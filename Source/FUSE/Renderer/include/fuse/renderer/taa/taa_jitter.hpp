@@ -9,6 +9,29 @@ namespace fuse::renderer {
 static constexpr u32 kTaaDefaultJitterSequenceLength = 8;
 static constexpr u32 kTaaMaxJitterSequenceLength = 64;
 
+/// Why jitter sync or NDC production preflight rejected the request (B5.9 deepen).
+enum class TaaJitterGuardRejectReason : u8 {
+    None = 0,
+    InvalidSequence,
+    InvalidViewport,
+};
+
+/// Human-readable label for jitter guard reject reasons (B5.9 deepen).
+const char* taaJitterGuardRejectReasonLabel(TaaJitterGuardRejectReason reason);
+/// Classify why jitter sync to a frame counter would be rejected (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterSyncReject(u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// Classify why NDC jitter production would be rejected (B5.9 deepen).
+TaaJitterGuardRejectReason classifyTaaJitterNdcReject(u32 width, u32 height,
+                                                      u32 sequenceLength = kTaaDefaultJitterSequenceLength);
+/// True when jitter can sync to `frameIndex` for the given sequence (B5.9 deepen).
+bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength = kTaaDefaultJitterSequenceLength,
+                             TaaJitterGuardRejectReason* reason = nullptr);
+/// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
+bool tryPreflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterGuardRejectReason& reason);
+/// True when NDC jitter can be produced for viewport and sequence (B5.9 deepen).
+bool preflightTaaJitterNdc(u32 width, u32 height, u32 sequenceLength = kTaaDefaultJitterSequenceLength,
+                            TaaJitterGuardRejectReason* reason = nullptr);
+
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
     static f32 halton(u32 index, u32 base);
@@ -46,6 +69,8 @@ public:
 
     fuse::math::Vec2 currentPixelOffset() const;
     fuse::math::Vec2 currentNdcOffset(u32 width, u32 height) const;
+    /// NDC offset only when viewport and sequence are valid; returns false when blocked (B5.9 deepen).
+    bool currentNdcOffsetIfReady(u32 width, u32 height, fuse::math::Vec2& out) const;
 
     void advance();
     /// Advance only when the sequence is valid; returns false when blocked (B5.9 deepen).

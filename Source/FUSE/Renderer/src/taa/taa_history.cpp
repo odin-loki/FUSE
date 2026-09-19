@@ -39,8 +39,30 @@ bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGener
     return block == TaaHistoryReuseBlockReason::None;
 }
 
+bool tryPreflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
+                                 TaaHistoryReuseBlockReason& reason) {
+    reason = classifyTaaHistoryReuseBlock(history, observedGeneration);
+    return reason == TaaHistoryReuseBlockReason::None;
+}
+
+bool shouldSkipTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    return !preflightTaaHistoryReuse(history, observedGeneration);
+}
+
+bool taaHistoryReuseReady(const TaaHistoryBuffer& history, u32 observedGeneration) {
+    return preflightTaaHistoryReuse(history, observedGeneration);
+}
+
 bool TaaHistoryBuffer::canReuseHistory() const {
     return taaHistoryCanReuse(*this);
+}
+
+u32 TaaHistoryBuffer::warmupFramesRemaining() const {
+    return taaHistoryWarmupFramesRemaining(*this);
+}
+
+bool TaaHistoryBuffer::reuseReady(u32 observedGeneration) const {
+    return taaHistoryReuseReady(*this, observedGeneration);
 }
 
 bool TaaHistoryBuffer::init(ResourceManager& resources, const TaaHistoryBufferDesc& desc) {
