@@ -505,3 +505,6 @@ CookHashPreflight preflight_manifest_cook_hash(const CookManifestEntry& entry, c
 // --- deepen additive from deepen-b79-cooker-hash-3e1a ---
     const CookHashPreflight source_preflight = preflight_file_content_hash(entry.source_path);
         const CookHashPreflight dependency_preflight = preflight_file_content_hash(dependency);
+
+// --- deepen additive from deepen-b79-cooker-hash-b4e0 ---
+CookHashPreflight preflight_manifest_entry_with_upstream_hash(const CookManifestEntry& entry,

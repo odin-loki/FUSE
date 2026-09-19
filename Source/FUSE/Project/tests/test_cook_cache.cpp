@@ -1083,3 +1083,8 @@ void testCookHashPreflightFnvAndManifestCook() {
 // --- deepen additive from deepen-b79-cooker-hash-3e1a ---
                    fuse::project::CookHashRejectReason::NullData)) == "null_data",
                "would_invalidate_stale_upstream with matching upstream is false");
+
+// --- deepen additive from deepen-b79-cooker-hash-b4e0 ---
+    expectTrue(cooker.cache().would_invalidate_source(source), "would_invalidate_source reports seeded source");
+    expectTrue(!cooker.cache().would_invalidate_source("/tmp/fuse_b79_unknown_source.obj"),
+               "would_invalidate_source rejects unknown source");
