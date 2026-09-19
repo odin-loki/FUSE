@@ -294,6 +294,7 @@ bool should_skip_narrowphase_dispatch(
 
 /// Returns true when narrowphase dispatch can early-out before shape tests (B4.6 deepen pass).
 bool can_skip_narrowphase_dispatch(
+/// True when narrowphase batch may early-out before slot preparation (B4.6 deepen pass).
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 

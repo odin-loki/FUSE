@@ -142,10 +142,7 @@ void runNarrowphaseIntoBufferImpl(
     if (!should_run_narrowphase_batch(pairs, bodies, shapes)) {
 
 
-    if (pairCount == 0u) {
         buffer.compactAndClampIfNeeded();
-        return;
-    }
 
     // Per-pair slots are job-safe (disjoint writes). Serial dispatch on the CPU stub avoids
     // scheduler reference-capture flakes seen when stacking parallel broadphase + narrowphase
@@ -170,7 +167,6 @@ void runNarrowphaseIntoBufferImpl(
             buffer.writeSlot(pairIndex, manifold);
 
         const broadphase::CandidatePair& pair = pairs[pairIndex];
-        if (should_skip_contact_pair_dispatch(pair, bodies, shapes)) {
         if (should_skip_narrowphase_pair_slot(pair, bodies, shapes)) {
 
         ContactManifold manifold = detect_contacts_pair(pair, bodies, shapes);
@@ -183,10 +179,6 @@ void runNarrowphaseIntoBufferImpl(
 
 
 void runNarrowphaseIntoBufferWithDeepenPreflight(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    ContactBufferSoA& buffer) {
     const u32 pairCount = runPreflight.pairCount;
 
         ContactManifold manifold = detect_contacts_pair_deepen(pairs[pairIndex], bodies, shapes);
@@ -195,7 +187,6 @@ void runNarrowphaseIntoBufferWithDeepenPreflight(
     compact_and_clamp_contact_buffer_with_preflight(buffer);
 
 bool runNarrowphaseIntoBufferIfNeeded(
-        buffer.clear();
         return false;
     runNarrowphaseIntoBufferWithDeepenPreflight(pairs, bodies, shapes, buffer);
     return buffer.hasValidContacts();
@@ -237,7 +228,6 @@ void runNarrowphaseIntoBufferBeyond(
     if (should_run_contact_buffer_compact_and_clamp(buffer)) {
 
 bool can_skip_narrowphase_beyond(
-    const CollisionShapeSoA& shapes) {
     return narrowphase_beyond_batch_rejects_all(pairs, bodies, shapes);
 
 void runNarrowphaseIntoBufferWithDeepenGuards(
@@ -248,59 +238,29 @@ void runNarrowphaseIntoBufferWithDeepenGuards(
     if (preflight.can_skip()) {
         if (!can_skip_contact_buffer_compact_and_clamp(buffer)) {
 
-    for (u32 pairIndex = 0; pairIndex < pairCount; ++pairIndex) {
         if (!should_run_narrowphase_pair_dispatch(pairs[pairIndex], bodies, shapes)) {
-            continue;
-        }
 
-        ContactManifold manifold =
-            detect_contacts_pair_with_deepen_preflight(pairs[pairIndex], bodies, shapes);
-        if (finalize_contact_manifold_with_preflight(manifold)) {
-            buffer.writeSlotWithPreflight(pairIndex, manifold);
-        }
-    }
 
-    buffer.compactAndClampIfNeeded();
-}
 
-} // namespace
 
 bool can_skip_narrowphase_buffer_dispatch(const std::vector<broadphase::CandidatePair>& pairs) {
-    return pairs.empty();
-}
 
 bool can_skip_narrowphase_buffer_dispatch_deepen(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
     return preflight_narrowphase_buffer_dispatch(pairs, bodies, shapes, true).skipped;
-}
 
-NarrowphaseBufferDispatchPreflight preflight_narrowphase_buffer_dispatch(
-    const std::vector<broadphase::CandidatePair>& pairs,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    bool useDeepenReject) {
-    NarrowphaseBufferDispatchPreflight preflight{};
-    preflight.pairCount = static_cast<u32>(pairs.size());
     if (preflight.pairCount == 0u) {
-        preflight.skipped = true;
         preflight.emptyPairs = true;
-        return preflight;
-    }
 
     if (useDeepenReject) {
         preflight.dispatchableCount = count_dispatchable_contact_pairs(pairs, bodies, shapes);
         if (preflight.dispatchableCount == 0u) {
-            preflight.skipped = true;
             preflight.allRejected = true;
-        }
     } else {
         preflight.dispatchableCount = preflight.pairCount;
-    }
 
-    return preflight;
-}
+
+    const RigidBodySoA& /*bodies*/,
+    const CollisionShapeSoA& /*shapes*/) {
 
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,
@@ -310,6 +270,19 @@ void runNarrowphaseIntoBuffer(
     if (can_skip_narrowphase_buffer_dispatch(pairs)) {
         buffer.preparePairSlots(0u);
         return;
+    if (can_skip_narrowphase_into_buffer(pairs, bodies, shapes)) {
+    }
+
+    const u32 pairCount = static_cast<u32>(pairs.size());
+    buffer.preparePairSlots(pairCount);
+
+    // Per-pair slots are job-safe (disjoint writes). Serial dispatch on the CPU stub avoids
+    // scheduler reference-capture flakes seen when stacking parallel broadphase + narrowphase
+    // under core::initialize(); the slot layout matches the future parallel_for kernel path.
+    for (u32 pairIndex = 0; pairIndex < pairCount; ++pairIndex) {
+        ContactManifold manifold = detect_contacts_pair(pairs[pairIndex], bodies, shapes);
+        if (generate_contact_manifold(manifold)) {
+            buffer.writeSlot(pairIndex, manifold);
     }
 
     runNarrowphaseIntoBufferImpl(pairs, bodies, shapes, buffer, false);

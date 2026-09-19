@@ -474,6 +474,9 @@ const char* contactBufferWriteSlotRejectReasonName(ContactBufferWriteSlotRejectR
 /// Diagnose why writeSlot would reject; vacuously succeeds when write may proceed (B4.6 deepen pass).
 ContactBufferWriteSlotRejectReason contactBufferWriteSlotRejectReason(
 
+/// Human-readable label for contact-buffer write-slot reject reasons (logging / tests).
+
+/// Diagnose why writeSlot would reject; vacuously succeeds when write may proceed.
     const ContactBufferSoA& buffer,
     u32 slot,
     const ContactManifold& manifold);
@@ -693,7 +696,8 @@ bool shouldSkipContactBufferWrite(
 
 
 
-};
+
+
 
 
 
@@ -718,6 +722,17 @@ enum class ContactBufferCompactionRejectReason : u8 {
 
 /// Human-readable label for contact-buffer compaction reject reasons (B4.6 deepen pass).
 
+    const ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold);
+
+
+};
+
+/// Human-readable label for contact-buffer compaction reject reasons (logging / tests).
+const char* contactBufferCompactionRejectReasonName(ContactBufferCompactionRejectReason reason);
+
+/// Diagnose why compaction would skip its scan loop; vacuously succeeds when compaction may proceed.
 ContactBufferCompactionRejectReason contactBufferCompactionRejectReason(const ContactBufferSoA& buffer);
 
 /// Returns true when `contactBufferCompactionRejectReason` matches `expected` (B4.6 deepen pass).
@@ -736,6 +751,7 @@ bool contactBufferCompactionRejectsForReason(
 
 
 
+    const ContactBufferSoA& buffer,
     ContactBufferCompactionRejectReason expected);
 
 /// Read-only compaction diagnostics — no mutation (B4.6 deepen pass).
@@ -872,7 +888,6 @@ const char* contact_buffer_friction_basis_reject_reason_name(ContactBufferFricti
 /// Diagnose why friction-basis rebuild would skip; vacuously succeeds when rebuild may proceed (B4.6 deepen pass).
 /// Diagnose why buildFrictionTangentBases would skip; vacuously succeeds when build may proceed (B4.6 deepen pass).
 ContactBufferFrictionBasisRejectReason contact_buffer_friction_basis_reject_reason(
-    const ContactBufferSoA& buffer);
 
 /// Returns true when `contact_buffer_friction_basis_reject_reason` matches `expected` (B4.6 deepen pass).
 bool contact_buffer_friction_basis_rejects_for_reason(
@@ -905,12 +920,9 @@ ContactBufferWritePreflight preflight_contact_buffer_write(const ContactManifold
 
 
 /// Read-only max-capacity clamp diagnostics — no mutation (B4.4 deepen follow-up pass).
-struct ContactBufferClampPreflight {
-    bool withinCapacity = false;
 
     bool needsClamp() const { return !emptyBuffer && !withinCapacity; }
 
-ContactBufferClampPreflight preflight_contact_buffer_clamp(const ContactBufferSoA& buffer);
 
 /// Read-only friction-basis rebuild diagnostics at the SoA layer (B4.4 deepen follow-up pass).
 struct ContactBufferFrictionPreflight {
@@ -1044,8 +1056,6 @@ bool shouldRunContactBufferCompact(const ContactBufferSoA& buffer);
 /// Non-mutating compaction predicate — mirrors `preflightContactBufferCompaction` (B4.5 deepen pass).
 
 /// Why contact-buffer max-capacity clamp would early-out (B4.5 deepen pass).
-enum class ContactBufferClampRejectReason : u8 {
-    WithinCapacity,
 /// Why contact-buffer max-capacity clamp would early-out (B4.6 narrowphase deepen pass).
 
 
@@ -1056,19 +1066,13 @@ enum class ContactBufferClampRejectReason : u8 {
 
 
 
-    bool needs_compaction() const { return reason == ContactBufferCompactionRejectReason::None; }
 
 
 
 
-const char* contact_buffer_clamp_reject_reason_name(ContactBufferClampRejectReason reason);
 
-ContactBufferClampRejectReason contact_buffer_clamp_reject_reason(const ContactBufferSoA& buffer);
 
-bool contact_buffer_clamp_rejects_for_reason(
-    ContactBufferClampRejectReason expected);
 
-    ContactBufferClampRejectReason reason = ContactBufferClampRejectReason::None;
 
     bool needsClamp() const { return reason == ContactBufferClampRejectReason::None; }
 
@@ -1120,7 +1124,6 @@ bool canWriteContactBufferSlot(
 
 /// Non-mutating compaction predicate — mirrors `preflightContactBufferCompaction` (B4.6 deepen pass).
 
-/// Why contact-buffer max-capacity clamp would early-out (B4.6 deepen pass).
 
 
 
@@ -1170,7 +1173,12 @@ bool writeContactSlotWithPreflight(
 
 
 
-/// Human-readable label for contact-buffer clamp reject reasons (B4.6 deepen pass).
+
+
+
+
+
+
 const char* contactBufferClampRejectReasonName(ContactBufferClampRejectReason reason);
 
 /// Diagnose why clamp would skip; vacuously succeeds when clamp may proceed.
@@ -1517,6 +1525,25 @@ bool contactBufferCompactAndClampRejectsForReason(
 
 
 
+
+bool contactBufferClampRejectsForReason(const ContactBufferSoA& buffer, ContactBufferClampRejectReason expected);
+
+struct ContactBufferClampPreflight {
+    ContactBufferClampRejectReason reason = ContactBufferClampRejectReason::None;
+    bool withinCapacity = false;
+
+    bool needsClamp() const { return reason == ContactBufferClampRejectReason::None; }
+};
+
+
+bool canSkipContactBufferClamp(const ContactBufferSoA& buffer);
+
+
+    None = 0,
+    EmptyBuffer,
+
+
+ContactBufferCompactAndClampRejectReason contactBufferCompactAndClampRejectReason(const ContactBufferSoA& buffer);
 
     ContactBufferCompactAndClampRejectReason expected);
 
@@ -2521,10 +2548,24 @@ enum class ContactBufferToVectorRejectReason : u8 {
 const char* contactBufferToVectorRejectReasonName(ContactBufferToVectorRejectReason reason);
 
 /// Diagnose why toVector would return empty; vacuously succeeds when export may proceed (B4.6 deepen pass).
+    bool emptyBuffer = false;
+
+};
+
+
+
+
+    None = 0,
+    EmptyBuffer,
+
+/// Human-readable label for contact-buffer toVector reject reasons (logging / tests).
+
+/// Diagnose why toVector would return empty; vacuously succeeds when export may proceed.
 ContactBufferToVectorRejectReason contactBufferToVectorRejectReason(const ContactBufferSoA& buffer);
 
 /// Returns true when `contactBufferToVectorRejectReason` matches `expected` (B4.6 deepen pass).
 bool contactBufferToVectorRejectsForReason(
+    const ContactBufferSoA& buffer,
     ContactBufferToVectorRejectReason expected);
 
 /// Read-only toVector diagnostics — no mutation (B4.6 deepen pass).
@@ -2532,6 +2573,9 @@ struct ContactBufferToVectorPreflight {
     ContactBufferToVectorRejectReason reason = ContactBufferToVectorRejectReason::None;
 
     bool canExport() const { return reason == ContactBufferToVectorRejectReason::None; }
+    bool emptyBuffer = false;
+
+};
 
 ContactBufferToVectorPreflight preflightContactBufferToVector(const ContactBufferSoA& buffer);
 
@@ -2548,5 +2592,50 @@ bool shouldRunContactBufferToVector(const ContactBufferSoA& buffer);
 
 
 /// Returns true when buildFrictionTangentBases should be skipped (B4.6 deepen pass).
+/// Why contact-buffer friction-basis build would early-out (B4.6 deepen pass).
+enum class ContactBufferFrictionBasisRejectReason : u8 {
+    None = 0,
+    EmptyBuffer,
+    NoValidContacts,
+};
+
+/// Human-readable label for friction-basis build reject reasons (logging / tests).
+const char* contactBufferFrictionBasisRejectReasonName(ContactBufferFrictionBasisRejectReason reason);
+
+/// Diagnose why buildFrictionTangentBases would skip; vacuously succeeds when build may proceed.
+ContactBufferFrictionBasisRejectReason contactBufferFrictionBasisRejectReason(const ContactBufferSoA& buffer);
+
+/// Returns true when `contactBufferFrictionBasisRejectReason` matches `expected` (B4.6 deepen pass).
+bool contactBufferFrictionBasisRejectsForReason(
+    const ContactBufferSoA& buffer,
+    ContactBufferFrictionBasisRejectReason expected);
+
+/// Read-only friction-basis build diagnostics — no mutation (B4.6 deepen pass).
+struct ContactBufferFrictionBasisPreflight {
+    ContactBufferFrictionBasisRejectReason reason = ContactBufferFrictionBasisRejectReason::None;
+    bool emptyBuffer = false;
+    bool noValidContacts = false;
+
+    bool canBuild() const { return reason == ContactBufferFrictionBasisRejectReason::None; }
+
+ContactBufferFrictionBasisPreflight preflightContactBufferFrictionBasis(const ContactBufferSoA& buffer);
+
+/// Non-mutating friction-basis build skip predicate — inverse of `canBuild` (B4.6 deepen pass).
+bool canSkipContactBufferFrictionBasis(const ContactBufferSoA& buffer);
+
+/// Non-mutating friction-basis build predicate — mirrors `preflightContactBufferFrictionBasis` (B4.6 deepen pass).
+bool shouldRunContactBufferFrictionBasis(const ContactBufferSoA& buffer);
+
+/// Write slot only when preflight allows; returns false when skipped (B4.6 deepen pass).
+bool writeContactBufferSlotWithPreflight(
+    ContactBufferSoA& buffer,
+    u32 slot,
+    const ContactManifold& manifold);
+
+/// Compact only when preflight allows; returns active count (B4.6 deepen pass).
+u32 compactContactBufferWithPreflight(ContactBufferSoA& buffer);
+
+/// Build friction tangents only when preflight allows (B4.6 deepen pass).
+void buildContactBufferFrictionBasesWithPreflight(ContactBufferSoA& buffer);
 
 } // namespace fuse::physics::narrowphase
