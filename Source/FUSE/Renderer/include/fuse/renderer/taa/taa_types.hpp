@@ -297,6 +297,9 @@ bool taaHistoryIsWarmed(const TaaHistoryBuffer& history);
 /// Why history warm-up preflight blocked the request (B5.9 deepen).
 enum class TaaHistoryWarmupBlockReason : u8 {
     NotReady,
+/// True when history is warmed and no longer needs a warm-up frame (B5.9 deepen).
+
+    NeedsWarmup,
 /// Human-readable label for history warm-up block reasons (B5.9 deepen).
 const char* taaHistoryWarmupBlockReasonLabel(TaaHistoryWarmupBlockReason reason);
 /// Classify why history warm-up is blocked (B5.9 deepen).
@@ -364,6 +367,9 @@ bool taaBlendWeightsNearEqual(const TaaBlendWeights& a, const TaaBlendWeights& b
 /// True when history has completed warm-up and may accumulate temporally (B5.9 deepen).
 /// True when temporal reuse may begin for the observed invalidate epoch (B5.9 deepen).
 bool tryCanBeginTemporalReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
+/// True when history is ready and warmed for temporal sampling (B5.9 deepen).
+/// History reuse preflight using `TaaResolveDesc::observed_history_generation` (B5.9 deepen).
+bool preflightTaaResolveHistoryReuse(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
 
 /// Why resolve blend-weight preflight rejected the request (B5.9 deepen).
 enum class TaaResolveBlendRejectReason : u8 {

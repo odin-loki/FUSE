@@ -29,6 +29,9 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaJitter::isSyncedToFrameIndex(frame)` / `slotMatchesMonotonicFrame()` — jitter sync guards
 - `TaaJitterLayout::monotonicFrameMatchesSlot(frame, slot, length)` — slot alignment guard
 - `TaaPass::isJitterSyncedToFrameIndex(frame)` / `jitterMonotonicFrameIndex()` — pass-level jitter sync
+- `classifyTaaJitterSyncBlock(frame, w, h, length)` / `preflightTaaJitterSync(...)` — jitter sync preflight guards
+- `TaaJitter::syncToFrameIndexIfViewportReady(frame, w, h)` — sync only when viewport and sequence preflight pass
+- `TaaJitter::preflightSyncToFrameIndex(frame, w, h)` — instance-level jitter sync preflight
 
 ## History validity (B5.9 deepen)
 
@@ -44,6 +47,9 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `taaHistoryCanAccumulate(history)` — true when history buffers are allocated and ready
 - `taaHistoryIsGenerationCurrent(history, observed_generation)` — free-function generation epoch check
 - `TaaHistoryBuffer::matchesDimensions(w, h)` — true when resolve dimensions match allocated history
+- `taaHistoryWarmupComplete(history)` / `preflightTaaHistoryWarmup(history)` — warm-up preflight guards
+- `preflightTaaHistoryReuse(history, observedGeneration)` — history temporal reuse preflight
+- `preflightTaaResolveHistoryReuse(desc, history)` — reuse preflight using resolve desc observed generation
 - `clampTaaParams(params)` — clamps blend/rejection/gamma knobs to safe ranges
 - `taaParamsRequireClamping(params)` — true when `clampTaaParams` would change any field
 - `computeEffectiveBlend(firstFrame, params)` — 1.0 on warm-up frame, else clamped `blend_factor`
@@ -82,6 +88,8 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `canAttemptTaaResolve(desc, history)` — true when all preflight guards pass (inverse of blocking skip)
 - `prepareTaaResolveDesc(desc, history)` — stamp generation and return whether resolve can proceed
 - `TaaResolve::wouldSkip(desc, history, &reason)` — preflight skip check without mutating history
+- `preflightTaaResolveBlendWeights(desc, history)` — blend-weight preflight guards
+- `preflightTaaResolveWithBlend(desc, history)` — combined resolve skip + blend-weight preflight
 - `TaaResolve::resetBookkeeping()` — clears resolve stats/message (called on `TaaPass::destroy` / `invalidateHistory`)
 - `TaaPass::invalidateHistory()` — clears history validity and resolve bookkeeping without destroying buffers
 - `TaaPass::resize(w, h)` — resizes history targets and invalidates accumulated frames
@@ -123,6 +131,9 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `diagnoseTaaResolveBlendPreflight(desc, history)` — classify blend preflight reject reason
 - `preflightTaaResolveBlend(desc, history, &reason)` — false when history not ready or weights violate reuse policy
 - `TaaPass::isWarmupResolveFrame()` / `preflightHistoryReuse(observedGeneration)` / `preflightResolveBlend(desc, &reason)` — pass-level preflight
+- `TaaPass::historyWarmupComplete()` / `preflightHistoryWarmup()` — pass-level warm-up preflight guards
+- `TaaPass::preflightJitterSync(frame)` / `syncJitterToFrameIndexIfViewportReady(frame)` — pass-level jitter sync guards
+- `TaaPass::preflightResolveHistoryReuse(desc)` / `preflightResolveWithBlend(desc)` — pass-level resolve preflights
 
 ## Pipeline (stub)
 

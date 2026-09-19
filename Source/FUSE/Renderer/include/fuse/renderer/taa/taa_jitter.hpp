@@ -108,6 +108,13 @@ bool taaJitterSyncBlockReasonIsBlocking(TaaJitterSyncBlockReason reason);
 TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(u32 frameIndex, u32 sequenceLength);
 /// True when jitter can align to `frameIndex` with `sequenceLength` (B5.9 deepen).
 bool preflightTaaJitterSync(u32 frameIndex, u32 sequenceLength, TaaJitterSyncBlockReason* reason = nullptr);
+/// Why jitter sync preflight blocked the request (B5.9 deepen).
+/// Classify why jitter cannot sync to a monotonic frame counter (B5.9 deepen).
+TaaJitterSyncBlockReason classifyTaaJitterSyncBlock(u32 /*frameIndex*/, u32 width, u32 height,
+/// True when jitter can sync to `frameIndex` for the given viewport and sequence (B5.9 deepen).
+bool preflightTaaJitterSync(u32 frameIndex, u32 width, u32 height,
+                            u32 sequenceLength = kTaaDefaultJitterSequenceLength,
+                            TaaJitterSyncBlockReason* reason = nullptr);
 
 /// Halton (2,3) sequence helpers — CPU reference for projection jitter (B5.9 deepen).
 struct TaaJitterLayout {
@@ -242,6 +249,10 @@ public:
     /// Diagnose viewport-aware jitter sync; false when sync is blocked (B5.9 deepen).
     bool trySyncToFrameIndexIfViewportReady(u32 frameIndex, u32 width, u32 height,
                                             TaaJitterSyncBlockReason& outReason);
+    /// Sync only when viewport and sequence preflight pass; returns false when blocked (B5.9 deepen).
+    /// True when jitter can sync to `frameIndex` for the given viewport (B5.9 deepen).
+    bool preflightSyncToFrameIndex(u32 frameIndex, u32 width, u32 height,
+                                   TaaJitterSyncBlockReason* reason = nullptr) const;
     /// True when monotonic frame counter and slot match `frameIndex` (B5.9 deepen).
     bool isAlignedToFrameIndex(u32 frameIndex) const;
     /// True when jitter slot and monotonic counter match a frame index (B5.9 deepen).
