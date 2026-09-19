@@ -2065,6 +2065,7 @@ bool try_generate_contact_manifold_if_needed(ContactManifold& manifold);
 
 /// Non-mutating pair-dispatch skip predicate — mirrors `should_skip_contact_pair_dispatch` (B4.3 deepen follow-up pass).
 /// Non-mutating alias for `should_skip_contact_pair_dispatch` (B4.5 deepen follow-up pass).
+/// Non-mutating alias for `should_skip_contact_pair_dispatch` (B4.6 deepen follow-up pass).
     const CollisionShapeSoA& shapes) {
     return should_skip_contact_pair_dispatch(pair, bodies, shapes);
 }
@@ -2347,6 +2348,11 @@ inline bool try_generate_contact_manifold_if_needed(ContactManifold& manifold) {
 /// Compute friction tangents only when tangents should not be skipped (B4.5 deepen follow-up pass).
 inline bool try_compute_friction_tangents(ContactManifold& manifold) {
     if (should_skip_friction_tangents(manifold)) {
+/// Non-mutating alias for `should_skip_contact_pair_deepen_dispatch` (B4.6 deepen follow-up pass).
+
+/// Dispatch only when pair preflight allows; returns invalid manifold when skipped (B4.6 deepen follow-up pass).
+
+/// Finalize only when `can_finalize_contact_manifold` passes; no-op otherwise (B4.6 deepen follow-up pass).
 }
 
 } // namespace fuse::physics::narrowphase

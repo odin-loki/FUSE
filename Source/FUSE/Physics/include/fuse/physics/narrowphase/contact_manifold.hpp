@@ -1806,6 +1806,13 @@ FUSE_PHYSICS_INLINE bool try_finalize_contact_manifold_with_preflight(
 /// Non-mutating alias for `can_skip_manifold_finalize` (B4.5 deepen follow-up pass).
 
 
+/// Non-mutating alias for `should_skip_manifold_prune` (B4.6 deepen follow-up pass).
+
+/// Non-mutating alias for `can_skip_manifold_finalize` (B4.6 deepen follow-up pass).
+
+/// Prune only when preflight allows; returns false when skipped or manifold becomes empty (B4.6 deepen follow-up pass).
+
+/// Finalize only when preflight allows; no-op otherwise (B4.6 deepen follow-up pass).
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

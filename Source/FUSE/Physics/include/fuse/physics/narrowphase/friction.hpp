@@ -1118,5 +1118,13 @@ inline bool would_skip_friction_tangents(const ContactManifold& manifold) {
 inline bool try_ensure_friction_basis(ContactManifold& manifold) {
     if (would_skip_friction_tangents(manifold)) {
 
+/// Non-mutating alias for `should_skip_friction_basis_preflight` (B4.6 deepen follow-up pass).
+
+/// Non-mutating alias for `should_skip_friction_tangents` (B4.6 deepen follow-up pass).
+inline bool would_skip_friction_tangents_build(const ContactManifold& manifold) {
+
+/// Rebuild friction basis only when preflight allows; returns false when skipped (B4.6 deepen follow-up pass).
+
+        return preflight.canReuse;
 
 } // namespace fuse::physics::narrowphase
