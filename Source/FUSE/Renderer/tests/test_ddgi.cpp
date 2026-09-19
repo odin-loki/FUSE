@@ -4898,3 +4898,15 @@ void testTrilinearAndCachePreflightGuards() {
                "wouldSkip true for empty grid");
 void testTrilinearCachePreflightDeepenGuards() {
     testTrilinearCachePreflightDeepenGuards();
+
+// --- deepen additive from deepen-ddgi-b56-guards-7ff8 ---
+    expectTrue(!fuse::renderer::tryValidateProbeGridSource(badSpacing, sourceReason),
+               "tryValidateProbeGridSource rejects invalid spacing");
+    expectTrue(sourceReason == fuse::renderer::ProbeGridSourceRejectReason::InvalidSpacing,
+               "preflightTrilinearProbeSampleAtCoords succeeds on full cache");
+    expectTrue(!fuse::renderer::ddgi_util::wouldSkipTrilinearProbeSampleAtCoords(desc, built, cache.data(), 8u),
+               "wouldSkipTrilinearProbeSampleAtCoords false for valid sample");
+               "preflightTrilinearProbeIrradiance succeeds on interior sample");
+               "tryLaunch_probe_kernels reports no reject reason on success");
+    expectTrue(!fuse::renderer::gi::tryLaunch_probe_kernels(nullIndices, nullptr, kernelReason),
+               "tryLaunch_probe_kernels null indices reports null_probe_indices");

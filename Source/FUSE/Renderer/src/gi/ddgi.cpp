@@ -3406,3 +3406,6 @@ bool preflightCacheLookup(const DDGIDesc& desc,
             *reason = CacheIndexRejectReason::EmptyGrid;
 bool wouldSkipCacheLookup(const DDGIDesc& desc,
     return !preflightCacheLookup(desc, cache, cache_count);
+
+// --- deepen additive from deepen-ddgi-b56-guards-7ff8 ---
+    return preflightTrilinearProbeSampleAtCoords(desc, coords, cache, cache_count, reason);
