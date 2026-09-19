@@ -756,3 +756,12 @@ FUSE_PHYSICS_INLINE u32 ContactBufferSoA::compactAndClampWithPreflight() {
     const ContactBufferCompactAndClampPreflight preflight = preflightContactBufferCompactAndClamp(*this);
 FUSE_PHYSICS_INLINE bool ContactBufferSoA::buildFrictionTangentBasesWithPreflight() {
     if (!preflightContactBufferFrictionBasis(*this).canBuild()) {
+
+// --- deepen additive from b4-narrowphase-deepen-f675 ---
+    case ContactBufferFrictionTangentRejectReason::AllCached:
+    return ContactBufferFrictionTangentRejectReason::AllCached;
+    return contactBufferFrictionTangentRejectReason(buffer) == expected;
+    preflight.reason = contactBufferFrictionTangentRejectReason(buffer);
+    preflight.allCached = preflight.reason == ContactBufferFrictionTangentRejectReason::AllCached;
+    return !preflightContactBufferFrictionTangentBases(buffer).needsRebuild();
+    return preflightContactBufferFrictionTangentBases(buffer).needsRebuild();

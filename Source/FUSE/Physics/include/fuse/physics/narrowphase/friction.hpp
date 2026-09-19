@@ -352,3 +352,6 @@ FUSE_PHYSICS_INLINE bool try_rebuild_friction_basis_with_preflight(
 // --- deepen additive from deepen-b4-narrowphase-guards-a927 ---
 inline bool would_skip_friction_tangents(const ContactManifold& manifold) {
     if (would_skip_friction_tangents(manifold)) {
+
+// --- deepen additive from b4-narrowphase-deepen-f675 ---
+inline bool would_skip_friction_tangents_build(const ContactManifold& manifold) {

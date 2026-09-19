@@ -3886,3 +3886,16 @@ void testContactPairManifoldFrictionTryGuards() {
         "would_skip_friction_basis_rebuild on invalid normal");
         !fuse::physics::narrowphase::would_skip_friction_tangents(needsBasis),
         "would_skip_friction_tangents false for valid manifold");
+
+// --- deepen additive from b4-narrowphase-deepen-f675 ---
+        buffer.tryWriteSlot(1u, second),
+        "tryWriteSlot accepts second valid manifold");
+        fuse::physics::narrowphase::preflightContactBufferFrictionTangentBases(buffer);
+        frictionPreflight.allCached,
+    expectTrue(emptyPreflight.emptyInput, "into-buffer preflight marks empty input");
+    expectTrue(emptyPreflight.can_skip(), "into-buffer preflight skips empty input");
+    expectTrue(rejectedPreflight.can_skip(), "into-buffer preflight skips all-rejected pairs");
+    expectTrue(validPreflight.can_dispatch(), "into-buffer preflight dispatches valid pair");
+    fuse::physics::narrowphase::runNarrowphaseIntoBufferWithPreflight(validPairs, bodies, shapes, buffer);
+        "would_skip_manifold_prune false for separated slot");
+        "would_skip_manifold_finalize false for finalizable manifold");
