@@ -247,6 +247,7 @@ bool tryComputeTaaJitterNdcOffset(u32 frameIndex, u32 width, u32 height, u32 seq
 
     return shouldSkipTaaJitterSync(0u, sequenceLength);
 
+
 bool TaaJitterLayout::validateSequenceLength(u32 length) {
     return length > 0u && length <= kTaaMaxJitterSequenceLength;
 }

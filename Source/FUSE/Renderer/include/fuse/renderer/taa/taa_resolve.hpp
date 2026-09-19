@@ -121,6 +121,9 @@ bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer
 bool tryPreflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                  TaaResolveSkipReason& skipReason, TaaResolveBlendRejectReason& blendReason);
 /// Early-out when combined resolve frame preflight would reject (B5.9 deepen).
+/// True when resolve skip and blend-weight preflights both pass (B5.9 deepen).
+/// Combined resolve-frame preflight with mandatory reject outputs (B5.9 deepen).
+/// Early-out when combined resolve-frame preflight would reject (B5.9 deepen).
 bool shouldSkipTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 
 /// CPU/CUDA resolve facade — records resolve intent; kernel deferred (B5.9 stub).

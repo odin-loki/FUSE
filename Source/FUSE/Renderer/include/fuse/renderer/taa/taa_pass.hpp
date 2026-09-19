@@ -473,6 +473,9 @@ public:
     bool preflightJitterNdc(u32 width, u32 height, TaaJitterGuardRejectReason* reason = nullptr) const;
     /// True when pass jitter can produce NDC offsets for configured viewport (B5.9 deepen).
     bool preflightJitterNdcIfReady(TaaJitterGuardRejectReason* reason = nullptr) const;
+    /// Early-out when pass history warm-up preflight would reject (B5.9 deepen).
+    bool shouldSkipHistoryWarmup() const;
+    /// Early-out when combined resolve-frame preflight would reject (B5.9 deepen).
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
