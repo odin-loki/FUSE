@@ -2217,3 +2217,7 @@ bool GizmoSystem::tryPreflightEndDrag(GizmoEndDragRejectReason& reason) const {
 bool GizmoSystem::shouldSkipEndDrag() const { return fuse::editor::shouldSkipEndDrag(m_dragging); }
 
 } // namespace fuse::editor
+
+// --- deepen additive from deepen-b6-gizmo-begin-drag-snap-ce02 ---
+    return tryPickAxis(ray, transform, mode, space, axisLength, pickRadius, axis);
+    return tryPickAxis(hit, mode, axis);

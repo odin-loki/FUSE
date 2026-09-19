@@ -2910,3 +2910,13 @@ int main() {
     std::fprintf(stdout, "fuse_editor_gizmo_system: all tests passed\n");
     return EXIT_SUCCESS;
 }
+
+// --- deepen additive from deepen-b6-gizmo-begin-drag-snap-ce02 ---
+void testCanPickAxisPreflight() {
+void testCanBeginDragPreflight() {
+void testTryBeginDragAlreadyDraggingGuard() {
+    expectTrue(gizmo.tryBeginDrag(hit, transform, result), "first begin drag succeeds");
+    expectTrue(!gizmo.tryBeginDrag(hit, transform, result),
+               "tryBeginDrag rejects when already dragging");
+    testCanPickAxisPreflight();
+    testCanBeginDragPreflight();
