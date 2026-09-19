@@ -511,6 +511,18 @@ bool canUseHrtfIr(const HrtfIrStub& ir) {
     return preflightEmptyHrtfIr(ir).hasIr();
 }
 
+HrtfIrPreflight preflight_hrtf_ir(const HrtfIrStub& ir) {
+    HrtfIrPreflight result;
+    result.null_samples = ir.samples == nullptr;
+    result.zero_length = ir.length == 0;
+    result.malformed = is_nonnull_zero_length_hrtf_ir(ir);
+    return result;
+}
+
+bool can_convolve_hrtf_ir(const HrtfIrStub& ir) {
+    return preflight_hrtf_ir(ir).can_convolve();
+}
+
 HrtfPanPath resolve_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
     if (should_skip_hrtf_pan(hrtf_enabled, rel_listener)) {
     if (should_bypass_hrtf_pan(hrtf_enabled, rel_listener)) {
@@ -714,6 +726,25 @@ HrtfPanPathPreflight preflightHrtfPanPath(bool hrtf_enabled, const Vec3& rel_lis
 
 bool canApplyHrtfPanPath(HrtfPanPath path) {
     return is_spatial_hrtf_pan_path(path);
+}
+
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const HrtfIrStub& ir,
+                                             const Vec3& rel_listener) {
+    HrtfPanPathPreflight result;
+    result.hrtf_disabled = !hrtf_enabled;
+    result.co_located = is_co_located_hrtf_source(rel_listener);
+    result.empty_ir = is_empty_hrtf_ir(ir);
+    result.has_valid_ir = has_hrtf_ir(ir);
+    result.path = resolve_hrtf_pan_path(hrtf_enabled, ir, rel_listener);
+    return result;
+}
+
+HrtfPanPathPreflight preflight_hrtf_pan_path(bool hrtf_enabled, const Vec3& rel_listener) {
+    return preflight_hrtf_pan_path(hrtf_enabled, make_empty_hrtf_ir(), rel_listener);
+}
+
+bool can_spatialize_hrtf_pan(bool hrtf_enabled, const Vec3& rel_listener) {
+    return preflight_hrtf_pan_path(hrtf_enabled, rel_listener).can_spatialize();
 }
 
 bool is_hrtf_pan_bypassed(HrtfPanPath path) {
@@ -1869,6 +1900,28 @@ HrtfAttenuationCouplingPreflight preflightHrtfAttenuationCoupling(
 bool canApplyHrtfAttenuationCoupling(HrtfPanPath path, float distance_attenuation,
                                      float occlusion_gain) {
     return should_narrow_hrtf_spatial_image(path, distance_attenuation, occlusion_gain);
+}
+
+HrtfAttenuationCouplingPreflight preflight_hrtf_attenuation_coupling(
+    HrtfPanPath path, float distance_attenuation, float occlusion_gain,
+    const HrtfAttenuationCoupling& coupling, const BinauralPanParams& params) {
+    HrtfAttenuationCouplingPreflight result;
+    result.path = path;
+    result.bypass_pan = is_hrtf_pan_path_bypass(path);
+    result.unity_attenuation = is_unity_hrtf_attenuation(distance_attenuation, occlusion_gain);
+    result.spatial_blend =
+        compute_hrtf_spatial_blend(distance_attenuation, occlusion_gain, coupling, params);
+    result.unity_spatial_blend = is_unity_hrtf_spatial_blend(result.spatial_blend);
+    return result;
+}
+
+bool can_apply_hrtf_attenuation_coupling(HrtfPanPath path, float distance_attenuation,
+                                         float occlusion_gain,
+                                         const HrtfAttenuationCoupling& coupling,
+                                         const BinauralPanParams& params) {
+    return preflight_hrtf_attenuation_coupling(path, distance_attenuation, occlusion_gain, coupling,
+                                               params)
+        .can_apply_coupling();
 }
 
 float compute_hrtf_distance_factor(float distance_attenuation,
