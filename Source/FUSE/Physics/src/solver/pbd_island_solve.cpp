@@ -2874,3 +2874,11 @@ bool should_skip_island_solve_pipeline(const IslandSolveJob& job,
         const IslandWakePreflight wakePreflight = preflight_island_wake(graph.island(islandIndex), bodies);
 IslandPipelineDispatchPreflight preflight_island_pipeline_dispatch(
     const IslandPipelineDispatchPreflight preflight = preflight_island_pipeline_dispatch(
+
+// --- deepen additive from deepen-b4-pbd-island-guards-0f09 ---
+IslandPipelineDispatchPreflight preflight_island_pipeline_dispatch_job(
+IslandPipelineGraphPreflight preflight_island_pipeline_dispatch_graph(const ContactIslandGraph& graph,
+    IslandPipelineGraphPreflight preflight{};
+bool should_skip_island_pipeline_dispatch_graph(const ContactIslandGraph& graph,
+        if (!should_skip_island_pipeline_dispatch(graph,
+    const IslandPipelineGraphPreflight preflight = preflight_island_pipeline_dispatch_graph(graph, bodies, dt);

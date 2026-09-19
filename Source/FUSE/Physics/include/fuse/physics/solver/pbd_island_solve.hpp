@@ -1738,3 +1738,9 @@ bool should_skip_island_pipeline_dispatch(const ContactIslandGraph& graph,
 // --- deepen additive from deepen-pbd-island-guards-1a8e ---
 bool should_skip_island_solve_pipeline(const IslandSolveJob& job,
 IslandPipelineDispatchPreflight preflight_island_pipeline_dispatch(
+
+// --- deepen additive from deepen-b4-pbd-island-guards-0f09 ---
+struct IslandPipelineGraphPreflight {
+IslandPipelineDispatchPreflight preflight_island_pipeline_dispatch_job(
+IslandPipelineGraphPreflight preflight_island_pipeline_dispatch_graph(const ContactIslandGraph& graph,
+bool should_skip_island_pipeline_dispatch_graph(const ContactIslandGraph& graph,

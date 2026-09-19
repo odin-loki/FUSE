@@ -5062,3 +5062,20 @@ void testIslandPipelineDispatchGuards() {
     expectTrue(!should_skip_island_pipeline_dispatch(graph, bodies, contacts, constraints, dt),
                "should_skip pipeline dispatch false when solveable islands exist");
 void testDispatchIslandPipelineGuards() {
+
+// --- deepen additive from deepen-b4-pbd-island-guards-0f09 ---
+void testPreflightIslandPipelineDispatchGuards() {
+    const IslandPipelineDispatchPreflight mixedPreflight = preflight_island_pipeline_dispatch(
+    expectTrue(mixedPreflight.can_dispatch(), "mixed island passes pipeline dispatch preflight");
+    expectTrue(mixedPreflight.should_wake_first(), "mixed island pipeline preflight requests wake");
+    const IslandPipelineDispatchPreflight sleepingPreflight = preflight_island_pipeline_dispatch(
+    expectTrue(!sleepingPreflight.can_dispatch(), "all-sleeping island fails pipeline dispatch preflight");
+    expectTrue(should_skip_island_pipeline_dispatch(graph, sleepingIsland, bodies, contacts, constraints, dt),
+               "should_skip pipeline dispatch on all-sleeping island");
+    const IslandPipelineGraphPreflight graphPreflight =
+    expectTrue(graphPreflight.can_dispatch(), "pipeline graph preflight can dispatch mixed graph");
+    expectTrue(graphPreflight.wake.can_wake(), "pipeline graph preflight sees wakeable island");
+    expectTrue(!should_skip_island_pipeline_dispatch_graph(graph, bodies, dt),
+               "should_skip pipeline graph false when mixed island exists");
+void testDispatchIslandPipelineGuarded() {
+    testPreflightIslandPipelineDispatchGuards();
