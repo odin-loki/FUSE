@@ -193,6 +193,10 @@ fuse::math::Vec2 TaaJitterLayout::safeNdcOffsetForFrameIndex(u32 frameIndex, u32
     return ndcOffsetForFrameIndex(frameIndex, width, height, sequenceLength);
 }
 
+bool TaaJitterLayout::monotonicFrameMatchesSlot(u32 frameIndex, u32 slot, u32 sequenceLength) {
+    return slot == frameIndexInSequence(frameIndex, sequenceLength);
+}
+
 bool TaaJitterLayout::fillHaltonSequence(u32 length, fuse::math::Vec2* out) {
     if (out == nullptr || !validateSequenceLength(length)) {
         return false;
@@ -288,7 +292,6 @@ bool TaaJitter::isSyncedToFrameIndex(u32 frameIndex) const {
 
 bool TaaJitterSyncPreflight::synced() const {
     return sequence_valid && monotonic_matches && slot_matches;
-}
 
 TaaJitterSyncPreflight preflightTaaJitterSync(const TaaJitter& jitter, u32 frameIndex, u32 width, u32 height) {
     TaaJitterSyncPreflight preflight{};
@@ -301,6 +304,10 @@ TaaJitterSyncPreflight preflightTaaJitterSync(const TaaJitter& jitter, u32 frame
     preflight.slot_matches = preflight.actual_slot == preflight.expected_slot;
     preflight.monotonic_matches = jitter.monotonicFrameIndex() == frameIndex;
     return preflight;
+    return m_monotonicFrame == frameIndex;
+
+bool TaaJitter::slotMatchesMonotonicFrame() const {
+    return TaaJitterLayout::monotonicFrameMatchesSlot(m_monotonicFrame, m_index, m_sequenceLength);
 }
 
 } // namespace fuse::renderer

@@ -123,6 +123,7 @@ bool taaResolveSurfacesSatisfied(const TaaResolveDesc& desc) {
 bool canAttemptTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     return preflightTaaResolve(desc, history);
 
+
 bool prepareTaaResolveDesc(TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     sanitizeTaaResolveDesc(desc, history);
     return canAttemptTaaResolve(desc, history);
@@ -133,6 +134,10 @@ bool taaResolveWillReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuff
     const TAAParams params = clampTaaParams(desc.params);
     const f32 effectiveBlend =
         computeEffectiveBlend(firstFrame, taaResolveCanReuseHistory(desc, history), params);
+}
+
+        return false;
+    const f32 effectiveBlend = computeEffectiveBlend(false, true, params);
     return taaBlendUsesHistory(effectiveBlend);
 }
 
@@ -247,6 +252,21 @@ TaaBlendWeights computeTaaBlendWeights(bool firstFrame, const TAAParams& params)
     weights.current = effectiveBlend;
     weights.history = computeHistoryBlend(effectiveBlend);
     return weights;
+
+TaaBlendWeights computeTaaBlendWeightsWithReuseGuard(bool firstFrame, bool historyReusable,
+                                                     const TAAParams& params) {
+    const f32 effectiveBlend = computeEffectiveBlend(firstFrame, historyReusable, params);
+    TaaBlendWeights weights{};
+    weights.current = effectiveBlend;
+    weights.history = computeHistoryBlend(effectiveBlend);
+    return weights;
+}
+
+TaaBlendWeights preflightTaaBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
+    const bool firstFrame = !history.hasValidHistory();
+    const bool historyReusable = taaResolveCanReuseHistory(desc, history);
+    return computeTaaBlendWeightsWithReuseGuard(firstFrame, historyReusable, desc.params);
+}
 
 bool taaBlendWeightsValid(const TaaBlendWeights& weights) {
     if (weights.current < 0.f || weights.current > 1.f) {
@@ -492,6 +512,10 @@ TaaBlendWeights computeTaaBlendWeightsWithReuseGuard(bool firstFrame, bool histo
     weights.current = effectiveBlend;
     weights.history = computeHistoryBlend(effectiveBlend);
     return weights;
+
+
+
+
 }
 
 const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason) {

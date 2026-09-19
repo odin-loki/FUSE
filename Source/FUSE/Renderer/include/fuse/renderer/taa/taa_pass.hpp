@@ -146,6 +146,9 @@ public:
     TaaHistoryReusePreflight preflightHistoryReuseForDesc(const TaaResolveDesc& desc) const;
     TaaJitterSyncPreflight preflightJitterSync(u32 frameIndex) const;
     TaaResolveBlendPreflight preflightResolveBlend(const TaaResolveDesc& desc) const;
+    /// Monotonic frame counter owned by pass jitter (B5.9 deepen).
+    u32 jitterMonotonicFrameIndex() const { return m_jitter.monotonicFrameIndex(); }
+    /// True when pass jitter is aligned to a monotonic frame counter (B5.9 deepen).
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;

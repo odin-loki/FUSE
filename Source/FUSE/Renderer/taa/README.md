@@ -24,11 +24,17 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaJitter` honours `TaaJitterDesc::sequence_length` (default 8) when advancing and wrapping
 - `TaaJitter::syncToFrameIndex(frame)` — align jitter state to a wrapped monotonic frame counter
 - `TaaJitter::monotonicFrameIndex()` — monotonic frame counter incremented by `advance`, set by `syncToFrameIndex`
+- `TaaJitterLayout::safeHaltonNdcOffset` / `safeNdcOffsetForFrameIndex` — zero NDC when viewport invalid
+- `TaaJitter::advanceIfPossible()` — advance only when sequence is valid
+- `TaaJitter::isSyncedToFrameIndex(frame)` / `slotMatchesMonotonicFrame()` — jitter sync guards
+- `TaaJitterLayout::monotonicFrameMatchesSlot(frame, slot, length)` — slot alignment guard
+- `TaaPass::isJitterSyncedToFrameIndex(frame)` / `jitterMonotonicFrameIndex()` — pass-level jitter sync
 
 ## History validity (B5.9 deepen)
 
 - `TaaHistoryBuffer::hasValidHistory()` — false until the first successful resolve
 - `TaaHistoryBuffer::needsWarmup()` — inverse of `hasValidHistory` for resolve warm-up gating
+- `taaHistoryNeedsWarmup(history)` / `taaHistoryWarmupComplete(history)` — free-function warmup guards
 - `TaaHistoryBuffer::accumulatedFrames()` — monotonic frame counter reset on invalidate/resize
 - `TaaHistoryBuffer::invalidateGeneration()` — bumped on invalidate/resize for stale-history detection
 - `TaaHistoryBuffer::isHistoryStale(observedGeneration)` — true when a consumer's epoch differs from current history
@@ -46,6 +52,12 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `taaBlendWeightReusesHistory(effective_blend)` — true when effective blend is strictly below 1.0
 - `computeHistoryContributionWeight(effective_blend)` — `1.0 - effective_blend`
 - `taaUsesWarmupBlend(first_frame)` — true when warm-up forces full current-frame weight
+- `computeEffectiveBlend(firstFrame, historyReusable, params)` — blend with explicit reuse guard
+- `computeTaaBlendWeightsWithReuseGuard` / `preflightTaaBlendWeights` — resolve-blend preflights
+- `isTaaBlendFactorInRange` / `taaUsesWarmupBlend` / `taaBlendUsesHistory` / `taaBlendSkipsHistoryReuse`
+- `taaResolveSurfacesSatisfied` / `canAttemptTaaResolve` / `prepareTaaResolveDesc`
+- `taaResolveWillReuseHistory` / `TaaResolveStats::history_reused`
+- `TaaPass::canResolveFrame` / `prepareAndCanResolve` / `resolveWillReuseHistory`
 - `taaResolveRequiresVelocity/Depth(params)` — true when rejection thresholds require G-buffer surfaces
 - `taaResolveRequiresRejectionSurfaces(params)` — true when either rejection threshold is active
 - `TaaHistoryBuffer::invalidateHistory()` — clears validity (called on resize)

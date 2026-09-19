@@ -2381,6 +2381,36 @@ void testHistoryReuseGuards() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testHistoryWarmupGuards() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for history warmup guard test");
+
+    fuse::renderer::BindlessDescriptors bindless{};
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    resources.init(*bootstrap->device(), bindless);
+
+    fuse::renderer::TaaHistoryBuffer history;
+    fuse::renderer::TaaHistoryBufferDesc historyDesc{64, 64};
+    expectTrue(history.init(resources, historyDesc), "history ready for warmup guard test");
+    expectTrue(fuse::renderer::taaHistoryNeedsWarmup(history), "fresh history needs warmup");
+    expectTrue(!fuse::renderer::taaHistoryWarmupComplete(history), "fresh history warmup incomplete");
+    expectTrue(!fuse::renderer::taaHistoryCanReuse(history), "fresh history cannot be reused");
+
+    history.markResolved();
+    expectTrue(!fuse::renderer::taaHistoryNeedsWarmup(history), "warmed history no longer needs warmup");
+    expectTrue(fuse::renderer::taaHistoryWarmupComplete(history), "warmed history warmup complete");
+    expectTrue(fuse::renderer::taaHistoryCanReuse(history), "warmed history can be reused");
+
+    history.destroy();
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testJitterSafeNdcOffset() {
     using fuse::renderer::TaaJitterLayout;
 
@@ -2418,6 +2448,28 @@ void testJitterAdvanceIfPossible() {
     expectTrue(fallback.canAdvance(), "invalid desc falls back to default sequence");
     expectTrue(fallback.sequenceLength() == 8u, "zero sequence length falls back to default");
     expectTrue(fallback.advanceIfPossible(), "advanceIfPossible succeeds after fallback");
+}
+
+void testJitterSyncGuards() {
+    using fuse::renderer::TaaJitterLayout;
+
+    fuse::renderer::TaaJitter jitter;
+    expectTrue(jitter.isSyncedToFrameIndex(0u), "fresh jitter synced to frame zero");
+    expectTrue(jitter.slotMatchesMonotonicFrame(), "fresh jitter slot matches monotonic frame");
+
+    jitter.advance();
+    expectTrue(jitter.isSyncedToFrameIndex(1u), "advance keeps monotonic sync");
+    expectTrue(jitter.slotMatchesMonotonicFrame(), "advance keeps slot sync");
+
+    jitter.syncToFrameIndex(13u);
+    expectTrue(jitter.isSyncedToFrameIndex(13u), "syncToFrameIndex marks monotonic sync");
+    expectTrue(jitter.slotMatchesMonotonicFrame(), "syncToFrameIndex keeps slot sync");
+    expectTrue(TaaJitterLayout::monotonicFrameMatchesSlot(13u, jitter.index(), 8u),
+               "layout slot guard matches synced jitter");
+
+    expectTrue(!jitter.isSyncedToFrameIndex(13u), "advance clears prior frame sync");
+    expectTrue(jitter.isSyncedToFrameIndex(14u), "advance updates monotonic sync");
+    expectTrue(jitter.slotMatchesMonotonicFrame(), "advance keeps slot aligned after sync drift");
 }
 
 void testJitterProduceNdcGuards() {
@@ -2491,6 +2543,11 @@ void testResolvePreflightHelpers() {
                "prepareTaaResolveDesc passes valid desc");
     expectNear(desc.params.blend_factor, 1.f, 1e-5f, "prepare clamps params");
     expectTrue(desc.observed_history_generation == 0u, "prepare stamps observed generation");
+
+    const fuse::renderer::TaaBlendWeights preflight =
+        fuse::renderer::preflightTaaBlendWeights(desc, history);
+    expectNear(preflight.current, 1.f, 1e-5f, "preflight blend uses warmup weight before first resolve");
+    expectTrue(fuse::renderer::taaBlendWeightsValid(preflight), "preflight blend weights are valid");
 
     desc.width = 0;
     expectTrue(!fuse::renderer::canAttemptTaaResolve(desc, history), "canAttempt rejects invalid dimensions");
@@ -2590,6 +2647,25 @@ void testTaaPassResolvePreflight() {
     pass->destroy();
     resources.destroy();
     bindless.destroy(*bootstrap->device());
+}
+
+void testTaaPassJitterSyncGuards() {
+    fuse::renderer::TaaPassDesc passDesc{};
+    passDesc.width = 128;
+    passDesc.height = 128;
+
+    auto pass = fuse::renderer::TaaPass::create(passDesc);
+    expectTrue(pass->isJitterSyncedToFrameIndex(0u), "pass jitter synced to frame zero before init");
+    expectTrue(pass->jitterMonotonicFrameIndex() == 0u, "pass jitter monotonic counter starts at zero");
+
+    pass->syncJitterToFrameIndex(11u);
+    expectTrue(pass->isJitterSyncedToFrameIndex(11u), "pass syncJitterToFrameIndex marks sync");
+    expectTrue(pass->jitterMonotonicFrameIndex() == 11u, "pass sync sets monotonic counter");
+
+    pass->advanceJitter();
+    expectTrue(!pass->isJitterSyncedToFrameIndex(11u), "pass advance clears prior sync");
+    expectTrue(pass->isJitterSyncedToFrameIndex(12u), "pass advance updates sync");
+    expectTrue(pass->jitter().slotMatchesMonotonicFrame(), "pass jitter slot stays aligned after advance");
 }
 
 void testResolveHistoryBlendStats() {
@@ -4015,11 +4091,14 @@ int main() {
     testHistoryReuseGuards();
     testJitterSafeNdcOffset();
     testJitterAdvanceIfPossible();
+    testHistoryWarmupGuards();
+    testJitterSyncGuards();
     testJitterProduceNdcGuards();
     testResolveSurfaceGuards();
     testResolvePreflightHelpers();
     testResolveWillReuseHistory();
     testTaaPassResolvePreflight();
+    testTaaPassJitterSyncGuards();
     testResolveHistoryBlendStats();
     testHistoryNeedsWarmupGuard();
     testComputeTaaResolveBlendWeights();

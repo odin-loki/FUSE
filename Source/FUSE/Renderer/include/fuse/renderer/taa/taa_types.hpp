@@ -107,6 +107,7 @@ bool taaUsesWarmupBlend(bool first_frame);
 /// True when effective blend samples history (strictly below full-current weight).
 bool taaBlendUsesHistory(f32 effective_blend);
 /// True when effective blend ignores history (warm-up / stale / full-current weight).
+/// True when effective blend ignores history (warm-up / full-current weight).
 bool taaBlendSkipsHistoryReuse(f32 effective_blend);
 /// History contribution weight — complement of `effectiveBlend`, clamped to [0, 1].
 f32 computeHistoryBlend(f32 effectiveBlend);
@@ -132,8 +133,14 @@ TaaBlendWeights computeTaaBlendWeightsWithReuseGuard(bool firstFrame, bool histo
                                                      const TAAParams& params);
 /// True when blend weights are within [0, 1] and sum to ~1 (B5.9 deepen).
 bool taaBlendWeightsValid(const TaaBlendWeights& weights);
+/// Preflight blend weights for a resolve frame without mutating history (B5.9 deepen).
+TaaBlendWeights preflightTaaBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 /// True when history is warm and ready for temporal reuse (B5.9 deepen).
 bool taaHistoryCanReuse(const TaaHistoryBuffer& history);
+/// True when history still needs a warm-up resolve before temporal reuse (B5.9 deepen).
+bool taaHistoryNeedsWarmup(const TaaHistoryBuffer& history);
+/// True when history warm-up is complete and targets may be sampled (B5.9 deepen).
+bool taaHistoryWarmupComplete(const TaaHistoryBuffer& history);
 /// True when history reuse is allowed for the observed invalidate epoch (B5.9 deepen).
 bool taaHistoryReuseAllowed(const TaaHistoryBuffer& history, u32 observedGeneration);
 /// True when resolve may sample prior history this frame (B5.9 deepen).
