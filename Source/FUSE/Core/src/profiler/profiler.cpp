@@ -2025,6 +2025,14 @@ void assignSkipReason(ProfilerSkipReason* reason, ProfilerSkipReason value) {
 
 
 
+
+u32 firstEventIndex();
+u32 lastEventIndex();
+u32 findFirstEventIndexByName(const char* name);
+u32 findLastEventIndexByName(const char* name);
+u32 findFirstEventIndexByFlowId(u32 flowId);
+u32 findLastEventIndexByFlowId(u32 flowId);
+
 bool isValidProfileEvent(const ProfileEvent& event) {
     return tryValidateEventName(event.name, reason);
 
@@ -3521,16 +3529,19 @@ bool tryLastExportableEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
-            return true;
-        }
 
-    outEvent = ProfileEvent{};
-    return false;
 
-    if (flowId == 0u) {
 
-    const u32 total = eventCount();
-            outEvent = event;
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -3909,6 +3920,25 @@ u32 countEventsByFlowId(u32 flowId) {
 
 
 
+
+
+
+
+
+bool wouldSkipNameLookup(const char* name) {
+    return !isValidEventName(name);
+
+bool wouldSkipFlowIdLookup(u32 flowId) {
+    return flowId == 0u;
+
+    if (wouldSkipNameLookup(name)) {
+
+
+
+
+
+
+    if (wouldSkipFlowIdLookup(flowId)) {
 
 
 
@@ -5144,10 +5174,21 @@ bool eventNameMatches(const char* eventName, const char* queryName) {
 
         }
 
-    std::unordered_map<u32, FlowPairCounts> counts;
-    accumulateFlowPairCounts(counts);
 
-    for (const auto& entry : counts) {
+
+
+
+
+
+
+
+
+    if (index == kInvalidEventIndex) {
+        outIndex = kInvalidEventIndex;
+        return false;
+
+
+
 
 
 
@@ -6645,6 +6686,71 @@ bool wouldSkipCounter(const char* track) {
 
 bool wouldSkipChromeTraceExport() {
     return !preflightChromeTraceExport().canExport();
+}
+
+bool wouldSkipChromeTraceExportSafely() {
+    return !preflightChromeTraceExport().canExportSafely();
+}
+
+ProfileScopePreflight preflightProfileScope(const char* name) {
+    ProfileScopePreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
+    return preflight;
+}
+
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
+    return preflight;
+}
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
+    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
+        && !preflight.wouldUnderflowOpenCount;
+    return preflight;
+}
+
+NestingAsyncFlowPreflight preflightNestingAsyncFlow() {
+    NestingAsyncFlowPreflight preflight{};
+    preflight.activeScopeNestingDepth = scopeNestingDepth();
+    preflight.activeFlowNestingDepth = flowNestingDepth();
+    preflight.maxScopeNestingDepth = maxNestingDepth();
+    preflight.maxFlowNestingDepth = maxFlowNestingDepth();
+    preflight.openAsyncFlowCount = openAsyncFlowCount();
+    preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
+    preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
+    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
+    return preflight;
+}
+
+bool wouldSkipProfileScope(const char* name) {
+    return !preflightProfileScope(name).canEnter;
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name) {
+    return !preflightBeginAsyncFlow(name, 0u).canBegin;
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name) {
+    return !preflightEndAsyncFlow(name, 0u).canEnd;
+}
+
+bool wouldSkipCounterSample(const char* track) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(track);
+}
+
+bool wouldSkipChromeTraceExport() {
+    return !enabled();
 }
 
 bool wouldSkipChromeTraceExportSafely() {
