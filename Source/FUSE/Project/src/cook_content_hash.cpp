@@ -167,6 +167,82 @@ u64 hash_audio_import(const AudioImportDesc& desc) {
     return hash;
 }
 
+CookContentHashPreflight preflight_file_content_hash(const std::string& path) {
+    CookContentHashPreflight preflight;
+    if (path.empty()) {
+        preflight.empty_path = true;
+        return preflight;
+    }
+
+    std::error_code ec;
+    if (!std::filesystem::exists(std::filesystem::path(path), ec)) {
+        preflight.missing_file = true;
+        return preflight;
+    }
+
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        preflight.unreadable_file = true;
+    }
+    return preflight;
+}
+
+CookImportHashPreflight preflight_mesh_import(const MeshImportDesc& desc) {
+    CookImportHashPreflight preflight;
+    if (desc.input_path.empty()) {
+        preflight.empty_input_path = true;
+    }
+    if (desc.output_path.empty()) {
+        preflight.empty_output_path = true;
+    }
+    if (preflight.can_hash()) {
+        preflight.source_unhashable = !preflight_file_content_hash(desc.input_path).can_hash();
+    }
+    return preflight;
+}
+
+CookImportHashPreflight preflight_texture_import(const TextureImportDesc& desc) {
+    CookImportHashPreflight preflight;
+    if (desc.input_path.empty()) {
+        preflight.empty_input_path = true;
+    }
+    if (desc.output_path.empty()) {
+        preflight.empty_output_path = true;
+    }
+    if (preflight.can_hash()) {
+        preflight.source_unhashable = !preflight_file_content_hash(desc.input_path).can_hash();
+    }
+    return preflight;
+}
+
+CookImportHashPreflight preflight_audio_import(const AudioImportDesc& desc) {
+    CookImportHashPreflight preflight;
+    if (desc.input_path.empty()) {
+        preflight.empty_input_path = true;
+    }
+    if (desc.output_path.empty()) {
+        preflight.empty_output_path = true;
+    }
+    if (preflight.can_hash()) {
+        preflight.source_unhashable = !preflight_file_content_hash(desc.input_path).can_hash();
+    }
+    return preflight;
+}
+
+CookImportHashPreflight preflight_manifest_entry(const CookManifestEntry& entry) {
+    CookImportHashPreflight preflight;
+    if (entry.source_path.empty()) {
+        preflight.empty_input_path = true;
+    }
+    if (entry.output_path.empty()) {
+        preflight.empty_output_path = true;
+    }
+    if (preflight.can_hash()) {
+        preflight.source_unhashable = !preflight_file_content_hash(entry.source_path).can_hash();
+    }
+    return preflight;
+}
+
 u64 hash_manifest_entry(const CookManifestEntry& entry) {
     if (entry.source_path.empty() || entry.output_path.empty()) {
         return 0;

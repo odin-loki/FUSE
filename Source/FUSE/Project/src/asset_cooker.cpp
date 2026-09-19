@@ -200,6 +200,43 @@ u32 AssetCooker::invalidate_upstream_dependency(const CookManifest& manifest, co
     return removed;
 }
 
+CookCacheReconcileEstimate AssetCooker::estimate_cache_reconcile() const {
+    return m_cache.estimate_reconcile();
+}
+
+CookCacheInvalidationProbe AssetCooker::estimate_stale_dependency_invalidation(
+    const CookManifest& manifest) const {
+    CookCacheInvalidationProbe probe;
+    probe.cache_empty = m_cache.empty();
+    if (probe.cache_empty) {
+        return probe;
+    }
+
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    std::vector<std::pair<std::string, u64>> source_upstream;
+    source_upstream.reserve(graph.jobs().size());
+    for (const CookJob& job : graph.jobs()) {
+        source_upstream.emplace_back(job.source_path, hash_upstream_from_jobs(job, graph.jobs()));
+    }
+
+    const std::vector<std::string> stale_sources = m_cache.probe_invalidate_stale_upstream_hashes(source_upstream);
+    probe.would_invalidate_count = static_cast<u32>(stale_sources.size());
+
+    for (const std::string& stale_source : stale_sources) {
+        for (const CookJob& job : graph.jobs()) {
+            if (job.source_path == stale_source) {
+                probe.would_invalidate_count +=
+                    m_cache.probe_invalidate_downstream_of(job.output_path, graph.edges(), graph.jobs())
+                        .would_invalidate_count;
+                break;
+            }
+        }
+    }
+    return probe;
+}
+
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
