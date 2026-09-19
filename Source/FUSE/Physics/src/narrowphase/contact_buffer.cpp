@@ -737,3 +737,6 @@ bool writeContactSlotWithPreflight(
 // --- deepen additive from deepen-b4-narrowphase-guards-f881 ---
     if (should_skip_contact_buffer_write(*this, slot, manifold)) {
 bool ContactBufferSoA::writeSlotIfPreflight(u32 slot, const ContactManifold& manifold) {
+
+// --- deepen additive from b4-narrowphase-deepen-guards-cdff ---
+    preflight.outOfRange = preflight.reason == ContactBufferWriteRejectReason::OutOfRangeSlot;

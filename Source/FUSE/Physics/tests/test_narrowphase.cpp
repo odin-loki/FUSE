@@ -3085,3 +3085,8 @@ void testRunNarrowphaseIfDispatchableGuard() {
             fuse::physics::narrowphase::ContactBufferCompactAndClampRejectReason::None,
     const auto afterPreflight =
         afterPreflight.reason ==
+
+// --- deepen additive from b4-narrowphase-deepen-guards-cdff ---
+    expectTrue(compactAndClampPreflight.needs_compact_and_clamp(),
+void testContactBufferGuardedWriteAndCompact() {
+void testFrictionBasisDeepenGuards() {
