@@ -2319,6 +2319,7 @@ bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
     return isValidProfileEvent(outEvent);
 
 bool tryFindLastEventByName(const char* name, ProfileEvent& outEvent) {
+
     const u32 index = findLastEventIndexByName(name);
     if (index == kInvalidEventIndex) {
         outEvent = ProfileEvent{};
@@ -2352,6 +2353,9 @@ bool tryFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
     return isValidProfileEvent(outEvent);
 
 bool tryFindFirstEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
+
+
+bool tryFirstFlowEvent(u32 flowId, ProfileEvent& outEvent) {
     const u32 index = findFirstEventIndexByFlowId(flowId);
     if (index == kInvalidEventIndex) {
         outEvent = ProfileEvent{};
@@ -2370,6 +2374,11 @@ bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
     if (index == kInvalidEventIndex) {
         outEvent = ProfileEvent{};
         return false;
+
+
+    return tryExportableEventAt(index, outEvent);
+
+bool tryLastFlowEvent(u32 flowId, ProfileEvent& outEvent) {
 
 
 u32 firstEventIndex() {
@@ -2967,6 +2976,63 @@ bool tryFindLastEventByFlowId(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+namespace {
+
+    return isValidEventName(name) && isValidEventName(event.name) && std::strcmp(event.name, name) == 0;
+
+bool isFlowPhase(EventPhase phase) {
+    return phase == EventPhase::FlowStart || phase == EventPhase::FlowFinish;
+
+u32 countOrphanEndsForPhases(EventPhase beginPhase, EventPhase endPhase) {
+    std::unordered_map<u32, u32> openIds;
+    u32 orphanEnds = 0u;
+        if (!isValidEventName(event.name) || event.scopeId == 0u) {
+
+        if (event.phase == beginPhase) {
+            openIds[event.scopeId]++;
+        } else if (event.phase == endPhase) {
+            if (openIds[event.scopeId] == 0u) {
+                ++orphanEnds;
+                openIds[event.scopeId]--;
+    return orphanEnds;
+
+} // namespace
+
+    if (wouldSkipNameLookup(name)) {
+
+
+
+
+
+
+    if (wouldSkipFlowIdLookup(flowId)) {
+
+        if (isFlowPhase(event.phase) && event.scopeId == flowId && isValidEventName(event.name)) {
+
+
+
+
+
+bool wouldSkipNameLookup(const char* name) {
+    return !isValidEventName(name) || isBufferEmpty();
+
+bool wouldSkipFlowIdLookup(u32 flowId) {
+    return flowId == 0u || isBufferEmpty();
+
+bool isRecordedScopePairingConsistent() {
+    return orphanScopeEndCount() == 0u;
+
+bool isRecordedAsyncFlowPairingConsistent() {
+    return orphanFlowEndCount() == 0u;
+
+bool isRecordedNestingConsistent() {
+    return isRecordedScopePairingConsistent() && isRecordedAsyncFlowPairingConsistent();
+
+u32 orphanScopeEndCount() {
+    return countOrphanEndsForPhases(EventPhase::Begin, EventPhase::End);
+
+u32 orphanFlowEndCount() {
+    return countOrphanEndsForPhases(EventPhase::FlowStart, EventPhase::FlowFinish);
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -3552,6 +3618,10 @@ NestingConsistencyPreflight preflightNestingConsistency() {
 
 
 
+    preflight.orphanScopeEndCount = orphanScopeEndCount();
+    preflight.orphanFlowEndCount = orphanFlowEndCount();
+    preflight.recordedScopePairingConsistent = isRecordedScopePairingConsistent();
+    preflight.recordedFlowPairingConsistent = isRecordedAsyncFlowPairingConsistent();
     return preflight;
 }
 
