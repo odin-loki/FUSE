@@ -1387,6 +1387,31 @@ bool hasOrphanFlowEvents() {
     return orphanFlowStartCount() > 0u || orphanFlowFinishCount() > 0u;
 }
 
+bool wouldSkipProfileScope(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)
+        || g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
+}
+
+bool wouldSkipCounterSample(const char* track) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(track);
+}
+
+bool wouldSkipChromeTraceExport() {
+    return !enabled();
+}
+
+bool wouldSkipChromeTraceExportSafely() {
+    return !preflightChromeTraceExport().canExportSafely();
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -2739,7 +2764,6 @@ bool tryLastExportableEvent(ProfileEvent& outEvent) {
         outEvent = ProfileEvent{};
         return false;
 
-    return tryExportableEventAt(index, outEvent);
 
 bool tryFirstEventByName(const char* name, ProfileEvent& outEvent) {
     const u32 index = findFirstEventIndexByName(name);
@@ -3004,6 +3028,13 @@ bool tryFindLastFlowEvent(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+
+
+    return tryEventAt(index, outEvent);
 
 
 
@@ -4268,6 +4299,22 @@ bool isFlowIdOpen(u32 flowId) {
 
 
 
+bool isAsyncFlowEvent(const ProfileEvent& event, u32 flowId) {
+    return (event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish)
+        && event.scopeId == flowId && isValidEventName(event.name);
+
+    return isValidEventName(event.name) && std::strcmp(event.name, name) == 0;
+
+
+
+
+
+
+
+        if (isAsyncFlowEvent(event, flowId)) {
+
+
+        if (isAsyncFlowEvent(eventAt(i), flowId)) {
 
 u32 lastEventIndex() {
     const u32 count = eventCount();
@@ -4549,6 +4596,8 @@ AsyncFlowPreflight preflightAsyncFlow() {
     preflight.depthDetached = isFlowDepthDetached();
     preflight.crossThreadHandoffPending = isCrossThreadFlowHandoffPending();
     preflight.hasOpenFlows = hasOpenAsyncFlows();
+NestingPreflight preflightNesting() {
+    NestingPreflight preflight{};
     return preflight;
 }
 

@@ -130,6 +130,10 @@ struct NestingStatePreflight {
     u32 maxFlowNestingDepth = 0;
     bool scopeNestingUnbalanced = false;
     bool flowNestingUnbalanced = false;
+/// Read-only nesting/async-flow diagnostics — safe to call before scope or flow entry.
+struct NestingPreflight {
+    bool scopeNestingBalanced = true;
+    bool flowNestingBalanced = true;
     bool hasOpenAsyncFlows = false;
     bool flowDepthDetached = false;
     bool crossThreadFlowHandoffPending = false;
@@ -164,6 +168,10 @@ struct ScopeNestingPreflight {
     bool crossThreadHandoffPending = false;
     bool hasOpenFlows = false;
 
+    bool isBalanced() const { return scopeNestingBalanced && flowNestingBalanced; }
+    bool canSafelyExport() const {
+        return isBalanced() && !flowDepthDetached && !crossThreadFlowHandoffPending;
+    }
 };
 
 /// Read-only chrome export diagnostics — safe to call before `exportChromeTraceJson()`.
@@ -862,6 +870,13 @@ u32 orphanFlowFinishCount();
 bool hasOrphanFlowEvents();
 
 /// True when `name` is non-null and contains at least one character (B1.6 deepen).
+bool wouldSkipProfileScope(const char* name);
+bool wouldSkipAsyncFlowBegin(const char* name);
+bool wouldSkipAsyncFlowEnd(const char* name);
+bool wouldSkipCounterSample(const char* track);
+bool wouldSkipChromeTraceExport();
+bool wouldSkipChromeTraceExportSafely();
+
 bool hasEvents();
 bool isBufferEmpty();
 bool isBufferFull();
@@ -1250,6 +1265,7 @@ const char* chromeTraceExportRejectReasonLabel(ChromeTraceExportRejectReason rea
 NestingAsyncFlowPreflight preflightNestingAndAsyncFlow();
 ScopeNestingPreflight preflightScopeNesting();
 AsyncFlowPreflight preflightAsyncFlow();
+NestingPreflight preflightNesting();
 ChromeTraceExportPreflight preflightChromeTraceExport();
 ProfileScopePreflight preflightProfileScope(const char* name);
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 flowId);
