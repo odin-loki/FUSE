@@ -57,4 +57,16 @@ InteractResult MechanicsBridge::pickup(mechanics::MechanicsRegistry& registry,
     return InteractResult::PickedUp;
 }
 
+InteractResult MechanicsBridge::examine(mechanics::MechanicsRegistry& registry,
+                                        mechanics::Component* target,
+                                        mechanics::Component* instigator,
+                                        mechanics::InteractionContext& ctx) {
+    ctx.instigatorRoot = instigator;
+    ctx.verb = "examine";
+    if (!registry.interact(target, ctx)) {
+        return InteractResult::Failed;
+    }
+    return InteractResult::Examined;
+}
+
 } // namespace fuse::adventure

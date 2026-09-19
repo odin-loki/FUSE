@@ -197,6 +197,17 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
         child.status = BehaviorStatus::Success;
         return child;
     }
+    case NodeKind::Monitor: {
+        BehaviorTickResult main = tickNode(node.childA, agentIndex, agent, board, ctx);
+        if (main.status != BehaviorStatus::Running) {
+            return main;
+        }
+        BehaviorTickResult observer = tickNode(node.childB, agentIndex, agent, board, ctx);
+        if (observer.status == BehaviorStatus::Failure) {
+            return observer;
+        }
+        return mergeParallelSideEffects(main, observer);
+    }
     case NodeKind::Root:
         return tickNode(node.childA, agentIndex, agent, board, ctx);
     case NodeKind::ConditionDistanceLess: {
@@ -269,12 +280,39 @@ BehaviorTickResult BehaviorTree::tickNode(u32 nodeIndex,
     case NodeKind::ActionMoveToward: {
         BehaviorTickResult result;
         const float distance = agent.distanceToTarget();
-        result.status = distance > node.threshold ? BehaviorStatus::Success : BehaviorStatus::Failure;
-        if (result.status == BehaviorStatus::Success) {
-            result.wroteFlag = true;
-            result.flagIndex = node.flagIndex;
-            result.flagValue = true;
+        const float stopDistance = node.threshold > 0.f ? node.threshold : 1.f;
+
+        if (distance <= stopDistance) {
+            result.status = BehaviorStatus::Success;
+            if (node.flagIndex != 0) {
+                result.wroteFlag = true;
+                result.flagIndex = node.flagIndex;
+                result.flagValue = false;
+            }
+            if (node.scalarSlot != BehaviorNode::kNoScalarSlot) {
+                result.wroteScalar = true;
+                result.scalarIndex = node.scalarSlot;
+                result.scalarValue = 0.f;
+            }
+            return result;
         }
+
+        float dirX = 0.f;
+        float dirY = 0.f;
+        if (agent.directionTowardTarget(dirX, dirY)) {
+            if (node.flagIndex != 0) {
+                result.wroteFlag = true;
+                result.flagIndex = node.flagIndex;
+                result.flagValue = true;
+            }
+            if (node.scalarSlot != BehaviorNode::kNoScalarSlot) {
+                result.wroteScalar = true;
+                result.scalarIndex = node.scalarSlot;
+                result.scalarValue = distance;
+            }
+        }
+
+        result.status = BehaviorStatus::Running;
         return result;
     }
     case NodeKind::ConditionAlliesInRadius: {

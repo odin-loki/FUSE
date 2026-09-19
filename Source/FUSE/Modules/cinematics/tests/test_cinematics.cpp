@@ -5,6 +5,7 @@
 #include <fuse/cinematics/event_track.hpp>
 #include <fuse/cinematics/interpolate.hpp>
 #include <fuse/cinematics/look_at.hpp>
+#include <fuse/cinematics/motion_track.hpp>
 #include <fuse/cinematics/property_track.hpp>
 #include <fuse/cinematics/sprite_track.hpp>
 #include <fuse/cinematics/timeline.hpp>
@@ -1247,6 +1248,39 @@ void testCuePayloadStubs() {
     expectTrue(!pending[0].cue_key.empty(), "cue key assigned for consume-once ledger");
 }
 
+void testMotionTrackPathSampling() {
+    fuse::cinematics::MotionTrack track("ActorPath");
+    track.set_target_object_id("hero");
+    track.set_path_id("outpost_intro");
+
+    fuse::cinematics::MotionWaypoint start;
+    start.time_ms = 0;
+    start.position = {0.f, 0.f, 0.f};
+
+    fuse::cinematics::MotionWaypoint mid;
+    mid.time_ms = 1'000;
+    mid.position = {10.f, 0.f, 0.f};
+
+    fuse::cinematics::MotionWaypoint end;
+    end.time_ms = 2'000;
+    end.position = {10.f, 0.f, 10.f};
+
+    track.path().add_waypoint(start);
+    track.path().add_waypoint(mid);
+    track.path().add_waypoint(end);
+    track.path().sort_waypoints();
+
+    expectNear(track.path().total_length(), 20.f, 1e-3f, "motion path length");
+
+    const fuse::cinematics::MotionSample half = track.sample_at(500);
+    expectNear(half.position.x, 5.f, 1e-3f, "motion track midpoint x");
+    expectNear(half.path_param, 0.5f, 1e-3f, "motion track midpoint param");
+
+    const fuse::cinematics::MotionSample finish = track.sample_at(2'000);
+    expectNear(finish.position.z, 10.f, 1e-3f, "motion track end z");
+    expectTrue(track.kind() == fuse::cinematics::TrackKind::Motion, "motion track kind");
+}
+
 } // namespace
 
 int main() {
@@ -1311,6 +1345,7 @@ int main() {
     testResolveLookAtWorldWithFallback();
     testSpriteTrackSampling();
     testPropertyTrackSampling();
+    testMotionTrackPathSampling();
     testTimelineContentSpan();
     testPlayheadScrub();
     testTimelineScrubEnqueuesCues();

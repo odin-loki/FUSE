@@ -16,6 +16,8 @@ struct AgentSnapshot {
     u32 teamId = 0;
 
     float distanceToTarget() const;
+
+    bool directionTowardTarget(float& outDx, float& outDy) const;
 };
 
 } // namespace fuse::ai

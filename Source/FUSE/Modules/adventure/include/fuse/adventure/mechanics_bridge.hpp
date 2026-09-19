@@ -21,6 +21,11 @@ public:
                           mechanics::Component* instigator,
                           mechanics::InteractionContext& ctx);
 
+    InteractResult examine(mechanics::MechanicsRegistry& registry,
+                           mechanics::Component* target,
+                           mechanics::Component* instigator,
+                           mechanics::InteractionContext& ctx);
+
 private:
     InteractContext buildContext(mechanics::Component* instigator) const;
 

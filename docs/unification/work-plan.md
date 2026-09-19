@@ -149,7 +149,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **MT note** | AI/FX jobify per architecture §7 |
 | **Exit** | Per-module U5 gates in prestarter §10 |
 | **Deps** | WP-06 |
-| **Status** | 🚧 Scaffolding — five CMake targets + `fuse_ai` BT vertical slice + tests; ore extraction backlog in [U5-MODULES.md](./U5-MODULES.md) |
+| **Status** | 🚧 Ore extraction advancing — all five targets compile; per-module vertical slices + new tests (`bb.monitor`, MotionPath, socket constraints, HealthComponent, ExamineInteractable); hybrid demo gates still open — [U5-MODULES.md](./U5-MODULES.md) |
 
 ---
 

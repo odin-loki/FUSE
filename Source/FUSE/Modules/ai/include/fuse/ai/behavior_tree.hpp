@@ -33,6 +33,7 @@ enum class NodeKind {
     Inverter,
     Loop,
     SucceedAlways,
+    Monitor,
     Root,
     ConditionDistanceLess,
     ConditionDistanceGreater,

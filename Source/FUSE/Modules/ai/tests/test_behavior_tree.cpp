@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -204,10 +205,53 @@ void testGuideBotMoveTowardLeaf() {
     fuse::ai::Blackboard board;
     board.resize(4);
 
-    const fuse::ai::BehaviorTickResult result =
+    const fuse::ai::BehaviorTickResult farResult =
         tree.tick(0, agent, fuse::ai::BlackboardView(board));
-    expectTrue(result.status == fuse::ai::BehaviorStatus::Success, "move toward succeeds when far");
-    expectTrue(result.flagIndex == 2u, "move toward writes configured flag");
+    expectTrue(farResult.status == fuse::ai::BehaviorStatus::Running, "move toward runs while far");
+    expectTrue(farResult.flagIndex == 2u, "move toward writes configured flag");
+    expectTrue(farResult.flagValue, "move toward marks moving flag");
+
+    agent.targetX = 0.5f;
+    const fuse::ai::BehaviorTickResult nearResult =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board));
+    expectTrue(nearResult.status == fuse::ai::BehaviorStatus::Success, "move toward succeeds when arrived");
+    expectTrue(!nearResult.flagValue, "move toward clears moving flag on arrival");
+}
+
+void testMonitorDecorator() {
+    const std::vector<fuse::ai::NodeLoadSpec> specs = {
+        {"bb.action.wait", 0.f, 0, 3, {}, {}},
+        {"bb.condition.distance_greater", 2.f, 0, 0, {}, {}},
+        {"bb.monitor", 0.f, 0, 0, {}, {0, 1}},
+    };
+
+    fuse::ai::BehaviorTree tree;
+    expectTrue(fuse::ai::loadTreeFromSpecs(specs, 2, tree), "monitor decorator loads");
+
+    fuse::ai::Blackboard board;
+    board.resize(1);
+
+    fuse::ai::AgentSnapshot agent;
+    agent.x = 0.f;
+    agent.y = 0.f;
+    agent.targetX = 5.f;
+    agent.targetY = 0.f;
+
+    fuse::ai::BehaviorEvalContext ctx;
+    ctx.tickCount = 1;
+    std::vector<fuse::u32> wait_ticks(static_cast<std::size_t>(tree.nodeCount()), 0u);
+    ctx.waitStartTicks = wait_ticks.data();
+
+    const fuse::ai::BehaviorTickResult running =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
+    expectTrue(running.status == fuse::ai::BehaviorStatus::Running,
+               "monitor returns running while guarded child runs");
+
+    agent.targetX = 1.f;
+    const fuse::ai::BehaviorTickResult failed =
+        tree.tick(0, agent, fuse::ai::BlackboardView(board), ctx);
+    expectTrue(failed.status == fuse::ai::BehaviorStatus::Failure,
+               "monitor aborts when observer child fails");
 }
 
 void testTextLoader() {
@@ -1703,6 +1747,7 @@ int main() {
     testLoopDecorator();
     testSucceedAlwaysDecorator();
     testGuideBotMoveTowardLeaf();
+    testMonitorDecorator();
     testWaitLeaf();
     testBlackboardDirectGetSet();
     testBlackboardTryGetSetBounds();
@@ -1770,14 +1815,3 @@ int main() {
     std::fprintf(stderr, "fuse_ai_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
-
-// --- deepen additive from deepen-u5-ai-bt-blackboard-0ba1 ---
-void testParallelRequireAgentGuard() {
-
-// --- deepen additive from deepen-u5-ai-bt-guards-86d4 ---
-void testGuardSpatialRadiusValidLeaf() {
-
-// --- deepen additive from deepen-u5-ai-bt-guards-c886 ---
-void testGuardAllyRadiusValidLeaf() {
-void testParallelRequireValidRadiusGuard() {
-void testParallelExtendedGuardTextLoader() {

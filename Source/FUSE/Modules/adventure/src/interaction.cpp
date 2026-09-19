@@ -1,5 +1,7 @@
 #include <fuse/adventure/interaction.hpp>
 
+#include <fuse/adventure/examine_interactable.hpp>
+
 namespace fuse::adventure {
 
 InteractResult InteractionSystem::use(InteractContext& ctx, ItemId item, IInteractable& target) {
@@ -16,6 +18,13 @@ InteractResult InteractionSystem::pickup(InteractContext& ctx, ItemId item, u32 
     }
 
     return target.onPickup(ctx, item, amount);
+}
+
+InteractResult InteractionSystem::examine(InteractContext& ctx, IInteractable& target) {
+    if (auto* examinable = dynamic_cast<ExamineInteractable*>(&target)) {
+        return examinable->onExamine(ctx);
+    }
+    return target.onUse(ctx, ItemId(""));
 }
 
 } // namespace fuse::adventure

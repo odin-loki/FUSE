@@ -18,6 +18,7 @@ enum class InteractResult {
     Ignored,
     Used,
     PickedUp,
+    Examined,
     Failed,
 };
 

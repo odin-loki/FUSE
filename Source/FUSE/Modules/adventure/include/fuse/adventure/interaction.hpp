@@ -13,6 +13,8 @@ public:
 
     /// Pick up an item through the target's onPickup hook (3DAAK `ShapeBase::pickup`).
     InteractResult pickup(InteractContext& ctx, ItemId item, u32 amount, IInteractable& target);
+
+    InteractResult examine(InteractContext& ctx, IInteractable& target);
 };
 
 } // namespace fuse::adventure

@@ -68,6 +68,14 @@ BehaviorNode makeSucceedAlways(const NodeLoadSpec& spec) {
     return node;
 }
 
+BehaviorNode makeMonitor(const NodeLoadSpec& spec) {
+    BehaviorNode node;
+    node.kind = NodeKind::Monitor;
+    node.childA = firstChild(spec);
+    node.childB = secondChild(spec);
+    return node;
+}
+
 BehaviorNode makeRoot(const NodeLoadSpec& spec) {
     BehaviorNode node;
     node.kind = NodeKind::Root;
@@ -297,6 +305,7 @@ void NodeRegistry::registerBuiltins() {
     registerFactory("bb.inverter", makeInverter);
     registerFactory("bb.loop", makeLoop);
     registerFactory("bb.succeed_always", makeSucceedAlways);
+    registerFactory("bb.monitor", makeMonitor);
     registerFactory("bb.root", makeRoot);
 
     // BadBehaviour leaf/ + FUSE demo conditions/actions

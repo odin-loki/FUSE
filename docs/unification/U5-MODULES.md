@@ -59,8 +59,9 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 | ✅ P0 | `third_party/addons/BadBehaviour/Engine/source/BadBehavior/core/` | `node_registry.hpp`, flat `BehaviorNode` |
 | ✅ P1 | `.../BadBehavior/composite/` | `bb.sequence`, `bb.selector`, `bb.parallel` |
 | ✅ P1 | `.../BadBehavior/decorator/` | `bb.inverter`, `bb.loop`, `bb.succeed_always`, `bb.root` |
-| 🚧 P1 | `.../BadBehavior/leaf/` | Scripted/compiled leaves — `bb.action.set_flag`, `bb.action.wait`, `bb.action.blackboard_set`, `bb.condition.blackboard_get`, `bb.action.distance` |
-| 🚧 P2 | `third_party/addons/GuideBot/.../guideBot/actionMove.h` | `gb.action.move_toward` stub (custom license) |
+| ✅ P1 | `.../BadBehavior/leaf/` | Scripted/compiled leaves — `bb.action.set_flag`, `bb.action.wait`, `bb.action.blackboard_set`, `bb.condition.blackboard_get`, `bb.action.distance` |
+| ✅ P1 | `.../BadBehavior/decorator/Monitor.h` | `bb.monitor` decorator (guarded + observer children) |
+| 🚧 P2 | `third_party/addons/GuideBot/.../guideBot/actionMove.h` | `gb.action.move_toward` — Running/Success arrival + direction scalar (custom license) |
 | ✅ P3 | `third_party/addons/UAISK/.../UAISK/*.cs` | Template hooks + `Samples/Modules/ai/uaisk-templates/` |
 
 **Do not compile** from `third_party/addons/*/Engine/` — extract kernels into `Source/FUSE/Modules/ai/`. See [Modules/ai/README.md](../../Source/FUSE/Modules/ai/README.md).
@@ -76,7 +77,9 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 - `Playhead::scrub_to`, `Timeline::scrub_to` — editor seek without playback; forward scrub enqueues cues
 - `CueQueue` — pending cue buffer with `drain()` for game-thread commit
 - Tests: `fuse_cinematics_tests` (30s advance, track span, interpolation, scrub, cue queue)
-- TODO: Torque bridge tracks (`VMotionTrack`, `VPath`, …) and hybrid demo camera/sprite drive
+- **MotionTrack** / **MotionPath** — `VMotionTrack` + `VPath` linear waypoint sampling (no Torque `PathObject` bridge)
+- Tests: `fuse_cinematics_tests` includes motion path length + midpoint sampling
+- TODO: hybrid demo camera/sprite drive; Torque bridge tracks (`VActor` attach)
 
 ### `fuse_fx`
 
@@ -103,8 +106,8 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 | ✅ P1 | `Engine/source/afx/afxResidueMgr.h` | `ResidualEffectQueue` |
 | ✅ P1 | `Engine/source/afx/afxChoreographer.h` | `FxComposer` orchestration |
 | ✅ P2 | `Engine/source/afx/afxEffectGroup.h` | `EffectGraph` group tick stub |
-| 🚧 P2 | `Engine/source/afx/afxConstraint.h` | Socket constraint remapping |
-| 🚧 P2 | `Engine/source/afx/util/afxParticlePool.h` | Particle sim jobification |
+| ✅ P2 | `Engine/source/afx/afxConstraint.h` | `SocketConstraintManager`, `parse_constraint_spec`, socket remap |
+| ✅ P2 | `Engine/source/afx/util/afxParticlePool.h` | `ParticlePool` CPU stub (spawn/tick/cull) |
 | 🚧 P3 | `third_party/addons/AFX-Template/game/` | Sample spell/FX content pack |
 
 **Do not compile** from `third_party/addons/*/Engine/` — extract kernels into `Source/FUSE/Modules/fx/`. See [Modules/fx/README.md](../../Source/FUSE/Modules/fx/README.md).
@@ -116,7 +119,8 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 - **Action stubs** (`InteractActionKind`, `InteractAction`, `UseActionStub`, `PickupActionStub`, `ExamineActionStub`) — verb dispatch without adventure deps
 - **Inventory provider** (`IInventoryProvider`, `InventoryProviderInterface`) — string-keyed instigator bag for adventure bridge
 - **Registry** (`MechanicsRegistry`) — explicit registration + component-tree `resolveInteractable`
-- Tests: `fuse_mechanics_tests`, `fuse_mechanics_inventory_provider`, `fuse_mechanics_action_stubs`
+- **HealthComponent** (`IHealthProvider`, `HealthProviderInterface`) — GMK damageable `SimpleComponent` leaf
+- Tests: `fuse_mechanics_tests`, `fuse_mechanics_inventory_provider`, `fuse_mechanics_action_stubs`, `fuse_mechanics_health`
 - TODO: extract remaining GMK `SimComponent` leaves from `third_party/addons/GMK/Engine/source/component/`
 
 ### `fuse_adventure`
@@ -126,9 +130,10 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 - **Interaction queue** (`InteractionQueue`, `QueuedInteraction`) — game-thread enqueue/drain via `MechanicsBridge` (mirrors `fuse::editor::CommandQueue`)
 - **Mechanics bridge** (`AdventureInteractableComponent`, `MechanicsBridge`) — dispatches mechanics `InteractionContext` through adventure use/pickup
 - Links `fuse_mechanics`; vertical slice: pickup key → use on puzzle gate (Outpost flow)
-- Tests: `fuse_adventure_inventory`, `fuse_adventure_interact`, `fuse_adventure_vertical_slice`, `fuse_adventure_interaction_queue`
+- **ExamineInteractable** — 3DAAK examine / lore interaction (`InteractionSystem::examine`, `InteractResult::Examined`)
+- Tests: `fuse_adventure_inventory`, `fuse_adventure_interact`, `fuse_adventure_vertical_slice`, `fuse_adventure_interaction_queue`, `fuse_adventure_examine`
 - Demo: `demo_adventure_stub` exercises inventory + door unlock
-- TODO: extract remaining 3DAAK interaction scripts as FUSE APIs + `Samples/Modules/adventure/`
+- TODO: extract remaining 3DAAK interaction scripts (weapons, conversations) + `Samples/Modules/adventure/`
 
 ---
 
@@ -171,11 +176,11 @@ ctest --test-dir build-fuse --output-on-failure
 
 | Module | Gate | This PR |
 |--------|------|---------|
-| `fuse_ai` | BT drives 2D + 3D agents in hybrid demo | 🚧 registry + decorators landed; 3D agent stub next |
-| `fuse_cinematics` | 30s timeline moves camera + sprite | 🚧 kernel + tests; hybrid drive next |
-| `fuse_fx` | AFX on 3D model + 2D sprite | 🚧 timeline + effect graph + parameter bind; hybrid drive next |
-| `fuse_mechanics` | One 3D interactable | 🚧 component + action stubs + registry; hybrid demo next |
-| `fuse_adventure` | Pick-up / use in 3D + 2D interface | 🚧 inventory + interaction queue + vertical slice + `demo_adventure_stub` |
+| `fuse_ai` | BT drives 2D + 3D agents in hybrid demo | 🚧 `bb.monitor` + move_toward slice; hybrid 3D agent drive next |
+| `fuse_cinematics` | 30s timeline moves camera + sprite | 🚧 kernel + MotionPath ore + tests; hybrid drive next |
+| `fuse_fx` | AFX on 3D model + 2D sprite | 🚧 constraint remap + particle pool ore; hybrid drive next |
+| `fuse_mechanics` | One 3D interactable | 🚧 HealthComponent ore + interactable kernel; hybrid demo next |
+| `fuse_adventure` | Pick-up / use in 3D + 2D interface | 🚧 examine ore + vertical slice; 2D interface stub next |
 
 ---
 

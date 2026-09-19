@@ -2,6 +2,8 @@
 #include <fuse/fx/effect_descriptor.hpp>
 #include <fuse/fx/effect_graph.hpp>
 #include <fuse/fx/fx_composer.hpp>
+#include <fuse/fx/particle_pool.hpp>
+#include <fuse/fx/socket_constraint.hpp>
 #include <fuse/fx/fx_defs.hpp>
 #include <fuse/fx/parameter_bind.hpp>
 #include <fuse/fx/spell_descriptor.hpp>
@@ -242,6 +244,43 @@ void testFireballPhaseProgression() {
                "instant launch phase advances to delivery");
 }
 
+void testSocketConstraintRemap() {
+    fuse::fx::SocketConstraintManager constraints;
+    expectTrue(constraints.defineConstraint(fuse::fx::ConstraintKind::Shape, "caster"),
+               "caster constraint defined");
+
+    fuse::fx::ConstraintDef parsed;
+    expectTrue(fuse::fx::parse_constraint_spec("shape:muzzle", parsed), "constraint spec parses");
+    expectTrue(parsed.kind == fuse::fx::ConstraintKind::Shape, "shape token maps");
+    expectTrue(parsed.node_name == "muzzle", "node suffix preserved");
+
+    expectTrue(constraints.defineConstraint(fuse::fx::ConstraintKind::Point, "impact"),
+               "impact constraint defined");
+
+    const fuse::math::Vec3 impact{1.f, 2.f, 3.f};
+    expectTrue(constraints.setReferencePoint("impact", impact), "impact point set");
+
+    fuse::fx::FxSocket socket;
+    socket.effectId = "spark_burst";
+    expectTrue(constraints.remapSocket(socket, "impact"), "point constraint remaps socket");
+
+    const fuse::fx::ConstraintPose pose = constraints.sample("impact");
+    expectTrue(pose.valid, "impact pose valid");
+    expectTrue(pose.position.x == 1.f && pose.position.y == 2.f && pose.position.z == 3.f,
+               "impact pose position");
+}
+
+void testParticlePoolTick() {
+    fuse::fx::ParticlePool pool(4);
+    expectTrue(pool.spawn({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 0.5f), "particle spawns");
+    expectTrue(pool.activeCount() == 1u, "one active particle");
+
+    fuse::frame::FrameCtx ctx;
+    ctx.dt = 0.6f;
+    pool.tick(ctx);
+    expectTrue(pool.activeCount() == 0u, "particle expires after lifetime");
+}
+
 } // namespace
 
 int main() {
@@ -254,6 +293,8 @@ int main() {
     testParameterBindComposerCast();
     testCastPipelineAndResiduals();
     testFireballPhaseProgression();
+    testSocketConstraintRemap();
+    testParticlePoolTick();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

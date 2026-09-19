@@ -15,6 +15,7 @@ enum class TrackKind {
     Camera,
     Sprite,
     Property,
+    Motion,
     Audio,
     Event,
 };
