@@ -2814,3 +2814,7 @@ SnapPhasePreflight preflightSnapPhase(GizmoMode mode, const GizmoSnapSettings& s
     return preflightInteraction(hit, dragging, activeAxis, mode, settings).canInteract();
 SnapPhasePreflight GizmoSystem::preflightSnapPhase() const {
     return fuse::editor::preflightSnapPhase(m_mode, m_snap,
+
+// --- deepen additive from deepen-gizmo-interaction-preflights-e207 ---
+    return preflightInteraction(hit).canInteract();
+    return preflightInteraction(ray, transform).canInteract();
