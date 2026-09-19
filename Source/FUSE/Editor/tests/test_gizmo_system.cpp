@@ -1891,6 +1891,161 @@ void testCanInteractionPredicates() {
     gizmo.endDrag();
 }
 
+void testInteractionPreflightSnapHelpers() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 0.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::InteractionPreflight idleDegraded = fuse::editor::preflightInteraction(
+        hit, false, fuse::editor::GizmoAxis::None, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(idleDegraded.snapDegraded(), "idle interaction marks snap degraded");
+    expectTrue(!idleDegraded.snapWillApply(), "idle interaction reports snap will not apply");
+    expectTrue(idleDegraded.canActOnPhase(), "idle interaction primary action is begin");
+    expectTrue(idleDegraded.canActOrEndOnPhase(), "idle interaction act-or-end mirrors begin");
+
+    const fuse::editor::InteractionPreflight activeDegraded = fuse::editor::preflightInteraction(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(activeDegraded.snapDegraded(), "active interaction marks snap degraded");
+    expectTrue(activeDegraded.canEndOnPhase(), "active interaction allows end on phase");
+    expectTrue(activeDegraded.canActOrEndOnPhase(), "active interaction act-or-end allows update");
+
+    hit.screenX = -5.f;
+    const fuse::editor::InteractionPreflight outOfBoundsActive = fuse::editor::preflightInteraction(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(!outOfBoundsActive.canActOnPhase(),
+               "out-of-bounds active interaction blocks primary update action");
+    expectTrue(outOfBoundsActive.canEndOnPhase(),
+               "out-of-bounds active interaction still allows end on phase");
+    expectTrue(outOfBoundsActive.canActOrEndOnPhase(),
+               "out-of-bounds active interaction act-or-end falls back to end");
+
+    snap.gridSize = 1.f;
+    hit.screenX = 10.f;
+    const fuse::editor::PickSnapPreflight validPickSnap =
+        fuse::editor::preflightPickSnap(hit, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(validPickSnap.snapWillApply(), "pick-snap preflight reports snap will apply");
+    expectTrue(!validPickSnap.snapDegraded(), "valid pick-snap preflight clears snap degraded");
+
+    const fuse::editor::UpdateInteractionPreflight validUpdate =
+        fuse::editor::preflightUpdateInteraction(hit, true, fuse::editor::GizmoAxis::X,
+                                                 fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(validUpdate.snapWillApply(), "update interaction reports snap will apply");
+    expectTrue(!validUpdate.snapDegraded(), "valid update interaction clears snap degraded");
+}
+
+void testGizmoPreflightRouter() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 1.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    const fuse::editor::GizmoPreflightRouter idleRouter = fuse::editor::preflightGizmoRouter(
+        hit, false, fuse::editor::GizmoAxis::None, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(idleRouter.phase() == fuse::editor::GizmoInteractionPhase::Idle,
+               "router reports idle phase");
+    expectTrue(idleRouter.canRoutePick(), "idle router allows pick");
+    expectTrue(idleRouter.canRouteBegin(), "idle router allows begin");
+    expectTrue(!idleRouter.canRouteUpdate(), "idle router rejects update");
+    expectTrue(!idleRouter.canRouteEnd(), "idle router rejects end");
+    expectTrue(idleRouter.canRoutePrimary(), "idle router primary action is begin");
+    expectTrue(!idleRouter.canRouteEndOnPhase(), "idle router rejects end-on-phase");
+    expectTrue(idleRouter.canRouteActOrEnd(), "idle router act-or-end mirrors begin");
+    expectTrue(fuse::editor::canGizmoRouter(hit, false, fuse::editor::GizmoAxis::None,
+                                            fuse::editor::GizmoMode::Translate, snap),
+               "canGizmoRouter accepts idle pick/begin paths");
+
+    const fuse::editor::GizmoPreflightRouter activeRouter = fuse::editor::preflightGizmoRouter(
+        hit, true, fuse::editor::GizmoAxis::X, fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(activeRouter.phase() == fuse::editor::GizmoInteractionPhase::Dragging,
+               "router reports dragging phase");
+    expectTrue(!activeRouter.canRouteBegin(), "active router rejects begin");
+    expectTrue(activeRouter.canRouteUpdate(), "active router allows update");
+    expectTrue(activeRouter.canRouteEnd(), "active router allows end");
+    expectTrue(activeRouter.canRoutePrimary(), "active router primary action is update");
+    expectTrue(activeRouter.canRouteEndOnPhase(), "active router allows end-on-phase");
+    expectTrue(activeRouter.snapWillApply(), "active router reports snap will apply");
+
+    hit.screenX = -5.f;
+    const fuse::editor::GizmoPreflightRouter blockedUpdateRouter =
+        fuse::editor::preflightGizmoRouter(hit, true, fuse::editor::GizmoAxis::X,
+                                           fuse::editor::GizmoMode::Translate, snap);
+    expectTrue(!blockedUpdateRouter.canRouteUpdate(),
+               "router rejects update on out-of-bounds hit");
+    expectTrue(blockedUpdateRouter.canRouteEnd(), "router still allows end while dragging");
+    expectTrue(!blockedUpdateRouter.canRoutePrimary(),
+               "router primary action blocked on out-of-bounds hit");
+    expectTrue(blockedUpdateRouter.canRouteEndOnPhase(),
+               "router end-on-phase remains valid on out-of-bounds hit");
+    expectTrue(blockedUpdateRouter.canRouteActOrEnd(),
+               "router act-or-end falls back to end when update blocked");
+    expectTrue(blockedUpdateRouter.canRouteAny(),
+               "router any-path true when end remains valid");
+
+    fuse::editor::GizmoTransform transform{};
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    hit.screenX = 10.f;
+    const fuse::editor::GizmoPreflightRouter rayRouter = fuse::editor::preflightGizmoRouter(
+        xRay, transform, false, fuse::editor::GizmoAxis::None, fuse::editor::GizmoMode::Translate,
+        fuse::editor::GizmoSpace::World, fuse::editor::GizmoSystem::kAxisLength,
+        fuse::editor::GizmoSystem::kPickRadius, snap);
+    expectTrue(rayRouter.canRoutePick(), "ray router allows pick");
+    expectTrue(rayRouter.canRouteBegin(), "ray router allows begin");
+    expectTrue(rayRouter.pickInteraction.pick.axis == fuse::editor::GizmoAxis::X,
+               "ray router resolves pick axis");
+}
+
+void testGizmoSystemPreflightRouter() {
+    fuse::editor::GizmoSnapSettings snap{};
+    snap.translateSnap = true;
+    snap.gridSize = 1.f;
+
+    fuse::editor::GizmoHitTest hit{};
+    hit.viewportWidth = 100.f;
+    hit.viewportHeight = 100.f;
+    hit.screenX = 10.f;
+    hit.screenY = 50.f;
+
+    fuse::editor::GizmoSystem gizmo;
+    gizmo.setSnapSettings(snap);
+
+    const fuse::editor::GizmoPreflightRouter idleRouter = gizmo.preflightRouter(hit);
+    expectTrue(idleRouter.canRouteBegin(), "gizmo router allows begin when idle");
+    expectTrue(gizmo.canRouter(hit), "gizmo canRouter accepts idle paths");
+    expectTrue(gizmo.canActOrEndOnPhase(hit), "gizmo canActOrEndOnPhase allows begin when idle");
+
+    fuse::editor::GizmoTransform transform{};
+    gizmo.beginDrag(hit, transform);
+    expectTrue(gizmo.preflightRouter(hit).canRouteUpdate(),
+               "gizmo router allows update while dragging");
+    expectTrue(gizmo.canActOrEndOnPhase(hit),
+               "gizmo canActOrEndOnPhase allows update while dragging");
+
+    hit.screenX = -5.f;
+    expectTrue(!gizmo.preflightRouter(hit).canRoutePrimary(),
+               "gizmo router blocks primary update on out-of-bounds hit");
+    expectTrue(gizmo.preflightRouter(hit).canRouteEndOnPhase(),
+               "gizmo router end-on-phase valid on out-of-bounds hit");
+    expectTrue(gizmo.canActOrEndOnPhase(hit),
+               "gizmo canActOrEndOnPhase falls back to end when update blocked");
+    expectTrue(gizmo.canRouter(hit), "gizmo canRouter true when end path remains valid");
+
+    const fuse::editor::GizmoRay xRay = rayAlongX();
+    expectTrue(gizmo.preflightRouter(xRay, transform).canRouteEnd(),
+               "gizmo ray router allows end while dragging");
+    gizmo.endDrag();
+}
+
 } // namespace
 
 int main() {
@@ -1952,6 +2107,9 @@ int main() {
     testIsSnapDegradedHelper();
     testInteractionPhaseRouting();
     testCanInteractionPredicates();
+    testInteractionPreflightSnapHelpers();
+    testGizmoPreflightRouter();
+    testGizmoSystemPreflightRouter();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d test failure(s)\n", g_failures);
