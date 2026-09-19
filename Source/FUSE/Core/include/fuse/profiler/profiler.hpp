@@ -262,6 +262,9 @@ private:
     bool m_active = false;
 };
 
+/// Returns true for non-null, non-empty scope/flow/counter names.
+bool isValidEventName(const char* name);
+
 bool enabled();
 void setEnabled(bool enabled);
 
@@ -324,7 +327,27 @@ ChromeTraceExportPreflight preflightChromeTraceExport();
 bool canExportChromeTrace();
 bool isNestingBalanced();
 
-bool isValidEventName(const char* name);
+/// Snapshot of scope/async nesting and open-flow guard state (read-only introspection).
+struct NestingIntrospection {
+    u32 scopeDepth = 0;
+    u32 flowDepth = 0;
+    u32 maxScopeDepth = 0;
+    u32 maxFlowDepth = 0;
+    u32 openAsyncFlowCount = 0;
+    bool scopeBalanced = true;
+    bool flowBalanced = true;
+NestingIntrospection nestingIntrospection();
+
+/// Returns true when scope, flow, and open-async-flow guards are all clean.
+bool isNestingStateClean();
+
+/// Read-only chrome export diagnostics — no mutation.
+    u32 eventCount = 0;
+    u32 frameIndex = 0;
+
+    bool isClean() const {
+        return !unbalancedScopeNesting && !unbalancedFlowNesting && !hasOpenAsyncFlows;
+
 bool hasEvents();
 bool hasExportableEvents();
 bool hasOpenAsyncFlows();

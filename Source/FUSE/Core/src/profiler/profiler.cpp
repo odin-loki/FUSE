@@ -406,6 +406,35 @@ bool isValidEventName(const char* name) {
     return name != nullptr && name[0] != '\0';
 }
 
+NestingIntrospection nestingIntrospection() {
+    NestingIntrospection result{};
+    result.scopeDepth = nestingDepth();
+    result.flowDepth = flowNestingDepth();
+    result.maxScopeDepth = maxNestingDepth();
+    result.maxFlowDepth = maxFlowNestingDepth();
+    result.openAsyncFlowCount = openAsyncFlowCount();
+    result.scopeBalanced = isScopeNestingBalanced();
+    result.flowBalanced = isFlowNestingBalanced();
+    result.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    return result;
+}
+
+bool isNestingStateClean() {
+    return isScopeNestingBalanced() && isFlowNestingBalanced() && !hasOpenAsyncFlows();
+}
+
+ChromeTraceExportPreflight preflightChromeTraceExport() {
+    ChromeTraceExportPreflight result{};
+    result.profilerDisabled = !enabled();
+    result.emptyBuffer = isBufferEmpty();
+    result.unbalancedScopeNesting = !isScopeNestingBalanced();
+    result.unbalancedFlowNesting = !isFlowNestingBalanced();
+    result.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    result.eventCount = eventCount();
+    result.frameIndex = frameIndex();
+    return result;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -891,6 +920,8 @@ u32 exportableEventCount() {
 
 bool isExportEmpty() {
     return exportableEventCount() == 0u;
+
+        outEvent = ProfileEvent{};
 
 
 void reset() {
