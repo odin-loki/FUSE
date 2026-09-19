@@ -36,6 +36,11 @@ public:
     [[nodiscard]] bool can_recall_next() const;
     /// True when navigation cursor sits at the live-input position (past newest entry).
     [[nodiscard]] bool is_navigation_at_end() const;
+    /// Entry at the current navigation cursor, or empty when at end / history is empty.
+    [[nodiscard]] const std::string& navigation_entry() const;
+    [[nodiscard]] bool is_navigating() const {
+        return m_size > 0 && m_navigationCursor >= 0 && m_navigationCursor < static_cast<s32>(m_size);
+    }
 
 private:
     [[nodiscard]] u32 ringIndex_(u32 offset) const;

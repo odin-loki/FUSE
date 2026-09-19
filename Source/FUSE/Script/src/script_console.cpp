@@ -160,6 +160,12 @@ ScriptConsoleCommandResult ScriptConsole::executeLine_(const char* line, bool re
 void ScriptConsole::registerBuiltIns_() {
     m_commands.register_built_in("repeat", [](ScriptConsole& console, const char* /*args*/) {
         if (!console.can_repeat()) {
+    m_commands.register_built_in("repeat", [](ScriptConsole& console, const char* args) {
+        if (args != nullptr && !trim(args).empty()) {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
+                                              "repeat does not accept arguments"};
+        }
+        if (console.m_lastExecutedLine.empty()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
                                               "no command to repeat"};
         }
@@ -213,6 +219,8 @@ void ScriptConsole::registerBuiltIns_() {
 
     m_commands.register_built_in("resolve", [](ScriptConsole& console, const char* args) {
         if (!hasNonWhitespaceArgs(args)) {
+        const std::string partial = trim(args != nullptr ? args : "");
+        if (partial.empty()) {
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
                                               "resolve requires a partial command name"};
         }
@@ -275,9 +283,25 @@ void ScriptConsole::registerBuiltIns_() {
                                                   "history already empty"};
             }
 
+        const std::string subcommand = trim(args != nullptr ? args : "");
+        if (subcommand == "clear") {
             console.m_history.clear();
             console.resetHistoryNavigation();
             return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, "history cleared"};
+        }
+        if (subcommand == "last" || subcommand == "newest") {
+            if (console.is_history_empty()) {
+                return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, "history empty"};
+            }
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok, console.historyNewest()};
+        }
+        if (subcommand == "count") {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::Ok,
+                                              std::to_string(console.historyCount())};
+        }
+        if (!subcommand.empty()) {
+            return ScriptConsoleCommandResult{ScriptConsoleCommandStatus::InvalidArgument,
+                                              std::string("unknown history subcommand: ") + subcommand};
         }
 
         if (console.is_history_empty()) {
