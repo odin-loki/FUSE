@@ -5729,3 +5729,15 @@ void testWouldSkipGuards() {
                "wouldSkipChromeTraceExport false when enabled");
                "wouldSkipChromeTraceExportSafely true with open flow and unbalanced nesting");
                "wouldSkipChromeTraceExportSafely false after paired flow teardown");
+
+// --- deepen additive from b16-profiler-deepen-guards-a430 ---
+    expectTrue(fuse::profiler::wouldSkipNameLookup(nullptr), "wouldSkipNameLookup true for null");
+    expectTrue(fuse::profiler::wouldSkipNameLookup(""), "wouldSkipNameLookup true for empty");
+    expectTrue(!fuse::profiler::wouldSkipNameLookup("valid"), "wouldSkipNameLookup false for valid name");
+    expectTrue(fuse::profiler::wouldSkipFlowIdLookup(0u), "wouldSkipFlowIdLookup true for zero");
+    expectTrue(!fuse::profiler::wouldSkipFlowIdLookup(1u), "wouldSkipFlowIdLookup false for non-zero");
+               "tryFindFirstEventIndexByPhase true for scope begin");
+    expectTrue(outIndex == 0u, "tryFindFirstEventIndexByPhase returns scope begin index");
+               "tryFindLastEventIndexByPhase true for scope end");
+    expectTrue(outIndex == 4u, "tryFindLastEventIndexByPhase returns scope end index");
+    expectTrue(fuse::profiler::tryFindFirstEventIndexByName("index_counter", outIndex),
