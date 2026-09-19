@@ -609,4 +609,30 @@ bool narrowphase_batch_rejects_all(
     return preflight_narrowphase_batch(pairs, bodies, shapes).can_skip();
 }
 
+bool is_valid_contact_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return !should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes);
+}
+
+ContactManifold detect_contacts_pair_with_deepen_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    if (should_skip_contact_pair_deepen_dispatch(pair, bodies, shapes)) {
+        return invalidContactManifold();
+    }
+    return detect_contacts_pair(pair, bodies, shapes);
+}
+
+bool generate_contact_manifold_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon,
+    f32 duplicateEpsilon,
+    f32 frictionEpsilon) {
+    return finalize_contact_manifold_with_preflight(
+        manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon);
+}
+
 } // namespace fuse::physics::narrowphase

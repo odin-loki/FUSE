@@ -226,4 +226,23 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Inverse of `should_skip_contact_pair_deepen_dispatch` (B4.6 deepen pass).
+bool is_valid_contact_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Detect contacts only when deepen preflight allows; invalid manifold otherwise (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_with_deepen_preflight(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Finalize only when manifold finalize preflight passes; no-op otherwise (B4.6 deepen pass).
+bool generate_contact_manifold_with_preflight(
+    ContactManifold& manifold,
+    f32 separationEpsilon = 1e-6f,
+    f32 duplicateEpsilon = 1e-4f,
+    f32 frictionEpsilon = 1e-4f);
+
 } // namespace fuse::physics::narrowphase

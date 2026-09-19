@@ -4,6 +4,35 @@
 
 namespace fuse::physics::narrowphase {
 
+NarrowphaseIntoBufferPreflight preflight_narrowphase_into_buffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    NarrowphaseIntoBufferPreflight preflight{};
+    preflight.batch = preflight_narrowphase_batch(pairs, bodies, shapes);
+    preflight.skipped = preflight.batch.can_skip();
+    return preflight;
+}
+
+bool can_skip_narrowphase_into_buffer(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    return preflight_narrowphase_into_buffer(pairs, bodies, shapes).skipped;
+}
+
+void run_narrowphase_into_buffer_with_preflight(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactBufferSoA& buffer) {
+    if (can_skip_narrowphase_into_buffer(pairs, bodies, shapes)) {
+        buffer.clear();
+        return;
+    }
+    runNarrowphaseIntoBuffer(pairs, bodies, shapes, buffer);
+}
+
 void runNarrowphaseIntoBuffer(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
