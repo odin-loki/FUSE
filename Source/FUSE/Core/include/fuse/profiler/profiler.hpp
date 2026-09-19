@@ -158,6 +158,12 @@ enum class ProfilerSkipReason : u8 {
 /// Why a profiler record call would be skipped without recording (B1.6 deepen).
 enum class ProfilerRecordSkipReason : u8 {
     NoOpenAsyncFlows,
+/// Why a profile record call would skip (B1.6 deepen) — same ordering as `wouldSkip*` helpers.
+    None = 0,
+    NullName,
+    EmptyName,
+    NoOpenFlows,
+    CrossThreadHandoffPending,
 };
 
 struct ProfileEvent {
@@ -473,36 +479,15 @@ struct AsyncFlowPreflight {
 
 
 
-/// Read-only scope-entry diagnostics — safe to call before constructing `ProfileScope`.
-struct ProfileScopePreflight {
-    bool profilerDisabled = false;
-    bool invalidName = false;
-    bool canEnter = false;
 
-/// Read-only async-flow begin diagnostics — safe to call before `beginAsyncFlow()`.
-struct AsyncFlowBeginPreflight {
-    bool canBegin = false;
 
-/// Read-only async-flow end diagnostics — safe to call before `endAsyncFlow()`.
-struct AsyncFlowEndPreflight {
-    bool wouldUnderflowOpenCount = false;
-    bool canEnd = false;
 
-/// Read-only nesting and async-flow diagnostics — safe before scope/flow entry.
-struct NestingAsyncFlowPreflight {
 /// Read-only scope/async-flow nesting diagnostics — safe before recording or export.
 struct NestingPreflight {
 };
 
 
 
-    u32 activeScopeNestingDepth = 0;
-    u32 activeFlowNestingDepth = 0;
-    u32 maxScopeNestingDepth = 0;
-    u32 maxFlowNestingDepth = 0;
-    u32 openAsyncFlowCount = 0;
-    bool scopeNestingUnbalanced = false;
-    bool flowNestingUnbalanced = false;
     bool scopeNestingBalanced = true;
     bool flowNestingBalanced = true;
 /// Read-only profile-scope preflight — safe to call before constructing `ProfileScope`.
@@ -529,6 +514,7 @@ struct CounterSamplePreflight {
 
 /// Read-only nesting/async-flow state preflight — safe before nested scopes or flows.
 struct NestingStatePreflight {
+/// Read-only nesting/async-flow diagnostics — safe to call before recording (B1.6 deepen).
     bool hasOpenAsyncFlows = false;
     bool flowDepthDetached = false;
     bool crossThreadFlowHandoffPending = false;
@@ -993,6 +979,9 @@ struct ScopeNestingPreflight {
 
 
 
+    bool isBalanced() const { return scopeNestingBalanced && flowNestingBalanced && !hasOpenAsyncFlows; }
+    bool hasActiveScope() const { return activeScopeNestingDepth > 0u; }
+    bool hasActiveAsyncFlowNesting() const { return activeFlowNestingDepth > 0u; }
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -1328,6 +1317,13 @@ bool wouldSkipAsyncFlowEnd(const char* name);
 bool wouldSkipCounter(const char* track);
 bool wouldSkipChromeTraceExport();
 /// True for null, empty, or whitespace-only names — diagnostic only; does not affect recording guards.
+ProfileRecordSkipReason classifyProfileRecordSkip(const char* name);
+const char* profileRecordSkipReasonLabel(ProfileRecordSkipReason reason);
+bool wouldSkipProfileScope(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowBegin(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipAsyncFlowEnd(const char* name, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipCounterSample(const char* track, ProfileRecordSkipReason* reason = nullptr);
+bool wouldSkipSafeChromeTraceExport(ProfileRecordSkipReason* reason = nullptr);
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
 bool isFlowPhaseEvent(const ProfileEvent& event);
@@ -1351,6 +1347,19 @@ bool preflightProfilerState(NestingStateRejectReason* reason = nullptr);
 const char* nestingStateRejectReasonLabel(NestingStateRejectReason reason);
 bool tryCanLookupEventAt(u32 index, EventLookupRejectReason& outReason);
 const char* eventLookupRejectReasonLabel(EventLookupRejectReason reason);
+u32 firstEventIndex();
+u32 lastEventIndex();
+u32 firstExportableEventIndex();
+u32 lastExportableEventIndex();
+bool wouldSkipNameLookup(const char* name);
+u32 findFirstEventIndexByName(const char* name);
+u32 findLastEventIndexByName(const char* name);
+u32 countEventsByName(const char* name);
+u32 findFirstEventIndexByFlowId(u32 flowId);
+u32 findLastEventIndexByFlowId(u32 flowId);
+u32 countEventsByFlowId(u32 flowId);
+u32 findFirstEventIndexByPhase(EventPhase phase);
+u32 findLastEventIndexByPhase(EventPhase phase);
 u32 countEventsByPhase(EventPhase phase);
 u32 findFirstEventIndexByPhase(EventPhase phase);
 bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent);
@@ -1568,6 +1577,7 @@ bool wouldSkipAsyncFlowBegin(const char* name, ProfilerRecordSkipReason* reason 
 bool wouldSkipAsyncFlowEnd(const char* name, ProfilerRecordSkipReason* reason = nullptr);
 bool wouldSkipCounter(const char* track, ProfilerRecordSkipReason* reason = nullptr);
 bool wouldSkipChromeTraceExport(bool requireBalancedNesting = false);
+NestingAsyncFlowPreflight preflightNestingAsyncFlow();
 ChromeTraceExportPreflight preflightChromeTraceExport();
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 flowId);
 AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 flowId);
