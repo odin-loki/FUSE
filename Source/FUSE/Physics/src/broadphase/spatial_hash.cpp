@@ -36,6 +36,18 @@ const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason) {
     return "Unknown";
 }
 
+const char* cellSpanRejectReasonName(CellSpanRejectReason reason) {
+    switch (reason) {
+    case CellSpanRejectReason::None:
+        return "None";
+    case CellSpanRejectReason::EmptyRange:
+        return "EmptyRange";
+    case CellSpanRejectReason::ExceedsMaxSpan:
+        return "ExceedsMaxSpan";
+    }
+    return "Unknown";
+}
+
 const char* broadphaseRejectReasonName(BroadphaseRejectReason reason) {
     switch (reason) {
     case BroadphaseRejectReason::None:
@@ -270,7 +282,7 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
 }
 
 void dedupeBuffer(PairBufferSoA& buffer) {
-    if (!shouldRunDedupeBroadphase(buffer)) {
+    if (!shouldRunPairBufferDedupe(buffer)) {
         return;
     }
 
@@ -346,7 +358,9 @@ void runBroadphaseIntoBufferInternal(
         }
         writePairsForCellSlots(cells.buckets[cellIndex], cellSlotOffsets[cellIndex], buffer);
     });
-    buffer.compact();
+    if (shouldRunPairBufferCompaction(buffer)) {
+        buffer.compact();
+    }
     dedupeBuffer(buffer);
 
     std::vector<u32> planeBodies;
@@ -393,7 +407,7 @@ void runBroadphaseIntoBufferInternal(
         dedupeBuffer(buffer);
     }
 
-    if (buffer.maxCapacity > 0u) {
+    if (shouldRunPairBufferClamp(buffer)) {
         buffer.applyMaxCapacityClamp();
     }
 }
@@ -423,7 +437,9 @@ void refineBroadphasePairsParallelImpl(
         }
     });
 
-    buffer.compact();
+    if (shouldRunPairBufferCompaction(buffer)) {
+        buffer.compact();
+    }
 }
 
 } // namespace
