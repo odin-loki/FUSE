@@ -1263,6 +1263,16 @@ struct NarrowphasePairSlotPreflight {
 /// Combined base+deepen reject reason for additive preflight (B4.5 deepen pass).
 ContactPairRejectReason contact_pair_union_reject_reason(
 /// Run shape dispatch only when extended deepen preflight passes (B4.6 deepen pass).
+/// Const preflight for guarded pair detection (B4.6 deepen pass).
+struct ContactPairDetectPreflight {
+    ContactPairDeepenPreflight deepen{};
+    bool can_detect = false;
+
+    bool can_dispatch() const { return deepen.can_dispatch(); }
+};
+
+/// Populate detect preflight without running shape dispatch (B4.6 deepen pass).
+ContactPairDetectPreflight preflight_detect_contacts_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1306,6 +1316,23 @@ bool contact_pair_deepen_rejects_for_reason_v2(
 
 /// Collect pairs that pass extended deepen preflight (B4.6 deepen pass).
 std::vector<broadphase::CandidatePair> filter_dispatchable_contact_pairs(
+/// Run shape dispatch only when extended deepen preflight passes (B4.6 deepen pass).
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when `preflight_contact_pair_deepen` matches `expected` (B4.6 deepen pass).
+bool preflight_contact_pair_deepen_rejects_for_reason(
+
+/// Const preflight for narrowphase dispatch entry (B4.6 deepen pass).
+struct NarrowphaseDispatchPreflight {
+    NarrowphaseBatchPreflight batch{};
+    bool can_skip_dispatch = false;
+
+    bool can_dispatch() const { return batch.can_dispatch(); }
+
+/// Populate dispatch preflight without running narrowphase (B4.6 deepen pass).
+NarrowphaseDispatchPreflight preflight_narrowphase_dispatch(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
@@ -1454,5 +1481,10 @@ struct ContactPairBatchRejectSummary {
 /// Populate batch reject summary without running shape dispatch (B4.6 deepen pass).
 ContactPairBatchRejectSummary summarize_contact_pair_batch_rejects(
 
+/// Returns true when dispatch preflight reports no dispatchable pairs (B4.6 deepen pass).
+bool should_skip_narrowphase_dispatch(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 } // namespace fuse::physics::narrowphase

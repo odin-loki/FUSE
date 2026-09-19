@@ -284,6 +284,7 @@ void runNarrowphaseIntoBufferWithPreflight(
 void runNarrowphaseIntoBufferIfDispatchable(
 /// Job-safe narrowphase that skips pairs rejected by extended deepen preflight (B4.6 deepen pass).
 void runNarrowphaseFilteredIntoBuffer(
+/// Narrowphase dispatch with batch preflight early-out when all pairs are rejected (B4.6 deepen pass).
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,

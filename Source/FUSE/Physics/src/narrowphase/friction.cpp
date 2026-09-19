@@ -1415,5 +1415,8 @@ bool rebuild_friction_basis_with_normalize_if_needed(ContactManifold& manifold, 
 bool can_skip_friction_basis_rebuild_with_normalize(
     return can_skip_friction_basis_rebuild(manifold, epsilon) &&
            can_skip_normalize_contact_normal_for_friction(manifold, epsilon);
+bool friction_basis_preflight_rejects_for_reason(
+    return preflight_friction_basis_rebuild(manifold, epsilon).reason == expected;
+
 
 } // namespace fuse::physics::narrowphase

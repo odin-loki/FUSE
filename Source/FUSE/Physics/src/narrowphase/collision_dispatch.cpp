@@ -199,6 +199,19 @@ void runNarrowphaseFilteredIntoBuffer(
     runNarrowphaseIntoBuffer(dispatchable, bodies, shapes, buffer);
 }
 
+void runNarrowphaseIntoBufferWithPreflight(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    ContactBufferSoA& buffer) {
+    const NarrowphaseDispatchPreflight preflight = preflight_narrowphase_dispatch(pairs, bodies, shapes);
+    if (preflight.can_skip_dispatch) {
+        buffer.clear();
+        return;
+    }
+    runNarrowphaseIntoBuffer(pairs, bodies, shapes, buffer);
+}
+
 std::vector<ContactManifold> runNarrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,

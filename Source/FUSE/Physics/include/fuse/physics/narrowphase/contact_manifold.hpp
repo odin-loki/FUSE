@@ -201,6 +201,7 @@ enum class ManifoldPruneRejectReason : u8 {
     AllSeparated,
     ExceedsMaxPoints,
     InvalidNormal,
+    NonUnitNormal,
 };
 
 /// Human-readable label for manifold prune reject reasons (B4.5 deepen follow-up pass).
@@ -1319,6 +1320,15 @@ bool is_finalized_contact_manifold(
 bool can_skip_finalize_contact_manifold_if_finalized(
 
 
+/// Returns true when `preflight_manifold_prune` matches `expected` (B4.6 deepen pass).
+bool manifold_prune_preflight_rejects_for_reason(
+
+/// Returns true when `preflight_manifold_finalize` matches `expected` (B4.6 deepen pass).
+bool manifold_finalize_preflight_rejects_for_reason(
+
+/// Finalize only when finalize preflight passes; clears on generation failure (B4.6 deepen pass).
+
+/// Prune then finalize only when both preflights allow (B4.6 deepen pass).
 
 inline ContactManifold invalidContactManifold() {
     return ContactManifold();

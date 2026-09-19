@@ -408,6 +408,8 @@ const char* manifold_prune_reject_reason_name(ManifoldPruneRejectReason reason) 
         return "ExceedsMaxPoints";
     case ManifoldPruneRejectReason::InvalidNormal:
         return "InvalidNormal";
+    case ManifoldPruneRejectReason::NonUnitNormal:
+        return "NonUnitNormal";
     }
     return "Unknown";
     case ManifoldPruneRejectReason::AllSeparated:
@@ -431,6 +433,8 @@ ManifoldPruneRejectReason manifold_prune_reject_reason(
     }
     if (!manifold.hasValidNormal()) {
         return ManifoldPruneRejectReason::InvalidNormal;
+        return ManifoldPruneRejectReason::NonUnitNormal;
+    }
     if (manifold.wouldBeEmptyAfterPrune(separationEpsilon, duplicateEpsilon)) {
         return ManifoldPruneRejectReason::WouldBeEmptyAfterPrune;
     if (!manifold.needsPruning(separationEpsilon, duplicateEpsilon)) {
@@ -2358,6 +2362,15 @@ bool is_finalized_contact_manifold(
 
 bool can_skip_finalize_contact_manifold_if_finalized(
     return is_finalized_contact_manifold(manifold, lengthEpsilon, frictionEpsilon);
+
+bool manifold_prune_preflight_rejects_for_reason(
+               .reason == expected;
+
+bool manifold_finalize_preflight_rejects_for_reason(
+    return preflight_manifold_finalize(manifold, separationEpsilon, duplicateEpsilon, frictionEpsilon)
+
+    if (preflight.needsPruning) {
+                manifold, separationEpsilon, duplicateEpsilon)) {
 
 
 const ContactPoint& ContactManifold::pointAt(u32 index) const {

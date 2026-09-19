@@ -760,5 +760,8 @@ bool rebuild_friction_basis_with_normalize_if_needed(ContactManifold& manifold, 
 
 /// True when friction-basis rebuild with normalization would be a no-op (B4.6 deepen pass).
 bool can_skip_friction_basis_rebuild_with_normalize(
+/// Returns true when `preflight_friction_basis_rebuild` matches `expected` (B4.6 deepen pass).
+bool friction_basis_preflight_rejects_for_reason(
+
 
 } // namespace fuse::physics::narrowphase
