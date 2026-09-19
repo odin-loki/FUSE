@@ -35,6 +35,9 @@ struct ContactIslandGraph {
     /// Body → island id, or `invalidIsland` when the body has no constraints.
     u32 bodyIsland(u32 bodyIndex) const;
 
+    /// True when both body indices are in range for union during graph build.
+    static bool bodiesInRange(u32 bodyCount, u32 bodyA, u32 bodyB);
+
     static constexpr u32 invalidIsland = ~0u;
 
 private:
