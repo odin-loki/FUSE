@@ -181,6 +181,14 @@ FixedStepPreflight PlaySession::preflightFixedSteps(f32 fixedDt, const PlayModeP
     preflight.deferred = preflight.pending > preflight.allowed ? preflight.pending - preflight.allowed : 0;
     preflight.wouldCap = preflight.deferred > 0;
 
+VariableTickPreflight PlaySession::preflightVariableTick(f32 dt,
+                                                         const PlayModePhysicsState& physics) const {
+    VariableTickPreflight preflight{};
+    preflight.skipped = shouldSkipVariableTick(dt, physics);
+    preflight.wouldSimulate = !preflight.skipped;
+    return preflight;
+}
+
 TickFixedStepPreflight PlaySession::preflightTickFixedStep(f32 dt, f32 fixedDt,
                                                            const PlayModePhysicsState& physics,
                                                            u32 maxSteps) const {
@@ -592,6 +600,62 @@ ecs::EntityID PlaySession::worldSnapshotEntityAt(usize index) const {
     }
 
     return m_worldSnapshot.entities[index].first;
+}
+
+bool PlaySession::transformDirtyForEntity(ecs::EntityID entityId) const {
+    if (!m_hasDirtySnapshot || !entityId.valid()) {
+        return false;
+    }
+
+    for (const std::pair<ecs::EntityID, bool>& entry : m_dirtySnapshot.transformDirty) {
+        if (entry.first == entityId) {
+            return entry.second;
+        }
+    }
+
+    return false;
+}
+
+u32 PlaySession::dirtySnapshotDirtyEntityCount() const {
+    if (!m_hasDirtySnapshot) {
+        return 0;
+    }
+
+    u32 dirtyCount = 0;
+    for (const std::pair<ecs::EntityID, bool>& entry : m_dirtySnapshot.transformDirty) {
+        if (entry.second) {
+            ++dirtyCount;
+        }
+    }
+
+    return dirtyCount;
+}
+
+WorldSnapshotInfo PlaySession::worldSnapshotInfo() const {
+    WorldSnapshotInfo info{};
+    info.captured = m_hasWorldSnapshot;
+    if (!m_hasWorldSnapshot) {
+        return info;
+    }
+
+    info.entityCount = static_cast<u32>(m_worldSnapshot.entities.size());
+    return info;
+}
+
+ecs::EntityID PlaySession::worldSnapshotEntityAt(usize index) const {
+    if (!m_hasWorldSnapshot || index >= m_worldSnapshot.entities.size()) {
+        return ecs::EntityID{};
+    }
+
+    return m_worldSnapshot.entities[index].first;
+}
+
+bool PlaySession::shouldSkipWorldSnapshotDrain() const {
+    return !m_hasWorldSnapshot;
+}
+
+bool PlaySession::shouldSkipDirtySnapshotDrain() const {
+    return !m_hasDirtySnapshot;
 }
 
 PlayWorldSnapshot PlaySession::captureWorldSnapshot(EditorScene& editorScene) const {

@@ -997,6 +997,7 @@ void testPlaySessionVariableTickPreflightAndRemainder() {
     editorScene.registry().add<fuse::ecs::Transform>(entity);
 
     fuse::scene::Scene scene("VariableTickPreflightTest");
+    fuse::scene::Scene scene("PreflightTickTest");
     fuse::editor::EditorState state;
     fuse::editor::PlaySession session;
     fuse::editor::PlayModePhysicsState physics;
@@ -1047,6 +1048,26 @@ void testPlaySessionVariableTickPreflightAndRemainder() {
     session.stop(editorScene, scene, state, physics);
     expectTrue(session.fixedAccumulatorRemainder(kFixedDt) == 0.f,
                "fixedAccumulatorRemainder clears on stop");
+        session.preflightVariableTick(0.016f, physics);
+    expectTrue(inactivePreflight.skipped, "variable preflight skips while session inactive");
+    expectTrue(!inactivePreflight.wouldSimulate,
+               "variable preflight does not simulate while inactive");
+
+    expectTrue(!activePreflight.skipped, "variable preflight allows active playing session");
+    expectTrue(activePreflight.wouldSimulate, "variable preflight marks wouldSimulate when active");
+
+    session.tick(kFixedDt * 0.25f, editorScene, physics);
+    expectNear(session.fixedAccumulatorRemainder(kFixedDt), kFixedDt * 0.25f, 1e-5f,
+               "fixedAccumulatorRemainder reports sub-fixed remainder");
+               "hasPendingFixedSteps false when accumulator below one slice");
+               "canConsumeFixedSteps false when accumulator below one slice");
+
+    session.tick(kFixedDt * 0.75f, editorScene, physics);
+               "hasPendingFixedSteps true when accumulator reaches one slice");
+               "canConsumeFixedSteps true when accumulator reaches one slice");
+    expectNear(session.fixedAccumulatorRemainder(kFixedDt), 0.f, 1e-5f,
+               "fixedAccumulatorRemainder clears after full slice threshold");
+
     editorScene.destroy();
 }
 
@@ -1096,6 +1117,7 @@ void testPlaySessionFixedStepRemainderAndPending() {
                "worldSnapshotEntityAt guards out-of-range index");
 
     session.stop(editorScene, scene, state, physics);
+    expectTrue(session.shouldSkipWorldSnapshotDrain(),
                "shouldSkipWorldSnapshotDrain true after stop clears snapshot");
     expectTrue(!session.worldSnapshotInfo().captured,
                "worldSnapshotInfo clears after stop");

@@ -35,9 +35,6 @@ struct VariableTickPreflight {
 struct VariableTickPreflight {
 
 /// Read-only variable-tick guard diagnostics (B6.12 deepen follow-up — inactive tick).
-    bool skipped = false;
-    bool wouldSimulate = false;
-    bool wouldAdvanceAccumulator = false;
 };
 
 /// Captured dirty-flag metadata for PIE restore (B6.12 deepen follow-up).
@@ -105,6 +102,12 @@ struct TickFixedStepPreflight {
     u32 entityCount = 0;
 };
 
+/// Captured world snapshot metadata for PIE restore (B6.12 deepen follow-up).
+struct WorldSnapshotInfo {
+    bool captured = false;
+    u32 entityCount = 0;
+};
+
 /// ECS world snapshot for PIE restore (B6.12 deepen — transform payloads per entity).
 struct PlayWorldSnapshot {
     std::vector<std::pair<ecs::EntityID, ecs::Transform>> entities;
@@ -154,6 +157,8 @@ public:
     /// Preflight a fixed-step drain without mutating session state.
     FixedStepPreflight preflightFixedSteps(f32 fixedDt, const PlayModePhysicsState& physics,
                                            u32 maxSteps = 0) const;
+    /// Preflight a variable tick without mutating session state.
+    VariableTickPreflight preflightVariableTick(f32 dt, const PlayModePhysicsState& physics) const;
     /// Preflight variable tick plus fixed-step drain for one PIE frame.
     TickFixedStepPreflight preflightTickFixedStep(f32 dt, f32 fixedDt,
                                                   const PlayModePhysicsState& physics,
