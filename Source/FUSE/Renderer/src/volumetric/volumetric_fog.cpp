@@ -2216,3 +2216,13 @@ SampleCoordRejectReason FroxelGridLayout::classifyFroxelSampleCoordReject(const 
     const DensityLookupRejectReason reject = classifyDensityLookupReject(grid, desc, tileX, tileY, sliceZ);
 SampleCoordRejectReason classifyFroxelSampleCoordReject(const FroxelDensityGrid& grid,
     const SampleCoordRejectReason reject = classifyFroxelSampleCoordReject(grid, desc, coords);
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-3f3e ---
+    return reason != DensityLookupRejectReason::None &&
+           reason != DensityLookupRejectReason::IndexOutOfRange;
+    const SampleCoordRejectReason sampleReason = FroxelGridLayout::classifySampleCoordReject(coords, desc);
+    if (sampleCoordRejectReasonIsBlocking(sampleReason)) {
+    outReason = classifyGridDensityReject(grid, desc, epsilon);
+    return !gridDensityRejectReasonIsBlocking(outReason);
+    outReason = classifyFroxelPopulateReject(desc, camera, params);
+    return !froxelPopulateRejectReasonIsBlocking(outReason);

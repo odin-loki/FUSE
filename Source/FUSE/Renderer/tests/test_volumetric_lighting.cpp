@@ -3438,3 +3438,28 @@ void testFroxelClassifyAndIsBlockingGuards() {
                "classifyTrilinearSampleReject invalid_sample_coords for hard OOB tile coord");
     expectTrue(!fuse::renderer::froxel_util::preflightTrilinearSample(grid, desc, hardOob),
                "classifyFroxelPopulateReject empty_desc for zero-dimension desc");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-3f3e ---
+void testFroxelClassifyAndBlockingGuards() {
+               "classifySampleCoordReject reports invalid_weights for clampable weights");
+               "classifySampleCoordReject reports out_of_bounds for hard OOB tile");
+               "preflightSampleCoords reports out_of_bounds for hard OOB tile");
+               "classifyScreenMappingReject reports depth_out_of_range below near plane");
+               "preflightScreenMapping reports depth_out_of_range below near plane");
+               "classifyDensityLookupReject reports none for in-range index");
+               "preflightDensityLookup reports none for in-range index");
+               "classifyFroxelTrilinearSampleReject reports none for in-bounds coords");
+               "classifyFroxelTrilinearSampleReject reports clampable_weights for OOB weights");
+    expectTrue(fuse::renderer::froxel_util::preflightFroxelTrilinearSample(grid, desc, warnWeights, &trilinearReason),
+               "preflightFroxelTrilinearSample reports clampable_weights for OOB weights");
+               "classifyFroxelTrilinearSampleReject reports invalid_sample_coords for hard OOB tile");
+               "classifyGridDensityReject reports none for accessible grid");
+               "preflightGridDensity reports none for accessible grid");
+               "classifyGridDensityReject reports undersized_storage for short buffer");
+               "preflightGridDensity reports undersized_storage for short buffer");
+               "classifyGridDensityReject vacuously reports none for empty desc");
+    expectTrue(fuse::renderer::froxel_util::preflightGridDensity(grid, zeroDesc, &densityReason),
+               "classifyFroxelPopulateReject reports none for valid inputs");
+               "preflightFroxelPopulate reports none for valid inputs");
+               "classifyFroxelPopulateReject reports zero_density for zero density");
+               "preflightFroxelPopulate reports zero_density for zero density");
