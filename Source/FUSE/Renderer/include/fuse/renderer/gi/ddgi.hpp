@@ -1073,6 +1073,20 @@ bool preflightDdgiProbeUpdatePipeline(const DDGIDesc& desc,
 bool wouldSkipDdgiProbeUpdatePipeline(const DDGIDesc& desc,
                                       const gi::DDGIKernelParams& kernel_params);
 
+/// Why probe grid source validation rejected the request (B5.6 deepen pass).
+enum class ProbeGridSourceRejectReason : u8 {
+    None = 0,
+    EmptyGrid,
+    ZeroSpacing,
+    ZeroIrradianceRes,
+};
+
+/// Human-readable label for probe grid source reject reasons (logging / tests).
+const char* probeGridSourceRejectReasonLabel(ProbeGridSourceRejectReason reason);
+
+/// True when a probe grid source reject reason would block sampling (B5.6 deepen pass).
+bool probeGridSourceRejectReasonIsBlocking(ProbeGridSourceRejectReason reason);
+
 /// Why probe-update scheduling preflight rejected the request (B5.6 deepen).
 enum class ProbeScheduleRejectReason : u8 {
     None = 0,
@@ -1671,6 +1685,15 @@ u32 probeCount(const DDGIDesc& desc);
 u32 countBorderProbes(const DDGIDesc& desc);
 /// Returns 0 when the grid is empty.
 u32 countInteriorProbes(const DDGIDesc& desc);
+/// Diagnose why probe grid source validation would reject; vacuously succeeds on valid desc.
+bool tryValidateProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason& outReason);
+/// Classify why probe grid source validation would reject — same ordering as `tryValidateProbeGridSource`.
+ProbeGridSourceRejectReason classifyProbeGridSourceReject(const DDGIDesc& desc);
+/// Non-mutating probe grid source preflight — returns true when sampling would proceed.
+bool preflightProbeGridSource(const DDGIDesc& desc, ProbeGridSourceRejectReason* reason = nullptr);
+/// Early-out when probe grid source validation would be rejected.
+bool wouldSkipProbeGridSource(const DDGIDesc& desc);
+
 /// Face/edge/corner breakdown; all fields zero on empty grid.
 ProbeBorderCounts countProbesByBorderKind(const DDGIDesc& desc);
 /// Count probes of a single border kind; returns 0 for `Invalid` or empty grids.
@@ -2678,6 +2701,7 @@ bool tryScheduleProbeUpdates(u32 frame_index,
 /// Schedule probe updates with rate-aware preflight; false when preflight rejects.
 /// Schedule probe updates with rate-aware reject-reason diagnostics; false when preflight rejects.
 /// Schedule probe updates with rate-aware preflight; false when rate or capacity preflight rejects.
+/// Schedule probe updates at rate with reject-reason diagnostics; false when preflight rejects.
 bool tryScheduleProbeUpdatesAtRate(u32 frame_index,
                                    u32 probe_count,
                                    u32 probes_per_frame,
@@ -2890,6 +2914,8 @@ bool preflightTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
                                                   const fuse::math::Vec3& direction,
 bool tryPreflightTrilinearDirectionalProbeIrradiance(const DDGIDesc& desc,
                                                      ProbeTrilinearSampleRejectReason& outReason);
+/// Non-mutating directional trilinear sample preflight — returns true when lookup would proceed.
+/// Early-out when directional trilinear sampling would be rejected.
 u32 nearestProbeIndex(const DDGIDesc& desc, const fuse::math::Vec3& world_position);
 } // namespace ddgi_util
 
