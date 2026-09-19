@@ -4,9 +4,12 @@
 #include <fuse/editor/editor_scene.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/log/logger.hpp>
+#include <fuse/platform/window_wsi.hpp>
 #include <fuse/project/loader.hpp>
 #include <fuse/scene/project_io.hpp>
 #include <fuse/scene/serialiser.hpp>
+
+#include <vector>
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <fuse/renderer/rhi_context.hpp>
@@ -164,10 +167,11 @@ void RuntimeViewportHook::ensureWorldLoaded_(EditorHost& host) {
 }
 
 void RuntimeViewportHook::mirrorEditorEntities_(EditorHost& host) {
-    u32 aliveCount = 0;
+    std::vector<ecs::EntityID> entityOrder;
     host.editorScene().registry().each_query<ecs::Transform>(
-        [&](ecs::EntityID /*id*/, ecs::Transform& /*transform*/) { ++aliveCount; });
+        [&](ecs::EntityID id, ecs::Transform& /*transform*/) { entityOrder.push_back(id); });
 
+    const u32 aliveCount = static_cast<u32>(entityOrder.size());
     if (aliveCount == m_embedSession.mirroredEditorEntityCount) {
         return;
     }
@@ -177,10 +181,21 @@ void RuntimeViewportHook::mirrorEditorEntities_(EditorHost& host) {
         return;
     }
 
+    auto findRuntimeIndex = [&](ecs::EntityID id) -> s32 {
+        for (u32 index = 0; index < entityOrder.size(); ++index) {
+            if (entityOrder[index] == id) {
+                return static_cast<s32>(index);
+            }
+        }
+        return -1;
+    };
+
     fuse::scene::Scene& runtimeScene = host.runtimeScene();
     runtimeScene.clearEntities();
-    u32 index = 0;
-    host.editorScene().registry().each_query<ecs::Transform>([&](ecs::EntityID id, ecs::Transform& transform) {
+    for (u32 index = 0; index < entityOrder.size(); ++index) {
+        const ecs::EntityID id = entityOrder[index];
+        const ecs::Transform& transform = *host.editorScene().registry().get<ecs::Transform>(id);
+
         fuse::scene::SceneEntityTransform sceneTransform{};
         sceneTransform.positionX = transform.position.x;
         sceneTransform.positionY = transform.position.y;
@@ -195,12 +210,12 @@ void RuntimeViewportHook::mirrorEditorEntities_(EditorHost& host) {
 
         s32 parentIndex = -1;
         if (transform.parent.valid()) {
-            parentIndex = 0;
+            parentIndex = findRuntimeIndex(transform.parent);
         }
 
-        const std::string name = "EditorEntity_" + std::to_string(index++);
+        const std::string name = "EditorEntity_" + std::to_string(index);
         runtimeScene.addEntity(name, sceneTransform, parentIndex);
-    });
+    }
 
     m_embedSession.mirroredEditorEntityCount = aliveCount;
     m_embedded = true;
@@ -211,6 +226,9 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 /*dt*/)
         return;
     }
 
+    m_embedSession.wsiBackendName = fuse::platform::windowWsiBackendName();
+    m_embedSession.usesHeadlessGpuPath =
+        fuse::platform::activeWindowWsiKind() == fuse::platform::WindowWsiKind::Null;
     ++m_embedSession.headlessPresentTicks;
 
 #if defined(FUSE_VULKAN_BACKEND)
@@ -235,6 +253,7 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 /*dt*/)
         fuse::renderer::RenderCommandList commands;
         if (gpu->context->beginFrame(0) && gpu->context->submitFrame(commands, 0)) {
             ++gpu->submittedFrames;
+            m_embedSession.submittedFrames = gpu->submittedFrames;
         }
     }
 

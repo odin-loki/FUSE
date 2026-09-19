@@ -1,3 +1,4 @@
+#include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -67,21 +68,27 @@ CullResult CullingSystem::cull(Registry& reg, const Camera& camera, const spatia
     for (const spatial::BVHLeaf& leaf : hits) {
         switch (leaf.type) {
         case spatial::BVHLeafType::Mesh:
-            if (reg.has<Mesh>(leaf.entity) && reg.has<Transform>(leaf.entity)) {
+            if (reg.has_all<Transform, Mesh>(leaf.entity)) {
                 result.visible_meshes.push_back(leaf.entity);
             } else {
                 ++result.culled_count;
             }
             break;
         case spatial::BVHLeafType::SDF:
-            if (reg.has<SDFObject>(leaf.entity) && reg.has<Transform>(leaf.entity)) {
+            if (reg.has_all<Transform, SDFObject>(leaf.entity)) {
                 result.visible_sdf_objects.push_back(leaf.entity);
             } else {
                 ++result.culled_count;
             }
             break;
         case spatial::BVHLeafType::Light:
-            result.visible_lights.push_back(leaf.entity);
+            if (reg.has<Transform>(leaf.entity) &&
+                (reg.has<PointLight>(leaf.entity) || reg.has<DirectionalLight>(leaf.entity) ||
+                 reg.has<SpotLight>(leaf.entity))) {
+                result.visible_lights.push_back(leaf.entity);
+            } else {
+                ++result.culled_count;
+            }
             break;
         default:
             ++result.culled_count;

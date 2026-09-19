@@ -2,8 +2,42 @@
 
 namespace fuse::editor {
 
+namespace {
+
+bool canCoalesceSetProperty_(const EditorCommand& previous, const EditorCommand& incoming) {
+    if (previous.kind != incoming.kind || previous.kind != CommandKind::SetProperty) {
+        return false;
+    }
+
+    if (previous.propertyName.empty() || incoming.propertyName.empty()) {
+        return false;
+    }
+
+    if (!previous.target.isValid() || !incoming.target.isValid()) {
+        return false;
+    }
+
+    if (!incoming.propertyValueBefore.empty()) {
+        return false;
+    }
+
+    if (previous.propertyValue.empty() || incoming.propertyValue.empty()) {
+        return false;
+    }
+
+    return previous.target == incoming.target && previous.propertyName == incoming.propertyName;
+}
+
+} // namespace
+
 void CommandQueue::post(EditorCommand command) {
     std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_pendingDeque.empty() && canCoalesceSetProperty_(m_pendingDeque.back(), command)) {
+        m_pendingDeque.back().propertyValue = std::move(command.propertyValue);
+        ++m_coalescedPosts;
+        return;
+    }
+
     m_pendingDeque.push_back(std::move(command));
     ++m_pending;
 }

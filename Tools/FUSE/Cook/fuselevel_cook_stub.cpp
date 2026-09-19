@@ -9,6 +9,7 @@ namespace {
 FuselevelCookResult fromConvertResult(const fuse::project::ConvertResult& converted) {
     FuselevelCookResult result;
     result.entityCount = converted.entityCount;
+    result.hierarchyLinks = converted.wiringStubCount;
     result.note = converted.note;
 
     switch (converted.status) {

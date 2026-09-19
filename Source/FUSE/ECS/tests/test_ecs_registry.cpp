@@ -1,3 +1,4 @@
+#include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/tags.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -114,6 +115,24 @@ void testEachIteration() {
     expectEq(seen, 3u, "each visits all transform entities");
 }
 
+void testHasAllComponents() {
+    fuse::ecs::Registry reg;
+    reg.init(64);
+
+    const fuse::ecs::EntityID meshEntity = reg.create();
+    const fuse::ecs::EntityID transformOnly = reg.create();
+
+    reg.add<fuse::ecs::Transform>(meshEntity);
+    reg.add<fuse::ecs::Mesh>(meshEntity);
+    reg.add<fuse::ecs::Transform>(transformOnly);
+
+    expectTrue(reg.has_all<fuse::ecs::Transform, fuse::ecs::Mesh>(meshEntity),
+               "has_all matches each<> component set");
+    expectTrue(!reg.has_all<fuse::ecs::Transform, fuse::ecs::Mesh>(transformOnly),
+               "has_all rejects partial component sets");
+    expectTrue(reg.has<fuse::ecs::Transform>(transformOnly), "single-type has still works");
+}
+
 } // namespace
 
 int main() {
@@ -122,6 +141,7 @@ int main() {
     testAddGetRemove();
     testArchetypeGrouping();
     testEachIteration();
+    testHasAllComponents();
 
     if (g_failures == 0) {
         std::printf("fuse_ecs_registry_tests: all checks passed\n");

@@ -12,6 +12,13 @@ struct CookStubWriteResult {
     std::string note;
 };
 
+/// Optional real encoder hooks — return `ok=false` when third-party libs are absent (U7 honest stubs).
+CookStubWriteResult tryCookMeshAssimp(const std::string& output_path, u32 lod_count, bool compressed);
+CookStubWriteResult tryCookTextureBc7(const std::string& output_path, const char* compression,
+                                        bool mipmaps);
+CookStubWriteResult tryCookAudioOgg(const std::string& output_path, u32 sample_rate,
+                                      const char* format);
+
 CookStubWriteResult write_mesh_stub(const std::string& output_path, u32 lod_count, bool compressed);
 CookStubWriteResult write_texture_stub(const std::string& output_path, const char* compression,
                                        bool mipmaps);

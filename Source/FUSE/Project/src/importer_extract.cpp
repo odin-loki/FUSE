@@ -212,6 +212,7 @@ T3DMissionExtract extractT3DMissionFields(const std::string& missionText) {
 T2DModuleExtract extractT2DModuleFields(const std::string& moduleText, const std::string& fallbackPath) {
     T2DModuleExtract extract;
     s32 depth = 0;
+    T2DSceneNodeStub* current = nullptr;
 
     const std::string markers[] = {"module \"", "module @"};
     for (const std::string& marker : markers) {
@@ -270,11 +271,22 @@ T2DModuleExtract extractT2DModuleFields(const std::string& moduleText, const std
             node.objectName = objectName;
             node.depth = depth;
             extract.sceneNodes.push_back(node);
+            current = &extract.sceneNodes.back();
+        }
+
+        if (current != nullptr) {
+            const std::string position = extractAssignmentValue(line, "position = ");
+            if (!position.empty()) {
+                current->position = position;
+            }
         }
 
         depth += countBraceDepth(line);
         if (depth < 0) {
             depth = 0;
+        }
+        if (depth <= 0) {
+            current = nullptr;
         }
     }
 

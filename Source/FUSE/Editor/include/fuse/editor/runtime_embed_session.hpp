@@ -10,12 +10,15 @@ namespace fuse::editor {
 struct RuntimeEmbedSession {
     std::string projectRoot;
     std::string loadedWorldPath;
+    std::string wsiBackendName;
     u32 worldEntityCount = 0;
     u32 mirroredEditorEntityCount = 0;
     u32 headlessPresentTicks = 0;
     u32 surfaceHandoffCount = 0;
+    u32 submittedFrames = 0;
     bool worldLoaded = false;
     bool headlessGpuReady = false;
+    bool usesHeadlessGpuPath = false;
     bool surfaceHandoffPending = false;
     bool surfaceHandoffConsumed = false;
 

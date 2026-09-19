@@ -2,7 +2,7 @@
 
 **Phase:** U7 content / converters  
 **Date:** 2026-09-19  
-**Status:** `project.json` v1 + `.fuselevel` v2 hierarchy + converter/cooker stubs
+**Status:** `project.json` v1 + `.fuselevel` v2 hierarchy + T3D wiring stubs + T2D toybox convert + cook encoder hooks (honest stubs)
 
 ---
 
@@ -93,23 +93,26 @@ if (result.status == fuse::project::LoadStatus::Ok) {
 
 ### T3D mission (`.mis`)
 
-Recursively extracts nested `new Type(Name) { ... }` blocks with transforms. Skips root `Scene` in output entities but preserves parent indices for `SimGroup` children.
+Recursively extracts nested `new Type(Name) { ... }` blocks with transforms. Emits `__fuse.wire|datablock|…` and `__fuse.wire|material|…` child entities for honest scene wiring stubs (parent-linked to the owning SimObject).
 
 ```cpp
 fuse::project::ConvertResult result =
     fuse::project::convertT3DMissionToFuselevel("levels/ExampleLevel.mis", "worlds/main.fuselevel");
+// result.wiringStubCount — datablock/material wiring entities written
 ```
 
 Golden source: `Templates/BaseGame/game/data/ExampleModule/levels/ExampleLevel.mis`
 
 ### T2D module (`main.cs`)
 
-Parses `module "Name"` or `module @Name` declarations. Falls back to filename stem.
+Scans `new Type(Name)` toybox nodes with brace-depth hierarchy and optional `position = "x y"` into `.fuselevel` v2 parent indices.
 
 ```cpp
 fuse::project::ConvertResult result =
     fuse::project::convertT2DModuleToFuselevel("main.cs", "worlds/ui.fuselevel");
 ```
+
+Golden source: `third_party/Torque2D/toybox/SpriteToy/1/main.cs`
 
 ### Dry-run
 
@@ -149,7 +152,7 @@ Exit `0` on success; prints one line per registered world / convert note.
 | Test | Target |
 |------|--------|
 | `fuse_project_tests` | Manifest parse, schema rejection, T3D/T2D importer stubs |
-| `fuse_world_converter_tests` | `.mis` hierarchy → `.fuselevel` v2 round-trip |
+| `fuse_world_converter_tests` | `.mis` hierarchy + datablock wiring stubs; T2D toybox hierarchy |
 | `fuse_scene_b37_b39` | Serialiser v1/v2 + hierarchy round-trip |
 
 ---
@@ -162,21 +165,20 @@ Each demo under `Samples/unification/<demo_id>/` ships a `project.json` consumed
 
 ## 9. Cook stubs (`Tools/FUSE/Cook`)
 
-`fuse_cook_stubs` (linked by `fuse_project`) writes placeholder binaries on `AssetCooker` cache miss:
+`fuse_cook_stubs` (linked by `fuse_project`) writes placeholder binaries on `AssetCooker` cache miss. Each writer tries an optional real encoder hook first (`tryCookMeshAssimp`, `tryCookTextureBc7`, `tryCookAudioOgg`) and falls back to stub headers when libs are absent:
 
-| Writer | Output marker |
-|--------|---------------|
-| `write_mesh_stub` | `FUSEMESH_STUB` |
-| `write_texture_stub` | `FUSETEX_STUB` |
-| `write_audio_stub` | `FUSEAUDIO_STUB` |
+| Writer | Hook | Output marker |
+|--------|------|---------------|
+| `write_mesh_stub` | Assimp (`FUSE_HAS_ASSIMP`) | `FUSEMESH_STUB` |
+| `write_texture_stub` | BC7 (`FUSE_HAS_BC7_ENCODER`) | `FUSETEX_STUB` |
+| `write_audio_stub` | OGG Vorbis (`FUSE_HAS_OGG_VORBIS`) | `FUSEAUDIO_STUB` |
 
-`fuselevel_cook_stub.*` remains on the `fuse_cook` executable for `--fuselevel` mission/module cooks.
+`fuselevel_cook_stub.*` populates `hierarchyLinks` from `ConvertResult::wiringStubCount` on `--fuselevel` cooks.
 
 ## 10. Deferred (honest backlog)
 
-- Real mesh/texture/audio encoders (Assimp, BC7, OGG) replacing stub headers
-- Full T3D datablock/material resolution (refs extracted; wiring deferred)
-- T2D toybox scene graph → `World2D` conversion (node scan only today)
+- Link Assimp / BC7 / OGG libraries so cook hooks produce real binaries (hooks + stub fallback exist today)
+- Resolve `__fuse.wire|*` stub entities into runtime ECS components / legacy datablock tables
+- T2D toybox → `fuse::world2d::World2D::loadWorld` runtime bridge (`.fuselevel` convert landed)
 - Asset path remapping via VFS mounts ([vfs-mount-plan.md](./vfs-mount-plan.md))
 - `project.json` `workerCap` override for `computeWorkerCount()`
-- Real mesh/texture/audio cooks (stubs exist under `fuse_cook`; not production pipelines)

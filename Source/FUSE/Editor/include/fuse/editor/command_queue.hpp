@@ -43,6 +43,7 @@ public:
     void drain();
     u32 pendingCount() const;
     u32 appliedCount() const { return m_applied; }
+    u32 coalescedPostCount() const { return m_coalescedPosts; }
 
     /// Commands moved out of the pending queue by the most recent drain() call.
     const std::vector<EditorCommand>& lastDrainedBatch() const { return m_lastDrained; }
@@ -53,6 +54,7 @@ private:
     std::vector<EditorCommand> m_lastDrained;
     u32 m_pending = 0;
     u32 m_applied = 0;
+    u32 m_coalescedPosts = 0;
 };
 
 } // namespace fuse::editor

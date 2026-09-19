@@ -90,6 +90,47 @@ void testAssetCookerStub() {
     expectTrue(header == "FUSEMESH_STUB", "mesh stub output file written");
 }
 
+void testAssetCookerTextureAudioHookStubs() {
+    const std::string textureSource = writeTempFile("/tmp/fuse_b79_albedo.png", "PNG");
+    fuse::project::TextureImportDesc textureDesc;
+    textureDesc.input_path = textureSource;
+    textureDesc.output_path = "/tmp/fuse_b79_albedo.fusetex";
+    textureDesc.generate_mipmaps = true;
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord textureRecord = cooker.cook_texture(textureDesc);
+    expectTrue(textureRecord.ok, "texture cook stub ok");
+
+    std::ifstream cookedTexture(textureDesc.output_path);
+    std::string textureHeader;
+    std::getline(cookedTexture, textureHeader);
+    expectTrue(textureHeader == "FUSETEX_STUB", "texture stub output file written");
+
+    std::string hookLine;
+    std::getline(cookedTexture, hookLine);
+    expectTrue(hookLine.find("hook=bc7 unavailable") != std::string::npos,
+               "texture stub records BC7 hook unavailable");
+
+    const std::string audioSource = writeTempFile("/tmp/fuse_b79_sfx.wav", "RIFF");
+    fuse::project::AudioImportDesc audioDesc;
+    audioDesc.input_path = audioSource;
+    audioDesc.output_path = "/tmp/fuse_b79_sfx.fuseaudio";
+    audioDesc.format = fuse::project::AudioImportDesc::Format::OGG_VORBIS;
+
+    const fuse::project::CookRecord audioRecord = cooker.cook_audio(audioDesc);
+    expectTrue(audioRecord.ok, "audio cook stub ok");
+
+    std::ifstream cookedAudio(audioDesc.output_path);
+    std::string audioHeader;
+    std::getline(cookedAudio, audioHeader);
+    expectTrue(audioHeader == "FUSEAUDIO_STUB", "audio stub output file written");
+
+    std::string audioHookLine;
+    std::getline(cookedAudio, audioHookLine);
+    expectTrue(audioHookLine.find("hook=ogg unavailable") != std::string::npos,
+               "audio stub records OGG hook unavailable");
+}
+
 void testImportPipelineDryRun() {
     fuse::project::CookManifest manifest = fuse::project::makeDefaultCookManifest("/tmp/demo");
     fuse::project::ImportPipeline pipeline;
@@ -1858,6 +1899,7 @@ int main() {
     testParseCookManifest();
     testAssetGraphRoundTrip();
     testAssetCookerStub();
+    testAssetCookerTextureAudioHookStubs();
     testCookJobGraphEmpty();
     testCookDependencyGraphEmptyGuards();
     testCookDependencyGraphEmptyHelperGuards();

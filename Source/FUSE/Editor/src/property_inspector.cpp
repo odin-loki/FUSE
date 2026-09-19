@@ -105,7 +105,7 @@ void PropertyInspector::sync(const EditorState& state, EditorScene& scene) {
 
 bool PropertyInspector::setTransformPosition(const ecs::vec3& position, EditorScene& scene,
                                              CommandStack& cmds) {
-    if (!m_target.valid()) {
+    if (!m_target.valid() || !scene.registry().has<ecs::Transform>(m_target)) {
         return false;
     }
 

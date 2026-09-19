@@ -19,6 +19,7 @@ struct ConvertResult {
     ConvertStatus status = ConvertStatus::IoError;
     std::string outputPath;
     u32 entityCount = 0;
+    u32 wiringStubCount = 0;
     std::string note;
 };
 

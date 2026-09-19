@@ -65,6 +65,84 @@ void clearSelectionIfMatches(EditorState& state, ecs::EntityID entity) {
         state.selectedEntities.end());
 }
 
+std::string capturePropertyValueBefore(const EditorHost& host, const EditorCommand& command) {
+    const ecs::EntityID entity = handleToEntity(command.target);
+    if (!entity.valid() || !host.editorScene().registry().alive(entity)) {
+        return {};
+    }
+
+    const ecs::Registry& registry = host.editorScene().registry();
+
+    if (command.propertyName == "transform.position") {
+        if (!registry.has<ecs::Transform>(entity)) {
+            return {};
+        }
+        const ecs::Transform* transform = registry.get<ecs::Transform>(entity);
+        return std::to_string(transform->position.x) + "," + std::to_string(transform->position.y) +
+               "," + std::to_string(transform->position.z);
+    }
+
+    if (command.propertyName == "transform.scale") {
+        if (!registry.has<ecs::Transform>(entity)) {
+            return {};
+        }
+        const ecs::Transform* transform = registry.get<ecs::Transform>(entity);
+        return std::to_string(transform->scale.x) + "," + std::to_string(transform->scale.y) + "," +
+               std::to_string(transform->scale.z);
+    }
+
+    if (command.propertyName == "transform.rotation") {
+        if (!registry.has<ecs::Transform>(entity)) {
+            return {};
+        }
+        const ecs::Transform* transform = registry.get<ecs::Transform>(entity);
+        return std::to_string(transform->rotation.x) + "," + std::to_string(transform->rotation.y) +
+               "," + std::to_string(transform->rotation.z) + "," +
+               std::to_string(transform->rotation.w);
+    }
+
+    if (command.propertyName == "mesh.material_id") {
+        if (!registry.has<ecs::Mesh>(entity)) {
+            return {};
+        }
+        return std::to_string(registry.get<ecs::Mesh>(entity)->material_id);
+    }
+
+    if (command.propertyName == "sdf.blend_alpha") {
+        if (!registry.has<ecs::SDFObject>(entity)) {
+            return {};
+        }
+        return std::to_string(registry.get<ecs::SDFObject>(entity)->blend_alpha);
+    }
+
+    if (command.propertyName == "directional.intensity") {
+        if (!registry.has<ecs::DirectionalLight>(entity)) {
+            return {};
+        }
+        return std::to_string(registry.get<ecs::DirectionalLight>(entity)->intensity);
+    }
+
+    if (command.propertyName == "spot.intensity") {
+        if (!registry.has<ecs::SpotLight>(entity)) {
+            return {};
+        }
+        return std::to_string(registry.get<ecs::SpotLight>(entity)->intensity);
+    }
+
+    return {};
+}
+
+bool isUndoableEntityProperty(const EditorCommand& command) {
+    if (command.kind != CommandKind::SetProperty || !command.target.isValid()) {
+        return false;
+    }
+
+    return command.propertyName == "transform.position" || command.propertyName == "transform.scale" ||
+           command.propertyName == "transform.rotation" || command.propertyName == "mesh.material_id" ||
+           command.propertyName == "sdf.blend_alpha" || command.propertyName == "directional.intensity" ||
+           command.propertyName == "spot.intensity";
+}
+
 bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
     if (command.propertyName == "project") {
         host.setLoadedProject(command.propertyValue);
@@ -117,6 +195,9 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
     ecs::Registry& registry = host.editorScene().registry();
 
     if (command.propertyName == "transform.position") {
+        if (!registry.has<ecs::Transform>(entity)) {
+            return false;
+        }
         ecs::Transform* transform = registry.get<ecs::Transform>(entity);
         if (transform == nullptr) {
             return false;
@@ -134,6 +215,9 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
     }
 
     if (command.propertyName == "transform.scale") {
+        if (!registry.has<ecs::Transform>(entity)) {
+            return false;
+        }
         ecs::Transform* transform = registry.get<ecs::Transform>(entity);
         if (transform == nullptr) {
             return false;
@@ -151,6 +235,9 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
     }
 
     if (command.propertyName == "transform.rotation") {
+        if (!registry.has<ecs::Transform>(entity)) {
+            return false;
+        }
         ecs::Transform* transform = registry.get<ecs::Transform>(entity);
         if (transform == nullptr) {
             return false;
@@ -176,6 +263,9 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
     }
 
     if (command.propertyName == "mesh.material_id") {
+        if (!registry.has<ecs::Mesh>(entity)) {
+            return false;
+        }
         ecs::Mesh* mesh = registry.get<ecs::Mesh>(entity);
         if (mesh == nullptr) {
             return false;
@@ -187,6 +277,9 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
     }
 
     if (command.propertyName == "sdf.blend_alpha") {
+        if (!registry.has<ecs::SDFObject>(entity)) {
+            return false;
+        }
         ecs::SDFObject* sdf = registry.get<ecs::SDFObject>(entity);
         if (sdf == nullptr) {
             return false;
@@ -198,6 +291,9 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
     }
 
     if (command.propertyName == "directional.intensity") {
+        if (!registry.has<ecs::DirectionalLight>(entity)) {
+            return false;
+        }
         ecs::DirectionalLight* light = registry.get<ecs::DirectionalLight>(entity);
         if (light == nullptr) {
             return false;
@@ -209,6 +305,9 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
     }
 
     if (command.propertyName == "spot.intensity") {
+        if (!registry.has<ecs::SpotLight>(entity)) {
+            return false;
+        }
         ecs::SpotLight* light = registry.get<ecs::SpotLight>(entity);
         if (light == nullptr) {
             return false;
@@ -351,7 +450,15 @@ void EditorHost::gameTick() {
     m_commandsAppliedLastTick = 0;
     m_queue.drain();
     for (const EditorCommand& command : m_queue.lastDrainedBatch()) {
-        applyCommand_(command);
+        if (isUndoableEntityProperty(command)) {
+            EditorCommand stacked = command;
+            const std::string before = command.propertyValueBefore.empty()
+                                           ? capturePropertyValueBefore(*this, command)
+                                           : command.propertyValueBefore;
+            m_commandStack.push(std::move(stacked), before);
+        } else {
+            applyCommand_(command);
+        }
         ++m_commandsAppliedLastTick;
     }
 

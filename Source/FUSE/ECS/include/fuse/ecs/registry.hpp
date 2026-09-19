@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <type_traits>
 #include <typeindex>
 #include <type_traits>
 #include <unordered_map>
@@ -40,6 +41,10 @@ public:
 
     template <typename T>
     bool has(EntityID id) const;
+
+    /// True when the entity has every listed component type (matches `each<Ts...>` semantics).
+    template <typename... Ts>
+    std::enable_if_t<(sizeof...(Ts) > 1), bool> has_all(EntityID id) const;
 
     /// Iterates entities that have all listed component types.
     template <typename... Ts, typename Fn>
@@ -215,6 +220,19 @@ bool Registry::has(EntityID id) const {
         return false;
     }
     return m_archetypes[rec->archetype_index].has_component(std::type_index(typeid(T)));
+}
+
+template <typename... Ts>
+std::enable_if_t<(sizeof...(Ts) > 1), bool> Registry::has_all(EntityID id) const {
+    (assertComponent<Ts>(), ...);
+
+    const EntityRecord* rec = record(id);
+    if (rec == nullptr) {
+        return false;
+    }
+
+    const Archetype& archetype = m_archetypes[rec->archetype_index];
+    return (... && archetype.has_component(std::type_index(typeid(Ts))));
 }
 
 template <typename... Ts, typename Fn>

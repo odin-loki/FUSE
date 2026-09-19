@@ -2,7 +2,7 @@
 
 **Phase:** U6 / WP-08 vertical slice  
 **Date:** 2026-09-19  
-**Status:** Inspector + undo through command queue; runtime viewport embed hook (headless-safe)
+**Status:** Inspector + coalesced UI property undo + headless runtime embed (null WSI / optional Vulkan submit)
 
 ---
 
@@ -74,9 +74,9 @@ Linux umbrella CI configures with `FUSE_BUILD_EDITOR=OFF` (default). Tests:
 
 | CTest name | Binary | Purpose |
 |------------|--------|---------|
-| `fuse_editor_command_queue` | `fuse_editor_api_tests` | Mutex-backed queue post/drain + payload FIFO |
-| `fuse_editor_host` | `fuse_editor_host_tests` | `EditorHost` game-tick drain, PIE, inspector props, `CommandStack` property undo/redo, `RuntimeViewportHook` |
-| `fuse_editor_runtime_embed` | `fuse_editor_runtime_embed_tests` | `RuntimeViewportHook` + `RuntimeEmbedSession` headless present counters |
+| `fuse_editor_command_queue` | `fuse_editor_api_tests` | Mutex-backed queue post/drain + SetProperty coalescing |
+| `fuse_editor_host` | `fuse_editor_host_tests` | PIE, inspector props, UI coalesced property undo/redo, `RuntimeViewportHook` |
+| `fuse_editor_runtime_embed` | `fuse_editor_runtime_embed_tests` | WSI backend label, headless GPU path counters, project world load |
 
 ```bash
 cmake -B build-fuse -G Ninja \
@@ -110,7 +110,7 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 ```
 
 - **Project hub** — lists `Samples/unification/*/project.json` directories.
-- **Property pane (WP-08 hook)** — `PropertyPaneWidget` + `FeaturePaneBridge`; Play/Stop posts `StartPlay`/`StopPlay` commands (no direct scene mutation from UI thread).
+- **Property pane (WP-08 hook)** — `PropertyPaneWidget` + `FeaturePaneBridge`; Play/Stop posts `StartPlay`/`StopPlay` commands (no direct scene mutation from UI thread). Position spinboxes post `SetProperty` envelopes that coalesce on the UI queue and record undo via the game-thread `CommandStack`.
 - **Runtime viewport hook** — `RuntimeViewportHook` + `RuntimeEmbedSession`: loads project default `.fuselevel` when `project.root` is posted, mirrors editor ECS entities into `runtimeScene`, ticks a headless present stub (`FUSE_VULKAN_BACKEND` submits empty frame when device ready).
 - **Open project** — posts `SetProperty { project = <name> }` and optional `project.root = <dir>` to the queue (handle-only command envelope).
 
@@ -125,7 +125,7 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 | `fuse/editor/feature_pane_bridge.hpp` | Feature-pane hook — posts commands for play/stop/selection/property edits; game-thread `CommandStack` undo |
 | `fuse/editor/command_stack.hpp` | Property-edit undo/redo — owned by `EditorHost`, drained on `gameTick()` |
 | `fuse/editor/runtime_viewport.hpp` | Viewport ↔ runtime scene embed hook (headless-safe) |
-| `fuse/editor/runtime_embed_session.hpp` | Embed session counters (world load, present stub ticks) |
+| `fuse/editor/runtime_embed_session.hpp` | Embed session counters (world load, WSI backend, GPU submit, mirror) |
 
 ---
 
@@ -133,14 +133,14 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 
 | Done (this slice) | Remaining |
 |-------------------|-----------|
-| Mutex-backed command queue with payload retention | Full GPU swapchain viewport in Qt widget |
-| `EditorHost` applies project + PIE + selection + delete/reparent on game thread | Timelines, addon feature panes |
-| Headless cross-thread queue proof (32 UI posts → game drain) | Thread-safe payload coalescing beyond counters |
+| Mutex-backed command queue with SetProperty coalescing on UI thread | Full GPU swapchain viewport in Qt widget |
+| `EditorHost` routes UI property edits through `CommandStack` undo on game thread | Timelines, addon feature panes |
+| Headless cross-thread queue proof (32 UI posts → game drain) | — |
 | `FeaturePaneBridge` + property edits (`transform`, `mesh.material_id`, `sdf.blend_alpha`) through queue | Live Qt widgets for mesh/SDF beyond position spinboxes |
 | `PropertyInspector` sections: Transform, Mesh, SDF, RigidBody, Camera, Point/Directional/Spot lights | All ECS types + live renderer preview on slider drag |
-| `CommandStack` property-edit undo/redo on `EditorHost` (game-thread drain) | Coalesced property undo from Qt thread |
-| Undo/redo through queue (`Undo`/`Redo` for scene graph; `CommandStack` for property edits) | Coalesced property undo from Qt thread |
-| `RuntimeViewportHook` loads manifest world + mirrors editor entities + headless present stub | Real in-process `fuse_runtime` GPU viewport (Vulkan/Metal/GLES) |
+| `CommandStack` property-edit undo/redo + coalesced Qt spinbox drags | — |
+| ECS `Registry::has<Ts...>()` aligned with `each<Ts...>`; cull light path requires Transform + light | — |
+| `RuntimeViewportHook` loads manifest world, mirrors editor entities (parent indices), null WSI headless GPU stub | Real in-process `fuse_runtime` GPU viewport (Qt External surface) |
 
 ---
 

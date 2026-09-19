@@ -1,6 +1,7 @@
 #include <fuse/project/world_converter.hpp>
 
 #include <fuse/log/logger.hpp>
+#include <fuse/project/importer_extract.hpp>
 #include <fuse/scene/serialiser.hpp>
 
 #include <cctype>
@@ -137,8 +138,15 @@ struct MisObject {
     bool hasPosition = false;
     bool hasRotation = false;
     bool hasScale = false;
+    std::string datablockRef;
+    std::string materialAsset;
     fuse::scene::SceneEntityTransform transform{};
 };
+
+std::string makeSceneWiringStubName(const char* kind, const std::string& objectName,
+                                    const std::string& refValue) {
+    return std::string("__fuse.wire|") + kind + "|" + objectName + "|" + refValue;
+}
 
 std::size_t skipMisWhitespace(const std::string& text, std::size_t cursor) {
     while (cursor < text.size() && std::isspace(static_cast<unsigned char>(text[cursor]))) {
@@ -232,6 +240,32 @@ void fillMisObjectTransform(MisObject& object, const std::string& block) {
                                             object.transform.scaleY,
                                             object.transform.scaleZ);
     }
+
+    const std::string datablockQuoted = extractQuotedValue(block, "dataBlock");
+    if (!datablockQuoted.empty()) {
+        object.datablockRef = datablockQuoted;
+    } else {
+        const std::size_t dbPos = block.find("dataBlock = ");
+        if (dbPos != std::string::npos) {
+            std::size_t cursor = dbPos + 12;
+            while (cursor < block.size() && std::isspace(static_cast<unsigned char>(block[cursor]))) {
+                ++cursor;
+            }
+            std::size_t end = cursor;
+            while (end < block.size()) {
+                const char ch = block[end];
+                if (ch == ';' || ch == '\n' || ch == '\r') {
+                    break;
+                }
+                ++end;
+            }
+            if (end > cursor) {
+                object.datablockRef = block.substr(cursor, end - cursor);
+            }
+        }
+    }
+
+    object.materialAsset = extractQuotedValue(block, "MaterialAsset");
 }
 
 void extractMisObjectsRecursive(const std::string& text, std::size_t blockStart, std::size_t blockEnd,
@@ -357,6 +391,33 @@ ConvertResult convertT3DMissionToFuselevel(const std::string& missionPath,
         scene.addEntity(object.name, transform, parentIndex);
     }
 
+    u32 wiringStubCount = 0;
+    for (std::size_t i = 0; i < objects.size(); ++i) {
+        const MisObject& object = objects[i];
+        if (object.type == "Scene") {
+            continue;
+        }
+
+        const s32 wireParentIndex = objectToSceneIndex[i];
+        if (wireParentIndex < 0) {
+            continue;
+        }
+
+        if (!object.datablockRef.empty()) {
+            scene.addEntity(makeSceneWiringStubName("datablock", object.name, object.datablockRef),
+                            {},
+                            wireParentIndex);
+            ++wiringStubCount;
+        }
+
+        if (!object.materialAsset.empty()) {
+            scene.addEntity(makeSceneWiringStubName("material", object.name, object.materialAsset),
+                            {},
+                            wireParentIndex);
+            ++wiringStubCount;
+        }
+    }
+
     const fuse::scene::SerialiseResult serialised = fuse::scene::SceneSerialiser::save(scene, outputPath);
     if (serialised.status != fuse::scene::SerialiseStatus::Ok) {
         result.status = ConvertStatus::IoError;
@@ -366,7 +427,9 @@ ConvertResult convertT3DMissionToFuselevel(const std::string& missionPath,
 
     result.status = ConvertStatus::Ok;
     result.entityCount = scene.entityCount();
-    result.note = "converted T3D mission to .fuselevel (" + std::to_string(result.entityCount) + " entities)";
+    result.wiringStubCount = wiringStubCount;
+    result.note = "converted T3D mission to .fuselevel (" + std::to_string(result.entityCount) +
+                  " entities, " + std::to_string(result.wiringStubCount) + " wiring stubs)";
     fuse::log::info("convertT3DMissionToFuselevel: %s -> %s (%u entities)",
                     missionPath.c_str(),
                     outputPath.c_str(),
@@ -388,8 +451,51 @@ ConvertResult convertT2DModuleToFuselevel(const std::string& modulePath,
         return makeIoError(outputPath, "unable to create output directory");
     }
 
-    fuse::scene::Scene scene(extractT2DModuleName(text, modulePath));
-    scene.addEntity("ModuleRoot");
+    const T2DModuleExtract extract = extractT2DModuleFields(text, modulePath);
+    fuse::scene::Scene scene(extract.moduleName);
+
+    std::vector<s32> parentIndices;
+    parentIndices.reserve(extract.sceneNodes.size());
+
+    for (std::size_t i = 0; i < extract.sceneNodes.size(); ++i) {
+        const T2DSceneNodeStub& node = extract.sceneNodes[i];
+        s32 parentIndex = -1;
+        if (node.depth > 0) {
+            for (std::size_t j = i; j-- > 0;) {
+                if (extract.sceneNodes[j].depth == node.depth - 1) {
+                    parentIndex = static_cast<s32>(j);
+                    break;
+                }
+            }
+        }
+        parentIndices.push_back(parentIndex);
+
+        fuse::scene::SceneEntityTransform transform{};
+        if (!node.position.empty()) {
+            float x = 0.f;
+            float y = 0.f;
+            float z = 0.f;
+            if (parseFloatTriplet(node.position, x, y, z)) {
+                transform.positionX = x;
+                transform.positionY = y;
+                transform.positionZ = z;
+            } else {
+                std::istringstream stream(node.position);
+                if (stream >> x >> y) {
+                    transform.positionX = x;
+                    transform.positionY = y;
+                }
+            }
+        }
+
+        const std::string entityName =
+            node.objectName.empty() ? node.className : node.objectName;
+        scene.addEntity(entityName, transform, parentIndex);
+    }
+
+    if (scene.entityCount() == 0) {
+        scene.addEntity("ModuleRoot");
+    }
 
     const fuse::scene::SerialiseResult serialised = fuse::scene::SceneSerialiser::save(scene, outputPath);
     if (serialised.status != fuse::scene::SerialiseStatus::Ok) {
@@ -400,8 +506,12 @@ ConvertResult convertT2DModuleToFuselevel(const std::string& modulePath,
 
     result.status = ConvertStatus::Ok;
     result.entityCount = scene.entityCount();
-    result.note = "converted T2D module to .fuselevel";
-    fuse::log::info("convertT2DModuleToFuselevel: %s -> %s", modulePath.c_str(), outputPath.c_str());
+    result.note = "converted T2D module to .fuselevel (" + std::to_string(result.entityCount) +
+                  " entities from toybox scan)";
+    fuse::log::info("convertT2DModuleToFuselevel: %s -> %s (%u entities)",
+                    modulePath.c_str(),
+                    outputPath.c_str(),
+                    result.entityCount);
     return result;
 }
 

@@ -29,11 +29,19 @@ void testRuntimeViewportHeadlessTick() {
 void testRuntimeEmbedSessionCounters() {
     fuse::editor::EditorHost host;
     host.runtimeViewport().setProjectRoot("Samples/unification/demo_3d_empty");
+    host.runtimeViewport().setProjectLabel("embed_test");
+    host.gameTick();
     host.gameTick();
 
     const fuse::editor::RuntimeEmbedSession& session = host.runtimeViewport().embedSession();
-    expectTrue(session.headlessPresentTicks >= 1u || !session.projectRoot.empty(),
-               "embed session records headless present or project root");
+    expectTrue(session.headlessPresentTicks >= 1u, "embed session records headless present ticks");
+    expectTrue(!session.wsiBackendName.empty(), "embed session records active WSI backend");
+    expectTrue(session.usesHeadlessGpuPath, "embed session marks null WSI headless GPU path in CI");
+#if defined(FUSE_VULKAN_BACKEND)
+    if (session.headlessGpuReady) {
+        expectTrue(session.submittedFrames >= 1u, "headless GPU path submits frames when device ready");
+    }
+#endif
 }
 
 } // namespace

@@ -34,6 +34,7 @@ struct T2DSceneNodeStub {
     std::string className;
     std::string objectName;
     s32 depth = 0;
+    std::string position;
 };
 
 struct T2DModuleExtract {

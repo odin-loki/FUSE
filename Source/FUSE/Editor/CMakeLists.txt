@@ -68,6 +68,9 @@ target_include_directories(fuse_editor_api
 )
 
 target_link_libraries(fuse_editor_api PUBLIC fuse_core fuse_ecs fuse_scene fuse_project)
+if(FUSE_BUILD_MODULES)
+    target_link_libraries(fuse_editor_api PUBLIC fuse_ai fuse_cinematics)
+endif()
 target_compile_features(fuse_editor_api PUBLIC cxx_std_17)
 
 if(FUSE_BUILD_MODULES)

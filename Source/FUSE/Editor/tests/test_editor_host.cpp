@@ -242,6 +242,35 @@ void testHostSetPropertyTransformViaQueue() {
                    transform->position.z == 3.f,
                "transform.position applied through command queue");
     expectTrue(host.editorState().sceneModified, "scene marked modified after property edit");
+    expectTrue(host.commandStack().canUndo(), "ui-thread property edit is undoable");
+}
+
+void testUiThreadPropertyCoalesceUndo() {
+    fuse::editor::EditorHost host;
+    fuse::editor::FeaturePaneBridge bridge(host);
+
+    const fuse::ecs::EntityID entity = host.editorScene().registry().create();
+    host.editorScene().registry().add<fuse::ecs::Transform>(entity);
+    bridge.postSelectEntity(entity);
+    host.gameTick();
+
+    for (fuse::u32 step = 1; step <= 8; ++step) {
+        bridge.postSetProperty(entity,
+                               "transform.position",
+                               std::to_string(step) + "," + std::to_string(step) + "," +
+                                   std::to_string(step));
+    }
+    expectTrue(host.commandQueue().coalescedPostCount() >= 7u,
+               "ui queue coalesces repeated transform.position posts");
+
+    host.gameTick();
+
+    const fuse::ecs::Transform* transform = host.editorScene().registry().get<fuse::ecs::Transform>(entity);
+    expectTrue(transform != nullptr && transform->position.x == 8.f, "coalesced drag applies final value");
+    expectTrue(host.commandStack().canUndo(), "coalesced ui edit records undo history");
+
+    bridge.undoPropertyEdit();
+    expectTrue(transform->position.x == 0.f, "undo restores pre-drag transform baseline");
 }
 
 void testHostSetPropertyMeshMaterialViaQueue() {
@@ -501,6 +530,7 @@ int main() {
     testHostDeleteObjectViaQueue();
     testHostReparentObjectViaQueue();
     testHostSetPropertyTransformViaQueue();
+    testUiThreadPropertyCoalesceUndo();
     testHostSetPropertyMeshMaterialViaQueue();
     testHostSetPropertySdfBlendViaQueue();
     testInspectorSectionsThroughBridge();
