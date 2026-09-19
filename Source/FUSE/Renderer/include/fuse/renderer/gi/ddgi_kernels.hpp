@@ -158,6 +158,8 @@ bool wouldSkipProbeKernelLaunchWithGrid(const DDGIDesc& desc, const DDGIKernelPa
 
 /// Non-mutating kernel launch preflight — returns true when both kernels would proceed.
 bool preflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
+/// Kernel launch preflight with mandatory reject-reason output (B5.6 deepen pass).
+bool tryPreflightProbeKernelLaunch(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
 /// Non-mutating trace kernel launch preflight — returns true when trace would proceed.
 bool preflightProbeTraceKernel(const DDGIKernelParams& params, ProbeKernelRejectReason* reason = nullptr);
