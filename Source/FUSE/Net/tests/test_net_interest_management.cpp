@@ -923,3 +923,19 @@ void run_interest_management_tests() {
     const fuse::net::InterestRadiusPreflight zero_radius_preflight =
     expectTrue(zero_radius_preflight.should_skip(), "zero-radius preflight should skip");
     expectTrue(empty_radius_preflight.should_skip(), "empty-radius preflight should skip");
+
+// --- deepen additive from deepen-b74-net-interest-diff-radius-guards-ab36 ---
+    expectTrue(empty_preflight.should_skip(), "preflight should_skip on empty diff");
+    expectTrue(fuse::net::should_skip_interest_diff_apply(preflight_apply_diff),
+               "should_skip accepts empty diff without scope");
+    expectTrue(fuse::net::should_skip_interest_diff_apply(preflight_apply_diff, preflight_apply_scope),
+               "should_skip accepts empty diff with scope");
+    const fuse::net::InterestDiffPreflight valid_preflight =
+    expectTrue(!fuse::net::should_skip_interest_diff_apply(preflight_apply_diff, preflight_apply_scope),
+               "should_skip rejects applicable diff");
+    expectTrue(fuse::net::should_skip_radius_filter(empty_candidates, policy),
+               "should_skip_radius_filter on empty candidates");
+    expectTrue(fuse::net::should_skip_radius_filter(candidates, zero_radius_policy),
+               "should_skip_radius_filter on zero relevance radii");
+    expectTrue(!fuse::net::should_skip_radius_filter(candidates, policy),
+               "should_skip_radius_filter allows non-empty in-range candidates");

@@ -654,3 +654,10 @@ RadiusFilterPreflight preflight_radius_filter(const InterestPolicy& policy,
     const InterestDiffPreflight preflight = preflight_interest_diff(diff, scope);
 bool should_skip_radius_filter(const std::vector<InterestCandidate>& candidates) {
     if (should_skip_radius_filter(candidates)) {
+
+// --- deepen additive from deepen-b74-net-interest-diff-radius-guards-ab36 ---
+InterestDiffPreflight preflight_interest_diff_apply(const InterestSetDiff& diff,
+    InterestDiffPreflight preflight{};
+    return preflight_interest_diff_apply(diff, scope).should_skip();
+bool should_skip_radius_filter(const std::vector<InterestCandidate>& candidates,
+    if (should_skip_radius_filter(candidates, policy)) {
