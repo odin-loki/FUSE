@@ -552,6 +552,7 @@ public:
     /// True when reconcile invalidation should be skipped — mirrors `CookCacheReconcileEstimate::should_skip` (B7.9 deepen).
     /// True when prune reconcile would be a no-op — mirrors `CookCachePruneEstimate::should_skip` (B7.9 deepen).
     /// True when reconcile invalidation would be a no-op — mirrors `CookCacheReconcileEstimate::should_skip` (B7.9 deepen).
+    /// True when dependency or prune reconcile would remove at least one entry (B7.9 deepen).
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
