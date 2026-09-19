@@ -1368,6 +1368,7 @@ void testVActorShapeBaseAttach() {
     expectTrue(bridge.shapebaseAttachCount() == 1u, "shapebase attach counter");
     expectTrue(bridge.mount_point_for("agent_3d") == "cockpit", "mount point stored");
     expectNear(agent.z(), 1.5f, 0.001f, "cockpit mount raises agent Z");
+    expectNear(agent.yawDeg(), 15.f, 0.001f, "cockpit mount applies ShapeBase yaw");
 }
 
 void testMotionTrackPathSampling() {
@@ -1429,7 +1430,40 @@ void testCuePreviewActorMount() {
     const std::vector<fuse::cinematics::CuePreviewEntry> previews =
         fuse::cinematics::preview_cues_at(timeline, 2'500);
     expectTrue(!previews.empty(), "cue preview finds actor mount cue");
-    expectTrue(previews[0].track_kind == fuse::cinematics::TrackKind::Actor, "actor mount preview kind");
+
+    bool sawActorMount = false;
+    for (const fuse::cinematics::CuePreviewEntry& entry : previews) {
+        if (entry.label == "actor_mount" && entry.track_kind == fuse::cinematics::TrackKind::Actor) {
+            sawActorMount = true;
+            break;
+        }
+    }
+    expectTrue(sawActorMount, "actor mount preview kind");
+}
+
+void testCuePreviewMotionCameraSprite() {
+    fuse::cinematics::Timeline timeline = fuse::cinematics::make_outpost_intro_30s_stub();
+    const std::vector<fuse::cinematics::CuePreviewEntry> previews =
+        fuse::cinematics::preview_cues_at(timeline, 15'000);
+
+    bool sawMotion = false;
+    bool sawCamera = false;
+    bool sawSprite = false;
+    for (const fuse::cinematics::CuePreviewEntry& entry : previews) {
+        if (entry.label == "motion_sample") {
+            sawMotion = true;
+        }
+        if (entry.label == "camera_sample") {
+            sawCamera = true;
+        }
+        if (entry.label == "sprite_sample") {
+            sawSprite = true;
+        }
+    }
+
+    expectTrue(sawMotion, "cue preview includes motion sample");
+    expectTrue(sawCamera, "cue preview includes camera sample");
+    expectTrue(sawSprite, "cue preview includes sprite sample");
 }
 
 void testVActorMotionSync() {
@@ -1527,6 +1561,7 @@ int main() {
     testEmptyTimelineProducesNoCues();
     testCuePayloadStubs();
     testCuePreviewActorMount();
+    testCuePreviewMotionCameraSprite();
     testActorMountYawAt();
     testSeqAssetMotionLoader();
     testVActorMotionSync();

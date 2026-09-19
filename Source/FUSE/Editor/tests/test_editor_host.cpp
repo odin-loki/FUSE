@@ -503,6 +503,20 @@ void testAiTreeProfilePickerPostsCommand() {
     expectTrue(picker.postCount() == 1u, "picker post counted");
 }
 
+void testAiAgentEntityBindingPostsCommand() {
+    fuse::editor::EditorHost host;
+    fuse::editor::AiTreeProfilePicker picker(host);
+
+    const fuse::Handle<fuse::Object> entity(3, 1);
+    picker.postBindAgentEntity(0, entity);
+    host.gameTick();
+
+    expectTrue(host.aiAgentEntityBindings().size() == 1u, "agent entity binding stored");
+    expectTrue(host.aiAgentEntityBindings()[0].agentIndex == 0u, "agent index stored");
+    expectTrue(host.aiAgentEntityBindings()[0].entity.index() == 3u, "entity index stored");
+    expectTrue(host.aiAgentEntityBindings()[0].entity.generation() == 1u, "entity generation stored");
+}
+
 void testCinematicsSeqImportPostsAsset() {
     fuse::editor::EditorHost host;
     fuse::editor::CinematicsSeqImport importer(host);
@@ -540,6 +554,7 @@ int main() {
     testRuntimeViewportQtSurfaceHandoffCommand();
     testRuntimeViewportHookTicksWithProject();
     testAiTreeProfilePickerPostsCommand();
+    testAiAgentEntityBindingPostsCommand();
     testCinematicsSeqImportPostsAsset();
     fuse::core::shutdown();
 

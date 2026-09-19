@@ -182,6 +182,23 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         return true;
     }
 
+    if (command.propertyName == "ai.agent_entity") {
+        std::istringstream stream(command.propertyValue);
+        std::string agentToken;
+        std::string indexToken;
+        std::string generationToken;
+        if (!std::getline(stream, agentToken, ':') || !std::getline(stream, indexToken, ':') ||
+            !std::getline(stream, generationToken)) {
+            return false;
+        }
+
+        const u32 agentIndex = static_cast<u32>(std::strtoul(agentToken.c_str(), nullptr, 10));
+        const u32 entityIndex = static_cast<u32>(std::strtoul(indexToken.c_str(), nullptr, 10));
+        const u32 entityGeneration = static_cast<u32>(std::strtoul(generationToken.c_str(), nullptr, 10));
+        host.setAiAgentEntityBinding(agentIndex, Handle<Object>(entityIndex, entityGeneration));
+        return true;
+    }
+
     if (command.propertyName == "cinematics.seq_asset") {
         host.setLoadedCinematicsSeqAsset(command.propertyValue);
         return true;
@@ -329,6 +346,16 @@ void EditorHost::setLoadedProject(std::string project) {
 
 void EditorHost::setSelectedAiTreeProfileId(u32 profileId) {
     m_selectedAiTreeProfileId = profileId;
+}
+
+void EditorHost::setAiAgentEntityBinding(u32 agentIndex, Handle<Object> entity) {
+    for (AiAgentEntityBinding& binding : m_aiAgentEntityBindings) {
+        if (binding.agentIndex == agentIndex) {
+            binding.entity = entity;
+            return;
+        }
+    }
+    m_aiAgentEntityBindings.push_back({agentIndex, entity});
 }
 
 void EditorHost::setLoadedCinematicsSeqAsset(std::string assetText) {

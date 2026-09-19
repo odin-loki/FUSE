@@ -22,6 +22,8 @@ struct CuePayload {
     std::string asset_id;
     std::string custom_key;
     std::string custom_value;
+    float scalar_a = 0.f;
+    float scalar_b = 0.f;
 };
 
 } // namespace fuse::cinematics

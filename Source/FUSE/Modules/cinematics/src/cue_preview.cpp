@@ -2,7 +2,10 @@
 
 #include <fuse/cinematics/actor_track.hpp>
 #include <fuse/cinematics/audio_track.hpp>
+#include <fuse/cinematics/camera_track.hpp>
 #include <fuse/cinematics/event_track.hpp>
+#include <fuse/cinematics/motion_track.hpp>
+#include <fuse/cinematics/sprite_track.hpp>
 
 namespace fuse::cinematics {
 
@@ -58,6 +61,55 @@ std::vector<CuePreviewEntry> preview_cues_at(const Timeline& timeline, TimelineM
                     entry.payload.custom_key = event.mount_point;
                     previews.push_back(std::move(entry));
                 }
+                continue;
+            }
+
+            if (track.kind() == TrackKind::Motion) {
+                const auto& motionTrack = static_cast<const MotionTrack&>(track);
+                const MotionSample sample = motionTrack.sample_at(time_ms);
+                CuePreviewEntry entry;
+                entry.label = "motion_sample";
+                entry.track_label = track.label();
+                entry.group_label = group.label();
+                entry.track_kind = TrackKind::Motion;
+                entry.trigger_ms = time_ms;
+                entry.payload.kind = CuePayloadKind::Custom;
+                entry.payload.custom_key = motionTrack.path_id();
+                entry.payload.scalar_a = sample.position.x;
+                entry.payload.scalar_b = sample.position.y;
+                previews.push_back(std::move(entry));
+                continue;
+            }
+
+            if (track.kind() == TrackKind::Camera) {
+                const auto& cameraTrack = static_cast<const CameraTrack&>(track);
+                const CameraSample sample = cameraTrack.sample_at(time_ms);
+                CuePreviewEntry entry;
+                entry.label = "camera_sample";
+                entry.track_label = track.label();
+                entry.group_label = group.label();
+                entry.track_kind = TrackKind::Camera;
+                entry.trigger_ms = time_ms;
+                entry.payload.kind = CuePayloadKind::Custom;
+                entry.payload.scalar_a = sample.field_of_view;
+                previews.push_back(std::move(entry));
+                continue;
+            }
+
+            if (track.kind() == TrackKind::Sprite) {
+                const auto& spriteTrack = static_cast<const SpriteTrack&>(track);
+                const SpriteSample sample = spriteTrack.sample_at(time_ms);
+                CuePreviewEntry entry;
+                entry.label = "sprite_sample";
+                entry.track_label = track.label();
+                entry.group_label = group.label();
+                entry.track_kind = TrackKind::Sprite;
+                entry.trigger_ms = time_ms;
+                entry.payload.kind = CuePayloadKind::Custom;
+                entry.payload.asset_id = spriteTrack.target_sprite_id();
+                entry.payload.scalar_a = sample.x;
+                entry.payload.scalar_b = sample.y;
+                previews.push_back(std::move(entry));
                 continue;
             }
 

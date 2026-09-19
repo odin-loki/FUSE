@@ -8,12 +8,20 @@
 #include <fuse/editor/play_session.hpp>
 #include <fuse/editor/runtime_viewport.hpp>
 #include <fuse/editor/undo_stack.hpp>
+#include <fuse/handle.hpp>
+#include <fuse/object.hpp>
 #include <fuse/scene/scene.hpp>
 #include <fuse/types.hpp>
 
 #include <string>
+#include <vector>
 
 namespace fuse::editor {
+
+struct AiAgentEntityBinding {
+    u32 agentIndex = 0;
+    Handle<Object> entity = Handle<Object>::invalid();
+};
 
 /// Qt-free in-process editor runtime host (WP-08 / U6).
 /// UI thread calls postFromUi(); game thread calls gameTick() to drain commands.
@@ -45,6 +53,7 @@ public:
 
     const std::string& loadedProject() const { return m_loadedProject; }
     u32 selectedAiTreeProfileId() const { return m_selectedAiTreeProfileId; }
+    const std::vector<AiAgentEntityBinding>& aiAgentEntityBindings() const { return m_aiAgentEntityBindings; }
     const std::string& loadedCinematicsSeqAsset() const { return m_loadedCinematicsSeqAsset; }
     u32 gameTickCount() const { return m_gameTickCount; }
     u32 commandsAppliedLastTick() const { return m_commandsAppliedLastTick; }
@@ -56,6 +65,7 @@ public:
     void gameTick();
     void setLoadedProject(std::string project);
     void setSelectedAiTreeProfileId(u32 profileId);
+    void setAiAgentEntityBinding(u32 agentIndex, Handle<Object> entity);
     void setLoadedCinematicsSeqAsset(std::string assetText);
 
     /// Undo/redo property edits recorded on the game-thread `CommandStack`.
@@ -81,6 +91,7 @@ private:
     std::string m_loadedProject;
     std::string m_loadedCinematicsSeqAsset;
     u32 m_selectedAiTreeProfileId = 0;
+    std::vector<AiAgentEntityBinding> m_aiAgentEntityBindings;
     u32 m_gameTickCount = 0;
     u32 m_commandsAppliedLastTick = 0;
     bool m_initialized = false;

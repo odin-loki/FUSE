@@ -29,6 +29,7 @@ public:
     u32 dispatchCount() const { return m_dispatchCount; }
     u32 hookCount() const { return static_cast<u32>(m_hooks.size()); }
     const std::string& lastBranchDispatched() const { return m_lastBranchDispatched; }
+    const std::string& lastLineDispatched() const { return m_lastLineDispatched; }
 
 private:
     std::string hookKey(const std::string& npcId, const std::string& branchId) const;
@@ -36,6 +37,7 @@ private:
     std::unordered_map<std::string, ConversationScriptHook> m_hooks;
     u32 m_dispatchCount = 0;
     std::string m_lastBranchDispatched;
+    std::string m_lastLineDispatched;
 };
 
 /// Register built-in Outpost guard conversation branches.

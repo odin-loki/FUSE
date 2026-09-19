@@ -21,7 +21,11 @@ bool ConversationScriptVm::dispatchBranch(const std::string& npcId,
 
     ++m_dispatchCount;
     m_lastBranchDispatched = branchId;
-    (void)it->second.lines;
+    if (!it->second.lines.empty()) {
+        m_lastLineDispatched = it->second.lines.front();
+    } else {
+        m_lastLineDispatched.clear();
+    }
     return target.chooseBranch(ctx, branchId) == InteractResult::Examined;
 }
 

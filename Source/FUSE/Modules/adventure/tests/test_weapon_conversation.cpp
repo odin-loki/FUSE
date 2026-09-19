@@ -2,6 +2,7 @@
 #include <fuse/adventure/interaction.hpp>
 #include <fuse/adventure/inventory.hpp>
 #include <fuse/adventure/weapon_pickup_interactable.hpp>
+#include <fuse/adventure/weapon_runtime.hpp>
 #include <fuse/core/init.hpp>
 
 #include <cstdio>
@@ -40,6 +41,12 @@ int main() {
     expectTrue(inventory.hasInventory(fuse::adventure::ItemId("energy_cell")), "ammo granted");
     expectTrue(inventory.activeWeapon().name == "plasma_rifle", "weapon equipped on pickup");
     expectTrue(rifle.consumed(), "weapon pickup consumed");
+
+    fuse::adventure::WeaponRuntime weaponRuntime;
+    weaponRuntime.setAmmoType(fuse::adventure::ItemId("energy_cell"));
+    expectTrue(weaponRuntime.fire(inventory), "weapon runtime fires with ammo");
+    expectTrue(weaponRuntime.fireCount() == 1u, "weapon runtime fire counted");
+    expectTrue(inventory.getInventory(fuse::adventure::ItemId("energy_cell")) == 19u, "weapon runtime consumes ammo");
 
     fuse::adventure::ConversationBranch polite;
     polite.id = "polite";

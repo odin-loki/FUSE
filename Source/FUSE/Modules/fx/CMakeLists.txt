@@ -5,6 +5,7 @@ add_library(fuse_fx STATIC
     src/effect_timeline.cpp
     src/afx_template_pack.cpp
     src/afx_mission_hooks.cpp
+    src/afx_mission_loader.cpp
     src/afx_mission_script_vm.cpp
     src/fx_composer.cpp
     src/particle_pool.cpp
@@ -20,6 +21,7 @@ add_library(fuse_fx STATIC
     include/fuse/fx/effect_timeline.hpp
     include/fuse/fx/afx_template_pack.hpp
     include/fuse/fx/afx_mission_hooks.hpp
+    include/fuse/fx/afx_mission_loader.hpp
     include/fuse/fx/afx_mission_script_vm.hpp
     include/fuse/fx/fx_composer.hpp
     include/fuse/fx/fx_defs.hpp

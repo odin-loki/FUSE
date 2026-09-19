@@ -27,6 +27,19 @@ int main() {
     expectTrue(broadphaseProxyFiltersCollide(BroadphaseProxyFilter::Default, BroadphaseProxyFilter::Trigger),
                "default filter collides with trigger");
 
+    const fuse::mechanics::BroadphaseProxyGroupMask characterGroup =
+        fuse::mechanics::broadphaseProxyGroupMask(BroadphaseProxyFilter::Character);
+    const fuse::mechanics::BroadphaseProxyGroupMask triggerGroup =
+        fuse::mechanics::broadphaseProxyGroupMask(BroadphaseProxyFilter::Trigger);
+    expectTrue(fuse::mechanics::broadphaseProxyMasksCollide(characterGroup, triggerGroup, triggerGroup, characterGroup),
+               "btBroadphaseProxy-style group/mask collision accepts character vs trigger");
+    expectTrue(!fuse::mechanics::broadphaseProxyMasksCollide(
+                   fuse::mechanics::broadphaseProxyGroupMask(BroadphaseProxyFilter::StaticRigid),
+                   triggerGroup,
+                   triggerGroup,
+                   characterGroup),
+               "static rigid group/mask rejects trigger");
+
     if (g_failures == 0) {
         std::printf("fuse_mechanics_broadphase_proxy_filter: all checks passed\n");
         return EXIT_SUCCESS;

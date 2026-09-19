@@ -18,12 +18,14 @@ struct LocalTransform3D {
     float x = 0.f;
     float y = 0.f;
     float z = 0.f;
+    float yaw_deg = 0.f;
 };
 
 struct WorldTransform3D {
     float x = 0.f;
     float y = 0.f;
     float z = 0.f;
+    float yaw_deg = 0.f;
 };
 
 class Object;

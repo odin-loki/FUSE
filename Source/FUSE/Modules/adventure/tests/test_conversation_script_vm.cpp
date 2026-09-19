@@ -48,6 +48,8 @@ int main() {
     expectTrue(vm.dispatchBranch("outpost_guard", "polite", ctx, *guardIt->second),
                "conversation script VM dispatches polite branch");
     expectTrue(vm.dispatchCount() == 1u, "conversation VM dispatch counted");
+    expectTrue(vm.lastLineDispatched() == "Thank you, traveler. Proceed with caution.",
+               "conversation VM injects hook line");
 
     fuse::core::shutdown();
 

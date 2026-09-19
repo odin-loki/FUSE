@@ -2,6 +2,7 @@
 #include <fuse/ai/behavior_tree.hpp>
 #include <fuse/ai/uaisk_script_import.hpp>
 #include <fuse/ai/uaisk_cs_parser.hpp>
+#include <fuse/ai/uaisk_cs_codegen.hpp>
 #if __has_include(<fuse/ai/uaisk_script_host_bridge.hpp>)
 #include <fuse/ai/uaisk_script_host_bridge.hpp>
 #include <fuse/script/script_host.hpp>
@@ -323,6 +324,24 @@ void testUaiskScriptHostBridge() {
     expectTrue(bridge.importCount() >= 1u, "ScriptHost import count tracked");
     expectTrue(runtime.treeProfileCount() >= 2u, "ScriptHost import registers profile");
 #endif
+}
+
+void testUaiskCsCodegen() {
+    static const char* kCsText =
+        "class PatrolSquad {\n"
+        "  behaviorTree = \"patrol_squad.bt\";\n"
+        "}\n";
+
+    fuse::ai::BehaviorTree tree;
+    std::string error;
+    expectTrue(fuse::ai::uaisk::codegenTreeFromCs("aiBehaviors.cs", kCsText, tree, &error),
+               "UAISK codegen builds patrol squad tree");
+    expectTrue(tree.nodeCount() >= 7u, "UAISK codegen emits selector tree nodes");
+
+    fuse::ai::BehaviorRuntime runtime;
+    expectTrue(fuse::ai::uaisk::importCodegenProfile("aiBehaviors.cs", kCsText, 1, runtime, &error),
+               "UAISK codegen imports runtime profile");
+    expectTrue(runtime.treeProfileCount() == 1u, "UAISK codegen profile registered");
 }
 
 void testUaiskCsParser() {
@@ -1984,6 +2003,7 @@ int main() {
     testPerAgentTreeSelection();
     testUaiskScriptHostBridge();
     testUaiskCsParser();
+    testUaiskCsCodegen();
     testUaiskScriptImportProfile();
     testUaiskPatrolSquadTemplateLoad();
     testGuideBotMoveTowardLeaf();

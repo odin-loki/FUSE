@@ -13,6 +13,13 @@ enum class BroadphaseProxyFilter : u8 {
     Trigger = 4,
 };
 
+using BroadphaseProxyGroupMask = u8;
+
+[[nodiscard]] BroadphaseProxyGroupMask broadphaseProxyGroupMask(BroadphaseProxyFilter filter);
+[[nodiscard]] bool broadphaseProxyMasksCollide(BroadphaseProxyGroupMask groupA,
+                                               BroadphaseProxyGroupMask maskA,
+                                               BroadphaseProxyGroupMask groupB,
+                                               BroadphaseProxyGroupMask maskB);
 [[nodiscard]] bool broadphaseProxyFiltersCollide(BroadphaseProxyFilter a, BroadphaseProxyFilter b);
 
 } // namespace fuse::mechanics

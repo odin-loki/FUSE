@@ -7,6 +7,7 @@
 #include <fuse/fx/particle_pool.hpp>
 #include <fuse/fx/particle_pool_gpu.hpp>
 #include <fuse/fx/afx_mission_hooks.hpp>
+#include <fuse/fx/afx_mission_loader.hpp>
 #include <fuse/fx/afx_mission_script_vm.hpp>
 #include <fuse/fx/socket_constraint.hpp>
 #include <fuse/fx/fx_defs.hpp>
@@ -350,6 +351,22 @@ void testAfxMissionScriptVm() {
     expectTrue(vm.dispatchCount() == 1u, "mission VM dispatch counted");
 }
 
+void testAfxMissionLoaderFromMis() {
+    static const char* kMisText =
+        "new Scene(ExampleLevel) {\n"
+        "   function onSpellCast(%caster, %spell) {\n"
+        "   }\n"
+        "   function onAmbientFx() {\n"
+        "   }\n"
+        "};\n";
+
+    std::vector<fuse::fx::AfxMissionHook> hooks;
+    std::string error;
+    expectTrue(fuse::fx::load_afx_mission_hooks_from_mis(kMisText, hooks, &error), ".mis loader finds hooks");
+    expectTrue(hooks.size() >= 2u, ".mis loader returns spell and ambient hooks");
+    expectTrue(hooks[0].scriptHook == "on_spell_cast", ".mis loader maps onSpellCast");
+}
+
 void testAfxMissionScriptVmImpactHook() {
     fuse::fx::FxComposer composer;
     fuse::fx::AfxMissionScriptVm vm;
@@ -415,6 +432,7 @@ int main() {
     testParticlePoolGpuBackend();
     testAfxMissionHooks();
     testAfxMissionScriptVm();
+    testAfxMissionLoaderFromMis();
     testAfxMissionScriptVmImpactHook();
     testParticlePoolCudaSkipReason();
     testParticlePoolCudaSkip();

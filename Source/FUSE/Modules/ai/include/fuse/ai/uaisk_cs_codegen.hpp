@@ -1,0 +1,46 @@
+#pragma once
+
+#include <fuse/ai/behavior_tree.hpp>
+#include <fuse/ai/node_registry.hpp>
+#include <fuse/ai/uaisk_cs_parser.hpp>
+
+#include <string>
+#include <vector>
+
+namespace fuse::ai {
+class BehaviorRuntime;
+}
+
+namespace fuse::ai::uaisk {
+
+/// Lightweight AST distilled from `UaiskCsParseResult` for codegen passes.
+struct UaiskCsAst {
+    std::string moduleName;
+    std::string className;
+    std::string primaryRegistryTypeId;
+    std::vector<std::string> behaviorTreeHooks;
+};
+
+/// Build an AST view from parsed `.cs` metadata.
+[[nodiscard]] bool buildAstFromParse(const UaiskCsParseResult& parsed, UaiskCsAst& outAst);
+
+/// Emit `NodeLoadSpec` rows for a UAISK module (patrol squad / move-toward templates).
+[[nodiscard]] bool codegenSpecsForModule(const UaiskCsAst& ast,
+                                         std::vector<NodeLoadSpec>& outSpecs,
+                                         u32& outRootIndex,
+                                         std::string* errorOut = nullptr);
+
+/// Parse `.cs` text, codegen specs, and build a `BehaviorTree`.
+[[nodiscard]] bool codegenTreeFromCs(std::string_view csModule,
+                                     std::string_view csText,
+                                     BehaviorTree& outTree,
+                                     std::string* errorOut = nullptr);
+
+/// Import a codegen tree into a runtime profile slot.
+[[nodiscard]] bool importCodegenProfile(std::string_view csModule,
+                                        std::string_view csText,
+                                        u32 profileId,
+                                        BehaviorRuntime& runtime,
+                                        std::string* errorOut = nullptr);
+
+} // namespace fuse::ai::uaisk

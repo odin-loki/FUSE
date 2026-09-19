@@ -47,6 +47,7 @@ void VActorBridge::apply_unmount(const std::string& actor_id) {
             actorIt->second.object->setPosition(actorIt->second.baseX,
                                                 actorIt->second.baseY);
             actorIt->second.object->setZ(actorIt->second.baseZ);
+            actorIt->second.object->setYawDeg(0.f);
         }
     }
     ++m_unmountCount;
@@ -103,6 +104,7 @@ void VActorBridge::sync_bound_objects() {
         state.object->setPosition(state.baseX + state.offset.x + state.motionX,
                                   state.baseY + state.offset.y + state.motionY);
         state.object->setZ(state.baseZ + state.offset.z + state.motionZ);
+        state.object->setYawDeg(state.offset.yaw_deg);
     }
     ++m_syncCount;
 }

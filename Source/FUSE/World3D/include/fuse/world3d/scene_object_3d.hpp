@@ -17,11 +17,15 @@ public:
     float z() const { return m_z; }
     void setZ(float z) { m_z = z; }
 
+    float yawDeg() const { return m_yawDeg; }
+    void setYawDeg(float yawDeg) { m_yawDeg = yawDeg; }
+
     LocalTransform3D localTransform3D() const;
     WorldTransform3D worldTransform3D() const;
 
 private:
     float m_z = 0.f;
+    float m_yawDeg = 0.f;
 };
 
 } // namespace fuse
