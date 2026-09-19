@@ -2898,3 +2898,13 @@ void testChromeExportPreflightDisabledProfiler() {
     testChromeExportPreflightWithEvents();
     testChromeExportPreflightUnbalancedNesting();
     testChromeExportPreflightDisabledProfiler();
+
+// --- deepen additive from deepen-b16-profiler-export-preflights-d73d ---
+void testChromeTraceExportPreflightOnReset() {
+void testChromeTraceExportPreflightUnbalancedNesting() {
+               "tryFirstEvent copies scope name");
+    expectTrue(outEvent.phase == fuse::profiler::EventPhase::End, "tryLastEvent copies end phase");
+               "tryLastEvent copies scope name");
+    expectTrue(fuse::profiler::isValidProfileEvent(outEvent), "tryLastEvent output passes isValidProfileEvent");
+    testChromeTraceExportPreflightOnReset();
+    testChromeTraceExportPreflightUnbalancedNesting();
