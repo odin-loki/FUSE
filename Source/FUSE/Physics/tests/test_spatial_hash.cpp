@@ -3613,3 +3613,37 @@ void testPairBufferSlotInvalidatePreflightGuards() {
     expectTrue(!planePreflight.canInsert(), "2D shape-insert preflight rejects over-budget range");
     expectTrue(planePreflight.exceedsOccupancyBudget, "2D shape-insert preflight marks exceedsOccupancyBudget");
                                fuse::physics::broadphase::ShapeCellInsertRejectReason::ExceedsOccupancyBudget),
+
+// --- deepen additive from b4-broadphase-deepen-guards-fff1 ---
+void testPairBufferWriteRejectReasonGuards() {
+                 fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 0u, 0u, 1u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferWriteRejectReason::None),
+                 fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 0u, 1u, 1u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferWriteRejectReason::InvalidPair),
+    expectTrue(std::strcmp(fuse::physics::broadphase::pairBufferWriteRejectReasonName(
+                               fuse::physics::broadphase::PairBufferWriteRejectReason::OutOfRangeSlot),
+                 fuse::physics::broadphase::pairBufferWriteRejectReason(buffer, 2u, 0u, 1u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferWriteRejectReason::OutOfRangeSlot),
+    const fuse::physics::broadphase::PairBufferWritePreflight preflight =
+        fuse::physics::broadphase::preflightPairBufferWrite(buffer, 1u, 2u, 3u);
+void testPairBufferInvalidateRejectReasonGuards() {
+                 fuse::physics::broadphase::pairBufferInvalidateRejectReason(buffer, 0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateRejectReason::None),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateRejectReason::AlreadyInvalid),
+    expectTrue(fuse::physics::broadphase::pairBufferInvalidateRejectsForReason(
+                   buffer, 0u, fuse::physics::broadphase::PairBufferInvalidateRejectReason::AlreadyInvalid),
+                 fuse::physics::broadphase::pairBufferInvalidateRejectReason(buffer, 2u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateRejectReason::OutOfRangeSlot),
+    const fuse::physics::broadphase::PairBufferInvalidatePreflight preflight =
+        fuse::physics::broadphase::preflightPairBufferInvalidate(buffer, 1u);
+                 fuse::physics::broadphase::cellPairGenRejectReason(duplicateSingle)),
+void testCellCapacityInsertRejectReasonGuards() {
+    expectEq(static_cast<fuse::u32>(fuse::physics::broadphase::cellCapacityInsertRejectReason(
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellCapacityInsertRejectReason::OutOfRangeBody),
+             static_cast<fuse::u32>(fuse::physics::broadphase::CellCapacityInsertRejectReason::ExceedsOccupancy),
+                               fuse::physics::broadphase::CellCapacityInsertRejectReason::ExceedsOccupancy),
+    const fuse::physics::broadphase::CellCapacityInsertPreflight preflight =
+        fuse::physics::broadphase::preflightCellCapacityInsert(0u, 2u, validRange, 8u);
+    testPairBufferWriteRejectReasonGuards();
+    testPairBufferInvalidateRejectReasonGuards();
+    testCellCapacityInsertRejectReasonGuards();

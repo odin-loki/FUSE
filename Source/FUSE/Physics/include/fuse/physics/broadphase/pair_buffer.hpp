@@ -569,3 +569,21 @@ struct PairBufferSlotInvalidatePreflight {
     PairBufferSlotInvalidateRejectReason reason = PairBufferSlotInvalidateRejectReason::None;
     bool canInvalidate() const { return reason == PairBufferSlotInvalidateRejectReason::None; }
 PairBufferSlotInvalidatePreflight preflightPairBufferSlotInvalidate(const PairBufferSoA& buffer, u32 slot);
+
+// --- deepen additive from b4-broadphase-deepen-guards-fff1 ---
+enum class PairBufferWriteRejectReason : u8 {
+const char* pairBufferWriteRejectReasonName(PairBufferWriteRejectReason reason);
+PairBufferWriteRejectReason pairBufferWriteRejectReason(
+    PairBufferWriteRejectReason expected);
+struct PairBufferWritePreflight {
+    PairBufferWriteRejectReason reason = PairBufferWriteRejectReason::None;
+    bool canWrite() const { return reason == PairBufferWriteRejectReason::None; }
+PairBufferWritePreflight preflightPairBufferWrite(
+enum class PairBufferInvalidateRejectReason : u8 {
+const char* pairBufferInvalidateRejectReasonName(PairBufferInvalidateRejectReason reason);
+PairBufferInvalidateRejectReason pairBufferInvalidateRejectReason(const PairBufferSoA& buffer, u32 slot);
+    PairBufferInvalidateRejectReason expected);
+struct PairBufferInvalidatePreflight {
+    PairBufferInvalidateRejectReason reason = PairBufferInvalidateRejectReason::None;
+    bool canInvalidate() const { return reason == PairBufferInvalidateRejectReason::None; }
+PairBufferInvalidatePreflight preflightPairBufferInvalidate(const PairBufferSoA& buffer, u32 slot);

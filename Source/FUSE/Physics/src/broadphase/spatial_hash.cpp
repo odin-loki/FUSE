@@ -1436,3 +1436,12 @@ CellCapacityInsertPreflight preflightCellCapacityInsert(
     preflight.exceedsOccupancyBudget = preflight.reason == ShapeCellInsertRejectReason::ExceedsOccupancyBudget;
     return !preflightShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert();
     return preflightShapeCellInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert();
+
+// --- deepen additive from b4-broadphase-deepen-guards-fff1 ---
+    case CellCapacityInsertRejectReason::ExceedsOccupancy:
+        return CellCapacityInsertRejectReason::ExceedsOccupancy;
+    return cellCapacityInsertRejectReason(bodyIndex, bodyCount, range, maxOccupancy) == expected;
+    preflight.reason = cellCapacityInsertRejectReason(bodyIndex, bodyCount, range, maxOccupancy);
+    preflight.exceedsOccupancy = preflight.reason == CellCapacityInsertRejectReason::ExceedsOccupancy;
+    return !preflightCellCapacityInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert();
+    return preflightCellCapacityInsert(bodyIndex, bodyCount, range, maxOccupancy).canInsert();
