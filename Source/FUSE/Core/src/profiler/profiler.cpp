@@ -2121,6 +2121,7 @@ ProfileRecordSkipReason diagnoseProfileRecordSkipReason(const char* name) {
 
     outReason = diagnoseEventNameRejectReason(name);
     return outReason == EventNameRejectReason::None;
+EventNameRejectReason classifyEventNameReject(const char* name) {
 
 const char* eventNameRejectReasonLabel(EventNameRejectReason reason) {
     switch (reason) {
@@ -2374,7 +2375,21 @@ InvalidEventNameReason classifyEventName(const char* name) {
     return classifyEventName(name) == InvalidEventNameReason::Empty;
     }
 
-} // namespace
+    case EventNameRejectReason::ProfilerDisabled:
+
+EventNamePreflight preflightEventName(const char* name) {
+    EventNamePreflight preflight{};
+    preflight.reason = classifyEventNameReject(name);
+    preflight.valid = preflight.reason == EventNameRejectReason::None;
+    preflight.skipped = !enabled() || !preflight.valid;
+    if (!enabled() && preflight.valid) {
+        preflight.reason = EventNameRejectReason::ProfilerDisabled;
+    return preflight;
+
+bool tryPreflightEventName(const char* name, EventNameRejectReason& reason) {
+    const EventNamePreflight preflight = preflightEventName(name);
+    reason = preflight.reason;
+    return preflight.canRecord();
 
 bool isValidProfileEvent(const ProfileEvent& event) {
     return tryValidateEventName(event.name, reason);
@@ -5845,6 +5860,29 @@ bool tryLastEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+u32 findFirstFlowStartIndexById(u32 flowId) {
+        if (event.phase == EventPhase::FlowStart && event.scopeId == flowId
+            && isValidEventName(event.name)) {
+
+u32 findLastFlowFinishIndexById(u32 flowId) {
+        if (event.phase == EventPhase::FlowFinish && event.scopeId == flowId
+
+
+
+
+
+bool tryFindFirstFlowStartById(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findFirstFlowStartIndexById(flowId);
+
+
+bool tryFindLastFlowFinishById(u32 flowId, ProfileEvent& outEvent) {
+    const u32 index = findLastFlowFinishIndexById(flowId);
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -6558,28 +6596,19 @@ u32 ringOverflowEventCount() {
 
 bool hasRingOverflowEvents() {
     return ringOverflowEventCount() > 0u;
-    return preflight;
-}
-
-
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
-
-
-NestingStatePreflight preflightNestingState() {
-    NestingStatePreflight preflight{};
-    preflight.activeScopeNestingDepth = scopeNestingDepth();
-    preflight.activeFlowNestingDepth = flowNestingDepth();
-    preflight.openAsyncFlowCount = openAsyncFlowCount();
-    preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
-    preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
-    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
-    preflight.flowDepthDetached = isFlowDepthDetached();
-    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
 
 
 
 
+
+
+
+
+
+
+    AsyncFlowPreflight preflight = preflightAsyncFlow();
+    if (!isValidEventName(name) || preflight.profilerDisabled || preflight.openFlowCount == 0u) {
+        preflight.balanced = false;
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
     ChromeTraceExportPreflight preflight{};
@@ -6699,6 +6728,10 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
     preflight.ringWriteHead = ringWriteHead();
     preflight.ringOverflowEventCount = ringOverflowEventCount();
     preflight.hasRingOverflowEvents = hasRingOverflowEvents();
+    preflight.scopeNesting = preflightScopeNesting();
+    preflight.asyncFlow = preflightAsyncFlow();
+    preflight.hasResolvableNamedEvents = preflight.exportableEventCount > 0u;
+    preflight.wouldSkipInvalidNameExport = preflight.hasInvalidNameEvents;
     return preflight;
 
 ProfileScopePreflight preflightProfileScope(const char* name) {
@@ -7522,6 +7555,22 @@ bool wouldSkipChromeTraceExport() {
 
 bool wouldSkipChromeTraceExportSafely() {
     return preflightChromeTraceExport().wouldSkipSafeExport();
+}
+
+bool wouldSkipProfileScope(const char* name) {
+    return !enabled() || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name) {
+    return !enabled() || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowEnd(const char* name) {
+    return !enabled() || !isValidEventName(name) || openAsyncFlowCount() == 0u;
+}
+
+bool wouldSkipCounter(const char* name) {
+    return !enabled() || !isValidEventName(name);
 }
 
 void reset() {
