@@ -1577,6 +1577,7 @@ bool wouldSkipTrilinearProbeSample(const DDGIDesc& desc,
                                        const fuse::math::Vec3& world_position,
 /// Early-out when directional trilinear sample preflight would reject.
                                        ProbeTrilinearSampleRejectReason* reason = nullptr);
+bool preflightTrilinearProbeSample(const DDGIDesc& desc,
 /// Read irradiance at a probe index with guard preflight; returns false when lookup would be rejected.
 bool tryReadIrradianceAtIndex(const DDGIDesc& desc,
                               u32 probe_index,
@@ -1709,6 +1710,7 @@ bool tryReadIrradianceAtCoord(const DDGIDesc& desc,
 /// Early-out when cache-index lookup at a grid coord would be rejected — includes null-cache check.
                                CacheIndexRejectReason* reason = nullptr);
 /// Early-out when coord-based cache lookup would be rejected — same ordering as `tryCanLookupAtCoord`.
+                                      u32 cache_count);
 /// Classify why cache-index preflight would reject — same ordering as `tryValidateCacheIndex`.
 CacheIndexRejectReason classifyCacheIndexReject(const DDGIDesc& desc,
 /// Non-mutating cache-index preflight — returns true when lookup would proceed.
