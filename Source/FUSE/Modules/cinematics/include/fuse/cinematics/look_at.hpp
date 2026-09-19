@@ -118,5 +118,7 @@ bool look_at_resolver_can_resolve_target(const LookAtResolver& resolver, const s
 
                               float default_look_distance = 10.f);
 
+/// True when `resolver` is wired and can resolve `target_id`.
+bool look_at_resolver_has_target(const LookAtResolver& resolver, const std::string& target_id);
 
 } // namespace fuse::cinematics
