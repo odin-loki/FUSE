@@ -1678,6 +1678,14 @@ bool CookCache::would_invalidate_downstream_of(const std::string& output_path,
     return count_downstream_of(output_path, edges, jobs) != 0;
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) != 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) != 0;
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
 
@@ -2402,6 +2410,7 @@ std::vector<std::string> CookCache::probe_stale_upstream_sources_dedup(
     if (probed.empty()) {
     const std::vector<std::string> per_entry = probe_stale_upstream_sources(source_upstream_by_path);
     if (per_entry.empty()) {
+    if (m_entries.empty() || source_upstream_by_path.empty()) {
         return {};
     }
 
@@ -2599,6 +2608,9 @@ std::vector<std::string> CookCache::probe_stale_upstream_source_paths(
         for (const std::string& recorded : stale_paths) {
             stale_paths.push_back(source_path);
     return stale_paths;
+        }
+
+
 
 namespace {
 
@@ -3755,8 +3767,11 @@ CookHashPreflight CookCache::preflight_store_entry(const CookCacheEntry& entry) 
         preflight.reason = CookHashRejectReason::SourceUnreadable;
         return preflight;
     default:
-        preflight.reason = CookHashRejectReason::SourceUnreadable;
     }
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        preflight.can_hash = true;
+        preflight.reason = CookHashRejectReason::None;
 }
 
 void CookCache::clear() {

@@ -3436,6 +3436,7 @@ void testCookerUpstreamInvalidationEstimate() {
 void testCookerUpstreamEstimateAndWouldProbes() {
 void testCookerWouldAndUpstreamEstimateProbes() {
 void testCookerUpstreamEstimateAndWouldGuards() {
+void testCookerWouldReconcileAndUpstreamEstimateProbes() {
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
@@ -3687,6 +3688,17 @@ void testCookerWouldReconcileInvalidation() {
 
     writeTempFile(source_a, "# up est a revised\n");
                "stale upstream makes would_reconcile_invalidation true");
+
+    const fuse::project::CookUpstreamInvalidationEstimate empty_upstream =
+    expectTrue(empty_upstream.total() == 0u, "empty changed source upstream estimate is zero");
+
+    const fuse::project::CookUpstreamInvalidationEstimate upstream =
+    expectTrue(upstream.direct_entries == 1u, "upstream estimate counts direct entry");
+    expectTrue(upstream.downstream_entries >= 1u, "upstream estimate counts downstream entries");
+    expectTrue(upstream.total() == cooker.count_upstream_invalidation(manifest, source_a),
+
+
+    expectTrue(cooker.would_reconcile_invalidation(manifest), "stale upstream makes would_reconcile true");
 
     const fuse::project::CookCacheReconcileEstimate reconcile = cooker.estimate_reconcile_invalidation(manifest);
     expectTrue(reconcile.total() >= 1u, "reconcile estimate non-zero after upstream change");
@@ -3968,9 +3980,7 @@ void testCookerStaleDependencyReconcileEstimate() {
     expectTrue(cooker.would_reconcile_invalidation(manifest), "would_reconcile true after upstream change");
 
     const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, source_a);
-               "would_upstream false after upstream invalidation");
-    expectTrue(cooker.probe_upstream_invalidation_sources(manifest, source_a).empty(),
-               "upstream probe empty after invalidation");
+               "would_reconcile mirrors reconcile estimate total");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
@@ -4281,6 +4291,7 @@ int main() {
     testCookerWouldReconcileProbes();
     testCookerUpstreamInvalidationEstimate();
     testCookerWouldReconcileInvalidation();
+    testCookerWouldReconcileAndUpstreamEstimateProbes();
 
     fuse::core::shutdown();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

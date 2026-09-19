@@ -873,6 +873,7 @@ public:
     /// Read-only store preflight — mirrors `store` guards without mutating stats (B7.9 deepen).
     [[nodiscard]] CookHashPreflight preflight_cache_entry(const CookCacheEntry& entry) const;
     /// Read-only store preflight — mirrors `store` structural and source-readability guards (B7.9 deepen).
+    /// Read-only store preflight — mirrors `store` guards plus source readability (B7.9 deepen).
     [[nodiscard]] CookHashPreflight preflight_store_entry(const CookCacheEntry& entry) const;
 
     void clear();

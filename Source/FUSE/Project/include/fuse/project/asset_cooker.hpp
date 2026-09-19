@@ -14,6 +14,10 @@ struct CookCacheUpstreamInvalidationEstimate {
     u32 downstream_entries = 0;
 
     [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
+struct CookUpstreamInvalidationEstimate {
+    u32 direct_entries = 0;
+
+    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
 };
 
 /// Read-only reconcile planning breakdown for cache + dependency invalidation (B7.9 deepen).
