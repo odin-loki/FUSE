@@ -796,6 +796,9 @@ CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry) 
     if (entry.kind == CookAssetKind::Shader) {
         return preflight_shader_manifest_hash(entry);
 
+    }
+
+    CookHashPreflight preflight;
     if (entry.source_path.empty()) {
     if (entry.output_path.empty()) {
     return preflight_file_content_hash(entry.source_path);
@@ -806,6 +809,18 @@ CookHashPreflight preflight_shader_manifest_hash(const CookManifestEntry& entry)
         preflight.reason = CookHashRejectReason::None;
     (void)entry;
     preflight.reason = CookHashRejectReason::UnsupportedKind;
+
+CookHashPreflight preflight_shader_manifest_hash(const CookManifestEntry& entry) {
+    CookHashPreflight preflight;
+    if (entry.kind != CookAssetKind::Shader) {
+        preflight.can_hash = true;
+        preflight.reason = CookHashRejectReason::None;
+        return preflight;
+    }
+    (void)entry;
+    preflight.reason = CookHashRejectReason::UnsupportedKind;
+    return preflight;
+}
 
 CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::string>& dependency_output_paths,
                                                      const CookManifest& manifest) {
@@ -819,6 +834,7 @@ CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::st
 
         if (dependency_output.empty()) {
             continue;
+        }
         bool found = false;
         for (const CookManifestEntry& asset : manifest.assets) {
             if (asset.output_path == dependency_output) {
@@ -828,6 +844,9 @@ CookHashPreflight preflight_upstream_dependencies_hash(const std::vector<std::st
                     return source_preflight;
         if (!found) {
             preflight.reason = CookHashRejectReason::UnknownDependency;
+                }
+                break;
+            return preflight;
 
     preflight.can_hash = true;
     preflight.reason = CookHashRejectReason::None;

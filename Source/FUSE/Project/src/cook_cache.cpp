@@ -240,6 +240,16 @@ const char* cookCacheEntryRejectReasonLabel(CookCacheEntryRejectReason reason) {
         preflight.reason = CookCacheEntryRejectReason::EmptyOutputPath;
 
     preflight.reason = CookCacheEntryRejectReason::None;
+    }
+
+CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
+    CookCacheEntryPreflight preflight;
+    if (!is_valid_cook_cache_key(entry.content_hash)) {
+        return preflight;
+    if (!is_valid_cook_cache_path(entry.source_path)) {
+    if (!is_valid_cook_cache_path(entry.output_path)) {
+
+    preflight.can_store = true;
 }
 
 CookCacheEntry* CookCache::find_entry_(u64 content_hash) {
@@ -1739,6 +1749,18 @@ bool CookCache::would_invalidate_all() const {
     return !m_entries.empty();
 }
 
+bool CookCache::would_invalidate_source(const std::string& source_path) const {
+    return count_by_source(source_path) != 0;
+}
+
+bool CookCache::would_invalidate_output(const std::string& output_path) const {
+    return count_by_output(output_path) != 0;
+}
+
+bool CookCache::would_invalidate_all() const {
+    return !m_entries.empty();
+}
+
 u32 CookCache::count_by_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
 
@@ -2678,12 +2700,24 @@ u32 CookCache::count_reconcile_overlap_entries(
             ++overlap;
     return overlap;
 
+
+
+
+
+
 bool CookCache::probe_stale_content_for_source(const std::string& source_path) const {
     if (!is_valid_cook_cache_path(source_path) || m_entries.empty()) {
         return false;
 
         if (entry.source_path != source_path) {
             return true;
+    }
+
+    for (const CookCacheEntry& entry : m_entries) {
+            continue;
+        if (!is_valid_cook_cache_entry(entry)) {
+        if (is_stale_cache_entry_(entry)) {
+    return false;
 
 namespace {
 

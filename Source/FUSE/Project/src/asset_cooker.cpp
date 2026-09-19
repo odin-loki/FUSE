@@ -1225,10 +1225,17 @@ CookStaleDependencyEstimate AssetCooker::estimate_stale_dependency_reconcile(con
             sources.push_back(stale_content);
 
 
+
+
+
 bool AssetCooker::would_upstream_invalidation(const CookManifest& manifest,
                                               const std::string& changed_source) const {
     return count_upstream_invalidation(manifest, changed_source) != 0;
 
+}
+
+bool AssetCooker::would_stale_dependency_invalidation(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) != 0;
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

@@ -4046,11 +4046,14 @@ void testCookerStaleDependencyReconcileEstimate() {
 
                "would_stale_dependency true after upstream source change");
 
+
+
     expectTrue(estimate.stale_dependency_entries >= 1u, "stale dependency entries in reconcile estimate");
     expectTrue(estimate.unique_total() <= estimate.total(), "unique total never exceeds raw total");
 
     const std::vector<std::string> reconcile_sources = cooker.probe_reconcile_sources(manifest);
     expectTrue(!reconcile_sources.empty(), "reconcile source probe non-empty after upstream change");
+    expectTrue(cooker.would_upstream_invalidation(manifest, source_a),
                "would_upstream true for changed upstream source");
 }
 

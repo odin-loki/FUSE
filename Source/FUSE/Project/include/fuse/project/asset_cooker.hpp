@@ -146,6 +146,11 @@ struct CookStaleDependencyEstimate {
         const u32 sum = total();
         return sum > overlapping_entries ? sum - overlapping_entries : 0;
     }
+
+    [[nodiscard]] u32 unique_total() const {
+        const u32 sum = total();
+        return sum > overlapping_entries ? sum - overlapping_entries : 0;
+    }
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).

@@ -442,6 +442,15 @@ enum class CookCacheEntryRejectReason : u8 {
     CookCacheEntryRejectReason reason = CookCacheEntryRejectReason::None;
 
 
+};
+
+/// Read-only store preflight — mirrors `is_valid_cook_cache_entry` with reject reasons (B7.9 deepen).
+struct CookCacheEntryPreflight {
+    bool can_store = false;
+
+    [[nodiscard]] bool ok() const { return can_store; }
+
+[[nodiscard]] CookCacheEntryPreflight preflight_cook_cache_entry(const CookCacheEntry& entry);
 const char* cookCacheEntryRejectReasonLabel(CookCacheEntryRejectReason reason);
 
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
