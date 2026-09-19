@@ -7597,6 +7597,7 @@ void testSnapDragRejectReasonGuards() {
 
     snap.translateSnap = true;
 
+
     expectTrue(!fuse::editor::tryPreflightSnapDrag(0.37f, fuse::editor::GizmoMode::Translate, snap,
                                                    reason),
                "tryPreflightSnapDrag rejects invalid step");
@@ -7629,7 +7630,6 @@ void testSnapDragRejectReasonGuards() {
 
                "tryPreflightSnapDrag accepts valid delta and snap after reset");
                "valid snap-drag reject reason is None after reset");
-                                                  reason),
                "valid snap-drag reject reason is None");
     expectTrue(fuse::editor::shouldSkipSnapDrag(std::numeric_limits<fuse::f32>::infinity(),
                                                 fuse::editor::GizmoMode::Translate, snap),
