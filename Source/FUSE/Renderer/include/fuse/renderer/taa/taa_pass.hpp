@@ -395,6 +395,10 @@ public:
     /// Pass NDC jitter preflight with mandatory reject-reason output (B5.9 deepen).
     /// Sync jitter when preflight passes; returns false when blocked (B5.9 deepen).
     bool trySyncJitterToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReason& reason);
+    /// Jitter sync preflight with mandatory reject-reason output (B5.9 deepen).
+    bool tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const;
+    /// Classify why pass jitter sync would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterSyncReject() const;
     /// Early-out when pass jitter sync preflight would reject (B5.9 deepen).
     bool shouldSkipJitterSync(u32 frameIndex) const;
     /// Sync jitter only when the sequence is valid; returns false when blocked (B5.9 deepen).
@@ -481,6 +485,8 @@ public:
     TaaJitterGuardRejectReason classifyJitterAdvanceReject() const;
     /// Jitter NDC preflight with mandatory reject-reason output (B5.9 deepen).
     bool tryPreflightJitterNdc(TaaJitterGuardRejectReason& reason) const;
+    /// Classify why pass NDC jitter would be rejected (B5.9 deepen).
+    TaaJitterGuardRejectReason classifyJitterNdcReject() const;
     /// Early-out when pass history still needs warm-up (B5.9 deepen).
     bool shouldSkipHistoryWarmup() const;
     /// True when pass history warm-up is complete (B5.9 deepen).
