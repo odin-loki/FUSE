@@ -313,6 +313,7 @@ enum class ProbeSampleCoordsRejectReason : u8 {
     NotSampleableGrid,
     InvalidSpacing,
     NotSampleable,
+    NonSampleableGrid,
     OutOfRangeIndices,
     OutOfRangeWeights,
     UnorderedCorners,
@@ -928,6 +929,7 @@ bool wouldClampCacheIndex(const DDGIDesc& desc, u32 probe_index, u32 cache_count
 /// Combined probe-index + cache pointer guard for cache lookups.
 bool isCacheIndexValid(const DDGIDesc& desc,
 /// Diagnose why cache-index preflight would reject, including null-cache check.
+bool tryValidateCacheIndex(const DDGIDesc& desc,
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
     /// True when `probe_index` is out of range for the grid or exceeds `cache_count`.
     bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
@@ -1023,6 +1025,8 @@ ProbeScheduleRejectReason classifyProbeScheduleReject(u32 probe_count,
 /// Preflight guard before probe scheduling; false on null outputs or zero capacity.
 bool canScheduleProbeUpdates(u32 probe_count, u32 max_indices, const u32* out_indices, const u32* out_count);
 bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, const u32* out_count);
+/// Early-out when probe-update scheduling would be rejected.
+/// Diagnose why probe-update scheduling preflight would reject; vacuously succeeds when schedulable.
 bool tryScheduleProbeUpdates(u32 frame_index,
                              u32 probe_count,
                              u32 probes_per_frame,

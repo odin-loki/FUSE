@@ -81,6 +81,7 @@ enum class ProbeKernelResourceRejectReason : u8 {
     NullDepthAtlas,
     NullPrevIrradianceSurface,
     NullOutRadianceSurface,
+    NullBlendSurfaces,
 };
 
 /// Human-readable label for probe-kernel reject reasons (logging / tests).
@@ -220,7 +221,6 @@ bool preflightProbeKernelParams(const DDGIKernelParams& params, ProbeKernelRejec
 ProbeKernelRejectReason classifyProbeKernelReject(const DDGIKernelParams& params);
 /// Early-out when probe trace kernel launch preflight would reject.
 /// Early-out when probe blend kernel launch preflight would reject.
-bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
 
 /// True when all GPU resource pointers required for probe trace are populated.
 bool hasProbeTraceGpuResources(const DDGIKernelParams& params);
@@ -235,13 +235,11 @@ bool tryCanLaunchProbeTraceKernelWithResources(const DDGIKernelParams& params,
                                                ProbeKernelResourceRejectReason& outResourceReason);
 /// Combined launch + resource preflight for full CUDA probe blend.
 bool tryCanLaunchProbeBlendKernelWithResources(const DDGIKernelParams& params,
-                                               ProbeKernelRejectReason& outLaunchReason,
-                                               ProbeKernelResourceRejectReason& outResourceReason);
 
-/// Early-out when probe trace launch would be rejected — same ordering as `canLaunchProbeTraceKernel`.
-bool wouldSkipProbeTraceKernel(const DDGIKernelParams& params);
-/// Early-out when probe blend launch would be rejected — same ordering as `canLaunchProbeBlendKernel`.
-bool wouldSkipProbeBlendKernel(const DDGIKernelParams& params);
+/// True when required blend-kernel output surfaces are bound (additive CUDA-path preflight).
+bool hasProbeBlendKernelSurfaces(const DDGIKernelParams& params);
+/// Diagnose missing blend-kernel surfaces without affecting stub launch paths.
+bool tryValidateProbeBlendKernelSurfaces(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);
