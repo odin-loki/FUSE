@@ -2682,3 +2682,9 @@ void testHrtfAttenuationCouplingRejectReasonWrappers() {
     testHrtfIrRejectReasonWrappers();
     testHrtfPanPathRejectReasonWrappers();
     testHrtfAttenuationCouplingRejectReasonWrappers();
+
+// --- deepen additive from binaural-hrtf-reject-reason-wrappers-cdb8 ---
+    expectTrue(fuse::audio::should_skip_hrtf_pan_path_preflight(false, empty, offset),
+void testHrtfBinauralRejectReasonMirrorsExistingPreflights() {
+               "preflight_hrtf_ir_ready mirrors should_skip_hrtf_convolution inverse");
+    testHrtfBinauralRejectReasonMirrorsExistingPreflights();

@@ -2303,3 +2303,6 @@ bool try_preflight_hrtf_binaural_narrow(const HrtfBinauralPreflight& preflight,
     const HrtfPanPathRejectReason spatial_reject = classify_hrtf_pan_path_spatial_reject(preflight);
 bool try_preflight_hrtf_pan_path_spatial(bool hrtf_enabled, const HrtfIrStub& ir,
 bool try_preflight_hrtf_pan_path_spatial(bool hrtf_enabled, const Vec3& rel_listener,
+
+// --- deepen additive from binaural-hrtf-reject-reason-wrappers-cdb8 ---
+    const HrtfBinauralRejectReason pan_reject = classify_hrtf_binaural_reject(preflight);
