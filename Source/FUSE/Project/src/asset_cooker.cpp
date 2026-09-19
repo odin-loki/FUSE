@@ -241,6 +241,47 @@ u32 AssetCooker::count_stale_dependency_invalidation(const CookManifest& manifes
     return count;
 }
 
+u32 AssetCooker::count_stale_content_invalidation(const CookManifest& manifest) const {
+    if (manifest.assets.empty()) {
+        return 0;
+    }
+
+    u32 count = m_cache.count_stale_entries();
+    const std::vector<std::string> stale_sources = m_cache.probe_stale_content_sources();
+    if (stale_sources.empty()) {
+        return count;
+    }
+
+    CookJobGraph graph;
+    graph.build_from_manifest(manifest);
+
+    for (const std::string& stale_source : stale_sources) {
+        for (const CookJob& job : graph.jobs()) {
+            if (job.source_path == stale_source) {
+                count += m_cache.count_downstream_of(job.output_path, graph.edges(), graph.jobs());
+                break;
+            }
+        }
+    }
+    return count;
+}
+
+u32 AssetCooker::estimate_reconcile_removals(const CookManifest& manifest) const {
+    if (manifest.assets.empty()) {
+        return 0;
+    }
+
+    const u32 stale_content = count_stale_content_invalidation(manifest);
+    const u32 stale_dependencies = count_stale_dependency_invalidation(manifest);
+    if (stale_content == 0) {
+        return stale_dependencies;
+    }
+    if (stale_dependencies == 0) {
+        return stale_content;
+    }
+    return stale_content + stale_dependencies;
+}
+
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
