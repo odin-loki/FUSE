@@ -3221,6 +3221,16 @@ bool tryFindLastFlowEvent(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+
+
+
+
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -4549,6 +4559,16 @@ bool eventNameMatches(const char* eventName, const char* searchName) {
 
 
 
+
+
+
+
+
+        if (isValidEventName(event.name) && event.scopeId == flowId
+            && (event.phase == EventPhase::FlowStart || event.phase == EventPhase::FlowFinish)) {
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -5364,6 +5384,72 @@ bool wouldSkipEndAsyncFlow(const char* name, u32 flowId) {
 
 bool wouldSkipCounterSample(const char* track) {
     return !enabled() || !isValidEventName(track);
+}
+
+ProfileScopePreflight preflightProfileScope(const char* name) {
+    ProfileScopePreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canEnter = !preflight.profilerDisabled && !preflight.invalidName;
+    return preflight;
+}
+
+AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowBeginPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.canBegin = !preflight.profilerDisabled && !preflight.invalidName;
+    return preflight;
+}
+
+AsyncFlowEndPreflight preflightEndAsyncFlow(const char* name, u32 /*flowId*/) {
+    AsyncFlowEndPreflight preflight{};
+    preflight.profilerDisabled = !enabled();
+    preflight.invalidName = !isValidEventName(name);
+    preflight.wouldUnderflowOpenCount = openAsyncFlowCount() == 0u;
+    preflight.canEnd = !preflight.profilerDisabled && !preflight.invalidName
+        && !preflight.wouldUnderflowOpenCount;
+    return preflight;
+}
+
+ScopeNestingPreflight preflightScopeNesting() {
+    ScopeNestingPreflight preflight{};
+    preflight.activeDepth = scopeNestingDepth();
+    preflight.maxDepth = maxNestingDepth();
+    preflight.balanced = isScopeNestingBalanced();
+    return preflight;
+}
+
+AsyncFlowNestingPreflight preflightAsyncFlowNesting() {
+    AsyncFlowNestingPreflight preflight{};
+    preflight.activeFlowDepth = flowNestingDepth();
+    preflight.maxFlowDepth = maxFlowNestingDepth();
+    preflight.openFlowCount = openAsyncFlowCount();
+    preflight.balanced = isFlowNestingBalanced();
+    preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.crossThreadHandoffPending = isCrossThreadFlowHandoffPending();
+    preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    return preflight;
+}
+
+bool wouldSkipProfileScope(const char* name) {
+    return !preflightProfileScope(name).canEnter;
+}
+
+bool wouldSkipBeginAsyncFlow(const char* name) {
+    return !preflightBeginAsyncFlow(name, 0u).canBegin;
+}
+
+bool wouldSkipEndAsyncFlow(const char* name) {
+    return !preflightEndAsyncFlow(name, 0u).canEnd;
+}
+
+bool wouldSkipCounter(const char* track) {
+    return !enabled() || !isValidEventName(track);
+}
+
+bool wouldSkipCounterSnapshotAtFrame(const char* track) {
+    return wouldSkipCounter(track);
 }
 
 void reset() {

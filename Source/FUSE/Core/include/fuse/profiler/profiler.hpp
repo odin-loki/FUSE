@@ -794,6 +794,13 @@ struct NestingStatePreflight {
     bool hasPendingHandoff() const { return crossThreadFlowHandoffPending; }
 
 
+
+
+
+
+/// Read-only async-flow nesting diagnostics — safe to call before flow begin/end.
+struct AsyncFlowNestingPreflight {
+    u32 activeFlowDepth = 0;
 };
 
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
@@ -1117,6 +1124,8 @@ bool canSampleCounter(const char* track);
 bool isWhitespaceOnlyEventName(const char* name);
 bool isFlowEventPhase(EventPhase phase);
 bool eventMatchesName(const ProfileEvent& event, const char* name);
+/// True for null, empty, or whitespace-only names — does not affect recording guards.
+bool isBlankEventName(const char* name);
 bool isValidProfileEvent(const ProfileEvent& event);
 bool isProfileEventSentinel(const ProfileEvent& event);
 bool isFlowPhaseEvent(const ProfileEvent& event);
@@ -1510,13 +1519,17 @@ bool wouldSkipBeginAsyncFlow(const char* name, u32 flowId);
 bool wouldSkipEndAsyncFlow(const char* name, u32 flowId);
 bool wouldSkipCounterSample(const char* track);
 
-bool wouldSkipProfileScope(const char* name);
 bool wouldSkipAsyncFlowBegin(const char* name);
 bool wouldSkipAsyncFlowEnd(const char* name);
-bool wouldSkipCounterSample(const char* track);
 bool wouldSkipCounterFloatSample(const char* track);
 bool wouldSkipCounterSnapshotAtFrame(const char* track);
 bool wouldSkipCounterFloatSnapshotAtFrame(const char* track);
+AsyncFlowNestingPreflight preflightAsyncFlowNesting();
+
+/// Non-mutating recording predicates — same guards as scope/flow/counter entry points.
+bool wouldSkipBeginAsyncFlow(const char* name);
+bool wouldSkipEndAsyncFlow(const char* name);
+bool wouldSkipCounter(const char* track);
 
 /// Monotonic flow id for async chrome://tracing `ph:"s"` / `ph:"f"` pairs (e.g. job load id).
 u32 nextFlowId();
