@@ -897,6 +897,43 @@ FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange2& range, co
     return preflightCellOccupancyForParams(range, params).canIterate();
 }
 
+/// Shape cell-insertion preflight — occupancy gate for `populateShapeCells` (B4.2 deepen pass).
+struct ShapeCellInsertionPreflight {
+    CellOccupancyPreflight occupancy{};
+
+    bool canInsert() const { return occupancy.canIterate(); }
+};
+
+FUSE_PHYSICS_INLINE ShapeCellInsertionPreflight preflightShapeCellInsertion(const CellRange3& range, u32 maxCells) {
+    ShapeCellInsertionPreflight preflight{};
+    preflight.occupancy = preflightCellOccupancy(range, maxCells);
+    return preflight;
+}
+
+FUSE_PHYSICS_INLINE ShapeCellInsertionPreflight preflightShapeCellInsertion(const CellRange2& range, u32 maxCells) {
+    ShapeCellInsertionPreflight preflight{};
+    preflight.occupancy = preflightCellOccupancy(range, maxCells);
+    return preflight;
+}
+
+/// Non-mutating shape cell-insertion predicate — mirrors `populateShapeCells` occupancy gate (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange3& range, u32 maxCells) {
+    return preflightShapeCellInsertion(range, maxCells).canInsert();
+}
+
+FUSE_PHYSICS_INLINE bool shouldRunShapeCellInsertion(const CellRange2& range, u32 maxCells) {
+    return preflightShapeCellInsertion(range, maxCells).canInsert();
+}
+
+/// Non-mutating shape cell-insertion skip predicate — inverse of `canInsert` (B4.2 deepen pass).
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange3& range, u32 maxCells) {
+    return !shouldRunShapeCellInsertion(range, maxCells);
+}
+
+FUSE_PHYSICS_INLINE bool canSkipShapeCellInsertion(const CellRange2& range, u32 maxCells) {
+    return !shouldRunShapeCellInsertion(range, maxCells);
+}
+
 /// Returns true when `cellOccupancyRejectReason` matches `expected` (B4.2 deepen follow-up pass).
 FUSE_PHYSICS_INLINE bool cellOccupancyRejectsForReason(
     const CellRange3& range,
@@ -3368,6 +3405,51 @@ bool shouldRunRefineBroadphase(
     const CollisionShapeSoA& shapes,
     const PairBufferSoA& buffer);
 
+/// Why per-slot broadphase pair refine would early-out (B4.2 deepen pass).
+enum class RefinePairSlotRejectReason : u8 {
+    None = 0,
+    OutOfRangeSlot,
+    InvalidSlot,
+    InvalidPair,
+};
+
+/// Human-readable label for per-slot refine reject reasons (logging / tests).
+const char* refinePairSlotRejectReasonName(RefinePairSlotRejectReason reason);
+
+/// Diagnose why per-slot refine would skip; vacuously succeeds when refine may proceed.
+RefinePairSlotRejectReason refinePairSlotRejectReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 bodyCount = 0u);
+
+/// Returns true when `refinePairSlotRejectReason` matches `expected` (B4.2 deepen pass).
+bool refinePairSlotRejectsForReason(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 bodyCount,
+    RefinePairSlotRejectReason expected);
+
+/// Read-only per-slot refine diagnostics — no mutation (B4.2 deepen pass).
+struct RefinePairSlotPreflight {
+    RefinePairSlotRejectReason reason = RefinePairSlotRejectReason::None;
+    bool outOfRangeSlot = false;
+    bool invalidSlot = false;
+    bool invalidPair = false;
+
+    bool canRefine() const { return reason == RefinePairSlotRejectReason::None; }
+};
+
+RefinePairSlotPreflight preflightRefinePairSlot(
+    const PairBufferSoA& buffer,
+    u32 slot,
+    u32 bodyCount = 0u);
+
+/// Non-mutating per-slot refine skip predicate — inverse of `canRefine` (B4.2 deepen pass).
+bool canSkipRefinePairSlot(const PairBufferSoA& buffer, u32 slot, u32 bodyCount = 0u);
+
+/// Non-mutating per-slot refine predicate — mirrors `preflightRefinePairSlot` (B4.2 deepen pass).
+bool shouldRunRefinePairSlot(const PairBufferSoA& buffer, u32 slot, u32 bodyCount = 0u);
+
 /// Why broadphase pair dedupe would early-out (B4.2 deepen follow-up pass).
 enum class DedupeBroadphaseRejectReason : u8 {
     SinglePair,
@@ -4575,6 +4657,32 @@ bool canSkipMergePairIntoBuffer(const PairBufferSoA& buffer, u32 bodyA, u32 body
 
 /// Non-mutating single-pair merge predicate — mirrors `preflightMergePairIntoBuffer` (B4.2 deepen pass).
 bool shouldRunMergePairIntoBuffer(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB);
+/// Why a single merge push into the pair buffer would reject (B4.2 deepen pass).
+enum class MergeBroadphasePushRejectReason : u8 {
+
+/// Human-readable label for merge push reject reasons (logging / tests).
+const char* mergeBroadphasePushRejectReasonName(MergeBroadphasePushRejectReason reason);
+
+/// Diagnose why merge push would reject; vacuously succeeds when push may proceed.
+MergeBroadphasePushRejectReason mergeBroadphasePushRejectReason(
+
+/// Returns true when `mergeBroadphasePushRejectReason` matches `expected` (B4.2 deepen pass).
+bool mergeBroadphasePushRejectsForReason(
+    MergeBroadphasePushRejectReason expected);
+
+/// Read-only merge push diagnostics — no mutation (B4.2 deepen pass).
+struct MergeBroadphasePushPreflight {
+    MergeBroadphasePushRejectReason reason = MergeBroadphasePushRejectReason::None;
+
+    bool canPush() const { return reason == MergeBroadphasePushRejectReason::None; }
+
+MergeBroadphasePushPreflight preflightMergeBroadphasePush(
+
+/// Non-mutating merge push skip predicate — inverse of `canPush` (B4.2 deepen pass).
+bool canSkipMergeBroadphasePush(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB);
+
+/// Non-mutating merge push predicate — mirrors `preflightMergeBroadphasePush` (B4.2 deepen pass).
+bool shouldRunMergeBroadphasePush(const PairBufferSoA& buffer, u32 bodyA, u32 bodyB);
 
 /// Parallel pair refine stub: invalidate separated pairs via `sphereAabbOverlap`, then compact.
 void refineBroadphasePairsParallel(

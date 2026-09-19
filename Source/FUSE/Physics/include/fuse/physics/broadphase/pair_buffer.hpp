@@ -2587,6 +2587,7 @@ enum class PairBufferWriteSlotRejectReason : u8 {
 /// Why pair-buffer slot write would early-out (B4.2 deepen follow-up pass).
 enum class PairBufferWriteRejectReason : u8 {
     None = 0,
+    UnpreparedBuffer,
     OutOfRangeSlot,
     InvalidPair,
 };
@@ -2854,6 +2855,7 @@ PairBufferWriteRejectReason pairBufferWriteRejectReason(
 
 
 
+
     const PairBufferSoA& buffer,
     u32 slot,
     u32 idxA,
@@ -2886,6 +2888,7 @@ bool pairBufferWriteRejectsForReason(
 /// Read-only write-slot diagnostics — no mutation (B4.2 deepen follow-up pass).
 struct PairBufferWriteSlotPreflight {
     PairBufferWriteSlotRejectReason reason = PairBufferWriteSlotRejectReason::None;
+    bool unpreparedBuffer = false;
     bool outOfRangeSlot = false;
     bool invalidPair = false;
 
@@ -2967,6 +2970,7 @@ struct PairBufferWritePreflight {
 
 
 PairBufferWritePreflight preflightPairBufferWrite(
+
 
 
 
@@ -3101,11 +3105,15 @@ enum class PairBufferInvalidateSlotRejectReason : u8 {
 
 /// Why pair-buffer slot invalidate would early-out (B4.2 deepen follow-up pass).
 
+
+/// Why pair-buffer slot invalidate would early-out (B4.2 deepen pass).
+
 /// Human-readable label for pair-buffer invalidate-slot reject reasons (logging / tests).
 const char* pairBufferInvalidateSlotRejectReasonName(PairBufferInvalidateSlotRejectReason reason);
 
 /// Diagnose why invalidateSlot would reject; vacuously succeeds when invalidation may proceed.
 /// Diagnose why invalidateSlot would skip; vacuously succeeds when invalidate may proceed.
+/// Diagnose why slot invalidate would skip; vacuously succeeds when invalidate may proceed.
 PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(const PairBufferSoA& buffer, u32 slot);
 
 /// Returns true when `pairBufferInvalidateSlotRejectReason` matches `expected` (B4.2 deepen pass).
@@ -3134,6 +3142,7 @@ struct PairBufferInvalidateSlotPreflight {
     bool canInvalidate() const { return reason == PairBufferInvalidateSlotRejectReason::None; }
     bool outOfSlot = false;
     bool alreadyInvalid = false;
+
 
 
 
