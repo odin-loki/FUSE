@@ -1118,18 +1118,13 @@ bool AssetCooker::would_stale_dependency_invalidate(const CookManifest& manifest
 
 
 
-    estimate.direct_source_entries = m_cache.count_by_source(changed_source);
-        }
-    return estimate;
 
-bool AssetCooker::would_upstream_invalidation(const CookManifest& manifest,
-                                              const std::string& changed_source) const {
 
-bool AssetCooker::would_reconcile_invalidation(const CookManifest& manifest) const {
-    return estimate_reconcile_invalidation(manifest).total() != 0;
 
-bool AssetCooker::would_prune_reconcile() const {
-    return estimate_prune_reconcile().total() != 0;
+    return estimate_reconcile_invalidation(manifest).can_reconcile();
+
+bool AssetCooker::should_skip_reconcile_invalidation(const CookManifest& manifest) const {
+    return estimate_reconcile_invalidation(manifest).should_skip();
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

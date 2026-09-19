@@ -67,166 +67,59 @@ struct CookReconcileEstimate {
     u32 downstream_cascade_entries = 0;
 
     [[nodiscard]] u32 total() const { return stale_upstream_entries + downstream_cascade_entries; }
-};
 
 /// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
 struct CookCacheUpstreamInvalidationEstimate {
-    u32 direct_source_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
-};
 
 /// Read-only upstream invalidation planning breakdown (B7.9 deepen).
-struct CookUpstreamInvalidationEstimate {
-    u32 direct_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
 struct CookCacheUpstreamInvalidateEstimate {
-    u32 direct_source_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
-struct CookUpstreamInvalidationEstimate {
-    u32 direct_source_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown for a changed source (B7.9 deepen).
-struct CookCacheUpstreamReconcileEstimate {
-    u32 direct_source_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
-struct CookUpstreamInvalidationEstimate {
-    u32 direct_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
-struct CookUpstreamInvalidationEstimate {
-    u32 direct_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
-struct CookCacheUpstreamInvalidationEstimate {
     u32 source_entries = 0;
-    u32 downstream_entries = 0;
 
     [[nodiscard]] u32 total() const { return source_entries + downstream_entries; }
-};
 
 /// Upstream invalidation breakdown — direct source entries plus downstream cascade (B7.9 deepen).
-struct CookCacheUpstreamInvalidationEstimate {
-    u32 direct_source_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
-struct CookCacheUpstreamInvalidateEstimate {
-    u32 direct_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
-struct CookUpstreamInvalidationEstimate {
-    u32 direct_source_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
 struct CookUpstreamReconcileEstimate {
-    u32 direct_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
-};
 
 /// Read-only upstream invalidation breakdown — mirrors `count_upstream_invalidation` (B7.9 deepen).
-struct CookUpstreamInvalidationEstimate {
-    u32 direct_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
-};
 
 /// Upstream invalidation breakdown — direct source hits plus downstream dependents (B7.9 deepen).
-struct CookCacheUpstreamInvalidationEstimate {
-    u32 direct_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
-struct CookUpstreamInvalidationEstimate {
-    u32 direct_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation planning breakdown (B7.9 deepen).
-struct CookUpstreamInvalidationEstimate {
-    u32 direct_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
-struct CookCacheUpstreamInvalidationEstimate {
-    u32 direct_source_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
-struct CookUpstreamInvalidationEstimate {
-    u32 direct_source_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
-struct CookUpstreamInvalidationEstimate {
-    u32 direct_source_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
-};
 
-/// Read-only upstream invalidation breakdown — mirrors `invalidate_upstream_dependency` (B7.9 deepen).
-struct CookUpstreamInvalidationEstimate {
-    u32 direct_source_entries = 0;
-    u32 downstream_entries = 0;
 
-    [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
+
+    [[nodiscard]] bool can_reconcile() const { return total() > 0; }
+    [[nodiscard]] bool should_skip() const { return !can_reconcile(); }
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -474,6 +367,13 @@ public:
     /// True when `estimate_reconcile_invalidation().total()` is non-zero (B7.9 deepen).
     /// Upstream invalidation breakdown — guarded on empty `changed_source` (B7.9 deepen).
     /// True when `estimate_upstream_invalidation(...).total()` is non-zero (B7.9 deepen).
+    /// Read-only reconcile preflight — alias of `estimate_reconcile_invalidation` (B7.9 deepen).
+    [[nodiscard]] CookCacheReconcileEstimate preflight_reconcile_invalidation(
+        const CookManifest& manifest) const {
+        return estimate_reconcile_invalidation(manifest);
+    /// True when reconcile invalidation would remove or prune at least one cache entry (B7.9 deepen).
+    /// True when reconcile invalidation can be skipped — mirrors `CookCacheReconcileEstimate::should_skip` (B7.9 deepen).
+    [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

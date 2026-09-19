@@ -379,4 +379,28 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 /// Structural + source readability guard for cache persistence — mirrors `CookCache::store` (B7.9 deepen).
 /// Cacheable fold preflight — mirrors `is_cacheable_cook_cache_key` (B7.9 deepen).
 
+/// Convenience skip probes — mirror preflight `ok()` without computing keys (B7.9 deepen).
+[[nodiscard]] inline bool should_skip_file_content_hash(const std::string& path) {
+    return !preflight_file_content_hash(path).ok();
+}
+[[nodiscard]] inline bool should_skip_mesh_import_hash(const MeshImportDesc& desc) {
+    return !preflight_mesh_import_hash(desc).ok();
+}
+[[nodiscard]] inline bool should_skip_texture_import_hash(const TextureImportDesc& desc) {
+    return !preflight_texture_import_hash(desc).ok();
+}
+[[nodiscard]] inline bool should_skip_audio_import_hash(const AudioImportDesc& desc) {
+    return !preflight_audio_import_hash(desc).ok();
+}
+[[nodiscard]] inline bool should_skip_manifest_entry_hash(const CookManifestEntry& entry) {
+    return !preflight_manifest_entry_hash(entry).ok();
+}
+[[nodiscard]] inline bool should_skip_upstream_dependencies_hash(
+    const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest) {
+    return !preflight_upstream_dependencies_hash(dependency_output_paths, manifest).ok();
+}
+[[nodiscard]] inline bool should_skip_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
+    return !preflight_combine_cook_cache_key(source_hash, upstream_hash).ok();
+}
+
 } // namespace fuse::project

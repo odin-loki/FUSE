@@ -384,6 +384,14 @@ struct CookCacheInvalidationEstimate {
 /// Structural cache-entry preflight — mirrors `is_valid_cook_cache_entry` without storing (B7.9 deepen).
 /// Structural cache-entry preflight — mirrors `store` guards without mutating the cache (B7.9 deepen).
 
+/// Read-only store preflight — mirrors `store` guards without mutating the cache (B7.9 deepen).
+    bool can_store = false;
+    bool zero_content_hash = false;
+
+    [[nodiscard]] bool ok() const { return can_store; }
+    [[nodiscard]] bool should_skip() const { return !can_store; }
+
+
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
 public:
@@ -507,6 +515,13 @@ public:
     /// Deduplicated source paths with stale upstream hashes — mirrors `probe_stale_upstream_sources` (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_upstream_source_paths(
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// Deduplicated stale-upstream source probe — mirrors `probe_stale_upstream_sources` (B7.9 deepen).
+    /// True when `invalidate_stale_content_for_source` would remove entries — guarded like the mutator (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
+                                                                 u64 current_content_hash) const;
+    /// True when `invalidate_stale_upstream_hashes` would touch entries — guarded on empty inputs (B7.9 deepen).
+    [[nodiscard]] bool would_invalidate_stale_upstream_hashes(
+    /// True when `invalidate_downstream_of` would remove entries — guarded on empty output path (B7.9 deepen).
     [[nodiscard]] u32 count_downstream_of(const std::string& output_path,
     [[nodiscard]] u32 count_prunable_entries() const;
     [[nodiscard]] u32 count_stale_entries() const;
