@@ -931,6 +931,7 @@ TaaResolveSkipReason TaaPass::classifyResolveSkip(const TaaResolveDesc& desc) co
 
 
 
+
 bool TaaPass::preflightHistoryReuse(u32 observedGeneration, TaaHistoryReuseBlockReason* reason) const {
     return preflightTaaHistoryReuse(m_history, observedGeneration, reason);
 
@@ -1498,6 +1499,8 @@ TaaResolveSkipReason TaaPass::classifyResolveSkip(const TaaResolveDesc& desc) co
 
 
 
+
+
 bool TaaPass::shouldSkipResolveBlend(const TaaResolveDesc& desc) const {
     return shouldSkipTaaResolveBlend(desc, m_history);
 
@@ -1822,6 +1825,13 @@ TaaJitterGuardRejectReason TaaPass::classifyJitterSyncReject() const {
     return classifyTaaJitterSyncReject(m_jitter.sequenceLength());
 }
 
+TaaJitterGuardRejectReason TaaPass::classifyJitterNdcReject() const {
+    return classifyTaaJitterNdcReject(m_desc.width, m_desc.height, m_jitter.sequenceLength());
+}
+
+TaaJitterGuardRejectReason TaaPass::classifyJitterAdvanceReject() const {
+    return classifyTaaJitterAdvanceReject(m_jitter.sequenceLength());
+
 bool TaaPass::tryPreflightJitterSync(u32 frameIndex, TaaJitterGuardRejectReason& reason) const {
     return tryPreflightTaaJitterSync(frameIndex, m_jitter.sequenceLength(), reason);
 }
@@ -1845,6 +1855,15 @@ bool TaaPass::trySyncJitterToFrameIndex(u32 frameIndex, TaaJitterGuardRejectReas
         reason = classifyTaaJitterSyncReject(m_jitter.sequenceLength());
     m_stats.lastJitterNdc = currentJitterNdc();
     return true;
+
+bool TaaPass::tryPreflightJitterAdvance(TaaJitterGuardRejectReason& reason) const {
+    return tryPreflightTaaJitterAdvance(m_jitter.sequenceLength(), reason);
+
+bool TaaPass::preflightJitterAdvance(TaaJitterGuardRejectReason* reason) const {
+    return preflightTaaJitterAdvance(m_jitter.sequenceLength(), reason);
+
+bool TaaPass::shouldSkipJitterAdvance() const {
+    return shouldSkipTaaJitterAdvance(m_jitter.sequenceLength());
 
 bool TaaPass::shouldSkipJitterSync(u32 frameIndex) const {
     return shouldSkipTaaJitterSync(frameIndex, m_jitter.sequenceLength());
@@ -4149,6 +4168,18 @@ bool TaaPass::tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReas
 
 TaaResolveSkipReason TaaPass::classifyResolveSkip(const TaaResolveDesc& desc) const {
     return classifyTaaResolveSkip(desc, m_history);
+}
+
+TaaResolveSkipReason TaaPass::classifyResolveSkip(const TaaResolveDesc& desc) const {
+    return classifyTaaResolveSkip(desc, m_history);
+}
+
+bool TaaPass::tryPreflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason& reason) const {
+    return tryPreflightTaaResolve(desc, m_history, reason);
+}
+
+bool TaaPass::preflightResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
+    return preflightTaaResolve(desc, m_history, reason);
 }
 
 bool TaaPass::wouldSkipResolve(const TaaResolveDesc& desc, TaaResolveSkipReason* reason) const {
