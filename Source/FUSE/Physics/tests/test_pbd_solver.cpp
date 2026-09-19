@@ -5046,3 +5046,19 @@ void testIslandPipelineDispatchGuards() {
                "should_skip pipeline dispatch when all islands sleeping");
     testContactIslandGraphBuildRejectReasons();
     testIslandExtendedSolvePreflightGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-1a8e ---
+    const IslandGraphBuildPreflight preflight = preflight_island_graph_build(4, contacts, constraints);
+    expectTrue(should_skip_island_graph_build(4, contacts, constraints),
+               "should_skip_island_graph_build on unsafe refs");
+    const IslandGraphBuildPreflight emptyPreflight = preflight_island_graph_build(0, {}, {});
+    expectTrue(emptyPreflight.skipped, "graph build preflight skips zero-body empty inputs");
+    expectTrue(should_skip_island_graph_build(0, {}, {}), "should_skip_island_graph_build on empty inputs");
+    expectTrue(!should_skip_island_solve_pipeline(mixedJob, bodies, contacts, constraints, dt),
+    expectTrue(should_skip_island_solve_pipeline(sleepingJob, bodies, contacts, constraints, dt),
+    const IslandPipelineDispatchPreflight pipelinePreflight =
+    expectTrue(!pipelinePreflight.skipped, "pipeline dispatch preflight has solveable islands");
+    expectTrue(pipelinePreflight.can_run(), "pipeline dispatch preflight can run");
+    expectTrue(!should_skip_island_pipeline_dispatch(graph, bodies, contacts, constraints, dt),
+               "should_skip pipeline dispatch false when solveable islands exist");
+void testDispatchIslandPipelineGuards() {

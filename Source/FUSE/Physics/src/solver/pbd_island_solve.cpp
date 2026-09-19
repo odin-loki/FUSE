@@ -2864,3 +2864,13 @@ IslandPipelinePreflight preflight_island_pipeline_dispatch(const ContactIslandGr
 bool should_skip_island_pipeline_dispatch(const ContactIslandGraph& graph,
     if (should_skip_island_extended_solve(island, bodies, contacts, distanceConstraints, dt)) {
     const IslandPipelinePreflight preflight = preflight_island_pipeline_dispatch(graph, bodies, dt);
+
+// --- deepen additive from deepen-pbd-island-guards-1a8e ---
+bool should_skip_island_solve_pipeline(const IslandSolveJob& job,
+        const IslandSolvePipelinePreflight pipelinePreflight =
+        if (pipelinePreflight.can_dispatch()) {
+        } else if (!pipelinePreflight.skipped && pipelinePreflight.sleep.can_skip_solve()) {
+        } else if (!pipelinePreflight.skipped && !pipelinePreflight.constraintSolve.can_solve()) {
+        const IslandWakePreflight wakePreflight = preflight_island_wake(graph.island(islandIndex), bodies);
+IslandPipelineDispatchPreflight preflight_island_pipeline_dispatch(
+    const IslandPipelineDispatchPreflight preflight = preflight_island_pipeline_dispatch(
