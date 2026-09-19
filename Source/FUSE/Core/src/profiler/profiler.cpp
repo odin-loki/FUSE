@@ -856,6 +856,17 @@ u32 flowDepthMismatch() {
     return localDepth > openCount ? localDepth - openCount : openCount - localDepth;
 }
 
+bool reconcileDetachedFlowDepth() {
+    if (!isFlowDepthDetached()) {
+        return false;
+    }
+
+    while (flowNestingDepth() > openAsyncFlowCount()) {
+        popFlowNestingDepth();
+    }
+    return true;
+}
+
 bool hasEvents() {
     return eventCount() > 0u;
 }
@@ -1256,11 +1267,7 @@ u32 exportableFirstEventIndex() {
         if (isEventExportable(i)) {
 
 u32 exportableLastEventIndex() {
-            return i;
-        }
-    return kInvalidEventIndex;
 
-    const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
         const u32 index = i - 1u;
         if (isEventExportable(index)) {
@@ -1333,8 +1340,14 @@ u32 findLastEventIndexByPhase(EventPhase phase) {
 
 u32 findFirstEventIndexByName(const char* name) {
 
-        }
-    return kInvalidEventIndex;
+u32 countEventsOfPhase(EventPhase phase) {
+
+u32 firstEventIndexOfPhase(EventPhase phase) {
+
+u32 lastEventIndexOfPhase(EventPhase phase) {
+
+bool isEventAtPhase(u32 index, EventPhase phase) {
+    return isEventIndexValid(index) && eventAt(index).phase == phase;
 
 const ProfileEvent& emptyProfileEvent() {
     static const ProfileEvent kEmpty{};
@@ -1769,6 +1782,8 @@ bool tryEventAtReverse(u32 reverseIndex, ProfileEvent& outEvent) {
     const u32 index = firstExportableEventIndex();
 bool tryFindFirstEventByPhase(EventPhase phase, ProfileEvent& outEvent) {
     const u32 index = findFirstEventIndexByPhase(phase);
+bool tryFirstEventOfPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = firstEventIndexOfPhase(phase);
         outEvent = ProfileEvent{};
         return false;
     }
@@ -1830,7 +1845,18 @@ bool tryFindFirstEventByName(const char* name, ProfileEvent& outEvent) {
 
 
 
-    return tryExportableEventAt(index, outEvent);
+
+bool tryLastEventOfPhase(EventPhase phase, ProfileEvent& outEvent) {
+    const u32 index = lastEventIndexOfPhase(phase);
+
+
+bool tryFindEventByName(const char* name, u32& outIndex) {
+    if (!isValidEventName(name)) {
+        outIndex = kInvalidEventIndex;
+
+        if (event.name != nullptr && std::strcmp(event.name, name) == 0) {
+            outIndex = i;
+
 
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
