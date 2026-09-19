@@ -2968,6 +2968,15 @@ void testCookCacheDownstreamWouldInvalidateProbe() {
 
     writeTempFile(source_a, "# unique up a revised\n");
     expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for upstream estimate ok");
+    fuse::project::AssetCooker cooker;
+    expectTrue(!cooker.would_reconcile_invalidation(manifest), "fresh cache would not reconcile");
+
+    const fuse::project::CookCacheUpstreamInvalidationEstimate estimate =
+        cooker.estimate_upstream_invalidation(manifest, source_a);
+    expectTrue(estimate.source_entries == 1u, "upstream estimate counts source entry");
+    expectTrue(estimate.downstream_entries == 1u, "upstream estimate counts downstream entry");
+    expectTrue(estimate.total() == cooker.count_upstream_invalidation(manifest, source_a),
+               "upstream estimate total matches count probe");
 
     const fuse::project::CookCacheUpstreamInvalidationEstimate empty =
         cooker.estimate_upstream_invalidation(manifest, "");
@@ -2995,6 +3004,7 @@ void testCookCacheDownstreamWouldInvalidateProbe() {
     manifest.assets.push_back(entry);
 
     expectTrue(cooker.cook_entry(entry, manifest).ok, "seed cook for unique upstream probe");
+    expectTrue(cooker.would_reconcile_invalidation(manifest), "stale upstream makes would_reconcile true");
 
     fuse::project::CookJobGraph graph;
     graph.build_from_manifest(manifest);
@@ -3184,6 +3194,11 @@ void testCookCacheWouldInvalidateDownstreamProbe() {
                "would_reconcile_invalidation false on fresh cache");
 
     expectTrue(removed == estimate.total(), "upstream invalidation removes estimated total");
+        source_upstream.emplace_back(job.source_path, 0u);
+               "mismatched upstream hash would_invalidate stale upstream");
+    expectTrue(cooker.cache().count_unique_stale_upstream_sources(source_upstream) >= 1u,
+               "unique stale upstream source count is non-zero");
+               "would_invalidate_downstream reports dependents");
 }
 
 void testCookCacheDownstreamSourceProbe() {

@@ -760,6 +760,9 @@ bool AssetCooker::would_invalidate_stale_dependencies(const CookManifest& manife
 std::vector<std::string> AssetCooker::probe_upstream_invalidation_sources(
         return {};
 
+CookCacheUpstreamInvalidationEstimate AssetCooker::estimate_upstream_invalidation(
+    CookCacheUpstreamInvalidationEstimate estimate;
+
     CookJobGraph graph;
     graph.build_from_manifest(manifest);
 
@@ -871,6 +874,7 @@ std::vector<std::string> AssetCooker::probe_upstream_invalidation_closure(
         const std::vector<std::string> downstream = m_cache.probe_downstream_sources(
             job.output_path, graph.edges(), graph.jobs());
             append_unique(sources, path);
+    return estimate;
 }
 
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {

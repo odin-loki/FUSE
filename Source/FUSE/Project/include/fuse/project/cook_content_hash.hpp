@@ -34,6 +34,7 @@ enum class CookHashRejectReason : u8 {
     InvalidCacheEntry,
     InvalidCacheKey,
     UnresolvedDependencyOutput,
+    UnsupportedAssetKind,
 };
 
 /// Read-only hash preflight — mirrors empty-input guards without computing keys (B7.9 deepen).
@@ -367,5 +368,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 /// Shared empty-path guard for import descriptors — mirrors mesh/texture/audio hash preconditions (B7.9 deepen).
 [[nodiscard]] CookHashPreflight preflight_import_paths(const std::string& input_path,
                                                        const std::string& output_path);
+/// Structural + source-readability preflight for cache records — shader kind is rejected (B7.9 deepen).
+/// Manifest entry plus upstream dependency preflight — empty deps skip upstream fold (B7.9 deepen).
+[[nodiscard]] CookHashPreflight preflight_manifest_entry_with_dependencies(const CookManifestEntry& entry,
 
 } // namespace fuse::project

@@ -560,6 +560,8 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
         return "invalid_cache_key";
     case CookHashRejectReason::UnresolvedDependencyOutput:
         return "unresolved_dependency_output";
+    case CookHashRejectReason::UnsupportedAssetKind:
+        return "unsupported_asset_kind";
     }
     return "unknown";
 
@@ -997,30 +999,14 @@ CookHashPreflight preflight_shader_entry_hash(const CookManifestEntry& entry) {
         return source_preflight;
 
 
-    preflight.can_hash = true;
-    preflight.reason = CookHashRejectReason::None;
-    return preflight;
-}
 
-CookHashPreflight preflight_fnv1a64_bytes(const u8* data, usize size) {
-CookHashPreflight preflight_cook_cache_key(u64 source_hash, u64 /*upstream_hash*/) {
     return preflight_combine_cook_cache_key(source_hash, 0);
-}
 
-CookHashPreflight preflight_fnv1a64_input(const u8* data, usize size) {
 CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 upstream_hash) {
-    CookHashPreflight preflight;
     if (source_hash == 0) {
-        preflight.reason = CookHashRejectReason::ZeroSourceHash;
-        return preflight;
 
-    if (combine_cook_cache_key(source_hash, upstream_hash) == 0) {
 
-    preflight.can_hash = true;
-    preflight.reason = CookHashRejectReason::None;
 
-    if (!is_valid_fnv1a64_input(data, size)) {
-        preflight.reason = CookHashRejectReason::NullData;
 
 
 CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 /*upstream_hash*/) {
@@ -1028,14 +1014,10 @@ CookHashPreflight preflight_combine_cook_cache_key(u64 source_hash, u64 /*upstre
 
 
 
-CookHashPreflight preflight_cacheable_cook_cache_key(u64 source_hash, u64 upstream_hash) {
     const CookHashPreflight key_preflight = preflight_cook_cache_key(source_hash, upstream_hash);
     if (!key_preflight.can_hash) {
         return key_preflight;
 CookHashPreflight preflight_cacheable_cook_key(u64 source_hash, u64 upstream_hash) {
-    const CookHashPreflight source_preflight = preflight_cook_cache_key(source_hash, upstream_hash);
-    if (!source_preflight.can_hash) {
-        return source_preflight;
 
         preflight.reason = CookHashRejectReason::NonCacheableKey;
 
@@ -1057,7 +1039,6 @@ CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry
     for (const std::string& dependency : entry.dependencies) {
         if (!dependency.empty()) {
             has_non_empty_dependency = true;
-            break;
     if (!has_non_empty_dependency) {
 
     return preflight_upstream_dependencies_hash(entry.dependencies, manifest);
@@ -1069,12 +1050,8 @@ CookHashPreflight preflight_manifest_entry_with_upstream(const CookManifestEntry
 
 
 
-CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
-    if (!is_valid_cook_cache_key(entry.content_hash)) {
     if (!is_valid_cook_cache_path(entry.source_path)) {
-        preflight.reason = CookHashRejectReason::EmptyInputPath;
     if (!is_valid_cook_cache_path(entry.output_path)) {
-        preflight.reason = CookHashRejectReason::EmptyOutputPath;
 
 
 
@@ -1087,7 +1064,6 @@ CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
 CookHashPreflight preflight_manifest_entry_dependencies(const CookManifestEntry& entry) {
 
         if (dependency.empty()) {
-            continue;
 
         const CookHashPreflight dependency_preflight = preflight_file_content_hash(dependency);
         if (!dependency_preflight.can_hash) {
@@ -1114,6 +1090,12 @@ CookHashPreflight preflight_manifest_entry_with_dependencies_hash(const CookMani
         preflight_upstream_dependencies_hash(entry.dependencies, manifest);
     if (!upstream_preflight.can_hash) {
         return upstream_preflight;
+
+        preflight.reason = CookHashRejectReason::UnsupportedAssetKind;
+    return preflight_file_content_hash(entry.source_path);
+
+CookHashPreflight preflight_manifest_entry_with_dependencies(const CookManifestEntry& entry,
+
 
 
 u64 hash_manifest_entry(const CookManifestEntry& entry) {

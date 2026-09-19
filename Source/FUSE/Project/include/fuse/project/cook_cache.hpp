@@ -623,6 +623,12 @@ public:
     /// Structural cache-entry hash preflight — mirrors `is_valid_cook_cache_entry` (B7.9 deepen).
     [[nodiscard]] CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) const;
     /// Bool invalidation probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
+    /// Deduplicated source paths with structurally invalid records (B7.9 deepen).
+    [[nodiscard]] std::vector<std::string> probe_invalid_entry_sources() const;
+    /// Deduplicated count of `probe_stale_upstream_sources` (B7.9 deepen).
+    [[nodiscard]] u32 count_unique_stale_upstream_sources(
+        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
+    /// Read-only probes mirroring remaining `invalidate_*` guards (B7.9 deepen).
     [[nodiscard]] bool would_invalidate_source(const std::string& source_path) const;
     [[nodiscard]] bool would_invalidate_output(const std::string& output_path) const;
     [[nodiscard]] bool would_invalidate_stale_content_for_source(const std::string& source_path,
@@ -705,19 +711,13 @@ public:
         const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     /// Deduplicated upstream stale sources — one entry per matching source path (B7.9 deepen).
     [[nodiscard]] std::vector<std::string> probe_stale_upstream_sources_deduplicated(
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path) const;
     /// Invalidation reconcile breakdown without mutating stats (B7.9 deepen).
     [[nodiscard]] CookCacheInvalidationEstimate estimate_invalidation_removals(
         const std::string& source_path = {},
         const std::string& output_path = {},
         u64 current_content_hash = 0,
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path = {}) const;
     /// True when `estimate_invalidation_removals(...).total()` is non-zero (B7.9 deepen).
     [[nodiscard]] bool would_invalidate_any(
-        const std::string& source_path = {},
-        const std::string& output_path = {},
-        u64 current_content_hash = 0,
-        const std::vector<std::pair<std::string, u64>>& source_upstream_by_path = {}) const;
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 
