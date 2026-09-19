@@ -4272,3 +4272,8 @@ void testInteractionPreflightReadyHelpers() {
     expectTrue(!fuse::editor::preflightUpdateDragInteractionReady(
     expectTrue(gizmo.preflightUpdateDragInteractionReady(hit),
     testInteractionPreflightReadyHelpers();
+
+// --- deepen additive from deepen-gizmo-preflights-0e29 ---
+void testNonFiniteRejectReasonClassifiers() {
+               "gizmo tryPreflightUpdateDrag rejects non-finite screen hit");
+    testNonFiniteRejectReasonClassifiers();
