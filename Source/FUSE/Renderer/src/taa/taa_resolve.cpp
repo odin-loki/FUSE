@@ -761,6 +761,19 @@ TaaHistoryReuseBlockReason classifyTaaHistoryReuseBlock(const TaaHistoryBuffer& 
 bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration,
                             TaaHistoryReuseBlockReason* reason) {
     const TaaHistoryReuseBlockReason block = classifyTaaHistoryReuseBlock(history, observedGeneration);
+TaaHistoryReuseBlockReason classifyTaaHistoryReuseBlockForResolve(const TaaResolveDesc& desc,
+                                                                 const TaaHistoryBuffer& history) {
+    if (taaResolveBypassesHistoryGenerationGuard(desc)) {
+        if (!history.isReady()) {
+            return TaaHistoryReuseBlockReason::NotReady;
+        }
+        if (!history.hasValidHistory()) {
+            return TaaHistoryReuseBlockReason::NotWarm;
+        return TaaHistoryReuseBlockReason::None;
+    return classifyTaaHistoryReuseBlock(history, desc.observed_history_generation);
+
+bool preflightTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+    const TaaHistoryReuseBlockReason block = classifyTaaHistoryReuseBlockForResolve(desc, history);
     if (reason != nullptr) {
         *reason = block;
     }
@@ -776,7 +789,6 @@ bool preflightTaaResolveBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer
     const bool historyBlendAllowed =
         taaHistoryBlendAllowed(!history.hasValidHistory(), history) && taaResolveCanReuseHistory(desc, history);
     return taaBlendWeightsValid(computed) && taaBlendWeightsConsistentWithReuse(computed, historyBlendAllowed);
-}
 
 bool preflightTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                         TaaHistoryReuseBlockReason* reason) {
@@ -784,33 +796,31 @@ bool preflightTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHis
                                        ? history.invalidateGeneration()
                                        : desc.observed_history_generation;
     return preflightTaaHistoryReuse(history, observedGeneration, reason);
-}
 
 bool preflightTaaResolveFrame(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                               TaaResolveSkipReason* skipReason, TaaResolveBlendRejectReason* blendRejectReason) {
     if (!preflightTaaResolve(desc, history, skipReason)) {
         if (blendRejectReason != nullptr) {
             *blendRejectReason = TaaResolveBlendRejectReason::None;
-        }
         return false;
-    }
     return preflightTaaResolveBlendWeights(desc, history, blendRejectReason);
-}
 
 bool canPreflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {
     return preflightTaaResolveBlendWeights(desc, history);
-}
 
 bool tryComputeTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
                                       TaaBlendWeights& out, TaaResolveBlendRejectReason* reason) {
     if (!preflightTaaResolveBlendWeights(desc, history, reason)) {
-        return false;
-    }
     out = computeTaaResolveBlendWeights(desc, history);
     return true;
-}
 
 const char* taaResolveTemporalRejectReasonLabel(TaaResolveTemporalRejectReason reason) {
+bool tryPreflightTaaHistoryReuseForResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                           TaaHistoryReuseBlockReason& outReason) {
+    outReason = classifyTaaHistoryReuseBlockForResolve(desc, history);
+    return outReason == TaaHistoryReuseBlockReason::None;
+
+const char* taaResolveBlendRejectReasonLabel(TaaResolveBlendRejectReason reason) {
     switch (reason) {
     case TaaResolveTemporalRejectReason::None:
         return "none";
@@ -934,6 +944,26 @@ bool preflightTaaResolveDesc(const TaaResolveDesc& desc, const TaaHistoryBuffer&
         *result = local;
     }
     return true;
+}
+
+bool tryPreflightTaaResolveBlendWeights(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                        TaaResolveBlendRejectReason& outReason) {
+    outReason = classifyTaaResolveBlendReject(desc, history);
+    return outReason == TaaResolveBlendRejectReason::None;
+}
+
+bool preflightTaaResolveTemporalAccumulation(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                                             TaaResolveTemporalPreflight* result) {
+    TaaResolveTemporalPreflight local{};
+    local.skip_reason = classifyTaaResolveSkip(desc, history);
+    local.reuse_block = classifyTaaHistoryReuseBlockForResolve(desc, history);
+    local.blend_reject = classifyTaaResolveBlendReject(desc, history);
+    local.passes = !taaResolveSkipReasonIsBlocking(local.skip_reason) &&
+                   local.blend_reject == TaaResolveBlendRejectReason::None;
+    if (result != nullptr) {
+        *result = local;
+    }
+    return local.passes;
 }
 
 bool taaResolveCanReuseHistory(const TaaResolveDesc& desc, const TaaHistoryBuffer& history) {

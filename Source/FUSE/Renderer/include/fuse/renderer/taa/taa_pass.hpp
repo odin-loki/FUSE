@@ -56,6 +56,10 @@ public:
     TaaJitterSyncRejectReason classifyJitterSyncReject(u32 frameIndex) const;
     /// Preflight pass jitter sync without mutating state (B5.9 deepen).
     bool preflightJitterSync(u32 frameIndex, TaaJitterSyncRejectReason* reason = nullptr) const;
+    /// Sync jitter only when sequence and viewport are valid; returns false when blocked (B5.9 deepen).
+    bool syncJitterToFrameIndexIfViewportReady(u32 frameIndex);
+    /// Diagnose pass jitter sync; false when sync is blocked (B5.9 deepen).
+    bool trySyncJitterToFrameIndexIfReady(u32 frameIndex, TaaJitterSyncBlockReason& outReason);
     /// True when pass jitter monotonic counter and slot match `frameIndex` (B5.9 deepen).
     bool jitterAlignedToFrameIndex(u32 frameIndex) const;
     /// True when pass jitter matches the expected monotonic frame counter (B5.9 deepen).
@@ -101,6 +105,12 @@ public:
     TaaHistoryWarmupPhase historyWarmupPhase() const;
     /// True when pass history is warmed (B5.9 deepen).
     bool preflightHistoryWarmup(TaaHistoryWarmupPhase* phase = nullptr) const;
+    /// Frames remaining before temporal reuse is allowed — 0 when warmed (B5.9 deepen).
+    u32 historyWarmupFramesRemaining() const;
+    /// Classify why pass history warm-up is blocked (B5.9 deepen).
+    TaaHistoryWarmupBlockReason classifyHistoryWarmupBlock() const;
+    /// True when pass history warm-up preflight passes (B5.9 deepen).
+    bool preflightHistoryWarmup(TaaHistoryWarmupBlockReason* reason = nullptr) const;
     /// True when pass history is warmed and may be sampled (B5.9 deepen).
     bool canReuseHistory() const;
     /// True when pass history is ready, warmed, and generation matches for reuse (B5.9 deepen).
@@ -117,6 +127,8 @@ public:
     bool advanceJitterIfAligned(u32 expectedFrameIndex);
     /// True when pass jitter monotonic counter and slot match `expectedFrameIndex` (B5.9 deepen).
     bool preflightJitterAlignment(u32 expectedFrameIndex) const;
+    /// Advance jitter only when sequence and viewport are valid; returns false when blocked (B5.9 deepen).
+    bool advanceJitterIfViewportReady();
     /// Expected blend weights for the next resolve (B5.9 deepen).
     TaaBlendWeights expectedResolveBlendWeights(const TaaResolveDesc& desc) const;
     /// True when resolve would sample warmed history this frame (B5.9 deepen).
@@ -282,6 +294,10 @@ public:
     /// Combined resolve-frame preflight — skip check then blend-weight validation (B5.9 deepen).
     /// Preflight resolve skip and blend-weight guards for one resolve request (B5.9 deepen).
     bool preflightResolveDesc(const TaaResolveDesc& desc, TaaResolveDescPreflight* result = nullptr) const;
+    /// True when resolve-desc history reuse preflight passes (B5.9 deepen).
+    /// Preflight resolve skip, history reuse, and blend weights together (B5.9 deepen).
+    bool preflightResolveTemporalAccumulation(const TaaResolveDesc& desc,
+                                              TaaResolveTemporalPreflight* result = nullptr) const;
     u32 historyInvalidateGeneration() const { return m_history.invalidateGeneration(); }
     /// True when a consumer's observed generation differs from pass history epoch.
     bool isHistoryStale(u32 observedGeneration) const;
