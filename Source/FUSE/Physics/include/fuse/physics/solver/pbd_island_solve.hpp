@@ -3803,6 +3803,7 @@ bool island_constraint_solve_rejects_for_reason(
     const std::vector<DistanceConstraint>& distanceConstraints);
 
 
+
     const std::vector<DistanceConstraint>& distanceConstraints,
     IslandConstraintSolveRejectReason expected);
 
@@ -4004,6 +4005,7 @@ bool should_skip_island_sleep_solve_deepen(const ContactIslandGraph::Island& isl
 
 
 
+
 };
 
 IslandConstraintSolveRejectPreflight preflight_island_constraint_solve_reject(
@@ -4031,6 +4033,8 @@ bool should_run_island_constraint_solve(const ContactIslandGraph::Island& island
                                           const std::vector<narrowphase::ContactManifold>& contacts,
                                           const std::vector<DistanceConstraint>& distanceConstraints);
 
+/// Why per-island sleep solve would early-out (B4.4 deepen follow-up pass).
+enum class IslandSleepSolveRejectReason : u8 {
     None = 0,
     EmptyIsland,
     AllSleeping,
@@ -4278,6 +4282,7 @@ bool shouldRunIslandPipelineDispatch(const ContactIslandGraph& graph, const Rigi
 
 
 
+
                                     const RigidBodySoA& bodies,
                                     IslandWakeRejectReason expected);
 
@@ -4310,6 +4315,7 @@ bool island_sleep_graph_rejects_for_reason(const ContactIslandGraph& graph,
                                                               const RigidBodySoA& bodies);
 
 
+
                                            const RigidBodySoA& bodies,
                                            IslandSleepGraphRejectReason expected);
 
@@ -4323,6 +4329,8 @@ IslandSleepGraphRejectPreflight preflight_island_sleep_graph_reject(const Contac
     bool skipped = false;
 
 };
+
+
 
 
 
@@ -4346,6 +4354,7 @@ bool island_wake_graph_rejects_for_reason(const ContactIslandGraph& graph,
                                                             const RigidBodySoA& bodies);
 
 
+
                                           const RigidBodySoA& bodies,
                                           IslandWakeGraphRejectReason expected);
 
@@ -4359,6 +4368,8 @@ IslandWakeGraphRejectPreflight preflight_island_wake_graph_reject(const ContactI
     bool skipped = false;
 
 };
+
+
 
 
 
@@ -4414,11 +4425,16 @@ IslandPipelineDispatchPreflight preflight_island_pipeline_dispatch(const Contact
 bool should_run_island_pipeline_dispatch(const ContactIslandGraph& graph,
 };
 
+
                                                                    const RigidBodySoA& bodies,
                                                                    f32 dt);
 
 bool can_skip_island_pipeline_dispatch(const ContactIslandGraph& graph,
 
+                                       const RigidBodySoA& bodies,
+                                       f32 dt);
+
+bool should_run_island_pipeline_dispatch(const ContactIslandGraph& graph,
 
 /// Wake sleepers then dispatch all islands only when pipeline preflight allows.
 IslandBatchDispatchResult dispatch_island_pipeline_guarded(
@@ -7410,6 +7426,11 @@ bool has_in_range_constraints(
     u32 bodyCount,
     const std::vector<narrowphase::ContactManifold>& contacts,
     const std::vector<DistanceConstraint>& distanceConstraints);
+
+/// Non-mutating build predicate — mirrors `preflight_island_build` (B4.4 deepen follow-up pass).
+bool should_run_island_build(u32 bodyCount,
+                             const std::vector<narrowphase::ContactManifold>& contacts,
+                             const std::vector<DistanceConstraint>& distanceConstraints);
 
 /// Non-mutating build predicate — mirrors `preflight_island_build` (B4.4 deepen follow-up pass).
 bool should_run_island_build(u32 bodyCount,
