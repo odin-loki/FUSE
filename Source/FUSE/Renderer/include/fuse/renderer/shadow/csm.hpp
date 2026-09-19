@@ -327,6 +327,9 @@ struct CascadeLightSpaceLayout {
     /// True when every cascade should be bypassed before per-cascade fitting.
     static bool shouldBypassAllCascadeShadowBuilds(const ShadowCameraParams& camera,
     /// Per-check skip guards routed by `classifyCascadeShadowSkip` (B5.5 deepen follow-up).
+    /// Bypass guard — empty light direction clears every cascade before fitting (B5.5 deepen).
+    /// Bypass guard — empty camera depth range clears every cascade before fitting (B5.5 deepen).
+    /// Per-check skip guards routed by `classifyCascadeShadowSkip` (B5.5 deepen).
     static bool shouldSkipEmptyLightDirection(const fuse::math::Vec3& lightDirection);
     static bool shouldSkipEmptyCameraDepthRange(const ShadowCameraParams& camera);
     static bool shouldSkipEmptyCascadeFrustum(u32 cascadeIndex,
