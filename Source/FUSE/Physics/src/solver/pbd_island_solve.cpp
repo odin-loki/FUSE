@@ -2305,3 +2305,19 @@ bool should_skip_island_dispatch_with_bodies(const ContactIslandGraph& graph,
 
 // --- deepen additive from deepen-pbd-island-sleep-build-guards-e836 ---
 bool should_skip_island_dispatch_for_sleep(const ContactIslandGraph& graph, const RigidBodySoA& bodies) {
+
+// --- deepen additive from deepen-pbd-island-guards-9f8d ---
+    if (should_skip_island_build(bodyCount, contacts, distanceConstraints)) {
+bool should_skip_island_constraint_solve_by_index(const ContactIslandGraph& graph,
+            const IslandSleepPreflight sleepPreflight = preflight_island_sleep(graph.island(islandIndex), bodies);
+IslandConstraintSolveGraphPreflight preflight_island_constraint_solve_graph(
+    IslandConstraintSolveGraphPreflight preflight{};
+bool should_skip_island_constraint_solve_graph(
+IslandSolvePipelinePreflight preflight_island_solve_pipeline(
+    IslandSolvePipelinePreflight preflight{};
+IslandSolvePipelinePreflight preflight_island_solve_pipeline_by_index(
+bool should_skip_island_solve_pipeline(const ContactIslandGraph::Island& island,
+    const IslandSolvePipelinePreflight preflight =
+    const IslandDispatchPreflight dispatchPreflight = preflight_island_dispatch(graph, dt);
+    result.dispatchableCount = dispatchPreflight.solve.stats.dispatchableCount;
+    if (!dispatchPreflight.can_dispatch()) {

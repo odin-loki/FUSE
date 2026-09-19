@@ -369,3 +369,10 @@ IslandBuildRejectReason island_build_reject_reason(
                                             const IslandBuildPreflight& inputPreflight) {
     stats.orphanContactCount = inputPreflight.outOfRangeContactCount + inputPreflight.invalidContactCount;
     stats.orphanDistanceCount = inputPreflight.outOfRangeDistanceCount;
+
+// --- deepen additive from deepen-pbd-island-guards-9f8d ---
+    case ContactIslandGraphBuildRejectReason::UnsafeRefs:
+    case ContactIslandGraphBuildRejectReason::SelfContact:
+        preflight.reason = ContactIslandGraphBuildRejectReason::EmptyInput;
+        preflight.reason = ContactIslandGraphBuildRejectReason::UnsafeRefs;
+        preflight.reason = ContactIslandGraphBuildRejectReason::SelfContact;

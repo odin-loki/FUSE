@@ -4298,3 +4298,31 @@ void testAllSleepingGraphDispatchPreflight() {
     expectTrue(should_skip_island_dispatch_for_sleep(graph, bodies),
                "should_skip dispatch for sleep on all-sleeping graph");
     testAllSleepingGraphDispatchPreflight();
+
+// --- deepen additive from deepen-pbd-island-guards-9f8d ---
+void testContactIslandGraphBuildPreflightGuards() {
+    const ContactIslandGraphBuildPreflight preflight = preflightContactIslandGraphBuild(2, contacts, constraints);
+    expectTrue(preflight.reason == ContactIslandGraphBuildRejectReason::SelfContact,
+    expectTrue(std::strcmp(contactIslandGraphBuildRejectReasonName(preflight.reason), "SelfContact") == 0,
+    const IslandBuildPreflight islandPreflight = preflight_island_build(2, contacts, constraints);
+    expectTrue(islandPreflight.has_degenerate_refs(), "island build preflight flags self-contact");
+    expectTrue(!islandPreflight.can_build(), "island build preflight rejects self-contact");
+void testPreflightIslandConstraintSolveGraphGuards() {
+    const IslandConstraintSolveGraphPreflight preflight =
+    const IslandConstraintSolvePreflight byIndex =
+    expectTrue(!should_skip_island_constraint_solve_by_index(
+               "should_skip false for solveable island index");
+    const IslandConstraintSolvePreflight blockedIndex = preflight_island_constraint_solve_by_index(
+    expectTrue(should_skip_island_constraint_solve_by_index(
+               "should_skip true for all-sleeping island index");
+void testGuardedIslandSolvePipelineWithWake() {
+    const IslandSolvePipelinePreflight pipelinePreflight = preflight_island_solve_pipeline(
+    expectTrue(pipelinePreflight.can_solve(), "pipeline preflight allows mixed island");
+    expectTrue(pipelinePreflight.should_wake_first(), "pipeline preflight requests wake before solve");
+    expectTrue(!should_skip_island_solve_pipeline(graph.island(mixedIsland), bodies, work.contactManifolds(), constraints),
+               "should_skip pipeline false for mixed island");
+    const IslandSolvePipelinePreflight sleepingPipeline = preflight_island_solve_pipeline(
+    expectTrue(should_skip_island_solve_pipeline(graph.island(sleepingIsland), bodies, work.contactManifolds(), constraints),
+               "should_skip pipeline true for all-sleeping island");
+    testContactIslandGraphBuildPreflightGuards();
+    testPreflightIslandConstraintSolveGraphGuards();

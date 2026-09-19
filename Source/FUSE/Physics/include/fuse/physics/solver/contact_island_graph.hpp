@@ -150,3 +150,7 @@ enum class IslandBuildRejectReason : u32 {
 
 // --- deepen additive from deepen-pbd-island-sleep-build-guards-e836 ---
                                             const IslandBuildPreflight& inputPreflight);
+
+// --- deepen additive from deepen-pbd-island-guards-9f8d ---
+enum class ContactIslandGraphBuildRejectReason {
+        return !skipped && reason == ContactIslandGraphBuildRejectReason::None && !has_unsafe_refs() &&

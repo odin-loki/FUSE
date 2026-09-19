@@ -1442,3 +1442,14 @@ bool should_skip_island_dispatch_with_bodies(const ContactIslandGraph& graph,
 
 // --- deepen additive from deepen-pbd-island-sleep-build-guards-e836 ---
 bool should_skip_island_dispatch_for_sleep(const ContactIslandGraph& graph, const RigidBodySoA& bodies);
+
+// --- deepen additive from deepen-pbd-island-guards-9f8d ---
+struct IslandConstraintSolveGraphPreflight {
+struct IslandSolvePipelinePreflight {
+    IslandConstraintSolvePreflight solve{};
+bool should_skip_island_constraint_solve_by_index(const ContactIslandGraph& graph,
+IslandConstraintSolveGraphPreflight preflight_island_constraint_solve_graph(
+bool should_skip_island_constraint_solve_graph(
+IslandSolvePipelinePreflight preflight_island_solve_pipeline(
+IslandSolvePipelinePreflight preflight_island_solve_pipeline_by_index(
+bool should_skip_island_solve_pipeline(const ContactIslandGraph::Island& island,
