@@ -2025,3 +2025,9 @@ void testCookerReconcileEstimatorGuards() {
 
 // --- deepen additive from deepen-cooker-hash-b79-2ae1 ---
                "empty output path would_invalidate_downstream is guarded");
+
+// --- deepen additive from deepen-b79-cooker-hash-7a34 ---
+    expectTrue(cooker.cook_manifest(manifest).ok, "chain cook for downstream would_invalidate probe ok");
+               "would_invalidate_downstream_of true for producer with dependents");
+    expectTrue(!cooker.cache().would_invalidate_downstream_of(entry_b.output_path, graph.edges(), graph.jobs()),
+               "leaf output would_invalidate_downstream_of is false");

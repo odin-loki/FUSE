@@ -871,3 +871,6 @@ CookHashPreflight CookCache::preflight_cook_cache_entry(const CookCacheEntry& en
 
 // --- deepen additive from deepen-b79-cooker-hash-guards-3cee ---
         preflight.reason = CookHashRejectReason::InvalidCacheKey;
+
+// --- deepen additive from deepen-b79-cooker-hash-7a34 ---
+CookHashPreflight CookCache::preflight_cache_entry(const CookCacheEntry& entry) const {

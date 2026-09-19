@@ -1152,3 +1152,16 @@ void testCookCachePreflightEntryGuards() {
 void testCookHashPreflightCacheEntryGuards() {
     expectTrue(zero_preflight.reason == fuse::project::CookHashRejectReason::InvalidCacheKey,
     testCookHashPreflightCacheEntryGuards();
+
+// --- deepen additive from deepen-b79-cooker-hash-7a34 ---
+               "matching hash is not stale for would_invalidate_stale_content");
+               "mismatched hash is stale for would_invalidate_stale_content");
+               "matching upstream hash does not trigger stale upstream would_invalidate");
+void testCookCachePreflightCacheEntry() {
+    const fuse::project::CookHashPreflight zero_hash = cache.preflight_cache_entry(invalid);
+    const fuse::project::CookHashPreflight empty_source = cache.preflight_cache_entry(invalid);
+    const fuse::project::CookHashPreflight empty_output = cache.preflight_cache_entry(invalid);
+    const fuse::project::CookHashPreflight valid = cache.preflight_cache_entry(invalid);
+    expectTrue(cooker.cache().would_invalidate_stale_upstream_hashes(stale_upstream),
+               "would_invalidate_stale_upstream_hashes true for stale upstream");
+    testCookCachePreflightCacheEntry();
