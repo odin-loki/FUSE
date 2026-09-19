@@ -19,6 +19,67 @@ struct IslandSolveJob {
     const ContactIslandGraph::Island* island = nullptr;
 };
 
+/// Diagnostic reason island solve dispatch would skip (B4.4 deepen follow-up).
+enum class IslandDispatchRejectReason : u8 {
+    None = 0,
+    NoDispatchableIslands,
+    InvalidDt,
+    NonFiniteDt,
+};
+
+/// Diagnostic reason one island solve job would skip dispatch (B4.4 deepen follow-up).
+enum class IslandSolveJobRejectReason : u8 {
+    None = 0,
+    EmptyJob,
+    InvalidDt,
+    NonFiniteDt,
+};
+
+/// Diagnostic reason one island constraint solve would skip (B4.4 deepen follow-up).
+enum class IslandConstraintSolveRejectReason : u8 {
+    None = 0,
+    EmptyIsland,
+    StaleConstraintRefs,
+    NoMovableBodies,
+};
+
+/// Diagnostic reason one island sleep preflight would skip solve (B4.4 deepen follow-up).
+enum class IslandSleepRejectReason : u8 {
+    None = 0,
+    EmptyIsland,
+    OutOfRangeIsland,
+    AllSleeping,
+};
+
+/// Diagnostic reason graph-level island sleep batch would skip (B4.4 deepen follow-up).
+enum class IslandSleepGraphRejectReason : u8 {
+    None = 0,
+    NoSolveableIslands,
+};
+
+/// Diagnostic reason one island wake preflight would skip activation (B4.4 deepen follow-up).
+enum class IslandWakeRejectReason : u8 {
+    None = 0,
+    EmptyIsland,
+    OutOfRangeIsland,
+    NoMixedSleepState,
+};
+
+/// Diagnostic reason graph-level island wake batch would skip (B4.4 deepen follow-up).
+enum class IslandWakeGraphRejectReason : u8 {
+    None = 0,
+    NoWakeableIslands,
+};
+
+/// Human-readable labels for island pipeline reject reasons (logging / tests).
+const char* island_dispatch_reject_reason_name(IslandDispatchRejectReason reason);
+const char* island_solve_job_reject_reason_name(IslandSolveJobRejectReason reason);
+const char* island_constraint_solve_reject_reason_name(IslandConstraintSolveRejectReason reason);
+const char* island_sleep_reject_reason_name(IslandSleepRejectReason reason);
+const char* island_sleep_graph_reject_reason_name(IslandSleepGraphRejectReason reason);
+const char* island_wake_reject_reason_name(IslandWakeRejectReason reason);
+const char* island_wake_graph_reject_reason_name(IslandWakeGraphRejectReason reason);
+
 /// Aggregate counts for parallel dispatch sizing and empty-island early-out stubs.
 struct IslandSolveStats {
     u32 totalIslands = 0;
@@ -30,6 +91,7 @@ struct IslandSolveStats {
 /// Preflight diagnostics for island solve dispatch (B4.4 deepen).
 struct IslandSolvePreflight {
     IslandSolveStats stats{};
+    IslandDispatchRejectReason reason = IslandDispatchRejectReason::None;
     bool skipped = false;
 
     bool can_dispatch() const { return !skipped && stats.dispatchableCount > 0u; }
@@ -94,6 +156,7 @@ struct FrameWarmStartPreflight {
 /// Combined dispatch preflight (graph + timestep guard).
 struct IslandDispatchPreflight {
     IslandSolvePreflight solve{};
+    IslandDispatchRejectReason reason = IslandDispatchRejectReason::None;
     bool invalidDt = false;
     bool skipped = false;
 
@@ -145,6 +208,7 @@ struct IslandCombinedWarmStartPreflight {
 
 /// Per-job island dispatch preflight (dt + empty/null job guards).
 struct IslandSolveJobPreflight {
+    IslandSolveJobRejectReason reason = IslandSolveJobRejectReason::None;
     bool invalidDt = false;
     bool skipped = false;
     u32 constraintCount = 0;
@@ -181,6 +245,7 @@ struct IslandBuildStats {
 /// Preflight diagnostics for island graph build inputs (B4.4 deepen).
 struct IslandBuildPreflight {
     IslandBuildStats stats{};
+    IslandGraphBuildRejectReason reason = IslandGraphBuildRejectReason::None;
     bool skipped = false;
 
     bool has_unsafe_refs() const {
@@ -206,6 +271,7 @@ struct IslandSolveBodiesPreflight {
 struct IslandConstraintSolvePreflight {
     IslandConstraintRefsPreflight refs{};
     IslandSolveBodiesPreflight bodies{};
+    IslandConstraintSolveRejectReason reason = IslandConstraintSolveRejectReason::None;
     bool skipped = false;
 
     bool can_solve() const { return !skipped && refs.can_solve() && bodies.can_solve(); }
@@ -217,6 +283,7 @@ struct IslandSleepPreflight {
     u32 sleepingCount = 0;
     u32 staticOrKinematicCount = 0;
     u32 activeDynamicCount = 0;
+    IslandSleepRejectReason reason = IslandSleepRejectReason::None;
     bool allSleeping = false;
     bool skipped = false;
 
@@ -228,6 +295,7 @@ struct IslandWakePreflight {
     u32 bodyCount = 0;
     u32 sleepingCount = 0;
     u32 activeDynamicCount = 0;
+    IslandWakeRejectReason reason = IslandWakeRejectReason::None;
     bool hasMixedSleepState = false;
     bool skipped = false;
 
@@ -248,6 +316,7 @@ struct IslandSleepGraphStats {
 /// Graph-level sleep preflight for selective per-island solve skipping.
 struct IslandSleepGraphPreflight {
     IslandSleepGraphStats stats{};
+    IslandSleepGraphRejectReason reason = IslandSleepGraphRejectReason::None;
     bool skipped = false;
 
     bool has_solveable_islands() const {
@@ -265,6 +334,7 @@ struct IslandWakeGraphStats {
 /// Graph-level wake preflight for selective per-island sleeper activation.
 struct IslandWakeGraphPreflight {
     IslandWakeGraphStats stats{};
+    IslandWakeGraphRejectReason reason = IslandWakeGraphRejectReason::None;
     bool skipped = false;
 
     bool can_wake() const { return !skipped && stats.wakeableCount > 0u; }
