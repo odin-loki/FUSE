@@ -226,4 +226,36 @@ bool narrowphase_batch_rejects_all(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// Run shape dispatch only when extended deepen preflight passes (B4.6 deepen pass).
+ContactManifold detect_contacts_pair_deepen(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Finalize manifold with prune+finalize preflight gates (B4.6 deepen pass).
+bool generate_contact_manifold_deepen(ContactManifold& manifold);
+
+/// Const preflight for per-slot narrowphase dispatch (B4.6 deepen pass).
+struct NarrowphasePairSlotPreflight {
+    u32 slot = 0u;
+    ContactPairRejectReason reason = ContactPairRejectReason::None;
+    bool rejected = false;
+
+    bool can_dispatch() const { return !rejected; }
+};
+
+/// Populate per-slot narrowphase preflight without running shape dispatch (B4.6 deepen pass).
+NarrowphasePairSlotPreflight preflight_narrowphase_pair_slot(
+    u32 slot,
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
+/// Returns true when per-slot narrowphase should skip dispatch (B4.6 deepen pass).
+bool should_skip_narrowphase_pair_slot(
+    u32 slot,
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
+
 } // namespace fuse::physics::narrowphase
