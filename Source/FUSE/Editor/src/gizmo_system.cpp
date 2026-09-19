@@ -787,6 +787,200 @@ bool isRayFinite(const GizmoRay& ray) {
 bool isHitTestFinite(const GizmoHitTest& hit) {
     return isFiniteF32(hit.screenX) && isFiniteF32(hit.screenY) &&
            isFiniteF32(hit.viewportWidth) && isFiniteF32(hit.viewportHeight);
+const char* gizmoPickGuardRejectReasonLabel(GizmoPickGuardRejectReason reason) {
+    case GizmoPickGuardRejectReason::None:
+    case GizmoPickGuardRejectReason::EmptyRay:
+    case GizmoPickGuardRejectReason::EmptyHit:
+    case GizmoPickGuardRejectReason::InvalidPickConfig:
+    case GizmoPickGuardRejectReason::InvalidDimensions:
+        return "invalid_dimensions";
+    case GizmoPickGuardRejectReason::OutOfBounds:
+        return "out_of_bounds";
+    case GizmoPickGuardRejectReason::ScreenMiss:
+    case GizmoPickGuardRejectReason::PickMiss:
+
+const char* gizmoSnapGuardRejectReasonLabel(GizmoSnapGuardRejectReason reason) {
+    case GizmoSnapGuardRejectReason::None:
+    case GizmoSnapGuardRejectReason::SnapDisabled:
+        return "snap_disabled";
+    case GizmoSnapGuardRejectReason::InvalidStep:
+        return "invalid_step";
+
+const char* gizmoBeginDragGuardRejectReasonLabel(GizmoBeginDragGuardRejectReason reason) {
+    case GizmoBeginDragGuardRejectReason::None:
+    case GizmoBeginDragGuardRejectReason::AlreadyDragging:
+    case GizmoBeginDragGuardRejectReason::EmptyRay:
+    case GizmoBeginDragGuardRejectReason::EmptyHit:
+    case GizmoBeginDragGuardRejectReason::InvalidPickConfig:
+    case GizmoBeginDragGuardRejectReason::InvalidDimensions:
+    case GizmoBeginDragGuardRejectReason::OutOfBounds:
+    case GizmoBeginDragGuardRejectReason::ScreenMiss:
+    case GizmoBeginDragGuardRejectReason::PickMiss:
+
+const char* gizmoUpdateDragGuardRejectReasonLabel(GizmoUpdateDragGuardRejectReason reason) {
+    case GizmoUpdateDragGuardRejectReason::None:
+    case GizmoUpdateDragGuardRejectReason::NotDragging:
+    case GizmoUpdateDragGuardRejectReason::EmptyHit:
+    case GizmoUpdateDragGuardRejectReason::InvalidDimensions:
+    case GizmoUpdateDragGuardRejectReason::OutOfBounds:
+    case GizmoUpdateDragGuardRejectReason::InvalidActiveAxis:
+
+const char* gizmoEndDragGuardRejectReasonLabel(GizmoEndDragGuardRejectReason reason) {
+    case GizmoEndDragGuardRejectReason::None:
+    case GizmoEndDragGuardRejectReason::NotDragging:
+
+GizmoPickGuardRejectReason classifyPickReject(const PickPreflight& preflight) {
+        return GizmoPickGuardRejectReason::EmptyRay;
+        return GizmoPickGuardRejectReason::EmptyHit;
+        return GizmoPickGuardRejectReason::InvalidPickConfig;
+    if (preflight.invalidDimensions) {
+        return GizmoPickGuardRejectReason::InvalidDimensions;
+    if (preflight.outOfBounds) {
+        return GizmoPickGuardRejectReason::OutOfBounds;
+        return GizmoPickGuardRejectReason::ScreenMiss;
+        return GizmoPickGuardRejectReason::PickMiss;
+    return GizmoPickGuardRejectReason::None;
+
+GizmoSnapGuardRejectReason classifySnapReject(const SnapPreflight& preflight) {
+    if (preflight.snapDisabled) {
+        return GizmoSnapGuardRejectReason::SnapDisabled;
+    if (preflight.invalidStep) {
+        return GizmoSnapGuardRejectReason::InvalidStep;
+    return GizmoSnapGuardRejectReason::None;
+
+GizmoBeginDragGuardRejectReason classifyBeginDragReject(const BeginDragPreflight& preflight) {
+        return GizmoBeginDragGuardRejectReason::AlreadyDragging;
+        return GizmoBeginDragGuardRejectReason::EmptyRay;
+        return GizmoBeginDragGuardRejectReason::EmptyHit;
+        return GizmoBeginDragGuardRejectReason::InvalidPickConfig;
+        return GizmoBeginDragGuardRejectReason::InvalidDimensions;
+        return GizmoBeginDragGuardRejectReason::OutOfBounds;
+        return GizmoBeginDragGuardRejectReason::ScreenMiss;
+        return GizmoBeginDragGuardRejectReason::PickMiss;
+    return GizmoBeginDragGuardRejectReason::None;
+
+GizmoUpdateDragGuardRejectReason classifyUpdateDragReject(const UpdateDragPreflight& preflight) {
+        return GizmoUpdateDragGuardRejectReason::NotDragging;
+        return GizmoUpdateDragGuardRejectReason::InvalidActiveAxis;
+        return GizmoUpdateDragGuardRejectReason::InvalidDimensions;
+        return GizmoUpdateDragGuardRejectReason::EmptyHit;
+        return GizmoUpdateDragGuardRejectReason::OutOfBounds;
+    return GizmoUpdateDragGuardRejectReason::None;
+
+GizmoEndDragGuardRejectReason classifyEndDragReject(const EndDragPreflight& preflight) {
+        return GizmoEndDragGuardRejectReason::NotDragging;
+    return GizmoEndDragGuardRejectReason::None;
+
+bool tryPreflightPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                      GizmoPickGuardRejectReason& reason) {
+    const PickPreflight preflight = preflightPick(ray, transform, mode, space, axisLength, pickRadius);
+    reason = classifyPickReject(preflight);
+    return preflight.canPick();
+
+bool tryPreflightPick(const GizmoHitTest& hit, GizmoMode mode, GizmoPickGuardRejectReason& reason) {
+    const PickPreflight preflight = preflightPick(hit, mode);
+
+bool tryPreflightSnap(GizmoMode mode, const GizmoSnapSettings& settings,
+                      GizmoSnapGuardRejectReason& reason) {
+    const SnapPreflight preflight = preflightSnap(mode, settings);
+    reason = classifySnapReject(preflight);
+    return preflight.canApply();
+
+bool tryPreflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                           GizmoBeginDragGuardRejectReason& reason, bool alreadyDragging) {
+    const BeginDragPreflight preflight =
+        preflightBeginDrag(ray, transform, mode, space, axisLength, pickRadius, alreadyDragging);
+    reason = classifyBeginDragReject(preflight);
+    return preflight.canBegin;
+
+                           const GizmoSnapSettings& settings, GizmoBeginDragGuardRejectReason& reason,
+                           bool alreadyDragging) {
+    const BeginDragPreflight preflight = preflightBeginDrag(ray, transform, mode, space, axisLength,
+                                                            pickRadius, settings, alreadyDragging);
+
+bool tryPreflightBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
+    const BeginDragPreflight preflight = preflightBeginDrag(hit, mode, alreadyDragging);
+
+    const BeginDragPreflight preflight = preflightBeginDrag(hit, mode, settings, alreadyDragging);
+
+bool tryPreflightUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
+                            GizmoUpdateDragGuardRejectReason& reason) {
+    const UpdateDragPreflight preflight = preflightUpdateDrag(hit, dragging, activeAxis);
+    reason = classifyUpdateDragReject(preflight);
+    return preflight.canUpdate();
+
+                            GizmoMode mode, const GizmoSnapSettings& settings,
+    const UpdateDragPreflight preflight =
+        preflightUpdateDrag(hit, dragging, activeAxis, mode, settings);
+
+bool tryPreflightEndDrag(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+                         const GizmoSnapSettings& settings, GizmoEndDragGuardRejectReason& reason) {
+    const EndDragPreflight preflight = preflightEndDrag(dragging, activeAxis, mode, settings);
+    reason = classifyEndDragReject(preflight);
+    return preflight.canEnd();
+
+bool shouldSkipPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                    GizmoSpace space, f32 axisLength, f32 pickRadius) {
+    GizmoPickGuardRejectReason reason = GizmoPickGuardRejectReason::None;
+    return !tryPreflightPick(ray, transform, mode, space, axisLength, pickRadius, reason);
+
+bool shouldSkipPick(const GizmoHitTest& hit, GizmoMode mode) {
+    return !tryPreflightPick(hit, mode, reason);
+
+bool shouldSkipSnap(GizmoMode mode, const GizmoSnapSettings& settings) {
+    GizmoSnapGuardRejectReason reason = GizmoSnapGuardRejectReason::None;
+    return !tryPreflightSnap(mode, settings, reason);
+
+bool shouldSkipBeginDrag(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+                         GizmoSpace space, f32 axisLength, f32 pickRadius, bool alreadyDragging) {
+    GizmoBeginDragGuardRejectReason reason = GizmoBeginDragGuardRejectReason::None;
+    return !tryPreflightBeginDrag(ray, transform, mode, space, axisLength, pickRadius, reason,
+                                  alreadyDragging);
+
+                         const GizmoSnapSettings& settings, bool alreadyDragging) {
+    return !tryPreflightBeginDrag(ray, transform, mode, space, axisLength, pickRadius, settings,
+                                  reason, alreadyDragging);
+
+bool shouldSkipBeginDrag(const GizmoHitTest& hit, GizmoMode mode, bool alreadyDragging) {
+    return !tryPreflightBeginDrag(hit, mode, reason, alreadyDragging);
+
+bool shouldSkipBeginDrag(const GizmoHitTest& hit, GizmoMode mode,
+    return !tryPreflightBeginDrag(hit, mode, settings, reason, alreadyDragging);
+
+bool shouldSkipUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis) {
+    GizmoUpdateDragGuardRejectReason reason = GizmoUpdateDragGuardRejectReason::None;
+    return !tryPreflightUpdateDrag(hit, dragging, activeAxis, reason);
+
+bool shouldSkipUpdateDrag(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
+                          GizmoMode mode, const GizmoSnapSettings& settings) {
+    return !tryPreflightUpdateDrag(hit, dragging, activeAxis, mode, settings, reason);
+
+bool shouldSkipEndDrag(bool dragging, GizmoAxis activeAxis) {
+    GizmoEndDragGuardRejectReason reason = GizmoEndDragGuardRejectReason::None;
+    return !tryPreflightEndDrag(dragging, activeAxis, GizmoMode::Translate, {}, reason);
+
+bool shouldSkipEndDrag(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+    return !tryPreflightEndDrag(dragging, activeAxis, mode, settings, reason);
+
+bool shouldSkipPickInteraction(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
+    return shouldSkipPick(ray, transform, mode, space, axisLength, pickRadius);
+
+bool shouldSkipPickInteraction(const GizmoHitTest& hit, GizmoMode mode,
+    (void)settings;
+    return shouldSkipPick(hit, mode);
+
+bool shouldSkipBeginDragInteraction(const GizmoRay& ray, const GizmoTransform& transform,
+                                    f32 pickRadius, const GizmoSnapSettings& settings,
+    return shouldSkipBeginDrag(ray, transform, mode, space, axisLength, pickRadius, settings,
+
+bool shouldSkipBeginDragInteraction(const GizmoHitTest& hit, GizmoMode mode,
+    return shouldSkipBeginDrag(hit, mode, settings, alreadyDragging);
+
+bool shouldSkipUpdateDragInteraction(const GizmoHitTest& hit, bool dragging, GizmoAxis activeAxis,
+    return shouldSkipUpdateDrag(hit, dragging, activeAxis, mode, settings);
+
+bool shouldSkipEndDragInteraction(bool dragging, GizmoAxis activeAxis, GizmoMode mode,
+    return shouldSkipEndDrag(dragging, activeAxis, mode, settings);
 
 PickPreflight preflightPick(const GizmoRay& ray, const GizmoTransform& transform, GizmoMode mode,
                             GizmoSpace space, f32 axisLength, f32 pickRadius) {
@@ -3502,6 +3696,62 @@ bool GizmoSystem::shouldSkipUpdateDrag(const GizmoHitTest& hit) const {
 
 bool GizmoSystem::shouldSkipEndDrag() const {
     return fuse::editor::shouldSkipEndDrag(m_dragging);
+bool GizmoSystem::tryPreflightPick(const GizmoRay& ray, const GizmoTransform& transform,
+                                   GizmoPickGuardRejectReason& reason) const {
+    return fuse::editor::tryPreflightPick(ray, transform, m_mode, m_space, kAxisLength, kPickRadius,
+                                          reason);
+
+bool GizmoSystem::tryPreflightPick(const GizmoHitTest& hit,
+    return fuse::editor::tryPreflightPick(hit, m_mode, reason);
+
+bool GizmoSystem::tryPreflightSnap(GizmoSnapGuardRejectReason& reason) const {
+    return fuse::editor::tryPreflightSnap(m_mode, m_snap, reason);
+
+bool GizmoSystem::tryPreflightBeginDrag(const GizmoHitTest& hit,
+                                        GizmoBeginDragGuardRejectReason& reason) const {
+    return fuse::editor::tryPreflightBeginDrag(hit, m_mode, m_snap, reason, m_dragging);
+
+bool GizmoSystem::tryPreflightBeginDrag(const GizmoRay& ray, const GizmoTransform& transform,
+    return fuse::editor::tryPreflightBeginDrag(ray, transform, m_mode, m_space, kAxisLength,
+                                               kPickRadius, m_snap, reason, m_dragging);
+
+bool GizmoSystem::tryPreflightUpdateDrag(const GizmoHitTest& hit,
+                                         GizmoUpdateDragGuardRejectReason& reason) const {
+    return fuse::editor::tryPreflightUpdateDrag(hit, m_dragging, m_activeAxis, m_mode, m_snap,
+
+bool GizmoSystem::tryPreflightEndDrag(GizmoEndDragGuardRejectReason& reason) const {
+    return fuse::editor::tryPreflightEndDrag(m_dragging, m_activeAxis, m_mode, m_snap, reason);
+
+
+
+bool GizmoSystem::shouldSkipSnap() const {
+    return fuse::editor::shouldSkipSnap(m_mode, m_snap);
+
+    return fuse::editor::shouldSkipBeginDrag(hit, m_mode, m_snap, m_dragging);
+
+
+    return fuse::editor::shouldSkipUpdateDrag(hit, m_dragging, m_activeAxis, m_mode, m_snap);
+
+    return fuse::editor::shouldSkipEndDrag(m_dragging, m_activeAxis, m_mode, m_snap);
+
+bool GizmoSystem::shouldSkipPickInteraction(const GizmoRay& ray,
+    return fuse::editor::shouldSkipPickInteraction(ray, transform, m_mode, m_space, kAxisLength,
+
+bool GizmoSystem::shouldSkipPickInteraction(const GizmoHitTest& hit) const {
+    return fuse::editor::shouldSkipPickInteraction(hit, m_mode, m_snap);
+
+bool GizmoSystem::shouldSkipBeginDragInteraction(const GizmoHitTest& hit) const {
+    return fuse::editor::shouldSkipBeginDragInteraction(hit, m_mode, m_snap, m_dragging);
+
+bool GizmoSystem::shouldSkipBeginDragInteraction(const GizmoRay& ray,
+    return fuse::editor::shouldSkipBeginDragInteraction(ray, transform, m_mode, m_space, kAxisLength,
+
+bool GizmoSystem::shouldSkipUpdateDragInteraction(const GizmoHitTest& hit) const {
+    return fuse::editor::shouldSkipUpdateDragInteraction(hit, m_dragging, m_activeAxis, m_mode,
+                                                         m_snap);
+
+bool GizmoSystem::shouldSkipEndDragInteraction() const {
+    return fuse::editor::shouldSkipEndDragInteraction(m_dragging, m_activeAxis, m_mode, m_snap);
 }
 
 GizmoResult GizmoSystem::beginDrag(const GizmoHitTest& hit, const GizmoTransform& current) {
