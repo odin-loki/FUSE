@@ -24,6 +24,12 @@ public:
     u32 warmupFramesRemaining() const;
     /// True when history is ready, warmed, and generation matches for reuse (B5.9 deepen).
     bool reuseReady(u32 observedGeneration) const;
+    /// True when history targets are allocated and ready for resolve (B5.9 deepen).
+    bool readyForResolve() const;
+    /// True when history is warmed for temporal reuse (B5.9 deepen).
+    bool warmupComplete() const;
+    /// Current warm-up lifecycle state (B5.9 deepen).
+    TaaHistoryWarmupState warmupState() const;
     u32 accumulatedFrames() const { return m_validity.accumulatedFrames; }
     u32 invalidateGeneration() const { return m_validity.invalidateGeneration; }
     /// True when a consumer's observed generation differs from the current history epoch.
