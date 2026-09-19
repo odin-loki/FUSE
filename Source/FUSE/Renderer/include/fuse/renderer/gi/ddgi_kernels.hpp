@@ -82,6 +82,7 @@ enum class ProbeKernelResourceRejectReason : u8 {
     NullPrevIrradianceSurface,
     NullOutRadianceSurface,
     NullBlendSurfaces,
+    NullRadianceSurface,
 };
 
 /// Human-readable label for probe-kernel reject reasons (logging / tests).
@@ -245,6 +246,18 @@ bool tryValidateProbeBlendKernelSurfaces(const DDGIKernelParams& params, ProbeKe
 bool canLaunchDdgiKernelParams(const DDGIKernelParams& params);
 /// Diagnose why unified kernel launch preflight would reject.
 bool tryCanLaunchDdgiKernelParams(const DDGIKernelParams& params, ProbeKernelRejectReason& outReason);
+
+/// Preflight guard before probe trace kernel launch including GPU surface pointers.
+bool canLaunchProbeTraceKernelWithSurfaces(const DDGIKernelParams& params);
+/// Diagnose why trace launch with GPU surfaces would reject.
+bool tryCanLaunchProbeTraceKernelWithSurfaces(const DDGIKernelParams& params,
+                                              ProbeKernelRejectReason& outReason);
+
+/// Preflight guard before probe blend kernel launch including GPU atlas surfaces.
+bool canLaunchProbeBlendKernelWithSurfaces(const DDGIKernelParams& params);
+/// Diagnose why blend launch with GPU surfaces would reject.
+bool tryCanLaunchProbeBlendKernelWithSurfaces(const DDGIKernelParams& params,
+                                              ProbeKernelRejectReason& outReason);
 
 /// Launch probe trace kernel — returns true on success (stub when CUDA unavailable).
 bool launch_probe_trace_kernel(const DDGIKernelParams& params, void* cuda_stream);

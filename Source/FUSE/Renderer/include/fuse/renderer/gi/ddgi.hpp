@@ -422,6 +422,19 @@ enum class SampleRequestRejectReason : u8 {
 /// Human-readable label for sample-request reject reasons (logging / tests).
 const char* sampleRequestRejectReasonLabel(SampleRequestRejectReason reason);
 
+/// Why probe scheduling preflight rejected the request (B5.6 deepen).
+enum class ProbeScheduleRejectReason : u8 {
+    None = 0,
+    NullIndices,
+    NullCount,
+    ZeroProbeCount,
+    ZeroMaxIndices,
+    ZeroProbesPerFrame,
+};
+
+/// Human-readable label for probe-schedule reject reasons (logging / tests).
+const char* probeScheduleRejectReasonLabel(ProbeScheduleRejectReason reason);
+
 /// Why a host probe-update launch preflight rejected the request (B5.6 deepen).
 enum class ProbeUpdateLaunchRejectReason : u8 {
     NullIndices,
@@ -685,6 +698,13 @@ struct ProbeGridLayout {
     /// Fractional grid coordinates — origin cell centre is (0,0,0).
     static fuse::math::Vec3 worldToProbeGridCoord(const DDGIDesc& desc,
                                                   const fuse::math::Vec3& world_position);
+    /// World→grid mapping with reject-reason diagnostics; false on empty grid or invalid spacing.
+    static bool tryWorldToProbeGridCoord(const DDGIDesc& desc,
+                                         const fuse::math::Vec3& world_position,
+                                         fuse::math::Vec3& out_grid_coord,
+                                         ProbeSampleCoordsRejectReason& outReason);
+    /// True when corner indices or weights would be clamped before trilinear sampling.
+    static bool wouldClampProbeSampleCoords(const DDGIDesc& desc, const ProbeSampleCoords& coords);
     /// Clamp fractional grid coordinates to the valid probe index range.
     static fuse::math::Vec3 clampWorldToProbeGridCoord(const DDGIDesc& desc,
                                                        const fuse::math::Vec3& grid_coord);
@@ -937,6 +957,11 @@ bool tryValidateCacheIndex(const DDGIDesc& desc,
 bool tryValidateCacheIndexLookup(const DDGIDesc& desc,
 /// True when a cache lookup at `probe_index` would clamp into the valid probe range.
 bool wouldClampCacheIndex(const DDGIDesc& desc, u32 probe_index);
+/// Cache-index preflight including null-cache diagnostics.
+bool wouldClampCacheLookupIndex(u32 probe_index, const DDGIDesc& desc);
+/// World position with guard preflight; false on empty grid or OOB probe index.
+bool tryProbeWorldPosition(const DDGIDesc& desc,
+                           fuse::math::Vec3& out_position,
 /// Sample-request guard — grid ready and cache sized for trilinear lookup (empty normals resolve at sample time).
     /// True when `probe_index` is out of range for the grid or exceeds `cache_count`.
     bool isCacheIndexOutOfRange(const DDGIDesc& desc, u32 probe_index, u32 cache_count);
@@ -1039,6 +1064,8 @@ bool canScheduleProbeUpdates(u32 probe_count, u32 max_indices, const u32* out_in
 bool wouldSkipProbeSchedule(u32 probe_count, u32 max_indices, const u32* out_indices, const u32* out_count);
 /// Early-out when probe-update scheduling would be rejected.
 /// Diagnose why probe-update scheduling preflight would reject; vacuously succeeds when schedulable.
+/// Preflight guard before probe scheduling; false on null/zero output buffers or zero probe count.
+                             u32* out_indices,
 bool tryScheduleProbeUpdates(u32 frame_index,
                              u32 probe_count,
                              u32 probes_per_frame,
