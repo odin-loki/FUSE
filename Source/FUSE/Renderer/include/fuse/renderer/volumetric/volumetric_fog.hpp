@@ -787,6 +787,9 @@ bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 /// True when a populate reject reason would block meaningful fill (B5.11 deepen pass).
 bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 
+/// True when a populate reject reason would block meaningful fill (B5.11 deepen pass).
+bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
+
 /// Why a froxel density lookup preflight rejected the request (B5.11 deepen).
 enum class DensityLookupRejectReason : u8 {
     None = 0,
@@ -905,6 +908,7 @@ bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReas
 
 
 /// True when a density-lookup reject reason blocks guarded lookup (B5.11 deepen).
+
 
 
 
@@ -1134,6 +1138,8 @@ DensityLookupRejectReason classifyDensityLookupReject(const FroxelDensityGrid& g
 DensityLookupRejectReason classifyDensityLookupRejectAtCoord(const FroxelDensityGrid& grid,
 /// Non-mutating index-based density lookup preflight — returns true when lookup would proceed.
 /// Non-mutating coord-based density lookup preflight — returns true when lookup would proceed.
+/// Classify why index-based density lookup would reject — same ordering as `tryCanLookupAtIndex`.
+/// Classify why coord-based density lookup would reject — same ordering as `tryCanLookupAtCoord`.
 /// Early-out when density lookup would be rejected — same ordering as `tryCanLookupAtIndex`.
 bool wouldSkipDensityLookup(const FroxelDensityGrid& grid, const FroxelGridDesc& desc);
 /// Early-out when index-based density lookup would be rejected; OOB indices that clamp are not skipped.
@@ -1286,9 +1292,11 @@ FroxelTrilinearSampleRejectReason classifyFroxelTrilinearSampleReject(const Frox
 /// Classify trilinear density sample preflight — same ordering as `tryCanTrilinearSampleAtCoords`.
 /// Non-mutating trilinear sample preflight — returns true when sampling would proceed.
 bool preflightFroxelTrilinearSample(const FroxelDensityGrid& grid,
-                                    const FroxelGridDesc& desc,
                                     const FroxelSampleCoords& coords,
                                     FroxelTrilinearSampleRejectReason* reason = nullptr);
+/// Classify why trilinear density sampling would reject — same ordering as `tryCanTrilinearSampleAtCoords`.
+FroxelTrilinearSampleRejectReason classifyTrilinearSampleReject(const FroxelDensityGrid& grid,
+bool preflightTrilinearSample(const FroxelDensityGrid& grid,
 /// Early-out when trilinear density sampling would be rejected — same ordering as `tryCanTrilinearSampleAtCoords`.
 bool wouldSkipDensityTrilinearSample(const FroxelDensityGrid& grid,
 bool canSampleDensityAtIndex(const FroxelDensityGrid& grid, const FroxelGridDesc& desc, u32 index);
@@ -1613,6 +1621,7 @@ bool hasNonFiniteDensity(const FroxelDensityGrid& grid);
 /// Early-out when grid density validation would be rejected — same ordering as `tryValidateGridDensity`.
 /// Non-mutating grid density preflight — returns true when validation would pass.
 /// Classify grid density validation — same ordering as `tryValidateGridDensity`.
+/// Non-mutating grid-density preflight — returns true when validation would succeed.
 /// Read density with guard preflight; returns false when `canLookupAtIndex` would reject the request.
 bool trySampleDensityAtIndex(const FroxelDensityGrid& grid,
                              u32 index,
@@ -1974,6 +1983,7 @@ bool preflightFroxelPopulate(const FroxelGridDesc& desc,
                                                         const FroxelCameraDesc& camera,
                                                         const VolumetricFogParams& params);
 /// Non-mutating populate preflight — returns true when analytic fill would proceed.
+/// Non-mutating populate preflight — returns true when meaningful fill would proceed.
                              const VolumetricFogParams& params,
                              FroxelPopulateRejectReason* reason = nullptr);
 /// Early-out when analytic populate would skip meaningful fill — same ordering as `tryCanPopulateFromAnalyticFog`.
