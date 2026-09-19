@@ -4635,3 +4635,30 @@ void testPreflightIslandSolvePassGuards() {
 void testDispatchSolveIslandWithWakeGuarded() {
 void testDispatchAllIslandsWithWakeGuarded() {
     testPreflightIslandSolvePassGuards();
+
+// --- deepen additive from deepen-pbd-island-guards-2fe2 ---
+void testPreflightBuiltIslandGraphGuards() {
+    const IslandBuiltGraphPreflight preflight =
+    expectTrue(!should_skip_built_island_graph(graph, 4, contacts, constraints),
+               "should_skip false for consistent built graph");
+    const IslandBuiltGraphPreflight lonePreflight =
+    expectTrue(lonePreflight.is_consistent(), "lone-body built graph has no unsafe refs");
+    const IslandBuiltGraphPreflight emptyPreflight =
+    expectTrue(emptyPreflight.skipped, "built graph preflight skips when graph is empty");
+void testPreflightIslandConstraintSolveByIndex() {
+    expectTrue(mixedPreflight.can_solve(), "mixed island passes constraint solve by index");
+    expectTrue(!sleepingPreflight.can_solve(), "all-sleeping island fails constraint solve by index");
+void testPreflightIslandDispatchSleepGuards() {
+    const IslandDispatchSleepPreflight preflight = preflight_island_dispatch_sleep(graph, bodies, dt);
+    expectTrue(!should_skip_island_dispatch_sleep(graph, bodies, dt),
+               "should_skip dispatch-sleep false for mixed graph");
+    const IslandDispatchSleepPreflight allSleeping = preflight_island_dispatch_sleep(graph, bodies, dt);
+    expectTrue(should_skip_island_dispatch_sleep(graph, bodies, dt),
+               "should_skip dispatch-sleep true for all-sleeping graph");
+    const IslandSolveableGraphPreflight solveablePreflight =
+    expectTrue(solveablePreflight.has_solveable(), "solveable graph preflight has one island");
+    expectTrue(!should_skip_island_solveable_graph(graph, bodies, work.contactManifolds(), constraints),
+               "should_skip solveable graph false for mixed graph");
+    testPreflightBuiltIslandGraphGuards();
+    testPreflightIslandConstraintSolveByIndex();
+    testPreflightIslandDispatchSleepGuards();

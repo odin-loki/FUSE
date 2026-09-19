@@ -1575,3 +1575,13 @@ bool should_skip_island_dispatch_solveable(const ContactIslandGraph& graph,
 
 // --- deepen additive from deepen-pbd-island-guards-a022 ---
 IslandSolvePassPreflight preflight_island_solve_pass_by_index(
+
+// --- deepen additive from deepen-pbd-island-guards-2fe2 ---
+struct IslandBuiltGraphPreflight {
+struct IslandSolveableGraphPreflight {
+IslandDispatchSleepPreflight preflight_island_dispatch_sleep(const ContactIslandGraph& graph,
+bool should_skip_island_dispatch_sleep(const ContactIslandGraph& graph,
+IslandBuiltGraphPreflight preflight_built_island_graph(const ContactIslandGraph& graph,
+bool should_skip_built_island_graph(const ContactIslandGraph& graph,
+IslandSolveableGraphPreflight preflight_island_solveable_graph(
+bool should_skip_island_solveable_graph(const ContactIslandGraph& graph,

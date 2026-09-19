@@ -2567,3 +2567,17 @@ bool should_skip_island_dispatch_solveable(const ContactIslandGraph& graph,
 IslandSolvePassPreflight preflight_island_solve_pass_by_index(
     const IslandSolvePassPreflight preflight = preflight_island_solve_pass(
         if (sleepPreflight.skipped || sleepPreflight.can_skip_solve()) {
+
+// --- deepen additive from deepen-pbd-island-guards-2fe2 ---
+IslandDispatchSleepPreflight preflight_island_dispatch_sleep(const ContactIslandGraph& graph,
+bool should_skip_island_dispatch_sleep(const ContactIslandGraph& graph,
+IslandBuiltGraphPreflight preflight_built_island_graph(const ContactIslandGraph& graph,
+    IslandBuiltGraphPreflight preflight{};
+bool should_skip_built_island_graph(const ContactIslandGraph& graph,
+        const IslandConstraintSolvePreflight solvePreflight =
+        if (!solvePreflight.refs.can_solve()) {
+        if (!solvePreflight.bodies.can_solve()) {
+IslandSolveableGraphPreflight preflight_island_solveable_graph(
+    IslandSolveableGraphPreflight preflight{};
+bool should_skip_island_solveable_graph(const ContactIslandGraph& graph,
+    const IslandDispatchSleepPreflight preflight = preflight_island_dispatch_sleep(graph, bodies, dt);
