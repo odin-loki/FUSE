@@ -1121,6 +1121,8 @@ BroadphaseInputPreflight preflight_broadphase_input(
 
 /// Returns true when broadphase should skip before hash build (B4.2 deepen pass).
 bool should_skip_broadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes);
 
 /// Const preflight for cell occupancy before hash insert (B4.2 deepen pass).
 struct CellOccupancyPreflight {
@@ -1130,6 +1132,9 @@ struct CellOccupancyPreflight {
     bool emptyRange = false;
 
     bool can_insert() const { return !skipped && !emptyRange && !exceedsBudget; }
+    bool skipped = false;
+
+};
 
 /// Populate cell occupancy preflight without mutating hash buckets (B4.2 deepen pass).
 CellOccupancyPreflight preflight_cell_occupancy(const CellRange3& range, u32 maxCells);
@@ -1142,6 +1147,10 @@ FUSE_PHYSICS_INLINE bool canSkipCellOccupancyInsert(const CellRange3& range, u32
     return maxCells > 0u && exceedsCellOccupancyBudget(range, maxCells);
 
 FUSE_PHYSICS_INLINE bool canSkipCellOccupancyInsert(const CellRange2& range, u32 maxCells) {
+    }
+
+    if (isEmptyCellRange(range)) {
+        return true;
 
 /// Const preflight for broadphase pair refine dispatch (B4.2 deepen pass).
 struct RefineBroadphasePreflight {
@@ -1152,11 +1161,19 @@ struct RefineBroadphasePreflight {
 
 /// Populate refine preflight without invalidating pair slots (B4.2 deepen pass).
 RefineBroadphasePreflight preflight_refine_broadphase(
+    bool skipped = false;
+
+};
+
+    const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     const PairBufferSoA& buffer);
 
 /// Returns true when refine should skip before AABB overlap pass (B4.2 deepen pass).
 bool should_skip_refine_broadphase(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const PairBufferSoA& buffer);
 
 /// Job-safe broadphase: parallel shape→cell + per-cell pair generation into reusable SoA slots.
 void runBroadphaseIntoBuffer(

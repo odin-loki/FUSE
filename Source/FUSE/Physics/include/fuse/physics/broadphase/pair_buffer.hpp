@@ -418,11 +418,13 @@ FUSE_PHYSICS_INLINE bool isEmptyBroadphaseOutput(const PairBufferSoA& buffer) {
     return buffer.isEmpty() || buffer.canSkipSoAIteration();
 
 /// Const preflight for pair-buffer dedupe dispatch (B4.2 deepen pass).
+
     u32 activePairCount = 0;
     bool skipped = false;
 
     bool needs_dedupe() const { return !skipped && activePairCount > 1u; }
     bool can_dedupe() const { return needs_dedupe(); }
+};
 
 /// Populate dedupe preflight without sorting pair slots (B4.2 deepen pass).
 PairBufferDedupePreflight preflight_dedupe_pair_buffer(const PairBufferSoA& buffer);
@@ -436,6 +438,11 @@ bool should_skip_dedupe_pair_buffer(const PairBufferSoA& buffer);
 
     bool needs_clamp() const { return !skipped && maxCapacity > 0u && activePairCount > maxCapacity; }
     bool can_clamp() const { return needs_clamp(); }
+struct PairBufferClampPreflight {
+    u32 activePairCount = 0;
+    bool skipped = false;
+
+};
 
 /// Populate clamp preflight without truncating pair slots (B4.2 deepen pass).
 PairBufferClampPreflight preflight_pair_buffer_clamp(const PairBufferSoA& buffer);
