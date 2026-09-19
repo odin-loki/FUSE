@@ -201,6 +201,7 @@ enum class FroxelBilinearSampleRejectReason : u8 {
 /// True when a sample-coord reject reason blocks guarded sampling (B5.11 deepen).
 
 
+
 /// Why froxel trilinear density sampling preflight rejected the request (B5.11 deepen).
 enum class FroxelTrilinearSampleRejectReason : u8 {
     None = 0,
@@ -572,7 +573,6 @@ struct FroxelGridLayout {
     /// Classify why screen-depth mapping would reject — same ordering as `tryMapScreenDepthToSampleCoords`.
     /// Screen-depth mapping preflight with optional reject-reason diagnostics.
     static bool preflightScreenDepthMapping(f32 screenX,
-    /// Classify sample-coord rejection — same ordering as `tryPreflightSampleCoords`.
     /// Classify screen-depth → sample-coords rejection — same ordering as `tryMapScreenDepthToSampleCoords`.
     /// Non-mutating screen-depth → sample-coords preflight — returns true when mapping would proceed.
     /// Classify sample-coord rejection — same ordering as `tryPreflightSampleCoords` (B5.11 deepen).
@@ -777,6 +777,9 @@ bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 /// True when a populate reject reason would block analytic fill (B5.11 deepen pass).
 bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
 
+/// True when a populate reject reason would block meaningful fill (B5.11 deepen).
+bool froxelPopulateRejectReasonIsBlocking(FroxelPopulateRejectReason reason);
+
 /// Why a froxel density lookup preflight rejected the request (B5.11 deepen).
 enum class DensityLookupRejectReason : u8 {
     None = 0,
@@ -895,6 +898,7 @@ bool froxelTrilinearSampleRejectReasonIsBlocking(FroxelTrilinearSampleRejectReas
 
 
 /// True when a density-lookup reject reason blocks guarded lookup (B5.11 deepen).
+
 
 
 
@@ -1987,6 +1991,10 @@ FroxelPopulateRejectReason classifyPopulateReject(const FroxelGridDesc& desc,
                                                   const VolumetricFogParams& params);
 /// Non-mutating populate preflight — returns true when meaningful fill would proceed.
 /// Non-mutating populate preflight — returns true when analytic fill would proceed.
+bool preflightFroxelPopulate(const FroxelGridDesc& desc,
+                             const FroxelCameraDesc& camera,
+                             const VolumetricFogParams& params,
+                             FroxelPopulateRejectReason* reason = nullptr);
 /// Guarded populate — always mirrors `populateFromAnalyticFog`; returns false when preflight rejects fill.
 bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
                                 const FroxelGridDesc& desc,
