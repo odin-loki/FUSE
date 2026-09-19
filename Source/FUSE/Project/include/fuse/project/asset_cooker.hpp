@@ -252,6 +252,7 @@ public:
     /// True when `count_stale_dependency_invalidation` would remove at least one entry (B7.9 deepen).
     /// Deduplicated source paths `invalidate_stale_dependency_hashes` would touch (B7.9 deepen).
     /// True when stale dependency hashes would invalidate cache entries (B7.9 deepen).
+    /// True when `count_upstream_invalidation` is non-zero (B7.9 deepen).
     /// Read-only prune reconcile probe — mirrors `CookCache::estimate_prune_removals` (B7.9 deepen).
     [[nodiscard]] CookCachePruneEstimate estimate_prune_reconcile() const;
     /// Combined dependency + prune reconcile estimator for incremental invalidation planning (B7.9 deepen).
@@ -529,10 +530,6 @@ public:
 
     /// Read-only reconcile skip guards — mirror count/estimate probes without mutating cache (B7.9 deepen).
     /// Read-only reconcile skip probes — mirror estimate/count guards (B7.9 deepen).
-    [[nodiscard]] bool should_skip_upstream_invalidation(const CookManifest& manifest,
-                                                         const std::string& changed_source) const;
-    [[nodiscard]] bool should_skip_stale_dependency_invalidation(const CookManifest& manifest) const;
-    [[nodiscard]] bool should_skip_prune_reconcile() const;
     [[nodiscard]] bool should_skip_reconcile_invalidation(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
