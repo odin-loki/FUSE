@@ -27,7 +27,7 @@ void ContactIslandGraph::compressPath(u32 index) {
 }
 
 void ContactIslandGraph::unionBodies(u32 a, u32 b) {
-    if (a >= parent_.size() || b >= parent_.size()) {
+    if (!bodies_in_union_range(parent_.size(), a, b)) {
         return;
     }
 
@@ -56,10 +56,16 @@ void ContactIslandGraph::build(u32 bodyCount,
         if (!contact.valid) {
             continue;
         }
+        if (!contact_in_island_build_range(bodyCount, contact)) {
+            continue;
+        }
         unionBodies(contact.bodyA, contact.bodyB);
     }
 
     for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (!distance_in_island_build_range(bodyCount, constraint)) {
+            continue;
+        }
         unionBodies(constraint.bodyA, constraint.bodyB);
     }
 
@@ -81,7 +87,7 @@ void ContactIslandGraph::build(u32 bodyCount,
 
     for (u32 contactIndex = 0; contactIndex < contacts.size(); ++contactIndex) {
         const narrowphase::ContactManifold& contact = contacts[contactIndex];
-        if (!contact.valid) {
+        if (!contact.valid || !contact_in_island_build_range(bodyCount, contact)) {
             continue;
         }
         const u32 islandIndex = rootToIsland[findRoot(contact.bodyA)];
@@ -92,6 +98,9 @@ void ContactIslandGraph::build(u32 bodyCount,
 
     for (u32 distanceIndex = 0; distanceIndex < distanceConstraints.size(); ++distanceIndex) {
         const DistanceConstraint& constraint = distanceConstraints[distanceIndex];
+        if (!distance_in_island_build_range(bodyCount, constraint)) {
+            continue;
+        }
         const u32 islandIndex = rootToIsland[findRoot(constraint.bodyA)];
         if (islandIndex != invalidIsland) {
             islands_[islandIndex].distanceIndices.push_back(distanceIndex);
@@ -130,6 +139,45 @@ u32 ContactIslandGraph::bodyIsland(u32 bodyIndex) const {
         }
     }
     return invalidIsland;
+}
+
+bool bodies_in_union_range(u32 bodyCount, u32 bodyA, u32 bodyB) {
+    return islandUnionRejectReason(bodyCount, bodyA, bodyB) == IslandUnionRejectReason::None;
+}
+
+bool contact_in_island_build_range(u32 bodyCount, const narrowphase::ContactManifold& contact) {
+    return contact.valid && contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+}
+
+bool distance_in_island_build_range(u32 bodyCount, const DistanceConstraint& constraint) {
+    return constraint.bodyA < bodyCount && constraint.bodyB < bodyCount;
+}
+
+const char* islandUnionRejectReasonName(IslandUnionRejectReason reason) {
+    switch (reason) {
+    case IslandUnionRejectReason::None:
+        return "None";
+    case IslandUnionRejectReason::OutOfRangeBodyA:
+        return "OutOfRangeBodyA";
+    case IslandUnionRejectReason::OutOfRangeBodyB:
+        return "OutOfRangeBodyB";
+    default:
+        return "Unknown";
+    }
+}
+
+IslandUnionRejectReason islandUnionRejectReason(u32 bodyCount, u32 bodyA, u32 bodyB) {
+    if (bodyA >= bodyCount) {
+        return IslandUnionRejectReason::OutOfRangeBodyA;
+    }
+    if (bodyB >= bodyCount) {
+        return IslandUnionRejectReason::OutOfRangeBodyB;
+    }
+    return IslandUnionRejectReason::None;
+}
+
+bool islandUnionRejectsForReason(u32 bodyCount, u32 bodyA, u32 bodyB, IslandUnionRejectReason expected) {
+    return islandUnionRejectReason(bodyCount, bodyA, bodyB) == expected;
 }
 
 } // namespace fuse::physics
