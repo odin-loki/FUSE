@@ -1774,3 +1774,10 @@ bool tryPreflightTrilinearSample(const FroxelDensityGrid& grid,
     FroxelPopulateRejectReason localReason = FroxelPopulateRejectReason::None;
     const bool ok = tryCanPopulateFromAnalyticFog(desc, camera, params, localReason);
 bool tryPreflightFroxelPopulate(const FroxelGridDesc& desc,
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-c280 ---
+    case FroxelTrilinearSampleRejectReason::ScreenMappingFailed:
+bool tryCanSampleTrilinear(const FroxelDensityGrid& grid,
+    if (!tryCanLookupAtCoord(grid, desc, tileX, tileY, sliceZ, lookupReason)) {
+    if (!tryCanSampleTrilinear(grid, desc, coords, outReason)) {
+        outReason = FroxelTrilinearSampleRejectReason::ScreenMappingFailed;

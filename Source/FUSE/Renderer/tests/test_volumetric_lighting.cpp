@@ -2549,3 +2549,20 @@ void testFroxelDeepenPreflightGuards() {
     expectTrue(!fuse::renderer::froxel_util::preflightFroxelPopulate(emptyDesc, camera, params, &populateReason),
                "preflightFroxelPopulate rejects empty desc");
     testFroxelDeepenPreflightGuards();
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-c280 ---
+void testFroxelTrilinearAndCoordLookupDeepGuards() {
+    expectTrue(fuse::renderer::froxel_util::tryCanSampleTrilinear(grid, desc, inBounds, trilinearReason),
+               "tryCanSampleTrilinear succeeds on accessible grid");
+    expectTrue(fuse::renderer::froxel_util::tryCanSampleTrilinear(grid, desc, warnWeights, trilinearReason),
+               "tryCanSampleTrilinear still succeeds when weights will be clamped");
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleTrilinear(grid, desc, hardOob, trilinearReason),
+               "tryCanSampleTrilinear rejects hard OOB tile coord");
+               "trySampleDensityAtScreen with trilinear reason succeeds on accessible grid");
+               "trySampleDensityAtScreen with trilinear reason matches unguarded screen sample");
+               "trySampleDensityAtScreen with trilinear reason rejects empty storage");
+               "trySampleDensityAtScreen with trilinear reason rejects depth below near plane");
+    expectTrue(trilinearReason == fuse::renderer::FroxelTrilinearSampleRejectReason::ScreenMappingFailed,
+    expectTrue(!fuse::renderer::froxel_util::tryCanSampleTrilinear(grid, zeroDesc, inBounds, trilinearReason),
+               "tryCanSampleTrilinear rejects empty desc");
+    expectTrue(!fuse::renderer::froxel_util::tryPopulateFromAnalyticFog(invalidCameraGrid, desc, badCamera, params,
