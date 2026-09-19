@@ -4042,3 +4042,11 @@ void testFroxelDeepenPreflightAndClassifyGuards() {
                "preflightSampleCoordsReady mirrors canPreflightSampleCoords on valid coords");
                "preflightDensityLookupReady mirrors canLookupAtIndex on accessible grid");
                "preflightFroxelPopulateReady mirrors canPopulateFromAnalyticFog on valid inputs");
+
+// --- deepen additive from deepen-froxel-volumetrics-b511-065c ---
+void testFroxelDeepenIsBlockingClassifyAndPreflightGuards() {
+               "preflightSampleCoords reports out_of_bounds sample reject reason");
+               "preflightTrilinearSample reports clampable_weights trilinear reject reason");
+               "preflightTrilinearSample reports invalid_sample_coords for hard OOB coords");
+               "preflightFroxelPopulate reports zero_density populate reject reason");
+    testFroxelDeepenIsBlockingClassifyAndPreflightGuards();
