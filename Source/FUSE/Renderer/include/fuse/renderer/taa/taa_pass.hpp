@@ -206,6 +206,14 @@ public:
     bool canReuseHistory(const TaaResolveDesc& desc) const;
     /// Effective current-frame blend for the next resolve (1.0 while history is cold or non-reusable).
     f32 effectiveBlendForNextResolve(const TaaResolveDesc& desc) const;
+    /// True when pass jitter matches a monotonic frame counter (B5.9 deepen).
+    bool isJitterSyncedToFrameIndex(u32 frameIndex) const;
+    /// Preflight history reuse for the pass history epoch (B5.9 deepen).
+    bool preflightHistoryReuse(u32 observedGeneration,
+                                TaaHistoryReuseRejectReason* reason = nullptr) const;
+    /// Preflight resolve history-blend for the pass history state (B5.9 deepen).
+    bool preflightResolveBlend(const TaaResolveDesc& desc,
+                                TaaBlendPreflightRejectReason* reason = nullptr) const;
 
     bool resolveFrame(const TaaResolveDesc& desc, void* cudaStream = nullptr);
 

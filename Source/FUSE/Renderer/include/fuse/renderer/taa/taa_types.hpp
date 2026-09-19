@@ -58,6 +58,31 @@ struct TaaHistoryValidity {
     u32 invalidateGeneration = 0;
 };
 
+/// Why history reuse preflight rejected the request (B5.9 deepen).
+enum class TaaHistoryReuseRejectReason : u8 {
+    None = 0,
+    HistoryNotReady,
+    HistoryNotWarmed,
+    StaleGeneration,
+};
+
+/// Why jitter sync preflight rejected the request (B5.9 deepen).
+enum class TaaJitterSyncRejectReason : u8 {
+    None = 0,
+    InvalidSequenceLength,
+    InvalidViewport,
+    FrameIndexMismatch,
+    SlotIndexMismatch,
+};
+
+/// Why resolve history-blend preflight rejected the request (B5.9 deepen).
+enum class TaaBlendPreflightRejectReason : u8 {
+    None = 0,
+    HistoryNotReady,
+    WarmupRequired,
+    StaleGeneration,
+};
+
 /// Why a resolve request bailed before history update (B5.9 deepen).
 enum class TaaResolveSkipReason : u8 {
     None = 0,
@@ -335,6 +360,19 @@ bool taaResolveBlendConsistentWithHistory(const TaaResolveDesc& desc, const TaaH
 /// True when history targets are ready and warmed for temporal reuse (B5.9 deepen).
 /// True when the next resolve would run before history is warm (B5.9 deepen).
 bool taaResolveWouldBeFirstFrame(const TaaHistoryBuffer& history);
+/// True when history is ready and warmed for temporal reuse (B5.9 deepen).
+/// Classify why history reuse preflight would reject (B5.9 deepen).
+/// Preflight history reuse — returns true when temporal reuse is allowed (B5.9 deepen).
+bool taaHistoryReusePreflight(const TaaHistoryBuffer& history, u32 observedGeneration,
+/// True when the next resolve would be the warm-up frame (B5.9 deepen).
+bool computeTaaResolveFirstFrame(const TaaHistoryBuffer& history);
+/// True when resolve would sample prior history this frame (B5.9 deepen).
+bool taaResolveWouldUseHistoryBlend(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
+/// Classify why resolve history-blend preflight would reject (B5.9 deepen).
+TaaBlendPreflightRejectReason classifyTaaBlendPreflightReject(const TaaResolveDesc& desc,
+/// Preflight resolve history-blend — returns true when history contribution is allowed (B5.9 deepen).
+bool taaResolveBlendPreflight(const TaaResolveDesc& desc, const TaaHistoryBuffer& history,
+                               TaaBlendPreflightRejectReason* reason = nullptr);
 
 /// Resolve bookkeeping returned by the stub backend.
 struct TaaResolveStats {
@@ -364,6 +402,12 @@ bool taaHistoryBufferDescValid(const TaaHistoryBufferDesc& desc);
 /// True when a resize would change history buffer dimensions (B5.9 deepen).
 bool taaHistoryResizeNeeded(u32 currentWidth, u32 currentHeight, u32 newWidth, u32 newHeight);
 
+/// Human-readable label for history-reuse reject reasons (logging / tests).
+const char* taaHistoryReuseRejectReasonLabel(TaaHistoryReuseRejectReason reason);
+/// Human-readable label for jitter-sync reject reasons (logging / tests).
+const char* taaJitterSyncRejectReasonLabel(TaaJitterSyncRejectReason reason);
+/// Human-readable label for resolve blend preflight reject reasons (logging / tests).
+const char* taaBlendPreflightRejectReasonLabel(TaaBlendPreflightRejectReason reason);
 /// Human-readable label for resolve skip reasons (logging / tests).
 const char* taaResolveSkipReasonLabel(TaaResolveSkipReason reason);
 /// True when width and height are both non-zero (resolve dimension preflight).

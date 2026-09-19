@@ -119,6 +119,23 @@ bool TaaHistoryBuffer::warmupComplete() const {
     return m_ready && m_validity.hasValidHistory;
 bool preflightTaaHistoryReuse(const TaaHistoryBuffer& history, u32 observedGeneration) {
     return taaHistoryReuseAllowed(history, observedGeneration);
+    return history.isReady() && history.needsWarmup();
+
+    return history.isReady() && history.hasValidHistory();
+
+TaaHistoryReuseRejectReason classifyTaaHistoryReuseReject(const TaaHistoryBuffer& history, u32 observedGeneration) {
+        return TaaHistoryReuseRejectReason::HistoryNotReady;
+    if (!history.hasValidHistory()) {
+        return TaaHistoryReuseRejectReason::HistoryNotWarmed;
+    if (history.isHistoryStale(observedGeneration)) {
+        return TaaHistoryReuseRejectReason::StaleGeneration;
+    return TaaHistoryReuseRejectReason::None;
+
+bool taaHistoryReusePreflight(const TaaHistoryBuffer& history, u32 observedGeneration,
+                               TaaHistoryReuseRejectReason* reason) {
+    const TaaHistoryReuseRejectReason reject = classifyTaaHistoryReuseReject(history, observedGeneration);
+        *reason = reject;
+    return reject == TaaHistoryReuseRejectReason::None;
 }
 
 bool TaaHistoryBuffer::canReuseHistory() const {
