@@ -5385,3 +5385,39 @@ void testFindFlowEventIndexGuard() {
     expectTrue(!fuse::profiler::tryFirstFlowEvent(outerFlowId + 999u, flowEvent),
     expectTrue(flowEvent.name == nullptr, "tryFirstFlowEvent clears output on miss");
     testPreflightNestingHelpers();
+
+// --- deepen additive from deepen-b16-profiler-guards-5538 ---
+               "tryFirstEventByName rejects null name");
+               "tryLastEventByName rejects empty name");
+    expectTrue(fuse::profiler::tryFirstEventByName("by_name_scope", outEvent),
+    expectTrue(fuse::profiler::tryLastEventByName("by_name_scope", outEvent),
+               "tryLastEventByName succeeds for scope end");
+               "wouldSkipChromeTraceExport true on empty buffer");
+    expectTrue(fuse::profiler::wouldSkipAsyncFlowEnd("valid_flow"),
+    expectTrue(!fuse::profiler::wouldSkipAsyncFlowEnd("skip_flow"),
+    expectTrue(fuse::profiler::wouldSkipProfileScope("disabled_scope"),
+               "wouldSkipChromeTraceExport false after recording exportable events");
+    const fuse::profiler::ScopeNestingPreflight resetScopePreflight = fuse::profiler::preflightScopeNesting();
+    expectTrue(resetScopePreflight.balanced, "reset scope preflight is balanced");
+    expectTrue(!resetScopePreflight.hasActiveScopes, "reset scope preflight has no active scopes");
+    expectTrue(resetScopePreflight.activeDepth == 0u, "reset scope preflight depth is zero");
+    const fuse::profiler::AsyncFlowPreflight resetFlowPreflight = fuse::profiler::preflightAsyncFlow();
+    expectTrue(resetFlowPreflight.balanced, "reset flow preflight is balanced");
+    expectTrue(resetFlowPreflight.consistent, "reset flow preflight is consistent");
+    expectTrue(!resetFlowPreflight.hasOpenFlows, "reset flow preflight has no open flows");
+        const fuse::profiler::ScopeNestingPreflight activeScopePreflight = fuse::profiler::preflightScopeNesting();
+        expectTrue(!activeScopePreflight.balanced, "active scope preflight is unbalanced");
+        expectTrue(activeScopePreflight.hasActiveScopes, "active scope preflight marks active scopes");
+        expectTrue(activeScopePreflight.activeDepth == 1u, "active scope preflight reports depth 1");
+        const fuse::profiler::AsyncFlowPreflight openFlowPreflight = fuse::profiler::preflightAsyncFlow();
+        expectTrue(!openFlowPreflight.balanced, "open flow preflight is unbalanced");
+        expectTrue(openFlowPreflight.consistent, "same-thread flow preflight stays consistent");
+        expectTrue(openFlowPreflight.hasOpenFlows, "open flow preflight marks open flows");
+        expectTrue(openFlowPreflight.openFlowCount == 1u, "open flow preflight tracks open count");
+    const fuse::profiler::ScopeNestingPreflight closedScopePreflight = fuse::profiler::preflightScopeNesting();
+    expectTrue(closedScopePreflight.balanced, "ended scope preflight restores balance");
+    expectTrue(!closedScopePreflight.hasActiveScopes, "ended scope preflight clears active scopes");
+    const fuse::profiler::AsyncFlowPreflight detachedPreflight = fuse::profiler::preflightAsyncFlow();
+    expectTrue(detachedPreflight.depthDetached, "detached flow preflight marks depth detached");
+    expectTrue(detachedPreflight.crossThreadHandoffPending,
+    expectTrue(!detachedPreflight.consistent, "detached flow preflight is inconsistent on begin thread");
