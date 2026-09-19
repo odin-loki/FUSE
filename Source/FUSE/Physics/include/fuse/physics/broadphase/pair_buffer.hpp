@@ -1979,6 +1979,9 @@ struct PairBufferInvalidateSlotPreflight {
     bool outOfRangeSlot = false;
     bool alreadyInvalid = false;
 
+
+
+
 };
 
 PairBufferInvalidateSlotPreflight preflightPairBufferInvalidateSlot(const PairBufferSoA& buffer, u32 slot);
@@ -2034,6 +2037,9 @@ bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer,
 
 
 /// Early-out when invalidate-slot preflight would no-op (B4.2 deepen pass).
+
+
+
 
 /// Why pair-buffer toVector would early-out (B4.2 deepen follow-up pass).
 enum class PairBufferToVectorRejectReason : u8 {

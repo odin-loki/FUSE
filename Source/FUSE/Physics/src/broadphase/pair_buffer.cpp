@@ -883,6 +883,17 @@ std::vector<CandidatePair> PairBufferSoA::toVector() const {
     return pairs;
 }
 
+namespace {
+
+u32 pairBufferSlotBound(const PairBufferSoA& buffer) {
+    if (buffer.pairSlotCount > 0u) {
+        return buffer.pairSlotCount;
+    }
+    return static_cast<u32>(buffer.validFlags.size());
+}
+
+} // namespace
+
 const char* pairBufferPushRejectReasonName(PairBufferPushRejectReason reason) {
     switch (reason) {
     case PairBufferPushRejectReason::None:
@@ -2991,6 +3002,8 @@ PairBufferInvalidateSlotRejectReason pairBufferInvalidateSlotRejectReason(const 
 
     if (slot >= buffer.validFlags.size() || buffer.validFlags[slot] == 0u) {
 
+    if (buffer.canSkipSoAIteration() || slot >= pairBufferSlotBound(buffer)) {
+
 bool pairBufferInvalidateSlotRejectsForReason(
     const PairBufferSoA& buffer,
     u32 slot,
@@ -3074,6 +3087,9 @@ bool wouldSkipPairBufferInvalidateSlot(const PairBufferSoA& buffer,
 
 
         *reason = reject;
+
+
+
 
 
 
