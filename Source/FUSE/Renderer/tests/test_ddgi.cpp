@@ -4582,3 +4582,12 @@ void testProbeKernelPreflightHelpers() {
 void testDdgiDeepenPass2Guards() {
     expectTrue(!fuse::renderer::preflightProbeGridSource(empty),
     expectTrue(fuse::renderer::classifyProbeGridSourceReject(zeroSpacing) ==
+
+// --- deepen additive from deepen-b56-ddgi-guards-ef27 ---
+    expectTrue(fuse::renderer::ddgi_util::wouldSkipProbeGridSource(emptySource),
+    expectTrue(fuse::renderer::ddgi_util::classifyProbeGridSourceReject(notSampleable) ==
+               "classifyProbeGridSourceReject not_sampleable");
+               "preflightCacheIndexLookup count-only succeeds for valid index");
+               "preflightCacheIndexLookup count-only rejects OOB index");
+               "classifyProbeScheduleRejectAtRate none for valid rate-aware inputs");
+               "preflightProbeScheduleAtRate succeeds for valid rate-aware inputs");
