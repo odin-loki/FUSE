@@ -117,13 +117,37 @@ struct EventNamePreflight {
 
 /// Read-only async-flow diagnostics — no mutation (B1.6 deepen).
 struct AsyncFlowPreflight {
-    bool profilerDisabled = false;
-    bool nullName = false;
-    bool emptyName = false;
     bool noOpenFlows = false;
 
     bool canBegin() const { return !profilerDisabled && !nullName && !emptyName; }
     bool canEnd() const { return canBegin() && !noOpenFlows; }
+/// Read-only nesting/async-flow diagnostics — safe before async-flow begin/end calls.
+struct NestingStatePreflight {
+    u32 activeScopeNestingDepth = 0;
+    u32 activeFlowNestingDepth = 0;
+    u32 openAsyncFlowCount = 0;
+    u32 maxScopeNestingDepth = 0;
+    u32 maxFlowNestingDepth = 0;
+    bool scopeNestingUnbalanced = false;
+    bool flowNestingUnbalanced = false;
+    bool hasOpenAsyncFlows = false;
+    bool flowDepthDetached = false;
+    bool crossThreadFlowHandoffPending = false;
+
+    bool isScopeNestingBalanced() const { return !scopeNestingUnbalanced; }
+    bool isFlowNestingBalanced() const { return !flowNestingUnbalanced; }
+    bool hasUnbalancedNesting() const { return scopeNestingUnbalanced || flowNestingUnbalanced; }
+
+/// Non-mutating preflight for `beginAsyncFlow()` — rejects empty names and disabled profiler.
+struct AsyncFlowBeginPreflight {
+
+    bool canBegin() const { return !profilerDisabled && !emptyName; }
+
+/// Non-mutating preflight for `endAsyncFlow()` — rejects empty names, disabled profiler, and orphan ends.
+struct AsyncFlowEndPreflight {
+    bool orphanEnd = false;
+
+    bool canEnd() const { return !profilerDisabled && !emptyName && !orphanEnd; }
 };
 
 /// Read-only chrome export diagnostics — safe to call before `exportChromeTraceJson()`.

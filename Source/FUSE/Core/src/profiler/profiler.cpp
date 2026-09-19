@@ -340,6 +340,10 @@ bool isFlowPhaseEvent(const ProfileEvent& event) {
 bool eventNameMatches(const char* lhs, const char* rhs) {
     if (lhs == nullptr || rhs == nullptr) {
     return std::strcmp(lhs, rhs) == 0;
+bool eventNameEquals(const char* eventName, const char* name) {
+    if (eventName == nullptr || eventName[0] == '\0' || name == nullptr || name[0] == '\0') {
+    return std::strcmp(eventName, name) == 0;
+
 }
 
 } // namespace
@@ -1263,6 +1267,14 @@ bool hasActiveFlowNesting() {
 
 bool hasNestedAsyncFlowContext() {
     return hasActiveScopeNesting() && hasActiveFlowNesting();
+}
+
+bool hasActiveScope() {
+    return scopeNestingDepth() > 0u;
+}
+
+bool hasActiveAsyncFlowNesting() {
+    return flowNestingDepth() > 0u;
 }
 
 bool hasEvents() {
@@ -2732,6 +2744,16 @@ bool tryFindLastEventByFlow(u32 flowId, ProfileEvent& outEvent) {
 
 
 
+
+
+
+
+
+
+
+
+
+
 u32 firstEventIndex() {
     return hasEvents() ? 0u : kInvalidEventIndex;
 }
@@ -3796,6 +3818,17 @@ bool tryExportableLastEvent(ProfileEvent& outEvent) {
 
 
 
+        if (eventNameEquals(event.name, name)) {
+
+
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -3930,6 +3963,14 @@ NestingStatePreflight preflightNestingState() {
     preflight.flowBalanced = isFlowNestingBalanced();
     preflight.flowDepthDetached = isFlowDepthDetached();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+    preflight.activeScopeNestingDepth = scopeNestingDepth();
+    preflight.activeFlowNestingDepth = flowNestingDepth();
+    preflight.openAsyncFlowCount = openAsyncFlowCount();
+    preflight.maxScopeNestingDepth = maxNestingDepth();
+    preflight.maxFlowNestingDepth = maxFlowNestingDepth();
+    preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
+    preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
+    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
     return preflight;
 }
 
@@ -4054,6 +4095,11 @@ NestingAsyncFlowPreflight preflightNestingAndAsyncFlow() {
     preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
+    preflight.emptyName = !isValidEventName(name);
+    return preflight;
+}
+
+    preflight.profilerDisabled = !enabled();
     return preflight;
 }
 
