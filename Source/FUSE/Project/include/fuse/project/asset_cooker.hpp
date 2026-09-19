@@ -223,6 +223,10 @@ public:
     /// Combined stale-dependency and prune reconcile estimate for manifest cache planning (B7.9 deepen).
     [[nodiscard]] u32 estimate_manifest_cache_reconcile(const CookManifest& manifest) const;
     /// Read-only stale dependency-hash reconcile estimator with upstream/downstream breakdown (B7.9 deepen).
+    /// Read-only prune reconcile estimate — mirrors `prune_all` guards (B7.9 deepen).
+    [[nodiscard]] u32 estimate_prune_reconcile() const;
+    /// Combined stale-upstream and prunable-entry reconcile estimate (B7.9 deepen).
+    [[nodiscard]] u32 estimate_full_cache_reconcile(const CookManifest& manifest) const;
 
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }

@@ -660,6 +660,14 @@ CookCacheReconcileEstimate AssetCooker::estimate_reconcile_invalidation(const Co
     return estimate;
 }
 
+u32 AssetCooker::estimate_prune_reconcile() const {
+    return m_cache.estimate_prune_all();
+}
+
+u32 AssetCooker::estimate_full_cache_reconcile(const CookManifest& manifest) const {
+    return count_stale_dependency_invalidation(manifest) + estimate_prune_reconcile();
+}
+
 u32 AssetCooker::invalidate_stale_dependency_hashes(const CookManifest& manifest) {
     if (manifest.assets.empty() || m_cache.empty()) {
     if (m_cache.empty() || manifest.assets.empty()) {

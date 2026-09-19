@@ -554,6 +554,12 @@ public:
     /// Read-only invalidation would-* probes — mirror `invalidate_*` guards without mutating stats (B7.9 deepen).
     /// Entries `prune_all` would remove — reconcile estimator without mutating stats (B7.9 deepen).
     [[nodiscard]] u32 estimate_prune_reconcile() const;
+    /// Valid entries whose recomputed content key differs — subset of `count_prunable_entries` (B7.9 deepen).
+    /// Entries `invalidate_all` would clear — zero on empty cache (B7.9 deepen).
+    [[nodiscard]] u32 count_invalidate_all() const;
+    /// `prune_all` removal estimate — zero when nothing is prunable (B7.9 deepen).
+
+    /// Source paths with stale content keys — read-only `prune_stale_entries` probe (B7.9 deepen).
 
     [[nodiscard]] bool contains(u64 content_hash) const;
 

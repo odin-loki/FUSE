@@ -2128,7 +2128,6 @@ bool CookCache::would_prune_all() const {
                 already_recorded = true;
                 break;
         if (!already_recorded) {
-            stale_sources.push_back(entry.source_path);
 
 
         if (is_stale_only_cache_entry_(entry)) {
@@ -2137,7 +2136,6 @@ bool CookCache::would_prune_all() const {
 
 
 
-        if (is_stale_cache_entry_(entry)) {
 u32 CookCache::probe_invalidate_source(const std::string& source_path) const {
     return count_by_source(source_path);
 
@@ -2165,11 +2163,8 @@ CookCacheInvalidationProbe CookCache::probe_upstream_invalidation(
         if (job.source_path == changed_source) {
             probe.downstream_entries += probe_downstream_of(job.output_path, edges, jobs);
 
-CookCachePruneEstimate CookCache::estimate_prune_removals() const {
 
-            ++estimate.invalid_entries;
         } else if (is_stale_cache_entry_(entry)) {
-            ++estimate.stale_entries;
 
     return count_invalid_entries() + count_stale_entries();
 
@@ -2207,7 +2202,6 @@ std::vector<std::string> CookCache::probe_unique_stale_upstream_sources(
 
 CookCacheReconcileEstimate CookCache::estimate_reconcile(
     if (m_entries.empty()) {
-        return estimate;
 
     estimate.invalid_entries = count_invalid_entries();
     estimate.stale_content_entries =
@@ -2229,45 +2223,40 @@ CookHashPreflight preflight_cook_cache_entry(const CookCacheEntry& entry) {
     preflight.can_hash = true;
     preflight.reason = CookHashRejectReason::None;
             }
-    return stale_sources;
 
-namespace {
 
 void append_unique_source_(std::vector<std::string>& sources, const std::string& source_path) {
-    if (!is_valid_cook_cache_path(source_path)) {
-        return;
     for (const std::string& recorded : sources) {
         if (recorded == source_path) {
     sources.push_back(source_path);
 
 void probe_downstream_sources_(const CookCache& cache,
-                               const std::string& output_path,
-                               const std::vector<CookJobDependencyEdge>& edges,
-                               const std::vector<CookJob>& jobs,
                                std::vector<std::string>& sources) {
-    if (!is_valid_cook_cache_path(output_path) || cache.empty()) {
 
     append_unique_source_(sources, output_path);
 
-    for (const CookJobDependencyEdge& edge : edges) {
-        const CookJob* from_job = find_job_by_id(jobs, edge.from_job_id);
-        if (!from_job || from_job->output_path != output_path) {
-            continue;
 
-        const CookJob* to_job = find_job_by_id(jobs, edge.to_job_id);
-        if (!to_job) {
 
         append_unique_source_(sources, to_job->source_path);
         probe_downstream_sources_(cache, to_job->output_path, edges, jobs, sources);
 
-} // namespace
 
-std::vector<std::string> CookCache::probe_downstream_sources(
-    const std::string& output_path, const std::vector<CookJobDependencyEdge>& edges,
-    const std::vector<CookJob>& jobs) const {
-    std::vector<std::string> sources;
     probe_downstream_sources_(*this, output_path, edges, jobs, sources);
-    return sources;
+
+u32 CookCache::count_invalidate_all() const {
+    return static_cast<u32>(m_entries.size());
+
+
+
+
+
+    for (const CookCacheEntry& entry : m_entries) {
+
+        bool already_listed = false;
+        for (const std::string& listed : stale_sources) {
+            if (listed == entry.source_path) {
+                already_listed = true;
+        if (!already_listed) {
 }
 
 bool CookCache::contains(u64 content_hash) const {

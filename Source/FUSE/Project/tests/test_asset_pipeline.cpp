@@ -1931,6 +1931,12 @@ void testCookStaleDependencyHashReconcileEstimate() {
                "would_invalidate_upstream false for empty changed source");
     expectTrue(cooker.count_prune_reconcile() == 0u, "fresh cache prune reconcile count is zero");
 
+    const fuse::u32 prune_estimate = cooker.estimate_prune_reconcile();
+    expectTrue(prune_estimate == 0u, "fresh cache prune reconcile estimate is zero");
+
+    const fuse::u32 full_estimate = cooker.estimate_full_cache_reconcile(manifest);
+    expectTrue(full_estimate == 0u, "fresh cache full reconcile estimate is zero");
+
     const fuse::u32 removed = cooker.invalidate_upstream_dependency(manifest, sourceA);
     expectTrue(removed >= upstream_count, "upstream invalidation removes at least probed count");
     expectTrue(cooker.cache().entry_count() == 0u, "cache empty after probed upstream invalidation");
@@ -2880,6 +2886,28 @@ void testCookCacheDownstreamSourceProbe() {
     expectTrue(counted == 2u, "downstream count matches dependent entries only");
     expectTrue(cooker.cache().probe_downstream_sources("", graph.edges(), graph.jobs()).empty(),
                "empty output path downstream probe is guarded");
+}
+
+void testCookerPruneReconcileEstimator() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_reconcile_prune.obj", "# reconcile prune v1\n");
+    fuse::project::MeshImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_reconcile_prune.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
+    expectTrue(seeded.ok, "seed cook for prune reconcile ok");
+    expectTrue(cooker.estimate_prune_reconcile() == 0u, "fresh cook prune reconcile is zero");
+
+    writeTempFile(source, "# reconcile prune v2\n");
+    expectTrue(cooker.cache().count_stale_entries() == 1u, "stale entry counted before reconcile");
+    expectTrue(cooker.estimate_prune_reconcile() == 1u, "prune reconcile estimates stale entry");
+    expectTrue(cooker.estimate_full_cache_reconcile(fuse::project::CookManifest{}) == 1u,
+               "full reconcile includes prunable stale entry");
+
+    const fuse::u32 pruned = cooker.cache().prune_all();
+    expectTrue(pruned == 1u, "prune_all removes estimated stale entry");
+    expectTrue(cooker.estimate_prune_reconcile() == 0u, "prune reconcile zero after prune_all");
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
