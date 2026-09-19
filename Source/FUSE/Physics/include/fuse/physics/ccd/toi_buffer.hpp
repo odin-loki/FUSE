@@ -32,13 +32,17 @@ struct ToiBufferSoA {
     /// True when compact+sort+clamp would leave the buffer unchanged.
     bool canSkipCompactAndSort() const;
     bool canSkipSort() const { return canSkipSoAIteration() || activeCount <= 1u; }
+    /// True when compactAndSort has no valid TOIs to gather or sort.
     /// Count valid flags in prepared slot storage before compaction.
     u32 countValidSlots() const;
+    /// True when `maxCapacity` is set and no additional TOIs may be pushed.
     bool isFull() const { return maxCapacity > 0u && activeCount >= maxCapacity; }
     /// Remaining push slots before `maxCapacity` clamp (unlimited when `maxCapacity == 0`).
     u32 remainingCapacity() const;
     /// True when post-pass truncation would drop TOIs.
     bool canApplyMaxCapacityClamp() const;
+    /// True when `slot` lies within prepared pair slots or dense push storage.
+    bool isPreparedSlot(u32 slot) const;
     bool slotIsValid(u32 slot) const;
 
     void reserve(u32 capacity);

@@ -1,6 +1,7 @@
 #include <fuse/physics/ccd/toi_buffer.hpp>
 
 #include <algorithm>
+#include <cstdint>
 
 namespace fuse::physics {
 
@@ -88,14 +89,35 @@ bool ToiBufferSoA::writeSlot(u32 slot, const TOIResult& result) {
 }
 
 void ToiBufferSoA::invalidateSlot(u32 slot) {
-    if (slot >= validFlags.size()) {
+    if (!isPreparedSlot(slot) || slot >= validFlags.size()) {
         return;
     }
     validFlags[slot] = 0u;
 }
 
+bool ToiBufferSoA::isPreparedSlot(u32 slot) const {
+    if (pairSlotCount > 0u) {
+        return slot < pairSlotCount;
+    }
+    return slot < activeCount;
+}
+
 bool ToiBufferSoA::slotIsValid(u32 slot) const {
-    return slot < validFlags.size() && validFlags[slot] != 0u;
+    if (!isPreparedSlot(slot) || slot >= validFlags.size()) {
+        return false;
+    }
+    return validFlags[slot] != 0u;
+}
+
+u32 ToiBufferSoA::remainingCapacity() const {
+    if (maxCapacity == 0u) {
+        return UINT32_MAX;
+    }
+    return activeCount < maxCapacity ? maxCapacity - activeCount : 0u;
+}
+
+bool ToiBufferSoA::canApplyMaxCapacityClamp() const {
+    return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
 }
 
 void ToiBufferSoA::invalidateSlot(u32 slot) {
@@ -158,25 +180,21 @@ bool ToiBufferSoA::canSkipSort() const {
 
     const u32 validCount = countValidSlots();
     if (validCount <= 1u) {
-        return true;
-    }
 
     return isSortedByToi();
-}
 
 bool ToiBufferSoA::canSkipCompactAndSort() const {
     return canSkipSoAIteration() || countValidSlots() == 0u;
-}
 
 u32 ToiBufferSoA::remainingCapacity() const {
     if (maxCapacity == 0u) {
         return UINT32_MAX;
-    }
     return activeCount < maxCapacity ? maxCapacity - activeCount : 0u;
-}
 
 bool ToiBufferSoA::canApplyMaxCapacityClamp() const {
     return !canSkipSoAIteration() && maxCapacity > 0u && activeCount > maxCapacity;
+    if (pairSlotCount > 0u && countValidSlots() == 0u) {
+    return false;
 }
 
 bool ToiBufferSoA::push(const TOIResult& result) {
@@ -325,7 +343,7 @@ u32 ToiBufferSoA::compact() {
     }
 
     if (canSkipCompaction()) {
-        activeCount = pairSlotCount;
+        activeCount = countValidSlots();
         return activeCount;
     }
 
