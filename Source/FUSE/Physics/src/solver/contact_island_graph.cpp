@@ -4,6 +4,53 @@
 
 namespace fuse::physics {
 
+bool contact_refs_in_range(u32 bodyCount, const narrowphase::ContactManifold& contact) {
+    return contact.bodyA < bodyCount && contact.bodyB < bodyCount;
+}
+
+bool distance_refs_in_range(u32 bodyCount, const DistanceConstraint& constraint) {
+    return constraint.bodyA < bodyCount && constraint.bodyB < bodyCount;
+}
+
+IslandGraphBuildPreflight preflight_island_graph_build(
+    u32 bodyCount,
+    const std::vector<narrowphase::ContactManifold>& contacts,
+    const std::vector<DistanceConstraint>& distanceConstraints) {
+    IslandGraphBuildPreflight preflight{};
+    preflight.stats.bodyCount = bodyCount;
+    preflight.stats.contactSlotCount = static_cast<u32>(contacts.size());
+    preflight.stats.distanceSlotCount = static_cast<u32>(distanceConstraints.size());
+
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (contact.valid) {
+            ++preflight.stats.validContactCount;
+        }
+        if (contact_refs_in_range(bodyCount, contact)) {
+            ++preflight.stats.inRangeContactCount;
+        } else if (contact.valid) {
+            ++preflight.stats.outOfRangeContactBodyCount;
+        }
+    }
+
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (distance_refs_in_range(bodyCount, constraint)) {
+            ++preflight.stats.inRangeDistanceCount;
+        } else {
+            ++preflight.stats.outOfRangeDistanceBodyCount;
+        }
+    }
+
+    preflight.skipped = bodyCount == 0u && preflight.stats.inRangeContactCount == 0u &&
+                        preflight.stats.inRangeDistanceCount == 0u;
+    return preflight;
+}
+
+bool should_skip_island_graph_build(u32 bodyCount,
+                                    const std::vector<narrowphase::ContactManifold>& contacts,
+                                    const std::vector<DistanceConstraint>& distanceConstraints) {
+    return !preflight_island_graph_build(bodyCount, contacts, distanceConstraints).can_build();
+}
+
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
@@ -53,13 +100,16 @@ void ContactIslandGraph::build(u32 bodyCount,
     }
 
     for (const narrowphase::ContactManifold& contact : contacts) {
-        if (!contact.valid) {
+        if (!contact.valid || !contact_refs_in_range(bodyCount, contact)) {
             continue;
         }
         unionBodies(contact.bodyA, contact.bodyB);
     }
 
     for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (!distance_refs_in_range(bodyCount, constraint)) {
+            continue;
+        }
         unionBodies(constraint.bodyA, constraint.bodyB);
     }
 
@@ -81,7 +131,7 @@ void ContactIslandGraph::build(u32 bodyCount,
 
     for (u32 contactIndex = 0; contactIndex < contacts.size(); ++contactIndex) {
         const narrowphase::ContactManifold& contact = contacts[contactIndex];
-        if (!contact.valid) {
+        if (!contact.valid || !contact_refs_in_range(bodyCount, contact)) {
             continue;
         }
         const u32 islandIndex = rootToIsland[findRoot(contact.bodyA)];
@@ -92,6 +142,9 @@ void ContactIslandGraph::build(u32 bodyCount,
 
     for (u32 distanceIndex = 0; distanceIndex < distanceConstraints.size(); ++distanceIndex) {
         const DistanceConstraint& constraint = distanceConstraints[distanceIndex];
+        if (!distance_refs_in_range(bodyCount, constraint)) {
+            continue;
+        }
         const u32 islandIndex = rootToIsland[findRoot(constraint.bodyA)];
         if (islandIndex != invalidIsland) {
             islands_[islandIndex].distanceIndices.push_back(distanceIndex);
@@ -104,6 +157,17 @@ void ContactIslandGraph::build(u32 bodyCount,
         }
         return left.bodyIndices.front() < right.bodyIndices.front();
     });
+}
+
+bool ContactIslandGraph::build_guarded(u32 bodyCount,
+                                       const std::vector<narrowphase::ContactManifold>& contacts,
+                                       const std::vector<DistanceConstraint>& distanceConstraints) {
+    if (should_skip_island_graph_build(bodyCount, contacts, distanceConstraints)) {
+        clear();
+        return false;
+    }
+    build(bodyCount, contacts, distanceConstraints);
+    return true;
 }
 
 u32 ContactIslandGraph::constrainedIslandCount() const {
