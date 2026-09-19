@@ -934,6 +934,26 @@ struct AsyncFlowPreflight {
     bool hasOpenFlows = false;
 };
 
+/// Read-only scope/async-flow nesting diagnostics — safe before recording or export.
+struct NestingPreflight {
+    u32 activeScopeNestingDepth = 0;
+    u32 activeFlowNestingDepth = 0;
+    u32 openAsyncFlowCount = 0;
+    u32 maxScopeNestingDepth = 0;
+    u32 maxFlowNestingDepth = 0;
+    bool scopeNestingBalanced = true;
+    bool flowNestingBalanced = true;
+    bool hasOpenAsyncFlows = false;
+    bool flowDepthDetached = false;
+    bool crossThreadFlowHandoffPending = false;
+
+    bool hasUnbalancedNesting() const { return !scopeNestingBalanced || !flowNestingBalanced; }
+    bool isSafe() const {
+        return scopeNestingBalanced && flowNestingBalanced && !flowDepthDetached
+            && !crossThreadFlowHandoffPending;
+    }
+};
+
 /// RAII CPU scope timer — records begin/end into the frame ring buffer when enabled.
 class ProfileScope {
 public:
@@ -1475,6 +1495,10 @@ CounterRecordingPreflight preflightCounterRecording(const char* track);
 bool wouldSkipScope(const char* name);
 bool wouldSkipCounter(const char* track);
 bool wouldSkipChromeTraceExport();
+
+bool wouldSkipAsyncFlowBegin(const char* name, u32 flowId);
+bool wouldSkipAsyncFlowEnd(const char* name, u32 flowId);
+bool wouldSkipSafeChromeTraceExport();
 
 ChromeTraceExportPreflight preflightChromeTraceExport();
 AsyncFlowBeginPreflight preflightBeginAsyncFlow(const char* name, u32 flowId);

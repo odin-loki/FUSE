@@ -4860,6 +4860,23 @@ bool isFlowIdTracked(u32 flowId) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 u32 lastEventIndex() {
     const u32 count = eventCount();
     for (u32 i = count; i > 0u; --i) {
@@ -4994,6 +5011,28 @@ NestingStatePreflight preflightNestingState() {
     preflight.flowBalanced = isFlowNestingBalanced();
     preflight.flowDepthDetached = isFlowDepthDetached();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
+bool wouldSkipScope(const char* name) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
+}
+
+bool wouldSkipAsyncFlowBegin(const char* name, u32 /*flowId*/) {
+
+bool wouldSkipAsyncFlowEnd(const char* name, u32 /*flowId*/) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
+        return true;
+    return g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
+
+bool wouldSkipCounter(const char* track) {
+    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(track);
+
+bool wouldSkipChromeTraceExport() {
+    return !enabled();
+
+bool wouldSkipSafeChromeTraceExport() {
+    return !preflightChromeTraceExport().canExportSafely();
+
+NestingPreflight preflightNesting() {
+    NestingPreflight preflight{};
     preflight.activeScopeNestingDepth = scopeNestingDepth();
     preflight.activeFlowNestingDepth = flowNestingDepth();
     preflight.openAsyncFlowCount = openAsyncFlowCount();
@@ -5187,10 +5226,7 @@ AsyncFlowPreflight preflightAsyncFlow() {
     preflight.activeDepth = flowNestingDepth();
     preflight.maxDepth = maxFlowNestingDepth();
     preflight.openFlowCount = openAsyncFlowCount();
-    return preflight;
-}
 
-    AsyncFlowPreflight preflight{};
     preflight.balanced = isFlowNestingBalanced();
     preflight.depthDetached = isFlowDepthDetached();
     preflight.crossThreadHandoffPending = isCrossThreadFlowHandoffPending();
@@ -5200,14 +5236,10 @@ NestingPreflight preflightNesting() {
 
 
 bool wouldSkipProfileScope(const char* name) {
-    return !g_enabled.load(std::memory_order_acquire) || !isValidEventName(name);
 
-bool wouldSkipAsyncFlowBegin(const char* name) {
     return wouldSkipProfileScope(name);
 
-bool wouldSkipAsyncFlowEnd(const char* name) {
     return wouldSkipProfileScope(name)
-        || g_openAsyncFlowCount.load(std::memory_order_acquire) == 0u;
 
 bool wouldSkipCounterSample(const char* track) {
     return wouldSkipProfileScope(track);
@@ -5265,8 +5297,6 @@ CounterRecordingPreflight preflightCounterRecording(const char* track) {
     } else if (preflight.invalidName) {
         preflight.reason = ProfileScopeSkipReason::InvalidName;
 
-    preflight.profilerDisabled = !enabled();
-    preflight.invalidName = !isValidEventName(name);
 
         preflight.reason = AsyncFlowBeginSkipReason::ProfilerDisabled;
         preflight.reason = AsyncFlowBeginSkipReason::InvalidName;
@@ -5289,11 +5319,8 @@ NestingStatePreflight preflightNestingState() {
     preflight.activeScopeNestingDepth = scopeNestingDepth();
     preflight.activeFlowNestingDepth = flowNestingDepth();
     preflight.openAsyncFlowCount = openAsyncFlowCount();
-    preflight.scopeNestingUnbalanced = !isScopeNestingBalanced();
-    preflight.flowNestingUnbalanced = !isFlowNestingBalanced();
     preflight.hasOpenAsyncFlows = hasOpenAsyncFlows();
     preflight.flowDepthDetached = isFlowDepthDetached();
-    preflight.crossThreadFlowHandoffPending = isCrossThreadFlowHandoffPending();
 
 ChromeTraceExportSkipReason chromeTraceExportSkipReason() {
         return ChromeTraceExportSkipReason::ProfilerDisabled;
