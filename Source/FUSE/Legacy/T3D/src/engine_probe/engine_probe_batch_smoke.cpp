@@ -27,9 +27,17 @@
 #include "core/stream/bitStream.h"
 #include "core/stringBuffer.h"
 #include "core/util/uuid.h"
+#include "core/threadStatic.h"
+#include "core/bitRender.h"
 
 #include <cstdio>
 #include <cstring>
+
+namespace {
+
+DITTS(U32, gThreadStaticProbeCounter, 7u);
+
+} // namespace
 
 namespace fuse::legacy::t3d::engineProbe {
 
@@ -204,21 +212,17 @@ bool resizeFilterStreamSmoke() {
 }
 
 bool tagDictionarySmoke() {
-    static const char kDefine[] = "TAG_FUSE_PROBE_BATCH11";
-    static const char kLabel[] = "FUSE probe tag batch 11";
+    static const char kDefine[] = "TAG_FUSE_PROBE";
+    static const char kLabel[] = "FUSE probe tag";
 
-    const StringTableEntry define = StringTable->insert(kDefine);
-    const StringTableEntry label = StringTable->insert(kLabel);
-    if (!define || !label) {
-        return false;
-    }
+    // Stable string-literal pointers — TagDictionary compares StringTableEntry by address.
+    const StringTableEntry define = kDefine;
+    const StringTableEntry label = kLabel;
 
     TagDictionary dict;
     constexpr S32 kTagId = 43;
-    if (!dict.addEntry(kTagId, define, label)) {
-        return false;
-    }
-    return dict.defineToId(define) == kTagId && dict.idToDefine(kTagId) == define;
+    const bool added = dict.addEntry(kTagId, define, label);
+    return added && dict.defineToId(define) == kTagId && dict.idToDefine(kTagId) == define;
 }
 
 bool findMatchSmoke() {
@@ -374,6 +378,30 @@ bool stringBufferUtf8Smoke() {
         utf8 != nullptr && std::strcmp(utf8, "fuse_u2_probe") == 0 && buffer.length() == 13u;
     FrameAllocator::destroy();
     return ok;
+}
+
+bool threadStaticSmoke() {
+    ATTS(gThreadStaticProbeCounter) = 11u;
+    if (ATTS(gThreadStaticProbeCounter) != 11u) {
+        return false;
+    }
+    ATTS(gThreadStaticProbeCounter) = 7u;
+    return ATTS(gThreadStaticProbeCounter) == 7u;
+}
+
+bool bitRenderTriangleSmoke() {
+    constexpr S32 dim = 8;
+    U32 bits[(dim * dim + 31) / 32] = {};
+    const Point2I v0(1, 1);
+    const Point2I v1(6, 1);
+    const Point2I v2(3, 6);
+    BitRender::render(&v0, &v1, &v2, dim, bits);
+
+    U32 sum = 0;
+    for (const U32 word : bits) {
+        sum += word;
+    }
+    return sum != 0u;
 }
 
 } // namespace fuse::legacy::t3d::engineProbe

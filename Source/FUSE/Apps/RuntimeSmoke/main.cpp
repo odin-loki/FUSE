@@ -405,6 +405,10 @@ int main() {
               "engine probe GBitmap getSurfaceSize BC1/BC3 block layout");
         check(fuse::legacy::t3d::engineProbe::gbitmapChopTopMipsSmoke(),
               "engine probe GBitmap chopTopMips mip discard");
+        check(fuse::legacy::t3d::engineProbe::threadStaticSmoke(),
+              "engine probe TorqueThreadStatic DITTS/ATTS round-trip");
+        check(fuse::legacy::t3d::engineProbe::bitRenderTriangleSmoke(),
+              "engine probe BitRender triangle raster sets bits");
     }
 #endif
 

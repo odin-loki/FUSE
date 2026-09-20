@@ -5,4 +5,7 @@
 
 #include "core/dataChunker.h"
 
+// Probe smoke uses stack-local TagDictionary only; skip unused global singleton.
+#define FUSE_PROBE_NO_GLOBAL_TAG_DICTIONARY 1
+
 #endif

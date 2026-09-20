@@ -1,15 +1,13 @@
 #include "core/stringTable.h"
 
 #include <cstring>
-#include <memory>
 #include <string>
-#include <unordered_map>
-#include <vector>
+#include <unordered_set>
 
 namespace {
 
-std::vector<std::unique_ptr<std::string>> gProbeStringPool;
-std::unordered_map<std::string, StringTableEntry> gProbeStringIntern;
+// Store interned strings in set nodes; c_str() stays valid until process exit (no rehash invalidation).
+std::unordered_set<std::string> gProbeStringIntern;
 
 StringTableEntry internCopy(const char* string, std::size_t len)
 {
@@ -18,16 +16,9 @@ StringTableEntry internCopy(const char* string, std::size_t len)
     }
 
     const std::string key(string, len);
-    const auto existing = gProbeStringIntern.find(key);
-    if (existing != gProbeStringIntern.end()) {
-        return existing->second;
-    }
-
-    auto owned = std::make_unique<std::string>(key);
-    const StringTableEntry entry = owned->c_str();
-    gProbeStringIntern.emplace(*owned, entry);
-    gProbeStringPool.push_back(std::move(owned));
-    return entry;
+    const auto [it, inserted] = gProbeStringIntern.emplace(key);
+    (void)inserted;
+    return it->c_str();
 }
 
 } // namespace
@@ -57,7 +48,7 @@ StringTableEntry _StringTable::lookup(const char* string, bool /*caseSens*/)
         return nullptr;
     }
     const auto existing = gProbeStringIntern.find(string);
-    return existing != gProbeStringIntern.end() ? existing->second : nullptr;
+    return existing != gProbeStringIntern.end() ? existing->c_str() : nullptr;
 }
 
 StringTableEntry _StringTable::lookupn(const char* string, S32 len, bool /*caseSens*/)
@@ -67,7 +58,7 @@ StringTableEntry _StringTable::lookupn(const char* string, S32 len, bool /*caseS
     }
     const std::string key(string, static_cast<std::size_t>(len));
     const auto existing = gProbeStringIntern.find(key);
-    return existing != gProbeStringIntern.end() ? existing->second : nullptr;
+    return existing != gProbeStringIntern.end() ? existing->c_str() : nullptr;
 }
 
 _StringTable gProbeStringTableInstance;

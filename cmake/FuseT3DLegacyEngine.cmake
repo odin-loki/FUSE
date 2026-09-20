@@ -84,6 +84,8 @@ set(_fuse_t3d_legacy_engine_sources
     "${CMAKE_SOURCE_DIR}/Engine/source/core/stream/bitStream.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/core/stringBuffer.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/core/strings/unicode.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/threadStatic.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/bitRender.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/math/impl/math_c.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/math/mQuat.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/math/mMath_C.cpp"
@@ -165,4 +167,4 @@ set_source_files_properties(
         COMPILE_OPTIONS "-include${_fuse_t3d_legacy_engine_probe_include}/bitstream_prelude.h"
 )
 
-message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-14: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB/PNG + read/writeBitmap stub + crc/bitVector/idGenerator/tDictionary + timeClass/tSignal + color/dataChunker + filterStream/resizeStream/tagDictionary + findMatch/tokenizer + rgb2xyz/luv stubs + gBitmap chopTopMips/getSurfaceSize BC+mip/copyRect/fillWhite/sGetExtensionList/getColor/setColor RGB/RGBA8/extrudeMipLevels + bitStream setStringBuffer/Huffman/class-id + stringBuffer/unicode + uuid_probe_stub + console shadows + stubs)")
+message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-15: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB/PNG + read/writeBitmap stub + crc/bitVector/idGenerator/tDictionary + timeClass/tSignal + color/dataChunker + filterStream/resizeStream/tagDictionary + findMatch/tokenizer + rgb2xyz/luv stubs + gBitmap chopTopMips/getSurfaceSize BC+mip/copyRect/fillWhite/sGetExtensionList/getColor/setColor RGB/RGBA8/extrudeMipLevels + bitStream setStringBuffer/Huffman/class-id + stringBuffer/unicode + uuid_probe_stub + threadStatic/bitRender + console shadows + stubs)")
