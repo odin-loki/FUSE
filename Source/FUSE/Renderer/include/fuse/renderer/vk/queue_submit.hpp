@@ -53,4 +53,10 @@ GraphicsQueueSubmitResult submitGraphicsQueue(const GraphicsQueueSubmitDesc& des
 /// Uses `device.queues().transfer`, falling back to graphics if transfer is null.
 GraphicsQueueSubmitResult submitTransferQueue(const GraphicsQueueSubmitDesc& desc);
 
+/// Submit the current slot compute command buffer via `vkQueueSubmit`.
+/// Records a one-time empty CB when not already recorded; skips when the compute CB is null.
+/// No WSI semaphores. Does not wait or signal the in-flight fence.
+/// Uses `device.queues().compute`, falling back to graphics if compute is null.
+GraphicsQueueSubmitResult submitComputeQueue(const GraphicsQueueSubmitDesc& desc);
+
 } // namespace fuse::renderer

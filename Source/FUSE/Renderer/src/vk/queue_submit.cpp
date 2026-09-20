@@ -259,4 +259,63 @@ GraphicsQueueSubmitResult submitTransferQueue(const GraphicsQueueSubmitDesc& des
 #endif
 }
 
+GraphicsQueueSubmitResult submitComputeQueue(const GraphicsQueueSubmitDesc& desc) {
+    GraphicsQueueSubmitResult result;
+    result.headless = true;
+    result.semaphoresUsed = false;
+
+    if (desc.device == nullptr || !desc.device->isValid() || desc.frameManager == nullptr ||
+        !desc.frameManager->isReady()) {
+        result.message = "submitComputeQueue requires valid device and frame manager";
+        return result;
+    }
+
+#if defined(FUSE_VULKAN_BACKEND)
+    FrameSyncData& slot = desc.frameManager->current();
+    auto computeBuffer = static_cast<VkCommandBuffer>(slot.commands.computeCommandBuffer);
+    if (computeBuffer == VK_NULL_HANDLE) {
+        result.ok = true;
+        result.submitted = false;
+        result.message = "compute command buffer null — skipped";
+        return result;
+    }
+
+    if (!desc.commandsAlreadyRecorded) {
+        if (vkResetCommandBuffer(computeBuffer, 0) != VK_SUCCESS) {
+            result.message = "compute command buffer reset failed";
+            return result;
+        }
+        if (!recordMinimalSubmitCommands(computeBuffer)) {
+            result.message = "compute command buffer record failed";
+            return result;
+        }
+    }
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &computeBuffer;
+
+    VkQueue queue = static_cast<VkQueue>(desc.device->queues().compute);
+    if (queue == VK_NULL_HANDLE) {
+        queue = static_cast<VkQueue>(desc.device->queues().graphics);
+    }
+    if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+        result.message = "compute vkQueueSubmit failed";
+        return result;
+    }
+
+    result.submitted = true;
+    result.ok = true;
+    result.message = "vkQueueSubmit compute (no WSI, no in-flight fence)";
+    return result;
+#else
+    (void)desc;
+    result.ok = true;
+    result.submitted = false;
+    result.message = "compute queue submit stub — Vulkan backend disabled";
+    return result;
+#endif
+}
+
 } // namespace fuse::renderer

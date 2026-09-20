@@ -135,6 +135,7 @@ struct RenderGraphExecuteInfo {
     u32 scratchBytesUsed = 0;
     u32 transientsReleased = 0;
     u32 aliasGroups = 0;
+    u32 executeDurationUs = 0;
 };
 
 /// Lightweight render graph — pass ordering, barrier planning, and stub command recording.

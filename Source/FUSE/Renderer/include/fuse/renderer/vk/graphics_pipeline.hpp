@@ -25,6 +25,12 @@ struct GraphicsPipelineDesc {
     u32 depthFormat = 0;
     u32 polygonMode = 0;  // VK_POLYGON_MODE_FILL
     u32 cullMode = 0;     // VK_CULL_MODE_NONE (keep current default so existing triangle tests do not flip)
+    u32 topology = 3;     // VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
+    u32 frontFace = 1;    // VK_FRONT_FACE_COUNTER_CLOCKWISE (current hardcoded)
+    bool depthBiasEnable = false;
+    float depthBiasConstantFactor = 0.f;
+    float depthBiasClamp = 0.f;
+    float depthBiasSlopeFactor = 0.f;
     bool depthTest = false;
     bool depthWrite = false;
     u32 depthCompareOp = 7; // VK_COMPARE_OP_ALWAYS to match current defaults
@@ -46,6 +52,8 @@ struct GraphicsPipelineInfo {
     bool hasDynamicDepth = false;
     bool blendEnabled = false;
     u32 vertexStrideBytes = 0;
+    u32 topology = 0;
+    bool depthBiasEnabled = false;
     u32 cacheSnapshotBytes = 0;
     u32 rebuildCount = 0;
     std::string message;

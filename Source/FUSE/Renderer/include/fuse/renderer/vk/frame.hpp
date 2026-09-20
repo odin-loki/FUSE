@@ -16,6 +16,7 @@ struct FrameCommandData {
     void* commandPool = nullptr;     // VkCommandPool
     void* primaryCommandBuffer = nullptr; // VkCommandBuffer
     void* transferCommandBuffer = nullptr; // VkCommandBuffer
+    void* computeCommandBuffer = nullptr; // VkCommandBuffer
     void* descriptorPool = nullptr;  // VkDescriptorPool — per-slot, reset each beginFrame
 };
 
@@ -62,6 +63,7 @@ public:
     const FrameSyncData& slot(u32 index) const;
     void* currentCommandBuffer() const;
     void* currentTransferCommandBuffer() const;
+    void* currentComputeCommandBuffer() const;
     void* currentTimelineSemaphore() const;
     void* currentDescriptorPool() const;
     u64 currentTimelineValue() const;

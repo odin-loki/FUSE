@@ -6,6 +6,7 @@
 #include <fuse/renderer/render_command_list.hpp>
 #include <fuse/renderer/render_graph.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
+#include <fuse/renderer/vk/compute_pipeline.hpp>
 #include <fuse/renderer/vk/queue_submit.hpp>
 #include <fuse/renderer/vk/composite_gpu_path.hpp>
 #include <fuse/renderer/vk/raster_path.hpp>
@@ -25,6 +26,7 @@ public:
         CompositePassDesc composite{};
         bool enableRasterPath = true;
         bool enableCompositePass = true;
+        bool enableComputePipeline = true;
     };
 
     static std::unique_ptr<RhiContext> create(const Desc& desc);
@@ -39,6 +41,7 @@ public:
     const RasterPath* rasterPath() const { return m_rasterPath.get(); }
     const CompositePass* compositePass() const { return m_compositePass.get(); }
     const CompositeGpuPath* compositeGpuPath() const { return m_compositeGpuPath.get(); }
+    const ComputePipeline* computePipeline() const { return m_computePipeline.get(); }
 
     /// Begin frame slot after tick barrier. Returns false off render thread.
     bool beginFrame(u32 frameIndex);
@@ -84,7 +87,9 @@ private:
     void ensureRasterPath();
     void ensureCompositePass();
     void ensureCompositeGpuPath();
+    void ensureComputePipeline();
     void ensureFrameSyncPair();
+    void fillComputeEncodeContext(VkFrameEncodeContext& encodeContextStorage);
     void captureGpuTimestampStats(const FrameManager& frameManager);
 
     std::unique_ptr<VulkanBootstrap> m_bootstrap;
@@ -92,6 +97,9 @@ private:
     std::unique_ptr<RasterPath> m_rasterPath;
     std::unique_ptr<CompositePass> m_compositePass;
     std::unique_ptr<CompositeGpuPath> m_compositeGpuPath;
+    std::unique_ptr<ShaderModule> m_computeShader;
+    std::unique_ptr<PipelineLayout> m_computeLayout;
+    std::unique_ptr<ComputePipeline> m_computePipeline;
     RasterPathStats m_lastRasterStats{};
     CompositePassStats m_lastCompositeStats{};
     CompositeGpuPathStats m_lastCompositeGpuStats{};

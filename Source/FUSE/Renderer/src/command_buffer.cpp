@@ -54,8 +54,11 @@ void CommandBufferRecorder::reset() {
     m_vulkanPresentRenderPassBeginCount = 0;
     m_vulkanCompositeDrawCount = 0;
     m_vulkanDrawIndexedCount = 0;
+    m_vulkanDrawIndexedIndirectCount = 0;
     m_vulkanDispatchCount = 0;
     m_vulkanFillBufferCount = 0;
+    m_vulkanUpdateBufferCount = 0;
+    m_vulkanCopyBufferCount = 0;
     m_records.clear();
 }
 
@@ -517,6 +520,101 @@ void CommandBufferRecorder::encodeDrawIndexed(u32 indexCount, u32 instanceCount,
 #endif
 }
 
+void CommandBufferRecorder::encodeDrawIndexedIndirect(void* indirectBuffer, u32 offset, u32 drawCount,
+                                                      u32 stride) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_vulkanEncodeActive || m_encodeContext == nullptr || !m_insideRenderPass ||
+        !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
+        return;
+    }
+
+    void* resolvedIndirect =
+        indirectBuffer != nullptr ? indirectBuffer : m_encodeContext->indirectBuffer;
+    if (resolvedIndirect == nullptr) {
+        return;
+    }
+
+    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
+    if (m_encodeContext->indexBuffer != nullptr) {
+        vkCmdBindIndexBuffer(commandBuffer, static_cast<VkBuffer>(m_encodeContext->indexBuffer), 0,
+                             m_encodeContext->indexType == 1u ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16);
+    }
+
+    if (m_encodeContext->vertexBuffer != nullptr) {
+        VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(m_encodeContext->vertexBuffer)};
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+    }
+
+    const u32 resolvedDrawCount = drawCount > 0u ? drawCount : 1u;
+    const u32 resolvedStride = stride > 0u ? stride : 20u;
+    vkCmdDrawIndexedIndirect(commandBuffer, static_cast<VkBuffer>(resolvedIndirect), offset,
+                             resolvedDrawCount, resolvedStride);
+    ++m_vulkanDrawIndexedIndirectCount;
+#else
+    (void)indirectBuffer;
+    (void)offset;
+    (void)drawCount;
+    (void)stride;
+#endif
+}
+
+void CommandBufferRecorder::encodeUpdateBuffer(void* dstBuffer, u32 data) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_vulkanEncodeActive || !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
+        return;
+    }
+
+    if (m_insideRenderPass) {
+        return;
+    }
+
+    void* resolvedDst = dstBuffer;
+    if (resolvedDst == nullptr && m_encodeContext != nullptr) {
+        resolvedDst = m_encodeContext->barrierBuffer;
+    }
+    if (resolvedDst == nullptr) {
+        return;
+    }
+
+    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
+    vkCmdUpdateBuffer(commandBuffer, static_cast<VkBuffer>(resolvedDst), 0, sizeof(u32), &data);
+    ++m_vulkanUpdateBufferCount;
+#else
+    (void)dstBuffer;
+    (void)data;
+#endif
+}
+
+void CommandBufferRecorder::encodeCopyBuffer(void* src, void* dst, u32 size) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_vulkanEncodeActive || !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
+        return;
+    }
+
+    if (m_insideRenderPass) {
+        return;
+    }
+
+    if (src == nullptr || dst == nullptr || size == 0u) {
+        return;
+    }
+
+    VkBufferCopy region{};
+    region.srcOffset = 0;
+    region.dstOffset = 0;
+    region.size = size;
+
+    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
+    vkCmdCopyBuffer(commandBuffer, static_cast<VkBuffer>(src), static_cast<VkBuffer>(dst), 1, &region);
+    ++m_vulkanCopyBufferCount;
+#else
+    (void)src;
+    (void)dst;
+    (void)size;
+#endif
+}
+
 void CommandBufferRecorder::encodeDispatch(u32 x, u32 y, u32 z) {
 #if defined(FUSE_VULKAN_BACKEND)
     if (!m_vulkanEncodeActive || m_encodeContext == nullptr ||
@@ -701,6 +799,54 @@ void CommandBufferRecorder::drawIndexed(u32 indexCount, u32 instanceCount, u32 f
     }
     encodeDrawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, materialId, vertexBuffer,
                       indexBuffer);
+}
+
+void CommandBufferRecorder::drawIndexedIndirect(void* indirectBuffer, u32 offset, u32 drawCount, u32 stride) {
+    if (!m_recording) {
+        return;
+    }
+
+    CommandRecord record;
+    record.kind = CommandRecordKind::DrawIndexedIndirect;
+    record.nativeIndirectBuffer = indirectBuffer;
+    record.bufferOffset = offset;
+    record.drawCount = drawCount;
+    record.stride = stride;
+    m_records.push_back(record);
+
+    if (m_activeRasterPass && !m_insideRenderPass) {
+        beginVulkanRenderPass();
+    }
+    encodeDrawIndexedIndirect(indirectBuffer, offset, drawCount, stride);
+}
+
+void CommandBufferRecorder::updateBuffer(void* dstBuffer, u32 data) {
+    if (!m_recording) {
+        return;
+    }
+
+    CommandRecord record;
+    record.kind = CommandRecordKind::UpdateBuffer;
+    record.nativeDstBuffer = dstBuffer;
+    record.fillValue = data;
+    m_records.push_back(record);
+
+    encodeUpdateBuffer(dstBuffer, data);
+}
+
+void CommandBufferRecorder::copyBuffer(void* src, void* dst, u32 size) {
+    if (!m_recording) {
+        return;
+    }
+
+    CommandRecord record;
+    record.kind = CommandRecordKind::CopyBuffer;
+    record.nativeSrcBuffer = src;
+    record.nativeDstBuffer = dst;
+    record.copySize = size;
+    m_records.push_back(record);
+
+    encodeCopyBuffer(src, dst, size);
 }
 
 void CommandBufferRecorder::dispatch(u32 x, u32 y, u32 z) {

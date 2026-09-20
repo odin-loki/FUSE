@@ -101,6 +101,8 @@ void nameSlotSyncObjects(void* vkDevice, FrameSyncData& slot, u32 index, u32& na
                        "cmd", namesSet);
     tryNameFrameObject(vkDevice, VK_OBJECT_TYPE_COMMAND_BUFFER, slot.commands.transferCommandBuffer,
                        index, "transferCmd", namesSet);
+    tryNameFrameObject(vkDevice, VK_OBJECT_TYPE_COMMAND_BUFFER, slot.commands.computeCommandBuffer, index,
+                       "computeCmd", namesSet);
     tryNameFrameObject(vkDevice, VK_OBJECT_TYPE_QUERY_POOL, slot.timestampQueryPool, index,
                        "timestampPool", namesSet);
 }
@@ -210,9 +212,9 @@ bool FrameManager::initialize(VulkanDevice& device) {
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.commandPool = commandPool;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandBufferCount = 2;
+        allocInfo.commandBufferCount = 3;
 
-        VkCommandBuffer commandBuffers[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+        VkCommandBuffer commandBuffers[3] = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
         if (vkAllocateCommandBuffers(vkDevice, &allocInfo, commandBuffers) != VK_SUCCESS) {
             vkDestroyCommandPool(vkDevice, commandPool, nullptr);
             m_info.message = "FrameManager command buffer allocation failed";
@@ -227,6 +229,7 @@ bool FrameManager::initialize(VulkanDevice& device) {
         m_slots[i].commands.commandPool = commandPool;
         m_slots[i].commands.primaryCommandBuffer = commandBuffers[0];
         m_slots[i].commands.transferCommandBuffer = commandBuffers[1];
+        m_slots[i].commands.computeCommandBuffer = commandBuffers[2];
 
 #if defined(VK_VERSION_1_2) || defined(VK_KHR_timeline_semaphore)
         VkSemaphore timelineSemaphore = VK_NULL_HANDLE;
@@ -310,6 +313,15 @@ void FrameManager::shutdown() {
                                  &transfer);
             m_slots[i].commands.transferCommandBuffer = nullptr;
         }
+        if (m_slots[i].commands.computeCommandBuffer != nullptr) {
+            VkCommandBuffer compute =
+                static_cast<VkCommandBuffer>(m_slots[i].commands.computeCommandBuffer);
+            vkFreeCommandBuffers(vkDevice,
+                                 static_cast<VkCommandPool>(m_slots[i].commands.commandPool),
+                                 1,
+                                 &compute);
+            m_slots[i].commands.computeCommandBuffer = nullptr;
+        }
         if (m_slots[i].commands.commandPool != nullptr) {
             vkDestroyCommandPool(vkDevice, static_cast<VkCommandPool>(m_slots[i].commands.commandPool), nullptr);
             m_slots[i].commands.commandPool = nullptr;
@@ -364,6 +376,10 @@ void* FrameManager::currentCommandBuffer() const {
 
 void* FrameManager::currentTransferCommandBuffer() const {
     return current().commands.transferCommandBuffer;
+}
+
+void* FrameManager::currentComputeCommandBuffer() const {
+    return current().commands.computeCommandBuffer;
 }
 
 void* FrameManager::currentTimelineSemaphore() const {

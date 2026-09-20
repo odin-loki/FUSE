@@ -1,5 +1,7 @@
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/renderer/rhi_context.hpp>
+#include <fuse/renderer/shader/shader_module.hpp>
+#include <fuse/renderer/vk/pipeline_layout.hpp>
 #include <fuse/renderer/vk/queue_submit.hpp>
 #include <fuse/renderer/vk/swapchain_util.hpp>
 
@@ -35,7 +37,9 @@ std::unique_ptr<RhiContext> RhiContext::create(const Desc& desc) {
         return nullptr;
     }
 
-    return std::unique_ptr<RhiContext>(new RhiContext(std::move(bootstrap), desc));
+    auto context = std::unique_ptr<RhiContext>(new RhiContext(std::move(bootstrap), desc));
+    context->ensureComputePipeline();
+    return context;
 }
 
 void RhiContext::ensureRasterPath() {
@@ -88,6 +92,57 @@ void RhiContext::ensureCompositeGpuPath() {
     compositeDesc.fragmentSpirvPath = fragPath.c_str();
 
     m_compositeGpuPath = CompositeGpuPath::create(*device, compositeDesc);
+}
+
+void RhiContext::ensureComputePipeline() {
+    if (m_computePipeline || !m_desc.enableComputePipeline) {
+        return;
+    }
+
+    VulkanDevice* device = m_bootstrap ? m_bootstrap->device() : nullptr;
+    if (device == nullptr) {
+        return;
+    }
+
+    static const std::string compPath = fixturePath("minimal.comp.spv");
+    m_computeShader = ShaderModule::createFromFile(*device, ShaderStage::Compute, compPath.c_str());
+    if (m_computeShader == nullptr) {
+        return;
+    }
+
+    PipelineLayoutDesc layoutDesc{};
+    layoutDesc.debugName = "rhi_compute_layout";
+    if (m_rasterPath != nullptr && m_rasterPath->lastStats().bindlessLayoutReady &&
+        m_compositeGpuPath != nullptr && m_compositeGpuPath->bindless().layoutHandle() != nullptr) {
+        layoutDesc.bindlessSetLayout = m_compositeGpuPath->bindless().layoutHandle();
+    }
+
+    m_computeLayout = PipelineLayout::create(*device, layoutDesc);
+    if (m_computeLayout == nullptr) {
+        m_computeShader.reset();
+        return;
+    }
+
+    ComputePipelineDesc pipelineDesc{};
+    pipelineDesc.layout = m_computeLayout.get();
+    pipelineDesc.computeShader = m_computeShader.get();
+    pipelineDesc.debugName = "rhi_compute_pipeline";
+    m_computePipeline = ComputePipeline::create(*device, pipelineDesc);
+    if (m_computePipeline == nullptr) {
+        m_computeLayout.reset();
+        m_computeShader.reset();
+    }
+}
+
+void RhiContext::fillComputeEncodeContext(VkFrameEncodeContext& encodeContextStorage) {
+    ensureComputePipeline();
+    if (m_computePipeline == nullptr || !m_computePipeline->isValid()) {
+        return;
+    }
+
+    encodeContextStorage.computePipeline = m_computePipeline->nativeHandle();
+    encodeContextStorage.computePipelineLayout =
+        m_computeLayout != nullptr ? m_computeLayout->nativeHandle() : nullptr;
 }
 
 void RhiContext::ensureFrameSyncPair() {
@@ -165,6 +220,7 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
                 encodeContext = &encodeContextStorage;
             }
         }
+        fillComputeEncodeContext(encodeContextStorage);
 
 #if defined(FUSE_VULKAN_BACKEND)
         VulkanSwapchain* swapchain = m_bootstrap->swapchain();
@@ -302,6 +358,7 @@ bool RhiContext::submitDrawList(const DrawList& draws, u32 frameIndex) {
                 encodeContext = &encodeContextStorage;
             }
         }
+        fillComputeEncodeContext(encodeContextStorage);
 
 #if defined(FUSE_VULKAN_BACKEND)
         VulkanSwapchain* swapchain = m_bootstrap->swapchain();

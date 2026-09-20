@@ -458,6 +458,50 @@ void testSamplerAnisotropy() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testSamplerCompare() {
+    fuse::renderer::VulkanBootstrapDesc desc{};
+    desc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(desc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for sampler compare");
+    if (bootstrap == nullptr) {
+        return;
+    }
+
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    fuse::renderer::ResourceManager::Desc resourceDesc{};
+    resourceDesc.stagingRingBytes = 4096u;
+    const bool ready = resources.init(*bootstrap->device(), bindless, resourceDesc);
+
+    fuse::renderer::SamplerDesc samplerDesc{};
+    samplerDesc.compareEnable = true;
+    samplerDesc.compareOp = 1u; // VK_COMPARE_OP_LESS
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        expectTrue(!ready, "resource manager skips without device");
+        bindless.destroy(*bootstrap->device());
+        return;
+    }
+    expectTrue(ready, "resource manager initializes for sampler compare");
+#else
+    expectTrue(ready, "stub resource manager initializes for sampler compare");
+#endif
+
+    const fuse::renderer::SamplerHandle sampler = resources.createSampler(samplerDesc);
+    expectTrue(sampler.isValid(),
+               "SamplerDesc compareEnable true creates a sampler (native or stub handle)");
+    expectTrue(resources.liveCounts().samplers == 1u, "compare sampler counted as live");
+
+    resources.destroySampler(sampler);
+    expectTrue(resources.liveCounts().samplers == 0u, "compare sampler destroyed");
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testSamplerLodAndGenerateMips() {
     fuse::renderer::VulkanBootstrapDesc desc{};
     desc.instance.enableValidation = false;
@@ -531,6 +575,73 @@ void testSamplerLodAndGenerateMips() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testCubeMapImageViews() {
+    fuse::renderer::VulkanBootstrapDesc desc{};
+    desc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(desc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for cube map views");
+    if (bootstrap == nullptr) {
+        return;
+    }
+
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    fuse::renderer::ResourceManager::Desc resourceDesc{};
+    resourceDesc.stagingRingBytes = 4096u;
+    const bool ready = resources.init(*bootstrap->device(), bindless, resourceDesc);
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        expectTrue(!ready, "resource manager skips without device");
+        bindless.destroy(*bootstrap->device());
+        return;
+    }
+    expectTrue(ready, "resource manager initializes for cube map views");
+#else
+    expectTrue(ready, "stub resource manager initializes for cube map views");
+#endif
+
+    fuse::renderer::TextureDesc default2d{};
+    default2d.width = 8;
+    default2d.height = 8;
+    default2d.usage = fuse::renderer::ImageUsage::Sampled;
+    expectTrue(!default2d.cubeMap, "TextureDesc cubeMap defaults to false");
+    const fuse::renderer::TextureHandle tex2d = resources.createTexture(default2d);
+    expectTrue(tex2d.isValid(), "2D default texture handle issued");
+    const fuse::renderer::Texture* created2d = resources.getTexture(tex2d);
+    expectTrue(created2d != nullptr, "2D default texture resolvable");
+    if (created2d != nullptr) {
+        expectTrue(!created2d->desc.cubeMap, "2D default path leaves cubeMap false");
+        expectTrue(created2d->desc.arrayLayers == 1u, "2D default path keeps arrayLayers at 1");
+        expectTrue(created2d->view != nullptr, "2D default texture view is non-null or honest stub");
+    }
+
+    fuse::renderer::TextureDesc cubeDesc{};
+    cubeDesc.width = 8;
+    cubeDesc.height = 8;
+    cubeDesc.arrayLayers = 6;
+    cubeDesc.cubeMap = true;
+    cubeDesc.usage = fuse::renderer::ImageUsage::Sampled;
+    const fuse::renderer::TextureHandle cube = resources.createTexture(cubeDesc);
+    expectTrue(cube.isValid(), "cubeMap texture handle issued");
+    const fuse::renderer::Texture* createdCube = resources.getTexture(cube);
+    expectTrue(createdCube != nullptr, "cubeMap texture resolvable");
+    if (createdCube != nullptr) {
+        expectTrue(createdCube->desc.cubeMap, "cubeMap flag stored on texture desc");
+        expectTrue(createdCube->desc.arrayLayers == 6u, "cubeMap texture has 6 array layers");
+        expectTrue(createdCube->view != nullptr,
+                   "cubeMap texture view is non-null when device is ready or honest stub");
+    }
+
+    resources.destroyTexture(cube);
+    resources.destroyTexture(tex2d);
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testDeviceLocalMemoryBudget() {
     fuse::renderer::VulkanBootstrapDesc desc{};
     desc.instance.enableValidation = false;
@@ -580,6 +691,77 @@ void testDeviceLocalMemoryBudget() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testTextureReadback() {
+    fuse::renderer::VulkanBootstrapDesc desc{};
+    desc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(desc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for texture readback");
+    if (bootstrap == nullptr) {
+        return;
+    }
+
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    fuse::renderer::ResourceManager::Desc resourceDesc{};
+    resourceDesc.stagingRingBytes = 4096u;
+    const bool ready = resources.init(*bootstrap->device(), bindless, resourceDesc);
+
+    u8 invalidDst[4] = {};
+    expectTrue(!resources.readTexture(fuse::renderer::TextureHandle{}, invalidDst, sizeof(invalidDst)),
+               "readTexture rejects an invalid handle");
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        expectTrue(!ready, "resource manager skips without device");
+        bindless.destroy(*bootstrap->device());
+        return;
+    }
+    expectTrue(ready, "resource manager initializes for texture readback");
+#else
+    expectTrue(ready, "stub resource manager initializes for texture readback");
+#endif
+
+    fuse::renderer::TextureDesc textureDesc{};
+    textureDesc.width = 1;
+    textureDesc.height = 1;
+    textureDesc.format = fuse::renderer::GpuFormat::R8G8B8A8Unorm;
+    textureDesc.usage = static_cast<fuse::renderer::ImageUsage>(
+        static_cast<u32>(fuse::renderer::ImageUsage::Sampled) |
+        static_cast<u32>(fuse::renderer::ImageUsage::TransferSrc) |
+        static_cast<u32>(fuse::renderer::ImageUsage::TransferDst));
+    const u8 payload[4] = {9, 8, 7, 6};
+    const fuse::renderer::TextureHandle texture = resources.createTexture(textureDesc, payload);
+    expectTrue(texture.isValid(), "1x1 R8G8B8A8 texture handle issued for readback");
+    expectTrue(resources.getTexture(texture) != nullptr, "1x1 readback texture resolvable");
+
+    expectTrue(!resources.readTexture(texture, nullptr, sizeof(payload)),
+               "readTexture rejects a null destination");
+    expectTrue(!resources.readTexture(texture, invalidDst, 0), "readTexture rejects a zero size");
+
+    u8 readback[4] = {};
+#if defined(FUSE_VULKAN_BACKEND)
+    if (resources.readTexture(texture, readback, sizeof(readback))) {
+        expectTrue(readback[0] == payload[0] && readback[1] == payload[1] &&
+                       readback[2] == payload[2] && readback[3] == payload[3],
+                   "readTexture matches 1x1 R8G8B8A8 initialData bytes");
+        expectTrue(resources.lastTextureReadbackBytes() == 4u,
+                   "lastTextureReadbackBytes records a 1x1 RGBA copy");
+    }
+#else
+    expectTrue(!resources.readTexture(texture, readback, sizeof(readback)),
+               "stub readTexture returns false");
+    expectTrue(resources.lastTextureReadbackBytes() == 0u,
+               "stub lastTextureReadbackBytes stays zero");
+#endif
+
+    resources.destroyTexture(texture);
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 } // namespace
 
 int main() {
@@ -590,8 +772,11 @@ int main() {
     testResourceManagerBuffersAndTextures();
     testDebugUtilsObjectNaming();
     testSamplerAnisotropy();
+    testSamplerCompare();
     testSamplerLodAndGenerateMips();
+    testCubeMapImageViews();
     testDeviceLocalMemoryBudget();
+    testTextureReadback();
 
     fuse::core::shutdown();
 

@@ -135,6 +135,10 @@ void testGraphicsPipelineFromFixtures() {
                    "default pipeline blendEnabled is false");
         expectTrue(graphicsPipeline->info().vertexStrideBytes == 12u,
                    "default pipeline vertexStrideBytes is 12");
+        expectTrue(graphicsPipeline->info().topology == 3u,
+                   "default pipeline topology is TRIANGLE_LIST (3)");
+        expectTrue(!graphicsPipeline->info().depthBiasEnabled,
+                   "default pipeline depthBiasEnabled is false");
         expectTrue(graphicsPipeline->rebuild(), "graphics pipeline rebuild succeeds");
         expectTrue(graphicsPipeline->isValid(), "graphics pipeline valid after rebuild");
         expectTrue(graphicsPipeline->nativeHandle() != nullptr,
@@ -143,6 +147,8 @@ void testGraphicsPipelineFromFixtures() {
                    "default pipeline blendEnabled stays false after rebuild");
         expectTrue(graphicsPipeline->info().vertexStrideBytes == 12u,
                    "default pipeline vertexStrideBytes stays 12 after rebuild");
+        expectTrue(graphicsPipeline->info().topology == 3u,
+                   "default pipeline topology stays TRIANGLE_LIST after rebuild");
     } else {
         expectTrue(!graphicsPipeline->isValid(), "graphics pipeline invalid without ICD");
         expectTrue(!graphicsPipeline->rebuild(), "rebuild returns false without valid device");
@@ -153,6 +159,10 @@ void testGraphicsPipelineFromFixtures() {
     expectTrue(!graphicsPipeline->info().blendEnabled, "stub default pipeline blendEnabled is false");
     expectTrue(graphicsPipeline->info().vertexStrideBytes == 12u,
                "stub default pipeline vertexStrideBytes is 12");
+    expectTrue(graphicsPipeline->info().topology == 3u,
+               "stub default pipeline topology is TRIANGLE_LIST (3)");
+    expectTrue(!graphicsPipeline->info().depthBiasEnabled,
+               "stub default pipeline depthBiasEnabled is false");
     expectTrue(graphicsPipeline->rebuild(), "stub graphics pipeline rebuild succeeds");
     expectTrue(graphicsPipeline->isValid(), "stub graphics pipeline valid after rebuild");
 #endif
@@ -192,6 +202,28 @@ void testGraphicsPipelineFromFixtures() {
     expectTrue(blendedPipeline->info().blendEnabled, "stub info.blendEnabled is true when valid");
     expectTrue(blendedPipeline->info().vertexStrideBytes == 12u,
                "stub blend pipeline records vertexStrideBytes");
+#endif
+
+    pipelineDesc.depthBiasEnable = true;
+    auto biasedPipeline = fuse::renderer::GraphicsPipeline::create(*device, pipelineDesc);
+    expectTrue(biasedPipeline != nullptr, "graphics pipeline allocated with depthBiasEnable");
+#if defined(FUSE_VULKAN_BACKEND)
+    if (bootstrap->status().deviceReady) {
+        if (biasedPipeline->isValid()) {
+            expectTrue(biasedPipeline->info().depthBiasEnabled,
+                       "info.depthBiasEnabled is true when bias pipeline is valid");
+            expectTrue(biasedPipeline->info().topology == 3u,
+                       "bias pipeline records default TRIANGLE_LIST topology");
+        }
+    } else {
+        expectTrue(!biasedPipeline->isValid(), "depthBiasEnable pipeline invalid without ICD");
+    }
+#else
+    expectTrue(biasedPipeline->isValid(), "depthBiasEnable pipeline valid in stub backend");
+    expectTrue(biasedPipeline->info().depthBiasEnabled,
+               "stub info.depthBiasEnabled is true when valid");
+    expectTrue(biasedPipeline->info().topology == 3u,
+               "stub bias pipeline records default TRIANGLE_LIST topology");
 #endif
 }
 
@@ -535,6 +567,26 @@ void testRhiContextWiresRasterPath() {
 #endif
 }
 
+void testRhiContextComputePipeline() {
+    fuse::renderer::RhiContext::Desc desc{};
+    desc.bootstrap.instance.enableValidation = false;
+    desc.bootstrap.createSwapchain = false;
+
+    auto context = fuse::renderer::RhiContext::create(desc);
+    expectTrue(context != nullptr, "RHI context allocated for compute pipeline");
+
+    const fuse::renderer::ComputePipeline* pipeline = context->computePipeline();
+    fuse::renderer::VulkanDevice* device = context->bootstrap().device();
+    if (device != nullptr && device->isValid()) {
+        if (pipeline != nullptr) {
+            expectTrue(pipeline->isValid(), "compute pipeline isValid when device is valid");
+        }
+    } else {
+        expectTrue(pipeline == nullptr || !pipeline->isValid(),
+                   "compute pipeline is null or invalid without a valid device");
+    }
+}
+
 void testShaderModuleReloadFromDisk() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -789,6 +841,7 @@ int main() {
     testShaderModuleReloadFromDisk();
     testRasterPathHotReload();
     testRhiContextWiresRasterPath();
+    testRhiContextComputePipeline();
     testCompositeGpuPathRegisterRasterDepth();
 
     fuse::core::shutdown();

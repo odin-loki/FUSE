@@ -60,6 +60,7 @@ struct TextureDesc {
     u32 arrayLayers = 1;
     GpuFormat format = GpuFormat::R8G8B8A8Unorm;
     ImageUsage usage = ImageUsage::Sampled;
+    bool cubeMap = false;
     bool cudaInterop = false;
     const char* name = nullptr;
 };
@@ -104,6 +105,8 @@ struct SamplerDesc {
     float minLod = 0.f;
     float maxLod = 1000.f;
     float mipLodBias = 0.f;
+    bool compareEnable = false;
+    u32 compareOp = 1; // VK_COMPARE_OP_LESS
     const char* name = nullptr;
 };
 

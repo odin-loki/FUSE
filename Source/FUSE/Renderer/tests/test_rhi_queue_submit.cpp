@@ -44,6 +44,8 @@ void testHeadlessQueueSubmit() {
 
     fuse::renderer::FrameManager* frameManager = bootstrap->frameManager();
     expectTrue(frameManager != nullptr && frameManager->isReady(), "frame manager ready");
+    expectTrue(frameManager->currentComputeCommandBuffer() != nullptr,
+               "current compute command buffer exists when device ready");
 
     fuse::renderer::GraphicsQueueSubmitDesc submitDesc{};
     submitDesc.device = bootstrap->device();
@@ -93,6 +95,15 @@ void testHeadlessQueueSubmit() {
         expectTrue(transferResult.submitted, "transfer path records a real submit");
     }
 
+    const fuse::renderer::GraphicsQueueSubmitResult computeResult =
+        fuse::renderer::submitComputeQueue(submitDesc);
+    expectTrue(computeResult.ok, "headless compute vkQueueSubmit succeeds or honest skip");
+    expectTrue(computeResult.headless, "compute path omits WSI semaphores");
+    expectTrue(!computeResult.semaphoresUsed, "compute path does not wire acquire semaphores");
+    if (frameManager->current().commands.computeCommandBuffer != nullptr) {
+        expectTrue(computeResult.submitted, "compute path records a real submit");
+    }
+
 #if defined(FUSE_VULKAN_BACKEND)
     void* waitQueue = bootstrap->device()->queues().transfer;
     if (waitQueue == nullptr) {
@@ -100,6 +111,13 @@ void testHeadlessQueueSubmit() {
     }
     if (waitQueue != nullptr) {
         vkQueueWaitIdle(static_cast<VkQueue>(waitQueue));
+    }
+    void* computeWaitQueue = bootstrap->device()->queues().compute;
+    if (computeWaitQueue == nullptr) {
+        computeWaitQueue = bootstrap->device()->queues().graphics;
+    }
+    if (computeWaitQueue != nullptr) {
+        vkQueueWaitIdle(static_cast<VkQueue>(computeWaitQueue));
     }
 #endif
 }

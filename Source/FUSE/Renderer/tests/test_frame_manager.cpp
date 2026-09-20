@@ -67,6 +67,8 @@ void testScratchResetAndDescriptorPool() {
                    "native descriptor pool exists when Vulkan device is valid");
         expectTrue(frames->currentTransferCommandBuffer() != nullptr,
                    "current transfer command buffer exists when ready");
+        expectTrue(frames->currentComputeCommandBuffer() != nullptr,
+                   "current compute command buffer exists when ready");
         expectTrue(frames->currentTimelineSemaphore() != nullptr,
                    "current timeline semaphore exists when ready");
         expectTrue(frames->currentTimelineValue() == 0u,
@@ -76,6 +78,8 @@ void testScratchResetAndDescriptorPool() {
                        "each in-flight slot has a descriptor pool");
             expectTrue(frames->slot(i).commands.transferCommandBuffer != nullptr,
                        "each in-flight slot has a transfer command buffer");
+            expectTrue(frames->slot(i).commands.computeCommandBuffer != nullptr,
+                       "each in-flight slot has a compute command buffer");
             expectTrue(frames->slot(i).timelineSemaphore != nullptr,
                        "each in-flight slot has a timeline semaphore");
         }
@@ -92,16 +96,19 @@ void testScratchResetAndDescriptorPool() {
     } else {
         (void)frames->currentDescriptorPool();
         (void)frames->currentTransferCommandBuffer();
+        (void)frames->currentComputeCommandBuffer();
         (void)frames->currentTimelineSemaphore();
         (void)frames->currentTimelineValue();
         for (fuse::u32 i = 0; i < fuse::renderer::kFramesInFlight; ++i) {
             (void)frames->slot(i).commands.transferCommandBuffer;
+            (void)frames->slot(i).commands.computeCommandBuffer;
             (void)frames->slot(i).timelineSemaphore;
         }
     }
 #else
     (void)frames->currentDescriptorPool();
     (void)frames->currentTransferCommandBuffer();
+    (void)frames->currentComputeCommandBuffer();
     (void)frames->currentTimelineSemaphore();
     (void)frames->currentTimelineValue();
 #endif

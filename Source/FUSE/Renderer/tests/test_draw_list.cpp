@@ -278,6 +278,81 @@ void testRecordWithInvalidResourceHandlesLeavesNativeNull() {
                "invalid index handle uses context default");
 }
 
+void testDrawIndexedIndirectRecordsWithoutDevice() {
+    fuse::renderer::CommandBufferRecorder recorder;
+    recorder.drawIndexedIndirect(nullptr);
+    expectTrue(recorder.recordCount() == 0u, "drawIndexedIndirect without beginRecording is a no-op");
+
+    expectTrue(recorder.beginRecording(nullptr), "beginRecording succeeds for drawIndexedIndirect");
+    void* indirect = reinterpret_cast<void*>(static_cast<uintptr_t>(0x3000));
+    recorder.drawIndexedIndirect(indirect, 40u, 2u, 20u);
+    recorder.drawIndexedIndirect(nullptr);
+
+    expectTrue(recorder.recordCount() == 2u, "logical drawIndexedIndirect records with null or fake handles");
+    expectTrue(recorder.records()[0].kind == fuse::renderer::CommandRecordKind::DrawIndexedIndirect,
+               "first record is DrawIndexedIndirect");
+    expectTrue(recorder.records()[0].nativeIndirectBuffer == indirect, "indirect buffer stored");
+    expectTrue(recorder.records()[0].bufferOffset == 40u, "indirect offset stored");
+    expectTrue(recorder.records()[0].drawCount == 2u, "indirect drawCount stored");
+    expectTrue(recorder.records()[0].stride == 20u, "indirect stride stored");
+    expectTrue(recorder.records()[1].kind == fuse::renderer::CommandRecordKind::DrawIndexedIndirect,
+               "null-handle indirect still records");
+    expectTrue(recorder.records()[1].nativeIndirectBuffer == nullptr, "null indirect handle stored");
+    expectTrue(recorder.vulkanDrawIndexedIndirectCount() == 0u,
+               "logical-only drawIndexedIndirect does not encode vkCmdDrawIndexedIndirect");
+    expectTrue(recorder.endRecording(), "endRecording succeeds after logical drawIndexedIndirect");
+}
+
+void testUpdateBufferRecordsWithoutDevice() {
+    fuse::renderer::CommandBufferRecorder recorder;
+    recorder.updateBuffer(nullptr, 1u);
+    expectTrue(recorder.recordCount() == 0u, "updateBuffer without beginRecording is a no-op");
+
+    expectTrue(recorder.beginRecording(nullptr), "beginRecording succeeds for updateBuffer");
+    void* dst = reinterpret_cast<void*>(static_cast<uintptr_t>(0x4000));
+    recorder.updateBuffer(dst, 0xABCDu);
+    recorder.updateBuffer(nullptr, 7u);
+
+    expectTrue(recorder.recordCount() == 2u, "logical updateBuffer records with null or fake handles");
+    expectTrue(recorder.records()[0].kind == fuse::renderer::CommandRecordKind::UpdateBuffer,
+               "first record is UpdateBuffer");
+    expectTrue(recorder.records()[0].nativeDstBuffer == dst, "updateBuffer dst stored");
+    expectTrue(recorder.records()[0].fillValue == 0xABCDu, "updateBuffer data stored");
+    expectTrue(recorder.records()[1].kind == fuse::renderer::CommandRecordKind::UpdateBuffer,
+               "null-handle updateBuffer still records");
+    expectTrue(recorder.records()[1].nativeDstBuffer == nullptr, "null dst stored");
+    expectTrue(recorder.records()[1].fillValue == 7u, "null-handle data stored");
+    expectTrue(recorder.vulkanUpdateBufferCount() == 0u,
+               "logical-only updateBuffer does not encode vkCmdUpdateBuffer");
+    expectTrue(recorder.endRecording(), "endRecording succeeds after logical updateBuffer");
+}
+
+void testCopyBufferRecordsWithoutDevice() {
+    fuse::renderer::CommandBufferRecorder recorder;
+    recorder.copyBuffer(nullptr, nullptr, 16u);
+    expectTrue(recorder.recordCount() == 0u, "copyBuffer without beginRecording is a no-op");
+
+    expectTrue(recorder.beginRecording(nullptr), "beginRecording succeeds for copyBuffer");
+    void* src = reinterpret_cast<void*>(static_cast<uintptr_t>(0x5000));
+    void* dst = reinterpret_cast<void*>(static_cast<uintptr_t>(0x6000));
+    recorder.copyBuffer(src, dst, 64u);
+    recorder.copyBuffer(nullptr, nullptr, 8u);
+
+    expectTrue(recorder.recordCount() == 2u, "logical copyBuffer records with null or fake handles");
+    expectTrue(recorder.records()[0].kind == fuse::renderer::CommandRecordKind::CopyBuffer,
+               "first record is CopyBuffer");
+    expectTrue(recorder.records()[0].nativeSrcBuffer == src, "copyBuffer src stored");
+    expectTrue(recorder.records()[0].nativeDstBuffer == dst, "copyBuffer dst stored");
+    expectTrue(recorder.records()[0].copySize == 64u, "copyBuffer size stored");
+    expectTrue(recorder.records()[1].kind == fuse::renderer::CommandRecordKind::CopyBuffer,
+               "null-handle copyBuffer still records");
+    expectTrue(recorder.records()[1].nativeSrcBuffer == nullptr, "null src stored");
+    expectTrue(recorder.records()[1].nativeDstBuffer == nullptr, "null dst stored");
+    expectTrue(recorder.vulkanCopyBufferCount() == 0u,
+               "logical-only copyBuffer does not encode vkCmdCopyBuffer");
+    expectTrue(recorder.endRecording(), "endRecording succeeds after logical copyBuffer");
+}
+
 } // namespace
 
 int main() {
@@ -295,6 +370,9 @@ int main() {
     testDrawIndexedStoresNativeBuffers();
     testRecordWithNullResourcesLeavesNativeNull();
     testRecordWithInvalidResourceHandlesLeavesNativeNull();
+    testDrawIndexedIndirectRecordsWithoutDevice();
+    testUpdateBufferRecordsWithoutDevice();
+    testCopyBufferRecordsWithoutDevice();
 
     if (g_failures == 0) {
         std::printf("fuse_draw_list: all checks passed\n");

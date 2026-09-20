@@ -49,6 +49,7 @@ public:
     Buffer* getBuffer(BufferHandle handle);
     const Buffer* getBuffer(BufferHandle handle) const;
     bool readBuffer(BufferHandle handle, void* dst, usize size);
+    bool readTexture(TextureHandle handle, void* dst, usize size);
 
     usize stagingRingCapacity() const { return m_stagingRingCapacity; }
     usize stagingRingOffset() const { return m_stagingOffset; }
@@ -61,6 +62,7 @@ public:
     bool lastGpuCopyWaitTimedOut() const { return m_lastGpuCopyWaitTimedOut; }
     u32 lastMipGenerateCount() const { return m_lastMipGenerateCount; }
     bool lastMipGenerateOk() const { return m_lastMipGenerateOk; }
+    u32 lastTextureReadbackBytes() const { return m_lastTextureReadbackBytes; }
 
     LiveCounts liveCounts() const;
     const GpuAllocStats* allocatorStats() const;
@@ -88,6 +90,7 @@ private:
     bool m_lastGpuCopyWaitTimedOut = false;
     u32 m_lastMipGenerateCount = 0;
     bool m_lastMipGenerateOk = false;
+    u32 m_lastTextureReadbackBytes = 0;
     bool m_ready = false;
 };
 

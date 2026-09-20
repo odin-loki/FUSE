@@ -575,8 +575,10 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
                                             FrameManager& frames,
                                             CommandBufferRecorder& recorder,
                                             const VkFrameEncodeContext* encodeContext) {
+    const auto executeStart = std::chrono::steady_clock::now();
     RenderGraphExecuteInfo result;
     if (!m_compileInfo.compiled) {
+        result.executeDurationUs = 0;
         return result;
     }
     result.aliasGroups = m_compileInfo.aliasGroups;
@@ -666,6 +668,11 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
     recorder.endRecording();
     result.recordedCommands = recorder.recordCount();
     (void)device;
+
+    const auto executeEnd = std::chrono::steady_clock::now();
+    const auto elapsedUs =
+        std::chrono::duration_cast<std::chrono::microseconds>(executeEnd - executeStart).count();
+    result.executeDurationUs = elapsedUs > 0 ? static_cast<u32>(elapsedUs) : 0u;
     return result;
 }
 

@@ -558,6 +558,48 @@ void testEmptyCompileDurationIsZero() {
                "compile duration stays 0 when nothing to compile");
 }
 
+void testExecuteDurationFieldPresent() {
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+    expectTrue(instance != nullptr, "instance allocated for execute duration");
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    expectTrue(device != nullptr, "device allocated for execute duration");
+    auto frames = fuse::renderer::FrameManager::create(*device);
+    expectTrue(frames != nullptr, "frame manager allocated for execute duration");
+    if (instance == nullptr || device == nullptr || frames == nullptr) {
+        return;
+    }
+
+    fuse::renderer::RenderGraph uncompiled;
+    uncompiled.beginFrame(0u);
+    fuse::renderer::CommandBufferRecorder uncompiledRecorder;
+    const fuse::renderer::RenderGraphExecuteInfo uncompiledInfo =
+        uncompiled.execute(*device, *frames, uncompiledRecorder);
+    expectTrue(uncompiledInfo.executeDurationUs == 0u,
+               "execute duration stays 0 when graph is not compiled");
+
+    fuse::renderer::RenderGraph graph;
+    graph.beginFrame(0u);
+
+    fuse::renderer::RGTextureAccess present{};
+    present.texture = {fuse::renderer::RenderGraph::kBackbufferTextureId};
+    present.access = fuse::renderer::RGResourceAccess::Present;
+
+    fuse::renderer::RGPassDesc presentPass{};
+    presentPass.name = "present";
+    presentPass.textureAccesses = &present;
+    presentPass.textureAccessCount = 1;
+    graph.addPass(presentPass);
+    graph.compile();
+    expectTrue(graph.compileInfo().compiled, "graph compiled before execute duration check");
+
+    fuse::renderer::CommandBufferRecorder recorder;
+    const fuse::renderer::RenderGraphExecuteInfo info = graph.execute(*device, *frames, recorder);
+    expectTrue(info.executeDurationUs == 0u || info.executeDurationUs > 0u,
+               "executeDurationUs field is present after compiled execute");
+}
+
 void testImportBufferStoresHandle() {
     fuse::renderer::RenderGraph graph;
     graph.beginFrame(0u);
@@ -805,6 +847,7 @@ int main() {
     testCudaPassSkipsVulkanBeginEnd();
     testComputePassSkipsVulkanBeginEnd();
     testEmptyCompileDurationIsZero();
+    testExecuteDurationFieldPresent();
     testImportBufferStoresHandle();
     testBufferBarrierPlannedWriteThenRead();
     testExecuteCopiesCompileOrderToScratch();

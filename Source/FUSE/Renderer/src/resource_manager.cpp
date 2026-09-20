@@ -52,8 +52,13 @@ void* createVulkanSampler(VulkanDevice& device, const SamplerDesc& desc) {
         const float limit = std::max(1.f, device.info().maxSamplerAnisotropy);
         info.maxAnisotropy = std::clamp(desc.maxAnisotropy, 1.f, limit);
     }
-    info.compareEnable = VK_FALSE;
-    info.compareOp = VK_COMPARE_OP_ALWAYS;
+    if (desc.compareEnable) {
+        info.compareEnable = VK_TRUE;
+        info.compareOp = static_cast<VkCompareOp>(desc.compareOp);
+    } else {
+        info.compareEnable = VK_FALSE;
+        info.compareOp = VK_COMPARE_OP_ALWAYS;
+    }
     info.minLod = std::max(0.0f, desc.minLod);
     info.maxLod = std::max(info.minLod, desc.maxLod);
     info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
@@ -905,6 +910,165 @@ bool ResourceManager::readBuffer(BufferHandle handle, void* dst, usize size) {
     m_allocator->destroyBuffer(staging);
     return copied;
 #else
+    return false;
+#endif
+}
+
+#if defined(FUSE_VULKAN_BACKEND)
+namespace {
+
+OneShotCopyOutcome oneShotCopyImageToBuffer(VulkanDevice& device, void* srcImage, void* dstHandle,
+                                            u32 width, u32 height, u32 depth, u32 arrayLayers) {
+    if (!device.isValid() || device.nativeHandle() == nullptr || width == 0 || height == 0) {
+        return {};
+    }
+    if (!bindlessNativeHandleReady(srcImage) || !bindlessNativeHandleReady(dstHandle)) {
+        return {};
+    }
+
+    const TransferSubmitTarget target = pickTransferTarget(device);
+    if (target.queue == VK_NULL_HANDLE) {
+        return {};
+    }
+
+    const VkDevice vkDevice = static_cast<VkDevice>(device.nativeHandle());
+    const u32 extentDepth = depth > 0 ? depth : 1u;
+    const u32 layerCount = arrayLayers > 0 ? arrayLayers : 1u;
+    const VkImage image = static_cast<VkImage>(srcImage);
+
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    poolInfo.queueFamilyIndex = target.family;
+
+    VkCommandPool pool = VK_NULL_HANDLE;
+    if (vkCreateCommandPool(vkDevice, &poolInfo, nullptr, &pool) != VK_SUCCESS) {
+        return {};
+    }
+
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = pool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    if (vkAllocateCommandBuffers(vkDevice, &allocInfo, &cmd) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return {};
+    }
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return {};
+    }
+
+    VkImageMemoryBarrier toTransferSrc{};
+    toTransferSrc.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toTransferSrc.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    toTransferSrc.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    toTransferSrc.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    toTransferSrc.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    toTransferSrc.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransferSrc.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransferSrc.image = image;
+    toTransferSrc.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    toTransferSrc.subresourceRange.levelCount = 1;
+    toTransferSrc.subresourceRange.layerCount = layerCount;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                         0, nullptr, 0, nullptr, 1, &toTransferSrc);
+
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.layerCount = layerCount;
+    region.imageExtent = {width, height, extentDepth};
+    vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           static_cast<VkBuffer>(dstHandle), 1, &region);
+
+    VkBufferMemoryBarrier toHost{};
+    toHost.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    toHost.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    toHost.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    toHost.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toHost.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toHost.buffer = static_cast<VkBuffer>(dstHandle);
+    toHost.size = VK_WHOLE_SIZE;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 0, nullptr,
+                         1, &toHost, 0, nullptr);
+
+    if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return {};
+    }
+
+    const OneShotCopyOutcome outcome = submitOneShotAndWait(vkDevice, target.queue, cmd, true);
+    vkDestroyCommandPool(vkDevice, pool, nullptr);
+    return outcome;
+}
+
+} // namespace
+#endif
+
+bool ResourceManager::readTexture(TextureHandle handle, void* dst, usize size) {
+    m_lastTextureReadbackBytes = 0;
+
+    const Texture* texture = getTexture(handle);
+    if (texture == nullptr || dst == nullptr || size == 0) {
+        return false;
+    }
+
+    const u32 width = texture->desc.width > 0 ? texture->desc.width : 1u;
+    const u32 height = texture->desc.height > 0 ? texture->desc.height : 1u;
+    const u32 depth = texture->desc.depth > 0 ? texture->desc.depth : 1u;
+    const u32 layers = texture->desc.arrayLayers > 0 ? texture->desc.arrayLayers : 1u;
+    const usize needed =
+        static_cast<usize>(width) * static_cast<usize>(height) * 4u * static_cast<usize>(depth) *
+        static_cast<usize>(layers);
+    if (needed == 0) {
+        return false;
+    }
+    const usize copySize = size < needed ? size : needed;
+
+    if (!m_ready || m_allocator == nullptr || m_device == nullptr || !m_device->isValid()) {
+        return false;
+    }
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bindlessNativeHandleReady(texture->image)) {
+        return false;
+    }
+
+    BufferDesc stagingDesc{};
+    stagingDesc.size = needed;
+    stagingDesc.usage = BufferUsage::TransferDst;
+    stagingDesc.memoryUsage = MemoryUsage::GpuToCpu;
+    stagingDesc.name = "texture_readback_staging";
+
+    Buffer staging{};
+    if (!m_allocator->createBuffer(stagingDesc, staging) || staging.mapped == nullptr) {
+        m_allocator->destroyBuffer(staging);
+        return false;
+    }
+
+    const OneShotCopyOutcome copy =
+        oneShotCopyImageToBuffer(*m_device, texture->image, staging.handle, width, height, depth,
+                                 layers);
+    if (!copy.submitted) {
+        m_allocator->destroyBuffer(staging);
+        return false;
+    }
+
+    std::memcpy(dst, staging.mapped, copySize);
+    m_lastTextureReadbackBytes = static_cast<u32>(copySize);
+    m_allocator->destroyBuffer(staging);
+    return true;
+#else
+    (void)copySize;
     return false;
 #endif
 }

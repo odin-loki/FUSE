@@ -125,7 +125,7 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.topology = static_cast<VkPrimitiveTopology>(desc.topology);
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
     VkPipelineViewportStateCreateInfo viewportState{};
@@ -140,8 +140,11 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     rasterizer.polygonMode = static_cast<VkPolygonMode>(desc.polygonMode);
     rasterizer.lineWidth = 1.f;
     rasterizer.cullMode = static_cast<VkCullModeFlags>(desc.cullMode);
-    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    rasterizer.depthBiasEnable = VK_FALSE;
+    rasterizer.frontFace = static_cast<VkFrontFace>(desc.frontFace);
+    rasterizer.depthBiasEnable = desc.depthBiasEnable ? VK_TRUE : VK_FALSE;
+    rasterizer.depthBiasConstantFactor = desc.depthBiasConstantFactor;
+    rasterizer.depthBiasClamp = desc.depthBiasClamp;
+    rasterizer.depthBiasSlopeFactor = desc.depthBiasSlopeFactor;
 
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -234,6 +237,8 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     m_info.hasDynamicDepth = desc.useDynamicRendering && desc.depthFormat != 0;
     m_info.blendEnabled = desc.blendEnable;
     m_info.vertexStrideBytes = desc.vertexStrideBytes;
+    m_info.topology = desc.topology;
+    m_info.depthBiasEnabled = desc.depthBiasEnable;
     if (desc.useDynamicRendering) {
         m_info.message = desc.debugName != nullptr
                              ? std::string(desc.debugName) + " (dynamic rendering)"
@@ -250,6 +255,8 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     m_info.hasDynamicDepth = desc.useDynamicRendering && desc.depthFormat != 0;
     m_info.blendEnabled = desc.blendEnable;
     m_info.vertexStrideBytes = desc.vertexStrideBytes;
+    m_info.topology = desc.topology;
+    m_info.depthBiasEnabled = desc.depthBiasEnable;
     if (desc.useDynamicRendering) {
         m_info.message = desc.debugName != nullptr
                              ? std::string(desc.debugName) + " (dynamic rendering)"

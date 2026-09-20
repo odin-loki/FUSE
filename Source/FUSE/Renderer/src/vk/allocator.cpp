@@ -145,6 +145,23 @@ VkFormat toVkFormat(GpuFormat format) {
     return static_cast<VkFormat>(static_cast<u32>(format));
 }
 
+VkImageViewType selectImageViewType(const TextureDesc& desc) {
+    if (desc.cubeMap && desc.arrayLayers >= 6) {
+        return desc.arrayLayers == 6 ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+    }
+    if (desc.depth > 1) {
+        return VK_IMAGE_VIEW_TYPE_3D;
+    }
+    if (desc.arrayLayers > 1) {
+        return VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+    }
+    return VK_IMAGE_VIEW_TYPE_2D;
+}
+
+VkImageCreateFlags imageCreateFlags(const TextureDesc& desc) {
+    return desc.cubeMap ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
+}
+
 #if defined(FUSE_VMA_AVAILABLE)
 VmaMemoryUsage toVmaMemoryUsage(MemoryUsage usage) {
     switch (usage) {
@@ -314,6 +331,7 @@ bool nativeCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, const T
     VkExternalMemoryImageCreateInfo externalImageInfo{};
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.flags = imageCreateFlags(desc);
     imageInfo.imageType = desc.depth > 1 ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
     imageInfo.format = toVkFormat(desc.format);
     imageInfo.extent = {desc.width, desc.height, desc.depth};
@@ -376,7 +394,7 @@ bool nativeCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, const T
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = image;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.viewType = selectImageViewType(desc);
     viewInfo.format = toVkFormat(desc.format);
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     viewInfo.subresourceRange.levelCount = desc.mipLevels;
@@ -717,6 +735,7 @@ bool GpuAllocator::createImage(const TextureDesc& desc, Texture& out) {
 #if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_VMA_AVAILABLE)
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.flags = imageCreateFlags(desc);
     imageInfo.imageType = desc.depth > 1 ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
     imageInfo.format = toVkFormat(desc.format);
     imageInfo.extent = {desc.width, desc.height, desc.depth};
@@ -743,7 +762,7 @@ bool GpuAllocator::createImage(const TextureDesc& desc, Texture& out) {
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = image;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.viewType = selectImageViewType(desc);
     viewInfo.format = toVkFormat(desc.format);
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     viewInfo.subresourceRange.levelCount = desc.mipLevels;
