@@ -10,6 +10,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 #include <vector>
 
 namespace {
@@ -59,8 +60,10 @@ void testDesktopPresentGateDefaultOff() {
 }
 
 void testNullWsiBackendScaffold() {
-    expectTrue(fuse::platform::activeWindowWsiKind() == fuse::platform::WindowWsiKind::Null ||
-                   fuse::platform::activeWindowWsiKind() == fuse::platform::WindowWsiKind::Glfw,
+    const fuse::platform::WindowWsiKind kind = fuse::platform::activeWindowWsiKind();
+    expectTrue(kind == fuse::platform::WindowWsiKind::Null ||
+                   kind == fuse::platform::WindowWsiKind::Glfw ||
+                   kind == fuse::platform::WindowWsiKind::Win32,
                "window WSI kind is known");
     expectTrue(fuse::platform::windowWsiBackendName() != nullptr, "WSI backend name available");
 
@@ -71,6 +74,12 @@ void testNullWsiBackendScaffold() {
         expectTrue(!extensions.empty(), "GLFW WSI publishes instance extensions");
     } else {
         expectTrue(extensions.empty(), "GLFW unavailable without display — null WSI extensions");
+    }
+#elif defined(FUSE_PLATFORM_WINDOW_WIN32)
+    if (fuse::platform::windowWsiAvailable()) {
+        expectTrue(!extensions.empty(), "Win32 WSI publishes instance extensions");
+    } else {
+        expectTrue(extensions.empty(), "Win32 WSI unavailable — no instance extensions");
     }
 #else
     expectTrue(extensions.empty(), "default null WSI requires no instance extensions");
@@ -104,6 +113,28 @@ void testHeadlessPresentableSurface() {
     const fuse::renderer::SurfaceDesc surface = presentable->surfaceDesc();
     expectTrue(surface.kind == fuse::renderer::SurfaceKind::Headless, "headless surface kind");
     expectTrue(!presentable->vulkanSurface().isPresentable(), "headless surface is not presentable");
+    expectTrue(!presentable->createVulkanSurface(nullptr),
+               "headless path does not create VkSurfaceKHR");
+}
+
+void testGameWindowPresentable() {
+    fuse::hybrid::VulkanPresentableDesc desc{};
+    desc.backend = fuse::hybrid::PresentableBackend::GameWindow;
+
+    auto presentable = fuse::hybrid::VulkanPresentable::create(desc);
+    expectTrue(presentable != nullptr, "GameWindow VulkanPresentable allocated");
+    expectTrue(presentable->status().windowReady, "GameWindow windowReady");
+    expectTrue(presentable->window() != nullptr && presentable->window()->isValid(),
+               "GameWindow owns a valid platform window");
+
+    if (fuse::platform::windowWsiAvailable() &&
+        presentable->window()->nativeHandle().value != nullptr) {
+        expectTrue(presentable->status().message.find("WSI ready") != std::string::npos,
+                   "Win32/platform WSI ready message when native handle exists");
+    }
+
+    // Null instance must not require a real ICD. Do not assert surfaceReady.
+    (void)presentable->createVulkanSurface(nullptr);
 }
 
 void testExternalSurfaceWiring() {
@@ -223,6 +254,7 @@ int main() {
     testNullWsiBackendScaffold();
     testGameWindowStub();
     testHeadlessPresentableSurface();
+    testGameWindowPresentable();
     testExternalSurfaceWiring();
     testVsyncModeOnPresentableDesc();
     testPresentPathThroughHybridBootstrap();

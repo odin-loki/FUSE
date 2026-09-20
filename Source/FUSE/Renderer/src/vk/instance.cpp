@@ -1,5 +1,7 @@
 #include <fuse/renderer/vk/instance.hpp>
 
+#include <fuse/platform/window_wsi.hpp>
+
 #include <cstring>
 #include <utility>
 
@@ -53,7 +55,23 @@ bool extensionAvailable(const char* name) {
 }
 #endif
 
+bool containsExtensionName(const std::vector<const char*>& list, const char* name) {
+    if (name == nullptr) {
+        return false;
+    }
+    for (const char* existing : list) {
+        if (existing != nullptr && std::strcmp(existing, name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
+
+bool VulkanInstanceInfo::instanceHasExtension(const char* name) const {
+    return containsExtensionName(enabledExtensions, name);
+}
 
 std::unique_ptr<VulkanInstance> VulkanInstance::create(const VulkanInstanceDesc& desc) {
     auto instance = std::unique_ptr<VulkanInstance>(new VulkanInstance());
@@ -87,11 +105,31 @@ bool VulkanInstance::initialize(const VulkanInstanceDesc& desc) {
     if (extensionAvailable(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
+
+    std::vector<const char*> platformExtensions;
+    fuse::platform::requiredVulkanInstanceExtensions(platformExtensions);
+    for (const char* name : platformExtensions) {
+        if (name == nullptr || containsExtensionName(extensions, name)) {
+            continue;
+        }
+        if (desc.extraExtensionCount == 0 && extensionAvailable(name)) {
+            extensions.push_back(name);
+        }
+    }
+
     if (desc.extraExtensions != nullptr && desc.extraExtensionCount > 0) {
         for (u32 i = 0; i < desc.extraExtensionCount; ++i) {
             const char* extensionName = desc.extraExtensions[i];
-            if (extensionName != nullptr) {
+            if (extensionName != nullptr && !containsExtensionName(extensions, extensionName)) {
                 extensions.push_back(extensionName);
+            }
+        }
+        for (const char* name : platformExtensions) {
+            if (name == nullptr || containsExtensionName(extensions, name)) {
+                continue;
+            }
+            if (extensionAvailable(name)) {
+                extensions.push_back(name);
             }
         }
     }

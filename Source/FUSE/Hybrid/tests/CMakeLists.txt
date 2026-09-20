@@ -59,4 +59,17 @@ if(FUSE_BUILD_VULKAN)
             )
         endif()
     endforeach()
+
+    if(MINGW)
+        foreach(_fuse_hybrid_link_test IN ITEMS
+            fuse_hybrid_tests
+            fuse_render_command_list
+            fuse_hybrid_renderer_bootstrap
+            fuse_hybrid_vulkan_presentable
+            fuse_placeholder_renderer_retirement)
+            if(TARGET ${_fuse_hybrid_link_test})
+                target_link_options(${_fuse_hybrid_link_test} PRIVATE -Wl,--allow-multiple-definition)
+            endif()
+        endforeach()
+    endif()
 endif()

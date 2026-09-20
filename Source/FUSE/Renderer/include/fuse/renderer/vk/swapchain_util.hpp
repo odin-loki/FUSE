@@ -32,6 +32,9 @@ inline bool shouldSkipAcquireForEmptySwapchain(const VulkanSwapchain* swapchain)
 /// Compile-time gate: desktop GLFW `vkQueuePresentKHR` path (OFF in headless CI by default).
 bool desktopGlfwPresentEnabled();
 
+/// Compile-time gate: desktop Win32 `vkQueuePresentKHR` path (OFF in headless CI by default).
+bool desktopWin32PresentEnabled();
+
 /// Compile-time gate: desktop Qt `vkQueuePresentKHR` path (OFF in headless CI by default).
 bool desktopQtPresentEnabled();
 
@@ -43,10 +46,13 @@ bool desktopQtPresentEnabled();
 /// Runtime: display + GLFW WSI available and desktop present gate is ON.
 bool desktopGlfwPresentRuntimeReady();
 
+/// Runtime: Win32 WSI available and desktop Win32 present gate is ON.
+bool desktopWin32PresentRuntimeReady();
+
 /// Runtime: display available and Qt present gate is ON (editor QVulkan surface path).
 bool desktopQtPresentRuntimeReady();
 
-/// Runtime: either GLFW or Qt desktop present path is eligible.
+/// Runtime: GLFW, Win32, or Qt desktop present path is eligible.
 bool desktopPresentRuntimeReady();
 
 /// True when a real `vkQueuePresentKHR` call may proceed for the current swapchain acquire.

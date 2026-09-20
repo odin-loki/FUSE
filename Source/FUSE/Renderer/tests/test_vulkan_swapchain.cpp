@@ -1,4 +1,5 @@
 #include <fuse/core/init.hpp>
+#include <fuse/core/track_b.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/renderer/vk/frame.hpp>
 #include <fuse/renderer/vk/surface.hpp>
@@ -225,10 +226,10 @@ void testZeroExtentRebuildRejected() {
 }
 
 void testProductionPresentLockedByDefault() {
-    expectTrue(!fuse::renderer::productionPresentAllowed(),
-               "production present returns false unless Track B VulkanProduction is unlocked");
+    expectTrue(fuse::renderer::productionPresentAllowed() == fuse::core::trackBUnlocked(),
+               "production present matches Track B VulkanProduction unlock");
     expectTrue(!fuse::renderer::realPresentEligible(nullptr, 0u, nullptr),
-               "real present stays ineligible while Track B production is locked");
+               "real present stays ineligible without a presentable swapchain");
 }
 
 void testEmptySwapchainSkipGuards() {

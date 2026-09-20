@@ -19,6 +19,7 @@
         "FUSE_BUILD_T2D": "OFF",
         "FUSE_BUILD_CORE": "ON",
         "FUSE_BUILD_CORE_TESTS": "ON",
+        "FUSE_BUILD_VULKAN": "ON",
         "FUSE_ENABLE_CLANG_TIDY": "OFF"
       }
     },
@@ -86,6 +87,22 @@
         "FUSE_BUILD_T3D": "OFF",
         "FUSE_BUILD_T2D": "OFF",
         "FUSE_ENABLE_QT_PRESENT": "OFF"
+      }
+    },
+    {
+      "name": "fuse-track-b-unlock",
+      "displayName": "FUSE Track B Unlock (local production defaults)",
+      "inherits": "fuse-debug",
+      "binaryDir": "${sourceDir}/build/fuse-track-b-unlock",
+      "cacheVariables": {
+        "FUSE_TRACK_B_UNLOCK": "ON",
+        "FUSE_ENABLE_WIN32_PRESENT": "ON",
+        "FUSE_BUILD_VULKAN": "ON",
+        "FUSE_BUILD_T3D": "OFF",
+        "FUSE_BUILD_T2D": "OFF",
+        "FUSE_BUILD_CORE": "ON",
+        "FUSE_BUILD_CORE_TESTS": "ON",
+        "FUSE_SHIPPING": "OFF"
       }
     }
   ]

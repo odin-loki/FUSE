@@ -141,6 +141,14 @@ target_link_libraries(fuse_core_p7_input_smoke PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_p7_input_smoke)
 add_test(NAME fuse_core_p7_input_smoke COMMAND fuse_core_p7_input_smoke)
 
+add_executable(fuse_core_input_state_tests
+    test_input_state.cpp
+)
+
+target_link_libraries(fuse_core_input_state_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_input_state_tests)
+add_test(NAME fuse_core_input_state_tests COMMAND fuse_core_input_state_tests)
+
 add_executable(fuse_core_phase1_integration
     test_phase1_integration.cpp
 )
@@ -182,9 +190,28 @@ target_link_libraries(fuse_p6_shipping_qt_ban PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_p6_shipping_qt_ban)
 add_test(NAME fuse_p6_shipping_qt_ban COMMAND fuse_p6_shipping_qt_ban)
 
+add_executable(fuse_core_b17_win32_window_input
+    test_b17_win32_window_input.cpp
+)
+
+target_link_libraries(fuse_core_b17_win32_window_input PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b17_win32_window_input)
+add_test(NAME fuse_core_b17_win32_window_input COMMAND fuse_core_b17_win32_window_input)
+
 get_property(_fuse_core_dir_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
 foreach(_fuse_core_test IN LISTS _fuse_core_dir_targets)
     if(_fuse_core_test MATCHES "^fuse_core_" OR _fuse_core_test STREQUAL "fuse_p6_shipping_qt_ban")
         fuse_core_apply_asan_ubsan(${_fuse_core_test})
     endif()
 endforeach()
+
+add_executable(fuse_core_window_wsi_win32_tests
+    test_window_wsi_win32.cpp
+)
+target_link_libraries(fuse_core_window_wsi_win32_tests PRIVATE fuse_core)
+if(TARGET Vulkan::Vulkan)
+    target_link_libraries(fuse_core_window_wsi_win32_tests PRIVATE Vulkan::Vulkan)
+endif()
+fuse_core_apply_tsan(fuse_core_window_wsi_win32_tests)
+fuse_core_apply_asan_ubsan(fuse_core_window_wsi_win32_tests)
+add_test(NAME fuse_core_window_wsi_win32 COMMAND fuse_core_window_wsi_win32_tests)

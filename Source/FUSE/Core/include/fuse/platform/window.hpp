@@ -16,6 +16,9 @@ struct WindowDesc {
     bool fullscreen = false;
     bool borderless = false;
     bool vsync = true;
+    /// When true, construct an owned native window (hidden Win32 HWND / GLFW).
+    /// Default and headless construction keep `nativeHandle().value == nullptr`.
+    bool createNative = false;
 };
 
 /// Opaque native window token (HWND, X11 Window, NSWindow*, ANativeWindow*, etc.).
@@ -37,17 +40,15 @@ enum class InputCaptureMode : u8 {
 
 /// Metadata for wiring a platform window into the Vulkan RHI external-surface path.
 ///
-/// Future platform backends populate `nativeSurface` with an opaque `VkSurfaceKHR`
-/// after enabling the appropriate WSI extensions. Until then the stub returns
-/// `presentable == false` and `nativeSurface == nullptr` (renderer stays Headless).
+/// `presentable` is true when a native window handle exists. `nativeSurface` stays
+/// nullptr until WSI creates an opaque `VkSurfaceKHR`.
 struct VulkanSurfaceWire {
     void* nativeSurface = nullptr;
     bool presentable = false;
 };
 
-/// Portable game window — desktop and mobile share the same stub backend for B1.7.
-///
-/// Real Win32 / X11 / Wayland / UIKit / Android backends replace the stub in follow-up PRs.
+/// Portable game window. Default / headless construction stays native-handle-less.
+/// Opt-in owned HWND (hidden overlapped, not message-only) via `WindowDesc::createNative`.
 /// Editor viewport windowing remains Qt-owned (Track A / B6).
 class Window {
 public:
@@ -82,7 +83,7 @@ public:
     /// The default constructor never creates a Win32 window.
     void setNativeHandleForPump(void* hwnd);
 
-    /// Opaque `VkSurfaceKHR` when WSI is wired; null in the B1.7 stub.
+    /// Opaque `VkSurfaceKHR` when WSI is wired; null until WSI creates the surface.
     void* nativeVulkanSurface() const;
 
     /// Maps this window to renderer surface metadata (see TRACK-B-VULKAN §Surface abstraction).
@@ -110,6 +111,7 @@ private:
     bool m_fullscreen = false;
     bool m_borderless = false;
     bool m_vsync = true;
+    bool m_createNative = false;
     bool m_focused = true;
     InputCaptureMode m_inputCapture = InputCaptureMode::Released;
     WindowCloseRequest m_closeRequest = WindowCloseRequest::None;

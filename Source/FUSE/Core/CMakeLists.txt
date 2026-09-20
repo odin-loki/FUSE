@@ -64,6 +64,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/platform/fiber.hpp
     include/fuse/platform/gl_context.hpp
     include/fuse/platform/window.hpp
+    include/fuse/platform/input.hpp
     include/fuse/platform/window_wsi.hpp
     include/fuse/platform/event_pump.hpp
 )
@@ -96,6 +97,7 @@ set(FUSE_CORE_SOURCES
     src/platform/platform_stub.cpp
     src/platform/platform_hardening.cpp
     src/platform/platform_window.cpp
+    src/platform/input.cpp
 )
 
 if(WIN32)
@@ -229,20 +231,38 @@ fuse_core_apply_tsan(fuse_core)
 fuse_core_apply_asan_ubsan(fuse_core)
 
 option(FUSE_PLATFORM_WINDOW_GLFW "Enable optional GLFW hidden-window WSI scaffold (desktop present path)" OFF)
+set(_fuse_glfw_wsi_active FALSE)
 if(FUSE_PLATFORM_WINDOW_GLFW)
     find_package(glfw3 QUIET)
-    find_package(Vulkan QUIET)
-    if(glfw3_FOUND AND Vulkan_FOUND)
+    if(NOT TARGET Vulkan::Vulkan)
+        include(${CMAKE_SOURCE_DIR}/cmake/FuseFindVulkan.cmake)
+    endif()
+    if(glfw3_FOUND AND TARGET Vulkan::Vulkan)
         target_sources(fuse_core PRIVATE src/platform/window_wsi_glfw.cpp)
         target_link_libraries(fuse_core PRIVATE glfw Vulkan::Vulkan)
         target_compile_definitions(fuse_core PUBLIC FUSE_PLATFORM_WINDOW_GLFW=1)
         message(STATUS "FUSE: fuse_core GLFW null-WSI scaffold enabled")
+        set(_fuse_glfw_wsi_active TRUE)
     else()
-        target_sources(fuse_core PRIVATE src/platform/window_wsi.cpp)
         message(STATUS "FUSE: FUSE_PLATFORM_WINDOW_GLFW=ON but glfw3/Vulkan missing — null WSI only")
     endif()
-else()
+endif()
+if(NOT _fuse_glfw_wsi_active)
     target_sources(fuse_core PRIVATE src/platform/window_wsi.cpp)
+    if(WIN32)
+    if(NOT TARGET Vulkan::Vulkan)
+        include(${CMAKE_SOURCE_DIR}/cmake/FuseFindVulkan.cmake)
+    endif()
+    if(TARGET Vulkan::Vulkan)
+            set(FUSE_PLATFORM_WINDOW_WIN32 ON CACHE INTERNAL "Win32 WSI compiled into fuse_core")
+            target_compile_definitions(fuse_core PUBLIC
+                FUSE_PLATFORM_WINDOW_WIN32=1
+                VK_USE_PLATFORM_WIN32_KHR=1
+            )
+            target_link_libraries(fuse_core PUBLIC Vulkan::Vulkan)
+            message(STATUS "FUSE: fuse_core Win32 WSI enabled")
+        endif()
+    endif()
 endif()
 
 if(FUSE_BUILD_CORE_TESTS)

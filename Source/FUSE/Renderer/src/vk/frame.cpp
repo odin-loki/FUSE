@@ -1,5 +1,7 @@
 #include <fuse/renderer/vk/frame.hpp>
 
+#include <array>
+
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
 #endif
@@ -7,6 +9,9 @@
 namespace fuse::renderer {
 
 namespace {
+
+constexpr u32 kFrameScratchBytes = 8u * 1024u * 1024u;
+constexpr u32 kFrameDescriptorCount = 1024u;
 
 #if defined(FUSE_VULKAN_BACKEND)
 /// Clear a slot fence that was marked in-flight without a matching queue submit (headless stub).
@@ -25,6 +30,29 @@ bool clearStubInFlightFence(VkDevice device, FrameSyncData& slot) {
     }
     return false;
 }
+
+bool createSlotDescriptorPool(VkDevice device, VkDescriptorPool* outPool) {
+    const std::array<VkDescriptorPoolSize, 5> poolSizes = {{
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kFrameDescriptorCount},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, kFrameDescriptorCount},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kFrameDescriptorCount},
+        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kFrameDescriptorCount},
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, kFrameDescriptorCount},
+    }};
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = kFrameDescriptorCount;
+    poolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
+
+    VkDescriptorPool pool = VK_NULL_HANDLE;
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &pool) != VK_SUCCESS) {
+        return false;
+    }
+    *outPool = pool;
+    return true;
+}
 #endif
 
 } // namespace
@@ -41,10 +69,22 @@ FrameManager::~FrameManager() {
     shutdown();
 }
 
+void FrameManager::constructScratchAllocators() {
+    for (u32 i = 0; i < kFramesInFlight; ++i) {
+        if (!m_scratch[i]) {
+            m_scratch[i] =
+                std::make_unique<fuse::alloc::FrameAllocator>(kFrameScratchBytes, "frame-slot");
+        }
+    }
+}
+
 bool FrameManager::initialize(VulkanDevice& device) {
+    constructScratchAllocators();
+    m_info.framesInFlight = kFramesInFlight;
+
 #if defined(FUSE_VULKAN_BACKEND)
     if (!device.isValid()) {
-        m_info.message = "FrameManager skipped — device not ready";
+        m_info.message = "FrameManager CPU scratch ready — device not valid";
         return false;
     }
 
@@ -105,15 +145,22 @@ bool FrameManager::initialize(VulkanDevice& device) {
         m_slots[i].fenceSignaled = true;
         m_slots[i].commands.commandPool = commandPool;
         m_slots[i].commands.primaryCommandBuffer = primaryCommandBuffer;
+
+        VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+        if (!createSlotDescriptorPool(vkDevice, &descriptorPool)) {
+            m_info.message = "FrameManager descriptor pool creation failed";
+            shutdown();
+            return false;
+        }
+        m_slots[i].commands.descriptorPool = descriptorPool;
     }
 
     m_info.ready = true;
-    m_info.framesInFlight = kFramesInFlight;
-    m_info.message = "Frame ring ready (triple-buffered fences + semaphores)";
+    m_info.message = "Frame ring ready (triple-buffered fences + scratch + descriptor pools)";
     return true;
 #else
     (void)device;
-    m_info.message = "FrameManager stub — Vulkan backend disabled";
+    m_info.message = "FrameManager stub — Vulkan backend disabled (CPU scratch ready)";
     return false;
 #endif
 }
@@ -126,6 +173,12 @@ void FrameManager::shutdown() {
 
     auto vkDevice = static_cast<VkDevice>(m_device);
     for (u32 i = 0; i < kFramesInFlight; ++i) {
+        if (m_slots[i].commands.descriptorPool != nullptr) {
+            vkDestroyDescriptorPool(vkDevice,
+                                    static_cast<VkDescriptorPool>(m_slots[i].commands.descriptorPool),
+                                    nullptr);
+            m_slots[i].commands.descriptorPool = nullptr;
+        }
         if (m_slots[i].commands.primaryCommandBuffer != nullptr) {
             VkCommandBuffer primary =
                 static_cast<VkCommandBuffer>(m_slots[i].commands.primaryCommandBuffer);
@@ -157,11 +210,11 @@ void FrameManager::shutdown() {
 }
 
 FrameSyncData& FrameManager::current() {
-    return m_slots[m_info.currentIndex % kFramesInFlight];
+    return m_slots[currentSlotIndex()];
 }
 
 const FrameSyncData& FrameManager::current() const {
-    return m_slots[m_info.currentIndex % kFramesInFlight];
+    return m_slots[currentSlotIndex()];
 }
 
 FrameSyncData& FrameManager::slot(u32 index) {
@@ -174,6 +227,22 @@ const FrameSyncData& FrameManager::slot(u32 index) const {
 
 void* FrameManager::currentCommandBuffer() const {
     return current().commands.primaryCommandBuffer;
+}
+
+fuse::alloc::FrameAllocator& FrameManager::scratch() {
+    return *m_scratch[currentSlotIndex()];
+}
+
+const fuse::alloc::FrameAllocator& FrameManager::scratch() const {
+    return *m_scratch[currentSlotIndex()];
+}
+
+void* FrameManager::allocateScratch(u32 bytes, u32 align) {
+    return scratch().allocate(bytes, align);
+}
+
+u32 FrameManager::scratchUsedBytes() const {
+    return scratch().usedBytes();
 }
 
 void FrameManager::signalTickComplete() {
@@ -219,22 +288,31 @@ bool FrameManager::waitInFlightFence(u32 slotIndex) {
 
 void FrameManager::beginFrame(u32 frameIndex) {
     m_lastBarrierFrame = frameIndex;
+    const u32 index = currentSlotIndex();
 
 #if defined(FUSE_VULKAN_BACKEND)
-    if (!m_info.ready) {
-        return;
-    }
+    FrameSyncData& slot = m_slots[index];
+    if (m_info.ready) {
+        if (slot.fenceSignaled && slot.inFlightFence != nullptr) {
+            if (!clearStubInFlightFence(static_cast<VkDevice>(m_device), slot)) {
+                return;
+            }
+        }
+        slot.fenceSignaled = false;
 
-    FrameSyncData& slot = m_slots[m_info.currentIndex % kFramesInFlight];
-    if (slot.fenceSignaled && slot.inFlightFence != nullptr) {
-        if (!clearStubInFlightFence(static_cast<VkDevice>(m_device), slot)) {
-            return;
+        if (slot.commands.descriptorPool != nullptr) {
+            vkResetDescriptorPool(static_cast<VkDevice>(m_device),
+                                  static_cast<VkDescriptorPool>(slot.commands.descriptorPool),
+                                  0);
         }
     }
-    slot.fenceSignaled = false;
 #else
     (void)frameIndex;
 #endif
+
+    if (m_scratch[index]) {
+        m_scratch[index]->reset();
+    }
 }
 
 void FrameManager::endFrame() {
@@ -242,7 +320,7 @@ void FrameManager::endFrame() {
         return;
     }
 
-    m_slots[m_info.currentIndex % kFramesInFlight].fenceSignaled = true;
+    m_slots[currentSlotIndex()].fenceSignaled = true;
     m_info.currentIndex = (m_info.currentIndex + 1u) % kFramesInFlight;
     ++m_info.totalFrames;
     m_tickComplete = false;

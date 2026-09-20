@@ -4,12 +4,47 @@
 
 #include <fuse/platform/window_wsi.hpp>
 
+#include <type_traits>
+
+#if defined(FUSE_VULKAN_BACKEND)
+#include <vulkan/vulkan.h>
+#endif
+
 namespace fuse::hybrid {
+
+namespace {
+
+template <typename T, typename = void>
+struct WindowDescHasCreateNative : std::false_type {};
+
+template <typename T>
+struct WindowDescHasCreateNative<T, std::void_t<decltype(T::createNative)>> : std::true_type {};
+
+template <typename Desc>
+void enableNativeWindowIfSupported(Desc& desc) {
+    if constexpr (WindowDescHasCreateNative<Desc>::value) {
+        desc.createNative = true;
+    }
+}
+
+} // namespace
 
 VulkanPresentable::VulkanPresentable(VulkanPresentableDesc desc) : m_desc(desc) {}
 
 VulkanPresentable::~VulkanPresentable() {
+    destroyOwnedVulkanSurface();
+}
+
+void VulkanPresentable::destroyOwnedVulkanSurface() {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (m_ownsVkSurface && m_vkSurface != nullptr && m_vkInstance != nullptr) {
+        vkDestroySurfaceKHR(static_cast<VkInstance>(m_vkInstance),
+                            static_cast<VkSurfaceKHR>(m_vkSurface), nullptr);
+    }
+#endif
     m_vkSurface = nullptr;
+    m_vkInstance = nullptr;
+    m_ownsVkSurface = false;
 }
 
 std::unique_ptr<VulkanPresentable> VulkanPresentable::create(const VulkanPresentableDesc& desc) {
@@ -32,7 +67,10 @@ bool VulkanPresentable::initialize() {
 
     platform::requiredVulkanInstanceExtensions(m_requiredExtensions);
 
-    m_window = std::make_unique<platform::Window>(m_desc.window);
+    platform::WindowDesc windowDesc = m_desc.window;
+    enableNativeWindowIfSupported(windowDesc);
+    m_desc.window = windowDesc;
+    m_window = std::make_unique<platform::Window>(windowDesc);
     m_status.windowReady = m_window != nullptr && m_window->isValid();
     if (!m_status.windowReady) {
         m_status.message = "fuse::platform::Window allocation failed";
@@ -42,9 +80,15 @@ bool VulkanPresentable::initialize() {
     const platform::VulkanSurfaceWire wire = m_window->vulkanSurfaceWire();
     if (wire.presentable && wire.nativeSurface != nullptr) {
         m_vkSurface = wire.nativeSurface;
+        m_ownsVkSurface = false;
         m_status.surfaceReady = true;
         m_status.presentable = true;
         m_status.message = "External VkSurfaceKHR wired from platform::Window";
+        return true;
+    }
+
+    if (platform::windowWsiAvailable() && m_window->nativeHandle().value != nullptr) {
+        m_status.message = "Win32/platform WSI ready — call createVulkanSurface after vkCreateInstance";
         return true;
     }
 
@@ -70,22 +114,29 @@ bool VulkanPresentable::createVulkanSurface(void* vkInstance) {
 
     const platform::VulkanSurfaceWire wire = m_window->vulkanSurfaceWire();
     if (wire.presentable && wire.nativeSurface != nullptr) {
+        destroyOwnedVulkanSurface();
         m_vkSurface = wire.nativeSurface;
+        m_vkInstance = vkInstance;
+        m_ownsVkSurface = false;
         m_status.surfaceReady = true;
         m_status.presentable = true;
         m_status.message = "External VkSurfaceKHR wired from platform::Window";
-        (void)vkInstance;
         return true;
     }
 
-    if (wire.presentable && platform::createVulkanSurface(vkInstance, *m_window, &m_vkSurface)) {
+    void* createdSurface = nullptr;
+    if (platform::createVulkanSurface(vkInstance, *m_window, &createdSurface) &&
+        createdSurface != nullptr) {
+        destroyOwnedVulkanSurface();
+        m_vkSurface = createdSurface;
+        m_vkInstance = vkInstance;
+        m_ownsVkSurface = true;
         m_status.surfaceReady = true;
         m_status.presentable = true;
         m_status.message = "VkSurfaceKHR created via platform WSI backend";
         return true;
     }
 
-    (void)vkInstance;
     m_status.message = "Null WSI — createVulkanSurface unavailable (headless CI OK)";
     return false;
 }

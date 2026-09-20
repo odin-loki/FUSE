@@ -74,17 +74,66 @@ bool isWindowScopedEventType(PlatformEventType type) {
            type == PlatformEventType::WindowFocusLost;
 }
 
-void destroyNativeWindow(void*& nativeWindow) {
-#if defined(FUSE_PLATFORM_WINDOW_GLFW)
-    if (nativeWindow != nullptr) {
-        glfwDestroyWindow(static_cast<GLFWwindow*>(nativeWindow));
+#if defined(_WIN32)
+constexpr wchar_t kOwnedWindowClassName[] = L"FUSE_PlatformWindow";
+
+bool registerOwnedWindowClassOnce() {
+    static bool ready = false;
+    if (ready) {
+        return true;
     }
+
+    WNDCLASSEXW wc{};
+    wc.cbSize = sizeof(wc);
+    wc.lpfnWndProc = DefWindowProcW;
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
+    wc.lpszClassName = kOwnedWindowClassName;
+
+    const ATOM atom = RegisterClassExW(&wc);
+    if (atom == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+        return false;
+    }
+
+    ready = true;
+    return true;
+}
+
+HWND createHiddenOverlappedWindow(u32 width, u32 height, const char* title) {
+    if (!registerOwnedWindowClassOnce()) {
+        return nullptr;
+    }
+
+    wchar_t wideTitle[256];
+    const int converted = MultiByteToWideChar(CP_UTF8, 0, title, -1, wideTitle, 256);
+    const wchar_t* titleW = (converted > 0) ? wideTitle : L"FUSE";
+
+    return CreateWindowExW(0, kOwnedWindowClassName, titleW, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
+                           CW_USEDEFAULT, static_cast<int>(width), static_cast<int>(height), nullptr,
+                           nullptr, GetModuleHandleW(nullptr), nullptr);
+}
+#endif
+
+void destroyNativeWindow(void*& nativeWindow) {
+    if (nativeWindow == nullptr) {
+        return;
+    }
+
+#if defined(FUSE_PLATFORM_WINDOW_GLFW)
+    glfwDestroyWindow(static_cast<GLFWwindow*>(nativeWindow));
+#elif defined(_WIN32)
+    DestroyWindow(reinterpret_cast<HWND>(nativeWindow));
 #endif
     nativeWindow = nullptr;
 }
 
-void createNativeWindowIfAvailable(u32 width, u32 height, const char* title, void*& nativeWindow) {
+void createNativeWindowIfAvailable(u32 width, u32 height, const char* title, bool createNative,
+                                   void*& nativeWindow) {
     nativeWindow = nullptr;
+    if (!createNative) {
+        return;
+    }
+
 #if defined(FUSE_PLATFORM_WINDOW_GLFW)
     if (!windowWsiAvailable()) {
         return;
@@ -97,6 +146,8 @@ void createNativeWindowIfAvailable(u32 width, u32 height, const char* title, voi
     }
 
     nativeWindow = window;
+#elif defined(_WIN32)
+    nativeWindow = createHiddenOverlappedWindow(width, height, title);
 #else
     (void)width;
     (void)height;
@@ -156,23 +207,103 @@ void enqueueMappedOsMessage(EventPump& pump, Window* window, const MSG& msg) {
         pump.pushSyntheticEvent(event);
         break;
     }
-    case WM_MOUSEMOVE:
+    case WM_MOUSEMOVE: {
         if (dropKeyMouse) {
             break;
         }
-        pump.pushMouseMove(osMessageAxisX(msg.lParam), osMessageAxisY(msg.lParam));
+        PlatformEvent event{};
+        event.type = PlatformEventType::MouseMove;
+        event.window = window;
+        event.mouseX = osMessageAxisX(msg.lParam);
+        event.mouseY = osMessageAxisY(msg.lParam);
+        pump.pushSyntheticEvent(event);
         break;
+    }
     case WM_LBUTTONDOWN:
-        if (dropKeyMouse) {
-            break;
-        }
-        pump.pushMouseButton(1u, true, osMessageAxisX(msg.lParam), osMessageAxisY(msg.lParam));
-        break;
     case WM_LBUTTONUP:
+    case WM_RBUTTONDOWN:
+    case WM_RBUTTONUP:
+    case WM_MBUTTONDOWN:
+    case WM_MBUTTONUP:
+    case WM_XBUTTONDOWN:
+    case WM_XBUTTONUP: {
         if (dropKeyMouse) {
             break;
         }
-        pump.pushMouseButton(1u, false, osMessageAxisX(msg.lParam), osMessageAxisY(msg.lParam));
+
+        u8 button = 0;
+        bool down = false;
+        switch (msg.message) {
+        case WM_LBUTTONDOWN:
+            button = 1u;
+            down = true;
+            break;
+        case WM_LBUTTONUP:
+            button = 1u;
+            break;
+        case WM_RBUTTONDOWN:
+            button = 2u;
+            down = true;
+            break;
+        case WM_RBUTTONUP:
+            button = 2u;
+            break;
+        case WM_MBUTTONDOWN:
+            button = 3u;
+            down = true;
+            break;
+        case WM_MBUTTONUP:
+            button = 3u;
+            break;
+        case WM_XBUTTONDOWN:
+        case WM_XBUTTONUP: {
+            const u16 xButton = HIWORD(msg.wParam);
+            if (xButton == 1u) {
+                button = 4u;
+            } else if (xButton == 2u) {
+                button = 5u;
+            }
+            down = msg.message == WM_XBUTTONDOWN;
+            break;
+        }
+        default:
+            break;
+        }
+
+        if (button == 0u) {
+            break;
+        }
+
+        PlatformEvent event{};
+        event.type = down ? PlatformEventType::MouseButtonDown : PlatformEventType::MouseButtonUp;
+        event.window = window;
+        event.mouseX = osMessageAxisX(msg.lParam);
+        event.mouseY = osMessageAxisY(msg.lParam);
+        event.mouseButton = button;
+        pump.pushSyntheticEvent(event);
+        break;
+    }
+    case WM_MOUSEWHEEL: {
+        if (dropKeyMouse) {
+            break;
+        }
+        PlatformEvent event{};
+        event.type = PlatformEventType::MouseMove;
+        event.window = window;
+        event.mouseX = osMessageAxisX(msg.lParam);
+        event.mouseY = static_cast<i32>(GET_WHEEL_DELTA_WPARAM(msg.wParam));
+        pump.pushSyntheticEvent(event);
+        break;
+    }
+    case WM_SETFOCUS:
+        if (window != nullptr) {
+            window->setFocused(true, &pump);
+        }
+        break;
+    case WM_KILLFOCUS:
+        if (window != nullptr) {
+            window->setFocused(false, &pump);
+        }
         break;
     case WM_CLOSE:
         if (window != nullptr) {
@@ -208,8 +339,12 @@ Window::Window() {
     m_width = 1920u;
     m_height = 1080u;
     m_title = "FUSE";
-    createNativeWindowIfAvailable(m_width, m_height, m_title.c_str(), m_nativeWindow);
+    m_createNative = false;
+    createNativeWindowIfAvailable(m_width, m_height, m_title.c_str(), false, m_nativeWindow);
     m_ownsNativeWindow = m_nativeWindow != nullptr;
+#if defined(_WIN32) && !defined(FUSE_PLATFORM_WINDOW_GLFW)
+    m_pumpAsHwnd = m_ownsNativeWindow;
+#endif
     registerPumpWindow(this);
 }
 
@@ -220,9 +355,13 @@ Window::Window(const WindowDesc& desc) {
     m_fullscreen = desc.fullscreen;
     m_borderless = desc.borderless;
     m_vsync = desc.vsync;
+    m_createNative = desc.createNative;
     m_title = sanitizeTitle(desc.title);
-    createNativeWindowIfAvailable(m_width, m_height, m_title.c_str(), m_nativeWindow);
+    createNativeWindowIfAvailable(m_width, m_height, m_title.c_str(), desc.createNative, m_nativeWindow);
     m_ownsNativeWindow = m_nativeWindow != nullptr;
+#if defined(_WIN32) && !defined(FUSE_PLATFORM_WINDOW_GLFW)
+    m_pumpAsHwnd = m_ownsNativeWindow;
+#endif
     registerPumpWindow(this);
 }
 
@@ -240,6 +379,7 @@ Window::Window(Window&& other) noexcept
       m_fullscreen(other.m_fullscreen),
       m_borderless(other.m_borderless),
       m_vsync(other.m_vsync),
+      m_createNative(other.m_createNative),
       m_focused(other.m_focused),
       m_inputCapture(other.m_inputCapture),
       m_closeRequest(other.m_closeRequest),
@@ -268,6 +408,7 @@ Window& Window::operator=(Window&& other) noexcept {
         m_fullscreen = other.m_fullscreen;
         m_borderless = other.m_borderless;
         m_vsync = other.m_vsync;
+        m_createNative = other.m_createNative;
         m_focused = other.m_focused;
         m_inputCapture = other.m_inputCapture;
         m_closeRequest = other.m_closeRequest;
@@ -296,6 +437,7 @@ WindowDesc Window::description() const {
     desc.fullscreen = m_fullscreen;
     desc.borderless = m_borderless;
     desc.vsync = m_vsync;
+    desc.createNative = m_createNative;
     return desc;
 }
 

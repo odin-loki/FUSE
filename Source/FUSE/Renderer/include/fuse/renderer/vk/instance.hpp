@@ -18,6 +18,8 @@ struct VulkanInstanceDesc {
     u32 appVersion = 1;
     bool enableValidation = true;
     /// Optional WSI / platform extensions (e.g. GLFW `glfwGetRequiredInstanceExtensions`).
+    /// When empty, `create` auto-requests `fuse::platform::requiredVulkanInstanceExtensions`
+    /// and skips names the loader does not expose (headless CI still succeeds).
     const char* const* extraExtensions = nullptr;
     u32 extraExtensionCount = 0;
 };
@@ -29,6 +31,9 @@ struct VulkanInstanceInfo {
     std::string message;
     std::vector<const char*> enabledLayers;
     std::vector<const char*> enabledExtensions;
+
+    /// True when `name` is in `enabledExtensions` (pointer-identity not required).
+    bool instanceHasExtension(const char* name) const;
 };
 
 class VulkanInstance {

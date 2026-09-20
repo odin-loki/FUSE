@@ -90,6 +90,10 @@ add_executable(fuse_vulkan_phase2_integration test_vulkan_phase2_integration.cpp
 target_link_libraries(fuse_vulkan_phase2_integration PRIVATE fuse_rhi)
 add_test(NAME fuse_vulkan_phase2_integration COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_vulkan_phase2_integration>")
 
+add_executable(fuse_frame_manager test_frame_manager.cpp)
+target_link_libraries(fuse_frame_manager PRIVATE fuse_rhi)
+add_test(NAME fuse_frame_manager COMMAND fuse_frame_manager)
+
 add_executable(fuse_gbuffer test_gbuffer.cpp)
 target_link_libraries(fuse_gbuffer PRIVATE fuse_rhi)
 add_test(NAME fuse_gbuffer COMMAND fuse_gbuffer)

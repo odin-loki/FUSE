@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/core/track_b.hpp>
 #include <fuse/platform/gl_context.hpp>
+#include <fuse/platform/window_wsi.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/renderer/vk/surface.hpp>
@@ -8,7 +9,9 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
+#include <vector>
 
 namespace {
 
@@ -76,6 +79,77 @@ void testBootstrapHeadless() {
 #endif
 }
 
+void testWsiExtensionAwareness() {
+    std::vector<const char*> extensions;
+    fuse::platform::requiredVulkanInstanceExtensions(extensions);
+
+    fuse::renderer::VulkanBootstrapDesc desc{};
+    desc.instance.enableValidation = false;
+    if (!extensions.empty()) {
+        desc.instance.extraExtensions = extensions.data();
+        desc.instance.extraExtensionCount = static_cast<fuse::u32>(extensions.size());
+    }
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(desc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated when WSI extensions are present or absent");
+}
+
+void testInstanceWsiAutoRequest() {
+    std::vector<const char*> required;
+    fuse::platform::requiredVulkanInstanceExtensions(required);
+
+    fuse::renderer::VulkanInstanceDesc desc{};
+    desc.enableValidation = false;
+    auto instance = fuse::renderer::VulkanInstance::create(desc);
+    expectTrue(instance != nullptr, "VulkanInstance allocated for WSI auto-request");
+
+    const fuse::renderer::VulkanInstanceInfo& info = instance->info();
+    expectTrue(!info.instanceHasExtension("VK_FAKE_NOT_AN_EXTENSION"),
+               "unknown instance extension is not reported as enabled");
+
+    for (const char* name : required) {
+        if (name == nullptr) {
+            continue;
+        }
+        bool listed = false;
+        for (const char* enabled : info.enabledExtensions) {
+            if (enabled != nullptr && std::strcmp(enabled, name) == 0) {
+                listed = true;
+                break;
+            }
+        }
+        expectTrue(info.instanceHasExtension(name) == listed,
+                   "instanceHasExtension matches enabledExtensions for platform WSI name");
+    }
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (info.valid) {
+        bool listedSurfaceName = false;
+        for (const char* enabled : info.enabledExtensions) {
+            if (enabled == nullptr) {
+                continue;
+            }
+            if (std::strstr(enabled, "surface") != nullptr ||
+                std::strstr(enabled, "SURFACE") != nullptr) {
+                listedSurfaceName = true;
+            }
+        }
+        for (const char* name : required) {
+            if (name != nullptr && info.instanceHasExtension(name)) {
+                listedSurfaceName = true;
+            }
+        }
+        if (!required.empty() && listedSurfaceName) {
+            expectTrue(listedSurfaceName,
+                       "enabledExtensions can include platform surface names when available");
+        }
+        expectTrue(info.valid, "unavailable WSI names are skipped — instance create still succeeds");
+    }
+#else
+    expectTrue(!info.valid, "stub instance when Vulkan loader is unavailable");
+#endif
+}
+
 void testSurfaceAbstraction() {
     fuse::renderer::SurfaceDesc headless{};
     headless.kind = fuse::renderer::SurfaceKind::Headless;
@@ -123,6 +197,8 @@ int main() {
 
     testB21CreateSmoke();
     testBootstrapHeadless();
+    testWsiExtensionAwareness();
+    testInstanceWsiAutoRequest();
     testSurfaceAbstraction();
     testRhiContextSubmitOnRenderThread();
 

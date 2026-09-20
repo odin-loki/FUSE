@@ -12,6 +12,7 @@ class Window;
 enum class WindowWsiKind : u8 {
     Null = 0,
     Glfw = 1,
+    Win32 = 2,
 };
 
 /// Returns the compile-time selected WSI backend (Null when GLFW option is OFF).

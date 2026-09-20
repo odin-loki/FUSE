@@ -12,6 +12,14 @@ bool desktopGlfwPresentEnabled() {
 #endif
 }
 
+bool desktopWin32PresentEnabled() {
+#if defined(FUSE_ENABLE_WIN32_PRESENT)
+    return true;
+#else
+    return false;
+#endif
+}
+
 bool desktopQtPresentEnabled() {
 #if defined(FUSE_ENABLE_QT_PRESENT)
     return true;
@@ -28,6 +36,15 @@ bool desktopGlfwPresentRuntimeReady() {
 #endif
 }
 
+bool desktopWin32PresentRuntimeReady() {
+#if defined(FUSE_ENABLE_WIN32_PRESENT) && defined(FUSE_PLATFORM_WINDOW_WIN32)
+    return fuse::platform::windowWsiAvailable() &&
+           fuse::platform::activeWindowWsiKind() == fuse::platform::WindowWsiKind::Win32;
+#else
+    return false;
+#endif
+}
+
 bool desktopQtPresentRuntimeReady() {
 #if defined(FUSE_ENABLE_QT_PRESENT)
     return fuse::platform::displayServerAvailable();
@@ -37,7 +54,8 @@ bool desktopQtPresentRuntimeReady() {
 }
 
 bool desktopPresentRuntimeReady() {
-    return desktopGlfwPresentRuntimeReady() || desktopQtPresentRuntimeReady();
+    return desktopGlfwPresentRuntimeReady() || desktopWin32PresentRuntimeReady() ||
+           desktopQtPresentRuntimeReady();
 }
 
 bool realPresentEligible(const VulkanSwapchain* swapchain, u32 imageIndex,

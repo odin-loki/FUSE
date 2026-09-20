@@ -3,6 +3,7 @@
 
 include(${CMAKE_SOURCE_DIR}/cmake/FuseCxx23.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/FuseVulkanMobile.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/FuseFindVulkan.cmake)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -50,8 +51,10 @@ if(FUSE_BUILD_COMPAT_TS)
 endif()
 
 if(FUSE_BUILD_VULKAN)
-    find_package(Vulkan QUIET)
-    if(Vulkan_FOUND)
+    if(NOT TARGET Vulkan::Vulkan)
+        include(${CMAKE_SOURCE_DIR}/cmake/FuseFindVulkan.cmake)
+    endif()
+    if(TARGET Vulkan::Vulkan)
         set(FUSE_VULKAN_BACKEND TRUE)
     else()
         set(FUSE_VULKAN_BACKEND FALSE)

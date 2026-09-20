@@ -48,6 +48,7 @@ option(FUSE_BUILD_EDITOR "Build fuse_editor Qt 6 desktop shell (requires Qt6; de
 option(FUSE_BUILD_VULKAN "Build fuse_rhi Vulkan bootstrap (Track B B2.1)" ON)
 option(FUSE_PLATFORM_WINDOW_GLFW "Enable optional GLFW hidden-window WSI scaffold for desktop present path" OFF)
 option(FUSE_ENABLE_GLFW_PRESENT "Allow vkQueuePresentKHR when display+GLFW WSI available (OFF for headless CI)" OFF)
+option(FUSE_ENABLE_WIN32_PRESENT "Allow vkQueuePresentKHR when Win32 WSI available (OFF for headless CI)" OFF)
 option(FUSE_ENABLE_QT_PRESENT "Allow vkQueuePresentKHR when display+Qt Vulkan surface available (OFF for headless CI)" OFF)
 option(FUSE_SHIPPING "Shipping game runtime: no Qt, no editor shell, no legacy engine GUI" OFF)
 option(FUSE_PROFILE "Enable profiler-friendly RelWithDebInfo defines" OFF)

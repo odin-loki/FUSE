@@ -53,7 +53,7 @@ public:
     const VulkanPresentableStatus& status() const { return m_status; }
     const platform::Window* window() const { return m_window.get(); }
 
-    /// WSI instance extensions required before `vkCreateInstance` (GLFW path only).
+    /// WSI instance extensions required before `vkCreateInstance` (platform WSI (Win32 or GLFW)).
     const std::vector<const char*>& requiredInstanceExtensions() const { return m_requiredExtensions; }
 
     /// Create `VkSurfaceKHR` from the platform window after instance bootstrap.
@@ -78,12 +78,15 @@ private:
     explicit VulkanPresentable(VulkanPresentableDesc desc);
 
     bool initialize();
+    void destroyOwnedVulkanSurface();
 
     VulkanPresentableDesc m_desc;
     VulkanPresentableStatus m_status;
     std::unique_ptr<platform::Window> m_window;
     std::vector<const char*> m_requiredExtensions;
+    void* m_vkInstance = nullptr;
     void* m_vkSurface = nullptr;
+    bool m_ownsVkSurface = false;
 };
 
 } // namespace fuse::hybrid

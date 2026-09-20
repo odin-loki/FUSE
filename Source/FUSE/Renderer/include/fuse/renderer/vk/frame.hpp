@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/alloc/frame_allocator.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/types.hpp>
 
@@ -15,6 +16,7 @@ struct FrameCommandData {
     void* commandPool = nullptr;     // VkCommandPool
     void* primaryCommandBuffer = nullptr; // VkCommandBuffer
     void* transferCommandBuffer = nullptr; // VkCommandBuffer
+    void* descriptorPool = nullptr;  // VkDescriptorPool — per-slot, reset each beginFrame
 };
 
 struct FrameSyncData {
@@ -33,7 +35,7 @@ struct FrameManagerInfo {
     std::string message;
 };
 
-/// Per-frame fencing sketch — command pools / descriptor pools deferred to B2.3+.
+/// Triple-buffered FrameData: per-slot CPU scratch (8MB) + optional VkDescriptorPool.
 class FrameManager {
 public:
     static std::unique_ptr<FrameManager> create(VulkanDevice& device);
@@ -54,7 +56,12 @@ public:
     const FrameSyncData& slot(u32 index) const;
     void* currentCommandBuffer() const;
 
-    /// Waits on the current slot fence, advances ring index. Call after tick barrier, before render record.
+    fuse::alloc::FrameAllocator& scratch();
+    const fuse::alloc::FrameAllocator& scratch() const;
+    void* allocateScratch(u32 bytes, u32 align = 16);
+    u32 scratchUsedBytes() const;
+
+    /// Waits on the current slot fence, resets scratch + descriptor pool. Call after tick barrier, before render record.
     void beginFrame(u32 frameIndex);
 
     /// Wait on the in-flight fence for a slot before acquire (B2.2 present path).
@@ -72,9 +79,12 @@ private:
     FrameManager() = default;
     bool initialize(VulkanDevice& device);
     void shutdown();
+    void constructScratchAllocators();
+    u32 currentSlotIndex() const { return m_info.currentIndex % kFramesInFlight; }
 
     FrameManagerInfo m_info;
     FrameSyncData m_slots[kFramesInFlight]{};
+    std::unique_ptr<fuse::alloc::FrameAllocator> m_scratch[kFramesInFlight];
     bool m_tickComplete = false;
     u32 m_lastBarrierFrame = 0;
     void* m_device = nullptr;

@@ -304,6 +304,64 @@ void testEventPumpOsDrainDefaultWindowIsNoOp() {
 }
 
 #if defined(_WIN32)
+void testWindowCreateNativeWin32OwnsHwnd() {
+    fuse::platform::WindowDesc desc;
+    desc.title = "FUSE Native";
+    desc.width = 320;
+    desc.height = 240;
+    desc.createNative = true;
+
+    HWND hwnd = nullptr;
+    {
+        fuse::platform::Window window(desc);
+        expectTrue(window.isValid(), "createNative window is valid");
+        expectTrue(window.nativeHandle().value != nullptr, "createNative HWND is non-null");
+        hwnd = static_cast<HWND>(window.nativeHandle().value);
+        expectTrue(IsWindow(hwnd) != FALSE, "createNative HWND is a live overlapped window");
+        expectTrue((GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_VISIBLE) == 0,
+                   "createNative HWND stays hidden");
+        expectTrue(window.nativeVulkanSurface() == nullptr,
+                   "nativeVulkanSurface stays null with owned HWND");
+        expectTrue(window.vulkanSurfaceWire().presentable,
+                   "vulkanSurfaceWire is presentable with owned HWND");
+        expectTrue(window.vulkanSurfaceWire().nativeSurface == nullptr,
+                   "vulkanSurfaceWire nativeSurface stays null");
+    }
+    expectTrue(IsWindow(hwnd) == FALSE, "DestroyWindow ran on Window destructor");
+}
+
+void testWindowCreateNativeFalseStillNull() {
+    fuse::platform::WindowDesc desc;
+    desc.createNative = false;
+    fuse::platform::Window window(desc);
+    expectTrue(window.isValid(), "createNative=false window is valid");
+    expectTrue(window.nativeHandle().value == nullptr, "createNative=false HWND stays null");
+    expectTrue(!window.vulkanSurfaceWire().presentable,
+               "createNative=false surface is not presentable");
+}
+
+void testWindowDefaultConstructorStillNull() {
+    fuse::platform::Window window;
+    expectTrue(window.isValid(), "default window is valid");
+    expectTrue(window.nativeHandle().value == nullptr, "default window HWND stays null");
+}
+
+void testWindowDescriptionRoundTripsCreateNative() {
+    fuse::platform::WindowDesc enabled;
+    enabled.createNative = true;
+    fuse::platform::Window nativeWindow(enabled);
+    expectTrue(nativeWindow.description().createNative, "description round-trips createNative true");
+
+    fuse::platform::WindowDesc disabled;
+    disabled.createNative = false;
+    fuse::platform::Window headless(disabled);
+    expectTrue(!headless.description().createNative, "description round-trips createNative false");
+
+    fuse::platform::Window defaultWindow;
+    expectTrue(!defaultWindow.description().createNative,
+               "default description createNative stays false");
+}
+
 void testEventPumpWin32MessageOnlyHwndMapsKeyDown() {
     fuse::platform::EventPump pump;
     fuse::platform::Window window;
@@ -570,6 +628,10 @@ int main() {
     testEventPumpOsDrainIsNoOp();
     testEventPumpOsDrainDefaultWindowIsNoOp();
 #if defined(_WIN32)
+    testWindowCreateNativeWin32OwnsHwnd();
+    testWindowCreateNativeFalseStillNull();
+    testWindowDefaultConstructorStillNull();
+    testWindowDescriptionRoundTripsCreateNative();
     testEventPumpWin32MessageOnlyHwndMapsKeyDown();
     testEventPumpWin32RequireCaptureDropsReleasedInput();
 #endif
