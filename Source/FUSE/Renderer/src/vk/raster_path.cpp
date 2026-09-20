@@ -19,6 +19,10 @@ namespace fuse::renderer {
 namespace {
 
 constexpr u32 kColorFormat = 37; // VK_FORMAT_R8G8B8A8_UNORM
+constexpr u32 kDepthFormat = 126; // VK_FORMAT_D32_SFLOAT / GpuFormat::D32Sfloat
+constexpr u32 kMaterialPushConstantSize = 16u;
+constexpr u32 kShaderStageVertex = 0x1u;
+constexpr u32 kShaderStageFragment = 0x10u;
 
 #if defined(FUSE_VULKAN_BACKEND)
 u32 findMemoryType(VkPhysicalDevice physicalDevice, u32 typeFilter, VkMemoryPropertyFlags properties) {
@@ -49,15 +53,38 @@ RasterPath::~RasterPath() {
 }
 
 bool RasterPath::recordFrame(const RenderCommandList& commands) {
-    m_shaderWatch.pollChanged();
-    ++m_stats.shaderWatchPolls;
+    reloadPipelinesIfWatched();
     updateStatsFromCommands(commands);
     return m_stats.pipelineReady;
 }
 
-void RasterPath::updateStatsFromCommands(const RenderCommandList& commands) {
-    m_shaderWatch.pollChanged();
+void RasterPath::reloadPipelinesIfWatched() {
+    const u32 changed = m_shaderWatch.pollChanged();
     ++m_stats.shaderWatchPolls;
+    if (changed == 0u) {
+        return;
+    }
+
+    const bool vertexReloaded = m_vertexShader != nullptr && m_vertexShader->reloadFromDisk();
+    const bool fragmentReloaded = m_fragmentShader != nullptr && m_fragmentShader->reloadFromDisk();
+    if (!vertexReloaded && !fragmentReloaded) {
+        return;
+    }
+
+    if (m_graphicsPipeline == nullptr || !m_graphicsPipeline->rebuild()) {
+        return;
+    }
+
+    ++m_stats.pipelineReloadCount;
+    if (m_vertexShader != nullptr && m_fragmentShader != nullptr) {
+        const u64 vertexHash = m_vertexShader->info().spirvHash;
+        const u64 fragmentHash = m_fragmentShader->info().spirvHash;
+        m_stats.pipelineContentHash = vertexHash ^ (fragmentHash * 0x9E3779B97F4A7C15ull);
+    }
+}
+
+void RasterPath::updateStatsFromCommands(const RenderCommandList& commands) {
+    reloadPipelinesIfWatched();
 
     if (!m_stats.pipelineReady) {
         m_stats.message = "raster path not ready";
@@ -100,6 +127,8 @@ VkFrameEncodeContext RasterPath::vulkanEncodeContext() const {
                      context.graphicsPipeline != nullptr && context.vertexBuffer != nullptr &&
                      context.width > 0u && context.height > 0u;
     context.barrierImage = m_colorImage;
+    context.depthImage = m_depthImage;
+    context.depthView = m_depthView;
     if (m_bindless != nullptr && m_bindless->descriptorSetHandle() != nullptr) {
         context.bindlessDescriptorSet = m_bindless->descriptorSetHandle();
     }
@@ -115,6 +144,17 @@ void* RasterPath::barrierImageHandle() const {
         return nullptr;
     }
     return m_colorImage;
+#else
+    return nullptr;
+#endif
+}
+
+void* RasterPath::depthImageHandle() const {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_stats.pipelineReady || m_depthImage == nullptr) {
+        return nullptr;
+    }
+    return m_depthImage;
 #else
     return nullptr;
 #endif
@@ -153,6 +193,7 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
 
     RenderPassDesc renderPassDesc{};
     renderPassDesc.colorFormat = kColorFormat;
+    renderPassDesc.depthFormat = kDepthFormat;
     renderPassDesc.debugName = "raster_path_render_pass";
     m_renderPass = RenderPass::create(device, renderPassDesc);
     if (m_renderPass == nullptr || !m_renderPass->isValid()) {
@@ -195,6 +236,8 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
 
     PipelineLayoutDesc layoutDesc{};
     layoutDesc.debugName = "raster_path_layout";
+    layoutDesc.pushConstants.push_back(
+        {0, kMaterialPushConstantSize, kShaderStageVertex | kShaderStageFragment});
     if (m_bindless != nullptr && m_bindless->layoutHandle() != nullptr) {
         layoutDesc.bindlessSetLayout = m_bindless->layoutHandle();
     }
@@ -218,6 +261,9 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
     pipelineDesc.renderPass = m_renderPass.get();
     pipelineDesc.pipelineCache = m_pipelineCache.get();
     pipelineDesc.colorFormat = kColorFormat;
+    pipelineDesc.depthTest = true;
+    pipelineDesc.depthWrite = true;
+    pipelineDesc.depthCompareOp = 1; // VK_COMPARE_OP_LESS
     pipelineDesc.debugName = "raster_path_pipeline";
     m_graphicsPipeline = GraphicsPipeline::create(device, pipelineDesc);
     if (m_graphicsPipeline == nullptr || !m_graphicsPipeline->isValid()) {
@@ -363,11 +409,63 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
     }
     m_colorView = colorView;
 
+    VkImageCreateInfo depthImageInfo{};
+    depthImageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    depthImageInfo.imageType = VK_IMAGE_TYPE_2D;
+    depthImageInfo.extent = {desc.width, desc.height, 1};
+    depthImageInfo.mipLevels = 1;
+    depthImageInfo.arrayLayers = 1;
+    depthImageInfo.format = static_cast<VkFormat>(kDepthFormat);
+    depthImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    depthImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthImageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    depthImageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthImageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VkImage depthImage = VK_NULL_HANDLE;
+    if (vkCreateImage(vkDevice, &depthImageInfo, nullptr, &depthImage) != VK_SUCCESS) {
+        m_stats.message = "depth image creation failed";
+        return false;
+    }
+    m_depthImage = depthImage;
+
+    vkGetImageMemoryRequirements(vkDevice, depthImage, &memRequirements);
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(physicalDevice, memRequirements.memoryTypeBits,
+                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    VkDeviceMemory depthMemory = VK_NULL_HANDLE;
+    if (vkAllocateMemory(vkDevice, &allocInfo, nullptr, &depthMemory) != VK_SUCCESS) {
+        m_stats.message = "depth image memory allocation failed";
+        return false;
+    }
+    m_depthMemory = depthMemory;
+    vkBindImageMemory(vkDevice, depthImage, depthMemory, 0);
+
+    VkImageViewCreateInfo depthViewInfo{};
+    depthViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    depthViewInfo.image = depthImage;
+    depthViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    depthViewInfo.format = static_cast<VkFormat>(kDepthFormat);
+    depthViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    depthViewInfo.subresourceRange.baseMipLevel = 0;
+    depthViewInfo.subresourceRange.levelCount = 1;
+    depthViewInfo.subresourceRange.baseArrayLayer = 0;
+    depthViewInfo.subresourceRange.layerCount = 1;
+
+    VkImageView depthView = VK_NULL_HANDLE;
+    if (vkCreateImageView(vkDevice, &depthViewInfo, nullptr, &depthView) != VK_SUCCESS) {
+        m_stats.message = "depth image view creation failed";
+        return false;
+    }
+    m_depthView = depthView;
+
+    const VkImageView framebufferAttachments[2] = {colorView, depthView};
+
     VkFramebufferCreateInfo framebufferInfo{};
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     framebufferInfo.renderPass = static_cast<VkRenderPass>(m_renderPass->nativeHandle());
-    framebufferInfo.attachmentCount = 1;
-    framebufferInfo.pAttachments = &colorView;
+    framebufferInfo.attachmentCount = 2;
+    framebufferInfo.pAttachments = framebufferAttachments;
     framebufferInfo.width = desc.width;
     framebufferInfo.height = desc.height;
     framebufferInfo.layers = 1;
@@ -378,6 +476,7 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
         return false;
     }
     m_framebuffer = framebuffer;
+    m_stats.depthAttachmentReady = true;
 #endif
 
     m_stats.pipelineReady = true;
@@ -395,11 +494,20 @@ void RasterPath::shutdown() {
         if (m_colorView != nullptr) {
             vkDestroyImageView(vkDevice, static_cast<VkImageView>(m_colorView), nullptr);
         }
+        if (m_depthView != nullptr) {
+            vkDestroyImageView(vkDevice, static_cast<VkImageView>(m_depthView), nullptr);
+        }
         if (m_colorImage != nullptr) {
             vkDestroyImage(vkDevice, static_cast<VkImage>(m_colorImage), nullptr);
         }
+        if (m_depthImage != nullptr) {
+            vkDestroyImage(vkDevice, static_cast<VkImage>(m_depthImage), nullptr);
+        }
         if (m_colorMemory != nullptr) {
             vkFreeMemory(vkDevice, static_cast<VkDeviceMemory>(m_colorMemory), nullptr);
+        }
+        if (m_depthMemory != nullptr) {
+            vkFreeMemory(vkDevice, static_cast<VkDeviceMemory>(m_depthMemory), nullptr);
         }
         if (m_indexBuffer != nullptr) {
             vkDestroyBuffer(vkDevice, static_cast<VkBuffer>(m_indexBuffer), nullptr);
@@ -416,8 +524,11 @@ void RasterPath::shutdown() {
     }
     m_framebuffer = nullptr;
     m_colorView = nullptr;
+    m_depthView = nullptr;
     m_colorImage = nullptr;
+    m_depthImage = nullptr;
     m_colorMemory = nullptr;
+    m_depthMemory = nullptr;
     m_indexBuffer = nullptr;
     m_indexMemory = nullptr;
     m_vertexBuffer = nullptr;

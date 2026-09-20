@@ -13,16 +13,18 @@ struct SharedTimeline {
     bool driverWired = false;
     const char* message = nullptr;
 
+    /// Vulkan timeline when backend + device + timeline feature are present. CUDA import is
+    /// optional: `driverWired` is set only when `cudaImportExternalSemaphore` succeeds.
     static SharedTimeline create(void* vkDevice, void* vkPhysicalDevice = nullptr);
     void destroy(void* vkDevice);
 
-    /// Vulkan timeline signal — real `vkSignalSemaphore` when driver-wired, otherwise false.
+    /// Vulkan timeline signal — real `vkSignalSemaphore` when `valid` and `vkSemaphore` are set.
     bool signalVulkan(void* vkDevice, u64 newValue) const;
     /// CUDA timeline wait — real `cudaWaitExternalSemaphoresAsync` when driver-wired.
     bool waitCuda(void* cudaStream, u64 waitValue) const;
     /// CUDA timeline signal — real `cudaSignalExternalSemaphoresAsync` when driver-wired.
     bool signalCuda(void* cudaStream, u64 newValue) const;
-    /// Vulkan timeline wait — real `vkWaitSemaphores` when driver-wired.
+    /// Vulkan timeline wait — real `vkWaitSemaphores` when `valid` and `vkSemaphore` are set.
     bool waitVulkan(void* vkDevice, u64 waitValue) const;
 };
 

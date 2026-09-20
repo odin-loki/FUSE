@@ -221,6 +221,40 @@ void testDeviceVulkan12FeatureFlags() {
     }
 }
 
+void testDeviceQueueFamilies() {
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+    expectTrue(instance != nullptr, "instance allocated for queue family selection");
+    if (instance == nullptr) {
+        return;
+    }
+
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    expectTrue(device != nullptr, "device allocated for queue family selection");
+    if (device == nullptr) {
+        return;
+    }
+
+    const fuse::renderer::VulkanDeviceInfo& info = device->info();
+    const fuse::renderer::VulkanQueues& queues = info.queues;
+    if (!info.valid) {
+        expectTrue(info.deviceType == 0, "stub deviceType stays 0");
+        expectTrue(queues.graphics == nullptr, "stub device has no graphics queue");
+        expectTrue(queues.transferFamily == 0, "stub transferFamily stays 0");
+        expectTrue(queues.computeFamily == 0, "stub computeFamily stays 0");
+        expectTrue(!queues.dedicatedTransfer, "stub dedicatedTransfer stays false");
+        expectTrue(!queues.dedicatedCompute, "stub dedicatedCompute stays false");
+        return;
+    }
+
+    expectTrue(queues.graphics != nullptr, "valid device has a graphics queue");
+    expectTrue(!queues.dedicatedTransfer || queues.transferFamily != queues.graphicsFamily,
+               "dedicatedTransfer implies transferFamily != graphicsFamily");
+    expectTrue(!queues.dedicatedCompute || queues.computeFamily != queues.graphicsFamily,
+               "dedicatedCompute implies computeFamily != graphicsFamily");
+}
+
 void testRhiContextSubmitOnRenderThread() {
     fuse::renderer::RhiContext::Desc desc{};
     desc.bootstrap.instance.enableValidation = false;
@@ -257,6 +291,7 @@ int main() {
     testInstanceWsiAutoRequest();
     testSurfaceAbstraction();
     testDeviceVulkan12FeatureFlags();
+    testDeviceQueueFamilies();
     testRhiContextSubmitOnRenderThread();
 
     fuse::core::shutdown();

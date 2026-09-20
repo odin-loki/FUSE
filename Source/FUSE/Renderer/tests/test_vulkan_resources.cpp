@@ -4,8 +4,10 @@
 #include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
+#include <fuse/renderer/vk/debug_utils.hpp>
 #include <fuse/types.hpp>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
@@ -133,16 +135,43 @@ void testResourceManagerBuffersAndTextures() {
     }
 #endif
 
+    const fuse::usize stagingMid = resources.stagingRingOffset();
+    const u32 wrapCountBefore = resources.stagingRingWrapCount();
+    const fuse::usize stagingCapacity = resources.stagingRingCapacity();
+    fuse::usize wrapSize = 16u;
+    if (stagingMid < stagingCapacity) {
+        wrapSize = (stagingCapacity - stagingMid) + 16u;
+        if (wrapSize > stagingCapacity) {
+            wrapSize = stagingCapacity;
+        }
+    }
+    gpuOnlyDesc.size = wrapSize;
+    std::vector<u8> wrapPayload(gpuOnlyDesc.size, 0x5A);
+    const fuse::renderer::BufferHandle wrapped =
+        resources.createBuffer(gpuOnlyDesc, wrapPayload.data());
+    expectTrue(wrapped.isValid(), "GpuOnly initialData that misses remaining staging still returns a handle");
+    const fuse::renderer::Buffer* wrappedBuf = resources.getBuffer(wrapped);
+    if (wrappedBuf != nullptr && wrappedBuf->mapped == nullptr && stagingMid > 0u &&
+        wrapSize <= stagingCapacity) {
+        expectTrue(resources.stagingRingWrapCount() == wrapCountBefore + 1u,
+                   "staging ring wrap count increases when remaining space is insufficient");
+        expectTrue(resources.stagingRingOffset() >= wrapSize,
+                   "staging offset advances from 0 after wrap");
+    }
+
     gpuOnlyDesc.size = resources.stagingRingCapacity() + 16u;
     std::vector<u8> tooLarge(gpuOnlyDesc.size, 0x5A);
-    const fuse::usize stagingMid = resources.stagingRingOffset();
+    const fuse::usize stagingAfterWrap = resources.stagingRingOffset();
+    const u32 wrapCountAfterWrap = resources.stagingRingWrapCount();
     const fuse::renderer::BufferHandle skipped =
         resources.createBuffer(gpuOnlyDesc, tooLarge.data());
-    expectTrue(skipped.isValid(), "GpuOnly initialData that misses staging still returns a handle");
+    expectTrue(skipped.isValid(), "GpuOnly initialData larger than staging still returns a handle");
     const fuse::renderer::Buffer* skippedBuf = resources.getBuffer(skipped);
     if (skippedBuf != nullptr && skippedBuf->mapped == nullptr) {
-        expectTrue(resources.stagingRingOffset() == stagingMid,
+        expectTrue(resources.stagingRingOffset() == stagingAfterWrap,
                    "staging offset unchanged when initialData copy is skipped");
+        expectTrue(resources.stagingRingWrapCount() == wrapCountAfterWrap,
+                   "staging wrap count unchanged when size exceeds capacity");
     }
 
     fuse::renderer::TextureDesc textureDesc{};
@@ -152,13 +181,22 @@ void testResourceManagerBuffersAndTextures() {
     u8 texels[4 * 4 * 4] = {};
 
     const fuse::usize stagingBeforeTexture = resources.stagingRingOffset();
+    const u32 wrapCountBeforeTexture = resources.stagingRingWrapCount();
     const fuse::renderer::TextureHandle texture = resources.createTexture(textureDesc, texels);
     expectTrue(texture.isValid(), "texture handle issued");
     expectTrue(resources.getTexture(texture) != nullptr, "texture resolvable");
     expectTrue(resources.getTexture(texture)->bindlessIndex != UINT32_MAX,
                "texture bindless index assigned");
-    expectTrue(resources.stagingRingOffset() > stagingBeforeTexture,
-               "texture initialData advances staging offset");
+    const fuse::usize textureBytes = 4u * 4u * 4u;
+    if (stagingBeforeTexture + textureBytes > resources.stagingRingCapacity()) {
+        expectTrue(resources.stagingRingWrapCount() == wrapCountBeforeTexture + 1u,
+                   "texture initialData wraps staging ring when remaining space is insufficient");
+        expectTrue(resources.stagingRingOffset() >= textureBytes,
+                   "texture initialData advances staging offset from 0 after wrap");
+    } else {
+        expectTrue(resources.stagingRingOffset() > stagingBeforeTexture,
+                   "texture initialData advances staging offset");
+    }
 #if defined(FUSE_VULKAN_BACKEND)
     if (bootstrap->status().deviceReady) {
         expectTrue(resources.lastGpuTextureCopySubmitted(),
@@ -238,11 +276,98 @@ void testResourceManagerBuffersAndTextures() {
 
     resources.destroyTexture(texture);
     resources.destroyBuffer(skipped);
+    resources.destroyBuffer(wrapped);
     resources.destroyBuffer(gpuOnly);
     resources.destroyBuffer(buffer);
     expectTrue(!resources.getTexture(texture), "destroyed texture handle stale");
     expectTrue(!resources.getBuffer(buffer), "destroyed buffer handle stale");
 
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testDebugUtilsObjectNaming() {
+    expectTrue(!fuse::renderer::setDebugObjectName(nullptr, 9u, 1u, "named"),
+               "setDebugObjectName rejects null device");
+    expectTrue(!fuse::renderer::setDebugObjectName(reinterpret_cast<void*>(1), 9u, 0u, "named"),
+               "setDebugObjectName rejects null handle");
+    expectTrue(!fuse::renderer::setDebugObjectName(reinterpret_cast<void*>(1), 9u, 1u, nullptr),
+               "setDebugObjectName rejects null name");
+
+    fuse::renderer::VulkanBootstrapDesc desc{};
+    desc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(desc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for debug naming");
+    if (bootstrap == nullptr) {
+        return;
+    }
+
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    fuse::renderer::ResourceManager::Desc resourceDesc{};
+    resourceDesc.stagingRingBytes = 4096u;
+    const bool ready = resources.init(*bootstrap->device(), bindless, resourceDesc);
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        expectTrue(!ready, "resource manager skips without device");
+        bindless.destroy(*bootstrap->device());
+        return;
+    }
+    expectTrue(ready, "resource manager initializes for debug naming");
+#else
+    expectTrue(ready, "stub resource manager initializes for debug naming");
+#endif
+
+    fuse::renderer::BufferDesc bufferDesc{};
+    bufferDesc.size = 64;
+    bufferDesc.usage = fuse::renderer::BufferUsage::Storage;
+    bufferDesc.memoryUsage = fuse::renderer::MemoryUsage::GpuOnly;
+    bufferDesc.name = "fuse_debug_named_buffer";
+    const fuse::renderer::BufferHandle buffer = resources.createBuffer(bufferDesc);
+    expectTrue(buffer.isValid(), "named buffer handle issued");
+    const fuse::renderer::Buffer* createdBuffer = resources.getBuffer(buffer);
+    expectTrue(createdBuffer != nullptr, "named buffer resolvable");
+
+    fuse::renderer::TextureDesc textureDesc{};
+    textureDesc.width = 2;
+    textureDesc.height = 2;
+    textureDesc.usage = fuse::renderer::ImageUsage::Sampled;
+    textureDesc.name = "fuse_debug_named_texture";
+    const fuse::renderer::TextureHandle texture = resources.createTexture(textureDesc);
+    expectTrue(texture.isValid(), "named texture handle issued");
+    const fuse::renderer::Texture* createdTexture = resources.getTexture(texture);
+    expectTrue(createdTexture != nullptr, "named texture resolvable");
+
+    const fuse::renderer::GpuAllocStats* stats = resources.allocatorStats();
+    expectTrue(stats != nullptr, "allocator stats available");
+
+#if defined(FUSE_VULKAN_BACKEND)
+    const bool debugUtilsEnabled =
+        bootstrap->instance() != nullptr &&
+        bootstrap->instance()->info().instanceHasExtension("VK_EXT_debug_utils");
+    if (debugUtilsEnabled && createdBuffer != nullptr && createdBuffer->handle != nullptr) {
+        expectTrue(stats != nullptr && stats->debugNamesSet >= 2u,
+                   "allocator recorded debug names for named buffer and texture");
+        const fuse::u64 bufferHandle =
+            static_cast<fuse::u64>(reinterpret_cast<std::uintptr_t>(createdBuffer->handle));
+        expectTrue(fuse::renderer::setDebugObjectName(bootstrap->device()->nativeHandle(), 9u,
+                                                     bufferHandle, "fuse_debug_named_buffer"),
+                   "setDebugObjectName succeeds on live VkBuffer");
+    }
+#else
+    expectTrue(!fuse::renderer::setDebugObjectName(reinterpret_cast<void*>(1), 9u, 1u, "named"),
+               "setDebugObjectName is a no-op on stub");
+    if (stats != nullptr) {
+        expectTrue(stats->debugNamesSet == 0u, "stub allocator does not set debug names");
+    }
+#endif
+    (void)createdTexture;
+
+    resources.destroyTexture(texture);
+    resources.destroyBuffer(buffer);
     resources.destroy();
     bindless.destroy(*bootstrap->device());
 }
@@ -255,6 +380,7 @@ int main() {
     testHandleMapGeneration();
     testBindlessIndexRecycle();
     testResourceManagerBuffersAndTextures();
+    testDebugUtilsObjectNaming();
 
     fuse::core::shutdown();
 

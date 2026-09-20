@@ -17,6 +17,7 @@ struct GpuAllocStats {
     u64 allocCount = 0;
     u64 freeCount = 0;
     u64 failedAllocs = 0;
+    u32 debugNamesSet = 0;
     /// Populated when VMA is active; stub path leaves at zero.
     u32 vmaPoolCount = 0;
     usize vmaPoolUsedBytes = 0;

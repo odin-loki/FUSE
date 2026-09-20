@@ -16,6 +16,8 @@ struct VulkanQueues {
     u32 graphicsFamily = 0;
     u32 computeFamily = 0;
     u32 transferFamily = 0;
+    bool dedicatedTransfer = false;
+    bool dedicatedCompute = false;
 };
 
 struct VulkanDeviceInfo {
@@ -30,6 +32,7 @@ struct VulkanDeviceInfo {
     bool bufferDeviceAddress = false;
     bool timelineSemaphore = false;
     bool dynamicRendering = false;
+    u32 deviceType = 0; // VkPhysicalDeviceType numeric
 };
 
 struct VulkanDeviceDesc {

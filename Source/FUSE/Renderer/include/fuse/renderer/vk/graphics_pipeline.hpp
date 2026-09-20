@@ -52,12 +52,17 @@ public:
 
     void* nativeHandle() const;
 
+    /// Destroys the current pipeline and recreates it from the last desc, using current shader
+    /// module native handles. Returns false if the stored device is missing or not valid.
+    bool rebuild();
+
 private:
     GraphicsPipeline() = default;
     bool initialize(VulkanDevice& device, const GraphicsPipelineDesc& desc);
     void shutdown();
 
     VulkanDevice* m_device = nullptr;
+    GraphicsPipelineDesc m_desc{};
     GraphicsPipelineInfo m_info;
     void* m_handle = nullptr;
 };

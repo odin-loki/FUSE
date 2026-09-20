@@ -50,6 +50,7 @@ public:
 
     usize stagingRingCapacity() const { return m_stagingRingCapacity; }
     usize stagingRingOffset() const { return m_stagingOffset; }
+    u32 stagingRingWrapCount() const { return m_stagingRingWrapCount; }
 
     bool lastGpuTextureCopySubmitted() const { return m_lastGpuTextureCopySubmitted; }
     u32 lastGpuTextureCopyBytes() const { return m_lastGpuTextureCopyBytes; }
@@ -73,6 +74,7 @@ private:
     BufferHandle m_stagingRing{};
     usize m_stagingRingCapacity = 0;
     usize m_stagingOffset = 0;
+    u32 m_stagingRingWrapCount = 0;
     bool m_lastGpuTextureCopySubmitted = false;
     u32 m_lastGpuTextureCopyBytes = 0;
     bool m_lastGpuCopyUsedTransferQueue = false;

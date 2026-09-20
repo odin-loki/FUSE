@@ -113,6 +113,10 @@ void testCommandBufferRecorderCapturesPasses() {
     expectTrue(recorder.recordCount() >= 5u, "logical commands recorded");
     expectTrue(recorder.records().front().kind == fuse::renderer::CommandRecordKind::BeginPass,
                "first record is pass begin");
+    expectTrue(recorder.vulkanRenderPassBeginCount() == 0u,
+               "logical-only recording does not begin a Vulkan render pass");
+    expectTrue(recorder.vulkanViewportCount() == 0u, "logical-only viewport count stays 0");
+    expectTrue(recorder.vulkanScissorCount() == 0u, "logical-only scissor count stays 0");
 }
 
 void testExplicitPassDependencyReordersCompileOrder() {
@@ -448,6 +452,10 @@ void testExecuteCopiesCompileOrderToScratch() {
     const fuse::renderer::RenderGraphExecuteInfo info =
         graph.execute(*bootstrap->device(), *bootstrap->frameManager(), recorder);
     expectTrue(info.scratchBytesUsed > 0u, "compile order copied into frame scratch");
+    expectTrue(recorder.vulkanViewportCount() == 0u,
+               "execute without encode context does not set viewport");
+    expectTrue(recorder.vulkanScissorCount() == 0u,
+               "execute without encode context does not set scissor");
 }
 
 void testPopulateFromDrawList() {
@@ -512,6 +520,12 @@ void testRhiContextUsesRenderGraph() {
     expectTrue(submitted, "submit accepted when Vulkan device ready");
     expectTrue(context->lastGraphPassCount() >= 3u, "render graph executed passes");
     expectTrue(context->lastRecordedCommandCount() > 0u, "command recorder captured work");
+    if (context->commandRecorder().vulkanRenderPassBeginCount() >= 1u) {
+        expectTrue(context->commandRecorder().vulkanViewportCount() >= 1u,
+                   "viewport set after real vkCmdBeginRenderPass");
+        expectTrue(context->commandRecorder().vulkanScissorCount() >= 1u,
+                   "scissor set after real vkCmdBeginRenderPass");
+    }
 #else
     expectTrue(!context->submitFrame(commands, 0u), "stub mode rejects GPU submit");
 #endif

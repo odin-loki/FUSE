@@ -24,11 +24,13 @@ struct RasterPathStats {
     bool pipelineReady = false;
     bool bindlessLayoutReady = false;
     bool indexBufferReady = false;
+    bool depthAttachmentReady = false;
     u32 clearCount = 0;
     u32 triangleDrawCount = 0;
     u32 framesRecorded = 0;
     u32 shaderFilesWatched = 0;
     u32 shaderWatchPolls = 0;
+    u32 pipelineReloadCount = 0;
     u64 pipelineContentHash = 0;
     std::string message;
 };
@@ -51,6 +53,9 @@ public:
     /// Offscreen color image for graph-planned layout barriers.
     void* barrierImageHandle() const;
 
+    /// Offscreen D32_SFLOAT depth image; null if not ready.
+    void* depthImageHandle() const;
+
     /// Sampled color attachment view for composite bindless registration.
     void* colorViewHandle() const;
 
@@ -67,6 +72,7 @@ private:
     RasterPath() = default;
     bool initialize(VulkanDevice& device, const RasterPathDesc& desc);
     void shutdown();
+    void reloadPipelinesIfWatched();
 
     VulkanDevice* m_device = nullptr;
     RasterPathDesc m_desc{};
@@ -92,6 +98,9 @@ private:
     void* m_colorImage = nullptr;
     void* m_colorMemory = nullptr;
     void* m_colorView = nullptr;
+    void* m_depthImage = nullptr;
+    void* m_depthMemory = nullptr;
+    void* m_depthView = nullptr;
     void* m_framebuffer = nullptr;
 #endif
 };

@@ -1,5 +1,7 @@
 #include <fuse/renderer/vk/allocator.hpp>
 
+#include <fuse/renderer/vk/debug_utils.hpp>
+
 #include <cstdint>
 #include <cstring>
 #include <utility>
@@ -414,6 +416,24 @@ bool bufferNeedsHostMapping(MemoryUsage usage) {
     return usage == MemoryUsage::CpuToGpu || usage == MemoryUsage::GpuToCpu;
 }
 
+#if defined(FUSE_VULKAN_BACKEND)
+// VkObjectType numeric: deviceMemory=8, buffer=9, image=10.
+constexpr u32 kVkObjectTypeDeviceMemory = 8;
+constexpr u32 kVkObjectTypeBuffer = 9;
+constexpr u32 kVkObjectTypeImage = 10;
+
+void trySetDebugName(void* vkDevice, u32 vkObjectType, void* handle, const char* name,
+                     GpuAllocStats& stats) {
+    if (name == nullptr || handle == nullptr) {
+        return;
+    }
+    const u64 objectHandle = static_cast<u64>(reinterpret_cast<uintptr_t>(handle));
+    if (setDebugObjectName(vkDevice, vkObjectType, objectHandle, name)) {
+        stats.debugNamesSet += 1;
+    }
+}
+#endif
+
 void* allocateStubMappedBuffer(usize size) {
     if (size == 0) {
         return nullptr;
@@ -574,6 +594,13 @@ bool GpuAllocator::createBuffer(const BufferDesc& desc, Buffer& out) {
         out.allocationSize = desc.size;
     }
     vmaMapMemory(static_cast<VmaAllocator>(m_allocator), allocation, &out.mapped);
+    trySetDebugName(m_device->nativeHandle(), kVkObjectTypeBuffer, out.handle, desc.name, m_stats);
+    {
+        VmaAllocationInfo vmaAllocInfo{};
+        vmaGetAllocationInfo(static_cast<VmaAllocator>(m_allocator), allocation, &vmaAllocInfo);
+        trySetDebugName(m_device->nativeHandle(), kVkObjectTypeDeviceMemory,
+                        reinterpret_cast<void*>(vmaAllocInfo.deviceMemory), desc.name, m_stats);
+    }
     gpu_alloc_detail::recordBufferAlloc(m_stats, desc.size);
     refreshVmaPoolStats();
     notifyStats();
@@ -597,6 +624,8 @@ bool GpuAllocator::createBuffer(const BufferDesc& desc, Buffer& out) {
         return false;
     }
 
+    trySetDebugName(device, kVkObjectTypeBuffer, out.handle, desc.name, m_stats);
+    trySetDebugName(device, kVkObjectTypeDeviceMemory, out.allocation, desc.name, m_stats);
     gpu_alloc_detail::recordBufferAlloc(m_stats, desc.size);
     notifyStats();
     return true;
@@ -712,6 +741,13 @@ bool GpuAllocator::createImage(const TextureDesc& desc, Texture& out) {
     if (desc.cudaInterop) {
         out.allocationSize = imageBytes;
     }
+    trySetDebugName(device, kVkObjectTypeImage, out.image, desc.name, m_stats);
+    {
+        VmaAllocationInfo vmaAllocInfo{};
+        vmaGetAllocationInfo(static_cast<VmaAllocator>(m_allocator), allocation, &vmaAllocInfo);
+        trySetDebugName(device, kVkObjectTypeDeviceMemory,
+                        reinterpret_cast<void*>(vmaAllocInfo.deviceMemory), desc.name, m_stats);
+    }
     gpu_alloc_detail::recordImageAlloc(m_stats, imageBytes);
     refreshVmaPoolStats();
     notifyStats();
@@ -734,6 +770,8 @@ bool GpuAllocator::createImage(const TextureDesc& desc, Texture& out) {
         return false;
     }
 
+    trySetDebugName(device, kVkObjectTypeImage, out.image, desc.name, m_stats);
+    trySetDebugName(device, kVkObjectTypeDeviceMemory, out.allocation, desc.name, m_stats);
     gpu_alloc_detail::recordImageAlloc(m_stats, imageBytes);
     notifyStats();
     return true;

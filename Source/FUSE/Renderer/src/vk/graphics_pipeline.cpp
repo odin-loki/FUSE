@@ -23,8 +23,43 @@ void* GraphicsPipeline::nativeHandle() const {
     return m_handle;
 }
 
+bool GraphicsPipeline::rebuild() {
+    if (m_device == nullptr) {
+        return false;
+    }
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_device->isValid()) {
+        return false;
+    }
+#endif
+
+    VulkanDevice* device = m_device;
+    const GraphicsPipelineDesc desc = m_desc;
+    const GraphicsPipelineInfo previousInfo = m_info;
+    void* previousHandle = m_handle;
+    m_handle = nullptr;
+    shutdown();
+
+    if (!initialize(*device, desc)) {
+        m_handle = previousHandle;
+        m_device = device;
+        m_desc = desc;
+        m_info = previousInfo;
+        return false;
+    }
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (previousHandle != nullptr && device->isValid()) {
+        vkDestroyPipeline(static_cast<VkDevice>(device->nativeHandle()),
+                          static_cast<VkPipeline>(previousHandle), nullptr);
+    }
+#endif
+    return true;
+}
+
 bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDesc& desc) {
     m_device = &device;
+    m_desc = desc;
 
     if (desc.layout == nullptr || desc.vertexShader == nullptr || desc.fragmentShader == nullptr ||
         (!desc.useDynamicRendering && desc.renderPass == nullptr &&

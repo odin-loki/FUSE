@@ -15,6 +15,10 @@ bool isRealVulkanCommandBuffer(void* nativeCommandBuffer) {
     return nativeCommandBuffer != nullptr && nativeCommandBuffer != reinterpret_cast<void*>(0x1);
 }
 
+bool isDepthAttachmentLayout(RGImageLayout layout) {
+    return layout == RGImageLayout::DepthAttachment;
+}
+
 #if defined(FUSE_VULKAN_BACKEND)
 void bindRasterBindlessDescriptorSets(VkCommandBuffer commandBuffer, const VkFrameEncodeContext& context) {
     if (context.bindlessDescriptorSet == nullptr || context.graphicsPipelineLayout == nullptr) {
@@ -42,6 +46,8 @@ void CommandBufferRecorder::reset() {
     m_pendingClearG = 0.f;
     m_pendingClearB = 0.f;
     m_vulkanRenderPassBeginCount = 0;
+    m_vulkanViewportCount = 0;
+    m_vulkanScissorCount = 0;
     m_vulkanPipelineBarrierCount = 0;
     m_vulkanBufferBarrierCount = 0;
     m_vulkanPresentRenderPassBeginCount = 0;
@@ -130,17 +136,25 @@ void CommandBufferRecorder::encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLa
         return;
     }
 
-    void* barrierImage = m_encodeContext->barrierImage;
-    if (barrierImage == nullptr && m_encodeContext->presentBarrierImage != nullptr) {
-        barrierImage = m_encodeContext->presentBarrierImage;
-    }
-    if (barrierImage == nullptr) {
-        return;
-    }
-
     const auto from = static_cast<RGImageLayout>(fromLayout);
     const auto to = static_cast<RGImageLayout>(toLayout);
     if (from == RGImageLayout::Undefined && to == RGImageLayout::Undefined) {
+        return;
+    }
+
+    const bool depthTransition = isDepthAttachmentLayout(from) || isDepthAttachmentLayout(to);
+
+    void* barrierImage = nullptr;
+    if (depthTransition) {
+        barrierImage = m_encodeContext->depthImage != nullptr ? m_encodeContext->depthImage
+                                                              : m_encodeContext->barrierImage;
+    } else {
+        barrierImage = m_encodeContext->barrierImage;
+        if (barrierImage == nullptr && m_encodeContext->presentBarrierImage != nullptr) {
+            barrierImage = m_encodeContext->presentBarrierImage;
+        }
+    }
+    if (barrierImage == nullptr) {
         return;
     }
 
@@ -172,6 +186,10 @@ void CommandBufferRecorder::encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLa
         case RGImageLayout::ColorAttachment:
             stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
             access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            break;
+        case RGImageLayout::DepthAttachment:
+            stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+            access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
             break;
         case RGImageLayout::ShaderReadOnly:
             stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
@@ -216,7 +234,8 @@ void CommandBufferRecorder::encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLa
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.image = static_cast<VkImage>(barrierImage);
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.aspectMask =
+        depthTransition ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
     barrier.subresourceRange.baseMipLevel = 0;
     barrier.subresourceRange.levelCount = 1;
     barrier.subresourceRange.baseArrayLayer = 0;
@@ -325,6 +344,31 @@ void CommandBufferRecorder::encodePresentSwapchainPass() {
 #endif
 }
 
+void CommandBufferRecorder::encodeVulkanViewportAndScissor() {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (m_encodeContext == nullptr || !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
+        return;
+    }
+
+    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
+    const u32 width = m_encodeContext->width > 0u ? m_encodeContext->width : 1u;
+    const u32 height = m_encodeContext->height > 0u ? m_encodeContext->height : 1u;
+
+    VkViewport viewport{};
+    viewport.width = static_cast<float>(width);
+    viewport.height = static_cast<float>(height);
+    viewport.minDepth = 0.f;
+    viewport.maxDepth = 1.f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+    ++m_vulkanViewportCount;
+
+    VkRect2D scissor{};
+    scissor.extent = {width, height};
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+    ++m_vulkanScissorCount;
+#endif
+}
+
 void CommandBufferRecorder::beginVulkanRenderPass() {
 #if defined(FUSE_VULKAN_BACKEND)
     if (!m_vulkanEncodeActive || m_encodeContext == nullptr || m_insideRenderPass ||
@@ -333,8 +377,10 @@ void CommandBufferRecorder::beginVulkanRenderPass() {
     }
 
     auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
-    VkClearValue clearValue{};
-    clearValue.color = {{m_pendingClearR, m_pendingClearG, m_pendingClearB, 1.f}};
+    VkClearValue clearValues[2]{};
+    clearValues[0].color = {{m_pendingClearR, m_pendingClearG, m_pendingClearB, 1.f}};
+    clearValues[1].depthStencil = {1.f, 0};
+    const bool hasDepth = m_encodeContext->depthImage != nullptr || m_encodeContext->depthView != nullptr;
 
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -342,24 +388,14 @@ void CommandBufferRecorder::beginVulkanRenderPass() {
     renderPassInfo.framebuffer = static_cast<VkFramebuffer>(m_encodeContext->framebuffer);
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = {m_encodeContext->width, m_encodeContext->height};
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearValue;
+    renderPassInfo.clearValueCount = hasDepth ? 2u : 1u;
+    renderPassInfo.pClearValues = clearValues;
 
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    encodeVulkanViewportAndScissor();
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       static_cast<VkPipeline>(m_encodeContext->graphicsPipeline));
     bindRasterBindlessDescriptorSets(commandBuffer, *m_encodeContext);
-
-    VkViewport viewport{};
-    viewport.width = static_cast<float>(m_encodeContext->width);
-    viewport.height = static_cast<float>(m_encodeContext->height);
-    viewport.minDepth = 0.f;
-    viewport.maxDepth = 1.f;
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
-    VkRect2D scissor{};
-    scissor.extent = {m_encodeContext->width, m_encodeContext->height};
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     m_insideRenderPass = true;
     ++m_vulkanRenderPassBeginCount;
@@ -402,7 +438,8 @@ void CommandBufferRecorder::encodeDraw(u32 instanceCount) {
 #endif
 }
 
-void CommandBufferRecorder::encodeDrawIndexed(u32 indexCount) {
+void CommandBufferRecorder::encodeDrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex,
+                                             i32 vertexOffset, u32 materialId) {
 #if defined(FUSE_VULKAN_BACKEND)
     if (!m_vulkanEncodeActive || m_encodeContext == nullptr || !m_insideRenderPass ||
         !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
@@ -423,10 +460,22 @@ void CommandBufferRecorder::encodeDrawIndexed(u32 indexCount) {
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
     }
 
-    vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
+    if (m_encodeContext->graphicsPipelineLayout != nullptr) {
+        const u32 payload[4] = {materialId, 0u, 0u, 0u};
+        vkCmdPushConstants(commandBuffer,
+                           static_cast<VkPipelineLayout>(m_encodeContext->graphicsPipelineLayout),
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 16, payload);
+    }
+
+    const u32 instances = instanceCount > 0u ? instanceCount : 1u;
+    vkCmdDrawIndexed(commandBuffer, indexCount, instances, firstIndex, vertexOffset, 0);
     ++m_vulkanDrawIndexedCount;
 #else
     (void)indexCount;
+    (void)instanceCount;
+    (void)firstIndex;
+    (void)vertexOffset;
+    (void)materialId;
 #endif
 }
 
@@ -525,6 +574,11 @@ void CommandBufferRecorder::draw(u32 instanceCount) {
 }
 
 void CommandBufferRecorder::drawIndexed(u32 indexCount) {
+    drawIndexed(indexCount, 1u, 0u, 0, 0u);
+}
+
+void CommandBufferRecorder::drawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset,
+                                        u32 materialId) {
     if (!m_recording) {
         return;
     }
@@ -532,12 +586,17 @@ void CommandBufferRecorder::drawIndexed(u32 indexCount) {
     CommandRecord record;
     record.kind = CommandRecordKind::DrawIndexed;
     record.drawCount = indexCount;
+    record.indexCount = indexCount;
+    record.instanceCount = instanceCount > 0u ? instanceCount : 1u;
+    record.firstIndex = firstIndex;
+    record.vertexOffset = vertexOffset;
+    record.materialId = materialId;
     m_records.push_back(record);
 
     if (m_activeRasterPass && !m_insideRenderPass) {
         beginVulkanRenderPass();
     }
-    encodeDrawIndexed(indexCount);
+    encodeDrawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, materialId);
 }
 
 void CommandBufferRecorder::encodeCompositePass(float blend) {

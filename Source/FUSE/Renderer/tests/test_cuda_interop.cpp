@@ -3,9 +3,12 @@
 #include <fuse/renderer/cuda/interop_fill.hpp>
 #include <fuse/renderer/cuda/stream_manager.hpp>
 #include <fuse/renderer/cuda/vk_sync.hpp>
+#include <fuse/renderer/vk/device.hpp>
+#include <fuse/renderer/vk/instance.hpp>
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 
@@ -55,19 +58,70 @@ void testInteropUnavailableOnCi() {
 void testSharedTimelineStub() {
     const fuse::renderer::cuda::SharedTimeline timeline =
         fuse::renderer::cuda::SharedTimeline::create(nullptr, nullptr);
-#if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
-    if (timeline.driverWired) {
-        expectTrue(timeline.valid, "SharedTimeline valid when driver wired");
-        expectTrue(timeline.signalVulkan(nullptr, 1u) == false,
-                   "signalVulkan requires valid VkDevice handle");
-    } else {
-        expectTrue(!timeline.valid, "SharedTimeline invalid without device handles");
-    }
-#else
-    expectTrue(!timeline.valid, "SharedTimeline stub is invalid until full B2.6");
-#endif
+    expectTrue(!timeline.valid, "SharedTimeline invalid without device handles");
+    expectTrue(timeline.vkSemaphore == nullptr, "null-handle create leaves vkSemaphore null");
+    expectTrue(!timeline.driverWired, "null-handle create is not driver-wired");
     expectTrue(timeline.message != nullptr, "SharedTimeline exposes honest message");
+    expectTrue(!timeline.signalVulkan(nullptr, 1u), "signalVulkan returns false when invalid");
+    expectTrue(!timeline.waitVulkan(nullptr, 1u), "waitVulkan returns false when invalid");
     expectTrue(!timeline.waitCuda(nullptr, 1u), "waitCuda returns false when invalid");
+    expectTrue(!timeline.signalCuda(nullptr, 1u), "signalCuda returns false when invalid");
+}
+
+void testSharedTimelineVulkanDevice() {
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+    expectTrue(instance != nullptr, "VulkanInstance allocated for SharedTimeline");
+    if (instance == nullptr) {
+        return;
+    }
+
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    expectTrue(device != nullptr, "VulkanDevice allocated for SharedTimeline");
+    if (device == nullptr) {
+        return;
+    }
+
+    fuse::renderer::cuda::SharedTimeline timeline = fuse::renderer::cuda::SharedTimeline::create(
+        device->nativeHandle(), device->nativePhysicalDevice());
+
+    if (!device->isValid() || !device->info().timelineSemaphore) {
+        expectTrue(!timeline.valid, "SharedTimeline invalid when device stub or no timeline feature");
+        expectTrue(timeline.vkSemaphore == nullptr, "stub SharedTimeline has no VkSemaphore");
+        expectTrue(!timeline.driverWired, "stub SharedTimeline is not driver-wired");
+        expectTrue(!timeline.signalVulkan(device->nativeHandle(), 1u),
+                   "signalVulkan false when timeline invalid");
+        expectTrue(!timeline.waitVulkan(device->nativeHandle(), 1u),
+                   "waitVulkan false when timeline invalid");
+        expectTrue(timeline.message != nullptr, "invalid SharedTimeline exposes honest message");
+        return;
+    }
+
+    expectTrue(timeline.valid, "SharedTimeline valid with Vulkan timeline device");
+    expectTrue(timeline.vkSemaphore != nullptr, "SharedTimeline has VkSemaphore");
+    expectTrue(timeline.message != nullptr, "SharedTimeline exposes honest message");
+    if (timeline.driverWired) {
+        expectTrue(timeline.cudaSemaphore != nullptr, "driverWired SharedTimeline has cudaSemaphore");
+    } else {
+        expectTrue(timeline.cudaSemaphore == nullptr,
+                   "Vulkan-only SharedTimeline has null cudaSemaphore");
+        expectTrue(std::strstr(timeline.message, "Vulkan-only") != nullptr,
+                   "Vulkan-only SharedTimeline reports honest CUDA-unavailable message");
+        expectTrue(!timeline.waitCuda(nullptr, 1u), "waitCuda requires driverWired");
+        expectTrue(!timeline.signalCuda(nullptr, 1u), "signalCuda requires driverWired");
+    }
+
+    expectTrue(timeline.signalVulkan(device->nativeHandle(), 1u),
+               "signalVulkan succeeds on valid Vulkan timeline");
+    expectTrue(timeline.waitVulkan(device->nativeHandle(), 1u),
+               "waitVulkan succeeds on valid Vulkan timeline");
+
+    timeline.destroy(device->nativeHandle());
+    expectTrue(!timeline.valid, "SharedTimeline invalid after destroy");
+    expectTrue(timeline.vkSemaphore == nullptr, "vkSemaphore cleared after destroy");
+    expectTrue(timeline.cudaSemaphore == nullptr, "cudaSemaphore cleared after destroy");
+    expectTrue(!timeline.driverWired, "driverWired cleared after destroy");
 }
 
 void testFrameSyncPairStub() {
@@ -272,6 +326,7 @@ int main() {
     testInteropUnavailableOnCi();
     testInteropReasonStrings();
     testSharedTimelineStub();
+    testSharedTimelineVulkanDevice();
     testFrameSyncPairStub();
     testFrameSyncProgressStub();
     testFrameSyncLoadStressStub();

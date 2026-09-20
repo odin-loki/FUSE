@@ -36,8 +36,8 @@ public:
     /// Stable sort by materialId (then original order).
     void sortByMaterial();
 
-    /// For each call, recorder.drawIndexed(call.indexCount). Returns number of calls recorded.
-    /// No-op (return 0) if recorder is not recording.
+    /// For each call, recorder.drawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, materialId).
+    /// Returns number of calls recorded. No-op (return 0) if recorder is not recording.
     u32 record(CommandBufferRecorder& recorder) const;
 
 private:

@@ -152,6 +152,47 @@ void testRecordDrawIndexedPerCall() {
                "third record is DrawIndexed");
 }
 
+void testRecordEncodesDrawParams() {
+    fuse::renderer::DrawList list;
+
+    fuse::renderer::DrawCall first{};
+    first.indexCount = 36;
+    first.firstIndex = 0;
+    first.vertexOffset = 0;
+    first.instanceCount = 1;
+    first.materialId = 7;
+    expectTrue(list.push(first), "param encode first call accepted");
+
+    fuse::renderer::DrawCall second{};
+    second.indexCount = 12;
+    second.firstIndex = 36;
+    second.vertexOffset = 12;
+    second.instanceCount = 2;
+    second.materialId = 9;
+    expectTrue(list.push(second), "param encode second call accepted");
+
+    fuse::renderer::CommandBufferRecorder recorder;
+    expectTrue(recorder.beginRecording(nullptr), "beginRecording succeeds for param encode");
+    expectTrue(list.record(recorder) == 2u, "param encode record returns 2");
+    expectTrue(recorder.recordCount() == 2u, "param encode recorder has 2 records");
+
+    const fuse::renderer::CommandRecord& a = recorder.records()[0];
+    expectTrue(a.kind == fuse::renderer::CommandRecordKind::DrawIndexed, "first param record is DrawIndexed");
+    expectTrue(a.indexCount == 36u, "first indexCount encoded");
+    expectTrue(a.instanceCount == 1u, "first instanceCount encoded");
+    expectTrue(a.firstIndex == 0u, "first firstIndex encoded");
+    expectTrue(a.vertexOffset == 0, "first vertexOffset encoded");
+    expectTrue(a.materialId == 7u, "first materialId encoded");
+
+    const fuse::renderer::CommandRecord& b = recorder.records()[1];
+    expectTrue(b.kind == fuse::renderer::CommandRecordKind::DrawIndexed, "second param record is DrawIndexed");
+    expectTrue(b.indexCount == 12u, "second indexCount encoded");
+    expectTrue(b.instanceCount == 2u, "second instanceCount encoded");
+    expectTrue(b.firstIndex == 36u, "second firstIndex encoded");
+    expectTrue(b.vertexOffset == 12, "second vertexOffset encoded");
+    expectTrue(b.materialId == 9u, "second materialId encoded");
+}
+
 } // namespace
 
 int main() {
@@ -163,6 +204,7 @@ int main() {
     testSortByMaterialIsStable();
     testRecordWithoutBeginReturnsZero();
     testRecordDrawIndexedPerCall();
+    testRecordEncodesDrawParams();
 
     if (g_failures == 0) {
         std::printf("fuse_draw_list: all checks passed\n");

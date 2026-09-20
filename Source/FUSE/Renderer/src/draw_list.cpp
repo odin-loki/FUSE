@@ -54,7 +54,8 @@ u32 DrawList::record(CommandBufferRecorder& recorder) const {
         return 0;
     }
     for (const DrawCall& call : m_calls) {
-        recorder.drawIndexed(call.indexCount);
+        recorder.drawIndexed(call.indexCount, call.instanceCount, call.firstIndex,
+                             static_cast<i32>(call.vertexOffset), call.materialId);
     }
     return count();
 }

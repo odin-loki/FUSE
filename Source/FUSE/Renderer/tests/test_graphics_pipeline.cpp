@@ -1,17 +1,29 @@
 #include <fuse/core/init.hpp>
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/renderer/rhi_context.hpp>
+#include <fuse/renderer/shader/shader_io.hpp>
 #include <fuse/renderer/shader/shader_module.hpp>
+#include <fuse/renderer/shader/shader_watch.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/renderer/vk/graphics_pipeline.hpp>
 #include <fuse/renderer/vk/pipeline_layout.hpp>
 #include <fuse/renderer/vk/raster_path.hpp>
 #include <fuse/renderer/vk/render_pass.hpp>
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <string>
+#include <vector>
+
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 #ifndef FUSE_SHADER_FIXTURE_DIR
 #define FUSE_SHADER_FIXTURE_DIR "Source/FUSE/Renderer/shaders/fixtures"
@@ -30,6 +42,45 @@ void expectTrue(bool condition, const char* message) {
 
 std::string fixturePath(const char* name) {
     return std::string(FUSE_SHADER_FIXTURE_DIR) + "/" + name;
+}
+
+std::filesystem::path uniqueTempSpvPath(const char* tag) {
+#if defined(_WIN32)
+    const int pid = _getpid();
+#else
+    const int pid = static_cast<int>(::getpid());
+#endif
+    static int seq = 0;
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    return std::filesystem::temp_directory_path() /
+           ("fuse_shader_reload_" + std::string(tag) + "_" + std::to_string(pid) + "_" +
+            std::to_string(stamp) + "_" + std::to_string(++seq) + ".spv");
+}
+
+bool copyBinaryFile(const std::filesystem::path& from, const std::filesystem::path& to) {
+    std::ifstream in(from, std::ios::binary);
+    if (!in) {
+        return false;
+    }
+    std::ofstream out(to, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        return false;
+    }
+    out << in.rdbuf();
+    out.flush();
+    return static_cast<bool>(out);
+}
+
+void touchExistingFile(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    std::vector<char> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    out.flush();
+    std::error_code ec;
+    std::filesystem::last_write_time(
+        path, std::filesystem::file_time_type::clock::now() + std::chrono::seconds(2), ec);
 }
 
 void testGraphicsPipelineFromFixtures() {
@@ -78,12 +129,19 @@ void testGraphicsPipelineFromFixtures() {
         expectTrue(graphicsPipeline->isValid(), "graphics pipeline valid with Vulkan device");
         expectTrue(graphicsPipeline->nativeHandle() != nullptr,
                    "graphics pipeline has native handle");
+        expectTrue(graphicsPipeline->rebuild(), "graphics pipeline rebuild succeeds");
+        expectTrue(graphicsPipeline->isValid(), "graphics pipeline valid after rebuild");
+        expectTrue(graphicsPipeline->nativeHandle() != nullptr,
+                   "graphics pipeline has native handle after rebuild");
     } else {
         expectTrue(!graphicsPipeline->isValid(), "graphics pipeline invalid without ICD");
+        expectTrue(!graphicsPipeline->rebuild(), "rebuild returns false without valid device");
     }
 #else
     expectTrue(graphicsPipeline->isValid(), "graphics pipeline valid in stub backend");
     expectTrue(graphicsPipeline->nativeHandle() == nullptr, "stub backend has no native handle");
+    expectTrue(graphicsPipeline->rebuild(), "stub graphics pipeline rebuild succeeds");
+    expectTrue(graphicsPipeline->isValid(), "stub graphics pipeline valid after rebuild");
 #endif
 
     pipelineDesc.cullMode = 2u; // VK_CULL_MODE_BACK_BIT
@@ -133,6 +191,13 @@ void testRasterPathClearTriangle() {
                        "raster path indexBufferHandle set when ready");
             expectTrue(rasterPath->lastStats().indexBufferReady,
                        "raster path indexBufferReady when ready");
+            expectTrue(rasterPath->lastStats().depthAttachmentReady,
+                       "raster path depthAttachmentReady when ready");
+            expectTrue(rasterPath->depthImageHandle() != nullptr,
+                       "raster path depthImageHandle set when ready");
+            const fuse::renderer::VkFrameEncodeContext encode = rasterPath->vulkanEncodeContext();
+            expectTrue(encode.active, "raster path vulkanEncodeContext.active with depth");
+            expectTrue(encode.depthImage != nullptr, "encode context depthImage set when ready");
         }
 #endif
     }
@@ -148,11 +213,15 @@ void testRasterPathClearTriangle() {
         expectTrue(stats.clearCount == 1u, "one clear command mirrored");
         expectTrue(stats.triangleDrawCount == 1u, "triangle draw issued");
         expectTrue(stats.framesRecorded == 1u, "one frame recorded");
+        expectTrue(stats.pipelineReloadCount == 0u, "no pipeline reload without shader change");
     } else {
         expectTrue(!rasterPath->isReady(), "raster path not ready without ICD");
     }
 #else
     expectTrue(rasterPath->isReady(), "raster path ready in stub backend");
+    (void)rasterPath->lastStats().depthAttachmentReady;
+    (void)rasterPath->vulkanEncodeContext();
+    (void)rasterPath->depthImageHandle();
 
     fuse::renderer::RenderCommandList commands;
     commands.clear3D(0.1f, 0.2f, 0.3f);
@@ -162,6 +231,7 @@ void testRasterPathClearTriangle() {
     expectTrue(stats.clearCount == 1u, "one clear command mirrored");
     expectTrue(stats.triangleDrawCount == 1u, "triangle draw issued");
     expectTrue(stats.framesRecorded == 1u, "one frame recorded");
+    expectTrue(stats.pipelineReloadCount == 0u, "no pipeline reload without shader change");
 #endif
 }
 
@@ -267,10 +337,116 @@ void testRhiContextWiresRasterPath() {
         expectTrue(context->rasterPath() != nullptr, "raster path created lazily");
         expectTrue(context->lastRasterStats().triangleDrawCount == 1u,
                    "RHI context wired clear + triangle path");
+        if (context->commandRecorder().vulkanRenderPassBeginCount() >= 1u) {
+            expectTrue(context->commandRecorder().vulkanViewportCount() >= 1u,
+                       "viewport encoded when a real render pass began");
+            expectTrue(context->commandRecorder().vulkanScissorCount() >= 1u,
+                       "scissor encoded when a real render pass began");
+        }
     }
 #else
     expectTrue(!submitted, "stub mode rejects GPU submit");
 #endif
+}
+
+void testShaderModuleReloadFromDisk() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for shader reload tests");
+
+    fuse::renderer::VulkanDevice* device = bootstrap->device();
+    if (device == nullptr) {
+        expectTrue(!bootstrap->status().deviceReady, "device unavailable without Vulkan loader");
+        return;
+    }
+
+    const std::string vertPath = fixturePath("minimal.vert.spv");
+    std::string loadError;
+    const std::vector<fuse::u32> words =
+        fuse::renderer::loadSpirvFile(vertPath.c_str(), &loadError);
+    expectTrue(!words.empty(), "fixture SPIR-V loads for reloadFromDisk test");
+    if (words.empty()) {
+        return;
+    }
+
+    auto memoryModule = fuse::renderer::ShaderModule::create(
+        *device, fuse::renderer::ShaderStage::Vertex, words.data(),
+        static_cast<fuse::u32>(words.size()));
+    expectTrue(memoryModule != nullptr, "in-memory shader module allocated");
+    expectTrue(!memoryModule->reloadFromDisk(), "create() without a file path cannot reloadFromDisk");
+
+    auto fileModule = fuse::renderer::ShaderModule::createFromFile(
+        *device, fuse::renderer::ShaderStage::Vertex, vertPath.c_str());
+    expectTrue(fileModule != nullptr, "createFromFile shader module allocated");
+    if (fileModule->isValid()) {
+        const fuse::u64 hash = fileModule->info().spirvHash;
+        expectTrue(fileModule->reloadFromDisk(), "reloadFromDisk succeeds on fixture SPIR-V");
+        expectTrue(fileModule->isValid(), "shader module remains valid after reloadFromDisk");
+        expectTrue(fileModule->info().spirvHash == hash, "reloadFromDisk preserves fixture spirvHash");
+    } else {
+        expectTrue(!fileModule->reloadFromDisk(),
+                   "reloadFromDisk fails without a valid device/module");
+    }
+}
+
+void testRasterPathHotReload() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for raster hot-reload tests");
+
+    fuse::renderer::VulkanDevice* device = bootstrap->device();
+    if (device == nullptr) {
+        expectTrue(!bootstrap->status().deviceReady, "device unavailable without Vulkan loader");
+        return;
+    }
+
+    const std::filesystem::path tempVert = uniqueTempSpvPath("vert");
+    const std::filesystem::path tempFrag = uniqueTempSpvPath("frag");
+    expectTrue(copyBinaryFile(fixturePath("minimal.vert.spv"), tempVert),
+               "temp vertex SPIR-V copied");
+    expectTrue(copyBinaryFile(fixturePath("minimal.frag.spv"), tempFrag),
+               "temp fragment SPIR-V copied");
+
+    const std::string vertUtf8 = tempVert.string();
+    const std::string fragUtf8 = tempFrag.string();
+    fuse::renderer::RasterPathDesc rasterDesc{};
+    rasterDesc.vertexSpirvPath = vertUtf8.c_str();
+    rasterDesc.fragmentSpirvPath = fragUtf8.c_str();
+
+    auto rasterPath = fuse::renderer::RasterPath::create(*device, rasterDesc);
+    expectTrue(rasterPath != nullptr, "raster path allocated for hot-reload");
+
+    fuse::renderer::ShaderFileWatch probe;
+    expectTrue(probe.watch(vertUtf8.c_str()), "probe watch records temp vertex SPIR-V");
+
+    fuse::renderer::RenderCommandList commands;
+    commands.clear3D(0.1f, 0.2f, 0.3f);
+    rasterPath->recordFrame(commands);
+    rasterPath->recordFrame(commands);
+    expectTrue(rasterPath->lastStats().pipelineReloadCount == 0u,
+               "recordFrame twice without file change keeps pipelineReloadCount at 0");
+
+    if (rasterPath->isReady()) {
+        touchExistingFile(tempVert);
+        const fuse::u32 probeChanged = probe.pollChanged();
+        rasterPath->recordFrame(commands);
+        if (probeChanged == 0u) {
+            std::printf("SKIP: shader watch did not observe mtime change\n");
+        } else {
+            expectTrue(rasterPath->lastStats().pipelineReloadCount >= 1u,
+                       "watched SPIR-V mtime change rebuilds the graphics pipeline");
+        }
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(tempVert, ec);
+    std::filesystem::remove(tempFrag, ec);
 }
 
 } // namespace
@@ -281,6 +457,8 @@ int main() {
     testGraphicsPipelineFromFixtures();
     testDynamicRenderingPipeline();
     testRasterPathClearTriangle();
+    testShaderModuleReloadFromDisk();
+    testRasterPathHotReload();
     testRhiContextWiresRasterPath();
 
     fuse::core::shutdown();

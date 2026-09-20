@@ -37,6 +37,10 @@ public:
 
     void* nativeHandle() const;
 
+    /// Re-reads SPIR-V from the path captured by `createFromFile`. Keeps the previous module if
+    /// the path is empty or the load/create fails.
+    bool reloadFromDisk();
+
 private:
     ShaderModule() = default;
     bool initialize(VulkanDevice& device, ShaderStage stage, const u32* spirv, u32 wordCount);
@@ -45,6 +49,7 @@ private:
     VulkanDevice* m_device = nullptr;
     ShaderModuleInfo m_info;
     void* m_handle = nullptr;
+    std::string m_sourcePath;
 };
 
 } // namespace fuse::renderer

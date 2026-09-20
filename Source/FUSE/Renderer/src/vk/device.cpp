@@ -53,6 +53,51 @@ u32 findQueueFamily(VkPhysicalDevice device, VkQueueFlagBits flags) {
     return 0;
 }
 
+u32 findComputeFamily(VkPhysicalDevice device) {
+    u32 count = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &count, nullptr);
+    std::vector<VkQueueFamilyProperties> families(count);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &count, families.data());
+    for (u32 i = 0; i < count; ++i) {
+        const VkQueueFlags flags = families[i].queueFlags;
+        if ((flags & VK_QUEUE_COMPUTE_BIT) != 0 && (flags & VK_QUEUE_GRAPHICS_BIT) == 0) {
+            return i;
+        }
+    }
+    for (u32 i = 0; i < count; ++i) {
+        if ((families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+u32 findTransferFamily(VkPhysicalDevice device) {
+    u32 count = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &count, nullptr);
+    std::vector<VkQueueFamilyProperties> families(count);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &count, families.data());
+    for (u32 i = 0; i < count; ++i) {
+        const VkQueueFlags flags = families[i].queueFlags;
+        if ((flags & VK_QUEUE_TRANSFER_BIT) != 0 && (flags & VK_QUEUE_GRAPHICS_BIT) == 0 &&
+            (flags & VK_QUEUE_COMPUTE_BIT) == 0) {
+            return i;
+        }
+    }
+    for (u32 i = 0; i < count; ++i) {
+        const VkQueueFlags flags = families[i].queueFlags;
+        if ((flags & VK_QUEUE_TRANSFER_BIT) != 0 && (flags & VK_QUEUE_GRAPHICS_BIT) == 0) {
+            return i;
+        }
+    }
+    for (u32 i = 0; i < count; ++i) {
+        if ((families[i].queueFlags & VK_QUEUE_TRANSFER_BIT) != 0) {
+            return i;
+        }
+    }
+    return 0;
+}
+
 bool queueFamilyPresentsToSurface(VkPhysicalDevice device, u32 family, VkSurfaceKHR surface) {
     VkBool32 supported = VK_FALSE;
     if (vkGetPhysicalDeviceSurfaceSupportKHR(device, family, surface, &supported) != VK_SUCCESS) {
@@ -172,8 +217,8 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     m_info.deviceName = props.deviceName;
 
     u32 graphicsFamily = findQueueFamily(selected, VK_QUEUE_GRAPHICS_BIT);
-    const u32 computeFamily = findQueueFamily(selected, VK_QUEUE_COMPUTE_BIT);
-    const u32 transferFamily = findQueueFamily(selected, VK_QUEUE_TRANSFER_BIT);
+    const u32 computeFamily = findComputeFamily(selected);
+    const u32 transferFamily = findTransferFamily(selected);
 
     std::string presentNote;
     if (desc.presentSurface != nullptr) {
@@ -299,9 +344,12 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     m_info.bufferDeviceAddress = enabled12.bufferDeviceAddress == VK_TRUE;
     m_info.timelineSemaphore = enabled12.timelineSemaphore == VK_TRUE;
     m_info.dynamicRendering = enabledDyn.dynamicRendering == VK_TRUE;
+    m_info.deviceType = static_cast<u32>(props.deviceType);
     m_info.queues.graphicsFamily = graphicsFamily;
     m_info.queues.computeFamily = computeFamily;
     m_info.queues.transferFamily = transferFamily;
+    m_info.queues.dedicatedTransfer = transferFamily != graphicsFamily;
+    m_info.queues.dedicatedCompute = computeFamily != graphicsFamily;
 
     VkQueue graphicsQueue = VK_NULL_HANDLE;
     VkQueue computeQueue = VK_NULL_HANDLE;

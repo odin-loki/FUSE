@@ -2,6 +2,20 @@
 
 #include <fuse/jobs/cuda_jobs.hpp>
 
+#include <cstdint>
+
+#if defined(FUSE_HAS_CUDA) && defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#elif defined(FUSE_HAS_CUDA)
+#include <unistd.h>
+#endif
+
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
 #endif
@@ -24,9 +38,39 @@ bool physicalDeviceSupportsTimelineSemaphores(VkPhysicalDevice physicalDevice) {
     vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
     return features12.timelineSemaphore != VK_FALSE;
 }
+
+bool createVulkanTimelineSemaphore(VkDevice device, bool exportForCuda, VkSemaphore* outSemaphore) {
+    VkSemaphoreTypeCreateInfo timelineTypeInfo{};
+    timelineTypeInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+    timelineTypeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    timelineTypeInfo.initialValue = 0;
+
+    VkExportSemaphoreCreateInfo exportInfo{};
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    if (exportForCuda) {
+        exportInfo.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO;
+#if defined(_WIN32)
+        exportInfo.handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+#else
+        exportInfo.handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+#endif
+        exportInfo.pNext = &timelineTypeInfo;
+        semaphoreInfo.pNext = &exportInfo;
+    } else {
+        semaphoreInfo.pNext = &timelineTypeInfo;
+    }
+
+    VkSemaphore semaphore = VK_NULL_HANDLE;
+    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore) != VK_SUCCESS) {
+        return false;
+    }
+    *outSemaphore = semaphore;
+    return true;
+}
 #endif
 
-#if defined(FUSE_HAS_CUDA)
+#if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
 cudaExternalSemaphoreHandleType externalSemaphoreHandleType() {
 #if defined(_WIN32)
     return cudaExternalSemaphoreHandleTypeOpaqueWin32;
@@ -34,65 +78,35 @@ cudaExternalSemaphoreHandleType externalSemaphoreHandleType() {
     return cudaExternalSemaphoreHandleTypeOpaqueFd;
 #endif
 }
-#endif
 
-} // namespace
-
-SharedTimeline SharedTimeline::create(void* vkDevice, void* vkPhysicalDevice) {
-    SharedTimeline timeline{};
-    timeline.message = "SharedTimeline stub — timeline semaphore pair deferred to B2.6";
-
-#if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
-    if (!fuse::jobs::cudaJobsAvailable() || vkDevice == nullptr || vkPhysicalDevice == nullptr) {
-        return timeline;
+void closeExportedSemaphoreHandle(void* handle) {
+    if (handle == nullptr) {
+        return;
     }
-
-    auto device = static_cast<VkDevice>(vkDevice);
-    auto physicalDevice = static_cast<VkPhysicalDevice>(vkPhysicalDevice);
-    if (!physicalDeviceSupportsTimelineSemaphores(physicalDevice)) {
-        timeline.message = "timeline semaphores unsupported on physical device";
-        return timeline;
-    }
-
-    VkSemaphoreTypeCreateInfo timelineTypeInfo{};
-    timelineTypeInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-    timelineTypeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-    timelineTypeInfo.initialValue = 0;
-
-    VkExportSemaphoreCreateInfo exportInfo{};
-    exportInfo.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO;
 #if defined(_WIN32)
-    exportInfo.handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+    CloseHandle(static_cast<HANDLE>(handle));
 #else
-    exportInfo.handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+    close(static_cast<int>(reinterpret_cast<intptr_t>(handle)));
 #endif
-    exportInfo.pNext = &timelineTypeInfo;
+}
 
-    VkSemaphoreCreateInfo semaphoreInfo{};
-    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    semaphoreInfo.pNext = &exportInfo;
-
-    VkSemaphore vkSemaphore = VK_NULL_HANDLE;
-    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &vkSemaphore) != VK_SUCCESS) {
-        timeline.message = "vkCreateSemaphore timeline export failed";
-        return timeline;
-    }
-
+bool importCudaExternalSemaphore(VkDevice device, VkSemaphore vkSemaphore,
+                                 cudaExternalSemaphore_t* outCudaSemaphore) {
 #if defined(_WIN32)
     using GetSemaphoreFn = PFN_vkGetSemaphoreWin32HandleKHR;
     const char* fnName = "vkGetSemaphoreWin32HandleKHR";
-    VkExternalSemaphoreHandleTypeFlagBits handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+    const VkExternalSemaphoreHandleTypeFlagBits handleType =
+        VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
 #else
     using GetSemaphoreFn = PFN_vkGetSemaphoreFdKHR;
     const char* fnName = "vkGetSemaphoreFdKHR";
-    VkExternalSemaphoreHandleTypeFlagBits handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+    const VkExternalSemaphoreHandleTypeFlagBits handleType =
+        VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
 #endif
 
     auto getHandle = reinterpret_cast<GetSemaphoreFn>(vkGetDeviceProcAddr(device, fnName));
     if (getHandle == nullptr) {
-        vkDestroySemaphore(device, vkSemaphore, nullptr);
-        timeline.message = "Vulkan semaphore export proc missing";
-        return timeline;
+        return false;
     }
 
     void* exportedHandle = nullptr;
@@ -103,9 +117,7 @@ SharedTimeline SharedTimeline::create(void* vkDevice, void* vkPhysicalDevice) {
     handleInfo.semaphore = vkSemaphore;
     handleInfo.handleType = handleType;
     if (getHandle(device, &handleInfo, &winHandle) != VK_SUCCESS || winHandle == nullptr) {
-        vkDestroySemaphore(device, vkSemaphore, nullptr);
-        timeline.message = "vkGetSemaphoreWin32HandleKHR failed";
-        return timeline;
+        return false;
     }
     exportedHandle = winHandle;
 #else
@@ -115,9 +127,7 @@ SharedTimeline SharedTimeline::create(void* vkDevice, void* vkPhysicalDevice) {
     fdInfo.semaphore = vkSemaphore;
     fdInfo.handleType = handleType;
     if (getHandle(device, &fdInfo, &fd) != VK_SUCCESS || fd < 0) {
-        vkDestroySemaphore(device, vkSemaphore, nullptr);
-        timeline.message = "vkGetSemaphoreFdKHR failed";
-        return timeline;
+        return false;
     }
     exportedHandle = reinterpret_cast<void*>(static_cast<intptr_t>(fd));
 #endif
@@ -134,27 +144,85 @@ SharedTimeline SharedTimeline::create(void* vkDevice, void* vkPhysicalDevice) {
     cudaExternalSemaphore_t cudaSemaphore = nullptr;
     const cudaError_t importErr = cudaImportExternalSemaphore(&cudaSemaphore, &cudaDesc);
     if (importErr != cudaSuccess) {
-        vkDestroySemaphore(device, vkSemaphore, nullptr);
-        timeline.message = cudaGetErrorString(importErr);
+        closeExportedSemaphoreHandle(exportedHandle);
+        return false;
+    }
+
+    *outCudaSemaphore = cudaSemaphore;
+    return true;
+}
+#endif
+
+} // namespace
+
+SharedTimeline SharedTimeline::create(void* vkDevice, void* vkPhysicalDevice) {
+    SharedTimeline timeline{};
+    timeline.message = "SharedTimeline stub — timeline semaphore pair deferred to B2.6";
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (vkDevice == nullptr || vkPhysicalDevice == nullptr) {
         return timeline;
     }
 
+    auto device = static_cast<VkDevice>(vkDevice);
+    auto physicalDevice = static_cast<VkPhysicalDevice>(vkPhysicalDevice);
+    if (!physicalDeviceSupportsTimelineSemaphores(physicalDevice)) {
+        timeline.message = "timeline semaphores unsupported on physical device";
+        return timeline;
+    }
+
+    VkSemaphore vkSemaphore = VK_NULL_HANDLE;
+    bool createdWithExport = false;
+
+#if defined(FUSE_HAS_CUDA)
+    if (fuse::jobs::cudaJobsAvailable() &&
+        createVulkanTimelineSemaphore(device, true, &vkSemaphore)) {
+        createdWithExport = true;
+    }
+#endif
+
+    if (vkSemaphore == VK_NULL_HANDLE) {
+        if (!createVulkanTimelineSemaphore(device, false, &vkSemaphore)) {
+            timeline.message = "vkCreateSemaphore timeline failed";
+            return timeline;
+        }
+    }
+
     timeline.vkSemaphore = vkSemaphore;
-    timeline.cudaSemaphore = cudaSemaphore;
     timeline.valid = true;
-    timeline.driverWired = true;
-    timeline.message = "SharedTimeline driver-wired via export/import";
+    timeline.driverWired = false;
+    timeline.cudaSemaphore = nullptr;
+    timeline.message = "SharedTimeline Vulkan-only — CUDA import unavailable";
+
+#if defined(FUSE_HAS_CUDA)
+    if (createdWithExport) {
+        cudaExternalSemaphore_t cudaSemaphore = nullptr;
+        if (importCudaExternalSemaphore(device, vkSemaphore, &cudaSemaphore)) {
+            timeline.cudaSemaphore = cudaSemaphore;
+            timeline.driverWired = true;
+            timeline.message = "SharedTimeline driver-wired via export/import";
+        }
+    }
+#else
+    (void)createdWithExport;
 #endif
 
     return timeline;
+#else
+    (void)vkDevice;
+    (void)vkPhysicalDevice;
+    return timeline;
+#endif
 }
 
 void SharedTimeline::destroy(void* vkDevice) {
-#if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
-    if (driverWired && cudaSemaphore != nullptr) {
+#if defined(FUSE_HAS_CUDA)
+    if (cudaSemaphore != nullptr) {
         cudaDestroyExternalSemaphore(static_cast<cudaExternalSemaphore_t>(cudaSemaphore));
     }
-    if (driverWired && vkDevice != nullptr && vkSemaphore != nullptr) {
+#endif
+#if defined(FUSE_VULKAN_BACKEND)
+    if (vkDevice != nullptr && vkSemaphore != nullptr) {
         vkDestroySemaphore(static_cast<VkDevice>(vkDevice), static_cast<VkSemaphore>(vkSemaphore),
                            nullptr);
     }
@@ -169,7 +237,7 @@ void SharedTimeline::destroy(void* vkDevice) {
 }
 
 bool SharedTimeline::signalVulkan(void* vkDevice, u64 newValue) const {
-    if (!valid || !driverWired || vkDevice == nullptr || vkSemaphore == nullptr) {
+    if (!valid || vkDevice == nullptr || vkSemaphore == nullptr) {
         return false;
     }
 
@@ -224,7 +292,7 @@ bool SharedTimeline::signalCuda(void* cudaStream, u64 newValue) const {
 }
 
 bool SharedTimeline::waitVulkan(void* vkDevice, u64 waitValue) const {
-    if (!valid || !driverWired || vkDevice == nullptr || vkSemaphore == nullptr) {
+    if (!valid || vkDevice == nullptr || vkSemaphore == nullptr) {
         return false;
     }
 

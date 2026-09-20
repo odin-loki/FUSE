@@ -46,16 +46,23 @@ std::unique_ptr<ShaderModule> ShaderModule::create(VulkanDevice& device,
 
 std::unique_ptr<ShaderModule> ShaderModule::createFromFile(VulkanDevice& device, ShaderStage stage,
                                                            const char* spirvPath) {
+    std::string path = spirvPath != nullptr ? spirvPath : "";
     std::string error;
     std::vector<u32> words = loadSpirvFile(spirvPath, &error);
     if (words.empty()) {
         auto module = std::unique_ptr<ShaderModule>(new ShaderModule());
+        module->m_device = &device;
+        module->m_sourcePath = std::move(path);
         module->m_info.stage = stage;
         module->m_info.message = error.empty() ? "failed to load SPIR-V file" : error;
         return module;
     }
 
-    return create(device, stage, words.data(), static_cast<u32>(words.size()));
+    auto module = create(device, stage, words.data(), static_cast<u32>(words.size()));
+    if (module != nullptr) {
+        module->m_sourcePath = std::move(path);
+    }
+    return module;
 }
 
 ShaderModule::~ShaderModule() {
@@ -64,6 +71,45 @@ ShaderModule::~ShaderModule() {
 
 void* ShaderModule::nativeHandle() const {
     return m_handle;
+}
+
+bool ShaderModule::reloadFromDisk() {
+    if (m_sourcePath.empty() || m_device == nullptr) {
+        return false;
+    }
+
+    std::string error;
+    std::vector<u32> words = loadSpirvFile(m_sourcePath.c_str(), &error);
+    if (words.empty()) {
+        return false;
+    }
+
+    VulkanDevice* device = m_device;
+    const ShaderStage stage = m_info.stage;
+    const std::string path = m_sourcePath;
+    const ShaderModuleInfo previousInfo = m_info;
+    void* previousHandle = m_handle;
+    m_handle = nullptr;
+
+    if (!initialize(*device, stage, words.data(), static_cast<u32>(words.size()))) {
+        m_handle = previousHandle;
+        m_device = device;
+        m_info = previousInfo;
+        m_sourcePath = path;
+        return false;
+    }
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (previousHandle != nullptr && device->isValid()) {
+        vkDestroyShaderModule(static_cast<VkDevice>(device->nativeHandle()),
+                              static_cast<VkShaderModule>(previousHandle), nullptr);
+    }
+#endif
+    m_sourcePath = path;
+    if (!previousInfo.entryPoint.empty()) {
+        m_info.entryPoint = previousInfo.entryPoint;
+    }
+    return true;
 }
 
 bool ShaderModule::initialize(VulkanDevice& device, ShaderStage stage, const u32* spirv,

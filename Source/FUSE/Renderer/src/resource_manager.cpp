@@ -319,6 +319,7 @@ void ResourceManager::destroy() {
     m_device = nullptr;
     m_bindless = nullptr;
     m_stagingOffset = 0;
+    m_stagingRingWrapCount = 0;
     m_ready = false;
 }
 
@@ -457,8 +458,12 @@ void ResourceManager::copyInitialDataViaStaging(Buffer& dest, const void* initia
         return;
     }
 
-    if (size > m_stagingRingCapacity || m_stagingOffset + size > m_stagingRingCapacity) {
+    if (size > m_stagingRingCapacity) {
         return;
+    }
+    if (m_stagingOffset + size > m_stagingRingCapacity) {
+        m_stagingOffset = 0;
+        ++m_stagingRingWrapCount;
     }
 
     const usize srcOffset = m_stagingOffset;
@@ -493,8 +498,12 @@ void ResourceManager::copyTextureInitialDataViaStaging(Texture& dest, const void
         return;
     }
 
-    if (bytes > m_stagingRingCapacity || m_stagingOffset + bytes > m_stagingRingCapacity) {
+    if (bytes > m_stagingRingCapacity) {
         return;
+    }
+    if (m_stagingOffset + bytes > m_stagingRingCapacity) {
+        m_stagingOffset = 0;
+        ++m_stagingRingWrapCount;
     }
 
     const usize srcOffset = m_stagingOffset;

@@ -55,6 +55,7 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/vk/composite_gpu_path.hpp
     include/fuse/renderer/vk/bootstrap.hpp
     include/fuse/renderer/vk/device.hpp
+    include/fuse/renderer/vk/debug_utils.hpp
     include/fuse/renderer/vk/frame.hpp
     include/fuse/renderer/vk/fence_wait.hpp
     include/fuse/renderer/vk/instance.hpp
@@ -122,6 +123,7 @@ set(FUSE_RHI_SOURCES
     src/vk/composite_gpu_path.cpp
     src/vk/bootstrap.cpp
     src/vk/device.cpp
+    src/vk/debug_utils.cpp
     src/vk/frame.cpp
     src/vk/fence_wait.cpp
     src/vk/instance.cpp

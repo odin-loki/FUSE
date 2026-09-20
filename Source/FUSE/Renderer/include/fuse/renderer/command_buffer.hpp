@@ -32,6 +32,11 @@ struct CommandRecord {
     u32 fromAccess = 0;
     u32 toAccess = 0;
     u32 drawCount = 0;
+    u32 indexCount = 0;
+    u32 instanceCount = 0;
+    u32 firstIndex = 0;
+    i32 vertexOffset = 0;
+    u32 materialId = 0;
 };
 
 /// Offscreen raster + optional swapchain present targets for real `vkCmd*` encoding (B2.5 / B2.8).
@@ -45,6 +50,9 @@ struct VkFrameEncodeContext {
     u32 indexType = 0; // 0 = VK_INDEX_TYPE_UINT16, 1 = UINT32
     /// Backbuffer image for graph-planned `vkCmdPipelineBarrier` (offscreen color target).
     void* barrierImage = nullptr;
+    /// Offscreen D32_SFLOAT depth attachment (B2.8 raster path).
+    void* depthImage = nullptr;
+    void* depthView = nullptr;
     /// Buffer for graph-planned `vkCmdPipelineBarrier` (`VkBufferMemoryBarrier`).
     void* barrierBuffer = nullptr;
     u32 width = 0;
@@ -90,6 +98,7 @@ public:
     void clearColor(float r, float g, float b);
     void draw(u32 instanceCount);
     void drawIndexed(u32 indexCount);
+    void drawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 materialId);
     void composite(float blend);
     void present();
 
@@ -100,6 +109,8 @@ public:
     bool vulkanEncodeActive() const { return m_vulkanEncodeActive; }
     bool vulkanRecordingComplete() const { return m_vulkanRecordingComplete; }
     u32 vulkanRenderPassBeginCount() const { return m_vulkanRenderPassBeginCount; }
+    u32 vulkanViewportCount() const { return m_vulkanViewportCount; }
+    u32 vulkanScissorCount() const { return m_vulkanScissorCount; }
     u32 vulkanPipelineBarrierCount() const { return m_vulkanPipelineBarrierCount; }
     u32 vulkanBufferBarrierCount() const { return m_vulkanBufferBarrierCount; }
     u32 vulkanPresentRenderPassBeginCount() const { return m_vulkanPresentRenderPassBeginCount; }
@@ -111,12 +122,13 @@ private:
     bool shouldEncodeRasterPass(const char* passName) const;
     void beginVulkanRenderPass();
     void endVulkanRenderPass();
+    void encodeVulkanViewportAndScissor();
     void encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLayout);
     void encodeVulkanBufferBarrier(u32 fromAccess, u32 toAccess);
     void encodePresentSwapchainPass();
     void encodeCompositePass(float blend);
     void encodeDraw(u32 instanceCount);
-    void encodeDrawIndexed(u32 indexCount);
+    void encodeDrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 materialId);
 
     const VkFrameEncodeContext* m_encodeContext = nullptr;
     void* m_nativeCommandBuffer = nullptr;
@@ -129,6 +141,8 @@ private:
     float m_pendingClearG = 0.f;
     float m_pendingClearB = 0.f;
     u32 m_vulkanRenderPassBeginCount = 0;
+    u32 m_vulkanViewportCount = 0;
+    u32 m_vulkanScissorCount = 0;
     u32 m_vulkanPipelineBarrierCount = 0;
     u32 m_vulkanBufferBarrierCount = 0;
     u32 m_vulkanPresentRenderPassBeginCount = 0;
