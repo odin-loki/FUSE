@@ -2,6 +2,7 @@
 #include <fuse/legacy/t3d/api.hpp>
 
 #include "platform/platform.h"
+#include "core/color.h"
 #include "core/frameAllocator.h"
 #include "core/stream/fileStream.h"
 #include "core/stream/memStream.h"
@@ -232,6 +233,24 @@ bool gbitmapExtensionListSmoke() {
     bitmapStbRegisterAnchor();
     const String extensions = GBitmap::sGetExtensionList();
     return extensions.find("bmp", 0, String::NoCase) != String::NPos;
+}
+
+bool gbitmapColorRgba8Smoke() {
+    GBitmap bitmap;
+    bitmap.allocateBitmap(2, 2, false, GFXFormatR8G8B8A8);
+
+    const ColorI written(10, 20, 30, 40);
+    if (!bitmap.setColor(1, 0, written)) {
+        return false;
+    }
+
+    ColorI read;
+    if (!bitmap.getColor(1, 0, read)) {
+        return false;
+    }
+
+    return read.red == 10 && read.green == 20 && read.blue == 30 && read.alpha == 40 &&
+           !bitmap.getColor(9, 0, read);
 }
 
 } // namespace fuse::legacy::t3d::engineProbe
