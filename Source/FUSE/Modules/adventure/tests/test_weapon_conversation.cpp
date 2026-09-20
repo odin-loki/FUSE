@@ -323,6 +323,49 @@ int main() {
                "conversation state machine records greeting");
     expectTrue(stateVm.stateAdvanceCount() >= 1u, "conversation state advance counted");
 
+    fuse::adventure::ConversationScriptVm injectLineVm;
+    fuse::adventure::registerOutpostConversationScriptHooks(injectLineVm);
+    fuse::adventure::ConversationBranch injectLineBranch;
+    injectLineBranch.id = "polite";
+    injectLineBranch.lines = {"Injected greeting.", "Injected follow-up."};
+    fuse::adventure::ConversationInteractable guardInjectLine({"Halt."}, {injectLineBranch});
+    expectTrue(injectLineVm.injectScriptLine("outpost_guard", "polite", 0, guardInjectLine),
+               "conversation VM injects scripted line");
+    expectTrue(injectLineVm.injectCount() >= 1u, "conversation VM inject count tracked");
+    expectTrue(guardInjectLine.injectedLineCount() >= 1u, "conversation interactable received injected line");
+
+    fuse::adventure::ConversationScriptVm chainVm;
+    fuse::adventure::registerOutpostConversationScriptHooks(chainVm);
+    fuse::adventure::ConversationBranch chainPolite;
+    chainPolite.id = "polite";
+    chainPolite.lines = {"Thank you, traveler. Proceed with caution."};
+    fuse::adventure::ConversationBranch chainAggressive;
+    chainAggressive.id = "aggressive";
+    chainAggressive.lines = {"Stand down or be fired upon."};
+    fuse::adventure::ConversationInteractable guardChain({"Halt."}, {chainPolite, chainAggressive});
+    expectTrue(chainVm.advanceNpcStateChain("outpost_guard", ctx, guardChain, 2) >= 2u,
+               "conversation VM advances NPC state chain");
+    expectTrue(chainVm.npcState("outpost_guard") == fuse::adventure::ConversationState::Quest,
+               "conversation state chain reaches quest");
+
+    fuse::adventure::CombatHitscanStub spreadHitscan;
+    spreadHitscan.setSpreadDeg(8.f);
+    fuse::adventure::WeaponStats spreadStats{};
+    spreadStats.damage = 10.f;
+    spreadStats.range = 80.f;
+    const fuse::adventure::HitscanResult spreadResult =
+        spreadHitscan.fireSpreadBurst(spreadStats, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 10.f, 0.f, 0.f, 3u);
+    expectTrue(spreadResult.hit, "hitscan spread burst hits in-range target");
+    expectTrue(spreadResult.pelletHits >= 1u, "hitscan spread burst counts pellet hits");
+    expectTrue(spreadHitscan.spreadBurstCount() >= 1u, "hitscan spread burst counted");
+
+    fuse::adventure::CombatHitscanStub penetrationHitscan;
+    const fuse::adventure::HitscanResult penetrationResult =
+        penetrationHitscan.fireHitscanWithPenetration(spreadStats, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 10.f, 0.f, 0.f, 2u);
+    expectTrue(penetrationResult.hit, "hitscan penetration hits target");
+    expectTrue(penetrationResult.penetrationLayers >= 2u, "hitscan penetration layers tracked");
+    expectTrue(penetrationHitscan.penetrationCount() >= 1u, "hitscan penetration counted");
+
     fuse::core::shutdown();
 
     if (g_failures == 0) {

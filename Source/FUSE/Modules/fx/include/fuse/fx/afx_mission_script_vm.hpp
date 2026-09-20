@@ -25,6 +25,7 @@ public:
     void registerHooks(const std::vector<AfxMissionHook>& hooks);
 
     bool dispatch(const std::string& scriptHook, FxComposer& composer, const frame::FrameCtx& ctx = {});
+    bool callImmediate(const std::string& scriptHook, FxComposer& composer, const frame::FrameCtx& ctx = {});
     bool dispatchTick(FxComposer& composer, const frame::FrameCtx& ctx = {});
     void scheduleDelayedDispatch(const std::string& scriptHook, u32 delayMs);
     u32 advanceDelayedDispatches(u32 deltaMs, FxComposer& composer, const frame::FrameCtx& ctx = {});
@@ -34,6 +35,8 @@ public:
                              const frame::FrameCtx& ctx = {});
 
     u32 dispatchCount() const { return m_dispatchCount; }
+    u32 callCount() const { return m_callCount; }
+    u32 scheduleCount() const { return m_scheduleCount; }
     u32 tickDispatchCount() const { return m_tickDispatchCount; }
     u32 delayedDispatchCount() const { return m_delayedDispatchCount; }
     u32 pendingDelayedCount() const;
@@ -47,6 +50,8 @@ private:
     std::vector<AfxMissionHook> m_registeredHooks;
     std::vector<AfxMissionDelayedDispatch> m_delayedDispatches;
     u32 m_dispatchCount = 0;
+    u32 m_callCount = 0;
+    u32 m_scheduleCount = 0;
     u32 m_tickDispatchCount = 0;
     u32 m_delayedDispatchCount = 0;
     u32 m_executeCount = 0;

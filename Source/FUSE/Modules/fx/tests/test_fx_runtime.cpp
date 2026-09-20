@@ -623,10 +623,37 @@ void testAfxMissionScheduleCallParse() {
     expectTrue(fuse::fx::dispatch_afx_mission_from_mis(kMisText, composer, vm, &error),
                "schedule dispatch prefers ordered hooks");
     expectTrue(vm.pendingDelayedCount() >= 1u, "schedule entry schedules delayed VM dispatch");
-    expectTrue(vm.dispatchCount() == 0u, "schedule dispatch defers immediate hook fire");
+    expectTrue(vm.callCount() >= 1u, "call entry fires immediate VM dispatch");
+    expectTrue(vm.dispatchCount() >= 1u, "call hook dispatch counted");
     fuse::frame::FrameCtx ctx;
     expectTrue(vm.advanceDelayedDispatches(600, composer, ctx) >= 1u, "scheduled hook fires after delay");
     expectTrue(vm.dispatchCount() >= 1u, "schedule delayed dispatch counted");
+}
+
+void testAfxMissionScheduleCallCombined() {
+    static const char* kMisText =
+        "missionName = \"CombinedDemo\";\n"
+        "schedule(200, onSpellCast);\n"
+        "call(onAmbientFx);\n"
+        "function onSpellCast() {\n"
+        "  beginCast(\"fireball\");\n"
+        "}\n"
+        "function onAmbientFx() {\n"
+        "  attachEffect(\"spark_burst\");\n"
+        "}\n";
+
+    fuse::fx::FxComposer composer;
+    composer.registerDemoVerticalSlice();
+    fuse::fx::AfxMissionScriptVm vm;
+    std::string error;
+    expectTrue(fuse::fx::dispatch_afx_mission_from_mis(kMisText, composer, vm, &error),
+               "combined schedule/call mission dispatches");
+    expectTrue(vm.scheduleCount() >= 1u, "schedule entry counted in VM");
+    expectTrue(vm.callCount() >= 1u, "call entry counted in VM");
+    expectTrue(vm.dispatchCount() >= 1u, "call fires immediate VM dispatch");
+    expectTrue(vm.pendingDelayedCount() >= 1u, "schedule still pending after call");
+    fuse::frame::FrameCtx ctx;
+    expectTrue(vm.advanceDelayedDispatches(250, composer, ctx) >= 1u, "scheduled hook fires after delay");
 }
 
 void testAfxMissionExecuteFromMis() {
@@ -696,6 +723,7 @@ int main() {
     testParticlePoolCudaResidency();
     testAfxMissionVmDelayedDispatch();
     testAfxMissionScheduleCallParse();
+    testAfxMissionScheduleCallCombined();
     testAfxMissionExecuteFromMis();
     testAfxMissionNestedSimObjectParse();
     fuse::core::shutdown();

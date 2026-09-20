@@ -34,10 +34,12 @@
 #include <fuse/mechanics/message_component.hpp>
 #include <fuse/mechanics/animate_component.hpp>
 #include <fuse/mechanics/health_component.hpp>
-#include <fuse/mechanics/look_at_component.hpp>
+#include <fuse/mechanics/follow_component.hpp>
+#include <fuse/mechanics/move_component.hpp>
 #include <fuse/mechanics/radio_component.hpp>
 #include <fuse/mechanics/path_component.hpp>
 #include <fuse/mechanics/waypoint_component.hpp>
+#include <fuse/mechanics/look_at_component.hpp>
 #include <fuse/mechanics/physics_broadphase_bridge.hpp>
 #include <fuse/mechanics/timer_component.hpp>
 #include <fuse/mechanics/physics_trigger_bridge.hpp>
@@ -88,6 +90,10 @@
 #define FUSE_HYBRID_GATES_WAVE21 1
 #endif
 
+#ifndef FUSE_HYBRID_GATES_WAVE22
+#define FUSE_HYBRID_GATES_WAVE22 1
+#endif
+
 namespace fuse::hybrid::gates {
 
 constexpr int kFrameCount = 60;
@@ -131,6 +137,8 @@ struct State {
     fuse::mechanics::AnimateComponent leverAnimate{"lever_animate", 0.5f};
     fuse::mechanics::WaypointComponent patrolWaypoint{"outpost_patrol_wp", 4.f, 0.f, 0.f};
     fuse::mechanics::LookAtComponent guardLookAt{"guard_look_at", 120.f};
+    fuse::mechanics::MoveComponent allyMove{"ally_move", 0.8f};
+    fuse::mechanics::FollowComponent allyFollow{"ally_follow", 0.6f};
     fuse::mechanics::RadioComponent leverRadio{"lever_radio", "outpost_alert"};
     fuse::mechanics::HealthComponent guardHealth{"outpost_guard_health", 100};
     fuse::mechanics::BroadphaseWorldStub broadphaseWorld;
@@ -173,8 +181,17 @@ struct State {
     bool weaponReloaded = false;
     bool timelineHostWired = false;
     u32 nestedCompositeNodeCount = 0;
+    bool booleanExpressionValid = false;
     u32 btDbvtOverlapHits = 0;
+    u32 btDbvtAabbHits = 0;
     u32 delayedMissionDispatchCount = 0;
+    u32 missionCallCount = 0;
+    u32 missionScheduleCount = 0;
+    u32 timelineHostAdvanceCount = 0;
+    u32 conversationInjectCount = 0;
+    u32 conversationStateChainSteps = 0;
+    u32 hitscanPelletHits = 0;
+    u32 hitscanPenetrationLayers = 0;
     float initialClearR = 0.f;
     float initialClearG = 0.f;
     float initialClearB = 0.f;

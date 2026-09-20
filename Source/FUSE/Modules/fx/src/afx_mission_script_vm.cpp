@@ -96,6 +96,13 @@ bool AfxMissionScriptVm::executeFunctionBody(const std::string& functionName, co
     return false;
 }
 
+bool AfxMissionScriptVm::callImmediate(const std::string& scriptHook,
+                                       FxComposer& composer,
+                                       const frame::FrameCtx& ctx) {
+    ++m_callCount;
+    return dispatch(scriptHook, composer, ctx);
+}
+
 void AfxMissionScriptVm::scheduleDelayedDispatch(const std::string& scriptHook, u32 delayMs) {
     if (delayMs == 0) {
         return;
@@ -104,6 +111,7 @@ void AfxMissionScriptVm::scheduleDelayedDispatch(const std::string& scriptHook, 
     delayed.scriptHook = scriptHook;
     delayed.delayMs = delayMs;
     m_delayedDispatches.push_back(std::move(delayed));
+    ++m_scheduleCount;
 }
 
 u32 AfxMissionScriptVm::pendingDelayedCount() const {

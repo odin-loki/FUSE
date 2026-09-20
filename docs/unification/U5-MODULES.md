@@ -383,6 +383,17 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_adventure` | `WeaponCombatLoop` hitscan integration; conversation `advanceNpcState` in hybrid demo |
 | **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE20` assertions for nested composite, btDbvt, reload, hitscan; `FUSE_HYBRID_GATES_WAVE21` for timeline host wire, schedule→VM delay, hitscan combat, NPC state |
 
+#### Landed wave 22 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | `UaiskExpressionAst` boolean ops (`&&`, `\|\|`, `!`) + nested parenthesis; `evaluateExpressionAst` + leaf collection for codegen |
+| `fuse_cinematics` | `TimelineHostStub::advanceHostPlayback()` / `syncToExternalTimeline()` / `sampleActorMountAt()` deepen |
+| `fuse_fx` | Mission VM `callImmediate()` + combined `schedule()` + `call()` dispatch; `callCount` / `scheduleCount` |
+| `fuse_mechanics` | GMK `MoveComponent` + `FollowComponent` in hybrid demo; `BtDbvtBridge` Bullet group/mask path when `FUSE_BUILD_BULLET` |
+| `fuse_adventure` | `CombatHitscanStub` spread burst + penetration; conversation VM `injectScriptLine` + `advanceNpcStateChain` |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE22` assertions for boolean AST, timeline host playback, schedule+call VM, move/follow, hitscan/conversation deepen |
+
 ---
 
 ## 8. Related docs

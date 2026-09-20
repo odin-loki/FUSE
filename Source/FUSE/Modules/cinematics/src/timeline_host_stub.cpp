@@ -25,6 +25,7 @@ bool TimelineHostStub::wireFromTimeline(const Timeline& timeline, const std::str
     m_seqAssetText = seqText;
     ++m_overlayWireCount;
     m_scrubTimeMs = timeMs;
+    m_hostPlaybackMs = timeMs;
     m_timeline.scrub_to(timeline.playhead().time_ms());
     if (!load_timeline_from_asset(seqText, m_timeline, nullptr)) {
         return false;
@@ -41,6 +42,7 @@ bool TimelineHostStub::scrubToMs(TimelineMs timeMs) {
     }
 
     m_scrubTimeMs = timeMs;
+    m_hostPlaybackMs = timeMs;
     m_timeline.scrub_to(timeMs);
     ++m_scrubCount;
 
@@ -55,6 +57,35 @@ bool TimelineHostStub::setPlaying(bool playing) {
     } else {
         m_timeline.pause();
     }
+    return true;
+}
+
+bool TimelineHostStub::advanceHostPlayback(TimelineMs deltaMs) {
+    if (m_seqAssetText.empty() || deltaMs == 0) {
+        return false;
+    }
+
+    m_hostPlaybackMs += deltaMs;
+    m_scrubTimeMs = m_hostPlaybackMs;
+    m_timeline.scrub_to(m_hostPlaybackMs);
+    ++m_hostAdvanceCount;
+    ++m_scrubCount;
+    m_lastOverlaySample = sampleOverlayAt(m_hostPlaybackMs);
+    return m_lastOverlaySample.valid;
+}
+
+bool TimelineHostStub::syncToExternalTimeline(Timeline& timeline) {
+    if (m_seqAssetText.empty()) {
+        return false;
+    }
+
+    timeline.scrub_to(m_hostPlaybackMs);
+    if (m_playing) {
+        timeline.play();
+    } else {
+        timeline.pause();
+    }
+    ++m_hostSyncCount;
     return true;
 }
 
@@ -76,6 +107,20 @@ TimelineHostOverlaySample TimelineHostStub::sampleOverlayAt(TimelineMs timeMs) c
     sample.playing = m_playing;
     sample.seq_asset_text = m_seqAssetText;
     sample.scrub_preview = preview;
+    return sample;
+}
+
+TimelineHostActorMountSample TimelineHostStub::sampleActorMountAt(TimelineMs timeMs) const {
+    TimelineHostActorMountSample sample{};
+    const TimelineHostOverlaySample overlay = sampleOverlayAt(timeMs);
+    if (!overlay.valid || !overlay.scrub_preview.has_actor_events) {
+        return sample;
+    }
+
+    sample.actor_id = overlay.scrub_preview.actor_id;
+    sample.mount_id = overlay.scrub_preview.mount_point;
+    sample.mount_yaw_deg = overlay.scrub_preview.mount_yaw_deg;
+    sample.valid = !sample.actor_id.empty();
     return sample;
 }
 

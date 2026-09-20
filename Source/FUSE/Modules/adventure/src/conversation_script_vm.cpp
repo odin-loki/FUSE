@@ -125,6 +125,37 @@ u32 ConversationScriptVm::dispatchAllLines(const std::string& npcId,
     return 0;
 }
 
+bool ConversationScriptVm::injectScriptLine(const std::string& npcId,
+                                              const std::string& branchId,
+                                              u32 lineIndex,
+                                              ConversationInteractable& target) {
+    const std::string line = peekBranchLine(npcId, branchId, lineIndex);
+    if (line.empty()) {
+        return false;
+    }
+
+    target.injectScriptLine(line);
+    m_lastBranchDispatched = branchId;
+    m_lastLineDispatched = line;
+    ++m_injectCount;
+    ++m_lineDispatchCount;
+    return true;
+}
+
+u32 ConversationScriptVm::advanceNpcStateChain(const std::string& npcId,
+                                               InteractContext& ctx,
+                                               ConversationInteractable& target,
+                                               u32 maxSteps) {
+    u32 steps = 0;
+    for (u32 step = 0; step < maxSteps; ++step) {
+        if (!advanceNpcState(npcId, ctx, target)) {
+            break;
+        }
+        ++steps;
+    }
+    return steps;
+}
+
 bool ConversationScriptVm::chooseHighestPriorityBranch(const std::string& npcId,
                                                        const InteractContext& ctx,
                                                        std::string& outBranchId) const {
