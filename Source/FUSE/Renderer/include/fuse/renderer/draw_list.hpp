@@ -8,6 +8,8 @@
 
 namespace fuse::renderer {
 
+class ResourceManager;
+
 struct DrawCall {
     BufferHandle vertexBuffer{};
     BufferHandle indexBuffer{};
@@ -37,8 +39,10 @@ public:
     void sortByMaterial();
 
     /// For each call, recorder.drawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, materialId).
+    /// When `resources` is non-null, looks up native VkBuffers from call handles; invalid/null uses defaults.
     /// Returns number of calls recorded. No-op (return 0) if recorder is not recording.
     u32 record(CommandBufferRecorder& recorder) const;
+    u32 record(CommandBufferRecorder& recorder, const ResourceManager* resources) const;
 
 private:
     std::vector<DrawCall> m_calls;

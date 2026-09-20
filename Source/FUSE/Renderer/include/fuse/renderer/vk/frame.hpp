@@ -26,6 +26,7 @@ struct FrameSyncData {
     void* timelineSemaphore = nullptr; // VkSemaphore — VK_SEMAPHORE_TYPE_TIMELINE
     u64 timelineValue = 0;
     bool fenceSignaled = false;
+    void* timestampQueryPool = nullptr; // VkQueryPool — TIMESTAMP, 2 queries (begin/end)
     FrameCommandData commands{};
 };
 
@@ -34,6 +35,9 @@ struct FrameManagerInfo {
     u32 framesInFlight = kFramesInFlight;
     u32 currentIndex = 0;
     u64 totalFrames = 0;
+    bool timestampsReady = false;
+    u64 lastGpuTimeNs = 0;
+    u32 timestampWriteCount = 0;
     std::string message;
 };
 
@@ -62,6 +66,19 @@ public:
     void* currentDescriptorPool() const;
     u64 currentTimelineValue() const;
     u32 descriptorPoolResetCount() const { return m_descriptorPoolResetCount; }
+
+    bool timestampsReady() const { return m_info.timestampsReady; }
+    u64 lastGpuTimeNs() const { return m_info.lastGpuTimeNs; }
+    u32 timestampWriteCount() const { return m_info.timestampWriteCount; }
+
+    /// vkCmdResetQueryPool + vkCmdWriteTimestamp TOP_OF_PIPE (query 0) on the current slot pool.
+    /// `commandBuffer` is a native VkCommandBuffer that must be in recording state. No-op if not ready.
+    void writeTimestampBegin(void* commandBuffer);
+    /// vkCmdWriteTimestamp BOTTOM_OF_PIPE (query 1) on the current slot pool. No-op if not ready.
+    void writeTimestampEnd(void* commandBuffer);
+    /// vkGetQueryPoolResults (64-bit) after the slot fence is signaled. Multiplies ticks by timestampPeriod.
+    /// Returns false if timestamps are not ready or results are unavailable. lastGpuTimeNs may be 0.
+    bool readLastGpuTimeNs(u32 slot, u64* outNs);
 
     /// Allocate `count` descriptor sets from the current slot pool using `setLayout` (VkDescriptorSetLayout).
     /// Returns number allocated (0 on stub / null layout / null pool / vkAllocate failure).
@@ -104,6 +121,7 @@ private:
     void* m_device = nullptr;
     u32 m_descriptorPoolResetCount = 0;
     u32 m_descriptorSetsAllocatedThisFrame = 0;
+    float m_timestampPeriod = 0.f;
 };
 
 } // namespace fuse::renderer

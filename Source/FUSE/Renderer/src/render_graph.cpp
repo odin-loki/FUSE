@@ -467,6 +467,46 @@ void RenderGraph::assignResourceLifetimes() {
     }
 }
 
+void RenderGraph::assignTransientAliasGroups() {
+    auto rangesOverlap = [](const RGResourceLifetime& a, const RGResourceLifetime& b) {
+        return a.firstPassIndex <= b.lastPassIndex && b.firstPassIndex <= a.lastPassIndex;
+    };
+
+    u32 nextGroupId = 1u;
+    for (RGResourceLifetime& lifetime : m_resourceLifetimes) {
+        lifetime.aliasGroup = 0;
+        if (!lifetime.isTexture || lifetime.phase != RGResourceLifetimePhase::TransientCreated) {
+            continue;
+        }
+
+        u32 reusedGroup = 0;
+        for (u32 groupId = 1u; groupId < nextGroupId; ++groupId) {
+            bool groupOverlaps = false;
+            for (const RGResourceLifetime& member : m_resourceLifetimes) {
+                if (member.aliasGroup != groupId) {
+                    continue;
+                }
+                if (rangesOverlap(lifetime, member)) {
+                    groupOverlaps = true;
+                    break;
+                }
+            }
+            if (!groupOverlaps) {
+                reusedGroup = groupId;
+                break;
+            }
+        }
+
+        if (reusedGroup != 0u) {
+            lifetime.aliasGroup = reusedGroup;
+        } else {
+            lifetime.aliasGroup = nextGroupId++;
+        }
+    }
+
+    m_compileInfo.aliasGroups = nextGroupId > 1u ? nextGroupId - 1u : 0u;
+}
+
 void RenderGraph::assignExecutionOrder() {
     u32 order = 0;
     for (PassNode& pass : m_passes) {
@@ -489,6 +529,7 @@ void RenderGraph::compile() {
     buildDependencyEdges();
     resolveCompileOrder();
     assignResourceLifetimes();
+    assignTransientAliasGroups();
 
     m_textureStates.clear();
     TextureState& backbuffer = textureStateAt(kBackbufferTextureId);
@@ -525,6 +566,7 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
     if (!m_compileInfo.compiled) {
         return result;
     }
+    result.aliasGroups = m_compileInfo.aliasGroups;
 
     if (frames.isReady()) {
         const u32 scratchBytes = static_cast<u32>(m_compileOrder.size() * sizeof(u32));
@@ -559,6 +601,17 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
                                static_cast<u32>(barrier.toAccess));
     }
 
+    auto releaseTransientsAfterPass = [&](u32 passIndex) {
+        for (RGResourceLifetime& lifetime : m_resourceLifetimes) {
+            if (lifetime.isTexture &&
+                lifetime.phase == RGResourceLifetimePhase::TransientCreated &&
+                lifetime.lastPassIndex == passIndex) {
+                lifetime.phase = RGResourceLifetimePhase::Released;
+                ++result.transientsReleased;
+            }
+        }
+    };
+
     for (const u32 passIndex : m_compileOrder) {
         const PassNode& pass = m_passes[passIndex];
 
@@ -568,6 +621,7 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
             }
             ++result.cudaPassCount;
             ++result.executedPassCount;
+            releaseTransientsAfterPass(passIndex);
             continue;
         }
 
@@ -577,6 +631,7 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
         }
         recorder.endPass();
         ++result.executedPassCount;
+        releaseTransientsAfterPass(passIndex);
     }
 
     recorder.endRecording();

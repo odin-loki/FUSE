@@ -4,6 +4,7 @@
 #include <fuse/renderer/shader/shader_io.hpp>
 #include <fuse/renderer/shader/shader_module.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
+#include <fuse/renderer/vk/compute_pipeline.hpp>
 #include <fuse/renderer/vk/pipeline_layout.hpp>
 #include <fuse/types.hpp>
 
@@ -397,6 +398,102 @@ void testWatchCopiesDefineStrings() {
     std::filesystem::remove(spvPath, ec);
 }
 
+void testComputePipeline() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for compute pipeline tests");
+
+    fuse::renderer::VulkanDevice* device = bootstrap->device();
+    if (device == nullptr) {
+        expectTrue(!bootstrap->status().deviceReady, "device unavailable without Vulkan loader");
+        return;
+    }
+
+    auto pipelineLayout = fuse::renderer::PipelineLayout::create(*device);
+    expectTrue(pipelineLayout != nullptr, "pipeline layout allocated for compute pipeline");
+
+    fuse::renderer::ComputePipelineDesc missingShaderDesc{};
+    missingShaderDesc.layout = pipelineLayout.get();
+    missingShaderDesc.debugName = "test_compute_missing_shader";
+    auto missingShaderPipeline = fuse::renderer::ComputePipeline::create(*device, missingShaderDesc);
+    expectTrue(missingShaderPipeline != nullptr, "compute pipeline allocated without shader");
+    expectTrue(!missingShaderPipeline->isValid(), "compute pipeline invalid without shader");
+    expectTrue(!missingShaderPipeline->info().message.empty(),
+               "missing-shader compute pipeline has honest message");
+
+    auto missingFileModule = fuse::renderer::ShaderModule::createFromFile(
+        *device, fuse::renderer::ShaderStage::Compute, "missing_compute.spv");
+    expectTrue(missingFileModule != nullptr, "missing compute shader module allocated");
+    expectTrue(!missingFileModule->isValid(), "missing compute shader module is invalid");
+    expectTrue(missingFileModule->stage() == fuse::renderer::ShaderStage::Compute,
+               "missing compute shader module preserves Compute stage");
+
+    fuse::renderer::ComputePipelineDesc invalidModuleDesc{};
+    invalidModuleDesc.layout = pipelineLayout.get();
+    invalidModuleDesc.computeShader = missingFileModule.get();
+    auto invalidModulePipeline = fuse::renderer::ComputePipeline::create(*device, invalidModuleDesc);
+    expectTrue(invalidModulePipeline != nullptr, "compute pipeline allocated with invalid shader");
+    expectTrue(!invalidModulePipeline->isValid(), "compute pipeline invalid with invalid shader");
+
+    const std::string vertPath = fixturePath("minimal.vert.spv");
+    auto vertexModule = fuse::renderer::ShaderModule::createFromFile(
+        *device, fuse::renderer::ShaderStage::Vertex, vertPath.c_str());
+    expectTrue(vertexModule != nullptr, "vertex shader module allocated for compute stage check");
+    fuse::renderer::ComputePipelineDesc wrongStageDesc{};
+    wrongStageDesc.layout = pipelineLayout.get();
+    wrongStageDesc.computeShader = vertexModule.get();
+    auto wrongStagePipeline = fuse::renderer::ComputePipeline::create(*device, wrongStageDesc);
+    expectTrue(wrongStagePipeline != nullptr, "compute pipeline allocated with vertex shader");
+    expectTrue(!wrongStagePipeline->isValid(), "compute pipeline invalid with non-compute shader");
+
+    const std::string compPath = fixturePath("minimal.comp.spv");
+    auto computeModule = fuse::renderer::ShaderModule::createFromFile(
+        *device, fuse::renderer::ShaderStage::Compute, compPath.c_str());
+    expectTrue(computeModule != nullptr, "compute shader module allocated");
+    expectTrue(computeModule->stage() == fuse::renderer::ShaderStage::Compute,
+               "compute shader module stage is Compute");
+
+    fuse::renderer::ComputePipelineDesc pipelineDesc{};
+    pipelineDesc.layout = pipelineLayout.get();
+    pipelineDesc.computeShader = computeModule.get();
+    pipelineDesc.localSizeX = 8;
+    pipelineDesc.localSizeY = 1;
+    pipelineDesc.localSizeZ = 1;
+    pipelineDesc.debugName = "test_compute_pipeline";
+
+    auto computePipeline = fuse::renderer::ComputePipeline::create(*device, pipelineDesc);
+    expectTrue(computePipeline != nullptr, "compute pipeline allocated");
+    expectTrue(computePipeline->info().localSizeX == 8u, "compute pipeline records localSizeX");
+    expectTrue(computePipeline->info().localSizeY == 1u, "compute pipeline records localSizeY");
+    expectTrue(computePipeline->info().localSizeZ == 1u, "compute pipeline records localSizeZ");
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (bootstrap->status().deviceReady && computeModule->isValid() && pipelineLayout->isValid()) {
+        expectTrue(computePipeline->isValid(), "compute pipeline valid with Vulkan device");
+        expectTrue(computePipeline->nativeHandle() != nullptr, "compute pipeline has native handle");
+        expectTrue(computePipeline->rebuild(), "compute pipeline rebuild succeeds");
+        expectTrue(computePipeline->isValid(), "compute pipeline valid after rebuild");
+        expectTrue(computePipeline->nativeHandle() != nullptr,
+                   "compute pipeline has native handle after rebuild");
+        expectTrue(computePipeline->info().rebuildCount == 1u,
+                   "compute pipeline rebuildCount increments");
+    } else if (!bootstrap->status().deviceReady) {
+        expectTrue(!computePipeline->isValid(), "compute pipeline invalid without ICD");
+        expectTrue(!computePipeline->rebuild(), "compute pipeline rebuild returns false without ICD");
+    } else {
+        expectTrue(!computePipeline->isValid(), "compute pipeline invalid without valid inputs");
+    }
+#else
+    expectTrue(!computePipeline->isValid(), "compute pipeline invalid in stub backend");
+    expectTrue(computePipeline->nativeHandle() == nullptr, "stub compute pipeline has no native handle");
+    expectTrue(!computePipeline->info().message.empty(), "stub compute pipeline has honest message");
+    expectTrue(!computePipeline->rebuild(), "stub compute pipeline rebuild stays invalid");
+#endif
+}
+
 } // namespace
 
 int main() {
@@ -410,6 +507,7 @@ int main() {
     testShaderModuleAndPipelineLayout();
     testHotReloadPoller();
     testWatchCopiesDefineStrings();
+    testComputePipeline();
 
     fuse::core::shutdown();
 

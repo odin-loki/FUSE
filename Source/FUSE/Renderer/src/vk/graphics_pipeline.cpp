@@ -176,6 +176,7 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
         static_cast<VkPipelineLayout>(desc.layout->nativeHandle());
 
     VkFormat colorFormat = static_cast<VkFormat>(desc.colorFormat);
+    VkFormat depthFormat = static_cast<VkFormat>(desc.depthFormat);
     VkPipelineRenderingCreateInfo rendering{};
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
@@ -196,8 +197,9 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
         rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
         rendering.colorAttachmentCount = 1;
         rendering.pColorAttachmentFormats = &colorFormat;
-        rendering.depthAttachmentFormat =
-            desc.depthTest ? VK_FORMAT_D32_SFLOAT : VK_FORMAT_UNDEFINED;
+        if (desc.depthFormat != 0) {
+            rendering.depthAttachmentFormat = depthFormat;
+        }
         pipelineInfo.pNext = &rendering;
         pipelineInfo.renderPass = VK_NULL_HANDLE;
     } else {
@@ -222,6 +224,8 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     m_handle = graphicsPipeline;
     m_info.valid = true;
     m_info.dynamicRendering = desc.useDynamicRendering;
+    m_info.depthFormat = desc.depthFormat;
+    m_info.hasDynamicDepth = desc.useDynamicRendering && desc.depthFormat != 0;
     if (desc.useDynamicRendering) {
         m_info.message = desc.debugName != nullptr
                              ? std::string(desc.debugName) + " (dynamic rendering)"
@@ -234,6 +238,8 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
 #else
     m_info.valid = true;
     m_info.dynamicRendering = desc.useDynamicRendering;
+    m_info.depthFormat = desc.depthFormat;
+    m_info.hasDynamicDepth = desc.useDynamicRendering && desc.depthFormat != 0;
     if (desc.useDynamicRendering) {
         m_info.message = desc.debugName != nullptr
                              ? std::string(desc.debugName) + " (dynamic rendering)"

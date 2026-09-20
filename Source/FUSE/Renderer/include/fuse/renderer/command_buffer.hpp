@@ -16,6 +16,7 @@ enum class CommandRecordKind : u8 {
     Present = 7,
     Composite = 8,
     BufferBarrier = 9,
+    Dispatch = 10,
 };
 
 struct CommandRecord {
@@ -37,6 +38,12 @@ struct CommandRecord {
     u32 firstIndex = 0;
     i32 vertexOffset = 0;
     u32 materialId = 0;
+    u32 dispatchX = 0;
+    u32 dispatchY = 0;
+    u32 dispatchZ = 0;
+    /// Per-draw VkBuffer overrides; null uses `VkFrameEncodeContext` defaults.
+    void* nativeVertexBuffer = nullptr;
+    void* nativeIndexBuffer = nullptr;
 };
 
 /// Offscreen raster + optional swapchain present targets for real `vkCmd*` encoding (B2.5 / B2.8).
@@ -45,6 +52,8 @@ struct VkFrameEncodeContext {
     void* framebuffer = nullptr;
     void* graphicsPipeline = nullptr;
     void* graphicsPipelineLayout = nullptr;
+    void* computePipeline = nullptr;
+    void* computePipelineLayout = nullptr;
     void* vertexBuffer = nullptr;
     void* indexBuffer = nullptr; // VkBuffer
     u32 indexType = 0; // 0 = VK_INDEX_TYPE_UINT16, 1 = UINT32
@@ -98,7 +107,9 @@ public:
     void clearColor(float r, float g, float b);
     void draw(u32 instanceCount);
     void drawIndexed(u32 indexCount);
-    void drawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 materialId);
+    void drawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 materialId,
+                     void* vertexBuffer = nullptr, void* indexBuffer = nullptr);
+    void dispatch(u32 x, u32 y, u32 z);
     void composite(float blend);
     void present();
 
@@ -116,6 +127,7 @@ public:
     u32 vulkanPresentRenderPassBeginCount() const { return m_vulkanPresentRenderPassBeginCount; }
     u32 vulkanCompositeDrawCount() const { return m_vulkanCompositeDrawCount; }
     u32 vulkanDrawIndexedCount() const { return m_vulkanDrawIndexedCount; }
+    u32 vulkanDispatchCount() const { return m_vulkanDispatchCount; }
 
 private:
     void push(CommandRecordKind kind);
@@ -128,7 +140,9 @@ private:
     void encodePresentSwapchainPass();
     void encodeCompositePass(float blend);
     void encodeDraw(u32 instanceCount);
-    void encodeDrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 materialId);
+    void encodeDrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 materialId,
+                           void* vertexBuffer, void* indexBuffer);
+    void encodeDispatch(u32 x, u32 y, u32 z);
 
     const VkFrameEncodeContext* m_encodeContext = nullptr;
     void* m_nativeCommandBuffer = nullptr;
@@ -148,6 +162,7 @@ private:
     u32 m_vulkanPresentRenderPassBeginCount = 0;
     u32 m_vulkanCompositeDrawCount = 0;
     u32 m_vulkanDrawIndexedCount = 0;
+    u32 m_vulkanDispatchCount = 0;
     std::vector<CommandRecord> m_records;
 };
 

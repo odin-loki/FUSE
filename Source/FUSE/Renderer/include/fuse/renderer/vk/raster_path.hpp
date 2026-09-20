@@ -34,6 +34,9 @@ struct RasterPathStats {
     u64 pipelineContentHash = 0;
     u32 resizeCount = 0;
     u32 resizeNoOpCount = 0;
+    u64 vertexDeviceAddress = 0;
+    u64 indexDeviceAddress = 0;
+    bool bufferDeviceAddressReady = false;
     std::string message;
 };
 

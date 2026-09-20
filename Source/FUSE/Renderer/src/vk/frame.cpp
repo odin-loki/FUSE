@@ -31,6 +31,20 @@ bool clearStubInFlightFence(VkDevice device, FrameSyncData& slot) {
     return false;
 }
 
+bool createSlotTimestampQueryPool(VkDevice device, VkQueryPool* outPool) {
+    VkQueryPoolCreateInfo queryInfo{};
+    queryInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+    queryInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    queryInfo.queryCount = 2;
+
+    VkQueryPool pool = VK_NULL_HANDLE;
+    if (vkCreateQueryPool(device, &queryInfo, nullptr, &pool) != VK_SUCCESS) {
+        return false;
+    }
+    *outPool = pool;
+    return true;
+}
+
 bool createSlotDescriptorPool(VkDevice device, VkDescriptorPool* outPool) {
     const std::array<VkDescriptorPoolSize, 5> poolSizes = {{
         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kFrameDescriptorCount},
@@ -106,6 +120,7 @@ bool FrameManager::initialize(VulkanDevice& device) {
 #if defined(FUSE_VULKAN_BACKEND)
     if (!device.isValid()) {
         m_info.message = "FrameManager CPU scratch ready — device not valid";
+        m_info.timestampsReady = false;
         return false;
     }
 
@@ -113,6 +128,14 @@ bool FrameManager::initialize(VulkanDevice& device) {
     auto vkDevice = static_cast<VkDevice>(m_device);
 
     const u32 graphicsFamily = device.queues().graphicsFamily;
+
+    m_timestampPeriod = 0.f;
+    m_info.timestampsReady = false;
+    if (device.nativePhysicalDevice() != nullptr) {
+        VkPhysicalDeviceProperties props{};
+        vkGetPhysicalDeviceProperties(static_cast<VkPhysicalDevice>(device.nativePhysicalDevice()), &props);
+        m_timestampPeriod = props.limits.timestampPeriod;
+    }
 
     for (u32 i = 0; i < kFramesInFlight; ++i) {
         VkSemaphoreCreateInfo semaphoreInfo{};
@@ -186,7 +209,23 @@ bool FrameManager::initialize(VulkanDevice& device) {
             return false;
         }
         m_slots[i].commands.descriptorPool = descriptorPool;
+
+        if (m_timestampPeriod > 0.f) {
+            VkQueryPool timestampPool = VK_NULL_HANDLE;
+            if (createSlotTimestampQueryPool(vkDevice, &timestampPool)) {
+                m_slots[i].timestampQueryPool = timestampPool;
+            }
+        }
     }
+
+    bool timestampsReady = m_timestampPeriod > 0.f;
+    for (u32 i = 0; i < kFramesInFlight; ++i) {
+        if (m_slots[i].timestampQueryPool == nullptr) {
+            timestampsReady = false;
+            break;
+        }
+    }
+    m_info.timestampsReady = timestampsReady;
 
     m_info.ready = true;
     m_info.message = "Frame ring ready (triple-buffered fences + scratch + descriptor pools)";
@@ -194,6 +233,7 @@ bool FrameManager::initialize(VulkanDevice& device) {
 #else
     (void)device;
     m_info.message = "FrameManager stub — Vulkan backend disabled (CPU scratch ready)";
+    m_info.timestampsReady = false;
     return false;
 #endif
 }
@@ -251,7 +291,13 @@ void FrameManager::shutdown() {
             vkDestroyFence(vkDevice, static_cast<VkFence>(m_slots[i].inFlightFence), nullptr);
             m_slots[i].inFlightFence = nullptr;
         }
+        if (m_slots[i].timestampQueryPool != nullptr) {
+            vkDestroyQueryPool(vkDevice, static_cast<VkQueryPool>(m_slots[i].timestampQueryPool), nullptr);
+            m_slots[i].timestampQueryPool = nullptr;
+        }
     }
+    m_info.timestampsReady = false;
+    m_timestampPeriod = 0.f;
     m_device = nullptr;
 #endif
 }
@@ -332,6 +378,89 @@ u64 FrameManager::currentTimelineValue() const {
     return current().timelineValue;
 }
 
+void FrameManager::writeTimestampBegin(void* commandBuffer) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_info.timestampsReady || commandBuffer == nullptr || m_device == nullptr) {
+        return;
+    }
+
+    FrameSyncData& slot = current();
+    if (slot.timestampQueryPool == nullptr) {
+        return;
+    }
+
+    auto cmd = static_cast<VkCommandBuffer>(commandBuffer);
+    auto pool = static_cast<VkQueryPool>(slot.timestampQueryPool);
+    vkCmdResetQueryPool(cmd, pool, 0, 2);
+    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, pool, 0);
+    ++m_info.timestampWriteCount;
+#else
+    (void)commandBuffer;
+#endif
+}
+
+void FrameManager::writeTimestampEnd(void* commandBuffer) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_info.timestampsReady || commandBuffer == nullptr || m_device == nullptr) {
+        return;
+    }
+
+    FrameSyncData& slot = current();
+    if (slot.timestampQueryPool == nullptr) {
+        return;
+    }
+
+    auto cmd = static_cast<VkCommandBuffer>(commandBuffer);
+    auto pool = static_cast<VkQueryPool>(slot.timestampQueryPool);
+    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, pool, 1);
+    ++m_info.timestampWriteCount;
+#else
+    (void)commandBuffer;
+#endif
+}
+
+bool FrameManager::readLastGpuTimeNs(u32 slotIndex, u64* outNs) {
+    if (outNs != nullptr) {
+        *outNs = 0;
+    }
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_info.timestampsReady || m_device == nullptr || m_timestampPeriod <= 0.f) {
+        return false;
+    }
+
+    const u32 index = slotIndex % kFramesInFlight;
+    const FrameSyncData& slot = m_slots[index];
+    if (slot.timestampQueryPool == nullptr) {
+        return false;
+    }
+
+    u64 timestamps[2] = {0, 0};
+    const VkResult result = vkGetQueryPoolResults(static_cast<VkDevice>(m_device),
+                                                  static_cast<VkQueryPool>(slot.timestampQueryPool),
+                                                  0,
+                                                  2,
+                                                  sizeof(timestamps),
+                                                  timestamps,
+                                                  sizeof(u64),
+                                                  VK_QUERY_RESULT_64_BIT);
+    if (result != VK_SUCCESS) {
+        return false;
+    }
+
+    const u64 ticks = timestamps[1] - timestamps[0];
+    const u64 ns = static_cast<u64>(static_cast<double>(ticks) * static_cast<double>(m_timestampPeriod));
+    m_info.lastGpuTimeNs = ns;
+    if (outNs != nullptr) {
+        *outNs = ns;
+    }
+    return true;
+#else
+    (void)slotIndex;
+    return false;
+#endif
+}
+
 fuse::alloc::FrameAllocator& FrameManager::scratch() {
     return *m_scratch[currentSlotIndex()];
 }
@@ -379,6 +508,11 @@ bool FrameManager::waitInFlightFence(u32 slotIndex) {
             return false;
         }
     }
+
+    if (m_info.timestampsReady) {
+        u64 ns = 0;
+        (void)readLastGpuTimeNs(index, &ns);
+    }
 #else
     if (!m_info.ready) {
         return false;
@@ -402,6 +536,11 @@ void FrameManager::beginFrame(u32 frameIndex) {
             }
         }
         slot.fenceSignaled = false;
+
+        if (m_info.timestampsReady) {
+            u64 ns = 0;
+            (void)readLastGpuTimeNs(index, &ns);
+        }
 
         if (slot.commands.descriptorPool != nullptr) {
             vkResetDescriptorPool(static_cast<VkDevice>(m_device),

@@ -21,6 +21,8 @@ struct GraphicsPipelineDesc {
     void* nativeRenderPassOverride = nullptr;
     PipelineCache* pipelineCache = nullptr;
     u32 colorFormat = 37; // VK_FORMAT_R8G8B8A8_UNORM
+    /// 0 = no depth attachment in dynamic rendering; 126 = D32_SFLOAT.
+    u32 depthFormat = 0;
     u32 polygonMode = 0;  // VK_POLYGON_MODE_FILL
     u32 cullMode = 0;     // VK_CULL_MODE_NONE (keep current default so existing triangle tests do not flip)
     bool depthTest = false;
@@ -34,6 +36,8 @@ struct GraphicsPipelineDesc {
 struct GraphicsPipelineInfo {
     bool valid = false;
     bool dynamicRendering = false;
+    u32 depthFormat = 0;
+    bool hasDynamicDepth = false;
     u32 cacheSnapshotBytes = 0;
     u32 rebuildCount = 0;
     std::string message;

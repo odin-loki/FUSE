@@ -37,6 +37,27 @@ u32 findMemoryType(VkPhysicalDevice physicalDevice, u32 typeFilter, VkMemoryProp
     }
     return 0;
 }
+
+u64 queryBufferDeviceAddress(VulkanDevice& device, VkDevice vkDevice, VkBuffer buffer) {
+    if (!device.info().bufferDeviceAddress || vkDevice == VK_NULL_HANDLE || buffer == VK_NULL_HANDLE) {
+        return 0;
+    }
+
+    auto getAddr = reinterpret_cast<PFN_vkGetBufferDeviceAddress>(
+        vkGetDeviceProcAddr(vkDevice, "vkGetBufferDeviceAddress"));
+    if (getAddr == nullptr) {
+        getAddr = reinterpret_cast<PFN_vkGetBufferDeviceAddress>(
+            vkGetDeviceProcAddr(vkDevice, "vkGetBufferDeviceAddressKHR"));
+    }
+    if (getAddr == nullptr) {
+        return 0;
+    }
+
+    VkBufferDeviceAddressInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+    info.buffer = buffer;
+    return static_cast<u64>(getAddr(vkDevice, &info));
+}
 #endif
 
 } // namespace
@@ -289,10 +310,15 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
         -0.5f, 0.5f, 0.f,
     };
 
+    const bool wantBufferDeviceAddress = device.info().bufferDeviceAddress;
+
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = sizeof(triangleVertices);
     bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    if (wantBufferDeviceAddress) {
+        bufferInfo.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    }
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     VkBuffer vertexBuffer = VK_NULL_HANDLE;
@@ -301,15 +327,24 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
         return false;
     }
     m_vertexBuffer = vertexBuffer;
+    setDebugObjectName(vkDevice, 9u,
+                       static_cast<u64>(reinterpret_cast<uintptr_t>(static_cast<void*>(vertexBuffer))),
+                       "fuse.raster.vb");
 
     VkMemoryRequirements memRequirements{};
     vkGetBufferMemoryRequirements(vkDevice, vertexBuffer, &memRequirements);
+    VkMemoryAllocateFlagsInfo vertexAllocFlags{};
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memRequirements.size;
     allocInfo.memoryTypeIndex =
         findMemoryType(physicalDevice, memRequirements.memoryTypeBits,
                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    if (wantBufferDeviceAddress) {
+        vertexAllocFlags.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+        vertexAllocFlags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+        allocInfo.pNext = &vertexAllocFlags;
+    }
 
     VkDeviceMemory vertexMemory = VK_NULL_HANDLE;
     if (vkAllocateMemory(vkDevice, &allocInfo, nullptr, &vertexMemory) != VK_SUCCESS) {
@@ -318,6 +353,7 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
     }
     m_vertexMemory = vertexMemory;
     vkBindBufferMemory(vkDevice, vertexBuffer, vertexMemory, 0);
+    m_stats.vertexDeviceAddress = queryBufferDeviceAddress(device, vkDevice, vertexBuffer);
 
     void* mapped = nullptr;
     vkMapMemory(vkDevice, vertexMemory, 0, sizeof(triangleVertices), 0, &mapped);
@@ -330,24 +366,37 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
     indexBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     indexBufferInfo.size = sizeof(triangleIndices);
     indexBufferInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    if (wantBufferDeviceAddress) {
+        indexBufferInfo.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    }
     indexBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     VkBuffer indexBuffer = VK_NULL_HANDLE;
     if (vkCreateBuffer(vkDevice, &indexBufferInfo, nullptr, &indexBuffer) == VK_SUCCESS) {
+        setDebugObjectName(vkDevice, 9u,
+                           static_cast<u64>(reinterpret_cast<uintptr_t>(static_cast<void*>(indexBuffer))),
+                           "fuse.raster.ib");
         VkMemoryRequirements indexMemRequirements{};
         vkGetBufferMemoryRequirements(vkDevice, indexBuffer, &indexMemRequirements);
+        VkMemoryAllocateFlagsInfo indexAllocFlags{};
         VkMemoryAllocateInfo indexAllocInfo{};
         indexAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         indexAllocInfo.allocationSize = indexMemRequirements.size;
         indexAllocInfo.memoryTypeIndex = findMemoryType(
             physicalDevice, indexMemRequirements.memoryTypeBits,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        if (wantBufferDeviceAddress) {
+            indexAllocFlags.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+            indexAllocFlags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+            indexAllocInfo.pNext = &indexAllocFlags;
+        }
 
         VkDeviceMemory indexMemory = VK_NULL_HANDLE;
         if (vkAllocateMemory(vkDevice, &indexAllocInfo, nullptr, &indexMemory) == VK_SUCCESS) {
             m_indexBuffer = indexBuffer;
             m_indexMemory = indexMemory;
             vkBindBufferMemory(vkDevice, indexBuffer, indexMemory, 0);
+            m_stats.indexDeviceAddress = queryBufferDeviceAddress(device, vkDevice, indexBuffer);
 
             void* indexMapped = nullptr;
             vkMapMemory(vkDevice, indexMemory, 0, sizeof(triangleIndices), 0, &indexMapped);
@@ -358,6 +407,7 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
         }
     }
     m_stats.indexBufferReady = (m_indexBuffer != nullptr);
+    m_stats.bufferDeviceAddressReady = (m_stats.vertexDeviceAddress != 0);
 
     if (!createOffscreenTargets()) {
         return false;

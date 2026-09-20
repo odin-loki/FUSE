@@ -6,6 +6,10 @@
 #include <cstdio>
 #include <cstdlib>
 
+#if defined(FUSE_VULKAN_BACKEND)
+#include <vulkan/vulkan.h>
+#endif
+
 namespace {
 
 int g_failures = 0;
@@ -103,12 +107,85 @@ void testScratchResetAndDescriptorPool() {
 #endif
 }
 
+void testGpuTimestamps() {
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+    expectTrue(instance != nullptr, "VulkanInstance allocated for timestamps");
+    if (instance == nullptr) {
+        return;
+    }
+
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    expectTrue(device != nullptr, "VulkanDevice allocated for timestamps");
+    if (device == nullptr) {
+        return;
+    }
+
+    auto frames = fuse::renderer::FrameManager::create(*device);
+    expectTrue(frames != nullptr, "FrameManager allocated for timestamps");
+    if (frames == nullptr) {
+        return;
+    }
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (device->isValid() && frames->isReady() && frames->timestampsReady()) {
+        expectTrue(frames->info().timestampsReady, "info.timestampsReady is true when accessors report ready");
+        expectTrue(frames->current().timestampQueryPool != nullptr,
+                   "current slot timestamp query pool exists when ready");
+        for (fuse::u32 i = 0; i < fuse::renderer::kFramesInFlight; ++i) {
+            expectTrue(frames->slot(i).timestampQueryPool != nullptr,
+                       "each in-flight slot has a timestamp query pool");
+        }
+
+        auto cmd = static_cast<VkCommandBuffer>(frames->currentCommandBuffer());
+        expectTrue(cmd != VK_NULL_HANDLE, "current command buffer exists for timestamp write");
+        if (cmd != VK_NULL_HANDLE) {
+            VkCommandBufferBeginInfo beginInfo{};
+            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            if (vkBeginCommandBuffer(cmd, &beginInfo) == VK_SUCCESS) {
+                const fuse::u32 before = frames->timestampWriteCount();
+                frames->writeTimestampBegin(cmd);
+                frames->writeTimestampEnd(cmd);
+                expectTrue(frames->timestampWriteCount() >= before + 2u,
+                           "writeTimestampBegin/End increment timestampWriteCount");
+                expectTrue(vkEndCommandBuffer(cmd) == VK_SUCCESS, "end command buffer after timestamp writes");
+            }
+        }
+
+        // lastGpuTimeNs may be 0 until a submit+wait — do not require >0
+        (void)frames->lastGpuTimeNs();
+        fuse::u64 ns = 0;
+        (void)frames->readLastGpuTimeNs(frames->currentIndex(), &ns);
+        (void)ns;
+    } else {
+        expectTrue(!frames->timestampsReady(), "timestampsReady false when stub or unsupported");
+        expectTrue(!frames->info().timestampsReady, "info.timestampsReady false when stub or unsupported");
+        frames->writeTimestampBegin(frames->currentCommandBuffer());
+        frames->writeTimestampEnd(frames->currentCommandBuffer());
+        fuse::u64 ns = 0;
+        expectTrue(!frames->readLastGpuTimeNs(0u, &ns), "readLastGpuTimeNs false when timestamps not ready");
+        expectTrue(frames->lastGpuTimeNs() == 0u, "lastGpuTimeNs stays 0 when timestamps not ready");
+    }
+#else
+    expectTrue(!frames->timestampsReady(), "stub: timestampsReady false");
+    expectTrue(!frames->info().timestampsReady, "stub: info.timestampsReady false");
+    frames->writeTimestampBegin(nullptr);
+    frames->writeTimestampEnd(nullptr);
+    fuse::u64 ns = 0;
+    expectTrue(!frames->readLastGpuTimeNs(0u, &ns), "stub: readLastGpuTimeNs false");
+    expectTrue(frames->lastGpuTimeNs() == 0u, "stub: lastGpuTimeNs is 0");
+#endif
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
 
     testScratchResetAndDescriptorPool();
+    testGpuTimestamps();
 
     fuse::core::shutdown();
 

@@ -1,5 +1,7 @@
 #include <fuse/renderer/draw_list.hpp>
+#include <fuse/renderer/resource_manager.hpp>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 
@@ -193,6 +195,71 @@ void testRecordEncodesDrawParams() {
     expectTrue(b.materialId == 9u, "second materialId encoded");
 }
 
+void testDispatchRecordsWithoutDevice() {
+    fuse::renderer::CommandBufferRecorder recorder;
+    recorder.dispatch(4u, 2u, 1u);
+    expectTrue(recorder.recordCount() == 0u, "dispatch without beginRecording is a no-op");
+
+    expectTrue(recorder.beginRecording(nullptr), "beginRecording succeeds without device");
+    recorder.dispatch(8u, 4u, 2u);
+    expectTrue(recorder.recordCount() == 1u, "logical dispatch records without device");
+    expectTrue(recorder.records()[0].kind == fuse::renderer::CommandRecordKind::Dispatch,
+               "record kind is Dispatch");
+    expectTrue(recorder.records()[0].dispatchX == 8u, "dispatchX recorded");
+    expectTrue(recorder.records()[0].dispatchY == 4u, "dispatchY recorded");
+    expectTrue(recorder.records()[0].dispatchZ == 2u, "dispatchZ recorded");
+    expectTrue(recorder.vulkanDispatchCount() == 0u, "no GPU dispatch without encode context");
+    expectTrue(recorder.endRecording(), "endRecording succeeds after logical dispatch");
+}
+
+void testDrawIndexedStoresNativeBuffers() {
+    fuse::renderer::CommandBufferRecorder recorder;
+    expectTrue(recorder.beginRecording(nullptr), "beginRecording succeeds for native buffers");
+
+    void* vertex = reinterpret_cast<void*>(static_cast<uintptr_t>(0x1000));
+    void* index = reinterpret_cast<void*>(static_cast<uintptr_t>(0x2000));
+    recorder.drawIndexed(12u, 1u, 0u, 0, 3u, vertex, index);
+
+    expectTrue(recorder.recordCount() == 1u, "drawIndexed records one command");
+    expectTrue(recorder.records()[0].nativeVertexBuffer == vertex, "native vertex buffer stored");
+    expectTrue(recorder.records()[0].nativeIndexBuffer == index, "native index buffer stored");
+}
+
+void testRecordWithNullResourcesLeavesNativeNull() {
+    fuse::renderer::DrawList list;
+    fuse::renderer::DrawCall call{};
+    call.vertexBuffer = fuse::renderer::BufferHandle(1u, 1u);
+    call.indexBuffer = fuse::renderer::BufferHandle(2u, 1u);
+    call.indexCount = 6;
+    expectTrue(list.push(call), "call with handles accepted");
+
+    fuse::renderer::CommandBufferRecorder recorder;
+    expectTrue(recorder.beginRecording(nullptr), "beginRecording succeeds for null resources");
+    expectTrue(list.record(recorder) == 1u, "record(recorder) records one call");
+    expectTrue(recorder.records()[0].nativeVertexBuffer == nullptr,
+               "null resources leave native vertex default");
+    expectTrue(recorder.records()[0].nativeIndexBuffer == nullptr,
+               "null resources leave native index default");
+}
+
+void testRecordWithInvalidResourceHandlesLeavesNativeNull() {
+    fuse::renderer::DrawList list;
+    fuse::renderer::DrawCall call{};
+    call.vertexBuffer = fuse::renderer::BufferHandle(1u, 1u);
+    call.indexBuffer = fuse::renderer::BufferHandle(2u, 1u);
+    call.indexCount = 6;
+    expectTrue(list.push(call), "call with stale handles accepted");
+
+    fuse::renderer::ResourceManager resources;
+    fuse::renderer::CommandBufferRecorder recorder;
+    expectTrue(recorder.beginRecording(nullptr), "beginRecording succeeds for invalid handles");
+    expectTrue(list.record(recorder, &resources) == 1u, "record with resources records one call");
+    expectTrue(recorder.records()[0].nativeVertexBuffer == nullptr,
+               "invalid vertex handle uses context default");
+    expectTrue(recorder.records()[0].nativeIndexBuffer == nullptr,
+               "invalid index handle uses context default");
+}
+
 } // namespace
 
 int main() {
@@ -205,6 +272,10 @@ int main() {
     testRecordWithoutBeginReturnsZero();
     testRecordDrawIndexedPerCall();
     testRecordEncodesDrawParams();
+    testDispatchRecordsWithoutDevice();
+    testDrawIndexedStoresNativeBuffers();
+    testRecordWithNullResourcesLeavesNativeNull();
+    testRecordWithInvalidResourceHandlesLeavesNativeNull();
 
     if (g_failures == 0) {
         std::printf("fuse_draw_list: all checks passed\n");

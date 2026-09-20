@@ -14,12 +14,16 @@ bool shouldUseSwapchainSemaphores(const VulkanSwapchain* swapchain, u32 acquired
 
 #if defined(FUSE_VULKAN_BACKEND)
 
-bool recordMinimalSubmitCommands(VkCommandBuffer commandBuffer) {
+bool recordMinimalSubmitCommands(VkCommandBuffer commandBuffer, FrameManager* frames = nullptr) {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
         return false;
+    }
+    if (frames != nullptr) {
+        frames->writeTimestampBegin(commandBuffer);
+        frames->writeTimestampEnd(commandBuffer);
     }
     return vkEndCommandBuffer(commandBuffer) == VK_SUCCESS;
 }
@@ -63,7 +67,7 @@ bool recordFrameSlotCommands(VulkanDevice& device, FrameManager& frameManager) {
     if (!resetSlotCommandPool(vkDevice, slot)) {
         return false;
     }
-    return recordMinimalSubmitCommands(commandBuffer);
+    return recordMinimalSubmitCommands(commandBuffer, &frameManager);
 #else
     (void)device;
     (void)frameManager;
@@ -94,7 +98,7 @@ GraphicsQueueSubmitResult submitGraphicsQueue(const GraphicsQueueSubmitDesc& des
             result.message = "command pool reset failed";
             return result;
         }
-        if (!recordMinimalSubmitCommands(commandBuffer)) {
+        if (!recordMinimalSubmitCommands(commandBuffer, desc.frameManager)) {
             result.message = "command buffer record failed";
             return result;
         }

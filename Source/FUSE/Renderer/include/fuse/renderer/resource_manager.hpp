@@ -47,6 +47,7 @@ public:
     const Texture* getTexture(TextureHandle handle) const;
     Buffer* getBuffer(BufferHandle handle);
     const Buffer* getBuffer(BufferHandle handle) const;
+    bool readBuffer(BufferHandle handle, void* dst, usize size);
 
     usize stagingRingCapacity() const { return m_stagingRingCapacity; }
     usize stagingRingOffset() const { return m_stagingOffset; }
@@ -55,6 +56,8 @@ public:
     bool lastGpuTextureCopySubmitted() const { return m_lastGpuTextureCopySubmitted; }
     u32 lastGpuTextureCopyBytes() const { return m_lastGpuTextureCopyBytes; }
     bool lastGpuCopyUsedTransferQueue() const { return m_lastGpuCopyUsedTransferQueue; }
+    bool lastGpuCopyUsedFence() const { return m_lastGpuCopyUsedFence; }
+    bool lastGpuCopyWaitTimedOut() const { return m_lastGpuCopyWaitTimedOut; }
 
     LiveCounts liveCounts() const;
     const GpuAllocStats* allocatorStats() const;
@@ -78,6 +81,8 @@ private:
     bool m_lastGpuTextureCopySubmitted = false;
     u32 m_lastGpuTextureCopyBytes = 0;
     bool m_lastGpuCopyUsedTransferQueue = false;
+    bool m_lastGpuCopyUsedFence = false;
+    bool m_lastGpuCopyWaitTimedOut = false;
     bool m_ready = false;
 };
 

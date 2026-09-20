@@ -2,6 +2,7 @@
 
 #include <fuse/renderer/command_buffer.hpp>
 #include <fuse/renderer/composite_pass.hpp>
+#include <fuse/renderer/draw_list.hpp>
 #include <fuse/renderer/render_command_list.hpp>
 #include <fuse/renderer/render_graph.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
@@ -46,6 +47,10 @@ public:
     /// Returns false off render thread.
     bool submitFrame(const RenderCommandList& commands, u32 frameIndex = 0);
 
+    /// Builds the graph from `draws` via `populateRenderGraphFromDrawList`, executes, and submits.
+    /// Same thread/device gates as `submitFrame`. Does not unlock production present.
+    bool submitDrawList(const DrawList& draws, u32 frameIndex = 0);
+
     /// Swapchain image from `PresentPath::acquireImage` — UINT32_MAX on headless CI.
     void setAcquiredSwapchainImage(u32 imageIndex) { m_acquiredSwapchainImage = imageIndex; }
     u32 acquiredSwapchainImage() const { return m_acquiredSwapchainImage; }
@@ -55,6 +60,7 @@ public:
     bool lastQueueSubmitOk() const { return m_lastQueueSubmit.ok; }
     const GraphicsQueueSubmitResult& lastQueueSubmit() const { return m_lastQueueSubmit; }
     u32 lastSubmittedCommandCount() const { return m_lastCommandCount; }
+    u32 lastDrawListCount() const { return m_lastDrawListCount; }
     u32 lastGraphPassCount() const { return m_lastGraphPassCount; }
     u32 lastGraphBarrierCount() const { return m_lastGraphBarrierCount; }
     u32 lastRecordedCommandCount() const { return m_lastRecordedCommands; }
@@ -91,6 +97,7 @@ private:
     CommandBufferRecorder m_commandRecorder;
     u32 m_submittedFrames = 0;
     u32 m_lastCommandCount = 0;
+    u32 m_lastDrawListCount = 0;
     u32 m_lastGraphPassCount = 0;
     u32 m_lastGraphBarrierCount = 0;
     u32 m_lastRecordedCommands = 0;

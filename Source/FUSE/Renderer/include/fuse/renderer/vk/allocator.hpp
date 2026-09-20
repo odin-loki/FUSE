@@ -44,6 +44,7 @@ public:
 
     bool createBuffer(const BufferDesc& desc, Buffer& out);
     void destroyBuffer(Buffer& buffer);
+    bool readMapped(const Buffer& src, void* dst, usize size, usize srcOffset = 0) const;
 
     bool createImage(const TextureDesc& desc, Texture& out);
     void destroyImage(Texture& texture);

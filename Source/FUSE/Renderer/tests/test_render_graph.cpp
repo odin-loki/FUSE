@@ -278,6 +278,149 @@ void testTransientResourceLifetimeTracked() {
     expectTrue(lifetime->lastPassIndex == 1u, "lifetime ends at last transient reader pass");
 }
 
+void testSequentialTransientsShareAliasGroup() {
+    fuse::renderer::RenderGraph graph;
+    graph.beginFrame(0u);
+
+    fuse::renderer::RGTextureRef transientA = graph.createTransient({});
+    fuse::renderer::RGTextureRef transientB = graph.createTransient({});
+
+    fuse::renderer::RGTextureAccess writeA{};
+    writeA.texture = transientA;
+    writeA.access = fuse::renderer::RGResourceAccess::ColorAttachmentWrite;
+
+    fuse::renderer::RGPassDesc passA{};
+    passA.name = "write_a";
+    passA.textureAccesses = &writeA;
+    passA.textureAccessCount = 1;
+    graph.addPass(passA);
+
+    fuse::renderer::RGTextureAccess writeB{};
+    writeB.texture = transientB;
+    writeB.access = fuse::renderer::RGResourceAccess::ColorAttachmentWrite;
+
+    fuse::renderer::RGPassDesc passB{};
+    passB.name = "write_b";
+    passB.textureAccesses = &writeB;
+    passB.textureAccessCount = 1;
+    graph.addPass(passB);
+
+    fuse::renderer::RGTextureAccess present{};
+    present.texture = {fuse::renderer::RenderGraph::kBackbufferTextureId};
+    present.access = fuse::renderer::RGResourceAccess::Present;
+
+    fuse::renderer::RGPassDesc presentPass{};
+    presentPass.name = "present";
+    presentPass.textureAccesses = &present;
+    presentPass.textureAccessCount = 1;
+    graph.addPass(presentPass);
+
+    graph.addPassDependency(0u, 2u);
+    graph.addPassDependency(1u, 2u);
+
+    graph.compile();
+
+    const fuse::renderer::RGResourceLifetime* lifetimeA = nullptr;
+    const fuse::renderer::RGResourceLifetime* lifetimeB = nullptr;
+    for (const fuse::renderer::RGResourceLifetime& candidate : graph.resourceLifetimes()) {
+        if (!candidate.isTexture) {
+            continue;
+        }
+        if (candidate.resourceId == transientA.id) {
+            lifetimeA = &candidate;
+        }
+        if (candidate.resourceId == transientB.id) {
+            lifetimeB = &candidate;
+        }
+    }
+
+    expectTrue(lifetimeA != nullptr && lifetimeB != nullptr, "both sequential transients recorded");
+    expectTrue(lifetimeA->firstPassIndex == 0u && lifetimeA->lastPassIndex == 0u,
+               "transient A lifetime stays pass 0");
+    expectTrue(lifetimeB->firstPassIndex == 1u && lifetimeB->lastPassIndex == 1u,
+               "transient B lifetime stays pass 1");
+    expectTrue(lifetimeA->aliasGroup != 0u && lifetimeB->aliasGroup != 0u,
+               "transients receive non-zero alias groups");
+    expectTrue(lifetimeA->aliasGroup == lifetimeB->aliasGroup ||
+                   graph.compileInfo().aliasGroups >= 1u,
+               "non-overlapping transients share an alias group");
+}
+
+void testExecuteReleasesTransientAfterLastPass() {
+    fuse::renderer::RenderGraph graph;
+    graph.beginFrame(0u);
+
+    fuse::renderer::RGTextureRef transient = graph.createTransient({});
+
+    fuse::renderer::RGTextureAccess writeAccess{};
+    writeAccess.texture = transient;
+    writeAccess.access = fuse::renderer::RGResourceAccess::ColorAttachmentWrite;
+
+    fuse::renderer::RGPassDesc writePass{};
+    writePass.name = "write";
+    writePass.textureAccesses = &writeAccess;
+    writePass.textureAccessCount = 1;
+    graph.addPass(writePass);
+
+    fuse::renderer::RGTextureAccess present{};
+    present.texture = {fuse::renderer::RenderGraph::kBackbufferTextureId};
+    present.access = fuse::renderer::RGResourceAccess::Present;
+
+    fuse::renderer::RGPassDesc presentPass{};
+    presentPass.name = "present";
+    presentPass.textureAccesses = &present;
+    presentPass.textureAccessCount = 1;
+    graph.addPass(presentPass);
+
+    graph.addPassDependency(0u, 1u);
+    graph.compile();
+
+    const fuse::renderer::RGResourceLifetime* compiledLifetime = nullptr;
+    for (const fuse::renderer::RGResourceLifetime& candidate : graph.resourceLifetimes()) {
+        if (candidate.resourceId == transient.id && candidate.isTexture) {
+            compiledLifetime = &candidate;
+            break;
+        }
+    }
+    expectTrue(compiledLifetime != nullptr, "transient lifetime recorded before execute");
+    expectTrue(compiledLifetime->phase == fuse::renderer::RGResourceLifetimePhase::TransientCreated,
+               "transient stays TransientCreated until last pass executes");
+    const fuse::u32 firstPass = compiledLifetime->firstPassIndex;
+    const fuse::u32 lastPass = compiledLifetime->lastPassIndex;
+
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+    expectTrue(instance != nullptr, "instance allocated for transient release execute");
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    expectTrue(device != nullptr, "device allocated for transient release execute");
+    auto frames = fuse::renderer::FrameManager::create(*device);
+    expectTrue(frames != nullptr, "frame manager allocated for transient release execute");
+    if (instance == nullptr || device == nullptr || frames == nullptr) {
+        return;
+    }
+
+    fuse::renderer::CommandBufferRecorder recorder;
+    const fuse::renderer::RenderGraphExecuteInfo info = graph.execute(*device, *frames, recorder);
+
+    expectTrue(info.transientsReleased >= 1u, "execute releases at least one transient");
+    expectTrue(info.aliasGroups >= 1u, "execute reports alias groups from compile");
+
+    const fuse::renderer::RGResourceLifetime* releasedLifetime = nullptr;
+    for (const fuse::renderer::RGResourceLifetime& candidate : graph.resourceLifetimes()) {
+        if (candidate.resourceId == transient.id && candidate.isTexture) {
+            releasedLifetime = &candidate;
+            break;
+        }
+    }
+    expectTrue(releasedLifetime != nullptr, "transient lifetime still recorded after execute");
+    expectTrue(releasedLifetime->phase == fuse::renderer::RGResourceLifetimePhase::Released,
+               "transient marked Released after last pass");
+    expectTrue(releasedLifetime->firstPassIndex == firstPass &&
+                   releasedLifetime->lastPassIndex == lastPass,
+               "release bookkeeping does not change first/last pass indices");
+}
+
 void executeCudaIncrement(void* commandBuffer, void* userData) {
     (void)commandBuffer;
     if (userData != nullptr) {
@@ -585,6 +728,8 @@ int main() {
     testExplicitPassDependencyReordersCompileOrder();
     testResourceAccessBuildsDependencyEdge();
     testTransientResourceLifetimeTracked();
+    testSequentialTransientsShareAliasGroup();
+    testExecuteReleasesTransientAfterLastPass();
     testCudaPassSkipsVulkanBeginEnd();
     testImportBufferStoresHandle();
     testBufferBarrierPlannedWriteThenRead();

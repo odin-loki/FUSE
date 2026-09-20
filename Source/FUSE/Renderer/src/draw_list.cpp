@@ -1,4 +1,5 @@
 #include <fuse/renderer/draw_list.hpp>
+#include <fuse/renderer/resource_manager.hpp>
 
 #include <algorithm>
 
@@ -50,12 +51,29 @@ void DrawList::sortByMaterial() {
 }
 
 u32 DrawList::record(CommandBufferRecorder& recorder) const {
+    return record(recorder, nullptr);
+}
+
+u32 DrawList::record(CommandBufferRecorder& recorder, const ResourceManager* resources) const {
     if (!recorder.isRecording()) {
         return 0;
     }
     for (const DrawCall& call : m_calls) {
+        void* vertexNative = nullptr;
+        void* indexNative = nullptr;
+        if (resources != nullptr) {
+            const Buffer* vertex = resources->getBuffer(call.vertexBuffer);
+            if (vertex != nullptr) {
+                vertexNative = vertex->handle;
+            }
+            const Buffer* index = resources->getBuffer(call.indexBuffer);
+            if (index != nullptr) {
+                indexNative = index->handle;
+            }
+        }
         recorder.drawIndexed(call.indexCount, call.instanceCount, call.firstIndex,
-                             static_cast<i32>(call.vertexOffset), call.materialId);
+                             static_cast<i32>(call.vertexOffset), call.materialId, vertexNative,
+                             indexNative);
     }
     return count();
 }

@@ -104,10 +104,20 @@ void testResourceManagerBuffersAndTextures() {
                    "Storage CpuToGpu buffer has deviceAddress when bufferDeviceAddress is enabled");
     }
 #endif
+    {
+        u8 cpuReadback[4] = {};
+        expectTrue(resources.readBuffer(buffer, cpuReadback, sizeof(cpuReadback)),
+                   "CpuToGpu readBuffer succeeds");
+        expectTrue(cpuReadback[0] == 1 && cpuReadback[1] == 2 && cpuReadback[2] == 3 &&
+                       cpuReadback[3] == 4,
+                   "CpuToGpu readBuffer matches initialData bytes");
+    }
 
     fuse::renderer::BufferDesc gpuOnlyDesc{};
     gpuOnlyDesc.size = 64;
-    gpuOnlyDesc.usage = fuse::renderer::BufferUsage::Storage;
+    gpuOnlyDesc.usage = static_cast<fuse::renderer::BufferUsage>(
+        static_cast<u32>(fuse::renderer::BufferUsage::Storage) |
+        static_cast<u32>(fuse::renderer::BufferUsage::TransferSrc));
     gpuOnlyDesc.memoryUsage = fuse::renderer::MemoryUsage::GpuOnly;
     u8 gpuPayload[64];
     for (u8 i = 0; i < 64; ++i) {
@@ -124,6 +134,8 @@ void testResourceManagerBuffersAndTextures() {
                    "unmapped initialData consumes staging ring");
     }
     (void)resources.lastGpuCopyUsedTransferQueue();
+    (void)resources.lastGpuCopyUsedFence();
+    (void)resources.lastGpuCopyWaitTimedOut();
 #if defined(FUSE_VULKAN_BACKEND)
     if (bootstrap->status().deviceReady && bootstrap->device() != nullptr &&
         gpuBuf != nullptr && gpuBuf->mapped == nullptr) {
@@ -132,8 +144,30 @@ void testResourceManagerBuffersAndTextures() {
             expectTrue(resources.lastGpuCopyUsedTransferQueue(),
                        "GpuOnly initialData copy used dedicated transfer queue");
         }
+        if (resources.lastGpuCopyUsedTransferQueue() || resources.lastGpuCopyUsedFence()) {
+            expectTrue(resources.lastGpuCopyUsedFence(),
+                       "GpuOnly initialData copy waited on a transient fence");
+            expectTrue(!resources.lastGpuCopyWaitTimedOut(),
+                       "GpuOnly initialData copy fence wait did not time out");
+        }
     }
+#else
+    expectTrue(!resources.lastGpuCopyUsedFence(), "stub GpuOnly copy does not wait on a GPU fence");
+    expectTrue(!resources.lastGpuCopyWaitTimedOut(), "stub GpuOnly copy does not time out a GPU fence");
 #endif
+    {
+        u8 gpuReadback[64] = {};
+        if (resources.readBuffer(gpuOnly, gpuReadback, sizeof(gpuReadback))) {
+            bool match = true;
+            for (u8 i = 0; i < 64; ++i) {
+                if (gpuReadback[i] != gpuPayload[i]) {
+                    match = false;
+                    break;
+                }
+            }
+            expectTrue(match, "GpuOnly readBuffer matches initialData bytes");
+        }
+    }
 
     const fuse::usize stagingMid = resources.stagingRingOffset();
     const u32 wrapCountBefore = resources.stagingRingWrapCount();
@@ -203,6 +237,10 @@ void testResourceManagerBuffersAndTextures() {
                    "GPU vkCmdCopyBufferToImage submitted for texture initialData");
         expectTrue(resources.lastGpuTextureCopyBytes() == 4u * 4u * 4u,
                    "GPU texture copy bytes match R8G8B8A8Unorm 4x4");
+        expectTrue(resources.lastGpuCopyUsedFence(),
+                   "texture initialData copy waited on a transient fence");
+        expectTrue(!resources.lastGpuCopyWaitTimedOut(),
+                   "texture initialData copy fence wait did not time out");
     }
 #endif
 

@@ -97,15 +97,19 @@ enum class RGResourceLifetimePhase : u32 {
     Unknown = 0,
     Imported = 1,
     TransientCreated = 2,
+    Released = 4,
 };
 
-/// CPU-side first/last pass indices for a graph resource (release stub deferred).
+/// CPU-side first/last pass indices for a graph resource. Transients are marked
+/// Released after their last pass during execute() (alias groups assigned at compile).
 struct RGResourceLifetime {
     u32 resourceId = 0;
     bool isTexture = true;
     u32 firstPassIndex = static_cast<u32>(-1);
     u32 lastPassIndex = static_cast<u32>(-1);
     RGResourceLifetimePhase phase = RGResourceLifetimePhase::Unknown;
+    /// Non-zero alias group id for transients; 0 = none (imported / unassigned).
+    u32 aliasGroup = 0;
 };
 
 struct RenderGraphCompileInfo {
@@ -116,6 +120,7 @@ struct RenderGraphCompileInfo {
     u32 bufferBarrierCount = 0;
     u32 dependencyEdgeCount = 0;
     u32 resourceLifetimeCount = 0;
+    u32 aliasGroups = 0;
     bool compiled = false;
     bool usedDeclarationOrderFallback = false;
 };
@@ -126,6 +131,8 @@ struct RenderGraphExecuteInfo {
     u32 cudaPassCount = 0;
     u32 bufferBarrierCount = 0;
     u32 scratchBytesUsed = 0;
+    u32 transientsReleased = 0;
+    u32 aliasGroups = 0;
 };
 
 /// Lightweight render graph — pass ordering, barrier planning, and stub command recording.
@@ -196,6 +203,7 @@ private:
     void buildDependencyEdges();
     void resolveCompileOrder();
     void assignResourceLifetimes();
+    void assignTransientAliasGroups();
     void assignExecutionOrder();
 
     u32 m_backbufferIndex = 0;

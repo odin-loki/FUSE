@@ -260,6 +260,116 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
     return true;
 }
 
+bool RhiContext::submitDrawList(const DrawList& draws, u32 frameIndex) {
+    if (!platform::requireGpuContextThread()) {
+        return false;
+    }
+
+    if (!m_bootstrap || !m_bootstrap->status().deviceReady) {
+        return false;
+    }
+
+    FrameManager* frameManager = m_bootstrap->frameManager();
+    if (frameManager != nullptr && frameManager->isReady()) {
+        if (!frameManager->tickComplete()) {
+            frameManager->signalTickComplete();
+            frameManager->beginFrame(frameIndex);
+            m_renderGraph.beginFrame(frameIndex);
+            m_commandRecorder.reset();
+        }
+
+        ensureCompositePass();
+        ensureCompositeGpuPath();
+        ensureFrameSyncPair();
+        ensureRasterPath();
+
+        const VkFrameEncodeContext* encodeContext = nullptr;
+        VkFrameEncodeContext encodeContextStorage{};
+        if (m_rasterPath && m_rasterPath->isReady()) {
+            encodeContextStorage = m_rasterPath->vulkanEncodeContext();
+            if (encodeContextStorage.active) {
+                encodeContext = &encodeContextStorage;
+            }
+        }
+
+#if defined(FUSE_VULKAN_BACKEND)
+        VulkanSwapchain* swapchain = m_bootstrap->swapchain();
+        const bool presentTargetsReady =
+            swapchain != nullptr && swapchain->hasPresentTargets() &&
+            !isEmptyAcquireResult(m_acquiredSwapchainImage);
+        if (encodeContext != nullptr && presentTargetsReady) {
+            encodeContextStorage.presentRenderPass = swapchain->presentRenderPass();
+            encodeContextStorage.presentFramebuffer =
+                swapchain->framebufferForImage(m_acquiredSwapchainImage);
+            encodeContextStorage.presentBarrierImage =
+                swapchain->imageHandleForIndex(m_acquiredSwapchainImage);
+            encodeContextStorage.presentWidth = swapchain->info().width;
+            encodeContextStorage.presentHeight = swapchain->info().height;
+            encodeContextStorage.presentActive =
+                encodeContextStorage.presentFramebuffer != nullptr &&
+                encodeContextStorage.presentRenderPass != nullptr;
+            encodeContext = &encodeContextStorage;
+        } else if (encodeContextStorage.active) {
+            encodeContext = &encodeContextStorage;
+        }
+#endif
+
+        populateRenderGraphFromDrawList(m_renderGraph, draws);
+        m_renderGraph.compile();
+
+        VulkanDevice* device = m_bootstrap->device();
+        if (device != nullptr) {
+#if defined(FUSE_VULKAN_BACKEND)
+            if (device->isValid() && encodeContext != nullptr) {
+                (void)resetFrameSlotCommandPool(*device, *frameManager);
+            }
+#endif
+            const RenderGraphExecuteInfo executeInfo =
+                m_renderGraph.execute(*device, *frameManager, m_commandRecorder, encodeContext);
+            m_lastGraphPassCount = executeInfo.executedPassCount;
+            m_lastRecordedCommands = executeInfo.recordedCommands;
+        }
+
+        m_lastGraphBarrierCount = m_renderGraph.compileInfo().barrierCount;
+    }
+
+    if (m_rasterPath && m_rasterPath->isReady()) {
+        m_lastRasterStats = m_rasterPath->lastStats();
+    }
+
+    if (m_compositePass && m_compositePass->isReady()) {
+        m_lastCompositeStats = m_compositePass->lastStats();
+    }
+
+    if (m_compositeGpuPath && m_compositeGpuPath->isReady()) {
+        m_lastCompositeGpuStats = m_compositeGpuPath->lastStats();
+    }
+
+    if (frameManager != nullptr && frameManager->isReady()) {
+        VulkanDevice* device = m_bootstrap->device();
+        if (device != nullptr && device->isValid()) {
+            GraphicsQueueSubmitDesc submitDesc{};
+            submitDesc.device = device;
+            submitDesc.frameManager = frameManager;
+            submitDesc.swapchain = m_bootstrap->swapchain();
+            submitDesc.acquiredImageIndex = m_acquiredSwapchainImage;
+            submitDesc.commandsAlreadyRecorded = m_commandRecorder.vulkanRecordingComplete();
+            m_lastQueueSubmit = submitGraphicsQueue(submitDesc);
+            if (m_lastQueueSubmit.submitted) {
+                ++m_queueSubmitCount;
+            }
+            if (!m_lastQueueSubmit.ok) {
+                return false;
+            }
+        }
+        frameManager->endFrame();
+    }
+
+    m_lastDrawListCount = draws.count();
+    ++m_submittedFrames;
+    return true;
+}
+
 u32 RhiContext::currentFrameSlot() const {
     const FrameManager* frameManager =
         m_bootstrap ? m_bootstrap->frameManager() : nullptr;

@@ -1,5 +1,6 @@
 #include <fuse/core/init.hpp>
 #include <fuse/platform/gl_context.hpp>
+#include <fuse/renderer/draw_list.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/shader/shader_io.hpp>
 #include <fuse/renderer/shader/shader_module.hpp>
@@ -198,6 +199,21 @@ void testRasterPathClearTriangle() {
             const fuse::renderer::VkFrameEncodeContext encode = rasterPath->vulkanEncodeContext();
             expectTrue(encode.active, "raster path vulkanEncodeContext.active with depth");
             expectTrue(encode.depthImage != nullptr, "encode context depthImage set when ready");
+            const fuse::renderer::RasterPathStats& bdaStats = rasterPath->lastStats();
+            if (device->info().bufferDeviceAddress) {
+                // NVIDIA/AMD typically return a non-zero address. Lavapipe may return 0 — skip, don't fail.
+                if (bdaStats.vertexDeviceAddress != 0) {
+                    expectTrue(bdaStats.bufferDeviceAddressReady,
+                               "raster path bufferDeviceAddressReady when vertexDeviceAddress is set");
+                }
+            } else {
+                expectTrue(bdaStats.vertexDeviceAddress == 0,
+                           "raster path vertexDeviceAddress is 0 without bufferDeviceAddress");
+                expectTrue(bdaStats.indexDeviceAddress == 0,
+                           "raster path indexDeviceAddress is 0 without bufferDeviceAddress");
+                expectTrue(!bdaStats.bufferDeviceAddressReady,
+                           "raster path bufferDeviceAddressReady is false without bufferDeviceAddress");
+            }
         }
 #endif
     }
@@ -232,6 +248,12 @@ void testRasterPathClearTriangle() {
     expectTrue(stats.triangleDrawCount == 1u, "triangle draw issued");
     expectTrue(stats.framesRecorded == 1u, "one frame recorded");
     expectTrue(stats.pipelineReloadCount == 0u, "no pipeline reload without shader change");
+    expectTrue(stats.vertexDeviceAddress == 0,
+               "stub raster path vertexDeviceAddress is 0");
+    expectTrue(stats.indexDeviceAddress == 0,
+               "stub raster path indexDeviceAddress is 0");
+    expectTrue(!stats.bufferDeviceAddressReady,
+               "stub raster path bufferDeviceAddressReady is false");
 #endif
 }
 
@@ -315,6 +337,81 @@ void testDynamicRenderingPipeline() {
 #endif
 }
 
+void testDynamicRenderingDepthPipeline() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr,
+               "bootstrap allocated for dynamic rendering depth pipeline tests");
+
+    fuse::renderer::VulkanDevice* device = bootstrap->device();
+    if (device == nullptr) {
+        expectTrue(!bootstrap->status().deviceReady, "device unavailable without Vulkan loader");
+        return;
+    }
+
+    const std::string vertPath = fixturePath("minimal.vert.spv");
+    const std::string fragPath = fixturePath("minimal.frag.spv");
+
+    auto vertModule =
+        fuse::renderer::ShaderModule::createFromFile(*device, fuse::renderer::ShaderStage::Vertex,
+                                                     vertPath.c_str());
+    auto fragModule =
+        fuse::renderer::ShaderModule::createFromFile(*device, fuse::renderer::ShaderStage::Fragment,
+                                                     fragPath.c_str());
+    expectTrue(vertModule != nullptr && fragModule != nullptr,
+               "fixture shader modules allocated for dynamic rendering depth");
+
+    auto pipelineLayout = fuse::renderer::PipelineLayout::create(*device);
+    expectTrue(pipelineLayout != nullptr && pipelineLayout->isValid(),
+               "pipeline layout created for dynamic rendering depth");
+
+    fuse::renderer::GraphicsPipelineDesc pipelineDesc{};
+    pipelineDesc.layout = pipelineLayout.get();
+    pipelineDesc.vertexShader = vertModule.get();
+    pipelineDesc.fragmentShader = fragModule.get();
+    pipelineDesc.useDynamicRendering = true;
+    pipelineDesc.depthFormat = 126u; // VK_FORMAT_D32_SFLOAT
+    pipelineDesc.debugName = "test_dynamic_rendering_depth_pipeline";
+
+    auto graphicsPipeline = fuse::renderer::GraphicsPipeline::create(*device, pipelineDesc);
+    expectTrue(graphicsPipeline != nullptr, "dynamic rendering depth pipeline allocated");
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (device->info().dynamicRendering) {
+        expectTrue(graphicsPipeline->isValid(),
+                   "dynamic rendering depth pipeline valid when device.info().dynamicRendering");
+        expectTrue(graphicsPipeline->info().dynamicRendering,
+                   "depth pipeline info.dynamicRendering is true");
+        expectTrue(graphicsPipeline->info().hasDynamicDepth,
+                   "depth pipeline info.hasDynamicDepth is true");
+        expectTrue(graphicsPipeline->info().depthFormat == 126u,
+                   "depth pipeline info.depthFormat is D32_SFLOAT (126)");
+        expectTrue(graphicsPipeline->nativeHandle() != nullptr,
+                   "dynamic rendering depth pipeline has native handle");
+    } else if (!graphicsPipeline->isValid()) {
+        std::printf("SKIP: dynamic rendering depth create failed without device.dynamicRendering\n");
+        return;
+    } else {
+        expectTrue(graphicsPipeline->isValid(),
+                   "dynamic rendering depth pipeline isValid when create succeeded");
+        expectTrue(graphicsPipeline->info().hasDynamicDepth,
+                   "honest hasDynamicDepth when create succeeded with depthFormat=126");
+        expectTrue(graphicsPipeline->info().depthFormat == 126u,
+                   "honest depthFormat when create succeeded with depthFormat=126");
+    }
+#else
+    expectTrue(graphicsPipeline->isValid(),
+               "dynamic rendering depth pipeline valid in stub backend");
+    expectTrue(graphicsPipeline->info().hasDynamicDepth,
+               "stub depth pipeline info.hasDynamicDepth is true");
+    expectTrue(graphicsPipeline->info().depthFormat == 126u,
+               "stub depth pipeline info.depthFormat is D32_SFLOAT (126)");
+#endif
+}
+
 void testRhiContextWiresRasterPath() {
     fuse::renderer::RhiContext::Desc desc{};
     desc.bootstrap.instance.enableValidation = false;
@@ -344,8 +441,24 @@ void testRhiContextWiresRasterPath() {
                        "scissor encoded when a real render pass began");
         }
     }
+
+    fuse::renderer::DrawList draws;
+    fuse::renderer::DrawCall call{};
+    call.indexCount = 3;
+    expectTrue(draws.push(call), "DrawList accepts one indexed call");
+    expectTrue(context->beginFrame(1u), "beginFrame accepted for DrawList submit");
+    const bool drawSubmitted = context->submitDrawList(draws, 1u);
+    if (drawSubmitted) {
+        expectTrue(context->lastDrawListCount() == 1u, "lastDrawListCount records one draw");
+    }
 #else
     expectTrue(!submitted, "stub mode rejects GPU submit");
+
+    fuse::renderer::DrawList draws;
+    fuse::renderer::DrawCall call{};
+    call.indexCount = 3;
+    expectTrue(draws.push(call), "DrawList accepts one indexed call");
+    expectTrue(!context->submitDrawList(draws, 0u), "stub mode rejects GPU DrawList submit");
 #endif
 }
 
@@ -531,6 +644,7 @@ int main() {
 
     testGraphicsPipelineFromFixtures();
     testDynamicRenderingPipeline();
+    testDynamicRenderingDepthPipeline();
     testRasterPathClearTriangle();
     testRasterPathResize();
     testShaderModuleReloadFromDisk();

@@ -694,6 +694,17 @@ void GpuAllocator::destroyBuffer(Buffer& buffer) {
     buffer = Buffer{};
 }
 
+bool GpuAllocator::readMapped(const Buffer& src, void* dst, usize size, usize srcOffset) const {
+    if (src.mapped == nullptr || dst == nullptr || size == 0) {
+        return false;
+    }
+    if (srcOffset > src.desc.size || size > src.desc.size - srcOffset) {
+        return false;
+    }
+    std::memcpy(dst, static_cast<const u8*>(src.mapped) + srcOffset, size);
+    return true;
+}
+
 bool GpuAllocator::createImage(const TextureDesc& desc, Texture& out) {
     if (!m_info.valid || desc.width == 0 || desc.height == 0) {
         gpu_alloc_detail::recordFailedAlloc(m_stats);

@@ -53,6 +53,7 @@ void CommandBufferRecorder::reset() {
     m_vulkanPresentRenderPassBeginCount = 0;
     m_vulkanCompositeDrawCount = 0;
     m_vulkanDrawIndexedCount = 0;
+    m_vulkanDispatchCount = 0;
     m_records.clear();
 }
 
@@ -445,23 +446,26 @@ void CommandBufferRecorder::encodeDraw(u32 instanceCount) {
 }
 
 void CommandBufferRecorder::encodeDrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex,
-                                             i32 vertexOffset, u32 materialId) {
+                                             i32 vertexOffset, u32 materialId, void* vertexBuffer,
+                                             void* indexBuffer) {
 #if defined(FUSE_VULKAN_BACKEND)
     if (!m_vulkanEncodeActive || m_encodeContext == nullptr || !m_insideRenderPass ||
         !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
         return;
     }
 
-    if (m_encodeContext->indexBuffer == nullptr) {
+    void* resolvedIndex = indexBuffer != nullptr ? indexBuffer : m_encodeContext->indexBuffer;
+    void* resolvedVertex = vertexBuffer != nullptr ? vertexBuffer : m_encodeContext->vertexBuffer;
+    if (resolvedIndex == nullptr) {
         return;
     }
 
     auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
-    vkCmdBindIndexBuffer(commandBuffer, static_cast<VkBuffer>(m_encodeContext->indexBuffer), 0,
+    vkCmdBindIndexBuffer(commandBuffer, static_cast<VkBuffer>(resolvedIndex), 0,
                          m_encodeContext->indexType == 1u ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16);
 
-    if (m_encodeContext->vertexBuffer != nullptr) {
-        VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(m_encodeContext->vertexBuffer)};
+    if (resolvedVertex != nullptr) {
+        VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(resolvedVertex)};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
     }
@@ -482,6 +486,44 @@ void CommandBufferRecorder::encodeDrawIndexed(u32 indexCount, u32 instanceCount,
     (void)firstIndex;
     (void)vertexOffset;
     (void)materialId;
+    (void)vertexBuffer;
+    (void)indexBuffer;
+#endif
+}
+
+void CommandBufferRecorder::encodeDispatch(u32 x, u32 y, u32 z) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_vulkanEncodeActive || m_encodeContext == nullptr ||
+        !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
+        return;
+    }
+
+    if (m_encodeContext->computePipeline == nullptr) {
+        return;
+    }
+
+    if (m_insideRenderPass) {
+        endVulkanRenderPass();
+    }
+
+    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                      static_cast<VkPipeline>(m_encodeContext->computePipeline));
+
+    if (m_encodeContext->bindlessDescriptorSet != nullptr &&
+        m_encodeContext->computePipelineLayout != nullptr) {
+        VkDescriptorSet bindlessSet = static_cast<VkDescriptorSet>(m_encodeContext->bindlessDescriptorSet);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                static_cast<VkPipelineLayout>(m_encodeContext->computePipelineLayout), 0, 1,
+                                &bindlessSet, 0, nullptr);
+    }
+
+    vkCmdDispatch(commandBuffer, x, y, z);
+    ++m_vulkanDispatchCount;
+#else
+    (void)x;
+    (void)y;
+    (void)z;
 #endif
 }
 
@@ -584,7 +626,7 @@ void CommandBufferRecorder::drawIndexed(u32 indexCount) {
 }
 
 void CommandBufferRecorder::drawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset,
-                                        u32 materialId) {
+                                        u32 materialId, void* vertexBuffer, void* indexBuffer) {
     if (!m_recording) {
         return;
     }
@@ -597,12 +639,30 @@ void CommandBufferRecorder::drawIndexed(u32 indexCount, u32 instanceCount, u32 f
     record.firstIndex = firstIndex;
     record.vertexOffset = vertexOffset;
     record.materialId = materialId;
+    record.nativeVertexBuffer = vertexBuffer;
+    record.nativeIndexBuffer = indexBuffer;
     m_records.push_back(record);
 
     if (m_activeRasterPass && !m_insideRenderPass) {
         beginVulkanRenderPass();
     }
-    encodeDrawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, materialId);
+    encodeDrawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, materialId, vertexBuffer,
+                      indexBuffer);
+}
+
+void CommandBufferRecorder::dispatch(u32 x, u32 y, u32 z) {
+    if (!m_recording) {
+        return;
+    }
+
+    CommandRecord record;
+    record.kind = CommandRecordKind::Dispatch;
+    record.dispatchX = x;
+    record.dispatchY = y;
+    record.dispatchZ = z;
+    m_records.push_back(record);
+
+    encodeDispatch(x, y, z);
 }
 
 void CommandBufferRecorder::encodeCompositePass(float blend) {
