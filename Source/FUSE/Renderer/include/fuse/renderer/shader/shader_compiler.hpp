@@ -21,8 +21,8 @@ public:
     /// Watch `desc.sourcePath` (copied into owned storage). Returns false if path is null/empty.
     bool watch(const ShaderDesc& desc);
 
-    /// Polls ShaderFileWatch. For each watched entry whose file changed, re-runs compileOffline
-    /// and stores the result. Returns number of successful recompiles this poll.
+    /// Polls ShaderFileWatch and recompiles only watched entries whose paths match the
+    /// changed files from this poll. Returns number of successful recompiles this poll.
     u32 pollHotReload();
 
     u32 watchedCount() const;

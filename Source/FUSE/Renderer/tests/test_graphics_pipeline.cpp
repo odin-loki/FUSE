@@ -124,6 +124,10 @@ void testRasterPathClearTriangle() {
 
     auto rasterPath = fuse::renderer::RasterPath::create(*device, rasterDesc);
     expectTrue(rasterPath != nullptr, "raster path allocated");
+    if (rasterPath->isReady()) {
+        expectTrue(rasterPath->lastStats().pipelineContentHash != 0,
+                   "raster path pipelineContentHash set when ready");
+    }
 #if defined(FUSE_VULKAN_BACKEND)
     if (bootstrap->status().deviceReady) {
         expectTrue(rasterPath->isReady(), "raster path ready with Vulkan device");

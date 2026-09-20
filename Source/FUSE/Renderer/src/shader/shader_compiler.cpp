@@ -93,11 +93,31 @@ u32 ShaderCompiler::pollHotReload() {
     }
 
     u32 successes = 0;
-    for (WatchedEntry& entry : m_entries) {
-        entry.desc.sourcePath = entry.path.c_str();
-        entry.last = compileOffline(entry.desc);
-        if (entry.last.valid) {
-            ++successes;
+    const u32 changedCount = m_watch.lastChangedCount();
+    if (changedCount == 0u) {
+        for (WatchedEntry& entry : m_entries) {
+            entry.desc.sourcePath = entry.path.c_str();
+            entry.last = compileOffline(entry.desc);
+            if (entry.last.valid) {
+                ++successes;
+            }
+        }
+        return successes;
+    }
+
+    for (u32 i = 0; i < changedCount; ++i) {
+        const char* path = m_watch.lastChangedPath(i);
+        if (path == nullptr) {
+            continue;
+        }
+        for (WatchedEntry& entry : m_entries) {
+            if (entry.path == path) {
+                entry.desc.sourcePath = entry.path.c_str();
+                entry.last = compileOffline(entry.desc);
+                if (entry.last.valid) {
+                    ++successes;
+                }
+            }
         }
     }
     return successes;

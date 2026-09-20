@@ -284,6 +284,10 @@ void* FrameManager::currentTimelineSemaphore() const {
     return current().timelineSemaphore;
 }
 
+void* FrameManager::currentDescriptorPool() const {
+    return current().commands.descriptorPool;
+}
+
 u64 FrameManager::currentTimelineValue() const {
     return current().timelineValue;
 }
@@ -363,6 +367,7 @@ void FrameManager::beginFrame(u32 frameIndex) {
             vkResetDescriptorPool(static_cast<VkDevice>(m_device),
                                   static_cast<VkDescriptorPool>(slot.commands.descriptorPool),
                                   0);
+            ++m_descriptorPoolResetCount;
         }
     }
 #else

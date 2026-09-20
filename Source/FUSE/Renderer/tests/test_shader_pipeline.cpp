@@ -56,9 +56,11 @@ std::filesystem::path uniqueTempShaderPath() {
 #else
     const int pid = static_cast<int>(::getpid());
 #endif
+    static int seq = 0;
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
     return std::filesystem::temp_directory_path() /
-           ("fuse_shader_compiler_" + std::to_string(pid) + "_" + std::to_string(stamp) + ".glsl");
+           ("fuse_shader_compiler_" + std::to_string(pid) + "_" + std::to_string(stamp) + "_" +
+            std::to_string(++seq) + ".glsl");
 }
 
 void testSpirvIo() {
@@ -186,6 +188,16 @@ void testShaderModuleAndPipelineLayout() {
     auto shaderModule = fuse::renderer::ShaderModule::createFromFile(
         *device, fuse::renderer::ShaderStage::Vertex, vertPath.c_str());
     expectTrue(shaderModule != nullptr, "shader module allocated");
+    if (shaderModule->isValid()) {
+        std::string hashError;
+        const std::vector<fuse::u32> words =
+            fuse::renderer::loadSpirvFile(vertPath.c_str(), &hashError);
+        expectTrue(shaderModule->info().spirvHash != 0, "valid shader module has non-zero spirvHash");
+        expectTrue(shaderModule->info().spirvHash ==
+                       fuse::renderer::hashSpirvWords(words.data(),
+                                                      static_cast<fuse::u32>(words.size())),
+                   "shader module spirvHash matches hashSpirvWords of fixture");
+    }
 #if defined(FUSE_VULKAN_BACKEND)
     if (bootstrap->status().deviceReady) {
         expectTrue(shaderModule->isValid(), "shader module valid with Vulkan device");
@@ -229,11 +241,15 @@ void testShaderModuleAndPipelineLayout() {
 }
 
 void testHotReloadPoller() {
-    const std::filesystem::path glslPath = uniqueTempShaderPath();
-    const std::string glslUtf8 = glslPath.string();
-    const std::filesystem::path spvPath(glslUtf8 + ".spv");
+    const std::filesystem::path glslPathA = uniqueTempShaderPath();
+    const std::filesystem::path glslPathB = uniqueTempShaderPath();
+    const std::string glslUtf8A = glslPathA.string();
+    const std::string glslUtf8B = glslPathB.string();
+    const std::filesystem::path spvPathA(glslUtf8A + ".spv");
+    const std::filesystem::path spvPathB(glslUtf8B + ".spv");
 
-    expectTrue(writeFile(glslPath, "void main() {}\n"), "hot-reload temp glsl created");
+    expectTrue(writeFile(glslPathA, "void main() {}\n"), "hot-reload temp glsl A created");
+    expectTrue(writeFile(glslPathB, "void main() {}\n"), "hot-reload temp glsl B created");
 
     const std::string fixtureSpv = fixturePath("minimal.vert.spv");
     std::ifstream spirvIn(fixtureSpv, std::ios::binary);
@@ -242,33 +258,50 @@ void testHotReloadPoller() {
                                  std::istreambuf_iterator<char>());
     expectTrue(!spirvBytes.empty(), "fixture spirv non-empty for hot-reload test");
 
-    std::ofstream spirvOut(spvPath, std::ios::binary | std::ios::trunc);
-    spirvOut.write(spirvBytes.data(), static_cast<std::streamsize>(spirvBytes.size()));
-    spirvOut.flush();
-    expectTrue(static_cast<bool>(spirvOut), "sibling spirv written for hot-reload test");
-    spirvOut.close();
+    std::ofstream spirvOutA(spvPathA, std::ios::binary | std::ios::trunc);
+    spirvOutA.write(spirvBytes.data(), static_cast<std::streamsize>(spirvBytes.size()));
+    spirvOutA.flush();
+    expectTrue(static_cast<bool>(spirvOutA), "sibling spirv written for hot-reload test A");
+    spirvOutA.close();
 
-    fuse::renderer::ShaderDesc desc{};
-    desc.sourcePath = glslUtf8.c_str();
-    desc.stage = fuse::renderer::ShaderStage::Vertex;
+    std::ofstream spirvOutB(spvPathB, std::ios::binary | std::ios::trunc);
+    spirvOutB.write(spirvBytes.data(), static_cast<std::streamsize>(spirvBytes.size()));
+    spirvOutB.flush();
+    expectTrue(static_cast<bool>(spirvOutB), "sibling spirv written for hot-reload test B");
+    spirvOutB.close();
+
+    fuse::renderer::ShaderDesc descA{};
+    descA.sourcePath = glslUtf8A.c_str();
+    descA.stage = fuse::renderer::ShaderStage::Vertex;
+
+    fuse::renderer::ShaderDesc descB{};
+    descB.sourcePath = glslUtf8B.c_str();
+    descB.stage = fuse::renderer::ShaderStage::Vertex;
 
     fuse::renderer::ShaderCompiler compiler;
-    expectTrue(compiler.watch(desc), "watch records shader path");
-    expectTrue(compiler.watchedCount() == 1u, "hot-reload watched count is 1");
+    expectTrue(compiler.watch(descA), "watch records shader path A");
+    expectTrue(compiler.watch(descB), "watch records shader path B");
+    expectTrue(compiler.watchedCount() == 2u, "hot-reload watched count is 2");
 
-    const fuse::renderer::CompiledShader* compiled = compiler.lastCompiled(glslUtf8.c_str());
-    expectTrue(compiled != nullptr && compiled->valid, "watch compiles offline SPIR-V");
-    expectTrue(compiler.pollHotReload() == 0u, "unchanged file reports no hot reload");
+    const fuse::renderer::CompiledShader* compiledA = compiler.lastCompiled(glslUtf8A.c_str());
+    expectTrue(compiledA != nullptr && compiledA->valid, "watch compiles offline SPIR-V A");
+    const fuse::renderer::CompiledShader* compiledB = compiler.lastCompiled(glslUtf8B.c_str());
+    expectTrue(compiledB != nullptr && compiledB->valid, "watch compiles offline SPIR-V B");
+    expectTrue(compiler.pollHotReload() == 0u, "unchanged files report no hot reload");
 
-    expectTrue(writeFile(glslPath, "void main() { /* hot reload */ }\n"), "temp shader rewritten");
-    expectTrue(compiler.pollHotReload() >= 1u, "rewrite triggers at least one recompile");
+    expectTrue(writeFile(glslPathA, "void main() { /* hot reload */ }\n"), "temp shader A rewritten");
+    expectTrue(compiler.pollHotReload() == 1u, "rewrite of one shader recompiles only that path");
 
-    compiled = compiler.lastCompiled(glslUtf8.c_str());
-    expectTrue(compiled != nullptr && compiled->valid, "lastCompiled still valid after reload");
+    compiledA = compiler.lastCompiled(glslUtf8A.c_str());
+    expectTrue(compiledA != nullptr && compiledA->valid, "rewritten shader lastCompiled still valid");
+    compiledB = compiler.lastCompiled(glslUtf8B.c_str());
+    expectTrue(compiledB != nullptr && compiledB->valid, "untouched shader lastCompiled still valid");
 
     std::error_code ec;
-    std::filesystem::remove(glslPath, ec);
-    std::filesystem::remove(spvPath, ec);
+    std::filesystem::remove(glslPathA, ec);
+    std::filesystem::remove(spvPathA, ec);
+    std::filesystem::remove(glslPathB, ec);
+    std::filesystem::remove(spvPathB, ec);
 }
 
 } // namespace

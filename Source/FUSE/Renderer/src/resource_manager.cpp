@@ -81,18 +81,36 @@ bool memoryNeedsHostMapping(MemoryUsage usage) {
 }
 
 #if defined(FUSE_VULKAN_BACKEND)
-void oneShotCopyBuffer(VulkanDevice& device, void* srcHandle, void* dstHandle, usize srcOffset,
+struct TransferSubmitTarget {
+    VkQueue queue;
+    u32 family;
+};
+
+TransferSubmitTarget pickTransferTarget(VulkanDevice& device) {
+    const VulkanQueues& queues = device.queues();
+    if (queues.transfer != nullptr) {
+        return {static_cast<VkQueue>(queues.transfer), queues.transferFamily};
+    }
+    return {static_cast<VkQueue>(queues.graphics), queues.graphicsFamily};
+}
+
+bool usedDedicatedTransferQueue(VulkanDevice& device) {
+    const VulkanQueues& queues = device.queues();
+    return queues.transfer != nullptr && queues.transfer != queues.graphics;
+}
+
+bool oneShotCopyBuffer(VulkanDevice& device, void* srcHandle, void* dstHandle, usize srcOffset,
                        usize size) {
     if (!device.isValid() || device.nativeHandle() == nullptr || size == 0) {
-        return;
+        return false;
     }
     if (!bindlessNativeHandleReady(srcHandle) || !bindlessNativeHandleReady(dstHandle)) {
-        return;
+        return false;
     }
 
-    auto queue = static_cast<VkQueue>(device.queues().graphics);
-    if (queue == VK_NULL_HANDLE) {
-        return;
+    const TransferSubmitTarget target = pickTransferTarget(device);
+    if (target.queue == VK_NULL_HANDLE) {
+        return false;
     }
 
     const VkDevice vkDevice = static_cast<VkDevice>(device.nativeHandle());
@@ -100,11 +118,11 @@ void oneShotCopyBuffer(VulkanDevice& device, void* srcHandle, void* dstHandle, u
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-    poolInfo.queueFamilyIndex = device.queues().graphicsFamily;
+    poolInfo.queueFamilyIndex = target.family;
 
     VkCommandPool pool = VK_NULL_HANDLE;
     if (vkCreateCommandPool(vkDevice, &poolInfo, nullptr, &pool) != VK_SUCCESS) {
-        return;
+        return false;
     }
 
     VkCommandBufferAllocateInfo allocInfo{};
@@ -116,7 +134,7 @@ void oneShotCopyBuffer(VulkanDevice& device, void* srcHandle, void* dstHandle, u
     VkCommandBuffer cmd = VK_NULL_HANDLE;
     if (vkAllocateCommandBuffers(vkDevice, &allocInfo, &cmd) != VK_SUCCESS) {
         vkDestroyCommandPool(vkDevice, pool, nullptr);
-        return;
+        return false;
     }
 
     VkCommandBufferBeginInfo beginInfo{};
@@ -124,7 +142,7 @@ void oneShotCopyBuffer(VulkanDevice& device, void* srcHandle, void* dstHandle, u
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
         vkDestroyCommandPool(vkDevice, pool, nullptr);
-        return;
+        return false;
     }
 
     VkBufferCopy region{};
@@ -136,18 +154,21 @@ void oneShotCopyBuffer(VulkanDevice& device, void* srcHandle, void* dstHandle, u
 
     if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
         vkDestroyCommandPool(vkDevice, pool, nullptr);
-        return;
+        return false;
     }
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
-    if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) == VK_SUCCESS) {
-        vkQueueWaitIdle(queue);
+    bool submitted = false;
+    if (vkQueueSubmit(target.queue, 1, &submitInfo, VK_NULL_HANDLE) == VK_SUCCESS) {
+        vkQueueWaitIdle(target.queue);
+        submitted = true;
     }
 
     vkDestroyCommandPool(vkDevice, pool, nullptr);
+    return submitted;
 }
 
 bool oneShotCopyBufferToImage(VulkanDevice& device, void* srcHandle, void* dstImage, usize srcOffset,
@@ -159,8 +180,8 @@ bool oneShotCopyBufferToImage(VulkanDevice& device, void* srcHandle, void* dstIm
         return false;
     }
 
-    auto queue = static_cast<VkQueue>(device.queues().graphics);
-    if (queue == VK_NULL_HANDLE) {
+    const TransferSubmitTarget target = pickTransferTarget(device);
+    if (target.queue == VK_NULL_HANDLE) {
         return false;
     }
 
@@ -171,7 +192,7 @@ bool oneShotCopyBufferToImage(VulkanDevice& device, void* srcHandle, void* dstIm
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-    poolInfo.queueFamilyIndex = device.queues().graphicsFamily;
+    poolInfo.queueFamilyIndex = target.family;
 
     VkCommandPool pool = VK_NULL_HANDLE;
     if (vkCreateCommandPool(vkDevice, &poolInfo, nullptr, &pool) != VK_SUCCESS) {
@@ -247,8 +268,8 @@ bool oneShotCopyBufferToImage(VulkanDevice& device, void* srcHandle, void* dstIm
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
     bool submitted = false;
-    if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) == VK_SUCCESS &&
-        vkQueueWaitIdle(queue) == VK_SUCCESS) {
+    if (vkQueueSubmit(target.queue, 1, &submitInfo, VK_NULL_HANDLE) == VK_SUCCESS &&
+        vkQueueWaitIdle(target.queue) == VK_SUCCESS) {
         submitted = true;
     }
 
@@ -364,6 +385,7 @@ const GpuAllocStats* ResourceManager::allocatorStats() const {
 TextureHandle ResourceManager::createTexture(const TextureDesc& desc, const void* initialData) {
     m_lastGpuTextureCopySubmitted = false;
     m_lastGpuTextureCopyBytes = 0;
+    m_lastGpuCopyUsedTransferQueue = false;
 
     if (!m_ready || m_allocator == nullptr) {
         return TextureHandle{};
@@ -424,6 +446,8 @@ BufferHandle ResourceManager::createBuffer(const BufferDesc& desc, const void* i
 }
 
 void ResourceManager::copyInitialDataViaStaging(Buffer& dest, const void* initialData, usize size) {
+    m_lastGpuCopyUsedTransferQueue = false;
+
     if (initialData == nullptr || size == 0) {
         return;
     }
@@ -442,7 +466,9 @@ void ResourceManager::copyInitialDataViaStaging(Buffer& dest, const void* initia
 
 #if defined(FUSE_VULKAN_BACKEND)
     if (m_device != nullptr && hasBufferUsage(dest.desc.usage, BufferUsage::TransferDst)) {
-        oneShotCopyBuffer(*m_device, staging->handle, dest.handle, srcOffset, size);
+        if (oneShotCopyBuffer(*m_device, staging->handle, dest.handle, srcOffset, size)) {
+            m_lastGpuCopyUsedTransferQueue = usedDedicatedTransferQueue(*m_device);
+        }
     }
 #else
     (void)dest;
@@ -480,6 +506,7 @@ void ResourceManager::copyTextureInitialDataViaStaging(Texture& dest, const void
                                      dest.desc.height, dest.desc.depth)) {
             m_lastGpuTextureCopySubmitted = true;
             m_lastGpuTextureCopyBytes = static_cast<u32>(bytes);
+            m_lastGpuCopyUsedTransferQueue = usedDedicatedTransferQueue(*m_device);
         }
     }
 #else

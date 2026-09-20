@@ -153,6 +153,10 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
         return false;
     }
 
+    const u64 vertexHash = m_vertexShader->info().spirvHash;
+    const u64 fragmentHash = m_fragmentShader->info().spirvHash;
+    m_stats.pipelineContentHash = vertexHash ^ (fragmentHash * 0x9E3779B97F4A7C15ull);
+
     m_shaderWatch.watch(desc.vertexSpirvPath);
     m_shaderWatch.watch(desc.fragmentSpirvPath);
     m_stats.shaderFilesWatched = m_shaderWatch.watchedCount();

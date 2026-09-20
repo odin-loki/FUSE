@@ -391,6 +391,31 @@ void testBufferBarrierPlannedWriteThenRead() {
                "write-then-read plans a buffer barrier");
     expectTrue(graph.compileInfo().bufferBarrierCount >= 1u,
                "compile info records buffer barrier count");
+
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+    expectTrue(instance != nullptr, "instance allocated for buffer barrier execute");
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    expectTrue(device != nullptr, "device allocated for buffer barrier execute");
+    auto frames = fuse::renderer::FrameManager::create(*device);
+    expectTrue(frames != nullptr, "frame manager allocated for buffer barrier execute");
+    if (instance == nullptr || device == nullptr || frames == nullptr) {
+        return;
+    }
+
+    fuse::renderer::CommandBufferRecorder recorder;
+    const fuse::renderer::RenderGraphExecuteInfo info = graph.execute(*device, *frames, recorder);
+
+    expectTrue(info.bufferBarrierCount >= 1u, "execute reports planned buffer barrier count");
+
+    fuse::u32 bufferBarrierRecords = 0;
+    for (const fuse::renderer::CommandRecord& record : recorder.records()) {
+        if (record.kind == fuse::renderer::CommandRecordKind::BufferBarrier) {
+            ++bufferBarrierRecords;
+        }
+    }
+    expectTrue(bufferBarrierRecords >= 1u, "execute records at least one BufferBarrier command");
 }
 
 void testExecuteCopiesCompileOrderToScratch() {

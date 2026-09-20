@@ -120,6 +120,17 @@ void testResourceManagerBuffersAndTextures() {
         expectTrue(resources.stagingRingOffset() >= stagingBefore + gpuOnlyDesc.size,
                    "unmapped initialData consumes staging ring");
     }
+    (void)resources.lastGpuCopyUsedTransferQueue();
+#if defined(FUSE_VULKAN_BACKEND)
+    if (bootstrap->status().deviceReady && bootstrap->device() != nullptr &&
+        gpuBuf != nullptr && gpuBuf->mapped == nullptr) {
+        const auto& queues = bootstrap->device()->queues();
+        if (queues.transfer != nullptr && queues.transfer != queues.graphics) {
+            expectTrue(resources.lastGpuCopyUsedTransferQueue(),
+                       "GpuOnly initialData copy used dedicated transfer queue");
+        }
+    }
+#endif
 
     gpuOnlyDesc.size = resources.stagingRingCapacity() + 16u;
     std::vector<u8> tooLarge(gpuOnlyDesc.size, 0x5A);
@@ -155,6 +166,29 @@ void testResourceManagerBuffersAndTextures() {
                    "GPU texture copy bytes match R8G8B8A8Unorm 4x4");
     }
 #endif
+
+    fuse::renderer::TextureDesc interopDesc{};
+    interopDesc.width = 2;
+    interopDesc.height = 2;
+    interopDesc.usage = fuse::renderer::ImageUsage::Sampled;
+    interopDesc.cudaInterop = true;
+    const fuse::renderer::TextureHandle interopTexture = resources.createTexture(interopDesc);
+    expectTrue(interopTexture.isValid(), "cudaInterop texture handle issued");
+    const fuse::renderer::Texture* interop = resources.getTexture(interopTexture);
+    expectTrue(interop != nullptr, "cudaInterop texture resolvable");
+    const bool stubOrDeviceReady =
+#if defined(FUSE_VULKAN_BACKEND)
+        bootstrap->status().deviceReady;
+#else
+        true;
+#endif
+    if (interop != nullptr && stubOrDeviceReady) {
+        expectTrue(interop->allocationSize > 0, "cudaInterop allocationSize recorded");
+    }
+    if (interop != nullptr && interop->exportedHandle != nullptr) {
+        expectTrue(interop->allocationSize > 0, "exportedHandle requires allocationSize");
+    }
+    resources.destroyTexture(interopTexture);
 
     expectTrue(resources.stagingRingCapacity() == resourceDesc.stagingRingBytes,
                "staging ring capacity recorded");

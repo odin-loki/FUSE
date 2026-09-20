@@ -14,6 +14,7 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/deferred/deferred_renderer.hpp
     include/fuse/renderer/deferred/frame_pipeline.hpp
     include/fuse/renderer/deferred/gbuffer.hpp
+    include/fuse/renderer/draw_list.hpp
     include/fuse/renderer/gi/ddgi.hpp
     include/fuse/renderer/gi/ddgi_kernels.hpp
     include/fuse/renderer/lighting/clustered.hpp
@@ -84,6 +85,7 @@ set(FUSE_RHI_SOURCES
     src/deferred/deferred_renderer.cpp
     src/deferred/frame_pipeline.cpp
     src/deferred/gbuffer.cpp
+    src/draw_list.cpp
     src/gi/ddgi.cpp
     src/lighting/clustered_light_culler.cpp
     src/postprocess/lens_flare.cpp

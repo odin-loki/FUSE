@@ -43,6 +43,7 @@ void CommandBufferRecorder::reset() {
     m_pendingClearB = 0.f;
     m_vulkanRenderPassBeginCount = 0;
     m_vulkanPipelineBarrierCount = 0;
+    m_vulkanBufferBarrierCount = 0;
     m_vulkanPresentRenderPassBeginCount = 0;
     m_vulkanCompositeDrawCount = 0;
     m_records.clear();
@@ -231,6 +232,70 @@ void CommandBufferRecorder::encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLa
 #endif
 }
 
+void CommandBufferRecorder::encodeVulkanBufferBarrier(u32 fromAccess, u32 toAccess) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_vulkanEncodeActive || m_encodeContext == nullptr ||
+        !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
+        return;
+    }
+
+    if (m_encodeContext->barrierBuffer == nullptr) {
+        return;
+    }
+
+    auto accessStageMask = [](RGResourceAccess access, VkPipelineStageFlags& stage, VkAccessFlags& mask) {
+        switch (access) {
+        case RGResourceAccess::ShaderRead:
+            stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            mask = VK_ACCESS_SHADER_READ_BIT;
+            break;
+        case RGResourceAccess::ShaderWrite:
+            stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            mask = VK_ACCESS_SHADER_WRITE_BIT;
+            break;
+        case RGResourceAccess::TransferSrc:
+            stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            mask = VK_ACCESS_TRANSFER_READ_BIT;
+            break;
+        case RGResourceAccess::TransferDst:
+            stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            mask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            break;
+        case RGResourceAccess::CUDAWrite:
+        case RGResourceAccess::CUDARead:
+            stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+            break;
+        default:
+            break;
+        }
+    };
+
+    VkPipelineStageFlags srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    VkAccessFlags srcAccess = 0;
+    VkPipelineStageFlags dstStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    VkAccessFlags dstAccess = 0;
+    accessStageMask(static_cast<RGResourceAccess>(fromAccess), srcStage, srcAccess);
+    accessStageMask(static_cast<RGResourceAccess>(toAccess), dstStage, dstAccess);
+
+    VkBufferMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    barrier.srcAccessMask = srcAccess;
+    barrier.dstAccessMask = dstAccess;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.buffer = static_cast<VkBuffer>(m_encodeContext->barrierBuffer);
+    barrier.offset = 0;
+    barrier.size = VK_WHOLE_SIZE;
+
+    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
+    vkCmdPipelineBarrier(commandBuffer, srcStage, dstStage, 0, 0, nullptr, 1, &barrier, 0, nullptr);
+    ++m_vulkanBufferBarrierCount;
+#else
+    (void)fromAccess;
+    (void)toAccess;
+#endif
+}
+
 void CommandBufferRecorder::encodePresentSwapchainPass() {
 #if defined(FUSE_VULKAN_BACKEND)
     if (!m_vulkanEncodeActive || m_encodeContext == nullptr || !m_encodeContext->presentActive ||
@@ -376,6 +441,21 @@ void CommandBufferRecorder::pipelineBarrier(u32 textureId, u32 fromLayout, u32 t
     m_records.push_back(record);
 
     encodeVulkanPipelineBarrier(fromLayout, toLayout);
+}
+
+void CommandBufferRecorder::bufferBarrier(u32 bufferId, u32 fromAccess, u32 toAccess) {
+    if (!m_recording) {
+        return;
+    }
+
+    CommandRecord record;
+    record.kind = CommandRecordKind::BufferBarrier;
+    record.bufferId = bufferId;
+    record.fromAccess = fromAccess;
+    record.toAccess = toAccess;
+    m_records.push_back(record);
+
+    encodeVulkanBufferBarrier(fromAccess, toAccess);
 }
 
 void CommandBufferRecorder::clearColor(float r, float g, float b) {

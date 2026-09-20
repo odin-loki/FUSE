@@ -106,6 +106,10 @@ add_executable(fuse_gbuffer test_gbuffer.cpp)
 target_link_libraries(fuse_gbuffer PRIVATE fuse_rhi)
 add_test(NAME fuse_gbuffer COMMAND fuse_gbuffer)
 
+add_executable(fuse_draw_list test_draw_list.cpp)
+target_link_libraries(fuse_draw_list PRIVATE fuse_rhi)
+add_test(NAME fuse_draw_list COMMAND fuse_draw_list)
+
 add_executable(fuse_material_system test_material_system.cpp)
 target_link_libraries(fuse_material_system PRIVATE fuse_rhi)
 add_test(NAME fuse_material_system COMMAND fuse_material_system)

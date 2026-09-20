@@ -13,6 +13,7 @@ struct ShaderModuleInfo {
     bool valid = false;
     ShaderStage stage = ShaderStage::Vertex;
     u32 spirvWordCount = 0;
+    u64 spirvHash = 0;
     std::string entryPoint;
     std::string message;
 };

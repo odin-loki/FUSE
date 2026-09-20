@@ -533,6 +533,12 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
 
     result.bufferBarrierCount = static_cast<u32>(m_bufferBarriers.size());
 
+    for (const RGBufferBarrier& barrier : m_bufferBarriers) {
+        recorder.bufferBarrier(barrier.buffer.id,
+                               static_cast<u32>(barrier.fromAccess),
+                               static_cast<u32>(barrier.toAccess));
+    }
+
     for (const u32 passIndex : m_compileOrder) {
         const PassNode& pass = m_passes[passIndex];
 

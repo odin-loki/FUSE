@@ -79,6 +79,8 @@ struct Texture {
     void* allocation = nullptr;
     TextureDesc desc{};
     u32 bindlessIndex = UINT32_MAX;
+    void* exportedHandle = nullptr;  // Win32 HANDLE or fd as void*
+    u64 allocationSize = 0;
 };
 
 /// GPU buffer resource — device_address populated when BDA extension enabled.
@@ -89,6 +91,8 @@ struct Buffer {
     BufferDesc desc{};
     u64 deviceAddress = 0;
     u32 bindlessIndex = UINT32_MAX;
+    void* exportedHandle = nullptr;  // Win32 HANDLE or fd as void*
+    u64 allocationSize = 0;
 };
 
 struct SamplerDesc {

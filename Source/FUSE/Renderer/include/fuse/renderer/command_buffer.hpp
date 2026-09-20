@@ -15,6 +15,7 @@ enum class CommandRecordKind : u8 {
     Draw = 6,
     Present = 7,
     Composite = 8,
+    BufferBarrier = 9,
 };
 
 struct CommandRecord {
@@ -27,6 +28,9 @@ struct CommandRecord {
     u32 textureId = 0;
     u32 fromLayout = 0;
     u32 toLayout = 0;
+    u32 bufferId = 0;
+    u32 fromAccess = 0;
+    u32 toAccess = 0;
     u32 drawCount = 0;
 };
 
@@ -39,6 +43,8 @@ struct VkFrameEncodeContext {
     void* vertexBuffer = nullptr;
     /// Backbuffer image for graph-planned `vkCmdPipelineBarrier` (offscreen color target).
     void* barrierImage = nullptr;
+    /// Buffer for graph-planned `vkCmdPipelineBarrier` (`VkBufferMemoryBarrier`).
+    void* barrierBuffer = nullptr;
     u32 width = 0;
     u32 height = 0;
     bool active = false;
@@ -78,6 +84,7 @@ public:
     void beginPass(const char* name);
     void endPass();
     void pipelineBarrier(u32 textureId, u32 fromLayout, u32 toLayout);
+    void bufferBarrier(u32 bufferId, u32 fromAccess, u32 toAccess);
     void clearColor(float r, float g, float b);
     void draw(u32 instanceCount);
     void drawIndexed(u32 indexCount);
@@ -92,6 +99,7 @@ public:
     bool vulkanRecordingComplete() const { return m_vulkanRecordingComplete; }
     u32 vulkanRenderPassBeginCount() const { return m_vulkanRenderPassBeginCount; }
     u32 vulkanPipelineBarrierCount() const { return m_vulkanPipelineBarrierCount; }
+    u32 vulkanBufferBarrierCount() const { return m_vulkanBufferBarrierCount; }
     u32 vulkanPresentRenderPassBeginCount() const { return m_vulkanPresentRenderPassBeginCount; }
     u32 vulkanCompositeDrawCount() const { return m_vulkanCompositeDrawCount; }
 
@@ -101,6 +109,7 @@ private:
     void beginVulkanRenderPass();
     void endVulkanRenderPass();
     void encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLayout);
+    void encodeVulkanBufferBarrier(u32 fromAccess, u32 toAccess);
     void encodePresentSwapchainPass();
     void encodeCompositePass(float blend);
     void encodeDraw(u32 instanceCount);
@@ -117,6 +126,7 @@ private:
     float m_pendingClearB = 0.f;
     u32 m_vulkanRenderPassBeginCount = 0;
     u32 m_vulkanPipelineBarrierCount = 0;
+    u32 m_vulkanBufferBarrierCount = 0;
     u32 m_vulkanPresentRenderPassBeginCount = 0;
     u32 m_vulkanCompositeDrawCount = 0;
     std::vector<CommandRecord> m_records;

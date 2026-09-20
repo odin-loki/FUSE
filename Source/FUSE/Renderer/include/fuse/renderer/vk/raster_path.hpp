@@ -28,6 +28,7 @@ struct RasterPathStats {
     u32 framesRecorded = 0;
     u32 shaderFilesWatched = 0;
     u32 shaderWatchPolls = 0;
+    u64 pipelineContentHash = 0;
     std::string message;
 };
 

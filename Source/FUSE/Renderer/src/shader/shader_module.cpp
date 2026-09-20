@@ -38,6 +38,8 @@ std::unique_ptr<ShaderModule> ShaderModule::create(VulkanDevice& device,
     if (!module->initialize(device, compiled.stage, compiled.spirv.data(),
                             static_cast<u32>(compiled.spirv.size()))) {
         module->m_info.valid = false;
+    } else if (compiled.spirvHash != 0) {
+        module->m_info.spirvHash = compiled.spirvHash;
     }
     return module;
 }
@@ -74,6 +76,8 @@ bool ShaderModule::initialize(VulkanDevice& device, ShaderStage stage, const u32
         m_info.message = "invalid SPIR-V header";
         return false;
     }
+
+    m_info.spirvHash = hashSpirvWords(spirv, wordCount);
 
 #if defined(FUSE_VULKAN_BACKEND)
     if (!device.isValid()) {

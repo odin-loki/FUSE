@@ -59,7 +59,9 @@ public:
     void* currentCommandBuffer() const;
     void* currentTransferCommandBuffer() const;
     void* currentTimelineSemaphore() const;
+    void* currentDescriptorPool() const;
     u64 currentTimelineValue() const;
+    u32 descriptorPoolResetCount() const { return m_descriptorPoolResetCount; }
 
     fuse::alloc::FrameAllocator& scratch();
     const fuse::alloc::FrameAllocator& scratch() const;
@@ -93,6 +95,7 @@ private:
     bool m_tickComplete = false;
     u32 m_lastBarrierFrame = 0;
     void* m_device = nullptr;
+    u32 m_descriptorPoolResetCount = 0;
 };
 
 } // namespace fuse::renderer

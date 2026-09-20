@@ -48,6 +48,9 @@ void testScratchResetAndDescriptorPool() {
     frames->beginFrame(0u);
     expectTrue(frames->scratchUsedBytes() == 0u, "beginFrame resets current slot scratch");
 
+    expectTrue(frames->currentDescriptorPool() == frames->current().commands.descriptorPool,
+               "currentDescriptorPool matches current slot commands.descriptorPool");
+
 #if defined(FUSE_VULKAN_BACKEND)
     if (device->isValid() && frames->isReady()) {
         expectTrue(frames->current().commands.descriptorPool != nullptr,
@@ -66,7 +69,14 @@ void testScratchResetAndDescriptorPool() {
             expectTrue(frames->slot(i).timelineSemaphore != nullptr,
                        "each in-flight slot has a timeline semaphore");
         }
+        if (frames->currentDescriptorPool() != nullptr) {
+            const fuse::u32 before = frames->descriptorPoolResetCount();
+            frames->beginFrame(1u);
+            expectTrue(frames->descriptorPoolResetCount() == before + 1u,
+                       "beginFrame increments descriptorPoolResetCount when pool is reset");
+        }
     } else {
+        (void)frames->currentDescriptorPool();
         (void)frames->currentTransferCommandBuffer();
         (void)frames->currentTimelineSemaphore();
         (void)frames->currentTimelineValue();
@@ -76,6 +86,7 @@ void testScratchResetAndDescriptorPool() {
         }
     }
 #else
+    (void)frames->currentDescriptorPool();
     (void)frames->currentTransferCommandBuffer();
     (void)frames->currentTimelineSemaphore();
     (void)frames->currentTimelineValue();

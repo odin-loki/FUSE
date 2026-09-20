@@ -53,6 +53,7 @@ public:
 
     bool lastGpuTextureCopySubmitted() const { return m_lastGpuTextureCopySubmitted; }
     u32 lastGpuTextureCopyBytes() const { return m_lastGpuTextureCopyBytes; }
+    bool lastGpuCopyUsedTransferQueue() const { return m_lastGpuCopyUsedTransferQueue; }
 
     LiveCounts liveCounts() const;
     const GpuAllocStats* allocatorStats() const;
@@ -74,6 +75,7 @@ private:
     usize m_stagingOffset = 0;
     bool m_lastGpuTextureCopySubmitted = false;
     u32 m_lastGpuTextureCopyBytes = 0;
+    bool m_lastGpuCopyUsedTransferQueue = false;
     bool m_ready = false;
 };
 
