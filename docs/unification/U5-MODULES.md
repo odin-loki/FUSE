@@ -372,6 +372,17 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_mechanics` | `BtDbvtBridge` AABB tree bridge when `FUSE_BUILD_BULLET` / `FUSE_HAS_BULLET` |
 | `fuse_adventure` | Weapon reload/magazine/spread; `CombatHitscanStub`; conversation NPC state machine (`advanceNpcState`) |
 
+#### Landed wave 21 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | `UaiskExpressionAst` condition parser (`distance < N`) wired into syntax-tree codegen field defaults |
+| `fuse_cinematics` | `TimelineHostStub::wireFromTimeline()` Qt seq overlay ↔ existing timeline host bridge |
+| `fuse_fx` | Mission `schedule()` entries route through `scheduleDelayedDispatch()` instead of immediate VM fire |
+| `fuse_mechanics` | `BtDbvtBridge` overlap gates when `FUSE_BUILD_BULLET` / CPU fallback |
+| `fuse_adventure` | `WeaponCombatLoop` hitscan integration; conversation `advanceNpcState` in hybrid demo |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE20` assertions for nested composite, btDbvt, reload, hitscan; `FUSE_HYBRID_GATES_WAVE21` for timeline host wire, schedule→VM delay, hitscan combat, NPC state |
+
 ---
 
 ## 8. Related docs

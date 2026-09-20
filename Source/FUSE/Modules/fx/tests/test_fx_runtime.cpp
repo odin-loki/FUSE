@@ -622,7 +622,11 @@ void testAfxMissionScheduleCallParse() {
     fuse::fx::AfxMissionScriptVm vm;
     expectTrue(fuse::fx::dispatch_afx_mission_from_mis(kMisText, composer, vm, &error),
                "schedule dispatch prefers ordered hooks");
-    expectTrue(vm.dispatchCount() >= 1u, "schedule dispatch counted");
+    expectTrue(vm.pendingDelayedCount() >= 1u, "schedule entry schedules delayed VM dispatch");
+    expectTrue(vm.dispatchCount() == 0u, "schedule dispatch defers immediate hook fire");
+    fuse::frame::FrameCtx ctx;
+    expectTrue(vm.advanceDelayedDispatches(600, composer, ctx) >= 1u, "scheduled hook fires after delay");
+    expectTrue(vm.dispatchCount() >= 1u, "schedule delayed dispatch counted");
 }
 
 void testAfxMissionExecuteFromMis() {

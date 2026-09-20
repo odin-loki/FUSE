@@ -22,6 +22,7 @@ struct TimelineHostOverlaySample {
 class TimelineHostStub {
 public:
     bool loadSeqAssetText(const std::string& seqText);
+    bool wireFromTimeline(const Timeline& timeline, const std::string& seqText, TimelineMs timeMs);
     bool scrubToMs(TimelineMs timeMs);
     bool setPlaying(bool playing);
 

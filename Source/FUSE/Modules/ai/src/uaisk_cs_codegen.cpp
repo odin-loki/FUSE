@@ -2,6 +2,7 @@
 
 #include <fuse/ai/behavior_runtime.hpp>
 #include <fuse/ai/uaisk_cs_syntax_tree.hpp>
+#include <fuse/ai/uaisk_expression_ast.hpp>
 
 #include <cstdlib>
 
@@ -31,6 +32,26 @@ u32 parseFieldUInt(const std::string& value, u32 fallback) {
     }
 }
 
+void applyExpressionDefaultsToSpecs(const UaiskCsAst& ast, std::vector<NodeLoadSpec>& specs) {
+    for (const UaiskExpressionAst& expr : ast.conditions) {
+        if (!expr.valid) {
+            continue;
+        }
+        for (NodeLoadSpec& spec : specs) {
+            if (spec.typeId == "bb.condition.distance_less" &&
+                (expr.fieldName == "distance" || expr.fieldName == "distanceThreshold" ||
+                 expr.fieldName == "patrolDistance") &&
+                (expr.op == UaiskExpressionOp::Less || expr.op == UaiskExpressionOp::Equal)) {
+                spec.threshold = expr.threshold;
+            } else if (spec.typeId == "bb.condition.allies_in_radius" &&
+                       (expr.fieldName == "patrolRadius" || expr.fieldName == "allyRadius") &&
+                       (expr.op == UaiskExpressionOp::Greater || expr.op == UaiskExpressionOp::Equal)) {
+                spec.threshold = expr.threshold;
+            }
+        }
+    }
+}
+
 void applyFieldDefaultsToSpecs(const UaiskCsAst& ast, std::vector<NodeLoadSpec>& specs) {
     float patrolRadius = 8.f;
     float distanceThreshold = 5.f;
@@ -56,6 +77,8 @@ void applyFieldDefaultsToSpecs(const UaiskCsAst& ast, std::vector<NodeLoadSpec>&
             spec.flagIndex = squadFlagIndex;
         }
     }
+
+    applyExpressionDefaultsToSpecs(ast, specs);
 }
 
 bool containsHook(const UaiskCsAst& ast, std::string_view needle) {
@@ -335,6 +358,14 @@ bool buildAstFromSyntaxTree(const UaiskCsSyntaxTree& tree, UaiskCsAst& outAst) {
             field.typeName = "float";
             field.defaultValue = node.value;
             outAst.fields.push_back(std::move(field));
+
+            if (node.name == "condition" || node.value.find('<') != std::string::npos ||
+                node.value.find('>') != std::string::npos) {
+                UaiskExpressionAst expr;
+                if (parseExpressionAst(node.value, expr)) {
+                    outAst.conditions.push_back(std::move(expr));
+                }
+            }
         }
         if (node.kind == UaiskCsSyntaxNodeKind::Attribute && node.name == "behaviorTree") {
             outAst.primaryRegistryTypeId = node.value;

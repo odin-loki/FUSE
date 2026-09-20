@@ -1630,6 +1630,12 @@ void testTimelineHostStubOverlay() {
     expectTrue(hostStub.loadSeqAssetText(kAssetText), "timeline host loads seq asset");
     expectTrue(hostStub.scrubToMs(2'500), "timeline host scrubs to mount cue");
     expectTrue(hostStub.lastOverlaySample().valid, "timeline host overlay sample valid");
+
+    fuse::cinematics::Timeline timeline = fuse::cinematics::make_outpost_intro_30s_stub();
+    fuse::cinematics::TimelineHostStub wiredHost;
+    expectTrue(wiredHost.wireFromTimeline(timeline, kAssetText, 2'500), "timeline host wires from timeline");
+    expectTrue(wiredHost.overlayWireCount() >= 1u, "timeline host wire counted");
+    expectTrue(wiredHost.lastOverlaySample().valid, "timeline host wired overlay sample valid");
 }
 
 void testVActorMotionSync() {

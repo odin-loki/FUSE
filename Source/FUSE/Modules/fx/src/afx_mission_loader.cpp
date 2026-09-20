@@ -503,8 +503,13 @@ bool dispatch_afx_mission_from_mis(const std::string& misText, FxComposer& compo
     bool dispatched = false;
     if (!body.scheduleEntries.empty()) {
         for (const AfxMissionScheduleEntry& entry : body.scheduleEntries) {
-            (void)entry.delayMs;
-            dispatched = vm.dispatch(missionHookDispatchName(entry.hookName), composer) || dispatched;
+            const std::string hookName = missionHookDispatchName(entry.hookName);
+            if (entry.delayMs > 0) {
+                vm.scheduleDelayedDispatch(hookName, entry.delayMs);
+                dispatched = true;
+            } else {
+                dispatched = vm.dispatch(hookName, composer) || dispatched;
+            }
         }
     } else if (!body.callTargets.empty()) {
         for (const std::string& target : body.callTargets) {

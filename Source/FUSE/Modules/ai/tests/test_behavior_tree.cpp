@@ -2096,6 +2096,30 @@ void testUaiskCodegenMethodBody() {
     expectTrue(tree.nodeCount() >= 1u, "method-body codegen emits nodes");
 }
 
+void testUaiskExpressionAstCodegen() {
+    static const char* kCsText =
+        "class TargetingPatrol : BehaviorBase {\n"
+        "  condition = \"distance < 12\";\n"
+        "  distanceThreshold = 5.f;\n"
+        "  behaviorTree = \"aiTargeting.cs\";\n"
+        "}\n";
+
+    fuse::ai::BehaviorTree tree;
+    std::string error;
+    expectTrue(fuse::ai::uaisk::codegenTreeFromSyntaxTree("aiTargeting.cs", kCsText, tree, &error),
+               "expression AST codegen builds distance tree");
+    expectTrue(tree.nodeCount() >= 1u, "expression AST codegen emits nodes");
+
+    fuse::ai::uaisk::UaiskCsSyntaxTree syntaxTree;
+    expectTrue(fuse::ai::uaisk::parseCsSyntaxTree("aiTargeting.cs", kCsText, syntaxTree),
+               "expression AST syntax tree parse");
+    fuse::ai::uaisk::UaiskCsAst ast;
+    expectTrue(fuse::ai::uaisk::buildAstFromSyntaxTree(syntaxTree, ast), "expression AST ast build");
+    expectTrue(!ast.conditions.empty(), "expression AST condition collected");
+    expectTrue(ast.conditions[0].fieldName == "distance", "expression AST field name parsed");
+    expectTrue(ast.conditions[0].threshold == 12.f, "expression AST threshold parsed");
+}
+
 void testUaiskNestedCompositeCodegen() {
     static const char* kCsText =
         "class CompositePatrol : BehaviorBase {\n"
@@ -2408,6 +2432,7 @@ int main() {
     testUaiskCodegenSyntaxTreePath();
     testUaiskCodegenMethodBody();
     testUaiskCodegenMultiLeafMethodBody();
+    testUaiskExpressionAstCodegen();
     testUaiskNestedCompositeCodegen();
     testUaiskFSEventsPollPath();
     testUaiskFSEventsCoreServicesStub();

@@ -17,6 +17,24 @@ bool TimelineHostStub::loadSeqAssetText(const std::string& seqText) {
     return true;
 }
 
+bool TimelineHostStub::wireFromTimeline(const Timeline& timeline, const std::string& seqText, TimelineMs timeMs) {
+    if (seqText.empty()) {
+        return false;
+    }
+
+    m_seqAssetText = seqText;
+    ++m_overlayWireCount;
+    m_scrubTimeMs = timeMs;
+    m_timeline.scrub_to(timeline.playhead().time_ms());
+    if (!load_timeline_from_asset(seqText, m_timeline, nullptr)) {
+        return false;
+    }
+    m_timeline.scrub_to(timeMs);
+    ++m_scrubCount;
+    m_lastOverlaySample = sampleOverlayAt(timeMs);
+    return m_lastOverlaySample.valid;
+}
+
 bool TimelineHostStub::scrubToMs(TimelineMs timeMs) {
     if (m_seqAssetText.empty()) {
         return false;

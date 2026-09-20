@@ -10,11 +10,15 @@
 #include <fuse/adventure/skeletal_mount_stub.hpp>
 #include <fuse/adventure/weapon_grant_pipeline.hpp>
 #include <fuse/adventure/weapon_mount_animation.hpp>
+#include <fuse/adventure/combat_hitscan_stub.hpp>
 #include <fuse/adventure/weapon_combat_loop.hpp>
 #include <fuse/adventure/weapon_runtime.hpp>
+#include <fuse/ai/uaisk_cs_codegen.hpp>
+#include <fuse/ai/uaisk_tree_reload.hpp>
 #include <fuse/animation/skeleton.hpp>
 #include <fuse/ai/behavior_runtime.hpp>
 #include <fuse/cinematics/timeline.hpp>
+#include <fuse/cinematics/timeline_host_stub.hpp>
 #include <fuse/dimension/world_handle.hpp>
 #include <fuse/frame/frame_ctx.hpp>
 #include <fuse/fx/afx_mission_script_vm.hpp>
@@ -22,6 +26,7 @@
 #include <fuse/hybrid/hybrid_composer.hpp>
 #include <fuse/mechanics/broadphase_trigger_sync.hpp>
 #include <fuse/mechanics/broadphase_world_stub.hpp>
+#include <fuse/mechanics/bt_dbvt_bridge.hpp>
 #include <fuse/mechanics/console_method_component.hpp>
 #include <fuse/mechanics/counter_component.hpp>
 #include <fuse/mechanics/delay_component.hpp>
@@ -75,6 +80,14 @@
 #define FUSE_HYBRID_GATES_WAVE19 1
 #endif
 
+#ifndef FUSE_HYBRID_GATES_WAVE20
+#define FUSE_HYBRID_GATES_WAVE20 1
+#endif
+
+#ifndef FUSE_HYBRID_GATES_WAVE21
+#define FUSE_HYBRID_GATES_WAVE21 1
+#endif
+
 namespace fuse::hybrid::gates {
 
 constexpr int kFrameCount = 60;
@@ -121,8 +134,12 @@ struct State {
     fuse::mechanics::RadioComponent leverRadio{"lever_radio", "outpost_alert"};
     fuse::mechanics::HealthComponent guardHealth{"outpost_guard_health", 100};
     fuse::mechanics::BroadphaseWorldStub broadphaseWorld;
+    fuse::mechanics::BtDbvtBridge btDbvtBridge;
+
+    fuse::ai::uaisk::TreeFileWatchRegistry treeFileWatchRegistry;
 
     fuse::adventure::Inventory playerInventory;
+    fuse::adventure::CombatHitscanStub combatHitscan;
     fuse::adventure::WeaponCombatLoop weaponCombatLoop;
     fuse::adventure::WeaponGrantPipeline weaponGrantPipeline;
     fuse::adventure::WeaponRuntime weaponRuntime;
@@ -138,6 +155,7 @@ struct State {
     fuse::adventure::OutpostSpawnBundle outpostSpawn;
 
     fuse::cinematics::VActorBridge vactorBridge;
+    fuse::cinematics::TimelineHostStub timelineHostStub;
     fuse::cinematics::TimelineMs lastTimelineMs = 0;
 
     std::string hudPromptText;
@@ -152,6 +170,11 @@ struct State {
     u32 broadphaseDbvtHits = 0;
     bool weaponFired = false;
     bool combatLoopFired = false;
+    bool weaponReloaded = false;
+    bool timelineHostWired = false;
+    u32 nestedCompositeNodeCount = 0;
+    u32 btDbvtOverlapHits = 0;
+    u32 delayedMissionDispatchCount = 0;
     float initialClearR = 0.f;
     float initialClearG = 0.f;
     float initialClearB = 0.f;

@@ -5,6 +5,7 @@
 #include <fuse/ai/node_registry.hpp>
 #include <fuse/ai/uaisk_cs_parser.hpp>
 #include <fuse/ai/uaisk_cs_syntax_tree.hpp>
+#include <fuse/ai/uaisk_expression_ast.hpp>
 
 #include <string>
 #include <vector>
@@ -41,6 +42,7 @@ struct UaiskCsAst {
     std::vector<std::string> behaviorTreeHooks;
     std::vector<UaiskCsMethodRef> methods;
     std::vector<UaiskCsFieldRef> fields;
+    std::vector<UaiskExpressionAst> conditions;
 };
 
 /// Build an AST view from parsed `.cs` metadata.

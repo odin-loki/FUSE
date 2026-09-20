@@ -275,10 +275,14 @@ int main() {
 
     fuse::mechanics::HealthComponent targetHealth("target_dummy", 100);
     fuse::adventure::WeaponCombatLoop combatLoop;
+    fuse::adventure::CombatHitscanStub hitscanLoop;
     combatLoop.setActiveWeapon(&weaponRuntime);
     combatLoop.setTarget(&targetHealth);
+    combatLoop.setHitscanStub(&hitscanLoop);
+    combatLoop.setTargetPosition(10.f, 0.f, 0.f);
     combatLoop.tick(0.f);
     expectTrue(combatLoop.tryFire(inventory), "weapon combat loop fires");
+    expectTrue(combatLoop.hitscanHitCount() >= 1u, "weapon combat loop hitscan hit counted");
     expectTrue(combatLoop.damageApplyCount() == 1u, "weapon combat loop applies damage");
     expectTrue(targetHealth.currentHealth() < 100, "weapon combat loop reduced target health");
     expectTrue(!combatLoop.tryFire(inventory), "weapon combat loop respects fire-rate gate");

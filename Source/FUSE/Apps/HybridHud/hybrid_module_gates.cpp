@@ -8,12 +8,15 @@
 #include <fuse/cinematics/sprite_track.hpp>
 #include <fuse/cinematics/vactor_bridge.hpp>
 #include <fuse/fx/afx_mission_hooks.hpp>
+#include <fuse/fx/afx_mission_loader.hpp>
 #include <fuse/fx/afx_template_pack.hpp>
 #include <fuse/fx/fx_socket.hpp>
 #include <fuse/handle.hpp>
 #include <fuse/object.hpp>
 
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 
 namespace fuse::hybrid::gates {
 
@@ -38,6 +41,16 @@ void setupFx(State& state) {
     fuse::fx::registerAfxTemplateMissionHooks(state.fxComposer);
     fuse::fx::registerAfxTemplateMissionVm(state.fxComposer, state.missionScriptVm);
     state.missionScriptVm.dispatch("on_ambient_fx", state.fxComposer);
+
+    static const char* kScheduledMisText =
+        "missionName = \"HybridHudSchedule\";\n"
+        "schedule(50, onAmbientFx);\n"
+        "function onAmbientFx() {\n"
+        "  attachEffect(\"spark_burst\");\n"
+        "}\n";
+    std::string scheduleError;
+    (void)fuse::fx::dispatch_afx_mission_from_mis(kScheduledMisText, state.fxComposer, state.missionScriptVm,
+                                                 &scheduleError);
 
     fuse::fx::FxSocket spriteSocket;
     spriteSocket.kind = fuse::fx::FxSocketKind::Sprite2D;
@@ -85,6 +98,30 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
 
     state.aiRuntime.registerTreeProfile(0, fuse::ai::BehaviorTree::makeMoveTowardDemoTree(0.12f));
     fuse::ai::uaisk::registerPatrolSquadProfile(state.aiRuntime);
+    static const char* kNestedCompositeCs =
+        "class CompositePatrol : BehaviorBase {\n"
+        "  composite = \"selector\";\n"
+        "  behaviorTree = \"aiComposite.cs\";\n"
+        "  void onNestedPatrol() {}\n"
+        "}\n";
+    fuse::ai::BehaviorTree nestedCompositeTree;
+    std::string nestedCompositeError;
+    if (fuse::ai::uaisk::codegenTreeFromSyntaxTree("aiComposite.cs", kNestedCompositeCs, nestedCompositeTree,
+                                                    &nestedCompositeError)) {
+        state.nestedCompositeNodeCount = nestedCompositeTree.nodeCount();
+        state.aiRuntime.registerTreeProfile(2, std::move(nestedCompositeTree));
+    }
+    {
+        namespace fs = std::filesystem;
+        const fs::path tempPath = fs::temp_directory_path() / "fuse_hybrid_patrol_wave21.bt";
+        {
+            std::ofstream out(tempPath);
+            out << "bb.action.set_flag flag=1\nroot=0\n";
+        }
+        state.treeFileWatchRegistry.watchProfileFromDisk(tempPath.string(), 8u);
+        (void)state.treeFileWatchRegistry.pollFSEventsFileChanges(state.aiRuntime);
+        fs::remove(tempPath);
+    }
 #if FUSE_HYBRID_GATES_SCRIPT
     state.scriptHost.init();
     state.scriptHostBridge.attach();
@@ -133,8 +170,19 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     state.leverRadio.startBroadcast();
     state.weaponCombatLoop.setActiveWeapon(&state.weaponRuntime);
     state.weaponCombatLoop.setTarget(&state.guardHealth);
+    state.weaponCombatLoop.setHitscanStub(&state.combatHitscan);
+    state.weaponCombatLoop.setTargetPosition(state.guard3D.x(), state.guard3D.y(), state.guard3D.z());
+    state.combatHitscan.setSpreadDeg(state.weaponRuntime.stats().spreadDeg);
 
     setupTimelineFromAsset(state.timeline);
+    static const char* kTimelineHostAssetText =
+        "# Outpost intro 30s sequence\n"
+        "duration_ms=30000\n"
+        "sprite hud_sprite 0,-20,0,1 15000,0,10,1 30000,40,20,1\n"
+        "camera 0,0,0,8,55 15000,0,30,12,70 30000,0,60,15,85\n"
+        "actor agent_3d mount 2000 cockpit 15\n";
+    state.timelineHostWired =
+        state.timelineHostStub.wireFromTimeline(state.timeline, kTimelineHostAssetText, 2'500);
     setupFx(state);
 
     state.loadedOutpostStub = fuse::adventure::loadEmbeddedOutpostStub(state.outpostContent);
@@ -185,6 +233,8 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
             grantRequest.ammoAmount = 20;
             grantRequest.stats.damage = 25.f;
             grantRequest.stats.range = 80.f;
+            grantRequest.stats.magazineSize = 1;
+            grantRequest.stats.reloadMs = 50;
             fuse::adventure::SkeletalBoneMount boneMount{};
             boneMount.boneName = "weapon_shoulder";
             boneMount.yawDeg = 15.f;
@@ -197,6 +247,9 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
             state.weaponFired = state.weaponRuntime.fire(state.playerInventory);
             state.weaponCombatLoop.tick(1.f / 60.f);
             state.combatLoopFired = state.weaponCombatLoop.tryFire(state.playerInventory);
+            if (state.weaponRuntime.magazineAmmo() == 0u) {
+                state.weaponReloaded = state.weaponRuntime.reload(state.playerInventory);
+            }
         }
 
         auto guardIt = state.outpostSpawn.conversations.find("outpost_guard");
@@ -217,6 +270,7 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
                 state.guardLineText =
                     state.adventureSystem.converseBranch(branchCtx, *guardIt->second, "polite");
             }
+            (void)state.conversationScriptVm.advanceNpcState("outpost_guard", branchCtx, *guardIt->second);
         }
     });
 
@@ -258,6 +312,28 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     agentBody.y = state.agent3D.y();
     agentBody.z = state.agent3D.z();
     state.broadphaseWorld.addBody(agentBody);
+
+    fuse::mechanics::BtDbvtProxy agentDbvt{};
+    agentDbvt.objectId = kAgentObjectId;
+    agentDbvt.proxy = fuse::mechanics::makeBroadphaseProxyDesc(fuse::mechanics::BroadphaseProxyFilter::Character);
+    agentDbvt.minX = state.agent3D.x() - 0.5f;
+    agentDbvt.maxX = state.agent3D.x() + 0.5f;
+    agentDbvt.minY = state.agent3D.y() - 0.5f;
+    agentDbvt.maxY = state.agent3D.y() + 0.5f;
+    agentDbvt.minZ = state.agent3D.z() - 0.5f;
+    agentDbvt.maxZ = state.agent3D.z() + 0.5f;
+    state.btDbvtBridge.insertProxy(agentDbvt);
+
+    fuse::mechanics::BtDbvtProxy triggerDbvt{};
+    triggerDbvt.objectId = 99u;
+    triggerDbvt.proxy = fuse::mechanics::makeBroadphaseProxyDesc(fuse::mechanics::BroadphaseProxyFilter::Trigger);
+    triggerDbvt.minX = state.agent3D.x() - 1.f;
+    triggerDbvt.maxX = state.agent3D.x() + 1.f;
+    triggerDbvt.minY = state.agent3D.y() - 1.f;
+    triggerDbvt.maxY = state.agent3D.y() + 1.f;
+    triggerDbvt.minZ = state.agent3D.z() - 1.f;
+    triggerDbvt.maxZ = state.agent3D.z() + 1.f;
+    state.btDbvtBridge.insertProxy(triggerDbvt);
 
     state.broadphaseTriggerSync.bindTrigger(&state.leverTrigger);
     state.broadphaseTriggerSync.setPositionProvider([&state](fuse::u32 objectId) -> fuse::mechanics::PhysicsBodyPosition {
@@ -304,6 +380,9 @@ void tickFrame(State& state, fuse::hybrid::HybridComposer& composer, const fuse:
 
     state.fxComposer.tick(ctx);
     state.missionScriptVm.dispatchTick(state.fxComposer, ctx);
+    state.delayedMissionDispatchCount += state.missionScriptVm.advanceDelayedDispatches(
+        static_cast<fuse::u32>(ctx.dt * 1000.f), state.fxComposer, ctx);
+    state.weaponRuntime.advanceReload(static_cast<fuse::u32>(ctx.dt * 1000.f));
 
     state.physicsBroadphaseBridge.trackBody(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
     state.physicsBroadphaseBridge.syncBody(kAgentObjectId);
@@ -317,6 +396,8 @@ void tickFrame(State& state, fuse::hybrid::HybridComposer& composer, const fuse:
     state.broadphaseDbvtHits = state.broadphaseWorld.queryDbvtOverlaps(
         state.agent3D.x() - 2.f, state.agent3D.y() - 2.f, state.agent3D.z() - 2.f, state.agent3D.x() + 2.f,
         state.agent3D.y() + 2.f, state.agent3D.z() + 2.f);
+    state.btDbvtOverlapHits = state.btDbvtBridge.queryOverlaps(
+        fuse::mechanics::BroadphaseProxyFilter::Character, fuse::mechanics::BroadphaseProxyFilter::Trigger);
     state.physicsTriggerBridge.syncObject(kAgentObjectId);
     state.broadphaseTriggerSync.trackBody(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
     state.broadphaseTriggerSync.syncAll();
@@ -432,6 +513,37 @@ VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& comp
     }
     if (state.vactorBridge.boneMotionSyncCount() == 0u) {
         return {false, "fuse_cinematics bone attach motion sync applied"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE21
+    if (!state.timelineHostWired || state.timelineHostStub.overlayWireCount() == 0u) {
+        return {false, "fuse_cinematics TimelineHostStub wired from timeline in hybrid demo"};
+    }
+    if (state.timelineHostStub.lastOverlaySample().time_ms < 2'000) {
+        return {false, "fuse_cinematics TimelineHostStub overlay scrub sample valid"};
+    }
+    if (state.delayedMissionDispatchCount == 0u && state.missionScriptVm.delayedDispatchCount() == 0u) {
+        return {false, "fuse_fx mission schedule delayed VM dispatch fired in hybrid demo"};
+    }
+    if (state.weaponCombatLoop.hitscanHitCount() == 0u) {
+        return {false, "fuse_adventure combat loop hitscan hit applied in hybrid demo"};
+    }
+    if (state.conversationScriptVm.stateAdvanceCount() == 0u) {
+        return {false, "fuse_adventure conversation NPC state machine advanced in hybrid demo"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE20
+    if (state.nestedCompositeNodeCount < 7u) {
+        return {false, "fuse_ai nested composite codegen profile registered in hybrid demo"};
+    }
+    if (state.btDbvtBridge.proxyCount() < 2u || state.btDbvtOverlapHits == 0u) {
+        return {false, "fuse_mechanics BtDbvtBridge overlap query hit in hybrid demo"};
+    }
+    if (!state.weaponReloaded && state.weaponRuntime.reloadCount() == 0u) {
+        return {false, "fuse_adventure weapon runtime reload began in hybrid demo"};
+    }
+    if (state.combatHitscan.fireCount() == 0u) {
+        return {false, "fuse_adventure CombatHitscanStub fired in hybrid demo"};
     }
 #endif
 #if FUSE_HYBRID_GATES_WAVE19
