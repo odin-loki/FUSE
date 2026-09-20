@@ -32,7 +32,15 @@ void PathComponent::advanceAlongPath(f32 speed, f32 dt) {
     const f32 dist = std::sqrt(dx * dx + dy * dy + dz * dz);
     if (dist <= 0.0001f) {
         ++m_pathIndex;
-        m_finished = m_pathIndex >= m_waypoints.size();
+        if (m_pathIndex >= m_waypoints.size()) {
+            if (m_loop && !m_waypoints.empty()) {
+                m_pathIndex = 0;
+                ++m_loopCount;
+                m_finished = false;
+            } else {
+                m_finished = true;
+            }
+        }
         ++m_tickCount;
         return;
     }
@@ -43,7 +51,15 @@ void PathComponent::advanceAlongPath(f32 speed, f32 dt) {
         m_y = target.y;
         m_z = target.z;
         ++m_pathIndex;
-        m_finished = m_pathIndex >= m_waypoints.size();
+        if (m_pathIndex >= m_waypoints.size()) {
+            if (m_loop && !m_waypoints.empty()) {
+                m_pathIndex = 0;
+                ++m_loopCount;
+                m_finished = false;
+            } else {
+                m_finished = true;
+            }
+        }
     } else {
         const f32 scale = step / dist;
         m_x += dx * scale;

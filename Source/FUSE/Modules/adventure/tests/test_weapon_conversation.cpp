@@ -222,6 +222,35 @@ int main() {
     expectTrue(bindBridge.applyCount() == 1u, "animation bind pose bridge counted");
     expectTrue(bindBridge.lastBoneIndex() == 12u, "animation bind pose bridge resolves bone index");
 
+    inventory.setMaxLimit(fuse::adventure::ItemId("scatter_gun"), 1);
+    fuse::adventure::WeaponPickupInteractable mountRifle(fuse::adventure::ItemId("scatter_gun"),
+                                                         fuse::adventure::ItemId("energy_cell"), 10);
+    fuse::adventure::WeaponGrantPipeline mountPipeline;
+    fuse::adventure::WeaponGrantRequest mountRequest{};
+    mountRequest.weapon = fuse::adventure::ItemId("scatter_gun");
+    mountRequest.ammo = fuse::adventure::ItemId("energy_cell");
+    mountRequest.ammoAmount = 10;
+    fuse::adventure::WeaponRuntime mountRuntime;
+    fuse::adventure::WeaponMountAnimationStub mountAnimStub;
+    fuse::adventure::SkeletalMountStub mountSkeletal;
+    fuse::adventure::SkeletalBoneMount mountBone{};
+    mountBone.boneName = "weapon_shoulder";
+    mountSkeletal.setBoneMount(mountBone);
+    expectTrue(mountPipeline.grantOnPickupWithMount(ctx, mountRifle, mountRequest, mountRuntime,
+                                                      mountAnimStub, mountSkeletal),
+               "weapon grant pipeline with mount chain");
+    expectTrue(mountPipeline.mountGrantCount() == 1u, "weapon mount grant counted");
+
+    fuse::adventure::ConversationScriptVm bestVm;
+    fuse::adventure::registerOutpostConversationScriptHooks(bestVm);
+    fuse::adventure::ConversationBranch armedBranch;
+    armedBranch.id = "armed";
+    armedBranch.lines = {"I see you are armed. Keep that rifle stowed."};
+    fuse::adventure::ConversationInteractable guardArmed({"Halt."}, {armedBranch});
+    expectTrue(bestVm.dispatchBestBranch("outpost_guard", ctx, guardArmed),
+               "conversation VM dispatchBestBranch chooses armed");
+    expectTrue(bestVm.lastBranchDispatched() == "armed", "armed branch wins by priority");
+
     fuse::core::shutdown();
 
     if (g_failures == 0) {

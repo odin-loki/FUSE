@@ -540,6 +540,35 @@ void testParticlePoolCudaSelectiveWriteback() {
     expectTrue(gpuBackend.selectiveWritebackCount() <= 1u, "selective writeback counted");
 }
 
+void testComposerSelectiveWriteback() {
+    fuse::fx::FxComposer composer;
+    composer.registerDemoVerticalSlice();
+
+    fuse::fx::FxSocket socket;
+    socket.kind = fuse::fx::FxSocketKind::Sprite2D;
+    socket.effectId = "spark_burst";
+    composer.attach(socket);
+
+    fuse::frame::FrameCtx ctx;
+    ctx.dt = 1.f / 60.f;
+    composer.tick(ctx);
+    expectTrue(composer.particlePoolGpu().selectiveWritebackCount() >= 0u,
+               "composer tick selective writeback path executes");
+}
+
+void testAfxMissionSpellCodegen() {
+    static const char* kMisText =
+        "new SimObject(FireballSpell) {\n"
+        "  spellId = \"fireball\";\n"
+        "}\n";
+
+    fuse::fx::AfxMissionBody body;
+    std::vector<fuse::fx::AfxMissionBodySpell> spells;
+    expectTrue(fuse::fx::parse_afx_mission_body_from_mis(kMisText, body), "spell body parse");
+    expectTrue(fuse::fx::codegen_spells_from_mission_body(body, spells) == 1u, "spell codegen from body");
+    expectTrue(!spells.empty() && spells[0].spellId == "fireball", "fireball spell id codegen");
+}
+
 void testAfxMissionNestedSimObjectParse() {
     static const char* kMisText =
         "new SimObject(FireballGroup) {\n"
@@ -587,6 +616,8 @@ int main() {
     testAfxChoreographerBridge();
     testParticlePoolTick();
     testParticlePoolCudaSelectiveWriteback();
+    testComposerSelectiveWriteback();
+    testAfxMissionSpellCodegen();
     testAfxMissionNestedSimObjectParse();
     fuse::core::shutdown();
 

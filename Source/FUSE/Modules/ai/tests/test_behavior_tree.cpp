@@ -2080,6 +2080,41 @@ void testUaiskCodegenSyntaxTreePath() {
     expectTrue(tree.nodeCount() >= 7u, "syntax-tree codegen emits selector nodes");
 }
 
+void testUaiskCodegenFieldDefaults() {
+    static const char* kCsText =
+        "class PatrolSquad : BehaviorBase {\n"
+        "  behaviorTree = \"aiBehaviors.cs\";\n"
+        "  float patrolRadius = 12;\n"
+        "  float distanceThreshold = 7;\n"
+        "}\n";
+
+    fuse::ai::uaisk::UaiskCsSyntaxTree tree;
+    expectTrue(fuse::ai::uaisk::parseCsSyntaxTree("aiBehaviors.cs", kCsText, tree),
+               "syntax tree parses field defaults");
+
+    fuse::ai::uaisk::UaiskCsAst ast;
+    expectTrue(fuse::ai::uaisk::buildAstFromSyntaxTree(tree, ast), "AST built from syntax tree");
+
+    std::vector<fuse::ai::NodeLoadSpec> specs;
+    fuse::u32 rootIndex = 0;
+    std::string error;
+    expectTrue(fuse::ai::uaisk::codegenSpecsForModule(ast, specs, rootIndex, &error),
+               "codegen specs with field defaults");
+
+    bool sawRadius = false;
+    bool sawDistance = false;
+    for (const fuse::ai::NodeLoadSpec& spec : specs) {
+        if (spec.typeId == "bb.condition.allies_in_radius" && spec.threshold == 12.f) {
+            sawRadius = true;
+        }
+        if (spec.typeId == "bb.condition.distance_less" && spec.threshold == 7.f) {
+            sawDistance = true;
+        }
+    }
+    expectTrue(sawRadius, "patrolRadius field default applied to allies_in_radius");
+    expectTrue(sawDistance, "distanceThreshold field default applied to distance_less");
+}
+
 void testUaiskTreeOsFileWatchProgress() {
     namespace fs = std::filesystem;
     const fs::path tempPath = fs::temp_directory_path() / "fuse_patrol_wave13.bt";
@@ -2265,6 +2300,7 @@ int main() {
     testUaiskFSEventsBackendStub();
     testUaiskInotifyHotReloadRegistry();
     testUaiskCodegenSyntaxTreePath();
+    testUaiskCodegenFieldDefaults();
     testReloadCodegenProfile();
     testRuntimeTreeReloadPreservesBlackboard();
     testAgentEntityBindSyncsBindingPosition();

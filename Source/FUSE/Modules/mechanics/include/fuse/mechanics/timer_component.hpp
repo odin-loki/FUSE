@@ -5,6 +5,7 @@
 #include <fuse/mechanics/component.hpp>
 #include <fuse/types.hpp>
 
+#include <functional>
 #include <string>
 
 namespace fuse::mechanics {
@@ -24,7 +25,9 @@ public:
     void setActive(bool active) { m_active = active; }
 
     void tick(f32 dt);
+    void setOnFire(std::function<void()> callback) { m_onFire = std::move(callback); }
     u32 fireCount() const { return m_fireCount; }
+    u32 callbackFireCount() const { return m_callbackFireCount; }
     f32 elapsedSec() const { return m_elapsedSec; }
 
 private:
@@ -32,6 +35,8 @@ private:
     f32 m_elapsedSec = 0.f;
     bool m_active = true;
     u32 m_fireCount = 0;
+    u32 m_callbackFireCount = 0;
+    std::function<void()> m_onFire;
 };
 
 } // namespace fuse::mechanics

@@ -146,6 +146,16 @@ bool ConversationScriptVm::chooseHighestPriorityBranch(const std::string& npcId,
     return found;
 }
 
+bool ConversationScriptVm::dispatchBestBranch(const std::string& npcId,
+                                              InteractContext& ctx,
+                                              ConversationInteractable& target) {
+    std::string branchId;
+    if (!chooseHighestPriorityBranch(npcId, ctx, branchId)) {
+        return false;
+    }
+    return dispatchBranch(npcId, branchId, ctx, target);
+}
+
 void registerOutpostConversationScriptHooks(ConversationScriptVm& vm) {
     ConversationScriptHook polite{};
     polite.npcId = "outpost_guard";
@@ -167,6 +177,7 @@ void registerOutpostConversationScriptHooks(ConversationScriptVm& vm) {
     armed.lines = {"I see you are armed. Keep that rifle stowed."};
     armed.requiredItem = "plasma_rifle";
     armed.minInventoryCount = 1;
+    armed.priority = 10;
 
     vm.registerHook(polite);
     vm.registerHook(aggressive);

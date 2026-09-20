@@ -120,6 +120,13 @@ u32 BroadphaseWorldStub::queryAabbOverlaps(float minX, float minY, float minZ, f
 
 u32 BroadphaseWorldStub::queryRaycastStub(float originX, float originY, float originZ, float dirX,
                                           float dirY, float dirZ, float maxDistance) {
+    return queryRaycastStubFiltered(originX, originY, originZ, dirX, dirY, dirZ, maxDistance,
+                                    BroadphaseProxyFilter::Character);
+}
+
+u32 BroadphaseWorldStub::queryRaycastStubFiltered(float originX, float originY, float originZ, float dirX,
+                                                  float dirY, float dirZ, float maxDistance,
+                                                  BroadphaseProxyFilter filter) {
     ++m_raycastQueryCount;
     m_lastOverlapCount = 0;
 
@@ -133,7 +140,21 @@ u32 BroadphaseWorldStub::queryRaycastStub(float originX, float originY, float or
     const float ndy = dirY * invLen;
     const float ndz = dirZ * invLen;
 
+#if defined(FUSE_HAS_BULLET) && FUSE_HAS_BULLET
+    const BroadphaseProxyDesc rayProxy = bulletProxyForFilter(filter);
+#endif
+
     for (const BroadphaseWorldBody& body : m_bodies) {
+#if defined(FUSE_HAS_BULLET) && FUSE_HAS_BULLET
+        const BroadphaseProxyDesc bodyProxy = bulletProxyForFilter(body.proxy.filter);
+        if (!broadphaseProxyDescsCollide(rayProxy, bodyProxy)) {
+            continue;
+        }
+#endif
+        if (!broadphaseProxyFiltersCollide(filter, body.proxy.filter)) {
+            continue;
+        }
+
         const float toX = body.x - originX;
         const float toY = body.y - originY;
         const float toZ = body.z - originZ;

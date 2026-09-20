@@ -1558,6 +1558,22 @@ void testCuePreviewMotionCameraSprite() {
     expectTrue(sawSprite, "cue preview includes sprite sample");
 }
 
+void testTimelineAssetBoneToken() {
+    static const char* kAssetText =
+        "duration_ms=5000\n"
+        "actor agent_3d mount 1000 cockpit bone=spine_mount\n";
+
+    fuse::cinematics::Timeline timeline;
+    std::string error;
+    expectTrue(fuse::cinematics::load_timeline_from_asset(kAssetText, timeline, &error),
+               "timeline asset parses bone= token");
+
+    fuse::cinematics::SeqScrubPreview preview;
+    expectTrue(fuse::cinematics::scrub_seq_preview(kAssetText, 1'500, timeline, preview, &error),
+               "scrub preview with bone token");
+    expectTrue(preview.bone_name == "spine_mount", "scrub preview bone name from asset token");
+}
+
 void testVActorMotionSync() {
     fuse::cinematics::Timeline timeline = fuse::cinematics::make_outpost_intro_30s_stub();
     fuse::SceneObject3D agent("agent_3d");
@@ -1638,6 +1654,7 @@ int main() {
     testVActorShapeBaseAttach();
     testVActorShapeBaseBoneAttach();
     testVActorBoneAttachMotionSync();
+    testTimelineAssetBoneToken();
     testVActorBridgeDrainCues();
     testOutpostIntro30sStub();
     testHybridTimelineDrive();

@@ -29,6 +29,9 @@
         },
         "polite": {
           "lines": ["Thank you, traveler. Proceed with caution."]
+        },
+        "armed": {
+          "lines": ["I see you are armed. Keep that rifle stowed."]
         }
       }
     }

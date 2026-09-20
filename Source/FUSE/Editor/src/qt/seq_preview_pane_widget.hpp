@@ -3,6 +3,8 @@
 #include <fuse/editor/cinematics_seq_import.hpp>
 #include <fuse/editor/editor_host.hpp>
 
+#include <QLabel>
+#include <QVBoxLayout>
 #include <QWidget>
 
 namespace fuse::editor::qt {
@@ -21,6 +23,7 @@ public:
     void scrubToMs(fuse::cinematics::TimelineMs timeMs);
 
     [[nodiscard]] u32 scrubPostCount() const { return m_scrubPostCount; }
+    [[nodiscard]] const QString& lastPreviewLabel() const { return m_lastPreviewLabel; }
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -28,6 +31,8 @@ protected:
 private:
     EditorHost& m_host;
     CinematicsSeqImport m_seqImport;
+    QLabel* m_previewLabel = nullptr;
+    QString m_lastPreviewLabel;
     u32 m_scrubPostCount = 0;
 };
 

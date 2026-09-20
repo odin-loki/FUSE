@@ -2,6 +2,7 @@
 #include <fuse/mechanics/follow_component.hpp>
 #include <fuse/mechanics/light_component.hpp>
 #include <fuse/mechanics/move_component.hpp>
+#include <fuse/mechanics/animate_component.hpp>
 #include <fuse/mechanics/path_component.hpp>
 #include <fuse/mechanics/timer_component.hpp>
 #include <fuse/mechanics/broadphase_world_stub.hpp>
@@ -104,8 +105,26 @@ int main() {
     expectTrue(path.x() > 0.f, "path component advances along waypoints");
 
     fuse::mechanics::TimerComponent timer("outpost_timer", 0.5f);
+    fuse::u32 callbackCount = 0;
+    timer.setOnFire([&callbackCount]() { ++callbackCount; });
     timer.tick(1.1f);
     expectTrue(timer.fireCount() == 2u, "timer component fires periodically");
+    expectTrue(callbackCount == 2u, "timer onFire callback invoked");
+
+    fuse::mechanics::PathComponent loopPath("loop_patrol");
+    loopPath.setPosition(0.f, 0.f, 0.f);
+    loopPath.addWaypoint(2.f, 0.f, 0.f);
+    loopPath.setLoop(true);
+    loopPath.advanceAlongPath(4.f, 1.f);
+    expectTrue(loopPath.loopCount() >= 1u, "path component loops waypoints");
+
+    fuse::mechanics::AnimateComponent animate("lever_anim", 0.25f);
+    animate.advance(0.5f);
+    expectTrue(animate.cycleCount() >= 1u, "animate component completes cycle");
+
+    expectTrue(world.queryRaycastStubFiltered(0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 5.f,
+                                              fuse::mechanics::BroadphaseProxyFilter::Character) >= 1u,
+               "filtered raycast finds character body");
 
     fuse::core::shutdown();
 

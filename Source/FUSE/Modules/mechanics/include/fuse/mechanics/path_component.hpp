@@ -35,12 +35,18 @@ public:
     void setPosition(f32 x, f32 y, f32 z);
     void advanceAlongPath(f32 speed, f32 dt);
 
+    bool loop() const { return m_loop; }
+    void setLoop(bool loop) { m_loop = loop; }
+    u32 loopCount() const { return m_loopCount; }
+
     u32 tickCount() const { return m_tickCount; }
     bool finished() const { return m_finished; }
 
 private:
     std::vector<PathWaypoint> m_waypoints;
     u32 m_pathIndex = 0;
+    u32 m_loopCount = 0;
+    bool m_loop = false;
     f32 m_x = 0.f;
     f32 m_y = 0.f;
     f32 m_z = 0.f;

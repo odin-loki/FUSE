@@ -206,10 +206,18 @@ bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, st
                 event.mount_point = mountPoint;
                 std::string yawToken;
                 if (lineStream >> yawToken) {
-                    parseFloat(yawToken, event.mount_yaw_deg);
-                    std::string boneToken;
-                    if (lineStream >> boneToken) {
-                        event.bone_name = boneToken;
+                    if (yawToken.rfind("bone=", 0) == 0) {
+                        event.bone_name = yawToken.substr(5);
+                    } else {
+                        parseFloat(yawToken, event.mount_yaw_deg);
+                        std::string boneToken;
+                        if (lineStream >> boneToken) {
+                            if (boneToken.rfind("bone=", 0) == 0) {
+                                event.bone_name = boneToken.substr(5);
+                            } else {
+                                event.bone_name = boneToken;
+                            }
+                        }
                     }
                 }
             } else if (eventKind == "unmount") {

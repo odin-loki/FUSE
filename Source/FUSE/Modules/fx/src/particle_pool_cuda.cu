@@ -25,6 +25,13 @@ __global__ void fuse_fx_integrate_particles_kernel(u8* packed, u32 activeCount, 
     position[0] += velocity[0] * dt;
     position[1] += velocity[1] * dt;
     position[2] += velocity[2] * dt;
+
+    float* vel = reinterpret_cast<float*>(slot + 12);
+    const float damping = 0.98f;
+    vel[0] *= damping;
+    vel[1] *= damping;
+    vel[2] *= damping;
+
     *age += dt;
     if (*age >= *lifetime) {
         *alive = 0u;

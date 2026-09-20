@@ -202,6 +202,16 @@ bool pollOsFileWatch(OsFileWatchHandle& handle, OsFileWatchStatus& outStatus) {
         return false;
     }
 
+#if defined(__APPLE__)
+    if (handle.backend == OsFileWatchBackend::FSEvents &&
+        handle.fsevents.coalescedEventCount >= handle.fseventsCoalesceThreshold) {
+        ++handle.fsevents.reloadSkipCount;
+        outStatus.fsevents = handle.fsevents;
+        outStatus.changed = false;
+        return false;
+    }
+#endif
+
     if (!readFileContent(handle.path, outStatus)) {
         return false;
     }

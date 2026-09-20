@@ -88,7 +88,7 @@ void AiTreeProfilePicker::postBindSelectedEntity() {
 
 bool AiTreeProfilePicker::postBindSelectedEntityAndReloadTree(std::string_view watchPath, u32 profileId) {
     postBindSelectedEntity();
-    return postTreeFileWatchReload(watchPath, profileId);
+    return postInotifyTreeHotReload(watchPath, profileId);
 }
 
 bool AiTreeProfilePicker::postTreeFileWatchReload(std::string_view watchPath, u32 profileId) {

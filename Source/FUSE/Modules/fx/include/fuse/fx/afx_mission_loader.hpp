@@ -22,6 +22,11 @@ struct AfxMissionBodyEffect {
     std::string effectId;
 };
 
+struct AfxMissionBodySpell {
+    std::string simObjectName;
+    std::string spellId;
+};
+
 /// Parse TorqueScript `.mis` body blocks (missionInfo, SimObject declarations, nested SimObjects).
 [[nodiscard]] bool parse_afx_mission_body_from_mis(const std::string& misText, AfxMissionBody& outBody,
                                                    std::string* errorOut = nullptr);
@@ -29,6 +34,10 @@ struct AfxMissionBodyEffect {
 /// Codegen effect ids from parsed SimObject bodies (SparkEmitter → spark_burst, etc.).
 [[nodiscard]] u32 codegen_effects_from_mission_body(const AfxMissionBody& body,
                                                     std::vector<AfxMissionBodyEffect>& outEffects);
+
+/// Codegen spell ids from parsed SimObject bodies (spellId= fields in nested bodies).
+[[nodiscard]] u32 codegen_spells_from_mission_body(const AfxMissionBody& body,
+                                                   std::vector<AfxMissionBodySpell>& outSpells);
 
 /// Scan TorqueScript `.mis` text for AFX mission hook function declarations.
 [[nodiscard]] bool load_afx_mission_hooks_from_mis(const std::string& misText,

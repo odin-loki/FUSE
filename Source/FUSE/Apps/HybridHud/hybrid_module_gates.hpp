@@ -1,10 +1,17 @@
 #pragma once
 
+#include <fuse/adventure/animation_bind_pose_bridge.hpp>
 #include <fuse/adventure/hud_prompt_interactable.hpp>
 #include <fuse/adventure/interaction.hpp>
 #include <fuse/adventure/conversation_script_vm.hpp>
+#include <fuse/adventure/inventory.hpp>
 #include <fuse/adventure/outpost_loader.hpp>
 #include <fuse/adventure/outpost_spawn.hpp>
+#include <fuse/adventure/skeletal_mount_stub.hpp>
+#include <fuse/adventure/weapon_grant_pipeline.hpp>
+#include <fuse/adventure/weapon_mount_animation.hpp>
+#include <fuse/adventure/weapon_runtime.hpp>
+#include <fuse/animation/skeleton.hpp>
 #include <fuse/ai/behavior_runtime.hpp>
 #include <fuse/cinematics/timeline.hpp>
 #include <fuse/dimension/world_handle.hpp>
@@ -19,6 +26,7 @@
 #include <fuse/mechanics/delay_component.hpp>
 #include <fuse/mechanics/interactable.hpp>
 #include <fuse/mechanics/message_component.hpp>
+#include <fuse/mechanics/animate_component.hpp>
 #include <fuse/mechanics/path_component.hpp>
 #include <fuse/mechanics/physics_broadphase_bridge.hpp>
 #include <fuse/mechanics/timer_component.hpp>
@@ -48,6 +56,10 @@
 
 #ifndef FUSE_HYBRID_GATES_WAVE16
 #define FUSE_HYBRID_GATES_WAVE16 1
+#endif
+
+#ifndef FUSE_HYBRID_GATES_WAVE17
+#define FUSE_HYBRID_GATES_WAVE17 1
 #endif
 
 namespace fuse::hybrid::gates {
@@ -90,8 +102,17 @@ struct State {
     fuse::mechanics::PhysicsBroadphaseBridge physicsBroadphaseBridge;
     fuse::mechanics::PathComponent patrolPath{"outpost_patrol"};
     fuse::mechanics::TimerComponent patrolTimer{"outpost_patrol_timer", 0.25f};
+    fuse::mechanics::AnimateComponent leverAnimate{"lever_animate", 0.5f};
     fuse::mechanics::BroadphaseWorldStub broadphaseWorld;
 
+    fuse::adventure::Inventory playerInventory;
+    fuse::adventure::WeaponGrantPipeline weaponGrantPipeline;
+    fuse::adventure::WeaponRuntime weaponRuntime;
+    fuse::adventure::WeaponMountAnimationStub weaponMountAnim;
+    fuse::adventure::SkeletalMountStub weaponSkeletalMount;
+    fuse::adventure::AnimationBindPoseBridge bindPoseBridge;
+    fuse::animation::Skeleton bindSkeleton;
+    fuse::animation::PoseSoA bindPose;
     fuse::adventure::InteractionSystem adventureSystem;
     fuse::adventure::ConversationScriptVm conversationScriptVm;
     fuse::adventure::HudPromptInteractable hudPrompt{"Press E to activate lever"};
@@ -107,7 +128,9 @@ struct State {
     bool loadedOutpostStub = false;
     bool spawnedOutpostInteractables = false;
     bool appliedOutpostPlacements = false;
+    bool weaponGranted = false;
     u32 cuePreviewCount = 0;
+    u32 broadphaseRaycastHits = 0;
     float initialClearR = 0.f;
     float initialClearG = 0.f;
     float initialClearB = 0.f;

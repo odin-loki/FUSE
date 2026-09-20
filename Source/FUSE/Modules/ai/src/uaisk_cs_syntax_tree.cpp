@@ -97,11 +97,20 @@ bool parseCsSyntaxTree(std::string_view csModule, std::string_view csText, Uaisk
         const std::size_t equals = line.find('=');
         if (equals != std::string_view::npos && line.find("class ") == std::string_view::npos) {
             std::string_view key = trimView(line.substr(0, equals));
+            if (key.find(' ') != std::string_view::npos) {
+                const std::size_t lastSpace = key.find_last_of(' ');
+                key = trimView(key.substr(lastSpace + 1));
+            }
             if (!key.empty() && key.find(' ') == std::string_view::npos && key.back() != ')') {
+                std::string value = std::string(trimView(line.substr(equals + 1)));
+                while (!value.empty() && value.back() == ';') {
+                    value.pop_back();
+                }
+                value = trimView(value);
                 UaiskCsSyntaxNode node;
                 node.kind = UaiskCsSyntaxNodeKind::Field;
                 node.name = std::string(key);
-                node.value = std::string(trimView(line.substr(equals + 1)));
+                node.value = std::move(value);
                 node.parentClass = currentClass;
                 node.line = lineNumber;
                 outTree.nodes.push_back(std::move(node));

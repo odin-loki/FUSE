@@ -17,4 +17,20 @@ bool WeaponGrantPipeline::grantOnPickup(InteractContext& ctx,
     return true;
 }
 
+bool WeaponGrantPipeline::grantOnPickupWithMount(InteractContext& ctx,
+                                                 WeaponPickupInteractable& pickup,
+                                                 const WeaponGrantRequest& request,
+                                                 WeaponRuntime& runtime,
+                                                 WeaponMountAnimationStub& mountAnim,
+                                                 SkeletalMountStub& skeletalMount) {
+    if (!grantOnPickup(ctx, pickup, request, runtime)) {
+        return false;
+    }
+
+    mountAnim.applyOnGrant(*ctx.inventory, request.weapon);
+    skeletalMount.applyToMountAnimation(mountAnim);
+    ++m_mountGrantCount;
+    return true;
+}
+
 } // namespace fuse::adventure

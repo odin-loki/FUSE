@@ -204,6 +204,9 @@ void VActorBridge::sync_bone_attach_from_timeline(const Timeline& timeline) {
         const ShapeBaseBoneAttach boneAttach = bone_attach_for(state.boneName);
         state.offset.yaw_deg = combine_mount_yaw_deg(boneAttach.yaw_deg, sample.position.x * 0.05f);
         state.offset.pitch_deg = boneAttach.pitch_deg + sample.position.y * 0.02f;
+        state.offset.roll_deg = boneAttach.roll_deg + sample.position.z * 0.01f;
+        state.offset.orientation = euler_deg_to_quaternion(
+            MountEulerDeg{state.offset.yaw_deg, state.offset.pitch_deg, state.offset.roll_deg});
     }
 
     sync_bound_objects();
@@ -347,7 +350,7 @@ bool load_outpost_intro_30s_from_asset(Timeline& outTimeline, std::string* error
         "sprite hud_sprite 0,-20,0,1 15000,0,10,1 30000,40,20,1\n"
         "camera 0,0,0,8,55 15000,0,30,12,70 30000,0,60,15,85\n"
         "motion outpost_intro 0,0,0,0 15000,10,0,5 30000,20,5,10\n"
-        "actor agent_3d mount 2000 cockpit 15\n"
+        "actor agent_3d mount 2000 cockpit 15 bone=spine_mount\n"
         "actor agent_3d unmount 28000\n";
 
     return load_timeline_from_asset(kAssetText, outTimeline, errorOut);

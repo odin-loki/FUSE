@@ -231,11 +231,11 @@ Headless proof: `fuse_hybrid_module_gates_tests` (shared `hybrid_module_gates.cp
 
 | Module | Status | Next ore / work |
 |--------|--------|-----------------|
-| `fuse_ai` | 🚧 | Full UAISK `.cs` AST + runtime tree reload; editor picker binds entity selection |
-| `fuse_cinematics` | 🚧 | Torque `ShapeBase` runtime mount rotation; editor `.seq` import preview pane |
-| `fuse_fx` | 🚧 | Real `afxParticlePool` CUDA kernel (B7.7); mission VM TorqueScript bridge |
-| `fuse_mechanics` | 🚧 | Bullet `btBroadphaseProxy` integration; remaining GMK `SimComponent` leaves |
-| `fuse_adventure` | 🚧 | Weapon runtime grant on pickup; full 3DAAK conversation script VM |
+| `fuse_ai` | 🚧 | Full UAISK method-body codegen; real FSEvents CoreServices backend |
+| `fuse_cinematics` | 🚧 | Torque `ShapeBase` runtime mount rotation; live Qt viewport seq preview |
+| `fuse_fx` | 🚧 | Full `afxParticlePool` CUDA residency (B7.7); TorqueScript mission VM execution |
+| `fuse_mechanics` | 🚧 | Real Bullet `btDbvtBroadphase` link; remaining GMK `SimComponent` leaves |
+| `fuse_adventure` | 🚧 | Weapon runtime fire in hybrid demo; full 3DAAK conversation script VM |
 
 Hybrid proof extended: `fuse_hybrid_module_gates_tests` covers UAISK `.cs` parser import, cue preview + ShapeBase motion sync, CUDA skip-reason path, physics broadphase pipeline, JSON scene placement, and conversation script VM branch dispatch.
 
@@ -322,6 +322,17 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_mechanics` | `PathComponent`/`TimerComponent` in hybrid gates; `FUSE_HAS_BULLET` proxy group/mask deepen |
 | `fuse_adventure` | `AnimationBindPoseBridge` weapon mount → bind pose; conversation VM `elif requires` inventory branch |
 | **Hybrid gates** | Optional `FUSE_HYBRID_GATES_WAVE16` assertions for Path/Timer/bone-motion stubs |
+
+#### Landed wave 17 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | `applyFieldDefaultsToSpecs()` AST field→`NodeLoadSpec` codegen; FSEvents coalesce reload-skip threshold; entity-bound picker uses inotify hot-reload |
+| `fuse_cinematics` | Asset `bone=` token parse; bone pitch/roll motion sync; Qt `SeqPreviewPaneWidget` live preview labels |
+| `fuse_fx` | CUDA velocity damping kernel; `codegen_spells_from_mission_body()` + nested `%hook` dispatch; composer tick selective writeback |
+| `fuse_mechanics` | `PathComponent::setLoop()`; `TimerComponent::setOnFire()`; GMK `AnimateComponent` leaf; `queryRaycastStubFiltered()` Bullet-aware |
+| `fuse_adventure` | `WeaponGrantPipeline::grantOnPickupWithMount()`; `dispatchBestBranch()` priority VM; hybrid demo weapon grant + armed branch |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE17` assertions for selective writeback, path loop, weapon grant, armed conversation |
 
 ---
 

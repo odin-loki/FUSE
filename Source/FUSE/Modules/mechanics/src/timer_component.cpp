@@ -16,6 +16,10 @@ void TimerComponent::tick(f32 dt) {
     while (m_elapsedSec >= m_periodSec) {
         m_elapsedSec -= m_periodSec;
         ++m_fireCount;
+        if (m_onFire) {
+            m_onFire();
+            ++m_callbackFireCount;
+        }
     }
 }
 

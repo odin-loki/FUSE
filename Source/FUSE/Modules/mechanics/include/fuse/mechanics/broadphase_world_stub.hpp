@@ -39,6 +39,9 @@ public:
                                         float maxZ);
     [[nodiscard]] u32 queryRaycastStub(float originX, float originY, float originZ, float dirX, float dirY,
                                        float dirZ, float maxDistance);
+    [[nodiscard]] u32 queryRaycastStubFiltered(float originX, float originY, float originZ, float dirX,
+                                               float dirY, float dirZ, float maxDistance,
+                                               BroadphaseProxyFilter filter);
 
 private:
     std::vector<BroadphaseWorldBody> m_bodies;

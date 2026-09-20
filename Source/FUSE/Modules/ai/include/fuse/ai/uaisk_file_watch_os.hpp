@@ -18,6 +18,7 @@ enum class OsFileWatchBackend : u8 {
 struct FSEventsWatchStats {
     u32 coalescedEventCount = 0;
     u32 latencyMs = 0;
+    u32 reloadSkipCount = 0;
 };
 
 /// OS file-watch status (inotify/FSEvents when portable; stat mtime + content-hash fallback).
@@ -42,6 +43,7 @@ struct OsFileWatchHandle {
     u64 lastSize = 0;
     u64 lastPollNs = 0;
     FSEventsWatchStats fsevents{};
+    u32 fseventsCoalesceThreshold = 4;
     bool active = false;
 };
 

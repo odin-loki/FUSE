@@ -3,9 +3,60 @@
 #include <fuse/ai/behavior_runtime.hpp>
 #include <fuse/ai/uaisk_cs_syntax_tree.hpp>
 
+#include <cstdlib>
+
 namespace fuse::ai::uaisk {
 
 namespace {
+
+float parseFieldFloat(const std::string& value, float fallback) {
+    if (value.empty()) {
+        return fallback;
+    }
+    try {
+        return std::stof(value);
+    } catch (...) {
+        return fallback;
+    }
+}
+
+u32 parseFieldUInt(const std::string& value, u32 fallback) {
+    if (value.empty()) {
+        return fallback;
+    }
+    try {
+        return static_cast<u32>(std::stoul(value));
+    } catch (...) {
+        return fallback;
+    }
+}
+
+void applyFieldDefaultsToSpecs(const UaiskCsAst& ast, std::vector<NodeLoadSpec>& specs) {
+    float patrolRadius = 8.f;
+    float distanceThreshold = 5.f;
+    u32 squadFlagIndex = 1;
+
+    for (const UaiskCsFieldRef& field : ast.fields) {
+        if (field.name == "patrolRadius" || field.name == "allyRadius") {
+            patrolRadius = parseFieldFloat(field.defaultValue, patrolRadius);
+        } else if (field.name == "distanceThreshold" || field.name == "patrolDistance") {
+            distanceThreshold = parseFieldFloat(field.defaultValue, distanceThreshold);
+        } else if (field.name == "squadFlagIndex" || field.name == "flagIndex") {
+            squadFlagIndex = parseFieldUInt(field.defaultValue, squadFlagIndex);
+        }
+    }
+
+    for (NodeLoadSpec& spec : specs) {
+        if (spec.typeId == "bb.condition.allies_in_radius") {
+            spec.threshold = patrolRadius;
+            spec.flagIndex = squadFlagIndex;
+        } else if (spec.typeId == "bb.condition.distance_less") {
+            spec.threshold = distanceThreshold;
+        } else if (spec.typeId == "bb.action.set_flag") {
+            spec.flagIndex = squadFlagIndex;
+        }
+    }
+}
 
 bool containsHook(const UaiskCsAst& ast, std::string_view needle) {
     for (const std::string& hook : ast.behaviorTreeHooks) {
@@ -165,7 +216,11 @@ bool codegenSpecsForModule(const UaiskCsAst& ast,
                            u32& outRootIndex,
                            std::string* errorOut) {
     if (containsHook(ast, "patrol_squad.bt") || containsHook(ast, "aiBehaviors.cs")) {
-        return codegenPatrolSquadSpecs(outSpecs, outRootIndex);
+        const bool ok = codegenPatrolSquadSpecs(outSpecs, outRootIndex);
+        if (ok) {
+            applyFieldDefaultsToSpecs(ast, outSpecs);
+        }
+        return ok;
     }
     if (containsHook(ast, "aiMovement.cs") || ast.primaryRegistryTypeId == "gb.action.move_toward") {
         return codegenMoveTowardSpecs(outSpecs, outRootIndex);
@@ -174,13 +229,25 @@ bool codegenSpecsForModule(const UaiskCsAst& ast,
         return codegenSetFlagSpecs(outSpecs, outRootIndex);
     }
     if (containsHook(ast, "aiTargeting.cs") || ast.primaryRegistryTypeId == "bb.condition.distance_less") {
-        return codegenDistanceLessSpecs(outSpecs, outRootIndex);
+        const bool ok = codegenDistanceLessSpecs(outSpecs, outRootIndex);
+        if (ok) {
+            applyFieldDefaultsToSpecs(ast, outSpecs);
+        }
+        return ok;
     }
     if (containsHook(ast, "aiSquad.cs") || methodImpliesCodegen(ast, "onSquadPatrol")) {
-        return codegenAlliesThenPatrolSpecs(outSpecs, outRootIndex);
+        const bool ok = codegenAlliesThenPatrolSpecs(outSpecs, outRootIndex);
+        if (ok) {
+            applyFieldDefaultsToSpecs(ast, outSpecs);
+        }
+        return ok;
     }
     if (methodImpliesCodegen(ast, "onWaitThenMove") || methodImpliesCodegen(ast, "onPatrolWait")) {
-        return codegenWaitThenMoveSpecs(outSpecs, outRootIndex);
+        const bool ok = codegenWaitThenMoveSpecs(outSpecs, outRootIndex);
+        if (ok) {
+            applyFieldDefaultsToSpecs(ast, outSpecs);
+        }
+        return ok;
     }
 
     if (errorOut != nullptr) {

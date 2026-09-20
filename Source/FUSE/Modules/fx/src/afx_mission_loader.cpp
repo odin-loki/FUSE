@@ -247,6 +247,54 @@ bool parse_afx_mission_body_from_mis(const std::string& misText, AfxMissionBody&
     return true;
 }
 
+u32 codegen_spells_from_mission_body(const AfxMissionBody& body,
+                                     std::vector<AfxMissionBodySpell>& outSpells) {
+    outSpells.clear();
+    for (const auto& bodyPair : body.simObjectBodies) {
+        const std::size_t spellPos = bodyPair.second.find("spellId");
+        if (spellPos == std::string::npos) {
+            continue;
+        }
+        const std::size_t eq = bodyPair.second.find('=', spellPos);
+        if (eq == std::string::npos) {
+            continue;
+        }
+        std::string value = trim(bodyPair.second.substr(eq + 1));
+        const std::size_t semi = value.find(';');
+        if (semi != std::string::npos) {
+            value = trim(value.substr(0, semi));
+        }
+        if (!value.empty() && value.front() == '"' && value.back() == '"') {
+            value = value.substr(1, value.size() - 2);
+        }
+        if (!value.empty()) {
+            outSpells.push_back({bodyPair.first, value});
+        }
+    }
+    for (const auto& nestedPair : body.nestedSimObjectBodies) {
+        const std::size_t spellPos = nestedPair.second.find("spellId");
+        if (spellPos == std::string::npos) {
+            continue;
+        }
+        const std::size_t eq = nestedPair.second.find('=', spellPos);
+        if (eq == std::string::npos) {
+            continue;
+        }
+        std::string value = trim(nestedPair.second.substr(eq + 1));
+        const std::size_t semi = value.find(';');
+        if (semi != std::string::npos) {
+            value = trim(value.substr(0, semi));
+        }
+        if (!value.empty() && value.front() == '"' && value.back() == '"') {
+            value = value.substr(1, value.size() - 2);
+        }
+        if (!value.empty()) {
+            outSpells.push_back({nestedPair.first, value});
+        }
+    }
+    return static_cast<u32>(outSpells.size());
+}
+
 u32 codegen_effects_from_mission_body(const AfxMissionBody& body,
                                       std::vector<AfxMissionBodyEffect>& outEffects) {
     outEffects.clear();
@@ -353,6 +401,8 @@ bool register_afx_mission_from_mis(const std::string& misText, FxComposer& compo
     parse_afx_mission_body_from_mis(misText, body);
     std::vector<AfxMissionBodyEffect> bodyEffects;
     codegen_effects_from_mission_body(body, bodyEffects);
+    std::vector<AfxMissionBodySpell> bodySpells;
+    codegen_spells_from_mission_body(body, bodySpells);
 
     std::vector<AfxMissionHook> hooks;
     if (!load_afx_mission_hooks_from_mis(misText, hooks, errorOut)) {
@@ -379,6 +429,11 @@ bool register_afx_mission_from_mis(const std::string& misText, FxComposer& compo
             composer.registerSpell(SpellDescriptor::makeFireball());
         }
     }
+    for (const AfxMissionBodySpell& bodySpell : bodySpells) {
+        if (bodySpell.spellId == "fireball") {
+            composer.registerSpell(SpellDescriptor::makeFireball());
+        }
+    }
     composer.registerEffect(EffectDescriptor::makeSparkBurst());
     composer.registerEffect(EffectDescriptor::makeMuzzleFlash());
     composer.registerSpell(SpellDescriptor::makeFireball());
@@ -395,6 +450,28 @@ bool dispatch_afx_mission_from_mis(const std::string& misText, FxComposer& compo
     for (const AfxMissionHook& hook : vm.registeredHooks()) {
         dispatched = vm.dispatch(hook.scriptHook, composer) || dispatched;
     }
+
+    AfxMissionBody body;
+    if (parse_afx_mission_body_from_mis(misText, body)) {
+        for (const auto& nestedPair : body.nestedSimObjectBodies) {
+            const std::size_t hookPos = nestedPair.second.find("%hook");
+            if (hookPos == std::string::npos) {
+                continue;
+            }
+            const std::size_t eq = nestedPair.second.find('=', hookPos);
+            if (eq == std::string::npos) {
+                continue;
+            }
+            std::string hookName = trim(nestedPair.second.substr(eq + 1));
+            if (!hookName.empty() && hookName.front() == '"' && hookName.back() == '"') {
+                hookName = hookName.substr(1, hookName.size() - 2);
+            }
+            if (!hookName.empty()) {
+                dispatched = vm.dispatch(hookName, composer) || dispatched;
+            }
+        }
+    }
+
     return dispatched;
 }
 

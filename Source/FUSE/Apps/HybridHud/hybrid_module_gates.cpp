@@ -169,13 +169,47 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
         adventureCtx.actorName = "player";
         state.hudPromptText = state.adventureSystem.showHudPrompt(adventureCtx, state.hudPrompt);
 
+        auto weaponIt = state.outpostSpawn.weaponPickups.find("armory_rifle");
+        if (!state.weaponGranted && weaponIt != state.outpostSpawn.weaponPickups.end() &&
+            weaponIt->second != nullptr) {
+            fuse::adventure::InteractContext grantCtx;
+            grantCtx.inventory = &state.playerInventory;
+            grantCtx.actorName = "player";
+            fuse::adventure::WeaponGrantRequest grantRequest{};
+            grantRequest.weapon = fuse::adventure::ItemId("plasma_rifle");
+            grantRequest.ammo = fuse::adventure::ItemId("energy_cell");
+            grantRequest.ammoAmount = 20;
+            grantRequest.stats.damage = 25.f;
+            grantRequest.stats.range = 80.f;
+            fuse::adventure::SkeletalBoneMount boneMount{};
+            boneMount.boneName = "weapon_shoulder";
+            boneMount.yawDeg = 15.f;
+            state.weaponSkeletalMount.setBoneMount(boneMount);
+            state.weaponGranted = state.weaponGrantPipeline.grantOnPickupWithMount(
+                grantCtx, *weaponIt->second, grantRequest, state.weaponRuntime, state.weaponMountAnim,
+                state.weaponSkeletalMount);
+            state.bindPoseBridge.applyMountToBindPose(state.weaponSkeletalMount, state.weaponMountAnim,
+                                                      state.bindSkeleton, state.bindPose);
+        }
+
         auto guardIt = state.outpostSpawn.conversations.find("outpost_guard");
         if (guardIt != state.outpostSpawn.conversations.end() && guardIt->second != nullptr) {
             fuse::adventure::InteractContext branchCtx;
             branchCtx.actorName = "player";
-            state.conversationScriptVm.dispatchBranch("outpost_guard", "polite", branchCtx, *guardIt->second);
-            state.guardLineText =
-                state.adventureSystem.converseBranch(adventureCtx, *guardIt->second, "polite");
+            branchCtx.inventory = &state.playerInventory;
+            if (state.weaponGranted) {
+                state.conversationScriptVm.dispatchBestBranch("outpost_guard", branchCtx, *guardIt->second);
+                state.guardLineText = state.conversationScriptVm.lastLineDispatched();
+                if (state.guardLineText.empty()) {
+                    state.guardLineText =
+                        state.adventureSystem.converseBranch(branchCtx, *guardIt->second,
+                                                             state.conversationScriptVm.lastBranchDispatched());
+                }
+            } else {
+                state.conversationScriptVm.dispatchBranch("outpost_guard", "polite", branchCtx, *guardIt->second);
+                state.guardLineText =
+                    state.adventureSystem.converseBranch(branchCtx, *guardIt->second, "polite");
+            }
         }
     });
 
@@ -199,7 +233,14 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     state.patrolPath.addWaypoint(-4.f, 0.f, 0.f);
     state.patrolPath.addWaypoint(4.f, 0.f, 0.f);
     state.patrolPath.setPosition(state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
+    state.patrolPath.setLoop(true);
     state.patrolTimer.setActive(true);
+    state.patrolTimer.setOnFire([&state]() { state.leverAnimate.advance(0.25f); });
+    state.bindSkeleton.bone_count = 16;
+    state.bindSkeleton.bones.resize(16);
+    state.bindPose = fuse::animation::PoseSoA::from_bind_pose(state.bindSkeleton);
+    state.playerInventory.setMaxLimit(fuse::adventure::ItemId("plasma_rifle"), 1);
+    state.playerInventory.setMaxLimit(fuse::adventure::ItemId("energy_cell"), 99);
 
     fuse::mechanics::BroadphaseWorldBody agentBody{};
     agentBody.objectId = kAgentObjectId;
@@ -258,12 +299,15 @@ void tickFrame(State& state, fuse::hybrid::HybridComposer& composer, const fuse:
     state.physicsBroadphaseBridge.trackBody(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
     state.physicsBroadphaseBridge.syncBody(kAgentObjectId);
     state.broadphaseWorld.setBodyPosition(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
-    state.patrolPath.advanceAlongPath(0.12f, ctx.dt);
+    state.patrolPath.advanceAlongPath(20.f, ctx.dt);
     state.patrolTimer.tick(ctx.dt);
     state.physicsTriggerBridge.syncObject(kAgentObjectId);
     state.broadphaseTriggerSync.trackBody(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
     state.broadphaseTriggerSync.syncAll();
     state.leverTrigger.testObject(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
+    state.broadphaseRaycastHits = state.broadphaseWorld.queryRaycastStubFiltered(
+        state.agent3D.x(), state.agent3D.y(), state.agent3D.z(), 1.f, 0.f, 0.f, 8.f,
+        fuse::mechanics::BroadphaseProxyFilter::Character);
 }
 
 VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& composer) {
@@ -374,6 +418,38 @@ VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& comp
         return {false, "fuse_cinematics bone attach motion sync applied"};
     }
 #endif
+#if FUSE_HYBRID_GATES_WAVE17
+    if (state.fxComposer.particlePoolGpu().selectiveWritebackCount() == 0u) {
+        return {false, "fuse_fx selective CUDA writeback in composer tick"};
+    }
+    if (state.patrolPath.loopCount() == 0u) {
+        return {false, "fuse_mechanics PathComponent looped in hybrid demo"};
+    }
+    if (state.patrolTimer.callbackFireCount() == 0u) {
+        return {false, "fuse_mechanics TimerComponent onFire callback fired"};
+    }
+    if (state.leverAnimate.cycleCount() == 0u) {
+        return {false, "fuse_mechanics AnimateComponent advanced via timer callback"};
+    }
+    if (state.broadphaseRaycastHits == 0u) {
+        return {false, "fuse_mechanics BroadphaseWorldStub filtered raycast hit agent"};
+    }
+    if (!state.weaponGranted) {
+        return {false, "fuse_adventure weapon grant pipeline granted armory rifle"};
+    }
+    if (state.weaponGrantPipeline.mountGrantCount() == 0u) {
+        return {false, "fuse_adventure weapon mount grant chain applied"};
+    }
+    if (state.bindPoseBridge.applyCount() == 0u) {
+        return {false, "fuse_adventure animation bind pose bridge applied on grant"};
+    }
+    if (state.guardLineText != "I see you are armed. Keep that rifle stowed.") {
+        return {false, "fuse_adventure armed conversation branch via dispatchBestBranch"};
+    }
+    if (state.conversationScriptVm.lastBranchDispatched() != "armed") {
+        return {false, "fuse_adventure conversation VM chose armed priority branch"};
+    }
+#endif
     if (state.leverInteractable.interactionCount() == 0u) {
         return {false, "fuse_mechanics 3D interactable fired on trigger enter"};
     }
@@ -401,9 +477,11 @@ VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& comp
     if (state.hudPrompt.promptShownCount() == 0u) {
         return {false, "fuse_adventure HUD prompt shown on examine"};
     }
+#if !FUSE_HYBRID_GATES_WAVE17
     if (state.guardLineText != "Thank you, traveler. Proceed with caution.") {
         return {false, "fuse_adventure NPC conversation branch in hybrid demo"};
     }
+#endif
     if (state.conversationScriptVm.dispatchCount() == 0u) {
         return {false, "fuse_adventure conversation script VM dispatched branch"};
     }

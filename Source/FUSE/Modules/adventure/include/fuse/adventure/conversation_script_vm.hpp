@@ -52,6 +52,11 @@ public:
                                                    const InteractContext& ctx,
                                                    std::string& outBranchId) const;
 
+    /// Dispatch the highest-priority eligible branch for an NPC (inventory + priority ore).
+    bool dispatchBestBranch(const std::string& npcId,
+                            InteractContext& ctx,
+                            ConversationInteractable& target);
+
     u32 dispatchCount() const { return m_dispatchCount; }
     u32 lineDispatchCount() const { return m_lineDispatchCount; }
     u32 grantCount() const { return m_grantCount; }
