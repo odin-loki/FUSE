@@ -74,7 +74,7 @@ After a successful umbrella build:
 
 On Windows, binaries live under the chosen config folder (for example `build\Source\FUSE\Apps\HybridHud\Release\`).
 
-More demos: [samples.md](samples.md). Full CMake matrix: [building.md](building.md).
+More demos: [samples.md](samples.md) and the [player guide](player-guide.md). API wiring: [programmer guide](programmer-guide.md). Full CMake matrix: [building.md](building.md).
 
 ## What you just built
 

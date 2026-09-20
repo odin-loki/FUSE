@@ -504,10 +504,10 @@ Mine each addon into a **FUSE module** with:
 - [ ] Addon capabilities reachable as FUSE features without merging Engine trees by hand  
 - [ ] Submodules are reference ore only (or removed after extraction)  
 - [ ] ASan clean smoke of hybrid PIE — 🚧 `fuse_u8_parity_embed_pie_smoke` + all parity demo binaries when `FUSE_SMOKE_ENABLE_ASAN=ON`; real Qt present still Track B  
-- [ ] Docs: player guide + programmer guide for unified API  
+- [x] Docs: player guide + programmer guide for unified API — [`docs/player-guide.md`](../../docs/player-guide.md), [`docs/programmer-guide.md`](../../docs/programmer-guide.md)  
 - [ ] Stakeholder agrees: “this is one program”  
 
-**U8 wave 4 honest remainder:** GPU animated-sprite playback, real window present, full golden submodule corpus without bundled stubs, player/programmer guides, stakeholder sign-off.
+**U8 wave 5 honest remainder:** GPU animated-sprite playback, real window present, full golden submodule corpus without bundled stubs, stakeholder sign-off.
 
 After EXIT → continue FUSE_MASTER_PLAN Track A remainder / Track B (Vulkan, ECS, physics replacement, etc.) **on the unified spine**, not on raw T3D/T2D forever.
 

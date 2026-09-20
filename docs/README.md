@@ -7,6 +7,8 @@ This is the product documentation. Start here; then pick a guide.
 | Guide | What it covers |
 |-------|----------------|
 | [Getting started](getting-started.md) | Clone, configure, build, run a demo |
+| [Player guide](player-guide.md) | Run parity demos, ctest smoke, honest limits |
+| [Programmer guide](programmer-guide.md) | Unified API, converters, demo wiring pattern |
 | [Building](building.md) | CMake options, platforms, sanitizers, editor |
 | [Architecture](architecture.md) | Process model, jobs, worlds, handles |
 | [Modules](modules.md) | AI, FX, cinematics, mechanics, adventure |

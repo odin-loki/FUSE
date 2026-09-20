@@ -3,6 +3,7 @@
 #include <fuse/log/logger.hpp>
 #include <fuse/project/importer_extract.hpp>
 #include <fuse/scene/serialiser.hpp>
+#include <fuse/scene/wire_stub.hpp>
 
 #include <cctype>
 #include <filesystem>
@@ -24,6 +25,22 @@ std::string readFileToString(const std::string& path) {
     std::ostringstream buffer;
     buffer << input.rdbuf();
     return buffer.str();
+}
+
+void populateFuselevelStats(const std::string& fuselevelPath, u32& entityCount, u32& wiringStubCount) {
+    fuse::scene::Scene scene;
+    const fuse::scene::SerialiseResult loaded = fuse::scene::SceneSerialiser::load(fuselevelPath, scene);
+    if (loaded.status != fuse::scene::SerialiseStatus::Ok) {
+        return;
+    }
+
+    entityCount = scene.entityCount();
+    wiringStubCount = 0;
+    for (const fuse::scene::SceneEntity& entity : scene.entities()) {
+        if (fuse::scene::isWireStubEntityName(entity.name)) {
+            ++wiringStubCount;
+        }
+    }
 }
 
 bool ensureParentDirectory(const std::string& outputPath) {
@@ -632,7 +649,71 @@ Ensure3DWorldResult ensureDefault3DWorldReady(const LoadResult& projectLoad) {
 
     result.ok = std::filesystem::exists(fuselevelPath, ec);
     if (result.ok) {
+        if (result.entityCount == 0u) {
+            populateFuselevelStats(fuselevelPath, result.entityCount, result.wiringStubCount);
+        }
         result.note = missionSource.note.empty() ? "3D world ready" : missionSource.note;
+    } else {
+        result.note = "fuselevel still missing after convert attempt";
+    }
+    return result;
+}
+
+Ensure2DWorldResult ensureDefault2DWorldReady(const LoadResult& projectLoad) {
+    Ensure2DWorldResult result;
+    if (projectLoad.status != LoadStatus::Ok) {
+        result.note = "project load failed";
+        return result;
+    }
+    if (projectLoad.manifest.defaultWorld2D.empty()) {
+        result.note = "project missing defaultWorld2D";
+        return result;
+    }
+
+    auto joinPath = [](const std::string& root, const std::string& relative) {
+        if (root.empty()) {
+            return relative;
+        }
+        return (std::filesystem::path(root) / relative).lexically_normal().string();
+    };
+
+    const std::string fuselevelPath =
+        joinPath(projectLoad.manifest.projectRoot, projectLoad.manifest.defaultWorld2D);
+    result.loadedPath = fuselevelPath;
+
+    const LegacySourceResolution moduleSource =
+        resolveParityLegacySource(projectLoad.manifest, fuselevelPath, ".cs");
+    result.sourceOrigin = moduleSource.origin;
+
+    std::error_code ec;
+    const bool fuselevelExists = std::filesystem::exists(fuselevelPath, ec);
+    const bool canRefreshFromModule = moduleSource.origin != LegacySourceOrigin::Missing &&
+                                      std::filesystem::exists(moduleSource.path, ec) &&
+                                      (!fuselevelExists ||
+                                       std::filesystem::last_write_time(moduleSource.path) >
+                                           std::filesystem::last_write_time(fuselevelPath));
+    if (!fuselevelExists || canRefreshFromModule) {
+        if (moduleSource.origin == LegacySourceOrigin::Missing) {
+            result.note = "missing .fuselevel and legacy .cs: " + fuselevelPath;
+            return result;
+        }
+
+        const ConvertResult converted =
+            convertT2DModuleToFuselevel(moduleSource.path, fuselevelPath);
+        if (converted.status != ConvertStatus::Ok) {
+            result.note = converted.note.empty() ? "T2D module convert failed" : converted.note;
+            return result;
+        }
+        result.entityCount = converted.entityCount;
+        result.wiringStubCount = converted.wiringStubCount;
+    }
+
+    result.ok = std::filesystem::exists(fuselevelPath, ec);
+    if (result.ok) {
+        if (result.entityCount == 0u) {
+            populateFuselevelStats(fuselevelPath, result.entityCount, result.wiringStubCount);
+        }
+        result.note = moduleSource.note.empty() ? "2D world ready" : moduleSource.note;
     } else {
         result.note = "fuselevel still missing after convert attempt";
     }

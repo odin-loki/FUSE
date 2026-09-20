@@ -98,7 +98,67 @@ void testEnsure3DWorldFromBundledMis() {
     const fuse::project::Ensure3DWorldResult prepared =
         fuse::project::ensureDefault3DWorldReady(project);
     expectTrue(prepared.ok, "demo_3d_empty 3D world prepared from bundled/golden source");
-    expectTrue(prepared.ok, "demo_3d_empty fuselevel exists after prepare");
+    expectTrue(prepared.entityCount >= 2u, "demo_3d_empty fuselevel has mission entities");
+}
+
+void testBundledAfxMinimalFallback() {
+    const fuse::project::LoadResult project =
+        fuse::project::loadFromDirectory("Samples/unification/demo_fx");
+    expectTrue(project.status == fuse::project::LoadStatus::Ok, "demo_fx loads");
+
+    const std::string fuselevelPath = project.manifest.projectRoot + "/worlds/afx_minimal.fuselevel";
+    const fuse::project::LegacySourceResolution source =
+        fuse::project::resolveParityLegacySource(project.manifest, fuselevelPath, ".mis");
+    expectTrue(source.origin == fuse::project::LegacySourceOrigin::Bundled,
+               "AFX minimal falls back to bundled stub when submodule absent");
+    expectTrue(!source.note.empty(), "AFX minimal fallback note recorded");
+}
+
+void testBundledBehaviorTestbedFallback() {
+    const fuse::project::LoadResult project =
+        fuse::project::loadFromDirectory("Samples/unification/demo_ai_bt");
+    expectTrue(project.status == fuse::project::LoadStatus::Ok, "demo_ai_bt loads");
+
+    const std::string fuselevelPath =
+        project.manifest.projectRoot + "/worlds/behavior_testbed.fuselevel";
+    const fuse::project::LegacySourceResolution source =
+        fuse::project::resolveParityLegacySource(project.manifest, fuselevelPath, ".mis");
+    expectTrue(source.origin == fuse::project::LegacySourceOrigin::Bundled,
+               "BehaviorTestbed falls back to bundled stub when submodule absent");
+}
+
+void testBundledVerveIntroFallback() {
+    const fuse::project::LoadResult project =
+        fuse::project::loadFromDirectory("Samples/unification/demo_timeline");
+    expectTrue(project.status == fuse::project::LoadStatus::Ok, "demo_timeline loads");
+
+    const std::string fuselevelPath = project.manifest.projectRoot + "/worlds/verve_intro.fuselevel";
+    const fuse::project::LegacySourceResolution source =
+        fuse::project::resolveParityLegacySource(project.manifest, fuselevelPath, ".mis");
+    expectTrue(source.origin == fuse::project::LegacySourceOrigin::Bundled,
+               "Verve intro falls back to bundled stub when submodule absent");
+}
+
+void testEnsure2DWorldFromBundledCs() {
+    const fuse::project::LoadResult project =
+        fuse::project::loadFromDirectory("Samples/unification/demo_2d_sprites");
+    expectTrue(project.status == fuse::project::LoadStatus::Ok, "demo_2d_sprites loads");
+
+    const fuse::project::Ensure2DWorldResult prepared =
+        fuse::project::ensureDefault2DWorldReady(project);
+    expectTrue(prepared.ok, "demo_2d_sprites 2D world prepared from bundled/golden source");
+    expectTrue(prepared.entityCount >= 3u, "SpriteToy stub produces sprite entities");
+    expectTrue(prepared.wiringStubCount >= 1u, "SpriteToy stub emits animated-sprite wiring stubs");
+}
+
+void testEnsure2DWorldFromAfxSpriteStub() {
+    const fuse::project::LoadResult project =
+        fuse::project::loadFromDirectory("Samples/unification/demo_fx");
+    expectTrue(project.status == fuse::project::LoadStatus::Ok, "demo_fx loads");
+
+    const fuse::project::Ensure2DWorldResult prepared =
+        fuse::project::ensureDefault2DWorldReady(project);
+    expectTrue(prepared.ok, "demo_fx defaultWorld2D prepared from bundled sprite stub");
 }
 
 } // namespace
@@ -111,6 +171,11 @@ int main() {
     testBundledSpriteToyFallback();
     testBundledOutpostFallback();
     testEnsure3DWorldFromBundledMis();
+    testBundledAfxMinimalFallback();
+    testBundledBehaviorTestbedFallback();
+    testBundledVerveIntroFallback();
+    testEnsure2DWorldFromBundledCs();
+    testEnsure2DWorldFromAfxSpriteStub();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

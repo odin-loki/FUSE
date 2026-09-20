@@ -88,24 +88,21 @@ World2DBridgeResult bridge2DWorldFromProject(const project::LoadResult& projectL
     }
 
     const std::string fuselevelPath = scene::resolveDefaultWorld2DPath(projectLoad.manifest);
+    const project::Ensure2DWorldResult prepared = project::ensureDefault2DWorldReady(projectLoad);
     const project::LegacySourceResolution moduleSource =
         project::resolveParityLegacySource(projectLoad.manifest, fuselevelPath, ".cs");
     const std::string& modulePath = moduleSource.path;
 
-    if (!fileExists(fuselevelPath) && moduleSource.origin != project::LegacySourceOrigin::Missing) {
-        const project::ConvertResult converted =
-            project::convertT2DModuleToFuselevel(modulePath, fuselevelPath);
-        if (converted.status != project::ConvertStatus::Ok) {
-            const project::T2DRuntimeBridgeResult bridged =
-                project::bridgeT2DModuleToRuntime(world, modulePath);
-            result.ok = bridged.ok;
-            result.spriteCount = bridged.spriteCount;
-            result.animatedSpriteCount = bridged.animatedSpriteCount;
-            result.physicsBodyCount = bridged.physicsBodyCount;
-            result.physicsEnabled = world.isPhysicsEnabled();
-            result.note = bridged.note.empty() ? "T2D module runtime bridge" : bridged.note;
-            return result;
-        }
+    if (!prepared.ok && moduleSource.origin != project::LegacySourceOrigin::Missing) {
+        const project::T2DRuntimeBridgeResult bridged =
+            project::bridgeT2DModuleToRuntime(world, modulePath);
+        result.ok = bridged.ok;
+        result.spriteCount = bridged.spriteCount;
+        result.animatedSpriteCount = bridged.animatedSpriteCount;
+        result.physicsBodyCount = bridged.physicsBodyCount;
+        result.physicsEnabled = world.isPhysicsEnabled();
+        result.note = bridged.note.empty() ? "T2D module runtime bridge" : bridged.note;
+        return result;
     }
 
     if (moduleSource.origin != project::LegacySourceOrigin::Missing && world.readSnapshot().sprites().empty()) {

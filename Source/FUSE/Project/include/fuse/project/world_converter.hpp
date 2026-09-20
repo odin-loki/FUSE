@@ -49,4 +49,16 @@ struct Ensure3DWorldResult {
 /// Ensure `.fuselevel` exists (convert from golden/bundled `.mis` when needed).
 [[nodiscard]] Ensure3DWorldResult ensureDefault3DWorldReady(const LoadResult& projectLoad);
 
+struct Ensure2DWorldResult {
+    bool ok = false;
+    u32 entityCount = 0;
+    u32 wiringStubCount = 0;
+    LegacySourceOrigin sourceOrigin = LegacySourceOrigin::Missing;
+    std::string loadedPath;
+    std::string note;
+};
+
+/// Ensure default 2D `.fuselevel` exists (convert from golden/bundled `.cs` when needed).
+[[nodiscard]] Ensure2DWorldResult ensureDefault2DWorldReady(const LoadResult& projectLoad);
+
 } // namespace fuse::project

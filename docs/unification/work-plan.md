@@ -364,7 +364,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | M |
 | **Scope** | `Samples/unification/demo_*` per [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) |
 | **Deps** | WP-07 (subset), WP-09 |
-| **Status** | 🚧 Wave 4 — animated-sprite wiring stubs, submodule-aware golden fallback, ASan parity demos + seven-demo PIE embed; real present + full submodule corpus still ❌ |
+| **Status** | 🚧 Wave 5 — player/programmer guides, `ensureDefault2DWorldReady`, parity fallback tests for remaining demos; real present + stakeholder sign-off still ❌ |
 
 ---
 
@@ -412,7 +412,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 | **U5** | Feature modules | Five `fuse_*` targets; `fuse_ai` BT slice + tests — 🚧 scaffolds + ore backlog ([U5-MODULES.md](./U5-MODULES.md)) |
 | **U6** | Editor PIE | UI/game thread queue + coalesced property undo + headless runtime embed — 🚧 Qt External GPU viewport remains |
 | **U7** | Project format | `fuse_project` + wiring stubs + toybox convert + cook encoder hooks — 🚧 link real Assimp/BC7/OGG libs |
-| **U8** | Parity demos | Seven demo binaries + bundled `worlds/` sources + module wiring — 🚧 prestarter §13.2 exit items remain |
+| **U8** | Parity demos | Seven demo binaries + bundled `worlds/` sources + module wiring + guides — 🚧 real present, full golden corpus, stakeholder sign-off remain |
 | **P3 (Track A)** | Job system tests | Fiber scheduler + single-thread fallback |
 
 ---

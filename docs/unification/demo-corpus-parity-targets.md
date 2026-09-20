@@ -1,7 +1,7 @@
 # FUSE U0 — Demo Corpus & Parity Targets
 
 **Phase:** U0 Inventory & collision map  
-**Date:** 2026-09-15 (updated 2026-09-20 — U8 wave 4)  
+**Date:** 2026-09-15 (updated 2026-09-20 — U8 wave 5)  
 **Purpose:** Freeze the minimum demo set for unification exit (U8) and map each demo to existing T3D missions, T2D scenes, and addon content.
 
 **Policy:** List may grow later; **must not shrink** below this minimum set (prestarter §13, gate U0).
@@ -30,6 +30,8 @@ Future location: `Samples/unification/<demo_id>/` (see [Samples/unification/READ
 - 🚧 Golden-path import — `resolveParityLegacySource` + `classifySubmoduleDirectory` prefer submodule paths when initialized; bundled stubs used in CI with explicit uninitialized/absent notes (no network fetch)
 - 🚧 PIE ASan smoke — `fuse_u8_parity_embed_pie_smoke` covers seven demos when `FUSE_SMOKE_ENABLE_ASAN=ON`; all parity demo binaries also ASan-linked under that flag
 - 🚧 Animated sprite textures — converter emits `__fuse.wire|animated_sprite|*` stubs + runtime bridge counts metadata; no GPU texture atlas playback yet
+- ✅ Player + programmer guides — [`docs/player-guide.md`](../player-guide.md), [`docs/programmer-guide.md`](../programmer-guide.md) (honest limits, real demo binaries + ctest names)
+- ❌ Stakeholder sign-off — “this is one program”
 
 ---
 
@@ -165,3 +167,4 @@ Per prestarter §1.3 and §17:
 - [x] U8 wiring wave 2: `fuse_demo_wiring` + bundled `worlds/` sources + `ctest -R fuse_u8_`
 - [x] U8 wiring wave 3: golden-path resolver + editor embed convert-before-load + `fuse_u8_parity_embed_pie_smoke`
 - [x] U8 wiring wave 4: animated-sprite wiring stubs + submodule directory classification + ASan on all parity demos + PIE embed covers `demo_hybrid_hud`
+- [x] U8 wiring wave 5: `ensureDefault2DWorldReady` (symmetric to 3D) + parity fallback tests for `demo_fx` / `demo_ai_bt` / `demo_timeline` + player/programmer guides

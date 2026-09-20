@@ -2,7 +2,7 @@
 
 Headless demos that prove one runtime: 2D, 3D, hybrid, and feature modules.
 
-Product guide: [`docs/samples.md`](../../docs/samples.md). Project format: [`docs/projects.md`](../../docs/projects.md).
+Product guides: [`docs/player-guide.md`](../../docs/player-guide.md) (run demos), [`docs/programmer-guide.md`](../../docs/programmer-guide.md) (API wiring). Also [`docs/samples.md`](../../docs/samples.md), [`docs/projects.md`](../../docs/projects.md).
 
 Enable binaries with `FUSE_BUILD_PARITY_DEMOS=ON` (default).
 
@@ -27,6 +27,11 @@ ctest --test-dir build -R fuse_u8_ --output-on-failure
 - Real GLES/Vulkan present (Track B) — software placeholder renderer only
 - Bit-perfect legacy mission replay — converters produce wiring stubs, not full gameplay
 - Live addon submodule assets — golden paths tried first; bundled `.mis`/`.cs` stubs used when submodules absent
+
+**Wave 5 wiring**
+
+- `ensureDefault2DWorldReady` — symmetric 2D `.cs`→`.fuselevel` prepare (used by `bridge2DWorldFromProject`)
+- Parity fallback tests for `demo_fx`, `demo_ai_bt`, `demo_timeline` golden paths (`ctest -R fuse_parity_legacy_sources`)
 
 **Wave 4 wiring**
 
