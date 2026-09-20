@@ -368,7 +368,6 @@ CookStubWriteResult tryCookAudioOgg(const std::string& input_path, const std::st
         vorbis_comment vorbisComment;
         vorbis_comment_init(&vorbisComment);
         vorbis_dsp_state vorbisDsp;
-        vorbis_analysis_state vorbisAnalysis;
         vorbis_block vorbisBlock;
 
         vorbis_analysis_init(&vorbisDsp, &vorbisInfo);
@@ -381,7 +380,7 @@ CookStubWriteResult tryCookAudioOgg(const std::string& input_path, const std::st
                                   &headerCodePacket);
 
         ogg_stream_state oggStream;
-        ogg_stream_init(&oggStream, 0xFUSE0001u);
+        ogg_stream_init(&oggStream, 0xF010001u);
 
         auto flushOggPage = [&](ogg_page& page) {
             oggPages.insert(oggPages.end(), page.header, page.header + page.header_len);
@@ -443,11 +442,7 @@ CookStubWriteResult tryCookAudioOgg(const std::string& input_path, const std::st
         encoderNote = oggPages.size() > 64u ? "vorbisenc_encode_ok" : "vorbisenc_encode_empty";
     }
 
-    if (vorbisReady) {
-        vorbis_encode_clear(&vorbisInfo);
-    } else {
-        vorbis_info_clear(&vorbisInfo);
-    }
+    vorbis_info_clear(&vorbisInfo);
 
     if (!oggPages.empty()) {
         std::ostringstream header;
