@@ -14,5 +14,5 @@
     "adventure": false
   },
   "defaultWorld3D": "",
-  "defaultWorld2D": "worlds/sprites.fuselevel"
+  "defaultWorld2D": "worlds/sprite_toy_stub.fuselevel"
 }

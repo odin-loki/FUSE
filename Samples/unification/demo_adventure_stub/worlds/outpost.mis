@@ -1,0 +1,16 @@
+new Scene(Outpost) {
+   new SimGroup(Interactables) {
+      new ShapeBase(MaintenanceDoor) {
+         position = "4 0 0";
+         dataBlock = "Door";
+      };
+      new ShapeBase(ArmoryRifle) {
+         position = "5 1 0";
+         dataBlock = "WeaponPickup";
+      };
+      new ShapeBase(OutpostGuard) {
+         position = "2 1 0";
+         dataBlock = "ConversationNPC";
+      };
+   };
+};

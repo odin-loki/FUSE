@@ -1,0 +1,10 @@
+new Scene(VerveIntro) {
+   new SimGroup(Director) {
+      new Camera(CameraIntro) {
+         position = "0 0 10";
+      };
+      new ShapeBase(ActorAnchor) {
+         position = "0 0 0";
+      };
+   };
+};

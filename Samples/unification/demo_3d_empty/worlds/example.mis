@@ -2,10 +2,12 @@ new Scene(ExampleLevel) {
    new SimGroup(CameraSpawnPoints) {
       new SpawnSphere(DefaultCameraSpawnSphere) {
          position = "0 0 10";
+         dataBlock = "SpawnSphereMarker";
       };
    };
-   new GroundPlane() {
+   new GroundPlane(Floor) {
       position = "0 0 0";
       scale = "1 1 1";
+      MaterialAsset = "Prototyping:FloorGray";
    };
 };

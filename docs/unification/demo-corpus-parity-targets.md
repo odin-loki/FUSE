@@ -1,7 +1,7 @@
 # FUSE U0 — Demo Corpus & Parity Targets
 
 **Phase:** U0 Inventory & collision map  
-**Date:** 2026-09-15  
+**Date:** 2026-09-15 (updated 2026-09-20 — U8 wiring wave)  
 **Purpose:** Freeze the minimum demo set for unification exit (U8) and map each demo to existing T3D missions, T2D scenes, and addon content.
 
 **Policy:** List may grow later; **must not shrink** below this minimum set (prestarter §13, gate U0).
@@ -14,15 +14,21 @@ Aligned with [FUSE_UNIFIED_PRESTARTER.md](../plans/FUSE_UNIFIED_PRESTARTER.md) �
 
 | FUSE demo ID | Proves | Status |
 |--------------|--------|--------|
-| `demo_3d_empty` | 3D dimension path | ✅ Stub binary + `project.json` |
-| `demo_2d_sprites` | 2D dimension path | ✅ Stub binary + `project.json` |
-| `demo_hybrid_hud` | Shared frame / compositor | ✅ U4 scaffold (`demo_hybrid_hud`) |
-| `demo_ai_bt` | `fuse_ai` on 3D + 2D agents | ✅ Stub binary + `project.json` |
-| `demo_timeline` | `fuse_cinematics` | ✅ Stub binary + `project.json` |
-| `demo_fx` | `fuse_fx` | ✅ Stub binary + `project.json` |
-| `demo_adventure_stub` | `fuse_adventure` interactions | ✅ Stub binary + `project.json` |
+| `demo_3d_empty` | 3D dimension path | ✅ Headless binary + `project.json` + `.mis` convert/load via `fuse_demo_wiring` |
+| `demo_2d_sprites` | 2D dimension path | ✅ SpriteToy-inspired `.cs` module bridge + Box2D tick |
+| `demo_hybrid_hud` | Shared frame / compositor | ✅ U4/U5 full module gates (`hybrid_module_gates`) |
+| `demo_ai_bt` | `fuse_ai` on 3D + 2D agents | ✅ Hybrid BT tick + UAISK patrol profile + mission convert |
+| `demo_timeline` | `fuse_cinematics` | ✅ Outpost intro asset/stub + VActor + hybrid timeline drive |
+| `demo_fx` | `fuse_fx` | ✅ AFX template pack + mission VM + GPU particle pool |
+| `demo_adventure_stub` | `fuse_adventure` interactions | ✅ Outpost JSON spawn + mechanics + weapon grant + mission convert |
 
-Future location: `Samples/unification/<demo_id>/` (stubs in [Samples/unification/README.md](../../Samples/unification/README.md)).
+Future location: `Samples/unification/<demo_id>/` (see [Samples/unification/README.md](../../Samples/unification/README.md)).
+
+**Honest gaps toward full U8 exit (prestarter §13.2):**
+
+- ❌ Real window present / PIE ASan smoke across all seven demos
+- ❌ Golden-path import from live addon submodules (bundled `worlds/*.mis` / `*.cs` stubs used instead)
+- ❌ Animated sprite textures / datablock gameplay parity (converter wiring stubs only)
 
 ---
 
@@ -40,6 +46,8 @@ Future location: `Samples/unification/<demo_id>/` (stubs in [Samples/unification
 
 **Primary:** `Templates/BaseGame/game/data/ExampleModule/levels/ExampleLevel.mis`  
 **Stretch:** `Templates/BaseGame` full template — module + datablocks + empty terrain.
+
+**Bundled stub:** `Samples/unification/demo_3d_empty/worlds/example.mis` (SpawnSphere + GroundPlane wiring stubs).
 
 **Acceptance (U8):** FUSE runtime loads converted FUSE world3d, clears colour or minimal scene, no crash under ASan.
 
@@ -78,11 +86,9 @@ T2D uses `main.cs` module entry points under `third_party/Torque2D/` (not `.mis`
 **Primary:** `third_party/Torque2D/toybox/SpriteToy/1/main.cs`  
 **Secondary:** `tutorials/fishTutorialBase/main.cs` (broader gameplay)
 
+**Bundled stub:** `Samples/unification/demo_2d_sprites/worlds/sprite_toy_stub.cs`
+
 **Acceptance (U8):** FUSE runtime loads converted FUSE world2d, animated sprites visible, Box2D tick optional.
-
-### 3.4 PlanetX sample game
-
-`third_party/Torque2D/PlanetX/PlanetXGame/` — fuller game module for late parity (post-minimum).
 
 ---
 
@@ -122,6 +128,8 @@ T2D uses `main.cs` module entry points under `third_party/Torque2D/` (not `.mis`
 
 **Acceptance (U8):** One window, 3D scene + 2D HUD sprites, shared input, single process.
 
+**Status:** Headless `demo_hybrid_hud` exercises all five `fuse_*` modules via `hybrid_module_gates` (60-frame software render). Real present remains Track B.
+
 ---
 
 ## 6. Cross-demo mapping to U8 acceptance
@@ -153,3 +161,4 @@ Per prestarter §1.3 and §17:
 - [x] Parity demo list frozen (minimum set documented)
 - [x] `Samples/unification/` stubs created (see README)
 - [x] Converters (U7) can import golden paths (stub importers + `fuse_import` dry-run)
+- [x] U8 wiring wave: `fuse_demo_wiring` + bundled `worlds/` sources + `ctest -R fuse_u8_`

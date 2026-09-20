@@ -1,0 +1,12 @@
+new Scene(BehaviorTestbed) {
+   new SimGroup(Agents) {
+      new AIPlayer(PatrolAgent) {
+         position = "-2 0 0";
+         dataBlock = "AIPlayer";
+      };
+      new AIPlayer(SquadLead) {
+         position = "-1 0 0";
+         dataBlock = "AIPlayer";
+      };
+   };
+};

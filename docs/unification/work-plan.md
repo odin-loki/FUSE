@@ -364,7 +364,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | M |
 | **Scope** | `Samples/unification/demo_*` per [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) |
 | **Deps** | WP-07 (subset), WP-09 |
-| **Status** | ✅ Minimum set — seven `project.json` stubs + headless demo binaries wired in CI |
+| **Status** | 🚧 Wave 2 — seven headless binaries + `fuse_demo_wiring` (VFS/mission convert/module bridge) + `ctest -R fuse_u8_`; real present + golden submodule import still ❌ |
 
 ---
 
@@ -412,7 +412,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 | **U5** | Feature modules | Five `fuse_*` targets; `fuse_ai` BT slice + tests — 🚧 scaffolds + ore backlog ([U5-MODULES.md](./U5-MODULES.md)) |
 | **U6** | Editor PIE | UI/game thread queue + coalesced property undo + headless runtime embed — 🚧 Qt External GPU viewport remains |
 | **U7** | Project format | `fuse_project` + wiring stubs + toybox convert + cook encoder hooks — 🚧 link real Assimp/BC7/OGG libs |
-| **U8** | Parity demos | Seven demo binaries + `Samples/unification/` stubs — ✅ minimum set |
+| **U8** | Parity demos | Seven demo binaries + bundled `worlds/` sources + module wiring — 🚧 prestarter §13.2 exit items remain |
 | **P3 (Track A)** | Job system tests | Fiber scheduler + single-thread fallback |
 
 ---

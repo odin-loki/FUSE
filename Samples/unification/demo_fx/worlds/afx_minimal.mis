@@ -1,0 +1,12 @@
+new Scene(AFXDemo_Minimal) {
+   new SimGroup(FXAnchors) {
+      new ShapeBase(MuzzleAnchor) {
+         position = "0 0 0";
+         MaterialAsset = "AFX:SparkBurst";
+      };
+      new ShapeBase(SpriteAnchor) {
+         position = "2 0 0";
+         MaterialAsset = "AFX:MuzzleFlash";
+      };
+   };
+};
