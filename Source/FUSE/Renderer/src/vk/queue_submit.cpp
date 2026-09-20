@@ -110,14 +110,44 @@ GraphicsQueueSubmitResult submitGraphicsQueue(const GraphicsQueueSubmitDesc& des
     submitInfo.pCommandBuffers = &commandBuffer;
 
     VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    VkSemaphore waitSemaphore = VK_NULL_HANDLE;
+    VkSemaphore signalSemaphores[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    u32 signalCount = 0;
     if (useSemaphores) {
-        VkSemaphore imageAvailable = static_cast<VkSemaphore>(slot.imageAvailable);
-        VkSemaphore renderFinished = static_cast<VkSemaphore>(slot.renderFinished);
+        waitSemaphore = static_cast<VkSemaphore>(slot.imageAvailable);
+        signalSemaphores[signalCount++] = static_cast<VkSemaphore>(slot.renderFinished);
         submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = &imageAvailable;
+        submitInfo.pWaitSemaphores = &waitSemaphore;
         submitInfo.pWaitDstStageMask = &waitStages;
-        submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = &renderFinished;
+    }
+
+#if defined(VK_VERSION_1_2) || defined(VK_KHR_timeline_semaphore)
+    VkTimelineSemaphoreSubmitInfo timelineInfo{};
+    u64 signalValues[2] = {0, 0};
+    const u64 nextTimelineValue = slot.timelineValue + 1;
+    const bool signalTimeline = slot.timelineSemaphore != nullptr;
+    if (signalTimeline) {
+        if (signalCount > 0) {
+            signalValues[0] = 0;
+            signalValues[1] = nextTimelineValue;
+        } else {
+            signalValues[0] = nextTimelineValue;
+        }
+        signalSemaphores[signalCount++] = static_cast<VkSemaphore>(slot.timelineSemaphore);
+        timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+        timelineInfo.signalSemaphoreValueCount = signalCount;
+        timelineInfo.pSignalSemaphoreValues = signalValues;
+        submitInfo.pNext = &timelineInfo;
+    }
+#else
+    const bool signalTimeline = false;
+    const u64 nextTimelineValue = 0;
+    (void)nextTimelineValue;
+#endif
+
+    if (signalCount > 0) {
+        submitInfo.signalSemaphoreCount = signalCount;
+        submitInfo.pSignalSemaphores = signalSemaphores;
     }
 
     VkFence fence = static_cast<VkFence>(slot.inFlightFence);
@@ -127,6 +157,9 @@ GraphicsQueueSubmitResult submitGraphicsQueue(const GraphicsQueueSubmitDesc& des
         return result;
     }
 
+    if (signalTimeline) {
+        slot.timelineValue = nextTimelineValue;
+    }
     slot.fenceSignaled = true;
     result.submitted = true;
     result.ok = true;
@@ -139,6 +172,65 @@ GraphicsQueueSubmitResult submitGraphicsQueue(const GraphicsQueueSubmitDesc& des
     result.submitted = false;
     result.headless = true;
     result.message = "queue submit stub — Vulkan backend disabled";
+    return result;
+#endif
+}
+
+GraphicsQueueSubmitResult submitTransferQueue(const GraphicsQueueSubmitDesc& desc) {
+    GraphicsQueueSubmitResult result;
+    result.headless = true;
+    result.semaphoresUsed = false;
+
+    if (desc.device == nullptr || !desc.device->isValid() || desc.frameManager == nullptr ||
+        !desc.frameManager->isReady()) {
+        result.message = "submitTransferQueue requires valid device and frame manager";
+        return result;
+    }
+
+#if defined(FUSE_VULKAN_BACKEND)
+    FrameSyncData& slot = desc.frameManager->current();
+    auto transferBuffer = static_cast<VkCommandBuffer>(slot.commands.transferCommandBuffer);
+    if (transferBuffer == VK_NULL_HANDLE) {
+        result.ok = true;
+        result.submitted = false;
+        result.message = "transfer command buffer null — skipped";
+        return result;
+    }
+
+    if (!desc.commandsAlreadyRecorded) {
+        if (vkResetCommandBuffer(transferBuffer, 0) != VK_SUCCESS) {
+            result.message = "transfer command buffer reset failed";
+            return result;
+        }
+        if (!recordMinimalSubmitCommands(transferBuffer)) {
+            result.message = "transfer command buffer record failed";
+            return result;
+        }
+    }
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &transferBuffer;
+
+    VkQueue queue = static_cast<VkQueue>(desc.device->queues().transfer);
+    if (queue == VK_NULL_HANDLE) {
+        queue = static_cast<VkQueue>(desc.device->queues().graphics);
+    }
+    if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+        result.message = "transfer vkQueueSubmit failed";
+        return result;
+    }
+
+    result.submitted = true;
+    result.ok = true;
+    result.message = "vkQueueSubmit transfer (no WSI, no in-flight fence)";
+    return result;
+#else
+    (void)desc;
+    result.ok = true;
+    result.submitted = false;
+    result.message = "transfer queue submit stub — Vulkan backend disabled";
     return result;
 #endif
 }

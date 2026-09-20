@@ -13,6 +13,7 @@ struct ShaderModuleInfo {
     bool valid = false;
     ShaderStage stage = ShaderStage::Vertex;
     u32 spirvWordCount = 0;
+    std::string entryPoint;
     std::string message;
 };
 
@@ -21,6 +22,7 @@ class ShaderModule {
 public:
     static std::unique_ptr<ShaderModule> create(VulkanDevice& device, ShaderStage stage,
                                                 const u32* spirv, u32 wordCount);
+    static std::unique_ptr<ShaderModule> create(VulkanDevice& device, const CompiledShader& compiled);
     static std::unique_ptr<ShaderModule> createFromFile(VulkanDevice& device, ShaderStage stage,
                                                         const char* spirvPath);
     ~ShaderModule();

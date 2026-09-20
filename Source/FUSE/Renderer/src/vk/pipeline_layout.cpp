@@ -38,6 +38,7 @@ void* PipelineLayout::nativeHandle() const {
 
 bool PipelineLayout::initialize(VulkanDevice& device, const PipelineLayoutDesc& desc) {
     m_device = &device;
+    const bool requestedBindless = desc.bindlessSetLayout != nullptr;
     m_info.pushConstantRangeCount = static_cast<u32>(desc.pushConstants.size());
     m_info.descriptorSetCount = static_cast<u32>(desc.descriptorSets.size());
 
@@ -57,8 +58,9 @@ bool PipelineLayout::initialize(VulkanDevice& device, const PipelineLayoutDesc& 
         pushRanges.push_back(vkRange);
     }
 
+    // Set 0 is the bindless layout when provided (B2.4).
     VkDescriptorSetLayout bindlessLayout = VK_NULL_HANDLE;
-    if (desc.bindlessSetLayout != nullptr) {
+    if (requestedBindless) {
         bindlessLayout = static_cast<VkDescriptorSetLayout>(desc.bindlessSetLayout);
     }
 
@@ -80,10 +82,18 @@ bool PipelineLayout::initialize(VulkanDevice& device, const PipelineLayoutDesc& 
 
     m_handle = pipelineLayout;
     m_info.valid = true;
+    m_info.hasBindlessSet = requestedBindless;
+    if (requestedBindless && m_info.descriptorSetCount < 1u) {
+        m_info.descriptorSetCount = 1u;
+    }
     m_info.message = desc.debugName != nullptr ? desc.debugName : "pipeline layout placeholder";
     return true;
 #else
     m_info.valid = true;
+    m_info.hasBindlessSet = requestedBindless;
+    if (requestedBindless && m_info.descriptorSetCount < 1u) {
+        m_info.descriptorSetCount = 1u;
+    }
     m_info.message = "pipeline layout placeholder (stub backend)";
     return true;
 #endif

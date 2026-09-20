@@ -31,8 +31,27 @@ struct CompiledShader {
     std::vector<u32> spirv;
     ShaderStage stage = ShaderStage::Vertex;
     std::string sourcePath;
+    std::string entryPoint;
     std::string message;
+    u64 spirvHash = 0;
+    u32 defineCount = 0;
     bool valid = false;
 };
+
+/// FNV-1a over SPIR-V words. Empty or null input hashes to 0.
+inline u64 hashSpirvWords(const u32* words, u32 wordCount) {
+    if (words == nullptr || wordCount == 0u) {
+        return 0;
+    }
+
+    constexpr u64 kFnvOffset = 14695981039346656037ull;
+    constexpr u64 kFnvPrime = 1099511628211ull;
+    u64 hash = kFnvOffset;
+    for (u32 i = 0; i < wordCount; ++i) {
+        hash ^= static_cast<u64>(words[i]);
+        hash *= kFnvPrime;
+    }
+    return hash;
+}
 
 } // namespace fuse::renderer

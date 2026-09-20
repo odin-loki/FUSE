@@ -33,6 +33,7 @@ struct PipelineLayoutInfo {
     bool valid = false;
     u32 pushConstantRangeCount = 0;
     u32 descriptorSetCount = 0;
+    bool hasBindlessSet = false;
     std::string message;
 };
 

@@ -201,6 +201,16 @@ void InputState::apply(const PlatformEvent& event) {
     }
 }
 
+u32 InputState::applyPump(EventPump& pump) {
+    u32 applied = 0;
+    PlatformEvent event;
+    while (pump.pollEvent(event)) {
+        apply(event);
+        ++applied;
+    }
+    return applied;
+}
+
 bool InputState::keyDown(Key key) const {
     if (!validKey(key)) {
         return false;

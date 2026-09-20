@@ -4,6 +4,7 @@
 
 namespace fuse::platform {
 
+class EventPump;
 struct PlatformEvent;
 
 enum class Key : u16 {
@@ -86,7 +87,8 @@ Key keyFromPlatformCode(u32 keyCode);
 
 /// Frame input snapshot. No heap: down/pressed/released are fixed arrays.
 ///
-/// Call `beginFrame()` once per tick, then `apply()` each polled event.
+/// Call `beginFrame()` once per tick, then `apply()` each polled event
+/// (or `applyPump()` to drain an `EventPump` — that drain does not call `beginFrame()`).
 /// `keyPressed` is true only until the next `beginFrame()` after a `KeyDown`.
 class InputState {
 public:
@@ -98,6 +100,10 @@ public:
     /// `RawMouseDelta` accumulates `mouseDeltaX/Y` and does not overwrite absolute `mouseX/Y`.
     /// Other event types are ignored. Unknown key/button codes are ignored.
     void apply(const PlatformEvent& event);
+
+    /// Poll every pending event from `pump` and `apply()` each. Does not call `beginFrame()`.
+    /// Returns the number of events applied (including types `apply` ignores).
+    u32 applyPump(EventPump& pump);
 
     bool keyDown(Key key) const;
     bool keyPressed(Key key) const;

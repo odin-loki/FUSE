@@ -46,7 +46,58 @@ VkBufferUsageFlags toVkBufferUsage(BufferUsage usage) {
     if (hasUsage(usage, BufferUsage::Vertex)) {
         flags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
     }
+    if (hasUsage(usage, BufferUsage::ShaderDeviceAddress)) {
+        flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    }
     return flags;
+}
+
+bool deviceHasBufferDeviceAddress(const VulkanDevice* device) {
+    return device != nullptr && device->info().bufferDeviceAddress;
+}
+
+bool usageWantsDeviceAddress(BufferUsage usage) {
+    return hasUsage(usage, BufferUsage::ShaderDeviceAddress) ||
+           hasUsage(usage, BufferUsage::Storage) || hasUsage(usage, BufferUsage::Uniform) ||
+           hasUsage(usage, BufferUsage::Vertex);
+}
+
+VkBufferUsageFlags resolveVkBufferUsage(const VulkanDevice* device, BufferUsage usage) {
+    VkBufferUsageFlags flags = toVkBufferUsage(usage);
+    if (deviceHasBufferDeviceAddress(device) && usageWantsDeviceAddress(usage)) {
+        flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    } else if (!deviceHasBufferDeviceAddress(device)) {
+        flags &= ~static_cast<VkBufferUsageFlags>(VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+    }
+    return flags;
+}
+
+u64 fetchBufferDeviceAddress(const VulkanDevice* device, VkBuffer buffer,
+                             VkBufferUsageFlags usageFlags) {
+    if (!deviceHasBufferDeviceAddress(device) || buffer == VK_NULL_HANDLE ||
+        (usageFlags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) == 0) {
+        return 0;
+    }
+
+    const VkDevice vkDevice = static_cast<VkDevice>(device->nativeHandle());
+    if (vkDevice == VK_NULL_HANDLE) {
+        return 0;
+    }
+
+    auto getAddr = reinterpret_cast<PFN_vkGetBufferDeviceAddress>(
+        vkGetDeviceProcAddr(vkDevice, "vkGetBufferDeviceAddress"));
+    if (getAddr == nullptr) {
+        getAddr = reinterpret_cast<PFN_vkGetBufferDeviceAddress>(
+            vkGetDeviceProcAddr(vkDevice, "vkGetBufferDeviceAddressKHR"));
+    }
+    if (getAddr == nullptr) {
+        return 0;
+    }
+
+    VkBufferDeviceAddressInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+    info.buffer = buffer;
+    return static_cast<u64>(getAddr(vkDevice, &info));
 }
 
 VkImageUsageFlags toVkImageUsage(ImageUsage usage) {
@@ -188,6 +239,9 @@ bool GpuAllocator::initialize(VulkanDevice& device) {
     allocatorInfo.physicalDevice = static_cast<VkPhysicalDevice>(device.nativePhysicalDevice());
     allocatorInfo.device = static_cast<VkDevice>(device.nativeHandle());
     allocatorInfo.instance = static_cast<VkInstance>(device.instanceHandle());
+    if (device.info().bufferDeviceAddress) {
+        allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    }
 
     VmaAllocator vmaAllocator = VK_NULL_HANDLE;
     if (vmaCreateAllocator(&allocatorInfo, &vmaAllocator) != VK_SUCCESS) {
@@ -242,7 +296,7 @@ bool GpuAllocator::createBuffer(const BufferDesc& desc, Buffer& out) {
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = desc.size;
-    bufferInfo.usage = toVkBufferUsage(desc.usage);
+    bufferInfo.usage = resolveVkBufferUsage(m_device, desc.usage);
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     VmaAllocationCreateInfo allocInfo{};
@@ -260,7 +314,7 @@ bool GpuAllocator::createBuffer(const BufferDesc& desc, Buffer& out) {
     out.handle = buffer;
     out.allocation = allocation;
     out.desc = desc;
-    out.deviceAddress = 0;
+    out.deviceAddress = fetchBufferDeviceAddress(m_device, buffer, bufferInfo.usage);
     vmaMapMemory(static_cast<VmaAllocator>(m_allocator), allocation, &out.mapped);
     gpu_alloc_detail::recordBufferAlloc(m_stats, desc.size);
     refreshVmaPoolStats();
@@ -280,7 +334,7 @@ bool GpuAllocator::createBuffer(const BufferDesc& desc, Buffer& out) {
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = desc.size;
-    bufferInfo.usage = toVkBufferUsage(desc.usage);
+    bufferInfo.usage = resolveVkBufferUsage(m_device, desc.usage);
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     VkBuffer buffer = VK_NULL_HANDLE;
@@ -305,10 +359,16 @@ bool GpuAllocator::createBuffer(const BufferDesc& desc, Buffer& out) {
         return false;
     }
 
+    VkMemoryAllocateFlagsInfo allocFlags{};
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memRequirements.size;
     allocInfo.memoryTypeIndex = memoryTypeIndex;
+    if ((bufferInfo.usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) != 0) {
+        allocFlags.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+        allocFlags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+        allocInfo.pNext = &allocFlags;
+    }
 
     VkDeviceMemory memory = VK_NULL_HANDLE;
     if (vkAllocateMemory(device, &allocInfo, nullptr, &memory) != VK_SUCCESS) {
@@ -339,7 +399,7 @@ bool GpuAllocator::createBuffer(const BufferDesc& desc, Buffer& out) {
     out.allocation = memory;
     out.desc = desc;
     out.mapped = mapped;
-    out.deviceAddress = 0;
+    out.deviceAddress = fetchBufferDeviceAddress(m_device, buffer, bufferInfo.usage);
     gpu_alloc_detail::recordBufferAlloc(m_stats, desc.size);
     notifyStats();
     return true;

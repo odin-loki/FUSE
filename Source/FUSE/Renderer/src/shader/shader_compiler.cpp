@@ -6,12 +6,18 @@ namespace fuse::renderer {
 
 namespace {
 
-CompiledShader makeFailure(const ShaderDesc& desc, const std::string& message) {
-    CompiledShader result;
+void fillDescMetadata(CompiledShader& result, const ShaderDesc& desc) {
     result.stage = desc.stage;
     if (desc.sourcePath != nullptr) {
         result.sourcePath = desc.sourcePath;
     }
+    result.entryPoint = (desc.entryPoint != nullptr && desc.entryPoint[0] != '\0') ? desc.entryPoint : "main";
+    result.defineCount = desc.defineCount;
+}
+
+CompiledShader makeFailure(const ShaderDesc& desc, const std::string& message) {
+    CompiledShader result;
+    fillDescMetadata(result, desc);
     result.message = message;
     result.valid = false;
     return result;
@@ -19,9 +25,9 @@ CompiledShader makeFailure(const ShaderDesc& desc, const std::string& message) {
 
 CompiledShader makeSuccess(const ShaderDesc& desc, std::vector<u32>&& words, const char* message) {
     CompiledShader result;
+    fillDescMetadata(result, desc);
     result.spirv = std::move(words);
-    result.stage = desc.stage;
-    result.sourcePath = desc.sourcePath;
+    result.spirvHash = hashSpirvWords(result.spirv.data(), static_cast<u32>(result.spirv.size()));
     result.message = message;
     result.valid = true;
     return result;

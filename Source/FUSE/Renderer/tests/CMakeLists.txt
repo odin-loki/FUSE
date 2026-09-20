@@ -67,6 +67,10 @@ target_compile_definitions(fuse_shader_pipeline PRIVATE
 )
 add_test(NAME fuse_shader_pipeline COMMAND fuse_shader_pipeline)
 
+add_executable(fuse_shader_watch test_shader_watch.cpp)
+target_link_libraries(fuse_shader_watch PRIVATE fuse_rhi)
+add_test(NAME fuse_shader_watch COMMAND fuse_shader_watch)
+
 add_executable(fuse_cuda_interop test_cuda_interop.cpp)
 target_link_libraries(fuse_cuda_interop PRIVATE fuse_rhi)
 add_test(NAME fuse_cuda_interop COMMAND fuse_cuda_interop)

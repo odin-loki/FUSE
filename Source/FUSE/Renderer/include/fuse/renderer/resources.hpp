@@ -32,6 +32,7 @@ enum class BufferUsage : u32 {
     Storage = 1u << 3,
     Index = 1u << 4,
     Vertex = 1u << 5,
+    ShaderDeviceAddress = 1u << 6,
 };
 
 enum class ImageUsage : u32 {

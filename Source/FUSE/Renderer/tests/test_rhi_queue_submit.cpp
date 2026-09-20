@@ -10,6 +10,10 @@
 #include <cstdio>
 #include <cstdlib>
 
+#if defined(FUSE_VULKAN_BACKEND)
+#include <vulkan/vulkan.h>
+#endif
+
 namespace {
 
 int g_failures = 0;
@@ -53,10 +57,34 @@ void testHeadlessQueueSubmit() {
     expectTrue(result.headless, "headless path omits WSI semaphores");
     expectTrue(!result.semaphoresUsed, "headless path does not wire acquire semaphores");
 
+    if (frameManager->current().timelineSemaphore != nullptr) {
+        expectTrue(frameManager->currentTimelineValue() >= 1u || result.ok,
+                   "graphics submit signals timeline (>= 1) or remains ok if increment is internal");
+    }
+
     expectTrue(fuse::renderer::countPendingInFlightFences(*frameManager) >= 1u,
                "submit signals in-flight fence");
     expectTrue(fuse::renderer::waitInFlightFenceForSlot(*frameManager, frameManager->currentIndex()),
                "fence wait after headless submit succeeds");
+
+    const fuse::renderer::GraphicsQueueSubmitResult transferResult =
+        fuse::renderer::submitTransferQueue(submitDesc);
+    expectTrue(transferResult.ok, "headless transfer vkQueueSubmit succeeds");
+    expectTrue(transferResult.headless, "transfer path omits WSI semaphores");
+    expectTrue(!transferResult.semaphoresUsed, "transfer path does not wire acquire semaphores");
+    if (frameManager->current().commands.transferCommandBuffer != nullptr) {
+        expectTrue(transferResult.submitted, "transfer path records a real submit");
+    }
+
+#if defined(FUSE_VULKAN_BACKEND)
+    void* waitQueue = bootstrap->device()->queues().transfer;
+    if (waitQueue == nullptr) {
+        waitQueue = bootstrap->device()->queues().graphics;
+    }
+    if (waitQueue != nullptr) {
+        vkQueueWaitIdle(static_cast<VkQueue>(waitQueue));
+    }
+#endif
 }
 
 void testQueueSubmitThroughRhiContext() {

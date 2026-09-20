@@ -62,6 +62,20 @@ void* createVulkanSampler(VulkanDevice& device, const SamplerDesc& desc) {
 }
 #endif
 
+constexpr usize kStagingAlignBytes = 256;
+
+bool hasBufferUsage(BufferUsage usage, BufferUsage flag) {
+    return (static_cast<u32>(usage) & static_cast<u32>(flag)) != 0;
+}
+
+BufferUsage withBufferUsage(BufferUsage usage, BufferUsage flag) {
+    return static_cast<BufferUsage>(static_cast<u32>(usage) | static_cast<u32>(flag));
+}
+
+bool memoryNeedsHostMapping(MemoryUsage usage) {
+    return usage == MemoryUsage::CpuToGpu || usage == MemoryUsage::GpuToCpu;
+}
+
 void stageTextureInitialData(Buffer* staging, usize& stagingOffset, usize stagingCapacity,
                              const TextureDesc& desc, const void* initialData) {
     if (staging == nullptr || staging->mapped == nullptr || initialData == nullptr) {
@@ -79,6 +93,77 @@ void stageTextureInitialData(Buffer* staging, usize& stagingOffset, usize stagin
     std::memcpy(static_cast<u8*>(staging->mapped) + stagingOffset, initialData, bytes);
     stagingOffset += bytes;
 }
+
+#if defined(FUSE_VULKAN_BACKEND)
+void oneShotCopyBuffer(VulkanDevice& device, void* srcHandle, void* dstHandle, usize srcOffset,
+                       usize size) {
+    if (!device.isValid() || device.nativeHandle() == nullptr || size == 0) {
+        return;
+    }
+    if (!bindlessNativeHandleReady(srcHandle) || !bindlessNativeHandleReady(dstHandle)) {
+        return;
+    }
+
+    auto queue = static_cast<VkQueue>(device.queues().graphics);
+    if (queue == VK_NULL_HANDLE) {
+        return;
+    }
+
+    const VkDevice vkDevice = static_cast<VkDevice>(device.nativeHandle());
+
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    poolInfo.queueFamilyIndex = device.queues().graphicsFamily;
+
+    VkCommandPool pool = VK_NULL_HANDLE;
+    if (vkCreateCommandPool(vkDevice, &poolInfo, nullptr, &pool) != VK_SUCCESS) {
+        return;
+    }
+
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = pool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    if (vkAllocateCommandBuffers(vkDevice, &allocInfo, &cmd) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return;
+    }
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return;
+    }
+
+    VkBufferCopy region{};
+    region.srcOffset = srcOffset;
+    region.dstOffset = 0;
+    region.size = size;
+    vkCmdCopyBuffer(cmd, static_cast<VkBuffer>(srcHandle), static_cast<VkBuffer>(dstHandle), 1,
+                    &region);
+
+    if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return;
+    }
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+    if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) == VK_SUCCESS) {
+        vkQueueWaitIdle(queue);
+    }
+
+    vkDestroyCommandPool(vkDevice, pool, nullptr);
+}
+#endif
 
 } // namespace
 
@@ -200,6 +285,8 @@ TextureHandle ResourceManager::createTexture(const TextureDesc& desc, const void
         return TextureHandle{};
     }
 
+    // CPU staging only — GPU vkCmdCopyBufferToImage needs a TRANSFER_DST layout
+    // transition that this one-shot path does not record.
     stageTextureInitialData(getBuffer(m_stagingRing), m_stagingOffset, m_stagingRingCapacity, desc,
                             initialData);
     return m_textures.insert(std::move(texture));
@@ -210,8 +297,13 @@ BufferHandle ResourceManager::createBuffer(const BufferDesc& desc, const void* i
         return BufferHandle{};
     }
 
+    BufferDesc allocDesc = desc;
+    if (initialData != nullptr && !memoryNeedsHostMapping(desc.memoryUsage)) {
+        allocDesc.usage = withBufferUsage(desc.usage, BufferUsage::TransferDst);
+    }
+
     Buffer buffer{};
-    if (!m_allocator->createBuffer(desc, buffer)) {
+    if (!m_allocator->createBuffer(allocDesc, buffer)) {
         return BufferHandle{};
     }
 
@@ -221,11 +313,44 @@ BufferHandle ResourceManager::createBuffer(const BufferDesc& desc, const void* i
         return BufferHandle{};
     }
 
-    if (initialData != nullptr && buffer.mapped != nullptr) {
-        std::memcpy(buffer.mapped, initialData, desc.size);
+    if (initialData != nullptr) {
+        if (buffer.mapped != nullptr) {
+            std::memcpy(buffer.mapped, initialData, desc.size);
+        } else {
+            copyInitialDataViaStaging(buffer, initialData, desc.size);
+        }
     }
 
     return m_buffers.insert(std::move(buffer));
+}
+
+void ResourceManager::copyInitialDataViaStaging(Buffer& dest, const void* initialData, usize size) {
+    if (initialData == nullptr || size == 0) {
+        return;
+    }
+
+    Buffer* staging = getBuffer(m_stagingRing);
+    if (staging == nullptr || staging->mapped == nullptr) {
+        return;
+    }
+
+    if (size > m_stagingRingCapacity || m_stagingOffset + size > m_stagingRingCapacity) {
+        return;
+    }
+
+    const usize srcOffset = m_stagingOffset;
+    std::memcpy(static_cast<u8*>(staging->mapped) + srcOffset, initialData, size);
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (m_device != nullptr && hasBufferUsage(dest.desc.usage, BufferUsage::TransferDst)) {
+        oneShotCopyBuffer(*m_device, staging->handle, dest.handle, srcOffset, size);
+    }
+#else
+    (void)dest;
+#endif
+
+    m_stagingOffset += size;
+    m_stagingOffset = (m_stagingOffset + (kStagingAlignBytes - 1u)) & ~(kStagingAlignBytes - 1u);
 }
 
 SamplerHandle ResourceManager::createSampler(const SamplerDesc& desc) {

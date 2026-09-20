@@ -40,6 +40,7 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/resources.hpp
     include/fuse/renderer/resource_manager.hpp
     include/fuse/renderer/shader/shader_compiler.hpp
+    include/fuse/renderer/shader/shader_watch.hpp
     include/fuse/renderer/shader/shader_io.hpp
     include/fuse/renderer/shader/shader_module.hpp
     include/fuse/renderer/shader/shader_types.hpp
@@ -106,6 +107,7 @@ set(FUSE_RHI_SOURCES
     src/renderer_bootstrap.cpp
     src/rhi_context.cpp
     src/shader/shader_compiler.cpp
+    src/shader/shader_watch.cpp
     src/shader/shader_io.cpp
     src/shader/shader_module.cpp
     src/shadow/csm.cpp

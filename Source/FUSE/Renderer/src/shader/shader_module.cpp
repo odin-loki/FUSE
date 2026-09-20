@@ -19,6 +19,29 @@ std::unique_ptr<ShaderModule> ShaderModule::create(VulkanDevice& device, ShaderS
     return module;
 }
 
+std::unique_ptr<ShaderModule> ShaderModule::create(VulkanDevice& device,
+                                                   const CompiledShader& compiled) {
+    auto module = std::unique_ptr<ShaderModule>(new ShaderModule());
+    module->m_info.entryPoint = compiled.entryPoint;
+    if (!compiled.valid || compiled.spirv.empty()) {
+        module->m_info.stage = compiled.stage;
+        module->m_info.spirvWordCount = static_cast<u32>(compiled.spirv.size());
+        if (!compiled.valid) {
+            module->m_info.message =
+                compiled.message.empty() ? "compiled shader is invalid" : compiled.message;
+        } else {
+            module->m_info.message = "compiled shader SPIR-V is empty";
+        }
+        return module;
+    }
+
+    if (!module->initialize(device, compiled.stage, compiled.spirv.data(),
+                            static_cast<u32>(compiled.spirv.size()))) {
+        module->m_info.valid = false;
+    }
+    return module;
+}
+
 std::unique_ptr<ShaderModule> ShaderModule::createFromFile(VulkanDevice& device, ShaderStage stage,
                                                            const char* spirvPath) {
     std::string error;

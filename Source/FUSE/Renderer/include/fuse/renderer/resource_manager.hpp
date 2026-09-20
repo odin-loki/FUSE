@@ -57,6 +57,7 @@ public:
 private:
     void destroyAllResources();
     bool ensureStagingRing();
+    void copyInitialDataViaStaging(Buffer& dest, const void* initialData, usize size);
 
     VulkanDevice* m_device = nullptr;
     BindlessDescriptors* m_bindless = nullptr;

@@ -144,6 +144,30 @@ void testUnknownKeyCodeIgnored() {
     expectTrue(!input.keyPressed(fuse::platform::Key::A), "unknown KeyDown does not press A");
 }
 
+void testApplyPumpDrainsKeyMouseAndRawDelta() {
+    fuse::platform::EventPump pump;
+    fuse::platform::InputState input;
+
+    pump.pushKeyDown(65u);
+    pump.pushMouseMove(100, 50);
+
+    fuse::platform::PlatformEvent raw{};
+    raw.type = fuse::platform::PlatformEventType::RawMouseDelta;
+    raw.mouseX = 7;
+    raw.mouseY = -4;
+    pump.pushSyntheticEvent(raw);
+
+    const fuse::u32 applied = input.applyPump(pump);
+
+    expectEqI32(static_cast<fuse::i32>(applied), 3, "applyPump applied KeyDown, MouseMove, RawMouseDelta");
+    expectTrue(input.keyDown(fuse::platform::Key::A), "applyPump KeyDown 65 sets keyDown(A)");
+    expectEqI32(input.mouseX(), 100, "applyPump MouseMove sets mouse x");
+    expectEqI32(input.mouseY(), 50, "applyPump MouseMove sets mouse y");
+    expectEqI32(input.mouseDeltaX(), 7, "applyPump raw delta x (first MouseMove does not delta)");
+    expectEqI32(input.mouseDeltaY(), -4, "applyPump raw delta y");
+    expectTrue(!pump.hasPendingEvents(), "applyPump drains the pump");
+}
+
 void testRawMouseDeltaAccumulatesWithoutChangingAbsolutePosition() {
     fuse::platform::InputState input;
 
@@ -176,6 +200,7 @@ int main() {
     testMouseMoveDeltaFromConsecutivePositions();
     testLeftMouseButtonDownUp();
     testUnknownKeyCodeIgnored();
+    testApplyPumpDrainsKeyMouseAndRawDelta();
     testRawMouseDeltaAccumulatesWithoutChangingAbsolutePosition();
 
     if (g_failures == 0) {

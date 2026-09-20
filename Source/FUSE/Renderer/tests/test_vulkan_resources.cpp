@@ -7,6 +7,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 using fuse::u32;
 using fuse::u8;
@@ -91,14 +92,54 @@ void testResourceManagerBuffersAndTextures() {
     const fuse::renderer::BufferHandle buffer =
         resources.createBuffer(bufferDesc, payload);
     expectTrue(buffer.isValid(), "buffer handle issued");
-    expectTrue(resources.getBuffer(buffer) != nullptr, "buffer resolvable");
+    const fuse::renderer::Buffer* createdBuffer = resources.getBuffer(buffer);
+    expectTrue(createdBuffer != nullptr, "buffer resolvable");
+#if defined(FUSE_VULKAN_BACKEND)
+    if (bootstrap->device() != nullptr && bootstrap->device()->isValid() &&
+        bootstrap->device()->info().bufferDeviceAddress) {
+        expectTrue(createdBuffer->deviceAddress != 0,
+                   "Storage CpuToGpu buffer has deviceAddress when bufferDeviceAddress is enabled");
+    }
+#endif
+
+    fuse::renderer::BufferDesc gpuOnlyDesc{};
+    gpuOnlyDesc.size = 64;
+    gpuOnlyDesc.usage = fuse::renderer::BufferUsage::Storage;
+    gpuOnlyDesc.memoryUsage = fuse::renderer::MemoryUsage::GpuOnly;
+    u8 gpuPayload[64];
+    for (u8 i = 0; i < 64; ++i) {
+        gpuPayload[i] = i;
+    }
+    const fuse::usize stagingBefore = resources.stagingRingOffset();
+    const fuse::renderer::BufferHandle gpuOnly =
+        resources.createBuffer(gpuOnlyDesc, gpuPayload);
+    expectTrue(gpuOnly.isValid(), "GpuOnly + initialData issues a handle");
+    const fuse::renderer::Buffer* gpuBuf = resources.getBuffer(gpuOnly);
+    expectTrue(gpuBuf != nullptr, "GpuOnly buffer resolvable");
+    if (gpuBuf != nullptr && gpuBuf->mapped == nullptr) {
+        expectTrue(resources.stagingRingOffset() >= stagingBefore + gpuOnlyDesc.size,
+                   "unmapped initialData consumes staging ring");
+    }
+
+    gpuOnlyDesc.size = resources.stagingRingCapacity() + 16u;
+    std::vector<u8> tooLarge(gpuOnlyDesc.size, 0x5A);
+    const fuse::usize stagingMid = resources.stagingRingOffset();
+    const fuse::renderer::BufferHandle skipped =
+        resources.createBuffer(gpuOnlyDesc, tooLarge.data());
+    expectTrue(skipped.isValid(), "GpuOnly initialData that misses staging still returns a handle");
+    const fuse::renderer::Buffer* skippedBuf = resources.getBuffer(skipped);
+    if (skippedBuf != nullptr && skippedBuf->mapped == nullptr) {
+        expectTrue(resources.stagingRingOffset() == stagingMid,
+                   "staging offset unchanged when initialData copy is skipped");
+    }
 
     fuse::renderer::TextureDesc textureDesc{};
     textureDesc.width = 4;
     textureDesc.height = 4;
     textureDesc.usage = fuse::renderer::ImageUsage::Sampled;
+    u8 texels[4 * 4 * 4] = {};
 
-    const fuse::renderer::TextureHandle texture = resources.createTexture(textureDesc);
+    const fuse::renderer::TextureHandle texture = resources.createTexture(textureDesc, texels);
     expectTrue(texture.isValid(), "texture handle issued");
     expectTrue(resources.getTexture(texture) != nullptr, "texture resolvable");
     expectTrue(resources.getTexture(texture)->bindlessIndex != UINT32_MAX,
@@ -108,6 +149,8 @@ void testResourceManagerBuffersAndTextures() {
                "staging ring capacity recorded");
 
     resources.destroyTexture(texture);
+    resources.destroyBuffer(skipped);
+    resources.destroyBuffer(gpuOnly);
     resources.destroyBuffer(buffer);
     expectTrue(!resources.getTexture(texture), "destroyed texture handle stale");
     expectTrue(!resources.getBuffer(buffer), "destroyed buffer handle stale");

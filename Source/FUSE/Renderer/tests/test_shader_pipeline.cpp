@@ -54,6 +54,11 @@ void testOfflineCompiler() {
                                                   static_cast<fuse::u32>(compiled.spirv.size())),
                "compiled SPIR-V header valid");
     expectTrue(!compiled.spirv.empty(), "compiled SPIR-V non-empty");
+    expectTrue(!compiled.valid || compiled.spirvHash != 0, "valid compiled shader has non-zero spirvHash");
+    expectTrue(compiled.entryPoint == "main", "compiled shader entryPoint is main");
+    expectTrue(compiled.spirvHash == fuse::renderer::hashSpirvWords(
+                   compiled.spirv.data(), static_cast<fuse::u32>(compiled.spirv.size())),
+               "spirvHash matches hashSpirvWords of loaded words");
 }
 
 void testCookedFuseshaderLoader() {
@@ -77,6 +82,61 @@ void testCookedFuseshaderLoader() {
     expectTrue(fuse::renderer::isValidSpirvHeader(words.data(), static_cast<fuse::u32>(words.size())),
                "cooked fuseshader SPIR-V header valid");
     expectTrue(error.empty(), "cooked fuseshader loader has no error");
+}
+
+void testCreateFromCompiledShader() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for compiled shader module tests");
+
+    fuse::renderer::VulkanDevice* device = bootstrap->device();
+    if (device == nullptr) {
+        expectTrue(!bootstrap->status().deviceReady, "device unavailable without Vulkan loader");
+        return;
+    }
+
+    fuse::renderer::CompiledShader invalid{};
+    auto invalidModule = fuse::renderer::ShaderModule::create(*device, invalid);
+    expectTrue(invalidModule != nullptr, "invalid compiled shader still allocates module");
+    expectTrue(!invalidModule->isValid(), "invalid compiled shader yields invalid module");
+
+    fuse::renderer::CompiledShader emptySpirv{};
+    emptySpirv.valid = true;
+    emptySpirv.stage = fuse::renderer::ShaderStage::Fragment;
+    auto emptyModule = fuse::renderer::ShaderModule::create(*device, emptySpirv);
+    expectTrue(emptyModule != nullptr, "empty SPIR-V compiled shader still allocates module");
+    expectTrue(!emptyModule->isValid(), "empty SPIR-V compiled shader yields invalid module");
+    expectTrue(emptyModule->stage() == fuse::renderer::ShaderStage::Fragment,
+               "empty SPIR-V compiled shader preserves stage");
+
+    const std::string sourcePath = fixturePath("minimal.vert");
+    fuse::renderer::ShaderDesc desc{};
+    desc.sourcePath = sourcePath.c_str();
+    desc.stage = fuse::renderer::ShaderStage::Vertex;
+    const fuse::renderer::CompiledShader compiled = fuse::renderer::ShaderCompiler::compileOffline(desc);
+    expectTrue(compiled.valid, "offline compile for module create succeeds");
+    expectTrue(!compiled.spirv.empty(), "offline compile SPIR-V non-empty for module create");
+
+    auto shaderModule = fuse::renderer::ShaderModule::create(*device, compiled);
+    expectTrue(shaderModule != nullptr, "compiled shader module allocated");
+    expectTrue(shaderModule->stage() == fuse::renderer::ShaderStage::Vertex,
+               "compiled shader module stage matches");
+    expectTrue(shaderModule->info().entryPoint == compiled.entryPoint,
+               "compiled shader module stores entry point");
+#if defined(FUSE_VULKAN_BACKEND)
+    if (bootstrap->status().deviceReady) {
+        expectTrue(shaderModule->isValid(), "compiled shader module valid with Vulkan device");
+        expectTrue(shaderModule->nativeHandle() != nullptr, "compiled shader module has native handle");
+    } else {
+        expectTrue(!shaderModule->isValid(), "compiled shader module invalid without ICD");
+    }
+#else
+    expectTrue(shaderModule->isValid(), "compiled shader module valid in stub backend");
+    expectTrue(shaderModule->nativeHandle() == nullptr, "stub compiled shader module has no native handle");
+#endif
 }
 
 void testShaderModuleAndPipelineLayout() {
@@ -119,11 +179,23 @@ void testShaderModuleAndPipelineLayout() {
     if (bootstrap->status().deviceReady) {
         expectTrue(pipelineLayout->isValid(), "pipeline layout valid with Vulkan device");
         expectTrue(pipelineLayout->nativeHandle() != nullptr, "pipeline layout has native handle");
+        expectTrue(!pipelineLayout->info().hasBindlessSet,
+                   "push-constant-only layout has no bindless set");
+        expectTrue(pipelineLayout->info().descriptorSetCount == 0u,
+                   "push-constant-only layout reports zero descriptor sets");
+        expectTrue(pipelineLayout->info().pushConstantRangeCount == 1u,
+                   "push-constant-only layout reports one push-constant range");
     } else {
         expectTrue(!pipelineLayout->isValid(), "pipeline layout invalid without ICD");
+        expectTrue(!pipelineLayout->info().hasBindlessSet,
+                   "failed push-constant-only layout has no bindless set");
     }
 #else
     expectTrue(pipelineLayout->isValid(), "pipeline layout valid in stub backend");
+    expectTrue(!pipelineLayout->info().hasBindlessSet,
+               "stub push-constant-only layout has no bindless set");
+    expectTrue(pipelineLayout->info().descriptorSetCount == 0u,
+               "stub push-constant-only layout reports zero descriptor sets");
 #endif
 }
 
@@ -135,6 +207,7 @@ int main() {
     testSpirvIo();
     testOfflineCompiler();
     testCookedFuseshaderLoader();
+    testCreateFromCompiledShader();
     testShaderModuleAndPipelineLayout();
 
     fuse::core::shutdown();
