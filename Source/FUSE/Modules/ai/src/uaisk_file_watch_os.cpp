@@ -130,7 +130,8 @@ bool createOsFileWatch(std::string_view path, OsFileWatchHandle& outHandle) {
 #elif defined(__APPLE__)
     // FSEvents stub — CoreServices API not linked; stat poll with coalesce/latency tracking.
     const fsevents_stub::CoreServicesWatchConfig csConfig = fsevents_stub::makeDefaultCoreServicesWatchConfig();
-    (void)fsevents_stub::createFileEventStreamStub(outHandle.path.c_str(), csConfig);
+    outHandle.fseventsStream =
+        fsevents_stub::createFileEventStreamStub(outHandle.path.c_str(), csConfig);
     outHandle.backend = OsFileWatchBackend::FSEvents;
     u64 fileSize = 0;
     outHandle.lastModifiedNs = statModifiedNs(outHandle.path, fileSize);
@@ -237,6 +238,12 @@ void closeOsFileWatch(OsFileWatchHandle& handle) {
             inotify_rm_watch(handle.inotifyFd, handle.watchFd);
         }
         close(handle.inotifyFd);
+    }
+#elif defined(__APPLE__)
+    if (handle.fseventsStream != nullptr) {
+        fsevents_stub::releaseFileEventStreamStub(
+            static_cast<fsevents_stub::FSEventStreamRef>(handle.fseventsStream));
+        handle.fseventsStream = nullptr;
     }
 #endif
     handle.watchFd = -1;

@@ -27,6 +27,14 @@ InteractResult ConversationInteractable::converse(InteractContext& ctx) {
     return InteractResult::Examined;
 }
 
+void ConversationInteractable::injectScriptLine(const std::string& line) {
+    if (line.empty()) {
+        return;
+    }
+    m_lines.push_back(line);
+    ++m_injectedLineCount;
+}
+
 InteractResult ConversationInteractable::chooseBranch(InteractContext& ctx, const std::string& branchId) {
     for (const ConversationBranch& branch : m_branches) {
         if (branch.id != branchId) {

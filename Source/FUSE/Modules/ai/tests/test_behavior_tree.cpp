@@ -2096,6 +2096,55 @@ void testUaiskCodegenMethodBody() {
     expectTrue(tree.nodeCount() >= 1u, "method-body codegen emits nodes");
 }
 
+void testUaiskCodegenMultiLeafMethodBody() {
+    static const char* kCsText =
+        "class SquadActions : BehaviorBase {\n"
+        "  void onSquadAdvance() {\n"
+        "    wait(0.5f);\n"
+        "    moveToward(target, moveSpeed = 0.4f);\n"
+        "    setFlag(patrolReady, true);\n"
+        "    alliesInRadius(8.f);\n"
+        "  }\n"
+        "}\n";
+
+    fuse::ai::uaisk::UaiskCsSyntaxTree syntaxTree;
+    expectTrue(fuse::ai::uaisk::parseCsSyntaxTree("aiSquadActions.cs", kCsText, syntaxTree),
+               "multi-leaf method body parses");
+
+    fuse::ai::uaisk::UaiskCsAst ast;
+    expectTrue(fuse::ai::uaisk::buildAstFromSyntaxTree(syntaxTree, ast), "multi-leaf AST built");
+
+    std::vector<fuse::ai::NodeLoadSpec> specs;
+    fuse::u32 rootIndex = 0;
+    std::string error;
+    expectTrue(fuse::ai::uaisk::codegenSpecsForModule(ast, specs, rootIndex, &error),
+               "multi-leaf method-body codegen specs");
+
+    bool sawWait = false;
+    bool sawMove = false;
+    bool sawFlag = false;
+    bool sawAllies = false;
+    for (const fuse::ai::NodeLoadSpec& spec : specs) {
+        if (spec.typeId == "bb.action.wait") {
+            sawWait = true;
+        }
+        if (spec.typeId == "gb.action.move_toward") {
+            sawMove = true;
+        }
+        if (spec.typeId == "bb.action.set_flag") {
+            sawFlag = true;
+        }
+        if (spec.typeId == "bb.condition.allies_in_radius") {
+            sawAllies = true;
+        }
+    }
+    expectTrue(sawWait, "multi-leaf method body emits wait");
+    expectTrue(sawMove, "multi-leaf method body emits moveToward");
+    expectTrue(sawFlag, "multi-leaf method body emits setFlag");
+    expectTrue(sawAllies, "multi-leaf method body emits alliesInRadius");
+    expectTrue(specs.size() >= 4u, "multi-leaf method body accumulates leaf sequence");
+}
+
 void testUaiskFSEventsCoreServicesStub() {
     const auto config = fuse::ai::uaisk::fsevents_stub::makeDefaultCoreServicesWatchConfig();
     expectTrue(config.latencyMs >= 16u, "CoreServices watch config latency seeded");
@@ -2326,6 +2375,7 @@ int main() {
     testUaiskInotifyHotReloadRegistry();
     testUaiskCodegenSyntaxTreePath();
     testUaiskCodegenMethodBody();
+    testUaiskCodegenMultiLeafMethodBody();
     testUaiskFSEventsCoreServicesStub();
     testUaiskCodegenFieldDefaults();
     testReloadCodegenProfile();

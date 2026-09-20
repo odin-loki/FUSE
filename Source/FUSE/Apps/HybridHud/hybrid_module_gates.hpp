@@ -10,6 +10,7 @@
 #include <fuse/adventure/skeletal_mount_stub.hpp>
 #include <fuse/adventure/weapon_grant_pipeline.hpp>
 #include <fuse/adventure/weapon_mount_animation.hpp>
+#include <fuse/adventure/weapon_combat_loop.hpp>
 #include <fuse/adventure/weapon_runtime.hpp>
 #include <fuse/animation/skeleton.hpp>
 #include <fuse/ai/behavior_runtime.hpp>
@@ -27,7 +28,9 @@
 #include <fuse/mechanics/interactable.hpp>
 #include <fuse/mechanics/message_component.hpp>
 #include <fuse/mechanics/animate_component.hpp>
+#include <fuse/mechanics/health_component.hpp>
 #include <fuse/mechanics/look_at_component.hpp>
+#include <fuse/mechanics/radio_component.hpp>
 #include <fuse/mechanics/path_component.hpp>
 #include <fuse/mechanics/waypoint_component.hpp>
 #include <fuse/mechanics/physics_broadphase_bridge.hpp>
@@ -66,6 +69,10 @@
 
 #ifndef FUSE_HYBRID_GATES_WAVE18
 #define FUSE_HYBRID_GATES_WAVE18 1
+#endif
+
+#ifndef FUSE_HYBRID_GATES_WAVE19
+#define FUSE_HYBRID_GATES_WAVE19 1
 #endif
 
 namespace fuse::hybrid::gates {
@@ -111,9 +118,12 @@ struct State {
     fuse::mechanics::AnimateComponent leverAnimate{"lever_animate", 0.5f};
     fuse::mechanics::WaypointComponent patrolWaypoint{"outpost_patrol_wp", 4.f, 0.f, 0.f};
     fuse::mechanics::LookAtComponent guardLookAt{"guard_look_at", 120.f};
+    fuse::mechanics::RadioComponent leverRadio{"lever_radio", "outpost_alert"};
+    fuse::mechanics::HealthComponent guardHealth{"outpost_guard_health", 100};
     fuse::mechanics::BroadphaseWorldStub broadphaseWorld;
 
     fuse::adventure::Inventory playerInventory;
+    fuse::adventure::WeaponCombatLoop weaponCombatLoop;
     fuse::adventure::WeaponGrantPipeline weaponGrantPipeline;
     fuse::adventure::WeaponRuntime weaponRuntime;
     fuse::adventure::WeaponMountAnimationStub weaponMountAnim;
@@ -141,6 +151,7 @@ struct State {
     u32 broadphaseRaycastHits = 0;
     u32 broadphaseDbvtHits = 0;
     bool weaponFired = false;
+    bool combatLoopFired = false;
     float initialClearR = 0.f;
     float initialClearG = 0.f;
     float initialClearB = 0.f;

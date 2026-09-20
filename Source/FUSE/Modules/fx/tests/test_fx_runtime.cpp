@@ -581,6 +581,34 @@ void testParticlePoolCudaResidency() {
     expectTrue(gpuBackend.residentSlotCount() >= 0u, "CUDA resident slot count tracked");
 }
 
+void testAfxMissionScheduleCallParse() {
+    static const char* kMisText =
+        "missionName = \"ScheduleDemo\";\n"
+        "schedule(500, onSpellCast);\n"
+        "call(onAmbientFx);\n"
+        "function onSpellCast() {\n"
+        "  beginCast(\"fireball\");\n"
+        "}\n"
+        "function onAmbientFx() {\n"
+        "  attachEffect(\"spark_burst\");\n"
+        "}\n";
+
+    fuse::fx::AfxMissionBody body;
+    std::string error;
+    expectTrue(fuse::fx::parse_afx_mission_body_from_mis(kMisText, body, &error), "schedule/call body parse");
+    expectTrue(body.scheduleEntries.size() == 1u, "schedule entry parsed");
+    expectTrue(body.scheduleEntries[0].hookName == "spell_cast", "schedule hook normalized");
+    expectTrue(body.scheduleEntries[0].delayMs == 500u, "schedule delay parsed");
+    expectTrue(body.callTargets.size() == 1u, "call target parsed");
+    expectTrue(body.callTargets[0] == "ambient_fx", "call target normalized");
+
+    fuse::fx::FxComposer composer;
+    fuse::fx::AfxMissionScriptVm vm;
+    expectTrue(fuse::fx::dispatch_afx_mission_from_mis(kMisText, composer, vm, &error),
+               "schedule dispatch prefers ordered hooks");
+    expectTrue(vm.dispatchCount() >= 1u, "schedule dispatch counted");
+}
+
 void testAfxMissionExecuteFromMis() {
     static const char* kMisText =
         "function onSpellCast() {\n"
@@ -646,6 +674,7 @@ int main() {
     testComposerSelectiveWriteback();
     testAfxMissionSpellCodegen();
     testParticlePoolCudaResidency();
+    testAfxMissionScheduleCallParse();
     testAfxMissionExecuteFromMis();
     testAfxMissionNestedSimObjectParse();
     fuse::core::shutdown();

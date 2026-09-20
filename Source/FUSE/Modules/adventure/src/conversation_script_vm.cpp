@@ -110,6 +110,7 @@ u32 ConversationScriptVm::dispatchAllLines(const std::string& npcId,
 
     u32 dispatched = 0;
     for (const std::string& line : it->second.lines) {
+        target.injectScriptLine(line);
         m_lastLineDispatched = line;
         ++dispatched;
         ++m_lineDispatchCount;

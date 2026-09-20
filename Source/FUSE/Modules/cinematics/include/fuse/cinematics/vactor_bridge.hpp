@@ -9,6 +9,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace fuse::cinematics {
 
@@ -44,6 +45,10 @@ public:
     void apply_shapebase_attach(const std::string& actor_id,
                               const std::string& mount_point,
                               float mount_yaw_deg = 0.f);
+    /// Apply chained ShapeBase mount points (vehicle_seat → turret ore).
+    void apply_shapebase_mount_chain(const std::string& actor_id,
+                                     const std::vector<std::string>& mount_chain,
+                                     float mount_yaw_deg = 0.f);
     /// Apply ShapeBase bone attach offset (VActor bone slot ore without DTS skeleton).
     void apply_shapebase_bone_attach(const std::string& actor_id, const std::string& bone_name);
     void sync_bone_attach_from_timeline(const Timeline& timeline);
@@ -56,6 +61,7 @@ public:
     u32 mountCount() const { return m_mountCount; }
     u32 unmountCount() const { return m_unmountCount; }
     u32 shapebaseAttachCount() const { return m_shapebaseAttachCount; }
+    u32 mountChainDepth() const { return m_mountChainDepth; }
     u32 shapebaseBoneAttachCount() const { return m_shapebaseBoneAttachCount; }
     u32 boneMotionSyncCount() const { return m_boneMotionSyncCount; }
     u32 mountRotationSyncCount() const { return m_mountRotationSyncCount; }
@@ -85,6 +91,7 @@ private:
     u32 m_mountCount = 0;
     u32 m_unmountCount = 0;
     u32 m_shapebaseAttachCount = 0;
+    u32 m_mountChainDepth = 0;
     u32 m_shapebaseBoneAttachCount = 0;
     u32 m_boneMotionSyncCount = 0;
     u32 m_mountRotationSyncCount = 0;

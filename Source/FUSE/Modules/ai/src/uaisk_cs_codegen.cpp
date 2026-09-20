@@ -178,27 +178,54 @@ float parseMoveSpeedFromBody(const std::string& body) {
                           0.25f);
 }
 
+float parseCallFloatArg(const std::string& body, std::string_view callName, float fallback) {
+    const std::string needle = std::string(callName) + "(";
+    const std::size_t pos = body.find(needle);
+    if (pos == std::string::npos) {
+        return fallback;
+    }
+    const std::size_t open = body.find('(', pos);
+    const std::size_t close = body.find(')', open);
+    if (open == std::string::npos || close == std::string::npos) {
+        return fallback;
+    }
+    return parseFieldFloat(body.substr(open + 1, close - open - 1), fallback);
+}
+
+void appendMethodBodyLeaves(const std::string& body, std::vector<NodeLoadSpec>& specs, std::vector<u32>& childIndices) {
+    if (bodyContains(body, "wait(") || bodyContains(body, "Wait(")) {
+        specs.push_back({"bb.action.wait", parseWaitDurationFromBody(body)});
+        childIndices.push_back(static_cast<u32>(specs.size() - 1));
+    }
+    if (bodyContains(body, "moveToward") || bodyContains(body, "MoveToward")) {
+        specs.push_back({"gb.action.move_toward", parseMoveSpeedFromBody(body)});
+        childIndices.push_back(static_cast<u32>(specs.size() - 1));
+    }
+    if (bodyContains(body, "setFlag") || bodyContains(body, "SetFlag")) {
+        specs.push_back({"bb.action.set_flag", 0.f, 1});
+        childIndices.push_back(static_cast<u32>(specs.size() - 1));
+    }
+    if (bodyContains(body, "distanceLess") || bodyContains(body, "DistanceLess")) {
+        specs.push_back({"bb.condition.distance_less", parseCallFloatArg(body, "distanceLess", 5.f)});
+        childIndices.push_back(static_cast<u32>(specs.size() - 1));
+    }
+    if (bodyContains(body, "alliesInRadius") || bodyContains(body, "AlliesInRadius")) {
+        specs.push_back({"bb.condition.allies_in_radius", parseCallFloatArg(body, "alliesInRadius", 6.f), 0, 1});
+        childIndices.push_back(static_cast<u32>(specs.size() - 1));
+    }
+    if (bodyContains(body, "blackboardSet") || bodyContains(body, "BlackboardSet")) {
+        specs.push_back({"bb.action.blackboard_set", 0.f, 0, 0, "patrol_flag"});
+        childIndices.push_back(static_cast<u32>(specs.size() - 1));
+    }
+}
+
 bool codegenFromMethodBodies(const UaiskCsAst& ast, std::vector<NodeLoadSpec>& specs, u32& rootIndex) {
     std::vector<u32> childIndices;
     for (const UaiskCsMethodRef& method : ast.methods) {
         if (method.bodyText.empty()) {
             continue;
         }
-
-        if (bodyContains(method.bodyText, "moveToward") || bodyContains(method.bodyText, "MoveToward")) {
-            specs.push_back({"gb.action.move_toward", parseMoveSpeedFromBody(method.bodyText)});
-            childIndices.push_back(static_cast<u32>(specs.size() - 1));
-            continue;
-        }
-        if (bodyContains(method.bodyText, "wait(") || bodyContains(method.bodyText, "Wait(")) {
-            specs.push_back({"bb.action.wait", parseWaitDurationFromBody(method.bodyText)});
-            childIndices.push_back(static_cast<u32>(specs.size() - 1));
-            continue;
-        }
-        if (bodyContains(method.bodyText, "setFlag") || bodyContains(method.bodyText, "SetFlag")) {
-            specs.push_back({"bb.action.set_flag", 0.f, 1});
-            childIndices.push_back(static_cast<u32>(specs.size() - 1));
-        }
+        appendMethodBodyLeaves(method.bodyText, specs, childIndices);
     }
 
     if (childIndices.empty()) {

@@ -25,6 +25,8 @@ public:
     const std::string& currentLine() const;
     InteractResult converse(InteractContext& ctx);
     InteractResult chooseBranch(InteractContext& ctx, const std::string& branchId);
+    void injectScriptLine(const std::string& line);
+    u32 injectedLineCount() const { return m_injectedLineCount; }
 
     InteractResult onUse(InteractContext& ctx, ItemId item) override;
     InteractResult onPickup(InteractContext& ctx, ItemId item, u32 amount) override;
@@ -36,6 +38,7 @@ private:
     u32 m_converseCount = 0;
     std::string m_lastActor;
     std::string m_activeBranchId;
+    u32 m_injectedLineCount = 0;
 };
 
 } // namespace fuse::adventure

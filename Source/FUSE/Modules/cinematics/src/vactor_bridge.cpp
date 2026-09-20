@@ -114,7 +114,17 @@ ShapeBaseBoneAttach VActorBridge::bone_attach_for(const std::string& bone_name) 
 void VActorBridge::apply_shapebase_attach(const std::string& actor_id,
                                           const std::string& mount_point,
                                           float mount_yaw_deg) {
-    apply_mount(actor_id, mount_point);
+    apply_shapebase_mount_chain(actor_id, {mount_point}, mount_yaw_deg);
+}
+
+void VActorBridge::apply_shapebase_mount_chain(const std::string& actor_id,
+                                               const std::vector<std::string>& mount_chain,
+                                               float mount_yaw_deg) {
+    if (mount_chain.empty()) {
+        return;
+    }
+
+    apply_mount(actor_id, mount_chain.back());
 
     BoundActorState& state = m_actors[actor_id];
     if (state.object != nullptr) {
@@ -123,29 +133,31 @@ void VActorBridge::apply_shapebase_attach(const std::string& actor_id,
         state.baseZ = state.object->z();
     }
 
-    state.offset = mount_offset_for(mount_point);
-    const MountEulerDeg mountEuler{state.offset.yaw_deg, state.offset.pitch_deg, state.offset.roll_deg};
-    if (mount_yaw_deg == 0.f) {
-        state.offset.orientation = euler_deg_to_quaternion(mountEuler);
-        state.offset.yaw_deg = mountEuler.yaw_deg;
-        state.offset.pitch_deg = mountEuler.pitch_deg;
-        state.offset.roll_deg = mountEuler.roll_deg;
-    } else {
-        const MountEulerDeg eventEuler{mount_yaw_deg, 0.f, 0.f};
-        const MountEulerDeg combinedEuler = combine_mount_euler_deg(mountEuler, eventEuler);
-        state.offset.yaw_deg = combinedEuler.yaw_deg;
-        state.offset.pitch_deg = combinedEuler.pitch_deg;
-        state.offset.roll_deg = combinedEuler.roll_deg;
-        const MountQuaternion mountQuat = euler_deg_to_quaternion(mountEuler);
-        const MountQuaternion eventQuat = yaw_deg_to_quaternion(mount_yaw_deg);
-        state.offset.orientation = combine_mount_orientation(mountQuat, eventQuat);
-        const MountEulerDeg finalEuler = quaternion_to_euler_deg(state.offset.orientation);
-        state.offset.yaw_deg = finalEuler.yaw_deg;
-        state.offset.pitch_deg = finalEuler.pitch_deg;
-        state.offset.roll_deg = finalEuler.roll_deg;
+    ShapeBaseMountOffset combinedOffset{};
+    std::vector<MountEulerDeg> eulerChain;
+    std::vector<MountQuaternion> quaternionChain;
+    for (const std::string& mountPoint : mount_chain) {
+        const ShapeBaseMountOffset linkOffset = mount_offset_for(mountPoint);
+        combinedOffset.x += linkOffset.x;
+        combinedOffset.y += linkOffset.y;
+        combinedOffset.z += linkOffset.z;
+        eulerChain.push_back(MountEulerDeg{linkOffset.yaw_deg, linkOffset.pitch_deg, linkOffset.roll_deg});
+        quaternionChain.push_back(euler_deg_to_quaternion(eulerChain.back()));
     }
+    if (mount_yaw_deg != 0.f) {
+        eulerChain.push_back(MountEulerDeg{mount_yaw_deg, 0.f, 0.f});
+        quaternionChain.push_back(yaw_deg_to_quaternion(mount_yaw_deg));
+    }
+
+    state.offset = combinedOffset;
+    const MountEulerDeg combinedEuler = combine_mount_chain_euler(eulerChain);
+    state.offset.yaw_deg = combinedEuler.yaw_deg;
+    state.offset.pitch_deg = combinedEuler.pitch_deg;
+    state.offset.roll_deg = combinedEuler.roll_deg;
+    state.offset.orientation = combine_mount_chain(quaternionChain);
     state.mounted = true;
     state.runtimeAttached = true;
+    m_mountChainDepth = static_cast<u32>(mount_chain.size());
     ++m_shapebaseAttachCount;
     ++m_runtimeAttachCount;
     sync_bound_objects();

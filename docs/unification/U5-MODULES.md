@@ -351,6 +351,17 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 |------|-----------|
 | `fuse_hybrid_module_gates_tests` | `RUN_SERIAL` + Lavapipe ICD flock wrapper (same pattern as `fuse_hybrid_tests`) |
 
+#### Landed wave 19 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | Fuller method-body leaf codegen (`wait`/`moveToward`/`setFlag`/`alliesInRadius` sequence); FSEvents CoreServices stream handle stored/released on Apple |
+| `fuse_cinematics` | ShapeBase mount chain (`apply_shapebase_mount_chain`, `combine_mount_chain`); Qt viewport seq overlay scrub bar |
+| `fuse_fx` | CUDA kernel residency deepen (`hostDirty` skip H2D, `hostToDeviceSkipCount`); TorqueScript mission `schedule()`/`call()` ordered dispatch |
+| `fuse_mechanics` | GMK `RadioComponent` leaf; `FUSE_BUILD_BULLET` links real Bullet when ON |
+| `fuse_adventure` | `WeaponCombatLoop` fire-rate gate + damage apply; conversation VM `injectScriptLine` deepen |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE19` assertions for mount chain, radio, combat loop, injected lines |
+
 ---
 
 ## 8. Related docs

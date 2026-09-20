@@ -29,6 +29,7 @@ add_library(fuse_mechanics STATIC
     src/animate_component.cpp
     src/waypoint_component.cpp
     src/look_at_component.cpp
+    src/radio_component.cpp
     src/broadphase_world_stub.cpp
     src/inventory_provider.cpp
     src/interact_action.cpp
@@ -64,6 +65,7 @@ add_library(fuse_mechanics STATIC
     include/fuse/mechanics/animate_component.hpp
     include/fuse/mechanics/waypoint_component.hpp
     include/fuse/mechanics/look_at_component.hpp
+    include/fuse/mechanics/radio_component.hpp
     include/fuse/mechanics/broadphase_world_stub.hpp
     include/fuse/mechanics/inventory_provider.hpp
     include/fuse/mechanics/interact_action.hpp
@@ -81,9 +83,18 @@ target_include_directories(fuse_mechanics
 target_link_libraries(fuse_mechanics PUBLIC fuse_core)
 target_compile_features(fuse_mechanics PUBLIC cxx_std_17)
 
-option(FUSE_BUILD_BULLET "Enable Bullet broadphase deepen stubs in fuse_mechanics" OFF)
+option(FUSE_BUILD_BULLET "Link Bullet btDbvt for mechanics broadphase deepen" OFF)
 if(FUSE_BUILD_BULLET)
-    target_compile_definitions(fuse_mechanics PUBLIC FUSE_HAS_BULLET=1)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(BUILD_CPU_DEMOS OFF CACHE BOOL "" FORCE)
+    set(BUILD_BULLET2_DEMOS OFF CACHE BOOL "" FORCE)
+    set(BUILD_EXTRAS OFF CACHE BOOL "" FORCE)
+    set(BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_OPENGL3_DEMOS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${CMAKE_SOURCE_DIR}/Engine/lib/bullet ${CMAKE_BINARY_DIR}/bullet EXCLUDE_FROM_ALL)
+    target_compile_definitions(fuse_mechanics PUBLIC FUSE_HAS_BULLET=1 FUSE_BUILD_BULLET=1)
+    target_include_directories(fuse_mechanics PRIVATE ${CMAKE_SOURCE_DIR}/Engine/lib/bullet/src)
+    target_link_libraries(fuse_mechanics PRIVATE BulletCollision LinearMath)
 else()
     target_compile_definitions(fuse_mechanics PUBLIC FUSE_HAS_BULLET=0)
 endif()

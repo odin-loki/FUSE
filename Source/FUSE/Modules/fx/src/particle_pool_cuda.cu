@@ -44,6 +44,9 @@ struct DeviceSsboState {
     u32 allocCount = 0;
     u32 reuseCount = 0;
     u32 integrateDispatchCount = 0;
+    u32 residentFrameCount = 0;
+    u32 hostToDeviceSkipCount = 0;
+    bool deviceResident = false;
 };
 
 DeviceSsboState& deviceSsboState() {
@@ -93,7 +96,15 @@ extern "C" u32 fuse_fx_particle_pool_cuda_integrate_dispatch_count() {
     return deviceSsboState().integrateDispatchCount;
 }
 
-extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* packed, u32 activeCount, float dt) {
+extern "C" u32 fuse_fx_particle_pool_device_resident_frames() {
+    return deviceSsboState().residentFrameCount;
+}
+
+extern "C" u32 fuse_fx_particle_pool_host_to_device_skip_count() {
+    return deviceSsboState().hostToDeviceSkipCount;
+}
+
+extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* packed, u32 activeCount, float dt, int hostDirty) {
     if (packed == nullptr || activeCount == 0u) {
         return;
     }
@@ -104,8 +115,15 @@ extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* packed, u32 activeCoun
         return;
     }
 
-    if (cudaMemcpy(devicePacked, packed, bytes, cudaMemcpyHostToDevice) != cudaSuccess) {
-        return;
+    DeviceSsboState& state = deviceSsboState();
+    const bool needsHostUpload = hostDirty != 0 || !state.deviceResident;
+    if (needsHostUpload) {
+        if (cudaMemcpy(devicePacked, packed, bytes, cudaMemcpyHostToDevice) != cudaSuccess) {
+            return;
+        }
+        state.deviceResident = true;
+    } else {
+        ++state.hostToDeviceSkipCount;
     }
 
     const int blockSize = 64;
@@ -113,5 +131,6 @@ extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* packed, u32 activeCoun
     fuse_fx_integrate_particles_kernel<<<gridSize, blockSize>>>(devicePacked, activeCount, dt);
     cudaDeviceSynchronize();
     cudaMemcpy(const_cast<u8*>(packed), devicePacked, bytes, cudaMemcpyDeviceToHost);
-    ++deviceSsboState().integrateDispatchCount;
+    ++state.integrateDispatchCount;
+    ++state.residentFrameCount;
 }

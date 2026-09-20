@@ -5,6 +5,7 @@
 #include <fuse/mechanics/animate_component.hpp>
 #include <fuse/mechanics/waypoint_component.hpp>
 #include <fuse/mechanics/look_at_component.hpp>
+#include <fuse/mechanics/radio_component.hpp>
 #include <fuse/mechanics/path_component.hpp>
 #include <fuse/mechanics/timer_component.hpp>
 #include <fuse/mechanics/broadphase_world_stub.hpp>
@@ -139,6 +140,14 @@ int main() {
 
     expectTrue(world.queryDbvtOverlaps(-1.f, -1.f, -1.f, 2.f, 2.f, 2.f) >= 1u,
                "dbvt overlap query finds body");
+
+    fuse::mechanics::RadioComponent radio("outpost_radio", "patrol");
+    radio.startBroadcast();
+    expectTrue(radio.broadcasting(), "radio component broadcasting");
+    expectTrue(radio.broadcastCount() == 1u, "radio broadcast counted");
+    expectTrue(radio.channel() == "patrol", "radio channel stored");
+    radio.stopBroadcast();
+    expectTrue(!radio.broadcasting(), "radio broadcast stopped");
 
     fuse::core::shutdown();
 

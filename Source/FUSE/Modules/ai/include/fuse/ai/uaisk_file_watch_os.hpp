@@ -38,6 +38,7 @@ struct OsFileWatchStatus {
 struct OsFileWatchHandle {
     int watchFd = -1;
     int inotifyFd = -1;
+    void* fseventsStream = nullptr;
     std::string path;
     OsFileWatchBackend backend = OsFileWatchBackend::StatPoll;
     u64 lastModifiedNs = 0;

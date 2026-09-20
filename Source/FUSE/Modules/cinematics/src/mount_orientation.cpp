@@ -87,4 +87,23 @@ MountQuaternion combine_mount_orientation(const MountQuaternion& mount_offset,
     return multiply_mount_quaternions(mount_offset, event_orientation);
 }
 
+MountQuaternion combine_mount_chain(const std::vector<MountQuaternion>& chain) {
+    MountQuaternion combined{};
+    combined.w = 1.f;
+    for (const MountQuaternion& link : chain) {
+        combined = multiply_mount_quaternions(combined, link);
+    }
+    return combined;
+}
+
+MountEulerDeg combine_mount_chain_euler(const std::vector<MountEulerDeg>& chain) {
+    MountEulerDeg combined{};
+    for (const MountEulerDeg& link : chain) {
+        combined.yaw_deg += link.yaw_deg;
+        combined.pitch_deg += link.pitch_deg;
+        combined.roll_deg += link.roll_deg;
+    }
+    return combined;
+}
+
 } // namespace fuse::cinematics

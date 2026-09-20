@@ -7,7 +7,9 @@
 #include <fuse/adventure/inventory.hpp>
 #include <fuse/adventure/weapon_grant_pipeline.hpp>
 #include <fuse/adventure/weapon_pickup_interactable.hpp>
+#include <fuse/adventure/weapon_combat_loop.hpp>
 #include <fuse/adventure/weapon_runtime.hpp>
+#include <fuse/mechanics/health_component.hpp>
 #include <fuse/animation/skeleton.hpp>
 #include <fuse/core/init.hpp>
 
@@ -255,6 +257,31 @@ int main() {
                "conversation VM peekBestBranchLine armed");
     expectTrue(bestVm.dispatchBestBranchAllLines("outpost_guard", ctx, guardArmed) >= 1u,
                "conversation VM dispatchBestBranchAllLines");
+
+    fuse::adventure::ConversationBranch injectBranch;
+    injectBranch.id = "inject";
+    injectBranch.lines = {"Injected line one.", "Injected line two."};
+    fuse::adventure::ConversationInteractable guardInject({"Halt."}, {injectBranch});
+    fuse::adventure::ConversationScriptHook injectHook;
+    injectHook.npcId = "outpost_guard";
+    injectHook.branchId = "inject";
+    injectHook.lines = {"Injected line one.", "Injected line two."};
+    scriptVm.registerHook(injectHook);
+    expectTrue(scriptVm.dispatchAllLines("outpost_guard", "inject", ctx, guardInject) == 2u,
+               "conversation VM injects script lines");
+    expectTrue(guardInject.injectedLineCount() == 2u, "conversation interactable injected line count");
+
+    fuse::mechanics::HealthComponent targetHealth("target_dummy", 100);
+    fuse::adventure::WeaponCombatLoop combatLoop;
+    combatLoop.setActiveWeapon(&weaponRuntime);
+    combatLoop.setTarget(&targetHealth);
+    combatLoop.tick(0.f);
+    expectTrue(combatLoop.tryFire(inventory), "weapon combat loop fires");
+    expectTrue(combatLoop.damageApplyCount() == 1u, "weapon combat loop applies damage");
+    expectTrue(targetHealth.currentHealth() < 100, "weapon combat loop reduced target health");
+    expectTrue(!combatLoop.tryFire(inventory), "weapon combat loop respects fire-rate gate");
+    combatLoop.tick(1.f);
+    expectTrue(combatLoop.tryFire(inventory), "weapon combat loop fires after cooldown");
 
     fuse::core::shutdown();
 

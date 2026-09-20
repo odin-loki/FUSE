@@ -38,6 +38,8 @@ public:
     u32 selectiveWritebackCount() const { return m_selectiveWritebackCount; }
     u32 residentSlotCount() const { return m_residentSlotCount; }
     u32 residencySyncCount() const { return m_residencySyncCount; }
+    u32 hostToDeviceSkipCount() const { return m_hostToDeviceSkipCount; }
+    u32 deviceResidentFrames() const { return m_deviceResidentFrames; }
     bool cudaEnabled() const { return m_cudaEnabled; }
     bool syncedFromCpu() const { return m_syncedFromCpu; }
     ParticlePoolCudaSkipReason lastCudaSkipReason() const { return m_lastCudaSkipReason; }
@@ -65,6 +67,9 @@ private:
     u32 m_selectiveWritebackCount = 0;
     u32 m_residentSlotCount = 0;
     u32 m_residencySyncCount = 0;
+    u32 m_hostToDeviceSkipCount = 0;
+    u32 m_deviceResidentFrames = 0;
+    bool m_hostDirty = true;
     u32 m_deviceSsboCapacityBytes = 0;
     u32 m_deviceSsboAllocCount = 0;
     u32 m_deviceSsboReuseCount = 0;

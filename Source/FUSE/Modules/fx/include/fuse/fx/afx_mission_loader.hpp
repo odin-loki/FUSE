@@ -9,12 +9,19 @@
 
 namespace fuse::fx {
 
+struct AfxMissionScheduleEntry {
+    std::string hookName;
+    u32 delayMs = 0;
+};
+
 struct AfxMissionBody {
     std::string missionName;
     std::vector<std::string> simObjectNames;
     std::vector<std::string> missionInfoKeys;
     std::vector<std::pair<std::string, std::string>> simObjectBodies;
     std::vector<std::pair<std::string, std::string>> nestedSimObjectBodies;
+    std::vector<AfxMissionScheduleEntry> scheduleEntries;
+    std::vector<std::string> callTargets;
 };
 
 struct AfxMissionBodyEffect {

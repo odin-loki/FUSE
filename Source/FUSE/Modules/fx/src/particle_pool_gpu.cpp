@@ -12,13 +12,15 @@ constexpr usize kBytesPerSlot = 40u; // pos(12) + vel(12) + lifetime(4) + age(4)
 #if defined(FUSE_HAS_CUDA) && FUSE_HAS_CUDA
 constexpr bool kCudaCompiled = true;
 
-extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* packed, u32 activeCount, float dt);
+extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* packed, u32 activeCount, float dt, int hostDirty);
 extern "C" u32 fuse_fx_particle_pool_device_ssbo_alloc_count();
 extern "C" u32 fuse_fx_particle_pool_device_ssbo_reuse_count();
 extern "C" u32 fuse_fx_particle_pool_device_ssbo_capacity_bytes();
+extern "C" u32 fuse_fx_particle_pool_device_resident_frames();
+extern "C" u32 fuse_fx_particle_pool_host_to_device_skip_count();
 
-void launchParticlePoolCudaStub(std::vector<u8>& packed, u32 activeCount, float dt) {
-    fuse_fx_particle_pool_cuda_stub(packed.data(), activeCount, dt);
+void launchParticlePoolCudaStub(std::vector<u8>& packed, u32 activeCount, float dt, bool hostDirty) {
+    fuse_fx_particle_pool_cuda_stub(packed.data(), activeCount, dt, hostDirty ? 1 : 0);
 }
 #else
 constexpr bool kCudaCompiled = false;
@@ -57,6 +59,7 @@ void ParticlePoolGpuBackend::syncFromCpu(const ParticlePool& pool) {
     }
 
     m_syncedFromCpu = true;
+    m_hostDirty = true;
     ++m_syncCount;
 }
 
@@ -175,10 +178,13 @@ void ParticlePoolGpuBackend::cudaDispatchOrSkip(const frame::FrameCtx& ctx) {
     }
 
 #if defined(FUSE_HAS_CUDA) && FUSE_HAS_CUDA
-    launchParticlePoolCudaStub(m_packed, m_activeCount, ctx.dt);
+    launchParticlePoolCudaStub(m_packed, m_activeCount, ctx.dt, m_hostDirty);
     m_deviceSsboCapacityBytes = fuse_fx_particle_pool_device_ssbo_capacity_bytes();
     m_deviceSsboAllocCount = fuse_fx_particle_pool_device_ssbo_alloc_count();
     m_deviceSsboReuseCount = fuse_fx_particle_pool_device_ssbo_reuse_count();
+    m_deviceResidentFrames = fuse_fx_particle_pool_device_resident_frames();
+    m_hostToDeviceSkipCount = fuse_fx_particle_pool_host_to_device_skip_count();
+    m_hostDirty = false;
 #endif
     syncResidencyFromPacked();
     ++m_cudaDispatchCount;

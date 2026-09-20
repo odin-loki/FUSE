@@ -1,6 +1,7 @@
 #include "viewport_placeholder_widget.hpp"
 #include "viewport_qt_vulkan_surface.hpp"
 
+#include <fuse/cinematics/timeline_loader.hpp>
 #include <fuse/editor/command_queue.hpp>
 
 #include <QColor>
@@ -100,7 +101,7 @@ void ViewportPlaceholderWidget::paintEvent(QPaintEvent* /*event*/) {
 
     painter.setPen(QColor(180, 190, 210));
     painter.drawText(
-        rect().adjusted(16, 16, -16, -16),
+        rect().adjusted(16, 16, -16, -80),
         Qt::AlignCenter,
         tr("Runtime viewport hook\n\nProject: %1\nSize: %2 × %3\nRuntime ticks: %4\nEmbedded: %5")
             .arg(project)
@@ -108,6 +109,28 @@ void ViewportPlaceholderWidget::paintEvent(QPaintEvent* /*event*/) {
             .arg(hook.panel().height())
             .arg(hook.runtimeTickCount())
             .arg(hook.isEmbedded() ? tr("yes") : tr("no")));
+
+    const fuse::cinematics::SeqScrubPreview& seqPreview = m_host.cinematicsSeqScrubPreview();
+    const QRect overlayRect = rect().adjusted(16, rect().height() - 72, -16, -16);
+    painter.fillRect(overlayRect, QColor(24, 28, 36, 220));
+    painter.setPen(QColor(120, 180, 255));
+    painter.drawRect(overlayRect);
+    if (seqPreview.valid) {
+        painter.setPen(QColor(210, 220, 235));
+        painter.drawText(
+            overlayRect.adjusted(8, 8, -8, -8),
+            Qt::AlignLeft | Qt::AlignVCenter,
+            tr("Seq overlay @ %1 ms — mount %2 yaw %3° sprite (%4, %5)")
+                .arg(static_cast<qulonglong>(seqPreview.time_ms))
+                .arg(QString::fromStdString(seqPreview.mount_point))
+                .arg(seqPreview.mount_yaw_deg, 0, 'f', 1)
+                .arg(seqPreview.sprite_x, 0, 'f', 1)
+                .arg(seqPreview.sprite_y, 0, 'f', 1));
+    } else {
+        painter.setPen(QColor(140, 150, 165));
+        painter.drawText(overlayRect.adjusted(8, 8, -8, -8), Qt::AlignLeft | Qt::AlignVCenter,
+                         tr("Seq overlay stub — scrub .seq via CinematicsSeqImport"));
+    }
 }
 
 } // namespace fuse::editor::qt

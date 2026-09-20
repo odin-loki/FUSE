@@ -1358,6 +1358,22 @@ void testLoadThirtySecondSequenceFromAsset() {
     expectTrue(timeline.groups().size() >= 1u, "asset timeline has director group");
 }
 
+void testVActorShapeBaseMountChain() {
+    fuse::SceneObject3D agent("agent_3d");
+    agent.setZ(0.f);
+
+    fuse::cinematics::VActorBridge bridge;
+    bridge.bind("agent_3d", &agent);
+    bridge.apply_shapebase_mount_chain("agent_3d", {"vehicle_seat", "turret"}, 10.f);
+
+    expectTrue(bridge.mountChainDepth() == 2u, "shapebase mount chain depth");
+    expectTrue(bridge.shapebaseAttachCount() == 1u, "shapebase mount chain attach counter");
+    expectTrue(bridge.mount_point_for("agent_3d") == "turret", "mount chain uses terminal mount point");
+    expectNear(agent.z(), 2.75f, 0.001f, "mount chain accumulates Z offsets");
+    expectNear(agent.yawDeg(), 100.f, 0.5f, "mount chain combines yaw with event offset");
+    expectNear(agent.pitchDeg(), 10.f, 0.5f, "mount chain combines pitch offsets");
+}
+
 void testVActorShapeBaseAttach() {
     fuse::SceneObject3D agent("agent_3d");
     agent.setZ(0.f);
@@ -1679,6 +1695,7 @@ int main() {
     testActorTrackMountUnmount();
     testLoadThirtySecondSequenceFromAsset();
     testVActorShapeBaseAttach();
+    testVActorShapeBaseMountChain();
     testVActorShapeBaseBoneAttach();
     testVActorBoneAttachMotionSync();
     testShapeBaseMountRotationDeepen();

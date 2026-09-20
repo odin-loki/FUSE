@@ -4,6 +4,8 @@
 
 #include <fuse/types.hpp>
 
+#include <vector>
+
 namespace fuse::cinematics {
 
 struct MountQuaternion {
@@ -43,5 +45,11 @@ struct MountEulerDeg {
 /// Apply mount-point offset quaternion to event quaternion.
 [[nodiscard]] MountQuaternion combine_mount_orientation(const MountQuaternion& mount_offset,
                                                           const MountQuaternion& event_orientation);
+
+/// Combine a ShapeBase mount chain (parent ⊗ child ⊗ … ⊗ event).
+[[nodiscard]] MountQuaternion combine_mount_chain(const std::vector<MountQuaternion>& chain);
+
+/// Combine mount-chain euler offsets (additive degrees stub).
+[[nodiscard]] MountEulerDeg combine_mount_chain_euler(const std::vector<MountEulerDeg>& chain);
 
 } // namespace fuse::cinematics

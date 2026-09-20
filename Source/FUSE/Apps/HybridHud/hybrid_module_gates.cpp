@@ -128,7 +128,11 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     });
 
     state.vactorBridge.bind("agent_3d", &state.agent3D);
+    state.vactorBridge.apply_shapebase_mount_chain("agent_3d", {"vehicle_seat", "turret"}, 10.f);
     state.vactorBridge.apply_shapebase_bone_attach("agent_3d", "weapon_shoulder");
+    state.leverRadio.startBroadcast();
+    state.weaponCombatLoop.setActiveWeapon(&state.weaponRuntime);
+    state.weaponCombatLoop.setTarget(&state.guardHealth);
 
     setupTimelineFromAsset(state.timeline);
     setupFx(state);
@@ -191,6 +195,8 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
             state.bindPoseBridge.applyMountToBindPose(state.weaponSkeletalMount, state.weaponMountAnim,
                                                       state.bindSkeleton, state.bindPose);
             state.weaponFired = state.weaponRuntime.fire(state.playerInventory);
+            state.weaponCombatLoop.tick(1.f / 60.f);
+            state.combatLoopFired = state.weaponCombatLoop.tryFire(state.playerInventory);
         }
 
         auto guardIt = state.outpostSpawn.conversations.find("outpost_guard");
@@ -426,6 +432,20 @@ VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& comp
     }
     if (state.vactorBridge.boneMotionSyncCount() == 0u) {
         return {false, "fuse_cinematics bone attach motion sync applied"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE19
+    if (state.vactorBridge.mountChainDepth() < 2u) {
+        return {false, "fuse_cinematics ShapeBase mount chain depth applied"};
+    }
+    if (!state.leverRadio.broadcasting() || state.leverRadio.broadcastCount() == 0u) {
+        return {false, "fuse_mechanics RadioComponent broadcast in hybrid demo"};
+    }
+    if (!state.combatLoopFired || state.weaponCombatLoop.damageApplyCount() == 0u) {
+        return {false, "fuse_adventure WeaponCombatLoop applied damage after grant"};
+    }
+    if (state.guardHealth.damageEvents() == 0u) {
+        return {false, "fuse_adventure combat loop damaged guard health"};
     }
 #endif
 #if FUSE_HYBRID_GATES_WAVE18

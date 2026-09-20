@@ -111,6 +111,21 @@ u32 parseNestedSimObjectsFromBodyImpl(const std::string& parentName,
     return nestedCount;
 }
 
+std::string normalizeMissionHookName(std::string_view rawName) {
+    std::string hook = camelToSnake(trim(std::string(rawName)));
+    if (hook.rfind("on_", 0) == 0) {
+        hook = hook.substr(3);
+    }
+    return hook;
+}
+
+std::string missionHookDispatchName(const std::string& hookName) {
+    if (hookName.rfind("on_", 0) == 0) {
+        return hookName;
+    }
+    return "on_" + hookName;
+}
+
 bool appendHook(std::vector<AfxMissionHook>& hooks, const std::string& functionName) {
     if (functionName == "onSpellCast") {
         hooks.push_back({"AFXDemo_Minimal", "on_spell_cast", "fireball"});
@@ -235,9 +250,45 @@ bool parse_afx_mission_body_from_mis(const std::string& misText, AfxMissionBody&
                 }
             }
         }
+
+        if (line.rfind("schedule(", 0) == 0) {
+            const std::size_t open = line.find('(');
+            const std::size_t close = line.find(')', open);
+            if (open != std::string::npos && close != std::string::npos) {
+                const std::string args = trim(line.substr(open + 1, close - open - 1));
+                const std::size_t comma = args.find(',');
+                AfxMissionScheduleEntry entry;
+                if (comma != std::string::npos) {
+                    try {
+                        entry.delayMs = static_cast<u32>(std::stoul(trim(args.substr(0, comma))));
+                    } catch (...) {
+                        entry.delayMs = 0;
+                    }
+                    entry.hookName = normalizeMissionHookName(trim(args.substr(comma + 1)));
+                } else {
+                    entry.hookName = normalizeMissionHookName(args);
+                }
+                if (!entry.hookName.empty()) {
+                    outBody.scheduleEntries.push_back(std::move(entry));
+                }
+            }
+            continue;
+        }
+
+        if (line.rfind("call(", 0) == 0) {
+            const std::size_t open = line.find('(');
+            const std::size_t close = line.find(')', open);
+            if (open != std::string::npos && close != std::string::npos) {
+                const std::string target = normalizeMissionHookName(trim(line.substr(open + 1, close - open - 1)));
+                if (!target.empty()) {
+                    outBody.callTargets.push_back(target);
+                }
+            }
+        }
     }
 
-    if (outBody.missionName.empty() && outBody.simObjectNames.empty() && outBody.missionInfoKeys.empty()) {
+    if (outBody.missionName.empty() && outBody.simObjectNames.empty() && outBody.missionInfoKeys.empty() &&
+        outBody.scheduleEntries.empty() && outBody.callTargets.empty()) {
         if (errorOut != nullptr) {
             *errorOut = "no AFX mission body content found in .mis text";
         }
@@ -446,14 +497,26 @@ bool dispatch_afx_mission_from_mis(const std::string& misText, FxComposer& compo
         return false;
     }
 
+    AfxMissionBody body;
+    parse_afx_mission_body_from_mis(misText, body);
+
     bool dispatched = false;
-    for (const AfxMissionHook& hook : vm.registeredHooks()) {
-        dispatched = vm.dispatch(hook.scriptHook, composer) || dispatched;
+    if (!body.scheduleEntries.empty()) {
+        for (const AfxMissionScheduleEntry& entry : body.scheduleEntries) {
+            (void)entry.delayMs;
+            dispatched = vm.dispatch(missionHookDispatchName(entry.hookName), composer) || dispatched;
+        }
+    } else if (!body.callTargets.empty()) {
+        for (const std::string& target : body.callTargets) {
+            dispatched = vm.dispatch(missionHookDispatchName(target), composer) || dispatched;
+        }
+    } else {
+        for (const AfxMissionHook& hook : vm.registeredHooks()) {
+            dispatched = vm.dispatch(hook.scriptHook, composer) || dispatched;
+        }
     }
 
-    AfxMissionBody body;
-    if (parse_afx_mission_body_from_mis(misText, body)) {
-        for (const auto& nestedPair : body.nestedSimObjectBodies) {
+    for (const auto& nestedPair : body.nestedSimObjectBodies) {
             const std::size_t hookPos = nestedPair.second.find("%hook");
             if (hookPos == std::string::npos) {
                 continue;
@@ -470,7 +533,6 @@ bool dispatch_afx_mission_from_mis(const std::string& misText, FxComposer& compo
                 dispatched = vm.dispatch(hookName, composer) || dispatched;
             }
         }
-    }
 
     return dispatched;
 }
