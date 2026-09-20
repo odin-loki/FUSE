@@ -364,7 +364,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | M |
 | **Scope** | `Samples/unification/demo_*` per [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) |
 | **Deps** | WP-07 (subset), WP-09 |
-| **Status** | 🚧 Wave 2 — seven headless binaries + `fuse_demo_wiring` (VFS/mission convert/module bridge) + `ctest -R fuse_u8_`; real present + golden submodule import still ❌ |
+| **Status** | 🚧 Wave 3 — golden-path resolver + editor embed/PIE parity smoke + `demo_fx` defaultWorld2D; real present + full submodule corpus still ❌ |
 
 ---
 

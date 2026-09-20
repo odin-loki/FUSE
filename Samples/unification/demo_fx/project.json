@@ -14,5 +14,5 @@
     "adventure": false
   },
   "defaultWorld3D": "worlds/afx_minimal.fuselevel",
-  "defaultWorld2D": "worlds/afx_sprite.fuselevel"
+  "defaultWorld2D": "worlds/afx_sprite_stub.fuselevel"
 }

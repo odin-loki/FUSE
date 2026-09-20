@@ -14,6 +14,7 @@
 #include <fuse/hybrid/project_flags.hpp>
 #include <fuse/project/loader.hpp>
 #include <fuse/project/manifest.hpp>
+#include <fuse/project/world_converter.hpp>
 #include <fuse/project/t3d_asset_vfs.hpp>
 #include <fuse/world2d/world_2d.hpp>
 #include <fuse/world3d/world_3d.hpp>
@@ -349,6 +350,13 @@ void RuntimeViewportHook::ensureWorldLoaded_(EditorHost& host) {
     const fuse::project::ProjectVfsMountResult vfsMount =
         fuse::project::mountProjectAssetRoots(projectLoad.manifest);
     m_embedSession.projectVfsMounts = vfsMount.mountsAdded;
+
+    const fuse::project::Ensure3DWorldResult prepared =
+        fuse::project::ensureDefault3DWorldReady(projectLoad);
+    if (!prepared.ok && !projectLoad.manifest.defaultWorld3D.empty()) {
+        fuse::log::warn("RuntimeViewportHook: 3D world prepare failed: %s", prepared.note.c_str());
+        return;
+    }
 
     fuse::scene::Scene& runtimeScene = host.runtimeScene();
     const fuse::scene::SerialiseResult loaded =

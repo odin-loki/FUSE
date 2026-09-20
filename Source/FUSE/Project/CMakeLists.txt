@@ -14,6 +14,7 @@ set(FUSE_PROJECT_PUBLIC_HEADERS
     include/fuse/project/import_pipeline.hpp
     include/fuse/project/importer_extract.hpp
     include/fuse/project/t3d_asset_vfs.hpp
+    include/fuse/project/parity_legacy_sources.hpp
 )
 
 set(FUSE_PROJECT_SOURCES
@@ -31,6 +32,7 @@ set(FUSE_PROJECT_SOURCES
     src/import_pipeline.cpp
     src/importer_extract.cpp
     src/t3d_asset_vfs.cpp
+    src/parity_legacy_sources.cpp
 )
 
 add_library(fuse_project STATIC

@@ -19,15 +19,16 @@ Aligned with [FUSE_UNIFIED_PRESTARTER.md](../plans/FUSE_UNIFIED_PRESTARTER.md) �
 | `demo_hybrid_hud` | Shared frame / compositor | ✅ U4/U5 full module gates (`hybrid_module_gates`) |
 | `demo_ai_bt` | `fuse_ai` on 3D + 2D agents | ✅ Hybrid BT tick + UAISK patrol profile + mission convert |
 | `demo_timeline` | `fuse_cinematics` | ✅ Outpost intro asset/stub + VActor + hybrid timeline drive |
-| `demo_fx` | `fuse_fx` | ✅ AFX template pack + mission VM + GPU particle pool |
+| `demo_fx` | `fuse_fx` | ✅ AFX mission VM + `defaultWorld2D` sprite socket bridge |
 | `demo_adventure_stub` | `fuse_adventure` interactions | ✅ Outpost JSON spawn + mechanics + weapon grant + mission convert |
 
 Future location: `Samples/unification/<demo_id>/` (see [Samples/unification/README.md](../../Samples/unification/README.md)).
 
 **Honest gaps toward full U8 exit (prestarter §13.2):**
 
-- ❌ Real window present / PIE ASan smoke across all seven demos
-- ❌ Golden-path import from live addon submodules (bundled `worlds/*.mis` / `*.cs` stubs used instead)
+- ❌ Real window present across all seven demos (headless embed + software placeholder only)
+- 🚧 Golden-path import — `resolveParityLegacySource` prefers submodule paths when initialized; bundled stubs used in CI
+- 🚧 PIE ASan smoke — `fuse_u8_parity_embed_pie_smoke` when `FUSE_SMOKE_ENABLE_ASAN=ON` (six demos; `demo_hybrid_hud` separate)
 - ❌ Animated sprite textures / datablock gameplay parity (converter wiring stubs only)
 
 ---
@@ -161,4 +162,5 @@ Per prestarter §1.3 and §17:
 - [x] Parity demo list frozen (minimum set documented)
 - [x] `Samples/unification/` stubs created (see README)
 - [x] Converters (U7) can import golden paths (stub importers + `fuse_import` dry-run)
-- [x] U8 wiring wave: `fuse_demo_wiring` + bundled `worlds/` sources + `ctest -R fuse_u8_`
+- [x] U8 wiring wave 2: `fuse_demo_wiring` + bundled `worlds/` sources + `ctest -R fuse_u8_`
+- [x] U8 wiring wave 3: golden-path resolver + editor embed convert-before-load + `fuse_u8_parity_embed_pie_smoke`

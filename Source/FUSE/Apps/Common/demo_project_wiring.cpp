@@ -2,6 +2,7 @@
 
 #include <fuse/dimension/world_handle.hpp>
 #include <fuse/jobs/worker_count.hpp>
+#include <fuse/project/parity_legacy_sources.hpp>
 #include <fuse/project/t2d_module_bridge.hpp>
 #include <fuse/project/t3d_datablock_resolve.hpp>
 #include <fuse/project/world_converter.hpp>
@@ -17,18 +18,6 @@ namespace {
 bool fileExists(const std::string& path) {
     std::error_code ec;
     return std::filesystem::exists(path, ec);
-}
-
-std::string swapExtension(const std::string& path, const char* extension) {
-    const std::filesystem::path filePath(path);
-    return (filePath.parent_path() / (filePath.stem().string() + extension)).lexically_normal().string();
-}
-
-std::string legacySourcePath(const std::string& fuselevelPath, const char* extension) {
-    if (fuselevelPath.size() >= 10 && fuselevelPath.substr(fuselevelPath.size() - 10) == ".fuselevel") {
-        return swapExtension(fuselevelPath, extension);
-    }
-    return fuselevelPath;
 }
 
 } // namespace
@@ -51,34 +40,14 @@ World3DLoadResult ensure3DWorldFromProject(const project::LoadResult& projectLoa
         result.note = "project load failed";
         return result;
     }
-    if (projectLoad.manifest.defaultWorld3D.empty()) {
-        result.note = "project missing defaultWorld3D";
+
+    const project::Ensure3DWorldResult prepared = project::ensureDefault3DWorldReady(projectLoad);
+    result.loadedPath = prepared.loadedPath;
+    result.entityCount = prepared.entityCount;
+    result.wiringStubCount = prepared.wiringStubCount;
+    if (!prepared.ok) {
+        result.note = prepared.note;
         return result;
-    }
-
-    const std::string fuselevelPath = scene::resolveDefaultWorldPath(projectLoad.manifest);
-    result.loadedPath = fuselevelPath;
-
-    const std::string missionPath = legacySourcePath(fuselevelPath, ".mis");
-    const bool needsConvert = !fileExists(fuselevelPath);
-    const bool canRefreshFromMis = fileExists(missionPath) &&
-                                   (!fileExists(fuselevelPath) ||
-                                    std::filesystem::last_write_time(missionPath) >
-                                        std::filesystem::last_write_time(fuselevelPath));
-    if (needsConvert || canRefreshFromMis) {
-        if (!fileExists(missionPath)) {
-            result.note = "missing .fuselevel and legacy .mis: " + fuselevelPath;
-            return result;
-        }
-
-        const project::ConvertResult converted =
-            project::convertT3DMissionToFuselevel(missionPath, fuselevelPath);
-        if (converted.status != project::ConvertStatus::Ok) {
-            result.note = converted.note.empty() ? "T3D mission convert failed" : converted.note;
-            return result;
-        }
-        result.entityCount = converted.entityCount;
-        result.wiringStubCount = converted.wiringStubCount;
     }
 
     const scene::SerialiseResult loaded = scene::loadForProject(scene, projectLoad);
@@ -97,7 +66,12 @@ World3DLoadResult ensure3DWorldFromProject(const project::LoadResult& projectLoa
     result.materialVfsResolved = materialVfs.resolvedCount;
 
     result.ok = true;
-    result.note = "loaded 3D world (" + std::to_string(result.entityCount) + " entities)";
+    if (prepared.sourceOrigin == project::LegacySourceOrigin::GoldenSubmodule) {
+        result.note = "loaded 3D world from golden submodule (" + std::to_string(result.entityCount) +
+                      " entities)";
+    } else {
+        result.note = "loaded 3D world (" + std::to_string(result.entityCount) + " entities)";
+    }
     return result;
 }
 
@@ -114,9 +88,11 @@ World2DBridgeResult bridge2DWorldFromProject(const project::LoadResult& projectL
     }
 
     const std::string fuselevelPath = scene::resolveDefaultWorld2DPath(projectLoad.manifest);
-    const std::string modulePath = legacySourcePath(fuselevelPath, ".cs");
+    const project::LegacySourceResolution moduleSource =
+        project::resolveParityLegacySource(projectLoad.manifest, fuselevelPath, ".cs");
+    const std::string& modulePath = moduleSource.path;
 
-    if (!fileExists(fuselevelPath) && fileExists(modulePath)) {
+    if (!fileExists(fuselevelPath) && moduleSource.origin != project::LegacySourceOrigin::Missing) {
         const project::ConvertResult converted =
             project::convertT2DModuleToFuselevel(modulePath, fuselevelPath);
         if (converted.status != project::ConvertStatus::Ok) {
@@ -131,14 +107,18 @@ World2DBridgeResult bridge2DWorldFromProject(const project::LoadResult& projectL
         }
     }
 
-    if (fileExists(modulePath) && world.readSnapshot().sprites().empty()) {
+    if (moduleSource.origin != project::LegacySourceOrigin::Missing && world.readSnapshot().sprites().empty()) {
         const project::T2DRuntimeBridgeResult bridged = project::bridgeT2DModuleToRuntime(world, modulePath);
         if (bridged.ok && bridged.spriteCount > 0u) {
             result.ok = true;
             result.spriteCount = bridged.spriteCount;
             result.physicsBodyCount = bridged.physicsBodyCount;
             result.physicsEnabled = world.isPhysicsEnabled();
-            result.note = "runtime bridge from " + modulePath;
+            if (moduleSource.origin == project::LegacySourceOrigin::GoldenSubmodule) {
+                result.note = "runtime bridge from golden SpriteToy submodule";
+            } else {
+                result.note = "runtime bridge from " + modulePath;
+            }
             return result;
         }
     }

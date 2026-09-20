@@ -112,3 +112,29 @@ add_executable(fuse_editor_gizmo_system_tests
 
 target_link_libraries(fuse_editor_gizmo_system_tests PRIVATE fuse_editor_api fuse_core)
 add_test(NAME fuse_editor_gizmo_system COMMAND fuse_editor_gizmo_system_tests)
+
+if(FUSE_BUILD_PARITY_DEMOS)
+    add_executable(fuse_u8_parity_embed_pie_tests
+        test_u8_parity_embed_pie.cpp
+    )
+    target_link_libraries(fuse_u8_parity_embed_pie_tests PRIVATE fuse_editor_api fuse_core fuse_project)
+    if(FUSE_BUILD_VULKAN)
+        target_link_libraries(fuse_u8_parity_embed_pie_tests PRIVATE fuse_hybrid fuse_rhi)
+        add_test(NAME fuse_u8_parity_embed_pie_smoke
+            COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_u8_parity_embed_pie_tests>")
+        set_tests_properties(fuse_u8_parity_embed_pie_smoke PROPERTIES
+            ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+            RUN_SERIAL TRUE
+        )
+    else()
+        add_test(NAME fuse_u8_parity_embed_pie_smoke COMMAND fuse_u8_parity_embed_pie_tests)
+        set_tests_properties(fuse_u8_parity_embed_pie_smoke PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        )
+    endif()
+    if(FUSE_SMOKE_ENABLE_ASAN)
+        target_compile_options(fuse_u8_parity_embed_pie_tests PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+        target_link_options(fuse_u8_parity_embed_pie_tests PRIVATE -fsanitize=address)
+    endif()
+endif()

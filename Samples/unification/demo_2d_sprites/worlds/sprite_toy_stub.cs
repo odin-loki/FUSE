@@ -14,5 +14,11 @@ new SceneToy() {
     position = "2 1";
     layer = 0;
     sortPoint = 5;
+    physicsEnabled = false;
+  };
+  new SpritePlayer(Backdrop) {
+    position = "-1 -1";
+    layer = -1;
+    sortPoint = 1;
   };
 };

@@ -26,7 +26,12 @@ ctest --test-dir build -R fuse_u8_ --output-on-failure
 
 - Real GLES/Vulkan present (Track B) — software placeholder renderer only
 - Bit-perfect legacy mission replay — converters produce wiring stubs, not full gameplay
-- `demo_fx` 2D sprite socket world (`defaultWorld2D`) — 3D AFX mission path only today
-- Live addon submodule assets — bundled `.mis`/`.cs` stubs under each `worlds/` dir
+- Live addon submodule assets — golden paths tried first; bundled `.mis`/`.cs` stubs used when submodules absent
+
+**Wave 3 wiring**
+
+- `fuse_u8_parity_embed_pie_smoke` — editor embed + PIE start/stop across six parity demos (ASan when `FUSE_SMOKE_ENABLE_ASAN`)
+- `demo_fx` bridges `defaultWorld2D` sprite sockets alongside 3D AFX mission VM
+- `resolveParityLegacySource` prefers `third_party/` golden paths when submodules are initialized
 
 `demo_hybrid_hud` uses a software placeholder renderer. Real present is Track B.

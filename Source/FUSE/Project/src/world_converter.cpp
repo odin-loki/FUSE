@@ -551,4 +551,62 @@ std::vector<ConvertResult> convertManifestWorlds(const ProjectManifest& project,
     return results;
 }
 
+Ensure3DWorldResult ensureDefault3DWorldReady(const LoadResult& projectLoad) {
+    Ensure3DWorldResult result;
+    if (projectLoad.status != LoadStatus::Ok) {
+        result.note = "project load failed";
+        return result;
+    }
+    if (projectLoad.manifest.defaultWorld3D.empty()) {
+        result.note = "project missing defaultWorld3D";
+        return result;
+    }
+
+    auto joinPath = [](const std::string& root, const std::string& relative) {
+        if (root.empty()) {
+            return relative;
+        }
+        return (std::filesystem::path(root) / relative).lexically_normal().string();
+    };
+
+    const std::string fuselevelPath =
+        joinPath(projectLoad.manifest.projectRoot, projectLoad.manifest.defaultWorld3D);
+    result.loadedPath = fuselevelPath;
+
+    const LegacySourceResolution missionSource =
+        resolveParityLegacySource(projectLoad.manifest, fuselevelPath, ".mis");
+    result.sourceOrigin = missionSource.origin;
+
+    std::error_code ec;
+    const bool fuselevelExists = std::filesystem::exists(fuselevelPath, ec);
+    const bool canRefreshFromMis = missionSource.origin != LegacySourceOrigin::Missing &&
+                                   std::filesystem::exists(missionSource.path, ec) &&
+                                   (!fuselevelExists ||
+                                    std::filesystem::last_write_time(missionSource.path) >
+                                        std::filesystem::last_write_time(fuselevelPath));
+    if (!fuselevelExists || canRefreshFromMis) {
+        if (missionSource.origin == LegacySourceOrigin::Missing) {
+            result.note = "missing .fuselevel and legacy .mis: " + fuselevelPath;
+            return result;
+        }
+
+        const ConvertResult converted =
+            convertT3DMissionToFuselevel(missionSource.path, fuselevelPath);
+        if (converted.status != ConvertStatus::Ok) {
+            result.note = converted.note.empty() ? "T3D mission convert failed" : converted.note;
+            return result;
+        }
+        result.entityCount = converted.entityCount;
+        result.wiringStubCount = converted.wiringStubCount;
+    }
+
+    result.ok = std::filesystem::exists(fuselevelPath, ec);
+    if (result.ok) {
+        result.note = missionSource.note.empty() ? "3D world ready" : missionSource.note;
+    } else {
+        result.note = "fuselevel still missing after convert attempt";
+    }
+    return result;
+}
+
 } // namespace fuse::project
