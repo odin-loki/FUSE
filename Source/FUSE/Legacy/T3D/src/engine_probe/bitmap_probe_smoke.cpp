@@ -287,6 +287,22 @@ bool gbitmapCopyRectSmoke() {
     return dst.getColor(2, 2, sampled) && sampled.red == 0xAA && sampled.green == 0x00 && sampled.blue == 0x00;
 }
 
+bool gbitmapCopyRectRgb8Smoke() {
+    GBitmap src;
+    src.allocateBitmap(3, 3, false, GFXFormatR8G8B8);
+    const ColorI marker(0x11, 0x22, 0x33, 255);
+    if (!src.setColor(0, 0, marker)) {
+        return false;
+    }
+
+    GBitmap dst;
+    dst.allocateBitmap(3, 3, false, GFXFormatR8G8B8);
+    dst.copyRect(&src, RectI(0, 0, 1, 1), Point2I(2, 1));
+
+    ColorI sampled;
+    return dst.getColor(2, 1, sampled) && sampled.red == 0x11 && sampled.green == 0x22 && sampled.blue == 0x33;
+}
+
 bool gbitmapExtrudeMipLevelsSmoke() {
     GBitmap bitmap;
     bitmap.allocateBitmap(4, 4, true, GFXFormatR8G8B8A8);

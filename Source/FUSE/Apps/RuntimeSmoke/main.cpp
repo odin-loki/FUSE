@@ -361,6 +361,14 @@ int main() {
               "engine probe DataChunker alloc/isManagedByChunker");
         check(fuse::legacy::t3d::engineProbe::resizeFilterStreamSmoke(),
               "engine probe ResizeFilterStream offset window read");
+        check(fuse::legacy::t3d::engineProbe::filterStreamDelegateSmoke(),
+              "engine probe FilterStream position/size/capability delegate");
+        check(fuse::legacy::t3d::engineProbe::streamTypedRoundTripSmoke(),
+              "engine probe Stream typed U32/F32 write/read round-trip");
+        check(fuse::legacy::t3d::engineProbe::byteBufferSmoke(),
+              "engine probe ByteBuffer append/ref-count/getCopy");
+        check(fuse::legacy::t3d::engineProbe::stringUnitSmoke(),
+              "engine probe StringUnit getUnit/getUnitCount/getUnits");
         check(fuse::legacy::t3d::engineProbe::tagDictionarySmoke(),
               "engine probe TagDictionary addEntry/defineToId round-trip");
         check(fuse::legacy::t3d::engineProbe::findMatchSmoke(),
@@ -397,6 +405,8 @@ int main() {
               "engine probe GBitmap getColor/setColor RGB8");
         check(fuse::legacy::t3d::engineProbe::gbitmapCopyRectSmoke(),
               "engine probe GBitmap copyRect RGBA8");
+        check(fuse::legacy::t3d::engineProbe::gbitmapCopyRectRgb8Smoke(),
+              "engine probe GBitmap copyRect RGB8");
         check(fuse::legacy::t3d::engineProbe::gbitmapExtrudeMipLevelsSmoke(),
               "engine probe GBitmap allocateBitmap extrudeMipLevels mip chain");
         check(fuse::legacy::t3d::engineProbe::gbitmapSurfaceSizeMipSmoke(),

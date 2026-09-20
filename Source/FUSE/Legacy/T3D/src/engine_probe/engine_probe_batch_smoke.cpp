@@ -5,8 +5,11 @@
 #include "core/util/fourcc.h"
 #include "core/util/hashFunction.h"
 #include "core/util/swizzle.h"
+#include "core/filterStream.h"
 #include "core/stream/fileStream.h"
 #include "core/stream/memStream.h"
+#include "core/util/byteBuffer.h"
+#include "core/strings/stringUnit.h"
 #include "core/bitVector.h"
 #include "core/crc.h"
 #include "core/idGenerator.h"
@@ -209,6 +212,111 @@ bool resizeFilterStreamSmoke() {
         return false;
     }
     return std::strncmp(out, "resize", 6) == 0 && resize.getLastBytesRead() == 6u;
+}
+
+bool filterStreamDelegateSmoke() {
+    const char payload[] = "fuse_u2_filter_delegate";
+    MemStream mem(static_cast<U32>(sizeof(payload)), true, true);
+    if (!mem.write(static_cast<U32>(sizeof(payload)), payload)) {
+        return false;
+    }
+    mem.setPosition(0);
+
+    ResizeFilterStream filter;
+    if (!filter.attachStream(&mem)) {
+        return false;
+    }
+    if (!filter.setStreamOffset(8, 8)) {
+        return false;
+    }
+    if (filter.getStreamSize() != 8u) {
+        return false;
+    }
+    if (!filter.hasCapability(Stream::StreamRead)) {
+        return false;
+    }
+    if (!filter.setPosition(2)) {
+        return false;
+    }
+    if (filter.getPosition() != 2u) {
+        return false;
+    }
+    if (!filter.setPosition(0)) {
+        return false;
+    }
+
+    char out[4] = {};
+    if (!filter.read(3, out)) {
+        return false;
+    }
+    if (std::strncmp(out, "fil", 3) != 0) {
+        return false;
+    }
+    if (filter.getPosition() != 3u) {
+        return false;
+    }
+
+    filter.detachStream();
+    if (filter.getStream() != nullptr) {
+        return false;
+    }
+    return filter.getStatus() == Stream::Closed;
+}
+
+bool streamTypedRoundTripSmoke() {
+    MemStream stream(32, true, true);
+    const U32 written = 0xDEADBEEFu;
+    const F32 writtenFloat = 3.25f;
+    if (!stream.write(written) || !stream.write(writtenFloat)) {
+        return false;
+    }
+    stream.setPosition(0);
+
+    U32 readU32 = 0;
+    F32 readFloat = 0.0f;
+    if (!stream.read(&readU32) || !stream.read(&readFloat)) {
+        return false;
+    }
+    return readU32 == written && readFloat > 3.24f && readFloat < 3.26f;
+}
+
+bool byteBufferSmoke() {
+    const U8 chunkA[] = {1, 2, 3};
+    const U8 chunkB[] = {4, 5};
+
+    Torque::ByteBuffer buffer;
+    buffer.appendBuffer(chunkA, static_cast<U32>(sizeof(chunkA)));
+    buffer.appendBuffer(chunkB, static_cast<U32>(sizeof(chunkB)));
+    if (buffer.getBufferSize() != 5u) {
+        return false;
+    }
+
+    Torque::ByteBuffer shared = buffer;
+    if (shared.getBuffer() != buffer.getBuffer()) {
+        return false;
+    }
+
+    Torque::ByteBuffer copy = buffer.getCopy();
+    if (copy.getBufferSize() != 5u) {
+        return false;
+    }
+    if (copy.getBuffer() == buffer.getBuffer()) {
+        return false;
+    }
+    return copy.getBuffer()[0] == 1 && copy.getBuffer()[4] == 5;
+}
+
+bool stringUnitSmoke() {
+    static const char kFields[] = "alpha beta gamma";
+    if (StringUnit::getUnitCount(kFields, " ") != 3u) {
+        return false;
+    }
+    const char* second = StringUnit::getUnit(kFields, 1, " ");
+    if (second == nullptr || std::strcmp(second, "beta") != 0) {
+        return false;
+    }
+    const char* range = StringUnit::getUnits(kFields, 0, 1, " ");
+    return range != nullptr && std::strcmp(range, "alpha beta") == 0;
 }
 
 bool tagDictionarySmoke() {
