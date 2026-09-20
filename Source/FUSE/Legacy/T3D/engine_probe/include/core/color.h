@@ -17,6 +17,14 @@ public:
 
    ColorI() : red(0), green(0), blue(0), alpha(0) {}
    ColorI(U8 r, U8 g, U8 b, U8 a = 255) : red(r), green(g), blue(b), alpha(a) {}
+
+   void set(U8 in_r, U8 in_g, U8 in_b, U8 in_a = 255)
+   {
+      red = in_r;
+      green = in_g;
+      blue = in_b;
+      alpha = in_a;
+   }
 };
 
 class LinearColorF

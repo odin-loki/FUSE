@@ -41,12 +41,15 @@ set(_fuse_t3d_legacy_engine_sources
     src/engine_probe/frame_allocator_stub.cpp
     src/engine_probe/string_table_stub.cpp
     src/engine_probe/platform_net_stub.cpp
+    src/engine_probe/console_object_stub.cpp
+    src/engine_probe/math_backend_probe_stub.cpp
     src/engine_probe/thread_pool_stub.cpp
     src/engine_probe/fs_volume_stub.cpp
     src/engine_probe/console_stub.cpp
     src/engine_probe/platform_assert_stub.cpp
     src/engine_probe/gbitmap_probe_stub.cpp
     src/engine_probe/rgb2xyz_probe_stub.cpp
+    src/engine_probe/rgb2luv_probe_stub.cpp
     src/engine_probe/bitmap_probe_smoke.cpp
     src/engine_probe/engine_probe_batch_smoke.cpp
     src/engine_probe/color_probe_smoke.cpp
@@ -77,6 +80,12 @@ set(_fuse_t3d_legacy_engine_sources
     "${CMAKE_SOURCE_DIR}/Engine/source/core/tagDictionary.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/core/strings/findMatch.cpp"
     "${CMAKE_SOURCE_DIR}/Engine/source/core/tokenizer.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/stream/bitStream.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/stringBuffer.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/core/strings/unicode.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/math/impl/math_c.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/math/mQuat.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/source/math/mMath_C.cpp"
 )
 
 # bitmapPng.cpp uses bundled lpng headers (Engine/lib/lpng) + system libpng/zlib.
@@ -148,4 +157,11 @@ set_source_files_properties(
         COMPILE_OPTIONS "-include${_fuse_t3d_legacy_engine_probe_include}/tag_dictionary_prelude.h"
 )
 
-message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-10: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB/PNG + read/writeBitmap stub + crc/bitVector/idGenerator/tDictionary + timeClass/tSignal + color/dataChunker + filterStream/resizeStream/tagDictionary + findMatch/tokenizer + rgb2xyz stub + gBitmap fillWhite/sGetExtensionList + console shadows + stubs)")
+set(_fuse_t3d_legacy_bitstream_cpp "${CMAKE_SOURCE_DIR}/Engine/source/core/stream/bitStream.cpp")
+set_source_files_properties(
+    ${_fuse_t3d_legacy_bitstream_cpp}
+    PROPERTIES
+        COMPILE_OPTIONS "-include${_fuse_t3d_legacy_engine_probe_include}/bitstream_prelude.h"
+)
+
+message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-11: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB/PNG + read/writeBitmap stub + crc/bitVector/idGenerator/tDictionary + timeClass/tSignal + color/dataChunker + filterStream/resizeStream/tagDictionary + findMatch/tokenizer + rgb2xyz/luv stubs + gBitmap fillWhite/sGetExtensionList/getColor/setColor RGBA8 + bitStream/stringBuffer/unicode + console shadows + stubs)")

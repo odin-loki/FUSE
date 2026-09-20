@@ -2,6 +2,7 @@
 // Implements allocation, registration, transparency, and readBitmap dispatch — not full gBitmap.cpp.
 
 #include "console/console.h"
+#include "core/color.h"
 #include "core/stream/fileStream.h"
 #include "core/stream/stream.h"
 #include "core/util/path.h"
@@ -335,4 +336,45 @@ String GBitmap::sGetExtensionList() {
         }
     }
     return list;
+}
+
+bool GBitmap::getColor(const U32 x, const U32 y, ColorI& rColor, const U32 mipLevel, const U32 face) const
+{
+    const U32 targMip = (mipLevel >= getNumMipLevels()) ? getNumMipLevels() - 1 : mipLevel;
+    const U32 targFace = (face >= getNumFaces()) ? getNumFaces() - 1 : face;
+
+    if (x >= getWidth(targMip) || y >= getHeight(targMip)) {
+        return false;
+    }
+
+    const U8* p = getAddress(x, y, targMip, targFace);
+    if (mInternalFormat != GFXFormatR8G8B8A8) {
+        AssertFatal(false, "GBitmap probe stub getColor supports GFXFormatR8G8B8A8 only");
+        return false;
+    }
+
+    rColor.set(p[0], p[1], p[2], p[3]);
+    return true;
+}
+
+bool GBitmap::setColor(const U32 x, const U32 y, const ColorI& rColor, const U32 mipLevel, const U32 face)
+{
+    const U32 targMip = (mipLevel >= getNumMipLevels()) ? getNumMipLevels() - 1 : mipLevel;
+    const U32 targFace = (face >= getNumFaces()) ? getNumFaces() - 1 : face;
+
+    if (x >= getWidth(targMip) || y >= getHeight(targMip)) {
+        return false;
+    }
+
+    U8* p = getAddress(x, y, targMip, targFace);
+    if (mInternalFormat != GFXFormatR8G8B8A8) {
+        AssertFatal(false, "GBitmap probe stub setColor supports GFXFormatR8G8B8A8 only");
+        return false;
+    }
+
+    p[0] = rColor.red;
+    p[1] = rColor.green;
+    p[2] = rColor.blue;
+    p[3] = rColor.alpha;
+    return true;
 }

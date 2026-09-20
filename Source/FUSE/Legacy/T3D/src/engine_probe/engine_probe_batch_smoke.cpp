@@ -15,11 +15,16 @@
 #include "gfx/bitmap/loaders/ies/ies_loader.h"
 #include "core/util/md5.h"
 #include "core/dataChunker.h"
+#include "core/frameAllocator.h"
+#include "core/stringTable.h"
 #include "core/resizeStream.h"
 #include "core/tagDictionary.h"
 #include "core/tokenizer.h"
 #include "core/strings/findMatch.h"
 #include "core/util/rgb2xyz.h"
+#include "core/util/rgb2luv.h"
+#include "core/stream/bitStream.h"
+#include "core/stringBuffer.h"
 
 #include <cstdio>
 #include <cstring>
@@ -197,14 +202,21 @@ bool resizeFilterStreamSmoke() {
 }
 
 bool tagDictionarySmoke() {
-    static const char kDefine[] = "TAG_FUSE_PROBE";
-    static const char kLabel[] = "FUSE probe tag";
+    static const char kDefine[] = "TAG_FUSE_PROBE_BATCH11";
+    static const char kLabel[] = "FUSE probe tag batch 11";
 
-    TagDictionary dict;
-    if (!dict.addEntry(42, kDefine, kLabel)) {
+    const StringTableEntry define = StringTable->insert(kDefine);
+    const StringTableEntry label = StringTable->insert(kLabel);
+    if (!define || !label) {
         return false;
     }
-    return dict.defineToId(kDefine) == 42 && dict.idToDefine(42) == kDefine;
+
+    TagDictionary dict;
+    constexpr S32 kTagId = 43;
+    if (!dict.addEntry(kTagId, define, label)) {
+        return false;
+    }
+    return dict.defineToId(define) == kTagId && dict.idToDefine(kTagId) == define;
 }
 
 bool findMatchSmoke() {
@@ -246,6 +258,44 @@ bool rgb2xyzSmoke() {
     const LinearColorF roundTrip = ConvertRGB::fromXYZ(xyz);
     return roundTrip.red > 0.99f && roundTrip.red < 1.01f && roundTrip.green > 0.99f &&
            roundTrip.green < 1.01f && roundTrip.blue > 0.99f && roundTrip.blue < 1.01f;
+}
+
+bool rgb2luvSmoke() {
+    const LinearColorF white(1.0f, 1.0f, 1.0f, 1.0f);
+    const LinearColorF luv = ConvertRGB::toLUV(white);
+    if (luv.blue < 0.99f || luv.blue > 1.01f) {
+        return false;
+    }
+
+    const LinearColorF scaled = ConvertRGB::toLUVScaled(white);
+    return scaled.red > luv.red && scaled.green > luv.green && scaled.blue > 0.99f && scaled.blue < 1.01f;
+}
+
+bool bitStreamRoundTripSmoke() {
+    U8 buffer[16] = {};
+    BitStream stream(buffer, static_cast<S32>(sizeof(buffer)), static_cast<S32>(sizeof(buffer)));
+    stream.write(static_cast<U32>(0xA5A5A5A5u));
+    stream.setPosition(0);
+
+    U32 value = 0;
+    if (!stream.read(&value)) {
+        return false;
+    }
+    return value == 0xA5A5A5A5u;
+}
+
+bool stringBufferUtf8Smoke() {
+    FrameAllocator::init(4 * 1024 * 1024);
+
+    StringBuffer buffer;
+    buffer.set("fuse_u2");
+    buffer.append("_probe");
+
+    const UTF8* utf8 = buffer.getPtr8();
+    const bool ok =
+        utf8 != nullptr && std::strcmp(utf8, "fuse_u2_probe") == 0 && buffer.length() == 13u;
+    FrameAllocator::destroy();
+    return ok;
 }
 
 } // namespace fuse::legacy::t3d::engineProbe

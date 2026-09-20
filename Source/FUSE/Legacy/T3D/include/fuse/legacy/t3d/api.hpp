@@ -91,9 +91,13 @@ bool tagDictionarySmoke();
 bool findMatchSmoke();
 bool tokenizerSmoke();
 bool rgb2xyzSmoke();
+bool rgb2luvSmoke();
+bool bitStreamRoundTripSmoke();
+bool stringBufferUtf8Smoke();
 bool gbitmapTransparencySmoke();
 bool gbitmapFillWhiteSmoke();
 bool gbitmapExtensionListSmoke();
+bool gbitmapColorRgba8Smoke();
 } // namespace engineProbe
 #endif
 

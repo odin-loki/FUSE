@@ -79,4 +79,22 @@ public:
    static NetSocket INVALID;
 };
 
+struct Net
+{
+    enum Error
+    {
+        NoError,
+        WrongProtocolType,
+        InvalidPacketProtocol,
+        WouldBlock,
+        NotASocket,
+        UnknownError,
+        NeedHostLookup
+    };
+
+    static const S32 MaxPacketDataSize = MAXPACKETSIZE;
+
+    static Error sendto(const NetAddress* address, const U8* buffer, S32 bufferSize);
+};
+
 #endif // _PLATFORM_PLATFORMNET_H_

@@ -369,12 +369,20 @@ int main() {
               "engine probe Tokenizer setBuffer/getNextToken");
         check(fuse::legacy::t3d::engineProbe::rgb2xyzSmoke(),
               "engine probe ConvertRGB toXYZ/fromXYZ round-trip");
+        check(fuse::legacy::t3d::engineProbe::rgb2luvSmoke(),
+              "engine probe ConvertRGB toLUV/toLUVScaled");
+        check(fuse::legacy::t3d::engineProbe::bitStreamRoundTripSmoke(),
+              "engine probe BitStream U32 write/read round-trip");
+        check(fuse::legacy::t3d::engineProbe::stringBufferUtf8Smoke(),
+              "engine probe StringBuffer UTF-8 set/append/getUTF8");
         check(fuse::legacy::t3d::engineProbe::gbitmapTransparencySmoke(),
               "engine probe GBitmap checkForTransparency alpha scan");
         check(fuse::legacy::t3d::engineProbe::gbitmapFillWhiteSmoke(),
               "engine probe GBitmap fillWhite/getSurfaceSize");
         check(fuse::legacy::t3d::engineProbe::gbitmapExtensionListSmoke(),
               "engine probe GBitmap sGetExtensionList includes STB bmp");
+        check(fuse::legacy::t3d::engineProbe::gbitmapColorRgba8Smoke(),
+              "engine probe GBitmap getColor/setColor RGBA8");
     }
 #endif
 
