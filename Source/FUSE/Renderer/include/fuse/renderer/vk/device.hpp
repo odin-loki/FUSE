@@ -29,6 +29,7 @@ struct VulkanDeviceInfo {
     bool descriptorIndexing = false;
     bool bufferDeviceAddress = false;
     bool timelineSemaphore = false;
+    bool dynamicRendering = false;
 };
 
 struct VulkanDeviceDesc {

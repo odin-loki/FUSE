@@ -21,6 +21,11 @@ public:
 
     u32 watchedCount() const;
 
+    /// Paths recorded by the most recent pollChanged() call.
+    u32 lastChangedCount() const;
+    /// nullptr if `index` is out of range.
+    const char* lastChangedPath(u32 index) const;
+
 private:
     struct Entry {
         std::string path;
@@ -29,6 +34,7 @@ private:
     };
 
     std::vector<Entry> m_entries;
+    std::vector<std::string> m_lastChanged;
 };
 
 } // namespace fuse::renderer

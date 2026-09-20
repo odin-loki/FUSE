@@ -27,7 +27,8 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     m_device = &device;
 
     if (desc.layout == nullptr || desc.vertexShader == nullptr || desc.fragmentShader == nullptr ||
-        (desc.renderPass == nullptr && desc.nativeRenderPassOverride == nullptr)) {
+        (!desc.useDynamicRendering && desc.renderPass == nullptr &&
+         desc.nativeRenderPassOverride == nullptr)) {
         m_info.message = "graphics pipeline requires layout, shaders, and render pass";
         return false;
     }
@@ -123,9 +124,9 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
 
     VkPipelineLayout pipelineLayout =
         static_cast<VkPipelineLayout>(desc.layout->nativeHandle());
-    VkRenderPass renderPass = desc.nativeRenderPassOverride != nullptr
-                                  ? static_cast<VkRenderPass>(desc.nativeRenderPassOverride)
-                                  : static_cast<VkRenderPass>(desc.renderPass->nativeHandle());
+
+    VkFormat colorFormat = static_cast<VkFormat>(desc.colorFormat);
+    VkPipelineRenderingCreateInfo rendering{};
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -140,8 +141,20 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = pipelineLayout;
-    pipelineInfo.renderPass = renderPass;
     pipelineInfo.subpass = 0;
+    if (desc.useDynamicRendering) {
+        rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+        rendering.colorAttachmentCount = 1;
+        rendering.pColorAttachmentFormats = &colorFormat;
+        rendering.depthAttachmentFormat =
+            desc.depthTest ? VK_FORMAT_D32_SFLOAT : VK_FORMAT_UNDEFINED;
+        pipelineInfo.pNext = &rendering;
+        pipelineInfo.renderPass = VK_NULL_HANDLE;
+    } else {
+        pipelineInfo.renderPass = desc.nativeRenderPassOverride != nullptr
+                                      ? static_cast<VkRenderPass>(desc.nativeRenderPassOverride)
+                                      : static_cast<VkRenderPass>(desc.renderPass->nativeHandle());
+    }
 
     VkPipeline graphicsPipeline = VK_NULL_HANDLE;
     VkPipelineCache pipelineCache =
@@ -158,11 +171,25 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
 
     m_handle = graphicsPipeline;
     m_info.valid = true;
-    m_info.message = desc.debugName != nullptr ? desc.debugName : "graphics pipeline scaffold";
+    m_info.dynamicRendering = desc.useDynamicRendering;
+    if (desc.useDynamicRendering) {
+        m_info.message = desc.debugName != nullptr
+                             ? std::string(desc.debugName) + " (dynamic rendering)"
+                             : "graphics pipeline (dynamic rendering)";
+    } else {
+        m_info.message = desc.debugName != nullptr ? desc.debugName : "graphics pipeline scaffold";
+    }
     return true;
 #else
     m_info.valid = true;
-    m_info.message = "graphics pipeline placeholder (stub backend)";
+    m_info.dynamicRendering = desc.useDynamicRendering;
+    if (desc.useDynamicRendering) {
+        m_info.message = desc.debugName != nullptr
+                             ? std::string(desc.debugName) + " (dynamic rendering)"
+                             : "graphics pipeline placeholder (stub backend, dynamic rendering)";
+    } else {
+        m_info.message = "graphics pipeline placeholder (stub backend)";
+    }
     return true;
 #endif
 }

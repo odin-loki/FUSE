@@ -26,11 +26,14 @@ struct GraphicsPipelineDesc {
     bool depthTest = false;
     bool depthWrite = false;
     u32 depthCompareOp = 7; // VK_COMPARE_OP_ALWAYS to match current defaults
+    /// When true, create with VkPipelineRenderingCreateInfo and VK_NULL_HANDLE render pass.
+    bool useDynamicRendering = false;
     const char* debugName = nullptr;
 };
 
 struct GraphicsPipelineInfo {
     bool valid = false;
+    bool dynamicRendering = false;
     std::string message;
 };
 

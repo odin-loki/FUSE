@@ -92,10 +92,12 @@ bool ShaderFileWatch::watch(const char* path) {
 }
 
 u32 ShaderFileWatch::pollChanged() {
+    m_lastChanged.clear();
     u32 changed = 0;
     for (Entry& entry : m_entries) {
         const FileStamp stamp = queryStamp(entry.path.c_str());
         if (stamp.mtime != entry.mtime || stamp.size != entry.size) {
+            m_lastChanged.push_back(entry.path);
             ++changed;
             entry.mtime = stamp.mtime;
             entry.size = stamp.size;
@@ -106,6 +108,17 @@ u32 ShaderFileWatch::pollChanged() {
 
 u32 ShaderFileWatch::watchedCount() const {
     return static_cast<u32>(m_entries.size());
+}
+
+u32 ShaderFileWatch::lastChangedCount() const {
+    return static_cast<u32>(m_lastChanged.size());
+}
+
+const char* ShaderFileWatch::lastChangedPath(u32 index) const {
+    if (index >= m_lastChanged.size()) {
+        return nullptr;
+    }
+    return m_lastChanged[index].c_str();
 }
 
 } // namespace fuse::renderer

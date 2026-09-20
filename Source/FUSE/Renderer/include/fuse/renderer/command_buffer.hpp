@@ -35,6 +35,7 @@ struct VkFrameEncodeContext {
     void* renderPass = nullptr;
     void* framebuffer = nullptr;
     void* graphicsPipeline = nullptr;
+    void* graphicsPipelineLayout = nullptr;
     void* vertexBuffer = nullptr;
     /// Backbuffer image for graph-planned `vkCmdPipelineBarrier` (offscreen color target).
     void* barrierImage = nullptr;

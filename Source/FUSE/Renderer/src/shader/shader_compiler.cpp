@@ -66,4 +66,58 @@ CompiledShader ShaderCompiler::compile(const ShaderDesc& desc) {
 #endif
 }
 
+bool ShaderCompiler::watch(const ShaderDesc& desc) {
+    if (desc.sourcePath == nullptr || desc.sourcePath[0] == '\0') {
+        return false;
+    }
+
+    WatchedEntry entry;
+    entry.path = desc.sourcePath;
+    entry.desc = desc;
+    entry.desc.sourcePath = entry.path.c_str();
+
+    if (!m_watch.watch(entry.path.c_str())) {
+        return false;
+    }
+
+    entry.last = compileOffline(entry.desc);
+    m_entries.push_back(std::move(entry));
+    m_entries.back().desc.sourcePath = m_entries.back().path.c_str();
+    return true;
+}
+
+u32 ShaderCompiler::pollHotReload() {
+    const u32 changed = m_watch.pollChanged();
+    if (changed == 0u) {
+        return 0u;
+    }
+
+    u32 successes = 0;
+    for (WatchedEntry& entry : m_entries) {
+        entry.desc.sourcePath = entry.path.c_str();
+        entry.last = compileOffline(entry.desc);
+        if (entry.last.valid) {
+            ++successes;
+        }
+    }
+    return successes;
+}
+
+u32 ShaderCompiler::watchedCount() const {
+    return static_cast<u32>(m_entries.size());
+}
+
+const CompiledShader* ShaderCompiler::lastCompiled(const char* path) const {
+    if (path == nullptr || path[0] == '\0') {
+        return nullptr;
+    }
+
+    for (const WatchedEntry& entry : m_entries) {
+        if (entry.path == path) {
+            return &entry.last;
+        }
+    }
+    return nullptr;
+}
+
 } // namespace fuse::renderer

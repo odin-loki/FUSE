@@ -67,6 +67,20 @@ void testBootstrapHeadless() {
     expectTrue(status.instanceReady, "Vulkan instance created when loader available");
     expectTrue(status.deviceReady, "Vulkan device created when GPU/ICD available");
     expectTrue(status.frameManagerReady, "frame ring created when device ready");
+    if (status.deviceReady && bootstrap->device() != nullptr) {
+        const fuse::renderer::VulkanDeviceInfo& deviceInfo = bootstrap->device()->info();
+        bool hasDynamicRenderingExt = false;
+        for (const char* enabled : deviceInfo.enabledExtensions) {
+            if (enabled != nullptr && std::strcmp(enabled, "VK_KHR_dynamic_rendering") == 0) {
+                hasDynamicRenderingExt = true;
+                break;
+            }
+        }
+        if (hasDynamicRenderingExt) {
+            expectTrue(deviceInfo.dynamicRendering,
+                       "VK_KHR_dynamic_rendering enabled implies dynamicRendering");
+        }
+    }
 #else
     expectTrue(!status.instanceReady, "stub mode keeps instance unavailable");
     expectTrue(status.mode == fuse::renderer::VulkanBackendMode::Stub, "stub backend mode");
@@ -186,12 +200,25 @@ void testDeviceVulkan12FeatureFlags() {
         expectTrue(!info.descriptorIndexing, "stub device reports descriptorIndexing false");
         expectTrue(!info.bufferDeviceAddress, "stub device reports bufferDeviceAddress false");
         expectTrue(!info.timelineSemaphore, "stub device reports timelineSemaphore false");
+        expectTrue(!info.dynamicRendering, "stub device reports dynamicRendering false");
         return;
     }
 
     (void)info.descriptorIndexing;
     (void)info.bufferDeviceAddress;
     (void)info.timelineSemaphore;
+
+    bool hasDynamicRenderingExt = false;
+    for (const char* enabled : info.enabledExtensions) {
+        if (enabled != nullptr && std::strcmp(enabled, "VK_KHR_dynamic_rendering") == 0) {
+            hasDynamicRenderingExt = true;
+            break;
+        }
+    }
+    if (hasDynamicRenderingExt) {
+        expectTrue(info.dynamicRendering,
+                   "VK_KHR_dynamic_rendering enabled implies dynamicRendering");
+    }
 }
 
 void testRhiContextSubmitOnRenderThread() {

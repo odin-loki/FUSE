@@ -2,6 +2,8 @@
 
 #include <fuse/renderer/render_command_list.hpp>
 #include <fuse/renderer/command_buffer.hpp>
+#include <fuse/renderer/shader/shader_watch.hpp>
+#include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/types.hpp>
 
@@ -15,13 +17,17 @@ struct RasterPathDesc {
     u32 height = 240;
     const char* vertexSpirvPath = nullptr;
     const char* fragmentSpirvPath = nullptr;
+    BindlessDescriptors* bindless = nullptr;
 };
 
 struct RasterPathStats {
     bool pipelineReady = false;
+    bool bindlessLayoutReady = false;
     u32 clearCount = 0;
     u32 triangleDrawCount = 0;
     u32 framesRecorded = 0;
+    u32 shaderFilesWatched = 0;
+    u32 shaderWatchPolls = 0;
     std::string message;
 };
 
@@ -60,6 +66,11 @@ private:
     VulkanDevice* m_device = nullptr;
     RasterPathDesc m_desc{};
     RasterPathStats m_stats;
+
+    ShaderFileWatch m_shaderWatch;
+    BindlessDescriptors m_ownedBindless;
+    BindlessDescriptors* m_bindless = nullptr;
+    bool m_ownedBindlessInitialized = false;
 
     std::unique_ptr<class RenderPass> m_renderPass;
     std::unique_ptr<class PipelineLayout> m_pipelineLayout;

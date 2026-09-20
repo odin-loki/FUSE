@@ -51,6 +51,9 @@ public:
     usize stagingRingCapacity() const { return m_stagingRingCapacity; }
     usize stagingRingOffset() const { return m_stagingOffset; }
 
+    bool lastGpuTextureCopySubmitted() const { return m_lastGpuTextureCopySubmitted; }
+    u32 lastGpuTextureCopyBytes() const { return m_lastGpuTextureCopyBytes; }
+
     LiveCounts liveCounts() const;
     const GpuAllocStats* allocatorStats() const;
 
@@ -58,6 +61,7 @@ private:
     void destroyAllResources();
     bool ensureStagingRing();
     void copyInitialDataViaStaging(Buffer& dest, const void* initialData, usize size);
+    void copyTextureInitialDataViaStaging(Texture& dest, const void* initialData);
 
     VulkanDevice* m_device = nullptr;
     BindlessDescriptors* m_bindless = nullptr;
@@ -68,6 +72,8 @@ private:
     BufferHandle m_stagingRing{};
     usize m_stagingRingCapacity = 0;
     usize m_stagingOffset = 0;
+    bool m_lastGpuTextureCopySubmitted = false;
+    u32 m_lastGpuTextureCopyBytes = 0;
     bool m_ready = false;
 };
 

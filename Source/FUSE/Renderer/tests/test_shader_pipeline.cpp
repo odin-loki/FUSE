@@ -7,11 +7,19 @@
 #include <fuse/renderer/vk/pipeline_layout.hpp>
 #include <fuse/types.hpp>
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
+
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 #ifndef FUSE_SHADER_FIXTURE_DIR
 #define FUSE_SHADER_FIXTURE_DIR "Source/FUSE/Renderer/shaders/fixtures"
@@ -30,6 +38,27 @@ void expectTrue(bool condition, const char* message) {
 
 std::string fixturePath(const char* name) {
     return std::string(FUSE_SHADER_FIXTURE_DIR) + "/" + name;
+}
+
+bool writeFile(const std::filesystem::path& path, const char* contents) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        return false;
+    }
+    out << contents;
+    out.flush();
+    return static_cast<bool>(out);
+}
+
+std::filesystem::path uniqueTempShaderPath() {
+#if defined(_WIN32)
+    const int pid = _getpid();
+#else
+    const int pid = static_cast<int>(::getpid());
+#endif
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    return std::filesystem::temp_directory_path() /
+           ("fuse_shader_compiler_" + std::to_string(pid) + "_" + std::to_string(stamp) + ".glsl");
 }
 
 void testSpirvIo() {
@@ -199,6 +228,49 @@ void testShaderModuleAndPipelineLayout() {
 #endif
 }
 
+void testHotReloadPoller() {
+    const std::filesystem::path glslPath = uniqueTempShaderPath();
+    const std::string glslUtf8 = glslPath.string();
+    const std::filesystem::path spvPath(glslUtf8 + ".spv");
+
+    expectTrue(writeFile(glslPath, "void main() {}\n"), "hot-reload temp glsl created");
+
+    const std::string fixtureSpv = fixturePath("minimal.vert.spv");
+    std::ifstream spirvIn(fixtureSpv, std::ios::binary);
+    expectTrue(spirvIn.good(), "fixture spirv readable for hot-reload test");
+    std::vector<char> spirvBytes((std::istreambuf_iterator<char>(spirvIn)),
+                                 std::istreambuf_iterator<char>());
+    expectTrue(!spirvBytes.empty(), "fixture spirv non-empty for hot-reload test");
+
+    std::ofstream spirvOut(spvPath, std::ios::binary | std::ios::trunc);
+    spirvOut.write(spirvBytes.data(), static_cast<std::streamsize>(spirvBytes.size()));
+    spirvOut.flush();
+    expectTrue(static_cast<bool>(spirvOut), "sibling spirv written for hot-reload test");
+    spirvOut.close();
+
+    fuse::renderer::ShaderDesc desc{};
+    desc.sourcePath = glslUtf8.c_str();
+    desc.stage = fuse::renderer::ShaderStage::Vertex;
+
+    fuse::renderer::ShaderCompiler compiler;
+    expectTrue(compiler.watch(desc), "watch records shader path");
+    expectTrue(compiler.watchedCount() == 1u, "hot-reload watched count is 1");
+
+    const fuse::renderer::CompiledShader* compiled = compiler.lastCompiled(glslUtf8.c_str());
+    expectTrue(compiled != nullptr && compiled->valid, "watch compiles offline SPIR-V");
+    expectTrue(compiler.pollHotReload() == 0u, "unchanged file reports no hot reload");
+
+    expectTrue(writeFile(glslPath, "void main() { /* hot reload */ }\n"), "temp shader rewritten");
+    expectTrue(compiler.pollHotReload() >= 1u, "rewrite triggers at least one recompile");
+
+    compiled = compiler.lastCompiled(glslUtf8.c_str());
+    expectTrue(compiled != nullptr && compiled->valid, "lastCompiled still valid after reload");
+
+    std::error_code ec;
+    std::filesystem::remove(glslPath, ec);
+    std::filesystem::remove(spvPath, ec);
+}
+
 } // namespace
 
 int main() {
@@ -209,6 +281,7 @@ int main() {
     testCookedFuseshaderLoader();
     testCreateFromCompiledShader();
     testShaderModuleAndPipelineLayout();
+    testHotReloadPoller();
 
     fuse::core::shutdown();
 

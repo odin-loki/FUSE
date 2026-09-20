@@ -236,6 +236,9 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
 
     VkPhysicalDeviceVulkan12Features supported12{};
     supported12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    VkPhysicalDeviceDynamicRenderingFeatures supportedDyn{};
+    supportedDyn.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
+    supported12.pNext = &supportedDyn;
     VkPhysicalDeviceFeatures2 supported2{};
     supported2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     supported2.pNext = &supported12;
@@ -253,12 +256,28 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     enabled12.bufferDeviceAddress = supported12.bufferDeviceAddress;
     enabled12.timelineSemaphore = supported12.timelineSemaphore;
 
+    VkPhysicalDeviceDynamicRenderingFeatures enabledDyn{};
+    enabledDyn.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
+
+    bool hasDynamicRenderingExt = false;
+    for (const char* extension : enabledExtensions) {
+        if (std::strcmp(extension, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME) == 0) {
+            hasDynamicRenderingExt = true;
+            break;
+        }
+    }
+
     VkPhysicalDeviceFeatures deviceFeatures{};
     deviceFeatures.samplerAnisotropy = supported2.features.samplerAnisotropy;
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     createInfo.pNext = &enabled12;
+    if (hasDynamicRenderingExt && supportedDyn.dynamicRendering) {
+        enabledDyn.dynamicRendering = VK_TRUE;
+        enabledDyn.pNext = &enabled12;
+        createInfo.pNext = &enabledDyn;
+    }
     createInfo.queueCreateInfoCount = static_cast<u32>(queueCreateInfos.size());
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
     createInfo.pEnabledFeatures = &deviceFeatures;
@@ -279,6 +298,7 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     m_info.descriptorIndexing = enabled12.descriptorIndexing == VK_TRUE;
     m_info.bufferDeviceAddress = enabled12.bufferDeviceAddress == VK_TRUE;
     m_info.timelineSemaphore = enabled12.timelineSemaphore == VK_TRUE;
+    m_info.dynamicRendering = enabledDyn.dynamicRendering == VK_TRUE;
     m_info.queues.graphicsFamily = graphicsFamily;
     m_info.queues.computeFamily = computeFamily;
     m_info.queues.transferFamily = transferFamily;

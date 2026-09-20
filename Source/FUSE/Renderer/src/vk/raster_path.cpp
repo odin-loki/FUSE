@@ -48,11 +48,16 @@ RasterPath::~RasterPath() {
 }
 
 bool RasterPath::recordFrame(const RenderCommandList& commands) {
+    m_shaderWatch.pollChanged();
+    ++m_stats.shaderWatchPolls;
     updateStatsFromCommands(commands);
     return m_stats.pipelineReady;
 }
 
 void RasterPath::updateStatsFromCommands(const RenderCommandList& commands) {
+    m_shaderWatch.pollChanged();
+    ++m_stats.shaderWatchPolls;
+
     if (!m_stats.pipelineReady) {
         m_stats.message = "raster path not ready";
         return;
@@ -81,6 +86,8 @@ VkFrameEncodeContext RasterPath::vulkanEncodeContext() const {
     context.renderPass = m_renderPass->nativeHandle();
     context.framebuffer = m_framebuffer;
     context.graphicsPipeline = m_graphicsPipeline->nativeHandle();
+    context.graphicsPipelineLayout =
+        m_pipelineLayout != nullptr ? m_pipelineLayout->nativeHandle() : nullptr;
     context.vertexBuffer = m_vertexBuffer;
     context.width = m_desc.width;
     context.height = m_desc.height;
@@ -88,6 +95,9 @@ VkFrameEncodeContext RasterPath::vulkanEncodeContext() const {
                      context.graphicsPipeline != nullptr && context.vertexBuffer != nullptr &&
                      context.width > 0u && context.height > 0u;
     context.barrierImage = m_colorImage;
+    if (m_bindless != nullptr && m_bindless->descriptorSetHandle() != nullptr) {
+        context.bindlessDescriptorSet = m_bindless->descriptorSetHandle();
+    }
 #else
     (void)0;
 #endif
@@ -143,13 +153,37 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
         return false;
     }
 
+    m_shaderWatch.watch(desc.vertexSpirvPath);
+    m_shaderWatch.watch(desc.fragmentSpirvPath);
+    m_stats.shaderFilesWatched = m_shaderWatch.watchedCount();
+
+    m_bindless = nullptr;
+    m_ownedBindlessInitialized = false;
+    if (desc.bindless != nullptr) {
+        m_bindless = desc.bindless;
+    } else {
+        m_ownedBindless.init(device);
+        m_ownedBindlessInitialized = true;
+        if (m_ownedBindless.vulkanDescriptorsReady()) {
+            m_bindless = &m_ownedBindless;
+        } else {
+            m_ownedBindless.destroy(device);
+            m_ownedBindlessInitialized = false;
+            m_bindless = nullptr;
+        }
+    }
+
     PipelineLayoutDesc layoutDesc{};
     layoutDesc.debugName = "raster_path_layout";
+    if (m_bindless != nullptr && m_bindless->layoutHandle() != nullptr) {
+        layoutDesc.bindlessSetLayout = m_bindless->layoutHandle();
+    }
     m_pipelineLayout = PipelineLayout::create(device, layoutDesc);
     if (m_pipelineLayout == nullptr || !m_pipelineLayout->isValid()) {
         m_stats.message = "pipeline layout creation failed";
         return false;
     }
+    m_stats.bindlessLayoutReady = m_pipelineLayout->info().hasBindlessSet;
 
     m_pipelineCache = PipelineCache::create(device);
     if (m_pipelineCache == nullptr || !m_pipelineCache->isValid()) {
@@ -333,6 +367,12 @@ void RasterPath::shutdown() {
     m_fragmentShader.reset();
     m_vertexShader.reset();
     m_renderPass.reset();
+
+    if (m_ownedBindlessInitialized && m_device != nullptr) {
+        m_ownedBindless.destroy(*m_device);
+        m_ownedBindlessInitialized = false;
+    }
+    m_bindless = nullptr;
     m_device = nullptr;
 }
 

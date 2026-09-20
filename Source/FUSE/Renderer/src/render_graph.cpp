@@ -1,6 +1,7 @@
 #include <fuse/renderer/composite_pass.hpp>
 
 #include <algorithm>
+#include <cstring>
 #include <unordered_map>
 #include <vector>
 
@@ -52,6 +53,20 @@ RenderGraph::TextureState& RenderGraph::textureStateAt(u32 textureId) {
     return m_textureStates[textureId];
 }
 
+RenderGraph::BufferState& RenderGraph::bufferStateAt(u32 id) {
+    if (id >= m_bufferStates.size()) {
+        m_bufferStates.resize(id + 1u);
+    }
+    return m_bufferStates[id];
+}
+
+BufferHandle RenderGraph::importedBufferHandle(u32 bufferId) const {
+    if (bufferId >= m_bufferStates.size()) {
+        return {};
+    }
+    return m_bufferStates[bufferId].sourceHandle;
+}
+
 void RenderGraph::reset() {
     m_backbufferIndex = 0;
     m_nextTextureId = kBackbufferTextureId + 1u;
@@ -59,7 +74,9 @@ void RenderGraph::reset() {
     m_compileInfo = {};
     m_passes.clear();
     m_barriers.clear();
+    m_bufferBarriers.clear();
     m_textureStates.clear();
+    m_bufferStates.clear();
     m_explicitEdges.clear();
     m_dependencyEdges.clear();
     m_resourceLifetimes.clear();
@@ -84,8 +101,11 @@ RGTextureRef RenderGraph::importTexture(TextureHandle handle, RGImageLayout curr
     return ref;
 }
 
-RGBufferRef RenderGraph::importBuffer(BufferHandle /*handle*/) {
+RGBufferRef RenderGraph::importBuffer(BufferHandle handle) {
     RGBufferRef ref{m_nextBufferId++};
+    BufferState& state = bufferStateAt(ref.id);
+    state.imported = true;
+    state.sourceHandle = handle;
     return ref;
 }
 
@@ -198,6 +218,24 @@ void RenderGraph::planBarriersForPass(const PassNode& pass) {
         state.written = state.written ||
                         access.access == RGResourceAccess::ColorAttachmentWrite ||
                         access.access == RGResourceAccess::DepthAttachmentWrite ||
+                        access.access == RGResourceAccess::ShaderWrite ||
+                        access.access == RGResourceAccess::TransferDst ||
+                        access.access == RGResourceAccess::CUDAWrite;
+    }
+
+    for (const RGBufferAccess& access : pass.bufferAccesses) {
+        BufferState& state = bufferStateAt(access.buffer.id);
+        if (state.touched && state.lastAccess != access.access) {
+            RGBufferBarrier barrier;
+            barrier.buffer = access.buffer;
+            barrier.fromAccess = state.lastAccess;
+            barrier.toAccess = access.access;
+            m_bufferBarriers.push_back(barrier);
+        }
+
+        state.touched = true;
+        state.lastAccess = access.access;
+        state.written = state.written ||
                         access.access == RGResourceAccess::ShaderWrite ||
                         access.access == RGResourceAccess::TransferDst ||
                         access.access == RGResourceAccess::CUDAWrite;
@@ -427,6 +465,7 @@ void RenderGraph::assignExecutionOrder() {
 
 void RenderGraph::compile() {
     m_barriers.clear();
+    m_bufferBarriers.clear();
     m_compileInfo = {};
     m_compileInfo.passCount = static_cast<u32>(m_passes.size());
 
@@ -440,12 +479,19 @@ void RenderGraph::compile() {
     backbuffer.imported = true;
     backbuffer.layout = RGImageLayout::Undefined;
 
+    for (BufferState& state : m_bufferStates) {
+        state.lastAccess = RGResourceAccess::ShaderRead;
+        state.written = false;
+        state.touched = false;
+    }
+
     for (const u32 passIndex : m_compileOrder) {
         planBarriersForPass(m_passes[passIndex]);
     }
 
     assignExecutionOrder();
     m_compileInfo.barrierCount = static_cast<u32>(m_barriers.size());
+    m_compileInfo.bufferBarrierCount = static_cast<u32>(m_bufferBarriers.size());
     m_compileInfo.dependencyEdgeCount = static_cast<u32>(m_dependencyEdges.size());
     m_compileInfo.resourceLifetimeCount = static_cast<u32>(m_resourceLifetimes.size());
     m_compileInfo.compiled = true;
@@ -458,6 +504,17 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
     RenderGraphExecuteInfo result;
     if (!m_compileInfo.compiled) {
         return result;
+    }
+
+    if (frames.isReady()) {
+        const u32 scratchBytes = static_cast<u32>(m_compileOrder.size() * sizeof(u32));
+        if (scratchBytes > 0u) {
+            void* scratch = frames.allocateScratch(scratchBytes);
+            if (scratch != nullptr) {
+                std::memcpy(scratch, m_compileOrder.data(), scratchBytes);
+            }
+        }
+        result.scratchBytesUsed = frames.scratchUsedBytes();
     }
 
     void* nativeCommandBuffer = frames.currentCommandBuffer();
@@ -474,16 +531,18 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
                                  static_cast<u32>(barrier.toLayout));
     }
 
+    result.bufferBarrierCount = static_cast<u32>(m_bufferBarriers.size());
+
     for (const u32 passIndex : m_compileOrder) {
         const PassNode& pass = m_passes[passIndex];
 
-        recorder.beginPass(pass.desc.name != nullptr ? pass.desc.name : "pass");
         if (pass.desc.isCuda) {
+            ++result.cudaPassCount;
             ++result.executedPassCount;
-            recorder.endPass();
             continue;
         }
 
+        recorder.beginPass(pass.desc.name != nullptr ? pass.desc.name : "pass");
         if (pass.desc.execute != nullptr) {
             pass.desc.execute(&recorder, pass.desc.userData);
         }

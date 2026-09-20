@@ -31,6 +31,23 @@ std::string fixturePath(const char* name) {
     return std::string(FUSE_SHADER_FIXTURE_DIR) + "/" + name;
 }
 
+void testHashedFileName() {
+    const std::string zeroName = fuse::renderer::PipelineCache::hashedFileName(0);
+    expectTrue(zeroName == "fuse_pso_0000000000000000.bin",
+               "hashedFileName(0) equals fuse_pso_0000000000000000.bin");
+
+    const std::string abcName = fuse::renderer::PipelineCache::hashedFileName(0xABC);
+    expectTrue(abcName.find("fuse_pso_") != std::string::npos, "hashedFileName(0xABC) contains fuse_pso_");
+    expectTrue(abcName.find(".bin") != std::string::npos, "hashedFileName(0xABC) contains .bin");
+    expectTrue(abcName != zeroName, "hashedFileName(0xABC) differs from hash 0");
+
+    const std::string hashA = fuse::renderer::PipelineCache::hashedFileName(0x11);
+    const std::string hashB = fuse::renderer::PipelineCache::hashedFileName(0x22);
+    expectTrue(hashA != hashB, "different hashes produce different cache file names");
+    expectTrue(hashA.find('/') == std::string::npos && hashA.find('\\') == std::string::npos,
+               "hashedFileName has no path separators");
+}
+
 void testSnapshotRestoreRoundTrip() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -79,6 +96,15 @@ void testSnapshotRestoreRoundTrip() {
     expectTrue(restored->readCacheFile(cachePath.string().c_str()), "readCacheFile restores blob");
     std::error_code ec;
     std::filesystem::remove(cachePath, ec);
+
+    const std::filesystem::path tempDir = std::filesystem::temp_directory_path();
+    expectTrue(cache->writeCacheFileForHash(tempDir.string().c_str(), 0x11),
+               "writeCacheFileForHash succeeds");
+    auto restoredHash = fuse::renderer::PipelineCache::create(*device);
+    expectTrue(restoredHash != nullptr && restoredHash->isValid(), "hash-restore cache allocated");
+    expectTrue(restoredHash->readCacheFileForHash(tempDir.string().c_str(), 0x11),
+               "readCacheFileForHash restores blob");
+    std::filesystem::remove(tempDir / fuse::renderer::PipelineCache::hashedFileName(0x11), ec);
 #else
     (void)bootstrap;
 #endif
@@ -88,6 +114,7 @@ void testSnapshotRestoreRoundTrip() {
 
 int main() {
     fuse::core::initialize();
+    testHashedFileName();
     testSnapshotRestoreRoundTrip();
     fuse::core::shutdown();
 

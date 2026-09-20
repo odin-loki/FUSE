@@ -10,6 +10,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 
 #ifndef FUSE_SHADER_FIXTURE_DIR
@@ -152,6 +153,86 @@ void testRasterPathClearTriangle() {
 #endif
 }
 
+void testDynamicRenderingPipeline() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for dynamic rendering pipeline tests");
+
+    fuse::renderer::VulkanDevice* device = bootstrap->device();
+    if (device == nullptr) {
+        expectTrue(!bootstrap->status().deviceReady, "device unavailable without Vulkan loader");
+        return;
+    }
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (bootstrap->status().deviceReady) {
+        bool hasDyn = device->info().dynamicRendering;
+        for (const char* e : device->info().enabledExtensions) {
+            if (e && std::strcmp(e, "VK_KHR_dynamic_rendering") == 0) {
+                hasDyn = true;
+            }
+        }
+        if (!hasDyn) {
+            std::printf("SKIP: dynamic rendering not advertised by device\n");
+            return;
+        }
+    } else {
+        return;
+    }
+#endif
+
+    const std::string vertPath = fixturePath("minimal.vert.spv");
+    const std::string fragPath = fixturePath("minimal.frag.spv");
+
+    auto vertModule =
+        fuse::renderer::ShaderModule::createFromFile(*device, fuse::renderer::ShaderStage::Vertex,
+                                                     vertPath.c_str());
+    auto fragModule =
+        fuse::renderer::ShaderModule::createFromFile(*device, fuse::renderer::ShaderStage::Fragment,
+                                                     fragPath.c_str());
+    expectTrue(vertModule != nullptr && fragModule != nullptr,
+               "fixture shader modules allocated for dynamic rendering");
+
+    auto pipelineLayout = fuse::renderer::PipelineLayout::create(*device);
+    expectTrue(pipelineLayout != nullptr && pipelineLayout->isValid(),
+               "pipeline layout created for dynamic rendering");
+
+    fuse::renderer::GraphicsPipelineDesc pipelineDesc{};
+    pipelineDesc.layout = pipelineLayout.get();
+    pipelineDesc.vertexShader = vertModule.get();
+    pipelineDesc.fragmentShader = fragModule.get();
+    pipelineDesc.useDynamicRendering = true;
+    pipelineDesc.debugName = "test_dynamic_rendering_pipeline";
+
+    auto graphicsPipeline = fuse::renderer::GraphicsPipeline::create(*device, pipelineDesc);
+    expectTrue(graphicsPipeline != nullptr, "dynamic rendering pipeline allocated");
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (device->info().dynamicRendering) {
+        expectTrue(graphicsPipeline->isValid(),
+                   "dynamic rendering pipeline valid when device.info().dynamicRendering");
+        expectTrue(graphicsPipeline->info().dynamicRendering,
+                   "pipeline info.dynamicRendering is true");
+        expectTrue(graphicsPipeline->nativeHandle() != nullptr,
+                   "dynamic rendering pipeline has native handle");
+    } else if (!graphicsPipeline->isValid()) {
+        std::printf("SKIP: ICD may lack dynamic rendering feature\n");
+        return;
+    } else {
+        expectTrue(graphicsPipeline->info().dynamicRendering,
+                   "pipeline info.dynamicRendering is true");
+    }
+#else
+    expectTrue(graphicsPipeline->isValid(), "dynamic rendering pipeline valid in stub backend");
+    expectTrue(graphicsPipeline->info().dynamicRendering,
+               "stub pipeline info.dynamicRendering is true");
+    expectTrue(graphicsPipeline->nativeHandle() == nullptr, "stub backend has no native handle");
+#endif
+}
+
 void testRhiContextWiresRasterPath() {
     fuse::renderer::RhiContext::Desc desc{};
     desc.bootstrap.instance.enableValidation = false;
@@ -186,6 +267,7 @@ int main() {
     fuse::core::initialize();
 
     testGraphicsPipelineFromFixtures();
+    testDynamicRenderingPipeline();
     testRasterPathClearTriangle();
     testRhiContextWiresRasterPath();
 

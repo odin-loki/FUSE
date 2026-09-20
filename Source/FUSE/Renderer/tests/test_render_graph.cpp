@@ -273,6 +273,157 @@ void testTransientResourceLifetimeTracked() {
     expectTrue(lifetime->lastPassIndex == 1u, "lifetime ends at last transient reader pass");
 }
 
+void testCudaPassSkipsVulkanBeginEnd() {
+    fuse::renderer::RenderGraph graph;
+    graph.beginFrame(0u);
+
+    fuse::renderer::RGPassDesc cudaPass{};
+    cudaPass.name = "cuda";
+    cudaPass.isCuda = true;
+    graph.addPass(cudaPass);
+
+    fuse::renderer::RGTextureAccess present{};
+    present.texture = {fuse::renderer::RenderGraph::kBackbufferTextureId};
+    present.access = fuse::renderer::RGResourceAccess::Present;
+
+    fuse::renderer::RGPassDesc presentPass{};
+    presentPass.name = "present";
+    presentPass.textureAccesses = &present;
+    presentPass.textureAccessCount = 1;
+    graph.addPass(presentPass);
+
+    graph.compile();
+
+    expectTrue(graph.compileInfo().compiled, "CUDA graph compiled");
+    expectTrue(graph.compileInfo().executablePassCount == 2u, "CUDA + present kept");
+    expectTrue(graph.compileOrder().size() == 2u, "compile order retains CUDA pass");
+
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+    expectTrue(instance != nullptr, "instance allocated for CUDA execute");
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    expectTrue(device != nullptr, "device allocated for CUDA execute");
+    auto frames = fuse::renderer::FrameManager::create(*device);
+    expectTrue(frames != nullptr, "frame manager allocated for CUDA execute");
+
+    fuse::renderer::CommandBufferRecorder recorder;
+    const fuse::renderer::RenderGraphExecuteInfo info = graph.execute(*device, *frames, recorder);
+
+    expectTrue(info.cudaPassCount == 1u, "CUDA pass counted at execute");
+    expectTrue(info.executedPassCount == 2u, "CUDA + present counted as executed");
+
+    fuse::u32 beginPassCount = 0;
+    fuse::u32 endPassCount = 0;
+    for (const fuse::renderer::CommandRecord& record : recorder.records()) {
+        if (record.kind == fuse::renderer::CommandRecordKind::BeginPass) {
+            ++beginPassCount;
+        }
+        if (record.kind == fuse::renderer::CommandRecordKind::EndPass) {
+            ++endPassCount;
+        }
+    }
+    expectTrue(beginPassCount == 1u, "CUDA pass does not record Vulkan beginPass");
+    expectTrue(endPassCount == 1u, "CUDA pass does not record Vulkan endPass");
+}
+
+void testImportBufferStoresHandle() {
+    fuse::renderer::RenderGraph graph;
+    graph.beginFrame(0u);
+
+    fuse::renderer::BufferHandle handle(42u, 7u);
+    const fuse::renderer::RGBufferRef ref = graph.importBuffer(handle);
+    expectTrue(ref.id != 0u, "imported buffer receives a non-zero id");
+
+    const fuse::renderer::BufferHandle stored = graph.importedBufferHandle(ref.id);
+    expectTrue(stored == handle, "importBuffer stores the source handle");
+    expectTrue(stored.index() == 42u && stored.generation() == 7u,
+               "imported buffer handle index/generation preserved");
+
+    fuse::renderer::BufferHandle invalid{};
+    const fuse::renderer::RGBufferRef invalidRef = graph.importBuffer(invalid);
+    expectTrue(graph.importedBufferHandle(invalidRef.id) == invalid,
+               "invalid BufferHandle identity is preserved");
+}
+
+void testBufferBarrierPlannedWriteThenRead() {
+    fuse::renderer::RenderGraph graph;
+    graph.beginFrame(0u);
+
+    const fuse::renderer::RGBufferRef buffer = graph.importBuffer({});
+
+    fuse::renderer::RGBufferAccess writeAccess{};
+    writeAccess.buffer = buffer;
+    writeAccess.access = fuse::renderer::RGResourceAccess::ShaderWrite;
+
+    fuse::renderer::RGPassDesc writePass{};
+    writePass.name = "buf_write";
+    writePass.bufferAccesses = &writeAccess;
+    writePass.bufferAccessCount = 1;
+    graph.addPass(writePass);
+
+    fuse::renderer::RGBufferAccess readAccess{};
+    readAccess.buffer = buffer;
+    readAccess.access = fuse::renderer::RGResourceAccess::ShaderRead;
+
+    fuse::renderer::RGPassDesc readPass{};
+    readPass.name = "buf_read";
+    readPass.bufferAccesses = &readAccess;
+    readPass.bufferAccessCount = 1;
+    graph.addPass(readPass);
+
+    fuse::renderer::RGTextureAccess present{};
+    present.texture = {fuse::renderer::RenderGraph::kBackbufferTextureId};
+    present.access = fuse::renderer::RGResourceAccess::Present;
+
+    fuse::renderer::RGPassDesc presentPass{};
+    presentPass.name = "present";
+    presentPass.textureAccesses = &present;
+    presentPass.textureAccessCount = 1;
+    graph.addPass(presentPass);
+
+    graph.addPassDependency(0u, 1u);
+    graph.addPassDependency(1u, 2u);
+
+    graph.compile();
+
+    expectTrue(graph.plannedBufferBarriers().size() >= 1u,
+               "write-then-read plans a buffer barrier");
+    expectTrue(graph.compileInfo().bufferBarrierCount >= 1u,
+               "compile info records buffer barrier count");
+}
+
+void testExecuteCopiesCompileOrderToScratch() {
+    fuse::renderer::VulkanBootstrapDesc desc{};
+    desc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(desc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for scratch copy");
+    if (bootstrap == nullptr || bootstrap->device() == nullptr ||
+        bootstrap->frameManager() == nullptr || !bootstrap->frameManager()->isReady()) {
+        return;
+    }
+
+    fuse::renderer::RenderGraph graph;
+    graph.beginFrame(0u);
+
+    fuse::renderer::RGTextureAccess present{};
+    present.texture = {fuse::renderer::RenderGraph::kBackbufferTextureId};
+    present.access = fuse::renderer::RGResourceAccess::Present;
+
+    fuse::renderer::RGPassDesc presentPass{};
+    presentPass.name = "present";
+    presentPass.textureAccesses = &present;
+    presentPass.textureAccessCount = 1;
+    graph.addPass(presentPass);
+    graph.compile();
+
+    fuse::renderer::CommandBufferRecorder recorder;
+    const fuse::renderer::RenderGraphExecuteInfo info =
+        graph.execute(*bootstrap->device(), *bootstrap->frameManager(), recorder);
+    expectTrue(info.scratchBytesUsed > 0u, "compile order copied into frame scratch");
+}
+
 void testRhiContextUsesRenderGraph() {
     fuse::renderer::RhiContext::Desc desc{};
     desc.bootstrap.instance.enableValidation = false;
@@ -307,6 +458,10 @@ int main() {
     testExplicitPassDependencyReordersCompileOrder();
     testResourceAccessBuildsDependencyEdge();
     testTransientResourceLifetimeTracked();
+    testCudaPassSkipsVulkanBeginEnd();
+    testImportBufferStoresHandle();
+    testBufferBarrierPlannedWriteThenRead();
+    testExecuteCopiesCompileOrderToScratch();
     testRhiContextUsesRenderGraph();
 
     fuse::core::shutdown();

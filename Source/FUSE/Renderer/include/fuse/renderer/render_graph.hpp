@@ -60,6 +60,12 @@ struct RGBarrier {
     RGResourceAccess toAccess = RGResourceAccess::ShaderRead;
 };
 
+struct RGBufferBarrier {
+    RGBufferRef buffer;
+    RGResourceAccess fromAccess = RGResourceAccess::ShaderRead;
+    RGResourceAccess toAccess = RGResourceAccess::ShaderRead;
+};
+
 using RGPassExecuteFn = void (*)(void* commandBuffer, void* userData);
 
 struct RGPassDesc {
@@ -106,6 +112,7 @@ struct RenderGraphCompileInfo {
     u32 executablePassCount = 0;
     u32 culledPassCount = 0;
     u32 barrierCount = 0;
+    u32 bufferBarrierCount = 0;
     u32 dependencyEdgeCount = 0;
     u32 resourceLifetimeCount = 0;
     bool compiled = false;
@@ -115,6 +122,9 @@ struct RenderGraphCompileInfo {
 struct RenderGraphExecuteInfo {
     u32 executedPassCount = 0;
     u32 recordedCommands = 0;
+    u32 cudaPassCount = 0;
+    u32 bufferBarrierCount = 0;
+    u32 scratchBytesUsed = 0;
 };
 
 /// Lightweight render graph — pass ordering, barrier planning, and stub command recording.
@@ -141,10 +151,12 @@ public:
 
     const RenderGraphCompileInfo& compileInfo() const { return m_compileInfo; }
     const std::vector<RGBarrier>& plannedBarriers() const { return m_barriers; }
+    const std::vector<RGBufferBarrier>& plannedBufferBarriers() const { return m_bufferBarriers; }
     const std::vector<RGPassDependencyEdge>& dependencyEdges() const { return m_dependencyEdges; }
     const std::vector<RGResourceLifetime>& resourceLifetimes() const { return m_resourceLifetimes; }
     /// Pass indices in execution order after `compile()` (non-culled passes only).
     const std::vector<u32>& compileOrder() const { return m_compileOrder; }
+    BufferHandle importedBufferHandle(u32 bufferId) const;
     u32 backbufferIndex() const { return m_backbufferIndex; }
 
 private:
@@ -165,9 +177,18 @@ private:
         TextureHandle sourceHandle{};
     };
 
+    struct BufferState {
+        RGResourceAccess lastAccess = RGResourceAccess::ShaderRead;
+        bool written = false;
+        bool imported = false;
+        bool touched = false;
+        BufferHandle sourceHandle{};
+    };
+
     RGImageLayout layoutForAccess(RGResourceAccess access) const;
     RGResourceAccess accessForLayout(RGImageLayout layout) const;
     TextureState& textureStateAt(u32 textureId);
+    BufferState& bufferStateAt(u32 id);
     void planBarriersForPass(const PassNode& pass);
     void cullUnusedPasses();
     void buildDependencyEdges();
@@ -181,7 +202,9 @@ private:
     RenderGraphCompileInfo m_compileInfo{};
     std::vector<PassNode> m_passes;
     std::vector<RGBarrier> m_barriers;
+    std::vector<RGBufferBarrier> m_bufferBarriers;
     std::vector<TextureState> m_textureStates;
+    std::vector<BufferState> m_bufferStates;
     std::vector<RGPassDependencyEdge> m_explicitEdges;
     std::vector<RGPassDependencyEdge> m_dependencyEdges;
     std::vector<RGResourceLifetime> m_resourceLifetimes;

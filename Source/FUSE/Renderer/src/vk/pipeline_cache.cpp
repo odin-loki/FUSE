@@ -6,6 +6,8 @@
 
 #include <cstdio>
 #include <fstream>
+#include <iomanip>
+#include <sstream>
 #include <vector>
 
 namespace fuse::renderer {
@@ -169,6 +171,29 @@ bool PipelineCache::readCacheFile(const char* path) {
     }
 
     return restoreFromData(blob);
+}
+
+std::string PipelineCache::hashedFileName(u64 spirvHash) {
+    std::ostringstream name;
+    name << "fuse_pso_" << std::hex << std::nouppercase << std::setw(16) << std::setfill('0')
+         << static_cast<unsigned long long>(spirvHash) << ".bin";
+    return name.str();
+}
+
+bool PipelineCache::writeCacheFileForHash(const char* directory, u64 spirvHash) const {
+    if (directory == nullptr) {
+        return false;
+    }
+    const std::string path = std::string(directory) + "/" + hashedFileName(spirvHash);
+    return writeCacheFile(path.c_str());
+}
+
+bool PipelineCache::readCacheFileForHash(const char* directory, u64 spirvHash) {
+    if (directory == nullptr) {
+        return false;
+    }
+    const std::string path = std::string(directory) + "/" + hashedFileName(spirvHash);
+    return readCacheFile(path.c_str());
 }
 
 } // namespace fuse::renderer

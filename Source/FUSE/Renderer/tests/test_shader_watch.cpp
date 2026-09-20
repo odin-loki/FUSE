@@ -51,6 +51,8 @@ void testNullPathRejected() {
     expectTrue(!watch.watch(nullptr), "watch rejects null path");
     expectTrue(watch.watchedCount() == 0u, "null watch does not record an entry");
     expectTrue(watch.pollChanged() == 0u, "empty watcher poll is zero");
+    expectTrue(watch.lastChangedCount() == 0u, "empty watcher lastChangedCount is zero");
+    expectTrue(watch.lastChangedPath(0) == nullptr, "empty watcher lastChangedPath(0) is null");
 }
 
 void testPollDetectsRewrite() {
@@ -65,7 +67,16 @@ void testPollDetectsRewrite() {
 
     expectTrue(writeFile(path, "void main() { /* hot reload */ }\n"), "temp shader rewritten");
     expectTrue(watch.pollChanged() >= 1u, "rewrite reports at least one change");
+    expectTrue(watch.lastChangedCount() >= 1u, "rewrite records at least one last-changed path");
+    const char* changedPath = watch.lastChangedPath(0);
+    expectTrue(changedPath != nullptr, "lastChangedPath(0) is non-null after rewrite");
+    if (changedPath != nullptr) {
+        const std::string changed(changedPath);
+        expectTrue(changed.find(path.stem().string()) != std::string::npos,
+                   "lastChangedPath contains temp filename stem");
+    }
     expectTrue(watch.pollChanged() == 0u, "second poll after rewrite is stable");
+    expectTrue(watch.lastChangedCount() == 0u, "stable poll clears last-changed list");
 
     std::error_code ec;
     std::filesystem::remove(path, ec);

@@ -38,6 +38,15 @@ public:
     bool writeCacheFile(const char* path) const;
     bool readCacheFile(const char* path);
 
+    /// "fuse_pso_<16 lowercase hex digits>.bin" from spirvHash; hash 0 still produces a well-formed name.
+    static std::string hashedFileName(u64 spirvHash);
+
+    /// Writes snapshot to directory/hashedFileName(spirvHash). directory must be non-null.
+    bool writeCacheFileForHash(const char* directory, u64 spirvHash) const;
+
+    /// Reads directory/hashedFileName(spirvHash) via readCacheFile.
+    bool readCacheFileForHash(const char* directory, u64 spirvHash);
+
 private:
     PipelineCache() = default;
     bool initialize(VulkanDevice& device);

@@ -139,11 +139,22 @@ void testResourceManagerBuffersAndTextures() {
     textureDesc.usage = fuse::renderer::ImageUsage::Sampled;
     u8 texels[4 * 4 * 4] = {};
 
+    const fuse::usize stagingBeforeTexture = resources.stagingRingOffset();
     const fuse::renderer::TextureHandle texture = resources.createTexture(textureDesc, texels);
     expectTrue(texture.isValid(), "texture handle issued");
     expectTrue(resources.getTexture(texture) != nullptr, "texture resolvable");
     expectTrue(resources.getTexture(texture)->bindlessIndex != UINT32_MAX,
                "texture bindless index assigned");
+    expectTrue(resources.stagingRingOffset() > stagingBeforeTexture,
+               "texture initialData advances staging offset");
+#if defined(FUSE_VULKAN_BACKEND)
+    if (bootstrap->status().deviceReady) {
+        expectTrue(resources.lastGpuTextureCopySubmitted(),
+                   "GPU vkCmdCopyBufferToImage submitted for texture initialData");
+        expectTrue(resources.lastGpuTextureCopyBytes() == 4u * 4u * 4u,
+                   "GPU texture copy bytes match R8G8B8A8Unorm 4x4");
+    }
+#endif
 
     expectTrue(resources.stagingRingCapacity() == resourceDesc.stagingRingBytes,
                "staging ring capacity recorded");

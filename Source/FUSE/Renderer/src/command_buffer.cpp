@@ -15,6 +15,19 @@ bool isRealVulkanCommandBuffer(void* nativeCommandBuffer) {
     return nativeCommandBuffer != nullptr && nativeCommandBuffer != reinterpret_cast<void*>(0x1);
 }
 
+#if defined(FUSE_VULKAN_BACKEND)
+void bindRasterBindlessDescriptorSets(VkCommandBuffer commandBuffer, const VkFrameEncodeContext& context) {
+    if (context.bindlessDescriptorSet == nullptr || context.graphicsPipelineLayout == nullptr) {
+        return;
+    }
+
+    VkDescriptorSet bindlessSet = static_cast<VkDescriptorSet>(context.bindlessDescriptorSet);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            static_cast<VkPipelineLayout>(context.graphicsPipelineLayout), 0, 1,
+                            &bindlessSet, 0, nullptr);
+}
+#endif
+
 } // namespace
 
 void CommandBufferRecorder::reset() {
@@ -269,6 +282,7 @@ void CommandBufferRecorder::beginVulkanRenderPass() {
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       static_cast<VkPipeline>(m_encodeContext->graphicsPipeline));
+    bindRasterBindlessDescriptorSets(commandBuffer, *m_encodeContext);
 
     VkViewport viewport{};
     viewport.width = static_cast<float>(m_encodeContext->width);
@@ -313,6 +327,7 @@ void CommandBufferRecorder::encodeDraw(u32 instanceCount) {
     VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(m_encodeContext->vertexBuffer)};
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+    bindRasterBindlessDescriptorSets(commandBuffer, *m_encodeContext);
 
     const u32 instances = instanceCount > 0u ? instanceCount : 1u;
     vkCmdDraw(commandBuffer, 3, instances, 0, 0);

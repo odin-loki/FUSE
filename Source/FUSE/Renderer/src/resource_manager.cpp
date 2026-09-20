@@ -72,26 +72,12 @@ BufferUsage withBufferUsage(BufferUsage usage, BufferUsage flag) {
     return static_cast<BufferUsage>(static_cast<u32>(usage) | static_cast<u32>(flag));
 }
 
-bool memoryNeedsHostMapping(MemoryUsage usage) {
-    return usage == MemoryUsage::CpuToGpu || usage == MemoryUsage::GpuToCpu;
+ImageUsage withImageUsage(ImageUsage usage, ImageUsage flag) {
+    return static_cast<ImageUsage>(static_cast<u32>(usage) | static_cast<u32>(flag));
 }
 
-void stageTextureInitialData(Buffer* staging, usize& stagingOffset, usize stagingCapacity,
-                             const TextureDesc& desc, const void* initialData) {
-    if (staging == nullptr || staging->mapped == nullptr || initialData == nullptr) {
-        return;
-    }
-
-    const usize bytes = gpu_alloc_detail::estimateImageBytes(desc);
-    if (bytes == 0 || bytes > stagingCapacity) {
-        return;
-    }
-    if (stagingOffset + bytes > stagingCapacity) {
-        stagingOffset = 0;
-    }
-
-    std::memcpy(static_cast<u8*>(staging->mapped) + stagingOffset, initialData, bytes);
-    stagingOffset += bytes;
+bool memoryNeedsHostMapping(MemoryUsage usage) {
+    return usage == MemoryUsage::CpuToGpu || usage == MemoryUsage::GpuToCpu;
 }
 
 #if defined(FUSE_VULKAN_BACKEND)
@@ -162,6 +148,112 @@ void oneShotCopyBuffer(VulkanDevice& device, void* srcHandle, void* dstHandle, u
     }
 
     vkDestroyCommandPool(vkDevice, pool, nullptr);
+}
+
+bool oneShotCopyBufferToImage(VulkanDevice& device, void* srcHandle, void* dstImage, usize srcOffset,
+                              u32 width, u32 height, u32 depth) {
+    if (!device.isValid() || device.nativeHandle() == nullptr || width == 0 || height == 0) {
+        return false;
+    }
+    if (!bindlessNativeHandleReady(srcHandle) || !bindlessNativeHandleReady(dstImage)) {
+        return false;
+    }
+
+    auto queue = static_cast<VkQueue>(device.queues().graphics);
+    if (queue == VK_NULL_HANDLE) {
+        return false;
+    }
+
+    const VkDevice vkDevice = static_cast<VkDevice>(device.nativeHandle());
+    const u32 extentDepth = depth > 0 ? depth : 1u;
+    const VkImage image = static_cast<VkImage>(dstImage);
+
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    poolInfo.queueFamilyIndex = device.queues().graphicsFamily;
+
+    VkCommandPool pool = VK_NULL_HANDLE;
+    if (vkCreateCommandPool(vkDevice, &poolInfo, nullptr, &pool) != VK_SUCCESS) {
+        return false;
+    }
+
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = pool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    if (vkAllocateCommandBuffers(vkDevice, &allocInfo, &cmd) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return false;
+    }
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return false;
+    }
+
+    VkImageMemoryBarrier toTransfer{};
+    toTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toTransfer.srcAccessMask = 0;
+    toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    toTransfer.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransfer.image = image;
+    toTransfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    toTransfer.subresourceRange.levelCount = 1;
+    toTransfer.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
+                         nullptr, 0, nullptr, 1, &toTransfer);
+
+    VkBufferImageCopy region{};
+    region.bufferOffset = srcOffset;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageExtent = {width, height, extentDepth};
+    vkCmdCopyBufferToImage(cmd, static_cast<VkBuffer>(srcHandle), image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    VkImageMemoryBarrier toShader{};
+    toShader.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toShader.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    toShader.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    toShader.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toShader.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    toShader.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toShader.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toShader.image = image;
+    toShader.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    toShader.subresourceRange.levelCount = 1;
+    toShader.subresourceRange.layerCount = 1;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0,
+                         nullptr, 0, nullptr, 1, &toShader);
+
+    if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return false;
+    }
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+    bool submitted = false;
+    if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) == VK_SUCCESS &&
+        vkQueueWaitIdle(queue) == VK_SUCCESS) {
+        submitted = true;
+    }
+
+    vkDestroyCommandPool(vkDevice, pool, nullptr);
+    return submitted;
 }
 #endif
 
@@ -270,12 +362,20 @@ const GpuAllocStats* ResourceManager::allocatorStats() const {
 }
 
 TextureHandle ResourceManager::createTexture(const TextureDesc& desc, const void* initialData) {
+    m_lastGpuTextureCopySubmitted = false;
+    m_lastGpuTextureCopyBytes = 0;
+
     if (!m_ready || m_allocator == nullptr) {
         return TextureHandle{};
     }
 
+    TextureDesc allocDesc = desc;
+    if (initialData != nullptr) {
+        allocDesc.usage = withImageUsage(desc.usage, ImageUsage::TransferDst);
+    }
+
     Texture texture{};
-    if (!m_allocator->createImage(desc, texture)) {
+    if (!m_allocator->createImage(allocDesc, texture)) {
         return TextureHandle{};
     }
 
@@ -285,10 +385,9 @@ TextureHandle ResourceManager::createTexture(const TextureDesc& desc, const void
         return TextureHandle{};
     }
 
-    // CPU staging only — GPU vkCmdCopyBufferToImage needs a TRANSFER_DST layout
-    // transition that this one-shot path does not record.
-    stageTextureInitialData(getBuffer(m_stagingRing), m_stagingOffset, m_stagingRingCapacity, desc,
-                            initialData);
+    if (initialData != nullptr) {
+        copyTextureInitialDataViaStaging(texture, initialData);
+    }
     return m_textures.insert(std::move(texture));
 }
 
@@ -350,6 +449,44 @@ void ResourceManager::copyInitialDataViaStaging(Buffer& dest, const void* initia
 #endif
 
     m_stagingOffset += size;
+    m_stagingOffset = (m_stagingOffset + (kStagingAlignBytes - 1u)) & ~(kStagingAlignBytes - 1u);
+}
+
+void ResourceManager::copyTextureInitialDataViaStaging(Texture& dest, const void* initialData) {
+    if (initialData == nullptr) {
+        return;
+    }
+
+    const usize bytes = gpu_alloc_detail::estimateImageBytes(dest.desc);
+    if (bytes == 0) {
+        return;
+    }
+
+    Buffer* staging = getBuffer(m_stagingRing);
+    if (staging == nullptr || staging->mapped == nullptr) {
+        return;
+    }
+
+    if (bytes > m_stagingRingCapacity || m_stagingOffset + bytes > m_stagingRingCapacity) {
+        return;
+    }
+
+    const usize srcOffset = m_stagingOffset;
+    std::memcpy(static_cast<u8*>(staging->mapped) + srcOffset, initialData, bytes);
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (m_device != nullptr && m_device->isValid() && bindlessNativeHandleReady(dest.image)) {
+        if (oneShotCopyBufferToImage(*m_device, staging->handle, dest.image, srcOffset, dest.desc.width,
+                                     dest.desc.height, dest.desc.depth)) {
+            m_lastGpuTextureCopySubmitted = true;
+            m_lastGpuTextureCopyBytes = static_cast<u32>(bytes);
+        }
+    }
+#else
+    (void)dest;
+#endif
+
+    m_stagingOffset += bytes;
     m_stagingOffset = (m_stagingOffset + (kStagingAlignBytes - 1u)) & ~(kStagingAlignBytes - 1u);
 }
 
