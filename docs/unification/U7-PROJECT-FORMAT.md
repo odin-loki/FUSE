@@ -176,7 +176,7 @@ Each demo under `Samples/unification/<demo_id>/` ships a `project.json` consumed
 | `write_mesh_stub` | Assimp (`FUSE_HAS_ASSIMP`) — passes `input_path` | `FUSEMESH_STUB` |
 | `write_texture_stub` | STB decode (`FUSE_HAS_STB_IMAGE`) + in-house BC7 mode-6 (`FUSE_HAS_INHOUSE_BC7_ENCODER`) | `FUSETEX_STUB` / `FUSETEX_BC7` |
 | `write_audio_stub` | OGG Vorbis (`FUSE_HAS_OGG_VORBIS`) — WAV sniff stub when linked | `FUSEAUDIO_STUB` |
-| `write_shader_stub` | `.spv` passthrough when input is valid SPIR-V (`FUSESHADER_SPIV`); otherwise honest stub | `FUSESHADER_STUB` |
+| `write_shader_stub` | `.spv` passthrough when input is valid SPIR-V (`FUSESHADER_SPIV`); `glslangValidator` offline compile when available (`FUSESHADER_GLSLANG`); otherwise honest stub | `FUSESHADER_STUB` |
 
 `fuselevel_cook_stub.*` populates `hierarchyLinks` from `ConvertResult::wiringStubCount` on `--fuselevel` cooks.
 
@@ -266,7 +266,17 @@ CTest: `fuse_scene_wire_runtime_bind`, `fuse_world2d_fuselevel_bridge`, `fuse_wo
 | `RuntimeViewportHook::syncEcsToEmbedWorld3D_` | Mirrors editor ECS `Transform` into embed `World3D` scene objects for hybrid compositor |
 | `RuntimeEmbedSession` counters | `ecsWorld3DObjectCount`, `ecsWorld3DSyncTicks`, `vfsAssetPathsRemapped` |
 
-## 18. Deferred (honest backlog)
+## 18. Wave 16 progress
+
+| API | Role |
+|-----|------|
+| `submitT3DShaderLoadsAsync` / `drainT3DShaderLoads` | Async shader VFS read stubs on I/O lane → `HandleTable<Asset>` drain + `AssetCooker::cook_shader` on cache miss |
+| `resolveT3DShaderVfsFromBindings` / `shaderCookCacheKey` | Shader wire binding resolve + content-hash cache keys |
+| `tryCookShaderGlslang` | Offline `glslangValidator -V` hook when source is `.cs`/`.glsl`/`.frag`/`.vert` (falls back to `.spv` passthrough or stub) |
+| `RuntimeViewportHook::syncEcsToEmbedWorld3D_` deepen | Mirrors ECS quaternion rotation into embed `SceneObject3D` yaw/pitch/roll; records `ecsWorld3DSnapshotVisible` after hybrid compose |
+| `RuntimeEmbedSession` counters | `shaderVfsResolved`, `shaderAsyncLoadsSubmitted`, `shaderAsyncLoadsDrained`, `shaderCookCacheHits`, `shaderCookCacheStores`, `ecsWorld3DSnapshotVisible` |
+
+## 19. Deferred (honest backlog)
 
 - Real ispc_texcomp library replacing honest header stub
 - libvorbisenc system package on CI images (runtime libs present; dev headers optional today)

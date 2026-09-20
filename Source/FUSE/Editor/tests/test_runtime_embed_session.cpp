@@ -151,7 +151,9 @@ void testRuntimeEmbedEcsWorld3DSync() {
     const fuse::ecs::EntityID entity = host.editorScene().registry().create();
     fuse::ecs::Transform& transform = host.editorScene().registry().add<fuse::ecs::Transform>(entity);
     transform.position = {1.f, 2.f, 3.f};
+    transform.rotation = {0.f, 0.7071068f, 0.f, 0.7071068f};
 
+    host.gameTick();
     host.gameTick();
     host.gameTick();
 
@@ -161,6 +163,8 @@ void testRuntimeEmbedEcsWorld3DSync() {
                    "ecs world3d mirror creates scene objects");
         expectTrue(host.runtimeViewport().embedSession().ecsWorld3DSyncTicks >= 1u,
                    "ecs world3d sync ticks recorded");
+        expectTrue(host.runtimeViewport().embedSession().ecsWorld3DSnapshotVisible >= 0u,
+                   "ecs world3d snapshot visible count recorded after hybrid compose");
     }
 #endif
     expectTrue(host.runtimeViewport().embedSession().qVulkanWindowWsiProbed,

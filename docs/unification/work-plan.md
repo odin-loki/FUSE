@@ -452,6 +452,8 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 **U6/U7 wave 15 landed:** ECS→`World3D` embed mirror for hybrid viewport compositing; `CookAssetKind::Shader` stub writers + cache keys; VFS legacy path remapping (`remapLegacyAssetPath`, shader virtual paths); Qt WSI probe deepen (instance API version + window lifecycle counters, headless-safe).
 
+**U6/U7 wave 16 landed:** ECS→`World3D` rotation sync + hybrid snapshot visible counter; shader async VFS submit/drain + cook-cache integration in editor embed; `tryCookShaderGlslang` offline compile hook (`FUSESHADER_GLSLANG` when `glslangValidator` on runner).
+
 ---
 
 ## 7. Risk cross-reference

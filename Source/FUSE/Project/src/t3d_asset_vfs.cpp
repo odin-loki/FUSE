@@ -4,6 +4,7 @@
 #include <fuse/log/logger.hpp>
 #include <fuse/project/asset_cooker.hpp>
 #include <fuse/project/cook_content_hash.hpp>
+#include <fuse/project/import_desc.hpp>
 
 #include <cstring>
 #include <filesystem>
@@ -65,6 +66,42 @@ void storeMaterialCookCacheEntry(CookCache& cache, const std::string& physicalPa
     entry.source_path = physicalPath;
     entry.kind = CookAssetKind::Texture;
     cache.store(entry);
+}
+
+void storeShaderCookCacheEntry(CookCache& cache, const std::string& physicalPath,
+                               const std::string& virtualPath) {
+    if (physicalPath.empty() || virtualPath.empty()) {
+        return;
+    }
+
+    const u64 sourceHash = hash_file_content(physicalPath);
+    const u64 cacheKey = combine_cook_cache_key(sourceHash, 0);
+    const std::string outputPath = shaderVirtualPathToCookOutput(virtualPath);
+    if (!is_valid_cook_cache_key(cacheKey) || outputPath.empty()) {
+        return;
+    }
+
+    cache.invalidate_stale_content_for_source(physicalPath, cacheKey);
+
+    CookCacheEntry entry;
+    entry.content_hash = cacheKey;
+    entry.upstream_hash = 0;
+    entry.output_path = outputPath;
+    entry.source_path = physicalPath;
+    entry.kind = CookAssetKind::Shader;
+    cache.store(entry);
+}
+
+ShaderImportDesc::Stage inferShaderStageFromPath(const std::string& physicalPath) {
+    const std::filesystem::path input = std::filesystem::path(physicalPath);
+    const std::string ext = input.extension().string();
+    if (ext == ".cs" || ext == ".comp") {
+        return ShaderImportDesc::Stage::Compute;
+    }
+    if (ext == ".vert") {
+        return ShaderImportDesc::Stage::Vertex;
+    }
+    return ShaderImportDesc::Stage::Fragment;
 }
 
 void mountIfMissing(fuse::io::MountKind kind, const std::string& physicalPath,
@@ -406,6 +443,122 @@ T3DMaterialCookCacheResult drainT3DMaterialLoads(fuse::HandleTable<fuse::io::Ass
     }
 
     result.note = "drained " + std::to_string(result.drainedCount) + " material vfs load(s), stored " +
+                  std::to_string(result.cookCacheStores) + " cook-cache entries";
+    return result;
+}
+
+T3DShaderVfsResolveResult resolveT3DShaderVfsFromBindings(const T3DDatablockResolveResult& bindings) {
+    T3DShaderVfsResolveResult result;
+    fuse::io::VirtualFileSystem& vfs = fuse::io::VirtualFileSystem::instance();
+
+    for (const T3DResolvedBinding& binding : bindings.bindings) {
+        if (binding.kind != "shader") {
+            continue;
+        }
+
+        ++result.shaderCount;
+        const std::string virtualPath = shaderAssetToVirtualPath(binding.refName);
+        std::string physicalPath;
+        if (!virtualPath.empty() && vfs.resolve(virtualPath, physicalPath)) {
+            ++result.resolvedCount;
+        } else {
+            ++result.unresolvedCount;
+        }
+    }
+
+    result.note = "resolved " + std::to_string(result.resolvedCount) + "/" +
+                  std::to_string(result.shaderCount) + " shader wire vfs paths";
+    return result;
+}
+
+u64 shaderCookCacheKey(const std::string& physicalPath) {
+    return combine_cook_cache_key(hash_file_content(physicalPath), 0);
+}
+
+T3DShaderVfsAsyncLoadResult submitT3DShaderLoadsAsync(const T3DDatablockResolveResult& bindings,
+                                                      CookCache* cache) {
+    T3DShaderVfsAsyncLoadResult result;
+    fuse::io::VirtualFileSystem& vfs = fuse::io::VirtualFileSystem::instance();
+
+    auto submitShaderRef = [&](const std::string& shaderRef) {
+        const std::string virtualPath = shaderAssetToVirtualPath(shaderRef);
+        if (virtualPath.empty()) {
+            return;
+        }
+
+        std::string physicalPath;
+        if (cache != nullptr && vfs.resolve(virtualPath, physicalPath) &&
+            tryCookCacheHit(cache, physicalPath, result.cookCacheHits)) {
+            return;
+        }
+
+        const fuse::io::LoadId loadId = vfs.submitLoadAsync(virtualPath);
+        if (loadId != 0u) {
+            result.loadIds.push_back(loadId);
+            ++result.submittedCount;
+        }
+    };
+
+    for (const T3DResolvedBinding& binding : bindings.bindings) {
+        if (binding.kind == "shader") {
+            submitShaderRef(binding.refName);
+        }
+    }
+
+    result.note = "submitted " + std::to_string(result.submittedCount) + " async shader vfs load(s)";
+    if (result.cookCacheHits > 0u) {
+        result.note += ", cook-cache hits=" + std::to_string(result.cookCacheHits);
+    }
+    return result;
+}
+
+T3DShaderVfsAsyncLoadResult submitT3DShaderLoadsAsync(const T3DMissionExtract& /*extract*/,
+                                                      CookCache* /*cache*/) {
+    T3DShaderVfsAsyncLoadResult result;
+    result.note = "submitted 0 async shader vfs load(s)";
+    return result;
+}
+
+T3DShaderCookCacheResult drainT3DShaderLoads(fuse::HandleTable<fuse::io::Asset>& table,
+                                             CookCache* cache) {
+    T3DShaderCookCacheResult result;
+    fuse::io::VirtualFileSystem& vfs = fuse::io::VirtualFileSystem::instance();
+    result.drainedCount = vfs.drainCompletedLoads(table);
+
+    if (cache == nullptr) {
+        result.note = "drained " + std::to_string(result.drainedCount) + " shader vfs load(s)";
+        return result;
+    }
+
+    for (const fuse::io::CompletedLoad& load : vfs.lastDrainedLoads()) {
+        if (!load.success || load.asset.virtualPath.empty()) {
+            continue;
+        }
+
+        std::string physicalPath;
+        if (!vfs.resolve(load.asset.virtualPath, physicalPath)) {
+            continue;
+        }
+
+        const std::string outputPath = shaderVirtualPathToCookOutput(load.asset.virtualPath);
+        if (!outputPath.empty()) {
+            AssetCooker cooker;
+            ShaderImportDesc desc;
+            desc.input_path = physicalPath;
+            desc.output_path = outputPath;
+            desc.stage = inferShaderStageFromPath(physicalPath);
+            const CookRecord cooked = cooker.cook_shader(desc);
+            if (cooked.ok) {
+                storeShaderCookCacheEntry(*cache, physicalPath, load.asset.virtualPath);
+                ++result.cookCacheStores;
+            }
+        } else {
+            storeShaderCookCacheEntry(*cache, physicalPath, load.asset.virtualPath);
+            ++result.cookCacheStores;
+        }
+    }
+
+    result.note = "drained " + std::to_string(result.drainedCount) + " shader vfs load(s), stored " +
                   std::to_string(result.cookCacheStores) + " cook-cache entries";
     return result;
 }

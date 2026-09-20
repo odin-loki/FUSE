@@ -43,6 +43,27 @@ struct T3DMaterialCookCacheResult {
     std::string note;
 };
 
+struct T3DShaderVfsResolveResult {
+    u32 shaderCount = 0;
+    u32 resolvedCount = 0;
+    u32 unresolvedCount = 0;
+    std::string note;
+};
+
+struct T3DShaderVfsAsyncLoadResult {
+    std::vector<fuse::io::LoadId> loadIds;
+    u32 submittedCount = 0;
+    u32 drainedCount = 0;
+    u32 cookCacheHits = 0;
+    std::string note;
+};
+
+struct T3DShaderCookCacheResult {
+    u32 drainedCount = 0;
+    u32 cookCacheStores = 0;
+    std::string note;
+};
+
 /// Mount project asset roots into the process VFS (`/game/`, `/t3d/`, `/t2d/`).
 [[nodiscard]] ProjectVfsMountResult mountProjectAssetRoots(const ProjectManifest& manifest);
 
@@ -87,5 +108,25 @@ struct T3DMaterialCookCacheResult {
 
 /// Count virtual-path mappings derived from resolved scene bindings (material + shader stubs).
 [[nodiscard]] u32 countRemappedAssetVfsPaths(const T3DDatablockResolveResult& bindings);
+
+/// Resolve shader wire bindings from a scene through the VFS registry.
+[[nodiscard]] T3DShaderVfsResolveResult resolveT3DShaderVfsFromBindings(
+    const T3DDatablockResolveResult& bindings);
+
+/// Content-hash key for a resolved shader source on disk (0 when unreadable).
+[[nodiscard]] u64 shaderCookCacheKey(const std::string& physicalPath);
+
+/// Submit async VFS reads for shader refs (I/O lane stub; game thread drains into HandleTable).
+/// When `cache` is non-null, cache hits skip I/O lane submission.
+[[nodiscard]] T3DShaderVfsAsyncLoadResult submitT3DShaderLoadsAsync(const T3DMissionExtract& extract,
+                                                                    CookCache* cache = nullptr);
+
+[[nodiscard]] T3DShaderVfsAsyncLoadResult submitT3DShaderLoadsAsync(
+    const T3DDatablockResolveResult& bindings, CookCache* cache = nullptr);
+
+/// Drain completed shader loads from the VFS I/O lane into the asset handle table.
+/// When `cache` is non-null, successful drains trigger `AssetCooker::cook_shader` on cache miss.
+[[nodiscard]] T3DShaderCookCacheResult drainT3DShaderLoads(fuse::HandleTable<fuse::io::Asset>& table,
+                                                           CookCache* cache = nullptr);
 
 } // namespace fuse::project

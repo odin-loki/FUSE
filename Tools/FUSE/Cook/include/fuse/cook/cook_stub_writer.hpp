@@ -23,6 +23,8 @@ CookStubWriteResult tryCookAudioOgg(const std::string& input_path, const std::st
                                     u32 sample_rate, const char* format);
 CookStubWriteResult tryCookShaderSpirv(const std::string& input_path, const std::string& output_path,
                                        const char* stage, u32 target_version);
+CookStubWriteResult tryCookShaderGlslang(const std::string& input_path, const std::string& output_path,
+                                         const char* stage, u32 target_version);
 
 CookStubWriteResult write_mesh_stub(const std::string& input_path, const std::string& output_path,
                                     u32 lod_count, bool compressed);

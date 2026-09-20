@@ -4,6 +4,7 @@
 #include <fuse/cook/ispc_texcomp_hook.hpp>
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -648,6 +649,93 @@ CookStubWriteResult write_audio_stub(const std::string& input_path, const std::s
     return writeTextStub(output_path, payload.str());
 }
 
+CookStubWriteResult tryCookShaderGlslang(const std::string& input_path, const std::string& output_path,
+                                         const char* stage, u32 target_version) {
+    CookStubWriteResult result;
+    if (input_path.empty() || output_path.empty()) {
+        result.note = "missing_input_or_output_path";
+        return result;
+    }
+
+    const std::filesystem::path input = std::filesystem::path(input_path);
+    const std::string ext = input.extension().string();
+    if (ext != ".cs" && ext != ".glsl" && ext != ".frag" && ext != ".vert" && ext != ".comp") {
+        result.note = "glslang_source_required";
+        return result;
+    }
+
+    const char* stageFlag = "frag";
+    if (stage != nullptr) {
+        if (std::strcmp(stage, "vertex") == 0) {
+            stageFlag = "vert";
+        } else if (std::strcmp(stage, "compute") == 0 || ext == ".cs" || ext == ".comp") {
+            stageFlag = "comp";
+        }
+    } else if (ext == ".vert") {
+        stageFlag = "vert";
+    } else if (ext == ".cs" || ext == ".comp") {
+        stageFlag = "comp";
+    }
+
+    const std::filesystem::path tempSpv =
+        std::filesystem::temp_directory_path() / "fuse_glslang_spv.bin";
+    const std::string tempSpvPath = tempSpv.string();
+
+    std::ostringstream command;
+    command << "glslangValidator -V -S " << stageFlag << " \"" << input_path << "\" -o \""
+            << tempSpvPath << "\"";
+    const int compileResult = std::system(command.str().c_str());
+    if (compileResult != 0) {
+        result.note = "glslang_unavailable_or_failed";
+        std::error_code ec;
+        std::filesystem::remove(tempSpv, ec);
+        return result;
+    }
+
+    std::ifstream in(tempSpvPath, std::ios::binary);
+    if (!in) {
+        result.note = "glslang_output_unreadable";
+        std::error_code ec;
+        std::filesystem::remove(tempSpv, ec);
+        return result;
+    }
+
+    std::vector<char> spirv((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::error_code ec;
+    std::filesystem::remove(tempSpv, ec);
+    if (spirv.empty() || (spirv.size() % 4u) != 0u) {
+        result.note = "glslang_invalid_spirv_size";
+        return result;
+    }
+
+    std::ostringstream header;
+    header << "FUSESHADER_GLSLANG\n";
+    header << "stage=" << (stage != nullptr ? stage : "fragment") << "\n";
+    header << "version=" << target_version << "\n";
+    header << "words=" << (spirv.size() / 4u) << "\n";
+    header << "DATA\n";
+
+    std::string payload = header.str();
+    payload.append(spirv.data(), spirv.size());
+
+    const std::filesystem::path parent = std::filesystem::path(output_path).parent_path();
+    if (!parent.empty()) {
+        std::filesystem::create_directories(parent, ec);
+    }
+
+    std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        result.note = "glslang_output_unwritable";
+        return result;
+    }
+
+    out.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+    result.ok = out.good();
+    result.byteCount = static_cast<u32>(payload.size());
+    result.note = result.ok ? "glslang offline compile written" : "glslang write failed";
+    return result;
+}
+
 CookStubWriteResult tryCookShaderSpirv(const std::string& input_path, const std::string& output_path,
                                        const char* stage, u32 target_version) {
     CookStubWriteResult result;
@@ -706,6 +794,12 @@ CookStubWriteResult tryCookShaderSpirv(const std::string& input_path, const std:
 
 CookStubWriteResult write_shader_stub(const std::string& input_path, const std::string& output_path,
                                       const char* stage, u32 target_version) {
+    const CookStubWriteResult glslangHook =
+        tryCookShaderGlslang(input_path, output_path, stage, target_version);
+    if (glslangHook.ok) {
+        return glslangHook;
+    }
+
     const CookStubWriteResult hook =
         tryCookShaderSpirv(input_path, output_path, stage, target_version);
     if (hook.ok) {

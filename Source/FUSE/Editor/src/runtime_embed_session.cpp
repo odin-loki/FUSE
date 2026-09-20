@@ -42,6 +42,13 @@ void RuntimeEmbedSession::reset() {
     ecsWorld3DSyncTicks = 0;
     materialTextureCooks = 0;
     vfsAssetPathsRemapped = 0;
+    shaderVfsResolved = 0;
+    shaderVfsUnresolved = 0;
+    shaderCookCacheHits = 0;
+    shaderCookCacheStores = 0;
+    shaderAsyncLoadsSubmitted = 0;
+    shaderAsyncLoadsDrained = 0;
+    ecsWorld3DSnapshotVisible = 0;
     qtLivePresentReady = false;
     usesExternalSwapchain = false;
     submittedFrames = 0;

@@ -449,6 +449,65 @@ void testVfsAssetPathRemap() {
                "remapped asset vfs path count includes material and shader bindings");
 }
 
+void testT3DShaderVfsAsyncLoad() {
+    const std::filesystem::path projectRoot = std::filesystem::path("/tmp/fuse_vfs_project");
+    const std::filesystem::path shaderPath =
+        projectRoot / "data" / "shaders" / "Common" / "ScreenSpace.cs";
+    std::filesystem::create_directories(shaderPath.parent_path());
+    writeTempFile(shaderPath.string(), "void main() {}\n");
+
+    fuse::project::ProjectManifest manifest{};
+    manifest.projectRoot = projectRoot.string();
+    fuse::project::mountProjectAssetRoots(manifest);
+
+    fuse::project::T3DDatablockResolveResult bindings;
+    bindings.bindings.push_back({"Post", "Common:ScreenSpace", "shader", 2u});
+
+    const fuse::project::T3DShaderVfsResolveResult resolved =
+        fuse::project::resolveT3DShaderVfsFromBindings(bindings);
+    expectTrue(resolved.shaderCount == 1u, "shader vfs resolve counted refs");
+    expectTrue(resolved.resolvedCount == 1u, "shader vfs path resolved on disk");
+
+    const fuse::project::T3DShaderVfsAsyncLoadResult submitted =
+        fuse::project::submitT3DShaderLoadsAsync(bindings);
+    expectTrue(submitted.submittedCount >= 1u, "async shader vfs load submitted");
+
+    fuse::io::VirtualFileSystem& vfs = fuse::io::VirtualFileSystem::instance();
+    for (fuse::u32 spinGuard = 0u;
+         spinGuard < 1'000'000u && vfs.completedLoadCount() < submitted.submittedCount; ++spinGuard) {
+        std::this_thread::yield();
+    }
+    expectTrue(vfs.completedLoadCount() >= submitted.submittedCount,
+               "async shader vfs load completes on I/O lane");
+
+    const std::string virtualPath = fuse::project::shaderAssetToVirtualPath("Common:ScreenSpace");
+    const std::string cookOutput = fuse::project::shaderVirtualPathToCookOutput(virtualPath);
+    expectTrue(cookOutput == "cooked/shaders/Common/ScreenSpace.fuseshader",
+               "shader virtual path maps to cooked output");
+
+    fuse::HandleTable<fuse::io::Asset> table;
+    fuse::project::CookCache cache;
+    const fuse::project::T3DShaderCookCacheResult drained =
+        fuse::project::drainT3DShaderLoads(table, &cache);
+    expectTrue(drained.drainedCount >= 1u, "async shader vfs load drained to handle table");
+    expectTrue(drained.cookCacheStores >= 1u, "async shader vfs load stored cook-cache entry");
+    expectTrue(vfs.completedLoadCount() == 0u, "shader drain clears completed vfs loads");
+
+    std::string resolvedPhysical;
+    expectTrue(vfs.resolve(virtualPath, resolvedPhysical),
+               "mounted vfs resolves shader path for cook-cache key");
+    const fuse::u64 cacheKey = fuse::project::shaderCookCacheKey(resolvedPhysical);
+    fuse::project::CookCacheEntry cached;
+    expectTrue(cache.lookup(cacheKey, &cached) == fuse::project::CookCacheLookup::Hit,
+               "shader cook-cache entry is retrievable");
+    expectTrue(cached.output_path == cookOutput, "shader cook-cache stores cooked output path");
+
+    const fuse::project::T3DShaderVfsAsyncLoadResult cachedSubmit =
+        fuse::project::submitT3DShaderLoadsAsync(bindings, &cache);
+    expectTrue(cachedSubmit.cookCacheHits >= 1u, "cached shader submit skips I/O on cook-cache hit");
+    expectTrue(cachedSubmit.submittedCount == 0u, "cached shader submit does not enqueue vfs reads");
+}
+
 void testT2DModuleRuntimeBridge() {
     const std::string module = writeTempFile(
         "/tmp/fuse_t2d_bridge.cs",
@@ -482,6 +541,7 @@ int main() {
     testT3DMaterialVfsMountAndResolve();
     testT3DMaterialVfsAsyncLoad();
     testVfsAssetPathRemap();
+    testT3DShaderVfsAsyncLoad();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

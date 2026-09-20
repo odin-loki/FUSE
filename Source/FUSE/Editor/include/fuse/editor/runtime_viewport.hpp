@@ -55,6 +55,7 @@ private:
     void applyPendingResize_();
     void ensureWorldLoaded_(EditorHost& host);
     void drainPendingMaterialLoads_();
+    void drainPendingShaderLoads_();
     void mirrorEditorEntities_(EditorHost& host);
     void syncEcsToEmbedWorld3D_(EditorHost& host);
     void tickHeadlessPresentStub_(EditorHost& host, f32 dt);
@@ -73,6 +74,9 @@ private:
     fuse::project::CookCache m_materialCookCache;
     fuse::HandleTable<fuse::io::Asset> m_materialAssetTable;
     bool m_materialLoadsPending = false;
+    fuse::project::CookCache m_shaderCookCache;
+    fuse::HandleTable<fuse::io::Asset> m_shaderAssetTable;
+    bool m_shaderLoadsPending = false;
 
 #if defined(FUSE_VULKAN_BACKEND)
     void* m_headlessGpuStub = nullptr;

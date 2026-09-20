@@ -24,6 +24,7 @@
 #include <vector>
 
 #include <algorithm>
+#include <cmath>
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <fuse/frame/frame_ctx.hpp>
@@ -34,6 +35,47 @@
 #endif
 
 namespace fuse::editor {
+
+namespace {
+
+struct EulerDeg {
+    float yaw = 0.f;
+    float pitch = 0.f;
+    float roll = 0.f;
+};
+
+EulerDeg quatToEulerDeg(const ecs::quat& q) {
+    constexpr float kRadToDeg = 57.2957795f;
+
+    const float sinrCosp = 2.f * (q.w * q.x + q.y * q.z);
+    const float cosrCosp = 1.f - 2.f * (q.x * q.x + q.y * q.y);
+    const float roll = std::atan2(sinrCosp, cosrCosp) * kRadToDeg;
+
+    const float sinp = 2.f * (q.w * q.y - q.z * q.x);
+    float pitch = 0.f;
+    if (std::abs(sinp) >= 1.f) {
+        pitch = std::copysign(90.f, sinp);
+    } else {
+        pitch = std::asin(sinp) * kRadToDeg;
+    }
+
+    const float sinyCosp = 2.f * (q.w * q.z + q.x * q.y);
+    const float cosyCosp = 1.f - 2.f * (q.y * q.y + q.z * q.z);
+    const float yaw = std::atan2(sinyCosp, cosyCosp) * kRadToDeg;
+
+    return {yaw, pitch, roll};
+}
+
+void applyEcsTransformToSceneObject3D(const ecs::Transform& transform, fuse::SceneObject3D& object) {
+    object.setPosition(transform.position.x, transform.position.y);
+    object.setZ(transform.position.z);
+    const EulerDeg euler = quatToEulerDeg(transform.rotation);
+    object.setYawDeg(euler.yaw);
+    object.setPitchDeg(euler.pitch);
+    object.setRollDeg(euler.roll);
+}
+
+} // namespace
 
 #if defined(FUSE_VULKAN_BACKEND)
 struct RuntimeViewportHeadlessGpuStub {
@@ -174,6 +216,8 @@ void RuntimeViewportHook::setProjectRoot(std::string root) {
     m_surfaceHandoff = {};
     m_materialCookCache.clear();
     m_materialLoadsPending = false;
+    m_shaderCookCache.clear();
+    m_shaderLoadsPending = false;
 }
 
 void RuntimeViewportHook::setExternalSurfaceHandle(void* vkSurface, u32 width, u32 height,
@@ -337,6 +381,17 @@ void RuntimeViewportHook::ensureWorldLoaded_(EditorHost& host) {
     m_embedSession.materialAsyncLoadsSubmitted = materialLoads.submittedCount;
     m_materialLoadsPending = materialLoads.submittedCount > 0u;
 
+    const fuse::project::T3DShaderVfsResolveResult shaderVfs =
+        fuse::project::resolveT3DShaderVfsFromBindings(materialBindings);
+    m_embedSession.shaderVfsResolved = shaderVfs.resolvedCount;
+    m_embedSession.shaderVfsUnresolved = shaderVfs.unresolvedCount;
+
+    const fuse::project::T3DShaderVfsAsyncLoadResult shaderLoads =
+        fuse::project::submitT3DShaderLoadsAsync(materialBindings, &m_shaderCookCache);
+    m_embedSession.shaderCookCacheHits = shaderLoads.cookCacheHits;
+    m_embedSession.shaderAsyncLoadsSubmitted = shaderLoads.submittedCount;
+    m_shaderLoadsPending = shaderLoads.submittedCount > 0u;
+
     m_embedSession.worldLoaded = true;
     m_embedded = true;
 
@@ -368,6 +423,25 @@ void RuntimeViewportHook::drainPendingMaterialLoads_() {
     m_materialAssetTable.commit();
     if (fuse::io::VirtualFileSystem::instance().completedLoadCount() == 0u) {
         m_materialLoadsPending = false;
+    }
+}
+
+void RuntimeViewportHook::drainPendingShaderLoads_() {
+    if (!m_shaderLoadsPending) {
+        return;
+    }
+
+    if (fuse::io::VirtualFileSystem::instance().completedLoadCount() == 0u) {
+        return;
+    }
+
+    const fuse::project::T3DShaderCookCacheResult drained =
+        fuse::project::drainT3DShaderLoads(m_shaderAssetTable, &m_shaderCookCache);
+    m_embedSession.shaderAsyncLoadsDrained += drained.drainedCount;
+    m_embedSession.shaderCookCacheStores += drained.cookCacheStores;
+    m_shaderAssetTable.commit();
+    if (fuse::io::VirtualFileSystem::instance().completedLoadCount() == 0u) {
+        m_shaderLoadsPending = false;
     }
 }
 
@@ -447,8 +521,7 @@ void RuntimeViewportHook::syncEcsToEmbedWorld3D_(EditorHost& host) {
             if (object == nullptr) {
                 continue;
             }
-            object->setPosition(transform.position.x, transform.position.y);
-            object->setZ(transform.position.z);
+            applyEcsTransformToSceneObject3D(transform, *object);
         }
         ++m_embedSession.ecsWorld3DSyncTicks;
         return;
@@ -463,8 +536,7 @@ void RuntimeViewportHook::syncEcsToEmbedWorld3D_(EditorHost& host) {
         const ecs::Transform& transform = *host.editorScene().registry().get<ecs::Transform>(id);
 
         auto object = std::make_unique<fuse::SceneObject3D>("EcsMirror_" + std::to_string(index));
-        object->setPosition(transform.position.x, transform.position.y);
-        object->setZ(transform.position.z);
+        applyEcsTransformToSceneObject3D(transform, *object);
         gpu->embedWorld3D.addObject(object.get());
         gpu->ecsMirrorObjects.push_back(std::move(object));
     }
@@ -570,6 +642,7 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
         gpu->hybrid->runFrame(frameCtx);
         if (gpu->hybrid->composer().frameCount() > composerFramesBefore) {
             ++m_embedSession.hybridComposerFrames;
+            m_embedSession.ecsWorld3DSnapshotVisible = gpu->embedWorld3D.readSnapshot().visibleCount();
         }
 
         fuse::renderer::PresentPath* presentPath = gpu->hybrid->presentPath();
@@ -639,6 +712,7 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
 
     ensureWorldLoaded_(host);
     drainPendingMaterialLoads_();
+    drainPendingShaderLoads_();
     mirrorEditorEntities_(host);
     syncEcsToEmbedWorld3D_(host);
 

@@ -153,6 +153,9 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 | `qtLivePresentAttempts` / `qtLivePresentTicks` when `qtRealSurface` + external swapchain wired (headless CI stays stub) | Full in-process GPU viewport compositing |
 | `HybridRendererBootstrap::runFrame` in embed tick — `hybridComposerFrames` counter; `World2D`/`World3D` attach from project dimensions | Live Qt swapchain present under real WSI |
 | Material texture cook on VFS drain (`materialTextureCooks` counter) | Full in-process GPU viewport compositing |
+| `syncEcsToEmbedWorld3D_` deepen — quaternion→yaw/pitch/roll + `ecsWorld3DSnapshotVisible` after hybrid compose (wave 16) | Live mesh/material preview from cooked assets |
+| Shader async VFS submit + cook-cache drain on world load (`shaderAsyncLoadsSubmitted`, `shaderAsyncLoadsDrained`, `shaderCookCacheHits`, `shaderCookCacheStores`) | — |
+| `resolveT3DShaderVfsFromBindings` + `shaderVfsResolved` counter on embed world load | — |
 
 ---
 
