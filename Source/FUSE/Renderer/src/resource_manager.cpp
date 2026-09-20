@@ -44,7 +44,7 @@ void* createVulkanSampler(VulkanDevice& device, const SamplerDesc& desc) {
     info.addressModeU = addressMode;
     info.addressModeV = addressMode;
     info.addressModeW = addressMode;
-    info.mipLodBias = 0.0f;
+    info.mipLodBias = desc.mipLodBias;
     info.anisotropyEnable = VK_FALSE;
     info.maxAnisotropy = 1.0f;
     if (desc.anisotropy && device.info().samplerAnisotropy) {
@@ -54,8 +54,8 @@ void* createVulkanSampler(VulkanDevice& device, const SamplerDesc& desc) {
     }
     info.compareEnable = VK_FALSE;
     info.compareOp = VK_COMPARE_OP_ALWAYS;
-    info.minLod = 0.0f;
-    info.maxLod = VK_LOD_CLAMP_NONE;
+    info.minLod = std::max(0.0f, desc.minLod);
+    info.maxLod = std::max(info.minLod, desc.maxLod);
     info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
     info.unnormalizedCoordinates = VK_FALSE;
 
@@ -312,6 +312,155 @@ OneShotCopyOutcome oneShotCopyBufferToImage(VulkanDevice& device, void* srcHandl
 
     const OneShotCopyOutcome outcome = submitOneShotAndWait(vkDevice, target.queue, cmd, true);
     vkDestroyCommandPool(vkDevice, pool, nullptr);
+    return outcome;
+}
+
+TransferSubmitTarget pickBlitTarget(VulkanDevice& device) {
+    const VulkanQueues& queues = device.queues();
+    if (queues.graphics != nullptr) {
+        return {static_cast<VkQueue>(queues.graphics), queues.graphicsFamily};
+    }
+    return pickTransferTarget(device);
+}
+
+OneShotCopyOutcome oneShotGenerateMips(VulkanDevice& device, const Texture& texture, u32& blitCount) {
+    blitCount = 0;
+    if (!device.isValid() || device.nativeHandle() == nullptr) {
+        return {};
+    }
+    if (!bindlessNativeHandleReady(texture.image) || texture.desc.mipLevels <= 1) {
+        return {};
+    }
+
+    const TransferSubmitTarget target = pickBlitTarget(device);
+    if (target.queue == VK_NULL_HANDLE) {
+        return {};
+    }
+
+    const VkDevice vkDevice = static_cast<VkDevice>(device.nativeHandle());
+    const VkImage image = static_cast<VkImage>(texture.image);
+    const u32 mipLevels = texture.desc.mipLevels;
+    const u32 layerCount = texture.desc.arrayLayers > 0 ? texture.desc.arrayLayers : 1u;
+    i32 mipWidth = static_cast<i32>(texture.desc.width > 0 ? texture.desc.width : 1u);
+    i32 mipHeight = static_cast<i32>(texture.desc.height > 0 ? texture.desc.height : 1u);
+    i32 mipDepth = static_cast<i32>(texture.desc.depth > 0 ? texture.desc.depth : 1u);
+
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    poolInfo.queueFamilyIndex = target.family;
+
+    VkCommandPool pool = VK_NULL_HANDLE;
+    if (vkCreateCommandPool(vkDevice, &poolInfo, nullptr, &pool) != VK_SUCCESS) {
+        return {};
+    }
+
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = pool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    if (vkAllocateCommandBuffers(vkDevice, &allocInfo, &cmd) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return {};
+    }
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return {};
+    }
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = layerCount;
+    barrier.subresourceRange.levelCount = 1;
+
+    if (mipLevels > 1) {
+        barrier.subresourceRange.baseMipLevel = 1;
+        barrier.subresourceRange.levelCount = mipLevels - 1;
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
+                             nullptr, 0, nullptr, 1, &barrier);
+    }
+
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
+                         nullptr, 0, nullptr, 1, &barrier);
+
+    for (u32 mip = 1; mip < mipLevels; ++mip) {
+        VkImageBlit blit{};
+        blit.srcOffsets[0] = {0, 0, 0};
+        blit.srcOffsets[1] = {mipWidth, mipHeight, mipDepth};
+        blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.srcSubresource.mipLevel = mip - 1;
+        blit.srcSubresource.baseArrayLayer = 0;
+        blit.srcSubresource.layerCount = layerCount;
+        const i32 dstWidth = std::max(mipWidth / 2, 1);
+        const i32 dstHeight = std::max(mipHeight / 2, 1);
+        const i32 dstDepth = std::max(mipDepth / 2, 1);
+        blit.dstOffsets[0] = {0, 0, 0};
+        blit.dstOffsets[1] = {dstWidth, dstHeight, dstDepth};
+        blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.dstSubresource.mipLevel = mip;
+        blit.dstSubresource.baseArrayLayer = 0;
+        blit.dstSubresource.layerCount = layerCount;
+
+        vkCmdBlitImage(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image,
+                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+
+        barrier.subresourceRange.baseMipLevel = mip;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
+                             nullptr, 0, nullptr, 1, &barrier);
+
+        mipWidth = dstWidth;
+        mipHeight = dstHeight;
+        mipDepth = dstDepth;
+        ++blitCount;
+    }
+
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = mipLevels;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0,
+                         nullptr, 0, nullptr, 1, &barrier);
+
+    if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
+        blitCount = 0;
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return {};
+    }
+
+    const OneShotCopyOutcome outcome = submitOneShotAndWait(vkDevice, target.queue, cmd, true);
+    vkDestroyCommandPool(vkDevice, pool, nullptr);
+    if (!outcome.submitted) {
+        blitCount = 0;
+    }
     return outcome;
 }
 #endif
@@ -604,6 +753,37 @@ SamplerHandle ResourceManager::createSampler(const SamplerDesc& desc) {
 
     (void)desc.name;
     return m_samplers.insert(std::move(entry));
+}
+
+bool ResourceManager::generateMips(TextureHandle handle) {
+    m_lastMipGenerateCount = 0;
+    m_lastMipGenerateOk = false;
+
+    if (!m_ready) {
+        return false;
+    }
+
+    Texture* texture = getTexture(handle);
+    if (texture == nullptr || texture->desc.mipLevels <= 1) {
+        return false;
+    }
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (m_device == nullptr || !m_device->isValid() || !bindlessNativeHandleReady(texture->image)) {
+        return false;
+    }
+
+    const OneShotCopyOutcome outcome =
+        oneShotGenerateMips(*m_device, *texture, m_lastMipGenerateCount);
+    m_lastMipGenerateOk = outcome.submitted;
+    if (!m_lastMipGenerateOk) {
+        m_lastMipGenerateCount = 0;
+    }
+    return m_lastMipGenerateOk;
+#else
+    (void)texture;
+    return false;
+#endif
 }
 
 void ResourceManager::destroyTexture(TextureHandle handle) {

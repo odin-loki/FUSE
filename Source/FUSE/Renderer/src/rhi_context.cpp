@@ -105,6 +105,12 @@ void RhiContext::ensureFrameSyncPair() {
     m_frameSyncInitialized = true;
 }
 
+void RhiContext::captureGpuTimestampStats(const FrameManager& frameManager) {
+    m_timestampsReady = frameManager.timestampsReady();
+    m_lastGpuTimeNs = frameManager.lastGpuTimeNs();
+    m_timestampWriteCount = frameManager.timestampWriteCount();
+}
+
 bool RhiContext::beginFrame(u32 frameIndex) {
     if (!platform::requireGpuContextThread()) {
         return false;
@@ -191,6 +197,9 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
             (void)m_compositeGpuPath->fillCudaInteropTexture(
                 m_frameSyncInitialized ? &m_frameSync : nullptr, frameIndex, true);
             m_compositeGpuPath->registerRasterSource(m_rasterPath->colorViewHandle());
+            if (m_rasterPath->isReady()) {
+                m_compositeGpuPath->registerRasterDepth(m_rasterPath->depthViewHandle());
+            }
             if (presentTargetsReady && encodeContextStorage.presentRenderPass != nullptr) {
                 m_compositeGpuPath->ensurePresentPipeline(encodeContextStorage.presentRenderPass);
             }
@@ -251,8 +260,10 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
             if (!m_lastQueueSubmit.ok) {
                 return false;
             }
+            captureGpuTimestampStats(*frameManager);
         }
         frameManager->endFrame();
+        captureGpuTimestampStats(*frameManager);
     }
 
     m_lastCommandCount = commands.commandCount();
@@ -312,6 +323,11 @@ bool RhiContext::submitDrawList(const DrawList& draws, u32 frameIndex) {
         } else if (encodeContextStorage.active) {
             encodeContext = &encodeContextStorage;
         }
+
+        if (m_compositeGpuPath && m_compositeGpuPath->isReady() && m_rasterPath != nullptr &&
+            m_rasterPath->isReady()) {
+            m_compositeGpuPath->registerRasterDepth(m_rasterPath->depthViewHandle());
+        }
 #endif
 
         populateRenderGraphFromDrawList(m_renderGraph, draws);
@@ -361,8 +377,10 @@ bool RhiContext::submitDrawList(const DrawList& draws, u32 frameIndex) {
             if (!m_lastQueueSubmit.ok) {
                 return false;
             }
+            captureGpuTimestampStats(*frameManager);
         }
         frameManager->endFrame();
+        captureGpuTimestampStats(*frameManager);
     }
 
     m_lastDrawListCount = draws.count();

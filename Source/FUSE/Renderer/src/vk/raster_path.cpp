@@ -182,6 +182,17 @@ void* RasterPath::depthImageHandle() const {
 #endif
 }
 
+void* RasterPath::depthViewHandle() const {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_stats.pipelineReady || m_depthView == nullptr) {
+        return nullptr;
+    }
+    return m_depthView;
+#else
+    return nullptr;
+#endif
+}
+
 void* RasterPath::colorViewHandle() const {
 #if defined(FUSE_VULKAN_BACKEND)
     if (!m_stats.pipelineReady || m_colorView == nullptr) {

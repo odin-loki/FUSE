@@ -101,6 +101,9 @@ struct SamplerDesc {
     u32 addressMode = 0; // VkSamplerAddressMode numeric (0 = REPEAT)
     bool anisotropy = false;
     float maxAnisotropy = 1.f;
+    float minLod = 0.f;
+    float maxLod = 1000.f;
+    float mipLodBias = 0.f;
     const char* name = nullptr;
 };
 

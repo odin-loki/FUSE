@@ -88,6 +88,9 @@ add_test(NAME fuse_render_graph COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARG
 
 add_executable(fuse_composite_pass test_composite_pass.cpp)
 target_link_libraries(fuse_composite_pass PRIVATE fuse_rhi)
+target_compile_definitions(fuse_composite_pass PRIVATE
+    FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
+)
 add_test(NAME fuse_composite_pass COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_composite_pass>")
 
 add_executable(fuse_renderer_bootstrap test_renderer_bootstrap.cpp)

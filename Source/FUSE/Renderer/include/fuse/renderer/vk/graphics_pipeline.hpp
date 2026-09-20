@@ -28,6 +28,12 @@ struct GraphicsPipelineDesc {
     bool depthTest = false;
     bool depthWrite = false;
     u32 depthCompareOp = 7; // VK_COMPARE_OP_ALWAYS to match current defaults
+    bool blendEnable = false;
+    u32 srcColorBlendFactor = 4; // VK_BLEND_FACTOR_SRC_ALPHA
+    u32 dstColorBlendFactor = 5; // VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA
+    u32 colorBlendOp = 0; // ADD
+    u32 vertexStrideBytes = 12; // 3 floats (keep current default)
+    u32 vertexFormat = 106; // VK_FORMAT_R32G32B32_SFLOAT
     /// When true, create with VkPipelineRenderingCreateInfo and VK_NULL_HANDLE render pass.
     bool useDynamicRendering = false;
     const char* debugName = nullptr;
@@ -38,6 +44,8 @@ struct GraphicsPipelineInfo {
     bool dynamicRendering = false;
     u32 depthFormat = 0;
     bool hasDynamicDepth = false;
+    bool blendEnabled = false;
+    u32 vertexStrideBytes = 0;
     u32 cacheSnapshotBytes = 0;
     u32 rebuildCount = 0;
     std::string message;

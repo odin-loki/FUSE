@@ -17,6 +17,8 @@ enum class CommandRecordKind : u8 {
     Composite = 8,
     BufferBarrier = 9,
     Dispatch = 10,
+    ClearDepth = 11,
+    FillBuffer = 12,
 };
 
 struct CommandRecord {
@@ -25,11 +27,13 @@ struct CommandRecord {
     float clearR = 0.f;
     float clearG = 0.f;
     float clearB = 0.f;
+    float clearDepth = 1.f;
     float compositeBlend = 0.f;
     u32 textureId = 0;
     u32 fromLayout = 0;
     u32 toLayout = 0;
     u32 bufferId = 0;
+    u32 fillValue = 0;
     u32 fromAccess = 0;
     u32 toAccess = 0;
     u32 drawCount = 0;
@@ -85,6 +89,7 @@ struct VkFrameEncodeContext {
     void* bindlessDescriptorSet = nullptr;
     u32 rasterTextureBindlessIndex = 0;
     u32 cudaTextureBindlessIndex = UINT32_MAX;
+    u32 depthTextureBindlessIndex = UINT32_MAX;
     u32 compositeWidth = 0;
     u32 compositeHeight = 0;
     float compositeBlend = 0.5f;
@@ -105,6 +110,8 @@ public:
     void pipelineBarrier(u32 textureId, u32 fromLayout, u32 toLayout);
     void bufferBarrier(u32 bufferId, u32 fromAccess, u32 toAccess);
     void clearColor(float r, float g, float b);
+    void clearDepth(float depth = 1.f);
+    void fillBuffer(u32 bufferId, u32 value);
     void draw(u32 instanceCount);
     void drawIndexed(u32 indexCount);
     void drawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 materialId,
@@ -128,6 +135,7 @@ public:
     u32 vulkanCompositeDrawCount() const { return m_vulkanCompositeDrawCount; }
     u32 vulkanDrawIndexedCount() const { return m_vulkanDrawIndexedCount; }
     u32 vulkanDispatchCount() const { return m_vulkanDispatchCount; }
+    u32 vulkanFillBufferCount() const { return m_vulkanFillBufferCount; }
 
 private:
     void push(CommandRecordKind kind);
@@ -137,6 +145,7 @@ private:
     void encodeVulkanViewportAndScissor(u32 width = 0, u32 height = 0);
     void encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLayout);
     void encodeVulkanBufferBarrier(u32 fromAccess, u32 toAccess);
+    void encodeFillBuffer(u32 value);
     void encodePresentSwapchainPass();
     void encodeCompositePass(float blend);
     void encodeDraw(u32 instanceCount);
@@ -154,6 +163,7 @@ private:
     float m_pendingClearR = 0.f;
     float m_pendingClearG = 0.f;
     float m_pendingClearB = 0.f;
+    float m_pendingClearDepth = 1.f;
     u32 m_vulkanRenderPassBeginCount = 0;
     u32 m_vulkanViewportCount = 0;
     u32 m_vulkanScissorCount = 0;
@@ -163,6 +173,7 @@ private:
     u32 m_vulkanCompositeDrawCount = 0;
     u32 m_vulkanDrawIndexedCount = 0;
     u32 m_vulkanDispatchCount = 0;
+    u32 m_vulkanFillBufferCount = 0;
     std::vector<CommandRecord> m_records;
 };
 

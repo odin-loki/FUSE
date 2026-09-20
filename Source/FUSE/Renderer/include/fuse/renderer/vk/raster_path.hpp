@@ -61,6 +61,9 @@ public:
     /// Offscreen D32_SFLOAT depth image; null if not ready.
     void* depthImageHandle() const;
 
+    /// Offscreen D32_SFLOAT depth view for composite bindless registration; null if not ready.
+    void* depthViewHandle() const;
+
     /// Sampled color attachment view for composite bindless registration.
     void* colorViewHandle() const;
 

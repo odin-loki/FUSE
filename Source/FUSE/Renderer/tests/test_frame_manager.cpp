@@ -179,6 +179,48 @@ void testGpuTimestamps() {
 #endif
 }
 
+void testFrameDebugNamesAndFenceWait() {
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+    expectTrue(instance != nullptr, "VulkanInstance allocated for frame debug names");
+    if (instance == nullptr) {
+        return;
+    }
+
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    expectTrue(device != nullptr, "VulkanDevice allocated for frame debug names");
+    if (device == nullptr) {
+        return;
+    }
+
+    auto frames = fuse::renderer::FrameManager::create(*device);
+    expectTrue(frames != nullptr, "FrameManager create for debug names and fence wait");
+    if (frames == nullptr) {
+        return;
+    }
+
+    // debugNamesSet may be 0 on stub or when VK_EXT_debug_utils is missing.
+    (void)frames->debugNamesSet();
+
+    if (frames->isReady()) {
+        const fuse::u32 names = frames->debugNamesSet();
+        (void)names;
+        expectTrue(frames->waitInFlightFence(frames->currentIndex()),
+                   "waitInFlightFence succeeds when FrameManager is ready");
+        // lastGpuTimeNs may stay 0 until a real submit — do not require >0
+        (void)frames->lastGpuTimeNs();
+        frames->beginFrame(0u);
+        (void)frames->lastGpuTimeNs();
+        expectTrue(frames->waitInFlightFence(0u), "waitInFlightFence after beginFrame does not crash");
+    } else {
+        expectTrue(frames->debugNamesSet() == 0u, "stub: debugNamesSet is 0");
+        (void)frames->waitInFlightFence(0u);
+        frames->beginFrame(0u);
+        expectTrue(frames->lastGpuTimeNs() == 0u, "stub: lastGpuTimeNs stays 0");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -186,6 +228,7 @@ int main() {
 
     testScratchResetAndDescriptorPool();
     testGpuTimestamps();
+    testFrameDebugNamesAndFenceWait();
 
     fuse::core::shutdown();
 

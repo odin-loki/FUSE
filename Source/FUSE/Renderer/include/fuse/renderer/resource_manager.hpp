@@ -38,6 +38,7 @@ public:
     TextureHandle createTexture(const TextureDesc& desc, const void* initialData = nullptr);
     BufferHandle createBuffer(const BufferDesc& desc, const void* initialData = nullptr);
     SamplerHandle createSampler(const SamplerDesc& desc);
+    bool generateMips(TextureHandle handle);
 
     void destroyTexture(TextureHandle handle);
     void destroyBuffer(BufferHandle handle);
@@ -58,6 +59,8 @@ public:
     bool lastGpuCopyUsedTransferQueue() const { return m_lastGpuCopyUsedTransferQueue; }
     bool lastGpuCopyUsedFence() const { return m_lastGpuCopyUsedFence; }
     bool lastGpuCopyWaitTimedOut() const { return m_lastGpuCopyWaitTimedOut; }
+    u32 lastMipGenerateCount() const { return m_lastMipGenerateCount; }
+    bool lastMipGenerateOk() const { return m_lastMipGenerateOk; }
 
     LiveCounts liveCounts() const;
     const GpuAllocStats* allocatorStats() const;
@@ -83,6 +86,8 @@ private:
     bool m_lastGpuCopyUsedTransferQueue = false;
     bool m_lastGpuCopyUsedFence = false;
     bool m_lastGpuCopyWaitTimedOut = false;
+    u32 m_lastMipGenerateCount = 0;
+    bool m_lastMipGenerateOk = false;
     bool m_ready = false;
 };
 

@@ -107,13 +107,13 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
 
     VkVertexInputBindingDescription binding{};
     binding.binding = 0;
-    binding.stride = sizeof(float) * 3;
+    binding.stride = desc.vertexStrideBytes;
     binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     VkVertexInputAttributeDescription attribute{};
     attribute.location = 0;
     attribute.binding = 0;
-    attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
+    attribute.format = static_cast<VkFormat>(desc.vertexFormat);
     attribute.offset = 0;
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
@@ -159,7 +159,13 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     colorBlendAttachment.colorWriteMask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
         VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
+    colorBlendAttachment.blendEnable = desc.blendEnable ? VK_TRUE : VK_FALSE;
+    colorBlendAttachment.srcColorBlendFactor = static_cast<VkBlendFactor>(desc.srcColorBlendFactor);
+    colorBlendAttachment.dstColorBlendFactor = static_cast<VkBlendFactor>(desc.dstColorBlendFactor);
+    colorBlendAttachment.colorBlendOp = static_cast<VkBlendOp>(desc.colorBlendOp);
+    colorBlendAttachment.srcAlphaBlendFactor = static_cast<VkBlendFactor>(desc.srcColorBlendFactor);
+    colorBlendAttachment.dstAlphaBlendFactor = static_cast<VkBlendFactor>(desc.dstColorBlendFactor);
+    colorBlendAttachment.alphaBlendOp = static_cast<VkBlendOp>(desc.colorBlendOp);
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -226,6 +232,8 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     m_info.dynamicRendering = desc.useDynamicRendering;
     m_info.depthFormat = desc.depthFormat;
     m_info.hasDynamicDepth = desc.useDynamicRendering && desc.depthFormat != 0;
+    m_info.blendEnabled = desc.blendEnable;
+    m_info.vertexStrideBytes = desc.vertexStrideBytes;
     if (desc.useDynamicRendering) {
         m_info.message = desc.debugName != nullptr
                              ? std::string(desc.debugName) + " (dynamic rendering)"
@@ -240,6 +248,8 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     m_info.dynamicRendering = desc.useDynamicRendering;
     m_info.depthFormat = desc.depthFormat;
     m_info.hasDynamicDepth = desc.useDynamicRendering && desc.depthFormat != 0;
+    m_info.blendEnabled = desc.blendEnable;
+    m_info.vertexStrideBytes = desc.vertexStrideBytes;
     if (desc.useDynamicRendering) {
         m_info.message = desc.debugName != nullptr
                              ? std::string(desc.debugName) + " (dynamic rendering)"

@@ -45,6 +45,7 @@ void CommandBufferRecorder::reset() {
     m_pendingClearR = 0.f;
     m_pendingClearG = 0.f;
     m_pendingClearB = 0.f;
+    m_pendingClearDepth = 1.f;
     m_vulkanRenderPassBeginCount = 0;
     m_vulkanViewportCount = 0;
     m_vulkanScissorCount = 0;
@@ -54,6 +55,7 @@ void CommandBufferRecorder::reset() {
     m_vulkanCompositeDrawCount = 0;
     m_vulkanDrawIndexedCount = 0;
     m_vulkanDispatchCount = 0;
+    m_vulkanFillBufferCount = 0;
     m_records.clear();
 }
 
@@ -253,6 +255,30 @@ void CommandBufferRecorder::encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLa
 #endif
 }
 
+void CommandBufferRecorder::encodeFillBuffer(u32 value) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_vulkanEncodeActive || m_encodeContext == nullptr ||
+        !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
+        return;
+    }
+
+    if (m_insideRenderPass) {
+        return;
+    }
+
+    if (m_encodeContext->barrierBuffer == nullptr) {
+        return;
+    }
+
+    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
+    vkCmdFillBuffer(commandBuffer, static_cast<VkBuffer>(m_encodeContext->barrierBuffer), 0, VK_WHOLE_SIZE,
+                    value);
+    ++m_vulkanFillBufferCount;
+#else
+    (void)value;
+#endif
+}
+
 void CommandBufferRecorder::encodeVulkanBufferBarrier(u32 fromAccess, u32 toAccess) {
 #if defined(FUSE_VULKAN_BACKEND)
     if (!m_vulkanEncodeActive || m_encodeContext == nullptr ||
@@ -386,7 +412,7 @@ void CommandBufferRecorder::beginVulkanRenderPass() {
     auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
     VkClearValue clearValues[2]{};
     clearValues[0].color = {{m_pendingClearR, m_pendingClearG, m_pendingClearB, 1.f}};
-    clearValues[1].depthStencil = {1.f, 0};
+    clearValues[1].depthStencil = {m_pendingClearDepth, 0};
     const bool hasDepth = m_encodeContext->depthImage != nullptr || m_encodeContext->depthView != nullptr;
 
     VkRenderPassBeginInfo renderPassInfo{};
@@ -603,6 +629,33 @@ void CommandBufferRecorder::clearColor(float r, float g, float b) {
     if (m_activeRasterPass && !m_insideRenderPass) {
         beginVulkanRenderPass();
     }
+}
+
+void CommandBufferRecorder::clearDepth(float depth) {
+    if (!m_recording) {
+        return;
+    }
+
+    CommandRecord record;
+    record.kind = CommandRecordKind::ClearDepth;
+    record.clearDepth = depth;
+    m_records.push_back(record);
+
+    m_pendingClearDepth = depth;
+}
+
+void CommandBufferRecorder::fillBuffer(u32 bufferId, u32 value) {
+    if (!m_recording) {
+        return;
+    }
+
+    CommandRecord record;
+    record.kind = CommandRecordKind::FillBuffer;
+    record.bufferId = bufferId;
+    record.fillValue = value;
+    m_records.push_back(record);
+
+    encodeFillBuffer(value);
 }
 
 void CommandBufferRecorder::draw(u32 instanceCount) {

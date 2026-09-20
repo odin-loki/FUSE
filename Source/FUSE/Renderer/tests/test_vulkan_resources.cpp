@@ -458,6 +458,79 @@ void testSamplerAnisotropy() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testSamplerLodAndGenerateMips() {
+    fuse::renderer::VulkanBootstrapDesc desc{};
+    desc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(desc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for sampler LOD and mip generate");
+    if (bootstrap == nullptr) {
+        return;
+    }
+
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    fuse::renderer::ResourceManager::Desc resourceDesc{};
+    resourceDesc.stagingRingBytes = 4096u;
+    const bool ready = resources.init(*bootstrap->device(), bindless, resourceDesc);
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        expectTrue(!ready, "resource manager skips without device");
+        expectTrue(!resources.generateMips(fuse::renderer::TextureHandle{}),
+                   "generateMips is false when resource manager is not ready");
+        bindless.destroy(*bootstrap->device());
+        return;
+    }
+    expectTrue(ready, "resource manager initializes for sampler LOD and mip generate");
+#else
+    expectTrue(ready, "stub resource manager initializes for sampler LOD and mip generate");
+#endif
+
+    fuse::renderer::SamplerDesc lodDesc{};
+    lodDesc.minLod = 0.f;
+    lodDesc.maxLod = 4.f;
+    const fuse::renderer::SamplerHandle lodSampler = resources.createSampler(lodDesc);
+    expectTrue(lodSampler.isValid(), "SamplerDesc minLod=0 maxLod=4 createSampler succeeds");
+
+    fuse::renderer::TextureDesc mipDesc{};
+    mipDesc.width = 16;
+    mipDesc.height = 16;
+    mipDesc.mipLevels = 4;
+    mipDesc.usage = static_cast<fuse::renderer::ImageUsage>(
+        static_cast<u32>(fuse::renderer::ImageUsage::Sampled) |
+        static_cast<u32>(fuse::renderer::ImageUsage::TransferSrc) |
+        static_cast<u32>(fuse::renderer::ImageUsage::TransferDst));
+    const fuse::renderer::TextureHandle mipTexture = resources.createTexture(mipDesc);
+    expectTrue(mipTexture.isValid(), "mipLevels=4 Sampled|TransferSrc|TransferDst texture issued");
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (bootstrap->status().deviceReady) {
+        const bool generated = resources.generateMips(mipTexture);
+        expectTrue(generated == resources.lastMipGenerateOk(),
+                   "lastMipGenerateOk matches generateMips result");
+        if (generated) {
+            expectTrue(resources.lastMipGenerateCount() == 3u,
+                       "generateMips blits three mip levels from a 4-level chain");
+        } else {
+            expectTrue(!resources.lastMipGenerateOk(),
+                       "generateMips honest false does not crash");
+        }
+    }
+#else
+    expectTrue(!resources.generateMips(mipTexture), "stub generateMips returns false");
+    expectTrue(!resources.lastMipGenerateOk(), "stub lastMipGenerateOk is false");
+    expectTrue(resources.lastMipGenerateCount() == 0u, "stub lastMipGenerateCount stays zero");
+#endif
+
+    resources.destroySampler(lodSampler);
+    resources.destroyTexture(mipTexture);
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 void testDeviceLocalMemoryBudget() {
     fuse::renderer::VulkanBootstrapDesc desc{};
     desc.instance.enableValidation = false;
@@ -517,6 +590,7 @@ int main() {
     testResourceManagerBuffersAndTextures();
     testDebugUtilsObjectNaming();
     testSamplerAnisotropy();
+    testSamplerLodAndGenerateMips();
     testDeviceLocalMemoryBudget();
 
     fuse::core::shutdown();

@@ -64,6 +64,9 @@ public:
     u32 lastGraphPassCount() const { return m_lastGraphPassCount; }
     u32 lastGraphBarrierCount() const { return m_lastGraphBarrierCount; }
     u32 lastRecordedCommandCount() const { return m_lastRecordedCommands; }
+    bool timestampsReady() const { return m_timestampsReady; }
+    u64 lastGpuTimeNs() const { return m_lastGpuTimeNs; }
+    u32 timestampWriteCount() const { return m_timestampWriteCount; }
     const RenderGraph& renderGraph() const { return m_renderGraph; }
     const CommandBufferRecorder& commandRecorder() const { return m_commandRecorder; }
     u32 currentFrameSlot() const;
@@ -82,6 +85,7 @@ private:
     void ensureCompositePass();
     void ensureCompositeGpuPath();
     void ensureFrameSyncPair();
+    void captureGpuTimestampStats(const FrameManager& frameManager);
 
     std::unique_ptr<VulkanBootstrap> m_bootstrap;
     Desc m_desc;
@@ -104,6 +108,9 @@ private:
     u32 m_acquiredSwapchainImage = UINT32_MAX;
     u32 m_queueSubmitCount = 0;
     GraphicsQueueSubmitResult m_lastQueueSubmit{};
+    bool m_timestampsReady = false;
+    u64 m_lastGpuTimeNs = 0;
+    u32 m_timestampWriteCount = 0;
 };
 
 } // namespace fuse::renderer

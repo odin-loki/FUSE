@@ -121,6 +121,7 @@ struct RenderGraphCompileInfo {
     u32 dependencyEdgeCount = 0;
     u32 resourceLifetimeCount = 0;
     u32 aliasGroups = 0;
+    u32 compileDurationUs = 0;
     bool compiled = false;
     bool usedDeclarationOrderFallback = false;
 };
@@ -129,6 +130,7 @@ struct RenderGraphExecuteInfo {
     u32 executedPassCount = 0;
     u32 recordedCommands = 0;
     u32 cudaPassCount = 0;
+    u32 computePassCount = 0;
     u32 bufferBarrierCount = 0;
     u32 scratchBytesUsed = 0;
     u32 transientsReleased = 0;

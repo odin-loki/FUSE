@@ -486,6 +486,78 @@ void testCudaPassSkipsVulkanBeginEnd() {
     expectTrue(endPassCount == 1u, "CUDA pass does not record Vulkan endPass");
 }
 
+void executeComputeIncrement(void* commandBuffer, void* userData) {
+    (void)commandBuffer;
+    if (userData != nullptr) {
+        ++*static_cast<fuse::u32*>(userData);
+    }
+}
+
+void testComputePassSkipsVulkanBeginEnd() {
+    fuse::renderer::RenderGraph graph;
+    graph.beginFrame(0u);
+
+    fuse::u32 computeExecuteCount = 0;
+    fuse::renderer::RGPassDesc computePass{};
+    computePass.name = "compute";
+    computePass.isCompute = true;
+    computePass.execute = executeComputeIncrement;
+    computePass.userData = &computeExecuteCount;
+    graph.addPass(computePass);
+
+    graph.compile();
+
+    expectTrue(graph.compileInfo().compiled, "compute graph compiled");
+    expectTrue(graph.compileInfo().executablePassCount == 1u, "compute pass kept");
+    expectTrue(graph.compileOrder().size() == 1u, "compile order retains compute pass");
+    (void)graph.compileInfo().compileDurationUs;
+
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+    expectTrue(instance != nullptr, "instance allocated for compute execute");
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    expectTrue(device != nullptr, "device allocated for compute execute");
+    auto frames = fuse::renderer::FrameManager::create(*device);
+    expectTrue(frames != nullptr, "frame manager allocated for compute execute");
+    if (instance == nullptr || device == nullptr || frames == nullptr) {
+        return;
+    }
+
+    fuse::renderer::CommandBufferRecorder recorder;
+    const fuse::renderer::RenderGraphExecuteInfo info = graph.execute(*device, *frames, recorder);
+
+    expectTrue(computeExecuteCount == 1u, "compute execute hook ran");
+    expectTrue(info.computePassCount == 1u, "compute pass counted at execute");
+    expectTrue(info.executedPassCount == 1u, "compute pass counted as executed");
+    expectTrue(recorder.vulkanRenderPassBeginCount() == 0u,
+               "compute-only execute does not begin a Vulkan render pass");
+
+    fuse::u32 beginPassCount = 0;
+    fuse::u32 endPassCount = 0;
+    for (const fuse::renderer::CommandRecord& record : recorder.records()) {
+        if (record.kind == fuse::renderer::CommandRecordKind::BeginPass) {
+            ++beginPassCount;
+        }
+        if (record.kind == fuse::renderer::CommandRecordKind::EndPass) {
+            ++endPassCount;
+        }
+    }
+    expectTrue(beginPassCount == 0u, "compute pass does not record Vulkan beginPass");
+    expectTrue(endPassCount == 0u, "compute pass does not record Vulkan endPass");
+}
+
+void testEmptyCompileDurationIsZero() {
+    fuse::renderer::RenderGraph graph;
+    graph.beginFrame(0u);
+    graph.compile();
+
+    expectTrue(graph.compileInfo().compiled, "empty graph compiles");
+    expectTrue(graph.compileInfo().passCount == 0u, "empty graph has nothing to compile");
+    expectTrue(graph.compileInfo().compileDurationUs == 0u,
+               "compile duration stays 0 when nothing to compile");
+}
+
 void testImportBufferStoresHandle() {
     fuse::renderer::RenderGraph graph;
     graph.beginFrame(0u);
@@ -731,6 +803,8 @@ int main() {
     testSequentialTransientsShareAliasGroup();
     testExecuteReleasesTransientAfterLastPass();
     testCudaPassSkipsVulkanBeginEnd();
+    testComputePassSkipsVulkanBeginEnd();
+    testEmptyCompileDurationIsZero();
     testImportBufferStoresHandle();
     testBufferBarrierPlannedWriteThenRead();
     testExecuteCopiesCompileOrderToScratch();

@@ -334,6 +334,46 @@ bool CompositeGpuPath::registerRasterSource(void* imageView) {
 #endif
 }
 
+bool CompositeGpuPath::registerRasterDepth(void* imageView) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_stats.pipelineReady || !bindlessNativeHandleReady(imageView)) {
+        m_stats.depthTextureBound = false;
+        m_stats.message = "composite bindless depth registration skipped";
+        return false;
+    }
+
+    fuse::renderer::Texture texture{};
+    texture.view = imageView;
+    texture.desc.width = m_desc.width;
+    texture.desc.height = m_desc.height;
+    texture.desc.format = GpuFormat::D32Sfloat;
+    texture.desc.usage = ImageUsage::Sampled;
+
+    if (m_depthTextureSlot.isValid()) {
+        m_bindless.unregisterSlot(m_depthTextureSlot);
+    }
+
+    m_depthTextureSlot = m_bindless.registerTextureSlot(texture, false);
+    if (!m_depthTextureSlot.isValid()) {
+        m_stats.depthTextureBound = false;
+        m_stats.depthTextureIndex = UINT32_MAX;
+        m_stats.message = "composite depth bindless slot failed";
+        return false;
+    }
+
+    m_stats.depthTextureIndex = m_depthTextureSlot.index;
+    m_stats.depthTextureBound = true;
+    m_stats.bindlessBound = m_bindless.vulkanDescriptorsReady();
+    m_stats.message = "composite raster depth registered in bindless heap";
+    return true;
+#else
+    (void)imageView;
+    m_stats.depthTextureBound = false;
+    m_stats.depthTextureIndex = UINT32_MAX;
+    return false;
+#endif
+}
+
 bool CompositeGpuPath::ensurePresentPipeline(void* presentRenderPass) {
 #if defined(FUSE_VULKAN_BACKEND)
     if (!m_stats.pipelineReady || presentRenderPass == nullptr) {
@@ -367,6 +407,8 @@ void CompositeGpuPath::fillEncodeContext(VkFrameEncodeContext& context, float bl
     context.rasterTextureBindlessIndex = m_stats.rasterTextureIndex;
     context.cudaTextureBindlessIndex =
         m_stats.cudaTextureActive ? m_stats.cudaTextureIndex : UINT32_MAX;
+    context.depthTextureBindlessIndex =
+        m_stats.depthTextureBound ? m_stats.depthTextureIndex : UINT32_MAX;
     context.bindlessDescriptorSet = m_bindless.descriptorSetHandle();
     context.compositePipelineLayout = m_pipelineLayout->nativeHandle();
     context.compositeVertexBuffer = m_vertexBuffer;
@@ -557,6 +599,7 @@ void CompositeGpuPath::shutdown() {
     m_vertexBuffer = nullptr;
     m_vertexMemory = nullptr;
     m_rasterTextureSlot = {};
+    m_depthTextureSlot = {};
     m_cudaTextureSlot = {};
     m_samplerSlot = {};
     if (m_device != nullptr && m_device->isValid()) {

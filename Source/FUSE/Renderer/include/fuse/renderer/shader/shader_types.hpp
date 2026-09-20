@@ -25,6 +25,8 @@ struct ShaderDesc {
     ShaderStage stage = ShaderStage::Vertex;
     const char** defines = nullptr;
     u32 defineCount = 0;
+    const char** includePaths = nullptr;
+    u32 includePathCount = 0;
 };
 
 struct CompiledShader {
@@ -34,8 +36,10 @@ struct CompiledShader {
     std::string entryPoint;
     std::string message;
     std::vector<std::string> defines;
+    std::vector<std::string> includePaths;
     u64 spirvHash = 0;
     u32 defineCount = 0;
+    u32 includePathCount = 0;
     bool valid = false;
 };
 

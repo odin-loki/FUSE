@@ -1,6 +1,7 @@
 #include <fuse/renderer/composite_pass.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <unordered_map>
 #include <vector>
@@ -270,7 +271,7 @@ void RenderGraph::cullUnusedPasses() {
                 required[i] = true;
             }
         }
-        if (m_passes[i].desc.isCuda) {
+        if (m_passes[i].desc.isCuda || m_passes[i].desc.isCompute) {
             required[i] = true;
         }
     }
@@ -520,6 +521,8 @@ void RenderGraph::assignExecutionOrder() {
 }
 
 void RenderGraph::compile() {
+    const auto compileStart = std::chrono::steady_clock::now();
+
     m_barriers.clear();
     m_bufferBarriers.clear();
     m_compileInfo = {};
@@ -556,6 +559,16 @@ void RenderGraph::compile() {
     m_compileInfo.dependencyEdgeCount = static_cast<u32>(m_dependencyEdges.size());
     m_compileInfo.resourceLifetimeCount = static_cast<u32>(m_resourceLifetimes.size());
     m_compileInfo.compiled = true;
+
+    if (m_compileInfo.passCount == 0u) {
+        m_compileInfo.compileDurationUs = 0;
+        return;
+    }
+
+    const auto compileEnd = std::chrono::steady_clock::now();
+    const auto elapsedUs =
+        std::chrono::duration_cast<std::chrono::microseconds>(compileEnd - compileStart).count();
+    m_compileInfo.compileDurationUs = elapsedUs > 0 ? static_cast<u32>(elapsedUs) : 0u;
 }
 
 RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
@@ -586,6 +599,9 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
 
     recorder.setVulkanEncodeContext(encodeContext);
     recorder.beginRecording(nativeCommandBuffer);
+    if (recorder.vulkanEncodeActive()) {
+        frames.writeTimestampBegin(nativeCommandBuffer);
+    }
 
     for (const RGBarrier& barrier : m_barriers) {
         recorder.pipelineBarrier(barrier.texture.id,
@@ -625,6 +641,16 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
             continue;
         }
 
+        if (pass.desc.isCompute) {
+            if (pass.desc.execute != nullptr) {
+                pass.desc.execute(&recorder, pass.desc.userData);
+            }
+            ++result.computePassCount;
+            ++result.executedPassCount;
+            releaseTransientsAfterPass(passIndex);
+            continue;
+        }
+
         recorder.beginPass(pass.desc.name != nullptr ? pass.desc.name : "pass");
         if (pass.desc.execute != nullptr) {
             pass.desc.execute(&recorder, pass.desc.userData);
@@ -634,6 +660,9 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
         releaseTransientsAfterPass(passIndex);
     }
 
+    if (recorder.vulkanEncodeActive()) {
+        frames.writeTimestampEnd(nativeCommandBuffer);
+    }
     recorder.endRecording();
     result.recordedCommands = recorder.recordCount();
     (void)device;

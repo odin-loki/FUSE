@@ -70,6 +70,7 @@ public:
     bool timestampsReady() const { return m_info.timestampsReady; }
     u64 lastGpuTimeNs() const { return m_info.lastGpuTimeNs; }
     u32 timestampWriteCount() const { return m_info.timestampWriteCount; }
+    u32 debugNamesSet() const { return m_debugNamesSet; }
 
     /// vkCmdResetQueryPool + vkCmdWriteTimestamp TOP_OF_PIPE (query 0) on the current slot pool.
     /// `commandBuffer` is a native VkCommandBuffer that must be in recording state. No-op if not ready.
@@ -122,6 +123,7 @@ private:
     u32 m_descriptorPoolResetCount = 0;
     u32 m_descriptorSetsAllocatedThisFrame = 0;
     float m_timestampPeriod = 0.f;
+    u32 m_debugNamesSet = 0;
 };
 
 } // namespace fuse::renderer

@@ -132,6 +132,45 @@ void testOfflineCompilerDefineVariants() {
                "define mix changes hash from raw SPIR-V words");
 }
 
+void testOfflineCompilerIncludePathVariants() {
+    const std::string sourcePath = fixturePath("minimal.vert");
+
+    const char* includeA[] = {"a"};
+    fuse::renderer::ShaderDesc descA{};
+    descA.sourcePath = sourcePath.c_str();
+    descA.stage = fuse::renderer::ShaderStage::Vertex;
+    descA.includePaths = includeA;
+    descA.includePathCount = 1u;
+
+    const char* includeB[] = {"b"};
+    fuse::renderer::ShaderDesc descB{};
+    descB.sourcePath = sourcePath.c_str();
+    descB.stage = fuse::renderer::ShaderStage::Vertex;
+    descB.includePaths = includeB;
+    descB.includePathCount = 1u;
+
+    const fuse::renderer::CompiledShader compiledA =
+        fuse::renderer::ShaderCompiler::compileOffline(descA);
+    const fuse::renderer::CompiledShader compiledB =
+        fuse::renderer::ShaderCompiler::compileOffline(descB);
+
+    expectTrue(compiledA.valid && compiledB.valid, "offline include-path variants both load fixture SPIR-V");
+    expectTrue(compiledA.spirv == compiledB.spirv, "offline include-path variants load the same SPIR-V words");
+    expectTrue(compiledA.includePathCount == 1u && compiledB.includePathCount == 1u,
+               "offline include-path variants report includePathCount 1");
+    expectTrue(compiledA.includePaths.size() == 1u && compiledA.includePaths[0] == "a",
+               "include path a variant owns include path string");
+    expectTrue(compiledB.includePaths.size() == 1u && compiledB.includePaths[0] == "b",
+               "include path b variant owns include path string");
+    expectTrue(compiledA.spirvHash != compiledB.spirvHash,
+               "include-path variants produce different spirvHash keys");
+
+    const fuse::u64 wordsHash = fuse::renderer::hashSpirvWords(
+        compiledA.spirv.data(), static_cast<fuse::u32>(compiledA.spirv.size()));
+    expectTrue(compiledA.spirvHash != wordsHash && compiledB.spirvHash != wordsHash,
+               "include-path mix changes hash from raw SPIR-V words");
+}
+
 void testCookedFuseshaderLoader() {
     const std::string spirvPath = fixturePath("minimal.vert.spv");
     std::ifstream spirvIn(spirvPath, std::ios::binary);
@@ -398,6 +437,60 @@ void testWatchCopiesDefineStrings() {
     std::filesystem::remove(spvPath, ec);
 }
 
+void testWatchCopiesIncludePaths() {
+    const std::filesystem::path glslPath = uniqueTempShaderPath();
+    const std::string glslUtf8 = glslPath.string();
+    const std::filesystem::path spvPath(glslUtf8 + ".spv");
+
+    expectTrue(writeFile(glslPath, "void main() {}\n"), "include-watch temp glsl created");
+
+    const std::string fixtureSpv = fixturePath("minimal.vert.spv");
+    std::ifstream spirvIn(fixtureSpv, std::ios::binary);
+    expectTrue(spirvIn.good(), "fixture spirv readable for include-watch test");
+    std::vector<char> spirvBytes((std::istreambuf_iterator<char>(spirvIn)),
+                                 std::istreambuf_iterator<char>());
+    expectTrue(!spirvBytes.empty(), "fixture spirv non-empty for include-watch test");
+
+    std::ofstream spirvOut(spvPath, std::ios::binary | std::ios::trunc);
+    spirvOut.write(spirvBytes.data(), static_cast<std::streamsize>(spirvBytes.size()));
+    spirvOut.flush();
+    expectTrue(static_cast<bool>(spirvOut), "sibling spirv written for include-watch test");
+    spirvOut.close();
+
+    fuse::renderer::ShaderCompiler compiler;
+    {
+        const char* stackIncludes[] = {"a"};
+        fuse::renderer::ShaderDesc desc{};
+        desc.sourcePath = glslUtf8.c_str();
+        desc.stage = fuse::renderer::ShaderStage::Vertex;
+        desc.includePaths = stackIncludes;
+        desc.includePathCount = 1u;
+        expectTrue(compiler.watch(desc), "watch copies stack include path strings");
+    }
+
+    const fuse::renderer::CompiledShader* compiled = compiler.lastCompiled(glslUtf8.c_str());
+    expectTrue(compiled != nullptr && compiled->valid, "watch compile with include paths is valid");
+    expectTrue(compiled->includePathCount == 1u, "watch lastCompiled includePathCount is 1");
+    expectTrue(compiled->includePaths.size() == 1u && compiled->includePaths[0] == "a",
+               "watch lastCompiled owns include path a");
+
+    expectTrue(compiler.pollHotReload() == 0u, "unchanged include-watch file does not crash poll");
+
+    expectTrue(writeFile(glslPath, "void main() { /* include watch */ }\n"),
+               "include-watch temp shader rewritten");
+    expectTrue(compiler.pollHotReload() == 1u, "rewrite recompiles using owned include path strings");
+
+    compiled = compiler.lastCompiled(glslUtf8.c_str());
+    expectTrue(compiled != nullptr && compiled->valid, "recompile after include stack death still valid");
+    expectTrue(compiled->includePathCount == 1u, "recompile includePathCount still 1");
+    expectTrue(compiled->includePaths.size() == 1u && compiled->includePaths[0] == "a",
+               "recompile still owns include path a after stack death");
+
+    std::error_code ec;
+    std::filesystem::remove(glslPath, ec);
+    std::filesystem::remove(spvPath, ec);
+}
+
 void testComputePipeline() {
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = false;
@@ -502,11 +595,13 @@ int main() {
     testSpirvIo();
     testOfflineCompiler();
     testOfflineCompilerDefineVariants();
+    testOfflineCompilerIncludePathVariants();
     testCookedFuseshaderLoader();
     testCreateFromCompiledShader();
     testShaderModuleAndPipelineLayout();
     testHotReloadPoller();
     testWatchCopiesDefineStrings();
+    testWatchCopiesIncludePaths();
     testComputePipeline();
 
     fuse::core::shutdown();

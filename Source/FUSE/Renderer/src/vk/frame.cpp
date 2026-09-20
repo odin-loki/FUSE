@@ -1,6 +1,9 @@
 #include <fuse/renderer/vk/frame.hpp>
 
+#include <fuse/renderer/vk/debug_utils.hpp>
+
 #include <array>
+#include <cstdio>
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
@@ -66,6 +69,40 @@ bool createSlotDescriptorPool(VkDevice device, VkDescriptorPool* outPool) {
     }
     *outPool = pool;
     return true;
+}
+
+u64 vulkanObjectHandle(void* handle) {
+    return static_cast<u64>(reinterpret_cast<uintptr_t>(handle));
+}
+
+void tryNameFrameObject(void* vkDevice, VkObjectType type, void* handle, u32 slot, const char* suffix,
+                        u32& namesSet) {
+    if (handle == nullptr || suffix == nullptr) {
+        return;
+    }
+    char name[64];
+    std::snprintf(name, sizeof(name), "fuse.frame.%u.%s", slot, suffix);
+    if (setDebugObjectName(vkDevice, static_cast<u32>(type), vulkanObjectHandle(handle), name)) {
+        ++namesSet;
+    }
+}
+
+void nameSlotSyncObjects(void* vkDevice, FrameSyncData& slot, u32 index, u32& namesSet) {
+    tryNameFrameObject(vkDevice, VK_OBJECT_TYPE_FENCE, slot.inFlightFence, index, "fence", namesSet);
+    tryNameFrameObject(vkDevice, VK_OBJECT_TYPE_SEMAPHORE, slot.imageAvailable, index, "imageAvailable",
+                       namesSet);
+    tryNameFrameObject(vkDevice, VK_OBJECT_TYPE_SEMAPHORE, slot.renderFinished, index, "renderFinished",
+                       namesSet);
+    tryNameFrameObject(vkDevice, VK_OBJECT_TYPE_SEMAPHORE, slot.timelineSemaphore, index, "timeline",
+                       namesSet);
+    tryNameFrameObject(vkDevice, VK_OBJECT_TYPE_COMMAND_POOL, slot.commands.commandPool, index,
+                       "commandPool", namesSet);
+    tryNameFrameObject(vkDevice, VK_OBJECT_TYPE_COMMAND_BUFFER, slot.commands.primaryCommandBuffer, index,
+                       "cmd", namesSet);
+    tryNameFrameObject(vkDevice, VK_OBJECT_TYPE_COMMAND_BUFFER, slot.commands.transferCommandBuffer,
+                       index, "transferCmd", namesSet);
+    tryNameFrameObject(vkDevice, VK_OBJECT_TYPE_QUERY_POOL, slot.timestampQueryPool, index,
+                       "timestampPool", namesSet);
 }
 
 #if defined(VK_VERSION_1_2) || defined(VK_KHR_timeline_semaphore)
@@ -216,6 +253,8 @@ bool FrameManager::initialize(VulkanDevice& device) {
                 m_slots[i].timestampQueryPool = timestampPool;
             }
         }
+
+        nameSlotSyncObjects(vkDevice, m_slots[i], i, m_debugNamesSet);
     }
 
     bool timestampsReady = m_timestampPeriod > 0.f;
@@ -239,6 +278,7 @@ bool FrameManager::initialize(VulkanDevice& device) {
 }
 
 void FrameManager::shutdown() {
+    m_debugNamesSet = 0;
 #if defined(FUSE_VULKAN_BACKEND)
     if (m_device == nullptr) {
         return;
@@ -507,11 +547,11 @@ bool FrameManager::waitInFlightFence(u32 slotIndex) {
         } else if (vkResetFences(static_cast<VkDevice>(m_device), 1, &fence) != VK_SUCCESS) {
             return false;
         }
-    }
 
-    if (m_info.timestampsReady) {
         u64 ns = 0;
-        (void)readLastGpuTimeNs(index, &ns);
+        if (readLastGpuTimeNs(index, &ns)) {
+            m_info.lastGpuTimeNs = ns;
+        }
     }
 #else
     if (!m_info.ready) {
@@ -534,13 +574,12 @@ void FrameManager::beginFrame(u32 frameIndex) {
             if (!clearStubInFlightFence(static_cast<VkDevice>(m_device), slot)) {
                 return;
             }
+            u64 ns = 0;
+            if (readLastGpuTimeNs(index, &ns)) {
+                m_info.lastGpuTimeNs = ns;
+            }
         }
         slot.fenceSignaled = false;
-
-        if (m_info.timestampsReady) {
-            u64 ns = 0;
-            (void)readLastGpuTimeNs(index, &ns);
-        }
 
         if (slot.commands.descriptorPool != nullptr) {
             vkResetDescriptorPool(static_cast<VkDevice>(m_device),

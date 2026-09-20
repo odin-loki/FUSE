@@ -32,6 +32,8 @@ struct CompositeGpuPathStats {
     u32 framesEncoded = 0;
     u32 rasterTextureIndex = UINT32_MAX;
     u32 cudaTextureIndex = UINT32_MAX;
+    u32 depthTextureIndex = UINT32_MAX;
+    bool depthTextureBound = false;
     u64 lastFrameSyncIndex = 0;
     std::string message;
 };
@@ -51,6 +53,9 @@ public:
 
     /// Registers the raster color view for bindless sampling; call after RasterPath is ready.
     bool registerRasterSource(void* imageView);
+
+    /// Registers the raster depth view into bindless. Stats-only until the composite shader samples it.
+    bool registerRasterDepth(void* imageView);
 
     /// Registers a CUDA-interop Vulkan image view; when unavailable composite keeps placeholder colour.
     bool registerCudaSource(void* imageView);
@@ -92,6 +97,7 @@ private:
     void* m_sampler = nullptr;
     BindlessSlotHandle m_samplerSlot{};
     BindlessSlotHandle m_rasterTextureSlot{};
+    BindlessSlotHandle m_depthTextureSlot{};
     BindlessSlotHandle m_cudaTextureSlot{};
     void* m_cudaImage = nullptr;
     void* m_cudaImageMemory = nullptr;

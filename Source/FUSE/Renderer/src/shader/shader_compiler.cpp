@@ -21,6 +21,15 @@ void fillDescMetadata(CompiledShader& result, const ShaderDesc& desc) {
         }
     }
     result.defineCount = static_cast<u32>(result.defines.size());
+    result.includePaths.clear();
+    if (desc.includePaths != nullptr) {
+        for (u32 i = 0; i < desc.includePathCount; ++i) {
+            if (desc.includePaths[i] != nullptr) {
+                result.includePaths.emplace_back(desc.includePaths[i]);
+            }
+        }
+    }
+    result.includePathCount = static_cast<u32>(result.includePaths.size());
 }
 
 CompiledShader makeFailure(const ShaderDesc& desc, const std::string& message) {
@@ -39,6 +48,10 @@ CompiledShader makeSuccess(const ShaderDesc& desc, std::vector<u32>&& words, con
     for (const std::string& define : result.defines) {
         result.spirvHash = hashMixDefineBytes(result.spirvHash, define.data(),
                                               static_cast<u32>(define.size()));
+    }
+    for (const std::string& includePath : result.includePaths) {
+        result.spirvHash = hashMixDefineBytes(result.spirvHash, includePath.data(),
+                                              static_cast<u32>(includePath.size()));
     }
     result.message = message;
     result.valid = true;
@@ -92,6 +105,18 @@ void ShaderCompiler::bindOwnedPointers(WatchedEntry& entry) {
         entry.desc.defines = entry.definePtrs.data();
         entry.desc.defineCount = static_cast<u32>(entry.definePtrs.size());
     }
+    entry.includePathPtrs.clear();
+    entry.includePathPtrs.reserve(entry.includePathStorage.size());
+    for (const std::string& includePath : entry.includePathStorage) {
+        entry.includePathPtrs.push_back(includePath.c_str());
+    }
+    if (entry.includePathPtrs.empty()) {
+        entry.desc.includePaths = nullptr;
+        entry.desc.includePathCount = 0;
+    } else {
+        entry.desc.includePaths = entry.includePathPtrs.data();
+        entry.desc.includePathCount = static_cast<u32>(entry.includePathPtrs.size());
+    }
 }
 
 bool ShaderCompiler::watch(const ShaderDesc& desc) {
@@ -110,6 +135,14 @@ bool ShaderCompiler::watch(const ShaderDesc& desc) {
             }
         }
     }
+    entry.includePathStorage.clear();
+    if (desc.includePaths != nullptr) {
+        for (u32 i = 0; i < desc.includePathCount; ++i) {
+            if (desc.includePaths[i] != nullptr) {
+                entry.includePathStorage.emplace_back(desc.includePaths[i]);
+            }
+        }
+    }
     bindOwnedPointers(entry);
 
     if (!m_watch.watch(entry.path.c_str())) {
@@ -118,7 +151,7 @@ bool ShaderCompiler::watch(const ShaderDesc& desc) {
 
     entry.last = compileOffline(entry.desc);
     m_entries.push_back(std::move(entry));
-    // Vector growth / string SSO moves invalidate c_str and definePtrs; rebuild all.
+    // Vector growth / string SSO moves invalidate c_str, definePtrs, and includePathPtrs; rebuild all.
     for (WatchedEntry& stored : m_entries) {
         bindOwnedPointers(stored);
     }

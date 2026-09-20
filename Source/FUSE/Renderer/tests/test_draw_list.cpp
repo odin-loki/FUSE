@@ -212,6 +212,24 @@ void testDispatchRecordsWithoutDevice() {
     expectTrue(recorder.endRecording(), "endRecording succeeds after logical dispatch");
 }
 
+void testClearDepthAndFillBufferRecordsWithoutDevice() {
+    fuse::renderer::CommandBufferRecorder recorder;
+    expectTrue(recorder.beginRecording(nullptr), "beginRecording succeeds for clearDepth/fillBuffer");
+    recorder.clearDepth(0.5f);
+    recorder.fillBuffer(1u, 0xFFFFFFFFu);
+
+    expectTrue(recorder.recordCount() == 2u, "clearDepth and fillBuffer each record one command");
+    expectTrue(recorder.records()[0].kind == fuse::renderer::CommandRecordKind::ClearDepth,
+               "first record is ClearDepth");
+    expectTrue(recorder.records()[0].clearDepth == 0.5f, "clearDepth stores 0.5");
+    expectTrue(recorder.records()[1].kind == fuse::renderer::CommandRecordKind::FillBuffer,
+               "second record is FillBuffer");
+    expectTrue(recorder.records()[1].bufferId == 1u, "fillBuffer stores bufferId 1");
+    expectTrue(recorder.records()[1].fillValue == 0xFFFFFFFFu, "fillBuffer stores fill value");
+    expectTrue(recorder.vulkanFillBufferCount() == 0u, "logical-only fillBuffer does not encode vkCmdFillBuffer");
+    expectTrue(recorder.endRecording(), "endRecording succeeds after logical clearDepth/fillBuffer");
+}
+
 void testDrawIndexedStoresNativeBuffers() {
     fuse::renderer::CommandBufferRecorder recorder;
     expectTrue(recorder.beginRecording(nullptr), "beginRecording succeeds for native buffers");
@@ -273,6 +291,7 @@ int main() {
     testRecordDrawIndexedPerCall();
     testRecordEncodesDrawParams();
     testDispatchRecordsWithoutDevice();
+    testClearDepthAndFillBufferRecordsWithoutDevice();
     testDrawIndexedStoresNativeBuffers();
     testRecordWithNullResourcesLeavesNativeNull();
     testRecordWithInvalidResourceHandlesLeavesNativeNull();

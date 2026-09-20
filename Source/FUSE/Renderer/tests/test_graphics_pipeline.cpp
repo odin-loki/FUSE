@@ -8,6 +8,7 @@
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/renderer/vk/graphics_pipeline.hpp>
 #include <fuse/renderer/vk/pipeline_layout.hpp>
+#include <fuse/renderer/vk/composite_gpu_path.hpp>
 #include <fuse/renderer/vk/raster_path.hpp>
 #include <fuse/renderer/vk/render_pass.hpp>
 
@@ -130,10 +131,18 @@ void testGraphicsPipelineFromFixtures() {
         expectTrue(graphicsPipeline->isValid(), "graphics pipeline valid with Vulkan device");
         expectTrue(graphicsPipeline->nativeHandle() != nullptr,
                    "graphics pipeline has native handle");
+        expectTrue(!graphicsPipeline->info().blendEnabled,
+                   "default pipeline blendEnabled is false");
+        expectTrue(graphicsPipeline->info().vertexStrideBytes == 12u,
+                   "default pipeline vertexStrideBytes is 12");
         expectTrue(graphicsPipeline->rebuild(), "graphics pipeline rebuild succeeds");
         expectTrue(graphicsPipeline->isValid(), "graphics pipeline valid after rebuild");
         expectTrue(graphicsPipeline->nativeHandle() != nullptr,
                    "graphics pipeline has native handle after rebuild");
+        expectTrue(!graphicsPipeline->info().blendEnabled,
+                   "default pipeline blendEnabled stays false after rebuild");
+        expectTrue(graphicsPipeline->info().vertexStrideBytes == 12u,
+                   "default pipeline vertexStrideBytes stays 12 after rebuild");
     } else {
         expectTrue(!graphicsPipeline->isValid(), "graphics pipeline invalid without ICD");
         expectTrue(!graphicsPipeline->rebuild(), "rebuild returns false without valid device");
@@ -141,6 +150,9 @@ void testGraphicsPipelineFromFixtures() {
 #else
     expectTrue(graphicsPipeline->isValid(), "graphics pipeline valid in stub backend");
     expectTrue(graphicsPipeline->nativeHandle() == nullptr, "stub backend has no native handle");
+    expectTrue(!graphicsPipeline->info().blendEnabled, "stub default pipeline blendEnabled is false");
+    expectTrue(graphicsPipeline->info().vertexStrideBytes == 12u,
+               "stub default pipeline vertexStrideBytes is 12");
     expectTrue(graphicsPipeline->rebuild(), "stub graphics pipeline rebuild succeeds");
     expectTrue(graphicsPipeline->isValid(), "stub graphics pipeline valid after rebuild");
 #endif
@@ -158,6 +170,28 @@ void testGraphicsPipelineFromFixtures() {
     }
 #else
     expectTrue(culledPipeline->isValid(), "cullMode BACK_BIT pipeline valid in stub backend");
+#endif
+
+    pipelineDesc.blendEnable = true;
+    auto blendedPipeline = fuse::renderer::GraphicsPipeline::create(*device, pipelineDesc);
+    expectTrue(blendedPipeline != nullptr, "graphics pipeline allocated with blendEnable");
+#if defined(FUSE_VULKAN_BACKEND)
+    if (bootstrap->status().deviceReady) {
+        expectTrue(blendedPipeline->isValid(), "graphics pipeline valid with blendEnable");
+        if (blendedPipeline->isValid()) {
+            expectTrue(blendedPipeline->info().blendEnabled,
+                       "info.blendEnabled is true when blend pipeline is valid");
+            expectTrue(blendedPipeline->info().vertexStrideBytes == 12u,
+                       "blend pipeline records vertexStrideBytes");
+        }
+    } else {
+        expectTrue(!blendedPipeline->isValid(), "blendEnable pipeline invalid without ICD");
+    }
+#else
+    expectTrue(blendedPipeline->isValid(), "blendEnable pipeline valid in stub backend");
+    expectTrue(blendedPipeline->info().blendEnabled, "stub info.blendEnabled is true when valid");
+    expectTrue(blendedPipeline->info().vertexStrideBytes == 12u,
+               "stub blend pipeline records vertexStrideBytes");
 #endif
 }
 
@@ -196,6 +230,8 @@ void testRasterPathClearTriangle() {
                        "raster path depthAttachmentReady when ready");
             expectTrue(rasterPath->depthImageHandle() != nullptr,
                        "raster path depthImageHandle set when ready");
+            expectTrue(rasterPath->depthViewHandle() != nullptr,
+                       "raster path depthViewHandle set when ready");
             const fuse::renderer::VkFrameEncodeContext encode = rasterPath->vulkanEncodeContext();
             expectTrue(encode.active, "raster path vulkanEncodeContext.active with depth");
             expectTrue(encode.depthImage != nullptr, "encode context depthImage set when ready");
@@ -238,6 +274,7 @@ void testRasterPathClearTriangle() {
     (void)rasterPath->lastStats().depthAttachmentReady;
     (void)rasterPath->vulkanEncodeContext();
     (void)rasterPath->depthImageHandle();
+    (void)rasterPath->depthViewHandle();
 
     fuse::renderer::RenderCommandList commands;
     commands.clear3D(0.1f, 0.2f, 0.3f);
@@ -430,6 +467,15 @@ void testRhiContextWiresRasterPath() {
     const bool submitted = context->submitFrame(commands, 0u);
 #if defined(FUSE_VULKAN_BACKEND)
     expectTrue(submitted, "submit accepted when Vulkan device ready");
+    if (submitted) {
+        expectTrue(context->timestampWriteCount() >= 0u,
+                   "timestampWriteCount is non-negative after submitFrame");
+        if (context->timestampsReady()) {
+            expectTrue(context->timestampWriteCount() > 0u,
+                       "submitFrame writes GPU timestamps when timestampsReady");
+        }
+        (void)context->lastGpuTimeNs();
+    }
     if (context->bootstrap().status().deviceReady) {
         expectTrue(context->rasterPath() != nullptr, "raster path created lazily");
         expectTrue(context->lastRasterStats().triangleDrawCount == 1u,
@@ -450,6 +496,18 @@ void testRhiContextWiresRasterPath() {
     const bool drawSubmitted = context->submitDrawList(draws, 1u);
     if (drawSubmitted) {
         expectTrue(context->lastDrawListCount() == 1u, "lastDrawListCount records one draw");
+        expectTrue(context->timestampWriteCount() >= 0u,
+                   "timestampWriteCount is non-negative after submitDrawList");
+        if (context->timestampsReady()) {
+            expectTrue(context->timestampWriteCount() > 0u,
+                       "submitDrawList writes GPU timestamps when timestampsReady");
+        }
+        (void)context->lastGpuTimeNs();
+        if (context->compositeGpuPath() != nullptr && context->compositeGpuPath()->isReady() &&
+            context->rasterPath() != nullptr && context->rasterPath()->isReady()) {
+            expectTrue(context->lastCompositeGpuStats().depthTextureBound,
+                       "submitDrawList registers raster depth into composite bindless");
+        }
     }
 #else
     expectTrue(!submitted, "stub mode rejects GPU submit");
@@ -459,6 +517,21 @@ void testRhiContextWiresRasterPath() {
     call.indexCount = 3;
     expectTrue(draws.push(call), "DrawList accepts one indexed call");
     expectTrue(!context->submitDrawList(draws, 0u), "stub mode rejects GPU DrawList submit");
+
+    fuse::renderer::VulkanDevice* device = context->bootstrap().device();
+    if (device != nullptr) {
+        const std::string compositeVertPath = fixturePath("composite.vert.spv");
+        const std::string compositeFragPath = fixturePath("composite.frag.spv");
+        fuse::renderer::CompositeGpuPathDesc compositeDesc{};
+        compositeDesc.vertexSpirvPath = compositeVertPath.c_str();
+        compositeDesc.fragmentSpirvPath = compositeFragPath.c_str();
+        auto compositePath = fuse::renderer::CompositeGpuPath::create(*device, compositeDesc);
+        expectTrue(compositePath != nullptr, "stub composite gpu path allocated");
+        expectTrue(!compositePath->registerRasterDepth(nullptr),
+                   "stub registerRasterDepth returns false");
+        expectTrue(!compositePath->lastStats().depthTextureBound,
+                   "stub depthTextureBound stays false");
+    }
 #endif
 }
 
@@ -637,6 +710,72 @@ void testRasterPathResize() {
     }
 }
 
+void testCompositeGpuPathRegisterRasterDepth() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for composite depth bindless");
+    fuse::renderer::VulkanDevice* device = bootstrap->device();
+    if (device == nullptr) {
+        expectTrue(!bootstrap->status().deviceReady, "device unavailable without Vulkan loader");
+        return;
+    }
+
+    const std::string rasterVertPath = fixturePath("minimal.vert.spv");
+    const std::string rasterFragPath = fixturePath("minimal.frag.spv");
+    fuse::renderer::RasterPathDesc rasterDesc{};
+    rasterDesc.vertexSpirvPath = rasterVertPath.c_str();
+    rasterDesc.fragmentSpirvPath = rasterFragPath.c_str();
+    auto rasterPath = fuse::renderer::RasterPath::create(*device, rasterDesc);
+    expectTrue(rasterPath != nullptr, "raster path allocated for depth bindless");
+
+    const std::string compositeVertPath = fixturePath("composite.vert.spv");
+    const std::string compositeFragPath = fixturePath("composite.frag.spv");
+    fuse::renderer::CompositeGpuPathDesc compositeDesc{};
+    compositeDesc.vertexSpirvPath = compositeVertPath.c_str();
+    compositeDesc.fragmentSpirvPath = compositeFragPath.c_str();
+    auto compositePath = fuse::renderer::CompositeGpuPath::create(*device, compositeDesc);
+    expectTrue(compositePath != nullptr, "composite gpu path allocated for depth bindless");
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (compositePath->isReady() && rasterPath->isReady()) {
+        void* depthView = rasterPath->depthViewHandle();
+        void* colorView = rasterPath->colorViewHandle();
+        void* bindlessView = depthView != nullptr ? depthView : colorView;
+        expectTrue(bindlessView != nullptr, "raster path has a view for bindless depth write");
+        expectTrue(compositePath->registerRasterDepth(bindlessView),
+                   "registerRasterDepth succeeds as a bindless write when ready");
+        expectTrue(compositePath->lastStats().depthTextureBound,
+                   "depthTextureBound true after successful registerRasterDepth");
+        expectTrue(compositePath->lastStats().depthTextureIndex != UINT32_MAX,
+                   "depthTextureIndex assigned on successful registerRasterDepth");
+        if (colorView != nullptr) {
+            expectTrue(compositePath->registerRasterDepth(colorView),
+                       "registerRasterDepth(colorView) still succeeds as a bindless write");
+            expectTrue(compositePath->lastStats().depthTextureBound,
+                       "depthTextureBound remains true after colorView bindless write");
+        }
+        expectTrue(compositePath->registerRasterSource(colorView),
+                   "registerRasterSource succeeds so fillEncodeContext can copy depth index");
+        fuse::renderer::VkFrameEncodeContext encode = rasterPath->vulkanEncodeContext();
+        compositePath->fillEncodeContext(encode, 0.5f, false);
+        expectTrue(encode.depthTextureBindlessIndex == compositePath->lastStats().depthTextureIndex,
+                   "fillEncodeContext copies depthTextureBindlessIndex");
+    } else {
+        expectTrue(!compositePath->registerRasterDepth(nullptr),
+                   "unready registerRasterDepth returns false");
+        expectTrue(!compositePath->lastStats().depthTextureBound,
+                   "unready depthTextureBound stays false");
+    }
+#else
+    expectTrue(!compositePath->registerRasterDepth(rasterPath->colorViewHandle()),
+               "stub registerRasterDepth returns false");
+    expectTrue(!compositePath->lastStats().depthTextureBound, "stub depthTextureBound stays false");
+#endif
+}
+
 } // namespace
 
 int main() {
@@ -650,6 +789,7 @@ int main() {
     testShaderModuleReloadFromDisk();
     testRasterPathHotReload();
     testRhiContextWiresRasterPath();
+    testCompositeGpuPathRegisterRasterDepth();
 
     fuse::core::shutdown();
 
