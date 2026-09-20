@@ -287,7 +287,18 @@ CTest: `fuse_scene_wire_runtime_bind`, `fuse_world2d_fuselevel_bridge`, `fuse_wo
 | `MeshSdfPreviewCatalog` | Headless-safe mesh/SDF live preview stubs from cooked asset hints |
 | `tryCookShaderGlslang` test | `fuse_bc7_encoder` exercises `FUSESHADER_GLSLANG` when `glslangValidator` is on runner |
 
-## 20. Deferred (honest backlog)
+## 20. Wave 18 progress
+
+| API | Role |
+|-----|------|
+| `materialVirtualPathToRefName` / `shaderVirtualPathToRefName` | Reverse-map VFS virtual paths to legacy `Folder:Name` wire refs for hashed bind ids |
+| `CookedAssetBindings` deepen | Header kind probe (`TextureBc7`, `ShaderGlslang`), per-id lookup, BC7/glslang-weighted hybrid tints |
+| `bindCookedAssetsToHybrid_` deepen | Project-root cook probe + wire-ref hash ids; `cookedMaterialValidBindings` / `cookedShaderValidBindings` embed counters |
+| `MeshSdfPreviewCatalog::cookedMeshResolvedCount` | Mesh preview hints resolve cooked texture paths from material bindings |
+| `PlaceholderRenderer::drawSdfPreviewStub` | Headless-safe SDF primitive shapes (sphere/box/capsule/torus/cylinder/custom) with param sizing |
+| `loadCookedFuseshaderSpirv` / `fuseshaderPathForSource` | Offline SPIR-V load from cooked `.fuseshader` (`FUSESHADER_SPIV` / `FUSESHADER_GLSLANG`) in `fuse_rhi` |
+
+## 21. Deferred (honest backlog)
 
 - Real ispc_texcomp library replacing honest header stub
 - libvorbisenc system package on CI images (runtime libs present; dev headers optional today)

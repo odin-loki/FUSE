@@ -179,6 +179,26 @@ std::string materialVirtualPathToCookOutput(const std::string& virtualPath) {
     return "cooked/materials/" + relative + ".fusetex";
 }
 
+std::string materialVirtualPathToRefName(const std::string& virtualPath) {
+    constexpr const char* prefix = "/t3d/materials/";
+    if (virtualPath.size() < std::strlen(prefix) ||
+        virtualPath.compare(0, std::strlen(prefix), prefix) != 0) {
+        return {};
+    }
+
+    std::string relative = virtualPath.substr(std::strlen(prefix));
+    if (relative.size() >= 4 && relative.compare(relative.size() - 4, 4, ".mat") == 0) {
+        relative.resize(relative.size() - 4);
+    }
+
+    const std::size_t slash = relative.rfind('/');
+    if (slash == std::string::npos) {
+        return relative;
+    }
+
+    return relative.substr(0, slash) + ":" + relative.substr(slash + 1);
+}
+
 std::string remapLegacyAssetPath(const std::string& legacyPath) {
     if (legacyPath.empty()) {
         return {};
@@ -242,6 +262,26 @@ std::string shaderVirtualPathToCookOutput(const std::string& virtualPath) {
     }
 
     return "cooked/shaders/" + relative + ".fuseshader";
+}
+
+std::string shaderVirtualPathToRefName(const std::string& virtualPath) {
+    constexpr const char* prefix = "/t3d/shaders/";
+    if (virtualPath.size() < std::strlen(prefix) ||
+        virtualPath.compare(0, std::strlen(prefix), prefix) != 0) {
+        return {};
+    }
+
+    std::string relative = virtualPath.substr(std::strlen(prefix));
+    if (relative.size() >= 3 && relative.compare(relative.size() - 3, 3, ".cs") == 0) {
+        relative.resize(relative.size() - 3);
+    }
+
+    const std::size_t slash = relative.rfind('/');
+    if (slash == std::string::npos) {
+        return relative;
+    }
+
+    return relative.substr(0, slash) + ":" + relative.substr(slash + 1);
 }
 
 u32 countRemappedAssetVfsPaths(const T3DDatablockResolveResult& bindings) {

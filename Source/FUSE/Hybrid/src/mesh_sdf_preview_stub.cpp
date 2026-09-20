@@ -35,4 +35,14 @@ u32 MeshSdfPreviewCatalog::visibleSdfCount() const {
     return count;
 }
 
+u32 MeshSdfPreviewCatalog::cookedMeshResolvedCount() const {
+    u32 count = 0;
+    for (const MeshPreviewHint& hint : m_meshes) {
+        if (hint.cookedMeshResolved) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 } // namespace fuse::hybrid

@@ -9,6 +9,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -53,6 +54,29 @@ void testOfflineCompiler() {
                                                   static_cast<fuse::u32>(compiled.spirv.size())),
                "compiled SPIR-V header valid");
     expectTrue(!compiled.spirv.empty(), "compiled SPIR-V non-empty");
+}
+
+void testCookedFuseshaderLoader() {
+    const std::string spirvPath = fixturePath("minimal.vert.spv");
+    std::ifstream spirvIn(spirvPath, std::ios::binary);
+    expectTrue(spirvIn.good(), "fixture spirv readable for cooked loader test");
+
+    std::vector<char> spirvBytes((std::istreambuf_iterator<char>(spirvIn)),
+                                 std::istreambuf_iterator<char>());
+    const std::string cookedPath = "/tmp/fuse_cooked_loader_test.fuseshader";
+    std::ofstream cookedOut(cookedPath, std::ios::binary | std::ios::trunc);
+    cookedOut << "FUSESHADER_SPIV\nstage=vertex\nversion=450\nwords="
+              << (spirvBytes.size() / 4u) << "\nDATA\n";
+    cookedOut.write(spirvBytes.data(), static_cast<std::streamsize>(spirvBytes.size()));
+    cookedOut.close();
+
+    std::string error;
+    const std::vector<fuse::u32> words =
+        fuse::renderer::loadCookedFuseshaderSpirv(cookedPath.c_str(), &error);
+    expectTrue(!words.empty(), "cooked fuseshader loader extracts SPIR-V payload");
+    expectTrue(fuse::renderer::isValidSpirvHeader(words.data(), static_cast<fuse::u32>(words.size())),
+               "cooked fuseshader SPIR-V header valid");
+    expectTrue(error.empty(), "cooked fuseshader loader has no error");
 }
 
 void testShaderModuleAndPipelineLayout() {
@@ -110,6 +134,7 @@ int main() {
 
     testSpirvIo();
     testOfflineCompiler();
+    testCookedFuseshaderLoader();
     testShaderModuleAndPipelineLayout();
 
     fuse::core::shutdown();

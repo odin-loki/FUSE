@@ -56,8 +56,12 @@ struct RuntimeEmbedSession {
     u32 ecsWorld3DSnapshotVisible = 0;
     u32 cookedMaterialBindings = 0;
     u32 cookedShaderBindings = 0;
+    u32 cookedMaterialValidBindings = 0;
+    u32 cookedShaderValidBindings = 0;
+    u32 cookedAssetTintApplied = 0;
     u32 meshPreviewHints = 0;
     u32 sdfPreviewHints = 0;
+    u32 meshPreviewCookedResolved = 0;
     u32 meshPreviewDraws = 0;
     u32 sdfPreviewDraws = 0;
     bool qtLivePresentReady = false;

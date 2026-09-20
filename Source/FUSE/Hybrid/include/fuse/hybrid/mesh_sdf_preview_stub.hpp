@@ -23,6 +23,7 @@ struct MeshPreviewHint {
     std::string cookedMeshPath;
     u32 materialId = 0;
     bool visible = true;
+    bool cookedMeshResolved = false;
 };
 
 struct SdfPreviewHint {
@@ -49,6 +50,7 @@ public:
     [[nodiscard]] u32 sdfCount() const { return static_cast<u32>(m_sdfs.size()); }
     [[nodiscard]] u32 visibleMeshCount() const;
     [[nodiscard]] u32 visibleSdfCount() const;
+    [[nodiscard]] u32 cookedMeshResolvedCount() const;
 
     [[nodiscard]] const std::vector<MeshPreviewHint>& meshes() const { return m_meshes; }
     [[nodiscard]] const std::vector<SdfPreviewHint>& sdfs() const { return m_sdfs; }

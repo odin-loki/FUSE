@@ -2,21 +2,34 @@
 
 #include <fuse/types.hpp>
 
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace fuse::hybrid {
 
+enum class CookedHeaderKind : u8 {
+    Unknown = 0,
+    TextureStub = 1,
+    TextureBc7 = 2,
+    MeshStub = 3,
+    ShaderStub = 4,
+    ShaderSpiv = 5,
+    ShaderGlslang = 6,
+};
+
 struct CookedMaterialBinding {
     std::string cookedPath;
     u32 materialId = 0;
     bool headerValid = false;
+    CookedHeaderKind headerKind = CookedHeaderKind::Unknown;
 };
 
 struct CookedShaderBinding {
     std::string cookedPath;
     u32 shaderId = 0;
     bool headerValid = false;
+    CookedHeaderKind headerKind = CookedHeaderKind::Unknown;
 };
 
 /// Headless-safe registry of cooked `.fusetex` / `.fuseshader` assets for hybrid render path.
@@ -31,9 +44,14 @@ public:
     [[nodiscard]] u32 shaderCount() const { return static_cast<u32>(m_shaders.size()); }
     [[nodiscard]] u32 validMaterialCount() const;
     [[nodiscard]] u32 validShaderCount() const;
+    [[nodiscard]] u32 bc7MaterialCount() const;
+    [[nodiscard]] u32 glslangShaderCount() const;
 
     [[nodiscard]] const std::vector<CookedMaterialBinding>& materials() const { return m_materials; }
     [[nodiscard]] const std::vector<CookedShaderBinding>& shaders() const { return m_shaders; }
+
+    [[nodiscard]] std::optional<CookedMaterialBinding> findMaterial(u32 materialId) const;
+    [[nodiscard]] std::optional<CookedShaderBinding> findShader(u32 shaderId) const;
 
     /// Tint factors derived from bound cooked asset headers (0..1).
     [[nodiscard]] float materialTintR() const { return m_materialTintR; }
@@ -43,10 +61,13 @@ public:
     [[nodiscard]] float shaderTintG() const { return m_shaderTintG; }
     [[nodiscard]] float shaderTintB() const { return m_shaderTintB; }
 
+    /// Per-material tint boost when a valid cooked texture is bound for `materialId`.
+    [[nodiscard]] float materialTintBoost(u32 materialId) const;
+
     void refreshTints();
 
 private:
-    [[nodiscard]] static bool probeCookedHeader(const std::string& path, const char* markerPrefix);
+    [[nodiscard]] static CookedHeaderKind probeCookedHeaderKind(const std::string& path);
 
     std::vector<CookedMaterialBinding> m_materials;
     std::vector<CookedShaderBinding> m_shaders;

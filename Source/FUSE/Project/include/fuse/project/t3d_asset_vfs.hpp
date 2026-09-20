@@ -73,6 +73,9 @@ struct T3DShaderCookCacheResult {
 /// Map mounted `/t3d/materials/.../*.mat` virtual paths to cooked `.fusetex` outputs.
 [[nodiscard]] std::string materialVirtualPathToCookOutput(const std::string& virtualPath);
 
+/// Reverse-map `/t3d/materials/Folder/Name.mat` to legacy `Folder:Name` wire ref.
+[[nodiscard]] std::string materialVirtualPathToRefName(const std::string& virtualPath);
+
 /// Content-hash key for a resolved material source on disk (0 when unreadable).
 [[nodiscard]] u64 materialCookCacheKey(const std::string& physicalPath);
 
@@ -105,6 +108,9 @@ struct T3DShaderCookCacheResult {
 
 /// Map mounted `/t3d/shaders/.../*.cs` virtual paths to cooked `.fuseshader` outputs.
 [[nodiscard]] std::string shaderVirtualPathToCookOutput(const std::string& virtualPath);
+
+/// Reverse-map `/t3d/shaders/Folder/Name.cs` to legacy `Folder:Name` wire ref.
+[[nodiscard]] std::string shaderVirtualPathToRefName(const std::string& virtualPath);
 
 /// Count virtual-path mappings derived from resolved scene bindings (material + shader stubs).
 [[nodiscard]] u32 countRemappedAssetVfsPaths(const T3DDatablockResolveResult& bindings);

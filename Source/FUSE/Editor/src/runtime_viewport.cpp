@@ -28,6 +28,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <optional>
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <fuse/frame/frame_ctx.hpp>
@@ -470,6 +472,26 @@ void RuntimeViewportHook::bindCookedAssetsToHybrid_() {
     bindings.clear();
 
     fuse::io::VirtualFileSystem& vfs = fuse::io::VirtualFileSystem::instance();
+    auto resolveCookProbePath = [&](const std::string& cookOutput) -> std::string {
+        if (cookOutput.empty()) {
+            return {};
+        }
+        if (!m_embedSession.projectRoot.empty()) {
+            const std::string joined = m_embedSession.projectRoot + "/" + cookOutput;
+            if (std::ifstream(joined)) {
+                return joined;
+            }
+        }
+        std::string physicalPath;
+        if (vfs.resolve(cookOutput, physicalPath)) {
+            return physicalPath;
+        }
+        if (vfs.resolve("/game/" + cookOutput, physicalPath)) {
+            return physicalPath;
+        }
+        return cookOutput;
+    };
+
     for (const fuse::io::CompletedLoad& load : vfs.lastDrainedLoads()) {
         if (!load.success || load.asset.virtualPath.empty()) {
             continue;
@@ -478,19 +500,31 @@ void RuntimeViewportHook::bindCookedAssetsToHybrid_() {
         const std::string materialOutput =
             fuse::project::materialVirtualPathToCookOutput(load.asset.virtualPath);
         if (!materialOutput.empty()) {
-            bindings.bindMaterial(materialOutput);
+            const std::string refName =
+                fuse::project::materialVirtualPathToRefName(load.asset.virtualPath);
+            const u32 materialId = fuse::scene::hashWireRefName(refName);
+            bindings.bindMaterial(resolveCookProbePath(materialOutput), materialId);
             continue;
         }
 
         const std::string shaderOutput =
             fuse::project::shaderVirtualPathToCookOutput(load.asset.virtualPath);
         if (!shaderOutput.empty()) {
-            bindings.bindShader(shaderOutput);
+            const std::string refName =
+                fuse::project::shaderVirtualPathToRefName(load.asset.virtualPath);
+            const u32 shaderId = fuse::scene::hashWireRefName(refName);
+            bindings.bindShader(resolveCookProbePath(shaderOutput), shaderId);
         }
     }
 
+    bindings.refreshTints();
     m_embedSession.cookedMaterialBindings = bindings.materialCount();
     m_embedSession.cookedShaderBindings = bindings.shaderCount();
+    m_embedSession.cookedMaterialValidBindings = bindings.validMaterialCount();
+    m_embedSession.cookedShaderValidBindings = bindings.validShaderCount();
+    if (bindings.validMaterialCount() > 0u || bindings.validShaderCount() > 0u) {
+        ++m_embedSession.cookedAssetTintApplied;
+    }
 #else
     (void)0;
 #endif
@@ -520,6 +554,12 @@ void RuntimeViewportHook::syncMeshSdfPreviewFromEcs_(EditorHost& host) {
                 hint.z = transform.position.z;
                 hint.materialId = mesh.material_id;
                 hint.cookedMeshPath = "cooked/mesh/preview_" + std::to_string(mesh.material_id) + ".fusemesh";
+                const std::optional<fuse::hybrid::CookedMaterialBinding> cookedMaterial =
+                    gpu->hybrid->composer().cookedAssets().findMaterial(mesh.material_id);
+                if (cookedMaterial.has_value()) {
+                    hint.cookedMeshPath = cookedMaterial->cookedPath;
+                    hint.cookedMeshResolved = true;
+                }
                 hint.visible = true;
                 catalog.addMesh(hint);
                 return;
@@ -566,6 +606,7 @@ void RuntimeViewportHook::syncMeshSdfPreviewFromEcs_(EditorHost& host) {
 
     m_embedSession.meshPreviewHints = catalog.meshCount();
     m_embedSession.sdfPreviewHints = catalog.sdfCount();
+    m_embedSession.meshPreviewCookedResolved = catalog.cookedMeshResolvedCount();
 #else
     (void)host;
 #endif

@@ -51,8 +51,12 @@ void RuntimeEmbedSession::reset() {
     ecsWorld3DSnapshotVisible = 0;
     cookedMaterialBindings = 0;
     cookedShaderBindings = 0;
+    cookedMaterialValidBindings = 0;
+    cookedShaderValidBindings = 0;
+    cookedAssetTintApplied = 0;
     meshPreviewHints = 0;
     sdfPreviewHints = 0;
+    meshPreviewCookedResolved = 0;
     meshPreviewDraws = 0;
     sdfPreviewDraws = 0;
     qtLivePresentReady = false;

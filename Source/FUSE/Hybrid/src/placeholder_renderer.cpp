@@ -37,7 +37,6 @@ void PlaceholderRenderer::clear3D(float r, float g, float b) {
 void PlaceholderRenderer::drawMeshPreviewStub(float x, float y, float z, u8 r, u8 g, u8 b) {
     const float cx = x + static_cast<float>(m_width) * 0.5f;
     const float cy = y - z * 0.25f + static_cast<float>(m_height) * 0.5f;
-    const float size = 10.f;
 
     for (int dy = -10; dy <= 10; ++dy) {
         for (int dx = -10; dx <= 10; ++dx) {
@@ -52,19 +51,38 @@ void PlaceholderRenderer::drawMeshPreviewStub(float x, float y, float z, u8 r, u
     }
 }
 
-void PlaceholderRenderer::drawSdfPreviewStub(float x, float y, float z, bool boxPrimitive, u8 r, u8 g,
-                                             u8 b) {
+void PlaceholderRenderer::drawSdfPreviewStub(float x, float y, float z, SdfPreviewPrimitive primitive,
+                                             float param0, float param1, float param2, u8 r, u8 g, u8 b) {
     const float cx = x + static_cast<float>(m_width) * 0.5f;
     const float cy = y - z * 0.25f + static_cast<float>(m_height) * 0.5f;
-    const int radius = boxPrimitive ? 0 : 8;
+    const float radius = param0 > 0.1f ? param0 * 6.f : 6.f;
+    const float halfWidth = param1 > 0.1f ? param1 * 5.f : 5.f;
+    const float halfHeight = param2 > 0.1f ? param2 * 5.f : 5.f;
 
-    for (int dy = -10; dy <= 10; ++dy) {
-        for (int dx = -10; dx <= 10; ++dx) {
+    for (int dy = -12; dy <= 12; ++dy) {
+        for (int dx = -12; dx <= 12; ++dx) {
             bool inside = false;
-            if (boxPrimitive) {
-                inside = std::abs(dx) <= 8 && std::abs(dy) <= 8;
-            } else {
-                inside = (dx * dx + dy * dy) <= (radius * radius + radius);
+            switch (primitive) {
+            case SdfPreviewPrimitive::Box:
+                inside = std::abs(dx) <= static_cast<int>(halfWidth) && std::abs(dy) <= static_cast<int>(halfHeight);
+                break;
+            case SdfPreviewPrimitive::Capsule:
+                inside = (dx * dx + dy * dy) <= static_cast<int>(radius * radius + radius);
+                break;
+            case SdfPreviewPrimitive::Torus: {
+                const float ring = std::sqrt(static_cast<float>(dx * dx + dy * dy));
+                inside = std::abs(ring - radius) <= 2.5f;
+                break;
+            }
+            case SdfPreviewPrimitive::Cylinder:
+                inside = std::abs(dx) <= static_cast<int>(radius) && std::abs(dy) <= static_cast<int>(halfHeight);
+                break;
+            case SdfPreviewPrimitive::Custom:
+                inside = (std::abs(dx) + std::abs(dy)) <= static_cast<int>(radius + halfWidth);
+                break;
+            default:
+                inside = (dx * dx + dy * dy) <= static_cast<int>(radius * radius + radius);
+                break;
             }
 
             if (inside) {
@@ -81,7 +99,6 @@ void PlaceholderRenderer::drawSdfPreviewStub(float x, float y, float z, bool box
 void PlaceholderRenderer::drawSprite2D(float x, float y, float rotation, u8 r, u8 g, u8 b) {
     const float cx = x + static_cast<float>(m_width) * 0.5f;
     const float cy = y + static_cast<float>(m_height) * 0.5f;
-    const float size = 12.f;
     const float cosR = std::cos(rotation);
     const float sinR = std::sin(rotation);
 

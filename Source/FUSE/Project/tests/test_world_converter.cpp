@@ -442,6 +442,12 @@ void testVfsAssetPathRemap() {
     expectTrue(fuse::project::shaderVirtualPathToCookOutput("/t3d/shaders/Common/ScreenSpace.cs") ==
                    "cooked/shaders/Common/ScreenSpace.fuseshader",
                "shader virtual path maps to cook output");
+    expectTrue(fuse::project::materialVirtualPathToRefName("/t3d/materials/Prototyping/FloorGray.mat") ==
+                   "Prototyping:FloorGray",
+               "material virtual path reverse-maps to wire ref");
+    expectTrue(fuse::project::shaderVirtualPathToRefName("/t3d/shaders/Common/ScreenSpace.cs") ==
+                   "Common:ScreenSpace",
+               "shader virtual path reverse-maps to wire ref");
 
     fuse::project::T3DDatablockResolveResult bindings;
     bindings.bindings.push_back({"Floor", "Prototyping:FloorGray", "material", 1u});

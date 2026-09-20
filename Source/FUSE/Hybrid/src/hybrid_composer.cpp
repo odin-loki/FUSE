@@ -143,8 +143,11 @@ void HybridComposer::render(frame::FrameCtx& ctx) {
             if (!meshHint.visible) {
                 continue;
             }
-            const u8 r = static_cast<u8>(64u + (meshHint.materialId % 7u) * 24u);
-            const u8 g = static_cast<u8>(96u + (meshHint.materialId % 5u) * 16u);
+            const float tintBoost = m_cookedAssets.materialTintBoost(meshHint.materialId);
+            const u8 r = static_cast<u8>(64u + (meshHint.materialId % 7u) * 24u +
+                                         static_cast<u32>(tintBoost * 255.f));
+            const u8 g = static_cast<u8>(96u + (meshHint.materialId % 5u) * 16u +
+                                         (meshHint.cookedMeshResolved ? 24u : 0u));
             const u8 b = static_cast<u8>(128u + (meshHint.materialId % 3u) * 20u);
             if (m_softwarePlaceholderEnabled) {
                 m_renderer.drawMeshPreviewStub(meshHint.x, meshHint.y, meshHint.z, r, g, b);
@@ -159,12 +162,14 @@ void HybridComposer::render(frame::FrameCtx& ctx) {
             if (!sdfHint.visible) {
                 continue;
             }
-            const bool boxPrimitive = sdfHint.primitive == SdfPreviewPrimitive::Box;
-            const u8 r = static_cast<u8>(180u + (sdfHint.materialId % 4u) * 12u);
+            const float tintBoost = m_cookedAssets.materialTintBoost(sdfHint.materialId);
+            const u8 r = static_cast<u8>(180u + (sdfHint.materialId % 4u) * 12u +
+                                         static_cast<u32>(tintBoost * 255.f));
             const u8 g = static_cast<u8>(96u + (sdfHint.materialId % 6u) * 10u);
             const u8 b = static_cast<u8>(220u);
             if (m_softwarePlaceholderEnabled) {
-                m_renderer.drawSdfPreviewStub(sdfHint.x, sdfHint.y, sdfHint.z, boxPrimitive, r, g, b);
+                m_renderer.drawSdfPreviewStub(sdfHint.x, sdfHint.y, sdfHint.z, sdfHint.primitive,
+                                              sdfHint.param0, sdfHint.param1, sdfHint.param2, r, g, b);
             }
 #if defined(FUSE_HAS_VULKAN_RHI)
             recordSprite2D(sdfHint.x, sdfHint.y + 6.f, 0.f, r, g, b);

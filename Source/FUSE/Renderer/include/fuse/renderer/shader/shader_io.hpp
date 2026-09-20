@@ -16,7 +16,13 @@ bool isValidSpirvHeader(const u8* bytes, u32 byteCount);
 /// Loads raw SPIR-V words from a `.spv` file. Returns empty vector on failure.
 std::vector<u32> loadSpirvFile(const char* path, std::string* errorOut = nullptr);
 
+/// Loads SPIR-V payload from a cooked `.fuseshader` (`FUSESHADER_SPIV` / `FUSESHADER_GLSLANG`).
+std::vector<u32> loadCookedFuseshaderSpirv(const char* path, std::string* errorOut = nullptr);
+
 /// Resolves `sourcePath` to a sibling `.spv` when offline fixtures are used.
 std::string spirvPathForSource(const char* sourcePath);
+
+/// Resolves `sourcePath` to a sibling `.fuseshader` cooked output when present.
+std::string fuseshaderPathForSource(const char* sourcePath);
 
 } // namespace fuse::renderer

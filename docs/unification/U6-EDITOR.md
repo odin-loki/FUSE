@@ -160,6 +160,10 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 | `MeshSdfPreviewCatalog` + ECS mesh/SDF preview stubs in embed tick (`meshPreviewHints`, `meshPreviewDraws`) | Live mesh/material preview from cooked assets |
 | `bindCookedAssetsToHybrid_` after VFS drain (`cookedMaterialBindings`, `cookedShaderBindings`) | — |
 | Mission-level `ShaderData =` extract + `resolveT3DShaderVfsPaths` / `submitT3DShaderLoadsAsync(extract)` | — |
+| `CookedAssetBindings` deepen — header kind probe (`FUSETEX_BC7`, `FUSESHADER_GLSLANG`), per-id lookup, tint boost on hybrid compose (wave 18) | Full in-process GPU viewport compositing |
+| `bindCookedAssetsToHybrid_` — wire-ref hash ids, project-root cook probe, `cookedMaterialValidBindings` / `cookedShaderValidBindings` counters | — |
+| `MeshSdfPreviewCatalog` deepen — cooked mesh resolve from bindings, SDF primitive/param draws, `meshPreviewCookedResolved` counter | Live mesh/material preview from cooked assets |
+| `loadCookedFuseshaderSpirv` offline path in `fuse_rhi` shader compiler (headless-safe) | Runtime glslang source compile behind `FUSE_SHADER_GLSLANG` |
 
 ---
 
