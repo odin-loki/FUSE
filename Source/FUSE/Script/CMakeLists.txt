@@ -1,6 +1,7 @@
 # fuse_script — B7.3 Lua-ready script host (null backend + optional Lua)
 
 set(FUSE_SCRIPT_PUBLIC_HEADERS
+    include/fuse/script/legacy_script_route.hpp
     include/fuse/script/script_bind.hpp
     include/fuse/script/script_bind_lua.hpp
     include/fuse/script/script_callback.hpp
@@ -9,18 +10,21 @@ set(FUSE_SCRIPT_PUBLIC_HEADERS
     include/fuse/script/script_console_command_registry.hpp
     include/fuse/script/script_console_history.hpp
     include/fuse/script/script_host.hpp
+    include/fuse/script/script_host_service.hpp
     include/fuse/script/script_result.hpp
     include/fuse/script/script_update.hpp
     include/fuse/script/script_vm.hpp
 )
 
 set(FUSE_SCRIPT_SOURCES
+    src/legacy_script_route.cpp
     src/script_bind.cpp
     src/script_bind_lua.cpp
     src/script_console.cpp
     src/script_console_command_registry.cpp
     src/script_console_history.cpp
     src/script_host.cpp
+    src/script_host_service.cpp
     src/script_update.cpp
     src/script_vm.cpp
 )

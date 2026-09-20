@@ -120,6 +120,7 @@ bool threadStaticSmoke();
 bool bitRenderTriangleSmoke();
 #if defined(FUSE_T3D_LEGACY_ENGINE_PROBE_ZIP)
 bool zipArchiveMemRoundTripSmoke();
+bool zipArchiveDiskReadWriteSmoke();
 #endif
 } // namespace engineProbe
 #endif

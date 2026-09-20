@@ -426,6 +426,8 @@ int main() {
 #if defined(FUSE_T3D_LEGACY_ENGINE_PROBE_ZIP)
         check(fuse::legacy::t3d::engineProbe::zipArchiveMemRoundTripSmoke(),
               "engine probe ZipArchive MemStream deflate write/read round-trip");
+        check(fuse::legacy::t3d::engineProbe::zipArchiveDiskReadWriteSmoke(),
+              "engine probe ZipArchive disk ReadWrite rebuild round-trip");
 #endif
     }
 #endif

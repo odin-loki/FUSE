@@ -8,7 +8,9 @@ extern "C" {
 #include <lua.h>
 }
 #endif
+#include <fuse/script/legacy_script_route.hpp>
 #include <fuse/script/script_host.hpp>
+#include <fuse/script/script_host_service.hpp>
 #include <fuse/script/script_update.hpp>
 #include <fuse/types.hpp>
 
@@ -459,6 +461,77 @@ void testBindMethodTable() {
     expectTrue(!methods.has_method("add"), "unregistered method gone");
 }
 
+void testLegacyChunkRoutePrefixes() {
+    const fuse::script::LegacyChunkRoute uaisk =
+        fuse::script::parse_legacy_chunk_route("uaisk:aiBehaviors.cs");
+    expectTrue(uaisk.dialect == fuse::script::LegacyScriptDialect::UaiskCompat,
+               "uaisk prefix routes to compat dialect");
+    expectTrue(uaisk.module == "aiBehaviors.cs", "uaisk module suffix preserved");
+
+    const fuse::script::LegacyChunkRoute t3d =
+        fuse::script::parse_legacy_chunk_route("t3d:weapon.cs");
+    expectTrue(t3d.dialect == fuse::script::LegacyScriptDialect::T3dTorqueScript,
+               "t3d prefix routes to t3d compat stub");
+    expectTrue(t3d.module == "weapon.cs", "t3d module suffix preserved");
+
+    const fuse::script::LegacyChunkRoute t2d =
+        fuse::script::parse_legacy_chunk_route("t2d:sceneObject.cs");
+    expectTrue(t2d.dialect == fuse::script::LegacyScriptDialect::T2dTorqueScript,
+               "t2d prefix routes to t2d compat stub");
+
+    const fuse::script::LegacyChunkRoute fuseChunk =
+        fuse::script::parse_legacy_chunk_route("fuse:bootstrap.lua");
+    expectTrue(fuseChunk.dialect == fuse::script::LegacyScriptDialect::Fuse, "fuse prefix is FUSE host");
+    expectTrue(fuseChunk.module == "bootstrap.lua", "fuse module suffix preserved");
+
+    const fuse::script::LegacyChunkRoute plain =
+        fuse::script::parse_legacy_chunk_route("bootstrap.lua");
+    expectTrue(plain.dialect == fuse::script::LegacyScriptDialect::Fuse,
+               "unqualified chunk names default to FUSE host");
+    expectTrue(plain.module == "bootstrap.lua", "unqualified module name preserved");
+
+    expectTrue(fuse::script::legacy_dialect_is_compat_stub(fuse::script::LegacyScriptDialect::T3dTorqueScript),
+               "t3d dialect is compat stub");
+    expectTrue(!fuse::script::legacy_dialect_is_compat_stub(fuse::script::LegacyScriptDialect::UaiskCompat),
+               "uaisk dialect loads through ScriptHost");
+}
+
+void testScriptHostServiceRoutesLegacyChunks() {
+    fuse::script::ScriptHostService& service = fuse::script::ScriptHostService::instance();
+    service.shutdown();
+    expectTrue(service.ensure_initialized(), "script host service initializes");
+
+    const auto fuse_result = service.load_chunk("return 1", "fuse:probe.lua");
+    expectTrue(fuse_result.ok(), "fuse-prefixed chunk loads through host");
+    expectTrue(service.last_loaded_dialect() == fuse::script::LegacyScriptDialect::Fuse,
+               "fuse chunk records fuse dialect");
+    expectTrue(service.fuse_route_count() == 1u, "fuse route count increments");
+    expectTrue(service.host().vm().loaded_chunk_count() == 1u, "fuse chunk recorded in VM");
+
+    const auto uaisk_result = service.load_chunk("bb.sequence children=0\n", "uaisk:aiBehaviors.cs");
+    expectTrue(uaisk_result.ok(), "uaisk chunk loads through host");
+    expectTrue(service.last_loaded_dialect() == fuse::script::LegacyScriptDialect::UaiskCompat,
+               "uaisk chunk records compat dialect");
+    expectTrue(service.fuse_route_count() == 2u, "uaisk chunk counts as fuse route");
+    expectTrue(service.compat_route_count() == 0u, "uaisk does not use dual-vm compat stub");
+
+    const auto t3d_result = service.load_chunk("function onStart() {}", "t3d:weapon.cs");
+    expectTrue(t3d_result.ok(), "t3d chunk records compat route without VM");
+    expectTrue(service.last_loaded_dialect() == fuse::script::LegacyScriptDialect::T3dTorqueScript,
+               "t3d chunk records t3d dialect");
+    expectTrue(service.compat_route_count() == 1u, "t3d compat route count increments");
+    expectTrue(service.host().vm().loaded_chunk_count() == 2u,
+               "t3d compat route does not add VM chunk");
+
+    const auto t2d_result = service.load_chunk("function onUpdate() {}", "t2d:sprite.cs");
+    expectTrue(t2d_result.ok(), "t2d chunk records compat route without VM");
+    expectTrue(service.compat_route_count() == 2u, "t2d compat route count increments");
+
+    service.shutdown();
+    expectTrue(!service.is_initialized(), "service shutdown clears host");
+    expectTrue(service.compat_route_count() == 0u, "shutdown resets compat route count");
+}
+
 #if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
 void testLuaLoadsHelloWorld() {
     fuse::script::ScriptHost host;
@@ -530,6 +603,8 @@ int main() {
     testScriptUpdateErrorIsolation();
     testBindPropertyStore();
     testBindMethodTable();
+    testLegacyChunkRoutePrefixes();
+    testScriptHostServiceRoutesLegacyChunks();
     run_script_console_tests();
 #if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
     testLuaLoadsHelloWorld();

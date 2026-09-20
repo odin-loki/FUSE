@@ -7,6 +7,8 @@ Lua-ready script host for Track B7.3. Uses a null backend when Lua is unavailabl
 | Header | Role |
 |--------|------|
 | `script_host.hpp` | Game-thread facade — VM lifecycle, callback registry, `dispatch` / `dispatch_update` / `tick_update_scripts` |
+| `script_host_service.hpp` | Singleton toward U3+ single process-wide host — `load_chunk` with legacy prefix routing |
+| `legacy_script_route.hpp` | `uaisk:` / `t3d:` / `t2d:` / `fuse:` chunk-name dialect parsing |
 | `script_update.hpp` | Per-script OnUpdate registry — dt accumulation, enable/disable, error isolation |
 | `script_vm.hpp` | Null or Lua VM with `load_string` / `load_file` |
 | `script_console.hpp` | Headless REPL — built-in command stubs, history buffer, dispatch to `ScriptHost` |

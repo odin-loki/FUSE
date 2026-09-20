@@ -578,6 +578,96 @@ bool zipArchiveMemRoundTripSmoke() {
     reader.closeArchive();
     return std::strcmp(buffer, kPayload) == 0;
 }
+
+bool zipArchiveDiskReadWriteSmoke() {
+    static const char kZipPath[] = "/tmp/fuse_u2_zip_disk_probe.zip";
+    static const char kInitialFile[] = "fuse_u2_initial.txt";
+    static const char kInitialPayload[] = "fuse_u2_zip_initial";
+    static const char kAddedFile[] = "fuse_u2_added.txt";
+    static const char kAddedPayload[] = "fuse_u2_zip_readwrite";
+
+    std::remove(kZipPath);
+    std::remove("/tmp/fuse_u2_zip_disk_probe.zip.new");
+    std::remove("/tmp/fuse_u2_zip_disk_probe.zip.old");
+
+    {
+        Zip::ZipArchive writer;
+        if (!writer.openArchive(kZipPath, Zip::ZipArchive::Write)) {
+            return false;
+        }
+
+        Stream* out = writer.openFile(kInitialFile, Zip::ZipArchive::Write);
+        if (out == nullptr) {
+            writer.closeArchive();
+            return false;
+        }
+        if (!out->write(static_cast<U32>(std::strlen(kInitialPayload) + 1), kInitialPayload)) {
+            writer.closeFile(out);
+            writer.closeArchive();
+            return false;
+        }
+        writer.closeFile(out);
+        writer.closeArchive();
+    }
+
+    {
+        Zip::ZipArchive editor;
+        if (!editor.openArchive(kZipPath, Zip::ZipArchive::ReadWrite)) {
+            return false;
+        }
+
+        Stream* out = editor.openFile(kAddedFile, Zip::ZipArchive::Write);
+        if (out == nullptr) {
+            editor.closeArchive();
+            return false;
+        }
+        if (!out->write(static_cast<U32>(std::strlen(kAddedPayload) + 1), kAddedPayload)) {
+            editor.closeFile(out);
+            editor.closeArchive();
+            return false;
+        }
+        editor.closeFile(out);
+        editor.closeArchive();
+    }
+
+    Zip::ZipArchive reader;
+    if (!reader.openArchive(kZipPath, Zip::ZipArchive::Read)) {
+        return false;
+    }
+
+    Stream* initialIn = reader.openFile(kInitialFile, Zip::ZipArchive::Read);
+    if (initialIn == nullptr) {
+        reader.closeArchive();
+        return false;
+    }
+    char initialBuffer[64] = {};
+    if (!initialIn->read(static_cast<U32>(sizeof(initialBuffer)), initialBuffer)) {
+        reader.closeFile(initialIn);
+        reader.closeArchive();
+        return false;
+    }
+    reader.closeFile(initialIn);
+
+    Stream* addedIn = reader.openFile(kAddedFile, Zip::ZipArchive::Read);
+    if (addedIn == nullptr) {
+        reader.closeArchive();
+        return false;
+    }
+    char addedBuffer[64] = {};
+    if (!addedIn->read(static_cast<U32>(sizeof(addedBuffer)), addedBuffer)) {
+        reader.closeFile(addedIn);
+        reader.closeArchive();
+        return false;
+    }
+    reader.closeFile(addedIn);
+    reader.closeArchive();
+
+    std::remove(kZipPath);
+    std::remove("/tmp/fuse_u2_zip_disk_probe.zip.new");
+    std::remove("/tmp/fuse_u2_zip_disk_probe.zip.old");
+    return std::strcmp(initialBuffer, kInitialPayload) == 0 &&
+           std::strcmp(addedBuffer, kAddedPayload) == 0;
+}
 #endif
 
 } // namespace fuse::legacy::t3d::engineProbe

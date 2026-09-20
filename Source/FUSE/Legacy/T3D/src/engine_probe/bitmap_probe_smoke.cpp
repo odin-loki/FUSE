@@ -157,8 +157,15 @@ bool writeBitmapPngRoundTripSmoke() {
     writer.setPosition(0);
 
     GBitmap loaded;
-    const bool ok =
-        loaded.readBitmapStream(String("png"), writer, len) && loaded.getWidth() == 2u && loaded.getHeight() == 2u;
+    if (!loaded.readBitmapStream(String("png"), writer, len) || loaded.getWidth() != 2u ||
+        loaded.getHeight() != 2u) {
+        FrameAllocator::destroy();
+        return false;
+    }
+
+    ColorI sampled;
+    const bool ok = loaded.getColor(1, 0, sampled) && sampled.red == 0x11 && sampled.green == 0x12 &&
+                    sampled.blue == 0x13 && sampled.alpha == 0x14;
     FrameAllocator::destroy();
     return ok;
 }

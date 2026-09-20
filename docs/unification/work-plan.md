@@ -96,7 +96,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **MT note** | Publish asset handles from I/O jobs; game thread commit; TSan nightly begins |
 | **Exit** | Both dims log via FUSE logger; one asset loaded via VFS from job; handle rules documented |
 | **Deps** | WP-02, WP-03 (partial — I/O can use thread pool before fibers complete) |
-| **Status** | ✅ Done — logger (both dims via `fuse::log`), HandleTable publish/commit, VFS async I/O lane, U3 gate tests; see [handle-rules.md](./handle-rules.md), [vfs-mount-plan.md](./vfs-mount-plan.md) |
+| **Status** | ✅ Done — logger (both dims via `fuse::log`), HandleTable publish/commit, VFS async I/O lane, U3 gate tests; script host singleton + legacy chunk routing stubs — see [handle-rules.md](./handle-rules.md), [vfs-mount-plan.md](./vfs-mount-plan.md), [U3-SCRIPT-HOST.md](./U3-SCRIPT-HOST.md) |
 
 ---
 
@@ -446,7 +446,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** U2 incremental — expand Engine probe + SimObject/StringTable route; U6 full Qt `vkQueuePresentKHR` on display with `FUSE_ENABLE_QT_PRESENT=ON`; U7 real ispc_texcomp + libvorbisenc on CI images; Track B post–WP-06p (driver-wired timeline stress on NVIDIA CI, full software placeholder removal).
+**Next:** U2 deepen-only on zip/PNG smoke (no new probe batches); U3 script host ECS component + Lua entity bindings; U6 full Qt `vkQueuePresentKHR` on display with `FUSE_ENABLE_QT_PRESENT=ON`; U7 real ispc_texcomp + libvorbisenc on CI images; Track B post–WP-06p (driver-wired timeline stress on NVIDIA CI, full software placeholder removal).
 
 **U6/U7 wave 13 landed:** `fuse_cook` cook-cache persist + skip re-cook progress; `ispc_texcomp` honest stub hook; vorbis WAV sniff deepen; Qt WSI instance/extension probe headless-safe.
 
