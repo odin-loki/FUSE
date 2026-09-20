@@ -37,6 +37,8 @@ void RuntimeEmbedSession::reset() {
     materialAsyncLoadsDrained = 0;
     qtLivePresentAttempts = 0;
     qtLivePresentTicks = 0;
+    hybridComposerFrames = 0;
+    materialTextureCooks = 0;
     qtLivePresentReady = false;
     usesExternalSwapchain = false;
     submittedFrames = 0;

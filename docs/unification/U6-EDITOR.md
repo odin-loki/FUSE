@@ -149,6 +149,8 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 | `fuse_cook` CLI cook-cache load/save + job-graph cache-hit skip progress | Full in-process GPU viewport compositing |
 | `probeQVulkanWindowWsi` instance/extension probe + `viewportHeadlessWsiProbeSkipped` gate | Live Qt swapchain present under real WSI |
 | `qtLivePresentAttempts` / `qtLivePresentTicks` when `qtRealSurface` + external swapchain wired (headless CI stays stub) | Full in-process GPU viewport compositing |
+| `HybridRendererBootstrap::runFrame` in embed tick — `hybridComposerFrames` counter; `World2D`/`World3D` attach from project dimensions | Live Qt swapchain present under real WSI |
+| Material texture cook on VFS drain (`materialTextureCooks` counter) | Full in-process GPU viewport compositing |
 
 ---
 

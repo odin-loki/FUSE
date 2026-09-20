@@ -103,6 +103,7 @@ private:
     [[nodiscard]] CookJob* find_job_(const std::string& job_id);
     [[nodiscard]] const CookJob* find_job_(const std::string& job_id) const;
     [[nodiscard]] std::string resolve_job_id_(const std::string& path) const;
+    [[nodiscard]] std::vector<std::string> resolve_dependency_output_paths_(const CookJob& job) const;
 
     bool run_job_stages_(CookJob& job, AssetCooker& cooker, const CookManifest& manifest,
                          CookJobGraphExecuteResult& result);

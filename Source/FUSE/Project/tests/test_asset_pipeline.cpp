@@ -90,6 +90,25 @@ void testAssetCookerStub() {
     expectTrue(header == "FUSEMESH_STUB", "mesh stub output file written");
 }
 
+void testCookEntryWritesOutputFile() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_entry_mesh.obj", "# entry mesh\n");
+
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_entry_mesh.fusemesh";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord record = cooker.cook_entry(entry);
+    expectTrue(record.ok, "cook_entry ok");
+    expectTrue(!record.cache_hit, "first cook_entry is cache miss");
+
+    std::ifstream cooked(entry.output_path);
+    std::string header;
+    cooked >> header;
+    expectTrue(header == "FUSEMESH_STUB", "cook_entry writes mesh stub output");
+}
+
 void testAssetCookerTextureAudioHookStubs() {
     static const unsigned char kMinimalPng[] = {
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
@@ -2002,6 +2021,7 @@ int main() {
     testParseCookManifest();
     testAssetGraphRoundTrip();
     testAssetCookerStub();
+    testCookEntryWritesOutputFile();
     testAssetCookerTextureAudioHookStubs();
     testAssetCookerBc7Texture();
     testCookJobGraphEmpty();

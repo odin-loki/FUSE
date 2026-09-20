@@ -302,13 +302,26 @@ bool CookJobGraph::is_valid_topological_order(const std::vector<std::string>& or
     return fuse::project::is_valid_topological_order(m_dep_graph, order);
 }
 
+std::vector<std::string> CookJobGraph::resolve_dependency_output_paths_(const CookJob& job) const {
+    std::vector<std::string> output_paths;
+    for (const std::string& dependency_id : job.dependency_ids) {
+        const CookJob* dependency = find_job_(dependency_id);
+        if (dependency != nullptr && !dependency->output_path.empty()) {
+            output_paths.push_back(dependency->output_path);
+        }
+    }
+    return output_paths;
+}
+
 bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, const CookManifest& manifest,
                                    CookJobGraphExecuteResult& result) {
+    const std::vector<std::string> dependency_outputs = resolve_dependency_output_paths_(job);
+
     CookManifestEntry cache_entry;
     cache_entry.kind = job.kind;
     cache_entry.source_path = job.source_path;
     cache_entry.output_path = job.output_path;
-    cache_entry.dependencies = job.dependency_ids;
+    cache_entry.dependencies = dependency_outputs;
 
     CookRecord cache_probe;
     if (cooker.probe_cook_cache_hit(cache_entry, manifest, &cache_probe)) {
@@ -361,7 +374,7 @@ bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, const Cook
     entry.kind = job.kind;
     entry.source_path = job.source_path;
     entry.output_path = job.output_path;
-    entry.dependencies = job.dependency_ids;
+    entry.dependencies = dependency_outputs;
 
     CookStageRecord& pack_stage = job.stages[2];
     const CookRecord packed = cooker.cook_entry(entry, manifest);

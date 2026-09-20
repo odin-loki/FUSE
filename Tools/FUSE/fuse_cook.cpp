@@ -178,6 +178,11 @@ int main(int argc, char** argv) {
             fuse::project::defaultCookCachePath(loaded.manifest.project_root);
         if (!dryRun) {
             pipeline.load_cook_cache(cachePath);
+            if (pipeline.cooker().would_reconcile_invalidation(loaded.manifest)) {
+                const fuse::u32 invalidated =
+                    pipeline.cooker().invalidate_stale_dependency_hashes(loaded.manifest);
+                std::printf("fuse_cook: reconciled %u stale cache entries\n", invalidated);
+            }
         }
         pipeline.plan_from_manifest(loaded.manifest);
         const fuse::project::CookBatchResult result = pipeline.execute(dryRun);
@@ -216,6 +221,11 @@ int main(int argc, char** argv) {
         const std::string cachePath = fuse::project::defaultCookCachePath(projectDir);
         if (!dryRun) {
             pipeline.load_cook_cache(cachePath);
+            if (pipeline.cooker().would_reconcile_invalidation(manifest)) {
+                const fuse::u32 invalidated =
+                    pipeline.cooker().invalidate_stale_dependency_hashes(manifest);
+                std::printf("fuse_cook: reconciled %u stale cache entries\n", invalidated);
+            }
         }
         pipeline.plan_from_manifest(manifest);
         const fuse::project::CookBatchResult result = pipeline.execute(dryRun);

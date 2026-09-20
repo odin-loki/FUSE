@@ -3,10 +3,13 @@
 #include <fuse/cook/bc7_encoder.hpp>
 #include <fuse/cook/ispc_texcomp_hook.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <vector>
+
+#include <cstring>
 
 #if defined(FUSE_HAS_ASSIMP)
 #include <assimp/Importer.hpp>
@@ -19,6 +22,7 @@
 #endif
 
 #if defined(FUSE_HAS_OGG_VORBIS)
+#include <ogg/ogg.h>
 #include <vorbis/codec.h>
 #include <vorbis/vorbisenc.h>
 #endif
@@ -31,11 +35,15 @@ struct WavHeaderInfo {
     bool valid = false;
     u32 channels = 0;
     u32 sampleRate = 0;
+    u16 bitsPerSample = 16;
     u32 dataBytes = 0;
+    u32 dataOffset = 0;
 };
 
 WavHeaderInfo sniffWavHeader(std::ifstream& in) {
     WavHeaderInfo info;
+    const std::streampos start = in.tellg();
+
     char riff[4] = {};
     in.read(riff, 4);
     if (riff[0] != 'R' || riff[1] != 'I' || riff[2] != 'F' || riff[3] != 'F') {
@@ -49,29 +57,65 @@ WavHeaderInfo sniffWavHeader(std::ifstream& in) {
         return info;
     }
 
-    char chunkId[4] = {};
-    in.read(chunkId, 4);
-    if (chunkId[0] != 'f' || chunkId[1] != 'm' || chunkId[2] != 't' || chunkId[3] != ' ') {
-        return info;
-    }
-
-    u32 chunkSize = 0;
-    in.read(reinterpret_cast<char*>(&chunkSize), 4);
     u16 audioFormat = 0;
     u16 channels = 0;
     u32 sampleRate = 0;
-    in.read(reinterpret_cast<char*>(&audioFormat), 2);
-    in.read(reinterpret_cast<char*>(&channels), 2);
-    in.read(reinterpret_cast<char*>(&sampleRate), 4);
-    if (audioFormat != 1u || channels == 0u || sampleRate == 0u) {
+    u16 bitsPerSample = 16;
+    bool fmtFound = false;
+
+    while (in && !in.eof()) {
+        char chunkId[4] = {};
+        in.read(chunkId, 4);
+        if (!in) {
+            break;
+        }
+
+        u32 chunkSize = 0;
+        in.read(reinterpret_cast<char*>(&chunkSize), 4);
+        if (!in) {
+            break;
+        }
+
+        if (chunkId[0] == 'f' && chunkId[1] == 'm' && chunkId[2] == 't' && chunkId[3] == ' ') {
+            in.read(reinterpret_cast<char*>(&audioFormat), 2);
+            in.read(reinterpret_cast<char*>(&channels), 2);
+            in.read(reinterpret_cast<char*>(&sampleRate), 4);
+            in.ignore(4);
+            in.read(reinterpret_cast<char*>(&bitsPerSample), 2);
+            if (chunkSize > 16u) {
+                in.ignore(static_cast<std::streamoff>(chunkSize - 16u));
+            }
+            fmtFound = true;
+        } else if (chunkId[0] == 'd' && chunkId[1] == 'a' && chunkId[2] == 't' && chunkId[3] == 'a') {
+            info.dataOffset = static_cast<u32>(in.tellg() - start);
+            info.dataBytes = chunkSize;
+            break;
+        } else {
+            in.ignore(static_cast<std::streamoff>(chunkSize));
+        }
+    }
+
+    if (!fmtFound || audioFormat != 1u || channels == 0u || sampleRate == 0u || info.dataBytes == 0u) {
         return info;
     }
 
     info.valid = true;
     info.channels = channels;
     info.sampleRate = sampleRate;
-    info.dataBytes = chunkSize > 16u ? chunkSize - 16u : 0u;
+    info.bitsPerSample = bitsPerSample > 0u ? bitsPerSample : 16u;
     return info;
+}
+
+bool readWavPcm16(std::ifstream& in, const WavHeaderInfo& wav, std::vector<std::int16_t>& pcm) {
+    if (!wav.valid || wav.dataOffset == 0u || wav.dataBytes == 0u || wav.bitsPerSample != 16u) {
+        return false;
+    }
+
+    in.seekg(static_cast<std::streamoff>(wav.dataOffset));
+    const u32 sampleCount = wav.dataBytes / (wav.channels * 2u);
+    pcm.resize(sampleCount * wav.channels);
+    in.read(reinterpret_cast<char*>(pcm.data()), static_cast<std::streamsize>(wav.dataBytes));
+    return in.good();
 }
 
 } // namespace
@@ -217,6 +261,7 @@ CookStubWriteResult tryCookTextureBc7(const std::string& input_path, const std::
     header << "height=" << encoded.height << "\n";
     header << "blocks=" << encoded.blockCount << "\n";
     header << "mipmaps=" << (mipmaps ? "on" : "off") << "\n";
+    header << "mip_levels=1\n";
     header << "mode=6\n";
     header << "DATA\n";
 
@@ -299,17 +344,142 @@ CookStubWriteResult tryCookAudioOgg(const std::string& input_path, const std::st
     const WavHeaderInfo wav = sniffWavHeader(in);
     const u32 effectiveRate = wav.valid ? wav.sampleRate : sample_rate;
     const u32 effectiveChannels = wav.valid ? wav.channels : 2u;
-    const u32 pcmSamples = wav.valid && effectiveChannels > 0u ? wav.dataBytes / (effectiveChannels * 2u) : 0u;
+
+    std::vector<std::int16_t> pcm;
+    u32 pcmSamples = 0;
+    if (wav.valid) {
+        in.seekg(0);
+        if (readWavPcm16(in, wav, pcm)) {
+            pcmSamples = wav.channels > 0u ? static_cast<u32>(pcm.size() / wav.channels) : 0u;
+        }
+    }
 
     vorbis_info vorbisInfo;
     vorbis_info_init(&vorbisInfo);
     const int vorbisSetup = vorbis_encode_init(&vorbisInfo, static_cast<long>(effectiveChannels),
                                                static_cast<long>(effectiveRate), 128000, 160000, 192000);
     const bool vorbisReady = vorbisSetup == 0;
+
+    std::string encoderNote = vorbisReady ? "vorbisenc_init_ok" : "vorbisenc_stub";
+    std::vector<u8> oggPages;
+
+    if (vorbisReady && !pcm.empty() && pcmSamples > 0u) {
+        vorbis_comment vorbisComment;
+        vorbis_comment_init(&vorbisComment);
+        vorbis_dsp_state vorbisDsp;
+        vorbis_analysis_state vorbisAnalysis;
+        vorbis_block vorbisBlock;
+
+        vorbis_analysis_init(&vorbisDsp, &vorbisInfo);
+        vorbis_block_init(&vorbisDsp, &vorbisBlock);
+
+        ogg_packet headerPacket{};
+        ogg_packet headerCommentPacket{};
+        ogg_packet headerCodePacket{};
+        vorbis_analysis_headerout(&vorbisDsp, &vorbisComment, &headerPacket, &headerCommentPacket,
+                                  &headerCodePacket);
+
+        ogg_stream_state oggStream;
+        ogg_stream_init(&oggStream, 0xFUSE0001u);
+
+        auto flushOggPage = [&](ogg_page& page) {
+            oggPages.insert(oggPages.end(), page.header, page.header + page.header_len);
+            oggPages.insert(oggPages.end(), page.body, page.body + page.body_len);
+        };
+
+        auto writeOggPacket = [&](ogg_packet& packet) {
+            ogg_stream_packetin(&oggStream, &packet);
+            ogg_page page;
+            while (ogg_stream_pageout(&oggStream, &page) != 0) {
+                flushOggPage(page);
+            }
+        };
+
+        writeOggPacket(headerPacket);
+        writeOggPacket(headerCommentPacket);
+        writeOggPacket(headerCodePacket);
+
+        const u32 blockSize = 1024u;
+        for (u32 offset = 0; offset < pcmSamples; offset += blockSize) {
+            const u32 frameCount = std::min(blockSize, pcmSamples - offset);
+            float** analysisBuffer = vorbis_analysis_buffer(&vorbisDsp, static_cast<int>(frameCount));
+            for (u32 frame = 0; frame < frameCount; ++frame) {
+                for (u32 channel = 0; channel < effectiveChannels; ++channel) {
+                    const std::int16_t sample = pcm[(offset + frame) * effectiveChannels + channel];
+                    analysisBuffer[channel][frame] = static_cast<float>(sample) / 32768.f;
+                }
+            }
+            vorbis_analysis_wrote(&vorbisDsp, static_cast<int>(frameCount));
+            while (vorbis_analysis_blockout(&vorbisDsp, &vorbisBlock) == 1) {
+                vorbis_analysis(&vorbisBlock, nullptr);
+                vorbis_bitrate_addblock(&vorbisBlock);
+                ogg_packet dataPacket;
+                while (vorbis_bitrate_flushpacket(&vorbisDsp, &dataPacket) != 0) {
+                    writeOggPacket(dataPacket);
+                }
+            }
+        }
+
+        vorbis_analysis_wrote(&vorbisDsp, 0);
+        while (vorbis_analysis_blockout(&vorbisDsp, &vorbisBlock) == 1) {
+            vorbis_analysis(&vorbisBlock, nullptr);
+            vorbis_bitrate_addblock(&vorbisBlock);
+            ogg_packet dataPacket;
+            while (vorbis_bitrate_flushpacket(&vorbisDsp, &dataPacket) != 0) {
+                writeOggPacket(dataPacket);
+            }
+        }
+
+        ogg_page page;
+        while (ogg_stream_flush(&oggStream, &page) != 0) {
+            flushOggPage(page);
+        }
+
+        ogg_stream_clear(&oggStream);
+        vorbis_block_clear(&vorbisBlock);
+        vorbis_dsp_clear(&vorbisDsp);
+        vorbis_comment_clear(&vorbisComment);
+        encoderNote = oggPages.size() > 64u ? "vorbisenc_encode_ok" : "vorbisenc_encode_empty";
+    }
+
     if (vorbisReady) {
         vorbis_encode_clear(&vorbisInfo);
     } else {
         vorbis_info_clear(&vorbisInfo);
+    }
+
+    if (!oggPages.empty()) {
+        std::ostringstream header;
+        header << "FUSEAUDIO_OGG\n";
+        header << "hook=ogg\n";
+        header << "rate=" << effectiveRate << "\n";
+        header << "format=" << format << "\n";
+        header << "channels=" << effectiveChannels << "\n";
+        header << "samples=" << pcmSamples << "\n";
+        header << "encoder=" << encoderNote << "\n";
+        header << "wav=" << (wav.valid ? "yes" : "no") << "\n";
+        header << "DATA\n";
+
+        std::string payload = header.str();
+        payload.append(reinterpret_cast<const char*>(oggPages.data()), oggPages.size());
+
+        std::error_code ec;
+        const std::filesystem::path parent = std::filesystem::path(output_path).parent_path();
+        if (!parent.empty()) {
+            std::filesystem::create_directories(parent, ec);
+        }
+
+        std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
+        CookStubWriteResult written;
+        if (!out) {
+            written.note = "unable to write ogg output";
+            return written;
+        }
+        out.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+        written.ok = out.good();
+        written.byteCount = static_cast<u32>(payload.size());
+        written.note = written.ok ? ("ogg encoded, pages=" + std::to_string(oggPages.size())) : "ogg write failed";
+        return written;
     }
 
     std::ostringstream payload;
@@ -319,7 +489,7 @@ CookStubWriteResult tryCookAudioOgg(const std::string& input_path, const std::st
     payload << "format=" << format << "\n";
     payload << "channels=" << effectiveChannels << "\n";
     payload << "samples=" << pcmSamples << "\n";
-    payload << "encoder=" << (vorbisReady ? "vorbisenc_init_ok" : "vorbisenc_stub") << "\n";
+    payload << "encoder=" << encoderNote << "\n";
     payload << "wav=" << (wav.valid ? "yes" : "no") << "\n";
 
     CookStubWriteResult written = writeTextStub(output_path, payload.str());
@@ -391,6 +561,7 @@ CookStubWriteResult write_texture_bc7_encoded(const std::string& output_path,
     header << "height=" << encoded.height << "\n";
     header << "blocks=" << encoded.blockCount << "\n";
     header << "mipmaps=" << (mipmaps ? "on" : "off") << "\n";
+    header << "mip_levels=1\n";
     header << "mode=6\n";
     header << "DATA\n";
 

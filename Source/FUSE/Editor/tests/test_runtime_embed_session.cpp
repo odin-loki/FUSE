@@ -44,6 +44,8 @@ void testRuntimeEmbedSessionCounters() {
 #if defined(FUSE_VULKAN_BACKEND)
     if (session.headlessGpuReady) {
         expectTrue(session.submittedFrames >= 1u, "headless GPU path submits frames when device ready");
+        expectTrue(session.hybridComposerFrames >= 1u,
+                   "embed session records hybrid composer frames when GPU ready");
     }
 #endif
 }

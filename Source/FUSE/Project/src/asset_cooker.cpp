@@ -241,24 +241,45 @@ CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry, const CookMan
         desc.input_path = entry.source_path;
         desc.output_path = entry.output_path;
         const u64 content_hash = hash_mesh_import(desc);
-        return cook_with_cache_(CookAssetKind::Mesh, entry.source_path, entry.output_path, content_hash,
-                                upstream_hash, "stub mesh cook from manifest entry");
+        CookRecord record =
+            cook_with_cache_(CookAssetKind::Mesh, entry.source_path, entry.output_path, content_hash,
+                             upstream_hash, "stub mesh cook from manifest entry");
+        if (record.ok && !record.cache_hit) {
+            const fuse::cook::CookStubWriteResult written =
+                fuse::cook::write_mesh_stub(desc.input_path, desc.output_path, 0u, false);
+            record = finalizeStubCook_(std::move(record), written);
+        }
+        return record;
     }
     case CookAssetKind::Texture: {
         TextureImportDesc desc;
         desc.input_path = entry.source_path;
         desc.output_path = entry.output_path;
         const u64 content_hash = hash_texture_import(desc);
-        return cook_with_cache_(CookAssetKind::Texture, entry.source_path, entry.output_path, content_hash,
-                                upstream_hash, "stub texture cook from manifest entry");
+        CookRecord record =
+            cook_with_cache_(CookAssetKind::Texture, entry.source_path, entry.output_path, content_hash,
+                             upstream_hash, "stub texture cook from manifest entry");
+        if (record.ok && !record.cache_hit) {
+            const fuse::cook::CookStubWriteResult written = fuse::cook::write_texture_stub(
+                desc.input_path, desc.output_path, "BC7", desc.generate_mipmaps);
+            record = finalizeStubCook_(std::move(record), written);
+        }
+        return record;
     }
     case CookAssetKind::Audio: {
         AudioImportDesc desc;
         desc.input_path = entry.source_path;
         desc.output_path = entry.output_path;
         const u64 content_hash = hash_audio_import(desc);
-        return cook_with_cache_(CookAssetKind::Audio, entry.source_path, entry.output_path, content_hash,
-                                upstream_hash, "stub audio cook from manifest entry");
+        CookRecord record =
+            cook_with_cache_(CookAssetKind::Audio, entry.source_path, entry.output_path, content_hash,
+                             upstream_hash, "stub audio cook from manifest entry");
+        if (record.ok && !record.cache_hit) {
+            const fuse::cook::CookStubWriteResult written =
+                fuse::cook::write_audio_stub(desc.input_path, desc.output_path, desc.target_sample_rate, "ogg");
+            record = finalizeStubCook_(std::move(record), written);
+        }
+        return record;
     }
     case CookAssetKind::Shader: {
         CookRecord record;

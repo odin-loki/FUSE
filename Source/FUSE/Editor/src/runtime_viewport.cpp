@@ -11,8 +11,12 @@
 #include <fuse/platform/window_wsi.hpp>
 #include <fuse/jobs/worker_count.hpp>
 #include <fuse/io/vfs.hpp>
+#include <fuse/hybrid/project_flags.hpp>
 #include <fuse/project/loader.hpp>
+#include <fuse/project/manifest.hpp>
 #include <fuse/project/t3d_asset_vfs.hpp>
+#include <fuse/world2d/world_2d.hpp>
+#include <fuse/world3d/world_3d.hpp>
 #include <fuse/scene/project_io.hpp>
 #include <fuse/scene/serialiser.hpp>
 #include <fuse/scene/wire_runtime_bind.hpp>
@@ -36,8 +40,11 @@ struct RuntimeViewportHeadlessGpuStub {
     std::unique_ptr<fuse::renderer::RhiContext> context;
     std::unique_ptr<fuse::hybrid::HybridRendererBootstrap> hybrid;
     std::unique_ptr<fuse::renderer::PresentPath> fallbackPresentPath;
+    fuse::world2d::World2D embedWorld2D;
+    fuse::world3d::World3D embedWorld3D;
     u32 submittedFrames = 0;
     bool externalSwapchainWired = false;
+    bool worldsAttached = false;
 };
 
 RuntimeViewportHeadlessGpuStub* asHeadlessGpuStub(void* stub) {
@@ -79,6 +86,23 @@ void recordViewportPresentDiagnostics(RuntimeEmbedSession& session,
     if (status.presentSkippedNoWsiCount > session.presentSkippedNoWsiCount) {
         session.presentSkippedNoWsiCount = status.presentSkippedNoWsiCount;
     }
+}
+
+void attachEmbedWorldsToHybrid(RuntimeViewportHeadlessGpuStub* gpu, RuntimeEmbedSession& session,
+                               const fuse::project::ProjectManifest& manifest) {
+    if (gpu == nullptr || gpu->hybrid == nullptr || gpu->worldsAttached) {
+        return;
+    }
+
+    fuse::hybrid::DimensionFlags flags = fuse::project::toDimensionFlags(manifest.dimensions);
+    gpu->hybrid->composer().setProjectFlags(flags);
+    gpu->embedWorld3D.setClearColor(0.08f, 0.12f, 0.18f);
+    gpu->embedWorld3D.setEnabled(flags.enable3D);
+    gpu->embedWorld2D.setEnabled(flags.enable2D);
+    gpu->hybrid->composer().attachWorld2D(&gpu->embedWorld2D);
+    gpu->hybrid->composer().attachWorld3D(&gpu->embedWorld3D);
+    gpu->worldsAttached = true;
+    ++session.hybridComposerFrames;
 }
 
 void maybeRetireSoftwarePlaceholder(RuntimeViewportHeadlessGpuStub* gpu, RuntimeEmbedSession& session,
@@ -314,6 +338,13 @@ void RuntimeViewportHook::ensureWorldLoaded_(EditorHost& host) {
     m_embedSession.worldLoaded = true;
     m_embedded = true;
 
+#if defined(FUSE_VULKAN_BACKEND)
+    RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
+    if (gpu != nullptr) {
+        attachEmbedWorldsToHybrid(gpu, m_embedSession, projectLoad.manifest);
+    }
+#endif
+
     if (!m_lastProjectLabel.empty()) {
         runtimeScene.setName(m_lastProjectLabel);
     }
@@ -477,55 +508,50 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
     }
 
     if (m_embedSession.wsiPresentPathReady && gpu->hybrid != nullptr) {
+        if (m_surfaceHandoff.qtRealSurface && m_embedSession.usesExternalSwapchain) {
+            ++m_embedSession.qtLivePresentAttempts;
+        }
+
+        fuse::frame::FrameCtx frameCtx{};
+        frameCtx.frameIndex = m_runtimeTickCount;
+        const u32 composerFramesBefore = gpu->hybrid->composer().frameCount();
+        gpu->hybrid->runFrame(frameCtx);
+        if (gpu->hybrid->composer().frameCount() > composerFramesBefore) {
+            ++m_embedSession.hybridComposerFrames;
+        }
+
         fuse::renderer::PresentPath* presentPath = gpu->hybrid->presentPath();
         if (presentPath != nullptr) {
-            if (m_surfaceHandoff.qtRealSurface && m_embedSession.usesExternalSwapchain) {
-                ++m_embedSession.qtLivePresentAttempts;
-            }
-            const u32 priorRealPresentCount = presentPath->status().realPresentCallCount;
-            if (presentPath->waitInFlightFence()) {
-                presentPath->acquireImage();
-                presentPath->markReadyToPresent();
-                if (presentPath->presentImage()) {
-                    ++m_embedSession.wsiPresentPathTicks;
-                    ++gpu->submittedFrames;
-                    m_embedSession.submittedFrames = gpu->submittedFrames;
+            ++m_embedSession.wsiPresentPathTicks;
+            ++gpu->submittedFrames;
+            m_embedSession.submittedFrames = gpu->submittedFrames;
 #if defined(FUSE_HAS_VULKAN_RHI)
-                    maybeRetireSoftwarePlaceholder(gpu, m_embedSession, m_surfaceHandoff);
-                    if (viewportQtPresentPathReady(m_surfaceHandoff, gpu->externalSwapchainWired)) {
-                        ++m_embedSession.qtPresentPathReadyTicks;
-                    }
-                    if (viewportQtPresentPathEligible(m_surfaceHandoff, gpu->externalSwapchainWired)) {
-                        ++m_embedSession.qtPresentPathEligibleTicks;
-                    }
-                    if (viewportQtPresentEligible(m_surfaceHandoff)) {
-                        ++m_embedSession.qtPresentEligibleTicks;
-                    }
-                    if (presentPath->status().realPresentCallCount > m_embedSession.realPresentCallCount) {
-                        m_embedSession.realPresentCallCount = presentPath->status().realPresentCallCount;
-                    }
-                    if (presentPath->status().qtRealPresentCallCount > m_embedSession.qtRealPresentCallCount) {
-                        m_embedSession.qtRealPresentCallCount = presentPath->status().qtRealPresentCallCount;
-                    }
-#endif
-                    if (m_surfaceHandoff.qtRealSurface && m_embedSession.usesExternalSwapchain) {
-                        ++m_embedSession.qtLivePresentTicks;
-                    }
-                }
-                if (presentPath->status().realPresentCallCount > priorRealPresentCount &&
-                    m_surfaceHandoff.qtRealSurface) {
-                    m_embedSession.qtLivePresentTicks =
-                        std::max(m_embedSession.qtLivePresentTicks,
-                                 presentPath->status().realPresentCallCount);
-                }
-                if (presentPath->status().presentSkippedNoWsiCount >
-                    m_embedSession.presentSkippedNoWsiCount) {
-                    m_embedSession.presentSkippedNoWsiCount =
-                        presentPath->status().presentSkippedNoWsiCount;
-                }
+            maybeRetireSoftwarePlaceholder(gpu, m_embedSession, m_surfaceHandoff);
+            if (viewportQtPresentPathReady(m_surfaceHandoff, gpu->externalSwapchainWired)) {
+                ++m_embedSession.qtPresentPathReadyTicks;
             }
-            return;
+            if (viewportQtPresentPathEligible(m_surfaceHandoff, gpu->externalSwapchainWired)) {
+                ++m_embedSession.qtPresentPathEligibleTicks;
+            }
+            if (viewportQtPresentEligible(m_surfaceHandoff)) {
+                ++m_embedSession.qtPresentEligibleTicks;
+            }
+            if (presentPath->status().realPresentCallCount > m_embedSession.realPresentCallCount) {
+                m_embedSession.realPresentCallCount = presentPath->status().realPresentCallCount;
+            }
+            if (presentPath->status().qtRealPresentCallCount > m_embedSession.qtRealPresentCallCount) {
+                m_embedSession.qtRealPresentCallCount = presentPath->status().qtRealPresentCallCount;
+            }
+            if (m_surfaceHandoff.qtRealSurface && m_embedSession.usesExternalSwapchain &&
+                presentPath->status().qtRealPresentCallCount > 0u) {
+                ++m_embedSession.qtLivePresentTicks;
+            }
+            if (presentPath->status().presentSkippedNoWsiCount > m_embedSession.presentSkippedNoWsiCount) {
+                m_embedSession.presentSkippedNoWsiCount = presentPath->status().presentSkippedNoWsiCount;
+            }
+#endif
         }
+        return;
     }
 
     if (m_embedSession.headlessGpuReady && gpu->context != nullptr) {

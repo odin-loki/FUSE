@@ -42,6 +42,8 @@ struct RuntimeEmbedSession {
     u32 materialAsyncLoadsDrained = 0;
     u32 qtLivePresentAttempts = 0;
     u32 qtLivePresentTicks = 0;
+    u32 hybridComposerFrames = 0;
+    u32 materialTextureCooks = 0;
     bool qtLivePresentReady = false;
     bool usesExternalSwapchain = false;
     u32 submittedFrames = 0;

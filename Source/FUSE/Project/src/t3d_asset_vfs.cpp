@@ -2,6 +2,7 @@
 
 #include <fuse/io/vfs.hpp>
 #include <fuse/log/logger.hpp>
+#include <fuse/project/asset_cooker.hpp>
 #include <fuse/project/cook_content_hash.hpp>
 
 #include <cstring>
@@ -303,8 +304,22 @@ T3DMaterialCookCacheResult drainT3DMaterialLoads(fuse::HandleTable<fuse::io::Ass
             continue;
         }
 
-        storeMaterialCookCacheEntry(*cache, physicalPath, load.asset.virtualPath);
-        ++result.cookCacheStores;
+        const std::string outputPath = materialVirtualPathToCookOutput(load.asset.virtualPath);
+        if (!outputPath.empty()) {
+            AssetCooker cooker;
+            TextureImportDesc desc;
+            desc.input_path = physicalPath;
+            desc.output_path = outputPath;
+            desc.generate_mipmaps = true;
+            const CookRecord cooked = cooker.cook_texture(desc);
+            if (cooked.ok) {
+                storeMaterialCookCacheEntry(*cache, physicalPath, load.asset.virtualPath);
+                ++result.cookCacheStores;
+            }
+        } else {
+            storeMaterialCookCacheEntry(*cache, physicalPath, load.asset.virtualPath);
+            ++result.cookCacheStores;
+        }
     }
 
     result.note = "drained " + std::to_string(result.drainedCount) + " material vfs load(s), stored " +

@@ -242,8 +242,19 @@ CTest: `fuse_scene_wire_runtime_bind`, `fuse_world2d_fuselevel_bridge`, `fuse_wo
 
 `fuse_cook` loads/saves `.fuse/cook_cache.json` on `--project` / `--manifest` runs and prints `[cache hit, skipped re-cook]` progress.
 
-## 16. Deferred (honest backlog)
+## 16. Wave 14 progress
+
+| API | Role |
+|-----|------|
+| `AssetCooker::cook_entry` | Delegates to `cook_mesh` / `cook_texture` / `cook_audio` — manifest job-graph packs write real stub outputs on cache miss |
+| `tryCookTextureIspc` | Mipmap chain generation (`mip_levels=` header); `hook=ispc_texcomp_stub` marker when honest header stub is linked |
+| `tryCookAudioOgg` | WAV `data` chunk walk + PCM16 decode; real OGG page encode when `libvorbisenc` + `libogg` linked (`FUSEAUDIO_OGG`) |
+| `fuse_cook` reconcile | `invalidate_stale_dependency_hashes` before `--project` / `--manifest` execute when stale upstream hashes detected |
+| `drainT3DMaterialLoads` | Cache miss triggers `AssetCooker::cook_texture` via `materialVirtualPathToCookOutput` |
+| `RuntimeEmbedSession::hybridComposerFrames` | Counter when `HybridRendererBootstrap::runFrame` composes in editor embed tick |
+
+## 17. Deferred (honest backlog)
 
 - Real ispc_texcomp library replacing honest header stub
 - libvorbisenc system package on CI images (runtime libs present; dev headers optional today)
-- Full OGG container encode (stub writes `FUSEAUDIO_STUB` metadata today)
+- Full OGG container encode for non-WAV sources (WAV → OGG path lands when vorbisenc linked)
