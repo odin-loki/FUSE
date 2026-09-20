@@ -50,6 +50,7 @@ set(_fuse_t3d_legacy_engine_sources
     src/engine_probe/gbitmap_probe_stub.cpp
     src/engine_probe/rgb2xyz_probe_stub.cpp
     src/engine_probe/rgb2luv_probe_stub.cpp
+    src/engine_probe/uuid_probe_stub.cpp
     src/engine_probe/bitmap_probe_smoke.cpp
     src/engine_probe/engine_probe_batch_smoke.cpp
     src/engine_probe/color_probe_smoke.cpp
@@ -164,4 +165,4 @@ set_source_files_properties(
         COMPILE_OPTIONS "-include${_fuse_t3d_legacy_engine_probe_include}/bitstream_prelude.h"
 )
 
-message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-11: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB/PNG + read/writeBitmap stub + crc/bitVector/idGenerator/tDictionary + timeClass/tSignal + color/dataChunker + filterStream/resizeStream/tagDictionary + findMatch/tokenizer + rgb2xyz/luv stubs + gBitmap fillWhite/sGetExtensionList/getColor/setColor RGBA8 + bitStream/stringBuffer/unicode + console shadows + stubs)")
+message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-12: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB/PNG + read/writeBitmap stub + crc/bitVector/idGenerator/tDictionary + timeClass/tSignal + color/dataChunker + filterStream/resizeStream/tagDictionary + findMatch/tokenizer + rgb2xyz/luv stubs + gBitmap fillWhite/sGetExtensionList/getColor/setColor RGB/RGBA8/extrudeMipLevels + bitStream Huffman/class-id + stringBuffer/unicode + uuid_probe_stub + console shadows + stubs)")

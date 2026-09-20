@@ -23,8 +23,10 @@
 #include "core/strings/findMatch.h"
 #include "core/util/rgb2xyz.h"
 #include "core/util/rgb2luv.h"
+#include "console/consoleObject.h"
 #include "core/stream/bitStream.h"
 #include "core/stringBuffer.h"
+#include "core/util/uuid.h"
 
 #include <cstdio>
 #include <cstring>
@@ -282,6 +284,61 @@ bool bitStreamRoundTripSmoke() {
         return false;
     }
     return value == 0xA5A5A5A5u;
+}
+
+bool bitStreamClassIdSmoke() {
+    U8 buffer[32] = {};
+    BitStream stream(buffer, static_cast<S32>(sizeof(buffer)), static_cast<S32>(sizeof(buffer)));
+
+    constexpr U32 kClassId = 7u;
+    stream.writeClassId(kClassId, NetClassTypeObject, NetClassGroupGame);
+    stream.setPosition(0);
+
+    const S32 read = stream.readClassId(NetClassTypeObject, NetClassGroupGame);
+    return read == static_cast<S32>(kClassId);
+}
+
+bool bitStreamHuffmanStringSmoke() {
+    U8 buffer[256] = {};
+    BitStream stream(buffer, static_cast<S32>(sizeof(buffer)), static_cast<S32>(sizeof(buffer)));
+
+    static const char kPayload[] = "fuse_u2_huffman";
+    stream.writeString(kPayload, 255);
+    stream.setPosition(0);
+
+    char out[256] = {};
+    stream.readString(out);
+    return std::strcmp(out, kPayload) == 0;
+}
+
+bool stringStartsEndsSmoke() {
+    const String path("textures/foo.bmp");
+    if (!path.startsWith("textures/")) {
+        return false;
+    }
+    if (path.startsWith("audio/")) {
+        return false;
+    }
+    return path.endsWith(".bmp") && !path.endsWith(".png");
+}
+
+bool uuidRoundTripSmoke() {
+    Torque::UUID generated;
+    generated.generate();
+    if (generated.isNull()) {
+        return false;
+    }
+
+    const String text = generated.toString();
+    if (text.length() != 36u) {
+        return false;
+    }
+
+    Torque::UUID parsed;
+    if (!parsed.fromString(text.c_str())) {
+        return false;
+    }
+    return parsed == generated;
 }
 
 bool stringBufferUtf8Smoke() {

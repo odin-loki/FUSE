@@ -376,3 +376,27 @@ bool String::operator==(StringChar c) const
 {
     return length() == 1 && c_str()[0] == c;
 }
+
+bool String::startsWith(const char* text) const
+{
+    if (text == nullptr) {
+        return false;
+    }
+    const SizeType prefixLen = static_cast<SizeType>(std::strlen(text));
+    if (prefixLen > length()) {
+        return false;
+    }
+    return std::strncmp(c_str(), text, prefixLen) == 0;
+}
+
+bool String::endsWith(const char* text) const
+{
+    if (text == nullptr) {
+        return false;
+    }
+    const SizeType suffixLen = static_cast<SizeType>(std::strlen(text));
+    if (suffixLen > length()) {
+        return false;
+    }
+    return std::strcmp(c_str() + length() - suffixLen, text) == 0;
+}

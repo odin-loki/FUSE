@@ -348,13 +348,17 @@ bool GBitmap::getColor(const U32 x, const U32 y, ColorI& rColor, const U32 mipLe
     }
 
     const U8* p = getAddress(x, y, targMip, targFace);
-    if (mInternalFormat != GFXFormatR8G8B8A8) {
-        AssertFatal(false, "GBitmap probe stub getColor supports GFXFormatR8G8B8A8 only");
+    switch (mInternalFormat) {
+    case GFXFormatR8G8B8A8:
+        rColor.set(p[0], p[1], p[2], p[3]);
+        return true;
+    case GFXFormatR8G8B8:
+        rColor.set(p[0], p[1], p[2], 255);
+        return true;
+    default:
+        AssertFatal(false, "GBitmap probe stub getColor supports RGB/RGBA8 only");
         return false;
     }
-
-    rColor.set(p[0], p[1], p[2], p[3]);
-    return true;
 }
 
 bool GBitmap::setColor(const U32 x, const U32 y, const ColorI& rColor, const U32 mipLevel, const U32 face)
@@ -367,14 +371,20 @@ bool GBitmap::setColor(const U32 x, const U32 y, const ColorI& rColor, const U32
     }
 
     U8* p = getAddress(x, y, targMip, targFace);
-    if (mInternalFormat != GFXFormatR8G8B8A8) {
-        AssertFatal(false, "GBitmap probe stub setColor supports GFXFormatR8G8B8A8 only");
+    switch (mInternalFormat) {
+    case GFXFormatR8G8B8A8:
+        p[0] = rColor.red;
+        p[1] = rColor.green;
+        p[2] = rColor.blue;
+        p[3] = rColor.alpha;
+        return true;
+    case GFXFormatR8G8B8:
+        p[0] = rColor.red;
+        p[1] = rColor.green;
+        p[2] = rColor.blue;
+        return true;
+    default:
+        AssertFatal(false, "GBitmap probe stub setColor supports RGB/RGBA8 only");
         return false;
     }
-
-    p[0] = rColor.red;
-    p[1] = rColor.green;
-    p[2] = rColor.blue;
-    p[3] = rColor.alpha;
-    return true;
 }

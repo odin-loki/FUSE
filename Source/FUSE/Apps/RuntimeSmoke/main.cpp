@@ -373,8 +373,16 @@ int main() {
               "engine probe ConvertRGB toLUV/toLUVScaled");
         check(fuse::legacy::t3d::engineProbe::bitStreamRoundTripSmoke(),
               "engine probe BitStream U32 write/read round-trip");
+        check(fuse::legacy::t3d::engineProbe::bitStreamClassIdSmoke(),
+              "engine probe BitStream writeClassId/readClassId round-trip");
+        check(fuse::legacy::t3d::engineProbe::bitStreamHuffmanStringSmoke(),
+              "engine probe BitStream Huffman writeString/readString round-trip");
         check(fuse::legacy::t3d::engineProbe::stringBufferUtf8Smoke(),
               "engine probe StringBuffer UTF-8 set/append/getUTF8");
+        check(fuse::legacy::t3d::engineProbe::stringStartsEndsSmoke(),
+              "engine probe String startsWith/endsWith prefix/suffix");
+        check(fuse::legacy::t3d::engineProbe::uuidRoundTripSmoke(),
+              "engine probe UUID generate/toString/fromString round-trip");
         check(fuse::legacy::t3d::engineProbe::gbitmapTransparencySmoke(),
               "engine probe GBitmap checkForTransparency alpha scan");
         check(fuse::legacy::t3d::engineProbe::gbitmapFillWhiteSmoke(),
@@ -383,6 +391,10 @@ int main() {
               "engine probe GBitmap sGetExtensionList includes STB bmp");
         check(fuse::legacy::t3d::engineProbe::gbitmapColorRgba8Smoke(),
               "engine probe GBitmap getColor/setColor RGBA8");
+        check(fuse::legacy::t3d::engineProbe::gbitmapColorRgb8Smoke(),
+              "engine probe GBitmap getColor/setColor RGB8");
+        check(fuse::legacy::t3d::engineProbe::gbitmapExtrudeMipLevelsSmoke(),
+              "engine probe GBitmap allocateBitmap extrudeMipLevels mip chain");
     }
 #endif
 

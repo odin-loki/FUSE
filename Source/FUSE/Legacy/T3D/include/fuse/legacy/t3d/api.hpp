@@ -93,11 +93,17 @@ bool tokenizerSmoke();
 bool rgb2xyzSmoke();
 bool rgb2luvSmoke();
 bool bitStreamRoundTripSmoke();
+bool bitStreamClassIdSmoke();
+bool bitStreamHuffmanStringSmoke();
 bool stringBufferUtf8Smoke();
+bool stringStartsEndsSmoke();
+bool uuidRoundTripSmoke();
 bool gbitmapTransparencySmoke();
 bool gbitmapFillWhiteSmoke();
 bool gbitmapExtensionListSmoke();
 bool gbitmapColorRgba8Smoke();
+bool gbitmapColorRgb8Smoke();
+bool gbitmapExtrudeMipLevelsSmoke();
 } // namespace engineProbe
 #endif
 

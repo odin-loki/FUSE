@@ -253,4 +253,37 @@ bool gbitmapColorRgba8Smoke() {
            !bitmap.getColor(9, 0, read);
 }
 
+bool gbitmapColorRgb8Smoke() {
+    GBitmap bitmap;
+    bitmap.allocateBitmap(2, 2, false, GFXFormatR8G8B8);
+
+    const ColorI written(11, 22, 33, 255);
+    if (!bitmap.setColor(0, 1, written)) {
+        return false;
+    }
+
+    ColorI read;
+    if (!bitmap.getColor(0, 1, read)) {
+        return false;
+    }
+
+    return read.red == 11 && read.green == 22 && read.blue == 33 && read.alpha == 255;
+}
+
+bool gbitmapExtrudeMipLevelsSmoke() {
+    GBitmap bitmap;
+    bitmap.allocateBitmap(4, 4, true, GFXFormatR8G8B8A8);
+
+    if (bitmap.getNumMipLevels() != 3u) {
+        return false;
+    }
+    if (bitmap.getWidth(0) != 4u || bitmap.getHeight(0) != 4u) {
+        return false;
+    }
+    if (bitmap.getWidth(1) != 2u || bitmap.getHeight(1) != 2u) {
+        return false;
+    }
+    return bitmap.getWidth(2) == 1u && bitmap.getHeight(2) == 1u && bitmap.getByteSize() > 16u;
+}
+
 } // namespace fuse::legacy::t3d::engineProbe

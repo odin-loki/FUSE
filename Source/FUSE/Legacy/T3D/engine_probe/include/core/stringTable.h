@@ -14,31 +14,10 @@ class _StringTable
 public:
    StringTableEntry EmptyString() const { return _EmptyString; }
 
-   StringTableEntry insert(const char* string, bool /*caseSens*/ = false)
-   {
-      if (!string) {
-         return _EmptyString;
-      }
-      if (string[0] == '\0') {
-         return _EmptyString;
-      }
-      return string;
-   }
-
-   StringTableEntry insertn(const char* string, S32 /*len*/, bool /*caseSens*/ = false)
-   {
-      return string ? string : "";
-   }
-
-   StringTableEntry lookup(const char* string, bool /*caseSens*/ = false)
-   {
-      return string ? string : nullptr;
-   }
-
-   StringTableEntry lookupn(const char* string, S32 /*len*/, bool /*caseSens*/ = false)
-   {
-      return string ? string : nullptr;
-   }
+   StringTableEntry insert(const char* string, bool caseSens = false);
+   StringTableEntry insertn(const char* string, S32 len, bool caseSens = false);
+   StringTableEntry lookup(const char* string, bool caseSens = false);
+   StringTableEntry lookupn(const char* string, S32 len, bool caseSens = false);
 };
 
 extern _StringTable* StringTable;
