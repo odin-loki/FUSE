@@ -363,6 +363,21 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         return false;
     }
 
+    if (command.propertyName == "name" || command.propertyName == "object.name") {
+        if (!command.target.isValid()) {
+            return false;
+        }
+
+        scene::SceneEntity* runtimeEntity = host.runtimeScene().entityAt(command.target.index());
+        if (runtimeEntity == nullptr) {
+            return false;
+        }
+
+        runtimeEntity->name = command.propertyValue;
+        host.editorState().sceneModified = true;
+        return true;
+    }
+
     if (command.propertyName == "cinematics.seq_timeline_host_wire") {
         const fuse::cinematics::TimelineMs timeMs =
             static_cast<fuse::cinematics::TimelineMs>(std::strtoul(command.propertyValue.c_str(), nullptr, 10));
@@ -631,7 +646,10 @@ void EditorHost::applyCommand_(const EditorCommand& command) {
         break;
     case CommandKind::SelectEntity: {
         const ecs::EntityID selected = handleToEntity(command.target);
-        if (selected.valid() && m_editorScene.registry().alive(selected)) {
+        const bool ecsAlive = selected.valid() && m_editorScene.registry().alive(selected);
+        const bool runtimeAlive =
+            command.target.isValid() && command.target.index() < m_runtimeScene.entityCount();
+        if (ecsAlive || runtimeAlive) {
             m_state.primarySelection = selected;
             m_state.selectedEntities.clear();
             m_state.selectedEntities.push_back(selected);

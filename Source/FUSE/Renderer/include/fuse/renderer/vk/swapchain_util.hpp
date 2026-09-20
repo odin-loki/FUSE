@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/core/track_b.hpp>
 #include <fuse/renderer/vk/frame.hpp>
 #include <fuse/types.hpp>
 
@@ -33,6 +34,11 @@ bool desktopGlfwPresentEnabled();
 
 /// Compile-time gate: desktop Qt `vkQueuePresentKHR` path (OFF in headless CI by default).
 bool desktopQtPresentEnabled();
+
+/// FUSE Track B: production `vkQueuePresentKHR` is allowed only when VulkanProduction is unlocked.
+[[nodiscard]] inline bool productionPresentAllowed() {
+    return fuse::core::trackBFeatureEnabled(fuse::core::TrackBFeature::VulkanProduction);
+}
 
 /// Runtime: display + GLFW WSI available and desktop present gate is ON.
 bool desktopGlfwPresentRuntimeReady();

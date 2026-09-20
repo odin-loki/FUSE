@@ -25,7 +25,7 @@ struct LegacyChunkRoute {
 /// Stable diagnostic label for logging/tests.
 [[nodiscard]] const char* legacy_dialect_name(LegacyScriptDialect dialect);
 
-/// True when the dialect is recorded for compat routing without invoking a legacy VM.
+/// True when the dialect belongs to the quarantined Compat TorqueScript VM (t3d/t2d).
 [[nodiscard]] bool legacy_dialect_is_compat_stub(LegacyScriptDialect dialect);
 
 } // namespace fuse::script

@@ -1,6 +1,9 @@
 #include <fuse/alloc/alloc_stats.hpp>
+#include <fuse/alloc/domain_budget.hpp>
 #include <fuse/alloc/frame_allocator.hpp>
+#include <fuse/alloc/freelist_allocator.hpp>
 #include <fuse/alloc/pool_allocator.hpp>
+#include <fuse/alloc/ring_allocator.hpp>
 #include <fuse/alloc/stack_allocator.hpp>
 
 #include <cstdio>
@@ -107,6 +110,107 @@ void testStackAllocatorLifoFree() {
     expectTrue(stack.stats().usedBytes == 8u, "stack LIFO free shrinks top allocation");
 }
 
+void testRingAllocatorWrap() {
+    fuse::alloc::RingAllocator ring(128u);
+    auto* a = ring.allocate<fuse::u8>(32u);
+    auto* b = ring.allocate<fuse::u8>(32u);
+    expectTrue(a != nullptr && b != nullptr && a != b, "ring fills from the head");
+
+    ring.free(a, 32u);
+    auto* c = ring.allocate<fuse::u8>(32u);
+    expectTrue(c != nullptr, "ring wraps into the freed prefix");
+    expectTrue(c == a, "wrapped alloc lands at the start of the buffer");
+    expectTrue(ring.usedBytes() > 0u, "ring used tracks live + wrap padding");
+    expectTrue(ring.stats().peakUsedBytes >= ring.usedBytes(), "ring peak tracks high water");
+
+    expectTrue(ring.allocate<fuse::u8>(32u) == nullptr, "ring fails when wrap would clobber live data");
+    expectTrue(ring.failedAllocations() >= 1u, "ring records wrap-clobber failure");
+}
+
+void testRingAllocatorOom() {
+    fuse::alloc::RingAllocator ring(32u);
+    expectTrue(ring.allocate<fuse::u8>(64u) == nullptr, "ring OOM when request exceeds capacity");
+    expectTrue(ring.failedAllocations() == 1u, "ring records OOM");
+
+    auto* a = ring.allocate<fuse::u8>(8u);
+    expectTrue(a != nullptr, "smaller alloc still succeeds after OOM");
+    expectTrue(ring.allocate<fuse::u8>(32u) == nullptr, "ring rejects alloc that cannot wrap without clobber");
+    expectTrue(ring.failedAllocations() == 2u, "ring counts subsequent OOM");
+}
+
+void testFreeListReuse() {
+    fuse::alloc::FreeListAllocator heap(256u);
+    void* a = heap.allocate<fuse::u8>(32u);
+    void* b = heap.allocate<fuse::u8>(32u);
+    expectTrue(a != nullptr && b != nullptr && a != b, "freelist returns distinct blocks");
+
+    heap.free(a, 32u);
+    void* c = heap.allocate<fuse::u8>(32u);
+    expectTrue(c == a, "freelist first-fit reuses a freed block");
+    expectTrue(heap.stats().freeCount >= 1u, "freelist records free");
+}
+
+void testFreeListCoalesce() {
+    fuse::alloc::FreeListAllocator heap(256u);
+    void* a = heap.allocate<fuse::u8>(32u);
+    void* b = heap.allocate<fuse::u8>(32u);
+    void* c = heap.allocate<fuse::u8>(32u);
+    expectTrue(a != nullptr && b != nullptr && c != nullptr, "freelist allocates three adjacent blocks");
+
+    heap.free(a, 32u);
+    heap.free(b, 32u);
+    void* d = heap.allocate<fuse::u8>(80u);
+    expectTrue(d != nullptr, "freelist coalesces adjacent free blocks");
+    expectTrue(d == a, "coalesced region starts at the first freed block");
+}
+
+void testFreeListOom() {
+    fuse::alloc::FreeListAllocator heap(64u);
+    expectTrue(heap.allocate<fuse::u8>(128u) == nullptr, "freelist OOM when request exceeds arena");
+    expectTrue(heap.failedAllocations() == 1u, "freelist records failed alloc");
+
+    void* a = heap.allocate<fuse::u8>(48u);
+    expectTrue(a != nullptr, "freelist still serves a fitting request after OOM");
+    expectTrue(heap.allocate<fuse::u8>(48u) == nullptr, "freelist rejects a second block that does not fit");
+    expectTrue(heap.failedAllocations() == 2u, "freelist counts in-arena OOM");
+}
+
+void testDomainBudgetReject() {
+    fuse::alloc::DomainBudget core("core", 32u);
+    fuse::alloc::DomainBudget frame("frame", 64u);
+    fuse::alloc::DomainBudget scene("scene", 64u);
+
+    expectTrue(core.tryCharge(16u), "core charge under cap");
+    expectTrue(frame.tryCharge(40u), "frame charge under cap");
+    expectTrue(scene.tryCharge(40u), "scene charge under cap");
+    expectTrue(scene.used() == 40u, "scene used tracks charge");
+    expectTrue(!scene.tryCharge(32u), "scene fail closed when over cap");
+    expectTrue(scene.used() == 40u, "failed charge does not consume");
+    expectTrue(scene.failed() == 1u, "failed charge is counted");
+    expectTrue(scene.stats().failedAllocs == 1u, "budget stats surface failed charges");
+
+    scene.release(40u);
+    expectTrue(scene.used() == 0u, "release returns budget");
+    expectTrue(scene.tryCharge(64u), "exact cap succeeds");
+    expectTrue(scene.peak() == 64u, "peak tracks high water");
+    expectTrue(!scene.tryCharge(1u), "charge at cap is rejected");
+}
+
+void testIAllocatorHierarchy() {
+    fuse::alloc::RingAllocator ring(64u, "ring");
+    fuse::alloc::FreeListAllocator heap(64u, "freelist");
+    fuse::alloc::IAllocator* allocators[] = {&ring, &heap};
+    for (fuse::alloc::IAllocator* allocator : allocators) {
+        void* p = allocator->alloc({8u, 8u, "p1"});
+        expectTrue(p != nullptr, "IAllocator alloc succeeds");
+        expectTrue(allocator->stats().allocCount >= 1u, "IAllocator stats track alloc");
+        expectTrue(allocator->name() != nullptr, "IAllocator reports a name");
+        allocator->free(p, 8u);
+        allocator->reset();
+        expectTrue(allocator->stats().usedBytes == 0u, "IAllocator reset clears used");
+    }
+}
+
 void testGlobalStatsHook() {
     resetStatsHook();
 
@@ -143,6 +247,13 @@ int main() {
     testPoolAllocatorRejectsOversize();
     testStackAllocatorMarkRollback();
     testStackAllocatorLifoFree();
+    testRingAllocatorWrap();
+    testRingAllocatorOom();
+    testFreeListReuse();
+    testFreeListCoalesce();
+    testFreeListOom();
+    testDomainBudgetReject();
+    testIAllocatorHierarchy();
     testGlobalStatsHook();
 
     if (g_failures != 0) {

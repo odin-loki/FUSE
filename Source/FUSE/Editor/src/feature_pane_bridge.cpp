@@ -9,6 +9,9 @@ FeaturePaneBridge::FeaturePaneBridge(EditorHost& host) : m_host(host) {}
 
 void FeaturePaneBridge::syncPropertyPane() {
     m_inspector.sync(m_host.editorState(), m_host.editorScene());
+    if (!m_inspector.hasSelection()) {
+        m_inspector.syncRuntime(m_host.editorState(), m_host.runtimeScene());
+    }
 }
 
 void FeaturePaneBridge::postPlayRequested() {

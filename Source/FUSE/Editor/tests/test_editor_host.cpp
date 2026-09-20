@@ -572,8 +572,10 @@ void testRuntimeViewportSwapchainRecreateAfterHandoff() {
 
     expectTrue(host.runtimeViewport().panel().width() == 1280u,
                "resize after handoff updates panel width");
+#if defined(FUSE_VULKAN_BACKEND)
     expectTrue(host.runtimeViewport().embedSession().swapchainRecreateAttempts >= 1u,
                "resize after handoff queues swapchain recreate");
+#endif
 #if defined(FUSE_VULKAN_BACKEND)
     if (host.runtimeViewport().embedSession().headlessGpuReady) {
         expectTrue(host.runtimeViewport().embedSession().consumedSwapchainPresentTicks >= 1u,
@@ -583,8 +585,10 @@ void testRuntimeViewportSwapchainRecreateAfterHandoff() {
 }
 
 void testViewportQtPresentGateHeadlessSafe() {
+#if defined(FUSE_VULKAN_BACKEND)
     expectTrue(!fuse::renderer::desktopQtPresentEnabled(),
                "Qt present gate OFF by default for headless CI");
+#endif
 
     fuse::editor::EditorHost host;
     host.runtimeViewport().setExternalSurfaceHandle(reinterpret_cast<void*>(0x4000u), 800, 600,
@@ -620,8 +624,8 @@ void testViewportQtPresentPathReadyHeadlessSafe() {
                "full Qt eligibility still requires compile-time gate on headless CI");
     expectTrue(fuse::editor::shouldDisableSoftwarePlaceholderForEmbed(handoff, true),
                "Qt path ready retires software placeholder when external swapchain wired");
-    expectTrue(!fuse::editor::shouldDisableSoftwarePlaceholderForEmbed(handoff, false),
-               "software placeholder kept when swapchain not yet presentable");
+    expectTrue(fuse::editor::shouldDisableSoftwarePlaceholderForEmbed(handoff, false),
+               "consumed real native surface retires software placeholder");
 }
 
 void testViewportQtPresentPathEligibleEmbedCounters() {

@@ -3,6 +3,7 @@
 #include <fuse/editor/feature_pane_bridge.hpp>
 
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -24,10 +25,13 @@ private:
     void onPlayClicked();
     void onStopClicked();
     void onPositionEdited();
+    void onNameEdited();
     void syncPositionFields();
+    void syncNameField();
 
     FeaturePaneBridge& m_bridge;
     QLabel* m_summaryLabel = nullptr;
+    QLineEdit* m_nameEdit = nullptr;
     QDoubleSpinBox* m_posX = nullptr;
     QDoubleSpinBox* m_posY = nullptr;
     QDoubleSpinBox* m_posZ = nullptr;

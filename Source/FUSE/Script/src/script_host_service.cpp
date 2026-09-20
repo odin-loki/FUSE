@@ -34,7 +34,7 @@ ScriptLoadResult ScriptHostService::load_chunk(const char* source, const char* c
 
     if (legacy_dialect_is_compat_stub(route.dialect)) {
         ++m_compatRouteCount;
-        return {ScriptLoadStatus::Ok, nullptr};
+        return m_host.load_string(source, chunk_name);
     }
 
     ++m_fuseRouteCount;

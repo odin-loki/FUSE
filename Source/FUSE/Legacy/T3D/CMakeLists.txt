@@ -12,6 +12,7 @@ add_library(squish STATIC
     ${CMAKE_SOURCE_DIR}/Engine/lib/squish/singlecolourfit.cpp
 )
 target_include_directories(squish PUBLIC ${CMAKE_SOURCE_DIR}/Engine/lib/squish)
+fuse_apply_cxx17(squish)
 
 add_library(fuse_t3d_legacy STATIC
     src/console_shim.cpp
@@ -35,6 +36,6 @@ target_compile_definitions(fuse_t3d_legacy
 )
 
 target_link_libraries(fuse_t3d_legacy PUBLIC fuse_core fuse_legacy_common fuse_world3d PRIVATE squish)
-target_compile_features(fuse_t3d_legacy PUBLIC cxx_std_17)
+fuse_apply_cxx17(fuse_t3d_legacy)
 
 include("${CMAKE_SOURCE_DIR}/cmake/FuseT3DLegacyEngine.cmake")

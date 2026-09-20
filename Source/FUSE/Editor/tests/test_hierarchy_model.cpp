@@ -2,6 +2,7 @@
 #include <fuse/editor/undo_stack.hpp>
 #include <fuse/editor/scene_hierarchy_panel.hpp>
 #include <fuse/object.hpp>
+#include <fuse/scene/scene.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
 
@@ -39,6 +40,28 @@ void testHierarchyModelFlatten() {
 
     expectTrue(model.flatNodes().size() == 3u, "root and two children flattened");
     expectTrue(model.childrenOf(root.handle()).size() == 2u, "root has two children");
+}
+
+void testHierarchyModelFromScene() {
+    fuse::scene::Scene scene("p5");
+    scene.addEntity("Floor");
+    scene.addEntity("CameraSpawnPoints");
+    scene.addEntity("DefaultCameraSpawnSphere", {}, 1);
+
+    fuse::editor::HierarchyModel model;
+    model.setScene(&scene);
+
+    expectTrue(model.root() == nullptr, "Object root stays empty for scene source");
+    expectTrue(model.flatNodes().size() == 3u, "scene entities listed when Object root is empty");
+
+    fuse::editor::HierarchyNode floor;
+    expectTrue(model.findNamed("Floor", floor), "Floor row present");
+    expectTrue(floor.handle.index() == 0u, "Floor row index matches entity");
+    expectTrue(floor.depth == 0u, "Floor is a root-level row");
+
+    fuse::editor::HierarchyNode spawn;
+    expectTrue(model.findNamed("DefaultCameraSpawnSphere", spawn), "child entity listed");
+    expectTrue(spawn.depth == 1u, "child row uses parentIndex depth");
 }
 
 void testHierarchySearchFilter() {
@@ -82,6 +105,7 @@ void testHierarchyReparentThroughPanel() {
 int main() {
     fuse::core::initialize();
     testHierarchyModelFlatten();
+    testHierarchyModelFromScene();
     testHierarchySearchFilter();
     testHierarchyReparentThroughPanel();
     fuse::core::shutdown();

@@ -38,6 +38,10 @@ public:
         Slot& slot = m_slots[handle.index()];
         slot.occupied = false;
         slot.value = T{};
+        ++slot.generation;
+        if (slot.generation == 0) {
+            slot.generation = 1;
+        }
         m_freeList.push_back(handle.index());
     }
 

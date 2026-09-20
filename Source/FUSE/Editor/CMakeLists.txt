@@ -79,7 +79,7 @@ target_link_libraries(fuse_editor_api PUBLIC fuse_core fuse_ecs fuse_scene fuse_
 if(FUSE_BUILD_MODULES)
     target_link_libraries(fuse_editor_api PUBLIC fuse_ai fuse_cinematics)
 endif()
-target_compile_features(fuse_editor_api PUBLIC cxx_std_17)
+fuse_apply_cxx23(fuse_editor_api)
 
 if(FUSE_BUILD_MODULES)
     target_link_libraries(fuse_editor_api PUBLIC fuse_ai)
@@ -93,6 +93,7 @@ if(FUSE_BUILD_VULKAN)
     find_package(Qt6 QUIET COMPONENTS Gui)
     if(Qt6_FOUND AND TARGET Qt6::Gui)
         target_sources(fuse_editor_api PRIVATE src/viewport_vulkan_surface_qt.cpp)
+        # PRIVATE so Qt cannot leak into fuse_core / fuse_runtime_smoke.
         target_link_libraries(fuse_editor_api PRIVATE Qt6::Gui)
         target_compile_definitions(fuse_editor_api PRIVATE FUSE_HAS_QT_VULKAN=1)
         message(STATUS "FUSE: fuse_editor_api Qt6 Gui Vulkan surface bootstrap enabled")
@@ -134,12 +135,13 @@ if(FUSE_BUILD_EDITOR)
                     fuse_editor_api
                     Qt6::Widgets
             )
+            target_compile_definitions(fuse_editor PRIVATE FUSE_HAS_QT=1)
             if(TARGET Qt6::Gui)
                 target_link_libraries(fuse_editor PRIVATE Qt6::Gui)
                 target_compile_definitions(fuse_editor PRIVATE FUSE_EDITOR_HAS_QT_VULKAN=1)
             endif()
 
-            target_compile_features(fuse_editor PRIVATE cxx_std_17)
+            fuse_apply_cxx23(fuse_editor)
 
             set_target_properties(fuse_editor PROPERTIES
                 AUTOMOC ON

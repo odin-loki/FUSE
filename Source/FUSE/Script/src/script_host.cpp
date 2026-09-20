@@ -1,4 +1,9 @@
 #include <fuse/script/script_host.hpp>
+#include <fuse/script/legacy_script_route.hpp>
+
+#if defined(FUSE_HAS_COMPAT_TS) && FUSE_HAS_COMPAT_TS
+#include <fuse/compat/ts.hpp>
+#endif
 
 namespace fuse::script {
 
@@ -22,6 +27,8 @@ void ScriptHost::shutdown() {
     m_vm.shutdown();
     m_initialized = false;
     m_nextCallbackId = 1;
+    m_lastLoadError.clear();
+    m_lastCompatOutput.clear();
 }
 
 ScriptCallbackId ScriptHost::register_callback(ScriptEventKind kind, ScriptCallbackFn fn) {
@@ -108,6 +115,34 @@ ScriptLoadResult ScriptHost::load_string(const char* source, const char* chunk_n
     if (!m_initialized) {
         return {ScriptLoadStatus::BackendUnavailable, "script host not initialized"};
     }
+
+    const LegacyChunkRoute route = parse_legacy_chunk_route(chunk_name);
+    if (legacy_dialect_is_compat_stub(route.dialect)) {
+        if (source == nullptr) {
+            m_lastLoadError = "source is null";
+            return {ScriptLoadStatus::InvalidArgument, m_lastLoadError.c_str()};
+        }
+
+#if defined(FUSE_HAS_COMPAT_TS) && FUSE_HAS_COMPAT_TS
+        const fuse::compat::Dialect dialect =
+            (route.dialect == LegacyScriptDialect::T3dTorqueScript)
+                ? fuse::compat::Dialect::T3d
+                : fuse::compat::Dialect::T2d;
+        const char* name = (chunk_name != nullptr && chunk_name[0] != '\0') ? chunk_name : "chunk";
+        const fuse::compat::ExecResult result = fuse::compat::eval(dialect, source, name);
+        if (result.ok) {
+            m_lastCompatOutput = result.output;
+            m_lastLoadError.clear();
+            return {ScriptLoadStatus::Ok, nullptr};
+        }
+        m_lastLoadError = result.error.empty() ? "compat TorqueScript parse error" : result.error;
+        return {ScriptLoadStatus::ParseError, m_lastLoadError.c_str()};
+#else
+        m_lastLoadError = "compat TorqueScript VM is not linked (FUSE_BUILD_COMPAT_TS=OFF)";
+        return {ScriptLoadStatus::BackendUnavailable, m_lastLoadError.c_str()};
+#endif
+    }
+
     return m_vm.load_string(source, chunk_name);
 }
 

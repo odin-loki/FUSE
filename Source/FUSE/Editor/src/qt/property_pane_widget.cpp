@@ -6,6 +6,7 @@
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QLineEdit>
 
 namespace fuse::editor::qt {
 
@@ -18,6 +19,11 @@ PropertyPaneWidget::PropertyPaneWidget(FeaturePaneBridge& bridge, QWidget* paren
     layout->addWidget(m_summaryLabel);
 
     auto* positionForm = new QFormLayout();
+    m_nameEdit = new QLineEdit(this);
+    m_nameEdit->setEnabled(false);
+    connect(m_nameEdit, &QLineEdit::editingFinished, this, &PropertyPaneWidget::onNameEdited);
+    positionForm->addRow(tr("Name"), m_nameEdit);
+
     m_posX = new QDoubleSpinBox(this);
     m_posY = new QDoubleSpinBox(this);
     m_posZ = new QDoubleSpinBox(this);
@@ -55,7 +61,24 @@ void PropertyPaneWidget::refresh() {
                           .arg(host.editorState().playing ? tr("yes") : tr("no"))
                           .arg(inspector.hasSelection() ? static_cast<int>(inspector.sections().size()) : 0);
     m_summaryLabel->setText(summary);
+    syncNameField();
     syncPositionFields();
+}
+
+void PropertyPaneWidget::syncNameField() {
+    m_syncingFields = true;
+
+    const PropertyInspector& inspector = m_bridge.propertyInspector();
+    std::string name;
+    const bool hasName = inspector.getName(m_bridge.host().runtimeScene(), name);
+    m_nameEdit->setEnabled(hasName);
+    if (hasName) {
+        m_nameEdit->setText(QString::fromStdString(name));
+    } else {
+        m_nameEdit->clear();
+    }
+
+    m_syncingFields = false;
 }
 
 void PropertyPaneWidget::syncPositionFields() {
@@ -85,6 +108,19 @@ void PropertyPaneWidget::syncPositionFields() {
     }
 
     m_syncingFields = false;
+}
+
+void PropertyPaneWidget::onNameEdited() {
+    if (m_syncingFields) {
+        return;
+    }
+
+    const PropertyInspector& inspector = m_bridge.propertyInspector();
+    if (!inspector.hasSelection()) {
+        return;
+    }
+
+    m_bridge.postSetProperty(inspector.target(), "name", m_nameEdit->text().toStdString());
 }
 
 void PropertyPaneWidget::onPositionEdited() {

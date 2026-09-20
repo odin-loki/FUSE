@@ -15,3 +15,10 @@ add_executable(fuse_net_tests
 
 target_link_libraries(fuse_net_tests PRIVATE fuse_net fuse_ecs fuse_core)
 add_test(NAME fuse_net_b74 COMMAND fuse_net_tests)
+
+add_executable(fuse_p7_net_smoke
+    test_p7_net_smoke.cpp
+)
+
+target_link_libraries(fuse_p7_net_smoke PRIVATE fuse_net fuse_core)
+add_test(NAME fuse_p7_net_smoke COMMAND fuse_p7_net_smoke)

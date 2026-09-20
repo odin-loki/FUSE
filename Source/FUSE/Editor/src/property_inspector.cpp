@@ -103,6 +103,75 @@ void PropertyInspector::sync(const EditorState& state, EditorScene& scene) {
     appendSectionIfPresent(ecs::SpotLight::component_name, m_target, scene);
 }
 
+void PropertyInspector::syncRuntime(const EditorState& state, const scene::Scene& scene) {
+    m_sections.clear();
+    m_target = state.primarySelection;
+
+    if (!m_target.valid() || scene.entityAt(m_target.index) == nullptr) {
+        m_target = ecs::EntityID::null();
+        return;
+    }
+
+    m_sections.push_back({"name", 1u});
+}
+
+bool PropertyInspector::getName(const scene::Scene& scene, std::string& out) const {
+    if (!m_target.valid()) {
+        return false;
+    }
+
+    const scene::SceneEntity* entity = scene.entityAt(m_target.index);
+    if (entity == nullptr) {
+        return false;
+    }
+
+    out = entity->name;
+    return true;
+}
+
+bool PropertyInspector::setName(std::string name, scene::Scene& scene, CommandQueue& queue) {
+    if (!m_target.valid()) {
+        return false;
+    }
+
+    scene::SceneEntity* entity = scene.entityAt(m_target.index);
+    if (entity == nullptr) {
+        return false;
+    }
+
+    entity->name = std::move(name);
+
+    EditorCommand command;
+    command.kind = CommandKind::SetProperty;
+    command.target = Handle<Object>(m_target.index, m_target.generation);
+    command.propertyName = "name";
+    command.propertyValue = entity->name;
+    queue.post(std::move(command));
+    return true;
+}
+
+bool PropertyInspector::setName(std::string name, scene::Scene& scene, CommandStack& cmds) {
+    if (!m_target.valid()) {
+        return false;
+    }
+
+    scene::SceneEntity* entity = scene.entityAt(m_target.index);
+    if (entity == nullptr) {
+        return false;
+    }
+
+    const std::string before = entity->name;
+    entity->name = std::move(name);
+
+    EditorCommand command;
+    command.kind = CommandKind::SetProperty;
+    command.target = Handle<Object>(m_target.index, m_target.generation);
+    command.propertyName = "name";
+    command.propertyValue = entity->name;
+    cmds.push(std::move(command), before);
+    return true;
+}
+
 bool PropertyInspector::setTransformPosition(const ecs::vec3& position, EditorScene& scene,
                                              CommandStack& cmds) {
     if (!m_target.valid() || !scene.registry().has<ecs::Transform>(m_target)) {

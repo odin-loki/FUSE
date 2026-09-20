@@ -1,0 +1,73 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "fuse-debug",
+      "displayName": "FUSE Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/fuse-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "FUSE_UMBRELLA": "ON",
+        "FUSE_BUILD_T3D": "OFF",
+        "FUSE_BUILD_T2D": "OFF",
+        "FUSE_BUILD_CORE": "ON",
+        "FUSE_BUILD_CORE_TESTS": "ON",
+        "FUSE_ENABLE_CLANG_TIDY": "OFF"
+      }
+    },
+    {
+      "name": "fuse-release",
+      "displayName": "FUSE Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/fuse-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FUSE_UMBRELLA": "ON",
+        "FUSE_BUILD_T3D": "OFF",
+        "FUSE_BUILD_T2D": "OFF",
+        "FUSE_BUILD_CORE": "ON",
+        "FUSE_BUILD_CORE_TESTS": "ON"
+      }
+    },
+    {
+      "name": "fuse-asan",
+      "displayName": "FUSE ASan Debug (GNU/Clang; skipped if libasan missing)",
+      "inherits": "fuse-debug",
+      "binaryDir": "${sourceDir}/build/fuse-asan",
+      "cacheVariables": {
+        "FUSE_CORE_ENABLE_ASAN": "ON",
+        "FUSE_SMOKE_ENABLE_ASAN": "ON"
+      }
+    },
+    {
+      "name": "fuse-editor-debug",
+      "displayName": "FUSE Editor Debug",
+      "inherits": "fuse-debug",
+      "binaryDir": "${sourceDir}/build/fuse-editor-debug",
+      "cacheVariables": {
+        "FUSE_BUILD_EDITOR": "ON"
+      }
+    },
+    {
+      "name": "fuse-shipping",
+      "displayName": "FUSE Shipping",
+      "inherits": "fuse-release",
+      "binaryDir": "${sourceDir}/build/fuse-shipping",
+      "cacheVariables": {
+        "FUSE_SHIPPING": "ON",
+        "FUSE_BUILD_EDITOR": "OFF",
+        "FUSE_BUILD_EDITOR_API": "OFF",
+        "FUSE_BUILD_T3D": "OFF",
+        "FUSE_BUILD_T2D": "OFF",
+        "FUSE_ENABLE_QT_PRESENT": "OFF"
+      }
+    }
+  ]
+}

@@ -515,16 +515,27 @@ void testScriptHostServiceRoutesLegacyChunks() {
     expectTrue(service.fuse_route_count() == 2u, "uaisk chunk counts as fuse route");
     expectTrue(service.compat_route_count() == 0u, "uaisk does not use dual-vm compat stub");
 
-    const auto t3d_result = service.load_chunk("function onStart() {}", "t3d:weapon.cs");
-    expectTrue(t3d_result.ok(), "t3d chunk records compat route without VM");
+    const auto t3d_result = service.load_chunk("echo(\"hello\");", "t3d:weapon.cs");
+#if defined(FUSE_HAS_COMPAT_TS) && FUSE_HAS_COMPAT_TS
+    expectTrue(t3d_result.ok(), "t3d chunk executes on compat VM");
+#else
+    expectTrue(!t3d_result.ok(), "t3d chunk fails when compat VM is not linked");
+    expectTrue(t3d_result.status == fuse::script::ScriptLoadStatus::BackendUnavailable,
+               "t3d without compat reports BackendUnavailable");
+#endif
     expectTrue(service.last_loaded_dialect() == fuse::script::LegacyScriptDialect::T3dTorqueScript,
                "t3d chunk records t3d dialect");
     expectTrue(service.compat_route_count() == 1u, "t3d compat route count increments");
     expectTrue(service.host().vm().loaded_chunk_count() == 2u,
                "t3d compat route does not add VM chunk");
 
-    const auto t2d_result = service.load_chunk("function onUpdate() {}", "t2d:sprite.cs");
-    expectTrue(t2d_result.ok(), "t2d chunk records compat route without VM");
+    const auto t2d_result = service.load_chunk("echo(\"hello\");", "t2d:sprite.cs");
+#if defined(FUSE_HAS_COMPAT_TS) && FUSE_HAS_COMPAT_TS
+    expectTrue(t2d_result.ok(), "t2d chunk executes on compat VM");
+#else
+    expectTrue(t2d_result.status == fuse::script::ScriptLoadStatus::BackendUnavailable,
+               "t2d without compat reports BackendUnavailable");
+#endif
     expectTrue(service.compat_route_count() == 2u, "t2d compat route count increments");
 
     service.shutdown();

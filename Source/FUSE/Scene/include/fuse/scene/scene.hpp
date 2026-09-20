@@ -27,6 +27,8 @@ public:
     void addObjectName(std::string objectName);
 
     const std::vector<SceneEntity>& entities() const { return m_entities; }
+    SceneEntity* entityAt(u32 index);
+    const SceneEntity* entityAt(u32 index) const;
     const std::vector<std::string>& objectNames() const;
     void clearEntities();
     void clearObjects();

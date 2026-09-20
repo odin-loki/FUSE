@@ -24,6 +24,7 @@ endif()
 
 project(FUSE VERSION 0.1.0 LANGUAGES CXX)
 
+# Umbrella/Engine default stays C++17. Product libs under Source/FUSE raise to 23.
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -48,11 +49,24 @@ option(FUSE_BUILD_VULKAN "Build fuse_rhi Vulkan bootstrap (Track B B2.1)" ON)
 option(FUSE_PLATFORM_WINDOW_GLFW "Enable optional GLFW hidden-window WSI scaffold for desktop present path" OFF)
 option(FUSE_ENABLE_GLFW_PRESENT "Allow vkQueuePresentKHR when display+GLFW WSI available (OFF for headless CI)" OFF)
 option(FUSE_ENABLE_QT_PRESENT "Allow vkQueuePresentKHR when display+Qt Vulkan surface available (OFF for headless CI)" OFF)
+option(FUSE_SHIPPING "Shipping game runtime: no Qt, no editor shell, no legacy engine GUI" OFF)
 option(FUSE_BUILD_CUDA "Build optional CUDA job lane, interop stubs, and fuse_compute (Track B B2.6–B2.7, B5.7 screen-space stubs)" OFF)
 option(FUSE_SMOKE_ENABLE_ASAN "Enable AddressSanitizer for fuse_runtime_smoke" OFF)
+option(FUSE_CORE_ENABLE_ASAN "Enable AddressSanitizer for fuse_core and fuse_core_* tests" OFF)
+option(FUSE_CORE_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer for fuse_core and fuse_core_* tests" OFF)
 option(FUSE_CORE_ENABLE_TSAN "Enable ThreadSanitizer for fuse_core and fuse_core_tests" OFF)
+include("${CMAKE_SOURCE_DIR}/cmake/FuseSanitizers.cmake")
 option(FUSE_BUILD_T3D "Build Torque3D application target(s)" ON)
 option(FUSE_BUILD_T2D "Build Torque2D engine target (requires submodule)" ON)
+option(FUSE_ENABLE_CLANG_TIDY "Export compile_commands.json for the optional fuse_clang_tidy seed gate (does not set CMAKE_CXX_CLANG_TIDY)" OFF)
+
+if(FUSE_ENABLE_CLANG_TIDY)
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+endif()
+
+# Policy first (force flags). Runtime target Qt-ban runs at the end of
+# Source/FUSE and Apps/RuntimeSmoke after those targets exist.
+include("${CMAKE_SOURCE_DIR}/cmake/FuseShipping.cmake")
 
 if(FUSE_BUILD_T3D AND "${TORQUE_APP_NAME}" STREQUAL "")
     set(TORQUE_APP_NAME "Torque3D" CACHE STRING "Torque3D application name" FORCE)
@@ -84,3 +98,9 @@ endif()
 if(FUSE_BUILD_TOOLS AND FUSE_BUILD_PROJECT)
     add_subdirectory(Tools/FUSE)
 endif()
+
+# Optional P7 clang-tidy seed gate (not CMAKE_CXX_CLANG_TIDY — too slow / breaks MSVC).
+# Needs compile_commands.json for clang-tidy -p. Ninja/Makefile emit it when
+# CMAKE_EXPORT_COMPILE_COMMANDS is ON (FUSE_ENABLE_CLANG_TIDY or fuse-debug / fuse-asan).
+# cmake --build is recommended before `fuse_clang_tidy` / ctest -R fuse_p7_clang_tidy.
+include("${CMAKE_SOURCE_DIR}/cmake/FuseClangTidy.cmake")

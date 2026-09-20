@@ -76,5 +76,6 @@ struct T2DModuleExtract {
 
 T3DMissionExtract extractT3DMissionFields(const std::string& missionText);
 T2DModuleExtract extractT2DModuleFields(const std::string& moduleText, const std::string& fallbackPath);
+std::string readTextFile(const std::string& path, std::string& error);
 
 } // namespace fuse::project

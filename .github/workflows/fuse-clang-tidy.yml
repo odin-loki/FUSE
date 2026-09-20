@@ -1,0 +1,34 @@
+name: FUSE clang-tidy (P7)
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main, development]
+
+concurrency:
+  group: ci-${{ github.actor }}-${{ github.head_ref || github.run_number }}-${{ github.ref }}-fuse-clang-tidy
+  cancel-in-progress: true
+
+jobs:
+  fuse-clang-tidy:
+    name: fuse_p7_clang_tidy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake g++ clang-tidy
+
+      - name: Configure fuse-debug (T3D/T2D off)
+        run: |
+          cmake --preset fuse-debug \
+            -DFUSE_BUILD_T3D=OFF \
+            -DFUSE_BUILD_T2D=OFF \
+            -DFUSE_ENABLE_CLANG_TIDY=ON
+
+      - name: Build fuse_core
+        run: cmake --build build/fuse-debug --target fuse_core
+
+      - name: Run clang-tidy ctest
+        run: ctest --test-dir build/fuse-debug -R fuse_p7_clang_tidy --output-on-failure

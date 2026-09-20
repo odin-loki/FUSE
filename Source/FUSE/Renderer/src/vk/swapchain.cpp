@@ -449,6 +449,9 @@ u32 VulkanSwapchain::acquireNextImage(void* imageAvailableSemaphore) {
 
 bool VulkanSwapchain::present(void* renderFinishedSemaphore, u32 imageIndex) {
 #if defined(FUSE_VULKAN_BACKEND)
+    if (!productionPresentAllowed()) {
+        return false;
+    }
     if (isEmpty() || isEmptyAcquireResult(imageIndex) || m_graphicsQueue == nullptr) {
         return false;
     }

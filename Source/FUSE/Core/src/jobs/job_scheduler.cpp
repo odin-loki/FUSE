@@ -179,16 +179,35 @@ struct JobScheduler::Impl {
                 continue;
             }
 
-            std::lock_guard<std::mutex> lock(queueMutexes[victim]);
-            const std::size_t queueSize = queues[victim].size();
-            if (!canStealFromVictim(queueSize)) {
+            std::vector<JobFn> stolen;
+            {
+                std::lock_guard<std::mutex> lock(queueMutexes[victim]);
+                const std::size_t queueSize = queues[victim].size();
+                if (!canStealFromVictim(queueSize)) {
+                    continue;
+                }
+
+                const u32 batch = stealHalfQueueBatchSize(queueSize);
+                stolen.reserve(batch);
+                for (u32 i = 0; i < batch && !queues[victim].empty(); ++i) {
+                    stolen.push_back(std::move(queues[victim].back()));
+                    queues[victim].pop_back();
+                }
+            }
+
+            if (stolen.empty()) {
                 continue;
             }
 
-            // Half-queue policy stub: one job per steal today; batch size informs future multi-steal.
-            (void)stealHalfQueueBatchSize(queueSize);
-            out = std::move(queues[victim].back());
-            queues[victim].pop_back();
+            // Run one stolen job now; remaining batch items become local work so
+            // the thief does not re-steal one-at-a-time from the same victim.
+            out = std::move(stolen[0]);
+            if (stolen.size() > 1) {
+                std::lock_guard<std::mutex> lock(queueMutexes[thief]);
+                for (std::size_t i = 1; i < stolen.size(); ++i) {
+                    queues[thief].push_back(std::move(stolen[i]));
+                }
+            }
             return true;
         }
         return false;
@@ -286,6 +305,26 @@ void JobScheduler::shutdown() {
 
     m_workerCount = 0;
     m_initialized = false;
+}
+
+bool JobScheduler::setWorkerCount(u32 workerCount) {
+    if (!m_initialized) {
+        return false;
+    }
+
+#if FUSE_JOBS_SINGLE_THREAD
+    (void)workerCount;
+    return true;
+#else
+    if (workerCount == m_workerCount) {
+        return true;
+    }
+
+    drainActiveJobs();
+    shutdown();
+    initialize(workerCount);
+    return true;
+#endif
 }
 
 void JobScheduler::drainActiveJobs() {

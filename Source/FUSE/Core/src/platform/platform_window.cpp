@@ -9,9 +9,58 @@
 #include <GLFW/glfw3.h>
 #endif
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 namespace fuse::platform {
 
 namespace {
+
+constexpr u32 kMaxPumpWindows = 32;
+Window* g_pumpWindows[kMaxPumpWindows]{};
+u32 g_pumpWindowCount = 0;
+
+void registerPumpWindow(Window* window) {
+    if (window == nullptr || window->nativeHandle().value == nullptr) {
+        return;
+    }
+
+    for (u32 i = 0; i < g_pumpWindowCount; ++i) {
+        if (g_pumpWindows[i] == window) {
+            return;
+        }
+    }
+
+    if (g_pumpWindowCount >= kMaxPumpWindows) {
+        return;
+    }
+
+    g_pumpWindows[g_pumpWindowCount++] = window;
+}
+
+void unregisterPumpWindow(Window* window) {
+    if (window == nullptr || g_pumpWindowCount == 0u) {
+        return;
+    }
+
+    for (u32 i = 0; i < g_pumpWindowCount; ++i) {
+        if (g_pumpWindows[i] != window) {
+            continue;
+        }
+
+        g_pumpWindows[i] = g_pumpWindows[g_pumpWindowCount - 1u];
+        g_pumpWindows[g_pumpWindowCount - 1u] = nullptr;
+        --g_pumpWindowCount;
+        return;
+    }
+}
 
 const char* sanitizeTitle(const char* title) {
     return (title != nullptr && title[0] != '\0') ? title : "FUSE";
@@ -54,6 +103,78 @@ void createNativeWindowIfAvailable(u32 width, u32 height, const char* title, voi
 #endif
 }
 
+void releaseOwnedNativeWindow(void*& nativeWindow, bool& ownsNativeWindow) {
+    if (ownsNativeWindow) {
+        destroyNativeWindow(nativeWindow);
+    } else {
+        nativeWindow = nullptr;
+    }
+    ownsNativeWindow = false;
+}
+
+#if defined(_WIN32)
+i32 osMessageAxisX(LPARAM lParam) {
+    return static_cast<i32>(static_cast<short>(LOWORD(lParam)));
+}
+
+i32 osMessageAxisY(LPARAM lParam) {
+    return static_cast<i32>(static_cast<short>(HIWORD(lParam)));
+}
+
+void enqueueMappedOsMessage(EventPump& pump, Window* window, const MSG& msg) {
+    switch (msg.message) {
+    case WM_KEYDOWN: {
+        PlatformEvent event{};
+        event.type = PlatformEventType::KeyDown;
+        event.window = window;
+        event.keyCode = static_cast<u32>(msg.wParam);
+        pump.pushSyntheticEvent(event);
+        break;
+    }
+    case WM_KEYUP: {
+        PlatformEvent event{};
+        event.type = PlatformEventType::KeyUp;
+        event.window = window;
+        event.keyCode = static_cast<u32>(msg.wParam);
+        pump.pushSyntheticEvent(event);
+        break;
+    }
+    case WM_MOUSEMOVE:
+        pump.pushMouseMove(osMessageAxisX(msg.lParam), osMessageAxisY(msg.lParam));
+        break;
+    case WM_LBUTTONDOWN:
+        pump.pushMouseButton(1u, true, osMessageAxisX(msg.lParam), osMessageAxisY(msg.lParam));
+        break;
+    case WM_LBUTTONUP:
+        pump.pushMouseButton(1u, false, osMessageAxisX(msg.lParam), osMessageAxisY(msg.lParam));
+        break;
+    case WM_CLOSE:
+        if (window != nullptr) {
+            window->requestClose(&pump);
+        }
+        break;
+    case WM_SIZE:
+        if (window != nullptr && msg.wParam != SIZE_MINIMIZED) {
+            const u32 width = static_cast<u32>(LOWORD(msg.lParam));
+            const u32 height = static_cast<u32>(HIWORD(msg.lParam));
+            if (width > 0u && height > 0u) {
+                window->resize(width, height, &pump);
+            }
+        }
+        break;
+    case WM_QUIT:
+        pump.requestQuit();
+        break;
+    default:
+        break;
+    }
+}
+
+bool dispatchMappedOsMessage(const MSG& msg) {
+    return msg.message != WM_CLOSE && msg.message != WM_QUIT;
+}
+#endif
+
 } // namespace
 
 Window::Window() {
@@ -62,6 +183,8 @@ Window::Window() {
     m_height = 1080u;
     m_title = "FUSE";
     createNativeWindowIfAvailable(m_width, m_height, m_title.c_str(), m_nativeWindow);
+    m_ownsNativeWindow = m_nativeWindow != nullptr;
+    registerPumpWindow(this);
 }
 
 Window::Window(const WindowDesc& desc) {
@@ -73,10 +196,14 @@ Window::Window(const WindowDesc& desc) {
     m_vsync = desc.vsync;
     m_title = sanitizeTitle(desc.title);
     createNativeWindowIfAvailable(m_width, m_height, m_title.c_str(), m_nativeWindow);
+    m_ownsNativeWindow = m_nativeWindow != nullptr;
+    registerPumpWindow(this);
 }
 
 Window::~Window() {
-    destroyNativeWindow(m_nativeWindow);
+    unregisterPumpWindow(this);
+    releaseOwnedNativeWindow(m_nativeWindow, m_ownsNativeWindow);
+    m_pumpAsHwnd = false;
     m_valid = false;
 }
 
@@ -90,14 +217,23 @@ Window::Window(Window&& other) noexcept
       m_focused(other.m_focused),
       m_closeRequest(other.m_closeRequest),
       m_title(std::move(other.m_title)),
-      m_nativeWindow(other.m_nativeWindow) {
+      m_nativeWindow(other.m_nativeWindow),
+      m_ownsNativeWindow(other.m_ownsNativeWindow),
+      m_pumpAsHwnd(other.m_pumpAsHwnd) {
+    unregisterPumpWindow(&other);
     other.m_valid = false;
     other.m_closeRequest = WindowCloseRequest::None;
     other.m_nativeWindow = nullptr;
+    other.m_ownsNativeWindow = false;
+    other.m_pumpAsHwnd = false;
+    registerPumpWindow(this);
 }
 
 Window& Window::operator=(Window&& other) noexcept {
     if (this != &other) {
+        unregisterPumpWindow(this);
+        releaseOwnedNativeWindow(m_nativeWindow, m_ownsNativeWindow);
+
         m_valid = other.m_valid;
         m_width = other.m_width;
         m_height = other.m_height;
@@ -108,9 +244,16 @@ Window& Window::operator=(Window&& other) noexcept {
         m_closeRequest = other.m_closeRequest;
         m_title = std::move(other.m_title);
         m_nativeWindow = other.m_nativeWindow;
+        m_ownsNativeWindow = other.m_ownsNativeWindow;
+        m_pumpAsHwnd = other.m_pumpAsHwnd;
+
+        unregisterPumpWindow(&other);
         other.m_valid = false;
         other.m_closeRequest = WindowCloseRequest::None;
         other.m_nativeWindow = nullptr;
+        other.m_ownsNativeWindow = false;
+        other.m_pumpAsHwnd = false;
+        registerPumpWindow(this);
     }
     return *this;
 }
@@ -130,6 +273,14 @@ NativeWindowHandle Window::nativeHandle() const {
     NativeWindowHandle handle;
     handle.value = m_nativeWindow;
     return handle;
+}
+
+void Window::setNativeHandleForPump(void* hwnd) {
+    unregisterPumpWindow(this);
+    releaseOwnedNativeWindow(m_nativeWindow, m_ownsNativeWindow);
+    m_nativeWindow = hwnd;
+    m_pumpAsHwnd = hwnd != nullptr;
+    registerPumpWindow(this);
 }
 
 void* Window::nativeVulkanSurface() const {
@@ -503,7 +654,52 @@ u32 EventPump::coalescedResizeCount() const {
 }
 
 void EventPump::processOsEvents() {
-    // Desktop + mobile no-op — OS backends enqueue into the synthetic queue later.
+#if defined(FUSE_PLATFORM_WINDOW_GLFW)
+    if (windowWsiAvailable()) {
+        glfwPollEvents();
+    }
+#endif
+
+#if defined(_WIN32)
+    if (g_pumpWindowCount == 0u) {
+        return;
+    }
+
+    bool pumpedHwnd = false;
+    for (u32 i = 0; i < g_pumpWindowCount; ++i) {
+        Window* window = g_pumpWindows[i];
+        if (window == nullptr || !window->m_pumpAsHwnd || window->m_nativeWindow == nullptr) {
+            continue;
+        }
+
+        const HWND hwnd = reinterpret_cast<HWND>(window->m_nativeWindow);
+        pumpedHwnd = true;
+
+        MSG msg;
+        while (PeekMessageW(&msg, hwnd, 0, 0, PM_REMOVE) != FALSE) {
+            if (dispatchMappedOsMessage(msg)) {
+                TranslateMessage(&msg);
+            }
+            enqueueMappedOsMessage(*this, window, msg);
+            if (dispatchMappedOsMessage(msg)) {
+                DispatchMessageW(&msg);
+            }
+        }
+    }
+
+    if (!pumpedHwnd) {
+        return;
+    }
+
+    MSG threadMsg;
+    while (PeekMessageW(&threadMsg, reinterpret_cast<HWND>(-1), 0, 0, PM_REMOVE) != FALSE) {
+        if (threadMsg.message == WM_QUIT) {
+            requestQuit();
+        }
+    }
+#else
+    (void)this;
+#endif
 }
 
 bool EventPump::pumpOnce() {
@@ -603,39 +799,99 @@ void EventPump::pushSyntheticEvent(const PlatformEvent& event) {
 }
 
 void EventPump::pushWindowResized(Window& window) {
-    PlatformEvent event;
+    PlatformEvent event{};
     event.type = PlatformEventType::WindowResized;
     event.window = &window;
     event.width = window.width();
     event.height = window.height();
+    event.keyCode = 0;
+    event.mouseX = 0;
+    event.mouseY = 0;
+    event.mouseButton = 0;
     pushSyntheticEvent(event);
 }
 
 void EventPump::pushWindowFocusGained(Window& window) {
-    PlatformEvent event;
+    PlatformEvent event{};
     event.type = PlatformEventType::WindowFocusGained;
     event.window = &window;
+    event.keyCode = 0;
+    event.mouseX = 0;
+    event.mouseY = 0;
+    event.mouseButton = 0;
     pushSyntheticEvent(event);
 }
 
 void EventPump::pushWindowFocusLost(Window& window) {
-    PlatformEvent event;
+    PlatformEvent event{};
     event.type = PlatformEventType::WindowFocusLost;
     event.window = &window;
+    event.keyCode = 0;
+    event.mouseX = 0;
+    event.mouseY = 0;
+    event.mouseButton = 0;
     pushSyntheticEvent(event);
 }
 
 void EventPump::pushWindowCloseRequested(Window& window) {
-    PlatformEvent event;
+    PlatformEvent event{};
     event.type = PlatformEventType::WindowCloseRequested;
     event.window = &window;
+    event.keyCode = 0;
+    event.mouseX = 0;
+    event.mouseY = 0;
+    event.mouseButton = 0;
+    pushSyntheticEvent(event);
+}
+
+void EventPump::pushKeyDown(u32 keyCode) {
+    PlatformEvent event{};
+    event.type = PlatformEventType::KeyDown;
+    event.keyCode = keyCode;
+    event.mouseX = 0;
+    event.mouseY = 0;
+    event.mouseButton = 0;
+    pushSyntheticEvent(event);
+}
+
+void EventPump::pushKeyUp(u32 keyCode) {
+    PlatformEvent event{};
+    event.type = PlatformEventType::KeyUp;
+    event.keyCode = keyCode;
+    event.mouseX = 0;
+    event.mouseY = 0;
+    event.mouseButton = 0;
+    pushSyntheticEvent(event);
+}
+
+void EventPump::pushMouseMove(i32 x, i32 y) {
+    PlatformEvent event{};
+    event.type = PlatformEventType::MouseMove;
+    event.keyCode = 0;
+    event.mouseX = x;
+    event.mouseY = y;
+    event.mouseButton = 0;
+    pushSyntheticEvent(event);
+}
+
+void EventPump::pushMouseButton(u8 button, bool down, i32 x, i32 y) {
+    PlatformEvent event{};
+    event.type = down ? PlatformEventType::MouseButtonDown : PlatformEventType::MouseButtonUp;
+    event.keyCode = 0;
+    event.mouseX = x;
+    event.mouseY = y;
+    event.mouseButton = button;
     pushSyntheticEvent(event);
 }
 
 void EventPump::requestQuit() {
     m_quitRequested = true;
-    PlatformEvent quitEvent;
+    PlatformEvent quitEvent{};
     quitEvent.type = PlatformEventType::Quit;
+    quitEvent.keyCode = 0;
+    quitEvent.mouseX = 0;
+    quitEvent.mouseY = 0;
+    quitEvent.mouseButton = 0;
     pushSyntheticEvent(quitEvent);
 }
 

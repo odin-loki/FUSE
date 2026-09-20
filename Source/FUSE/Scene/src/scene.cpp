@@ -20,6 +20,20 @@ void Scene::addObjectName(std::string objectName) {
     addEntity(std::move(objectName));
 }
 
+SceneEntity* Scene::entityAt(u32 index) {
+    if (index >= m_entities.size()) {
+        return nullptr;
+    }
+    return &m_entities[index];
+}
+
+const SceneEntity* Scene::entityAt(u32 index) const {
+    if (index >= m_entities.size()) {
+        return nullptr;
+    }
+    return &m_entities[index];
+}
+
 void Scene::rebuildObjectNameCache_() const {
     m_objectNamesCache.clear();
     m_objectNamesCache.reserve(m_entities.size());

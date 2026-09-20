@@ -41,3 +41,35 @@ add_executable(fuse_scene_wire_runtime_bind_tests
 
 target_link_libraries(fuse_scene_wire_runtime_bind_tests PRIVATE fuse_scene fuse_ecs fuse_project fuse_world_converter)
 add_test(NAME fuse_scene_wire_runtime_bind COMMAND fuse_scene_wire_runtime_bind_tests)
+
+add_executable(fuse_p4_golden_mis
+    test_p4_golden_mis.cpp
+)
+
+file(TO_CMAKE_PATH
+    "${CMAKE_SOURCE_DIR}/Samples/unification/demo_3d_empty/worlds/example.mis"
+    FUSE_GOLDEN_MIS_PATH_CMAKE
+)
+
+target_link_libraries(fuse_p4_golden_mis PRIVATE fuse_scene fuse_project fuse_core)
+target_compile_definitions(fuse_p4_golden_mis PRIVATE
+    FUSE_GOLDEN_MIS_PATH="${FUSE_GOLDEN_MIS_PATH_CMAKE}"
+)
+add_test(NAME fuse_p4_golden_mis COMMAND fuse_p4_golden_mis)
+set_tests_properties(fuse_p4_golden_mis PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
+add_executable(fuse_p7_parity_scenes
+    test_p7_parity_scenes.cpp
+)
+
+file(TO_CMAKE_PATH "${CMAKE_SOURCE_DIR}" FUSE_SOURCE_DIR_CMAKE)
+target_link_libraries(fuse_p7_parity_scenes PRIVATE fuse_scene fuse_project fuse_core)
+target_compile_definitions(fuse_p7_parity_scenes PRIVATE
+    FUSE_SOURCE_DIR="${FUSE_SOURCE_DIR_CMAKE}"
+)
+add_test(NAME fuse_p7_parity_scenes COMMAND fuse_p7_parity_scenes)
+set_tests_properties(fuse_p7_parity_scenes PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)

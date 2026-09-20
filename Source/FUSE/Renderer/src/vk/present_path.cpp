@@ -199,7 +199,9 @@ bool PresentPath::presentImage() {
         realQtPresentEligible(swapchain, m_status.acquiredImageIndex, frameManager);
 
     bool presented = false;
-    if (shouldEarlyOutEmptyPresent(swapchain, m_status.acquiredImageIndex, frameManager)) {
+    // FUSE Track B: skip vkQueuePresentKHR unless VulkanProduction is unlocked.
+    if (!productionPresentAllowed() ||
+        shouldEarlyOutEmptyPresent(swapchain, m_status.acquiredImageIndex, frameManager)) {
         presented = true;
         ++m_status.emptyPresentCount;
     } else {

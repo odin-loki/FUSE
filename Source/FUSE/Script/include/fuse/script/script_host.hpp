@@ -6,6 +6,7 @@
 #include <fuse/script/script_vm.hpp>
 #include <fuse/types.hpp>
 
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -56,6 +57,8 @@ private:
     std::unordered_map<ScriptCallbackId, ScriptCallbackRegistration> m_callbacks;
     std::vector<ScriptCallbackId> m_callbackOrder;
     ScriptUpdateRegistry m_updateRegistry;
+    std::string m_lastLoadError;
+    std::string m_lastCompatOutput;
 };
 
 } // namespace fuse::script

@@ -224,6 +224,13 @@ void testZeroExtentRebuildRejected() {
 #endif
 }
 
+void testProductionPresentLockedByDefault() {
+    expectTrue(!fuse::renderer::productionPresentAllowed(),
+               "production present returns false unless Track B VulkanProduction is unlocked");
+    expectTrue(!fuse::renderer::realPresentEligible(nullptr, 0u, nullptr),
+               "real present stays ineligible while Track B production is locked");
+}
+
 void testEmptySwapchainSkipGuards() {
     expectTrue(fuse::renderer::shouldSkipAcquireForEmptySwapchain(nullptr),
                "null swapchain skips acquire");
@@ -285,6 +292,7 @@ int main() {
     testAcquireOnEmptySwapchain();
     testPresentEmptyImageIndex();
     testZeroExtentRebuildRejected();
+    testProductionPresentLockedByDefault();
     testEmptySwapchainSkipGuards();
 
     fuse::core::shutdown();

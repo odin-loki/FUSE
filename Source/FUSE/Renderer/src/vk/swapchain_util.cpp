@@ -42,6 +42,9 @@ bool desktopPresentRuntimeReady() {
 
 bool realPresentEligible(const VulkanSwapchain* swapchain, u32 imageIndex,
                          const FrameManager* frameManager) {
+    if (!productionPresentAllowed()) {
+        return false;
+    }
     if (swapchain == nullptr || isSwapchainEmpty(*swapchain) || isEmptyAcquireResult(imageIndex) ||
         frameManager == nullptr || !frameManager->isReady()) {
         return false;
@@ -54,6 +57,9 @@ bool realPresentEligible(const VulkanSwapchain* swapchain, u32 imageIndex,
 
 bool realQtPresentEligible(const VulkanSwapchain* swapchain, u32 imageIndex,
                            const FrameManager* frameManager) {
+    if (!productionPresentAllowed()) {
+        return false;
+    }
     if (swapchain == nullptr || isSwapchainEmpty(*swapchain) || isEmptyAcquireResult(imageIndex) ||
         frameManager == nullptr || !frameManager->isReady()) {
         return false;

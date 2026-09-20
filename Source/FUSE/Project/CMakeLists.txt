@@ -13,6 +13,7 @@ set(FUSE_PROJECT_PUBLIC_HEADERS
     include/fuse/project/cook_cache.hpp
     include/fuse/project/import_pipeline.hpp
     include/fuse/project/importer_extract.hpp
+    include/fuse/project/mission_load.hpp
     include/fuse/project/t3d_asset_vfs.hpp
     include/fuse/project/parity_legacy_sources.hpp
 )
@@ -31,6 +32,7 @@ set(FUSE_PROJECT_SOURCES
     src/cook_cache.cpp
     src/import_pipeline.cpp
     src/importer_extract.cpp
+    src/mission_load.cpp
     src/t3d_asset_vfs.cpp
     src/parity_legacy_sources.cpp
 )
@@ -64,9 +66,14 @@ add_library(fuse::world_converter ALIAS fuse_world_converter)
 target_include_directories(fuse_world_converter
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/Source/FUSE/Legacy/T2D/include
 )
 
-target_link_libraries(fuse_world_converter PUBLIC fuse_project fuse_scene fuse_world2d fuse_t2d_legacy)
+target_link_libraries(fuse_world_converter PUBLIC fuse_project fuse_scene fuse_world2d)
+if(TARGET fuse_t2d_legacy)
+    target_link_libraries(fuse_world_converter PUBLIC fuse_t2d_legacy)
+endif()
 target_compile_features(fuse_world_converter PUBLIC cxx_std_17)
 
 if(FUSE_BUILD_CORE_TESTS)

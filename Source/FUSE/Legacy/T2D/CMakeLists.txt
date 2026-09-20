@@ -21,4 +21,4 @@ target_compile_definitions(fuse_t2d_legacy
 )
 
 target_link_libraries(fuse_t2d_legacy PUBLIC fuse_core fuse_legacy_common fuse_world2d)
-target_compile_features(fuse_t2d_legacy PUBLIC cxx_std_17)
+fuse_apply_cxx17(fuse_t2d_legacy)

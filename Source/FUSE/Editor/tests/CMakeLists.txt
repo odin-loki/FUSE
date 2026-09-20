@@ -79,6 +79,9 @@ target_link_libraries(fuse_editor_hierarchy_model_tests
         fuse_world2d
         fuse_world3d
 )
+if(MINGW)
+    target_link_options(fuse_editor_hierarchy_model_tests PRIVATE -Wl,--allow-multiple-definition)
+endif()
 add_test(NAME fuse_editor_hierarchy_model COMMAND fuse_editor_hierarchy_model_tests)
 
 add_executable(fuse_editor_panels_b69_b612_tests
@@ -113,6 +116,32 @@ add_executable(fuse_editor_gizmo_system_tests
 target_link_libraries(fuse_editor_gizmo_system_tests PRIVATE fuse_editor_api fuse_core)
 add_test(NAME fuse_editor_gizmo_system COMMAND fuse_editor_gizmo_system_tests)
 
+add_executable(fuse_editor_p5_slice_tests
+    test_p5_vertical_slice.cpp
+)
+
+file(TO_CMAKE_PATH "${CMAKE_SOURCE_DIR}" FUSE_SOURCE_DIR_CMAKE)
+target_link_libraries(fuse_editor_p5_slice_tests PRIVATE fuse_editor_api fuse_core fuse_scene fuse_project)
+target_compile_definitions(fuse_editor_p5_slice_tests PRIVATE
+    FUSE_SOURCE_DIR="${FUSE_SOURCE_DIR_CMAKE}"
+)
+if(MINGW)
+    target_link_options(fuse_editor_p5_slice_tests PRIVATE -Wl,--allow-multiple-definition)
+endif()
+if(FUSE_BUILD_VULKAN)
+    add_test(NAME fuse_editor_p5_slice COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_editor_p5_slice_tests>")
+    set_tests_properties(fuse_editor_p5_slice PROPERTIES
+        ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        RUN_SERIAL TRUE
+    )
+else()
+    add_test(NAME fuse_editor_p5_slice COMMAND fuse_editor_p5_slice_tests)
+    set_tests_properties(fuse_editor_p5_slice PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+endif()
+
 if(FUSE_BUILD_PARITY_DEMOS)
     add_executable(fuse_u8_parity_embed_pie_tests
         test_u8_parity_embed_pie.cpp
@@ -133,8 +162,16 @@ if(FUSE_BUILD_PARITY_DEMOS)
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         )
     endif()
-    if(FUSE_SMOKE_ENABLE_ASAN)
-        target_compile_options(fuse_u8_parity_embed_pie_tests PRIVATE -fsanitize=address -fno-omit-frame-pointer)
-        target_link_options(fuse_u8_parity_embed_pie_tests PRIVATE -fsanitize=address)
+    if(COMMAND fuse_apply_asan)
+        fuse_apply_asan(fuse_u8_parity_embed_pie_tests)
     endif()
+endif()
+
+if(MINGW)
+    get_property(_fuse_editor_test_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(_fuse_editor_test IN LISTS _fuse_editor_test_targets)
+        if(_fuse_editor_test MATCHES "^fuse_editor_" OR _fuse_editor_test MATCHES "^fuse_u8_")
+            target_link_options(${_fuse_editor_test} PRIVATE -Wl,--allow-multiple-definition)
+        endif()
+    endforeach()
 endif()

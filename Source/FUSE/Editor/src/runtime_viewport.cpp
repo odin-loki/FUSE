@@ -613,6 +613,10 @@ void RuntimeViewportHook::syncMeshSdfPreviewFromEcs_(EditorHost& host) {
 }
 
 void RuntimeViewportHook::mirrorEditorEntities_(EditorHost& host) {
+    if (m_embedSession.worldLoaded) {
+        return;
+    }
+
     std::vector<ecs::EntityID> entityOrder;
     host.editorScene().registry().each_query<ecs::Transform>(
         [&](ecs::EntityID id, ecs::Transform& /*transform*/) { entityOrder.push_back(id); });

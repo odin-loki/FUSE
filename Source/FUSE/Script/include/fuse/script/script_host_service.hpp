@@ -19,7 +19,7 @@ public:
     [[nodiscard]] ScriptHost& host() { return m_host; }
     [[nodiscard]] const ScriptHost& host() const { return m_host; }
 
-    /// Route chunk-name prefixes; dual TorqueScript VMs are recorded, not linked.
+    /// Route chunk-name prefixes; t3d/t2d execute on the quarantined Compat VM when linked.
     ScriptLoadResult load_chunk(const char* source, const char* chunk_name);
 
     [[nodiscard]] LegacyScriptDialect last_loaded_dialect() const { return m_lastDialect; }

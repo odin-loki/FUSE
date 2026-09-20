@@ -159,6 +159,30 @@ void testWorkStealHalfQueuePolicyStub() {
     expectEq(fuse::jobs::stealHalfQueueBatchSize(5), 3u, "odd queue rounds half up");
 }
 
+void testParallelForTinyGrainStealParity() {
+    // Grain 1 submits one job per index so victim queues stay deep; with 2+
+    // workers, idle peers take stealHalfQueueBatchSize() jobs per steal.
+#if FUSE_JOBS_SINGLE_THREAD
+    const fuse::u32 workers = 0;
+#else
+    const fuse::u32 workers = 4;
+#endif
+
+    constexpr fuse::u32 count = 2048u;
+    constexpr fuse::u32 grain = 1u;
+    const fuse::u32 expected = serialParallelForChecksum(0u, count, grain);
+
+    std::atomic<fuse::u32> parallelChecksum{0};
+    withScheduler(workers, [&] {
+        fuse::jobs::parallel_for(0u, count, grain, [&parallelChecksum](fuse::u32 i) {
+            parallelChecksum.fetch_add(i * 3u + (i % 5u), std::memory_order_relaxed);
+        });
+    });
+
+    expectEq(parallelChecksum.load(std::memory_order_relaxed), expected,
+             "tiny-grain parallel_for matches serial under half-queue steal");
+}
+
 void testWorkStealEmptyVictimFallback() {
     expectTrue(!fuse::jobs::canStealFromVictim(0), "empty victim is not stealable");
     expectTrue(fuse::jobs::canStealFromVictim(1), "non-empty victim is stealable");
@@ -481,6 +505,66 @@ void testCompileTimeSingleThreadMacro() {
 }
 #endif
 
+void testSetWorkerCountResizesPool() {
+#if FUSE_JOBS_SINGLE_THREAD
+    std::printf("SKIP: setWorkerCount resize requires a worker pool\n");
+    return;
+#else
+    auto& scheduler = fuse::jobs::JobScheduler::instance();
+    scheduler.shutdown();
+    scheduler.initialize(2);
+    expectEq(scheduler.workerCount(), 2u, "initialize(2) starts two workers");
+
+    expectTrue(scheduler.setWorkerCount(3), "setWorkerCount(3) succeeds");
+    expectEq(scheduler.workerCount(), 3u, "workerCount is 3 after resize");
+
+    std::atomic<fuse::u32> parallelSum{0};
+    fuse::u32 serialSum = 0;
+    fuse::jobs::parallel_for(0u, 256u, 8u, [&parallelSum](fuse::u32 i) {
+        parallelSum.fetch_add(i, std::memory_order_relaxed);
+    });
+    for (fuse::u32 i = 0; i < 256u; ++i) {
+        serialSum += i;
+    }
+    expectEq(parallelSum.load(std::memory_order_relaxed), serialSum,
+             "parallel_for sum matches serial after setWorkerCount(3)");
+
+    expectTrue(scheduler.setWorkerCount(0), "setWorkerCount(0) succeeds");
+    expectEq(scheduler.workerCount(), 0u, "workerCount is 0 after setWorkerCount(0)");
+    expectTrue(scheduler.isSingleThreaded(), "scheduler reports single-threaded after setWorkerCount(0)");
+
+    std::atomic<int> phase{0};
+    scheduler.submit([&] {
+        expectEq(static_cast<fuse::u32>(phase.load(std::memory_order_relaxed)), 0u,
+                 "zero-worker submit after resize runs before caller continues");
+        phase.store(1, std::memory_order_release);
+    });
+    expectEq(static_cast<fuse::u32>(phase.load(std::memory_order_acquire)), 1u,
+             "setWorkerCount(0) submit completes inline");
+
+    fuse::u32 sum = 0;
+    fuse::jobs::parallel_for(0u, 50u, 5u, [&sum](fuse::u32 i) { sum += i; });
+    expectEq(sum, 1225u, "jobs still run after setWorkerCount(0)");
+
+    expectTrue(scheduler.setWorkerCount(2), "setWorkerCount(2) restores pool");
+    expectEq(scheduler.workerCount(), 2u, "workerCount is 2 after restoring pool");
+    expectTrue(!scheduler.isSingleThreaded(), "pool is multi-threaded after restore");
+
+    parallelSum.store(0, std::memory_order_relaxed);
+    serialSum = 0;
+    fuse::jobs::parallel_for(0u, 256u, 8u, [&parallelSum](fuse::u32 i) {
+        parallelSum.fetch_add(i, std::memory_order_relaxed);
+    });
+    for (fuse::u32 i = 0; i < 256u; ++i) {
+        serialSum += i;
+    }
+    expectEq(parallelSum.load(std::memory_order_relaxed), serialSum,
+             "parallel_for still works after restoring worker pool");
+
+    scheduler.shutdown();
+#endif
+}
+
 } // namespace
 
 int main() {
@@ -488,6 +572,7 @@ int main() {
     testCooperativeWorkerWait();
     testWorkStealVictimPickRotatesFromThief();
     testWorkStealHalfQueuePolicyStub();
+    testParallelForTinyGrainStealParity();
     testWorkStealEmptyVictimFallback();
     testWorkStealFromBusyVictim();
     testWorkStealNoOpWhenAllQueuesEmpty();
@@ -506,6 +591,7 @@ int main() {
 #if FUSE_JOBS_SINGLE_THREAD
     testCompileTimeSingleThreadMacro();
 #endif
+    testSetWorkerCountResizesPool();
 
     if (g_failures == 0) {
         std::printf("fuse_core job tests: all checks passed\n");

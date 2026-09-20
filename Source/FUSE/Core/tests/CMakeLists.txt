@@ -14,15 +14,17 @@ target_link_libraries(fuse_core_job_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_job_tests)
 add_test(NAME fuse_core_jobs COMMAND fuse_core_job_tests)
 
-if(FUSE_JOBS_SINGLE_THREAD)
-    add_executable(fuse_core_job_single_thread_tests
-        test_jobs_single_thread.cpp
-    )
+# Always compile the single-thread job tests in default (multi-thread) CI.
+# fuse_core stays multi-thread; this executable alone sees FUSE_JOBS_SINGLE_THREAD=1
+# because test_jobs_single_thread.cpp requires the macro at compile time.
+add_executable(fuse_core_job_single_thread_tests
+    test_jobs_single_thread.cpp
+)
 
-    target_link_libraries(fuse_core_job_single_thread_tests PRIVATE fuse_core)
-    fuse_core_apply_tsan(fuse_core_job_single_thread_tests)
-    add_test(NAME fuse_core_jobs_single_thread COMMAND fuse_core_job_single_thread_tests)
-endif()
+target_compile_definitions(fuse_core_job_single_thread_tests PRIVATE FUSE_JOBS_SINGLE_THREAD=1)
+target_link_libraries(fuse_core_job_single_thread_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_job_single_thread_tests)
+add_test(NAME fuse_core_jobs_single_thread COMMAND fuse_core_job_single_thread_tests)
 
 add_executable(fuse_core_fiber_tests
     test_fiber.cpp
@@ -85,6 +87,13 @@ add_executable(fuse_core_profiler_assert_tests
 target_link_libraries(fuse_core_profiler_assert_tests PRIVATE fuse_core)
 add_test(NAME fuse_core_profiler_assert COMMAND fuse_core_profiler_assert_tests)
 
+add_executable(fuse_core_chrome_trace_tests
+    test_chrome_trace.cpp
+)
+
+target_link_libraries(fuse_core_chrome_trace_tests PRIVATE fuse_core)
+add_test(NAME fuse_core_chrome_trace COMMAND fuse_core_chrome_trace_tests)
+
 add_executable(fuse_core_math_tests
     test_math.cpp
 )
@@ -100,6 +109,14 @@ target_link_libraries(fuse_core_allocator_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_allocator_tests)
 add_test(NAME fuse_core_allocator COMMAND fuse_core_allocator_tests)
 
+add_executable(fuse_core_new_ban
+    test_new_ban.cpp
+)
+
+target_link_libraries(fuse_core_new_ban PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_new_ban)
+add_test(NAME fuse_core_new_ban COMMAND fuse_core_new_ban)
+
 add_executable(fuse_core_platform_window_tests
     test_platform_window.cpp
 )
@@ -107,6 +124,14 @@ add_executable(fuse_core_platform_window_tests
 target_link_libraries(fuse_core_platform_window_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_platform_window_tests)
 add_test(NAME fuse_core_platform_window COMMAND fuse_core_platform_window_tests)
+
+add_executable(fuse_core_p7_input_smoke
+    test_p7_input_smoke.cpp
+)
+
+target_link_libraries(fuse_core_p7_input_smoke PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_p7_input_smoke)
+add_test(NAME fuse_core_p7_input_smoke COMMAND fuse_core_p7_input_smoke)
 
 add_executable(fuse_core_phase1_integration
     test_phase1_integration.cpp
@@ -124,6 +149,14 @@ target_link_libraries(fuse_core_frame_barrier_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_frame_barrier_tests)
 add_test(NAME fuse_core_frame_barrier COMMAND fuse_core_frame_barrier_tests)
 
+add_executable(fuse_core_p7_track_b_unlock
+    test_p7_track_b_unlock.cpp
+)
+
+target_link_libraries(fuse_core_p7_track_b_unlock PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_p7_track_b_unlock)
+add_test(NAME fuse_core_p7_track_b_unlock COMMAND fuse_core_p7_track_b_unlock)
+
 add_executable(fuse_mobile_vulkan_stub_tests
     test_mobile_vulkan_stub.cpp
 )
@@ -131,3 +164,19 @@ add_executable(fuse_mobile_vulkan_stub_tests
 target_link_libraries(fuse_mobile_vulkan_stub_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_mobile_vulkan_stub_tests)
 add_test(NAME fuse_mobile_vulkan_stub COMMAND fuse_mobile_vulkan_stub_tests)
+
+# P6 shipping Qt ban — linked only to fuse_core (never fuse_editor). Always
+# built with core tests so default product graphs catch FUSE_HAS_QT leakage.
+add_executable(fuse_p6_shipping_qt_ban
+    ${CMAKE_SOURCE_DIR}/Source/FUSE/Apps/RuntimeSmoke/test_p6_shipping_qt_ban.cpp
+)
+target_link_libraries(fuse_p6_shipping_qt_ban PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_p6_shipping_qt_ban)
+add_test(NAME fuse_p6_shipping_qt_ban COMMAND fuse_p6_shipping_qt_ban)
+
+get_property(_fuse_core_dir_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_fuse_core_test IN LISTS _fuse_core_dir_targets)
+    if(_fuse_core_test MATCHES "^fuse_core_" OR _fuse_core_test STREQUAL "fuse_p6_shipping_qt_ban")
+        fuse_core_apply_asan_ubsan(${_fuse_core_test})
+    endif()
+endforeach()

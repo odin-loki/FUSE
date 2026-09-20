@@ -15,6 +15,11 @@ enum class PlatformEventType : u8 {
     WindowResized,
     WindowFocusGained,
     WindowFocusLost,
+    KeyDown,
+    KeyUp,
+    MouseMove,
+    MouseButtonDown,
+    MouseButtonUp,
 };
 
 struct PlatformEvent {
@@ -22,6 +27,10 @@ struct PlatformEvent {
     Window* window = nullptr;
     u32 width = 0;
     u32 height = 0;
+    u32 keyCode = 0;  // virtual key / USB-ish; 0 means unused
+    i32 mouseX = 0;
+    i32 mouseY = 0;
+    u8 mouseButton = 0;  // 1=left 2=right 3=middle
 };
 
 /// Snapshot of the most recent in-place resize coalesce (diagnostic only).
@@ -51,10 +60,11 @@ struct EventPumpStats {
     PlatformEventType frontEventType = PlatformEventType::None;
 };
 
-/// OS event pump — B1.7 stub drains a synthetic queue only (desktop + mobile no-op).
+/// OS event pump — synthetic queue plus optional native drain.
 ///
-/// Platform backends will override `processOsEvents()` behaviour by replacing this
-/// translation unit or routing through a backend registry in a follow-up PR.
+/// `processOsEvents()` is a no-op until a `Window` registers a non-null native
+/// handle (HWND on Win32 via `Window::setNativeHandleForPump`). Headless tests
+/// that never attach a native window keep a pure synthetic queue.
 class EventPump {
 public:
     EventPump();
@@ -153,7 +163,11 @@ public:
     /// Number of `WindowResized` events merged in-place via coalescing.
     u32 coalescedResizeCount() const;
 
-    /// Drain the OS event queue — no-op in the B1.7 stub.
+    /// Drain native OS messages into the synthetic queue.
+    ///
+    /// Win32: PeekMessage loop for registered HWND pumps (KeyDown/Up, MouseMove,
+    /// MouseButton, WindowCloseRequested, WindowResized, Quit). GLFW: glfwPollEvents
+    /// when WSI is available. No-op when no native window is registered.
     void processOsEvents();
 
     /// Pump OS events then poll until the queue is empty. Returns false when quit was requested.
@@ -173,6 +187,12 @@ public:
     void pushWindowFocusGained(Window& window);
     void pushWindowFocusLost(Window& window);
     void pushWindowCloseRequested(Window& window);
+
+    /// Headless input helpers — wrap `pushSyntheticEvent` for key/mouse smoke.
+    void pushKeyDown(u32 keyCode);
+    void pushKeyUp(u32 keyCode);
+    void pushMouseMove(i32 x, i32 y);
+    void pushMouseButton(u8 button, bool down, i32 x, i32 y);
 
     void requestQuit();
     bool quitRequested() const;

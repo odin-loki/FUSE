@@ -19,6 +19,10 @@ public:
     void initialize(u32 workerCount);
     void shutdown();
 
+    /// Resize the pool. Drains in-flight work, then shutdown+initialize.
+    /// Returns false if the scheduler is not initialized.
+    bool setWorkerCount(u32 workerCount);
+
     void submit(JobFn job);
 
     u32 workerCount() const { return m_workerCount; }

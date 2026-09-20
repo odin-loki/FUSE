@@ -64,6 +64,13 @@ public:
 
     NativeWindowHandle nativeHandle() const;
 
+    /// Test / embedding hook — attach an existing native window (HWND on Win32)
+    /// so `EventPump::processOsEvents` can drain its message queue.
+    ///
+    /// Does not create or take ownership of the handle. Pass null to detach.
+    /// The default constructor never creates a Win32 window.
+    void setNativeHandleForPump(void* hwnd);
+
     /// Opaque `VkSurfaceKHR` when WSI is wired; null in the B1.7 stub.
     void* nativeVulkanSurface() const;
 
@@ -84,6 +91,8 @@ public:
     void clearCloseRequest();
 
 private:
+    friend class EventPump;
+
     bool m_valid = false;
     u32 m_width = 0;
     u32 m_height = 0;
@@ -94,6 +103,8 @@ private:
     WindowCloseRequest m_closeRequest = WindowCloseRequest::None;
     std::string m_title = "FUSE";
     void* m_nativeWindow = nullptr;
+    bool m_ownsNativeWindow = false;
+    bool m_pumpAsHwnd = false;
 };
 
 } // namespace fuse::platform

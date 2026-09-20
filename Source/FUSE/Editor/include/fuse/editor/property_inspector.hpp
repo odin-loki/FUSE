@@ -10,6 +10,7 @@
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/entity.hpp>
+#include <fuse/scene/scene.hpp>
 #include <fuse/types.hpp>
 
 #include <string>
@@ -26,10 +27,17 @@ public:
     };
 
     void sync(const EditorState& state, EditorScene& scene);
+    /// Bind the inspector to a `runtimeScene` entity selected by index (P5).
+    void syncRuntime(const EditorState& state, const scene::Scene& scene);
 
     [[nodiscard]] bool hasSelection() const { return m_target.valid(); }
     [[nodiscard]] ecs::EntityID target() const { return m_target; }
     [[nodiscard]] const std::vector<ComponentSection>& sections() const { return m_sections; }
+
+    /// Selected runtime-scene object name (mission entity), independent of ECS components.
+    [[nodiscard]] bool getName(const scene::Scene& scene, std::string& out) const;
+    bool setName(std::string name, scene::Scene& scene, CommandQueue& queue);
+    bool setName(std::string name, scene::Scene& scene, CommandStack& cmds);
 
     bool setTransformPosition(const ecs::vec3& position, EditorScene& scene, CommandStack& cmds);
     bool setSdfBlendAlpha(f32 alpha, EditorScene& scene, CommandStack& cmds);

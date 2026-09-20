@@ -45,11 +45,27 @@ void withScheduler(fuse::u32 workers, Body&& body) {
     scheduler.shutdown();
 }
 
+// Default CI keeps fuse_core multi-thread; this test executable alone defines
+// FUSE_JOBS_SINGLE_THREAD. Probe the linked library before asserting clamps.
+bool fuseCoreCompiledSingleThread() {
+    fuse::jobs::WorkerCountParams desktop;
+    desktop.usableCores = 16;
+    desktop.performanceCores = 16;
+    desktop.mobileProfile = false;
+    desktop.powerState = fuse::platform::PowerState::Normal;
+    return fuse::jobs::computeWorkerCount(desktop) == 0u;
+}
+
 void testMacroEnabled() {
     expectTrue(FUSE_JOBS_SINGLE_THREAD == 1, "FUSE_JOBS_SINGLE_THREAD compile flag is set");
 }
 
 void testComputeWorkerCountAlwaysZero() {
+    if (!fuseCoreCompiledSingleThread()) {
+        std::printf("SKIP: computeWorkerCount clamp requires fuse_core FUSE_JOBS_SINGLE_THREAD\n");
+        return;
+    }
+
     fuse::jobs::WorkerCountParams desktop;
     desktop.usableCores = 16;
     desktop.performanceCores = 16;
@@ -78,9 +94,11 @@ void testComputeWorkerCountAlwaysZero() {
 }
 
 void testSchedulerIgnoresRequestedWorkers() {
-    withScheduler(8, [&] {
+    // Compile-time clamp is only in ST fuse_core; otherwise exercise runtime initialize(0).
+    const fuse::u32 requested = fuseCoreCompiledSingleThread() ? 8u : 0u;
+    withScheduler(requested, [&] {
         auto& scheduler = fuse::jobs::JobScheduler::instance();
-        expectEq(scheduler.workerCount(), 0u, "initialize clamps worker count to 0");
+        expectEq(scheduler.workerCount(), 0u, "initialize results in 0 workers");
         expectTrue(scheduler.isSingleThreaded(), "scheduler reports single-threaded mode");
     });
 }

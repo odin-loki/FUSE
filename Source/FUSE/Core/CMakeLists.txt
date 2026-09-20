@@ -6,6 +6,10 @@ else()
     set(_fuse_jobs_single_thread_default OFF)
 endif()
 option(FUSE_JOBS_SINGLE_THREAD "Force single-threaded job execution (tests/replay/Emscripten stub)" ${_fuse_jobs_single_thread_default})
+option(FUSE_CORE_BAN_GLOBAL_NEW
+    "Debug: intercept naked new/delete/malloc in fuse_core TUs (never replace process-wide ::operator new)"
+    OFF)
+option(FUSE_TRACK_B_UNLOCK "Unlock Track B production defaults on FUSE APIs (P7)" OFF)
 
 set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/types.hpp
@@ -20,14 +24,19 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/object.hpp
     include/fuse/core/init.hpp
     include/fuse/core/phase1_test_registry.hpp
+    include/fuse/core/track_b.hpp
     include/fuse/log/logger.hpp
     include/fuse/assert.hpp
     include/fuse/profiler/profiler.hpp
     include/fuse/alloc/alloc_stats.hpp
     include/fuse/alloc/allocator.hpp
+    include/fuse/alloc/new_ban.hpp
     include/fuse/alloc/frame_allocator.hpp
     include/fuse/alloc/pool_allocator.hpp
     include/fuse/alloc/stack_allocator.hpp
+    include/fuse/alloc/ring_allocator.hpp
+    include/fuse/alloc/freelist_allocator.hpp
+    include/fuse/alloc/domain_budget.hpp
     include/fuse/io/asset.hpp
     include/fuse/io/vfs.hpp
     include/fuse/jobs/worker_count.hpp
@@ -63,6 +72,7 @@ set(FUSE_CORE_SOURCES
     src/fuse_core_stub.cpp
     src/core/init.cpp
     src/core/phase1_test_registry.cpp
+    src/core/track_b.cpp
     src/frame/frame_barrier.cpp
     src/object.cpp
     src/log/logger.cpp
@@ -70,9 +80,13 @@ set(FUSE_CORE_SOURCES
     src/profiler/profiler.cpp
     src/alloc/alloc_stats.cpp
     src/alloc/allocator_detail.cpp
+    src/alloc/new_ban.cpp
     src/alloc/frame_allocator.cpp
     src/alloc/pool_allocator.cpp
     src/alloc/stack_allocator.cpp
+    src/alloc/ring_allocator.cpp
+    src/alloc/freelist_allocator.cpp
+    src/alloc/domain_budget.cpp
     src/io/vfs.cpp
     src/jobs/worker_count.cpp
     src/jobs/work_steal.cpp
@@ -115,6 +129,16 @@ if(FUSE_JOBS_SINGLE_THREAD)
     target_compile_definitions(fuse_core PUBLIC FUSE_JOBS_SINGLE_THREAD=1)
 endif()
 
+if(FUSE_TRACK_B_UNLOCK)
+    target_compile_definitions(fuse_core PUBLIC FUSE_TRACK_B_UNLOCK=1)
+else()
+    target_compile_definitions(fuse_core PUBLIC FUSE_TRACK_B_UNLOCK=0)
+endif()
+
+if((FUSE_CORE_ENABLE_ASAN OR FUSE_CORE_ENABLE_UBSAN) AND FUSE_CORE_ENABLE_TSAN)
+    message(FATAL_ERROR "FUSE_CORE_ENABLE_ASAN/FUSE_CORE_ENABLE_UBSAN and FUSE_CORE_ENABLE_TSAN are mutually exclusive")
+endif()
+
 if(FUSE_CORE_ENABLE_TSAN)
     if(FUSE_SMOKE_ENABLE_ASAN)
         message(FATAL_ERROR "FUSE_CORE_ENABLE_TSAN and FUSE_SMOKE_ENABLE_ASAN are mutually exclusive")
@@ -128,8 +152,49 @@ else()
     endfunction()
 endif()
 
-target_compile_features(fuse_core PUBLIC cxx_std_17)
+function(fuse_core_apply_asan_ubsan target)
+    if(NOT FUSE_CORE_ENABLE_ASAN AND NOT FUSE_CORE_ENABLE_UBSAN)
+        return()
+    endif()
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+        if(FUSE_CORE_ENABLE_ASAN AND FUSE_ASAN_SUPPORTED)
+            target_compile_options(${target} PRIVATE /fsanitize=address)
+            target_link_options(${target} PRIVATE /fsanitize=address)
+        endif()
+        return()
+    endif()
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        return()
+    endif()
+    set(_fuse_core_sanitizers)
+    if(FUSE_CORE_ENABLE_ASAN AND FUSE_ASAN_SUPPORTED)
+        list(APPEND _fuse_core_sanitizers address)
+    endif()
+    if(FUSE_CORE_ENABLE_UBSAN)
+        list(APPEND _fuse_core_sanitizers undefined)
+    endif()
+    if(NOT _fuse_core_sanitizers)
+        return()
+    endif()
+    list(JOIN _fuse_core_sanitizers "," _fuse_core_sanitizer_csv)
+    target_compile_options(${target} PRIVATE
+        -fsanitize=${_fuse_core_sanitizer_csv}
+        -fno-omit-frame-pointer
+    )
+    target_link_options(${target} PRIVATE
+        -fsanitize=${_fuse_core_sanitizer_csv}
+    )
+endfunction()
+
+if(FUSE_CORE_ENABLE_UBSAN AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    message(STATUS "FUSE: FUSE_CORE_ENABLE_UBSAN ignored on MSVC (no /fsanitize=undefined)")
+endif()
+
+fuse_apply_cxx23(fuse_core)
 target_link_libraries(fuse_core PUBLIC Threads::Threads)
+if(WIN32)
+    target_link_libraries(fuse_core PUBLIC user32)
+endif()
 
 target_compile_definitions(fuse_core
     PUBLIC
@@ -137,12 +202,23 @@ target_compile_definitions(fuse_core
         $<$<CONFIG:RelWithDebInfo>:FUSE_PROFILE=1>
 )
 
+if(FUSE_CORE_BAN_GLOBAL_NEW)
+    # PRIVATE + Debug only. Engine TUs that include fuse/alloc/new_ban.hpp route
+    # keyword new/malloc through HeapGuard. Do not replace global ::operator new —
+    # Qt/STL in the same process would abort.
+    target_compile_definitions(fuse_core
+        PRIVATE
+            $<$<CONFIG:Debug>:FUSE_ENGINE_HEAP_GUARD=1>
+    )
+endif()
+
 if(FUSE_CUDA_BACKEND)
     target_compile_definitions(fuse_core PUBLIC FUSE_HAS_CUDA=1)
     target_link_libraries(fuse_core PUBLIC CUDA::cudart)
 endif()
 
 fuse_core_apply_tsan(fuse_core)
+fuse_core_apply_asan_ubsan(fuse_core)
 
 option(FUSE_PLATFORM_WINDOW_GLFW "Enable optional GLFW hidden-window WSI scaffold (desktop present path)" OFF)
 if(FUSE_PLATFORM_WINDOW_GLFW)

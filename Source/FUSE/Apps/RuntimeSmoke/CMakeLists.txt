@@ -16,9 +16,12 @@ endif()
 
 target_compile_features(fuse_runtime_smoke PRIVATE cxx_std_17)
 
-if(FUSE_SMOKE_ENABLE_ASAN)
-    target_compile_options(fuse_runtime_smoke PRIVATE -fsanitize=address -fno-omit-frame-pointer)
-    target_link_options(fuse_runtime_smoke PRIVATE -fsanitize=address)
+if(MINGW)
+    target_link_options(fuse_runtime_smoke PRIVATE -Wl,--allow-multiple-definition)
+endif()
+
+if(COMMAND fuse_apply_asan)
+    fuse_apply_asan(fuse_runtime_smoke)
 endif()
 
 if(FUSE_T3D_LEGACY_ENGINE_PROBE)
@@ -29,3 +32,7 @@ if(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG)
 endif()
 
 add_test(NAME fuse_runtime_smoke COMMAND fuse_runtime_smoke)
+
+if(COMMAND fuse_shipping_assert_runtime_targets)
+    fuse_shipping_assert_runtime_targets()
+endif()

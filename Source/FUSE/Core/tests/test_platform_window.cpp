@@ -7,6 +7,16 @@
 #include <string>
 #include <vector>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 namespace {
 
 int g_failures = 0;
@@ -197,6 +207,80 @@ void testEventPumpOsDrainIsNoOp() {
     expectEq(pump.pendingEventCount(), 0u, "pending count zero after OS drain");
 }
 
+void testEventPumpOsDrainDefaultWindowIsNoOp() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    expectTrue(window.nativeHandle().value == nullptr, "default window has no native handle");
+    pump.processOsEvents();
+    expectTrue(!pump.hasPendingEvents(), "default window OS drain enqueues nothing");
+    expectEq(pump.pendingEventCount(), 0u, "pending count zero after default window OS drain");
+
+    fuse::platform::PlatformEvent synthetic;
+    synthetic.type = fuse::platform::PlatformEventType::KeyDown;
+    synthetic.keyCode = 65u;
+    pump.pushSyntheticEvent(synthetic);
+
+    fuse::platform::PlatformEvent polled;
+    expectTrue(pump.pollEvent(polled), "synthetic event works after OS drain");
+    expectTrue(polled.type == fuse::platform::PlatformEventType::KeyDown,
+               "synthetic KeyDown preserved after OS drain");
+    expectEq(polled.keyCode, 65u, "synthetic keyCode preserved after OS drain");
+    expectTrue(!pump.hasPendingEvents(), "synthetic KeyDown consumed after OS drain");
+}
+
+#if defined(_WIN32)
+void testEventPumpWin32MessageOnlyHwndMapsKeyDown() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    const wchar_t* className = L"FUSE_EventPumpMsgOnly";
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = DefWindowProcW;
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = className;
+
+    ATOM atom = RegisterClassW(&wc);
+    if (atom == 0) {
+        const DWORD err = GetLastError();
+        if (err != ERROR_CLASS_ALREADY_EXISTS) {
+            expectTrue(false, "RegisterClassW for message-only HWND");
+            return;
+        }
+    }
+
+    HWND hwnd = CreateWindowExW(0, className, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr,
+                                GetModuleHandleW(nullptr), nullptr);
+    if (hwnd == nullptr) {
+        std::fprintf(stderr, "SKIP: message-only HWND unavailable (GetLastError=%lu)\n",
+                     static_cast<unsigned long>(GetLastError()));
+        return;
+    }
+
+    window.setNativeHandleForPump(hwnd);
+    expectTrue(window.nativeHandle().value == static_cast<void*>(hwnd), "pump handle stores HWND");
+
+    pump.processOsEvents();
+    expectTrue(!pump.hasPendingEvents(), "idle HWND pump enqueues nothing");
+
+    const BOOL posted = PostMessageW(hwnd, WM_KEYDOWN, 'A', 0);
+    expectTrue(posted != FALSE, "PostMessageW WM_KEYDOWN");
+
+    pump.processOsEvents();
+
+    fuse::platform::PlatformEvent event;
+    expectTrue(pump.pollEvent(event), "WM_KEYDOWN mapped after processOsEvents");
+    expectTrue(event.type == fuse::platform::PlatformEventType::KeyDown, "mapped KeyDown type");
+    expectEq(event.keyCode, static_cast<fuse::u32>('A'), "mapped KeyDown virtual key");
+    expectTrue(event.window == &window, "mapped KeyDown bound to pumped window");
+    expectTrue(!pump.hasPendingEvents(), "mapped KeyDown consumed");
+
+    window.setNativeHandleForPump(nullptr);
+    DestroyWindow(hwnd);
+    UnregisterClassW(className, GetModuleHandleW(nullptr));
+}
+#endif
+
 void testEventPumpPollQueueFifoOrder() {
     fuse::platform::EventPump pump;
     fuse::platform::Window window;
@@ -345,6 +429,10 @@ int main() {
     testEventPumpSyntheticEvents();
     testEventPumpQuitFlow();
     testEventPumpOsDrainIsNoOp();
+    testEventPumpOsDrainDefaultWindowIsNoOp();
+#if defined(_WIN32)
+    testEventPumpWin32MessageOnlyHwndMapsKeyDown();
+#endif
     testEventPumpPollQueueFifoOrder();
     testEventPumpPollQueueOverflowDropsTail();
     testEventPumpClearSyntheticEvents();

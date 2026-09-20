@@ -2,6 +2,8 @@
 
 #include <cctype>
 #include <cstdlib>
+#include <fstream>
+#include <sstream>
 #include <string_view>
 
 namespace fuse::project {
@@ -518,6 +520,19 @@ T2DModuleExtract extractT2DModuleFields(const std::string& moduleText, const std
     }
 
     return extract;
+}
+
+std::string readTextFile(const std::string& path, std::string& error) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) {
+        error = "unable to read mission file: " + path;
+        return {};
+    }
+
+    error.clear();
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+    return buffer.str();
 }
 
 } // namespace fuse::project
