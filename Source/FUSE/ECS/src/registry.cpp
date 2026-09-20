@@ -174,11 +174,15 @@ void Registry::migrate_entity(EntityID id, const std::vector<std::type_index>& t
         ComponentColumn& dst = *target.find_column(type);
         auto value_it = new_values.find(type);
         if (value_it != new_values.end()) {
-            dst.push(value_it->second);
+            dst.write_at(new_row, value_it->second);
         } else if (const ComponentColumn* src = source.find_column(type)) {
-            dst.push(src->at(rec->row));
+            if (rec->row < src->count()) {
+                dst.write_at(new_row, src->at(rec->row));
+            } else {
+                dst.write_default_at(new_row);
+            }
         } else {
-            dst.push_default();
+            dst.write_default_at(new_row);
         }
     }
 

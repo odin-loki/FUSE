@@ -22,6 +22,22 @@ else()
     add_test(NAME fuse_editor_host COMMAND fuse_editor_host_tests)
 endif()
 
+add_executable(fuse_editor_viewport_present_gate_tests
+    test_viewport_present_gate.cpp
+)
+
+target_link_libraries(fuse_editor_viewport_present_gate_tests PRIVATE fuse_editor_api fuse_core)
+if(FUSE_BUILD_VULKAN)
+    target_link_libraries(fuse_editor_viewport_present_gate_tests PRIVATE fuse_rhi)
+    add_test(NAME fuse_editor_viewport_present_gate COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_editor_viewport_present_gate_tests>")
+    set_tests_properties(fuse_editor_viewport_present_gate PROPERTIES
+        ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
+        RUN_SERIAL TRUE
+    )
+else()
+    add_test(NAME fuse_editor_viewport_present_gate COMMAND fuse_editor_viewport_present_gate_tests)
+endif()
+
 add_executable(fuse_editor_runtime_embed_tests
     test_runtime_embed_session.cpp
 )

@@ -9,7 +9,17 @@ Component::Component() = default;
 Component::Component(std::string name) : Object(std::move(name)) {}
 
 Component::~Component() {
-    detach();
+    if (m_owner != nullptr) {
+        m_owner->removeComponent(this);
+        m_owner = nullptr;
+    }
+    for (Component* child : m_components) {
+        if (child != nullptr) {
+            child->m_owner = nullptr;
+        }
+    }
+    m_components.clear();
+    m_interfaceCache.clear();
 }
 
 Component* Component::componentAt(s32 index) {

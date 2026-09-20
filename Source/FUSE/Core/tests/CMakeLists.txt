@@ -123,3 +123,11 @@ add_executable(fuse_core_frame_barrier_tests
 target_link_libraries(fuse_core_frame_barrier_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_frame_barrier_tests)
 add_test(NAME fuse_core_frame_barrier COMMAND fuse_core_frame_barrier_tests)
+
+add_executable(fuse_mobile_vulkan_stub_tests
+    test_mobile_vulkan_stub.cpp
+)
+
+target_link_libraries(fuse_mobile_vulkan_stub_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_mobile_vulkan_stub_tests)
+add_test(NAME fuse_mobile_vulkan_stub COMMAND fuse_mobile_vulkan_stub_tests)

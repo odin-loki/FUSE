@@ -146,6 +146,11 @@ T& Registry::add(EntityID id, T value) {
 
     std::unordered_map<std::type_index, usize> sizes;
     sizes[tidx] = sizeof(T);
+    for (const std::type_index& type : current.component_types) {
+        if (const ComponentColumn* column = current.find_column(type)) {
+            sizes[type] = column->element_size;
+        }
+    }
 
     migrate_entity(id, target_types, values, sizes);
     return *get<T>(id);
@@ -172,8 +177,16 @@ void Registry::remove(EntityID id) {
             target_types.push_back(type);
         }
     }
+    std::sort(target_types.begin(), target_types.end());
 
-    migrate_entity(id, target_types, {}, {});
+    std::unordered_map<std::type_index, usize> sizes;
+    for (const std::type_index& type : current.component_types) {
+        if (const ComponentColumn* column = current.find_column(type)) {
+            sizes[type] = column->element_size;
+        }
+    }
+
+    migrate_entity(id, target_types, {}, sizes);
 }
 
 template <typename T>
@@ -187,7 +200,7 @@ T* Registry::get(EntityID id) {
 
     Archetype& archetype = m_archetypes[rec->archetype_index];
     ComponentColumn* column = archetype.find_column(std::type_index(typeid(T)));
-    if (column == nullptr) {
+    if (column == nullptr || rec->row >= column->count()) {
         return nullptr;
     }
 
@@ -205,7 +218,7 @@ const T* Registry::get(EntityID id) const {
 
     const Archetype& archetype = m_archetypes[rec->archetype_index];
     const ComponentColumn* column = archetype.find_column(std::type_index(typeid(T)));
-    if (column == nullptr) {
+    if (column == nullptr || rec->row >= column->count()) {
         return nullptr;
     }
 
@@ -223,7 +236,9 @@ bool Registry::has(EntityID id) const {
     if (rec->archetype_index >= m_archetypes.size()) {
         return false;
     }
-    return m_archetypes[rec->archetype_index].has_component(std::type_index(typeid(T)));
+    const Archetype& archetype = m_archetypes[rec->archetype_index];
+    const ComponentColumn* column = archetype.find_column(std::type_index(typeid(T)));
+    return column != nullptr && rec->row < column->count();
 }
 
 template <typename... Ts>

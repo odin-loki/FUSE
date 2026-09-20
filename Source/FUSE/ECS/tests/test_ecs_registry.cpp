@@ -1,6 +1,7 @@
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/tags.hpp>
+#include <fuse/ecs/components/camera.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
 
@@ -142,12 +143,37 @@ void testHasAllComponents() {
     expectTrue(reg.has<fuse::ecs::Transform>(transformOnly), "single-type has still works");
 }
 
+void testCameraThenTransformAdd() {
+    fuse::ecs::Registry reg;
+    reg.init(64);
+
+    const fuse::ecs::EntityID camera_entity = reg.create();
+    fuse::ecs::Camera camera{};
+    camera.is_active = true;
+    reg.add(camera_entity, camera);
+    expectTrue(reg.get<fuse::ecs::Camera>(camera_entity) != nullptr &&
+                   reg.get<fuse::ecs::Camera>(camera_entity)->is_active,
+               "camera active flag stored on first add");
+
+    fuse::ecs::Transform transform{};
+    transform.position = {0.f, 0.f, -10.f, 1.f};
+    reg.add(camera_entity, transform);
+
+    expectTrue(reg.has<fuse::ecs::Camera>(camera_entity), "camera survives transform add");
+    expectTrue(reg.has<fuse::ecs::Transform>(camera_entity), "transform added after camera");
+    const fuse::ecs::Camera* camera_ptr = reg.get<fuse::ecs::Camera>(camera_entity);
+    const fuse::ecs::Transform* transform_ptr = reg.get<fuse::ecs::Transform>(camera_entity);
+    expectTrue(camera_ptr != nullptr, "camera get after transform add");
+    expectTrue(transform_ptr != nullptr, "transform get after camera add");
+}
+
 } // namespace
 
 int main() {
     testCreateDestroy();
     testStaleHandle();
     testAddGetRemove();
+    testCameraThenTransformAdd();
     testArchetypeGrouping();
     testEachIteration();
     testUninitializedRegistrySafe();

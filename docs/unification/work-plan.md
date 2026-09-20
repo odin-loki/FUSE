@@ -123,7 +123,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Mobile** | Hybrid demo runs on iOS **or** Android device/sim; respect surface loss / background |
 | **Exit** | Demo: 3D clear + spinning 2D sprite one window (desktop + one mobile); TSan clean on cull path |
 | **Deps** | WP-05, WP-03 |
-| **Status** | 🚧 Core frame green — `fillSnapshotSoA` in worlds, SoA cull, barrier, software `demo_hybrid_hud`; Track B bindless composite GPU blit ✅ (WP-06f); CUDA interop/GLFW present/U6 surface handoff ✅ (WP-06g); CUDA interop fill + frame-sync progress + Qt surface stub ✅ (WP-06h); Qt `QVulkanInstance` bootstrap + load-stress stubs ✅ (WP-06i); Lavapipe teardown hardening + Qt embed/timeline stress ✅ (WP-06j); Lavapipe tune + composite SPIR-V regen + viewport swapchain recreate stubs ✅ (WP-06k); spirv-val regen gate + consumed swapchain present + PlaceholderRenderer toggle ✅ (WP-06l); Qt `vkQueuePresentKHR` gate + embed PlaceholderRenderer deepen + mobile Vulkan cmake stubs ✅ (WP-06m); Qt present path readiness + combined CUDA/timeline stress ✅ (WP-06n); Qt present path eligible diagnostics + scoped PlaceholderRenderer retirement deepen ✅ (WP-06o) — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) |
+| **Status** | 🚧 Core frame green — `fillSnapshotSoA` in worlds, SoA cull, barrier, software `demo_hybrid_hud`; Track B bindless composite GPU blit ✅ (WP-06f); CUDA interop/GLFW present/U6 surface handoff ✅ (WP-06g); CUDA interop fill + frame-sync progress + Qt surface stub ✅ (WP-06h); Qt `QVulkanInstance` bootstrap + load-stress stubs ✅ (WP-06i); Lavapipe teardown hardening + Qt embed/timeline stress ✅ (WP-06j); Lavapipe tune + composite SPIR-V regen + viewport swapchain recreate stubs ✅ (WP-06k); spirv-val regen gate + consumed swapchain present + PlaceholderRenderer toggle ✅ (WP-06l); Qt `vkQueuePresentKHR` gate + embed PlaceholderRenderer deepen + mobile Vulkan cmake stubs ✅ (WP-06m); Qt present path readiness + combined CUDA/timeline stress ✅ (WP-06n); Qt present path eligible diagnostics + scoped PlaceholderRenderer retirement deepen ✅ (WP-06o); mobile Vulkan stubs deepen + PlaceholderRenderer retirement tests + Lavapipe destroy-order ICD lock ✅ (WP-06p) — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) |
 
 ---
 
@@ -309,6 +309,19 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 
 ---
 
+### WP-06p — Track B mobile Vulkan stubs deepen + PlaceholderRenderer retirement tests + Lavapipe ICD tune
+
+| Field | Value |
+|-------|-------|
+| **Effort** | M |
+| **Scope** | `mobile_vulkan_stub.hpp` + `FuseVulkanMobile.cmake` status helper; `test_viewport_present_gate` + `fuse_placeholder_renderer_retirement` tests; serial ICD lock on `fuse_rhi_resource_destroy_order`; ECS `migrate_entity` indexed column writes + mechanics `Component` destructor hygiene for umbrella green; keep serial `ctest -j1` green for Vulkan targets |
+| **MT note** | Headless-safe stub tests only; no display required |
+| **Exit** | `fuse_mobile_vulkan_stub` + `fuse_editor_viewport_present_gate` + `fuse_placeholder_renderer_retirement` tests; Lavapipe ICD targets stable under `ctest -j1`; ECS/mechanics segfaulting tests restored |
+| **Deps** | WP-06o |
+| **Status** | ✅ Landed — see [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §WP-06p |
+
+---
+
 ### WP-07 — U5 Feature modules (parallel per module)
 
 | Field | Value |
@@ -433,7 +446,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** U2 incremental — expand Engine probe + SimObject/StringTable route; U6 full Qt `vkQueuePresentKHR` on display with `FUSE_ENABLE_QT_PRESENT=ON`; U7 ispc_texcomp BC7 + libvorbisenc on CI images; Track B post–WP-06o (driver-wired timeline stress on NVIDIA CI, full software placeholder removal).
+**Next:** U2 incremental — expand Engine probe + SimObject/StringTable route; U6 full Qt `vkQueuePresentKHR` on display with `FUSE_ENABLE_QT_PRESENT=ON`; U7 ispc_texcomp BC7 + libvorbisenc on CI images; Track B post–WP-06p (driver-wired timeline stress on NVIDIA CI, full software placeholder removal).
 
 ---
 

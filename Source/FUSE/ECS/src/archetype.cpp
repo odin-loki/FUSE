@@ -25,6 +25,28 @@ void ComponentColumn::push_default() {
     std::memset(storage.data() + old_bytes, 0, element_size);
 }
 
+void ComponentColumn::write_at(usize row, const void* src) {
+    if (element_size == 0 || src == nullptr) {
+        return;
+    }
+    const usize needed_bytes = (row + 1) * element_size;
+    if (storage.size() < needed_bytes) {
+        storage.resize(needed_bytes);
+    }
+    std::memcpy(storage.data() + row * element_size, src, element_size);
+}
+
+void ComponentColumn::write_default_at(usize row) {
+    if (element_size == 0) {
+        return;
+    }
+    const usize needed_bytes = (row + 1) * element_size;
+    if (storage.size() < needed_bytes) {
+        storage.resize(needed_bytes);
+    }
+    std::memset(storage.data() + row * element_size, 0, element_size);
+}
+
 void ComponentColumn::swap_remove(usize row) {
     const usize n = count();
     if (row >= n) {
@@ -39,7 +61,7 @@ void ComponentColumn::swap_remove(usize row) {
 }
 
 bool Archetype::has_component(std::type_index type) const {
-    return columns.find(type) != columns.end();
+    return std::find(component_types.begin(), component_types.end(), type) != component_types.end();
 }
 
 ComponentColumn& Archetype::ensure_column(std::type_index type, usize element_size) {

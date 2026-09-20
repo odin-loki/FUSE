@@ -31,6 +31,8 @@ struct ComponentColumn {
     const void* at(usize row) const;
     void push(const void* src);
     void push_default();
+    void write_at(usize row, const void* src);
+    void write_default_at(usize row);
     void swap_remove(usize row);
 };
 

@@ -24,6 +24,7 @@ if(FUSE_BUILD_VULKAN)
     set(_fuse_hybrid_vulkan_icd_tests
         fuse_hybrid_renderer_bootstrap
         fuse_hybrid_vulkan_presentable
+        fuse_placeholder_renderer_retirement
     )
 
     add_executable(fuse_render_command_list test_render_command_list.cpp)
@@ -41,6 +42,10 @@ if(FUSE_BUILD_VULKAN)
     add_executable(fuse_hybrid_vulkan_presentable test_vulkan_presentable_stub.cpp)
     target_link_libraries(fuse_hybrid_vulkan_presentable PRIVATE fuse_hybrid fuse_core)
     add_test(NAME fuse_hybrid_vulkan_presentable COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh" "$<TARGET_FILE:fuse_hybrid_vulkan_presentable>")
+
+    add_executable(fuse_placeholder_renderer_retirement test_placeholder_renderer_retirement.cpp)
+    target_link_libraries(fuse_placeholder_renderer_retirement PRIVATE fuse_hybrid fuse_core)
+    add_test(NAME fuse_placeholder_renderer_retirement COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh" "$<TARGET_FILE:fuse_placeholder_renderer_retirement>")
 
     foreach(_fuse_hybrid_vulkan_test IN LISTS _fuse_hybrid_vulkan_icd_tests)
         if(TEST ${_fuse_hybrid_vulkan_test})
