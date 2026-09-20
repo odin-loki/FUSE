@@ -118,6 +118,9 @@ bool gbitmapDeleteImageSmoke();
 bool gbitmapAllocateBitmapWithMipsSmoke();
 bool threadStaticSmoke();
 bool bitRenderTriangleSmoke();
+#if defined(FUSE_T3D_LEGACY_ENGINE_PROBE_ZIP)
+bool zipArchiveMemRoundTripSmoke();
+#endif
 } // namespace engineProbe
 #endif
 

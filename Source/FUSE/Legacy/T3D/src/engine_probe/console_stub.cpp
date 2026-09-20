@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <cstdarg>
+#include <cstring>
 
 namespace Con {
 
@@ -28,6 +29,18 @@ void warnf(const char* fmt, ...) {
     std::vfprintf(stderr, fmt, args);
     std::fprintf(stderr, "\n");
     va_end(args);
+}
+
+bool getBoolVariable(const char* name, bool def) {
+    if (name != nullptr && std::strcmp(name, "$pref::Zip::Verbose") == 0) {
+        return false;
+    }
+    return def;
+}
+
+void setBoolVariable(const char* name, bool value) {
+    (void)name;
+    (void)value;
 }
 
 } // namespace Con

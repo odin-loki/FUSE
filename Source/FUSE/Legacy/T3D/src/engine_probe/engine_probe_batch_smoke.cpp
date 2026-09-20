@@ -32,6 +32,9 @@
 #include "core/util/uuid.h"
 #include "core/threadStatic.h"
 #include "core/bitRender.h"
+#if defined(FUSE_T3D_LEGACY_ENGINE_PROBE_ZIP)
+#include "core/util/zip/zipArchive.h"
+#endif
 
 #include <cstdio>
 #include <cstring>
@@ -526,5 +529,55 @@ bool bitRenderTriangleSmoke() {
     }
     return sum != 0u;
 }
+
+#if defined(FUSE_T3D_LEGACY_ENGINE_PROBE_ZIP)
+bool zipArchiveMemRoundTripSmoke() {
+    static const char kFilename[] = "fuse_u2_probe.txt";
+    static const char kPayload[] = "fuse_u2_zip_probe";
+
+    MemStream zipStream(64 * 1024, true, true);
+    Zip::ZipArchive writer;
+    if (!writer.openArchive(&zipStream, Zip::ZipArchive::Write)) {
+        return false;
+    }
+
+    Stream* out = writer.openFile(kFilename, Zip::ZipArchive::Write);
+    if (out == nullptr) {
+        writer.closeArchive();
+        return false;
+    }
+    if (!out->write(static_cast<U32>(std::strlen(kPayload) + 1), kPayload)) {
+        writer.closeFile(out);
+        writer.closeArchive();
+        return false;
+    }
+    writer.closeFile(out);
+    writer.closeArchive();
+
+    zipStream.setPosition(0);
+
+    Zip::ZipArchive reader;
+    if (!reader.openArchive(&zipStream, Zip::ZipArchive::Read)) {
+        return false;
+    }
+
+    Stream* in = reader.openFile(kFilename, Zip::ZipArchive::Read);
+    if (in == nullptr) {
+        reader.closeArchive();
+        return false;
+    }
+
+    char buffer[64] = {};
+    if (!in->read(static_cast<U32>(sizeof(buffer)), buffer)) {
+        reader.closeFile(in);
+        reader.closeArchive();
+        return false;
+    }
+
+    reader.closeFile(in);
+    reader.closeArchive();
+    return std::strcmp(buffer, kPayload) == 0;
+}
+#endif
 
 } // namespace fuse::legacy::t3d::engineProbe

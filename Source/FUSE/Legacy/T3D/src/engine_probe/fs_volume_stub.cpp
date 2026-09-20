@@ -310,5 +310,21 @@ bool IsFile(const Path& path)
    return S_ISREG(st.st_mode);
 }
 
+bool Remove(const Path& path)
+{
+   if (path.isEmpty()) {
+      return false;
+   }
+   return std::remove(path.getFullPath().c_str()) == 0;
+}
+
+bool Rename(const Path& from, const Path& to)
+{
+   if (from.isEmpty() || to.isEmpty()) {
+      return false;
+   }
+   return std::rename(from.getFullPath().c_str(), to.getFullPath().c_str()) == 0;
+}
+
 } // namespace FS
 } // namespace Torque

@@ -10,6 +10,8 @@ namespace Con {
 void printf(const char* fmt, ...);
 void errorf(const char* fmt, ...);
 void warnf(const char* fmt, ...);
+bool getBoolVariable(const char* name, bool def = false);
+void setBoolVariable(const char* name, bool value);
 } // namespace Con
 
 #endif // _CONSOLE_H_

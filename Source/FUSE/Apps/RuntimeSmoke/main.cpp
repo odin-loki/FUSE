@@ -423,6 +423,10 @@ int main() {
               "engine probe TorqueThreadStatic DITTS/ATTS round-trip");
         check(fuse::legacy::t3d::engineProbe::bitRenderTriangleSmoke(),
               "engine probe BitRender triangle raster sets bits");
+#if defined(FUSE_T3D_LEGACY_ENGINE_PROBE_ZIP)
+        check(fuse::legacy::t3d::engineProbe::zipArchiveMemRoundTripSmoke(),
+              "engine probe ZipArchive MemStream deflate write/read round-trip");
+#endif
     }
 #endif
 

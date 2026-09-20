@@ -51,6 +51,7 @@ set(_fuse_t3d_legacy_engine_sources
     src/engine_probe/rgb2xyz_probe_stub.cpp
     src/engine_probe/rgb2luv_probe_stub.cpp
     src/engine_probe/uuid_probe_stub.cpp
+    src/engine_probe/version_probe_stub.cpp
     src/engine_probe/bitmap_probe_smoke.cpp
     src/engine_probe/engine_probe_batch_smoke.cpp
     src/engine_probe/color_probe_smoke.cpp
@@ -96,14 +97,39 @@ set(_fuse_t3d_legacy_engine_sources
 find_package(PNG QUIET)
 find_package(ZLIB QUIET)
 set(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG OFF)
+set(FUSE_T3D_LEGACY_ENGINE_PROBE_ZIP OFF)
+if(ZLIB_FOUND)
+    list(APPEND _fuse_t3d_legacy_engine_sources
+        "${CMAKE_SOURCE_DIR}/Engine/source/core/util/zip/compressor.cpp"
+        "${CMAKE_SOURCE_DIR}/Engine/source/core/util/zip/compressors/deflate.cpp"
+        "${CMAKE_SOURCE_DIR}/Engine/source/core/util/zip/compressors/stored.cpp"
+        "${CMAKE_SOURCE_DIR}/Engine/source/core/util/zip/fileHeader.cpp"
+        "${CMAKE_SOURCE_DIR}/Engine/source/core/util/zip/centralDir.cpp"
+        "${CMAKE_SOURCE_DIR}/Engine/source/core/util/zip/extraField.cpp"
+        "${CMAKE_SOURCE_DIR}/Engine/source/core/util/zip/zipSubStream.cpp"
+        "${CMAKE_SOURCE_DIR}/Engine/source/core/util/zip/zipCryptStream.cpp"
+        "${CMAKE_SOURCE_DIR}/Engine/source/core/util/zip/zipTempStream.cpp"
+        "${CMAKE_SOURCE_DIR}/Engine/source/core/util/zip/zipArchive.cpp"
+    )
+    target_link_libraries(fuse_t3d_legacy PRIVATE ZLIB::ZLIB)
+    target_include_directories(fuse_t3d_legacy PRIVATE
+        "${CMAKE_SOURCE_DIR}/Engine/lib/zlib"
+    )
+    target_compile_definitions(fuse_t3d_legacy PRIVATE FUSE_T3D_LEGACY_ENGINE_PROBE_ZIP=1)
+    set(FUSE_T3D_LEGACY_ENGINE_PROBE_ZIP ON CACHE BOOL "Engine probe linked zipArchive core" FORCE)
+    message(STATUS "FUSE: engine probe zipArchive core enabled (zlib found)")
+else()
+    set(FUSE_T3D_LEGACY_ENGINE_PROBE_ZIP OFF CACHE BOOL "Engine probe linked zipArchive core" FORCE)
+    message(STATUS "FUSE: engine probe zipArchive core skipped (zlib not found)")
+endif()
+
 if(PNG_FOUND AND ZLIB_FOUND)
     list(APPEND _fuse_t3d_legacy_engine_sources
         "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/bitmapPng.cpp"
     )
-    target_link_libraries(fuse_t3d_legacy PRIVATE PNG::PNG ZLIB::ZLIB)
+    target_link_libraries(fuse_t3d_legacy PRIVATE PNG::PNG)
     target_include_directories(fuse_t3d_legacy PRIVATE
         "${CMAKE_SOURCE_DIR}/Engine/lib"
-        "${CMAKE_SOURCE_DIR}/Engine/lib/zlib"
     )
     target_compile_definitions(fuse_t3d_legacy PRIVATE FUSE_T3D_LEGACY_ENGINE_PROBE_PNG=1)
     set(FUSE_T3D_LEGACY_ENGINE_PROBE_PNG ON CACHE BOOL "Engine probe linked bitmapPng.cpp" FORCE)
@@ -168,4 +194,4 @@ set_source_files_properties(
         COMPILE_OPTIONS "-include${_fuse_t3d_legacy_engine_probe_include}/bitstream_prelude.h"
 )
 
-message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-17: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB/PNG + read/writeBitmap stub + crc/bitVector/idGenerator/tDictionary + timeClass/tSignal + color/dataChunker + filterStream/resizeStream/tagDictionary + findMatch/tokenizer/stringUnit set/remove + rgb2xyz/luv stubs + gBitmap deleteImage/allocateBitmapWithMips/chopTopMips/getSurfaceSize BC+mip/copyRect RGB/RGBA8/fillWhite/sGetExtensionList/getColor/setColor/extrudeMipLevels + bitStream setStringBuffer/Huffman/class-id + stringBuffer/unicode + uuid_probe_stub + threadStatic/bitRender + byteBuffer + console shadows + stubs)")
+message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-18: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB/PNG + read/writeBitmap stub + crc/bitVector/idGenerator/tDictionary + timeClass/tSignal + color/dataChunker + filterStream/resizeStream/tagDictionary + findMatch/tokenizer/stringUnit set/remove + rgb2xyz/luv stubs + gBitmap deleteImage/allocateBitmapWithMips/chopTopMips/getSurfaceSize BC+mip/copyRect RGB/RGBA8/fillWhite/sGetExtensionList/getColor/setColor/extrudeMipLevels + bitStream setStringBuffer/Huffman/class-id + stringBuffer/unicode + uuid_probe_stub + threadStatic/bitRender + byteBuffer + zipArchive core subtree (no zipVolume/zipObject) + version_probe_stub + console shadows + stubs)")

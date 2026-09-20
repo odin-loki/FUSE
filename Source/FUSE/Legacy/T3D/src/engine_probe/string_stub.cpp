@@ -2,6 +2,7 @@
 // Satisfies only the methods exercised by the probe batch — not a full str.cpp substitute.
 
 #include "core/util/str.h"
+#include "core/util/hashFunction.h"
 
 #include <cstdio>
 #include <cstdarg>
@@ -399,4 +400,19 @@ bool String::endsWith(const char* text) const
         return false;
     }
     return std::strcmp(c_str() + length() - suffixLen, text) == 0;
+}
+
+U32 String::getHashCaseSensitive() const
+{
+    return Torque::hash(reinterpret_cast<const U8*>(c_str()), length(), 0);
+}
+
+U32 String::getHashCaseInsensitive() const
+{
+    std::string lower = _string->value;
+    for (char& ch : lower) {
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    return Torque::hash(reinterpret_cast<const U8*>(lower.c_str()),
+                        static_cast<U32>(lower.size()), 0);
 }
