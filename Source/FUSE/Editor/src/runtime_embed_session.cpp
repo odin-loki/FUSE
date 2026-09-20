@@ -38,7 +38,10 @@ void RuntimeEmbedSession::reset() {
     qtLivePresentAttempts = 0;
     qtLivePresentTicks = 0;
     hybridComposerFrames = 0;
+    ecsWorld3DObjectCount = 0;
+    ecsWorld3DSyncTicks = 0;
     materialTextureCooks = 0;
+    vfsAssetPathsRemapped = 0;
     qtLivePresentReady = false;
     usesExternalSwapchain = false;
     submittedFrames = 0;
@@ -50,6 +53,13 @@ void RuntimeEmbedSession::reset() {
     surfaceHandoffConsumed = false;
     qVulkanWindowWsiProbed = false;
     qVulkanWindowWsiReady = false;
+    qVulkanInstanceReady = false;
+    qVulkanExtensionsProbed = false;
+    qVulkanWindowCreated = false;
+    qVulkanWindowDestroyed = false;
+    qVulkanSupportedExtensionCount = 0;
+    qVulkanInstanceVersionMajor = 0;
+    qVulkanInstanceVersionMinor = 0;
 }
 
 } // namespace fuse::editor

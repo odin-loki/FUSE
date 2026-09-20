@@ -109,6 +109,25 @@ void testCookEntryWritesOutputFile() {
     expectTrue(header == "FUSEMESH_STUB", "cook_entry writes mesh stub output");
 }
 
+void testCookEntryWritesShaderStubOutput() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_entry_shader.cs", "void main() {}\n");
+
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Shader;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_entry_shader.fuseshader";
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookRecord record = cooker.cook_entry(entry);
+    expectTrue(record.ok, "shader cook_entry ok");
+    expectTrue(!record.cache_hit, "first shader cook_entry is cache miss");
+
+    std::ifstream cooked(entry.output_path);
+    std::string header;
+    cooked >> header;
+    expectTrue(header == "FUSESHADER_STUB", "cook_entry writes shader stub output");
+}
+
 void testAssetCookerTextureAudioHookStubs() {
     static const unsigned char kMinimalPng[] = {
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
@@ -2022,6 +2041,7 @@ int main() {
     testAssetGraphRoundTrip();
     testAssetCookerStub();
     testCookEntryWritesOutputFile();
+    testCookEntryWritesShaderStubOutput();
     testAssetCookerTextureAudioHookStubs();
     testAssetCookerBc7Texture();
     testCookJobGraphEmpty();

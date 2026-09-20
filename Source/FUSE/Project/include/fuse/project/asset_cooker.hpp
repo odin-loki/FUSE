@@ -35,6 +35,7 @@ public:
     CookRecord cook_mesh(const MeshImportDesc& desc);
     CookRecord cook_texture(const TextureImportDesc& desc);
     CookRecord cook_audio(const AudioImportDesc& desc);
+    CookRecord cook_shader(const ShaderImportDesc& desc);
 
     CookRecord cook_entry(const CookManifestEntry& entry);
     CookRecord cook_entry(const CookManifestEntry& entry, const CookManifest& manifest);

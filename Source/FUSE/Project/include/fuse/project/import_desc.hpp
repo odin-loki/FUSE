@@ -41,4 +41,13 @@ struct AudioImportDesc {
     f32 ogg_quality = 0.6f;
 };
 
+/// Shader import descriptor — offline GLSL/HLSL → SPIR-V (B7.9 stub).
+struct ShaderImportDesc {
+    std::string input_path;
+    std::string output_path;
+    enum class Stage : u8 { Vertex, Fragment, Compute } stage = Stage::Fragment;
+    u32 target_version = 450;
+    bool debug_info = false;
+};
+
 } // namespace fuse::project

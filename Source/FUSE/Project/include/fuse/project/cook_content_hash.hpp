@@ -59,6 +59,7 @@ struct CookHashPreflight {
 [[nodiscard]] u64 hash_mesh_import(const MeshImportDesc& desc);
 [[nodiscard]] u64 hash_texture_import(const TextureImportDesc& desc);
 [[nodiscard]] u64 hash_audio_import(const AudioImportDesc& desc);
+[[nodiscard]] u64 hash_shader_import(const ShaderImportDesc& desc);
 [[nodiscard]] u64 hash_manifest_entry(const CookManifestEntry& entry);
 
 const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
@@ -67,6 +68,7 @@ const char* cookHashRejectReasonLabel(CookHashRejectReason reason);
 [[nodiscard]] CookHashPreflight preflight_mesh_import_hash(const MeshImportDesc& desc);
 [[nodiscard]] CookHashPreflight preflight_texture_import_hash(const TextureImportDesc& desc);
 [[nodiscard]] CookHashPreflight preflight_audio_import_hash(const AudioImportDesc& desc);
+[[nodiscard]] CookHashPreflight preflight_shader_import_hash(const ShaderImportDesc& desc);
 [[nodiscard]] CookHashPreflight preflight_manifest_entry_hash(const CookManifestEntry& entry);
 [[nodiscard]] CookHashPreflight preflight_upstream_dependencies_hash(
     const std::vector<std::string>& dependency_output_paths, const CookManifest& manifest);

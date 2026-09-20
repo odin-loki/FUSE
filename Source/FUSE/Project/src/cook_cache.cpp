@@ -42,8 +42,13 @@ u64 recompute_cache_key_for_entry_(const CookCacheEntry& entry) {
         source_hash = hash_audio_import(desc);
         break;
     }
-    case CookAssetKind::Shader:
-        return 0;
+    case CookAssetKind::Shader: {
+        ShaderImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        source_hash = hash_shader_import(desc);
+        break;
+    }
     }
     return combine_cook_cache_key(source_hash, entry.upstream_hash);
 }
@@ -56,10 +61,6 @@ bool source_exists_for_entry_(const CookCacheEntry& entry) {
 bool is_stale_cache_entry_(const CookCacheEntry& entry) {
     if (!is_valid_cook_cache_entry(entry)) {
         return false;
-    }
-
-    if (entry.kind == CookAssetKind::Shader) {
-        return true;
     }
 
     if (!source_exists_for_entry_(entry)) {

@@ -648,4 +648,77 @@ CookStubWriteResult write_audio_stub(const std::string& input_path, const std::s
     return writeTextStub(output_path, payload.str());
 }
 
+CookStubWriteResult tryCookShaderSpirv(const std::string& input_path, const std::string& output_path,
+                                       const char* stage, u32 target_version) {
+    CookStubWriteResult result;
+    if (input_path.empty() || output_path.empty()) {
+        result.note = "missing_input_or_output_path";
+        return result;
+    }
+
+    const std::filesystem::path input = std::filesystem::path(input_path);
+    const std::string ext = input.extension().string();
+    if (ext != ".spv") {
+        result.note = "spirv_input_required";
+        return result;
+    }
+
+    std::ifstream in(input_path, std::ios::binary);
+    if (!in) {
+        result.note = "spirv_input_unreadable";
+        return result;
+    }
+
+    std::vector<char> spirv((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (spirv.empty() || (spirv.size() % 4u) != 0u) {
+        result.note = "spirv_invalid_size";
+        return result;
+    }
+
+    std::ostringstream header;
+    header << "FUSESHADER_SPIV\n";
+    header << "stage=" << (stage != nullptr ? stage : "fragment") << "\n";
+    header << "version=" << target_version << "\n";
+    header << "words=" << (spirv.size() / 4u) << "\n";
+    header << "DATA\n";
+
+    std::string payload = header.str();
+    payload.append(spirv.data(), spirv.size());
+
+    std::error_code ec;
+    const std::filesystem::path parent = std::filesystem::path(output_path).parent_path();
+    if (!parent.empty()) {
+        std::filesystem::create_directories(parent, ec);
+    }
+
+    std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        result.note = "spirv_output_unwritable";
+        return result;
+    }
+
+    out.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+    result.ok = out.good();
+    result.byteCount = static_cast<u32>(payload.size());
+    result.note = result.ok ? "spirv passthrough written" : "spirv write failed";
+    return result;
+}
+
+CookStubWriteResult write_shader_stub(const std::string& input_path, const std::string& output_path,
+                                      const char* stage, u32 target_version) {
+    const CookStubWriteResult hook =
+        tryCookShaderSpirv(input_path, output_path, stage, target_version);
+    if (hook.ok) {
+        return hook;
+    }
+
+    std::ostringstream payload;
+    payload << "FUSESHADER_STUB\n";
+    payload << "hook=" << hook.note << "\n";
+    payload << "stage=" << (stage != nullptr ? stage : "fragment") << "\n";
+    payload << "version=" << target_version << "\n";
+    payload << "spirv_words=0\n";
+    return writeTextStub(output_path, payload.str());
+}
+
 } // namespace fuse::cook

@@ -169,6 +169,25 @@ u64 hash_audio_import(const AudioImportDesc& desc) {
     return hash;
 }
 
+u64 hash_shader_import(const ShaderImportDesc& desc) {
+    if (desc.input_path.empty() || desc.output_path.empty()) {
+        return 0;
+    }
+
+    const u64 file_hash = hash_file_content(desc.input_path);
+    if (file_hash == 0) {
+        return 0;
+    }
+
+    u64 hash = hash_string(desc.input_path);
+    hash = fnv1a64_combine(hash, hash_string(desc.output_path));
+    hash = fnv1a64_combine(hash, file_hash);
+    hash = fnv1a64_combine(hash, hash_u64(static_cast<u64>(desc.stage)));
+    hash = fnv1a64_combine(hash, hash_u64(desc.target_version));
+    hash = fnv1a64_combine(hash, hash_bool(desc.debug_info));
+    return hash;
+}
+
 const char* cookHashRejectReasonLabel(CookHashRejectReason reason) {
     switch (reason) {
     case CookHashRejectReason::None:
@@ -238,6 +257,19 @@ CookHashPreflight preflight_texture_import_hash(const TextureImportDesc& desc) {
 }
 
 CookHashPreflight preflight_audio_import_hash(const AudioImportDesc& desc) {
+    CookHashPreflight preflight;
+    if (desc.input_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyInputPath;
+        return preflight;
+    }
+    if (desc.output_path.empty()) {
+        preflight.reason = CookHashRejectReason::EmptyOutputPath;
+        return preflight;
+    }
+    return preflight_file_content_hash(desc.input_path);
+}
+
+CookHashPreflight preflight_shader_import_hash(const ShaderImportDesc& desc) {
     CookHashPreflight preflight;
     if (desc.input_path.empty()) {
         preflight.reason = CookHashRejectReason::EmptyInputPath;

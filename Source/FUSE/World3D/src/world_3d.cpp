@@ -37,6 +37,19 @@ void World3D::addObject(SceneObject3D* object) {
     }
 }
 
+void World3D::clearDynamicObjects() {
+    if (m_root) {
+        for (SceneObject3D* object : m_objects) {
+            m_root->removeChild(object);
+        }
+    }
+    m_objects.clear();
+    m_physicsBodyIndices.clear();
+    m_snapshot.clear();
+    m_transformSoA.clear();
+    m_cullVisible.clear();
+}
+
 void World3D::syncPhysicsFromScene() {
     for (usize i = 0; i < m_objects.size() && i < m_physicsBodyIndices.size(); ++i) {
         const SceneObject3D* object = m_objects[i];

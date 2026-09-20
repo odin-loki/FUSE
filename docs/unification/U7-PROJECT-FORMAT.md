@@ -176,6 +176,7 @@ Each demo under `Samples/unification/<demo_id>/` ships a `project.json` consumed
 | `write_mesh_stub` | Assimp (`FUSE_HAS_ASSIMP`) — passes `input_path` | `FUSEMESH_STUB` |
 | `write_texture_stub` | STB decode (`FUSE_HAS_STB_IMAGE`) + in-house BC7 mode-6 (`FUSE_HAS_INHOUSE_BC7_ENCODER`) | `FUSETEX_STUB` / `FUSETEX_BC7` |
 | `write_audio_stub` | OGG Vorbis (`FUSE_HAS_OGG_VORBIS`) — WAV sniff stub when linked | `FUSEAUDIO_STUB` |
+| `write_shader_stub` | `.spv` passthrough when input is valid SPIR-V (`FUSESHADER_SPIV`); otherwise honest stub | `FUSESHADER_STUB` |
 
 `fuselevel_cook_stub.*` populates `hierarchyLinks` from `ConvertResult::wiringStubCount` on `--fuselevel` cooks.
 
@@ -253,7 +254,19 @@ CTest: `fuse_scene_wire_runtime_bind`, `fuse_world2d_fuselevel_bridge`, `fuse_wo
 | `drainT3DMaterialLoads` | Cache miss triggers `AssetCooker::cook_texture` via `materialVirtualPathToCookOutput` |
 | `RuntimeEmbedSession::hybridComposerFrames` | Counter when `HybridRendererBootstrap::runFrame` composes in editor embed tick |
 
-## 17. Deferred (honest backlog)
+## 17. Wave 15 progress
+
+| API | Role |
+|-----|------|
+| `write_shader_stub` / `tryCookShaderSpirv` | `FUSESHADER_STUB` placeholder or `.spv` passthrough (`FUSESHADER_SPIV`) on cache miss |
+| `AssetCooker::cook_shader` / `cook_entry(Shader)` | Manifest job-graph packs write shader stub outputs; cache keys via `hash_shader_import` |
+| `remapLegacyAssetPath` | Maps `data/`, `game/`, `assets/` legacy prefixes → `/t3d/`, `/game/` virtual paths |
+| `shaderAssetToVirtualPath` / `shaderVirtualPathToCookOutput` | Shader ref → `/t3d/shaders/.../*.cs` → `cooked/shaders/.../*.fuseshader` |
+| `countRemappedAssetVfsPaths` | Counts material + shader virtual-path mappings from scene bindings |
+| `RuntimeViewportHook::syncEcsToEmbedWorld3D_` | Mirrors editor ECS `Transform` into embed `World3D` scene objects for hybrid compositor |
+| `RuntimeEmbedSession` counters | `ecsWorld3DObjectCount`, `ecsWorld3DSyncTicks`, `vfsAssetPathsRemapped` |
+
+## 18. Deferred (honest backlog)
 
 - Real ispc_texcomp library replacing honest header stub
 - libvorbisenc system package on CI images (runtime libs present; dev headers optional today)

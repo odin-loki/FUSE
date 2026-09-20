@@ -56,6 +56,7 @@ private:
     void ensureWorldLoaded_(EditorHost& host);
     void drainPendingMaterialLoads_();
     void mirrorEditorEntities_(EditorHost& host);
+    void syncEcsToEmbedWorld3D_(EditorHost& host);
     void tickHeadlessPresentStub_(EditorHost& host, f32 dt);
 
     ViewportPanel m_panel;

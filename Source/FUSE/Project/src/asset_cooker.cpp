@@ -149,8 +149,13 @@ bool AssetCooker::probe_cook_cache_hit(const CookManifestEntry& entry, const Coo
         content_hash = hash_audio_import(desc);
         break;
     }
-    case CookAssetKind::Shader:
-        return false;
+    case CookAssetKind::Shader: {
+        ShaderImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        content_hash = hash_shader_import(desc);
+        break;
+    }
     }
 
     const u64 cache_key = combine_cook_cache_key(content_hash, upstream_hash);
@@ -228,6 +233,24 @@ CookRecord AssetCooker::cook_audio(const AudioImportDesc& desc) {
     return record;
 }
 
+CookRecord AssetCooker::cook_shader(const ShaderImportDesc& desc) {
+    const char* stage = desc.stage == ShaderImportDesc::Stage::Vertex
+                            ? "vertex"
+                            : (desc.stage == ShaderImportDesc::Stage::Compute ? "compute" : "fragment");
+    std::ostringstream note;
+    note << "stub shader cook (stage=" << stage << ", version=" << desc.target_version << ")";
+    const u64 content_hash = hash_shader_import(desc);
+    CookRecord record =
+        cook_with_cache_(CookAssetKind::Shader, desc.input_path, desc.output_path, content_hash, 0,
+                         note.str().c_str());
+    if (record.ok && !record.cache_hit) {
+        const fuse::cook::CookStubWriteResult written = fuse::cook::write_shader_stub(
+            desc.input_path, desc.output_path, stage, desc.target_version);
+        record = finalizeStubCook_(std::move(record), written);
+    }
+    return record;
+}
+
 CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry) {
     return cook_entry(entry, CookManifest{});
 }
@@ -282,13 +305,19 @@ CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry, const CookMan
         return record;
     }
     case CookAssetKind::Shader: {
-        CookRecord record;
-        record.kind = CookAssetKind::Shader;
-        record.source_path = entry.source_path;
-        record.output_path = entry.output_path;
-        record.status = CookStatus::UnsupportedKind;
-        record.ok = false;
-        record.note = "shader cook deferred";
+        ShaderImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        const u64 content_hash = hash_shader_import(desc);
+        CookRecord record =
+            cook_with_cache_(CookAssetKind::Shader, entry.source_path, entry.output_path, content_hash,
+                             upstream_hash, "stub shader cook from manifest entry");
+        if (record.ok && !record.cache_hit) {
+            const fuse::cook::CookStubWriteResult written =
+                fuse::cook::write_shader_stub(desc.input_path, desc.output_path, "fragment",
+                                              desc.target_version);
+            record = finalizeStubCook_(std::move(record), written);
+        }
         return record;
     }
     }

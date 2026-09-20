@@ -326,17 +326,25 @@ void testCookCacheLookupEmptyCacheMissCounts() {
 }
 
 void testCookCacheShaderKindStalePrune() {
-    fuse::project::CookCache cache;
+    const std::string source = writeTempFile("/tmp/fuse_b79_shader_prune.cs", "void main() {}\n");
+    fuse::project::ShaderImportDesc desc;
+    desc.input_path = source;
+    desc.output_path = "/tmp/fuse_b79_shader_prune.fuseshader";
+    const fuse::u64 key =
+        fuse::project::combine_cook_cache_key(fuse::project::hash_shader_import(desc), 0);
 
+    fuse::project::CookCache cache;
     fuse::project::CookCacheEntry shader_entry;
-    shader_entry.content_hash = 303;
-    shader_entry.source_path = "/tmp/fuse_b79_shader_prune.obj";
-    shader_entry.output_path = "/tmp/fuse_b79_shader_prune.fuseshader";
+    shader_entry.content_hash = key;
+    shader_entry.source_path = source;
+    shader_entry.output_path = desc.output_path;
     shader_entry.kind = fuse::project::CookAssetKind::Shader;
     cache.store(shader_entry);
     expectTrue(cache.entry_count() == 1u, "shader entry stored with valid paths and hash");
+    expectTrue(!cache.has_prunable_entries(), "shader entry fresh when hash matches source");
 
-    expectTrue(cache.has_prunable_entries(), "shader entry is prunable because recompute yields zero key");
+    writeTempFile(source, "void main() { modified }\n");
+    expectTrue(cache.has_prunable_entries(), "shader entry stale after source change");
     expectTrue(cache.prune_stale_entries() == 1u, "shader entry pruned as stale");
     expectTrue(cache.empty(), "cache empty after shader stale prune");
 }
@@ -484,8 +492,9 @@ void testCookCachePruneEstimateShouldSkip() {
     expectTrue(!cache.would_prune_all(), "would_prune_all is false when estimate should_skip");
 
     fuse::project::CookCacheEntry shader_entry;
+    const std::string shaderSource = writeTempFile("/tmp/fuse_b79_should_skip_shader.cs", "void main() {}\n");
     shader_entry.content_hash = 909;
-    shader_entry.source_path = "/tmp/fuse_b79_should_skip_shader.obj";
+    shader_entry.source_path = shaderSource;
     shader_entry.output_path = "/tmp/fuse_b79_should_skip_shader.fuseshader";
     shader_entry.kind = fuse::project::CookAssetKind::Shader;
     cache.store(shader_entry);
@@ -571,8 +580,9 @@ void testCookCachePruneReconcileEstimateGuards() {
     expectTrue(cache.entry_count() == 0u, "invalid entry rejected during estimate setup");
 
     fuse::project::CookCacheEntry shader_entry;
+    const std::string shaderSource = writeTempFile("/tmp/fuse_b79_est_shader.cs", "void main() {}\n");
     shader_entry.content_hash = 808;
-    shader_entry.source_path = "/tmp/fuse_b79_est_shader.obj";
+    shader_entry.source_path = shaderSource;
     shader_entry.output_path = "/tmp/fuse_b79_est_shader.fuseshader";
     shader_entry.kind = fuse::project::CookAssetKind::Shader;
     cache.store(shader_entry);

@@ -43,7 +43,10 @@ struct RuntimeEmbedSession {
     u32 qtLivePresentAttempts = 0;
     u32 qtLivePresentTicks = 0;
     u32 hybridComposerFrames = 0;
+    u32 ecsWorld3DObjectCount = 0;
+    u32 ecsWorld3DSyncTicks = 0;
     u32 materialTextureCooks = 0;
+    u32 vfsAssetPathsRemapped = 0;
     bool qtLivePresentReady = false;
     bool usesExternalSwapchain = false;
     u32 submittedFrames = 0;
@@ -57,7 +60,11 @@ struct RuntimeEmbedSession {
     bool qVulkanWindowWsiReady = false;
     bool qVulkanInstanceReady = false;
     bool qVulkanExtensionsProbed = false;
+    bool qVulkanWindowCreated = false;
+    bool qVulkanWindowDestroyed = false;
     u32 qVulkanSupportedExtensionCount = 0;
+    u32 qVulkanInstanceVersionMajor = 0;
+    u32 qVulkanInstanceVersionMinor = 0;
 
     void reset();
 };

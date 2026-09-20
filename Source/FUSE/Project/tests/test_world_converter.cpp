@@ -428,6 +428,27 @@ void testT3DMaterialVfsAsyncLoad() {
     expectTrue(cachedSubmit.submittedCount == 0u, "cached material submit does not enqueue vfs reads");
 }
 
+void testVfsAssetPathRemap() {
+    expectTrue(fuse::project::remapLegacyAssetPath("data/materials/FloorGray.mat") ==
+                   "/t3d/materials/FloorGray.mat",
+               "data/ prefix remaps to /t3d/");
+    expectTrue(fuse::project::remapLegacyAssetPath("game/textures/albedo.png") ==
+                   "/game/textures/albedo.png",
+               "game/ prefix remaps to /game/");
+    expectTrue(fuse::project::shaderAssetToVirtualPath("Common:ScreenSpace") ==
+                   "/t3d/shaders/Common/ScreenSpace.cs",
+               "shader ref maps to virtual path");
+    expectTrue(fuse::project::shaderVirtualPathToCookOutput("/t3d/shaders/Common/ScreenSpace.cs") ==
+                   "cooked/shaders/Common/ScreenSpace.fuseshader",
+               "shader virtual path maps to cook output");
+
+    fuse::project::T3DDatablockResolveResult bindings;
+    bindings.bindings.push_back({"Floor", "Prototyping:FloorGray", "material", 1u});
+    bindings.bindings.push_back({"Post", "Common:ScreenSpace", "shader", 2u});
+    expectTrue(fuse::project::countRemappedAssetVfsPaths(bindings) == 2u,
+               "remapped asset vfs path count includes material and shader bindings");
+}
+
 void testT2DModuleRuntimeBridge() {
     const std::string module = writeTempFile(
         "/tmp/fuse_t2d_bridge.cs",
@@ -460,6 +481,7 @@ int main() {
     testT2DPhysicsShapesCollisionLayers();
     testT3DMaterialVfsMountAndResolve();
     testT3DMaterialVfsAsyncLoad();
+    testVfsAssetPathRemap();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

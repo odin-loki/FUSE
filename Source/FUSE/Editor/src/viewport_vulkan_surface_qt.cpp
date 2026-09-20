@@ -4,6 +4,7 @@
 
 #include <QByteArrayList>
 #include <QGuiApplication>
+#include <QVersionNumber>
 #include <QVulkanInstance>
 #include <QVulkanWindow>
 #include <QWindow>
@@ -101,6 +102,9 @@ QVulkanWindowWsiProbeResult probeQVulkanWindowWsiQt() {
     }
 
     result.instanceReady = true;
+    const QVersionNumber apiVersion = QVulkanInstance::supportedApiVersion();
+    result.instanceVersionMajor = static_cast<u32>(apiVersion.majorVersion());
+    result.instanceVersionMinor = static_cast<u32>(apiVersion.minorVersion());
     const QByteArrayList extensions = QVulkanInstance::supportedSurfaceExtensions();
     result.extensionsProbed = true;
     result.supportedExtensionCount = static_cast<u32>(extensions.size());
@@ -114,17 +118,20 @@ QVulkanWindowWsiProbeResult probeQVulkanWindowWsiQt() {
     window.setWidth(64);
     window.setHeight(64);
     window.create();
+    result.windowCreated = window.vulkanInstance() != nullptr;
 
     const VkSurfaceKHR surface = window.vulkanSurface();
     if (surface == VK_NULL_HANDLE) {
         result.note = "qvulkan_window_surface_failed";
         window.destroy();
+        result.windowDestroyed = true;
         return result;
     }
 
     result.surfaceReady = true;
     result.note = "qvulkan_window_surface";
     window.destroy();
+    result.windowDestroyed = true;
     return result;
 }
 

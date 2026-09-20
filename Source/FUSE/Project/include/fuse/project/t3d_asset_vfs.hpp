@@ -76,4 +76,16 @@ struct T3DMaterialCookCacheResult {
 [[nodiscard]] T3DMaterialCookCacheResult drainT3DMaterialLoads(fuse::HandleTable<fuse::io::Asset>& table,
                                                                CookCache* cache = nullptr);
 
+/// Remap legacy relative asset paths (`data/`, `game/`, `assets/`) to mounted VFS prefixes.
+[[nodiscard]] std::string remapLegacyAssetPath(const std::string& legacyPath);
+
+/// Map legacy `ShaderData = "Folder:Name"` refs to `/t3d/shaders/Folder/Name.cs`.
+[[nodiscard]] std::string shaderAssetToVirtualPath(const std::string& shaderRef);
+
+/// Map mounted `/t3d/shaders/.../*.cs` virtual paths to cooked `.fuseshader` outputs.
+[[nodiscard]] std::string shaderVirtualPathToCookOutput(const std::string& virtualPath);
+
+/// Count virtual-path mappings derived from resolved scene bindings (material + shader stubs).
+[[nodiscard]] u32 countRemappedAssetVfsPaths(const T3DDatablockResolveResult& bindings);
+
 } // namespace fuse::project

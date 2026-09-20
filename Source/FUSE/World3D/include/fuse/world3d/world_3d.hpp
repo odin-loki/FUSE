@@ -35,6 +35,8 @@ public:
     const SceneObject3D* root() const { return m_root.get(); }
 
     void addObject(SceneObject3D* object);
+    /// Removes dynamic objects from the scene root (retains the world root node).
+    void clearDynamicObjects();
     const SceneSnapshot3D& readSnapshot() const { return m_snapshot; }
     const SceneTransformSoA3D& readTransformSoA() const { return m_transformSoA; }
 

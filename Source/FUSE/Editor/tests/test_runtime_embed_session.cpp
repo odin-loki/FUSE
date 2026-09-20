@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/viewport_vulkan_surface.hpp>
+#include <fuse/ecs/components/transform.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -143,6 +144,29 @@ void testRuntimeEmbedTeardownStress() {
                "embed teardown stress records repeated handoffs");
 }
 
+void testRuntimeEmbedEcsWorld3DSync() {
+    fuse::editor::EditorHost host;
+    host.runtimeViewport().setProjectRoot("Samples/unification/demo_3d_empty");
+
+    const fuse::ecs::EntityID entity = host.editorScene().registry().create();
+    fuse::ecs::Transform& transform = host.editorScene().registry().add<fuse::ecs::Transform>(entity);
+    transform.position = {1.f, 2.f, 3.f};
+
+    host.gameTick();
+    host.gameTick();
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (host.runtimeViewport().embedSession().headlessGpuReady) {
+        expectTrue(host.runtimeViewport().embedSession().ecsWorld3DObjectCount >= 1u,
+                   "ecs world3d mirror creates scene objects");
+        expectTrue(host.runtimeViewport().embedSession().ecsWorld3DSyncTicks >= 1u,
+                   "ecs world3d sync ticks recorded");
+    }
+#endif
+    expectTrue(host.runtimeViewport().embedSession().qVulkanWindowWsiProbed,
+               "qt wsi probe attempted during embed tick");
+}
+
 } // namespace
 
 int main() {
@@ -152,6 +176,7 @@ int main() {
     testRuntimeEmbedSwapchainHandoff();
     testRuntimeEmbedSoftwarePlaceholderRetirement();
     testRuntimeViewportSwapchainRecreateStub();
+    testRuntimeEmbedEcsWorld3DSync();
     testRuntimeEmbedTeardownStress();
     fuse::core::shutdown();
 

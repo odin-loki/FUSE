@@ -39,7 +39,11 @@ struct QVulkanWindowWsiProbeResult {
     bool extensionsProbed = false;
     bool surfaceReady = false;
     bool headlessSkipped = false;
+    bool windowCreated = false;
+    bool windowDestroyed = false;
     u32 supportedExtensionCount = 0;
+    u32 instanceVersionMajor = 0;
+    u32 instanceVersionMinor = 0;
     const char* note = nullptr;
 };
 

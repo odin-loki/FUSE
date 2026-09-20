@@ -42,6 +42,7 @@ struct RuntimeViewportHeadlessGpuStub {
     std::unique_ptr<fuse::renderer::PresentPath> fallbackPresentPath;
     fuse::world2d::World2D embedWorld2D;
     fuse::world3d::World3D embedWorld3D;
+    std::vector<std::unique_ptr<fuse::SceneObject3D>> ecsMirrorObjects;
     u32 submittedFrames = 0;
     bool externalSwapchainWired = false;
     bool worldsAttached = false;
@@ -328,6 +329,7 @@ void RuntimeViewportHook::ensureWorldLoaded_(EditorHost& host) {
         fuse::project::resolveT3DMaterialVfsFromBindings(materialBindings);
     m_embedSession.materialVfsResolved = materialVfs.resolvedCount;
     m_embedSession.materialVfsUnresolved = materialVfs.unresolvedCount;
+    m_embedSession.vfsAssetPathsRemapped = fuse::project::countRemappedAssetVfsPaths(materialBindings);
 
     const fuse::project::T3DMaterialVfsAsyncLoadResult materialLoads =
         fuse::project::submitT3DMaterialLoadsAsync(materialBindings, &m_materialCookCache);
@@ -422,6 +424,56 @@ void RuntimeViewportHook::mirrorEditorEntities_(EditorHost& host) {
 
     m_embedSession.mirroredEditorEntityCount = aliveCount;
     m_embedded = true;
+}
+
+void RuntimeViewportHook::syncEcsToEmbedWorld3D_(EditorHost& host) {
+#if defined(FUSE_VULKAN_BACKEND)
+    RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
+    if (gpu == nullptr || !gpu->worldsAttached) {
+        return;
+    }
+
+    std::vector<ecs::EntityID> entityOrder;
+    host.editorScene().registry().each_query<ecs::Transform>(
+        [&](ecs::EntityID id, ecs::Transform& /*transform*/) { entityOrder.push_back(id); });
+
+    const u32 aliveCount = static_cast<u32>(entityOrder.size());
+    if (aliveCount == m_embedSession.ecsWorld3DObjectCount &&
+        aliveCount == gpu->ecsMirrorObjects.size()) {
+        for (u32 index = 0; index < aliveCount; ++index) {
+            const ecs::Transform& transform =
+                *host.editorScene().registry().get<ecs::Transform>(entityOrder[index]);
+            fuse::SceneObject3D* object = gpu->ecsMirrorObjects[index].get();
+            if (object == nullptr) {
+                continue;
+            }
+            object->setPosition(transform.position.x, transform.position.y);
+            object->setZ(transform.position.z);
+        }
+        ++m_embedSession.ecsWorld3DSyncTicks;
+        return;
+    }
+
+    gpu->embedWorld3D.clearDynamicObjects();
+    gpu->ecsMirrorObjects.clear();
+    gpu->ecsMirrorObjects.reserve(entityOrder.size());
+
+    for (u32 index = 0; index < entityOrder.size(); ++index) {
+        const ecs::EntityID id = entityOrder[index];
+        const ecs::Transform& transform = *host.editorScene().registry().get<ecs::Transform>(id);
+
+        auto object = std::make_unique<fuse::SceneObject3D>("EcsMirror_" + std::to_string(index));
+        object->setPosition(transform.position.x, transform.position.y);
+        object->setZ(transform.position.z);
+        gpu->embedWorld3D.addObject(object.get());
+        gpu->ecsMirrorObjects.push_back(std::move(object));
+    }
+
+    m_embedSession.ecsWorld3DObjectCount = aliveCount;
+    ++m_embedSession.ecsWorld3DSyncTicks;
+#else
+    (void)host;
+#endif
 }
 
 #if defined(FUSE_VULKAN_BACKEND)
@@ -579,11 +631,16 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
         m_embedSession.qVulkanInstanceReady = probe.instanceReady;
         m_embedSession.qVulkanExtensionsProbed = probe.extensionsProbed;
         m_embedSession.qVulkanSupportedExtensionCount = probe.supportedExtensionCount;
+        m_embedSession.qVulkanWindowCreated = probe.windowCreated;
+        m_embedSession.qVulkanWindowDestroyed = probe.windowDestroyed;
+        m_embedSession.qVulkanInstanceVersionMajor = probe.instanceVersionMajor;
+        m_embedSession.qVulkanInstanceVersionMinor = probe.instanceVersionMinor;
     }
 
     ensureWorldLoaded_(host);
     drainPendingMaterialLoads_();
     mirrorEditorEntities_(host);
+    syncEcsToEmbedWorld3D_(host);
 
     if (!m_lastProjectLabel.empty()) {
         if (host.runtimeScene().name() != m_lastProjectLabel) {

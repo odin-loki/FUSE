@@ -450,6 +450,8 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 **U6/U7 wave 13 landed:** `fuse_cook` cook-cache persist + skip re-cook progress; `ispc_texcomp` honest stub hook; vorbis WAV sniff deepen; Qt WSI instance/extension probe headless-safe.
 
+**U6/U7 wave 15 landed:** ECS→`World3D` embed mirror for hybrid viewport compositing; `CookAssetKind::Shader` stub writers + cache keys; VFS legacy path remapping (`remapLegacyAssetPath`, shader virtual paths); Qt WSI probe deepen (instance API version + window lifecycle counters, headless-safe).
+
 ---
 
 ## 7. Risk cross-reference
