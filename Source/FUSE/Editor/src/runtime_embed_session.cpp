@@ -31,6 +31,10 @@ void RuntimeEmbedSession::reset() {
     projectVfsMounts = 0;
     materialVfsResolved = 0;
     materialVfsUnresolved = 0;
+    materialCookCacheHits = 0;
+    materialCookCacheStores = 0;
+    materialAsyncLoadsSubmitted = 0;
+    materialAsyncLoadsDrained = 0;
     qtLivePresentAttempts = 0;
     qtLivePresentTicks = 0;
     qtLivePresentReady = false;

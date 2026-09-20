@@ -29,7 +29,8 @@ int main() {
     expectTrue(bundle.doors.count("maintenance_door") == 1, "maintenance door spawned");
     expectTrue(bundle.weaponPickups.count("armory_rifle") == 1, "armory rifle spawned");
     expectTrue(bundle.conversations.count("outpost_guard") == 1, "guard conversation spawned");
-    expectTrue(bundle.conversations["outpost_guard"]->branches().size() == 2u, "conversation branches preserved");
+    expectTrue(bundle.conversations["outpost_guard"]->branches().size() == 3u,
+               "conversation branches preserved (aggressive, polite, armed)");
     expectTrue(bundle.placements.count("outpost_guard") == 1u, "JSON placement copied to spawn bundle");
 
     fuse::core::shutdown();

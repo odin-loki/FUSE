@@ -58,4 +58,4 @@ Completed loads queue in FIFO **completion** order (`pushCompleted` → `drainCo
 
 ## Wave 10 (U7 project wiring)
 
-`fuse::project::mountProjectAssetRoots` mounts project `Assets/` + `data/` (+ project root for `/t2d/`) into the process VFS. `materialAssetToVirtualPath` maps legacy `MaterialAsset` refs to `/t3d/materials/...` for resolve checks; runtime embed loads call this on world load (`RuntimeEmbedSession::projectVfsMounts`).
+`fuse::project::mountProjectAssetRoots` mounts project `Assets/` + `data/` (+ project root for `/t2d/`) into the process VFS. `materialAssetToVirtualPath` maps legacy `MaterialAsset` refs to `/t3d/materials/...` for resolve checks; runtime embed loads call this on world load (`RuntimeEmbedSession::projectVfsMounts`). Wave 12: `submitT3DMaterialLoadsAsync` + `drainT3DMaterialLoads` optionally integrate `CookCache` (hits skip I/O; drains store `cooked/materials/.../*.fusetex` entries).

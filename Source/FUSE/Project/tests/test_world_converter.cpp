@@ -371,15 +371,11 @@ void testT3DMaterialVfsMountAndResolve() {
 }
 
 void testT3DMaterialVfsAsyncLoad() {
-    const std::filesystem::path projectRoot = std::filesystem::path("/tmp/fuse_vfs_async_project");
+    const std::filesystem::path projectRoot = std::filesystem::path("/tmp/fuse_vfs_project");
     const std::filesystem::path materialPath =
         projectRoot / "data" / "materials" / "Prototyping" / "FloorGray.mat";
     std::filesystem::create_directories(materialPath.parent_path());
     writeTempFile(materialPath.string(), "async stub material");
-
-    fuse::project::ProjectManifest manifest{};
-    manifest.projectRoot = projectRoot.string();
-    fuse::project::mountProjectAssetRoots(manifest);
 
     const std::string missionText =
         "new Scene(ExampleLevel) {\n"
@@ -395,16 +391,41 @@ void testT3DMaterialVfsAsyncLoad() {
     expectTrue(submitted.submittedCount >= 1u, "async material vfs load submitted");
 
     fuse::io::VirtualFileSystem& vfs = fuse::io::VirtualFileSystem::instance();
-    for (fuse::u32 spinGuard = 0u; spinGuard < 1'000'000u && vfs.completedLoadCount() == 0u; ++spinGuard) {
+    for (fuse::u32 spinGuard = 0u;
+         spinGuard < 1'000'000u && vfs.completedLoadCount() < submitted.submittedCount; ++spinGuard) {
         std::this_thread::yield();
     }
-    expectTrue(vfs.completedLoadCount() > 0u, "async material vfs load completes on I/O lane");
+    expectTrue(vfs.completedLoadCount() >= submitted.submittedCount,
+               "async material vfs load completes on I/O lane");
+
+    const std::string virtualPath =
+        fuse::project::materialAssetToVirtualPath("Prototyping:FloorGray");
+    const std::string cookOutput = fuse::project::materialVirtualPathToCookOutput(virtualPath);
+    expectTrue(cookOutput == "cooked/materials/Prototyping/FloorGray.fusetex",
+               "material virtual path maps to cooked output");
 
     fuse::HandleTable<fuse::io::Asset> table;
-    const fuse::u32 drained = fuse::project::drainT3DMaterialLoads(table);
-    expectTrue(drained >= 1u, "async material vfs load drained to handle table");
+    fuse::project::CookCache cache;
+    const fuse::project::T3DMaterialCookCacheResult drained =
+        fuse::project::drainT3DMaterialLoads(table, &cache);
+    expectTrue(drained.drainedCount >= 1u, "async material vfs load drained to handle table");
+    expectTrue(drained.cookCacheStores >= 1u, "async material vfs load stored cook-cache entry");
     expectTrue(fuse::io::VirtualFileSystem::instance().completedLoadCount() == 0u,
                "drain clears completed vfs loads");
+
+    std::string resolvedPhysical;
+    expectTrue(fuse::io::VirtualFileSystem::instance().resolve(virtualPath, resolvedPhysical),
+               "mounted vfs resolves material path for cook-cache key");
+    const fuse::u64 cacheKey = fuse::project::materialCookCacheKey(resolvedPhysical);
+    fuse::project::CookCacheEntry cached;
+    expectTrue(cache.lookup(cacheKey, &cached) == fuse::project::CookCacheLookup::Hit,
+               "material cook-cache entry is retrievable");
+    expectTrue(cached.output_path == cookOutput, "material cook-cache stores cooked output path");
+
+    const fuse::project::T3DMaterialVfsAsyncLoadResult cachedSubmit =
+        fuse::project::submitT3DMaterialLoadsAsync(extract, &cache);
+    expectTrue(cachedSubmit.cookCacheHits >= 1u, "cached material submit skips I/O on cook-cache hit");
+    expectTrue(cachedSubmit.submittedCount == 0u, "cached material submit does not enqueue vfs reads");
 }
 
 void testT2DModuleRuntimeBridge() {

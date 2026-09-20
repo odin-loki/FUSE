@@ -3,6 +3,9 @@
 #include <fuse/editor/runtime_embed_session.hpp>
 #include <fuse/editor/viewport_panel.hpp>
 #include <fuse/editor/viewport_swapchain_handoff.hpp>
+#include <fuse/handle_table.hpp>
+#include <fuse/io/asset.hpp>
+#include <fuse/project/cook_cache.hpp>
 #include <fuse/types.hpp>
 
 #include <memory>
@@ -51,6 +54,7 @@ public:
 private:
     void applyPendingResize_();
     void ensureWorldLoaded_(EditorHost& host);
+    void drainPendingMaterialLoads_();
     void mirrorEditorEntities_(EditorHost& host);
     void tickHeadlessPresentStub_(EditorHost& host, f32 dt);
 
@@ -65,6 +69,9 @@ private:
     std::string m_lastProjectLabel;
     ViewportSwapchainHandoff m_surfaceHandoff{};
     bool m_pendingQtStubSurface = true;
+    fuse::project::CookCache m_materialCookCache;
+    fuse::HandleTable<fuse::io::Asset> m_materialAssetTable;
+    bool m_materialLoadsPending = false;
 
 #if defined(FUSE_VULKAN_BACKEND)
     void* m_headlessGpuStub = nullptr;

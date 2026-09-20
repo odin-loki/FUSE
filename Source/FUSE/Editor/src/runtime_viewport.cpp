@@ -10,6 +10,7 @@
 #include <fuse/log/logger.hpp>
 #include <fuse/platform/window_wsi.hpp>
 #include <fuse/jobs/worker_count.hpp>
+#include <fuse/io/vfs.hpp>
 #include <fuse/project/loader.hpp>
 #include <fuse/project/t3d_asset_vfs.hpp>
 #include <fuse/scene/project_io.hpp>
@@ -146,6 +147,8 @@ void RuntimeViewportHook::setProjectRoot(std::string root) {
     m_embedSession.projectRoot = std::move(root);
     m_embedded = false;
     m_surfaceHandoff = {};
+    m_materialCookCache.clear();
+    m_materialLoadsPending = false;
 }
 
 void RuntimeViewportHook::setExternalSurfaceHandle(void* vkSurface, u32 width, u32 height,
@@ -302,11 +305,36 @@ void RuntimeViewportHook::ensureWorldLoaded_(EditorHost& host) {
     m_embedSession.materialVfsResolved = materialVfs.resolvedCount;
     m_embedSession.materialVfsUnresolved = materialVfs.unresolvedCount;
 
+    const fuse::project::T3DMaterialVfsAsyncLoadResult materialLoads =
+        fuse::project::submitT3DMaterialLoadsAsync(materialBindings, &m_materialCookCache);
+    m_embedSession.materialCookCacheHits = materialLoads.cookCacheHits;
+    m_embedSession.materialAsyncLoadsSubmitted = materialLoads.submittedCount;
+    m_materialLoadsPending = materialLoads.submittedCount > 0u;
+
     m_embedSession.worldLoaded = true;
     m_embedded = true;
 
     if (!m_lastProjectLabel.empty()) {
         runtimeScene.setName(m_lastProjectLabel);
+    }
+}
+
+void RuntimeViewportHook::drainPendingMaterialLoads_() {
+    if (!m_materialLoadsPending) {
+        return;
+    }
+
+    if (fuse::io::VirtualFileSystem::instance().completedLoadCount() == 0u) {
+        return;
+    }
+
+    const fuse::project::T3DMaterialCookCacheResult drained =
+        fuse::project::drainT3DMaterialLoads(m_materialAssetTable, &m_materialCookCache);
+    m_embedSession.materialAsyncLoadsDrained += drained.drainedCount;
+    m_embedSession.materialCookCacheStores += drained.cookCacheStores;
+    m_materialAssetTable.commit();
+    if (fuse::io::VirtualFileSystem::instance().completedLoadCount() == 0u) {
+        m_materialLoadsPending = false;
     }
 }
 
@@ -525,6 +553,7 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
     }
 
     ensureWorldLoaded_(host);
+    drainPendingMaterialLoads_();
     mirrorEditorEntities_(host);
 
     if (!m_lastProjectLabel.empty()) {

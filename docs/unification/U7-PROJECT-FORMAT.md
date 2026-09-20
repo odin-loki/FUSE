@@ -220,8 +220,18 @@ CTest: `fuse_scene_wire_runtime_bind`, `fuse_world2d_fuselevel_bridge`, `fuse_wo
 | `BroadphaseWorldBody::collisionLayer` / `collisionMask` | Mechanics broadphase stub filters overlaps by layer mask |
 | `submitT3DMaterialLoadsAsync()` / `drainT3DMaterialLoads()` | Async material VFS read stubs on I/O lane → `HandleTable<Asset>` drain |
 
-## 14. Deferred (honest backlog)
+## 14. Wave 12 progress
+
+| API | Role |
+|-----|------|
+| `materialVirtualPathToCookOutput` | Maps `/t3d/materials/.../*.mat` → `cooked/materials/.../*.fusetex` |
+| `materialCookCacheKey` | Content-hash key from resolved material source path |
+| `submitT3DMaterialLoadsAsync(..., CookCache*)` | Cache hits skip I/O lane submission (mission extract or scene bindings overload) |
+| `drainT3DMaterialLoads(..., CookCache*)` | Drain VFS loads into `HandleTable<Asset>` and store texture `CookCacheEntry` records |
+| `RuntimeEmbedSession` counters | `materialCookCacheHits`, `materialCookCacheStores`, `materialAsyncLoadsSubmitted`, `materialAsyncLoadsDrained` on editor world load |
+
+## 15. Deferred (honest backlog)
 
 - ispc_texcomp-quality BC7/BC5 compression replacing in-house mode-6 encoder
 - libvorbisenc system package on CI images (runtime libs present; dev headers optional today)
-- Async material cook-cache integration (loads drain to handles; cook cache wiring deferred)
+- Cook-cache hit → skip re-cook on `fuse_cook` CLI (editor/runtime drain stores entries today)

@@ -345,6 +345,12 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_adventure` | Weapon `fire()` in hybrid demo after grant; `peekBestBranchLine()` + `dispatchBestBranchAllLines()` VM deepen |
 | **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE18` assertions for mount rotation, residency, waypoint/look-at, dbvt, weapon fire, conversation peek |
 
+#### Hybrid gates parallel ctest fix (U6/U7 wave 12)
+
+| Item | Delivered |
+|------|-----------|
+| `fuse_hybrid_module_gates_tests` | `RUN_SERIAL` + Lavapipe ICD flock wrapper (same pattern as `fuse_hybrid_tests`) |
+
 ---
 
 ## 8. Related docs

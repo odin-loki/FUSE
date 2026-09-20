@@ -36,6 +36,10 @@ struct RuntimeEmbedSession {
     u32 projectVfsMounts = 0;
     u32 materialVfsResolved = 0;
     u32 materialVfsUnresolved = 0;
+    u32 materialCookCacheHits = 0;
+    u32 materialCookCacheStores = 0;
+    u32 materialAsyncLoadsSubmitted = 0;
+    u32 materialAsyncLoadsDrained = 0;
     u32 qtLivePresentAttempts = 0;
     u32 qtLivePresentTicks = 0;
     bool qtLivePresentReady = false;

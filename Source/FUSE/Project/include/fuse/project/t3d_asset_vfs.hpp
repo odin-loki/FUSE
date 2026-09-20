@@ -3,6 +3,7 @@
 #include <fuse/handle_table.hpp>
 #include <fuse/io/asset.hpp>
 #include <fuse/io/vfs.hpp>
+#include <fuse/project/cook_cache.hpp>
 #include <fuse/project/importer_extract.hpp>
 #include <fuse/project/manifest.hpp>
 #include <fuse/project/t3d_datablock_resolve.hpp>
@@ -32,6 +33,13 @@ struct T3DMaterialVfsAsyncLoadResult {
     std::vector<fuse::io::LoadId> loadIds;
     u32 submittedCount = 0;
     u32 drainedCount = 0;
+    u32 cookCacheHits = 0;
+    std::string note;
+};
+
+struct T3DMaterialCookCacheResult {
+    u32 drainedCount = 0;
+    u32 cookCacheStores = 0;
     std::string note;
 };
 
@@ -41,6 +49,12 @@ struct T3DMaterialVfsAsyncLoadResult {
 /// Map legacy `MaterialAsset` refs to virtual paths and resolve via mounted VFS.
 [[nodiscard]] std::string materialAssetToVirtualPath(const std::string& materialRef);
 
+/// Map mounted `/t3d/materials/.../*.mat` virtual paths to cooked `.fusetex` outputs.
+[[nodiscard]] std::string materialVirtualPathToCookOutput(const std::string& virtualPath);
+
+/// Content-hash key for a resolved material source on disk (0 when unreadable).
+[[nodiscard]] u64 materialCookCacheKey(const std::string& physicalPath);
+
 /// Resolve material bindings from a mission extract through the VFS registry.
 [[nodiscard]] T3DMaterialVfsResolveResult resolveT3DMaterialVfsPaths(const T3DMissionExtract& extract);
 
@@ -49,9 +63,17 @@ struct T3DMaterialVfsAsyncLoadResult {
     const T3DDatablockResolveResult& bindings);
 
 /// Submit async VFS reads for material refs (I/O lane stub; game thread drains into HandleTable).
-[[nodiscard]] T3DMaterialVfsAsyncLoadResult submitT3DMaterialLoadsAsync(const T3DMissionExtract& extract);
+/// When `cache` is non-null, cache hits skip I/O lane submission.
+[[nodiscard]] T3DMaterialVfsAsyncLoadResult submitT3DMaterialLoadsAsync(const T3DMissionExtract& extract,
+                                                                       CookCache* cache = nullptr);
+
+/// Submit async VFS reads for resolved scene material bindings.
+[[nodiscard]] T3DMaterialVfsAsyncLoadResult submitT3DMaterialLoadsAsync(
+    const T3DDatablockResolveResult& bindings, CookCache* cache = nullptr);
 
 /// Drain completed material loads from the VFS I/O lane into the asset handle table.
-u32 drainT3DMaterialLoads(fuse::HandleTable<fuse::io::Asset>& table);
+/// When `cache` is non-null, successful drains are stored as texture cook-cache entries.
+[[nodiscard]] T3DMaterialCookCacheResult drainT3DMaterialLoads(fuse::HandleTable<fuse::io::Asset>& table,
+                                                               CookCache* cache = nullptr);
 
 } // namespace fuse::project

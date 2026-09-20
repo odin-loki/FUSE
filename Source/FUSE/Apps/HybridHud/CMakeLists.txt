@@ -40,7 +40,20 @@ if(FUSE_BUILD_CORE_TESTS)
         FUSE_HYBRID_GATES_WAVE17=1
         FUSE_HYBRID_GATES_WAVE18=1
     )
-    add_test(NAME fuse_hybrid_module_gates_tests COMMAND fuse_hybrid_module_gates_tests)
+    if(FUSE_BUILD_VULKAN)
+        set(FUSE_HYBRID_GATES_VULKAN_ICD_LOCK_SCRIPT
+            "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
+        set(FUSE_HYBRID_GATES_VULKAN_TEST_ENV "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+        add_test(NAME fuse_hybrid_module_gates_tests
+            COMMAND "${FUSE_HYBRID_GATES_VULKAN_ICD_LOCK_SCRIPT}"
+                    "$<TARGET_FILE:fuse_hybrid_module_gates_tests>")
+        set_tests_properties(fuse_hybrid_module_gates_tests PROPERTIES
+            ENVIRONMENT "${FUSE_HYBRID_GATES_VULKAN_TEST_ENV}"
+            RUN_SERIAL TRUE
+        )
+    else()
+        add_test(NAME fuse_hybrid_module_gates_tests COMMAND fuse_hybrid_module_gates_tests)
+    endif()
 endif()
 
 if(FUSE_SMOKE_ENABLE_ASAN)
