@@ -28,6 +28,13 @@ enum class WindowCloseRequest {
     Requested,
 };
 
+/// Game-path focus/capture (master plan A6). Qt editor input stays independent
+/// until the game window is `Captured`. Headless default is `Released`.
+enum class InputCaptureMode : u8 {
+    Released,
+    Captured,
+};
+
 /// Metadata for wiring a platform window into the Vulkan RHI external-surface path.
 ///
 /// Future platform backends populate `nativeSurface` with an opaque `VkSurfaceKHR`
@@ -61,6 +68,10 @@ public:
     bool isFullscreen() const { return m_fullscreen; }
     bool vsyncEnabled() const { return m_vsync; }
     bool isFocused() const { return m_focused; }
+
+    void setInputCapture(InputCaptureMode mode) { m_inputCapture = mode; }
+    InputCaptureMode inputCapture() const { return m_inputCapture; }
+    bool isInputCaptured() const { return m_inputCapture == InputCaptureMode::Captured; }
 
     NativeWindowHandle nativeHandle() const;
 
@@ -100,6 +111,7 @@ private:
     bool m_borderless = false;
     bool m_vsync = true;
     bool m_focused = true;
+    InputCaptureMode m_inputCapture = InputCaptureMode::Released;
     WindowCloseRequest m_closeRequest = WindowCloseRequest::None;
     std::string m_title = "FUSE";
     void* m_nativeWindow = nullptr;

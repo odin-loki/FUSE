@@ -46,12 +46,18 @@ bool setSuppressAbortForTests(bool suppress);
 #define FUSE_PRECONDITION(cond) FUSE_ASSERT(cond, "Precondition failed: " #cond)
 #define FUSE_POSTCONDITION(cond) FUSE_ASSERT(cond, "Postcondition failed: " #cond)
 
+#if defined(_MSC_VER)
+#define FUSE_DETAIL_UNREACHABLE() __assume(0)
+#else
+#define FUSE_DETAIL_UNREACHABLE() __builtin_unreachable()
+#endif
+
 #if defined(FUSE_NO_ASSERT) && FUSE_NO_ASSERT
-#define FUSE_UNREACHABLE(msg) __builtin_unreachable()
+#define FUSE_UNREACHABLE(msg) FUSE_DETAIL_UNREACHABLE()
 #else
 #define FUSE_UNREACHABLE(msg)                                                                    \
     do {                                                                                         \
         ::fuse::assertion::fatal((msg), __FILE__, static_cast<::fuse::u32>(__LINE__));           \
-        __builtin_unreachable();                                                                 \
+        FUSE_DETAIL_UNREACHABLE();                                                               \
     } while (0)
 #endif

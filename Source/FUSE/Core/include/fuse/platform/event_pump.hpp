@@ -168,7 +168,16 @@ public:
     /// Win32: PeekMessage loop for registered HWND pumps (KeyDown/Up, MouseMove,
     /// MouseButton, WindowCloseRequested, WindowResized, Quit). GLFW: glfwPollEvents
     /// when WSI is available. No-op when no native window is registered.
+    ///
+    /// Key/Mouse mapping in `enqueueMappedOsMessage` is dropped when
+    /// `requireCaptureForInput()` is true and the target window is
+    /// `InputCaptureMode::Released`. Window lifecycle / Quit are not filtered.
     void processOsEvents();
+
+    /// Process-wide policy: OS-pumped Key/Mouse events require `Window` capture.
+    /// Default false so headless tests keep enqueueing regardless of capture mode.
+    void setRequireCaptureForInput(bool require);
+    bool requireCaptureForInput() const;
 
     /// Pump OS events then poll until the queue is empty. Returns false when quit was requested.
     bool pumpOnce();
@@ -177,6 +186,9 @@ public:
     u32 drainEvents(std::vector<PlatformEvent>& out);
 
     /// Test / headless hook — enqueue a synthetic event.
+    ///
+    /// Bypasses input-capture filtering. Capture only applies to OS-pumped Key/Mouse
+    /// mapping inside `processOsEvents` (`enqueueMappedOsMessage`).
     ///
     /// Pending `WindowResized` events for the same `window` pointer are coalesced
     /// in-place (latest width/height wins) instead of enqueueing duplicates.

@@ -37,6 +37,25 @@
       }
     },
     {
+      "name": "fuse-profile",
+      "displayName": "FUSE Profile",
+      "inherits": "fuse-release",
+      "binaryDir": "${sourceDir}/build/fuse-profile",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "FUSE_PROFILE": "ON",
+        "FUSE_UMBRELLA": "ON",
+        "FUSE_BUILD_T3D": "OFF",
+        "FUSE_BUILD_T2D": "OFF",
+        "FUSE_BUILD_CORE": "ON",
+        "FUSE_BUILD_CORE_TESTS": "ON",
+        "FUSE_CORE_ENABLE_ASAN": "OFF",
+        "FUSE_CORE_ENABLE_UBSAN": "OFF",
+        "FUSE_CORE_ENABLE_TSAN": "OFF",
+        "FUSE_SMOKE_ENABLE_ASAN": "OFF"
+      }
+    },
+    {
       "name": "fuse-asan",
       "displayName": "FUSE ASan Debug (GNU/Clang; skipped if libasan missing)",
       "inherits": "fuse-debug",

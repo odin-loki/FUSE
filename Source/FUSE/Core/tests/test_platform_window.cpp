@@ -56,10 +56,84 @@ void testWindowStubStoresDescription() {
     expectTrue(window.nativeHandle().value == nullptr, "native handle is null in stub");
 }
 
+void testWindowInputCaptureDefaultReleased() {
+    fuse::platform::Window window;
+    expectTrue(window.inputCapture() == fuse::platform::InputCaptureMode::Released,
+               "default capture is Released");
+    expectTrue(!window.isInputCaptured(), "default isInputCaptured is false");
+}
+
+void testWindowInputCaptureSetCaptured() {
+    fuse::platform::Window window;
+    window.setInputCapture(fuse::platform::InputCaptureMode::Captured);
+    expectTrue(window.inputCapture() == fuse::platform::InputCaptureMode::Captured,
+               "setInputCapture stores Captured");
+    expectTrue(window.isInputCaptured(), "isInputCaptured is true when Captured");
+
+    window.setInputCapture(fuse::platform::InputCaptureMode::Released);
+    expectTrue(window.inputCapture() == fuse::platform::InputCaptureMode::Released,
+               "setInputCapture restores Released");
+    expectTrue(!window.isInputCaptured(), "isInputCaptured is false when Released");
+}
+
+void testRequireCaptureForInputDoesNotDropSyntheticEvents() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    expectTrue(!pump.requireCaptureForInput(), "default requireCaptureForInput is false");
+    expectTrue(window.inputCapture() == fuse::platform::InputCaptureMode::Released,
+               "synthetic test window stays Released");
+
+    pump.setRequireCaptureForInput(true);
+    expectTrue(pump.requireCaptureForInput(), "requireCaptureForInput can be enabled");
+
+    pump.pushKeyDown(65u);
+    pump.pushKeyUp(65u);
+    pump.pushMouseMove(10, 20);
+    pump.pushMouseButton(1u, true, 10, 20);
+
+    fuse::platform::PlatformEvent synthetic{};
+    synthetic.type = fuse::platform::PlatformEventType::KeyDown;
+    synthetic.keyCode = 66u;
+    pump.pushSyntheticEvent(synthetic);
+
+    expectEq(pump.pendingEventCount(), 5u, "pushSyntheticEvent bypasses capture filter");
+
+    fuse::platform::PlatformEvent keyDown;
+    expectTrue(pump.pollEvent(keyDown), "synthetic KeyDown polled with capture required");
+    expectTrue(keyDown.type == fuse::platform::PlatformEventType::KeyDown,
+               "synthetic KeyDown type preserved");
+    expectEq(keyDown.keyCode, 65u, "synthetic KeyDown keyCode preserved");
+
+    fuse::platform::PlatformEvent keyUp;
+    expectTrue(pump.pollEvent(keyUp), "synthetic KeyUp polled with capture required");
+    expectTrue(keyUp.type == fuse::platform::PlatformEventType::KeyUp, "synthetic KeyUp type");
+
+    fuse::platform::PlatformEvent move;
+    expectTrue(pump.pollEvent(move), "synthetic MouseMove polled with capture required");
+    expectTrue(move.type == fuse::platform::PlatformEventType::MouseMove, "synthetic MouseMove type");
+
+    fuse::platform::PlatformEvent button;
+    expectTrue(pump.pollEvent(button), "synthetic MouseButton polled with capture required");
+    expectTrue(button.type == fuse::platform::PlatformEventType::MouseButtonDown,
+               "synthetic MouseButtonDown type");
+
+    fuse::platform::PlatformEvent direct;
+    expectTrue(pump.pollEvent(direct), "direct pushSyntheticEvent polled with capture required");
+    expectTrue(direct.type == fuse::platform::PlatformEventType::KeyDown,
+               "direct synthetic KeyDown type");
+    expectEq(direct.keyCode, 66u, "direct synthetic KeyDown keyCode");
+    expectTrue(!pump.hasPendingEvents(), "synthetic capture-bypass queue drained");
+
+    pump.setRequireCaptureForInput(false);
+    expectTrue(!pump.requireCaptureForInput(), "requireCaptureForInput restored to default");
+}
+
 void testWindowResizeAndCloseRequest() {
     fuse::platform::Window window;
     expectTrue(window.isValid(), "default window is valid");
     expectTrue(window.isFocused(), "default window starts focused");
+    expectTrue(!window.isInputCaptured(), "default window starts Released");
 
     window.resize(800, 600);
     expectEq(window.width(), 800u, "resize updates width");
@@ -279,6 +353,68 @@ void testEventPumpWin32MessageOnlyHwndMapsKeyDown() {
     DestroyWindow(hwnd);
     UnregisterClassW(className, GetModuleHandleW(nullptr));
 }
+
+void testEventPumpWin32RequireCaptureDropsReleasedInput() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+
+    expectTrue(!window.isInputCaptured(), "HWND pump window starts Released");
+    pump.setRequireCaptureForInput(true);
+
+    const wchar_t* className = L"FUSE_EventPumpCapture";
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = DefWindowProcW;
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = className;
+
+    ATOM atom = RegisterClassW(&wc);
+    if (atom == 0) {
+        const DWORD err = GetLastError();
+        if (err != ERROR_CLASS_ALREADY_EXISTS) {
+            pump.setRequireCaptureForInput(false);
+            expectTrue(false, "RegisterClassW for capture HWND");
+            return;
+        }
+    }
+
+    HWND hwnd = CreateWindowExW(0, className, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr,
+                                GetModuleHandleW(nullptr), nullptr);
+    if (hwnd == nullptr) {
+        pump.setRequireCaptureForInput(false);
+        std::fprintf(stderr, "SKIP: capture HWND unavailable (GetLastError=%lu)\n",
+                     static_cast<unsigned long>(GetLastError()));
+        return;
+    }
+
+    window.setNativeHandleForPump(hwnd);
+
+    const BOOL postedReleased = PostMessageW(hwnd, WM_KEYDOWN, 'A', 0);
+    expectTrue(postedReleased != FALSE, "PostMessageW WM_KEYDOWN while Released");
+    pump.processOsEvents();
+    expectTrue(!pump.hasPendingEvents(), "Released window drops OS KeyDown when capture required");
+
+    const BOOL postedMouse = PostMessageW(hwnd, WM_MOUSEMOVE, 0, MAKELPARAM(4, 8));
+    expectTrue(postedMouse != FALSE, "PostMessageW WM_MOUSEMOVE while Released");
+    pump.processOsEvents();
+    expectTrue(!pump.hasPendingEvents(), "Released window drops OS MouseMove when capture required");
+
+    window.setInputCapture(fuse::platform::InputCaptureMode::Captured);
+    const BOOL postedCaptured = PostMessageW(hwnd, WM_KEYDOWN, 'B', 0);
+    expectTrue(postedCaptured != FALSE, "PostMessageW WM_KEYDOWN while Captured");
+    pump.processOsEvents();
+
+    fuse::platform::PlatformEvent event;
+    expectTrue(pump.pollEvent(event), "Captured window enqueues OS KeyDown");
+    expectTrue(event.type == fuse::platform::PlatformEventType::KeyDown, "captured OS KeyDown type");
+    expectEq(event.keyCode, static_cast<fuse::u32>('B'), "captured OS KeyDown virtual key");
+    expectTrue(event.window == &window, "captured OS KeyDown bound to window");
+    expectTrue(!pump.hasPendingEvents(), "captured OS KeyDown consumed");
+
+    window.setNativeHandleForPump(nullptr);
+    DestroyWindow(hwnd);
+    UnregisterClassW(className, GetModuleHandleW(nullptr));
+    pump.setRequireCaptureForInput(false);
+}
 #endif
 
 void testEventPumpPollQueueFifoOrder() {
@@ -420,6 +556,9 @@ void testMobileProfileStillUsesWindowStub() {
 
 int main() {
     testWindowStubStoresDescription();
+    testWindowInputCaptureDefaultReleased();
+    testWindowInputCaptureSetCaptured();
+    testRequireCaptureForInputDoesNotDropSyntheticEvents();
     testWindowResizeAndCloseRequest();
     testWindowResizeNotifiesPump();
     testWindowFocusEventsNotifyPump();
@@ -432,6 +571,7 @@ int main() {
     testEventPumpOsDrainDefaultWindowIsNoOp();
 #if defined(_WIN32)
     testEventPumpWin32MessageOnlyHwndMapsKeyDown();
+    testEventPumpWin32RequireCaptureDropsReleasedInput();
 #endif
     testEventPumpPollQueueFifoOrder();
     testEventPumpPollQueueOverflowDropsTail();

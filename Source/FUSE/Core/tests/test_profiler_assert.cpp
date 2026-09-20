@@ -2154,6 +2154,9 @@ void testVerifyMacro() {
     FUSE_VERIFY(1 + 1 == 2, "math still works");
     expectTrue(!handlerCalled, "verify does not fire on true condition");
 
+    FUSE_ASSERT(true, "true must not fatal");
+    expectTrue(!handlerCalled, "FUSE_ASSERT(true) does not fatal");
+
     FUSE_VERIFY(false, "expected failure");
     expectTrue(handlerCalled, "verify fires fatal handler on false condition");
 }

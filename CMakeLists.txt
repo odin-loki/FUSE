@@ -50,6 +50,7 @@ option(FUSE_PLATFORM_WINDOW_GLFW "Enable optional GLFW hidden-window WSI scaffol
 option(FUSE_ENABLE_GLFW_PRESENT "Allow vkQueuePresentKHR when display+GLFW WSI available (OFF for headless CI)" OFF)
 option(FUSE_ENABLE_QT_PRESENT "Allow vkQueuePresentKHR when display+Qt Vulkan surface available (OFF for headless CI)" OFF)
 option(FUSE_SHIPPING "Shipping game runtime: no Qt, no editor shell, no legacy engine GUI" OFF)
+option(FUSE_PROFILE "Enable profiler-friendly RelWithDebInfo defines" OFF)
 option(FUSE_BUILD_CUDA "Build optional CUDA job lane, interop stubs, and fuse_compute (Track B B2.6–B2.7, B5.7 screen-space stubs)" OFF)
 option(FUSE_SMOKE_ENABLE_ASAN "Enable AddressSanitizer for fuse_runtime_smoke" OFF)
 option(FUSE_CORE_ENABLE_ASAN "Enable AddressSanitizer for fuse_core and fuse_core_* tests" OFF)

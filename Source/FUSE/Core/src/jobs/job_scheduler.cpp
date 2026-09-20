@@ -88,9 +88,14 @@ WorkerState* currentWorkerState() {
 } // namespace detail
 
 struct JobScheduler::Impl {
+    struct WorkerQueues {
+        std::deque<JobFn> high;
+        std::deque<JobFn> normal;
+    };
+
     std::vector<std::thread> workers;
     std::vector<std::unique_ptr<detail::WorkerState>> workerStates;
-    std::vector<std::deque<JobFn>> queues;
+    std::vector<WorkerQueues> queues;
     std::vector<std::mutex> queueMutexes;
     std::mutex waitMutex;
     std::condition_variable waitCv;
@@ -157,21 +162,42 @@ struct JobScheduler::Impl {
         detail::g_workerState = nullptr;
     }
 
-    bool tryPopLocal(u32 index, JobFn& out) {
-        std::lock_guard<std::mutex> lock(queueMutexes[index]);
-        if (queues[index].empty()) {
-            return false;
-        }
-        out = std::move(queues[index].front());
-        queues[index].pop_front();
-        return true;
+    static bool isUrgent(JobPriority priority) {
+        return priority >= JobPriority::High;
     }
 
-    bool trySteal(u32 thief, JobFn& out) {
-        if (workerCount <= 1) {
+    static bool stealHalfFromQueue(std::deque<JobFn>& victimQueue, std::vector<JobFn>& stolen) {
+        const std::size_t queueSize = victimQueue.size();
+        if (!canStealFromVictim(queueSize)) {
             return false;
         }
 
+        const u32 batch = stealHalfQueueBatchSize(queueSize);
+        stolen.reserve(batch);
+        for (u32 i = 0; i < batch && !victimQueue.empty(); ++i) {
+            stolen.push_back(std::move(victimQueue.back()));
+            victimQueue.pop_back();
+        }
+        return !stolen.empty();
+    }
+
+    bool tryPopLocal(u32 index, JobFn& out) {
+        std::lock_guard<std::mutex> lock(queueMutexes[index]);
+        auto& local = queues[index];
+        if (!local.high.empty()) {
+            out = std::move(local.high.front());
+            local.high.pop_front();
+            return true;
+        }
+        if (!local.normal.empty()) {
+            out = std::move(local.normal.front());
+            local.normal.pop_front();
+            return true;
+        }
+        return false;
+    }
+
+    bool tryStealFromBand(u32 thief, JobFn& out, bool highBand) {
         const u32 maxRounds = workerCount - 1;
         for (u32 round = 0; round < maxRounds; ++round) {
             const u32 victim = pickStealVictim(thief, workerCount, round);
@@ -182,21 +208,10 @@ struct JobScheduler::Impl {
             std::vector<JobFn> stolen;
             {
                 std::lock_guard<std::mutex> lock(queueMutexes[victim]);
-                const std::size_t queueSize = queues[victim].size();
-                if (!canStealFromVictim(queueSize)) {
+                auto& victimQueue = highBand ? queues[victim].high : queues[victim].normal;
+                if (!stealHalfFromQueue(victimQueue, stolen)) {
                     continue;
                 }
-
-                const u32 batch = stealHalfQueueBatchSize(queueSize);
-                stolen.reserve(batch);
-                for (u32 i = 0; i < batch && !queues[victim].empty(); ++i) {
-                    stolen.push_back(std::move(queues[victim].back()));
-                    queues[victim].pop_back();
-                }
-            }
-
-            if (stolen.empty()) {
-                continue;
             }
 
             // Run one stolen job now; remaining batch items become local work so
@@ -204,8 +219,9 @@ struct JobScheduler::Impl {
             out = std::move(stolen[0]);
             if (stolen.size() > 1) {
                 std::lock_guard<std::mutex> lock(queueMutexes[thief]);
+                auto& dest = highBand ? queues[thief].high : queues[thief].normal;
                 for (std::size_t i = 1; i < stolen.size(); ++i) {
-                    queues[thief].push_back(std::move(stolen[i]));
+                    dest.push_back(std::move(stolen[i]));
                 }
             }
             return true;
@@ -213,12 +229,24 @@ struct JobScheduler::Impl {
         return false;
     }
 
-    void pushJob(JobFn job) {
+    bool trySteal(u32 thief, JobFn& out) {
+        if (workerCount <= 1) {
+            return false;
+        }
+
+        if (tryStealFromBand(thief, out, true)) {
+            return true;
+        }
+        return tryStealFromBand(thief, out, false);
+    }
+
+    void pushJob(JobFn job, JobPriority priority) {
         static std::atomic<u32> roundRobin{0};
         const u32 target = roundRobin.fetch_add(1, std::memory_order_relaxed) % workerCount;
         {
             std::lock_guard<std::mutex> lock(queueMutexes[target]);
-            queues[target].push_back(std::move(job));
+            auto& dest = isUrgent(priority) ? queues[target].high : queues[target].normal;
+            dest.push_back(std::move(job));
         }
         waitCv.notify_one();
     }
@@ -228,7 +256,7 @@ struct JobScheduler::Impl {
             bool anyPending = false;
             for (u32 i = 0; i < workerCount; ++i) {
                 std::lock_guard<std::mutex> lock(queueMutexes[i]);
-                if (!queues[i].empty()) {
+                if (!queues[i].high.empty() || !queues[i].normal.empty()) {
                     anyPending = true;
                     break;
                 }
@@ -334,6 +362,10 @@ void JobScheduler::drainActiveJobs() {
 }
 
 void JobScheduler::submit(JobFn job) {
+    submit(std::move(job), JobPriority::Normal);
+}
+
+void JobScheduler::submit(JobFn job, JobPriority priority) {
     if (!m_initialized) {
         job();
         return;
@@ -344,7 +376,7 @@ void JobScheduler::submit(JobFn job) {
         return;
     }
 
-    m_impl->pushJob(std::move(job));
+    m_impl->pushJob(std::move(job), priority);
 }
 
 } // namespace fuse::jobs

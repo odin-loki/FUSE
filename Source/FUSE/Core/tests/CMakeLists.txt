@@ -50,6 +50,14 @@ target_link_libraries(fuse_core_services_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_services_tests)
 add_test(NAME fuse_core_services COMMAND fuse_core_services_tests)
 
+add_executable(fuse_core_logger_tests
+    test_logger.cpp
+)
+
+target_link_libraries(fuse_core_logger_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_logger_tests)
+add_test(NAME fuse_core_logger COMMAND fuse_core_logger_tests)
+
 add_executable(fuse_core_platform_hardening_tests
     test_platform_hardening.cpp
 )

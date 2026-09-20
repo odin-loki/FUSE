@@ -11,6 +11,8 @@
 
 namespace fuse::profiler {
 
+bool isValidEventName(const char* name);
+
 namespace {
 
 constexpr u32 kRingCapacity = 4096u;
@@ -91,6 +93,43 @@ u32 currentFlowNestingDepth() {
     return threadLocalFlowNestingDepth();
 }
 
+constexpr u32 kMarkerStackCapacity = 32u;
+
+struct PendingMarker {
+    const char* name = nullptr;
+    u64 startNs = 0;
+    u32 scopeId = 0;
+    u32 nestingDepth = 0;
+};
+
+struct MarkerStack {
+    PendingMarker frames[kMarkerStackCapacity]{};
+    u32 depth = 0;
+
+    bool push(const PendingMarker& marker) {
+        if (depth >= kMarkerStackCapacity) {
+            return false;
+        }
+        frames[depth++] = marker;
+        return true;
+    }
+
+    bool pop(PendingMarker& out) {
+        if (depth == 0u) {
+            return false;
+        }
+        out = frames[--depth];
+        return true;
+    }
+
+    void clear() {
+        depth = 0u;
+    }
+};
+
+thread_local MarkerStack g_gpuMarkers{};
+thread_local MarkerStack g_cudaMarkers{};
+
 std::string formatCounterArgsJson(const ProfileEvent& event) {
     std::string args = "\"args\":{\"value\":";
     if (event.counterKind == CounterValueKind::Float) {
@@ -165,7 +204,9 @@ void recordEvent(const char* name,
                  CounterValueKind counterKind = CounterValueKind::None,
                  s64 counterIntValue = 0,
                  f64 counterFloatValue = 0.0,
-                 u32 counterSnapshotFrame = 0u) {
+                 u32 counterSnapshotFrame = 0u,
+                 u64 timestampNs = 0u,
+                 u64 durationNs = 0u) {
     if (!g_enabled.load(std::memory_order_acquire)) {
         return;
     }
@@ -173,7 +214,7 @@ void recordEvent(const char* name,
     const u32 index = g_writeHead.fetch_add(1u, std::memory_order_acq_rel) % kRingCapacity;
     g_events[index] = ProfileEvent{
         name,
-        nowNanoseconds(),
+        timestampNs != 0u ? timestampNs : nowNanoseconds(),
         phase,
         fuse::platform::chromeTraceThreadId(),
         scopeId,
@@ -183,6 +224,7 @@ void recordEvent(const char* name,
         counterIntValue,
         counterFloatValue,
         counterSnapshotFrame,
+        durationNs,
     };
 
     const u32 count = g_eventCount.load(std::memory_order_acquire);
@@ -203,6 +245,9 @@ const char* chromePhaseToken(EventPhase phase) {
         return "f";
     case EventPhase::Counter:
         return "C";
+    case EventPhase::GpuComplete:
+    case EventPhase::CudaComplete:
+        return "X";
     }
     return "X";
 }
@@ -214,9 +259,47 @@ const char* chromeCategory(EventPhase phase) {
         return "async";
     case EventPhase::Counter:
         return "counter";
+    case EventPhase::GpuComplete:
+        return "gpu";
+    case EventPhase::CudaComplete:
+        return "cuda";
     default:
         return "cpu";
     }
+}
+
+void beginMarker(MarkerStack& stack, const char* name) {
+    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
+        return;
+    }
+
+    PendingMarker marker;
+    marker.name = name;
+    marker.startNs = nowNanoseconds();
+    marker.scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
+    marker.nestingDepth = currentNestingDepth();
+    stack.push(marker);
+}
+
+void endMarker(MarkerStack& stack, EventPhase phase) {
+    PendingMarker marker;
+    if (!stack.pop(marker)) {
+        return;
+    }
+
+    const u64 endNs = nowNanoseconds();
+    const u64 durationNs = endNs >= marker.startNs ? endNs - marker.startNs : 0u;
+    recordEvent(marker.name,
+                phase,
+                marker.scopeId,
+                marker.nestingDepth,
+                currentFlowNestingDepth(),
+                CounterValueKind::None,
+                0,
+                0.0,
+                0u,
+                marker.startNs,
+                durationNs);
 }
 
 } // namespace
@@ -651,7 +734,7 @@ const ProfileEvent& lastEvent() {
 
 ChromeTraceExportPreflight preflightChromeTraceExport() {
     ChromeTraceExportPreflight preflight{};
-    preflight.profilerDisabled = !enabled();
+    preflight.profilerDisabled = !kChromeTraceExportEnabled || !enabled();
     preflight.eventCount = eventCount();
     preflight.exportableEventCount = exportableEventCount();
     preflight.frameIndex = frameIndex();
@@ -684,6 +767,8 @@ void reset() {
     g_openAsyncFlowCount.store(0u, std::memory_order_release);
     threadLocalNestingDepth() = 0u;
     threadLocalFlowNestingDepth() = 0u;
+    g_gpuMarkers.clear();
+    g_cudaMarkers.clear();
 }
 
 u32 nextFlowId() {
@@ -788,7 +873,32 @@ void sampleCounterFloatSnapshotAtFrame(const char* track, f64 value) {
                 frameIndex());
 }
 
+void profile_gpu_begin(const char* name, void* cmdBuffer) {
+    (void)cmdBuffer;
+    beginMarker(g_gpuMarkers, name);
+}
+
+void profile_gpu_end(void* cmdBuffer) {
+    (void)cmdBuffer;
+    endMarker(g_gpuMarkers, EventPhase::GpuComplete);
+}
+
+void profile_cuda_begin(const char* name, void* stream) {
+    (void)stream;
+    beginMarker(g_cudaMarkers, name);
+}
+
+void profile_cuda_end(void* stream) {
+    (void)stream;
+    endMarker(g_cudaMarkers, EventPhase::CudaComplete);
+}
+
 std::string exportChromeTraceJson() {
+    if constexpr (!kChromeTraceExportEnabled) {
+        return "{\"displayTimeUnit\":\"ns\",\"metadata\":{\"name\":\"FUSE CPU profiler\",\"frame\":0},"
+               "\"traceEvents\":[]}";
+    }
+
     const std::lock_guard<std::mutex> lock(g_exportMutex);
 
     char header[192];
@@ -958,6 +1068,22 @@ std::string exportChromeTraceJson() {
             first = false;
             continue;
         }
+        case EventPhase::GpuComplete:
+        case EventPhase::CudaComplete:
+            std::snprintf(buffer,
+                          sizeof(buffer),
+                          "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"dur\":%llu,\"pid\":1,"
+                          "\"tid\":%u,\"id\":%u,\"args\":{\"depth\":%u}}",
+                          first ? "" : ",",
+                          escapedName.c_str(),
+                          category,
+                          phase,
+                          static_cast<unsigned long long>(timestampUs),
+                          static_cast<unsigned long long>(event.durationNs / 1000u),
+                          event.threadId,
+                          event.scopeId,
+                          event.nestingDepth);
+            break;
         }
         json += buffer;
         first = false;

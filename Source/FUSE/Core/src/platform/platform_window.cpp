@@ -26,6 +26,7 @@ namespace {
 constexpr u32 kMaxPumpWindows = 32;
 Window* g_pumpWindows[kMaxPumpWindows]{};
 u32 g_pumpWindowCount = 0;
+bool g_requireCaptureForInput = false;
 
 void registerPumpWindow(Window* window) {
     if (window == nullptr || window->nativeHandle().value == nullptr) {
@@ -121,9 +122,22 @@ i32 osMessageAxisY(LPARAM lParam) {
     return static_cast<i32>(static_cast<short>(HIWORD(lParam)));
 }
 
+bool shouldDropOsKeyOrMouse(const EventPump& pump, const Window* window) {
+    if (!pump.requireCaptureForInput()) {
+        return false;
+    }
+
+    return window == nullptr || !window->isInputCaptured();
+}
+
 void enqueueMappedOsMessage(EventPump& pump, Window* window, const MSG& msg) {
+    const bool dropKeyMouse = shouldDropOsKeyOrMouse(pump, window);
+
     switch (msg.message) {
     case WM_KEYDOWN: {
+        if (dropKeyMouse) {
+            break;
+        }
         PlatformEvent event{};
         event.type = PlatformEventType::KeyDown;
         event.window = window;
@@ -132,6 +146,9 @@ void enqueueMappedOsMessage(EventPump& pump, Window* window, const MSG& msg) {
         break;
     }
     case WM_KEYUP: {
+        if (dropKeyMouse) {
+            break;
+        }
         PlatformEvent event{};
         event.type = PlatformEventType::KeyUp;
         event.window = window;
@@ -140,12 +157,21 @@ void enqueueMappedOsMessage(EventPump& pump, Window* window, const MSG& msg) {
         break;
     }
     case WM_MOUSEMOVE:
+        if (dropKeyMouse) {
+            break;
+        }
         pump.pushMouseMove(osMessageAxisX(msg.lParam), osMessageAxisY(msg.lParam));
         break;
     case WM_LBUTTONDOWN:
+        if (dropKeyMouse) {
+            break;
+        }
         pump.pushMouseButton(1u, true, osMessageAxisX(msg.lParam), osMessageAxisY(msg.lParam));
         break;
     case WM_LBUTTONUP:
+        if (dropKeyMouse) {
+            break;
+        }
         pump.pushMouseButton(1u, false, osMessageAxisX(msg.lParam), osMessageAxisY(msg.lParam));
         break;
     case WM_CLOSE:
@@ -215,6 +241,7 @@ Window::Window(Window&& other) noexcept
       m_borderless(other.m_borderless),
       m_vsync(other.m_vsync),
       m_focused(other.m_focused),
+      m_inputCapture(other.m_inputCapture),
       m_closeRequest(other.m_closeRequest),
       m_title(std::move(other.m_title)),
       m_nativeWindow(other.m_nativeWindow),
@@ -222,6 +249,7 @@ Window::Window(Window&& other) noexcept
       m_pumpAsHwnd(other.m_pumpAsHwnd) {
     unregisterPumpWindow(&other);
     other.m_valid = false;
+    other.m_inputCapture = InputCaptureMode::Released;
     other.m_closeRequest = WindowCloseRequest::None;
     other.m_nativeWindow = nullptr;
     other.m_ownsNativeWindow = false;
@@ -241,6 +269,7 @@ Window& Window::operator=(Window&& other) noexcept {
         m_borderless = other.m_borderless;
         m_vsync = other.m_vsync;
         m_focused = other.m_focused;
+        m_inputCapture = other.m_inputCapture;
         m_closeRequest = other.m_closeRequest;
         m_title = std::move(other.m_title);
         m_nativeWindow = other.m_nativeWindow;
@@ -249,6 +278,7 @@ Window& Window::operator=(Window&& other) noexcept {
 
         unregisterPumpWindow(&other);
         other.m_valid = false;
+        other.m_inputCapture = InputCaptureMode::Released;
         other.m_closeRequest = WindowCloseRequest::None;
         other.m_nativeWindow = nullptr;
         other.m_ownsNativeWindow = false;
@@ -349,6 +379,14 @@ void Window::clearCloseRequest() {
 
 EventPump::EventPump() = default;
 EventPump::~EventPump() = default;
+
+void EventPump::setRequireCaptureForInput(bool require) {
+    g_requireCaptureForInput = require;
+}
+
+bool EventPump::requireCaptureForInput() const {
+    return g_requireCaptureForInput;
+}
 
 bool EventPump::pollEvent(PlatformEvent& outEvent) {
     if (m_syntheticHead == m_syntheticTail) {

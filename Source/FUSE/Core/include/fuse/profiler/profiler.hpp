@@ -7,6 +7,16 @@
 
 namespace fuse::profiler {
 
+// Chrome JSON export stays on for FUSE_PROFILE (RelWithDebInfo) even without FUSE_DEBUG.
+// FUSE_NO_PROFILER (optional shipping strip) no-ops export; FUSE_PROFILE always wins.
+#if defined(FUSE_PROFILE) && FUSE_PROFILE
+inline constexpr bool kChromeTraceExportEnabled = true;
+#elif defined(FUSE_NO_PROFILER) && FUSE_NO_PROFILER
+inline constexpr bool kChromeTraceExportEnabled = false;
+#else
+inline constexpr bool kChromeTraceExportEnabled = true;
+#endif
+
 /// Sentinel returned by `lastEventIndex()` when the ring buffer has no recorded events.
 constexpr u32 kInvalidEventIndex = static_cast<u32>(-1);
 
@@ -16,6 +26,8 @@ enum class EventPhase : u8 {
     FlowStart,
     FlowFinish,
     Counter,
+    GpuComplete,
+    CudaComplete,
 };
 
 enum class CounterValueKind : u8 {
@@ -36,6 +48,7 @@ struct ProfileEvent {
     s64 counterIntValue = 0;
     f64 counterFloatValue = 0.0;
     u32 counterSnapshotFrame = 0;
+    u64 durationNs = 0;
 };
 
 /// Read-only chrome export diagnostics — safe to call before `exportChromeTraceJson()`.
@@ -205,7 +218,17 @@ inline void sampleCounterSnapshotAtFrameDispatch(const char* track, T value) {
     }
 }
 
+/// GPU markers — no-op command-buffer queries; emit chrome `ph:"X"` events with CPU timestamps.
+void profile_gpu_begin(const char* name, void* cmdBuffer);
+void profile_gpu_end(void* cmdBuffer);
+
+/// CUDA event markers — stream pointer unused (no CUDA toolkit). CPU timestamps only.
+void profile_cuda_begin(const char* name, void* stream);
+void profile_cuda_end(void* stream);
+
 /// Stub export for chrome://tracing offline analysis (not hot path).
+/// Available in FUSE_PROFILE RelWithDebInfo even when FUSE_DEBUG is off.
+/// FUSE_NO_PROFILER (optional shipping strip) no-ops this; FUSE_PROFILE always exports.
 std::string exportChromeTraceJson();
 
 } // namespace fuse::profiler
@@ -216,6 +239,10 @@ std::string exportChromeTraceJson();
 #define FUSE_PROFILE_ASYNC_FLOW_END(name, flowId) ((void)0)
 #define FUSE_PROFILE_COUNTER(track, value) ((void)0)
 #define FUSE_PROFILE_COUNTER_SNAPSHOT_AT_FRAME(track, value) ((void)0)
+#define FUSE_PROFILE_GPU_BEGIN(name, cmd) ((void)0)
+#define FUSE_PROFILE_GPU_END(cmd) ((void)0)
+#define FUSE_PROFILE_CUDA_BEGIN(name, stream) ((void)0)
+#define FUSE_PROFILE_CUDA_END(stream) ((void)0)
 #else
 #define FUSE_PROFILE_SCOPE_IMPL2(line, name) ::fuse::profiler::ProfileScope _fuse_profile_scope_##line(name)
 #define FUSE_PROFILE_SCOPE_IMPL(line, name) FUSE_PROFILE_SCOPE_IMPL2(line, name)
@@ -225,4 +252,8 @@ std::string exportChromeTraceJson();
 #define FUSE_PROFILE_COUNTER(track, value) ::fuse::profiler::sampleCounterDispatch(track, value)
 #define FUSE_PROFILE_COUNTER_SNAPSHOT_AT_FRAME(track, value) \
     ::fuse::profiler::sampleCounterSnapshotAtFrameDispatch(track, value)
+#define FUSE_PROFILE_GPU_BEGIN(name, cmd) ::fuse::profiler::profile_gpu_begin(name, cmd)
+#define FUSE_PROFILE_GPU_END(cmd) ::fuse::profiler::profile_gpu_end(cmd)
+#define FUSE_PROFILE_CUDA_BEGIN(name, stream) ::fuse::profiler::profile_cuda_begin(name, stream)
+#define FUSE_PROFILE_CUDA_END(stream) ::fuse::profiler::profile_cuda_end(stream)
 #endif

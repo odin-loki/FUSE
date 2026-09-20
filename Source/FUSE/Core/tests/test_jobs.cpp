@@ -442,6 +442,57 @@ void testNestedParallelForWithCooperativeWait() {
              "nested parallel_for with cooperative waits visits every index");
 }
 
+void testHighPriorityRunsBeforeQueuedLow() {
+#if FUSE_JOBS_SINGLE_THREAD
+    std::printf("SKIP: job priority ordering requires a worker pool\n");
+    return;
+#else
+    std::atomic<fuse::u32> ready{0};
+    std::atomic<fuse::u32> blockerStarted{0};
+    std::atomic<fuse::u32> slot[2] = {};
+    std::atomic<fuse::u32> order{0};
+
+    withScheduler(1, [&] {
+        auto& sched = fuse::jobs::JobScheduler::instance();
+
+        sched.submit([&] {
+            blockerStarted.store(1, std::memory_order_release);
+            while (ready.load(std::memory_order_acquire) == 0) {
+                std::this_thread::yield();
+            }
+        });
+
+        while (blockerStarted.load(std::memory_order_acquire) == 0) {
+            std::this_thread::yield();
+        }
+
+        sched.submit(
+            [&] {
+                slot[0].store(order.fetch_add(1u, std::memory_order_relaxed) + 1u,
+                              std::memory_order_release);
+            },
+            fuse::jobs::JobPriority::Low);
+
+        sched.submit(
+            [&] {
+                slot[1].store(order.fetch_add(1u, std::memory_order_relaxed) + 1u,
+                              std::memory_order_release);
+            },
+            fuse::jobs::JobPriority::High);
+
+        ready.store(1, std::memory_order_release);
+
+        while (slot[0].load(std::memory_order_acquire) == 0 ||
+               slot[1].load(std::memory_order_acquire) == 0) {
+            std::this_thread::yield();
+        }
+    });
+
+    expectTrue(slot[1].load(std::memory_order_acquire) < slot[0].load(std::memory_order_acquire),
+               "High job runs before Low when both were queued on the same worker");
+#endif
+}
+
 void testSingleThreadSubmitRunsInline() {
     withScheduler(0, [&] {
         std::atomic<int> phase{0};
@@ -452,6 +503,15 @@ void testSingleThreadSubmitRunsInline() {
         });
         expectEq(static_cast<fuse::u32>(phase.load(std::memory_order_acquire)), 1u,
                  "zero-worker submit completes inline");
+        fuse::jobs::JobScheduler::instance().submit(
+            [&] {
+                expectEq(static_cast<fuse::u32>(phase.load(std::memory_order_relaxed)), 1u,
+                         "zero-worker High submit runs before caller continues");
+                phase.store(2, std::memory_order_release);
+            },
+            fuse::jobs::JobPriority::High);
+        expectEq(static_cast<fuse::u32>(phase.load(std::memory_order_acquire)), 2u,
+                 "zero-worker High submit completes inline");
     });
 }
 
@@ -585,6 +645,7 @@ int main() {
     testNestedParallelForMultiWorkerVisitCount();
     testNestedParallelForStressVisitCoverage();
     testNestedParallelForWithCooperativeWait();
+    testHighPriorityRunsBeforeQueuedLow();
     testSingleThreadSubmitRunsInline();
     testSingleThreadNestedCounterWait();
     testSingleThreadParallelForGrainSizes();

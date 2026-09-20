@@ -202,6 +202,14 @@ target_compile_definitions(fuse_core
         $<$<CONFIG:RelWithDebInfo>:FUSE_PROFILE=1>
 )
 
+if(FUSE_PROFILE)
+    target_compile_definitions(fuse_core PUBLIC FUSE_PROFILE=1)
+endif()
+
+if(FUSE_SHIPPING)
+    target_compile_definitions(fuse_core PUBLIC FUSE_NO_ASSERT=1 FUSE_SHIPPING=1)
+endif()
+
 if(FUSE_CORE_BAN_GLOBAL_NEW)
     # PRIVATE + Debug only. Engine TUs that include fuse/alloc/new_ban.hpp route
     # keyword new/malloc through HeapGuard. Do not replace global ::operator new —

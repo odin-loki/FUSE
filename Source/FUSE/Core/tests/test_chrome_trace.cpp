@@ -27,6 +27,7 @@ bool isValidChromePhaseToken(const std::string& json, std::size_t phPos) {
         "\"ph\":\"s\"",
         "\"ph\":\"f\"",
         "\"ph\":\"C\"",
+        "\"ph\":\"X\"",
     };
     for (const char* token : kValid) {
         if (json.compare(phPos, std::strlen(token), token) == 0) {
@@ -97,11 +98,40 @@ void testDisabledProfilerStillExportsJsonObject() {
                "disabled export has no invalid ph tokens");
 }
 
+void testGpuCudaMarkersExportChromeCompleteEvents() {
+    fuse::profiler::reset();
+    fuse::profiler::setEnabled(true);
+
+    void* cmdBuffer = nullptr;
+    fuse::profiler::profile_gpu_begin("GpuMarker", cmdBuffer);
+    fuse::profiler::profile_gpu_end(cmdBuffer);
+
+    void* cudaStream = nullptr;
+    fuse::profiler::profile_cuda_begin("CudaMarker", cudaStream);
+    fuse::profiler::profile_cuda_end(cudaStream);
+
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(isJsonObject(json), "gpu/cuda export is a JSON object");
+    expectTrue(json.find("\"name\":\"GpuMarker\"") != std::string::npos,
+               "enabled export includes GpuMarker name");
+    expectTrue(json.find("\"name\":\"CudaMarker\"") != std::string::npos,
+               "enabled export includes CudaMarker name");
+    expectTrue(json.find("\"ph\":\"X\"") != std::string::npos,
+               "gpu/cuda markers export chrome complete events");
+    expectTrue(json.find("\"cat\":\"gpu\"") != std::string::npos,
+               "gpu marker uses gpu chrome category");
+    expectTrue(json.find("\"cat\":\"cuda\"") != std::string::npos,
+               "cuda marker uses cuda chrome category");
+    expectTrue(hasOnlyValidChromePhaseTokens(json, false),
+               "gpu/cuda export has valid chrome ph tokens");
+}
+
 } // namespace
 
 int main() {
     testEnabledP2GateChromeTrace();
     testDisabledProfilerStillExportsJsonObject();
+    testGpuCudaMarkersExportChromeCompleteEvents();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d chrome trace test(s) failed.\n", g_failures);

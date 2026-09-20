@@ -8,6 +8,8 @@
 
 namespace fuse::jobs {
 
+enum class JobPriority : u8 { Low = 0, Normal = 1, High = 2, Critical = 3 };
+
 /// Work-stealing scheduler with optional cooperative fibers on worker threads (WP-03).
 /// OS threads back the pool; JobCounter::wait() yields on workers when fibers are available.
 class JobScheduler {
@@ -24,6 +26,7 @@ public:
     bool setWorkerCount(u32 workerCount);
 
     void submit(JobFn job);
+    void submit(JobFn job, JobPriority priority);
 
     u32 workerCount() const { return m_workerCount; }
     bool isSingleThreaded() const { return m_workerCount == 0; }

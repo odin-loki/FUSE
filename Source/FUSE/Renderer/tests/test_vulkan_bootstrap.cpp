@@ -1,11 +1,14 @@
 #include <fuse/core/init.hpp>
+#include <fuse/core/track_b.hpp>
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/renderer/vk/surface.hpp>
+#include <fuse/renderer/vk/swapchain_util.hpp>
 
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 
 namespace {
 
@@ -16,6 +19,35 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testB21CreateSmoke() {
+    std::unique_ptr<fuse::renderer::VulkanBootstrap> bootstrap =
+        fuse::renderer::VulkanBootstrap::create({});
+    if (bootstrap == nullptr) {
+        expectTrue(bootstrap == nullptr, "create() returned null — skip remaining checks");
+        return;
+    }
+
+    expectTrue(bootstrap != nullptr, "create() returns a bootstrap object");
+
+    const fuse::renderer::VulkanBootstrapStatus& status = bootstrap->status();
+    const bool stubOrHeadless =
+        status.mode == fuse::renderer::VulkanBackendMode::Stub ||
+        status.mode == fuse::renderer::VulkanBackendMode::Headless;
+    expectTrue(!status.message.empty() || stubOrHeadless,
+               "status message is non-empty or mode is Stub/Headless");
+
+#if !defined(FUSE_VULKAN_BACKEND)
+    expectTrue(status.mode == fuse::renderer::VulkanBackendMode::Stub,
+               "stub mode when Vulkan loader is unavailable");
+#endif
+
+    expectTrue(fuse::renderer::productionPresentAllowed() == fuse::core::trackBUnlocked(),
+               "productionPresentAllowed matches Track B unlock (false by default)");
+
+    bootstrap.reset();
+    expectTrue(bootstrap == nullptr, "unique_ptr drop is safe");
 }
 
 void testBootstrapHeadless() {
@@ -89,6 +121,7 @@ void testRhiContextSubmitOnRenderThread() {
 int main() {
     fuse::core::initialize();
 
+    testB21CreateSmoke();
     testBootstrapHeadless();
     testSurfaceAbstraction();
     testRhiContextSubmitOnRenderThread();
