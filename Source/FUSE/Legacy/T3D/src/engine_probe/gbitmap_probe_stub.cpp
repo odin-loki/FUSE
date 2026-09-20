@@ -7,6 +7,7 @@
 #include "core/stream/stream.h"
 #include "core/util/path.h"
 #include "gfx/bitmap/gBitmap.h"
+#include "math/mRect.h"
 
 #include "platform/platformAssert.h"
 #include "platform/profiler.h"
@@ -336,6 +337,30 @@ String GBitmap::sGetExtensionList() {
         }
     }
     return list;
+}
+
+void GBitmap::copyRect(const GBitmap* src,
+                       const RectI& srcRect,
+                       const Point2I& dstPt,
+                       const U32 srcMipLevel,
+                       const U32 dstMipLevel) {
+    if (src->getFormat() != getFormat()) {
+        return;
+    }
+    if (srcRect.extent.x + srcRect.point.x > src->getWidth(srcMipLevel) ||
+        srcRect.extent.y + srcRect.point.y > src->getHeight(srcMipLevel)) {
+        return;
+    }
+    if (srcRect.extent.x + dstPt.x > getWidth(dstMipLevel) ||
+        srcRect.extent.y + dstPt.y > getHeight(dstMipLevel)) {
+        return;
+    }
+
+    for (U32 i = 0; i < srcRect.extent.y; i++) {
+        dMemcpy(getAddress(dstPt.x, dstPt.y + i, dstMipLevel),
+                src->getAddress(srcRect.point.x, srcRect.point.y + i, srcMipLevel),
+                mBytesPerPixel * srcRect.extent.x);
+    }
 }
 
 bool GBitmap::getColor(const U32 x, const U32 y, ColorI& rColor, const U32 mipLevel, const U32 face) const

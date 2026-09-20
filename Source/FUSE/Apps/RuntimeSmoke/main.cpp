@@ -377,6 +377,8 @@ int main() {
               "engine probe BitStream writeClassId/readClassId round-trip");
         check(fuse::legacy::t3d::engineProbe::bitStreamHuffmanStringSmoke(),
               "engine probe BitStream Huffman writeString/readString round-trip");
+        check(fuse::legacy::t3d::engineProbe::bitStreamStringBufferSmoke(),
+              "engine probe BitStream setStringBuffer shared-buffer dedup");
         check(fuse::legacy::t3d::engineProbe::stringBufferUtf8Smoke(),
               "engine probe StringBuffer UTF-8 set/append/getUTF8");
         check(fuse::legacy::t3d::engineProbe::stringStartsEndsSmoke(),
@@ -393,6 +395,8 @@ int main() {
               "engine probe GBitmap getColor/setColor RGBA8");
         check(fuse::legacy::t3d::engineProbe::gbitmapColorRgb8Smoke(),
               "engine probe GBitmap getColor/setColor RGB8");
+        check(fuse::legacy::t3d::engineProbe::gbitmapCopyRectSmoke(),
+              "engine probe GBitmap copyRect RGBA8");
         check(fuse::legacy::t3d::engineProbe::gbitmapExtrudeMipLevelsSmoke(),
               "engine probe GBitmap allocateBitmap extrudeMipLevels mip chain");
     }

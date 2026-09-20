@@ -44,7 +44,7 @@ void BitStream::clearStringBuffer()
 
 void BitStream::setStringBuffer(char buffer[256])
 {
-//   stringBuffer = buffer;
+   stringBuffer = buffer;
 }
 
 BitStream *BitStream::getPacketStream(U32 writeSize)

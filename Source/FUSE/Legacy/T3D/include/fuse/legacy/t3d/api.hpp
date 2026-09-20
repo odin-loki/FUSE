@@ -95,6 +95,7 @@ bool rgb2luvSmoke();
 bool bitStreamRoundTripSmoke();
 bool bitStreamClassIdSmoke();
 bool bitStreamHuffmanStringSmoke();
+bool bitStreamStringBufferSmoke();
 bool stringBufferUtf8Smoke();
 bool stringStartsEndsSmoke();
 bool uuidRoundTripSmoke();
@@ -103,6 +104,7 @@ bool gbitmapFillWhiteSmoke();
 bool gbitmapExtensionListSmoke();
 bool gbitmapColorRgba8Smoke();
 bool gbitmapColorRgb8Smoke();
+bool gbitmapCopyRectSmoke();
 bool gbitmapExtrudeMipLevelsSmoke();
 } // namespace engineProbe
 #endif

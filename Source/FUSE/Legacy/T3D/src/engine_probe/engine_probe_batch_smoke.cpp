@@ -311,6 +311,27 @@ bool bitStreamHuffmanStringSmoke() {
     return std::strcmp(out, kPayload) == 0;
 }
 
+bool bitStreamStringBufferSmoke() {
+    U8 buffer[512] = {};
+    char shared[256] = {};
+
+    static const char kPrefix[] = "fuse_u2_prefix_";
+    static const char kExtended[] = "fuse_u2_prefix_suffix";
+    std::strncpy(shared, kPrefix, sizeof(shared) - 1);
+    shared[sizeof(shared) - 1] = '\0';
+
+    BitStream writer(buffer, static_cast<S32>(sizeof(buffer)), static_cast<S32>(sizeof(buffer)));
+    writer.setStringBuffer(shared);
+    writer.writeString(kExtended, 255);
+    const U32 encodedBytes = writer.getPosition();
+
+    BitStream reader(buffer, static_cast<S32>(encodedBytes), static_cast<S32>(encodedBytes));
+    reader.setStringBuffer(shared);
+    char readOut[256] = {};
+    reader.readString(readOut);
+    return std::strcmp(readOut, kExtended) == 0;
+}
+
 bool stringStartsEndsSmoke() {
     const String path("textures/foo.bmp");
     if (!path.startsWith("textures/")) {

@@ -9,6 +9,7 @@
 #include "core/util/path.h"
 #include "gfx/bitmap/bitmapUtils.h"
 #include "gfx/bitmap/gBitmap.h"
+#include "math/mRect.h"
 #include "platform/types.h"
 
 #include <cstdio>
@@ -268,6 +269,22 @@ bool gbitmapColorRgb8Smoke() {
     }
 
     return read.red == 11 && read.green == 22 && read.blue == 33 && read.alpha == 255;
+}
+
+bool gbitmapCopyRectSmoke() {
+    GBitmap src;
+    src.allocateBitmap(4, 4, false, GFXFormatR8G8B8A8);
+    const ColorI marker(0xAA, 0x00, 0x00, 0xFF);
+    if (!src.setColor(1, 1, marker)) {
+        return false;
+    }
+
+    GBitmap dst;
+    dst.allocateBitmap(4, 4, false, GFXFormatR8G8B8A8);
+    dst.copyRect(&src, RectI(1, 1, 1, 1), Point2I(2, 2));
+
+    ColorI sampled;
+    return dst.getColor(2, 2, sampled) && sampled.red == 0xAA && sampled.green == 0x00 && sampled.blue == 0x00;
 }
 
 bool gbitmapExtrudeMipLevelsSmoke() {

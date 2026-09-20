@@ -165,4 +165,4 @@ set_source_files_properties(
         COMPILE_OPTIONS "-include${_fuse_t3d_legacy_engine_probe_include}/bitstream_prelude.h"
 )
 
-message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-12: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB/PNG + read/writeBitmap stub + crc/bitVector/idGenerator/tDictionary + timeClass/tSignal + color/dataChunker + filterStream/resizeStream/tagDictionary + findMatch/tokenizer + rgb2xyz/luv stubs + gBitmap fillWhite/sGetExtensionList/getColor/setColor RGB/RGBA8/extrudeMipLevels + bitStream Huffman/class-id + stringBuffer/unicode + uuid_probe_stub + console shadows + stubs)")
+message(STATUS "FUSE: fuse_t3d_legacy Engine probe enabled (batch 1-13: bitmapUtils/ies/md5/hash/swizzles/stream + bitmapSTB/PNG + read/writeBitmap stub + crc/bitVector/idGenerator/tDictionary + timeClass/tSignal + color/dataChunker + filterStream/resizeStream/tagDictionary + findMatch/tokenizer + rgb2xyz/luv stubs + gBitmap copyRect/fillWhite/sGetExtensionList/getColor/setColor RGB/RGBA8/extrudeMipLevels + bitStream setStringBuffer/Huffman/class-id + stringBuffer/unicode + uuid_probe_stub + console shadows + stubs)")
