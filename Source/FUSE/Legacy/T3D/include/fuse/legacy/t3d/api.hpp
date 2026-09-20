@@ -106,6 +106,9 @@ bool gbitmapColorRgba8Smoke();
 bool gbitmapColorRgb8Smoke();
 bool gbitmapCopyRectSmoke();
 bool gbitmapExtrudeMipLevelsSmoke();
+bool gbitmapSurfaceSizeMipSmoke();
+bool gbitmapSurfaceSizeCompressedSmoke();
+bool gbitmapChopTopMipsSmoke();
 } // namespace engineProbe
 #endif
 

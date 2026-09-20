@@ -399,6 +399,12 @@ int main() {
               "engine probe GBitmap copyRect RGBA8");
         check(fuse::legacy::t3d::engineProbe::gbitmapExtrudeMipLevelsSmoke(),
               "engine probe GBitmap allocateBitmap extrudeMipLevels mip chain");
+        check(fuse::legacy::t3d::engineProbe::gbitmapSurfaceSizeMipSmoke(),
+              "engine probe GBitmap getSurfaceSize mip chain RGBA8");
+        check(fuse::legacy::t3d::engineProbe::gbitmapSurfaceSizeCompressedSmoke(),
+              "engine probe GBitmap getSurfaceSize BC1/BC3 block layout");
+        check(fuse::legacy::t3d::engineProbe::gbitmapChopTopMipsSmoke(),
+              "engine probe GBitmap chopTopMips mip discard");
     }
 #endif
 

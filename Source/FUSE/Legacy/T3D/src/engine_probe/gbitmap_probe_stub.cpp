@@ -68,6 +68,10 @@ U32 GBitmap::getFormatBytesPerPixel(GFXFormat fmt) {
         return 8;
     case GFXFormatR32G32B32A32F:
         return 16;
+    case GFXFormatBC1:
+    case GFXFormatBC2:
+    case GFXFormatBC3:
+        return 0;
     default:
         AssertWarn(false, "getFormatBytesPerPixel() - Unknown or compressed format");
         return 4;
@@ -201,6 +205,20 @@ void GBitmap::Face::allocate(const U32 in_width,
                              const U32 in_bytesPerPixel) {
     AssertFatal(in_width != 0 && in_height != 0, "GBitmap::Face::allocate: width or height is 0");
 
+    if (in_bytesPerPixel == 0) {
+        // Probe stub: placeholder surface for compressed formats (getSurfaceSize only).
+        delete[] mBits;
+        mWidth = in_width;
+        mHeight = in_height;
+        mBytesPerPixel = 0;
+        mNumMipLevels = 1;
+        mMipLevelOffsets[0] = 0;
+        mByteSize = 1;
+        mBits = new U8[1];
+        dMemset(mBits, 0, mByteSize);
+        return;
+    }
+
     delete[] mBits;
 
     mWidth = in_width;
@@ -311,11 +329,75 @@ bool GBitmap::writeBitmapStream(const String& bmType, Stream& ioStream, U32 comp
 }
 
 U32 GBitmap::getSurfaceSize(const U32 mipLevel) const {
+    const U32 height = getHeight(mipLevel);
+    const U32 width = getWidth(mipLevel);
+
     if (mInternalFormat >= GFXFormatBC1 && mInternalFormat <= GFXFormatBC3) {
-        AssertWarn(false, "GBitmap::getSurfaceSize: compressed formats not supported in probe stub");
-        return 0;
+        U32 sizeMultiple = 0;
+        switch (mInternalFormat) {
+        case GFXFormatBC1:
+            sizeMultiple = 8;
+            break;
+        case GFXFormatBC2:
+        case GFXFormatBC3:
+            sizeMultiple = 16;
+            break;
+        default:
+            AssertWarn(false, "GBitmap::getSurfaceSize: invalid compressed texture format");
+            return 0;
+        }
+        return getMax(U32(1), width / 4) * getMax(U32(1), height / 4) * sizeMultiple;
     }
-    return getWidth(mipLevel) * getHeight(mipLevel) * mBytesPerPixel;
+
+    return height * width * mBytesPerPixel;
+}
+
+void GBitmap::Face::chopTopMips(const U32 scalePower) {
+    if (scalePower == 0) {
+        return;
+    }
+
+    AssertFatal(mBytesPerPixel > 0, "GBitmap::Face::chopTopMips: compressed faces not supported in probe stub");
+    AssertFatal(scalePower < mNumMipLevels, "GBitmap::Face::chopTopMips: scalePower out of range");
+
+    const U32 newWidth = getMax(U32(1), mWidth >> scalePower);
+    const U32 newHeight = getMax(U32(1), mHeight >> scalePower);
+    const U32 newMipCount = mNumMipLevels - scalePower;
+
+    U32 newByteSize = 0;
+    for (U32 i = scalePower; i < mNumMipLevels; i++) {
+        newByteSize += getWidth(i) * getHeight(i) * mBytesPerPixel;
+    }
+
+    U8* newBits = new U8[newByteSize];
+    U32 newOffsets[c_maxMipLevels];
+    dMemset(newOffsets, 0, sizeof(newOffsets));
+
+    U8* dest = newBits;
+    for (U32 i = scalePower; i < mNumMipLevels; i++) {
+        const U32 surfaceSize = getWidth(i) * getHeight(i) * mBytesPerPixel;
+        dMemcpy(dest, getWritableBits(i), surfaceSize);
+        newOffsets[i - scalePower] = static_cast<U32>(dest - newBits);
+        dest += surfaceSize;
+    }
+
+    delete[] mBits;
+    mBits = newBits;
+    mByteSize = newByteSize;
+    mWidth = newWidth;
+    mHeight = newHeight;
+    mNumMipLevels = newMipCount;
+    dMemset(mMipLevelOffsets, 0, sizeof(mMipLevelOffsets));
+    for (U32 mip = 0; mip < newMipCount; mip++) {
+        mMipLevelOffsets[mip] = newOffsets[mip];
+    }
+}
+
+void GBitmap::chopTopMips(U32 mipsToChop) {
+    const U32 scalePower = getMin(mipsToChop, getNumMipLevels() - 1);
+    for (U32 i = 0; i < getNumFaces(); i++) {
+        mFaces[i].chopTopMips(scalePower);
+    }
 }
 
 void GBitmap::fillWhite() {

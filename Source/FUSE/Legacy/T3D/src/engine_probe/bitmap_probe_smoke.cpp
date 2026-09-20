@@ -303,4 +303,54 @@ bool gbitmapExtrudeMipLevelsSmoke() {
     return bitmap.getWidth(2) == 1u && bitmap.getHeight(2) == 1u && bitmap.getByteSize() > 16u;
 }
 
+bool gbitmapSurfaceSizeMipSmoke() {
+    GBitmap bitmap;
+    bitmap.allocateBitmap(4, 4, true, GFXFormatR8G8B8A8);
+
+    if (bitmap.getSurfaceSize(0) != 4u * 4u * 4u) {
+        return false;
+    }
+    if (bitmap.getSurfaceSize(1) != 2u * 2u * 4u) {
+        return false;
+    }
+    return bitmap.getSurfaceSize(2) == 1u * 1u * 4u;
+}
+
+bool gbitmapSurfaceSizeCompressedSmoke() {
+    GBitmap bc1;
+    bc1.allocateBitmap(8, 8, false, GFXFormatBC1);
+    if (bc1.getSurfaceSize(0) != 2u * 2u * 8u) {
+        return false;
+    }
+
+    GBitmap bc3;
+    bc3.allocateBitmap(4, 4, false, GFXFormatBC3);
+    return bc3.getSurfaceSize(0) == 1u * 1u * 16u;
+}
+
+bool gbitmapChopTopMipsSmoke() {
+    GBitmap bitmap;
+    bitmap.allocateBitmap(4, 4, true, GFXFormatR8G8B8A8);
+
+    const ColorI marker(0x12, 0x34, 0x56, 0xFF);
+    if (!bitmap.setColor(0, 0, marker, 1)) {
+        return false;
+    }
+
+    bitmap.chopTopMips(1);
+
+    if (bitmap.getWidth() != 2u || bitmap.getHeight() != 2u) {
+        return false;
+    }
+    if (bitmap.getNumMipLevels() != 2u) {
+        return false;
+    }
+    if (bitmap.getSurfaceSize(0) != 2u * 2u * 4u) {
+        return false;
+    }
+
+    ColorI read;
+    return bitmap.getColor(0, 0, read) && read.red == 0x12 && read.green == 0x34 && read.blue == 0x56;
+}
+
 } // namespace fuse::legacy::t3d::engineProbe
