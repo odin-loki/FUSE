@@ -231,11 +231,11 @@ Headless proof: `fuse_hybrid_module_gates_tests` (shared `hybrid_module_gates.cp
 
 | Module | Status | Next ore / work |
 |--------|--------|-----------------|
-| `fuse_ai` | 🚧 | Full UAISK method-body codegen; real FSEvents CoreServices backend |
-| `fuse_cinematics` | 🚧 | Torque `ShapeBase` runtime mount rotation; live Qt viewport seq preview |
-| `fuse_fx` | 🚧 | Full `afxParticlePool` CUDA residency (B7.7); TorqueScript mission VM execution |
-| `fuse_mechanics` | 🚧 | Real Bullet `btDbvtBroadphase` link; remaining GMK `SimComponent` leaves |
-| `fuse_adventure` | 🚧 | Weapon runtime fire in hybrid demo; full 3DAAK conversation script VM |
+| `fuse_ai` | 🚧 | Full UAISK method-body codegen for all leaf types; real FSEvents CoreServices backend link |
+| `fuse_cinematics` | 🚧 | Full Torque `ShapeBase` runtime mount chain; live Qt viewport seq preview overlay |
+| `fuse_fx` | 🚧 | Full `afxParticlePool` CUDA kernel residency (B7.7); TorqueScript mission VM full execution |
+| `fuse_mechanics` | 🚧 | Real Bullet `btDbvtBroadphase` link (`FUSE_BUILD_BULLET`); remaining GMK `SimComponent` leaves |
+| `fuse_adventure` | 🚧 | Weapon runtime combat loop; full 3DAAK conversation script VM |
 
 Hybrid proof extended: `fuse_hybrid_module_gates_tests` covers UAISK `.cs` parser import, cue preview + ShapeBase motion sync, CUDA skip-reason path, physics broadphase pipeline, JSON scene placement, and conversation script VM branch dispatch.
 
@@ -333,6 +333,17 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_mechanics` | `PathComponent::setLoop()`; `TimerComponent::setOnFire()`; GMK `AnimateComponent` leaf; `queryRaycastStubFiltered()` Bullet-aware |
 | `fuse_adventure` | `WeaponGrantPipeline::grantOnPickupWithMount()`; `dispatchBestBranch()` priority VM; hybrid demo weapon grant + armed branch |
 | **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE17` assertions for selective writeback, path loop, weapon grant, armed conversation |
+
+#### Landed wave 18 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | Method-body syntax-tree codegen (`moveToward`/`wait`/`setFlag`); FSEvents CoreServices API stub (`uaisk_fsevents_coreservices_stub.hpp`) |
+| `fuse_cinematics` | ShapeBase mount pitch/roll rotation deepen in `sync_motion_from_timeline()`; Qt viewport seq preview stub + pane pitch/roll labels |
+| `fuse_fx` | CUDA particle residency sync (`syncResidencyFromPacked()`); TorqueScript mission function-body execution (`execute_afx_mission_from_mis()`) |
+| `fuse_mechanics` | GMK `WaypointComponent` + `LookAtComponent` leaves; `BroadphaseWorldStub::queryDbvtOverlaps()` btDbvt deepen |
+| `fuse_adventure` | Weapon `fire()` in hybrid demo after grant; `peekBestBranchLine()` + `dispatchBestBranchAllLines()` VM deepen |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE18` assertions for mount rotation, residency, waypoint/look-at, dbvt, weapon fire, conversation peek |
 
 ---
 

@@ -89,6 +89,56 @@ bool parseCsSyntaxTree(std::string_view csModule, std::string_view csText, Uaisk
                     node.name = std::string(methodLine.substr(0, paren));
                     node.parentClass = currentClass;
                     node.line = lineNumber;
+
+                    const std::size_t braceOpen = line.find('{');
+                    if (braceOpen != std::string_view::npos) {
+                        std::string body;
+                        std::size_t depth = 0;
+                        auto appendUntilClose = [&](std::string_view text) {
+                            for (char ch : text) {
+                                if (ch == '{') {
+                                    if (depth > 0) {
+                                        body.push_back(ch);
+                                    }
+                                    ++depth;
+                                } else if (ch == '}') {
+                                    --depth;
+                                    if (depth == 0) {
+                                        return;
+                                    }
+                                    body.push_back(ch);
+                                } else if (depth > 0) {
+                                    body.push_back(ch);
+                                }
+                            }
+                        };
+                        appendUntilClose(line.substr(braceOpen));
+                        std::size_t bodyLineEnd = lineEnd;
+                        while (depth > 0) {
+                            if (bodyLineEnd == std::string_view::npos) {
+                                break;
+                            }
+                            cursor.remove_prefix(bodyLineEnd + 1);
+                            ++lineNumber;
+                            bodyLineEnd = cursor.find('\n');
+                            const std::string_view nextLine =
+                                trimView(cursor.substr(0, bodyLineEnd == std::string_view::npos ? cursor.size()
+                                                                                                  : bodyLineEnd));
+                            const std::size_t bodyStart = body.size();
+                            appendUntilClose(nextLine);
+                            if (depth > 0 && body.size() > bodyStart) {
+                                body.push_back('\n');
+                            }
+                        }
+                        node.bodyText = std::string(trimView(body));
+                        outTree.nodes.push_back(std::move(node));
+                        if (bodyLineEnd == std::string_view::npos) {
+                            break;
+                        }
+                        cursor.remove_prefix(bodyLineEnd + 1);
+                        continue;
+                    }
+
                     outTree.nodes.push_back(std::move(node));
                 }
             }

@@ -1417,6 +1417,33 @@ void testVActorBoneAttachMotionSync() {
     expectTrue(bridge.bone_name_for("agent_3d") == "spine_mount", "bone name stored on actor");
 }
 
+void testShapeBaseMountRotationDeepen() {
+    fuse::SceneObject3D agent("agent_3d");
+    fuse::cinematics::VActorBridge bridge;
+    bridge.bind("agent_3d", &agent);
+    bridge.apply_shapebase_attach("agent_3d", "cockpit", 15.f);
+
+    fuse::cinematics::Timeline timeline;
+    fuse::cinematics::TrackGroup& group = timeline.add_group("MountRotation");
+    fuse::cinematics::MotionTrack& motion = group.add_motion_track("mount_motion");
+    fuse::cinematics::MotionWaypoint wp0{};
+    wp0.time_ms = 0;
+    wp0.position = {0.f, 0.f, 0.f};
+    fuse::cinematics::MotionWaypoint wp1{};
+    wp1.time_ms = 1'000;
+    wp1.position = {20.f, 10.f, 5.f};
+    motion.path().add_waypoint(wp0);
+    motion.path().add_waypoint(wp1);
+    motion.path().sort_waypoints();
+    timeline.playhead().set_duration_ms(1'000);
+    timeline.playhead().scrub_to(500);
+
+    bridge.sync_motion_from_timeline(timeline);
+    expectTrue(bridge.mountRotationSyncCount() == 1u, "mount rotation sync counted");
+    expectTrue(agent.pitchDeg() != 0.f || agent.rollDeg() != 0.f || agent.yawDeg() != 0.f,
+               "mount rotation applied to scene object");
+}
+
 void testMotionTrackPathSampling() {
     fuse::cinematics::MotionTrack track("ActorPath");
     track.set_target_object_id("hero");
@@ -1654,6 +1681,7 @@ int main() {
     testVActorShapeBaseAttach();
     testVActorShapeBaseBoneAttach();
     testVActorBoneAttachMotionSync();
+    testShapeBaseMountRotationDeepen();
     testTimelineAssetBoneToken();
     testVActorBridgeDrainCues();
     testOutpostIntro30sStub();

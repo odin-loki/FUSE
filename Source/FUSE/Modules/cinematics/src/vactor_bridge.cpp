@@ -252,11 +252,20 @@ void VActorBridge::sync_motion_from_timeline(const Timeline& timeline) {
         state.motionZ = sample.position.z * 0.01f;
         if (state.runtimeAttached) {
             const float motionYaw = sample.position.x * 0.1f;
+            const float motionPitch = sample.position.y * 0.05f;
+            const float motionRoll = sample.position.z * 0.03f;
             state.offset.yaw_deg = combine_mount_yaw_deg(state.offset.yaw_deg, motionYaw);
-            const MountQuaternion motionQuat = yaw_deg_to_quaternion(motionYaw);
+            state.offset.pitch_deg += motionPitch;
+            state.offset.roll_deg += motionRoll;
+            const MountEulerDeg motionEuler{motionYaw, motionPitch, motionRoll};
+            const MountQuaternion motionQuat = euler_deg_to_quaternion(motionEuler);
             state.offset.orientation =
                 combine_mount_orientation(state.offset.orientation, motionQuat);
-            state.offset.yaw_deg = quaternion_to_yaw_deg(state.offset.orientation);
+            const MountEulerDeg finalEuler = quaternion_to_euler_deg(state.offset.orientation);
+            state.offset.yaw_deg = finalEuler.yaw_deg;
+            state.offset.pitch_deg = finalEuler.pitch_deg;
+            state.offset.roll_deg = finalEuler.roll_deg;
+            ++m_mountRotationSyncCount;
         }
     }
 

@@ -3,6 +3,8 @@
 #include <fuse/mechanics/light_component.hpp>
 #include <fuse/mechanics/move_component.hpp>
 #include <fuse/mechanics/animate_component.hpp>
+#include <fuse/mechanics/waypoint_component.hpp>
+#include <fuse/mechanics/look_at_component.hpp>
 #include <fuse/mechanics/path_component.hpp>
 #include <fuse/mechanics/timer_component.hpp>
 #include <fuse/mechanics/broadphase_world_stub.hpp>
@@ -125,6 +127,18 @@ int main() {
     expectTrue(world.queryRaycastStubFiltered(0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 5.f,
                                               fuse::mechanics::BroadphaseProxyFilter::Character) >= 1u,
                "filtered raycast finds character body");
+
+    fuse::mechanics::WaypointComponent waypoint("patrol_wp", 2.f, 0.f, 0.f);
+    waypoint.markVisited();
+    expectTrue(waypoint.visitCount() == 1u, "waypoint component visit counted");
+
+    fuse::mechanics::LookAtComponent lookAt("guard_look", 90.f);
+    lookAt.setTarget(4.f, 0.f);
+    lookAt.advanceTowardTarget(0.f, 0.f, 1.f);
+    expectTrue(lookAt.tickCount() == 1u, "look-at component tick counted");
+
+    expectTrue(world.queryDbvtOverlaps(-1.f, -1.f, -1.f, 2.f, 2.f, 2.f) >= 1u,
+               "dbvt overlap query finds body");
 
     fuse::core::shutdown();
 

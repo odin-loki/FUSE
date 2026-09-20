@@ -38,6 +38,7 @@ if(FUSE_BUILD_CORE_TESTS)
     target_compile_definitions(fuse_hybrid_module_gates_tests PRIVATE
         FUSE_HYBRID_GATES_WAVE16=1
         FUSE_HYBRID_GATES_WAVE17=1
+        FUSE_HYBRID_GATES_WAVE18=1
     )
     add_test(NAME fuse_hybrid_module_gates_tests COMMAND fuse_hybrid_module_gates_tests)
 endif()

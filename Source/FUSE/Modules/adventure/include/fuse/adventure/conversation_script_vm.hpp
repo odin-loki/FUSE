@@ -57,6 +57,14 @@ public:
                             InteractContext& ctx,
                             ConversationInteractable& target);
 
+    /// Peek the first line of the highest-priority eligible branch without dispatching.
+    [[nodiscard]] std::string peekBestBranchLine(const std::string& npcId, const InteractContext& ctx) const;
+
+    /// Dispatch best branch and run all scripted lines (conversation VM execution deepen).
+    u32 dispatchBestBranchAllLines(const std::string& npcId,
+                                   InteractContext& ctx,
+                                   ConversationInteractable& target);
+
     u32 dispatchCount() const { return m_dispatchCount; }
     u32 lineDispatchCount() const { return m_lineDispatchCount; }
     u32 grantCount() const { return m_grantCount; }

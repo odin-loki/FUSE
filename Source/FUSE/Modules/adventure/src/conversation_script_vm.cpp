@@ -156,6 +156,25 @@ bool ConversationScriptVm::dispatchBestBranch(const std::string& npcId,
     return dispatchBranch(npcId, branchId, ctx, target);
 }
 
+std::string ConversationScriptVm::peekBestBranchLine(const std::string& npcId,
+                                                     const InteractContext& ctx) const {
+    std::string branchId;
+    if (!chooseHighestPriorityBranch(npcId, ctx, branchId)) {
+        return {};
+    }
+    return peekBranchLine(npcId, branchId, 0);
+}
+
+u32 ConversationScriptVm::dispatchBestBranchAllLines(const std::string& npcId,
+                                                     InteractContext& ctx,
+                                                     ConversationInteractable& target) {
+    std::string branchId;
+    if (!chooseHighestPriorityBranch(npcId, ctx, branchId)) {
+        return 0;
+    }
+    return dispatchAllLines(npcId, branchId, ctx, target);
+}
+
 void registerOutpostConversationScriptHooks(ConversationScriptVm& vm) {
     ConversationScriptHook polite{};
     polite.npcId = "outpost_guard";

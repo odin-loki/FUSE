@@ -475,4 +475,72 @@ bool dispatch_afx_mission_from_mis(const std::string& misText, FxComposer& compo
     return dispatched;
 }
 
+u32 parse_afx_mission_functions_from_mis(const std::string& misText,
+                                         std::vector<AfxMissionFunctionBody>& outFunctions) {
+    outFunctions.clear();
+    std::stringstream stream(misText);
+    std::string line;
+    AfxMissionFunctionBody current{};
+
+    while (std::getline(stream, line)) {
+        line = trim(line);
+        if (line.rfind("function ", 0) == 0) {
+            if (!current.functionName.empty()) {
+                outFunctions.push_back(current);
+            }
+            current = AfxMissionFunctionBody{};
+            std::string remainder = trim(line.substr(9));
+            const std::size_t paren = remainder.find('(');
+            if (paren != std::string::npos) {
+                current.functionName = trim(remainder.substr(0, paren));
+            }
+            const std::size_t braceOpen = line.find('{');
+            if (braceOpen != std::string::npos) {
+                current.bodyText = trim(line.substr(braceOpen + 1));
+            }
+            continue;
+        }
+
+        if (!current.functionName.empty()) {
+            if (line == "};" || line == "}") {
+                outFunctions.push_back(current);
+                current = AfxMissionFunctionBody{};
+                continue;
+            }
+            if (!line.empty()) {
+                if (!current.bodyText.empty()) {
+                    current.bodyText.push_back('\n');
+                }
+                current.bodyText += line;
+            }
+        }
+    }
+
+    if (!current.functionName.empty()) {
+        outFunctions.push_back(current);
+    }
+
+    return static_cast<u32>(outFunctions.size());
+}
+
+bool execute_afx_mission_from_mis(const std::string& misText, FxComposer& composer, AfxMissionScriptVm& vm,
+                                  std::string* errorOut) {
+    if (!register_afx_mission_from_mis(misText, composer, vm, errorOut)) {
+        return false;
+    }
+
+    std::vector<AfxMissionFunctionBody> functions;
+    parse_afx_mission_functions_from_mis(misText, functions);
+    bool executed = false;
+    for (const AfxMissionFunctionBody& function : functions) {
+        executed = vm.executeFunctionBody(function.functionName, function.bodyText, composer) || executed;
+    }
+
+    if (!executed) {
+        executed = dispatch_afx_mission_from_mis(misText, composer, vm, errorOut);
+    }
+
+    return executed;
+}
+
 } // namespace fuse::fx

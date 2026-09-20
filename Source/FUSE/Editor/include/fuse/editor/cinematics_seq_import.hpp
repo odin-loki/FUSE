@@ -49,6 +49,10 @@ public:
 
     /// Wire Qt seq preview pane — import asset + post initial scrub through EditorHost.
     bool wirePreviewPaneToHost(fuse::cinematics::TimelineMs initialTimeMs = 0);
+
+    /// Qt viewport seq preview stub — post scrub time for runtime viewport overlay sampling.
+    bool postViewportSeqPreviewAtMs(fuse::cinematics::TimelineMs timeMs);
+    [[nodiscard]] u32 viewportSeqPreviewPostCount() const { return m_viewportSeqPreviewPostCount; }
     [[nodiscard]] const SeqPreviewPaneSample& lastWiredPreviewSample() const { return m_lastWiredPreviewSample; }
     [[nodiscard]] u32 previewPaneWireCount() const { return m_previewPaneWireCount; }
     [[nodiscard]] u32 previewPaneScrubCount() const { return m_previewPaneScrubCount; }
@@ -61,6 +65,7 @@ private:
     u32 m_scrubPreviewPostCount = 0;
     u32 m_previewPaneWireCount = 0;
     u32 m_previewPaneScrubCount = 0;
+    u32 m_viewportSeqPreviewPostCount = 0;
     SeqPreviewPaneSample m_lastWiredPreviewSample{};
 };
 

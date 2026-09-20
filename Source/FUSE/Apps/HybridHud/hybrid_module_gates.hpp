@@ -27,7 +27,9 @@
 #include <fuse/mechanics/interactable.hpp>
 #include <fuse/mechanics/message_component.hpp>
 #include <fuse/mechanics/animate_component.hpp>
+#include <fuse/mechanics/look_at_component.hpp>
 #include <fuse/mechanics/path_component.hpp>
+#include <fuse/mechanics/waypoint_component.hpp>
 #include <fuse/mechanics/physics_broadphase_bridge.hpp>
 #include <fuse/mechanics/timer_component.hpp>
 #include <fuse/mechanics/physics_trigger_bridge.hpp>
@@ -60,6 +62,10 @@
 
 #ifndef FUSE_HYBRID_GATES_WAVE17
 #define FUSE_HYBRID_GATES_WAVE17 1
+#endif
+
+#ifndef FUSE_HYBRID_GATES_WAVE18
+#define FUSE_HYBRID_GATES_WAVE18 1
 #endif
 
 namespace fuse::hybrid::gates {
@@ -103,6 +109,8 @@ struct State {
     fuse::mechanics::PathComponent patrolPath{"outpost_patrol"};
     fuse::mechanics::TimerComponent patrolTimer{"outpost_patrol_timer", 0.25f};
     fuse::mechanics::AnimateComponent leverAnimate{"lever_animate", 0.5f};
+    fuse::mechanics::WaypointComponent patrolWaypoint{"outpost_patrol_wp", 4.f, 0.f, 0.f};
+    fuse::mechanics::LookAtComponent guardLookAt{"guard_look_at", 120.f};
     fuse::mechanics::BroadphaseWorldStub broadphaseWorld;
 
     fuse::adventure::Inventory playerInventory;
@@ -131,6 +139,8 @@ struct State {
     bool weaponGranted = false;
     u32 cuePreviewCount = 0;
     u32 broadphaseRaycastHits = 0;
+    u32 broadphaseDbvtHits = 0;
+    bool weaponFired = false;
     float initialClearR = 0.f;
     float initialClearG = 0.f;
     float initialClearB = 0.f;

@@ -20,6 +20,7 @@ struct UaiskCsSyntaxNode {
     UaiskCsSyntaxNodeKind kind = UaiskCsSyntaxNodeKind::Class;
     std::string name;
     std::string value;
+    std::string bodyText;
     std::string parentClass;
     u32 line = 0;
 };

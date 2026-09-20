@@ -5,6 +5,7 @@
 #include <fuse/ai/uaisk_cs_parser.hpp>
 #include <fuse/ai/uaisk_cs_codegen.hpp>
 #include <fuse/ai/uaisk_cs_syntax_tree.hpp>
+#include <fuse/ai/uaisk_fsevents_coreservices_stub.hpp>
 #include <fuse/ai/uaisk_tree_reload.hpp>
 #if __has_include(<fuse/ai/uaisk_script_host_bridge.hpp>)
 #include <fuse/ai/uaisk_script_host_bridge.hpp>
@@ -2080,6 +2081,30 @@ void testUaiskCodegenSyntaxTreePath() {
     expectTrue(tree.nodeCount() >= 7u, "syntax-tree codegen emits selector nodes");
 }
 
+void testUaiskCodegenMethodBody() {
+    static const char* kCsText =
+        "class PatrolActions : BehaviorBase {\n"
+        "  void onPatrolMove() {\n"
+        "    moveToward(target, moveSpeed = 0.3f);\n"
+        "  }\n"
+        "}\n";
+
+    fuse::ai::BehaviorTree tree;
+    std::string error;
+    expectTrue(fuse::ai::uaisk::codegenTreeFromSyntaxTree("aiActions.cs", kCsText, tree, &error),
+               "method-body codegen builds move-toward tree");
+    expectTrue(tree.nodeCount() >= 1u, "method-body codegen emits nodes");
+}
+
+void testUaiskFSEventsCoreServicesStub() {
+    const auto config = fuse::ai::uaisk::fsevents_stub::makeDefaultCoreServicesWatchConfig();
+    expectTrue(config.latencyMs >= 16u, "CoreServices watch config latency seeded");
+    expectTrue(config.createFlags == fuse::ai::uaisk::fsevents_stub::kFSEventStreamCreateFlagFileEvents,
+               "CoreServices create flags stub");
+    expectTrue(fuse::ai::uaisk::fsevents_stub::createFileEventStreamStub("patrol.bt", config) == nullptr,
+               "CoreServices stream stub returns null without framework link");
+}
+
 void testUaiskCodegenFieldDefaults() {
     static const char* kCsText =
         "class PatrolSquad : BehaviorBase {\n"
@@ -2300,6 +2325,8 @@ int main() {
     testUaiskFSEventsBackendStub();
     testUaiskInotifyHotReloadRegistry();
     testUaiskCodegenSyntaxTreePath();
+    testUaiskCodegenMethodBody();
+    testUaiskFSEventsCoreServicesStub();
     testUaiskCodegenFieldDefaults();
     testReloadCodegenProfile();
     testRuntimeTreeReloadPreservesBlackboard();

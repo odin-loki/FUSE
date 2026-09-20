@@ -14,6 +14,7 @@ namespace fuse::ai::uaisk {
 /// Method reference distilled from UAISK `.cs` (behavior-tree hook ore).
 struct UaiskCsMethodRef {
     std::string name;
+    std::string bodyText;
     std::vector<std::string> behaviorTreeRefs;
 };
 

@@ -21,15 +21,19 @@ void SeqPreviewPaneWidget::scrubToMs(fuse::cinematics::TimelineMs timeMs) {
     const SeqPreviewPaneSample sample = m_seqImport.previewPaneSampleAtMs(timeMs);
     if (sample.valid && m_previewLabel != nullptr) {
         m_lastPreviewLabel =
-            QString("t=%1ms sprite=(%2,%3) mount=%4 bone=%5 yaw=%6")
+            QString("t=%1ms sprite=(%2,%3) mount=%4 bone=%5 yaw=%6 pitch=%7 roll=%8")
                 .arg(sample.time_ms)
                 .arg(sample.sprite_x, 0, 'f', 1)
                 .arg(sample.sprite_y, 0, 'f', 1)
                 .arg(QString::fromStdString(sample.mount_point))
                 .arg(QString::fromStdString(sample.bone_name))
-                .arg(sample.mount_yaw_deg, 0, 'f', 1);
+                .arg(sample.mount_yaw_deg, 0, 'f', 1)
+                .arg(sample.mount_pitch_deg, 0, 'f', 1)
+                .arg(sample.mount_roll_deg, 0, 'f', 1);
         m_previewLabel->setText(m_lastPreviewLabel);
     }
+
+    m_seqImport.postViewportSeqPreviewAtMs(timeMs);
 }
 
 void SeqPreviewPaneWidget::showEvent(QShowEvent* event) {

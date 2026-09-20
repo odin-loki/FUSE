@@ -27,6 +27,11 @@ struct AfxMissionBodySpell {
     std::string spellId;
 };
 
+struct AfxMissionFunctionBody {
+    std::string functionName;
+    std::string bodyText;
+};
+
 /// Parse TorqueScript `.mis` body blocks (missionInfo, SimObject declarations, nested SimObjects).
 [[nodiscard]] bool parse_afx_mission_body_from_mis(const std::string& misText, AfxMissionBody& outBody,
                                                    std::string* errorOut = nullptr);
@@ -58,5 +63,13 @@ class FxComposer;
 /// Deepen TorqueScript bridge — dispatch all hooks found in `.mis` text through the VM.
 [[nodiscard]] bool dispatch_afx_mission_from_mis(const std::string& misText, FxComposer& composer,
                                                AfxMissionScriptVm& vm, std::string* errorOut = nullptr);
+
+/// Parse TorqueScript function bodies from `.mis` text (mission VM execution ore).
+[[nodiscard]] u32 parse_afx_mission_functions_from_mis(const std::string& misText,
+                                                       std::vector<AfxMissionFunctionBody>& outFunctions);
+
+/// Execute parsed mission function bodies through the VM (TorqueScript execution stub).
+[[nodiscard]] bool execute_afx_mission_from_mis(const std::string& misText, FxComposer& composer,
+                                                AfxMissionScriptVm& vm, std::string* errorOut = nullptr);
 
 } // namespace fuse::fx

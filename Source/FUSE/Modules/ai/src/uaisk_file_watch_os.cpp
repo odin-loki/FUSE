@@ -1,4 +1,5 @@
 #include <fuse/ai/uaisk_file_watch_os.hpp>
+#include <fuse/ai/uaisk_fsevents_coreservices_stub.hpp>
 
 #include <algorithm>
 #include <fstream>
@@ -127,13 +128,17 @@ bool createOsFileWatch(std::string_view path, OsFileWatchHandle& outHandle) {
         outHandle.inotifyFd = -1;
     }
 #elif defined(__APPLE__)
-    // FSEvents stub — stat poll with backend marker + coalesce/latency tracking.
+    // FSEvents stub — CoreServices API not linked; stat poll with coalesce/latency tracking.
+    const fsevents_stub::CoreServicesWatchConfig csConfig = fsevents_stub::makeDefaultCoreServicesWatchConfig();
+    (void)fsevents_stub::createFileEventStreamStub(outHandle.path.c_str(), csConfig);
     outHandle.backend = OsFileWatchBackend::FSEvents;
     u64 fileSize = 0;
     outHandle.lastModifiedNs = statModifiedNs(outHandle.path, fileSize);
     outHandle.lastSize = fileSize;
     outHandle.lastPollNs = outHandle.lastModifiedNs;
-    outHandle.fsevents.latencyMs = 16;
+    outHandle.fsevents.latencyMs = csConfig.latencyMs;
+    outHandle.fsevents.coreServicesCreateFlags = csConfig.createFlags;
+    outHandle.fseventsCoalesceThreshold = csConfig.coalesceThreshold;
     outHandle.active = true;
     return true;
 #endif

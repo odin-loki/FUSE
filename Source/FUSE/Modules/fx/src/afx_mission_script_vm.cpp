@@ -68,6 +68,31 @@ bool AfxMissionScriptVm::dispatch(const std::string& scriptHook,
     return false;
 }
 
+bool AfxMissionScriptVm::executeFunctionBody(const std::string& functionName, const std::string& bodyText,
+                                             FxComposer& composer, const frame::FrameCtx& ctx) {
+    if (bodyText.empty()) {
+        return false;
+    }
+
+    ++m_executeCount;
+    m_lastHookDispatched = functionName;
+
+    if (bodyText.find("beginCast") != std::string::npos || bodyText.find("spell_cast") != std::string::npos) {
+        return dispatch("on_spell_cast", composer, ctx);
+    }
+    if (bodyText.find("attachEffect") != std::string::npos || bodyText.find("ambient") != std::string::npos) {
+        return dispatch("on_ambient_fx", composer, ctx);
+    }
+    if (bodyText.find("impact") != std::string::npos) {
+        return dispatch("on_impact_fx", composer, ctx);
+    }
+    if (bodyText.find("onTick") != std::string::npos || bodyText.find("tick") != std::string::npos) {
+        return dispatch("on_tick", composer, ctx);
+    }
+
+    return false;
+}
+
 bool AfxMissionScriptVm::dispatchTick(FxComposer& composer, const frame::FrameCtx& ctx) {
     bool dispatched = false;
     if (m_hooks.count("on_tick") != 0) {

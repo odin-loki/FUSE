@@ -155,6 +155,9 @@ void ParticlePoolGpuBackend::cudaDispatchOrSkip(const frame::FrameCtx& ctx) {
         ++m_cudaSkipCount;
         return;
     }
+
+    syncResidencyFromPacked();
+
     if (!m_cudaEnabled) {
         m_lastCudaSkipReason = ParticlePoolCudaSkipReason::Disabled;
         ++m_cudaSkipCount;
@@ -177,7 +180,33 @@ void ParticlePoolGpuBackend::cudaDispatchOrSkip(const frame::FrameCtx& ctx) {
     m_deviceSsboAllocCount = fuse_fx_particle_pool_device_ssbo_alloc_count();
     m_deviceSsboReuseCount = fuse_fx_particle_pool_device_ssbo_reuse_count();
 #endif
+    syncResidencyFromPacked();
     ++m_cudaDispatchCount;
+}
+
+u32 ParticlePoolGpuBackend::syncResidencyFromPacked() {
+    if (!m_syncedFromCpu || m_packed.empty()) {
+        m_residentSlotCount = 0;
+        return 0;
+    }
+
+    u32 resident = 0;
+    const u32 count = std::min(m_capacity, m_activeCount);
+    usize offset = 0;
+    for (u32 slotIndex = 0; slotIndex < count; ++slotIndex) {
+        offset += sizeof(float) * 6;
+        offset += sizeof(float) * 2;
+        offset += sizeof(float);
+        const u32 aliveFlag = *reinterpret_cast<const u32*>(m_packed.data() + offset);
+        offset += sizeof(u32);
+        if (aliveFlag != 0u) {
+            ++resident;
+        }
+    }
+
+    m_residentSlotCount = resident;
+    ++m_residencySyncCount;
+    return resident;
 }
 
 } // namespace fuse::fx

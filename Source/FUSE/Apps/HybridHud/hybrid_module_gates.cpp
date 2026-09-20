@@ -190,6 +190,7 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
                 state.weaponSkeletalMount);
             state.bindPoseBridge.applyMountToBindPose(state.weaponSkeletalMount, state.weaponMountAnim,
                                                       state.bindSkeleton, state.bindPose);
+            state.weaponFired = state.weaponRuntime.fire(state.playerInventory);
         }
 
         auto guardIt = state.outpostSpawn.conversations.find("outpost_guard");
@@ -234,6 +235,8 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     state.patrolPath.addWaypoint(4.f, 0.f, 0.f);
     state.patrolPath.setPosition(state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
     state.patrolPath.setLoop(true);
+    state.patrolWaypoint.setPosition(4.f, 0.f, 0.f);
+    state.guardLookAt.setTarget(state.agent3D.x(), state.agent3D.y());
     state.patrolTimer.setActive(true);
     state.patrolTimer.setOnFire([&state]() { state.leverAnimate.advance(0.25f); });
     state.bindSkeleton.bone_count = 16;
@@ -301,6 +304,13 @@ void tickFrame(State& state, fuse::hybrid::HybridComposer& composer, const fuse:
     state.broadphaseWorld.setBodyPosition(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
     state.patrolPath.advanceAlongPath(20.f, ctx.dt);
     state.patrolTimer.tick(ctx.dt);
+    state.guardLookAt.advanceTowardTarget(state.guard3D.x(), state.guard3D.y(), ctx.dt);
+    if (state.patrolPath.x() >= 3.5f) {
+        state.patrolWaypoint.markVisited();
+    }
+    state.broadphaseDbvtHits = state.broadphaseWorld.queryDbvtOverlaps(
+        state.agent3D.x() - 2.f, state.agent3D.y() - 2.f, state.agent3D.z() - 2.f, state.agent3D.x() + 2.f,
+        state.agent3D.y() + 2.f, state.agent3D.z() + 2.f);
     state.physicsTriggerBridge.syncObject(kAgentObjectId);
     state.broadphaseTriggerSync.trackBody(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
     state.broadphaseTriggerSync.syncAll();
@@ -416,6 +426,26 @@ VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& comp
     }
     if (state.vactorBridge.boneMotionSyncCount() == 0u) {
         return {false, "fuse_cinematics bone attach motion sync applied"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE18
+    if (state.vactorBridge.mountRotationSyncCount() == 0u) {
+        return {false, "fuse_cinematics ShapeBase mount rotation sync applied"};
+    }
+    if (state.fxComposer.particlePoolGpu().residencySyncCount() == 0u) {
+        return {false, "fuse_fx CUDA particle residency sync in composer tick"};
+    }
+    if (state.patrolWaypoint.visitCount() == 0u) {
+        return {false, "fuse_mechanics WaypointComponent visited in hybrid demo"};
+    }
+    if (state.guardLookAt.tickCount() == 0u) {
+        return {false, "fuse_mechanics LookAtComponent tracked agent in hybrid demo"};
+    }
+    if (state.broadphaseDbvtHits == 0u) {
+        return {false, "fuse_mechanics BroadphaseWorldStub dbvt query hit agent"};
+    }
+    if (!state.weaponFired || state.weaponRuntime.fireCount() == 0u) {
+        return {false, "fuse_adventure weapon runtime fired after grant in hybrid demo"};
     }
 #endif
 #if FUSE_HYBRID_GATES_WAVE17

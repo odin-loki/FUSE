@@ -250,6 +250,11 @@ int main() {
     expectTrue(bestVm.dispatchBestBranch("outpost_guard", ctx, guardArmed),
                "conversation VM dispatchBestBranch chooses armed");
     expectTrue(bestVm.lastBranchDispatched() == "armed", "armed branch wins by priority");
+    expectTrue(bestVm.peekBestBranchLine("outpost_guard", ctx) ==
+                   "I see you are armed. Keep that rifle stowed.",
+               "conversation VM peekBestBranchLine armed");
+    expectTrue(bestVm.dispatchBestBranchAllLines("outpost_guard", ctx, guardArmed) >= 1u,
+               "conversation VM dispatchBestBranchAllLines");
 
     fuse::core::shutdown();
 

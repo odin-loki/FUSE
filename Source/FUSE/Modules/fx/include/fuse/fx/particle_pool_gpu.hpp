@@ -36,6 +36,8 @@ public:
     u32 writebackCount() const { return m_writebackCount; }
     u32 positionWritebackCount() const { return m_positionWritebackCount; }
     u32 selectiveWritebackCount() const { return m_selectiveWritebackCount; }
+    u32 residentSlotCount() const { return m_residentSlotCount; }
+    u32 residencySyncCount() const { return m_residencySyncCount; }
     bool cudaEnabled() const { return m_cudaEnabled; }
     bool syncedFromCpu() const { return m_syncedFromCpu; }
     ParticlePoolCudaSkipReason lastCudaSkipReason() const { return m_lastCudaSkipReason; }
@@ -45,6 +47,8 @@ public:
     void syncPositionsToCpu(ParticlePool& pool);
     /// Selective D→H writeback — only alive slots with non-zero age are copied.
     u32 syncSelectivePositionsToCpu(ParticlePool& pool);
+    /// Count alive GPU-resident slots after CUDA dispatch (B7.7 residency deepen).
+    u32 syncResidencyFromPacked();
     void tick(const frame::FrameCtx& ctx);
     void cudaDispatchOrSkip(const frame::FrameCtx& ctx);
 
@@ -59,6 +63,8 @@ private:
     u32 m_writebackCount = 0;
     u32 m_positionWritebackCount = 0;
     u32 m_selectiveWritebackCount = 0;
+    u32 m_residentSlotCount = 0;
+    u32 m_residencySyncCount = 0;
     u32 m_deviceSsboCapacityBytes = 0;
     u32 m_deviceSsboAllocCount = 0;
     u32 m_deviceSsboReuseCount = 0;

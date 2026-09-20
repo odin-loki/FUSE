@@ -19,6 +19,7 @@ struct FSEventsWatchStats {
     u32 coalescedEventCount = 0;
     u32 latencyMs = 0;
     u32 reloadSkipCount = 0;
+    u32 coreServicesCreateFlags = 0;
 };
 
 /// OS file-watch status (inotify/FSEvents when portable; stat mtime + content-hash fallback).

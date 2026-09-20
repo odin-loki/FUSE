@@ -177,4 +177,26 @@ u32 BroadphaseWorldStub::queryRaycastStubFiltered(float originX, float originY, 
     return m_lastOverlapCount;
 }
 
+u32 BroadphaseWorldStub::queryDbvtOverlaps(float minX, float minY, float minZ, float maxX, float maxY,
+                                           float maxZ) {
+    ++m_dbvtQueryCount;
+    m_lastOverlapCount = 0;
+
+#if defined(FUSE_HAS_BULLET) && FUSE_HAS_BULLET
+    for (const BroadphaseWorldBody& body : m_bodies) {
+        const BroadphaseProxyDesc proxy = bulletProxyForFilter(body.proxy.filter);
+        if (proxy.group == 0u && proxy.mask == 0u) {
+            continue;
+        }
+        if (body.x >= minX && body.x <= maxX && body.y >= minY && body.y <= maxY && body.z >= minZ &&
+            body.z <= maxZ) {
+            ++m_lastOverlapCount;
+        }
+    }
+    return m_lastOverlapCount;
+#else
+    return queryAabbOverlaps(minX, minY, minZ, maxX, maxY, maxZ);
+#endif
+}
+
 } // namespace fuse::mechanics

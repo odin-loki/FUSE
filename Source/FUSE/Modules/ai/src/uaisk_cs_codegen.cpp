@@ -138,6 +138,83 @@ bool methodImpliesCodegen(const UaiskCsAst& ast, std::string_view methodName) {
     return false;
 }
 
+const UaiskCsMethodRef* findMethod(const UaiskCsAst& ast, std::string_view methodName) {
+    for (const UaiskCsMethodRef& method : ast.methods) {
+        if (method.name == methodName) {
+            return &method;
+        }
+    }
+    return nullptr;
+}
+
+bool bodyContains(const std::string& body, std::string_view needle) {
+    return body.find(needle) != std::string::npos;
+}
+
+float parseWaitDurationFromBody(const std::string& body) {
+    const std::size_t waitPos = body.find("wait(");
+    if (waitPos == std::string::npos) {
+        return 0.5f;
+    }
+    const std::size_t open = body.find('(', waitPos);
+    const std::size_t close = body.find(')', open);
+    if (open == std::string::npos || close == std::string::npos) {
+        return 0.5f;
+    }
+    return parseFieldFloat(body.substr(open + 1, close - open - 1), 0.5f);
+}
+
+float parseMoveSpeedFromBody(const std::string& body) {
+    const std::size_t speedPos = body.find("moveSpeed");
+    if (speedPos == std::string::npos) {
+        return 0.25f;
+    }
+    const std::size_t eq = body.find('=', speedPos);
+    if (eq == std::string::npos) {
+        return 0.25f;
+    }
+    const std::size_t semi = body.find(';', eq);
+    return parseFieldFloat(body.substr(eq + 1, semi == std::string::npos ? body.size() - eq - 1 : semi - eq - 1),
+                          0.25f);
+}
+
+bool codegenFromMethodBodies(const UaiskCsAst& ast, std::vector<NodeLoadSpec>& specs, u32& rootIndex) {
+    std::vector<u32> childIndices;
+    for (const UaiskCsMethodRef& method : ast.methods) {
+        if (method.bodyText.empty()) {
+            continue;
+        }
+
+        if (bodyContains(method.bodyText, "moveToward") || bodyContains(method.bodyText, "MoveToward")) {
+            specs.push_back({"gb.action.move_toward", parseMoveSpeedFromBody(method.bodyText)});
+            childIndices.push_back(static_cast<u32>(specs.size() - 1));
+            continue;
+        }
+        if (bodyContains(method.bodyText, "wait(") || bodyContains(method.bodyText, "Wait(")) {
+            specs.push_back({"bb.action.wait", parseWaitDurationFromBody(method.bodyText)});
+            childIndices.push_back(static_cast<u32>(specs.size() - 1));
+            continue;
+        }
+        if (bodyContains(method.bodyText, "setFlag") || bodyContains(method.bodyText, "SetFlag")) {
+            specs.push_back({"bb.action.set_flag", 0.f, 1});
+            childIndices.push_back(static_cast<u32>(specs.size() - 1));
+        }
+    }
+
+    if (childIndices.empty()) {
+        return false;
+    }
+
+    if (childIndices.size() == 1u) {
+        rootIndex = childIndices[0];
+        return true;
+    }
+
+    specs.push_back({"bb.sequence", 0.f, 0, 1, "", childIndices});
+    rootIndex = static_cast<u32>(specs.size() - 1);
+    return true;
+}
+
 } // namespace
 
 bool buildAstFromParse(const UaiskCsParseResult& parsed, UaiskCsAst& outAst) {
@@ -189,6 +266,7 @@ bool buildAstFromSyntaxTree(const UaiskCsSyntaxTree& tree, UaiskCsAst& outAst) {
         if (node.kind == UaiskCsSyntaxNodeKind::Method) {
             UaiskCsMethodRef method;
             method.name = node.name;
+            method.bodyText = node.bodyText;
             for (const std::string& hook : tree.behaviorTreeHooks) {
                 if (hook.find(node.name) != std::string::npos) {
                     method.behaviorTreeRefs.push_back(hook);
@@ -248,6 +326,16 @@ bool codegenSpecsForModule(const UaiskCsAst& ast,
             applyFieldDefaultsToSpecs(ast, outSpecs);
         }
         return ok;
+    }
+
+    for (const UaiskCsMethodRef& method : ast.methods) {
+        if (!method.bodyText.empty()) {
+            const bool ok = codegenFromMethodBodies(ast, outSpecs, outRootIndex);
+            if (ok) {
+                applyFieldDefaultsToSpecs(ast, outSpecs);
+                return true;
+            }
+        }
     }
 
     if (errorOut != nullptr) {

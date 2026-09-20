@@ -10,6 +10,7 @@ set(FUSE_EDITOR_API_SOURCES
     src/feature_pane_bridge.cpp
     src/ai_tree_profile_picker.cpp
     src/cinematics_seq_import.cpp
+    src/viewport_seq_preview_stub.cpp
     src/runtime_viewport.cpp
     src/runtime_embed_session.cpp
     src/viewport_swapchain_wiring.cpp
@@ -45,6 +46,7 @@ set(FUSE_EDITOR_API_HEADERS
     include/fuse/editor/feature_pane_bridge.hpp
     include/fuse/editor/ai_tree_profile_picker.hpp
     include/fuse/editor/cinematics_seq_import.hpp
+    include/fuse/editor/viewport_seq_preview_stub.hpp
     include/fuse/editor/gizmo_system.hpp
     include/fuse/editor/hierarchy_model.hpp
     include/fuse/editor/material_editor_panel.hpp

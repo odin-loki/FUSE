@@ -1,4 +1,5 @@
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/viewport_seq_preview_stub.hpp>
 #include <fuse/editor/viewport_vulkan_surface.hpp>
 
 #include <fuse/ai/agent_entity_bind.hpp>
@@ -323,6 +324,28 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
             return true;
         }
         return false;
+    }
+
+    if (command.propertyName == "cinematics.viewport_seq_preview_ms") {
+        const fuse::cinematics::TimelineMs timeMs =
+            static_cast<fuse::cinematics::TimelineMs>(std::strtoul(command.propertyValue.c_str(), nullptr, 10));
+        const fuse::editor::ViewportSeqPreviewSample viewportSample =
+            fuse::editor::sample_viewport_seq_preview(host.loadedCinematicsSeqAsset(), timeMs);
+        if (!viewportSample.valid) {
+            return false;
+        }
+        fuse::cinematics::SeqScrubPreview preview;
+        preview.time_ms = viewportSample.time_ms;
+        preview.valid = viewportSample.valid;
+        preview.mount_point = viewportSample.mount_point;
+        preview.bone_name = viewportSample.bone_name;
+        preview.mount_yaw_deg = viewportSample.mount_yaw_deg;
+        preview.mount_pitch_deg = viewportSample.mount_pitch_deg;
+        preview.mount_roll_deg = viewportSample.mount_roll_deg;
+        preview.sprite_x = viewportSample.sprite_x;
+        preview.sprite_y = viewportSample.sprite_y;
+        host.setCinematicsSeqScrubPreview(timeMs, preview);
+        return true;
     }
 
     if (command.propertyName == "cinematics.seq_preview_pane_wire") {

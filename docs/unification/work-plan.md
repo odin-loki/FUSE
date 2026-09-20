@@ -331,7 +331,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **MT note** | AI/FX jobify per architecture §7 |
 | **Exit** | Per-module U5 gates in prestarter §10 |
 | **Deps** | WP-06 |
-| **Status** | ✅ Prestarter §10 gates closed; post-gate ore through U5 wave 17 (UAISK field-default codegen, Qt seq preview labels, CUDA selective writeback, Path loop/Animate GMK, weapon grant hybrid demo) — [U5-MODULES.md](./U5-MODULES.md) |
+| **Status** | ✅ Prestarter §10 gates closed; post-gate ore through U5 wave 18 (method-body codegen, mount rotation deepen, CUDA residency, Waypoint/LookAt GMK, weapon fire hybrid) — [U5-MODULES.md](./U5-MODULES.md) |
 
 ---
 

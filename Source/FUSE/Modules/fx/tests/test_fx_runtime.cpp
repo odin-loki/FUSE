@@ -569,6 +569,33 @@ void testAfxMissionSpellCodegen() {
     expectTrue(!spells.empty() && spells[0].spellId == "fireball", "fireball spell id codegen");
 }
 
+void testParticlePoolCudaResidency() {
+    fuse::fx::ParticlePool pool(4);
+    pool.spawn({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, 0.5f);
+
+    fuse::fx::ParticlePoolGpuBackend gpuBackend(4);
+    gpuBackend.syncFromCpu(pool);
+    fuse::frame::FrameCtx ctx;
+    gpuBackend.cudaDispatchOrSkip(ctx);
+    expectTrue(gpuBackend.residencySyncCount() >= 1u, "CUDA residency sync counted");
+    expectTrue(gpuBackend.residentSlotCount() >= 0u, "CUDA resident slot count tracked");
+}
+
+void testAfxMissionExecuteFromMis() {
+    static const char* kMisText =
+        "function onSpellCast() {\n"
+        "  beginCast(\"fireball\");\n"
+        "}\n"
+        "function onAmbientFx() {\n"
+        "  attachEffect(\"spark_burst\");\n"
+        "}\n";
+
+    fuse::fx::FxComposer composer;
+    fuse::fx::AfxMissionScriptVm vm;
+    expectTrue(fuse::fx::execute_afx_mission_from_mis(kMisText, composer, vm), "mission execute from .mis");
+    expectTrue(vm.executeCount() >= 1u, "mission VM execute count tracked");
+}
+
 void testAfxMissionNestedSimObjectParse() {
     static const char* kMisText =
         "new SimObject(FireballGroup) {\n"
@@ -618,6 +645,8 @@ int main() {
     testParticlePoolCudaSelectiveWriteback();
     testComposerSelectiveWriteback();
     testAfxMissionSpellCodegen();
+    testParticlePoolCudaResidency();
+    testAfxMissionExecuteFromMis();
     testAfxMissionNestedSimObjectParse();
     fuse::core::shutdown();
 

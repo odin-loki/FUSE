@@ -43,12 +43,18 @@ public:
                                                float dirY, float dirZ, float maxDistance,
                                                BroadphaseProxyFilter filter);
 
+    /// btDbvtBroadphase-style AABB overlap query deepen (Bullet-aware when FUSE_HAS_BULLET).
+    [[nodiscard]] u32 queryDbvtOverlaps(float minX, float minY, float minZ, float maxX, float maxY, float maxZ);
+
+    [[nodiscard]] u32 dbvtQueryCount() const { return m_dbvtQueryCount; }
+
 private:
     std::vector<BroadphaseWorldBody> m_bodies;
     u32 m_overlapQueryCount = 0;
     u32 m_lastOverlapCount = 0;
     u32 m_aabbQueryCount = 0;
     u32 m_raycastQueryCount = 0;
+    u32 m_dbvtQueryCount = 0;
 };
 
 } // namespace fuse::mechanics

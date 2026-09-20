@@ -113,4 +113,18 @@ bool CinematicsSeqImport::wirePreviewPaneToHost(fuse::cinematics::TimelineMs ini
     return m_lastWiredPreviewSample.valid;
 }
 
+bool CinematicsSeqImport::postViewportSeqPreviewAtMs(fuse::cinematics::TimelineMs timeMs) {
+    if (m_lastAssetText.empty()) {
+        return false;
+    }
+
+    ++m_viewportSeqPreviewPostCount;
+    EditorCommand command;
+    command.kind = CommandKind::SetProperty;
+    command.propertyName = "cinematics.viewport_seq_preview_ms";
+    command.propertyValue = std::to_string(timeMs);
+    m_host.postFromUi(std::move(command));
+    return true;
+}
+
 } // namespace fuse::editor
