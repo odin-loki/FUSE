@@ -186,6 +186,14 @@ void Registry::migrate_entity(EntityID id, const std::vector<std::type_index>& t
         }
     }
 
+    const usize entity_count = target.count();
+    for (const std::type_index& type : target_types) {
+        ComponentColumn& column = *target.find_column(type);
+        while (column.count() < entity_count) {
+            column.push_default();
+        }
+    }
+
     EntityID swapped = source.remove_entity(rec->row);
     if (swapped.valid()) {
         EntityRecord* moved = record(swapped);

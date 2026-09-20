@@ -2,6 +2,7 @@
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/systems/camera_system.hpp>
 #include <fuse/ecs/systems/culling_system.hpp>
+#include <fuse/ecs/systems/transform_system.hpp>
 
 namespace fuse::ecs {
 
@@ -9,6 +10,12 @@ void CameraSystem::update(Registry& reg) {
     reg.each<Camera, Transform>([&](EntityID, Camera& camera, Transform& transform) {
         if (!camera.is_active) {
             return;
+        }
+
+        // TransformSystem should run first; recompute root cameras when still dirty so
+        // view/proj/frustum are not derived from stale identity local_to_world matrices.
+        if (transform.dirty && TransformSystem::is_root_transform(transform)) {
+            TransformSystem::recompute_world_matrix(transform, mat4::identity());
         }
 
         const vec3 eye = {transform.local_to_world.data[12], transform.local_to_world.data[13],

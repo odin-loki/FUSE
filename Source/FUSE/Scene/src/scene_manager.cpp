@@ -1,6 +1,7 @@
 #include <fuse/scene/scene_manager.hpp>
 
 #include <fuse/ecs/components/camera.hpp>
+#include <fuse/ecs/components/transform.hpp>
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 
@@ -73,6 +74,10 @@ fuse::ecs::EntityID SceneManager::createCamera(f32 fovDegrees, bool active) {
     if (!camera.valid()) {
         return fuse::ecs::EntityID::null();
     }
+
+    fuse::ecs::Transform transform{};
+    transform.dirty = true;
+    m_registry.add<fuse::ecs::Transform>(camera, transform);
 
     fuse::ecs::Camera cameraComponent{};
     cameraComponent.fov_deg = fovDegrees;
