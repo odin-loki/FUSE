@@ -32,30 +32,22 @@ u32 parseFieldUInt(const std::string& value, u32 fallback) {
     }
 }
 
-void applyLeafExpressionToSpecs(const UaiskExpressionAst& expr, std::vector<NodeLoadSpec>& specs) {
-    if (!expr.valid) {
-        return;
-    }
-    for (NodeLoadSpec& spec : specs) {
-        if (spec.typeId == "bb.condition.distance_less" &&
-            (expr.fieldName == "distance" || expr.fieldName == "distanceThreshold" ||
-             expr.fieldName == "patrolDistance") &&
-            (expr.op == UaiskExpressionOp::Less || expr.op == UaiskExpressionOp::Equal)) {
-            spec.threshold = expr.threshold;
-        } else if (spec.typeId == "bb.condition.allies_in_radius" &&
-                   (expr.fieldName == "patrolRadius" || expr.fieldName == "allyRadius") &&
-                   (expr.op == UaiskExpressionOp::Greater || expr.op == UaiskExpressionOp::Equal)) {
-            spec.threshold = expr.threshold;
-        }
-    }
-}
-
 void applyExpressionDefaultsToSpecs(const UaiskCsAst& ast, std::vector<NodeLoadSpec>& specs) {
     for (const UaiskExpressionAst& expr : ast.conditions) {
-        std::vector<UaiskExpressionAst> leaves;
-        collectExpressionLeaves(expr, leaves);
-        for (const UaiskExpressionAst& leaf : leaves) {
-            applyLeafExpressionToSpecs(leaf, specs);
+        if (!expr.valid) {
+            continue;
+        }
+        for (NodeLoadSpec& spec : specs) {
+            if (spec.typeId == "bb.condition.distance_less" &&
+                (expr.fieldName == "distance" || expr.fieldName == "distanceThreshold" ||
+                 expr.fieldName == "patrolDistance") &&
+                (expr.op == UaiskExpressionOp::Less || expr.op == UaiskExpressionOp::Equal)) {
+                spec.threshold = expr.threshold;
+            } else if (spec.typeId == "bb.condition.allies_in_radius" &&
+                       (expr.fieldName == "patrolRadius" || expr.fieldName == "allyRadius") &&
+                       (expr.op == UaiskExpressionOp::Greater || expr.op == UaiskExpressionOp::Equal)) {
+                spec.threshold = expr.threshold;
+            }
         }
     }
 }
@@ -368,8 +360,7 @@ bool buildAstFromSyntaxTree(const UaiskCsSyntaxTree& tree, UaiskCsAst& outAst) {
             outAst.fields.push_back(std::move(field));
 
             if (node.name == "condition" || node.value.find('<') != std::string::npos ||
-                node.value.find('>') != std::string::npos || node.value.find("&&") != std::string::npos ||
-                node.value.find("||") != std::string::npos || node.value.find('!') != std::string::npos) {
+                node.value.find('>') != std::string::npos) {
                 UaiskExpressionAst expr;
                 if (parseExpressionAst(node.value, expr)) {
                     outAst.conditions.push_back(std::move(expr));

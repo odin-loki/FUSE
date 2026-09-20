@@ -508,18 +508,14 @@ bool dispatch_afx_mission_from_mis(const std::string& misText, FxComposer& compo
                 vm.scheduleDelayedDispatch(hookName, entry.delayMs);
                 dispatched = true;
             } else {
-                dispatched = vm.callImmediate(hookName, composer) || dispatched;
+                dispatched = vm.dispatch(hookName, composer) || dispatched;
             }
         }
-    }
-
-    if (!body.callTargets.empty()) {
+    } else if (!body.callTargets.empty()) {
         for (const std::string& target : body.callTargets) {
-            dispatched = vm.callImmediate(missionHookDispatchName(target), composer) || dispatched;
+            dispatched = vm.dispatch(missionHookDispatchName(target), composer) || dispatched;
         }
-    }
-
-    if (!dispatched && body.scheduleEntries.empty() && body.callTargets.empty()) {
+    } else {
         for (const AfxMissionHook& hook : vm.registeredHooks()) {
             dispatched = vm.dispatch(hook.scriptHook, composer) || dispatched;
         }

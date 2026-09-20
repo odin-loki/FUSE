@@ -1638,33 +1638,6 @@ void testTimelineHostStubOverlay() {
     expectTrue(wiredHost.lastOverlaySample().valid, "timeline host wired overlay sample valid");
 }
 
-void testTimelineHostPlaybackDeepen() {
-    static const char* kAssetText =
-        "# Outpost intro 30s sequence\n"
-        "duration_ms=30000\n"
-        "sprite hud_sprite 0,-20,0,1 15000,0,10,1 30000,40,20,1\n"
-        "camera 0,0,0,8,55 15000,0,30,12,70 30000,0,60,15,85\n"
-        "actor agent_3d mount 2000 cockpit 15\n";
-
-    fuse::cinematics::TimelineHostStub hostStub;
-    expectTrue(hostStub.loadSeqAssetText(kAssetText), "timeline host loads seq asset for playback");
-    expectTrue(hostStub.setPlaying(true), "timeline host playback armed");
-    expectTrue(hostStub.advanceHostPlayback(2'500), "timeline host advances playback");
-    expectTrue(hostStub.hostAdvanceCount() >= 1u, "timeline host advance counted");
-    expectTrue(hostStub.hostPlaybackMs() >= 2'500, "timeline host playback ms tracked");
-
-    const fuse::cinematics::TimelineHostActorMountSample mountSample =
-        hostStub.sampleActorMountAt(hostStub.hostPlaybackMs());
-    expectTrue(mountSample.valid, "timeline host actor mount sample valid");
-    expectTrue(mountSample.actor_id == "agent_3d", "timeline host actor mount actor id");
-    expectTrue(mountSample.mount_id == "cockpit", "timeline host actor mount id");
-
-    fuse::cinematics::Timeline externalTimeline = fuse::cinematics::make_outpost_intro_30s_stub();
-    expectTrue(hostStub.syncToExternalTimeline(externalTimeline), "timeline host syncs external timeline");
-    expectTrue(hostStub.hostSyncCount() >= 1u, "timeline host sync counted");
-    expectTrue(externalTimeline.playhead().time_ms() >= 2'500, "external timeline scrubbed from host");
-}
-
 void testVActorMotionSync() {
     fuse::cinematics::Timeline timeline = fuse::cinematics::make_outpost_intro_30s_stub();
     fuse::SceneObject3D agent("agent_3d");
@@ -1772,7 +1745,6 @@ int main() {
     testSeqScrubPreviewStub();
     testSeqAssetMotionLoader();
     testTimelineHostStubOverlay();
-    testTimelineHostPlaybackDeepen();
     testVActorMotionSync();
     fuse::core::shutdown();
 

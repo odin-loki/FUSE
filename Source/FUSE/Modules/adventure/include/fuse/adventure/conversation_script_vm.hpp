@@ -78,23 +78,10 @@ public:
                                    InteractContext& ctx,
                                    ConversationInteractable& target);
 
-    /// Inject a scripted line without branch inventory checks (conversation VM deepen).
-    bool injectScriptLine(const std::string& npcId,
-                          const std::string& branchId,
-                          u32 lineIndex,
-                          ConversationInteractable& target);
-
-    /// Advance NPC state twice when chain preconditions are met (Greeting→Quest deepen).
-    u32 advanceNpcStateChain(const std::string& npcId,
-                             InteractContext& ctx,
-                             ConversationInteractable& target,
-                             u32 maxSteps = 2);
-
     u32 dispatchCount() const { return m_dispatchCount; }
     u32 lineDispatchCount() const { return m_lineDispatchCount; }
     u32 stateAdvanceCount() const { return m_stateAdvanceCount; }
     u32 grantCount() const { return m_grantCount; }
-    u32 injectCount() const { return m_injectCount; }
     u32 hookCount() const { return static_cast<u32>(m_hooks.size()); }
     const std::string& lastBranchDispatched() const { return m_lastBranchDispatched; }
     const std::string& lastLineDispatched() const { return m_lastLineDispatched; }
@@ -109,7 +96,6 @@ private:
     u32 m_stateAdvanceCount = 0;
     u32 m_lineDispatchCount = 0;
     u32 m_grantCount = 0;
-    u32 m_injectCount = 0;
     std::string m_lastBranchDispatched;
     std::string m_lastLineDispatched;
     std::string m_lastGrantedItem;

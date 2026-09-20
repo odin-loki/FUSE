@@ -2120,46 +2120,6 @@ void testUaiskExpressionAstCodegen() {
     expectTrue(ast.conditions[0].threshold == 12.f, "expression AST threshold parsed");
 }
 
-void testUaiskBooleanExpressionAst() {
-    static const char* kCsText =
-        "class NestedTargeting : BehaviorBase {\n"
-        "  condition = \"(distance < 12 && patrolRadius > 5) || allyRadius > 8\";\n"
-        "  behaviorTree = \"aiTargeting.cs\";\n"
-        "}\n";
-
-    fuse::ai::uaisk::UaiskExpressionAst nestedExpr;
-    expectTrue(fuse::ai::uaisk::parseExpressionAst("(distance < 12 && patrolRadius > 5) || allyRadius > 8",
-                                                    nestedExpr),
-               "boolean nested expression parses");
-    expectTrue(nestedExpr.op == fuse::ai::uaisk::UaiskExpressionOp::Or, "top-level OR operator");
-    expectTrue(nestedExpr.children.size() == 2u, "OR has two children");
-
-    fuse::ai::uaisk::UaiskExpressionEvalContext ctx{};
-    ctx.distance = 10.f;
-    ctx.patrolRadius = 6.f;
-    ctx.allyRadius = 4.f;
-    expectTrue(fuse::ai::uaisk::evaluateExpressionAst(nestedExpr, ctx),
-               "nested AND branch evaluates true");
-
-    ctx.distance = 20.f;
-    ctx.patrolRadius = 2.f;
-    ctx.allyRadius = 9.f;
-    expectTrue(fuse::ai::uaisk::evaluateExpressionAst(nestedExpr, ctx),
-               "OR fallback branch evaluates true");
-
-    fuse::ai::uaisk::UaiskExpressionAst notExpr;
-    expectTrue(fuse::ai::uaisk::parseExpressionAst("!(distance > 20)", notExpr),
-               "NOT expression parses");
-    ctx.distance = 10.f;
-    expectTrue(fuse::ai::uaisk::evaluateExpressionAst(notExpr, ctx), "NOT expression evaluates");
-
-    fuse::ai::BehaviorTree tree;
-    std::string error;
-    expectTrue(fuse::ai::uaisk::codegenTreeFromSyntaxTree("aiNested.cs", kCsText, tree, &error),
-               "boolean expression AST wired into codegen");
-    expectTrue(tree.nodeCount() >= 1u, "boolean expression codegen emits nodes");
-}
-
 void testUaiskNestedCompositeCodegen() {
     static const char* kCsText =
         "class CompositePatrol : BehaviorBase {\n"
@@ -2473,7 +2433,6 @@ int main() {
     testUaiskCodegenMethodBody();
     testUaiskCodegenMultiLeafMethodBody();
     testUaiskExpressionAstCodegen();
-    testUaiskBooleanExpressionAst();
     testUaiskNestedCompositeCodegen();
     testUaiskFSEventsPollPath();
     testUaiskFSEventsCoreServicesStub();
