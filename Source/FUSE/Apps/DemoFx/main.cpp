@@ -48,6 +48,7 @@ int main(int argc, char** argv) {
         fuse::demo::wiring::bridge2DWorldFromProject(project, world2D);
     fuse::demo::check(spriteBridge.ok, "defaultWorld2D sprite socket world bridges");
     fuse::demo::check(spriteBridge.spriteCount >= 1u, "AFX 2D socket sprites spawned");
+    fuse::demo::check(spriteBridge.animatedSpriteCount >= 1u, "AFX socket animated-sprite metadata bridged");
 
     fuse::hybrid::HybridComposer hybridComposer;
     hybridComposer.setProjectFlags(fuse::project::toDimensionFlags(project.manifest.dimensions));

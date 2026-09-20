@@ -9,6 +9,10 @@ new SceneToy() {
     collisionRadius = 0.5;
     collisionLayer = 1;
     collisionMask = 0xFFFFFFFF;
+    imageMap = "HeroSheet.png";
+    animationName = "Walk";
+    frameCount = 8;
+    animationFPS = 12;
   };
   new SpritePlayer(Companion) {
     position = "2 1";

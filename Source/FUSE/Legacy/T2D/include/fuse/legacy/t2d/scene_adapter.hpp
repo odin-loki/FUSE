@@ -32,6 +32,10 @@ struct LegacySceneObjectStub {
     float physicsRadius = 0.5f;
     float boxHalfWidth = 0.5f;
     float boxHalfHeight = 0.5f;
+    std::string imageMap;
+    std::string animationName;
+    u32 frameCount = 0;
+    float animationFps = 0.f;
 };
 
 /// Import legacy stub fields into a greenfield node (game thread only).

@@ -29,6 +29,7 @@ struct World3DLoadResult {
 struct World2DBridgeResult {
     bool ok = false;
     u32 spriteCount = 0;
+    u32 animatedSpriteCount = 0;
     u32 physicsBodyCount = 0;
     bool physicsEnabled = false;
     std::string note;

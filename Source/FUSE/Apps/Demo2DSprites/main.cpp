@@ -34,6 +34,7 @@ int main(int argc, char** argv) {
         fuse::demo::wiring::bridge2DWorldFromProject(project, world2D);
     fuse::demo::check(bridge.ok, "SpriteToy-inspired module bridges into World2D");
     fuse::demo::check(bridge.spriteCount >= 2u, "module bridge spawned multiple sprites");
+    fuse::demo::check(bridge.animatedSpriteCount >= 1u, "Hero animated-sprite metadata bridged");
     fuse::demo::check(bridge.physicsEnabled, "module bridge enabled Box2D tick path");
     fuse::demo::check(bridge.physicsBodyCount >= 1u, "physics body attached to hero sprite");
 

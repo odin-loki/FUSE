@@ -148,6 +148,14 @@ std::string makeSceneWiringStubName(const char* kind, const std::string& objectN
     return std::string("__fuse.wire|") + kind + "|" + objectName + "|" + refValue;
 }
 
+std::string formatAnimatedSpriteWireValue(const T2DSceneNodeStub& node) {
+    std::ostringstream value;
+    value << (node.imageMap.empty() ? "unknown" : node.imageMap) << ':'
+          << (node.animationName.empty() ? "default" : node.animationName) << ':' << node.frameCount
+          << ':' << node.animationFps;
+    return value.str();
+}
+
 std::size_t skipMisWhitespace(const std::string& text, std::size_t cursor) {
     while (cursor < text.size() && std::isspace(static_cast<unsigned char>(text[cursor]))) {
         ++cursor;
@@ -454,8 +462,7 @@ ConvertResult convertT2DModuleToFuselevel(const std::string& modulePath,
     const T2DModuleExtract extract = extractT2DModuleFields(text, modulePath);
     fuse::scene::Scene scene(extract.moduleName);
 
-    std::vector<s32> parentIndices;
-    parentIndices.reserve(extract.sceneNodes.size());
+    std::vector<s32> nodeToSceneIndex(extract.sceneNodes.size(), -1);
 
     for (std::size_t i = 0; i < extract.sceneNodes.size(); ++i) {
         const T2DSceneNodeStub& node = extract.sceneNodes[i];
@@ -463,12 +470,11 @@ ConvertResult convertT2DModuleToFuselevel(const std::string& modulePath,
         if (node.depth > 0) {
             for (std::size_t j = i; j-- > 0;) {
                 if (extract.sceneNodes[j].depth == node.depth - 1) {
-                    parentIndex = static_cast<s32>(j);
+                    parentIndex = nodeToSceneIndex[j];
                     break;
                 }
             }
         }
-        parentIndices.push_back(parentIndex);
 
         fuse::scene::SceneEntityTransform transform{};
         if (!node.position.empty()) {
@@ -491,10 +497,32 @@ ConvertResult convertT2DModuleToFuselevel(const std::string& modulePath,
         const std::string entityName =
             node.objectName.empty() ? node.className : node.objectName;
         scene.addEntity(entityName, transform, parentIndex);
+        nodeToSceneIndex[i] = static_cast<s32>(scene.entityCount() - 1u);
     }
 
     if (scene.entityCount() == 0) {
         scene.addEntity("ModuleRoot");
+    }
+
+    u32 wiringStubCount = 0;
+    for (std::size_t i = 0; i < extract.sceneNodes.size(); ++i) {
+        const T2DSceneNodeStub& node = extract.sceneNodes[i];
+        if (!node.hasAnimatedSpriteFields()) {
+            continue;
+        }
+
+        const s32 wireParentIndex = nodeToSceneIndex[i];
+        if (wireParentIndex < 0) {
+            continue;
+        }
+
+        const std::string ownerName =
+            node.objectName.empty() ? node.className : node.objectName;
+        scene.addEntity(makeSceneWiringStubName("animated_sprite", ownerName,
+                                                formatAnimatedSpriteWireValue(node)),
+                        {},
+                        wireParentIndex);
+        ++wiringStubCount;
     }
 
     const fuse::scene::SerialiseResult serialised = fuse::scene::SceneSerialiser::save(scene, outputPath);
@@ -506,8 +534,10 @@ ConvertResult convertT2DModuleToFuselevel(const std::string& modulePath,
 
     result.status = ConvertStatus::Ok;
     result.entityCount = scene.entityCount();
+    result.wiringStubCount = wiringStubCount;
     result.note = "converted T2D module to .fuselevel (" + std::to_string(result.entityCount) +
-                  " entities from toybox scan)";
+                  " entities, " + std::to_string(result.wiringStubCount) +
+                  " animated-sprite wiring stubs)";
     fuse::log::info("convertT2DModuleToFuselevel: %s -> %s (%u entities)",
                     modulePath.c_str(),
                     outputPath.c_str(),

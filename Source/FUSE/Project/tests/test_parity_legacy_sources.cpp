@@ -5,6 +5,8 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace {
@@ -18,11 +20,48 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+std::string writeTempFile(const std::string& path, const std::string& contents) {
+    std::ofstream out(path, std::ios::binary);
+    out << contents;
+    return path;
+}
+
 void testRepositoryRootFromParityDemo() {
     const std::string root =
         fuse::project::findRepositoryRoot("Samples/unification/demo_2d_sprites");
     expectTrue(!root.empty(), "repository root resolved from parity demo path");
     expectTrue(root.find("Samples") == std::string::npos, "repository root is not the demo folder");
+}
+
+void testSubmoduleDirectoryClassification() {
+    const std::string emptyDir = "/tmp/fuse_submodule_empty_probe";
+    std::filesystem::create_directories(emptyDir);
+    expectTrue(fuse::project::classifySubmoduleDirectory(emptyDir) ==
+                   fuse::project::SubmodulePathStatus::Uninitialized,
+               "empty directory classified as uninitialized submodule checkout");
+
+    const std::string populatedDir = "/tmp/fuse_submodule_populated_probe";
+    std::filesystem::create_directories(populatedDir);
+    writeTempFile(populatedDir + "/main.cs", "module \"Probe\";");
+    expectTrue(fuse::project::classifySubmoduleDirectory(populatedDir) ==
+                   fuse::project::SubmodulePathStatus::Present,
+               "populated directory classified as present submodule checkout");
+}
+
+void testGoldenSubmoduleStatusOnSpriteToyFallback() {
+    const fuse::project::LoadResult project =
+        fuse::project::loadFromDirectory("Samples/unification/demo_2d_sprites");
+    expectTrue(project.status == fuse::project::LoadStatus::Ok, "demo_2d_sprites loads");
+
+    const std::string fuselevelPath =
+        project.manifest.projectRoot + "/worlds/sprite_toy_stub.fuselevel";
+    const fuse::project::LegacySourceResolution source =
+        fuse::project::resolveParityLegacySource(project.manifest, fuselevelPath, ".cs");
+    expectTrue(source.origin == fuse::project::LegacySourceOrigin::Bundled,
+               "SpriteToy falls back to bundled stub when submodule absent");
+    expectTrue(source.goldenSubmoduleStatus != fuse::project::SubmodulePathStatus::Present,
+               "SpriteToy golden submodule status recorded when golden file missing");
+    expectTrue(!source.note.empty(), "SpriteToy fallback note explains golden-path status");
 }
 
 void testBundledSpriteToyFallback() {
@@ -67,6 +106,8 @@ void testEnsure3DWorldFromBundledMis() {
 int main() {
     fuse::core::initialize();
     testRepositoryRootFromParityDemo();
+    testSubmoduleDirectoryClassification();
+    testGoldenSubmoduleStatusOnSpriteToyFallback();
     testBundledSpriteToyFallback();
     testBundledOutpostFallback();
     testEnsure3DWorldFromBundledMis();

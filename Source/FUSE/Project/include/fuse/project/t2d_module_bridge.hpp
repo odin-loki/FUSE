@@ -19,6 +19,7 @@ struct T2DRuntimeBridgeResult {
     bool ok = false;
     u32 nodeCount = 0;
     u32 spriteCount = 0;
+    u32 animatedSpriteCount = 0;
     u32 physicsBodyCount = 0;
     u32 circleBodyCount = 0;
     u32 boxBodyCount = 0;

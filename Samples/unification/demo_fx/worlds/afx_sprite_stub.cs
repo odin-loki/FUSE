@@ -6,6 +6,10 @@ new SceneToy() {
     layer = 1;
     sortPoint = 15;
     physicsEnabled = false;
+    imageMap = "FxSparkSheet.png";
+    animationName = "SparkLoop";
+    frameCount = 4;
+    animationFPS = 15;
   };
   new SpritePlayer(FxAmbientSprite) {
     position = "1.5 0.5";

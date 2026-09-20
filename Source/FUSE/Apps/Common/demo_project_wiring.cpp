@@ -100,6 +100,7 @@ World2DBridgeResult bridge2DWorldFromProject(const project::LoadResult& projectL
                 project::bridgeT2DModuleToRuntime(world, modulePath);
             result.ok = bridged.ok;
             result.spriteCount = bridged.spriteCount;
+            result.animatedSpriteCount = bridged.animatedSpriteCount;
             result.physicsBodyCount = bridged.physicsBodyCount;
             result.physicsEnabled = world.isPhysicsEnabled();
             result.note = bridged.note.empty() ? "T2D module runtime bridge" : bridged.note;
@@ -112,6 +113,7 @@ World2DBridgeResult bridge2DWorldFromProject(const project::LoadResult& projectL
         if (bridged.ok && bridged.spriteCount > 0u) {
             result.ok = true;
             result.spriteCount = bridged.spriteCount;
+            result.animatedSpriteCount = bridged.animatedSpriteCount;
             result.physicsBodyCount = bridged.physicsBodyCount;
             result.physicsEnabled = world.isPhysicsEnabled();
             if (moduleSource.origin == project::LegacySourceOrigin::GoldenSubmodule) {

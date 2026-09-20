@@ -364,7 +364,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | M |
 | **Scope** | `Samples/unification/demo_*` per [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) |
 | **Deps** | WP-07 (subset), WP-09 |
-| **Status** | 🚧 Wave 3 — golden-path resolver + editor embed/PIE parity smoke + `demo_fx` defaultWorld2D; real present + full submodule corpus still ❌ |
+| **Status** | 🚧 Wave 4 — animated-sprite wiring stubs, submodule-aware golden fallback, ASan parity demos + seven-demo PIE embed; real present + full submodule corpus still ❌ |
 
 ---
 

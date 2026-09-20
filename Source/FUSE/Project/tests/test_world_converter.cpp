@@ -9,6 +9,7 @@
 #include <fuse/project/t3d_datablock_resolve.hpp>
 #include <fuse/project/world_converter.hpp>
 #include <fuse/scene/serialiser.hpp>
+#include <fuse/scene/wire_stub.hpp>
 #include <fuse/world2d/world_2d.hpp>
 
 #include <cstdio>
@@ -573,6 +574,49 @@ void testT3DShaderVfsAsyncLoad() {
     expectTrue(cachedSubmit.submittedCount == 0u, "cached shader submit does not enqueue vfs reads");
 }
 
+void testConvertT2DAnimatedSpriteWiringStubs() {
+    const std::string module = writeTempFile(
+        "/tmp/fuse_convert_animated.cs",
+        R"(module "SpriteToy";
+new SceneToy() {
+  new SpritePlayer(Hero) {
+    position = "0 0";
+    imageMap = "HeroSheet.png";
+    animationName = "Walk";
+    frameCount = 8;
+    animationFPS = 12;
+  };
+};)");
+    const std::string output = "/tmp/fuse_convert_animated.fuselevel";
+
+    const fuse::project::ConvertResult result =
+        fuse::project::convertT2DModuleToFuselevel(module, output);
+
+    expectTrue(result.status == fuse::project::ConvertStatus::Ok, "animated module convert ok");
+    expectTrue(result.wiringStubCount >= 1u, "animated-sprite wiring stub emitted");
+
+    fuse::scene::Scene loaded;
+    const fuse::scene::SerialiseResult loadResult = fuse::scene::SceneSerialiser::load(output, loaded);
+    expectTrue(loadResult.status == fuse::scene::SerialiseStatus::Ok, "animated fuselevel loads");
+
+    bool foundAnimatedWire = false;
+    for (const fuse::scene::SceneEntity& entity : loaded.entities()) {
+        const fuse::scene::WireStubRef wire = fuse::scene::parseWireStubEntityName(entity.name);
+        if (wire.valid && wire.kind == "animated_sprite" && wire.owner == "Hero") {
+            foundAnimatedWire = true;
+            expectTrue(wire.value.find("HeroSheet.png") != std::string::npos,
+                       "animated wire value includes imageMap");
+        }
+    }
+    expectTrue(foundAnimatedWire, "animated-sprite wire stub round-trips in fuselevel");
+
+    fuse::world2d::World2D world;
+    const fuse::project::T2DRuntimeBridgeResult bridged =
+        fuse::project::bridgeT2DModuleToRuntime(world, module);
+    expectTrue(bridged.ok, "animated module runtime bridge ok");
+    expectTrue(bridged.animatedSpriteCount >= 1u, "animated sprite metadata counted in bridge");
+}
+
 void testT2DModuleRuntimeBridge() {
     const std::string module = writeTempFile(
         "/tmp/fuse_t2d_bridge.cs",
@@ -603,6 +647,7 @@ int main() {
     testT2DModuleRuntimeBridge();
     testT2DModuleRuntimeBridgeLayersPhysicsComposite();
     testT2DPhysicsShapesCollisionLayers();
+    testConvertT2DAnimatedSpriteWiringStubs();
     testT3DMaterialVfsMountAndResolve();
     testT3DMaterialVfsAsyncLoad();
     testVfsAssetPathRemap();

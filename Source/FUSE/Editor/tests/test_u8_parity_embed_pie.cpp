@@ -78,6 +78,7 @@ void testAllParityDemosEmbedPie() {
         {"demo_timeline", true},
         {"demo_fx", true},
         {"demo_adventure_stub", true},
+        {"demo_hybrid_hud", false},
     };
 
     for (const ParityDemoCase& demo : demos) {

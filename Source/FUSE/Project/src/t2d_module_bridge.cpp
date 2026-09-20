@@ -73,6 +73,10 @@ legacy::t2d::LegacySceneObjectStub makeLegacyStub(const T2DSceneNodeStub& node, 
     legacy.physicsRadius = node.physicsRadius;
     legacy.boxHalfWidth = node.boxHalfWidth;
     legacy.boxHalfHeight = node.boxHalfHeight;
+    legacy.imageMap = node.imageMap;
+    legacy.animationName = node.animationName;
+    legacy.frameCount = node.frameCount;
+    legacy.animationFps = node.animationFps;
     switch (node.physicsShape) {
     case T2DPhysicsShape::Circle:
         legacy.physicsShape = legacy::t2d::LegacyPhysicsShape::Circle;
@@ -193,6 +197,10 @@ T2DRuntimeBridgeResult populateWorld2DFromModuleExtract(fuse::world2d::World2D& 
             }
         }
 
+        if (node.hasAnimatedSpriteFields()) {
+            ++result.animatedSpriteCount;
+        }
+
         world.adoptOwnedSprite(std::move(sprite));
         ++spriteIndex;
     }
@@ -200,7 +208,7 @@ T2DRuntimeBridgeResult populateWorld2DFromModuleExtract(fuse::world2d::World2D& 
     result.spriteCount = spriteIndex;
     result.ok = true;
     result.note = "bridged " + std::to_string(result.spriteCount) +
-                  " sprites from T2D module extract (layers/physics shapes/collision)";
+                  " sprites from T2D module extract (layers/physics/animated-sprite metadata)";
     return result;
 }
 

@@ -469,6 +469,43 @@ T2DModuleExtract extractT2DModuleFields(const std::string& moduleText, const std
                     }
                 }
             }
+
+            const std::string imageMap = extractAssignmentValue(line, "imageMap = ");
+            if (!imageMap.empty()) {
+                current->imageMap = imageMap;
+            }
+
+            const std::string imageMapAlt = extractAssignmentValue(line, "ImageMap = ");
+            if (!imageMapAlt.empty()) {
+                current->imageMap = imageMapAlt;
+            }
+
+            const std::string animationName = extractAssignmentValue(line, "animationName = ");
+            if (!animationName.empty()) {
+                current->animationName = animationName;
+            }
+
+            const std::string animation = extractAssignmentValue(line, "animation = ");
+            if (!animation.empty()) {
+                current->animationName = animation;
+            }
+
+            u32 frameCountValue = 0;
+            const std::string frameCount = extractAssignmentValue(line, "frameCount = ");
+            if (!frameCount.empty() && parseU32Token(frameCount, frameCountValue)) {
+                current->frameCount = frameCountValue;
+            }
+
+            float fpsValue = 0.f;
+            const std::string animationFps = extractAssignmentValue(line, "animationFPS = ");
+            if (!animationFps.empty() && parseFloatToken(animationFps, fpsValue)) {
+                current->animationFps = fpsValue;
+            }
+
+            const std::string animationFpsAlt = extractAssignmentValue(line, "animationFps = ");
+            if (!animationFpsAlt.empty() && parseFloatToken(animationFpsAlt, fpsValue)) {
+                current->animationFps = fpsValue;
+            }
         }
 
         depth += countBraceDepth(line);

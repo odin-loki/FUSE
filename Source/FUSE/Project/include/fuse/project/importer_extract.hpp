@@ -59,6 +59,14 @@ struct T2DSceneNodeStub {
     float physicsRadius = 0.5f;
     float boxHalfWidth = 0.5f;
     float boxHalfHeight = 0.5f;
+    std::string imageMap;
+    std::string animationName;
+    u32 frameCount = 0;
+    float animationFps = 0.f;
+
+    [[nodiscard]] bool hasAnimatedSpriteFields() const {
+        return !imageMap.empty() || !animationName.empty() || frameCount > 0u || animationFps > 0.f;
+    }
 };
 
 struct T2DModuleExtract {
