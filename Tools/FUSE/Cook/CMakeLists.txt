@@ -2,8 +2,10 @@ add_library(fuse_cook_stubs STATIC
     src/bc7_encoder.cpp
     src/cook_stub_writer.cpp
     src/cook_stb_image.cpp
+    src/ispc_texcomp_hook.cpp
     include/fuse/cook/bc7_encoder.hpp
     include/fuse/cook/cook_stub_writer.hpp
+    include/fuse/cook/ispc_texcomp_hook.hpp
 )
 
 add_library(fuse::cook_stubs ALIAS fuse_cook_stubs)
@@ -59,11 +61,11 @@ else()
     endif()
 endif()
 
-find_path(FUSE_BC7_ENCODER_INCLUDE NAMES ispc_texcomp.h
+find_path(FUSE_ISPC_TEXCOMP_INCLUDE NAMES ispc_texcomp.h
     PATHS "${CMAKE_SOURCE_DIR}/third_party/ispc_texcomp")
-if(FUSE_BC7_ENCODER_INCLUDE)
-    target_compile_definitions(fuse_cook_stubs PUBLIC FUSE_HAS_BC7_ENCODER=1)
-    target_include_directories(fuse_cook_stubs PRIVATE "${FUSE_BC7_ENCODER_INCLUDE}")
+if(FUSE_ISPC_TEXCOMP_INCLUDE)
+    target_compile_definitions(fuse_cook_stubs PUBLIC FUSE_HAS_ISPC_TEXCOMP=1)
+    target_include_directories(fuse_cook_stubs PRIVATE "${FUSE_ISPC_TEXCOMP_INCLUDE}")
 endif()
 
 if(FUSE_BUILD_CORE_TESTS)

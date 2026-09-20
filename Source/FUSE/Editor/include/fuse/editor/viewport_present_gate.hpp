@@ -23,6 +23,11 @@ inline bool viewportQtPresentPathEligible(const ViewportSwapchainHandoff& handof
     return viewportQtPresentPathReady(handoff, swapchainPresentable) && viewportQtPresentEligible(handoff);
 }
 
+/// True when headless CI should skip Qt WSI probes (no display server).
+inline bool viewportHeadlessWsiProbeSkipped() {
+    return !fuse::renderer::desktopQtPresentRuntimeReady();
+}
+
 /// Scoped PlaceholderRenderer retirement — RHI mirror remains; software RGBA skipped when safe.
 inline bool shouldDisableSoftwarePlaceholderForEmbed(const ViewportSwapchainHandoff& handoff,
                                                      bool externalSwapchainWired) {

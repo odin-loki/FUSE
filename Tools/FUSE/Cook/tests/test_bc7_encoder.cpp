@@ -67,6 +67,16 @@ void testBc7EncodeImageBlocks() {
     expectTrue(blocks.size() == 16u, "one bc7 block is 16 bytes");
 }
 
+void testIspcTexcompHookUnavailableWithoutInput() {
+    const fuse::cook::CookStubWriteResult written =
+        fuse::cook::tryCookTextureIspc("", "/tmp/fuse_ispc_output.fusetex", "BC7", false);
+#if defined(FUSE_HAS_ISPC_TEXCOMP) && defined(FUSE_HAS_STB_IMAGE)
+    expectTrue(!written.ok, "ispc hook rejects empty input");
+#else
+    expectTrue(!written.ok, "ispc hook unavailable without header");
+#endif
+}
+
 void testBc7CookWriter() {
     const std::string source = "/tmp/fuse_bc7_source.bin";
     {
@@ -92,6 +102,7 @@ int main() {
     testBc7SolidBlockRoundTrip();
     testBc7DualEndpointBlock();
     testBc7EncodeImageBlocks();
+    testIspcTexcompHookUnavailableWithoutInput();
     testBc7CookWriter();
     fuse::core::shutdown();
 

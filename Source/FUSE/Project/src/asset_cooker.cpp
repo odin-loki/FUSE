@@ -123,6 +123,59 @@ CookRecord AssetCooker::cook_with_cache_(CookAssetKind kind,
     return record;
 }
 
+bool AssetCooker::probe_cook_cache_hit(const CookManifestEntry& entry, const CookManifest& manifest,
+                                       CookRecord* out_record) {
+    const u64 upstream_hash = hash_upstream_dependencies(entry.dependencies, manifest);
+    u64 content_hash = 0;
+    switch (entry.kind) {
+    case CookAssetKind::Mesh: {
+        MeshImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        content_hash = hash_mesh_import(desc);
+        break;
+    }
+    case CookAssetKind::Texture: {
+        TextureImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        content_hash = hash_texture_import(desc);
+        break;
+    }
+    case CookAssetKind::Audio: {
+        AudioImportDesc desc;
+        desc.input_path = entry.source_path;
+        desc.output_path = entry.output_path;
+        content_hash = hash_audio_import(desc);
+        break;
+    }
+    case CookAssetKind::Shader:
+        return false;
+    }
+
+    const u64 cache_key = combine_cook_cache_key(content_hash, upstream_hash);
+    if (!is_valid_cook_cache_key(cache_key)) {
+        return false;
+    }
+
+    CookCacheEntry cached;
+    if (m_cache.lookup(cache_key, &cached) != CookCacheLookup::Hit) {
+        return false;
+    }
+
+    if (out_record != nullptr) {
+        out_record->kind = entry.kind;
+        out_record->source_path = entry.source_path;
+        out_record->output_path = cached.output_path;
+        out_record->status = CookStatus::Ok;
+        out_record->ok = true;
+        out_record->cache_hit = true;
+        out_record->content_hash = cache_key;
+        out_record->note = "cache hit";
+    }
+    return true;
+}
+
 CookRecord AssetCooker::cook_mesh(const MeshImportDesc& desc) {
     std::ostringstream note;
     note << "stub mesh cook (lods=" << (desc.generate_lods ? desc.lod_count : 0u)

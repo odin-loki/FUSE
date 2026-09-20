@@ -53,6 +53,9 @@ struct RuntimeEmbedSession {
     bool surfaceHandoffConsumed = false;
     bool qVulkanWindowWsiProbed = false;
     bool qVulkanWindowWsiReady = false;
+    bool qVulkanInstanceReady = false;
+    bool qVulkanExtensionsProbed = false;
+    u32 qVulkanSupportedExtensionCount = 0;
 
     void reset();
 };

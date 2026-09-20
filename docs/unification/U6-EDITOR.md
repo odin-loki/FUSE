@@ -145,7 +145,9 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 | `probeQVulkanWindowWsi` — headless-safe `QVulkanWindow` surface probe; `RuntimeEmbedSession::qVulkanWindowWsiReady` counter | Full in-process GPU viewport compositing |
 | `RuntimeViewportHook` loads manifest world, applies wire bindings + `workerCap`, mirrors editor entities, `PresentPath` tick counters | Live Qt swapchain present under real WSI |
 | `RuntimeEmbedSession` tracks project VFS mounts + material resolve counts on world load | — |
-| Async material VFS submit + cook-cache drain on world load (`materialCookCacheHits`, `materialCookCacheStores`, `materialAsyncLoadsSubmitted`, `materialAsyncLoadsDrained`) | Cook-cache hit → skip `fuse_cook` re-run |
+| Async material VFS submit + cook-cache drain on world load (`materialCookCacheHits`, `materialCookCacheStores`, `materialAsyncLoadsSubmitted`, `materialAsyncLoadsDrained`) | — |
+| `fuse_cook` CLI cook-cache load/save + job-graph cache-hit skip progress | Full in-process GPU viewport compositing |
+| `probeQVulkanWindowWsi` instance/extension probe + `viewportHeadlessWsiProbeSkipped` gate | Live Qt swapchain present under real WSI |
 | `qtLivePresentAttempts` / `qtLivePresentTicks` when `qtRealSurface` + external swapchain wired (headless CI stays stub) | Full in-process GPU viewport compositing |
 
 ---

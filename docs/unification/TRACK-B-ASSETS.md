@@ -104,6 +104,9 @@ ctest --test-dir build --output-on-failure -R fuse_assets
 # Plan default cooks for a U7 project (dry-run)
 ./build/Tools/FUSE/fuse_cook --project Samples/unification/demo_3d_empty --dry-run
 
+# Cook with on-disk cache (`.fuse/cook_cache.json`) — second run skips re-cook on cache hit
+./build/Tools/FUSE/fuse_cook --project Samples/unification/demo_3d_empty
+
 # Load an explicit cook manifest
 ./build/Tools/FUSE/fuse_cook --manifest path/to/cook_manifest.json --dry-run
 
@@ -145,7 +148,7 @@ ctest --test-dir build --output-on-failure -R fuse_assets_b79
 
 - [ ] Wire Assimp/meshoptimizer for mesh cooks
 - [x] BC7 mode-6 dual-endpoint block encoder (`fuse/cook/bc7_encoder.hpp`, `FUSETEX_BC7` cook output)
-- [ ] ispc_texcomp-quality BC7/BC5 texture compression path
+- [x] ispc_texcomp honest stub hook (`third_party/ispc_texcomp`, `tryCookTextureIspc`)
 - [ ] OGG encode + normalise for audio
 - [ ] Shader offline SPIR-V batch (`compile_all`)
 - [ ] Qt cook UI sharing `ImportPipeline`

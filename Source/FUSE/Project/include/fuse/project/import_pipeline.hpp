@@ -20,6 +20,12 @@ public:
     const AssetGraph& graph() const { return m_graph; }
     const CookManifest& planned_manifest() const { return m_plannedManifest; }
 
+    AssetCooker& cooker() { return m_cooker; }
+    const AssetCooker& cooker() const { return m_cooker; }
+
+    bool load_cook_cache(const std::string& path);
+    bool save_cook_cache(const std::string& path) const;
+
     static CookBatchResult planForProject(const ProjectManifest& project, const std::string& project_dir);
 
 private:

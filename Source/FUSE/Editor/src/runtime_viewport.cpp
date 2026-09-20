@@ -550,6 +550,9 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
         const QVulkanWindowWsiProbeResult probe = probeQVulkanWindowWsi();
         m_embedSession.qVulkanWindowWsiProbed = probe.attempted || probe.headlessSkipped;
         m_embedSession.qVulkanWindowWsiReady = probe.surfaceReady;
+        m_embedSession.qVulkanInstanceReady = probe.instanceReady;
+        m_embedSession.qVulkanExtensionsProbed = probe.extensionsProbed;
+        m_embedSession.qVulkanSupportedExtensionCount = probe.supportedExtensionCount;
     }
 
     ensureWorldLoaded_(host);

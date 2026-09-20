@@ -35,8 +35,11 @@ struct ViewportVulkanBootstrapStressResult {
 /// Headless-safe `QVulkanWindow` WSI probe (wave 9). Skips when no display server.
 struct QVulkanWindowWsiProbeResult {
     bool attempted = false;
+    bool instanceReady = false;
+    bool extensionsProbed = false;
     bool surfaceReady = false;
     bool headlessSkipped = false;
+    u32 supportedExtensionCount = 0;
     const char* note = nullptr;
 };
 

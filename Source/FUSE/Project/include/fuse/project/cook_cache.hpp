@@ -61,6 +61,9 @@ struct CookCachePruneEstimate {
     return is_valid_cook_cache_key(combine_cook_cache_key(source_hash, upstream_hash));
 }
 
+/// Default on-disk cook cache beside a U7 project (`.fuse/cook_cache.json`).
+[[nodiscard]] std::string defaultCookCachePath(const std::string& project_root);
+
 /// Content-hashed cook output cache — identical source+desc hashes return cached records (B7.9 deepen stub).
 class CookCache {
 public:

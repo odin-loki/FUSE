@@ -1,6 +1,7 @@
 #include <fuse/cook/cook_stub_writer.hpp>
 
 #include <fuse/cook/bc7_encoder.hpp>
+#include <fuse/cook/ispc_texcomp_hook.hpp>
 
 #include <filesystem>
 #include <fstream>
@@ -18,10 +19,62 @@
 #endif
 
 #if defined(FUSE_HAS_OGG_VORBIS)
+#include <vorbis/codec.h>
 #include <vorbis/vorbisenc.h>
 #endif
 
 namespace fuse::cook {
+
+namespace {
+
+struct WavHeaderInfo {
+    bool valid = false;
+    u32 channels = 0;
+    u32 sampleRate = 0;
+    u32 dataBytes = 0;
+};
+
+WavHeaderInfo sniffWavHeader(std::ifstream& in) {
+    WavHeaderInfo info;
+    char riff[4] = {};
+    in.read(riff, 4);
+    if (riff[0] != 'R' || riff[1] != 'I' || riff[2] != 'F' || riff[3] != 'F') {
+        return info;
+    }
+
+    in.ignore(4);
+    char wave[4] = {};
+    in.read(wave, 4);
+    if (wave[0] != 'W' || wave[1] != 'A' || wave[2] != 'V' || wave[3] != 'E') {
+        return info;
+    }
+
+    char chunkId[4] = {};
+    in.read(chunkId, 4);
+    if (chunkId[0] != 'f' || chunkId[1] != 'm' || chunkId[2] != 't' || chunkId[3] != ' ') {
+        return info;
+    }
+
+    u32 chunkSize = 0;
+    in.read(reinterpret_cast<char*>(&chunkSize), 4);
+    u16 audioFormat = 0;
+    u16 channels = 0;
+    u32 sampleRate = 0;
+    in.read(reinterpret_cast<char*>(&audioFormat), 2);
+    in.read(reinterpret_cast<char*>(&channels), 2);
+    in.read(reinterpret_cast<char*>(&sampleRate), 4);
+    if (audioFormat != 1u || channels == 0u || sampleRate == 0u) {
+        return info;
+    }
+
+    info.valid = true;
+    info.channels = channels;
+    info.sampleRate = sampleRate;
+    info.dataBytes = chunkSize > 16u ? chunkSize - 16u : 0u;
+    return info;
+}
+
+} // namespace
 
 namespace {
 
@@ -243,17 +296,31 @@ CookStubWriteResult tryCookAudioOgg(const std::string& input_path, const std::st
         return result;
     }
 
-    char riff[4] = {};
-    in.read(riff, 4);
-    const bool looksLikeWav = (riff[0] == 'R' && riff[1] == 'I' && riff[2] == 'F' && riff[3] == 'F');
+    const WavHeaderInfo wav = sniffWavHeader(in);
+    const u32 effectiveRate = wav.valid ? wav.sampleRate : sample_rate;
+    const u32 effectiveChannels = wav.valid ? wav.channels : 2u;
+    const u32 pcmSamples = wav.valid && effectiveChannels > 0u ? wav.dataBytes / (effectiveChannels * 2u) : 0u;
+
+    vorbis_info vorbisInfo;
+    vorbis_info_init(&vorbisInfo);
+    const int vorbisSetup = vorbis_encode_init(&vorbisInfo, static_cast<long>(effectiveChannels),
+                                               static_cast<long>(effectiveRate), 128000, 160000, 192000);
+    const bool vorbisReady = vorbisSetup == 0;
+    if (vorbisReady) {
+        vorbis_encode_clear(&vorbisInfo);
+    } else {
+        vorbis_info_clear(&vorbisInfo);
+    }
 
     std::ostringstream payload;
     payload << "FUSEAUDIO_STUB\n";
     payload << "hook=ogg\n";
-    payload << "rate=" << sample_rate << "\n";
+    payload << "rate=" << effectiveRate << "\n";
     payload << "format=" << format << "\n";
-    payload << "samples=" << (looksLikeWav ? 1u : 0u) << "\n";
-    payload << "encoder=vorbisenc_linked\n";
+    payload << "channels=" << effectiveChannels << "\n";
+    payload << "samples=" << pcmSamples << "\n";
+    payload << "encoder=" << (vorbisReady ? "vorbisenc_init_ok" : "vorbisenc_stub") << "\n";
+    payload << "wav=" << (wav.valid ? "yes" : "no") << "\n";
 
     CookStubWriteResult written = writeTextStub(output_path, payload.str());
     if (written.ok) {
@@ -358,6 +425,11 @@ CookStubWriteResult write_texture_bc7_encoded(const std::string& output_path,
 
 CookStubWriteResult write_texture_stub(const std::string& input_path, const std::string& output_path,
                                        const char* compression, bool mipmaps) {
+    const CookStubWriteResult ispc = tryCookTextureIspc(input_path, output_path, compression, mipmaps);
+    if (ispc.ok) {
+        return ispc;
+    }
+
     if (compression != nullptr && std::string(compression) == "BC7") {
         const CookStubWriteResult bc7 = tryCookTextureBc7(input_path, output_path, compression, mipmaps);
         if (bc7.ok) {

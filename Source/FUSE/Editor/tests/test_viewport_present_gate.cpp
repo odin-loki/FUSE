@@ -56,6 +56,11 @@ void testViewportPresentGateMatrix() {
                "real Qt surface alone retires placeholder when consumed");
 }
 
+void testViewportHeadlessWsiProbeSkippedOnCi() {
+    expectTrue(fuse::editor::viewportHeadlessWsiProbeSkipped(),
+               "headless CI skips Qt WSI probe until runtime gate enabled");
+}
+
 void testDesktopPresentGatesHeadlessSafe() {
     expectTrue(!fuse::renderer::desktopQtPresentEnabled(),
                "Qt present gate OFF by default on headless CI");
@@ -69,6 +74,7 @@ void testDesktopPresentGatesHeadlessSafe() {
 
 int main() {
     testViewportPresentGateMatrix();
+    testViewportHeadlessWsiProbeSkippedOnCi();
     testDesktopPresentGatesHeadlessSafe();
 
     if (g_failures == 0) {

@@ -9,6 +9,13 @@
 
 namespace fuse::project {
 
+std::string defaultCookCachePath(const std::string& project_root) {
+    if (project_root.empty()) {
+        return {};
+    }
+    return project_root + "/.fuse/cook_cache.json";
+}
+
 namespace {
 
 u64 recompute_cache_key_for_entry_(const CookCacheEntry& entry) {

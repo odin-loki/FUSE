@@ -2,6 +2,7 @@
 
 #if defined(FUSE_HAS_QT_VULKAN)
 
+#include <QByteArrayList>
 #include <QGuiApplication>
 #include <QVulkanInstance>
 #include <QVulkanWindow>
@@ -96,6 +97,15 @@ QVulkanWindowWsiProbeResult probeQVulkanWindowWsiQt() {
     QVulkanInstance* instance = sharedQtVulkanInstance();
     if (instance == nullptr) {
         result.note = "qvulkan_instance_create_failed";
+        return result;
+    }
+
+    result.instanceReady = true;
+    const QByteArrayList extensions = QVulkanInstance::supportedSurfaceExtensions();
+    result.extensionsProbed = true;
+    result.supportedExtensionCount = static_cast<u32>(extensions.size());
+    if (extensions.isEmpty()) {
+        result.note = "qvulkan_no_surface_extensions";
         return result;
     }
 

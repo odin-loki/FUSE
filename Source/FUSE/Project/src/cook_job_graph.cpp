@@ -43,6 +43,9 @@ std::string format_stage_summary(const CookJob& job) {
         out << cookStageKindName(job.stages[i].kind) << ':'
             << cookStageStatusName(job.stages[i].status);
     }
+    if (job.cache_hit) {
+        out << " (cache hit, skipped re-cook)";
+    }
     return out.str();
 }
 
@@ -301,6 +304,29 @@ bool CookJobGraph::is_valid_topological_order(const std::vector<std::string>& or
 
 bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, const CookManifest& manifest,
                                    CookJobGraphExecuteResult& result) {
+    CookManifestEntry cache_entry;
+    cache_entry.kind = job.kind;
+    cache_entry.source_path = job.source_path;
+    cache_entry.output_path = job.output_path;
+    cache_entry.dependencies = job.dependency_ids;
+
+    CookRecord cache_probe;
+    if (cooker.probe_cook_cache_hit(cache_entry, manifest, &cache_probe)) {
+        CookStageRecord& import_stage = job.stages[0];
+        CookStageRecord& process_stage = job.stages[1];
+        CookStageRecord& pack_stage = job.stages[2];
+        import_stage.status = CookStageStatus::Skipped;
+        import_stage.note = "skipped (cache hit)";
+        process_stage.status = CookStageStatus::Skipped;
+        process_stage.note = "skipped (cache hit)";
+        pack_stage.status = CookStageStatus::Ok;
+        pack_stage.note = cache_probe.note.empty() ? "cache hit — skipped re-cook" : cache_probe.note;
+        job.content_hash = cache_probe.content_hash;
+        job.cache_hit = true;
+        job.ok = true;
+        return true;
+    }
+
     CookStageRecord& import_stage = job.stages[0];
     if (job.source_path.empty() || job.output_path.empty()) {
         import_stage.status = CookStageStatus::Failed;

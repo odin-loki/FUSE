@@ -230,8 +230,20 @@ CTest: `fuse_scene_wire_runtime_bind`, `fuse_world2d_fuselevel_bridge`, `fuse_wo
 | `drainT3DMaterialLoads(..., CookCache*)` | Drain VFS loads into `HandleTable<Asset>` and store texture `CookCacheEntry` records |
 | `RuntimeEmbedSession` counters | `materialCookCacheHits`, `materialCookCacheStores`, `materialAsyncLoadsSubmitted`, `materialAsyncLoadsDrained` on editor world load |
 
-## 15. Deferred (honest backlog)
+## 15. Wave 13 progress
 
-- ispc_texcomp-quality BC7/BC5 compression replacing in-house mode-6 encoder
+| API | Role |
+|-----|------|
+| `defaultCookCachePath` | Maps project root → `.fuse/cook_cache.json` |
+| `ImportPipeline::load_cook_cache` / `save_cook_cache` | Persist cook cache across `fuse_cook` CLI invocations |
+| `AssetCooker::probe_cook_cache_hit` | Job-graph short-circuit — import/process/pack skipped on cache hit |
+| `tryCookTextureIspc` | Optional `ispc_texcomp` BC7/BC5 hook (`third_party/ispc_texcomp` honest stub) |
+| `tryCookAudioOgg` deepen | WAV sniff + `vorbis_encode_init` probe when `libvorbisenc` linked |
+
+`fuse_cook` loads/saves `.fuse/cook_cache.json` on `--project` / `--manifest` runs and prints `[cache hit, skipped re-cook]` progress.
+
+## 16. Deferred (honest backlog)
+
+- Real ispc_texcomp library replacing honest header stub
 - libvorbisenc system package on CI images (runtime libs present; dev headers optional today)
-- Cook-cache hit → skip re-cook on `fuse_cook` CLI (editor/runtime drain stores entries today)
+- Full OGG container encode (stub writes `FUSEAUDIO_STUB` metadata today)

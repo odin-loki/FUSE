@@ -761,11 +761,18 @@ void testCookCachePruneInvalidEntriesOnLoad() {
     expectTrue(loaded.contains(valid_hash), "valid loaded entry remains addressable");
 }
 
+void testDefaultCookCachePath() {
+    expectTrue(fuse::project::defaultCookCachePath("").empty(), "empty project root has no cache path");
+    expectTrue(fuse::project::defaultCookCachePath("/tmp/demo") == "/tmp/demo/.fuse/cook_cache.json",
+               "default cook cache path under .fuse");
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
 
+    testDefaultCookCachePath();
     testCombineCookCacheKeyGuards();
     testFnv1a64BytesEmptyGuard();
     testHashUpstreamDependenciesEmptyPathGuards();

@@ -17,6 +17,8 @@ CookStubWriteResult tryCookMeshAssimp(const std::string& input_path, const std::
                                       u32 lod_count, bool compressed);
 CookStubWriteResult tryCookTextureBc7(const std::string& input_path, const std::string& output_path,
                                       const char* compression, bool mipmaps);
+CookStubWriteResult tryCookTextureIspc(const std::string& input_path, const std::string& output_path,
+                                       const char* compression, bool mipmaps);
 CookStubWriteResult tryCookAudioOgg(const std::string& input_path, const std::string& output_path,
                                     u32 sample_rate, const char* format);
 

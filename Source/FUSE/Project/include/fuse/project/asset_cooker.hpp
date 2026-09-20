@@ -74,6 +74,10 @@ public:
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
 
+    /// Read-only cache probe for job-graph short-circuit — no stub cook on hit (U7 wave 13).
+    [[nodiscard]] bool probe_cook_cache_hit(const CookManifestEntry& entry, const CookManifest& manifest,
+                                            CookRecord* out_record = nullptr);
+
 private:
     CookRecord cook_with_cache_(CookAssetKind kind,
                                 const std::string& source_path,

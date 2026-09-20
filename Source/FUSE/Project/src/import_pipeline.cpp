@@ -53,6 +53,20 @@ CookBatchResult ImportPipeline::execute(bool dry_run) {
     return m_cooker.cook_manifest(m_plannedManifest);
 }
 
+bool ImportPipeline::load_cook_cache(const std::string& path) {
+    if (path.empty()) {
+        return false;
+    }
+    return m_cooker.cache().load(path);
+}
+
+bool ImportPipeline::save_cook_cache(const std::string& path) const {
+    if (path.empty()) {
+        return false;
+    }
+    return m_cooker.cache().save(path);
+}
+
 CookBatchResult ImportPipeline::planForProject(const ProjectManifest& project, const std::string& project_dir) {
     ImportPipeline pipeline;
     pipeline.set_project_root(project_dir);

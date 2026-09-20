@@ -1026,9 +1026,11 @@ void testCookManifestUsesJobGraph() {
     entry.output_path = "/tmp/fuse_b79_graph_mesh.fusemesh";
     manifest.assets.push_back(entry);
 
-    fuse::project::AssetCooker cooker;
-    const fuse::project::CookJobGraphExecuteResult graphResult = cooker.cook_manifest_graph(manifest);
-    const fuse::project::CookBatchResult batchResult = cooker.cook_manifest(manifest);
+    fuse::project::AssetCooker graphCooker;
+    const fuse::project::CookJobGraphExecuteResult graphResult = graphCooker.cook_manifest_graph(manifest);
+
+    fuse::project::AssetCooker batchCooker;
+    const fuse::project::CookBatchResult batchResult = batchCooker.cook_manifest(manifest);
 
     expectTrue(graphResult.ok, "cook_manifest_graph ok");
     expectTrue(batchResult.ok, "cook_manifest ok via job graph");
@@ -1920,6 +1922,56 @@ void testCookCacheDownstreamSourceProbe() {
                "empty output path downstream probe is guarded");
 }
 
+void testCookJobGraphCacheShortCircuit() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_shortcircuit_mesh.obj", "# shortcircuit\n");
+
+    fuse::project::CookManifest manifest;
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_shortcircuit_mesh.fusemesh";
+    manifest.assets.push_back(entry);
+
+    fuse::project::AssetCooker cooker;
+    const fuse::project::CookBatchResult first = cooker.cook_manifest(manifest);
+    expectTrue(first.ok, "first cook ok");
+    expectTrue(!first.records[0].cache_hit, "first cook misses");
+
+    const fuse::project::CookBatchResult second = cooker.cook_manifest(manifest);
+    expectTrue(second.ok, "second cook ok");
+    expectTrue(second.records[0].cache_hit, "second cook hits cache");
+    expectTrue(second.records[0].note.find("cache hit") != std::string::npos,
+               "job graph note reports cache hit skip");
+}
+
+void testImportPipelineCookCachePersistRoundTrip() {
+    const std::string source = writeTempFile("/tmp/fuse_b79_pipeline_mesh.obj", "# pipeline cache\n");
+    const std::string cachePath = "/tmp/fuse_b79_pipeline_cook_cache.json";
+
+    fuse::project::CookManifest manifest;
+    manifest.project_root = "/tmp";
+    fuse::project::CookManifestEntry entry;
+    entry.kind = fuse::project::CookAssetKind::Mesh;
+    entry.source_path = source;
+    entry.output_path = "/tmp/fuse_b79_pipeline_mesh.fusemesh";
+    manifest.assets.push_back(entry);
+
+    fuse::project::ImportPipeline pipeline;
+    pipeline.set_project_root(manifest.project_root);
+    pipeline.plan_from_manifest(manifest);
+    const fuse::project::CookBatchResult first = pipeline.execute(false);
+    expectTrue(first.ok, "pipeline first cook ok");
+    expectTrue(pipeline.save_cook_cache(cachePath), "pipeline saves cook cache");
+
+    fuse::project::ImportPipeline reloaded;
+    reloaded.set_project_root(manifest.project_root);
+    expectTrue(reloaded.load_cook_cache(cachePath), "pipeline reloads cook cache");
+    reloaded.plan_from_manifest(manifest);
+    const fuse::project::CookBatchResult second = reloaded.execute(false);
+    expectTrue(second.ok, "pipeline second cook ok");
+    expectTrue(second.records[0].cache_hit, "reloaded pipeline hits persisted cache");
+}
+
 void testCookManifestCacheHitsOnSecondRun() {
     const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
 
@@ -1996,6 +2048,8 @@ int main() {
     testCookContentHashGuardHelpers();
     testCookCacheContainsHelper();
     testCookCachePruneInvalidEntries();
+    testCookJobGraphCacheShortCircuit();
+    testImportPipelineCookCachePersistRoundTrip();
     testCookManifestCacheHitsOnSecondRun();
     testCookCacheInvalidateChain();
     testCookCacheStaleDependencyHashInvalidation();

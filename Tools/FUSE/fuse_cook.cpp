@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/project/asset_cooker.hpp>
+#include <fuse/project/cook_cache.hpp>
 #include <fuse/project/cook_manifest.hpp>
 #include <fuse/project/import_pipeline.hpp>
 #include <fuse/project/loader.hpp>
@@ -26,17 +27,33 @@ void printUsage() {
                  "  fuse_cook --fuselevel --module <file.cs> --output <world.fuselevel>\n");
 }
 
-int printCookResult(const fuse::project::CookBatchResult& result) {
+int printCookResult(const fuse::project::CookBatchResult& result,
+                    const fuse::project::CookCacheStats* cacheStats = nullptr) {
+    fuse::u32 cacheHits = 0;
     for (const fuse::project::CookRecord& record : result.records) {
-        std::printf("  [%s] %s -> %s (%s) %s\n",
+        if (record.cache_hit) {
+            ++cacheHits;
+        }
+        const char* cacheTag = record.cache_hit ? " [cache hit, skipped re-cook]" : "";
+        std::printf("  [%s] %s -> %s (%s) %s%s\n",
                     fuse::project::cookAssetKindName(record.kind),
                     record.source_path.c_str(),
                     record.output_path.c_str(),
                     fuse::project::cookStatusName(record.status),
-                    record.note.c_str());
+                    record.note.c_str(),
+                    cacheTag);
     }
 
-    std::printf("fuse_cook: %s\n", result.summary.c_str());
+    std::printf("fuse_cook: %s", result.summary.c_str());
+    if (cacheHits > 0) {
+        std::printf(" (%u cache hit%s, skipped re-cook)", cacheHits, cacheHits == 1 ? "" : "s");
+    }
+    if (cacheStats != nullptr && (cacheStats->hits > 0 || cacheStats->misses > 0)) {
+        std::printf(" [cache stats: hits=%llu misses=%llu]",
+                    static_cast<unsigned long long>(cacheStats->hits),
+                    static_cast<unsigned long long>(cacheStats->misses));
+    }
+    std::printf("\n");
     return result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
@@ -116,6 +133,9 @@ int main(int argc, char** argv) {
         }
 
         fuse::project::AssetCooker cooker;
+        const std::string cachePath = fuse::project::defaultCookCachePath(".");
+        cooker.cache().load(cachePath);
+
         fuse::project::CookRecord record;
         if (meshCook) {
             fuse::project::MeshImportDesc desc;
@@ -138,7 +158,8 @@ int main(int argc, char** argv) {
         result.records.push_back(record);
         result.ok = record.ok;
         result.summary = record.ok ? "single asset cook stub ok" : "single asset cook stub failed";
-        const int exitCode = printCookResult(result);
+        cooker.cache().save(cachePath);
+        const int exitCode = printCookResult(result, &cooker.cache().stats());
         fuse::core::shutdown();
         return exitCode;
     }
@@ -153,9 +174,18 @@ int main(int argc, char** argv) {
 
         fuse::project::ImportPipeline pipeline;
         pipeline.set_project_root(loaded.manifest.project_root);
+        const std::string cachePath =
+            fuse::project::defaultCookCachePath(loaded.manifest.project_root);
+        if (!dryRun) {
+            pipeline.load_cook_cache(cachePath);
+        }
         pipeline.plan_from_manifest(loaded.manifest);
         const fuse::project::CookBatchResult result = pipeline.execute(dryRun);
-        const int exitCode = printCookResult(result);
+        if (!dryRun) {
+            pipeline.save_cook_cache(cachePath);
+        }
+        const int exitCode =
+            printCookResult(result, dryRun ? nullptr : &pipeline.cooker().cache().stats());
         fuse::core::shutdown();
         return exitCode;
     }
@@ -183,9 +213,17 @@ int main(int argc, char** argv) {
 
         fuse::project::ImportPipeline pipeline;
         pipeline.set_project_root(projectDir);
+        const std::string cachePath = fuse::project::defaultCookCachePath(projectDir);
+        if (!dryRun) {
+            pipeline.load_cook_cache(cachePath);
+        }
         pipeline.plan_from_manifest(manifest);
         const fuse::project::CookBatchResult result = pipeline.execute(dryRun);
-        const int exitCode = printCookResult(result);
+        if (!dryRun) {
+            pipeline.save_cook_cache(cachePath);
+        }
+        const int exitCode =
+            printCookResult(result, dryRun ? nullptr : &pipeline.cooker().cache().stats());
         fuse::core::shutdown();
         return exitCode;
     }
