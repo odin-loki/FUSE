@@ -49,6 +49,12 @@ void RuntimeEmbedSession::reset() {
     shaderAsyncLoadsSubmitted = 0;
     shaderAsyncLoadsDrained = 0;
     ecsWorld3DSnapshotVisible = 0;
+    cookedMaterialBindings = 0;
+    cookedShaderBindings = 0;
+    meshPreviewHints = 0;
+    sdfPreviewHints = 0;
+    meshPreviewDraws = 0;
+    sdfPreviewDraws = 0;
     qtLivePresentReady = false;
     usesExternalSwapchain = false;
     submittedFrames = 0;

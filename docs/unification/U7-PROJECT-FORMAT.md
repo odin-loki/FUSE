@@ -276,7 +276,18 @@ CTest: `fuse_scene_wire_runtime_bind`, `fuse_world2d_fuselevel_bridge`, `fuse_wo
 | `RuntimeViewportHook::syncEcsToEmbedWorld3D_` deepen | Mirrors ECS quaternion rotation into embed `SceneObject3D` yaw/pitch/roll; records `ecsWorld3DSnapshotVisible` after hybrid compose |
 | `RuntimeEmbedSession` counters | `shaderVfsResolved`, `shaderAsyncLoadsSubmitted`, `shaderAsyncLoadsDrained`, `shaderCookCacheHits`, `shaderCookCacheStores`, `ecsWorld3DSnapshotVisible` |
 
-## 19. Deferred (honest backlog)
+## 19. Wave 17 progress
+
+| API | Role |
+|-----|------|
+| `T3DShaderRefStub` + `ShaderData =` mission extract | Mission-level shader refs parsed alongside `MaterialAsset` |
+| `resolveT3DMissionBindings` shader bindings | Owner-linked `ShaderData` refs with `shaderCount` |
+| `resolveT3DShaderVfsPaths` / `submitT3DShaderLoadsAsync(extract)` | Mission shader VFS resolve + async load parity with materials |
+| `CookedAssetBindings` | Hybrid render path binds cooked `.fusetex` / `.fuseshader` outputs; probes headers for tint |
+| `MeshSdfPreviewCatalog` | Headless-safe mesh/SDF live preview stubs from cooked asset hints |
+| `tryCookShaderGlslang` test | `fuse_bc7_encoder` exercises `FUSESHADER_GLSLANG` when `glslangValidator` is on runner |
+
+## 20. Deferred (honest backlog)
 
 - Real ispc_texcomp library replacing honest header stub
 - libvorbisenc system package on CI images (runtime libs present; dev headers optional today)

@@ -5,6 +5,10 @@ add_executable(fuse_hybrid_tests
     test_parallel_cull_edge.cpp
 )
 
+add_executable(fuse_hybrid_cooked_bindings test_cooked_asset_bindings.cpp)
+target_link_libraries(fuse_hybrid_cooked_bindings PRIVATE fuse_hybrid fuse_core)
+add_test(NAME fuse_hybrid_cooked_bindings COMMAND fuse_hybrid_cooked_bindings)
+
 target_link_libraries(fuse_hybrid_tests PRIVATE fuse_hybrid fuse_core)
 target_compile_features(fuse_hybrid_tests PRIVATE cxx_std_17)
 

@@ -1,7 +1,11 @@
 add_library(fuse_hybrid STATIC
+    src/cooked_asset_bindings.cpp
     src/hybrid_composer.cpp
+    src/mesh_sdf_preview_stub.cpp
     src/placeholder_renderer.cpp
+    include/fuse/hybrid/cooked_asset_bindings.hpp
     include/fuse/hybrid/hybrid_composer.hpp
+    include/fuse/hybrid/mesh_sdf_preview_stub.hpp
     include/fuse/hybrid/placeholder_renderer.hpp
     include/fuse/hybrid/project_flags.hpp
 )

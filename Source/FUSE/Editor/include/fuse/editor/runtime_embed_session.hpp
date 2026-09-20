@@ -54,6 +54,12 @@ struct RuntimeEmbedSession {
     u32 shaderAsyncLoadsSubmitted = 0;
     u32 shaderAsyncLoadsDrained = 0;
     u32 ecsWorld3DSnapshotVisible = 0;
+    u32 cookedMaterialBindings = 0;
+    u32 cookedShaderBindings = 0;
+    u32 meshPreviewHints = 0;
+    u32 sdfPreviewHints = 0;
+    u32 meshPreviewDraws = 0;
+    u32 sdfPreviewDraws = 0;
     bool qtLivePresentReady = false;
     bool usesExternalSwapchain = false;
     u32 submittedFrames = 0;

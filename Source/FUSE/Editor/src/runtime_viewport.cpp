@@ -6,6 +6,8 @@
 #include <fuse/editor/viewport_swapchain_recreate.hpp>
 #include <fuse/editor/viewport_swapchain_wiring.hpp>
 #include <fuse/editor/viewport_vulkan_surface.hpp>
+#include <fuse/ecs/components/mesh.hpp>
+#include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/platform/window_wsi.hpp>
@@ -29,6 +31,7 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <fuse/frame/frame_ctx.hpp>
+#include <fuse/hybrid/mesh_sdf_preview_stub.hpp>
 #include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/render_command_list.hpp>
@@ -428,10 +431,12 @@ void RuntimeViewportHook::drainPendingMaterialLoads_() {
         fuse::project::drainT3DMaterialLoads(m_materialAssetTable, &m_materialCookCache);
     m_embedSession.materialAsyncLoadsDrained += drained.drainedCount;
     m_embedSession.materialCookCacheStores += drained.cookCacheStores;
+    m_embedSession.materialTextureCooks += drained.cookCacheStores;
     m_materialAssetTable.commit();
     if (fuse::io::VirtualFileSystem::instance().completedLoadCount() == 0u) {
         m_materialLoadsPending = false;
     }
+    bindCookedAssetsToHybrid_();
 }
 
 void RuntimeViewportHook::drainPendingShaderLoads_() {
@@ -451,6 +456,119 @@ void RuntimeViewportHook::drainPendingShaderLoads_() {
     if (fuse::io::VirtualFileSystem::instance().completedLoadCount() == 0u) {
         m_shaderLoadsPending = false;
     }
+    bindCookedAssetsToHybrid_();
+}
+
+void RuntimeViewportHook::bindCookedAssetsToHybrid_() {
+#if defined(FUSE_VULKAN_BACKEND)
+    RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
+    if (gpu == nullptr || gpu->hybrid == nullptr) {
+        return;
+    }
+
+    fuse::hybrid::CookedAssetBindings& bindings = gpu->hybrid->composer().cookedAssets();
+    bindings.clear();
+
+    fuse::io::VirtualFileSystem& vfs = fuse::io::VirtualFileSystem::instance();
+    for (const fuse::io::CompletedLoad& load : vfs.lastDrainedLoads()) {
+        if (!load.success || load.asset.virtualPath.empty()) {
+            continue;
+        }
+
+        const std::string materialOutput =
+            fuse::project::materialVirtualPathToCookOutput(load.asset.virtualPath);
+        if (!materialOutput.empty()) {
+            bindings.bindMaterial(materialOutput);
+            continue;
+        }
+
+        const std::string shaderOutput =
+            fuse::project::shaderVirtualPathToCookOutput(load.asset.virtualPath);
+        if (!shaderOutput.empty()) {
+            bindings.bindShader(shaderOutput);
+        }
+    }
+
+    m_embedSession.cookedMaterialBindings = bindings.materialCount();
+    m_embedSession.cookedShaderBindings = bindings.shaderCount();
+#else
+    (void)0;
+#endif
+}
+
+void RuntimeViewportHook::syncMeshSdfPreviewFromEcs_(EditorHost& host) {
+#if defined(FUSE_VULKAN_BACKEND)
+    RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
+    if (gpu == nullptr || gpu->hybrid == nullptr || !gpu->worldsAttached) {
+        return;
+    }
+
+    fuse::hybrid::MeshSdfPreviewCatalog& catalog = gpu->hybrid->composer().previewCatalog();
+    catalog.clear();
+
+    host.editorScene().registry().each_query<ecs::Transform>(
+        [&](ecs::EntityID id, ecs::Transform& transform) {
+            if (host.editorScene().registry().has<ecs::Mesh>(id)) {
+                const ecs::Mesh& mesh = *host.editorScene().registry().get<ecs::Mesh>(id);
+                if (!mesh.visible) {
+                    return;
+                }
+
+                fuse::hybrid::MeshPreviewHint hint{};
+                hint.x = transform.position.x;
+                hint.y = transform.position.y;
+                hint.z = transform.position.z;
+                hint.materialId = mesh.material_id;
+                hint.cookedMeshPath = "cooked/mesh/preview_" + std::to_string(mesh.material_id) + ".fusemesh";
+                hint.visible = true;
+                catalog.addMesh(hint);
+                return;
+            }
+
+            if (host.editorScene().registry().has<ecs::SDFObject>(id)) {
+                const ecs::SDFObject& sdf = *host.editorScene().registry().get<ecs::SDFObject>(id);
+                if (!sdf.visible) {
+                    return;
+                }
+
+                fuse::hybrid::SdfPreviewHint hint{};
+                hint.x = transform.position.x;
+                hint.y = transform.position.y;
+                hint.z = transform.position.z;
+                hint.materialId = sdf.material_id;
+                hint.param0 = sdf.params.x;
+                hint.param1 = sdf.params.y;
+                hint.param2 = sdf.params.z;
+                switch (sdf.type) {
+                case ecs::SDFPrimitive::Box:
+                    hint.primitive = fuse::hybrid::SdfPreviewPrimitive::Box;
+                    break;
+                case ecs::SDFPrimitive::Capsule:
+                    hint.primitive = fuse::hybrid::SdfPreviewPrimitive::Capsule;
+                    break;
+                case ecs::SDFPrimitive::Torus:
+                    hint.primitive = fuse::hybrid::SdfPreviewPrimitive::Torus;
+                    break;
+                case ecs::SDFPrimitive::Cylinder:
+                    hint.primitive = fuse::hybrid::SdfPreviewPrimitive::Cylinder;
+                    break;
+                case ecs::SDFPrimitive::Custom:
+                    hint.primitive = fuse::hybrid::SdfPreviewPrimitive::Custom;
+                    break;
+                default:
+                    hint.primitive = fuse::hybrid::SdfPreviewPrimitive::Sphere;
+                    break;
+                }
+                hint.visible = true;
+                catalog.addSdf(hint);
+            }
+        });
+
+    m_embedSession.meshPreviewHints = catalog.meshCount();
+    m_embedSession.sdfPreviewHints = catalog.sdfCount();
+#else
+    (void)host;
+#endif
 }
 
 void RuntimeViewportHook::mirrorEditorEntities_(EditorHost& host) {
@@ -651,6 +769,8 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
         if (gpu->hybrid->composer().frameCount() > composerFramesBefore) {
             ++m_embedSession.hybridComposerFrames;
             m_embedSession.ecsWorld3DSnapshotVisible = gpu->embedWorld3D.readSnapshot().visibleCount();
+            m_embedSession.meshPreviewDraws = gpu->hybrid->composer().meshPreviewDraws();
+            m_embedSession.sdfPreviewDraws = gpu->hybrid->composer().sdfPreviewDraws();
         }
 
         fuse::renderer::PresentPath* presentPath = gpu->hybrid->presentPath();
@@ -723,6 +843,7 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
     drainPendingShaderLoads_();
     mirrorEditorEntities_(host);
     syncEcsToEmbedWorld3D_(host);
+    syncMeshSdfPreviewFromEcs_(host);
 
     if (!m_lastProjectLabel.empty()) {
         if (host.runtimeScene().name() != m_lastProjectLabel) {

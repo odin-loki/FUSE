@@ -34,6 +34,50 @@ void PlaceholderRenderer::clear3D(float r, float g, float b) {
     }
 }
 
+void PlaceholderRenderer::drawMeshPreviewStub(float x, float y, float z, u8 r, u8 g, u8 b) {
+    const float cx = x + static_cast<float>(m_width) * 0.5f;
+    const float cy = y - z * 0.25f + static_cast<float>(m_height) * 0.5f;
+    const float size = 10.f;
+
+    for (int dy = -10; dy <= 10; ++dy) {
+        for (int dx = -10; dx <= 10; ++dx) {
+            if (std::abs(dx) == 10 || std::abs(dy) == 10 || std::abs(dx + dy) <= 2 || std::abs(dx - dy) <= 2) {
+                const u32 px = static_cast<u32>(cx + static_cast<float>(dx));
+                const u32 py = static_cast<u32>(cy + static_cast<float>(dy));
+                if (px < m_width && py < m_height) {
+                    setPixel(px, py, r, g, b, 255);
+                }
+            }
+        }
+    }
+}
+
+void PlaceholderRenderer::drawSdfPreviewStub(float x, float y, float z, bool boxPrimitive, u8 r, u8 g,
+                                             u8 b) {
+    const float cx = x + static_cast<float>(m_width) * 0.5f;
+    const float cy = y - z * 0.25f + static_cast<float>(m_height) * 0.5f;
+    const int radius = boxPrimitive ? 0 : 8;
+
+    for (int dy = -10; dy <= 10; ++dy) {
+        for (int dx = -10; dx <= 10; ++dx) {
+            bool inside = false;
+            if (boxPrimitive) {
+                inside = std::abs(dx) <= 8 && std::abs(dy) <= 8;
+            } else {
+                inside = (dx * dx + dy * dy) <= (radius * radius + radius);
+            }
+
+            if (inside) {
+                const u32 px = static_cast<u32>(cx + static_cast<float>(dx));
+                const u32 py = static_cast<u32>(cy + static_cast<float>(dy));
+                if (px < m_width && py < m_height) {
+                    setPixel(px, py, r, g, b, 220);
+                }
+            }
+        }
+    }
+}
+
 void PlaceholderRenderer::drawSprite2D(float x, float y, float rotation, u8 r, u8 g, u8 b) {
     const float cx = x + static_cast<float>(m_width) * 0.5f;
     const float cy = y + static_cast<float>(m_height) * 0.5f;

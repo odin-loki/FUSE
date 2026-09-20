@@ -109,6 +109,9 @@ struct T3DShaderCookCacheResult {
 /// Count virtual-path mappings derived from resolved scene bindings (material + shader stubs).
 [[nodiscard]] u32 countRemappedAssetVfsPaths(const T3DDatablockResolveResult& bindings);
 
+/// Resolve shader refs from a mission extract through the VFS registry.
+[[nodiscard]] T3DShaderVfsResolveResult resolveT3DShaderVfsPaths(const T3DMissionExtract& extract);
+
 /// Resolve shader wire bindings from a scene through the VFS registry.
 [[nodiscard]] T3DShaderVfsResolveResult resolveT3DShaderVfsFromBindings(
     const T3DDatablockResolveResult& bindings);

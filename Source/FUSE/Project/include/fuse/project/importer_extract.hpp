@@ -15,6 +15,7 @@ struct T3DSimObjectStub {
     std::string scale;
     std::string datablockRef;
     std::string materialAsset;
+    std::string shaderAsset;
 };
 
 struct T3DMaterialRefStub {
@@ -25,11 +26,16 @@ struct T3DDatablockRefStub {
     std::string datablockName;
 };
 
+struct T3DShaderRefStub {
+    std::string shaderRef;
+};
+
 struct T3DMissionExtract {
     std::string missionName;
     std::vector<T3DSimObjectStub> simObjects;
     std::vector<T3DMaterialRefStub> materials;
     std::vector<T3DDatablockRefStub> datablocks;
+    std::vector<T3DShaderRefStub> shaders;
 };
 
 enum class T2DPhysicsShape : u8 {

@@ -12,6 +12,8 @@ public:
     void beginFrame(u32 width, u32 height);
     void clear3D(float r, float g, float b);
     void drawSprite2D(float x, float y, float rotation, u8 r, u8 g, u8 b);
+    void drawMeshPreviewStub(float x, float y, float z, u8 r, u8 g, u8 b);
+    void drawSdfPreviewStub(float x, float y, float z, bool boxPrimitive, u8 r, u8 g, u8 b);
 
     u32 width() const { return m_width; }
     u32 height() const { return m_height; }

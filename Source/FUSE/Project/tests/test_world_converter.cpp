@@ -449,6 +449,71 @@ void testVfsAssetPathRemap() {
                "remapped asset vfs path count includes material and shader bindings");
 }
 
+void testT3DMissionShaderDataExtract() {
+    const std::string missionText =
+        "new Scene(ShaderLevel) {\n"
+        "   new PostEffect(Post) {\n"
+        "      ShaderData = \"Common:ScreenSpace\";\n"
+        "   };\n"
+        "};\n";
+
+    const fuse::project::T3DMissionExtract extract =
+        fuse::project::extractT3DMissionFields(missionText);
+    expectTrue(extract.shaders.size() >= 1u, "mission extract records ShaderData refs");
+    expectTrue(extract.simObjects.size() >= 2u, "mission extract records shader owner object");
+    bool foundShaderOwner = false;
+    for (const fuse::project::T3DSimObjectStub& object : extract.simObjects) {
+        if (object.objectName == "Post" && object.shaderAsset == "Common:ScreenSpace") {
+            foundShaderOwner = true;
+            break;
+        }
+    }
+    expectTrue(foundShaderOwner, "shader owner object stores ShaderData ref");
+
+    const fuse::project::T3DDatablockResolveResult resolved =
+        fuse::project::resolveT3DMissionBindings(extract);
+    expectTrue(resolved.shaderCount >= 1u, "mission resolve linked shader bindings");
+}
+
+void testT3DMissionShaderVfsAsyncLoad() {
+    const std::filesystem::path projectRoot = std::filesystem::path("/tmp/fuse_vfs_project");
+    const std::filesystem::path shaderPath =
+        projectRoot / "data" / "shaders" / "Common" / "ScreenSpace.cs";
+    std::filesystem::create_directories(shaderPath.parent_path());
+    writeTempFile(shaderPath.string(), "void main() {}\n");
+
+    fuse::project::ProjectManifest manifest{};
+    manifest.projectRoot = projectRoot.string();
+    fuse::project::mountProjectAssetRoots(manifest);
+
+    const std::string missionText =
+        "new Scene(ShaderLevel) {\n"
+        "   new PostEffect(Post) {\n"
+        "      ShaderData = \"Common:ScreenSpace\";\n"
+        "   };\n"
+        "};\n";
+    const fuse::project::T3DMissionExtract extract =
+        fuse::project::extractT3DMissionFields(missionText);
+
+    const fuse::project::T3DShaderVfsResolveResult resolved =
+        fuse::project::resolveT3DShaderVfsPaths(extract);
+    expectTrue(resolved.shaderCount >= 1u, "mission shader vfs resolve counted refs");
+    expectTrue(resolved.resolvedCount >= 1u, "mission shader vfs path resolved on disk");
+
+    const fuse::project::T3DShaderVfsAsyncLoadResult submitted =
+        fuse::project::submitT3DShaderLoadsAsync(extract);
+    expectTrue(submitted.submittedCount >= 1u, "mission async shader vfs load submitted");
+
+    fuse::io::VirtualFileSystem& vfs = fuse::io::VirtualFileSystem::instance();
+    for (fuse::u32 spinGuard = 0u;
+         spinGuard < 1'000'000u && vfs.completedLoadCount() < submitted.submittedCount; ++spinGuard) {
+        std::this_thread::yield();
+    }
+
+    fuse::HandleTable<fuse::io::Asset> table;
+    fuse::project::drainT3DShaderLoads(table, nullptr);
+}
+
 void testT3DShaderVfsAsyncLoad() {
     const std::filesystem::path projectRoot = std::filesystem::path("/tmp/fuse_vfs_project");
     const std::filesystem::path shaderPath =
@@ -541,6 +606,8 @@ int main() {
     testT3DMaterialVfsMountAndResolve();
     testT3DMaterialVfsAsyncLoad();
     testVfsAssetPathRemap();
+    testT3DMissionShaderDataExtract();
+    testT3DMissionShaderVfsAsyncLoad();
     testT3DShaderVfsAsyncLoad();
     fuse::core::shutdown();
 

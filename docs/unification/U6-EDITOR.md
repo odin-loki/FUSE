@@ -156,6 +156,10 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 | `syncEcsToEmbedWorld3D_` deepen — quaternion→yaw/pitch/roll + `ecsWorld3DSnapshotVisible` after hybrid compose (wave 16) | Live mesh/material preview from cooked assets |
 | Shader async VFS submit + cook-cache drain on world load (`shaderAsyncLoadsSubmitted`, `shaderAsyncLoadsDrained`, `shaderCookCacheHits`, `shaderCookCacheStores`) | — |
 | `resolveT3DShaderVfsFromBindings` + `shaderVfsResolved` counter on embed world load | — |
+| `CookedAssetBindings` on `HybridComposer` — cooked `.fusetex` / `.fuseshader` bind + clear-color tint (wave 17) | Full in-process GPU viewport compositing |
+| `MeshSdfPreviewCatalog` + ECS mesh/SDF preview stubs in embed tick (`meshPreviewHints`, `meshPreviewDraws`) | Live mesh/material preview from cooked assets |
+| `bindCookedAssetsToHybrid_` after VFS drain (`cookedMaterialBindings`, `cookedShaderBindings`) | — |
+| Mission-level `ShaderData =` extract + `resolveT3DShaderVfsPaths` / `submitT3DShaderLoadsAsync(extract)` | — |
 
 ---
 

@@ -447,6 +447,40 @@ T3DMaterialCookCacheResult drainT3DMaterialLoads(fuse::HandleTable<fuse::io::Ass
     return result;
 }
 
+T3DShaderVfsResolveResult resolveT3DShaderVfsPaths(const T3DMissionExtract& extract) {
+    T3DShaderVfsResolveResult result;
+    fuse::io::VirtualFileSystem& vfs = fuse::io::VirtualFileSystem::instance();
+
+    for (const T3DShaderRefStub& shader : extract.shaders) {
+        ++result.shaderCount;
+        const std::string virtualPath = shaderAssetToVirtualPath(shader.shaderRef);
+        std::string physicalPath;
+        if (!virtualPath.empty() && vfs.resolve(virtualPath, physicalPath)) {
+            ++result.resolvedCount;
+        } else {
+            ++result.unresolvedCount;
+        }
+    }
+
+    for (const T3DSimObjectStub& object : extract.simObjects) {
+        if (object.shaderAsset.empty()) {
+            continue;
+        }
+        ++result.shaderCount;
+        const std::string virtualPath = shaderAssetToVirtualPath(object.shaderAsset);
+        std::string physicalPath;
+        if (!virtualPath.empty() && vfs.resolve(virtualPath, physicalPath)) {
+            ++result.resolvedCount;
+        } else {
+            ++result.unresolvedCount;
+        }
+    }
+
+    result.note = "resolved " + std::to_string(result.resolvedCount) + "/" +
+                  std::to_string(result.shaderCount) + " shader vfs paths";
+    return result;
+}
+
 T3DShaderVfsResolveResult resolveT3DShaderVfsFromBindings(const T3DDatablockResolveResult& bindings) {
     T3DShaderVfsResolveResult result;
     fuse::io::VirtualFileSystem& vfs = fuse::io::VirtualFileSystem::instance();
@@ -512,10 +546,44 @@ T3DShaderVfsAsyncLoadResult submitT3DShaderLoadsAsync(const T3DDatablockResolveR
     return result;
 }
 
-T3DShaderVfsAsyncLoadResult submitT3DShaderLoadsAsync(const T3DMissionExtract& /*extract*/,
-                                                      CookCache* /*cache*/) {
+T3DShaderVfsAsyncLoadResult submitT3DShaderLoadsAsync(const T3DMissionExtract& extract,
+                                                      CookCache* cache) {
     T3DShaderVfsAsyncLoadResult result;
-    result.note = "submitted 0 async shader vfs load(s)";
+    fuse::io::VirtualFileSystem& vfs = fuse::io::VirtualFileSystem::instance();
+
+    auto submitShaderRef = [&](const std::string& shaderRef) {
+        const std::string virtualPath = shaderAssetToVirtualPath(shaderRef);
+        if (virtualPath.empty()) {
+            return;
+        }
+
+        std::string physicalPath;
+        if (cache != nullptr && vfs.resolve(virtualPath, physicalPath) &&
+            tryCookCacheHit(cache, physicalPath, result.cookCacheHits)) {
+            return;
+        }
+
+        const fuse::io::LoadId loadId = vfs.submitLoadAsync(virtualPath);
+        if (loadId != 0u) {
+            result.loadIds.push_back(loadId);
+            ++result.submittedCount;
+        }
+    };
+
+    for (const T3DShaderRefStub& shader : extract.shaders) {
+        submitShaderRef(shader.shaderRef);
+    }
+
+    for (const T3DSimObjectStub& object : extract.simObjects) {
+        if (!object.shaderAsset.empty()) {
+            submitShaderRef(object.shaderAsset);
+        }
+    }
+
+    result.note = "submitted " + std::to_string(result.submittedCount) + " async shader vfs load(s)";
+    if (result.cookCacheHits > 0u) {
+        result.note += ", cook-cache hits=" + std::to_string(result.cookCacheHits);
+    }
     return result;
 }
 

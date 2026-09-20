@@ -25,6 +25,8 @@ void appendBinding(T3DDatablockResolveResult& result, const std::string& owner,
         ++result.datablockCount;
     } else if (kind == "material") {
         ++result.materialCount;
+    } else if (kind == "shader") {
+        ++result.shaderCount;
     }
 }
 
@@ -49,6 +51,9 @@ T3DDatablockResolveResult resolveT3DMissionBindings(const T3DMissionExtract& ext
         if (!object.materialAsset.empty()) {
             appendBinding(result, object.objectName, object.materialAsset, "material");
         }
+        if (!object.shaderAsset.empty()) {
+            appendBinding(result, object.objectName, object.shaderAsset, "shader");
+        }
     }
 
     return result;
@@ -67,7 +72,7 @@ T3DDatablockResolveResult resolveT3DBindingsFromScene(const fuse::scene::Scene& 
             continue;
         }
 
-        if (wire.kind == "datablock" || wire.kind == "material") {
+        if (wire.kind == "datablock" || wire.kind == "material" || wire.kind == "shader") {
             appendBinding(result, wire.owner, wire.value, wire.kind);
         }
     }

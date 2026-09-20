@@ -120,15 +120,57 @@ void HybridComposer::render(frame::FrameCtx& ctx) {
 
     if (m_world3D && m_flags.enable3D) {
         m_world3D->render(ctx);
-        const float clearR = m_world3D->clearColorR();
-        const float clearG = m_world3D->clearColorG();
-        const float clearB = m_world3D->clearColorB();
+        m_cookedAssets.refreshTints();
+        float clearR = m_world3D->clearColorR() + m_cookedAssets.materialTintR() +
+                       m_cookedAssets.shaderTintR();
+        float clearG = m_world3D->clearColorG() + m_cookedAssets.materialTintG() +
+                       m_cookedAssets.shaderTintG();
+        float clearB = m_world3D->clearColorB() + m_cookedAssets.materialTintB() +
+                       m_cookedAssets.shaderTintB();
+        clearR = clearR > 1.f ? 1.f : clearR;
+        clearG = clearG > 1.f ? 1.f : clearG;
+        clearB = clearB > 1.f ? 1.f : clearB;
         if (m_softwarePlaceholderEnabled) {
             m_renderer.clear3D(clearR, clearG, clearB);
         }
 #if defined(FUSE_HAS_VULKAN_RHI)
         recordClear3D(clearR, clearG, clearB);
 #endif
+
+        m_meshPreviewDraws = 0;
+        m_sdfPreviewDraws = 0;
+        for (const MeshPreviewHint& meshHint : m_previewCatalog.meshes()) {
+            if (!meshHint.visible) {
+                continue;
+            }
+            const u8 r = static_cast<u8>(64u + (meshHint.materialId % 7u) * 24u);
+            const u8 g = static_cast<u8>(96u + (meshHint.materialId % 5u) * 16u);
+            const u8 b = static_cast<u8>(128u + (meshHint.materialId % 3u) * 20u);
+            if (m_softwarePlaceholderEnabled) {
+                m_renderer.drawMeshPreviewStub(meshHint.x, meshHint.y, meshHint.z, r, g, b);
+            }
+#if defined(FUSE_HAS_VULKAN_RHI)
+            recordSprite2D(meshHint.x, meshHint.y, 0.f, r, g, b);
+#endif
+            ++m_meshPreviewDraws;
+        }
+
+        for (const SdfPreviewHint& sdfHint : m_previewCatalog.sdfs()) {
+            if (!sdfHint.visible) {
+                continue;
+            }
+            const bool boxPrimitive = sdfHint.primitive == SdfPreviewPrimitive::Box;
+            const u8 r = static_cast<u8>(180u + (sdfHint.materialId % 4u) * 12u);
+            const u8 g = static_cast<u8>(96u + (sdfHint.materialId % 6u) * 10u);
+            const u8 b = static_cast<u8>(220u);
+            if (m_softwarePlaceholderEnabled) {
+                m_renderer.drawSdfPreviewStub(sdfHint.x, sdfHint.y, sdfHint.z, boxPrimitive, r, g, b);
+            }
+#if defined(FUSE_HAS_VULKAN_RHI)
+            recordSprite2D(sdfHint.x, sdfHint.y + 6.f, 0.f, r, g, b);
+#endif
+            ++m_sdfPreviewDraws;
+        }
     } else {
         if (m_softwarePlaceholderEnabled) {
             m_renderer.clear3D(0.f, 0.f, 0.f);

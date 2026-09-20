@@ -58,6 +58,8 @@ private:
     void drainPendingShaderLoads_();
     void mirrorEditorEntities_(EditorHost& host);
     void syncEcsToEmbedWorld3D_(EditorHost& host);
+    void syncMeshSdfPreviewFromEcs_(EditorHost& host);
+    void bindCookedAssetsToHybrid_();
     void tickHeadlessPresentStub_(EditorHost& host, f32 dt);
 
     ViewportPanel m_panel;

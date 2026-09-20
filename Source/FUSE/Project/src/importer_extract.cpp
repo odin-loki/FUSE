@@ -268,6 +268,14 @@ T3DMissionExtract extractT3DMissionFields(const std::string& missionText) {
             }
         }
 
+        const std::string shaderAsset = extractQuotedValue(line, "ShaderData = ");
+        if (!shaderAsset.empty()) {
+            extract.shaders.push_back({shaderAsset});
+            if (current != nullptr) {
+                current->shaderAsset = shaderAsset;
+            }
+        }
+
         const std::string datablock = extractAssignmentValue(line, "dataBlock = ");
         if (!datablock.empty()) {
             extract.datablocks.push_back({datablock});

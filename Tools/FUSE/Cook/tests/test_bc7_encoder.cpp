@@ -107,6 +107,34 @@ void testIspcTexcompHookUnavailableWithoutInput() {
 #endif
 }
 
+void testGlslangShaderCookHook() {
+    const std::string source = "/tmp/fuse_glslang_source.frag";
+    {
+        std::ofstream out(source, std::ios::trunc);
+        out << "#version 450\n"
+               "layout(location = 0) out vec4 outColor;\n"
+               "void main() { outColor = vec4(1.0, 0.0, 0.0, 1.0); }\n";
+    }
+
+    const fuse::cook::CookStubWriteResult written =
+        fuse::cook::tryCookShaderGlslang(source, "/tmp/fuse_glslang_output.fuseshader", "fragment", 450u);
+
+    std::ifstream cooked("/tmp/fuse_glslang_output.fuseshader");
+    std::string header;
+    if (cooked) {
+        std::getline(cooked, header);
+    }
+
+    if (written.ok) {
+        expectTrue(header == "FUSESHADER_GLSLANG", "glslang cook output marker");
+        expectTrue(written.byteCount > 32u, "glslang cook output includes SPIR-V payload");
+        return;
+    }
+
+    expectTrue(header.empty() || header != "FUSESHADER_GLSLANG",
+               "glslang hook skipped cleanly when validator unavailable");
+}
+
 void testBc7CookWriter() {
     const std::string source = "/tmp/fuse_bc7_source.bin";
     {
@@ -134,6 +162,7 @@ int main() {
     testBc7EncodeImageBlocks();
     testIspcTexcompHookMipLevelHeader();
     testIspcTexcompHookUnavailableWithoutInput();
+    testGlslangShaderCookHook();
     testBc7CookWriter();
     fuse::core::shutdown();
 

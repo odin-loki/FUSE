@@ -2,6 +2,8 @@
 
 #include <fuse/frame/frame_barrier.hpp>
 #include <fuse/frame/frame_ctx.hpp>
+#include <fuse/hybrid/cooked_asset_bindings.hpp>
+#include <fuse/hybrid/mesh_sdf_preview_stub.hpp>
 #include <fuse/hybrid/placeholder_renderer.hpp>
 #include <fuse/hybrid/project_flags.hpp>
 #include <fuse/world2d/world_2d.hpp>
@@ -33,6 +35,12 @@ public:
     PlaceholderRenderer& renderer() { return m_renderer; }
     const PlaceholderRenderer& renderer() const { return m_renderer; }
 
+    CookedAssetBindings& cookedAssets() { return m_cookedAssets; }
+    const CookedAssetBindings& cookedAssets() const { return m_cookedAssets; }
+
+    MeshSdfPreviewCatalog& previewCatalog() { return m_previewCatalog; }
+    const MeshSdfPreviewCatalog& previewCatalog() const { return m_previewCatalog; }
+
     void tick(frame::FrameCtx& ctx);
     void render(frame::FrameCtx& ctx);
 
@@ -40,6 +48,8 @@ public:
     void setSoftwarePlaceholderEnabled(bool enabled) { m_softwarePlaceholderEnabled = enabled; }
     bool softwarePlaceholderEnabled() const { return m_softwarePlaceholderEnabled; }
     u32 softwarePlaceholderSkippedFrames() const { return m_softwarePlaceholderSkippedFrames; }
+    u32 meshPreviewDraws() const { return m_meshPreviewDraws; }
+    u32 sdfPreviewDraws() const { return m_sdfPreviewDraws; }
 
     u32 frameCount() const { return m_frameCount; }
     const frame::FrameBarrier& frameBarrier() const { return m_barrier; }
@@ -71,6 +81,10 @@ private:
     u32 m_frameCount = 0;
     bool m_softwarePlaceholderEnabled = true;
     u32 m_softwarePlaceholderSkippedFrames = 0;
+    CookedAssetBindings m_cookedAssets;
+    MeshSdfPreviewCatalog m_previewCatalog;
+    u32 m_meshPreviewDraws = 0;
+    u32 m_sdfPreviewDraws = 0;
 #if defined(FUSE_HAS_VULKAN_RHI)
     renderer::RenderCommandList m_commandList;
     renderer::RhiContext* m_sharedRhiContext = nullptr;

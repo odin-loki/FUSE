@@ -15,7 +15,7 @@ namespace fuse::project {
 struct T3DResolvedBinding {
     std::string owner;
     std::string refName;
-    std::string kind; // "datablock" | "material"
+    std::string kind; // "datablock" | "material" | "shader"
     u32 resolvedId = 0;
 };
 
@@ -23,6 +23,7 @@ struct T3DDatablockResolveResult {
     std::vector<T3DResolvedBinding> bindings;
     u32 datablockCount = 0;
     u32 materialCount = 0;
+    u32 shaderCount = 0;
     u32 ownerLinked = 0;
 };
 
