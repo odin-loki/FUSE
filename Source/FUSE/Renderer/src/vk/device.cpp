@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -46,6 +47,32 @@ u32 findQueueFamily(VkPhysicalDevice device, VkQueueFlagBits flags) {
     vkGetPhysicalDeviceQueueFamilyProperties(device, &count, families.data());
     for (u32 i = 0; i < count; ++i) {
         if ((families[i].queueFlags & flags) != 0) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+bool queueFamilyPresentsToSurface(VkPhysicalDevice device, u32 family, VkSurfaceKHR surface) {
+    VkBool32 supported = VK_FALSE;
+    if (vkGetPhysicalDeviceSurfaceSupportKHR(device, family, surface, &supported) != VK_SUCCESS) {
+        return false;
+    }
+    return supported == VK_TRUE;
+}
+
+u32 findPresentableGraphicsFamily(VkPhysicalDevice device, VkSurfaceKHR surface, bool& found) {
+    found = false;
+    u32 count = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &count, nullptr);
+    std::vector<VkQueueFamilyProperties> families(count);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &count, families.data());
+    for (u32 i = 0; i < count; ++i) {
+        if ((families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0) {
+            continue;
+        }
+        if (queueFamilyPresentsToSurface(device, i, surface)) {
+            found = true;
             return i;
         }
     }
@@ -144,9 +171,26 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     vkGetPhysicalDeviceProperties(selected, &props);
     m_info.deviceName = props.deviceName;
 
-    const u32 graphicsFamily = findQueueFamily(selected, VK_QUEUE_GRAPHICS_BIT);
+    u32 graphicsFamily = findQueueFamily(selected, VK_QUEUE_GRAPHICS_BIT);
     const u32 computeFamily = findQueueFamily(selected, VK_QUEUE_COMPUTE_BIT);
     const u32 transferFamily = findQueueFamily(selected, VK_QUEUE_TRANSFER_BIT);
+
+    std::string presentNote;
+    if (desc.presentSurface != nullptr) {
+        const auto surface = reinterpret_cast<VkSurfaceKHR>(desc.presentSurface);
+        bool foundPresentableGraphics = false;
+        const u32 presentableFamily =
+            findPresentableGraphicsFamily(selected, surface, foundPresentableGraphics);
+        if (foundPresentableGraphics) {
+            graphicsFamily = presentableFamily;
+        } else {
+            presentNote = "no graphics queue family presents to the given surface";
+            m_info.message = presentNote;
+            if (desc.requirePresentation) {
+                return false;
+            }
+        }
+    }
 
     std::vector<const char*> enabledExtensions;
     for (const char* extension : kPreferredExtensions) {
@@ -190,10 +234,31 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
         addQueue(transferFamily);
     }
 
+    VkPhysicalDeviceVulkan12Features supported12{};
+    supported12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    VkPhysicalDeviceFeatures2 supported2{};
+    supported2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    supported2.pNext = &supported12;
+    vkGetPhysicalDeviceFeatures2(selected, &supported2);
+
+    VkPhysicalDeviceVulkan12Features enabled12{};
+    enabled12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    enabled12.descriptorIndexing = supported12.descriptorIndexing;
+    enabled12.descriptorBindingPartiallyBound = supported12.descriptorBindingPartiallyBound;
+    enabled12.runtimeDescriptorArray = supported12.runtimeDescriptorArray;
+    enabled12.descriptorBindingSampledImageUpdateAfterBind =
+        supported12.descriptorBindingSampledImageUpdateAfterBind;
+    enabled12.descriptorBindingStorageBufferUpdateAfterBind =
+        supported12.descriptorBindingStorageBufferUpdateAfterBind;
+    enabled12.bufferDeviceAddress = supported12.bufferDeviceAddress;
+    enabled12.timelineSemaphore = supported12.timelineSemaphore;
+
     VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceFeatures.samplerAnisotropy = supported2.features.samplerAnisotropy;
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    createInfo.pNext = &enabled12;
     createInfo.queueCreateInfoCount = static_cast<u32>(queueCreateInfos.size());
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
     createInfo.pEnabledFeatures = &deviceFeatures;
@@ -211,6 +276,9 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     m_handle = logicalDevice;
     m_info.valid = true;
     m_info.enabledExtensions = enabledExtensions;
+    m_info.descriptorIndexing = enabled12.descriptorIndexing == VK_TRUE;
+    m_info.bufferDeviceAddress = enabled12.bufferDeviceAddress == VK_TRUE;
+    m_info.timelineSemaphore = enabled12.timelineSemaphore == VK_TRUE;
     m_info.queues.graphicsFamily = graphicsFamily;
     m_info.queues.computeFamily = computeFamily;
     m_info.queues.transferFamily = transferFamily;
@@ -226,6 +294,10 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     m_info.queues.transfer = transferQueue;
     m_info.vmaAllocator = nullptr;
     m_info.message = "Logical device ready (VMA via GpuAllocator)";
+    if (!presentNote.empty()) {
+        m_info.message += " — ";
+        m_info.message += presentNote;
+    }
     return true;
 #else
     (void)desc;

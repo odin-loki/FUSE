@@ -29,6 +29,10 @@ add_executable(fuse_vulkan_swapchain test_vulkan_swapchain.cpp)
 target_link_libraries(fuse_vulkan_swapchain PRIVATE fuse_rhi)
 add_test(NAME fuse_vulkan_swapchain COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_vulkan_swapchain>")
 
+add_executable(fuse_win32_swapchain_wsi test_win32_swapchain_wsi.cpp)
+target_link_libraries(fuse_win32_swapchain_wsi PRIVATE fuse_rhi)
+add_test(NAME fuse_win32_swapchain_wsi COMMAND fuse_win32_swapchain_wsi)
+
 add_executable(fuse_rhi_present_path_stub test_rhi_present_path_stub.cpp)
 target_link_libraries(fuse_rhi_present_path_stub PRIVATE fuse_rhi)
 add_test(NAME fuse_rhi_present_path_stub COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_rhi_present_path_stub>")

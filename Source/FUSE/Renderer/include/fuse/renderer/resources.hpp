@@ -91,13 +91,14 @@ struct Buffer {
 };
 
 struct SamplerDesc {
-    u32 minFilter = 0; // VkFilter::VK_FILTER_LINEAR
+    u32 minFilter = 0; // VkFilter numeric (0 = NEAREST, 1 = LINEAR)
     u32 magFilter = 0;
-    u32 addressMode = 0; // VkSamplerAddressMode::VK_SAMPLER_ADDRESS_MODE_REPEAT
+    u32 addressMode = 0; // VkSamplerAddressMode numeric (0 = REPEAT)
     const char* name = nullptr;
 };
 
 struct SamplerEntry {
+    /// VkSampler when FUSE_VULKAN_BACKEND and the device is valid; packed filter bits otherwise.
     void* handle = nullptr;
     u32 bindlessIndex = UINT32_MAX;
 };

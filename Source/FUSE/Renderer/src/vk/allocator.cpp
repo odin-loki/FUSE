@@ -90,6 +90,18 @@ VmaMemoryUsage toVmaMemoryUsage(MemoryUsage usage) {
     }
     return VMA_MEMORY_USAGE_AUTO;
 }
+#else
+u32 findMemoryType(VkPhysicalDevice physicalDevice, u32 typeFilter, VkMemoryPropertyFlags properties) {
+    VkPhysicalDeviceMemoryProperties memProperties{};
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+    for (u32 i = 0; i < memProperties.memoryTypeCount; ++i) {
+        if ((typeFilter & (1u << i)) &&
+            (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+    return UINT32_MAX;
+}
 #endif
 #endif
 
@@ -195,8 +207,8 @@ bool GpuAllocator::initialize(VulkanDevice& device) {
         return false;
     }
     m_info.valid = true;
-    m_info.mode = GpuAllocatorMode::Stub;
-    m_info.message = "Stub allocator (VMA header not available)";
+    m_info.mode = GpuAllocatorMode::Native;
+    m_info.message = "Native Vulkan allocator (VMA header not available)";
     return true;
 #else
     m_info.valid = true;
@@ -255,11 +267,78 @@ bool GpuAllocator::createBuffer(const BufferDesc& desc, Buffer& out) {
     notifyStats();
     return true;
 #elif defined(FUSE_VULKAN_BACKEND)
-    out.handle = reinterpret_cast<void*>(m_stubId++);
-    out.allocation = out.handle;
+    if (m_device == nullptr || !m_device->isValid()) {
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
+        return false;
+    }
+
+    const VkDevice device = static_cast<VkDevice>(m_device->nativeHandle());
+    const VkPhysicalDevice physicalDevice =
+        static_cast<VkPhysicalDevice>(m_device->nativePhysicalDevice());
+
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = desc.size;
+    bufferInfo.usage = toVkBufferUsage(desc.usage);
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VkBuffer buffer = VK_NULL_HANDLE;
+    if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
+        return false;
+    }
+
+    VkMemoryRequirements memRequirements{};
+    vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
+
+    const bool hostVisible = bufferNeedsHostMapping(desc.memoryUsage);
+    const VkMemoryPropertyFlags memFlags =
+        hostVisible ? (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+                    : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    const u32 memoryTypeIndex = findMemoryType(physicalDevice, memRequirements.memoryTypeBits, memFlags);
+    if (memoryTypeIndex == UINT32_MAX) {
+        vkDestroyBuffer(device, buffer, nullptr);
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
+        return false;
+    }
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = memoryTypeIndex;
+
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &memory) != VK_SUCCESS) {
+        vkDestroyBuffer(device, buffer, nullptr);
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
+        return false;
+    }
+
+    if (vkBindBufferMemory(device, buffer, memory, 0) != VK_SUCCESS) {
+        vkFreeMemory(device, memory, nullptr);
+        vkDestroyBuffer(device, buffer, nullptr);
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
+        return false;
+    }
+
+    void* mapped = nullptr;
+    if (hostVisible && vkMapMemory(device, memory, 0, VK_WHOLE_SIZE, 0, &mapped) != VK_SUCCESS) {
+        vkDestroyBuffer(device, buffer, nullptr);
+        vkFreeMemory(device, memory, nullptr);
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
+        return false;
+    }
+
+    out.handle = buffer;
+    out.allocation = memory;
     out.desc = desc;
-    out.mapped = bufferNeedsHostMapping(desc.memoryUsage) ? allocateStubMappedBuffer(desc.size)
-                                                          : nullptr;
+    out.mapped = mapped;
     out.deviceAddress = 0;
     gpu_alloc_detail::recordBufferAlloc(m_stats, desc.size);
     notifyStats();
@@ -290,7 +369,16 @@ void GpuAllocator::destroyBuffer(Buffer& buffer) {
                          static_cast<VmaAllocation>(buffer.allocation));
     }
 #elif defined(FUSE_VULKAN_BACKEND)
-    freeStubMappedBuffer(buffer.mapped);
+    if (m_device != nullptr && buffer.handle != nullptr) {
+        const VkDevice device = static_cast<VkDevice>(m_device->nativeHandle());
+        if (buffer.mapped != nullptr && buffer.allocation != nullptr) {
+            vkUnmapMemory(device, static_cast<VkDeviceMemory>(buffer.allocation));
+        }
+        vkDestroyBuffer(device, static_cast<VkBuffer>(buffer.handle), nullptr);
+        if (buffer.allocation != nullptr) {
+            vkFreeMemory(device, static_cast<VkDeviceMemory>(buffer.allocation), nullptr);
+        }
+    }
 #else
     freeStubMappedBuffer(buffer.mapped);
 #endif
@@ -364,9 +452,90 @@ bool GpuAllocator::createImage(const TextureDesc& desc, Texture& out) {
     notifyStats();
     return true;
 #elif defined(FUSE_VULKAN_BACKEND)
-    out.image = reinterpret_cast<void*>(m_stubId++);
-    out.view = reinterpret_cast<void*>(m_stubId++);
-    out.allocation = out.image;
+    if (m_device == nullptr || !m_device->isValid()) {
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
+        return false;
+    }
+
+    const VkDevice device = static_cast<VkDevice>(m_device->nativeHandle());
+    const VkPhysicalDevice physicalDevice =
+        static_cast<VkPhysicalDevice>(m_device->nativePhysicalDevice());
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = desc.depth > 1 ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
+    imageInfo.format = toVkFormat(desc.format);
+    imageInfo.extent = {desc.width, desc.height, desc.depth};
+    imageInfo.mipLevels = desc.mipLevels;
+    imageInfo.arrayLayers = desc.arrayLayers;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage = toVkImageUsage(desc.usage);
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VkImage image = VK_NULL_HANDLE;
+    if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
+        return false;
+    }
+
+    VkMemoryRequirements memRequirements{};
+    vkGetImageMemoryRequirements(device, image, &memRequirements);
+
+    const u32 memoryTypeIndex = findMemoryType(physicalDevice, memRequirements.memoryTypeBits,
+                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (memoryTypeIndex == UINT32_MAX) {
+        vkDestroyImage(device, image, nullptr);
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
+        return false;
+    }
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = memoryTypeIndex;
+
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &memory) != VK_SUCCESS) {
+        vkDestroyImage(device, image, nullptr);
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
+        return false;
+    }
+
+    if (vkBindImageMemory(device, image, memory, 0) != VK_SUCCESS) {
+        vkFreeMemory(device, memory, nullptr);
+        vkDestroyImage(device, image, nullptr);
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
+        return false;
+    }
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = toVkFormat(desc.format);
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.levelCount = desc.mipLevels;
+    viewInfo.subresourceRange.layerCount = desc.arrayLayers;
+
+    VkImageView view = VK_NULL_HANDLE;
+    if (vkCreateImageView(device, &viewInfo, nullptr, &view) != VK_SUCCESS) {
+        vkDestroyImage(device, image, nullptr);
+        vkFreeMemory(device, memory, nullptr);
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
+        return false;
+    }
+
+    out.image = image;
+    out.view = view;
+    out.allocation = memory;
     out.desc = desc;
     gpu_alloc_detail::recordImageAlloc(m_stats, imageBytes);
     notifyStats();
@@ -392,6 +561,17 @@ void GpuAllocator::destroyImage(Texture& texture) {
         }
         vmaDestroyImage(static_cast<VmaAllocator>(m_allocator), static_cast<VkImage>(texture.image),
                         static_cast<VmaAllocation>(texture.allocation));
+    }
+#elif defined(FUSE_VULKAN_BACKEND)
+    if (m_device != nullptr && texture.image != nullptr) {
+        const VkDevice device = static_cast<VkDevice>(m_device->nativeHandle());
+        if (texture.view != nullptr) {
+            vkDestroyImageView(device, static_cast<VkImageView>(texture.view), nullptr);
+        }
+        vkDestroyImage(device, static_cast<VkImage>(texture.image), nullptr);
+        if (texture.allocation != nullptr) {
+            vkFreeMemory(device, static_cast<VkDeviceMemory>(texture.allocation), nullptr);
+        }
     }
 #else
     (void)texture;

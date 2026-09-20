@@ -53,6 +53,27 @@ bool createSlotDescriptorPool(VkDevice device, VkDescriptorPool* outPool) {
     *outPool = pool;
     return true;
 }
+
+#if defined(VK_VERSION_1_2) || defined(VK_KHR_timeline_semaphore)
+// VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO is an enum, not a #define — gate on 1.2 / KHR.
+bool createSlotTimelineSemaphore(VkDevice device, VkSemaphore* outSemaphore) {
+    VkSemaphoreTypeCreateInfo timelineTypeInfo{};
+    timelineTypeInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+    timelineTypeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    timelineTypeInfo.initialValue = 0;
+
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    semaphoreInfo.pNext = &timelineTypeInfo;
+
+    VkSemaphore semaphore = VK_NULL_HANDLE;
+    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore) != VK_SUCCESS) {
+        return false;
+    }
+    *outSemaphore = semaphore;
+    return true;
+}
+#endif
 #endif
 
 } // namespace
@@ -129,10 +150,10 @@ bool FrameManager::initialize(VulkanDevice& device) {
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.commandPool = commandPool;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandBufferCount = 1;
+        allocInfo.commandBufferCount = 2;
 
-        VkCommandBuffer primaryCommandBuffer = VK_NULL_HANDLE;
-        if (vkAllocateCommandBuffers(vkDevice, &allocInfo, &primaryCommandBuffer) != VK_SUCCESS) {
+        VkCommandBuffer commandBuffers[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+        if (vkAllocateCommandBuffers(vkDevice, &allocInfo, commandBuffers) != VK_SUCCESS) {
             vkDestroyCommandPool(vkDevice, commandPool, nullptr);
             m_info.message = "FrameManager command buffer allocation failed";
             shutdown();
@@ -144,7 +165,19 @@ bool FrameManager::initialize(VulkanDevice& device) {
         m_slots[i].inFlightFence = fence;
         m_slots[i].fenceSignaled = true;
         m_slots[i].commands.commandPool = commandPool;
-        m_slots[i].commands.primaryCommandBuffer = primaryCommandBuffer;
+        m_slots[i].commands.primaryCommandBuffer = commandBuffers[0];
+        m_slots[i].commands.transferCommandBuffer = commandBuffers[1];
+
+#if defined(VK_VERSION_1_2) || defined(VK_KHR_timeline_semaphore)
+        VkSemaphore timelineSemaphore = VK_NULL_HANDLE;
+        if (!createSlotTimelineSemaphore(vkDevice, &timelineSemaphore)) {
+            m_info.message = "FrameManager timeline semaphore creation failed";
+            shutdown();
+            return false;
+        }
+        m_slots[i].timelineSemaphore = timelineSemaphore;
+        m_slots[i].timelineValue = 0;
+#endif
 
         VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
         if (!createSlotDescriptorPool(vkDevice, &descriptorPool)) {
@@ -188,6 +221,15 @@ void FrameManager::shutdown() {
                                  &primary);
             m_slots[i].commands.primaryCommandBuffer = nullptr;
         }
+        if (m_slots[i].commands.transferCommandBuffer != nullptr) {
+            VkCommandBuffer transfer =
+                static_cast<VkCommandBuffer>(m_slots[i].commands.transferCommandBuffer);
+            vkFreeCommandBuffers(vkDevice,
+                                 static_cast<VkCommandPool>(m_slots[i].commands.commandPool),
+                                 1,
+                                 &transfer);
+            m_slots[i].commands.transferCommandBuffer = nullptr;
+        }
         if (m_slots[i].commands.commandPool != nullptr) {
             vkDestroyCommandPool(vkDevice, static_cast<VkCommandPool>(m_slots[i].commands.commandPool), nullptr);
             m_slots[i].commands.commandPool = nullptr;
@@ -199,6 +241,11 @@ void FrameManager::shutdown() {
         if (m_slots[i].renderFinished != nullptr) {
             vkDestroySemaphore(vkDevice, static_cast<VkSemaphore>(m_slots[i].renderFinished), nullptr);
             m_slots[i].renderFinished = nullptr;
+        }
+        if (m_slots[i].timelineSemaphore != nullptr) {
+            vkDestroySemaphore(vkDevice, static_cast<VkSemaphore>(m_slots[i].timelineSemaphore), nullptr);
+            m_slots[i].timelineSemaphore = nullptr;
+            m_slots[i].timelineValue = 0;
         }
         if (m_slots[i].inFlightFence != nullptr) {
             vkDestroyFence(vkDevice, static_cast<VkFence>(m_slots[i].inFlightFence), nullptr);
@@ -227,6 +274,18 @@ const FrameSyncData& FrameManager::slot(u32 index) const {
 
 void* FrameManager::currentCommandBuffer() const {
     return current().commands.primaryCommandBuffer;
+}
+
+void* FrameManager::currentTransferCommandBuffer() const {
+    return current().commands.transferCommandBuffer;
+}
+
+void* FrameManager::currentTimelineSemaphore() const {
+    return current().timelineSemaphore;
+}
+
+u64 FrameManager::currentTimelineValue() const {
+    return current().timelineValue;
 }
 
 fuse::alloc::FrameAllocator& FrameManager::scratch() {

@@ -21,6 +21,11 @@ struct GraphicsPipelineDesc {
     void* nativeRenderPassOverride = nullptr;
     PipelineCache* pipelineCache = nullptr;
     u32 colorFormat = 37; // VK_FORMAT_R8G8B8A8_UNORM
+    u32 polygonMode = 0;  // VK_POLYGON_MODE_FILL
+    u32 cullMode = 0;     // VK_CULL_MODE_NONE (keep current default so existing triangle tests do not flip)
+    bool depthTest = false;
+    bool depthWrite = false;
+    u32 depthCompareOp = 7; // VK_COMPARE_OP_ALWAYS to match current defaults
     const char* debugName = nullptr;
 };
 

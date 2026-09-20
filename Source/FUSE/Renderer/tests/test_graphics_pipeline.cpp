@@ -84,6 +84,21 @@ void testGraphicsPipelineFromFixtures() {
     expectTrue(graphicsPipeline->isValid(), "graphics pipeline valid in stub backend");
     expectTrue(graphicsPipeline->nativeHandle() == nullptr, "stub backend has no native handle");
 #endif
+
+    pipelineDesc.cullMode = 2u; // VK_CULL_MODE_BACK_BIT
+    auto culledPipeline = fuse::renderer::GraphicsPipeline::create(*device, pipelineDesc);
+    expectTrue(culledPipeline != nullptr, "graphics pipeline allocated with back-face cull");
+#if defined(FUSE_VULKAN_BACKEND)
+    if (bootstrap->status().deviceReady) {
+        expectTrue(culledPipeline->isValid(), "graphics pipeline valid with cullMode BACK_BIT");
+        expectTrue(culledPipeline->nativeHandle() != nullptr,
+                   "cullMode BACK_BIT pipeline has native handle");
+    } else {
+        expectTrue(!culledPipeline->isValid(), "cullMode BACK_BIT pipeline invalid without ICD");
+    }
+#else
+    expectTrue(culledPipeline->isValid(), "cullMode BACK_BIT pipeline valid in stub backend");
+#endif
 }
 
 void testRasterPathClearTriangle() {

@@ -94,7 +94,8 @@ public:
     /// Held keys and absolute mouse position stay.
     void beginFrame();
 
-    /// Apply one `KeyDown`/`KeyUp`, `MouseMove`, or `MouseButtonDown`/`Up`.
+    /// Apply one `KeyDown`/`KeyUp`, `MouseMove`, `RawMouseDelta`, or `MouseButtonDown`/`Up`.
+    /// `RawMouseDelta` accumulates `mouseDeltaX/Y` and does not overwrite absolute `mouseX/Y`.
     /// Other event types are ignored. Unknown key/button codes are ignored.
     void apply(const PlatformEvent& event);
 

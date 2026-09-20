@@ -4,6 +4,7 @@
 #include <fuse/platform/window_wsi.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
+#include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/surface.hpp>
 #include <fuse/renderer/vk/swapchain_util.hpp>
 
@@ -165,6 +166,34 @@ void testSurfaceAbstraction() {
     expectTrue(!invalidExternal.info().valid, "external surface without handle is invalid");
 }
 
+void testDeviceVulkan12FeatureFlags() {
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+    expectTrue(instance != nullptr, "instance allocated for Vulkan 1.2 feature flags");
+    if (instance == nullptr) {
+        return;
+    }
+
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    expectTrue(device != nullptr, "device allocated for Vulkan 1.2 feature flags");
+    if (device == nullptr) {
+        return;
+    }
+
+    const fuse::renderer::VulkanDeviceInfo& info = device->info();
+    if (!info.valid) {
+        expectTrue(!info.descriptorIndexing, "stub device reports descriptorIndexing false");
+        expectTrue(!info.bufferDeviceAddress, "stub device reports bufferDeviceAddress false");
+        expectTrue(!info.timelineSemaphore, "stub device reports timelineSemaphore false");
+        return;
+    }
+
+    (void)info.descriptorIndexing;
+    (void)info.bufferDeviceAddress;
+    (void)info.timelineSemaphore;
+}
+
 void testRhiContextSubmitOnRenderThread() {
     fuse::renderer::RhiContext::Desc desc{};
     desc.bootstrap.instance.enableValidation = false;
@@ -200,6 +229,7 @@ int main() {
     testWsiExtensionAwareness();
     testInstanceWsiAutoRequest();
     testSurfaceAbstraction();
+    testDeviceVulkan12FeatureFlags();
     testRhiContextSubmitOnRenderThread();
 
     fuse::core::shutdown();

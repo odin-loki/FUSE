@@ -20,6 +20,7 @@ enum class PlatformEventType : u8 {
     MouseMove,
     MouseButtonDown,
     MouseButtonUp,
+    RawMouseDelta,
 };
 
 struct PlatformEvent {
@@ -28,8 +29,8 @@ struct PlatformEvent {
     u32 width = 0;
     u32 height = 0;
     u32 keyCode = 0;  // virtual key / USB-ish; 0 means unused
-    i32 mouseX = 0;
-    i32 mouseY = 0;
+    i32 mouseX = 0;  // client X, or signed raw delta when type is RawMouseDelta
+    i32 mouseY = 0;  // client Y, or signed raw delta when type is RawMouseDelta
     u8 mouseButton = 0;  // 1=left 2=right 3=middle
 };
 
@@ -166,8 +167,9 @@ public:
     /// Drain native OS messages into the synthetic queue.
     ///
     /// Win32: PeekMessage loop for registered HWND pumps (KeyDown/Up, MouseMove,
-    /// MouseButton, WindowCloseRequested, WindowResized, Quit). GLFW: glfwPollEvents
-    /// when WSI is available. No-op when no native window is registered.
+    /// MouseButton, RawMouseDelta from WM_INPUT, WindowCloseRequested, WindowResized,
+    /// Quit). GLFW: glfwPollEvents when WSI is available. No-op when no native window
+    /// is registered.
     ///
     /// Key/Mouse mapping in `enqueueMappedOsMessage` is dropped when
     /// `requireCaptureForInput()` is true and the target window is

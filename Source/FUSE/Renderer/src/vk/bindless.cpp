@@ -353,6 +353,10 @@ void BindlessDescriptors::updateVulkanDescriptor(BindlessSlotHandle handle, cons
             sampler = static_cast<VkSampler>(samplerHandle);
         } else if (!clear) {
             return;
+        } else if (!bindlessNativeHandleReady(samplerHandle)) {
+            // Null sampler writes are invalid without nullDescriptor; drop the GPU write.
+            ++m_descriptorClearCount;
+            return;
         }
         imageInfo.sampler = sampler;
         write.pImageInfo = &imageInfo;

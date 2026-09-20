@@ -23,6 +23,8 @@ struct FrameSyncData {
     void* imageAvailable = nullptr;  // VkSemaphore — swapchain acquire signal
     void* renderFinished = nullptr;  // VkSemaphore — present wait
     void* inFlightFence = nullptr;   // VkFence — CPU wait before reusing slot
+    void* timelineSemaphore = nullptr; // VkSemaphore — VK_SEMAPHORE_TYPE_TIMELINE
+    u64 timelineValue = 0;
     bool fenceSignaled = false;
     FrameCommandData commands{};
 };
@@ -55,6 +57,9 @@ public:
     FrameSyncData& slot(u32 index);
     const FrameSyncData& slot(u32 index) const;
     void* currentCommandBuffer() const;
+    void* currentTransferCommandBuffer() const;
+    void* currentTimelineSemaphore() const;
+    u64 currentTimelineValue() const;
 
     fuse::alloc::FrameAllocator& scratch();
     const fuse::alloc::FrameAllocator& scratch() const;

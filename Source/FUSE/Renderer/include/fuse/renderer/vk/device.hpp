@@ -26,11 +26,16 @@ struct VulkanDeviceInfo {
     std::vector<const char*> enabledExtensions;
     /// VMA placeholder — wired in a later B2.1 follow-up.
     void* vmaAllocator = nullptr;
+    bool descriptorIndexing = false;
+    bool bufferDeviceAddress = false;
+    bool timelineSemaphore = false;
 };
 
 struct VulkanDeviceDesc {
     bool requirePresentation = false;
     bool preferDiscreteGpu = true;
+    /// Opaque VkSurfaceKHR; used to pick a present-capable graphics queue family.
+    void* presentSurface = nullptr;
 };
 
 class VulkanDevice {

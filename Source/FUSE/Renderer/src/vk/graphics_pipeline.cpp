@@ -86,9 +86,9 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rasterizer.depthClampEnable = VK_FALSE;
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.polygonMode = static_cast<VkPolygonMode>(desc.polygonMode);
     rasterizer.lineWidth = 1.f;
-    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.cullMode = static_cast<VkCullModeFlags>(desc.cullMode);
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -98,9 +98,9 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = VK_FALSE;
-    depthStencil.depthWriteEnable = VK_FALSE;
-    depthStencil.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+    depthStencil.depthTestEnable = desc.depthTest ? VK_TRUE : VK_FALSE;
+    depthStencil.depthWriteEnable = desc.depthWrite ? VK_TRUE : VK_FALSE;
+    depthStencil.depthCompareOp = static_cast<VkCompareOp>(desc.depthCompareOp);
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 

@@ -169,6 +169,11 @@ void InputState::apply(const PlatformEvent& event) {
         m_haveMousePosition = true;
         break;
     }
+    case PlatformEventType::RawMouseDelta: {
+        m_mouseDeltaX += event.mouseX;
+        m_mouseDeltaY += event.mouseY;
+        break;
+    }
     case PlatformEventType::MouseButtonDown: {
         const MouseButton button = mouseButtonFromPlatformCode(event.mouseButton);
         if (!validMouseButton(button)) {

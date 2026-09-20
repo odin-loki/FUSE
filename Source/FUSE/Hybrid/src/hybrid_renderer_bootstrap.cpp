@@ -2,6 +2,7 @@
 
 #include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
 
+#include <fuse/platform/window_wsi.hpp>
 #include <fuse/renderer/vk/fence_wait.hpp>
 
 #include <cstdint>
@@ -51,11 +52,24 @@ bool HybridRendererBootstrap::initialize() {
             static_cast<u32>(wsiExtensions.size());
     }
 
+    const bool gameWindowBackend =
+        m_desc.presentable.backend == PresentableBackend::GameWindow;
+    const renderer::SurfaceDesc presentableSurface = m_presentable->surfaceDesc();
     const bool deferSwapchain =
-        m_desc.presentable.backend == PresentableBackend::GameWindow &&
-        m_presentable->surfaceDesc().kind == renderer::SurfaceKind::Headless;
+        gameWindowBackend && presentableSurface.kind == renderer::SurfaceKind::Headless;
     if (deferSwapchain) {
         rendererDesc.rhi.bootstrap.createSwapchain = false;
+    }
+
+    // Device is created inside RendererBootstrap before deferSwapchain can call
+    // createVulkanSurface. Enable swapchain on GameWindow+WSI now; Headless CI stays off.
+    renderer::VulkanDeviceDesc& deviceDesc = rendererDesc.rhi.bootstrap.device;
+    if (gameWindowBackend && platform::windowWsiAvailable()) {
+        deviceDesc.requirePresentation = true;
+    }
+    if (presentableSurface.kind == renderer::SurfaceKind::External) {
+        deviceDesc.requirePresentation = true;
+        deviceDesc.presentSurface = presentableSurface.nativeSurface;
     }
 
     m_rendererBootstrap = renderer::RendererBootstrap::create(rendererDesc);

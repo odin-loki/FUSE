@@ -13,6 +13,7 @@ namespace fuse::renderer {
 enum class GpuAllocatorMode : u8 {
     Stub,
     Vma,
+    Native = 2,
 };
 
 struct GpuAllocatorInfo {
@@ -21,7 +22,7 @@ struct GpuAllocatorInfo {
     std::string message;
 };
 
-/// Optional VMA-backed GPU allocator; falls back to stub bookkeeping when VMA unavailable.
+/// VMA when vendored; native vkAllocateMemory when Vulkan is on without VMA; stub otherwise.
 class GpuAllocator {
 public:
     static std::unique_ptr<GpuAllocator> create(VulkanDevice& device);

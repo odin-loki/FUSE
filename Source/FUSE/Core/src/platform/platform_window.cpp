@@ -173,6 +173,91 @@ i32 osMessageAxisY(LPARAM lParam) {
     return static_cast<i32>(static_cast<short>(HIWORD(lParam)));
 }
 
+#if !defined(FUSE_PLATFORM_WINDOW_GLFW)
+HWND ownedHwnd(void* nativeWindow, bool ownsNativeWindow) {
+    if (!ownsNativeWindow || nativeWindow == nullptr) {
+        return nullptr;
+    }
+    return reinterpret_cast<HWND>(nativeWindow);
+}
+
+void registerRawMouseInput(HWND hwnd) {
+    RAWINPUTDEVICE rid{};
+    rid.usUsagePage = 0x01;
+    rid.usUsage = 0x02;
+    rid.dwFlags = 0;
+    rid.hwndTarget = hwnd;
+    RegisterRawInputDevices(&rid, 1, sizeof(rid));
+}
+
+void unregisterRawMouseInput() {
+    RAWINPUTDEVICE rid{};
+    rid.usUsagePage = 0x01;
+    rid.usUsage = 0x02;
+    rid.dwFlags = RIDEV_REMOVE;
+    rid.hwndTarget = nullptr;
+    RegisterRawInputDevices(&rid, 1, sizeof(rid));
+}
+
+void applyOwnedHwndInputCapture(HWND hwnd, bool captured) {
+    if (hwnd == nullptr) {
+        return;
+    }
+
+    if (captured) {
+        RECT client{};
+        if (GetClientRect(hwnd, &client) != FALSE) {
+            MapWindowPoints(hwnd, nullptr, reinterpret_cast<LPPOINT>(&client), 2);
+            ClipCursor(&client);
+        }
+        ShowCursor(FALSE);
+        registerRawMouseInput(hwnd);
+        return;
+    }
+
+    ClipCursor(nullptr);
+    ShowCursor(TRUE);
+    unregisterRawMouseInput();
+}
+
+void releaseOwnedHwndInputCapture(void* nativeWindow, bool ownsNativeWindow,
+                                  InputCaptureMode capture) {
+    if (capture != InputCaptureMode::Captured) {
+        return;
+    }
+    applyOwnedHwndInputCapture(ownedHwnd(nativeWindow, ownsNativeWindow), false);
+}
+
+void enqueueRawMouseDeltaFromWmInput(EventPump& pump, Window* window, LPARAM lParam) {
+    const HRAWINPUT rawInput = reinterpret_cast<HRAWINPUT>(lParam);
+    UINT size = 0;
+    if (GetRawInputData(rawInput, RID_INPUT, nullptr, &size, sizeof(RAWINPUTHEADER)) ==
+            static_cast<UINT>(-1) ||
+        size == 0u || size > sizeof(RAWINPUT)) {
+        return;
+    }
+
+    RAWINPUT raw{};
+    UINT copied = size;
+    if (GetRawInputData(rawInput, RID_INPUT, &raw, &copied, sizeof(RAWINPUTHEADER)) ==
+            static_cast<UINT>(-1) ||
+        raw.header.dwType != RIM_TYPEMOUSE) {
+        return;
+    }
+
+    if ((raw.data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE) != 0) {
+        return;
+    }
+
+    PlatformEvent event{};
+    event.type = PlatformEventType::RawMouseDelta;
+    event.window = window;
+    event.mouseX = raw.data.mouse.lLastX;
+    event.mouseY = raw.data.mouse.lLastY;
+    pump.pushSyntheticEvent(event);
+}
+#endif
+
 bool shouldDropOsKeyOrMouse(const EventPump& pump, const Window* window) {
     if (!pump.requireCaptureForInput()) {
         return false;
@@ -295,6 +380,15 @@ void enqueueMappedOsMessage(EventPump& pump, Window* window, const MSG& msg) {
         pump.pushSyntheticEvent(event);
         break;
     }
+    case WM_INPUT: {
+        if (dropKeyMouse) {
+            break;
+        }
+#if !defined(FUSE_PLATFORM_WINDOW_GLFW)
+        enqueueRawMouseDeltaFromWmInput(pump, window, msg.lParam);
+#endif
+        break;
+    }
     case WM_SETFOCUS:
         if (window != nullptr) {
             window->setFocused(true, &pump);
@@ -367,6 +461,9 @@ Window::Window(const WindowDesc& desc) {
 
 Window::~Window() {
     unregisterPumpWindow(this);
+#if defined(_WIN32) && !defined(FUSE_PLATFORM_WINDOW_GLFW)
+    releaseOwnedHwndInputCapture(m_nativeWindow, m_ownsNativeWindow, m_inputCapture);
+#endif
     releaseOwnedNativeWindow(m_nativeWindow, m_ownsNativeWindow);
     m_pumpAsHwnd = false;
     m_valid = false;
@@ -400,6 +497,9 @@ Window::Window(Window&& other) noexcept
 Window& Window::operator=(Window&& other) noexcept {
     if (this != &other) {
         unregisterPumpWindow(this);
+#if defined(_WIN32) && !defined(FUSE_PLATFORM_WINDOW_GLFW)
+        releaseOwnedHwndInputCapture(m_nativeWindow, m_ownsNativeWindow, m_inputCapture);
+#endif
         releaseOwnedNativeWindow(m_nativeWindow, m_ownsNativeWindow);
 
         m_valid = other.m_valid;
@@ -449,10 +549,28 @@ NativeWindowHandle Window::nativeHandle() const {
 
 void Window::setNativeHandleForPump(void* hwnd) {
     unregisterPumpWindow(this);
+#if defined(_WIN32) && !defined(FUSE_PLATFORM_WINDOW_GLFW)
+    releaseOwnedHwndInputCapture(m_nativeWindow, m_ownsNativeWindow, m_inputCapture);
+#endif
     releaseOwnedNativeWindow(m_nativeWindow, m_ownsNativeWindow);
     m_nativeWindow = hwnd;
     m_pumpAsHwnd = hwnd != nullptr;
     registerPumpWindow(this);
+}
+
+void Window::setInputCapture(InputCaptureMode mode) {
+    if (m_inputCapture == mode) {
+        return;
+    }
+
+#if defined(_WIN32) && !defined(FUSE_PLATFORM_WINDOW_GLFW)
+    const HWND hwnd = ownedHwnd(m_nativeWindow, m_ownsNativeWindow);
+    if (hwnd != nullptr) {
+        applyOwnedHwndInputCapture(hwnd, mode == InputCaptureMode::Captured);
+    }
+#endif
+
+    m_inputCapture = mode;
 }
 
 void* Window::nativeVulkanSurface() const {

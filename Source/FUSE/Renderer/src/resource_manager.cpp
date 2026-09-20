@@ -1,11 +1,86 @@
 #include <fuse/renderer/resource_manager.hpp>
 
 #include <fuse/renderer/vk/allocator.hpp>
+#include <fuse/renderer/vk/gpu_alloc_stats.hpp>
 
 #include <cstring>
 #include <vector>
 
+#if defined(FUSE_VULKAN_BACKEND)
+#include <vulkan/vulkan.h>
+#endif
+
 namespace fuse::renderer {
+
+namespace {
+
+void* packedSamplerHandle(const SamplerDesc& desc) {
+    return reinterpret_cast<void*>(static_cast<u64>(desc.minFilter) |
+                                   (static_cast<u64>(desc.magFilter) << 16) |
+                                   (static_cast<u64>(desc.addressMode) << 32));
+}
+
+#if defined(FUSE_VULKAN_BACKEND)
+void destroyOwnedVulkanSampler(VulkanDevice* device, void* handle) {
+    if (device == nullptr || !device->isValid() || !bindlessNativeHandleReady(handle)) {
+        return;
+    }
+    vkDestroySampler(static_cast<VkDevice>(device->nativeHandle()), static_cast<VkSampler>(handle),
+                     nullptr);
+}
+
+void* createVulkanSampler(VulkanDevice& device, const SamplerDesc& desc) {
+    if (!device.isValid() || device.nativeHandle() == nullptr) {
+        return nullptr;
+    }
+
+    VkSamplerCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    info.magFilter = static_cast<VkFilter>(desc.magFilter);
+    info.minFilter = static_cast<VkFilter>(desc.minFilter);
+    info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    const auto addressMode = static_cast<VkSamplerAddressMode>(desc.addressMode);
+    info.addressModeU = addressMode;
+    info.addressModeV = addressMode;
+    info.addressModeW = addressMode;
+    info.mipLodBias = 0.0f;
+    info.anisotropyEnable = VK_FALSE;
+    info.maxAnisotropy = 1.0f;
+    info.compareEnable = VK_FALSE;
+    info.compareOp = VK_COMPARE_OP_ALWAYS;
+    info.minLod = 0.0f;
+    info.maxLod = VK_LOD_CLAMP_NONE;
+    info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+    info.unnormalizedCoordinates = VK_FALSE;
+
+    VkSampler sampler = VK_NULL_HANDLE;
+    if (vkCreateSampler(static_cast<VkDevice>(device.nativeHandle()), &info, nullptr, &sampler) !=
+        VK_SUCCESS) {
+        return nullptr;
+    }
+    return sampler;
+}
+#endif
+
+void stageTextureInitialData(Buffer* staging, usize& stagingOffset, usize stagingCapacity,
+                             const TextureDesc& desc, const void* initialData) {
+    if (staging == nullptr || staging->mapped == nullptr || initialData == nullptr) {
+        return;
+    }
+
+    const usize bytes = gpu_alloc_detail::estimateImageBytes(desc);
+    if (bytes == 0 || bytes > stagingCapacity) {
+        return;
+    }
+    if (stagingOffset + bytes > stagingCapacity) {
+        stagingOffset = 0;
+    }
+
+    std::memcpy(static_cast<u8*>(staging->mapped) + stagingOffset, initialData, bytes);
+    stagingOffset += bytes;
+}
+
+} // namespace
 
 ResourceManager::~ResourceManager() {
     destroy();
@@ -125,7 +200,8 @@ TextureHandle ResourceManager::createTexture(const TextureDesc& desc, const void
         return TextureHandle{};
     }
 
-    (void)initialData;
+    stageTextureInitialData(getBuffer(m_stagingRing), m_stagingOffset, m_stagingRingCapacity, desc,
+                            initialData);
     return m_textures.insert(std::move(texture));
 }
 
@@ -158,11 +234,23 @@ SamplerHandle ResourceManager::createSampler(const SamplerDesc& desc) {
     }
 
     SamplerEntry entry{};
-    entry.handle = reinterpret_cast<void*>(static_cast<u64>(desc.minFilter) |
-                                           (static_cast<u64>(desc.magFilter) << 16) |
-                                           (static_cast<u64>(desc.addressMode) << 32));
+#if defined(FUSE_VULKAN_BACKEND)
+    if (m_device != nullptr && m_device->isValid()) {
+        entry.handle = createVulkanSampler(*m_device, desc);
+        if (entry.handle == nullptr) {
+            return SamplerHandle{};
+        }
+    } else {
+        entry.handle = packedSamplerHandle(desc);
+    }
+#else
+    entry.handle = packedSamplerHandle(desc);
+#endif
     entry.bindlessIndex = m_bindless->registerSampler(entry.handle);
     if (entry.bindlessIndex == UINT32_MAX) {
+#if defined(FUSE_VULKAN_BACKEND)
+        destroyOwnedVulkanSampler(m_device, entry.handle);
+#endif
         return SamplerHandle{};
     }
 
@@ -205,6 +293,9 @@ void ResourceManager::destroySampler(SamplerHandle handle) {
     if (sampler->bindlessIndex != UINT32_MAX) {
         m_bindless->unregisterSampler(sampler->bindlessIndex);
     }
+#if defined(FUSE_VULKAN_BACKEND)
+    destroyOwnedVulkanSampler(m_device, sampler->handle);
+#endif
     m_samplers.remove(handle);
 }
 

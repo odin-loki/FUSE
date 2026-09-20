@@ -70,7 +70,10 @@ public:
     bool vsyncEnabled() const { return m_vsync; }
     bool isFocused() const { return m_focused; }
 
-    void setInputCapture(InputCaptureMode mode) { m_inputCapture = mode; }
+    /// Stores capture mode. Headless (null HWND) is a no-op for OS clip/cursor/raw input.
+    /// Win32 owned HWND: Captured clips the cursor, hides it once, and registers RID_INPUT
+    /// mouse; Released / destructor restores clip/cursor and unregisters raw input.
+    void setInputCapture(InputCaptureMode mode);
     InputCaptureMode inputCapture() const { return m_inputCapture; }
     bool isInputCaptured() const { return m_inputCapture == InputCaptureMode::Captured; }
 

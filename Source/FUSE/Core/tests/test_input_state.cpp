@@ -37,6 +37,14 @@ fuse::platform::PlatformEvent makeMouseMove(fuse::i32 x, fuse::i32 y) {
     return event;
 }
 
+fuse::platform::PlatformEvent makeRawMouseDelta(fuse::i32 dx, fuse::i32 dy) {
+    fuse::platform::PlatformEvent event{};
+    event.type = fuse::platform::PlatformEventType::RawMouseDelta;
+    event.mouseX = dx;
+    event.mouseY = dy;
+    return event;
+}
+
 fuse::platform::PlatformEvent makeMouseButton(fuse::platform::PlatformEventType type, fuse::u8 button,
                                               fuse::i32 x, fuse::i32 y) {
     fuse::platform::PlatformEvent event{};
@@ -136,6 +144,28 @@ void testUnknownKeyCodeIgnored() {
     expectTrue(!input.keyPressed(fuse::platform::Key::A), "unknown KeyDown does not press A");
 }
 
+void testRawMouseDeltaAccumulatesWithoutChangingAbsolutePosition() {
+    fuse::platform::InputState input;
+
+    expectEqI32(input.mouseX(), 0, "default mouse x");
+    expectEqI32(input.mouseY(), 0, "default mouse y");
+
+    input.apply(makeRawMouseDelta(3, -1));
+    input.apply(makeRawMouseDelta(1, 0));
+
+    expectEqI32(input.mouseDeltaX(), 4, "raw delta x 3+1");
+    expectEqI32(input.mouseDeltaY(), -1, "raw delta y -1+0");
+    expectEqI32(input.mouseX(), 0, "RawMouseDelta does not overwrite mouse x");
+    expectEqI32(input.mouseY(), 0, "RawMouseDelta does not overwrite mouse y");
+
+    input.beginFrame();
+
+    expectEqI32(input.mouseDeltaX(), 0, "beginFrame zeros raw mouse delta x");
+    expectEqI32(input.mouseDeltaY(), 0, "beginFrame zeros raw mouse delta y");
+    expectEqI32(input.mouseX(), 0, "beginFrame keeps mouse x after raw delta");
+    expectEqI32(input.mouseY(), 0, "beginFrame keeps mouse y after raw delta");
+}
+
 } // namespace
 
 int main() {
@@ -146,6 +176,7 @@ int main() {
     testMouseMoveDeltaFromConsecutivePositions();
     testLeftMouseButtonDownUp();
     testUnknownKeyCodeIgnored();
+    testRawMouseDeltaAccumulatesWithoutChangingAbsolutePosition();
 
     if (g_failures == 0) {
         std::printf("fuse_core input state: all checks passed\n");
