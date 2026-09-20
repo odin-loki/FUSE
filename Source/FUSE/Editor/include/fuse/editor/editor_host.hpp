@@ -2,6 +2,7 @@
 
 #include <fuse/ai/behavior_runtime.hpp>
 #include <fuse/ai/uaisk_tree_reload.hpp>
+#include <fuse/cinematics/timeline_host_stub.hpp>
 #include <fuse/cinematics/timeline_loader.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/command_stack.hpp>
@@ -71,6 +72,9 @@ public:
     fuse::cinematics::TimelineMs cinematicsSeqScrubPreviewMs() const { return m_cinematicsSeqScrubPreviewMs; }
     const fuse::cinematics::SeqScrubPreview& cinematicsSeqScrubPreview() const { return m_cinematicsSeqScrubPreview; }
     u32 cinematicsSeqPreviewPaneWireCount() const { return m_cinematicsSeqPreviewPaneWireCount; }
+    u32 cinematicsSeqTimelineHostWireCount() const { return m_cinematicsSeqTimelineHostWireCount; }
+    fuse::cinematics::TimelineHostStub& cinematicsTimelineHost() { return m_cinematicsTimelineHost; }
+    const fuse::cinematics::TimelineHostStub& cinematicsTimelineHost() const { return m_cinematicsTimelineHost; }
     u32 gameTickCount() const { return m_gameTickCount; }
     u32 commandsAppliedLastTick() const { return m_commandsAppliedLastTick; }
 
@@ -90,6 +94,7 @@ public:
     void setCinematicsSeqScrubPreview(fuse::cinematics::TimelineMs timeMs,
                                       const fuse::cinematics::SeqScrubPreview& preview);
     void incrementCinematicsSeqPreviewPaneWireCount();
+    void incrementCinematicsSeqTimelineHostWireCount();
 
     /// Undo/redo property edits recorded on the game-thread `CommandStack`.
     void undoPropertyEdit();
@@ -117,6 +122,8 @@ private:
     fuse::cinematics::TimelineMs m_cinematicsSeqScrubPreviewMs = 0;
     fuse::cinematics::SeqScrubPreview m_cinematicsSeqScrubPreview;
     u32 m_cinematicsSeqPreviewPaneWireCount = 0;
+    u32 m_cinematicsSeqTimelineHostWireCount = 0;
+    fuse::cinematics::TimelineHostStub m_cinematicsTimelineHost;
     u32 m_selectedAiTreeProfileId = 0;
     u32 m_selectedAiAgentIndex = 0;
     u32 m_aiCodegenReloadCount = 0;

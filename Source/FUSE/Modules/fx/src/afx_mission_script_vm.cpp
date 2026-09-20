@@ -8,6 +8,9 @@ namespace fuse::fx {
 void AfxMissionScriptVm::registerHooks(const std::vector<AfxMissionHook>& hooks) {
     for (const AfxMissionHook& hook : hooks) {
         m_hooks[hook.scriptHook] = hook;
+        if (hook.delayMs > 0) {
+            scheduleDelayedDispatch(hook.scriptHook, hook.delayMs);
+        }
     }
     m_registeredHooks = hooks;
 }
@@ -93,7 +96,51 @@ bool AfxMissionScriptVm::executeFunctionBody(const std::string& functionName, co
     return false;
 }
 
+void AfxMissionScriptVm::scheduleDelayedDispatch(const std::string& scriptHook, u32 delayMs) {
+    if (delayMs == 0) {
+        return;
+    }
+    AfxMissionDelayedDispatch delayed{};
+    delayed.scriptHook = scriptHook;
+    delayed.delayMs = delayMs;
+    m_delayedDispatches.push_back(std::move(delayed));
+}
+
+u32 AfxMissionScriptVm::pendingDelayedCount() const {
+    u32 pending = 0;
+    for (const AfxMissionDelayedDispatch& delayed : m_delayedDispatches) {
+        if (!delayed.fired) {
+            ++pending;
+        }
+    }
+    return pending;
+}
+
+u32 AfxMissionScriptVm::advanceDelayedDispatches(u32 deltaMs,
+                                                 FxComposer& composer,
+                                                 const frame::FrameCtx& ctx) {
+    u32 fired = 0;
+    for (AfxMissionDelayedDispatch& delayed : m_delayedDispatches) {
+        if (delayed.fired) {
+            continue;
+        }
+        delayed.elapsedMs += deltaMs;
+        if (delayed.elapsedMs < delayed.delayMs) {
+            continue;
+        }
+        if (dispatch(delayed.scriptHook, composer, ctx)) {
+            delayed.fired = true;
+            ++fired;
+            ++m_delayedDispatchCount;
+        }
+    }
+    return fired;
+}
+
 bool AfxMissionScriptVm::dispatchTick(FxComposer& composer, const frame::FrameCtx& ctx) {
+    const u32 deltaMs = static_cast<u32>(ctx.dt * 1000.f);
+    advanceDelayedDispatches(deltaMs, composer, ctx);
+
     bool dispatched = false;
     if (m_hooks.count("on_tick") != 0) {
         dispatched = dispatch("on_tick", composer, ctx) || dispatched;

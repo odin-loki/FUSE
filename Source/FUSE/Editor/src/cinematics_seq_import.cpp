@@ -113,6 +113,25 @@ bool CinematicsSeqImport::wirePreviewPaneToHost(fuse::cinematics::TimelineMs ini
     return m_lastWiredPreviewSample.valid;
 }
 
+bool CinematicsSeqImport::wireTimelineHostToHost(fuse::cinematics::TimelineMs initialTimeMs) {
+    if (!postImportEmbeddedOutpostIntro()) {
+        return false;
+    }
+
+    EditorCommand wireCommand;
+    wireCommand.kind = CommandKind::SetProperty;
+    wireCommand.propertyName = "cinematics.seq_timeline_host_wire";
+    wireCommand.propertyValue = std::to_string(initialTimeMs);
+    m_host.postFromUi(std::move(wireCommand));
+
+    ++m_timelineHostWireCount;
+    fuse::cinematics::TimelineHostStub hostStub;
+    hostStub.loadSeqAssetText(m_lastAssetText);
+    hostStub.scrubToMs(initialTimeMs);
+    m_lastTimelineHostSample = hostStub.lastOverlaySample();
+    return m_lastTimelineHostSample.valid;
+}
+
 bool CinematicsSeqImport::postViewportSeqPreviewAtMs(fuse::cinematics::TimelineMs timeMs) {
     if (m_lastAssetText.empty()) {
         return false;

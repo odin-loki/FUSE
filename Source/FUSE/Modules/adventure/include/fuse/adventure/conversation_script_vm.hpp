@@ -10,6 +10,13 @@
 
 namespace fuse::adventure {
 
+enum class ConversationState : u8 {
+    Idle = 0,
+    Greeting,
+    Quest,
+    Farewell,
+};
+
 struct ConversationScriptHook {
     std::string npcId;
     std::string branchId;
@@ -43,10 +50,16 @@ public:
     [[nodiscard]] std::string peekBranchLine(const std::string& npcId,
                                              const std::string& branchId,
                                              u32 lineIndex) const;
-    [[nodiscard]] u32 dispatchAllLines(const std::string& npcId,
+    [[nodiscard]]     u32 dispatchAllLines(const std::string& npcId,
                                        const std::string& branchId,
                                        InteractContext& ctx,
                                        ConversationInteractable& target);
+
+    void setNpcState(const std::string& npcId, ConversationState state);
+    [[nodiscard]] ConversationState npcState(const std::string& npcId) const;
+    bool advanceNpcState(const std::string& npcId,
+                         InteractContext& ctx,
+                         ConversationInteractable& target);
 
     [[nodiscard]] bool chooseHighestPriorityBranch(const std::string& npcId,
                                                    const InteractContext& ctx,
@@ -67,6 +80,7 @@ public:
 
     u32 dispatchCount() const { return m_dispatchCount; }
     u32 lineDispatchCount() const { return m_lineDispatchCount; }
+    u32 stateAdvanceCount() const { return m_stateAdvanceCount; }
     u32 grantCount() const { return m_grantCount; }
     u32 hookCount() const { return static_cast<u32>(m_hooks.size()); }
     const std::string& lastBranchDispatched() const { return m_lastBranchDispatched; }
@@ -77,7 +91,9 @@ private:
     std::string hookKey(const std::string& npcId, const std::string& branchId) const;
 
     std::unordered_map<std::string, ConversationScriptHook> m_hooks;
+    std::unordered_map<std::string, ConversationState> m_npcStates;
     u32 m_dispatchCount = 0;
+    u32 m_stateAdvanceCount = 0;
     u32 m_lineDispatchCount = 0;
     u32 m_grantCount = 0;
     std::string m_lastBranchDispatched;

@@ -791,6 +791,13 @@ void testCinematicsSeqPreviewPaneWire() {
     expectTrue(importer.lastWiredPreviewSample().mount_point == "cockpit", "wired preview mount point");
     expectTrue(importer.previewPaneScrubCount() == 1u, "preview pane follow-up scrub counted");
     expectTrue(importer.scrubPreviewPostCount() == 1u, "preview pane scrub post counted");
+
+    expectTrue(importer.wireTimelineHostToHost(2'500), "timeline host wire posts commands");
+    host.gameTick();
+    host.gameTick();
+    expectTrue(importer.timelineHostWireCount() == 1u, "timeline host wire counted");
+    expectTrue(host.cinematicsSeqTimelineHostWireCount() == 1u, "host timeline host wire counted");
+    expectTrue(importer.lastTimelineHostSample().valid, "timeline host sample valid");
 }
 
 void testCinematicsSeqImportPostsAsset() {

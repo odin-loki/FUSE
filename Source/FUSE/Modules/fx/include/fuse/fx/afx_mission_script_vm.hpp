@@ -12,6 +12,13 @@
 
 namespace fuse::fx {
 
+struct AfxMissionDelayedDispatch {
+    std::string scriptHook;
+    u32 delayMs = 0;
+    u32 elapsedMs = 0;
+    bool fired = false;
+};
+
 /// AFX-Template mission script VM stub — dispatches `on_spell_cast` / `on_ambient_fx` / `on_impact_fx` hooks.
 class AfxMissionScriptVm {
 public:
@@ -19,6 +26,8 @@ public:
 
     bool dispatch(const std::string& scriptHook, FxComposer& composer, const frame::FrameCtx& ctx = {});
     bool dispatchTick(FxComposer& composer, const frame::FrameCtx& ctx = {});
+    void scheduleDelayedDispatch(const std::string& scriptHook, u32 delayMs);
+    u32 advanceDelayedDispatches(u32 deltaMs, FxComposer& composer, const frame::FrameCtx& ctx = {});
 
     /// Execute a TorqueScript function body stub (attach/cast commands in body text).
     bool executeFunctionBody(const std::string& functionName, const std::string& bodyText, FxComposer& composer,
@@ -26,6 +35,8 @@ public:
 
     u32 dispatchCount() const { return m_dispatchCount; }
     u32 tickDispatchCount() const { return m_tickDispatchCount; }
+    u32 delayedDispatchCount() const { return m_delayedDispatchCount; }
+    u32 pendingDelayedCount() const;
     u32 executeCount() const { return m_executeCount; }
     u32 hookCount() const { return static_cast<u32>(m_hooks.size()); }
     const std::vector<AfxMissionHook>& registeredHooks() const;
@@ -34,8 +45,10 @@ public:
 private:
     std::unordered_map<std::string, AfxMissionHook> m_hooks;
     std::vector<AfxMissionHook> m_registeredHooks;
+    std::vector<AfxMissionDelayedDispatch> m_delayedDispatches;
     u32 m_dispatchCount = 0;
     u32 m_tickDispatchCount = 0;
+    u32 m_delayedDispatchCount = 0;
     u32 m_executeCount = 0;
     std::string m_lastHookDispatched;
 };

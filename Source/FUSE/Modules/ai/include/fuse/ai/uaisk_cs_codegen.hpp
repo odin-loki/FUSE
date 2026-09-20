@@ -25,12 +25,19 @@ struct UaiskCsFieldRef {
     std::string defaultValue;
 };
 
+enum class UaiskCompositeKind : u8 {
+    None = 0,
+    Sequence,
+    Selector,
+};
+
 /// Lightweight AST distilled from `UaiskCsParseResult` for codegen passes.
 struct UaiskCsAst {
     std::string moduleName;
     std::string className;
     std::string baseClass;
     std::string primaryRegistryTypeId;
+    UaiskCompositeKind compositeKind = UaiskCompositeKind::None;
     std::vector<std::string> behaviorTreeHooks;
     std::vector<UaiskCsMethodRef> methods;
     std::vector<UaiskCsFieldRef> fields;

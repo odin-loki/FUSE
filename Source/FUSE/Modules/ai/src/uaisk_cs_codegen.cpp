@@ -219,6 +219,34 @@ void appendMethodBodyLeaves(const std::string& body, std::vector<NodeLoadSpec>& 
     }
 }
 
+bool codegenNestedSelectorSequenceSpecs(std::vector<NodeLoadSpec>& specs, u32& rootIndex) {
+    specs = {
+        {"bb.action.wait", 0.25f},
+        {"gb.action.move_toward", 0.2f},
+        {"bb.condition.distance_less", 6.f},
+        {"bb.action.set_flag", 0.f, 1},
+        {"bb.sequence", 0.f, 0, 1, "patrol_branch", {0, 1}},
+        {"bb.sequence", 0.f, 0, 1, "engage_branch", {2, 3}},
+        {"bb.selector", 0.f, 0, 1, "aiComposite.cs", {4, 5}},
+    };
+    rootIndex = 6;
+    return true;
+}
+
+bool codegenNestedSequenceSelectorSpecs(std::vector<NodeLoadSpec>& specs, u32& rootIndex) {
+    specs = {
+        {"bb.condition.allies_in_radius", 5.f, 0, 1},
+        {"bb.action.set_flag", 0.f, 1},
+        {"bb.condition.distance_less", 3.f},
+        {"bb.action.set_flag", 0.f, 0},
+        {"bb.selector", 0.f, 0, 1, "squad_branch", {0, 1}},
+        {"bb.selector", 0.f, 0, 1, "solo_branch", {2, 3}},
+        {"bb.sequence", 0.f, 0, 1, "aiComposite.cs", {4, 5}},
+    };
+    rootIndex = 6;
+    return true;
+}
+
 bool codegenFromMethodBodies(const UaiskCsAst& ast, std::vector<NodeLoadSpec>& specs, u32& rootIndex) {
     std::vector<u32> childIndices;
     for (const UaiskCsMethodRef& method : ast.methods) {
@@ -311,6 +339,13 @@ bool buildAstFromSyntaxTree(const UaiskCsSyntaxTree& tree, UaiskCsAst& outAst) {
         if (node.kind == UaiskCsSyntaxNodeKind::Attribute && node.name == "behaviorTree") {
             outAst.primaryRegistryTypeId = node.value;
         }
+        if (node.kind == UaiskCsSyntaxNodeKind::Attribute && node.name == "composite") {
+            if (node.value == "selector") {
+                outAst.compositeKind = UaiskCompositeKind::Selector;
+            } else if (node.value == "sequence") {
+                outAst.compositeKind = UaiskCompositeKind::Sequence;
+            }
+        }
     }
 
     return !outAst.moduleName.empty();
@@ -349,6 +384,29 @@ bool codegenSpecsForModule(const UaiskCsAst& ast,
     }
     if (methodImpliesCodegen(ast, "onWaitThenMove") || methodImpliesCodegen(ast, "onPatrolWait")) {
         const bool ok = codegenWaitThenMoveSpecs(outSpecs, outRootIndex);
+        if (ok) {
+            applyFieldDefaultsToSpecs(ast, outSpecs);
+        }
+        return ok;
+    }
+    if (containsHook(ast, "aiComposite.cs") || methodImpliesCodegen(ast, "onNestedPatrol")) {
+        const bool ok = ast.compositeKind == UaiskCompositeKind::Sequence
+                            ? codegenNestedSequenceSelectorSpecs(outSpecs, outRootIndex)
+                            : codegenNestedSelectorSequenceSpecs(outSpecs, outRootIndex);
+        if (ok) {
+            applyFieldDefaultsToSpecs(ast, outSpecs);
+        }
+        return ok;
+    }
+    if (ast.compositeKind == UaiskCompositeKind::Selector) {
+        const bool ok = codegenNestedSelectorSequenceSpecs(outSpecs, outRootIndex);
+        if (ok) {
+            applyFieldDefaultsToSpecs(ast, outSpecs);
+        }
+        return ok;
+    }
+    if (ast.compositeKind == UaiskCompositeKind::Sequence) {
+        const bool ok = codegenNestedSequenceSelectorSpecs(outSpecs, outRootIndex);
         if (ok) {
             applyFieldDefaultsToSpecs(ast, outSpecs);
         }

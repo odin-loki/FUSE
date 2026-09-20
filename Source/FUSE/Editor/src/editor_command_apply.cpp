@@ -363,6 +363,18 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         return false;
     }
 
+    if (command.propertyName == "cinematics.seq_timeline_host_wire") {
+        const fuse::cinematics::TimelineMs timeMs =
+            static_cast<fuse::cinematics::TimelineMs>(std::strtoul(command.propertyValue.c_str(), nullptr, 10));
+        if (!host.loadedCinematicsSeqAsset().empty() &&
+            host.cinematicsTimelineHost().loadSeqAssetText(host.loadedCinematicsSeqAsset()) &&
+            host.cinematicsTimelineHost().scrubToMs(timeMs)) {
+            host.incrementCinematicsSeqTimelineHostWireCount();
+            return true;
+        }
+        return false;
+    }
+
     const ecs::EntityID entity = handleToEntity(command.target);
     if (!entity.valid() || !host.editorScene().registry().alive(entity)) {
         return false;
@@ -604,6 +616,10 @@ void EditorHost::setCinematicsSeqScrubPreview(fuse::cinematics::TimelineMs timeM
 
 void EditorHost::incrementCinematicsSeqPreviewPaneWireCount() {
     ++m_cinematicsSeqPreviewPaneWireCount;
+}
+
+void EditorHost::incrementCinematicsSeqTimelineHostWireCount() {
+    ++m_cinematicsSeqTimelineHostWireCount;
 }
 
 void EditorHost::applyCommand_(const EditorCommand& command) {

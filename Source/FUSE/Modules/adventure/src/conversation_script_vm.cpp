@@ -176,6 +176,49 @@ u32 ConversationScriptVm::dispatchBestBranchAllLines(const std::string& npcId,
     return dispatchAllLines(npcId, branchId, ctx, target);
 }
 
+void ConversationScriptVm::setNpcState(const std::string& npcId, ConversationState state) {
+    m_npcStates[npcId] = state;
+}
+
+ConversationState ConversationScriptVm::npcState(const std::string& npcId) const {
+    const auto it = m_npcStates.find(npcId);
+    if (it == m_npcStates.end()) {
+        return ConversationState::Idle;
+    }
+    return it->second;
+}
+
+bool ConversationScriptVm::advanceNpcState(const std::string& npcId,
+                                           InteractContext& ctx,
+                                           ConversationInteractable& target) {
+    ConversationState state = npcState(npcId);
+    std::string branchId;
+    switch (state) {
+    case ConversationState::Idle:
+        state = ConversationState::Greeting;
+        branchId = "polite";
+        break;
+    case ConversationState::Greeting:
+        state = ConversationState::Quest;
+        branchId = "aggressive";
+        break;
+    case ConversationState::Quest:
+        state = ConversationState::Farewell;
+        branchId = "armed";
+        break;
+    case ConversationState::Farewell:
+        setNpcState(npcId, ConversationState::Idle);
+        return false;
+    }
+
+    setNpcState(npcId, state);
+    ++m_stateAdvanceCount;
+    if (!branchId.empty()) {
+        return dispatchBranch(npcId, branchId, ctx, target);
+    }
+    return true;
+}
+
 void registerOutpostConversationScriptHooks(ConversationScriptVm& vm) {
     ConversationScriptHook polite{};
     polite.npcId = "outpost_guard";

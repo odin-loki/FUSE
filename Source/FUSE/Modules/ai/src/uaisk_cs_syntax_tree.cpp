@@ -179,6 +179,18 @@ bool parseCsSyntaxTree(std::string_view csModule, std::string_view csText, Uaisk
             outTree.nodes.push_back(std::move(node));
         }
 
+        const std::string composite = extractQuotedValue(line, "composite");
+        if (!composite.empty()) {
+            appendUnique(outTree.behaviorTreeHooks, composite);
+            UaiskCsSyntaxNode node;
+            node.kind = UaiskCsSyntaxNodeKind::Attribute;
+            node.name = "composite";
+            node.value = composite;
+            node.parentClass = currentClass;
+            node.line = lineNumber;
+            outTree.nodes.push_back(std::move(node));
+        }
+
         const std::string treeProfile = extractQuotedValue(line, "treeProfile");
         if (!treeProfile.empty()) {
             appendUnique(outTree.behaviorTreeHooks, treeProfile);

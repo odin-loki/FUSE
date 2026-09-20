@@ -331,7 +331,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **MT note** | AI/FX jobify per architecture §7 |
 | **Exit** | Per-module U5 gates in prestarter §10 |
 | **Deps** | WP-06 |
-| **Status** | ✅ Prestarter §10 gates closed; post-gate ore through U5 wave 19 (multi-leaf method-body codegen, mount chain, CUDA residency skip, RadioComponent, WeaponCombatLoop, schedule/call mission VM) — [U5-MODULES.md](./U5-MODULES.md) |
+| **Status** | ✅ Prestarter §10 gates closed; post-gate ore through U5 wave 20 (nested composite codegen, FSEvents poll, timeline host, mission VM delay-ms, btDbvt bridge, combat hitscan/reload, conv state machine) — [U5-MODULES.md](./U5-MODULES.md) |
 
 ---
 

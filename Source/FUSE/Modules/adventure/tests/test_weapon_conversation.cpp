@@ -1,4 +1,6 @@
+#include <fuse/adventure/combat_hitscan_stub.hpp>
 #include <fuse/adventure/conversation_interactable.hpp>
+#include <fuse/adventure/conversation_script_vm.hpp>
 #include <fuse/adventure/conversation_script_loader.hpp>
 #include <fuse/adventure/skeletal_mount_stub.hpp>
 #include <fuse/adventure/animation_bind_pose_bridge.hpp>
@@ -282,6 +284,40 @@ int main() {
     expectTrue(!combatLoop.tryFire(inventory), "weapon combat loop respects fire-rate gate");
     combatLoop.tick(1.f);
     expectTrue(combatLoop.tryFire(inventory), "weapon combat loop fires after cooldown");
+
+    fuse::adventure::WeaponRuntime reloadRuntime;
+    reloadRuntime.setAmmoType(fuse::adventure::ItemId("energy_cell"));
+    fuse::adventure::WeaponStats reloadStats{};
+    reloadStats.magazineSize = 2;
+    reloadStats.reloadMs = 100;
+    reloadRuntime.setStats(reloadStats);
+    reloadRuntime.fire(inventory);
+    reloadRuntime.fire(inventory);
+    expectTrue(reloadRuntime.reload(inventory), "weapon runtime begins reload");
+    expectTrue(reloadRuntime.advanceReload(120), "weapon runtime completes reload");
+    expectTrue(reloadRuntime.magazineAmmo() == 2u, "weapon runtime refills magazine");
+
+    fuse::adventure::CombatHitscanStub hitscan;
+    hitscan.setSpreadDeg(5.f);
+    fuse::adventure::WeaponStats hitscanStats{};
+    hitscanStats.damage = 25.f;
+    hitscanStats.range = 80.f;
+    const fuse::adventure::HitscanResult hit =
+        hitscan.fireHitscan(hitscanStats, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 10.f, 0.f, 0.f);
+    expectTrue(hit.hit, "hitscan stub hits in-range target");
+    expectTrue(hit.damage == 25.f, "hitscan stub applies weapon damage");
+
+    fuse::adventure::ConversationScriptVm stateVm;
+    fuse::adventure::registerOutpostConversationScriptHooks(stateVm);
+    fuse::adventure::ConversationBranch politeStateBranch;
+    politeStateBranch.id = "polite";
+    politeStateBranch.lines = {"Thank you, traveler. Proceed with caution."};
+    fuse::adventure::ConversationInteractable guardPolite({"Halt."}, {politeStateBranch});
+    expectTrue(stateVm.advanceNpcState("outpost_guard", ctx, guardPolite),
+               "conversation state machine advances greeting");
+    expectTrue(stateVm.npcState("outpost_guard") == fuse::adventure::ConversationState::Greeting,
+               "conversation state machine records greeting");
+    expectTrue(stateVm.stateAdvanceCount() >= 1u, "conversation state advance counted");
 
     fuse::core::shutdown();
 

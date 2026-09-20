@@ -581,6 +581,22 @@ void testParticlePoolCudaResidency() {
     expectTrue(gpuBackend.residentSlotCount() >= 0u, "CUDA resident slot count tracked");
 }
 
+void testAfxMissionVmDelayedDispatch() {
+    fuse::fx::FxComposer composer;
+    composer.registerDemoVerticalSlice();
+    fuse::fx::AfxMissionScriptVm vm;
+    std::vector<fuse::fx::AfxMissionHook> hooks;
+    hooks.push_back({"AFXDemo_Minimal", "on_ambient_fx", "spark_burst", 100});
+    vm.registerHooks(hooks);
+    expectTrue(vm.pendingDelayedCount() >= 1u, "mission VM delayed dispatch scheduled");
+
+    fuse::frame::FrameCtx ctx;
+    ctx.dt = 0.05f;
+    expectTrue(vm.advanceDelayedDispatches(40, composer, ctx) == 0u, "delayed dispatch not fired early");
+    expectTrue(vm.advanceDelayedDispatches(80, composer, ctx) >= 1u, "delayed dispatch fired after delay");
+    expectTrue(vm.delayedDispatchCount() >= 1u, "delayed dispatch counted");
+}
+
 void testAfxMissionScheduleCallParse() {
     static const char* kMisText =
         "missionName = \"ScheduleDemo\";\n"
@@ -674,6 +690,7 @@ int main() {
     testComposerSelectiveWriteback();
     testAfxMissionSpellCodegen();
     testParticlePoolCudaResidency();
+    testAfxMissionVmDelayedDispatch();
     testAfxMissionScheduleCallParse();
     testAfxMissionExecuteFromMis();
     testAfxMissionNestedSimObjectParse();

@@ -38,6 +38,9 @@ public:
     /// Inotify/FSEvents poll — uses portable OS watch handles when available.
     u32 pollInotifyFileChanges(BehaviorRuntime& runtime, std::string* errorOut = nullptr);
 
+    /// macOS FSEvents-only poll — separate from inotify path for wave-20 deepen.
+    u32 pollFSEventsFileChanges(BehaviorRuntime& runtime, std::string* errorOut = nullptr);
+
     u32 watchCount() const { return static_cast<u32>(m_watches.size()); }
     u32 reloadCount() const { return m_reloadCount; }
     u32 osPollCount() const { return m_osPollCount; }
@@ -59,6 +62,8 @@ private:
     u32 m_osReloadCount = 0;
     u32 m_inotifyPollCount = 0;
     u32 m_inotifyReloadCount = 0;
+    u32 m_fseventsPollCount = 0;
+    u32 m_fseventsReloadCount = 0;
     std::unordered_map<std::string, OsFileWatchHandle> m_osHandles;
 };
 

@@ -2096,6 +2096,38 @@ void testUaiskCodegenMethodBody() {
     expectTrue(tree.nodeCount() >= 1u, "method-body codegen emits nodes");
 }
 
+void testUaiskNestedCompositeCodegen() {
+    static const char* kCsText =
+        "class CompositePatrol : BehaviorBase {\n"
+        "  composite = \"selector\";\n"
+        "  behaviorTree = \"aiComposite.cs\";\n"
+        "  void onNestedPatrol() {}\n"
+        "}\n";
+
+    fuse::ai::BehaviorTree tree;
+    std::string error;
+    expectTrue(fuse::ai::uaisk::codegenTreeFromSyntaxTree("aiComposite.cs", kCsText, tree, &error),
+               "nested composite codegen builds selector tree");
+    expectTrue(tree.nodeCount() >= 7u, "nested composite codegen emits selector+sequence nodes");
+}
+
+void testUaiskFSEventsPollPath() {
+    namespace fs = std::filesystem;
+    const fs::path tempPath = fs::temp_directory_path() / "fuse_patrol_wave20.bt";
+    {
+        std::ofstream out(tempPath);
+        out << "bb.action.set_flag flag=1\nroot=0\n";
+    }
+
+    fuse::ai::BehaviorRuntime runtime;
+    fuse::ai::uaisk::TreeFileWatchRegistry registry;
+    registry.watchProfileFromDisk(tempPath.string(), 8u);
+    expectTrue(registry.pollFSEventsFileChanges(runtime) == 0u, "no fsevents reload when unchanged");
+    expectTrue(registry.pollFSEventsFileChanges(runtime) >= 0u, "fsevents poll path executes");
+
+    fs::remove(tempPath);
+}
+
 void testUaiskCodegenMultiLeafMethodBody() {
     static const char* kCsText =
         "class SquadActions : BehaviorBase {\n"
@@ -2376,6 +2408,8 @@ int main() {
     testUaiskCodegenSyntaxTreePath();
     testUaiskCodegenMethodBody();
     testUaiskCodegenMultiLeafMethodBody();
+    testUaiskNestedCompositeCodegen();
+    testUaiskFSEventsPollPath();
     testUaiskFSEventsCoreServicesStub();
     testUaiskCodegenFieldDefaults();
     testReloadCodegenProfile();

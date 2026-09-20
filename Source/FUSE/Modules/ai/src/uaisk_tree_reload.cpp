@@ -196,6 +196,42 @@ u32 TreeFileWatchRegistry::pollInotifyFileChanges(BehaviorRuntime& runtime, std:
     return reloaded;
 }
 
+u32 TreeFileWatchRegistry::pollFSEventsFileChanges(BehaviorRuntime& runtime, std::string* errorOut) {
+    u32 reloaded = 0;
+    ++m_fseventsPollCount;
+
+    for (auto& entryPair : m_watches) {
+        TreeFileWatchEntry& entry = entryPair.second;
+        if (!entry.osWatchEnabled) {
+            continue;
+        }
+
+        auto handleIt = m_osHandles.find(entry.path);
+        if (handleIt == m_osHandles.end() || handleIt->second.backend != OsFileWatchBackend::FSEvents) {
+            continue;
+        }
+
+        OsFileWatchStatus status;
+        if (!pollOsFileWatch(handleIt->second, status)) {
+            continue;
+        }
+        if (!status.readable) {
+            if (errorOut != nullptr && !status.error.empty()) {
+                *errorOut = status.error;
+            }
+            continue;
+        }
+
+        if (applyOsStatus_(entry, status.content, status.lastModifiedNs, runtime, errorOut)) {
+            entry.osBackend = status.backend;
+            ++m_fseventsReloadCount;
+            ++reloaded;
+        }
+    }
+
+    return reloaded;
+}
+
 const TreeFileWatchEntry* TreeFileWatchRegistry::entryFor(std::string_view path) const {
     const auto it = m_watches.find(std::string(path));
     return (it != m_watches.end()) ? &it->second : nullptr;

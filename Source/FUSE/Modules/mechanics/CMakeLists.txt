@@ -30,6 +30,7 @@ add_library(fuse_mechanics STATIC
     src/waypoint_component.cpp
     src/look_at_component.cpp
     src/radio_component.cpp
+    src/bt_dbvt_bridge.cpp
     src/broadphase_world_stub.cpp
     src/inventory_provider.cpp
     src/interact_action.cpp
@@ -66,6 +67,7 @@ add_library(fuse_mechanics STATIC
     include/fuse/mechanics/waypoint_component.hpp
     include/fuse/mechanics/look_at_component.hpp
     include/fuse/mechanics/radio_component.hpp
+    include/fuse/mechanics/bt_dbvt_bridge.hpp
     include/fuse/mechanics/broadphase_world_stub.hpp
     include/fuse/mechanics/inventory_provider.hpp
     include/fuse/mechanics/interact_action.hpp

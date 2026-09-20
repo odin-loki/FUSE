@@ -13,6 +13,7 @@ struct AfxMissionHook {
     std::string missionId;
     std::string scriptHook;
     std::string spellId;
+    u32 delayMs = 0;
 };
 
 /// Parse `mission` lines from AFX-Template pack text.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/cinematics/cue_preview.hpp>
+#include <fuse/cinematics/timeline_host_stub.hpp>
 #include <fuse/cinematics/timeline_loader.hpp>
 #include <fuse/cinematics/types.hpp>
 #include <fuse/editor/editor_host.hpp>
@@ -50,6 +51,13 @@ public:
     /// Wire Qt seq preview pane — import asset + post initial scrub through EditorHost.
     bool wirePreviewPaneToHost(fuse::cinematics::TimelineMs initialTimeMs = 0);
 
+    /// Wire Qt seq overlay ↔ timeline host stub through EditorHost.
+    bool wireTimelineHostToHost(fuse::cinematics::TimelineMs initialTimeMs = 0);
+    [[nodiscard]] const fuse::cinematics::TimelineHostOverlaySample& lastTimelineHostSample() const {
+        return m_lastTimelineHostSample;
+    }
+    [[nodiscard]] u32 timelineHostWireCount() const { return m_timelineHostWireCount; }
+
     /// Qt viewport seq preview stub — post scrub time for runtime viewport overlay sampling.
     bool postViewportSeqPreviewAtMs(fuse::cinematics::TimelineMs timeMs);
     [[nodiscard]] u32 viewportSeqPreviewPostCount() const { return m_viewportSeqPreviewPostCount; }
@@ -66,7 +74,9 @@ private:
     u32 m_previewPaneWireCount = 0;
     u32 m_previewPaneScrubCount = 0;
     u32 m_viewportSeqPreviewPostCount = 0;
+    u32 m_timelineHostWireCount = 0;
     SeqPreviewPaneSample m_lastWiredPreviewSample{};
+    fuse::cinematics::TimelineHostOverlaySample m_lastTimelineHostSample{};
 };
 
 } // namespace fuse::editor

@@ -362,6 +362,16 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_adventure` | `WeaponCombatLoop` fire-rate gate + damage apply; conversation VM `injectScriptLine` deepen |
 | **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE19` assertions for mount chain, radio, combat loop, injected lines |
 
+#### Landed wave 20 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | Nested selector/sequence codegen from `composite` AST attribute; `pollFSEventsFileChanges()` macOS deepen |
+| `fuse_cinematics` | `TimelineHostStub` Qt seq overlay ↔ timeline host wiring; `wireTimelineHostToHost()` editor command |
+| `fuse_fx` | Mission VM `delayMs` scheduled hook dispatch (`advanceDelayedDispatches`) |
+| `fuse_mechanics` | `BtDbvtBridge` AABB tree bridge when `FUSE_BUILD_BULLET` / `FUSE_HAS_BULLET` |
+| `fuse_adventure` | Weapon reload/magazine/spread; `CombatHitscanStub`; conversation NPC state machine (`advanceNpcState`) |
+
 ---
 
 ## 8. Related docs
