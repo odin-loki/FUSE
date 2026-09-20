@@ -344,6 +344,36 @@ bool gbitmapSurfaceSizeCompressedSmoke() {
     return bc3.getSurfaceSize(0) == 1u * 1u * 16u;
 }
 
+bool gbitmapDeleteImageSmoke() {
+    GBitmap bitmap;
+    bitmap.allocateBitmap(2, 2, false, GFXFormatR8G8B8A8);
+    if (bitmap.getByteSize() == 0u) {
+        return false;
+    }
+
+    bitmap.deleteImage();
+    if (bitmap.getByteSize() != 0u) {
+        return false;
+    }
+
+    bitmap.allocateBitmap(1, 1, false, GFXFormatR8G8B8);
+    return bitmap.getWidth() == 1u && bitmap.getHeight() == 1u && bitmap.getByteSize() == 3u;
+}
+
+bool gbitmapAllocateBitmapWithMipsSmoke() {
+    GBitmap bitmap;
+    bitmap.allocateBitmapWithMips(4, 4, 2, GFXFormatR8G8B8A8, 1);
+
+    if (bitmap.getNumMipLevels() != 2u) {
+        return false;
+    }
+    if (bitmap.getWidth(0) != 4u || bitmap.getHeight(0) != 4u) {
+        return false;
+    }
+    return bitmap.getWidth(1) == 2u && bitmap.getHeight(1) == 2u &&
+           bitmap.getSurfaceSize(0) == 4u * 4u * 4u && bitmap.getSurfaceSize(1) == 2u * 2u * 4u;
+}
+
 bool gbitmapChopTopMipsSmoke() {
     GBitmap bitmap;
     bitmap.allocateBitmap(4, 4, true, GFXFormatR8G8B8A8);

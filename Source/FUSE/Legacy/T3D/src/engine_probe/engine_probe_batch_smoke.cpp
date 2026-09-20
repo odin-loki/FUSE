@@ -316,7 +316,22 @@ bool stringUnitSmoke() {
         return false;
     }
     const char* range = StringUnit::getUnits(kFields, 0, 1, " ");
-    return range != nullptr && std::strcmp(range, "alpha beta") == 0;
+    if (range == nullptr || std::strcmp(range, "alpha beta") != 0) {
+        return false;
+    }
+
+    const char* replaced = StringUnit::setUnit(kFields, 1, "delta", " ");
+    if (replaced == nullptr || std::strcmp(replaced, "alpha delta gamma") != 0) {
+        return false;
+    }
+
+    const char* removed = StringUnit::removeUnit(kFields, 1, " ");
+    if (removed == nullptr || std::strcmp(removed, "alpha gamma") != 0) {
+        return false;
+    }
+
+    const char* tailRemoved = StringUnit::removeUnit(kFields, 2, " ");
+    return tailRemoved != nullptr && std::strcmp(tailRemoved, "alpha beta") == 0;
 }
 
 bool tagDictionarySmoke() {

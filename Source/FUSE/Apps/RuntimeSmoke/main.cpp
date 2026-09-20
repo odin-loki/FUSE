@@ -368,7 +368,7 @@ int main() {
         check(fuse::legacy::t3d::engineProbe::byteBufferSmoke(),
               "engine probe ByteBuffer append/ref-count/getCopy");
         check(fuse::legacy::t3d::engineProbe::stringUnitSmoke(),
-              "engine probe StringUnit getUnit/getUnitCount/getUnits");
+              "engine probe StringUnit get/set/remove unit paths");
         check(fuse::legacy::t3d::engineProbe::tagDictionarySmoke(),
               "engine probe TagDictionary addEntry/defineToId round-trip");
         check(fuse::legacy::t3d::engineProbe::findMatchSmoke(),
@@ -415,6 +415,10 @@ int main() {
               "engine probe GBitmap getSurfaceSize BC1/BC3 block layout");
         check(fuse::legacy::t3d::engineProbe::gbitmapChopTopMipsSmoke(),
               "engine probe GBitmap chopTopMips mip discard");
+        check(fuse::legacy::t3d::engineProbe::gbitmapDeleteImageSmoke(),
+              "engine probe GBitmap deleteImage reallocate");
+        check(fuse::legacy::t3d::engineProbe::gbitmapAllocateBitmapWithMipsSmoke(),
+              "engine probe GBitmap allocateBitmapWithMips explicit mip count");
         check(fuse::legacy::t3d::engineProbe::threadStaticSmoke(),
               "engine probe TorqueThreadStatic DITTS/ATTS round-trip");
         check(fuse::legacy::t3d::engineProbe::bitRenderTriangleSmoke(),

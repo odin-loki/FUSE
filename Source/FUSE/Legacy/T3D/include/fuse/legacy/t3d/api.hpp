@@ -114,6 +114,8 @@ bool gbitmapExtrudeMipLevelsSmoke();
 bool gbitmapSurfaceSizeMipSmoke();
 bool gbitmapSurfaceSizeCompressedSmoke();
 bool gbitmapChopTopMipsSmoke();
+bool gbitmapDeleteImageSmoke();
+bool gbitmapAllocateBitmapWithMipsSmoke();
 bool threadStaticSmoke();
 bool bitRenderTriangleSmoke();
 } // namespace engineProbe
