@@ -78,6 +78,8 @@ void testCommandRecorderComposite() {
         }
     }
     expectTrue(foundComposite, "composite command recorded");
+    expectTrue(recorder.vulkanViewportCount() == 0u, "logical-only viewport count stays 0");
+    expectTrue(recorder.vulkanScissorCount() == 0u, "logical-only scissor count stays 0");
 }
 
 void testRhiContextCompositeStats() {
@@ -104,6 +106,12 @@ void testRhiContextCompositeStats() {
     expectTrue(context->lastCompositeStats().framesRecorded >= 1u,
                "composite stats updated after submit");
     expectTrue(context->lastGraphPassCount() >= 3u, "graph includes composite before present");
+    if (context->commandRecorder().vulkanCompositeDrawCount() >= 1u) {
+        expectTrue(context->commandRecorder().vulkanViewportCount() >= 1u,
+                   "viewport set after composite GPU encode");
+        expectTrue(context->commandRecorder().vulkanScissorCount() >= 1u,
+                   "scissor set after composite GPU encode");
+    }
 #else
     expectTrue(!context->submitFrame(commands, 0u), "stub mode rejects GPU submit");
 #endif

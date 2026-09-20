@@ -32,6 +32,8 @@ struct RasterPathStats {
     u32 shaderWatchPolls = 0;
     u32 pipelineReloadCount = 0;
     u64 pipelineContentHash = 0;
+    u32 resizeCount = 0;
+    u32 resizeNoOpCount = 0;
     std::string message;
 };
 
@@ -68,11 +70,17 @@ public:
     /// Legacy hook — stats only; real draws are encoded via `CommandBufferRecorder`.
     bool recordFrame(const RenderCommandList& commands);
 
+    /// Recreate offscreen color+depth images, views, and framebuffer. Vertex/index buffers and
+    /// the graphics pipeline stay. Zero size is rejected. Same size is a success no-op.
+    bool resize(u32 width, u32 height);
+
 private:
     RasterPath() = default;
     bool initialize(VulkanDevice& device, const RasterPathDesc& desc);
     void shutdown();
     void reloadPipelinesIfWatched();
+    bool createOffscreenTargets();
+    void destroyOffscreenTargets();
 
     VulkanDevice* m_device = nullptr;
     RasterPathDesc m_desc{};

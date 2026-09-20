@@ -110,12 +110,59 @@ void testSnapshotRestoreRoundTrip() {
 #endif
 }
 
+void testRebuildSnapshotsCache() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for rebuild cache snapshot");
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        std::printf("SKIP: no Vulkan ICD — pipeline cache rebuild snapshot test\n");
+        return;
+    }
+
+    fuse::renderer::VulkanDevice* device = bootstrap->device();
+    auto cache = fuse::renderer::PipelineCache::create(*device);
+    expectTrue(cache != nullptr && cache->isValid(), "pipeline cache created for rebuild snapshot");
+
+    auto renderPass = fuse::renderer::RenderPass::create(*device);
+    auto layout = fuse::renderer::PipelineLayout::create(*device);
+    auto vert = fuse::renderer::ShaderModule::createFromFile(
+        *device, fuse::renderer::ShaderStage::Vertex, fixturePath("minimal.vert.spv").c_str());
+    auto frag = fuse::renderer::ShaderModule::createFromFile(
+        *device, fuse::renderer::ShaderStage::Fragment, fixturePath("minimal.frag.spv").c_str());
+    expectTrue(renderPass && layout && vert && frag, "rebuild snapshot pipeline deps ready");
+
+    fuse::renderer::GraphicsPipelineDesc pipelineDesc{};
+    pipelineDesc.layout = layout.get();
+    pipelineDesc.vertexShader = vert.get();
+    pipelineDesc.fragmentShader = frag.get();
+    pipelineDesc.renderPass = renderPass.get();
+    pipelineDesc.pipelineCache = cache.get();
+    auto pipeline = fuse::renderer::GraphicsPipeline::create(*device, pipelineDesc);
+    expectTrue(pipeline != nullptr && pipeline->isValid(),
+               "graphics pipeline created with pipeline cache");
+    expectTrue(pipeline->info().rebuildCount == 0u, "first create does not increment rebuildCount");
+
+    expectTrue(pipeline->rebuild(), "graphics pipeline rebuild succeeds with cache");
+    expectTrue(pipeline->isValid(), "graphics pipeline valid after cached rebuild");
+    expectTrue(pipeline->info().rebuildCount == 1u, "rebuildCount is 1 after one rebuild");
+    (void)pipeline->info().cacheSnapshotBytes;
+#else
+    (void)bootstrap;
+#endif
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
     testHashedFileName();
     testSnapshotRestoreRoundTrip();
+    testRebuildSnapshotsCache();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

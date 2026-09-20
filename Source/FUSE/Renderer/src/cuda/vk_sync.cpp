@@ -323,7 +323,7 @@ bool FrameSyncPair::signalRenderLane(void* vkDevice, u64 frameIndex) {
     progress.vkToCudaValue = timelineValueForFrame(frameIndex, 1u);
     ++progress.renderLaneSignals;
 
-    if (!driverWired()) {
+    if (!vkToCuda.valid) {
         return false;
     }
 
@@ -366,6 +366,7 @@ bool FrameSyncPair::waitRenderLane(void* vkDevice, u64 frameIndex) {
     progress.frameIndex = frameIndex;
     ++progress.renderLaneWaits;
 
+    // CUDA never signaled cudaToVk when !driverWired; waitVulkan would block/timeout.
     if (!driverWired()) {
         return false;
     }

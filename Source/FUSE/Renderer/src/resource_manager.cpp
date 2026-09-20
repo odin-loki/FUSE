@@ -3,6 +3,7 @@
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/gpu_alloc_stats.hpp>
 
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
@@ -46,6 +47,11 @@ void* createVulkanSampler(VulkanDevice& device, const SamplerDesc& desc) {
     info.mipLodBias = 0.0f;
     info.anisotropyEnable = VK_FALSE;
     info.maxAnisotropy = 1.0f;
+    if (desc.anisotropy && device.info().samplerAnisotropy) {
+        info.anisotropyEnable = VK_TRUE;
+        const float limit = std::max(1.f, device.info().maxSamplerAnisotropy);
+        info.maxAnisotropy = std::clamp(desc.maxAnisotropy, 1.f, limit);
+    }
     info.compareEnable = VK_FALSE;
     info.compareOp = VK_COMPARE_OP_ALWAYS;
     info.minLod = 0.0f;

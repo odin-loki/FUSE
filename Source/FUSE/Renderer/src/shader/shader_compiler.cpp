@@ -12,7 +12,15 @@ void fillDescMetadata(CompiledShader& result, const ShaderDesc& desc) {
         result.sourcePath = desc.sourcePath;
     }
     result.entryPoint = (desc.entryPoint != nullptr && desc.entryPoint[0] != '\0') ? desc.entryPoint : "main";
-    result.defineCount = desc.defineCount;
+    result.defines.clear();
+    if (desc.defines != nullptr) {
+        for (u32 i = 0; i < desc.defineCount; ++i) {
+            if (desc.defines[i] != nullptr) {
+                result.defines.emplace_back(desc.defines[i]);
+            }
+        }
+    }
+    result.defineCount = static_cast<u32>(result.defines.size());
 }
 
 CompiledShader makeFailure(const ShaderDesc& desc, const std::string& message) {
@@ -28,6 +36,10 @@ CompiledShader makeSuccess(const ShaderDesc& desc, std::vector<u32>&& words, con
     fillDescMetadata(result, desc);
     result.spirv = std::move(words);
     result.spirvHash = hashSpirvWords(result.spirv.data(), static_cast<u32>(result.spirv.size()));
+    for (const std::string& define : result.defines) {
+        result.spirvHash = hashMixDefineBytes(result.spirvHash, define.data(),
+                                              static_cast<u32>(define.size()));
+    }
     result.message = message;
     result.valid = true;
     return result;
@@ -66,6 +78,22 @@ CompiledShader ShaderCompiler::compile(const ShaderDesc& desc) {
 #endif
 }
 
+void ShaderCompiler::bindOwnedPointers(WatchedEntry& entry) {
+    entry.desc.sourcePath = entry.path.c_str();
+    entry.definePtrs.clear();
+    entry.definePtrs.reserve(entry.defineStorage.size());
+    for (const std::string& define : entry.defineStorage) {
+        entry.definePtrs.push_back(define.c_str());
+    }
+    if (entry.definePtrs.empty()) {
+        entry.desc.defines = nullptr;
+        entry.desc.defineCount = 0;
+    } else {
+        entry.desc.defines = entry.definePtrs.data();
+        entry.desc.defineCount = static_cast<u32>(entry.definePtrs.size());
+    }
+}
+
 bool ShaderCompiler::watch(const ShaderDesc& desc) {
     if (desc.sourcePath == nullptr || desc.sourcePath[0] == '\0') {
         return false;
@@ -74,7 +102,15 @@ bool ShaderCompiler::watch(const ShaderDesc& desc) {
     WatchedEntry entry;
     entry.path = desc.sourcePath;
     entry.desc = desc;
-    entry.desc.sourcePath = entry.path.c_str();
+    entry.defineStorage.clear();
+    if (desc.defines != nullptr) {
+        for (u32 i = 0; i < desc.defineCount; ++i) {
+            if (desc.defines[i] != nullptr) {
+                entry.defineStorage.emplace_back(desc.defines[i]);
+            }
+        }
+    }
+    bindOwnedPointers(entry);
 
     if (!m_watch.watch(entry.path.c_str())) {
         return false;
@@ -82,7 +118,10 @@ bool ShaderCompiler::watch(const ShaderDesc& desc) {
 
     entry.last = compileOffline(entry.desc);
     m_entries.push_back(std::move(entry));
-    m_entries.back().desc.sourcePath = m_entries.back().path.c_str();
+    // Vector growth / string SSO moves invalidate c_str and definePtrs; rebuild all.
+    for (WatchedEntry& stored : m_entries) {
+        bindOwnedPointers(stored);
+    }
     return true;
 }
 
@@ -96,7 +135,7 @@ u32 ShaderCompiler::pollHotReload() {
     const u32 changedCount = m_watch.lastChangedCount();
     if (changedCount == 0u) {
         for (WatchedEntry& entry : m_entries) {
-            entry.desc.sourcePath = entry.path.c_str();
+            bindOwnedPointers(entry);
             entry.last = compileOffline(entry.desc);
             if (entry.last.valid) {
                 ++successes;
@@ -112,7 +151,7 @@ u32 ShaderCompiler::pollHotReload() {
         }
         for (WatchedEntry& entry : m_entries) {
             if (entry.path == path) {
-                entry.desc.sourcePath = entry.path.c_str();
+                bindOwnedPointers(entry);
                 entry.last = compileOffline(entry.desc);
                 if (entry.last.valid) {
                     ++successes;

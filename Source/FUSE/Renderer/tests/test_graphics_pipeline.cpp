@@ -449,6 +449,81 @@ void testRasterPathHotReload() {
     std::filesystem::remove(tempFrag, ec);
 }
 
+void testRasterPathResize() {
+    fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.instance.enableValidation = false;
+    bootstrapDesc.createSwapchain = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(bootstrapDesc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for raster resize tests");
+
+    fuse::renderer::VulkanDevice* device = bootstrap->device();
+    if (device == nullptr) {
+        expectTrue(!bootstrap->status().deviceReady, "device unavailable without Vulkan loader");
+        return;
+    }
+
+    fuse::renderer::RasterPathDesc unreadyDesc{};
+    auto unreadyPath = fuse::renderer::RasterPath::create(*device, unreadyDesc);
+    expectTrue(unreadyPath != nullptr, "unready raster path allocated");
+    expectTrue(!unreadyPath->isReady(), "missing SPIR-V leaves raster path unready");
+    expectTrue(!unreadyPath->resize(64, 48), "unready raster path resize returns false");
+    expectTrue(unreadyPath->lastStats().resizeCount == 0u,
+               "unready resize does not increment resizeCount");
+    (void)unreadyPath->vulkanEncodeContext();
+
+    const std::string rasterVertPath = fixturePath("minimal.vert.spv");
+    const std::string rasterFragPath = fixturePath("minimal.frag.spv");
+    fuse::renderer::RasterPathDesc rasterDesc{};
+    rasterDesc.vertexSpirvPath = rasterVertPath.c_str();
+    rasterDesc.fragmentSpirvPath = rasterFragPath.c_str();
+
+    auto rasterPath = fuse::renderer::RasterPath::create(*device, rasterDesc);
+    expectTrue(rasterPath != nullptr, "raster path allocated for resize");
+
+    if (rasterPath->isReady()) {
+        expectTrue(!rasterPath->resize(0, 48), "zero width resize rejected");
+        expectTrue(!rasterPath->resize(64, 0), "zero height resize rejected");
+        expectTrue(rasterPath->lastStats().resizeCount == 0u,
+                   "rejected resize does not increment resizeCount");
+
+        expectTrue(rasterPath->resize(64, 48), "resize succeeds when ready");
+        expectTrue(rasterPath->lastStats().resizeCount == 1u,
+                   "resizeCount increments on actual recreate");
+        expectTrue(rasterPath->lastStats().pipelineReady, "pipeline stays ready after resize");
+
+        const fuse::renderer::VkFrameEncodeContext encode = rasterPath->vulkanEncodeContext();
+#if defined(FUSE_VULKAN_BACKEND)
+        if (bootstrap->status().deviceReady) {
+            expectTrue(encode.width == 64u, "encode context width matches resize");
+            expectTrue(encode.height == 48u, "encode context height matches resize");
+            expectTrue(encode.active, "encode context stays active after resize");
+            expectTrue(rasterPath->lastStats().depthAttachmentReady,
+                       "depth attachment ready after resize");
+            expectTrue(rasterPath->depthImageHandle() != nullptr,
+                       "depth image handle set after resize");
+            expectTrue(rasterPath->indexBufferHandle() != nullptr,
+                       "index buffer survives resize");
+            expectTrue(rasterPath->lastStats().indexBufferReady,
+                       "indexBufferReady survives resize");
+        }
+#else
+        (void)encode;
+#endif
+
+        expectTrue(rasterPath->resize(64, 48), "same-size resize is success no-op");
+        expectTrue(rasterPath->lastStats().resizeCount == 1u,
+                   "same-size resize does not increment resizeCount");
+        expectTrue(rasterPath->lastStats().resizeNoOpCount == 1u,
+                   "same-size resize increments resizeNoOpCount");
+    } else {
+        expectTrue(!rasterPath->resize(64, 48), "stub/unready raster path resize returns false");
+        expectTrue(rasterPath->lastStats().resizeCount == 0u,
+                   "stub/unready resize does not increment resizeCount");
+        (void)rasterPath->vulkanEncodeContext();
+    }
+}
+
 } // namespace
 
 int main() {
@@ -457,6 +532,7 @@ int main() {
     testGraphicsPipelineFromFixtures();
     testDynamicRenderingPipeline();
     testRasterPathClearTriangle();
+    testRasterPathResize();
     testShaderModuleReloadFromDisk();
     testRasterPathHotReload();
     testRhiContextWiresRasterPath();

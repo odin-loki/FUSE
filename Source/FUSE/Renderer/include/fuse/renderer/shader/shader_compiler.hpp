@@ -18,7 +18,8 @@ public:
     /// When glslang is enabled at build time, compiles GLSL/HLSL source; otherwise falls back to offline.
     static CompiledShader compile(const ShaderDesc& desc);
 
-    /// Watch `desc.sourcePath` (copied into owned storage). Returns false if path is null/empty.
+    /// Watch `desc.sourcePath` and define strings (copied into owned storage).
+    /// Returns false if path is null/empty.
     bool watch(const ShaderDesc& desc);
 
     /// Polls ShaderFileWatch and recompiles only watched entries whose paths match the
@@ -31,9 +32,13 @@ public:
 private:
     struct WatchedEntry {
         std::string path;
+        std::vector<std::string> defineStorage;
+        std::vector<const char*> definePtrs;
         ShaderDesc desc{};
         CompiledShader last{};
     };
+
+    static void bindOwnedPointers(WatchedEntry& entry);
 
     ShaderFileWatch m_watch;
     std::vector<WatchedEntry> m_entries;

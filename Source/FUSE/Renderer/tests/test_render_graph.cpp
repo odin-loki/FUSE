@@ -278,13 +278,23 @@ void testTransientResourceLifetimeTracked() {
     expectTrue(lifetime->lastPassIndex == 1u, "lifetime ends at last transient reader pass");
 }
 
+void executeCudaIncrement(void* commandBuffer, void* userData) {
+    (void)commandBuffer;
+    if (userData != nullptr) {
+        ++*static_cast<fuse::u32*>(userData);
+    }
+}
+
 void testCudaPassSkipsVulkanBeginEnd() {
     fuse::renderer::RenderGraph graph;
     graph.beginFrame(0u);
 
+    fuse::u32 cudaExecuteCount = 0;
     fuse::renderer::RGPassDesc cudaPass{};
     cudaPass.name = "cuda";
     cudaPass.isCuda = true;
+    cudaPass.execute = executeCudaIncrement;
+    cudaPass.userData = &cudaExecuteCount;
     graph.addPass(cudaPass);
 
     fuse::renderer::RGTextureAccess present{};
@@ -315,6 +325,7 @@ void testCudaPassSkipsVulkanBeginEnd() {
     fuse::renderer::CommandBufferRecorder recorder;
     const fuse::renderer::RenderGraphExecuteInfo info = graph.execute(*device, *frames, recorder);
 
+    expectTrue(cudaExecuteCount == 1u, "CUDA execute hook ran");
     expectTrue(info.cudaPassCount == 1u, "CUDA pass counted at execute");
     expectTrue(info.executedPassCount == 2u, "CUDA + present counted as executed");
 
@@ -479,6 +490,25 @@ void testPopulateFromDrawList() {
     expectTrue(graph.compileInfo().compiled, "draw list graph compiled");
     expectTrue(graph.compileInfo().executablePassCount >= 2u, "meshes + present kept");
 
+    bool depthBarrierPlanned = false;
+    for (const fuse::renderer::RGBarrier& barrier : graph.plannedBarriers()) {
+        if (barrier.texture.id == fuse::renderer::RenderGraph::kDepthTextureId &&
+            barrier.toLayout == fuse::renderer::RGImageLayout::DepthAttachment) {
+            depthBarrierPlanned = true;
+        }
+    }
+    bool depthAccessPresent = false;
+    for (const fuse::renderer::RGResourceLifetime& lifetime : graph.resourceLifetimes()) {
+        if (lifetime.isTexture &&
+            lifetime.resourceId == fuse::renderer::RenderGraph::kDepthTextureId) {
+            depthAccessPresent = true;
+        }
+    }
+    expectTrue(depthBarrierPlanned || depthAccessPresent,
+               "draw list compile covers depth attachment write");
+    expectTrue(graph.compileInfo().barrierCount >= 1u,
+               "compile barrier count covers color/present and depth when planned");
+
     fuse::renderer::VulkanInstanceDesc instanceDesc{};
     instanceDesc.enableValidation = false;
     auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
@@ -525,6 +555,18 @@ void testRhiContextUsesRenderGraph() {
                    "viewport set after real vkCmdBeginRenderPass");
         expectTrue(context->commandRecorder().vulkanScissorCount() >= 1u,
                    "scissor set after real vkCmdBeginRenderPass");
+    }
+    if (context->commandRecorder().vulkanCompositeDrawCount() >= 1u) {
+        expectTrue(context->commandRecorder().vulkanViewportCount() >= 1u,
+                   "viewport set after composite GPU encode");
+        expectTrue(context->commandRecorder().vulkanScissorCount() >= 1u,
+                   "scissor set after composite GPU encode");
+    }
+    if (context->commandRecorder().vulkanPresentRenderPassBeginCount() >= 1u) {
+        expectTrue(context->commandRecorder().vulkanViewportCount() >= 1u,
+                   "viewport set after present GPU encode");
+        expectTrue(context->commandRecorder().vulkanScissorCount() >= 1u,
+                   "scissor set after present GPU encode");
     }
 #else
     expectTrue(!context->submitFrame(commands, 0u), "stub mode rejects GPU submit");

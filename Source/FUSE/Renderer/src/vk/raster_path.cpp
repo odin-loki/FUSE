@@ -1,6 +1,7 @@
 #include <fuse/renderer/vk/raster_path.hpp>
 
 #include <fuse/renderer/shader/shader_module.hpp>
+#include <fuse/renderer/vk/debug_utils.hpp>
 #include <fuse/renderer/vk/graphics_pipeline.hpp>
 #include <fuse/renderer/vk/pipeline_cache.hpp>
 #include <fuse/renderer/vk/pipeline_layout.hpp>
@@ -358,10 +359,53 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
     }
     m_stats.indexBufferReady = (m_indexBuffer != nullptr);
 
+    if (!createOffscreenTargets()) {
+        return false;
+    }
+#endif
+
+    m_stats.pipelineReady = true;
+    m_stats.message = "headless raster path ready";
+    return true;
+}
+
+bool RasterPath::resize(u32 width, u32 height) {
+    if (!m_stats.pipelineReady || width == 0u || height == 0u) {
+        return false;
+    }
+    if (width == m_desc.width && height == m_desc.height) {
+        ++m_stats.resizeNoOpCount;
+        return true;
+    }
+
+    m_desc.width = width;
+    m_desc.height = height;
+    destroyOffscreenTargets();
+    if (!createOffscreenTargets()) {
+        return false;
+    }
+    ++m_stats.resizeCount;
+    m_stats.message = "raster path resized";
+    return true;
+}
+
+bool RasterPath::createOffscreenTargets() {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (m_device == nullptr || !m_device->isValid()) {
+        return true;
+    }
+    if (m_renderPass == nullptr || m_renderPass->nativeHandle() == nullptr) {
+        m_stats.message = "render pass required for offscreen targets";
+        return false;
+    }
+
+    auto vkDevice = static_cast<VkDevice>(m_device->nativeHandle());
+    auto physicalDevice = static_cast<VkPhysicalDevice>(m_device->nativePhysicalDevice());
+
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.extent = {desc.width, desc.height, 1};
+    imageInfo.extent = {m_desc.width, m_desc.height, 1};
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.format = static_cast<VkFormat>(kColorFormat);
@@ -378,8 +422,14 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
         return false;
     }
     m_colorImage = colorImage;
+    setDebugObjectName(vkDevice, 10u,
+                       static_cast<u64>(reinterpret_cast<uintptr_t>(static_cast<void*>(colorImage))),
+                       "fuse.raster.color");
 
+    VkMemoryRequirements memRequirements{};
     vkGetImageMemoryRequirements(vkDevice, colorImage, &memRequirements);
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memRequirements.size;
     allocInfo.memoryTypeIndex = findMemoryType(physicalDevice, memRequirements.memoryTypeBits,
                                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
@@ -412,7 +462,7 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
     VkImageCreateInfo depthImageInfo{};
     depthImageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     depthImageInfo.imageType = VK_IMAGE_TYPE_2D;
-    depthImageInfo.extent = {desc.width, desc.height, 1};
+    depthImageInfo.extent = {m_desc.width, m_desc.height, 1};
     depthImageInfo.mipLevels = 1;
     depthImageInfo.arrayLayers = 1;
     depthImageInfo.format = static_cast<VkFormat>(kDepthFormat);
@@ -428,6 +478,9 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
         return false;
     }
     m_depthImage = depthImage;
+    setDebugObjectName(vkDevice, 10u,
+                       static_cast<u64>(reinterpret_cast<uintptr_t>(static_cast<void*>(depthImage))),
+                       "fuse.raster.depth");
 
     vkGetImageMemoryRequirements(vkDevice, depthImage, &memRequirements);
     allocInfo.allocationSize = memRequirements.size;
@@ -466,8 +519,8 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
     framebufferInfo.renderPass = static_cast<VkRenderPass>(m_renderPass->nativeHandle());
     framebufferInfo.attachmentCount = 2;
     framebufferInfo.pAttachments = framebufferAttachments;
-    framebufferInfo.width = desc.width;
-    framebufferInfo.height = desc.height;
+    framebufferInfo.width = m_desc.width;
+    framebufferInfo.height = m_desc.height;
     framebufferInfo.layers = 1;
 
     VkFramebuffer framebuffer = VK_NULL_HANDLE;
@@ -477,14 +530,13 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
     }
     m_framebuffer = framebuffer;
     m_stats.depthAttachmentReady = true;
+#else
+    (void)0;
 #endif
-
-    m_stats.pipelineReady = true;
-    m_stats.message = "headless raster path ready";
     return true;
 }
 
-void RasterPath::shutdown() {
+void RasterPath::destroyOffscreenTargets() {
 #if defined(FUSE_VULKAN_BACKEND)
     if (m_device != nullptr && m_device->isValid()) {
         auto vkDevice = static_cast<VkDevice>(m_device->nativeHandle());
@@ -509,6 +561,23 @@ void RasterPath::shutdown() {
         if (m_depthMemory != nullptr) {
             vkFreeMemory(vkDevice, static_cast<VkDeviceMemory>(m_depthMemory), nullptr);
         }
+    }
+    m_framebuffer = nullptr;
+    m_colorView = nullptr;
+    m_depthView = nullptr;
+    m_colorImage = nullptr;
+    m_depthImage = nullptr;
+    m_colorMemory = nullptr;
+    m_depthMemory = nullptr;
+    m_stats.depthAttachmentReady = false;
+#endif
+}
+
+void RasterPath::shutdown() {
+#if defined(FUSE_VULKAN_BACKEND)
+    destroyOffscreenTargets();
+    if (m_device != nullptr && m_device->isValid()) {
+        auto vkDevice = static_cast<VkDevice>(m_device->nativeHandle());
         if (m_indexBuffer != nullptr) {
             vkDestroyBuffer(vkDevice, static_cast<VkBuffer>(m_indexBuffer), nullptr);
         }
@@ -522,13 +591,6 @@ void RasterPath::shutdown() {
             vkFreeMemory(vkDevice, static_cast<VkDeviceMemory>(m_vertexMemory), nullptr);
         }
     }
-    m_framebuffer = nullptr;
-    m_colorView = nullptr;
-    m_depthView = nullptr;
-    m_colorImage = nullptr;
-    m_depthImage = nullptr;
-    m_colorMemory = nullptr;
-    m_depthMemory = nullptr;
     m_indexBuffer = nullptr;
     m_indexMemory = nullptr;
     m_vertexBuffer = nullptr;

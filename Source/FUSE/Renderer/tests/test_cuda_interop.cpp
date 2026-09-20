@@ -124,6 +124,53 @@ void testSharedTimelineVulkanDevice() {
     expectTrue(!timeline.driverWired, "driverWired cleared after destroy");
 }
 
+void testFrameSyncPairVulkanOnly() {
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+    expectTrue(instance != nullptr, "VulkanInstance allocated for FrameSyncPair");
+    if (instance == nullptr) {
+        return;
+    }
+
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    expectTrue(device != nullptr, "VulkanDevice allocated for FrameSyncPair");
+    if (device == nullptr) {
+        return;
+    }
+
+    fuse::renderer::cuda::FrameSyncPair pair = fuse::renderer::cuda::FrameSyncPair::create(
+        device->nativeHandle(), device->nativePhysicalDevice());
+
+    if (!device->isValid() || !device->info().timelineSemaphore) {
+        expectTrue(!pair.valid(), "FrameSyncPair invalid when device stub or no timeline feature");
+        expectTrue(!pair.signalRenderLane(device->nativeHandle(), 1u),
+                   "signalRenderLane false when timeline invalid");
+        expectTrue(!pair.waitJobLaneOnRenderSignal(nullptr, 1u),
+                   "waitJobLane false when timeline invalid");
+        pair.destroy(device->nativeHandle());
+        return;
+    }
+
+    expectTrue(pair.valid(), "FrameSyncPair valid with Vulkan timeline device");
+    expectTrue(pair.signalRenderLane(device->nativeHandle(), 1u),
+               "signalRenderLane succeeds on valid Vulkan timeline without CUDA import");
+    expectTrue(pair.lastProgress().renderLaneSignals == 1u, "render lane signal counted");
+    expectTrue(pair.lastProgress().frameIndex == 1u, "progress tracks signaled frame");
+
+    if (!pair.driverWired()) {
+        expectTrue(!pair.waitJobLaneOnRenderSignal(nullptr, 1u),
+                   "waitJobLane stays false without CUDA");
+        expectTrue(!pair.signalJobLaneComplete(nullptr, 1u),
+                   "signalJobLaneComplete stays false without CUDA");
+        expectTrue(!pair.waitRenderLane(device->nativeHandle(), 1u),
+                   "waitRenderLane stays false without CUDA (no hang)");
+    }
+
+    pair.destroy(device->nativeHandle());
+    expectTrue(!pair.valid(), "FrameSyncPair invalid after destroy");
+}
+
 void testFrameSyncPairStub() {
     const fuse::renderer::cuda::FrameSyncPair pair =
         fuse::renderer::cuda::FrameSyncPair::create(nullptr, nullptr);
@@ -327,6 +374,7 @@ int main() {
     testInteropReasonStrings();
     testSharedTimelineStub();
     testSharedTimelineVulkanDevice();
+    testFrameSyncPairVulkanOnly();
     testFrameSyncPairStub();
     testFrameSyncProgressStub();
     testFrameSyncLoadStressStub();

@@ -33,6 +33,7 @@ struct CompiledShader {
     std::string sourcePath;
     std::string entryPoint;
     std::string message;
+    std::vector<std::string> defines;
     u64 spirvHash = 0;
     u32 defineCount = 0;
     bool valid = false;
@@ -49,6 +50,20 @@ inline u64 hashSpirvWords(const u32* words, u32 wordCount) {
     u64 hash = kFnvOffset;
     for (u32 i = 0; i < wordCount; ++i) {
         hash ^= static_cast<u64>(words[i]);
+        hash *= kFnvPrime;
+    }
+    return hash;
+}
+
+/// Continue FNV-1a over the bytes of `text`. Empty or null input leaves `hash` unchanged.
+inline u64 hashMixDefineBytes(u64 hash, const char* text, u32 byteCount) {
+    if (text == nullptr || byteCount == 0u) {
+        return hash;
+    }
+
+    constexpr u64 kFnvPrime = 1099511628211ull;
+    for (u32 i = 0; i < byteCount; ++i) {
+        hash ^= static_cast<u64>(static_cast<unsigned char>(text[i]));
         hash *= kFnvPrime;
     }
     return hash;

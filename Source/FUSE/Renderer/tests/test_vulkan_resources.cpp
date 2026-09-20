@@ -372,6 +372,103 @@ void testDebugUtilsObjectNaming() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testSamplerAnisotropy() {
+    fuse::renderer::VulkanBootstrapDesc desc{};
+    desc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(desc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for sampler anisotropy");
+    if (bootstrap == nullptr) {
+        return;
+    }
+
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    fuse::renderer::ResourceManager::Desc resourceDesc{};
+    resourceDesc.stagingRingBytes = 4096u;
+    const bool ready = resources.init(*bootstrap->device(), bindless, resourceDesc);
+
+    fuse::renderer::SamplerDesc samplerDesc{};
+    samplerDesc.anisotropy = true;
+    samplerDesc.maxAnisotropy = 16.f;
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        expectTrue(!ready, "resource manager skips without device");
+        bindless.destroy(*bootstrap->device());
+        return;
+    }
+    expectTrue(ready, "resource manager initializes for sampler anisotropy");
+    const fuse::renderer::VulkanDeviceInfo& info = bootstrap->device()->info();
+    expectTrue(info.maxSamplerAnisotropy >= 1.f,
+               "maxSamplerAnisotropy is at least 1 when device is ready");
+    (void)info.samplerAnisotropy;
+#else
+    expectTrue(ready, "stub resource manager initializes for sampler anisotropy");
+#endif
+
+    const fuse::renderer::SamplerHandle sampler = resources.createSampler(samplerDesc);
+    expectTrue(sampler.isValid(),
+               "SamplerDesc anisotropy true still creates a sampler (disabled if feature off)");
+    expectTrue(resources.liveCounts().samplers == 1u, "anisotropic sampler counted as live");
+
+    resources.destroySampler(sampler);
+    expectTrue(resources.liveCounts().samplers == 0u, "anisotropic sampler destroyed");
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
+void testDeviceLocalMemoryBudget() {
+    fuse::renderer::VulkanBootstrapDesc desc{};
+    desc.instance.enableValidation = false;
+
+    auto bootstrap = fuse::renderer::VulkanBootstrap::create(desc);
+    expectTrue(bootstrap != nullptr, "bootstrap allocated for memory budget");
+    if (bootstrap == nullptr) {
+        return;
+    }
+
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::ResourceManager resources;
+    fuse::renderer::ResourceManager::Desc resourceDesc{};
+    resourceDesc.stagingRingBytes = 4096u;
+    const bool ready = resources.init(*bootstrap->device(), bindless, resourceDesc);
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bootstrap->status().deviceReady) {
+        expectTrue(!ready, "resource manager skips without device");
+        bindless.destroy(*bootstrap->device());
+        return;
+    }
+    expectTrue(ready, "resource manager initializes for memory budget");
+    const fuse::renderer::GpuAllocStats* stats = resources.allocatorStats();
+    expectTrue(stats != nullptr, "allocator stats available for memory budget");
+    if (stats != nullptr) {
+        expectTrue(stats->deviceLocalHeapBytes > 0,
+                   "device-local heap size queried when GpuAllocator/device ready");
+        expectTrue(stats->deviceLocalBudgetBytes > 0,
+                   "device-local budget falls back to heap size when EXT budget is absent");
+    }
+#else
+    expectTrue(ready, "stub resource manager initializes for memory budget");
+    const fuse::renderer::GpuAllocStats* stats = resources.allocatorStats();
+    expectTrue(stats != nullptr, "stub allocator stats available for memory budget");
+    if (stats != nullptr) {
+        expectTrue(stats->deviceLocalHeapBytes == 0, "stub allocator leaves device-local heap at zero");
+        expectTrue(stats->deviceLocalBudgetBytes == 0,
+                   "stub allocator leaves device-local budget at zero");
+        expectTrue(stats->deviceLocalHeapIndex == 0, "stub allocator leaves device-local heap index at zero");
+    }
+#endif
+
+    resources.destroy();
+    bindless.destroy(*bootstrap->device());
+}
+
 } // namespace
 
 int main() {
@@ -381,6 +478,8 @@ int main() {
     testBindlessIndexRecycle();
     testResourceManagerBuffersAndTextures();
     testDebugUtilsObjectNaming();
+    testSamplerAnisotropy();
+    testDeviceLocalMemoryBudget();
 
     fuse::core::shutdown();
 

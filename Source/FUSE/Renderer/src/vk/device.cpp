@@ -344,6 +344,8 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     m_info.bufferDeviceAddress = enabled12.bufferDeviceAddress == VK_TRUE;
     m_info.timelineSemaphore = enabled12.timelineSemaphore == VK_TRUE;
     m_info.dynamicRendering = enabledDyn.dynamicRendering == VK_TRUE;
+    m_info.samplerAnisotropy = deviceFeatures.samplerAnisotropy == VK_TRUE;
+    m_info.maxSamplerAnisotropy = props.limits.maxSamplerAnisotropy;
     m_info.deviceType = static_cast<u32>(props.deviceType);
     m_info.queues.graphicsFamily = graphicsFamily;
     m_info.queues.computeFamily = computeFamily;

@@ -484,6 +484,18 @@ void GpuAllocator::refreshVmaPoolStats() {
 #endif
 }
 
+void GpuAllocator::refreshBudget() {
+    if (m_device == nullptr || !m_device->isValid() || m_info.mode == GpuAllocatorMode::Stub) {
+        m_stats.deviceLocalHeapBytes = 0;
+        m_stats.deviceLocalBudgetBytes = 0;
+        m_stats.deviceLocalHeapIndex = 0;
+        return;
+    }
+
+    gpu_alloc_detail::queryDeviceLocalHeapBudget(m_device->instanceHandle(),
+                                                 m_device->nativePhysicalDevice(), m_stats);
+}
+
 std::unique_ptr<GpuAllocator> GpuAllocator::create(VulkanDevice& device) {
     auto allocator = std::unique_ptr<GpuAllocator>(new GpuAllocator());
     if (!allocator->initialize(device)) {
@@ -528,6 +540,7 @@ bool GpuAllocator::initialize(VulkanDevice& device) {
     m_info.mode = GpuAllocatorMode::Vma;
     m_info.message = "VMA allocator ready";
     device.setVmaAllocator(vmaAllocator);
+    refreshBudget();
     return true;
 #elif defined(FUSE_VULKAN_BACKEND)
     if (!device.isValid()) {
@@ -537,6 +550,7 @@ bool GpuAllocator::initialize(VulkanDevice& device) {
     m_info.valid = true;
     m_info.mode = GpuAllocatorMode::Native;
     m_info.message = "Native Vulkan allocator (VMA header not available)";
+    refreshBudget();
     return true;
 #else
     m_info.valid = true;

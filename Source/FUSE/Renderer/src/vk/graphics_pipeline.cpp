@@ -4,7 +4,21 @@
 #include <vulkan/vulkan.h>
 #endif
 
+#include <vector>
+
 namespace fuse::renderer {
+namespace {
+
+void snapshotPipelineCache(GraphicsPipelineInfo& info, PipelineCache* cache) {
+    if (cache == nullptr) {
+        return;
+    }
+    std::vector<u8> blob;
+    cache->snapshotData(blob);
+    info.cacheSnapshotBytes = static_cast<u32>(blob.size());
+}
+
+} // namespace
 
 std::unique_ptr<GraphicsPipeline> GraphicsPipeline::create(VulkanDevice& device,
                                                            const GraphicsPipelineDesc& desc) {
@@ -54,6 +68,7 @@ bool GraphicsPipeline::rebuild() {
                           static_cast<VkPipeline>(previousHandle), nullptr);
     }
 #endif
+    m_info.rebuildCount = previousInfo.rebuildCount + 1u;
     return true;
 }
 
@@ -214,6 +229,7 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     } else {
         m_info.message = desc.debugName != nullptr ? desc.debugName : "graphics pipeline scaffold";
     }
+    snapshotPipelineCache(m_info, desc.pipelineCache);
     return true;
 #else
     m_info.valid = true;
@@ -225,6 +241,7 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     } else {
         m_info.message = "graphics pipeline placeholder (stub backend)";
     }
+    snapshotPipelineCache(m_info, desc.pipelineCache);
     return true;
 #endif
 }

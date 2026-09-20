@@ -34,6 +34,8 @@ struct GraphicsPipelineDesc {
 struct GraphicsPipelineInfo {
     bool valid = false;
     bool dynamicRendering = false;
+    u32 cacheSnapshotBytes = 0;
+    u32 rebuildCount = 0;
     std::string message;
 };
 

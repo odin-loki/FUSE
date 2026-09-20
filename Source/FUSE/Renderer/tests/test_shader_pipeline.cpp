@@ -92,6 +92,45 @@ void testOfflineCompiler() {
                "spirvHash matches hashSpirvWords of loaded words");
 }
 
+void testOfflineCompilerDefineVariants() {
+    const std::string sourcePath = fixturePath("minimal.vert");
+
+    const char* definesFoo1[] = {"FOO=1"};
+    fuse::renderer::ShaderDesc descFoo1{};
+    descFoo1.sourcePath = sourcePath.c_str();
+    descFoo1.stage = fuse::renderer::ShaderStage::Vertex;
+    descFoo1.defines = definesFoo1;
+    descFoo1.defineCount = 1u;
+
+    const char* definesFoo2[] = {"FOO=2"};
+    fuse::renderer::ShaderDesc descFoo2{};
+    descFoo2.sourcePath = sourcePath.c_str();
+    descFoo2.stage = fuse::renderer::ShaderStage::Vertex;
+    descFoo2.defines = definesFoo2;
+    descFoo2.defineCount = 1u;
+
+    const fuse::renderer::CompiledShader compiledFoo1 =
+        fuse::renderer::ShaderCompiler::compileOffline(descFoo1);
+    const fuse::renderer::CompiledShader compiledFoo2 =
+        fuse::renderer::ShaderCompiler::compileOffline(descFoo2);
+
+    expectTrue(compiledFoo1.valid && compiledFoo2.valid, "offline define variants both load fixture SPIR-V");
+    expectTrue(compiledFoo1.spirv == compiledFoo2.spirv, "offline define variants load the same SPIR-V words");
+    expectTrue(compiledFoo1.defineCount == 1u && compiledFoo2.defineCount == 1u,
+               "offline define variants report defineCount 1");
+    expectTrue(compiledFoo1.defines.size() == 1u && compiledFoo1.defines[0] == "FOO=1",
+               "FOO=1 variant owns define string");
+    expectTrue(compiledFoo2.defines.size() == 1u && compiledFoo2.defines[0] == "FOO=2",
+               "FOO=2 variant owns define string");
+    expectTrue(compiledFoo1.spirvHash != compiledFoo2.spirvHash,
+               "define variants produce different spirvHash keys");
+
+    const fuse::u64 wordsHash = fuse::renderer::hashSpirvWords(
+        compiledFoo1.spirv.data(), static_cast<fuse::u32>(compiledFoo1.spirv.size()));
+    expectTrue(compiledFoo1.spirvHash != wordsHash && compiledFoo2.spirvHash != wordsHash,
+               "define mix changes hash from raw SPIR-V words");
+}
+
 void testCookedFuseshaderLoader() {
     const std::string spirvPath = fixturePath("minimal.vert.spv");
     std::ifstream spirvIn(spirvPath, std::ios::binary);
@@ -304,6 +343,60 @@ void testHotReloadPoller() {
     std::filesystem::remove(spvPathB, ec);
 }
 
+void testWatchCopiesDefineStrings() {
+    const std::filesystem::path glslPath = uniqueTempShaderPath();
+    const std::string glslUtf8 = glslPath.string();
+    const std::filesystem::path spvPath(glslUtf8 + ".spv");
+
+    expectTrue(writeFile(glslPath, "void main() {}\n"), "define-watch temp glsl created");
+
+    const std::string fixtureSpv = fixturePath("minimal.vert.spv");
+    std::ifstream spirvIn(fixtureSpv, std::ios::binary);
+    expectTrue(spirvIn.good(), "fixture spirv readable for define-watch test");
+    std::vector<char> spirvBytes((std::istreambuf_iterator<char>(spirvIn)),
+                                 std::istreambuf_iterator<char>());
+    expectTrue(!spirvBytes.empty(), "fixture spirv non-empty for define-watch test");
+
+    std::ofstream spirvOut(spvPath, std::ios::binary | std::ios::trunc);
+    spirvOut.write(spirvBytes.data(), static_cast<std::streamsize>(spirvBytes.size()));
+    spirvOut.flush();
+    expectTrue(static_cast<bool>(spirvOut), "sibling spirv written for define-watch test");
+    spirvOut.close();
+
+    fuse::renderer::ShaderCompiler compiler;
+    {
+        const char* stackDefines[] = {"FOO=1"};
+        fuse::renderer::ShaderDesc desc{};
+        desc.sourcePath = glslUtf8.c_str();
+        desc.stage = fuse::renderer::ShaderStage::Vertex;
+        desc.defines = stackDefines;
+        desc.defineCount = 1u;
+        expectTrue(compiler.watch(desc), "watch copies stack define strings");
+    }
+
+    const fuse::renderer::CompiledShader* compiled = compiler.lastCompiled(glslUtf8.c_str());
+    expectTrue(compiled != nullptr && compiled->valid, "watch compile with defines is valid");
+    expectTrue(compiled->defineCount == 1u, "watch lastCompiled defineCount is 1");
+    expectTrue(compiled->defines.size() == 1u && compiled->defines[0] == "FOO=1",
+               "watch lastCompiled owns FOO=1");
+
+    expectTrue(compiler.pollHotReload() == 0u, "unchanged define-watch file does not crash poll");
+
+    expectTrue(writeFile(glslPath, "void main() { /* define watch */ }\n"),
+               "define-watch temp shader rewritten");
+    expectTrue(compiler.pollHotReload() == 1u, "rewrite recompiles using owned define strings");
+
+    compiled = compiler.lastCompiled(glslUtf8.c_str());
+    expectTrue(compiled != nullptr && compiled->valid, "recompile after stack death still valid");
+    expectTrue(compiled->defineCount == 1u, "recompile defineCount still 1");
+    expectTrue(compiled->defines.size() == 1u && compiled->defines[0] == "FOO=1",
+               "recompile still owns FOO=1 after stack death");
+
+    std::error_code ec;
+    std::filesystem::remove(glslPath, ec);
+    std::filesystem::remove(spvPath, ec);
+}
+
 } // namespace
 
 int main() {
@@ -311,10 +404,12 @@ int main() {
 
     testSpirvIo();
     testOfflineCompiler();
+    testOfflineCompilerDefineVariants();
     testCookedFuseshaderLoader();
     testCreateFromCompiledShader();
     testShaderModuleAndPipelineLayout();
     testHotReloadPoller();
+    testWatchCopiesDefineStrings();
 
     fuse::core::shutdown();
 

@@ -51,20 +51,20 @@ struct FrameSyncPair {
     bool driverWired() const { return vkToCuda.driverWired || cudaToVk.driverWired; }
     const FrameSyncProgress& lastProgress() const { return progress; }
 
-    /// Render thread: CUDA jobs may consume frame `frameIndex` after this signal.
+    /// Render thread: Vulkan-signal frame `frameIndex` when `vkToCuda` is valid (no CUDA import).
     bool signalRenderLane(void* vkDevice, u64 frameIndex);
     /// Job lane: wait for render signal, then run CUDA work for `frameIndex`.
     bool waitJobLaneOnRenderSignal(void* cudaStream, u64 frameIndex);
     /// Job lane: signal CUDA completion for `frameIndex`.
     bool signalJobLaneComplete(void* cudaStream, u64 frameIndex);
-    /// Render thread: wait for CUDA before composite sampling.
+    /// Render thread: wait for CUDA before composite sampling. `waitVulkan` only when `driverWired()`.
     bool waitRenderLane(void* vkDevice, u64 frameIndex);
     /// Convenience — job lane wait + signal in one call.
     bool advanceJobLane(void* cudaStream, u64 frameIndex);
 };
 
-/// Multi-frame bookkeeping stress (WP-06i) — always updates `progress` counters; driver ops
-/// succeed only when `driverWired()`.
+/// Multi-frame bookkeeping stress (WP-06i) — always updates `progress` counters. CUDA lane
+/// ops succeed only when `driverWired()`; Vulkan render-lane signal does not require CUDA.
 struct FrameSyncLoadStressResult {
     u32 framesAttempted = 0;
     u32 framesCompleted = 0;

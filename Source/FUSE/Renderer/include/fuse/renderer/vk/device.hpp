@@ -32,6 +32,8 @@ struct VulkanDeviceInfo {
     bool bufferDeviceAddress = false;
     bool timelineSemaphore = false;
     bool dynamicRendering = false;
+    bool samplerAnisotropy = false;
+    float maxSamplerAnisotropy = 1.f;
     u32 deviceType = 0; // VkPhysicalDeviceType numeric
 };
 

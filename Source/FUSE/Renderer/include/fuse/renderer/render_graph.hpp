@@ -132,6 +132,7 @@ struct RenderGraphExecuteInfo {
 class RenderGraph {
 public:
     static constexpr u32 kBackbufferTextureId = 1u;
+    static constexpr u32 kDepthTextureId = 2u;
     static constexpr u32 kMaxPassesPerFrame = 32u;
 
     void reset();
@@ -198,7 +199,7 @@ private:
     void assignExecutionOrder();
 
     u32 m_backbufferIndex = 0;
-    u32 m_nextTextureId = kBackbufferTextureId + 1u;
+    u32 m_nextTextureId = kDepthTextureId + 1u;
     u32 m_nextBufferId = 1u;
     RenderGraphCompileInfo m_compileInfo{};
     std::vector<PassNode> m_passes;

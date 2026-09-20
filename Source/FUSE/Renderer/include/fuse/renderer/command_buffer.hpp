@@ -122,7 +122,7 @@ private:
     bool shouldEncodeRasterPass(const char* passName) const;
     void beginVulkanRenderPass();
     void endVulkanRenderPass();
-    void encodeVulkanViewportAndScissor();
+    void encodeVulkanViewportAndScissor(u32 width = 0, u32 height = 0);
     void encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLayout);
     void encodeVulkanBufferBarrier(u32 fromAccess, u32 toAccess);
     void encodePresentSwapchainPass();

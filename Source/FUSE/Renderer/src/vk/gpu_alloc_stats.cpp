@@ -2,6 +2,13 @@
 
 #include <fuse/renderer/resources.hpp>
 
+#include <cstring>
+#include <vector>
+
+#if defined(FUSE_VULKAN_BACKEND)
+#include <vulkan/vulkan.h>
+#endif
+
 namespace fuse::renderer {
 
 namespace {
@@ -115,6 +122,84 @@ usize estimateImageBytes(const TextureDesc& desc) {
     const usize mips = desc.mipLevels > 0 ? desc.mipLevels : 1u;
     const usize layers = desc.arrayLayers > 0 ? desc.arrayLayers : 1u;
     return width * height * depth * pixelBytes * mips * layers;
+}
+
+void queryDeviceLocalHeapBudget(void* vkInstance, void* vkPhysicalDevice, GpuAllocStats& stats) {
+    stats.deviceLocalHeapBytes = 0;
+    stats.deviceLocalBudgetBytes = 0;
+    stats.deviceLocalHeapIndex = 0;
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (vkPhysicalDevice == nullptr) {
+        return;
+    }
+
+    const auto physicalDevice = static_cast<VkPhysicalDevice>(vkPhysicalDevice);
+    VkPhysicalDeviceMemoryProperties memProperties{};
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+    bool foundDeviceLocal = false;
+    for (u32 i = 0; i < memProperties.memoryHeapCount; ++i) {
+        if ((memProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0) {
+            stats.deviceLocalHeapIndex = i;
+            stats.deviceLocalHeapBytes = static_cast<usize>(memProperties.memoryHeaps[i].size);
+            foundDeviceLocal = true;
+            break;
+        }
+    }
+    if (!foundDeviceLocal) {
+        return;
+    }
+
+    stats.deviceLocalBudgetBytes = stats.deviceLocalHeapBytes;
+
+    bool hasMemoryBudgetExt = false;
+    u32 extensionCount = 0;
+    vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, nullptr);
+    if (extensionCount > 0) {
+        std::vector<VkExtensionProperties> extensions(extensionCount);
+        vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount,
+                                             extensions.data());
+        for (const VkExtensionProperties& extension : extensions) {
+            if (std::strcmp(extension.extensionName, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) == 0) {
+                hasMemoryBudgetExt = true;
+                break;
+            }
+        }
+    }
+    if (!hasMemoryBudgetExt || vkInstance == nullptr) {
+        return;
+    }
+
+    const auto instance = static_cast<VkInstance>(vkInstance);
+    auto getMemProps2 = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties2>(
+        vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceMemoryProperties2"));
+    if (getMemProps2 == nullptr) {
+        getMemProps2 = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties2>(
+            vkGetInstanceProcAddr(instance, "vkGetPhysicalDeviceMemoryProperties2KHR"));
+    }
+    if (getMemProps2 == nullptr) {
+        return;
+    }
+
+    VkPhysicalDeviceMemoryBudgetPropertiesEXT budgetProps{};
+    budgetProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
+
+    VkPhysicalDeviceMemoryProperties2 memProps2{};
+    memProps2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
+    memProps2.pNext = &budgetProps;
+    getMemProps2(physicalDevice, &memProps2);
+
+    if (stats.deviceLocalHeapIndex < VK_MAX_MEMORY_HEAPS) {
+        const VkDeviceSize budget = budgetProps.heapBudget[stats.deviceLocalHeapIndex];
+        if (budget != 0) {
+            stats.deviceLocalBudgetBytes = static_cast<usize>(budget);
+        }
+    }
+#else
+    (void)vkInstance;
+    (void)vkPhysicalDevice;
+#endif
 }
 
 } // namespace gpu_alloc_detail

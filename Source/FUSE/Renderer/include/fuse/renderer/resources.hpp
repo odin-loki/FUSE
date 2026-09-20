@@ -99,6 +99,8 @@ struct SamplerDesc {
     u32 minFilter = 0; // VkFilter numeric (0 = NEAREST, 1 = LINEAR)
     u32 magFilter = 0;
     u32 addressMode = 0; // VkSamplerAddressMode numeric (0 = REPEAT)
+    bool anisotropy = false;
+    float maxAnisotropy = 1.f;
     const char* name = nullptr;
 };
 

@@ -337,6 +337,7 @@ void CommandBufferRecorder::encodePresentSwapchainPass() {
     renderPassInfo.renderArea.extent = {m_encodeContext->presentWidth, m_encodeContext->presentHeight};
 
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    encodeVulkanViewportAndScissor(m_encodeContext->presentWidth, m_encodeContext->presentHeight);
     vkCmdEndRenderPass(commandBuffer);
     ++m_vulkanPresentRenderPassBeginCount;
 #else
@@ -344,28 +345,33 @@ void CommandBufferRecorder::encodePresentSwapchainPass() {
 #endif
 }
 
-void CommandBufferRecorder::encodeVulkanViewportAndScissor() {
+void CommandBufferRecorder::encodeVulkanViewportAndScissor(u32 width, u32 height) {
 #if defined(FUSE_VULKAN_BACKEND)
     if (m_encodeContext == nullptr || !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
         return;
     }
 
     auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
-    const u32 width = m_encodeContext->width > 0u ? m_encodeContext->width : 1u;
-    const u32 height = m_encodeContext->height > 0u ? m_encodeContext->height : 1u;
+    const u32 resolvedWidth = width > 0u ? width : m_encodeContext->width;
+    const u32 resolvedHeight = height > 0u ? height : m_encodeContext->height;
+    const u32 viewportWidth = resolvedWidth > 0u ? resolvedWidth : 1u;
+    const u32 viewportHeight = resolvedHeight > 0u ? resolvedHeight : 1u;
 
     VkViewport viewport{};
-    viewport.width = static_cast<float>(width);
-    viewport.height = static_cast<float>(height);
+    viewport.width = static_cast<float>(viewportWidth);
+    viewport.height = static_cast<float>(viewportHeight);
     viewport.minDepth = 0.f;
     viewport.maxDepth = 1.f;
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
     ++m_vulkanViewportCount;
 
     VkRect2D scissor{};
-    scissor.extent = {width, height};
+    scissor.extent = {viewportWidth, viewportHeight};
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
     ++m_vulkanScissorCount;
+#else
+    (void)width;
+    (void)height;
 #endif
 }
 
@@ -620,6 +626,7 @@ void CommandBufferRecorder::encodeCompositePass(float blend) {
     renderPassInfo.renderArea.extent = {m_encodeContext->compositeWidth, m_encodeContext->compositeHeight};
 
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    encodeVulkanViewportAndScissor(m_encodeContext->compositeWidth, m_encodeContext->compositeHeight);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       static_cast<VkPipeline>(m_encodeContext->compositePipeline));
@@ -641,17 +648,6 @@ void CommandBufferRecorder::encodeCompositePass(float blend) {
     pushConstants.cudaTexIndex = m_encodeContext->cudaTextureBindlessIndex;
     vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(pushConstants), &pushConstants);
-
-    VkViewport viewport{};
-    viewport.width = static_cast<float>(m_encodeContext->compositeWidth);
-    viewport.height = static_cast<float>(m_encodeContext->compositeHeight);
-    viewport.minDepth = 0.f;
-    viewport.maxDepth = 1.f;
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
-    VkRect2D scissor{};
-    scissor.extent = {m_encodeContext->compositeWidth, m_encodeContext->compositeHeight};
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(m_encodeContext->compositeVertexBuffer)};
     VkDeviceSize offsets[] = {0};

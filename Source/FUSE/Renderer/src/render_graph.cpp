@@ -77,7 +77,7 @@ BufferHandle RenderGraph::importedBufferHandle(u32 bufferId) const {
 
 void RenderGraph::reset() {
     m_backbufferIndex = 0;
-    m_nextTextureId = kBackbufferTextureId + 1u;
+    m_nextTextureId = kDepthTextureId + 1u;
     m_nextBufferId = 1u;
     m_compileInfo = {};
     m_passes.clear();
@@ -93,6 +93,10 @@ void RenderGraph::reset() {
     TextureState& backbuffer = textureStateAt(kBackbufferTextureId);
     backbuffer.imported = true;
     backbuffer.layout = RGImageLayout::Undefined;
+
+    TextureState& depth = textureStateAt(kDepthTextureId);
+    depth.imported = true;
+    depth.layout = RGImageLayout::Undefined;
 }
 
 void RenderGraph::beginFrame(u32 backbufferIndex) {
@@ -211,7 +215,11 @@ void RenderGraph::planBarriersForPass(const PassNode& pass) {
         TextureState& state = textureStateAt(access.texture.id);
         const RGImageLayout requiredLayout = layoutForAccess(access.access);
 
-        if (state.layout != RGImageLayout::Undefined && state.layout != requiredLayout) {
+        const bool importedOrCreated = state.imported || state.transient;
+        const bool planInitialDepth =
+            importedOrCreated && requiredLayout == RGImageLayout::DepthAttachment;
+        if (state.layout != requiredLayout &&
+            (state.layout != RGImageLayout::Undefined || planInitialDepth)) {
             RGBarrier barrier;
             barrier.texture = access.texture;
             barrier.fromLayout = state.layout;
@@ -487,6 +495,10 @@ void RenderGraph::compile() {
     backbuffer.imported = true;
     backbuffer.layout = RGImageLayout::Undefined;
 
+    TextureState& depth = textureStateAt(kDepthTextureId);
+    depth.imported = true;
+    depth.layout = RGImageLayout::Undefined;
+
     for (BufferState& state : m_bufferStates) {
         state.lastAccess = RGResourceAccess::ShaderRead;
         state.written = false;
@@ -551,6 +563,9 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
         const PassNode& pass = m_passes[passIndex];
 
         if (pass.desc.isCuda) {
+            if (pass.desc.execute != nullptr) {
+                pass.desc.execute(&recorder, pass.desc.userData);
+            }
             ++result.cudaPassCount;
             ++result.executedPassCount;
             continue;
@@ -582,6 +597,7 @@ const DrawList* g_drawListForGraph = nullptr;
 
 RGTextureAccess g_backbufferColorWrite{};
 RGTextureAccess g_backbufferPresent{};
+RGTextureAccess g_meshPassAccesses[2]{};
 
 } // namespace
 
@@ -665,8 +681,10 @@ void populateRenderGraphFromDrawList(RenderGraph& graph, const DrawList& draws) 
 
     g_drawListForGraph = &draws;
 
-    g_backbufferColorWrite.texture = {RenderGraph::kBackbufferTextureId};
-    g_backbufferColorWrite.access = RGResourceAccess::ColorAttachmentWrite;
+    g_meshPassAccesses[0].texture = {RenderGraph::kBackbufferTextureId};
+    g_meshPassAccesses[0].access = RGResourceAccess::ColorAttachmentWrite;
+    g_meshPassAccesses[1].texture = {RenderGraph::kDepthTextureId};
+    g_meshPassAccesses[1].access = RGResourceAccess::DepthAttachmentWrite;
     g_backbufferPresent.texture = {RenderGraph::kBackbufferTextureId};
     g_backbufferPresent.access = RGResourceAccess::Present;
 
@@ -674,8 +692,8 @@ void populateRenderGraphFromDrawList(RenderGraph& graph, const DrawList& draws) 
     meshes.name = "meshes";
     meshes.execute = executeDrawListPass;
     meshes.userData = const_cast<DrawList*>(g_drawListForGraph);
-    meshes.textureAccesses = &g_backbufferColorWrite;
-    meshes.textureAccessCount = 1;
+    meshes.textureAccesses = g_meshPassAccesses;
+    meshes.textureAccessCount = 2;
     graph.addPass(meshes);
 
     RGPassDesc present{};

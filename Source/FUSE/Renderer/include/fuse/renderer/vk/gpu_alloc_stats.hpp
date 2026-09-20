@@ -21,6 +21,10 @@ struct GpuAllocStats {
     /// Populated when VMA is active; stub path leaves at zero.
     u32 vmaPoolCount = 0;
     usize vmaPoolUsedBytes = 0;
+    /// First VK_MEMORY_HEAP_DEVICE_LOCAL_BIT heap. Stub path leaves at zero.
+    usize deviceLocalHeapBytes = 0;
+    usize deviceLocalBudgetBytes = 0;
+    u32 deviceLocalHeapIndex = 0;
 };
 
 using GpuStatsHookFn = void (*)(const char* allocatorName, const GpuAllocStats& stats, void* userData);
@@ -39,6 +43,10 @@ void recordFailedAlloc(GpuAllocStats& stats);
 void updatePeak(GpuAllocStats& stats);
 
 usize estimateImageBytes(const TextureDesc& desc);
+
+/// Query device-local heap size and optional VK_EXT_memory_budget.
+/// `vkInstance` / `vkPhysicalDevice` are opaque VkInstance / VkPhysicalDevice.
+void queryDeviceLocalHeapBudget(void* vkInstance, void* vkPhysicalDevice, GpuAllocStats& stats);
 
 } // namespace gpu_alloc_detail
 

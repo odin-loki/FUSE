@@ -38,6 +38,7 @@ public:
 
     void setStatsName(const char* name);
     void refreshVmaPoolStats();
+    void refreshBudget();
 
     void* nativeHandle() const;
 
