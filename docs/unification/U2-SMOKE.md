@@ -195,7 +195,7 @@ Re-run collision inventory at U3 when first real Engine `.cpp` batches land in q
 
 | Metric | Value |
 |--------|-------|
-| **HEAD** | `02ba5552c` (batch 17) |
+| **HEAD** | `c31ed06a0` (batch 17) |
 | **Consecutive smoke** | 10/10 Release + 10/10 ASan (`fuse_runtime_smoke` loop) |
 | **verify-shims** | `python3 Tools/FUSE/prefix_legacy_symbols.py --verify-shims --dimension t3d/t2d` |
 | **broadphase** | `ctest -R fuse_physics_broadphase_tests` |
