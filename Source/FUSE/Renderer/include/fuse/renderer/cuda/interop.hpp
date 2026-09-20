@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/renderer/resources.hpp>
 #include <fuse/types.hpp>
 
 namespace fuse::renderer::cuda {
@@ -59,8 +60,13 @@ bool cudaExternalMemoryImportSupported();
 bool importDescHasExportedHandle(const VulkanBufferImportDesc& desc);
 bool importDescHasExportedHandle(const VulkanImageImportDesc& desc);
 
+VulkanBufferImportDesc makeBufferImportDesc(void* vkDevice, const Buffer& buffer);
+VulkanImageImportDesc makeImageImportDesc(void* vkDevice, const Texture& texture);
+
 CudaBufferImport import_vulkan_buffer(VulkanBufferImportDesc desc);
 CudaSurfaceImport import_vulkan_image(VulkanImageImportDesc desc);
+CudaBufferImport import_vulkan_buffer(void* vkDevice, const Buffer& buffer);
+CudaSurfaceImport import_vulkan_image(void* vkDevice, const Texture& texture);
 
 void free_cuda_import(void* cudaDevicePtr);
 void free_cuda_surface(void* surfaceObject);

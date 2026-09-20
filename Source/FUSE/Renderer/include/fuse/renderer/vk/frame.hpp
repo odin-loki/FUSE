@@ -63,6 +63,13 @@ public:
     u64 currentTimelineValue() const;
     u32 descriptorPoolResetCount() const { return m_descriptorPoolResetCount; }
 
+    /// Allocate `count` descriptor sets from the current slot pool using `setLayout` (VkDescriptorSetLayout).
+    /// Returns number allocated (0 on stub / null layout / null pool / vkAllocate failure).
+    /// outSets may be null if count==0. When non-null, writes up to `count` void* native sets.
+    u32 allocateDescriptorSets(void* setLayout, u32 count, void** outSets);
+
+    u32 descriptorSetsAllocatedThisFrame() const { return m_descriptorSetsAllocatedThisFrame; }
+
     fuse::alloc::FrameAllocator& scratch();
     const fuse::alloc::FrameAllocator& scratch() const;
     void* allocateScratch(u32 bytes, u32 align = 16);
@@ -96,6 +103,7 @@ private:
     u32 m_lastBarrierFrame = 0;
     void* m_device = nullptr;
     u32 m_descriptorPoolResetCount = 0;
+    u32 m_descriptorSetsAllocatedThisFrame = 0;
 };
 
 } // namespace fuse::renderer

@@ -22,6 +22,13 @@ public:
     /// Opaque `cudaStream_t` when available; otherwise null.
     void* get(CUDAStreamKind stream) const;
 
+    /// cudaStreamSynchronize when available; returns false if stream missing / no CUDA.
+    bool synchronize(CUDAStreamKind stream) const;
+    /// Synchronize all created streams. Returns true if every non-null stream synced (or none exist and !available).
+    bool synchronizeAll() const;
+    /// Count of non-null `m_streams` (0 on stub / before init).
+    u32 createdStreamCount() const;
+
     bool available() const { return m_available; }
 
 private:

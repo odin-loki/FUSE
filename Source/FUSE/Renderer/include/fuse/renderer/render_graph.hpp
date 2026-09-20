@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/renderer/command_buffer.hpp>
+#include <fuse/renderer/draw_list.hpp>
 #include <fuse/renderer/render_command_list.hpp>
 #include <fuse/renderer/resources.hpp>
 #include <fuse/renderer/vk/device.hpp>
@@ -214,5 +215,9 @@ private:
 void populateRenderGraphFromCommandList(RenderGraph& graph,
                                         const RenderCommandList& commands,
                                         float compositeBlend = 0.5f);
+
+/// Raster mesh path — one "meshes" pass plus present. `draws` must outlive compile() and execute().
+/// Empty lists add no passes.
+void populateRenderGraphFromDrawList(RenderGraph& graph, const DrawList& draws);
 
 } // namespace fuse::renderer

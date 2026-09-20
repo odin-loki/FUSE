@@ -1,5 +1,7 @@
 #include <fuse/renderer/draw_list.hpp>
 
+#include <algorithm>
+
 namespace fuse::renderer {
 
 void DrawList::reset() {
@@ -39,6 +41,22 @@ u32 DrawList::totalIndexCount() const {
         total += call.indexCount * call.instanceCount;
     }
     return total;
+}
+
+void DrawList::sortByMaterial() {
+    std::stable_sort(m_calls.begin(), m_calls.end(), [](const DrawCall& a, const DrawCall& b) {
+        return a.materialId < b.materialId;
+    });
+}
+
+u32 DrawList::record(CommandBufferRecorder& recorder) const {
+    if (!recorder.isRecording()) {
+        return 0;
+    }
+    for (const DrawCall& call : m_calls) {
+        recorder.drawIndexed(call.indexCount);
+    }
+    return count();
 }
 
 } // namespace fuse::renderer

@@ -24,6 +24,9 @@ struct GraphicsQueueSubmitResult {
     bool submitted = false;
     bool headless = true;
     bool semaphoresUsed = false;
+    bool timelineSignaled = false;
+    bool timelineWaited = false;
+    u64 timelineValueAfter = 0;
     std::string message;
 };
 
@@ -40,7 +43,8 @@ bool recordFrameSlotCommands(VulkanDevice& device, FrameManager& frameManager);
 /// Headless CI: real submit + fence signal; no `vkQueuePresentKHR`.
 /// Presentable WSI: waits on `imageAvailable`, signals `renderFinished`, signals `inFlightFence`.
 /// When `FrameSyncData::timelineSemaphore` is non-null and timeline headers exist, also signals
-/// the timeline to `timelineValue + 1` via `VkTimelineSemaphoreSubmitInfo`.
+/// the timeline to `timelineValue + 1` via `VkTimelineSemaphoreSubmitInfo`. If `timelineValue > 0`,
+/// waits on that prior value before reuse (CUDA/Vulkan interop slot recycle).
 GraphicsQueueSubmitResult submitGraphicsQueue(const GraphicsQueueSubmitDesc& desc);
 
 /// Submit the current slot transfer command buffer via `vkQueueSubmit`.

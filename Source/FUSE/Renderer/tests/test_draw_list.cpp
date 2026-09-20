@@ -82,6 +82,76 @@ void testResetClears() {
     expectTrue(list.totalIndexCount() == 0u, "reset totalIndexCount is 0");
 }
 
+void testSortByMaterialIsStable() {
+    fuse::renderer::DrawList list;
+
+    fuse::renderer::DrawCall first{};
+    first.indexCount = 10;
+    first.materialId = 2;
+    expectTrue(list.push(first), "first material 2 accepted");
+
+    fuse::renderer::DrawCall second{};
+    second.indexCount = 20;
+    second.materialId = 1;
+    expectTrue(list.push(second), "material 1 accepted");
+
+    fuse::renderer::DrawCall third{};
+    third.indexCount = 30;
+    third.materialId = 2;
+    expectTrue(list.push(third), "second material 2 accepted");
+
+    list.sortByMaterial();
+
+    expectTrue(list.at(0).materialId == 1u, "lowest materialId sorts first");
+    expectTrue(list.at(0).indexCount == 20u, "material 1 keeps its indexCount");
+    expectTrue(list.at(1).materialId == 2u, "first remaining call is material 2");
+    expectTrue(list.at(2).materialId == 2u, "second remaining call is material 2");
+    expectTrue(list.at(1).indexCount == 10u, "first-pushed material 2 stays before second");
+    expectTrue(list.at(2).indexCount == 30u, "second-pushed material 2 stays last among ties");
+}
+
+void testRecordWithoutBeginReturnsZero() {
+    fuse::renderer::DrawList list;
+    fuse::renderer::DrawCall call{};
+    call.indexCount = 6;
+    call.materialId = 2;
+    expectTrue(list.push(call), "draw accepted for unrecorded list");
+
+    fuse::renderer::CommandBufferRecorder recorder;
+    expectTrue(list.record(recorder) == 0u, "record without beginRecording returns 0");
+    expectTrue(recorder.recordCount() == 0u, "no records when not recording");
+}
+
+void testRecordDrawIndexedPerCall() {
+    fuse::renderer::DrawList list;
+
+    fuse::renderer::DrawCall first{};
+    first.indexCount = 10;
+    first.materialId = 2;
+    expectTrue(list.push(first), "record first call accepted");
+
+    fuse::renderer::DrawCall second{};
+    second.indexCount = 20;
+    second.materialId = 1;
+    expectTrue(list.push(second), "record second call accepted");
+
+    fuse::renderer::DrawCall third{};
+    third.indexCount = 30;
+    third.materialId = 2;
+    expectTrue(list.push(third), "record third call accepted");
+
+    fuse::renderer::CommandBufferRecorder recorder;
+    expectTrue(recorder.beginRecording(nullptr), "beginRecording succeeds");
+    expectTrue(list.record(recorder) == 3u, "record returns 3");
+    expectTrue(recorder.recordCount() == 3u, "recorder has 3 records");
+    expectTrue(recorder.records()[0].kind == fuse::renderer::CommandRecordKind::DrawIndexed,
+               "first record is DrawIndexed");
+    expectTrue(recorder.records()[1].kind == fuse::renderer::CommandRecordKind::DrawIndexed,
+               "second record is DrawIndexed");
+    expectTrue(recorder.records()[2].kind == fuse::renderer::CommandRecordKind::DrawIndexed,
+               "third record is DrawIndexed");
+}
+
 } // namespace
 
 int main() {
@@ -90,6 +160,9 @@ int main() {
     testPushRejectsZeroInstanceCount();
     testPushTwoDraws();
     testResetClears();
+    testSortByMaterialIsStable();
+    testRecordWithoutBeginReturnsZero();
+    testRecordDrawIndexedPerCall();
 
     if (g_failures == 0) {
         std::printf("fuse_draw_list: all checks passed\n");

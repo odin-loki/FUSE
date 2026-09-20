@@ -45,8 +45,14 @@ void testScratchResetAndDescriptorPool() {
     expectTrue(ptr != nullptr, "64-byte scratch allocation succeeds");
     expectTrue(frames->scratchUsedBytes() >= 64u, "usedBytes accounts for 64-byte allocation");
 
+    void* dummySet = nullptr;
+    expectTrue(frames->allocateDescriptorSets(nullptr, 1u, &dummySet) == 0u,
+               "allocateDescriptorSets with null layout returns 0");
+
     frames->beginFrame(0u);
     expectTrue(frames->scratchUsedBytes() == 0u, "beginFrame resets current slot scratch");
+    expectTrue(frames->descriptorSetsAllocatedThisFrame() == 0u,
+               "beginFrame resets descriptorSetsAllocatedThisFrame");
 
     expectTrue(frames->currentDescriptorPool() == frames->current().commands.descriptorPool,
                "currentDescriptorPool matches current slot commands.descriptorPool");
@@ -74,6 +80,10 @@ void testScratchResetAndDescriptorPool() {
             frames->beginFrame(1u);
             expectTrue(frames->descriptorPoolResetCount() == before + 1u,
                        "beginFrame increments descriptorPoolResetCount when pool is reset");
+            expectTrue(frames->descriptorSetsAllocatedThisFrame() == 0u,
+                       "beginFrame resets descriptorSetsAllocatedThisFrame when pool is reset");
+            expectTrue(frames->allocateDescriptorSets(nullptr, 1u, nullptr) == 0u,
+                       "null layout does not allocate from a live pool");
         }
     } else {
         (void)frames->currentDescriptorPool();

@@ -57,7 +57,11 @@ void testHeadlessQueueSubmit() {
     expectTrue(result.headless, "headless path omits WSI semaphores");
     expectTrue(!result.semaphoresUsed, "headless path does not wire acquire semaphores");
 
-    if (frameManager->current().timelineSemaphore != nullptr) {
+    const bool hasTimeline = frameManager->current().timelineSemaphore != nullptr;
+    if (hasTimeline) {
+        expectTrue(result.timelineSignaled, "first graphics submit signals timeline");
+        expectTrue(!result.timelineWaited, "first graphics submit does not wait on timeline (value 0)");
+        expectTrue(result.timelineValueAfter == 1u, "first graphics submit advances timeline to 1");
         expectTrue(frameManager->currentTimelineValue() >= 1u || result.ok,
                    "graphics submit signals timeline (>= 1) or remains ok if increment is internal");
     }
@@ -66,6 +70,19 @@ void testHeadlessQueueSubmit() {
                "submit signals in-flight fence");
     expectTrue(fuse::renderer::waitInFlightFenceForSlot(*frameManager, frameManager->currentIndex()),
                "fence wait after headless submit succeeds");
+
+    const fuse::renderer::GraphicsQueueSubmitResult reuseResult = fuse::renderer::submitGraphicsQueue(submitDesc);
+    expectTrue(reuseResult.ok, "second same-slot vkQueueSubmit succeeds");
+    expectTrue(reuseResult.submitted, "second same-slot path records a real submit");
+    expectTrue(reuseResult.headless, "second same-slot path omits WSI semaphores");
+    if (hasTimeline) {
+        expectTrue(reuseResult.timelineSignaled, "second graphics submit signals timeline");
+        expectTrue(reuseResult.timelineWaited, "second same-slot submit waits on prior timeline value");
+        expectTrue(reuseResult.timelineValueAfter == 2u, "second graphics submit advances timeline to 2");
+    }
+
+    expectTrue(fuse::renderer::waitInFlightFenceForSlot(*frameManager, frameManager->currentIndex()),
+               "fence wait after second same-slot submit succeeds");
 
     const fuse::renderer::GraphicsQueueSubmitResult transferResult =
         fuse::renderer::submitTransferQueue(submitDesc);

@@ -23,6 +23,7 @@ struct RasterPathDesc {
 struct RasterPathStats {
     bool pipelineReady = false;
     bool bindlessLayoutReady = false;
+    bool indexBufferReady = false;
     u32 clearCount = 0;
     u32 triangleDrawCount = 0;
     u32 framesRecorded = 0;
@@ -52,6 +53,9 @@ public:
 
     /// Sampled color attachment view for composite bindless registration.
     void* colorViewHandle() const;
+
+    /// UINT16 triangle index buffer (`{0,1,2}`); null if not ready.
+    void* indexBufferHandle() const;
 
     /// Updates CPU stats from mirrored commands (GPU work lives in graph execute path).
     void updateStatsFromCommands(const RenderCommandList& commands);
@@ -83,6 +87,8 @@ private:
 #if defined(FUSE_VULKAN_BACKEND)
     void* m_vertexBuffer = nullptr;
     void* m_vertexMemory = nullptr;
+    void* m_indexBuffer = nullptr;
+    void* m_indexMemory = nullptr;
     void* m_colorImage = nullptr;
     void* m_colorMemory = nullptr;
     void* m_colorView = nullptr;

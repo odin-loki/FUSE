@@ -53,4 +53,51 @@ void* StreamManager::get(CUDAStreamKind stream) const {
     return m_streams[index];
 }
 
+bool StreamManager::synchronize(CUDAStreamKind stream) const {
+#if defined(FUSE_HAS_CUDA)
+    if (!m_available) {
+        return false;
+    }
+    void* handle = get(stream);
+    if (handle == nullptr) {
+        return false;
+    }
+    return cudaStreamSynchronize(static_cast<cudaStream_t>(handle)) == cudaSuccess;
+#else
+    (void)stream;
+    return false;
+#endif
+}
+
+bool StreamManager::synchronizeAll() const {
+    if (createdStreamCount() == 0) {
+        return !m_available;
+    }
+#if defined(FUSE_HAS_CUDA)
+    for (usize i = 0; i < static_cast<usize>(CUDAStreamKind::Count); ++i) {
+        if (m_streams[i] == nullptr) {
+            continue;
+        }
+        if (cudaStreamSynchronize(static_cast<cudaStream_t>(m_streams[i])) != cudaSuccess) {
+            return false;
+        }
+    }
+    return true;
+#else
+    return true;
+#endif
+}
+
+u32 StreamManager::createdStreamCount() const {
+    u32 count = 0;
+#if defined(FUSE_HAS_CUDA)
+    for (usize i = 0; i < static_cast<usize>(CUDAStreamKind::Count); ++i) {
+        if (m_streams[i] != nullptr) {
+            ++count;
+        }
+    }
+#endif
+    return count;
+}
+
 } // namespace fuse::renderer::cuda

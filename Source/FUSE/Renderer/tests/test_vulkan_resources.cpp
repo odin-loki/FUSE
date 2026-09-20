@@ -1,5 +1,6 @@
 #include <fuse/core/init.hpp>
 #include <fuse/handle_map.hpp>
+#include <fuse/renderer/cuda/interop.hpp>
 #include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
@@ -188,6 +189,48 @@ void testResourceManagerBuffersAndTextures() {
     if (interop != nullptr && interop->exportedHandle != nullptr) {
         expectTrue(interop->allocationSize > 0, "exportedHandle requires allocationSize");
     }
+
+    void* vkDevice = nullptr;
+    if (bootstrap->device() != nullptr) {
+        vkDevice = bootstrap->device()->nativeHandle();
+    }
+    if (interop != nullptr) {
+        const auto imageImportDesc =
+            fuse::renderer::cuda::makeImageImportDesc(vkDevice, *interop);
+        expectTrue(imageImportDesc.exportedHandle == interop->exportedHandle,
+                   "makeImageImportDesc copies exportedHandle");
+        expectTrue(imageImportDesc.width == interop->desc.width,
+                   "makeImageImportDesc width matches texture");
+        expectTrue(imageImportDesc.height == interop->desc.height,
+                   "makeImageImportDesc height matches texture");
+
+        const fuse::renderer::cuda::CudaSurfaceImport imported =
+            fuse::renderer::cuda::import_vulkan_image(vkDevice, *interop);
+        if (imported.ok) {
+            fuse::renderer::cuda::free_cuda_surface(imported.surfaceObject);
+        }
+    }
+
+    fuse::renderer::BufferDesc interopBufferDesc{};
+    interopBufferDesc.size = 64;
+    interopBufferDesc.usage = fuse::renderer::BufferUsage::Storage;
+    interopBufferDesc.memoryUsage = fuse::renderer::MemoryUsage::GpuOnly;
+    interopBufferDesc.cudaInterop = true;
+    const fuse::renderer::BufferHandle interopBufferHandle =
+        resources.createBuffer(interopBufferDesc);
+    expectTrue(interopBufferHandle.isValid(), "cudaInterop buffer handle issued");
+    const fuse::renderer::Buffer* interopBuffer = resources.getBuffer(interopBufferHandle);
+    expectTrue(interopBuffer != nullptr, "cudaInterop buffer resolvable");
+    if (interopBuffer != nullptr) {
+        const auto bufferImportDesc =
+            fuse::renderer::cuda::makeBufferImportDesc(vkDevice, *interopBuffer);
+        if (stubOrDeviceReady) {
+            expectTrue(bufferImportDesc.allocationSize > 0,
+                       "cudaInterop buffer allocationSize recorded");
+        }
+    }
+    resources.destroyBuffer(interopBufferHandle);
+
     resources.destroyTexture(interopTexture);
 
     expectTrue(resources.stagingRingCapacity() == resourceDesc.stagingRingBytes,

@@ -288,6 +288,46 @@ void* FrameManager::currentDescriptorPool() const {
     return current().commands.descriptorPool;
 }
 
+u32 FrameManager::allocateDescriptorSets(void* setLayout, u32 count, void** outSets) {
+    if (!isReady() || setLayout == nullptr || count == 0 || currentDescriptorPool() == nullptr) {
+        return 0;
+    }
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (count > 16u) {
+        count = 16u;
+    }
+
+    VkDescriptorSetLayout layouts[16];
+    VkDescriptorSet sets[16];
+    for (u32 i = 0; i < count; ++i) {
+        layouts[i] = static_cast<VkDescriptorSetLayout>(setLayout);
+    }
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = static_cast<VkDescriptorPool>(currentDescriptorPool());
+    allocInfo.descriptorSetCount = count;
+    allocInfo.pSetLayouts = layouts;
+
+    if (vkAllocateDescriptorSets(static_cast<VkDevice>(m_device), &allocInfo, sets) != VK_SUCCESS) {
+        return 0;
+    }
+
+    if (outSets != nullptr) {
+        for (u32 i = 0; i < count; ++i) {
+            outSets[i] = sets[i];
+        }
+    }
+
+    m_descriptorSetsAllocatedThisFrame += count;
+    return count;
+#else
+    (void)outSets;
+    return 0;
+#endif
+}
+
 u64 FrameManager::currentTimelineValue() const {
     return current().timelineValue;
 }
@@ -368,12 +408,14 @@ void FrameManager::beginFrame(u32 frameIndex) {
                                   static_cast<VkDescriptorPool>(slot.commands.descriptorPool),
                                   0);
             ++m_descriptorPoolResetCount;
+            m_descriptorSetsAllocatedThisFrame = 0;
         }
     }
 #else
     (void)frameIndex;
 #endif
 
+    m_descriptorSetsAllocatedThisFrame = 0;
     if (m_scratch[index]) {
         m_scratch[index]->reset();
     }

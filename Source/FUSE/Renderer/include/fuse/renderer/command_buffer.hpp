@@ -41,6 +41,8 @@ struct VkFrameEncodeContext {
     void* graphicsPipeline = nullptr;
     void* graphicsPipelineLayout = nullptr;
     void* vertexBuffer = nullptr;
+    void* indexBuffer = nullptr; // VkBuffer
+    u32 indexType = 0; // 0 = VK_INDEX_TYPE_UINT16, 1 = UINT32
     /// Backbuffer image for graph-planned `vkCmdPipelineBarrier` (offscreen color target).
     void* barrierImage = nullptr;
     /// Buffer for graph-planned `vkCmdPipelineBarrier` (`VkBufferMemoryBarrier`).
@@ -102,6 +104,7 @@ public:
     u32 vulkanBufferBarrierCount() const { return m_vulkanBufferBarrierCount; }
     u32 vulkanPresentRenderPassBeginCount() const { return m_vulkanPresentRenderPassBeginCount; }
     u32 vulkanCompositeDrawCount() const { return m_vulkanCompositeDrawCount; }
+    u32 vulkanDrawIndexedCount() const { return m_vulkanDrawIndexedCount; }
 
 private:
     void push(CommandRecordKind kind);
@@ -113,6 +116,7 @@ private:
     void encodePresentSwapchainPass();
     void encodeCompositePass(float blend);
     void encodeDraw(u32 instanceCount);
+    void encodeDrawIndexed(u32 indexCount);
 
     const VkFrameEncodeContext* m_encodeContext = nullptr;
     void* m_nativeCommandBuffer = nullptr;
@@ -129,6 +133,7 @@ private:
     u32 m_vulkanBufferBarrierCount = 0;
     u32 m_vulkanPresentRenderPassBeginCount = 0;
     u32 m_vulkanCompositeDrawCount = 0;
+    u32 m_vulkanDrawIndexedCount = 0;
     std::vector<CommandRecord> m_records;
 };
 

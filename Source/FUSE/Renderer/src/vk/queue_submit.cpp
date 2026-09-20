@@ -109,23 +109,31 @@ GraphicsQueueSubmitResult submitGraphicsQueue(const GraphicsQueueSubmitDesc& des
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    VkSemaphore waitSemaphore = VK_NULL_HANDLE;
+    VkSemaphore waitSemaphores[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    VkPipelineStageFlags waitStages[2] = {};
+    u32 waitCount = 0;
     VkSemaphore signalSemaphores[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
     u32 signalCount = 0;
     if (useSemaphores) {
-        waitSemaphore = static_cast<VkSemaphore>(slot.imageAvailable);
+        waitSemaphores[waitCount] = static_cast<VkSemaphore>(slot.imageAvailable);
+        waitStages[waitCount] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        ++waitCount;
         signalSemaphores[signalCount++] = static_cast<VkSemaphore>(slot.renderFinished);
-        submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = &waitSemaphore;
-        submitInfo.pWaitDstStageMask = &waitStages;
     }
 
 #if defined(VK_VERSION_1_2) || defined(VK_KHR_timeline_semaphore)
     VkTimelineSemaphoreSubmitInfo timelineInfo{};
     u64 signalValues[2] = {0, 0};
+    u64 waitValues[2] = {0, 0};
     const u64 nextTimelineValue = slot.timelineValue + 1;
     const bool signalTimeline = slot.timelineSemaphore != nullptr;
+    const bool waitTimeline = signalTimeline && slot.timelineValue > 0;
+    if (waitTimeline) {
+        waitSemaphores[waitCount] = static_cast<VkSemaphore>(slot.timelineSemaphore);
+        waitStages[waitCount] = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        waitValues[waitCount] = slot.timelineValue;
+        ++waitCount;
+    }
     if (signalTimeline) {
         if (signalCount > 0) {
             signalValues[0] = 0;
@@ -135,16 +143,25 @@ GraphicsQueueSubmitResult submitGraphicsQueue(const GraphicsQueueSubmitDesc& des
         }
         signalSemaphores[signalCount++] = static_cast<VkSemaphore>(slot.timelineSemaphore);
         timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+        timelineInfo.waitSemaphoreValueCount = waitCount;
+        timelineInfo.pWaitSemaphoreValues = waitCount > 0 ? waitValues : nullptr;
         timelineInfo.signalSemaphoreValueCount = signalCount;
         timelineInfo.pSignalSemaphoreValues = signalValues;
         submitInfo.pNext = &timelineInfo;
     }
 #else
     const bool signalTimeline = false;
+    const bool waitTimeline = false;
     const u64 nextTimelineValue = 0;
     (void)nextTimelineValue;
+    (void)waitTimeline;
 #endif
 
+    if (waitCount > 0) {
+        submitInfo.waitSemaphoreCount = waitCount;
+        submitInfo.pWaitSemaphores = waitSemaphores;
+        submitInfo.pWaitDstStageMask = waitStages;
+    }
     if (signalCount > 0) {
         submitInfo.signalSemaphoreCount = signalCount;
         submitInfo.pSignalSemaphores = signalSemaphores;
@@ -159,6 +176,9 @@ GraphicsQueueSubmitResult submitGraphicsQueue(const GraphicsQueueSubmitDesc& des
 
     if (signalTimeline) {
         slot.timelineValue = nextTimelineValue;
+        result.timelineSignaled = true;
+        result.timelineWaited = waitTimeline;
+        result.timelineValueAfter = slot.timelineValue;
     }
     slot.fenceSignaled = true;
     result.submitted = true;

@@ -85,6 +85,29 @@ bool importDescHasExportedHandle(const VulkanImageImportDesc& desc) {
     return desc.exportedHandle != nullptr && desc.allocationSize > 0;
 }
 
+VulkanBufferImportDesc makeBufferImportDesc(void* vkDevice, const Buffer& buffer) {
+    VulkanBufferImportDesc desc{};
+    desc.vkDevice = vkDevice;
+    desc.vkMemory = buffer.allocation;
+    desc.exportedHandle = buffer.exportedHandle;
+    desc.allocationSize = buffer.allocationSize;
+    desc.offset = 0;
+    desc.size = buffer.desc.size;
+    return desc;
+}
+
+VulkanImageImportDesc makeImageImportDesc(void* vkDevice, const Texture& texture) {
+    VulkanImageImportDesc desc{};
+    desc.vkDevice = vkDevice;
+    desc.vkMemory = texture.allocation;
+    desc.exportedHandle = texture.exportedHandle;
+    desc.allocationSize = texture.allocationSize;
+    desc.width = texture.desc.width;
+    desc.height = texture.desc.height;
+    desc.format = static_cast<u32>(texture.desc.format);
+    return desc;
+}
+
 CudaBufferImport import_vulkan_buffer(VulkanBufferImportDesc desc) {
     CudaBufferImport result{};
     if (!interopAvailable()) {
@@ -222,6 +245,14 @@ CudaSurfaceImport import_vulkan_image(VulkanImageImportDesc desc) {
     result.reason = interopUnavailableReasonString(InteropUnavailableReason::ExternalMemoryUnsupported);
     return result;
 #endif
+}
+
+CudaBufferImport import_vulkan_buffer(void* vkDevice, const Buffer& buffer) {
+    return import_vulkan_buffer(makeBufferImportDesc(vkDevice, buffer));
+}
+
+CudaSurfaceImport import_vulkan_image(void* vkDevice, const Texture& texture) {
+    return import_vulkan_image(makeImageImportDesc(vkDevice, texture));
 }
 
 void free_cuda_import(void* cudaDevicePtr) {

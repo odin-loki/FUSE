@@ -7,6 +7,7 @@
 #include <fuse/renderer/vk/render_pass.hpp>
 
 #include <array>
+#include <cstdint>
 #include <cstring>
 
 #if defined(FUSE_VULKAN_BACKEND)
@@ -89,6 +90,10 @@ VkFrameEncodeContext RasterPath::vulkanEncodeContext() const {
     context.graphicsPipelineLayout =
         m_pipelineLayout != nullptr ? m_pipelineLayout->nativeHandle() : nullptr;
     context.vertexBuffer = m_vertexBuffer;
+    if (m_indexBuffer != nullptr) {
+        context.indexBuffer = m_indexBuffer;
+        context.indexType = 0; // UINT16
+    }
     context.width = m_desc.width;
     context.height = m_desc.height;
     context.active = context.renderPass != nullptr && context.framebuffer != nullptr &&
@@ -121,6 +126,17 @@ void* RasterPath::colorViewHandle() const {
         return nullptr;
     }
     return m_colorView;
+#else
+    return nullptr;
+#endif
+}
+
+void* RasterPath::indexBufferHandle() const {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_stats.indexBufferReady || m_indexBuffer == nullptr) {
+        return nullptr;
+    }
+    return m_indexBuffer;
 #else
     return nullptr;
 #endif
@@ -261,6 +277,41 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
     std::memcpy(mapped, triangleVertices.data(), sizeof(triangleVertices));
     vkUnmapMemory(vkDevice, vertexMemory);
 
+    const std::array<std::uint16_t, 3> triangleIndices = {0, 1, 2};
+
+    VkBufferCreateInfo indexBufferInfo{};
+    indexBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    indexBufferInfo.size = sizeof(triangleIndices);
+    indexBufferInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    indexBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VkBuffer indexBuffer = VK_NULL_HANDLE;
+    if (vkCreateBuffer(vkDevice, &indexBufferInfo, nullptr, &indexBuffer) == VK_SUCCESS) {
+        VkMemoryRequirements indexMemRequirements{};
+        vkGetBufferMemoryRequirements(vkDevice, indexBuffer, &indexMemRequirements);
+        VkMemoryAllocateInfo indexAllocInfo{};
+        indexAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        indexAllocInfo.allocationSize = indexMemRequirements.size;
+        indexAllocInfo.memoryTypeIndex = findMemoryType(
+            physicalDevice, indexMemRequirements.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+        VkDeviceMemory indexMemory = VK_NULL_HANDLE;
+        if (vkAllocateMemory(vkDevice, &indexAllocInfo, nullptr, &indexMemory) == VK_SUCCESS) {
+            m_indexBuffer = indexBuffer;
+            m_indexMemory = indexMemory;
+            vkBindBufferMemory(vkDevice, indexBuffer, indexMemory, 0);
+
+            void* indexMapped = nullptr;
+            vkMapMemory(vkDevice, indexMemory, 0, sizeof(triangleIndices), 0, &indexMapped);
+            std::memcpy(indexMapped, triangleIndices.data(), sizeof(triangleIndices));
+            vkUnmapMemory(vkDevice, indexMemory);
+        } else {
+            vkDestroyBuffer(vkDevice, indexBuffer, nullptr);
+        }
+    }
+    m_stats.indexBufferReady = (m_indexBuffer != nullptr);
+
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -350,6 +401,12 @@ void RasterPath::shutdown() {
         if (m_colorMemory != nullptr) {
             vkFreeMemory(vkDevice, static_cast<VkDeviceMemory>(m_colorMemory), nullptr);
         }
+        if (m_indexBuffer != nullptr) {
+            vkDestroyBuffer(vkDevice, static_cast<VkBuffer>(m_indexBuffer), nullptr);
+        }
+        if (m_indexMemory != nullptr) {
+            vkFreeMemory(vkDevice, static_cast<VkDeviceMemory>(m_indexMemory), nullptr);
+        }
         if (m_vertexBuffer != nullptr) {
             vkDestroyBuffer(vkDevice, static_cast<VkBuffer>(m_vertexBuffer), nullptr);
         }
@@ -361,6 +418,8 @@ void RasterPath::shutdown() {
     m_colorView = nullptr;
     m_colorImage = nullptr;
     m_colorMemory = nullptr;
+    m_indexBuffer = nullptr;
+    m_indexMemory = nullptr;
     m_vertexBuffer = nullptr;
     m_vertexMemory = nullptr;
 #endif

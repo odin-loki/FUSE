@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/renderer/command_buffer.hpp>
+#include <fuse/renderer/draw_list.hpp>
 #include <fuse/renderer/render_command_list.hpp>
 #include <fuse/renderer/render_graph.hpp>
 #include <fuse/renderer/rhi_context.hpp>
@@ -449,6 +450,51 @@ void testExecuteCopiesCompileOrderToScratch() {
     expectTrue(info.scratchBytesUsed > 0u, "compile order copied into frame scratch");
 }
 
+void testPopulateFromDrawList() {
+    fuse::renderer::DrawList draws;
+    fuse::renderer::DrawCall call{};
+    call.indexCount = 3;
+    expectTrue(draws.push(call), "draw list accepts one indexed call");
+
+    fuse::renderer::DrawList emptyDraws;
+    fuse::renderer::RenderGraph emptyGraph;
+    emptyGraph.beginFrame(0u);
+    fuse::renderer::populateRenderGraphFromDrawList(emptyGraph, emptyDraws);
+    emptyGraph.compile();
+    expectTrue(emptyGraph.compileInfo().passCount == 0u, "empty draw list adds no passes");
+
+    fuse::renderer::RenderGraph graph;
+    graph.beginFrame(0u);
+    fuse::renderer::populateRenderGraphFromDrawList(graph, draws);
+    graph.compile();
+
+    expectTrue(graph.compileInfo().compiled, "draw list graph compiled");
+    expectTrue(graph.compileInfo().executablePassCount >= 2u, "meshes + present kept");
+
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+    expectTrue(instance != nullptr, "instance allocated for draw list execute");
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    expectTrue(device != nullptr, "device allocated for draw list execute");
+    auto frames = fuse::renderer::FrameManager::create(*device);
+    expectTrue(frames != nullptr, "frame manager allocated for draw list execute");
+    if (instance == nullptr || device == nullptr || frames == nullptr) {
+        return;
+    }
+
+    fuse::renderer::CommandBufferRecorder recorder;
+    (void)graph.execute(*device, *frames, recorder);
+
+    fuse::u32 drawIndexedCount = 0;
+    for (const fuse::renderer::CommandRecord& record : recorder.records()) {
+        if (record.kind == fuse::renderer::CommandRecordKind::DrawIndexed) {
+            ++drawIndexedCount;
+        }
+    }
+    expectTrue(drawIndexedCount >= 1u, "execute records DrawIndexed from DrawList::record");
+}
+
 void testRhiContextUsesRenderGraph() {
     fuse::renderer::RhiContext::Desc desc{};
     desc.bootstrap.instance.enableValidation = false;
@@ -487,6 +533,7 @@ int main() {
     testImportBufferStoresHandle();
     testBufferBarrierPlannedWriteThenRead();
     testExecuteCopiesCompileOrderToScratch();
+    testPopulateFromDrawList();
     testRhiContextUsesRenderGraph();
 
     fuse::core::shutdown();

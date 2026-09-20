@@ -235,6 +235,35 @@ void testStreamManagerStub() {
     streams.shutdown();
 }
 
+void testStreamManagerSynchronize() {
+    fuse::renderer::cuda::StreamManager sm;
+    sm.init();
+
+#if defined(FUSE_HAS_CUDA)
+    if (sm.available()) {
+        expectTrue(sm.createdStreamCount() == static_cast<fuse::u32>(fuse::renderer::cuda::CUDAStreamKind::Count),
+                   "available StreamManager creates one stream per kind");
+        expectTrue(sm.synchronize(fuse::renderer::cuda::CUDAStreamKind::Render),
+                   "synchronize Render succeeds when CUDA available");
+        expectTrue(sm.synchronizeAll(), "synchronizeAll succeeds when CUDA available");
+    } else {
+        expectTrue(sm.createdStreamCount() == 0u, "unavailable CUDA leaves createdStreamCount at 0");
+        expectTrue(!sm.synchronize(fuse::renderer::cuda::CUDAStreamKind::Render),
+                   "synchronize returns false when CUDA unavailable");
+        expectTrue(sm.synchronizeAll(), "synchronizeAll is vacuously true with no streams");
+    }
+#else
+    expectTrue(sm.createdStreamCount() == 0u, "stub StreamManager createdStreamCount is 0");
+    expectTrue(!sm.synchronize(fuse::renderer::cuda::CUDAStreamKind::Render),
+               "stub synchronize returns false");
+    expectTrue(sm.synchronizeAll(), "stub synchronizeAll is vacuously true");
+#endif
+
+    sm.shutdown();
+    expectTrue(sm.get(fuse::renderer::cuda::CUDAStreamKind::Render) == nullptr,
+               "get returns null after StreamManager shutdown");
+}
+
 } // namespace
 
 int main() {
@@ -251,6 +280,7 @@ int main() {
     testInteropFillLoadStressStub();
     testInteropFillStub();
     testStreamManagerStub();
+    testStreamManagerSynchronize();
 
     fuse::core::shutdown();
 

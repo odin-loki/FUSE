@@ -127,6 +127,14 @@ void testRasterPathClearTriangle() {
     if (rasterPath->isReady()) {
         expectTrue(rasterPath->lastStats().pipelineContentHash != 0,
                    "raster path pipelineContentHash set when ready");
+#if defined(FUSE_VULKAN_BACKEND)
+        if (bootstrap->status().deviceReady) {
+            expectTrue(rasterPath->indexBufferHandle() != nullptr,
+                       "raster path indexBufferHandle set when ready");
+            expectTrue(rasterPath->lastStats().indexBufferReady,
+                       "raster path indexBufferReady when ready");
+        }
+#endif
     }
 #if defined(FUSE_VULKAN_BACKEND)
     if (bootstrap->status().deviceReady) {

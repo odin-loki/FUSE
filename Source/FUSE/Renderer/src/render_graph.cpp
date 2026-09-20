@@ -44,6 +44,14 @@ void executePresentPass(void* commandBuffer, void* /*userData*/) {
     recorder->present();
 }
 
+void executeDrawListPass(void* commandBuffer, void* userData) {
+    auto* recorder = static_cast<CommandBufferRecorder*>(commandBuffer);
+    auto* list = static_cast<const DrawList*>(userData);
+    if (recorder && list) {
+        list->record(*recorder);
+    }
+}
+
 } // namespace
 
 RenderGraph::TextureState& RenderGraph::textureStateAt(u32 textureId) {
@@ -569,6 +577,9 @@ DrawPassUserData g_drawPasses[RenderGraph::kMaxPassesPerFrame]{};
 u32 g_clearPassCount = 0;
 u32 g_drawPassCount = 0;
 
+/// Thread-unsafe; DrawList must outlive compile() + execute() (same pattern as g_clearPasses).
+const DrawList* g_drawListForGraph = nullptr;
+
 RGTextureAccess g_backbufferColorWrite{};
 RGTextureAccess g_backbufferPresent{};
 
@@ -643,6 +654,36 @@ void populateRenderGraphFromCommandList(RenderGraph& graph,
         present.textureAccessCount = 1;
         graph.addPass(present);
     }
+}
+
+void populateRenderGraphFromDrawList(RenderGraph& graph, const DrawList& draws) {
+    g_drawListForGraph = nullptr;
+
+    if (draws.count() == 0u) {
+        return;
+    }
+
+    g_drawListForGraph = &draws;
+
+    g_backbufferColorWrite.texture = {RenderGraph::kBackbufferTextureId};
+    g_backbufferColorWrite.access = RGResourceAccess::ColorAttachmentWrite;
+    g_backbufferPresent.texture = {RenderGraph::kBackbufferTextureId};
+    g_backbufferPresent.access = RGResourceAccess::Present;
+
+    RGPassDesc meshes{};
+    meshes.name = "meshes";
+    meshes.execute = executeDrawListPass;
+    meshes.userData = const_cast<DrawList*>(g_drawListForGraph);
+    meshes.textureAccesses = &g_backbufferColorWrite;
+    meshes.textureAccessCount = 1;
+    graph.addPass(meshes);
+
+    RGPassDesc present{};
+    present.name = "present";
+    present.execute = executePresentPass;
+    present.textureAccesses = &g_backbufferPresent;
+    present.textureAccessCount = 1;
+    graph.addPass(present);
 }
 
 } // namespace fuse::renderer

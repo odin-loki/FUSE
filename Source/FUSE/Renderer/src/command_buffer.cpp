@@ -46,6 +46,7 @@ void CommandBufferRecorder::reset() {
     m_vulkanBufferBarrierCount = 0;
     m_vulkanPresentRenderPassBeginCount = 0;
     m_vulkanCompositeDrawCount = 0;
+    m_vulkanDrawIndexedCount = 0;
     m_records.clear();
 }
 
@@ -401,6 +402,34 @@ void CommandBufferRecorder::encodeDraw(u32 instanceCount) {
 #endif
 }
 
+void CommandBufferRecorder::encodeDrawIndexed(u32 indexCount) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_vulkanEncodeActive || m_encodeContext == nullptr || !m_insideRenderPass ||
+        !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
+        return;
+    }
+
+    if (m_encodeContext->indexBuffer == nullptr) {
+        return;
+    }
+
+    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
+    vkCmdBindIndexBuffer(commandBuffer, static_cast<VkBuffer>(m_encodeContext->indexBuffer), 0,
+                         m_encodeContext->indexType == 1u ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16);
+
+    if (m_encodeContext->vertexBuffer != nullptr) {
+        VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(m_encodeContext->vertexBuffer)};
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+    }
+
+    vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
+    ++m_vulkanDrawIndexedCount;
+#else
+    (void)indexCount;
+#endif
+}
+
 void CommandBufferRecorder::beginPass(const char* name) {
     if (!m_recording) {
         return;
@@ -504,6 +533,11 @@ void CommandBufferRecorder::drawIndexed(u32 indexCount) {
     record.kind = CommandRecordKind::DrawIndexed;
     record.drawCount = indexCount;
     m_records.push_back(record);
+
+    if (m_activeRasterPass && !m_insideRenderPass) {
+        beginVulkanRenderPass();
+    }
+    encodeDrawIndexed(indexCount);
 }
 
 void CommandBufferRecorder::encodeCompositePass(float blend) {
