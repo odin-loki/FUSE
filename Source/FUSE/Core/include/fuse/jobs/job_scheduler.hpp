@@ -79,8 +79,10 @@ void JobScheduler::parallel_for(u32 begin, u32 end, u32 grainSize, const Body& b
             state->counter.signal();
         });
     }
+    // The counter covers every chunk and each chunk owns its captures (shared state + body copy),
+    // so nothing else needs to finish. Draining all active jobs here deadlocked when parallel_for
+    // ran inside a job whose chunks completed before wait(): the caller counted itself as active.
     state->counter.wait();
-    drainActiveJobs();
 }
 
 } // namespace fuse::jobs

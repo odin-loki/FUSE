@@ -92,6 +92,7 @@ add_test(NAME fuse_b2_triangle_readback COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}"
 add_executable(fuse_b2_render_graph_budget test_b2_render_graph_budget.cpp)
 target_link_libraries(fuse_b2_render_graph_budget PRIVATE fuse_rhi)
 add_test(NAME fuse_b2_render_graph_budget COMMAND fuse_b2_render_graph_budget)
+set_tests_properties(fuse_b2_render_graph_budget PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate")
 
 add_executable(fuse_b2_staging_wrap test_b2_staging_wrap.cpp)
 target_link_libraries(fuse_b2_staging_wrap PRIVATE fuse_rhi)

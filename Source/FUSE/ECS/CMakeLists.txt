@@ -18,6 +18,8 @@ set(FUSE_ECS_PUBLIC_HEADERS
     include/fuse/ecs/systems/camera_system.hpp
     include/fuse/ecs/systems/culling_system.hpp
     include/fuse/ecs/systems/scene_build_system.hpp
+    include/fuse/ecs/component_types.hpp
+    include/fuse/ecs/registry_serialiser.hpp
     ../Spatial/include/fuse/spatial/aabb.hpp
     ../Spatial/include/fuse/spatial/frustum.hpp
     ../Spatial/include/fuse/spatial/bvh.hpp
@@ -33,6 +35,8 @@ set(FUSE_ECS_SOURCES
     src/culling_system.cpp
     src/scene_build_system.cpp
     src/system_scheduler.cpp
+    src/component_types.cpp
+    src/registry_serialiser.cpp
     ../Spatial/src/bvh.cpp
     ../Spatial/src/frustum.cpp
 )

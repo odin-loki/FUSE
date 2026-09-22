@@ -19,9 +19,26 @@ struct CullResult {
     u32 culled_count = 0;
 };
 
+struct Mesh;
+struct SDFObject;
+struct Transform;
+
+struct CullOptions {
+    /// True when `bvh` holds a leaf for every Mesh/SDFObject entity with current world bounds
+    /// (SceneManager keeps it in sync). Culling then uses only the BVH; otherwise every entity is
+    /// also tested directly so stale or partial BVHs cannot drop visible objects.
+    bool bvh_covers_scene = false;
+};
+
 class CullingSystem {
 public:
-    static CullResult cull(Registry& reg, const Camera& camera, const spatial::BVH& bvh);
+    static CullResult cull(Registry& reg, const Camera& camera, const spatial::BVH& bvh,
+                           const CullOptions& options = {});
+
+    /// World-space bounds used for culling: all 8 local AABB corners transformed.
+    static spatial::AABB world_bounds(const Transform& transform, const Mesh& mesh);
+    /// World-space bounds of the SDF's bounding sphere.
+    static spatial::AABB world_bounds(const Transform& transform, const SDFObject& sdf);
 
     static bool test_aabb_frustum(const Camera::Frustum& frustum, const vec3& aabb_min,
                                   const vec3& aabb_max);

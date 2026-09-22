@@ -101,6 +101,9 @@ struct JobScheduler::Impl {
     std::condition_variable waitCv;
     std::atomic<bool> stop{false};
     std::atomic<u32> activeJobs{0};
+    /// Jobs sitting in any queue. Incremented under waitMutex before notify so a worker that just
+    /// found its queues empty cannot miss the wakeup and sleep out the 1 ms wait (lost-wakeup race).
+    std::atomic<u32> queued{0};
     std::atomic<bool> useFibers{false};
     u32 workerCount = 0;
 
@@ -137,10 +140,11 @@ struct JobScheduler::Impl {
             if (!tryPopLocal(index, job) && !trySteal(index, job)) {
                 std::unique_lock<std::mutex> lock(waitMutex);
                 waitCv.wait_for(lock, std::chrono::milliseconds(1), [this] {
-                    return stop.load(std::memory_order_acquire);
+                    return stop.load(std::memory_order_acquire) || queued.load(std::memory_order_acquire) > 0u;
                 });
                 continue;
             }
+            queued.fetch_sub(1, std::memory_order_acq_rel);
 
             activeJobs.fetch_add(1, std::memory_order_relaxed);
             if (fibersEnabled && state.jobFiber) {
@@ -247,6 +251,10 @@ struct JobScheduler::Impl {
             std::lock_guard<std::mutex> lock(queueMutexes[target]);
             auto& dest = isUrgent(priority) ? queues[target].high : queues[target].normal;
             dest.push_back(std::move(job));
+        }
+        {
+            std::lock_guard<std::mutex> lock(waitMutex);
+            queued.fetch_add(1, std::memory_order_acq_rel);
         }
         waitCv.notify_one();
     }

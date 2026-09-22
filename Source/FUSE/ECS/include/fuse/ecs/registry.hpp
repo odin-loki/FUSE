@@ -80,6 +80,8 @@ public:
     [[nodiscard]] usize archetype_count() const { return m_archetypes.size(); }
 
 private:
+    friend class RegistrySerialiser;
+
     struct EntityRecord {
         u32 archetype_index = 0;
         u32 row = 0;

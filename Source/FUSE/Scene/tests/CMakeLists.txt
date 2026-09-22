@@ -18,6 +18,10 @@ add_executable(fuse_b3_svo_gates test_b3_svo_gates.cpp)
 target_link_libraries(fuse_b3_svo_gates PRIVATE fuse_scene fuse_core fuse_ecs)
 add_test(NAME fuse_b3_svo_gates COMMAND fuse_b3_svo_gates)
 
+add_executable(fuse_b3_scene_gates test_b3_scene_gates.cpp)
+target_link_libraries(fuse_b3_scene_gates PRIVATE fuse_scene fuse_core fuse_ecs)
+add_test(NAME fuse_b3_scene_gates COMMAND fuse_b3_scene_gates)
+
 add_executable(fuse_scene_manager_tests
     test_scene_manager.cpp
 )
@@ -77,3 +81,5 @@ add_test(NAME fuse_p7_parity_scenes COMMAND fuse_p7_parity_scenes)
 set_tests_properties(fuse_p7_parity_scenes PROPERTIES
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
+# Timing budgets are meaningless while other tests compete for cores.
+set_tests_properties(fuse_b3_scene_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate")
