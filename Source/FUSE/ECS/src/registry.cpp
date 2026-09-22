@@ -151,8 +151,10 @@ void Registry::migrate_entity(EntityID id, const std::vector<std::type_index>& t
         return;
     }
 
-    Archetype& source = m_archetypes[rec->archetype_index];
+    // find_or_create_archetype may grow m_archetypes; take references only afterwards.
+    const u32 source_index = rec->archetype_index;
     const u32 target_index = find_or_create_archetype(target_types);
+    Archetype& source = m_archetypes[source_index];
     Archetype& target = m_archetypes[target_index];
 
     for (const std::type_index& type : target_types) {

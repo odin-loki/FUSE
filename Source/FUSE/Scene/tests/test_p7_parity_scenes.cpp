@@ -3,6 +3,8 @@
 #include <fuse/object.hpp>
 #include <fuse/project/importer_extract.hpp>
 #include <fuse/project/loader.hpp>
+#include <fuse/project/parity_legacy_sources.hpp>
+#include <fuse/project/world_converter.hpp>
 #include <fuse/scene/mission_load.hpp>
 #include <fuse/scene/project_io.hpp>
 #include <fuse/scene/scene.hpp>
@@ -129,40 +131,6 @@ void populateFromT2D(fuse::scene::Scene& scene, const fuse::project::T2DModuleEx
     }
 }
 
-bool cookMissionToFuselevel(const std::filesystem::path& missionPath, const std::string& fuselevelPath) {
-    fuse::scene::MissionLoadResult mission = fuse::scene::loadMissionToHandleMap(missionPath.string());
-    if (!mission.ok) {
-        return false;
-    }
-
-    fuse::scene::Scene cooked(mission.worldName.empty() ? "ImportedMission" : mission.worldName);
-    populateFromMission(cooked, mission);
-    if (cooked.entityCount() == 0u) {
-        return false;
-    }
-
-    const fuse::scene::SerialiseResult saved = fuse::scene::SceneSerialiser::save(cooked, fuselevelPath);
-    return saved.status == fuse::scene::SerialiseStatus::Ok;
-}
-
-bool cookT2DToFuselevel(const std::filesystem::path& modulePath, const std::string& fuselevelPath) {
-    const std::string text = readFileToString(modulePath);
-    if (text.empty()) {
-        return false;
-    }
-
-    const fuse::project::T2DModuleExtract extract =
-        fuse::project::extractT2DModuleFields(text, modulePath.string());
-    fuse::scene::Scene cooked(extract.moduleName.empty() ? "ImportedModule" : extract.moduleName);
-    populateFromT2D(cooked, extract);
-    if (cooked.entityCount() == 0u) {
-        return false;
-    }
-
-    const fuse::scene::SerialiseResult saved = fuse::scene::SceneSerialiser::save(cooked, fuselevelPath);
-    return saved.status == fuse::scene::SerialiseStatus::Ok;
-}
-
 bool loadWorldIntoScene(const fuse::project::LoadResult& project, fuse::scene::Scene& scene,
                         std::string& via) {
     via.clear();
@@ -175,9 +143,8 @@ bool loadWorldIntoScene(const fuse::project::LoadResult& project, fuse::scene::S
                                              ".mis");
         }
 
-        if (!fileExists(fuselevelPath) && fileExists(missionPath)) {
-            (void)cookMissionToFuselevel(missionPath, fuselevelPath);
-        }
+        // Production converter (wire stubs included) so the cooked sample matches what demos load.
+        (void)fuse::project::ensureDefault3DWorldReady(project);
 
         const fuse::scene::SerialiseResult loaded = fuse::scene::loadForProject(scene, project);
         if (loaded.status == fuse::scene::SerialiseStatus::Ok && scene.entityCount() > 0u) {
@@ -204,9 +171,7 @@ bool loadWorldIntoScene(const fuse::project::LoadResult& project, fuse::scene::S
                                             ".cs");
         }
 
-        if (!fileExists(fuselevelPath) && fileExists(modulePath)) {
-            (void)cookT2DToFuselevel(modulePath, fuselevelPath);
-        }
+        (void)fuse::project::ensureDefault2DWorldReady(project);
 
         if (fileExists(fuselevelPath)) {
             const fuse::scene::SerialiseResult loaded =
@@ -295,7 +260,8 @@ void assertHandlesAndRoundTrip(const char* demo, fuse::scene::Scene& scene) {
 struct DemoSpec {
     const char* name;
     bool required;
-    const char* requiredEntity;
+    const char* requiredEntity;       ///< Expected when the bundled sample mission is loaded
+    const char* goldenRequiredEntity; ///< Expected when the golden in-tree/submodule mission wins
 };
 
 void testDemo(const std::filesystem::path& repoRoot, const DemoSpec& spec) {
@@ -334,9 +300,19 @@ void testDemo(const std::filesystem::path& repoRoot, const DemoSpec& spec) {
         return;
     }
 
-    if (spec.requiredEntity != nullptr) {
-        expectTrue(findEntityByName(scene, spec.requiredEntity),
-                   demoMsg(spec.name, "required golden entity present"));
+    // resolveParityLegacySource prefers golden missions over the bundled sample copy,
+    // so the entity to expect depends on which source was converted.
+    const char* requiredEntity = spec.requiredEntity;
+    if (!project.manifest.defaultWorld3D.empty()) {
+        const fuse::project::LegacySourceResolution source = fuse::project::resolveParityLegacySource(
+            project.manifest, fuse::scene::resolveDefaultWorldPath(project.manifest), ".mis");
+        if (source.origin == fuse::project::LegacySourceOrigin::GoldenSubmodule) {
+            requiredEntity = spec.goldenRequiredEntity;
+        }
+    }
+    if (requiredEntity != nullptr) {
+        expectTrue(findEntityByName(scene, requiredEntity),
+                   demoMsg(spec.name, (std::string("required entity present: ") + requiredEntity).c_str()));
     }
 
     assertHandlesAndRoundTrip(spec.name, scene);
@@ -350,12 +326,12 @@ void testParitySuite(const std::filesystem::path& repoRoot) {
     }
 
     const DemoSpec demos[] = {
-        {"demo_3d_empty", true, "Floor"},
-        {"demo_2d_sprites", true, nullptr},
-        {"demo_ai_bt", false, nullptr},
-        {"demo_timeline", false, nullptr},
-        {"demo_fx", false, nullptr},
-        {"demo_adventure_stub", false, nullptr},
+        {"demo_3d_empty", true, "Floor", "GroundPlane"},
+        {"demo_2d_sprites", true, nullptr, nullptr},
+        {"demo_ai_bt", false, nullptr, nullptr},
+        {"demo_timeline", false, nullptr, nullptr},
+        {"demo_fx", false, nullptr, nullptr},
+        {"demo_adventure_stub", false, nullptr, nullptr},
     };
 
     for (const DemoSpec& spec : demos) {

@@ -1275,6 +1275,11 @@ void testChunkGridAsyncInFlightCapGuard() {
         }
 
         expectTrue(grid.resident_chunk_count() >= 1u, "in-flight cap carryover still completes loads");
+        // The last update_lod may submit the next capped load; drain it without re-submitting.
+        for (int attempt = 0; attempt < 1000 && grid.in_flight_request_count() > 0u; ++attempt) {
+            grid.drain_completed_requests();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
         expectEq(grid.in_flight_request_count(), 0u, "in-flight count returns to zero after drain");
 
         grid.destroy();

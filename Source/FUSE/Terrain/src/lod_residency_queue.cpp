@@ -135,6 +135,11 @@ u32 LodResidencyQueue::flush(u32 budget, LodResidencyWorkFn work) {
     return submitted;
 }
 
+LodResidencyQueue::~LodResidencyQueue() {
+    std::unique_lock<std::mutex> lock(m_mutex);
+    m_jobsIdle.wait(lock, [this] { return m_liveJobs == 0u; });
+}
+
 bool LodResidencyQueue::submit(LodResidencyRequest request, LodResidencyWorkFn work) {
     if (work == nullptr) {
         return false;
@@ -153,6 +158,7 @@ bool LodResidencyQueue::submit(LodResidencyRequest request, LodResidencyWorkFn w
         }
         submit_sequence = ++m_submit_sequence;
         ++m_inFlight;
+        ++m_liveJobs;
     }
 
     scheduler.submit([this, request = std::move(request), work = std::move(work), submit_sequence]() mutable {
@@ -163,12 +169,17 @@ bool LodResidencyQueue::submit(LodResidencyRequest request, LodResidencyWorkFn w
         completed.submit_sequence = submit_sequence;
         completed.morph_snapshot = request.morph_snapshot;
         completed.success = work(request.chunk_index, request.kind);
-        push_completed_(std::move(completed));
 
+        // Publish, retire and notify under one lock so drain never observes a
+        // completed request still counted in flight, and the destructor cannot
+        // release `this` mid-update.
         std::lock_guard<std::mutex> lock(m_mutex);
+        m_completed.push_back(std::move(completed));
         if (m_inFlight > 0) {
             --m_inFlight;
         }
+        --m_liveJobs;
+        m_jobsIdle.notify_all();
     });
 
     return true;
@@ -271,9 +282,5 @@ bool LodResidencyQueue::would_exceed_budget_() const {
     return m_inFlight + static_cast<u32>(m_completed.size()) >= m_max_pending_submits;
 }
 
-void LodResidencyQueue::push_completed_(CompletedLodResidencyRequest completed) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    m_completed.push_back(std::move(completed));
-}
 
 } // namespace fuse::terrain

@@ -529,7 +529,8 @@ bool RasterPath::createOffscreenTargets() {
     depthImageInfo.format = static_cast<VkFormat>(kDepthFormat);
     depthImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     depthImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthImageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    // Sampled: composite binds raster depth in the bindless heap (B2.9).
+    depthImageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     depthImageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     depthImageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 

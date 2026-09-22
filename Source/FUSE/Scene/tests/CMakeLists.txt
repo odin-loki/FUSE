@@ -65,7 +65,7 @@ add_executable(fuse_p7_parity_scenes
 )
 
 file(TO_CMAKE_PATH "${CMAKE_SOURCE_DIR}" FUSE_SOURCE_DIR_CMAKE)
-target_link_libraries(fuse_p7_parity_scenes PRIVATE fuse_scene fuse_project fuse_core)
+target_link_libraries(fuse_p7_parity_scenes PRIVATE fuse_scene fuse_project fuse_world_converter fuse_core)
 target_compile_definitions(fuse_p7_parity_scenes PRIVATE
     FUSE_SOURCE_DIR="${FUSE_SOURCE_DIR_CMAKE}"
 )
