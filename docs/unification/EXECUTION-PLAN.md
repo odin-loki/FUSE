@@ -94,7 +94,8 @@ against today's code and only then deepening (same pattern as §2).
 |-----------|------|--------|
 | ECS: 1M entities + stale generations; archetype grouping; exact `each`; `each_parallel` == `each` over 100 randomised cases; migration preserves data | `fuse_b3_ecs_gates` | ✅ (plus the `migrate_entity` UAF fixed in §1) |
 | ECS: 100k Transform+Mesh+RigidBody > 500M components/s single-threaded | `fuse_b3_ecs_gates` | ◐ Column lookup hoisted out of the row loop: Release 60M → ~225–290M/s here. Components total 340 B/entity, so this runner is memory-bound (~15 GB/s); CI enforces a 100M floor, the 500M baseline is a §5 workstation measurement |
-| BVH, SVO, scene, camera rows | — | Next: `fuse_b3_bvh_gates` (SAH build time, ray/frustum vs brute force, refit), then SVO, then scene |
+| BVH: SAH build 100k < 500 ms; 100k rays vs 10k objects == brute force; frustum == brute force; refit after 1k updates; frustum cull 10k < 0.1 ms | `fuse_b3_bvh_gates` | ✅ The old SAH build was O(n²) per node (every split re-merged the range) — replaced with 16-bin SAH: 55 ms Release. Added `update_leaf_aabb` (the refit row had no way to move a leaf). 0/100k ray mismatches; cull 0.064 ms |
+| SVO, scene, camera rows | — | Next: `fuse_b3_svo_gates`, then scene build/cull/serialise |
 
 ## 5. Hardware / manual gates (not provable in CI)
 

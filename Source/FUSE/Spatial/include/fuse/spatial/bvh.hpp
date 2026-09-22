@@ -36,7 +36,13 @@ struct BVHBuildDesc {
 
 class BVH {
 public:
+    /// Binned-SAH (16 bins) or median build. Leaves are stored reordered; `update_leaf_aabb`
+    /// addresses them by their index in `leaves`.
     void build(const std::vector<BVHLeaf>& leaves, const BVHBuildDesc& desc = {});
+    /// Replace the bounds of the leaf that was `leaves[source_index]` at build time. Call `refit()`
+    /// after a batch of updates. Returns false for an out-of-range index.
+    bool update_leaf_aabb(u32 source_index, const AABB& aabb);
+    /// Recompute every node's bounds bottom-up from the current leaf bounds (topology unchanged).
     void refit();
 
     bool ray_cast(const ecs::vec3& origin, const ecs::vec3& direction, f32 max_t, BVHLeaf& hit,
@@ -50,9 +56,10 @@ public:
     usize leaf_count() const { return m_leaves.size(); }
 
 private:
-    u32 build_recursive(std::vector<BVHLeaf>& leaves, u32 begin, u32 end, u32 depth);
-    f32 sah_cost(const AABB& parent, const AABB& left, const AABB& right, u32 left_count,
-                 u32 right_count) const;
+    u32 build_recursive(const std::vector<BVHLeaf>& leaves, std::vector<u32>& order, u32 begin, u32 end,
+                        u32 depth);
+    u32 choose_split(const std::vector<BVHLeaf>& leaves, std::vector<u32>& order, u32 begin, u32 end,
+                     u32& axis_out) const;
     void query_node(u32 node_index, const AABB& box, std::vector<BVHLeaf>& results) const;
     void query_node_sphere(u32 node_index, const ecs::vec3& center, f32 radius_sq,
                            std::vector<BVHLeaf>& results) const;
@@ -62,6 +69,8 @@ private:
 
     std::vector<BVHNode> m_nodes;
     std::vector<BVHLeaf> m_leaves;
+    std::vector<u32> m_slot_of_source; ///< build-input index -> index into m_leaves
+    std::vector<ecs::vec3> m_centroids; ///< build scratch, indexed by build-input index
     BVHBuildDesc m_desc{};
 };
 
