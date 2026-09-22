@@ -85,6 +85,16 @@ ContactManifold dispatchShapePair(
             pair.bodyA);
     }
 
+    if (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Plane) {
+        return collideBoxPlane(posA, shapes.params[shapeA], shapes.params[shapeB], shapes.scalars[shapeB],
+                               pair.bodyA, pair.bodyB);
+    }
+
+    if (typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Box) {
+        return collideBoxPlane(posB, shapes.params[shapeB], shapes.params[shapeA], shapes.scalars[shapeA],
+                               pair.bodyB, pair.bodyA);
+    }
+
     if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Box) {
         return collideBoxSphere(
             posA,

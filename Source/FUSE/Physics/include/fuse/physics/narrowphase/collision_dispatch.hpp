@@ -78,6 +78,31 @@ FUSE_PHYSICS_INLINE ContactManifold collideSpherePlane(
     return manifold;
 }
 
+/// Axis-aligned box vs plane: deepest point along -normal (box orientation ignored like the other box stubs).
+FUSE_PHYSICS_INLINE ContactManifold collideBoxPlane(
+    vec3 boxPos,
+    vec3 boxHalfExtents,
+    vec3 planeNormal,
+    f32 planeDistance,
+    u32 idxBox,
+    u32 idxPlane) {
+    const f32 extent = std::fabs(boxHalfExtents.x * planeNormal.x) + std::fabs(boxHalfExtents.y * planeNormal.y) +
+                       std::fabs(boxHalfExtents.z * planeNormal.z);
+    const f32 dist = boxPos.dot(planeNormal) - planeDistance;
+    if (dist > extent) {
+        return invalidContactManifold();
+    }
+
+    ContactManifold manifold{};
+    manifold.contactNormal = planeNormal;
+    manifold.minSeparation = extent;
+    manifold.bodyA = idxBox;
+    manifold.bodyB = idxPlane;
+    manifold.valid = true;
+    manifold.addPoint(boxPos - planeNormal * extent, extent - dist);
+    return manifold;
+}
+
 /// Axis-aligned box vs sphere (box half extents in `boxHalfExtents`, stub ignores orientation).
 FUSE_PHYSICS_INLINE ContactManifold collideBoxSphere(
     vec3 spherePos,

@@ -1,6 +1,7 @@
 // B4.11 broad-phase gate rows (master plan):
 //  - spatial hash finds all overlapping pairs for 10k random spheres (vs brute-force O(n^2))
 //  - no missed pairs for bodies straddling multiple cells (grid-aligned edge cases)
+//  - planes pair with every dynamic body, not just ones sharing the plane body's cell
 //  - AABB refine drops separated candidates but keeps every true overlap (spheres and boxes)
 #include <fuse/physics/broadphase/pair_buffer.hpp>
 #include <fuse/physics/broadphase/spatial_hash.hpp>
@@ -166,12 +167,30 @@ void testBoxRefine() {
     expectTrue(missed == 0u, "box refine uses box extents, not a radius");
 }
 
+void testPlanePairsAwayFromPlaneOrigin() {
+    // Planes are unbounded: a lone body far from the plane body's origin (sharing no cell
+    // with anything) must still be paired with the plane.
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+    const fuse::u32 plane = bodies.addBody({0.f, 0.f, 0.f}, 0.f, fuse::physics::RB_STATIC);
+    shapes.addShape(CollisionShapeType::Plane, plane, {0.f, 1.f, 0.f}, 0.f);
+    const fuse::u32 far = bodies.addBody({250.f, 0.5f, -40.f}, 1.f);
+    shapes.addShape(CollisionShapeType::Box, far, {0.5f, 0.5f, 0.5f});
+    SpatialHashParams params{};
+    params.cellSize = 2.f;
+    params.tableSize = 1024;
+    const std::vector<Pair> pairs = canonical(fuse::physics::broadphase::runBroadphase(bodies, shapes, params));
+    expectTrue(std::binary_search(pairs.begin(), pairs.end(), Pair{plane, far}),
+               "body far from the plane origin is paired with the plane");
+}
+
 } // namespace
 
 int main() {
     testTenThousandSpheres();
     testGridAlignedStraddlers();
     testBoxRefine();
+    testPlanePairsAwayFromPlaneOrigin();
 
     if (g_failures == 0) {
         std::printf("fuse_b4_broadphase_gates: all checks passed\n");

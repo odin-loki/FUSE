@@ -91,17 +91,17 @@ f32 accumulateContactCorrection(const RigidBodySoA& bodies,
     addPositionDelta(positionDeltas, a, deltaPosition * invMassA);
     addPositionDelta(positionDeltas, b, deltaPosition * (-invMassB));
 
-    const vec3 relativeVelocity = (pa - pb) * (1.f / dt);
-    const f32 normalVelocity = relativeVelocity.dot(contact.contactNormal);
-    vec3 tangentialVelocity = relativeVelocity - contact.contactNormal * normalVelocity;
-    const f32 tangentialLength = tangentialVelocity.length();
-    if (tangentialLength > 1e-6f) {
-        const f32 frictionCoeff = bodies.frictionDynamic[a];
-        const f32 frictionCorrection =
-            std::min(frictionCoeff * std::fabs(deltaLambda), tangentialLength * weightSum) / weightSum;
-        const vec3 tangentialDir = tangentialVelocity * (1.f / tangentialLength);
-        addPositionDelta(positionDeltas, a, tangentialDir * (-frictionCorrection * invMassA));
-        addPositionDelta(positionDeltas, b, tangentialDir * (frictionCorrection * invMassB));
+    // Static friction: cancel the tangential motion since the substep start while it stays
+    // inside the friction cone (dynamic friction is applied in the velocity pass).
+    const vec3 displacement = (pa - bodies.positions[a]) - (pb - bodies.positions[b]);
+    const vec3 tangential = displacement - contact.contactNormal * displacement.dot(contact.contactNormal);
+    const f32 tangentialLength = tangential.length();
+    if (tangentialLength > 1e-9f) {
+        const f32 staticCoeff = std::sqrt(bodies.frictionStatic[a] * bodies.frictionStatic[b]);
+        if (tangentialLength <= staticCoeff * deltaLambda * weightSum) {
+            addPositionDelta(positionDeltas, a, tangential * (-invMassA / weightSum));
+            addPositionDelta(positionDeltas, b, tangential * (invMassB / weightSum));
+        }
     }
 
     return std::fabs(constraint);

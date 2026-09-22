@@ -60,10 +60,15 @@ private:
                                   f32 dt);
     f32 measureConstraintResidual_(RigidBodySoA& bodies) const;
     void updateVelocities(RigidBodySoA& bodies, f32 dt);
+    /// Velocity pass after each substep: dynamic friction and restitution from the
+    /// substep's normal impulses and pre-solve velocities (XPBD rigid bodies, sec. 3.6).
+    void solveVelocities(RigidBodySoA& bodies, const SolverParams& params, f32 dt);
     void applyDamping(RigidBodySoA& bodies, const SolverParams& params);
     void detectSleep(RigidBodySoA& bodies, const SolverParams& params, f32 dt);
 
     std::vector<DistanceConstraint> distanceConstraints_;
+    std::vector<vec3> preSolveVelocities_;
+    std::vector<f32> substepLambdaStart_;
     SolverWorkBuffers workBuffers_;
     ContactIslandGraph islandGraph_;
     u32 maxBodies_ = 0;

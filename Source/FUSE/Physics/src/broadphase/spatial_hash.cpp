@@ -510,18 +510,18 @@ void runBroadphaseIntoBufferInternal(
     }
 
     buffer.preparePairSlots(totalCellSlots);
-    if (!shouldRunBroadphaseCellPairGen(totalCellSlots)) {
-        return;
+    // No shared cells still needs the plane merge below: planes are unbounded and never
+    // share a cell with bodies far from the plane body's origin.
+    if (shouldRunBroadphaseCellPairGen(totalCellSlots)) {
+        fuse::jobs::parallel_for(0u, tableSize, kCellGrainSize, [&](u32 cellIndex) {
+            if (cells.buckets[cellIndex].empty()) {
+                return;
+            }
+            writePairsForCellSlots(cells.buckets[cellIndex], cellSlotOffsets[cellIndex], buffer);
+        });
+        buffer.compact();
+        dedupeBuffer(buffer);
     }
-
-    fuse::jobs::parallel_for(0u, tableSize, kCellGrainSize, [&](u32 cellIndex) {
-        if (cells.buckets[cellIndex].empty()) {
-            return;
-        }
-        writePairsForCellSlots(cells.buckets[cellIndex], cellSlotOffsets[cellIndex], buffer);
-    });
-    buffer.compact();
-    dedupeBuffer(buffer);
 
     std::vector<u32> planeBodies;
     std::vector<u32> dynamicBodies;

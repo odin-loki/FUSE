@@ -217,6 +217,57 @@ void PBDSolver::updateVelocities(RigidBodySoA& bodies, f32 dt) {
     }
 }
 
+void PBDSolver::solveVelocities(RigidBodySoA& bodies, const SolverParams& params, f32 dt) {
+    const std::vector<narrowphase::ContactManifold>& contacts = workBuffers_.contactManifolds();
+    const std::vector<f32>& lambdas = workBuffers_.contactLambdas();
+    const f32 restingSpeed = 2.f * params.gravity.length() * dt;
+    for (u32 contactIndex = 0; contactIndex < contacts.size(); ++contactIndex) {
+        const narrowphase::ContactManifold& contact = contacts[contactIndex];
+        if (!contact.valid || contactIndex >= lambdas.size()) {
+            continue;
+        }
+        const f32 start = contactIndex < substepLambdaStart_.size() ? substepLambdaStart_[contactIndex] : 0.f;
+        const f32 normalLambda = lambdas[contactIndex] - start;
+        if (normalLambda <= 0.f) {
+            continue; // contact did not push this substep
+        }
+        const u32 a = contact.bodyA;
+        const u32 b = contact.bodyB;
+        const f32 invMassA = effectiveInvMass(bodies, a);
+        const f32 invMassB = effectiveInvMass(bodies, b);
+        const f32 weightSum = invMassA + invMassB;
+        if (weightSum < 1e-10f) {
+            continue;
+        }
+
+        const vec3 n = contact.contactNormal;
+        const vec3 relative = bodies.linearVelocities[a] - bodies.linearVelocities[b];
+        const f32 normalSpeed = relative.dot(n);
+        vec3 deltaV{};
+
+        // Dynamic friction: bounded by mu * normal impulse (normalLambda / dt).
+        const vec3 tangential = relative - n * normalSpeed;
+        const f32 tangentialSpeed = tangential.length();
+        if (tangentialSpeed > 1e-9f) {
+            const f32 mu = std::sqrt(bodies.frictionDynamic[a] * bodies.frictionDynamic[b]);
+            const f32 slow = std::min(mu * normalLambda * weightSum / dt, tangentialSpeed);
+            deltaV += tangential * (-slow / tangentialSpeed);
+        }
+
+        // Restitution against the approach speed before the position solve.
+        const f32 preNormalSpeed = (preSolveVelocities_[a] - preSolveVelocities_[b]).dot(n);
+        f32 restitution = bodies.restitutions[a] * bodies.restitutions[b];
+        if (std::fabs(preNormalSpeed) <= restingSpeed) {
+            restitution = 0.f; // resting contact: no micro-bounces
+        }
+        deltaV += n * (-normalSpeed + std::max(-restitution * preNormalSpeed, 0.f));
+
+        const vec3 impulse = deltaV * (1.f / weightSum);
+        bodies.linearVelocities[a] += impulse * invMassA;
+        bodies.linearVelocities[b] -= impulse * invMassB;
+    }
+}
+
 void PBDSolver::applyDamping(RigidBodySoA& bodies, const SolverParams& params) {
     for (u32 i = 0; i < bodies.count(); ++i) {
         if (isStaticOrKinematic(bodies.flags[i]) || isSleeping(bodies.flags[i])) {
@@ -269,6 +320,7 @@ void PBDSolver::step(RigidBodySoA& bodies,
 
     for (u32 substep = 0; substep < std::max(1u, params.substeps); ++substep) {
         predict(bodies, params, subDt);
+        preSolveVelocities_ = bodies.linearVelocities;
         generateContacts(bodies, shapes, params);
         if (substep == 0u) {
             frame_lambda_warm_start(workBuffers_,
@@ -276,8 +328,10 @@ void PBDSolver::step(RigidBodySoA& bodies,
                                     priorDistanceLambdas,
                                     priorContactLambdas);
         }
+        substepLambdaStart_ = workBuffers_.contactLambdas();
         runConstraintIterations(bodies, params, subDt);
         updateVelocities(bodies, subDt);
+        solveVelocities(bodies, params, subDt);
     }
 
     applyDamping(bodies, params);

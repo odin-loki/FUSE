@@ -88,3 +88,8 @@ add_executable(fuse_b4_broadphase_gates test_b4_broadphase_gates.cpp)
 target_link_libraries(fuse_b4_broadphase_gates PRIVATE fuse_physics fuse_core)
 target_compile_features(fuse_b4_broadphase_gates PRIVATE cxx_std_17)
 add_test(NAME fuse_b4_broadphase_gates COMMAND fuse_b4_broadphase_gates)
+
+add_executable(fuse_b4_solver_gates test_b4_solver_gates.cpp)
+target_link_libraries(fuse_b4_solver_gates PRIVATE fuse_physics fuse_core)
+target_compile_features(fuse_b4_solver_gates PRIVATE cxx_std_17)
+add_test(NAME fuse_b4_solver_gates COMMAND fuse_b4_solver_gates)
