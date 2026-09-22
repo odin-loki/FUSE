@@ -65,6 +65,7 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/vk/compute_pipeline.hpp
     include/fuse/renderer/vk/pipeline_layout.hpp
     include/fuse/renderer/vk/pipeline_cache.hpp
+    include/fuse/renderer/vk/image_readback.hpp
     include/fuse/renderer/vk/raster_path.hpp
     include/fuse/renderer/vk/render_pass.hpp
     include/fuse/renderer/vk/surface.hpp
@@ -134,6 +135,7 @@ set(FUSE_RHI_SOURCES
     src/vk/compute_pipeline.cpp
     src/vk/pipeline_layout.cpp
     src/vk/pipeline_cache.cpp
+    src/vk/image_readback.cpp
     src/vk/raster_path.cpp
     src/vk/render_pass.cpp
     src/vk/surface.cpp

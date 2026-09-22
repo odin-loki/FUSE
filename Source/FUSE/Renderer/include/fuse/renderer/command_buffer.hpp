@@ -100,6 +100,8 @@ struct VkFrameEncodeContext {
     /// Composite GPU blit — bindless fullscreen pass into backbuffer (WP-06f).
     void* compositeRenderPass = nullptr;
     void* compositeFramebuffer = nullptr;
+    /// Tracked layout of the offscreen composite target (null when composite targets the swapchain).
+    u32* compositeTargetLayout = nullptr;
     void* compositePipeline = nullptr;
     void* compositePipelineLayout = nullptr;
     void* compositeVertexBuffer = nullptr;

@@ -1,4 +1,5 @@
 #include <fuse/renderer/vk/composite_gpu_path.hpp>
+#include <fuse/renderer/vk/image_readback.hpp>
 
 #include <fuse/renderer/cuda/interop.hpp>
 #include <fuse/renderer/cuda/interop_fill.hpp>
@@ -397,6 +398,20 @@ bool CompositeGpuPath::ensurePresentPipeline(void* presentRenderPass) {
 #endif
 }
 
+bool CompositeGpuPath::readbackOutput(std::vector<u8>& outRgba) const {
+    outRgba.clear();
+#if defined(FUSE_VULKAN_BACKEND)
+    if (m_device == nullptr || m_outputImage == nullptr) {
+        return false;
+    }
+    const u32 width = m_desc.width > 0u ? m_desc.width : 1u;
+    const u32 height = m_desc.height > 0u ? m_desc.height : 1u;
+    return readbackColorImage(*m_device, m_outputImage, width, height, m_outputLayout, outRgba);
+#else
+    return false;
+#endif
+}
+
 void CompositeGpuPath::fillEncodeContext(VkFrameEncodeContext& context, float blend,
                                          bool presentActive) {
 #if defined(FUSE_VULKAN_BACKEND)
@@ -431,6 +446,7 @@ void CompositeGpuPath::fillEncodeContext(VkFrameEncodeContext& context, float bl
     } else if (context.active && m_outputFramebuffer != nullptr) {
         context.compositeRenderPass = m_offscreenRenderPass->nativeHandle();
         context.compositeFramebuffer = m_outputFramebuffer;
+        context.compositeTargetLayout = &m_outputLayout;
         context.compositeWidth = m_desc.width > 0u ? m_desc.width : 1u;
         context.compositeHeight = m_desc.height > 0u ? m_desc.height : 1u;
         context.compositePipeline = m_offscreenPipeline->nativeHandle();
@@ -685,6 +701,7 @@ void CompositeGpuPath::shutdown() {
     m_outputImage = nullptr;
     m_outputMemory = nullptr;
     m_cudaImageLayout = 0;
+    m_outputLayout = 0;
     m_sampler = nullptr;
     m_vertexBuffer = nullptr;
     m_vertexMemory = nullptr;

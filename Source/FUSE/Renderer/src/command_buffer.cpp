@@ -968,6 +968,8 @@ void CommandBufferRecorder::encodeCompositePass(float blend) {
     vkCmdEndRenderPass(commandBuffer);
     if (m_encodeContext->compositeTargetsSwapchain) {
         setTrackedLayout(m_encodeContext->presentImageLayout, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+    } else {
+        setTrackedLayout(m_encodeContext->compositeTargetLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     }
     ++m_vulkanCompositeDrawCount;
 #else
