@@ -82,3 +82,9 @@ add_executable(fuse_physics_phase4_integration test_physics_phase4_integration.c
 target_link_libraries(fuse_physics_phase4_integration PRIVATE fuse_physics fuse_core)
 target_compile_features(fuse_physics_phase4_integration PRIVATE cxx_std_17)
 add_test(NAME fuse_physics_phase4_integration COMMAND fuse_physics_phase4_integration)
+
+# B4.11 gate rows
+add_executable(fuse_b4_broadphase_gates test_b4_broadphase_gates.cpp)
+target_link_libraries(fuse_b4_broadphase_gates PRIVATE fuse_physics fuse_core)
+target_compile_features(fuse_b4_broadphase_gates PRIVATE cxx_std_17)
+add_test(NAME fuse_b4_broadphase_gates COMMAND fuse_b4_broadphase_gates)

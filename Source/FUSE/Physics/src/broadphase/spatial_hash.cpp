@@ -431,13 +431,31 @@ void dedupeBuffer(PairBufferSoA& buffer) {
     }
 }
 
-f32 bodyShapeRadius(const CollisionShapeSoA& shapes, u32 bodyIndex) {
+constexpr u32 kInvalidShapeIndex = 0xFFFFFFFFu;
+
+/// Shape index for a body: shapes are usually added one per body in body order, so try that first.
+u32 bodyShapeIndex(const CollisionShapeSoA& shapes, u32 bodyIndex) {
+    if (bodyIndex < shapes.count() && shapes.bodyIndices[bodyIndex] == bodyIndex) {
+        return bodyIndex;
+    }
     for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
         if (shapeBodyIndex(shapes, shapeIndex) == bodyIndex) {
-            return shapeRadius(shapes, shapeIndex);
+            return shapeIndex;
         }
     }
-    return 0.5f;
+    return kInvalidShapeIndex;
+}
+
+/// Same bounds the cell insertion uses, so refine never rejects a pair the grid found overlapping.
+aabb bodyShapeBounds(const CollisionShapeSoA& shapes, u32 bodyIndex, vec3 position) {
+    const u32 shapeIndex = bodyShapeIndex(shapes, bodyIndex);
+    if (shapeIndex == kInvalidShapeIndex) {
+        return aabbFromSphere(position, 0.5f);
+    }
+    if (shapeType(shapes, shapeIndex) == CollisionShapeType::Box) {
+        return aabbFromBox(position, shapes.params[shapeIndex]);
+    }
+    return aabbFromSphere(position, shapeRadius(shapes, shapeIndex));
 }
 
 bool pairPassesCollisionLayers(u32 bodyA, u32 bodyB, const RigidBodySoA& bodies) {
@@ -460,11 +478,8 @@ bool pairPassesAabbRefine(
         return false;
     }
 
-    const vec3 posA = bodies.positions[bodyA];
-    const vec3 posB = bodies.positions[bodyB];
-    const f32 radiusA = bodyShapeRadius(shapes, bodyA);
-    const f32 radiusB = bodyShapeRadius(shapes, bodyB);
-    return sphereAabbOverlap(posA, radiusA, posB, radiusB);
+    return aabbOverlap(bodyShapeBounds(shapes, bodyA, bodies.positions[bodyA]),
+                       bodyShapeBounds(shapes, bodyB, bodies.positions[bodyB]));
 }
 
 void runBroadphaseIntoBufferInternal(
