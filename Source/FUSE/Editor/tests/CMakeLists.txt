@@ -46,9 +46,11 @@ target_link_libraries(fuse_editor_runtime_embed_tests PRIVATE fuse_editor_api fu
 if(FUSE_BUILD_VULKAN)
     target_link_libraries(fuse_editor_runtime_embed_tests PRIVATE fuse_hybrid fuse_rhi)
     add_test(NAME fuse_editor_runtime_embed COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_editor_runtime_embed_tests>")
+    # Tests load Samples/unification/* by repo-relative path.
     set_tests_properties(fuse_editor_runtime_embed PROPERTIES
         ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
         RUN_SERIAL TRUE
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
 else()
     add_test(NAME fuse_editor_runtime_embed COMMAND fuse_editor_runtime_embed_tests)

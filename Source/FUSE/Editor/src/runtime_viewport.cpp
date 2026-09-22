@@ -409,9 +409,10 @@ void RuntimeViewportHook::ensureWorldLoaded_(EditorHost& host) {
     m_embedded = true;
 
 #if defined(FUSE_VULKAN_BACKEND)
+    m_loadedManifest = projectLoad.manifest;
     RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
     if (gpu != nullptr) {
-        attachEmbedWorldsToHybrid(gpu, m_embedSession, projectLoad.manifest);
+        attachEmbedWorldsToHybrid(gpu, m_embedSession, m_loadedManifest);
     }
 #endif
 
@@ -784,6 +785,9 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
         if (gpu->hybrid != nullptr && gpu->hybrid->isReady()) {
             m_embedSession.wsiPresentPathReady = true;
             m_embedSession.headlessGpuReady = true;
+            if (m_embedSession.worldLoaded) {
+                attachEmbedWorldsToHybrid(gpu, m_embedSession, m_loadedManifest);
+            }
 #if defined(FUSE_HAS_VULKAN_RHI)
             syncHybridBootstrapFromConsumedHandoff(*gpu->hybrid, m_surfaceHandoff);
             maybeRetireSoftwarePlaceholder(gpu, m_embedSession, m_surfaceHandoff);

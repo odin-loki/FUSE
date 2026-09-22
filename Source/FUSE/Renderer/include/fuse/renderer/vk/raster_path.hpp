@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace fuse::renderer {
 
@@ -80,6 +81,11 @@ public:
     /// the graphics pipeline stay. Zero size is rejected. Same size is a success no-op.
     bool resize(u32 width, u32 height);
 
+    /// Copy the offscreen colour target (R8G8B8A8, tightly packed rows) to `outRgba`.
+    /// Waits for the device to idle, then restores the tracked layout. Returns false in the
+    /// stub backend or before the targets exist (B2.11 triangle readback gate).
+    bool readbackColor(std::vector<u8>& outRgba) const;
+
 private:
     RasterPath() = default;
     bool initialize(VulkanDevice& device, const RasterPathDesc& desc);
@@ -113,6 +119,9 @@ private:
     void* m_colorMemory = nullptr;
     void* m_colorView = nullptr;
     void* m_depthImage = nullptr;
+    /// Current VkImageLayout of the color/depth targets, advanced by recorded barriers and passes.
+    mutable u32 m_colorLayout = 0; // VK_IMAGE_LAYOUT_UNDEFINED
+    mutable u32 m_depthLayout = 0;
     void* m_depthMemory = nullptr;
     void* m_depthView = nullptr;
     void* m_framebuffer = nullptr;

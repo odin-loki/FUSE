@@ -602,7 +602,9 @@ void testViewportQtPresentGateHeadlessSafe() {
     expectTrue(!fuse::editor::viewportQtPresentPathEligible(handoff, true),
                "Qt present path not fully eligible without gate on headless CI");
 #if defined(FUSE_VULKAN_BACKEND)
-    if (host.runtimeViewport().embedSession().headlessGpuReady) {
+    // Present cycles need a real swapchain on the handed-off surface. Headless CI passes a fake
+    // handle without VK_KHR_surface, so the viewport honestly stays on the headless path.
+    if (host.runtimeViewport().embedSession().usesExternalSwapchain) {
         expectTrue(host.runtimeViewport().embedSession().consumedSwapchainPresentTicks >= 1u,
                    "consumed handoff present cycle on real Qt surface handoff");
     }
@@ -624,8 +626,8 @@ void testViewportQtPresentPathReadyHeadlessSafe() {
                "full Qt eligibility still requires compile-time gate on headless CI");
     expectTrue(fuse::editor::shouldDisableSoftwarePlaceholderForEmbed(handoff, true),
                "Qt path ready retires software placeholder when external swapchain wired");
-    expectTrue(fuse::editor::shouldDisableSoftwarePlaceholderForEmbed(handoff, false),
-               "consumed real native surface retires software placeholder");
+    expectTrue(!fuse::editor::shouldDisableSoftwarePlaceholderForEmbed(handoff, false),
+               "consumed real native surface keeps software placeholder until swapchain wired");
 }
 
 void testViewportQtPresentPathEligibleEmbedCounters() {
@@ -635,7 +637,7 @@ void testViewportQtPresentPathEligibleEmbedCounters() {
     host.gameTick();
 
 #if defined(FUSE_VULKAN_BACKEND)
-    if (host.runtimeViewport().embedSession().headlessGpuReady) {
+    if (host.runtimeViewport().embedSession().usesExternalSwapchain) {
         expectTrue(host.runtimeViewport().embedSession().qtPresentPathReadyTicks >= 1u,
                    "real Qt surface handoff records present path ready ticks");
         expectTrue(host.runtimeViewport().embedSession().softwarePlaceholderRetiredTicks >= 1u,

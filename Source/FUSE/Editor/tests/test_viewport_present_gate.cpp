@@ -52,8 +52,9 @@ void testViewportPresentGateMatrix() {
                "path-ready handoff keeps placeholder until swapchain presentable");
 
     const auto surfaceOnly = makeQtHandoff(true, true, false, reinterpret_cast<void*>(0x4000u));
-    expectTrue(fuse::editor::shouldDisableSoftwarePlaceholderForEmbed(surfaceOnly, false),
-               "real Qt surface alone retires placeholder when consumed");
+    // Same inputs as `ready` above: a consumed surface without a wired swapchain keeps the placeholder.
+    expectTrue(!fuse::editor::shouldDisableSoftwarePlaceholderForEmbed(surfaceOnly, false),
+               "real Qt surface alone keeps placeholder until swapchain wired");
 }
 
 void testViewportHeadlessWsiProbeSkippedOnCi() {

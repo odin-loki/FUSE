@@ -17,21 +17,33 @@ constexpr u32 kFrameScratchBytes = 8u * 1024u * 1024u;
 constexpr u32 kFrameDescriptorCount = 1024u;
 
 #if defined(FUSE_VULKAN_BACKEND)
-/// Clear a slot fence that was marked in-flight without a matching queue submit (headless stub).
-bool clearStubInFlightFence(VkDevice device, FrameSyncData& slot) {
+/// Retire a slot before its command pool / fence are reused: wait any real submission, drain
+/// fence-less aux queue submits from the slot pool, and leave the fence unsignaled for the
+/// next vkQueueSubmit (fences are created signaled).
+bool retireSlotFence(VkDevice device, FrameSyncData& slot) {
     if (slot.inFlightFence == nullptr) {
         return true;
     }
 
     auto fence = static_cast<VkFence>(slot.inFlightFence);
+    if (slot.fenceSubmitted &&
+        vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX) != VK_SUCCESS) {
+        return false;
+    }
+    slot.fenceSubmitted = false;
+
+    for (void** pending : {&slot.pendingTransferQueue, &slot.pendingComputeQueue}) {
+        if (*pending != nullptr) {
+            vkQueueWaitIdle(static_cast<VkQueue>(*pending));
+            *pending = nullptr;
+        }
+    }
+
     const VkResult status = vkGetFenceStatus(device, fence);
     if (status == VK_SUCCESS) {
         return vkResetFences(device, 1, &fence) == VK_SUCCESS;
     }
-    if (status == VK_NOT_READY) {
-        return true;
-    }
-    return false;
+    return status == VK_NOT_READY;
 }
 
 bool createSlotTimestampQueryPool(VkDevice device, VkQueryPool* outPool) {
@@ -346,6 +358,8 @@ void FrameManager::shutdown() {
         if (m_slots[i].timestampQueryPool != nullptr) {
             vkDestroyQueryPool(vkDevice, static_cast<VkQueryPool>(m_slots[i].timestampQueryPool), nullptr);
             m_slots[i].timestampQueryPool = nullptr;
+            m_slots[i].timestampsRecorded = false;
+            m_slots[i].timestampsPending = false;
         }
     }
     m_info.timestampsReady = false;
@@ -469,6 +483,7 @@ void FrameManager::writeTimestampEnd(void* commandBuffer) {
     auto cmd = static_cast<VkCommandBuffer>(commandBuffer);
     auto pool = static_cast<VkQueryPool>(slot.timestampQueryPool);
     vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, pool, 1);
+    slot.timestampsPending = true;
     ++m_info.timestampWriteCount;
 #else
     (void)commandBuffer;
@@ -487,7 +502,7 @@ bool FrameManager::readLastGpuTimeNs(u32 slotIndex, u64* outNs) {
 
     const u32 index = slotIndex % kFramesInFlight;
     const FrameSyncData& slot = m_slots[index];
-    if (slot.timestampQueryPool == nullptr) {
+    if (slot.timestampQueryPool == nullptr || !slot.timestampsRecorded) {
         return false;
     }
 
@@ -546,21 +561,8 @@ bool FrameManager::waitInFlightFence(u32 slotIndex) {
         return false;
     }
 
-    if (slot.fenceSignaled) {
-        auto fence = static_cast<VkFence>(slot.inFlightFence);
-        const VkResult status = vkGetFenceStatus(static_cast<VkDevice>(m_device), fence);
-        if (status == VK_NOT_READY) {
-            if (!clearStubInFlightFence(static_cast<VkDevice>(m_device), slot)) {
-                return false;
-            }
-        } else if (status == VK_SUCCESS) {
-            if (vkResetFences(static_cast<VkDevice>(m_device), 1, &fence) != VK_SUCCESS) {
-                return false;
-            }
-        } else if (vkWaitForFences(static_cast<VkDevice>(m_device), 1, &fence, VK_TRUE, UINT64_MAX) !=
-                   VK_SUCCESS) {
-            return false;
-        } else if (vkResetFences(static_cast<VkDevice>(m_device), 1, &fence) != VK_SUCCESS) {
+    if (slot.fenceSignaled || slot.fenceSubmitted) {
+        if (!retireSlotFence(static_cast<VkDevice>(m_device), slot)) {
             return false;
         }
 
@@ -586,8 +588,8 @@ void FrameManager::beginFrame(u32 frameIndex) {
 #if defined(FUSE_VULKAN_BACKEND)
     FrameSyncData& slot = m_slots[index];
     if (m_info.ready) {
-        if (slot.fenceSignaled && slot.inFlightFence != nullptr) {
-            if (!clearStubInFlightFence(static_cast<VkDevice>(m_device), slot)) {
+        if ((slot.fenceSignaled || slot.fenceSubmitted) && slot.inFlightFence != nullptr) {
+            if (!retireSlotFence(static_cast<VkDevice>(m_device), slot)) {
                 return;
             }
             u64 ns = 0;

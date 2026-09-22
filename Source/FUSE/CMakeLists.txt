@@ -133,3 +133,18 @@ endforeach()
 if(_fuse_cxx23_pinned)
   message(STATUS "FUSE: C++23 pinned: ${_fuse_cxx23_pinned}")
 endif()
+
+# B2.11: whole-suite rerun under VK_LAYER_KHRONOS_validation (skips when the layer is absent).
+# RUN_SERIAL: the nested run shares sample-tree outputs with the outer suite.
+if(FUSE_VULKAN_BACKEND AND FUSE_BUILD_CORE_TESTS AND TARGET fuse_rhi)
+  add_test(NAME fuse_vulkan_validation_gate
+    COMMAND "${CMAKE_COMMAND}"
+            -DFUSE_GATE_BUILD_DIR=${CMAKE_BINARY_DIR}
+            -DFUSE_GATE_SELF=fuse_vulkan_validation_gate
+            -P "${CMAKE_CURRENT_LIST_DIR}/../../cmake/FuseVulkanValidationGate.cmake")
+  set_tests_properties(fuse_vulkan_validation_gate PROPERTIES
+    RUN_SERIAL TRUE
+    SKIP_RETURN_CODE 77
+    TIMEOUT 1200
+    LABELS "vulkan;gate")
+endif()

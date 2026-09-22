@@ -77,6 +77,10 @@ struct VkFrameEncodeContext {
     /// Offscreen D32_SFLOAT depth attachment (B2.8 raster path).
     void* depthImage = nullptr;
     void* depthView = nullptr;
+    /// Persistent current `VkImageLayout` (as u32) of `barrierImage` / `depthImage`, owned by the
+    /// image owner (RasterPath). Barriers use it as oldLayout; render passes update it on end.
+    u32* barrierImageLayout = nullptr;
+    u32* depthImageLayout = nullptr;
     /// Buffer for graph-planned `vkCmdPipelineBarrier` (`VkBufferMemoryBarrier`).
     void* barrierBuffer = nullptr;
     u32 width = 0;
@@ -87,6 +91,8 @@ struct VkFrameEncodeContext {
     void* presentRenderPass = nullptr;
     void* presentFramebuffer = nullptr;
     void* presentBarrierImage = nullptr;
+    /// Tracked layout of `presentBarrierImage` (owned by VulkanSwapchain, one per image).
+    u32* presentImageLayout = nullptr;
     u32 presentWidth = 0;
     u32 presentHeight = 0;
     bool presentActive = false;
@@ -101,6 +107,9 @@ struct VkFrameEncodeContext {
     u32 rasterTextureBindlessIndex = 0;
     u32 cudaTextureBindlessIndex = UINT32_MAX;
     u32 depthTextureBindlessIndex = UINT32_MAX;
+    /// CUDA interop image sampled by composite; transitioned to SHADER_READ_ONLY before sampling.
+    void* cudaImage = nullptr;
+    u32* cudaImageLayout = nullptr;
     u32 compositeWidth = 0;
     u32 compositeHeight = 0;
     float compositeBlend = 0.5f;

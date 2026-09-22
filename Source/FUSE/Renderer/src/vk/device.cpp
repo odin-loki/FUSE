@@ -179,6 +179,14 @@ void VulkanDevice::setVmaAllocator(void* allocator) {
     m_info.vmaAllocator = allocator;
 }
 
+void VulkanDevice::waitIdle() const {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (m_handle != nullptr) {
+        vkDeviceWaitIdle(static_cast<VkDevice>(m_handle));
+    }
+#endif
+}
+
 bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& desc) {
     m_instance = &instance;
 
@@ -220,8 +228,17 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     const u32 computeFamily = findComputeFamily(selected);
     const u32 transferFamily = findTransferFamily(selected);
 
+    // VK_KHR_swapchain and surface queries both depend on VK_KHR_surface at instance level.
+    const bool instanceHasSurface = instance.info().instanceHasExtension(VK_KHR_SURFACE_EXTENSION_NAME);
+
     std::string presentNote;
-    if (desc.presentSurface != nullptr) {
+    if (desc.presentSurface != nullptr && !instanceHasSurface) {
+        presentNote = "present surface ignored: instance lacks VK_KHR_surface";
+        m_info.message = presentNote;
+        if (desc.requirePresentation) {
+            return false;
+        }
+    } else if (desc.presentSurface != nullptr) {
         const auto surface = reinterpret_cast<VkSurfaceKHR>(desc.presentSurface);
         bool foundPresentableGraphics = false;
         const u32 presentableFamily =
@@ -239,6 +256,9 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
 
     std::vector<const char*> enabledExtensions;
     for (const char* extension : kPreferredExtensions) {
+        if (!instanceHasSurface && std::strcmp(extension, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0) {
+            continue;
+        }
         if (extensionSupported(selected, extension)) {
             enabledExtensions.push_back(extension);
         }
@@ -250,7 +270,7 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     }
 
     if (desc.requirePresentation &&
-        !extensionSupported(selected, VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
+        (!instanceHasSurface || !extensionSupported(selected, VK_KHR_SWAPCHAIN_EXTENSION_NAME))) {
         m_info.message = "Presentation requested but VK_KHR_swapchain unavailable";
         return false;
     }
@@ -298,6 +318,17 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
         supported12.descriptorBindingSampledImageUpdateAfterBind;
     enabled12.descriptorBindingStorageBufferUpdateAfterBind =
         supported12.descriptorBindingStorageBufferUpdateAfterBind;
+    enabled12.descriptorBindingStorageImageUpdateAfterBind =
+        supported12.descriptorBindingStorageImageUpdateAfterBind;
+    enabled12.descriptorBindingUniformBufferUpdateAfterBind =
+        supported12.descriptorBindingUniformBufferUpdateAfterBind;
+    // Composite/bindless shaders index texture arrays with nonuniformEXT.
+    enabled12.shaderSampledImageArrayNonUniformIndexing =
+        supported12.shaderSampledImageArrayNonUniformIndexing;
+    enabled12.shaderStorageImageArrayNonUniformIndexing =
+        supported12.shaderStorageImageArrayNonUniformIndexing;
+    enabled12.shaderStorageBufferArrayNonUniformIndexing =
+        supported12.shaderStorageBufferArrayNonUniformIndexing;
     enabled12.bufferDeviceAddress = supported12.bufferDeviceAddress;
     enabled12.timelineSemaphore = supported12.timelineSemaphore;
 
@@ -341,6 +372,16 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     m_info.valid = true;
     m_info.enabledExtensions = enabledExtensions;
     m_info.descriptorIndexing = enabled12.descriptorIndexing == VK_TRUE;
+    m_info.sampledImageUpdateAfterBind = enabled12.descriptorBindingSampledImageUpdateAfterBind == VK_TRUE;
+    m_info.storageImageUpdateAfterBind = enabled12.descriptorBindingStorageImageUpdateAfterBind == VK_TRUE;
+    m_info.storageBufferUpdateAfterBind = enabled12.descriptorBindingStorageBufferUpdateAfterBind == VK_TRUE;
+    m_info.uniformBufferUpdateAfterBind = enabled12.descriptorBindingUniformBufferUpdateAfterBind == VK_TRUE;
+    m_info.sampledImageNonUniformIndexing = enabled12.shaderSampledImageArrayNonUniformIndexing == VK_TRUE;
+    for (const char* extension : enabledExtensions) {
+        if (std::strcmp(extension, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0) {
+            m_info.swapchainExtension = true;
+        }
+    }
     m_info.bufferDeviceAddress = enabled12.bufferDeviceAddress == VK_TRUE;
     m_info.timelineSemaphore = enabled12.timelineSemaphore == VK_TRUE;
     m_info.dynamicRendering = enabledDyn.dynamicRendering == VK_TRUE;

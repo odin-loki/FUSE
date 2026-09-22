@@ -2,8 +2,11 @@ set(FUSE_VULKAN_TEST_ENV "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
 set(FUSE_VULKAN_ICD_LOCK_FILE "${CMAKE_BINARY_DIR}/fuse_vulkan_icd.lock")
 set(FUSE_VULKAN_ICD_LOCK_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/run_vulkan_icd_locked.sh")
 file(TOUCH "${FUSE_VULKAN_ICD_LOCK_FILE}")
+# Serialise ICD-using tests on one lock and propagate the test's exit status unchanged.
+# (The previous wrapper exited 0 on every failure via `if ! cmd; then status=$?`, and retried
+# segfaults — both hid real failures.)
 file(WRITE "${FUSE_VULKAN_ICD_LOCK_SCRIPT}"
-"#!/usr/bin/env bash\nset -euo pipefail\nflock -x \"${FUSE_VULKAN_ICD_LOCK_FILE}\" bash -c '\n  set -euo pipefail\n  run_icd_test() {\n    sync\n    sleep 0.10\n    \"$@\"\n  }\n  if ! run_icd_test \"$@\"; then\n    status=$?\n    if [ \"$status\" -eq 139 ] || [ \"$status\" -eq 134 ]; then\n      sync\n      sleep 0.50\n      run_icd_test \"$@\"\n    else\n      exit \"$status\"\n    fi\n  fi\n  sync\n  sleep 0.35\n' _ \"$@\"\n")
+"#!/usr/bin/env bash\nexec flock -x \"${FUSE_VULKAN_ICD_LOCK_FILE}\" \"$@\"\n")
 file(CHMOD "${FUSE_VULKAN_ICD_LOCK_SCRIPT}"
     FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 
@@ -81,6 +84,10 @@ target_compile_definitions(fuse_graphics_pipeline PRIVATE
     FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
 )
 add_test(NAME fuse_graphics_pipeline COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_graphics_pipeline>")
+
+add_executable(fuse_b2_triangle_readback test_b2_triangle_readback.cpp)
+target_link_libraries(fuse_b2_triangle_readback PRIVATE fuse_rhi)
+add_test(NAME fuse_b2_triangle_readback COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_b2_triangle_readback>")
 
 add_executable(fuse_render_graph test_render_graph.cpp)
 target_link_libraries(fuse_render_graph PRIVATE fuse_rhi)

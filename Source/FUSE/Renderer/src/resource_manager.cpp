@@ -623,7 +623,12 @@ BufferHandle ResourceManager::createBuffer(const BufferDesc& desc, const void* i
         return BufferHandle{};
     }
 
-    buffer.bindlessIndex = m_bindless->registerBuffer(buffer);
+    // Uniform-only buffers bind through the UBO heap; everything else uses the storage heap
+    // (the GPU write is skipped when the buffer lacks the matching usage bit).
+    const u32 usageBits = static_cast<u32>(buffer.desc.usage);
+    const bool uniformOnly = (usageBits & static_cast<u32>(BufferUsage::Uniform)) != 0u &&
+                             (usageBits & static_cast<u32>(BufferUsage::Storage)) == 0u;
+    buffer.bindlessIndex = m_bindless->registerBuffer(buffer, uniformOnly);
     if (buffer.bindlessIndex == UINT32_MAX) {
         m_allocator->destroyBuffer(buffer);
         return BufferHandle{};

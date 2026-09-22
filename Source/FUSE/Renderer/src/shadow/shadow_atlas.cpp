@@ -45,8 +45,9 @@ bool ShadowAtlas::init(ResourceManager& resources, const ShadowAtlasDesc& desc) 
     textureDesc.width = m_layout.atlasWidth;
     textureDesc.height = m_layout.atlasHeight;
     textureDesc.format = CascadedShadowMapLayout::depthFormat();
+    // R32F shadow depth (B5.5) is written as a color target; R32F cannot be a depth attachment.
     textureDesc.usage = static_cast<ImageUsage>(
-        static_cast<u32>(ImageUsage::DepthStencilAttachment) | static_cast<u32>(ImageUsage::Sampled));
+        static_cast<u32>(ImageUsage::ColorAttachment) | static_cast<u32>(ImageUsage::Sampled));
     textureDesc.name = "shadow_atlas";
     textureDesc.cudaInterop = false;
 

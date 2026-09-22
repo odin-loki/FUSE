@@ -166,6 +166,7 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
 
     state.vactorBridge.bind("agent_3d", &state.agent3D);
     state.vactorBridge.apply_shapebase_mount_chain("agent_3d", {"vehicle_seat", "turret"}, 10.f);
+    state.setupMountChainDepth = state.vactorBridge.mountChainDepth();
     state.vactorBridge.apply_shapebase_bone_attach("agent_3d", "weapon_shoulder");
     state.leverRadio.startBroadcast();
     state.weaponCombatLoop.setActiveWeapon(&state.weaponRuntime);
@@ -198,8 +199,10 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     state.leverInteractable.attach();
     state.mechanicsRegistry.registerInteractable(&state.leverInteractable, &state.leverInteractable);
 
+    // The VActor mount chain above lifts agent_3d to ~(y 2.1, z 2.75); the lever volume must
+    // enclose the mounted spawn or the enter event never fires.
     const fuse::mechanics::ConvexPolyhedron triggerVolume =
-        fuse::mechanics::ConvexPolyhedron::axis_aligned_box(-5.f, -1.f, -1.f, 4.5f, 1.f, 2.f);
+        fuse::mechanics::ConvexPolyhedron::axis_aligned_box(-5.f, -1.f, -1.f, 4.5f, 2.5f, 3.f);
     state.leverTrigger.setPolyhedron(triggerVolume);
     state.leverConsole.registerMethod("toggleLever", [&state]() {
         state.leverToggle.toggle();
@@ -245,8 +248,8 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
             state.bindPoseBridge.applyMountToBindPose(state.weaponSkeletalMount, state.weaponMountAnim,
                                                       state.bindSkeleton, state.bindPose);
             state.weaponFired = state.weaponRuntime.fire(state.playerInventory);
-            state.weaponCombatLoop.tick(1.f / 60.f);
-            state.combatLoopFired = state.weaponCombatLoop.tryFire(state.playerInventory);
+            // Single-round magazine: start the timed reload; the combat loop fires from tickFrame
+            // once advanceReload has refilled it.
             if (state.weaponRuntime.magazineAmmo() == 0u) {
                 state.weaponReloaded = state.weaponRuntime.reload(state.playerInventory);
             }
@@ -259,6 +262,7 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
             branchCtx.inventory = &state.playerInventory;
             if (state.weaponGranted) {
                 state.conversationScriptVm.dispatchBestBranch("outpost_guard", branchCtx, *guardIt->second);
+                state.guardBranchChosen = state.conversationScriptVm.lastBranchDispatched();
                 state.guardLineText = state.conversationScriptVm.lastLineDispatched();
                 if (state.guardLineText.empty()) {
                     state.guardLineText =
@@ -383,6 +387,10 @@ void tickFrame(State& state, fuse::hybrid::HybridComposer& composer, const fuse:
     state.delayedMissionDispatchCount += state.missionScriptVm.advanceDelayedDispatches(
         static_cast<fuse::u32>(ctx.dt * 1000.f), state.fxComposer, ctx);
     state.weaponRuntime.advanceReload(static_cast<fuse::u32>(ctx.dt * 1000.f));
+    if (state.weaponGranted && !state.combatLoopFired) {
+        state.weaponCombatLoop.tick(ctx.dt);
+        state.combatLoopFired = state.weaponCombatLoop.tryFire(state.playerInventory);
+    }
 
     state.physicsBroadphaseBridge.trackBody(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
     state.physicsBroadphaseBridge.syncBody(kAgentObjectId);
@@ -547,7 +555,7 @@ VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& comp
     }
 #endif
 #if FUSE_HYBRID_GATES_WAVE19
-    if (state.vactorBridge.mountChainDepth() < 2u) {
+    if (state.setupMountChainDepth < 2u) {
         return {false, "fuse_cinematics ShapeBase mount chain depth applied"};
     }
     if (!state.leverRadio.broadcasting() || state.leverRadio.broadcastCount() == 0u) {
@@ -608,7 +616,7 @@ VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& comp
     if (state.guardLineText != "I see you are armed. Keep that rifle stowed.") {
         return {false, "fuse_adventure armed conversation branch via dispatchBestBranch"};
     }
-    if (state.conversationScriptVm.lastBranchDispatched() != "armed") {
+    if (state.guardBranchChosen != "armed") {
         return {false, "fuse_adventure conversation VM chose armed priority branch"};
     }
 #endif

@@ -5,6 +5,25 @@
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.2, §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
 
+**Execution order from here:** [EXECUTION-PLAN.md](./EXECUTION-PLAN.md)
+
+### B2.11 — validation gate ✅
+
+`fuse_vulkan_validation_gate` re-runs the whole CTest suite with `VK_LAYER_KHRONOS_validation`
+forced on (`VK_INSTANCE_LAYERS`) and fails on any validation message. It runs serially and
+reports *skipped* when the layer manifest is not installed. Linux CI installs
+`vulkan-validationlayers`, so the gate is live there.
+
+```bash
+ctest --test-dir build/fuse-debug -R fuse_vulkan_validation_gate --output-on-failure
+```
+
+Per-image layout tracking (raster colour/depth, swapchain images, CUDA interop image) backs the
+graph barriers: `VkFrameEncodeContext::{barrierImageLayout, depthImageLayout,
+presentImageLayout, cudaImageLayout}` point at state owned by the image owner, barriers use the
+tracked value as `oldLayout`, and render passes update it to their final layout. Composite renders
+into its own offscreen target (never the raster framebuffer it samples).
+
 ---
 
 ## Scope

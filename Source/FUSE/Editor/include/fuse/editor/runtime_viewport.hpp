@@ -6,6 +6,7 @@
 #include <fuse/handle_table.hpp>
 #include <fuse/io/asset.hpp>
 #include <fuse/project/cook_cache.hpp>
+#include <fuse/project/manifest.hpp>
 #include <fuse/types.hpp>
 
 #include <memory>
@@ -82,6 +83,9 @@ private:
 
 #if defined(FUSE_VULKAN_BACKEND)
     void* m_headlessGpuStub = nullptr;
+    /// Manifest of the loaded world; embed worlds attach once the hybrid renderer exists,
+    /// which can be after the world load on the same tick.
+    fuse::project::ProjectManifest m_loadedManifest{};
 #endif
 };
 

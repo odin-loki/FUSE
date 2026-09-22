@@ -83,6 +83,8 @@ public:
     void* presentRenderPass() const { return m_presentRenderPass; }
     void* framebufferForImage(u32 imageIndex) const;
     void* imageHandleForIndex(u32 imageIndex) const;
+    /// Tracked VkImageLayout (as u32) for image `imageIndex`; nullptr when out of range.
+    u32* imageLayoutForIndex(u32 imageIndex);
 
     /// Returns image index or UINT32_MAX when headless / not acquired.
     u32 acquireNextImage(void* imageAvailableSemaphore);
@@ -107,6 +109,7 @@ private:
     u32 m_graphicsQueueFamily = 0;
     void* m_presentRenderPass = nullptr;
     std::vector<void*> m_framebuffers;
+    std::vector<u32> m_imageLayouts; ///< Per-image current layout; reset to UNDEFINED on (re)create
     std::vector<SwapchainImageInfo> m_images;
 };
 

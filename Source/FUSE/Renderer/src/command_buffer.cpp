@@ -30,6 +30,80 @@ void bindRasterBindlessDescriptorSets(VkCommandBuffer commandBuffer, const VkFra
                             static_cast<VkPipelineLayout>(context.graphicsPipelineLayout), 0, 1,
                             &bindlessSet, 0, nullptr);
 }
+
+void layoutStageAccessMask(VkImageLayout layout, VkPipelineStageFlags& stage, VkAccessFlags& access) {
+    switch (layout) {
+    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+        stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        access = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        break;
+    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+        stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        break;
+    case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+        stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        access = VK_ACCESS_SHADER_READ_BIT;
+        break;
+    case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+        stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        access = VK_ACCESS_TRANSFER_READ_BIT;
+        break;
+    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+        stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        access = VK_ACCESS_TRANSFER_WRITE_BIT;
+        break;
+    case VK_IMAGE_LAYOUT_GENERAL:
+        stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+        access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        break;
+    default: // UNDEFINED / PRESENT_SRC: no prior access to make available
+        stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        access = 0;
+        break;
+    }
+}
+
+/// Transition `image` from its tracked layout (or `fallbackOld` when untracked) to `newLayout`,
+/// then advance the tracker. Emitted even when old == new so it still orders memory access.
+void transitionTrackedImage(VkCommandBuffer commandBuffer, void* image, u32* trackedLayout,
+                            VkImageLayout fallbackOld, VkImageLayout newLayout, VkImageAspectFlags aspect) {
+    const VkImageLayout oldLayout =
+        trackedLayout != nullptr ? static_cast<VkImageLayout>(*trackedLayout) : fallbackOld;
+
+    VkPipelineStageFlags srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    VkAccessFlags srcAccess = 0;
+    VkPipelineStageFlags dstStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    VkAccessFlags dstAccess = 0;
+    layoutStageAccessMask(oldLayout, srcStage, srcAccess);
+    if (newLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
+        layoutStageAccessMask(newLayout, dstStage, dstAccess);
+    }
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = static_cast<VkImage>(image);
+    barrier.subresourceRange.aspectMask = aspect;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = srcAccess;
+    barrier.dstAccessMask = dstAccess;
+    vkCmdPipelineBarrier(commandBuffer, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    if (trackedLayout != nullptr) {
+        *trackedLayout = static_cast<u32>(newLayout);
+    }
+}
+
+void setTrackedLayout(u32* trackedLayout, VkImageLayout layout) {
+    if (trackedLayout != nullptr) {
+        *trackedLayout = static_cast<u32>(layout);
+    }
+}
 #endif
 
 } // namespace
@@ -149,16 +223,23 @@ void CommandBufferRecorder::encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLa
     }
 
     const bool depthTransition = isDepthAttachmentLayout(from) || isDepthAttachmentLayout(to);
+    const bool presentTransition = from == RGImageLayout::PresentSrc || to == RGImageLayout::PresentSrc;
 
+    // Present layouts only apply to the acquired swapchain image; headless frames have none.
     void* barrierImage = nullptr;
-    if (depthTransition) {
-        barrierImage = m_encodeContext->depthImage != nullptr ? m_encodeContext->depthImage
-                                                              : m_encodeContext->barrierImage;
-    } else {
+    u32* trackedLayout = nullptr;
+    if (presentTransition) {
+        barrierImage = m_encodeContext->presentBarrierImage;
+        trackedLayout = m_encodeContext->presentImageLayout;
+    } else if (depthTransition) {
+        barrierImage = m_encodeContext->depthImage;
+        trackedLayout = m_encodeContext->depthImageLayout;
+    } else if (m_encodeContext->barrierImage != nullptr) {
         barrierImage = m_encodeContext->barrierImage;
-        if (barrierImage == nullptr && m_encodeContext->presentBarrierImage != nullptr) {
-            barrierImage = m_encodeContext->presentBarrierImage;
-        }
+        trackedLayout = m_encodeContext->barrierImageLayout;
+    } else {
+        barrierImage = m_encodeContext->presentBarrierImage;
+        trackedLayout = m_encodeContext->presentImageLayout;
     }
     if (barrierImage == nullptr) {
         return;
@@ -185,72 +266,14 @@ void CommandBufferRecorder::encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLa
         }
     };
 
-    auto layoutStageAccess = [](RGImageLayout layout, VkPipelineStageFlags& stage, VkAccessFlags& access) {
-        stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        access = 0;
-        switch (layout) {
-        case RGImageLayout::ColorAttachment:
-            stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-            access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-            break;
-        case RGImageLayout::DepthAttachment:
-            stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-            access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-            break;
-        case RGImageLayout::ShaderReadOnly:
-            stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-            access = VK_ACCESS_SHADER_READ_BIT;
-            break;
-        case RGImageLayout::TransferSrc:
-            stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-            access = VK_ACCESS_TRANSFER_READ_BIT;
-            break;
-        case RGImageLayout::TransferDst:
-            stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-            access = VK_ACCESS_TRANSFER_WRITE_BIT;
-            break;
-        case RGImageLayout::PresentSrc:
-            stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-            access = 0;
-            break;
-        case RGImageLayout::General:
-            stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-            access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-            break;
-        default:
-            break;
-        }
-    };
-
-    VkPipelineStageFlags srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    VkAccessFlags srcAccess = 0;
-    VkPipelineStageFlags dstStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    VkAccessFlags dstAccess = 0;
-    if (from != RGImageLayout::Undefined) {
-        layoutStageAccess(from, srcStage, srcAccess);
+    const VkImageLayout newLayout = toVkLayout(to);
+    if (newLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
+        return; // Cannot transition into UNDEFINED.
     }
-    if (to != RGImageLayout::Undefined) {
-        layoutStageAccess(to, dstStage, dstAccess);
-    }
-
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = toVkLayout(from);
-    barrier.newLayout = toVkLayout(to);
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = static_cast<VkImage>(barrierImage);
-    barrier.subresourceRange.aspectMask =
-        depthTransition ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
-    barrier.srcAccessMask = srcAccess;
-    barrier.dstAccessMask = dstAccess;
 
     auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
-    vkCmdPipelineBarrier(commandBuffer, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    transitionTrackedImage(commandBuffer, barrierImage, trackedLayout, toVkLayout(from), newLayout,
+                           depthTransition ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT);
     ++m_vulkanPipelineBarrierCount;
 #else
     (void)fromLayout;
@@ -365,10 +388,14 @@ void CommandBufferRecorder::encodePresentSwapchainPass() {
     renderPassInfo.framebuffer = static_cast<VkFramebuffer>(m_encodeContext->presentFramebuffer);
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = {m_encodeContext->presentWidth, m_encodeContext->presentHeight};
+    VkClearValue presentClear{};
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &presentClear;
 
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     encodeVulkanViewportAndScissor(m_encodeContext->presentWidth, m_encodeContext->presentHeight);
     vkCmdEndRenderPass(commandBuffer);
+    setTrackedLayout(m_encodeContext->presentImageLayout, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
     ++m_vulkanPresentRenderPassBeginCount;
 #else
     (void)0;
@@ -449,6 +476,11 @@ void CommandBufferRecorder::endVulkanRenderPass() {
     auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
     vkCmdEndRenderPass(commandBuffer);
     m_insideRenderPass = false;
+    // Raster render pass final layouts (RenderPass::create).
+    if (m_encodeContext != nullptr) {
+        setTrackedLayout(m_encodeContext->barrierImageLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        setTrackedLayout(m_encodeContext->depthImageLayout, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+    }
 #else
     (void)0;
 #endif
@@ -877,12 +909,32 @@ void CommandBufferRecorder::encodeCompositePass(float blend) {
 
     auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
 
+    // Composite samples raster color/depth and the CUDA interop image through the bindless heap,
+    // whose descriptors are written with SHADER_READ_ONLY_OPTIMAL.
+    const VkImageLayout sampled = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    if (m_encodeContext->barrierImage != nullptr) {
+        transitionTrackedImage(commandBuffer, m_encodeContext->barrierImage, m_encodeContext->barrierImageLayout,
+                               VK_IMAGE_LAYOUT_UNDEFINED, sampled, VK_IMAGE_ASPECT_COLOR_BIT);
+    }
+    if (m_encodeContext->depthImage != nullptr && m_encodeContext->depthTextureBindlessIndex != UINT32_MAX) {
+        transitionTrackedImage(commandBuffer, m_encodeContext->depthImage, m_encodeContext->depthImageLayout,
+                               VK_IMAGE_LAYOUT_UNDEFINED, sampled, VK_IMAGE_ASPECT_DEPTH_BIT);
+    }
+    if (m_encodeContext->cudaImage != nullptr && m_encodeContext->cudaImageLayout != nullptr &&
+        *m_encodeContext->cudaImageLayout != static_cast<u32>(sampled)) {
+        transitionTrackedImage(commandBuffer, m_encodeContext->cudaImage, m_encodeContext->cudaImageLayout,
+                               VK_IMAGE_LAYOUT_UNDEFINED, sampled, VK_IMAGE_ASPECT_COLOR_BIT);
+    }
+
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = static_cast<VkRenderPass>(m_encodeContext->compositeRenderPass);
     renderPassInfo.framebuffer = static_cast<VkFramebuffer>(m_encodeContext->compositeFramebuffer);
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = {m_encodeContext->compositeWidth, m_encodeContext->compositeHeight};
+    VkClearValue compositeClear{};
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &compositeClear;
 
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     encodeVulkanViewportAndScissor(m_encodeContext->compositeWidth, m_encodeContext->compositeHeight);
@@ -914,6 +966,9 @@ void CommandBufferRecorder::encodeCompositePass(float blend) {
     vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
+    if (m_encodeContext->compositeTargetsSwapchain) {
+        setTrackedLayout(m_encodeContext->presentImageLayout, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+    }
     ++m_vulkanCompositeDrawCount;
 #else
     (void)blend;

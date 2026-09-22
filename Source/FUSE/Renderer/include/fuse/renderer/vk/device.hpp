@@ -29,6 +29,14 @@ struct VulkanDeviceInfo {
     /// VMA placeholder — wired in a later B2.1 follow-up.
     void* vmaAllocator = nullptr;
     bool descriptorIndexing = false;
+    /// Per-descriptor-type UPDATE_AFTER_BIND support (bindless layout gates binding flags on these).
+    bool sampledImageUpdateAfterBind = false; ///< Also covers VK_DESCRIPTOR_TYPE_SAMPLER
+    bool storageImageUpdateAfterBind = false;
+    bool storageBufferUpdateAfterBind = false;
+    bool uniformBufferUpdateAfterBind = false;
+    bool sampledImageNonUniformIndexing = false;
+    /// True when VK_KHR_swapchain was enabled (requires VK_KHR_surface on the instance).
+    bool swapchainExtension = false;
     bool bufferDeviceAddress = false;
     bool timelineSemaphore = false;
     bool dynamicRendering = false;
@@ -60,6 +68,8 @@ public:
     void* nativePhysicalDevice() const;
     void* instanceHandle() const;
     void setVmaAllocator(void* allocator);
+    /// vkDeviceWaitIdle — call before destroying objects a submitted command buffer may still use.
+    void waitIdle() const;
 
     const VulkanQueues& queues() const { return m_info.queues; }
 

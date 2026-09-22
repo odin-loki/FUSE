@@ -38,12 +38,18 @@ bool createVulkanBindlessDescriptors(const VulkanDevice& device, void*& outPool,
         makeBinding(kBindlessBindingUniformBuffers, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, kBindlessScaffoldCapacity),
     };
 
+    // UPDATE_AFTER_BIND is only legal per descriptor type the device enabled (VUID-03005/03007...).
+    const VulkanDeviceInfo& features = device.info();
+    auto flagsFor = [](bool updateAfterBind) -> VkDescriptorBindingFlags {
+        return VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
+               (updateAfterBind ? VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT : 0u);
+    };
     std::array<VkDescriptorBindingFlags, 5> bindingFlags = {
-        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
-        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
-        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
-        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
-        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
+        flagsFor(features.storageImageUpdateAfterBind),
+        flagsFor(features.sampledImageUpdateAfterBind),
+        flagsFor(features.sampledImageUpdateAfterBind),
+        flagsFor(features.storageBufferUpdateAfterBind),
+        flagsFor(features.uniformBufferUpdateAfterBind),
     };
 
     VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo{};
@@ -305,6 +311,13 @@ void BindlessDescriptors::updateVulkanDescriptor(BindlessSlotHandle handle, cons
         return;
     }
 
+    if (clear) {
+        // Null writes need VK_EXT_robustness2::nullDescriptor. Bindings are PARTIALLY_BOUND, so a
+        // released slot may keep its stale descriptor as long as shaders stop indexing it.
+        ++m_descriptorClearCount;
+        return;
+    }
+
     auto vkDevice = static_cast<VkDevice>(m_device->nativeHandle());
     VkDescriptorSet set = static_cast<VkDescriptorSet>(m_set);
     VkWriteDescriptorSet write{};
@@ -334,9 +347,14 @@ void BindlessDescriptors::updateVulkanDescriptor(BindlessSlotHandle handle, cons
         break;
     }
     case BindlessHeapKind::Buffer: {
-        write.descriptorType =
-            slotIsUniformBuffer(handle.index) ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
-                                              : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        const bool uniform = slotIsUniformBuffer(handle.index);
+        write.descriptorType = uniform ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        const BufferUsage requiredUsage = uniform ? BufferUsage::Uniform : BufferUsage::Storage;
+        if (buffer != nullptr &&
+            (static_cast<u32>(buffer->desc.usage) & static_cast<u32>(requiredUsage)) == 0u) {
+            // CPU slot stays valid; the GPU descriptor would violate VUID-VkWriteDescriptorSet-00330/00331.
+            return;
+        }
         if (!clear && buffer != nullptr && bindlessNativeHandleReady(buffer->handle)) {
             bufferInfo.buffer = static_cast<VkBuffer>(buffer->handle);
             bufferInfo.offset = 0;
