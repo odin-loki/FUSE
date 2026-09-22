@@ -90,9 +90,15 @@ B3.5 SVO → B3.6 scene manager → B3.7 serialisation → B3.8 camera → B3.9 
 Scaffolding exists for most of these; each sub-phase starts by running its B3.9 gate rows
 against today's code and only then deepening (same pattern as §2).
 
+| Gate rows | Test | Status |
+|-----------|------|--------|
+| ECS: 1M entities + stale generations; archetype grouping; exact `each`; `each_parallel` == `each` over 100 randomised cases; migration preserves data | `fuse_b3_ecs_gates` | ✅ (plus the `migrate_entity` UAF fixed in §1) |
+| ECS: 100k Transform+Mesh+RigidBody > 500M components/s single-threaded | `fuse_b3_ecs_gates` | ◐ Column lookup hoisted out of the row loop: Release 60M → ~225–290M/s here. Components total 340 B/entity, so this runner is memory-bound (~15 GB/s); CI enforces a 100M floor, the 500M baseline is a §5 workstation measurement |
+| BVH, SVO, scene, camera rows | — | Next: `fuse_b3_bvh_gates` (SAH build time, ray/frustum vs brute force, refit), then SVO, then scene |
+
 ## 5. Hardware / manual gates (not provable in CI)
 
-RTX 3090 device selection, Nsight occupancy, 60 fps / < 8 ms at 1080p, Win32 external memory
+RTX 3090 device selection, Nsight occupancy, ECS 500M components/s, 60 fps / < 8 ms at 1080p, Win32 external memory
 handles, `cudaImportExternalMemory`, `compute-sanitizer`, RenderDoc captures, and on-screen WSI
 present. These need a developer machine with the target GPU; record results in
 [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) when run.

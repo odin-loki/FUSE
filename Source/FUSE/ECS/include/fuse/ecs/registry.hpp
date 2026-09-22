@@ -105,6 +105,13 @@ private:
         static_assert(std::is_trivially_destructible<T>::value, "components must be trivially destructible");
     }
 
+    /// Typed base pointer of T's column in a matching archetype (columns are SoA byte storage).
+    template <typename T>
+    static T* column_base_(Archetype& archetype) {
+        ComponentColumn* column = archetype.find_column(std::type_index(typeid(T)));
+        return column != nullptr ? reinterpret_cast<T*>(column->storage.data()) : nullptr;
+    }
+
     template <typename... WithTs, typename Fn>
     void each_query_impl_(const QueryFilter& filter, Fn&& fn);
 
@@ -287,10 +294,18 @@ void Registry::each_query_impl_(const QueryFilter& filter, Fn&& fn) {
             continue;
         }
 
-        for (usize row = 0; row < archetype.count(); ++row) {
-            EntityID id = archetype.entities[row];
-            fn(id, *static_cast<WithTs*>(archetype.find_column(std::type_index(typeid(WithTs)))->at(row))...);
+        const usize rowCount = archetype.count();
+        if (rowCount == 0) {
+            continue;
         }
+
+        // Resolve each column once per archetype; the row loop only indexes typed pointers.
+        const EntityID* ids = archetype.entities.data();
+        [&](auto*... columns) {
+            for (usize row = 0; row < rowCount; ++row) {
+                fn(ids[row], columns[row]...);
+            }
+        }(column_base_<WithTs>(archetype)...);
     }
 }
 
@@ -333,10 +348,11 @@ void Registry::each_query_parallel_impl_(const QueryFilter& filter, Fn&& fn, u32
             continue;
         }
 
-        jobs::parallel_for(0, static_cast<u32>(rowCount), batchSize, [&](u32 row) {
-            EntityID id = archetype.entities[row];
-            fn(id, *static_cast<WithTs*>(archetype.find_column(std::type_index(typeid(WithTs)))->at(row))...);
-        });
+        const EntityID* ids = archetype.entities.data();
+        [&](auto*... columns) {
+            jobs::parallel_for(0, static_cast<u32>(rowCount), batchSize,
+                               [&](u32 row) { fn(ids[row], columns[row]...); });
+        }(column_base_<WithTs>(archetype)...);
     }
 }
 
