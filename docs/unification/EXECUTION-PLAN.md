@@ -74,7 +74,7 @@ RenderDoc captures) are tracked in §5 and are **not** faked.
 | # | Gate (master plan wording, abbreviated) | Test to add | Notes |
 |---|------------------------------------------|-------------|-------|
 | 3.1 ✅ | Triangle on screen — white triangle, black background, correct winding, no validation errors (**Week 1 gate**) | `fuse_b2_triangle_readback` | Done: `RasterPath::readbackColor`; corners black, apex/base white, orientation asymmetry check, coverage 0.1250 (expected 0.125), pixel-identical second frame; `minimal.frag` is white |
-| 3.2 | Render graph compiles in < 1 ms CPU per frame | `fuse_b2_render_graph_budget` | Hybrid-frame graph (clear/sprites/composite/present), median of N compiles; Release-only threshold, Debug reports |
+| 3.2 ✅ | Render graph compiles in < 1 ms CPU per frame | `fuse_b2_render_graph_budget` | Done. Release median: hybrid frame 0.69 µs, worst-case 32-pass live chain (54 barriers) 9.8 µs. Debug enforces a 10 ms gross-regression bound (164 µs measured) |
 | 3.3 | Staging ring wraps — 256 MB in 1 MB chunks, no corruption | `fuse_b2_staging_wrap_256mb` | Pattern per chunk, readback verify; Lavapipe host memory is fine for 256 MB |
 | 3.4 | Async upload completes and signals fence — fence wait timeout test | extend `fuse_vulkan_resources` | Bounded `vkWaitForFences` timeout, assert signalled |
 | 3.5 | Zero per-frame heap allocations — frame memory from per-frame LinearAllocator | `fuse_b2_frame_alloc_budget` | Count global `operator new` across N steady-state `submitFrame` calls (reuse `new_ban` hooks from Track A) |

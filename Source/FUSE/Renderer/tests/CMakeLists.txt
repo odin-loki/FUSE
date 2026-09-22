@@ -89,6 +89,10 @@ add_executable(fuse_b2_triangle_readback test_b2_triangle_readback.cpp)
 target_link_libraries(fuse_b2_triangle_readback PRIVATE fuse_rhi)
 add_test(NAME fuse_b2_triangle_readback COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_b2_triangle_readback>")
 
+add_executable(fuse_b2_render_graph_budget test_b2_render_graph_budget.cpp)
+target_link_libraries(fuse_b2_render_graph_budget PRIVATE fuse_rhi)
+add_test(NAME fuse_b2_render_graph_budget COMMAND fuse_b2_render_graph_budget)
+
 add_executable(fuse_render_graph test_render_graph.cpp)
 target_link_libraries(fuse_render_graph PRIVATE fuse_rhi)
 add_test(NAME fuse_render_graph COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_render_graph>")
