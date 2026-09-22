@@ -8,6 +8,7 @@
 #include <fuse/renderer/vk/frame.hpp>
 #include <fuse/types.hpp>
 
+#include <span>
 #include <vector>
 
 namespace fuse::renderer {
@@ -172,12 +173,16 @@ public:
     u32 backbufferIndex() const { return m_backbufferIndex; }
 
 private:
+    /// Accesses live in the graph-wide pools below (ranges per pass) so steady-state frames reuse
+    /// capacity instead of allocating per pass (B2.11 zero per-frame heap allocations).
     struct PassNode {
         RGPassDesc desc{};
         u32 order = 0;
         bool culled = false;
-        std::vector<RGTextureAccess> textureAccesses;
-        std::vector<RGBufferAccess> bufferAccesses;
+        u32 textureAccessBegin = 0;
+        u32 textureAccessCount = 0;
+        u32 bufferAccessBegin = 0;
+        u32 bufferAccessCount = 0;
     };
 
     struct TextureState {
@@ -199,6 +204,8 @@ private:
 
     RGImageLayout layoutForAccess(RGResourceAccess access) const;
     RGResourceAccess accessForLayout(RGImageLayout layout) const;
+    std::span<const RGTextureAccess> textureAccessesOf(const PassNode& pass) const;
+    std::span<const RGBufferAccess> bufferAccessesOf(const PassNode& pass) const;
     TextureState& textureStateAt(u32 textureId);
     BufferState& bufferStateAt(u32 id);
     void planBarriersForPass(const PassNode& pass);
@@ -222,6 +229,15 @@ private:
     std::vector<RGPassDependencyEdge> m_dependencyEdges;
     std::vector<RGResourceLifetime> m_resourceLifetimes;
     std::vector<u32> m_compileOrder;
+    std::vector<RGTextureAccess> m_textureAccessPool;
+    std::vector<RGBufferAccess> m_bufferAccessPool;
+    // compile() scratch — cleared, never shrunk, so warm frames do not touch the heap.
+    std::vector<u8> m_scratchRequired;
+    std::vector<u32> m_scratchLastTexturePass;
+    std::vector<u32> m_scratchLastBufferPass;
+    std::vector<u32> m_scratchActivePasses;
+    std::vector<u32> m_scratchIndegree;
+    std::vector<u8> m_scratchEmitted;
 };
 
 void populateRenderGraphFromCommandList(RenderGraph& graph,
