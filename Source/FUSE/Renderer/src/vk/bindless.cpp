@@ -11,7 +11,7 @@ namespace fuse::renderer {
 namespace {
 
 #if defined(FUSE_VULKAN_BACKEND)
-constexpr u32 kBindlessScaffoldCapacity = 1024u;
+constexpr u32 kBindlessScaffoldCapacity = kBindlessGpuArrayCapacity;
 
 VkDescriptorSetLayoutBinding makeBinding(u32 binding, VkDescriptorType type, u32 count) {
     VkDescriptorSetLayoutBinding layoutBinding{};
@@ -483,11 +483,11 @@ void BindlessDescriptors::freeSlot(std::vector<Slot>& slots, std::vector<u32>& f
 }
 
 BindlessSlotHandle BindlessDescriptors::allocateTextureSlot(bool storage) {
-    return allocateSlot(m_textureSlots, m_freeTextureIndices, kMaxTextures, BindlessHeapKind::Texture, storage);
+    return allocateSlot(m_textureSlots, m_freeTextureIndices, gpuTextureCapacity(), BindlessHeapKind::Texture, storage);
 }
 
 BindlessSlotHandle BindlessDescriptors::allocateBufferSlot(bool uniform) {
-    return allocateSlot(m_bufferSlots, m_freeBufferIndices, kMaxBuffers, BindlessHeapKind::Buffer, uniform);
+    return allocateSlot(m_bufferSlots, m_freeBufferIndices, gpuBufferCapacity(), BindlessHeapKind::Buffer, uniform);
 }
 
 BindlessSlotHandle BindlessDescriptors::allocateSamplerSlot() {

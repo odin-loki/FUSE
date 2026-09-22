@@ -11,6 +11,10 @@ namespace fuse::renderer {
 static constexpr u32 kMaxTextures = 65536;
 static constexpr u32 kMaxBuffers = 65536;
 static constexpr u32 kMaxSamplers = 1024;
+/// Descriptor array length of each texture/buffer binding in the Vulkan set. The CPU heap may be
+/// larger (kMaxTextures/kMaxBuffers) but, once the Vulkan set exists, slots are capped here so a
+/// descriptor write can never land outside the array.
+static constexpr u32 kBindlessGpuArrayCapacity = 1024;
 
 /// Vulkan bindless set layout bindings (master plan B2.3).
 static constexpr u32 kBindlessBindingStorageImages = 0;
@@ -177,6 +181,9 @@ public:
     void* descriptorSetHandle() const { return m_set; }
     void* poolHandle() const { return m_pool; }
     bool vulkanDescriptorsReady() const { return m_pool != nullptr && m_layout != nullptr && m_set != nullptr; }
+    /// Usable texture / buffer slots: the GPU array length once Vulkan descriptors exist, else the CPU heap.
+    u32 gpuTextureCapacity() const { return vulkanDescriptorsReady() ? kBindlessGpuArrayCapacity : kMaxTextures; }
+    u32 gpuBufferCapacity() const { return vulkanDescriptorsReady() ? kBindlessGpuArrayCapacity : kMaxBuffers; }
 
     u32 descriptorUpdateCount() const { return m_descriptorUpdateCount; }
     u32 descriptorClearCount() const { return m_descriptorClearCount; }

@@ -105,6 +105,10 @@ add_executable(fuse_b2_composite_blend test_b2_composite_blend.cpp)
 target_link_libraries(fuse_b2_composite_blend PRIVATE fuse_rhi)
 add_test(NAME fuse_b2_composite_blend COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_b2_composite_blend>")
 
+add_executable(fuse_b2_bindless_churn test_b2_bindless_churn.cpp)
+target_link_libraries(fuse_b2_bindless_churn PRIVATE fuse_rhi)
+add_test(NAME fuse_b2_bindless_churn COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_b2_bindless_churn>")
+
 add_executable(fuse_render_graph test_render_graph.cpp)
 target_link_libraries(fuse_render_graph PRIVATE fuse_rhi)
 add_test(NAME fuse_render_graph COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_render_graph>")
