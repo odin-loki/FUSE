@@ -14,6 +14,10 @@ add_executable(fuse_scene_svo_tests
 target_link_libraries(fuse_scene_svo_tests PRIVATE fuse_scene fuse_core fuse_ecs)
 add_test(NAME fuse_scene_svo COMMAND fuse_scene_svo_tests)
 
+add_executable(fuse_b3_svo_gates test_b3_svo_gates.cpp)
+target_link_libraries(fuse_b3_svo_gates PRIVATE fuse_scene fuse_core fuse_ecs)
+add_test(NAME fuse_b3_svo_gates COMMAND fuse_b3_svo_gates)
+
 add_executable(fuse_scene_manager_tests
     test_scene_manager.cpp
 )

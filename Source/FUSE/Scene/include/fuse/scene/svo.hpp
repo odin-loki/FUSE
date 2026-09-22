@@ -24,7 +24,10 @@ struct SVODesc {
     bool storeSdf = true;
 };
 
-/// Sparse Voxel Octree — B3.5 scaffold (hash-backed leaves until pool allocator lands).
+/// Sparse Voxel Octree (B3.5). Voxels live in depth-`maxDepth` leaves reached by octant walks
+/// (O(depth) get/set). Each leaf stores its material and a signed distance at the voxel centre;
+/// `sdfQuery` trilinearly interpolates those samples (continuous across leaf boundaries) and
+/// `carve` applies CSG sphere subtraction. `rayCast` is an exact 3D-DDA over the voxel grid.
 class SVO {
 public:
     void init(const SVODesc& desc);
@@ -41,7 +44,7 @@ public:
     f32 sdfQuery(vec3 worldPos) const;
 
     [[nodiscard]] usize nodeCount() const { return m_nodes.size(); }
-    [[nodiscard]] usize voxelCount() const { return m_voxelKeys.size(); }
+    [[nodiscard]] usize voxelCount() const { return m_voxelCount; }
     [[nodiscard]] const SVODesc& desc() const { return m_desc; }
     [[nodiscard]] bool isInitialized() const { return m_initialized; }
 
@@ -50,13 +53,14 @@ private:
     [[nodiscard]] f32 leafSize() const;
     [[nodiscard]] vec3 voxelCenterWorld(ivec3 coord) const;
     [[nodiscard]] f32 sdfAtVoxel(ivec3 coord) const;
-    void updateSdfAt(ivec3 coord);
-    u32 ensureLeafNode(ivec3 coord, u8 depth);
+    [[nodiscard]] u32 findLeaf(ivec3 coord) const; ///< kNoNode when the voxel was never written
+    u32 ensureLeafNode(ivec3 coord);
+
+    static constexpr u32 kNoNode = 0xFFFFFFFFu;
 
     SVODesc m_desc{};
     std::vector<SVONode> m_nodes;
-    std::vector<u32> m_voxelKeys;
-    std::vector<u32> m_voxelMaterials;
+    usize m_voxelCount = 0;
     bool m_initialized = false;
 };
 
