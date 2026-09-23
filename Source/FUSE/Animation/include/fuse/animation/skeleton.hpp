@@ -22,6 +22,18 @@ struct Skeleton {
 
     s32 find_bone(const char* name) const;
     mat4 compute_world_transform(u32 bone_idx) const;
+
+    /// True when `bone_count` matches `bones.size()` and every parent index is -1 or refers to an
+    /// earlier bone (topological order, which also rules out cycles and self-parenting).
+    [[nodiscard]] bool has_valid_hierarchy() const;
+
+    /// Binary skeleton format ("FSKL", version 1, little-endian): u32 bone count, then per bone
+    /// name[64], s32 parent index, inverse bind mat4, local (bind) mat4.
+    [[nodiscard]] bool save(const char* path) const;
+
+    /// Loads a skeleton written by `save`. Rejects bad magic/version, truncated files, and invalid
+    /// hierarchies; leaves `*this` untouched on failure.
+    [[nodiscard]] bool load(const char* path);
 };
 
 struct Pose {

@@ -32,10 +32,6 @@ vec3 vec3_cross(const vec3& a, const vec3& b) {
     };
 }
 
-f32 vec3_dot(const vec3& a, const vec3& b) {
-    return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-
 f32 vec3_distance(const vec3& a, const vec3& b) {
     return vec3_length(vec3_sub(a, b));
 }
@@ -46,15 +42,6 @@ vec3 pick_fallback_bend_axis(const vec3& dir) {
         bendAxis = vec3_cross(dir, {0.f, 1.f, 0.f, 0.f});
     }
     return vec3_normalize(bendAxis);
-}
-
-void set_bone_translation(Pose& pose, u32 bone_idx, const vec3& position) {
-    if (bone_idx >= pose.bone_world_transforms.size()) {
-        return;
-    }
-    pose.bone_world_transforms[bone_idx].data[12] = position.x;
-    pose.bone_world_transforms[bone_idx].data[13] = position.y;
-    pose.bone_world_transforms[bone_idx].data[14] = position.z;
 }
 
 vec3 bone_translation(const Pose& pose, u32 bone_idx) {
@@ -71,18 +58,188 @@ vec3 bone_translation_soa(const PoseSoA& pose, u32 bone_idx) {
     return mat4_translation(pose.bone_world_transforms[bone_idx]);
 }
 
-void write_local_position(PoseSoA& pose, u32 bone_idx, const vec3& world_position, const Skeleton& skel) {
-    if (bone_idx >= pose.bone_count) {
-        return;
+vec3 vec3_add_scaled(const vec3& a, const vec3& dir, f32 scale) {
+    return {a.x + dir.x * scale, a.y + dir.y * scale, a.z + dir.z * scale, 0.f};
+}
+
+bool is_in_subtree(const Skeleton& skel, u32 bone, u32 subtree_root) {
+    s32 current = static_cast<s32>(bone);
+    while (current >= 0 && static_cast<u32>(current) < skel.bones.size()) {
+        if (static_cast<u32>(current) == subtree_root) {
+            return true;
+        }
+        current = skel.bones[static_cast<u32>(current)].parent_index;
+    }
+    return false;
+}
+
+/// Rigid rotation `rotation` about world-space `pivot`, as an affine matrix.
+mat4 rotation_about_pivot(const quat& rotation, const vec3& pivot) {
+    const vec3 rotatedPivot = quat_rotate(rotation, pivot);
+    return mat4_from_trs(vec3_sub(pivot, rotatedPivot), rotation, {1.f, 1.f, 1.f, 0.f});
+}
+
+/// Rotate each chain bone's subtree so the chain passes through `solved` (world matrices, AoS).
+void apply_chain_positions(Pose& pose,
+                           const Skeleton& skel,
+                           const std::vector<u32>& chain,
+                           const std::vector<vec3>& solved) {
+    for (size_t i = 0; i + 1 < chain.size(); ++i) {
+        const vec3 pivot = bone_translation(pose, chain[i]);
+        const vec3 child = bone_translation(pose, chain[i + 1]);
+        const quat delta = quat_from_to(vec3_sub(child, pivot), vec3_sub(solved[i + 1], pivot));
+        const mat4 xform = rotation_about_pivot(delta, pivot);
+        const u32 count = std::min(pose.bone_count, static_cast<u32>(skel.bones.size()));
+        for (u32 bone = 0; bone < count; ++bone) {
+            if (is_in_subtree(skel, bone, chain[i])) {
+                pose.bone_world_transforms[bone] = mat4_multiply(xform, pose.bone_world_transforms[bone]);
+            }
+        }
+    }
+}
+
+/// SoA variant: rewrites the chain bones' local TRS so the chain passes through `solved`.
+void apply_chain_positions(PoseSoA& pose,
+                           const Skeleton& skel,
+                           const std::vector<u32>& chain,
+                           const std::vector<vec3>& solved) {
+    pose.compute_world_transforms(skel);
+    for (size_t i = 0; i + 1 < chain.size(); ++i) {
+        const u32 bone = chain[i];
+        const vec3 pivot = bone_translation_soa(pose, bone);
+        const vec3 child = bone_translation_soa(pose, chain[i + 1]);
+        const quat delta = quat_from_to(vec3_sub(child, pivot), vec3_sub(solved[i + 1], pivot));
+        const mat4 newWorld = mat4_multiply(rotation_about_pivot(delta, pivot), pose.bone_world_transforms[bone]);
+
+        mat4 newLocal = newWorld;
+        const s32 parent = skel.bones[bone].parent_index;
+        if (parent >= 0 && static_cast<u32>(parent) < pose.bone_count) {
+            newLocal = mat4_multiply(mat4_inverse_affine(pose.bone_world_transforms[static_cast<u32>(parent)]),
+                                     newWorld);
+        }
+        decompose_trs(newLocal, pose.local_positions[bone], pose.local_rotations[bone], pose.local_scales[bone]);
+        pose.compute_world_transforms(skel);
+    }
+}
+
+/// Place the chain for a given `blend`: every segment direction d becomes normalize(d + (axis - d) * blend),
+/// so 0 keeps the current shape, 1 is straight along `axis`, and negative values bend each segment
+/// further away from `axis`. Returns the resulting root->end distance.
+f32 reshape_chain(const std::vector<vec3>& source,
+                  const std::vector<f32>& lengths,
+                  const vec3& axis,
+                  f32 blend,
+                  std::vector<vec3>& out) {
+    out[0] = source[0];
+    for (size_t i = 0; i + 1 < source.size(); ++i) {
+        const vec3 dir = vec3_normalize(vec3_sub(source[i + 1], source[i]));
+        const vec3 mixed = {
+            dir.x + (axis.x - dir.x) * blend,
+            dir.y + (axis.y - dir.y) * blend,
+            dir.z + (axis.z - dir.z) * blend,
+            0.f,
+        };
+        out[i + 1] = vec3_add_scaled(out[i], vec3_normalize(mixed), lengths[i]);
+    }
+    return vec3_distance(out[0], out.back());
+}
+
+/// Warm start: find a blend (bisection) whose reach equals the target distance, then swing the chain
+/// rigidly about the root onto the target. The result is a continuous deformation of the input
+/// pose (uniformly straightened or curled), so no joint flips sides. Returns false and leaves
+/// `points` untouched when no blend in [-kMaxCurl, 1] brackets the target distance (e.g. a
+/// perfectly straight chain has no bend to curl).
+bool reshape_chain_to_target(std::vector<vec3>& points, const std::vector<f32>& lengths, const vec3& target) {
+    constexpr f32 kMaxCurl = 16.f;
+    const vec3 root = points[0];
+    const f32 wanted = vec3_distance(root, target);
+    const f32 current = vec3_distance(root, points.back());
+    if (current < 1e-6f) {
+        return false;
+    }
+    const vec3 axis = vec3_normalize(vec3_sub(points.back(), root));
+    std::vector<vec3> scratch(points.size());
+
+    // reach(lo) <= wanted <= reach(hi) must hold for the bisection bracket.
+    f32 lo = 0.f;
+    f32 hi = 0.f;
+    if (wanted >= current) {
+        hi = 1.f;
+    } else {
+        lo = -kMaxCurl;
+        if (reshape_chain(points, lengths, axis, lo, scratch) > wanted) {
+            return false;
+        }
+    }
+    for (u32 step = 0; step < 32; ++step) {
+        const f32 mid = 0.5f * (lo + hi);
+        if (reshape_chain(points, lengths, axis, mid, scratch) < wanted) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    reshape_chain(points, lengths, axis, 0.5f * (lo + hi), scratch);
+
+    const quat swing = quat_from_to(vec3_sub(scratch.back(), root), vec3_sub(target, root));
+    for (size_t i = 0; i < points.size(); ++i) {
+        const vec3 local = quat_rotate(swing, vec3_sub(scratch[i], root));
+        points[i] = {root.x + local.x, root.y + local.y, root.z + local.z, 0.f};
+    }
+    return true;
+}
+
+/// Core FABRIK on world positions. Root stays pinned; returns passes run and writes the final error.
+u32 fabrik_solve_positions(std::vector<vec3>& points,
+                           const vec3& target,
+                           u32 max_iterations,
+                           f32 tolerance,
+                           bool reshape_warm_start,
+                           f32& out_error) {
+    const size_t n = points.size();
+    std::vector<f32> lengths(n - 1);
+    f32 totalLength = 0.f;
+    for (size_t i = 0; i + 1 < n; ++i) {
+        lengths[i] = vec3_distance(points[i], points[i + 1]);
+        totalLength += lengths[i];
     }
 
-    const s32 parent = skel.bones[bone_idx].parent_index;
-    if (parent >= 0 && static_cast<u32>(parent) < pose.bone_count) {
-        const vec3 parentWorld = bone_translation_soa(pose, static_cast<u32>(parent));
-        pose.local_positions[bone_idx] = vec3_sub(world_position, parentWorld);
+    const vec3 root = points[0];
+    const f32 targetDistance = vec3_distance(root, target);
+    u32 iterations = 0;
+    if (targetDistance >= totalLength) {
+        // Unreachable: the closest configuration is the chain fully extended toward the target.
+        for (size_t i = 0; i + 1 < n; ++i) {
+            const vec3 dir = vec3_normalize(vec3_sub(target, points[i]));
+            points[i + 1] = vec3_add_scaled(points[i], dir, lengths[i]);
+        }
+        iterations = 1;
     } else {
-        pose.local_positions[bone_idx] = world_position;
+        // FABRIK converges only linearly, slowest near full extension; the reshape warm start is exact
+        // whenever it can bracket the target distance, leaving the passes to polish float error or to
+        // do the real work when it cannot (e.g. deep folds of a nearly straight chain).
+        if (reshape_warm_start && vec3_distance(points[n - 1], target) > tolerance) {
+            (void)reshape_chain_to_target(points, lengths, target);
+        }
+        while (iterations < max_iterations && vec3_distance(points[n - 1], target) > tolerance) {
+            // Backward pass: pin the end effector to the target, walk toward the root.
+            points[n - 1] = target;
+            for (size_t i = n - 1; i-- > 0;) {
+                const vec3 dir = vec3_normalize(vec3_sub(points[i], points[i + 1]));
+                points[i] = vec3_add_scaled(points[i + 1], dir, lengths[i]);
+            }
+            // Forward pass: re-pin the root, walk toward the end effector.
+            points[0] = root;
+            for (size_t i = 0; i + 1 < n; ++i) {
+                const vec3 dir = vec3_normalize(vec3_sub(points[i + 1], points[i]));
+                points[i + 1] = vec3_add_scaled(points[i], dir, lengths[i]);
+            }
+            ++iterations;
+        }
     }
+
+    out_error = vec3_distance(points[n - 1], target);
+    return iterations;
 }
 
 } // namespace
@@ -338,6 +495,8 @@ bool FABRIKChain::can_solve(const Pose& pose, const Skeleton& skel) const {
 }
 
 bool FABRIKChain::solve(Pose& pose, const Skeleton& skel) {
+    last_iterations = 0;
+    last_error = 0.f;
     if (!has_valid_chain(skel)) {
         return false;
     }
@@ -346,30 +505,40 @@ bool FABRIKChain::solve(Pose& pose, const Skeleton& skel) {
     if (!can_solve(pose, skel)) {
         return false;
     }
-    const u32 endBone = bone_indices.back();
 
-    for (u32 iteration = 0; iteration < max_iterations; ++iteration) {
-        set_bone_translation(pose, endBone, target);
-        const f32 error = vec3_distance(bone_translation(pose, endBone), target);
-        if (error <= tolerance) {
-            break;
-        }
+    std::vector<vec3> points(bone_indices.size());
+    for (size_t i = 0; i < bone_indices.size(); ++i) {
+        points[i] = bone_translation(pose, bone_indices[i]);
+    }
+    last_iterations = fabrik_solve_positions(points, target, max_iterations, tolerance, reshape_warm_start, last_error);
+    apply_chain_positions(pose, skel, bone_indices, points);
+    last_error = vec3_distance(bone_translation(pose, bone_indices.back()), target);
+    return true;
+}
 
-        for (auto it = bone_indices.rbegin() + 1; it != bone_indices.rend(); ++it) {
-            const vec3 child = bone_translation(pose, *(it - 1));
-            vec3 parent = bone_translation(pose, *it);
-            const f32 dist = vec3_distance(parent, child);
-            if (dist < 1e-6f) {
-                continue;
-            }
-            const f32 t = 0.5f;
-            parent.x = child.x + (parent.x - child.x) * t;
-            parent.y = child.y + (parent.y - child.y) * t;
-            parent.z = child.z + (parent.z - child.z) * t;
-            set_bone_translation(pose, *it, parent);
-        }
+bool FABRIKChain::solve(PoseSoA& pose, const Skeleton& skel) {
+    last_iterations = 0;
+    last_error = 0.f;
+    if (!has_valid_chain(skel)) {
+        return false;
     }
 
+    ensure_pose_soa_bind_fallback(pose, skel);
+    if (!has_valid_pose(pose)) {
+        return false;
+    }
+    pose.compute_world_transforms(skel);
+
+    std::vector<vec3> points(bone_indices.size());
+    for (size_t i = 0; i < bone_indices.size(); ++i) {
+        points[i] = bone_translation_soa(pose, bone_indices[i]);
+        if (i > 0 && vec3_distance(points[i - 1], points[i]) < 1e-6f) {
+            return false;
+        }
+    }
+    last_iterations = fabrik_solve_positions(points, target, max_iterations, tolerance, reshape_warm_start, last_error);
+    apply_chain_positions(pose, skel, bone_indices, points);
+    last_error = vec3_distance(bone_translation_soa(pose, bone_indices.back()), target);
     return true;
 }
 
@@ -469,8 +638,7 @@ bool TwoBoneIK::solve(Pose& pose, const Skeleton& skel) {
         return false;
     }
 
-    set_bone_translation(pose, mid_bone, solvedMid);
-    set_bone_translation(pose, end_bone, solvedEnd);
+    apply_chain_positions(pose, skel, {root_bone, mid_bone, end_bone}, {root, solvedMid, solvedEnd});
     return true;
 }
 
@@ -494,10 +662,7 @@ bool TwoBoneIK::solve(PoseSoA& pose, const Skeleton& skel) {
         return false;
     }
 
-    write_local_position(pose, mid_bone, solvedMid, skel);
-    pose.compute_world_transforms(skel);
-    write_local_position(pose, end_bone, solvedEnd, skel);
-    pose.compute_world_transforms(skel);
+    apply_chain_positions(pose, skel, {root_bone, mid_bone, end_bone}, {root, solvedMid, solvedEnd});
     return true;
 }
 

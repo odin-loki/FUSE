@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <memory>
 
 namespace fuse::animation {
 
@@ -31,6 +33,117 @@ mat4 Skeleton::compute_world_transform(u32 bone_idx) const {
         parent = bones[static_cast<u32>(parent)].parent_index;
     }
     return world;
+}
+
+namespace {
+
+constexpr char kSkeletonMagic[4] = {'F', 'S', 'K', 'L'};
+constexpr u32 kSkeletonVersion = 1;
+constexpr u32 kMaxSerializedBones = 65536;
+
+struct FileCloser {
+    void operator()(std::FILE* file) const {
+        if (file != nullptr) {
+            std::fclose(file);
+        }
+    }
+};
+
+template <typename T>
+bool write_pod(std::FILE* file, const T& value) {
+    return std::fwrite(&value, sizeof(T), 1, file) == 1;
+}
+
+template <typename T>
+bool read_pod(std::FILE* file, T& value) {
+    return std::fread(&value, sizeof(T), 1, file) == 1;
+}
+
+bool write_mat4(std::FILE* file, const mat4& m) {
+    return std::fwrite(m.data.data(), sizeof(f32), 16, file) == 16;
+}
+
+bool read_mat4(std::FILE* file, mat4& m) {
+    return std::fread(m.data.data(), sizeof(f32), 16, file) == 16;
+}
+
+} // namespace
+
+bool Skeleton::has_valid_hierarchy() const {
+    if (bone_count != bones.size()) {
+        return false;
+    }
+    for (u32 i = 0; i < bones.size(); ++i) {
+        const s32 parent = bones[i].parent_index;
+        if (parent < -1 || parent >= static_cast<s32>(i)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Skeleton::save(const char* path) const {
+    if (path == nullptr || path[0] == '\0' || !has_valid_hierarchy()) {
+        return false;
+    }
+
+    std::unique_ptr<std::FILE, FileCloser> file(std::fopen(path, "wb"));
+    if (!file) {
+        return false;
+    }
+
+    bool ok = std::fwrite(kSkeletonMagic, 1, sizeof(kSkeletonMagic), file.get()) == sizeof(kSkeletonMagic);
+    ok = ok && write_pod(file.get(), kSkeletonVersion);
+    ok = ok && write_pod(file.get(), static_cast<u32>(bones.size()));
+    for (const Bone& bone : bones) {
+        if (!ok) {
+            break;
+        }
+        ok = std::fwrite(bone.name, 1, sizeof(bone.name), file.get()) == sizeof(bone.name);
+        ok = ok && write_pod(file.get(), bone.parent_index);
+        ok = ok && write_mat4(file.get(), bone.inverse_bind);
+        ok = ok && write_mat4(file.get(), bone.local_transform);
+    }
+    return ok && std::fflush(file.get()) == 0;
+}
+
+bool Skeleton::load(const char* path) {
+    if (path == nullptr || path[0] == '\0') {
+        return false;
+    }
+
+    std::unique_ptr<std::FILE, FileCloser> file(std::fopen(path, "rb"));
+    if (!file) {
+        return false;
+    }
+
+    char magic[4] = {};
+    u32 version = 0;
+    u32 count = 0;
+    if (std::fread(magic, 1, sizeof(magic), file.get()) != sizeof(magic) ||
+        std::memcmp(magic, kSkeletonMagic, sizeof(magic)) != 0 || !read_pod(file.get(), version) ||
+        version != kSkeletonVersion || !read_pod(file.get(), count) || count > kMaxSerializedBones) {
+        return false;
+    }
+
+    Skeleton loaded;
+    loaded.bones.resize(count);
+    loaded.bone_count = count;
+    for (Bone& bone : loaded.bones) {
+        if (std::fread(bone.name, 1, sizeof(bone.name), file.get()) != sizeof(bone.name) ||
+            !read_pod(file.get(), bone.parent_index) || !read_mat4(file.get(), bone.inverse_bind) ||
+            !read_mat4(file.get(), bone.local_transform)) {
+            return false;
+        }
+        bone.name[sizeof(bone.name) - 1] = '\0';
+    }
+
+    if (!loaded.has_valid_hierarchy()) {
+        return false;
+    }
+
+    *this = std::move(loaded);
+    return true;
 }
 
 Pose Pose::make_bind_pose(const Skeleton& skel) {

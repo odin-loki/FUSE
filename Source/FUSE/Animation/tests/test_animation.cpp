@@ -355,19 +355,19 @@ void testStateMachineTransition() {
 }
 
 void testFabrikConverges() {
-    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    const fuse::animation::Skeleton skel = makeThreeBoneSkeleton();
     fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
 
     fuse::animation::FABRIKChain chain;
-    chain.bone_indices = {0, 1};
-    chain.target = {0.5f, 2.f, 0.f, 0.f};
+    chain.bone_indices = {0, 1, 2};
+    chain.target = {0.5f, 1.5f, 0.f, 0.f};
     chain.max_iterations = 8;
     expectTrue(chain.solve(pose, skel), "fabrik solve succeeds for valid two-bone chain");
 
     const fuse::animation::vec3 end = {
-        pose.bone_world_transforms[1].data[12],
-        pose.bone_world_transforms[1].data[13],
-        pose.bone_world_transforms[1].data[14],
+        pose.bone_world_transforms[2].data[12],
+        pose.bone_world_transforms[2].data[13],
+        pose.bone_world_transforms[2].data[14],
         0.f,
     };
     const fuse::f32 dx = end.x - chain.target.x;
@@ -772,7 +772,10 @@ void testTwoBoneIKEmptySkeleton() {
 void testTwoBoneIKInPlace() {
     const fuse::animation::Skeleton skel = makeLimbSkeleton();
     fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
-    pose.bone_world_transforms[0].data[12] = 3.f;
+    // Offset the whole limb (a consistent pose) so the solve starts from a non-origin root.
+    for (auto& world : pose.bone_world_transforms) {
+        world.data[12] += 3.f;
+    }
 
     fuse::animation::TwoBoneIK ik;
     ik.root_bone = 0;
