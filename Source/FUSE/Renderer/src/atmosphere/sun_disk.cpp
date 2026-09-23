@@ -1,5 +1,6 @@
 #include <fuse/renderer/atmosphere/sun_disk.hpp>
 
+#include <algorithm>
 #include <cmath>
 
 namespace fuse::renderer {
@@ -8,11 +9,6 @@ namespace {
 constexpr f32 kPi = 3.14159265358979323846f;
 constexpr f32 kDegreesToRadians = kPi / 180.f;
 
-f32 smoothstep(f32 edge0, f32 edge1, f32 x) {
-    const f32 t = std::max(0.f, std::min(1.f, (x - edge0) / std::max(1e-8f, edge1 - edge0)));
-    return t * t * (3.f - 2.f * t);
-}
-
 } // namespace
 
 f32 sun_angular_radius_rad() {
@@ -20,21 +16,39 @@ f32 sun_angular_radius_rad() {
 }
 
 f32 sun_disk_angular_separation_rad(const math::Vec3& view_dir, const math::Vec3& sun_dir) {
-    const f32 cos_theta = std::max(-1.f, std::min(1.f, view_dir.normalized().dot(sun_dir.normalized())));
-    return std::acos(cos_theta);
+    // atan2(|a x b|, a . b) stays accurate for the sub-degree separations the disk edge needs;
+    // acos(dot) loses most of its precision there in f32.
+    const math::Vec3 a = view_dir.normalized();
+    const math::Vec3 b = sun_dir.normalized();
+    const f32 sin_theta = math::cross(a, b).length();
+    const f32 cos_theta = a.dot(b);
+    return std::atan2(sin_theta, cos_theta);
 }
 
 bool is_inside_sun_disk(f32 angular_separation_rad, f32 angular_radius_rad) {
-    return angular_separation_rad <= angular_radius_rad;
+    return angular_separation_rad < angular_radius_rad;
 }
 
 f32 sun_disk_radiance_factor(f32 angular_separation_rad, f32 angular_radius_rad) {
-    if (angular_separation_rad >= angular_radius_rad) {
+    if (angular_radius_rad <= 0.f || angular_separation_rad >= angular_radius_rad) {
         return 0.f;
     }
 
-    const f32 t = 1.f - (angular_separation_rad / std::max(1e-8f, angular_radius_rad));
-    return smoothstep(0.f, 1.f, t);
+    const f32 rho = std::max(0.f, angular_separation_rad) / angular_radius_rad;
+    const f32 mu = std::sqrt(std::max(0.f, 1.f - rho * rho));
+    return 1.f - kSunLimbDarkeningU * (1.f - mu);
+}
+
+f32 sun_disk_weighted_solid_angle(f32 angular_radius_rad) {
+    return kPi * angular_radius_rad * angular_radius_rad * (1.f - kSunLimbDarkeningU / 3.f);
+}
+
+f32 sun_disk_radiance_per_irradiance(f32 angular_separation_rad, f32 angular_radius_rad) {
+    const f32 weight = sun_disk_weighted_solid_angle(angular_radius_rad);
+    if (weight <= 0.f) {
+        return 0.f;
+    }
+    return sun_disk_radiance_factor(angular_separation_rad, angular_radius_rad) / weight;
 }
 
 math::Vec3 composite_sun_disk(const math::Vec3& sky_radiance, const math::Vec3& view_dir,

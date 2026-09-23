@@ -1385,6 +1385,87 @@ f32 sample_volumetric_fog_density(const VolumetricFogParams& params, const math:
     return params.density * height_factor;
 }
 
+f32 march_volumetric_fog_optical_depth(const VolumetricFogParams& params, const math::Vec3& ray_origin,
+                                       const math::Vec3& ray_dir, f32 distance) {
+    if (params.march_steps == 0u || distance <= 0.f) {
+        return 0.f;
+    }
+    const math::Vec3 dir = ray_dir.normalized();
+    const f32 dt = distance / static_cast<f32>(params.march_steps);
+    f32 optical_depth = 0.f;
+    for (u32 i = 0; i < params.march_steps; ++i) {
+        const f32 t = dt * (static_cast<f32>(i) + 0.5f);
+        optical_depth += sample_volumetric_fog_density(params, ray_origin + dir * t);
+    }
+    return optical_depth * dt;
+}
+
+f32 analytic_volumetric_fog_optical_depth(const VolumetricFogParams& params, const math::Vec3& ray_origin,
+                                          const math::Vec3& ray_dir, f32 distance) {
+    if (distance <= 0.f) {
+        return 0.f;
+    }
+    const math::Vec3 dir = ray_dir.normalized();
+    const f64 dy = static_cast<f64>(dir.y);
+    const f64 h0 = static_cast<f64>(ray_origin.y) - static_cast<f64>(params.base_height);
+    const f64 length = static_cast<f64>(distance);
+    const f64 k = static_cast<f64>(params.height_falloff);
+
+    // Split [0, length] at the base-height crossing; below base the density is constant.
+    f64 below = 0.0;
+    f64 above_start = 0.0;
+    f64 above_end = 0.0;
+    const f64 h1 = h0 + dy * length;
+    if (h0 <= 0.0 && h1 <= 0.0) {
+        below = length;
+    } else if (h0 >= 0.0 && h1 >= 0.0) {
+        above_start = 0.0;
+        above_end = length;
+    } else {
+        const f64 t_cross = -h0 / dy;
+        if (h0 < 0.0) {
+            below = t_cross;
+            above_start = t_cross;
+            above_end = length;
+        } else {
+            below = length - t_cross;
+            above_start = 0.0;
+            above_end = t_cross;
+        }
+    }
+
+    f64 above = 0.0;
+    const f64 above_length = above_end - above_start;
+    if (above_length > 0.0) {
+        const f64 h_start = std::max(0.0, h0 + dy * above_start);
+        if (k <= 0.0) {
+            above = above_length;
+        } else {
+            const f64 a = k * dy;
+            const f64 x = a * above_length;
+            // integral_0^L exp(-a t) dt = L * (-expm1(-x) / x), with the x -> 0 limit L.
+            const f64 shape = (std::fabs(x) < 1e-12) ? 1.0 : -std::expm1(-x) / x;
+            above = std::exp(-k * h_start) * above_length * shape;
+        }
+    }
+    return static_cast<f32>(static_cast<f64>(params.density) * (below + above));
+}
+
+f32 march_volumetric_fog_transmittance(const VolumetricFogParams& params, const math::Vec3& ray_origin,
+                                       const math::Vec3& ray_dir, f32 distance) {
+    if (params.march_steps == 0u || distance <= 0.f) {
+        return 1.f;
+    }
+    const math::Vec3 dir = ray_dir.normalized();
+    const f32 dt = distance / static_cast<f32>(params.march_steps);
+    f32 optical_depth = 0.f;
+    for (u32 i = 0; i < params.march_steps; ++i) {
+        const math::Vec3 segment_origin = ray_origin + dir * (dt * static_cast<f32>(i));
+        optical_depth += analytic_volumetric_fog_optical_depth(params, segment_origin, dir, dt);
+    }
+    return std::exp(-optical_depth);
+}
+
 bool record_volumetric_fog_pass(const VolumetricFogParams& params, VolumetricFogPassStats& stats) {
     if (params.march_steps == 0u || params.density <= 0.f) {
         stats.ready = false;

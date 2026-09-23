@@ -1,4 +1,5 @@
 #include <fuse/renderer/atmosphere/transmittance_lut.hpp>
+#include <fuse/renderer/atmosphere/sky_scatter.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -6,19 +7,11 @@
 namespace fuse::renderer {
 namespace {
 
-constexpr f32 kMinCosZenith = 1e-4f;
+/// Log-linear segments per transmittance ray (LUT build and CPU reference).
+constexpr u32 kTransmittanceSteps = 128u;
 
 f32 clampCosZenith(f32 cos_zenith) {
     return std::max(-1.f, std::min(1.f, cos_zenith));
-}
-
-f32 extinctionAtAltitude(f32 altitude_m, const AtmosphereParams& params) {
-    const f32 height = std::max(0.f, altitude_m - params.earth_radius);
-    const f32 rayleigh_density = std::exp(-height / params.rayleigh_scale_h);
-    const f32 mie_density = std::exp(-height / params.mie_scale_h);
-    const f32 rayleigh_ext =
-        params.rayleigh_coeff.x + params.rayleigh_coeff.y + params.rayleigh_coeff.z;
-    return rayleigh_ext * rayleigh_density + params.mie_coeff * mie_density;
 }
 
 } // namespace
@@ -79,20 +72,9 @@ f32 transmittance_lut_cos_zenith_for_bin(u32 cos_bin, const TransmittanceLutDesc
     return cos_t * 2.f - 1.f;
 }
 
-math::Vec3 compute_transmittance(f32 altitude_m, f32 cos_zenith, const AtmosphereParams& params) {
-    const f32 cos_clamped = std::max(kMinCosZenith, std::fabs(clampCosZenith(cos_zenith)));
-    const f32 path_length = (params.atmo_radius - std::max(params.earth_radius, altitude_m)) / cos_clamped;
-    const f32 extinction = extinctionAtAltitude(altitude_m, params);
-    const f32 optical_depth = extinction * path_length;
-
-    const f32 transmittance = std::exp(-optical_depth);
-    const f32 rayleigh_weight = params.rayleigh_coeff.z /
-                                std::max(1e-8f, params.rayleigh_coeff.x + params.rayleigh_coeff.y +
-                                                     params.rayleigh_coeff.z);
-    const f32 mie_weight = params.mie_coeff / std::max(1e-8f, extinction);
-
-    return math::Vec3{transmittance * rayleigh_weight, transmittance,
-                        transmittance * (1.f - 0.5f * mie_weight)};
+math::Vec3 compute_transmittance(f32 radius_m, f32 cos_zenith, const AtmosphereParams& params) {
+    const f32 radius = std::max(params.earth_radius, std::min(params.atmo_radius, radius_m));
+    return atmosphere_transmittance_to_top(radius, clampCosZenith(cos_zenith), kTransmittanceSteps, params);
 }
 
 bool TransmittanceLut::build(const TransmittanceLutDesc& desc) {
