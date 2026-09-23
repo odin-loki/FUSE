@@ -154,80 +154,108 @@ u32 ContactBufferSoA::compact() {
     return activeCount;
 }
 
+void ContactBufferSoA::moveSlot(u32 dst, u32 src) {
+    contactPoints[dst] = contactPoints[src];
+    contactNormals[dst] = contactNormals[src];
+    penetrationDepths[dst] = penetrationDepths[src];
+    minSeparations[dst] = minSeparations[src];
+    bodyA[dst] = bodyA[src];
+    bodyB[dst] = bodyB[src];
+    validFlags[dst] = validFlags[src];
+    pointCounts[dst] = pointCounts[src];
+    warmNormalImpulses[dst] = warmNormalImpulses[src];
+    warmTangentImpulses[dst] = warmTangentImpulses[src];
+    tangent1[dst] = tangent1[src];
+    tangent2[dst] = tangent2[src];
+    const u32 readBase = pointSlotBase(src);
+    const u32 writeBase = pointSlotBase(dst);
+    for (u32 pointIndex = 0u; pointIndex < kMaxContactPointsPerManifold; ++pointIndex) {
+        pointSlots[writeBase + pointIndex] = pointSlots[readBase + pointIndex];
+        pointPenetrations[writeBase + pointIndex] = pointPenetrations[readBase + pointIndex];
+    }
+}
+
 u32 ContactBufferSoA::applyMaxCapacityClamp() {
     if (maxCapacity == 0u || activeCount <= maxCapacity) {
         return activeCount;
     }
 
     if (activeCount > 1u) {
-        std::vector<u32> order(activeCount);
+        // Deepest contacts first. The permutation is applied in place (cycle-following with one
+        // row held in locals), so every SoA array keeps its original size (>= pairSlotCount) and
+        // the tail loop below stays in bounds. Same std::sort over the same input as before, so
+        // the resulting order (including ties) is unchanged.
+        std::vector<u32>& order = m_clampOrder;
+        if (order.capacity() < activeCount) {
+            order.reserve(static_cast<usize>(activeCount) + activeCount / 2u);
+        }
+        order.resize(activeCount);
         for (u32 i = 0u; i < activeCount; ++i) {
             order[i] = i;
         }
-
         std::sort(order.begin(), order.end(), [&](u32 lhs, u32 rhs) {
             return penetrationDepths[lhs] > penetrationDepths[rhs];
         });
 
-        std::vector<vec3> sortedContactPoints(activeCount);
-        std::vector<vec3> sortedContactNormals(activeCount);
-        std::vector<f32> sortedPenetrationDepths(activeCount);
-        std::vector<f32> sortedMinSeparations(activeCount);
-        std::vector<u32> sortedBodyA(activeCount);
-        std::vector<u32> sortedBodyB(activeCount);
-        std::vector<u8> sortedValidFlags(activeCount);
-        std::vector<u8> sortedPointCounts(activeCount);
-        std::vector<f32> sortedWarmNormalImpulses(activeCount);
-        std::vector<vec2> sortedWarmTangentImpulses(activeCount);
-        std::vector<vec3> sortedTangent1(activeCount);
-        std::vector<vec3> sortedTangent2(activeCount);
-        std::vector<vec3> sortedPointSlots(activeCount * kMaxContactPointsPerManifold);
-        std::vector<f32> sortedPointPenetrations(activeCount * kMaxContactPointsPerManifold);
-
-        for (u32 i = 0u; i < activeCount; ++i) {
-            const u32 src = order[i];
-            sortedContactPoints[i] = contactPoints[src];
-            sortedContactNormals[i] = contactNormals[src];
-            sortedPenetrationDepths[i] = penetrationDepths[src];
-            sortedMinSeparations[i] = minSeparations[src];
-            sortedBodyA[i] = bodyA[src];
-            sortedBodyB[i] = bodyB[src];
-            sortedValidFlags[i] = validFlags[src];
-            sortedPointCounts[i] = pointCounts[src];
-            sortedWarmNormalImpulses[i] = warmNormalImpulses[src];
-            sortedWarmTangentImpulses[i] = warmTangentImpulses[src];
-            sortedTangent1[i] = tangent1[src];
-            sortedTangent2[i] = tangent2[src];
-
-            const u32 readBase = pointSlotBase(src);
-            const u32 writeBase = i * kMaxContactPointsPerManifold;
+        // Slot i must receive old slot order[i]. Follow each cycle holding its first row in locals.
+        for (u32 start = 0u; start < activeCount; ++start) {
+            if (order[start] == start) {
+                continue;
+            }
+            const vec3 tmpContactPoint = contactPoints[start];
+            const vec3 tmpContactNormal = contactNormals[start];
+            const f32 tmpPenetrationDepth = penetrationDepths[start];
+            const f32 tmpMinSeparation = minSeparations[start];
+            const u32 tmpBodyA = bodyA[start];
+            const u32 tmpBodyB = bodyB[start];
+            const u8 tmpValidFlag = validFlags[start];
+            const u8 tmpPointCount = pointCounts[start];
+            const f32 tmpWarmNormalImpulse = warmNormalImpulses[start];
+            const vec2 tmpWarmTangentImpulse = warmTangentImpulses[start];
+            const vec3 tmpTangent1 = tangent1[start];
+            const vec3 tmpTangent2 = tangent2[start];
+            vec3 tmpPointSlots[kMaxContactPointsPerManifold];
+            f32 tmpPointPenetrations[kMaxContactPointsPerManifold];
             for (u32 pointIndex = 0u; pointIndex < kMaxContactPointsPerManifold; ++pointIndex) {
-                sortedPointSlots[writeBase + pointIndex] = pointSlots[readBase + pointIndex];
-                sortedPointPenetrations[writeBase + pointIndex] = pointPenetrations[readBase + pointIndex];
+                tmpPointSlots[pointIndex] = pointSlots[pointSlotBase(start) + pointIndex];
+                tmpPointPenetrations[pointIndex] = pointPenetrations[pointSlotBase(start) + pointIndex];
+            }
+
+            u32 dst = start;
+            while (true) {
+                const u32 src = order[dst];
+                order[dst] = dst; // mark placed
+                if (src == start) {
+                    contactPoints[dst] = tmpContactPoint;
+                    contactNormals[dst] = tmpContactNormal;
+                    penetrationDepths[dst] = tmpPenetrationDepth;
+                    minSeparations[dst] = tmpMinSeparation;
+                    bodyA[dst] = tmpBodyA;
+                    bodyB[dst] = tmpBodyB;
+                    validFlags[dst] = tmpValidFlag;
+                    pointCounts[dst] = tmpPointCount;
+                    warmNormalImpulses[dst] = tmpWarmNormalImpulse;
+                    warmTangentImpulses[dst] = tmpWarmTangentImpulse;
+                    tangent1[dst] = tmpTangent1;
+                    tangent2[dst] = tmpTangent2;
+                    for (u32 pointIndex = 0u; pointIndex < kMaxContactPointsPerManifold; ++pointIndex) {
+                        pointSlots[pointSlotBase(dst) + pointIndex] = tmpPointSlots[pointIndex];
+                        pointPenetrations[pointSlotBase(dst) + pointIndex] = tmpPointPenetrations[pointIndex];
+                    }
+                    break;
+                }
+                moveSlot(dst, src);
+                dst = src;
             }
         }
-
-        contactPoints.swap(sortedContactPoints);
-        contactNormals.swap(sortedContactNormals);
-        penetrationDepths.swap(sortedPenetrationDepths);
-        minSeparations.swap(sortedMinSeparations);
-        bodyA.swap(sortedBodyA);
-        bodyB.swap(sortedBodyB);
-        validFlags.swap(sortedValidFlags);
-        pointCounts.swap(sortedPointCounts);
-        warmNormalImpulses.swap(sortedWarmNormalImpulses);
-        warmTangentImpulses.swap(sortedWarmTangentImpulses);
-        tangent1.swap(sortedTangent1);
-        tangent2.swap(sortedTangent2);
-        pointSlots.swap(sortedPointSlots);
-        pointPenetrations.swap(sortedPointPenetrations);
     }
 
     const u32 excess = activeCount - maxCapacity;
     droppedCount += excess;
     activeCount = maxCapacity;
 
-    for (u32 i = activeCount; i < pairSlotCount; ++i) {
+    const u32 slotEnd = std::min<u32>(pairSlotCount, static_cast<u32>(validFlags.size()));
+    for (u32 i = activeCount; i < slotEnd; ++i) {
         validFlags[i] = 0u;
         pointCounts[i] = 0u;
     }

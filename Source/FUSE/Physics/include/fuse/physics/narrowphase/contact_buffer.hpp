@@ -51,6 +51,10 @@ struct ContactBufferSoA {
 
 private:
     u32 pointSlotBase(u32 slot) const { return slot * kMaxContactPointsPerManifold; }
+    void moveSlot(u32 dst, u32 src);
+
+    /// Clamp sort permutation (capacity reused across frames).
+    std::vector<u32> m_clampOrder;
 };
 
 /// Why contact-buffer compaction would early-out (B4.6 deepen pass).

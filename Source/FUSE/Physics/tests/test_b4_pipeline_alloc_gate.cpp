@@ -9,6 +9,7 @@
 //   - World3D with physics enabled (World3D::tick: sync, PhysicsWorld3D::step, snapshot, cull)
 //   - World2D with physics enabled (World2D::tick)
 // Also prints the median PhysicsPipeline::step wall time for the 1000-body 3D case.
+// Set FUSE_ALLOC_GATE_BACKTRACE=1 to print a backtrace (stderr) for every counted allocation.
 
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
@@ -28,13 +29,30 @@
 #include <string>
 #include <vector>
 
+#if defined(__GLIBC__)
+#include <execinfo.h>
+#include <unistd.h>
+#define FUSE_ALLOC_GATE_HAS_BACKTRACE 1
+#endif
+
 namespace {
 std::atomic<bool> g_counting{false};
 std::atomic<unsigned long> g_allocations{0};
+bool g_backtraces = false;
 
 void noteAllocation() {
     if (g_counting.load(std::memory_order_relaxed)) {
         g_allocations.fetch_add(1u, std::memory_order_relaxed);
+#if defined(FUSE_ALLOC_GATE_HAS_BACKTRACE)
+        if (g_backtraces) {
+            // backtrace() was warmed up in main (its first call may allocate); symbols_fd is heap-free.
+            void* frames[32];
+            const int depth = backtrace(frames, 32);
+            static const char kHeader[] = "--- counted allocation ---\n";
+            (void)!write(2, kHeader, sizeof(kHeader) - 1u);
+            backtrace_symbols_fd(frames, depth, 2);
+        }
+#endif
     }
 }
 
@@ -220,6 +238,13 @@ void testWorld2D() {
 } // namespace
 
 int main() {
+#if defined(FUSE_ALLOC_GATE_HAS_BACKTRACE)
+    if (const char* env = std::getenv("FUSE_ALLOC_GATE_BACKTRACE"); env != nullptr && env[0] == '1') {
+        void* warm[4];
+        (void)backtrace(warm, 4);
+        g_backtraces = true;
+    }
+#endif
     fuse::core::initialize();
     std::printf("physics alloc gate: %u job worker(s)\n", fuse::jobs::JobScheduler::instance().workerCount());
     testPipeline3D();
