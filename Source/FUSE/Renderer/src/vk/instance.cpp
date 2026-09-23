@@ -3,6 +3,7 @@
 #include <fuse/platform/window_wsi.hpp>
 
 #include <cstring>
+#include <mutex>
 #include <utility>
 
 #if defined(FUSE_VULKAN_BACKEND)
@@ -13,17 +14,32 @@ namespace fuse::renderer {
 
 namespace {
 
+std::mutex& validationMutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+VulkanValidationCounters& validationCounters() {
+    static VulkanValidationCounters counters;
+    return counters;
+}
+
 #if defined(FUSE_VULKAN_BACKEND)
 VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
                                              VkDebugUtilsMessageTypeFlagsEXT type,
                                              const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
                                              void* userData) {
-    (void)severity;
     (void)type;
     (void)userData;
-    if (callbackData != nullptr && callbackData->pMessage != nullptr) {
-        // Validation output is captured by CI logs when layers are present.
-        (void)callbackData->pMessage;
+    std::lock_guard<std::mutex> lock(validationMutex());
+    VulkanValidationCounters& counters = validationCounters();
+    if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0) {
+        ++counters.errors;
+        if (callbackData != nullptr && callbackData->pMessage != nullptr) {
+            counters.lastError = callbackData->pMessage;
+        }
+    } else if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0) {
+        ++counters.warnings;
     }
     return VK_FALSE;
 }
@@ -68,6 +84,16 @@ bool containsExtensionName(const std::vector<const char*>& list, const char* nam
 }
 
 } // namespace
+
+VulkanValidationCounters vulkanValidationCounters() {
+    std::lock_guard<std::mutex> lock(validationMutex());
+    return validationCounters();
+}
+
+void resetVulkanValidationCounters() {
+    std::lock_guard<std::mutex> lock(validationMutex());
+    validationCounters() = VulkanValidationCounters{};
+}
 
 bool VulkanInstanceInfo::instanceHasExtension(const char* name) const {
     return containsExtensionName(enabledExtensions, name);

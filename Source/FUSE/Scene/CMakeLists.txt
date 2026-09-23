@@ -1,6 +1,7 @@
 add_library(fuse_scene STATIC
     src/bvh_stub.cpp
     src/camera.cpp
+    src/free_camera.cpp
     src/mission_load.cpp
     src/project_io.cpp
     src/scene.cpp
@@ -12,6 +13,7 @@ add_library(fuse_scene STATIC
     src/wire_runtime_bind.cpp
     include/fuse/scene/bvh_stub.hpp
     include/fuse/scene/camera.hpp
+    include/fuse/scene/free_camera.hpp
     include/fuse/scene/math.hpp
     include/fuse/scene/mission_load.hpp
     include/fuse/scene/project_io.hpp

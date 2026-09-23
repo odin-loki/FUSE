@@ -7,6 +7,7 @@
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/physics/solver/contact_island_graph.hpp>
 #include <fuse/physics/solver/distance_constraint.hpp>
+#include <fuse/physics/solver/joint_constraint.hpp>
 #include <fuse/physics/solver/solver_work_buffers.hpp>
 
 #include <fuse/types.hpp>
@@ -59,6 +60,12 @@ public:
               f32 dt);
 
     void setDistanceConstraints(const std::vector<DistanceConstraint>& constraints);
+    /// Joints (ball-socket / hinge / fixed / distance / spring with angle limits), solved after the
+    /// contacts and distance constraints in every iteration. Resets every joint's broken state.
+    void setJoints(const std::vector<JointConstraint>& joints);
+    const std::vector<JointConstraint>& joints() const { return joints_; }
+    /// Per-joint force / torque / break state from the last step (same order as `setJoints`).
+    const std::vector<JointSolveResult>& jointResults() const { return jointResults_; }
 
     /// B4.6 CCD: sweeps each awake RB_CCD body against every shape its frame motion can
     /// reach, advances it to the earliest time of impact and reflects its approach velocity
@@ -95,6 +102,14 @@ private:
     void detectSleep(RigidBodySoA& bodies, const SolverParams& params, f32 dt);
 
     std::vector<DistanceConstraint> distanceConstraints_;
+    std::vector<JointConstraint> joints_;
+    std::vector<JointSolveResult> jointResults_;
+    std::vector<JointSubstepState> jointStates_;
+    /// Sorted (lo << 32 | hi) body pairs whose contacts are ignored (collideConnected == false).
+    std::vector<u64> jointIgnoredPairs_;
+    void solveJoints_(RigidBodySoA& bodies, f32 dt);
+    void finishJointSubstep_(f32 dt);
+    bool jointIgnoresPair_(u32 a, u32 b) const;
     void recordFrameContacts_(RigidBodySoA& bodies, const SolverParams& params);
     void wakeJointedBodies_(RigidBodySoA& bodies, const SolverParams& params);
     u32 slotForFrameContact_(const narrowphase::ContactManifold& manifold, bool trigger);

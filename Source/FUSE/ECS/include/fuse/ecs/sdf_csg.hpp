@@ -33,6 +33,12 @@ f32 sdf_smooth_min(f32 a, f32 b, f32 k);
 /// scene' = op(scene, d).
 f32 sdf_csg_apply(SDFCsgOp op, f32 scene, f32 d, f32 blend_radius);
 
+/// Smooth-union blend width actually applied for `sdf`: `blend_radius` scaled by the GRIA alpha,
+/// k = blend_radius * blend_alpha / kSdfDefaultBlendAlpha. alpha = 0 (exact) is a hard union, the
+/// default alpha (0.5, edge of chaos) applies `blend_radius` as authored, alpha = 1 (approximate)
+/// doubles it. Alpha is clamped to [0, 1] (NaN -> 0). Non-smooth ops return 0.
+f32 sdf_effective_blend_radius(const SDFObject& sdf);
+
 /// Conservative local bounding radius (params, roughness and smooth-union bulge included).
 f32 sdf_bounding_radius(const SDFObject& sdf);
 

@@ -59,6 +59,8 @@ struct PairBufferSoA {
     bool containsCanonicalPair(u32 idxA, u32 idxB) const;
     CandidatePair pairAt(u32 index) const;
     std::vector<CandidatePair> toVector() const;
+    /// Same pairs as `toVector` written into `out` (its capacity is reused; no allocation once warm).
+    void copyTo(std::vector<CandidatePair>& out) const;
 };
 
 /// Why pair-buffer push would reject (B4.2 deepen pass).

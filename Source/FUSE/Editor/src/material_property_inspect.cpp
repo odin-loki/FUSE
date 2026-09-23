@@ -3,6 +3,7 @@
 #include <fuse/editor/material_editor_panel.hpp>
 
 #include <algorithm>
+#include <cmath>
 
 namespace fuse::editor {
 
@@ -120,6 +121,16 @@ f32 clampMetallic(f32 value) {
 
 f32 clampBaseColorComponent(f32 value) {
     return clampUnit_(value);
+}
+
+f32 srgbToLinear(f32 srgb) {
+    const f32 c = clampUnit_(srgb);
+    return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
+}
+
+f32 linearToSrgb(f32 linear) {
+    const f32 c = clampUnit_(linear);
+    return c <= 0.0031308f ? 12.92f * c : 1.055f * std::pow(c, 1.f / 2.4f) - 0.055f;
 }
 
 u8 clampShadingModel(u8 value) {

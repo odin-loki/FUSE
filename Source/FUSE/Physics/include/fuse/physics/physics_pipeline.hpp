@@ -54,6 +54,7 @@ private:
     RigidBodySoA m_bodies;
     CollisionShapeSoA m_shapes;
     broadphase::SpatialHashParams m_hashParams{};
+    broadphase::BroadphaseScratch m_broadphaseScratch;
     broadphase::PairBufferSoA m_pairBuffer;
     std::vector<broadphase::CandidatePair> m_candidatePairs;
     narrowphase::ContactBufferSoA m_contactBuffer;

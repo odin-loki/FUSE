@@ -1,4 +1,5 @@
 #include <fuse/renderer/cuda/vk_sync.hpp>
+#include <fuse/renderer/vk/debug_utils.hpp>
 
 #include <fuse/jobs/cuda_jobs.hpp>
 
@@ -65,6 +66,8 @@ bool createVulkanTimelineSemaphore(VkDevice device, bool exportForCuda, VkSemaph
     if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore) != VK_SUCCESS) {
         return false;
     }
+    nameVkObject(device, vk_object_type::kSemaphore, static_cast<void*>(semaphore),
+                       "fuse.cuda_vk.timeline");
     *outSemaphore = semaphore;
     return true;
 }

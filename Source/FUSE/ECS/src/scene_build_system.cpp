@@ -1,11 +1,23 @@
 #include <fuse/ecs/systems/scene_build_system.hpp>
 
+#include <fuse/ecs/sdf_csg.hpp>
+
 #include <algorithm>
 
 namespace fuse::ecs {
 
 SceneData SceneBuildSystem::build(Registry& reg, const CullResult& visible) {
     SceneData scene{};
+    build(reg, visible, scene);
+    return scene;
+}
+
+void SceneBuildSystem::build(Registry& reg, const CullResult& visible, SceneData& scene) {
+    scene.draw_items.clear();
+    scene.sdf_objects.clear();
+    scene.point_lights.clear();
+    scene.sun = DirectionalLight{};
+    scene.has_sun = false;
 
     for (EntityID id : visible.visible_meshes) {
         Mesh* mesh = reg.get<Mesh>(id);
@@ -38,13 +50,16 @@ SceneData SceneBuildSystem::build(Registry& reg, const CullResult& visible) {
         item.material_id = sdf->material_id;
         item.transform = transform->local_to_world;
         item.op = sdf->op;
-        item.blend_radius = sdf->blend_radius;
+        item.blend_radius = sdf_effective_blend_radius(*sdf);
+        item.blend_alpha = sdf->blend_alpha;
         item.roughness = sdf->roughness;
         item.csg_order = sdf->csg_order;
         scene.sdf_objects.push_back(item);
     }
     // CSG is order dependent (subtract carves what precedes it): hand consumers the fold order.
-    std::stable_sort(scene.sdf_objects.begin(), scene.sdf_objects.end(),
+    // (csg_order, entity index) is a strict total order (each entity appears once), so an unstable
+    // sort gives the same result without std::stable_sort's temporary heap buffer.
+    std::sort(scene.sdf_objects.begin(), scene.sdf_objects.end(),
                      [](const SceneSdfObject& a, const SceneSdfObject& b) {
                          if (a.csg_order != b.csg_order) {
                              return a.csg_order < b.csg_order;
@@ -64,8 +79,6 @@ SceneData SceneBuildSystem::build(Registry& reg, const CullResult& visible) {
         }
         scene.point_lights.push_back(light);
     });
-
-    return scene;
 }
 
 } // namespace fuse::ecs

@@ -1,5 +1,7 @@
 #include <fuse/renderer/vk/image_readback.hpp>
 
+#include <fuse/renderer/vk/debug_utils.hpp>
+
 #include <cstring>
 
 #if defined(FUSE_VULKAN_BACKEND)
@@ -69,6 +71,9 @@ bool readbackColorImage(VulkanDevice& device, void* image, u32 width, u32 height
             break;
         }
         vkBindBufferMemory(vkDevice, staging, stagingMemory, 0);
+        nameVkObject(vkDevice, vk_object_type::kBuffer, static_cast<void*>(staging), "fuse.readback.staging");
+        nameVkObject(vkDevice, vk_object_type::kDeviceMemory, static_cast<void*>(stagingMemory),
+                           "fuse.readback.staging.memory");
 
         VkCommandPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -86,6 +91,8 @@ bool readbackColorImage(VulkanDevice& device, void* image, u32 width, u32 height
         if (vkAllocateCommandBuffers(vkDevice, &cmdInfo, &cmd) != VK_SUCCESS) {
             break;
         }
+        nameVkObject(vkDevice, vk_object_type::kCommandPool, static_cast<void*>(pool), "fuse.readback.pool");
+        nameVkObject(vkDevice, vk_object_type::kCommandBuffer, static_cast<void*>(cmd), "fuse.readback.cmd");
 
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -141,6 +148,7 @@ bool readbackColorImage(VulkanDevice& device, void* image, u32 width, u32 height
         if (vkCreateFence(vkDevice, &fenceInfo, nullptr, &fence) != VK_SUCCESS) {
             break;
         }
+        nameVkObject(vkDevice, vk_object_type::kFence, static_cast<void*>(fence), "fuse.readback.fence");
         VkSubmitInfo submit{};
         submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submit.commandBufferCount = 1;

@@ -31,9 +31,21 @@ PoseSoA pose_to_soa(const Pose& pose, const Skeleton& skel) {
 /// lerp translation/scale) followed by forward kinematics.
 template <typename Node>
 void evaluate_via_soa(Node& node, f32 dt, const Skeleton& skel, Pose& out) {
-    PoseSoA soa = PoseSoA::from_bind_pose(skel);
-    node.evaluate_soa(dt, skel, soa);
-    out = soa.to_pose();
+    // Per-thread scratch keeps the per-frame AoS entry point heap-free once it has grown to the
+    // skeleton; a nested call on the same thread (not expected) falls back to a local pose.
+    thread_local PoseSoA t_scratch;
+    thread_local bool t_busy = false;
+    if (t_busy) {
+        PoseSoA soa = PoseSoA::from_bind_pose(skel);
+        node.evaluate_soa(dt, skel, soa);
+        soa.to_pose(out);
+        return;
+    }
+    t_busy = true;
+    t_scratch.assign_bind_pose(skel);
+    node.evaluate_soa(dt, skel, t_scratch);
+    t_scratch.to_pose(out);
+    t_busy = false;
 }
 
 void find_blend_space_1d_bracket(const BlendSpace1D& space,
@@ -151,7 +163,7 @@ void ClipNode::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 
 void ClipNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
     if (is_empty()) {
-        out = PoseSoA::from_bind_pose(skel);
+        out.assign_bind_pose(skel);
         return;
     }
 
@@ -199,7 +211,7 @@ void BlendNode2::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 
 void BlendNode2::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
     if (is_empty()) {
-        out = PoseSoA::from_bind_pose(skel);
+        out.assign_bind_pose(skel);
         return;
     }
 
@@ -227,7 +239,7 @@ void BlendSpace1D::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 
 void BlendSpace1D::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
     if (is_empty()) {
-        out = PoseSoA::from_bind_pose(skel);
+        out.assign_bind_pose(skel);
         return;
     }
 
@@ -265,7 +277,7 @@ void BlendSpace2D::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 
 void BlendSpace2D::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
     if (is_empty()) {
-        out = PoseSoA::from_bind_pose(skel);
+        out.assign_bind_pose(skel);
         return;
     }
 
@@ -291,7 +303,7 @@ void BlendSpace2D::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
 
 void LayeredBlendNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
     if (is_empty()) {
-        out = PoseSoA::from_bind_pose(skel);
+        out.assign_bind_pose(skel);
         return;
     }
 
@@ -339,7 +351,7 @@ void LayeredBlendNode::evaluate(f32 dt, const Skeleton& skel, Pose& out) {
 
 void AdditiveBlendNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
     if (is_empty()) {
-        out = PoseSoA::from_bind_pose(skel);
+        out.assign_bind_pose(skel);
         return;
     }
 
@@ -683,7 +695,7 @@ bool AnimStateMachine::transition_condition_passes_at(u32 transition_index) cons
 
 void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
     if (is_empty()) {
-        out = PoseSoA::from_bind_pose(skel);
+        out.assign_bind_pose(skel);
         return;
     }
 
@@ -701,7 +713,7 @@ void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) 
     if (is_transitioning) {
         if (!is_valid_pending_state()) {
             is_transitioning = false;
-            out = PoseSoA::from_bind_pose(skel);
+            out.assign_bind_pose(skel);
             return;
         }
 
@@ -733,7 +745,7 @@ void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) 
         states[active_state].node->evaluate_soa(dt, skel, out);
         ensure_pose_soa_bind_fallback(out, skel);
     } else {
-        out = PoseSoA::from_bind_pose(skel);
+        out.assign_bind_pose(skel);
     }
 
     for (const Transition& transition : transitions) {

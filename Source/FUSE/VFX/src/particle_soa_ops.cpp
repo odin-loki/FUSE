@@ -335,16 +335,19 @@ SimStepPreflight preflight_simulate_step(const ParticleSoA& soa, f32 dt) {
     return preflight;
 }
 
-SimStepResult simulate_step(ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt, u32 grain_size) {
-    SimStepResult result{};
+namespace {
+
+void simulate_step_into(ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt, u32 grain_size,
+                        SimStepResult& result, std::vector<u32>& dead_slots) {
     const SimStepPreflight preflight = preflight_simulate_step(soa, dt);
     if (preflight.skipped) {
         result.skipped = true;
         result.alive_after = soa.count;
-        return result;
+        return;
     }
 
-    result.dead_slots.reserve(soa.capacity / 8u + 1u);
+    dead_slots.clear();
+    dead_slots.reserve(soa.capacity / 8u + 1u);
     std::mutex dead_mutex;
     std::atomic<u32> alive_count{0};
     std::atomic<u32> integrated_count{0};
@@ -354,7 +357,7 @@ SimStepResult simulate_step(ParticleSoA& soa, const ParticleEmitterDesc& desc, f
         if (soa.alive_flags[index] == 0U) {
             return;
         }
-        integrate_slot(soa, index, desc, dt, result.dead_slots, dead_mutex, alive_count, integrated_count,
+        integrate_slot(soa, index, desc, dt, dead_slots, dead_mutex, alive_count, integrated_count,
                        culled_count);
     });
 
@@ -362,8 +365,22 @@ SimStepResult simulate_step(ParticleSoA& soa, const ParticleEmitterDesc& desc, f
     result.integrated = integrated_count.load(std::memory_order_relaxed);
     result.culled = culled_count.load(std::memory_order_relaxed);
     result.alive_after = soa.count;
-    sort_dead_slots(result.dead_slots);
-    recycle_slots(soa, result.dead_slots);
+    sort_dead_slots(dead_slots);
+    recycle_slots(soa, dead_slots);
+}
+
+} // namespace
+
+SimStepResult simulate_step(ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt, u32 grain_size) {
+    SimStepResult result{};
+    simulate_step_into(soa, desc, dt, grain_size, result, result.dead_slots);
+    return result;
+}
+
+SimStepResult simulate_step(ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt,
+                            std::vector<u32>& dead_slots_scratch, u32 grain_size) {
+    SimStepResult result{};
+    simulate_step_into(soa, desc, dt, grain_size, result, dead_slots_scratch);
     return result;
 }
 

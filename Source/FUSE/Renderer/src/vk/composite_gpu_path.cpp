@@ -1,4 +1,5 @@
 #include <fuse/renderer/vk/composite_gpu_path.hpp>
+#include <fuse/renderer/vk/debug_utils.hpp>
 #include <fuse/renderer/vk/image_readback.hpp>
 
 #include <fuse/renderer/cuda/interop.hpp>
@@ -237,6 +238,11 @@ bool CompositeGpuPath::ensureCudaInteropTexture() {
     }
 
     m_cudaImage = image;
+    nameVkObject(vkDevice, vk_object_type::kImage, static_cast<void*>(image), "fuse.composite.cuda_image");
+    nameVkObject(vkDevice, vk_object_type::kDeviceMemory, static_cast<void*>(memory),
+                       "fuse.composite.cuda_image.memory");
+    nameVkObject(vkDevice, vk_object_type::kImageView, static_cast<void*>(view),
+                       "fuse.composite.cuda_image.view");
     m_cudaImageLayout = 0; // VK_IMAGE_LAYOUT_UNDEFINED
     m_cudaImageMemory = memory;
     m_cudaImageView = view;
@@ -552,6 +558,7 @@ bool CompositeGpuPath::initialize(VulkanDevice& device, const CompositeGpuPathDe
         return false;
     }
     m_sampler = sampler;
+    nameVkObject(vkDevice, vk_object_type::kSampler, m_sampler, "fuse.composite.sampler");
     m_samplerSlot = m_bindless.registerSamplerSlot(sampler);
 
     VkImageCreateInfo outputInfo{};
@@ -573,6 +580,7 @@ bool CompositeGpuPath::initialize(VulkanDevice& device, const CompositeGpuPathDe
         return false;
     }
     m_outputImage = outputImage;
+    nameVkObject(vkDevice, vk_object_type::kImage, m_outputImage, "fuse.composite.output");
 
     VkMemoryRequirements outputRequirements{};
     vkGetImageMemoryRequirements(vkDevice, outputImage, &outputRequirements);
@@ -587,6 +595,7 @@ bool CompositeGpuPath::initialize(VulkanDevice& device, const CompositeGpuPathDe
         return false;
     }
     m_outputMemory = outputMemory;
+    nameVkObject(vkDevice, vk_object_type::kDeviceMemory, m_outputMemory, "fuse.composite.output.memory");
     vkBindImageMemory(vkDevice, outputImage, outputMemory, 0);
 
     VkImageViewCreateInfo outputViewInfo{};
@@ -603,6 +612,7 @@ bool CompositeGpuPath::initialize(VulkanDevice& device, const CompositeGpuPathDe
         return false;
     }
     m_outputView = outputView;
+    nameVkObject(vkDevice, vk_object_type::kImageView, m_outputView, "fuse.composite.output.view");
 
     VkFramebufferCreateInfo outputFramebufferInfo{};
     outputFramebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -618,6 +628,8 @@ bool CompositeGpuPath::initialize(VulkanDevice& device, const CompositeGpuPathDe
         return false;
     }
     m_outputFramebuffer = outputFramebuffer;
+    nameVkObject(vkDevice, vk_object_type::kFramebuffer, m_outputFramebuffer,
+                       "fuse.composite.output.framebuffer");
 
     const std::array<float, 9> fullscreenVertices = {
         -1.f, -1.f, 0.f,
@@ -637,6 +649,7 @@ bool CompositeGpuPath::initialize(VulkanDevice& device, const CompositeGpuPathDe
         return false;
     }
     m_vertexBuffer = vertexBuffer;
+    nameVkObject(vkDevice, vk_object_type::kBuffer, m_vertexBuffer, "fuse.composite.vb");
 
     VkMemoryRequirements memRequirements{};
     vkGetBufferMemoryRequirements(vkDevice, vertexBuffer, &memRequirements);
@@ -653,6 +666,7 @@ bool CompositeGpuPath::initialize(VulkanDevice& device, const CompositeGpuPathDe
         return false;
     }
     m_vertexMemory = vertexMemory;
+    nameVkObject(vkDevice, vk_object_type::kDeviceMemory, m_vertexMemory, "fuse.composite.vb.memory");
     vkBindBufferMemory(vkDevice, vertexBuffer, vertexMemory, 0);
 
     void* mapped = nullptr;

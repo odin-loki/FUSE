@@ -152,6 +152,40 @@ foreach(_fuse_b6_gate IN ITEMS command hierarchy gizmo panels play_mode)
     add_test(NAME fuse_editor_b6_${_fuse_b6_gate}_gates COMMAND fuse_editor_b6_${_fuse_b6_gate}_gates)
 endforeach()
 
+# B6.3 / B6.5-B6.7 / B6.10 viewport, inspector, material and profiler rows (B6.13 checklist).
+add_executable(fuse_editor_b6_viewport_gates test_b6_viewport_gates.cpp)
+target_link_libraries(fuse_editor_b6_viewport_gates PRIVATE fuse_editor_api fuse_core)
+fuse_apply_cxx23(fuse_editor_b6_viewport_gates)
+add_test(NAME fuse_editor_b6_viewport_gates COMMAND fuse_editor_b6_viewport_gates)
+set_tests_properties(fuse_editor_b6_viewport_gates PROPERTIES LABELS "gate")
+
+if(FUSE_BUILD_VULKAN)
+    add_executable(fuse_editor_b6_material_profiler_gates test_b6_material_profiler_gates.cpp)
+    target_link_libraries(fuse_editor_b6_material_profiler_gates PRIVATE fuse_editor_api fuse_core fuse_rhi)
+    fuse_apply_cxx23(fuse_editor_b6_material_profiler_gates)
+    add_test(NAME fuse_editor_b6_material_profiler_gates COMMAND fuse_editor_b6_material_profiler_gates)
+    set_tests_properties(fuse_editor_b6_material_profiler_gates PROPERTIES LABELS "gate")
+
+    # Resize on a real device under VK_LAYER_KHRONOS_validation (Lavapipe via the ICD lock).
+    add_executable(fuse_editor_b6_viewport_resize_vk_gates test_b6_viewport_resize_vk_gates.cpp)
+    target_link_libraries(fuse_editor_b6_viewport_resize_vk_gates PRIVATE fuse_editor_api fuse_core fuse_rhi)
+    target_compile_definitions(fuse_editor_b6_viewport_resize_vk_gates PRIVATE
+        FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures")
+    fuse_apply_cxx23(fuse_editor_b6_viewport_resize_vk_gates)
+    if(FUSE_VULKAN_BACKEND)
+        add_test(NAME fuse_editor_b6_viewport_resize_vk_gates
+            COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_editor_b6_viewport_resize_vk_gates>")
+        set_tests_properties(fuse_editor_b6_viewport_resize_vk_gates PROPERTIES
+            ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
+            RUN_SERIAL TRUE
+            LABELS "gate"
+        )
+    else()
+        add_test(NAME fuse_editor_b6_viewport_resize_vk_gates COMMAND fuse_editor_b6_viewport_resize_vk_gates)
+        set_tests_properties(fuse_editor_b6_viewport_resize_vk_gates PROPERTIES LABELS "gate")
+    endif()
+endif()
+
 if(FUSE_BUILD_PARITY_DEMOS)
     add_executable(fuse_u8_parity_embed_pie_tests
         test_u8_parity_embed_pie.cpp

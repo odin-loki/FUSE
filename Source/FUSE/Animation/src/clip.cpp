@@ -101,7 +101,7 @@ mat4 build_channel_local(const AnimationClip::BoneChannels& channels, f32 sample
 } // namespace
 
 void AnimationClip::evaluate(f32 time, const Skeleton& skel, PoseSoA& out_pose) const {
-    out_pose = PoseSoA::from_bind_pose(skel);
+    out_pose.assign_bind_pose(skel);
     const f32 sample_time = clamp_time(time, duration, looping);
 
     for (const BoneChannels& channels : bone_channels) {

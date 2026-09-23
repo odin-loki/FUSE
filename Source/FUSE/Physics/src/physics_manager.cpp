@@ -143,6 +143,13 @@ void PhysicsManager::destroy() {
     m_destructionEvents_.clear();
     m_destructibles_.clear();
     m_lastDebris_.clear();
+    m_joints_.clear();
+    m_freeJointSlots_.clear();
+    m_solverJoints_.clear();
+    m_solverJointSlots_.clear();
+    m_pendingWakes_.clear();
+    m_jointEvents_.clear();
+    m_liveJointCount_ = 0;
     m_stepCount = 0;
     m_lastCcdHitCount_ = 0;
     m_initialized = false;
@@ -165,7 +172,16 @@ void PhysicsManager::step(fuse::ecs::Registry& registry, f32 dt, PhysicsStreamMa
         return;
     }
     syncEcsToSoa_(registry, dt);
+    for (const fuse::ecs::EntityID id : m_pendingWakes_) {
+        const u32 body = bodyIndex(id);
+        if (body != kNoBody) {
+            wake(m_soa_, body);
+        }
+    }
+    m_pendingWakes_.clear();
+    buildSolverJoints_();
     m_solver_.step(m_soa_, m_shapes_, m_desc.solver, dt);
+    collectJointBreaks_();
     m_lastCcdHitCount_ = m_solver_.lastCcdHitCount();
     m_kinematicTargets_.clear();
     syncSoaToEcs_(registry);
@@ -189,16 +205,24 @@ void PhysicsManager::syncEcsToSoa_(fuse::ecs::Registry& registry, f32 dt) {
         const quat orientation = quatNormalize(toPhysics(transform.rotation));
         const vec3 angularVelocity = toPhysics(rb.angular_velocity);
         u32 body = bodyIndex(id);
-        if (body == kNoBody) {
+        const bool created = body == kNoBody;
+        if (created) {
             body = m_soa_.addBody(position, 0.f);
             m_shapes_.addShape(CollisionShapeType::Sphere, body, {0.5f, 0.f, 0.f});
             m_soa_.linearVelocities[body] = velocity;
-            m_soa_.orientations[body] = orientation;
-            m_soa_.predictedOrientations[body] = orientation;
+            // Keep a (near-)unit saved rotation bit-exact — the solver's own orientations are only
+            // renormalised when they drift — so a reloaded scene resumes exactly where it was saved.
+            const quat saved = toPhysics(transform.rotation);
+            const f32 norm2 = saved.x * saved.x + saved.y * saved.y + saved.z * saved.z + saved.w * saved.w;
+            const quat initial = std::fabs(norm2 - 1.f) < 1e-4f ? saved : orientation;
+            m_soa_.orientations[body] = initial;
+            m_soa_.predictedOrientations[body] = initial;
             m_soa_.angularVelocities[body] = angularVelocity;
             if (rb.is_sleeping) {
                 m_soa_.flags[body] |= RB_SLEEPING;
             }
+            // Resume the sleep countdown written back by syncSoaToEcs_ (saved scenes, re-added bodies).
+            m_soa_.sleepTimers[body] = rb.sleep_timer;
             m_bodyToEntity_.push_back(id);
             m_entityToBodyIdx_[id.index] = body;
             m_writtenPositions_.push_back(position);
@@ -249,7 +273,11 @@ void PhysicsManager::syncEcsToSoa_(fuse::ecs::Registry& registry, f32 dt) {
             }
         }
 
-        m_soa_.invMasses[body] = (rb.is_static || kinematic || rb.mass <= 0.f) ? 0.f : 1.f / rb.mass;
+        const f32 invMass = (rb.is_static || kinematic || rb.mass <= 0.f) ? 0.f : 1.f / rb.mass;
+        if (!created && invMass != m_soa_.invMasses[body] && invMass > 0.f) {
+            wake(m_soa_, body); // mass edited by game code: joint and contact loads change
+        }
+        m_soa_.invMasses[body] = invMass;
         m_soa_.restitutions[body] = rb.restitution;
         m_soa_.frictionStatic[body] = collider.friction_static;
         m_soa_.frictionDynamic[body] = collider.friction_dynamic;
@@ -361,6 +389,9 @@ void PhysicsManager::raiseEvents_() {
     for (const auto& [key, pair] : m_activePairs_) {
         const auto now = m_currentPairs_.find(key);
         if (now == m_currentPairs_.end() || (now->second.a != pair.a && now->second.a != pair.b)) {
+            if (bodyIndex(pair.a) == kNoBody || bodyIndex(pair.b) == kNoBody) {
+                continue; // an entity was destroyed / left the simulation: never name it in an event
+            }
             CollisionEvent event{};
             event.type = CollisionEventType::Exit;
             event.entityA = pair.a;
@@ -369,11 +400,13 @@ void PhysicsManager::raiseEvents_() {
         }
     }
     std::swap(m_activePairs_, m_currentPairs_);
+    m_lastEvents_.insert(m_lastEvents_.end(), m_jointEvents_.begin(), m_jointEvents_.end());
+    m_jointEvents_.clear();
     m_collisionEvents_.dispatch(m_lastEvents_);
 }
 
 bool PhysicsManager::rayCast(vec3 origin, vec3 direction, f32 maxT, fuse::ecs::EntityID& hit, vec3& normal,
-                             f32& t) const {
+                             f32& t, const fuse::ecs::Registry* aliveIn) const {
     if (direction.length() < 1e-6f || maxT <= 0.f) {
         return false;
     }
@@ -383,6 +416,9 @@ bool PhysicsManager::rayCast(vec3 origin, vec3 direction, f32 maxT, fuse::ecs::E
     for (u32 body = 0; body < m_soa_.count(); ++body) {
         if ((m_soa_.flags[body] & RB_TRIGGER) != 0u) {
             continue;
+        }
+        if (aliveIn != nullptr && !aliveIn->alive(m_bodyToEntity_[body])) {
+            continue; // destroyed since the last step; its body leaves on the next one
         }
         const vec3 center = m_soa_.positions[body];
         const vec3 params = m_shapes_.params[body];
@@ -451,11 +487,15 @@ bool PhysicsManager::rayCast(vec3 origin, vec3 direction, f32 maxT, fuse::ecs::E
     return found;
 }
 
-void PhysicsManager::querySphere(vec3 center, f32 radius, std::vector<fuse::ecs::EntityID>& results) const {
+void PhysicsManager::querySphere(vec3 center, f32 radius, std::vector<fuse::ecs::EntityID>& results,
+                                 const fuse::ecs::Registry* aliveIn) const {
     if (radius <= 0.f) {
         return;
     }
     for (u32 body = 0; body < m_soa_.count(); ++body) {
+        if (aliveIn != nullptr && !aliveIn->alive(m_bodyToEntity_[body])) {
+            continue;
+        }
         const vec3 p = m_soa_.positions[body];
         const vec3 params = m_shapes_.params[body];
         bool overlap = false;
@@ -567,6 +607,342 @@ DestructibleVolume* PhysicsManager::destructible(fuse::ecs::EntityID entity) {
 void PhysicsManager::processDestructionEvents_(fuse::ecs::Registry& registry) {
     // Debris entities join the simulation on the next step's sync.
     DestructionSystem::processEvents(m_destructionEvents_, m_destructibles_, registry, m_lastDebris_);
+}
+
+// --- Joints ---------------------------------------------------------------------------------------
+
+JointDesc JointDesc::ballSocket(fuse::ecs::EntityID a, fuse::ecs::EntityID b, vec3 pivot, vec3 twistAxis) {
+    JointDesc desc;
+    desc.type = JointType::BallSocket;
+    desc.entityA = a;
+    desc.entityB = b;
+    desc.anchorA = pivot;
+    desc.anchorB = pivot;
+    desc.axis = twistAxis;
+    return desc;
+}
+
+JointDesc JointDesc::hinge(fuse::ecs::EntityID a, fuse::ecs::EntityID b, vec3 pivot, vec3 axis) {
+    JointDesc desc = ballSocket(a, b, pivot, axis);
+    desc.type = JointType::Hinge;
+    return desc;
+}
+
+JointDesc JointDesc::fixed(fuse::ecs::EntityID a, fuse::ecs::EntityID b, vec3 pivot) {
+    JointDesc desc = ballSocket(a, b, pivot);
+    desc.type = JointType::Fixed;
+    return desc;
+}
+
+JointDesc JointDesc::distance(fuse::ecs::EntityID a, fuse::ecs::EntityID b, vec3 anchorA, vec3 anchorB,
+                              f32 minLength, f32 maxLength) {
+    JointDesc desc;
+    desc.type = JointType::Distance;
+    desc.entityA = a;
+    desc.entityB = b;
+    desc.anchorA = anchorA;
+    desc.anchorB = anchorB;
+    desc.minDistance = minLength;
+    desc.maxDistance = maxLength;
+    return desc;
+}
+
+JointDesc JointDesc::rope(fuse::ecs::EntityID a, fuse::ecs::EntityID b, vec3 anchorA, vec3 anchorB, f32 maxLength) {
+    return distance(a, b, anchorA, anchorB, 0.f, maxLength);
+}
+
+JointDesc JointDesc::spring(fuse::ecs::EntityID a, fuse::ecs::EntityID b, vec3 anchorA, vec3 anchorB, f32 stiffness,
+                            f32 damping, f32 restLength) {
+    JointDesc desc = distance(a, b, anchorA, anchorB);
+    desc.type = JointType::Spring;
+    desc.stiffness = stiffness;
+    desc.damping = damping;
+    desc.restLength = restLength;
+    return desc;
+}
+
+namespace {
+
+bool entityPose(const fuse::ecs::Registry& registry, fuse::ecs::EntityID id, vec3& position, quat& orientation) {
+    if (!id.valid()) {
+        position = {};
+        orientation = {};
+        return true; // the world frame
+    }
+    if (!registry.alive(id)) {
+        return false;
+    }
+    const fuse::ecs::Transform* transform = registry.get<fuse::ecs::Transform>(id);
+    if (transform == nullptr) {
+        return false;
+    }
+    position = toPhysics(transform->position);
+    orientation = quatNormalize(toPhysics(transform->rotation));
+    return true;
+}
+
+vec3 perpendicularTo(vec3 axis, vec3 hint) {
+    vec3 normal = hint - axis * axis.dot(hint);
+    if (normal.length() < 1e-4f) {
+        const vec3 fallback = std::fabs(axis.x) < 0.9f ? vec3{1.f, 0.f, 0.f} : vec3{0.f, 1.f, 0.f};
+        normal = fallback - axis * axis.dot(fallback);
+    }
+    return normal.normalized();
+}
+
+} // namespace
+
+JointHandle PhysicsManager::createJoint(const fuse::ecs::Registry& registry, const JointDesc& desc) {
+    vec3 positionA{};
+    vec3 positionB{};
+    quat orientationA{};
+    quat orientationB{};
+    if (!desc.entityA.valid() || desc.entityA == desc.entityB ||
+        !entityPose(registry, desc.entityA, positionA, orientationA) ||
+        !entityPose(registry, desc.entityB, positionB, orientationB)) {
+        return {};
+    }
+    JointConstraint joint{};
+    joint.type = desc.type;
+    joint.bodyA = kNoBody; // mapped every step
+    joint.bodyB = kJointWorldBody;
+    const bool pointJoint = desc.type == JointType::BallSocket || desc.type == JointType::Hinge ||
+                            desc.type == JointType::Fixed;
+    const vec3 anchorB = pointJoint ? desc.anchorA : desc.anchorB;
+    joint.localAnchorA = inverseRotate(orientationA, desc.anchorA - positionA);
+    joint.localAnchorB = inverseRotate(orientationB, anchorB - positionB);
+    const vec3 axis = desc.axis.normalized();
+    const vec3 normal = perpendicularTo(axis, desc.normal);
+    joint.localAxisA = inverseRotate(orientationA, axis);
+    joint.localAxisB = inverseRotate(orientationB, axis);
+    joint.localNormalA = inverseRotate(orientationA, normal);
+    joint.localNormalB = inverseRotate(orientationB, normal);
+    joint.restRelative = quatNormalize(quatMul(quatConjugate(orientationA), orientationB));
+    joint.hingeLimit = desc.hingeLimit;
+    joint.minAngle = desc.minAngle;
+    joint.maxAngle = desc.maxAngle;
+    joint.swingLimit = desc.swingLimit;
+    joint.twistLimit = desc.twistLimit;
+    joint.minTwist = desc.minTwist;
+    joint.maxTwist = desc.maxTwist;
+    const f32 current = (desc.anchorA - anchorB).length();
+    joint.minDistance = desc.minDistance < 0.f ? current : desc.minDistance;
+    joint.maxDistance = desc.maxDistance < 0.f ? current : std::max(desc.maxDistance, joint.minDistance);
+    joint.restLength = desc.restLength < 0.f ? current : desc.restLength;
+    joint.damping = std::max(desc.damping, 0.f);
+    joint.compliance = desc.type == JointType::Spring ? (desc.stiffness > 0.f ? 1.f / desc.stiffness : 0.f)
+                                                      : std::max(desc.compliance, 0.f);
+    joint.angularCompliance = std::max(desc.angularCompliance, 0.f);
+    joint.breakForce = desc.breakForce;
+    joint.breakTorque = desc.breakTorque;
+    joint.collideConnected = desc.collideConnected;
+
+    u32 slot = 0;
+    if (!m_freeJointSlots_.empty()) {
+        slot = m_freeJointSlots_.back();
+        m_freeJointSlots_.pop_back();
+    } else {
+        slot = static_cast<u32>(m_joints_.size());
+        m_joints_.push_back({});
+    }
+    JointRecord& record = m_joints_[slot];
+    record.constraint = joint;
+    record.entityA = desc.entityA;
+    record.entityB = desc.entityB;
+    record.alive = true;
+    record.broken = false;
+    record.lastForce = 0.f;
+    record.lastTorque = 0.f;
+    ++m_liveJointCount_;
+    wakeEntity_(desc.entityA);
+    wakeEntity_(desc.entityB);
+    return {slot, record.generation};
+}
+
+PhysicsManager::JointRecord* PhysicsManager::jointRecord_(JointHandle handle) {
+    if (!handle.valid() || handle.index >= m_joints_.size()) {
+        return nullptr;
+    }
+    JointRecord& record = m_joints_[handle.index];
+    return record.alive && record.generation == handle.generation ? &record : nullptr;
+}
+
+const PhysicsManager::JointRecord* PhysicsManager::jointRecord_(JointHandle handle) const {
+    return const_cast<PhysicsManager*>(this)->jointRecord_(handle);
+}
+
+void PhysicsManager::wakeEntity_(fuse::ecs::EntityID id) {
+    if (!id.valid()) {
+        return;
+    }
+    const u32 body = bodyIndex(id);
+    if (body != kNoBody) {
+        wake(m_soa_, body);
+    }
+    m_pendingWakes_.push_back(id); // also once the body is in the simulation
+}
+
+void PhysicsManager::releaseJoint_(u32 slot) {
+    JointRecord& record = m_joints_[slot];
+    wakeEntity_(record.entityA);
+    wakeEntity_(record.entityB);
+    record.alive = false;
+    record.broken = false;
+    ++record.generation;
+    if (record.generation == 0u) {
+        record.generation = 1u;
+    }
+    m_freeJointSlots_.push_back(slot);
+    --m_liveJointCount_;
+}
+
+bool PhysicsManager::destroyJoint(JointHandle handle) {
+    if (jointRecord_(handle) == nullptr) {
+        return false;
+    }
+    releaseJoint_(handle.index);
+    return true;
+}
+
+bool PhysicsManager::isJointValid(JointHandle handle) const {
+    return jointRecord_(handle) != nullptr;
+}
+
+bool PhysicsManager::isJointBroken(JointHandle handle) const {
+    const JointRecord* record = jointRecord_(handle);
+    return record != nullptr && record->broken;
+}
+
+bool PhysicsManager::setHingeLimits(JointHandle handle, bool enabled, f32 minAngle, f32 maxAngle) {
+    JointRecord* record = jointRecord_(handle);
+    if (record == nullptr) {
+        return false;
+    }
+    record->constraint.hingeLimit = enabled;
+    record->constraint.minAngle = std::min(minAngle, maxAngle);
+    record->constraint.maxAngle = std::max(minAngle, maxAngle);
+    wakeEntity_(record->entityA);
+    wakeEntity_(record->entityB);
+    return true;
+}
+
+bool PhysicsManager::setSwingTwistLimits(JointHandle handle, f32 swingLimit, bool twistEnabled, f32 minTwist,
+                                         f32 maxTwist) {
+    JointRecord* record = jointRecord_(handle);
+    if (record == nullptr) {
+        return false;
+    }
+    record->constraint.swingLimit = swingLimit;
+    record->constraint.twistLimit = twistEnabled;
+    record->constraint.minTwist = std::min(minTwist, maxTwist);
+    record->constraint.maxTwist = std::max(minTwist, maxTwist);
+    wakeEntity_(record->entityA);
+    wakeEntity_(record->entityB);
+    return true;
+}
+
+bool PhysicsManager::setBreakThresholds(JointHandle handle, f32 breakForce, f32 breakTorque) {
+    JointRecord* record = jointRecord_(handle);
+    if (record == nullptr) {
+        return false;
+    }
+    record->constraint.breakForce = breakForce;
+    record->constraint.breakTorque = breakTorque;
+    wakeEntity_(record->entityA);
+    wakeEntity_(record->entityB);
+    return true;
+}
+
+const JointConstraint* PhysicsManager::joint(JointHandle handle) const {
+    const JointRecord* record = jointRecord_(handle);
+    return record != nullptr ? &record->constraint : nullptr;
+}
+
+f32 PhysicsManager::jointForce(JointHandle handle) const {
+    const JointRecord* record = jointRecord_(handle);
+    return record != nullptr ? record->lastForce : 0.f;
+}
+
+f32 PhysicsManager::jointTorque(JointHandle handle) const {
+    const JointRecord* record = jointRecord_(handle);
+    return record != nullptr ? record->lastTorque : 0.f;
+}
+
+bool PhysicsManager::jointAngles(JointHandle handle, f32& hingeAngle, f32& swing, f32& twist) const {
+    const JointRecord* record = jointRecord_(handle);
+    if (record == nullptr) {
+        return false;
+    }
+    JointConstraint joint = record->constraint;
+    joint.bodyA = bodyIndex(record->entityA);
+    joint.bodyB = record->entityB.valid() ? bodyIndex(record->entityB) : kJointWorldBody;
+    if (joint.bodyA == kNoBody || (record->entityB.valid() && joint.bodyB == kNoBody)) {
+        return false;
+    }
+    hingeAngle = jointHingeAngle(m_soa_, joint);
+    jointSwingTwist(m_soa_, joint, swing, twist);
+    return true;
+}
+
+void PhysicsManager::buildSolverJoints_() {
+    m_solverJoints_.clear();
+    m_solverJointSlots_.clear();
+    for (u32 slot = 0; slot < m_joints_.size(); ++slot) {
+        JointRecord& record = m_joints_[slot];
+        if (!record.alive) {
+            continue;
+        }
+        const u32 bodyA = bodyIndex(record.entityA);
+        const u32 bodyB = record.entityB.valid() ? bodyIndex(record.entityB) : kJointWorldBody;
+        if (bodyA == kNoBody || (record.entityB.valid() && bodyB == kNoBody)) {
+            releaseJoint_(slot); // an entity was destroyed or left the simulation
+            continue;
+        }
+        record.constraint.bodyA = bodyA;
+        record.constraint.bodyB = bodyB;
+        if (record.broken) {
+            record.lastForce = 0.f;
+            record.lastTorque = 0.f;
+            continue;
+        }
+        m_solverJoints_.push_back(record.constraint);
+        m_solverJointSlots_.push_back(slot);
+    }
+    // Wakes raised by releases above apply before the solve.
+    for (const fuse::ecs::EntityID id : m_pendingWakes_) {
+        const u32 body = bodyIndex(id);
+        if (body != kNoBody) {
+            wake(m_soa_, body);
+        }
+    }
+    m_pendingWakes_.clear();
+    m_solver_.setJoints(m_solverJoints_);
+}
+
+void PhysicsManager::collectJointBreaks_() {
+    const std::vector<JointSolveResult>& results = m_solver_.jointResults();
+    for (u32 i = 0; i < m_solverJointSlots_.size() && i < results.size(); ++i) {
+        const u32 slot = m_solverJointSlots_[i];
+        JointRecord& record = m_joints_[slot];
+        record.lastForce = results[i].force;
+        record.lastTorque = results[i].torque;
+        if (!results[i].broken || record.broken) {
+            continue;
+        }
+        record.broken = true;
+        CollisionEvent event{};
+        event.type = CollisionEventType::JointBreak;
+        event.entityA = record.entityA;
+        event.entityB = record.entityB;
+        const u32 body = record.constraint.bodyA;
+        event.contactPoint = m_soa_.positions[body] + rotate(m_soa_.orientations[body], record.constraint.localAnchorA);
+        event.impulse = results[i].force;
+        event.jointIndex = slot;
+        event.jointGeneration = record.generation;
+        m_jointEvents_.push_back(event);
+        wakeEntity_(record.entityA);
+        wakeEntity_(record.entityB);
+    }
 }
 
 } // namespace fuse::physics

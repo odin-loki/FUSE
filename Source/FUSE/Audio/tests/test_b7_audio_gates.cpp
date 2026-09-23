@@ -6,6 +6,8 @@
 // by calling the code under test.
 //
 // Run with `--perf` for the CPU budget gate (enforced only in NDEBUG builds).
+// Run with `--require-openal` (e.g. under ALSOFT_DRIVERS=null) to fail unless the engine brings up
+// a real OpenAL device + current context without error, instead of falling back to Null.
 
 #include <fuse/audio/attenuation.hpp>
 #include <fuse/audio/audio_clip.hpp>
@@ -18,6 +20,7 @@
 
 #if defined(FUSE_AUDIO_OPENAL)
 #include <AL/al.h>
+#include <AL/alc.h>
 #endif
 
 #include <algorithm>
@@ -206,6 +209,8 @@ std::vector<double> channel(const std::vector<float>& stereo, u32 ch) {
 // ---------------------------------------------------------------------------------------------
 // Gate: Audio engine initialises OpenAL device and context without error
 
+bool g_requireOpenAL = false;
+
 void gateEngineInitialises() {
     for (int cycle = 0; cycle < 3; ++cycle) {
         fa::AudioEngine engine;
@@ -222,8 +227,31 @@ void gateEngineInitialises() {
             std::printf("[b7-audio] backend = %s\n",
                         engine.backend_kind() == fa::AudioBackendKind::OpenAL ? "OpenAL" : "Null");
         }
+        if (g_requireOpenAL) {
+            expectTrue(engine.backend_kind() == fa::AudioBackendKind::OpenAL,
+                       "--require-openal: engine initialised the OpenAL backend (not Null)");
+#if defined(FUSE_AUDIO_OPENAL)
+            ALCcontext* context = alcGetCurrentContext();
+            ALCdevice* device = context != nullptr ? alcGetContextsDevice(context) : nullptr;
+            expectTrue(context != nullptr && device != nullptr, "--require-openal: current ALC context and device");
+            if (device != nullptr) {
+                expectTrue(alcGetError(device) == ALC_NO_ERROR, "--require-openal: ALC device reports no error");
+                if (cycle == 0) {
+                    const ALCchar* name = alcGetString(device, ALC_DEVICE_SPECIFIER);
+                    std::printf("[b7-audio] OpenAL device = %s, renderer = %s\n", name != nullptr ? name : "?",
+                                alGetString(AL_RENDERER) != nullptr ? alGetString(AL_RENDERER) : "?");
+                }
+            }
+            expectTrue(alGetError() == AL_NO_ERROR, "--require-openal: AL reports no error");
+#endif
+        }
         engine.destroy();
         expectTrue(!engine.is_initialized(), "engine destroy releases backend");
+#if defined(FUSE_AUDIO_OPENAL)
+        if (g_requireOpenAL) {
+            expectTrue(alcGetCurrentContext() == nullptr, "--require-openal: destroy releases the ALC context");
+        }
+#endif
     }
 }
 
@@ -913,6 +941,7 @@ int main(int argc, char** argv) {
         fuse::core::shutdown();
         return rc;
     }
+    g_requireOpenAL = argc > 1 && std::strcmp(argv[1], "--require-openal") == 0;
 
     gateEngineInitialises();
     gateWavLoadDecodesExactly();

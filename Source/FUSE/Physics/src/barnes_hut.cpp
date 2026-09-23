@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <limits>
 
 namespace fuse::physics {
@@ -84,8 +85,10 @@ u32 subdivide(BuildNode& node,
         return 0;
     }
 
-    node.child_start = static_cast<u32>(build_nodes.size());
-    node.child_count = 0;
+    // `node` aliases an element of `build_nodes`; appending children may
+    // reallocate the vector, so stage them locally and append last (ASan UAF).
+    std::vector<BuildNode> children;
+    children.reserve(occupied);
 
     for (u32 octant = 0; octant < kOctantCount; ++octant) {
         if (buckets[octant].empty()) {
@@ -111,12 +114,17 @@ u32 subdivide(BuildNode& node,
             child.max_bounds.z = center.z;
         }
         child.body_indices = std::move(buckets[octant]);
-        build_nodes.push_back(child);
-        ++node.child_count;
+        children.push_back(std::move(child));
     }
 
+    node.child_start = static_cast<u32>(build_nodes.size());
+    node.child_count = static_cast<u32>(children.size());
     node.body_indices.clear();
-    return node.child_count;
+    const u32 child_count = node.child_count;
+    build_nodes.insert(build_nodes.end(),
+                       std::make_move_iterator(children.begin()),
+                       std::make_move_iterator(children.end()));
+    return child_count;
 }
 
 void buildTree(const std::vector<vec3>& positions,

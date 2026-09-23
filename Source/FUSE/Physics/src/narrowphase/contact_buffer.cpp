@@ -289,6 +289,18 @@ std::vector<ContactManifold> ContactBufferSoA::toVector() const {
     return manifolds;
 }
 
+void ContactBufferSoA::copyTo(std::vector<ContactManifold>& out) const {
+    out.clear();
+    if (out.capacity() < activeCount) {
+        out.reserve(activeCount);
+    }
+    for (u32 i = 0; i < activeCount; ++i) {
+        if (validFlags[i] != 0u) {
+            out.push_back(manifoldAt(i));
+        }
+    }
+}
+
 namespace {
 
 bool contactBufferHasCompactionGaps(const ContactBufferSoA& buffer) {

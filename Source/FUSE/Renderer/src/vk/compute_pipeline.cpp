@@ -135,11 +135,9 @@ bool ComputePipeline::initialize(VulkanDevice& device, const ComputePipelineDesc
     m_handle = computePipeline;
     m_info.valid = true;
     m_info.message = desc.debugName != nullptr ? desc.debugName : "compute pipeline";
-    if (desc.debugName != nullptr) {
-        const u64 objectHandle = static_cast<u64>(reinterpret_cast<uintptr_t>(m_handle));
-        setDebugObjectName(device.nativeHandle(), kVkObjectTypePipeline, objectHandle,
-                           desc.debugName);
-    }
+    setDebugObjectName(device.nativeHandle(), kVkObjectTypePipeline,
+                       static_cast<u64>(reinterpret_cast<uintptr_t>(m_handle)),
+                       desc.debugName != nullptr ? desc.debugName : "fuse.compute_pipeline");
     snapshotPipelineCache(m_info, desc.pipelineCache);
     return true;
 #else

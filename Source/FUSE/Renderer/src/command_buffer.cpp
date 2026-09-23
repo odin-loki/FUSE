@@ -133,7 +133,19 @@ void CommandBufferRecorder::reset() {
     m_vulkanFillBufferCount = 0;
     m_vulkanUpdateBufferCount = 0;
     m_vulkanCopyBufferCount = 0;
+    m_vulkanPipelineBindCount = 0;
+    m_vulkanVertexBufferBindCount = 0;
+    m_vulkanIndexBufferBindCount = 0;
+    m_vulkanPushConstantCount = 0;
+    invalidateBindState();
     m_records.clear();
+}
+
+void CommandBufferRecorder::invalidateBindState() {
+    m_boundVertexBuffer = nullptr;
+    m_boundIndexBuffer = nullptr;
+    m_boundIndexType = UINT32_MAX;
+    m_boundMaterialId = UINT32_MAX;
 }
 
 void CommandBufferRecorder::setVulkanEncodeContext(const VkFrameEncodeContext* context) {
@@ -151,6 +163,7 @@ bool CommandBufferRecorder::beginRecording(void* nativeCommandBuffer) {
     m_vulkanRecordingComplete = false;
     m_insideRenderPass = false;
     m_activeRasterPass = false;
+    invalidateBindState();
 
 #if defined(FUSE_VULKAN_BACKEND)
     if (m_encodeContext != nullptr && m_encodeContext->active && isRealVulkanCommandBuffer(nativeCommandBuffer)) {
@@ -206,7 +219,10 @@ bool CommandBufferRecorder::shouldEncodeRasterPass(const char* passName) const {
     if (passName == nullptr) {
         return false;
     }
-    return std::strcmp(passName, "clear3d") == 0 || std::strcmp(passName, "sprites2d") == 0;
+    // "meshes" is the DrawList pass (populateRenderGraphFromDrawList); without it submitDrawList
+    // recorded draws on the CPU only and never encoded them.
+    return std::strcmp(passName, "clear3d") == 0 || std::strcmp(passName, "sprites2d") == 0 ||
+           std::strcmp(passName, "meshes") == 0;
 }
 
 void CommandBufferRecorder::encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLayout) {
@@ -458,6 +474,8 @@ void CommandBufferRecorder::beginVulkanRenderPass() {
     encodeVulkanViewportAndScissor();
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       static_cast<VkPipeline>(m_encodeContext->graphicsPipeline));
+    ++m_vulkanPipelineBindCount;
+    invalidateBindState();
     bindRasterBindlessDescriptorSets(commandBuffer, *m_encodeContext);
 
     m_insideRenderPass = true;
@@ -494,10 +512,13 @@ void CommandBufferRecorder::encodeDraw(u32 instanceCount) {
     }
 
     auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
-    VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(m_encodeContext->vertexBuffer)};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-    bindRasterBindlessDescriptorSets(commandBuffer, *m_encodeContext);
+    if (m_boundVertexBuffer != m_encodeContext->vertexBuffer) {
+        VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(m_encodeContext->vertexBuffer)};
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+        m_boundVertexBuffer = m_encodeContext->vertexBuffer;
+        ++m_vulkanVertexBufferBindCount;
+    }
 
     const u32 instances = instanceCount > 0u ? instanceCount : 1u;
     vkCmdDraw(commandBuffer, 3, instances, 0, 0);
@@ -522,20 +543,32 @@ void CommandBufferRecorder::encodeDrawIndexed(u32 indexCount, u32 instanceCount,
     }
 
     auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
-    vkCmdBindIndexBuffer(commandBuffer, static_cast<VkBuffer>(resolvedIndex), 0,
-                         m_encodeContext->indexType == 1u ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16);
+    // Material-sorted draw lists share buffers and materials across runs of draws: only encode
+    // the state that actually changes (B3 gate: no redundant state changes).
+    const u32 indexType = m_encodeContext->indexType == 1u ? 1u : 0u;
+    if (m_boundIndexBuffer != resolvedIndex || m_boundIndexType != indexType) {
+        vkCmdBindIndexBuffer(commandBuffer, static_cast<VkBuffer>(resolvedIndex), 0,
+                             indexType == 1u ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16);
+        m_boundIndexBuffer = resolvedIndex;
+        m_boundIndexType = indexType;
+        ++m_vulkanIndexBufferBindCount;
+    }
 
-    if (resolvedVertex != nullptr) {
+    if (resolvedVertex != nullptr && m_boundVertexBuffer != resolvedVertex) {
         VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(resolvedVertex)};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+        m_boundVertexBuffer = resolvedVertex;
+        ++m_vulkanVertexBufferBindCount;
     }
 
-    if (m_encodeContext->graphicsPipelineLayout != nullptr) {
+    if (m_encodeContext->graphicsPipelineLayout != nullptr && m_boundMaterialId != materialId) {
         const u32 payload[4] = {materialId, 0u, 0u, 0u};
         vkCmdPushConstants(commandBuffer,
                            static_cast<VkPipelineLayout>(m_encodeContext->graphicsPipelineLayout),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 16, payload);
+        m_boundMaterialId = materialId;
+        ++m_vulkanPushConstantCount;
     }
 
     const u32 instances = instanceCount > 0u ? instanceCount : 1u;
@@ -567,15 +600,22 @@ void CommandBufferRecorder::encodeDrawIndexedIndirect(void* indirectBuffer, u32 
     }
 
     auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
-    if (m_encodeContext->indexBuffer != nullptr) {
+    const u32 indexType = m_encodeContext->indexType == 1u ? 1u : 0u;
+    if (m_encodeContext->indexBuffer != nullptr &&
+        (m_boundIndexBuffer != m_encodeContext->indexBuffer || m_boundIndexType != indexType)) {
         vkCmdBindIndexBuffer(commandBuffer, static_cast<VkBuffer>(m_encodeContext->indexBuffer), 0,
-                             m_encodeContext->indexType == 1u ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16);
+                             indexType == 1u ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16);
+        m_boundIndexBuffer = m_encodeContext->indexBuffer;
+        m_boundIndexType = indexType;
+        ++m_vulkanIndexBufferBindCount;
     }
 
-    if (m_encodeContext->vertexBuffer != nullptr) {
+    if (m_encodeContext->vertexBuffer != nullptr && m_boundVertexBuffer != m_encodeContext->vertexBuffer) {
         VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(m_encodeContext->vertexBuffer)};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+        m_boundVertexBuffer = m_encodeContext->vertexBuffer;
+        ++m_vulkanVertexBufferBindCount;
     }
 
     const u32 resolvedDrawCount = drawCount > 0u ? drawCount : 1u;
@@ -941,6 +981,9 @@ void CommandBufferRecorder::encodeCompositePass(float blend) {
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       static_cast<VkPipeline>(m_encodeContext->compositePipeline));
+    ++m_vulkanPipelineBindCount;
+    // Composite binds its own pipeline layout, push constants and vertex buffer.
+    invalidateBindState();
 
     const VkPipelineLayout pipelineLayout =
         static_cast<VkPipelineLayout>(m_encodeContext->compositePipelineLayout);

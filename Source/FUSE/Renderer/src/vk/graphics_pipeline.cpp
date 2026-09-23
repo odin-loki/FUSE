@@ -1,5 +1,7 @@
 #include <fuse/renderer/vk/graphics_pipeline.hpp>
 
+#include <fuse/renderer/vk/debug_utils.hpp>
+
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
 #endif
@@ -170,10 +172,20 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     colorBlendAttachment.dstAlphaBlendFactor = static_cast<VkBlendFactor>(desc.dstColorBlendFactor);
     colorBlendAttachment.alphaBlendOp = static_cast<VkBlendOp>(desc.colorBlendOp);
 
+    const u32 colorCount = desc.colorAttachmentCount;
+    if (colorCount == 0u || colorCount > RenderPassDesc::kMaxColorAttachments) {
+        m_info.message = "graphics pipeline colour attachment count out of range";
+        return false;
+    }
+    VkPipelineColorBlendAttachmentState colorBlendAttachments[RenderPassDesc::kMaxColorAttachments]{};
+    for (u32 i = 0; i < colorCount; ++i) {
+        colorBlendAttachments[i] = colorBlendAttachment;
+    }
+
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+    colorBlending.attachmentCount = colorCount;
+    colorBlending.pAttachments = colorBlendAttachments;
 
     VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
     VkPipelineDynamicStateCreateInfo dynamicState{};
@@ -184,7 +196,13 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     VkPipelineLayout pipelineLayout =
         static_cast<VkPipelineLayout>(desc.layout->nativeHandle());
 
-    VkFormat colorFormat = static_cast<VkFormat>(desc.colorFormat);
+    VkFormat colorFormats[RenderPassDesc::kMaxColorAttachments]{};
+    for (u32 i = 0; i < colorCount; ++i) {
+        const u32 format = i == 0u || desc.renderPass == nullptr
+                               ? desc.colorFormat
+                               : desc.renderPass->colorFormatAt(i);
+        colorFormats[i] = static_cast<VkFormat>(format);
+    }
     VkFormat depthFormat = static_cast<VkFormat>(desc.depthFormat);
     VkPipelineRenderingCreateInfo rendering{};
 
@@ -204,8 +222,8 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     pipelineInfo.subpass = 0;
     if (desc.useDynamicRendering) {
         rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-        rendering.colorAttachmentCount = 1;
-        rendering.pColorAttachmentFormats = &colorFormat;
+        rendering.colorAttachmentCount = colorCount;
+        rendering.pColorAttachmentFormats = colorFormats;
         if (desc.depthFormat != 0) {
             rendering.depthAttachmentFormat = depthFormat;
         }
@@ -232,6 +250,8 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
 
     m_handle = graphicsPipeline;
     m_info.valid = true;
+    nameVkObject(device.nativeHandle(), vk_object_type::kPipeline, m_handle,
+                       desc.debugName != nullptr ? desc.debugName : "fuse.graphics_pipeline");
     m_info.dynamicRendering = desc.useDynamicRendering;
     m_info.depthFormat = desc.depthFormat;
     m_info.hasDynamicDepth = desc.useDynamicRendering && desc.depthFormat != 0;

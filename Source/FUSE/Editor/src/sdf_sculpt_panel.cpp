@@ -121,7 +121,9 @@ bool SdfSculptPanel::applySpawnBrush(const ecs::vec3& hitPoint, bool mirror, Edi
         label = "Subtract SDF primitive";
     } else if (m_brush.op == BrushOp::Smooth) {
         op = ecs::SDFCsgOp::SmoothUnion;
-        blendRadius = m_brush.blendAlpha * m_brush.radius;
+        // Authored width is the brush radius at the default GRIA alpha; the object's own
+        // blend_alpha scales it live (ecs::sdf_effective_blend_radius = blendAlpha * radius).
+        blendRadius = m_brush.radius * ecs::kSdfDefaultBlendAlpha;
         label = "Smooth SDF primitive";
     }
 

@@ -34,6 +34,10 @@ public:
     /// Cull against the active camera through the spatial BVH and gather draw items, SDF objects
     /// and lights (B3.6). Call after update(). Returns empty data without an active camera.
     fuse::ecs::SceneData buildFrame(fuse::ecs::CullResult* cullOut = nullptr);
+    /// Steady-state form of buildFrame(): fills `out` in place (capacity kept) and reuses the
+    /// manager's cull buffers, so a frame loop that keeps its SceneData performs no heap
+    /// allocation once the buffers have grown.
+    void buildFrame(fuse::ecs::SceneData& out, fuse::ecs::CullResult* cullOut = nullptr);
 
     fuse::ecs::EntityID createCamera(f32 fovDegrees = 75.f, bool active = false);
     [[nodiscard]] fuse::ecs::EntityID activeCamera() const { return m_activeCamera; }
@@ -72,6 +76,8 @@ private:
     std::vector<BvhSource> m_bvhSources;          ///< BVH build index -> entity
     std::vector<BvhSource> m_bvhSourcesScratch;
     std::vector<fuse::spatial::BVHLeaf> m_bvhLeaves;
+    fuse::ecs::CullScratch m_cullScratch;
+    fuse::ecs::CullResult m_visible;
     u32 m_spatialBvhRebuilds = 0;
     fuse::ecs::EntityID m_activeCamera{};
     u32 m_frameIndex = 0;

@@ -96,23 +96,29 @@ void SceneManager::syncSpatialBvh() {
 }
 
 fuse::ecs::SceneData SceneManager::buildFrame(fuse::ecs::CullResult* cullOut) {
+    fuse::ecs::SceneData scene;
+    buildFrame(scene, cullOut);
+    return scene;
+}
+
+void SceneManager::buildFrame(fuse::ecs::SceneData& out, fuse::ecs::CullResult* cullOut) {
     const fuse::ecs::Camera* camera =
         m_activeCamera.valid() ? m_registry.get<fuse::ecs::Camera>(m_activeCamera) : nullptr;
     if (!m_initialized || camera == nullptr) {
         if (cullOut != nullptr) {
             *cullOut = {};
         }
-        return {};
+        out = {};
+        return;
     }
 
     fuse::ecs::CullOptions options{};
     options.bvh_covers_scene = true; // syncSpatialBvh keeps a leaf for every Mesh/SDFObject
-    fuse::ecs::CullResult visible = fuse::ecs::CullingSystem::cull(m_registry, *camera, m_spatialBvh, options);
-    fuse::ecs::SceneData scene = fuse::ecs::SceneBuildSystem::build(m_registry, visible);
+    fuse::ecs::CullingSystem::cull(m_registry, *camera, m_spatialBvh, options, m_visible, m_cullScratch);
+    fuse::ecs::SceneBuildSystem::build(m_registry, m_visible, out);
     if (cullOut != nullptr) {
-        *cullOut = std::move(visible);
+        *cullOut = m_visible; // copy-assign reuses the caller's capacity
     }
-    return scene;
 }
 
 fuse::ecs::EntityID SceneManager::createCamera(f32 fovDegrees, bool active) {

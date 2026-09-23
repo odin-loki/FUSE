@@ -81,21 +81,31 @@ bool RasterPath::recordFrame(const RenderCommandList& commands) {
     return m_stats.pipelineReady;
 }
 
-void RasterPath::reloadPipelinesIfWatched() {
+bool RasterPath::pollShaderReload() {
+    return reloadPipelinesIfWatched();
+}
+
+bool RasterPath::reloadPipelinesIfWatched() {
     const u32 changed = m_shaderWatch.pollChanged();
     ++m_stats.shaderWatchPolls;
     if (changed == 0u) {
-        return;
+        return false;
+    }
+
+    // Frames still in flight reference the current pipeline (GraphicsPipeline::rebuild destroys
+    // it immediately); hot reload is a development path, so a device idle is acceptable.
+    if (m_device != nullptr && m_device->isValid()) {
+        m_device->waitIdle();
     }
 
     const bool vertexReloaded = m_vertexShader != nullptr && m_vertexShader->reloadFromDisk();
     const bool fragmentReloaded = m_fragmentShader != nullptr && m_fragmentShader->reloadFromDisk();
     if (!vertexReloaded && !fragmentReloaded) {
-        return;
+        return false;
     }
 
     if (m_graphicsPipeline == nullptr || !m_graphicsPipeline->rebuild()) {
-        return;
+        return false;
     }
 
     ++m_stats.pipelineReloadCount;
@@ -104,11 +114,10 @@ void RasterPath::reloadPipelinesIfWatched() {
         const u64 fragmentHash = m_fragmentShader->info().spirvHash;
         m_stats.pipelineContentHash = vertexHash ^ (fragmentHash * 0x9E3779B97F4A7C15ull);
     }
+    return true;
 }
 
 void RasterPath::updateStatsFromCommands(const RenderCommandList& commands) {
-    reloadPipelinesIfWatched();
-
     if (!m_stats.pipelineReady) {
         m_stats.message = "raster path not ready";
         return;
@@ -366,6 +375,7 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
         return false;
     }
     m_vertexMemory = vertexMemory;
+    nameVkObject(vkDevice, vk_object_type::kDeviceMemory, m_vertexMemory, "fuse.raster.vb.memory");
     vkBindBufferMemory(vkDevice, vertexBuffer, vertexMemory, 0);
     m_stats.vertexDeviceAddress = queryBufferDeviceAddress(device, vkDevice, vertexBuffer);
 
@@ -409,6 +419,7 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
         if (vkAllocateMemory(vkDevice, &indexAllocInfo, nullptr, &indexMemory) == VK_SUCCESS) {
             m_indexBuffer = indexBuffer;
             m_indexMemory = indexMemory;
+            nameVkObject(vkDevice, vk_object_type::kDeviceMemory, m_indexMemory, "fuse.raster.ib.memory");
             vkBindBufferMemory(vkDevice, indexBuffer, indexMemory, 0);
             m_stats.indexDeviceAddress = queryBufferDeviceAddress(device, vkDevice, indexBuffer);
 
@@ -503,6 +514,7 @@ bool RasterPath::createOffscreenTargets() {
         return false;
     }
     m_colorMemory = colorMemory;
+    nameVkObject(vkDevice, vk_object_type::kDeviceMemory, m_colorMemory, "fuse.raster.color.memory");
     vkBindImageMemory(vkDevice, colorImage, colorMemory, 0);
 
     VkImageViewCreateInfo viewInfo{};
@@ -522,6 +534,7 @@ bool RasterPath::createOffscreenTargets() {
         return false;
     }
     m_colorView = colorView;
+    nameVkObject(vkDevice, vk_object_type::kImageView, m_colorView, "fuse.raster.color.view");
 
     VkImageCreateInfo depthImageInfo{};
     depthImageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -557,6 +570,7 @@ bool RasterPath::createOffscreenTargets() {
         return false;
     }
     m_depthMemory = depthMemory;
+    nameVkObject(vkDevice, vk_object_type::kDeviceMemory, m_depthMemory, "fuse.raster.depth.memory");
     vkBindImageMemory(vkDevice, depthImage, depthMemory, 0);
 
     VkImageViewCreateInfo depthViewInfo{};
@@ -576,6 +590,7 @@ bool RasterPath::createOffscreenTargets() {
         return false;
     }
     m_depthView = depthView;
+    nameVkObject(vkDevice, vk_object_type::kImageView, m_depthView, "fuse.raster.depth.view");
 
     const VkImageView framebufferAttachments[2] = {colorView, depthView};
 
@@ -594,6 +609,7 @@ bool RasterPath::createOffscreenTargets() {
         return false;
     }
     m_framebuffer = framebuffer;
+    nameVkObject(vkDevice, vk_object_type::kFramebuffer, m_framebuffer, "fuse.raster.framebuffer");
     m_stats.depthAttachmentReady = true;
 #else
     (void)0;

@@ -206,7 +206,8 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
         basis = make_listener_basis_safe(listener->forward, listener->up);
     }
 
-    std::vector<VoiceRequest> requests;
+    std::vector<VoiceRequest>& requests = m_requests;
+    requests.clear();
     requests.reserve(registry.source_entities().size() + m_oneShots.size());
 
     auto estimate_audibility = [&](VoiceRequest& request) {

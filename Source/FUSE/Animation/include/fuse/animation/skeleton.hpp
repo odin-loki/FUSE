@@ -56,7 +56,12 @@ struct PoseSoA {
     void clear();
 
     static PoseSoA from_bind_pose(const Skeleton& skel);
+    /// In-place from_bind_pose(): reuses this pose's storage (no heap once it has grown to the
+    /// skeleton's bone count). Result is identical to `*this = from_bind_pose(skel)`.
+    void assign_bind_pose(const Skeleton& skel);
     Pose to_pose() const;
+    /// In-place to_pose(): copies bone count + world matrices into `out`, reusing its storage.
+    void to_pose(Pose& out) const;
     void compute_world_transforms(const Skeleton& skel);
 };
 

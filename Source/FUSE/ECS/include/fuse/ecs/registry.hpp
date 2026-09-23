@@ -41,6 +41,12 @@ public:
     [[nodiscard]] bool alive(EntityID id) const;
     [[nodiscard]] usize count() const;
 
+    /// Runtime component list of a live entity (sorted by type_index; empty when dead). Lets
+    /// type-erased tools (editor inspector, serialisers) enumerate what an entity carries.
+    [[nodiscard]] std::vector<std::type_index> component_types(EntityID id) const;
+    /// Type-erased read access to one component of a live entity; null when absent or dead.
+    [[nodiscard]] const void* get_raw(EntityID id, std::type_index type) const;
+
     template <typename T>
     T& add(EntityID id, T value = {});
 
@@ -296,14 +302,14 @@ void Registry::each(Fn&& fn, Without<WithoutTs...> exclude) {
 template <typename... WithTs, typename Fn>
 void Registry::each_query(Fn&& fn) {
     (assertComponent<WithTs>(), ...);
-    each_query_impl_<WithTs...>(make_query_filter(With<WithTs...>{}), std::forward<Fn>(fn));
+    each_query_impl_<WithTs...>(cached_query_filter(With<WithTs...>{}), std::forward<Fn>(fn));
 }
 
 template <typename... WithTs, typename... WithoutTs, typename Fn>
 void Registry::each_query(Fn&& fn, Without<WithoutTs...> /*exclude*/) {
     (assertComponent<WithTs>(), ...);
     (assertComponent<WithoutTs>(), ...);
-    each_query_impl_<WithTs...>(make_query_filter(With<WithTs...>{}, Without<WithoutTs...>{}), std::forward<Fn>(fn));
+    each_query_impl_<WithTs...>(cached_query_filter(With<WithTs...>{}, Without<WithoutTs...>{}), std::forward<Fn>(fn));
 }
 
 template <typename... WithTs, typename Fn>
@@ -341,14 +347,14 @@ void Registry::each_parallel(Fn&& fn, Without<WithoutTs...> exclude, u32 batchSi
 template <typename... WithTs, typename Fn>
 void Registry::each_query_parallel(Fn&& fn, u32 batchSize) {
     (assertComponent<WithTs>(), ...);
-    each_query_parallel_impl_<WithTs...>(make_query_filter(With<WithTs...>{}), std::forward<Fn>(fn), batchSize);
+    each_query_parallel_impl_<WithTs...>(cached_query_filter(With<WithTs...>{}), std::forward<Fn>(fn), batchSize);
 }
 
 template <typename... WithTs, typename... WithoutTs, typename Fn>
 void Registry::each_query_parallel(Fn&& fn, Without<WithoutTs...> /*exclude*/, u32 batchSize) {
     (assertComponent<WithTs>(), ...);
     (assertComponent<WithoutTs>(), ...);
-    each_query_parallel_impl_<WithTs...>(make_query_filter(With<WithTs...>{}, Without<WithoutTs...>{}),
+    each_query_parallel_impl_<WithTs...>(cached_query_filter(With<WithTs...>{}, Without<WithoutTs...>{}),
                                          std::forward<Fn>(fn),
                                          batchSize);
 }

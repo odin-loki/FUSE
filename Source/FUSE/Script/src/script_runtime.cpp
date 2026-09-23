@@ -454,12 +454,20 @@ void ScriptRuntime::update(f32 dt) {
 }
 
 void ScriptRuntime::dispatch_collision(ecs::EntityID entity, ecs::EntityID other, const ecs::vec3& point) {
+    // An entity destroyed earlier in this dispatch (e.g. `Entity.destroy(self)` on its first of
+    // several same-step contacts) gets no further callbacks; `update` detaches it.
+    if (m_bindings.registry != nullptr && !m_bindings.registry->alive(entity)) {
+        return;
+    }
     if (Instance* instance = find_instance(entity)) {
         invoke(*instance, Callback::Collision, 0.f, other, point);
     }
 }
 
 void ScriptRuntime::dispatch_trigger_enter(ecs::EntityID entity, ecs::EntityID other) {
+    if (m_bindings.registry != nullptr && !m_bindings.registry->alive(entity)) {
+        return;
+    }
     if (Instance* instance = find_instance(entity)) {
         invoke(*instance, Callback::TriggerEnter, 0.f, other, {});
     }

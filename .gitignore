@@ -193,3 +193,6 @@ Qt*.dll
 Engine/lib/assimp/include/assimp/config.h
 Engine/lib/assimp/revision.h
 *.o
+
+# Crash reports written by the crash handler when tests run from the repo root
+fuse_crash_*.txt

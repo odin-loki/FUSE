@@ -21,6 +21,9 @@ struct GraphicsPipelineDesc {
     void* nativeRenderPassOverride = nullptr;
     PipelineCache* pipelineCache = nullptr;
     u32 colorFormat = 37; // VK_FORMAT_R8G8B8A8_UNORM
+    /// Colour attachments written by the fragment shader (MRT). Blend state is replicated per
+    /// attachment; must match the render pass subpass colour count.
+    u32 colorAttachmentCount = 1;
     /// 0 = no depth attachment in dynamic rendering; 126 = D32_SFLOAT.
     u32 depthFormat = 0;
     u32 polygonMode = 0;  // VK_POLYGON_MODE_FILL

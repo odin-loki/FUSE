@@ -863,12 +863,39 @@ private:
 
 struct PairBufferSoA;
 
+/// Reusable working memory for the spatial-hash broadphase. Flat arrays only (counting-sort CSR
+/// cell table, open-addressing pair set, per-body plane-pair slots); they grow to the working
+/// size once and are reused, so a steady-state broadphase performs no heap allocations.
+struct BroadphaseScratch {
+    std::vector<u32> shapeEntryOffsets; ///< per shape: first (key, body) entry; shapeCount + 1
+    std::vector<u32> entryKeys;         ///< hash cell of each (shape, cell) occupancy
+    std::vector<u32> entryBodies;       ///< body of each (shape, cell) occupancy
+    std::vector<u32> cellStart;         ///< CSR offsets into cellBodies; tableSize + 1
+    std::vector<u32> cellCursor;        ///< scatter cursor / sorted-unique occupant count per cell
+    std::vector<u32> cellBodies;        ///< occupants grouped by cell (sorted, unique per cell)
+    std::vector<u32> cellSlotOffsets;   ///< first pair slot per cell
+    std::vector<u64> pairKeys;          ///< dedupe staging (packed canonical pairs)
+    std::vector<u64> pairKeysTemp;      ///< radix-sort ping-pong buffer
+    std::vector<u32> planeBodies;
+    std::vector<u32> dynamicBodies;
+    std::vector<u64> pairSet;           ///< open-addressing set of existing canonical pair keys
+    std::vector<CandidatePair> planePairs; ///< dynamicCount x planeCount slots
+    std::vector<u32> planePairCounts;      ///< valid plane pairs per dynamic body
+};
+
 /// Job-safe broadphase: parallel shape→cell + per-cell pair generation into reusable SoA slots.
+/// The overload without `scratch` uses a thread-local scratch.
 void runBroadphaseIntoBuffer(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     const SpatialHashParams& params,
     PairBufferSoA& buffer);
+void runBroadphaseIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    PairBufferSoA& buffer,
+    BroadphaseScratch& scratch);
 
 /// Job-safe 2D broadphase into reusable SoA pair slots.
 void runBroadphase2DIntoBuffer(
@@ -876,6 +903,12 @@ void runBroadphase2DIntoBuffer(
     const CollisionShapeSoA& shapes,
     const SpatialHashParams& params,
     PairBufferSoA& buffer);
+void runBroadphase2DIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    PairBufferSoA& buffer,
+    BroadphaseScratch& scratch);
 
 /// Why broadphase pair refine would early-out (B4.2 deepen follow-up pass).
 enum class RefineBroadphaseRejectReason : u8 {

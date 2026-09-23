@@ -11,6 +11,23 @@
 
 namespace fuse::ecs {
 
+f32 CullingSystem::sdf_world_bounding_radius(const Transform& transform, const SDFObject& sdf) {
+    // The local bounding sphere scales with the largest stretch of local_to_world's 3x3 block:
+    // the largest column length for rotation x scale chains (orthogonal columns), otherwise the
+    // Frobenius norm (an upper bound on the stretch of any sheared matrix).
+    const f32* m = transform.local_to_world.data.data();
+    const f32 c0 = m[0] * m[0] + m[1] * m[1] + m[2] * m[2];
+    const f32 c1 = m[4] * m[4] + m[5] * m[5] + m[6] * m[6];
+    const f32 c2 = m[8] * m[8] + m[9] * m[9] + m[10] * m[10];
+    const f32 d01 = m[0] * m[4] + m[1] * m[5] + m[2] * m[6];
+    const f32 d02 = m[0] * m[8] + m[1] * m[9] + m[2] * m[10];
+    const f32 d12 = m[4] * m[8] + m[5] * m[9] + m[6] * m[10];
+    const f32 tol = 1e-4f * (c0 + c1 + c2);
+    const bool orthogonal = std::fabs(d01) <= tol && std::fabs(d02) <= tol && std::fabs(d12) <= tol;
+    const f32 stretch = orthogonal ? std::sqrt(std::max(c0, std::max(c1, c2))) : std::sqrt(c0 + c1 + c2);
+    return sdf_bounding_radius(sdf) * stretch;
+}
+
 Camera::Frustum CullingSystem::extract_frustum(const mat4& view_projection) {
     return spatial::extract_frustum(view_projection);
 }
@@ -45,13 +62,24 @@ spatial::AABB CullingSystem::world_bounds(const Transform& transform, const Mesh
 
 spatial::AABB CullingSystem::world_bounds(const Transform& transform, const SDFObject& sdf) {
     const vec3 center = transform_point(transform.local_to_world, {0.f, 0.f, 0.f, 1.f});
-    const f32 r = sdf_bounding_radius(sdf);
+    const f32 r = sdf_world_bounding_radius(transform, sdf);
     return spatial::AABB{{center.x - r, center.y - r, center.z - r, 0.f}, {center.x + r, center.y + r, center.z + r, 0.f}};
 }
 
 CullResult CullingSystem::cull(Registry& reg, const Camera& camera, const spatial::BVH& bvh,
                                const CullOptions& options) {
     CullResult result{};
+    CullScratch scratch{};
+    cull(reg, camera, bvh, options, result, scratch);
+    return result;
+}
+
+void CullingSystem::cull(Registry& reg, const Camera& camera, const spatial::BVH& bvh, const CullOptions& options,
+                         CullResult& result, CullScratch& scratch) {
+    result.visible_meshes.clear();
+    result.visible_sdf_objects.clear();
+    result.visible_lights.clear();
+    result.culled_count = 0;
     const Camera::Frustum& frustum = camera.frustum;
 
     // Exact per-object tests shared by the BVH and fallback paths so both agree.
@@ -65,15 +93,18 @@ CullResult CullingSystem::cull(Registry& reg, const Camera& camera, const spatia
     auto sdfVisible = [&](const SDFObject& sdf, const Transform& transform) {
         return sdf.visible &&
                test_sphere_frustum(frustum, transform_point(transform.local_to_world, {0.f, 0.f, 0.f, 1.f}),
-                                   sdf_bounding_radius(sdf));
+                                   sdf_world_bounding_radius(transform, sdf));
     };
 
-    std::vector<spatial::BVHLeaf> hits;
+    std::vector<spatial::BVHLeaf>& hits = scratch.hits;
+    hits.clear();
     bvh.query_frustum(frustum, hits);
 
     // Entity-index markers so the fallback pass never adds an entity twice (was std::find: O(n^2)).
-    std::vector<u8> seenMesh;
-    std::vector<u8> seenSdf;
+    std::vector<u8>& seenMesh = scratch.seen_mesh;
+    std::vector<u8>& seenSdf = scratch.seen_sdf;
+    std::fill(seenMesh.begin(), seenMesh.end(), u8{0});
+    std::fill(seenSdf.begin(), seenSdf.end(), u8{0});
     auto mark = [](std::vector<u8>& seen, EntityID id) {
         if (id.index >= seen.size()) {
             seen.resize(static_cast<usize>(id.index) + 1u, 0u);
@@ -127,7 +158,7 @@ CullResult CullingSystem::cull(Registry& reg, const Camera& camera, const spatia
         const usize leafCount = bvh.leaf_count();
         const usize returned = hits.size();
         result.culled_count += static_cast<u32>(leafCount > returned ? leafCount - returned : 0u);
-        return result;
+        return;
     }
 
     reg.each<Mesh, Transform>([&](EntityID id, Mesh& mesh, Transform& transform) {
@@ -149,8 +180,6 @@ CullResult CullingSystem::cull(Registry& reg, const Camera& camera, const spatia
             result.visible_sdf_objects.push_back(id);
         }
     });
-
-    return result;
 }
 
 } // namespace fuse::ecs

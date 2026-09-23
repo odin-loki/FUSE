@@ -2,6 +2,21 @@
 
 #include <fuse/renderer/shader/shader_io.hpp>
 
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <system_error>
+#include <vector>
+
+#if !defined(_WIN32)
+#include <cerrno>
+#include <fcntl.h>
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char** environ;
+#endif
+
 namespace fuse::renderer {
 
 namespace {
@@ -58,7 +73,153 @@ CompiledShader makeSuccess(const ShaderDesc& desc, std::vector<u32>&& words, con
     return result;
 }
 
+const char* glslangStageName(ShaderStage stage) {
+    switch (stage) {
+    case ShaderStage::Vertex:
+        return "vert";
+    case ShaderStage::Fragment:
+        return "frag";
+    case ShaderStage::Compute:
+        return "comp";
+    case ShaderStage::Mesh:
+        return "mesh";
+    case ShaderStage::Task:
+        return "task";
+    case ShaderStage::RayGen:
+        return "rgen";
+    case ShaderStage::RayMiss:
+        return "rmiss";
+    case ShaderStage::RayClosestHit:
+        return "rchit";
+    case ShaderStage::RayAnyHit:
+        return "rahit";
+    }
+    return "vert";
+}
+
+bool isPrecompiledPath(const std::string& path) {
+    auto endsWith = [&path](const char* suffix) {
+        const std::string s(suffix);
+        return path.size() >= s.size() && path.compare(path.size() - s.size(), s.size(), s) == 0;
+    };
+    return endsWith(".spv") || endsWith(".fuseshader");
+}
+
+/// Run glslangValidator with `args` (args[0] = executable), output discarded. POSIX spawns the
+/// process directly (no shell: ~10 ms less per hot reload and no quoting pitfalls).
+bool runValidator(const std::vector<std::string>& args) {
+#if defined(_WIN32)
+    std::string command;
+    for (const std::string& arg : args) {
+        command += (command.empty() ? "\"" : " \"") + arg + "\"";
+    }
+    command = "\"" + command + " > NUL 2>&1\"";
+    return std::system(command.c_str()) == 0;
+#else
+    std::vector<char*> argv;
+    argv.reserve(args.size() + 1u);
+    for (const std::string& arg : args) {
+        argv.push_back(const_cast<char*>(arg.c_str()));
+    }
+    argv.push_back(nullptr);
+
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
+    posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
+    pid_t pid = 0;
+    const int spawned = posix_spawn(&pid, argv[0], &actions, nullptr, argv.data(), environ);
+    posix_spawn_file_actions_destroy(&actions);
+    if (spawned != 0) {
+        return false;
+    }
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) {
+            return false;
+        }
+    }
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+#endif
+}
+
 } // namespace
+
+const char* ShaderCompiler::defaultValidatorPath() {
+#if defined(FUSE_GLSLANG_VALIDATOR_PATH)
+    return FUSE_GLSLANG_VALIDATOR_PATH;
+#else
+    return nullptr;
+#endif
+}
+
+CompiledShader ShaderCompiler::compileWithValidator(const ShaderDesc& desc, const char* validatorPath) {
+    if (desc.sourcePath == nullptr || desc.sourcePath[0] == '\0') {
+        return makeFailure(desc, "shader source path is required");
+    }
+    const char* validator = validatorPath != nullptr ? validatorPath : defaultValidatorPath();
+    if (validator == nullptr || validator[0] == '\0') {
+        return makeFailure(desc, "no glslangValidator configured");
+    }
+    const std::string source(desc.sourcePath);
+    if (isPrecompiledPath(source)) {
+        return compileOffline(desc);
+    }
+
+    const std::string spirvPath = spirvPathForSource(desc.sourcePath);
+    const std::string tempPath = spirvPath + ".tmp";
+    std::vector<std::string> args = {validator, "-V", "-S", glslangStageName(desc.stage)};
+    if (desc.entryPoint != nullptr && desc.entryPoint[0] != '\0' && std::string(desc.entryPoint) != "main") {
+        args.insert(args.end(), {"-e", desc.entryPoint, "--source-entrypoint", "main"});
+    }
+    for (u32 i = 0; desc.defines != nullptr && i < desc.defineCount; ++i) {
+        if (desc.defines[i] != nullptr && desc.defines[i][0] != '\0') {
+            args.push_back(std::string("-D") + desc.defines[i]);
+        }
+    }
+    for (u32 i = 0; desc.includePaths != nullptr && i < desc.includePathCount; ++i) {
+        if (desc.includePaths[i] != nullptr && desc.includePaths[i][0] != '\0') {
+            args.push_back(std::string("-I") + desc.includePaths[i]);
+        }
+    }
+    args.insert(args.end(), {source, "-o", tempPath});
+
+    if (!runValidator(args)) {
+        std::remove(tempPath.c_str());
+        return makeFailure(desc, "glslangValidator failed for " + source);
+    }
+
+    // Atomic replace: a watcher polling the .spv never sees a half-written module.
+    std::error_code error;
+    std::filesystem::rename(tempPath, spirvPath, error);
+    if (error) {
+        std::remove(tempPath.c_str());
+        return makeFailure(desc, "could not replace " + spirvPath + ": " + error.message());
+    }
+
+    CompiledShader result = compileOffline(desc);
+    if (result.valid) {
+        result.message = "compiled GLSL with glslangValidator";
+    }
+    return result;
+}
+
+bool ShaderCompiler::enableRuntimeCompile(const char* validatorPath) {
+    const char* validator = validatorPath != nullptr ? validatorPath : defaultValidatorPath();
+    if (validator == nullptr || validator[0] == '\0') {
+        m_validatorPath.clear();
+        return false;
+    }
+    m_validatorPath = validator;
+    return true;
+}
+
+CompiledShader ShaderCompiler::compileEntry(const ShaderDesc& desc) const {
+    if (!m_validatorPath.empty()) {
+        return compileWithValidator(desc, m_validatorPath.c_str());
+    }
+    return compileOffline(desc);
+}
 
 CompiledShader ShaderCompiler::compileOffline(const ShaderDesc& desc) {
     if (desc.sourcePath == nullptr || desc.sourcePath[0] == '\0') {
@@ -149,7 +310,7 @@ bool ShaderCompiler::watch(const ShaderDesc& desc) {
         return false;
     }
 
-    entry.last = compileOffline(entry.desc);
+    entry.last = compileEntry(entry.desc);
     m_entries.push_back(std::move(entry));
     // Vector growth / string SSO moves invalidate c_str, definePtrs, and includePathPtrs; rebuild all.
     for (WatchedEntry& stored : m_entries) {
@@ -169,7 +330,7 @@ u32 ShaderCompiler::pollHotReload() {
     if (changedCount == 0u) {
         for (WatchedEntry& entry : m_entries) {
             bindOwnedPointers(entry);
-            entry.last = compileOffline(entry.desc);
+            entry.last = compileEntry(entry.desc);
             if (entry.last.valid) {
                 ++successes;
             }
@@ -185,7 +346,7 @@ u32 ShaderCompiler::pollHotReload() {
         for (WatchedEntry& entry : m_entries) {
             if (entry.path == path) {
                 bindOwnedPointers(entry);
-                entry.last = compileOffline(entry.desc);
+                entry.last = compileEntry(entry.desc);
                 if (entry.last.valid) {
                     ++successes;
                 }

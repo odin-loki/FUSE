@@ -68,6 +68,10 @@ void PBDSolver::init(u32 maxBodies, u32 maxContacts, u32 maxConstraints) {
     maxContacts_ = maxContacts;
     distanceConstraints_.clear();
     distanceConstraints_.reserve(maxConstraints);
+    joints_.clear();
+    jointResults_.clear();
+    jointStates_.clear();
+    jointIgnoredPairs_.clear();
     workBuffers_.init(maxBodies, maxContacts, maxConstraints);
     islandGraph_.clear();
     lastContactCount_ = 0;
@@ -78,6 +82,10 @@ void PBDSolver::init(u32 maxBodies, u32 maxContacts, u32 maxConstraints) {
 
 void PBDSolver::destroy() {
     distanceConstraints_.clear();
+    joints_.clear();
+    jointResults_.clear();
+    jointStates_.clear();
+    jointIgnoredPairs_.clear();
     workBuffers_.clear();
     islandGraph_.clear();
     maxBodies_ = 0;
@@ -90,6 +98,70 @@ void PBDSolver::destroy() {
 
 void PBDSolver::setDistanceConstraints(const std::vector<DistanceConstraint>& constraints) {
     distanceConstraints_ = constraints;
+}
+
+void PBDSolver::setJoints(const std::vector<JointConstraint>& joints) {
+    joints_.assign(joints.begin(), joints.end());
+    jointResults_.assign(joints_.size(), JointSolveResult{});
+    jointStates_.assign(joints_.size(), JointSubstepState{});
+    jointIgnoredPairs_.clear();
+    for (const JointConstraint& joint : joints_) {
+        if (!joint.collideConnected && joint.bodyA != kJointWorldBody && joint.bodyB != kJointWorldBody) {
+            const u32 lo = std::min(joint.bodyA, joint.bodyB);
+            const u32 hi = std::max(joint.bodyA, joint.bodyB);
+            jointIgnoredPairs_.push_back((static_cast<u64>(lo) << 32u) | hi);
+        }
+    }
+    std::sort(jointIgnoredPairs_.begin(), jointIgnoredPairs_.end());
+}
+
+bool PBDSolver::jointIgnoresPair_(u32 a, u32 b) const {
+    if (jointIgnoredPairs_.empty()) {
+        return false;
+    }
+    const u64 key = (static_cast<u64>(std::min(a, b)) << 32u) | std::max(a, b);
+    return std::binary_search(jointIgnoredPairs_.begin(), jointIgnoredPairs_.end(), key);
+}
+
+void PBDSolver::solveJoints_(RigidBodySoA& bodies, f32 dt) {
+    const u32 bodyCount = bodies.count();
+    const auto jointBody = [&](u32 index) {
+        if (index == kJointWorldBody || index >= bodyCount) {
+            return JointBody{kJointWorldBody, 0.f, {}};
+        }
+        const f32 invMass = effectiveInvMass(bodies, index);
+        return JointBody{index, invMass, workBuffers_.effectiveInvInertia(index, invMass)};
+    };
+    for (u32 jointIndex = 0; jointIndex < joints_.size(); ++jointIndex) {
+        const JointConstraint& joint = joints_[jointIndex];
+        if (jointResults_[jointIndex].broken || (joint.bodyA >= bodyCount && joint.bodyA != kJointWorldBody) ||
+            (joint.bodyB >= bodyCount && joint.bodyB != kJointWorldBody)) {
+            continue;
+        }
+        solveJointConstraint(bodies, joint, jointBody(joint.bodyA), jointBody(joint.bodyB), dt,
+                             jointStates_[jointIndex]);
+    }
+}
+
+void PBDSolver::finishJointSubstep_(f32 dt) {
+    // XPBD: lambda / h^2 is the constraint force (torque) over the substep.
+    const f32 invH2 = 1.f / (dt * dt);
+    for (u32 jointIndex = 0; jointIndex < joints_.size(); ++jointIndex) {
+        JointSolveResult& result = jointResults_[jointIndex];
+        JointSubstepState& state = jointStates_[jointIndex];
+        if (!result.broken) {
+            const f32 force = state.linearImpulse.length() * invH2;
+            const f32 torque = state.angularImpulse.length() * invH2;
+            result.force = std::max(result.force, force);
+            result.torque = std::max(result.torque, torque);
+            const JointConstraint& joint = joints_[jointIndex];
+            if (force > joint.breakForce || torque > joint.breakTorque) {
+                result.broken = true;
+                result.brokeThisStep = true;
+            }
+        }
+        state = JointSubstepState{};
+    }
 }
 
 void PBDSolver::mapBodyShapes_(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes) {
@@ -148,6 +220,23 @@ void PBDSolver::wakeJointedBodies_(RigidBodySoA& bodies, const SolverParams& par
         };
         wake(constraint.bodyA, constraint.bodyB);
         wake(constraint.bodyB, constraint.bodyA);
+    }
+    for (u32 jointIndex = 0; jointIndex < joints_.size(); ++jointIndex) {
+        const JointConstraint& joint = joints_[jointIndex];
+        if (jointResults_[jointIndex].broken || joint.bodyA >= bodyCount || joint.bodyB >= bodyCount) {
+            continue; // the world side never wakes anything
+        }
+        const auto wake = [&](u32 sleeper, u32 other) {
+            if (isSleeping(bodies.flags[sleeper]) && !isSleeping(bodies.flags[other]) &&
+                (bodies.flags[other] & RB_STATIC) == 0u && bodies.sleepTimers[other] == 0.f &&
+                (bodies.linearVelocities[other].length() > params.sleepLinearThreshold ||
+                 bodies.angularVelocities[other].length() > params.sleepAngularThreshold)) {
+                bodies.flags[sleeper] &= ~RB_SLEEPING;
+                bodies.sleepTimers[sleeper] = 0.f;
+            }
+        };
+        wake(joint.bodyA, joint.bodyB);
+        wake(joint.bodyB, joint.bodyA);
     }
 }
 
@@ -378,6 +467,9 @@ void PBDSolver::generateContacts(RigidBodySoA& bodies,
             }
             continue;
         }
+        if (jointIgnoresPair_(manifold.bodyA, manifold.bodyB)) {
+            continue; // jointed bodies without collideConnected
+        }
         filtered.push_back(manifold);
     }
 }
@@ -466,6 +558,8 @@ void PBDSolver::runConstraintIterations(RigidBodySoA& bodies, const SolverParams
                                       });
             });
         }
+
+        solveJoints_(bodies, dt);
 
         ++lastIterationCount_;
         // The residual costs a full pass over the contact points: only measure it when it can end
@@ -721,6 +815,11 @@ void PBDSolver::step(RigidBodySoA& bodies,
 
     frameContacts_.clear();
     frameContactSlot_.clear();
+    for (JointSolveResult& result : jointResults_) {
+        result.force = 0.f;
+        result.torque = 0.f;
+        result.brokeThisStep = false;
+    }
     mapBodyShapes_(bodies, shapes);
     computeInverseInertia_(bodies, shapes);
     wakeJointedBodies_(bodies, params);
@@ -752,6 +851,7 @@ void PBDSolver::step(RigidBodySoA& bodies,
         workBuffers_.prepareContactPoints(bodies);
         substepLambdaStart_ = workBuffers_.contactLambdas();
         runConstraintIterations(bodies, params, subDt);
+        finishJointSubstep_(subDt);
         updateVelocities(bodies, subDt);
         solveVelocities(bodies, params, subDt);
     }

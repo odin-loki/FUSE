@@ -107,6 +107,14 @@ f32 sdf_csg_apply(SDFCsgOp op, f32 scene, f32 d, f32 blend_radius) {
     }
 }
 
+f32 sdf_effective_blend_radius(const SDFObject& sdf) {
+    if (sdf.op != SDFCsgOp::SmoothUnion || !(sdf.blend_radius > 0.f)) {
+        return 0.f;
+    }
+    const f32 alpha = sdf.blend_alpha > 0.f ? std::min(sdf.blend_alpha, 1.f) : 0.f;
+    return sdf.blend_radius * (alpha / kSdfDefaultBlendAlpha);
+}
+
 f32 sdf_bounding_radius(const SDFObject& sdf) {
     f32 r = 0.f;
     switch (sdf.type) {
@@ -129,9 +137,7 @@ f32 sdf_bounding_radius(const SDFObject& sdf) {
         break;
     }
     r += std::fabs(sdf.roughness);
-    if (sdf.op == SDFCsgOp::SmoothUnion && sdf.blend_radius > 0.f) {
-        r += 0.25f * sdf.blend_radius;
-    }
+    r += 0.25f * sdf_effective_blend_radius(sdf);
     return r;
 }
 
@@ -155,7 +161,7 @@ SdfCsgSample SdfCsgScene::sample(const vec3& world) const {
     for (const Entry& entry : m_entries) {
         const f32 d = sdf_object_distance(entry.sdf, entry.transform, world);
         const f32 before = result.distance;
-        result.distance = sdf_csg_apply(entry.sdf.op, before, d, entry.sdf.blend_radius);
+        result.distance = sdf_csg_apply(entry.sdf.op, before, d, sdf_effective_blend_radius(entry.sdf));
         // The surface belongs to this object when it now defines the value: for union ops when its
         // own distance is the nearer one, for subtract/intersect when it raised the value.
         bool owns = false;

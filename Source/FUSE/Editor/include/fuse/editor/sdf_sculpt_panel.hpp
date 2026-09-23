@@ -51,7 +51,8 @@ public:
     /// (`fuse/ecs/sdf_csg.hpp`), each new primitive taking the next `csg_order`:
     ///  - Add: spawn a Union primitive (brush shape, radius in `params.x`, α, material) at `hitPoint`.
     ///  - Subtract: spawn a Subtract primitive that carves its volume out of everything before it.
-    ///  - Smooth: spawn a SmoothUnion primitive with blend radius `blendAlpha * radius`.
+    ///  - Smooth: spawn a SmoothUnion primitive with effective blend radius `blendAlpha * radius` (the
+    ///    object keeps `blend_alpha`, so later GRIA alpha edits re-blend it live).
     ///  - Roughen: raise `roughness` by `strength * kRoughenStep * radius` (capped at
     ///    `kMaxRoughness * radius`) on every object whose surface lies within the brush radius.
     ///  - Paint: set `material_id` to the brush material on every object whose surface lies within

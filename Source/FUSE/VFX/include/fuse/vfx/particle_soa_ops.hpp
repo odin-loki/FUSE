@@ -125,4 +125,9 @@ struct SimStepPreflight {
 [[nodiscard]] SimStepResult simulate_step(ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt,
                                           u32 grain_size = 64u);
 
+/// Heap-free form for per-frame use: dead-slot bookkeeping goes to the caller's
+/// `dead_slots_scratch` (cleared first, capacity kept) and the result's `dead_slots` stays empty.
+[[nodiscard]] SimStepResult simulate_step(ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt,
+                                          std::vector<u32>& dead_slots_scratch, u32 grain_size = 64u);
+
 } // namespace fuse::vfx::particle_soa

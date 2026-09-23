@@ -45,6 +45,8 @@ private:
     ShaderModule() = default;
     bool initialize(VulkanDevice& device, ShaderStage stage, const u32* spirv, u32 wordCount);
     void shutdown();
+    /// Debug-names the module after its SPIR-V path (or its stage when created from memory).
+    void applyDebugName();
 
     VulkanDevice* m_device = nullptr;
     ShaderModuleInfo m_info;

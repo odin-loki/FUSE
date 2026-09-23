@@ -1,0 +1,51 @@
+# FUSE valgrind suppressions (used by cmake/FuseValgrind.cmake, ctest label "valgrind").
+#
+# Policy: only THIRD-PARTY / system allocations are suppressed here, each with a comment naming
+# the owner and why it is not a FUSE leak. FUSE code is never suppressed: fix the leak instead.
+# Regenerate candidates with the --gen-suppressions=all blocks valgrind prints on failure.
+#
+# Baseline (2026-09, valgrind 3.22, build/fuse-debug): the representative set reports zero
+# definitely/indirectly lost blocks and zero memcheck errors without any suppression; the entries
+# below cover driver/runtime noise seen when the same binaries run against a Vulkan ICD.
+
+# Mesa lavapipe / llvmpipe (Vulkan software ICD, loaded by RendererBootstrap in
+# fuse_runtime_smoke / HybridComposer): a lavapipe rasterizer thread calloc()s 56+56 bytes that
+# the ICD never frees (observed in fuse_hybrid_cooked_bindings and fuse_u8_demo_3d_empty). The ICD
+# is dlclose()d before the leak scan, so this only matches with --keep-debuginfo=yes (set by
+# FuseValgrind.cmake); without it the frames print as ???.
+{
+   mesa_lavapipe_llvm_jit_caches
+   Memcheck:Leak
+   match-leak-kinds: definite,indirect
+   ...
+   obj:*/libvulkan_lvp.so*
+}
+{
+   mesa_llvm_shared_library
+   Memcheck:Leak
+   match-leak-kinds: definite,indirect
+   ...
+   obj:*/libLLVM*.so*
+}
+
+# Khronos Vulkan loader: layer/ICD manifest JSON parsing caches owned by the loader for the
+# process lifetime (freed only by the loader's library destructor).
+{
+   vulkan_loader_manifest_cache
+   Memcheck:Leak
+   match-leak-kinds: definite,indirect
+   ...
+   obj:*/libvulkan.so*
+   ...
+   fun:vkCreateInstance
+}
+
+# glibc dynamic loader: dlopen() of an ICD allocates link-map/TLS bookkeeping that is intentionally
+# retained (dlclose of a nodelete library).
+{
+   glibc_dlopen_linkmap
+   Memcheck:Leak
+   match-leak-kinds: definite,indirect
+   ...
+   fun:_dl_open
+}

@@ -1,4 +1,5 @@
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/property_inspector.hpp>
 #include <fuse/editor/gizmo_system.hpp>
 #include <fuse/editor/viewport_seq_preview_stub.hpp>
 #include <fuse/editor/viewport_vulkan_surface.hpp>
@@ -138,6 +139,14 @@ std::string capturePropertyValueBefore(const EditorHost& host, const EditorComma
         return formatPropertyFloat(registry.get<ecs::SDFObject>(entity)->blend_alpha);
     }
 
+    if (command.propertyName == "sdf.shape") {
+        const ecs::SDFObject* sdf = registry.get<ecs::SDFObject>(entity);
+        if (sdf == nullptr) {
+            return {};
+        }
+        return PropertyInspector::formatSdfShape(sdf->type, sdf->params);
+    }
+
     if (command.propertyName == "directional.intensity") {
         if (!registry.has<ecs::DirectionalLight>(entity)) {
             return {};
@@ -163,7 +172,8 @@ bool isUndoableEntityProperty(const EditorCommand& command) {
     return command.propertyName == "transform.trs" || command.propertyName == "transform.position" ||
            command.propertyName == "transform.scale" ||
            command.propertyName == "transform.rotation" || command.propertyName == "mesh.material_id" ||
-           command.propertyName == "sdf.blend_alpha" || command.propertyName == "directional.intensity" ||
+           command.propertyName == "sdf.blend_alpha" || command.propertyName == "sdf.shape" ||
+           command.propertyName == "directional.intensity" ||
            command.propertyName == "spot.intensity";
 }
 
@@ -523,6 +533,22 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         }
 
         sdf->blend_alpha = std::strtof(command.propertyValue.c_str(), nullptr);
+        host.editorState().sceneModified = true;
+        return true;
+    }
+
+    if (command.propertyName == "sdf.shape") {
+        ecs::SDFObject* sdf = registry.get<ecs::SDFObject>(entity);
+        if (sdf == nullptr) {
+            return false;
+        }
+        ecs::SDFPrimitive type{};
+        ecs::vec3 params = sdf->params;
+        if (!PropertyInspector::parseSdfShape(command.propertyValue, type, params)) {
+            return false;
+        }
+        sdf->type = type;
+        sdf->params = params;
         host.editorState().sceneModified = true;
         return true;
     }

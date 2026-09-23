@@ -177,24 +177,35 @@ void PoseSoA::clear() {
 
 PoseSoA PoseSoA::from_bind_pose(const Skeleton& skel) {
     PoseSoA pose = allocate(static_cast<u32>(skel.bones.size()));
-    pose.resize(static_cast<u32>(skel.bones.size()));
+    pose.assign_bind_pose(skel);
+    return pose;
+}
 
-    for (u32 i = 0; i < skel.bones.size(); ++i) {
-        decompose_trs(skel.bones[i].local_transform,
-                      pose.local_positions[i],
-                      pose.local_rotations[i],
-                      pose.local_scales[i]);
+void PoseSoA::assign_bind_pose(const Skeleton& skel) {
+    const u32 count = static_cast<u32>(skel.bones.size());
+    // Exact size (not just capacity) so every column matches a freshly built pose.
+    local_positions.resize(count);
+    local_rotations.resize(count);
+    local_scales.resize(count);
+    bone_world_transforms.resize(count);
+    bone_count = count;
+
+    for (u32 i = 0; i < count; ++i) {
+        decompose_trs(skel.bones[i].local_transform, local_positions[i], local_rotations[i], local_scales[i]);
     }
 
-    pose.compute_world_transforms(skel);
-    return pose;
+    compute_world_transforms(skel);
 }
 
 Pose PoseSoA::to_pose() const {
     Pose pose;
-    pose.bone_count = bone_count;
-    pose.bone_world_transforms = bone_world_transforms;
+    to_pose(pose);
     return pose;
+}
+
+void PoseSoA::to_pose(Pose& out) const {
+    out.bone_count = bone_count;
+    out.bone_world_transforms.assign(bone_world_transforms.begin(), bone_world_transforms.end());
 }
 
 void PoseSoA::compute_world_transforms(const Skeleton& skel) {

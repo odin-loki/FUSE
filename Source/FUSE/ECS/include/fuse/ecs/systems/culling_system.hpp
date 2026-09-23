@@ -30,15 +30,29 @@ struct CullOptions {
     bool bvh_covers_scene = false;
 };
 
+/// Reusable per-caller working memory for `CullingSystem::cull`: keeping one alive across frames
+/// (SceneManager does) makes steady-state culling heap-free once the buffers have grown.
+struct CullScratch {
+    std::vector<spatial::BVHLeaf> hits;
+    std::vector<u8> seen_mesh;
+    std::vector<u8> seen_sdf;
+};
+
 class CullingSystem {
 public:
     static CullResult cull(Registry& reg, const Camera& camera, const spatial::BVH& bvh,
                            const CullOptions& options = {});
+    /// Same as above, writing into `out` (cleared first, capacity kept) and reusing `scratch`.
+    static void cull(Registry& reg, const Camera& camera, const spatial::BVH& bvh, const CullOptions& options,
+                     CullResult& out, CullScratch& scratch);
 
     /// World-space bounds used for culling: all 8 local AABB corners transformed.
     static spatial::AABB world_bounds(const Transform& transform, const Mesh& mesh);
     /// World-space bounds of the SDF's bounding sphere.
     static spatial::AABB world_bounds(const Transform& transform, const SDFObject& sdf);
+    /// World-space bounding-sphere radius of an SDF: local radius x largest stretch of
+    /// `local_to_world` (scaled SDFs were previously bounded by their unscaled radius).
+    static f32 sdf_world_bounding_radius(const Transform& transform, const SDFObject& sdf);
 
     static bool test_aabb_frustum(const Camera::Frustum& frustum, const vec3& aabb_min,
                                   const vec3& aabb_max);

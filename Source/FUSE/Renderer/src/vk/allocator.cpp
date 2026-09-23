@@ -34,6 +34,7 @@ namespace {
 
 void closeExportedHandle(void* handle);
 bool bufferNeedsHostMapping(MemoryUsage usage);
+const char* resolveDebugName(const char* name, const char* fallback);
 
 #if defined(FUSE_VULKAN_BACKEND)
 bool hasUsage(BufferUsage usage, BufferUsage flag) {
@@ -162,6 +163,19 @@ VkImageCreateFlags imageCreateFlags(const TextureDesc& desc) {
     return desc.cubeMap ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
 }
 
+bool isDepthFormat(GpuFormat format) {
+    return format == GpuFormat::D32Sfloat;
+}
+
+/// Depth formats need a DEPTH-aspect view; a COLOR-aspect view of D32 is invalid.
+VkImageAspectFlags imageAspectFor(GpuFormat format) {
+    return isDepthFormat(format) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+}
+
+bool textureNeedsHostMapping(const TextureDesc& desc) {
+    return desc.memoryUsage != MemoryUsage::GpuOnly;
+}
+
 #if defined(FUSE_VMA_AVAILABLE)
 VmaMemoryUsage toVmaMemoryUsage(MemoryUsage usage) {
     switch (usage) {
@@ -172,19 +186,78 @@ VmaMemoryUsage toVmaMemoryUsage(MemoryUsage usage) {
     case MemoryUsage::GpuToCpu:
         return VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     case MemoryUsage::CpuOnly:
-        return VMA_MEMORY_USAGE_CPU_ONLY;
+        return VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
     }
     return VMA_MEMORY_USAGE_AUTO;
 }
+
+/// VMA_MEMORY_USAGE_AUTO* only picks host-visible memory when a HOST_ACCESS flag is given.
+VmaAllocationCreateFlags vmaHostAccessFlags(MemoryUsage usage) {
+    switch (usage) {
+    case MemoryUsage::CpuToGpu:
+    case MemoryUsage::CpuOnly:
+        return VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+    case MemoryUsage::GpuToCpu:
+        return VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
+    case MemoryUsage::GpuOnly:
+        break;
+    }
+    return 0;
+}
 #else
-u32 findMemoryType(VkPhysicalDevice physicalDevice, u32 typeFilter, VkMemoryPropertyFlags properties) {
+u32 findMemoryType(VkPhysicalDevice physicalDevice, u32 typeFilter, VkMemoryPropertyFlags properties,
+                   VkMemoryPropertyFlags* outFlags = nullptr) {
     VkPhysicalDeviceMemoryProperties memProperties{};
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
     for (u32 i = 0; i < memProperties.memoryTypeCount; ++i) {
         if ((typeFilter & (1u << i)) &&
             (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            if (outFlags != nullptr) {
+                *outFlags = memProperties.memoryTypes[i].propertyFlags;
+            }
             return i;
         }
+    }
+    return UINT32_MAX;
+}
+
+/// Memory type for a MemoryUsage, most-preferred property set first (VMA usage semantics):
+///   GpuOnly  -> DEVICE_LOCAL
+///   CpuToGpu -> HOST_VISIBLE|COHERENT, preferring DEVICE_LOCAL (BAR) when the heap offers it
+///   GpuToCpu -> HOST_VISIBLE|COHERENT, preferring HOST_CACHED for fast CPU reads
+///   CpuOnly  -> HOST_VISIBLE|COHERENT, preferring non-device-local system memory
+u32 selectMemoryType(VkPhysicalDevice physicalDevice, u32 typeFilter, MemoryUsage usage,
+                     VkMemoryPropertyFlags* outFlags) {
+    constexpr VkMemoryPropertyFlags kHost =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    switch (usage) {
+    case MemoryUsage::GpuOnly:
+        return findMemoryType(physicalDevice, typeFilter, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, outFlags);
+    case MemoryUsage::CpuToGpu: {
+        const u32 bar = findMemoryType(physicalDevice, typeFilter, kHost | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                       outFlags);
+        return bar != UINT32_MAX ? bar : findMemoryType(physicalDevice, typeFilter, kHost, outFlags);
+    }
+    case MemoryUsage::GpuToCpu: {
+        const u32 cached =
+            findMemoryType(physicalDevice, typeFilter, kHost | VK_MEMORY_PROPERTY_HOST_CACHED_BIT, outFlags);
+        return cached != UINT32_MAX ? cached : findMemoryType(physicalDevice, typeFilter, kHost, outFlags);
+    }
+    case MemoryUsage::CpuOnly: {
+        VkPhysicalDeviceMemoryProperties memProperties{};
+        vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+        for (u32 i = 0; i < memProperties.memoryTypeCount; ++i) {
+            const VkMemoryPropertyFlags flags = memProperties.memoryTypes[i].propertyFlags;
+            if ((typeFilter & (1u << i)) && (flags & kHost) == kHost &&
+                (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) == 0) {
+                if (outFlags != nullptr) {
+                    *outFlags = flags;
+                }
+                return i;
+            }
+        }
+        return findMemoryType(physicalDevice, typeFilter, kHost, outFlags);
+    }
     }
     return UINT32_MAX;
 }
@@ -261,10 +334,9 @@ bool nativeCreateBuffer(const VulkanDevice* vulkanDevice, VkDevice device,
     vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
 
     const bool hostVisible = bufferNeedsHostMapping(desc.memoryUsage);
-    const VkMemoryPropertyFlags memFlags =
-        hostVisible ? (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
-                    : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    const u32 memoryTypeIndex = findMemoryType(physicalDevice, memRequirements.memoryTypeBits, memFlags);
+    VkMemoryPropertyFlags memoryFlags = 0;
+    const u32 memoryTypeIndex =
+        selectMemoryType(physicalDevice, memRequirements.memoryTypeBits, desc.memoryUsage, &memoryFlags);
     if (memoryTypeIndex == UINT32_MAX) {
         vkDestroyBuffer(device, buffer, nullptr);
         return false;
@@ -323,6 +395,7 @@ bool nativeCreateBuffer(const VulkanDevice* vulkanDevice, VkDevice device,
     out.deviceAddress = fetchBufferDeviceAddress(vulkanDevice, buffer, bufferInfo.usage);
     out.exportedHandle = exported;
     out.allocationSize = memRequirements.size;
+    out.memoryPropertyFlags = static_cast<u32>(memoryFlags);
     return true;
 }
 
@@ -338,14 +411,32 @@ bool nativeCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, const T
     imageInfo.mipLevels = desc.mipLevels;
     imageInfo.arrayLayers = desc.arrayLayers;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    const bool hostVisible = textureNeedsHostMapping(desc);
+    imageInfo.tiling = hostVisible ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
     imageInfo.usage = toVkImageUsage(desc.usage);
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    // Linear host textures start PREINITIALIZED so texels the CPU writes before the first
+    // transition survive it; optimal images start UNDEFINED.
+    imageInfo.initialLayout = hostVisible ? VK_IMAGE_LAYOUT_PREINITIALIZED : VK_IMAGE_LAYOUT_UNDEFINED;
     if (enableExport) {
         externalImageInfo.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
         externalImageInfo.handleTypes = platformExternalMemoryHandleType();
         imageInfo.pNext = &externalImageInfo;
+    }
+
+    if (hostVisible) {
+        // Linear tiling is only guaranteed for single-mip, single-layer 2D colour images, and
+        // per-format usage support must be queried.
+        if (imageInfo.imageType != VK_IMAGE_TYPE_2D || desc.mipLevels != 1u || desc.arrayLayers != 1u ||
+            isDepthFormat(desc.format)) {
+            return false;
+        }
+        VkImageFormatProperties formatProperties{};
+        if (vkGetPhysicalDeviceImageFormatProperties(physicalDevice, imageInfo.format, imageInfo.imageType,
+                                                     imageInfo.tiling, imageInfo.usage, imageInfo.flags,
+                                                     &formatProperties) != VK_SUCCESS) {
+            return false;
+        }
     }
 
     VkImage image = VK_NULL_HANDLE;
@@ -356,8 +447,9 @@ bool nativeCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, const T
     VkMemoryRequirements memRequirements{};
     vkGetImageMemoryRequirements(device, image, &memRequirements);
 
-    const u32 memoryTypeIndex = findMemoryType(physicalDevice, memRequirements.memoryTypeBits,
-                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    VkMemoryPropertyFlags memoryFlags = 0;
+    const u32 memoryTypeIndex =
+        selectMemoryType(physicalDevice, memRequirements.memoryTypeBits, desc.memoryUsage, &memoryFlags);
     if (memoryTypeIndex == UINT32_MAX) {
         vkDestroyImage(device, image, nullptr);
         return false;
@@ -396,7 +488,7 @@ bool nativeCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, const T
     viewInfo.image = image;
     viewInfo.viewType = selectImageViewType(desc);
     viewInfo.format = toVkFormat(desc.format);
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.aspectMask = imageAspectFor(desc.format);
     viewInfo.subresourceRange.levelCount = desc.mipLevels;
     viewInfo.subresourceRange.layerCount = desc.arrayLayers;
 
@@ -408,12 +500,35 @@ bool nativeCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, const T
         return false;
     }
 
+    void* mapped = nullptr;
+    u64 rowPitch = 0;
+    if (hostVisible) {
+        VkImageSubresource subresource{};
+        subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        VkSubresourceLayout layout{};
+        vkGetImageSubresourceLayout(device, image, &subresource, &layout);
+        void* base = nullptr;
+        if (vkMapMemory(device, memory, 0, VK_WHOLE_SIZE, 0, &base) != VK_SUCCESS) {
+            vkDestroyImageView(device, view, nullptr);
+            closeExportedHandle(exported);
+            vkDestroyImage(device, image, nullptr);
+            vkFreeMemory(device, memory, nullptr);
+            return false;
+        }
+        mapped = static_cast<u8*>(base) + layout.offset;
+        rowPitch = static_cast<u64>(layout.rowPitch);
+    }
+
     out.image = image;
     out.view = view;
     out.allocation = memory;
     out.desc = desc;
     out.exportedHandle = exported;
     out.allocationSize = memRequirements.size;
+    out.mapped = mapped;
+    out.mappedRowPitch = rowPitch;
+    out.memoryPropertyFlags = static_cast<u32>(memoryFlags);
+    out.layout = hostVisible ? static_cast<u32>(VK_IMAGE_LAYOUT_PREINITIALIZED) : 0u;
     return true;
 }
 #endif
@@ -431,14 +546,20 @@ void closeExportedHandle(void* handle) {
 }
 
 bool bufferNeedsHostMapping(MemoryUsage usage) {
-    return usage == MemoryUsage::CpuToGpu || usage == MemoryUsage::GpuToCpu;
+    // CpuOnly is host memory too (staging / CPU-side scratch): it must be mapped like the others.
+    return usage == MemoryUsage::CpuToGpu || usage == MemoryUsage::GpuToCpu || usage == MemoryUsage::CpuOnly;
+}
+
+const char* resolveDebugName(const char* name, const char* fallback) {
+    return (name != nullptr && name[0] != '\0') ? name : fallback;
 }
 
 #if defined(FUSE_VULKAN_BACKEND)
-// VkObjectType numeric: deviceMemory=8, buffer=9, image=10.
+// VkObjectType numeric: deviceMemory=8, buffer=9, image=10, imageView=14.
 constexpr u32 kVkObjectTypeDeviceMemory = 8;
 constexpr u32 kVkObjectTypeBuffer = 9;
 constexpr u32 kVkObjectTypeImage = 10;
+constexpr u32 kVkObjectTypeImageView = 14;
 
 void trySetDebugName(void* vkDevice, u32 vkObjectType, void* handle, const char* name,
                      GpuAllocStats& stats) {
@@ -607,6 +728,7 @@ bool GpuAllocator::createBuffer(const BufferDesc& desc, Buffer& out) {
 
     VmaAllocationCreateInfo allocInfo{};
     allocInfo.usage = toVmaMemoryUsage(desc.memoryUsage);
+    allocInfo.flags = vmaHostAccessFlags(desc.memoryUsage);
 
     VkBuffer buffer = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
@@ -625,13 +747,21 @@ bool GpuAllocator::createBuffer(const BufferDesc& desc, Buffer& out) {
     if (desc.cudaInterop) {
         out.allocationSize = desc.size;
     }
-    vmaMapMemory(static_cast<VmaAllocator>(m_allocator), allocation, &out.mapped);
-    trySetDebugName(m_device->nativeHandle(), kVkObjectTypeBuffer, out.handle, desc.name, m_stats);
+    // Only host-access allocations are mappable; mapping a GpuOnly (device-local) block fails.
+    if (bufferNeedsHostMapping(desc.memoryUsage)) {
+        vmaMapMemory(static_cast<VmaAllocator>(m_allocator), allocation, &out.mapped);
+    }
+    const char* bufferName = resolveDebugName(desc.name, "fuse.gpu_alloc.buffer");
+    trySetDebugName(m_device->nativeHandle(), kVkObjectTypeBuffer, out.handle, bufferName, m_stats);
     {
         VmaAllocationInfo vmaAllocInfo{};
         vmaGetAllocationInfo(static_cast<VmaAllocator>(m_allocator), allocation, &vmaAllocInfo);
         trySetDebugName(m_device->nativeHandle(), kVkObjectTypeDeviceMemory,
-                        reinterpret_cast<void*>(vmaAllocInfo.deviceMemory), desc.name, m_stats);
+                        reinterpret_cast<void*>(vmaAllocInfo.deviceMemory), bufferName, m_stats);
+        VkMemoryPropertyFlags memoryFlags = 0;
+        vmaGetMemoryTypeProperties(static_cast<VmaAllocator>(m_allocator), vmaAllocInfo.memoryType,
+                                   &memoryFlags);
+        out.memoryPropertyFlags = static_cast<u32>(memoryFlags);
     }
     gpu_alloc_detail::recordBufferAlloc(m_stats, desc.size);
     refreshVmaPoolStats();
@@ -656,8 +786,9 @@ bool GpuAllocator::createBuffer(const BufferDesc& desc, Buffer& out) {
         return false;
     }
 
-    trySetDebugName(device, kVkObjectTypeBuffer, out.handle, desc.name, m_stats);
-    trySetDebugName(device, kVkObjectTypeDeviceMemory, out.allocation, desc.name, m_stats);
+    const char* bufferName = resolveDebugName(desc.name, "fuse.gpu_alloc.buffer");
+    trySetDebugName(device, kVkObjectTypeBuffer, out.handle, bufferName, m_stats);
+    trySetDebugName(device, kVkObjectTypeDeviceMemory, out.allocation, bufferName, m_stats);
     gpu_alloc_detail::recordBufferAlloc(m_stats, desc.size);
     notifyStats();
     return true;
@@ -742,13 +873,21 @@ bool GpuAllocator::createImage(const TextureDesc& desc, Texture& out) {
     imageInfo.mipLevels = desc.mipLevels;
     imageInfo.arrayLayers = desc.arrayLayers;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    const bool hostVisible = textureNeedsHostMapping(desc);
+    imageInfo.tiling = hostVisible ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
     imageInfo.usage = toVkImageUsage(desc.usage);
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.initialLayout = hostVisible ? VK_IMAGE_LAYOUT_PREINITIALIZED : VK_IMAGE_LAYOUT_UNDEFINED;
+    if (hostVisible && (desc.depth > 1 || desc.mipLevels != 1u || desc.arrayLayers != 1u ||
+                        isDepthFormat(desc.format))) {
+        gpu_alloc_detail::recordFailedAlloc(m_stats);
+        notifyStats();
+        return false;
+    }
 
     VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    allocInfo.usage = toVmaMemoryUsage(desc.memoryUsage);
+    allocInfo.flags = vmaHostAccessFlags(desc.memoryUsage);
 
     VkImage image = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
@@ -764,7 +903,7 @@ bool GpuAllocator::createImage(const TextureDesc& desc, Texture& out) {
     viewInfo.image = image;
     viewInfo.viewType = selectImageViewType(desc);
     viewInfo.format = toVkFormat(desc.format);
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.aspectMask = imageAspectFor(desc.format);
     viewInfo.subresourceRange.levelCount = desc.mipLevels;
     viewInfo.subresourceRange.layerCount = desc.arrayLayers;
 
@@ -785,12 +924,30 @@ bool GpuAllocator::createImage(const TextureDesc& desc, Texture& out) {
     if (desc.cudaInterop) {
         out.allocationSize = imageBytes;
     }
-    trySetDebugName(device, kVkObjectTypeImage, out.image, desc.name, m_stats);
+    if (hostVisible) {
+        VkImageSubresource subresource{};
+        subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        VkSubresourceLayout layout{};
+        vkGetImageSubresourceLayout(device, image, &subresource, &layout);
+        void* base = nullptr;
+        if (vmaMapMemory(static_cast<VmaAllocator>(m_allocator), allocation, &base) == VK_SUCCESS) {
+            out.mapped = static_cast<u8*>(base) + layout.offset;
+            out.mappedRowPitch = static_cast<u64>(layout.rowPitch);
+        }
+        out.layout = static_cast<u32>(VK_IMAGE_LAYOUT_PREINITIALIZED);
+    }
+    const char* imageName = resolveDebugName(desc.name, "fuse.gpu_alloc.image");
+    trySetDebugName(device, kVkObjectTypeImage, out.image, imageName, m_stats);
+    trySetDebugName(device, kVkObjectTypeImageView, out.view, imageName, m_stats);
     {
         VmaAllocationInfo vmaAllocInfo{};
         vmaGetAllocationInfo(static_cast<VmaAllocator>(m_allocator), allocation, &vmaAllocInfo);
         trySetDebugName(device, kVkObjectTypeDeviceMemory,
-                        reinterpret_cast<void*>(vmaAllocInfo.deviceMemory), desc.name, m_stats);
+                        reinterpret_cast<void*>(vmaAllocInfo.deviceMemory), imageName, m_stats);
+        VkMemoryPropertyFlags memoryFlags = 0;
+        vmaGetMemoryTypeProperties(static_cast<VmaAllocator>(m_allocator), vmaAllocInfo.memoryType,
+                                   &memoryFlags);
+        out.memoryPropertyFlags = static_cast<u32>(memoryFlags);
     }
     gpu_alloc_detail::recordImageAlloc(m_stats, imageBytes);
     refreshVmaPoolStats();
@@ -814,8 +971,10 @@ bool GpuAllocator::createImage(const TextureDesc& desc, Texture& out) {
         return false;
     }
 
-    trySetDebugName(device, kVkObjectTypeImage, out.image, desc.name, m_stats);
-    trySetDebugName(device, kVkObjectTypeDeviceMemory, out.allocation, desc.name, m_stats);
+    const char* imageName = resolveDebugName(desc.name, "fuse.gpu_alloc.image");
+    trySetDebugName(device, kVkObjectTypeImage, out.image, imageName, m_stats);
+    trySetDebugName(device, kVkObjectTypeImageView, out.view, imageName, m_stats);
+    trySetDebugName(device, kVkObjectTypeDeviceMemory, out.allocation, imageName, m_stats);
     gpu_alloc_detail::recordImageAlloc(m_stats, imageBytes);
     notifyStats();
     return true;
@@ -842,6 +1001,10 @@ void GpuAllocator::destroyImage(Texture& texture) {
         if (texture.view != nullptr) {
             vkDestroyImageView(device, static_cast<VkImageView>(texture.view), nullptr);
         }
+        if (texture.mapped != nullptr) {
+            vmaUnmapMemory(static_cast<VmaAllocator>(m_allocator),
+                           static_cast<VmaAllocation>(texture.allocation));
+        }
         vmaDestroyImage(static_cast<VmaAllocator>(m_allocator), static_cast<VkImage>(texture.image),
                         static_cast<VmaAllocation>(texture.allocation));
     }
@@ -852,6 +1015,9 @@ void GpuAllocator::destroyImage(Texture& texture) {
             vkDestroyImageView(device, static_cast<VkImageView>(texture.view), nullptr);
         }
         vkDestroyImage(device, static_cast<VkImage>(texture.image), nullptr);
+        if (texture.mapped != nullptr && texture.allocation != nullptr) {
+            vkUnmapMemory(device, static_cast<VkDeviceMemory>(texture.allocation));
+        }
         if (texture.allocation != nullptr) {
             vkFreeMemory(device, static_cast<VkDeviceMemory>(texture.allocation), nullptr);
         }

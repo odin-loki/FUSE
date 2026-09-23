@@ -72,7 +72,20 @@ ScriptPhysicsBackend& require_physics(lua_State* L) {
     return *b.physics;
 }
 
+/// An entity argument is its encoded id, or a script instance table (`self`), whose `entity`
+/// field is used — so behaviours can write `Entity.destroy(self)`.
 ecs::EntityID check_entity(lua_State* L, int index) {
+    if (lua_istable(L, index)) {
+        lua_getfield(L, index, "entity");
+        if (!lua_isnumber(L, -1)) {
+            lua_pop(L, 1);
+            luaL_argerror(L, index, "entity id or table with an 'entity' field expected");
+            return ecs::EntityID::null();
+        }
+        const ecs::EntityID id = decode_entity_id(static_cast<f64>(lua_tonumber(L, -1)));
+        lua_pop(L, 1);
+        return id;
+    }
     return decode_entity_id(static_cast<f64>(luaL_checknumber(L, index)));
 }
 

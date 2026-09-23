@@ -252,7 +252,9 @@ SerialiseResult SceneSerialiser::load(const std::string& path, Scene& scene) {
     SceneHeader header{};
     std::memcpy(&header, buffer.data(), sizeof(header));
 
-    if (header.magic != MAGIC) {
+    // Compat loader: pre-rename 'ENGC' files share the v1/v2 layout, only the magic differs.
+    const bool legacyMagic = header.magic == LEGACY_MAGIC_ENGC;
+    if (header.magic != MAGIC && !legacyMagic) {
         result.status = SerialiseStatus::InvalidMagic;
         result.error = "invalid scene magic";
         return result;
@@ -382,6 +384,7 @@ SerialiseResult SceneSerialiser::load(const std::string& path, Scene& scene) {
 
     scene = std::move(loaded);
     scene.camera().update();
+    result.legacyMagic = legacyMagic;
     result.status = SerialiseStatus::Ok;
     return result;
 }

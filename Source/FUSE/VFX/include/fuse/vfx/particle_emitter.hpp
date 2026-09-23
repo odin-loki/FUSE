@@ -101,6 +101,8 @@ private:
     f64 m_emitAccum = 0.0;
     u64 m_totalEmitted = 0;
     u64 m_frameSeed = 1;
+    /// simulate_step dead-slot list reused across frames (steady-state simulate is heap-free).
+    std::vector<u32> m_deadSlotScratch;
 };
 
 } // namespace fuse::vfx

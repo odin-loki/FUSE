@@ -19,6 +19,7 @@ add_library(fuse_physics STATIC
     src/pbd_solver.cpp
     src/solver/solver_work_buffers.cpp
     src/solver/constraint_accumulation.cpp
+    src/solver/joint_constraint.cpp
     src/solver/contact_island_graph.cpp
     src/solver/pbd_island_solve.cpp
     src/barnes_hut.cpp

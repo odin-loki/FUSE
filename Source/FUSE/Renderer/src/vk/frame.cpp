@@ -117,6 +117,8 @@ void nameSlotSyncObjects(void* vkDevice, FrameSyncData& slot, u32 index, u32& na
                        "computeCmd", namesSet);
     tryNameFrameObject(vkDevice, VK_OBJECT_TYPE_QUERY_POOL, slot.timestampQueryPool, index,
                        "timestampPool", namesSet);
+    tryNameFrameObject(vkDevice, VK_OBJECT_TYPE_DESCRIPTOR_POOL, slot.commands.descriptorPool, index,
+                       "descriptorPool", namesSet);
 }
 
 #if defined(VK_VERSION_1_2) || defined(VK_KHR_timeline_semaphore)

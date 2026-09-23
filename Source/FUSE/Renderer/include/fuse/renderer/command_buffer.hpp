@@ -164,8 +164,15 @@ public:
     u32 vulkanFillBufferCount() const { return m_vulkanFillBufferCount; }
     u32 vulkanUpdateBufferCount() const { return m_vulkanUpdateBufferCount; }
     u32 vulkanCopyBufferCount() const { return m_vulkanCopyBufferCount; }
+    /// Real state-change calls encoded this recording (redundant binds are skipped, B3 draw list gate).
+    u32 vulkanPipelineBindCount() const { return m_vulkanPipelineBindCount; }
+    u32 vulkanVertexBufferBindCount() const { return m_vulkanVertexBufferBindCount; }
+    u32 vulkanIndexBufferBindCount() const { return m_vulkanIndexBufferBindCount; }
+    u32 vulkanPushConstantCount() const { return m_vulkanPushConstantCount; }
 
 private:
+    /// Forget cached bindings (new pipeline / render pass / foreign vkCmd* in between).
+    void invalidateBindState();
     void push(CommandRecordKind kind);
     bool shouldEncodeRasterPass(const char* passName) const;
     void beginVulkanRenderPass();
@@ -208,6 +215,15 @@ private:
     u32 m_vulkanFillBufferCount = 0;
     u32 m_vulkanUpdateBufferCount = 0;
     u32 m_vulkanCopyBufferCount = 0;
+    u32 m_vulkanPipelineBindCount = 0;
+    u32 m_vulkanVertexBufferBindCount = 0;
+    u32 m_vulkanIndexBufferBindCount = 0;
+    u32 m_vulkanPushConstantCount = 0;
+    /// Last state encoded into the current command buffer; null / UINT32_MAX = unknown.
+    void* m_boundVertexBuffer = nullptr;
+    void* m_boundIndexBuffer = nullptr;
+    u32 m_boundIndexType = UINT32_MAX;
+    u32 m_boundMaterialId = UINT32_MAX;
     std::vector<CommandRecord> m_records;
 };
 

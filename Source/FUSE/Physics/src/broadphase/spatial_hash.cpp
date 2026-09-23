@@ -6,8 +6,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <mutex>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -173,36 +171,6 @@ CandidatePair canonicalPair(u32 bodyA, u32 bodyB) {
     return {bodyA, bodyB};
 }
 
-void appendPair(std::vector<CandidatePair>& pairs, u32 bodyA, u32 bodyB) {
-    if (!isValidCandidatePair(bodyA, bodyB)) {
-        return;
-    }
-    pairs.push_back(canonicalPair(bodyA, bodyB));
-}
-
-void dedupePairs(std::vector<CandidatePair>& pairs) {
-    std::sort(pairs.begin(), pairs.end(), [](const CandidatePair& left, const CandidatePair& right) {
-        return left.bodyA < right.bodyA || (left.bodyA == right.bodyA && left.bodyB < right.bodyB);
-    });
-    pairs.erase(std::unique(pairs.begin(), pairs.end(),
-                            [](const CandidatePair& left, const CandidatePair& right) {
-                                return left.bodyA == right.bodyA && left.bodyB == right.bodyB;
-                            }),
-                pairs.end());
-}
-
-struct CellBuckets {
-    explicit CellBuckets(u32 tableSize) : buckets(tableSize), locks(tableSize) {}
-
-    std::vector<std::vector<u32>> buckets;
-    std::vector<std::mutex> locks;
-
-    void insert(u32 key, u32 bodyIndex) {
-        std::lock_guard<std::mutex> guard(locks[key]);
-        buckets[key].push_back(bodyIndex);
-    }
-};
-
 std::vector<u32> uniqueOccupants(const std::vector<u32>& occupants) {
     std::vector<u32> uniqueBodies = occupants;
     std::sort(uniqueBodies.begin(), uniqueBodies.end());
@@ -227,37 +195,14 @@ CellPairGenPreflight preflightCellPairGenerationImpl(const std::vector<u32>& occ
     return preflight;
 }
 
-u32 countPairsForCell(const std::vector<u32>& occupants) {
-    const CellPairGenPreflight preflight = preflightCellPairGenerationImpl(occupants);
-    if (!preflight.canGenerate()) {
-        return 0u;
-    }
-    return preflight.pairCount;
-}
-
-void generatePairsForCell(const std::vector<u32>& occupants, std::vector<CandidatePair>& out) {
-    if (!preflightCellPairGenerationImpl(occupants).canGenerate()) {
+/// Pair slots for one cell whose occupants are already sorted and unique.
+void writePairsForSortedUniqueCell(const u32* uniqueBodies, u32 count, u32 slotStart, PairBufferSoA& buffer) {
+    if (cellPairGenRejectReason(count) != CellPairGenRejectReason::None) {
         return;
     }
-    const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
-    for (usize i = 0; i < uniqueBodies.size(); ++i) {
-        for (usize j = i + 1; j < uniqueBodies.size(); ++j) {
-            appendPair(out, uniqueBodies[i], uniqueBodies[j]);
-        }
-    }
-}
-
-void writePairsForCellSlots(
-    const std::vector<u32>& occupants,
-    u32 slotStart,
-    PairBufferSoA& buffer) {
-    if (!preflightCellPairGenerationImpl(occupants).canGenerate()) {
-        return;
-    }
-    const std::vector<u32> uniqueBodies = uniqueOccupants(occupants);
     u32 slot = slotStart;
-    for (usize i = 0; i < uniqueBodies.size(); ++i) {
-        for (usize j = i + 1; j < uniqueBodies.size(); ++j) {
+    for (u32 i = 0; i < count; ++i) {
+        for (u32 j = i + 1; j < count; ++j) {
             buffer.writeSlot(slot++, uniqueBodies[i], uniqueBodies[j]);
         }
     }
@@ -354,13 +299,16 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
     return preflight;
 }
 
-void populateShapeCells(
+/// Calls `visit(key, bodyIndex)` for every hash cell the shape occupies (nothing when the shape
+/// insert preflight rejects it).
+template <typename Visit>
+void forEachShapeCell(
     u32 shapeIndex,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     const SpatialHashParams& params,
     bool use2D,
-    CellBuckets& cells) {
+    Visit&& visit) {
     const ShapeCellInsertPreflight insertPreflight =
         preflightShapeCellInsertImpl(shapeIndex, bodies, shapes, params, use2D);
     if (!insertPreflight.canInsert()) {
@@ -387,7 +335,7 @@ void populateShapeCells(
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
             for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
                 const u32 key = spatialHash2D(cx, cy, tableSize);
-                cells.insert(key, bodyIndex);
+                visit(key, bodyIndex);
             }
         }
         return;
@@ -405,7 +353,7 @@ void populateShapeCells(
         for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
             for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
                 const u32 key = spatialHash(cx, cy, cz, tableSize);
-                cells.insert(key, bodyIndex);
+                visit(key, bodyIndex);
             }
         }
     }
@@ -424,17 +372,150 @@ void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA
     }
 }
 
-void dedupeBuffer(PairBufferSoA& buffer) {
+/// Canonical pair (bodyA <= bodyB) packed so u64 order equals (bodyA, bodyB) lexicographic order.
+u64 pairKey(u32 bodyA, u32 bodyB) {
+    return (static_cast<u64>(bodyA) << 32) | bodyB;
+}
+
+/// LSD radix sort of `keys` (each < 2^keyBits) using `temp` as the ping-pong buffer. Produces the
+/// same ascending order as std::sort in O(n * passes); passes = ceil(keyBits / 11).
+void radixSortKeys(std::vector<u64>& keys, std::vector<u64>& temp, u32 keyBits) {
+    constexpr u32 kDigitBits = 11u;
+    constexpr u32 kBuckets = 1u << kDigitBits;
+    const usize count = keys.size();
+    if (count < 64u) {
+        std::sort(keys.begin(), keys.end());
+        return;
+    }
+    if (temp.capacity() < count) {
+        temp.reserve(keys.capacity());
+    }
+    temp.resize(count);
+    u64* src = keys.data();
+    u64* dst = temp.data();
+    u32 histogram[kBuckets];
+    for (u32 shift = 0; shift < keyBits; shift += kDigitBits) {
+        std::fill(histogram, histogram + kBuckets, 0u);
+        for (usize i = 0; i < count; ++i) {
+            ++histogram[(src[i] >> shift) & (kBuckets - 1u)];
+        }
+        u32 sum = 0u;
+        for (u32 bucket = 0; bucket < kBuckets; ++bucket) {
+            const u32 n = histogram[bucket];
+            histogram[bucket] = sum;
+            sum += n;
+        }
+        for (usize i = 0; i < count; ++i) {
+            dst[histogram[(src[i] >> shift) & (kBuckets - 1u)]++] = src[i];
+        }
+        std::swap(src, dst);
+    }
+    if (src != keys.data()) {
+        std::copy(src, src + count, keys.data());
+    }
+}
+
+/// Sort + unique the buffer's pairs through `staging` (packed keys; capacity reused across frames).
+/// Same result as sorting CandidatePairs by (bodyA, bodyB) and dropping duplicates.
+void dedupeBuffer(PairBufferSoA& buffer, std::vector<u64>& staging, std::vector<u64>& temp) {
     if (!shouldRunDedupeBroadphase(buffer) || !shouldRunPairBufferDedupe(buffer)) {
         return;
     }
 
-    std::vector<CandidatePair> pairs = buffer.toVector();
-    dedupePairs(pairs);
+    // Headroom: the pre-dedupe count (cell duplicates included) fluctuates frame to frame.
+    if (staging.capacity() < buffer.activeCount) {
+        staging.reserve(static_cast<usize>(buffer.activeCount) * 2u);
+    }
+    staging.clear();
+    u32 maxBody = 0u;
+    if (preflightPairBufferToVector(buffer).canExport()) {
+        for (u32 i = 0; i < buffer.activeCount; ++i) {
+            if (buffer.slotIsValid(i)) {
+                const CandidatePair pair = buffer.pairAt(i);
+                maxBody = std::max(maxBody, std::max(pair.bodyA, pair.bodyB));
+                staging.push_back(pairKey(pair.bodyA, pair.bodyB));
+            }
+        }
+    }
+    // Repack as (bodyA << bits | bodyB) with just enough bits: same order, fewer radix passes.
+    u32 bits = 1u;
+    while (bits < 32u && (maxBody >> bits) != 0u) {
+        ++bits;
+    }
+    if (bits < 32u) {
+        for (u64& key : staging) {
+            key = ((key >> 32u) << bits) | (key & 0xFFFFFFFFull);
+        }
+    }
+    radixSortKeys(staging, temp, bits * 2u);
+    staging.erase(std::unique(staging.begin(), staging.end()), staging.end());
 
     buffer.clear();
-    for (const CandidatePair& pair : pairs) {
-        buffer.push(pair.bodyA, pair.bodyB);
+    const u64 lowMask = bits < 32u ? ((1ull << bits) - 1ull) : 0xFFFFFFFFull;
+    const u32 highShift = bits < 32u ? bits : 32u;
+    for (const u64 key : staging) {
+        buffer.push(static_cast<u32>(key >> highShift), static_cast<u32>(key & lowMask));
+    }
+}
+
+void dedupeBuffer(PairBufferSoA& buffer) {
+    std::vector<u64> staging;
+    std::vector<u64> temp;
+    dedupeBuffer(buffer, staging, temp);
+}
+
+/// Grow-only resize: keeps capacity (and reserves headroom) so steady-state frames never reallocate.
+template <typename T>
+void resizeScratch(std::vector<T>& v, usize size) {
+    if (size > v.capacity()) {
+        v.reserve(size + size / 2u);
+    }
+    v.resize(size);
+}
+
+/// Open-addressing u64 set over `slots` (power-of-two size); kEmptyPairKey marks a free slot.
+/// Canonical pair keys never equal it (that would be the self pair 0xFFFFFFFF/0xFFFFFFFF).
+constexpr u64 kEmptyPairKey = ~0ull;
+
+usize pairKeySlot(u64 key, usize mask) {
+    u64 h = key * 0x9E3779B97F4A7C15ull;
+    h ^= h >> 29u;
+    return static_cast<usize>(h) & mask;
+}
+
+void pairSetReset(std::vector<u64>& slots, u32 count) {
+    usize size = 16u;
+    while (size < static_cast<usize>(count) * 2u) {
+        size <<= 1u;
+    }
+    if (size > slots.capacity()) {
+        slots.reserve(size);
+    }
+    slots.assign(size, kEmptyPairKey);
+}
+
+void pairSetInsert(std::vector<u64>& slots, u64 key) {
+    const usize mask = slots.size() - 1u;
+    for (usize slot = pairKeySlot(key, mask);; slot = (slot + 1u) & mask) {
+        if (slots[slot] == key) {
+            return;
+        }
+        if (slots[slot] == kEmptyPairKey) {
+            slots[slot] = key;
+            return;
+        }
+    }
+}
+
+bool pairSetContains(const std::vector<u64>& slots, u64 key) {
+    const usize mask = slots.size() - 1u;
+    for (usize slot = pairKeySlot(key, mask);; slot = (slot + 1u) & mask) {
+        if (slots[slot] == key) {
+            return true;
+        }
+        if (slots[slot] == kEmptyPairKey) {
+            return false;
+        }
     }
 }
 
@@ -494,7 +575,8 @@ void runBroadphaseIntoBufferInternal(
     const CollisionShapeSoA& shapes,
     const SpatialHashParams& params,
     bool use2D,
-    PairBufferSoA& buffer) {
+    PairBufferSoA& buffer,
+    BroadphaseScratch& scratch) {
     buffer.clear();
     if (!preflightBroadphase(bodies, shapes).canRun()) {
         return;
@@ -502,37 +584,103 @@ void runBroadphaseIntoBufferInternal(
 
     const SpatialHashParams normalizedParams = normalizeSpatialHashParams(params);
     const u32 tableSize = normalizedParams.tableSize;
-    CellBuckets cells(tableSize);
-
     const u32 shapeCount = shapes.count();
+
+    // Shape -> cell occupancy as flat (key, body) entries: count per shape, prefix, then fill.
+    // Each shape writes its own disjoint range, so both passes are job-safe and deterministic.
+    resizeScratch(scratch.shapeEntryOffsets, static_cast<usize>(shapeCount) + 1u);
+    u32* shapeEntryOffsets = scratch.shapeEntryOffsets.data();
     fuse::jobs::parallel_for(0u, shapeCount, kBuildGrainSize, [&](u32 shapeIndex) {
-        populateShapeCells(shapeIndex, bodies, shapes, normalizedParams, use2D, cells);
+        u32 count = 0u;
+        forEachShapeCell(shapeIndex, bodies, shapes, normalizedParams, use2D, [&](u32, u32) { ++count; });
+        shapeEntryOffsets[shapeIndex] = count;
+    });
+    u32 totalEntries = 0u;
+    for (u32 shapeIndex = 0; shapeIndex < shapeCount; ++shapeIndex) {
+        const u32 count = shapeEntryOffsets[shapeIndex];
+        shapeEntryOffsets[shapeIndex] = totalEntries;
+        totalEntries += count;
+    }
+    shapeEntryOffsets[shapeCount] = totalEntries;
+
+    resizeScratch(scratch.entryKeys, totalEntries);
+    resizeScratch(scratch.entryBodies, totalEntries);
+    u32* entryKeys = scratch.entryKeys.data();
+    u32* entryBodies = scratch.entryBodies.data();
+    fuse::jobs::parallel_for(0u, shapeCount, kBuildGrainSize, [&](u32 shapeIndex) {
+        u32 write = shapeEntryOffsets[shapeIndex];
+        forEachShapeCell(shapeIndex, bodies, shapes, normalizedParams, use2D, [&](u32 key, u32 bodyIndex) {
+            entryKeys[write] = key;
+            entryBodies[write] = bodyIndex;
+            ++write;
+        });
     });
 
-    std::vector<u32> cellSlotOffsets(tableSize, 0u);
-    u32 totalCellSlots = 0u;
+    // Counting sort into a CSR cell table (replaces one std::vector + mutex per hash bucket).
+    resizeScratch(scratch.cellStart, static_cast<usize>(tableSize) + 1u);
+    resizeScratch(scratch.cellCursor, tableSize);
+    resizeScratch(scratch.cellBodies, totalEntries);
+    resizeScratch(scratch.cellSlotOffsets, tableSize);
+    u32* cellStart = scratch.cellStart.data();
+    u32* cellCursor = scratch.cellCursor.data();
+    u32* cellBodies = scratch.cellBodies.data();
+    u32* cellSlotOffsets = scratch.cellSlotOffsets.data();
+    std::fill(cellStart, cellStart + tableSize + 1u, 0u);
+    for (u32 entry = 0; entry < totalEntries; ++entry) {
+        ++cellStart[entryKeys[entry] + 1u];
+    }
     for (u32 cellIndex = 0; cellIndex < tableSize; ++cellIndex) {
-        cellSlotOffsets[cellIndex] = totalCellSlots;
-        totalCellSlots += countPairsForCell(cells.buckets[cellIndex]);
+        cellStart[cellIndex + 1u] += cellStart[cellIndex];
+        cellCursor[cellIndex] = cellStart[cellIndex];
+    }
+    for (u32 entry = 0; entry < totalEntries; ++entry) {
+        cellBodies[cellCursor[entryKeys[entry]]++] = entryBodies[entry];
     }
 
+    // Per cell: sort + unique occupants in place (cellCursor becomes the unique count), then
+    // lay out pair slots in cell order exactly as the per-bucket path did.
+    u32 totalCellSlots = 0u;
+    for (u32 cellIndex = 0; cellIndex < tableSize; ++cellIndex) {
+        u32* begin = cellBodies + cellStart[cellIndex];
+        u32* end = cellBodies + cellStart[cellIndex + 1u];
+        if (end - begin > 1) {
+            std::sort(begin, end);
+            end = std::unique(begin, end);
+        }
+        const u32 uniqueCount = static_cast<u32>(end - begin);
+        cellCursor[cellIndex] = uniqueCount;
+        cellSlotOffsets[cellIndex] = totalCellSlots;
+        if (cellPairGenRejectReason(uniqueCount) == CellPairGenRejectReason::None) {
+            totalCellSlots += estimateCellPairCount(uniqueCount);
+        }
+    }
+
+    if (totalCellSlots > buffer.bodyA.capacity()) {
+        buffer.reserve(totalCellSlots + totalCellSlots / 2u);
+    }
     buffer.preparePairSlots(totalCellSlots);
     // No shared cells still needs the plane merge below: planes are unbounded and never
     // share a cell with bodies far from the plane body's origin.
     if (shouldRunBroadphaseCellPairGen(totalCellSlots)) {
         fuse::jobs::parallel_for(0u, tableSize, kCellGrainSize, [&](u32 cellIndex) {
-            if (cells.buckets[cellIndex].empty()) {
+            if (cellCursor[cellIndex] < 2u) {
                 return;
             }
-            writePairsForCellSlots(cells.buckets[cellIndex], cellSlotOffsets[cellIndex], buffer);
+            writePairsForSortedUniqueCell(cellBodies + cellStart[cellIndex], cellCursor[cellIndex],
+                                          cellSlotOffsets[cellIndex], buffer);
         });
         buffer.compact();
-        dedupeBuffer(buffer);
+        dedupeBuffer(buffer, scratch.pairKeys, scratch.pairKeysTemp);
     }
 
-    std::vector<u32> planeBodies;
-    std::vector<u32> dynamicBodies;
-    for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
+    std::vector<u32>& planeBodies = scratch.planeBodies;
+    std::vector<u32>& dynamicBodies = scratch.dynamicBodies;
+    planeBodies.clear();
+    dynamicBodies.clear();
+    if (dynamicBodies.capacity() < shapeCount) {
+        dynamicBodies.reserve(shapeCount);
+    }
+    for (u32 shapeIndex = 0; shapeIndex < shapeCount; ++shapeIndex) {
         const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
         if (bodyIndex >= bodies.count()) {
             continue;
@@ -545,17 +693,23 @@ void runBroadphaseIntoBufferInternal(
     }
 
     if (shouldRunBroadphaseMerge(bodies, shapes)) {
-        std::unordered_set<u64> existing;
-        existing.reserve(buffer.activeCount * 2 + 1);
+        std::vector<u64>& existing = scratch.pairSet;
+        pairSetReset(existing, buffer.activeCount);
         for (u32 i = 0; i < buffer.activeCount; ++i) {
-            const u64 key = (static_cast<u64>(buffer.bodyA[i]) << 32) | buffer.bodyB[i];
-            existing.insert(key);
+            pairSetInsert(existing, pairKey(buffer.bodyA[i], buffer.bodyB[i]));
         }
 
+        // One fixed slot row per dynamic body (at most one pair per plane), merged in body order.
         const u32 dynamicCount = static_cast<u32>(dynamicBodies.size());
-        std::vector<std::vector<CandidatePair>> dynamicPlanePairs(dynamicCount);
+        const u32 planeCount = static_cast<u32>(planeBodies.size());
+        resizeScratch(scratch.planePairs, static_cast<usize>(dynamicCount) * planeCount);
+        resizeScratch(scratch.planePairCounts, dynamicCount);
+        CandidatePair* planePairs = scratch.planePairs.data();
+        u32* planePairCounts = scratch.planePairCounts.data();
         fuse::jobs::parallel_for(0u, dynamicCount, kPlanePairGrainSize, [&](u32 dynamicIndex) {
             const u32 dynamicBody = dynamicBodies[dynamicIndex];
+            CandidatePair* row = planePairs + static_cast<usize>(dynamicIndex) * planeCount;
+            u32 count = 0u;
             for (u32 planeBody : planeBodies) {
                 if (!isValidCandidatePair(dynamicBody, planeBody, bodies.count())) {
                     continue;
@@ -564,22 +718,39 @@ void runBroadphaseIntoBufferInternal(
                     continue;
                 }
                 const CandidatePair pair = canonicalPair(dynamicBody, planeBody);
-                const u64 key = (static_cast<u64>(pair.bodyA) << 32) | pair.bodyB;
-                if (existing.find(key) == existing.end()) {
-                    dynamicPlanePairs[dynamicIndex].push_back(pair);
+                if (!pairSetContains(existing, pairKey(pair.bodyA, pair.bodyB))) {
+                    row[count++] = pair;
                 }
             }
+            planePairCounts[dynamicIndex] = count;
         });
 
-        for (const std::vector<CandidatePair>& bucketPairs : dynamicPlanePairs) {
-            mergePairsIntoBuffer(bucketPairs, buffer);
+        for (u32 dynamicIndex = 0; dynamicIndex < dynamicCount; ++dynamicIndex) {
+            const u32 count = planePairCounts[dynamicIndex];
+            // Same semantics as mergePairsIntoBuffer: skip empty rows and rows arriving at a full
+            // buffer, stop a row at the first rejected push.
+            if (count == 0u || buffer.isFull()) {
+                continue;
+            }
+            const CandidatePair* row = planePairs + static_cast<usize>(dynamicIndex) * planeCount;
+            for (u32 i = 0; i < count; ++i) {
+                if (!preflightPairBufferPush(buffer, row[i].bodyA, row[i].bodyB).canPush()) {
+                    break;
+                }
+                buffer.push(row[i].bodyA, row[i].bodyB);
+            }
         }
-        dedupeBuffer(buffer);
+        dedupeBuffer(buffer, scratch.pairKeys, scratch.pairKeysTemp);
     }
 
     if (shouldRunPairBufferClamp(buffer)) {
         buffer.applyMaxCapacityClamp();
     }
+}
+
+BroadphaseScratch& threadBroadphaseScratch() {
+    thread_local BroadphaseScratch scratch;
+    return scratch;
 }
 
 void refineBroadphasePairsParallelImpl(
@@ -964,7 +1135,16 @@ void runBroadphaseIntoBuffer(
     const CollisionShapeSoA& shapes,
     const SpatialHashParams& params,
     PairBufferSoA& buffer) {
-    runBroadphaseIntoBufferInternal(bodies, shapes, params, false, buffer);
+    runBroadphaseIntoBufferInternal(bodies, shapes, params, false, buffer, threadBroadphaseScratch());
+}
+
+void runBroadphaseIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    PairBufferSoA& buffer,
+    BroadphaseScratch& scratch) {
+    runBroadphaseIntoBufferInternal(bodies, shapes, params, false, buffer, scratch);
 }
 
 void runBroadphase2DIntoBuffer(
@@ -972,7 +1152,16 @@ void runBroadphase2DIntoBuffer(
     const CollisionShapeSoA& shapes,
     const SpatialHashParams& params,
     PairBufferSoA& buffer) {
-    runBroadphaseIntoBufferInternal(bodies, shapes, params, true, buffer);
+    runBroadphaseIntoBufferInternal(bodies, shapes, params, true, buffer, threadBroadphaseScratch());
+}
+
+void runBroadphase2DIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    PairBufferSoA& buffer,
+    BroadphaseScratch& scratch) {
+    runBroadphaseIntoBufferInternal(bodies, shapes, params, true, buffer, scratch);
 }
 
 std::vector<CandidatePair> runBroadphase(

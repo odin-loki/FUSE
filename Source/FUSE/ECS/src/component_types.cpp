@@ -60,6 +60,11 @@ const ComponentTypeInfo* ComponentTypes::find(std::type_index type) {
     return nullptr;
 }
 
+std::vector<ComponentTypeInfo> ComponentTypes::all() {
+    std::lock_guard<std::mutex> lock(tableMutex());
+    return table();
+}
+
 void register_builtin_components() {
     ComponentTypes::register_type<Transform>();
     ComponentTypes::register_type<Mesh>();

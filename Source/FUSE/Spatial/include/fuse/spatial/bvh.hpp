@@ -6,6 +6,7 @@
 #include <fuse/spatial/frustum.hpp>
 #include <fuse/types.hpp>
 
+#include <functional>
 #include <vector>
 
 namespace fuse::spatial {
@@ -47,6 +48,15 @@ public:
 
     bool ray_cast(const ecs::vec3& origin, const ecs::vec3& direction, f32 max_t, BVHLeaf& hit,
                   f32& t) const;
+    /// Exact nearest-hit query. `intersect(leaf, max_t, t)` refines a candidate leaf (whose AABB
+    /// the ray enters before the current best hit) to the true surface distance and returns false
+    /// on a miss. Nodes and leaves whose AABB entry lies beyond the best refined hit are skipped,
+    /// so overlapping bounds cannot hide a nearer surface behind a nearer box. Children are visited
+    /// near-first. Returns the leaf with the smallest refined `t` in [0, max_t].
+    using LeafIntersector = std::function<bool(const BVHLeaf& leaf, f32 max_t, f32& t)>;
+    bool ray_cast_exact(const ecs::vec3& origin, const ecs::vec3& direction, f32 max_t,
+                        const LeafIntersector& intersect, BVHLeaf& hit, f32& t) const;
+
     void query_aabb(const AABB& box, std::vector<BVHLeaf>& results) const;
     void query_sphere(const ecs::vec3& center, f32 radius, std::vector<BVHLeaf>& results) const;
     void query_frustum(const Frustum& frustum, std::vector<BVHLeaf>& results) const;
@@ -60,6 +70,8 @@ private:
                         u32 depth);
     u32 choose_split(const std::vector<BVHLeaf>& leaves, std::vector<u32>& order, u32 begin, u32 end,
                      u32& axis_out) const;
+    bool ray_cast_exact_node(u32 node_index, const ecs::vec3& origin, const ecs::vec3& direction,
+                             const LeafIntersector& intersect, BVHLeaf& hit, f32& closest_t) const;
     void query_node(u32 node_index, const AABB& box, std::vector<BVHLeaf>& results) const;
     void query_node_sphere(u32 node_index, const ecs::vec3& center, f32 radius_sq,
                            std::vector<BVHLeaf>& results) const;

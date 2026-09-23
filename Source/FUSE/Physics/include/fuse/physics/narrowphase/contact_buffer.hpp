@@ -46,6 +46,8 @@ struct ContactBufferSoA {
     TangentBasis tangentBasisAt(u32 index) const;
     ContactManifold manifoldAt(u32 index) const;
     std::vector<ContactManifold> toVector() const;
+    /// Same manifolds as `toVector` written into `out` (capacity reused; no allocation once warm).
+    void copyTo(std::vector<ContactManifold>& out) const;
 
 private:
     u32 pointSlotBase(u32 slot) const { return slot * kMaxContactPointsPerManifold; }

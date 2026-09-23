@@ -38,3 +38,13 @@ set_tests_properties(fuse_audio_b7_gates PROPERTIES LABELS "gate")
 # CPU budget: 32 spatial voices x 512 frames within 10% of the buffer period (NDEBUG only).
 add_test(NAME fuse_audio_b7_perf COMMAND fuse_audio_b7_gates_tests --perf)
 set_tests_properties(fuse_audio_b7_perf PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate")
+
+# B7.2 "Audio engine initialises OpenAL device and context without error" — only where fuse_audio
+# links OpenAL (system or vendored openal-soft). openal-soft's always-built null output driver makes
+# it headless: the gate must come up on the real OpenAL backend, never the engine's Null fallback.
+if(FUSE_AUDIO_HAS_OPENAL)
+    add_test(NAME fuse_audio_b7_openal_init COMMAND fuse_audio_b7_gates_tests --require-openal)
+    set_tests_properties(fuse_audio_b7_openal_init PROPERTIES
+        LABELS "gate"
+        ENVIRONMENT "ALSOFT_DRIVERS=null;ALSOFT_CONF=/dev/null")
+endif()

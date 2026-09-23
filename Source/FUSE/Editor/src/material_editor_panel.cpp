@@ -4,7 +4,7 @@
 #include <fuse/handle.hpp>
 #include <fuse/object.hpp>
 
-#ifdef FUSE_VULKAN_BACKEND
+#if defined(FUSE_EDITOR_HAS_RHI)
 #include <fuse/renderer/material/material.hpp>
 #include <fuse/renderer/material/material_system.hpp>
 #endif
@@ -47,7 +47,7 @@ void MaterialEditorPanel::sync(const EditorState& /*state*/, u32 materialCount) 
 
 void MaterialEditorPanel::syncFromMaterialSystem(const EditorState& state,
                                                  renderer::MaterialSystem& materials) {
-#ifdef FUSE_VULKAN_BACKEND
+#if defined(FUSE_EDITOR_HAS_RHI)
     sync(state, materials.materialCount());
     if (m_selectedMatId == kInvalidMaterialId && m_catalogCount > 0u) {
         selectMaterial(0u);
@@ -61,6 +61,9 @@ void MaterialEditorPanel::syncFromMaterialSystem(const EditorState& state,
         m_editState.roughness = material.roughness;
         m_editState.metallic = material.metallic;
         m_editState.shadingModel = static_cast<u8>(material.shadingModel);
+        m_editState.procedural = material.isProcedural;
+        m_editState.proceduralFnId = material.proceduralFnId;
+        m_editState.proceduralSeed = material.proceduralSeed;
         m_binding.refreshFromEditState(m_editState);
         m_previewDirty = false;
         m_editDirty = false;
@@ -150,9 +153,39 @@ bool MaterialEditorPanel::setShadingModel(u8 shadingModel, CommandStack& cmds) {
     return m_binding.setShadingModel(shadingModel, cmds);
 }
 
+bool MaterialEditorPanel::setBaseColorSrgb(f32 r, f32 g, f32 b, CommandStack& cmds) {
+    return setBaseColor(srgbToLinear(r), srgbToLinear(g), srgbToLinear(b), cmds);
+}
+
+void MaterialEditorPanel::baseColorSrgb(f32& r, f32& g, f32& b) const {
+    r = linearToSrgb(m_editState.baseColorR);
+    g = linearToSrgb(m_editState.baseColorG);
+    b = linearToSrgb(m_editState.baseColorB);
+}
+
+bool MaterialEditorPanel::setProceduralMaterial(u32 fnId, u32 seed, CommandStack& cmds) {
+    if (shouldSkipPropertyEdit()) {
+        return false;
+    }
+
+    const std::string before = m_editState.procedural ? std::to_string(m_editState.proceduralFnId) : "0";
+    m_editState.procedural = fnId != 0u;
+    m_editState.proceduralFnId = fnId;
+    m_editState.proceduralSeed = seed;
+    markEditDirty_();
+
+    EditorCommand command;
+    command.kind = CommandKind::SetProperty;
+    command.target = materialHandle(m_selectedMatId);
+    command.propertyName = "material.procedural";
+    command.propertyValue = std::to_string(fnId);
+    cmds.push(std::move(command), before);
+    return true;
+}
+
 bool MaterialEditorPanel::pushToMaterialSystem(renderer::MaterialSystem& materials,
                                               CommandStack& cmds) {
-#ifdef FUSE_VULKAN_BACKEND
+#if defined(FUSE_EDITOR_HAS_RHI)
     if (m_selectedMatId == kInvalidMaterialId || !materials.isReady()) {
         return false;
     }
@@ -168,6 +201,9 @@ bool MaterialEditorPanel::pushToMaterialSystem(renderer::MaterialSystem& materia
     material.roughness = m_editState.roughness;
     material.metallic = m_editState.metallic;
     material.shadingModel = static_cast<renderer::ShadingModel>(m_editState.shadingModel);
+    material.isProcedural = m_editState.procedural;
+    material.proceduralFnId = m_editState.procedural ? m_editState.proceduralFnId : 0u;
+    material.proceduralSeed = m_editState.proceduralSeed;
     materials.updateMaterial(m_selectedMatId, material);
 
     EditorCommand command;

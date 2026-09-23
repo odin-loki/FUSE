@@ -63,6 +63,10 @@ struct TextureDesc {
     bool cubeMap = false;
     bool cudaInterop = false;
     const char* name = nullptr;
+    /// GpuOnly: optimal tiling, device-local. Host-visible usages (CpuToGpu / GpuToCpu / CpuOnly)
+    /// use linear tiling so `Texture::mapped` addresses texel rows directly; they are limited to
+    /// single-mip, single-layer 2D colour images (the Vulkan linear-tiling guarantee).
+    MemoryUsage memoryUsage = MemoryUsage::GpuOnly;
 };
 
 struct BufferDesc {
@@ -89,6 +93,12 @@ struct Texture {
     u32 mipTailLayout = 0;
     /// Upload-queue serial of the newest copy into this image (0: never uploaded).
     u64 lastUploadSerial = 0;
+    /// Persistently mapped texels for host-visible (linear) textures; null for GpuOnly.
+    void* mapped = nullptr;
+    /// Row pitch of `mapped` in bytes (linear textures only).
+    u64 mappedRowPitch = 0;
+    /// `VkMemoryPropertyFlags` of the backing memory type (0 in the stub backend).
+    u32 memoryPropertyFlags = 0;
 };
 
 /// GPU buffer resource — device_address populated when BDA extension enabled.
@@ -103,6 +113,8 @@ struct Buffer {
     u64 allocationSize = 0;
     /// Upload-queue serial of the newest copy into this buffer (0: never uploaded).
     u64 lastUploadSerial = 0;
+    /// `VkMemoryPropertyFlags` of the backing memory type (0 in the stub backend).
+    u32 memoryPropertyFlags = 0;
 };
 
 struct SamplerDesc {

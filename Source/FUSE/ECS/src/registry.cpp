@@ -171,6 +171,26 @@ Registry::EntityRecord* Registry::record(EntityID id) {
     return &rec;
 }
 
+std::vector<std::type_index> Registry::component_types(EntityID id) const {
+    const EntityRecord* rec = record(id);
+    if (rec == nullptr || rec->archetype_index >= m_archetypes.size()) {
+        return {};
+    }
+    return m_archetypes[rec->archetype_index].component_types;
+}
+
+const void* Registry::get_raw(EntityID id, std::type_index type) const {
+    const EntityRecord* rec = record(id);
+    if (rec == nullptr || rec->archetype_index >= m_archetypes.size()) {
+        return nullptr;
+    }
+    const ComponentColumn* column = m_archetypes[rec->archetype_index].find_column(type);
+    if (column == nullptr || rec->row >= column->count()) {
+        return nullptr;
+    }
+    return column->at(rec->row);
+}
+
 const Registry::EntityRecord* Registry::record(EntityID id) const {
     if (m_archetypes.empty()) {
         return nullptr;

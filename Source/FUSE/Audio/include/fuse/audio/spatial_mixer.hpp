@@ -118,6 +118,8 @@ private:
         AudioBus bus = AudioBus::Sfx;
         float audibility = 0.f;
     };
+    /// Per-mix voice list, kept across calls so steady-state mixing does not touch the heap.
+    std::vector<VoiceRequest> m_requests;
 
     float sample_clip(const AudioClip& clip, double frame_pos, u32 channel, bool looping) const;
     void render_voice(const VoiceRequest& voice, const Vec3& listener_pos, bool has_listener,

@@ -288,9 +288,10 @@ bool GBuffer::init(ResourceManager& resources, const GBufferDesc& desc) {
 
         // RT4 depth is an R32F *color* target (linear/reversed-Z depth for CUDA passes, B5.2);
         // the hardware depth buffer is separate. R32F cannot carry DEPTH_STENCIL_ATTACHMENT usage.
+        // TransferSrc: attachments are read back for debugging / capture (B5 G-buffer gate).
         textureDesc.usage = static_cast<ImageUsage>(
-            static_cast<u32>(ImageUsage::ColorAttachment) |
-            static_cast<u32>(ImageUsage::Sampled) | static_cast<u32>(ImageUsage::Storage));
+            static_cast<u32>(ImageUsage::ColorAttachment) | static_cast<u32>(ImageUsage::Sampled) |
+            static_cast<u32>(ImageUsage::Storage) | static_cast<u32>(ImageUsage::TransferSrc));
 
         m_targets.attachments[i] = resources.createTexture(textureDesc);
         if (!m_targets.attachments[i].isValid()) {

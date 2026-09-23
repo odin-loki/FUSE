@@ -22,10 +22,13 @@ bool PhysicsManagerScriptBackend::ray_cast(const ecs::vec3& origin, const ecs::v
     if (d.length() < 1e-6f) {
         return false;
     }
+    // The manager's shapes reflect the last physics step: an entity destroyed since (e.g. by a
+    // script in on_collision) keeps its body until the next step. Never hand scripts that dead
+    // handle — filter hits by the registry.
     ecs::EntityID hit = ecs::EntityID::null();
     physics::vec3 normal{};
     f32 t = 0.f;
-    if (!m_manager.rayCast(o, d, max_distance, hit, normal, t)) {
+    if (!m_manager.rayCast(o, d, max_distance, hit, normal, t, &m_registry)) {
         return false;
     }
     out.entity = hit;

@@ -1,4 +1,5 @@
 #include <fuse/renderer/vk/bindless.hpp>
+#include <fuse/renderer/vk/debug_utils.hpp>
 
 #include <algorithm>
 
@@ -106,6 +107,10 @@ bool createVulkanBindlessDescriptors(const VulkanDevice& device, const BindlessA
     outPool = pool;
     outLayout = layout;
     outSet = set;
+    nameVkObject(vkDevice, vk_object_type::kDescriptorPool, static_cast<void*>(pool), "fuse.bindless.pool");
+    nameVkObject(vkDevice, vk_object_type::kDescriptorSetLayout, static_cast<void*>(layout),
+                       "fuse.bindless.layout");
+    nameVkObject(vkDevice, vk_object_type::kDescriptorSet, static_cast<void*>(set), "fuse.bindless.set");
     return true;
 }
 

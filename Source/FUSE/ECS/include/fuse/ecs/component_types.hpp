@@ -6,6 +6,7 @@
 #include <string_view>
 #include <type_traits>
 #include <typeindex>
+#include <vector>
 
 namespace fuse::ecs {
 
@@ -30,6 +31,8 @@ public:
     static void register_raw(const ComponentTypeInfo& info);
     [[nodiscard]] static const ComponentTypeInfo* find(std::string_view name);
     [[nodiscard]] static const ComponentTypeInfo* find(std::type_index type);
+    /// Snapshot of every registered type, in registration order.
+    [[nodiscard]] static std::vector<ComponentTypeInfo> all();
 };
 
 /// Registers Transform, Mesh, RigidBody, Collider, SDFObject, Camera, lights, SpawnMarker and tags.

@@ -124,6 +124,13 @@ target_compile_features(fuse_b4_destruction_gates PRIVATE cxx_std_17)
 add_test(NAME fuse_b4_destruction_gates COMMAND fuse_b4_destruction_gates)
 set_tests_properties(fuse_b4_destruction_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate")
 
+# Steady-state heap allocations per frame for physics-enabled worlds (pipeline + World2D/3D tick).
+add_executable(fuse_b4_pipeline_alloc_gate test_b4_pipeline_alloc_gate.cpp)
+target_link_libraries(fuse_b4_pipeline_alloc_gate PRIVATE fuse_world3d fuse_world2d fuse_physics fuse_core)
+target_compile_features(fuse_b4_pipeline_alloc_gate PRIVATE cxx_std_17)
+add_test(NAME fuse_b4_pipeline_alloc_gate COMMAND fuse_b4_pipeline_alloc_gate)
+set_tests_properties(fuse_b4_pipeline_alloc_gate PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate")
+
 add_executable(fuse_b4_rotation_gates test_b4_rotation_gates.cpp)
 target_link_libraries(fuse_b4_rotation_gates PRIVATE fuse_physics fuse_core)
 target_compile_features(fuse_b4_rotation_gates PRIVATE cxx_std_17)

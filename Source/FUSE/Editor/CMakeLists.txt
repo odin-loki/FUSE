@@ -29,6 +29,11 @@ set(FUSE_EDITOR_API_SOURCES
     src/scene_hierarchy_panel.cpp
     src/undo_stack.cpp
     src/viewport_panel.cpp
+    src/viewport_scene_view.cpp
+    src/viewport_framebuffer.cpp
+    src/entity_context_menu.cpp
+    src/material_library_io.cpp
+    src/profiler_flame_graph.cpp
 )
 
 set(FUSE_EDITOR_API_HEADERS
@@ -61,6 +66,11 @@ set(FUSE_EDITOR_API_HEADERS
     include/fuse/editor/undo_stack.hpp
     include/fuse/editor/viewport_panel.hpp
     include/fuse/editor/viewport_vulkan_surface.hpp
+    include/fuse/editor/viewport_scene_view.hpp
+    include/fuse/editor/viewport_framebuffer.hpp
+    include/fuse/editor/entity_context_menu.hpp
+    include/fuse/editor/material_library_io.hpp
+    include/fuse/editor/profiler_flame_graph.hpp
 )
 
 add_library(fuse_editor_api STATIC
@@ -89,6 +99,8 @@ endif()
 
 if(FUSE_BUILD_VULKAN)
     target_link_libraries(fuse_editor_api PUBLIC fuse_rhi fuse_hybrid)
+    # fuse_rhi's CPU-side systems (MaterialSystem, RasterPath stub) exist with or without a loader.
+    target_compile_definitions(fuse_editor_api PUBLIC FUSE_EDITOR_HAS_RHI=1)
     if(FUSE_VULKAN_BACKEND)
         target_compile_definitions(fuse_editor_api PUBLIC FUSE_VULKAN_BACKEND=1)
     endif()

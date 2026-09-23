@@ -36,6 +36,17 @@ struct VulkanInstanceInfo {
     bool instanceHasExtension(const char* name) const;
 };
 
+/// Process-wide tally of messages delivered to the validation debug messenger (every instance
+/// created with `enableValidation` and the Khronos layer present). Gates assert `errors == 0`.
+struct VulkanValidationCounters {
+    u32 errors = 0;
+    u32 warnings = 0;
+    std::string lastError;
+};
+
+[[nodiscard]] VulkanValidationCounters vulkanValidationCounters();
+void resetVulkanValidationCounters();
+
 class VulkanInstance {
 public:
     static std::unique_ptr<VulkanInstance> create(const VulkanInstanceDesc& desc);

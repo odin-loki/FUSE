@@ -255,6 +255,66 @@ bool BVH::ray_cast(const vec3& origin, const vec3& direction, f32 max_t, BVHLeaf
     return ray_cast_node(0, origin, direction, max_t, hit, closest_t) ? (t = closest_t, true) : false;
 }
 
+bool BVH::ray_cast_exact_node(u32 node_index, const vec3& origin, const vec3& direction,
+                              const LeafIntersector& intersect, BVHLeaf& hit, f32& closest_t) const {
+    const BVHNode& node = m_nodes[node_index];
+    if (node.leaf_count > 0) {
+        bool found = false;
+        const u32 begin = node.left_child;
+        for (u16 i = 0; i < node.leaf_count; ++i) {
+            const BVHLeaf& leaf = m_leaves[begin + i];
+            const f32 entry = leaf.aabb.ray_intersect(origin, direction);
+            if (entry < 0.f || entry > closest_t) {
+                continue;
+            }
+            f32 leaf_t = 0.f;
+            if (intersect(leaf, closest_t, leaf_t) && leaf_t >= 0.f && leaf_t <= closest_t) {
+                closest_t = leaf_t;
+                hit = leaf;
+                found = true;
+            }
+        }
+        return found;
+    }
+
+    const f32 left_entry = m_nodes[node.left_child].aabb.ray_intersect(origin, direction);
+    const f32 right_entry = m_nodes[node.right_child].aabb.ray_intersect(origin, direction);
+    const bool right_first = right_entry >= 0.f && (left_entry < 0.f || right_entry < left_entry);
+    const u32 first = right_first ? node.right_child : node.left_child;
+    const u32 second = right_first ? node.left_child : node.right_child;
+    const f32 first_entry = right_first ? right_entry : left_entry;
+    const f32 second_entry = right_first ? left_entry : right_entry;
+
+    bool found = false;
+    if (first_entry >= 0.f && first_entry <= closest_t &&
+        ray_cast_exact_node(first, origin, direction, intersect, hit, closest_t)) {
+        found = true;
+    }
+    // Re-test against the (possibly tightened) best hit before descending the far child.
+    if (second_entry >= 0.f && second_entry <= closest_t &&
+        ray_cast_exact_node(second, origin, direction, intersect, hit, closest_t)) {
+        found = true;
+    }
+    return found;
+}
+
+bool BVH::ray_cast_exact(const vec3& origin, const vec3& direction, f32 max_t, const LeafIntersector& intersect,
+                         BVHLeaf& hit, f32& t) const {
+    if (m_nodes.empty() || !intersect) {
+        return false;
+    }
+    const f32 root_entry = m_nodes[0].aabb.ray_intersect(origin, direction);
+    if (root_entry < 0.f || root_entry > max_t) {
+        return false;
+    }
+    f32 closest_t = max_t;
+    if (!ray_cast_exact_node(0, origin, direction, intersect, hit, closest_t)) {
+        return false;
+    }
+    t = closest_t;
+    return true;
+}
+
 void BVH::query_node(u32 node_index, const AABB& box, std::vector<BVHLeaf>& results) const {
     const BVHNode& node = m_nodes[node_index];
     if (!node.aabb.overlaps(box)) {

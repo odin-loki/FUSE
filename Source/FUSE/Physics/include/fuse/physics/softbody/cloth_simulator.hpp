@@ -45,6 +45,12 @@ struct ClothSphereCollider {
 /// B4.8 — XPBD cloth (CPU path; CUDA kernels deferred).
 class ClothSimulator {
 public:
+    ClothSimulator() = default;
+    /// Owns the ParticleSoA arrays: release them on scope exit (LSan leak otherwise).
+    ~ClothSimulator() { destroy(); }
+    ClothSimulator(const ClothSimulator&) = delete;
+    ClothSimulator& operator=(const ClothSimulator&) = delete;
+
     void init(const ClothDesc& desc, vec3 origin);
     void destroy();
     void step(f32 dt, vec3 gravity);

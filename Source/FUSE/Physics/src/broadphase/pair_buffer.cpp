@@ -315,6 +315,22 @@ std::vector<CandidatePair> PairBufferSoA::toVector() const {
     return pairs;
 }
 
+void PairBufferSoA::copyTo(std::vector<CandidatePair>& out) const {
+    out.clear();
+    if (!preflightPairBufferToVector(*this).canExport()) {
+        return;
+    }
+    if (out.capacity() < activeCount) {
+        out.reserve(activeCount);
+    }
+    for (u32 i = 0; i < activeCount; ++i) {
+        if (!slotIsValid(i)) {
+            continue;
+        }
+        out.push_back(pairAt(i));
+    }
+}
+
 const char* pairBufferPushRejectReasonName(PairBufferPushRejectReason reason) {
     switch (reason) {
     case PairBufferPushRejectReason::None:

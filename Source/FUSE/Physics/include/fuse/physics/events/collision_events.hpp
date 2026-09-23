@@ -14,6 +14,10 @@ enum class CollisionEventType : u8 {
     Stay,
     Exit,
     Trigger,
+    /// A joint exceeded its break force / torque (entityB null: jointed to the world).
+    /// contactPoint = world anchor on A, impulse = constraint force (N) at the break,
+    /// jointIndex / jointGeneration = the broken `JointHandle`.
+    JointBreak,
 };
 
 struct CollisionEvent {
@@ -23,6 +27,8 @@ struct CollisionEvent {
     vec3 contactPoint{};
     vec3 contactNormal{};
     f32 impulse = 0.f;
+    u32 jointIndex = 0xFFFFFFFFu;
+    u32 jointGeneration = 0;
 };
 
 using CollisionCallback = std::function<void(const CollisionEvent&)>;

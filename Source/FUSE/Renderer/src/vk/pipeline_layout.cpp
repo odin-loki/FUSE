@@ -1,5 +1,7 @@
 #include <fuse/renderer/vk/pipeline_layout.hpp>
 
+#include <fuse/renderer/vk/debug_utils.hpp>
+
 #include <utility>
 #include <vector>
 
@@ -82,6 +84,8 @@ bool PipelineLayout::initialize(VulkanDevice& device, const PipelineLayoutDesc& 
 
     m_handle = pipelineLayout;
     m_info.valid = true;
+    nameVkObject(device.nativeHandle(), vk_object_type::kPipelineLayout, m_handle,
+                       desc.debugName != nullptr ? desc.debugName : "fuse.pipeline_layout");
     m_info.hasBindlessSet = requestedBindless;
     if (requestedBindless && m_info.descriptorSetCount < 1u) {
         m_info.descriptorSetCount = 1u;

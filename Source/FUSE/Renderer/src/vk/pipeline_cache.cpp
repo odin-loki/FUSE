@@ -1,5 +1,7 @@
 #include <fuse/renderer/vk/pipeline_cache.hpp>
 
+#include <fuse/renderer/vk/debug_utils.hpp>
+
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
 #endif
@@ -53,6 +55,7 @@ bool PipelineCache::recreate(VulkanDevice& device, const void* initialData, usiz
     m_device = &device;
     m_handle = pipelineCache;
     m_info.valid = true;
+    nameVkObject(device.nativeHandle(), vk_object_type::kPipelineCache, m_handle, "fuse.pipeline_cache");
     m_info.dataByteCount = static_cast<u32>(initialSize);
     m_info.message = initialData != nullptr ? "pipeline cache restored from blob"
                                             : "in-memory pipeline cache ready";

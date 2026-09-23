@@ -72,7 +72,14 @@ public:
     void* indexBufferHandle() const;
 
     /// Updates CPU stats from mirrored commands (GPU work lives in graph execute path).
+    /// Does not poll the shader watch: a rebuild here would destroy the pipeline the frame's
+    /// just-recorded command buffer references. Call `pollShaderReload` before recording.
     void updateStatsFromCommands(const RenderCommandList& commands);
+
+    /// Poll the watched SPIR-V files; on change reload the modules and rebuild the graphics
+    /// pipeline (after the device idles, so no in-flight frame still uses the old pipeline).
+    /// Call at frame start, before `vulkanEncodeContext()`. Returns true when a rebuild happened.
+    bool pollShaderReload();
 
     /// Legacy hook — stats only; real draws are encoded via `CommandBufferRecorder`.
     bool recordFrame(const RenderCommandList& commands);
@@ -90,7 +97,7 @@ private:
     RasterPath() = default;
     bool initialize(VulkanDevice& device, const RasterPathDesc& desc);
     void shutdown();
-    void reloadPipelinesIfWatched();
+    bool reloadPipelinesIfWatched();
     bool createOffscreenTargets();
     void destroyOffscreenTargets();
 

@@ -48,6 +48,9 @@ struct ScriptEngineBindings {
 ///   Physics.ray_cast(origin, dir, max) -> {entity, point, normal, distance} | nil
 ///   Physics.apply_impulse(id, v)  Physics.set_velocity(id, v)  Physics.get_velocity(id) -> v|nil
 ///
+/// Any `id` argument may also be a behaviour's `self` table (its `entity` field is used), e.g.
+/// `Entity.destroy(self)` from `on_collision`.
+///
 /// Scripts see only these tables — never registry or solver internals. Calls with a missing
 /// service or malformed arguments raise a Lua error (caught by the VM's protected calls).
 /// Returns false when the VM has no Lua backend.

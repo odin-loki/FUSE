@@ -52,7 +52,7 @@ void ParticleEmitter::simulate(f32 dt) {
         return;
     }
 
-    (void)particle_soa::simulate_step(m_particles, m_desc, dt);
+    (void)particle_soa::simulate_step(m_particles, m_desc, dt, m_deadSlotScratch);
 
     if (m_desc.emit_rate > 0.f && m_particles.capacity > 0u) {
         // Double-precision accumulator: an f32 fraction drifts by ~1 ulp per frame, which loses or

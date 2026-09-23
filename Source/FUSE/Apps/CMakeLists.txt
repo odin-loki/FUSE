@@ -45,3 +45,8 @@ if(FUSE_BUILD_PARITY_DEMOS AND FUSE_BUILD_PROJECT)
         endif()
     endif()
 endif()
+
+# B1.8 valgrind leak gate: memcheck twins (label "valgrind") of representative core/ECS/scene tests
+# and fuse_runtime_smoke. Registered here because Apps is configured after every engine library.
+include(${CMAKE_SOURCE_DIR}/cmake/FuseValgrind.cmake)
+fuse_add_valgrind_tests()
