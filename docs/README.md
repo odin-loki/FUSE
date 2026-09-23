@@ -20,6 +20,7 @@ This is the product documentation. Start here; then pick a guide.
 | [Coding standards](coding-standards.md) | Language, ownership, threading rules |
 | [Roadmap](roadmap.md) | Track A / Track B and current gates |
 | [Heritage](heritage.md) | License provenance |
+| [World extract](../Tools/FUSE/WorldExtract/README.md) | World-model video (Matrix-Game 2.0) to a 3D world as FUSE assets |
 
 Contributing process: [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
