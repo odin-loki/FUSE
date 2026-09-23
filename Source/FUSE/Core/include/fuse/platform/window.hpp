@@ -73,7 +73,10 @@ public:
     /// Stores capture mode. Headless (null HWND) is a no-op for OS clip/cursor/raw input.
     /// Win32 owned HWND: Captured clips the cursor, hides it once, and registers RID_INPUT
     /// mouse; Released / destructor restores clip/cursor and unregisters raw input.
-    void setInputCapture(InputCaptureMode mode);
+    /// Each change is reported as `PlatformEventType::InputCaptureChanged`: enqueued on `pump`
+    /// immediately when given, otherwise by the next `EventPump::processOsEvents` (registered
+    /// native windows) so `InputState` can leave raw-delta mode on release.
+    void setInputCapture(InputCaptureMode mode, EventPump* pump = nullptr);
     InputCaptureMode inputCapture() const { return m_inputCapture; }
     bool isInputCaptured() const { return m_inputCapture == InputCaptureMode::Captured; }
 
@@ -117,6 +120,7 @@ private:
     bool m_createNative = false;
     bool m_focused = true;
     InputCaptureMode m_inputCapture = InputCaptureMode::Released;
+    bool m_captureChangeUnreported = false; ///< set by setInputCapture without a pump
     WindowCloseRequest m_closeRequest = WindowCloseRequest::None;
     std::string m_title = "FUSE";
     void* m_nativeWindow = nullptr;

@@ -12,6 +12,7 @@
 //     optimized non-sanitizer builds.
 // Every section runs under a watchdog so a deadlock fails instead of hanging CI.
 
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/log/logger.hpp>
 
 #include <algorithm>
@@ -686,7 +687,10 @@ void checkLatencyBudget() {
     plan.flushEvery = 8192u;
     const Percentiles p = percentiles(runProducers(plan).latencyNs);
     logger.stopAsync();
-    expectTrue(p.p50 < 2000u, "latency: async producer median < 2 us (optimized build)");
+    printLatency("latency budget run (async, 4 producers):", p);
+    if (fuse::core::timingBudgetsEnforcedNoted()) {
+        expectTrue(p.p50 < 2000u, "latency: async producer median < 2 us (optimized build)");
+    }
 #endif
 }
 

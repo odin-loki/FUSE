@@ -5,6 +5,7 @@
 #include <fuse/animation/clip.hpp>
 #include <fuse/animation/skeleton.hpp>
 #include <fuse/core/init.hpp>
+#include <fuse/core/temp_path.hpp>
 #include <fuse/frame/frame_ctx.hpp>
 #include <fuse/net/transport.hpp>
 #include <fuse/platform/profile.hpp>
@@ -216,9 +217,9 @@ bool smokeScriptFacade() {
 
 #if defined(FUSE_PHASE7_HAS_PROJECT)
 bool smokeAssetsFacade() {
-    project::CookManifest manifest = project::makeDefaultCookManifest("/tmp/fuse_phase7");
+    project::CookManifest manifest = project::makeDefaultCookManifest(fuse::test::tempPath("fuse_phase7"));
     project::ImportPipeline pipeline;
-    pipeline.set_project_root("/tmp/fuse_phase7");
+    pipeline.set_project_root(fuse::test::tempPath("fuse_phase7"));
     const project::CookBatchResult plan = pipeline.plan_from_manifest(manifest);
     return plan.ok && !plan.records.empty();
 }

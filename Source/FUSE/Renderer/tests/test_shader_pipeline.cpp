@@ -1,3 +1,4 @@
+#include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/renderer/shader/shader_compiler.hpp>
@@ -178,7 +179,7 @@ void testCookedFuseshaderLoader() {
 
     std::vector<char> spirvBytes((std::istreambuf_iterator<char>(spirvIn)),
                                  std::istreambuf_iterator<char>());
-    const std::string cookedPath = "/tmp/fuse_cooked_loader_test.fuseshader";
+    const std::string cookedPath = fuse::test::tempPath("fuse_cooked_loader_test.fuseshader");
     std::ofstream cookedOut(cookedPath, std::ios::binary | std::ios::trunc);
     cookedOut << "FUSESHADER_SPIV\nstage=vertex\nversion=450\nwords="
               << (spirvBytes.size() / 4u) << "\nDATA\n";

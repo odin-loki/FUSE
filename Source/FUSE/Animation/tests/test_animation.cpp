@@ -4,6 +4,7 @@
 #include <fuse/animation/ik_solver.hpp>
 #include <fuse/animation/retarget.hpp>
 #include <fuse/animation/skinning.hpp>
+#include <fuse/jobs/cuda_jobs.hpp>
 #include <fuse/animation/skeleton.hpp>
 #include <fuse/core/init.hpp>
 
@@ -378,13 +379,17 @@ void testFabrikConverges() {
 }
 
 void testSkinningCpuPath() {
-#if defined(FUSE_HAS_CUDA)
-    expectTrue(fuse::animation::skinning_backend() == fuse::animation::SkinningBackend::Cuda,
-               "CUDA skinning backend when toolkit available");
-#else
+    // The reported backend is the one skin_vertices() runs on: Cuda needs a CUDA skinning kernel
+    // and a CUDA device, never just a CUDA toolkit at build time.
+    const bool cudaUsable =
+        fuse::animation::skinning_cuda_kernel_available() && fuse::jobs::cudaJobsAvailable();
+    expectTrue(fuse::animation::skinning_backend() ==
+                   (cudaUsable ? fuse::animation::SkinningBackend::Cuda
+                               : fuse::animation::SkinningBackend::CpuReference),
+               "skinning backend reports Cuda only with a CUDA kernel + device");
+    expectTrue(!fuse::animation::skinning_cuda_kernel_available(), "no CUDA skinning kernel built yet");
     expectTrue(fuse::animation::skinning_backend() == fuse::animation::SkinningBackend::CpuReference,
-               "CPU reference skinning without CUDA toolkit");
-#endif
+               "skinning reports the CPU reference path it actually runs (even with FUSE_HAS_CUDA)");
 
     fuse::animation::SkinningInput input;
     input.rest_positions = {{0.f, 0.f, 0.f, 0.f}};

@@ -5,6 +5,7 @@
 // Network impairment (loss / duplication / reordering) is injected by a UDP proxy that sits
 // between two real ENet endpoints; all sockets bind port 0.
 
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -442,7 +443,9 @@ void run_enet_timeout_cases() {
         }
         const f64 handshake_ms = static_cast<f64>(now_us() - connect_start) / 1000.0;
         expectTrue(client.is_connected(peer) && server.is_connected(server_side_peer), "handshake completes");
-        expectTrue(handshake_ms < 1000.0, "loopback handshake under 1 s");
+        if (fuse::core::timingBudgetsEnforcedNoted()) {
+            expectTrue(handshake_ms < 1000.0, "loopback handshake under 1 s");
+        }
 
         // Graceful disconnect is observed promptly by the other side.
         bool server_saw_leave = false;
@@ -518,7 +521,9 @@ void run_enet_timeout_cases() {
         const f64 leave_ms = static_cast<f64>(now_us() - leave_start) / 1000.0;
         std::printf("  [enet graceful disconnect] observed by server after %.1f ms\n", leave_ms);
         expectTrue(server_saw_leave && server.peer_count() == 0u, "graceful disconnect reaches server");
-        expectTrue(leave_ms < 500.0, "graceful disconnect observed within 500 ms");
+        if (fuse::core::timingBudgetsEnforcedNoted()) {
+            expectTrue(leave_ms < 500.0, "graceful disconnect observed within 500 ms");
+        }
     }
 }
 

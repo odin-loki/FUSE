@@ -13,6 +13,7 @@ set(_fuse_qt_gate_tests
     context_menu
     "context_menu_dpr1_5:context_menu"
     fuse_api
+    project_open
     present_adopt
     live_present
     ui_frame

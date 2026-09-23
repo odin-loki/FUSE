@@ -2,6 +2,7 @@
 //  - engine -> script: per-entity on_update dispatch  < 2 us per callback (1000 entities)
 //  - script -> engine: Entity.get_position + set_position pair < 1 us per pair
 #include <fuse/core/init.hpp>
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/script/script_engine_api.hpp>
@@ -73,7 +74,7 @@ void testUpdateDispatchOverhead() {
     std::printf("on_update dispatch: %.3f us per callback (median of 15 x 20 frames x %d entities), budget %.1f us%s\n",
                 median, kEntities, kUpdateBudgetUs, kEnforceBudgets ? "" : " [not enforced: debug build]");
     expectTrue(runtime.error_count() == 0, "no script errors");
-    if (kEnforceBudgets) {
+    if (kEnforceBudgets && fuse::core::timingBudgetsEnforcedNoted()) {
         expectTrue(median < kUpdateBudgetUs, "on_update dispatch within budget");
     }
 }
@@ -116,7 +117,7 @@ void testEngineApiOverhead() {
     std::printf("Entity get+set from Lua: %.3f us per pair (median of 9 x %d), budget %.1f us%s\n", median, kCalls,
                 kApiPairBudgetUs, kEnforceBudgets ? "" : " [not enforced: debug build]");
     expectTrue(x == 1000.f + 9.f * kCalls, "every scripted write reached the Transform");
-    if (kEnforceBudgets) {
+    if (kEnforceBudgets && fuse::core::timingBudgetsEnforcedNoted()) {
         expectTrue(median < kApiPairBudgetUs, "script -> engine API call within budget");
     }
 }

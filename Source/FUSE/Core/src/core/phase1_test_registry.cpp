@@ -1,6 +1,7 @@
 #include <fuse/core/phase1_test_registry.hpp>
 
 #include <fuse/core/init.hpp>
+#include <fuse/core/temp_path.hpp>
 #include <fuse/handle_table.hpp>
 #include <fuse/io/asset.hpp>
 #include <fuse/io/vfs.hpp>
@@ -100,7 +101,7 @@ bool smokeJobsAndMath() {
 }
 
 bool smokeHandlesAndVfsAsync() {
-    const std::string tempPath = "/tmp/fuse_b18_phase1_asset.bin";
+    const std::string tempPath = fuse::test::tempPath("fuse_b18_phase1_asset.bin");
     {
         std::ofstream out(tempPath, std::ios::binary);
         if (!out) {
@@ -110,7 +111,7 @@ bool smokeHandlesAndVfsAsync() {
     }
 
     auto& vfs = fuse::io::VirtualFileSystem::instance();
-    vfs.mount(fuse::io::MountKind::Game, "/tmp", "/game");
+    vfs.mount(fuse::io::MountKind::Game, fuse::test::tempDir(), "/game");
 
     fuse::HandleTable<fuse::io::Asset> table;
     const fuse::io::LoadId loadId = vfs.submitLoadAsync("/game/fuse_b18_phase1_asset.bin");

@@ -12,6 +12,9 @@
 
 namespace fuse::vfx {
 
+/// True when this build contains a CUDA particle simulation kernel (none yet: CPU only).
+bool particle_cuda_kernel_available();
+
 class ParticleSystem {
 public:
     void init(const VfxDesc& desc);
@@ -35,6 +38,8 @@ public:
     u32 effect_count() const;
     bool is_initialized() const { return m_initialized; }
     const VfxDesc& desc() const { return m_desc; }
+    /// Backend `update()` actually simulates on: Cuda only when GPU simulation is requested *and*
+    /// a CUDA particle kernel plus a CUDA device are available; CpuReference otherwise.
     VfxBackendKind backend_kind() const;
 
 private:

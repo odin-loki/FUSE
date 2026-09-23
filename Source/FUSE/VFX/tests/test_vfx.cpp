@@ -5,6 +5,7 @@
 #include <fuse/vfx/particle_gpu.hpp>
 #include <fuse/vfx/particle_soa_ops.hpp>
 #include <fuse/vfx/particle_system.hpp>
+#include <fuse/jobs/cuda_jobs.hpp>
 
 #include <array>
 #include <cmath>
@@ -514,6 +515,22 @@ void testParticleSystemSpawnAndUpdate() {
     expectTrue(system.is_initialized(), "particle system initialized");
     expectTrue(system.backend_kind() == fuse::vfx::VfxBackendKind::CpuReference,
                "default backend is CPU reference stub");
+    {
+        // Requesting GPU simulation does not change the backend unless a CUDA particle kernel
+        // and device exist: update() still simulates on the CPU.
+        fuse::vfx::ParticleSystem gpuRequested{};
+        fuse::vfx::VfxDesc gpuDesc{};
+        gpuDesc.gpu_simulation = true;
+        gpuRequested.init(gpuDesc);
+        const bool cudaUsable = fuse::vfx::particle_cuda_kernel_available() && fuse::jobs::cudaJobsAvailable();
+        expectTrue(gpuRequested.backend_kind() ==
+                       (cudaUsable ? fuse::vfx::VfxBackendKind::Cuda : fuse::vfx::VfxBackendKind::CpuReference),
+                   "gpu_simulation reports Cuda only with a CUDA kernel + device");
+        expectTrue(!fuse::vfx::particle_cuda_kernel_available(), "no CUDA particle kernel built yet");
+        expectTrue(gpuRequested.backend_kind() == fuse::vfx::VfxBackendKind::CpuReference,
+                   "gpu_simulation request still reports the CPU path it runs");
+        gpuRequested.destroy();
+    }
 
     fuse::vfx::ParticleEmitterDesc emitterDesc{};
     emitterDesc.max_particles = 32;

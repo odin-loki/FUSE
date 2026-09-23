@@ -1043,7 +1043,7 @@ Phase 1 is complete when every item in this checklist passes. Nothing moves to P
 - [x] Logger ring buffer survives concurrent writes from all worker threads — no corruption — `fuse_core_b1_logging_gates`
 - [x] Log entries appear with correct timestamps, file, and line numbers — `fuse_core_b1_logging_gates`
 - [x] `FUSE_ASSERT` fires and breaks in debug, is a no-op in release — verified by disassembly — `fuse_core_b1_logging_gates`, `fuse_core_b1_assert_codegen`
-- [ ] Profiler scope overhead < 10ns per scope on ThinkStation hardware — partial: `fuse_core_b1_logging_gates` measures it (~79 ns on the CI runner, 250 ns regression ceiling); 10 ns needs the reference workstation
+- [ ] Profiler scope overhead < 10ns per scope on ThinkStation hardware — partial: `fuse_core_b1_logging_gates` measures it (Release, 2.1 GHz Xeon CI VM: ~32-39 ns, was 66-85 ns — hot path is now a lock-free per-thread ring with invariant-TSC stamps, no shared RMW / allocation; floor here is two `rdtsc` at ~14 ns each; 60 ns regression ceiling with TSC); 10 ns needs the reference workstation (`FUSE_B1_REFERENCE_HARDWARE=1`)
 - [x] Profiler output writes valid chrome://tracing JSON — `fuse_core_b1_logging_gates`
 - [x] Platform opens a window, displays title, receives and dispatches events cleanly (`fuse_core_b1_x11_window_gates`)
 - [x] Input system correctly reports `key_pressed` for exactly one frame on a keydown event — `fuse_core_b1_platform_gates`

@@ -1,5 +1,6 @@
 #include <fuse/platform/event_pump.hpp>
 #include <fuse/platform/input.hpp>
+#include <fuse/platform/window.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -190,6 +191,63 @@ void testRawMouseDeltaAccumulatesWithoutChangingAbsolutePosition() {
     expectEqI32(input.mouseY(), 0, "beginFrame keeps mouse y after raw delta");
 }
 
+void testCaptureReleaseRestoresCursorDeltas() {
+    // Raw mode follows the window's capture: RawMouseDelta while captured (MouseMove only moves the
+    // absolute position), cursor deltas from MouseMove again once capture is released.
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+    fuse::platform::InputState input;
+
+    pump.pushMouseMove(10, 10);
+    window.setInputCapture(fuse::platform::InputCaptureMode::Captured, &pump);
+    pump.pushSyntheticEvent(makeRawMouseDelta(5, 2));
+    pump.pushMouseMove(40, 40); // accelerated OS cursor path: must not mix into the raw delta
+    input.applyPump(pump);
+    expectTrue(input.rawMouseActive(), "raw mode active while captured");
+    expectEqI32(input.mouseDeltaX(), 5, "captured: delta x from raw input only");
+    expectEqI32(input.mouseDeltaY(), 2, "captured: delta y from raw input only");
+    expectEqI32(input.mouseX(), 40, "captured: MouseMove still updates absolute x");
+
+    input.beginFrame();
+    window.setInputCapture(fuse::platform::InputCaptureMode::Released, &pump);
+    fuse::platform::PlatformEvent released{};
+    expectTrue(pump.pollEvent(released) && released.type == fuse::platform::PlatformEventType::InputCaptureChanged &&
+                   released.window == &window && !released.inputCaptured,
+               "release enqueues InputCaptureChanged(false) for the window");
+    input.apply(released);
+    expectTrue(!input.rawMouseActive(), "raw mode off after capture release");
+
+    pump.pushMouseMove(200, 100); // first move after release: new baseline (cursor was hidden/clipped)
+    pump.pushMouseMove(203, 96);
+    input.applyPump(pump);
+    expectEqI32(input.mouseDeltaX(), 3, "released: MouseMove delta x restored (no jump from stale baseline)");
+    expectEqI32(input.mouseDeltaY(), -4, "released: MouseMove delta y restored");
+    expectEqI32(input.mouseX(), 203, "released: absolute x");
+
+    // Recapture: raw mode resumes with the next raw delta.
+    input.beginFrame();
+    window.setInputCapture(fuse::platform::InputCaptureMode::Captured, &pump);
+    pump.pushSyntheticEvent(makeRawMouseDelta(-1, 1));
+    pump.pushMouseMove(250, 50);
+    input.applyPump(pump);
+    expectTrue(input.rawMouseActive(), "raw mode resumes after recapture");
+    expectEqI32(input.mouseDeltaX(), -1, "recaptured: raw delta only");
+
+    // Direct API (callers that track capture themselves).
+    input.onInputCaptureChanged(false);
+    expectTrue(!input.rawMouseActive(), "onInputCaptureChanged(false) leaves raw mode");
+}
+
+void testCaptureChangeWithoutPumpIsNoOpForUnchangedMode() {
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+    window.setInputCapture(fuse::platform::InputCaptureMode::Released, &pump);
+    expectTrue(!pump.hasPendingEvents(), "setting the current capture mode enqueues nothing");
+    window.setInputCapture(fuse::platform::InputCaptureMode::Captured);
+    expectTrue(!pump.hasPendingEvents(), "capture change without a pump does not touch other pumps");
+    expectTrue(window.isInputCaptured(), "capture stored without a pump");
+}
+
 } // namespace
 
 int main() {
@@ -202,6 +260,8 @@ int main() {
     testUnknownKeyCodeIgnored();
     testApplyPumpDrainsKeyMouseAndRawDelta();
     testRawMouseDeltaAccumulatesWithoutChangingAbsolutePosition();
+    testCaptureReleaseRestoresCursorDeltas();
+    testCaptureChangeWithoutPumpIsNoOpForUnchangedMode();
 
     if (g_failures == 0) {
         std::printf("fuse_core input state: all checks passed\n");

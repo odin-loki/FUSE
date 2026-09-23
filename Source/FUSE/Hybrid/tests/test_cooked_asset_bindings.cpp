@@ -1,3 +1,4 @@
+#include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/hybrid/cooked_asset_bindings.hpp>
 #include <fuse/hybrid/hybrid_composer.hpp>
@@ -33,22 +34,22 @@ void writeBinaryFile(const char* path, const std::string& header, const std::vec
 }
 
 void testCookedAssetBindingsProbeHeaders() {
-    writeTextFile("/tmp/fuse_cooked_mat.fusetex", "FUSETEX_STUB\n");
-    writeTextFile("/tmp/fuse_cooked_mat_bc7.fusetex", "FUSETEX_BC7\n");
-    writeTextFile("/tmp/fuse_cooked_shader.fuseshader", "FUSESHADER_STUB\n");
+    writeTextFile(fuse::test::tempPath("fuse_cooked_mat.fusetex").c_str(), "FUSETEX_STUB\n");
+    writeTextFile(fuse::test::tempPath("fuse_cooked_mat_bc7.fusetex").c_str(), "FUSETEX_BC7\n");
+    writeTextFile(fuse::test::tempPath("fuse_cooked_shader.fuseshader").c_str(), "FUSESHADER_STUB\n");
 
     const std::vector<char> spirvPayload = {
         static_cast<char>(0x03), static_cast<char>(0x02), static_cast<char>(0x23), static_cast<char>(0x07),
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    writeBinaryFile("/tmp/fuse_cooked_shader_glslang.fuseshader",
+    writeBinaryFile(fuse::test::tempPath("fuse_cooked_shader_glslang.fuseshader").c_str(),
                     "FUSESHADER_GLSLANG\nstage=fragment\nversion=450\nwords=8\nDATA\n", spirvPayload);
 
     fuse::hybrid::CookedAssetBindings bindings;
-    bindings.bindMaterial("/tmp/fuse_cooked_mat.fusetex", 3u);
-    bindings.bindMaterial("/tmp/fuse_cooked_mat_bc7.fusetex", 4u);
-    bindings.bindShader("/tmp/fuse_cooked_shader.fuseshader", 7u);
-    bindings.bindShader("/tmp/fuse_cooked_shader_glslang.fuseshader", 8u);
+    bindings.bindMaterial(fuse::test::tempPath("fuse_cooked_mat.fusetex"), 3u);
+    bindings.bindMaterial(fuse::test::tempPath("fuse_cooked_mat_bc7.fusetex"), 4u);
+    bindings.bindShader(fuse::test::tempPath("fuse_cooked_shader.fuseshader"), 7u);
+    bindings.bindShader(fuse::test::tempPath("fuse_cooked_shader_glslang.fuseshader"), 8u);
     bindings.refreshTints();
 
     expectTrue(bindings.materialCount() == 2u, "material bindings recorded");
@@ -76,8 +77,8 @@ void testMeshSdfPreviewCatalogAndComposerDraws() {
     composer.setProjectFlags(flags);
     composer.attachWorld3D(&world3D);
 
-    writeTextFile("/tmp/fuse_preview_mat.fusetex", "FUSETEX_BC7\n");
-    composer.cookedAssets().bindMaterial("/tmp/fuse_preview_mat.fusetex", 1u);
+    writeTextFile(fuse::test::tempPath("fuse_preview_mat.fusetex").c_str(), "FUSETEX_BC7\n");
+    composer.cookedAssets().bindMaterial(fuse::test::tempPath("fuse_preview_mat.fusetex"), 1u);
     composer.cookedAssets().refreshTints();
 
     fuse::hybrid::MeshPreviewHint meshHint{};
@@ -85,7 +86,7 @@ void testMeshSdfPreviewCatalogAndComposerDraws() {
     meshHint.y = 2.f;
     meshHint.z = 3.f;
     meshHint.materialId = 1u;
-    meshHint.cookedMeshPath = "/tmp/fuse_preview_mat.fusetex";
+    meshHint.cookedMeshPath = fuse::test::tempPath("fuse_preview_mat.fusetex");
     meshHint.cookedMeshResolved = true;
     meshHint.visible = true;
     composer.previewCatalog().addMesh(meshHint);

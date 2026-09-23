@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -37,8 +38,9 @@ struct ScriptVM::Impl {
     lua_State* state = nullptr;
     /// Lua heap: every lua_Alloc request is served from this size-class pool, so a steady-state
     /// script frame (GC'd temporaries, table resizes) recycles pooled blocks instead of reaching
-    /// the system heap (FUSE_MASTER_PLAN B1.8).
-    alloc::SizeClassAllocator heap{alloc::SizeClassAllocatorDesc{"script.lua", 64u * 1024u, 0u, false}};
+    /// the system heap (FUSE_MASTER_PLAN B1.8). (Re)created by init() before the state, sized by
+    /// ScriptVMDesc::heap_reserve_bytes; lua_close() returns every block before it is replaced.
+    std::optional<alloc::SizeClassAllocator> heap;
     usize bytes = 0;
     usize peak_bytes = 0;
     usize memory_limit = 0;
@@ -61,7 +63,7 @@ void* counting_alloc(void* ud, void* ptr, size_t osize, size_t nsize) {
     auto* impl = static_cast<ScriptVM::Impl*>(ud);
     const usize old_size = (ptr != nullptr) ? osize : 0u;
     if (nsize == 0) {
-        impl->heap.deallocate(ptr, old_size);
+        impl->heap->deallocate(ptr, old_size);
         impl->bytes -= old_size;
         return nullptr;
     }
@@ -71,7 +73,7 @@ void* counting_alloc(void* ud, void* ptr, size_t osize, size_t nsize) {
         impl->bytes - old_size + nsize > impl->memory_limit) {
         return nullptr;
     }
-    void* block = impl->heap.reallocate(ptr, old_size, nsize);
+    void* block = impl->heap->reallocate(ptr, old_size, nsize);
     if (block == nullptr) {
         return nullptr;
     }
@@ -275,6 +277,12 @@ bool ScriptVM::init(const ScriptVMDesc& desc) {
     m_impl->instruction_budget = 0;
     m_impl->executed = 0;
     m_impl->protected_depth = 0;
+    try {
+        m_impl->heap.emplace(alloc::SizeClassAllocatorDesc{"script.lua", 64u * 1024u, desc.heap_reserve_bytes, false});
+    } catch (...) {
+        m_backend = ScriptBackendKind::Null;
+        return false;
+    }
     m_impl->state = lua_newstate(counting_alloc, m_impl.get());
     if (m_impl->state == nullptr) {
         m_backend = ScriptBackendKind::Null;
@@ -584,6 +592,22 @@ usize ScriptVM::memory_bytes() const {
 usize ScriptVM::peak_memory_bytes() const {
 #if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
     return has_lua_backend() ? m_impl->peak_bytes : 0u;
+#else
+    return 0u;
+#endif
+}
+
+usize ScriptVM::heap_reserved_bytes() const {
+#if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
+    return has_lua_backend() && m_impl->heap ? m_impl->heap->reservedBytes() : 0u;
+#else
+    return 0u;
+#endif
+}
+
+u64 ScriptVM::heap_system_allocations() const {
+#if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
+    return has_lua_backend() && m_impl->heap ? m_impl->heap->systemAllocations() : 0u;
 #else
     return 0u;
 #endif

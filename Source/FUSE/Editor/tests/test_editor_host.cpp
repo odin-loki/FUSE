@@ -1,3 +1,4 @@
+#include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/editor_host.hpp>
@@ -358,7 +359,7 @@ void testHostUndoDeleteViaQueue() {
 }
 
 void testRuntimeViewportLoadsProjectRoot() {
-    const std::string projectRoot = "/tmp/fuse_editor_viewport_project";
+    const std::string projectRoot = fuse::test::tempPath("fuse_editor_viewport_project");
     std::filesystem::create_directories(projectRoot + "/worlds");
     {
         std::ofstream manifest(projectRoot + "/project.json");

@@ -9,6 +9,7 @@
 //    `ccdIterationStats()`) and bounded over every gate case above plus a seeded sweep of hard
 //    cases (fast spin, grazing, thin posts, tumbling onto planes), each checked against a dense
 //    brute-force reference so the bound is never bought by skipping an impact.
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/physics/ccd/ccd.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
@@ -219,7 +220,9 @@ void testCcdOverheadHundredBodies() {
     std::printf("CCD overhead: 100 fast bodies among %u, median %.3f ms, %u clamps\n", bodies.count(), samples[10],
                 solver.lastCcdHitCount());
 #if defined(NDEBUG)
-    expectTrue(samples[10] < 1.0, "CCD < 1 ms per frame for 100 fast-moving bodies");
+    if (fuse::core::timingBudgetsEnforcedNoted()) {
+        expectTrue(samples[10] < 1.0, "CCD < 1 ms per frame for 100 fast-moving bodies");
+    }
 #endif
 }
 

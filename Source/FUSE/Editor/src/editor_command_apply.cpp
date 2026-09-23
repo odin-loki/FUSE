@@ -179,6 +179,11 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
     }
 
     if (command.propertyName == "project.root") {
+        if (command.propertyValue != host.runtimeViewport().projectRoot()) {
+            // Opening a different project replaces the scene: the next viewport tick loads the
+            // project's default world into the (now empty) editor registry + runtime scene.
+            host.resetSceneForProjectOpen();
+        }
         host.runtimeViewport().setProjectRoot(command.propertyValue);
         return true;
     }
@@ -599,6 +604,24 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
 }
 
 } // namespace
+
+void EditorHost::resetSceneForProjectOpen() {
+    ensureInitialized_();
+    if (m_playSession.isActive()) {
+        m_playSession.stop(m_editorScene, m_runtimeScene, m_state, m_physics);
+    }
+    // Undo commands hold registry references (and release reserved slots when destroyed): drop
+    // the history before the registry it points into.
+    m_undoStack.clear();
+    m_commandStack.clear();
+    m_state.selectedEntities.clear();
+    m_state.primarySelection = ecs::EntityID::null();
+    m_state.sceneModified = false;
+    m_aiAgentEntityBindings.clear();
+    m_editorScene.destroy();
+    m_editorScene.init();
+    m_runtimeScene.clearEntities();
+}
 
 void EditorHost::setLoadedProject(std::string project) {
     m_loadedProject = std::move(project);

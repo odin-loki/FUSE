@@ -58,7 +58,9 @@
 #  endif
 #endif
 
+#include <cstdio>
 #include <cstdlib>
+#include <string>
 
 namespace fuse::core {
 
@@ -88,6 +90,41 @@ inline bool instrumentedRun() {
 /// run their correctness checks and print measured times either way.
 inline bool timingBudgetsEnforced() {
     return !kInstrumentedBuild && !instrumentedRun();
+}
+
+/// Why timingBudgetsEnforced() is false (e.g. "FUSE_INSTRUMENTED_RUN=wine", "sanitizer build"),
+/// or an empty string when budgets are enforced.
+inline std::string timingBudgetsSkipReason() {
+    if (kSanitizerBuild) {
+        return "sanitizer build";
+    }
+    if (kInstrumentedBuild) {
+        return "thread sanitizer build";
+    }
+#if defined(FUSE_HAVE_VALGRIND_H)
+    if (RUNNING_ON_VALGRIND) {
+        return "running under valgrind";
+    }
+#endif
+    if (instrumentedRun()) {
+        return std::string(kInstrumentedRunEnv) + "=" + std::getenv(kInstrumentedRunEnv);
+    }
+    return {};
+}
+
+/// timingBudgetsEnforced(), and when it is false prints
+/// "timing budgets not enforced (<reason>)" once per process. Use for wall-clock
+/// assertions; always print the measured value regardless of the result.
+inline bool timingBudgetsEnforcedNoted() {
+    static const bool enforced = [] {
+        const bool on = timingBudgetsEnforced();
+        if (!on) {
+            std::printf("timing budgets not enforced (%s)\n", timingBudgetsSkipReason().c_str());
+            std::fflush(stdout);
+        }
+        return on;
+    }();
+    return enforced;
 }
 
 } // namespace fuse::core

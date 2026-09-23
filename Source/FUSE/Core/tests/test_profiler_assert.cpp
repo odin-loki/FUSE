@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -2241,9 +2242,90 @@ void testShippingProfilerMacrosAreStripped() {
 
 } // namespace
 
+void testPerThreadRingsMergeInRecordOrder() {
+    // Scopes are recorded into per-thread rings (lock-free hot path) and merged on read: every
+    // thread's Begin/End pairs survive, each thread's events stay in program order, and the merged
+    // view keeps only the latest ringCapacity() events overall.
+    resetState();
+    constexpr fuse::u32 kThreads = 4u;
+    constexpr fuse::u32 kScopesPerThread = 200u;
+    std::vector<std::thread> threads;
+    std::vector<fuse::u32> tids(kThreads, 0u);
+    for (fuse::u32 t = 0; t < kThreads; ++t) {
+        threads.emplace_back([t, &tids]() {
+            tids[t] = fuse::platform::chromeTraceThreadId();
+            for (fuse::u32 i = 0; i < kScopesPerThread; ++i) {
+                FUSE_PROFILE_SCOPE("ring_worker");
+            }
+        });
+    }
+    for (std::thread& thread : threads) {
+        thread.join();
+    }
+    // Events of exited threads stay readable.
+    expectTrue(fuse::profiler::eventCount() == kThreads * kScopesPerThread * 2u,
+               "all worker scopes recorded (2 events each) after the threads exited");
+    bool ordered = true;
+    fuse::u32 perThreadBegin[kThreads] = {};
+    fuse::u32 perThreadEnd[kThreads] = {};
+    for (fuse::u32 i = 0; i < fuse::profiler::eventCount(); ++i) {
+        const fuse::profiler::ProfileEvent& event = fuse::profiler::eventAt(i);
+        for (fuse::u32 t = 0; t < kThreads; ++t) {
+            if (event.threadId != tids[t]) {
+                continue;
+            }
+            if (event.phase == fuse::profiler::EventPhase::Begin) {
+                ordered = ordered && perThreadBegin[t] == perThreadEnd[t];
+                ++perThreadBegin[t];
+            } else {
+                ordered = ordered && perThreadBegin[t] == perThreadEnd[t] + 1u;
+                ++perThreadEnd[t];
+            }
+        }
+    }
+    expectTrue(ordered, "each thread's Begin/End alternate in the merged view (program order kept)");
+    bool balanced = true;
+    for (fuse::u32 t = 0; t < kThreads; ++t) {
+        balanced = balanced && perThreadBegin[t] == kScopesPerThread && perThreadEnd[t] == kScopesPerThread;
+    }
+    expectTrue(balanced, "every thread contributes all of its Begin and End events");
+    bool monotonic = true;
+    for (fuse::u32 i = 1; i < fuse::profiler::eventCount(); ++i) {
+        const fuse::profiler::ProfileEvent& a = fuse::profiler::eventAt(i - 1u);
+        const fuse::profiler::ProfileEvent& b = fuse::profiler::eventAt(i);
+        if (a.threadId == b.threadId && b.timestampNs < a.timestampNs) {
+            monotonic = false;
+        }
+    }
+    expectTrue(monotonic, "per-thread timestamps never go backwards");
+
+    // Overflow across threads: the view keeps exactly the newest ringCapacity() events.
+    const fuse::u32 capacity = fuse::profiler::ringCapacity();
+    std::thread spill([capacity]() {
+        for (fuse::u32 i = 0; i < capacity; ++i) {
+            FUSE_PROFILE_SCOPE("ring_spill");
+        }
+    });
+    spill.join();
+    {
+        FUSE_PROFILE_SCOPE("ring_main_last");
+    }
+    expectTrue(fuse::profiler::eventCount() == capacity, "merged view capped at ringCapacity()");
+    expectTrue(fuse::profiler::isBufferFull(), "buffer reports full once capped");
+    expectTrue(fuse::profiler::eventNameMatches(fuse::profiler::lastEvent(), "ring_main_last"),
+               "newest event is last in the merged view");
+    expectTrue(fuse::profiler::countEventsByName("ring_worker") == 0u,
+               "older worker events were evicted by the newer spill events");
+
+    fuse::profiler::reset();
+    expectTrue(fuse::profiler::eventCount() == 0u && fuse::profiler::maxNestingDepth() == 0u,
+               "reset empties every thread's ring");
+}
+
 int main() {
     if constexpr (kMacrosRecordEvents) {
         testProfileScopeRecordsEvents();
+        testPerThreadRingsMergeInRecordOrder();
     }
     testProfilerDisabledSkipsEvents();
     testFrameBoundaryIncrementsIndex();

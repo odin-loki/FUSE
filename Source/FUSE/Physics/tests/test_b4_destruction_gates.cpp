@@ -5,6 +5,7 @@
 //  - debris rigid bodies collide correctly with the scene after spawning
 //  - 10 simultaneous impacts each spawning 5 debris pieces: no frame spike > 10 ms
 //  - 5 simultaneous destruction events with 10 debris each: < 16 ms total
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
@@ -259,7 +260,9 @@ void testSimultaneousImpactsBudget(u32 hubCount, u32 piecesPerHub, f32 budgetMs,
                 eventFrameMs, worstAfter);
     expectTrue(spawned == static_cast<usize>(hubCount) * piecesPerHub, "every impact frees its pieces");
 #if defined(NDEBUG)
-    expectTrue(eventFrameMs < budgetMs && worstAfter < budgetMs, "destruction stays within its frame budget");
+    if (fuse::core::timingBudgetsEnforcedNoted()) {
+        expectTrue(eventFrameMs < budgetMs && worstAfter < budgetMs, "destruction stays within its frame budget");
+    }
 #else
     (void)budgetMs;
 #endif

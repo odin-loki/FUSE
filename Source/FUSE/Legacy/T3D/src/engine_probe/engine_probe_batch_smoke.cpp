@@ -1,4 +1,5 @@
 // Engine probe smoke wrappers — linked when FUSE_T3D_LEGACY_ENGINE_PROBE=ON.
+#include <fuse/core/temp_path.hpp>
 #include <fuse/legacy/t3d/api.hpp>
 
 #include "platform/platform.h"
@@ -38,6 +39,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 namespace {
 
@@ -110,7 +112,7 @@ bool memStreamRoundTripSmoke() {
 
 bool fileStreamTempRoundTripSmoke() {
     const char payload[] = "fuse_u2_filestream";
-    const String path("/tmp/fuse_u2_filestream_probe.bin");
+    const String path(fuse::test::tempPath("fuse_u2_filestream_probe.bin").c_str());
     {
         FileStream writer;
         if (!writer.open(path, Torque::FS::File::Write)) {
@@ -580,15 +582,18 @@ bool zipArchiveMemRoundTripSmoke() {
 }
 
 bool zipArchiveDiskReadWriteSmoke() {
-    static const char kZipPath[] = "/tmp/fuse_u2_zip_disk_probe.zip";
+    const std::string zipPathStorage = fuse::test::tempPath("fuse_u2_zip_disk_probe.zip");
+    const char* const kZipPath = zipPathStorage.c_str();
+    const std::string zipPathNew = zipPathStorage + ".new";
+    const std::string zipPathOld = zipPathStorage + ".old";
     static const char kInitialFile[] = "fuse_u2_initial.txt";
     static const char kInitialPayload[] = "fuse_u2_zip_initial";
     static const char kAddedFile[] = "fuse_u2_added.txt";
     static const char kAddedPayload[] = "fuse_u2_zip_readwrite";
 
     std::remove(kZipPath);
-    std::remove("/tmp/fuse_u2_zip_disk_probe.zip.new");
-    std::remove("/tmp/fuse_u2_zip_disk_probe.zip.old");
+    std::remove(zipPathNew.c_str());
+    std::remove(zipPathOld.c_str());
 
     {
         Zip::ZipArchive writer;
@@ -663,8 +668,8 @@ bool zipArchiveDiskReadWriteSmoke() {
     reader.closeArchive();
 
     std::remove(kZipPath);
-    std::remove("/tmp/fuse_u2_zip_disk_probe.zip.new");
-    std::remove("/tmp/fuse_u2_zip_disk_probe.zip.old");
+    std::remove(zipPathNew.c_str());
+    std::remove(zipPathOld.c_str());
     return std::strcmp(initialBuffer, kInitialPayload) == 0 &&
            std::strcmp(addedBuffer, kAddedPayload) == 0;
 }

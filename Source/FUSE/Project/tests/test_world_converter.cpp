@@ -1,3 +1,4 @@
+#include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/handle_table.hpp>
 #include <fuse/io/asset.hpp>
@@ -39,7 +40,7 @@ std::string writeTempFile(const std::string& path, const std::string& contents) 
 
 void testConvertT3DMissionHierarchy() {
     const std::string mission = writeTempFile(
-        "/tmp/fuse_convert_hierarchy.mis",
+        fuse::test::tempPath("fuse_convert_hierarchy.mis"),
         "new Scene(ExampleLevel) {\n"
         "   new SimGroup(CameraSpawnPoints) {\n"
         "      new SpawnSphere(DefaultCameraSpawnSphere) {\n"
@@ -51,7 +52,7 @@ void testConvertT3DMissionHierarchy() {
         "   };\n"
         "};\n");
 
-    const std::string output = "/tmp/fuse_convert_hierarchy.fuselevel";
+    const std::string output = fuse::test::tempPath("fuse_convert_hierarchy.fuselevel");
     const fuse::project::ConvertResult result =
         fuse::project::convertT3DMissionToFuselevel(mission, output);
 
@@ -76,7 +77,7 @@ void testConvertT3DMissionHierarchy() {
 
 void testConvertT3DMissionToFuselevel() {
     const std::string mission = writeTempFile(
-        "/tmp/fuse_convert_mission.mis",
+        fuse::test::tempPath("fuse_convert_mission.mis"),
         "new Scene(ExampleLevel) {\n"
         "   new GroundPlane() {\n"
         "      position = \"1 2 3\";\n"
@@ -85,7 +86,7 @@ void testConvertT3DMissionToFuselevel() {
         "   };\n"
         "};\n");
 
-    const std::string output = "/tmp/fuse_convert_mission.fuselevel";
+    const std::string output = fuse::test::tempPath("fuse_convert_mission.fuselevel");
     const fuse::project::ConvertResult result =
         fuse::project::convertT3DMissionToFuselevel(mission, output);
 
@@ -101,14 +102,14 @@ void testConvertT3DMissionToFuselevel() {
 
 void testConvertT2DModuleToFuselevel() {
     const std::string module = writeTempFile(
-        "/tmp/fuse_convert_module.cs",
+        fuse::test::tempPath("fuse_convert_module.cs"),
         R"(module "SpriteToy";
 new SceneToy() {
   new SpritePlayer(Player) {
     position = "0 0";
   };
 };)");
-    const std::string output = "/tmp/fuse_convert_module.fuselevel";
+    const std::string output = fuse::test::tempPath("fuse_convert_module.fuselevel");
 
     const fuse::project::ConvertResult result =
         fuse::project::convertT2DModuleToFuselevel(module, output);
@@ -132,7 +133,7 @@ new SceneToy() {
 
 void testConvertT3DDatablockWiringStubs() {
     const std::string mission = writeTempFile(
-        "/tmp/fuse_convert_wiring.mis",
+        fuse::test::tempPath("fuse_convert_wiring.mis"),
         "new Scene(ExampleLevel) {\n"
         "   new GroundPlane() {\n"
         "      MaterialAsset = \"Prototyping:FloorGray\";\n"
@@ -142,7 +143,7 @@ void testConvertT3DDatablockWiringStubs() {
         "   };\n"
         "};\n");
 
-    const std::string output = "/tmp/fuse_convert_wiring.fuselevel";
+    const std::string output = fuse::test::tempPath("fuse_convert_wiring.fuselevel");
     const fuse::project::ConvertResult result =
         fuse::project::convertT3DMissionToFuselevel(mission, output);
 
@@ -164,14 +165,14 @@ void testConvertT3DDatablockWiringStubs() {
 
 void testConvertT2DModuleHierarchy() {
     const std::string module = writeTempFile(
-        "/tmp/fuse_convert_t2d_hierarchy.cs",
+        fuse::test::tempPath("fuse_convert_t2d_hierarchy.cs"),
         "module \"SpriteToy\";\n"
         "new SceneToy() {\n"
         "  new SpritePlayer(Player) {\n"
         "    position = \"10 20\";\n"
         "  };\n"
         "};\n");
-    const std::string output = "/tmp/fuse_convert_t2d_hierarchy.fuselevel";
+    const std::string output = fuse::test::tempPath("fuse_convert_t2d_hierarchy.fuselevel");
 
     const fuse::project::ConvertResult result =
         fuse::project::convertT2DModuleToFuselevel(module, output);
@@ -196,7 +197,7 @@ void testConvertT2DModuleHierarchy() {
 
 void testT3DDatablockResolveFromMission() {
     const std::string mission = writeTempFile(
-        "/tmp/fuse_t3d_resolve.mis",
+        fuse::test::tempPath("fuse_t3d_resolve.mis"),
         "new Scene(ExampleLevel) {\n"
         "   new GroundPlane(Floor) {\n"
         "      MaterialAsset = \"Prototyping:FloorGray\";\n"
@@ -225,13 +226,13 @@ void testT3DDatablockResolveFromMission() {
 
 void testT3DDatablockResolveFromScene() {
     const std::string mission = writeTempFile(
-        "/tmp/fuse_t3d_resolve_scene.mis",
+        fuse::test::tempPath("fuse_t3d_resolve_scene.mis"),
         "new Scene(ExampleLevel) {\n"
         "   new SpawnSphere(DefaultCameraSpawnSphere) {\n"
         "      dataBlock = \"SpawnSphereMarker\";\n"
         "   };\n"
         "};\n");
-    const std::string output = "/tmp/fuse_t3d_resolve_scene.fuselevel";
+    const std::string output = fuse::test::tempPath("fuse_t3d_resolve_scene.fuselevel");
     const fuse::project::ConvertResult converted =
         fuse::project::convertT3DMissionToFuselevel(mission, output);
     expectTrue(converted.status == fuse::project::ConvertStatus::Ok, "mission converts for resolve");
@@ -258,7 +259,7 @@ void testT2DModuleRuntimeBridgeLayersPhysicsComposite() {
         "    };\n"
         "  };\n"
         "};\n";
-    const std::string module = writeTempFile("/tmp/fuse_t2d_deep_bridge.cs", moduleText);
+    const std::string module = writeTempFile(fuse::test::tempPath("fuse_t2d_deep_bridge.cs"), moduleText);
 
     fuse::world2d::World2D world;
     const fuse::project::T2DRuntimeBridgeResult bridged =
@@ -290,7 +291,7 @@ new SceneToy() {
     collisionLayer = 1;
   };
 };)";
-    const std::string module = writeTempFile("/tmp/fuse_t2d_physics_shapes.cs", moduleText);
+    const std::string module = writeTempFile(fuse::test::tempPath("fuse_t2d_physics_shapes.cs"), moduleText);
 
     const fuse::project::T2DModuleExtract extract =
         fuse::project::extractT2DModuleFields(moduleText, module);
@@ -327,7 +328,7 @@ new SceneToy() {
 }
 
 void testT3DMaterialVfsMountAndResolve() {
-    const std::filesystem::path projectRoot = std::filesystem::path("/tmp/fuse_vfs_project");
+    const std::filesystem::path projectRoot = std::filesystem::path(fuse::test::tempPath("fuse_vfs_project"));
     const std::filesystem::path materialPath =
         projectRoot / "data" / "materials" / "Prototyping" / "FloorGray.mat";
     std::filesystem::create_directories(materialPath.parent_path());
@@ -350,7 +351,7 @@ void testT3DMaterialVfsMountAndResolve() {
                "mounted vfs resolves material path");
 
     const std::string mission = writeTempFile(
-        "/tmp/fuse_vfs_mission.mis",
+        fuse::test::tempPath("fuse_vfs_mission.mis"),
         "new Scene(ExampleLevel) {\n"
         "   new GroundPlane(Floor) {\n"
         "      MaterialAsset = \"Prototyping:FloorGray\";\n"
@@ -372,7 +373,7 @@ void testT3DMaterialVfsMountAndResolve() {
 }
 
 void testT3DMaterialVfsAsyncLoad() {
-    const std::filesystem::path projectRoot = std::filesystem::path("/tmp/fuse_vfs_project");
+    const std::filesystem::path projectRoot = std::filesystem::path(fuse::test::tempPath("fuse_vfs_project"));
     const std::filesystem::path materialPath =
         projectRoot / "data" / "materials" / "Prototyping" / "FloorGray.mat";
     std::filesystem::create_directories(materialPath.parent_path());
@@ -483,7 +484,7 @@ void testT3DMissionShaderDataExtract() {
 }
 
 void testT3DMissionShaderVfsAsyncLoad() {
-    const std::filesystem::path projectRoot = std::filesystem::path("/tmp/fuse_vfs_project");
+    const std::filesystem::path projectRoot = std::filesystem::path(fuse::test::tempPath("fuse_vfs_project"));
     const std::filesystem::path shaderPath =
         projectRoot / "data" / "shaders" / "Common" / "ScreenSpace.cs";
     std::filesystem::create_directories(shaderPath.parent_path());
@@ -523,7 +524,7 @@ void testT3DMissionShaderVfsAsyncLoad() {
 }
 
 void testT3DShaderVfsAsyncLoad() {
-    const std::filesystem::path projectRoot = std::filesystem::path("/tmp/fuse_vfs_project");
+    const std::filesystem::path projectRoot = std::filesystem::path(fuse::test::tempPath("fuse_vfs_project"));
     const std::filesystem::path shaderPath =
         projectRoot / "data" / "shaders" / "Common" / "ScreenSpace.cs";
     std::filesystem::create_directories(shaderPath.parent_path());
@@ -584,7 +585,7 @@ void testT3DShaderVfsAsyncLoad() {
 
 void testConvertT2DAnimatedSpriteWiringStubs() {
     const std::string module = writeTempFile(
-        "/tmp/fuse_convert_animated.cs",
+        fuse::test::tempPath("fuse_convert_animated.cs"),
         R"(module "SpriteToy";
 new SceneToy() {
   new SpritePlayer(Hero) {
@@ -595,7 +596,7 @@ new SceneToy() {
     animationFPS = 12;
   };
 };)");
-    const std::string output = "/tmp/fuse_convert_animated.fuselevel";
+    const std::string output = fuse::test::tempPath("fuse_convert_animated.fuselevel");
 
     const fuse::project::ConvertResult result =
         fuse::project::convertT2DModuleToFuselevel(module, output);
@@ -627,7 +628,7 @@ new SceneToy() {
 
 void testT2DModuleRuntimeBridge() {
     const std::string module = writeTempFile(
-        "/tmp/fuse_t2d_bridge.cs",
+        fuse::test::tempPath("fuse_t2d_bridge.cs"),
         "module \"SpriteToy\";\n"
         "new SceneToy() {\n"
         "  new SpritePlayer(Player) { position = \"4 8\"; };\n"

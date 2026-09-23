@@ -107,7 +107,8 @@ bool isWindowScopedEventType(PlatformEventType type) {
     return type == PlatformEventType::WindowCloseRequested ||
            type == PlatformEventType::WindowResized ||
            type == PlatformEventType::WindowFocusGained ||
-           type == PlatformEventType::WindowFocusLost;
+           type == PlatformEventType::WindowFocusLost ||
+           type == PlatformEventType::InputCaptureChanged;
 }
 
 #if defined(_WIN32)
@@ -544,6 +545,7 @@ Window::Window(Window&& other) noexcept
       m_createNative(other.m_createNative),
       m_focused(other.m_focused),
       m_inputCapture(other.m_inputCapture),
+      m_captureChangeUnreported(other.m_captureChangeUnreported),
       m_closeRequest(other.m_closeRequest),
       m_title(std::move(other.m_title)),
       m_nativeWindow(other.m_nativeWindow),
@@ -552,6 +554,7 @@ Window::Window(Window&& other) noexcept
     unregisterPumpWindow(&other);
     other.m_valid = false;
     other.m_inputCapture = InputCaptureMode::Released;
+    other.m_captureChangeUnreported = false;
     other.m_closeRequest = WindowCloseRequest::None;
     other.m_nativeWindow = nullptr;
     other.m_ownsNativeWindow = false;
@@ -576,6 +579,7 @@ Window& Window::operator=(Window&& other) noexcept {
         m_createNative = other.m_createNative;
         m_focused = other.m_focused;
         m_inputCapture = other.m_inputCapture;
+        m_captureChangeUnreported = other.m_captureChangeUnreported;
         m_closeRequest = other.m_closeRequest;
         m_title = std::move(other.m_title);
         m_nativeWindow = other.m_nativeWindow;
@@ -585,6 +589,7 @@ Window& Window::operator=(Window&& other) noexcept {
         unregisterPumpWindow(&other);
         other.m_valid = false;
         other.m_inputCapture = InputCaptureMode::Released;
+        other.m_captureChangeUnreported = false;
         other.m_closeRequest = WindowCloseRequest::None;
         other.m_nativeWindow = nullptr;
         other.m_ownsNativeWindow = false;
@@ -635,7 +640,7 @@ void Window::setNativeHandleForPump(void* hwnd) {
 #endif
 }
 
-void Window::setInputCapture(InputCaptureMode mode) {
+void Window::setInputCapture(InputCaptureMode mode, EventPump* pump) {
     if (m_inputCapture == mode) {
         return;
     }
@@ -651,6 +656,12 @@ void Window::setInputCapture(InputCaptureMode mode) {
 #if defined(FUSE_PLATFORM_WINDOW_X11)
     syncX11RawMotion();
 #endif
+    if (pump != nullptr) {
+        m_captureChangeUnreported = false;
+        pump->pushInputCaptureChanged(*this);
+    } else {
+        m_captureChangeUnreported = !m_captureChangeUnreported;
+    }
 }
 
 void* Window::nativeVulkanSurface() const {
@@ -1046,6 +1057,16 @@ u32 EventPump::coalescedResizeCount() const {
 }
 
 void EventPump::processOsEvents() {
+    // Capture changes made without a pump: report them before this batch's OS input so the
+    // InputState delta source switches at the right point in the stream.
+    for (u32 i = 0; i < g_pumpWindowCount; ++i) {
+        Window* window = g_pumpWindows[i];
+        if (window != nullptr && window->m_captureChangeUnreported) {
+            window->m_captureChangeUnreported = false;
+            pushInputCaptureChanged(*window);
+        }
+    }
+
 #if defined(FUSE_PLATFORM_WINDOW_GLFW)
     if (windowWsiAvailable()) {
         glfwPollEvents();
@@ -1302,6 +1323,14 @@ void EventPump::pushWindowFocusGained(Window& window) {
     event.mouseX = 0;
     event.mouseY = 0;
     event.mouseButton = 0;
+    pushSyntheticEvent(event);
+}
+
+void EventPump::pushInputCaptureChanged(Window& window) {
+    PlatformEvent event{};
+    event.type = PlatformEventType::InputCaptureChanged;
+    event.window = &window;
+    event.inputCaptured = window.isInputCaptured();
     pushSyntheticEvent(event);
 }
 

@@ -70,6 +70,7 @@ public:
     [[nodiscard]] InspectorWidget* inspector() const { return m_inspector; }
     [[nodiscard]] ConsoleWidget* console() const { return m_console; }
     [[nodiscard]] ProfilerWidget* profiler() const { return m_profiler; }
+    [[nodiscard]] ProjectHubWidget* projectHub() const { return m_projectHub; }
     [[nodiscard]] QDockWidget* dock(const char* objectName) const;
     [[nodiscard]] const std::vector<QDockWidget*>& docks() const { return m_docks; }
 
@@ -81,6 +82,10 @@ public:
 
     /// Refresh every panel from the FUSE models (runs on the UI refresh timer).
     void refreshPanels();
+
+    /// Refresh the panels once the game thread has loaded an opened project's world (runs on the
+    /// status timer). Returns true on the refresh that first shows the newly loaded world.
+    bool syncProjectWorld();
 
     /// Duration of the last full repaint of the window (ms), as measured by `measureUiFrame`.
     double measureUiFrame();
@@ -112,6 +117,7 @@ private:
     QString m_samplesRoot;
     QLabel* m_statusLabel = nullptr;
     QTimer m_statusTimer;
+    bool m_projectWorldShown = false;
 };
 
 } // namespace fuse::editor::qt

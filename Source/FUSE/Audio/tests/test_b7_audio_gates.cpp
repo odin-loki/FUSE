@@ -17,6 +17,7 @@
 #include <fuse/audio/occlusion.hpp>
 #include <fuse/audio/reverb_cuda.hpp>
 #include <fuse/core/init.hpp>
+#include <fuse/core/sanitizer.hpp>
 
 #if defined(FUSE_AUDIO_OPENAL)
 #include <AL/al.h>
@@ -35,6 +36,12 @@
 #include <random>
 #include <string>
 #include <vector>
+
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 using fuse::u32;
 namespace fa = fuse::audio;
@@ -92,6 +99,14 @@ struct WavSpec {
     bool junk_before_fmt = false; ///< Odd-sized LIST chunk ahead of fmt.
 };
 
+unsigned long currentProcessId() {
+#if defined(_WIN32)
+    return static_cast<unsigned long>(_getpid());
+#else
+    return static_cast<unsigned long>(getpid());
+#endif
+}
+
 std::filesystem::path write_wav(const char* name, const WavSpec& spec,
                                 const std::vector<unsigned char>& data) {
     std::vector<unsigned char> fmt;
@@ -127,7 +142,19 @@ std::filesystem::path write_wav(const char* name, const WavSpec& spec,
     put_u32(file, static_cast<std::uint32_t>(body.size()));
     file.insert(file.end(), body.begin(), body.end());
 
-    const std::filesystem::path dir = std::filesystem::temp_directory_path() / "fuse_b7_audio_gates";
+    // Per-process directory: ctest runs this binary twice at once (gates + --require-openal), and a
+    // shared fixed path let one process truncate a WAV while the other was loading it.
+    // Removed again at process exit so repeated runs don't leave one directory per pid behind.
+    struct FixtureDir {
+        std::filesystem::path path =
+            std::filesystem::temp_directory_path() / ("fuse_b7_audio_gates_" + std::to_string(currentProcessId()));
+        ~FixtureDir() {
+            std::error_code ec;
+            std::filesystem::remove_all(path, ec);
+        }
+    };
+    static const FixtureDir fixtureDir;
+    const std::filesystem::path& dir = fixtureDir.path;
     std::filesystem::create_directories(dir);
     const std::filesystem::path path = dir / name;
     std::ofstream out(path, std::ios::binary);
@@ -921,7 +948,7 @@ int runPerfGate() {
                 "(buffer %.2f ms, budget %.3f ms)\n",
                 frames, median, p99, buffer_ms, budget_ms);
 #if defined(NDEBUG)
-    if (median > budget_ms) {
+    if (fuse::core::timingBudgetsEnforcedNoted() && median > budget_ms) {
         std::fprintf(stderr, "FAIL: 32-voice mix median %.3f ms exceeds %.3f ms budget\n", median,
                      budget_ms);
         return EXIT_FAILURE;

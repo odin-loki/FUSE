@@ -2,6 +2,7 @@
 // CPU-only: builds the per-frame graph the way RhiContext does, compiles it repeatedly and checks
 // the median compile time. The 1 ms budget is enforced for optimised builds; Debug (-O0) reports
 // the numbers and only fails on a gross regression.
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/renderer/render_command_list.hpp>
 #include <fuse/renderer/render_graph.hpp>
 
@@ -74,7 +75,9 @@ void testHybridFrameGraphBudget() {
         "hybrid frame graph");
     expectTrue(graph.compileInfo().compiled, "hybrid frame graph compiled");
     expectTrue(graph.compileInfo().passCount >= 4u, "hybrid frame graph has clear/sprites/composite/present");
-    expectTrue(median < kBudgetUs, "hybrid frame graph compile within budget");
+    if (fuse::core::timingBudgetsEnforcedNoted()) {
+        expectTrue(median < kBudgetUs, "hybrid frame graph compile within budget");
+    }
 }
 
 void testFullPassBudgetGraph() {
@@ -126,7 +129,9 @@ void testFullPassBudgetGraph() {
     expectTrue(graph.compileInfo().culledPassCount == 0u, "32-pass chain feeds present, nothing culled");
     expectTrue(graph.compileInfo().barrierCount >= kPasses - 2u,
                "write->sample transitions planned along the chain");
-    expectTrue(median < kBudgetUs, "32-pass graph compile within budget");
+    if (fuse::core::timingBudgetsEnforcedNoted()) {
+        expectTrue(median < kBudgetUs, "32-pass graph compile within budget");
+    }
 }
 
 } // namespace

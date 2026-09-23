@@ -99,6 +99,13 @@
 #include <cstdlib>
 #if defined(_WIN32)
 #include <malloc.h>
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #endif
 #include <cstring>
 #include <memory>
@@ -145,6 +152,19 @@ struct Site {
     int depth = 0;
     void* frames[kStackDepth] = {};
 };
+
+#if defined(_WIN32) && !FUSE_STEADY_HAVE_MALLOC_HOOK
+struct WinTrace {
+    int phase = -1;
+    Kind kind = Kind::CxxNew;
+    std::size_t size = 0;
+    unsigned short depth = 0;
+    void* frames[kStackDepth] = {};
+};
+constexpr unsigned kWinTraceMax = 32;
+WinTrace g_winTraces[kWinTraceMax];
+std::atomic<unsigned> g_winTraceCount{0};
+#endif
 
 // Only filled/read with the glibc malloc hook (backtrace attribution); unused elsewhere.
 [[maybe_unused]] Site g_sites[kSiteTableSize];
@@ -214,6 +234,17 @@ void record(Kind kind, std::size_t size) {
         }
     }
     g_droppedSites.fetch_add(1u, std::memory_order_relaxed);
+#elif defined(_WIN32)
+    // No malloc hook here: keep the return addresses of the first few measured operator new calls
+    // so a failing phase can be traced (resolve with x86_64-w64-mingw32-addr2line / nm on the .exe).
+    const unsigned slot = g_winTraceCount.fetch_add(1u, std::memory_order_relaxed);
+    if (slot < kWinTraceMax) {
+        WinTrace& t = g_winTraces[slot];
+        t.phase = phase;
+        t.kind = kind;
+        t.size = size;
+        t.depth = RtlCaptureStackBackTrace(1, kStackDepth, t.frames, nullptr);
+    }
 #else
     (void)size;
 #endif
@@ -639,6 +670,8 @@ struct ScriptWorld {
     fuse::script::ScriptRuntime runtime; // after vm: shut down (and released) first
     std::vector<fuse::ecs::EntityID> actors;
     std::vector<fuse::ecs::EntityID> movers;
+    fuse::usize warmPoolBytes = 0;
+    fuse::u64 warmPoolAllocs = 0;
 };
 
 fuse::ecs::EntityID spawnScriptBody(fuse::ecs::Registry& reg, float x, float y, float z, fuse::u32 shape,
@@ -682,6 +715,10 @@ bool setupScript(ScriptWorld& s) {
     fuse::script::ScriptVMDesc desc;
     desc.memory_limit_bytes = 32u * 1024u * 1024u;
     desc.instruction_budget = 5'000'000u;
+    // The behaviours' GC-paced Lua heap peaks at ~117 KiB but its per-size-class working set varies
+    // run to run: grown on demand in 64 KiB pages, the pool sometimes took its third page only
+    // after warm-up (one 64 KiB operator new in a measured frame). Reserve ~4x the peak up front.
+    desc.heap_reserve_bytes = 512u * 1024u;
     if (!s.vm.init(desc) || !s.vm.has_lua_backend()) {
         return false;
     }
@@ -1278,6 +1315,12 @@ void measure() {
     for (fuse::u32 frame = 0; frame < kWarmupFrames; ++frame) {
         runFrame(e, frame);
     }
+#if FUSE_STEADY_HAS_SCRIPT
+    if (g_worlds.script != nullptr) {
+        g_worlds.script->warmPoolBytes = g_worlds.script->vm.heap_reserved_bytes();
+        g_worlds.script->warmPoolAllocs = g_worlds.script->vm.heap_system_allocations();
+    }
+#endif
     g_measuring.store(true);
     for (fuse::u32 frame = kWarmupFrames; frame < kWarmupFrames + kMeasuredFrames; ++frame) {
         runFrame(e, frame);
@@ -1334,6 +1377,29 @@ void measure() {
                           ? static_cast<unsigned>(std::atoi(std::getenv("FUSE_STEADY_TOP")))
                           : 25u);
     }
+#elif defined(_WIN32)
+    if (totalNew + totalMalloc != 0u) {
+        // Return addresses inside this .exe print as "+rva" (resolve with
+        // x86_64-w64-mingw32-addr2line -f -C -e <exe> <image base + rva - 1>); others as absolute.
+        const auto base = reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr));
+        const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+        const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + static_cast<std::uintptr_t>(dos->e_lfanew));
+        const std::uintptr_t end = base + nt->OptionalHeader.SizeOfImage;
+        const unsigned n = std::min(g_winTraceCount.load(), kWinTraceMax);
+        std::printf("steady-state alloc: first %u measured allocation stack(s), image base 0x%llx:\n", n,
+                    static_cast<unsigned long long>(base));
+        for (unsigned i = 0; i < n; ++i) {
+            const WinTrace& t = g_winTraces[i];
+            std::printf("  #%u [%s] %s %zu bytes:", i, phaseName(t.phase),
+                        t.kind == Kind::CxxNew ? "operator new" : "malloc", t.size);
+            for (unsigned d = 0; d < t.depth; ++d) {
+                const auto a = reinterpret_cast<std::uintptr_t>(t.frames[d]);
+                const bool inImage = a >= base && a < end;
+                std::printf(" %s0x%llx", inImage ? "+" : "", static_cast<unsigned long long>(inImage ? a - base : a));
+            }
+            std::printf("\n");
+        }
+    }
 #endif
 
     for (int p = 0; p < kPhaseCount; ++p) {
@@ -1375,6 +1441,13 @@ void measure() {
                     sw.runtime.instance_count(), static_cast<unsigned long long>(sw.runtime.callback_count()), hits,
                     kicks, contacts, sw.vm.memory_bytes() / 1024u, sw.vm.peak_memory_bytes() / 1024u,
                     sw.runtime.error_count());
+        std::printf("steady-state alloc: script: Lua heap pool %zu KiB in %llu system allocation(s) "
+                    "(%zu KiB in %llu after warm-up)\n",
+                    sw.vm.heap_reserved_bytes() / 1024u,
+                    static_cast<unsigned long long>(sw.vm.heap_system_allocations()),
+                    sw.warmPoolBytes / 1024u, static_cast<unsigned long long>(sw.warmPoolAllocs));
+        expectTrue(sw.vm.heap_system_allocations() == sw.warmPoolAllocs,
+                   "Lua heap pool took no system allocation after warm-up");
         expectTrue(sw.runtime.frame_count() == frames, "script runtime ticked every frame");
         expectTrue(sw.runtime.error_count() == 0u, "script behaviours ran without errors");
         expectTrue(hits > 0.0 && kicks > 0.0, "scripts performed physics queries (ray hits, impulses)");

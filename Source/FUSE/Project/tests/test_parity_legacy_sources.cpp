@@ -1,3 +1,4 @@
+#include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/project/loader.hpp>
 #include <fuse/project/parity_legacy_sources.hpp>
@@ -34,13 +35,13 @@ void testRepositoryRootFromParityDemo() {
 }
 
 void testSubmoduleDirectoryClassification() {
-    const std::string emptyDir = "/tmp/fuse_submodule_empty_probe";
+    const std::string emptyDir = fuse::test::tempPath("fuse_submodule_empty_probe");
     std::filesystem::create_directories(emptyDir);
     expectTrue(fuse::project::classifySubmoduleDirectory(emptyDir) ==
                    fuse::project::SubmodulePathStatus::Uninitialized,
                "empty directory classified as uninitialized submodule checkout");
 
-    const std::string populatedDir = "/tmp/fuse_submodule_populated_probe";
+    const std::string populatedDir = fuse::test::tempPath("fuse_submodule_populated_probe");
     std::filesystem::create_directories(populatedDir);
     writeTempFile(populatedDir + "/main.cs", "module \"Probe\";");
     expectTrue(fuse::project::classifySubmoduleDirectory(populatedDir) ==

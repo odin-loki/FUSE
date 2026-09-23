@@ -13,6 +13,10 @@
 #include <fuse/log/logger.hpp>
 #include <fuse/profiler/profiler.hpp>
 
+#if defined(__x86_64__)
+#include <x86intrin.h>
+#endif
+
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -350,23 +354,46 @@ void testProfilerScopeOverhead() {
     }
     const double clockRead = static_cast<double>(nowNs() - clockStart) / kScopes;
 
-    std::printf("  profiler scope overhead: %.2f ns enabled (best of 5), %.2f ns disabled; "
-                "steady_clock read %.2f ns (%llu)\n",
-                best, disabled, clockRead, static_cast<unsigned long long>(sink & 1u));
+    // The profiler stamps scopes with the invariant TSC where available (x86-64): two reads per
+    // scope are the floor of FUSE_PROFILE_SCOPE on this host.
+    double tscRead = 0.0;
+#if defined(__x86_64__)
+    const u64 tscStart = nowNs();
+    u64 tscSink = 0;
+    for (u32 i = 0; i < kScopes; ++i) {
+        tscSink += __rdtsc();
+    }
+    tscRead = static_cast<double>(nowNs() - tscStart) / kScopes;
+    sink += tscSink & 1u;
+#endif
+
+    std::printf("  profiler scope overhead: %.2f ns enabled (best of 5), %.2f ns disabled; clock %s; "
+                "steady_clock read %.2f ns, rdtsc read %.2f ns (%llu)\n",
+                best, disabled, fuse::profiler::clockSourceName(), clockRead, tscRead,
+                static_cast<unsigned long long>(sink & 1u));
 #if defined(NDEBUG)
     // The plan's < 10 ns budget is specified for the ThinkStation P920 reference machine; set
-    // FUSE_B1_REFERENCE_HARDWARE=1 there to enforce it. Elsewhere (shared CI VMs, where a single
-    // steady_clock read can cost more than 10 ns) enforce a regression ceiling instead.
+    // FUSE_B1_REFERENCE_HARDWARE=1 there to enforce it. Elsewhere enforce a regression ceiling
+    // derived from this host's clock cost. A scope is two clock reads plus a lock-free per-thread
+    // ring append: with the invariant TSC (rdtsc ~12-15 ns on the 2.1 GHz CI VM) it measures
+    // ~32-40 ns there (the old shared atomic ring + steady_clock measured 66-85 ns), so 60 ns
+    // catches a return of shared read-modify-writes / steady_clock stamping. Without a TSC the
+    // floor is two steady_clock reads.
+    const bool tscClock = std::strcmp(fuse::profiler::clockSourceName(), "tsc") == 0;
+    const double ceiling = tscClock ? 60.0 : std::max(100.0, 3.0 * clockRead);
     const char* reference = std::getenv("FUSE_B1_REFERENCE_HARDWARE");
     if (reference != nullptr && reference[0] == '1') {
         expectTrue(best < 10.0, "profiler scope overhead < 10 ns per scope (reference hardware)");
     } else if (!fuse::core::timingBudgetsEnforced()) {
         // e.g. FUSE_INSTRUMENTED_RUN=wine: a steady_clock read alone costs ~100 ns under Wine.
-        std::printf("  SKIP 250 ns regression ceiling (instrumented/emulated run)\n");
+        std::printf("  SKIP %.0f ns regression ceiling (instrumented/emulated run)\n", ceiling);
     } else {
-        expectTrue(best < 250.0, "profiler scope overhead under the 250 ns CI regression ceiling");
+        std::printf("  regression ceiling %.0f ns (%s clock)\n", ceiling, tscClock ? "tsc" : "steady_clock");
+        expectTrue(best < ceiling, "profiler scope overhead under the CI regression ceiling");
     }
-    expectTrue(disabled < 10.0, "disabled profiler scope costs < 10 ns");
+    if (fuse::core::timingBudgetsEnforcedNoted()) {
+        expectTrue(disabled < 10.0, "disabled profiler scope costs < 10 ns");
+    }
 #else
     std::printf("  (budget enforced only in NDEBUG builds)\n");
 #endif

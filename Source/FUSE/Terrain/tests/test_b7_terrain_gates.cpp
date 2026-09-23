@@ -3,6 +3,7 @@
 // Every check compares against an independent reference: analytic surfaces, the documented noise
 // parameters' Lipschitz bounds, direct texel reads, or a from-scratch mesh rebuild.
 
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/terrain/chunk_grid.hpp>
@@ -816,7 +817,9 @@ void testUpdateFrameBudget() {
     const f64 worst = samples.back();
     std::printf("  update_lod while streaming (1024 chunks): p99 %.3f ms, worst %.3f ms\n", p99, worst);
 #ifdef NDEBUG
-    expectLe(p99, 2.0, "update_lod p99 under 2 ms while streaming (NDEBUG)");
+    if (fuse::core::timingBudgetsEnforcedNoted()) {
+        expectLe(p99, 2.0, "update_lod p99 under 2 ms while streaming (NDEBUG)");
+    }
 #endif
     terrain.destroy();
 }

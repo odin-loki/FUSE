@@ -28,6 +28,12 @@ struct ScriptVMDesc {
     u64 instruction_budget = 0;
     /// Forward `print` output to stdout in addition to the captured output buffer.
     bool echo_print = false;
+    /// Bytes of Lua heap pool obtained up front, as one page (0 = grow in 64 KiB pages on
+    /// demand). Pool blocks never move between size classes and the GC-paced per-class working
+    /// set differs from run to run, so a pool grown on demand can still take a new page long
+    /// after start-up; a frame loop that must not touch the system heap reserves a few times its
+    /// peak script heap here.
+    usize heap_reserve_bytes = 0;
 };
 
 /// Script VM — Lua when `FUSE_SCRIPT_LUA=1`, otherwise a null backend that records chunk names.
@@ -90,6 +96,10 @@ public:
     /// Current / peak Lua heap bytes (0 on the null backend).
     [[nodiscard]] usize memory_bytes() const;
     [[nodiscard]] usize peak_memory_bytes() const;
+    /// Bytes the Lua heap pool holds from the system heap, and how many system allocations
+    /// (page refills + oversize blocks) it has made (0 on the null backend).
+    [[nodiscard]] usize heap_reserved_bytes() const;
+    [[nodiscard]] u64 heap_system_allocations() const;
     void set_memory_limit(usize bytes);
     void set_instruction_budget(u64 instructions);
     /// Full garbage-collection cycle.

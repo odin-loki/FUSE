@@ -1,16 +1,22 @@
 #include <fuse/animation/skinning.hpp>
+#include <fuse/jobs/cuda_jobs.hpp>
 
 #include <algorithm>
 #include <cmath>
 
 namespace fuse::animation {
 
+bool skinning_cuda_kernel_available() {
+    // No CUDA skinning kernel is built yet: skin_vertices() is the only implementation, so a
+    // CUDA toolkit / device alone must not make the backend report Cuda.
+    return false;
+}
+
 SkinningBackend skinning_backend() {
-#if defined(FUSE_HAS_CUDA)
-    return SkinningBackend::Cuda;
-#else
+    if (skinning_cuda_kernel_available() && fuse::jobs::cudaJobsAvailable()) {
+        return SkinningBackend::Cuda;
+    }
     return SkinningBackend::CpuReference;
-#endif
 }
 
 bool skin_vertices(const SkinningInput& input, SkinningOutput& output) {

@@ -11,6 +11,7 @@
 //   - Idle workers go back to sleep instead of spinning (process CPU time over an idle window).
 // Every multi-worker section runs under a watchdog so a deadlock fails instead of hanging CI.
 
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/jobs/parallel_for.hpp>
@@ -454,7 +455,7 @@ int main() {
     for (u32 workers : {0u, 1u, 2u, 4u}) {
         byWorkers[workers] = measureLatency(workers);
     }
-    if (kOptimizedBuild) {
+    if (kOptimizedBuild && fuse::core::timingBudgetsEnforcedNoted()) {
         expectTrue(byWorkers[4].p50 < 50.0, "Release: parallel_for(4096, grain 256) median < 50 us at 4 workers");
         expectTrue(byWorkers[1].p50 < 50.0, "Release: parallel_for(4096, grain 256) median < 50 us at 1 worker");
     } else {

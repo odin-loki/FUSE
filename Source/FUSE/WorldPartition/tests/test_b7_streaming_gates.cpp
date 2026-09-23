@@ -3,6 +3,7 @@
 // registry; async loads run on JobScheduler workers and apply on the game thread.
 
 #include <fuse/core/init.hpp>
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
@@ -632,9 +633,12 @@ void testTraverse2kmAt30mps() {
         // Worst single wall-clock frame is dominated by OS preemption on shared CI hosts, so the hitch
         // gate is the 99.9th percentile against a quarter frame, and "no update ever costs a whole 60 fps
         // frame" is judged on the game thread's own CPU time (the work update() actually does).
-        expectLe(p99, 1.0, "streaming update p99 under 1 ms (NDEBUG)");
-        expectLe(p999, 4.0, "streaming update p99.9 under 4 ms: no hitch (NDEBUG)");
-        expectLe(worstCpuMs, 1000.0 / 60.0, "no streaming update costs a whole 60 fps frame of game-thread CPU (NDEBUG)");
+        if (fuse::core::timingBudgetsEnforcedNoted()) {
+            expectLe(p99, 1.0, "streaming update p99 under 1 ms (NDEBUG)");
+            expectLe(p999, 4.0, "streaming update p99.9 under 4 ms: no hitch (NDEBUG)");
+            expectLe(worstCpuMs, 1000.0 / 60.0,
+                     "no streaming update costs a whole 60 fps frame of game-thread CPU (NDEBUG)");
+        }
 #endif
         partition.destroy();
         expectTrue(registry.count() == 0u, "partition destroy leaves no streamed entities");

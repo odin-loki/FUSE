@@ -1,3 +1,4 @@
+#include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/project/asset_cooker.hpp>
 #include <fuse/project/asset_graph.hpp>
@@ -62,7 +63,7 @@ void testParseCookManifest() {
 })";
 
     const fuse::project::CookManifestLoadResult result =
-        fuse::project::parseCookManifest(json, "/tmp/demo");
+        fuse::project::parseCookManifest(json, fuse::test::tempPath("demo"));
     expectTrue(result.status == fuse::project::CookManifestLoadStatus::Ok, "cook manifest parses");
     expectTrue(result.manifest.assets.size() == 2u, "two assets parsed");
     expectTrue(result.manifest.assets[0].kind == fuse::project::CookAssetKind::Mesh, "first asset is mesh");
@@ -71,10 +72,10 @@ void testParseCookManifest() {
 
 void testAssetGraphRoundTrip() {
     fuse::project::AssetGraph graph;
-    graph.add_asset("cooked/a.fusemesh", "/tmp/fuse_b79_source_a.obj");
-    graph.add_dependency("cooked/a.fusemesh", "/tmp/fuse_b79_dep.mtl");
+    graph.add_asset("cooked/a.fusemesh", fuse::test::tempPath("fuse_b79_source_a.obj"));
+    graph.add_dependency("cooked/a.fusemesh", fuse::test::tempPath("fuse_b79_dep.mtl"));
 
-    const std::string graphPath = "/tmp/fuse_b79_graph.json";
+    const std::string graphPath = fuse::test::tempPath("fuse_b79_graph.json");
     expectTrue(graph.save(graphPath), "asset graph saves");
 
     fuse::project::AssetGraph loaded;
@@ -83,10 +84,10 @@ void testAssetGraphRoundTrip() {
 }
 
 void testAssetCookerStub() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_mesh.obj", "# stub mesh\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_mesh.obj"), "# stub mesh\n");
     fuse::project::MeshImportDesc desc;
     desc.input_path = source;
-    desc.output_path = "/tmp/fuse_b79_mesh.fusemesh";
+    desc.output_path = fuse::test::tempPath("fuse_b79_mesh.fusemesh");
 
     fuse::project::AssetCooker cooker;
 
@@ -102,12 +103,12 @@ void testAssetCookerStub() {
 }
 
 void testCookEntryWritesOutputFile() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_entry_mesh.obj", "# entry mesh\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_entry_mesh.obj"), "# entry mesh\n");
 
     fuse::project::CookManifestEntry entry;
     entry.kind = fuse::project::CookAssetKind::Mesh;
     entry.source_path = source;
-    entry.output_path = "/tmp/fuse_b79_entry_mesh.fusemesh";
+    entry.output_path = fuse::test::tempPath("fuse_b79_entry_mesh.fusemesh");
 
     fuse::project::AssetCooker cooker;
 
@@ -123,12 +124,12 @@ void testCookEntryWritesOutputFile() {
 }
 
 void testCookEntryWritesShaderStubOutput() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_entry_shader.cs", "void main() {}\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_entry_shader.cs"), "void main() {}\n");
 
     fuse::project::CookManifestEntry entry;
     entry.kind = fuse::project::CookAssetKind::Shader;
     entry.source_path = source;
-    entry.output_path = "/tmp/fuse_b79_entry_shader.fuseshader";
+    entry.output_path = fuse::test::tempPath("fuse_b79_entry_shader.fuseshader");
 
     fuse::project::AssetCooker cooker;
 
@@ -151,11 +152,11 @@ void testAssetCookerTextureAudioHookStubs() {
         0x01, 0x01, 0x00, 0x05, 0x18, 0xD8, 0x4E, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
         0x42, 0x60, 0x82};
     const std::string textureSource = writeTempFile(
-        "/tmp/fuse_b79_albedo.png",
+        fuse::test::tempPath("fuse_b79_albedo.png"),
         std::string(reinterpret_cast<const char*>(kMinimalPng), sizeof(kMinimalPng)));
     fuse::project::TextureImportDesc textureDesc;
     textureDesc.input_path = textureSource;
-    textureDesc.output_path = "/tmp/fuse_b79_albedo.fusetex";
+    textureDesc.output_path = fuse::test::tempPath("fuse_b79_albedo.fusetex");
     textureDesc.generate_mipmaps = true;
 
     fuse::project::AssetCooker cooker;
@@ -199,10 +200,10 @@ void testAssetCookerTextureAudioHookStubs() {
         }
     }
 
-    const std::string audioSource = writeTempFile("/tmp/fuse_b79_sfx.wav", "RIFF");
+    const std::string audioSource = writeTempFile(fuse::test::tempPath("fuse_b79_sfx.wav"), "RIFF");
     fuse::project::AudioImportDesc audioDesc;
     audioDesc.input_path = audioSource;
-    audioDesc.output_path = "/tmp/fuse_b79_sfx.fuseaudio";
+    audioDesc.output_path = fuse::test::tempPath("fuse_b79_sfx.fuseaudio");
     audioDesc.format = fuse::project::AudioImportDesc::Format::OGG_VORBIS;
 
     const fuse::project::CookRecord audioRecord = cooker.cook_audio(audioDesc);
@@ -221,10 +222,10 @@ void testAssetCookerTextureAudioHookStubs() {
 }
 
 void testAssetCookerBc7Texture() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_tex.png", "PNG\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_tex.png"), "PNG\n");
     fuse::project::TextureImportDesc desc;
     desc.input_path = source;
-    desc.output_path = "/tmp/fuse_b79_tex.fusetex";
+    desc.output_path = fuse::test::tempPath("fuse_b79_tex.fusetex");
 
     fuse::project::AssetCooker cooker;
 
@@ -240,9 +241,9 @@ void testAssetCookerBc7Texture() {
 }
 
 void testImportPipelineDryRun() {
-    fuse::project::CookManifest manifest = fuse::project::makeDefaultCookManifest("/tmp/demo");
+    fuse::project::CookManifest manifest = fuse::project::makeDefaultCookManifest(fuse::test::tempPath("demo"));
     fuse::project::ImportPipeline pipeline;
-    pipeline.set_project_root("/tmp/demo");
+    pipeline.set_project_root(fuse::test::tempPath("demo"));
 
     const fuse::project::CookBatchResult planned = pipeline.plan_from_manifest(manifest);
     expectTrue(planned.ok, "pipeline plan ok");
@@ -283,21 +284,21 @@ void testCookJobGraphEmpty() {
 }
 
 void testCookJobGraphTopologicalOrderDirect() {
-    const std::string sourceA = writeTempFile("/tmp/fuse_b79_topo_a.obj", "# topo a\n");
-    const std::string sourceB = writeTempFile("/tmp/fuse_b79_topo_b.obj", "# topo b\n");
+    const std::string sourceA = writeTempFile(fuse::test::tempPath("fuse_b79_topo_a.obj"), "# topo a\n");
+    const std::string sourceB = writeTempFile(fuse::test::tempPath("fuse_b79_topo_b.obj"), "# topo b\n");
 
     fuse::project::CookManifest manifest;
 
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
     entryA.source_path = sourceA;
-    entryA.output_path = "/tmp/fuse_b79_topo_a.fusemesh";
+    entryA.output_path = fuse::test::tempPath("fuse_b79_topo_a.fusemesh");
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
     entryB.source_path = sourceB;
-    entryB.output_path = "/tmp/fuse_b79_topo_b.fusemesh";
+    entryB.output_path = fuse::test::tempPath("fuse_b79_topo_b.fusemesh");
     entryB.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryB);
 
@@ -314,20 +315,20 @@ void testCookJobGraphTopologicalOrderDirect() {
 }
 
 void testCookJobGraphImplicitOutputSourceEdge() {
-    const std::string sourceA = writeTempFile("/tmp/fuse_b79_implicit_a.obj", "# implicit a\n");
+    const std::string sourceA = writeTempFile(fuse::test::tempPath("fuse_b79_implicit_a.obj"), "# implicit a\n");
 
     fuse::project::CookManifest manifest;
 
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
     entryA.source_path = sourceA;
-    entryA.output_path = "/tmp/fuse_b79_implicit_a.fusemesh";
+    entryA.output_path = fuse::test::tempPath("fuse_b79_implicit_a.fusemesh");
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
     entryB.source_path = entryA.output_path;
-    entryB.output_path = "/tmp/fuse_b79_implicit_b.fusemesh";
+    entryB.output_path = fuse::test::tempPath("fuse_b79_implicit_b.fusemesh");
     manifest.assets.push_back(entryB);
 
     fuse::project::CookJobGraph graph;
@@ -623,29 +624,29 @@ void testCookDependencyGraphParallelLayerWidth() {
 }
 
 void testCookJobGraphUpstreamAndMergedClosure() {
-    const std::string sourceA = writeTempFile("/tmp/fuse_b79_up_a.obj", "# up a\n");
-    const std::string sourceB = writeTempFile("/tmp/fuse_b79_up_b.obj", "# up b\n");
-    const std::string sourceC = writeTempFile("/tmp/fuse_b79_up_c.obj", "# up c\n");
+    const std::string sourceA = writeTempFile(fuse::test::tempPath("fuse_b79_up_a.obj"), "# up a\n");
+    const std::string sourceB = writeTempFile(fuse::test::tempPath("fuse_b79_up_b.obj"), "# up b\n");
+    const std::string sourceC = writeTempFile(fuse::test::tempPath("fuse_b79_up_c.obj"), "# up c\n");
 
     fuse::project::CookManifest manifest;
 
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
     entryA.source_path = sourceA;
-    entryA.output_path = "/tmp/fuse_b79_up_a.fusemesh";
+    entryA.output_path = fuse::test::tempPath("fuse_b79_up_a.fusemesh");
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
     entryB.source_path = sourceB;
-    entryB.output_path = "/tmp/fuse_b79_up_b.fusemesh";
+    entryB.output_path = fuse::test::tempPath("fuse_b79_up_b.fusemesh");
     entryB.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryB);
 
     fuse::project::CookManifestEntry entryC;
     entryC.kind = fuse::project::CookAssetKind::Mesh;
     entryC.source_path = sourceC;
-    entryC.output_path = "/tmp/fuse_b79_up_c.fusemesh";
+    entryC.output_path = fuse::test::tempPath("fuse_b79_up_c.fusemesh");
     entryC.dependencies.push_back(entryB.output_path);
     manifest.assets.push_back(entryC);
 
@@ -697,16 +698,16 @@ void testCookJobGraphCycleEdgesIntegration() {
 
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
-    entryA.source_path = "/tmp/fuse_b79_cycle_edge_a.obj";
-    entryA.output_path = "/tmp/fuse_b79_cycle_edge_a.fusemesh";
-    entryA.dependencies.push_back("/tmp/fuse_b79_cycle_edge_b.fusemesh");
+    entryA.source_path = fuse::test::tempPath("fuse_b79_cycle_edge_a.obj");
+    entryA.output_path = fuse::test::tempPath("fuse_b79_cycle_edge_a.fusemesh");
+    entryA.dependencies.push_back(fuse::test::tempPath("fuse_b79_cycle_edge_b.fusemesh"));
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
-    entryB.source_path = "/tmp/fuse_b79_cycle_edge_b.obj";
-    entryB.output_path = "/tmp/fuse_b79_cycle_edge_b.fusemesh";
-    entryB.dependencies.push_back("/tmp/fuse_b79_cycle_edge_a.fusemesh");
+    entryB.source_path = fuse::test::tempPath("fuse_b79_cycle_edge_b.obj");
+    entryB.output_path = fuse::test::tempPath("fuse_b79_cycle_edge_b.fusemesh");
+    entryB.dependencies.push_back(fuse::test::tempPath("fuse_b79_cycle_edge_a.fusemesh"));
     manifest.assets.push_back(entryB);
 
     fuse::project::CookJobGraph graph;
@@ -723,16 +724,16 @@ void testCookJobGraphCycleDetectDirect() {
 
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
-    entryA.source_path = "/tmp/fuse_b79_cycle_direct_a.obj";
-    entryA.output_path = "/tmp/fuse_b79_cycle_direct_a.fusemesh";
-    entryA.dependencies.push_back("/tmp/fuse_b79_cycle_direct_b.fusemesh");
+    entryA.source_path = fuse::test::tempPath("fuse_b79_cycle_direct_a.obj");
+    entryA.output_path = fuse::test::tempPath("fuse_b79_cycle_direct_a.fusemesh");
+    entryA.dependencies.push_back(fuse::test::tempPath("fuse_b79_cycle_direct_b.fusemesh"));
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
-    entryB.source_path = "/tmp/fuse_b79_cycle_direct_b.obj";
-    entryB.output_path = "/tmp/fuse_b79_cycle_direct_b.fusemesh";
-    entryB.dependencies.push_back("/tmp/fuse_b79_cycle_direct_a.fusemesh");
+    entryB.source_path = fuse::test::tempPath("fuse_b79_cycle_direct_b.obj");
+    entryB.output_path = fuse::test::tempPath("fuse_b79_cycle_direct_b.fusemesh");
+    entryB.dependencies.push_back(fuse::test::tempPath("fuse_b79_cycle_direct_a.fusemesh"));
     manifest.assets.push_back(entryB);
 
     fuse::project::CookJobGraph graph;
@@ -746,13 +747,13 @@ void testCookJobGraphCycleDetectDirect() {
 }
 
 void testCookJobGraphStageOrdering() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_stage_mesh.obj", "# stage mesh\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_stage_mesh.obj"), "# stage mesh\n");
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry;
     entry.kind = fuse::project::CookAssetKind::Mesh;
     entry.source_path = source;
-    entry.output_path = "/tmp/fuse_b79_stage_mesh.fusemesh";
+    entry.output_path = fuse::test::tempPath("fuse_b79_stage_mesh.fusemesh");
     manifest.assets.push_back(entry);
 
     fuse::project::CookJobGraph graph;
@@ -778,8 +779,8 @@ void testCookJobGraphFailedStageShortCircuit() {
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry;
     entry.kind = fuse::project::CookAssetKind::Texture;
-    entry.source_path = "/tmp/fuse_b79_missing_texture.png";
-    entry.output_path = "/tmp/fuse_b79_missing_texture.fusetex";
+    entry.source_path = fuse::test::tempPath("fuse_b79_missing_texture.png");
+    entry.output_path = fuse::test::tempPath("fuse_b79_missing_texture.fusetex");
     manifest.assets.push_back(entry);
 
     fuse::project::CookJobGraph graph;
@@ -799,29 +800,29 @@ void testCookJobGraphFailedStageShortCircuit() {
 }
 
 void testCookJobGraphLinearChain() {
-    const std::string sourceA = writeTempFile("/tmp/fuse_b79_chain_a.obj", "# chain a\n");
-    const std::string sourceB = writeTempFile("/tmp/fuse_b79_chain_b.obj", "# chain b\n");
-    const std::string sourceC = writeTempFile("/tmp/fuse_b79_chain_c.obj", "# chain c\n");
+    const std::string sourceA = writeTempFile(fuse::test::tempPath("fuse_b79_chain_a.obj"), "# chain a\n");
+    const std::string sourceB = writeTempFile(fuse::test::tempPath("fuse_b79_chain_b.obj"), "# chain b\n");
+    const std::string sourceC = writeTempFile(fuse::test::tempPath("fuse_b79_chain_c.obj"), "# chain c\n");
 
     fuse::project::CookManifest manifest;
 
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
     entryA.source_path = sourceA;
-    entryA.output_path = "/tmp/fuse_b79_chain_a.fusemesh";
+    entryA.output_path = fuse::test::tempPath("fuse_b79_chain_a.fusemesh");
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
     entryB.source_path = sourceB;
-    entryB.output_path = "/tmp/fuse_b79_chain_b.fusemesh";
+    entryB.output_path = fuse::test::tempPath("fuse_b79_chain_b.fusemesh");
     entryB.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryB);
 
     fuse::project::CookManifestEntry entryC;
     entryC.kind = fuse::project::CookAssetKind::Mesh;
     entryC.source_path = sourceC;
-    entryC.output_path = "/tmp/fuse_b79_chain_c.fusemesh";
+    entryC.output_path = fuse::test::tempPath("fuse_b79_chain_c.fusemesh");
     entryC.dependencies.push_back(entryB.output_path);
     manifest.assets.push_back(entryC);
 
@@ -842,37 +843,37 @@ void testCookJobGraphLinearChain() {
 }
 
 void testCookJobGraphDiamondDag() {
-    const std::string sourceA = writeTempFile("/tmp/fuse_b79_diamond_a.obj", "# diamond a\n");
-    const std::string sourceB = writeTempFile("/tmp/fuse_b79_diamond_b.obj", "# diamond b\n");
-    const std::string sourceC = writeTempFile("/tmp/fuse_b79_diamond_c.obj", "# diamond c\n");
-    const std::string sourceD = writeTempFile("/tmp/fuse_b79_diamond_d.obj", "# diamond d\n");
+    const std::string sourceA = writeTempFile(fuse::test::tempPath("fuse_b79_diamond_a.obj"), "# diamond a\n");
+    const std::string sourceB = writeTempFile(fuse::test::tempPath("fuse_b79_diamond_b.obj"), "# diamond b\n");
+    const std::string sourceC = writeTempFile(fuse::test::tempPath("fuse_b79_diamond_c.obj"), "# diamond c\n");
+    const std::string sourceD = writeTempFile(fuse::test::tempPath("fuse_b79_diamond_d.obj"), "# diamond d\n");
 
     fuse::project::CookManifest manifest;
 
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
     entryA.source_path = sourceA;
-    entryA.output_path = "/tmp/fuse_b79_diamond_a.fusemesh";
+    entryA.output_path = fuse::test::tempPath("fuse_b79_diamond_a.fusemesh");
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
     entryB.source_path = sourceB;
-    entryB.output_path = "/tmp/fuse_b79_diamond_b.fusemesh";
+    entryB.output_path = fuse::test::tempPath("fuse_b79_diamond_b.fusemesh");
     entryB.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryB);
 
     fuse::project::CookManifestEntry entryC;
     entryC.kind = fuse::project::CookAssetKind::Mesh;
     entryC.source_path = sourceC;
-    entryC.output_path = "/tmp/fuse_b79_diamond_c.fusemesh";
+    entryC.output_path = fuse::test::tempPath("fuse_b79_diamond_c.fusemesh");
     entryC.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryC);
 
     fuse::project::CookManifestEntry entryD;
     entryD.kind = fuse::project::CookAssetKind::Mesh;
     entryD.source_path = sourceD;
-    entryD.output_path = "/tmp/fuse_b79_diamond_d.fusemesh";
+    entryD.output_path = fuse::test::tempPath("fuse_b79_diamond_d.fusemesh");
     entryD.dependencies.push_back(entryB.output_path);
     entryD.dependencies.push_back(entryC.output_path);
     manifest.assets.push_back(entryD);
@@ -906,16 +907,16 @@ void testCookJobGraphCycleReject() {
 
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
-    entryA.source_path = "/tmp/fuse_b79_cycle_a.obj";
-    entryA.output_path = "/tmp/fuse_b79_cycle_a.fusemesh";
-    entryA.dependencies.push_back("/tmp/fuse_b79_cycle_b.fusemesh");
+    entryA.source_path = fuse::test::tempPath("fuse_b79_cycle_a.obj");
+    entryA.output_path = fuse::test::tempPath("fuse_b79_cycle_a.fusemesh");
+    entryA.dependencies.push_back(fuse::test::tempPath("fuse_b79_cycle_b.fusemesh"));
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
-    entryB.source_path = "/tmp/fuse_b79_cycle_b.obj";
-    entryB.output_path = "/tmp/fuse_b79_cycle_b.fusemesh";
-    entryB.dependencies.push_back("/tmp/fuse_b79_cycle_a.fusemesh");
+    entryB.source_path = fuse::test::tempPath("fuse_b79_cycle_b.obj");
+    entryB.output_path = fuse::test::tempPath("fuse_b79_cycle_b.fusemesh");
+    entryB.dependencies.push_back(fuse::test::tempPath("fuse_b79_cycle_a.fusemesh"));
     manifest.assets.push_back(entryB);
 
     fuse::project::CookJobGraph graph;
@@ -936,21 +937,21 @@ void testCookJobGraphCycleReject() {
 }
 
 void testCookJobGraphDependencyEdgesAndOrder() {
-    const std::string sourceA = writeTempFile("/tmp/fuse_b79_dep_mesh_a.obj", "# mesh a\n");
-    const std::string sourceB = writeTempFile("/tmp/fuse_b79_dep_mesh_b.obj", "# mesh b\n");
+    const std::string sourceA = writeTempFile(fuse::test::tempPath("fuse_b79_dep_mesh_a.obj"), "# mesh a\n");
+    const std::string sourceB = writeTempFile(fuse::test::tempPath("fuse_b79_dep_mesh_b.obj"), "# mesh b\n");
 
     fuse::project::CookManifest manifest;
 
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
     entryA.source_path = sourceA;
-    entryA.output_path = "/tmp/fuse_b79_dep_mesh_a.fusemesh";
+    entryA.output_path = fuse::test::tempPath("fuse_b79_dep_mesh_a.fusemesh");
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
     entryB.source_path = sourceB;
-    entryB.output_path = "/tmp/fuse_b79_dep_mesh_b.fusemesh";
+    entryB.output_path = fuse::test::tempPath("fuse_b79_dep_mesh_b.fusemesh");
     entryB.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryB);
 
@@ -997,29 +998,29 @@ void testCookJobGraphStageHelpers() {
 }
 
 void testCookJobGraphReadyJobsAndInvalidationClosure() {
-    const std::string sourceA = writeTempFile("/tmp/fuse_b79_ready_a.obj", "# ready a\n");
-    const std::string sourceB = writeTempFile("/tmp/fuse_b79_ready_b.obj", "# ready b\n");
-    const std::string sourceC = writeTempFile("/tmp/fuse_b79_ready_c.obj", "# ready c\n");
+    const std::string sourceA = writeTempFile(fuse::test::tempPath("fuse_b79_ready_a.obj"), "# ready a\n");
+    const std::string sourceB = writeTempFile(fuse::test::tempPath("fuse_b79_ready_b.obj"), "# ready b\n");
+    const std::string sourceC = writeTempFile(fuse::test::tempPath("fuse_b79_ready_c.obj"), "# ready c\n");
 
     fuse::project::CookManifest manifest;
 
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
     entryA.source_path = sourceA;
-    entryA.output_path = "/tmp/fuse_b79_ready_a.fusemesh";
+    entryA.output_path = fuse::test::tempPath("fuse_b79_ready_a.fusemesh");
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
     entryB.source_path = sourceB;
-    entryB.output_path = "/tmp/fuse_b79_ready_b.fusemesh";
+    entryB.output_path = fuse::test::tempPath("fuse_b79_ready_b.fusemesh");
     entryB.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryB);
 
     fuse::project::CookManifestEntry entryC;
     entryC.kind = fuse::project::CookAssetKind::Mesh;
     entryC.source_path = sourceC;
-    entryC.output_path = "/tmp/fuse_b79_ready_c.fusemesh";
+    entryC.output_path = fuse::test::tempPath("fuse_b79_ready_c.fusemesh");
     entryC.dependencies.push_back(entryB.output_path);
     manifest.assets.push_back(entryC);
 
@@ -1053,20 +1054,20 @@ void testCookJobGraphReadyJobsAndInvalidationClosure() {
 }
 
 void testCookJobGraphDependencyShortCircuit() {
-    const std::string sourceB = writeTempFile("/tmp/fuse_b79_dep_mesh_b_skip.obj", "# mesh b\n");
+    const std::string sourceB = writeTempFile(fuse::test::tempPath("fuse_b79_dep_mesh_b_skip.obj"), "# mesh b\n");
 
     fuse::project::CookManifest manifest;
 
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
-    entryA.source_path = "/tmp/fuse_b79_missing_dep_mesh_a.obj";
-    entryA.output_path = "/tmp/fuse_b79_dep_mesh_a_skip.fusemesh";
+    entryA.source_path = fuse::test::tempPath("fuse_b79_missing_dep_mesh_a.obj");
+    entryA.output_path = fuse::test::tempPath("fuse_b79_dep_mesh_a_skip.fusemesh");
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
     entryB.source_path = sourceB;
-    entryB.output_path = "/tmp/fuse_b79_dep_mesh_b_skip.fusemesh";
+    entryB.output_path = fuse::test::tempPath("fuse_b79_dep_mesh_b_skip.fusemesh");
     entryB.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryB);
 
@@ -1090,13 +1091,13 @@ void testCookJobGraphDependencyShortCircuit() {
 }
 
 void testCookManifestUsesJobGraph() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_graph_mesh.obj", "# graph mesh\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_graph_mesh.obj"), "# graph mesh\n");
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry;
     entry.kind = fuse::project::CookAssetKind::Mesh;
     entry.source_path = source;
-    entry.output_path = "/tmp/fuse_b79_graph_mesh.fusemesh";
+    entry.output_path = fuse::test::tempPath("fuse_b79_graph_mesh.fusemesh");
     manifest.assets.push_back(entry);
 
     fuse::project::AssetCooker graphCooker;
@@ -1125,21 +1126,21 @@ void testPlanForProject() {
   "defaultWorld2D": ""
 })";
 
-    const fuse::project::LoadResult loaded = fuse::project::parseManifest(json, "/tmp/demo");
+    const fuse::project::LoadResult loaded = fuse::project::parseManifest(json, fuse::test::tempPath("demo"));
     expectTrue(loaded.status == fuse::project::LoadStatus::Ok, "project manifest ok");
 
     const fuse::project::CookBatchResult planned =
-        fuse::project::ImportPipeline::planForProject(loaded.manifest, "/tmp/demo");
+        fuse::project::ImportPipeline::planForProject(loaded.manifest, fuse::test::tempPath("demo"));
     expectTrue(planned.ok, "project cook plan ok");
     expectTrue(planned.records.size() >= 2u, "default manifest plus world entry");
 }
 
 void testContentHashDeterministic() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_hash_mesh.obj", "# hash mesh\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_hash_mesh.obj"), "# hash mesh\n");
 
     fuse::project::MeshImportDesc desc;
     desc.input_path = source;
-    desc.output_path = "/tmp/fuse_b79_hash_mesh.fusemesh";
+    desc.output_path = fuse::test::tempPath("fuse_b79_hash_mesh.fusemesh");
 
     const fuse::u64 hash_a = fuse::project::hash_mesh_import(desc);
     const fuse::u64 hash_b = fuse::project::hash_mesh_import(desc);
@@ -1148,11 +1149,11 @@ void testContentHashDeterministic() {
 
     const fuse::u64 file_hash = fuse::project::hash_file_content(source);
     expectTrue(file_hash != 0, "file content hash is non-zero");
-    expectTrue(fuse::project::hash_file_content("/tmp/fuse_b79_missing.obj") == 0, "missing file hashes to zero");
+    expectTrue(fuse::project::hash_file_content(fuse::test::tempPath("fuse_b79_missing.obj")) == 0, "missing file hashes to zero");
 }
 
 void testContentHashMtimeSensitivity() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_hash_mtime.obj", "# mtime mesh\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_hash_mtime.obj"), "# mtime mesh\n");
 
     const fuse::u64 hash_before = fuse::project::hash_file_content(source);
     expectTrue(hash_before != 0, "mtime-aware file hash is non-zero");
@@ -1166,11 +1167,11 @@ void testContentHashMtimeSensitivity() {
 }
 
 void testContentHashDescSensitivity() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_hash_tex.png", "PNG\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_hash_tex.png"), "PNG\n");
 
     fuse::project::TextureImportDesc desc_a;
     desc_a.input_path = source;
-    desc_a.output_path = "/tmp/fuse_b79_hash_tex.fusetex";
+    desc_a.output_path = fuse::test::tempPath("fuse_b79_hash_tex.fusetex");
 
     fuse::project::TextureImportDesc desc_b = desc_a;
     desc_b.is_normal_map = true;
@@ -1181,11 +1182,11 @@ void testContentHashDescSensitivity() {
 }
 
 void testCookCacheHitMiss() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_cache_mesh.obj", "# cache mesh\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_cache_mesh.obj"), "# cache mesh\n");
 
     fuse::project::MeshImportDesc desc;
     desc.input_path = source;
-    desc.output_path = "/tmp/fuse_b79_cache_mesh.fusemesh";
+    desc.output_path = fuse::test::tempPath("fuse_b79_cache_mesh.fusemesh");
 
     fuse::project::AssetCooker cooker;
 
@@ -1206,11 +1207,11 @@ void testCookCacheHitMiss() {
 }
 
 void testCookCacheInvalidation() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_inval_mesh.obj", "# invalidation mesh\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_inval_mesh.obj"), "# invalidation mesh\n");
 
     fuse::project::MeshImportDesc desc;
     desc.input_path = source;
-    desc.output_path = "/tmp/fuse_b79_inval_mesh.fusemesh";
+    desc.output_path = fuse::test::tempPath("fuse_b79_inval_mesh.fusemesh");
 
     fuse::project::AssetCooker cooker;
 
@@ -1240,18 +1241,18 @@ void testCookCacheInvalidation() {
 }
 
 void testCookCacheRoundTrip() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_cache_persist.obj", "# persist mesh\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_cache_persist.obj"), "# persist mesh\n");
 
     fuse::project::MeshImportDesc desc;
     desc.input_path = source;
-    desc.output_path = "/tmp/fuse_b79_cache_persist.fusemesh";
+    desc.output_path = fuse::test::tempPath("fuse_b79_cache_persist.fusemesh");
 
     fuse::project::AssetCooker cooker;
 
     optOutOfStrictImport(cooker);
     cooker.cook_mesh(desc);
 
-    const std::string cachePath = "/tmp/fuse_b79_cook_cache.json";
+    const std::string cachePath = fuse::test::tempPath("fuse_b79_cook_cache.json");
     expectTrue(cooker.cache().save(cachePath), "cook cache saves");
 
     fuse::project::CookCache loaded;
@@ -1260,29 +1261,29 @@ void testCookCacheRoundTrip() {
 }
 
 void testCookCacheInvalidateChain() {
-    const std::string sourceA = writeTempFile("/tmp/fuse_b79_chain_inv_a.obj", "# chain inv a\n");
-    const std::string sourceB = writeTempFile("/tmp/fuse_b79_chain_inv_b.obj", "# chain inv b\n");
-    const std::string sourceC = writeTempFile("/tmp/fuse_b79_chain_inv_c.obj", "# chain inv c\n");
+    const std::string sourceA = writeTempFile(fuse::test::tempPath("fuse_b79_chain_inv_a.obj"), "# chain inv a\n");
+    const std::string sourceB = writeTempFile(fuse::test::tempPath("fuse_b79_chain_inv_b.obj"), "# chain inv b\n");
+    const std::string sourceC = writeTempFile(fuse::test::tempPath("fuse_b79_chain_inv_c.obj"), "# chain inv c\n");
 
     fuse::project::CookManifest manifest;
 
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
     entryA.source_path = sourceA;
-    entryA.output_path = "/tmp/fuse_b79_chain_inv_a.fusemesh";
+    entryA.output_path = fuse::test::tempPath("fuse_b79_chain_inv_a.fusemesh");
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
     entryB.source_path = sourceB;
-    entryB.output_path = "/tmp/fuse_b79_chain_inv_b.fusemesh";
+    entryB.output_path = fuse::test::tempPath("fuse_b79_chain_inv_b.fusemesh");
     entryB.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryB);
 
     fuse::project::CookManifestEntry entryC;
     entryC.kind = fuse::project::CookAssetKind::Mesh;
     entryC.source_path = sourceC;
-    entryC.output_path = "/tmp/fuse_b79_chain_inv_c.fusemesh";
+    entryC.output_path = fuse::test::tempPath("fuse_b79_chain_inv_c.fusemesh");
     entryC.dependencies.push_back(entryB.output_path);
     manifest.assets.push_back(entryC);
 
@@ -1309,21 +1310,21 @@ void testCookCacheInvalidateChain() {
 }
 
 void testCookCacheStaleDependencyHashInvalidation() {
-    const std::string sourceA = writeTempFile("/tmp/fuse_b79_stale_a.obj", "# stale a\n");
-    const std::string sourceB = writeTempFile("/tmp/fuse_b79_stale_b.obj", "# stale b\n");
+    const std::string sourceA = writeTempFile(fuse::test::tempPath("fuse_b79_stale_a.obj"), "# stale a\n");
+    const std::string sourceB = writeTempFile(fuse::test::tempPath("fuse_b79_stale_b.obj"), "# stale b\n");
 
     fuse::project::CookManifest manifest;
 
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
     entryA.source_path = sourceA;
-    entryA.output_path = "/tmp/fuse_b79_stale_a.fusemesh";
+    entryA.output_path = fuse::test::tempPath("fuse_b79_stale_a.fusemesh");
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
     entryB.source_path = sourceB;
-    entryB.output_path = "/tmp/fuse_b79_stale_b.fusemesh";
+    entryB.output_path = fuse::test::tempPath("fuse_b79_stale_b.fusemesh");
     entryB.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryB);
 
@@ -1346,21 +1347,21 @@ void testCookCacheStaleDependencyHashInvalidation() {
 }
 
 void testCookCacheUpstreamInvalidation() {
-    const std::string sourceA = writeTempFile("/tmp/fuse_b79_upinv_a.obj", "# upstream a\n");
-    const std::string sourceB = writeTempFile("/tmp/fuse_b79_upinv_b.obj", "# downstream b\n");
+    const std::string sourceA = writeTempFile(fuse::test::tempPath("fuse_b79_upinv_a.obj"), "# upstream a\n");
+    const std::string sourceB = writeTempFile(fuse::test::tempPath("fuse_b79_upinv_b.obj"), "# downstream b\n");
 
     fuse::project::CookManifest manifest;
 
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
     entryA.source_path = sourceA;
-    entryA.output_path = "/tmp/fuse_b79_upinv_a.fusemesh";
+    entryA.output_path = fuse::test::tempPath("fuse_b79_upinv_a.fusemesh");
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
     entryB.source_path = sourceB;
-    entryB.output_path = "/tmp/fuse_b79_upinv_b.fusemesh";
+    entryB.output_path = fuse::test::tempPath("fuse_b79_upinv_b.fusemesh");
     entryB.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryB);
 
@@ -1398,25 +1399,25 @@ void testCookCacheEmptyKeyPaths() {
 
     fuse::project::CookCacheEntry invalid;
     invalid.content_hash = 0;
-    invalid.source_path = "/tmp/fuse_b79_empty_key.obj";
-    invalid.output_path = "/tmp/fuse_b79_empty_key.fusemesh";
+    invalid.source_path = fuse::test::tempPath("fuse_b79_empty_key.obj");
+    invalid.output_path = fuse::test::tempPath("fuse_b79_empty_key.fusemesh");
     cache.store(invalid);
     expectTrue(cache.entry_count() == 0u, "zero-hash entry is not stored");
 
     fuse::project::CookCacheEntry empty_paths;
     empty_paths.content_hash = 42;
     empty_paths.source_path = "";
-    empty_paths.output_path = "/tmp/fuse_b79_empty_paths.fusemesh";
+    empty_paths.output_path = fuse::test::tempPath("fuse_b79_empty_paths.fusemesh");
     cache.store(empty_paths);
     expectTrue(cache.entry_count() == 0u, "empty source path is not stored");
 
-    empty_paths.source_path = "/tmp/fuse_b79_empty_source.obj";
+    empty_paths.source_path = fuse::test::tempPath("fuse_b79_empty_source.obj");
     empty_paths.output_path = "";
     cache.store(empty_paths);
     expectTrue(cache.entry_count() == 0u, "empty output path is not stored");
 
     expectTrue(!fuse::project::is_valid_cook_cache_path(""), "empty path fails path validation");
-    expectTrue(fuse::project::is_valid_cook_cache_path("/tmp/fuse_b79_ok.obj"), "non-empty path passes validation");
+    expectTrue(fuse::project::is_valid_cook_cache_path(fuse::test::tempPath("fuse_b79_ok.obj")), "non-empty path passes validation");
 
     expectTrue(!cache.invalidate(0), "zero-hash invalidation is a no-op");
     expectTrue(cache.stats().invalidations == 0u, "zero-hash invalidation does not bump stats");
@@ -1426,7 +1427,7 @@ void testCookCacheEmptyKeyPaths() {
 
     fuse::project::MeshImportDesc desc;
     desc.input_path = "";
-    desc.output_path = "/tmp/fuse_b79_empty_input.fusemesh";
+    desc.output_path = fuse::test::tempPath("fuse_b79_empty_input.fusemesh");
     expectTrue(fuse::project::hash_mesh_import(desc) == 0, "empty input path yields zero content hash");
 
     fuse::project::AssetCooker cooker;
@@ -1439,14 +1440,14 @@ void testCookCacheEmptyKeyPaths() {
 }
 
 void testCookDirtyInvalidatesCache() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_dirty_mesh.obj", "# dirty mesh\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_dirty_mesh.obj"), "# dirty mesh\n");
 
     fuse::project::AssetGraph graph;
-    graph.add_asset("/tmp/fuse_b79_dirty_mesh.fusemesh", source);
+    graph.add_asset(fuse::test::tempPath("fuse_b79_dirty_mesh.fusemesh"), source);
 
     fuse::project::MeshImportDesc desc;
     desc.input_path = source;
-    desc.output_path = "/tmp/fuse_b79_dirty_mesh.fusemesh";
+    desc.output_path = fuse::test::tempPath("fuse_b79_dirty_mesh.fusemesh");
 
     fuse::project::AssetCooker cooker;
 
@@ -1461,14 +1462,14 @@ void testCookDirtyInvalidatesCache() {
     graph.scan_for_changes();
     expectTrue(!graph.dirty_assets().empty(), "asset marked dirty after source change");
 
-    const fuse::project::CookBatchResult reimport = cooker.cook_dirty(graph, "/tmp/demo");
+    const fuse::project::CookBatchResult reimport = cooker.cook_dirty(graph, fuse::test::tempPath("demo"));
     expectTrue(reimport.ok, "dirty reimport ok");
     expectTrue(cooker.cache().entry_count() == 0u, "dirty reimport invalidates cache");
     expectTrue(cooker.cache().stats().invalidations >= 1u, "dirty invalidation counted");
 }
 
 void testContentHashByteSensitivity() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_hash_bytes.obj", "# bytes v1\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_hash_bytes.obj"), "# bytes v1\n");
 
     const fuse::u64 hash_before = fuse::project::hash_file_content(source);
     expectTrue(hash_before != 0, "byte-aware file hash is non-zero");
@@ -1480,11 +1481,11 @@ void testContentHashByteSensitivity() {
 }
 
 void testCookCacheContentChangePrunesStale() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_prune_mesh.obj", "# prune v1\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_prune_mesh.obj"), "# prune v1\n");
 
     fuse::project::MeshImportDesc desc;
     desc.input_path = source;
-    desc.output_path = "/tmp/fuse_b79_prune_mesh.fusemesh";
+    desc.output_path = fuse::test::tempPath("fuse_b79_prune_mesh.fusemesh");
 
     fuse::project::AssetCooker cooker;
 
@@ -1507,11 +1508,11 @@ void testCookCacheContentChangePrunesStale() {
 }
 
 void testCookCacheOutputInvalidation() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_outinv_mesh.obj", "# output inv\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_outinv_mesh.obj"), "# output inv\n");
 
     fuse::project::MeshImportDesc desc;
     desc.input_path = source;
-    desc.output_path = "/tmp/fuse_b79_outinv_mesh.fusemesh";
+    desc.output_path = fuse::test::tempPath("fuse_b79_outinv_mesh.fusemesh");
 
     fuse::project::AssetCooker cooker;
 
@@ -1531,11 +1532,11 @@ void testCookCacheOutputInvalidation() {
 }
 
 void testCookCachePruneStaleEntries() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_batch_prune.obj", "# batch prune v1\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_batch_prune.obj"), "# batch prune v1\n");
 
     fuse::project::MeshImportDesc desc;
     desc.input_path = source;
-    desc.output_path = "/tmp/fuse_b79_batch_prune.fusemesh";
+    desc.output_path = fuse::test::tempPath("fuse_b79_batch_prune.fusemesh");
 
     fuse::project::AssetCooker cooker;
 
@@ -1564,18 +1565,18 @@ void testCookCacheEmptyGuards() {
     expectTrue(cache.entry_count() == 0u, "fresh cache has zero entries");
 
     expectTrue(cache.prune_stale_entries() == 0u, "prune on empty cache returns zero");
-    expectTrue(cache.invalidate_output("/tmp/fuse_b79_missing.fusemesh") == 0u,
+    expectTrue(cache.invalidate_output(fuse::test::tempPath("fuse_b79_missing.fusemesh")) == 0u,
                "output invalidation on empty cache returns zero");
-    expectTrue(cache.invalidate_source("/tmp/fuse_b79_missing.obj") == 0u,
+    expectTrue(cache.invalidate_source(fuse::test::tempPath("fuse_b79_missing.obj")) == 0u,
                "source invalidation on empty cache returns zero");
-    expectTrue(cache.invalidate_stale_content_for_source("/tmp/fuse_b79_missing.obj", 42u) == 0u,
+    expectTrue(cache.invalidate_stale_content_for_source(fuse::test::tempPath("fuse_b79_missing.obj"), 42u) == 0u,
                "stale-content invalidation on empty cache returns zero");
 
     cache.invalidate_all();
     expectTrue(cache.empty(), "invalidate_all on empty cache stays empty");
     expectTrue(cache.stats().invalidations == 0u, "invalidate_all on empty cache does not bump stats");
 
-    const std::string cachePath = "/tmp/fuse_b79_empty_cache.json";
+    const std::string cachePath = fuse::test::tempPath("fuse_b79_empty_cache.json");
     expectTrue(cache.save(cachePath), "empty cache saves valid JSON");
     fuse::project::CookCache loaded;
     expectTrue(loaded.load(cachePath), "empty cache JSON loads");
@@ -1591,7 +1592,7 @@ void testCookCacheEmptyGuards() {
     expectTrue(cache.invalidate_stale_upstream_hashes({{"", 1u}}).empty(),
                "stale upstream invalidation skips empty source paths");
 
-    expectTrue(cache.invalidate_downstream_of("/tmp/fuse_b79_missing.fusemesh", {}, {}) == 0u,
+    expectTrue(cache.invalidate_downstream_of(fuse::test::tempPath("fuse_b79_missing.fusemesh"), {}, {}) == 0u,
                "downstream invalidation on empty cache returns zero");
     expectTrue(cache.invalidate_downstream_of("", {}, {}) == 0u,
                "downstream invalidation rejects empty output path");
@@ -1610,11 +1611,11 @@ void testCookCacheEmptyGuards() {
 }
 
 void testCookCacheInvalidatePruneGuards() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_guard_mesh.obj", "# guard mesh\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_guard_mesh.obj"), "# guard mesh\n");
 
     fuse::project::MeshImportDesc desc;
     desc.input_path = source;
-    desc.output_path = "/tmp/fuse_b79_guard_mesh.fusemesh";
+    desc.output_path = fuse::test::tempPath("fuse_b79_guard_mesh.fusemesh");
 
     fuse::project::AssetCooker cooker;
 
@@ -1661,11 +1662,11 @@ void testCookContentHashGuardHelpers() {
 }
 
 void testCookCacheContainsHelper() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_contains_mesh.obj", "# contains mesh\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_contains_mesh.obj"), "# contains mesh\n");
 
     fuse::project::MeshImportDesc desc;
     desc.input_path = source;
-    desc.output_path = "/tmp/fuse_b79_contains_mesh.fusemesh";
+    desc.output_path = fuse::test::tempPath("fuse_b79_contains_mesh.fusemesh");
 
     fuse::project::AssetCooker cooker;
 
@@ -1684,8 +1685,8 @@ void testCookCacheContainsHelper() {
 void testCookCachePruneInvalidEntries() {
     fuse::project::CookCacheEntry valid;
     valid.content_hash = 42;
-    valid.source_path = "/tmp/fuse_b79_valid_entry.obj";
-    valid.output_path = "/tmp/fuse_b79_valid_entry.fusemesh";
+    valid.source_path = fuse::test::tempPath("fuse_b79_valid_entry.obj");
+    valid.output_path = fuse::test::tempPath("fuse_b79_valid_entry.fusemesh");
     expectTrue(fuse::project::is_valid_cook_cache_entry(valid), "valid entry passes validation");
 
     fuse::project::CookCacheEntry invalid = valid;
@@ -1708,7 +1709,7 @@ void testCookCachePruneInvalidEntries() {
     expectTrue(cache.prune_invalid_entries() == 0u, "prune_invalid on valid-only cache is a no-op");
     expectTrue(cache.contains(valid.content_hash), "valid entry remains after invalid prune");
 
-    const std::string cachePath = "/tmp/fuse_b79_invalid_cache.json";
+    const std::string cachePath = fuse::test::tempPath("fuse_b79_invalid_cache.json");
     {
         std::ofstream out(cachePath, std::ios::binary);
         out << R"({
@@ -1717,21 +1718,21 @@ void testCookCachePruneInvalidEntries() {
     {
       "contentHash": 101,
       "upstreamHash": 0,
-      "outputPath": "/tmp/fuse_b79_valid.fusemesh",
-      "sourcePath": "/tmp/fuse_b79_valid.obj",
+      "outputPath": fuse::test::tempPath("fuse_b79_valid.fusemesh"),
+      "sourcePath": fuse::test::tempPath("fuse_b79_valid.obj"),
       "kind": "mesh"
     },
     {
       "contentHash": 0,
       "upstreamHash": 0,
-      "outputPath": "/tmp/fuse_b79_zero_hash.fusemesh",
-      "sourcePath": "/tmp/fuse_b79_zero_hash.obj",
+      "outputPath": fuse::test::tempPath("fuse_b79_zero_hash.fusemesh"),
+      "sourcePath": fuse::test::tempPath("fuse_b79_zero_hash.obj"),
       "kind": "mesh"
     },
     {
       "contentHash": 99,
       "upstreamHash": 0,
-      "outputPath": "/tmp/fuse_b79_empty_source.fusemesh",
+      "outputPath": fuse::test::tempPath("fuse_b79_empty_source.fusemesh"),
       "sourcePath": "",
       "kind": "mesh"
     }
@@ -1745,7 +1746,7 @@ void testCookCachePruneInvalidEntries() {
     expectTrue(loaded.entry_count() == 1u, "load keeps first valid entry and rejects invalid trailing records");
     expectTrue(loaded.contains(101u), "valid loaded entry remains addressable");
 
-    const std::string invalidOnlyPath = "/tmp/fuse_b79_invalid_only_cache.json";
+    const std::string invalidOnlyPath = fuse::test::tempPath("fuse_b79_invalid_only_cache.json");
     {
         std::ofstream out(invalidOnlyPath, std::ios::binary);
         out << R"({
@@ -1754,8 +1755,8 @@ void testCookCachePruneInvalidEntries() {
     {
       "contentHash": 0,
       "upstreamHash": 0,
-      "outputPath": "/tmp/fuse_b79_zero_only.fusemesh",
-      "sourcePath": "/tmp/fuse_b79_zero_only.obj",
+      "outputPath": fuse::test::tempPath("fuse_b79_zero_only.fusemesh"),
+      "sourcePath": fuse::test::tempPath("fuse_b79_zero_only.obj"),
       "kind": "mesh"
     }
   ]
@@ -1770,20 +1771,20 @@ void testCookCachePruneInvalidEntries() {
 }
 
 void testCookerInvalidationCountProbes() {
-    const std::string sourceA = writeTempFile("/tmp/fuse_b79_count_chain_a.obj", "# count chain a\n");
-    const std::string sourceB = writeTempFile("/tmp/fuse_b79_count_chain_b.obj", "# count chain b\n");
+    const std::string sourceA = writeTempFile(fuse::test::tempPath("fuse_b79_count_chain_a.obj"), "# count chain a\n");
+    const std::string sourceB = writeTempFile(fuse::test::tempPath("fuse_b79_count_chain_b.obj"), "# count chain b\n");
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
     entryA.source_path = sourceA;
-    entryA.output_path = "/tmp/fuse_b79_count_chain_a.fusemesh";
+    entryA.output_path = fuse::test::tempPath("fuse_b79_count_chain_a.fusemesh");
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
     entryB.source_path = sourceB;
-    entryB.output_path = "/tmp/fuse_b79_count_chain_b.fusemesh";
+    entryB.output_path = fuse::test::tempPath("fuse_b79_count_chain_b.fusemesh");
     entryB.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryB);
 
@@ -1809,20 +1810,20 @@ void testCookerInvalidationCountProbes() {
 }
 
 void testCookerWouldInvalidateProbes() {
-    const std::string source_a = writeTempFile("/tmp/fuse_b79_would_inv_a.obj", "# would inv a\n");
-    const std::string source_b = writeTempFile("/tmp/fuse_b79_would_inv_b.obj", "# would inv b\n");
+    const std::string source_a = writeTempFile(fuse::test::tempPath("fuse_b79_would_inv_a.obj"), "# would inv a\n");
+    const std::string source_b = writeTempFile(fuse::test::tempPath("fuse_b79_would_inv_b.obj"), "# would inv b\n");
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
     entry_a.kind = fuse::project::CookAssetKind::Mesh;
     entry_a.source_path = source_a;
-    entry_a.output_path = "/tmp/fuse_b79_would_inv_a.fusemesh";
+    entry_a.output_path = fuse::test::tempPath("fuse_b79_would_inv_a.fusemesh");
     manifest.assets.push_back(entry_a);
 
     fuse::project::CookManifestEntry entry_b;
     entry_b.kind = fuse::project::CookAssetKind::Mesh;
     entry_b.source_path = source_b;
-    entry_b.output_path = "/tmp/fuse_b79_would_inv_b.fusemesh";
+    entry_b.output_path = fuse::test::tempPath("fuse_b79_would_inv_b.fusemesh");
     entry_b.dependencies.push_back(entry_a.output_path);
     manifest.assets.push_back(entry_b);
 
@@ -1845,13 +1846,13 @@ void testCookerWouldInvalidateProbes() {
 }
 
 void testCookerReconcileEstimateShouldSkip() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_reconcile_skip.obj", "# reconcile skip\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_reconcile_skip.obj"), "# reconcile skip\n");
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry;
     entry.kind = fuse::project::CookAssetKind::Mesh;
     entry.source_path = source;
-    entry.output_path = "/tmp/fuse_b79_reconcile_skip.fusemesh";
+    entry.output_path = fuse::test::tempPath("fuse_b79_reconcile_skip.fusemesh");
     manifest.assets.push_back(entry);
 
     fuse::project::AssetCooker cooker;
@@ -1872,20 +1873,20 @@ void testCookerReconcileEstimateShouldSkip() {
 }
 
 void testCookerReconcileEstimateProbes() {
-    const std::string source_a = writeTempFile("/tmp/fuse_b79_reconcile_a.obj", "# reconcile a\n");
-    const std::string source_b = writeTempFile("/tmp/fuse_b79_reconcile_b.obj", "# reconcile b\n");
+    const std::string source_a = writeTempFile(fuse::test::tempPath("fuse_b79_reconcile_a.obj"), "# reconcile a\n");
+    const std::string source_b = writeTempFile(fuse::test::tempPath("fuse_b79_reconcile_b.obj"), "# reconcile b\n");
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
     entry_a.kind = fuse::project::CookAssetKind::Mesh;
     entry_a.source_path = source_a;
-    entry_a.output_path = "/tmp/fuse_b79_reconcile_a.fusemesh";
+    entry_a.output_path = fuse::test::tempPath("fuse_b79_reconcile_a.fusemesh");
     manifest.assets.push_back(entry_a);
 
     fuse::project::CookManifestEntry entry_b;
     entry_b.kind = fuse::project::CookAssetKind::Mesh;
     entry_b.source_path = source_b;
-    entry_b.output_path = "/tmp/fuse_b79_reconcile_b.fusemesh";
+    entry_b.output_path = fuse::test::tempPath("fuse_b79_reconcile_b.fusemesh");
     entry_b.dependencies.push_back(entry_a.output_path);
     manifest.assets.push_back(entry_b);
 
@@ -1919,28 +1920,28 @@ void testCookerReconcileEstimateProbes() {
 }
 
 void testCookerUpstreamReconcileProbes() {
-    const std::string source_a = writeTempFile("/tmp/fuse_b79_up_reconcile_a.obj", "# up reconcile a\n");
-    const std::string source_b = writeTempFile("/tmp/fuse_b79_up_reconcile_b.obj", "# up reconcile b\n");
-    const std::string source_c = writeTempFile("/tmp/fuse_b79_up_reconcile_c.obj", "# up reconcile c\n");
+    const std::string source_a = writeTempFile(fuse::test::tempPath("fuse_b79_up_reconcile_a.obj"), "# up reconcile a\n");
+    const std::string source_b = writeTempFile(fuse::test::tempPath("fuse_b79_up_reconcile_b.obj"), "# up reconcile b\n");
+    const std::string source_c = writeTempFile(fuse::test::tempPath("fuse_b79_up_reconcile_c.obj"), "# up reconcile c\n");
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
     entry_a.kind = fuse::project::CookAssetKind::Mesh;
     entry_a.source_path = source_a;
-    entry_a.output_path = "/tmp/fuse_b79_up_reconcile_a.fusemesh";
+    entry_a.output_path = fuse::test::tempPath("fuse_b79_up_reconcile_a.fusemesh");
     manifest.assets.push_back(entry_a);
 
     fuse::project::CookManifestEntry entry_b;
     entry_b.kind = fuse::project::CookAssetKind::Mesh;
     entry_b.source_path = source_b;
-    entry_b.output_path = "/tmp/fuse_b79_up_reconcile_b.fusemesh";
+    entry_b.output_path = fuse::test::tempPath("fuse_b79_up_reconcile_b.fusemesh");
     entry_b.dependencies.push_back(entry_a.output_path);
     manifest.assets.push_back(entry_b);
 
     fuse::project::CookManifestEntry entry_c;
     entry_c.kind = fuse::project::CookAssetKind::Mesh;
     entry_c.source_path = source_c;
-    entry_c.output_path = "/tmp/fuse_b79_up_reconcile_c.fusemesh";
+    entry_c.output_path = fuse::test::tempPath("fuse_b79_up_reconcile_c.fusemesh");
     entry_c.dependencies.push_back(entry_b.output_path);
     manifest.assets.push_back(entry_c);
 
@@ -1975,28 +1976,28 @@ void testCookerUpstreamReconcileProbes() {
 }
 
 void testCookCacheDownstreamSourceProbe() {
-    const std::string source_a = writeTempFile("/tmp/fuse_b79_downstream_a.obj", "# downstream a\n");
-    const std::string source_b = writeTempFile("/tmp/fuse_b79_downstream_b.obj", "# downstream b\n");
-    const std::string source_c = writeTempFile("/tmp/fuse_b79_downstream_c.obj", "# downstream c\n");
+    const std::string source_a = writeTempFile(fuse::test::tempPath("fuse_b79_downstream_a.obj"), "# downstream a\n");
+    const std::string source_b = writeTempFile(fuse::test::tempPath("fuse_b79_downstream_b.obj"), "# downstream b\n");
+    const std::string source_c = writeTempFile(fuse::test::tempPath("fuse_b79_downstream_c.obj"), "# downstream c\n");
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry_a;
     entry_a.kind = fuse::project::CookAssetKind::Mesh;
     entry_a.source_path = source_a;
-    entry_a.output_path = "/tmp/fuse_b79_downstream_a.fusemesh";
+    entry_a.output_path = fuse::test::tempPath("fuse_b79_downstream_a.fusemesh");
     manifest.assets.push_back(entry_a);
 
     fuse::project::CookManifestEntry entry_b;
     entry_b.kind = fuse::project::CookAssetKind::Mesh;
     entry_b.source_path = source_b;
-    entry_b.output_path = "/tmp/fuse_b79_downstream_b.fusemesh";
+    entry_b.output_path = fuse::test::tempPath("fuse_b79_downstream_b.fusemesh");
     entry_b.dependencies.push_back(entry_a.output_path);
     manifest.assets.push_back(entry_b);
 
     fuse::project::CookManifestEntry entry_c;
     entry_c.kind = fuse::project::CookAssetKind::Mesh;
     entry_c.source_path = source_c;
-    entry_c.output_path = "/tmp/fuse_b79_downstream_c.fusemesh";
+    entry_c.output_path = fuse::test::tempPath("fuse_b79_downstream_c.fusemesh");
     entry_c.dependencies.push_back(entry_b.output_path);
     manifest.assets.push_back(entry_c);
 
@@ -2038,13 +2039,13 @@ void testCookCacheDownstreamSourceProbe() {
 }
 
 void testCookJobGraphCacheShortCircuit() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_shortcircuit_mesh.obj", "# shortcircuit\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_shortcircuit_mesh.obj"), "# shortcircuit\n");
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry;
     entry.kind = fuse::project::CookAssetKind::Mesh;
     entry.source_path = source;
-    entry.output_path = "/tmp/fuse_b79_shortcircuit_mesh.fusemesh";
+    entry.output_path = fuse::test::tempPath("fuse_b79_shortcircuit_mesh.fusemesh");
     manifest.assets.push_back(entry);
 
     fuse::project::AssetCooker cooker;
@@ -2062,15 +2063,15 @@ void testCookJobGraphCacheShortCircuit() {
 }
 
 void testImportPipelineCookCachePersistRoundTrip() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_pipeline_mesh.obj", "# pipeline cache\n");
-    const std::string cachePath = "/tmp/fuse_b79_pipeline_cook_cache.json";
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_pipeline_mesh.obj"), "# pipeline cache\n");
+    const std::string cachePath = fuse::test::tempPath("fuse_b79_pipeline_cook_cache.json");
 
     fuse::project::CookManifest manifest;
-    manifest.project_root = "/tmp";
+    manifest.project_root = fuse::test::tempDir();
     fuse::project::CookManifestEntry entry;
     entry.kind = fuse::project::CookAssetKind::Mesh;
     entry.source_path = source;
-    entry.output_path = "/tmp/fuse_b79_pipeline_mesh.fusemesh";
+    entry.output_path = fuse::test::tempPath("fuse_b79_pipeline_mesh.fusemesh");
     manifest.assets.push_back(entry);
 
     fuse::project::ImportPipeline pipeline;
@@ -2094,13 +2095,13 @@ void testImportPipelineCookCachePersistRoundTrip() {
 }
 
 void testCookManifestCacheHitsOnSecondRun() {
-    const std::string source = writeTempFile("/tmp/fuse_b79_rehit_mesh.obj", "# rehit mesh\n");
+    const std::string source = writeTempFile(fuse::test::tempPath("fuse_b79_rehit_mesh.obj"), "# rehit mesh\n");
 
     fuse::project::CookManifest manifest;
     fuse::project::CookManifestEntry entry;
     entry.kind = fuse::project::CookAssetKind::Mesh;
     entry.source_path = source;
-    entry.output_path = "/tmp/fuse_b79_rehit_mesh.fusemesh";
+    entry.output_path = fuse::test::tempPath("fuse_b79_rehit_mesh.fusemesh");
     manifest.assets.push_back(entry);
 
     fuse::project::AssetCooker cooker;

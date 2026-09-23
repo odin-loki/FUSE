@@ -6,6 +6,7 @@
 //  - EPA penetration depth within 0.01 of the SAT reference for every overlapping pair
 //  - SDF collision produces smooth contact normals across surface transitions
 //  - narrowphase for 1k contact pairs < 3 ms (CPU reference; the RTX 3090 figure is a hardware row)
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/narrowphase/gjk.hpp>
 #include <fuse/physics/physics_data.hpp>
@@ -367,7 +368,9 @@ void testNarrowphaseThousandPairs() {
     std::sort(samples.begin(), samples.end());
     std::printf("narrowphase: 1000 pairs -> %zu manifolds, median %.3f ms (CPU)\n", contacts, samples[10]);
 #if defined(NDEBUG)
-    expectTrue(samples[10] < 3.0, "narrowphase for 1k contact pairs < 3 ms (CPU reference)");
+    if (fuse::core::timingBudgetsEnforcedNoted()) {
+        expectTrue(samples[10] < 3.0, "narrowphase for 1k contact pairs < 3 ms (CPU reference)");
+    }
 #endif
 }
 

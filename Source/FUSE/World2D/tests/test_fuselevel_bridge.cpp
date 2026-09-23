@@ -1,3 +1,4 @@
+#include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/project/world_converter.hpp>
 #include <fuse/world2d/world_2d.hpp>
@@ -26,20 +27,20 @@ std::string writeTempFile(const std::string& path, const std::string& contents) 
 
 void testWorld2DLoadWorldProjectManifestBridge() {
     const std::string module = writeTempFile(
-        "/tmp/fuse_world2d_project_bridge.cs",
+        fuse::test::tempPath("fuse_world2d_project_bridge.cs"),
         R"(module "SpriteToy";
 new SceneToy() {
   new SpritePlayer(Player) {
     position = "1 2";
   };
 };)");
-    const std::string fuselevel = "/tmp/fuse_world2d_project_bridge.fuselevel";
+    const std::string fuselevel = fuse::test::tempPath("fuse_world2d_project_bridge.fuselevel");
     const fuse::project::ConvertResult converted =
         fuse::project::convertT2DModuleToFuselevel(module, fuselevel);
     expectTrue(converted.status == fuse::project::ConvertStatus::Ok, "t2d convert ok for project bridge");
 
     fuse::world2d::World2D world;
-    world.setProjectWorldSource("/tmp", "fuse_world2d_project_bridge.fuselevel");
+    world.setProjectWorldSource(fuse::test::tempDir(), "fuse_world2d_project_bridge.fuselevel");
     const fuse::dimension::WorldHandle handle(3u, 1u);
     world.loadWorld(handle);
 
@@ -50,14 +51,14 @@ new SceneToy() {
 
 void testWorld2DLoadWorldBridge() {
     const std::string module = writeTempFile(
-        "/tmp/fuse_world2d_bridge.cs",
+        fuse::test::tempPath("fuse_world2d_bridge.cs"),
         R"(module "SpriteToy";
 new SceneToy() {
   new SpritePlayer(Player) {
     position = "3 4";
   };
 };)");
-    const std::string fuselevel = "/tmp/fuse_world2d_bridge.fuselevel";
+    const std::string fuselevel = fuse::test::tempPath("fuse_world2d_bridge.fuselevel");
 
     const fuse::project::ConvertResult converted =
         fuse::project::convertT2DModuleToFuselevel(module, fuselevel);

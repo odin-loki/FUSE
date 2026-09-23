@@ -120,6 +120,10 @@ private:
 bool enabled();
 void setEnabled(bool enabled);
 
+/// Timestamp source of the recording hot path: "tsc" (invariant TSC via rdtsc on x86-64; ticks
+/// are converted to steady_clock-aligned nanoseconds on read) or "steady_clock".
+const char* clockSourceName();
+
 void beginFrame();
 void endFrame();
 

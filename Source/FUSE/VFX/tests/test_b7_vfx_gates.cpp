@@ -8,6 +8,7 @@
 //   - multi-worker runs vs a single-thread run (bit-identical state).
 // Timing budgets are enforced only in optimised (NDEBUG) builds.
 
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/vfx/particle_emitter.hpp>
@@ -540,7 +541,9 @@ void testCpuBudget() {
                     median, worstP95);
         expectTrue(emitter.alive_count() == 4096u, "budget run keeps 4096 particles");
 #if defined(NDEBUG)
-        expectTrue(median < 0.5, "4096-particle CPU simulate step median < 0.5 ms");
+        if (fuse::core::timingBudgetsEnforcedNoted()) {
+            expectTrue(median < 0.5, "4096-particle CPU simulate step median < 0.5 ms");
+        }
 #endif
     });
 }

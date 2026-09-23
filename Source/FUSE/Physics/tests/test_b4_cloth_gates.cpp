@@ -4,6 +4,7 @@
 //  - wind force deflects the cloth in the correct direction
 //  - cloth-sphere collision resolves without interpenetration
 //  - 64x64 cloth simulation < 1 ms per frame (optimised builds)
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/physics/softbody/cloth_simulator.hpp>
 
@@ -164,7 +165,9 @@ void testLargeClothBudget() {
                 cloth.constraintCount());
     expectTrue(allFinite(cloth), "64x64 cloth stays finite");
 #if defined(NDEBUG)
-    expectTrue(samples[30] < 1.0, "64x64 cloth simulation < 1 ms");
+    if (fuse::core::timingBudgetsEnforcedNoted()) {
+        expectTrue(samples[30] < 1.0, "64x64 cloth simulation < 1 ms");
+    }
 #endif
 }
 

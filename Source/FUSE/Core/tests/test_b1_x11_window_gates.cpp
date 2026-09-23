@@ -467,11 +467,25 @@ void runRawMouseGates(Display* dpy, fuse::platform::Window& window, EventPump& p
     expectTrue(r.rawEvents == 0u, "captured but unfocused: no RawMouseDelta");
     window.setFocused(true, nullptr);
 
-    // 4) Released again: XI_RawMotion is deselected.
+    // 4) Released again: XI_RawMotion is deselected, and the next pump reports the release so
+    //    InputState leaves raw mode and takes deltas from MouseMove again.
     window.setInputCapture(fuse::platform::InputCaptureMode::Released);
+    {
+        fuse::u32 releaseEvents = 0;
+        for (const PlatformEvent& e : pumpNative(dpy, pump)) {
+            input.apply(e);
+            if (e.type == PlatformEventType::InputCaptureChanged && e.window == &window && !e.inputCaptured) {
+                ++releaseEvents;
+            }
+        }
+        expectTrue(releaseEvents == 1u, "capture released: processOsEvents reports InputCaptureChanged(false) once");
+    }
+    expectTrue(!input.rawMouseActive(), "capture released: InputState leaves raw mouse mode");
     input.beginFrame();
     r = injectAndPump(dpy, pump, input, window, xtestId, true, false);
     expectTrue(r.rawEvents == 0u, "capture released: RawMouseDelta stops");
+    expectTrue(r.mouseMoves > 1u && (input.mouseDeltaX() != 0 || input.mouseDeltaY() != 0),
+               "capture released: MouseMove cursor deltas drive InputState again");
 
     XChangePointerControl(dpy, True, True, oldNum, oldDen, oldThreshold);
     XSync(dpy, False);

@@ -239,14 +239,43 @@ bool MainWindow::restoreLayout(const QByteArray& state) {
 
 void MainWindow::onProjectOpenRequested(const QString& projectDirectory) {
     const QFileInfo info(projectDirectory);
+    const QString root = info.absoluteFilePath();
     m_viewport->setProjectLabel(info.fileName());
-    m_assetBrowser->setProjectRoot(projectDirectory);
+    m_assetBrowser->setProjectRoot(root);
+    setWindowTitle(tr("FUSE Editor - %1").arg(info.fileName()));
+
+    // `project.root` switches the scene and makes the next game tick load the project's default
+    // world (EditorHost -> RuntimeViewportHook::ensureWorldLoaded_); `project` sets the label.
+    // refreshStatusBar() refreshes the panels once the world is in.
+    EditorCommand rootCmd;
+    rootCmd.kind = CommandKind::SetProperty;
+    rootCmd.propertyName = "project.root";
+    rootCmd.propertyValue = root.toStdString();
+    m_host.postFromUi(std::move(rootCmd));
 
     EditorCommand cmd;
     cmd.kind = CommandKind::SetProperty;
     cmd.propertyName = "project";
     cmd.propertyValue = info.fileName().toStdString();
     m_host.postFromUi(std::move(cmd));
+    m_projectWorldShown = false;
+}
+
+bool MainWindow::syncProjectWorld() {
+    bool loaded = false;
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        loaded = m_host.runtimeViewport().embedSession().worldLoaded;
+    }
+    if (loaded && !m_projectWorldShown) {
+        m_projectWorldShown = true;
+        refreshPanels();
+        return true;
+    }
+    if (!loaded) {
+        m_projectWorldShown = false;
+    }
+    return false;
 }
 
 void MainWindow::refreshPanels() {
@@ -283,6 +312,7 @@ double MainWindow::measureUiFrame() {
 }
 
 void MainWindow::refreshStatusBar() {
+    syncProjectWorld();
     m_console->drainLog();
     {
         std::lock_guard<std::mutex> lock(m_sceneMutex);

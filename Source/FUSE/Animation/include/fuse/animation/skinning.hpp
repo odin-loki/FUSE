@@ -29,6 +29,12 @@ struct SkinningOutput {
     std::vector<vec3> normals;
 };
 
+/// True when this build contains a CUDA skinning kernel (none yet; skinning runs on the CPU).
+bool skinning_cuda_kernel_available();
+
+/// Backend skinning actually runs on: Cuda only with a CUDA skinning kernel *and* a usable CUDA
+/// device (`fuse::jobs::cudaJobsAvailable()`); CpuReference otherwise — compiling with the CUDA
+/// toolkit alone does not change it.
 SkinningBackend skinning_backend();
 
 /// CPU reference linear blend skinning. Normals use the bone matrices' linear part and are

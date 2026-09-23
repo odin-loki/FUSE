@@ -393,7 +393,7 @@ void testSingleThreadIterationThroughput() {
                 sizeof(RigidBody));
 
 #if defined(NDEBUG)
-    if (fuse::core::timingBudgetsEnforced()) {
+    if (fuse::core::timingBudgetsEnforcedNoted()) {
         // Floor ~2/3 of the median measured on the 4-vCPU CI box (275-340M/s idle, 265-330M/s with
         // three concurrent compiles; L3-bandwidth bound, see above). A per-row column lookup
         // (60M/s) or std::function dispatch in the row loop fails it.

@@ -4,6 +4,7 @@
 //  - frustum query on 10k objects == O(n) brute force
 //  - refit after 1k transform updates is correct (no stale bounds)
 //  - BVH frustum cull of 10k objects < 0.1 ms (reported; enforced in optimised builds)
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/ecs/math/mat.hpp>
 #include <fuse/spatial/bvh.hpp>
 #include <fuse/spatial/frustum.hpp>
@@ -59,7 +60,9 @@ void testSahBuildTime() {
     std::printf("SAH build 100k AABBs: %.1f ms, %zu nodes\n", ms, bvh.node_count());
     expectTrue(bvh.leaf_count() == leaves.size(), "every AABB stored once");
 #if defined(NDEBUG)
-    expectTrue(ms < 500.0, "SAH build of 100k AABBs < 500 ms");
+    if (fuse::core::timingBudgetsEnforcedNoted()) {
+        expectTrue(ms < 500.0, "SAH build of 100k AABBs < 500 ms");
+    }
 #endif
 }
 
@@ -159,7 +162,9 @@ void testFrustumAndRefit() {
     std::sort(samples.begin(), samples.end());
     std::printf("frustum cull 10k: %zu visible, median %.4f ms\n", expected.size(), samples[50]);
 #if defined(NDEBUG)
-    expectTrue(samples[50] < 0.1, "BVH frustum cull of 10k objects < 0.1 ms");
+    if (fuse::core::timingBudgetsEnforcedNoted()) {
+        expectTrue(samples[50] < 0.1, "BVH frustum cull of 10k objects < 0.1 ms");
+    }
 #endif
 
     // Refit: move 1k objects (some into view, some out), refit, compare with brute force again.

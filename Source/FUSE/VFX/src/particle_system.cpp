@@ -1,5 +1,7 @@
 #include <fuse/vfx/particle_system.hpp>
 
+#include <fuse/jobs/cuda_jobs.hpp>
+
 #include <algorithm>
 
 namespace fuse::vfx {
@@ -149,12 +151,15 @@ u32 ParticleSystem::effect_count() const {
     return static_cast<u32>(m_activeEffects.size());
 }
 
+bool particle_cuda_kernel_available() {
+    // update() only has the CPU SoA path; there is no CUDA particle kernel to dispatch to yet.
+    return false;
+}
+
 VfxBackendKind ParticleSystem::backend_kind() const {
-#if defined(FUSE_HAS_CUDA)
-    if (m_desc.gpu_simulation) {
+    if (m_desc.gpu_simulation && particle_cuda_kernel_available() && fuse::jobs::cudaJobsAvailable()) {
         return VfxBackendKind::Cuda;
     }
-#endif
     return VfxBackendKind::CpuReference;
 }
 

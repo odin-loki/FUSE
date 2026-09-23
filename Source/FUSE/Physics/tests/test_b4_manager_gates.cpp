@@ -6,6 +6,7 @@
 //  - PhysicsManager::step < 8 ms for 1000 active rigid bodies (optimised builds)
 //  - 1000 dynamic bodies, full pipeline (broad + narrow + 10 PBD iterations + integrate) < 4 ms
 //  - 10k sleeping bodies < 0.5 ms (sleep check only)
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
@@ -339,8 +340,10 @@ void testThousandBodiesBudget() {
                 stepMs, active, pipelineMs, solver.contactCount());
     expectTrue(active >= 900u, "the scene keeps ~1000 bodies active");
 #if defined(NDEBUG)
-    expectTrue(stepMs < 8.0, "PhysicsManager::step < 8 ms for 1000 active rigid bodies");
-    expectTrue(pipelineMs < 4.0, "broad + narrow + 10 PBD iterations + integrate < 4 ms for 1000 bodies");
+    if (fuse::core::timingBudgetsEnforcedNoted()) {
+        expectTrue(stepMs < 8.0, "PhysicsManager::step < 8 ms for 1000 active rigid bodies");
+        expectTrue(pipelineMs < 4.0, "broad + narrow + 10 PBD iterations + integrate < 4 ms for 1000 bodies");
+    }
 #endif
 }
 
@@ -370,7 +373,9 @@ void testTenThousandSleepingBodies() {
     std::printf("10k sleeping bodies: solver step median %.4f ms\n", ms);
     expectTrue(stillAsleep && solver.activeBodyCount() == 0u, "sleeping bodies stay asleep and inactive");
 #if defined(NDEBUG)
-    expectTrue(ms < 0.5, "10k sleeping bodies < 0.5 ms");
+    if (fuse::core::timingBudgetsEnforcedNoted()) {
+        expectTrue(ms < 0.5, "10k sleeping bodies < 0.5 ms");
+    }
 #endif
 }
 

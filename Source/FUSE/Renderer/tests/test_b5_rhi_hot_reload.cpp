@@ -17,6 +17,7 @@
 // "shader file write" as the renderer sees it): every one must reach a redrawn frame < 200 ms.
 #include "b5_rhi_test_common.hpp"
 
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/shader/shader_compiler.hpp>
@@ -166,7 +167,9 @@ int main() {
                     step.r, step.g, step.b, recompiles, redrawn ? "yes" : "no", ms, compileMs, ms - compileMs);
         expectTrue(recompiles == 1u, "exactly one recompile per source edit");
         expectTrue(redrawn, "first frame after the reload shows the new shader");
-        expectTrue(ms - compileMs < 50.0, "engine side (.spv -> pipeline rebuild -> redrawn frame) < 50 ms");
+        if (fuse::core::timingBudgetsEnforcedNoted()) {
+            expectTrue(ms - compileMs < 50.0, "engine side (.spv -> pipeline rebuild -> redrawn frame) < 50 ms");
+        }
         totals.push_back(ms);
     }
 
@@ -177,7 +180,9 @@ int main() {
     const double medianMs = totals.empty() ? 1e9 : totals[totals.size() / 2u];
     std::printf("GLSL hot reload: best %.2f ms, median %.2f ms, worst %.2f ms over %u rebuilds\n", bestMs,
                 medianMs, worstMs, reloads);
-    expectTrue(bestMs < 200.0, "GLSL write -> recompile -> first redrawn frame < 200 ms");
+    if (fuse::core::timingBudgetsEnforcedNoted()) {
+        expectTrue(bestMs < 200.0, "GLSL write -> recompile -> first redrawn frame < 200 ms");
+    }
 
     // SPIR-V drops: prebuild each variant off the clock, then rename it over the watched module.
     double worstSpvMs = 0.0;
@@ -198,7 +203,9 @@ int main() {
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
         worstSpvMs = ms > worstSpvMs ? ms : worstSpvMs;
         expectTrue(!error && redrawn, "SPIR-V drop redrawn by the very next frame");
-        expectTrue(ms < 200.0, "SPIR-V write -> pipeline rebuild -> first redrawn frame < 200 ms");
+        if (fuse::core::timingBudgetsEnforcedNoted()) {
+            expectTrue(ms < 200.0, "SPIR-V write -> pipeline rebuild -> first redrawn frame < 200 ms");
+        }
     }
     std::printf("SPIR-V hot reload: worst %.2f ms over %u drops\n", worstSpvMs, kSteps);
     expectTrue(context->lastRasterStats().pipelineReloadCount - reloadsBefore == 2u * kSteps,

@@ -11,6 +11,8 @@
 //                   missing glyphs (run under QT_SCALE_FACTOR=<scale>)
 //   wasd            free camera: same-frame key response, constant motion per frame, no jitter
 //   context_menu    QMenu::popup geometry == EntityContextMenu::placement() (incl. edge flips, DPR)
+//   project_open    Projects dock "Open Project" loads the sample's default world into the live editor:
+//                   runtime scene + ECS registry populated, hierarchy lists it; a second open replaces it
 //   fuse_api        B6.1: Qt panels drive the FUSE editor APIs (undo stack, selection, inspector,
 //                   console, PIE) — the host never mutates engine state behind them
 //   ui_frame        editor UI render time < 2 ms / frame (Qt paint; budget enforced in Release only)
@@ -24,6 +26,7 @@
 #include "editor_panels.hpp"
 #include "editor_theme.hpp"
 #include "main_window.hpp"
+#include "project_hub_widget.hpp"
 #include "property_pane_widget.hpp"
 #include "viewport_placeholder_widget.hpp"
 #include "viewport_vulkan_window.hpp"
@@ -41,8 +44,11 @@
 
 #include <fuse/core/init.hpp>
 #include <fuse/core/sanitizer.hpp>
+#include <fuse/core/temp_path.hpp>
 #include <fuse/core/track_b.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/project/loader.hpp>
+#include <fuse/scene/project_io.hpp>
 
 #include <QAction>
 #include <QApplication>
@@ -84,6 +90,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <filesystem>
 #include <functional>
 #include <malloc.h>
 #include <map>
@@ -1040,6 +1047,110 @@ int gateFuseApi() {
     return g_failures == 0 ? 0 : 1;
 }
 
+// ---- Project open ------------------------------------------------------------------------------------
+
+/// Opens `projectName` through the Projects dock (select row + "Open Project"), then ticks the host
+/// the way the game thread does until the status timer has shown the loaded world.
+bool openProjectThroughHub(MainWindow& window, const QString& projectName) {
+    fuse::editor::qt::ProjectHubWidget* hub = window.projectHub();
+    auto* list = hub->findChild<QListWidget*>();
+    QPushButton* open = nullptr;
+    for (QPushButton* b : hub->findChildren<QPushButton*>()) {
+        if (b->text() == QStringLiteral("Open Project")) {
+            open = b;
+        }
+    }
+    if (list == nullptr || open == nullptr) {
+        return false;
+    }
+    const QList<QListWidgetItem*> items = list->findItems(projectName, Qt::MatchExactly);
+    if (items.isEmpty()) {
+        return false;
+    }
+    list->setCurrentItem(items.front());
+    open->click();
+    bool shown = false;
+    for (int i = 0; i < 20 && !shown; ++i) {
+        {
+            std::lock_guard<std::mutex> lock(window.sceneMutex());
+            window.host().gameTick();
+        }
+        // The 100 ms status timer refreshes the panels once the world is in.
+        shown = QTest::qWaitFor(
+            [&]() {
+                std::lock_guard<std::mutex> lock(window.sceneMutex());
+                return window.host().runtimeViewport().embedSession().worldLoaded;
+            },
+            50);
+    }
+    QTest::qWait(250);
+    return shown;
+}
+
+int ecsTransformCount(MainWindow& window) {
+    std::lock_guard<std::mutex> lock(window.sceneMutex());
+    int count = 0;
+    window.host().editorScene().registry().each<fuse::ecs::Transform>(
+        [&](fuse::ecs::EntityID, fuse::ecs::Transform&) { ++count; });
+    return count;
+}
+
+int gateProjectOpen() {
+    // Work on a copy: world load may convert / cook next to the project, never in the source tree.
+    const std::filesystem::path samples = std::filesystem::path(FUSE_TEST_SOURCE_DIR) / "Samples" / "unification";
+    std::error_code ec;
+    const std::filesystem::path root = fuse::test::makeUniqueTempDir("fuse_qt_project_open");
+    for (const char* name : {"demo_3d_empty", "demo_fx"}) {
+        std::filesystem::create_directories(root / name, ec);
+        std::filesystem::copy(samples / name, root / name,
+                              std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing,
+                              ec);
+        expect(!ec, fmt("copied sample %s to %s", name, (root / name).string().c_str()));
+    }
+
+    {
+        MainWindow window(QString::fromStdString(root.string()), quietOptions());
+        expect(showAndExpose(window), "main window exposed");
+        fuse::editor::EditorHost& host = window.host();
+        const int rows0 = window.hierarchy()->entityRowCount();
+        expect(rows0 == 0, fmt("hierarchy empty before a project is open (%d rows)", rows0));
+
+        expect(openProjectThroughHub(window, QStringLiteral("demo_3d_empty")),
+               "Projects dock Open Project -> game tick loaded the world");
+        const auto& session = host.runtimeViewport().embedSession();
+        expect(host.loadedProject() == "demo_3d_empty", "EditorHost::loadedProject is the opened project");
+        expect(host.runtimeViewport().projectRoot() == (root / "demo_3d_empty").generic_string(),
+               fmt("project.root posted with the project's directory (%s)", host.runtimeViewport().projectRoot().c_str()));
+        expect(session.worldLoaded, "defaultWorld3D loaded into the editor");
+        const fuse::u32 sceneEntities = host.runtimeScene().entityCount();
+        expect(sceneEntities > 0, fmt("runtime scene has the world's objects (%u)", sceneEntities));
+        const int ecs1 = ecsTransformCount(window);
+        const int rows1 = window.hierarchy()->entityRowCount();
+        std::printf("demo_3d_empty: scene entities %u, ECS entities %d, hierarchy rows %d, world %s\n", sceneEntities,
+                    ecs1, rows1, session.loadedWorldPath.c_str());
+        expect(ecs1 > 0, "world objects spawned into the editor ECS registry");
+        expect(rows1 == ecs1, "hierarchy dock lists every world object (refreshed by the status timer)");
+        expect(window.windowTitle().contains(QStringLiteral("demo_3d_empty")), "window title names the project");
+
+        // A second project replaces the scene instead of accumulating into it.
+        expect(openProjectThroughHub(window, QStringLiteral("demo_fx")), "second project opened");
+        const int ecs2 = ecsTransformCount(window);
+        const int rows2 = window.hierarchy()->entityRowCount();
+        std::printf("demo_fx: scene entities %u, ECS entities %d, hierarchy rows %d\n", host.runtimeScene().entityCount(),
+                    ecs2, rows2);
+        expect(host.loadedProject() == "demo_fx", "loadedProject follows the second open");
+        expect(ecs2 > 0 && rows2 == ecs2, "hierarchy shows the second project's world");
+        expect(host.undoStack().undoCount() == 0, "project switch starts with an empty undo history");
+        fuse::scene::Scene fresh;
+        const fuse::project::LoadResult fx = fuse::project::loadFromDirectory((root / "demo_fx").string());
+        expect(fuse::scene::loadForProject(fresh, fx).status == fuse::scene::SerialiseStatus::Ok &&
+                   fresh.entityCount() == host.runtimeScene().entityCount(),
+               "runtime scene holds exactly the second project's world (no leftovers)");
+    }
+    std::filesystem::remove_all(root, ec);
+    return g_failures == 0 ? 0 : 1;
+}
+
 // ---- UI frame time / idle frames / memory ----------------------------------------------------------
 
 void populateScene(MainWindow& window, int count) {
@@ -1587,7 +1698,7 @@ int gateLivePresent() {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::fprintf(stderr, "usage: %s <startup|layout|theme|font <scale>|wasd|context_menu|fuse_api|ui_frame|"
+        std::fprintf(stderr, "usage: %s <startup|layout|theme|font <scale>|wasd|context_menu|fuse_api|project_open|ui_frame|"
                              "idle_frames>\n",
                      argv[0]);
         return 2;
@@ -1623,6 +1734,8 @@ int main(int argc, char** argv) {
             code = gateContextMenu();
         } else if (gate == "fuse_api") {
             code = gateFuseApi();
+        } else if (gate == "project_open") {
+            code = gateProjectOpen();
         } else if (gate == "ui_frame") {
             code = gateUiFrame();
         } else if (gate == "present_adopt") {
