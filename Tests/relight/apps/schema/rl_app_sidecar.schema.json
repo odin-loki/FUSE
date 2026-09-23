@@ -1,0 +1,353 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fuse.invalid/relight/rl_app_sidecar.schema.json",
+  "title": "FUSE Relight test-app sidecar (fuse.relight.app_sidecar/1)",
+  "description": "Ground truth one Relight test app (Tests/relight/apps, plan §6.2) fed to D3D8/D3D9: resources with their bytes, and per recorded draw call the vertex format, stream bindings, transforms and fixed-function / shader state. Binary data lives in `blobs`, keyed by the SHA-256 of the bytes (fuse.capture.sha256). Texture blobs are mip levels in the Remix canonical packed layout (plan §4.1.3: rows = blocksHigh, rowBytes = align(bytesPerBlock * blocksWide, 4)); buffer blobs are the whole buffer after each write; UP draws store their vertex (and index) bytes directly.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "app", "scene", "api", "covers", "width", "height", "frames", "recorded_frames", "device",
+               "dumps", "probes", "annotations", "textures", "buffers", "declarations", "shaders", "state_blocks",
+               "clears", "draws", "blobs"],
+  "properties": {
+    "schema": {"const": "fuse.relight.app_sidecar/1"},
+    "app": {"type": "string", "pattern": "^(d3d8_)?[a-z0-9_]+$"},
+    "scene": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+    "api": {"enum": ["d3d8", "d3d9"]},
+    "covers": {"type": "string", "minLength": 1},
+    "width": {"const": 128},
+    "height": {"const": 96},
+    "frames": {"type": "integer", "minimum": 1},
+    "recorded_frames": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 0}},
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backbuffer_format", "depth_stencil_format", "vertex_processing"],
+      "properties": {
+        "backbuffer_format": {"const": "X8R8G8B8"},
+        "depth_stencil_format": {"const": "D24S8"},
+        "vertex_processing": {"enum": ["hardware", "software"]}
+      }
+    },
+    "dumps": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/dump"}},
+    "probes": {"type": "array", "items": {"$ref": "#/$defs/probe"}},
+    "annotations": {"type": "object"},
+    "textures": {"type": "array", "items": {"$ref": "#/$defs/texture"}},
+    "buffers": {"type": "array", "items": {"$ref": "#/$defs/buffer"}},
+    "declarations": {"type": "array", "items": {"$ref": "#/$defs/declaration"}},
+    "shaders": {"type": "array", "items": {"$ref": "#/$defs/shader"}},
+    "state_blocks": {"type": "array", "items": {"$ref": "#/$defs/state_block"}},
+    "clears": {"type": "array", "items": {"$ref": "#/$defs/clear"}},
+    "draws": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/draw"}},
+    "blobs": {
+      "type": "object",
+      "patternProperties": {"^[0-9a-f]{64}$": {"type": "string", "pattern": "^[A-Za-z0-9+/]*={0,2}$"}},
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "id": {"type": "integer", "minimum": 0},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "u32": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+    "color4": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"type": "number"}},
+    "vec3": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}},
+    "mat4": {"type": "array", "minItems": 16, "maxItems": 16, "items": {"type": "number"},
+             "description": "Row-major D3DMATRIX (_11 _12 _13 _14 _21 ... _44), row vectors."},
+    "enum_name": {"type": "string", "pattern": "^[A-Z0-9_]+$"},
+    "dump": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "source", "frame", "width", "height", "png", "raw", "alpha"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+        "source": {"type": "string"},
+        "texture": {"$ref": "#/$defs/id"},
+        "frame": {"type": "integer", "minimum": 0},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1},
+        "png": {"type": "string", "pattern": "\\.png$"},
+        "raw": {"type": "string", "pattern": "\\.rgba$"},
+        "alpha": {"enum": ["forced_opaque", "stored"]}
+      }
+    },
+    "probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "rgb", "tolerance", "what"],
+      "properties": {
+        "x": {"type": "integer", "minimum": 0, "maximum": 127},
+        "y": {"type": "integer", "minimum": 0, "maximum": 95},
+        "rgb": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "integer", "minimum": 0, "maximum": 255}},
+        "tolerance": {"type": "integer", "minimum": 0, "maximum": 255},
+        "what": {"type": "string"}
+      }
+    },
+    "vertex_element": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stream", "offset", "type", "size", "method", "usage", "usage_index"],
+      "properties": {
+        "stream": {"type": "integer", "minimum": 0, "maximum": 15},
+        "offset": {"type": "integer", "minimum": 0},
+        "type": {"$ref": "#/$defs/enum_name", "description": "D3DDECLTYPE_* without prefix"},
+        "size": {"type": "integer", "minimum": 0, "description": "Element byte size (Remix elementSize)"},
+        "method": {"type": "integer", "minimum": 0},
+        "usage": {"$ref": "#/$defs/enum_name", "description": "D3DDECLUSAGE_* without prefix"},
+        "usage_index": {"type": "integer", "minimum": 0, "maximum": 15}
+      }
+    },
+    "upload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frame", "level", "method", "blob"],
+      "properties": {
+        "frame": {"type": "integer", "minimum": -1, "description": "-1 = during scene init"},
+        "level": {"type": "integer", "minimum": 0},
+        "method": {"enum": ["LockRect", "UpdateTexture", "UpdateSurface", "CopyRects"]},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1},
+        "row_bytes": {"type": "integer", "minimum": 4},
+        "rows": {"type": "integer", "minimum": 1},
+        "source": {"$ref": "#/$defs/id"},
+        "source_level": {"type": "integer", "minimum": 0},
+        "blob": {"oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]}
+      }
+    },
+    "texture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "width", "height", "levels", "format", "format_value", "usage", "pool", "uploads"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "kind": {"enum": ["texture", "depth_stencil"]},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1},
+        "levels": {"type": "integer", "minimum": 1},
+        "format": {"$ref": "#/$defs/enum_name"},
+        "format_value": {"$ref": "#/$defs/u32"},
+        "usage": {"$ref": "#/$defs/u32"},
+        "pool": {"$ref": "#/$defs/enum_name"},
+        "uploads": {"type": "array", "items": {"$ref": "#/$defs/upload"}}
+      }
+    },
+    "buffer_version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frame", "offset", "size", "lock_flags", "blob"],
+      "properties": {
+        "frame": {"type": "integer", "minimum": -1},
+        "offset": {"type": "integer", "minimum": 0},
+        "size": {"type": "integer", "minimum": 0},
+        "lock_flags": {"$ref": "#/$defs/u32"},
+        "blob": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "buffer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "size", "usage", "pool", "versions"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "kind": {"enum": ["vertex", "index"]},
+        "size": {"type": "integer", "minimum": 1},
+        "usage": {"$ref": "#/$defs/u32"},
+        "pool": {"$ref": "#/$defs/enum_name"},
+        "fvf": {"$ref": "#/$defs/u32"},
+        "format": {"enum": ["INDEX16", "INDEX32"]},
+        "versions": {"type": "array", "items": {"$ref": "#/$defs/buffer_version"}}
+      }
+    },
+    "declaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "elements"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "elements": {"type": "array", "items": {"$ref": "#/$defs/vertex_element"}}
+      }
+    },
+    "shader": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "stage", "version", "declaration", "token_count", "blob", "listing"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "stage": {"enum": ["vertex", "pixel"]},
+        "version": {"type": "string", "pattern": "^(vs|ps)_[1-3]_[0-4]$"},
+        "declaration": {"oneOf": [{"$ref": "#/$defs/id"}, {"type": "null"}],
+                        "description": "D3D8 only: the declaration the shader was created with"},
+        "token_count": {"type": "integer", "minimum": 2},
+        "blob": {"$ref": "#/$defs/sha256"},
+        "listing": {"type": "string"}
+      }
+    },
+    "state_map": {"type": "object", "patternProperties": {"^[A-Z0-9_]+$": {"$ref": "#/$defs/u32"}},
+                  "additionalProperties": false},
+    "const_f": {
+      "type": "array",
+      "items": {"type": "object", "additionalProperties": false, "required": ["register", "value"],
+                "properties": {"register": {"type": "integer", "minimum": 0},
+                               "value": {"$ref": "#/$defs/color4"}}}
+    },
+    "light": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "enabled", "type", "diffuse", "specular", "ambient", "position", "direction", "range",
+                   "falloff", "attenuation", "theta", "phi"],
+      "properties": {
+        "index": {"type": "integer", "minimum": 0},
+        "enabled": {"type": "boolean"},
+        "type": {"enum": ["POINT", "SPOT", "DIRECTIONAL"]},
+        "diffuse": {"$ref": "#/$defs/color4"},
+        "specular": {"$ref": "#/$defs/color4"},
+        "ambient": {"$ref": "#/$defs/color4"},
+        "position": {"$ref": "#/$defs/vec3"},
+        "direction": {"$ref": "#/$defs/vec3"},
+        "range": {"type": "number"},
+        "falloff": {"type": "number"},
+        "attenuation": {"$ref": "#/$defs/vec3"},
+        "theta": {"type": "number"},
+        "phi": {"type": "number"}
+      }
+    },
+    "state_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["render_states", "render_states_float", "texture_stages", "samplers", "textures", "lights",
+                   "material", "viewport", "render_target", "depth_stencil", "vertex_shader", "pixel_shader",
+                   "vs_const_f", "vs_const_i", "vs_const_b", "ps_const_f"],
+      "properties": {
+        "render_states": {"$ref": "#/$defs/state_map", "description": "Every D3DRS_* the app set so far (raw DWORD)"},
+        "render_states_float": {"type": "object", "patternProperties": {"^[A-Z0-9_]+$": {"type": "number"}},
+                                "additionalProperties": false},
+        "texture_stages": {
+          "type": "array",
+          "items": {"type": "object", "additionalProperties": false, "required": ["stage", "states"],
+                    "properties": {"stage": {"type": "integer", "minimum": 0, "maximum": 7},
+                                   "states": {"$ref": "#/$defs/state_map"}}}
+        },
+        "samplers": {
+          "type": "array",
+          "items": {"type": "object", "additionalProperties": false, "required": ["sampler", "states"],
+                    "properties": {"sampler": {"type": "integer", "minimum": 0, "maximum": 15},
+                                   "states": {"$ref": "#/$defs/state_map"}}}
+        },
+        "textures": {
+          "type": "array",
+          "items": {"type": "object", "additionalProperties": false, "required": ["stage", "texture"],
+                    "properties": {"stage": {"type": "integer", "minimum": 0, "maximum": 15},
+                                   "texture": {"$ref": "#/$defs/id"}}}
+        },
+        "lights": {"type": "array", "items": {"$ref": "#/$defs/light"}},
+        "material": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "object", "additionalProperties": false,
+             "required": ["diffuse", "ambient", "specular", "emissive", "power"],
+             "properties": {"diffuse": {"$ref": "#/$defs/color4"}, "ambient": {"$ref": "#/$defs/color4"},
+                            "specular": {"$ref": "#/$defs/color4"}, "emissive": {"$ref": "#/$defs/color4"},
+                            "power": {"type": "number"}}}
+          ]
+        },
+        "viewport": {
+          "type": "object", "additionalProperties": false,
+          "required": ["x", "y", "width", "height", "min_z", "max_z"],
+          "properties": {"x": {"type": "integer", "minimum": 0}, "y": {"type": "integer", "minimum": 0},
+                         "width": {"type": "integer", "minimum": 1}, "height": {"type": "integer", "minimum": 1},
+                         "min_z": {"type": "number"}, "max_z": {"type": "number"}}
+        },
+        "render_target": {"oneOf": [{"const": "backbuffer"}, {"$ref": "#/$defs/id"}]},
+        "depth_stencil": {"oneOf": [{"const": "default"}, {"$ref": "#/$defs/id"}]},
+        "vertex_shader": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/id"}]},
+        "pixel_shader": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/id"}]},
+        "vs_const_f": {"$ref": "#/$defs/const_f"},
+        "vs_const_i": {
+          "type": "array",
+          "items": {"type": "object", "additionalProperties": false, "required": ["register", "value"],
+                    "properties": {"register": {"type": "integer", "minimum": 0},
+                                   "value": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"type": "integer"}}}}
+        },
+        "vs_const_b": {
+          "type": "array",
+          "items": {"type": "object", "additionalProperties": false, "required": ["register", "value"],
+                    "properties": {"register": {"type": "integer", "minimum": 0}, "value": {"type": "boolean"}}}
+        },
+        "ps_const_f": {"$ref": "#/$defs/const_f"}
+      }
+    },
+    "clear": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frame", "seq", "flags", "color", "z", "stencil", "render_target"],
+      "properties": {
+        "frame": {"type": "integer", "minimum": 0},
+        "seq": {"type": "integer", "minimum": 0},
+        "flags": {"$ref": "#/$defs/u32"},
+        "color": {"type": "string", "pattern": "^0x[0-9a-f]{8}$"},
+        "z": {"type": "number"},
+        "stencil": {"$ref": "#/$defs/u32"},
+        "render_target": {"oneOf": [{"const": "backbuffer"}, {"$ref": "#/$defs/id"}]}
+      }
+    },
+    "stream_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stream", "buffer", "version", "offset", "stride"],
+      "properties": {
+        "stream": {"type": "integer", "minimum": 0, "maximum": 15},
+        "buffer": {"$ref": "#/$defs/id"},
+        "version": {"type": "integer", "minimum": 0, "description": "Index into the buffer's versions"},
+        "offset": {"type": "integer", "minimum": 0},
+        "stride": {"type": "integer", "minimum": 0}
+      }
+    },
+    "draw": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frame", "seq", "call", "primitive", "prim_count", "tag", "index_buffer", "vertex_format", "streams",
+                   "transforms", "state"],
+      "properties": {
+        "frame": {"type": "integer", "minimum": 0},
+        "seq": {"type": "integer", "minimum": 0, "description": "Order of clears and draws within the frame"},
+        "call": {"enum": ["DrawPrimitive", "DrawIndexedPrimitive", "DrawPrimitiveUP", "DrawIndexedPrimitiveUP"]},
+        "primitive": {"enum": ["POINTLIST", "LINELIST", "LINESTRIP", "TRIANGLELIST", "TRIANGLESTRIP", "TRIANGLEFAN"]},
+        "prim_count": {"type": "integer", "minimum": 1},
+        "tag": {"type": "string", "pattern": "^[a-z0-9_]+$",
+                "description": "Scene's semantic label (world, sky, hud, shadow_volume, ...); metadata only"},
+        "start_vertex": {"type": "integer", "minimum": 0},
+        "vertex_count": {"type": "integer", "minimum": 1},
+        "base_vertex": {"type": "integer"},
+        "min_index": {"type": "integer", "minimum": 0},
+        "num_vertices": {"type": "integer", "minimum": 1},
+        "start_index": {"type": "integer", "minimum": 0},
+        "index_count": {"type": "integer", "minimum": 1},
+        "index_buffer": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "object", "additionalProperties": false, "required": ["buffer", "version", "format"],
+             "properties": {"buffer": {"$ref": "#/$defs/id"}, "version": {"type": "integer", "minimum": 0},
+                            "format": {"enum": ["INDEX16", "INDEX32"]}}}
+          ]
+        },
+        "up": {
+          "type": "object", "additionalProperties": false,
+          "required": ["vertex_stride", "vertex_blob", "index_blob", "index_format"],
+          "properties": {"vertex_stride": {"type": "integer", "minimum": 1},
+                         "vertex_blob": {"$ref": "#/$defs/sha256"},
+                         "index_blob": {"oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+                         "index_format": {"oneOf": [{"enum": ["INDEX16", "INDEX32"]}, {"type": "null"}]}}
+        },
+        "vertex_format": {
+          "type": "object", "additionalProperties": false, "required": ["fvf", "declaration", "elements"],
+          "properties": {"fvf": {"oneOf": [{"$ref": "#/$defs/u32"}, {"type": "null"}]},
+                         "declaration": {"oneOf": [{"$ref": "#/$defs/id"}, {"type": "null"}]},
+                         "elements": {"type": "array", "items": {"$ref": "#/$defs/vertex_element"}}}
+        },
+        "streams": {"type": "array", "items": {"$ref": "#/$defs/stream_binding"}},
+        "transforms": {"type": "object",
+                       "patternProperties": {"^(WORLD|VIEW|PROJECTION|TEXTURE[0-7]|WORLDMATRIX_[0-9]+)$": {"$ref": "#/$defs/mat4"}},
+                       "additionalProperties": false},
+        "state": {"type": "integer", "minimum": 0, "description": "Index into state_blocks"}
+      }
+    }
+  }
+}

@@ -126,7 +126,13 @@ _fuse_lint_add(fuse_lint_c_doc_headings        doc-headings
     --plan "${CMAKE_SOURCE_DIR}/docs/plans/FUSE_MASTER_PLAN.md" --sources "${CMAKE_SOURCE_DIR}/docs/sources")
 # B1 gate: third-party dependencies build from vendored source with pinned commits.
 _fuse_lint_add(fuse_lint_vendored_pins_vma     vendored-pins  --dir "${CMAKE_SOURCE_DIR}/Engine/lib/vma")
+# FUSE Relight (RL-0.2): vendored DXVK 3.1.1 subset (zlib) and dxbc-spirv (MIT).
+_fuse_lint_add(fuse_lint_vendored_pins_dxvk vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/dxvk")
+_fuse_lint_add(fuse_lint_vendored_pins_dxbc_spirv vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/dxbc-spirv")
+# FUSE Relight RL-0.5: xxHash 0.8.x (BSD-2) for the Remix-compatible asset hashes.
+_fuse_lint_add(fuse_lint_vendored_pins_xxhash vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/xxhash")
 
 get_property(_fuse_lint_all GLOBAL PROPERTY _FUSE_LINT_TESTS)
 set_tests_properties(${_fuse_lint_all} PROPERTIES LABELS "gate;lint" TIMEOUT 300)
 set_tests_properties(fuse_lint_b6_editor_qt6_only PROPERTIES LABELS "gate;lint;qt" SKIP_RETURN_CODE 77)
+include(${CMAKE_SOURCE_DIR}/Source/FUSE/Relight/cmake/relight_licence_gates.cmake)  # RL-0.1 licence gates (rl_licence_text_scan, rl_binary_gate)

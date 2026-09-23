@@ -1,0 +1,5 @@
+{
+  "description": "Run-to-run image tolerances for the RL-0.4 test apps (tools/rl_app_check.py run). Sidecars must always be byte-identical; images too unless an app lists a tolerance here with the reason. Measured on Wine 9.0 builtin d3d9/d3d8 (wined3d, OpenGL) on Mesa llvmpipe under Xvfb.",
+  "default": {"max_channel_diff": 0, "max_differing_pixels": 0},
+  "apps": {}
+}

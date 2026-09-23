@@ -80,6 +80,7 @@ endif()
 if(FUSE_BUILD_LEGACY)
     add_subdirectory(Legacy)
 endif()
+add_subdirectory(Relight)  # FUSE Relight (docs/plans/FUSE_REMIX_PORT_PLAN.md); FUSE_BUILD_RELIGHT inside, default ON for MinGW
 
 if(TARGET fuse_script AND TARGET fuse_compat_ts)
     target_link_libraries(fuse_script PRIVATE fuse_compat_ts fuse_compat_ts_t3d fuse_compat_ts_t2d)

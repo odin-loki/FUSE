@@ -25,7 +25,7 @@
 //   vendored-pins  B1 gate "Third-party dependencies build from vendored source with pinned commits":
 //                  --dir <vendored lib> holds a VERSION pin (upstream, version, tag, 40-hex commit,
 //                  license, sha256 per file) that matches the vendored files and the version the
-//                  header itself declares.
+//                  header itself declares (or `header_version`, for one component of a larger SDK tag).
 //   branding       Appendix A "Icons, installer, docs, CI badge names": --repo workflows' `name:`
 //                  fields say FUSE (no Torque/T3D job / step names), README.md is titled `# FUSE`
 //                  with one CI badge per workflow (alt = workflow name), docs titles say FUSE.
@@ -572,12 +572,26 @@ bool readManifest(const fs::path& p, std::vector<TargetRow>& rows, Violations& v
 
 // ---- check: banned-deps -----------------------------------------------------------------------------
 
+// Narrow ImGui allow-list (Meridian stays banned everywhere). FUSE Relight is injected into D3D8/D3D9
+// games, where a Qt overlay is impossible; docs/plans/FUSE_REMIX_PORT_PLAN.md AD-14 and §3 row 36 adopt
+// vendored upstream Dear ImGui for the in-game developer menu in Relight/overlay (RL-6.x), and
+// Relight/THIRD_PARTY.md must name it for attribution (§0.4.1). Paths are relative to Source/FUSE.
+bool imguiAllowedPath(const std::string& relPath) {
+    return relPath == "Relight/THIRD_PARTY.md" || relPath.rfind("Relight/overlay/", 0) == 0;
+}
+
+bool imguiAllowedTarget(const std::string& sourceDir) {
+    return (sourceDir + "/").find("/Source/FUSE/Relight/overlay/") != std::string::npos;
+}
+
 Violations checkBannedDeps(const fs::path& root, const fs::path& manifest) {
     Violations v;
     const std::regex banned(R"(meridian|imgui)");
+    const std::regex meridianOnly(R"(meridian)");
     for (const fs::path& f : listFiles(root, [](const fs::path&, const std::string&) { return true; })) {
         const std::string r = rel(f, root);
-        if (std::regex_search(lower(r), banned)) {
+        const std::regex& bannedHere = imguiAllowedPath(r) ? meridianOnly : banned;
+        if (std::regex_search(lower(r), bannedHere)) {
             v.push_back(r + ": banned name in path");
             continue;
         }
@@ -588,7 +602,7 @@ Violations checkBannedDeps(const fs::path& root, const fs::path& manifest) {
         for (size_t i = 0; i < lines.size(); ++i) {
             std::smatch m;
             const std::string l = lower(lines[i].raw);
-            if (std::regex_search(l, m, banned)) {
+            if (std::regex_search(l, m, bannedHere)) {
                 v.push_back(where(f, root, i) + ": banned dependency '" + m.str(0) + "'");
             }
         }
@@ -598,7 +612,7 @@ Violations checkBannedDeps(const fs::path& root, const fs::path& manifest) {
         for (const TargetRow& t : rows) {
             const std::string links = lower(t.links + "," + t.interfaceLinks);
             std::smatch m;
-            if (std::regex_search(links, m, banned)) {
+            if (std::regex_search(links, m, imguiAllowedTarget(t.sourceDir) ? meridianOnly : banned)) {
                 v.push_back("target " + t.name + ": links banned '" + m.str(0) + "' (" + t.links + ")");
             }
         }
@@ -1002,6 +1016,10 @@ Violations checkVendoredPins(const fs::path& dir) {
             const std::string text = readFile(header);
             const std::regex makeVersion(R"(#define\s+\w*VERSION\s+\(\s*VK_MAKE_VERSION\(\s*([0-9]+)\s*,\s*([0-9]+)\s*,\s*([0-9]+)\s*\)\s*\))");
             const std::regex docVersion(R"(<b>Version ([0-9]+\.[0-9]+\.[0-9]+)</b>)");
+            // FidelityFX SDK style: #define FFX_<EFFECT>_VERSION_MAJOR (1) / _MINOR / _PATCH.
+            const std::regex partVersion(R"(#define\s+(\w+)_VERSION_(MAJOR|MINOR|PATCH)\s+\(?\s*([0-9]+)\s*\)?)");
+            // NVIDIA Image Scaling style banner: "NVIDIA Image Scaling SDK  - v1.0.3".
+            const std::regex sdkBanner(R"(SDK\s+-\s+v([0-9]+\.[0-9]+\.[0-9]+))");
             std::vector<std::string> declared;
             for (std::sregex_iterator it(text.begin(), text.end(), makeVersion), end; it != end; ++it) {
                 declared.push_back((*it).str(1) + "." + (*it).str(2) + "." + (*it).str(3));
@@ -1009,12 +1027,34 @@ Violations checkVendoredPins(const fs::path& dir) {
             for (std::sregex_iterator it(text.begin(), text.end(), docVersion), end; it != end; ++it) {
                 declared.push_back((*it).str(1));
             }
+            std::map<std::string, std::array<std::string, 3>> parts; // prefix -> {major, minor, patch}
+            for (std::sregex_iterator it(text.begin(), text.end(), partVersion), end; it != end; ++it) {
+                const std::string which = (*it).str(2);
+                parts[(*it).str(1)][which == "MAJOR" ? 0 : (which == "MINOR" ? 1 : 2)] = (*it).str(3);
+            }
+            for (const auto& [prefix, mmp] : parts) {
+                if (!mmp[0].empty() && !mmp[1].empty() && !mmp[2].empty()) {
+                    declared.push_back(mmp[0] + "." + mmp[1] + "." + mmp[2]);
+                }
+            }
+            for (std::sregex_iterator it(text.begin(), text.end(), sdkBanner), end; it != end; ++it) {
+                declared.push_back((*it).str(1));
+            }
             if (declared.empty()) {
-                v.push_back(header.generic_string() + ": declares no version (VK_MAKE_VERSION define or <b>Version X.Y.Z</b>)");
+                v.push_back(header.generic_string() +
+                            ": declares no version (VK_MAKE_VERSION define, <b>Version X.Y.Z</b>, *_VERSION_MAJOR/MINOR/PATCH "
+                            "defines or an 'SDK - vX.Y.Z' banner)");
+            }
+            // `header_version` pins the component version a multi-component SDK header declares when it
+            // differs from the SDK tag (e.g. FSR1 1.2.0 inside FidelityFX SDK v1.1.4).
+            const std::string expectedDeclared = kv["header_version"].empty() ? version : kv["header_version"];
+            if (!kv["header_version"].empty() &&
+                !std::regex_match(kv["header_version"], std::regex(R"([0-9]+\.[0-9]+\.[0-9]+)"))) {
+                v.push_back(where + ": header_version '" + kv["header_version"] + "' is not X.Y.Z");
             }
             for (const std::string& d : declared) {
-                if (d != version) {
-                    v.push_back(header.generic_string() + ": declares version " + d + ", pin says " + version);
+                if (d != expectedDeclared) {
+                    v.push_back(header.generic_string() + ": declares version " + d + ", pin says " + expectedDeclared);
                 }
             }
         }
@@ -1318,12 +1358,21 @@ bool selfTest(const std::string& check, const fs::path& scratch) {
     } else if (check == "banned-deps") {
         seedTree(bad, {{"Editor/CMakeLists.txt", "target_link_libraries(fuse_editor PRIVATE imgui)\n"},
                        {"Editor/src/meridian_panel.cpp", "int x;\n"},
-                       {"Legacy/src/x.cpp", "#include \"Meridian/api.h\"\n"}});
-        writeFile(scratch / "bad.manifest", "fuse_editor|EXECUTABLE|/x|23|1|0|fuse_core,imgui::imgui|\n");
+                       {"Legacy/src/x.cpp", "#include \"Meridian/api.h\"\n"},
+                       // Relight allow-list is narrow: ImGui outside overlay/ is still flagged, and
+                       // Meridian is flagged even inside overlay/.
+                       {"Relight/render/menu.cpp", "#include <imgui.h>\n"},
+                       {"Relight/overlay/m.cpp", "#include \"Meridian/api.h\"\n"}});
+        writeFile(scratch / "bad.manifest", "fuse_editor|EXECUTABLE|/x|23|1|0|fuse_core,imgui::imgui|\n"
+                                            "fuse_relight_render|STATIC_LIBRARY|/r/Source/FUSE/Relight/render|23|1|0|imgui|\n");
         const Violations vb = checkBannedDeps(bad, scratch / "bad.manifest");
-        t.expect(vb.size() == 4u, "banned-deps: seeded ImGui CMake link, Meridian path/include and imgui target link flagged (got " + std::to_string(vb.size()) + ")");
-        seedTree(good, {{"Editor/CMakeLists.txt", "target_link_libraries(fuse_editor PRIVATE Qt6::Widgets)\n"}});
-        writeFile(scratch / "good.manifest", "fuse_editor|EXECUTABLE|/x|23|1|0|fuse_core,Qt6::Widgets|\n");
+        t.expect(vb.size() == 7u, "banned-deps: seeded ImGui CMake link, Meridian path/include, imgui target links and "
+                                  "Relight ImGui outside overlay/ flagged (got " + std::to_string(vb.size()) + ")");
+        seedTree(good, {{"Editor/CMakeLists.txt", "target_link_libraries(fuse_editor PRIVATE Qt6::Widgets)\n"},
+                        {"Relight/overlay/dev_menu.cpp", "#include <imgui.h>\n"},
+                        {"Relight/THIRD_PARTY.md", "| Dear ImGui | MIT | Engine/lib/imgui |\n"}});
+        writeFile(scratch / "good.manifest", "fuse_editor|EXECUTABLE|/x|23|1|0|fuse_core,Qt6::Widgets|\n"
+                                             "fuse_relight_overlay|STATIC_LIBRARY|/r/Source/FUSE/Relight/overlay|23|1|0|imgui|\n");
         const Violations vg = checkBannedDeps(good, scratch / "good.manifest");
         for (const auto& s : vg) {
             std::fprintf(stderr, "  unexpected: %s\n", s.c_str());
@@ -1455,6 +1504,22 @@ bool selfTest(const std::string& check, const fs::path& scratch) {
                      countContaining(vb, "40-hex") == 1u && countContaining(vb, "sha256") >= 1u,
                  "vendored-pins: seeded version/commit/hash/license violations flagged (got " + std::to_string(vb.size()) + ")");
         t.expect(checkVendoredPins(bad / "nonexistent").size() == 1u, "vendored-pins: missing pin file flagged");
+        // Multi-component SDK: tag v1.1.4, header declares its component version via MAJOR/MINOR/PATCH
+        // defines, pinned by header_version; a banner-style header ("SDK  - v1.0.3") pins the tag directly.
+        const std::string sdkHeader = "#define FFX_FOO_VERSION_MAJOR      (1)\n#define FFX_FOO_VERSION_MINOR (2)\n"
+                                      "#define FFX_FOO_VERSION_PATCH      (0)\n";
+        const fs::path sdk = good / "sdk";
+        writeFile(sdk / "include/lib.h", sdkHeader);
+        writeFile(sdk / "LICENSE.txt", license);
+        writeFile(sdk / "VERSION", pin("1.1.4", commit, sha256Hex(sdkHeader)) + "header_version=1.2.0\n");
+        t.expect(checkVendoredPins(sdk).empty(), "vendored-pins: MAJOR/MINOR/PATCH header + header_version passes");
+        writeFile(sdk / "VERSION", pin("1.1.4", commit, sha256Hex(sdkHeader)) + "header_version=1.3.0\n");
+        t.expect(countContaining(checkVendoredPins(sdk), "declares version 1.2.0") == 1u,
+                 "vendored-pins: header_version mismatch flagged");
+        const std::string banner = "// NVIDIA Image Scaling SDK  - v1.0.3\n";
+        writeFile(sdk / "include/lib.h", banner);
+        writeFile(sdk / "VERSION", pin("1.0.3", commit, sha256Hex(banner)));
+        t.expect(checkVendoredPins(sdk).empty(), "vendored-pins: 'SDK - vX.Y.Z' banner header passes");
     } else if (check == "branding") {
         const char* wfGood =
             "name: FUSE Umbrella (Linux)\non:\n  push:\njobs:\n  a:\n    name: fuse_core + tests\n    steps:\n      - name: Build\n";

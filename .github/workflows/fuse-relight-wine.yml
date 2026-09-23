@@ -1,0 +1,82 @@
+name: FUSE Relight (MinGW-w64 cross + Wine/Xvfb/Lavapipe)
+
+# FUSE Relight CI (docs/plans/FUSE_REMIX_PORT_PLAN.md §6.3, work package RL-0.3).
+#   - Cross-builds FUSE for Windows x64 with MinGW-w64 and FUSE_BUILD_RELIGHT=ON; the i686 pieces
+#     (32-bit env probe now, bridge client and test apps later) are built with the i686 MinGW
+#     driver from the same tree.
+#   - Runs every `relight` ctest through cmake/toolchains/fuse-wine-xvfb-run.sh: Wine with a
+#     private Xvfb display per ctest job, a cached per-slot WINEPREFIX, and Mesa Lavapipe as the
+#     Vulkan ICD (winevulkan needs a real X display; Wine's null driver cannot load it).
+#   - wine32 (multiarch i386) plus the i386 Lavapipe and Vulkan loader make the 32-bit tests run
+#     here; locally they skip with 77. The "32-bit probe ran" step fails the job if they skipped.
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main, development]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.actor }}-${{ github.head_ref || github.run_number }}-${{ github.ref }}-fuse-relight-wine
+  cancel-in-progress: true
+
+jobs:
+  relight-wine:
+    name: Relight x64 + x86 under Wine/Xvfb/Lavapipe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      BUILD_DIR: build/fuse-relight-wine
+      WINEDEBUG: -all
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MinGW-w64 (x64 + i686), Wine (64 + 32), Xvfb and Lavapipe
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
+            ninja-build cmake file \
+            g++-mingw-w64-x86-64-posix gcc-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64 \
+            g++-mingw-w64-i686-posix gcc-mingw-w64-i686-posix binutils-mingw-w64-i686 \
+            mingw-w64-tools \
+            wine wine64 wine32:i386 \
+            xvfb \
+            mesa-vulkan-drivers mesa-vulkan-drivers:i386 libvulkan1 libvulkan1:i386
+          x86_64-w64-mingw32-g++-posix --version | head -1
+          i686-w64-mingw32-g++-posix --version | head -1
+          (wine64 --version || /usr/lib/wine/wine64 --version) 2>/dev/null | head -1
+          ls /usr/share/vulkan/icd.d/
+
+      - name: Configure (MinGW-w64 x64 cross, FUSE_BUILD_RELIGHT=ON)
+        run: |
+          cmake --preset fuse-mingw-release -B "$BUILD_DIR" \
+            -DFUSE_BUILD_RELIGHT=ON \
+            -DFUSE_WINE_XVFB_PREFIX_ROOT="$GITHUB_WORKSPACE/$BUILD_DIR/wineprefix-xvfb"
+
+      - name: Build
+        run: cmake --build "$BUILD_DIR"
+
+      - name: CTest relight (Wine + Xvfb + Lavapipe)
+        env:
+          FUSE_WINE_SLOTS: 2
+        run: ctest --test-dir "$BUILD_DIR" -L relight --no-tests=error --output-on-failure -j 2 --timeout 900
+
+      - name: 32-bit probe ran (must not skip in CI)
+        run: |
+          set -o pipefail
+          ctest --test-dir "$BUILD_DIR" -R '^rl_env_probe(64|32)$' --no-tests=error --output-on-failure -V \
+            | tee probe.log
+          if grep -q 'rl_env_probe.*Skipped' probe.log; then
+            echo "::error::an env probe skipped: wine32 / i686 MinGW / Lavapipe missing on the runner"
+            exit 1
+          fi
+
+      - name: Upload test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuse-relight-wine-testlog
+          path: ${{ env.BUILD_DIR }}/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
