@@ -13,8 +13,13 @@ Phase 3 scene APIs from [FUSE Master Plan](../../docs/plans/FUSE_MASTER_PLAN.md)
 
 ### B3.5 — Sparse Voxel Octree (`svo.hpp`)
 
-- Hash-backed leaf storage (scaffold) with octree node pool allocation
-- SDF values stored at leaves when `SVODesc::storeSdf` is enabled
+- Octree of 32-byte interior nodes ending in 8x8x8 brick leaves (O(depth) `get`/`set`); brick
+  payloads live in one pooled word arena as sparse (index, material) pairs, a shared-material
+  bitmask, a dense material array, or a single uniform material (whole-brick `fill`)
+- 1M scattered voxels at depth 10: ~1.09M nodes / 32 MB (per-voxel leaves: ~4.06M nodes / ~195 MB);
+  a 256^3 dense fill: ~1.2 MB. `memoryBytes()` reports the pooled capacity
+- Per-voxel SDF plane allocated only for bricks a `carve` refined (`SVODesc::storeSdf`)
+- `rayCast` is an exact 3D-DDA that jumps over empty octree cells and empty bricks
 - GPU upload deferred — no renderer dependency
 
 ### B3.6 — Scene Manager (`scene_manager.hpp`)

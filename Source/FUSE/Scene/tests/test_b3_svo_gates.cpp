@@ -69,9 +69,12 @@ void testMillionVoxelRoundTrip() {
             ++falsePositives;
         }
     }
-    std::printf("SVO 1M round-trip: %zu wrong, %zu false positives, %zu nodes\n", wrong, falsePositives,
-                svo.nodeCount());
+    std::printf("SVO 1M round-trip: %zu wrong, %zu false positives, %zu nodes (%zu bricks), %.1f MB\n", wrong,
+                falsePositives, svo.nodeCount(), svo.brickCount(),
+                static_cast<double>(svo.memoryBytes()) / (1024.0 * 1024.0));
     expectTrue(wrong == 0u, "every one of 1M voxels reads back its material");
+    // Per-voxel leaves needed ~4.06M 48-byte nodes (~195 MB) here; brick leaves keep it compact.
+    expectTrue(svo.memoryBytes() < 40u * 1024u * 1024u, "1M scattered voxels fit in < 40 MB");
     expectTrue(falsePositives == 0u, "unset voxels read as empty");
 
     for (std::size_t i = 0; i < 1000u; ++i) {
@@ -206,6 +209,22 @@ void testCarveTransitions() {
     expectTrue(surface <= 0.f && surface > -0.5f, "boundary voxel stores the refined carve distance");
 }
 
+void testDenseFillMemory() {
+    SVO svo;
+    SVODesc desc{};
+    desc.rootSize = 1024.f;
+    desc.maxDepth = 10;
+    svo.init(desc);
+    // 256^3 = 16.8M voxels: whole bricks collapse to uniform records, the ragged edge stays dense.
+    svo.fill({3, 3, 3}, {258, 258, 258}, 5u);
+    const bool corners = svo.get({3, 3, 3}) == 5u && svo.get({258, 258, 258}) == 5u && svo.get({2, 3, 3}) == 0u &&
+                         svo.get({259, 258, 258}) == 0u;
+    std::printf("SVO dense fill: %zu voxels, %zu nodes (%zu bricks), %.2f MB\n", svo.voxelCount(), svo.nodeCount(),
+                svo.brickCount(), static_cast<double>(svo.memoryBytes()) / (1024.0 * 1024.0));
+    expectTrue(svo.voxelCount() == 256u * 256u * 256u && corners, "dense fill writes exactly the box");
+    expectTrue(svo.memoryBytes() < 8u * 1024u * 1024u, "dense 256^3 fill stays under 8 MB");
+}
+
 void testSdfContinuityAcrossLeaves() {
     SVO svo;
     SVODesc desc{};
@@ -236,6 +255,7 @@ int main() {
     testRayCastMatchesBruteForce();
     testCarveTransitions();
     testSdfContinuityAcrossLeaves();
+    testDenseFillMemory();
 
     if (g_failures == 0) {
         std::printf("fuse_b3_svo_gates: all checks passed\n");
