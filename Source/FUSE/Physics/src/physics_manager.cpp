@@ -125,6 +125,8 @@ void PhysicsManager::destroy() {
     m_currentPairs_.clear();
     m_lastEvents_.clear();
     m_destructionEvents_.clear();
+    m_destructibles_.clear();
+    m_lastDebris_.clear();
     m_stepCount = 0;
     m_lastCcdHitCount_ = 0;
     m_initialized = false;
@@ -153,6 +155,7 @@ void PhysicsManager::step(fuse::ecs::Registry& registry, f32 dt, PhysicsStreamMa
     syncSoaToEcs_(registry);
     raiseEvents_();
 
+    m_lastDebris_.clear();
     if (m_desc.enableDestruction && !m_destructionEvents_.empty()) {
         processDestructionEvents_(registry);
     }
@@ -468,11 +471,21 @@ void PhysicsManager::pushDestructionEvent(const DestructionEvent& event) {
     m_destructionEvents_.push_back(event);
 }
 
+void PhysicsManager::addDestructible(fuse::ecs::EntityID entity, const VoxelVolume& volume,
+                                     const VoxelMaterial& material) {
+    if (entity.valid()) {
+        m_destructibles_[entity.index] = {volume, material};
+    }
+}
+
+DestructibleVolume* PhysicsManager::destructible(fuse::ecs::EntityID entity) {
+    const auto it = m_destructibles_.find(entity.index);
+    return it == m_destructibles_.end() ? nullptr : &it->second;
+}
+
 void PhysicsManager::processDestructionEvents_(fuse::ecs::Registry& registry) {
-    (void)registry;
-    PhysicsRegistry legacy{};
-    PhysicsResourceManager resources{};
-    DestructionSystem::processEvents(m_destructionEvents_, legacy, resources);
+    // Debris entities join the simulation on the next step's sync.
+    DestructionSystem::processEvents(m_destructionEvents_, m_destructibles_, registry, m_lastDebris_);
 }
 
 } // namespace fuse::physics

@@ -59,6 +59,11 @@ public:
     /// Kinematic pose to reach by the end of the next step (the body is made kinematic).
     void setKinematicTarget(fuse::ecs::EntityID id, vec3 position, quat orientation);
     void pushDestructionEvent(const DestructionEvent& event);
+    /// Registers the voxels that destruction events targeting `entity` carve.
+    void addDestructible(fuse::ecs::EntityID entity, const VoxelVolume& volume, const VoxelMaterial& material);
+    DestructibleVolume* destructible(fuse::ecs::EntityID entity);
+    /// Debris spawned by the last step's destruction events (entities already in the registry).
+    const std::vector<DebrisSpawn>& lastDebris() const { return m_lastDebris_; }
 
     CollisionEventSystem& collisionEvents() { return m_collisionEvents_; }
     /// Events raised by the last step (also dispatched to the registered callbacks).
@@ -104,6 +109,8 @@ private:
     std::unordered_map<u64, PairKey> m_activePairs_{};
     std::unordered_map<u64, PairKey> m_currentPairs_{};
     std::vector<DestructionEvent> m_destructionEvents_{};
+    std::unordered_map<u32, DestructibleVolume> m_destructibles_{};
+    std::vector<DebrisSpawn> m_lastDebris_{};
     u32 m_stepCount = 0;
     u32 m_lastCcdHitCount_ = 0;
     bool m_initialized = false;
