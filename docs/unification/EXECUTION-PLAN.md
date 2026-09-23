@@ -25,7 +25,7 @@ unverified. The next stage is to **prove B2** rather than add surface area.
 
 | Item | Result |
 |------|--------|
-| Baseline suite | 165/172 → **173/173** (incl. new gate tests), Debug + stub-backend Release |
+| Baseline suite | 165/172 → **173/173** (incl. new gate tests), Debug + stub-backend Release; now 191/191 Debug, 190/190 stub Release with the B3/B4 gates |
 | ECS `migrate_entity` | Use-after-free: `Archetype&` held across `m_archetypes` growth |
 | WorldPartition / Terrain streaming queues | Jobs captured `this` with no lifetime guard (heap corruption); completion vs in-flight counter race |
 | Raster depth | Missing `SAMPLED` usage → Lavapipe segfault on bindless registration |
@@ -100,9 +100,34 @@ against today's code and only then deepening (same pattern as §2).
 | Serialisation: 10k entities save/load byte-identical; async load callback on the main thread | `fuse_b3_serialiser` | ✅ New `RegistrySerialiser` ('FECS' v1: record table + archetype blocks keyed by `component_name`) and `RegistryLoadQueue` (parse on a worker, apply + callback in `pump()`). 10,001 entities round-trip with identical ids and bytes; corrupt/truncated files rejected; ASan/UBSan clean |
 | Remaining B3 rows | — | CUDA managed-memory column read, SDF buffer → ray marcher, 500 SDF @ 1080p > 60 fps, RenderDoc ordering, SVO 1M rays on CUDA: GPU/workstation (§5) |
 
+## 4b. Then — B4 (physics) on the verified B3 base
+
+Same method: run the B4.11 rows against the existing code first. Most of B4 was scaffolding with
+guard/preflight helpers around stubs (a PhysicsManager that fabricated bodies, a GJK that fell
+back to an AABB test, an `Svo` that only counted carves, cloth without velocity update); each
+row below replaced the stub it exercised. All tests are `fuse_physics` executables; timing rows
+are enforced in optimised builds and marked `RUN_SERIAL` + `perf;gate`.
+
+| Gate rows | Test | Status |
+|-----------|------|--------|
+| Spatial hash finds every overlapping pair of 10k random spheres (vs O(n²)); no missed pairs for grid-aligned / multi-cell bodies | `fuse_b4_broadphase_gates` | ✅ 653 overlaps, 0 missed; refine now uses the insertion bounds (boxes were refined as spheres of radius `halfExtents.x`); planes paired only when a body shared the plane body's cell — fixed |
+| Sphere-sphere vs analytic (Bullet) within 0.001; sphere-plane at all angles; capsule-capsule parallel + degenerate | `fuse_b4_narrowphase_gates` | ✅ exact to float; capsule-capsule added (Ericson segment closest points) |
+| GJK vs SAT on 10k convex pairs; EPA depth within 0.01 | `fuse_b4_narrowphase_gates` | ✅ distance GJK + EPA written (0 mismatches over 10k oriented boxes, worst EPA depth error 8e-7, ≤ 10 GJK / 16 EPA iterations) |
+| SDF collision normals smooth across surface transitions | `fuse_b4_narrowphase_gates` | ✅ `collideSphereSdf` (gradient normal): 0.19° per 1 mm step on a smooth union vs 44° on the hard-union control |
+| Free fall hits ground at √(2h/g); stack of 10 stable 5 s; restitution 1.0 equal rebound; friction stops a sliding box at v²/(2μg); distance constraint ± 0.01; sleep | `fuse_b4_solver_gates` | ✅ 1.433 s vs 1.428 s; rebound 1.99 / 2.00 m; box slides 2.553 m vs 2.548 m. Added the XPBD velocity pass (restitution was never read), static friction on substep displacement (the old term used the offset between body centres), box-plane contacts |
+| 100 m/s sphere vs 0.1 m wall: discrete misses, CCD catches; CCD < 1 ms for 100 fast bodies | `fuse_b4_ccd_gates` | ✅ 50/50 shots caught, 0.49 ms. CCD now clamps in the solver (the manager's sweep ran an unswept broadphase and discarded its TOIs). TOI binary-search row: N/A — sweeps are closed form |
+| Cloth 32×32 stable at 1/60; pins exact; wind direction; cloth-sphere without interpenetration; 64×64 < 1 ms | `fuse_b4_cloth_gates` | ✅ XPBD cloth rewritten (shear/bend, long-range tethers, per-particle drag, sphere contact with friction, banded parallel solve): stretch ≤ 1.05, 0 penetration, 64×64 ≈ 0.7 ms |
+| Transforms reflect physics every frame; `apply_impulse` Δv = J/m; Enter/Exit without misses or spurious callbacks; kinematic path + push; 1000 active < 8 ms; full pipeline 1000 bodies < 4 ms; 10k sleeping < 0.5 ms | `fuse_b4_manager_gates` | ✅ real ECS bridge (`Collider` component, `TagKinematic`). Solver fixes: centre-based `minSeparation` for all shapes (boxes sank into each other), forces over all substeps, kinematic motion, per-constraint delta application that walked every body and raced across island jobs. Perf: 1000 bodies 1.6 ms step / 0.65 ms single pass, 10k sleeping 0.016 ms |
+| Sphere carve exact; dual contouring watertight; debris mass ∝ voxels; debris collides; 10×5 debris no spike > 10 ms; 5×10 debris < 16 ms | `fuse_b4_destruction_gates` | ✅ `VoxelVolume` (carve, dual contouring, floating-piece detach) + ECS debris spawn: 590/590 voxels, 0 open edges, debris frames ≈ 0.9 ms |
+| GPU radix sort; broadphase < 2 ms / 10k (RTX 3090); narrowphase < 3 ms / 1k (RTX); solver 10 iterations × 10k contacts < 5 ms (RTX) | — | §5 (CUDA). CPU references: 1k-pair narrowphase 0.24 ms, 1000-body single pass 0.65 ms |
+
+**Follow-ups:** bodies still carry no rotational state (orientation/angular velocity unsimulated,
+impulses act at the centre of mass); box collisions are axis-aligned; the destructible volume
+has no collision shape of its own yet; `Scene::SVO` and the physics `VoxelVolume` are separate.
+
 ## 5. Hardware / manual gates (not provable in CI)
 
-RTX 3090 device selection, Nsight occupancy, ECS 500M components/s, 60 fps / < 8 ms at 1080p, Win32 external memory
+RTX 3090 device selection, Nsight occupancy, ECS 500M components/s, CUDA physics timings (radix sort, 10k broadphase, 10k-contact solver), 60 fps / < 8 ms at 1080p, Win32 external memory
 handles, `cudaImportExternalMemory`, `compute-sanitizer`, RenderDoc captures, and on-screen WSI
 present. These need a developer machine with the target GPU; record results in
 [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) when run.
