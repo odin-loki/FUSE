@@ -37,7 +37,7 @@ jobs:
           sudo dpkg --add-architecture i386
           sudo apt-get update -q
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
-            ninja-build cmake file \
+            ninja-build cmake file glslang-tools python3 \
             g++-mingw-w64-x86-64-posix gcc-mingw-w64-x86-64-posix binutils-mingw-w64-x86-64 \
             g++-mingw-w64-i686-posix gcc-mingw-w64-i686-posix binutils-mingw-w64-i686 \
             mingw-w64-tools \
