@@ -159,8 +159,9 @@ void InputState::apply(const PlatformEvent& event) {
         break;
     }
     case PlatformEventType::MouseMove: {
-        // Consecutive client positions — not OS cursor-acceleration velocity.
-        if (m_haveMousePosition) {
+        // Consecutive client positions (OS cursor path, acceleration applied). Only a fallback
+        // delta source: with raw input active the delta comes from RawMouseDelta alone.
+        if (m_haveMousePosition && !m_rawMouseActive) {
             m_mouseDeltaX += event.mouseX - m_mouseX;
             m_mouseDeltaY += event.mouseY - m_mouseY;
         }
@@ -170,6 +171,7 @@ void InputState::apply(const PlatformEvent& event) {
         break;
     }
     case PlatformEventType::RawMouseDelta: {
+        m_rawMouseActive = true;
         m_mouseDeltaX += event.mouseX;
         m_mouseDeltaY += event.mouseY;
         break;

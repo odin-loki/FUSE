@@ -4,12 +4,15 @@
 
 namespace fuse::alloc {
 
-/// Named domain byte budget (e.g. "core", "frame", "scene"). tryCharge fails closed when over cap.
+/// Named domain byte budget (e.g. "core", "frame", "scene"). tryCharge fails closed when over cap
+/// and raises FUSE_ASSERT in debug builds (exceeding a declared budget is a bug); use fits() to
+/// probe without asserting.
 class DomainBudget {
 public:
     DomainBudget(const char* name, usize budgetBytes);
 
     bool tryCharge(usize n);
+    bool fits(usize n) const { return n <= m_budget && m_used <= m_budget - n; }
     void release(usize n);
 
     const char* name() const { return m_name; }

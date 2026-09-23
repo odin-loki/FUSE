@@ -33,6 +33,11 @@ using SinkFn = void (*)(Level level, const char* message, void* userData);
 struct Record {
     Level level = Level::Info;
     Channel channel = Channel::Core;
+    /// Monotonic (steady clock) nanoseconds when the entry was emitted.
+    u64 timestampNs = 0;
+    /// Source location for FUSE_LOG_* / logAt(); nullptr and 0 for plain log() calls.
+    const char* file = nullptr;
+    u32 line = 0;
     char message[128]{};
 };
 
@@ -62,12 +67,17 @@ public:
     void logV(Level level, const char* fmt, va_list args);
     void logV(Level level, Channel channel, const char* fmt, va_list args);
 
+    /// Log with a source location (used by the FUSE_LOG_* macros).
+    void logAt(Level level, Channel channel, const char* file, u32 line, const char* fmt, ...);
+    void logVAt(Level level, Channel channel, const char* file, u32 line, const char* fmt, va_list args);
+
     RecordSnapshot snapshotRecords() const;
 
 private:
     Logger() = default;
 
-    void recordLocked(Level level, Channel channel, const char* message);
+    void recordLocked(Level level, Channel channel, const char* file, u32 line, u64 timestampNs,
+                      const char* message);
 
     Level m_minLevel = Level::Info;
     u32 m_enabledChannels = static_cast<u32>(Channel::All);
@@ -114,3 +124,14 @@ inline void fatal(const char* fmt, ...) {
 }
 
 } // namespace fuse::log
+
+/// Channel-Core logging with the call site's file and line recorded in the entry.
+#define FUSE_LOG_AT(level, channel, ...)                                                          \
+    ::fuse::log::Logger::instance().logAt((level), (channel), __FILE__,                           \
+                                          static_cast<::fuse::u32>(__LINE__), __VA_ARGS__)
+#define FUSE_LOG_TRACE(...) FUSE_LOG_AT(::fuse::log::Level::Trace, ::fuse::log::Channel::Core, __VA_ARGS__)
+#define FUSE_LOG_DEBUG(...) FUSE_LOG_AT(::fuse::log::Level::Debug, ::fuse::log::Channel::Core, __VA_ARGS__)
+#define FUSE_LOG_INFO(...) FUSE_LOG_AT(::fuse::log::Level::Info, ::fuse::log::Channel::Core, __VA_ARGS__)
+#define FUSE_LOG_WARN(...) FUSE_LOG_AT(::fuse::log::Level::Warn, ::fuse::log::Channel::Core, __VA_ARGS__)
+#define FUSE_LOG_ERROR(...) FUSE_LOG_AT(::fuse::log::Level::Error, ::fuse::log::Channel::Core, __VA_ARGS__)
+#define FUSE_LOG_FATAL(...) FUSE_LOG_AT(::fuse::log::Level::Fatal, ::fuse::log::Channel::Core, __VA_ARGS__)

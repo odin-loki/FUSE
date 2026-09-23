@@ -141,6 +141,68 @@ inline Float4 multiplyColumn(const Mat4& matrix, const Float4& vector) {
 #endif
 }
 
+// ---- Float4 lane arithmetic -----------------------------------------------------------------
+// Each op has a scalar reference and an SSE path that performs the same IEEE operations in the
+// same order, so both backends produce bit-identical results (B1.8 gate). dot() sums
+// ((x + y) + z) + w on both paths; min/max follow the SSE rule "a < b ? a : b" / "a > b ? a : b".
+
+namespace detail {
+
+inline Float4 addScalar(const Float4& a, const Float4& b) { return {a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w}; }
+inline Float4 subScalar(const Float4& a, const Float4& b) { return {a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w}; }
+inline Float4 mulScalar(const Float4& a, const Float4& b) { return {a.x * b.x, a.y * b.y, a.z * b.z, a.w * b.w}; }
+inline Float4 divScalar(const Float4& a, const Float4& b) { return {a.x / b.x, a.y / b.y, a.z / b.z, a.w / b.w}; }
+inline Float4 scaleScalar(const Float4& a, f32 s) { return {a.x * s, a.y * s, a.z * s, a.w * s}; }
+inline Float4 minScalar(const Float4& a, const Float4& b) {
+    return {a.x < b.x ? a.x : b.x, a.y < b.y ? a.y : b.y, a.z < b.z ? a.z : b.z, a.w < b.w ? a.w : b.w};
+}
+inline Float4 maxScalar(const Float4& a, const Float4& b) {
+    return {a.x > b.x ? a.x : b.x, a.y > b.y ? a.y : b.y, a.z > b.z ? a.z : b.z, a.w > b.w ? a.w : b.w};
+}
+inline f32 dotScalar(const Float4& a, const Float4& b) {
+    const f32 x = a.x * b.x;
+    const f32 y = a.y * b.y;
+    const f32 z = a.z * b.z;
+    const f32 w = a.w * b.w;
+    return ((x + y) + z) + w;
+}
+
+#if defined(FUSE_MATH_HAS_SSE)
+inline Float4 addSse(const Float4& a, const Float4& b) { return Float4::fromSimd(_mm_add_ps(a.simd(), b.simd())); }
+inline Float4 subSse(const Float4& a, const Float4& b) { return Float4::fromSimd(_mm_sub_ps(a.simd(), b.simd())); }
+inline Float4 mulSse(const Float4& a, const Float4& b) { return Float4::fromSimd(_mm_mul_ps(a.simd(), b.simd())); }
+inline Float4 divSse(const Float4& a, const Float4& b) { return Float4::fromSimd(_mm_div_ps(a.simd(), b.simd())); }
+inline Float4 scaleSse(const Float4& a, f32 s) { return Float4::fromSimd(_mm_mul_ps(a.simd(), _mm_set1_ps(s))); }
+inline Float4 minSse(const Float4& a, const Float4& b) { return Float4::fromSimd(_mm_min_ps(a.simd(), b.simd())); }
+inline Float4 maxSse(const Float4& a, const Float4& b) { return Float4::fromSimd(_mm_max_ps(a.simd(), b.simd())); }
+inline f32 dotSse(const Float4& a, const Float4& b) {
+    const __m128 p = _mm_mul_ps(a.simd(), b.simd());
+    const __m128 y = _mm_shuffle_ps(p, p, _MM_SHUFFLE(1, 1, 1, 1));
+    const __m128 z = _mm_shuffle_ps(p, p, _MM_SHUFFLE(2, 2, 2, 2));
+    const __m128 w = _mm_shuffle_ps(p, p, _MM_SHUFFLE(3, 3, 3, 3));
+    return _mm_cvtss_f32(_mm_add_ss(_mm_add_ss(_mm_add_ss(p, y), z), w));
+}
+#endif
+
+} // namespace detail
+
+#if defined(FUSE_MATH_HAS_SSE)
+#define FUSE_MATH_SIMD_DISPATCH(op, ...) detail::op##Sse(__VA_ARGS__)
+#else
+#define FUSE_MATH_SIMD_DISPATCH(op, ...) detail::op##Scalar(__VA_ARGS__)
+#endif
+
+inline Float4 add(const Float4& a, const Float4& b) { return FUSE_MATH_SIMD_DISPATCH(add, a, b); }
+inline Float4 sub(const Float4& a, const Float4& b) { return FUSE_MATH_SIMD_DISPATCH(sub, a, b); }
+inline Float4 mul(const Float4& a, const Float4& b) { return FUSE_MATH_SIMD_DISPATCH(mul, a, b); }
+inline Float4 div(const Float4& a, const Float4& b) { return FUSE_MATH_SIMD_DISPATCH(div, a, b); }
+inline Float4 scale(const Float4& a, f32 s) { return FUSE_MATH_SIMD_DISPATCH(scale, a, s); }
+inline Float4 min(const Float4& a, const Float4& b) { return FUSE_MATH_SIMD_DISPATCH(min, a, b); }
+inline Float4 max(const Float4& a, const Float4& b) { return FUSE_MATH_SIMD_DISPATCH(max, a, b); }
+inline f32 dot(const Float4& a, const Float4& b) { return FUSE_MATH_SIMD_DISPATCH(dot, a, b); }
+
+#undef FUSE_MATH_SIMD_DISPATCH
+
 inline Mat4 multiply(const Mat4& a, const Mat4& b) {
     Mat4 result{};
     for (u32 col = 0; col < 4; ++col) {

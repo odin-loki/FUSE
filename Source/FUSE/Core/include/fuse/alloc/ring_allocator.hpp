@@ -47,7 +47,7 @@ private:
     bool place(u32 start, u32 limit, usize size, usize alignment, Header& out) const;
 
     const char* m_name = "ring";
-    std::vector<u8> m_storage;
+    detail::ArenaBytes m_storage;
     u32 m_capacity = 0;
     u32 m_head = 0;
     u32 m_tail = 0;

@@ -1,5 +1,6 @@
 #include <fuse/log/logger.hpp>
 
+#include <chrono>
 #include <cstdio>
 #include <mutex>
 
@@ -84,10 +85,25 @@ void Logger::logV(Level level, const char* fmt, va_list args) {
     logV(level, Channel::Core, fmt, args);
 }
 
-void Logger::recordLocked(Level level, Channel channel, const char* message) {
+void Logger::logV(Level level, Channel channel, const char* fmt, va_list args) {
+    logVAt(level, channel, nullptr, 0u, fmt, args);
+}
+
+void Logger::logAt(Level level, Channel channel, const char* file, u32 line, const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    logVAt(level, channel, file, line, fmt, args);
+    va_end(args);
+}
+
+void Logger::recordLocked(Level level, Channel channel, const char* file, u32 line, u64 timestampNs,
+                          const char* message) {
     Record& rec = m_records[m_recordWrite % kRecordCapacity];
     rec.level = level;
     rec.channel = channel;
+    rec.timestampNs = timestampNs;
+    rec.file = file;
+    rec.line = line;
     copyMessage(rec.message, sizeof(rec.message), message);
     ++m_recordWrite;
     if (m_recordCount < kRecordCapacity) {
@@ -95,7 +111,7 @@ void Logger::recordLocked(Level level, Channel channel, const char* message) {
     }
 }
 
-void Logger::logV(Level level, Channel channel, const char* fmt, va_list args) {
+void Logger::logVAt(Level level, Channel channel, const char* file, u32 line, const char* fmt, va_list args) {
 #if defined(FUSE_SHIPPING) && FUSE_SHIPPING
     if (level < Level::Fatal) {
         return;
@@ -116,13 +132,21 @@ void Logger::logV(Level level, Channel channel, const char* fmt, va_list args) {
     std::vsnprintf(buffer, sizeof(buffer), fmt ? fmt : "", args);
 
     std::lock_guard<std::mutex> lock(g_logMutex);
-    recordLocked(level, channel, buffer);
+    // Timestamp under the lock so ring order and timestamp order always agree.
+    const u64 timestampNs = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                 std::chrono::steady_clock::now().time_since_epoch())
+                                                 .count());
+    recordLocked(level, channel, file, line, timestampNs, buffer);
     if (m_sink) {
         m_sink(level, buffer, m_sinkUser);
         return;
     }
 
-    std::fprintf(stderr, "[%s] %s\n", levelPrefix(level), buffer);
+    if (file != nullptr) {
+        std::fprintf(stderr, "[%s] %s:%u: %s\n", levelPrefix(level), file, line, buffer);
+    } else {
+        std::fprintf(stderr, "[%s] %s\n", levelPrefix(level), buffer);
+    }
 }
 
 RecordSnapshot Logger::snapshotRecords() const {

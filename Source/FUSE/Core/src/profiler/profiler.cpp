@@ -211,12 +211,14 @@ void recordEvent(const char* name,
         return;
     }
 
+    // Hot path: the chrome tid is fixed per thread, so hash it once.
+    static thread_local const u32 threadId = fuse::platform::chromeTraceThreadId();
     const u32 index = g_writeHead.fetch_add(1u, std::memory_order_acq_rel) % kRingCapacity;
     g_events[index] = ProfileEvent{
         name,
         timestampNs != 0u ? timestampNs : nowNanoseconds(),
         phase,
-        fuse::platform::chromeTraceThreadId(),
+        threadId,
         scopeId,
         nestingDepth,
         flowNestingDepth,
@@ -923,12 +925,15 @@ std::string exportChromeTraceJson() {
         const char* category = chromeCategory(event.phase);
         const u64 timestampUs = event.timestampNs / 1000u;
 
-        char buffer[768];
+        // Sized for the escaped name so long names are never truncated into invalid JSON.
+        std::string bufferStorage(escapedName.size() + 768u, '\0');
+        char* buffer = bufferStorage.data();
+        const std::size_t bufferSize = bufferStorage.size();
         switch (event.phase) {
         case EventPhase::Begin:
         case EventPhase::End:
             std::snprintf(buffer,
-                          sizeof(buffer),
+                          bufferSize,
                           "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                           "\"tid\":%u,\"id\":%u,\"args\":{\"depth\":%u}}",
                           first ? "" : ",",
@@ -943,7 +948,7 @@ std::string exportChromeTraceJson() {
         case EventPhase::FlowStart:
             if (event.nestingDepth > 0u && event.flowNestingDepth > 0u) {
                 std::snprintf(buffer,
-                              sizeof(buffer),
+                              bufferSize,
                               "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                               "\"tid\":%u,\"id\":%u,\"args\":{\"depth\":%u,\"flow_depth\":%u}}",
                               first ? "" : ",",
@@ -957,7 +962,7 @@ std::string exportChromeTraceJson() {
                               event.flowNestingDepth);
             } else if (event.nestingDepth > 0u) {
                 std::snprintf(buffer,
-                              sizeof(buffer),
+                              bufferSize,
                               "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                               "\"tid\":%u,\"id\":%u,\"args\":{\"depth\":%u}}",
                               first ? "" : ",",
@@ -970,7 +975,7 @@ std::string exportChromeTraceJson() {
                               event.nestingDepth);
             } else if (event.flowNestingDepth > 0u) {
                 std::snprintf(buffer,
-                              sizeof(buffer),
+                              bufferSize,
                               "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                               "\"tid\":%u,\"id\":%u,\"args\":{\"flow_depth\":%u}}",
                               first ? "" : ",",
@@ -983,7 +988,7 @@ std::string exportChromeTraceJson() {
                               event.flowNestingDepth);
             } else {
                 std::snprintf(buffer,
-                              sizeof(buffer),
+                              bufferSize,
                               "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                               "\"tid\":%u,\"id\":%u}",
                               first ? "" : ",",
@@ -998,7 +1003,7 @@ std::string exportChromeTraceJson() {
         case EventPhase::FlowFinish:
             if (event.nestingDepth > 0u && event.flowNestingDepth > 0u) {
                 std::snprintf(buffer,
-                              sizeof(buffer),
+                              bufferSize,
                               "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                               "\"tid\":%u,\"id\":%u,\"bp\":\"e\",\"args\":{\"depth\":%u,\"flow_depth\":%u}}",
                               first ? "" : ",",
@@ -1012,7 +1017,7 @@ std::string exportChromeTraceJson() {
                               event.flowNestingDepth);
             } else if (event.nestingDepth > 0u) {
                 std::snprintf(buffer,
-                              sizeof(buffer),
+                              bufferSize,
                               "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                               "\"tid\":%u,\"id\":%u,\"bp\":\"e\",\"args\":{\"depth\":%u}}",
                               first ? "" : ",",
@@ -1025,7 +1030,7 @@ std::string exportChromeTraceJson() {
                               event.nestingDepth);
             } else if (event.flowNestingDepth > 0u) {
                 std::snprintf(buffer,
-                              sizeof(buffer),
+                              bufferSize,
                               "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                               "\"tid\":%u,\"id\":%u,\"bp\":\"e\",\"args\":{\"flow_depth\":%u}}",
                               first ? "" : ",",
@@ -1038,7 +1043,7 @@ std::string exportChromeTraceJson() {
                               event.flowNestingDepth);
             } else {
                 std::snprintf(buffer,
-                              sizeof(buffer),
+                              bufferSize,
                               "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                               "\"tid\":%u,\"id\":%u,\"bp\":\"e\"}",
                               first ? "" : ",",
@@ -1051,9 +1056,9 @@ std::string exportChromeTraceJson() {
             }
             break;
         case EventPhase::Counter: {
-            char counterHeader[512];
+            char* counterHeader = buffer;
             std::snprintf(counterHeader,
-                          sizeof(counterHeader),
+                          bufferSize,
                           "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                           "\"tid\":%u,",
                           first ? "" : ",",
@@ -1071,7 +1076,7 @@ std::string exportChromeTraceJson() {
         case EventPhase::GpuComplete:
         case EventPhase::CudaComplete:
             std::snprintf(buffer,
-                          sizeof(buffer),
+                          bufferSize,
                           "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"dur\":%llu,\"pid\":1,"
                           "\"tid\":%u,\"id\":%u,\"args\":{\"depth\":%u}}",
                           first ? "" : ",",

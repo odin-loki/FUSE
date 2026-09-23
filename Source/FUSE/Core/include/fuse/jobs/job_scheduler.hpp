@@ -46,7 +46,7 @@ private:
     void drainActiveJobs();
 
     struct Impl;
-    Impl* m_impl = nullptr;
+    std::unique_ptr<Impl> m_impl;
 
     u32 m_workerCount = 0;
     bool m_initialized = false;

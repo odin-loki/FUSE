@@ -93,7 +93,7 @@ void* FreeListAllocator::alloc(AllocInfo info) {
     }
 
     const usize alignment = info.alignment == 0 ? 1u : info.alignment;
-    if (m_capacity < kMinBlock || info.size > m_capacity) {
+    if (!detail::isSupportedAlignment(alignment) || m_capacity < kMinBlock || info.size > m_capacity) {
         failAlloc();
         return nullptr;
     }

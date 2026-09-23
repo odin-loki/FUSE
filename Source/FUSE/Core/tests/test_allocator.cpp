@@ -5,6 +5,7 @@
 #include <fuse/alloc/pool_allocator.hpp>
 #include <fuse/alloc/ring_allocator.hpp>
 #include <fuse/alloc/stack_allocator.hpp>
+#include <fuse/assert.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -176,6 +177,9 @@ void testFreeListOom() {
 }
 
 void testDomainBudgetReject() {
+    // Over-budget charges raise FUSE_ASSERT in debug builds; keep the process alive to check the
+    // fail-closed bookkeeping (debug assert coverage lives in test_b1_memory_gates.cpp).
+    fuse::assertion::setSuppressAbortForTests(true);
     fuse::alloc::DomainBudget core("core", 32u);
     fuse::alloc::DomainBudget frame("frame", 64u);
     fuse::alloc::DomainBudget scene("scene", 64u);
@@ -194,6 +198,7 @@ void testDomainBudgetReject() {
     expectTrue(scene.tryCharge(64u), "exact cap succeeds");
     expectTrue(scene.peak() == 64u, "peak tracks high water");
     expectTrue(!scene.tryCharge(1u), "charge at cap is rejected");
+    fuse::assertion::setSuppressAbortForTests(false);
 }
 
 void testIAllocatorHierarchy() {

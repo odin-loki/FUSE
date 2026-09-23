@@ -198,6 +198,59 @@ target_link_libraries(fuse_core_b17_win32_window_input PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_b17_win32_window_input)
 add_test(NAME fuse_core_b17_win32_window_input COMMAND fuse_core_b17_win32_window_input)
 
+# B1 gate suites (FUSE_MASTER_PLAN B1.8 carry-forward checklist).
+add_executable(fuse_core_b1_jobs_gates
+    test_b1_jobs_gates.cpp
+)
+target_link_libraries(fuse_core_b1_jobs_gates PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b1_jobs_gates)
+add_test(NAME fuse_core_b1_jobs_gates COMMAND fuse_core_b1_jobs_gates)
+set_tests_properties(fuse_core_b1_jobs_gates PROPERTIES RUN_SERIAL TRUE LABELS "gate" TIMEOUT 900)
+
+add_executable(fuse_core_b1_memory_gates
+    test_b1_memory_gates.cpp
+)
+target_link_libraries(fuse_core_b1_memory_gates PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b1_memory_gates)
+add_test(NAME fuse_core_b1_memory_gates COMMAND fuse_core_b1_memory_gates)
+set_tests_properties(fuse_core_b1_memory_gates PROPERTIES RUN_SERIAL TRUE LABELS "gate" TIMEOUT 600)
+
+add_executable(fuse_core_b1_math_gates
+    test_b1_math_gates.cpp
+)
+target_link_libraries(fuse_core_b1_math_gates PRIVATE fuse_core)
+add_test(NAME fuse_core_b1_math_gates COMMAND fuse_core_b1_math_gates)
+set_tests_properties(fuse_core_b1_math_gates PROPERTIES LABELS "gate" TIMEOUT 600)
+
+# Logging/assert/profiler gates include the profiler scope-overhead timing budget.
+add_executable(fuse_core_b1_logging_gates
+    test_b1_logging_gates.cpp
+)
+target_link_libraries(fuse_core_b1_logging_gates PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b1_logging_gates)
+add_test(NAME fuse_core_b1_logging_gates COMMAND fuse_core_b1_logging_gates)
+set_tests_properties(fuse_core_b1_logging_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate" TIMEOUT 600)
+
+add_executable(fuse_core_b1_platform_gates
+    test_b1_platform_gates.cpp
+)
+target_link_libraries(fuse_core_b1_platform_gates PRIVATE fuse_core)
+add_test(NAME fuse_core_b1_platform_gates COMMAND fuse_core_b1_platform_gates)
+set_tests_properties(fuse_core_b1_platform_gates PROPERTIES LABELS "gate")
+
+# FUSE_ASSERT codegen: Debug objects must call fuse::assertion::fatal, other configs must not.
+add_library(fuse_core_b1_assert_probe OBJECT b1_assert_probe.cpp)
+target_link_libraries(fuse_core_b1_assert_probe PRIVATE fuse_core)
+if(CMAKE_NM AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    add_test(NAME fuse_core_b1_assert_codegen
+        COMMAND ${CMAKE_COMMAND}
+            -DNM=${CMAKE_NM}
+            "-DOBJECTS=$<TARGET_OBJECTS:fuse_core_b1_assert_probe>"
+            -DEXPECT=$<IF:$<CONFIG:Debug>,present,absent>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_b1_assert_codegen.cmake)
+    set_tests_properties(fuse_core_b1_assert_codegen PROPERTIES LABELS "gate")
+endif()
+
 get_property(_fuse_core_dir_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
 foreach(_fuse_core_test IN LISTS _fuse_core_dir_targets)
     if(_fuse_core_test MATCHES "^fuse_core_" OR _fuse_core_test STREQUAL "fuse_p6_shipping_qt_ban")

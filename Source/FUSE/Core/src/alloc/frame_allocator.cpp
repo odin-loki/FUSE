@@ -2,6 +2,8 @@
 
 #include <fuse/alloc/alloc_stats.hpp>
 
+#include <cstring>
+
 namespace fuse::alloc {
 
 FrameAllocator::FrameAllocator(u32 capacityBytes, const char* name)
@@ -19,15 +21,39 @@ const u8* FrameAllocator::activeBuffer() const {
     return m_buffers[m_activeIndex].data();
 }
 
+void FrameAllocator::poisonActive(u32 bytes) {
+#if defined(FUSE_DEBUG) && FUSE_DEBUG
+    if (bytes > 0u) {
+        std::memset(activeBuffer(), kFreedFramePattern, bytes);
+    }
+#else
+    (void)bytes;
+#endif
+}
+
+bool FrameAllocator::isLive(const void* ptr) const {
+    const auto* p = static_cast<const u8*>(ptr);
+    const u8* active = activeBuffer();
+    if (p >= active && p < active + m_offset) {
+        return true;
+    }
+    const u8* previous = previousFrameData();
+    return p >= previous && p < previous + m_previousUsedBytes;
+}
+
 void FrameAllocator::reset() {
+    poisonActive(m_offset);
     m_offset = 0;
     m_stats.usedBytes = 0;
     notifyStats(m_name, m_stats);
 }
 
 void FrameAllocator::advanceFrame() {
+    const u32 recycledBytes = m_previousUsedBytes;
     m_previousUsedBytes = m_offset;
     m_activeIndex = 1u - m_activeIndex;
+    // The buffer becoming active held frame N-1; its contents are now dead.
+    poisonActive(recycledBytes);
     m_offset = 0;
     m_stats.usedBytes = 0;
     notifyStats(m_name, m_stats);
@@ -48,7 +74,7 @@ void* FrameAllocator::alloc(AllocInfo info) {
     }
 
     const usize aligned = detail::alignUp(m_offset, info.alignment);
-    if (aligned + info.size > m_buffers[m_activeIndex].size()) {
+    if (!detail::isSupportedAlignment(info.alignment) || aligned + info.size > m_buffers[m_activeIndex].size()) {
         detail::recordFailedAlloc(m_stats);
         notifyStats(m_name, m_stats);
         return nullptr;

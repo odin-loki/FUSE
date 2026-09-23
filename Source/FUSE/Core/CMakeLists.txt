@@ -55,6 +55,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/math/sdf.hpp
     include/fuse/math/simd.hpp
     include/fuse/math/math.hpp
+    include/fuse/gria.hpp
     include/fuse/platform/power.hpp
     include/fuse/platform/lifecycle.hpp
     include/fuse/platform/surface_loss.hpp

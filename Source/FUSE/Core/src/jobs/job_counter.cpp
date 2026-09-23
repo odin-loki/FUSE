@@ -19,7 +19,9 @@ void JobCounter::add(u32 delta) {
 
 void JobCounter::signal() {
     std::lock_guard<std::mutex> lock(m_waitMutex);
-    const u32 prev = m_remaining.fetch_sub(1, std::memory_order_relaxed);
+    // acq_rel: a waiter that observes zero (even on the lock-free fast path) must see every write
+    // the signalling jobs made before signal().
+    const u32 prev = m_remaining.fetch_sub(1, std::memory_order_acq_rel);
     if (prev == 1) {
         m_waitCv.notify_all();
     }
@@ -39,6 +41,9 @@ u32 JobCounter::remaining() const {
 
 void JobCounter::wait() {
     if (isComplete()) {
+        // The last signaller may still be inside signal() holding m_waitMutex; returning now would
+        // let the caller destroy this counter under it. Acquire the mutex once to wait it out.
+        synchronizeCompletion();
         return;
     }
 
