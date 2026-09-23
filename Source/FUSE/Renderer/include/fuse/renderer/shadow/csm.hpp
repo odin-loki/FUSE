@@ -47,7 +47,13 @@ struct CascadedShadowMapDesc {
     f32 cascadeSplits[kCascadeCount] = {0.05f, 0.15f, 0.4f, 1.0f};
     f32 depthBias = 0.005f;
     f32 normalOffsetBias = 0.01f;
+    /// When true, each cascade is fitted to the bounding sphere of its frustum slice and the light
+    /// projection is snapped to a world-anchored texel grid — the texel grid of static geometry stays
+    /// fixed under camera translation/rotation (no shimmer). When false, a tight light-space AABB is used.
     bool stabilise = true;
+    /// Distance the light near plane is pulled back towards the light so casters outside the
+    /// cascade slice (between the slice and the light) still land in the shadow map.
+    f32 casterPullback = 100.f;
 };
 
 /// GPU-side cascade payload uploaded for deferred shading.
@@ -85,6 +91,13 @@ enum class CascadeShadowSkipReason : u8 {
     EmptyCameraDepthRange = 2,
     EmptyCascadeFrustum = 3,
     DegenerateCascadeRange = 4,
+};
+
+/// Global bypass reason for a whole cascade shadow build (B5.5 guards).
+enum class CascadeShadowBypassReason : u8 {
+    None = 0,
+    EmptyLightDirection = 1,
+    EmptyCameraDepthRange = 2,
 };
 
 /// Per-reason skipped-cascade breakdown for CPU bookkeeping (B5.5 deepen).
@@ -172,6 +185,8 @@ struct CascadedShadowMapLayout {
     static bool needsLastCascadeSplitPin(const CascadedShadowMapDesc& desc);
     /// True when any sanitize preflight guard would fire.
     static bool cascadeSplitsNeedSanitize(const CascadedShadowMapDesc& desc);
+    /// Alias of `cascadeSplitsNeedSanitize`.
+    static bool needsCascadeSplitSanitize(const CascadedShadowMapDesc& desc);
     /// Clamp each split to [0, 1], enforce monotonicity, and pin the last slot to 1.0.
     static void sanitizeCascadeSplits(CascadedShadowMapDesc& desc);
     /// Sanitize cascade split fractions in `desc` (alias for `sanitizeCascadeSplits`).
@@ -236,6 +251,25 @@ struct CascadeLightSpaceLayout {
     static bool isDegenerateCascadeRange(const CascadeRange& range, const ShadowCameraParams& camera);
     static bool isDegenerateLightDirection(const fuse::math::Vec3& lightDirection);
     static bool isEmptyLightDirection(const fuse::math::Vec3& lightDirection);
+    static bool shouldBypassForEmptyLightDirection(const fuse::math::Vec3& lightDirection);
+    static bool shouldBypassForEmptyCameraDepthRange(const ShadowCameraParams& camera);
+    /// Classify the global bypass (light first, then camera depth range).
+    static CascadeShadowBypassReason classifyCascadeShadowBypass(const ShadowCameraParams& camera,
+                                                                 const fuse::math::Vec3& lightDirection);
+    static bool isEmptyLightCascadeShadowGuard(const fuse::math::Vec3& lightDirection);
+    static bool isEmptyCameraCascadeShadowGuard(const ShadowCameraParams& camera);
+    static bool isEmptyFrustumCascadeShadowGuard(u32 cascadeIndex,
+                                                 const CascadedShadowMapDesc& desc,
+                                                 const ShadowCameraParams& camera);
+    static bool isDegenerateRangeCascadeShadowGuard(u32 cascadeIndex,
+                                                    const CascadedShadowMapDesc& desc,
+                                                    const ShadowCameraParams& camera);
+    /// Member form of the free `wouldSkipCascadeShadowBuild`.
+    static bool wouldSkipCascadeShadowBuild(u32 cascadeIndex,
+                                            const CascadedShadowMapDesc& desc,
+                                            const ShadowCameraParams& camera,
+                                            const fuse::math::Vec3& lightDirection,
+                                            CascadeShadowSkipReason* reason = nullptr);
     /// True when every cascade should be bypassed before per-cascade fitting.
     static bool shouldBypassAllCascadeShadowBuilds(const ShadowCameraParams& camera,
                                                  const fuse::math::Vec3& lightDirection);
@@ -263,6 +297,22 @@ struct CascadeLightSpaceLayout {
                                                                  u32 cascadeCount);
     static bool validateOrthoBounds(const CascadeOrthoBounds& bounds);
     static fuse::math::Mat4 buildLightView(const fuse::math::Vec3& focus, const fuse::math::Vec3& lightDirection);
+    /// Up vector used for light views — world +Y unless the light is (near-)vertical, then +Z.
+    static fuse::math::Vec3 chooseLightUp(const fuse::math::Vec3& lightDirection);
+    /// Rotation-only light view anchored at the world origin (looks along `lightDirection`).
+    /// Depends only on the light direction, so a world-space texel grid expressed in it is fixed.
+    static fuse::math::Mat4 buildStableLightView(const fuse::math::Vec3& lightDirection);
+    /// Bounding sphere of a cascade frustum slice (centre on the view axis). Depends only on the slice
+    /// range, FOV and aspect for its radius — invariant under camera rotation and translation.
+    static fuse::math::Vec3 computeCascadeBoundingSphere(u32 cascadeIndex,
+                                                         const CascadedShadowMapDesc& desc,
+                                                         const ShadowCameraParams& camera,
+                                                         f32& outRadius);
+    /// Stabilised ortho bounds: square extents of the bounding sphere padded by one texel, centre
+    /// snapped to the world-anchored texel grid of `buildStableLightView`.
+    static CascadeOrthoBounds fitStabilisedOrthoBounds(const fuse::math::Vec3& sphereCenterLightSpace,
+                                                       f32 sphereRadius,
+                                                       u32 shadowMapResolution);
     static bool isEmptyLightSpaceAabb(const fuse::math::AABB& aabb);
     static fuse::math::AABB computeLightSpaceAabbFromWorldCorners(const fuse::math::Vec3 worldCorners[8],
                                                                   const fuse::math::Mat4& lightView);
@@ -279,6 +329,9 @@ struct CascadeLightSpaceLayout {
                                                                const fuse::math::Vec3& lightDirection);
     static bool orthoBoundsContainsLightSpaceAabb(const CascadeOrthoBounds& bounds,
                                                   const fuse::math::AABB& aabb);
+    /// Legacy extent rounding for a tight AABB fit. Not shimmer-free on its own (texel size follows the
+    /// per-frame bounds and the light view re-centres each frame); `desc.stabilise` uses
+    /// `fitStabilisedOrthoBounds` instead.
     static CascadeOrthoBounds stabiliseOrthoExtents(const CascadeOrthoBounds& bounds,
                                                     u32 shadowMapResolution,
                                                     bool enableStabilisation);
@@ -303,6 +356,29 @@ struct CascadeLightSpaceLayout {
                                                  CascadeLightSpaceMatrices outMatrices[kCascadeCount]);
 };
 
+/// Shadow-map coordinates of a world point in one cascade.
+struct CascadeShadowCoord {
+    f32 u = 0.f;       ///< [0,1] across the shadow map (x).
+    f32 v = 0.f;       ///< [0,1] across the shadow map (y, NDC +y up → v up).
+    f32 depth = 0.f;   ///< Vulkan [0,1] NDC depth (0 = light near plane).
+    f32 texelX = 0.f;  ///< u * resolution.
+    f32 texelY = 0.f;  ///< v * resolution.
+    bool inside = false;
+};
+
+/// Receiver-side cascade selection and projection (mirrors the deferred shading lookup).
+struct CascadeShadowSampling {
+    /// First cascade whose far-Z covers `viewDepth`; returns `cascadeCount` when beyond all cascades.
+    static u32 selectCascade(const CascadedShadowMapData& data, f32 viewDepth, u32 cascadeCount);
+    /// View-space depth of a world point along the camera forward axis.
+    static f32 computeViewDepth(const ShadowCameraParams& camera, const fuse::math::Vec3& worldPoint);
+    static CascadeShadowCoord projectToCascade(const ShadowMat4& lightViewProj,
+                                               const fuse::math::Vec3& worldPoint,
+                                               u32 resolution);
+    /// World-space size of one shadow texel for fitted ortho bounds.
+    static f32 texelWorldSize(const CascadeOrthoBounds& bounds, u32 resolution);
+};
+
 /// Predict per-cascade skip — same ordering as `classifyCascadeShadowSkip` (B5.5 deepen).
 bool wouldSkipCascadeShadowBuild(u32 cascadeIndex,
                                  const CascadedShadowMapDesc& desc,
@@ -317,6 +393,8 @@ bool preflightCascadeShadowBuild(const ShadowCameraParams& camera,
 bool cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason reason);
 /// True when a skip reason applies to every cascade slot (global bypass guards).
 bool cascadeShadowSkipReasonIsGlobal(CascadeShadowSkipReason reason);
+bool cascadeShadowBypassReasonIsBlocking(CascadeShadowBypassReason reason);
+const char* cascadeShadowBypassReasonLabel(CascadeShadowBypassReason reason);
 /// Human-readable label for skip reasons (logging / tests).
 const char* cascadeShadowSkipReasonLabel(CascadeShadowSkipReason reason);
 /// Increment per-reason skip counters for one classified cascade.

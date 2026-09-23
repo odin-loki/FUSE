@@ -48,7 +48,9 @@ fuse::math::Vec3 buildCameraBasis(const ShadowCameraParams& camera,
                                   fuse::math::Vec3& outRight,
                                   fuse::math::Vec3& outUp) {
     const fuse::math::Vec3 forward = camera.forward.normalized();
-    const fuse::math::Vec3 worldUp{0.f, 1.f, 0.f};
+    // World +Y is parallel to a straight-up/down view; fall back to +Z to keep the basis finite.
+    const fuse::math::Vec3 worldUp =
+        std::fabs(forward.y) > 0.999f ? fuse::math::Vec3{0.f, 0.f, 1.f} : fuse::math::Vec3{0.f, 1.f, 0.f};
     outRight = fuse::math::cross(forward, worldUp).normalized();
     outUp = fuse::math::cross(outRight, forward);
     return forward;
@@ -445,6 +447,10 @@ bool CascadedShadowMapLayout::cascadeSplitsNeedSanitize(const CascadedShadowMapD
            needsLastCascadeSplitPin(desc);
 }
 
+bool CascadedShadowMapLayout::needsCascadeSplitSanitize(const CascadedShadowMapDesc& desc) {
+    return cascadeSplitsNeedSanitize(desc);
+}
+
 void CascadedShadowMapLayout::sanitizeCascadeSplits(CascadedShadowMapDesc& desc) {
     clampCascadeSplitFractions(desc);
     enforceCascadeSplitMonotonicity(desc);
@@ -606,6 +612,54 @@ bool CascadeLightSpaceLayout::isEmptyLightDirection(const fuse::math::Vec3& ligh
     return isDegenerateLightDirection(lightDirection);
 }
 
+bool CascadeLightSpaceLayout::shouldBypassForEmptyLightDirection(const fuse::math::Vec3& lightDirection) {
+    return isEmptyLightDirection(lightDirection);
+}
+
+bool CascadeLightSpaceLayout::shouldBypassForEmptyCameraDepthRange(const ShadowCameraParams& camera) {
+    return CascadedShadowMapLayout::isEmptyCameraDepthRange(camera);
+}
+
+CascadeShadowBypassReason CascadeLightSpaceLayout::classifyCascadeShadowBypass(
+    const ShadowCameraParams& camera, const fuse::math::Vec3& lightDirection) {
+    if (shouldBypassForEmptyLightDirection(lightDirection)) {
+        return CascadeShadowBypassReason::EmptyLightDirection;
+    }
+    if (shouldBypassForEmptyCameraDepthRange(camera)) {
+        return CascadeShadowBypassReason::EmptyCameraDepthRange;
+    }
+    return CascadeShadowBypassReason::None;
+}
+
+bool CascadeLightSpaceLayout::isEmptyLightCascadeShadowGuard(const fuse::math::Vec3& lightDirection) {
+    return isEmptyLightDirection(lightDirection);
+}
+
+bool CascadeLightSpaceLayout::isEmptyCameraCascadeShadowGuard(const ShadowCameraParams& camera) {
+    return CascadedShadowMapLayout::isEmptyCameraDepthRange(camera);
+}
+
+bool CascadeLightSpaceLayout::isEmptyFrustumCascadeShadowGuard(u32 cascadeIndex,
+                                                               const CascadedShadowMapDesc& desc,
+                                                               const ShadowCameraParams& camera) {
+    return CascadedShadowMapLayout::isEmptyCascadeFrustum(cascadeIndex, desc, camera);
+}
+
+bool CascadeLightSpaceLayout::isDegenerateRangeCascadeShadowGuard(u32 cascadeIndex,
+                                                                  const CascadedShadowMapDesc& desc,
+                                                                  const ShadowCameraParams& camera) {
+    return isDegenerateCascadeRange(CascadedShadowMapLayout::computeCascadeRange(cascadeIndex, desc, camera),
+                                    camera);
+}
+
+bool CascadeLightSpaceLayout::wouldSkipCascadeShadowBuild(u32 cascadeIndex,
+                                                          const CascadedShadowMapDesc& desc,
+                                                          const ShadowCameraParams& camera,
+                                                          const fuse::math::Vec3& lightDirection,
+                                                          CascadeShadowSkipReason* reason) {
+    return fuse::renderer::wouldSkipCascadeShadowBuild(cascadeIndex, desc, camera, lightDirection, reason);
+}
+
 bool CascadeLightSpaceLayout::shouldBypassAllCascadeShadowBuilds(const ShadowCameraParams& camera,
                                                                  const fuse::math::Vec3& lightDirection) {
     return isEmptyLightDirection(lightDirection) || CascadedShadowMapLayout::isEmptyCameraDepthRange(camera);
@@ -728,6 +782,22 @@ bool cascadeShadowSkipReasonIsBlocking(CascadeShadowSkipReason reason) {
     return reason != CascadeShadowSkipReason::None;
 }
 
+bool cascadeShadowBypassReasonIsBlocking(CascadeShadowBypassReason reason) {
+    return reason != CascadeShadowBypassReason::None;
+}
+
+const char* cascadeShadowBypassReasonLabel(CascadeShadowBypassReason reason) {
+    switch (reason) {
+    case CascadeShadowBypassReason::None:
+        return "none";
+    case CascadeShadowBypassReason::EmptyLightDirection:
+        return "empty_light_direction";
+    case CascadeShadowBypassReason::EmptyCameraDepthRange:
+        return "empty_camera_depth_range";
+    }
+    return "unknown";
+}
+
 bool cascadeShadowSkipReasonIsGlobal(CascadeShadowSkipReason reason) {
     switch (reason) {
     case CascadeShadowSkipReason::EmptyLightDirection:
@@ -787,11 +857,76 @@ bool CascadeLightSpaceLayout::validateOrthoBounds(const CascadeOrthoBounds& boun
     return width > 1e-8f && height > 1e-8f && depth > 1e-8f;
 }
 
+fuse::math::Vec3 CascadeLightSpaceLayout::chooseLightUp(const fuse::math::Vec3& lightDirection) {
+    const fuse::math::Vec3 lightDir = lightDirection.normalized();
+    // A +Y up vector is parallel to a vertical sun and would make lookAt degenerate (NaN basis).
+    if (std::fabs(lightDir.y) > 0.99f) {
+        return {0.f, 0.f, 1.f};
+    }
+    return {0.f, 1.f, 0.f};
+}
+
 fuse::math::Mat4 CascadeLightSpaceLayout::buildLightView(const fuse::math::Vec3& focus,
                                                          const fuse::math::Vec3& lightDirection) {
     const fuse::math::Vec3 lightDir = lightDirection.normalized();
     const fuse::math::Vec3 lightPos = focus - lightDir * 100.f;
-    return fuse::math::lookAt(lightPos, focus, {0.f, 1.f, 0.f});
+    return fuse::math::lookAt(lightPos, focus, chooseLightUp(lightDir));
+}
+
+fuse::math::Mat4 CascadeLightSpaceLayout::buildStableLightView(const fuse::math::Vec3& lightDirection) {
+    const fuse::math::Vec3 lightDir = lightDirection.normalized();
+    return fuse::math::lookAt({0.f, 0.f, 0.f}, lightDir, chooseLightUp(lightDir));
+}
+
+fuse::math::Vec3 CascadeLightSpaceLayout::computeCascadeBoundingSphere(u32 cascadeIndex,
+                                                                       const CascadedShadowMapDesc& desc,
+                                                                       const ShadowCameraParams& camera,
+                                                                       f32& outRadius) {
+    const CascadeRange range = CascadedShadowMapLayout::computeCascadeRange(cascadeIndex, desc, camera);
+    const f32 nearZ = range.nearZ;
+    const f32 farZ = range.farZ;
+    const f32 tanHalfFov = std::tan(camera.fovDegrees * 0.5f * kPi / 180.f);
+    // Corner distance from the view axis per unit depth (half-diagonal of the unit-depth slice).
+    const f32 k2 = tanHalfFov * tanHalfFov * (1.f + camera.aspect * camera.aspect);
+    const f32 k = std::sqrt(k2);
+
+    // Centre on the axis equidistant to near and far corners; clamp to the far plane for wide slices.
+    f32 centerZ = 0.5f * (nearZ + farZ) * (1.f + k2);
+    f32 radius = 0.f;
+    if (centerZ >= farZ) {
+        centerZ = farZ;
+        radius = farZ * k;
+    } else {
+        const f32 dz = centerZ - nearZ;
+        radius = std::sqrt(dz * dz + nearZ * nearZ * k2);
+    }
+
+    // Quantise the radius upwards so it is bit-identical frame to frame (extent never jitters).
+    outRadius = std::ceil(radius * 16.f) / 16.f;
+    return camera.position + camera.forward.normalized() * centerZ;
+}
+
+CascadeOrthoBounds CascadeLightSpaceLayout::fitStabilisedOrthoBounds(
+    const fuse::math::Vec3& sphereCenterLightSpace, f32 sphereRadius, u32 shadowMapResolution) {
+    if (shadowMapResolution <= 2u || sphereRadius <= 0.f) {
+        return {};
+    }
+
+    // Half-extent = radius + one texel (room for the snap) and exactly resolution/2 texels wide.
+    const f32 resolution = static_cast<f32>(shadowMapResolution);
+    const f32 texel = 2.f * sphereRadius / (resolution - 2.f);
+    const f32 halfExtent = texel * resolution * 0.5f;
+    const f32 snappedX = std::floor(sphereCenterLightSpace.x / texel + 0.5f) * texel;
+    const f32 snappedY = std::floor(sphereCenterLightSpace.y / texel + 0.5f) * texel;
+
+    CascadeOrthoBounds bounds{};
+    bounds.left = snappedX - halfExtent;
+    bounds.right = snappedX + halfExtent;
+    bounds.bottom = snappedY - halfExtent;
+    bounds.top = snappedY + halfExtent;
+    bounds.nearPlane = -sphereCenterLightSpace.z - sphereRadius;
+    bounds.farPlane = -sphereCenterLightSpace.z + sphereRadius;
+    return bounds;
 }
 
 bool CascadeLightSpaceLayout::isEmptyLightSpaceAabb(const fuse::math::AABB& aabb) {
@@ -966,17 +1101,37 @@ CascadeLightSpaceMatrices CascadeLightSpaceLayout::buildCascadeLightSpaceMatrice
         return matrices;
     }
 
-    const fuse::math::Vec3 focus = computeCascadeFocus(cascadeIndex, desc, camera);
-    const fuse::math::AABB lightAabb = computeCascadeLightSpaceAabb(cascadeIndex, desc, camera, lightDirection);
-    if (isEmptyLightSpaceAabb(lightAabb)) {
-        return matrices;
+    const f32 pullback = std::max(desc.casterPullback, 0.f);
+    if (desc.stabilise && desc.resolution > 2u) {
+        // Rotation-invariant bounding sphere + world-anchored texel grid (no shimmer).
+        const fuse::math::Mat4 lightView = buildStableLightView(lightDirection);
+        f32 radius = 0.f;
+        const fuse::math::Vec3 center = computeCascadeBoundingSphere(cascadeIndex, desc, camera, radius);
+        const CascadeFrustumCorners corners =
+            CascadedShadowMapLayout::buildCascadeFrustumCorners(cascadeIndex, desc, camera);
+        matrices.lightView = shadowMat4FromMat4(lightView);
+        matrices.lightSpaceAabb = computeLightSpaceAabb(corners, lightView);
+        matrices.orthoBounds =
+            fitStabilisedOrthoBounds(fuse::math::transformPoint(lightView, center), radius, desc.resolution);
+        if (!validateOrthoBounds(matrices.orthoBounds)) {
+            return {};
+        }
+    } else {
+        const fuse::math::Vec3 focus = computeCascadeFocus(cascadeIndex, desc, camera);
+        const fuse::math::AABB lightAabb =
+            computeCascadeLightSpaceAabb(cascadeIndex, desc, camera, lightDirection);
+        if (isEmptyLightSpaceAabb(lightAabb)) {
+            return matrices;
+        }
+
+        matrices.lightView = shadowMat4FromMat4(buildLightView(focus, lightDirection));
+        matrices.lightSpaceAabb = lightAabb;
+        matrices.orthoBounds = stabiliseOrthoExtents(fitOrthoBoundsFromLightSpaceAabb(lightAabb),
+                                                     desc.resolution,
+                                                     desc.stabilise);
     }
 
-    matrices.lightView = shadowMat4FromMat4(buildLightView(focus, lightDirection));
-    matrices.lightSpaceAabb = lightAabb;
-    matrices.orthoBounds = stabiliseOrthoExtents(fitOrthoBoundsFromLightSpaceAabb(lightAabb),
-                                                 desc.resolution,
-                                                 desc.stabilise);
+    matrices.orthoBounds.nearPlane -= pullback;
     matrices.lightProjection = buildOrthographicShadowProjection(matrices.orthoBounds);
     matrices.lightViewProj = multiplyShadowMatrices(matrices.lightProjection, matrices.lightView);
     matrices.valid = true;
@@ -1016,6 +1171,48 @@ u32 CascadeLightSpaceLayout::buildAllCascadeLightSpaceMatrices(
     }
 
     return validCount;
+}
+
+u32 CascadeShadowSampling::selectCascade(const CascadedShadowMapData& data, f32 viewDepth, u32 cascadeCount) {
+    const u32 activeCount = CascadedShadowMapLayout::clampCascadeCount(cascadeCount);
+    for (u32 cascade = 0; cascade < activeCount; ++cascade) {
+        if (viewDepth <= data.cascadeFarZ[cascade]) {
+            return cascade;
+        }
+    }
+    return activeCount;
+}
+
+f32 CascadeShadowSampling::computeViewDepth(const ShadowCameraParams& camera, const fuse::math::Vec3& worldPoint) {
+    return (worldPoint - camera.position).dot(camera.forward.normalized());
+}
+
+CascadeShadowCoord CascadeShadowSampling::projectToCascade(const ShadowMat4& lightViewProj,
+                                                           const fuse::math::Vec3& worldPoint,
+                                                           u32 resolution) {
+    const auto& m = lightViewProj.data;
+    const f32 x = m[0] * worldPoint.x + m[4] * worldPoint.y + m[8] * worldPoint.z + m[12];
+    const f32 y = m[1] * worldPoint.x + m[5] * worldPoint.y + m[9] * worldPoint.z + m[13];
+    const f32 z = m[2] * worldPoint.x + m[6] * worldPoint.y + m[10] * worldPoint.z + m[14];
+    const f32 w = m[3] * worldPoint.x + m[7] * worldPoint.y + m[11] * worldPoint.z + m[15];
+    const f32 invW = std::fabs(w) > 1e-12f ? 1.f / w : 1.f;
+
+    CascadeShadowCoord coord{};
+    coord.u = x * invW * 0.5f + 0.5f;
+    coord.v = y * invW * 0.5f + 0.5f;
+    coord.depth = z * invW;
+    coord.texelX = coord.u * static_cast<f32>(resolution);
+    coord.texelY = coord.v * static_cast<f32>(resolution);
+    coord.inside = coord.u >= 0.f && coord.u <= 1.f && coord.v >= 0.f && coord.v <= 1.f && coord.depth >= 0.f &&
+                   coord.depth <= 1.f;
+    return coord;
+}
+
+f32 CascadeShadowSampling::texelWorldSize(const CascadeOrthoBounds& bounds, u32 resolution) {
+    if (resolution == 0u) {
+        return 0.f;
+    }
+    return (bounds.right - bounds.left) / static_cast<f32>(resolution);
 }
 
 } // namespace fuse::renderer
