@@ -1,5 +1,7 @@
 #include <fuse/physics/solver/solver_work_buffers.hpp>
 
+#include <fuse/physics/rotation.hpp>
+
 #include <algorithm>
 
 namespace fuse::physics {
@@ -16,6 +18,47 @@ void SolverWorkBuffers::clear() {
     contactManifolds_.clear();
     contactLambdas_.clear();
     distanceLambdas_.clear();
+    bodyInvInertia_.clear();
+    contactAnchors_.clear();
+    contactPointLambdas_.clear();
+}
+
+void SolverWorkBuffers::prepareContactPoints(const RigidBodySoA& bodies) {
+    constexpr u32 kSlots = narrowphase::kMaxContactPointsPerManifold;
+    const usize slotCount = contactManifolds_.size() * kSlots;
+    contactAnchors_.resize(slotCount);
+    contactPointLambdas_.assign(slotCount, 0.f);
+    for (usize c = 0; c < contactManifolds_.size(); ++c) {
+        const narrowphase::ContactManifold& contact = contactManifolds_[c];
+        const vec3 n = contact.contactNormal;
+        const vec3 xA = bodies.predictedPositions[contact.bodyA];
+        const vec3 xB = bodies.predictedPositions[contact.bodyB];
+        const quat qA = bodies.predictedOrientations[contact.bodyA];
+        const quat qB = bodies.predictedOrientations[contact.bodyB];
+        const vec3 startA = bodies.positions[contact.bodyA];
+        const vec3 startB = bodies.positions[contact.bodyB];
+        const quat startQA = bodies.orientations[contact.bodyA];
+        const quat startQB = bodies.orientations[contact.bodyB];
+        for (u32 k = 0; k < contact.pointCount && k < kSlots; ++k) {
+            // Split the penetration about the reported point so (pA - pB) . n = -penetration.
+            const f32 halfDepth = 0.5f * contact.points[k].penetration;
+            const vec3 pA = contact.points[k].point - n * halfDepth;
+            const vec3 pB = contact.points[k].point + n * halfDepth;
+            ContactAnchor& anchor = contactAnchors_[c * kSlots + k];
+            anchor.localA = inverseRotate(qA, pA - xA);
+            anchor.localB = inverseRotate(qB, pB - xB);
+            anchor.startSeparation =
+                (startA + rotate(startQA, anchor.localA)) - (startB + rotate(startQB, anchor.localB));
+        }
+    }
+}
+
+f32& SolverWorkBuffers::contactPointLambda(u32 contactIndex, u32 pointIndex) {
+    const usize slot = static_cast<usize>(contactIndex) * narrowphase::kMaxContactPointsPerManifold + pointIndex;
+    if (slot >= contactPointLambdas_.size()) {
+        contactPointLambdas_.resize(slot + 1u, 0.f);
+    }
+    return contactPointLambdas_[slot];
 }
 
 void SolverWorkBuffers::ensureLambdaCapacity(u32 contactCount, u32 distanceCount) {

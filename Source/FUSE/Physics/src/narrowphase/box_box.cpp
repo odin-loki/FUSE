@@ -31,14 +31,20 @@ ContactManifold collideBoxBox(
     vec3 posB,
     vec3 halfExtentsB,
     u32 idxA,
-    u32 idxB) {
+    u32 idxB,
+    f32 margin) {
     const Aabb aabbA = makeAabb(posA, halfExtentsA);
     const Aabb aabbB = makeAabb(posB, halfExtentsB);
 
     const f32 overlapX = overlapOnAxis(aabbA.min.x, aabbA.max.x, aabbB.min.x, aabbB.max.x);
     const f32 overlapY = overlapOnAxis(aabbA.min.y, aabbA.max.y, aabbB.min.y, aabbB.max.y);
     const f32 overlapZ = overlapOnAxis(aabbA.min.z, aabbA.max.z, aabbB.min.z, aabbB.max.z);
-    if (overlapX <= 0.f || overlapY <= 0.f || overlapZ <= 0.f) {
+    if (overlapX <= -margin || overlapY <= -margin || overlapZ <= -margin) {
+        return invalidContactManifold();
+    }
+    // Speculative (separated within the margin) only across one face.
+    const int separatedAxes = (overlapX <= 0.f ? 1 : 0) + (overlapY <= 0.f ? 1 : 0) + (overlapZ <= 0.f ? 1 : 0);
+    if (separatedAxes > 1) {
         return invalidContactManifold();
     }
 

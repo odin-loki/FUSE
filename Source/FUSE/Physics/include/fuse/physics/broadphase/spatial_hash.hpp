@@ -844,8 +844,10 @@ FUSE_PHYSICS_INLINE bool sphereAabbOverlap(vec3 centerA, f32 radiusA, vec3 cente
 /// layer-filtered pairs are skipped. Scratch buffers are reused across calls.
 class GridBroadphase {
 public:
+    /// `margin` widens every body's bounds so shapes up to `margin` apart still pair up (the
+    /// solver's speculative contacts need them).
     void findPairs(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes, f32 cellSize,
-                   std::vector<CandidatePair>& out);
+                   std::vector<CandidatePair>& out, f32 margin = 0.f);
 
 private:
     struct Entry {

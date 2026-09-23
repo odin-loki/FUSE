@@ -32,15 +32,29 @@ void collidePairs(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
-    std::vector<ContactManifold>& out) {
+    std::vector<ContactManifold>& out,
+    f32 margin) {
     out.clear();
     // Only validity checks here: trigger and sleeping pairs are still reported (the solver skips
     // resolving them) so overlap events and resting contacts stay continuous.
     for (const broadphase::CandidatePair& pair : pairs) {
-        ContactManifold manifold = detect_contacts_pair(pair, bodies, shapes);
-        if (finalize_contact_manifold_with_preflight(manifold)) {
-            out.push_back(manifold);
+        ContactManifold manifold = detect_contacts_pair(pair, bodies, shapes, margin);
+        if (margin > 0.f) {
+            // Finalize prunes separated points: shift speculative points into range and back.
+            for (u32 i = 0; i < manifold.pointCount; ++i) {
+                manifold.points[i].penetration += margin;
+            }
         }
+        if (!finalize_contact_manifold_with_preflight(manifold)) {
+            continue;
+        }
+        if (margin > 0.f) {
+            for (u32 i = 0; i < manifold.pointCount; ++i) {
+                manifold.points[i].penetration -= margin;
+            }
+            manifold.syncLegacyFields();
+        }
+        out.push_back(manifold);
     }
 }
 

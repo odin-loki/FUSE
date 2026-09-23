@@ -5,6 +5,7 @@
 #include <fuse/ecs/components/tags.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
+#include <fuse/physics/rotation.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -24,8 +25,20 @@ fuse::ecs::vec3 toEcs(vec3 v, f32 w) {
     return {v.x, v.y, v.z, w};
 }
 
+quat toPhysics(const fuse::ecs::quat& q) {
+    return {q.x, q.y, q.z, q.w};
+}
+
+fuse::ecs::quat toEcs(const quat& q) {
+    return {q.x, q.y, q.z, q.w};
+}
+
 bool sameVec(vec3 a, vec3 b) {
     return a.x == b.x && a.y == b.y && a.z == b.z;
+}
+
+bool sameQuat(const quat& a, const quat& b) {
+    return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w;
 }
 
 u64 pairKey(fuse::ecs::EntityID a, fuse::ecs::EntityID b) {
@@ -93,9 +106,10 @@ bool rayAabb(vec3 origin, vec3 dir, vec3 lo, vec3 hi, f32& t, vec3& normal) {
     return true;
 }
 
-f32 capsuleDistance(vec3 p, vec3 center, vec3 params) {
-    const vec3 a = center - vec3{0.f, params.y, 0.f};
-    const vec3 ab{0.f, 2.f * params.y, 0.f};
+f32 capsuleDistance(vec3 p, vec3 center, vec3 params, const quat& orientation) {
+    const vec3 half = capsuleHalfAxis(orientation, params.y);
+    const vec3 a = center - half;
+    const vec3 ab = half * 2.f;
     const f32 denom = ab.dot(ab);
     const f32 s = denom > 1e-12f ? std::clamp((p - a).dot(ab) / denom, 0.f, 1.f) : 0.f;
     return (p - (a + ab * s)).length() - params.x;
@@ -120,6 +134,8 @@ void PhysicsManager::destroy() {
     m_entityToBodyIdx_.clear();
     m_writtenPositions_.clear();
     m_writtenVelocities_.clear();
+    m_writtenOrientations_.clear();
+    m_writtenAngularVelocities_.clear();
     m_kinematicTargets_.clear();
     m_activePairs_.clear();
     m_currentPairs_.clear();
@@ -170,11 +186,16 @@ void PhysicsManager::syncEcsToSoa_(fuse::ecs::Registry& registry, f32 dt) {
                                                                  fuse::ecs::RigidBody& rb, Collider& collider) {
         const vec3 position = toPhysics(transform.position);
         const vec3 velocity = toPhysics(rb.velocity);
+        const quat orientation = quatNormalize(toPhysics(transform.rotation));
+        const vec3 angularVelocity = toPhysics(rb.angular_velocity);
         u32 body = bodyIndex(id);
         if (body == kNoBody) {
             body = m_soa_.addBody(position, 0.f);
             m_shapes_.addShape(CollisionShapeType::Sphere, body, {0.5f, 0.f, 0.f});
             m_soa_.linearVelocities[body] = velocity;
+            m_soa_.orientations[body] = orientation;
+            m_soa_.predictedOrientations[body] = orientation;
+            m_soa_.angularVelocities[body] = angularVelocity;
             if (rb.is_sleeping) {
                 m_soa_.flags[body] |= RB_SLEEPING;
             }
@@ -182,6 +203,8 @@ void PhysicsManager::syncEcsToSoa_(fuse::ecs::Registry& registry, f32 dt) {
             m_entityToBodyIdx_[id.index] = body;
             m_writtenPositions_.push_back(position);
             m_writtenVelocities_.push_back(velocity);
+            m_writtenOrientations_.push_back(toPhysics(transform.rotation));
+            m_writtenAngularVelocities_.push_back(angularVelocity);
             m_seen_.push_back(0u);
         }
         m_seen_[body] = 1u;
@@ -200,8 +223,11 @@ void PhysicsManager::syncEcsToSoa_(fuse::ecs::Registry& registry, f32 dt) {
 
         if (kinematic) {
             // Sweep from the current pose to the programmed one over this step.
-            const vec3 goal = target != m_kinematicTargets_.end() ? target->second : position;
+            const vec3 goal = target != m_kinematicTargets_.end() ? target->second.position : position;
+            const quat goalOrientation =
+                target != m_kinematicTargets_.end() ? quatNormalize(target->second.orientation) : orientation;
             m_soa_.linearVelocities[body] = (goal - m_soa_.positions[body]) * (1.f / dt);
+            m_soa_.angularVelocities[body] = angularVelocityBetween(m_soa_.orientations[body], goalOrientation, dt);
         } else {
             if (!sameVec(position, m_writtenPositions_[body])) { // teleported by game code
                 m_soa_.positions[body] = position;
@@ -210,6 +236,15 @@ void PhysicsManager::syncEcsToSoa_(fuse::ecs::Registry& registry, f32 dt) {
             }
             if (!sameVec(velocity, m_writtenVelocities_[body])) { // velocity written by game code
                 m_soa_.linearVelocities[body] = velocity;
+                wake(m_soa_, body);
+            }
+            if (!sameQuat(toPhysics(transform.rotation), m_writtenOrientations_[body])) { // rotated by game code
+                m_soa_.orientations[body] = orientation;
+                m_soa_.predictedOrientations[body] = orientation;
+                wake(m_soa_, body);
+            }
+            if (!sameVec(angularVelocity, m_writtenAngularVelocities_[body])) {
+                m_soa_.angularVelocities[body] = angularVelocity;
                 wake(m_soa_, body);
             }
         }
@@ -224,6 +259,11 @@ void PhysicsManager::syncEcsToSoa_(fuse::ecs::Registry& registry, f32 dt) {
         if (force.dot(force) > 0.f) {
             m_soa_.forces[body] += force;
             rb.force_accumulator = {};
+        }
+        const vec3 torque = toPhysics(rb.torque_accumulator);
+        if (torque.dot(torque) > 0.f) {
+            m_soa_.torques[body] += torque;
+            rb.torque_accumulator = {};
         }
         m_shapes_.types[body] = collider.shape;
         m_shapes_.params[body] = toPhysics(collider.params);
@@ -246,6 +286,8 @@ void PhysicsManager::removeBody_(u32 body) {
         m_entityToBodyIdx_[m_bodyToEntity_[body].index] = body;
         m_writtenPositions_[body] = m_writtenPositions_[last];
         m_writtenVelocities_[body] = m_writtenVelocities_[last];
+        m_writtenOrientations_[body] = m_writtenOrientations_[last];
+        m_writtenAngularVelocities_[body] = m_writtenAngularVelocities_[last];
         m_seen_[body] = m_seen_[last];
     }
     m_soa_.removeBodySwap(body);
@@ -256,6 +298,8 @@ void PhysicsManager::removeBody_(u32 body) {
     m_bodyToEntity_.pop_back();
     m_writtenPositions_.pop_back();
     m_writtenVelocities_.pop_back();
+    m_writtenOrientations_.pop_back();
+    m_writtenAngularVelocities_.pop_back();
     m_seen_.pop_back();
 }
 
@@ -270,15 +314,24 @@ void PhysicsManager::syncSoaToEcs_(fuse::ecs::Registry& registry) {
         }
         const vec3 position = m_soa_.positions[body];
         const vec3 velocity = m_soa_.linearVelocities[body];
+        const quat orientation = m_soa_.orientations[body];
+        const vec3 angularVelocity = m_soa_.angularVelocities[body];
         if (!sameVec(position, toPhysics(transform->position))) {
             transform->position = toEcs(position, 1.f);
             transform->dirty = true;
         }
+        if (!sameQuat(orientation, toPhysics(transform->rotation))) {
+            transform->rotation = toEcs(orientation);
+            transform->dirty = true;
+        }
         rb->velocity = toEcs(velocity, 0.f);
+        rb->angular_velocity = toEcs(angularVelocity, 0.f);
         rb->is_sleeping = (m_soa_.flags[body] & RB_SLEEPING) != 0u;
         rb->sleep_timer = m_soa_.sleepTimers[body];
         m_writtenPositions_[body] = position;
         m_writtenVelocities_[body] = velocity;
+        m_writtenOrientations_[body] = orientation;
+        m_writtenAngularVelocities_[body] = angularVelocity;
     }
 }
 
@@ -333,6 +386,7 @@ bool PhysicsManager::rayCast(vec3 origin, vec3 direction, f32 maxT, fuse::ecs::E
         }
         const vec3 center = m_soa_.positions[body];
         const vec3 params = m_shapes_.params[body];
+        const quat rotation = m_soa_.orientations[body];
         f32 tHit = 0.f;
         vec3 n{};
         bool ok = false;
@@ -341,25 +395,30 @@ bool PhysicsManager::rayCast(vec3 origin, vec3 direction, f32 maxT, fuse::ecs::E
             ok = raySphere(origin, dir, center, params.x, tHit);
             n = ok ? (origin + dir * tHit - center).normalized() : n;
             break;
-        case CollisionShapeType::Box:
-            ok = rayAabb(origin, dir, center - params, center + params, tHit, n);
+        case CollisionShapeType::Box: {
+            // Slab test in the box frame; the hit normal is rotated back to world space.
+            const vec3 localOrigin = inverseRotate(rotation, origin - center);
+            const vec3 localDir = inverseRotate(rotation, dir);
+            ok = rayAabb(localOrigin, localDir, params * -1.f, params, tHit, n);
+            n = rotate(rotation, n);
             break;
+        }
         case CollisionShapeType::Capsule: {
             // Sphere tracing on the capsule distance (exact distance => never overshoots).
             f32 travelled = 0.f;
             for (int i = 0; i < 96 && travelled <= best; ++i) {
-                const f32 d = capsuleDistance(origin + dir * travelled, center, params);
+                const f32 d = capsuleDistance(origin + dir * travelled, center, params, rotation);
                 if (d < 1e-4f) {
                     ok = true;
                     tHit = travelled;
                     const vec3 p = origin + dir * travelled;
                     const f32 h = 1e-3f;
-                    n = vec3{capsuleDistance(p + vec3{h, 0.f, 0.f}, center, params) -
-                                 capsuleDistance(p - vec3{h, 0.f, 0.f}, center, params),
-                             capsuleDistance(p + vec3{0.f, h, 0.f}, center, params) -
-                                 capsuleDistance(p - vec3{0.f, h, 0.f}, center, params),
-                             capsuleDistance(p + vec3{0.f, 0.f, h}, center, params) -
-                                 capsuleDistance(p - vec3{0.f, 0.f, h}, center, params)}
+                    n = vec3{capsuleDistance(p + vec3{h, 0.f, 0.f}, center, params, rotation) -
+                                 capsuleDistance(p - vec3{h, 0.f, 0.f}, center, params, rotation),
+                             capsuleDistance(p + vec3{0.f, h, 0.f}, center, params, rotation) -
+                                 capsuleDistance(p - vec3{0.f, h, 0.f}, center, params, rotation),
+                             capsuleDistance(p + vec3{0.f, 0.f, h}, center, params, rotation) -
+                                 capsuleDistance(p - vec3{0.f, 0.f, h}, center, params, rotation)}
                             .normalized();
                     break;
                 }
@@ -405,14 +464,14 @@ void PhysicsManager::querySphere(vec3 center, f32 radius, std::vector<fuse::ecs:
             overlap = (center - p).length() <= radius + params.x;
             break;
         case CollisionShapeType::Box: {
-            const vec3 closest{std::clamp(center.x, p.x - params.x, p.x + params.x),
-                               std::clamp(center.y, p.y - params.y, p.y + params.y),
-                               std::clamp(center.z, p.z - params.z, p.z + params.z)};
-            overlap = (center - closest).length() <= radius;
+            const vec3 local = inverseRotate(m_soa_.orientations[body], center - p);
+            const vec3 closest{std::clamp(local.x, -params.x, params.x), std::clamp(local.y, -params.y, params.y),
+                               std::clamp(local.z, -params.z, params.z)};
+            overlap = (local - closest).length() <= radius;
             break;
         }
         case CollisionShapeType::Capsule:
-            overlap = capsuleDistance(center, p, params) <= radius;
+            overlap = capsuleDistance(center, p, params, m_soa_.orientations[body]) <= radius;
             break;
         case CollisionShapeType::Plane:
             overlap = params.dot(center) - m_shapes_.scalars[body] <= radius;
@@ -431,13 +490,27 @@ bool PhysicsManager::isSleeping(fuse::ecs::EntityID id) const {
     return body != kNoBody && (m_soa_.flags[body] & RB_SLEEPING) != 0u;
 }
 
-void PhysicsManager::applyImpulse(fuse::ecs::EntityID id, vec3 impulse, vec3 worldPoint) {
-    (void)worldPoint; // bodies carry no rotational state yet: the impulse acts on the centre of mass
+void PhysicsManager::applyImpulse(fuse::ecs::EntityID id, vec3 impulse) {
     const u32 body = bodyIndex(id);
     if (body == kNoBody || m_soa_.invMasses[body] <= 0.f) {
         return;
     }
     m_soa_.linearVelocities[body] += impulse * m_soa_.invMasses[body];
+    wake(m_soa_, body);
+}
+
+void PhysicsManager::applyImpulse(fuse::ecs::EntityID id, vec3 impulse, vec3 worldPoint) {
+    const u32 body = bodyIndex(id);
+    if (body == kNoBody || m_soa_.invMasses[body] <= 0.f) {
+        return;
+    }
+    m_soa_.linearVelocities[body] += impulse * m_soa_.invMasses[body];
+    if ((m_soa_.flags[body] & RB_FIXED_ROTATION) == 0u) {
+        const vec3 invInertia = shapeInverseInertia(static_cast<CollisionShapeType>(m_shapes_.types[body]),
+                                                    m_shapes_.params[body], m_soa_.invMasses[body]);
+        const vec3 arm = worldPoint - m_soa_.positions[body];
+        m_soa_.angularVelocities[body] += applyInverseInertia(m_soa_.orientations[body], invInertia, arm.cross(impulse));
+    }
     wake(m_soa_, body);
 }
 
@@ -447,6 +520,15 @@ void PhysicsManager::applyForce(fuse::ecs::EntityID id, vec3 force) {
         return;
     }
     m_soa_.forces[body] += force;
+    wake(m_soa_, body);
+}
+
+void PhysicsManager::applyTorque(fuse::ecs::EntityID id, vec3 torque) {
+    const u32 body = bodyIndex(id);
+    if (body == kNoBody || m_soa_.invMasses[body] <= 0.f) {
+        return;
+    }
+    m_soa_.torques[body] += torque;
     wake(m_soa_, body);
 }
 
@@ -461,9 +543,8 @@ void PhysicsManager::setVelocity(fuse::ecs::EntityID id, vec3 linear, vec3 angul
 }
 
 void PhysicsManager::setKinematicTarget(fuse::ecs::EntityID id, vec3 position, quat orientation) {
-    (void)orientation; // orientation is not simulated yet
     if (id.valid()) {
-        m_kinematicTargets_[id.index] = position;
+        m_kinematicTargets_[id.index] = {position, orientation};
     }
 }
 

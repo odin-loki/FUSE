@@ -50,11 +50,16 @@ public:
     void querySphere(vec3 center, f32 radius, std::vector<fuse::ecs::EntityID>& results) const;
     bool isSleeping(fuse::ecs::EntityID id) const;
 
-    /// Instant velocity change `impulse / mass` (applied to the solver state, visible in the
-    /// RigidBody component after the next step). Wakes the body.
-    void applyImpulse(fuse::ecs::EntityID id, vec3 impulse, vec3 worldPoint = {});
+    /// Instant velocity change `impulse / mass` through the centre of mass (applied to the solver
+    /// state, visible in the RigidBody component after the next step). Wakes the body.
+    void applyImpulse(fuse::ecs::EntityID id, vec3 impulse);
+    /// Impulse at a world-space point: dv = J / m and dw = I^-1 ((worldPoint - centre) x J), with
+    /// the world inverse inertia of the body's shape at its current orientation. Wakes the body.
+    void applyImpulse(fuse::ecs::EntityID id, vec3 impulse, vec3 worldPoint);
     /// Force applied over the next step.
     void applyForce(fuse::ecs::EntityID id, vec3 force);
+    /// Torque (world space) applied over the next step.
+    void applyTorque(fuse::ecs::EntityID id, vec3 torque);
     void setVelocity(fuse::ecs::EntityID id, vec3 linear, vec3 angular = {});
     /// Kinematic pose to reach by the end of the next step (the body is made kinematic).
     void setKinematicTarget(fuse::ecs::EntityID id, vec3 position, quat orientation);
@@ -104,8 +109,14 @@ private:
     /// Values last written to the components: a difference at sync time is a game-side edit.
     std::vector<vec3> m_writtenPositions_{};
     std::vector<vec3> m_writtenVelocities_{};
+    std::vector<quat> m_writtenOrientations_{};
+    std::vector<vec3> m_writtenAngularVelocities_{};
     std::vector<u8> m_seen_{};
-    std::unordered_map<u32, vec3> m_kinematicTargets_{};
+    struct KinematicTarget {
+        vec3 position{};
+        quat orientation{};
+    };
+    std::unordered_map<u32, KinematicTarget> m_kinematicTargets_{};
     std::unordered_map<u64, PairKey> m_activePairs_{};
     std::unordered_map<u64, PairKey> m_currentPairs_{};
     std::vector<DestructionEvent> m_destructionEvents_{};

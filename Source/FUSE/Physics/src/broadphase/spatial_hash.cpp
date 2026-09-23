@@ -1,5 +1,6 @@
 #include <fuse/physics/broadphase/pair_buffer.hpp>
 #include <fuse/physics/broadphase/spatial_hash.hpp>
+#include <fuse/physics/rotation.hpp>
 
 #include <fuse/jobs/parallel_for.hpp>
 
@@ -137,6 +138,12 @@ namespace {
 constexpr u32 kBuildGrainSize = 8u;
 constexpr u32 kCellGrainSize = 4u;
 constexpr u32 kPlanePairGrainSize = 16u;
+
+/// World AABB half extents of a box shape on `bodyIndex` (orientation-aware).
+vec3 worldBoxHalfExtents(const RigidBodySoA& bodies, u32 bodyIndex, vec3 halfExtents) {
+    return bodyIndex < bodies.orientations.size() ? orientedBoxHalfExtents(bodies.orientations[bodyIndex], halfExtents)
+                                                  : halfExtents;
+}
 
 f32 shapeRadius(const CollisionShapeSoA& shapes, u32 shapeIndex) {
     if (shapeIndex >= shapes.count()) {
@@ -276,7 +283,7 @@ ShapeCellInsertRejectReason shapeCellInsertRejectReasonImpl(
     if (use2D) {
         CellRange2 range = {};
         if (type == CollisionShapeType::Box) {
-            const vec3 halfExtents = shapes.params[shapeIndex];
+            const vec3 halfExtents = worldBoxHalfExtents(bodies, bodyIndex, shapes.params[shapeIndex]);
             const aabb bounds = aabbFromBox(position, halfExtents);
             range = cellRangeFromAabb2D(bounds, cellSize, maxSpan);
         } else {
@@ -291,7 +298,7 @@ ShapeCellInsertRejectReason shapeCellInsertRejectReasonImpl(
 
     CellRange3 range = {};
     if (type == CollisionShapeType::Box) {
-        const vec3 halfExtents = shapes.params[shapeIndex];
+        const vec3 halfExtents = worldBoxHalfExtents(bodies, bodyIndex, shapes.params[shapeIndex]);
         range = cellRangeFromBox(position, halfExtents, cellSize, maxSpan);
     } else {
         const f32 radius = shapeRadius(shapes, shapeIndex);
@@ -323,7 +330,7 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
         if (use2D) {
             CellRange2 range = {};
             if (type == CollisionShapeType::Box) {
-                const vec3 halfExtents = shapes.params[shapeIndex];
+                const vec3 halfExtents = worldBoxHalfExtents(bodies, bodyIndex, shapes.params[shapeIndex]);
                 const aabb bounds = aabbFromBox(position, halfExtents);
                 range = cellRangeFromAabb2D(bounds, cellSize, maxSpan);
             } else {
@@ -334,7 +341,7 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
         } else {
             CellRange3 range = {};
             if (type == CollisionShapeType::Box) {
-                const vec3 halfExtents = shapes.params[shapeIndex];
+                const vec3 halfExtents = worldBoxHalfExtents(bodies, bodyIndex, shapes.params[shapeIndex]);
                 range = cellRangeFromBox(position, halfExtents, cellSize, maxSpan);
             } else {
                 const f32 radius = shapeRadius(shapes, shapeIndex);
@@ -370,7 +377,7 @@ void populateShapeCells(
     if (use2D) {
         CellRange2 range = {};
         if (type == CollisionShapeType::Box) {
-            const vec3 halfExtents = shapes.params[shapeIndex];
+            const vec3 halfExtents = worldBoxHalfExtents(bodies, bodyIndex, shapes.params[shapeIndex]);
             const aabb bounds = aabbFromBox(position, halfExtents);
             range = cellRangeFromAabb2D(bounds, cellSize, maxSpan);
         } else {
@@ -388,7 +395,7 @@ void populateShapeCells(
 
     CellRange3 range = {};
     if (type == CollisionShapeType::Box) {
-        const vec3 halfExtents = shapes.params[shapeIndex];
+        const vec3 halfExtents = worldBoxHalfExtents(bodies, bodyIndex, shapes.params[shapeIndex]);
         range = cellRangeFromBox(position, halfExtents, cellSize, maxSpan);
     } else {
         const f32 radius = shapeRadius(shapes, shapeIndex);
@@ -447,13 +454,13 @@ u32 bodyShapeIndex(const CollisionShapeSoA& shapes, u32 bodyIndex) {
 }
 
 /// Same bounds the cell insertion uses, so refine never rejects a pair the grid found overlapping.
-aabb bodyShapeBounds(const CollisionShapeSoA& shapes, u32 bodyIndex, vec3 position) {
+aabb bodyShapeBounds(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes, u32 bodyIndex, vec3 position) {
     const u32 shapeIndex = bodyShapeIndex(shapes, bodyIndex);
     if (shapeIndex == kInvalidShapeIndex) {
         return aabbFromSphere(position, 0.5f);
     }
     if (shapeType(shapes, shapeIndex) == CollisionShapeType::Box) {
-        return aabbFromBox(position, shapes.params[shapeIndex]);
+        return aabbFromBox(position, worldBoxHalfExtents(bodies, bodyIndex, shapes.params[shapeIndex]));
     }
     return aabbFromSphere(position, shapeRadius(shapes, shapeIndex));
 }
@@ -478,8 +485,8 @@ bool pairPassesAabbRefine(
         return false;
     }
 
-    return aabbOverlap(bodyShapeBounds(shapes, bodyA, bodies.positions[bodyA]),
-                       bodyShapeBounds(shapes, bodyB, bodies.positions[bodyB]));
+    return aabbOverlap(bodyShapeBounds(bodies, shapes, bodyA, bodies.positions[bodyA]),
+                       bodyShapeBounds(bodies, shapes, bodyB, bodies.positions[bodyB]));
 }
 
 void runBroadphaseIntoBufferInternal(
@@ -1013,7 +1020,8 @@ bool gridPairWanted(const RigidBodySoA& bodies, u32 a, u32 b) {
 } // namespace
 
 void GridBroadphase::findPairs(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes, f32 cellSize,
-                               std::vector<CandidatePair>& out) {
+                               std::vector<CandidatePair>& out, f32 margin) {
+    const vec3 pad{0.5f * margin, 0.5f * margin, 0.5f * margin};
     out.clear();
     const u32 bodyCount = bodies.count();
     const f32 invCell = 1.f / clampCellSize(cellSize);
@@ -1035,15 +1043,17 @@ void GridBroadphase::findPairs(const RigidBodySoA& bodies, const CollisionShapeS
             m_planeShapes.push_back(shape);
             continue;
         case CollisionShapeType::Box:
-            m_bounds[body] = aabbFromBox(p, params);
+            m_bounds[body] = aabbFromBox(p, orientedBoxHalfExtents(bodies.orientations[body], params));
             break;
         case CollisionShapeType::Capsule:
-            m_bounds[body] = aabbFromBox(p, {params.x, params.y + params.x, params.x});
+            m_bounds[body] = aabbFromBox(p, orientedCapsuleHalfExtents(bodies.orientations[body], params));
             break;
         default:
             m_bounds[body] = aabbFromSphere(p, params.x);
             break;
         }
+        m_bounds[body].min -= pad;
+        m_bounds[body].max += pad;
         m_hasBounds[body] = 1u;
         const aabb& box = m_bounds[body];
         const s64 x0 = gridCoord(box.min.x, invCell), x1 = gridCoord(box.max.x, invCell);
@@ -1120,7 +1130,7 @@ void GridBroadphase::findPairs(const RigidBodySoA& bodies, const CollisionShapeS
             const vec3 center = (box.min + box.max) * 0.5f;
             const vec3 half = (box.max - box.min) * 0.5f;
             const f32 extent = std::fabs(n.x) * half.x + std::fabs(n.y) * half.y + std::fabs(n.z) * half.z;
-            if (center.dot(n) - d <= extent) {
+            if (center.dot(n) - d <= extent + pad.x) {
                 out.push_back(canonicalPair(plane, b));
             }
         }

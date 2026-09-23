@@ -23,6 +23,10 @@ struct SolverParams {
     f32 linearDamping = 0.98f;
     f32 angularDamping = 0.95f;
     f32 contactCompliance = 0.f;
+    /// Speculative contact distance: shapes closer than this get (inactive) contacts, so a body
+    /// pushed into its neighbour during the iterations is caught in the same substep. Resting
+    /// stacks rely on it; only penetrating contacts count as touching (events, contactCount).
+    f32 contactMargin = 0.005f;
     f32 sleepLinearThreshold = 0.01f;
     f32 sleepAngularThreshold = 0.01f;
     f32 sleepTimeRequired = 0.5f;
@@ -92,8 +96,14 @@ private:
 
     std::vector<DistanceConstraint> distanceConstraints_;
     void recordFrameContacts_(RigidBodySoA& bodies, const SolverParams& params);
+    u32 slotForFrameContact_(const narrowphase::ContactManifold& manifold, bool trigger);
+
+    void mapBodyShapes_(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
+    /// Body-frame inverse inertia per body from its shape and mass (zero for RB_FIXED_ROTATION).
+    void computeInverseInertia_(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
 
     std::vector<vec3> preSolveVelocities_;
+    std::vector<vec3> preSolveAngular_;
     std::vector<narrowphase::ContactManifold> triggerManifolds_;
     broadphase::GridBroadphase grid_;
     std::vector<broadphase::CandidatePair> candidatePairs_;

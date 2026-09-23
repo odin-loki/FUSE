@@ -720,7 +720,8 @@ IslandBatchDispatchResult dispatch_all_islands_result(
     f32 contactCompliance,
     const std::function<f32(const RigidBodySoA&, u32)>& invMassFn);
 
-/// Per-constraint-pair delta clear → accumulate → apply (job-safe across parallel islands).
+/// Per-contact XPBD solve on the manifold's points (moves and rotates only bodyA / bodyB, so it
+/// is job-safe across parallel islands). `contactIndex` addresses the prepared contact anchors.
 void per_pair_delta_application(RigidBodySoA& bodies,
                                 SolverWorkBuffers& workBuffers,
                                 u32 bodyA,
@@ -728,9 +729,12 @@ void per_pair_delta_application(RigidBodySoA& bodies,
                                 f32 invMassA,
                                 f32 invMassB,
                                 const narrowphase::ContactManifold& contact,
+                                u32 contactIndex,
                                 f32 dt,
                                 f32 contactCompliance,
                                 f32& lambda);
+
+/// Per-constraint-pair delta clear → accumulate → apply (job-safe across parallel islands).
 
 void per_pair_delta_application(RigidBodySoA& bodies,
                                 SolverWorkBuffers& workBuffers,

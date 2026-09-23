@@ -23,7 +23,9 @@ enum RigidBodyFlags : u32 {
     RB_TRIGGER = 1u << 2,
     RB_KINEMATIC = 1u << 3,
     RB_NO_GRAVITY = 1u << 4,
-    RB_CCD = 1u << 5
+    RB_CCD = 1u << 5,
+    /// Translation only: the solver gives the body zero inverse inertia (orientation never changes).
+    RB_FIXED_ROTATION = 1u << 6
 };
 
 /// Torque2D-style layer/mask collision filter (bitmask layers).

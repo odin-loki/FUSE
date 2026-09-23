@@ -19,11 +19,12 @@ FUSE_PHYSICS_INLINE ContactManifold collideSphereSphere(
     vec3 posB,
     f32 radiusB,
     u32 idxA,
-    u32 idxB) {
+    u32 idxB,
+    f32 margin = 0.f) {
     const vec3 diff = posA - posB;
     const f32 dist = diff.length();
     const f32 sumRadius = radiusA + radiusB;
-    if (dist > sumRadius) {
+    if (dist > sumRadius + margin) {
         return invalidContactManifold();
     }
 
@@ -56,9 +57,10 @@ FUSE_PHYSICS_INLINE ContactManifold collideSpherePlane(
     vec3 planeNormal,
     f32 planeDistance,
     u32 idxSphere,
-    u32 idxPlane) {
+    u32 idxPlane,
+    f32 margin = 0.f) {
     const f32 dist = spherePos.dot(planeNormal) - planeDistance;
-    if (dist > sphereRadius) {
+    if (dist > sphereRadius + margin) {
         return invalidContactManifold();
     }
 
@@ -110,7 +112,8 @@ FUSE_PHYSICS_INLINE ContactManifold collideBoxSphere(
     vec3 boxPos,
     vec3 boxHalfExtents,
     u32 idxSphere,
-    u32 idxBox) {
+    u32 idxBox,
+    f32 margin = 0.f) {
     const vec3 local = spherePos - boxPos;
     const vec3 closest = {
         std::max(-boxHalfExtents.x, std::min(local.x, boxHalfExtents.x)),
@@ -120,7 +123,7 @@ FUSE_PHYSICS_INLINE ContactManifold collideBoxSphere(
 
     const vec3 delta = local - closest;
     const f32 distSq = delta.dot(delta);
-    if (distSq > sphereRadius * sphereRadius) {
+    if (distSq > (sphereRadius + margin) * (sphereRadius + margin)) {
         return invalidContactManifold();
     }
 
@@ -163,7 +166,8 @@ FUSE_PHYSICS_INLINE ContactManifold collideCapsuleSphere(
     vec3 capsulePos,
     vec3 capsuleParams,
     u32 idxSphere,
-    u32 idxCapsule) {
+    u32 idxCapsule,
+    f32 margin = 0.f) {
     const f32 capsuleRadius = capsuleParams.x;
     const f32 halfHeight = capsuleParams.y;
     const vec3 segmentA = capsulePos - vec3{0.f, halfHeight, 0.f};
@@ -180,7 +184,7 @@ FUSE_PHYSICS_INLINE ContactManifold collideCapsuleSphere(
     const vec3 diff = spherePos - axisPoint;
     const f32 dist = diff.length();
     const f32 sumRadius = sphereRadius + capsuleRadius;
-    if (dist > sumRadius) {
+    if (dist > sumRadius + margin) {
         return invalidContactManifold();
     }
 
@@ -249,12 +253,12 @@ FUSE_PHYSICS_INLINE f32 closestPointsSegmentSegment(vec3 p1, vec3 q1, vec3 p2, v
 FUSE_PHYSICS_INLINE ContactManifold collideCapsuleSegments(
     vec3 a0, vec3 a1, f32 radiusA, vec3 centerA,
     vec3 b0, vec3 b1, f32 radiusB, vec3 centerB,
-    u32 idxA, u32 idxB) {
+    u32 idxA, u32 idxB, f32 margin = 0.f) {
     vec3 ca{};
     vec3 cb{};
     const f32 distSq = closestPointsSegmentSegment(a0, a1, b0, b1, ca, cb);
     const f32 sumRadius = radiusA + radiusB;
-    if (distSq > sumRadius * sumRadius) {
+    if (distSq > (sumRadius + margin) * (sumRadius + margin)) {
         return invalidContactManifold();
     }
     const f32 dist = std::sqrt(distSq);
@@ -286,11 +290,11 @@ FUSE_PHYSICS_INLINE ContactManifold collideCapsuleSegments(
 
 /// Y-axis capsules (`params.x` = radius, `params.y` = half height).
 FUSE_PHYSICS_INLINE ContactManifold collideCapsuleCapsule(
-    vec3 posA, vec3 paramsA, vec3 posB, vec3 paramsB, u32 idxA, u32 idxB) {
+    vec3 posA, vec3 paramsA, vec3 posB, vec3 paramsB, u32 idxA, u32 idxB, f32 margin = 0.f) {
     const vec3 upA{0.f, paramsA.y, 0.f};
     const vec3 upB{0.f, paramsB.y, 0.f};
     return collideCapsuleSegments(posA - upA, posA + upA, paramsA.x, posA, posB - upB, posB + upB, paramsB.x, posB,
-                                  idxA, idxB);
+                                  idxA, idxB, margin);
 }
 
 /// Sphere vs signed distance field. `sdf(vec3) -> f32` is negative inside. The contact normal is
@@ -323,14 +327,77 @@ ContactManifold collideSphereSdf(vec3 spherePos, f32 sphereRadius, const Sdf& sd
     return manifold;
 }
 
-/// Axis-aligned box vs box (stub ignores orientation; emits up to four face contact points).
+/// Axis-aligned box vs box (emits up to four face contact points). Oriented boxes take
+/// `collideOrientedBoxBox`.
 ContactManifold collideBoxBox(
     vec3 posA,
     vec3 halfExtentsA,
     vec3 posB,
     vec3 halfExtentsB,
     u32 idxA,
-    u32 idxB);
+    u32 idxB,
+    f32 margin = 0.f);
+
+/// Oriented box vs plane: up to four of the deepest corners below the plane (box A, plane B).
+ContactManifold collideOrientedBoxPlane(
+    vec3 boxPos,
+    quat boxRotation,
+    vec3 boxHalfExtents,
+    vec3 planeNormal,
+    f32 planeDistance,
+    u32 idxBox,
+    u32 idxPlane,
+    f32 margin = 0.f);
+
+/// Sphere (A) vs oriented box (B): the axis-aligned test run in the box frame.
+ContactManifold collideOrientedBoxSphere(
+    vec3 spherePos,
+    f32 sphereRadius,
+    vec3 boxPos,
+    quat boxRotation,
+    vec3 boxHalfExtents,
+    u32 idxSphere,
+    u32 idxBox,
+    f32 margin = 0.f);
+
+/// Oriented box vs oriented box: separating-axis test over the 15 axes. Face contacts clip the
+/// incident face against the reference face (up to four points); edge contacts give one point.
+/// The normal points from B towards A.
+ContactManifold collideOrientedBoxBox(
+    vec3 posA,
+    quat rotationA,
+    vec3 halfExtentsA,
+    vec3 posB,
+    quat rotationB,
+    vec3 halfExtentsB,
+    u32 idxA,
+    u32 idxB,
+    f32 margin = 0.f);
+
+/// Capsule (local Y axis, `params.x` radius, `params.y` half height) vs plane: one point per cap
+/// centre closer than the radius (capsule A, plane B).
+ContactManifold collideCapsulePlane(
+    vec3 capsulePos,
+    quat capsuleRotation,
+    vec3 capsuleParams,
+    vec3 planeNormal,
+    f32 planeDistance,
+    u32 idxCapsule,
+    u32 idxPlane,
+    f32 margin = 0.f);
+
+/// Capsule (A) vs oriented box (B): deepest point of the capsule axis against the box, plus the
+/// cap centres touching along the same normal.
+ContactManifold collideCapsuleBox(
+    vec3 capsulePos,
+    quat capsuleRotation,
+    vec3 capsuleParams,
+    vec3 boxPos,
+    quat boxRotation,
+    vec3 boxHalfExtents,
+    u32 idxCapsule,
+    u32 idxBox,
+    f32 margin = 0.f);
 
 struct ContactBufferSoA;
 
@@ -344,11 +411,16 @@ void runNarrowphaseIntoBuffer(
 /// CPU stub of the CUDA narrow-phase dispatch (B4.3).
 /// Narrowphase into a caller-owned vector (cleared first; capacity reused across frames). Unlike
 /// `runNarrowphase` it keeps trigger and sleeping pairs: callers decide what to resolve.
+///
+/// `margin` > 0 also keeps speculative manifolds for shapes separated by less than `margin`:
+/// their points carry negative penetration (the separation). A position solver only acts on them
+/// once they penetrate, which keeps stacked bodies coupled within one substep.
 void collidePairs(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
-    std::vector<ContactManifold>& out);
+    std::vector<ContactManifold>& out,
+    f32 margin = 0.f);
 
 std::vector<ContactManifold> runNarrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,

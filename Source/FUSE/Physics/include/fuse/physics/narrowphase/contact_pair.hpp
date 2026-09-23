@@ -114,6 +114,14 @@ ContactManifold detect_contacts_pair(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes);
 
+/// As above, also keeping speculative manifolds for shapes separated by less than `margin`
+/// (their points carry negative penetration).
+ContactManifold detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    f32 margin);
+
 /// Preflight guard before finalize: non-empty, unit normal candidate, penetrating points (B4.3 deepen pass).
 bool can_finalize_contact_manifold(const ContactManifold& manifold);
 

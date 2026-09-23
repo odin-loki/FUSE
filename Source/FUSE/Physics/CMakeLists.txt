@@ -13,6 +13,7 @@ add_library(fuse_physics STATIC
     src/narrowphase/contact_manifold.cpp
     src/narrowphase/contact_pair.cpp
     src/narrowphase/box_box.cpp
+    src/narrowphase/oriented_shapes.cpp
     src/narrowphase/friction.cpp
     src/narrowphase/gjk.cpp
     src/pbd_solver.cpp
@@ -27,6 +28,7 @@ add_library(fuse_physics STATIC
     include/fuse/physics/broadphase/pair_buffer.hpp
     include/fuse/physics/config.hpp
     include/fuse/physics/math.hpp
+    include/fuse/physics/rotation.hpp
     include/fuse/physics/narrowphase/collision_dispatch.hpp
     include/fuse/physics/narrowphase/contact_buffer.hpp
     include/fuse/physics/narrowphase/contact_manifold.hpp
