@@ -11,10 +11,14 @@
 #include <QTimer>
 #include <QWidget>
 
+#include <memory>
 #include <mutex>
 
+class QVulkanInstance;
 
 namespace fuse::editor::qt {
+
+class ViewportVulkanWindow;
 
 /// Editor viewport (B6.3 Qt host): drives the FUSE `ViewportPanel` fly camera from Qt key / mouse
 /// events, picks and opens the `EntityContextMenu` through `ViewportSceneView`, and posts resize /
@@ -59,6 +63,24 @@ public:
     /// Window-logical rectangle of the placement, mapped to global screen coordinates.
     [[nodiscard]] QRect placementGlobalRect() const;
 
+    // ---- embedded Vulkan viewport (presenting path) ----------------------------------------------
+    /// Ask the game thread for a VkInstance with this platform's WSI extensions; once published it
+    /// is adopted (`QVulkanInstance::setVkInstance`), a Vulkan child window is embedded over the
+    /// widget and its surface handed back for a real swapchain. Returns false (software placeholder
+    /// stays) when there is no display, no WSI extension set for the platform, or the
+    /// `FUSE_EDITOR_HEADLESS_VIEWPORT` override is set. Call before the game thread starts ticking.
+    bool enableEmbeddedVulkanViewport(bool enableValidation = false);
+    /// UI-side poll of the game thread's present state (runs on a timer; public for tests).
+    void pollEmbeddedVulkanViewport();
+    /// True once the Vulkan child window is embedded and its surface handed to the game thread.
+    [[nodiscard]] bool embeddedVulkanViewportActive() const { return m_vkSurfacePosted; }
+    [[nodiscard]] ViewportVulkanWindow* vulkanWindow() const { return m_vkWindow; }
+    [[nodiscard]] QWidget* vulkanContainer() const { return m_vkContainer; }
+    /// Destroy the child window (and with it Qt's VkSurfaceKHR), then the adopted QVulkanInstance.
+    /// The game thread must be stopped and `RuntimeViewportHook::releaseWindowSurface()` called
+    /// first; the FUSE VkInstance itself is destroyed later with the host.
+    void releaseVulkanViewport();
+
 signals:
     /// ECS scene changed from the viewport (context menu create / delete, pick selection).
     void sceneEdited();
@@ -75,6 +97,7 @@ protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
     void focusOutEvent(QFocusEvent* event) override;
 
 private:
@@ -94,6 +117,8 @@ private:
     void postViewportResize();
     void postVulkanSurfaceHandoffStub();
     void onFrameTimer();
+    bool attachVulkanWindow_(void* vkInstance);
+    void fallBackToPlaceholder_();
 
     EditorHost& m_host;
     std::mutex& m_sceneMutex;
@@ -113,6 +138,13 @@ private:
     bool m_lookHeld = false;
     bool m_rmbDragged = false;
     bool m_flyKeyUsedDuringLook = false;
+
+    std::unique_ptr<QVulkanInstance> m_qtVulkanInstance;
+    ViewportVulkanWindow* m_vkWindow = nullptr; ///< owned by m_vkContainer
+    QWidget* m_vkContainer = nullptr;
+    QTimer m_presentPollTimer;
+    bool m_windowPresentRequested = false;
+    bool m_vkSurfacePosted = false;
 };
 
 } // namespace fuse::editor::qt

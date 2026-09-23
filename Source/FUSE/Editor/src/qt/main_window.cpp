@@ -7,6 +7,7 @@
 #include "viewport_placeholder_widget.hpp"
 
 #include <fuse/editor/command_queue.hpp>
+#include <fuse/platform/thread.hpp>
 
 #include <QAction>
 #include <QApplication>
@@ -65,6 +66,11 @@ MainWindow::MainWindow(const QString& samplesRoot, const Options& options, QWidg
     connect(&m_statusTimer, &QTimer::timeout, this, &MainWindow::refreshStatusBar);
     m_statusTimer.start();
 
+    if (m_options.embeddedVulkanViewport) {
+        // Before the game thread starts: its first tick creates the instance with the WSI extensions.
+        m_viewport->enableEmbeddedVulkanViewport(m_options.vulkanValidation ||
+                                                 qEnvironmentVariableIntValue("FUSE_EDITOR_VK_VALIDATION") != 0);
+    }
     if (m_options.startGameLoop) {
         m_gameThread.start();
     }
@@ -81,6 +87,16 @@ MainWindow::~MainWindow() {
     m_viewport->setFramePumpEnabled(false);
     m_gameThread.quit();
     m_gameThread.wait();
+    // GPU work belongs to the UI thread again (tests tick the host there; teardown drains here).
+    fuse::platform::registerRenderThread();
+    // Vulkan teardown order: swapchain (game-side) -> Qt surface + adopted QVulkanInstance (UI) ->
+    // FUSE VkInstance (with m_host, after this body). Child widgets outlive m_host, so the surface
+    // must go here, not in the viewport's destructor.
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        m_host.runtimeViewport().releaseWindowSurface();
+    }
+    m_viewport->releaseVulkanViewport();
 }
 
 QDockWidget* MainWindow::addPanelDock(const char* objectName, const QString& title, QWidget* content) {

@@ -39,6 +39,12 @@ public:
     struct Options {
         bool startGameLoop = true;   ///< run EditorHost::gameTick on the game thread (~60 Hz)
         bool startFramePump = true;  ///< viewport camera frame pump (~60 Hz)
+        /// Present the viewport through an embedded Vulkan child window (adopted FUSE VkInstance +
+        /// real swapchain). Falls back to the software placeholder without a display / Vulkan WSI.
+        bool embeddedVulkanViewport = true;
+        /// VK_LAYER_KHRONOS_validation on the viewport renderer's instance (also
+        /// FUSE_EDITOR_VK_VALIDATION=1).
+        bool vulkanValidation = false;
     };
 
     /// Dock object names (stable: they key QMainWindow::saveState / restoreState).

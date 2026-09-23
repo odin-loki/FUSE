@@ -102,6 +102,10 @@ if(FUSE_BUILD_TOOLS AND FUSE_BUILD_PROJECT)
     add_subdirectory(Tools/FUSE)
 endif()
 
+# Installer / package: install() rules + CPack ("fuse", vendor "FUSE"; TGZ+DEB / NSIS+ZIP), app icon
+# and desktop entry, with the fuse_package_gate ctest (Appendix A: icons, installer).
+include("${CMAKE_SOURCE_DIR}/cmake/FusePackaging.cmake")
+
 # Optional P7 clang-tidy seed gate (not CMAKE_CXX_CLANG_TIDY — too slow / breaks MSVC).
 # Needs compile_commands.json for clang-tidy -p. Ninja/Makefile emit it when
 # CMAKE_EXPORT_COMPILE_COMMANDS is ON (FUSE_ENABLE_CLANG_TIDY or fuse-debug / fuse-asan).

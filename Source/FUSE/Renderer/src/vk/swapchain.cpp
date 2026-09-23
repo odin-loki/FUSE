@@ -439,7 +439,15 @@ u32 VulkanSwapchain::acquireNextImage(void* imageAvailableSemaphore) {
         VK_NULL_HANDLE,
         &imageIndex);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+    // SUBOPTIMAL still acquired the image and will signal the semaphore: it must be rendered and
+    // presented (dropping it leaks the image and leaves the semaphore signalled). The owner
+    // recreates the swapchain on its next resize.
+    if (result == VK_SUBOPTIMAL_KHR) {
+        ++m_info.suboptimalCount;
+        return imageIndex;
+    }
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        ++m_info.outOfDateCount;
         return UINT32_MAX;
     }
     if (result != VK_SUCCESS) {

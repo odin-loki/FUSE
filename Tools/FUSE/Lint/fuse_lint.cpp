@@ -26,6 +26,9 @@
 //                  --dir <vendored lib> holds a VERSION pin (upstream, version, tag, 40-hex commit,
 //                  license, sha256 per file) that matches the vendored files and the version the
 //                  header itself declares.
+//   branding       Appendix A "Icons, installer, docs, CI badge names": --repo workflows' `name:`
+//                  fields say FUSE (no Torque/T3D job / step names), README.md is titled `# FUSE`
+//                  with one CI badge per workflow (alt = workflow name), docs titles say FUSE.
 
 #include <algorithm>
 #include <array>
@@ -1037,6 +1040,139 @@ Violations checkVendoredPins(const fs::path& dir) {
     return v;
 }
 
+// ---- check: branding --------------------------------------------------------------------------------
+// Appendix A "Icons, installer, docs, CI badge names" (docs + CI half; the icon / installer half is
+// fuse_package_gate). Over --repo:
+//   * every .github/workflows/*.yml has a top-level `name:` that says FUSE, and no workflow / job /
+//     step `name:` uses Torque / T3D product naming (badges and the Actions UI show these names);
+//   * README.md opens with `# FUSE`, carries one CI badge per workflow whose alt text is exactly the
+//     workflow's `name:` and whose target is that workflow file (…/actions/workflows/<file>/badge.svg);
+//   * docs/README.md's title says FUSE and no top-level docs/*.md title names Torque / T3D.
+
+bool mentionsTorque(const std::string& s) {
+    static const std::regex re(R"(torque|t3d)", std::regex::icase);
+    return std::regex_search(s, re);
+}
+
+std::string unquoteYaml(std::string v) {
+    while (!v.empty() && (v.back() == ' ' || v.back() == '\r' || v.back() == ',')) v.pop_back();
+    const size_t hash = v.find(" #");
+    if (hash != std::string::npos && v.find_first_of("\"'") == std::string::npos) v.resize(hash);
+    while (!v.empty() && v.back() == ' ') v.pop_back();
+    if (v.size() >= 2 && (v.front() == '"' || v.front() == '\'') && v.back() == v.front()) v = v.substr(1, v.size() - 2);
+    return v;
+}
+
+std::string firstHeading(const std::string& text) {
+    std::istringstream in(text);
+    std::string line;
+    while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.rfind("# ", 0) == 0) return line.substr(2);
+    }
+    return {};
+}
+
+Violations checkBranding(const fs::path& repo) {
+    Violations v;
+    const fs::path wfDir = repo / ".github/workflows";
+    std::map<std::string, std::string> workflows; // file name -> top-level name
+    if (fs::is_directory(wfDir)) {
+        for (const auto& e : fs::directory_iterator(wfDir)) {
+            if (!e.is_regular_file() || !hasExt(e.path(), {".yml", ".yaml"})) continue;
+            const std::string file = e.path().filename().string();
+            const std::string shown = ".github/workflows/" + file;
+            std::istringstream in(readFile(e.path()));
+            std::string line, top;
+            bool haveTop = false;
+            int ln = 0;
+            static const std::regex nameRe(R"(^(\s*)(?:-\s*)?(?:\{\s*)?name:\s*(.*)$)");
+            while (std::getline(in, line)) {
+                ++ln;
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                std::smatch m;
+                if (!std::regex_match(line, m, nameRe)) continue;
+                const std::string val = unquoteYaml(m[2].str());
+                if (m[1].length() == 0 && !haveTop) {
+                    haveTop = true;
+                    top = val;
+                }
+                if (mentionsTorque(val)) {
+                    v.push_back(shown + ":" + std::to_string(ln) + ": name '" + val + "' uses Torque/T3D product naming");
+                }
+            }
+            if (!haveTop) {
+                v.push_back(shown + ": no top-level `name:` (badges would show the file name)");
+            } else if (top.find("FUSE") == std::string::npos) {
+                v.push_back(shown + ": workflow name '" + top + "' does not say FUSE");
+            }
+            workflows[file] = top;
+        }
+    }
+    if (workflows.empty()) {
+        v.push_back(wfDir.generic_string() + ": no workflows found");
+    }
+
+    const fs::path readme = repo / "README.md";
+    const std::string text = fs::exists(readme) ? readFile(readme) : std::string();
+    if (text.empty()) {
+        v.push_back("README.md: missing");
+    } else {
+        std::istringstream in(text);
+        std::string first;
+        while (std::getline(in, first) && (first.empty() || first == "\r")) {}
+        if (!first.empty() && first.back() == '\r') first.pop_back();
+        if (first != "# FUSE" && first.rfind("# FUSE ", 0) != 0) {
+            v.push_back("README.md: title '" + first + "' is not '# FUSE'");
+        }
+        static const std::regex badgeRe(R"(\[!\[([^\]]*)\]\(([^)\s]*/actions/workflows/([^/)\s]+)/badge\.svg[^)\s]*)\)\]\(([^)\s]*)\))");
+        std::set<std::string> badged;
+        for (std::sregex_iterator it(text.begin(), text.end(), badgeRe), end; it != end; ++it) {
+            const std::string alt = (*it)[1].str();
+            const std::string file = (*it)[3].str();
+            const std::string link = (*it)[4].str();
+            badged.insert(file);
+            auto wf = workflows.find(file);
+            if (wf == workflows.end()) {
+                v.push_back("README.md: badge '" + alt + "' points at missing workflow " + file);
+                continue;
+            }
+            if (alt != wf->second) {
+                v.push_back("README.md: badge alt '" + alt + "' != workflow name '" + wf->second + "' (" + file + ")");
+            }
+            if (alt.find("FUSE") == std::string::npos || mentionsTorque(alt)) {
+                v.push_back("README.md: badge '" + alt + "' does not use FUSE naming");
+            }
+            if (link.find("/actions/workflows/" + file) == std::string::npos) {
+                v.push_back("README.md: badge '" + alt + "' links to '" + link + "', not its workflow runs");
+            }
+        }
+        for (const auto& [file, name] : workflows) {
+            if (!badged.count(file)) {
+                v.push_back("README.md: no CI badge for workflow " + file + " ('" + name + "')");
+            }
+        }
+    }
+
+    const fs::path docs = repo / "docs";
+    const fs::path docsReadme = docs / "README.md";
+    if (!fs::exists(docsReadme)) {
+        v.push_back("docs/README.md: missing");
+    } else if (firstHeading(readFile(docsReadme)).find("FUSE") == std::string::npos) {
+        v.push_back("docs/README.md: title '" + firstHeading(readFile(docsReadme)) + "' does not say FUSE");
+    }
+    if (fs::is_directory(docs)) {
+        for (const auto& e : fs::directory_iterator(docs)) {
+            if (!e.is_regular_file() || !hasExt(e.path(), {".md"})) continue;
+            const std::string h = firstHeading(readFile(e.path()));
+            if (mentionsTorque(h)) {
+                v.push_back("docs/" + e.path().filename().string() + ": title '" + h + "' uses Torque/T3D product naming");
+            }
+        }
+    }
+    return v;
+}
+
 // ---- self-tests -------------------------------------------------------------------------------------
 
 struct SelfTest {
@@ -1319,6 +1455,43 @@ bool selfTest(const std::string& check, const fs::path& scratch) {
                      countContaining(vb, "40-hex") == 1u && countContaining(vb, "sha256") >= 1u,
                  "vendored-pins: seeded version/commit/hash/license violations flagged (got " + std::to_string(vb.size()) + ")");
         t.expect(checkVendoredPins(bad / "nonexistent").size() == 1u, "vendored-pins: missing pin file flagged");
+    } else if (check == "branding") {
+        const char* wfGood =
+            "name: FUSE Umbrella (Linux)\non:\n  push:\njobs:\n  a:\n    name: fuse_core + tests\n    steps:\n      - name: Build\n";
+        const char* readmeGood =
+            "# FUSE\n\n[![FUSE Umbrella (Linux)](https://github.com/o/r/actions/workflows/umbrella.yml/badge.svg?branch=main)]"
+            "(https://github.com/o/r/actions/workflows/umbrella.yml)\n"
+            "[![FUSE Nightly](https://github.com/o/r/actions/workflows/nightly.yml/badge.svg)](https://github.com/o/r/actions/workflows/nightly.yml)\n\n"
+            "Heritage: forked from Torque3D.\n";
+        seedTree(good, {{".github/workflows/umbrella.yml", wfGood},
+                        {".github/workflows/nightly.yml", "name: \"FUSE Nightly\"  \non:\n  schedule:\njobs:\n  b:\n    strategy:\n      matrix:\n        config:\n          - { name: \"Ubuntu GCC\", cc: gcc }\n"},
+                        {"README.md", readmeGood},
+                        {"docs/README.md", "# FUSE documentation\n"},
+                        {"docs/heritage.md", "# Heritage\n\nFUSE descends from Torque3D.\n"}});
+        const Violations vg = checkBranding(good);
+        for (const auto& s : vg) {
+            std::fprintf(stderr, "  unexpected: %s\n", s.c_str());
+        }
+        t.expect(vg.empty(), "branding: FUSE-named workflows, README title/badges and docs titles pass");
+        // Bad: workflow name without FUSE (1), Torque job name (1), missing top-level name (1),
+        // README title (1), badge to missing workflow (1), badge alt != name + not FUSE (2),
+        // unbadged workflows x3 (3), docs/README title (1), Torque docs title (1) => 12.
+        seedTree(bad, {{".github/workflows/linux.yml", "name: Linux Build\njobs:\n  a:\n    name: Torque3D unit tests\n"},
+                       {".github/workflows/noname.yml", "on: push\njobs:\n  a:\n    runs-on: x\n"},
+                       {".github/workflows/win.yml", "name: FUSE Windows\n"},
+                       {"README.md", "# Torque3D\n\n[![Build](https://github.com/o/r/actions/workflows/gone.yml/badge.svg)](https://github.com/o/r/actions/workflows/gone.yml)\n"
+                                     "[![Windows](https://github.com/o/r/actions/workflows/win.yml/badge.svg)](https://github.com/o/r/actions/workflows/win.yml)\n"},
+                       {"docs/README.md", "# Engine documentation\n"},
+                       {"docs/t3d.md", "# T3D reference\n"}});
+        const Violations vb = checkBranding(bad);
+        for (const auto& s : vb) {
+            std::fprintf(stderr, "  seeded: %s\n", s.c_str());
+        }
+        t.expect(vb.size() == 11u && countContaining(vb, "does not say FUSE") == 2u && countContaining(vb, "Torque/T3D") == 2u &&
+                     countContaining(vb, "no top-level") == 1u && countContaining(vb, "is not '# FUSE'") == 1u &&
+                     countContaining(vb, "missing workflow") == 1u && countContaining(vb, "no CI badge") == 2u,
+                 "branding: seeded workflow/README/docs naming violations flagged (got " + std::to_string(vb.size()) + ")");
+        t.expect(checkBranding(bad / "nonexistent").size() >= 2u, "branding: missing repo flagged");
     } else {
         std::fprintf(stderr, "unknown check '%s'\n", check.c_str());
         return false;
@@ -1332,7 +1505,7 @@ bool selfTest(const std::string& check, const fs::path& scratch) {
 int usage() {
     std::fprintf(stderr,
                  "usage: fuse_lint <ownership|namespace|macros|torque-macros|torque-names|banned-deps|cxx-standard|"
-                 "qt-includes|editor-qt6|doc-headings|vendored-pins> [--root DIR] [--dir DIR] [--manifest FILE] [--repo DIR] [--plan FILE] "
+                 "qt-includes|editor-qt6|doc-headings|vendored-pins|branding> [--root DIR] [--dir DIR] [--manifest FILE] [--repo DIR] [--plan FILE] "
                  "[--sources DIR] --scratch DIR\n");
     return 2;
 }
@@ -1392,6 +1565,7 @@ int main(int argc, char** argv) {
     else if (a.check == "cxx-standard") v = checkCxxStandard(shown = a.manifest, a.repo);
     else if (a.check == "doc-headings") v = checkDocHeadings(shown = a.plan, a.sources);
     else if (a.check == "vendored-pins") v = checkVendoredPins(shown = a.dir);
+    else if (a.check == "branding") v = checkBranding(shown = a.repo);
     else return usage();
 
     for (const std::string& s : v) {

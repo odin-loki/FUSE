@@ -44,12 +44,31 @@ void testAllFeaturesFollowUnlockGate() {
                "runtime PbrFrame gated");
 }
 
+void testHostFeatureIsScoped() {
+    using fuse::core::TrackBHostFeature;
+    expectTrue(!fuse::core::trackBHostFeatureEnabled(TrackBHostFeature::EditorViewportPresent),
+               "host-scoped editor present unlock off until a host opts in");
+    fuse::core::setTrackBHostFeature(TrackBHostFeature::EditorViewportPresent, true);
+#if !(defined(FUSE_SHIPPING) && FUSE_SHIPPING)
+    expectTrue(fuse::core::trackBHostFeatureEnabled(TrackBHostFeature::EditorViewportPresent),
+               "host opt-in enables only the host feature");
+#endif
+    expectTrue(!fuse::core::trackBUnlocked() && !fuse::core::trackBUnlockedRuntime(),
+               "host opt-in never flips the compile-time Track B gate");
+    expectTrue(!fuse::core::trackBFeatureEnabledRuntime(fuse::core::TrackBFeature::VulkanProduction),
+               "host opt-in leaves VulkanProduction locked");
+    fuse::core::setTrackBHostFeature(TrackBHostFeature::EditorViewportPresent, false);
+    expectTrue(!fuse::core::trackBHostFeatureEnabled(TrackBHostFeature::EditorViewportPresent),
+               "host opt-in can be withdrawn");
+}
+
 } // namespace
 
 int main() {
     testDefaultBuildLocksTrackB();
     testVulkanProductionLockedByDefault();
     testAllFeaturesFollowUnlockGate();
+    testHostFeatureIsScoped();
 
     if (g_failures == 0) {
         std::printf("fuse_core_p7_track_b_unlock: Track B production gate is locked\n");

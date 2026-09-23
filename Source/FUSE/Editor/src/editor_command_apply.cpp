@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstdint>
 #include <sstream>
 
 namespace fuse::editor {
@@ -211,6 +212,26 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
             useStubPath ? "qt_winid_stub" : "qt_vulkan_instance",
             useStubPath, !useStubPath && !surfaceResult.stubPath, surfaceResult.vkInstance);
         host.runtimeViewport().setPendingQtStubSurface(useStubPath);
+        return true;
+    }
+
+    if (command.propertyName == "viewport.vk_surface_adopted") {
+        // "<VkSurfaceKHR> <VkInstance> <width> <height>": a surface the UI created on the instance it
+        // adopted from `RuntimeViewportHook::windowPresentInstance()` (window-system present path).
+        std::istringstream stream(command.propertyValue);
+        unsigned long long surface = 0;
+        unsigned long long instance = 0;
+        u32 width = 0;
+        u32 height = 0;
+        stream >> surface >> instance >> width >> height;
+        if (!stream || surface == 0 || instance == 0) {
+            return false;
+        }
+        host.runtimeViewport().setExternalSurfaceHandle(
+            reinterpret_cast<void*>(static_cast<std::uintptr_t>(surface)), width, height,
+            "qt_adopted_fuse_instance", false, true,
+            reinterpret_cast<void*>(static_cast<std::uintptr_t>(instance)));
+        host.runtimeViewport().setPendingQtStubSurface(false);
         return true;
     }
 

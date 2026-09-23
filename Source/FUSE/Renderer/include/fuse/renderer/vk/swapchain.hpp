@@ -57,6 +57,8 @@ struct SwapchainInfo {
     u32 imageCount = 0;
     u32 format = 0;
     u32 recreateCount = 0;
+    u32 suboptimalCount = 0; ///< acquires that returned VK_SUBOPTIMAL_KHR (image still used)
+    u32 outOfDateCount = 0;  ///< acquires that returned VK_ERROR_OUT_OF_DATE_KHR (no image)
     std::string message;
 };
 

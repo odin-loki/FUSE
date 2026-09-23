@@ -113,6 +113,9 @@ _fuse_lint_add(fuse_lint_a_fuse_macros         macros         --root "${_fuse_li
 _fuse_lint_add(fuse_lint_a_torque_macros_compat torque-macros --root "${_fuse_lint_src}")
 _fuse_lint_add(fuse_lint_a_log_mem_domains     torque-names   --root "${_fuse_lint_src}")
 _fuse_lint_add(fuse_lint_a_no_meridian_imgui   banned-deps    --root "${_fuse_lint_src}" --manifest "${FUSE_LINT_MANIFEST}")
+# "Icons, installer, docs, CI badge names": workflow names, README title + CI badges, docs titles
+# (icons / installer half: fuse_package_gate + fuse_branding_icons_regen in cmake/FusePackaging.cmake).
+_fuse_lint_add(fuse_lint_a_branding_ci_docs    branding       --repo "${CMAKE_SOURCE_DIR}")
 # Appendix C — Phase 1 carry-forward.
 _fuse_lint_add(fuse_lint_c_cxx23_targets       cxx-standard   --manifest "${FUSE_LINT_MANIFEST}" --repo "${CMAKE_SOURCE_DIR}")
 _fuse_lint_add(fuse_lint_c_no_qt_in_core       qt-includes    --root "${_fuse_lint_src}" --manifest "${FUSE_LINT_MANIFEST}")

@@ -6423,7 +6423,7 @@ Parallelism: B1 coincides with P1–P3; later B tracks overlap only where Track 
 - [x] Namespace `fuse::` (`fuse_lint_a_namespace_fuse`)
 - [x] Macros `FUSE_*` / `FUSE_ASSERT` / `FUSE_HOST_DEVICE` (`fuse_lint_a_fuse_macros`)
 - [x] Default window title “FUSE” (`fuse_lint_a_window_title`)
-- [ ] Icons, installer, docs, CI badge names
+- [x] Icons, installer, docs, CI badge names (`fuse_package_gate`, `fuse_branding_icons_regen`, `fuse_editor_qt_icon`, `fuse_lint_a_branding_ci_docs`)
 - [x] `TORQUE_*` only inside `compat/` (`fuse_lint_a_torque_macros_compat`)
 - [x] Log channels / memory domains renamed (`fuse_lint_a_log_mem_domains`)
 - [x] Scene file magic updated (versioned; old magic in compat loader) — `fuse_scene_magic_gates`
@@ -6443,7 +6443,7 @@ Parallelism: B1 coincides with P1–P3; later B tracks overlap only where Track 
 Retain Foundation deliverable gates under FUSE naming, plus:
 
 - [x] `CMAKE_CXX_STANDARD 23` on all non-CUDA host targets (`fuse_lint_c_cxx23_targets`; Legacy compat targets stay C++17 by design)
-- [ ] `fuse_editor` on Qt 6 with embedded Vulkan viewport
+- [x] `fuse_editor` on Qt 6 with embedded Vulkan viewport (`fuse_editor_qt_live_present`: live `MainWindow` presents through a `createWindowContainer` Vulkan child window on the adopted FUSE `VkInstance` — acquire/present counts, screen pixels, resize recreate, forwarded input, 0 validation messages, clean teardown; editor-scoped `TrackBHostFeature::EditorViewportPresent`, see `docs/editor.md`)
 - [x] No `#include <Q*>` from `fuse_core` / `fuse_renderer` / `fuse_physics` / `fuse_ecs` / `fuse_compute` (`fuse_lint_c_no_qt_in_core`)
 - [x] Golden Torque mission loads under ASan after P4 (`fuse_p4_golden_mis`, `fuse_mission_load_p4` under `fuse-asan`)
 - [x] Profiler events consumable by Qt flame-graph panel (B6) (`fuse_editor_b6_material_profiler_gates`)

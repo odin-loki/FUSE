@@ -145,10 +145,14 @@ if(FUSE_BUILD_EDITOR)
                 src/qt/viewport_placeholder_widget.hpp
                 src/qt/viewport_qt_vulkan_surface.cpp
                 src/qt/viewport_qt_vulkan_surface.hpp
+                src/qt/viewport_vulkan_window.cpp
+                src/qt/viewport_vulkan_window.hpp
                 src/qt/seq_preview_pane_widget.cpp
                 src/qt/seq_preview_pane_widget.hpp
                 src/qt/game_loop_thread.cpp
                 src/qt/game_loop_thread.hpp
+                src/qt/app_icon.cpp
+                src/qt/app_icon.hpp
             )
             target_include_directories(fuse_editor_qt PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/qt)
             target_link_libraries(fuse_editor_qt PUBLIC fuse_editor_api Qt6::Widgets Qt6::Gui)
@@ -164,7 +168,23 @@ if(FUSE_BUILD_EDITOR)
                 FILES "${_fuse_editor_font}"
             )
 
+            # FUSE app icon (Appendix A "Icons"): Source/FUSE/Branding rasters as Qt resources for the
+            # window icon; the Windows .rc embeds fuse.ico as the executable icon.
+            set(_fuse_branding "${CMAKE_SOURCE_DIR}/Source/FUSE/Branding")
+            set(_fuse_editor_icons)
+            foreach(_px 16 32 48 256)
+                set_source_files_properties("${_fuse_branding}/fuse_${_px}.png" PROPERTIES QT_RESOURCE_ALIAS "fuse_${_px}.png")
+                list(APPEND _fuse_editor_icons "${_fuse_branding}/fuse_${_px}.png")
+            endforeach()
+            qt_add_resources(fuse_editor_qt fuse_editor_branding
+                PREFIX "/fuse/branding"
+                FILES ${_fuse_editor_icons}
+            )
+
             add_executable(fuse_editor src/qt/main.cpp)
+            if(WIN32)
+                target_sources(fuse_editor PRIVATE "${_fuse_branding}/fuse_editor.rc")
+            endif()
             target_link_libraries(fuse_editor PRIVATE fuse_editor_qt)
             fuse_apply_cxx23(fuse_editor)
 

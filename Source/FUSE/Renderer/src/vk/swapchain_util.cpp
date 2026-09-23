@@ -49,7 +49,9 @@ bool desktopQtPresentRuntimeReady() {
 #if defined(FUSE_ENABLE_QT_PRESENT)
     return fuse::platform::displayServerAvailable();
 #else
-    return false;
+    // The editor host opts in at runtime once its Qt Vulkan surface exists (editor-scoped unlock).
+    return fuse::core::trackBHostFeatureEnabled(fuse::core::TrackBHostFeature::EditorViewportPresent) &&
+           fuse::platform::displayServerAvailable();
 #endif
 }
 

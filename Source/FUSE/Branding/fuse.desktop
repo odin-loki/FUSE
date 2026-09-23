@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=FUSE Editor
+GenericName=Game Engine Editor
+Comment=Fast Unified Simulation Engine editor for 2D, 3D and hybrid worlds
+Exec=fuse_editor
+TryExec=fuse_editor
+Icon=fuse
+Terminal=false
+Categories=Development;IDE;
+Keywords=FUSE;game;engine;editor;2D;3D;
+StartupNotify=true
+StartupWMClass=fuse_editor

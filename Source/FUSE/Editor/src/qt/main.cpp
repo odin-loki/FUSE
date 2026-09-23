@@ -1,3 +1,4 @@
+#include "app_icon.hpp"
 #include "editor_theme.hpp"
 #include "main_window.hpp"
 
@@ -13,6 +14,7 @@ int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     QApplication::setApplicationName("fuse_editor");
     QApplication::setApplicationVersion("0.1.0");
+    fuse::editor::qt::applyApplicationIdentity(app);
     fuse::editor::qt::applyEditorTheme(app);
 
     QCommandLineParser parser;

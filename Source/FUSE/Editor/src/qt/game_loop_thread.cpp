@@ -1,5 +1,7 @@
 #include "game_loop_thread.hpp"
 
+#include <fuse/platform/thread.hpp>
+
 #include <QTimer>
 
 namespace fuse::editor::qt {
@@ -8,6 +10,10 @@ GameLoopThread::GameLoopThread(EditorHost* host, std::mutex* sceneMutex, QObject
     : QThread(parent), m_host(host), m_sceneMutex(sceneMutex) {}
 
 void GameLoopThread::run() {
+    // The game thread records and submits the viewport's GPU work (RhiContext / HybridComposer
+    // only submit on the registered render thread). MainWindow hands the role back to the UI
+    // thread after joining this one.
+    fuse::platform::registerRenderThread();
     QTimer timer;
     timer.setTimerType(Qt::PreciseTimer);
     timer.setInterval(16);

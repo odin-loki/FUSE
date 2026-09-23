@@ -1,5 +1,6 @@
 #include "viewport_placeholder_widget.hpp"
 #include "viewport_qt_vulkan_surface.hpp"
+#include "viewport_vulkan_window.hpp"
 
 #include <fuse/cinematics/timeline_loader.hpp>
 #include <fuse/editor/command_queue.hpp>
@@ -12,13 +13,21 @@
 #include <QPainter>
 #include <QPalette>
 #include <QResizeEvent>
+#include <QGuiApplication>
 #include <QShowEvent>
+#include <QWheelEvent>
 #include <QWindow>
+#if QT_CONFIG(vulkan)
+#include <QVulkanInstance>
+#include <vulkan/vulkan.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <string>
+#include <vector>
 
 namespace fuse::editor::qt {
 
@@ -38,12 +47,168 @@ ViewportPlaceholderWidget::ViewportPlaceholderWidget(EditorHost& host, std::mute
     m_frameTimer.setTimerType(Qt::PreciseTimer);
     m_frameTimer.setInterval(kFrameIntervalMs);
     connect(&m_frameTimer, &QTimer::timeout, this, &ViewportPlaceholderWidget::onFrameTimer);
+    m_presentPollTimer.setInterval(15);
+    connect(&m_presentPollTimer, &QTimer::timeout, this, &ViewportPlaceholderWidget::pollEmbeddedVulkanViewport);
 }
 
 ViewportPlaceholderWidget::~ViewportPlaceholderWidget() {
     if (m_activeMenu) {
         m_activeMenu->close();
     }
+    // MainWindow releases the surface in order (swapchain -> surface -> instance) before the host
+    // goes; this only covers a widget used without it.
+    releaseVulkanViewport();
+}
+
+// ---- embedded Vulkan viewport ---------------------------------------------------------------------
+
+namespace {
+
+/// Instance extensions Qt's platform plugin needs to create a VkSurfaceKHR for a QWindow.
+std::vector<std::string> platformSurfaceExtensions() {
+    const QString platform = QGuiApplication::platformName();
+    if (platform == QLatin1String("xcb")) {
+        return {"VK_KHR_surface", "VK_KHR_xcb_surface"};
+    }
+    if (platform.startsWith(QLatin1String("wayland"))) {
+        return {"VK_KHR_surface", "VK_KHR_wayland_surface"};
+    }
+    if (platform == QLatin1String("windows")) {
+        return {"VK_KHR_surface", "VK_KHR_win32_surface"};
+    }
+    return {}; // offscreen / minimal / cocoa (MoltenVK not wired): software placeholder
+}
+
+} // namespace
+
+bool ViewportPlaceholderWidget::enableEmbeddedVulkanViewport(bool enableValidation) {
+#if QT_CONFIG(vulkan) && defined(FUSE_VULKAN_BACKEND)
+    if (m_windowPresentRequested) {
+        return true;
+    }
+    if (qEnvironmentVariableIntValue("FUSE_EDITOR_HEADLESS_VIEWPORT") != 0) {
+        return false;
+    }
+    const std::vector<std::string> extensions = platformSurfaceExtensions();
+    if (extensions.empty()) {
+        return false;
+    }
+    WindowPresentRequest request;
+    request.instanceExtensions = extensions;
+    request.enableValidation = enableValidation;
+    m_host.runtimeViewport().requestWindowSystemPresent(request);
+    m_windowPresentRequested = true;
+    m_presentPollTimer.start();
+    return true;
+#else
+    (void)enableValidation;
+    return false;
+#endif
+}
+
+void ViewportPlaceholderWidget::pollEmbeddedVulkanViewport() {
+    if (!m_windowPresentRequested) {
+        m_presentPollTimer.stop();
+        return;
+    }
+    const RuntimeViewportHook& hook = m_host.runtimeViewport();
+    switch (hook.windowPresentState()) {
+    case WindowPresentState::Off:
+    case WindowPresentState::InstancePending:
+        return;
+    case WindowPresentState::Failed:
+        fallBackToPlaceholder_();
+        return;
+    case WindowPresentState::InstanceReady:
+        if (m_vkWindow == nullptr && isVisible() && width() > 0 && height() > 0) {
+            if (!attachVulkanWindow_(hook.windowPresentInstance())) {
+                fallBackToPlaceholder_();
+            }
+        }
+        return;
+    case WindowPresentState::SurfaceWired:
+        return; // keep polling: a later wiring failure falls back to the placeholder
+    }
+}
+
+bool ViewportPlaceholderWidget::attachVulkanWindow_(void* vkInstance) {
+#if QT_CONFIG(vulkan) && defined(FUSE_VULKAN_BACKEND)
+    if (vkInstance == nullptr) {
+        return false;
+    }
+    // Qt adopts the game thread's instance (it never destroys an adopted VkInstance), so the
+    // surface it creates is owned by the instance the swapchain lives on.
+    m_qtVulkanInstance = std::make_unique<QVulkanInstance>();
+    m_qtVulkanInstance->setVkInstance(static_cast<VkInstance>(vkInstance));
+    if (!m_qtVulkanInstance->create()) {
+        m_qtVulkanInstance.reset();
+        return false;
+    }
+
+    m_vkWindow = new ViewportVulkanWindow(this);
+    m_vkWindow->setVulkanInstance(m_qtVulkanInstance.get());
+    m_vkContainer = QWidget::createWindowContainer(m_vkWindow, this, Qt::Widget);
+    m_vkContainer->setObjectName(QStringLiteral("fuseViewportVulkanContainer"));
+    // Keyboard focus stays on this widget (the container is only a native host); events that
+    // reach the child window are forwarded here by ViewportVulkanWindow.
+    m_vkContainer->setFocusPolicy(Qt::NoFocus);
+    m_vkContainer->setGeometry(rect());
+    m_vkContainer->show();
+    if (m_vkWindow->handle() == nullptr) {
+        m_vkWindow->create();
+    }
+    const VkSurfaceKHR surface = QVulkanInstance::surfaceForWindow(m_vkWindow);
+    if (surface == VK_NULL_HANDLE) {
+        releaseVulkanViewport();
+        return false;
+    }
+
+    syncPanelSize();
+    postViewportResize();
+    EditorCommand cmd;
+    cmd.kind = CommandKind::SetProperty;
+    cmd.propertyName = "viewport.vk_surface_adopted";
+    cmd.propertyValue = std::to_string(static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(surface))) +
+                        ' ' +
+                        std::to_string(static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(vkInstance))) +
+                        ' ' + std::to_string(m_panel.width()) + ' ' + std::to_string(m_panel.height());
+    m_host.postFromUi(std::move(cmd));
+    m_vkSurfacePosted = true;
+    return true;
+#else
+    (void)vkInstance;
+    return false;
+#endif
+}
+
+void ViewportPlaceholderWidget::fallBackToPlaceholder_() {
+    m_presentPollTimer.stop();
+    m_windowPresentRequested = false;
+    if (m_vkContainer != nullptr) {
+        m_vkContainer->hide();
+    }
+    update();
+}
+
+void ViewportPlaceholderWidget::releaseVulkanViewport() {
+    m_presentPollTimer.stop();
+    m_vkSurfacePosted = false;
+    if (m_vkContainer != nullptr) {
+        // Deleting the container deletes the embedded QWindow; destroying its platform window
+        // destroys Qt's VkSurfaceKHR through the (still alive) adopted instance.
+        delete m_vkContainer;
+        m_vkContainer = nullptr;
+        m_vkWindow = nullptr;
+    } else if (m_vkWindow != nullptr) {
+        delete m_vkWindow;
+        m_vkWindow = nullptr;
+    }
+#if QT_CONFIG(vulkan)
+    if (m_qtVulkanInstance != nullptr) {
+        m_qtVulkanInstance->destroy();
+        m_qtVulkanInstance.reset();
+    }
+#endif
 }
 
 void ViewportPlaceholderWidget::setProjectLabel(const QString& projectName) {
@@ -200,6 +365,28 @@ void ViewportPlaceholderWidget::mouseReleaseEvent(QMouseEvent* event) {
     QWidget::mouseReleaseEvent(event);
 }
 
+void ViewportPlaceholderWidget::wheelEvent(QWheelEvent* event) {
+    const float steps = static_cast<float>(event->angleDelta().y()) / 120.f;
+    if (steps == 0.f) {
+        QWidget::wheelEvent(event);
+        return;
+    }
+    ViewportCamera& cam = m_panel.camera();
+    if (m_lookHeld) {
+        // While flying: wheel scales the fly speed (20 % per notch).
+        cam.moveSpeed = std::clamp(cam.moveSpeed * std::pow(1.2f, steps), 0.5f, 1000.f);
+    } else {
+        // Otherwise dolly along the view direction.
+        const ecs::vec3 fwd = m_panel.forward();
+        const float distance = steps * cam.moveSpeed * 0.25f;
+        cam.positionX += fwd.x * distance;
+        cam.positionY += fwd.y * distance;
+        cam.positionZ += fwd.z * distance;
+    }
+    event->accept();
+    update();
+}
+
 // ---- context menu ----------------------------------------------------------------------------------
 
 ContextMenuHostGeometry ViewportPlaceholderWidget::hostGeometry() const {
@@ -340,11 +527,20 @@ void ViewportPlaceholderWidget::postVulkanSurfaceHandoffStub() {
 
 void ViewportPlaceholderWidget::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
+    if (m_windowPresentRequested) {
+        // The presenting path hands over a real surface once the instance is adopted.
+        postViewportResize();
+        pollEmbeddedVulkanViewport();
+        return;
+    }
     postVulkanSurfaceHandoffStub();
 }
 
 void ViewportPlaceholderWidget::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
+    if (m_vkContainer != nullptr) {
+        m_vkContainer->setGeometry(rect());
+    }
     postViewportResize();
 }
 

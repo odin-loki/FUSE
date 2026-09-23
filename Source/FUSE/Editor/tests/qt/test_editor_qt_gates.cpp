@@ -16,12 +16,17 @@
 //   ui_frame        editor UI render time < 2 ms / frame (Qt paint; budget enforced in Release only)
 //   idle_frames     no frame spikes over 10,000 non-interactive frames; editor memory < 256 MiB
 //   present_adopt   QVulkanInstance adopts the FUSE VkInstance; Qt surface wired to a real swapchain, 0 validation errors
+//   live_present    the real editor (game thread running) presents its viewport through the embedded Vulkan
+//                   child window: acquire / present counts grow, the window pixels are the rendered frame (not
+//                   the placeholder), resize recreates the swapchain, forwarded input drives the camera /
+//                   context menu, 0 validation messages, clean teardown
 
 #include "editor_panels.hpp"
 #include "editor_theme.hpp"
 #include "main_window.hpp"
 #include "property_pane_widget.hpp"
 #include "viewport_placeholder_widget.hpp"
+#include "viewport_vulkan_window.hpp"
 
 #include <fuse/editor/viewport_swapchain_wiring.hpp>
 #if defined(FUSE_VULKAN_BACKEND)
@@ -36,6 +41,7 @@
 
 #include <fuse/core/init.hpp>
 #include <fuse/core/sanitizer.hpp>
+#include <fuse/core/track_b.hpp>
 #include <fuse/ecs/components/transform.hpp>
 
 #include <QAction>
@@ -1360,6 +1366,223 @@ int gatePresentAdopt() {
 #endif
 }
 
+
+// ---- live present: the running editor presents its viewport ------------------------------------------
+
+#if defined(FUSE_VULKAN_BACKEND)
+fuse::editor::WindowPresentStats presentStats(MainWindow& window) {
+    return window.host().runtimeViewport().windowPresentStats();
+}
+
+/// Mean colour of a centred patch of the viewport as it is on screen (X server contents of the root
+/// window over the viewport's global rectangle — what the user sees, not a widget re-render).
+QColor screenPatch(QWidget* viewport, const QPoint& local, int half = 6) {
+    QScreen* screen = viewport->screen();
+    const QPoint g = viewport->mapToGlobal(local) - screen->geometry().topLeft();
+    const QImage img = screen->grabWindow(0, g.x() - half, g.y() - half, 2 * half, 2 * half).toImage();
+    if (img.isNull()) {
+        return {};
+    }
+    long long r = 0;
+    long long gg = 0;
+    long long b = 0;
+    int n = 0;
+    for (int y = 0; y < img.height(); ++y) {
+        for (int x = 0; x < img.width(); ++x) {
+            const QColor c = img.pixelColor(x, y);
+            r += c.red();
+            gg += c.green();
+            b += c.blue();
+            ++n;
+        }
+    }
+    return n == 0 ? QColor() : QColor(static_cast<int>(r / n), static_cast<int>(gg / n), static_cast<int>(b / n));
+}
+
+std::string colorText(const QColor& c) {
+    return fmt("(%d, %d, %d)", c.red(), c.green(), c.blue());
+}
+
+bool waitPresented(MainWindow& window, quint64 minPresented, int timeoutMs) {
+    return QTest::qWaitFor([&]() { return presentStats(window).presentedImages >= minPresented; }, timeoutMs);
+}
+#endif
+
+int gateLivePresent() {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (QGuiApplication::platformName() != QLatin1String("xcb")) {
+        std::printf("SKIP: embedded Vulkan viewport needs the xcb platform (have %s)\n",
+                    qPrintable(QGuiApplication::platformName()));
+        return 77;
+    }
+    fuse::renderer::resetVulkanValidationCounters();
+    using fuse::editor::WindowPresentState;
+
+    {
+        MainWindow::Options options; // the real editor: game thread + frame pump running
+        options.vulkanValidation = true;
+        MainWindow window(samplesRoot(), options);
+        expect(showAndExpose(window), "editor main window exposed");
+        ViewportPlaceholderWidget* viewport = window.viewport();
+
+        // ---- bring-up: instance published -> adopted -> surface wired -> frames presented ----------
+        const bool wired = QTest::qWaitFor(
+            [&]() {
+                const WindowPresentState state = window.host().runtimeViewport().windowPresentState();
+                return state == WindowPresentState::SurfaceWired || state == WindowPresentState::Failed;
+            },
+            30000);
+        const WindowPresentState state = window.host().runtimeViewport().windowPresentState();
+        if (state == WindowPresentState::Failed || !wired) {
+            std::printf("SKIP: no Vulkan device with xcb WSI (state %d)\n", static_cast<int>(state));
+            return 77;
+        }
+        expect(state == WindowPresentState::SurfaceWired, "game thread wired a real swapchain on the Qt surface");
+        expect(viewport->embeddedVulkanViewportActive() && viewport->vulkanContainer() != nullptr &&
+                   viewport->vulkanContainer()->isVisible(),
+               "Vulkan child window embedded via QWidget::createWindowContainer");
+        expect(viewport->vulkanWindow() != nullptr &&
+                   viewport->vulkanWindow()->surfaceType() == QSurface::VulkanSurface,
+               "viewport window surfaceType == VulkanSurface");
+        expect(viewport->vulkanWindow() != nullptr && viewport->vulkanWindow()->vulkanInstance() != nullptr &&
+                   reinterpret_cast<void*>(viewport->vulkanWindow()->vulkanInstance()->vkInstance()) ==
+                       window.host().runtimeViewport().windowPresentInstance(),
+               "Qt adopted the game thread's VkInstance (QVulkanInstance::setVkInstance)");
+        expect(fuse::core::trackBHostFeatureEnabled(fuse::core::TrackBHostFeature::EditorViewportPresent) &&
+                   !fuse::core::trackBUnlocked(),
+               "editor-scoped present unlock on; global FUSE_TRACK_B_UNLOCK untouched");
+
+        expect(waitPresented(window, 10, 20000), "first 10 viewport frames presented");
+        const fuse::editor::WindowPresentStats s0 = presentStats(window);
+        QTest::qWait(600);
+        const fuse::editor::WindowPresentStats s1 = presentStats(window);
+        std::printf("present: %llu frames, %llu acquired, %llu presented (+%llu / +%llu in 600 ms), swapchain %ux%u\n",
+                    static_cast<unsigned long long>(s1.frames), static_cast<unsigned long long>(s1.acquiredImages),
+                    static_cast<unsigned long long>(s1.presentedImages),
+                    static_cast<unsigned long long>(s1.acquiredImages - s0.acquiredImages),
+                    static_cast<unsigned long long>(s1.presentedImages - s0.presentedImages), s1.width, s1.height);
+        expect(s1.acquiredImages > s0.acquiredImages, "swapchain images acquired count increases");
+        expect(s1.presentedImages > s0.presentedImages, "vkQueuePresentKHR count increases");
+        expect(s1.presentedImages <= s1.acquiredImages, "every presented image was acquired");
+        const qreal dpr = viewport->devicePixelRatioF();
+        const auto expectedW = static_cast<fuse::u32>(std::lround(viewport->width() * dpr));
+        const auto expectedH = static_cast<fuse::u32>(std::lround(viewport->height() * dpr));
+        expect(s1.width == expectedW && s1.height == expectedH,
+               fmt("swapchain extent %ux%u == viewport %ux%u", s1.width, s1.height, expectedW, expectedH));
+
+        // ---- pixels: the window shows the rendered frame, not the placeholder ------------------------
+        const QColor placeholder = viewport->palette().color(QPalette::Window);
+        const QColor rendered = screenPatch(viewport, viewport->rect().center());
+        const QColor corner = screenPatch(viewport, QPoint(12, 12));
+        const QColor softwareFrame = viewport->grab().toImage().pixelColor(12, 12);
+        std::printf("pixels: screen centre %s corner %s; placeholder %s (widget re-render %s)\n",
+                    colorText(rendered).c_str(), colorText(corner).c_str(), colorText(placeholder).c_str(),
+                    colorText(softwareFrame).c_str());
+        expect(rendered.isValid() && colorDistance(rendered, placeholder) > 12 &&
+                   colorDistance(corner, placeholder) > 12,
+               "viewport pixels on screen are the rendered frame, not the software placeholder");
+        expect(colorDistance(rendered, corner) > 40,
+               "frame carries rendered geometry (raster pass over the clear colour), not a flat fill");
+        if (const char* dump = std::getenv("FUSE_QT_PRESENT_DUMP")) {
+            QScreen* screen = viewport->screen();
+            const QPoint g = viewport->mapToGlobal(QPoint(0, 0)) - screen->geometry().topLeft();
+            screen->grabWindow(0, g.x(), g.y(), viewport->width(), viewport->height())
+                .save(QString::fromUtf8(dump) + QStringLiteral("_viewport.png"));
+            window.grab().save(QString::fromUtf8(dump) + QStringLiteral("_widgets.png"));
+        }
+        expect(colorDistance(softwareFrame, placeholder) <= 6,
+               "control: a software re-render of the widget would show the placeholder colour");
+
+        // ---- resize: swapchain recreated for the new extent, presenting continues -------------------
+        const quint64 recreatesBefore = s1.swapchainRecreates;
+        window.resize(window.width() - 160, window.height() - 100);
+        QCoreApplication::processEvents();
+        const bool recreated = QTest::qWaitFor(
+            [&]() {
+                const fuse::editor::WindowPresentStats s = presentStats(window);
+                return s.swapchainRecreates > recreatesBefore &&
+                       s.width == static_cast<fuse::u32>(std::lround(viewport->width() * dpr)) &&
+                       s.height == static_cast<fuse::u32>(std::lround(viewport->height() * dpr));
+            },
+            10000);
+        const fuse::editor::WindowPresentStats s2 = presentStats(window);
+        std::printf("resize: viewport %dx%d -> swapchain %ux%u, recreates %llu -> %llu\n", viewport->width(),
+                    viewport->height(), s2.width, s2.height, static_cast<unsigned long long>(recreatesBefore),
+                    static_cast<unsigned long long>(s2.swapchainRecreates));
+        expect(recreated, "viewport resize recreates the swapchain at the new extent");
+        expect(waitPresented(window, s2.presentedImages + 10, 10000), "frames presented after the recreate");
+        const QColor afterResize = screenPatch(viewport, QPoint(viewport->width() - 14, viewport->height() - 14));
+        std::printf("pixels after resize: bottom-right %s\n", colorText(afterResize).c_str());
+        expect(colorDistance(afterResize, corner) <= 6,
+               "resized viewport shows the rendered frame edge to edge (new corner == old corner colour)");
+
+        // ---- input forwarded from the Vulkan window to the viewport widget ---------------------------
+        fuse::editor::qt::ViewportVulkanWindow* vkWindow = viewport->vulkanWindow();
+        const quint64 forwardedBefore = vkWindow->forwardedEventCount();
+        const fuse::editor::ViewportCamera cam0 = viewport->panel().camera();
+        QTest::mouseClick(vkWindow, Qt::LeftButton, Qt::NoModifier, QPoint(30, 30)); // pick (+ focus)
+        // Fly: RMB held + W (WASD only moves while flying).
+        QTest::mousePress(vkWindow, Qt::RightButton, Qt::NoModifier, QPoint(40, 40));
+        QTest::keyPress(vkWindow, Qt::Key_W);
+        QTest::qWait(300);
+        QTest::keyRelease(vkWindow, Qt::Key_W);
+        QTest::mouseRelease(vkWindow, Qt::RightButton, Qt::NoModifier, QPoint(40, 40));
+        const fuse::editor::ViewportCamera cam1 = viewport->panel().camera();
+        std::printf("camera z %.3f -> %.3f after RMB+W held 300 ms on the Vulkan window\n", cam0.positionZ,
+                    cam1.positionZ);
+        expect(cam1.positionZ > cam0.positionZ + 0.5f, "RMB+W on the Vulkan window flies the camera forward");
+        expect(viewport->activeContextMenu() == nullptr, "RMB used for flying does not open the context menu");
+        QTest::qWait(100);
+        const fuse::editor::ViewportCamera cam2 = viewport->panel().camera();
+        expect(std::abs(cam2.positionZ - cam1.positionZ) < 1e-4f, "key release stops the camera (no drift)");
+
+        const QPoint centre = viewport->rect().center();
+        QTest::mousePress(vkWindow, Qt::RightButton, Qt::NoModifier, centre);
+        QTest::mouseMove(vkWindow, centre + QPoint(40, 0));
+        QTest::mouseMove(vkWindow, centre + QPoint(80, 0));
+        QTest::qWait(60);
+        QTest::mouseRelease(vkWindow, Qt::RightButton, Qt::NoModifier, centre + QPoint(80, 0));
+        const fuse::editor::ViewportCamera cam3 = viewport->panel().camera();
+        std::printf("camera yaw %.2f -> %.2f after RMB drag on the Vulkan window\n", cam2.yaw, cam3.yaw);
+        expect(std::abs(cam3.yaw - cam2.yaw) > 1.f, "RMB drag on the Vulkan window turns the camera");
+        expect(viewport->activeContextMenu() == nullptr, "RMB drag does not open the context menu");
+
+        QWheelEvent wheel(QPointF(centre), QPointF(vkWindow->mapToGlobal(centre)), QPoint(), QPoint(0, 240),
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        const fuse::editor::ViewportCamera cam4 = viewport->panel().camera();
+        QCoreApplication::sendEvent(vkWindow, &wheel);
+        const fuse::editor::ViewportCamera cam5 = viewport->panel().camera();
+        const float moved = std::hypot(cam5.positionX - cam4.positionX, cam5.positionZ - cam4.positionZ);
+        std::printf("wheel: camera moved %.3f\n", moved);
+        expect(moved > 0.5f, "wheel on the Vulkan window dollies the camera");
+
+        QTest::mouseClick(vkWindow, Qt::RightButton, Qt::NoModifier, QPoint(60, 60));
+        const bool menuOpen = QTest::qWaitFor([&]() { return viewport->activeContextMenu() != nullptr; }, 2000);
+        expect(menuOpen, "RMB click on the Vulkan window opens the entity context menu");
+        if (QMenu* menu = viewport->activeContextMenu()) {
+            menu->close();
+        }
+        expect(vkWindow->forwardedEventCount() > forwardedBefore + 8,
+               fmt("Vulkan window forwarded %llu input events to the viewport widget",
+                   static_cast<unsigned long long>(vkWindow->forwardedEventCount() - forwardedBefore)));
+        QTest::qWait(200);
+        expect(presentStats(window).presentedImages > s2.presentedImages, "presenting continued through input");
+    }
+
+    // ---- clean teardown: swapchain -> Qt surface -> adopted QVulkanInstance -> FUSE instance ----------
+    expect(!fuse::core::trackBHostFeatureEnabled(fuse::core::TrackBHostFeature::EditorViewportPresent),
+           "editor present unlock withdrawn at teardown");
+    const fuse::renderer::VulkanValidationCounters counters = fuse::renderer::vulkanValidationCounters();
+    std::printf("validation: %u errors, %u warnings%s%s\n", counters.errors, counters.warnings,
+                counters.lastError.empty() ? "" : " — last: ", counters.lastError.c_str());
+    expect(counters.errors == 0u && counters.warnings == 0u,
+           "0 VK_LAYER_KHRONOS_validation messages across bring-up / present / resize / input / teardown");
+    return g_failures == 0 ? 0 : 1;
+#else
+    std::printf("SKIP: Vulkan backend not built\n");
+    return 77;
+#endif
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1404,6 +1627,8 @@ int main(int argc, char** argv) {
             code = gateUiFrame();
         } else if (gate == "present_adopt") {
             code = gatePresentAdopt();
+        } else if (gate == "live_present") {
+            code = gateLivePresent();
         } else if (gate == "idle_frames") {
             code = gateIdleFrames();
         } else {

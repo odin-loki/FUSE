@@ -163,17 +163,21 @@ void HybridRendererBootstrap::render(frame::FrameCtx& ctx) {
         acquiredImageIndex = m_presentPath->acquireImage();
     }
 
+    u32 queueSubmitsBefore = 0;
     if (m_rendererBootstrap != nullptr && m_rendererBootstrap->rhiContext() != nullptr) {
         m_rendererBootstrap->rhiContext()->setAcquiredSwapchainImage(acquiredImageIndex);
+        queueSubmitsBefore = m_rendererBootstrap->rhiContext()->queueSubmitCount();
     }
 
     m_composer.render(ctx);
 
     if (m_presentPath != nullptr) {
         if (m_rendererBootstrap != nullptr && m_rendererBootstrap->rhiContext() != nullptr) {
-            const renderer::GraphicsQueueSubmitResult& submit =
-                m_rendererBootstrap->rhiContext()->lastQueueSubmit();
-            m_presentPath->noteQueueSubmit(submit.ok, submit.submitted, submit.headless);
+            const renderer::RhiContext& rhi = *m_rendererBootstrap->rhiContext();
+            const renderer::GraphicsQueueSubmitResult& submit = rhi.lastQueueSubmit();
+            // Only this frame's submit can have signalled renderFinished for the acquired image.
+            const bool submittedThisFrame = rhi.queueSubmitCount() > queueSubmitsBefore;
+            m_presentPath->noteQueueSubmit(submit.ok, submit.submitted && submittedThisFrame, submit.headless);
         }
         m_presentPath->markReadyToPresent();
         m_presentPath->presentImage();

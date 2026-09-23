@@ -14,6 +14,7 @@ set(_fuse_qt_gate_tests
     "context_menu_dpr1_5:context_menu"
     fuse_api
     present_adopt
+    live_present
     ui_frame
     idle_frames
 )
@@ -57,8 +58,13 @@ foreach(_entry IN LISTS _fuse_qt_gate_tests)
     elseif(_name STREQUAL "context_menu_dpr1_5")
         list(APPEND _env "QT_SCALE_FACTOR=1.5")
     endif()
+    set(_labels "gate;qt")
+    if(_name STREQUAL "live_present")
+        # Needs a real X server (Xvfb via the display wrapper): the viewport presents to an X window.
+        list(APPEND _labels xvfb)
+    endif()
     set_tests_properties(${_test} PROPERTIES
-        LABELS "gate;qt"
+        LABELS "${_labels}"
         SKIP_RETURN_CODE 77
         ENVIRONMENT "${_env}"
         TIMEOUT 600
@@ -66,3 +72,19 @@ foreach(_entry IN LISTS _fuse_qt_gate_tests)
         RUN_SERIAL TRUE
     )
 endforeach()
+
+# Appendix A "Icons": FUSE app icon embedded in the Qt host and installed as the window icon.
+if(_fuse_qt_gate_available)
+    add_executable(fuse_editor_qt_icon_gate test_editor_qt_icon.cpp)
+    target_link_libraries(fuse_editor_qt_icon_gate PRIVATE fuse_editor_qt)
+    fuse_apply_cxx23(fuse_editor_qt_icon_gate)
+    add_test(NAME fuse_editor_qt_icon COMMAND fuse_editor_qt_icon_gate)
+else()
+    add_test(NAME fuse_editor_qt_icon COMMAND fuse_editor_qt_gates icon)
+endif()
+set_tests_properties(fuse_editor_qt_icon PROPERTIES
+    LABELS "gate;qt;lint"
+    SKIP_RETURN_CODE 77
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 120
+)
