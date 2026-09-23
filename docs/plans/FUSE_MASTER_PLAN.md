@@ -460,7 +460,7 @@ concept GPUResident = FuseValue<T> && (alignof(T) >= 4);
 
 #### Gates
 
-- [ ] **B1.2** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B1.2** implemented on FUSE APIs (not ungated Torque guts) (`fuse_core_b1_math_gates, fuse_core_io_handle`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -587,7 +587,7 @@ void declare_memory_budgets(std::span<MemoryBudget> budgets);
 
 #### Gates
 
-- [ ] **B1.3** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B1.3** implemented on FUSE APIs (not ungated Torque guts) (`fuse_core_b1_memory_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -690,7 +690,7 @@ namespace Noise {
 
 #### Gates
 
-- [ ] **B1.4** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B1.4** implemented on FUSE APIs (not ungated Torque guts) (`fuse_core_b1_math_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -791,8 +791,8 @@ void submit_cuda(CUDAJobDesc desc);  // launches kernel on a managed stream, sig
 
 #### Gates
 
-- [ ] **B1.5** implemented on FUSE APIs (not ungated Torque guts)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] **B1.5** implemented on FUSE APIs (not ungated Torque guts) (`fuse_core_b1_jobs_gates`)
+- [x] Source narrative tests/acceptance for this topic green (`fuse_core_b1_jobs_gates`)
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
 
@@ -895,7 +895,7 @@ Output formats: chrome://tracing JSON (offline analysis), or live Qt flame-graph
 
 #### Gates
 
-- [ ] **B1.6** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B1.6** implemented on FUSE APIs (not ungated Torque guts) (`fuse_core_b1_logging_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -973,7 +973,7 @@ struct InputState {
 
 #### Gates
 
-- [ ] **B1.7** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B1.7** implemented on FUSE APIs (not ungated Torque guts) (`fuse_core_b1_platform_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -1162,7 +1162,7 @@ static constexpr const char* OPTIONAL_EXTENSIONS[] = {
 
 #### Gates
 
-- [ ] **B2.1** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B2.1** implemented on FUSE APIs (not ungated Torque guts) (`fuse_vulkan_bootstrap`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -1239,7 +1239,7 @@ struct FrameData {
 
 #### Gates
 
-- [ ] **B2.2** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B2.2** implemented on FUSE APIs (not ungated Torque guts) (`fuse_vulkan_swapchain, fuse_frame_manager`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -1340,7 +1340,7 @@ public:
 
 #### Gates
 
-- [ ] **B2.3** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B2.3** implemented on FUSE APIs (not ungated Torque guts) (`fuse_vulkan_resources, fuse_b2_bindless_churn`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -1417,7 +1417,7 @@ struct GraphicsPipelineDesc {
 
 #### Gates
 
-- [ ] **B2.4** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B2.4** implemented on FUSE APIs (not ungated Torque guts) (`fuse_shader_pipeline`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -1469,7 +1469,7 @@ enum class RGResourceAccess : u32 {
 
 #### Gates
 
-- [ ] **B2.5** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B2.5** implemented on FUSE APIs (not ungated Torque guts) (`fuse_render_graph`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -1750,7 +1750,7 @@ struct DrawCall {
 
 #### Gates
 
-- [ ] **B2.8** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B2.8** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b2_triangle_readback`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -1800,8 +1800,8 @@ void main() {
 
 #### Gates
 
-- [ ] **B2.9** implemented on FUSE APIs (not ungated Torque guts)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] **B2.9** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b2_composite_blend`)
+- [x] Source narrative tests/acceptance for this topic green (`fuse_b2_composite_blend`)
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
 
@@ -1872,7 +1872,7 @@ int main() {
 
 #### Gates
 
-- [ ] **B2.10** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B2.10** implemented on FUSE APIs (not ungated Torque guts) (`fuse_renderer_bootstrap`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -1924,7 +1924,7 @@ int main() {
 - [x] Async upload completes and signals fence correctly — verified with fence wait timeout test — `fuse_b2_async_upload`
 - [ ] External memory textures allocate with correct Win32 handle — `cudaImportExternalMemory` succeeds
 - [ ] Shader compiler produces valid SPIR-V for all test shaders — verified with `spirv-val`
-- [ ] Pipeline cache serialises to disk and restores on next run — first frame pipeline stalls eliminated
+- [x] Pipeline cache serialises to disk and restores on next run — first frame pipeline stalls eliminated (`fuse_pipeline_cache`)
 - [ ] Hot-reload triggers pipeline rebuild in < 200ms — verified by timing shader file write to first redrawn frame
 - [ ] Push constants correctly pass per-draw data to shaders — verified with RenderDoc capture
 - [ ] `SharedTimeline` semaphore correctly serialises Vulkan and CUDA execution — no race conditions under 10k frames
@@ -2037,7 +2037,7 @@ struct ComponentColumn {
 
 #### Gates
 
-- [ ] **B3.1** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B3.1** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b3_ecs_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -2210,7 +2210,7 @@ struct SpotLight {
 
 #### Gates
 
-- [ ] **B3.2** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B3.2** implemented on FUSE APIs (not ungated Torque guts) (`fuse_ecs_components`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -2312,7 +2312,7 @@ class SceneBuildSystem {
 
 #### Gates
 
-- [ ] **B3.3** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B3.3** implemented on FUSE APIs (not ungated Torque guts) (`fuse_ecs_systems`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -2412,8 +2412,8 @@ u32 BVH::build_recursive(std::span<BVHLeaf> leaves, u32 depth) {
 
 #### Gates
 
-- [ ] **B3.4** implemented on FUSE APIs (not ungated Torque guts)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] **B3.4** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b3_bvh_gates`)
+- [x] Source narrative tests/acceptance for this topic green (`fuse_b3_bvh_gates`)
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
 
@@ -2485,7 +2485,7 @@ void SVO::carve(vec3 center, f32 radius) {
 
 #### Gates
 
-- [ ] **B3.5** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B3.5** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b3_svo_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -2561,7 +2561,7 @@ void Scene::update(f32 dt) {
 
 #### Gates
 
-- [ ] **B3.6** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B3.6** implemented on FUSE APIs (not ungated Torque guts) (`fuse_scene_manager`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -2634,8 +2634,8 @@ private:
 
 #### Gates
 
-- [ ] **B3.7** implemented on FUSE APIs (not ungated Torque guts)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] **B3.7** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b3_serialiser`)
+- [x] Source narrative tests/acceptance for this topic green (`fuse_b3_serialiser`)
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
 
@@ -2682,7 +2682,7 @@ void CameraSystem::update(Registry& reg) {
 
 #### Gates
 
-- [ ] **B3.8** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B3.8** implemented on FUSE APIs (not ungated Torque guts) (`fuse_scene_b37_b39`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -2835,7 +2835,7 @@ struct RigidBodySoA {
 
 #### Gates
 
-- [ ] **B4.1** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B4.1** implemented on FUSE APIs (not ungated Torque guts) (`fuse_phase4_deliverables`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -2908,7 +2908,7 @@ world_to_cell(vec3 pos, f32 cell_size) {
 
 #### Gates
 
-- [ ] **B4.2** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B4.2** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b4_broadphase_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -2984,7 +2984,7 @@ minkowski_support(const vec3* a, u32 na, const mat4& ta,
 
 #### Gates
 
-- [ ] **B4.3** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B4.3** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b4_narrowphase_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -3099,7 +3099,7 @@ public:
 
 #### Gates
 
-- [ ] **B4.4** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B4.4** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b4_solver_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -3151,7 +3151,7 @@ struct BHParams {
 
 #### Gates
 
-- [ ] **B4.5** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B4.5** implemented on FUSE APIs (not ungated Torque guts) (`fuse_physics_barnes_hut_tests`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -3201,7 +3201,7 @@ swept_sphere_sphere(
 
 #### Gates
 
-- [ ] **B4.6** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B4.6** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b4_ccd_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -3277,8 +3277,8 @@ void DestructionSystem::apply_destruction(
 
 #### Gates
 
-- [ ] **B4.7** implemented on FUSE APIs (not ungated Torque guts)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] **B4.7** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b4_destruction_gates`)
+- [x] Source narrative tests/acceptance for this topic green (`fuse_b4_destruction_gates`)
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
 
@@ -3353,8 +3353,8 @@ __global__ void cloth_solve_constraints_kernel(
 
 #### Gates
 
-- [ ] **B4.8** implemented on FUSE APIs (not ungated Torque guts)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] **B4.8** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b4_cloth_gates`)
+- [x] Source narrative tests/acceptance for this topic green (`fuse_b4_cloth_gates`)
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
 
@@ -3427,8 +3427,8 @@ void PhysicsManager::step(Registry& registry, f32 dt, StreamManager& streams) {
 
 #### Gates
 
-- [ ] **B4.9** implemented on FUSE APIs (not ungated Torque guts)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] **B4.9** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b4_manager_gates`)
+- [x] Source narrative tests/acceptance for this topic green (`fuse_b4_manager_gates`)
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
 
@@ -3475,8 +3475,8 @@ struct CollisionEvent {
 
 #### Gates
 
-- [ ] **B4.10** implemented on FUSE APIs (not ungated Torque guts)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] **B4.10** implemented on FUSE APIs (not ungated Torque guts) (`fuse_collision_events`)
+- [x] Source narrative tests/acceptance for this topic green (`fuse_b4_manager_gates, fuse_collision_events`)
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
 
@@ -3620,7 +3620,7 @@ Frame N:
 
 #### Gates
 
-- [ ] **B5.1** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B5.1** implemented on FUSE APIs (not ungated Torque guts) (`fuse_deferred_pipeline`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -3681,7 +3681,7 @@ void write_gbuffer(
 
 #### Gates
 
-- [ ] **B5.2** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B5.2** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_gbuffer_materials_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -3782,7 +3782,7 @@ __device__ MaterialSample mat_wood(vec3 world_pos, u32 seed) {
 
 #### Gates
 
-- [ ] **B5.3** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B5.3** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_gbuffer_materials_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -3882,7 +3882,7 @@ __global__ void deferred_shade_kernel(/* params */) {
 
 #### Gates
 
-- [ ] **B5.4** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B5.4** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_clustered_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -3958,7 +3958,7 @@ __device__ f32 sdf_soft_shadow(
 
 #### Gates
 
-- [ ] **B5.5** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B5.5** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_shadows_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -4034,7 +4034,7 @@ __global__ void probe_trace_kernel(
 
 #### Gates
 
-- [ ] **B5.6** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B5.6** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_ddgi_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -4108,7 +4108,7 @@ __global__ void ssr_kernel(
 
 #### Gates
 
-- [ ] **B5.7** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B5.7** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_taa_ssfx_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -4158,8 +4158,8 @@ __device__ f32 rayleigh_phase(f32 cos_theta) {
 
 #### Gates
 
-- [ ] **B5.8** implemented on FUSE APIs (not ungated Torque guts)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] **B5.8** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_atmosphere_gates`)
+- [x] Source narrative tests/acceptance for this topic green (`fuse_b5_atmosphere_gates`)
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
 
@@ -4232,7 +4232,7 @@ __global__ void taa_resolve_kernel(
 
 #### Gates
 
-- [ ] **B5.9** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B5.9** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_taa_ssfx_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -4353,7 +4353,7 @@ struct ColorGradeParams {
 
 #### Gates
 
-- [ ] **B5.10** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B5.10** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b5_post_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -4427,7 +4427,7 @@ __global__ void volumetric_fog_kernel(
 
 #### Gates
 
-- [ ] **B5.11** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B5.11** implemented on FUSE APIs (not ungated Torque guts) (`fuse_volumetric_lighting_b511`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -4681,8 +4681,8 @@ struct TransformCommand : Command {
 
 #### Gates
 
-- [ ] **B6.2** implemented on FUSE APIs (not ungated Torque guts)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] **B6.2** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_command_gates`)
+- [x] Source narrative tests/acceptance for this topic green (`fuse_editor_b6_command_gates`)
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
 - [ ] Qt 6 only for editor chrome — **no Dear ImGui**
@@ -4824,8 +4824,8 @@ static constexpr f32   GIZMO_ARROW_SIZE  = 0.2f;   // fraction of total length
 
 #### Gates
 
-- [ ] **B6.4** implemented on FUSE APIs (not ungated Torque guts)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] **B6.4** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_gizmo_gates`)
+- [x] Source narrative tests/acceptance for this topic green (`fuse_editor_b6_gizmo_gates`)
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
 - [ ] Qt 6 only for editor chrome — **no Dear ImGui**
@@ -4873,7 +4873,7 @@ private:
 
 #### Gates
 
-- [ ] **B6.5** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B6.5** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_hierarchy_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -4924,7 +4924,7 @@ private:
 
 #### Gates
 
-- [ ] **B6.6** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B6.6** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_panels`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -4973,7 +4973,7 @@ private:
 
 #### Gates
 
-- [ ] **B6.7** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B6.7** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_panels`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -5024,7 +5024,7 @@ private:
 
 #### Gates
 
-- [ ] **B6.8** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B6.8** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_panels_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -5073,7 +5073,7 @@ private:
 
 #### Gates
 
-- [ ] **B6.9** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B6.9** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_panels_b69_b612`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -5122,7 +5122,7 @@ private:
 
 #### Gates
 
-- [ ] **B6.10** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B6.10** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_panels_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -5171,7 +5171,7 @@ private:
 
 #### Gates
 
-- [ ] **B6.11** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B6.11** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_panels_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -5220,8 +5220,8 @@ private:
 
 #### Gates
 
-- [ ] **B6.12** implemented on FUSE APIs (not ungated Torque guts)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] **B6.12** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_play_mode_gates`)
+- [x] Source narrative tests/acceptance for this topic green (`fuse_editor_b6_play_mode_gates`)
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
 - [ ] Qt 6 only for editor chrome — **no Dear ImGui**
@@ -5306,7 +5306,7 @@ private:
 - [ ] Material changes persist after save/load cycle
 - [x] Add brush creates SDF sphere at correct world position — `fuse_editor_b6_panels_gates`
 - [x] Subtract brush correctly removes volume — verified by ray marching through carved region (`fuse_editor_b6_panels_gates`)
-- [ ] GRIA alpha blend produces smooth/hard transitions as expected
+- [x] GRIA alpha blend produces smooth/hard transitions as expected (`fuse_editor_b6_panels_gates`)
 - [x] X symmetry correctly mirrors stroke across X=0 plane — `fuse_editor_b6_panels_gates`
 - [x] Stroke spacing prevents redundant kernel dispatches at slow cursor speeds — `fuse_editor_b6_panels_gates`
 - [ ] GPU pass breakdown times match CUDA event measurements within 0.5ms
@@ -5504,7 +5504,7 @@ struct Animator {
 
 #### Gates
 
-- [ ] **B7.1** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B7.1** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b7_animation_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -5579,7 +5579,7 @@ struct ConvolutionReverb {
 
 #### Gates
 
-- [ ] **B7.2** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B7.2** implemented on FUSE APIs (not ungated Torque guts) (`fuse_audio_b7_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -5689,8 +5689,8 @@ private:
 
 #### Gates
 
-- [ ] **B7.3** implemented on FUSE APIs (not ungated Torque guts)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] **B7.3** implemented on FUSE APIs (not ungated Torque guts) (`fuse_script_b7_gates`)
+- [x] Source narrative tests/acceptance for this topic green (`fuse_script_b7_gates`)
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
 
@@ -5790,8 +5790,8 @@ public:
 
 #### Gates
 
-- [ ] **B7.4** implemented on FUSE APIs (not ungated Torque guts)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] **B7.4** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b7_net_gates`)
+- [x] Source narrative tests/acceptance for this topic green (`fuse_b7_net_gates`)
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
 
@@ -5892,7 +5892,7 @@ void main() {
 
 #### Gates
 
-- [ ] **B7.5** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B7.5** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b7_terrain_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -5942,8 +5942,8 @@ struct WorldPartitionDesc {
 
 #### Gates
 
-- [ ] **B7.6** implemented on FUSE APIs (not ungated Torque guts)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] **B7.6** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b7_streaming_gates`)
+- [x] Source narrative tests/acceptance for this topic green (`fuse_b7_streaming_gates`)
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
 
@@ -6016,7 +6016,7 @@ __global__ void particle_simulate_kernel(
 
 #### Gates
 
-- [ ] **B7.7** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B7.7** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b7_vfx_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -6134,7 +6134,7 @@ private:
 
 #### Gates
 
-- [ ] **B7.8** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B7.8** implemented on FUSE APIs (not ungated Torque guts) (`fuse_core_b7_platform_gates`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
@@ -6243,8 +6243,8 @@ private:
 
 #### Gates
 
-- [ ] **B7.9** implemented on FUSE APIs (not ungated Torque guts)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] **B7.9** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b7_cook_gates`)
+- [x] Source narrative tests/acceptance for this topic green (`fuse_b7_cook_gates`)
 - [ ] ASan/UBSan clean on subsystem smoke
 - [ ] No owning raw pointers in public FUSE APIs
 
