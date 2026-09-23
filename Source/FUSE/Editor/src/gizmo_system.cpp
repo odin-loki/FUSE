@@ -1,6 +1,8 @@
 #include <fuse/editor/gizmo_system.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 namespace fuse::editor {
 
@@ -131,17 +133,15 @@ bool hitTestAxisSegment(const GizmoRay& ray, const math::Vec3& segmentStart,
     const f32 e = ray.direction.dot(w);
     const f32 denom = a * c - b * b;
 
-    f32 segmentT = 0.f;
-    f32 rayT = 0.f;
-    if (std::fabs(denom) < kEpsilon) {
-        segmentT = 0.f;
-        rayT = (b > c ? d / b : e / c);
-    } else {
-        segmentT = (b * e - c * d) / denom;
-        rayT = (a * e - b * d) / denom;
-    }
+    // Closest points between the segment [0,1] and the ray [0,inf): solve the unconstrained
+    // lines, clamp the segment parameter, re-project onto the ray (clamping behind-origin hits),
+    // then re-project that ray point back onto the segment.
+    f32 segmentT = std::fabs(denom) < kEpsilon ? 0.f : (c * d - b * e) / denom;
+    segmentT = std::clamp(segmentT, 0.f, 1.f);
+    f32 rayT = (segment * segmentT - w).dot(ray.direction) / c;
+    rayT = std::max(0.f, rayT);
+    segmentT = std::clamp((w + ray.direction * rayT).dot(segment) / a, 0.f, 1.f);
 
-    segmentT = std::max(0.f, std::min(1.f, segmentT));
     const math::Vec3 pointOnSegment = segmentStart + segment * segmentT;
     const math::Vec3 pointOnRay = ray.origin + ray.direction * rayT;
     if ((pointOnSegment - pointOnRay).length() > radius) {
@@ -179,25 +179,39 @@ GizmoAxis pickAxisFromRay(const GizmoRay& ray, const GizmoTransform& transform, 
 
     if (mode == GizmoMode::Scale) {
         const math::Vec3 toCenter = origin - ray.origin;
-        const f32 centerDist = math::cross(toCenter, ray.direction).length();
-        if (centerDist <= pickRadius) {
+        const f32 centerT = toCenter.dot(ray.direction) / ray.direction.dot(ray.direction);
+        const math::Vec3 closest = ray.origin + ray.direction * centerT;
+        if (centerT >= 0.f && (closest - origin).length() <= pickRadius) {
             return GizmoAxis::Uniform;
         }
     }
 
     GizmoAxis bestAxis = GizmoAxis::None;
     f32 bestT = 1e30f;
+    f32 bestAlignment = 0.f;
+    const f32 rayLength = ray.direction.length();
 
     const GizmoAxis axes[] = {GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z};
+    // Rotate handles are rings, not arrows: only translate/scale test the axis segments.
     for (const GizmoAxis axis : axes) {
+        if (mode == GizmoMode::Rotate) {
+            break;
+        }
         f32 hitT = 0.f;
         const math::Vec3 end = segmentEnd(origin, axis, orientation, space, axisLength);
         if (!hitTestAxisSegment(ray, origin, end, pickRadius, hitT)) {
             continue;
         }
-        if (hitT < bestT) {
+        // Nearest hit wins. Arrows share the pivot, so a ray through it ties every arrow at the
+        // same depth: prefer the arrow the ray runs along (it covers that whole arrow).
+        const f32 alignment =
+            std::fabs(axisDirection(axis, orientation, space).dot(ray.direction)) / rayLength;
+        const f32 tieEpsilon = 1e-4f * std::max(1.f, std::fabs(bestT));
+        const bool tie = std::fabs(hitT - bestT) <= tieEpsilon;
+        if ((!tie && hitT < bestT) || (tie && alignment > bestAlignment)) {
             bestT = hitT;
             bestAxis = axis;
+            bestAlignment = alignment;
         }
     }
 
@@ -1485,11 +1499,16 @@ GizmoTransform snapTransform(const GizmoTransform& transform, GizmoMode mode,
         break;
     }
     case GizmoMode::Rotate: {
-        const math::Vec3 snapped =
-            snapEulerRadians({out.rotX, out.rotY, out.rotZ}, settings);
+        // rotX..rotW are quaternion components, not angles: snap the Euler angles instead.
+        if (!settings.rotateSnap) {
+            break;
+        }
+        const math::Vec3 euler = quatToEulerRadians(gizmoRotation(out));
+        const math::Quat snapped = eulerRadiansToQuat(snapEulerRadians(euler, settings));
         out.rotX = snapped.x;
         out.rotY = snapped.y;
         out.rotZ = snapped.z;
+        out.rotW = snapped.w;
         break;
     }
     case GizmoMode::Scale: {
@@ -1535,28 +1554,26 @@ GizmoTransform gizmoFromMath(const math::Vec3& position, const math::Quat& rotat
 GizmoTransform applyTranslateDelta(const GizmoTransform& base, GizmoAxis axis,
                                    const math::Vec3& delta, GizmoSpace space) {
     GizmoTransform out = base;
-    math::Vec3 worldDelta = delta;
-
-    if (space == GizmoSpace::Local) {
-        worldDelta = gizmoRotation(base).rotate(delta);
-    }
+    math::Vec3 worldDelta{};
 
     switch (axis) {
     case GizmoAxis::X:
-        out.posX += worldDelta.x;
+        worldDelta = gizmoAxisDirection(axis, base, space) * delta.x;
         break;
     case GizmoAxis::Y:
-        out.posY += worldDelta.y;
+        worldDelta = gizmoAxisDirection(axis, base, space) * delta.y;
         break;
     case GizmoAxis::Z:
-        out.posZ += worldDelta.z;
+        worldDelta = gizmoAxisDirection(axis, base, space) * delta.z;
         break;
     default:
-        out.posX += worldDelta.x;
-        out.posY += worldDelta.y;
-        out.posZ += worldDelta.z;
+        worldDelta = space == GizmoSpace::Local ? gizmoRotation(base).rotate(delta) : delta;
         break;
     }
+
+    out.posX += worldDelta.x;
+    out.posY += worldDelta.y;
+    out.posZ += worldDelta.z;
     return out;
 }
 
@@ -1578,12 +1595,12 @@ GizmoTransform applyRotateDelta(const GizmoTransform& base, GizmoAxis axis, f32 
         return out;
     }
 
-    if (space == GizmoSpace::World) {
-        axisVec = gizmoRotation(base).rotate(axisVec);
-    }
-
-    const math::Quat delta = math::fromAxisAngle(axisVec.normalized(), deltaRadians);
-    const math::Quat combined = delta * gizmoRotation(base);
+    // World: rotate about the fixed world axis (pre-multiply). Local: rotate about the entity's
+    // own axis (post-multiply), which equals pre-multiplying by the rotated axis.
+    const math::Quat delta = math::fromAxisAngle(axisVec, deltaRadians);
+    const math::Quat rotation = gizmoRotation(base).normalized();
+    const math::Quat combined =
+        (space == GizmoSpace::World ? delta * rotation : rotation * delta).normalized();
     out.rotX = combined.x;
     out.rotY = combined.y;
     out.rotZ = combined.z;
@@ -1616,6 +1633,213 @@ GizmoTransform applyScaleDelta(const GizmoTransform& base, GizmoAxis axis,
     return out;
 }
 
+math::Vec3 quatToEulerRadians(const math::Quat& rotation) {
+    const math::Quat q = rotation.normalized();
+    const f32 sinX = 2.f * (q.w * q.x + q.y * q.z);
+    const f32 cosX = 1.f - 2.f * (q.x * q.x + q.y * q.y);
+    const f32 sinY = std::clamp(2.f * (q.w * q.y - q.z * q.x), -1.f, 1.f);
+    const f32 sinZ = 2.f * (q.w * q.z + q.x * q.y);
+    const f32 cosZ = 1.f - 2.f * (q.y * q.y + q.z * q.z);
+    return {std::atan2(sinX, cosX), std::asin(sinY), std::atan2(sinZ, cosZ)};
+}
+
+math::Quat eulerRadiansToQuat(const math::Vec3& eulerRadians) {
+    const math::Quat qx = math::fromAxisAngle({1.f, 0.f, 0.f}, eulerRadians.x);
+    const math::Quat qy = math::fromAxisAngle({0.f, 1.f, 0.f}, eulerRadians.y);
+    const math::Quat qz = math::fromAxisAngle({0.f, 0.f, 1.f}, eulerRadians.z);
+    return (qz * qy * qx).normalized();
+}
+
+math::Vec3 gizmoAxisDirection(GizmoAxis axis, const GizmoTransform& transform, GizmoSpace space) {
+    return axisDirection(axis, gizmoRotation(transform).normalized(), space);
+}
+
+bool closestAxisParameter(const GizmoRay& ray, const math::Vec3& axisOrigin,
+                          const math::Vec3& axisDirection, f32& outS) {
+    const math::Vec3 u = axisDirection;
+    const math::Vec3 v = ray.direction;
+    const math::Vec3 w = axisOrigin - ray.origin;
+    const f32 a = u.dot(u);
+    const f32 b = u.dot(v);
+    const f32 c = v.dot(v);
+    const f32 d = u.dot(w);
+    const f32 e = v.dot(w);
+    const f32 denom = a * c - b * b;
+    if (a < kEpsilon || c < kEpsilon || denom < kEpsilon * a * c) {
+        return false;
+    }
+    outS = (b * e - c * d) / denom;
+    return isFiniteGizmoScalar(outS);
+}
+
+f32 signedAngleAroundAxis(const math::Vec3& from, const math::Vec3& to, const math::Vec3& axis) {
+    const math::Vec3 n = axis.normalized();
+    const math::Vec3 a = from - n * from.dot(n);
+    const math::Vec3 b = to - n * to.dot(n);
+    return std::atan2(math::cross(a, b).dot(n), a.dot(b));
+}
+
+bool dragTransformFromRays(const GizmoTransform& base, GizmoMode mode, GizmoAxis axis,
+                           GizmoSpace space, const GizmoRay& startRay, const GizmoRay& currentRay,
+                           const GizmoSnapSettings& snap, GizmoTransform& out) {
+    out = base;
+    if (!isRayValid(startRay) || !isRayValid(currentRay) || axis == GizmoAxis::None) {
+        return false;
+    }
+
+    const math::Vec3 center = gizmoPosition(base);
+    const math::Vec3 axisDir = gizmoAxisDirection(axis, base, space);
+
+    switch (mode) {
+    case GizmoMode::Translate: {
+        f32 s0 = 0.f;
+        f32 s1 = 0.f;
+        if (axis == GizmoAxis::Uniform || !closestAxisParameter(startRay, center, axisDir, s0) ||
+            !closestAxisParameter(currentRay, center, axisDir, s1)) {
+            return false;
+        }
+        f32 distance = s1 - s0;
+        if (space == GizmoSpace::Local && snap.translateSnap) {
+            distance = snapToGrid(distance, snap.gridSize);
+        }
+        const math::Vec3 moved = center + axisDir * distance;
+        out.posX = moved.x;
+        out.posY = moved.y;
+        out.posZ = moved.z;
+        if (space == GizmoSpace::World) {
+            out = snapTransform(out, GizmoMode::Translate, snap);
+        }
+        return true;
+    }
+    case GizmoMode::Rotate: {
+        if (axis == GizmoAxis::Uniform) {
+            return false;
+        }
+        f32 t0 = 0.f;
+        f32 t1 = 0.f;
+        if (!hitTestAxisPlane(startRay, axisDir, center, t0) ||
+            !hitTestAxisPlane(currentRay, axisDir, center, t1)) {
+            return false;
+        }
+        const math::Vec3 v0 = startRay.origin + startRay.direction * t0 - center;
+        const math::Vec3 v1 = currentRay.origin + currentRay.direction * t1 - center;
+        if (v0.length() < kEpsilon || v1.length() < kEpsilon) {
+            return false;
+        }
+        f32 angle = signedAngleAroundAxis(v0, v1, axisDir);
+        if (snap.rotateSnap) {
+            angle = snapAngleRadians(angle, snap.angleStepDegrees);
+        }
+        // `axisDir` is already the world-space direction of the handle, so pre-multiplying is
+        // correct for both World and Local handles.
+        const math::Quat rotation =
+            (math::fromAxisAngle(axisDir, angle) * gizmoRotation(base).normalized()).normalized();
+        out.rotX = rotation.x;
+        out.rotY = rotation.y;
+        out.rotZ = rotation.z;
+        out.rotW = rotation.w;
+        return true;
+    }
+    case GizmoMode::Scale: {
+        f32 factor = 1.f;
+        if (axis == GizmoAxis::Uniform) {
+            // Distance from the centre on the camera-facing plane through the gizmo.
+            f32 t0 = 0.f;
+            f32 t1 = 0.f;
+            const math::Vec3 toCenter = center - startRay.origin;
+            if (toCenter.length() < kEpsilon) {
+                return false;
+            }
+            const math::Vec3 facing = toCenter.normalized();
+            if (!hitTestAxisPlane(startRay, facing, center, t0) ||
+                !hitTestAxisPlane(currentRay, facing, center, t1)) {
+                return false;
+            }
+            const f32 r0 = (startRay.origin + startRay.direction * t0 - center).length();
+            const f32 r1 = (currentRay.origin + currentRay.direction * t1 - center).length();
+            if (r0 < kEpsilon) {
+                return false;
+            }
+            factor = r1 / r0;
+        } else {
+            f32 s0 = 0.f;
+            f32 s1 = 0.f;
+            if (!closestAxisParameter(startRay, center, axisDir, s0) ||
+                !closestAxisParameter(currentRay, center, axisDir, s1) || std::fabs(s0) < kEpsilon) {
+                return false;
+            }
+            factor = s1 / s0;
+        }
+
+        constexpr f32 kMinScale = 0.01f;
+        const bool uniform = axis == GizmoAxis::Uniform;
+        if (uniform || axis == GizmoAxis::X) {
+            out.scaleX = std::max(kMinScale, base.scaleX * factor);
+        }
+        if (uniform || axis == GizmoAxis::Y) {
+            out.scaleY = std::max(kMinScale, base.scaleY * factor);
+        }
+        if (uniform || axis == GizmoAxis::Z) {
+            out.scaleZ = std::max(kMinScale, base.scaleZ * factor);
+        }
+        out = snapTransform(out, GizmoMode::Scale, snap);
+        return true;
+    }
+    }
+    return false;
+}
+
+f32 gizmoWorldScale(const math::Vec3& cameraPosition, const math::Vec3& gizmoPosition,
+                    f32 verticalFovRadians, f32 viewportHeightPx, f32 screenSizePx) {
+    const f32 distance = (gizmoPosition - cameraPosition).length();
+    if (viewportHeightPx <= 0.f || verticalFovRadians <= 0.f || distance < kEpsilon) {
+        return 1.f;
+    }
+    const f32 worldPerPixel = 2.f * distance * std::tan(verticalFovRadians * 0.5f) / viewportHeightPx;
+    return screenSizePx * worldPerPixel;
+}
+
+std::string formatGizmoTransform(const GizmoTransform& transform) {
+    const f32 values[] = {transform.posX,   transform.posY,   transform.posZ, transform.rotX,
+                          transform.rotY,   transform.rotZ,   transform.rotW, transform.scaleX,
+                          transform.scaleY, transform.scaleZ};
+    std::string text;
+    for (const f32 value : values) {
+        if (!text.empty()) {
+            text += ',';
+        }
+        text += formatPropertyFloat(value);
+    }
+    return text;
+}
+
+bool parseGizmoTransform(const std::string& text, GizmoTransform& out) {
+    f32 values[10] = {};
+    const char* cursor = text.c_str();
+    for (usize i = 0; i < 10; ++i) {
+        char* end = nullptr;
+        values[i] = std::strtof(cursor, &end);
+        if (end == cursor) {
+            return false;
+        }
+        cursor = end;
+        if (i + 1 < 10) {
+            if (*cursor != ',') {
+                return false;
+            }
+            ++cursor;
+        }
+    }
+    if (*cursor != '\0') {
+        return false;
+    }
+
+    out = gizmoFromMath({values[0], values[1], values[2]},
+                        {values[3], values[4], values[5], values[6]},
+                        {values[7], values[8], values[9]});
+    return true;
+}
+
 bool GizmoSystem::setMode(GizmoMode mode) {
     if (m_mode == mode) {
         return false;
@@ -1643,7 +1867,8 @@ void GizmoSystem::cycleMode() {
 }
 
 GizmoAxis GizmoSystem::pickAxis(const GizmoRay& ray, const GizmoTransform& transform) const {
-    return pickAxisFromRay(ray, transform, m_mode, m_space, kAxisLength, kPickRadius);
+    return pickAxisFromRay(ray, transform, m_mode, m_space, kAxisLength * m_worldScale,
+                           kPickRadius * m_worldScale);
 }
 
 GizmoAxis GizmoSystem::pickAxis(const GizmoHitTest& hit) const {
@@ -1652,8 +1877,8 @@ GizmoAxis GizmoSystem::pickAxis(const GizmoHitTest& hit) const {
 
 bool GizmoSystem::tryPickAxis(const GizmoRay& ray, const GizmoTransform& transform,
                               GizmoAxis& outAxis) const {
-    return fuse::editor::tryPickAxis(ray, transform, m_mode, m_space, kAxisLength, kPickRadius,
-                                     outAxis);
+    return fuse::editor::tryPickAxis(ray, transform, m_mode, m_space, kAxisLength * m_worldScale,
+                                     kPickRadius * m_worldScale, outAxis);
 }
 
 bool GizmoSystem::tryPickAxis(const GizmoHitTest& hit, GizmoAxis& outAxis) const {
@@ -1883,8 +2108,10 @@ bool GizmoSystem::tryBeginDrag(const GizmoHitTest& hit, const GizmoTransform& cu
     }
 
     m_dragging = true;
+    m_rayDrag = false;
     m_startTransform = current;
     m_currentTransform = current;
+    m_startHit = hit;
     m_lastHit = hit;
 
     out.active = true;
@@ -1905,8 +2132,11 @@ bool GizmoSystem::tryBeginDrag(const GizmoRay& ray, const GizmoTransform& curren
     }
 
     m_dragging = true;
+    m_rayDrag = true;
+    m_startRay = ray;
     m_startTransform = current;
     m_currentTransform = current;
+    m_startHit = {};
     m_lastHit = {};
 
     out.active = true;
@@ -1947,6 +2177,32 @@ GizmoResult GizmoSystem::updateDrag(const GizmoHitTest& hit) {
     return result;
 }
 
+bool GizmoSystem::tryUpdateDrag(const GizmoRay& ray, GizmoResult& out) {
+    out = {};
+    if (!m_dragging || !m_rayDrag || !isRayValid(ray)) {
+        return false;
+    }
+
+    GizmoTransform dragged{};
+    if (!dragTransformFromRays(m_startTransform, m_mode, m_activeAxis, m_space, m_startRay, ray,
+                               m_snap, dragged)) {
+        return false;
+    }
+    m_currentTransform = dragged;
+
+    out.active = true;
+    out.changed = true;
+    out.axis = m_activeAxis;
+    out.transform = m_currentTransform;
+    return true;
+}
+
+GizmoResult GizmoSystem::updateDrag(const GizmoRay& ray) {
+    GizmoResult result;
+    static_cast<void>(tryUpdateDrag(ray, result));
+    return result;
+}
+
 GizmoResult GizmoSystem::endDrag() {
     GizmoResult result;
     if (!tryEndDrag(result)) {
@@ -1961,7 +2217,9 @@ bool GizmoSystem::tryEndDrag(GizmoResult& out) {
         return false;
     }
 
-    m_currentTransform = applySnapping_(m_currentTransform);
+    if (!m_rayDrag) {
+        m_currentTransform = applySnapping_(m_currentTransform);
+    }
     markDirty_();
 
     out.active = false;
@@ -1970,6 +2228,7 @@ bool GizmoSystem::tryEndDrag(GizmoResult& out) {
     out.transform = m_currentTransform;
 
     m_dragging = false;
+    m_rayDrag = false;
     m_activeAxis = GizmoAxis::None;
     return true;
 }
@@ -1984,9 +2243,13 @@ GizmoAxis GizmoSystem::pickAxisScreen_(const GizmoHitTest& hit) const {
 
 GizmoTransform GizmoSystem::applyAxisDelta_(const GizmoHitTest& hit,
                                             const GizmoTransform& base) const {
-    const f32 dx = normalizedX(hit) - normalizedX(m_lastHit);
-    const f32 dy = normalizedY(hit) - normalizedY(m_lastHit);
-    const f32 delta = trySnapDragDelta(dx + dy, m_mode, m_snap);
+    // `base` is the drag-start transform, so the delta is measured from the drag-start hit.
+    const f32 dx = normalizedX(hit) - normalizedX(m_startHit);
+    const f32 dy = normalizedY(hit) - normalizedY(m_startHit);
+    // Only the rotation angle is snapped relatively; translate/scale snap the absolute result in
+    // `applySnapping_` (snapping a normalised screen delta by a world grid mixes units).
+    const f32 delta = m_mode == GizmoMode::Rotate ? trySnapDragDelta(dx + dy, m_mode, m_snap)
+                                                  : dx + dy;
 
     switch (m_mode) {
     case GizmoMode::Translate: {
@@ -2025,6 +2288,9 @@ GizmoTransform GizmoSystem::applyAxisDelta_(const GizmoHitTest& hit,
 }
 
 GizmoTransform GizmoSystem::applySnapping_(const GizmoTransform& transform) const {
+    if (m_mode == GizmoMode::Rotate) {
+        return transform; // the swept angle was already snapped relative to the drag start
+    }
     GizmoTransform snapped = transform;
     static_cast<void>(trySnapTransform(transform, snapped));
     return snapped;
@@ -2036,11 +2302,14 @@ void GizmoSystem::markDirty_() {
         m_editorState->sceneModified = true;
     }
     if (m_commandStack != nullptr) {
+        // One `transform.trs` edit per drag carrying the exact before/after state; consecutive
+        // drags of the same target coalesce into a single undo step on the CommandStack.
         EditorCommand command;
         command.kind = CommandKind::SetProperty;
         command.target = m_target;
-        command.propertyName = "transform";
-        command.propertyValue = "gizmo";
+        command.propertyName = "transform.trs";
+        command.propertyValue = formatGizmoTransform(m_currentTransform);
+        command.propertyValueBefore = formatGizmoTransform(m_startTransform);
         m_commandStack->execute(std::move(command));
     }
 }

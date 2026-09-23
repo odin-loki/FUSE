@@ -183,9 +183,9 @@ bool PropertyInspector::setTransformPosition(const ecs::vec3& position, EditorSc
         return false;
     }
 
-    const std::string before = std::to_string(transform->position.x) + "," +
-                               std::to_string(transform->position.y) + "," +
-                               std::to_string(transform->position.z);
+    const std::string before = formatPropertyFloat(transform->position.x) + "," +
+                               formatPropertyFloat(transform->position.y) + "," +
+                               formatPropertyFloat(transform->position.z);
 
     transform->position = position;
     transform->dirty = true;
@@ -194,8 +194,8 @@ bool PropertyInspector::setTransformPosition(const ecs::vec3& position, EditorSc
     command.kind = CommandKind::SetProperty;
     command.target = Handle<Object>(m_target.index, m_target.generation);
     command.propertyName = "transform.position";
-    command.propertyValue = std::to_string(position.x) + "," + std::to_string(position.y) + "," +
-                            std::to_string(position.z);
+    command.propertyValue = formatPropertyFloat(position.x) + "," +
+                            formatPropertyFloat(position.y) + "," + formatPropertyFloat(position.z);
     cmds.push(std::move(command), before);
     return true;
 }
@@ -269,14 +269,14 @@ bool PropertyInspector::setSdfBlendAlpha(f32 alpha, EditorScene& scene, CommandS
         return false;
     }
 
-    const std::string before = std::to_string(sdf->blend_alpha);
+    const std::string before = formatPropertyFloat(sdf->blend_alpha);
     sdf->blend_alpha = alpha;
 
     EditorCommand command;
     command.kind = CommandKind::SetProperty;
     command.target = Handle<Object>(m_target.index, m_target.generation);
     command.propertyName = "sdf.blend_alpha";
-    command.propertyValue = std::to_string(alpha);
+    command.propertyValue = formatPropertyFloat(alpha);
     cmds.push(std::move(command), before);
     return true;
 }
@@ -291,14 +291,14 @@ bool PropertyInspector::setDirectionalIntensity(f32 intensity, EditorScene& scen
         return false;
     }
 
-    const std::string before = std::to_string(light->intensity);
+    const std::string before = formatPropertyFloat(light->intensity);
     light->intensity = intensity;
 
     EditorCommand command;
     command.kind = CommandKind::SetProperty;
     command.target = Handle<Object>(m_target.index, m_target.generation);
     command.propertyName = "directional.intensity";
-    command.propertyValue = std::to_string(intensity);
+    command.propertyValue = formatPropertyFloat(intensity);
     cmds.push(std::move(command), before);
     return true;
 }
@@ -313,14 +313,14 @@ bool PropertyInspector::setSpotIntensity(f32 intensity, EditorScene& scene, Comm
         return false;
     }
 
-    const std::string before = std::to_string(light->intensity);
+    const std::string before = formatPropertyFloat(light->intensity);
     light->intensity = intensity;
 
     EditorCommand command;
     command.kind = CommandKind::SetProperty;
     command.target = Handle<Object>(m_target.index, m_target.generation);
     command.propertyName = "spot.intensity";
-    command.propertyValue = std::to_string(intensity);
+    command.propertyValue = formatPropertyFloat(intensity);
     cmds.push(std::move(command), before);
     return true;
 }

@@ -3,6 +3,10 @@
 namespace fuse::editor {
 
 void PlayModeController::enterPlay(scene::Scene& scene, PlayModePhysicsState& physics) {
+    if (m_state != State::Stopped) {
+        return; // re-entering would overwrite the edit-time snapshot with simulated state
+    }
+
     takeSnapshot_(scene);
     physics.simulationActive = true;
     physics.stepCount = 0;

@@ -8,6 +8,8 @@
 #include <fuse/object.hpp>
 #include <fuse/types.hpp>
 
+#include <string>
+
 namespace fuse::editor {
 
 enum class GizmoMode {
@@ -737,12 +739,53 @@ math::Vec3 gizmoScale(const GizmoTransform& transform);
 GizmoTransform gizmoFromMath(const math::Vec3& position, const math::Quat& rotation,
                              const math::Vec3& scale);
 
+/// Moves `base` along the gizmo axis: `delta` is expressed in `space`, so for a single axis only
+/// its matching component is used, applied along the world axis (World) or the entity's rotated
+/// local axis (Local). `None`/`Uniform` apply the whole vector.
 GizmoTransform applyTranslateDelta(const GizmoTransform& base, GizmoAxis axis,
                                    const math::Vec3& delta, GizmoSpace space);
+/// Rotates `base` about the world axis (World: q' = r * q) or its own local axis
+/// (Local: q' = q * r). The result is re-normalised.
 GizmoTransform applyRotateDelta(const GizmoTransform& base, GizmoAxis axis, f32 deltaRadians,
                                 GizmoSpace space);
 GizmoTransform applyScaleDelta(const GizmoTransform& base, GizmoAxis axis,
                                const math::Vec3& delta, GizmoSpace space);
+
+/// Quaternion <-> XYZ Euler radians (q = qz * qy * qx) used for absolute rotation snapping.
+math::Vec3 quatToEulerRadians(const math::Quat& rotation);
+math::Quat eulerRadiansToQuat(const math::Vec3& eulerRadians);
+
+/// World-space direction of a gizmo handle axis (unit length; zero for None/Uniform).
+math::Vec3 gizmoAxisDirection(GizmoAxis axis, const GizmoTransform& transform, GizmoSpace space);
+
+/// Parameter `s` of the point on the line `axisOrigin + axisDirection * s` closest to `ray`.
+/// False when the ray is (nearly) parallel to the axis — no stable drag point exists.
+bool closestAxisParameter(const GizmoRay& ray, const math::Vec3& axisOrigin,
+                          const math::Vec3& axisDirection, f32& outS);
+
+/// Signed angle (radians, right-handed about `axis`) from `from` to `to` after projecting both
+/// onto the plane perpendicular to `axis`.
+f32 signedAngleAroundAxis(const math::Vec3& from, const math::Vec3& to, const math::Vec3& axis);
+
+/// Analytic drag: transform produced by dragging handle `axis` of a gizmo at `base` from the pick
+/// ray `startRay` to `currentRay`. Translate follows the axis line, rotate measures the angle swept
+/// on the ring plane, scale uses the ratio of distances along the axis (or from the centre for
+/// Uniform). Snapping: translate in World space quantises the absolute position, in Local space
+/// the displacement; rotate quantises the swept angle; scale quantises the absolute scale.
+/// Returns false (and `out = base`) when the rays give no stable drag point.
+bool dragTransformFromRays(const GizmoTransform& base, GizmoMode mode, GizmoAxis axis,
+                           GizmoSpace space, const GizmoRay& startRay, const GizmoRay& currentRay,
+                           const GizmoSnapSettings& snap, GizmoTransform& out);
+
+/// World length that projects to `screenSizePx` pixels at the gizmo's distance from the camera
+/// (perspective, vertical FOV) — scale the gizmo by this to keep a constant on-screen size.
+f32 gizmoWorldScale(const math::Vec3& cameraPosition, const math::Vec3& gizmoPosition,
+                    f32 verticalFovRadians, f32 viewportHeightPx, f32 screenSizePx);
+
+/// Stable text form of a gizmo transform ("px,py,pz,rx,ry,rz,rw,sx,sy,sz", round-trip exact)
+/// carried by the `transform.trs` editor command.
+std::string formatGizmoTransform(const GizmoTransform& transform);
+bool parseGizmoTransform(const std::string& text, GizmoTransform& out);
 
 /// Headless in-viewport gizmo API (B6.4).
 class GizmoSystem {
@@ -769,6 +812,10 @@ public:
 
     void setCommandStack(CommandStack* stack) { m_commandStack = stack; }
     void setEditorState(EditorState* state) { m_editorState = state; }
+
+    /// World length of one gizmo axis (see `gizmoWorldScale`); scales pick distances. Default 1.
+    void setWorldScale(f32 scale) { m_worldScale = scale > 0.f ? scale : 1.f; }
+    [[nodiscard]] f32 worldScale() const { return m_worldScale; }
 
     [[nodiscard]] bool transformDirty() const { return m_transformDirty; }
     void clearTransformDirty() { m_transformDirty = false; }
@@ -843,6 +890,10 @@ public:
     /// Guarded drag update — returns false when preflight rejects the hit (B6.4 deepen follow-up).
     bool tryUpdateDrag(const GizmoHitTest& hit, GizmoResult& out);
     GizmoResult updateDrag(const GizmoHitTest& hit);
+    /// Analytic drag update from the current pick ray (`dragTransformFromRays` against the ray the
+    /// drag began with). Only valid after `beginDrag(const GizmoRay&, ...)`.
+    bool tryUpdateDrag(const GizmoRay& ray, GizmoResult& out);
+    GizmoResult updateDrag(const GizmoRay& ray);
     /// Read-only end-drag diagnostics — same guards as `canEndDrag` (B6.4 deepen pass).
     [[nodiscard]] EndDragPreflight preflightEndDrag() const;
     [[nodiscard]] EndDragInteractionPreflight preflightEndDragInteraction() const;
@@ -963,8 +1014,12 @@ private:
     GizmoAxis m_activeAxis = GizmoAxis::None;
     bool m_dragging = false;
     bool m_transformDirty = false;
+    f32 m_worldScale = 1.f;
+    bool m_rayDrag = false;
+    GizmoRay m_startRay{};
     GizmoTransform m_startTransform;
     GizmoTransform m_currentTransform;
+    GizmoHitTest m_startHit;
     GizmoHitTest m_lastHit;
 };
 

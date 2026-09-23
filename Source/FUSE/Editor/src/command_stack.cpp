@@ -89,6 +89,9 @@ void CommandStack::execute(EditorCommand command) {
     if (m_undoDepth > 0u && !m_undoStack.empty() && canCoalesce_(m_undoStack.back(), command)) {
         m_undoStack.back().propertyValue = command.propertyValue;
         ++m_coalescedCount;
+        // A coalesced edit is still a new edit: the redo branch no longer follows from it.
+        m_redoStack.clear();
+        m_redoDepth = 0;
         markDirty_();
         m_pending.post(m_undoStack.back());
         ++m_appliedCount;

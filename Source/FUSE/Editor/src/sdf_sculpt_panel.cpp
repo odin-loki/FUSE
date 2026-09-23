@@ -1,6 +1,9 @@
 #include <fuse/editor/sdf_sculpt_panel.hpp>
 
 #include <cmath>
+#include <memory>
+#include <optional>
+#include <tuple>
 
 namespace fuse::editor {
 
@@ -22,7 +25,7 @@ void SdfSculptPanel::setBlendAlpha(f32 alpha) {
 }
 
 bool SdfSculptPanel::shouldEmitStroke(const ecs::vec3& hitPoint) const {
-    if (m_strokeCount == 0u) {
+    if (!m_strokeOpen) {
         return true;
     }
 
@@ -49,6 +52,7 @@ bool SdfSculptPanel::handleBrushStroke(const ecs::vec3& hitPoint, const ecs::vec
     }
 
     m_lastStrokePos = hitPoint;
+    m_strokeOpen = true;
     ++m_strokeCount;
 
     EditorCommand command;
@@ -70,6 +74,52 @@ bool SdfSculptPanel::handleBrushStroke(const ecs::vec3& hitPoint, const ecs::vec
         ++m_strokeCount;
     }
 
+    return true;
+}
+
+} // namespace fuse::editor
+
+namespace fuse::editor {
+
+bool SdfSculptPanel::applyBrushStroke(const ecs::vec3& hitPoint, const ecs::vec3& hitNormal,
+                                      EditorScene& scene, UndoStack& undo) {
+    (void)hitNormal;
+
+    if (!m_sculptActive || m_brush.op != BrushOp::Add || !shouldEmitStroke(hitPoint)) {
+        return false;
+    }
+
+    m_lastStrokePos = hitPoint;
+    m_strokeOpen = true;
+
+    const auto makePrimitive = [this](const ecs::vec3& position) {
+        EntityComponentSet components{};
+        ecs::Transform transform{};
+        transform.position = {position.x, position.y, position.z, 1.f};
+        std::get<std::optional<ecs::Transform>>(components) = transform;
+
+        ecs::SDFObject sdf{};
+        sdf.type = m_brush.shape;
+        sdf.params = {m_brush.radius, 0.f, 0.f, 0.f};
+        sdf.material_id = m_brush.materialId;
+        sdf.blend_alpha = m_brush.blendAlpha;
+        std::get<std::optional<ecs::SDFObject>>(components) = sdf;
+        return components;
+    };
+
+    constexpr f32 kMirrorPlaneEpsilon = 1e-6f;
+    const bool mirror = m_brush.symmetryX && std::fabs(hitPoint.x) > kMirrorPlaneEpsilon;
+
+    undo.beginMacro("Sculpt stroke");
+    undo.execute(std::make_unique<CreateEntityCommand>(scene.registry(), makePrimitive(hitPoint),
+                                                       "Add SDF primitive"));
+    ++m_strokeCount;
+    if (mirror) {
+        undo.execute(std::make_unique<CreateEntityCommand>(
+            scene.registry(), makePrimitive(mirrorHitPoint(hitPoint)), "Add SDF primitive (mirror)"));
+        ++m_strokeCount;
+    }
+    undo.endMacro();
     return true;
 }
 

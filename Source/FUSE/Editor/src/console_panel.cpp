@@ -1,11 +1,21 @@
 #include <fuse/editor/console_panel.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstring>
+#include <iterator>
 
 namespace fuse::editor {
 
 namespace {
+
+std::string toLower(std::string value) {
+    for (char& ch : value) {
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    return value;
+}
 
 u64 defaultTimestampMs() {
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
@@ -64,15 +74,152 @@ std::vector<ConsolePanel::LogLine> ConsolePanel::filteredLines() const {
     return filtered;
 }
 
+bool ConsolePanel::parseCommandLine(std::string_view line, ParsedCommand& out) {
+    out = {};
+    std::vector<std::string> tokens;
+    std::string token;
+    bool inToken = false;
+    bool inQuotes = false;
+
+    for (usize i = 0; i < line.size(); ++i) {
+        const char ch = line[i];
+        if (inQuotes) {
+            if (ch == '\\' && i + 1 < line.size() && (line[i + 1] == '"' || line[i + 1] == '\\')) {
+                token += line[++i];
+            } else if (ch == '"') {
+                inQuotes = false;
+            } else {
+                token += ch;
+            }
+            continue;
+        }
+        if (ch == '"') {
+            inQuotes = true;
+            inToken = true;
+            continue;
+        }
+        if (std::isspace(static_cast<unsigned char>(ch)) != 0) {
+            if (inToken) {
+                tokens.push_back(std::move(token));
+                token.clear();
+                inToken = false;
+            }
+            continue;
+        }
+        token += ch;
+        inToken = true;
+    }
+
+    if (inQuotes) {
+        return false;
+    }
+    if (inToken) {
+        tokens.push_back(std::move(token));
+    }
+    if (tokens.empty()) {
+        return false;
+    }
+
+    out.name = toLower(tokens.front());
+    out.args.assign(std::make_move_iterator(tokens.begin() + 1), std::make_move_iterator(tokens.end()));
+    return true;
+}
+
+ConsolePanel::ConsolePanel() {
+    registerBuiltins_();
+}
+
+void ConsolePanel::registerBuiltins_() {
+    m_commands.emplace("help", [](const std::vector<std::string>&, ConsolePanel& console) {
+        std::string names;
+        for (const std::string& name : console.commandNames()) {
+            names += names.empty() ? name : " " + name;
+        }
+        console.addLog(LogLevel::Info, ("commands: " + names).c_str());
+        return true;
+    });
+    m_commands.emplace("clear", [](const std::vector<std::string>&, ConsolePanel& console) {
+        console.clear();
+        return true;
+    });
+}
+
+void ConsolePanel::registerCommand(std::string name, CommandHandler handler) {
+    name = toLower(std::move(name));
+    if (name.empty() || !handler) {
+        return;
+    }
+    m_commands[std::move(name)] = std::move(handler);
+}
+
+bool ConsolePanel::hasCommand(std::string_view name) const {
+    return m_commands.count(toLower(std::string(name))) != 0u;
+}
+
+std::vector<std::string> ConsolePanel::commandNames() const {
+    std::vector<std::string> names;
+    names.reserve(m_commands.size());
+    for (const auto& entry : m_commands) {
+        names.push_back(entry.first); // std::map keeps them sorted
+    }
+    return names;
+}
+
 bool ConsolePanel::executeCommand(const char* command) {
+    m_historyCursor = m_history.size();
+
     if (command == nullptr) {
         m_lastExecutedCommand.clear();
         return false;
     }
 
+    ParsedCommand parsed;
+    if (!parseCommandLine(command, parsed)) {
+        if (command[0] != '\0') {
+            addLog(LogLevel::Error, (std::string("malformed command: ") + command).c_str());
+        }
+        return false;
+    }
+
     m_lastExecutedCommand = command;
+    if (m_history.empty() || m_history.back() != m_lastExecutedCommand) {
+        m_history.push_back(m_lastExecutedCommand);
+        if (m_history.size() > kMaxCommandHistory) {
+            m_history.erase(m_history.begin());
+        }
+    }
+    m_historyCursor = m_history.size();
+
     addLog(LogLevel::Info, ("exec: " + m_lastExecutedCommand).c_str());
-    return true;
+
+    const auto it = m_commands.find(parsed.name);
+    if (it == m_commands.end()) {
+        addLog(LogLevel::Error, ("unknown command: " + parsed.name).c_str());
+        return false;
+    }
+
+    // Copy: the handler may re-register commands (invalidating `it`).
+    const CommandHandler handler = it->second;
+    return handler(parsed.args, *this);
+}
+
+std::string ConsolePanel::historyPrevious() {
+    if (m_history.empty()) {
+        return {};
+    }
+    if (m_historyCursor > 0u) {
+        --m_historyCursor;
+    }
+    return m_history[m_historyCursor];
+}
+
+std::string ConsolePanel::historyNext() {
+    if (m_historyCursor + 1u >= m_history.size()) {
+        m_historyCursor = m_history.size();
+        return {};
+    }
+    ++m_historyCursor;
+    return m_history[m_historyCursor];
 }
 
 const char* ConsolePanel::levelLabel(LogLevel level) {

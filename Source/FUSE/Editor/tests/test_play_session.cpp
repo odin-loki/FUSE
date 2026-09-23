@@ -297,7 +297,12 @@ void testPlaySessionFullTransformSnapshotRoundtrip() {
     editorScene.init();
 
     const fuse::ecs::EntityID first = editorScene.registry().create();
-    fuse::ecs::Transform& firstTransform = editorScene.registry().add<fuse::ecs::Transform>(first);
+    const fuse::ecs::EntityID second = editorScene.registry().create();
+    editorScene.registry().add<fuse::ecs::Transform>(first);
+    editorScene.registry().add<fuse::ecs::Transform>(second);
+    // Take references only after both adds: adding a component can grow the column storage.
+    fuse::ecs::Transform& firstTransform = *editorScene.registry().get<fuse::ecs::Transform>(first);
+    fuse::ecs::Transform& secondTransform = *editorScene.registry().get<fuse::ecs::Transform>(second);
     firstTransform.position.x = 1.f;
     firstTransform.rotation.y = 0.707f;
     firstTransform.rotation.w = 0.707f;
@@ -305,8 +310,6 @@ void testPlaySessionFullTransformSnapshotRoundtrip() {
     firstTransform.scale.y = 2.f;
     firstTransform.scale.z = 2.f;
 
-    const fuse::ecs::EntityID second = editorScene.registry().create();
-    fuse::ecs::Transform& secondTransform = editorScene.registry().add<fuse::ecs::Transform>(second);
     secondTransform.position.z = 9.f;
     secondTransform.scale.x = 0.5f;
 

@@ -36,6 +36,10 @@ struct EditorCommand {
     std::string propertyValueBefore;
 };
 
+/// Formats a float for `EditorCommand::propertyValue` so parsing it back yields the identical
+/// value (round-trip precision; `std::to_string` keeps only six decimals).
+std::string formatPropertyFloat(f32 value);
+
 /// Thread-safe queue: post from UI thread, drain on game thread.
 class CommandQueue {
 public:

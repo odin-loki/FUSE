@@ -1,4 +1,5 @@
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/gizmo_system.hpp>
 #include <fuse/editor/viewport_seq_preview_stub.hpp>
 #include <fuse/editor/viewport_vulkan_surface.hpp>
 
@@ -60,6 +61,13 @@ bool parseVec3(const std::string& text, ecs::vec3& out) {
     return true;
 }
 
+GizmoTransform gizmoFromEcs(const ecs::Transform& transform) {
+    return gizmoFromMath({transform.position.x, transform.position.y, transform.position.z},
+                         {transform.rotation.x, transform.rotation.y, transform.rotation.z,
+                          transform.rotation.w},
+                         {transform.scale.x, transform.scale.y, transform.scale.z});
+}
+
 void clearSelectionIfMatches(EditorState& state, ecs::EntityID entity) {
     if (state.primarySelection == entity) {
         state.primarySelection = ecs::EntityID::null();
@@ -78,13 +86,22 @@ std::string capturePropertyValueBefore(const EditorHost& host, const EditorComma
 
     const ecs::Registry& registry = host.editorScene().registry();
 
+    if (command.propertyName == "transform.trs") {
+        const ecs::Transform* transform = registry.get<ecs::Transform>(entity);
+        if (transform == nullptr) {
+            return {};
+        }
+        return formatGizmoTransform(gizmoFromEcs(*transform));
+    }
+
     if (command.propertyName == "transform.position") {
         if (!registry.has<ecs::Transform>(entity)) {
             return {};
         }
         const ecs::Transform* transform = registry.get<ecs::Transform>(entity);
-        return std::to_string(transform->position.x) + "," + std::to_string(transform->position.y) +
-               "," + std::to_string(transform->position.z);
+        return formatPropertyFloat(transform->position.x) + "," +
+               formatPropertyFloat(transform->position.y) + "," +
+               formatPropertyFloat(transform->position.z);
     }
 
     if (command.propertyName == "transform.scale") {
@@ -92,8 +109,8 @@ std::string capturePropertyValueBefore(const EditorHost& host, const EditorComma
             return {};
         }
         const ecs::Transform* transform = registry.get<ecs::Transform>(entity);
-        return std::to_string(transform->scale.x) + "," + std::to_string(transform->scale.y) + "," +
-               std::to_string(transform->scale.z);
+        return formatPropertyFloat(transform->scale.x) + "," +
+               formatPropertyFloat(transform->scale.y) + "," + formatPropertyFloat(transform->scale.z);
     }
 
     if (command.propertyName == "transform.rotation") {
@@ -101,9 +118,10 @@ std::string capturePropertyValueBefore(const EditorHost& host, const EditorComma
             return {};
         }
         const ecs::Transform* transform = registry.get<ecs::Transform>(entity);
-        return std::to_string(transform->rotation.x) + "," + std::to_string(transform->rotation.y) +
-               "," + std::to_string(transform->rotation.z) + "," +
-               std::to_string(transform->rotation.w);
+        return formatPropertyFloat(transform->rotation.x) + "," +
+               formatPropertyFloat(transform->rotation.y) + "," +
+               formatPropertyFloat(transform->rotation.z) + "," +
+               formatPropertyFloat(transform->rotation.w);
     }
 
     if (command.propertyName == "mesh.material_id") {
@@ -117,21 +135,21 @@ std::string capturePropertyValueBefore(const EditorHost& host, const EditorComma
         if (!registry.has<ecs::SDFObject>(entity)) {
             return {};
         }
-        return std::to_string(registry.get<ecs::SDFObject>(entity)->blend_alpha);
+        return formatPropertyFloat(registry.get<ecs::SDFObject>(entity)->blend_alpha);
     }
 
     if (command.propertyName == "directional.intensity") {
         if (!registry.has<ecs::DirectionalLight>(entity)) {
             return {};
         }
-        return std::to_string(registry.get<ecs::DirectionalLight>(entity)->intensity);
+        return formatPropertyFloat(registry.get<ecs::DirectionalLight>(entity)->intensity);
     }
 
     if (command.propertyName == "spot.intensity") {
         if (!registry.has<ecs::SpotLight>(entity)) {
             return {};
         }
-        return std::to_string(registry.get<ecs::SpotLight>(entity)->intensity);
+        return formatPropertyFloat(registry.get<ecs::SpotLight>(entity)->intensity);
     }
 
     return {};
@@ -142,7 +160,8 @@ bool isUndoableEntityProperty(const EditorCommand& command) {
         return false;
     }
 
-    return command.propertyName == "transform.position" || command.propertyName == "transform.scale" ||
+    return command.propertyName == "transform.trs" || command.propertyName == "transform.position" ||
+           command.propertyName == "transform.scale" ||
            command.propertyName == "transform.rotation" || command.propertyName == "mesh.material_id" ||
            command.propertyName == "sdf.blend_alpha" || command.propertyName == "directional.intensity" ||
            command.propertyName == "spot.intensity";
@@ -396,6 +415,21 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
     }
 
     ecs::Registry& registry = host.editorScene().registry();
+
+    if (command.propertyName == "transform.trs") {
+        ecs::Transform* transform = registry.get<ecs::Transform>(entity);
+        GizmoTransform trs{};
+        if (transform == nullptr || !parseGizmoTransform(command.propertyValue, trs)) {
+            return false;
+        }
+
+        transform->position = {trs.posX, trs.posY, trs.posZ, transform->position.w};
+        transform->rotation = {trs.rotX, trs.rotY, trs.rotZ, trs.rotW};
+        transform->scale = {trs.scaleX, trs.scaleY, trs.scaleZ, transform->scale.w};
+        transform->dirty = true;
+        host.editorState().sceneModified = true;
+        return true;
+    }
 
     if (command.propertyName == "transform.position") {
         if (!registry.has<ecs::Transform>(entity)) {

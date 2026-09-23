@@ -24,8 +24,11 @@ void SceneHierarchyPanel::reparentSelection(Object* newParent, UndoStack& undoSt
     }
 
     Object* selected = findObject_(m_model.root(), m_selection);
-    if (!selected || selected == newParent) {
+    if (!selected || selected == newParent || selected->parent() == newParent) {
         return;
+    }
+    if (newParent != nullptr && isSelfOrDescendant(*selected, newParent)) {
+        return; // dropping a node onto its own subtree would form a cycle
     }
 
     Object* oldParent = selected->parent();

@@ -5,6 +5,7 @@
 #include <fuse/editor/play_mode_controller.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/entity.hpp>
+#include <fuse/ecs/registry.hpp>
 #include <fuse/scene/scene.hpp>
 #include <fuse/types.hpp>
 
@@ -89,6 +90,11 @@ struct PlayWorldSnapshot {
 /// PIE play-session orchestrator (B6.12 deepen) — wraps `PlayModeController` with
 /// `EditorState` sync, tick accumulator, world snapshot capture/restore, and ECS
 /// dirty-flag snapshot/restore with coalesced dirty marking during play.
+///
+/// `start` also copies the whole ECS registry (entity records, generations, free list and every
+/// component column) and `stop` restores it, so entities spawned or destroyed during play and
+/// non-Transform state such as RigidBody velocities return exactly to their edit-time values
+/// (the same state `ecs::RegistrySerialiser` persists).
 class PlaySession {
 public:
     void start(EditorScene& editorScene, scene::Scene& scene, EditorState& state,
@@ -162,6 +168,8 @@ public:
     bool shouldSkipWorldSnapshotDrain() const;
     bool shouldSkipDirtySnapshotDrain() const;
     bool hasWorldSnapshot() const { return m_hasWorldSnapshot; }
+    /// True between `start` and `stop` — the full edit-time registry copy is held.
+    bool hasRegistrySnapshot() const { return m_hasRegistrySnapshot; }
     bool hasDirtySnapshot() const { return m_hasDirtySnapshot; }
 
     const PlayWorldSnapshot& worldSnapshot() const { return m_worldSnapshot; }
@@ -191,6 +199,8 @@ private:
     PlayModeController m_controller;
     DirtySnapshot m_dirtySnapshot{};
     PlayWorldSnapshot m_worldSnapshot{};
+    ecs::Registry m_registrySnapshot{};
+    bool m_hasRegistrySnapshot = false;
     bool m_hasWorldSnapshot = false;
     bool m_hasDirtySnapshot = false;
     u32 m_sessionTickCount = 0;

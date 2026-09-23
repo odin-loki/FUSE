@@ -1,6 +1,14 @@
 #include <fuse/editor/command_queue.hpp>
 
+#include <cstdio>
+
 namespace fuse::editor {
+
+std::string formatPropertyFloat(f32 value) {
+    char buffer[32];
+    const int written = std::snprintf(buffer, sizeof(buffer), "%.9g", static_cast<double>(value));
+    return written > 0 ? std::string(buffer, static_cast<usize>(written)) : std::string("0");
+}
 
 namespace {
 

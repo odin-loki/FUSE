@@ -1,10 +1,68 @@
 #include <fuse/editor/play_session.hpp>
 
+#include <fuse/editor/undo_stack.hpp>
+
 #include <fuse/ecs/components/transform.hpp>
 
 #include <algorithm>
+#include <utility>
 
 namespace fuse::editor {
+
+namespace {
+
+std::vector<ecs::EntityID> aliveEntities(ecs::Registry& registry) {
+    std::vector<ecs::EntityID> ids;
+    registry.each_query<>([&ids](ecs::EntityID id) { ids.push_back(id); });
+    std::sort(ids.begin(), ids.end(), [](ecs::EntityID lhs, ecs::EntityID rhs) {
+        return lhs.index != rhs.index ? lhs.index < rhs.index : lhs.generation < rhs.generation;
+    });
+    return ids;
+}
+
+bool sameComponentLayout(const EntityComponentSet& lhs, const EntityComponentSet& rhs) {
+    return std::apply(
+        [&rhs](const auto&... left) {
+            return std::apply(
+                [&](const auto&... right) { return ((left.has_value() == right.has_value()) && ...); },
+                rhs);
+        },
+        lhs);
+}
+
+/// Restores `live` to `snapshot`. When play changed only component values (same live entity ids,
+/// same component sets, same archetypes) the values are written back in place so component
+/// storage — and references into it — stays valid; any structural change (spawn, destroy,
+/// add/remove component) falls back to replacing the whole registry with the snapshot.
+void restoreRegistry(ecs::Registry& live, ecs::Registry& snapshot) {
+    const std::vector<ecs::EntityID> liveIds = aliveEntities(live);
+    const std::vector<ecs::EntityID> snapshotIds = aliveEntities(snapshot);
+
+    bool inPlace = liveIds == snapshotIds && live.count() == snapshot.count() &&
+                   live.archetype_count() == snapshot.archetype_count();
+    std::vector<EntityComponentSet> saved;
+    if (inPlace) {
+        saved.reserve(snapshotIds.size());
+        for (const ecs::EntityID id : snapshotIds) {
+            saved.push_back(captureEntityComponents(snapshot, id));
+            if (!sameComponentLayout(saved.back(), captureEntityComponents(live, id))) {
+                inPlace = false;
+                break;
+            }
+        }
+    }
+
+    if (!inPlace) {
+        live = std::move(snapshot);
+        return;
+    }
+
+    for (usize i = 0; i < snapshotIds.size(); ++i) {
+        restoreEntityComponents(live, snapshotIds[i], saved[i]);
+    }
+}
+
+} // namespace
 
 PlayWorldSnapshot PlayWorldSnapshot::capture(EditorScene& editorScene) {
     PlayWorldSnapshot snapshot;
@@ -40,6 +98,8 @@ void PlaySession::start(EditorScene& editorScene, scene::Scene& scene, EditorSta
 
     captureDirtySnapshot_(editorScene, state);
     captureWorldSnapshot_(editorScene);
+    m_registrySnapshot = editorScene.registry();
+    m_hasRegistrySnapshot = true;
     m_controller.enterPlay(scene, physics);
     m_sessionTickCount = 0;
     m_tickAccumulator = 0.f;
@@ -59,6 +119,11 @@ void PlaySession::stop(EditorScene& editorScene, scene::Scene& scene, EditorStat
     }
 
     m_controller.stop(scene, physics);
+    if (m_hasRegistrySnapshot) {
+        restoreRegistry(editorScene.registry(), m_registrySnapshot);
+        m_registrySnapshot = ecs::Registry{};
+        m_hasRegistrySnapshot = false;
+    }
     restoreWorldSnapshot_(editorScene);
     restoreDirtySnapshot_(editorScene, state);
     m_sessionTickCount = 0;

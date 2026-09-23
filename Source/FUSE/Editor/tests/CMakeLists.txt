@@ -144,6 +144,14 @@ else()
     )
 endif()
 
+# B6 gate suites (B6.13 checklist rows whose logic is Qt-free).
+foreach(_fuse_b6_gate IN ITEMS command hierarchy gizmo panels play_mode)
+    add_executable(fuse_editor_b6_${_fuse_b6_gate}_gates test_b6_${_fuse_b6_gate}_gates.cpp)
+    target_link_libraries(fuse_editor_b6_${_fuse_b6_gate}_gates PRIVATE fuse_editor_api fuse_core)
+    fuse_apply_cxx23(fuse_editor_b6_${_fuse_b6_gate}_gates)
+    add_test(NAME fuse_editor_b6_${_fuse_b6_gate}_gates COMMAND fuse_editor_b6_${_fuse_b6_gate}_gates)
+endforeach()
+
 if(FUSE_BUILD_PARITY_DEMOS)
     add_executable(fuse_u8_parity_embed_pie_tests
         test_u8_parity_embed_pie.cpp
