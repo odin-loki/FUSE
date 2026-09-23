@@ -63,7 +63,8 @@ void testNullWsiBackendScaffold() {
     const fuse::platform::WindowWsiKind kind = fuse::platform::activeWindowWsiKind();
     expectTrue(kind == fuse::platform::WindowWsiKind::Null ||
                    kind == fuse::platform::WindowWsiKind::Glfw ||
-                   kind == fuse::platform::WindowWsiKind::Win32,
+                   kind == fuse::platform::WindowWsiKind::Win32 ||
+                   kind == fuse::platform::WindowWsiKind::X11,
                "window WSI kind is known");
     expectTrue(fuse::platform::windowWsiBackendName() != nullptr, "WSI backend name available");
 
@@ -75,6 +76,15 @@ void testNullWsiBackendScaffold() {
     } else {
         expectTrue(extensions.empty(), "GLFW unavailable without display — null WSI extensions");
     }
+#elif defined(FUSE_PLATFORM_WINDOW_X11)
+    if (!fuse::platform::windowWsiAvailable()) {
+        expectTrue(extensions.empty(), "X11 WSI without a display — no instance extensions");
+    }
+#if defined(FUSE_VULKAN_BACKEND)
+    else {
+        expectTrue(!extensions.empty(), "X11 WSI publishes instance extensions");
+    }
+#endif
 #elif defined(FUSE_PLATFORM_WINDOW_WIN32)
     if (fuse::platform::windowWsiAvailable()) {
         expectTrue(!extensions.empty(), "Win32 WSI publishes instance extensions");

@@ -17,6 +17,10 @@
 #include <vulkan/vulkan.h>
 #endif
 
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+#include "x11_window.hpp"
+#endif
+
 namespace fuse::platform {
 
 namespace {
@@ -39,6 +43,8 @@ bool hasDisplayServerEnv() {
 WindowWsiKind activeWindowWsiKind() {
 #if defined(FUSE_PLATFORM_WINDOW_WIN32)
     return WindowWsiKind::Win32;
+#elif defined(FUSE_PLATFORM_WINDOW_X11)
+    return WindowWsiKind::X11;
 #else
     return WindowWsiKind::Null;
 #endif
@@ -47,6 +53,8 @@ WindowWsiKind activeWindowWsiKind() {
 const char* windowWsiBackendName() {
 #if defined(FUSE_PLATFORM_WINDOW_WIN32)
     return "win32-wsi";
+#elif defined(FUSE_PLATFORM_WINDOW_X11)
+    return "x11-xlib";
 #else
     return "null-wsi";
 #endif
@@ -55,6 +63,8 @@ const char* windowWsiBackendName() {
 bool windowWsiAvailable() {
 #if defined(FUSE_PLATFORM_WINDOW_WIN32)
     return true;
+#elif defined(FUSE_PLATFORM_WINDOW_X11)
+    return x11::ensureDisplay();
 #else
     return false;
 #endif
@@ -73,6 +83,20 @@ void requiredVulkanInstanceExtensions(std::vector<const char*>& out) {
 #if defined(FUSE_PLATFORM_WINDOW_WIN32)
     out.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
     out.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
+#elif defined(FUSE_PLATFORM_WINDOW_X11)
+    // Mirrors the GLFW backend: publish WSI extensions only when a display is reachable so
+    // headless CI instances stay extension-free.
+    if (x11::ensureDisplay()) {
+        x11::vulkanInstanceExtensions(out);
+    }
+#endif
+}
+
+void* nativeDisplayHandle() {
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+    return x11::display();
+#else
+    return nullptr;
 #endif
 }
 
@@ -105,6 +129,12 @@ bool createVulkanSurface(void* vkInstance, const Window& window, void** outSurfa
         *outSurface = (void*)surface;
     }
     return true;
+#elif defined(FUSE_PLATFORM_WINDOW_X11)
+    void* nativeWindow = window.nativeHandle().value;
+    if (vkInstance == nullptr || nativeWindow == nullptr) {
+        return false;
+    }
+    return x11::createVulkanSurface(vkInstance, nativeWindow, outSurface);
 #else
     (void)vkInstance;
     (void)window;

@@ -148,3 +148,7 @@ if(FUSE_VULKAN_BACKEND AND FUSE_BUILD_CORE_TESTS AND TARGET fuse_rhi)
     TIMEOUT 1200
     LABELS "vulkan;gate")
 endif()
+
+# Lint gates (ctest -L lint): ownership per module include tree, Appendix A rename checklist,
+# Appendix C carry-forward (C++23 targets, no Qt in core libs, plan/source heading parity).
+include(${CMAKE_SOURCE_DIR}/cmake/FuseLintGates.cmake)

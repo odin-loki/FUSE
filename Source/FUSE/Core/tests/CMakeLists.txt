@@ -327,3 +327,36 @@ fuse_core_apply_tsan(fuse_core_b1_log_async_ring_gates)
 fuse_core_apply_asan_ubsan(fuse_core_b1_log_async_ring_gates)
 add_test(NAME fuse_core_b1_log_async_ring_gates COMMAND fuse_core_b1_log_async_ring_gates)
 set_tests_properties(fuse_core_b1_log_async_ring_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate" TIMEOUT 900)
+
+# B1.8: 1M FULL alloc/free cycles per allocator type (Pool, FreeList, Ring, Stack, Frame) with
+# alignment/corruption/invariant/stats checks and LeakDetector accounting.
+add_executable(fuse_core_b1_alloc_million_cycles
+    test_b1_alloc_million_cycles.cpp
+)
+target_link_libraries(fuse_core_b1_alloc_million_cycles PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b1_alloc_million_cycles)
+fuse_core_apply_asan_ubsan(fuse_core_b1_alloc_million_cycles)
+add_test(NAME fuse_core_b1_alloc_million_cycles COMMAND fuse_core_b1_alloc_million_cycles)
+set_tests_properties(fuse_core_b1_alloc_million_cycles PROPERTIES LABELS "gate" TIMEOUT 900)
+
+# Master plan Appendix A (rename checklist): default window title "FUSE".
+add_executable(fuse_core_rename_window_title test_rename_window_title.cpp)
+target_link_libraries(fuse_core_rename_window_title PRIVATE fuse_core)
+add_test(NAME fuse_lint_a_window_title COMMAND fuse_core_rename_window_title)
+set_tests_properties(fuse_lint_a_window_title PROPERTIES LABELS "gate;lint")
+
+# B1.8: native X11 window gate — window opens mapped, title read back via XFetchName/_NET_WM_NAME,
+# XSendEvent key/mouse/focus/resize/close events dispatched through EventPump. Runs on Xvfb via
+# the display wrapper; SKIP (77) when the X11 backend is off or no display/xvfb is available.
+add_executable(fuse_core_b1_x11_window_gates test_b1_x11_window_gates.cpp)
+target_link_libraries(fuse_core_b1_x11_window_gates PRIVATE fuse_core)
+if(FUSE_PLATFORM_WINDOW_X11_ACTIVE)
+    target_include_directories(fuse_core_b1_x11_window_gates PRIVATE ${X11_INCLUDE_DIR})
+    target_link_libraries(fuse_core_b1_x11_window_gates PRIVATE ${X11_LIBRARIES})
+    add_test(NAME fuse_core_b1_x11_window_gates
+        COMMAND "${FUSE_DISPLAY_TEST_WRAPPER}" "$<TARGET_FILE:fuse_core_b1_x11_window_gates>")
+else()
+    add_test(NAME fuse_core_b1_x11_window_gates COMMAND fuse_core_b1_x11_window_gates)
+endif()
+set_tests_properties(fuse_core_b1_x11_window_gates PROPERTIES
+    LABELS "gate" SKIP_RETURN_CODE 77 TIMEOUT 120)

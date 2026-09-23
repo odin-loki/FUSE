@@ -269,6 +269,54 @@ if(NOT _fuse_glfw_wsi_active)
     endif()
 endif()
 
+# Native X11 (Xlib) window backend — the Linux/BSD desktop window path when GLFW is not
+# active. Windows open only with WindowDesc::createNative and a reachable DISPLAY; headless
+# CI (no DISPLAY) keeps null native handles. VK_KHR_xlib_surface is compiled in when the
+# Vulkan loader is found (not in the stub build).
+option(FUSE_PLATFORM_WINDOW_X11 "Native X11 (Xlib) game window + VK_KHR_xlib_surface when GLFW is unavailable" ON)
+set(FUSE_PLATFORM_WINDOW_X11_ACTIVE OFF CACHE INTERNAL "X11 window backend compiled into fuse_core")
+if(FUSE_PLATFORM_WINDOW_X11 AND NOT _fuse_glfw_wsi_active AND UNIX AND NOT APPLE
+   AND NOT ANDROID AND NOT EMSCRIPTEN)
+    find_package(X11 QUIET)
+    if(X11_FOUND)
+        target_sources(fuse_core PRIVATE src/platform/x11_window.cpp)
+        target_include_directories(fuse_core PRIVATE ${X11_INCLUDE_DIR})
+        target_link_libraries(fuse_core PRIVATE ${X11_LIBRARIES})
+        target_compile_definitions(fuse_core PUBLIC FUSE_PLATFORM_WINDOW_X11=1)
+        set(FUSE_PLATFORM_WINDOW_X11_ACTIVE ON CACHE INTERNAL "X11 window backend compiled into fuse_core")
+        if(NOT TARGET Vulkan::Vulkan)
+            include(${CMAKE_SOURCE_DIR}/cmake/FuseFindVulkan.cmake)
+        endif()
+        if(TARGET Vulkan::Vulkan)
+            target_link_libraries(fuse_core PRIVATE Vulkan::Vulkan)
+            target_compile_definitions(fuse_core PRIVATE FUSE_PLATFORM_X11_VULKAN=1)
+            message(STATUS "FUSE: fuse_core X11 (Xlib) window + VK_KHR_xlib_surface enabled")
+        else()
+            message(STATUS "FUSE: fuse_core X11 (Xlib) window enabled (no Vulkan loader — no surface)")
+        endif()
+    else()
+        message(STATUS "FUSE: FUSE_PLATFORM_WINDOW_X11=ON but X11 headers/libs missing — null WSI")
+    endif()
+endif()
+
+# ctest wrapper for window/WSI gates: reuse $DISPLAY when set, else a private Xvfb via xvfb-run;
+# exit 77 (ctest SKIP) when neither exists. Gate binaries also return 77 when no display opens.
+set(FUSE_DISPLAY_TEST_WRAPPER "${CMAKE_BINARY_DIR}/fuse_run_with_display.sh"
+    CACHE INTERNAL "Runs a test command on an X display (Xvfb fallback, 77 = skip)")
+file(WRITE "${FUSE_DISPLAY_TEST_WRAPPER}"
+"#!/usr/bin/env bash
+if [ -n \"\${DISPLAY:-}\" ] && [ -z \"\${FUSE_FORCE_XVFB:-}\" ]; then
+    exec \"$@\"
+fi
+if command -v xvfb-run >/dev/null 2>&1; then
+    exec xvfb-run -a -s \"-screen 0 1920x1080x24 -nolisten tcp\" \"$@\"
+fi
+echo \"SKIP: no DISPLAY and xvfb-run not installed\"
+exit 77
+")
+file(CHMOD "${FUSE_DISPLAY_TEST_WRAPPER}"
+    FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)
 endif()

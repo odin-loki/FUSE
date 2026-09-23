@@ -189,3 +189,23 @@ foreach(_fuse_vulkan_test IN LISTS _fuse_vulkan_icd_tests)
         )
     endif()
 endforeach()
+
+# B1.8 get_vulkan_surface + B2 "Swapchain 1920x1080 triple-buffered, resize rebuilds" on the
+# native X11 window backend: real VkSurfaceKHR (VK_KHR_xlib_surface) + VkSwapchainKHR on Lavapipe
+# under Xvfb, 10 presented frames, resize to 1280x720 + recreate, zero validation errors.
+# SKIP (77) without the X11 backend, a display/xvfb-run, a Vulkan ICD or the validation layer.
+add_executable(fuse_b2_x11_swapchain_gates test_b2_x11_swapchain_gates.cpp)
+target_link_libraries(fuse_b2_x11_swapchain_gates PRIVATE fuse_rhi)
+if(FUSE_PLATFORM_WINDOW_X11_ACTIVE AND FUSE_DISPLAY_TEST_WRAPPER)
+    add_test(NAME fuse_b2_x11_swapchain_gates
+        COMMAND "${FUSE_DISPLAY_TEST_WRAPPER}" "${FUSE_VULKAN_ICD_LOCK_SCRIPT}"
+                "$<TARGET_FILE:fuse_b2_x11_swapchain_gates>")
+else()
+    add_test(NAME fuse_b2_x11_swapchain_gates COMMAND fuse_b2_x11_swapchain_gates)
+endif()
+set_tests_properties(fuse_b2_x11_swapchain_gates PROPERTIES
+    ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
+    RUN_SERIAL TRUE
+    SKIP_RETURN_CODE 77
+    TIMEOUT 300
+    LABELS "vulkan;gate")

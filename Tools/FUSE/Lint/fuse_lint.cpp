@@ -1,0 +1,991 @@
+// fuse_lint — dependency-free source/target lint gates for the FUSE master plan.
+//
+//   fuse_lint <check> [--root DIR] [--dir DIR] [--manifest FILE] [--repo DIR]
+//                     [--plan FILE] [--sources DIR] --scratch DIR
+//
+// Every check first runs a self-test: it seeds a known-bad and a known-good sample tree under
+// --scratch and must flag the bad one and pass the good one, then it scans the real inputs.
+// Exit code 0 = self-test ok and no violations; 1 = violations; 2 = self-test / usage failure.
+//
+// Checks (master plan rows):
+//   ownership      No owning raw pointers in public FUSE APIs (one include tree per run).
+//   namespace      Appendix A: namespace `fuse::` (public headers + product sources).
+//   macros         Appendix A: macros FUSE_* / FUSE_ASSERT / FUSE_HOST_DEVICE.
+//   torque-macros  Appendix A: TORQUE_* only inside compat/ (Compat/ and Legacy/ quarantine).
+//   torque-names   Appendix A: log channels / memory domains renamed (no Torque names).
+//   banned-deps    Appendix A: no Meridian; no ImGui (Source/FUSE text + fuse_* link graph).
+//   cxx-standard   Appendix C: CMAKE_CXX_STANDARD 23 on all non-CUDA fuse_* host targets.
+//   qt-includes    Appendix C: no #include <Q*> in core/renderer/physics/ecs/compute.
+//   doc-headings   Appendix C: every `### B*.*` has a matching `## N.M` in docs/sources/P*.md.
+
+#include <algorithm>
+#include <cctype>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <map>
+#include <regex>
+#include <set>
+#include <sstream>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace fs = std::filesystem;
+
+namespace {
+
+struct Args {
+    std::string check;
+    fs::path root, dir, manifest, repo, plan, sources, scratch;
+};
+
+using Violations = std::vector<std::string>;
+
+// ---- helpers ------------------------------------------------------------------------------------
+
+std::string readFile(const fs::path& p) {
+    std::ifstream in(p, std::ios::binary);
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+}
+
+void writeFile(const fs::path& p, std::string_view text) {
+    fs::create_directories(p.parent_path());
+    std::ofstream out(p, std::ios::binary | std::ios::trunc);
+    out << text;
+}
+
+std::string lower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return char(std::tolower(c)); });
+    return s;
+}
+
+std::string rel(const fs::path& p, const fs::path& base) {
+    std::error_code ec;
+    fs::path r = fs::relative(p, base, ec);
+    return (ec || r.empty() ? p : r).generic_string();
+}
+
+bool hasExt(const fs::path& p, std::initializer_list<const char*> exts) {
+    const std::string e = lower(p.extension().string());
+    for (const char* x : exts) {
+        if (e == x) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool isHeader(const fs::path& p) { return hasExt(p, {".hpp", ".h", ".hh", ".hxx", ".inl"}); }
+bool isCxxSource(const fs::path& p) {
+    return isHeader(p) || hasExt(p, {".cpp", ".cc", ".cxx", ".cu", ".cuh", ".mm", ".ipp"});
+}
+
+/// Files under `dir` (recursive, sorted) accepted by `pred(path, generic relative path)`.
+std::vector<fs::path> listFiles(const fs::path& dir, const std::function<bool(const fs::path&, const std::string&)>& pred) {
+    std::vector<fs::path> out;
+    std::error_code ec;
+    if (!fs::is_directory(dir, ec)) {
+        return out;
+    }
+    for (auto it = fs::recursive_directory_iterator(dir, fs::directory_options::skip_permission_denied, ec);
+         !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+        if (!it->is_regular_file(ec)) {
+            continue;
+        }
+        const std::string r = "/" + rel(it->path(), dir);
+        if (pred(it->path(), r)) {
+            out.push_back(it->path());
+        }
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+/// Top-level Source/FUSE directories that are Torque quarantine (compat loaders, legacy engines).
+bool inQuarantine(const std::string& relFromRoot) {
+    return relFromRoot.rfind("/Compat/", 0) == 0 || relFromRoot.rfind("/Legacy/", 0) == 0;
+}
+
+/// A source split into lines: `raw` as written, `code` with comments removed, and `bare` with
+/// comments removed and string/char literal contents blanked (quotes kept, length preserved).
+struct Line {
+    std::string raw, code, bare;
+};
+
+std::vector<Line> scanLines(const std::string& text) {
+    std::vector<Line> lines(1);
+    enum class St { Code, LineComment, BlockComment, Str, Chr, Raw } st = St::Code;
+    std::string rawDelim;
+    auto emit = [&](char c, bool inCode, bool inLiteral) {
+        Line& l = lines.back();
+        l.raw.push_back(c);
+        if (inCode || inLiteral) {
+            l.code.push_back(c);
+        }
+        if (inCode) {
+            l.bare.push_back(c);
+        } else if (inLiteral) {
+            l.bare.push_back(' ');
+        }
+    };
+    for (size_t i = 0; i < text.size(); ++i) {
+        const char c = text[i];
+        const char n = i + 1 < text.size() ? text[i + 1] : '\0';
+        if (c == '\r') {
+            continue;
+        }
+        if (c == '\n') {
+            if (st == St::LineComment) {
+                st = St::Code;
+            }
+            if (st == St::Str || st == St::Chr) {
+                st = St::Code; // unterminated literal: recover at end of line
+            }
+            lines.emplace_back();
+            continue;
+        }
+        switch (st) {
+        case St::Code:
+            if (c == '/' && n == '/') {
+                st = St::LineComment;
+                lines.back().raw += "//";
+                ++i;
+            } else if (c == '/' && n == '*') {
+                st = St::BlockComment;
+                lines.back().raw += "/*";
+                lines.back().code += ' ';
+                lines.back().bare += ' ';
+                ++i;
+            } else if (c == 'R' && n == '"' && (i == 0 || !(std::isalnum((unsigned char)text[i - 1]) || text[i - 1] == '_'))) {
+                const size_t open = text.find('(', i + 2);
+                if (open == std::string::npos || open - (i + 2) > 16) {
+                    emit(c, true, false);
+                    break;
+                }
+                rawDelim = ")" + text.substr(i + 2, open - (i + 2)) + "\"";
+                for (size_t k = i; k <= open; ++k) {
+                    emit(text[k], true, false);
+                }
+                i = open;
+                st = St::Raw;
+            } else if (c == '"') {
+                emit(c, true, false);
+                st = St::Str;
+            } else if (c == '\'') {
+                // C++14 digit separator (1'000) is not a char literal.
+                const bool sep = i > 0 && std::isxdigit((unsigned char)text[i - 1]) && std::isxdigit((unsigned char)n);
+                emit(c, true, false);
+                if (!sep) {
+                    st = St::Chr;
+                }
+            } else {
+                emit(c, true, false);
+            }
+            break;
+        case St::LineComment:
+            lines.back().raw.push_back(c);
+            break;
+        case St::BlockComment:
+            lines.back().raw.push_back(c);
+            if (c == '*' && n == '/') {
+                lines.back().raw.push_back('/');
+                ++i;
+                st = St::Code;
+            }
+            break;
+        case St::Str:
+        case St::Chr: {
+            const char q = st == St::Str ? '"' : '\'';
+            if (c == '\\' && n != '\0' && n != '\n') {
+                emit(c, false, true);
+                emit(n, false, true);
+                ++i;
+            } else if (c == q) {
+                emit(c, true, false);
+                st = St::Code;
+            } else {
+                emit(c, false, true);
+            }
+            break;
+        }
+        case St::Raw:
+            if (text.compare(i, rawDelim.size(), rawDelim) == 0) {
+                for (char d : rawDelim) {
+                    emit(d, true, false);
+                }
+                i += rawDelim.size() - 1;
+                st = St::Code;
+            } else {
+                emit(c, false, true);
+            }
+            break;
+        }
+    }
+    return lines;
+}
+
+std::string trimLeft(const std::string& s) {
+    const size_t p = s.find_first_not_of(" \t");
+    return p == std::string::npos ? std::string() : s.substr(p);
+}
+
+/// Preprocessor directive lines (including backslash continuations) are flagged true.
+std::vector<bool> preprocessorMask(const std::vector<Line>& lines) {
+    std::vector<bool> mask(lines.size(), false);
+    bool cont = false;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        const std::string t = trimLeft(lines[i].code);
+        const bool pp = cont || (!t.empty() && t[0] == '#');
+        mask[i] = pp;
+        cont = pp && !lines[i].code.empty() && lines[i].code.back() == '\\';
+    }
+    return mask;
+}
+
+/// Inline allowlist marker: `// fuse-lint-allow(<check>): <justification, >= 10 chars>`.
+bool inlineAllowed(const std::string& raw, const std::string& check) {
+    const std::string tag = "fuse-lint-allow(" + check + "):";
+    const size_t p = raw.find(tag);
+    if (p == std::string::npos) {
+        return false;
+    }
+    return trimLeft(raw.substr(p + tag.size())).size() >= 10u;
+}
+
+std::string where(const fs::path& file, const fs::path& base, size_t lineIdx) {
+    return rel(file, base) + ":" + std::to_string(lineIdx + 1);
+}
+
+// ---- check: ownership -----------------------------------------------------------------------------
+
+/// Central allowlist for non-owning raw-pointer accessors whose names look like factories.
+/// Each entry: path suffix, code substring, justification. Prefer the inline marker for new code.
+struct AllowEntry {
+    const char* pathSuffix;
+    const char* code;
+    const char* why;
+};
+constexpr AllowEntry kOwnershipAllow[] = {
+    // (empty today — the tree is clean; add {suffix, code, justification} rows here when a
+    // non-owning view legitimately matches the factory pattern.)
+    {"/fuse_lint_selftest_allow.hpp", "Widget* openView()", "self-test: non-owning view into a pool"},
+};
+
+Violations checkOwnership(const fs::path& dir) {
+    const std::regex factory(R"([A-Za-z0-9_>]\s*\*\s*(create|make|clone|spawn|instantiate|open|load|acquire)[A-Za-z0-9_]*\s*\()");
+    const std::regex naked(R"((^|[^A-Za-z0-9_:])(new\s+[A-Za-z_:][A-Za-z0-9_:<>]*\s*[\[({;]|delete(\[\])?\s+[A-Za-z_(*]))");
+    const std::regex rawRelease(R"(\*\s*release\s*\(\s*\)\s*(const\s*)?(noexcept\s*)?[;{])");
+    Violations v;
+    const auto files = listFiles(dir, [](const fs::path& p, const std::string& r) {
+        return isHeader(p) && r.find("/tests/") == std::string::npos && !r.ends_with("/fuse/alloc/new_ban.hpp");
+    });
+    for (const fs::path& f : files) {
+        const auto lines = scanLines(readFile(f));
+        const auto pp = preprocessorMask(lines);
+        const std::string gen = f.generic_string();
+        for (size_t i = 0; i < lines.size(); ++i) {
+            if (pp[i] || trimLeft(lines[i].bare).empty()) {
+                continue;
+            }
+            const std::string& code = lines[i].bare;
+            if (!std::regex_search(code, factory) && !std::regex_search(code, naked) && !std::regex_search(code, rawRelease)) {
+                continue;
+            }
+            if (inlineAllowed(lines[i].raw, "ownership")) {
+                continue;
+            }
+            bool listed = false;
+            for (const AllowEntry& a : kOwnershipAllow) {
+                listed |= gen.ends_with(a.pathSuffix) && code.find(a.code) != std::string::npos;
+            }
+            if (!listed) {
+                v.push_back(where(f, dir, i) + ": owning raw pointer: " + trimLeft(lines[i].raw));
+            }
+        }
+    }
+    if (files.empty()) {
+        v.push_back(dir.generic_string() + ": no public headers found (wrong --dir?)");
+    }
+    return v;
+}
+
+// ---- check: namespace ------------------------------------------------------------------------------
+
+/// Product (non-quarantine) files under Source/FUSE: public headers under */include and sources under
+/// */src. Apps/, tests/ and samples are excluded (executables may use global scope freely).
+std::vector<fs::path> productFiles(const fs::path& root, bool headersOnly) {
+    return listFiles(root, [&](const fs::path& p, const std::string& r) {
+        if (inQuarantine(r) || r.find("/tests/") != std::string::npos || r.rfind("/Apps/", 0) == 0) {
+            return false;
+        }
+        if (r.find("/include/") != std::string::npos) {
+            return isHeader(p);
+        }
+        return !headersOnly && r.find("/src/") != std::string::npos && isCxxSource(p);
+    });
+}
+
+Violations checkNamespace(const fs::path& root) {
+    Violations v;
+    const std::regex tok(
+        R"(\bnamespace\s+([A-Za-z_][A-Za-z0-9_:]*)?\s*(\[\[[^\]]*\]\]\s*)?\{|\bextern\s+"[^"]*"\s*\{|\b(class|struct|union|enum(?:\s+class|\s+struct)?)\s+(?:alignas\s*\([^)]*\)\s*|\[\[[^\]]*\]\]\s*|FUSE_[A-Z_]+\s+)*([A-Za-z_][A-Za-z0-9_]*)(::)?[^;{}()=]*\{|[{}])");
+    const auto files = productFiles(root, false);
+    size_t headers = 0;
+    for (const fs::path& f : files) {
+        const bool header = isHeader(f);
+        headers += header ? 1u : 0u;
+        const auto lines = scanLines(readFile(f));
+        const auto pp = preprocessorMask(lines);
+        std::string joined;
+        std::vector<size_t> lineStart;
+        for (size_t i = 0; i < lines.size(); ++i) {
+            lineStart.push_back(joined.size());
+            joined += pp[i] ? std::string() : lines[i].bare;
+            joined += '\n';
+        }
+        auto lineOf = [&](size_t off) {
+            return size_t(std::upper_bound(lineStart.begin(), lineStart.end(), off) - lineStart.begin()) - 1u;
+        };
+        std::vector<char> stack; // N namespace, E extern "C", T type, B other
+        bool anyFuse = false;
+        for (auto it = std::sregex_iterator(joined.begin(), joined.end(), tok); it != std::sregex_iterator(); ++it) {
+            const std::smatch& m = *it;
+            const std::string s = m.str(0);
+            const size_t li = lineOf(size_t(m.position(0)));
+            const bool inNs = std::find(stack.begin(), stack.end(), 'N') != stack.end();
+            if (s == "}") {
+                if (!stack.empty()) {
+                    stack.pop_back();
+                }
+            } else if (s == "{") {
+                stack.push_back('B');
+            } else if (s.rfind("namespace", 0) == 0) {
+                const std::string name = m.str(1);
+                if (!inNs) {
+                    const bool fuse = name == "fuse" || name.rfind("fuse::", 0) == 0;
+                    anyFuse |= fuse;
+                    const bool ok = fuse || name == "std" || (!header && name.empty());
+                    if (!ok && !inlineAllowed(lines[li].raw, "namespace")) {
+                        v.push_back(where(f, root, li) + ": top-level namespace '" + (name.empty() ? "<anonymous>" : name) +
+                                    "' outside fuse::");
+                    }
+                }
+                stack.push_back('N');
+            } else if (s.rfind("extern", 0) == 0) {
+                stack.push_back('E');
+            } else {
+                const bool qualified = m[5].matched; // struct std::hash<...> specialisation
+                const bool global = std::none_of(stack.begin(), stack.end(), [](char k) { return k != 'E'; });
+                if (header && global && !qualified && !inlineAllowed(lines[li].raw, "namespace")) {
+                    v.push_back(where(f, root, li) + ": " + m.str(3) + " '" + m.str(4) + "' declared at global scope");
+                }
+                stack.push_back('T');
+            }
+        }
+        (void)anyFuse;
+    }
+    if (headers < 20u) {
+        v.push_back(root.generic_string() + ": only " + std::to_string(headers) + " public headers found (wrong --root?)");
+    }
+    return v;
+}
+
+// ---- check: macros ----------------------------------------------------------------------------------
+
+Violations checkMacros(const fs::path& root) {
+    Violations v;
+    const std::regex def(R"(^\s*#\s*define\s+([A-Za-z_][A-Za-z0-9_]*))");
+    const std::regex torqueAssert(R"(\b(AssertFatal|AssertWarn|AssertISV|AssertRelease|TORQUE_UNUSED)\b)");
+    std::set<std::string> coreDefined;
+    const auto headers = productFiles(root, true);
+    for (const fs::path& f : headers) {
+        const std::string r = "/" + rel(f, root);
+        const auto lines = scanLines(readFile(f));
+        for (size_t i = 0; i < lines.size(); ++i) {
+            std::smatch m;
+            if (!std::regex_search(lines[i].code, m, def)) {
+                continue;
+            }
+            const std::string name = m.str(1);
+            if (r.rfind("/Core/include/", 0) == 0) {
+                coreDefined.insert(name);
+            }
+            // new_ban.hpp redefines malloc/free/new/delete on purpose (B1.3 debug heap intercept).
+            if (name.rfind("FUSE_", 0) != 0 && !r.ends_with("/fuse/alloc/new_ban.hpp") &&
+                !inlineAllowed(lines[i].raw, "macros")) {
+                v.push_back(where(f, root, i) + ": public macro '" + name + "' is not FUSE_-prefixed");
+            }
+        }
+    }
+    for (const char* required : {"FUSE_ASSERT", "FUSE_HOST_DEVICE", "FUSE_VERIFY"}) {
+        if (!coreDefined.count(required)) {
+            v.push_back(std::string("Core/include: required macro ") + required + " is not defined by fuse_core public headers");
+        }
+    }
+    for (const fs::path& f : productFiles(root, false)) {
+        const auto lines = scanLines(readFile(f));
+        for (size_t i = 0; i < lines.size(); ++i) {
+            std::smatch m;
+            if (std::regex_search(lines[i].bare, m, torqueAssert)) {
+                v.push_back(where(f, root, i) + ": Torque macro '" + m.str(1) + "' (use FUSE_ASSERT / FUSE_VERIFY)");
+            }
+        }
+    }
+    return v;
+}
+
+// ---- check: torque-macros ---------------------------------------------------------------------------
+
+bool isTextFile(const fs::path& p) {
+    if (isCxxSource(p) || hasExt(p, {".cmake", ".txt", ".glsl", ".hlsl", ".comp", ".vert", ".frag", ".json", ".in", ".py", ".sh", ".md", ".toml", ".yaml", ".yml", ".ts", ".cs"})) {
+        return true;
+    }
+    return p.filename() == "CMakeLists.txt";
+}
+
+Violations checkTorqueMacros(const fs::path& root) {
+    Violations v;
+    const std::regex torque(R"(\bTORQUE_[A-Z0-9_]*)");
+    for (const fs::path& f : listFiles(root, [](const fs::path& p, const std::string& r) {
+             return !inQuarantine(r) && isTextFile(p) && !hasExt(p, {".md"});
+         })) {
+        const auto lines = scanLines(readFile(f));
+        const bool cmake = hasExt(f, {".cmake", ".txt"});
+        for (size_t i = 0; i < lines.size(); ++i) {
+            std::smatch m;
+            // Comments may mention TORQUE_* when documenting the compat mapping; code may not.
+            const std::string& text = cmake ? lines[i].raw.substr(0, lines[i].raw.find('#')) : lines[i].code;
+            if (std::regex_search(text, m, torque) && !inlineAllowed(lines[i].raw, "torque-macros")) {
+                v.push_back(where(f, root, i) + ": '" + m.str(0) + "' outside Compat/ Legacy/ quarantine");
+            }
+        }
+    }
+    return v;
+}
+
+// ---- check: torque-names ----------------------------------------------------------------------------
+
+Violations checkTorqueNames(const fs::path& root) {
+    Violations v;
+    const std::regex torqueish(R"(torque|t3d|t2d|\btge\b|\btgea\b)");
+    const std::regex enumChannel(R"(\benum\s+(class|struct)?\s*(Channel|LogChannel|Domain|MemoryDomain|AllocDomain|MemTag|MemoryTag)\b)");
+    const std::regex channelRef(R"(\b(Channel|LogChannel|MemoryDomain|AllocDomain|MemTag|MemoryTag)::([A-Za-z0-9_]+))");
+    const std::regex domainCtor(R"re(\b(DomainBudget|MemoryDomain|AllocDomain|ProfilerDomain|LogChannel)\b[^;]*"([^"]*)")re");
+    const std::regex logTag(R"re(\bFUSE_LOG_[A-Z_]+\s*\([^"]*"\s*\[([^\]]*)\])re");
+    for (const fs::path& f : productFiles(root, false)) {
+        const auto lines = scanLines(readFile(f));
+        int enumDepth = -1; // brace depth while inside a channel/domain enum body
+        int depth = 0;
+        bool pendingEnum = false;
+        for (size_t i = 0; i < lines.size(); ++i) {
+            const std::string& bare = lines[i].bare;
+            const std::string& code = lines[i].code;
+            std::smatch m;
+            if (std::regex_search(bare, enumChannel)) {
+                pendingEnum = true;
+            }
+            for (char c : bare) {
+                if (c == '{') {
+                    if (pendingEnum) {
+                        enumDepth = depth;
+                        pendingEnum = false;
+                    }
+                    ++depth;
+                } else if (c == '}') {
+                    --depth;
+                    if (depth == enumDepth) {
+                        enumDepth = -1;
+                    }
+                }
+            }
+            std::string hit;
+            if ((enumDepth >= 0 || pendingEnum) && std::regex_search(lower(bare), torqueish)) {
+                hit = "log channel / memory domain enumerator";
+            }
+            for (auto it = std::sregex_iterator(bare.begin(), bare.end(), channelRef); hit.empty() && it != std::sregex_iterator(); ++it) {
+                if (std::regex_search(lower((*it).str(2)), torqueish)) {
+                    hit = "channel/domain '" + (*it).str(0) + "'";
+                }
+            }
+            if (hit.empty() && std::regex_search(code, m, domainCtor) && std::regex_search(lower(m.str(2)), torqueish)) {
+                hit = "memory domain / channel name \"" + m.str(2) + "\"";
+            }
+            if (hit.empty() && std::regex_search(code, m, logTag) && std::regex_search(lower(m.str(1)), torqueish)) {
+                hit = "log tag [" + m.str(1) + "]";
+            }
+            if (!hit.empty() && !inlineAllowed(lines[i].raw, "torque-names")) {
+                v.push_back(where(f, root, i) + ": Torque-named " + hit);
+            }
+        }
+    }
+    return v;
+}
+
+// ---- manifest ---------------------------------------------------------------------------------------
+
+struct TargetRow {
+    std::string name, type, sourceDir, cxxStandard;
+    bool hasCxx = false, hasCuda = false;
+    std::string links, interfaceLinks;
+};
+
+bool readManifest(const fs::path& p, std::vector<TargetRow>& rows, Violations& v) {
+    std::ifstream in(p);
+    if (!in) {
+        v.push_back(p.generic_string() + ": target manifest missing (re-run CMake configure)");
+        return false;
+    }
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+        std::vector<std::string> f;
+        std::stringstream ss(line);
+        std::string cell;
+        while (std::getline(ss, cell, '|')) {
+            f.push_back(cell);
+        }
+        f.resize(8);
+        rows.push_back({f[0], f[1], f[2], f[3], f[4] == "1", f[5] == "1", f[6], f[7]});
+    }
+    return true;
+}
+
+// ---- check: banned-deps -----------------------------------------------------------------------------
+
+Violations checkBannedDeps(const fs::path& root, const fs::path& manifest) {
+    Violations v;
+    const std::regex banned(R"(meridian|imgui)");
+    for (const fs::path& f : listFiles(root, [](const fs::path&, const std::string&) { return true; })) {
+        const std::string r = rel(f, root);
+        if (std::regex_search(lower(r), banned)) {
+            v.push_back(r + ": banned name in path");
+            continue;
+        }
+        if (!isTextFile(f)) {
+            continue;
+        }
+        const auto lines = scanLines(readFile(f));
+        for (size_t i = 0; i < lines.size(); ++i) {
+            std::smatch m;
+            const std::string l = lower(lines[i].raw);
+            if (std::regex_search(l, m, banned)) {
+                v.push_back(where(f, root, i) + ": banned dependency '" + m.str(0) + "'");
+            }
+        }
+    }
+    std::vector<TargetRow> rows;
+    if (readManifest(manifest, rows, v)) {
+        for (const TargetRow& t : rows) {
+            const std::string links = lower(t.links + "," + t.interfaceLinks);
+            std::smatch m;
+            if (std::regex_search(links, m, banned)) {
+                v.push_back("target " + t.name + ": links banned '" + m.str(0) + "' (" + t.links + ")");
+            }
+        }
+    }
+    return v;
+}
+
+// ---- check: qt-includes -----------------------------------------------------------------------------
+
+Violations checkQtIncludes(const fs::path& root, const fs::path& manifest) {
+    Violations v;
+    const std::regex qtInclude(R"(^\s*#\s*include\s*[<"](Q[A-Za-z0-9_]*|Qt[A-Za-z0-9_]*/[^>"]*)[>"])");
+    const std::regex qtLink(R"((^|,)\s*(\$<[^>]*:)?Qt[0-9]*(::|Core|Gui|Widgets|$))");
+    size_t scanned = 0;
+    for (const char* mod : {"Core", "Renderer", "Physics", "ECS", "Compute"}) {
+        const fs::path dir = root / mod;
+        for (const fs::path& f : listFiles(dir, [](const fs::path& p, const std::string&) { return isCxxSource(p); })) {
+            ++scanned;
+            const auto lines = scanLines(readFile(f));
+            for (size_t i = 0; i < lines.size(); ++i) {
+                std::smatch m;
+                if (std::regex_search(lines[i].code, m, qtInclude)) {
+                    v.push_back(where(f, root, i) + ": Qt include <" + m.str(1) + "> in " + mod);
+                }
+            }
+        }
+    }
+    if (scanned < 20u) {
+        v.push_back(root.generic_string() + ": too few sources scanned (wrong --root?)");
+    }
+    std::vector<TargetRow> rows;
+    if (readManifest(manifest, rows, v)) {
+        const std::set<std::string> guarded = {"fuse_core", "fuse_rhi", "fuse_renderer", "fuse_physics", "fuse_ecs", "fuse_compute"};
+        size_t seen = 0;
+        for (const TargetRow& t : rows) {
+            if (!guarded.count(t.name)) {
+                continue;
+            }
+            ++seen;
+            if (std::regex_search(t.links, qtLink) || std::regex_search(t.interfaceLinks, qtLink)) {
+                v.push_back("target " + t.name + ": links Qt (" + t.links + ")");
+            }
+        }
+        if (seen == 0u) {
+            v.push_back("manifest lists none of fuse_core/fuse_rhi/fuse_physics/fuse_ecs/fuse_compute");
+        }
+    }
+    return v;
+}
+
+// ---- check: cxx-standard ----------------------------------------------------------------------------
+
+Violations checkCxxStandard(const fs::path& manifest, const fs::path& repo) {
+    Violations v;
+    std::vector<TargetRow> rows;
+    if (!readManifest(manifest, rows, v)) {
+        return v;
+    }
+    const std::string repoGen = repo.generic_string();
+    size_t checked = 0;
+    for (const TargetRow& t : rows) {
+        if (t.type == "INTERFACE_LIBRARY" || t.type == "UTILITY" || !t.hasCxx) {
+            continue; // header-only, custom, C-only, or CUDA-only targets are not C++ host targets
+        }
+        std::string r = t.sourceDir;
+        if (!repoGen.empty() && r.rfind(repoGen, 0) == 0) {
+            r = r.substr(repoGen.size());
+        }
+        // Torque quarantine is pinned to C++17 by design (Source/FUSE/CMakeLists.txt, FuseCxx23.cmake);
+        // Engine/lib/* are vendored third-party C/C++ libraries built under fuse_* names.
+        if (r.rfind("/Source/FUSE/Legacy", 0) == 0 || r.rfind("/Engine/", 0) == 0) {
+            continue;
+        }
+        ++checked;
+        if (t.cxxStandard != "23") {
+            v.push_back("target " + t.name + " (" + r + "): CXX_STANDARD='" + t.cxxStandard + "', expected 23");
+        }
+    }
+    if (checked < 10u) {
+        v.push_back(manifest.generic_string() + ": only " + std::to_string(checked) + " fuse_* host targets in manifest");
+    }
+    return v;
+}
+
+// ---- check: doc-headings ----------------------------------------------------------------------------
+
+Violations checkDocHeadings(const fs::path& plan, const fs::path& sources) {
+    Violations v;
+    const std::regex bHead(R"(^###\s+B([0-9]+)\.([0-9]+)\b)");
+    const std::regex srcHead(R"(^##\s+([0-9]+)\.([0-9]+)(?![0-9.]))");
+    std::map<std::string, std::set<std::string>> have; // phase -> {"N.M"}
+    std::ifstream in(plan);
+    if (!in) {
+        return {plan.generic_string() + ": master plan missing"};
+    }
+    std::string line;
+    size_t lineNo = 0, headings = 0;
+    while (std::getline(in, line)) {
+        ++lineNo;
+        std::smatch m;
+        if (!std::regex_search(line, m, bHead)) {
+            continue;
+        }
+        ++headings;
+        const std::string phase = m.str(1);
+        const std::string nm = phase + "." + m.str(2);
+        if (!have.count(phase)) {
+            auto& set = have[phase];
+            std::ifstream src(sources / ("P" + phase + ".md"));
+            std::string s;
+            while (std::getline(src, s)) {
+                std::smatch sm;
+                if (std::regex_search(s, sm, srcHead)) {
+                    set.insert(sm.str(1) + "." + sm.str(2));
+                }
+            }
+        }
+        if (!have[phase].count(nm)) {
+            v.push_back(rel(plan, plan.parent_path()) + ":" + std::to_string(lineNo) + ": '### B" + nm +
+                        "' has no '## " + nm + "' in " + (sources / ("P" + phase + ".md")).filename().string());
+        }
+    }
+    if (headings < 10u) {
+        v.push_back(plan.generic_string() + ": only " + std::to_string(headings) + " '### B*.*' headings found");
+    }
+    return v;
+}
+
+// ---- self-tests -------------------------------------------------------------------------------------
+
+struct SelfTest {
+    bool ok = true;
+    void expect(bool cond, const std::string& what) {
+        if (!cond) {
+            std::fprintf(stderr, "SELFTEST FAIL: %s\n", what.c_str());
+            ok = false;
+        }
+    }
+};
+
+size_t countContaining(const Violations& v, const std::string& needle) {
+    return size_t(std::count_if(v.begin(), v.end(), [&](const std::string& s) { return s.find(needle) != std::string::npos; }));
+}
+
+/// Writes a fake Source/FUSE tree under `base` from {relative path, contents} pairs.
+fs::path seedTree(const fs::path& base, std::initializer_list<std::pair<const char*, const char*>> files) {
+    std::error_code ec;
+    fs::remove_all(base, ec);
+    for (const auto& [path, text] : files) {
+        writeFile(base / path, text);
+    }
+    return base;
+}
+
+std::string padHeaders(const fs::path& base, int n) {
+    // Some checks require a minimum number of headers so a wrong --root cannot pass silently.
+    for (int i = 0; i < n; ++i) {
+        writeFile(base / "Core/include/fuse/pad" / ("pad" + std::to_string(i) + ".hpp"),
+                  "#pragma once\nnamespace fuse::pad {\nstruct P" + std::to_string(i) + " {};\n}\n");
+        writeFile(base / "Physics/src/pad" / ("pad" + std::to_string(i) + ".cpp"), "namespace fuse {}\n");
+    }
+    return {};
+}
+
+bool selfTest(const std::string& check, const fs::path& scratch) {
+    SelfTest t;
+    const fs::path bad = scratch / "selftest_bad";
+    const fs::path good = scratch / "selftest_good";
+    if (check == "ownership") {
+        seedTree(bad, {{"include/fuse/w.hpp",
+                        "#pragma once\n"
+                        "struct Widget;\n"
+                        "Widget* createWidget(int id);\n"
+                        "inline Widget* mk() {\n"
+                        "    return new Widget(1);\n"
+                        "}\n"
+                        "inline void kill(Widget* w) { delete w; }\n"
+                        "struct Holder { Widget* release(); };\n"}});
+        const Violations vb = checkOwnership(bad);
+        t.expect(vb.size() == 4u, "ownership: seeded factory, new, delete and release() all flagged (got " + std::to_string(vb.size()) + ")");
+        seedTree(good, {{"include/fuse/w.hpp",
+                         "#pragma once\n"
+                         "struct Snapshot; struct Foo { Foo(const Foo&) = delete; };\n"
+                         "const Snapshot* newest() const;\n"
+                         "// Widget* createWidget(int id);\n"
+                         "/* return new Widget(1);\n   delete w; */\n"
+                         "inline const char* s = \"new Widget(\";\n"
+                         "Widget* openPooled(); // fuse-lint-allow(ownership): non-owning view into the pool\n"
+                         "#define FUSE_NEW(T) new T()\n"},
+                        {"include/fuse/fuse_lint_selftest_allow.hpp", "#pragma once\nWidget* openView();\n"},
+                        {"include/fuse/alloc/new_ban.hpp", "#define new if (0) {} else new\nvoid f() { delete p; }\n"},
+                        {"tests/include/x.hpp", "Widget* createWidget();\n"}});
+        const Violations vg = checkOwnership(good);
+        for (const auto& s : vg) {
+            std::fprintf(stderr, "  unexpected: %s\n", s.c_str());
+        }
+        t.expect(vg.empty(), "ownership: comments, strings, deleted ctors, allowlisted views and new_ban.hpp pass");
+    } else if (check == "namespace") {
+        seedTree(bad, {{"Core/include/fuse/a.hpp", "#pragma once\nnamespace torque {\nstruct X {};\n}\n"},
+                       {"Core/include/fuse/b.hpp", "#pragma once\nstruct GlobalThing {\n  int x;\n};\n"},
+                       {"Core/include/fuse/c.hpp", "#pragma once\nnamespace {\nint hidden;\n}\n"},
+                       {"Core/src/d.cpp", "namespace engine {\nvoid f() {}\n}\n"},
+                       {"Compat/include/compat/ok.hpp", "namespace Con { struct Legacy {}; }\n"}});
+        padHeaders(bad, 20);
+        const Violations vb = checkNamespace(bad);
+        t.expect(countContaining(vb, "'torque'") == 1u, "namespace: seeded top-level namespace torque flagged");
+        t.expect(countContaining(vb, "'GlobalThing'") == 1u, "namespace: seeded global struct flagged");
+        t.expect(countContaining(vb, "<anonymous>") == 1u, "namespace: anonymous namespace in public header flagged");
+        t.expect(countContaining(vb, "'engine'") == 1u, "namespace: seeded source namespace engine flagged");
+        t.expect(vb.size() == 4u, "namespace: Compat/ quarantine ignored (got " + std::to_string(vb.size()) + ")");
+        seedTree(good, {{"Core/include/fuse/a.hpp",
+                         "#pragma once\nnamespace fuse::core {\nnamespace detail {\nstruct X { struct Y {}; };\n}\n"
+                         "enum class E { A };\n}\n"
+                         "template <> struct std::hash<fuse::core::detail::X> { int operator()() const { return 0; } };\n"
+                         "namespace std {\ntemplate <> struct hash<int*> {};\n}\n"
+                         "extern \"C\" {\nvoid fuse_c_api();\n}\n"
+                         "// namespace torque {\n#define FUSE_X struct Bad {}\n"},
+                        {"Core/src/b.cpp", "namespace {\nstruct Local {};\n}\nnamespace fuse {\nvoid f() { const char* s = \"namespace q {\"; }\n}\n"}});
+        padHeaders(good, 20);
+        const Violations vg = checkNamespace(good);
+        for (const auto& s : vg) {
+            std::fprintf(stderr, "  unexpected: %s\n", s.c_str());
+        }
+        t.expect(vg.empty(), "namespace: nested/detail/std specialisations/extern C/strings pass");
+    } else if (check == "macros") {
+        seedTree(bad, {{"Core/include/fuse/assert.hpp", "#pragma once\n#define ASSERT(x) (void)(x)\n#define FUSE_VERIFY(c, m) (void)(c)\n"},
+                       {"Physics/src/p.cpp", "void f() { AssertFatal(false, \"x\"); }\n"}});
+        padHeaders(bad, 1);
+        const Violations vb = checkMacros(bad);
+        t.expect(countContaining(vb, "'ASSERT'") == 1u, "macros: seeded non-FUSE_ public macro flagged");
+        t.expect(countContaining(vb, "FUSE_ASSERT is not defined") == 1u, "macros: missing FUSE_ASSERT flagged");
+        t.expect(countContaining(vb, "FUSE_HOST_DEVICE is not defined") == 1u, "macros: missing FUSE_HOST_DEVICE flagged");
+        t.expect(countContaining(vb, "AssertFatal") == 1u, "macros: Torque AssertFatal usage flagged");
+        seedTree(good, {{"Core/include/fuse/assert.hpp", "#pragma once\n#define FUSE_ASSERT(c, m) (void)(c)\n#define FUSE_VERIFY(c, m) (void)(c)\n"},
+                        {"Core/include/fuse/gria.hpp", "#pragma once\n#define FUSE_HOST_DEVICE\n"},
+                        {"Core/include/fuse/alloc/new_ban.hpp", "#define new if (0) {} else new\n"},
+                        {"Legacy/include/t.hpp", "#define AssertFatal(x, y)\n"},
+                        {"Physics/src/p.cpp", "// AssertFatal was replaced\nvoid f() { const char* s = \"AssertFatal\"; }\n"}});
+        const Violations vg = checkMacros(good);
+        for (const auto& s : vg) {
+            std::fprintf(stderr, "  unexpected: %s\n", s.c_str());
+        }
+        t.expect(vg.empty(), "macros: FUSE_* macros, new_ban.hpp and Legacy/ quarantine pass");
+    } else if (check == "torque-macros") {
+        seedTree(bad, {{"Core/src/a.cpp", "#ifdef TORQUE_DEBUG\n#endif\n"},
+                       {"Core/CMakeLists.txt", "target_compile_definitions(x PRIVATE TORQUE_SHIPPING=1)\n"}});
+        const Violations vb = checkTorqueMacros(bad);
+        t.expect(vb.size() == 2u, "torque-macros: seeded TORQUE_* in source and CMake flagged (got " + std::to_string(vb.size()) + ")");
+        seedTree(good, {{"Core/src/a.cpp", "// maps TORQUE_DEBUG to FUSE_DEBUG\nconst char* s = \"x\";\n"},
+                        {"Core/CMakeLists.txt", "# TORQUE_SHIPPING lives in Compat\n"},
+                        {"Compat/src/c.cpp", "#ifdef TORQUE_DEBUG\n#endif\n"},
+                        {"Legacy/T3D/CMakeLists.txt", "add_definitions(-DTORQUE_OS_LINUX)\n"}});
+        const Violations vg = checkTorqueMacros(good);
+        for (const auto& s : vg) {
+            std::fprintf(stderr, "  unexpected: %s\n", s.c_str());
+        }
+        t.expect(vg.empty(), "torque-macros: comments and Compat/ Legacy/ quarantine pass");
+    } else if (check == "torque-names") {
+        seedTree(bad, {{"Core/include/fuse/log/logger.hpp", "namespace fuse::log {\nenum class Channel : unsigned {\n    Core = 1,\n    TorqueScript = 2,\n};\n}\n"},
+                       {"Core/src/a.cpp", "void f() {\n  fuse::alloc::DomainBudget b(\"torque_legacy\", 64u);\n  log(Channel::T3DBridge, \"x\");\n  FUSE_LOG_INFO(Channel::Core, \"[Torque] hello\");\n}\n"}});
+        const Violations vb = checkTorqueNames(bad);
+        t.expect(vb.size() == 4u, "torque-names: seeded enumerator, domain name, channel ref and log tag flagged (got " + std::to_string(vb.size()) + ")");
+        seedTree(good, {{"Core/include/fuse/log/logger.hpp", "namespace fuse::log {\nenum class Channel : unsigned {\n    Core = 1,\n    Script = 2,\n};\n}\n"},
+                        {"Core/src/a.cpp", "void f() {\n  fuse::alloc::DomainBudget b(\"script\", 64u);\n  // Channel::TorqueScript was renamed\n  FUSE_LOG_INFO(Channel::Core, \"[compat] loaded torque mission\");\n}\n"},
+                        {"Compat/src/c.cpp", "DomainBudget b(\"torque\", 1);\n"}});
+        const Violations vg = checkTorqueNames(good);
+        for (const auto& s : vg) {
+            std::fprintf(stderr, "  unexpected: %s\n", s.c_str());
+        }
+        t.expect(vg.empty(), "torque-names: FUSE names, comments and Compat/ quarantine pass");
+    } else if (check == "banned-deps") {
+        seedTree(bad, {{"Editor/CMakeLists.txt", "target_link_libraries(fuse_editor PRIVATE imgui)\n"},
+                       {"Editor/src/meridian_panel.cpp", "int x;\n"},
+                       {"Legacy/src/x.cpp", "#include \"Meridian/api.h\"\n"}});
+        writeFile(scratch / "bad.manifest", "fuse_editor|EXECUTABLE|/x|23|1|0|fuse_core,imgui::imgui|\n");
+        const Violations vb = checkBannedDeps(bad, scratch / "bad.manifest");
+        t.expect(vb.size() == 4u, "banned-deps: seeded ImGui CMake link, Meridian path/include and imgui target link flagged (got " + std::to_string(vb.size()) + ")");
+        seedTree(good, {{"Editor/CMakeLists.txt", "target_link_libraries(fuse_editor PRIVATE Qt6::Widgets)\n"}});
+        writeFile(scratch / "good.manifest", "fuse_editor|EXECUTABLE|/x|23|1|0|fuse_core,Qt6::Widgets|\n");
+        const Violations vg = checkBannedDeps(good, scratch / "good.manifest");
+        for (const auto& s : vg) {
+            std::fprintf(stderr, "  unexpected: %s\n", s.c_str());
+        }
+        t.expect(vg.empty(), "banned-deps: clean tree and Qt-only editor links pass");
+    } else if (check == "qt-includes") {
+        seedTree(bad, {{"Core/src/a.cpp", "#include <QString>\n"},
+                       {"Renderer/include/fuse/r.hpp", "#  include <QtGui/QWindow>\n"},
+                       {"Physics/src/p.cpp", "#include \"QObject\"\n"}});
+        padHeaders(bad, 20);
+        writeFile(scratch / "bad.manifest", "fuse_core|STATIC_LIBRARY|/x|23|1|0|Qt6::Core|\nfuse_rhi|STATIC_LIBRARY|/x|23|1|0|fuse_core|Qt6::Gui\n");
+        const Violations vb = checkQtIncludes(bad, scratch / "bad.manifest");
+        t.expect(vb.size() == 5u, "qt-includes: seeded Qt includes and Qt links flagged (got " + std::to_string(vb.size()) + ")");
+        seedTree(good, {{"Core/src/a.cpp", "// #include <QString>\n#include <queue>\n#include \"quat.hpp\"\n"},
+                        {"Editor/src/e.cpp", "#include <QWidget>\n"}});
+        padHeaders(good, 20);
+        writeFile(scratch / "good.manifest", "fuse_core|STATIC_LIBRARY|/x|23|1|0|fuse_quat,Threads::Threads|\nfuse_editor|EXECUTABLE|/x|23|1|0|Qt6::Widgets|\n");
+        const Violations vg = checkQtIncludes(good, scratch / "good.manifest");
+        for (const auto& s : vg) {
+            std::fprintf(stderr, "  unexpected: %s\n", s.c_str());
+        }
+        t.expect(vg.empty(), "qt-includes: std includes, comments and fuse_editor Qt use pass");
+    } else if (check == "cxx-standard") {
+        std::string rows = "# header\n";
+        for (int i = 0; i < 10; ++i) {
+            rows += "fuse_ok" + std::to_string(i) + "|STATIC_LIBRARY|/r/Source/FUSE/Core|23|1|0||\n";
+        }
+        const std::string goodRows = rows +
+                                     "fuse_legacy|STATIC_LIBRARY|/r/Source/FUSE/Legacy/T3D|17|1|0||\n"
+                                     "fuse_lua|STATIC_LIBRARY|/r/Engine/lib/lua||0|0||\n"
+                                     "fuse_cuda_kernels|STATIC_LIBRARY|/r/Source/FUSE/Compute||0|1||\n"
+                                     "fuse_headers|INTERFACE_LIBRARY|/r/Source/FUSE/Core||0|0||\n";
+        writeFile(scratch / "bad.manifest", rows + "fuse_bad17|STATIC_LIBRARY|/r/Source/FUSE/ECS|17|1|0||\nfuse_unset|EXECUTABLE|/r/Tools/FUSE||1|0||\n");
+        const Violations vb = checkCxxStandard(scratch / "bad.manifest", "/r");
+        t.expect(vb.size() == 2u, "cxx-standard: seeded C++17 and unset targets flagged (got " + std::to_string(vb.size()) + ")");
+        writeFile(scratch / "good.manifest", goodRows);
+        const Violations vg = checkCxxStandard(scratch / "good.manifest", "/r");
+        for (const auto& s : vg) {
+            std::fprintf(stderr, "  unexpected: %s\n", s.c_str());
+        }
+        t.expect(vg.empty(), "cxx-standard: Legacy quarantine, vendored C, CUDA-only and interface targets exempt");
+    } else if (check == "doc-headings") {
+        std::string plan = "# Plan\n### Banned / gated\n";
+        std::string p1 = "# P1\n";
+        for (int i = 1; i <= 10; ++i) {
+            plan += "### B1." + std::to_string(i) + " — Section\n";
+            p1 += "## 1." + std::to_string(i) + " — Section\n";
+        }
+        writeFile(good / "plan.md", plan);
+        writeFile(good / "sources/P1.md", p1);
+        writeFile(bad / "plan.md", plan + "### B1.11 — Missing\n### B2.1 — No source file\n");
+        writeFile(bad / "sources/P1.md", p1 + "## 1.110 — Not a match\n### 1.11 — Wrong level\n");
+        const Violations vb = checkDocHeadings(bad / "plan.md", bad / "sources");
+        t.expect(vb.size() == 2u, "doc-headings: seeded B1.11 and B2.1 without source sections flagged (got " + std::to_string(vb.size()) + ")");
+        const Violations vg = checkDocHeadings(good / "plan.md", good / "sources");
+        for (const auto& s : vg) {
+            std::fprintf(stderr, "  unexpected: %s\n", s.c_str());
+        }
+        t.expect(vg.empty(), "doc-headings: matching plan/sources pass");
+    } else {
+        std::fprintf(stderr, "unknown check '%s'\n", check.c_str());
+        return false;
+    }
+    std::error_code ec;
+    fs::remove_all(bad, ec);
+    fs::remove_all(good, ec);
+    return t.ok;
+}
+
+int usage() {
+    std::fprintf(stderr,
+                 "usage: fuse_lint <ownership|namespace|macros|torque-macros|torque-names|banned-deps|cxx-standard|"
+                 "qt-includes|doc-headings> [--root DIR] [--dir DIR] [--manifest FILE] [--repo DIR] [--plan FILE] "
+                 "[--sources DIR] --scratch DIR\n");
+    return 2;
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+    if (argc < 2) {
+        return usage();
+    }
+    Args a;
+    a.check = argv[1];
+    for (int i = 2; i + 1 < argc; i += 2) {
+        const std::string k = argv[i];
+        const fs::path val = argv[i + 1];
+        if (k == "--root") a.root = val;
+        else if (k == "--dir") a.dir = val;
+        else if (k == "--manifest") a.manifest = val;
+        else if (k == "--repo") a.repo = val;
+        else if (k == "--plan") a.plan = val;
+        else if (k == "--sources") a.sources = val;
+        else if (k == "--scratch") a.scratch = val;
+        else return usage();
+    }
+    if (a.scratch.empty()) {
+        a.scratch = fs::temp_directory_path() / ("fuse_lint_" + a.check);
+    }
+    if (!selfTest(a.check, a.scratch)) {
+        std::fprintf(stderr, "fuse_lint %s: self-test FAILED (the check cannot detect its seeded violation)\n", a.check.c_str());
+        return 2;
+    }
+    std::printf("fuse_lint %s: self-test ok (seeded violations detected, clean sample passes)\n", a.check.c_str());
+
+    Violations v;
+    fs::path shown;
+    if (a.check == "ownership") v = checkOwnership(shown = a.dir);
+    else if (a.check == "namespace") v = checkNamespace(shown = a.root);
+    else if (a.check == "macros") v = checkMacros(shown = a.root);
+    else if (a.check == "torque-macros") v = checkTorqueMacros(shown = a.root);
+    else if (a.check == "torque-names") v = checkTorqueNames(shown = a.root);
+    else if (a.check == "banned-deps") v = checkBannedDeps(shown = a.root, a.manifest);
+    else if (a.check == "qt-includes") v = checkQtIncludes(shown = a.root, a.manifest);
+    else if (a.check == "cxx-standard") v = checkCxxStandard(shown = a.manifest, a.repo);
+    else if (a.check == "doc-headings") v = checkDocHeadings(shown = a.plan, a.sources);
+    else return usage();
+
+    for (const std::string& s : v) {
+        std::fprintf(stderr, "  %s\n", s.c_str());
+    }
+    std::printf("fuse_lint %s over %s: %zu violation(s)\n", a.check.c_str(), shown.generic_string().c_str(), v.size());
+    return v.empty() ? 0 : 1;
+}

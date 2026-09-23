@@ -94,6 +94,10 @@ void requiredVulkanInstanceExtensions(std::vector<const char*>& out) {
 #endif
 }
 
+void* nativeDisplayHandle() {
+    return nullptr;
+}
+
 bool createVulkanSurface(void* vkInstance, const Window& window, void** outSurface) {
     if (outSurface != nullptr) {
         *outSurface = nullptr;

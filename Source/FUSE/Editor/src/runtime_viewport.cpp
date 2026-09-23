@@ -758,8 +758,11 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
     }
 
     m_embedSession.wsiBackendName = fuse::platform::windowWsiBackendName();
+    // The X11 backend only serves the standalone game window; the editor viewport stays
+    // Qt-owned, so it renders through the headless GPU path like the Null WSI.
     m_embedSession.usesHeadlessGpuPath =
-        fuse::platform::activeWindowWsiKind() == fuse::platform::WindowWsiKind::Null;
+        fuse::platform::activeWindowWsiKind() == fuse::platform::WindowWsiKind::Null ||
+        fuse::platform::activeWindowWsiKind() == fuse::platform::WindowWsiKind::X11;
     ++m_embedSession.headlessPresentTicks;
 
 #if defined(FUSE_VULKAN_BACKEND)
