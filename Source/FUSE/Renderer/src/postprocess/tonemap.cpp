@@ -73,6 +73,31 @@ const char* tone_mapper_name(ToneMapper mapper) {
     }
 }
 
+f32 tone_mapper_mid_grey_calibration_ev(ToneMapper mapper, f32 scene_grey, f32 display_grey) {
+    if (scene_grey <= 0.f || display_grey <= 0.f) {
+        return 0.f;
+    }
+    const auto evaluate = [mapper, scene_grey](f32 ev) {
+        const f32 x = scene_grey * std::exp2(ev);
+        return apply_tone_map({x, x, x}, mapper).x;
+    };
+    f32 lo = -16.f;
+    f32 hi = 16.f;
+    if (evaluate(lo) > display_grey || evaluate(hi) < display_grey) {
+        return 0.f;
+    }
+    for (u32 i = 0; i < 64u; ++i) {
+        const f32 mid = 0.5f * (lo + hi);
+        if (evaluate(mid) < display_grey) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    const f32 ev = 0.5f * (lo + hi);
+    return std::fabs(ev) < 1e-6f ? 0.f : ev;
+}
+
 void ToneMap::init() {
     m_ready = true;
 }
