@@ -160,11 +160,13 @@ was re-verified from a clean checkout. Every stream found real bugs in the scaff
 
 | Batch 5 | `ctest -L qt` (Qt 6 editor: startup, layout, theme, fonts, WASD, menus, UI frame, idle, present adopt), `fuse_lint_b6_editor_qt6_only`, `fuse-werror-*` presets + `fuse_b7_shipping_binaries`, `fuse_core_b1_x11_window_gates` (XInput2 raw mouse), `fuse_b2_physical_device_selection`, `fuse_b3_sdf_buffer_ray_march`, `fuse_runtime_steady_state_alloc` (script/net/editor), `fuse_b4_ccd_gates` (TOI < 8 iterations), `fuse_b7_terrain_cave_render`, `fuse_lint_vendored_pins_vma` | Zero warnings in Debug/Release/Profile/Shipping with and without Vulkan (306 → 0); full suite green in Shipping; VMA 3.4.0 vendored and default; Qt editor builds (its Vulkan code had never compiled) and passes under Xvfb; Lua/ENet/snapshot deltas at 0 allocations/frame; CCD TOI 64 → 7 iterations worst case; jobs startup race (fiber prewarm after `initialize()` returned) fixed |
 
-**Open items:** CUDA kernels are stubs (no nvcc here); lavapipe allocates inside `vkCmd*` (engine code
-is 0/frame); Windows crash minidump and DPI awareness untested (no Windows toolchain); the live Qt
-editor viewport still presents headless (in progress); ECS single-thread rate and a GPU radix sort are
-being worked on; remaining unchecked plan rows are hardware timings (RTX 3090 / ThinkStation),
-CUDA, Windows or manual visual checks.
+| Batch 6 | `fuse_editor_qt_live_present`, `fuse_package_gate`, `fuse_branding_icons_regen`, `fuse_editor_qt_icon`, `fuse_lint_a_branding_ci_docs`, `fuse_gpu_radix_sort_gates`, `fuse_b3_ecs_gates` (`each_chunk`) | Live Qt editor presents through an embedded Vulkan swapchain (present hang, recreate race and SUBOPTIMAL leak fixed in the renderer); FUSE icon, CPack TGZ/DEB/NSIS, CI badges; Vulkan-compute radix sort matching `std::stable_sort`; ECS iteration shown to be memory-bandwidth bound here (~300M comps/s) |
+| Batch 7 | `fuse_cuda_shared_headers_gate`, `fuse_cuda_compile_gate`, `fuse-mingw-*` presets under Wine, `fuse_core_b7_win32_crash_minidump`, `fuse_b7_dpi_awareness` | CUDA builds with nvcc 12.0 against the shared FUSE headers (compile-only); all four configs cross-build with MinGW and pass under Wine; Win32 minidumps validated structurally; bugs the Windows build exposed (cook cache never hit, second-granularity file times, backslash paths) |
+
+**Open items:** remaining unchecked plan rows need hardware or tools this container does not have:
+RTX 3090 / ThinkStation timings, a CUDA-capable GPU (kernels compile but are stubs or unverified),
+MSVC builds, WinDbg / RenderDoc / Nsight inspection, per-monitor-v2 DPI on real Windows. Rows proven
+only partially (CPU reference instead of CUDA, Wine instead of Windows) are annotated in the master plan.
 
 ## 5. Hardware / manual gates (not provable in CI)
 
