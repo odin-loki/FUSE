@@ -458,7 +458,17 @@ bool functionRva(const void* fn, u64& begin, u64& end) {
     DWORD64 imageBase = 0;
     PRUNTIME_FUNCTION entry = ::RtlLookupFunctionEntry(reinterpret_cast<DWORD64>(fn), &imageBase, nullptr);
     if (entry == nullptr) {
-        return false;
+        // MSVC emits no .pdata for leaf functions without a frame (the probe is one load + add + ret),
+        // so there is no unwind entry to bound it. Fall back to a small window from its first byte;
+        // the probe is a handful of instructions, far shorter than this.
+        constexpr u64 kLeafProbeWindow = 64u;
+        const auto imageStart = reinterpret_cast<const unsigned char*>(::GetModuleHandleW(nullptr));
+        if (imageStart == nullptr || code < imageStart) {
+            return false;
+        }
+        begin = static_cast<u64>(code - imageStart);
+        end = begin + kLeafProbeWindow;
+        return true;
     }
     begin = entry->BeginAddress;
     end = entry->EndAddress;
@@ -581,9 +591,12 @@ void checkVerifyAbort(const std::string& dir, const std::string& exeName) {
     expectTrue(child.started && child.exitCode == 3u, "failed FUSE_VERIFY: abort() exit code 3");
     const std::string dmpPath = reportBase(dir, child.pid) + ".dmp";
     const DumpFacts f = parseMinidump(readBinary(dmpPath), exeName);
+    const std::string report = readText(reportBase(dir, child.pid) + ".txt");
+    std::printf("  failed FUSE_VERIFY: dump header %d, exception stream %d, code 0x%08x, report dump: %s\n",
+                f.headerOk ? 1 : 0, f.hasException ? 1 : 0, static_cast<unsigned>(f.exceptionCode),
+                field(report, "dump").c_str());
     expectTrue(f.headerOk && f.hasException && f.exceptionCode == kAbortExceptionCode,
                "failed FUSE_VERIFY: minidump records the synthetic abort exception");
-    const std::string report = readText(reportBase(dir, child.pid) + ".txt");
     expectTrue(field(report, "exception") == "0x00000000e0465553 abort (SIGABRT)",
                "failed FUSE_VERIFY: text report names abort (SIGABRT)");
     const std::string expectedNote =

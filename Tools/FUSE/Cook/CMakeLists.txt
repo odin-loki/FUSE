@@ -55,6 +55,9 @@ elseif(EXISTS "${CMAKE_SOURCE_DIR}/Engine/lib/assimp/CMakeLists.txt")
         # (cl prints D9025 "overriding '/Zi' with '/Z7'", a command-line note, not an error).
         # clang-cl already treats /Zi as /Z7, so it is left alone.
         target_compile_options(assimp PRIVATE $<$<CONFIG:Debug>:/Z7>)
+        # assimp's Debug flags still carry /Zi ahead of the /Z7 above; cl.exe honours the last one,
+        # but sccache parses the /Zi and then fails looking for assimp.pdb. Compile assimp uncached.
+        set_target_properties(assimp PROPERTIES CXX_COMPILER_LAUNCHER "" C_COMPILER_LAUNCHER "")
     endif()
     if(TARGET assimp)
         target_compile_definitions(fuse_cook_stubs PUBLIC FUSE_HAS_ASSIMP=1)

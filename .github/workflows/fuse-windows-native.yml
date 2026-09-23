@@ -177,6 +177,16 @@ jobs:
           arch: win64_msvc2022_64
           cache: true
 
+      # Qt 6 for MSVC is built with QT_CONFIG(vulkan), so the editor's Qt viewport sources include
+      # <vulkan/vulkan.h>; install the headers (and loader) even though this job leaves Vulkan off.
+      - name: Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 1.4.304.0
+          install_runtime: true
+          cache: true
+          stripdown: true
+
       - name: Compiler cache (sccache)
         uses: mozilla-actions/sccache-action@v0.0.9
 

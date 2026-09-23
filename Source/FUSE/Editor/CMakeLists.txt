@@ -157,6 +157,12 @@ if(FUSE_BUILD_EDITOR)
             target_include_directories(fuse_editor_qt PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/qt)
             target_link_libraries(fuse_editor_qt PUBLIC fuse_editor_api Qt6::Widgets Qt6::Gui)
             target_compile_definitions(fuse_editor_qt PUBLIC FUSE_HAS_QT=1 FUSE_EDITOR_HAS_QT_VULKAN=1)
+            # The Qt viewport sources include <vulkan/vulkan.h> whenever Qt has QT_CONFIG(vulkan), even
+            # with FUSE_BUILD_VULKAN off; on Windows the headers live in the Vulkan SDK, not the system.
+            find_package(Vulkan QUIET)
+            if(Vulkan_FOUND)
+                target_include_directories(fuse_editor_qt PRIVATE ${Vulkan_INCLUDE_DIRS})
+            endif()
             set_target_properties(fuse_editor_qt PROPERTIES AUTOMOC ON)
             fuse_apply_cxx23(fuse_editor_qt)
 
