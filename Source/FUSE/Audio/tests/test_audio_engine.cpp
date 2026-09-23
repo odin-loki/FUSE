@@ -666,6 +666,14 @@ float panAsymmetry(fuse::audio::AudioEngine& engine, fuse::audio::AudioRegistry&
             source->play_head = 0.f;
         }
     }
+    // First update settles the mixer's per-voice gain ramp after the teleport; measure the
+    // steady-state buffer.
+    engine.update(registry, 1.f / 60.f);
+    for (fuse::audio::EntityId entity : registry.source_entities()) {
+        if (fuse::audio::AudioSource* source = registry.find_source(entity)) {
+            source->play_head = 0.f;
+        }
+    }
     engine.update(registry, 1.f / 60.f);
     return channelEnergy(engine.last_mix_buffer(), 0) - channelEnergy(engine.last_mix_buffer(), 1);
 }

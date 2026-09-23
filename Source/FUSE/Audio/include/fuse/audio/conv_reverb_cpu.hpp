@@ -26,10 +26,14 @@ public:
     static float peak_error_db(const float* a, const float* b, u32 length);
 
 private:
+    void process_block_(const float* input, float* output, u32 frames);
+
     u32 m_fftSize = 0;
     u32 m_irLength = 0;
     u32 m_blockSize = 0;
     std::vector<std::complex<float>> m_irSpectrum;
+    std::vector<std::complex<float>> m_twiddles;
+    std::vector<std::complex<float>> m_spectrum;
     std::vector<float> m_overlap;
     std::vector<float> m_workInput;
     std::vector<float> m_workOutput;

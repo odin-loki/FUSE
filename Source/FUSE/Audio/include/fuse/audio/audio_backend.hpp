@@ -29,6 +29,9 @@ public:
     void pause_source(u32 source, bool paused);
 
     float read_source_gain(u32 source) const;
+    bool read_source_position(u32 source, float& x, float& y, float& z) const;
+    bool is_source_playing(u32 source) const;
+    u32 source_count() const { return static_cast<u32>(m_sources.size()); }
 
 private:
     bool m_initialized = false;

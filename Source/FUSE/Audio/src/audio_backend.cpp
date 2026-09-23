@@ -191,4 +191,20 @@ float AudioBackend::read_source_gain(u32 source) const {
     return it == m_sources.end() ? 0.f : it->second.gain;
 }
 
+bool AudioBackend::read_source_position(u32 source, float& x, float& y, float& z) const {
+    const auto it = m_sources.find(source);
+    if (it == m_sources.end()) {
+        return false;
+    }
+    x = it->second.x;
+    y = it->second.y;
+    z = it->second.z;
+    return true;
+}
+
+bool AudioBackend::is_source_playing(u32 source) const {
+    const auto it = m_sources.find(source);
+    return it != m_sources.end() && it->second.playing && !it->second.paused;
+}
+
 } // namespace fuse::audio

@@ -14,6 +14,7 @@
 #include <fuse/handle_map.hpp>
 #include <fuse/types.hpp>
 
+#include <unordered_map>
 #include <vector>
 
 namespace fuse::audio {
@@ -49,6 +50,9 @@ public:
     AudioBackendKind backend_kind() const { return m_backend.kind(); }
 
     const std::vector<float>& last_mix_buffer() const { return m_mixBuffer; }
+
+    /// Output backend (gain / position readback for headless verification).
+    const AudioBackend& backend() const { return m_backend; }
     const ConvReverbCpu& cpu_reverb() const { return m_cpuReverb; }
 
     AudioBusMixer& bus_mixer() { return m_mixer.bus_mixer(); }
@@ -75,6 +79,8 @@ private:
     ConvReverbCpu m_cpuReverb;
     std::vector<float> m_mixBuffer;
     std::vector<float> m_dryBuffer;
+    std::vector<float> m_wetBuffer;
+    std::unordered_map<EntityId, u32> m_entitySources;
 };
 
 } // namespace fuse::audio

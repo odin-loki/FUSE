@@ -17,7 +17,10 @@ u32 next_pow2(u32 value) {
     return result;
 }
 
-void fft_inplace(std::vector<std::complex<float>>& data) {
+/// Radix-2 DIT FFT using a precomputed twiddle table (w_k = exp(-2*pi*i*k/n), k < n/2).
+/// Twiddles are evaluated in double precision so error does not accumulate with size.
+void fft_inplace(std::vector<std::complex<float>>& data,
+                 const std::vector<std::complex<float>>& twiddles) {
     const u32 n = static_cast<u32>(data.size());
     for (u32 i = 1, j = 0; i < n; ++i) {
         u32 bit = n >> 1;
@@ -31,59 +34,51 @@ void fft_inplace(std::vector<std::complex<float>>& data) {
     }
 
     for (u32 len = 2; len <= n; len <<= 1) {
-        const float angle = -2.f * 3.14159265358979323846f / static_cast<float>(len);
-        const std::complex<float> wlen(std::cos(angle), std::sin(angle));
+        const u32 half = len / 2;
+        const u32 stride = n / len;
         for (u32 i = 0; i < n; i += len) {
-            std::complex<float> w(1.f, 0.f);
-            for (u32 j = 0; j < len / 2; ++j) {
+            for (u32 j = 0; j < half; ++j) {
                 const std::complex<float> u = data[i + j];
-                const std::complex<float> v = data[i + j + len / 2] * w;
+                const std::complex<float> v = data[i + j + half] * twiddles[j * stride];
                 data[i + j] = u + v;
-                data[i + j + len / 2] = u - v;
-                w *= wlen;
+                data[i + j + half] = u - v;
             }
         }
     }
 }
 
-std::vector<std::complex<float>> spectrum_from_real(const float* samples, u32 fft_size) {
-    std::vector<std::complex<float>> data(fft_size, {0.f, 0.f});
-    for (u32 i = 0; i < fft_size; ++i) {
-        data[i].real(samples[i]);
-    }
-    fft_inplace(data);
-    return data;
-}
-
-void multiply_spectrum(std::vector<std::complex<float>>& a, const std::vector<std::complex<float>>& b) {
-    for (usize i = 0; i < a.size(); ++i) {
-        a[i] *= b[i];
-    }
-}
-
-void ifft_to_real(const std::vector<std::complex<float>>& freq, float* out, u32 fft_size) {
-    std::vector<std::complex<float>> data = freq;
-    const float inv_n = 1.f / static_cast<float>(fft_size);
-    for (auto& value : data) {
-        value = std::conj(value);
-    }
-    fft_inplace(data);
-    for (u32 i = 0; i < fft_size; ++i) {
-        out[i] = data[i].real() * inv_n;
+void make_twiddles(u32 n, std::vector<std::complex<float>>& twiddles) {
+    twiddles.resize(std::max<u32>(n / 2, 1));
+    for (u32 k = 0; k < static_cast<u32>(twiddles.size()); ++k) {
+        const double angle = -2.0 * 3.14159265358979323846 * static_cast<double>(k)
+            / static_cast<double>(n);
+        twiddles[k] = {static_cast<float>(std::cos(angle)), static_cast<float>(std::sin(angle))};
     }
 }
 
 } // namespace
 
 void ConvReverbCpu::init(const float* ir_samples, u32 ir_length, u32 block_size) {
+    m_irLength = 0;
+    m_blockSize = 0;
+    m_fftSize = 0;
+    m_irSpectrum.clear();
+    if (ir_samples == nullptr || ir_length == 0 || block_size == 0) {
+        return;
+    }
+
     m_irLength = ir_length;
     m_blockSize = block_size;
     m_fftSize = next_pow2(block_size + ir_length - 1);
+    make_twiddles(m_fftSize, m_twiddles);
 
-    std::vector<float> padded(m_fftSize, 0.f);
-    std::memcpy(padded.data(), ir_samples, ir_length * sizeof(float));
-    m_irSpectrum = spectrum_from_real(padded.data(), m_fftSize);
+    m_irSpectrum.assign(m_fftSize, {0.f, 0.f});
+    for (u32 i = 0; i < ir_length; ++i) {
+        m_irSpectrum[i].real(ir_samples[i]);
+    }
+    fft_inplace(m_irSpectrum, m_twiddles);
 
+    m_spectrum.assign(m_fftSize, {0.f, 0.f});
     m_overlap.assign(m_fftSize, 0.f);
     m_workInput.assign(m_fftSize, 0.f);
     m_workOutput.assign(m_fftSize, 0.f);
@@ -94,12 +89,34 @@ void ConvReverbCpu::reset() {
 }
 
 void ConvReverbCpu::process(const float* input, float* output, u32 frames) {
-    std::fill(m_workInput.begin(), m_workInput.end(), 0.f);
-    std::memcpy(m_workInput.data(), input, frames * sizeof(float));
+    if (m_fftSize == 0) {
+        std::fill(output, output + frames, 0.f);
+        return;
+    }
+    // Blocks longer than the planned size would wrap the circular convolution — split them.
+    while (frames > m_blockSize) {
+        process_block_(input, output, m_blockSize);
+        input += m_blockSize;
+        output += m_blockSize;
+        frames -= m_blockSize;
+    }
+    process_block_(input, output, frames);
+}
 
-    auto input_spectrum = spectrum_from_real(m_workInput.data(), m_fftSize);
-    multiply_spectrum(input_spectrum, m_irSpectrum);
-    ifft_to_real(input_spectrum, m_workOutput.data(), m_fftSize);
+void ConvReverbCpu::process_block_(const float* input, float* output, u32 frames) {
+    for (u32 i = 0; i < m_fftSize; ++i) {
+        m_spectrum[i] = {i < frames ? input[i] : 0.f, 0.f};
+    }
+    fft_inplace(m_spectrum, m_twiddles);
+    for (u32 i = 0; i < m_fftSize; ++i) {
+        // Inverse FFT via conj(FFT(conj(X))) / N.
+        m_spectrum[i] = std::conj(m_spectrum[i] * m_irSpectrum[i]);
+    }
+    fft_inplace(m_spectrum, m_twiddles);
+    const float inv_n = 1.f / static_cast<float>(m_fftSize);
+    for (u32 i = 0; i < m_fftSize; ++i) {
+        m_workOutput[i] = m_spectrum[i].real() * inv_n;
+    }
 
     for (u32 i = 0; i < frames; ++i) {
         output[i] = m_workOutput[i] + m_overlap[i];
