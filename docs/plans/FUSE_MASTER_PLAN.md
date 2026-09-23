@@ -3520,7 +3520,7 @@ struct CollisionEvent {
 
 - [x] Spatial hash correctly identifies all overlapping pairs for 10k random spheres — verified against brute force O(n²) — `fuse_b4_broadphase_gates`
 - [x] No missed pairs for bodies straddling multiple cells — edge case tested with grid-aligned bodies — `fuse_b4_broadphase_gates`
-- [ ] GPU radix sort produces correctly sorted (key, value) pairs — verified with reference CPU sort
+- [x] GPU radix sort produces correctly sorted (key, value) pairs — verified with reference CPU sort — `fuse_gpu_radix_sort_gates` (Vulkan compute `GpuRadixSort` in fuse_rhi, 330 cases vs `std::stable_sort` on Lavapipe under sync validation; broadphase hook `SpatialHashParams::entrySorter` matches CPU pairs; CUDA variant not built — no CUDA toolchain)
 - [ ] Broad phase runs in < 2ms for 10k bodies on RTX 3090 — measured with CUDA events
 - [x] Sphere-sphere analytic result matches Bullet reference to within 0.001f — `fuse_b4_narrowphase_gates`
 - [x] Sphere-plane produces correct normal and penetration depth at all angles — `fuse_b4_narrowphase_gates`

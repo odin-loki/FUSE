@@ -10,6 +10,19 @@
 
 namespace fuse::physics::broadphase {
 
+/// Optional external (key, value) sorter for the spatial-hash broadphase's (cell, body) entry
+/// grouping (runBroadphaseIntoBuffer). `sort` must stably sort keys[0..count) ascending, carrying
+/// values[i] with keys[i]; every key is < 2^keyBits. It returns false to decline (the arrays must
+/// then be left unchanged) and the CPU counting sort runs instead. The result is identical either
+/// way (the counting sort is stable too). Used to plug in a GPU radix sort (fuse_rhi
+/// GpuRadixSort) without the physics module depending on the renderer.
+struct BroadphaseKeyValueSorter {
+    bool (*sort)(void* user, u32* keys, u32* values, u32 count, u32 keyBits) = nullptr;
+    void* user = nullptr;
+    /// Entry counts below this stay on the CPU counting sort (upload/readback not worth it).
+    u32 minCount = 0u;
+};
+
 struct SpatialHashParams {
     f32 cellSize = 2.f;
     u32 tableSize = 1024;
@@ -18,6 +31,8 @@ struct SpatialHashParams {
     u32 maxCellSpanPerAxis = 64u;
     /// Per-shape cell occupancy budget before hash insertion is skipped (0 = unlimited stub).
     u32 maxCellOccupancy = 0u;
+    /// Optional entry sorter (null = CPU counting sort). Not owned; must outlive the call.
+    const BroadphaseKeyValueSorter* entrySorter = nullptr;
 };
 
 struct CandidatePair {

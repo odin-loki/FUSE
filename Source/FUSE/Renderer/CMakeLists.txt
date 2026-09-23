@@ -266,3 +266,4 @@ foreach(_fuse_b5_topic gbuffer_materials clustered shadows ddgi atmosphere post 
 endforeach()
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/vk_followups.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/b5_rhi_rows.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/gpu_radix_sort.cmake")

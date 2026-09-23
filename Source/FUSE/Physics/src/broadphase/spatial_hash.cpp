@@ -633,8 +633,23 @@ void runBroadphaseIntoBufferInternal(
         cellStart[cellIndex + 1u] += cellStart[cellIndex];
         cellCursor[cellIndex] = cellStart[cellIndex];
     }
-    for (u32 entry = 0; entry < totalEntries; ++entry) {
-        cellBodies[cellCursor[entryKeys[entry]]++] = entryBodies[entry];
+    // Group occupants by cell: optional external stable (key, value) sort (e.g. GPU radix sort),
+    // else the CPU counting-sort scatter. Both yield the same stable order, so cellBodies match.
+    bool entriesSorted = false;
+    const BroadphaseKeyValueSorter* sorter = normalizedParams.entrySorter;
+    if (sorter != nullptr && sorter->sort != nullptr && totalEntries > 1u && totalEntries >= sorter->minCount) {
+        u32 keyBits = 1u;
+        while (keyBits < 32u && ((tableSize - 1u) >> keyBits) != 0u) {
+            ++keyBits;
+        }
+        std::copy(entryBodies, entryBodies + totalEntries, cellBodies);
+        // entryKeys is not read again below, so the sorter may reorder it in place.
+        entriesSorted = sorter->sort(sorter->user, entryKeys, cellBodies, totalEntries, keyBits);
+    }
+    if (!entriesSorted) {
+        for (u32 entry = 0; entry < totalEntries; ++entry) {
+            cellBodies[cellCursor[entryKeys[entry]]++] = entryBodies[entry];
+        }
     }
 
     // Per cell: sort + unique occupants in place (cellCursor becomes the unique count), then

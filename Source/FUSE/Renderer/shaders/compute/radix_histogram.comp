@@ -1,0 +1,29 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// GpuRadixSort pass 1/4: per-tile digit histogram, written digit-major so one exclusive scan
+// over scratch[0 .. 256 * numBlocks) yields every (digit, tile) global output offset.
+#include "radix_sort_common.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer KeysIn { RADIX_KEY_T keysIn[]; };
+layout(std430, set = 0, binding = 4) buffer Scratch { uint scratch[]; };
+
+shared uint sBins[RADIX_BINS];
+
+void main() {
+    const uint tid = gl_LocalInvocationID.x;
+    const uint tile = gl_WorkGroupID.x;
+    sBins[tid] = 0u;
+    barrier();
+
+    const uint tileStart = tile * RADIX_TILE_SIZE;
+    for (uint i = 0u; i < RADIX_BATCHES_PER_TILE; ++i) {
+        const uint idx = tileStart + i * RADIX_WG_SIZE + tid;
+        if (idx < pc.count) {
+            atomicAdd(sBins[radixDigit(keysIn[idx], pc.shift)], 1u);
+        }
+    }
+    barrier();
+    scratch[tid * pc.numBlocks + tile] = sBins[tid];
+}
