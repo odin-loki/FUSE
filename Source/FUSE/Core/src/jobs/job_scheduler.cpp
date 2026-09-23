@@ -30,6 +30,11 @@ thread_local WorkerState* g_workerState = nullptr;
 /// stops taking new jobs and only resumes parked ones (64 KiB stacks -> 8 MiB per worker max).
 constexpr std::size_t kMaxFibersPerWorker = 128;
 
+/// Job fibers each worker creates up front (16 x 64 KiB stacks = 1 MiB per worker on desktop).
+/// Covers a fork-join nested inside up to ~15 blocked jobs per worker; deeper parking still grows
+/// the pool on demand up to kMaxFibersPerWorker.
+constexpr std::size_t kPrewarmedFibersPerWorker = 16;
+
 /// How long an idle worker polls for new work before sleeping on the condition variable. A futex
 /// wakeup costs tens of microseconds on virtualised hosts, so back-to-back fork-joins (a frame's
 /// systems) find the workers still awake; an idle pool sleeps after this window.
@@ -227,6 +232,11 @@ struct WorkerState {
             freeFibers.pop_back();
             return fiber;
         }
+        return createFiber();
+    }
+
+    /// Create a new job fiber (not added to freeFibers). Null at the cap or on failure.
+    JobFiber* createFiber() {
         if (fibers.size() >= kMaxFibersPerWorker) {
             return nullptr;
         }
@@ -439,6 +449,17 @@ struct JobScheduler::Impl {
             detail::JobFiber* probe = state.schedulerFiber ? state.acquireFiber() : nullptr;
             if (probe) {
                 state.freeFibers.push_back(probe);
+                // Pre-grow the pool so ordinary fork-join nesting never creates a fiber (three heap
+                // allocations) mid-frame. Park depth depends on timing: when a thread running an
+                // in-flight chunk is preempted, its waiter parks and this worker starts another
+                // blocking job on a fresh fiber, so warm-up alone cannot be trusted to reach it.
+                while (state.fibers.size() < detail::kPrewarmedFibersPerWorker) {
+                    detail::JobFiber* fiber = state.createFiber();
+                    if (!fiber) {
+                        break;
+                    }
+                    state.freeFibers.push_back(fiber);
+                }
             } else {
                 fibersEnabled = false;
             }

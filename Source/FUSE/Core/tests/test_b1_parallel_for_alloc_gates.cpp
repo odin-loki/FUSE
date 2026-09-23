@@ -1,7 +1,8 @@
 // B1 parallel_for dispatch gates:
 //   - Steady-state JobScheduler::parallel_for makes zero heap allocations on any thread
 //     (counted through this binary's replaced global operator new) for 1/2/4 workers, including
-//     nested parallel_for from inside chunks and parallel_for issued from inside a job.
+//     nested parallel_for from inside chunks and parallel_for issued from inside a job, with
+//     simulated preemption of chunk-running threads (peak fiber park depth, as on a loaded host).
 //   - Concurrent parallel_for from several non-worker threads stays correct.
 //   - Dispatch latency percentiles for a 4096-item / grain-256 parallel_for at 0/1/2/4 workers.
 //     Release builds (no sanitizer) enforce a loose median bound at 1 and 4 workers.
@@ -155,13 +156,19 @@ bool runFlat(std::vector<u32>& data, u32 stamp) {
 }
 
 /// Outer parallel_for whose chunks each run an inner parallel_for (fiber-park wait path on workers).
-bool runNested(std::vector<u32>& data, u32 stamp) {
+/// With `stallChunks`, a few inner items sleep briefly, standing in for the thread running them being
+/// preempted on a loaded host: waiters then park and workers start further blocking jobs on other
+/// fibers, which is how the park depth (and so the fiber pool) peaks under load.
+bool runNested(std::vector<u32>& data, u32 stamp, bool stallChunks = false) {
     constexpr u32 kOuter = 8;
     constexpr u32 kInner = kItems / kOuter;
     fuse::jobs::parallel_for(0u, kOuter, 1u, [&](u32 outer) {
         fuse::jobs::parallel_for(0u, kInner, 64u, [&](u32 inner) {
             const u32 i = outer * kInner + inner;
             data[i] = stamp ^ i;
+            if (stallChunks && ((stamp * 2654435761u) ^ i) % 997u == 0u) {
+                std::this_thread::sleep_for(std::chrono::microseconds(300));
+            }
         });
     });
     for (u32 i = 0; i < kItems; ++i) {
@@ -223,7 +230,7 @@ void testZeroAllocations(u32 workers) {
 
     const u64 mixedBefore = g_heapAllocations.load(std::memory_order_acquire);
     for (u32 iter = 0; iter < kCalls; ++iter) {
-        ok = runNested(data, iter + 11u) && ok;
+        ok = runNested(data, iter + 11u, true) && ok;
         ok = runFromJob(data, iter + 13u, counter) && ok;
     }
     const u64 mixedAllocs = g_heapAllocations.load(std::memory_order_acquire) - mixedBefore;
