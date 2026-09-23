@@ -1,8 +1,10 @@
 // B2.11 gates:
 //   "Staging ring buffer correctly wraps — upload of 256MB in 1MB chunks with no corruption"
 //   "Async upload completes and signals fence correctly — verified with fence wait timeout test"
-// A 16 MB ring uploads 256 x 1 MB device-local buffers (16 wraps). Every buffer stays alive and is
-// verified only after all uploads, so a ring slot overwritten before its copy retired would show.
+// A 16 MB ring uploads 256 x 1 MB device-local buffers (16 wraps). createBuffer(initialData) now
+// submits each copy asynchronously (no CPU wait per copy); ring space is reused only after the
+// batch's fence signals. Every buffer stays alive and is verified only after all uploads, so a ring
+// slot overwritten before its copy retired would show. See test_b2_async_upload for the ticket API.
 #include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
@@ -76,6 +78,14 @@ void testStagingRingWrap256MB() {
     expectTrue(resources.stagingRingWrapCount() >= expectedWraps, "ring wrapped for 256 MB through 16 MB");
     expectTrue(fencedCopies == kChunkCount, "every upload signalled its fence");
     expectTrue(timedOut == 0u, "no upload hit the fence wait timeout");
+
+    const fuse::renderer::UploadQueueStats& uploads = resources.uploadStats();
+    std::printf("staging: batches in flight max=%u, ring stalls=%u, fence timeouts=%u\n",
+                uploads.maxBatchesInFlight, uploads.ringStalls, uploads.fenceTimeouts);
+    expectTrue(uploads.maxBatchesInFlight > 1u, "uploads overlap: more than one batch in flight at once");
+    expectTrue(uploads.fenceTimeouts == 0u, "no ring stall hit the bounded fence wait");
+    expectTrue(resources.waitAllUploads(), "all uploads signal within the bounded wait");
+    expectTrue(resources.stagingRingBytesInFlight() == 0u, "ring fully retired after the final wait");
 
     std::vector<fuse::u32> readback(words.size());
     fuse::u32 corrupted = 0;

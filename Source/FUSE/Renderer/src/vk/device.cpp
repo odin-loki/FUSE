@@ -387,6 +387,40 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     m_info.dynamicRendering = enabledDyn.dynamicRendering == VK_TRUE;
     m_info.samplerAnisotropy = deviceFeatures.samplerAnisotropy == VK_TRUE;
     m_info.maxSamplerAnisotropy = props.limits.maxSamplerAnisotropy;
+    {
+        VkPhysicalDeviceVulkan12Properties props12{};
+        props12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES;
+        VkPhysicalDeviceProperties2 props2{};
+        props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        props2.pNext = &props12;
+        vkGetPhysicalDeviceProperties2(selected, &props2);
+        const VkPhysicalDeviceLimits& core = props.limits;
+        VulkanDescriptorLimits& limits = m_info.descriptorLimits;
+        if (m_info.descriptorIndexing && props12.maxPerStageUpdateAfterBindResources > 0u) {
+            limits.sampledImages = std::min(props12.maxDescriptorSetUpdateAfterBindSampledImages,
+                                            props12.maxPerStageDescriptorUpdateAfterBindSampledImages);
+            limits.storageImages = std::min(props12.maxDescriptorSetUpdateAfterBindStorageImages,
+                                            props12.maxPerStageDescriptorUpdateAfterBindStorageImages);
+            limits.storageBuffers = std::min(props12.maxDescriptorSetUpdateAfterBindStorageBuffers,
+                                             props12.maxPerStageDescriptorUpdateAfterBindStorageBuffers);
+            limits.uniformBuffers = std::min(props12.maxDescriptorSetUpdateAfterBindUniformBuffers,
+                                             props12.maxPerStageDescriptorUpdateAfterBindUniformBuffers);
+            limits.samplers = std::min(props12.maxDescriptorSetUpdateAfterBindSamplers,
+                                       props12.maxPerStageDescriptorUpdateAfterBindSamplers);
+            limits.perStageResources = props12.maxPerStageUpdateAfterBindResources;
+            limits.allPools = props12.maxUpdateAfterBindDescriptorsInAllPools;
+        } else {
+            limits.sampledImages = std::min(core.maxDescriptorSetSampledImages, core.maxPerStageDescriptorSampledImages);
+            limits.storageImages = std::min(core.maxDescriptorSetStorageImages, core.maxPerStageDescriptorStorageImages);
+            limits.storageBuffers =
+                std::min(core.maxDescriptorSetStorageBuffers, core.maxPerStageDescriptorStorageBuffers);
+            limits.uniformBuffers =
+                std::min(core.maxDescriptorSetUniformBuffers, core.maxPerStageDescriptorUniformBuffers);
+            limits.samplers = std::min(core.maxDescriptorSetSamplers, core.maxPerStageDescriptorSamplers);
+            limits.perStageResources = core.maxPerStageResources;
+            limits.allPools = UINT32_MAX;
+        }
+    }
     m_info.deviceType = static_cast<u32>(props.deviceType);
     m_info.queues.graphicsFamily = graphicsFamily;
     m_info.queues.computeFamily = computeFamily;

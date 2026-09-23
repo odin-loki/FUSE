@@ -73,8 +73,6 @@ void* createVulkanSampler(VulkanDevice& device, const SamplerDesc& desc) {
 }
 #endif
 
-constexpr usize kStagingAlignBytes = 256;
-
 bool hasBufferUsage(BufferUsage usage, BufferUsage flag) {
     return (static_cast<u32>(usage) & static_cast<u32>(flag)) != 0;
 }
@@ -103,11 +101,6 @@ TransferSubmitTarget pickTransferTarget(VulkanDevice& device) {
         return {static_cast<VkQueue>(queues.transfer), queues.transferFamily};
     }
     return {static_cast<VkQueue>(queues.graphics), queues.graphicsFamily};
-}
-
-bool usedDedicatedTransferQueue(VulkanDevice& device) {
-    const VulkanQueues& queues = device.queues();
-    return queues.transfer != nullptr && queues.transfer != queues.graphics;
 }
 
 constexpr u64 kOneShotCopyFenceTimeoutNs = 1000000000ull;
@@ -219,103 +212,6 @@ OneShotCopyOutcome oneShotCopyBuffer(VulkanDevice& device, void* srcHandle, void
     }
 
     const OneShotCopyOutcome outcome = submitOneShotAndWait(vkDevice, target.queue, cmd, false);
-    vkDestroyCommandPool(vkDevice, pool, nullptr);
-    return outcome;
-}
-
-OneShotCopyOutcome oneShotCopyBufferToImage(VulkanDevice& device, void* srcHandle, void* dstImage,
-                                            usize srcOffset, u32 width, u32 height, u32 depth) {
-    if (!device.isValid() || device.nativeHandle() == nullptr || width == 0 || height == 0) {
-        return {};
-    }
-    if (!bindlessNativeHandleReady(srcHandle) || !bindlessNativeHandleReady(dstImage)) {
-        return {};
-    }
-
-    const TransferSubmitTarget target = pickTransferTarget(device);
-    if (target.queue == VK_NULL_HANDLE) {
-        return {};
-    }
-
-    const VkDevice vkDevice = static_cast<VkDevice>(device.nativeHandle());
-    const u32 extentDepth = depth > 0 ? depth : 1u;
-    const VkImage image = static_cast<VkImage>(dstImage);
-
-    VkCommandPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-    poolInfo.queueFamilyIndex = target.family;
-
-    VkCommandPool pool = VK_NULL_HANDLE;
-    if (vkCreateCommandPool(vkDevice, &poolInfo, nullptr, &pool) != VK_SUCCESS) {
-        return {};
-    }
-
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool = pool;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer cmd = VK_NULL_HANDLE;
-    if (vkAllocateCommandBuffers(vkDevice, &allocInfo, &cmd) != VK_SUCCESS) {
-        vkDestroyCommandPool(vkDevice, pool, nullptr);
-        return {};
-    }
-
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
-        vkDestroyCommandPool(vkDevice, pool, nullptr);
-        return {};
-    }
-
-    VkImageMemoryBarrier toTransfer{};
-    toTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toTransfer.srcAccessMask = 0;
-    toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    toTransfer.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toTransfer.image = image;
-    toTransfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    toTransfer.subresourceRange.levelCount = 1;
-    toTransfer.subresourceRange.layerCount = 1;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
-                         nullptr, 0, nullptr, 1, &toTransfer);
-
-    VkBufferImageCopy region{};
-    region.bufferOffset = srcOffset;
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel = 0;
-    region.imageSubresource.layerCount = 1;
-    region.imageExtent = {width, height, extentDepth};
-    vkCmdCopyBufferToImage(cmd, static_cast<VkBuffer>(srcHandle), image,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-    VkImageMemoryBarrier toShader{};
-    toShader.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toShader.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    toShader.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    toShader.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    toShader.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    toShader.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toShader.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toShader.image = image;
-    toShader.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    toShader.subresourceRange.levelCount = 1;
-    toShader.subresourceRange.layerCount = 1;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0,
-                         nullptr, 0, nullptr, 1, &toShader);
-
-    if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
-        vkDestroyCommandPool(vkDevice, pool, nullptr);
-        return {};
-    }
-
-    const OneShotCopyOutcome outcome = submitOneShotAndWait(vkDevice, target.queue, cmd, true);
     vkDestroyCommandPool(vkDevice, pool, nullptr);
     return outcome;
 }
@@ -497,7 +393,16 @@ bool ResourceManager::init(VulkanDevice& device, BindlessDescriptors& bindless, 
     m_allocator->setStatsName("fuse_rhi_gpu");
 
     m_ready = true;
-    return ensureStagingRing();
+    if (!ensureStagingRing()) {
+        return false;
+    }
+    if (m_stagingRing.isValid()) {
+        const Buffer* staging = getBuffer(m_stagingRing);
+        if (staging != nullptr) {
+            m_uploads.init(m_device, staging->handle, staging->mapped, m_stagingRingCapacity);
+        }
+    }
+    return true;
 }
 
 void ResourceManager::destroy() {
@@ -505,13 +410,14 @@ void ResourceManager::destroy() {
         return;
     }
 
+    // In-flight copies still read the staging ring and write live resources.
+    m_uploads.destroy();
     destroyAllResources();
 
     m_allocator.reset();
     m_device = nullptr;
     m_bindless = nullptr;
-    m_stagingOffset = 0;
-    m_stagingRingWrapCount = 0;
+    m_lastUploadTicket = UploadTicket{};
     m_ready = false;
 }
 
@@ -596,14 +502,21 @@ TextureHandle ResourceManager::createTexture(const TextureDesc& desc, const void
         return TextureHandle{};
     }
 
-    texture.bindlessIndex = m_bindless->registerTexture(texture, false);
+    // Sampled textures bind through the sampled-image array; storage-only textures through the
+    // storage-image array (the GPU write is skipped when the view lacks the matching usage bit).
+    const u32 imageUsageBits = static_cast<u32>(texture.desc.usage);
+    const bool storageOnly = (imageUsageBits & static_cast<u32>(ImageUsage::Storage)) != 0u &&
+                             (imageUsageBits & static_cast<u32>(ImageUsage::Sampled)) == 0u;
+    texture.bindlessIndex = m_bindless->registerTexture(texture, storageOnly);
     if (texture.bindlessIndex == UINT32_MAX) {
         m_allocator->destroyImage(texture);
         return TextureHandle{};
     }
 
     if (initialData != nullptr) {
-        copyTextureInitialDataViaStaging(texture, initialData);
+        // Submitted now (no CPU wait): later graphics-queue work is ordered after the copy.
+        stageTextureUpload(texture, initialData);
+        m_lastUploadTicket = m_uploads.flush();
     }
     return m_textures.insert(std::move(texture));
 }
@@ -638,101 +551,116 @@ BufferHandle ResourceManager::createBuffer(const BufferDesc& desc, const void* i
         if (buffer.mapped != nullptr) {
             std::memcpy(buffer.mapped, initialData, desc.size);
         } else {
-            copyInitialDataViaStaging(buffer, initialData, desc.size);
+            stageBufferUpload(buffer, initialData, desc.size, 0);
+            m_lastUploadTicket = m_uploads.flush();
         }
     }
 
     return m_buffers.insert(std::move(buffer));
 }
 
-void ResourceManager::copyInitialDataViaStaging(Buffer& dest, const void* initialData, usize size) {
+UploadTicket ResourceManager::stageBufferUpload(Buffer& dest, const void* data, usize size, usize dstOffset) {
     m_lastGpuCopyUsedTransferQueue = false;
     m_lastGpuCopyUsedFence = false;
     m_lastGpuCopyWaitTimedOut = false;
 
-    if (initialData == nullptr || size == 0) {
-        return;
+    if (data == nullptr || size == 0 || dstOffset > dest.desc.size || size > dest.desc.size - dstOffset) {
+        return UploadTicket{};
+    }
+    if (dest.mapped != nullptr) {
+        std::memcpy(static_cast<u8*>(dest.mapped) + dstOffset, data, size);
+        return UploadTicket{0, true};
+    }
+    if (!hasBufferUsage(dest.desc.usage, BufferUsage::TransferDst)) {
+        return UploadTicket{};
     }
 
-    Buffer* staging = getBuffer(m_stagingRing);
-    if (staging == nullptr || staging->mapped == nullptr) {
-        return;
+    usize srcOffset = 0;
+    if (!m_uploads.stage(data, size, srcOffset)) {
+        m_lastGpuCopyWaitTimedOut = m_uploads.lastStageTimedOut();
+        return UploadTicket{};
     }
-
-    if (size > m_stagingRingCapacity) {
-        return;
+    const UploadTicket ticket = m_uploads.pendingTicket();
+    if (m_uploads.recordBufferCopy(dest.handle, srcOffset, dstOffset, size)) {
+        m_lastGpuCopyUsedFence = true;
+        m_lastGpuCopyUsedTransferQueue = m_uploads.stats().dedicatedTransferQueue;
     }
-    if (m_stagingOffset + size > m_stagingRingCapacity) {
-        m_stagingOffset = 0;
-        ++m_stagingRingWrapCount;
-    }
-
-    const usize srcOffset = m_stagingOffset;
-    std::memcpy(static_cast<u8*>(staging->mapped) + srcOffset, initialData, size);
-
-#if defined(FUSE_VULKAN_BACKEND)
-    if (m_device != nullptr && hasBufferUsage(dest.desc.usage, BufferUsage::TransferDst)) {
-        const OneShotCopyOutcome outcome =
-            oneShotCopyBuffer(*m_device, staging->handle, dest.handle, srcOffset, size);
-        m_lastGpuCopyUsedFence = outcome.usedFence;
-        m_lastGpuCopyWaitTimedOut = outcome.waitTimedOut;
-        if (outcome.submitted) {
-            m_lastGpuCopyUsedTransferQueue = usedDedicatedTransferQueue(*m_device);
-        }
-    }
-#else
-    (void)dest;
-#endif
-
-    m_stagingOffset += size;
-    m_stagingOffset = (m_stagingOffset + (kStagingAlignBytes - 1u)) & ~(kStagingAlignBytes - 1u);
+    m_lastUploadTicket = ticket;
+    return ticket;
 }
 
-void ResourceManager::copyTextureInitialDataViaStaging(Texture& dest, const void* initialData) {
-    if (initialData == nullptr) {
-        return;
-    }
+UploadTicket ResourceManager::stageTextureUpload(Texture& dest, const void* data) {
+    m_lastGpuTextureCopySubmitted = false;
+    m_lastGpuTextureCopyBytes = 0;
+    m_lastGpuCopyUsedTransferQueue = false;
+    m_lastGpuCopyUsedFence = false;
+    m_lastGpuCopyWaitTimedOut = false;
 
+    if (data == nullptr) {
+        return UploadTicket{};
+    }
     const usize bytes = gpu_alloc_detail::estimateImageBytes(dest.desc);
     if (bytes == 0) {
-        return;
+        return UploadTicket{};
     }
 
-    Buffer* staging = getBuffer(m_stagingRing);
-    if (staging == nullptr || staging->mapped == nullptr) {
-        return;
+    usize srcOffset = 0;
+    if (!m_uploads.stage(data, bytes, srcOffset)) {
+        m_lastGpuCopyWaitTimedOut = m_uploads.lastStageTimedOut();
+        return UploadTicket{};
     }
-
-    if (bytes > m_stagingRingCapacity) {
-        return;
+    const UploadTicket ticket = m_uploads.pendingTicket();
+    if (bindlessNativeHandleReady(dest.image) &&
+        m_uploads.recordImageCopy(dest.image, srcOffset, dest.desc.width, dest.desc.height, dest.desc.depth)) {
+        m_lastGpuTextureCopySubmitted = true;
+        m_lastGpuTextureCopyBytes = static_cast<u32>(bytes);
+        m_lastGpuCopyUsedFence = true;
+        m_lastGpuCopyUsedTransferQueue = m_uploads.stats().dedicatedTransferQueue;
     }
-    if (m_stagingOffset + bytes > m_stagingRingCapacity) {
-        m_stagingOffset = 0;
-        ++m_stagingRingWrapCount;
+    m_lastUploadTicket = ticket;
+    return ticket;
+}
+
+UploadTicket ResourceManager::uploadBuffer(BufferHandle handle, const void* data, usize size, usize dstOffset) {
+    Buffer* buffer = getBuffer(handle);
+    if (!m_ready || buffer == nullptr || handle == m_stagingRing) {
+        return UploadTicket{};
     }
+    return stageBufferUpload(*buffer, data, size, dstOffset);
+}
 
-    const usize srcOffset = m_stagingOffset;
-    std::memcpy(static_cast<u8*>(staging->mapped) + srcOffset, initialData, bytes);
-
-#if defined(FUSE_VULKAN_BACKEND)
-    if (m_device != nullptr && m_device->isValid() && bindlessNativeHandleReady(dest.image)) {
-        const OneShotCopyOutcome outcome =
-            oneShotCopyBufferToImage(*m_device, staging->handle, dest.image, srcOffset, dest.desc.width,
-                                     dest.desc.height, dest.desc.depth);
-        m_lastGpuCopyUsedFence = outcome.usedFence;
-        m_lastGpuCopyWaitTimedOut = outcome.waitTimedOut;
-        if (outcome.submitted) {
-            m_lastGpuTextureCopySubmitted = true;
-            m_lastGpuTextureCopyBytes = static_cast<u32>(bytes);
-            m_lastGpuCopyUsedTransferQueue = usedDedicatedTransferQueue(*m_device);
-        }
+UploadTicket ResourceManager::uploadTexture(TextureHandle handle, const void* data) {
+    Texture* texture = getTexture(handle);
+    if (!m_ready || texture == nullptr) {
+        return UploadTicket{};
     }
-#else
-    (void)dest;
-#endif
+    return stageTextureUpload(*texture, data);
+}
 
-    m_stagingOffset += bytes;
-    m_stagingOffset = (m_stagingOffset + (kStagingAlignBytes - 1u)) & ~(kStagingAlignBytes - 1u);
+UploadTicket ResourceManager::flushUploads() {
+    return m_uploads.flush();
+}
+
+bool ResourceManager::isUploadComplete(UploadTicket ticket) {
+    return m_uploads.isComplete(ticket);
+}
+
+bool ResourceManager::waitUpload(UploadTicket ticket, u64 timeoutNs) {
+    return m_uploads.wait(ticket, timeoutNs);
+}
+
+bool ResourceManager::waitAllUploads(u64 timeoutNs) {
+    return m_uploads.waitAll(timeoutNs);
+}
+
+u32 ResourceManager::retireUploads() {
+    return m_uploads.retireCompleted();
+}
+
+void ResourceManager::drainUploads() {
+    if (m_uploads.hasPendingWork()) {
+        m_uploads.waitAll();
+    }
 }
 
 SamplerHandle ResourceManager::createSampler(const SamplerDesc& desc) {
@@ -783,6 +711,8 @@ bool ResourceManager::generateMips(TextureHandle handle) {
         return false;
     }
 
+    // The blit runs on the graphics queue: submit any recorded upload of mip 0 first.
+    m_uploads.flush();
     const OneShotCopyOutcome outcome =
         oneShotGenerateMips(*m_device, *texture, m_lastMipGenerateCount);
     m_lastMipGenerateOk = outcome.submitted;
@@ -801,6 +731,7 @@ void ResourceManager::destroyTexture(TextureHandle handle) {
     if (texture == nullptr || m_allocator == nullptr) {
         return;
     }
+    drainUploads();
     if (texture->bindlessIndex != UINT32_MAX) {
         m_bindless->unregisterTexture(texture->bindlessIndex);
     }
@@ -816,6 +747,7 @@ void ResourceManager::destroyBuffer(BufferHandle handle) {
     if (buffer == nullptr || m_allocator == nullptr) {
         return;
     }
+    drainUploads();
     if (buffer->bindlessIndex != UINT32_MAX) {
         m_bindless->unregisterBuffer(buffer->bindlessIndex);
     }
@@ -890,6 +822,7 @@ bool ResourceManager::readBuffer(BufferHandle handle, void* dst, usize size) {
     if (!m_ready || m_allocator == nullptr || m_device == nullptr || !m_device->isValid()) {
         return false;
     }
+    drainUploads();
 
 #if defined(FUSE_VULKAN_BACKEND)
     BufferDesc stagingDesc{};
@@ -1042,6 +975,8 @@ bool ResourceManager::readTexture(TextureHandle handle, void* dst, usize size) {
     if (!m_ready || m_allocator == nullptr || m_device == nullptr || !m_device->isValid()) {
         return false;
     }
+
+    drainUploads();
 
 #if defined(FUSE_VULKAN_BACKEND)
     if (!bindlessNativeHandleReady(texture->image)) {

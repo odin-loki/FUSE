@@ -1,5 +1,7 @@
 #include <fuse/renderer/vk/bindless.hpp>
 
+#include <algorithm>
+
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
 
@@ -11,8 +13,6 @@ namespace fuse::renderer {
 namespace {
 
 #if defined(FUSE_VULKAN_BACKEND)
-constexpr u32 kBindlessScaffoldCapacity = kBindlessGpuArrayCapacity;
-
 VkDescriptorSetLayoutBinding makeBinding(u32 binding, VkDescriptorType type, u32 count) {
     VkDescriptorSetLayoutBinding layoutBinding{};
     layoutBinding.binding = binding;
@@ -22,8 +22,8 @@ VkDescriptorSetLayoutBinding makeBinding(u32 binding, VkDescriptorType type, u32
     return layoutBinding;
 }
 
-bool createVulkanBindlessDescriptors(const VulkanDevice& device, void*& outPool, void*& outLayout,
-                                       void*& outSet) {
+bool createVulkanBindlessDescriptors(const VulkanDevice& device, const BindlessArraySizes& sizes, void*& outPool,
+                                     void*& outLayout, void*& outSet) {
     if (!device.isValid()) {
         return false;
     }
@@ -31,11 +31,11 @@ bool createVulkanBindlessDescriptors(const VulkanDevice& device, void*& outPool,
     auto vkDevice = static_cast<VkDevice>(device.nativeHandle());
 
     std::array<VkDescriptorSetLayoutBinding, 5> bindings = {
-        makeBinding(kBindlessBindingStorageImages, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, kBindlessScaffoldCapacity),
-        makeBinding(kBindlessBindingSampledImages, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kBindlessScaffoldCapacity),
-        makeBinding(kBindlessBindingSamplers, VK_DESCRIPTOR_TYPE_SAMPLER, kMaxSamplers),
-        makeBinding(kBindlessBindingStorageBuffers, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kBindlessScaffoldCapacity),
-        makeBinding(kBindlessBindingUniformBuffers, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, kBindlessScaffoldCapacity),
+        makeBinding(kBindlessBindingStorageImages, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, sizes.storageImages),
+        makeBinding(kBindlessBindingSampledImages, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, sizes.sampledImages),
+        makeBinding(kBindlessBindingSamplers, VK_DESCRIPTOR_TYPE_SAMPLER, sizes.samplers),
+        makeBinding(kBindlessBindingStorageBuffers, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, sizes.storageBuffers),
+        makeBinding(kBindlessBindingUniformBuffers, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, sizes.uniformBuffers),
     };
 
     // UPDATE_AFTER_BIND is only legal per descriptor type the device enabled (VUID-03005/03007...).
@@ -70,11 +70,11 @@ bool createVulkanBindlessDescriptors(const VulkanDevice& device, void*& outPool,
     }
 
     std::array<VkDescriptorPoolSize, 5> poolSizes = {
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, kBindlessScaffoldCapacity},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, kBindlessScaffoldCapacity},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, kMaxSamplers},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kBindlessScaffoldCapacity},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, kBindlessScaffoldCapacity},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, sizes.storageImages},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, sizes.sampledImages},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, sizes.samplers},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, sizes.storageBuffers},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, sizes.uniformBuffers},
     };
 
     VkDescriptorPoolCreateInfo poolInfo{};
@@ -142,6 +142,52 @@ u32 countLiveSlots(const SlotVec& slots) {
 }
 
 } // namespace
+
+BindlessArraySizes computeBindlessArraySizes(const VulkanDescriptorLimits& limits) {
+    auto fit = [](u32 limit, u32 budget) -> u32 {
+        if (limit == 0u) {
+            return std::min(kBindlessGpuArrayCapacity, budget);
+        }
+        const u32 reserve = kBindlessReservedPerStageDescriptors;
+        const u32 usable = limit > 2u * reserve ? limit - reserve : std::max(1u, limit / 2u);
+        return std::min(usable, budget);
+    };
+
+    BindlessArraySizes sizes{};
+    sizes.sampledImages = fit(limits.sampledImages, kBindlessSampledImageBudget);
+    sizes.storageImages = std::min(fit(limits.storageImages, kBindlessStorageImageBudget), sizes.sampledImages);
+    sizes.storageBuffers = fit(limits.storageBuffers, kBindlessStorageBufferBudget);
+    sizes.uniformBuffers = std::min(fit(limits.uniformBuffers, kBindlessUniformBufferBudget), sizes.storageBuffers);
+    sizes.samplers = limits.samplers == 0u ? kMaxSamplers : std::min(fit(limits.samplers, kMaxSamplers), kMaxSamplers);
+
+    // Every binding is visible to all stages, so the four resource arrays together count against
+    // maxPerStageUpdateAfterBindResources (samplers do not); samplers join the all-pools total.
+    auto scaleTo = [&sizes](u64 available, bool includeSamplers) {
+        u64 total = static_cast<u64>(sizes.sampledImages) + sizes.storageImages + sizes.storageBuffers +
+                    sizes.uniformBuffers + (includeSamplers ? sizes.samplers : 0u);
+        if (available == 0u || total <= available) {
+            return;
+        }
+        auto scale = [&](u32 value) {
+            return static_cast<u32>(std::max<u64>(1u, static_cast<u64>(value) * available / total));
+        };
+        sizes.sampledImages = scale(sizes.sampledImages);
+        sizes.storageImages = std::min(scale(sizes.storageImages), sizes.sampledImages);
+        sizes.storageBuffers = scale(sizes.storageBuffers);
+        sizes.uniformBuffers = std::min(scale(sizes.uniformBuffers), sizes.storageBuffers);
+        if (includeSamplers) {
+            sizes.samplers = scale(sizes.samplers);
+        }
+    };
+    if (limits.perStageResources > 0u) {
+        const u64 reserve = 4u * kBindlessReservedPerStageDescriptors;
+        scaleTo(limits.perStageResources > 2u * reserve ? limits.perStageResources - reserve
+                                                        : std::max<u64>(4u, limits.perStageResources / 2u),
+                false);
+    }
+    scaleTo(limits.allPools, true);
+    return sizes;
+}
 
 BindlessBindingIndex bindlessTextureBinding(u32 slotIndex, bool storage) {
     return {storage ? kBindlessBindingStorageImages : kBindlessBindingSampledImages, slotIndex};
@@ -260,14 +306,19 @@ void BindlessDescriptors::init(const VulkanDevice& device) {
     m_descriptorUpdateCount = 0;
     m_descriptorClearCount = 0;
 
-    (void)device;
+    m_arraySizes = BindlessArraySizes{};
 #if defined(FUSE_VULKAN_BACKEND)
-    if (!createVulkanBindlessDescriptors(device, m_pool, m_layout, m_set)) {
+    if (device.isValid()) {
+        m_arraySizes = computeBindlessArraySizes(device.info().descriptorLimits);
+    }
+    if (!createVulkanBindlessDescriptors(device, m_arraySizes, m_pool, m_layout, m_set)) {
         m_pool = nullptr;
         m_layout = nullptr;
         m_set = nullptr;
     }
 #else
+    // Stub builds may pass a null-backed device reference: never touch it.
+    (void)device;
     m_pool = nullptr;
     m_layout = nullptr;
     m_set = nullptr;
@@ -333,9 +384,15 @@ void BindlessDescriptors::updateVulkanDescriptor(BindlessSlotHandle handle, cons
 
     switch (handle.kind) {
     case BindlessHeapKind::Texture: {
-        write.descriptorType =
-            slotIsStorageTexture(handle.index) ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE
-                                               : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        const bool storage = slotIsStorageTexture(handle.index);
+        write.descriptorType = storage ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        const ImageUsage requiredUsage = storage ? ImageUsage::Storage : ImageUsage::Sampled;
+        if (texture != nullptr &&
+            (static_cast<u32>(texture->desc.usage) & static_cast<u32>(requiredUsage)) == 0u) {
+            // CPU slot stays valid; the view lacks the usage the descriptor type needs
+            // (VUID-VkWriteDescriptorSet-descriptorType-00336/00339).
+            return;
+        }
         if (!clear && texture != nullptr && bindlessNativeHandleReady(texture->view)) {
             imageInfo.imageView = static_cast<VkImageView>(texture->view);
             imageInfo.imageLayout = slotIsStorageTexture(handle.index) ? VK_IMAGE_LAYOUT_GENERAL
@@ -424,33 +481,40 @@ std::vector<BindlessDescriptors::Slot>& BindlessDescriptors::slotsFor(BindlessHe
 }
 
 u32 BindlessDescriptors::maxCountFor(BindlessHeapKind kind) const {
+    // The CPU heap follows the Vulkan array lengths once the set exists.
     switch (kind) {
     case BindlessHeapKind::Texture:
-        return kMaxTextures;
+        return gpuTextureCapacity();
     case BindlessHeapKind::Buffer:
-        return kMaxBuffers;
+        return gpuBufferCapacity();
     case BindlessHeapKind::Sampler:
-        return kMaxSamplers;
+        return gpuSamplerCapacity();
     }
     return 0;
 }
 
 BindlessSlotHandle BindlessDescriptors::allocateSlot(std::vector<Slot>& slots, std::vector<u32>& freeList,
-                                                     u32 maxCount, BindlessHeapKind kind, bool storageFlag) {
+                                                     u32 maxCount, BindlessHeapKind kind, bool storageFlag,
+                                                     u32 flaggedLimit) {
     if (!m_initialized) {
         return BindlessSlotHandle::invalid();
     }
 
-    if (!freeList.empty()) {
-        const u32 index = freeList.back();
-        freeList.pop_back();
+    // Storage textures / uniform buffers must also fit their (possibly shorter) descriptor array.
+    const u32 limit = storageFlag ? std::min(maxCount, flaggedLimit) : maxCount;
+    for (usize i = freeList.size(); i-- > 0;) {
+        const u32 index = freeList[i];
+        if (index >= limit) {
+            continue;
+        }
+        freeList.erase(freeList.begin() + static_cast<std::ptrdiff_t>(i));
         Slot& slot = slots[index];
         slot.occupied = true;
         slot.storage = storageFlag;
         return BindlessSlotHandle{kind, index, slot.generation};
     }
 
-    if (slots.size() >= maxCount) {
+    if (slots.size() >= limit) {
         return BindlessSlotHandle::invalid();
     }
 
@@ -483,15 +547,18 @@ void BindlessDescriptors::freeSlot(std::vector<Slot>& slots, std::vector<u32>& f
 }
 
 BindlessSlotHandle BindlessDescriptors::allocateTextureSlot(bool storage) {
-    return allocateSlot(m_textureSlots, m_freeTextureIndices, gpuTextureCapacity(), BindlessHeapKind::Texture, storage);
+    return allocateSlot(m_textureSlots, m_freeTextureIndices, gpuTextureCapacity(), BindlessHeapKind::Texture, storage,
+                        gpuStorageTextureCapacity());
 }
 
 BindlessSlotHandle BindlessDescriptors::allocateBufferSlot(bool uniform) {
-    return allocateSlot(m_bufferSlots, m_freeBufferIndices, gpuBufferCapacity(), BindlessHeapKind::Buffer, uniform);
+    return allocateSlot(m_bufferSlots, m_freeBufferIndices, gpuBufferCapacity(), BindlessHeapKind::Buffer, uniform,
+                        gpuUniformBufferCapacity());
 }
 
 BindlessSlotHandle BindlessDescriptors::allocateSamplerSlot() {
-    return allocateSlot(m_samplerSlots, m_freeSamplerIndices, kMaxSamplers, BindlessHeapKind::Sampler, false);
+    return allocateSlot(m_samplerSlots, m_freeSamplerIndices, gpuSamplerCapacity(), BindlessHeapKind::Sampler, false,
+                        gpuSamplerCapacity());
 }
 
 void BindlessDescriptors::freeTextureSlot(BindlessSlotHandle handle) {
@@ -690,7 +757,7 @@ bool BindlessDescriptors::resizeHeap(BindlessHeapKind kind, u32 newCapacity) {
         return false;
     }
 
-    newCapacity = clampHeapCapacity(kind, newCapacity);
+    newCapacity = std::min(clampHeapCapacity(kind, newCapacity), maxCountFor(kind));
     if (newCapacity == 0u) {
         return true;
     }

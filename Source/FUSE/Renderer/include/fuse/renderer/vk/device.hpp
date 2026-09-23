@@ -20,6 +20,22 @@ struct VulkanQueues {
     bool dedicatedCompute = false;
 };
 
+/// Descriptor limits that bind a VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT layout
+/// (the bindless set): per type, min(maxDescriptorSetUpdateAfterBind*, maxPerStageDescriptorUpdateAfterBind*).
+/// Falls back to the core (non update-after-bind) limits when descriptor indexing is unavailable.
+/// All zero when no device was created.
+struct VulkanDescriptorLimits {
+    u32 sampledImages = 0;
+    u32 storageImages = 0;
+    u32 storageBuffers = 0;
+    u32 uniformBuffers = 0;
+    u32 samplers = 0;
+    /// maxPerStageUpdateAfterBindResources: all non-sampler descriptors visible to one stage.
+    u32 perStageResources = 0;
+    /// maxUpdateAfterBindDescriptorsInAllPools.
+    u32 allPools = 0;
+};
+
 struct VulkanDeviceInfo {
     bool valid = false;
     std::string deviceName;
@@ -35,6 +51,7 @@ struct VulkanDeviceInfo {
     bool storageBufferUpdateAfterBind = false;
     bool uniformBufferUpdateAfterBind = false;
     bool sampledImageNonUniformIndexing = false;
+    VulkanDescriptorLimits descriptorLimits{};
     /// True when VK_KHR_swapchain was enabled (requires VK_KHR_surface on the instance).
     bool swapchainExtension = false;
     bool bufferDeviceAddress = false;
