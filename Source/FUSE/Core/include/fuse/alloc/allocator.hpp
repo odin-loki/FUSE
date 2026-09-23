@@ -4,7 +4,9 @@
 #include <fuse/types.hpp>
 
 #include <cstddef>
+#include <cstring>
 #include <new>
+#include <utility>
 #include <vector>
 
 namespace fuse::alloc {
@@ -42,26 +44,75 @@ inline bool isSupportedAlignment(usize alignment) {
     return alignment <= kArenaAlignment && (alignment & (alignment - 1u)) == 0u;
 }
 
-/// std::allocator replacement that places arena storage on a kArenaAlignment boundary.
-template <typename T>
-struct ArenaStorageAllocator {
-    using value_type = T;
-
-    ArenaStorageAllocator() = default;
-    template <typename U>
-    ArenaStorageAllocator(const ArenaStorageAllocator<U>& /*other*/) {}
-
-    T* allocate(std::size_t n) {
-        return static_cast<T*>(::operator new(n * sizeof(T), std::align_val_t{kArenaAlignment}));
+/// Zero-initialised byte arena backing store whose data() sits on a kArenaAlignment boundary.
+/// (A std::vector with an aligned allocator value-initialises byte by byte through
+/// allocator_traits::construct, which made multi-megabyte arenas very slow to create in
+/// unoptimised builds; this zero-fills with memset.)
+class ArenaBytes {
+public:
+    ArenaBytes() = default;
+    explicit ArenaBytes(usize bytes) { resize(bytes); }
+    ArenaBytes(const ArenaBytes& other) { assign(other.m_data, other.m_size); }
+    ArenaBytes(ArenaBytes&& other) noexcept
+        : m_data(std::exchange(other.m_data, nullptr)), m_size(std::exchange(other.m_size, 0u)) {}
+    ArenaBytes& operator=(const ArenaBytes& other) {
+        if (this != &other) {
+            assign(other.m_data, other.m_size);
+        }
+        return *this;
     }
-    void deallocate(T* ptr, std::size_t /*n*/) { ::operator delete(ptr, std::align_val_t{kArenaAlignment}); }
+    ArenaBytes& operator=(ArenaBytes&& other) noexcept {
+        if (this != &other) {
+            release();
+            m_data = std::exchange(other.m_data, nullptr);
+            m_size = std::exchange(other.m_size, 0u);
+        }
+        return *this;
+    }
+    ~ArenaBytes() { release(); }
 
-    template <typename U>
-    bool operator==(const ArenaStorageAllocator<U>& /*other*/) const { return true; }
+    /// Reallocates to `bytes`, keeping the common prefix and zero-filling any growth.
+    void resize(usize bytes) {
+        if (bytes == m_size) {
+            return;
+        }
+        u8* next = bytes > 0u ? static_cast<u8*>(::operator new(bytes, std::align_val_t{kArenaAlignment})) : nullptr;
+        const usize keep = bytes < m_size ? bytes : m_size;
+        if (keep > 0u) {
+            std::memcpy(next, m_data, keep);
+        }
+        if (bytes > keep) {
+            std::memset(next + keep, 0, bytes - keep);
+        }
+        release();
+        m_data = next;
+        m_size = bytes;
+    }
+
+    u8* data() { return m_data; }
+    const u8* data() const { return m_data; }
+    usize size() const { return m_size; }
+    bool empty() const { return m_size == 0u; }
+
+private:
+    void assign(const u8* source, usize bytes) {
+        release();
+        resize(bytes);
+        if (bytes > 0u) {
+            std::memcpy(m_data, source, bytes);
+        }
+    }
+    void release() {
+        if (m_data != nullptr) {
+            ::operator delete(m_data, std::align_val_t{kArenaAlignment});
+        }
+        m_data = nullptr;
+        m_size = 0u;
+    }
+
+    u8* m_data = nullptr;
+    usize m_size = 0u;
 };
-
-/// Byte arena backing store (kArenaAlignment-aligned data()).
-using ArenaBytes = std::vector<u8, ArenaStorageAllocator<u8>>;
 
 } // namespace detail
 
