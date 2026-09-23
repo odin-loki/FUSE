@@ -736,6 +736,156 @@ void testSameFrameEdits() {
     expectTrue(findDraw(view.buildFrame(scene, viewport), cube)->material_id == 1u, "material id undo reaches the frame");
 }
 
+// ---------------------------------------------------------------------------------------------
+// Row 5285: right-click context menu appears at the correct screen position. The Qt shell reports
+// the click in window logical px; the viewport picks in physical framebuffer px (logical * DPR).
+// The menu's anchor must be the click mapped back to window logical px, with QMenu-style flipping
+// and clamping at the window edges.
+void testContextMenuPlacement() {
+    using fuse::editor::ContextMenuHostGeometry;
+    using fuse::editor::ContextMenuPlacement;
+    using fuse::editor::EntityContextMenu;
+
+    // (a) Round trip at several DPRs: a Qt click (window logical) -> viewport physical px -> menu.
+    // The picked entity is the one under the cursor and the menu top-left is exactly the click.
+    for (const f32 dpr : {1.f, 1.25f, 1.5f, 2.f}) {
+        fuse::editor::EditorScene scene;
+        scene.init();
+        const EntityID target = addSdfSphere(scene.registry(), v(1.5f, 0.75f, 10.f), 0.6f);
+        fuse::editor::ViewportPanel viewport;
+        placeCameraAtOrigin(viewport);
+        viewport.setDimensions(static_cast<u32>(1200.f * dpr), static_cast<u32>(700.f * dpr));
+        fuse::editor::ViewportSceneView view;
+        fuse::editor::EditorState state;
+        EntityContextMenu menu;
+        ContextMenuHostGeometry host{};
+        host.viewportOriginX = 250.f; // dock panels left of / above the viewport
+        host.viewportOriginY = 80.f;
+        host.devicePixelRatio = dpr;
+        host.windowWidth = 1920.f;
+        host.windowHeight = 1080.f;
+        menu.setHostGeometry(host);
+
+        f32 px = 0.f;
+        f32 py = 0.f;
+        expectTrue(viewport.worldToScreen({1.5f, 0.75f, 9.4f, 1.f}, px, py), "placement: target projects on screen");
+        // What Qt would deliver for that physical pixel: window logical coordinates.
+        const f32 qtX = host.viewportOriginX + px / dpr;
+        const f32 qtY = host.viewportOriginY + py / dpr;
+        menu.openInViewport(scene, view, viewport, (qtX - host.viewportOriginX) * dpr,
+                            (qtY - host.viewportOriginY) * dpr, state);
+        const ContextMenuPlacement& at = menu.placement();
+        expectTrue(menu.isOpen() && menu.clickedEntity() == target, "placement: menu targets the entity under the cursor");
+        expectTrue(near(at.clickX, qtX, 1e-3f) && near(at.clickY, qtY, 1e-3f),
+                   "placement: anchor == click in window logical px (DPR + viewport offset applied)");
+        expectTrue(near(at.x, qtX, 1e-3f) && near(at.y, qtY, 1e-3f) && !at.flippedX && !at.flippedY,
+                   "placement: menu top-left sits at the click when it fits");
+        expectTrue(near(at.width, EntityContextMenu::kMenuWidth, 0.f) &&
+                       near(at.height, menu.menuHeight(), 0.f) && at.height > 9.f * EntityContextMenu::kItemHeight,
+                   "placement: menu size follows the item list (9 items + separator + padding)");
+    }
+
+    // (b) Viewport pixel -> window mapping is exact, independent of the pick.
+    {
+        ContextMenuHostGeometry host{};
+        host.viewportOriginX = 33.f;
+        host.viewportOriginY = 57.f;
+        host.devicePixelRatio = 1.5f;
+        f32 wx = 0.f;
+        f32 wy = 0.f;
+        EntityContextMenu::viewportToWindow(host, 300.f, 150.f, wx, wy);
+        expectTrue(near(wx, 233.f, 1e-4f) && near(wy, 157.f, 1e-4f), "placement: (300,150)phys @1.5 -> (233,157)logical");
+        host.devicePixelRatio = 0.f; // unset DPR behaves as 1
+        EntityContextMenu::viewportToWindow(host, 300.f, 150.f, wx, wy);
+        expectTrue(near(wx, 333.f, 1e-4f) && near(wy, 207.f, 1e-4f), "placement: DPR <= 0 treated as 1");
+    }
+
+    // (c) Edge handling (window 1920 x 1080 logical, menu 200 x 250).
+    {
+        ContextMenuHostGeometry host{};
+        host.windowWidth = 1920.f;
+        host.windowHeight = 1080.f;
+        const f32 w = 200.f;
+        const f32 h = 250.f;
+        ContextMenuPlacement at = EntityContextMenu::place(host, 1900.f, 500.f, w, h);
+        expectTrue(at.flippedX && near(at.x, 1700.f, 0.f) && near(at.y, 500.f, 0.f) && !at.flippedY,
+                   "placement: right edge flips the menu to the left of the click");
+        at = EntityContextMenu::place(host, 600.f, 1070.f, w, h);
+        expectTrue(at.flippedY && near(at.y, 820.f, 0.f) && near(at.x, 600.f, 0.f) && !at.flippedX,
+                   "placement: bottom edge opens the menu above the click");
+        at = EntityContextMenu::place(host, 1919.f, 1079.f, w, h);
+        expectTrue(at.flippedX && at.flippedY && near(at.x + w, 1919.f, 0.f) && near(at.y + h, 1079.f, 0.f),
+                   "placement: bottom-right corner opens up-left, bottom-right corner at the click");
+        at = EntityContextMenu::place(host, 0.f, 0.f, w, h);
+        expectTrue(!at.flippedX && !at.flippedY && near(at.x, 0.f, 0.f) && near(at.y, 0.f, 0.f),
+                   "placement: top-left corner opens down-right at the click");
+        at = EntityContextMenu::place(host, 1720.f, 830.f, w, h);
+        expectTrue(!at.flippedX && !at.flippedY && near(at.x, 1720.f, 0.f) && near(at.y, 830.f, 0.f),
+                   "placement: menu that exactly fits is not flipped");
+        // Window narrower / shorter than the menu: pinned to the top-left, never off-screen.
+        ContextMenuHostGeometry tiny{};
+        tiny.windowWidth = 150.f;
+        tiny.windowHeight = 100.f;
+        at = EntityContextMenu::place(tiny, 120.f, 90.f, w, h);
+        expectTrue(near(at.x, 0.f, 0.f) && near(at.y, 0.f, 0.f), "placement: oversize menu pinned to window origin");
+        // Flipping would go off the left edge (click at x = 150 in a 300-wide window): clamp to 0,
+        // as QMenu::popup does, so the menu stays fully inside and still covers the click.
+        ContextMenuHostGeometry narrow{};
+        narrow.windowWidth = 300.f;
+        narrow.windowHeight = 1080.f;
+        at = EntityContextMenu::place(narrow, 150.f, 10.f, w, h);
+        expectTrue(at.flippedX && near(at.x, 0.f, 0.f) && at.x + w <= 300.f && at.x + w >= 150.f, "placement: flip result clamped to keep the menu inside the window");
+    }
+
+    // (d) Sweep: every click over the window at every DPR yields a menu inside the window whose
+    // nearest corner touches the click whenever the menu fits beside it.
+    {
+        int bad = 0;
+        for (const f32 dpr : {1.f, 1.25f, 1.5f, 2.f}) {
+            ContextMenuHostGeometry host{};
+            host.viewportOriginX = 250.f;
+            host.viewportOriginY = 80.f;
+            host.devicePixelRatio = dpr;
+            host.windowWidth = 1920.f;
+            host.windowHeight = 1080.f;
+            const f32 w = 200.f;
+            const f32 h = 260.f;
+            for (f32 py = 0.f; py < 1000.f * dpr; py += 7.3f * dpr) {
+                for (f32 px = 0.f; px < 1670.f * dpr; px += 11.1f * dpr) {
+                    f32 wx = 0.f;
+                    f32 wy = 0.f;
+                    EntityContextMenu::viewportToWindow(host, px, py, wx, wy);
+                    const ContextMenuPlacement at = EntityContextMenu::place(host, wx, wy, w, h);
+                    const bool inside = at.x >= 0.f && at.y >= 0.f && at.x + w <= host.windowWidth + 1e-3f &&
+                                        at.y + h <= host.windowHeight + 1e-3f;
+                    const bool cornerX = at.flippedX ? near(at.x + w, wx, 1e-3f) : near(at.x, wx, 1e-3f);
+                    const bool cornerY = at.flippedY ? near(at.y + h, wy, 1e-3f) : near(at.y, wy, 1e-3f);
+                    const bool expectFlipX = wx + w > host.windowWidth;
+                    const bool expectFlipY = wy + h > host.windowHeight;
+                    if (!inside || !cornerX || !cornerY || at.flippedX != expectFlipX || at.flippedY != expectFlipY) {
+                        ++bad;
+                    }
+                }
+            }
+        }
+        expectTrue(bad == 0, "placement: sweep over window x DPR keeps menu inside and cornered on the click");
+    }
+
+    // (e) Hierarchy right-click positions the menu at the given window coords too.
+    {
+        fuse::editor::EditorState state;
+        EntityContextMenu menu;
+        ContextMenuHostGeometry host{};
+        host.windowWidth = 1920.f;
+        host.windowHeight = 1080.f;
+        menu.setHostGeometry(host);
+        menu.openAt(EntityID::null(), v(0.f, 0.f, 0.f), state, 40.f, 1000.f);
+        expectTrue(menu.isOpen() && near(menu.placement().clickX, 40.f, 0.f) && menu.placement().flippedY &&
+                       near(menu.placement().y + menu.placement().height, 1000.f, 1e-3f),
+                   "placement: hierarchy menu near the bottom opens above the click");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -746,6 +896,7 @@ int main() {
     testPickFrontMost();
     testViewportResizeHeadless();
     testContextMenu();
+    testContextMenuPlacement();
     testInspectorAllComponents();
     testSameFrameEdits();
 

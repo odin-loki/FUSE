@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/ecs/entity.hpp>
 #include <fuse/editor/runtime_embed_session.hpp>
 #include <fuse/editor/viewport_panel.hpp>
 #include <fuse/editor/viewport_swapchain_handoff.hpp>
@@ -12,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace fuse::editor {
 
@@ -80,6 +82,8 @@ private:
     fuse::project::CookCache m_shaderCookCache;
     fuse::HandleTable<fuse::io::Asset> m_shaderAssetTable;
     bool m_shaderLoadsPending = false;
+    /// Per-tick entity walk scratch (capacity reused so idle ticks stay allocation-free).
+    std::vector<ecs::EntityID> m_entityOrderScratch;
 
 #if defined(FUSE_VULKAN_BACKEND)
     void* m_headlessGpuStub = nullptr;

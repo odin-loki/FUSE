@@ -9,7 +9,7 @@ enum class SdfPrimitiveType : u8 { Sphere = 0, Box = 1, Capsule = 2, Torus = 3 }
 
 /// Analytic SDF primitive (local frame axis-aligned, centred on `position`). `params` by type:
 /// Sphere  — x = radius;
-/// Box     — xyz = half extents;
+/// Box     — xyz = half extents (outer extents; edges/corners rounded by `rounding`);
 /// Capsule — x = radius, y = half length of the core segment along local Y (0 = sphere);
 /// Torus   — x = major radius (ring in the local XZ plane), y = minor (tube) radius.
 struct SdfObject {
@@ -19,6 +19,9 @@ struct SdfObject {
     /// Smooth-union blend width with the objects before it (<= 0 = hard union).
     f32 alpha = 0.1f;
     u32 material_id = 0;
+    /// Box only: edge/corner rounding radius (0 = sharp). The rounded box keeps `params` as its outer half
+    /// extents (`box(p, params - rounding) - rounding`); clamped to the smallest half extent.
+    f32 rounding = 0.f;
 };
 
 /// CPU reference surfaces (host arrays of `width * height`, row 0 = top): `depth_surface` is `f32*` hit distance
@@ -65,6 +68,13 @@ f32 ray_march_hit_distance(const RayMarchParams& params, const math::Vec3& origi
 
 /// Signed distance of the scene at `position` (hard or smooth union of all objects).
 f32 ray_march_scene_distance(const RayMarchParams& params, const math::Vec3& position);
+
+/// Unit surface normal of the scene at `position`: the analytic gradient of `ray_march_scene_distance`
+/// (per-primitive closed-form gradients chained through the smooth union's derivative). Unlike a
+/// finite-difference normal it has no step size, so it cannot facet or quantise into plateaus at any
+/// zoom level: its error is ~1 f32 ulp of `position` relative to the local feature radius.
+/// Returns +Y where the gradient vanishes (empty scene / medial singularity).
+math::Vec3 ray_march_scene_normal(const RayMarchParams& params, const math::Vec3& position);
 
 /// CPU reference full-frame trace into the host surfaces; false on invalid parameters.
 bool launch_ray_march_cpu(const RayMarchParams& params);

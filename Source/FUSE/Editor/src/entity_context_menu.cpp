@@ -119,6 +119,50 @@ void EntityContextMenu::openAt(ecs::EntityID clicked, const ecs::vec3& spawnPoin
     m_open = true;
 }
 
+void EntityContextMenu::viewportToWindow(const ContextMenuHostGeometry& host, f32 px, f32 py, f32& wx, f32& wy) {
+    const f32 dpr = host.devicePixelRatio > 0.f ? host.devicePixelRatio : 1.f;
+    wx = host.viewportOriginX + px / dpr;
+    wy = host.viewportOriginY + py / dpr;
+}
+
+ContextMenuPlacement EntityContextMenu::place(const ContextMenuHostGeometry& host, f32 windowX, f32 windowY,
+                                              f32 menuWidth, f32 menuHeight) {
+    ContextMenuPlacement out{};
+    out.clickX = windowX;
+    out.clickY = windowY;
+    out.width = menuWidth;
+    out.height = menuHeight;
+    out.x = windowX;
+    out.y = windowY;
+    if (host.windowWidth > 0.f && out.x + menuWidth > host.windowWidth) {
+        out.x = windowX - menuWidth;
+        out.flippedX = true;
+        out.x = std::clamp(out.x, 0.f, std::max(host.windowWidth - menuWidth, 0.f));
+    }
+    if (host.windowHeight > 0.f && out.y + menuHeight > host.windowHeight) {
+        out.y = windowY - menuHeight;
+        out.flippedY = true;
+        out.y = std::clamp(out.y, 0.f, std::max(host.windowHeight - menuHeight, 0.f));
+    }
+    out.x = std::max(out.x, 0.f);
+    out.y = std::max(out.y, 0.f);
+    return out;
+}
+
+f32 EntityContextMenu::menuHeight() const {
+    f32 height = 2.f * kMenuPadding;
+    for (const ContextMenuItem& item : m_items) {
+        height += kItemHeight + (item.separatorBefore ? kSeparatorHeight : 0.f);
+    }
+    return height;
+}
+
+void EntityContextMenu::openAt(ecs::EntityID clicked, const ecs::vec3& spawnPoint, EditorState& state, f32 windowX,
+                               f32 windowY) {
+    openAt(clicked, spawnPoint, state);
+    m_placement = place(m_host, windowX, windowY, menuWidth(), menuHeight());
+}
+
 void EntityContextMenu::openInViewport(EditorScene& scene, ViewportSceneView& view, const ViewportPanel& viewport,
                                        f32 px, f32 py, EditorState& state) {
     const ViewportRay ray = viewport.screenRay(px, py);
@@ -130,7 +174,10 @@ void EntityContextMenu::openInViewport(EditorScene& scene, ViewportSceneView& vi
         spawn = {ray.origin.x + ray.direction.x * kSpawnDistance, ray.origin.y + ray.direction.y * kSpawnDistance,
                  ray.origin.z + ray.direction.z * kSpawnDistance, 1.f};
     }
-    openAt(pick.hit ? pick.entity : ecs::EntityID::null(), spawn, state);
+    f32 wx = 0.f;
+    f32 wy = 0.f;
+    viewportToWindow(m_host, px, py, wx, wy);
+    openAt(pick.hit ? pick.entity : ecs::EntityID::null(), spawn, state, wx, wy);
 }
 
 const ContextMenuItem* EntityContextMenu::find(ContextMenuAction action) const {

@@ -7,19 +7,25 @@
 //
 //   family 0: the ICD's family, unchanged (graphics | compute | transfer)
 //   family 1: transfer-only, one queue
+//   family 2: compute | transfer (no graphics), one queue — only when the environment variable
+//             FUSE_SPLIT_LAYER_COMPUTE_FAMILY is set to a non-empty value other than "0" (the
+//             "async compute" family discrete GPUs expose)
 //
 // The application and the validation layer see two families and two distinct VkQueue handles, so
 // QFO release/acquire pairing, per-family stage/access limits and cross-queue synchronization are
 // all validated for real. Downward, family 1 is folded onto family 0: its queue is a wrapper over
-// the ICD's only queue, command pools / barriers / sharing lists get index 1 rewritten to 0 (an
-// ownership transfer 1 -> 0 becomes an ordinary barrier, which is what the single family needs).
-// Submissions from both "queues" reach the one real queue in the application's submission order,
-// so semaphore waits are always on earlier signals and cannot deadlock.
+// the ICD's only queue, command pools / barriers / sharing lists get index 1 (and 2) rewritten to 0
+// (an ownership transfer 1 -> 0 becomes an ordinary barrier, which is what the single family needs).
+// Submissions from all "queues" reach the one real queue in the application's submission order
+// (serialized by a per-device mutex, since the application may legally submit to its distinct
+// queues from different threads), so semaphore waits are always on earlier signals and cannot
+// deadlock.
 //
 // Only active when the ICD reports exactly one queue family; otherwise a pass-through.
 #include <vulkan/vk_layer.h>
 #include <vulkan/vulkan.h>
 
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -35,7 +41,26 @@
 namespace {
 
 constexpr uint32_t kRealFamily = 0;
-constexpr uint32_t kSplitFamily = 1;
+constexpr uint32_t kSplitFamily = 1;   ///< transfer-only
+constexpr uint32_t kComputeFamily = 2; ///< compute | transfer, opt-in (FUSE_SPLIT_LAYER_COMPUTE_FAMILY)
+constexpr uint32_t kMaxFamilies = 3;
+
+bool computeFamilyEnabled() {
+    static const bool enabled = [] {
+        const char* env = std::getenv("FUSE_SPLIT_LAYER_COMPUTE_FAMILY");
+        return env != nullptr && env[0] != '\0' && !(env[0] == '0' && env[1] == '\0');
+    }();
+    return enabled;
+}
+
+/// Families exposed upward when splitting: 0 (real) + transfer-only (+ compute-only).
+uint32_t exposedFamilyCount() {
+    return computeFamilyEnabled() ? 3u : 2u;
+}
+
+bool isSplitFamily(uint32_t family) {
+    return family == kSplitFamily || (family == kComputeFamily && computeFamilyEnabled());
+}
 
 using DispatchKey = void*;
 
@@ -80,7 +105,10 @@ struct DeviceData {
     PFN_vkCmdWaitEvents cmdWaitEvents = nullptr;
     PFN_vkCreateBuffer createBuffer = nullptr;
     PFN_vkCreateImage createImage = nullptr;
-    std::unique_ptr<SplitQueue> splitQueue;
+    /// Wrapper queue per split family (index = exposed family; [0] unused).
+    std::unique_ptr<SplitQueue> splitQueues[kMaxFamilies];
+    /// Serializes access to the one real queue shared by all exposed queues.
+    std::mutex submitMutex;
 };
 
 std::mutex g_mutex;
@@ -127,14 +155,37 @@ VkQueueFamilyProperties transferOnly(const VkQueueFamilyProperties& real) {
     return props;
 }
 
+VkQueueFamilyProperties computeOnly(const VkQueueFamilyProperties& real) {
+    VkQueueFamilyProperties props = real;
+    props.queueFlags = VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
+    props.queueCount = 1;
+    props.minImageTransferGranularity = {1, 1, 1};
+    return props;
+}
+
+/// Exposed family `index` derived from the real family 0 properties.
+VkQueueFamilyProperties exposedFamily(const VkQueueFamilyProperties& real, uint32_t index) {
+    if (index == kSplitFamily) {
+        return transferOnly(real);
+    }
+    if (index == kComputeFamily) {
+        return computeOnly(real);
+    }
+    return real;
+}
+
 uint32_t mapFamily(uint32_t family) {
-    return family == kSplitFamily ? kRealFamily : family;
+    return isSplitFamily(family) ? kRealFamily : family;
 }
 
 VkQueue realQueue(DeviceData* data, VkQueue queue) {
-    if (data != nullptr && data->splitQueue &&
-        queue == reinterpret_cast<VkQueue>(data->splitQueue.get())) {
-        return data->splitQueue->real;
+    if (data == nullptr) {
+        return queue;
+    }
+    for (const std::unique_ptr<SplitQueue>& split : data->splitQueues) {
+        if (split && queue == reinterpret_cast<VkQueue>(split.get())) {
+            return split->real;
+        }
     }
     return queue;
 }
@@ -203,20 +254,16 @@ VKAPI_ATTR void VKAPI_CALL GetPhysicalDeviceQueueFamilyProperties(VkPhysicalDevi
         return;
     }
     if (pProperties == nullptr) {
-        *pCount = 2;
+        *pCount = exposedFamilyCount();
         return;
     }
     VkQueueFamilyProperties real{};
     uint32_t one = 1;
     data->queueFamilyProperties(physicalDevice, &one, &real);
     uint32_t written = 0;
-    if (*pCount >= 1) {
-        pProperties[0] = real;
-        written = 1;
-    }
-    if (*pCount >= 2) {
-        pProperties[1] = transferOnly(real);
-        written = 2;
+    for (uint32_t i = 0; i < *pCount && i < exposedFamilyCount(); ++i) {
+        pProperties[i] = exposedFamily(real, i);
+        written = i + 1;
     }
     *pCount = written;
 }
@@ -228,17 +275,15 @@ void queueFamilyProperties2(InstanceData* data, PFN_vkGetPhysicalDeviceQueueFami
         return;
     }
     if (pProperties == nullptr) {
-        *pCount = 2;
+        *pCount = exposedFamilyCount();
         return;
     }
     uint32_t written = 0;
-    for (uint32_t i = 0; i < *pCount && i < 2; ++i) {
-        // Fill each element (and its pNext chain) from the real family, then narrow family 1.
+    for (uint32_t i = 0; i < *pCount && i < exposedFamilyCount(); ++i) {
+        // Fill each element (and its pNext chain) from the real family, then narrow the split ones.
         uint32_t one = 1;
         next(physicalDevice, &one, &pProperties[i]);
-        if (i == kSplitFamily) {
-            pProperties[i].queueFamilyProperties = transferOnly(pProperties[i].queueFamilyProperties);
-        }
+        pProperties[i].queueFamilyProperties = exposedFamily(pProperties[i].queueFamilyProperties, i);
         written = i + 1;
     }
     *pCount = written;
@@ -262,8 +307,8 @@ VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevi
                                                                   uint32_t queueFamilyIndex, VkSurfaceKHR surface,
                                                                   VkBool32* pSupported) {
     InstanceData* data = instanceData(physicalDevice);
-    if (queueFamilyIndex == kSplitFamily && shouldSplit(*data, physicalDevice)) {
-        *pSupported = VK_FALSE; // transfer-only family never presents
+    if (isSplitFamily(queueFamilyIndex) && shouldSplit(*data, physicalDevice)) {
+        *pSupported = VK_FALSE; // split (transfer / compute) families never present
         return VK_SUCCESS;
     }
     return data->surfaceSupport(physicalDevice, queueFamilyIndex, surface, pSupported);
@@ -307,7 +352,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateDevice(VkPhysicalDevice physicalDevice, con
     bool hasRealQueue = false;
     for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; ++i) {
         const VkDeviceQueueCreateInfo& info = pCreateInfo->pQueueCreateInfos[i];
-        if (split && info.queueFamilyIndex == kSplitFamily) {
+        if (split && isSplitFamily(info.queueFamilyIndex)) {
             wantsSplitQueue = true;
             continue;
         }
@@ -375,8 +420,9 @@ VKAPI_ATTR void VKAPI_CALL DestroyDevice(VkDevice device, const VkAllocationCall
     data->destroyDevice(device, pAllocator);
 }
 
-VkQueue splitQueueFor(DeviceData* data, VkDevice device) {
-    if (!data->splitQueue) {
+VkQueue splitQueueFor(DeviceData* data, VkDevice device, uint32_t family) {
+    std::unique_ptr<SplitQueue>& slot = data->splitQueues[family];
+    if (!slot) {
         VkQueue real = VK_NULL_HANDLE;
         data->getDeviceQueue(device, kRealFamily, 0, &real);
         if (real == VK_NULL_HANDLE) {
@@ -388,15 +434,15 @@ VkQueue splitQueueFor(DeviceData* data, VkDevice device) {
         if (data->setLoaderData != nullptr) {
             data->setLoaderData(device, wrapper.get());
         }
-        data->splitQueue = std::move(wrapper);
+        slot = std::move(wrapper);
     }
-    return reinterpret_cast<VkQueue>(data->splitQueue.get());
+    return reinterpret_cast<VkQueue>(slot.get());
 }
 
 VKAPI_ATTR void VKAPI_CALL GetDeviceQueue(VkDevice device, uint32_t family, uint32_t index, VkQueue* pQueue) {
     DeviceData* data = deviceData(device);
-    if (data->split && family == kSplitFamily) {
-        *pQueue = index == 0 ? splitQueueFor(data, device) : VK_NULL_HANDLE;
+    if (data->split && isSplitFamily(family)) {
+        *pQueue = index == 0 ? splitQueueFor(data, device, family) : VK_NULL_HANDLE;
         return;
     }
     data->getDeviceQueue(device, family, index, pQueue);
@@ -404,8 +450,8 @@ VKAPI_ATTR void VKAPI_CALL GetDeviceQueue(VkDevice device, uint32_t family, uint
 
 VKAPI_ATTR void VKAPI_CALL GetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* pInfo, VkQueue* pQueue) {
     DeviceData* data = deviceData(device);
-    if (data->split && pInfo->queueFamilyIndex == kSplitFamily) {
-        *pQueue = pInfo->queueIndex == 0 ? splitQueueFor(data, device) : VK_NULL_HANDLE;
+    if (data->split && isSplitFamily(pInfo->queueFamilyIndex)) {
+        *pQueue = pInfo->queueIndex == 0 ? splitQueueFor(data, device, pInfo->queueFamilyIndex) : VK_NULL_HANDLE;
         return;
     }
     data->getDeviceQueue2(device, pInfo, pQueue);
@@ -413,11 +459,13 @@ VKAPI_ATTR void VKAPI_CALL GetDeviceQueue2(VkDevice device, const VkDeviceQueueI
 
 VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit(VkQueue queue, uint32_t count, const VkSubmitInfo* pSubmits, VkFence fence) {
     DeviceData* data = deviceData(queue);
+    std::lock_guard<std::mutex> lock(data->submitMutex);
     return data->queueSubmit(realQueue(data, queue), count, pSubmits, fence);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit2(VkQueue queue, uint32_t count, const VkSubmitInfo2* pSubmits, VkFence fence) {
     DeviceData* data = deviceData(queue);
+    std::lock_guard<std::mutex> lock(data->submitMutex);
     return data->queueSubmit2(realQueue(data, queue), count, pSubmits, fence);
 }
 
@@ -425,22 +473,26 @@ VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit2KHR(VkQueue queue, uint32_t count, co
                                                VkFence fence) {
     DeviceData* data = deviceData(queue);
     const PFN_vkQueueSubmit2 next = data->queueSubmit2KHR != nullptr ? data->queueSubmit2KHR : data->queueSubmit2;
+    std::lock_guard<std::mutex> lock(data->submitMutex);
     return next(realQueue(data, queue), count, pSubmits, fence);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL QueueWaitIdle(VkQueue queue) {
     DeviceData* data = deviceData(queue);
+    std::lock_guard<std::mutex> lock(data->submitMutex);
     return data->queueWaitIdle(realQueue(data, queue));
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL QueueBindSparse(VkQueue queue, uint32_t count, const VkBindSparseInfo* pInfo,
                                                VkFence fence) {
     DeviceData* data = deviceData(queue);
+    std::lock_guard<std::mutex> lock(data->submitMutex);
     return data->queueBindSparse(realQueue(data, queue), count, pInfo, fence);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pInfo) {
     DeviceData* data = deviceData(queue);
+    std::lock_guard<std::mutex> lock(data->submitMutex);
     return data->queuePresent(realQueue(data, queue), pInfo);
 }
 

@@ -159,6 +159,17 @@ fuse_apply_cxx23(fuse_editor_b6_viewport_gates)
 add_test(NAME fuse_editor_b6_viewport_gates COMMAND fuse_editor_b6_viewport_gates)
 set_tests_properties(fuse_editor_b6_viewport_gates PROPERTIES LABELS "gate")
 
+# Headless editor-layer idle frames: 10k-frame spike + zero-alloc gate and editor memory overhead.
+# Only registered without the Vulkan backend: there the runtime viewport hook never boots the hybrid
+# GPU renderer, so what is measured is the editor layer (EditorHost::gameTick), not renderer frames.
+add_executable(fuse_editor_b6_idle_frame_gates test_b6_editor_idle_frame_gates.cpp)
+target_link_libraries(fuse_editor_b6_idle_frame_gates PRIVATE fuse_editor_api fuse_core fuse_scene)
+fuse_apply_cxx23(fuse_editor_b6_idle_frame_gates)
+if(NOT FUSE_VULKAN_BACKEND)
+    add_test(NAME fuse_editor_b6_idle_frame_gates COMMAND fuse_editor_b6_idle_frame_gates)
+    set_tests_properties(fuse_editor_b6_idle_frame_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate")
+endif()
+
 if(FUSE_BUILD_VULKAN)
     add_executable(fuse_editor_b6_material_profiler_gates test_b6_material_profiler_gates.cpp)
     target_link_libraries(fuse_editor_b6_material_profiler_gates PRIVATE fuse_editor_api fuse_core fuse_rhi)

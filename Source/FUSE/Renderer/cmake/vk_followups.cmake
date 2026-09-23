@@ -68,6 +68,27 @@ if(FUSE_BUILD_CORE_TESTS)
 }
 ")
         add_dependencies(fuse_b2_upload_queue_family VkLayer_fuse_split_transfer_family)
+
+        # Row "Logical device created with graphics, compute, and transfer queues on separate families
+        # where available": device creation against three topologies (split layer with an extra
+        # compute-only family, split layer transfer-only, plain single-family Lavapipe).
+        add_executable(fuse_b2_device_queue_families tests/test_b2_device_queue_families.cpp)
+        target_link_libraries(fuse_b2_device_queue_families PRIVATE fuse_rhi)
+        add_dependencies(fuse_b2_device_queue_families VkLayer_fuse_split_transfer_family)
+        add_test(NAME fuse_b2_device_queue_families_split
+                 COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_b2_device_queue_families>"
+                         --layer-dir "${_fuse_split_layer_dir}" --mode transfer-compute)
+        add_test(NAME fuse_b2_device_queue_families_transfer
+                 COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_b2_device_queue_families>"
+                         --layer-dir "${_fuse_split_layer_dir}" --mode transfer)
+        add_test(NAME fuse_b2_device_queue_families_shared
+                 COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_b2_device_queue_families>" --mode shared)
+        set_tests_properties(fuse_b2_device_queue_families_split fuse_b2_device_queue_families_transfer
+                             fuse_b2_device_queue_families_shared PROPERTIES
+            ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+            RUN_SERIAL TRUE
+            SKIP_RETURN_CODE 77
+            LABELS "gate;vulkan")
         add_test(NAME fuse_b2_upload_queue_family
                  COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_b2_upload_queue_family>"
                          --layer-dir "${_fuse_split_layer_dir}" --expect-split)

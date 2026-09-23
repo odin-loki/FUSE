@@ -51,12 +51,18 @@ void CommandQueue::post(EditorCommand command) {
 }
 
 void CommandQueue::drain() {
-    std::deque<EditorCommand> batch;
-    {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        batch.swap(m_pendingDeque);
-        m_pending = 0;
+    std::unique_lock<std::mutex> lock(m_mutex);
+    if (m_pendingDeque.empty()) {
+        // Idle frame: no batch to move. (A default-constructed libstdc++ deque allocates its map, so
+        // skipping it keeps an idle editor tick allocation-free.)
+        lock.unlock();
+        m_lastDrained.clear();
+        return;
     }
+    std::deque<EditorCommand> batch;
+    batch.swap(m_pendingDeque);
+    m_pending = 0;
+    lock.unlock();
 
     m_lastDrained.clear();
     m_lastDrained.reserve(batch.size());

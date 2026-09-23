@@ -618,7 +618,9 @@ void RuntimeViewportHook::mirrorEditorEntities_(EditorHost& host) {
         return;
     }
 
-    std::vector<ecs::EntityID> entityOrder;
+    // Reused scratch: idle editor ticks must not allocate (fuse_editor_b6_idle_frame_gates).
+    std::vector<ecs::EntityID>& entityOrder = m_entityOrderScratch;
+    entityOrder.clear();
     host.editorScene().registry().each_query<ecs::Transform>(
         [&](ecs::EntityID id, ecs::Transform& /*transform*/) { entityOrder.push_back(id); });
 
@@ -679,7 +681,9 @@ void RuntimeViewportHook::syncEcsToEmbedWorld3D_(EditorHost& host) {
         return;
     }
 
-    std::vector<ecs::EntityID> entityOrder;
+    // Reused scratch: idle editor ticks must not allocate (fuse_editor_b6_idle_frame_gates).
+    std::vector<ecs::EntityID>& entityOrder = m_entityOrderScratch;
+    entityOrder.clear();
     host.editorScene().registry().each_query<ecs::Transform>(
         [&](ecs::EntityID id, ecs::Transform& /*transform*/) { entityOrder.push_back(id); });
 

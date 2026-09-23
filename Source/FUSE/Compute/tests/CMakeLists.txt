@@ -5,3 +5,9 @@ add_test(NAME fuse_ray_march_stub COMMAND fuse_ray_march_stub)
 add_executable(fuse_screen_space_effects_stub test_screen_space_effects_stub.cpp)
 target_link_libraries(fuse_screen_space_effects_stub PRIVATE fuse_compute fuse_ssfx)
 add_test(NAME fuse_screen_space_effects_stub COMMAND fuse_screen_space_effects_stub)
+
+# Gate: "SDF normals are smooth at surface — no faceting visible at any zoom level" (CPU reference normal).
+add_executable(fuse_b2_sdf_normal_smoothness test_sdf_normal_smoothness_gates.cpp)
+target_link_libraries(fuse_b2_sdf_normal_smoothness PRIVATE fuse_compute)
+add_test(NAME fuse_b2_sdf_normal_smoothness COMMAND fuse_b2_sdf_normal_smoothness)
+set_tests_properties(fuse_b2_sdf_normal_smoothness PROPERTIES LABELS "gate")
