@@ -5305,14 +5305,14 @@ private:
 - [ ] Procedural material switch correctly replaces texture-based shading
 - [ ] Material changes persist after save/load cycle
 - [x] Add brush creates SDF sphere at correct world position — `fuse_editor_b6_panels_gates`
-- [ ] Subtract brush correctly removes volume — verified by ray marching through carved region
+- [x] Subtract brush correctly removes volume — verified by ray marching through carved region (`fuse_editor_b6_panels_gates`)
 - [ ] GRIA alpha blend produces smooth/hard transitions as expected
 - [x] X symmetry correctly mirrors stroke across X=0 plane — `fuse_editor_b6_panels_gates`
 - [x] Stroke spacing prevents redundant kernel dispatches at slow cursor speeds — `fuse_editor_b6_panels_gates`
 - [ ] GPU pass breakdown times match CUDA event measurements within 0.5ms
 - [x] Frame history scrolls correctly — no off-by-one in ring buffer — `fuse_editor_b6_panels_gates`
 - [x] Pause correctly freezes history display without stopping engine — `fuse_editor_b6_panels_gates`
-- [ ] Enter play: snapshot taken, physics initialised correctly — partial: snapshot proven in `fuse_editor_b6_play_mode_gates`, but Play steps a stand-in integrator, not `PhysicsManager`
+- [x] Enter play: snapshot taken, physics initialised correctly — `fuse_editor_b6_play_mode_gates` (Play drives `PhysicsManager`)
 - [x] Stop play: scene state restored exactly — entity positions, velocities reset — `fuse_editor_b6_play_mode_gates`
 - [x] Pause/resume: simulation correctly halts and continues without state corruption — `fuse_editor_b6_play_mode_gates`
 - [ ] Editor UI render time < 2ms per frame (Qt draw call submission)
@@ -6326,9 +6326,9 @@ private:
 - [x] emit_rate correctly emits expected particle count per second — tested over 5 seconds — `fuse_b7_vfx_gates`
 - [x] Particle lifetime correctly ages and kills particles — alive count converges to rate × lifetime — `fuse_b7_vfx_gates`
 - [ ] CUDA particle kernel achieves > 70% occupancy — verified with Nsight Compute
-- [ ] Shipping build compiles with zero warnings, zero debug code included — verified by binary inspection
-- [ ] Crash handler writes valid minidump on intentional null dereference — dmp opens in WinDbg
-- [ ] Leak detector correctly reports zero leaks after clean shutdown in debug build
+- [ ] Shipping build compiles with zero warnings, zero debug code included — verified by binary inspection — partial: fuse_core headers + macros strip-checked in `fuse_core_b7_shipping_strip`; full-engine shipping build manual
+- [ ] Crash handler writes valid minidump on intentional null dereference — dmp opens in WinDbg — partial: Linux signal report proven in `fuse_core_b7_platform_gates`; Windows SEH/minidump path uncompiled here, WinDbg check manual
+- [x] Leak detector correctly reports zero leaks after clean shutdown in debug build (`fuse_core_b7_platform_gates`)
 - [x] Mesh importer produces byte-identical output from same source on two machines — deterministic — `fuse_b7_cook_gates`
 - [x] Texture BC7 compression PSNR > 40dB vs original — verified with image comparison tool — `fuse_b7_cook_gates`
 - [ ] Engine boots, editor opens, scene loads, physics runs, audio plays in < 3 seconds on ThinkStation P920

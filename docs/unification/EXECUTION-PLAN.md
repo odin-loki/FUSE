@@ -151,11 +151,16 @@ was re-verified from a clean checkout. Every stream found real bugs in the scaff
 | B7.7/7.9 VFX, assets | `fuse_b7_vfx_gates`, `fuse_b7_cook_gates` | Collision never implemented, emission drift; BC7 encoder invalid, mesh cook wrote text, cook cache never persisted |
 | B2.11 / B3 follow-ups | see §3 rows 3.4/3.5/3.7 and §4 SVO row | Async uploads, device-sized bindless, composer 0 allocs; SVO bricks |
 
-**Open items from the streams:** Compute's SSAO/SSR stubs should route to `renderer/ssfx`; ECS needs
-`create_at` (undo of delete keeps the id) and an SDF CSG op (sculpt subtract/smooth brushes);
-editor Play should drive `PhysicsManager`; strict asset import is opt-in; ENet and Lua are read from
-`Engine/lib/bullet/examples/ThirdPartyLibs`; B7.8 platform hardening not yet audited;
-Phase7 test registry flags not flipped for newly proven rows.
+| B7.8 Platform | `fuse_core_b7_platform_gates`, `fuse_core_b7_shipping_strip` | Crash handler was a flag-only stub → POSIX signal reports (SEGV/ABRT/FPE/stack overflow, chaining); no leak detector existed → debug detector, 0 leaks over 150 init/shutdown cycles; shipping kept all log/profiler code → `FUSE_NO_LOGGING`/`FUSE_NO_PROFILER` |
+| B1 jobs | `fuse_core_b1_parallel_for_alloc_gates` | `parallel_for` allocated ~17 per call → 0 (flat, nested, in-job); median 4096/256 at 4 workers 54 µs → ~1–4 µs |
+| B4 follow-ups | `fuse_b4_joint_gates`, `fuse_b4_ccd_gates`, `fuse_b4_rotation_gates` | Joint anchors were ignored; pendulum periods within 0.04%; rotational CCD (spinning bar stopped at post); twisted 8/12-box stacks sleep; cloth 64×64 ~0.65 → ~0.4 ms |
+| Batch 3 | see commits | Compute SSAO/SSR/SSGI via shared `fuse_ssfx`; ECS `create_at` + SDF CSG; editor Play drives `PhysicsManager`; renderer TAA/DDGI integration with 0 sync-validation hazards |
+
+**Open items:** strict asset import is opt-in; ENet and Lua are read from
+`Engine/lib/bullet/examples/ThirdPartyLibs`; CUDA kernels are stubs; cross-queue-family upload path
+untested; physics-enabled worlds still allocate in the legacy `PhysicsPipeline` spatial hash;
+`logging.async_ring` is not lock-free; Windows crash minidump and DPI awareness untested (no Windows
+toolchain); no `PhysicsManager` joint API or angle-limited hinges yet.
 
 ## 5. Hardware / manual gates (not provable in CI)
 
