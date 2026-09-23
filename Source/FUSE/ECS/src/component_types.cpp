@@ -1,6 +1,7 @@
 #include <fuse/ecs/component_types.hpp>
 
 #include <fuse/ecs/components/camera.hpp>
+#include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
@@ -72,6 +73,8 @@ void register_builtin_components() {
     ComponentTypes::register_type<TagStatic>();
     ComponentTypes::register_type<TagPlayer>();
     ComponentTypes::register_type<TagDestroy>();
+    ComponentTypes::register_type<Collider>();
+    ComponentTypes::register_type<TagKinematic>();
 }
 
 } // namespace fuse::ecs

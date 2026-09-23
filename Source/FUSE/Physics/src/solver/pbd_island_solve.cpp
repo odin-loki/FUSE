@@ -375,7 +375,7 @@ void per_pair_delta_application(RigidBodySoA& bodies,
                                 contactCompliance,
                                 lambda,
                                 workBuffers.positionDeltas());
-    workBuffers.applyPositionDeltas(bodies);
+    workBuffers.applyPositionDeltasForBodies(bodies, bodyA, bodyB);
 }
 
 void per_pair_delta_application(RigidBodySoA& bodies,
@@ -395,7 +395,7 @@ void per_pair_delta_application(RigidBodySoA& bodies,
                                        dt,
                                        lambda,
                                        workBuffers.positionDeltas());
-    workBuffers.applyPositionDeltas(bodies);
+    workBuffers.applyPositionDeltasForBodies(bodies, bodyA, bodyB);
 }
 
 bool solve_island_job(RigidBodySoA& bodies,

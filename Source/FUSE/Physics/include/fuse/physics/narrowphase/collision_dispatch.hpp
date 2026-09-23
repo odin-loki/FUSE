@@ -342,6 +342,14 @@ void runNarrowphaseIntoBuffer(
     ContactBufferSoA& buffer);
 
 /// CPU stub of the CUDA narrow-phase dispatch (B4.3).
+/// Narrowphase into a caller-owned vector (cleared first; capacity reused across frames). Unlike
+/// `runNarrowphase` it keeps trigger and sleeping pairs: callers decide what to resolve.
+void collidePairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    std::vector<ContactManifold>& out);
+
 std::vector<ContactManifold> runNarrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,

@@ -10,6 +10,7 @@ set(FUSE_ECS_PUBLIC_HEADERS
     include/fuse/ecs/components/mesh.hpp
     include/fuse/ecs/components/sdf_object.hpp
     include/fuse/ecs/components/rigidbody.hpp
+    include/fuse/ecs/components/collider.hpp
     include/fuse/ecs/components/camera.hpp
     include/fuse/ecs/components/light.hpp
     include/fuse/ecs/components/tags.hpp

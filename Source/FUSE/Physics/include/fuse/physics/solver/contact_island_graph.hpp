@@ -110,6 +110,7 @@ private:
 
     std::vector<u32> parent_;
     std::vector<Island> islands_;
+    std::vector<u32> rootToIsland_;
 };
 
 } // namespace fuse::physics

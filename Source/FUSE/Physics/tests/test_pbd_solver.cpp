@@ -147,8 +147,10 @@ void testCompliantSpringStretchesUnderLoad() {
     params.gravity = {};
     params.broadphase.cellSize = 4.f;
 
+    // Forces act over the whole step (all substeps); 50 N is the load this test was calibrated
+    // with when a force only reached the first of the four substeps.
     for (int i = 0; i < 60; ++i) {
-        bodies.forces[bodyB] = {200.f, 0.f, 0.f};
+        bodies.forces[bodyB] = {50.f, 0.f, 0.f};
         solver.step(bodies, shapes, params, 1.f / 60.f);
     }
 

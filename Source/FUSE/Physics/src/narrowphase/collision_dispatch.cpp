@@ -28,6 +28,22 @@ void runNarrowphaseIntoBuffer(
     buffer.compactAndClamp();
 }
 
+void collidePairs(
+    const std::vector<broadphase::CandidatePair>& pairs,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    std::vector<ContactManifold>& out) {
+    out.clear();
+    // Only validity checks here: trigger and sleeping pairs are still reported (the solver skips
+    // resolving them) so overlap events and resting contacts stay continuous.
+    for (const broadphase::CandidatePair& pair : pairs) {
+        ContactManifold manifold = detect_contacts_pair(pair, bodies, shapes);
+        if (finalize_contact_manifold_with_preflight(manifold)) {
+            out.push_back(manifold);
+        }
+    }
+}
+
 std::vector<ContactManifold> runNarrowphase(
     const std::vector<broadphase::CandidatePair>& pairs,
     const RigidBodySoA& bodies,

@@ -836,6 +836,29 @@ FUSE_PHYSICS_INLINE bool sphereAabbOverlap(vec3 centerA, f32 radiusA, vec3 cente
     return aabbOverlap(aabbFromSphere(centerA, radiusA), aabbFromSphere(centerB, radiusB));
 }
 
+/// Sort-based uniform grid for the CPU solver path. Shapes are binned into every cell their
+/// AABB covers; (cell, body) entries are sorted so bodies sharing a cell are adjacent; each
+/// candidate gets an exact AABB test and is emitted only from the cell holding the minimum
+/// corner of the two boxes' intersection, so no pair is reported twice and none is lost.
+/// Planes pair with every non-static body whose bounds reach them. Static-static pairs and
+/// layer-filtered pairs are skipped. Scratch buffers are reused across calls.
+class GridBroadphase {
+public:
+    void findPairs(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes, f32 cellSize,
+                   std::vector<CandidatePair>& out);
+
+private:
+    struct Entry {
+        u64 cell = 0;
+        u32 body = 0;
+    };
+    std::vector<aabb> m_bounds;
+    std::vector<u8> m_hasBounds;
+    std::vector<Entry> m_entries;
+    std::vector<u32> m_planeShapes;
+    std::vector<u32> m_large;
+};
+
 struct PairBufferSoA;
 
 /// Job-safe broadphase: parallel shape→cell + per-cell pair generation into reusable SoA slots.

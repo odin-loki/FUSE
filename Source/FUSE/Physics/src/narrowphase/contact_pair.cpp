@@ -52,7 +52,7 @@ bool hasShapeForBody(const CollisionShapeSoA& shapes, u32 bodyIndex) {
     return false;
 }
 
-ContactManifold dispatchShapePair(
+ContactManifold dispatchShapePairRaw(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
@@ -181,6 +181,21 @@ ContactManifold dispatchShapePair(
     }
 
     return invalidContactManifold();
+}
+
+/// The PBD contact constraint is written on body centres, (pA - pB) . n >= minSeparation, so
+/// every manifold states minSeparation against the centres: then the constraint's violation is
+/// exactly the narrowphase penetration whatever the shapes (boxes, capsules, offset planes).
+ContactManifold dispatchShapePair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes) {
+    ContactManifold manifold = dispatchShapePairRaw(pair, bodies, shapes);
+    if (manifold.valid) {
+        const vec3 centres = bodies.positions[manifold.bodyA] - bodies.positions[manifold.bodyB];
+        manifold.minSeparation = centres.dot(manifold.contactNormal) + manifold.maxPenetration();
+    }
+    return manifold;
 }
 
 bool isShapeDegenerate(CollisionShapeType type, const vec3& params) {

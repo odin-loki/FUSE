@@ -61,6 +61,8 @@ struct RigidBodySoA {
     void clear();
     u32 addBody(vec3 position, f32 invMass, u32 bodyFlags = 0, u32 collisionLayer = 1u,
                 u32 collisionMask = 0xFFFFFFFFu);
+    /// Moves the last body into `index` and shrinks by one (O(1); the last body's index changes).
+    void removeBodySwap(u32 index);
 };
 
 /// Collision shape descriptors stored in SoA layout (B4.1).
@@ -74,6 +76,8 @@ struct CollisionShapeSoA {
 
     void clear();
     u32 addShape(CollisionShapeType type, u32 bodyIndex, vec3 shapeParams, f32 scalarParam = 0.f);
+    /// Moves the last shape into `index` and shrinks by one.
+    void removeShapeSwap(u32 index);
 };
 
 } // namespace fuse::physics

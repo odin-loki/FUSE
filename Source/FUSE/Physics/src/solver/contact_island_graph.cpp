@@ -171,7 +171,7 @@ void ContactIslandGraph::unionBodies(u32 a, u32 b) {
 void ContactIslandGraph::build(u32 bodyCount,
                                const std::vector<narrowphase::ContactManifold>& contacts,
                                const std::vector<DistanceConstraint>& distanceConstraints) {
-    clear();
+    // Island storage is reused across builds (inner vectors keep their capacity).
     parent_.resize(bodyCount);
     for (u32 i = 0; i < bodyCount; ++i) {
         parent_[i] = i;
@@ -198,16 +198,23 @@ void ContactIslandGraph::build(u32 bodyCount,
         compressPath(i);
     }
 
-    std::vector<u32> rootToIsland(bodyCount, invalidIsland);
-    islands_.clear();
-
+    std::vector<u32>& rootToIsland = rootToIsland_;
+    rootToIsland.assign(bodyCount, invalidIsland);
+    u32 islandCount = 0;
     for (u32 bodyIndex = 0; bodyIndex < bodyCount; ++bodyIndex) {
         const u32 root = findRoot(bodyIndex);
         if (rootToIsland[root] == invalidIsland) {
-            rootToIsland[root] = static_cast<u32>(islands_.size());
-            islands_.push_back({});
+            rootToIsland[root] = islandCount++;
         }
-        islands_[rootToIsland[root]].bodyIndices.push_back(bodyIndex);
+    }
+    islands_.resize(islandCount);
+    for (Island& island : islands_) {
+        island.bodyIndices.clear();
+        island.contactIndices.clear();
+        island.distanceIndices.clear();
+    }
+    for (u32 bodyIndex = 0; bodyIndex < bodyCount; ++bodyIndex) {
+        islands_[rootToIsland[findRoot(bodyIndex)]].bodyIndices.push_back(bodyIndex);
     }
 
     for (u32 contactIndex = 0; contactIndex < contacts.size(); ++contactIndex) {
@@ -235,12 +242,8 @@ void ContactIslandGraph::build(u32 bodyCount,
         }
     }
 
-    std::sort(islands_.begin(), islands_.end(), [](const Island& left, const Island& right) {
-        if (left.bodyIndices.empty() || right.bodyIndices.empty()) {
-            return left.bodyIndices.size() < right.bodyIndices.size();
-        }
-        return left.bodyIndices.front() < right.bodyIndices.front();
-    });
+    // Islands are numbered in order of their lowest body index already (bodies are visited in
+    // ascending order), which is the ordering callers rely on.
 }
 
 bool ContactIslandGraph::buildGuarded(u32 bodyCount,

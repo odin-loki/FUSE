@@ -105,4 +105,19 @@ void SolverWorkBuffers::applyPositionDeltas(RigidBodySoA& bodies) {
     }
 }
 
+void SolverWorkBuffers::applyPositionDeltasForBodies(RigidBodySoA& bodies, u32 bodyA, u32 bodyB) {
+    const auto apply = [&](u32 i) {
+        if (i >= bodies.count() || i >= positionDeltas_.size() || positionDeltas_[i].writeCount == 0) {
+            return;
+        }
+        bodies.predictedPositions[i] += positionDeltas_[i].delta;
+        positionDeltas_[i].delta = {};
+        positionDeltas_[i].writeCount = 0;
+    };
+    apply(bodyA);
+    if (bodyB != bodyA) {
+        apply(bodyB);
+    }
+}
+
 } // namespace fuse::physics

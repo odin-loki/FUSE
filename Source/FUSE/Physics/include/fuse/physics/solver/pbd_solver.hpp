@@ -11,6 +11,7 @@
 
 #include <fuse/types.hpp>
 
+#include <unordered_map>
 #include <vector>
 
 namespace fuse::physics {
@@ -33,6 +34,16 @@ struct SolverParams {
 };
 
 /// B4.4 — CPU PBD/XPBD constraint solver wired to B4.2 broadphase + B4.3 narrowphase.
+/// A body pair that touched during the last step (any substep), for collision events.
+struct FrameContact {
+    u32 bodyA = 0;
+    u32 bodyB = 0;
+    vec3 normal{};   // B -> A
+    vec3 point{};
+    f32 impulse = 0.f; // summed normal impulse over the step
+    bool trigger = false;
+};
+
 class PBDSolver {
 public:
     void init(u32 maxBodies, u32 maxContacts, u32 maxConstraints);
@@ -49,6 +60,8 @@ public:
     /// reach, advances it to the earliest time of impact and reflects its approach velocity
     /// (restitution applied) so the discrete substeps cannot tunnel. Returns bodies clamped.
     u32 applyContinuousCollision(RigidBodySoA& bodies, const CollisionShapeSoA& shapes, f32 dt);
+    /// Pairs that touched (or overlapped, for triggers) during the last step.
+    const std::vector<FrameContact>& frameContacts() const { return frameContacts_; }
     u32 lastCcdHitCount() const { return lastCcdHitCount_; }
     const ToiBufferSoA& ccdBuffer() const { return ccdBuffer_; }
 
@@ -78,7 +91,16 @@ private:
     void detectSleep(RigidBodySoA& bodies, const SolverParams& params, f32 dt);
 
     std::vector<DistanceConstraint> distanceConstraints_;
+    void recordFrameContacts_(RigidBodySoA& bodies, const SolverParams& params);
+
     std::vector<vec3> preSolveVelocities_;
+    std::vector<narrowphase::ContactManifold> triggerManifolds_;
+    broadphase::GridBroadphase grid_;
+    std::vector<broadphase::CandidatePair> candidatePairs_;
+    std::vector<narrowphase::ContactManifold> narrowManifolds_;
+    std::vector<FrameContact> frameContacts_;
+    std::unordered_map<u64, u32> frameContactSlot_;
+    std::vector<u32> substepContactSlot_;
     std::vector<u32> bodyShape_;
     std::vector<aabb> sweptBounds_;
     std::vector<broadphase::CandidatePair> ccdPairs_;

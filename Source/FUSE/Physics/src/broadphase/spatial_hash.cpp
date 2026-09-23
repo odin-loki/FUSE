@@ -988,4 +988,143 @@ std::vector<CandidatePair> runBroadphase2D(
     return buffer.toVector();
 }
 
+namespace {
+
+constexpr u32 kGridMaxCellsPerShape = 64u; // larger shapes are tested against everything
+constexpr s64 kGridCellBias = 1 << 20;
+
+s64 gridCoord(f32 value, f32 invCell) {
+    return static_cast<s64>(std::floor(value * invCell));
+}
+
+u64 gridKey(s64 x, s64 y, s64 z) {
+    const u64 mask = (1ull << 21u) - 1ull;
+    return ((static_cast<u64>(x + kGridCellBias) & mask) << 42u) |
+           ((static_cast<u64>(y + kGridCellBias) & mask) << 21u) | (static_cast<u64>(z + kGridCellBias) & mask);
+}
+
+bool gridPairWanted(const RigidBodySoA& bodies, u32 a, u32 b) {
+    const bool staticA = (bodies.flags[a] & RB_STATIC) != 0u;
+    const bool staticB = (bodies.flags[b] & RB_STATIC) != 0u;
+    return !(staticA && staticB) && collisionLayersCollide(bodies.collisionLayers[a], bodies.collisionMasks[a],
+                                                            bodies.collisionLayers[b], bodies.collisionMasks[b]);
+}
+
+} // namespace
+
+void GridBroadphase::findPairs(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes, f32 cellSize,
+                               std::vector<CandidatePair>& out) {
+    out.clear();
+    const u32 bodyCount = bodies.count();
+    const f32 invCell = 1.f / clampCellSize(cellSize);
+    m_bounds.resize(bodyCount);
+    m_hasBounds.assign(bodyCount, 0u);
+    m_entries.clear();
+    m_planeShapes.clear();
+    m_large.clear();
+
+    for (u32 shape = 0; shape < shapes.count(); ++shape) {
+        const u32 body = shapes.bodyIndices[shape];
+        if (body >= bodyCount || m_hasBounds[body] != 0u) {
+            continue; // one shape per body on this path
+        }
+        const vec3 p = bodies.positions[body];
+        const vec3 params = shapes.params[shape];
+        switch (static_cast<CollisionShapeType>(shapes.types[shape])) {
+        case CollisionShapeType::Plane:
+            m_planeShapes.push_back(shape);
+            continue;
+        case CollisionShapeType::Box:
+            m_bounds[body] = aabbFromBox(p, params);
+            break;
+        case CollisionShapeType::Capsule:
+            m_bounds[body] = aabbFromBox(p, {params.x, params.y + params.x, params.x});
+            break;
+        default:
+            m_bounds[body] = aabbFromSphere(p, params.x);
+            break;
+        }
+        m_hasBounds[body] = 1u;
+        const aabb& box = m_bounds[body];
+        const s64 x0 = gridCoord(box.min.x, invCell), x1 = gridCoord(box.max.x, invCell);
+        const s64 y0 = gridCoord(box.min.y, invCell), y1 = gridCoord(box.max.y, invCell);
+        const s64 z0 = gridCoord(box.min.z, invCell), z1 = gridCoord(box.max.z, invCell);
+        const u64 cells = static_cast<u64>(x1 - x0 + 1) * static_cast<u64>(y1 - y0 + 1) * static_cast<u64>(z1 - z0 + 1);
+        if (cells > kGridMaxCellsPerShape) {
+            m_large.push_back(body);
+            continue;
+        }
+        for (s64 x = x0; x <= x1; ++x) {
+            for (s64 y = y0; y <= y1; ++y) {
+                for (s64 z = z0; z <= z1; ++z) {
+                    m_entries.push_back({gridKey(x, y, z), body});
+                }
+            }
+        }
+    }
+
+    std::sort(m_entries.begin(), m_entries.end(),
+              [](const Entry& a, const Entry& b) { return a.cell < b.cell || (a.cell == b.cell && a.body < b.body); });
+    for (usize begin = 0; begin < m_entries.size();) {
+        usize end = begin + 1;
+        while (end < m_entries.size() && m_entries[end].cell == m_entries[begin].cell) {
+            ++end;
+        }
+        const u64 cell = m_entries[begin].cell;
+        for (usize i = begin; i < end; ++i) {
+            const u32 a = m_entries[i].body;
+            const aabb& boxA = m_bounds[a];
+            for (usize j = i + 1; j < end; ++j) {
+                const u32 b = m_entries[j].body;
+                const aabb& boxB = m_bounds[b];
+                if (!aabbOverlap(boxA, boxB) || !gridPairWanted(bodies, a, b)) {
+                    continue;
+                }
+                // Report from the cell holding the intersection's minimum corner only.
+                const u64 owner = gridKey(gridCoord(std::max(boxA.min.x, boxB.min.x), invCell),
+                                          gridCoord(std::max(boxA.min.y, boxB.min.y), invCell),
+                                          gridCoord(std::max(boxA.min.z, boxB.min.z), invCell));
+                if (owner == cell) {
+                    out.push_back(canonicalPair(a, b));
+                }
+            }
+        }
+        begin = end;
+    }
+
+    // Oversized shapes: exact tests against every bounded body (and each other once).
+    for (usize i = 0; i < m_large.size(); ++i) {
+        const u32 a = m_large[i];
+        for (u32 b = 0; b < bodyCount; ++b) {
+            if (b == a || m_hasBounds[b] == 0u) {
+                continue;
+            }
+            const bool otherLarge = std::find(m_large.begin(), m_large.end(), b) != m_large.end();
+            if ((otherLarge && b < a) || !aabbOverlap(m_bounds[a], m_bounds[b]) || !gridPairWanted(bodies, a, b)) {
+                continue;
+            }
+            out.push_back(canonicalPair(a, b));
+        }
+    }
+
+    // Planes: every non-static body whose bounds reach the plane.
+    for (const u32 planeShape : m_planeShapes) {
+        const u32 plane = shapes.bodyIndices[planeShape];
+        const vec3 n = shapes.params[planeShape];
+        const f32 d = shapes.scalars[planeShape];
+        for (u32 b = 0; b < bodyCount; ++b) {
+            if (m_hasBounds[b] == 0u || (bodies.flags[b] & RB_STATIC) != 0u || !gridPairWanted(bodies, plane, b)) {
+                continue;
+            }
+            const aabb& box = m_bounds[b];
+            const vec3 center = (box.min + box.max) * 0.5f;
+            const vec3 half = (box.max - box.min) * 0.5f;
+            const f32 extent = std::fabs(n.x) * half.x + std::fabs(n.y) * half.y + std::fabs(n.z) * half.z;
+            if (center.dot(n) - d <= extent) {
+                out.push_back(canonicalPair(plane, b));
+            }
+        }
+    }
+}
+
 } // namespace fuse::physics::broadphase

@@ -30,6 +30,9 @@ struct SolverWorkBuffers {
     void clearPositionDeltasForIslandBodies(const std::vector<u32>& bodyIndices);
     /// Apply accumulated deltas to predicted positions and reset touched slots.
     void applyPositionDeltas(RigidBodySoA& bodies);
+    /// Applies and clears only these two bodies' deltas (island jobs must not touch bodies
+    /// owned by other islands running concurrently).
+    void applyPositionDeltasForBodies(RigidBodySoA& bodies, u32 bodyA, u32 bodyB);
 
     void ensureLambdaCapacity(u32 contactCount, u32 distanceCount);
     void clearLambdas();

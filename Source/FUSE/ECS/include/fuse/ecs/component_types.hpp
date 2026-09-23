@@ -32,7 +32,7 @@ public:
     [[nodiscard]] static const ComponentTypeInfo* find(std::type_index type);
 };
 
-/// Registers Transform, Mesh, RigidBody, SDFObject, Camera, lights, SpawnMarker and tags.
+/// Registers Transform, Mesh, RigidBody, Collider, SDFObject, Camera, lights, SpawnMarker and tags.
 void register_builtin_components();
 
 } // namespace fuse::ecs

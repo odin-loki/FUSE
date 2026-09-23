@@ -3,6 +3,9 @@
 #include <fuse/physics/ccd/ccd.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/physics_data.hpp>
+#include <fuse/ecs/components/collider.hpp>
+#include <fuse/ecs/components/rigidbody.hpp>
+#include <fuse/ecs/components/transform.hpp>
 #include <fuse/physics/physics_manager.hpp>
 #include <fuse/physics/solver/pbd_solver.hpp>
 
@@ -138,8 +141,23 @@ void testPhysicsManagerEndToEndIntegration() {
     desc.solver.broadphase.tableSize = 1024;
     manager.init(desc);
 
-    PhysicsRegistry registry{};
-    registry.entityCount = 2;
+    fuse::ecs::Registry registry;
+    registry.init(16);
+    const fuse::ecs::EntityID ground = registry.create();
+    registry.add(ground, fuse::ecs::Transform{});
+    fuse::ecs::RigidBody groundBody{};
+    groundBody.is_static = true;
+    registry.add(ground, groundBody);
+    fuse::ecs::Collider plane{};
+    plane.shape = fuse::ecs::Collider::Plane;
+    plane.params = {0.f, 1.f, 0.f, 0.f};
+    registry.add(ground, plane);
+    const fuse::ecs::EntityID ball = registry.create();
+    fuse::ecs::Transform ballTransform{};
+    ballTransform.position = {0.f, 2.f, 0.f, 1.f};
+    registry.add(ball, ballTransform);
+    registry.add(ball, fuse::ecs::RigidBody{});
+    registry.add(ball, fuse::ecs::Collider{});
     PhysicsStreamManager streams{};
 
     const f32 dt = 1.f / 120.f;
@@ -150,7 +168,8 @@ void testPhysicsManagerEndToEndIntegration() {
     expectTrue(manager.bodies().count() == 2u, "manager syncs ground + dynamic sphere");
     expectTrue(manager.shapes().count() == 2u, "manager provisions collision shapes for synced bodies");
     expectTrue(manager.stepCount() == 300u, "manager completes integrated simulation steps");
-    expectNear(manager.bodies().positions[1].y, 0.5f, 0.25f, "manager sphere settles via PBD pipeline");
+    expectNear(registry.get<fuse::ecs::Transform>(ball)->position.y, 0.5f, 0.25f,
+               "manager sphere settles via PBD pipeline (written back to its Transform)");
     expectTrue(manager.desc().enableCcd, "manager integrates CCD sweep when enabled");
 
     manager.destroy();
