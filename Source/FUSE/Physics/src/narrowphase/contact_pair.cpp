@@ -165,6 +165,11 @@ ContactManifold dispatchShapePair(
         return manifold;
     }
 
+    if (typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Capsule) {
+        return collideCapsuleCapsule(posA, shapes.params[shapeA], posB, shapes.params[shapeB], pair.bodyA,
+                                     pair.bodyB);
+    }
+
     if (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Box) {
         return collideBoxBox(
             posA,

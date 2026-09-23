@@ -201,6 +201,128 @@ FUSE_PHYSICS_INLINE ContactManifold collideCapsuleSphere(
     return manifold;
 }
 
+/// Closest points between segments p1-q1 and p2-q2 (Ericson, RTCD 5.1.9); handles parallel
+/// and zero-length segments. Returns the squared distance.
+FUSE_PHYSICS_INLINE f32 closestPointsSegmentSegment(vec3 p1, vec3 q1, vec3 p2, vec3 q2, vec3& c1, vec3& c2) {
+    constexpr f32 kEps = 1e-12f;
+    const vec3 d1 = q1 - p1;
+    const vec3 d2 = q2 - p2;
+    const vec3 r = p1 - p2;
+    const f32 a = d1.dot(d1);
+    const f32 e = d2.dot(d2);
+    const f32 f = d2.dot(r);
+    f32 s = 0.f;
+    f32 t = 0.f;
+    if (a <= kEps && e <= kEps) {
+        c1 = p1;
+        c2 = p2;
+        return (c1 - c2).dot(c1 - c2);
+    }
+    if (a <= kEps) {
+        t = std::clamp(f / e, 0.f, 1.f);
+    } else {
+        const f32 c = d1.dot(r);
+        if (e <= kEps) {
+            s = std::clamp(-c / a, 0.f, 1.f);
+        } else {
+            const f32 b = d1.dot(d2);
+            const f32 denom = a * e - b * b; // 0 when parallel: pick s = 0, fixed up below
+            s = denom > kEps * a * e ? std::clamp((b * f - c * e) / denom, 0.f, 1.f) : 0.f;
+            t = (b * s + f) / e;
+            if (t < 0.f) {
+                t = 0.f;
+                s = std::clamp(-c / a, 0.f, 1.f);
+            } else if (t > 1.f) {
+                t = 1.f;
+                s = std::clamp((b - c) / a, 0.f, 1.f);
+            }
+        }
+    }
+    c1 = p1 + d1 * s;
+    c2 = p2 + d2 * t;
+    return (c1 - c2).dot(c1 - c2);
+}
+
+/// Capsules given by segment endpoints and radii. The normal points from B towards A;
+/// `minSeparation` is expressed against the body centres so centre-based solvers see the
+/// true surface separation.
+FUSE_PHYSICS_INLINE ContactManifold collideCapsuleSegments(
+    vec3 a0, vec3 a1, f32 radiusA, vec3 centerA,
+    vec3 b0, vec3 b1, f32 radiusB, vec3 centerB,
+    u32 idxA, u32 idxB) {
+    vec3 ca{};
+    vec3 cb{};
+    const f32 distSq = closestPointsSegmentSegment(a0, a1, b0, b1, ca, cb);
+    const f32 sumRadius = radiusA + radiusB;
+    if (distSq > sumRadius * sumRadius) {
+        return invalidContactManifold();
+    }
+    const f32 dist = std::sqrt(distSq);
+    vec3 normal{};
+    if (dist > 1e-6f) {
+        normal = (ca - cb) * (1.f / dist);
+    } else {
+        // Axes intersect: push apart perpendicular to both axes (or to the one that exists).
+        const vec3 dA = a1 - a0;
+        const vec3 dB = b1 - b0;
+        vec3 perp = dA.cross(dB);
+        if (perp.dot(perp) < 1e-12f) {
+            const vec3 axis = dA.dot(dA) > 1e-12f ? dA : dB;
+            perp = axis.cross(std::fabs(axis.x) < 0.9f * axis.length() ? vec3{1.f, 0.f, 0.f} : vec3{0.f, 1.f, 0.f});
+        }
+        normal = perp.dot(perp) > 1e-12f ? perp.normalized() : vec3{0.f, 1.f, 0.f};
+    }
+    const f32 penetration = sumRadius - dist;
+
+    ContactManifold manifold{};
+    manifold.contactNormal = normal;
+    manifold.minSeparation = (centerA - centerB).dot(normal) + penetration;
+    manifold.bodyA = idxA;
+    manifold.bodyB = idxB;
+    manifold.valid = true;
+    manifold.addPoint(cb + normal * radiusB, penetration);
+    return manifold;
+}
+
+/// Y-axis capsules (`params.x` = radius, `params.y` = half height).
+FUSE_PHYSICS_INLINE ContactManifold collideCapsuleCapsule(
+    vec3 posA, vec3 paramsA, vec3 posB, vec3 paramsB, u32 idxA, u32 idxB) {
+    const vec3 upA{0.f, paramsA.y, 0.f};
+    const vec3 upB{0.f, paramsB.y, 0.f};
+    return collideCapsuleSegments(posA - upA, posA + upA, paramsA.x, posA, posB - upB, posB + upB, paramsB.x, posB,
+                                  idxA, idxB);
+}
+
+/// Sphere vs signed distance field. `sdf(vec3) -> f32` is negative inside. The contact normal is
+/// the normalised central-difference gradient (points out of the field, towards the sphere), so
+/// it varies smoothly wherever the field is smooth.
+template <typename Sdf>
+ContactManifold collideSphereSdf(vec3 spherePos, f32 sphereRadius, const Sdf& sdf, u32 idxSphere, u32 idxField,
+                                 f32 gradientStep = 1e-3f) {
+    const f32 distance = sdf(spherePos);
+    if (distance > sphereRadius) {
+        return invalidContactManifold();
+    }
+    const f32 h = gradientStep;
+    const vec3 gradient{
+        sdf(spherePos + vec3{h, 0.f, 0.f}) - sdf(spherePos - vec3{h, 0.f, 0.f}),
+        sdf(spherePos + vec3{0.f, h, 0.f}) - sdf(spherePos - vec3{0.f, h, 0.f}),
+        sdf(spherePos + vec3{0.f, 0.f, h}) - sdf(spherePos - vec3{0.f, 0.f, h}),
+    };
+    if (gradient.dot(gradient) < 1e-20f) {
+        return invalidContactManifold();
+    }
+    const vec3 normal = gradient.normalized();
+    ContactManifold manifold{};
+    manifold.contactNormal = normal;
+    manifold.minSeparation = sphereRadius;
+    manifold.bodyA = idxSphere;
+    manifold.bodyB = idxField;
+    manifold.valid = true;
+    manifold.addPoint(spherePos - normal * distance, sphereRadius - distance);
+    return manifold;
+}
+
 /// Axis-aligned box vs box (stub ignores orientation; emits up to four face contact points).
 ContactManifold collideBoxBox(
     vec3 posA,
