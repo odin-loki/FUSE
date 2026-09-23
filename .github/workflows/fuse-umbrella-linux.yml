@@ -107,31 +107,40 @@ jobs:
             -R 'fuse_core_jobs|fuse_core_jobs_single_thread|fuse_core_worker_count|fuse_core_fiber'
 
   fuse-smoke-asan:
-    name: fuse_runtime_smoke (ASan)
+    # Master plan: "ASan/UBSan clean on subsystem smoke" + "All unit tests pass
+    # under ASan+UBSan". FUSE_SANITIZE instruments every Source/FUSE + Tools/FUSE
+    # target (cmake/FuseSanitizers.cmake); UBSan is non-recoverable so any
+    # finding fails its test. Third-party-only suppressions: cmake/sanitizers/.
+    name: FUSE ASan+UBSan (all unit tests + smoke)
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build cmake g++-13
+          sudo apt-get install -y ninja-build cmake g++-13 libvulkan-dev mesa-vulkan-drivers vulkan-tools glslang-tools spirv-tools
 
-      - name: Configure smoke with ASan
+      - name: Configure (fuse-asan preset, FUSE_SANITIZE=address,undefined)
         run: |
-          cmake -B build-asan -G Ninja \
+          cmake --preset fuse-asan \
             -DCMAKE_CXX_COMPILER=g++-13 \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DFUSE_UMBRELLA=ON \
-            -DFUSE_BUILD_CORE=ON \
-            -DFUSE_BUILD_CORE_TESTS=OFF \
             -DFUSE_BUILD_LEGACY=ON \
-            -DFUSE_BUILD_SMOKE=ON \
-            -DFUSE_SMOKE_ENABLE_ASAN=ON \
-            -DFUSE_BUILD_T3D=OFF \
-            -DFUSE_BUILD_T2D=OFF
+            -DFUSE_BUILD_SMOKE=ON
 
-      - name: Build and run smoke
-        run: |
-          cmake --build build-asan --target fuse_runtime_smoke
-          ./build-asan/Source/FUSE/Apps/RuntimeSmoke/fuse_runtime_smoke
+      - name: Build
+        run: cmake --build build/fuse-asan
+
+      - name: Run CTest under ASan+UBSan
+        env:
+          # Lavapipe for the Vulkan tests (headless runner).
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
+        run: ctest --test-dir build/fuse-asan --output-on-failure -j2 --timeout 1200
+
+      - name: Run fuse_runtime_smoke under ASan+UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/asan.supp
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/cmake/sanitizers/lsan.supp
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/ubsan.supp
+        run: ./build/fuse-asan/Source/FUSE/Apps/RuntimeSmoke/fuse_runtime_smoke

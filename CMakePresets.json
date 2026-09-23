@@ -58,12 +58,11 @@
     },
     {
       "name": "fuse-asan",
-      "displayName": "FUSE ASan Debug (GNU/Clang; skipped if libasan missing)",
+      "displayName": "FUSE ASan+UBSan Debug (all FUSE targets + tests; GNU/Clang; skipped if runtime missing)",
       "inherits": "fuse-debug",
       "binaryDir": "${sourceDir}/build/fuse-asan",
       "cacheVariables": {
-        "FUSE_CORE_ENABLE_ASAN": "ON",
-        "FUSE_SMOKE_ENABLE_ASAN": "ON"
+        "FUSE_SANITIZE": "address,undefined"
       }
     },
     {

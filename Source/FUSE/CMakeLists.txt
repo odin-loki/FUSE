@@ -141,10 +141,12 @@ if(FUSE_VULKAN_BACKEND AND FUSE_BUILD_CORE_TESTS AND TARGET fuse_rhi)
     COMMAND "${CMAKE_COMMAND}"
             -DFUSE_GATE_BUILD_DIR=${CMAKE_BINARY_DIR}
             -DFUSE_GATE_SELF=fuse_vulkan_validation_gate
+            "-DFUSE_GATE_SANITIZE=${FUSE_SANITIZE}"
             -P "${CMAKE_CURRENT_LIST_DIR}/../../cmake/FuseVulkanValidationGate.cmake")
   set_tests_properties(fuse_vulkan_validation_gate PROPERTIES
     RUN_SERIAL TRUE
     SKIP_RETURN_CODE 77
+    SKIP_REGULAR_EXPRESSION "FUSE_GATE_SKIP: "
     TIMEOUT 1200
     LABELS "vulkan;gate")
 endif()

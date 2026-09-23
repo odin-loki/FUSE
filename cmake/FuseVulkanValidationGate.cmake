@@ -4,8 +4,28 @@
 # Invoked as a test:  cmake -DFUSE_GATE_BUILD_DIR=<dir> -DFUSE_GATE_SELF=<name> -P <this file>
 # Exit code 77 (SKIP_RETURN_CODE) when the validation layer manifest is not installed.
 
+# Skip: exit 77 (SKIP_RETURN_CODE) where cmake_language(EXIT) exists (CMake >= 3.29);
+# older CMake ends the script with 0 after the "FUSE_GATE_SKIP:" line (unique token so
+# nested test output containing "SKIP:" never masks a failure), which the test's
+# SKIP_REGULAR_EXPRESSION turns into a skip.
+macro(_fuse_gate_skip _why)
+  message("FUSE_GATE_SKIP: ${_why}")
+  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.29)
+    cmake_language(EXIT 77)
+  endif()
+  return()
+endmacro()
+
 if(NOT FUSE_GATE_BUILD_DIR OR NOT FUSE_GATE_SELF)
   message(FATAL_ERROR "FUSE_GATE_BUILD_DIR and FUSE_GATE_SELF are required")
+endif()
+
+# Sanitizer builds (fuse-asan, FUSE_SANITIZE=...): the outer ctest run already executes
+# every test under ASan/UBSan; this gate would re-run the whole instrumented suite a second
+# time (~10x slower Lavapipe + validation layer). Zero-validation-errors is proven by the
+# non-sanitized fuse-debug / CI job instead.
+if(FUSE_GATE_SANITIZE)
+  _fuse_gate_skip("sanitizer build (FUSE_SANITIZE=${FUSE_GATE_SANITIZE}) — validation-layer whole-suite rerun runs in the non-sanitized configuration")
 endif()
 
 set(_manifest_dirs
@@ -23,8 +43,7 @@ foreach(_dir IN LISTS _manifest_dirs)
   endif()
 endforeach()
 if(NOT _layer_found)
-  message("SKIP: VK_LAYER_KHRONOS_validation not installed")
-  cmake_language(EXIT 77)
+  _fuse_gate_skip("VK_LAYER_KHRONOS_validation not installed")
 endif()
 
 set(ENV{VK_INSTANCE_LAYERS} "VK_LAYER_KHRONOS_validation")

@@ -37,7 +37,8 @@ git submodule update --init --recursive
 | `FUSE_BUILD_T3D` | ON | Optional legacy 3D application target |
 | `FUSE_BUILD_T2D` | ON | Optional legacy 2D application target |
 | `FUSE_JOBS_SINGLE_THREAD` | OFF | Inline jobs on the caller thread |
-| `FUSE_SMOKE_ENABLE_ASAN` | OFF | AddressSanitizer on smoke |
+| `FUSE_SANITIZE` | "" | `address,undefined`: ASan+UBSan on every FUSE target and test (`fuse-asan` preset) |
+| `FUSE_SMOKE_ENABLE_ASAN` | OFF | AddressSanitizer on smoke (legacy; superseded by `FUSE_SANITIZE`) |
 | `FUSE_CORE_ENABLE_TSAN` | OFF | ThreadSanitizer on `fuse_core` tests |
 
 For product development, turn the optional legacy application targets **off**:
@@ -105,7 +106,22 @@ Point CMake at Qt with `CMAKE_PREFIX_PATH` or `Qt6_DIR` if `find_package(Qt6)` f
 
 ## Sanitizers
 
-AddressSanitizer on smoke:
+ASan + UBSan on every FUSE library, test, demo and tool (the CI `fuse-smoke-asan` job):
+
+```bash
+cmake --preset fuse-asan          # FUSE_SANITIZE=address,undefined, build/fuse-asan
+cmake --build build/fuse-asan
+ctest --test-dir build/fuse-asan -j2 --output-on-failure
+```
+
+`cmake/FuseSanitizers.cmake` (`fuse_sanitize_finalize`) instruments every target under
+`Source/FUSE` and `Tools/FUSE`; vendored `Engine/lib` code (openal-soft, assimp, bullet,
+ENet, Lua) is linked but not instrumented. UBSan is non-recoverable, so any finding fails the
+test. Each test gets `ASAN_/LSAN_/UBSAN_OPTIONS` pointing at `cmake/sanitizers/*.supp`
+(third-party-only suppressions) and `VK_ICD_FILENAMES` pinned to Lavapipe. Tests that cannot
+run under sanitizers include `<fuse/core/sanitizer.hpp>` and skip on `FUSE_SANITIZER_BUILD`.
+
+AddressSanitizer on smoke only (legacy switch):
 
 ```bash
 cmake -B build-asan -G Ninja \

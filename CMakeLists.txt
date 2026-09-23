@@ -106,3 +106,7 @@ endif()
 # CMAKE_EXPORT_COMPILE_COMMANDS is ON (FUSE_ENABLE_CLANG_TIDY or fuse-debug / fuse-asan).
 # cmake --build is recommended before `fuse_clang_tidy` / ctest -R fuse_p7_clang_tidy.
 include("${CMAKE_SOURCE_DIR}/cmake/FuseClangTidy.cmake")
+
+# FUSE_SANITIZE (fuse-asan preset): instrument every Source/FUSE + Tools/FUSE
+# target and wire sanitizer runtime options into their tests. Must run last.
+fuse_sanitize_finalize()
