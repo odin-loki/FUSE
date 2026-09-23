@@ -49,8 +49,10 @@ endif()
 set(ENV{VK_INSTANCE_LAYERS} "VK_LAYER_KHRONOS_validation")
 cmake_host_system_information(RESULT _cores QUERY NUMBER_OF_LOGICAL_CORES)
 execute_process(
+  # Timing budgets (label perf) and valgrind wrappers are proven by the outer run; under the
+  # validation layer they only add load-dependent noise (and valgrind x validation is very slow).
   COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${FUSE_GATE_BUILD_DIR}" -V --parallel ${_cores}
-          -E "^${FUSE_GATE_SELF}$"
+          -E "^${FUSE_GATE_SELF}$" -LE "^(perf|valgrind)$"
   RESULT_VARIABLE _ctest_result
   OUTPUT_VARIABLE _ctest_out
   ERROR_VARIABLE _ctest_out)
@@ -64,8 +66,25 @@ if(_hit_count GREATER 0)
   message("Vulkan validation messages (${_hit_count} total), unique:\n  ${_unique}")
   message(FATAL_ERROR "B2.11 validation gate failed")
 endif()
+set(_gate_log "${FUSE_GATE_BUILD_DIR}/fuse_vulkan_validation_gate.log")
+file(WRITE "${_gate_log}" "${_ctest_out}")
 if(NOT _ctest_result EQUAL 0)
-  message("${_ctest_out}")
+  # Name the failing tests and show each one's own output instead of the whole suite log.
+  string(REGEX MATCH "The following tests FAILED:.*" _failed "${_ctest_out}")
+  message("${_failed}")
+  string(REGEX MATCHALL "[0-9]+ - [A-Za-z0-9_.]+ \\(Failed\\)" _failed_rows "${_failed}")
+  foreach(_row IN LISTS _failed_rows)
+    string(REGEX REPLACE "^([0-9]+) - .*" "\\1" _num "${_row}")
+    string(REGEX MATCHALL "\n${_num}: [^\n]*" _lines "${_ctest_out}")
+    list(LENGTH _lines _n)
+    if(_n GREATER 60)
+      math(EXPR _start "${_n} - 60")
+      list(SUBLIST _lines ${_start} 60 _lines)
+    endif()
+    string(REPLACE ";" "" _lines "${_lines}")
+    message("---- ${_row} (last lines) ----${_lines}")
+  endforeach()
+  message("full log: ${_gate_log}")
   message(FATAL_ERROR "suite failed under validation layers (ctest exit ${_ctest_result})")
 endif()
 message("B2.11 validation gate: zero validation messages")
