@@ -35,10 +35,13 @@ struct MeshCookOptions {
 
 inline constexpr u32 kCookedMeshVersion = 1;
 
-/// Import FBX / glTF / OBJ / … through assimp into `CookedMesh`. Returns false (with `error`)
-/// when the library is absent, the file cannot be parsed, or it contains no triangles.
+/// Import FBX / glTF / OBJ / … through assimp into `CookedMesh`. Returns false (with `error` and a
+/// `failure` class) when the library is absent (`ImporterUnavailable`), the file cannot be parsed
+/// (`MalformedSource`), or the parsed geometry is unusable (`InvalidGeometry`): no triangles, face
+/// indices outside the vertex range (including faces an importer silently dropped for that reason),
+/// or non-finite positions / normals / uvs. Nothing is ever "repaired" — bad data is rejected.
 bool import_mesh_file(const std::string& input_path, const MeshCookOptions& options, CookedMesh& out,
-                      std::string* error = nullptr);
+                      std::string* error = nullptr, CookFailure* failure = nullptr);
 
 /// Serialize to the little-endian `FMSH` layout (header, submeshes, streams, FNV-1a trailer).
 /// Output depends only on mesh contents — never on paths, time, or host.
@@ -47,7 +50,8 @@ std::vector<u8> serialize_cooked_mesh(const CookedMesh& mesh);
 /// Parse and validate an `FMSH` blob (magic, version, sizes, index range, checksum).
 bool deserialize_cooked_mesh(const u8* data, usize size, CookedMesh& out, std::string* error = nullptr);
 
-/// Import + serialize + write. Fails without writing when the source cannot be imported.
+/// Import + serialize + write. Fails without writing when the source cannot be imported; the
+/// result's `failure` says why (see `import_mesh_file`).
 CookStubWriteResult cook_mesh_file(const std::string& input_path, const std::string& output_path,
                                    const MeshCookOptions& options = {});
 

@@ -381,6 +381,7 @@ bool CookJobGraph::run_job_stages_(CookJob& job, AssetCooker& cooker, const Cook
     if (!packed.ok) {
         pack_stage.status = CookStageStatus::Failed;
         pack_stage.note = packed.note.empty() ? cookStatusName(packed.status) : packed.note;
+        job.failure_status = packed.status;
         result.failed_job_id = job.id;
         result.failed_stage = CookStageKind::Pack;
         result.failure_note = pack_stage.note;
@@ -495,7 +496,10 @@ CookBatchResult cookBatchFromJobGraphResult(const CookJobGraphExecuteResult& gra
                 // Keep the importer's reason (e.g. "mesh import failed: ...") in the batch record.
                 record.note += " (" + failed_stage->note + ")";
             }
-            if (failed_stage != job.stages.end() && failed_stage->kind == CookStageKind::Import &&
+            if (isImportValidationFailure(job.failure_status)) {
+                // Strict import rejection: keep the specific reason (malformed mesh, corrupt image, ...).
+                record.status = job.failure_status;
+            } else if (failed_stage != job.stages.end() && failed_stage->kind == CookStageKind::Import &&
                 failed_stage->note.find("not found") != std::string::npos) {
                 record.status = CookStatus::SourceMissing;
             } else if (job.kind == CookAssetKind::Shader) {

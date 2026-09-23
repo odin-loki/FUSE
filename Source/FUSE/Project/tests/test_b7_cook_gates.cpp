@@ -181,13 +181,12 @@ void testMeshRoundTripAgainstObjReference() {
     writeText(source, kTwoObjectObj);
     const fs::path output = g_root / "cooked" / "wedge.fusemesh";
 
-    fuse::project::AssetCooker cooker;
-    cooker.set_strict_import(true);
+    fuse::project::AssetCooker cooker; // default import validation is strict
     fuse::project::MeshImportDesc desc;
     desc.input_path = path_of(source);
     desc.output_path = path_of(output);
     const fuse::project::CookRecord record = cooker.cook_mesh(desc);
-    expectTrue(record.ok && record.status == fuse::project::CookStatus::Ok, "strict mesh cook ok");
+    expectTrue(record.ok && record.status == fuse::project::CookStatus::Ok, "strict (default) mesh cook ok");
 
     fuse::cook::CookedMesh mesh;
     std::string error;
@@ -501,8 +500,7 @@ struct Bc7Measurement {
 Bc7Measurement cookAndMeasure(const fs::path& source, const std::vector<u8>& original, u32 width, u32 height,
                               const fs::path& output) {
     Bc7Measurement m;
-    fuse::project::AssetCooker cooker;
-    cooker.set_strict_import(true);
+    fuse::project::AssetCooker cooker; // default import validation is strict
     fuse::project::TextureImportDesc desc;
     desc.input_path = path_of(source);
     desc.output_path = path_of(output);
@@ -635,18 +633,19 @@ void testBc7Psnr() {
 // Error reporting for bad inputs (strict cook).
 // ---------------------------------------------------------------------------------------------
 void testBadInputs() {
-    fuse::project::AssetCooker cooker;
-    cooker.set_strict_import(true);
+    fuse::project::AssetCooker cooker; // default import validation is strict
+    using fuse::project::CookStatus;
 
     struct MeshCase {
         const char* name;
         std::string contents;
+        CookStatus expected;
     };
     const MeshCase meshCases[] = {
-        {"empty.obj", "# nothing here\n"},
-        {"garbage.obj", std::string("\x01\x02\xFFnot a mesh\x00\x7F", 16)},
-        {"bad_index.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 9\n"},
-        {"lines_only.obj", "v 0 0 0\nv 1 0 0\nl 1 2\n"},
+        {"empty.obj", "# nothing here\n", CookStatus::MalformedSource},
+        {"garbage.obj", std::string("\x01\x02\xFFnot a mesh\x00\x7F", 16), CookStatus::MalformedSource},
+        {"bad_index.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 9\n", CookStatus::InvalidGeometry},
+        {"lines_only.obj", "v 0 0 0\nv 1 0 0\nl 1 2\n", CookStatus::InvalidGeometry},
     };
     for (const MeshCase& c : meshCases) {
         const fs::path source = g_root / "bad" / c.name;
@@ -658,7 +657,7 @@ void testBadInputs() {
         const fuse::project::CookRecord record = cooker.cook_mesh(desc);
         std::printf("bad mesh %-15s -> ok=%d status=%s note='%s'\n", c.name, record.ok ? 1 : 0,
                     fuse::project::cookStatusName(record.status), record.note.c_str());
-        expectTrue(!record.ok && record.status == fuse::project::CookStatus::InvalidInput, "bad mesh is rejected");
+        expectTrue(!record.ok && record.status == c.expected, "bad mesh is rejected with its specific status");
         expectTrue(!record.note.empty(), "bad mesh rejection carries a reason");
         expectTrue(!fs::exists(output), "rejected mesh writes no output");
     }
@@ -671,8 +670,8 @@ void testBadInputs() {
     const fuse::project::CookRecord texRecord = cooker.cook_texture(tex);
     std::printf("bad texture corrupt.png -> ok=%d status=%s note='%s'\n", texRecord.ok ? 1 : 0,
                 fuse::project::cookStatusName(texRecord.status), texRecord.note.c_str());
-    expectTrue(!texRecord.ok && texRecord.status == fuse::project::CookStatus::InvalidInput,
-               "corrupt PNG is rejected");
+    expectTrue(!texRecord.ok && texRecord.status == fuse::project::CookStatus::CorruptImage,
+               "corrupt PNG is rejected as CorruptImage");
     expectTrue(!fs::exists(tex.output_path), "rejected texture writes no output");
 
     fuse::project::MeshImportDesc missing;
@@ -727,7 +726,7 @@ fuse::project::CookBatchResult runCook(const fuse::project::CookManifest& manife
     // Mirrors fuse_cook --manifest: fresh process state, cache loaded from and saved to disk.
     fuse::project::ImportPipeline pipeline;
     pipeline.set_project_root(manifest.project_root);
-    pipeline.cooker().set_strict_import(true);
+    // No explicit set_import_validation: fuse_cook and the pipeline are strict by default.
     (void)pipeline.load_cook_cache(path_of(cachePath));
     if (pipeline.cooker().would_reconcile_invalidation(manifest)) {
         (void)pipeline.cooker().invalidate_stale_dependency_hashes(manifest);
@@ -848,12 +847,305 @@ void testIncrementalCook() {
     std::printf("incremental: broken source -> batch ok=%d, wedge ok=%d note='%s'\n", broken.ok ? 1 : 0,
                 brokenRec && brokenRec->ok ? 1 : 0, brokenRec ? brokenRec->note.c_str() : "");
     expectTrue(!broken.ok && brokenRec && !brokenRec->ok, "broken source fails the cook batch");
+    expectTrue(brokenRec && brokenRec->status == fuse::project::CookStatus::MalformedSource,
+               "batch record keeps the specific strict-import status");
     expectTrue(brokenRec && brokenRec->note.find("mesh import failed") != std::string::npos,
                "batch record carries the importer's failure reason");
     const fuse::project::CookRecord* propBroken = recordFor(broken, propOut);
     expectTrue(propBroken && !propBroken->ok, "dependent of a failed cook is not reported ok");
 }
 
+
+// ---------------------------------------------------------------------------------------------
+// Strict import validation is the default; malformed sources fail with specific statuses and write
+// nothing; the explicit lenient opt-out still cooks labelled placeholders.
+// ---------------------------------------------------------------------------------------------
+
+// Minimal embedded glTF 2.0: 3 float3 positions + uint16 indices in one base64 buffer.
+std::string base64(const std::vector<u8>& bytes) {
+    static const char* table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    for (std::size_t i = 0; i < bytes.size(); i += 3) {
+        const u32 b0 = bytes[i];
+        const u32 b1 = i + 1 < bytes.size() ? bytes[i + 1] : 0u;
+        const u32 b2 = i + 2 < bytes.size() ? bytes[i + 2] : 0u;
+        const u32 triple = (b0 << 16) | (b1 << 8) | b2;
+        out.push_back(table[(triple >> 18) & 63u]);
+        out.push_back(table[(triple >> 12) & 63u]);
+        out.push_back(i + 1 < bytes.size() ? table[(triple >> 6) & 63u] : '=');
+        out.push_back(i + 2 < bytes.size() ? table[triple & 63u] : '=');
+    }
+    return out;
+}
+
+std::string makeGltf(const std::vector<f32>& positions, const std::vector<fuse::u16>& indices) {
+    std::vector<u8> buffer(positions.size() * 4u);
+    std::memcpy(buffer.data(), positions.data(), buffer.size());
+    const std::size_t positionBytes = buffer.size();
+    for (fuse::u16 index : indices) {
+        buffer.push_back(static_cast<u8>(index & 0xFFu));
+        buffer.push_back(static_cast<u8>(index >> 8));
+    }
+    while (buffer.size() % 4u != 0u) {
+        buffer.push_back(0u);
+    }
+    std::ostringstream json;
+    json << "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],\"nodes\":[{\"mesh\":0}],"
+         << "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1}]}],"
+         << "\"buffers\":[{\"byteLength\":" << buffer.size()
+         << ",\"uri\":\"data:application/octet-stream;base64," << base64(buffer) << "\"}],"
+         << "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":" << positionBytes << "},"
+         << "{\"buffer\":0,\"byteOffset\":" << positionBytes << ",\"byteLength\":" << indices.size() * 2u << "}],"
+         << "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":" << positions.size() / 3u
+         << ",\"type\":\"VEC3\",\"min\":[0,0,0],\"max\":[1,1,0]},"
+         << "{\"bufferView\":1,\"componentType\":5123,\"count\":" << indices.size() << ",\"type\":\"SCALAR\"}]}";
+    return json.str();
+}
+
+// PNG signature + IHDR (RGBA8) + IEND. stb_image does not verify CRCs, so they are left zero; enough
+// for the header probe that must reject bad dimensions before any pixel data is needed.
+std::string pngHeaderOnly(u32 width, u32 height) {
+    std::string png("\x89PNG\r\n\x1a\n", 8);
+    auto be32 = [&png](u32 v) {
+        for (int shift = 24; shift >= 0; shift -= 8) {
+            png.push_back(static_cast<char>((v >> shift) & 0xFFu));
+        }
+    };
+    be32(13u);
+    png += "IHDR";
+    be32(width);
+    be32(height);
+    png.push_back(8);  // bit depth
+    png.push_back(6);  // RGBA
+    png.push_back(0);  // compression
+    png.push_back(0);  // filter
+    png.push_back(0);  // interlace
+    be32(0u);          // crc (unchecked)
+    be32(0u);
+    png += "IEND";
+    be32(0xAE426082u);
+    return png;
+}
+
+// A complete, valid 1x1 RGB PNG.
+const unsigned char kOnePixelPng[] = {
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+    0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xDF, 0xC0, 0x00,
+    0x00, 0x04, 0x01, 0x01, 0x80, 0xC5, 0x2A, 0x18, 0x5D, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+    0x44, 0xAE, 0x42, 0x60, 0x82};
+
+void testStrictImportValidation() {
+    using fuse::project::CookStatus;
+    using fuse::project::ImportValidation;
+
+    // --- Default is strict everywhere a cook starts from. -------------------------------------
+    {
+        fuse::project::AssetCooker cooker;
+        expectTrue(cooker.import_validation() == ImportValidation::Strict && cooker.strict_import(),
+                   "AssetCooker defaults to strict import validation");
+        fuse::project::ImportPipeline pipeline;
+        expectTrue(pipeline.cooker().import_validation() == ImportValidation::Strict,
+                   "ImportPipeline's cooker defaults to strict import validation");
+        expectTrue(std::string(fuse::project::importValidationName(ImportValidation::Strict)) == "strict" &&
+                       std::string(fuse::project::importValidationName(ImportValidation::Lenient)) == "lenient",
+                   "import validation names");
+    }
+
+    const fs::path dir = g_root / "strict";
+    const fs::path out = g_root / "strict_out";
+
+    // --- Meshes. ------------------------------------------------------------------------------
+    const std::vector<f32> tri = {0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f, 1.f, 0.f};
+    const std::string goodGltf = makeGltf(tri, {0, 1, 2});
+    const std::string goodObj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 1 1 0\nf 1 2 3\nf 2 4 3\n";
+    const std::string wedge = kTwoObjectObj;
+
+    struct MeshCase {
+        const char* name;
+        std::string contents;
+        CookStatus expected;
+    };
+    const MeshCase meshCases[] = {
+        // Truncated OBJ: cut mid-vertex or mid-face; or a vertex line lost so a face points past the list.
+        {"trunc_mid_vertex.obj", goodObj + "v 5.0 5", CookStatus::MalformedSource},
+        {"trunc_mid_face.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 1 1 0\nf 1 2 3\nf 2 4", CookStatus::MalformedSource},
+        {"trunc_lost_vertices.obj", wedge.substr(0, wedge.find("v 5.0 2.125 4.5")) + "vt 0.25 0.75\nvn 0 0 1\nf 6/6/6 7/6/6 8/6/6\n",
+         CookStatus::InvalidGeometry},
+        // Truncated glTF (JSON cut in half) and binary noise with a mesh extension.
+        {"trunc.gltf", goodGltf.substr(0, goodGltf.size() / 2u), CookStatus::MalformedSource},
+        {"noise.gltf", std::string("\x00\x01\x02\x03garbage\xFF\xFE", 13), CookStatus::MalformedSource},
+        // Out-of-range indices: OBJ rejects at parse, glTF drops faces with only a warning.
+        {"oob_index.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\nf 1 3 4\n", CookStatus::InvalidGeometry},
+        {"oob_index_partial.gltf", makeGltf(tri, {0, 1, 2, 0, 1, 7}), CookStatus::InvalidGeometry},
+        {"oob_index_all.gltf", makeGltf(tri, {0, 1, 9}), CookStatus::InvalidGeometry},
+        // Non-finite attributes.
+        {"nan_position.obj", "v nan 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n", CookStatus::InvalidGeometry},
+        {"inf_position.obj", "v 0 inf 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n", CookStatus::InvalidGeometry},
+        {"nan_position.gltf", makeGltf({std::nanf(""), 0.f, 0.f, 1.f, 0.f, 0.f, 0.f, 1.f, 0.f}, {0, 1, 2}),
+         CookStatus::InvalidGeometry},
+    };
+
+    fuse::project::AssetCooker strict; // default
+    fuse::project::AssetCooker lenient;
+    // Explicit opt-out under test: undecodable sources must still cook to labelled placeholders.
+    lenient.set_import_validation(ImportValidation::Lenient);
+
+    for (const MeshCase& c : meshCases) {
+        const fs::path source = dir / c.name;
+        writeText(source, c.contents);
+        fuse::project::MeshImportDesc desc;
+        desc.input_path = path_of(source);
+        desc.output_path = path_of(out / (std::string(c.name) + ".fusemesh"));
+        const fuse::project::CookRecord record = strict.cook_mesh(desc);
+        std::printf("strict mesh %-26s -> status=%s note='%s'\n", c.name,
+                    fuse::project::cookStatusName(record.status), record.note.c_str());
+        expectTrue(!record.ok && record.status == c.expected, "strict: malformed mesh rejected with specific status");
+        expectTrue(fuse::project::isImportValidationFailure(record.status),
+                   "strict: mesh rejection is an import-validation status");
+        expectTrue(!record.note.empty(), "strict: mesh rejection carries a reason");
+        expectTrue(!fs::exists(desc.output_path), "strict: rejected mesh writes no output");
+
+        desc.output_path = path_of(out / (std::string(c.name) + ".lenient.fusemesh"));
+        const fuse::project::CookRecord relaxed = lenient.cook_mesh(desc);
+        expectTrue(relaxed.ok && relaxed.status == CookStatus::Ok && fs::exists(desc.output_path),
+                   "lenient opt-out still cooks the malformed mesh");
+        std::ifstream stub(desc.output_path);
+        std::string header;
+        std::getline(stub, header);
+        expectTrue(header == "FUSEMESH_STUB", "lenient output is a labelled placeholder, not a real mesh");
+    }
+    expectTrue(strict.cache().entry_count() == 0u, "strict rejections are never cached");
+
+    // Valid sources in the same formats still cook under the default.
+    for (const auto& [name, contents] : {std::pair<const char*, std::string>{"good.gltf", goodGltf},
+                                         std::pair<const char*, std::string>{"good.obj", goodObj}}) {
+        const fs::path source = dir / name;
+        writeText(source, contents);
+        fuse::project::MeshImportDesc desc;
+        desc.input_path = path_of(source);
+        desc.output_path = path_of(out / (std::string(name) + ".fusemesh"));
+        const fuse::project::CookRecord record = strict.cook_mesh(desc);
+        fuse::cook::CookedMesh mesh;
+        expectTrue(record.ok && fuse::cook::load_cooked_mesh(desc.output_path, mesh) && !mesh.indices.empty(),
+                   "strict: valid mesh cooks to a real FMSH");
+    }
+
+    // --- Textures. ----------------------------------------------------------------------------
+    const std::string onePixel(reinterpret_cast<const char*>(kOnePixelPng), sizeof(kOnePixelPng));
+    std::string badZlib = onePixel;
+    badZlib[41] = '\x00'; // zlib CMF byte of the IDAT stream (0x78)
+    struct TextureCase {
+        const char* name;
+        std::string contents;
+        CookStatus expected;
+    };
+    const TextureCase textureCases[] = {
+        {"zero_width.png", pngHeaderOnly(0u, 16u), CookStatus::InvalidImageDimensions},
+        {"zero_height.png", pngHeaderOnly(16u, 0u), CookStatus::InvalidImageDimensions},
+        {"oversize.png", pngHeaderOnly(fuse::cook::kMaxCookTextureDimension + 1u, 4u),
+         CookStatus::InvalidImageDimensions},
+        {"oversize_tall.png", pngHeaderOnly(4u, fuse::cook::kMaxCookTextureDimension * 2u),
+         CookStatus::InvalidImageDimensions},
+        {"truncated.png", onePixel.substr(0, 50), CookStatus::CorruptImage},
+        {"bad_zlib.png", badZlib, CookStatus::CorruptImage},
+        {"empty.png", "", CookStatus::CorruptImage},
+        {"not_an_image.png", "PNG\n", CookStatus::CorruptImage},
+        {"garbage_header.png", std::string("\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDRtruncated", 25), CookStatus::CorruptImage},
+    };
+    for (const TextureCase& c : textureCases) {
+        const fs::path source = dir / c.name;
+        writeText(source, c.contents);
+        fuse::project::TextureImportDesc desc;
+        desc.input_path = path_of(source);
+        desc.output_path = path_of(out / (std::string(c.name) + ".fusetex"));
+        const fuse::project::CookRecord record = strict.cook_texture(desc);
+        std::printf("strict texture %-20s -> status=%s note='%s'\n", c.name,
+                    fuse::project::cookStatusName(record.status), record.note.c_str());
+        expectTrue(!record.ok && record.status == c.expected, "strict: bad texture rejected with specific status");
+        expectTrue(!fs::exists(desc.output_path), "strict: rejected texture writes no output");
+
+        desc.output_path = path_of(out / (std::string(c.name) + ".lenient.fusetex"));
+        const fuse::project::CookRecord relaxed = lenient.cook_texture(desc);
+        fuse::cook::CookedTexture placeholder;
+        expectTrue(relaxed.ok && fuse::cook::load_cooked_texture(desc.output_path, placeholder),
+                   "lenient opt-out still cooks the bad texture");
+        std::ifstream in(desc.output_path, std::ios::binary);
+        std::string header;
+        std::string hook;
+        std::getline(in, header);
+        std::getline(in, hook);
+        expectTrue(hook == "hook=bc7_synthesized_placeholder", "lenient texture output is labelled a placeholder");
+    }
+
+    // Non-power-of-two / non-multiple-of-4 textures are valid for BC7 (blocks are edge-padded), so
+    // strict validation must not reject them.
+    {
+        const fs::path source = dir / "npot_6x10.tga";
+        writeTga(source, proceduralImage(6u, 10u), 6u, 10u);
+        fuse::project::TextureImportDesc desc;
+        desc.input_path = path_of(source);
+        desc.output_path = path_of(out / "npot_6x10.fusetex");
+        desc.generate_mipmaps = true;
+        const fuse::project::CookRecord record = strict.cook_texture(desc);
+        fuse::cook::CookedTexture texture;
+        expectTrue(record.ok && fuse::cook::load_cooked_texture(desc.output_path, texture) &&
+                       texture.levels.size() == 4u && texture.levels[0].width == 6u &&
+                       texture.levels[0].blocks.size() == 2u * 3u * 16u,
+                   "strict: NPOT 6x10 texture cooks (padded 2x3 BC7 blocks, 4 mips)");
+
+        const fs::path onePx = dir / "one_pixel.png";
+        writeText(onePx, onePixel);
+        desc.input_path = path_of(onePx);
+        desc.output_path = path_of(out / "one_pixel.fusetex");
+        expectTrue(strict.cook_texture(desc).ok, "strict: valid 1x1 PNG cooks");
+    }
+
+    // --- Batch (job graph) records keep the specific status. ---------------------------------
+    {
+        fuse::project::CookManifest manifest;
+        manifest.project_root = path_of(dir);
+        manifest.assets.push_back({fuse::project::CookAssetKind::Mesh, path_of(dir / "nan_position.obj"),
+                                   path_of(out / "batch_nan.fusemesh"), {}});
+        manifest.assets.push_back({fuse::project::CookAssetKind::Texture, path_of(dir / "oversize.png"),
+                                   path_of(out / "batch_oversize.fusetex"), {}});
+        fuse::project::ImportPipeline pipeline;
+        pipeline.set_project_root(manifest.project_root);
+        pipeline.plan_from_manifest(manifest);
+        const fuse::project::CookBatchResult batch = pipeline.execute(false);
+        const fuse::project::CookRecord* nanRec = recordFor(batch, out / "batch_nan.fusemesh");
+        const fuse::project::CookRecord* bigRec = recordFor(batch, out / "batch_oversize.fusetex");
+        expectTrue(!batch.ok, "strict batch with malformed sources fails");
+        expectTrue(nanRec && nanRec->status == CookStatus::InvalidGeometry,
+                   "batch record reports InvalidGeometry for the NaN mesh");
+        expectTrue(bigRec && bigRec->status == CookStatus::InvalidImageDimensions,
+                   "batch record reports InvalidImageDimensions for the oversize texture");
+
+        fuse::project::ImportPipeline relaxed;
+        relaxed.set_project_root(manifest.project_root);
+        // Explicit opt-out under test.
+        relaxed.cooker().set_import_validation(ImportValidation::Lenient);
+        manifest.assets[0].output_path = path_of(out / "batch_nan.lenient.fusemesh");
+        manifest.assets[1].output_path = path_of(out / "batch_oversize.lenient.fusetex");
+        relaxed.plan_from_manifest(manifest);
+        expectTrue(relaxed.execute(false).ok, "lenient batch cooks the same sources to placeholders");
+    }
+
+    // A lenient placeholder in the cache is not served to a later strict cook.
+    {
+        const fs::path source = dir / "nan_position.obj";
+        fuse::project::MeshImportDesc desc;
+        desc.input_path = path_of(source);
+        desc.output_path = path_of(out / "shared_cache.fusemesh");
+        fuse::project::AssetCooker cooker;
+        cooker.set_import_validation(ImportValidation::Lenient); // opt-out under test
+        expectTrue(cooker.cook_mesh(desc).ok, "lenient seeds a placeholder cache entry");
+        cooker.set_import_validation(ImportValidation::Strict);
+        const fuse::project::CookRecord again = cooker.cook_mesh(desc);
+        expectTrue(!again.ok && !again.cache_hit && again.status == CookStatus::InvalidGeometry,
+                   "strict cook ignores the cached lenient placeholder and rejects the source");
+    }
+}
 } // namespace
 
 int main() {
@@ -869,6 +1161,7 @@ int main() {
     testBc7Psnr();
     testBadInputs();
     testIncrementalCook();
+    testStrictImportValidation();
 
     fs::remove_all(g_root, ec);
     fuse::core::shutdown();

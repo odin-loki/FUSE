@@ -76,7 +76,7 @@ bool AssetCooker::lookup_live_entry_(u64 cache_key, CookCacheEntry* out_entry) {
         return false;
     }
     bool live = path_exists(cached.output_path);
-    if (live && m_strictImport) {
+    if (live && strict_import()) {
         // Strict cooks only reuse outputs that load as real cooked assets (not lenient stubs or
         // truncated/corrupted files).
         if (cached.kind == CookAssetKind::Mesh) {
@@ -132,7 +132,7 @@ CookRecord AssetCooker::cook_with_cache_(CookAssetKind kind,
     const CookWriteOutcome written = write();
     if (!written.ok) {
         record.ok = false;
-        record.status = CookStatus::InvalidInput;
+        record.status = written.status;
         record.note = written.note;
         return record;
     }
@@ -213,18 +213,44 @@ bool AssetCooker::probe_cook_cache_hit(const CookManifestEntry& entry, const Coo
 
 namespace {
 
+CookStatus status_for_failure(fuse::cook::CookFailure failure) {
+    switch (failure) {
+    case fuse::cook::CookFailure::MalformedSource:
+        return CookStatus::MalformedSource;
+    case fuse::cook::CookFailure::InvalidGeometry:
+        return CookStatus::InvalidGeometry;
+    case fuse::cook::CookFailure::CorruptImage:
+        return CookStatus::CorruptImage;
+    case fuse::cook::CookFailure::InvalidImageDimensions:
+        return CookStatus::InvalidImageDimensions;
+    case fuse::cook::CookFailure::ImporterUnavailable:
+        return CookStatus::ImporterUnavailable;
+    case fuse::cook::CookFailure::WriteFailed:
+        return CookStatus::OutputError;
+    case fuse::cook::CookFailure::None:
+    case fuse::cook::CookFailure::InvalidArgument:
+        break;
+    }
+    return CookStatus::InvalidInput;
+}
+
 CookWriteOutcome to_outcome(const fuse::cook::CookStubWriteResult& written) {
-    return {written.ok, written.byteCount, written.note};
+    return {written.ok, written.byteCount, written.note,
+            written.ok ? CookStatus::Ok : status_for_failure(written.failure)};
 }
 
 } // namespace
 
+const char* importValidationName(ImportValidation mode) {
+    return mode == ImportValidation::Strict ? "strict" : "lenient";
+}
+
 CookRecord AssetCooker::cook_mesh(const MeshImportDesc& desc) {
     std::ostringstream note;
-    note << (m_strictImport ? "mesh cook" : "stub mesh cook") << " (lods=" << (desc.generate_lods ? desc.lod_count : 0u)
+    note << (strict_import() ? "mesh cook" : "stub mesh cook") << " (lods=" << (desc.generate_lods ? desc.lod_count : 0u)
          << ", compress=" << (desc.compress ? "on" : "off") << ")";
     const u64 content_hash = hash_mesh_import(desc);
-    const bool strict = m_strictImport;
+    const bool strict = strict_import();
     return cook_with_cache_(CookAssetKind::Mesh, desc.input_path, desc.output_path, content_hash, 0,
                             note.str().c_str(), [&desc, strict]() {
                                 if (strict) {
@@ -242,10 +268,10 @@ CookRecord AssetCooker::cook_mesh(const MeshImportDesc& desc) {
 CookRecord AssetCooker::cook_texture(const TextureImportDesc& desc) {
     const char* compression = desc.is_normal_map ? "BC5" : "BC7";
     std::ostringstream note;
-    note << (m_strictImport ? "texture cook" : "stub texture cook") << " (compression=" << compression
+    note << (strict_import() ? "texture cook" : "stub texture cook") << " (compression=" << compression
          << ", mipmaps=" << (desc.generate_mipmaps ? "on" : "off") << ")";
     const u64 content_hash = hash_texture_import(desc);
-    const bool strict = m_strictImport;
+    const bool strict = strict_import();
     return cook_with_cache_(CookAssetKind::Texture, desc.input_path, desc.output_path, content_hash, 0,
                             note.str().c_str(), [&desc, compression, strict]() {
                                 if (strict) {
@@ -289,7 +315,7 @@ CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry) {
 
 CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry, const CookManifest& manifest) {
     const u64 upstream_hash = hash_upstream_dependencies(entry.dependencies, manifest);
-    const bool strict = m_strictImport;
+    const bool strict = strict_import();
 
     switch (entry.kind) {
     case CookAssetKind::Mesh: {
@@ -297,7 +323,8 @@ CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry, const CookMan
         desc.input_path = entry.source_path;
         desc.output_path = entry.output_path;
         return cook_with_cache_(CookAssetKind::Mesh, entry.source_path, entry.output_path, hash_mesh_import(desc),
-                                upstream_hash, "stub mesh cook from manifest entry", [&desc, strict]() {
+                                upstream_hash, strict ? "mesh cook from manifest entry" : "stub mesh cook from manifest entry",
+                                [&desc, strict]() {
                                     if (strict) {
                                         return to_outcome(fuse::cook::cook_mesh_file(desc.input_path, desc.output_path));
                                     }
@@ -310,7 +337,8 @@ CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry, const CookMan
         desc.input_path = entry.source_path;
         desc.output_path = entry.output_path;
         return cook_with_cache_(CookAssetKind::Texture, entry.source_path, entry.output_path,
-                                hash_texture_import(desc), upstream_hash, "stub texture cook from manifest entry",
+                                hash_texture_import(desc), upstream_hash,
+                                strict ? "texture cook from manifest entry" : "stub texture cook from manifest entry",
                                 [&desc, strict]() {
                                     if (strict) {
                                         return to_outcome(fuse::cook::cook_texture_bc7_file(

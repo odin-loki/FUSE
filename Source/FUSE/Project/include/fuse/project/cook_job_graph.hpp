@@ -42,6 +42,8 @@ struct CookJob {
     bool cache_hit = false;
     u64 content_hash = 0;
     std::string skip_note;
+    /// Status of the failed pack (cook) stage, e.g. a strict-import rejection; `Ok` otherwise.
+    CookStatus failure_status = CookStatus::Ok;
 };
 
 struct CookJobGraphExecuteResult {

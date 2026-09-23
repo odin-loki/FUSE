@@ -20,7 +20,20 @@ enum class CookStatus : u8 {
     SourceMissing,
     OutputError,
     UnsupportedKind,
+    // Strict import validation (the AssetCooker default) — the source exists but was rejected:
+    MalformedSource,        ///< mesh file could not be parsed (truncated, corrupt, not a mesh format)
+    InvalidGeometry,        ///< mesh parsed but unusable: no triangles, out-of-range indices, NaN/Inf
+    CorruptImage,           ///< texture bytes could not be decoded (truncated, corrupt, not an image)
+    InvalidImageDimensions, ///< texture is zero-size or exceeds the cook's maximum dimension
+    ImporterUnavailable,    ///< the real importer (assimp / stb_image) is not linked into this build
 };
+
+/// True for the statuses strict import validation reports for a rejected-but-present source.
+[[nodiscard]] constexpr bool isImportValidationFailure(CookStatus status) {
+    return status == CookStatus::MalformedSource || status == CookStatus::InvalidGeometry ||
+           status == CookStatus::CorruptImage || status == CookStatus::InvalidImageDimensions ||
+           status == CookStatus::ImporterUnavailable;
+}
 
 struct CookManifestEntry {
     CookAssetKind kind = CookAssetKind::Mesh;

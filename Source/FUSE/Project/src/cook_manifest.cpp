@@ -183,6 +183,16 @@ const char* cookStatusName(CookStatus status) {
         return "output_error";
     case CookStatus::UnsupportedKind:
         return "unsupported_kind";
+    case CookStatus::MalformedSource:
+        return "malformed_source";
+    case CookStatus::InvalidGeometry:
+        return "invalid_geometry";
+    case CookStatus::CorruptImage:
+        return "corrupt_image";
+    case CookStatus::InvalidImageDimensions:
+        return "invalid_image_dimensions";
+    case CookStatus::ImporterUnavailable:
+        return "importer_unavailable";
     }
     return "unknown";
 }

@@ -145,6 +145,28 @@ CookStubWriteResult unavailableHook(const char* hookName) {
 
 } // namespace
 
+const char* cookFailureName(CookFailure failure) {
+    switch (failure) {
+    case CookFailure::None:
+        return "none";
+    case CookFailure::InvalidArgument:
+        return "invalid_argument";
+    case CookFailure::ImporterUnavailable:
+        return "importer_unavailable";
+    case CookFailure::MalformedSource:
+        return "malformed_source";
+    case CookFailure::InvalidGeometry:
+        return "invalid_geometry";
+    case CookFailure::CorruptImage:
+        return "corrupt_image";
+    case CookFailure::InvalidImageDimensions:
+        return "invalid_image_dimensions";
+    case CookFailure::WriteFailed:
+        return "write_failed";
+    }
+    return "unknown";
+}
+
 CookStubWriteResult tryCookMeshAssimp(const std::string& input_path, const std::string& output_path,
                                       u32 lod_count, bool compressed) {
     // LOD generation and vertex compression are not implemented yet; the knobs only feed the
@@ -368,7 +390,7 @@ CookStubWriteResult write_texture_bc7_encoded(const std::string& output_path,
     }
 
     // Lenient fallback for undecodable sources: a deterministic placeholder image, labelled as such
-    // in the header. Strict cooks (AssetCooker::set_strict_import) never reach this path.
+    // in the header. Strict cooks (the AssetCooker default, see ImportValidation) never reach this path.
     Bc7RgbaImage working = source_path.empty() ? Bc7RgbaImage{} : synthesize_rgba_from_source(source_path);
     if (working.rgba.empty()) {
         working.width = 4u;

@@ -5,11 +5,19 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <sstream>
+
+#include <cctype>
+#include <cmath>
 
 #if defined(FUSE_HAS_ASSIMP)
+#include <assimp/DefaultLogger.hpp>
 #include <assimp/Importer.hpp>
+#include <assimp/LogStream.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+
+#include <mutex>
 #endif
 
 namespace fuse::cook {
@@ -26,6 +34,146 @@ void set_error(std::string* error, const std::string& message) {
         *error = message;
     }
 }
+
+void set_failure(CookFailure* failure, CookFailure value) {
+    if (failure != nullptr) {
+        *failure = value;
+    }
+}
+
+std::string to_lower(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return text;
+}
+
+/// Importer diagnostics that mean "the file parsed, but its geometry references data that does not
+/// exist" (e.g. OBJ faces pointing past the vertex list, glTF indices past the accessor range).
+[[maybe_unused]] bool mentions_out_of_range_geometry(const std::string& message) {
+    const std::string lower = to_lower(message);
+    return lower.find("out of range") != std::string::npos || lower.find("out-of-range") != std::string::npos ||
+           lower.find("bad vertex index") != std::string::npos ||
+           lower.find("invalid face index") != std::string::npos;
+}
+
+[[maybe_unused]] bool all_finite(const std::vector<f32>& values) {
+    for (f32 value : values) {
+        if (!std::isfinite(value)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[maybe_unused]] std::string strip_log_prefix(std::string message) {
+    // Assimp log lines look like "Warn,  T0: <message>\n".
+    const std::size_t colon = message.find(": ");
+    if (message.rfind("Warn", 0) == 0 && colon != std::string::npos) {
+        message.erase(0, colon + 2);
+    }
+    while (!message.empty() && (message.back() == '\n' || message.back() == '\r')) {
+        message.pop_back();
+    }
+    return message;
+}
+
+bool has_extension(const std::string& path, const char* ext) {
+    const std::string lower = to_lower(std::filesystem::path(path).extension().string());
+    return lower == ext;
+}
+
+/// OBJ is line-oriented text, so a file cut short usually still parses: assimp quietly accepts a
+/// final `v 1.0 2` (missing z) or a dangling `f 1 2`. Strict import rejects statements whose
+/// argument count is impossible, which is what truncation mid-line produces. (A cut exactly at a
+/// line boundary is indistinguishable from a shorter valid file; faces referencing the lost
+/// vertices are then caught as out-of-range indices.)
+[[maybe_unused]] bool lint_obj_source(const std::string& input_path, std::string* error) {
+    if (!has_extension(input_path, ".obj")) {
+        return true;
+    }
+    std::ifstream in(input_path, std::ios::binary);
+    if (!in) {
+        return true; // the importer reports unreadable files itself
+    }
+    std::string line;
+    u32 lineNumber = 0;
+    while (std::getline(in, line)) {
+        ++lineNumber;
+        const std::size_t hash = line.find('#');
+        if (hash != std::string::npos) {
+            line.resize(hash);
+        }
+        std::istringstream tokens(line);
+        std::string keyword;
+        if (!(tokens >> keyword)) {
+            continue;
+        }
+        u32 args = 0;
+        for (std::string token; tokens >> token;) {
+            ++args;
+        }
+        u32 required = 0;
+        if (keyword == "v" || keyword == "vn") {
+            required = 3u;
+        } else if (keyword == "vt") {
+            required = 1u;
+        } else if (keyword == "f") {
+            required = 3u;
+        } else {
+            continue;
+        }
+        if (args < required) {
+            set_error(error, "mesh import failed: OBJ line " + std::to_string(lineNumber) + ": '" + keyword +
+                                 "' has " + std::to_string(args) + " of " + std::to_string(required) +
+                                 " required values (truncated file?)");
+            return false;
+        }
+    }
+    return true;
+}
+
+#if defined(FUSE_HAS_ASSIMP)
+// Assimp reports some data problems only as log warnings while still returning a scene — e.g. the
+// glTF2 importer drops faces with out-of-range indices and carries on. Strict import must see those,
+// so a capture stream is attached to assimp's (global) logger once, and each import collects the
+// warnings raised on its own thread.
+thread_local std::vector<std::string>* t_importWarnings = nullptr;
+
+class ImportWarningCapture final : public Assimp::LogStream {
+public:
+    void write(const char* message) override {
+        if (t_importWarnings != nullptr && message != nullptr) {
+            t_importWarnings->emplace_back(message);
+        }
+    }
+};
+
+void ensure_import_warning_capture() {
+    static std::mutex mutex;
+    static const Assimp::Logger* attachedTo = nullptr;
+    std::lock_guard<std::mutex> lock(mutex);
+    if (Assimp::DefaultLogger::isNullLogger()) {
+        Assimp::DefaultLogger::create(nullptr, Assimp::Logger::NORMAL, 0u);
+    }
+    Assimp::Logger* logger = Assimp::DefaultLogger::get();
+    if (logger != attachedTo) {
+        // The logger owns (and deletes) attached streams.
+        logger->attachStream(new ImportWarningCapture(), Assimp::Logger::Warn | Assimp::Logger::Err);
+        attachedTo = logger;
+    }
+}
+
+struct ScopedWarningCapture {
+    std::vector<std::string> warnings;
+    ScopedWarningCapture() {
+        ensure_import_warning_capture();
+        t_importWarnings = &warnings;
+    }
+    ~ScopedWarningCapture() { t_importWarnings = nullptr; }
+    ScopedWarningCapture(const ScopedWarningCapture&) = delete;
+    ScopedWarningCapture& operator=(const ScopedWarningCapture&) = delete;
+};
+#endif
 
 u64 fnv1a64(const u8* data, usize size) {
     u64 hash = 14695981039346656037ull;
@@ -88,17 +236,22 @@ void compute_bounds(CookedMesh& mesh) {
 } // namespace
 
 bool import_mesh_file(const std::string& input_path, const MeshCookOptions& options, CookedMesh& out,
-                      std::string* error) {
+                      std::string* error, CookFailure* failure) {
     out = CookedMesh{};
+    set_failure(failure, CookFailure::None);
 #if defined(FUSE_HAS_ASSIMP)
-    if (input_path.empty()) {
-        set_error(error, "missing input path");
+    auto reject = [&](CookFailure kind, const std::string& message) {
+        set_error(error, message);
+        set_failure(failure, kind);
+        out = CookedMesh{};
         return false;
+    };
+    if (input_path.empty()) {
+        return reject(CookFailure::InvalidArgument, "missing input path");
     }
     std::error_code ec;
     if (!std::filesystem::is_regular_file(std::filesystem::path(input_path), ec)) {
-        set_error(error, "source file not found");
-        return false;
+        return reject(CookFailure::InvalidArgument, "source file not found");
     }
 
     // Single-threaded, fixed post-process set: identical bytes in → identical mesh out.
@@ -108,11 +261,37 @@ bool import_mesh_file(const std::string& input_path, const MeshCookOptions& opti
         flags |= aiProcess_GenSmoothNormals;
     }
 
+    if (!lint_obj_source(input_path, error)) {
+        set_failure(failure, CookFailure::MalformedSource);
+        return false;
+    }
+
+    ScopedWarningCapture capture;
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(input_path, flags);
+    std::string droppedGeometry;
+    for (const std::string& warning : capture.warnings) {
+        if (mentions_out_of_range_geometry(warning)) {
+            droppedGeometry = strip_log_prefix(warning);
+            break;
+        }
+    }
     if (scene == nullptr) {
-        set_error(error, std::string("mesh import failed: ") + importer.GetErrorString());
-        return false;
+        const std::string reason = importer.GetErrorString();
+        if (!droppedGeometry.empty()) {
+            return reject(CookFailure::InvalidGeometry,
+                          "mesh import failed: " + reason + " (" + droppedGeometry + ")");
+        }
+        return reject(mentions_out_of_range_geometry(reason) ? CookFailure::InvalidGeometry
+                                                             : CookFailure::MalformedSource,
+                      "mesh import failed: " + reason);
+    }
+    if ((scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0u) {
+        return reject(CookFailure::MalformedSource, "mesh import failed: scene is incomplete");
+    }
+    if (!droppedGeometry.empty()) {
+        return reject(CookFailure::InvalidGeometry,
+                      "mesh import rejected: importer dropped geometry (" + droppedGeometry + ")");
     }
 
     for (u32 meshIndex = 0; meshIndex < scene->mNumMeshes; ++meshIndex) {
@@ -147,6 +326,12 @@ bool import_mesh_file(const std::string& input_path, const MeshCookOptions& opti
                 continue;
             }
             for (u32 corner = 0; corner < 3u; ++corner) {
+                if (face.mIndices[corner] >= mesh->mNumVertices) {
+                    return reject(CookFailure::InvalidGeometry,
+                                  "mesh import rejected: face " + std::to_string(f) + " index " +
+                                      std::to_string(face.mIndices[corner]) + " out of range (vertices=" +
+                                      std::to_string(mesh->mNumVertices) + ")");
+                }
                 out.indices.push_back(submesh.vertex_offset + face.mIndices[corner]);
             }
         }
@@ -157,9 +342,16 @@ bool import_mesh_file(const std::string& input_path, const MeshCookOptions& opti
     }
 
     if (out.indices.empty()) {
-        set_error(error, "mesh import produced no triangles");
-        out = CookedMesh{};
-        return false;
+        return reject(CookFailure::InvalidGeometry, "mesh import produced no triangles");
+    }
+    if (!all_finite(out.positions)) {
+        return reject(CookFailure::InvalidGeometry, "mesh import rejected: non-finite (NaN/Inf) vertex position");
+    }
+    if (!all_finite(out.normals)) {
+        return reject(CookFailure::InvalidGeometry, "mesh import rejected: non-finite (NaN/Inf) vertex normal");
+    }
+    if (!all_finite(out.uvs)) {
+        return reject(CookFailure::InvalidGeometry, "mesh import rejected: non-finite (NaN/Inf) texture coordinate");
     }
     compute_bounds(out);
     return true;
@@ -167,6 +359,7 @@ bool import_mesh_file(const std::string& input_path, const MeshCookOptions& opti
     (void)input_path;
     (void)options;
     set_error(error, "assimp unavailable (library not linked)");
+    set_failure(failure, CookFailure::ImporterUnavailable);
     return false;
 #endif
 }
@@ -289,12 +482,15 @@ CookStubWriteResult cook_mesh_file(const std::string& input_path, const std::str
     CookStubWriteResult result;
     if (input_path.empty() || output_path.empty()) {
         result.note = "missing input or output path";
+        result.failure = CookFailure::InvalidArgument;
         return result;
     }
     CookedMesh mesh;
     std::string error;
-    if (!import_mesh_file(input_path, options, mesh, &error)) {
+    CookFailure failure = CookFailure::None;
+    if (!import_mesh_file(input_path, options, mesh, &error, &failure)) {
         result.note = error;
+        result.failure = failure;
         return result;
     }
     const std::vector<u8> bytes = serialize_cooked_mesh(mesh);
@@ -307,10 +503,12 @@ CookStubWriteResult cook_mesh_file(const std::string& input_path, const std::str
     std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
     if (!out) {
         result.note = "unable to write cooked mesh output";
+        result.failure = CookFailure::WriteFailed;
         return result;
     }
     out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     result.ok = out.good();
+    result.failure = result.ok ? CookFailure::None : CookFailure::WriteFailed;
     result.byteCount = static_cast<u32>(bytes.size());
     result.note = result.ok ? ("mesh cooked, vertices=" + std::to_string(mesh.vertex_count()) +
                                " triangles=" + std::to_string(mesh.indices.size() / 3u))

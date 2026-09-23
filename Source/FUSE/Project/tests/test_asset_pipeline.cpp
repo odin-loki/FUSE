@@ -29,6 +29,15 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+// Lenient opt-out for this file: these tests exercise the cook-cache / job-graph bookkeeping and the
+// lenient stub writers using placeholder sources ("# comment" .obj files, "PNG\n" textures, a bare
+// "RIFF" wav) that no real importer can decode. Import validation is strict by default, which would
+// (correctly) reject every one of them, so each cooker here explicitly opts out. Strict validation
+// has its own coverage in test_b7_cook_gates.cpp.
+void optOutOfStrictImport(fuse::project::AssetCooker& cooker) {
+    cooker.set_import_validation(fuse::project::ImportValidation::Lenient);
+}
+
 std::string writeTempFile(const std::string& path, const std::string& contents) {
     std::ofstream out(path, std::ios::binary);
     out << contents;
@@ -80,6 +89,8 @@ void testAssetCookerStub() {
     desc.output_path = "/tmp/fuse_b79_mesh.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord record = cooker.cook_mesh(desc);
     expectTrue(record.ok, "mesh cook stub ok");
     expectTrue(record.status == fuse::project::CookStatus::Ok, "mesh cook status ok");
@@ -99,6 +110,8 @@ void testCookEntryWritesOutputFile() {
     entry.output_path = "/tmp/fuse_b79_entry_mesh.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord record = cooker.cook_entry(entry);
     expectTrue(record.ok, "cook_entry ok");
     expectTrue(!record.cache_hit, "first cook_entry is cache miss");
@@ -118,6 +131,8 @@ void testCookEntryWritesShaderStubOutput() {
     entry.output_path = "/tmp/fuse_b79_entry_shader.fuseshader";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord record = cooker.cook_entry(entry);
     expectTrue(record.ok, "shader cook_entry ok");
     expectTrue(!record.cache_hit, "first shader cook_entry is cache miss");
@@ -144,6 +159,8 @@ void testAssetCookerTextureAudioHookStubs() {
     textureDesc.generate_mipmaps = true;
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord textureRecord = cooker.cook_texture(textureDesc);
     expectTrue(textureRecord.ok, "texture cook stub ok");
 
@@ -210,6 +227,8 @@ void testAssetCookerBc7Texture() {
     desc.output_path = "/tmp/fuse_b79_tex.fusetex";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord record = cooker.cook_texture(desc);
     expectTrue(record.ok, "bc7 texture cook ok");
 
@@ -254,6 +273,8 @@ void testCookJobGraphEmpty() {
     expectTrue(manifestOrder.order.empty(), "empty manifest order is empty");
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker, manifest);
     expectTrue(result.ok, "empty graph execute ok");
     expectTrue(!result.cycle_detected, "empty graph execute not cyclic");
@@ -738,6 +759,8 @@ void testCookJobGraphStageOrdering() {
     graph.build_from_manifest(manifest);
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker, manifest);
 
     expectTrue(result.ok, "job graph execute ok");
@@ -763,6 +786,8 @@ void testCookJobGraphFailedStageShortCircuit() {
     graph.build_from_manifest(manifest);
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker, manifest);
 
     expectTrue(!result.ok, "missing source fails graph execute");
@@ -805,6 +830,8 @@ void testCookJobGraphLinearChain() {
     expectTrue(graph.edges().size() == 2u, "linear chain has two edges");
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker, manifest);
 
     expectTrue(result.ok, "linear chain executes successfully");
@@ -855,6 +882,8 @@ void testCookJobGraphDiamondDag() {
     expectTrue(graph.edges().size() >= 3u, "diamond DAG records dependency edges");
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker, manifest);
 
     expectTrue(result.ok, "diamond DAG executes successfully");
@@ -896,6 +925,8 @@ void testCookJobGraphCycleReject() {
     expectTrue(graph.edges().size() >= 2u, "cycle edges recorded");
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker, manifest);
 
     expectTrue(!result.ok, "cycle rejects graph execute");
@@ -931,6 +962,8 @@ void testCookJobGraphDependencyEdgesAndOrder() {
     expectTrue(graph.edges()[0].to_job_id == entryB.output_path, "edge to dependent job");
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker, manifest);
 
     expectTrue(result.ok, "both jobs succeed");
@@ -1041,6 +1074,8 @@ void testCookJobGraphDependencyShortCircuit() {
     graph.build_from_manifest(manifest);
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookJobGraphExecuteResult result = graph.execute(cooker, manifest);
 
     expectTrue(!result.ok, "upstream failure fails batch");
@@ -1065,9 +1100,13 @@ void testCookManifestUsesJobGraph() {
     manifest.assets.push_back(entry);
 
     fuse::project::AssetCooker graphCooker;
+
+    optOutOfStrictImport(graphCooker);
     const fuse::project::CookJobGraphExecuteResult graphResult = graphCooker.cook_manifest_graph(manifest);
 
     fuse::project::AssetCooker batchCooker;
+
+    optOutOfStrictImport(batchCooker);
     const fuse::project::CookBatchResult batchResult = batchCooker.cook_manifest(manifest);
 
     expectTrue(graphResult.ok, "cook_manifest_graph ok");
@@ -1149,6 +1188,8 @@ void testCookCacheHitMiss() {
     desc.output_path = "/tmp/fuse_b79_cache_mesh.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord first = cooker.cook_mesh(desc);
     expectTrue(first.ok, "first cook ok");
     expectTrue(!first.cache_hit, "first cook is cache miss");
@@ -1172,6 +1213,8 @@ void testCookCacheInvalidation() {
     desc.output_path = "/tmp/fuse_b79_inval_mesh.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
     expectTrue(seeded.ok, "seed cook ok");
     expectTrue(cooker.cache().entry_count() == 1u, "cache seeded");
@@ -1204,6 +1247,8 @@ void testCookCacheRoundTrip() {
     desc.output_path = "/tmp/fuse_b79_cache_persist.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     cooker.cook_mesh(desc);
 
     const std::string cachePath = "/tmp/fuse_b79_cook_cache.json";
@@ -1242,6 +1287,8 @@ void testCookCacheInvalidateChain() {
     manifest.assets.push_back(entryC);
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
     expectTrue(batch.ok, "chain manifest cook seeds cache");
     expectTrue(cooker.cache().entry_count() == 3u, "three-node chain cached");
@@ -1281,6 +1328,8 @@ void testCookCacheStaleDependencyHashInvalidation() {
     manifest.assets.push_back(entryB);
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
     expectTrue(batch.ok, "stale-hash test seeds cache");
     expectTrue(cooker.cache().entry_count() == 2u, "upstream and downstream cached");
@@ -1316,6 +1365,8 @@ void testCookCacheUpstreamInvalidation() {
     manifest.assets.push_back(entryB);
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookBatchResult batch = cooker.cook_manifest(manifest);
     expectTrue(batch.ok, "manifest cook seeds cache");
     expectTrue(cooker.cache().entry_count() == 2u, "upstream and downstream cached");
@@ -1379,6 +1430,8 @@ void testCookCacheEmptyKeyPaths() {
     expectTrue(fuse::project::hash_mesh_import(desc) == 0, "empty input path yields zero content hash");
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord record = cooker.cook_mesh(desc);
     expectTrue(!record.ok, "empty input path fails cook");
     expectTrue(cooker.cache().entry_count() == 0u, "failed empty-path cook does not cache");
@@ -1396,6 +1449,8 @@ void testCookDirtyInvalidatesCache() {
     desc.output_path = "/tmp/fuse_b79_dirty_mesh.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
     expectTrue(seeded.ok, "seed dirty-path cook ok");
     expectTrue(cooker.cache().entry_count() == 1u, "cache seeded for dirty test");
@@ -1432,6 +1487,8 @@ void testCookCacheContentChangePrunesStale() {
     desc.output_path = "/tmp/fuse_b79_prune_mesh.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord first = cooker.cook_mesh(desc);
     expectTrue(first.ok, "first cook ok");
     expectTrue(!first.cache_hit, "first cook misses");
@@ -1457,6 +1514,8 @@ void testCookCacheOutputInvalidation() {
     desc.output_path = "/tmp/fuse_b79_outinv_mesh.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
     expectTrue(seeded.ok, "seed cook ok");
     expectTrue(cooker.cache().entry_count() == 1u, "cache seeded");
@@ -1479,6 +1538,8 @@ void testCookCachePruneStaleEntries() {
     desc.output_path = "/tmp/fuse_b79_batch_prune.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord first = cooker.cook_mesh(desc);
     expectTrue(first.ok, "seed cook for batch prune ok");
     expectTrue(cooker.cache().entry_count() == 1u, "one entry before batch prune");
@@ -1556,6 +1617,8 @@ void testCookCacheInvalidatePruneGuards() {
     desc.output_path = "/tmp/fuse_b79_guard_mesh.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
     expectTrue(seeded.ok, "seed cook for invalidate/prune guards ok");
     expectTrue(cooker.cache().entry_count() == 1u, "cache seeded for guard tests");
@@ -1605,6 +1668,8 @@ void testCookCacheContainsHelper() {
     desc.output_path = "/tmp/fuse_b79_contains_mesh.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
     expectTrue(seeded.ok, "seed cook for contains helper ok");
     expectTrue(cooker.cache().contains(seeded.content_hash), "contains reports seeded hash");
@@ -1723,6 +1788,8 @@ void testCookerInvalidationCountProbes() {
     manifest.assets.push_back(entryB);
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookBatchResult cooked = cooker.cook_manifest(manifest);
     expectTrue(cooked.ok, "manifest cook for count probes ok");
     expectTrue(cooker.cache().entry_count() == 2u, "two entries seeded for count probes");
@@ -1760,6 +1827,8 @@ void testCookerWouldInvalidateProbes() {
     manifest.assets.push_back(entry_b);
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for would_invalidate probes ok");
     expectTrue(!cooker.would_invalidate_upstream_dependency(manifest, ""),
                "empty changed source upstream would_invalidate is false");
@@ -1786,6 +1855,8 @@ void testCookerReconcileEstimateShouldSkip() {
     manifest.assets.push_back(entry);
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     expectTrue(cooker.cook_manifest(manifest).ok, "manifest cook for reconcile should_skip ok");
 
     const fuse::project::CookCacheReconcileEstimate fresh = cooker.estimate_reconcile_invalidation(manifest);
@@ -1819,6 +1890,8 @@ void testCookerReconcileEstimateProbes() {
     manifest.assets.push_back(entry_b);
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookBatchResult cooked = cooker.cook_manifest(manifest);
     expectTrue(cooked.ok, "manifest cook for reconcile estimate ok");
 
@@ -1872,6 +1945,8 @@ void testCookerUpstreamReconcileProbes() {
     manifest.assets.push_back(entry_c);
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     expectTrue(cooker.cook_manifest(manifest).ok, "chain manifest cook for upstream reconcile ok");
     expectTrue(!cooker.would_reconcile_invalidation(manifest), "fresh cache would_reconcile is false");
 
@@ -1929,6 +2004,8 @@ void testCookCacheDownstreamSourceProbe() {
     graph.build_from_manifest(manifest);
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     expectTrue(cooker.cook_manifest(manifest).ok, "chain manifest cook for downstream probe ok");
     expectTrue(cooker.cache().entry_count() == 3u, "three entries seeded for downstream probe");
 
@@ -1971,6 +2048,8 @@ void testCookJobGraphCacheShortCircuit() {
     manifest.assets.push_back(entry);
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookBatchResult first = cooker.cook_manifest(manifest);
     expectTrue(first.ok, "first cook ok");
     expectTrue(!first.records[0].cache_hit, "first cook misses");
@@ -1996,6 +2075,8 @@ void testImportPipelineCookCachePersistRoundTrip() {
 
     fuse::project::ImportPipeline pipeline;
     pipeline.set_project_root(manifest.project_root);
+
+    optOutOfStrictImport(pipeline.cooker());
     pipeline.plan_from_manifest(manifest);
     const fuse::project::CookBatchResult first = pipeline.execute(false);
     expectTrue(first.ok, "pipeline first cook ok");
@@ -2003,6 +2084,8 @@ void testImportPipelineCookCachePersistRoundTrip() {
 
     fuse::project::ImportPipeline reloaded;
     reloaded.set_project_root(manifest.project_root);
+
+    optOutOfStrictImport(reloaded.cooker());
     expectTrue(reloaded.load_cook_cache(cachePath), "pipeline reloads cook cache");
     reloaded.plan_from_manifest(manifest);
     const fuse::project::CookBatchResult second = reloaded.execute(false);
@@ -2021,6 +2104,8 @@ void testCookManifestCacheHitsOnSecondRun() {
     manifest.assets.push_back(entry);
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookBatchResult first = cooker.cook_manifest(manifest);
     expectTrue(first.ok, "first manifest cook ok");
     expectTrue(!first.records[0].cache_hit, "first manifest cook misses");

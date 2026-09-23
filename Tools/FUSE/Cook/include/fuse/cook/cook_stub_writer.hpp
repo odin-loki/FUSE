@@ -6,10 +6,26 @@
 
 namespace fuse::cook {
 
+/// Why a real importer/encoder refused a source (strict cook validation). `None` when `ok`, or when
+/// the failure has no more specific class than "bad argument".
+enum class CookFailure : u8 {
+    None = 0,
+    InvalidArgument,        ///< empty input/output path, null pixel buffer, ...
+    ImporterUnavailable,    ///< assimp / stb_image not linked into this build
+    MalformedSource,        ///< file could not be parsed at all (truncated, corrupt, wrong format)
+    InvalidGeometry,        ///< parsed, but geometry is unusable (no triangles, out-of-range indices, NaN/Inf)
+    CorruptImage,           ///< image bytes could not be decoded (truncated, corrupt, not an image)
+    InvalidImageDimensions, ///< zero-size or larger than `kMaxCookTextureDimension`
+    WriteFailed,            ///< the cooked output could not be written
+};
+
+[[nodiscard]] const char* cookFailureName(CookFailure failure);
+
 struct CookStubWriteResult {
     bool ok = false;
     u32 byteCount = 0;
     std::string note;
+    CookFailure failure = CookFailure::None;
 };
 
 /// Optional real encoder hooks — return `ok=false` when third-party libs are absent (U7 honest stubs).

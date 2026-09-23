@@ -23,6 +23,15 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+// Lenient opt-out for this file: these tests exercise the cook-cache / job-graph bookkeeping and the
+// lenient stub writers using placeholder sources ("# comment" .obj files, "PNG\n" textures, a bare
+// "RIFF" wav) that no real importer can decode. Import validation is strict by default, which would
+// (correctly) reject every one of them, so each cooker here explicitly opts out. Strict validation
+// has its own coverage in test_b7_cook_gates.cpp.
+void optOutOfStrictImport(fuse::project::AssetCooker& cooker) {
+    cooker.set_import_validation(fuse::project::ImportValidation::Lenient);
+}
+
 std::string writeTempFile(const std::string& path, const std::string& contents) {
     std::ofstream out(path, std::ios::binary);
     out << contents;
@@ -129,6 +138,8 @@ void testCookCachePruneAll() {
     desc.output_path = "/tmp/fuse_b79_prune_all_stale.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord first = cooker.cook_mesh(desc);
     expectTrue(first.ok, "seed cook for prune_all ok");
     expectTrue(cooker.cache().entry_count() == 1u, "one stale-tracked entry before content change");
@@ -151,6 +162,8 @@ void testCookCacheStaleContentInvalidationGuards() {
     desc.output_path = "/tmp/fuse_b79_stale_guard.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
     expectTrue(seeded.ok, "seed cook for stale-content guard ok");
     expectTrue(cooker.cache().entry_count() == 1u, "cache seeded");
@@ -171,6 +184,8 @@ void testCookCacheHasPrunableEntriesAndCleanPruneGuards() {
     valid_desc.output_path = "/tmp/fuse_b79_prunable_valid.fusemesh";
 
     fuse::project::AssetCooker fresh_cooker;
+
+    optOutOfStrictImport(fresh_cooker);
     const fuse::project::CookRecord valid_cook = fresh_cooker.cook_mesh(valid_desc);
     expectTrue(valid_cook.ok, "valid cook for prunable guard ok");
     expectTrue(!fresh_cooker.cache().has_prunable_entries(), "fresh cook cache is not prunable");
@@ -182,6 +197,8 @@ void testCookCacheHasPrunableEntriesAndCleanPruneGuards() {
     desc.output_path = "/tmp/fuse_b79_prunable_stale.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord first = cooker.cook_mesh(desc);
     expectTrue(first.ok, "seed cook for prunable guard ok");
     expectTrue(!cooker.cache().has_prunable_entries(), "fresh cook entry is not prunable");
@@ -240,6 +257,8 @@ void testCookCachePruneAllMixedInvalidAndStale() {
     stale_desc.output_path = "/tmp/fuse_b79_prune_mixed_stale.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord valid_cook = cooker.cook_mesh(valid_desc);
     const fuse::project::CookRecord stale_cook = cooker.cook_mesh(stale_desc);
     expectTrue(valid_cook.ok && stale_cook.ok, "seed valid and stale entries for mixed prune");
@@ -356,6 +375,8 @@ void testCookCacheLoadPrunesStaleEntries() {
     desc.output_path = "/tmp/fuse_b79_load_prune.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord cooked = cooker.cook_mesh(desc);
     expectTrue(cooked.ok, "seed cook for load-time stale prune ok");
 
@@ -530,6 +551,8 @@ void testCookCacheInvalidationProbes() {
     desc.output_path = "/tmp/fuse_b79_probe_mesh.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
     expectTrue(seeded.ok, "seed cook for invalidation probes ok");
 
@@ -613,6 +636,8 @@ void testCookCacheProbeStaleContentSources() {
     desc_b.output_path = "/tmp/fuse_b79_probe_stale_b.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     expectTrue(cooker.cook_mesh(desc_a).ok, "seed cook a for stale source probe");
     expectTrue(cooker.cook_mesh(desc_b).ok, "seed cook b for stale source probe");
     expectTrue(cooker.cache().probe_stale_content_sources().empty(), "fresh entries not probed as stale");
@@ -681,6 +706,8 @@ void testCookCacheWouldInvalidationProbes() {
     desc.output_path = "/tmp/fuse_b79_would_mesh.fusemesh";
 
     fuse::project::AssetCooker cooker;
+
+    optOutOfStrictImport(cooker);
     const fuse::project::CookRecord seeded = cooker.cook_mesh(desc);
     expectTrue(seeded.ok, "seed cook for would_invalidate probes ok");
 

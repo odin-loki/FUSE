@@ -22,8 +22,15 @@ struct CookedTexture {
     std::vector<Level> levels;
 };
 
+/// Largest width or height a texture cook accepts (the common D3D12 / Vulkan 2D image limit). Larger
+/// sources are rejected with `CookFailure::InvalidImageDimensions` before any pixels are decoded.
+inline constexpr u32 kMaxCookTextureDimension = 16384u;
+
 /// Decode an image (PNG / TGA / BMP / JPEG via stb_image), build mips when requested, BC7-encode and
-/// write. Fails without writing when the source cannot be decoded.
+/// write. Fails without writing when the source cannot be decoded (`CorruptImage`), is zero-size or
+/// larger than `kMaxCookTextureDimension` (`InvalidImageDimensions`), or stb_image is not linked
+/// (`ImporterUnavailable`). Non-power-of-two and non-multiple-of-4 sizes are valid: BC7 blocks are
+/// edge-padded and each mip level halves (floor, min 1), so there is no POT requirement to enforce.
 CookStubWriteResult cook_texture_bc7_file(const std::string& input_path, const std::string& output_path,
                                           bool mipmaps);
 

@@ -27,8 +27,10 @@ void printUsage() {
                  "  fuse_cook --fuselevel --mis <file.mis> --output <world.fuselevel>\n"
                  "  fuse_cook --fuselevel --module <file.cs> --output <world.fuselevel>\n"
                  "Options:\n"
-                 "  --strict   Fail (exit 1) on sources the real importers cannot decode instead of\n"
-                 "             writing placeholder stubs\n");
+                 "  --lenient  Cook undecodable mesh/texture sources to labelled placeholder stubs instead\n"
+                 "             of failing. By default cooks are strict: malformed meshes and corrupt,\n"
+                 "             zero-size or oversize textures fail (exit 1) with a specific status\n"
+                 "  --strict   Accepted for compatibility (strict is the default)\n");
 }
 
 /// Manifest paths are relative to the manifest's directory, not the caller's working directory.
@@ -91,7 +93,7 @@ int main(int argc, char** argv) {
     std::string inputPath;
     std::string outputPath;
     bool dryRun = false;
-    bool strictImport = false;
+    fuse::project::ImportValidation validation = fuse::project::ImportValidation::Strict;
     bool meshCook = false;
     bool textureCook = false;
     bool audioCook = false;
@@ -112,7 +114,9 @@ int main(int argc, char** argv) {
         } else if (arg == "--dry-run") {
             dryRun = true;
         } else if (arg == "--strict") {
-            strictImport = true;
+            validation = fuse::project::ImportValidation::Strict;
+        } else if (arg == "--lenient") {
+            validation = fuse::project::ImportValidation::Lenient;
         } else if (arg == "--mesh") {
             meshCook = true;
         } else if (arg == "--texture") {
@@ -160,7 +164,7 @@ int main(int argc, char** argv) {
         }
 
         fuse::project::AssetCooker cooker;
-        cooker.set_strict_import(strictImport);
+        cooker.set_import_validation(validation);
         const std::string cachePath = fuse::project::defaultCookCachePath(".");
         cooker.cache().load(cachePath);
 
@@ -205,7 +209,7 @@ int main(int argc, char** argv) {
 
         fuse::project::ImportPipeline pipeline;
         pipeline.set_project_root(manifest.project_root);
-        pipeline.cooker().set_strict_import(strictImport);
+        pipeline.cooker().set_import_validation(validation);
         const std::string cachePath =
             fuse::project::defaultCookCachePath(manifest.project_root);
         if (!dryRun) {
@@ -250,7 +254,7 @@ int main(int argc, char** argv) {
 
         fuse::project::ImportPipeline pipeline;
         pipeline.set_project_root(projectDir);
-        pipeline.cooker().set_strict_import(strictImport);
+        pipeline.cooker().set_import_validation(validation);
         const std::string cachePath = fuse::project::defaultCookCachePath(projectDir);
         if (!dryRun) {
             pipeline.load_cook_cache(cachePath);

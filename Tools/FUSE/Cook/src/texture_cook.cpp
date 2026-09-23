@@ -2,6 +2,7 @@
 
 #include <fuse/cook/bc7_encoder.hpp>
 
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -30,8 +31,15 @@ u32 level_block_count(u32 width, u32 height) {
 CookStubWriteResult write_texture_bc7_rgba(const u8* rgba, u32 width, u32 height, const std::string& output_path,
                                            bool mipmaps, const char* hook) {
     CookStubWriteResult result;
-    if (rgba == nullptr || width == 0u || height == 0u || output_path.empty()) {
+    if (rgba == nullptr || output_path.empty()) {
         result.note = "invalid rgba input or output path";
+        result.failure = CookFailure::InvalidArgument;
+        return result;
+    }
+    if (width == 0u || height == 0u || width > kMaxCookTextureDimension || height > kMaxCookTextureDimension) {
+        result.note = "texture dimensions " + std::to_string(width) + "x" + std::to_string(height) +
+                      " invalid (must be 1.." + std::to_string(kMaxCookTextureDimension) + ")";
+        result.failure = CookFailure::InvalidImageDimensions;
         return result;
     }
 
@@ -53,6 +61,7 @@ CookStubWriteResult write_texture_bc7_rgba(const u8* rgba, u32 width, u32 height
         const Bc7EncodeResult levelResult = encode_bc7_rgba8(level.rgba.data(), level.width, level.height, encoded);
         if (!levelResult.ok) {
             result.note = levelResult.note;
+            result.failure = CookFailure::InvalidArgument;
             return result;
         }
         totalBlocks += levelResult.blockCount;
@@ -80,10 +89,12 @@ CookStubWriteResult write_texture_bc7_rgba(const u8* rgba, u32 width, u32 height
     std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
     if (!out) {
         result.note = "unable to write BC7 texture output";
+        result.failure = CookFailure::WriteFailed;
         return result;
     }
     out.write(payload.data(), static_cast<std::streamsize>(payload.size()));
     result.ok = out.good();
+    result.failure = result.ok ? CookFailure::None : CookFailure::WriteFailed;
     result.byteCount = static_cast<u32>(payload.size());
     result.note = result.ok ? ("bc7 encoded, blocks=" + std::to_string(totalBlocks) +
                                ", mip_levels=" + std::to_string(levels.size()))
@@ -96,16 +107,63 @@ CookStubWriteResult cook_texture_bc7_file(const std::string& input_path, const s
     CookStubWriteResult result;
     if (input_path.empty() || output_path.empty()) {
         result.note = "missing input or output path";
+        result.failure = CookFailure::InvalidArgument;
         return result;
     }
 #if defined(FUSE_HAS_STB_IMAGE)
+    // stb flags a zero width/height header as "0-pixel image". Its "too large" (> 2^24 pixels on a
+    // side, or a size overflow) comes from garbage headers, so it stays CorruptImage; plausible
+    // oversize images are caught by the explicit kMaxCookTextureDimension check below.
+    auto classify = [](const char* reason) {
+        const std::string text = reason != nullptr ? reason : "";
+        return text == "0-pixel image" ? CookFailure::InvalidImageDimensions : CookFailure::CorruptImage;
+    };
+
+    // stbi_info tries every loader and reports the *last* failure, so a PNG whose IHDR says 0x0 comes
+    // back as "unknown image type". Read the PNG IHDR directly to classify that case precisely.
+    {
+        std::ifstream probe(input_path, std::ios::binary);
+        unsigned char head[24] = {};
+        if (probe.read(reinterpret_cast<char*>(head), sizeof(head)) &&
+            std::memcmp(head, "\x89PNG\r\n\x1a\n", 8) == 0 && std::memcmp(head + 12, "IHDR", 4) == 0) {
+            auto be32 = [&head](int at) {
+                return (static_cast<u32>(head[at]) << 24) | (static_cast<u32>(head[at + 1]) << 16) |
+                       (static_cast<u32>(head[at + 2]) << 8) | static_cast<u32>(head[at + 3]);
+            };
+            const u32 pngWidth = be32(16);
+            const u32 pngHeight = be32(20);
+            if (pngWidth == 0u || pngHeight == 0u) {
+                result.note = "texture rejected: dimensions " + std::to_string(pngWidth) + "x" +
+                              std::to_string(pngHeight) + " (zero-size image)";
+                result.failure = CookFailure::InvalidImageDimensions;
+                return result;
+            }
+        }
+    }
+
+    // Header probe first: reject zero-size / oversize images before allocating pixels for them.
     int width = 0;
     int height = 0;
     int channels = 0;
+    if (stbi_info(input_path.c_str(), &width, &height, &channels) == 0) {
+        const char* reason = stbi_failure_reason();
+        result.note = std::string("texture decode failed: ") + (reason != nullptr ? reason : "unknown");
+        result.failure = classify(reason);
+        return result;
+    }
+    if (width <= 0 || height <= 0 || static_cast<u32>(width) > kMaxCookTextureDimension ||
+        static_cast<u32>(height) > kMaxCookTextureDimension) {
+        result.note = "texture rejected: dimensions " + std::to_string(width) + "x" + std::to_string(height) +
+                      " outside 1.." + std::to_string(kMaxCookTextureDimension);
+        result.failure = CookFailure::InvalidImageDimensions;
+        return result;
+    }
+
     unsigned char* pixels = stbi_load(input_path.c_str(), &width, &height, &channels, 4);
     if (pixels == nullptr) {
         const char* reason = stbi_failure_reason();
         result.note = std::string("texture decode failed: ") + (reason != nullptr ? reason : "unknown");
+        result.failure = classify(reason);
         return result;
     }
     result = write_texture_bc7_rgba(pixels, static_cast<u32>(width), static_cast<u32>(height), output_path, mipmaps);
@@ -114,6 +172,7 @@ CookStubWriteResult cook_texture_bc7_file(const std::string& input_path, const s
 #else
     (void)mipmaps;
     result.note = "stb_image unavailable (library not linked)";
+    result.failure = CookFailure::ImporterUnavailable;
     return result;
 #endif
 }
