@@ -464,8 +464,9 @@ std::vector<u8> runChurn(u32 workers) {
     std::vector<u8> result;
     withScheduler(workers, [&] {
         ParticleEmitterDesc desc{};
-        desc.max_particles = 4096;
-        desc.emit_rate = 3000.f;
+        // Above the serial-slot threshold so the parallel update path is what gets compared.
+        desc.max_particles = 32768;
+        desc.emit_rate = 24000.f;
         desc.lifetime_min = 0.2f;
         desc.lifetime_max = 1.2f;
         desc.collide_with_world = true;

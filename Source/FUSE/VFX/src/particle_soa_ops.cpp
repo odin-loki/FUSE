@@ -11,6 +11,21 @@ namespace fuse::vfx::particle_soa {
 
 namespace {
 
+/// Below this many slots a job dispatch costs more than the loop itself (measured ~0.1 ms per
+/// parallel_for with 4 workers on a 4-vCPU host, against a few microseconds of per-slot work).
+constexpr u32 kParallelSlotThreshold = 16384u;
+
+template <typename Fn>
+void for_each_slot(u32 capacity, u32 grain_size, Fn&& fn) {
+    if (capacity < kParallelSlotThreshold) {
+        for (u32 index = 0; index < capacity; ++index) {
+            fn(index);
+        }
+        return;
+    }
+    fuse::jobs::parallel_for(0u, capacity, grain_size, fn);
+}
+
 u64 mix_seed(u64 seed) {
     seed ^= seed >> 33U;
     seed *= 0xff51afd7ed558ccdULL;
@@ -249,7 +264,7 @@ LifetimeCullResult lifetime_cull(ParticleSoA& soa, f32 dt, u32 grain_size) {
     std::atomic<u32> aged_count{0};
     std::atomic<u32> culled_count{0};
 
-    fuse::jobs::parallel_for(0u, soa.capacity, grain_size, [&](u32 index) {
+    for_each_slot(soa.capacity, grain_size, [&](u32 index) {
         if (soa.alive_flags[index] == 0U) {
             return;
         }
@@ -335,7 +350,7 @@ SimStepResult simulate_step(ParticleSoA& soa, const ParticleEmitterDesc& desc, f
     std::atomic<u32> integrated_count{0};
     std::atomic<u32> culled_count{0};
 
-    fuse::jobs::parallel_for(0u, soa.capacity, grain_size, [&](u32 index) {
+    for_each_slot(soa.capacity, grain_size, [&](u32 index) {
         if (soa.alive_flags[index] == 0U) {
             return;
         }
