@@ -4,7 +4,8 @@
 //  - a box on an incline rests when mu_s > tan(theta) and slides at g (sin - mu cos) otherwise
 //  - a torque-free spinning sphere keeps its angular velocity (angular momentum) with no damping
 //  - a torque-free tumbling box never gains kinetic energy and keeps its angular momentum
-//  - a stack of five yawed (oriented) boxes stays stable
+//  - a stack of five yawed (oriented) boxes stays stable; 8- and 12-box stacks twisted 0.3 rad per
+//    box settle and sleep at the default 4 substeps x 10 iterations
 //  - a tilted capsule falls over and rests on its side; a spinning box sleeps only once it stops
 //  - oriented box narrowphase: OBB-OBB face manifolds clip to four points, OBB-plane corners
 #include <fuse/core/init.hpp>
@@ -389,56 +390,98 @@ void testTumblingBoxEnergy() {
     expectTrue(worstMomentum < 0.1f, "torque-free tumbling keeps its world angular momentum");
 }
 
-void testOrientedBoxStack() {
+struct StackResult {
+    f32 lateral = 0.f;
+    f32 vertical = 0.f;
+    f32 tilt = 0.f;
+    f32 yawDrift = 0.f;
+    f32 peakSpeed = 0.f;
+    /// Largest body speed over the last second (rocking shows up here).
+    f32 lateSpeed = 0.f;
+    bool asleep = false;
+};
+
+/// `count` unit boxes stacked on a plane, each yawed `twist` radians more than the one below.
+StackResult runTwistedStack(u32 count, f32 twist, u32 substeps, u32 iterations, int frames) {
     RigidBodySoA bodies;
     CollisionShapeSoA shapes;
     const u32 ground = addPlane(bodies, shapes);
     setFriction(bodies, ground, 0.6f);
     u32 first = 0;
-    for (u32 i = 0; i < 5u; ++i) {
-        const quat yaw = quatFromAxisAngle({0.f, 1.f, 0.f}, 0.3f * static_cast<f32>(i));
+    for (u32 i = 0; i < count; ++i) {
+        const quat yaw = quatFromAxisAngle({0.f, 1.f, 0.f}, twist * static_cast<f32>(i));
         const u32 box = addBox(bodies, shapes, {0.f, 0.5f + static_cast<f32>(i), 0.f}, {0.5f, 0.5f, 0.5f}, yaw);
         setFriction(bodies, box, 0.6f);
         bodies.restitutions[box] = 0.f;
         first = i == 0u ? box : first;
     }
     PBDSolver solver;
-    solver.init(8, 64, 0);
+    solver.init(count + 2u, 64, 0);
     SolverParams params = undampedParams();
-    f32 peakSpeed = 0.f;
-    for (int frame = 0; frame < 300; ++frame) {
+    params.substeps = substeps;
+    params.iterations = iterations;
+    StackResult result;
+    for (int frame = 0; frame < frames; ++frame) {
         solver.step(bodies, shapes, params, kDt);
-        for (u32 i = 0; i < 5u; ++i) {
-            peakSpeed = std::max(peakSpeed, bodies.linearVelocities[first + i].length());
+        for (u32 i = 0; i < count; ++i) {
+            const f32 speed = bodies.linearVelocities[first + i].length();
+            result.peakSpeed = std::max(result.peakSpeed, speed);
+            if (frame >= frames - 60) {
+                result.lateSpeed = std::max(result.lateSpeed, speed);
+            }
         }
     }
-    f32 worstLateral = 0.f;
-    f32 worstVertical = 0.f;
-    f32 worstTilt = 0.f;
-    f32 worstYawDrift = 0.f;
-    for (u32 i = 0; i < 5u; ++i) {
+    result.asleep = true;
+    for (u32 i = 0; i < count; ++i) {
         const vec3 p = bodies.positions[first + i];
         const quat q = bodies.orientations[first + i];
-        worstLateral = std::max(worstLateral, std::sqrt(p.x * p.x + p.z * p.z));
-        worstVertical = std::max(worstVertical, std::fabs(p.y - (0.5f + static_cast<f32>(i))));
-        worstTilt = std::max(worstTilt, std::acos(std::min(rotate(q, {0.f, 1.f, 0.f}).y, 1.f)) * 180.f / kPi);
+        result.lateral = std::max(result.lateral, std::sqrt(p.x * p.x + p.z * p.z));
+        result.vertical = std::max(result.vertical, std::fabs(p.y - (0.5f + static_cast<f32>(i))));
+        result.tilt = std::max(result.tilt, std::acos(std::min(rotate(q, {0.f, 1.f, 0.f}).y, 1.f)) * 180.f / kPi);
         const vec3 xAxis = rotate(q, {1.f, 0.f, 0.f});
         const f32 yaw = std::atan2(-xAxis.z, xAxis.x);
-        worstYawDrift = std::max(worstYawDrift, std::fabs(yaw - 0.3f * static_cast<f32>(i)));
+        f32 drift = std::fmod(std::fabs(yaw - twist * static_cast<f32>(i)), 2.f * kPi);
+        drift = std::min(drift, 2.f * kPi - drift);
+        result.yawDrift = std::max(result.yawDrift, drift);
+        result.asleep = result.asleep && (bodies.flags[first + i] & RB_SLEEPING) != 0u;
     }
-    std::printf("oriented stack of 5: lateral %.5f m, vertical %.4f m, tilt %.4f deg, yaw drift %.4f rad, peak "
-                "speed %.4f m/s\n",
-                worstLateral, worstVertical, worstTilt, worstYawDrift, peakSpeed);
-    bool asleep = true;
-    for (u32 i = 0; i < 5u; ++i) {
-        asleep = asleep && (bodies.flags[first + i] & RB_SLEEPING) != 0u;
+    return result;
+}
+
+void printStack(const char* label, const StackResult& r) {
+    std::printf("%s: lateral %.5f m, vertical %.4f m, tilt %.4f deg, yaw drift %.4f rad, peak speed %.4f m/s, "
+                "last-second speed %.4f m/s, %s\n",
+                label, r.lateral, r.vertical, r.tilt, r.yawDrift, r.peakSpeed, r.lateSpeed,
+                r.asleep ? "asleep" : "awake");
+}
+
+void testOrientedBoxStack() {
+    const StackResult r = runTwistedStack(5u, 0.3f, 8u, 10u, 300);
+    printStack("oriented stack of 5", r);
+    expectTrue(r.lateral < 0.005f, "yawed box stack does not drift sideways");
+    expectTrue(r.vertical < 0.005f, "yawed box stack holds its rest heights");
+    expectTrue(r.tilt < 0.5f, "stacked boxes stay upright");
+    expectTrue(r.yawDrift < 0.01f, "stacked boxes keep their yaw (no spurious spin)");
+    expectTrue(r.peakSpeed < 0.05f, "resting stack does not pop or jitter");
+    expectTrue(r.asleep, "the stack settles and sleeps");
+}
+
+void testTallTwistedStack() {
+    // Default 4 substeps x 10 iterations. Tall yawed stacks used to rock: the face-face manifold
+    // reduction ranked its tie-break along a side axis of the reference face, where the clipped
+    // polygon has two equally extreme points, so noise swapped the kept quad between substeps.
+    const u32 heights[2] = {8u, 12u};
+    for (u32 height : heights) {
+        const StackResult r = runTwistedStack(height, 0.3f, 4u, 10u, 400);
+        char label[64];
+        std::snprintf(label, sizeof(label), "twisted stack of %u (4 substeps x 10 iterations)", height);
+        printStack(label, r);
+        expectTrue(r.lateral < 0.005f, "tall twisted stack does not drift sideways");
+        expectTrue(r.tilt < 0.5f, "tall twisted stack stays upright");
+        expectTrue(r.yawDrift < 0.01f, "tall twisted stack keeps its yaw");
+        expectTrue(r.peakSpeed < 0.1f, "tall twisted stack does not rock");
+        expectTrue(r.lateSpeed < 1e-3f && r.asleep, "tall twisted stack settles and sleeps");
     }
-    expectTrue(worstLateral < 0.005f, "yawed box stack does not drift sideways");
-    expectTrue(worstVertical < 0.005f, "yawed box stack holds its rest heights");
-    expectTrue(worstTilt < 0.5f, "stacked boxes stay upright");
-    expectTrue(worstYawDrift < 0.01f, "stacked boxes keep their yaw (no spurious spin)");
-    expectTrue(peakSpeed < 0.05f, "resting stack does not pop or jitter");
-    expectTrue(asleep, "the stack settles and sleeps");
 }
 
 void testCapsuleFallsOnItsSide() {
@@ -567,6 +610,7 @@ int main() {
     testBoxTipsOverAndRestsFlat();
     testBoxOnIncline();
     testOrientedBoxStack();
+    testTallTwistedStack();
     testCapsuleFallsOnItsSide();
     testSpinningBoxSleepsOnlyWhenStopped();
     fuse::core::shutdown();

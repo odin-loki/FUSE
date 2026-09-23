@@ -10,7 +10,9 @@
 
 namespace fuse::physics {
 
-/// Job-safe distance/spring XPBD correction into per-body `PositionDelta` slots.
+/// Job-safe distance/spring XPBD correction into per-body `PositionDelta` slots (translation only:
+/// the anchors follow the predicted orientations but no torque is applied; the solver itself uses
+/// `solveDistanceConstraint`).
 /// Returns absolute constraint violation (|distance - restLength|) for residual stub.
 /// Accumulates `lambda` across iterations/substeps when present (CPU warm-start stub).
 f32 accumulateDistanceSpringCorrection(const RigidBodySoA& bodies,
@@ -28,6 +30,17 @@ struct ContactBody {
     f32 invMass = 0.f;
     vec3 invInertia{};
 };
+
+/// Anchored distance constraint (joint) solve: the anchors are fixed in each body's frame, so the
+/// correction uses the generalized inverse masses at the anchors, w = 1/m + (r x n)^T I^-1 (r x n),
+/// and moves and rotates both predicted poses directly. restLength 0 is a ball-socket joint.
+/// Accumulates `lambda`; returns |distance - restLength| before the correction.
+f32 solveDistanceConstraint(RigidBodySoA& bodies,
+                            const DistanceConstraint& constraint,
+                            const ContactBody& bodyA,
+                            const ContactBody& bodyB,
+                            f32 dt,
+                            f32& lambda);
 
 /// XPBD contact solve on every manifold point: the points are fixed in both bodies' frames
 /// (`SolverWorkBuffers::prepareContactPoints`), so the correction uses the generalized inverse

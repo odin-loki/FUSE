@@ -172,7 +172,7 @@ ContactManifold collideOrientedBoxPlane(
         return invalidContactManifold();
     }
     if (count > kMaxContactPointsPerManifold) {
-        count = reduceToFour(corners, count, planeNormal, rotate(boxRotation, {1.f, 0.f, 0.f}), 1e-3f);
+        count = reduceToFour(corners, count, planeNormal, rotate(boxRotation, {0.8f, 0.f, 0.6f}), 1e-3f);
     }
 
     ContactManifold manifold{};
@@ -373,7 +373,10 @@ ContactManifold collideOrientedBoxBox(
         manifold.addPoint((boxA.center + boxB.center) * 0.5f, std::min(facePen, edgePen));
         return manifold;
     }
-    count = reduceToFour(points, count, refNormal, s1, 1e-3f);
+    // Tie-break along a skewed in-face direction: the clipped polygon has whole edges on the
+    // reference side planes, so ranking along a side axis ties two points and numerical noise
+    // swaps the kept quad from substep to substep (tall yawed stacks then rock).
+    count = reduceToFour(points, count, refNormal, s1 * 0.8f + s2 * 0.6f, 1e-3f);
     for (u32 i = 0; i < count; ++i) {
         manifold.addPoint(points[i].point, points[i].depth);
     }

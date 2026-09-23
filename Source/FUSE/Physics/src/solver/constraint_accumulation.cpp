@@ -16,9 +16,40 @@ void addPositionDelta(std::vector<PositionDelta>& positionDeltas, u32 bodyIndex,
     ++positionDeltas[bodyIndex].writeCount;
 }
 
+/// Anchor offset from the body centre in world space at the predicted orientation.
+vec3 anchorArm(const RigidBodySoA& bodies, u32 bodyIndex, const vec3& localAnchor) {
+    if (localAnchor.x == 0.f && localAnchor.y == 0.f && localAnchor.z == 0.f) {
+        return {};
+    }
+    return rotate(bodies.predictedOrientations[bodyIndex], localAnchor);
+}
+
 vec3 worldAnchor(const RigidBodySoA& bodies, u32 bodyIndex, const vec3& localAnchor) {
-    (void)localAnchor;
-    return bodies.predictedPositions[bodyIndex];
+    return bodies.predictedPositions[bodyIndex] + anchorArm(bodies, bodyIndex, localAnchor);
+}
+
+/// Applies the positional impulse `impulse` (+ on A, - on B) at arms rA / rB.
+void applyPositionalImpulse(RigidBodySoA& bodies,
+                            const ContactBody& A,
+                            const ContactBody& B,
+                            vec3 rA,
+                            vec3 rB,
+                            vec3 impulse) {
+    if (A.invMass > 0.f) {
+        bodies.predictedPositions[A.index] += impulse * A.invMass;
+        const vec3 dTheta = applyInverseInertia(bodies.predictedOrientations[A.index], A.invInertia, rA.cross(impulse));
+        if (dTheta.dot(dTheta) > 0.f) {
+            bodies.predictedOrientations[A.index] = integrateRotation(bodies.predictedOrientations[A.index], dTheta);
+        }
+    }
+    if (B.invMass > 0.f) {
+        bodies.predictedPositions[B.index] -= impulse * B.invMass;
+        const vec3 dTheta = applyInverseInertia(bodies.predictedOrientations[B.index], B.invInertia, rB.cross(impulse));
+        if (dTheta.dot(dTheta) > 0.f) {
+            bodies.predictedOrientations[B.index] =
+                integrateRotation(bodies.predictedOrientations[B.index], dTheta * -1.f);
+        }
+    }
 }
 
 } // namespace
@@ -58,6 +89,36 @@ f32 accumulateDistanceSpringCorrection(const RigidBodySoA& bodies,
     return std::fabs(constraintValue);
 }
 
+f32 solveDistanceConstraint(RigidBodySoA& bodies,
+                            const DistanceConstraint& constraint,
+                            const ContactBody& A,
+                            const ContactBody& B,
+                            f32 dt,
+                            f32& lambda) {
+    if (A.invMass + B.invMass < 1e-10f) {
+        return 0.f;
+    }
+    const vec3 rA = anchorArm(bodies, A.index, constraint.localAnchorA);
+    const vec3 rB = anchorArm(bodies, B.index, constraint.localAnchorB);
+    const vec3 diff = (bodies.predictedPositions[A.index] + rA) - (bodies.predictedPositions[B.index] + rB);
+    const f32 distance = diff.length();
+    if (distance < 1e-8f) {
+        return constraint.restLength; // coincident anchors: no defined direction to push along
+    }
+    const vec3 n = diff * (1.f / distance);
+    const f32 constraintValue = distance - constraint.restLength;
+    const f32 w = generalizedInverseMass(A.invMass, bodies.predictedOrientations[A.index], A.invInertia, rA, n) +
+                  generalizedInverseMass(B.invMass, bodies.predictedOrientations[B.index], B.invInertia, rB, n);
+    const f32 alpha = constraint.compliance / (dt * dt);
+    if (w + alpha < 1e-10f) {
+        return std::fabs(constraintValue);
+    }
+    const f32 deltaLambda = -constraintValue / (w + alpha);
+    lambda += deltaLambda;
+    applyPositionalImpulse(bodies, A, B, rA, rB, n * deltaLambda);
+    return std::fabs(constraintValue);
+}
+
 namespace {
 
 struct ContactPointPair {
@@ -83,30 +144,6 @@ ContactPointPair contactPointPair(const RigidBodySoA& bodies,
     (void)k;
     return {bodies.predictedPositions[a],
             bodies.predictedPositions[b] + contact.contactNormal * contact.minSeparation};
-}
-
-/// Applies the positional impulse `impulse` (+ on A, - on B) at arms rA / rB.
-void applyPositionalImpulse(RigidBodySoA& bodies,
-                            const ContactBody& A,
-                            const ContactBody& B,
-                            vec3 rA,
-                            vec3 rB,
-                            vec3 impulse) {
-    if (A.invMass > 0.f) {
-        bodies.predictedPositions[A.index] += impulse * A.invMass;
-        const vec3 dTheta = applyInverseInertia(bodies.predictedOrientations[A.index], A.invInertia, rA.cross(impulse));
-        if (dTheta.dot(dTheta) > 0.f) {
-            bodies.predictedOrientations[A.index] = integrateRotation(bodies.predictedOrientations[A.index], dTheta);
-        }
-    }
-    if (B.invMass > 0.f) {
-        bodies.predictedPositions[B.index] -= impulse * B.invMass;
-        const vec3 dTheta = applyInverseInertia(bodies.predictedOrientations[B.index], B.invInertia, rB.cross(impulse));
-        if (dTheta.dot(dTheta) > 0.f) {
-            bodies.predictedOrientations[B.index] =
-                integrateRotation(bodies.predictedOrientations[B.index], dTheta * -1.f);
-        }
-    }
 }
 
 } // namespace

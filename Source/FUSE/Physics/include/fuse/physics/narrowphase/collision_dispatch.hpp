@@ -399,6 +399,19 @@ ContactManifold collideCapsuleBox(
     u32 idxBox,
     f32 margin = 0.f);
 
+/// One shape at an explicit pose (for queries away from the bodies' stored poses, e.g. CCD).
+struct ShapeInstance {
+    CollisionShapeType type = CollisionShapeType::Sphere;
+    vec3 params{};
+    f32 scalar = 0.f;
+    vec3 position{};
+    quat orientation{};
+};
+
+/// Shape-pair narrowphase at explicit poses (the dispatch `collidePairs` runs per pair). The normal
+/// points from B towards A; invalid for unsupported pairs or shapes further apart than `margin`.
+ContactManifold collideShapes(const ShapeInstance& a, const ShapeInstance& b, u32 idxA, u32 idxB, f32 margin = 0.f);
+
 struct ContactBufferSoA;
 
 /// Job-safe narrowphase: one output slot per candidate pair, then compact valid contacts.

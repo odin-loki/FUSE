@@ -129,6 +129,28 @@ u32 PBDSolver::slotForFrameContact_(const narrowphase::ContactManifold& manifold
     return it->second;
 }
 
+void PBDSolver::wakeJointedBodies_(RigidBodySoA& bodies, const SolverParams& params) {
+    // A sleeping body is immovable to the solver: a moving body joined to it wakes it (same rule
+    // as contacts, so a chain settling as a whole still falls asleep).
+    const u32 bodyCount = bodies.count();
+    for (const DistanceConstraint& constraint : distanceConstraints_) {
+        if (constraint.bodyA >= bodyCount || constraint.bodyB >= bodyCount) {
+            continue;
+        }
+        const auto wake = [&](u32 sleeper, u32 other) {
+            if (isSleeping(bodies.flags[sleeper]) && !isSleeping(bodies.flags[other]) &&
+                (bodies.flags[other] & RB_STATIC) == 0u && bodies.sleepTimers[other] == 0.f &&
+                (bodies.linearVelocities[other].length() > params.sleepLinearThreshold ||
+                 bodies.angularVelocities[other].length() > params.sleepAngularThreshold)) {
+                bodies.flags[sleeper] &= ~RB_SLEEPING;
+                bodies.sleepTimers[sleeper] = 0.f;
+            }
+        };
+        wake(constraint.bodyA, constraint.bodyB);
+        wake(constraint.bodyB, constraint.bodyA);
+    }
+}
+
 void PBDSolver::recordFrameContacts_(RigidBodySoA& bodies, const SolverParams& params) {
     const std::vector<narrowphase::ContactManifold>& contacts = workBuffers_.contactManifolds();
     substepContactSlot_.resize(contacts.size());
@@ -169,14 +191,29 @@ u32 PBDSolver::applyContinuousCollision(RigidBodySoA& bodies, const CollisionSha
     }
     mapBodyShapes_(bodies, shapes);
 
-    // Candidates: every shape a CCD body's swept bounds touch (planes always).
+    computeInverseInertia_(bodies, shapes);
+
+    // Candidates: every shape a CCD body's swept bounds touch (planes always). A spinning shape
+    // can reach anywhere within its bounding sphere over the frame.
     sweptBounds_.resize(bodyCount);
     for (u32 body = 0; body < bodyCount; ++body) {
-        if (bodyShape_[body] != kNoShape) {
-            sweptBounds_[body] = sweptBounds(
-                shapeBoundsAt(shapes, bodyShape_[body], bodies.positions[body], bodies.orientations[body]),
-                bodies.linearVelocities[body] * dt);
+        const u32 shape = bodyShape_[body];
+        if (shape == kNoShape) {
+            continue;
         }
+        aabb start = shapeBoundsAt(shapes, shape, bodies.positions[body], bodies.orientations[body]);
+        const CollisionShapeType type = static_cast<CollisionShapeType>(shapes.types[shape]);
+        if ((type == CollisionShapeType::Box || type == CollisionShapeType::Capsule) &&
+            bodies.angularVelocities[body].dot(bodies.angularVelocities[body]) > 0.f) {
+            const vec3 p = shapes.params[shape];
+            const f32 reach = type == CollisionShapeType::Box ? p.length() : p.x + p.y;
+            const aabb sphere = broadphase::aabbFromSphere(bodies.positions[body], reach);
+            start = {{std::min(start.min.x, sphere.min.x), std::min(start.min.y, sphere.min.y),
+                      std::min(start.min.z, sphere.min.z)},
+                     {std::max(start.max.x, sphere.max.x), std::max(start.max.y, sphere.max.y),
+                      std::max(start.max.z, sphere.max.z)}};
+        }
+        sweptBounds_[body] = sweptBounds(start, bodies.linearVelocities[body] * dt);
     }
     ccdPairs_.clear();
     for (u32 body = 0; body < bodyCount; ++body) {
@@ -229,21 +266,45 @@ u32 PBDSolver::applyContinuousCollision(RigidBodySoA& bodies, const CollisionSha
         }
         const f32 invMassA = effectiveInvMass(bodies, a);
         const f32 invMassB = effectiveInvMass(bodies, b);
-        const f32 weightSum = invMassA + invMassB;
-        if (weightSum < 1e-10f) {
+        if (invMassA + invMassB < 1e-10f) {
             continue;
         }
-        bodies.positions[a] += bodies.linearVelocities[a] * (dt * toi);
-        bodies.positions[b] += bodies.linearVelocities[b] * (dt * toi);
-        const f32 approach = (bodies.linearVelocities[a] - bodies.linearVelocities[b]).dot(n);
-        if (approach < 0.f) {
+        // Advance both bodies (position and orientation) to the time of impact.
+        const auto advance = [&](u32 body) {
+            if (isStaticOrKinematic(bodies.flags[body]) || isSleeping(bodies.flags[body])) {
+                return;
+            }
+            bodies.positions[body] += bodies.linearVelocities[body] * (dt * toi);
+            const vec3 spin = bodies.angularVelocities[body] * (dt * toi);
+            if (spin.dot(spin) > 0.f) {
+                bodies.orientations[body] = applyRotationVector(bodies.orientations[body], spin);
+            }
+        };
+        advance(a);
+        advance(b);
+        // Reflect the approach velocity of the contact point (restitution applied) with an impulse
+        // through the generalized inverse masses, so a spinning body's rotation is stopped too.
+        const vec3 point = ccdBuffer_.contactPoints[i];
+        const vec3 rA = point - bodies.positions[a];
+        const vec3 rB = point - bodies.positions[b];
+        const vec3 invInertiaA = workBuffers_.effectiveInvInertia(a, invMassA);
+        const vec3 invInertiaB = workBuffers_.effectiveInvInertia(b, invMassB);
+        const vec3 relative = (bodies.linearVelocities[a] + bodies.angularVelocities[a].cross(rA)) -
+                              (bodies.linearVelocities[b] + bodies.angularVelocities[b].cross(rB));
+        const f32 approach = relative.dot(n);
+        const f32 w = generalizedInverseMass(invMassA, bodies.orientations[a], invInertiaA, rA, n) +
+                      generalizedInverseMass(invMassB, bodies.orientations[b], invInertiaB, rB, n);
+        if (approach < 0.f && w > 1e-10f) {
             const f32 restitution = bodies.restitutions[a] * bodies.restitutions[b];
-            const f32 impulse = -(1.f + restitution) * approach / weightSum;
-            bodies.linearVelocities[a] += n * (impulse * invMassA);
-            bodies.linearVelocities[b] -= n * (impulse * invMassB);
+            const vec3 impulse = n * (-(1.f + restitution) * approach / w);
+            bodies.linearVelocities[a] += impulse * invMassA;
+            bodies.linearVelocities[b] -= impulse * invMassB;
+            bodies.angularVelocities[a] += applyInverseInertia(bodies.orientations[a], invInertiaA, rA.cross(impulse));
+            bodies.angularVelocities[b] -= applyInverseInertia(bodies.orientations[b], invInertiaB, rB.cross(impulse));
         }
-        ccdHandled_[a] = 1u;
-        ccdHandled_[b] = 1u;
+        // Static and kinematic bodies take any number of impacts per frame.
+        ccdHandled_[a] = invMassA > 0.f ? 1u : 0u;
+        ccdHandled_[b] = invMassB > 0.f ? 1u : 0u;
         ++lastCcdHitCount_;
     }
     return lastCcdHitCount_;
@@ -368,18 +429,13 @@ void PBDSolver::runConstraintIterations(RigidBodySoA& bodies, const SolverParams
         if (islandCount == 0) {
             for (u32 distanceIndex = 0; distanceIndex < distanceConstraints_.size(); ++distanceIndex) {
                 const DistanceConstraint& constraint = distanceConstraints_[distanceIndex];
-                workBuffers_.clearPositionDeltasForBodies(constraint.bodyA, constraint.bodyB);
                 const f32 invMassA = effectiveInvMass(bodies, constraint.bodyA);
                 const f32 invMassB = effectiveInvMass(bodies, constraint.bodyB);
-                f32& lambda = workBuffers_.distanceLambda(distanceIndex);
-                accumulateDistanceSpringCorrection(bodies,
-                                                   constraint,
-                                                   invMassA,
-                                                   invMassB,
-                                                   dt,
-                                                   lambda,
-                                                   workBuffers_.positionDeltas());
-                workBuffers_.applyPositionDeltasForBodies(bodies, constraint.bodyA, constraint.bodyB);
+                const ContactBody bodyA{constraint.bodyA, invMassA,
+                                        workBuffers_.effectiveInvInertia(constraint.bodyA, invMassA)};
+                const ContactBody bodyB{constraint.bodyB, invMassB,
+                                        workBuffers_.effectiveInvInertia(constraint.bodyB, invMassB)};
+                solveDistanceConstraint(bodies, constraint, bodyA, bodyB, dt, workBuffers_.distanceLambda(distanceIndex));
             }
         } else if (!parallelIslands) {
             for (u32 islandIndex = 0; islandIndex < islandCount; ++islandIndex) {
@@ -667,6 +723,7 @@ void PBDSolver::step(RigidBodySoA& bodies,
     frameContactSlot_.clear();
     mapBodyShapes_(bodies, shapes);
     computeInverseInertia_(bodies, shapes);
+    wakeJointedBodies_(bodies, params);
 
     if (params.enableCcd) {
         applyContinuousCollision(bodies, shapes, dt);

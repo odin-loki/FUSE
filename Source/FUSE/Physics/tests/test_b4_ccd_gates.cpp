@@ -1,10 +1,13 @@
 // B4.11 CCD gate rows (master plan):
 //  - high-velocity sphere (100 m/s) does not tunnel through a 0.1 m wall — discrete misses, CCD catches
+//  - a fast-spinning long thin box does not tunnel through a thin post in its sweep — discrete
+//    misses, CCD (conservative advancement with the |w| r_max rotation bound) catches
 //  - CCD introduces < 1 ms overhead per frame for 100 fast-moving bodies (optimised builds)
 // TOI rows: sphere/plane/box sweeps are analytic (closed form), so there is no TOI binary search
 // to bound; that row is recorded as not applicable in the execution plan.
 #include <fuse/core/init.hpp>
 #include <fuse/physics/physics_data.hpp>
+#include <fuse/physics/rotation.hpp>
 #include <fuse/physics/solver/pbd_solver.hpp>
 
 #include <algorithm>
@@ -111,6 +114,59 @@ void testFastSpheresCollideHeadOn() {
     }
 }
 
+/// A 2 m bar (0.04 m thick) spinning at 60 rad/s about z around its centre; a 0.04 m post stands in
+/// the sweep 0.8 m from the centre. The swing angle phi (unwrapped) must never pass +-pi/2, where
+/// either end of the bar meets the post. Returns the largest |phi| reached.
+f32 spinBarPastPost(bool ccd, u32& ccdHits) {
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+    const u32 post = bodies.addBody({0.f, 0.8f, 0.f}, 0.f, RB_STATIC);
+    shapes.addShape(CollisionShapeType::Box, post, {0.02f, 0.02f, 1.f});
+    const u32 bar = bodies.addBody({0.f, 0.f, 0.f}, 1.f, RB_NO_GRAVITY | (ccd ? RB_CCD : 0u));
+    shapes.addShape(CollisionShapeType::Box, bar, {1.f, 0.02f, 0.02f});
+    bodies.angularVelocities[bar] = {0.f, 0.f, 60.f};
+    bodies.restitutions[bar] = 0.8f;
+    bodies.restitutions[post] = 0.8f;
+
+    PBDSolver solver;
+    solver.init(2, 8, 0);
+    SolverParams p = params();
+    p.linearDamping = 1.f;
+    p.angularDamping = 1.f;
+    ccdHits = 0;
+    f32 phi = 0.f;
+    f32 worst = 0.f;
+    for (int frame = 0; frame < 120; ++frame) {
+        solver.step(bodies, shapes, p, kDt);
+        ccdHits += solver.lastCcdHitCount();
+        const vec3 axis = rotate(bodies.orientations[bar], {1.f, 0.f, 0.f});
+        f32 delta = std::atan2(axis.y, axis.x) - std::fmod(phi, 2.f * 3.14159265f);
+        while (delta > 3.14159265f) {
+            delta -= 2.f * 3.14159265f;
+        }
+        while (delta < -3.14159265f) {
+            delta += 2.f * 3.14159265f;
+        }
+        phi += delta;
+        worst = std::max(worst, std::fabs(phi));
+    }
+    return worst;
+}
+
+void testSpinningBarDoesNotTunnel() {
+    constexpr f32 kHalfPi = 0.5f * 3.14159265f;
+    // The post spans about +-0.05 rad around phi = pi/2 (bar and post half thickness over 0.8 m).
+    constexpr f32 kPostSpan = 0.06f;
+    u32 hits = 0;
+    const f32 discrete = spinBarPastPost(false, hits);
+    std::printf("CCD spin: discrete-only bar swept to |phi| %.3f rad (post at %.3f rad)\n", discrete, kHalfPi);
+    expectTrue(discrete > kHalfPi + 0.5f, "discrete stepping alone lets the spinning bar pass through the post");
+    const f32 swept = spinBarPastPost(true, hits);
+    std::printf("CCD spin: with CCD bar swept to |phi| %.3f rad, %u CCD clamps\n", swept, hits);
+    expectTrue(swept < kHalfPi + kPostSpan, "CCD stops the spinning bar at the post");
+    expectTrue(hits >= 1u, "the bar's impact with the post is clamped by CCD");
+}
+
 void testCcdOverheadHundredBodies() {
     RigidBodySoA bodies;
     CollisionShapeSoA shapes;
@@ -153,6 +209,7 @@ int main() {
     fuse::core::initialize();
     testNoTunnellingThroughThinWall();
     testFastSpheresCollideHeadOn();
+    testSpinningBarDoesNotTunnel();
     testCcdOverheadHundredBodies();
     fuse::core::shutdown();
 

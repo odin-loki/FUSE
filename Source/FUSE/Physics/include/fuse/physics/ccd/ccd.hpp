@@ -211,6 +211,30 @@ FUSE_PHYSICS_INLINE TOIResult sweptSphereSlabZ(vec3 pos0,
     return selectEarliestToi(frontFace, backFace);
 }
 
+/// Separation at which conservative advancement reports an impact.
+constexpr f32 kCcdTolerance = 0.004f;
+/// Core rotation over a frame (|theta| * reach, metres) below which a shape counts as not spinning.
+constexpr f32 kCcdRotationEpsilon = 1e-4f;
+constexpr u32 kCcdMaxAdvancementSteps = 64u;
+
+namespace narrowphase {
+struct ShapeInstance;
+}
+
+/// Conservative advancement over one frame for shapes moving by `displacement` and rotating by the
+/// rotation vector `rotation` (angular velocity * dt), each about its own centre. Steps the time by
+/// separation / (|relative displacement| + |theta_A| r_A + |theta_B| r_B), where r is the reach of
+/// each shape's rotating core, so no impact is skipped; reports the first time the separation
+/// falls below `tolerance` with the contact normal (B towards A) and point there. toi is a fraction
+/// of the frame; 0 when the shapes already touch.
+TOIResult conservativeAdvancementToi(const narrowphase::ShapeInstance& shapeA,
+                                     vec3 displacementA,
+                                     vec3 rotationA,
+                                     const narrowphase::ShapeInstance& shapeB,
+                                     vec3 displacementB,
+                                     vec3 rotationB,
+                                     f32 tolerance = kCcdTolerance);
+
 /// Job-safe CCD: one output slot per candidate pair, then compact valid TOIs.
 void runCcdIntoBuffer(const std::vector<broadphase::CandidatePair>& pairs,
                       const RigidBodySoA& bodies,

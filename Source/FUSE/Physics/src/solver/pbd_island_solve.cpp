@@ -381,15 +381,11 @@ void per_pair_delta_application(RigidBodySoA& bodies,
                                 const DistanceConstraint& constraint,
                                 f32 dt,
                                 f32& lambda) {
+    // Anchored joints move and rotate the predicted poses directly (no delta slots needed).
     workBuffers.clearPositionDeltasForBodies(bodyA, bodyB);
-    accumulateDistanceSpringCorrection(bodies,
-                                       constraint,
-                                       invMassA,
-                                       invMassB,
-                                       dt,
-                                       lambda,
-                                       workBuffers.positionDeltas());
-    workBuffers.applyPositionDeltasForBodies(bodies, bodyA, bodyB);
+    const ContactBody a{bodyA, invMassA, workBuffers.effectiveInvInertia(bodyA, invMassA)};
+    const ContactBody b{bodyB, invMassB, workBuffers.effectiveInvInertia(bodyB, invMassB)};
+    solveDistanceConstraint(bodies, constraint, a, b, dt, lambda);
 }
 
 bool solve_island_job(RigidBodySoA& bodies,

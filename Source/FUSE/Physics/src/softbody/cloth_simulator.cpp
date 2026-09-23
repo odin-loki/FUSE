@@ -98,28 +98,36 @@ void ClothSimulator::step(f32 dt, vec3 gravity) {
     const u32 count = m_particles.count;
 
     applyAerodynamics_(dt);
+    const f32 invH = 1.f / h;
+    const vec3 gravityStep = gravity * h;
+    vec3* const positions = m_particles.positions;
+    vec3* const prevPositions = m_particles.prevPositions;
+    vec3* const velocities = m_particles.velocities;
+    const f32* const invMasses = m_particles.invMasses;
     for (u32 substep = 0; substep < m_desc.substeps; ++substep) {
+        // Velocity of the previous substep (from its solved positions) fused with this substep's
+        // prediction: one pass over the particles per substep.
+        const bool first = substep == 0u;
         for (u32 i = 0; i < count; ++i) {
-            m_particles.prevPositions[i] = m_particles.positions[i];
-            if (m_particles.invMasses[i] == 0.f) {
+            if (invMasses[i] == 0.f) {
+                velocities[i] = {};
+                prevPositions[i] = positions[i];
                 continue;
             }
-            m_particles.velocities[i] += gravity * h;
-            m_particles.positions[i] += m_particles.velocities[i] * h;
+            vec3 v = first ? velocities[i] : (positions[i] - prevPositions[i]) * (invH * damping);
+            v += gravityStep;
+            velocities[i] = v;
+            prevPositions[i] = positions[i];
+            positions[i] += v * h;
         }
         for (u32 iteration = 0; iteration < m_desc.iterations; ++iteration) {
             solveConstraints_(h);
         }
         solveTethers_();
         collideSpheres_();
-        const f32 invH = 1.f / h;
-        for (u32 i = 0; i < count; ++i) {
-            if (m_particles.invMasses[i] == 0.f) {
-                m_particles.velocities[i] = {};
-                continue;
-            }
-            m_particles.velocities[i] = (m_particles.positions[i] - m_particles.prevPositions[i]) * (invH * damping);
-        }
+    }
+    for (u32 i = 0; i < count; ++i) {
+        velocities[i] = invMasses[i] == 0.f ? vec3{} : (positions[i] - prevPositions[i]) * (invH * damping);
     }
 }
 
@@ -194,9 +202,42 @@ void ClothSimulator::prepareSolve_(f32 dt) {
     }
     m_packed.clear();
     m_bandStarts.clear();
+    // Within a bucket, order the constraints colour by colour (greedy: no two constraints of a
+    // colour share a particle). Consecutive constraints then touch different particles, so the
+    // CPU overlaps their square roots and divides instead of waiting on the previous store.
+    std::vector<u64> usedColours(m_particles.count, 0u);
+    std::vector<u32> colours;
+    std::vector<u32> colourCounts;
     for (const auto& band : bands) {
         m_bandStarts.push_back(static_cast<u32>(m_packed.size()));
-        m_packed.insert(m_packed.end(), band.begin(), band.end());
+        colours.assign(band.size(), 0u);
+        colourCounts.assign(65u, 0u);
+        for (usize i = 0; i < band.size(); ++i) {
+            const u64 used = usedColours[band[i].a] | usedColours[band[i].b];
+            u32 colour = 0;
+            while (colour < 64u && (used & (u64{1} << colour)) != 0u) {
+                ++colour;
+            }
+            colours[i] = colour;
+            ++colourCounts[colour];
+            if (colour < 64u) {
+                usedColours[band[i].a] |= u64{1} << colour;
+                usedColours[band[i].b] |= u64{1} << colour;
+            }
+        }
+        for (const PackedConstraint& c : band) {
+            usedColours[c.a] = 0u;
+            usedColours[c.b] = 0u;
+        }
+        std::vector<u32> offsets(65u, 0u);
+        for (u32 colour = 1; colour < 65u; ++colour) {
+            offsets[colour] = offsets[colour - 1u] + colourCounts[colour - 1u];
+        }
+        const usize base = m_packed.size();
+        m_packed.resize(base + band.size());
+        for (usize i = 0; i < band.size(); ++i) {
+            m_packed[base + offsets[colours[i]]++] = band[i];
+        }
     }
     m_packedDt = dt;
 }
@@ -262,11 +303,13 @@ void ClothSimulator::collideSpheres_() {
 }
 
 void ClothSimulator::solveTethers_() {
+    // Most tethers are slack: compare squared lengths and only take the root when one binds.
+    vec3* const positions = m_particles.positions;
     for (const ParticleConstraint& tether : m_tethers) {
-        const vec3 offset = m_particles.positions[tether.b] - m_particles.positions[tether.a];
-        const f32 dist = offset.length();
-        if (dist > tether.restLength) {
-            m_particles.positions[tether.b] = m_particles.positions[tether.a] + offset * (tether.restLength / dist);
+        const vec3 offset = positions[tether.b] - positions[tether.a];
+        const f32 distSq = offset.dot(offset);
+        if (distSq > tether.restLength * tether.restLength) {
+            positions[tether.b] = positions[tether.a] + offset * (tether.restLength / std::sqrt(distSq));
         }
     }
 }

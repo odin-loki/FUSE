@@ -96,6 +96,7 @@ private:
 
     std::vector<DistanceConstraint> distanceConstraints_;
     void recordFrameContacts_(RigidBodySoA& bodies, const SolverParams& params);
+    void wakeJointedBodies_(RigidBodySoA& bodies, const SolverParams& params);
     u32 slotForFrameContact_(const narrowphase::ContactManifold& manifold, bool trigger);
 
     void mapBodyShapes_(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);

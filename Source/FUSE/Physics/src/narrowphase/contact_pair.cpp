@@ -78,17 +78,24 @@ ContactManifold dispatchShapePairRaw(
     if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
         return invalidContactManifold();
     }
+    const ShapeInstance a{shapeType(shapes, shapeA), shapes.params[shapeA], shapes.scalars[shapeA],
+                          bodies.positions[pair.bodyA], bodyOrientation(bodies, pair.bodyA)};
+    const ShapeInstance b{shapeType(shapes, shapeB), shapes.params[shapeB], shapes.scalars[shapeB],
+                          bodies.positions[pair.bodyB], bodyOrientation(bodies, pair.bodyB)};
+    return collideShapes(a, b, pair.bodyA, pair.bodyB, margin);
+}
 
-    const CollisionShapeType typeA = shapeType(shapes, shapeA);
-    const CollisionShapeType typeB = shapeType(shapes, shapeB);
-    const vec3 posA = bodies.positions[pair.bodyA];
-    const vec3 posB = bodies.positions[pair.bodyB];
-    const quat rotA = bodyOrientation(bodies, pair.bodyA);
-    const quat rotB = bodyOrientation(bodies, pair.bodyB);
-    const vec3 paramsA = shapes.params[shapeA];
-    const vec3 paramsB = shapes.params[shapeB];
-    const u32 a = pair.bodyA;
-    const u32 b = pair.bodyB;
+} // namespace
+
+ContactManifold collideShapes(const ShapeInstance& shapeA, const ShapeInstance& shapeB, u32 a, u32 b, f32 margin) {
+    const CollisionShapeType typeA = shapeA.type;
+    const CollisionShapeType typeB = shapeB.type;
+    const vec3 posA = shapeA.position;
+    const vec3 posB = shapeB.position;
+    const quat rotA = shapeA.orientation;
+    const quat rotB = shapeB.orientation;
+    const vec3 paramsA = shapeA.params;
+    const vec3 paramsB = shapeB.params;
 
     using T = CollisionShapeType;
     const auto is = [&](T first, T second) { return typeA == first && typeB == second; };
@@ -97,16 +104,16 @@ ContactManifold dispatchShapePairRaw(
         return collideSphereSphere(posA, paramsA.x, posB, paramsB.x, a, b, margin);
     }
     if (is(T::Sphere, T::Plane)) {
-        return collideSpherePlane(posA, paramsA.x, paramsB, shapes.scalars[shapeB], a, b, margin);
+        return collideSpherePlane(posA, paramsA.x, paramsB, shapeB.scalar, a, b, margin);
     }
     if (is(T::Plane, T::Sphere)) {
-        return collideSpherePlane(posB, paramsB.x, paramsA, shapes.scalars[shapeA], b, a, margin);
+        return collideSpherePlane(posB, paramsB.x, paramsA, shapeA.scalar, b, a, margin);
     }
     if (is(T::Box, T::Plane)) {
-        return collideOrientedBoxPlane(posA, rotA, paramsA, paramsB, shapes.scalars[shapeB], a, b, margin);
+        return collideOrientedBoxPlane(posA, rotA, paramsA, paramsB, shapeB.scalar, a, b, margin);
     }
     if (is(T::Plane, T::Box)) {
-        return collideOrientedBoxPlane(posB, rotB, paramsB, paramsA, shapes.scalars[shapeA], b, a, margin);
+        return collideOrientedBoxPlane(posB, rotB, paramsB, paramsA, shapeA.scalar, b, a, margin);
     }
     if (is(T::Sphere, T::Box)) {
         return collideOrientedBoxSphere(posA, paramsA.x, posB, rotB, paramsB, a, b, margin);
@@ -145,10 +152,10 @@ ContactManifold dispatchShapePairRaw(
                                       paramsB.x, posB, a, b, margin);
     }
     if (is(T::Capsule, T::Plane)) {
-        return collideCapsulePlane(posA, rotA, paramsA, paramsB, shapes.scalars[shapeB], a, b, margin);
+        return collideCapsulePlane(posA, rotA, paramsA, paramsB, shapeB.scalar, a, b, margin);
     }
     if (is(T::Plane, T::Capsule)) {
-        return collideCapsulePlane(posB, rotB, paramsB, paramsA, shapes.scalars[shapeA], b, a, margin);
+        return collideCapsulePlane(posB, rotB, paramsB, paramsA, shapeA.scalar, b, a, margin);
     }
     if (is(T::Capsule, T::Box)) {
         return collideCapsuleBox(posA, rotA, paramsA, posB, rotB, paramsB, a, b, margin);
@@ -159,6 +166,8 @@ ContactManifold dispatchShapePairRaw(
 
     return invalidContactManifold();
 }
+
+namespace {
 
 /// minSeparation is stated against the body centres, (pA - pB) . n >= minSeparation, so its
 /// violation equals the deepest penetration whatever the shapes. The solver constrains the
