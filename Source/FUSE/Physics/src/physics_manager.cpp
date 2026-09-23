@@ -9,6 +9,7 @@ namespace fuse::physics {
 void PhysicsManager::init(const PhysicsManagerDesc& desc) {
     destroy();
     m_desc = desc;
+    m_desc.solver.enableCcd = desc.enableCcd; // CCD runs inside the solver step (B4.6)
     m_soa_.reserve(desc.maxBodies);
     m_solver_.init(desc.maxBodies, desc.maxContacts, desc.maxConstraints);
     m_initialized = true;
@@ -33,13 +34,8 @@ void PhysicsManager::step(PhysicsRegistry& registry, f32 dt, PhysicsStreamManage
 
     syncEcsToSoa_(registry);
 
-    if (m_desc.enableCcd) {
-        runCcdSweep_(dt);
-    } else {
-        m_lastCcdHitCount_ = 0;
-    }
-
     m_solver_.step(m_soa_, m_shapes_, m_desc.solver, dt);
+    m_lastCcdHitCount_ = m_solver_.lastCcdHitCount();
     syncSoaToEcs_(registry);
 
     if (m_desc.enableDestruction && !m_destructionEvents_.empty()) {
@@ -174,28 +170,6 @@ void PhysicsManager::syncEcsToSoa_(PhysicsRegistry& registry) {
 
 void PhysicsManager::syncSoaToEcs_(PhysicsRegistry& /*registry*/) {
     // Stub — managed-memory writeback deferred to full B4.9 CUDA path.
-}
-
-void PhysicsManager::runCcdSweep_(f32 dt) {
-    m_lastCcdHitCount_ = 0;
-    if (m_soa_.count() == 0 || m_shapes_.count() == 0) {
-        return;
-    }
-
-    broadphase::SpatialHashParams hashParams = m_desc.solver.broadphase;
-    hashParams.bodyCount = m_soa_.count();
-    if (hashParams.tableSize == 0) {
-        hashParams.tableSize = std::max(1024u, hashParams.bodyCount * 8u);
-    }
-    if (hashParams.cellSize <= 0.f) {
-        hashParams.cellSize = 2.f;
-    }
-
-    const std::vector<broadphase::CandidatePair> pairs =
-        broadphase::runBroadphase(m_soa_, m_shapes_, hashParams);
-    m_toiBuffer_.reserve(static_cast<u32>(pairs.size()));
-    runCcdIntoBuffer(pairs, m_soa_, m_shapes_, dt, m_toiBuffer_);
-    m_lastCcdHitCount_ = m_toiBuffer_.activeCount;
 }
 
 void PhysicsManager::processDestructionEvents_(PhysicsRegistry& registry, PhysicsResourceManager& resources) {

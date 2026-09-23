@@ -27,6 +27,32 @@ f32 effectiveInvMass(const RigidBodySoA& bodies, u32 index) {
     return bodies.invMasses[index];
 }
 
+constexpr u32 kNoShape = 0xFFFFFFFFu;
+
+/// Conservative bounds of a shape at `position`; planes are unbounded (handled separately).
+aabb shapeBoundsAt(const CollisionShapeSoA& shapes, u32 shapeIndex, vec3 position) {
+    const vec3 p = shapes.params[shapeIndex];
+    switch (static_cast<CollisionShapeType>(shapes.types[shapeIndex])) {
+    case CollisionShapeType::Box:
+        return broadphase::aabbFromBox(position, p);
+    case CollisionShapeType::Capsule:
+        return broadphase::aabbFromSphere(position, p.x + p.y);
+    default:
+        return broadphase::aabbFromSphere(position, p.x);
+    }
+}
+
+aabb sweptBounds(const aabb& start, vec3 motion) {
+    aabb out = start;
+    out.min.x += std::min(motion.x, 0.f);
+    out.min.y += std::min(motion.y, 0.f);
+    out.min.z += std::min(motion.z, 0.f);
+    out.max.x += std::max(motion.x, 0.f);
+    out.max.y += std::max(motion.y, 0.f);
+    out.max.z += std::max(motion.z, 0.f);
+    return out;
+}
+
 } // namespace
 
 void PBDSolver::init(u32 maxBodies, u32 maxContacts, u32 maxConstraints) {
@@ -56,6 +82,100 @@ void PBDSolver::destroy() {
 
 void PBDSolver::setDistanceConstraints(const std::vector<DistanceConstraint>& constraints) {
     distanceConstraints_ = constraints;
+}
+
+u32 PBDSolver::applyContinuousCollision(RigidBodySoA& bodies, const CollisionShapeSoA& shapes, f32 dt) {
+    lastCcdHitCount_ = 0;
+    ccdBuffer_.clear();
+    const u32 bodyCount = bodies.count();
+    if (bodyCount == 0u || dt <= 0.f) {
+        return 0u;
+    }
+    bodyShape_.assign(bodyCount, kNoShape);
+    for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
+        const u32 body = shapes.bodyIndices[shapeIndex];
+        if (body < bodyCount && bodyShape_[body] == kNoShape) {
+            bodyShape_[body] = shapeIndex;
+        }
+    }
+
+    // Candidates: every shape a CCD body's swept bounds touch (planes always).
+    sweptBounds_.resize(bodyCount);
+    for (u32 body = 0; body < bodyCount; ++body) {
+        if (bodyShape_[body] != kNoShape) {
+            sweptBounds_[body] = sweptBounds(shapeBoundsAt(shapes, bodyShape_[body], bodies.positions[body]),
+                                             bodies.linearVelocities[body] * dt);
+        }
+    }
+    ccdPairs_.clear();
+    for (u32 body = 0; body < bodyCount; ++body) {
+        const u32 flags = bodies.flags[body];
+        if ((flags & RB_CCD) == 0u || isStaticOrKinematic(flags) || isSleeping(flags) || bodyShape_[body] == kNoShape) {
+            continue;
+        }
+        const aabb& swept = sweptBounds_[body];
+        for (u32 other = 0; other < bodyCount; ++other) {
+            const u32 otherShape = bodyShape_[other];
+            if (other == body || otherShape == kNoShape) {
+                continue;
+            }
+            if (!collisionLayersCollide(bodies.collisionLayers[body], bodies.collisionMasks[body],
+                                        bodies.collisionLayers[other], bodies.collisionMasks[other]) ||
+                (bodies.flags[other] & RB_TRIGGER) != 0u) {
+                continue;
+            }
+            if (static_cast<CollisionShapeType>(shapes.types[otherShape]) != CollisionShapeType::Plane) {
+                if (!broadphase::aabbOverlap(swept, sweptBounds_[other])) {
+                    continue;
+                }
+                // Both CCD bodies: keep one ordering of the pair.
+                if ((bodies.flags[other] & RB_CCD) != 0u && other < body) {
+                    continue;
+                }
+            }
+            ccdPairs_.push_back({body, other});
+        }
+    }
+    if (ccdPairs_.empty()) {
+        return 0u;
+    }
+    runCcdIntoBuffer(ccdPairs_, bodies, shapes, dt, ccdBuffer_);
+
+    // Earliest impact per body (buffer is sorted by TOI); TOI 0 is an existing contact
+    // the discrete solver already handles.
+    ccdHandled_.assign(bodyCount, 0u);
+    for (u32 i = 0; i < ccdBuffer_.activeCount; ++i) {
+        const f32 toi = ccdBuffer_.toiValues[i];
+        u32 a = ccdBuffer_.bodyA[i];
+        u32 b = ccdBuffer_.bodyB[i];
+        vec3 n = ccdBuffer_.contactNormals[i]; // points towards bodyA
+        if (toi <= 1e-6f || ccdHandled_[a] != 0u || ccdHandled_[b] != 0u) {
+            continue;
+        }
+        if ((bodies.flags[a] & RB_CCD) == 0u) {
+            std::swap(a, b);
+            n = n * -1.f;
+        }
+        const f32 invMassA = effectiveInvMass(bodies, a);
+        const f32 invMassB = effectiveInvMass(bodies, b);
+        const f32 weightSum = invMassA + invMassB;
+        if (weightSum < 1e-10f) {
+            continue;
+        }
+        bodies.positions[a] += bodies.linearVelocities[a] * (dt * toi);
+        bodies.positions[b] += bodies.linearVelocities[b] * (dt * toi);
+        const f32 approach = (bodies.linearVelocities[a] - bodies.linearVelocities[b]).dot(n);
+        if (approach < 0.f) {
+            const f32 restitution = bodies.restitutions[a] * bodies.restitutions[b];
+            const f32 impulse = -(1.f + restitution) * approach / weightSum;
+            bodies.linearVelocities[a] += n * (impulse * invMassA);
+            bodies.linearVelocities[b] -= n * (impulse * invMassB);
+        }
+        ccdHandled_[a] = 1u;
+        ccdHandled_[b] = 1u;
+        ++lastCcdHitCount_;
+    }
+    return lastCcdHitCount_;
 }
 
 void PBDSolver::predict(RigidBodySoA& bodies, const SolverParams& params, f32 dt) {
@@ -310,6 +430,12 @@ void PBDSolver::step(RigidBodySoA& bodies,
         lastIterationCount_ = 0;
         lastConstraintResidual_ = 0.f;
         return;
+    }
+
+    if (params.enableCcd) {
+        applyContinuousCollision(bodies, shapes, dt);
+    } else {
+        lastCcdHitCount_ = 0;
     }
 
     const f32 subDt = dt / static_cast<f32>(std::max(1u, params.substeps));

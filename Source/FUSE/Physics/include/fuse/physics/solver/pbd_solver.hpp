@@ -1,6 +1,8 @@
 #pragma once
 
 #include <fuse/physics/broadphase/spatial_hash.hpp>
+#include <fuse/physics/ccd/ccd.hpp>
+#include <fuse/physics/ccd/toi_buffer.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/physics/solver/contact_island_graph.hpp>
@@ -26,6 +28,8 @@ struct SolverParams {
     /// Max constraint violation (residual stub) for early exit; 0 disables.
     f32 residualTolerance = 0.f;
     broadphase::SpatialHashParams broadphase{};
+    /// Sweep RB_CCD bodies over the frame before the discrete substeps (B4.6).
+    bool enableCcd = true;
 };
 
 /// B4.4 — CPU PBD/XPBD constraint solver wired to B4.2 broadphase + B4.3 narrowphase.
@@ -40,6 +44,13 @@ public:
               f32 dt);
 
     void setDistanceConstraints(const std::vector<DistanceConstraint>& constraints);
+
+    /// B4.6 CCD: sweeps each awake RB_CCD body against every shape its frame motion can
+    /// reach, advances it to the earliest time of impact and reflects its approach velocity
+    /// (restitution applied) so the discrete substeps cannot tunnel. Returns bodies clamped.
+    u32 applyContinuousCollision(RigidBodySoA& bodies, const CollisionShapeSoA& shapes, f32 dt);
+    u32 lastCcdHitCount() const { return lastCcdHitCount_; }
+    const ToiBufferSoA& ccdBuffer() const { return ccdBuffer_; }
 
     u32 contactCount() const { return lastContactCount_; }
     u32 activeBodyCount() const { return lastActiveCount_; }
@@ -68,6 +79,12 @@ private:
 
     std::vector<DistanceConstraint> distanceConstraints_;
     std::vector<vec3> preSolveVelocities_;
+    std::vector<u32> bodyShape_;
+    std::vector<aabb> sweptBounds_;
+    std::vector<broadphase::CandidatePair> ccdPairs_;
+    std::vector<u8> ccdHandled_;
+    ToiBufferSoA ccdBuffer_;
+    u32 lastCcdHitCount_ = 0;
     std::vector<f32> substepLambdaStart_;
     SolverWorkBuffers workBuffers_;
     ContactIslandGraph islandGraph_;

@@ -17,6 +17,15 @@ CollisionShapeType shapeType(const CollisionShapeSoA& shapes, u32 shapeIndex) {
 }
 
 u32 findShapeForBody(const CollisionShapeSoA& shapes, u32 bodyIndex, CollisionShapeType preferred) {
+    // Common layout: one shape per body, added in body order. Multi-shape bodies (adjacent
+    // shapes of the same body) take the scan below so `preferred` still wins.
+    if (bodyIndex < shapes.count() && shapes.bodyIndices[bodyIndex] == bodyIndex) {
+        const bool soleShape = (bodyIndex == 0u || shapes.bodyIndices[bodyIndex - 1u] != bodyIndex) &&
+                               (bodyIndex + 1u >= shapes.count() || shapes.bodyIndices[bodyIndex + 1u] != bodyIndex);
+        if (soleShape || static_cast<CollisionShapeType>(shapes.types[bodyIndex]) == preferred) {
+            return bodyIndex;
+        }
+    }
     for (u32 i = 0; i < shapes.count(); ++i) {
         if (shapes.bodyIndices[i] == bodyIndex &&
             static_cast<CollisionShapeType>(shapes.types[i]) == preferred) {
@@ -32,6 +41,9 @@ u32 findShapeForBody(const CollisionShapeSoA& shapes, u32 bodyIndex, CollisionSh
 }
 
 bool hasShapeForBody(const CollisionShapeSoA& shapes, u32 bodyIndex) {
+    if (bodyIndex < shapes.count() && shapes.bodyIndices[bodyIndex] == bodyIndex) {
+        return true;
+    }
     for (u32 i = 0; i < shapes.count(); ++i) {
         if (shapes.bodyIndices[i] == bodyIndex) {
             return true;
