@@ -36,6 +36,21 @@ struct UploadQueueStats {
     /// Transfer and graphics families differ: every batch releases ownership on the transfer queue
     /// and a graphics-queue acquire submit (waiting on a semaphore) carries the fence.
     bool queueFamilyOwnershipTransfer = false;
+    /// Cross-family only: destinations (whole buffers / image mip-layer ranges) handed graphics ->
+    /// transfer before a batch's copies and back after them. One pair per destination per batch.
+    u64 ownershipBufferTransfers = 0;
+    u64 ownershipImageTransfers = 0;
+};
+
+/// Full image upload: every mip in [0, mipLevels) of every layer in [0, layerCount). Caller data is
+/// tightly packed mip-major (mip 0 of layers 0..n, then mip 1 ...), uncompressed `bytesPerTexel`.
+struct UploadImageDesc {
+    u32 width = 1;
+    u32 height = 1;
+    u32 depth = 1;
+    u32 mipLevels = 1;
+    u32 layerCount = 1;
+    u32 bytesPerTexel = 4;
 };
 
 /// Asynchronous staging-ring upload queue.
@@ -49,8 +64,12 @@ struct UploadQueueStats {
 ///
 /// Visibility: on the same queue family each batch ends in a transfer-write -> all-commands read
 /// barrier (images end in SHADER_READ_ONLY_OPTIMAL), so graphics work submitted after `flush`
-/// sees the data without a CPU wait. Across families the batch releases ownership and an acquire
-/// submit on the graphics queue completes the transfer before the fence signals.
+/// sees the data without a CPU wait. Across families (graphics owns every resource at rest) a
+/// batch is three submits: graphics releases each destination to the transfer family and signals
+/// a semaphore (also the WAR dependency on earlier graphics work), the transfer queue waits,
+/// acquires, copies, releases, signals; graphics waits and acquires (image layouts go
+/// TRANSFER_DST -> SHADER_READ_ONLY once, in the matching release/acquire pair), then the fence
+/// signals. Each destination is transferred once per batch, however many copies target it.
 /// Work on other queues (async compute) must wait on the ticket.
 ///
 /// Not thread-safe: one owner thread records, flushes and polls.
@@ -80,6 +99,16 @@ public:
     bool recordBufferCopy(void* dstBuffer, usize srcOffset, usize dstOffset, usize size);
     /// Record staging[srcOffset] -> mip 0 / layer 0 of a colour image; leaves it SHADER_READ_ONLY.
     bool recordImageCopy(void* dstImage, usize srcOffset, u32 width, u32 height, u32 depth);
+
+    /// Ring bytes `stageImage` takes for `desc` (per-mip offsets aligned for transfer-only queues).
+    static usize imageStagingBytes(const UploadImageDesc& desc);
+    /// Tightly packed caller bytes for `desc`; 0 when `desc` is invalid.
+    static usize imageSourceBytes(const UploadImageDesc& desc);
+    /// Copies a tightly packed mip chain into the ring with each mip at an aligned offset.
+    bool stageImage(const void* data, const UploadImageDesc& desc, usize& outOffset);
+    /// Record the staged chain (from `stageImage`) into every mip/layer of `dstImage`; the whole
+    /// range ends SHADER_READ_ONLY_OPTIMAL (previous contents are discarded).
+    bool recordImageCopy(void* dstImage, usize srcOffset, const UploadImageDesc& desc);
 
     /// Ticket of the open (not yet submitted) batch; complete tickets have serial <= completedSerial.
     UploadTicket pendingTicket() const;

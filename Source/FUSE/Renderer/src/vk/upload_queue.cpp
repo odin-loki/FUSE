@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstring>
 #include <deque>
+#include <numeric>
 #include <vector>
 
 #if defined(FUSE_VULKAN_BACKEND)
@@ -22,20 +23,66 @@ usize alignUp(usize value, usize alignment) {
     return (value + (alignment - 1u)) & ~(alignment - 1u);
 }
 
+/// bufferOffset of a buffer->image copy must be a multiple of the texel size, and of 4 on queues
+/// without graphics/compute (dedicated transfer families).
+usize mipOffsetAlignment(u32 bytesPerTexel) {
+    return std::lcm(static_cast<usize>(4), static_cast<usize>(bytesPerTexel));
+}
+
+bool validImageDesc(const UploadImageDesc& desc) {
+    return desc.width > 0 && desc.height > 0 && desc.mipLevels > 0 && desc.layerCount > 0 &&
+           desc.bytesPerTexel > 0 && desc.mipLevels <= 32;
+}
+
+u32 mipExtent(u32 extent, u32 mip) {
+    return std::max(1u, (extent > 0 ? extent : 1u) >> mip);
+}
+
+usize mipBytes(const UploadImageDesc& desc, u32 mip) {
+    return static_cast<usize>(mipExtent(desc.width, mip)) * mipExtent(desc.height, mip) *
+           mipExtent(desc.depth, mip) * desc.layerCount * desc.bytesPerTexel;
+}
+
+/// Offset of `mip` inside the staged chain (each mip aligned; mip 0 at 0).
+usize stagedMipOffset(const UploadImageDesc& desc, u32 mip) {
+    const usize alignment = mipOffsetAlignment(desc.bytesPerTexel);
+    usize offset = 0;
+    for (u32 level = 0; level < mip; ++level) {
+        offset = (offset + mipBytes(desc, level) + alignment - 1u) / alignment * alignment;
+    }
+    return offset;
+}
+
 #if defined(FUSE_VULKAN_BACKEND)
-/// Everything a later graphics / compute / transfer consumer may read after an upload.
-constexpr VkAccessFlags kConsumerReadAccess =
+/// Everything a later graphics / compute / transfer consumer may do with an uploaded buffer. Writes
+/// are included so a later shader/transfer write is ordered (WAW) after the upload, not just reads.
+constexpr VkAccessFlags kConsumerBufferAccess =
     VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT |
-    VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+    VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT |
+    VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+/// Reads allowed in SHADER_READ_ONLY_OPTIMAL (the layout uploaded images end in).
+constexpr VkAccessFlags kConsumerImageAccess = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
+
+/// Image destination of a cross-family batch: mips [0, mipLevels) x layers [0, layerCount).
+struct ImageOwnership {
+    VkImage image = VK_NULL_HANDLE;
+    u32 mipLevels = 1;
+    u32 layerCount = 1;
+};
 
 struct Batch {
     VkCommandPool pool = VK_NULL_HANDLE;
     VkCommandBuffer cmd = VK_NULL_HANDLE;
     VkFence fence = VK_NULL_HANDLE;
-    // Cross-family only: graphics-queue acquire side of the ownership transfer.
-    VkCommandPool acquirePool = VK_NULL_HANDLE;
+    // Cross-family only (graphics-family pool): `releaseCmd` hands each destination graphics ->
+    // transfer before the copies, `acquireCmd` takes it back after them.
+    VkCommandPool graphicsPool = VK_NULL_HANDLE;
+    VkCommandBuffer releaseCmd = VK_NULL_HANDLE;
     VkCommandBuffer acquireCmd = VK_NULL_HANDLE;
-    VkSemaphore semaphore = VK_NULL_HANDLE;
+    VkSemaphore toTransfer = VK_NULL_HANDLE; ///< graphics release -> transfer copies
+    VkSemaphore toGraphics = VK_NULL_HANDLE; ///< transfer release -> graphics acquire
+    std::vector<VkBuffer> buffers;           ///< destinations owned by the transfer family this batch
+    std::vector<ImageOwnership> images;
     bool recording = false;
     bool bufferCopies = false;
 };
@@ -85,6 +132,10 @@ struct UploadQueue::Impl {
     bool crossFamily = false;
     std::vector<Batch> batches;
     std::vector<u32> freeBatches;
+    // Scratch for the end-of-batch release/acquire barriers (kept to avoid per-flush allocations).
+    std::vector<VkBufferMemoryBarrier> bufferBarriers;
+    std::vector<VkImageMemoryBarrier> imageBarriers;
+    std::vector<VkBufferImageCopy> imageRegions;
 #endif
 
     bool gpu() const {
@@ -161,6 +212,36 @@ struct UploadQueue::Impl {
             return true;
         }
         return false;
+    }
+
+    /// Reserve `size` ring bytes, retiring / flushing / waiting (bounded) as needed.
+    bool reserve(usize size, usize& outOffset) {
+        lastStageTimedOut = false;
+        if (!ready || size == 0 || size > capacity) {
+            return false;
+        }
+        usize offset = 0;
+        while (!tryAllocate(size, offset)) {
+            if (pollFront()) {
+                continue;
+            }
+            if (openBytes > 0) {
+                flush(); // the open batch itself holds ring space: submit it so it can retire
+                continue;
+            }
+            if (inFlight.empty()) {
+                return false;
+            }
+            ++stats.ringStalls;
+            if (!waitFront(UploadQueue::kDefaultFenceTimeoutNs)) {
+                lastStageTimedOut = true;
+                return false;
+            }
+        }
+        ensureOpenSerial();
+        refreshStats();
+        outOffset = offset;
+        return true;
     }
 
     void retireFront() {
@@ -245,28 +326,47 @@ struct UploadQueue::Impl {
         }
         if (crossFamily) {
             poolInfo.queueFamilyIndex = graphicsFamily;
-            if (vkCreateCommandPool(vkDevice, &poolInfo, nullptr, &batch.acquirePool) != VK_SUCCESS) {
+            if (vkCreateCommandPool(vkDevice, &poolInfo, nullptr, &batch.graphicsPool) != VK_SUCCESS) {
                 return false;
             }
-            allocInfo.commandPool = batch.acquirePool;
-            if (vkAllocateCommandBuffers(vkDevice, &allocInfo, &batch.acquireCmd) != VK_SUCCESS) {
+            VkCommandBuffer graphicsCmds[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+            allocInfo.commandPool = batch.graphicsPool;
+            allocInfo.commandBufferCount = 2;
+            if (vkAllocateCommandBuffers(vkDevice, &allocInfo, graphicsCmds) != VK_SUCCESS) {
                 return false;
             }
-            VkSemaphoreCreateInfo semaphoreInfo{};
-            semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-            if (vkCreateSemaphore(vkDevice, &semaphoreInfo, nullptr, &batch.semaphore) != VK_SUCCESS) {
+            batch.releaseCmd = graphicsCmds[0];
+            batch.acquireCmd = graphicsCmds[1];
+            if (!createSemaphore(batch.toTransfer) || !createSemaphore(batch.toGraphics)) {
                 return false;
             }
         }
         return true;
     }
 
+    bool createSemaphore(VkSemaphore& semaphore) const {
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        return vkCreateSemaphore(vkDevice, &semaphoreInfo, nullptr, &semaphore) == VK_SUCCESS;
+    }
+
+    /// A signalled binary semaphore nobody will wait on: drain the device, then replace it.
+    void replaceSignalledSemaphore(VkSemaphore& semaphore) {
+        vkDeviceWaitIdle(vkDevice);
+        vkDestroySemaphore(vkDevice, semaphore, nullptr);
+        semaphore = VK_NULL_HANDLE;
+        createSemaphore(semaphore);
+    }
+
     void destroyBatch(Batch& batch) {
-        if (batch.semaphore != VK_NULL_HANDLE) {
-            vkDestroySemaphore(vkDevice, batch.semaphore, nullptr);
+        if (batch.toTransfer != VK_NULL_HANDLE) {
+            vkDestroySemaphore(vkDevice, batch.toTransfer, nullptr);
         }
-        if (batch.acquirePool != VK_NULL_HANDLE) {
-            vkDestroyCommandPool(vkDevice, batch.acquirePool, nullptr);
+        if (batch.toGraphics != VK_NULL_HANDLE) {
+            vkDestroySemaphore(vkDevice, batch.toGraphics, nullptr);
+        }
+        if (batch.graphicsPool != VK_NULL_HANDLE) {
+            vkDestroyCommandPool(vkDevice, batch.graphicsPool, nullptr);
         }
         if (batch.fence != VK_NULL_HANDLE) {
             vkDestroyFence(vkDevice, batch.fence, nullptr);
@@ -312,11 +412,16 @@ struct UploadQueue::Impl {
             return nullptr;
         }
         if (crossFamily) {
-            if (vkResetCommandPool(vkDevice, batch.acquirePool, 0) != VK_SUCCESS ||
+            // No barrier here: the transfer submit waits (TRANSFER stage) on a semaphore the
+            // graphics release submit signals, which orders it after all earlier graphics work.
+            if (vkResetCommandPool(vkDevice, batch.graphicsPool, 0) != VK_SUCCESS ||
+                vkBeginCommandBuffer(batch.releaseCmd, &beginInfo) != VK_SUCCESS ||
                 vkBeginCommandBuffer(batch.acquireCmd, &beginInfo) != VK_SUCCESS) {
                 vkEndCommandBuffer(batch.cmd);
                 return nullptr;
             }
+            batch.buffers.clear();
+            batch.images.clear();
         } else {
             // WAR/WAW against earlier work on this queue that may still touch a destination
             // (re-uploads into live resources). Fresh resources pay one cheap execution dependency.
@@ -347,19 +452,125 @@ struct UploadQueue::Impl {
                              &between, 0, nullptr, 0, nullptr);
     }
 
+    /// Cross-family: first copy into `buffer` this batch hands it graphics -> transfer (the
+    /// graphics side may have read or written it; a partial update must keep the other bytes).
+    void claimBuffer(Batch& batch, VkBuffer buffer) {
+        if (std::find(batch.buffers.begin(), batch.buffers.end(), buffer) != batch.buffers.end()) {
+            return;
+        }
+        batch.buffers.push_back(buffer);
+        VkBufferMemoryBarrier release{};
+        release.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        release.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+        release.dstAccessMask = 0;
+        release.srcQueueFamilyIndex = graphicsFamily;
+        release.dstQueueFamilyIndex = family;
+        release.buffer = buffer;
+        release.offset = 0;
+        release.size = VK_WHOLE_SIZE;
+        vkCmdPipelineBarrier(batch.releaseCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                             0, 0, nullptr, 1, &release, 0, nullptr);
+        VkBufferMemoryBarrier acquire = release;
+        acquire.srcAccessMask = 0;
+        acquire.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        // srcStage TRANSFER chains with the semaphore wait (TRANSFER) on the transfer submit.
+        vkCmdPipelineBarrier(batch.cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
+                             nullptr, 1, &acquire, 0, nullptr);
+    }
+
+    /// Cross-family: true when `image` needs its UNDEFINED -> TRANSFER_DST transition for
+    /// [mips x layers] in this batch (first copy, or a larger range than before). Images need no
+    /// graphics -> transfer release: every upload discards the previous contents.
+    bool claimImage(Batch& batch, VkImage image, u32 mipLevels, u32 layerCount) {
+        for (ImageOwnership& owned : batch.images) {
+            if (owned.image != image) {
+                continue;
+            }
+            if (mipLevels <= owned.mipLevels && layerCount <= owned.layerCount) {
+                return false; // already TRANSFER_DST and owned by the transfer family
+            }
+            owned.mipLevels = std::max(owned.mipLevels, mipLevels);
+            owned.layerCount = std::max(owned.layerCount, layerCount);
+            return true;
+        }
+        batch.images.push_back(ImageOwnership{image, mipLevels, layerCount});
+        return true;
+    }
+
+    /// End of a cross-family batch: one release (transfer queue) and matching acquire (graphics
+    /// queue) per destination. Image layouts go TRANSFER_DST -> SHADER_READ_ONLY in both halves:
+    /// the spec requires identical layouts in the pair and performs the transition once.
+    void recordOwnershipReturn(Batch& batch) {
+        bufferBarriers.clear();
+        imageBarriers.clear();
+        for (VkBuffer buffer : batch.buffers) {
+            VkBufferMemoryBarrier release{};
+            release.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            release.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            release.dstAccessMask = 0;
+            release.srcQueueFamilyIndex = family;
+            release.dstQueueFamilyIndex = graphicsFamily;
+            release.buffer = buffer;
+            release.offset = 0;
+            release.size = VK_WHOLE_SIZE;
+            bufferBarriers.push_back(release);
+        }
+        for (const ImageOwnership& owned : batch.images) {
+            VkImageMemoryBarrier release{};
+            release.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            release.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            release.dstAccessMask = 0;
+            release.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            release.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            release.srcQueueFamilyIndex = family;
+            release.dstQueueFamilyIndex = graphicsFamily;
+            release.image = owned.image;
+            release.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            release.subresourceRange.baseMipLevel = 0;
+            release.subresourceRange.levelCount = owned.mipLevels;
+            release.subresourceRange.baseArrayLayer = 0;
+            release.subresourceRange.layerCount = owned.layerCount;
+            imageBarriers.push_back(release);
+        }
+        if (bufferBarriers.empty() && imageBarriers.empty()) {
+            return;
+        }
+        vkCmdPipelineBarrier(batch.cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0,
+                             nullptr, static_cast<u32>(bufferBarriers.size()), bufferBarriers.data(),
+                             static_cast<u32>(imageBarriers.size()), imageBarriers.data());
+        for (VkBufferMemoryBarrier& barrier : bufferBarriers) {
+            barrier.srcAccessMask = 0;
+            barrier.dstAccessMask = kConsumerBufferAccess;
+        }
+        for (VkImageMemoryBarrier& barrier : imageBarriers) {
+            barrier.srcAccessMask = 0;
+            barrier.dstAccessMask = kConsumerImageAccess;
+        }
+        // srcStage ALL_COMMANDS chains with the semaphore wait (ALL_COMMANDS) on the acquire submit.
+        vkCmdPipelineBarrier(batch.acquireCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                             0, 0, nullptr, static_cast<u32>(bufferBarriers.size()), bufferBarriers.data(),
+                             static_cast<u32>(imageBarriers.size()), imageBarriers.data());
+        stats.ownershipBufferTransfers += batch.buffers.size();
+        stats.ownershipImageTransfers += batch.images.size();
+    }
+
     bool submitOpenBatch() {
         Batch& batch = batches[openBatch];
         if (!crossFamily && batch.bufferCopies) {
             VkMemoryBarrier after{};
             after.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
             after.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            after.dstAccessMask = kConsumerReadAccess;
+            after.dstAccessMask = kConsumerBufferAccess;
             vkCmdPipelineBarrier(batch.cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0,
                                  1, &after, 0, nullptr, 0, nullptr);
         }
+        if (crossFamily) {
+            recordOwnershipReturn(batch);
+        }
         batch.recording = false;
         const bool ended = vkEndCommandBuffer(batch.cmd) == VK_SUCCESS &&
-                           (!crossFamily || vkEndCommandBuffer(batch.acquireCmd) == VK_SUCCESS);
+                           (!crossFamily || (vkEndCommandBuffer(batch.releaseCmd) == VK_SUCCESS &&
+                                             vkEndCommandBuffer(batch.acquireCmd) == VK_SUCCESS));
         if (!ended) {
             return false;
         }
@@ -372,28 +583,38 @@ struct UploadQueue::Impl {
             return vkQueueSubmit(queue, 1, &submit, batch.fence) == VK_SUCCESS;
         }
 
-        submit.signalSemaphoreCount = 1;
-        submit.pSignalSemaphores = &batch.semaphore;
-        if (vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE) != VK_SUCCESS) {
+        // 1. Graphics: release destinations to the transfer family (after all earlier graphics work).
+        VkSubmitInfo release{};
+        release.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        release.commandBufferCount = 1;
+        release.pCommandBuffers = &batch.releaseCmd;
+        release.signalSemaphoreCount = 1;
+        release.pSignalSemaphores = &batch.toTransfer;
+        if (vkQueueSubmit(graphicsQueue, 1, &release, VK_NULL_HANDLE) != VK_SUCCESS) {
             return false;
         }
-        const VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+        // 2. Transfer: acquire, copy, release back to graphics.
+        const VkPipelineStageFlags transferWait = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        submit.waitSemaphoreCount = 1;
+        submit.pWaitSemaphores = &batch.toTransfer;
+        submit.pWaitDstStageMask = &transferWait;
+        submit.signalSemaphoreCount = 1;
+        submit.pSignalSemaphores = &batch.toGraphics;
+        if (vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE) != VK_SUCCESS) {
+            replaceSignalledSemaphore(batch.toTransfer);
+            return false;
+        }
+        // 3. Graphics: acquire before any later graphics submission; the fence covers all three.
+        const VkPipelineStageFlags graphicsWait = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
         VkSubmitInfo acquire{};
         acquire.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         acquire.waitSemaphoreCount = 1;
-        acquire.pWaitSemaphores = &batch.semaphore;
-        acquire.pWaitDstStageMask = &waitStage;
+        acquire.pWaitSemaphores = &batch.toGraphics;
+        acquire.pWaitDstStageMask = &graphicsWait;
         acquire.commandBufferCount = 1;
         acquire.pCommandBuffers = &batch.acquireCmd;
         if (vkQueueSubmit(graphicsQueue, 1, &acquire, batch.fence) != VK_SUCCESS) {
-            // The semaphore stays signalled; drain so the batch objects can be reused safely.
-            vkQueueWaitIdle(queue);
-            vkDeviceWaitIdle(vkDevice);
-            vkDestroySemaphore(vkDevice, batch.semaphore, nullptr);
-            batch.semaphore = VK_NULL_HANDLE;
-            VkSemaphoreCreateInfo semaphoreInfo{};
-            semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-            vkCreateSemaphore(vkDevice, &semaphoreInfo, nullptr, &batch.semaphore);
+            replaceSignalledSemaphore(batch.toGraphics);
             return false;
         }
         return true;
@@ -517,31 +738,56 @@ bool UploadQueue::isReady() const {
 
 bool UploadQueue::stage(const void* data, usize size, usize& outOffset) {
     Impl& s = *m_impl;
-    s.lastStageTimedOut = false;
-    if (!s.ready || data == nullptr || size == 0 || size > s.capacity) {
+    usize offset = 0;
+    if (data == nullptr) {
+        s.lastStageTimedOut = false;
         return false;
     }
-    usize offset = 0;
-    while (!s.tryAllocate(size, offset)) {
-        if (s.pollFront()) {
-            continue;
-        }
-        if (s.openBytes > 0) {
-            s.flush(); // the open batch itself holds ring space: submit it so it can retire
-            continue;
-        }
-        if (s.inFlight.empty()) {
-            return false;
-        }
-        ++s.stats.ringStalls;
-        if (!s.waitFront(kDefaultFenceTimeoutNs)) {
-            s.lastStageTimedOut = true;
-            return false;
-        }
+    if (!s.reserve(size, offset)) {
+        return false;
     }
-    s.ensureOpenSerial();
     std::memcpy(s.mapped + offset, data, size);
-    s.refreshStats();
+    outOffset = offset;
+    return true;
+}
+
+usize UploadQueue::imageSourceBytes(const UploadImageDesc& desc) {
+    if (!validImageDesc(desc)) {
+        return 0;
+    }
+    usize total = 0;
+    for (u32 mip = 0; mip < desc.mipLevels; ++mip) {
+        total += mipBytes(desc, mip);
+    }
+    return total;
+}
+
+usize UploadQueue::imageStagingBytes(const UploadImageDesc& desc) {
+    if (!validImageDesc(desc)) {
+        return 0;
+    }
+    const u32 last = desc.mipLevels - 1u;
+    return stagedMipOffset(desc, last) + mipBytes(desc, last);
+}
+
+bool UploadQueue::stageImage(const void* data, const UploadImageDesc& desc, usize& outOffset) {
+    Impl& s = *m_impl;
+    const usize bytes = imageStagingBytes(desc);
+    usize offset = 0;
+    if (data == nullptr || bytes == 0) {
+        s.lastStageTimedOut = false;
+        return false;
+    }
+    if (!s.reserve(bytes, offset)) {
+        return false;
+    }
+    // The ring offset is 256-aligned, so aligned relative mip offsets stay aligned.
+    const u8* src = static_cast<const u8*>(data);
+    for (u32 mip = 0; mip < desc.mipLevels; ++mip) {
+        const usize size = mipBytes(desc, mip);
+        std::memcpy(s.mapped + offset + stagedMipOffset(desc, mip), src, size);
+        src += size;
+    }
     outOffset = offset;
     return true;
 }
@@ -557,33 +803,19 @@ bool UploadQueue::recordBufferCopy(void* dstBuffer, usize srcOffset, usize dstOf
         return false;
     }
     s.ensureOpenSerial();
-    s.orderAfterPreviousCopies(*batch);
     const VkBuffer dst = static_cast<VkBuffer>(dstBuffer);
+    if (s.crossFamily) {
+        // Ownership moves once per batch; the release back is recorded at flush, after the last
+        // copy (a release per copy would let a second copy write a buffer already given away).
+        s.claimBuffer(*batch, dst);
+    }
+    s.orderAfterPreviousCopies(*batch);
     VkBufferCopy region{};
     region.srcOffset = srcOffset;
     region.dstOffset = dstOffset;
     region.size = size;
     vkCmdCopyBuffer(batch->cmd, s.staging, dst, 1, &region);
     batch->bufferCopies = true;
-
-    if (s.crossFamily) {
-        VkBufferMemoryBarrier release{};
-        release.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-        release.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        release.dstAccessMask = 0;
-        release.srcQueueFamilyIndex = s.family;
-        release.dstQueueFamilyIndex = s.graphicsFamily;
-        release.buffer = dst;
-        release.offset = 0;
-        release.size = VK_WHOLE_SIZE;
-        vkCmdPipelineBarrier(batch->cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0,
-                             nullptr, 1, &release, 0, nullptr);
-        VkBufferMemoryBarrier acquire = release;
-        acquire.srcAccessMask = 0;
-        acquire.dstAccessMask = kConsumerReadAccess;
-        vkCmdPipelineBarrier(batch->acquireCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 1, &acquire, 0, nullptr);
-    }
     ++s.openCopies;
     ++s.stats.recordedCopies;
     return true;
@@ -595,8 +827,17 @@ bool UploadQueue::recordBufferCopy(void* dstBuffer, usize srcOffset, usize dstOf
 }
 
 bool UploadQueue::recordImageCopy(void* dstImage, usize srcOffset, u32 width, u32 height, u32 depth) {
+    UploadImageDesc desc{};
+    desc.width = width;
+    desc.height = height;
+    desc.depth = depth > 0 ? depth : 1u;
+    desc.bytesPerTexel = 1; // single mip: no per-mip offsets to align
+    return recordImageCopy(dstImage, srcOffset, desc);
+}
+
+bool UploadQueue::recordImageCopy(void* dstImage, usize srcOffset, const UploadImageDesc& desc) {
     Impl& s = *m_impl;
-    if (!s.ready || !s.gpu() || dstImage == nullptr || width == 0 || height == 0) {
+    if (!s.ready || !s.gpu() || dstImage == nullptr || !validImageDesc(desc)) {
         return false;
     }
 #if defined(FUSE_VULKAN_BACKEND)
@@ -605,65 +846,70 @@ bool UploadQueue::recordImageCopy(void* dstImage, usize srcOffset, u32 width, u3
         return false;
     }
     s.ensureOpenSerial();
-    s.orderAfterPreviousCopies(*batch);
     const VkImage image = static_cast<VkImage>(dstImage);
 
-    VkImageMemoryBarrier toTransfer{};
-    toTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toTransfer.srcAccessMask = 0;
-    toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    toTransfer.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toTransfer.image = image;
-    toTransfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    toTransfer.subresourceRange.levelCount = 1;
-    toTransfer.subresourceRange.layerCount = 1;
-    vkCmdPipelineBarrier(batch->cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr,
-                         0, nullptr, 1, &toTransfer);
+    VkImageSubresourceRange range{};
+    range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    range.baseMipLevel = 0;
+    range.levelCount = desc.mipLevels;
+    range.baseArrayLayer = 0;
+    range.layerCount = desc.layerCount;
 
-    VkBufferImageCopy region{};
-    region.bufferOffset = srcOffset;
-    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    region.imageSubresource.mipLevel = 0;
-    region.imageSubresource.layerCount = 1;
-    region.imageExtent = {width, height, depth > 0 ? depth : 1u};
-    vkCmdCopyBufferToImage(batch->cmd, s.staging, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    const bool transition = !s.crossFamily || s.claimImage(*batch, image, desc.mipLevels, desc.layerCount);
+    const bool earlierCopies = s.openCopies > 0;
+    s.orderAfterPreviousCopies(*batch);
+    if (transition) {
+        // UNDEFINED: the upload replaces every texel of the range. An earlier copy in this batch
+        // (same image) is ordered by the barrier above; its access is repeated here for the
+        // layout transition's write-after-write.
+        VkImageMemoryBarrier toTransfer{};
+        toTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toTransfer.srcAccessMask = earlierCopies ? VK_ACCESS_TRANSFER_WRITE_BIT : 0u;
+        toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        toTransfer.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toTransfer.image = image;
+        toTransfer.subresourceRange = range;
+        vkCmdPipelineBarrier(batch->cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
+                             nullptr, 0, nullptr, 1, &toTransfer);
+    }
 
-    VkImageMemoryBarrier toShader{};
-    toShader.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toShader.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    toShader.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
-    toShader.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    toShader.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    toShader.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toShader.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toShader.image = image;
-    toShader.subresourceRange = toTransfer.subresourceRange;
+    s.imageRegions.clear();
+    for (u32 mip = 0; mip < desc.mipLevels; ++mip) {
+        VkBufferImageCopy region{};
+        region.bufferOffset = srcOffset + stagedMipOffset(desc, mip);
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = mip;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = desc.layerCount;
+        region.imageExtent = {mipExtent(desc.width, mip), mipExtent(desc.height, mip), mipExtent(desc.depth, mip)};
+        s.imageRegions.push_back(region);
+    }
+    vkCmdCopyBufferToImage(batch->cmd, s.staging, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           static_cast<u32>(s.imageRegions.size()), s.imageRegions.data());
+
     if (!s.crossFamily) {
+        VkImageMemoryBarrier toShader{};
+        toShader.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toShader.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        toShader.dstAccessMask = kConsumerImageAccess;
+        toShader.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        toShader.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        toShader.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toShader.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toShader.image = image;
+        toShader.subresourceRange = range;
         vkCmdPipelineBarrier(batch->cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
                              nullptr, 0, nullptr, 1, &toShader);
-    } else {
-        // Release (with the layout transition) on the transfer family, matching acquire on graphics.
-        VkImageMemoryBarrier release = toShader;
-        release.dstAccessMask = 0;
-        release.srcQueueFamilyIndex = s.family;
-        release.dstQueueFamilyIndex = s.graphicsFamily;
-        vkCmdPipelineBarrier(batch->cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0,
-                             nullptr, 0, nullptr, 1, &release);
-        VkImageMemoryBarrier acquire = release;
-        acquire.srcAccessMask = 0;
-        acquire.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT;
-        vkCmdPipelineBarrier(batch->acquireCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &acquire);
     }
+    // Cross-family: the image stays TRANSFER_DST until the batch's release/acquire pair.
     ++s.openCopies;
     ++s.stats.recordedCopies;
     return true;
 #else
     (void)srcOffset;
-    (void)depth;
     return false;
 #endif
 }

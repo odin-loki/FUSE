@@ -165,7 +165,14 @@ OneShotCopyOutcome oneShotCopyBuffer(VulkanDevice& device, void* srcHandle, void
         return {};
     }
 
-    const TransferSubmitTarget target = pickTransferTarget(device);
+    // Resources rest on the graphics family: uploads from a dedicated transfer family hand
+    // ownership back to graphics, so a copy on the transfer family would read contents the spec
+    // leaves undefined (no ownership transfer). Read back on graphics; transfer only as fallback.
+    const VulkanQueues& queues = device.queues();
+    const TransferSubmitTarget target = queues.graphics != nullptr
+                                            ? TransferSubmitTarget{static_cast<VkQueue>(queues.graphics),
+                                                                   queues.graphicsFamily}
+                                            : pickTransferTarget(device);
     if (target.queue == VK_NULL_HANDLE) {
         return {};
     }
