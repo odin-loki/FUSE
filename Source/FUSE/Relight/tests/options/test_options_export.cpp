@@ -72,11 +72,11 @@ void testExportAddedOptionsNewFile() {
     const std::string exportFile = path("test_export_added_new.conf");
     const std::string layerFile = path("test_layer_source.conf");
     const OptionConfig empty;
-    const OptionLayer* layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &empty);
-    RL_CHECK(layer != nullptr);
-    TestExportOptions::testIntOption.setImmediately(100, layer);
-    TestExportOptions::testFloatOption.setImmediately(2.71f, layer);
-    TestExportOptions::testStringOption.setImmediately(std::string("test_value"), layer);
+    OptionLayerHandle layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &empty);
+    RL_CHECK(layer.get() != nullptr);
+    TestExportOptions::testIntOption.setImmediately(100, layer.get());
+    TestExportOptions::testFloatOption.setImmediately(2.71f, layer.get());
+    TestExportOptions::testStringOption.setImmediately(std::string("test_value"), layer.get());
     RL_CHECK(layer->exportUnsavedChanges(exportFile));
     RL_CHECK(std::filesystem::exists(exportFile));
     RL_CHECK_STR(readOptionFromFile(exportFile, "rtx.test.export.testIntOption"), "100");
@@ -84,7 +84,7 @@ void testExportAddedOptionsNewFile() {
     RL_CHECK(parseOptionValue(readOptionFromFile(exportFile, "rtx.test.export.testFloatOption"), exported) &&
              exported == 2.71f);
     RL_CHECK_STR(readOptionFromFile(exportFile, "rtx.test.export.testStringOption"), "test_value");
-    OptionManager::releaseLayer(layer);
+    layer.release();
     cleanup(exportFile);
     cleanup(layerFile);
 }
@@ -95,15 +95,15 @@ void testExportModifiedOptions() {
     OptionConfig initial;
     initial.setValue("rtx.test.export.testIntOption", std::int32_t{42});
     initial.setValue("rtx.test.export.testFloatOption", 3.14f);
-    const OptionLayer* layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
-    TestExportOptions::testIntOption.setImmediately(200, layer);
-    TestExportOptions::testFloatOption.setImmediately(6.28f, layer);
+    OptionLayerHandle layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
+    TestExportOptions::testIntOption.setImmediately(200, layer.get());
+    TestExportOptions::testFloatOption.setImmediately(6.28f, layer.get());
     RL_CHECK(layer->exportUnsavedChanges(exportFile));
     RL_CHECK_STR(readOptionFromFile(exportFile, "rtx.test.export.testIntOption"), "200");
     float exported = 0.0f;
     RL_CHECK(parseOptionValue(readOptionFromFile(exportFile, "rtx.test.export.testFloatOption"), exported) &&
              exported == 6.28f);
-    OptionManager::releaseLayer(layer);
+    layer.release();
     cleanup(exportFile);
     cleanup(layerFile);
 }
@@ -113,16 +113,16 @@ void testExportHashSetAddNew() {
     const std::string layerFile = path("test_layer_hashset_add_source.conf");
     OptionConfig initial;
     initial.set("rtx.test.export.testHashSetOption", "0x1111111111111111, 0x2222222222222222");
-    const OptionLayer* layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
+    OptionLayerHandle layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
     TestExportOptions::testHashSetOption.setImmediately(
-        HashSet{0x1111111111111111ull, 0x2222222222222222ull, 0x3333333333333333ull, 0x4444444444444444ull}, layer);
+        HashSet{0x1111111111111111ull, 0x2222222222222222ull, 0x3333333333333333ull, 0x4444444444444444ull}, layer.get());
     RL_CHECK(layer->exportUnsavedChanges(exportFile));
     const HashSetLayer exported = readHashesFromFile(exportFile);
     RL_CHECK(exported.hasPositive(0x3333333333333333ull));
     RL_CHECK(exported.hasPositive(0x4444444444444444ull));
     RL_CHECK(!exported.hasPositive(0x1111111111111111ull)); // delta export
     RL_CHECK(!exported.hasPositive(0x2222222222222222ull));
-    OptionManager::releaseLayer(layer);
+    layer.release();
     cleanup(exportFile);
     cleanup(layerFile);
 }
@@ -131,14 +131,14 @@ void testExportHashSetAddThenRemove() {
     const std::string exportFile = path("test_export_hashset_add_remove.conf");
     const std::string layerFile = path("test_layer_hashset_add_remove_source.conf");
     const OptionConfig initial;
-    const OptionLayer* layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
-    TestExportOptions::testHashSetOption.addHash(0x1111111111111111ull, layer);
-    TestExportOptions::testHashSetOption.removeHash(0x1111111111111111ull, layer);
+    OptionLayerHandle layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
+    TestExportOptions::testHashSetOption.addHash(0x1111111111111111ull, layer.get());
+    TestExportOptions::testHashSetOption.removeHash(0x1111111111111111ull, layer.get());
     RL_CHECK(layer->exportUnsavedChanges(exportFile));
     const HashSetLayer exported = readHashesFromFile(exportFile);
     RL_CHECK(exported.hasNegative(0x1111111111111111ull));
     RL_CHECK(!exported.hasPositive(0x1111111111111111ull));
-    OptionManager::releaseLayer(layer);
+    layer.release();
     cleanup(exportFile);
     cleanup(layerFile);
 }
@@ -148,18 +148,18 @@ void testExportHashSetConflictingOpinions() {
     const std::string layerFile = path("test_layer_hashset_negative_source.conf");
     OptionConfig initial;
     initial.set("rtx.test.export.testHashSetOption", "0x1111111111111111, 0x2222222222222222");
-    const OptionLayer* layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
+    OptionLayerHandle layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
     HashSetLayer saved;
     saved.parseFromStrings(splitConfigList(*layer->getConfig().find("rtx.test.export.testHashSetOption")));
     RL_CHECK(saved.hasPositive(0x1111111111111111ull) && saved.hasPositive(0x2222222222222222ull));
-    TestExportOptions::testHashSetOption.removeHash(0x1111111111111111ull, layer);
+    TestExportOptions::testHashSetOption.removeHash(0x1111111111111111ull, layer.get());
     RL_CHECK(layer->exportUnsavedChanges(exportFile));
     const HashSetLayer exported = readHashesFromFile(exportFile);
     RL_CHECK(exported.hasNegative(0x1111111111111111ull));
     RL_CHECK(!exported.hasPositive(0x1111111111111111ull));
     RL_CHECK(!exported.hasPositive(0x2222222222222222ull));
     RL_CHECK(!exported.hasNegative(0x2222222222222222ull));
-    OptionManager::releaseLayer(layer);
+    layer.release();
     cleanup(exportFile);
     cleanup(layerFile);
 }
@@ -172,14 +172,14 @@ void testExportHashSetMergeWithExistingFile() {
     RL_CHECK(existing.saveFile(exportFile, defaultSaveKeyFilters()));
     OptionConfig initial;
     initial.set("rtx.test.export.testHashSetOption", "0x1111111111111111");
-    const OptionLayer* layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
-    TestExportOptions::testHashSetOption.setImmediately(HashSet{0x1111111111111111ull, 0x7777777777777777ull}, layer);
+    OptionLayerHandle layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
+    TestExportOptions::testHashSetOption.setImmediately(HashSet{0x1111111111111111ull, 0x7777777777777777ull}, layer.get());
     RL_CHECK(layer->exportUnsavedChanges(exportFile));
     const HashSetLayer exported = readHashesFromFile(exportFile);
     RL_CHECK(exported.hasPositive(0x5555555555555555ull));
     RL_CHECK(exported.hasPositive(0x6666666666666666ull));
     RL_CHECK(exported.hasPositive(0x7777777777777777ull));
-    OptionManager::releaseLayer(layer);
+    layer.release();
     cleanup(exportFile);
     cleanup(layerFile);
 }
@@ -191,9 +191,9 @@ void testExportHashSetConflictInMerge() {
     existing.set("rtx.test.export.testHashSetOption", "0x1111111111111111, 0x2222222222222222");
     RL_CHECK(existing.saveFile(exportFile, defaultSaveKeyFilters()));
     const OptionConfig initial;
-    const OptionLayer* layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
-    TestExportOptions::testHashSetOption.addHash(0x2222222222222222ull, layer);
-    TestExportOptions::testHashSetOption.removeHash(0x1111111111111111ull, layer);
+    OptionLayerHandle layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
+    TestExportOptions::testHashSetOption.addHash(0x2222222222222222ull, layer.get());
+    TestExportOptions::testHashSetOption.removeHash(0x1111111111111111ull, layer.get());
     RL_CHECK(layer->exportUnsavedChanges(exportFile));
     HashSetLayer exported = readHashesFromFile(exportFile);
     RL_CHECK(exported.hasNegative(0x1111111111111111ull));
@@ -203,17 +203,17 @@ void testExportHashSetConflictInMerge() {
 
     existing.set("rtx.test.export.testHashSetOption", "-0x3333333333333333, 0x4444444444444444");
     RL_CHECK(existing.saveFile(exportFile, defaultSaveKeyFilters()));
-    OptionManager::releaseLayer(layer);
+    layer.release();
     layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
-    TestExportOptions::testHashSetOption.addHash(0x3333333333333333ull, layer);
-    TestExportOptions::testHashSetOption.addHash(0x4444444444444444ull, layer);
+    TestExportOptions::testHashSetOption.addHash(0x3333333333333333ull, layer.get());
+    TestExportOptions::testHashSetOption.addHash(0x4444444444444444ull, layer.get());
     RL_CHECK(layer->exportUnsavedChanges(exportFile));
     exported = readHashesFromFile(exportFile);
     RL_CHECK(exported.hasPositive(0x3333333333333333ull));
     RL_CHECK(!exported.hasNegative(0x3333333333333333ull));
     RL_CHECK(exported.hasPositive(0x4444444444444444ull));
     RL_CHECK(!exported.hasNegative(0x4444444444444444ull));
-    OptionManager::releaseLayer(layer);
+    layer.release();
     cleanup(exportFile);
     cleanup(layerFile);
 }
@@ -227,12 +227,12 @@ void testExportNonHashSetMergeOverwrite() {
     RL_CHECK(existing.saveFile(exportFile, defaultSaveKeyFilters()));
     OptionConfig initial;
     initial.setValue("rtx.test.export.testIntOption", std::int32_t{42});
-    const OptionLayer* layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
-    TestExportOptions::testIntOption.setImmediately(300, layer);
+    OptionLayerHandle layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
+    TestExportOptions::testIntOption.setImmediately(300, layer.get());
     RL_CHECK(layer->exportUnsavedChanges(exportFile));
     RL_CHECK_STR(readOptionFromFile(exportFile, "rtx.test.export.testIntOption"), "300");
     RL_CHECK_STR(readOptionFromFile(exportFile, "rtx.test.export.testStringOption"), "old_value");
-    OptionManager::releaseLayer(layer);
+    layer.release();
     cleanup(exportFile);
     cleanup(layerFile);
 }
@@ -242,11 +242,11 @@ void testExportNoUnsavedChanges() {
     const std::string layerFile = path("test_layer_no_changes_source.conf");
     OptionConfig initial;
     initial.setValue("rtx.test.export.testIntOption", std::int32_t{42});
-    const OptionLayer* layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
+    OptionLayerHandle layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
     RL_CHECK(!layer->hasUnsavedChanges());
     RL_CHECK(!layer->exportUnsavedChanges(exportFile));
     RL_CHECK(!std::filesystem::exists(exportFile));
-    OptionManager::releaseLayer(layer);
+    layer.release();
     cleanup(exportFile);
     cleanup(layerFile);
 }
@@ -258,10 +258,10 @@ void testForEachChangeClassification() {
     initial.setValue("rtx.test.export.testIntOption", std::int32_t{42});         // will be modified
     initial.setValue("rtx.test.export.testFloatOption", 3.14f);                  // will be removed
     initial.set("rtx.test.export.testHashSetOption", "0x2, 0x1");                // unchanged (order-free)
-    OptionLayer* layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
-    TestExportOptions::testIntOption.setImmediately(43, layer);
-    TestExportOptions::testFloatOptionObject().disableLayerValue(layer);
-    TestExportOptions::testStringOption.setImmediately(std::string("added"), layer);
+    OptionLayerHandle layer = OptionManager::acquireLayer(layerFile, kTestLayerKey, 1.0f, 0.1f, false, &initial);
+    TestExportOptions::testIntOption.setImmediately(43, layer.get());
+    TestExportOptions::testFloatOptionObject().disableLayerValue(layer.get());
+    TestExportOptions::testStringOption.setImmediately(std::string("added"), layer.get());
     std::vector<std::string> added, modified, removed, unchanged;
     layer->forEachChange([&](OptionBase* o, const OptionValue*) { added.push_back(o->getFullName()); },
                          [&](OptionBase* o, const OptionValue*) { modified.push_back(o->getFullName()); },
@@ -273,7 +273,7 @@ void testForEachChangeClassification() {
     RL_CHECK(unchanged == std::vector<std::string>{"rtx.test.export.testHashSetOption"});
     RL_CHECK(layer->hasUnsavedChanges());
     RL_CHECK(layer->hasPendingRemovals());
-    OptionManager::releaseLayer(layer);
+    layer.release();
     OptionManager::applyPendingValues(nullptr, false);
     cleanup(layerFile);
 }

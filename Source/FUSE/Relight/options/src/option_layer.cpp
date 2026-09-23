@@ -490,7 +490,7 @@ std::vector<OptionLayer*> OptionLayer::createLayersFromEnvVar(const char* envVar
     const std::vector<std::string> paths = resolveConfigPaths(envVarName, defaultPath);
     for (std::size_t i = 0; i < paths.size(); ++i) {
         const OptionLayerKey key(baseLayer.priority, makeLayerName(i, paths.size(), baseLayer.name));
-        if (OptionLayer* layer = OptionManager::acquireLayer(paths[i], key, kDefaultLayerBlendStrength,
+        if (OptionLayer* layer = OptionManager::referenceLayer(paths[i], key, kDefaultLayerBlendStrength,
                                                              kDefaultLayerBlendThreshold, true, nullptr)) {
             layers.push_back(layer);
         }

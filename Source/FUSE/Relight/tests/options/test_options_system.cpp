@@ -113,7 +113,7 @@ void testLayerStackFromFiles() {
     SysOptions::layered.setDeferred(6); // code-driven: Derived layer
     apply();
     RL_CHECK(SysOptions::layered() == 6);
-    const OptionLayer* indoor =
+    OptionLayerHandle indoor =
         OptionManager::acquireLayer((dir / "indoor.conf").string(), {kDefaultDynamicLayerPriority, "indoor.conf"});
     apply();
     RL_CHECK(SysOptions::layered() == 100);
@@ -129,13 +129,13 @@ void testLayerStackFromFiles() {
     RL_CHECK(OptionLayer::getUserLayer()->countMiscategorizedOptions() == 1);
 
     // A half-strength dynamic layer: ints need strength >= threshold (0.1 by default).
-    const_cast<OptionLayer*>(indoor)->requestBlendStrength(0.05f);
+    indoor.get()->requestBlendStrength(0.05f);
     SysOptions::layeredObject().disableLayerValue(OptionLayer::getQualityLayer());
     SysOptions::layeredObject().disableLayerValue(OptionLayer::getUserLayer());
     apply();
     RL_CHECK(SysOptions::layered() == 6);
     RL_CHECK((SysOptions::hashes() == HashSet{0x1, 0x2, 0x3}));
-    OptionManager::releaseLayer(indoor);
+    indoor.release();
     SysOptions::layeredObject().disableLayerValue(OptionLayer::getDerivedLayer());
     apply();
     RL_CHECK(SysOptions::layered() == 4);

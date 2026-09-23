@@ -144,9 +144,22 @@ void OptionManager::removeAlias(std::string_view alias) {
 // Layers
 // ============================================================================
 
-OptionLayer* OptionManager::acquireLayer(const std::string& configPath, const OptionLayerKey& layerKey,
-                                         float blendStrength, float blendThreshold, bool isSystemLayer,
-                                         const OptionConfig* config) {
+OptionLayerHandle OptionManager::acquireLayer(const std::string& configPath, const OptionLayerKey& layerKey,
+                                              float blendStrength, float blendThreshold, bool isSystemLayer,
+                                              const OptionConfig* config) {
+    return OptionLayerHandle(referenceLayer(configPath, layerKey, blendStrength, blendThreshold, isSystemLayer, config));
+}
+
+void OptionLayerHandle::release() noexcept {
+    if (m_layer) {
+        OptionManager::dropLayerReference(m_layer);
+        m_layer = nullptr;
+    }
+}
+
+OptionLayer* OptionManager::referenceLayer(const std::string& configPath, const OptionLayerKey& layerKey,
+                                           float blendStrength, float blendThreshold, bool isSystemLayer,
+                                           const OptionConfig* config) {
     std::lock_guard<std::recursive_mutex> lock(detail::optionMutex());
     auto& registry = getLayerRegistry();
     if (auto it = registry.find(layerKey); it != registry.end()) {
@@ -219,7 +232,7 @@ bool OptionManager::unregisterLayer(const OptionLayer* layer) {
     return true;
 }
 
-void OptionManager::releaseLayer(const OptionLayer* layer) {
+void OptionManager::dropLayerReference(const OptionLayer* layer) {
     if (!layer) {
         return;
     }
@@ -507,7 +520,7 @@ const OptionConfig& OptionSystem::initialize(const OptionSystemDesc& desc) {
         }
 
         // 2. Per-application defaults supplied by the host (upstream: the config.cpp table).
-        merge(OptionManager::acquireLayer("", kAppConfigLayerId, kDefaultLayerBlendStrength,
+        merge(OptionManager::referenceLayer("", kAppConfigLayerId, kDefaultLayerBlendStrength,
                                           kDefaultLayerBlendThreshold, true, &desc.appConfig));
 
         // 3. rtx.conf (possibly several through DXVK_RTX_CONFIG_FILE). The last one is the rtx.conf
@@ -524,7 +537,7 @@ const OptionConfig& OptionSystem::initialize(const OptionSystemDesc& desc) {
             const std::string modPath = desc.baseGameModPathResolver(state.mergedConfig);
             if (!modPath.empty()) {
                 detail::logInfo("Found base game mod path: %s", modPath.c_str());
-                merge(OptionManager::acquireLayer(joinPath(modPath, kRtxConfFileName), kBaseGameModLayerId,
+                merge(OptionManager::referenceLayer(joinPath(modPath, kRtxConfFileName), kBaseGameModLayerId,
                                                   kDefaultLayerBlendStrength, kDefaultLayerBlendThreshold, true,
                                                   nullptr));
             }
@@ -532,15 +545,15 @@ const OptionConfig& OptionSystem::initialize(const OptionSystemDesc& desc) {
         state.mergedConfig.logEntries("Effective Combined Config for DXVK Options");
 
         // 5. Code-driven layers without files (not part of the merged config).
-        state.derivedLayer = OptionManager::acquireLayer("", kDerivedLayerId, kDefaultLayerBlendStrength,
+        state.derivedLayer = OptionManager::referenceLayer("", kDerivedLayerId, kDefaultLayerBlendStrength,
                                                          kDefaultLayerBlendThreshold, true, nullptr);
-        state.environmentLayer = OptionManager::acquireLayer("", kEnvironmentLayerId, kDefaultLayerBlendStrength,
+        state.environmentLayer = OptionManager::referenceLayer("", kEnvironmentLayerId, kDefaultLayerBlendStrength,
                                                              kDefaultLayerBlendThreshold, true, nullptr);
-        state.qualityLayer = OptionManager::acquireLayer("", kQualityLayerId, kDefaultLayerBlendStrength,
+        state.qualityLayer = OptionManager::referenceLayer("", kQualityLayerId, kDefaultLayerBlendStrength,
                                                          kDefaultLayerBlendThreshold, true, nullptr);
 
         // 6. user.conf, reserved for UserSetting options.
-        state.userLayer = OptionManager::acquireLayer(joinPath(desc.baseDirectory, kUserConfFileName), kUserLayerId,
+        state.userLayer = OptionManager::referenceLayer(joinPath(desc.baseDirectory, kUserConfFileName), kUserLayerId,
                                                       kDefaultLayerBlendStrength, kDefaultLayerBlendThreshold, true,
                                                       nullptr);
         if (state.userLayer) {

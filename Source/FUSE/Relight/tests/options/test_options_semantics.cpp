@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2022-2026, NVIDIA CORPORATION. All rights reserved.
+* Copyright (c.get()) 2022-2026, NVIDIA CORPORATION. All rights reserved.
 *
 * Permission is hereby granted, free of charge, to any person obtaining a
 * copy of this software and associated documentation files (the "Software"),
@@ -19,9 +19,9 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c.get()) 2026 FUSE contributors (MIT)
 // rl_options / semantics: port of dxvk-remix tests/rtx/unit/test_rtx_option.cpp@0867d3c (MIT,
-// Copyright (c) NVIDIA CORPORATION), rewritten for the FUSE option API, plus Relight additions
+// Copyright (c.get()) NVIDIA CORPORATION), rewritten for the FUSE option API, plus Relight additions
 // (routing, aliases, blocking layers, redundancy, migration helpers, malformed-value parity).
 
 #include "rl_options_test.hpp"
@@ -33,6 +33,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <utility>
 
 namespace rl_options_test {
 namespace {
@@ -221,13 +222,9 @@ void testValueCycleBCallback(void*) {
 
 void apply() { OptionManager::applyPendingValues(nullptr, false); }
 
-const OptionLayer* acquire(const OptionLayerKey& key, float strength = 1.0f, float threshold = 0.1f) {
+OptionLayerHandle acquire(const OptionLayerKey& key, float strength = 1.0f, float threshold = 0.1f) {
     static const OptionConfig kEmptyConfig;
     return OptionManager::acquireLayer("", key, strength, threshold, false, &kEmptyConfig);
-}
-
-OptionLayer* acquireMutable(const OptionLayerKey& key, float strength = 1.0f, float threshold = 0.1f) {
-    return const_cast<OptionLayer*>(acquire(key, strength, threshold));
 }
 
 /// Called at the end of tests: nothing may leak after the test layers are released.
@@ -270,35 +267,35 @@ void test_basicTypes() {
 }
 
 void test_setAndGet() {
-    const OptionLayer* layer = acquire(kTestLayerMidKey);
-    RL_CHECK(layer != nullptr);
-    TestOptions::testBool.setDeferred(true, layer);
+    OptionLayerHandle layer = acquire(kTestLayerMidKey);
+    RL_CHECK(layer.get() != nullptr);
+    TestOptions::testBool.setDeferred(true, layer.get());
     apply();
     RL_CHECK(TestOptions::testBool() == true);
-    TestOptions::testInt.setDeferred(200, layer);
+    TestOptions::testInt.setDeferred(200, layer.get());
     apply();
     RL_CHECK(TestOptions::testInt() == 200);
-    TestOptions::testFloat.setDeferred(3.14f, layer);
+    TestOptions::testFloat.setDeferred(3.14f, layer.get());
     apply();
     RL_CHECK_NEAR(TestOptions::testFloat(), 3.14f, 0.0001f);
-    TestOptions::testString.setDeferred("modified", layer);
+    TestOptions::testString.setDeferred("modified", layer.get());
     apply();
     RL_CHECK_STR(TestOptions::testString(), "modified");
-    TestOptions::testVector2.setDeferred(Vec2f(5.0f, 6.0f), layer);
+    TestOptions::testVector2.setDeferred(Vec2f(5.0f, 6.0f), layer.get());
     apply();
     RL_CHECK(TestOptions::testVector2() == Vec2f(5.0f, 6.0f));
-    TestOptions::testVector3.setDeferred(Vec3f(7.0f, 8.0f, 9.0f), layer);
+    TestOptions::testVector3.setDeferred(Vec3f(7.0f, 8.0f, 9.0f), layer.get());
     apply();
     RL_CHECK(TestOptions::testVector3() == Vec3f(7.0f, 8.0f, 9.0f));
-    TestOptions::testEnum.setDeferred(TestOptions::TestEnum::ValueB, layer);
+    TestOptions::testEnum.setDeferred(TestOptions::TestEnum::ValueB, layer.get());
     apply();
     RL_CHECK(TestOptions::testEnum() == TestOptions::TestEnum::ValueB);
     // Deferred means deferred: the new value is not visible until the end of the frame.
-    TestOptions::testInt.setDeferred(300, layer);
+    TestOptions::testInt.setDeferred(300, layer.get());
     RL_CHECK(TestOptions::testInt() == 200);
     apply();
     RL_CHECK(TestOptions::testInt() == 300);
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     RL_CHECK(TestOptions::testEnum() == TestOptions::TestEnum::ValueA);
     verifyOptionsAtDefaults();
@@ -333,56 +330,56 @@ void test_optionTypeIdentification() {
 }
 
 void test_minMaxClamping() {
-    const OptionLayer* layer = acquire(kTestLayerHighKey);
-    TestOptions::testIntWithMin.setDeferred(-10, layer);
+    OptionLayerHandle layer = acquire(kTestLayerHighKey);
+    TestOptions::testIntWithMin.setDeferred(-10, layer.get());
     apply();
     RL_CHECK(TestOptions::testIntWithMin() == 0);
-    TestOptions::testIntWithMax.setDeferred(200, layer);
+    TestOptions::testIntWithMax.setDeferred(200, layer.get());
     apply();
     RL_CHECK(TestOptions::testIntWithMax() == 100);
-    TestOptions::testIntWithMinMax.setDeferred(-50, layer);
+    TestOptions::testIntWithMinMax.setDeferred(-50, layer.get());
     apply();
     RL_CHECK(TestOptions::testIntWithMinMax() == 0);
-    TestOptions::testIntWithMinMax.setDeferred(150, layer);
+    TestOptions::testIntWithMinMax.setDeferred(150, layer.get());
     apply();
     RL_CHECK(TestOptions::testIntWithMinMax() == 100);
-    TestOptions::testIntWithMinMax.setDeferred(75, layer);
+    TestOptions::testIntWithMinMax.setDeferred(75, layer.get());
     apply();
     RL_CHECK(TestOptions::testIntWithMinMax() == 75);
-    TestOptions::testFloatWithMinMax.setDeferred(-0.5f, layer);
+    TestOptions::testFloatWithMinMax.setDeferred(-0.5f, layer.get());
     apply();
     RL_CHECK(TestOptions::testFloatWithMinMax() == 0.0f);
-    TestOptions::testFloatWithMinMax.setDeferred(1.5f, layer);
+    TestOptions::testFloatWithMinMax.setDeferred(1.5f, layer.get());
     apply();
     RL_CHECK(TestOptions::testFloatWithMinMax() == 1.0f);
-    TestOptions::testVector2WithMinMax.setDeferred(Vec2f(-0.5f, 0.5f), layer);
+    TestOptions::testVector2WithMinMax.setDeferred(Vec2f(-0.5f, 0.5f), layer.get());
     apply();
     RL_CHECK(TestOptions::testVector2WithMinMax() == Vec2f(0.0f, 0.5f));
-    TestOptions::testVector2WithMinMax.setDeferred(Vec2f(0.5f, 1.5f), layer);
+    TestOptions::testVector2WithMinMax.setDeferred(Vec2f(0.5f, 1.5f), layer.get());
     apply();
     RL_CHECK(TestOptions::testVector2WithMinMax() == Vec2f(0.5f, 1.0f));
     // The layer keeps the raw value; only the resolved value is clamped.
-    const std::optional<OptionValue> raw = TestOptions::testIntWithMinMaxObject().getLayerValue(layer);
+    const std::optional<OptionValue> raw = TestOptions::testIntWithMinMaxObject().getLayerValue(layer.get());
     RL_CHECK(raw && std::get<std::int32_t>(*raw) == 75);
     RL_CHECK(TestOptions::testIntWithMinMax.getMinValue() == std::optional<std::int32_t>(0));
     RL_CHECK(TestOptions::testIntWithMinMax.getMaxValue() == std::optional<std::int32_t>(100));
     RL_CHECK(!TestOptions::testIntWithMin.getMaxValue().has_value());
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     verifyOptionsAtDefaults();
 }
 
 void test_dynamicMinMax() {
-    const OptionLayer* layer = acquire({10500, "DynamicMinMaxLayer"});
+    OptionLayerHandle layer = acquire({10500, "DynamicMinMaxLayer"});
     TestOptions::testInt.setMinValue(50);
-    TestOptions::testInt.setDeferred(25, layer);
+    TestOptions::testInt.setDeferred(25, layer.get());
     apply();
     RL_CHECK(TestOptions::testInt() == 50);
     TestOptions::testInt.setMaxValue(200);
-    TestOptions::testInt.setDeferred(300, layer);
+    TestOptions::testInt.setDeferred(300, layer.get());
     apply();
     RL_CHECK(TestOptions::testInt() == 200);
-    TestOptions::testInt.setDeferred(150, layer);
+    TestOptions::testInt.setDeferred(150, layer.get());
     apply();
     RL_CHECK(TestOptions::testInt() == 150);
     // Tightening a bound re-clamps the current value (setMinValue marks the option dirty).
@@ -391,7 +388,7 @@ void test_dynamicMinMax() {
     RL_CHECK(TestOptions::testInt() == 120);
     TestOptions::testInt.setMinValue(std::numeric_limits<std::int32_t>::min());
     TestOptions::testInt.setMaxValue(std::numeric_limits<std::int32_t>::max());
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     verifyOptionsAtDefaults();
 }
@@ -403,35 +400,35 @@ void test_onChangeCallback() {
     RL_CHECK(TestOptions::testIntWithCallbackObject().getFlags() == 0);
     RL_CHECK(TestOptions::testFloatWithCallbackObject().getFlags() == 0);
 
-    const OptionLayer* lowLayer = acquire({13000, "CallbackTestLowLayer"});
-    const OptionLayer* highLayer = acquire({14000, "CallbackTestHighLayer"});
+    OptionLayerHandle lowLayer = acquire({13000, "CallbackTestLowLayer"});
+    OptionLayerHandle highLayer = acquire({14000, "CallbackTestHighLayer"});
     int intBefore = s_intCallbackCount;
     int floatBefore = s_floatCallbackCount;
 
-    TestOptions::testIntWithCallback.setDeferred(999, highLayer);
+    TestOptions::testIntWithCallback.setDeferred(999, highLayer.get());
     apply();
     RL_CHECK(s_intCallbackCount == intBefore + 1);
     RL_CHECK(s_floatCallbackCount == floatBefore);
     RL_CHECK(TestOptions::testIntWithCallback() == 999);
     intBefore = s_intCallbackCount;
 
-    TestOptions::testIntWithCallback.setDeferred(999, highLayer); // same value: no callback
+    TestOptions::testIntWithCallback.setDeferred(999, highLayer.get()); // same value: no callback
     apply();
     RL_CHECK(s_intCallbackCount == intBefore);
 
-    TestOptions::testIntWithCallback.setDeferred(500, lowLayer); // hidden by the high layer
+    TestOptions::testIntWithCallback.setDeferred(500, lowLayer.get()); // hidden by the high layer
     apply();
     RL_CHECK(TestOptions::testIntWithCallback() == 999);
     RL_CHECK(s_intCallbackCount == intBefore);
 
-    TestOptions::testIntWithCallbackObject().disableLayerValue(highLayer); // falls back to 500
+    TestOptions::testIntWithCallbackObject().disableLayerValue(highLayer.get()); // falls back to 500
     apply();
     RL_CHECK(TestOptions::testIntWithCallback() == 500);
     RL_CHECK(s_intCallbackCount == intBefore + 1);
     intBefore = s_intCallbackCount;
 
-    OptionManager::releaseLayer(lowLayer);
-    OptionManager::releaseLayer(highLayer);
+    lowLayer.release();
+    highLayer.release();
     apply();
     RL_CHECK(TestOptions::testIntWithCallback() == 0);
     RL_CHECK(s_intCallbackCount == intBefore + 1);
@@ -439,8 +436,8 @@ void test_onChangeCallback() {
     floatBefore = s_floatCallbackCount;
 
     // Float blending: 100 * 0.5 + 0 * 0.5.
-    OptionLayer* blendLayer = acquireMutable({15000, "CallbackBlendLayer"}, 0.5f);
-    TestOptions::testFloatWithCallback.setDeferred(100.0f, blendLayer);
+    OptionLayerHandle blendLayer = acquire({15000, "CallbackBlendLayer"}, 0.5f);
+    TestOptions::testFloatWithCallback.setDeferred(100.0f, blendLayer.get());
     apply();
     RL_CHECK_NEAR(TestOptions::testFloatWithCallback(), 50.0f, 0.01f);
     RL_CHECK(s_floatCallbackCount == floatBefore + 1);
@@ -463,14 +460,14 @@ void test_onChangeCallback() {
     RL_CHECK(s_floatCallbackCount == floatBefore + 1);
     floatBefore = s_floatCallbackCount;
 
-    OptionManager::releaseLayer(blendLayer);
+    blendLayer.release();
     apply();
     RL_CHECK_NEAR(TestOptions::testFloatWithCallback(), 0.0f, 0.01f);
     RL_CHECK(s_floatCallbackCount == floatBefore + 1);
 
     // Ints do not blend: they apply only while strength >= threshold.
-    OptionLayer* thresholdLayer = acquireMutable({16000, "ThresholdTestLayer"}, 0.3f, 0.5f);
-    TestOptions::testIntWithCallback.setDeferred(777, thresholdLayer);
+    OptionLayerHandle thresholdLayer = acquire({16000, "ThresholdTestLayer"}, 0.3f, 0.5f);
+    TestOptions::testIntWithCallback.setDeferred(777, thresholdLayer.get());
     apply();
     RL_CHECK(TestOptions::testIntWithCallback() == 0);
     RL_CHECK(s_intCallbackCount == intBefore);
@@ -498,7 +495,7 @@ void test_onChangeCallback() {
     RL_CHECK(s_intCallbackCount == intBefore + 1);
     intBefore = s_intCallbackCount;
 
-    OptionManager::releaseLayer(thresholdLayer);
+    thresholdLayer.release();
     apply();
     RL_CHECK(TestOptions::testIntWithCallback() == 0);
     RL_CHECK(s_intCallbackCount == intBefore + 1);
@@ -513,29 +510,29 @@ void test_minMaxInterdependency() {
     TestOptions::testRangeMinObject().setMaxValue(100.0f);
     TestOptions::testRangeMaxObject().setMinValue(-100.0f);
     TestOptions::testRangeMaxObject().setMaxValue(100.0f);
-    const OptionLayer* layer = acquire({30000, "MinMaxTestLayer"});
+    OptionLayerHandle layer = acquire({30000, "MinMaxTestLayer"});
 
-    TestOptions::testRangeMax.setDeferred(50.0f, layer);
+    TestOptions::testRangeMax.setDeferred(50.0f, layer.get());
     apply();
     RL_CHECK_NEAR(TestOptions::testRangeMax(), 50.0f, 0.001f);
-    TestOptions::testRangeMin.setDeferred(60.0f, layer);
+    TestOptions::testRangeMin.setDeferred(60.0f, layer.get());
     apply();
     RL_CHECK_NEAR(TestOptions::testRangeMin(), 50.0f, 0.001f);
 
-    TestOptions::testRangeMin.setDeferred(20.0f, layer);
+    TestOptions::testRangeMin.setDeferred(20.0f, layer.get());
     apply();
     RL_CHECK_NEAR(TestOptions::testRangeMin(), 20.0f, 0.001f);
-    TestOptions::testRangeMax.setDeferred(10.0f, layer);
+    TestOptions::testRangeMax.setDeferred(10.0f, layer.get());
     apply();
     RL_CHECK_NEAR(TestOptions::testRangeMax(), 20.0f, 0.001f);
 
-    TestOptions::testRangeMin.setDeferred(5.0f, layer);
-    TestOptions::testRangeMax.setDeferred(95.0f, layer);
+    TestOptions::testRangeMin.setDeferred(5.0f, layer.get());
+    TestOptions::testRangeMax.setDeferred(95.0f, layer.get());
     apply();
     RL_CHECK_NEAR(TestOptions::testRangeMin(), 5.0f, 0.001f);
     RL_CHECK_NEAR(TestOptions::testRangeMax(), 95.0f, 0.001f);
 
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     TestOptions::testRangeMinObject().setMinValue(-100.0f);
     TestOptions::testRangeMinObject().setMaxValue(100.0f);
@@ -549,30 +546,30 @@ void test_chainedOnChangeCallbacks() {
     TestOptions::testChainedSourceObject().setMaxValue(100.0f);
     TestOptions::testChainedTargetObject().setMinValue(0.0f);
     TestOptions::testChainedTargetObject().setMaxValue(100.0f);
-    const OptionLayer* layer = acquire({33000, "ChainedBoundsTestLayer"});
+    OptionLayerHandle layer = acquire({33000, "ChainedBoundsTestLayer"});
     s_chainCallbackCount = 0;
 
-    TestOptions::testChainedSource.setDeferred(30.0f, layer);
+    TestOptions::testChainedSource.setDeferred(30.0f, layer.get());
     apply();
     RL_CHECK_NEAR(TestOptions::testChainedSource(), 30.0f, 0.001f);
     RL_CHECK(s_chainCallbackCount >= 1);
-    TestOptions::testChainedTarget.setDeferred(50.0f, layer);
+    TestOptions::testChainedTarget.setDeferred(50.0f, layer.get());
     apply();
     RL_CHECK_NEAR(TestOptions::testChainedTarget(), 30.0f, 0.001f);
 
     s_chainCallbackCount = 0;
-    TestOptions::testChainedSource.setDeferred(20.0f, layer);
+    TestOptions::testChainedSource.setDeferred(20.0f, layer.get());
     apply();
     RL_CHECK_NEAR(TestOptions::testChainedSource(), 20.0f, 0.001f);
     RL_CHECK(s_chainCallbackCount >= 1);
     // The callback lowered the target's max, which re-resolves the target in the same call.
     RL_CHECK_NEAR(TestOptions::testChainedTarget(), 20.0f, 0.001f);
 
-    TestOptions::testChainedTarget.setDeferred(15.0f, layer);
+    TestOptions::testChainedTarget.setDeferred(15.0f, layer.get());
     apply();
     RL_CHECK_NEAR(TestOptions::testChainedTarget(), 15.0f, 0.001f);
 
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     TestOptions::testChainedSourceObject().setMinValue(0.0f);
     TestOptions::testChainedSourceObject().setMaxValue(100.0f);
@@ -588,10 +585,10 @@ void test_cyclicOnChangeCallbacksTerminate() {
     TestOptions::testCyclicBObject().setMinValue(0.0f);
     TestOptions::testCyclicBObject().setMaxValue(100.0f);
     apply();
-    const OptionLayer* layer = acquire({34000, "CyclicBoundsTestLayer"});
+    OptionLayerHandle layer = acquire({34000, "CyclicBoundsTestLayer"});
     s_cycleCallbackCount = 0;
 
-    TestOptions::testCyclicA.setDeferred(30.0f, layer);
+    TestOptions::testCyclicA.setDeferred(30.0f, layer.get());
     apply();
     RL_CHECK_NEAR(TestOptions::testCyclicA(), 30.0f, 0.001f);
     RL_CHECK(s_cycleCallbackCount <= 8);
@@ -604,7 +601,7 @@ void test_cyclicOnChangeCallbacksTerminate() {
     RL_CHECK(TestOptions::testCyclicA() == a);
     RL_CHECK(TestOptions::testCyclicB() == b);
 
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     TestOptions::testCyclicAObject().setMinValue(0.0f);
     TestOptions::testCyclicAObject().setMaxValue(100.0f);
@@ -671,31 +668,31 @@ void test_environmentVariables() {
     const char* noEnv = TestOptions::testIntObject().getEnvironmentVariable();
     RL_CHECK(noEnv == nullptr || std::strlen(noEnv) == 0);
 
-    const OptionLayer* envTestLayer = acquire({25000, "EnvVarTestLayer"});
+    OptionLayerHandle envTestLayer = acquire({25000, "EnvVarTestLayer"});
     RL_CHECK(setEnvironmentVariable("RTX_TEST_INT_ENV", "999"));
     RL_CHECK(setEnvironmentVariable("RTX_TEST_BOOL_ENV", "1"));
     RL_CHECK(setEnvironmentVariable("RTX_TEST_FLOAT_ENV", "3.14"));
     std::string outValue;
-    RL_CHECK(TestOptions::testIntWithEnvObject().loadFromEnvironmentVariable(envTestLayer, &outValue));
+    RL_CHECK(TestOptions::testIntWithEnvObject().loadFromEnvironmentVariable(envTestLayer.get(), &outValue));
     RL_CHECK_STR(outValue, "999");
-    RL_CHECK(TestOptions::testBoolWithEnvObject().loadFromEnvironmentVariable(envTestLayer, &outValue));
+    RL_CHECK(TestOptions::testBoolWithEnvObject().loadFromEnvironmentVariable(envTestLayer.get(), &outValue));
     RL_CHECK_STR(outValue, "1");
-    RL_CHECK(TestOptions::testFloatWithEnvObject().loadFromEnvironmentVariable(envTestLayer, &outValue));
+    RL_CHECK(TestOptions::testFloatWithEnvObject().loadFromEnvironmentVariable(envTestLayer.get(), &outValue));
     RL_CHECK_STR(outValue, "3.14");
     apply();
     RL_CHECK(TestOptions::testIntWithEnv() == 999);
     RL_CHECK(TestOptions::testBoolWithEnv() == true);
     RL_CHECK_NEAR(TestOptions::testFloatWithEnv(), 3.14f, 0.001f);
-    RL_CHECK(!TestOptions::testIntObject().loadFromEnvironmentVariable(envTestLayer, nullptr));
+    RL_CHECK(!TestOptions::testIntObject().loadFromEnvironmentVariable(envTestLayer.get(), nullptr));
 
     // A malformed environment value is reported (and not counted as loaded).
     RL_CHECK(setEnvironmentVariable("RTX_TEST_INT_ENV", "not-a-number"));
-    RL_CHECK(!TestOptions::testIntWithEnvObject().loadFromEnvironmentVariable(envTestLayer, nullptr));
+    RL_CHECK(!TestOptions::testIntWithEnvObject().loadFromEnvironmentVariable(envTestLayer.get(), nullptr));
 
     setEnvironmentVariable("RTX_TEST_INT_ENV", "");
     setEnvironmentVariable("RTX_TEST_BOOL_ENV", "");
     setEnvironmentVariable("RTX_TEST_FLOAT_ENV", "");
-    OptionManager::releaseLayer(envTestLayer);
+    envTestLayer.release();
     apply();
     RL_CHECK(TestOptions::testIntWithEnv() == 123);
     verifyOptionsAtDefaults();
@@ -705,126 +702,126 @@ void test_hashSetOperations() {
     const OptionLayerKey weakKey{10000, "WeakHashLayer"};
     const OptionLayerKey middleKey{15000, "MiddleHashLayer"};
     const OptionLayerKey strongKey{20000, "StrongHashLayer"};
-    const OptionLayer* weak = acquire(weakKey);
-    const OptionLayer* middle = acquire(middleKey);
-    const OptionLayer* strong = acquire(strongKey);
+    OptionLayerHandle weak = acquire(weakKey);
+    OptionLayerHandle middle = acquire(middleKey);
+    OptionLayerHandle strong = acquire(strongKey);
     const Hash64 hash1 = 0x1234567890ABCDEFull, hash2 = 0xFEDCBA0987654321ull, hash3 = 0xAAAABBBBCCCCDDDDull,
                  hash4 = 0x1111222233334444ull;
 
-    TestOptions::testHashSet.addHash(hash1, weak);
+    TestOptions::testHashSet.addHash(hash1, weak.get());
     apply();
     RL_CHECK(TestOptions::testHashSet.containsHash(hash1));
     RL_CHECK(!TestOptions::testHashSet.containsHash(hash2));
 
-    TestOptions::testHashSet.addHash(hash2, weak);
-    TestOptions::testHashSet.removeHash(hash2, middle);
+    TestOptions::testHashSet.addHash(hash2, weak.get());
+    TestOptions::testHashSet.removeHash(hash2, middle.get());
     apply();
     RL_CHECK(!TestOptions::testHashSet.containsHash(hash2));
 
-    TestOptions::testHashSet.addHash(hash3, weak);
-    TestOptions::testHashSet.removeHash(hash3, middle);
-    TestOptions::testHashSet.addHash(hash3, strong);
+    TestOptions::testHashSet.addHash(hash3, weak.get());
+    TestOptions::testHashSet.removeHash(hash3, middle.get());
+    TestOptions::testHashSet.addHash(hash3, strong.get());
     apply();
     RL_CHECK(TestOptions::testHashSet.containsHash(hash3));
 
-    TestOptions::testHashSet.removeHash(hash4, weak);
-    TestOptions::testHashSet.addHash(hash4, middle);
+    TestOptions::testHashSet.removeHash(hash4, weak.get());
+    TestOptions::testHashSet.addHash(hash4, middle.get());
     apply();
     RL_CHECK(TestOptions::testHashSet.containsHash(hash4));
     // The resolved set exposes exactly the surviving positives.
     RL_CHECK((TestOptions::testHashSet() == HashSet{hash1, hash3, hash4}));
 
-    OptionManager::releaseLayer(strong);
+    strong.release();
     apply();
     RL_CHECK(!TestOptions::testHashSet.containsHash(hash3));
     RL_CHECK(TestOptions::testHashSet.containsHash(hash1));
     RL_CHECK(TestOptions::testHashSet.containsHash(hash4));
 
-    OptionManager::releaseLayer(middle);
+    middle.release();
     apply();
     RL_CHECK(TestOptions::testHashSet.containsHash(hash2));
     RL_CHECK(TestOptions::testHashSet.containsHash(hash3));
     RL_CHECK(!TestOptions::testHashSet.containsHash(hash4));
 
-    const OptionLayer* middle2 = acquire(middleKey);
-    TestOptions::testHashSet.removeHash(hash1, middle2);
+    OptionLayerHandle middle2 = acquire(middleKey);
+    TestOptions::testHashSet.removeHash(hash1, middle2.get());
     apply();
     RL_CHECK(!TestOptions::testHashSet.containsHash(hash1));
-    TestOptions::testHashSet.clearHash(hash1, middle2);
+    TestOptions::testHashSet.clearHash(hash1, middle2.get());
     apply();
     RL_CHECK(TestOptions::testHashSet.containsHash(hash1));
     // clearHash on the last opinion drops the layer entry altogether.
-    RL_CHECK(!TestOptions::testHashSetObject().hasValueInLayer(middle2));
+    RL_CHECK(!TestOptions::testHashSetObject().hasValueInLayer(middle2.get()));
 
-    OptionManager::releaseLayer(middle2);
-    OptionManager::releaseLayer(weak);
+    middle2.release();
+    weak.release();
     apply();
     verifyOptionsAtDefaults();
 }
 
 void test_hashSetLayerMerging() {
-    const OptionLayer* low = acquire({6000, "HashLowLayer"});
-    const OptionLayer* high = acquire({7000, "HashHighLayer"});
+    OptionLayerHandle low = acquire({6000, "HashLowLayer"});
+    OptionLayerHandle high = acquire({7000, "HashHighLayer"});
     const Hash64 a = 0x1111111111111111ull, b = 0x2222222222222222ull, c = 0x3333333333333333ull;
-    TestOptions::testHashSet.addHash(a, low);
-    TestOptions::testHashSet.addHash(b, low);
-    TestOptions::testHashSet.addHash(c, low);
+    TestOptions::testHashSet.addHash(a, low.get());
+    TestOptions::testHashSet.addHash(b, low.get());
+    TestOptions::testHashSet.addHash(c, low.get());
     apply();
     RL_CHECK(TestOptions::testHashSet.containsHash(a) && TestOptions::testHashSet.containsHash(b) &&
              TestOptions::testHashSet.containsHash(c));
-    TestOptions::testHashSet.removeHash(b, high);
+    TestOptions::testHashSet.removeHash(b, high.get());
     apply();
     RL_CHECK(TestOptions::testHashSet.containsHash(a));
     RL_CHECK(!TestOptions::testHashSet.containsHash(b));
     RL_CHECK(TestOptions::testHashSet.containsHash(c));
     // Per-hash layer queries.
-    RL_CHECK(TestOptions::testHashSetObject().hasValueInLayer(high, b));
-    RL_CHECK(!TestOptions::testHashSetObject().hasValueInLayer(high, a));
+    RL_CHECK(TestOptions::testHashSetObject().hasValueInLayer(high.get(), b));
+    RL_CHECK(!TestOptions::testHashSetObject().hasValueInLayer(high.get(), a));
 
-    TestOptions::testHashSet.clearHash(a, low);
-    TestOptions::testHashSet.clearHash(b, low);
-    TestOptions::testHashSet.clearHash(c, low);
-    TestOptions::testHashSet.clearHash(b, high);
+    TestOptions::testHashSet.clearHash(a, low.get());
+    TestOptions::testHashSet.clearHash(b, low.get());
+    TestOptions::testHashSet.clearHash(c, low.get());
+    TestOptions::testHashSet.clearHash(b, high.get());
     apply();
-    OptionManager::releaseLayer(low);
-    OptionManager::releaseLayer(high);
+    low.release();
+    high.release();
     apply();
     verifyOptionsAtDefaults();
 }
 
 void test_layerPriorityOverride() {
-    const OptionLayer* low = acquire({16000, "PriorityTestLow"});
-    const OptionLayer* high = acquire({17000, "PriorityTestHigh"});
-    TestOptions::testIntLayerPriority.setDeferred(500, low);
+    OptionLayerHandle low = acquire({16000, "PriorityTestLow"});
+    OptionLayerHandle high = acquire({17000, "PriorityTestHigh"});
+    TestOptions::testIntLayerPriority.setDeferred(500, low.get());
     apply();
     RL_CHECK(TestOptions::testIntLayerPriority() == 500);
-    TestOptions::testIntLayerPriority.setDeferred(999, high);
+    TestOptions::testIntLayerPriority.setDeferred(999, high.get());
     apply();
     RL_CHECK(TestOptions::testIntLayerPriority() == 999);
-    TestOptions::testIntLayerPriorityObject().disableLayerValue(high);
+    TestOptions::testIntLayerPriorityObject().disableLayerValue(high.get());
     apply();
     RL_CHECK(TestOptions::testIntLayerPriority() == 500);
-    OptionManager::releaseLayer(low);
-    OptionManager::releaseLayer(high);
+    low.release();
+    high.release();
     apply();
 
     // Equal priority: the alphabetically earlier name wins.
-    const OptionLayer* aLayer = acquire({16500, "a.conf"});
-    const OptionLayer* zLayer = acquire({16500, "z.conf"});
-    TestOptions::testIntLayerPriority.setDeferred(1, aLayer);
-    TestOptions::testIntLayerPriority.setDeferred(26, zLayer);
+    OptionLayerHandle aLayer = acquire({16500, "a.conf"});
+    OptionLayerHandle zLayer = acquire({16500, "z.conf"});
+    TestOptions::testIntLayerPriority.setDeferred(1, aLayer.get());
+    TestOptions::testIntLayerPriority.setDeferred(26, zLayer.get());
     apply();
     RL_CHECK(TestOptions::testIntLayerPriority() == 1);
-    OptionManager::releaseLayer(aLayer);
-    OptionManager::releaseLayer(zLayer);
+    aLayer.release();
+    zLayer.release();
     apply();
     verifyOptionsAtDefaults();
 }
 
 void test_layerEnableDisable() {
-    OptionLayer* layer = acquireMutable({20000, "EnableDisableLayer"});
+    OptionLayerHandle layer = acquire({20000, "EnableDisableLayer"});
     RL_CHECK(layer->isEnabled());
-    TestOptions::testIntEnableDisable.setDeferred(777, layer);
+    TestOptions::testIntEnableDisable.setDeferred(777, layer.get());
     apply();
     RL_CHECK(TestOptions::testIntEnableDisable() == 777);
     layer->requestEnabled(false);
@@ -838,7 +835,7 @@ void test_layerEnableDisable() {
     layer->requestEnabled(false);
     apply();
     RL_CHECK(layer->isEnabled());
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     verifyOptionsAtDefaults();
 }
@@ -867,42 +864,42 @@ void test_layerKeyComparison() {
 }
 
 void test_hasValueInLayer() {
-    const OptionLayer* layer = acquire({11000, "HasValueLayer"});
+    OptionLayerHandle layer = acquire({11000, "HasValueLayer"});
     RL_CHECK(TestOptions::testIntObject().hasValueInLayer(OptionLayer::getDefaultLayer()));
-    RL_CHECK(!TestOptions::testIntObject().hasValueInLayer(layer));
+    RL_CHECK(!TestOptions::testIntObject().hasValueInLayer(layer.get()));
     RL_CHECK(!layer->hasValues());
-    TestOptions::testInt.setDeferred(123, layer);
+    TestOptions::testInt.setDeferred(123, layer.get());
     apply();
-    RL_CHECK(TestOptions::testIntObject().hasValueInLayer(layer));
+    RL_CHECK(TestOptions::testIntObject().hasValueInLayer(layer.get()));
     RL_CHECK(layer->hasValues());
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     verifyOptionsAtDefaults();
 }
 
 void test_multipleLayersComplex() {
-    const OptionLayer* layer1 = acquire({22000, "ComplexLayer1"});
-    const OptionLayer* layer2 = acquire({23000, "ComplexLayer2"});
-    const OptionLayer* layer3 = acquire({24000, "ComplexLayer3"});
-    TestOptions::testIntComplex.setDeferred(1000, layer1);
-    TestOptions::testIntComplex.setDeferred(2000, layer2);
+    OptionLayerHandle layer1 = acquire({22000, "ComplexLayer1"});
+    OptionLayerHandle layer2 = acquire({23000, "ComplexLayer2"});
+    OptionLayerHandle layer3 = acquire({24000, "ComplexLayer3"});
+    TestOptions::testIntComplex.setDeferred(1000, layer1.get());
+    TestOptions::testIntComplex.setDeferred(2000, layer2.get());
     apply();
     RL_CHECK(TestOptions::testIntComplex() == 2000);
-    TestOptions::testIntComplex.setDeferred(3000, layer3);
+    TestOptions::testIntComplex.setDeferred(3000, layer3.get());
     apply();
     RL_CHECK(TestOptions::testIntComplex() == 3000);
-    TestOptions::testIntComplexObject().disableLayerValue(layer3);
+    TestOptions::testIntComplexObject().disableLayerValue(layer3.get());
     apply();
     RL_CHECK(TestOptions::testIntComplex() == 2000);
-    TestOptions::testIntComplexObject().disableLayerValue(layer2);
+    TestOptions::testIntComplexObject().disableLayerValue(layer2.get());
     apply();
     RL_CHECK(TestOptions::testIntComplex() == 1000);
-    TestOptions::testIntComplexObject().disableLayerValue(layer1);
+    TestOptions::testIntComplexObject().disableLayerValue(layer1.get());
     apply();
     RL_CHECK(TestOptions::testIntComplex() == 100);
-    OptionManager::releaseLayer(layer1);
-    OptionManager::releaseLayer(layer2);
-    OptionManager::releaseLayer(layer3);
+    layer1.release();
+    layer2.release();
+    layer3.release();
     apply();
     verifyOptionsAtDefaults();
 }
@@ -990,55 +987,55 @@ void test_migrateMiscategorizedOptions() {
 }
 
 void test_floatBlending() {
-    const OptionLayer* layer = acquire({18000, "FloatBlendLayer50"}, 0.5f);
-    TestOptions::testFloatBlend.setDeferred(10.0f, layer);
+    OptionLayerHandle layer = acquire({18000, "FloatBlendLayer50"}, 0.5f);
+    TestOptions::testFloatBlend.setDeferred(10.0f, layer.get());
     apply();
     RL_CHECK_NEAR(TestOptions::testFloatBlend(), 10.0f * 0.5f + 1.5f * 0.5f, 0.01f);
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     verifyOptionsAtDefaults();
 }
 
 void test_floatBlendChain() {
     // v = lerp(lerp(C, B, 0.5), A, 0.2) with A strongest; D (full strength, below C) is never reached.
-    const OptionLayer* a = acquire({18400, "BlendA"}, 0.2f);
-    const OptionLayer* b = acquire({18300, "BlendB"}, 0.5f);
-    const OptionLayer* c = acquire({18200, "BlendC"}, 1.0f);
-    const OptionLayer* d = acquire({18100, "BlendD"}, 1.0f);
-    TestOptions::testFloatBlend.setDeferred(10.0f, a);
-    TestOptions::testFloatBlend.setDeferred(20.0f, b);
-    TestOptions::testFloatBlend.setDeferred(40.0f, c);
-    TestOptions::testFloatBlend.setDeferred(1000.0f, d);
+    OptionLayerHandle a = acquire({18400, "BlendA"}, 0.2f);
+    OptionLayerHandle b = acquire({18300, "BlendB"}, 0.5f);
+    OptionLayerHandle c = acquire({18200, "BlendC"}, 1.0f);
+    OptionLayerHandle d = acquire({18100, "BlendD"}, 1.0f);
+    TestOptions::testFloatBlend.setDeferred(10.0f, a.get());
+    TestOptions::testFloatBlend.setDeferred(20.0f, b.get());
+    TestOptions::testFloatBlend.setDeferred(40.0f, c.get());
+    TestOptions::testFloatBlend.setDeferred(1000.0f, d.get());
     apply();
     RL_CHECK_NEAR(TestOptions::testFloatBlend(), 30.0f * 0.8f + 10.0f * 0.2f, 0.001f);
     // A layer at strength 0 contributes nothing.
-    const_cast<OptionLayer*>(a)->requestBlendStrength(0.0f);
+    a.get()->requestBlendStrength(0.0f);
     apply();
     RL_CHECK_NEAR(TestOptions::testFloatBlend(), 30.0f, 0.001f);
-    for (const OptionLayer* layer : {a, b, c, d}) {
-        OptionManager::releaseLayer(layer);
+    for (OptionLayerHandle* layer : {&a, &b, &c, &d}) {
+        layer->release();
     }
     apply();
     verifyOptionsAtDefaults();
 }
 
 void test_vectorBlending() {
-    const OptionLayer* layer = acquire({19000, "Vector3BlendLayer"}, 0.5f);
-    TestOptions::testVector3Blend.setDeferred(Vec3f(10.0f, 20.0f, 30.0f), layer);
+    OptionLayerHandle layer = acquire({19000, "Vector3BlendLayer"}, 0.5f);
+    TestOptions::testVector3Blend.setDeferred(Vec3f(10.0f, 20.0f, 30.0f), layer.get());
     apply();
     const Vec3f result = TestOptions::testVector3Blend();
     RL_CHECK_NEAR(result.x, 5.5f, 0.01f);
     RL_CHECK_NEAR(result.y, 11.0f, 0.01f);
     RL_CHECK_NEAR(result.z, 16.5f, 0.01f);
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     verifyOptionsAtDefaults();
 }
 
 void test_blendThreshold() {
-    const OptionLayer* inactive = acquire({21000, "InactiveLayer"}, 0.4f, 0.5f);
+    OptionLayerHandle inactive = acquire({21000, "InactiveLayer"}, 0.4f, 0.5f);
     RL_CHECK(TestOptions::testIntThreshold.getDefaultValue() == 100);
-    TestOptions::testIntThreshold.setDeferred(9999, inactive);
+    TestOptions::testIntThreshold.setDeferred(9999, inactive.get());
     apply();
     RL_CHECK(!inactive->isActive());
     RL_CHECK(TestOptions::testIntThreshold() == 100);
@@ -1059,16 +1056,16 @@ void test_blendThreshold() {
     RL_CHECK(visited == 2);
 
     // Hash sets honour the threshold too.
-    TestOptions::testHashSet.addHash(0x42, inactive);
+    TestOptions::testHashSet.addHash(0x42, inactive.get());
     apply();
     RL_CHECK(!TestOptions::testHashSet.containsHash(0x42));
-    OptionManager::releaseLayer(inactive);
+    inactive.release();
     apply();
     verifyOptionsAtDefaults();
 }
 
 void test_blendStrengthRequest() {
-    OptionLayer* layer = acquireMutable({9500, "BlendStrengthLayer"}, 0.5f);
+    OptionLayerHandle layer = acquire({9500, "BlendStrengthLayer"}, 0.5f);
     RL_CHECK_NEAR(layer->getBlendStrength(), 0.5f, 0.0001f);
     layer->requestBlendStrength(0.8f);
     RL_CHECK_NEAR(layer->getPendingBlendStrength(), 0.8f, 0.0001f);
@@ -1079,13 +1076,13 @@ void test_blendStrengthRequest() {
     layer->requestBlendStrength(0.6f);
     apply();
     RL_CHECK_NEAR(layer->getBlendStrength(), 0.9f, 0.0001f);
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     verifyOptionsAtDefaults();
 }
 
 void test_blendThresholdRequest() {
-    OptionLayer* layer = acquireMutable({9600, "BlendThresholdLayer"}, 1.0f, 0.5f);
+    OptionLayerHandle layer = acquire({9600, "BlendThresholdLayer"}, 1.0f, 0.5f);
     RL_CHECK_NEAR(layer->getBlendStrengthThreshold(), 0.5f, 0.0001f);
     layer->requestBlendThreshold(0.3f);
     apply();
@@ -1095,7 +1092,7 @@ void test_blendThresholdRequest() {
     layer->requestBlendThreshold(0.6f);
     apply();
     RL_CHECK_NEAR(layer->getBlendStrengthThreshold(), 0.2f, 0.0001f);
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     verifyOptionsAtDefaults();
 }
@@ -1108,9 +1105,9 @@ void test_optionFlags() {
     RL_CHECK(written.contains("rtx.test.testInt"));
 
     RL_CHECK((TestOptions::testIntNoResetObject().getFlags() & OptionFlags::NoReset) != 0);
-    OptionLayer* layer = acquireMutable({9500, "NoResetTestLayer"});
-    TestOptions::testInt.setDeferred(888, layer);
-    TestOptions::testIntNoReset.setDeferred(999, layer);
+    OptionLayerHandle layer = acquire({9500, "NoResetTestLayer"});
+    TestOptions::testInt.setDeferred(888, layer.get());
+    TestOptions::testIntNoReset.setDeferred(999, layer.get());
     apply();
     RL_CHECK(TestOptions::testInt() == 888);
     RL_CHECK(TestOptions::testIntNoReset() == 999);
@@ -1121,20 +1118,20 @@ void test_optionFlags() {
     layer->requestEnabled(true);
     apply();
     RL_CHECK(TestOptions::testIntNoReset() == 999);
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     RL_CHECK(TestOptions::testInt() == 100);
     RL_CHECK(TestOptions::testIntNoReset() == 42);
 
-    // NoSave routes every write to the Derived layer, even an explicit one.
-    const OptionLayer* other = acquire({9700, "NoSaveExplicitLayer"});
-    TestOptions::testIntNoSave.setDeferred(5, other);
+    // NoSave routes every write to the Derived layer.get(), even an explicit one.
+    OptionLayerHandle other = acquire({9700, "NoSaveExplicitLayer"});
+    TestOptions::testIntNoSave.setDeferred(5, other.get());
     apply();
-    RL_CHECK(!TestOptions::testIntNoSaveObject().hasValueInLayer(other));
+    RL_CHECK(!TestOptions::testIntNoSaveObject().hasValueInLayer(other.get()));
     RL_CHECK(TestOptions::testIntNoSaveObject().hasValueInLayer(OptionLayer::getDerivedLayer()));
     RL_CHECK(TestOptions::testIntNoSave() == 5);
     TestOptions::testIntNoSaveObject().disableLayerValue(OptionLayer::getDerivedLayer());
-    OptionManager::releaseLayer(other);
+    other.release();
     apply();
     RL_CHECK(TestOptions::testIntNoSave() == 42);
     verifyOptionsAtDefaults();
@@ -1189,22 +1186,22 @@ void test_invalidationScope() {
 }
 
 void test_isDefault() {
-    const OptionLayer* layer = acquire({8000, "IsDefaultLayer"});
+    OptionLayerHandle layer = acquire({8000, "IsDefaultLayer"});
     RL_CHECK(TestOptions::testIntObject().isDefault());
-    TestOptions::testInt.setDeferred(999, layer);
+    TestOptions::testInt.setDeferred(999, layer.get());
     apply();
     RL_CHECK(!TestOptions::testIntObject().isDefault());
-    TestOptions::testInt.setDeferred(100, layer);
+    TestOptions::testInt.setDeferred(100, layer.get());
     apply();
     RL_CHECK(TestOptions::testIntObject().isDefault());
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     verifyOptionsAtDefaults();
 }
 
 void test_resetToDefault() {
-    const OptionLayer* layer = acquire({12000, "ResetLayer"});
-    TestOptions::testInt.setDeferred(999, layer);
+    OptionLayerHandle layer = acquire({12000, "ResetLayer"});
+    TestOptions::testInt.setDeferred(999, layer.get());
     apply();
     RL_CHECK(TestOptions::testInt() == 999);
     // resetToDefault() writes the default into the current target layer (Derived here), which is
@@ -1213,7 +1210,7 @@ void test_resetToDefault() {
     apply();
     RL_CHECK(TestOptions::testIntObject().hasValueInLayer(OptionLayer::getDerivedLayer()));
     RL_CHECK(TestOptions::testInt() == 999);
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     RL_CHECK(TestOptions::testInt() == 100);
     TestOptions::testIntObject().disableLayerValue(OptionLayer::getDerivedLayer());
@@ -1222,15 +1219,15 @@ void test_resetToDefault() {
 }
 
 void test_configSerialization() {
-    const OptionLayer* layer = acquire({25000, "SerializeTestLayer"});
-    TestOptions::testInt.setDeferred(9999, layer);
-    TestOptions::testFloat.setDeferred(1.234f, layer);
-    TestOptions::testBool.setDeferred(true, layer);
-    TestOptions::testString.setDeferred(std::string("SerializedString"), layer);
-    TestOptions::testVector3.setDeferred(Vec3f(7.0f, 8.0f, 9.0f), layer);
+    OptionLayerHandle layer = acquire({25000, "SerializeTestLayer"});
+    TestOptions::testInt.setDeferred(9999, layer.get());
+    TestOptions::testFloat.setDeferred(1.234f, layer.get());
+    TestOptions::testBool.setDeferred(true, layer.get());
+    TestOptions::testString.setDeferred(std::string("SerializedString"), layer.get());
+    TestOptions::testVector3.setDeferred(Vec3f(7.0f, 8.0f, 9.0f), layer.get());
     apply();
     OptionConfig config;
-    OptionManager::writeOptions(config, layer, false);
+    OptionManager::writeOptions(config, layer.get(), false);
     RL_CHECK(config.get<std::int32_t>("rtx.test.testInt", 0) == 9999);
     RL_CHECK_NEAR(config.get<float>("rtx.test.testFloat", 0.0f), 1.234f, 0.001f);
     RL_CHECK(config.get<bool>("rtx.test.testBool", false));
@@ -1238,39 +1235,39 @@ void test_configSerialization() {
     RL_CHECK(config.get<Vec3f>("rtx.test.testVector3") == Vec3f(7.0f, 8.0f, 9.0f));
     RL_CHECK(config.size() == 5); // only this layer's values
     // changedOptionsOnly drops values equal to what the weaker layers give.
-    TestOptions::testBool.setDeferred(false, layer);
+    TestOptions::testBool.setDeferred(false, layer.get());
     apply();
     OptionConfig changed;
-    OptionManager::writeOptions(changed, layer, true);
+    OptionManager::writeOptions(changed, layer.get(), true);
     RL_CHECK(!changed.contains("rtx.test.testBool"));
     RL_CHECK(changed.contains("rtx.test.testInt"));
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     verifyOptionsAtDefaults();
 }
 
 void test_configFileIO() {
     const std::string path = (s_tempDir / "test_rtx_option_temp.conf").string();
-    const OptionLayer* writeLayer = acquire({26000, "FileWriteTestLayer"});
-    TestOptions::testInt.setDeferred(77777, writeLayer);
-    TestOptions::testFloat.setDeferred(2.71828f, writeLayer);
-    TestOptions::testBool.setDeferred(true, writeLayer);
-    TestOptions::testString.setDeferred(std::string("FileTestValue"), writeLayer);
-    TestOptions::testVector2.setDeferred(Vec2f(11.0f, 22.0f), writeLayer);
-    TestOptions::testVector3.setDeferred(Vec3f(33.0f, 44.0f, 55.0f), writeLayer);
-    TestOptions::testVector2i.setDeferred(Vec2i(111, 222), writeLayer);
-    TestOptions::testHashVector.setDeferred(HashVector{3, 1, 2}, writeLayer);
+    OptionLayerHandle writeLayer = acquire({26000, "FileWriteTestLayer"});
+    TestOptions::testInt.setDeferred(77777, writeLayer.get());
+    TestOptions::testFloat.setDeferred(2.71828f, writeLayer.get());
+    TestOptions::testBool.setDeferred(true, writeLayer.get());
+    TestOptions::testString.setDeferred(std::string("FileTestValue"), writeLayer.get());
+    TestOptions::testVector2.setDeferred(Vec2f(11.0f, 22.0f), writeLayer.get());
+    TestOptions::testVector3.setDeferred(Vec3f(33.0f, 44.0f, 55.0f), writeLayer.get());
+    TestOptions::testVector2i.setDeferred(Vec2i(111, 222), writeLayer.get());
+    TestOptions::testHashVector.setDeferred(HashVector{3, 1, 2}, writeLayer.get());
     apply();
     OptionConfig writeConfig;
-    OptionManager::writeOptions(writeConfig, writeLayer, false);
+    OptionManager::writeOptions(writeConfig, writeLayer.get(), false);
     RL_CHECK(writeConfig.saveFile(path, defaultSaveKeyFilters()));
-    OptionManager::releaseLayer(writeLayer);
+    writeLayer.release();
     apply();
     verifyOptionsAtDefaults();
 
     OptionConfig readConfig = OptionConfig::loadFile(path, OptionSystem::parseOptions());
     RL_CHECK(readConfig.get<std::int32_t>("rtx.test.testInt", 0) == 77777);
-    OptionLayer* readLayer = OptionManager::acquireLayer(path, {27000, "FileReadTestLayer"}, 1.0f, 0.1f, false,
+    OptionLayerHandle readLayer = OptionManager::acquireLayer(path, {27000, "FileReadTestLayer"}, 1.0f, 0.1f, false,
                                                          &readConfig);
     RL_CHECK(readLayer->isValid());
     apply();
@@ -1282,7 +1279,7 @@ void test_configFileIO() {
     RL_CHECK(TestOptions::testVector3() == Vec3f(33.0f, 44.0f, 55.0f));
     RL_CHECK(TestOptions::testVector2i() == Vec2i(111, 222));
     RL_CHECK((TestOptions::testHashVector() == HashVector{3, 1, 2}));
-    OptionManager::releaseLayer(readLayer);
+    readLayer.release();
     apply();
     verifyOptionsAtDefaults();
 }
@@ -1295,12 +1292,12 @@ void test_configScalarToVectorPromotion() {
     }
     OptionConfig config = OptionConfig::loadFile(path, OptionSystem::parseOptions());
     RL_CHECK(!config.empty());
-    const OptionLayer* layer =
+    OptionLayerHandle layer =
         OptionManager::acquireLayer(path, {27500, "ScalarPromotionTestLayer"}, 1.0f, 0.1f, false, &config);
     RL_CHECK(layer->isValid());
     apply();
     RL_CHECK(TestOptions::testVector3() == Vec3f(7.0f));
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     verifyOptionsAtDefaults();
 }
@@ -1310,30 +1307,30 @@ void test_configScalarToVectorPromotion() {
 // ============================================================================
 
 void test_hashVectorDoesNotMerge() {
-    const OptionLayer* low = acquire({5000, "HashVectorLow"});
-    const OptionLayer* high = acquire({5100, "HashVectorHigh"});
-    TestOptions::testHashVector.setDeferred(HashVector{1, 2, 3}, low);
-    TestOptions::testHashVector.setDeferred(HashVector{9}, high);
+    OptionLayerHandle low = acquire({5000, "HashVectorLow"});
+    OptionLayerHandle high = acquire({5100, "HashVectorHigh"});
+    TestOptions::testHashVector.setDeferred(HashVector{1, 2, 3}, low.get());
+    TestOptions::testHashVector.setDeferred(HashVector{9}, high.get());
     apply();
     RL_CHECK((TestOptions::testHashVector() == HashVector{9}));
-    TestOptions::testHashVectorObject().disableLayerValue(high);
+    TestOptions::testHashVectorObject().disableLayerValue(high.get());
     apply();
     RL_CHECK((TestOptions::testHashVector() == HashVector{1, 2, 3}));
-    OptionManager::releaseLayer(low);
-    OptionManager::releaseLayer(high);
+    low.release();
+    high.release();
     apply();
     RL_CHECK(TestOptions::testHashVector().empty());
 }
 
 void test_hashSetAssignWholeSet() {
-    const OptionLayer* layer = acquire({5200, "HashAssignLayer"});
-    TestOptions::testHashSet.removeHash(0x5, layer);
-    TestOptions::testHashSet.setDeferred(HashSet{0x1, 0x2}, layer);
+    OptionLayerHandle layer = acquire({5200, "HashAssignLayer"});
+    TestOptions::testHashSet.removeHash(0x5, layer.get());
+    TestOptions::testHashSet.setDeferred(HashSet{0x1, 0x2}, layer.get());
     apply();
     RL_CHECK((TestOptions::testHashSet() == HashSet{0x1, 0x2}));
-    const std::optional<OptionValue> value = TestOptions::testHashSetObject().getLayerValue(layer);
+    const std::optional<OptionValue> value = TestOptions::testHashSetObject().getLayerValue(layer.get());
     RL_CHECK(value && std::get<HashSetLayer>(*value).hasNegative(0x5)); // negatives survive
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     verifyOptionsAtDefaults();
 }
@@ -1387,66 +1384,66 @@ void test_editTargetRouting() {
 }
 
 void test_blockingAndClearStronger() {
-    const OptionLayer* low = acquire({4000, "ClearLow"});
-    const OptionLayer* mid = acquire({4100, "ClearMid"});
-    const OptionLayer* high = acquire({4200, "ClearHigh"});
-    TestOptions::testIntComplex.setDeferred(1, low);
-    TestOptions::testIntComplex.setDeferred(2, mid);
-    TestOptions::testIntComplex.setDeferred(3, high);
-    TestOptions::testHashSet.addHash(0x10, mid);
-    TestOptions::testHashSet.addHash(0x20, high);
-    TestOptions::testHashSet.removeHash(0x10, high);
+    OptionLayerHandle low = acquire({4000, "ClearLow"});
+    OptionLayerHandle mid = acquire({4100, "ClearMid"});
+    OptionLayerHandle high = acquire({4200, "ClearHigh"});
+    TestOptions::testIntComplex.setDeferred(1, low.get());
+    TestOptions::testIntComplex.setDeferred(2, mid.get());
+    TestOptions::testIntComplex.setDeferred(3, high.get());
+    TestOptions::testHashSet.addHash(0x10, mid.get());
+    TestOptions::testHashSet.addHash(0x20, high.get());
+    TestOptions::testHashSet.removeHash(0x10, high.get());
     apply();
-    RL_CHECK(TestOptions::testIntComplexObject().getBlockingLayer(low) == high);
-    RL_CHECK(TestOptions::testIntComplexObject().getBlockingLayer(high) == nullptr);
-    RL_CHECK(TestOptions::testHashSetObject().getBlockingLayer(mid, Hash64{0x10}) == high);
-    RL_CHECK(TestOptions::testHashSetObject().getBlockingLayer(mid, Hash64{0x30}) == nullptr);
+    RL_CHECK(TestOptions::testIntComplexObject().getBlockingLayer(low.get()) == high.get());
+    RL_CHECK(TestOptions::testIntComplexObject().getBlockingLayer(high.get()) == nullptr);
+    RL_CHECK(TestOptions::testHashSetObject().getBlockingLayer(mid.get(), Hash64{0x10}) == high.get());
+    RL_CHECK(TestOptions::testHashSetObject().getBlockingLayer(mid.get(), Hash64{0x30}) == nullptr);
 
-    TestOptions::testIntComplexObject().clearFromStrongerLayers(low);
+    TestOptions::testIntComplexObject().clearFromStrongerLayers(low.get());
     apply();
     RL_CHECK(TestOptions::testIntComplex() == 1);
-    RL_CHECK(!TestOptions::testIntComplexObject().hasValueInLayer(mid));
+    RL_CHECK(!TestOptions::testIntComplexObject().hasValueInLayer(mid.get()));
 
     // For hash sets only the given hash is cleared from stronger layers.
-    TestOptions::testHashSetObject().clearFromStrongerLayers(mid, Hash64{0x10});
+    TestOptions::testHashSetObject().clearFromStrongerLayers(mid.get(), Hash64{0x10});
     apply();
     RL_CHECK(TestOptions::testHashSet.containsHash(0x10));
     RL_CHECK(TestOptions::testHashSet.containsHash(0x20));
 
-    for (const OptionLayer* layer : {low, mid, high}) {
-        OptionManager::releaseLayer(layer);
+    for (OptionLayerHandle* layer : {&low, &mid, &high}) {
+        layer->release();
     }
     apply();
     verifyOptionsAtDefaults();
 }
 
 void test_removeRedundantLayerValues() {
-    const OptionLayer* low = acquire({4300, "RedundantLow"});
-    const OptionLayer* high = acquire({4400, "RedundantHigh"});
-    TestOptions::testIntComplex.setDeferred(5, low);
-    TestOptions::testIntComplex.setDeferred(5, high);  // same as below: redundant
-    TestOptions::testInt.setDeferred(100, high);        // same as the default: redundant
-    TestOptions::testFloat.setDeferred(2.0f, high);     // real change
+    OptionLayerHandle low = acquire({4300, "RedundantLow"});
+    OptionLayerHandle high = acquire({4400, "RedundantHigh"});
+    TestOptions::testIntComplex.setDeferred(5, low.get());
+    TestOptions::testIntComplex.setDeferred(5, high.get());  // same as below: redundant
+    TestOptions::testInt.setDeferred(100, high.get());        // same as the default: redundant
+    TestOptions::testFloat.setDeferred(2.0f, high.get());     // real change
     apply();
-    RL_CHECK(TestOptions::testIntComplexObject().isLayerValueRedundant(high));
-    RL_CHECK(!TestOptions::testFloatObject().isLayerValueRedundant(high));
-    RL_CHECK(OptionManager::removeRedundantLayerValues(high) == 2);
+    RL_CHECK(TestOptions::testIntComplexObject().isLayerValueRedundant(high.get()));
+    RL_CHECK(!TestOptions::testFloatObject().isLayerValueRedundant(high.get()));
+    RL_CHECK(OptionManager::removeRedundantLayerValues(high.get()) == 2);
     apply();
-    RL_CHECK(!TestOptions::testIntComplexObject().hasValueInLayer(high));
-    RL_CHECK(TestOptions::testFloatObject().hasValueInLayer(high));
+    RL_CHECK(!TestOptions::testIntComplexObject().hasValueInLayer(high.get()));
+    RL_CHECK(TestOptions::testFloatObject().hasValueInLayer(high.get()));
     RL_CHECK(TestOptions::testIntComplex() == 5);
     RL_CHECK(high->hasValues());
-    OptionManager::releaseLayer(low);
-    OptionManager::releaseLayer(high);
+    low.release();
+    high.release();
     apply();
     verifyOptionsAtDefaults();
 }
 
 void test_migrateValuesTo() {
-    const OptionLayer* layer = acquire({4500, "MigrateValuesLayer"});
-    const OptionLayer* skipped = acquire({4600, "MigrateSkippedLayer"});
-    TestOptions::testMigrateSource.setDeferred(8, layer);
-    TestOptions::testMigrateSource.setDeferred(-1, skipped);
+    OptionLayerHandle layer = acquire({4500, "MigrateValuesLayer"});
+    OptionLayerHandle skipped = acquire({4600, "MigrateSkippedLayer"});
+    TestOptions::testMigrateSource.setDeferred(8, layer.get());
+    TestOptions::testMigrateSource.setDeferred(-1, skipped.get());
     apply();
     const bool migrated = TestOptions::testMigrateSourceObject().migrateValuesTo(
         &TestOptions::testMigrateDestinationObject(), [](const OptionValue& source, OptionValue& destination, bool) {
@@ -1460,23 +1457,23 @@ void test_migrateValuesTo() {
     RL_CHECK(migrated);
     apply();
     RL_CHECK_NEAR(TestOptions::testMigrateDestination(), 4.0f, 0.0001f);
-    RL_CHECK(TestOptions::testMigrateDestinationObject().hasValueInLayer(layer));
-    RL_CHECK(!TestOptions::testMigrateDestinationObject().hasValueInLayer(skipped)); // no zero left behind
-    OptionManager::releaseLayer(layer);
-    OptionManager::releaseLayer(skipped);
+    RL_CHECK(TestOptions::testMigrateDestinationObject().hasValueInLayer(layer.get()));
+    RL_CHECK(!TestOptions::testMigrateDestinationObject().hasValueInLayer(skipped.get())); // no zero left behind
+    layer.release();
+    skipped.release();
     apply();
     RL_CHECK_NEAR(TestOptions::testMigrateDestination(), 0.0f, 0.0001f);
 }
 
 void test_setImmediately() {
-    const OptionLayer* layer = acquire({4700, "ImmediateLayer"});
+    OptionLayerHandle layer = acquire({4700, "ImmediateLayer"});
     s_intCallbackCount = 0;
-    TestOptions::testIntWithCallback.setImmediately(42, layer);
+    TestOptions::testIntWithCallback.setImmediately(42, layer.get());
     RL_CHECK(TestOptions::testIntWithCallback() == 42); // visible before the end of the frame
     RL_CHECK(TestOptions::testIntWithCallbackObject().isDirty());
     apply();
     RL_CHECK(s_intCallbackCount == 0); // already resolved, so no change is seen at end of frame
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     RL_CHECK(TestOptions::testIntWithCallback() == 0);
     s_intCallbackCount = 0;
@@ -1484,16 +1481,16 @@ void test_setImmediately() {
 
 void test_drawcallInvalidation() {
     OptionManager::clearDrawcallTranslationInvalid();
-    const OptionLayer* layer = acquire({4800, "DrawcallLayer"});
-    TestOptions::testInt.setDeferred(1, layer);
+    OptionLayerHandle layer = acquire({4800, "DrawcallLayer"});
+    TestOptions::testInt.setDeferred(1, layer.get());
     apply();
     RL_CHECK(!OptionManager::isDrawcallTranslationInvalid());
-    TestOptions::testIntDrawcall.setDeferred(1, layer);
+    TestOptions::testIntDrawcall.setDeferred(1, layer.get());
     apply();
     RL_CHECK(OptionManager::isDrawcallTranslationInvalid());
     OptionManager::clearDrawcallTranslationInvalid();
     RL_CHECK(!OptionManager::isDrawcallTranslationInvalid());
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     OptionManager::clearDrawcallTranslationInvalid();
     verifyOptionsAtDefaults();
@@ -1523,7 +1520,7 @@ void test_aliases() {
     config.set("rtx.test.nativeOnly", "8");
     config.set("rtx.test.testFloat", "2.5");
     config.set("relight.test.testFloat", "9.5");
-    const OptionLayer* layer = OptionManager::acquireLayer("", {4900, "AliasLayer"}, 1.0f, 0.1f, false, &config);
+    OptionLayerHandle layer = OptionManager::acquireLayer("", {4900, "AliasLayer"}, 1.0f, 0.1f, false, &config);
     apply();
     RL_CHECK(TestOptions::testInt() == 5);
     RL_CHECK(TestOptions::testIntComplex() == 6);
@@ -1531,10 +1528,10 @@ void test_aliases() {
     RL_CHECK_NEAR(TestOptions::testFloat(), 2.5f, 0.0001f);
     // Written back under the declared names.
     OptionConfig written;
-    OptionManager::writeOptions(written, layer, false);
+    OptionManager::writeOptions(written, layer.get(), false);
     RL_CHECK(written.contains("rtx.test.testInt") && !written.contains("relight.test.testInt"));
     RL_CHECK(written.contains("relight.test.nativeOnly"));
-    OptionManager::releaseLayer(layer);
+    layer.release();
     OptionManager::removeAlias("rtx.test.oldIntName");
     RL_CHECK(OptionManager::findOption("rtx.test.oldIntName") == nullptr);
     apply();
@@ -1543,37 +1540,62 @@ void test_aliases() {
 
 void test_malformedValuesMatchUpstream() {
     // Upstream inserts the type's parse result even when parsing fails: an int that does not parse
-    // becomes 0 in that layer, and a short vector keeps the components it did parse.
+    // becomes 0 in that layer.get(), and a short vector keeps the components it did parse.
     OptionConfig config;
     config.set("rtx.test.testIntComplex", "abc");
     config.set("rtx.test.testVector3", "5, 6");
     config.set("rtx.test.testBool", "yes");
     config.set("rtx.test.testHashSet", "0x1, garbage, -0x2");
-    const OptionLayer* layer = OptionManager::acquireLayer("", {5300, "MalformedLayer"}, 1.0f, 0.1f, false, &config);
+    OptionLayerHandle layer = OptionManager::acquireLayer("", {5300, "MalformedLayer"}, 1.0f, 0.1f, false, &config);
     apply();
     RL_CHECK(TestOptions::testIntComplex() == 0);
     RL_CHECK(TestOptions::testVector3() == Vec3f(5.0f, 6.0f, 0.0f));
     RL_CHECK(TestOptions::testBool() == false);
     RL_CHECK(TestOptions::testHashSet.containsHash(0x1)); // valid entries kept, bad ones skipped
-    const std::optional<OptionValue> hashes = TestOptions::testHashSetObject().getLayerValue(layer);
+    const std::optional<OptionValue> hashes = TestOptions::testHashSetObject().getLayerValue(layer.get());
     RL_CHECK(hashes && std::get<HashSetLayer>(*hashes).hasNegative(0x2));
-    OptionManager::releaseLayer(layer);
+    layer.release();
     apply();
     verifyOptionsAtDefaults();
 }
 
+void test_layerHandle() {
+    const OptionLayerKey key{5400, "HandleLayer"};
+    {
+        OptionLayerHandle handle = acquire(key);
+        RL_CHECK(static_cast<bool>(handle) && OptionManager::getLayer(key) == handle.get());
+        TestOptions::testIntComplex.setDeferred(5, handle.get());
+        apply();
+        RL_CHECK(TestOptions::testIntComplex() == 5);
+        OptionLayerHandle moved = std::move(handle); // moving transfers the reference
+        RL_CHECK(!handle && moved.get() == OptionManager::getLayer(key));
+        OptionLayerHandle second = acquire(key);     // a second reference to the same layer
+        moved.release();
+        RL_CHECK(!moved && OptionManager::getLayer(key) == second.get());
+        apply();
+        RL_CHECK(TestOptions::testIntComplex() == 5);
+        moved.release(); // no-op on an empty handle
+        OptionLayerHandle assigned;
+        assigned = std::move(second);
+        RL_CHECK(assigned.get() != nullptr);
+    } // last handle destroyed: layer and its values go
+    RL_CHECK(OptionManager::getLayer(key) == nullptr);
+    apply();
+    RL_CHECK(TestOptions::testIntComplex() == 100);
+}
+
 void test_dynamicLayerPriorityClamp() {
-    const OptionLayer* low = OptionManager::acquireLayer("", {5, "ClampedLow"});
-    const OptionLayer* high = OptionManager::acquireLayer("", {0xFFFFFFF0u, "ClampedHigh"});
+    OptionLayerHandle low = OptionManager::acquireLayer("", {5, "ClampedLow"});
+    OptionLayerHandle high = OptionManager::acquireLayer("", {0xFFFFFFF0u, "ClampedHigh"});
     RL_CHECK(low->getLayerKey().priority == kMinDynamicLayerPriority);
     RL_CHECK(high->getLayerKey().priority == kMaxDynamicLayerPriority);
     // Acquiring the same key again references the same layer.
-    const OptionLayer* again = OptionManager::acquireLayer("", {5, "ClampedLow"});
-    RL_CHECK(again == low);
-    OptionManager::releaseLayer(again);
-    RL_CHECK(OptionManager::getLayer(low->getLayerKey()) == low);
-    OptionManager::releaseLayer(low);
-    OptionManager::releaseLayer(high);
+    OptionLayerHandle again = OptionManager::acquireLayer("", {5, "ClampedLow"});
+    RL_CHECK(again.get() == low.get());
+    again.release();
+    RL_CHECK(OptionManager::getLayer(low->getLayerKey()) == low.get());
+    low.release();
+    high.release();
     RL_CHECK(OptionManager::getLayer({kMinDynamicLayerPriority, "ClampedLow"}) == nullptr);
     RL_CHECK(clampComponentLayerPriority(-5.0f) == kMinDynamicLayerPriority);
     RL_CHECK(clampComponentLayerPriority(12345.4f) == 12345u);
@@ -1654,6 +1676,7 @@ void runSemanticsTests() {
         {"drawcallInvalidation", test_drawcallInvalidation},
         {"aliases", test_aliases},
         {"malformedValuesMatchUpstream", test_malformedValuesMatchUpstream},
+        {"layerHandle", test_layerHandle},
         {"dynamicLayerPriorityClamp", test_dynamicLayerPriorityClamp},
         {"markdownDocumentation", test_markdownDocumentation},
     };

@@ -80,17 +80,16 @@ public:
 
     // --- Layers -----------------------------------------------------------------------------------
 
-    /// Create (or reference) a layer. A new layer reads `config` if given, else `configPath` if
-    /// non-empty, else starts empty, and is applied to every option at once. System layers keep
-    /// their reserved priority; other layers are clamped into [100, 10,000,000] with a warning.
-    /// Every acquire must be matched by releaseLayer().
-    static OptionLayer* acquireLayer(const std::string& configPath, const OptionLayerKey& layerKey, // fuse-lint-allow(ownership): registry-owned, released via releaseLayer()
-                                     float blendStrength = kDefaultLayerBlendStrength,
-                                     float blendThreshold = kDefaultLayerBlendThreshold, bool isSystemLayer = false,
-                                     const OptionConfig* config = nullptr);
-    /// Drop a reference; at zero the layer's values leave every option (NoReset included) and the
-    /// layer is destroyed.
-    static void releaseLayer(const OptionLayer* layer);
+    /// Create (or reference) a layer and return a counted handle to it. A new layer reads `config`
+    /// if given, else `configPath` if non-empty, else starts empty, and is applied to every option at
+    /// once. System layers keep their reserved priority; other layers are clamped into
+    /// [100, 10,000,000] with a warning. Acquiring an existing key references the same layer. When
+    /// the last handle goes (destructor or OptionLayerHandle::release()) the layer's values leave
+    /// every option (NoReset included) and the layer is destroyed.
+    static OptionLayerHandle acquireLayer(const std::string& configPath, const OptionLayerKey& layerKey,
+                                          float blendStrength = kDefaultLayerBlendStrength,
+                                          float blendThreshold = kDefaultLayerBlendThreshold,
+                                          bool isSystemLayer = false, const OptionConfig* config = nullptr);
 
     // --- Serialization ----------------------------------------------------------------------------
 
@@ -126,8 +125,15 @@ public:
 private:
     friend class OptionBase;
     friend class OptionLayer;
+    friend class OptionLayerHandle;
     friend class OptionSystem;
 
+    /// acquireLayer() without the handle: adds one reference the caller must drop with
+    /// dropLayerReference(). Used for system layers, which live until OptionSystem::shutdown().
+    static OptionLayer* referenceLayer(const std::string& configPath, const OptionLayerKey& layerKey,
+                                       float blendStrength, float blendThreshold, bool isSystemLayer,
+                                       const OptionConfig* config);
+    static void dropLayerReference(const OptionLayer* layer);
     static OptionMap& optionRegistry();
     static std::map<std::string, OptionBase*, std::less<>>& dirtyOptions();
     static bool unregisterLayer(const OptionLayer* layer);

@@ -54,6 +54,7 @@ namespace fuse::relight::options {
 class OptionBase;
 class OptionManager;
 class OptionSystem;
+class OptionLayerHandle;
 
 /// Who is editing: the user (any UI) or code (presets, callbacks, automation). Together with the
 /// option's UserSetting flag it picks the layer a write goes to (OptionBase::getTargetLayer).
@@ -183,11 +184,6 @@ public:
 
     /// Paths from a comma-separated environment variable, or `{defaultPath}` when it is unset.
     static std::vector<std::string> resolveConfigPaths(const char* envVarName, const std::string& defaultPath);
-    /// One layer per path at `baseLayer`'s priority. With several paths the earlier ones get
-    /// "00_", "01_" … name prefixes and the last keeps the plain name; as names sort, the FIRST
-    /// listed file is the strongest (upstream behaviour).
-    static std::vector<OptionLayer*> createLayersFromEnvVar(const char* envVarName, const std::string& defaultPath,
-                                                            const SystemLayerId& baseLayer);
 
     // --- System layers (valid after OptionSystem::initialize) -----------------------------------
 
@@ -199,6 +195,11 @@ public:
     static const OptionLayer* getDerivedLayer();
 
 private:
+    /// One system layer per path at `baseLayer`'s priority (references owned by OptionSystem). With several paths the earlier ones get
+    /// "00_", "01_" … name prefixes and the last keeps the plain name; as names sort, the FIRST
+    /// listed file is the strongest (upstream behaviour).
+    static std::vector<OptionLayer*> createLayersFromEnvVar(const char* envVarName, const std::string& defaultPath,
+                                                            const SystemLayerId& baseLayer);
     void setCategoryFlags(std::uint32_t flags);
     void recalculateUnsavedChangesInternal() const;
     bool isValueEqualToSaved(const OptionBase& option, const OptionValue& value, const std::string& savedValue) const;
@@ -246,6 +247,41 @@ public:
 private:
     OptionEditTarget m_previousTarget;
     inline static thread_local OptionEditTarget s_currentTarget = OptionEditTarget::Derived;
+};
+
+/// Counted reference to a layer from OptionManager::acquireLayer(). Move-only. The layer lives while
+/// any handle to it does; destroying or release()-ing the last one removes the layer's values from
+/// every option and destroys it. Dynamic layers (Logic graphs, tests, tools) are held this way.
+class OptionLayerHandle {
+public:
+    OptionLayerHandle() noexcept = default;
+    ~OptionLayerHandle() { release(); }
+    OptionLayerHandle(const OptionLayerHandle&) = delete;
+    OptionLayerHandle& operator=(const OptionLayerHandle&) = delete;
+    OptionLayerHandle(OptionLayerHandle&& other) noexcept : m_layer(other.m_layer) { other.m_layer = nullptr; }
+    OptionLayerHandle& operator=(OptionLayerHandle&& other) noexcept {
+        if (this != &other) {
+            release();
+            m_layer = other.m_layer;
+            other.m_layer = nullptr;
+        }
+        return *this;
+    }
+
+    /// The layer (non-owning), or nullptr for an empty handle.
+    OptionLayer* get() const noexcept { return m_layer; }
+    OptionLayer* operator->() const noexcept { return m_layer; }
+    OptionLayer& operator*() const noexcept { return *m_layer; }
+    explicit operator bool() const noexcept { return m_layer != nullptr; }
+
+    /// Drop this reference now (the handle becomes empty). No-op on an empty handle.
+    void release() noexcept;
+
+private:
+    friend class OptionManager;
+    explicit OptionLayerHandle(OptionLayer* layer) noexcept : m_layer(layer) {}
+
+    OptionLayer* m_layer = nullptr;
 };
 
 } // namespace fuse::relight::options
