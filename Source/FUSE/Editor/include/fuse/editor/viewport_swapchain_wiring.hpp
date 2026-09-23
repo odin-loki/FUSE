@@ -22,6 +22,13 @@ struct ViewportSwapchainWiringResult {
     const char* note = nullptr;
 };
 
+/// True only when the handed-off VkSurfaceKHR was created on `vkInstance` (the handoff records
+/// its creating instance in `qtVkInstance`). A VkSurfaceKHR is only valid with the instance that
+/// created it, so a surface from another instance (the shared QVulkanInstance) or a placeholder
+/// handle (tests, winId stubs) must never reach vkGetPhysicalDeviceSurface* on this instance.
+[[nodiscard]] bool viewportHandoffSurfaceOwnedBy(const ViewportSwapchainHandoff& handoff,
+                                                 const void* vkInstance);
+
 /// Consumes a pending `ViewportSwapchainHandoff` and calls `VulkanBootstrap::ensureSwapchain`.
 /// Headless-safe: invalid/null surfaces fall back without crashing.
 ViewportSwapchainWiringResult wireExternalSwapchainFromHandoff(fuse::renderer::RhiContext& context,

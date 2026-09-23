@@ -742,6 +742,10 @@ void recreateHybridForExternalSurface(RuntimeViewportHook& hook, RuntimeViewport
     bootstrapDesc.renderer.rhi.bootstrap.instance.enableValidation = false;
     bootstrapDesc.renderer.rhi.bootstrap.createSwapchain = true;
     bootstrapDesc.renderer.rhi.bootstrap.swapchain = hook.buildSwapchainDescHandoff();
+    // The hybrid bootstrap creates its own VkInstance, which cannot own the handed-off surface
+    // (VkSurfaceKHR is per-instance). Start it headless; syncHybridBootstrapFromConsumedHandoff
+    // only attaches the surface when the instances match.
+    bootstrapDesc.renderer.rhi.bootstrap.swapchain.surface = fuse::renderer::SurfaceDesc{};
 
     gpu->hybrid = fuse::hybrid::HybridRendererBootstrap::create(bootstrapDesc);
     if (gpu->hybrid != nullptr && gpu->hybrid->isReady()) {
