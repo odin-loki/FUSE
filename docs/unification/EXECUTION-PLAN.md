@@ -156,8 +156,11 @@ was re-verified from a clean checkout. Every stream found real bugs in the scaff
 | B4 follow-ups | `fuse_b4_joint_gates`, `fuse_b4_ccd_gates`, `fuse_b4_rotation_gates` | Joint anchors were ignored; pendulum periods within 0.04%; rotational CCD (spinning bar stopped at post); twisted 8/12-box stacks sleep; cloth 64×64 ~0.65 → ~0.4 ms |
 | Batch 3 | see commits | Compute SSAO/SSR/SSGI via shared `fuse_ssfx`; ECS `create_at` + SDF CSG; editor Play drives `PhysicsManager`; renderer TAA/DDGI integration with 0 sync-validation hazards |
 
-**Open items:** strict asset import is opt-in; CUDA kernels are stubs; physics-enabled worlds still allocate in the legacy `PhysicsPipeline` spatial hash; Windows crash minidump and DPI awareness untested (no Windows
-toolchain); no `PhysicsManager` joint API or angle-limited hinges yet.
+| Batch 4 | `fuse_b4_pipeline_alloc_gate`, `fuse_b4_joint_gates`, `fuse_b2_upload_queue_family`, `fuse_core_b1_log_async_ring_gates`, `fuse_core_b1_x11_window_gates`, `fuse_b2_x11_swapchain_gates`, `fuse_b5_rhi_*`, `fuse_editor_b6_viewport*_gates`, `fuse_editor_b6_material_profiler_gates`, `fuse_scene_magic_gates`, `fuse_b7_save_reload_gates`, `fuse_b3_free_camera_gates`, `fuse_runtime_steady_state_alloc`, `ctest -L lint`, `ctest -L valgrind`, `fuse-asan` preset | Physics worlds 18.8k → 0 allocs/frame; joint API with XPBD limits and break events; cross-queue-family uploads fixed (test layer splits Lavapipe's family); lock-free async log ring; native X11 window + real swapchain under Xvfb; ENet/Lua vendored; strict asset import by default; draw lists reached the GPU for the first time; ASan+UBSan over every FUSE target |
+
+**Open items:** CUDA kernels are stubs; lavapipe allocates inside `vkCmd*` (engine code itself is 0/frame);
+Windows crash minidump and DPI awareness untested (no Windows toolchain); the editor presents headless
+until `RhiContext` can adopt the `QVulkanInstance`.
 
 ## 5. Hardware / manual gates (not provable in CI)
 
