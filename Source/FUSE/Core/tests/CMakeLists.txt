@@ -346,13 +346,22 @@ add_test(NAME fuse_lint_a_window_title COMMAND fuse_core_rename_window_title)
 set_tests_properties(fuse_lint_a_window_title PROPERTIES LABELS "gate;lint")
 
 # B1.8: native X11 window gate — window opens mapped, title read back via XFetchName/_NET_WM_NAME,
-# XSendEvent key/mouse/focus/resize/close events dispatched through EventPump. Runs on Xvfb via
-# the display wrapper; SKIP (77) when the X11 backend is off or no display/xvfb is available.
+# XSendEvent key/mouse/focus/resize/close events dispatched through EventPump; XInput2 raw mouse
+# delta equals XTest-injected device deltas while the cursor is accelerated (B1.8 raw mouse row).
+# Runs on Xvfb via the display wrapper; SKIP (77) when the X11 backend is off or no display/xvfb is available.
 add_executable(fuse_core_b1_x11_window_gates test_b1_x11_window_gates.cpp)
 target_link_libraries(fuse_core_b1_x11_window_gates PRIVATE fuse_core)
 if(FUSE_PLATFORM_WINDOW_X11_ACTIVE)
     target_include_directories(fuse_core_b1_x11_window_gates PRIVATE ${X11_INCLUDE_DIR})
     target_link_libraries(fuse_core_b1_x11_window_gates PRIVATE ${X11_LIBRARIES})
+    # Raw-mouse-vs-acceleration gate: XTest injects relative device motion, XInput2 sets the
+    # XTEST pointer's Coordinate Transformation Matrix. Sections skip when either is missing.
+    if(X11_Xtst_FOUND AND X11_Xi_FOUND)
+        target_include_directories(fuse_core_b1_x11_window_gates PRIVATE
+            ${X11_Xtst_INCLUDE_PATH} ${X11_Xi_INCLUDE_PATH})
+        target_link_libraries(fuse_core_b1_x11_window_gates PRIVATE ${X11_Xtst_LIB} ${X11_Xi_LIB})
+        target_compile_definitions(fuse_core_b1_x11_window_gates PRIVATE FUSE_TEST_HAS_XTEST_XI2=1)
+    endif()
     add_test(NAME fuse_core_b1_x11_window_gates
         COMMAND "${FUSE_DISPLAY_TEST_WRAPPER}" "$<TARGET_FILE:fuse_core_b1_x11_window_gates>")
 else()

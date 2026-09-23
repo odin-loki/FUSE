@@ -100,6 +100,16 @@ void* nativeDisplayHandle() {
 #endif
 }
 
+bool rawMouseInputAvailable() {
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+    return x11::rawMotionAvailable();
+#elif defined(_WIN32)
+    return true;
+#else
+    return false;
+#endif
+}
+
 bool createVulkanSurface(void* vkInstance, const Window& window, void** outSurface) {
     if (outSurface != nullptr) {
         *outSurface = nullptr;

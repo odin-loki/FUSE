@@ -284,6 +284,16 @@ if(FUSE_PLATFORM_WINDOW_X11 AND NOT _fuse_glfw_wsi_active AND UNIX AND NOT APPLE
         target_link_libraries(fuse_core PRIVATE ${X11_LIBRARIES})
         target_compile_definitions(fuse_core PUBLIC FUSE_PLATFORM_WINDOW_X11=1)
         set(FUSE_PLATFORM_WINDOW_X11_ACTIVE ON CACHE INTERNAL "X11 window backend compiled into fuse_core")
+        # XInput2 raw mouse (XI_RawMotion): unaccelerated device deltas while a window is
+        # captured. Without libXi the backend falls back to MotionNotify cursor deltas.
+        if(X11_Xi_FOUND AND EXISTS "${X11_Xi_INCLUDE_PATH}/X11/extensions/XInput2.h")
+            target_include_directories(fuse_core PRIVATE ${X11_Xi_INCLUDE_PATH})
+            target_link_libraries(fuse_core PRIVATE ${X11_Xi_LIB})
+            target_compile_definitions(fuse_core PUBLIC FUSE_PLATFORM_X11_XI2=1)
+            message(STATUS "FUSE: fuse_core X11 XInput2 raw mouse (XI_RawMotion) enabled")
+        else()
+            message(STATUS "FUSE: libXi / XInput2.h not found — X11 raw mouse falls back to cursor deltas")
+        endif()
         if(NOT TARGET Vulkan::Vulkan)
             include(${CMAKE_SOURCE_DIR}/cmake/FuseFindVulkan.cmake)
         endif()

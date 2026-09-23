@@ -98,6 +98,11 @@ void* nativeDisplayHandle() {
     return nullptr;
 }
 
+bool rawMouseInputAvailable() {
+    // The GLFW backend does not route glfwSetInputMode(GLFW_RAW_MOUSE_MOTION) into the pump.
+    return false;
+}
+
 bool createVulkanSurface(void* vkInstance, const Window& window, void** outSurface) {
     if (outSurface != nullptr) {
         *outSurface = nullptr;

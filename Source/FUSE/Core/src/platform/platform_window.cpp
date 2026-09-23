@@ -67,6 +67,37 @@ void unregisterPumpWindow(Window* window) {
     }
 }
 
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+// X11 raw mouse: XI_RawMotion is selected on the root window exactly while some registered
+// (native-handle) window holds InputCaptureMode::Captured — the Win32 path registers WM_INPUT
+// the same way. Derived from the pump registry, so destruction / moves / handle swaps stay
+// balanced. Without XInput2 this is a no-op and the MotionNotify cursor path remains.
+bool anyX11WindowCaptured() {
+    for (u32 i = 0; i < g_pumpWindowCount; ++i) {
+        if (g_pumpWindows[i] != nullptr && g_pumpWindows[i]->isInputCaptured()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Raw motion is global to the X server; like Win32 WM_INPUT (no RIDEV_INPUTSINK) it is only
+// delivered to a captured window that currently has focus.
+Window* x11RawMotionTarget() {
+    for (u32 i = 0; i < g_pumpWindowCount; ++i) {
+        Window* window = g_pumpWindows[i];
+        if (window != nullptr && window->isInputCaptured() && window->isFocused()) {
+            return window;
+        }
+    }
+    return nullptr;
+}
+
+void syncX11RawMotion() {
+    x11::setRawMotionEnabled(anyX11WindowCaptured());
+}
+#endif
+
 const char* sanitizeTitle(const char* title) {
     return (title != nullptr && title[0] != '\0') ? title : "FUSE";
 }
@@ -473,6 +504,11 @@ Window::~Window() {
 #if defined(_WIN32) && !defined(FUSE_PLATFORM_WINDOW_GLFW)
     releaseOwnedHwndInputCapture(m_nativeWindow, m_ownsNativeWindow, m_inputCapture);
 #endif
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+    if (m_inputCapture == InputCaptureMode::Captured) {
+        syncX11RawMotion();
+    }
+#endif
     releaseOwnedNativeWindow(m_nativeWindow, m_ownsNativeWindow);
     m_pumpAsHwnd = false;
     m_valid = false;
@@ -534,6 +570,9 @@ Window& Window::operator=(Window&& other) noexcept {
         other.m_ownsNativeWindow = false;
         other.m_pumpAsHwnd = false;
         registerPumpWindow(this);
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+        syncX11RawMotion();
+#endif
     }
     return *this;
 }
@@ -571,6 +610,9 @@ void Window::setNativeHandleForPump(void* hwnd) {
     }
 #endif
     registerPumpWindow(this);
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+    syncX11RawMotion();
+#endif
 }
 
 void Window::setInputCapture(InputCaptureMode mode) {
@@ -586,6 +628,9 @@ void Window::setInputCapture(InputCaptureMode mode) {
 #endif
 
     m_inputCapture = mode;
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+    syncX11RawMotion();
+#endif
 }
 
 void* Window::nativeVulkanSurface() const {
@@ -988,12 +1033,27 @@ void EventPump::processOsEvents() {
 #endif
 
 #if defined(FUSE_PLATFORM_WINDOW_X11)
+    syncX11RawMotion();
     if (g_pumpWindowCount == 0u) {
         return;
     }
 
     x11::Event xe;
     while (x11::pollEvent(xe)) {
+        if (xe.kind == x11::EventKind::RawMouseDelta) {
+            // Root-window XI_RawMotion: device counts before pointer acceleration. Routed to
+            // the captured window; raw motion is only selected while one exists.
+            Window* target = x11RawMotionTarget();
+            if (target != nullptr) {
+                PlatformEvent event{};
+                event.type = PlatformEventType::RawMouseDelta;
+                event.window = target;
+                event.mouseX = xe.x;
+                event.mouseY = xe.y;
+                pushSyntheticEvent(event);
+            }
+            continue;
+        }
         Window* window = nullptr;
         for (u32 i = 0; i < g_pumpWindowCount; ++i) {
             if (g_pumpWindows[i] != nullptr && g_pumpWindows[i]->m_nativeWindow == xe.window) {
@@ -1058,6 +1118,7 @@ void EventPump::processOsEvents() {
                 pushSyntheticEvent(event);
             }
             break;
+        case x11::EventKind::RawMouseDelta:
         case x11::EventKind::Ignored:
             break;
         }

@@ -36,6 +36,11 @@ void requiredVulkanInstanceExtensions(std::vector<const char*>& out);
 /// backends or when no display server is reachable.
 void* nativeDisplayHandle();
 
+/// True when captured windows receive unaccelerated `PlatformEventType::RawMouseDelta` events
+/// from the OS (Win32 WM_INPUT; X11 XInput2 XI_RawMotion). False means the backend falls back
+/// to cursor-position deltas (`MouseMove`), which include the OS pointer acceleration.
+bool rawMouseInputAvailable();
+
 /// Creates `VkSurfaceKHR` from a platform window. Returns false on Null WSI / headless CI.
 bool createVulkanSurface(void* vkInstance, const Window& window, void** outSurface);
 

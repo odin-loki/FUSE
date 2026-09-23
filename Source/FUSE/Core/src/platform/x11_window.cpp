@@ -11,6 +11,11 @@
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
 
+#if defined(FUSE_PLATFORM_X11_XI2)
+#include <X11/extensions/XInput2.h>
+#endif
+
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -321,6 +326,248 @@ bool translate(const XEvent& xe, Event& out) {
 
 } // namespace
 
+// --- XInput2 raw motion ---------------------------------------------------------------------
+//
+// XI_RawMotion is selected on the root window for XIAllMasterDevices while some FUSE window
+// holds input capture. `raw_values` are the source device's valuators *before* the server's
+// pointer acceleration (XChangePointerControl / "Device Accel *" properties) and before the
+// device's Coordinate Transformation Matrix, so they are the physical device counts. Axes 0/1
+// are X/Y. Relative-mode axes are used as-is; absolute-mode sources (tablets, touchscreens)
+// are converted to deltas by differencing successive samples. Sub-unit fractions (high-res
+// mice) are carried in a remainder so the emitted integer deltas sum to the device total.
+
+namespace {
+
+#if defined(FUSE_PLATFORM_X11_XI2)
+
+int g_xiOpcode = -1;
+bool g_xiProbed = false;
+bool g_xiAvailable = false;
+bool g_rawSelected = false;
+double g_rawRemainderX = 0.0;
+double g_rawRemainderY = 0.0;
+
+struct RawSourceInfo {
+    int sourceId = -1;
+    bool absoluteX = false;
+    bool absoluteY = false;
+    bool haveLast = false;
+    double lastX = 0.0;
+    double lastY = 0.0;
+};
+
+constexpr int kMaxRawSources = 16;
+RawSourceInfo g_rawSources[kMaxRawSources];
+int g_rawSourceCount = 0;
+int g_rawSourceNext = 0;
+
+bool probeXi2() {
+    if (g_xiProbed) {
+        return g_xiAvailable;
+    }
+    g_xiProbed = true;
+    const char* disable = std::getenv("FUSE_X11_NO_XI2");
+    if (disable != nullptr && disable[0] != '\0' && disable[0] != '0') {
+        return false;
+    }
+    int event = 0;
+    int error = 0;
+    if (XQueryExtension(g_display, "XInputExtension", &g_xiOpcode, &event, &error) == False) {
+        return false;
+    }
+    int major = 2;
+    int minor = 2;
+    if (XIQueryVersion(g_display, &major, &minor) != Success) {
+        // Another component may have announced a lower client version; 2.0 is enough.
+        major = 2;
+        minor = 0;
+        if (XIQueryVersion(g_display, &major, &minor) != Success) {
+            return false;
+        }
+    }
+    g_xiAvailable = major >= 2;
+    return g_xiAvailable;
+}
+
+void selectRawMasks(bool enabled) {
+    unsigned char rawMask[XIMaskLen(XI_LASTEVENT)] = {};
+    unsigned char hierarchyMask[XIMaskLen(XI_LASTEVENT)] = {};
+    if (enabled) {
+        XISetMask(rawMask, XI_RawMotion);
+        XISetMask(hierarchyMask, XI_HierarchyChanged);
+        XISetMask(hierarchyMask, XI_DeviceChanged);
+    }
+    XIEventMask masks[2];
+    masks[0].deviceid = XIAllMasterDevices;
+    masks[0].mask_len = sizeof(rawMask);
+    masks[0].mask = rawMask;
+    masks[1].deviceid = XIAllDevices;
+    masks[1].mask_len = sizeof(hierarchyMask);
+    masks[1].mask = hierarchyMask;
+    XISelectEvents(g_display, DefaultRootWindow(g_display), masks, 2);
+    XFlush(g_display);
+}
+
+void resetRawSources() {
+    g_rawSourceCount = 0;
+    g_rawSourceNext = 0;
+}
+
+RawSourceInfo* rawSource(int sourceId) {
+    for (int i = 0; i < g_rawSourceCount; ++i) {
+        if (g_rawSources[i].sourceId == sourceId) {
+            return &g_rawSources[i];
+        }
+    }
+
+    RawSourceInfo info{};
+    info.sourceId = sourceId;
+    int count = 0;
+    XIDeviceInfo* devices = XIQueryDevice(g_display, sourceId, &count);
+    if (devices != nullptr) {
+        for (int c = 0; c < devices[0].num_classes; ++c) {
+            const XIAnyClassInfo* any = devices[0].classes[c];
+            if (any == nullptr || any->type != XIValuatorClass) {
+                continue;
+            }
+            const auto* valuator = reinterpret_cast<const XIValuatorClassInfo*>(any);
+            if (valuator->number == 0) {
+                info.absoluteX = valuator->mode == XIModeAbsolute;
+            } else if (valuator->number == 1) {
+                info.absoluteY = valuator->mode == XIModeAbsolute;
+            }
+        }
+        XIFreeDeviceInfo(devices);
+    }
+
+    int slot = g_rawSourceCount;
+    if (g_rawSourceCount < kMaxRawSources) {
+        ++g_rawSourceCount;
+    } else {
+        slot = g_rawSourceNext;
+        g_rawSourceNext = (g_rawSourceNext + 1) % kMaxRawSources;
+    }
+    g_rawSources[slot] = info;
+    return &g_rawSources[slot];
+}
+
+// Returns true (and fills `out`) when the cookie is an XI_RawMotion with a non-zero delta.
+bool translateXi2(XGenericEventCookie& cookie, Event& out) {
+    if (cookie.extension != g_xiOpcode) {
+        return false;
+    }
+    if (cookie.evtype == XI_HierarchyChanged || cookie.evtype == XI_DeviceChanged) {
+        resetRawSources();
+        return false;
+    }
+    if (cookie.evtype != XI_RawMotion || !g_rawSelected) {
+        return false;
+    }
+    if (XGetEventData(g_display, &cookie) == False) {
+        return false;
+    }
+
+    const auto* raw = static_cast<const XIRawEvent*>(cookie.data);
+    bool haveX = false;
+    bool haveY = false;
+    double rawX = 0.0;
+    double rawY = 0.0;
+    // raw_values are packed in ascending valuator order, so X/Y (0/1) come first when set.
+    const int bitCount = raw->valuators.mask_len * 8;
+    int index = 0;
+    for (int bit = 0; bit < 2 && bit < bitCount; ++bit) {
+        if (!XIMaskIsSet(raw->valuators.mask, bit)) {
+            continue;
+        }
+        if (bit == 0) {
+            rawX = raw->raw_values[index];
+            haveX = true;
+        } else {
+            rawY = raw->raw_values[index];
+            haveY = true;
+        }
+        ++index;
+    }
+    const int sourceId = raw->sourceid;
+    XFreeEventData(g_display, &cookie);
+
+    if (!haveX && !haveY) {
+        return false;
+    }
+
+    RawSourceInfo* source = rawSource(sourceId);
+    double dx = rawX;
+    double dy = rawY;
+    if (source->absoluteX || source->absoluteY) {
+        const double absX = haveX ? rawX : source->lastX;
+        const double absY = haveY ? rawY : source->lastY;
+        if (source->absoluteX) {
+            dx = source->haveLast && haveX ? absX - source->lastX : 0.0;
+        }
+        if (source->absoluteY) {
+            dy = source->haveLast && haveY ? absY - source->lastY : 0.0;
+        }
+        source->lastX = absX;
+        source->lastY = absY;
+        source->haveLast = true;
+    }
+    if (!haveX) {
+        dx = 0.0;
+    }
+    if (!haveY) {
+        dy = 0.0;
+    }
+
+    g_rawRemainderX += dx;
+    g_rawRemainderY += dy;
+    const double wholeX = std::trunc(g_rawRemainderX);
+    const double wholeY = std::trunc(g_rawRemainderY);
+    g_rawRemainderX -= wholeX;
+    g_rawRemainderY -= wholeY;
+    if (wholeX == 0.0 && wholeY == 0.0) {
+        return false;
+    }
+
+    out = Event{};
+    out.kind = EventKind::RawMouseDelta;
+    out.x = static_cast<i32>(wholeX);
+    out.y = static_cast<i32>(wholeY);
+    return true;
+}
+
+#endif // FUSE_PLATFORM_X11_XI2
+
+} // namespace
+
+bool rawMotionAvailable() {
+#if defined(FUSE_PLATFORM_X11_XI2)
+    return ensureDisplay() && probeXi2();
+#else
+    return false;
+#endif
+}
+
+bool setRawMotionEnabled(bool enabled) {
+#if defined(FUSE_PLATFORM_X11_XI2)
+    // Never opens the display on its own: raw motion only matters once a native window exists.
+    if (g_rawSelected == enabled) {
+        return g_rawSelected;
+    }
+    if (g_display == nullptr || !probeXi2()) {
+        return false;
+    }
+    selectRawMasks(enabled);
+    g_rawSelected = enabled;
+    g_rawRemainderX = 0.0;
+    g_rawRemainderY = 0.0;
+    resetRawSources();
+    return g_rawSelected;
+#else
+    (void)enabled;
+    return false;
+#endif
+}
+
 bool pollEvent(Event& out) {
     if (g_display == nullptr) {
         return false;
@@ -328,6 +575,14 @@ bool pollEvent(Event& out) {
     while (XPending(g_display) > 0) {
         XEvent xe;
         XNextEvent(g_display, &xe);
+#if defined(FUSE_PLATFORM_X11_XI2)
+        if (xe.type == GenericEvent) {
+            if (g_xiAvailable && translateXi2(xe.xcookie, out)) {
+                return true;
+            }
+            continue;
+        }
+#endif
         if (translate(xe, out)) {
             return true;
         }

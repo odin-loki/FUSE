@@ -44,6 +44,9 @@ enum class EventKind : u8 {
     MouseButtonDown,
     MouseButtonUp,
     MouseWheel,
+    /// XInput2 XI_RawMotion (root window, device-level, pre-acceleration). `window` is null;
+    /// `x`/`y` carry the signed integer device delta.
+    RawMouseDelta,
 };
 
 struct Event {
@@ -56,6 +59,15 @@ struct Event {
     i32 y = 0;        // wheel delta (+/-120) for MouseWheel
     u8 button = 0;    // 1=left 2=right 3=middle 4=X1 5=X2
 };
+
+/// True when the server speaks XInput2 (>= 2.0) so XI_RawMotion can be selected. Probed once;
+/// `FUSE_X11_NO_XI2=1` in the environment forces the fallback (cursor-delta MouseMove only).
+bool rawMotionAvailable();
+
+/// Selects (true) or deselects (false) XI_RawMotion on the root window for all master
+/// pointers. Idempotent. Returns whether raw motion is selected afterwards (false when XI2 is
+/// missing — callers keep the MotionNotify/cursor-delta path).
+bool setRawMotionEnabled(bool enabled);
 
 /// Pops one queued X event (non-blocking). Returns false when the queue is empty.
 bool pollEvent(Event& out);

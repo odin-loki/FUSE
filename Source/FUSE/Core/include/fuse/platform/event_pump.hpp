@@ -168,8 +168,9 @@ public:
     ///
     /// Win32: PeekMessage loop for registered HWND pumps (KeyDown/Up, MouseMove,
     /// MouseButton, RawMouseDelta from WM_INPUT, WindowCloseRequested, WindowResized,
-    /// Quit). GLFW: glfwPollEvents when WSI is available. No-op when no native window
-    /// is registered.
+    /// Quit). X11: Xlib events for registered windows, plus RawMouseDelta from XInput2
+    /// XI_RawMotion (pre-acceleration device counts) while a focused window is captured.
+    /// GLFW: glfwPollEvents when WSI is available. No-op when no native window is registered.
     ///
     /// Key/Mouse mapping in `enqueueMappedOsMessage` is dropped when
     /// `requireCaptureForInput()` is true and the target window is
