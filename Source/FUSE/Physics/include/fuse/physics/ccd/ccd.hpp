@@ -20,6 +20,8 @@ struct TOIResult {
     u32 bodyA = 0;
     u32 bodyB = 0;
     bool valid = false;
+    /// Separation evaluations the TOI solver spent (closed-form sweeps report 1); also set on misses.
+    u32 iterations = 0;
 };
 
 struct ToiBufferSoA;
@@ -222,11 +224,12 @@ struct ShapeInstance;
 }
 
 /// Conservative advancement over one frame for shapes moving by `displacement` and rotating by the
-/// rotation vector `rotation` (angular velocity * dt), each about its own centre. Steps the time by
-/// separation / (|relative displacement| + |theta_A| r_A + |theta_B| r_B), where r is the reach of
-/// each shape's rotating core, so no impact is skipped; reports the first time the separation
+/// rotation vector `rotation` (angular velocity * dt), each about its own centre. Every step is a
+/// certified lower bound on the time to contact (Lipschitz, fixed-axis, exact-rotation Taylor and
+/// per-piece bounds; see ccd.cpp), so no impact is skipped; reports the first time the separation
 /// falls below `tolerance` with the contact normal (B towards A) and point there. toi is a fraction
-/// of the frame; 0 when the shapes already touch.
+/// of the frame; 0 when the shapes already touch. `iterations` (hit or miss) counts separation
+/// evaluations; `fuse_b4_ccd_gates` holds it under 8 on its gate and hard-case sweeps.
 TOIResult conservativeAdvancementToi(const narrowphase::ShapeInstance& shapeA,
                                      vec3 displacementA,
                                      vec3 rotationA,
@@ -234,6 +237,19 @@ TOIResult conservativeAdvancementToi(const narrowphase::ShapeInstance& shapeA,
                                      vec3 displacementB,
                                      vec3 rotationB,
                                      f32 tolerance = kCcdTolerance);
+
+/// TOI solver iteration counters accumulated by `runCcdIntoBuffer` (every swept pair, hit or miss).
+/// Closed-form sweeps count one iteration; conservative advancement counts separation evaluations.
+struct CcdIterationStats {
+    u64 sweeps = 0;          ///< pairs swept (closed form + iterative)
+    u64 iterativeSweeps = 0; ///< pairs that took conservative advancement
+    u64 totalIterations = 0;
+    u32 maxIterations = 0;   ///< worst pair since the last reset
+};
+
+/// Process-wide counters (relaxed atomics; cheap enough to leave on in shipping builds).
+CcdIterationStats ccdIterationStats();
+void resetCcdIterationStats();
 
 /// Job-safe CCD: one output slot per candidate pair, then compact valid TOIs.
 void runCcdIntoBuffer(const std::vector<broadphase::CandidatePair>& pairs,

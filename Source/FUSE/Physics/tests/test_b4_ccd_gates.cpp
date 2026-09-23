@@ -3,9 +3,15 @@
 //  - a fast-spinning long thin box does not tunnel through a thin post in its sweep — discrete
 //    misses, CCD (conservative advancement with the |w| r_max rotation bound) catches
 //  - CCD introduces < 1 ms overhead per frame for 100 fast-moving bodies (optimised builds)
-// TOI rows: sphere/plane/box sweeps are analytic (closed form), so there is no TOI binary search
-// to bound; that row is recorded as not applicable in the execution plan.
+//  - TOI search converges in < 8 iterations for all test cases: sphere/plane/box sweeps are closed
+//    form (1 iteration); the iterative solver is conservative advancement (rotating/oriented boxes
+//    and capsules). Its iteration count is instrumented (`TOIResult::iterations`,
+//    `ccdIterationStats()`) and bounded over every gate case above plus a seeded sweep of hard
+//    cases (fast spin, grazing, thin posts, tumbling onto planes), each checked against a dense
+//    brute-force reference so the bound is never bought by skipping an impact.
 #include <fuse/core/init.hpp>
+#include <fuse/physics/ccd/ccd.hpp>
+#include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/physics/rotation.hpp>
 #include <fuse/physics/solver/pbd_solver.hpp>
@@ -23,6 +29,7 @@ int g_failures = 0;
 
 using namespace fuse::physics;
 using fuse::u32;
+using fuse::u64;
 
 void expectTrue(bool condition, const char* message) {
     if (!condition) {
@@ -32,6 +39,19 @@ void expectTrue(bool condition, const char* message) {
 }
 
 constexpr f32 kDt = 1.f / 60.f;
+constexpr u32 kToiIterationBudget = 8u; // plan row: converges in < 8 iterations
+
+/// Asserts the TOI iteration counters accumulated since the last reset are inside the budget.
+void expectIterationBudget(const char* gate) {
+    const CcdIterationStats stats = ccdIterationStats();
+    std::printf("CCD TOI iterations [%s]: %llu sweeps (%llu iterative), max %u, mean %.2f\n", gate,
+                static_cast<unsigned long long>(stats.sweeps), static_cast<unsigned long long>(stats.iterativeSweeps),
+                stats.maxIterations,
+                stats.sweeps > 0u ? static_cast<double>(stats.totalIterations) / static_cast<double>(stats.sweeps) : 0.0);
+    expectTrue(stats.sweeps > 0u, "gate exercised the TOI solver");
+    expectTrue(stats.maxIterations < kToiIterationBudget, "TOI search converges in < 8 iterations");
+    resetCcdIterationStats();
+}
 constexpr f32 kRadius = 0.1f;
 constexpr f32 kWallHalf = 0.05f; // 0.1 m thick
 
@@ -203,14 +223,186 @@ void testCcdOverheadHundredBodies() {
 #endif
 }
 
+/// One hard TOI case: shapes at their frame-start poses with per-frame displacement and rotation
+/// vectors (world axis, as the solver integrates them).
+struct HardToiCase {
+    narrowphase::ShapeInstance a;
+    vec3 moveA{};
+    vec3 spinA{};
+    narrowphase::ShapeInstance b;
+    vec3 moveB{};
+    vec3 spinB{};
+};
+
+narrowphase::ShapeInstance poseAt(const narrowphase::ShapeInstance& shape, vec3 move, vec3 spin, f32 t) {
+    narrowphase::ShapeInstance moved = shape;
+    moved.position = shape.position + move * t;
+    moved.orientation = applyRotationVector(shape.orientation, spin * t);
+    return moved;
+}
+
+bool overlapsAt(const HardToiCase& c, f32 t) {
+    const narrowphase::ContactManifold m =
+        narrowphase::collideShapes(poseAt(c.a, c.moveA, c.spinA, t), poseAt(c.b, c.moveB, c.spinB, t), 0u, 1u, 0.f);
+    return m.valid && m.pointCount > 0u;
+}
+
+/// Brute-force first-contact time: the first of 4000 uniform samples where the shapes overlap, or
+/// -1 when none does. The true first contact is at or before it.
+f32 referenceFirstContact(const HardToiCase& c) {
+    constexpr int kSamples = 4000;
+    for (int k = 0; k <= kSamples; ++k) {
+        const f32 t = static_cast<f32>(k) / static_cast<f32>(kSamples);
+        if (overlapsAt(c, t)) {
+            return t;
+        }
+    }
+    return -1.f;
+}
+
+narrowphase::ShapeInstance makeShape(CollisionShapeType type, vec3 params, vec3 position, quat orientation, f32 scalar = 0.f) {
+    narrowphase::ShapeInstance shape;
+    shape.type = type;
+    shape.params = params;
+    shape.scalar = scalar;
+    shape.position = position;
+    shape.orientation = orientation;
+    return shape;
+}
+
+void testToiIterationsOnHardCases() {
+    std::mt19937 rng(0xC0DEu);
+    std::uniform_real_distribution<f32> unit(0.f, 1.f);
+    const auto randomAxis = [&]() {
+        vec3 v{};
+        do {
+            v = {unit(rng) * 2.f - 1.f, unit(rng) * 2.f - 1.f, unit(rng) * 2.f - 1.f};
+        } while (v.length() < 0.1f || v.length() > 1.f);
+        return v.normalized();
+    };
+    const auto randomOrientation = [&]() { return quatFromAxisAngle(randomAxis(), unit(rng) * 6.2831853f); };
+    const quat identity{0.f, 0.f, 0.f, 1.f};
+
+    const char* names[] = {"fast spin bar vs post", "grazing box vs box", "thin post vs spinning capsule",
+                           "tumbling box onto plane", "grazing capsule vs capsule", "spinning box vs capsule"};
+    constexpr int kFamilies = 6;
+    constexpr int kPerFamily = 400;
+    u32 worstOverall = 0;
+    int missedImpacts = 0;
+    int lateImpacts = 0;
+    for (int family = 0; family < kFamilies; ++family) {
+        u32 worst = 0;
+        u64 total = 0;
+        int hits = 0;
+        int cases = 0;
+        for (int i = 0; i < kPerFamily; ++i) {
+            HardToiCase c;
+            switch (family) {
+            case 0: { // bar up to 1.5 m long spinning up to 150 rad/s (2.5 rad/frame) past a 2 cm post
+                const f32 half = 0.5f + unit(rng);
+                c.a = makeShape(CollisionShapeType::Box, {half, 0.02f, 0.02f}, {0.f, 0.f, 0.f},
+                                quatFromAxisAngle({0.f, 0.f, 1.f}, unit(rng) * 6.2831853f));
+                c.spinA = {0.f, 0.f, (unit(rng) < 0.5f ? -1.f : 1.f) * (0.5f + 2.f * unit(rng))};
+                c.moveA = {unit(rng) * 0.4f - 0.2f, unit(rng) * 0.4f - 0.2f, 0.f};
+                const f32 angle = unit(rng) * 6.2831853f;
+                const f32 radius = 0.1f + unit(rng) * (half + 0.2f);
+                c.b = makeShape(CollisionShapeType::Box, {0.02f, 0.02f, 1.f},
+                                {radius * std::cos(angle), radius * std::sin(angle), 0.f}, identity);
+                break;
+            }
+            case 1: { // oriented boxes flying past each other at 180 m/s (3 m/frame), offsets across the graze line
+                c.b = makeShape(CollisionShapeType::Box, {0.5f, 0.3f, 0.4f}, {0.f, 0.f, 0.f}, randomOrientation());
+                c.a = makeShape(CollisionShapeType::Box, {0.1f, 0.2f, 0.05f},
+                                {-1.5f, unit(rng) * 1.4f - 0.7f, unit(rng) * 1.4f - 0.7f}, randomOrientation());
+                c.moveA = {3.f, unit(rng) * 0.2f - 0.1f, unit(rng) * 0.2f - 0.1f};
+                c.spinA = randomAxis() * (unit(rng) * 0.5f);
+                break;
+            }
+            case 2: { // spinning, translating thin capsule vs a 1 cm post
+                c.b = makeShape(CollisionShapeType::Box, {0.01f, 0.01f, 1.f}, {0.f, 0.f, 0.f}, identity);
+                c.a = makeShape(CollisionShapeType::Capsule, {0.01f, 0.3f + unit(rng) * 0.5f, 0.f},
+                                {-1.2f, unit(rng) * 1.2f - 0.6f, unit(rng) * 0.4f - 0.2f},
+                                quatFromAxisAngle({0.f, 0.f, 1.f}, unit(rng) * 6.2831853f));
+                c.moveA = {1.5f + unit(rng) * 1.f, unit(rng) * 0.4f - 0.2f, 0.f};
+                c.spinA = {0.f, 0.f, (unit(rng) < 0.5f ? -1.f : 1.f) * (1.f + 2.f * unit(rng))};
+                break;
+            }
+            case 3: { // box tumbling fast onto the ground plane, some glancing
+                c.b = makeShape(CollisionShapeType::Plane, {0.f, 1.f, 0.f}, {}, identity, 0.f);
+                c.a = makeShape(CollisionShapeType::Box, {0.5f, 0.1f + unit(rng) * 0.4f, 0.3f},
+                                {0.f, 1.f + unit(rng) * 1.f, 0.f}, randomOrientation());
+                c.moveA = {unit(rng) * 2.f - 1.f, -(unit(rng) * 2.5f), unit(rng) * 2.f - 1.f};
+                c.spinA = randomAxis() * (unit(rng) * 2.f);
+                break;
+            }
+            case 4: { // capsules crossing near-tangentially
+                c.b = makeShape(CollisionShapeType::Capsule, {0.05f, 0.6f, 0.f}, {0.f, 0.f, 0.f}, randomOrientation());
+                c.a = makeShape(CollisionShapeType::Capsule, {0.03f, 0.4f, 0.f},
+                                {-2.f, unit(rng) * 1.2f - 0.6f, unit(rng) * 1.2f - 0.6f}, randomOrientation());
+                c.moveA = {4.f, unit(rng) * 0.1f - 0.05f, unit(rng) * 0.1f - 0.05f};
+                c.spinA = randomAxis() * (unit(rng) * 1.f);
+                c.spinB = randomAxis() * (unit(rng) * 1.f);
+                break;
+            }
+            default: { // both spinning: box vs thin capsule, head-on and glancing
+                c.b = makeShape(CollisionShapeType::Capsule, {0.02f, 0.8f, 0.f}, {0.f, 0.f, 0.f}, randomOrientation());
+                c.a = makeShape(CollisionShapeType::Box, {0.4f, 0.05f, 0.2f},
+                                {-1.5f, unit(rng) * 1.f - 0.5f, unit(rng) * 1.f - 0.5f}, randomOrientation());
+                c.moveA = {2.5f, 0.f, 0.f};
+                c.spinA = randomAxis() * (unit(rng) * 2.f);
+                c.spinB = randomAxis() * (unit(rng) * 1.f);
+                break;
+            }
+            }
+            if (overlapsAt(c, 0.f)) {
+                continue; // resting contact is not a sweep
+            }
+            ++cases;
+            const TOIResult toi = conservativeAdvancementToi(c.a, c.moveA, c.spinA, c.b, c.moveB, c.spinB);
+            const f32 reference = referenceFirstContact(c);
+            worst = std::max(worst, toi.iterations);
+            total += toi.iterations;
+            hits += toi.valid ? 1 : 0;
+            if (reference >= 0.f && !toi.valid) {
+                ++missedImpacts;
+                std::fprintf(stderr, "  %s case %d: missed impact at t=%.4f (%u iterations)\n", names[family], i,
+                             reference, toi.iterations);
+            } else if (reference >= 0.f && toi.toi > reference) {
+                ++lateImpacts;
+                std::fprintf(stderr, "  %s case %d: toi %.4f after reference contact %.4f\n", names[family], i, toi.toi,
+                             reference);
+            }
+            if (toi.iterations >= kToiIterationBudget) {
+                std::fprintf(stderr, "  %s case %d: %u iterations (valid %d toi %.4f ref %.4f)\n", names[family], i,
+                             toi.iterations, toi.valid ? 1 : 0, toi.toi, reference);
+            }
+        }
+        std::printf("CCD TOI hard cases [%s]: %d sweeps, %d hits, max %u iterations, mean %.2f\n", names[family], cases,
+                    hits, worst, cases > 0 ? static_cast<double>(total) / cases : 0.0);
+        expectTrue(cases > kPerFamily / 2 && hits > 0 && hits < cases, "hard-case family mixes hits and misses");
+        worstOverall = std::max(worstOverall, worst);
+    }
+    std::printf("CCD TOI hard cases: worst %u iterations (budget < %u), %d missed impacts, %d late TOIs\n", worstOverall,
+                kToiIterationBudget, missedImpacts, lateImpacts);
+    expectTrue(worstOverall < kToiIterationBudget, "iterative TOI converges in < 8 iterations on every hard case");
+    expectTrue(missedImpacts == 0, "no hard case tunnels (every brute-force impact is caught)");
+    expectTrue(lateImpacts == 0, "no hard-case TOI lands after the brute-force first contact");
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
+    resetCcdIterationStats();
     testNoTunnellingThroughThinWall();
+    expectIterationBudget("thin wall");
     testFastSpheresCollideHeadOn();
+    expectIterationBudget("head-on spheres");
     testSpinningBarDoesNotTunnel();
+    expectIterationBudget("spinning bar vs post");
     testCcdOverheadHundredBodies();
+    expectIterationBudget("100 fast bodies");
+    testToiIterationsOnHardCases();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

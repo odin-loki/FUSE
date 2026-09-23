@@ -3537,7 +3537,7 @@ struct CollisionEvent {
 - [ ] Constraint solver runs 10 iterations over 10k contacts in < 5ms on RTX 3090
 - [x] Sleep detection correctly deactivates resting bodies — confirmed by zero velocity reads — `fuse_b4_solver_gates`
 - [x] High-velocity sphere (100 m/s) does not tunnel through a 0.1m wall — discrete misses, CCD catches — `fuse_b4_ccd_gates`
-- [ ] TOI binary search converges in < 8 iterations for all test cases — partial: not applicable as written: CCD sweeps are closed form, no binary search (`fuse_b4_ccd_gates`)
+- [x] TOI binary search converges in < 8 iterations for all test cases — closed-form sweeps count 1; the iterative TOI (conservative advancement for rotating boxes/capsules) is instrumented (`TOIResult::iterations`, `ccdIterationStats()`) and stays < 8 on every CCD gate case plus 2373 seeded hard sweeps (fast spin, grazing, thin posts, tumbling, capsules; worst 7), each checked against a brute-force first contact (0 missed, 0 late) — `fuse_b4_ccd_gates`
 - [x] CCD introduces < 1ms overhead per frame for 100 fast-moving bodies — `fuse_b4_ccd_gates`
 - [x] Sphere carve correctly removes voxels within radius — verified by querying carved region — `fuse_b4_destruction_gates`
 - [x] Dual contouring extracts watertight mesh from carved SVO surface — `fuse_b4_destruction_gates`
@@ -6316,7 +6316,7 @@ private:
 - [x] Heightfield generates without artifacts at 4096×4096 resolution — `fuse_b7_terrain_gates`
 - [x] get_height returns correct value — matches heightmap texel read within 0.01f — `fuse_b7_terrain_gates`
 - [x] LOD system loads and unloads chunks correctly as camera moves — no missing geometry — `fuse_b7_terrain_gates`
-- [ ] Terrain-SVO cave correctly renders below terrain surface — SVO ray march transitions from heightfield — partial: CPU heightfield→SVO ray-march transition proven in `fuse_b7_terrain_gates`; the rendered image is a manual check
+- [ ] Terrain-SVO cave correctly renders below terrain surface — SVO ray march transitions from heightfield — partial: deterministic CPU render of the combined heightfield+SVO ray march (cave through the surface + 2 buried caves) matches an exact voxel-DDA reference per pixel (surface id, depth ≤ 2 cm, 0 gap/seam pixels, mouth rays hand off to the SVO), PPM written to the build dir — `fuse_b7_terrain_cave_render`; transition also in `fuse_b7_terrain_gates`; the GPU render remains a manual check
 - [x] Terrain deform correctly updates affected chunk mesh within 1 frame — `fuse_b7_terrain_gates`
 - [x] Cell loads correctly from disk — entity count and positions match saved state — `fuse_b7_streaming_gates`
 - [x] Stream-in fires before camera enters cell bounds — no pop-in visible at 60fps with 512m draw distance — `fuse_b7_streaming_gates`
