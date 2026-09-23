@@ -756,6 +756,257 @@ bool ClusterLightGridLayout::validateContiguousOffsets(const ClusterGridSoA& gri
     return totalLights == grid.lightList.size();
 }
 
+void cluster_math::viewBasis(const ClusterCameraDesc& camera,
+                             fuse::math::Vec3& outRight,
+                             fuse::math::Vec3& outUp,
+                             fuse::math::Vec3& outBack) {
+    fuse::math::Vec3 forward = camera.forward.normalized();
+    if (forward.dot(forward) == 0.f) {
+        forward = {0.f, 0.f, -1.f};
+    }
+    fuse::math::Vec3 right = fuse::math::cross(forward, camera.up).normalized();
+    if (right.dot(right) == 0.f) {
+        // Up hint parallel to forward: pick any perpendicular axis.
+        const fuse::math::Vec3 fallback =
+            std::fabs(forward.y) < 0.99f ? fuse::math::Vec3{0.f, 1.f, 0.f} : fuse::math::Vec3{1.f, 0.f, 0.f};
+        right = fuse::math::cross(forward, fallback).normalized();
+    }
+    outRight = right;
+    outUp = fuse::math::cross(right, forward);
+    outBack = forward * -1.f;
+}
+
+fuse::math::Vec3 cluster_math::worldToView(const ClusterCameraDesc& camera, const fuse::math::Vec3& world) {
+    fuse::math::Vec3 right;
+    fuse::math::Vec3 up;
+    fuse::math::Vec3 back;
+    viewBasis(camera, right, up, back);
+    const fuse::math::Vec3 rel = world - camera.position;
+    return {rel.dot(right), rel.dot(up), rel.dot(back)};
+}
+
+fuse::math::Vec3 cluster_math::viewToWorld(const ClusterCameraDesc& camera, const fuse::math::Vec3& view) {
+    fuse::math::Vec3 right;
+    fuse::math::Vec3 up;
+    fuse::math::Vec3 back;
+    viewBasis(camera, right, up, back);
+    return camera.position + right * view.x + up * view.y + back * view.z;
+}
+
+f32 cluster_math::viewDepthFromDeviceDepth(f32 deviceDepth, const ClusterCameraDesc& camera) {
+    if (camera.reversedZ) {
+        // Infinite-far reversed-Z: ndc = near / d; 0 is the cleared (sky) value.
+        return deviceDepth > 0.f ? camera.nearPlane / deviceDepth : 0.f;
+    }
+    // Standard [0,1]: ndc = far (d - near) / (d (far - near)); 1 is the cleared value.
+    if (deviceDepth >= 1.f || camera.farPlane <= camera.nearPlane) {
+        return 0.f;
+    }
+    const f32 n = camera.nearPlane;
+    const f32 f = camera.farPlane;
+    return (n * f) / (f - deviceDepth * (f - n));
+}
+
+f32 cluster_math::deviceDepthFromViewDepth(f32 viewDepth, const ClusterCameraDesc& camera) {
+    if (viewDepth <= 0.f) {
+        return camera.reversedZ ? 0.f : 1.f;
+    }
+    if (camera.reversedZ) {
+        return camera.nearPlane / viewDepth;
+    }
+    const f32 n = camera.nearPlane;
+    const f32 f = camera.farPlane;
+    return (f * (viewDepth - n)) / (viewDepth * (f - n));
+}
+
+fuse::math::Vec3 cluster_math::viewPositionFromScreen(f32 screenX,
+                                                      f32 screenY,
+                                                      f32 viewDepth,
+                                                      const ClusterCameraDesc& camera) {
+    const f32 tanY = std::tan(camera.fovYRadians * 0.5f);
+    const f32 tanX = tanY * camera.aspect();
+    const f32 ndcX = screenX * 2.f - 1.f;
+    const f32 ndcY = 1.f - screenY * 2.f;
+    return {ndcX * tanX * viewDepth, ndcY * tanY * viewDepth, -viewDepth};
+}
+
+ClusterAABB cluster_math::buildClusterAabb(u32 tileX,
+                                           u32 tileY,
+                                           u32 sliceZ,
+                                           const ClusterDesc& desc,
+                                           const ClusterCameraDesc& camera) {
+    ClusterAABB aabb{};
+    if (desc.tilesX == 0u || desc.tilesY == 0u || desc.slicesZ == 0u) {
+        return aabb;
+    }
+
+    const f32 tanY = std::tan(camera.fovYRadians * 0.5f);
+    const f32 tanX = tanY * camera.aspect();
+    const f32 depths[2] = {ClusterSliceLayout::computeSliceNearZ(sliceZ, desc, camera),
+                           ClusterSliceLayout::computeSliceFarZ(sliceZ, desc, camera)};
+    // Tile 0 is the top row (screenY = 0 -> ndc y = +1), matching mapScreenDepthToClusterIndex.
+    const f32 ndcX[2] = {(static_cast<f32>(tileX) / static_cast<f32>(desc.tilesX)) * 2.f - 1.f,
+                         (static_cast<f32>(tileX + 1u) / static_cast<f32>(desc.tilesX)) * 2.f - 1.f};
+    const f32 ndcY[2] = {1.f - (static_cast<f32>(tileY + 1u) / static_cast<f32>(desc.tilesY)) * 2.f,
+                         1.f - (static_cast<f32>(tileY) / static_cast<f32>(desc.tilesY)) * 2.f};
+
+    // The cell is the convex hull of its 8 corners, so their bounds are the tight AABB.
+    bool first = true;
+    for (f32 depth : depths) {
+        for (f32 nx : ndcX) {
+            for (f32 ny : ndcY) {
+                const fuse::math::Vec3 corner{nx * tanX * depth, ny * tanY * depth, -depth};
+                if (first) {
+                    aabb.minP = corner;
+                    aabb.maxP = corner;
+                    first = false;
+                    continue;
+                }
+                aabb.minP = {std::min(aabb.minP.x, corner.x), std::min(aabb.minP.y, corner.y),
+                             std::min(aabb.minP.z, corner.z)};
+                aabb.maxP = {std::max(aabb.maxP.x, corner.x), std::max(aabb.maxP.y, corner.y),
+                             std::max(aabb.maxP.z, corner.z)};
+            }
+        }
+    }
+    return aabb;
+}
+
+void cluster_math::buildClusterAabbs(const ClusterDesc& desc,
+                                     const ClusterCameraDesc& camera,
+                                     std::vector<ClusterAABB>& outAabbs) {
+    outAabbs.assign(desc.clusterCount(), ClusterAABB{});
+    for (u32 sliceZ = 0; sliceZ < desc.slicesZ; ++sliceZ) {
+        for (u32 tileY = 0; tileY < desc.tilesY; ++tileY) {
+            for (u32 tileX = 0; tileX < desc.tilesX; ++tileX) {
+                outAabbs[ClusterGridLayout::clusterIndex(tileX, tileY, sliceZ, desc)] =
+                    buildClusterAabb(tileX, tileY, sliceZ, desc, camera);
+            }
+        }
+    }
+}
+
+bool cluster_math::sphereIntersectsAabb(const fuse::math::Vec3& center, f32 radius, const ClusterAABB& aabb) {
+    if (!(radius >= 0.f) || !std::isfinite(radius)) {
+        return false;
+    }
+    const f32 closestX = std::clamp(center.x, aabb.minP.x, aabb.maxP.x);
+    const f32 closestY = std::clamp(center.y, aabb.minP.y, aabb.maxP.y);
+    const f32 closestZ = std::clamp(center.z, aabb.minP.z, aabb.maxP.z);
+
+    const f32 dx = center.x - closestX;
+    const f32 dy = center.y - closestY;
+    const f32 dz = center.z - closestZ;
+    return (dx * dx + dy * dy + dz * dz) <= (radius * radius);
+}
+
+ClusterCullResult cluster_math::cullLightsToClusters(const ClusterDesc& desc,
+                                                     const ClusterCameraDesc& camera,
+                                                     const std::vector<ClusterAABB>& aabbs,
+                                                     const std::vector<PointLightInput>& pointLights,
+                                                     const std::vector<SpotLightInput>& spotLights,
+                                                     std::vector<std::vector<u32>>& outPerClusterLights) {
+    ClusterCullResult result{};
+    const u32 clusterCount = desc.clusterCount();
+    outPerClusterLights.resize(clusterCount);
+    for (std::vector<u32>& lights : outPerClusterLights) {
+        lights.clear();
+    }
+    if (clusterCount == 0u || aabbs.size() < clusterCount) {
+        return result;
+    }
+
+    std::vector<u8> overflowed(clusterCount, 0u);
+    const u32 pointCount = static_cast<u32>(pointLights.size());
+    const u32 totalCount = pointCount + static_cast<u32>(spotLights.size());
+    const bool usePrefilter = desc.tilesX <= 32u && desc.tilesY <= 32u; // Row/column bit masks.
+
+    // Light-major loop keeps every cluster list in ascending light index (same order a
+    // cluster-major brute force produces). Only depth slices the sphere can reach are visited;
+    // the slice window is widened by one on each side so float rounding in the log/pow slice
+    // mapping can never skip a cluster — the exact sphere/AABB test decides membership.
+    for (u32 lightIdx = 0; lightIdx < totalCount; ++lightIdx) {
+        fuse::math::Vec3 worldPos;
+        f32 radius = 0.f;
+        if (lightIdx < pointCount) {
+            worldPos = pointLights[lightIdx].position;
+            radius = pointLights[lightIdx].radius;
+        } else {
+            // Spot lights are bounded by their range sphere (conservative superset of the cone).
+            worldPos = spotLights[lightIdx - pointCount].position;
+            radius = spotLights[lightIdx - pointCount].radius;
+        }
+        // A light with no range (falloff is identically zero) occupies no cluster.
+        if (!(radius > 0.f) || !std::isfinite(radius) || !std::isfinite(worldPos.x) ||
+            !std::isfinite(worldPos.y) || !std::isfinite(worldPos.z)) {
+            continue;
+        }
+
+        const fuse::math::Vec3 center = worldToView(camera, worldPos);
+        const f32 depth = -center.z;
+        const f32 minDepth = std::clamp(depth - radius, camera.nearPlane, camera.farPlane);
+        const f32 maxDepth = std::clamp(depth + radius, camera.nearPlane, camera.farPlane);
+        u32 sliceLo = ClusterSliceLayout::computeSliceZFromDepth(minDepth, desc, camera);
+        u32 sliceHi = ClusterSliceLayout::computeSliceZFromDepth(maxDepth, desc, camera);
+        sliceLo = sliceLo > 0u ? sliceLo - 1u : 0u;
+        sliceHi = std::min(sliceHi + 1u, desc.slicesZ - 1u);
+
+        const f32 radiusSq = radius * radius;
+        for (u32 sliceZ = sliceLo; sliceZ <= sliceHi; ++sliceZ) {
+            // Per-axis prefilter: a tile's x bounds depend only on (tileX, slice) and its y bounds
+            // only on (tileY, slice), so reject whole columns/rows whose single-axis separation
+            // already exceeds the radius. Same arithmetic as the exact test, so it never rejects a
+            // cluster the exact test would accept.
+            u32 rowMask = usePrefilter ? 0u : ~0u;
+            for (u32 tileY = 0; usePrefilter && tileY < desc.tilesY; ++tileY) {
+                const ClusterAABB& box = aabbs[ClusterGridLayout::clusterIndex(0u, tileY, sliceZ, desc)];
+                const f32 dy = center.y - std::clamp(center.y, box.minP.y, box.maxP.y);
+                if (dy * dy <= radiusSq) {
+                    rowMask |= 1u << tileY;
+                }
+            }
+            u32 columnMask = usePrefilter ? 0u : ~0u;
+            for (u32 tileX = 0; usePrefilter && tileX < desc.tilesX; ++tileX) {
+                const ClusterAABB& box = aabbs[ClusterGridLayout::clusterIndex(tileX, 0u, sliceZ, desc)];
+                const f32 dx = center.x - std::clamp(center.x, box.minP.x, box.maxP.x);
+                if (dx * dx <= radiusSq) {
+                    columnMask |= 1u << tileX;
+                }
+            }
+            if (rowMask == 0u || columnMask == 0u) {
+                continue;
+            }
+
+            for (u32 tileY = 0; tileY < desc.tilesY; ++tileY) {
+                if (usePrefilter && (rowMask & (1u << tileY)) == 0u) {
+                    continue;
+                }
+                for (u32 tileX = 0; tileX < desc.tilesX; ++tileX) {
+                    if (usePrefilter && (columnMask & (1u << tileX)) == 0u) {
+                        continue;
+                    }
+                    const u32 clusterIdx = ClusterGridLayout::clusterIndex(tileX, tileY, sliceZ, desc);
+                    if (!sphereIntersectsAabb(center, radius, aabbs[clusterIdx])) {
+                        continue;
+                    }
+                    if (cluster_util::tryAssignLight(outPerClusterLights[clusterIdx], lightIdx,
+                                                     desc.maxLightsPerCluster)) {
+                        ++result.lightsCulled;
+                    } else {
+                        ++result.lightsDroppedOverflow;
+                        overflowed[clusterIdx] = 1u;
+                    }
+                }
+            }
+        }
+    }
+
+    for (u8 flag : overflowed) {
+        result.clustersAtCapacity += flag;
+    }
+    return result;
+}
+
 void ClusteredLightCuller::init(const ClusterDesc& desc, ResourceManager& resources) {
     destroy();
     m_desc = ClusterDesc::clampCounts(desc);
@@ -821,14 +1072,8 @@ void ClusteredLightCuller::updateClusters(const ClusterCameraDesc& camera) {
         return;
     }
 
-    if (ClusterGridLayout::isEmptyGrid(m_desc)) {
-        m_gridSoA.clear();
-        m_stats.clustersBuilt = 0;
-        return;
-    }
-
     const u32 clusterCount = m_desc.clusterCount();
-    if (clusterCount == 0u) {
+    if (ClusterGridLayout::isEmptyGrid(m_desc) || clusterCount == 0u) {
         m_gridSoA.clear();
         m_stats.clustersBuilt = 0;
         return;
@@ -838,46 +1083,14 @@ void ClusteredLightCuller::updateClusters(const ClusterCameraDesc& camera) {
         m_gridSoA.allocate(m_desc);
     }
 
-    for (u32 sliceZ = 0; sliceZ < m_desc.slicesZ; ++sliceZ) {
-        const f32 nearZ = ClusterSliceLayout::computeSliceNearZ(sliceZ, m_desc, camera);
-        const f32 farZ = ClusterSliceLayout::computeSliceFarZ(sliceZ, m_desc, camera);
-
-        for (u32 tileY = 0; tileY < m_desc.tilesY; ++tileY) {
-            for (u32 tileX = 0; tileX < m_desc.tilesX; ++tileX) {
-                const u32 idx = clusterIndex(tileX, tileY, sliceZ, m_desc);
-                ClusterAABB& aabb = m_gridSoA.aabbs[idx];
-
-                const f32 ndcMinX = (static_cast<f32>(tileX) / static_cast<f32>(m_desc.tilesX)) * 2.f - 1.f;
-                const f32 ndcMaxX =
-                    (static_cast<f32>(tileX + 1u) / static_cast<f32>(m_desc.tilesX)) * 2.f - 1.f;
-                const f32 ndcMinY =
-                    1.f - (static_cast<f32>(tileY + 1u) / static_cast<f32>(m_desc.tilesY)) * 2.f;
-                const f32 ndcMaxY = 1.f - (static_cast<f32>(tileY) / static_cast<f32>(m_desc.tilesY)) * 2.f;
-
-                aabb.minP = {ndcMinX * nearZ + camera.position.x,
-                             ndcMinY * nearZ + camera.position.y,
-                             -(farZ + camera.position.z)};
-                aabb.maxP = {ndcMaxX * farZ + camera.position.x,
-                             ndcMaxY * farZ + camera.position.y,
-                             -(nearZ + camera.position.z)};
-            }
-        }
-    }
-
+    cluster_math::buildClusterAabbs(m_desc, camera, m_gridSoA.aabbs);
     m_stats.clustersBuilt = clusterCount;
 }
 
 bool ClusteredLightCuller::sphereIntersectsAabb(const fuse::math::Vec3& center,
                                                  f32 radius,
                                                  const ClusterAABB& aabb) const {
-    const f32 closestX = std::clamp(center.x, aabb.minP.x, aabb.maxP.x);
-    const f32 closestY = std::clamp(center.y, aabb.minP.y, aabb.maxP.y);
-    const f32 closestZ = std::clamp(center.z, aabb.minP.z, aabb.maxP.z);
-
-    const f32 dx = center.x - closestX;
-    const f32 dy = center.y - closestY;
-    const f32 dz = center.z - closestZ;
-    return (dx * dx + dy * dy + dz * dz) <= (radius * radius);
+    return cluster_math::sphereIntersectsAabb(center, radius, aabb);
 }
 
 void ClusteredLightCuller::cullLights(const std::vector<PointLightInput>& pointLights,
@@ -892,7 +1105,7 @@ void ClusteredLightCuller::cullLights(const std::vector<PointLightInput>& pointL
     m_stats.clustersAtCapacity = 0;
     m_stats.lightsDroppedOverflow = 0;
 
-    if (cluster_util::shouldSkipClusterCull(m_desc)) {
+    if (cluster_util::shouldSkipClusterCull(m_desc) || m_desc.clusterCount() == 0u) {
         m_pendingClusterLights.clear();
         rebuildLightGrid();
         m_stats.lightsCulled = 0;
@@ -900,64 +1113,14 @@ void ClusteredLightCuller::cullLights(const std::vector<PointLightInput>& pointL
         return;
     }
 
-    const u32 clusterCount = m_desc.clusterCount();
-    if (clusterCount == 0u) {
-        m_pendingClusterLights.clear();
-        rebuildLightGrid();
-        m_stats.lightsCulled = 0;
-        m_stats.lightListEntries = 0;
-        return;
-    }
-
-    std::vector<std::vector<u32>> perClusterLights(clusterCount);
-
-    u32 lightsProcessed = 0;
-    u32 clustersAtCapacity = 0;
-    u32 lightsDroppedOverflow = 0;
-
-    for (u32 clusterIdx = 0; clusterIdx < clusterCount; ++clusterIdx) {
-        const ClusterAABB& aabb = m_gridSoA.aabbs[clusterIdx];
-        std::vector<u32>& clusterLights = perClusterLights[clusterIdx];
-        bool clusterOverflowed = false;
-
-        for (u32 lightIdx = 0; lightIdx < static_cast<u32>(pointLights.size()); ++lightIdx) {
-            const PointLightInput& light = pointLights[lightIdx];
-            if (!sphereIntersectsAabb(light.position, light.radius, aabb)) {
-                continue;
-            }
-            if (!cluster_util::assignLightToCluster(perClusterLights, clusterIdx, lightIdx,
-                                                     m_desc.maxLightsPerCluster)) {
-                ++lightsDroppedOverflow;
-                clusterOverflowed = true;
-            }
-        }
-
-        for (u32 lightIdx = 0; lightIdx < static_cast<u32>(spotLights.size()); ++lightIdx) {
-            const SpotLightInput& light = spotLights[lightIdx];
-            if (!sphereIntersectsAabb(light.position, light.radius, aabb)) {
-                continue;
-            }
-            const u32 encodedIdx = static_cast<u32>(pointLights.size()) + lightIdx;
-            if (!cluster_util::assignLightToCluster(perClusterLights, clusterIdx, encodedIdx,
-                                                     m_desc.maxLightsPerCluster)) {
-                ++lightsDroppedOverflow;
-                clusterOverflowed = true;
-            }
-        }
-
-        if (clusterOverflowed) {
-            ++clustersAtCapacity;
-        }
-        lightsProcessed += static_cast<u32>(clusterLights.size());
-    }
-
-    m_pendingClusterLights = std::move(perClusterLights);
+    const ClusterCullResult result = cluster_math::cullLightsToClusters(
+        m_desc, camera, m_gridSoA.aabbs, pointLights, spotLights, m_pendingClusterLights);
     rebuildLightGrid();
 
-    m_stats.lightsCulled = lightsProcessed;
+    m_stats.lightsCulled = result.lightsCulled;
     m_stats.lightListEntries = static_cast<u32>(m_gridSoA.lightList.size());
-    m_stats.clustersAtCapacity = clustersAtCapacity;
-    m_stats.lightsDroppedOverflow = lightsDroppedOverflow;
+    m_stats.clustersAtCapacity = result.clustersAtCapacity;
+    m_stats.lightsDroppedOverflow = result.lightsDroppedOverflow;
 }
 
 void ClusteredLightCuller::rebuildLightGrid() {

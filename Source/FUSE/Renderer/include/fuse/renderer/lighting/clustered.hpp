@@ -33,7 +33,8 @@ struct ClusterDesc {
     static ClusterDesc clampCounts(const ClusterDesc& raw);
 };
 
-/// World-space cluster bounds built from the camera frustum.
+/// View-space cluster bounds (right-handed, camera looks down -Z) built from the camera frustum.
+/// Each AABB is the tight axis-aligned bound of its frustum cell (8 corner points).
 struct ClusterAABB {
     fuse::math::Vec3 minP{};
     fuse::math::Vec3 maxP{};
@@ -70,13 +71,50 @@ struct ClusterBuffers {
 };
 
 /// Minimal camera inputs for cluster AABB construction.
+/// `farPlane` bounds the cluster grid; the depth buffer itself may use an infinite far plane.
 struct ClusterCameraDesc {
     fuse::math::Vec3 position{};
     f32 nearPlane = 0.1f;
     f32 farPlane = 1000.f;
     u32 screenWidth = 1920;
     u32 screenHeight = 1080;
+    /// World-space view direction and up hint (need not be normalized; must not be parallel).
+    fuse::math::Vec3 forward{0.f, 0.f, -1.f};
+    fuse::math::Vec3 up{0.f, 1.f, 0.f};
+    /// Vertical field of view; horizontal extent follows screenWidth / screenHeight.
+    f32 fovYRadians = 1.04719755f;
+    /// Device depth convention: true = reversed-Z infinite far (ndc = near / viewDepth, matches
+    /// fuse::Camera); false = standard [0,1] depth with a finite far plane at `farPlane`.
+    bool reversedZ = true;
+
+    f32 aspect() const {
+        return screenHeight == 0u ? 1.f : static_cast<f32>(screenWidth) / static_cast<f32>(screenHeight);
+    }
 };
+
+/// Camera-space math shared by cluster build, light cull, and the CPU deferred shade reference.
+namespace cluster_math {
+/// Orthonormal view basis (right, up, back) derived from `camera.forward` / `camera.up`.
+void viewBasis(const ClusterCameraDesc& camera,
+               fuse::math::Vec3& outRight,
+               fuse::math::Vec3& outUp,
+               fuse::math::Vec3& outBack);
+/// World position to view space (right-handed, -Z forward).
+fuse::math::Vec3 worldToView(const ClusterCameraDesc& camera, const fuse::math::Vec3& world);
+fuse::math::Vec3 viewToWorld(const ClusterCameraDesc& camera, const fuse::math::Vec3& view);
+/// Positive linear view depth from a device depth value; returns 0 for the cleared/sky value.
+f32 viewDepthFromDeviceDepth(f32 deviceDepth, const ClusterCameraDesc& camera);
+/// Device depth for a positive linear view depth (inverse of viewDepthFromDeviceDepth).
+f32 deviceDepthFromViewDepth(f32 viewDepth, const ClusterCameraDesc& camera);
+/// View-space position for normalized screen coords (0,0 = top-left) at a linear view depth.
+fuse::math::Vec3 viewPositionFromScreen(f32 screenX, f32 screenY, f32 viewDepth, const ClusterCameraDesc& camera);
+/// Tight view-space AABB of one frustum cell (tile x/y, exponential depth slice z).
+ClusterAABB buildClusterAabb(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc, const ClusterCameraDesc& camera);
+/// Build all cluster AABBs in flat cluster-index order; empty output for an empty grid.
+void buildClusterAabbs(const ClusterDesc& desc, const ClusterCameraDesc& camera, std::vector<ClusterAABB>& outAabbs);
+/// Closed sphere-vs-AABB overlap (touching counts); false for negative or non-finite radius.
+bool sphereIntersectsAabb(const fuse::math::Vec3& center, f32 radius, const ClusterAABB& aabb);
+} // namespace cluster_math
 
 /// Exponential depth-slice bounds — shared by cluster build and CPU tests.
 struct ClusterSliceLayout {
@@ -340,7 +378,27 @@ struct ClusteredLightCullerStats {
     u32 lightsDroppedOverflow = 0;
 };
 
-/// CPU stub for clustered light assignment — CUDA kernels deferred to B5.4 follow-up.
+/// Result of one CPU light-to-cluster assignment pass.
+struct ClusterCullResult {
+    u32 lightsCulled = 0;          ///< Total (cluster, light) pairs stored.
+    u32 clustersAtCapacity = 0;    ///< Clusters that overflowed `maxLightsPerCluster`.
+    u32 lightsDroppedOverflow = 0; ///< Intersecting (cluster, light) pairs dropped at capacity.
+};
+
+namespace cluster_math {
+/// Assign point lights (index i) then spot lights (index pointCount + i, bounded by their range
+/// sphere) to every cluster whose view-space AABB they overlap. Each cluster list is in ascending
+/// light index; on overflow the lowest indices are kept and the rest are counted as dropped.
+/// `aabbs` must hold `desc.clusterCount()` view-space bounds from `buildClusterAabbs`.
+ClusterCullResult cullLightsToClusters(const ClusterDesc& desc,
+                                       const ClusterCameraDesc& camera,
+                                       const std::vector<ClusterAABB>& aabbs,
+                                       const std::vector<PointLightInput>& pointLights,
+                                       const std::vector<SpotLightInput>& spotLights,
+                                       std::vector<std::vector<u32>>& outPerClusterLights);
+} // namespace cluster_math
+
+/// CPU clustered light assignment — mirrors the cluster build + cull kernels (CUDA path deferred).
 class ClusteredLightCuller {
 public:
     void init(const ClusterDesc& desc, ResourceManager& resources);

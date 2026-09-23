@@ -27,11 +27,8 @@ bool DeferredRenderer::init(ResourceManager& resources) {
 
     m_materials.init(resources);
 
-    ClusterDesc clusterDesc{};
-    clusterDesc.tilesX = 4;
-    clusterDesc.tilesY = 4;
-    clusterDesc.slicesZ = 4;
-    clusterDesc.maxLightsPerCluster = 64;
+    // B5.4 grid: 16x9 screen tiles x 24 exponential depth slices, 256 lights per cluster.
+    const ClusterDesc clusterDesc{};
     m_lightCuller.init(clusterDesc, resources);
 
     m_stats.ready = true;
