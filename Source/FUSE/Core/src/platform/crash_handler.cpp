@@ -644,17 +644,37 @@ LONG WINAPI crashExceptionFilter(EXCEPTION_POINTERS* ep) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+/// Vectored handler installed only while crashAbortHandler raises the synthetic abort exception:
+/// it reports with the EXCEPTION_POINTERS the OS built for RaiseException and resumes.
+LONG CALLBACK crashAbortVectoredHandler(EXCEPTION_POINTERS* ep) {
+    if (ep == nullptr || ep->ExceptionRecord == nullptr || ep->ExceptionRecord->ExceptionCode != kAbortExceptionCode) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    reportCrash(ep, "abort (SIGABRT)");
+    return EXCEPTION_CONTINUE_EXECUTION;
+}
+
 void crashAbortHandler(int sig) {
-    CONTEXT context{};
-    ::RtlCaptureContext(&context);
-    EXCEPTION_RECORD record{};
-    record.ExceptionCode = kAbortExceptionCode;
-    record.ExceptionFlags = EXCEPTION_NONCONTINUABLE;
+    // abort() raises no SEH exception. Raise a continuable synthetic one and report it from a
+    // first-chance vectored handler: MiniDumpWriteDump then gets OS-built exception pointers.
+    // (A hand-made EXCEPTION_RECORD + RtlCaptureContext context made dbghelp fail with
+    // RPC_X_NULL_REF_POINTER under MSVC builds and drop the ExceptionStream.)
+    PVOID vectored = ::AddVectoredExceptionHandler(1u, &crashAbortVectoredHandler);
+    if (vectored != nullptr) {
+        ::RaiseException(kAbortExceptionCode, 0u, 0u, nullptr);
+        ::RemoveVectoredExceptionHandler(vectored);
+    } else {
+        CONTEXT context{};
+        ::RtlCaptureContext(&context);
+        EXCEPTION_RECORD record{};
+        record.ExceptionCode = kAbortExceptionCode;
+        record.ExceptionFlags = EXCEPTION_NONCONTINUABLE;
 #if defined(_M_X64) || defined(__x86_64__)
-    record.ExceptionAddress = reinterpret_cast<PVOID>(context.Rip);
+        record.ExceptionAddress = reinterpret_cast<PVOID>(context.Rip);
 #endif
-    EXCEPTION_POINTERS pointers{&record, &context};
-    reportCrash(&pointers, "abort (SIGABRT)");
+        EXCEPTION_POINTERS pointers{&record, &context};
+        reportCrash(&pointers, "abort (SIGABRT)");
+    }
 
     // Chain: restore the previous disposition. With SIG_DFL, returning lets abort() terminate the
     // process (exit code 3); a previously installed handler is invoked directly.
