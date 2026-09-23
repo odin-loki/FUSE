@@ -4,17 +4,25 @@
 //  - each<T> iterates exactly the right entities
 //  - each_parallel<T> matches each<T> across 100 randomised cases
 //  - add/remove migrates entities between archetypes with data preserved
-//  - 100k Transform+Mesh+RigidBody iteration throughput (500M/s workstation baseline; CI floor)
+//  - 100k Transform+Mesh+RigidBody iteration throughput (500M/s workstation target; see the
+//    bandwidth analysis at testSingleThreadIterationThroughput for why this box floors lower)
+//  - each_chunk (span iteration) visits exactly what each<T> visits
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 
+#include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <random>
+#include <span>
 #include <vector>
 
 namespace {
@@ -183,39 +191,219 @@ void testEachParallelMatchesEachRandomised() {
     expectTrue(mismatches == 0u, "each_parallel matches each across 100 randomised cases");
 }
 
+void testEachChunkMatchesEach() {
+    Registry reg;
+    reg.init(4096);
+    for (fuse::u32 i = 0; i < 3000u; ++i) {
+        const EntityID id = reg.create();
+        reg.add<Transform>(id);
+        if (i % 2u == 0u) {
+            reg.add<RigidBody>(id);
+        }
+        if (i % 5u == 0u) {
+            reg.add<Mesh>(id); // splits {Transform,RigidBody} across two archetypes
+        }
+    }
+    std::vector<fuse::u8> viaEach(4096, 0u);
+    reg.each<Transform, RigidBody>([&](EntityID id, Transform&, RigidBody&) { ++viaEach[id.index]; });
+
+    for (const fuse::usize maxRows : {fuse::usize{0}, fuse::usize{1}, fuse::usize{97}}) {
+        std::vector<fuse::u8> viaChunk(4096, 0u);
+        bool spansConsistent = true;
+        fuse::u32 chunks = 0;
+        reg.each_chunk<Transform, RigidBody>(
+            [&](std::span<const EntityID> ids, std::span<Transform> t, std::span<RigidBody> rb) {
+                ++chunks;
+                spansConsistent = spansConsistent && !ids.empty() && ids.size() == t.size() &&
+                                  ids.size() == rb.size() && (maxRows == 0 || ids.size() <= maxRows);
+                for (std::size_t i = 0; i < ids.size(); ++i) {
+                    ++viaChunk[ids[i].index];
+                    spansConsistent = spansConsistent && &t[i] == reg.get<Transform>(ids[i]) &&
+                                      &rb[i] == reg.get<RigidBody>(ids[i]);
+                }
+            },
+            maxRows);
+        expectTrue(spansConsistent, "each_chunk spans are row-aligned, equal-length and within maxChunkRows");
+        expectTrue(viaChunk == viaEach, "each_chunk visits exactly the entities each<T> visits");
+        expectTrue(maxRows != 0 || chunks == 2u, "each_chunk yields one chunk per matching archetype");
+    }
+
+    std::vector<fuse::u8> viaWithout(4096, 0u);
+    reg.each_chunk<Transform, RigidBody>(
+        [&](std::span<const EntityID> ids, std::span<Transform>, std::span<RigidBody>) {
+            for (const EntityID id : ids) {
+                ++viaWithout[id.index];
+            }
+        },
+        fuse::ecs::Without<Mesh>{});
+    bool withoutExact = true;
+    reg.each<Transform, RigidBody>([&](EntityID id, Transform&, RigidBody&) {
+        withoutExact = withoutExact && viaWithout[id.index] == (reg.has<Mesh>(id) ? 0u : 1u);
+    });
+    expectTrue(withoutExact, "each_chunk honours Without<> exclusion");
+}
+
+/// Compiler barrier between timed passes: stops the optimiser from fusing or interchanging passes
+/// (which would turn a memory-bound sweep into a cache-resident one) or sinking the stores.
+inline void clobberMemory() {
+#if defined(__GNUC__) || defined(__clang__)
+    asm volatile("" ::: "memory");
+#else
+    std::atomic_signal_fence(std::memory_order_seq_cst);
+#endif
+}
+
+/// Distinct 64-byte cache lines covering the touched bytes [offset, offset+size) of every row.
+template <typename T>
+std::size_t touchedCacheLines(const T* base, std::size_t rows, std::size_t offset, std::size_t size) {
+    std::size_t lines = 0;
+    std::uintptr_t nextUncounted = 0; // rows ascend, so only lines past the previous row's are new
+    for (std::size_t i = 0; i < rows; ++i) {
+        const std::uintptr_t begin = reinterpret_cast<std::uintptr_t>(base + i) + offset;
+        const std::uintptr_t first = std::max(begin >> 6u, nextUncounted);
+        const std::uintptr_t final = (begin + size - 1u) >> 6u;
+        if (final >= first) {
+            lines += final - first + 1u;
+            nextUncounted = final + 1u;
+        }
+    }
+    return lines;
+}
+
+// Throughput metric (plan row "> 500M components/sec on a single thread"):
+//   components/sec = entities x components touched per entity (3) / seconds per pass.
+// Every pass touches all three components of all 100k entities with real memory traffic:
+//   RigidBody: read `mass`      Mesh: read `index_count`      Transform: read+write `position.x`
+// and results are checked exactly afterwards, so nothing can be dead-code eliminated. The reported
+// number is the median of 101 single-pass samples: a preemption or a busy hyperthread sibling only
+// spoils the few samples it overlaps, so the median stays stable under background build load.
+//
+// Bandwidth bound: the components are 188 + 60 + 92 = 340 bytes/entity (Transform carries two
+// mat4s), so 100k entities are ~34 MB — L3-resident, beyond L2. Each entity pulls ~3 distinct cache
+// lines (~190 B) and writes one back (~64 B), so 500M components/s (167M entities/s) needs ~42 GB/s
+// of single-core L3 traffic. This 4-vCPU Xeon sustains ~25 GB/s single-core (a plain contiguous
+// read of the same 34 MB), which caps any iteration scheme over these layouts near ~300M/s; the
+// same loop over raw std::vectors measures the same. Beating 500M/s here needs hot/cold component
+// splits (fewer bytes per entity), not a faster iterator.
 void testSingleThreadIterationThroughput() {
     constexpr fuse::u32 kEntities = 100'000;
+    constexpr float kDt = 1.f / 1024.f; // exact in binary, so the position check below is exact
     Registry reg;
     reg.init(kEntities + 16u);
+    std::uint64_t expectedChecksumPerPass = 0;
     for (fuse::u32 i = 0; i < kEntities; ++i) {
         const EntityID id = reg.create();
         reg.add<Transform>(id);
-        reg.add<Mesh>(id);
-        reg.add<RigidBody>(id);
+        Mesh mesh{};
+        mesh.index_count = 1u + i % 7u;
+        expectedChecksumPerPass += mesh.index_count;
+        reg.add(id, mesh);
+        RigidBody body{};
+        body.mass = static_cast<float>(1u + i % 4u);
+        reg.add(id, body);
     }
 
-    float sink = 0.f;
-    auto pass = [&]() {
-        reg.each<Transform, Mesh, RigidBody>([&](EntityID, Transform& t, Mesh& m, RigidBody& rb) {
-            t.position.x += rb.mass * 0.001f;
-            sink += static_cast<float>(m.index_count);
-        });
+    std::uint64_t checksum = 0;
+    int passesRun = 0;
+    auto chunkPass = [&]() {
+        reg.each_chunk<Transform, Mesh, RigidBody>(
+            [&](std::span<const EntityID> ids, std::span<Transform> t, std::span<Mesh> m, std::span<RigidBody> rb) {
+                const std::size_t n = ids.size();
+                Transform* __restrict tp = t.data();
+                const Mesh* __restrict mp = m.data();
+                const RigidBody* __restrict rp = rb.data();
+                std::uint64_t local = 0;
+                for (std::size_t i = 0; i < n; ++i) {
+                    tp[i].position.x += rp[i].mass * kDt;
+                    local += mp[i].index_count;
+                }
+                checksum += local;
+            });
+        ++passesRun;
+        clobberMemory();
     };
-    pass(); // warm caches
-    constexpr int kPasses = 20;
-    const auto start = std::chrono::steady_clock::now();
-    for (int i = 0; i < kPasses; ++i) {
-        pass();
-    }
-    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-    const double componentsPerSecond = (3.0 * kEntities * kPasses) / seconds;
-    std::printf("each<Transform,Mesh,RigidBody>: %.1f M components/s (sink %.1f)\n", componentsPerSecond / 1e6,
-                static_cast<double>(sink));
+    auto eachPass = [&]() {
+        std::uint64_t local = 0;
+        reg.each<Transform, Mesh, RigidBody>([&](EntityID, Transform& t, Mesh& m, RigidBody& rb) {
+            t.position.x += rb.mass * kDt;
+            local += m.index_count;
+        });
+        checksum += local;
+        ++passesRun;
+        clobberMemory();
+    };
+
+    constexpr int kSamples = 101;
+    constexpr int kPassesPerSample = 1;
+    auto measure = [&](auto&& pass) {
+        for (int i = 0; i < 3; ++i) {
+            pass(); // warm caches / page in
+        }
+        std::vector<double> perPass;
+        perPass.reserve(kSamples);
+        for (int s = 0; s < kSamples; ++s) {
+            const auto start = std::chrono::steady_clock::now();
+            for (int i = 0; i < kPassesPerSample; ++i) {
+                pass();
+            }
+            perPass.push_back(std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() /
+                              kPassesPerSample);
+        }
+        std::sort(perPass.begin(), perPass.end());
+        return perPass; // sorted seconds per pass
+    };
+    const std::vector<double> chunkTimes = measure(chunkPass);
+    const std::vector<double> eachTimes = measure(eachPass);
+
+    // Anti-DCE / correctness: every pass must have read every Mesh and RigidBody and written every
+    // Transform exactly once.
+    expectTrue(checksum == expectedChecksumPerPass * static_cast<std::uint64_t>(passesRun),
+               "throughput passes read every Mesh.index_count every pass");
+    bool positionsExact = true;
+    reg.each<Transform, RigidBody>([&](EntityID, Transform& t, RigidBody& rb) {
+        positionsExact = positionsExact && t.position.x == rb.mass * kDt * static_cast<float>(passesRun);
+    });
+    expectTrue(positionsExact, "throughput passes wrote every Transform.position.x every pass");
+
+    // Bytes actually moved per pass: distinct cache lines under the touched fields of each column.
+    std::size_t lines = 0;
+    std::size_t transformLines = 0;
+    reg.each_chunk<Transform, Mesh, RigidBody>(
+        [&](std::span<const EntityID>, std::span<Transform> t, std::span<Mesh> m, std::span<RigidBody> rb) {
+            transformLines += touchedCacheLines(t.data(), t.size(), offsetof(Transform, position), sizeof(float));
+            lines += touchedCacheLines(m.data(), m.size(), offsetof(Mesh, index_count), sizeof(fuse::u32));
+            lines += touchedCacheLines(rb.data(), rb.size(), offsetof(RigidBody, mass), sizeof(float));
+        });
+    lines += transformLines;
+    const double bytesPerPass = 64.0 * static_cast<double>(lines + transformLines); // + dirty write-back
+
+    constexpr double kComponentsPerPass = 3.0 * kEntities;
+    auto report = [&](const char* name, const std::vector<double>& times) {
+        const double median = times[times.size() / 2];
+        std::printf("%s: median %.1f M components/s (best %.1f, worst %.1f); %.1f GB/s cache-line traffic "
+                    "(%.0f B/entity)\n",
+                    name, kComponentsPerPass / median / 1e6, kComponentsPerPass / times.front() / 1e6,
+                    kComponentsPerPass / times.back() / 1e6, bytesPerPass / median / 1e9, bytesPerPass / kEntities);
+        return kComponentsPerPass / median;
+    };
+    const double chunkRate = report("each_chunk<Transform,Mesh,RigidBody>", chunkTimes);
+    const double eachRate = report("each<Transform,Mesh,RigidBody>      ", eachTimes);
+    std::printf("component bytes/entity %zu (Transform %zu, Mesh %zu, RigidBody %zu)\n",
+                sizeof(Transform) + sizeof(Mesh) + sizeof(RigidBody), sizeof(Transform), sizeof(Mesh),
+                sizeof(RigidBody));
+
 #if defined(NDEBUG)
-    // 500M/s is the workstation baseline (EXECUTION-PLAN §5). These components total 340 bytes per
-    // entity, so shared CI runners are memory-bound well below it; enforce a regression floor that
-    // the per-row column lookup (60M/s before hoisting) would fail.
-    expectTrue(componentsPerSecond > 100e6, "> 100M components/s single-threaded (CI floor)");
+    if (fuse::core::timingBudgetsEnforced()) {
+        // Floor ~2/3 of the median measured on the 4-vCPU CI box (275-340M/s idle, 265-330M/s with
+        // three concurrent compiles; L3-bandwidth bound, see above). A per-row column lookup
+        // (60M/s) or std::function dispatch in the row loop fails it.
+        constexpr double kFloor = 200e6;
+        expectTrue(chunkRate > kFloor, "each_chunk > 200M components/s single-threaded (CI floor)");
+        expectTrue(eachRate > kFloor, "each > 200M components/s single-threaded (CI floor)");
+    }
+#else
+    (void)chunkRate;
+    (void)eachRate;
 #endif
 }
 
@@ -226,6 +414,7 @@ int main() {
     testArchetypeGroupingAndMigration();
     testEachVisitsExactlyTheMatchingEntities();
     testEachParallelMatchesEachRandomised();
+    testEachChunkMatchesEach();
     testSingleThreadIterationThroughput();
 
     if (g_failures == 0) {

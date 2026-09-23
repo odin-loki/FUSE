@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <span>
 #include <typeindex>
 #include <type_traits>
 #include <unordered_map>
@@ -82,6 +83,20 @@ public:
     template <typename... WithTs, typename... WithoutTs, typename Fn>
     void each_query(Fn&& fn, Without<WithoutTs...> exclude);
 
+    /// Chunk (span) iteration — the idiomatic single-threaded fast path. Calls
+    /// `fn(std::span<const EntityID> ids, std::span<Ts>... columns)` once per matching non-empty
+    /// archetype chunk; every span has the same length and `columns[i]` belongs to `ids[i]`.
+    /// Columns are contiguous SoA storage, so a plain indexed loop over the spans has no per-entity
+    /// indirection and auto-vectorises when its body allows. Chunks hold at most `maxChunkRows`
+    /// rows (0 = whole archetype). The callback must not add/remove components or create/destroy
+    /// entities (same rule as `each`).
+    template <typename... Ts, typename Fn>
+    void each_chunk(Fn&& fn, usize maxChunkRows = 0);
+
+    /// Chunk iteration with With/Without component filters.
+    template <typename... WithTs, typename... WithoutTs, typename Fn>
+    void each_chunk(Fn&& fn, Without<WithoutTs...> exclude, usize maxChunkRows = 0);
+
     /// Parallel iteration over matching archetypes via JobScheduler::parallel_for.
     template <typename... Ts, typename Fn>
     void each_parallel(Fn&& fn, u32 batchSize = 256);
@@ -137,8 +152,16 @@ private:
         return column != nullptr ? reinterpret_cast<T*>(column->storage.data()) : nullptr;
     }
 
+    /// Visits every matching non-empty archetype with its ids pointer, row count and typed column
+    /// base pointers (resolved once per archetype, never per row).
+    template <typename... WithTs, typename Fn>
+    void for_each_matching_archetype_(const QueryFilter& filter, Fn&& fn);
+
     template <typename... WithTs, typename Fn>
     void each_query_impl_(const QueryFilter& filter, Fn&& fn);
+
+    template <typename... WithTs, typename Fn>
+    void each_chunk_impl_(const QueryFilter& filter, Fn&& fn, usize maxChunkRows);
 
     template <typename... WithTs, typename Fn>
     void each_query_parallel_impl_(const QueryFilter& filter, Fn&& fn, u32 batchSize);
@@ -313,25 +336,52 @@ void Registry::each_query(Fn&& fn, Without<WithoutTs...> /*exclude*/) {
 }
 
 template <typename... WithTs, typename Fn>
-void Registry::each_query_impl_(const QueryFilter& filter, Fn&& fn) {
+void Registry::for_each_matching_archetype_(const QueryFilter& filter, Fn&& fn) {
     for (Archetype& archetype : m_archetypes) {
-        if (!archetype_matches(archetype, filter)) {
-            continue;
-        }
-
         const usize rowCount = archetype.count();
-        if (rowCount == 0) {
+        if (rowCount == 0 || !archetype_matches(archetype, filter)) {
             continue;
         }
-
-        // Resolve each column once per archetype; the row loop only indexes typed pointers.
-        const EntityID* ids = archetype.entities.data();
-        [&](auto*... columns) {
-            for (usize row = 0; row < rowCount; ++row) {
-                fn(ids[row], columns[row]...);
-            }
-        }(column_base_<WithTs>(archetype)...);
+        fn(static_cast<const EntityID*>(archetype.entities.data()), rowCount, column_base_<WithTs>(archetype)...);
     }
+}
+
+template <typename... WithTs, typename Fn>
+void Registry::each_query_impl_(const QueryFilter& filter, Fn&& fn) {
+    // Columns are resolved once per archetype; the row loop only indexes typed pointers, and `fn`
+    // is a template parameter (no std::function / virtual dispatch), so it inlines into the loop.
+    for_each_matching_archetype_<WithTs...>(filter, [&](const EntityID* ids, usize rowCount, auto*... columns) {
+        for (usize row = 0; row < rowCount; ++row) {
+            fn(ids[row], columns[row]...);
+        }
+    });
+}
+
+template <typename... Ts, typename Fn>
+void Registry::each_chunk(Fn&& fn, usize maxChunkRows) {
+    (assertComponent<Ts>(), ...);
+    each_chunk_impl_<Ts...>(cached_query_filter(With<Ts...>{}), std::forward<Fn>(fn), maxChunkRows);
+}
+
+template <typename... WithTs, typename... WithoutTs, typename Fn>
+void Registry::each_chunk(Fn&& fn, Without<WithoutTs...> /*exclude*/, usize maxChunkRows) {
+    (assertComponent<WithTs>(), ...);
+    (assertComponent<WithoutTs>(), ...);
+    each_chunk_impl_<WithTs...>(cached_query_filter(With<WithTs...>{}, Without<WithoutTs...>{}),
+                                std::forward<Fn>(fn),
+                                maxChunkRows);
+}
+
+template <typename... WithTs, typename Fn>
+void Registry::each_chunk_impl_(const QueryFilter& filter, Fn&& fn, usize maxChunkRows) {
+    for_each_matching_archetype_<WithTs...>(filter, [&](const EntityID* ids, usize rowCount, auto*... columns) {
+        const usize step = maxChunkRows == 0 ? rowCount : maxChunkRows;
+        for (usize begin = 0; begin < rowCount; begin += step) {
+            const usize n = std::min(step, rowCount - begin);
+            fn(std::span<const EntityID>(ids + begin, n),
+               std::span<std::remove_pointer_t<decltype(columns)>>(columns + begin, n)...);
+        }
+    });
 }
 
 template <typename... Ts, typename Fn>
@@ -363,22 +413,9 @@ template <typename... WithTs, typename Fn>
 void Registry::each_query_parallel_impl_(const QueryFilter& filter, Fn&& fn, u32 batchSize) {
     batchSize = detail::normalize_batch_size(batchSize);
 
-    for (Archetype& archetype : m_archetypes) {
-        if (!archetype_matches(archetype, filter)) {
-            continue;
-        }
-
-        const usize rowCount = archetype.count();
-        if (rowCount == 0) {
-            continue;
-        }
-
-        const EntityID* ids = archetype.entities.data();
-        [&](auto*... columns) {
-            jobs::parallel_for(0, static_cast<u32>(rowCount), batchSize,
-                               [&](u32 row) { fn(ids[row], columns[row]...); });
-        }(column_base_<WithTs>(archetype)...);
-    }
+    for_each_matching_archetype_<WithTs...>(filter, [&](const EntityID* ids, usize rowCount, auto*... columns) {
+        jobs::parallel_for(0, static_cast<u32>(rowCount), batchSize, [&](u32 row) { fn(ids[row], columns[row]...); });
+    });
 }
 
 } // namespace fuse::ecs

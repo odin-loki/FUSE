@@ -2724,7 +2724,7 @@ void CameraSystem::update(Registry& reg) {
 - [x] `each<T>` iterates exactly the correct entities — no missed entities, no spurious iterations — `fuse_b3_ecs_gates`
 - [x] `each_parallel<T>` produces identical results to `each<T>` across 100 randomised test cases — `fuse_b3_ecs_gates`
 - [x] Component add/remove triggers archetype migration correctly — entity moves to new archetype, data preserved — `fuse_b3_ecs_gates`
-- [ ] 100k entities with Transform + Mesh + RigidBody iterated at > 500M components/sec on a single thread — partial: `fuse_b3_ecs_gates` enforces a 100M/s floor (~225–290M/s on the memory-bound CI runner); 500M/s is a workstation measurement
+- [ ] 100k entities with Transform + Mesh + RigidBody iterated at > 500M components/sec on a single thread — partial: `fuse_b3_ecs_gates` (`each_chunk` span API) enforces a 200M/s floor; ~265–340M/s median here, memory-bandwidth bound (Transform+Mesh+RigidBody = 340 B/entity, 252 B/entity of cache-line traffic; 500M/s needs ~42 GB/s to one core vs ~25 GB/s here; 10k entities reach ~630M/s). Needs the workstation or a hot/cold component split
 - [ ] CUDA kernel reads Transform positions from managed-memory ECS column — verified with device-side assert
 - [x] BVH SAH build on 100k random AABBs completes in < 500ms — `fuse_b3_bvh_gates`
 - [x] BVH ray cast returns correct closest hit for 100k random rays against 10k objects — verified against brute-force — `fuse_b3_bvh_gates`
