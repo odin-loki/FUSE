@@ -72,7 +72,7 @@ EulerDeg quatToEulerDeg(const ecs::quat& q) {
     return {yaw, pitch, roll};
 }
 
-void applyEcsTransformToSceneObject3D(const ecs::Transform& transform, fuse::SceneObject3D& object) {
+[[maybe_unused]] void applyEcsTransformToSceneObject3D(const ecs::Transform& transform, fuse::SceneObject3D& object) {
     object.setPosition(transform.position.x, transform.position.y);
     object.setZ(transform.position.z);
     const EulerDeg euler = quatToEulerDeg(transform.rotation);

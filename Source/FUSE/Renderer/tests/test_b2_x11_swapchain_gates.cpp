@@ -33,7 +33,7 @@ namespace {
 constexpr int kSkip = 77;
 int g_failures = 0;
 
-void expectTrue(bool condition, const char* message) {
+[[maybe_unused]] void expectTrue(bool condition, const char* message) {
     if (!condition) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;

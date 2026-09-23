@@ -26,12 +26,12 @@ struct Rgb {
     u8 r, g, b;
 };
 
-Rgb pixel(const std::vector<u8>& rgba, u32 w, u32 x, u32 y) {
+[[maybe_unused]] Rgb pixel(const std::vector<u8>& rgba, u32 w, u32 x, u32 y) {
     const std::size_t i = (static_cast<std::size_t>(y) * w + x) * 4u;
     return {rgba[i], rgba[i + 1], rgba[i + 2]};
 }
 
-bool is(Rgb p, u8 r, u8 g, u8 b) {
+[[maybe_unused]] bool is(Rgb p, u8 r, u8 g, u8 b) {
     return p.r == r && p.g == g && p.b == b;
 }
 

@@ -43,7 +43,7 @@ constexpr u32 kBones = 32;
 constexpr u32 kFrames = 240;
 constexpr u32 kWarmup = kFramesInFlight;
 
-anim::Skeleton makeChain() {
+[[maybe_unused]] anim::Skeleton makeChain() {
     anim::Skeleton skel;
     skel.bone_count = kBones;
     skel.bones.resize(kBones);
@@ -63,7 +63,7 @@ anim::quat axisAngleZ(f32 radians) {
     return {0.f, 0.f, std::sin(radians * 0.5f), std::cos(radians * 0.5f)};
 }
 
-anim::AnimationClip makeClip() {
+[[maybe_unused]] anim::AnimationClip makeClip() {
     anim::AnimationClip clip{};
     clip.duration = 2.f;
     clip.looping = true;

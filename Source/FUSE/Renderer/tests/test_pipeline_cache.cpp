@@ -27,7 +27,7 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
-std::string fixturePath(const char* name) {
+[[maybe_unused]] std::string fixturePath(const char* name) {
     return std::string(FUSE_SHADER_FIXTURE_DIR) + "/" + name;
 }
 

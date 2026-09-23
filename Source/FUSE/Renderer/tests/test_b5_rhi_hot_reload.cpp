@@ -39,7 +39,7 @@ using b5rhi::expectTrue;
 using fuse::u32;
 using fuse::u8;
 
-void writeFragment(const std::string& path, const char* rgb, u32 generation) {
+[[maybe_unused]] void writeFragment(const std::string& path, const char* rgb, u32 generation) {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     out << "#version 450\n"
         << "// hot-reload generation " << generation << "\n"
@@ -49,7 +49,7 @@ void writeFragment(const std::string& path, const char* rgb, u32 generation) {
         << "}\n";
 }
 
-bool centreIs(const std::vector<u8>& rgba, u32 w, u32 h, u8 r, u8 g, u8 b) {
+[[maybe_unused]] bool centreIs(const std::vector<u8>& rgba, u32 w, u32 h, u8 r, u8 g, u8 b) {
     if (rgba.size() != static_cast<std::size_t>(w) * h * 4u) {
         return false;
     }

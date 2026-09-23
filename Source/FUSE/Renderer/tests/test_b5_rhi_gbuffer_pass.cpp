@@ -48,7 +48,7 @@ struct Surface {
     f32 depth = 0.5f;
 };
 
-GBufferDrawPush toPush(const Surface& s) {
+[[maybe_unused]] GBufferDrawPush toPush(const Surface& s) {
     GBufferDrawPush push{};
     push.albedo[0] = s.data.albedo.x;
     push.albedo[1] = s.data.albedo.y;
@@ -101,7 +101,7 @@ bool near4(const Vec4& a, const Vec4& b, f32 tol) {
            std::fabs(a.w - b.w) <= tol;
 }
 
-void checkRegion(const Readback& rb, u32 x, u32 y, const Surface& s, const char* label) {
+[[maybe_unused]] void checkRegion(const Readback& rb, u32 x, u32 y, const Surface& s, const char* label) {
     const Texels t = rb.at(x, y);
     const GBufferMrt expected = GBufferPacking::quantizeToStorage(GBufferPacking::pack(s.data));
     const Vec3 decoded = GBufferEncoding::decodeOctSigned({t.rt0.x, t.rt0.y});

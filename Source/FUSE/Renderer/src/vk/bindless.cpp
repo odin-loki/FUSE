@@ -332,7 +332,7 @@ void BindlessDescriptors::init(const VulkanDevice& device) {
     m_initialized = true;
 }
 
-void BindlessDescriptors::destroy(const VulkanDevice& device) {
+void BindlessDescriptors::destroy([[maybe_unused]] const VulkanDevice& device) {
 #if defined(FUSE_VULKAN_BACKEND)
     destroyVulkanBindlessDescriptors(device, m_pool, m_layout, m_set);
 #else

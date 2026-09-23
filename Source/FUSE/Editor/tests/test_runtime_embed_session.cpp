@@ -89,7 +89,7 @@ void testRuntimeViewportSwapchainRecreateStub() {
     host.runtimeViewport().requestResize(1024, 768);
     host.gameTick();
 
-    const fuse::editor::RuntimeEmbedSession& session = host.runtimeViewport().embedSession();
+    [[maybe_unused]] const fuse::editor::RuntimeEmbedSession& session = host.runtimeViewport().embedSession();
 #if defined(FUSE_VULKAN_BACKEND)
     // Recreate requests go through the GPU present path, which only exists with a real backend.
     expectTrue(session.swapchainRecreateAttempts >= 1u, "viewport resize queues swapchain recreate");

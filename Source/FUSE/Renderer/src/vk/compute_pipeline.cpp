@@ -13,7 +13,7 @@ namespace {
 
 constexpr u32 kVkObjectTypePipeline = 19;
 
-void snapshotPipelineCache(ComputePipelineInfo& info, PipelineCache* cache) {
+[[maybe_unused]] void snapshotPipelineCache(ComputePipelineInfo& info, PipelineCache* cache) {
     if (cache == nullptr) {
         return;
     }

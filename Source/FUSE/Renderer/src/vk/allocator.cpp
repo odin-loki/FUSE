@@ -46,7 +46,7 @@ namespace {
 
 void closeExportedHandle(void* handle);
 bool bufferNeedsHostMapping(MemoryUsage usage);
-const char* resolveDebugName(const char* name, const char* fallback);
+[[maybe_unused]] const char* resolveDebugName(const char* name, const char* fallback);
 
 #if defined(FUSE_VULKAN_BACKEND)
 bool hasUsage(BufferUsage usage, BufferUsage flag) {
@@ -712,7 +712,7 @@ bool bufferNeedsHostMapping(MemoryUsage usage) {
     return usage == MemoryUsage::CpuToGpu || usage == MemoryUsage::GpuToCpu || usage == MemoryUsage::CpuOnly;
 }
 
-const char* resolveDebugName(const char* name, const char* fallback) {
+[[maybe_unused]] const char* resolveDebugName(const char* name, const char* fallback) {
     return (name != nullptr && name[0] != '\0') ? name : fallback;
 }
 

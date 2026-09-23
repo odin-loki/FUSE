@@ -218,7 +218,7 @@ SharedTimeline SharedTimeline::create(void* vkDevice, void* vkPhysicalDevice) {
 #endif
 }
 
-void SharedTimeline::destroy(void* vkDevice) {
+void SharedTimeline::destroy([[maybe_unused]] void* vkDevice) {
 #if defined(FUSE_HAS_CUDA)
     if (cudaSemaphore != nullptr) {
         cudaDestroyExternalSemaphore(static_cast<cudaExternalSemaphore_t>(cudaSemaphore));
