@@ -64,10 +64,8 @@ f32 ChunkGrid::effective_load_radius() const {
     return m_desc.load_radius > 0.f ? m_desc.load_radius : m_desc.world_size * 0.75f;
 }
 
-AABB ChunkGrid::chunk_world_bounds(ivec2 coord, u32 lod) const {
-    const LodLevel& level = m_lod_levels[std::min(lod, static_cast<u32>(m_lod_levels.size()) - 1)];
-    const f32 chunk_size = m_desc.world_size / static_cast<f32>(m_chunks_per_axis) * level.world_stride;
-
+AABB ChunkGrid::chunk_world_bounds(ivec2 coord, u32 /*lod*/) const {
+    const f32 chunk_size = base_chunk_stride();
     const f32 min_x = static_cast<f32>(coord.x) * chunk_size;
     const f32 min_z = static_cast<f32>(coord.y) * chunk_size;
     return {
@@ -76,11 +74,38 @@ AABB ChunkGrid::chunk_world_bounds(ivec2 coord, u32 lod) const {
     };
 }
 
+u32 ChunkGrid::chunk_index_at(ivec2 coord) const {
+    if (coord.x < 0 || coord.y < 0 || static_cast<u32>(coord.x) >= m_chunks_per_axis ||
+        static_cast<u32>(coord.y) >= m_chunks_per_axis) {
+        return kInvalidChunkIndex;
+    }
+    return static_cast<u32>(coord.y) * m_chunks_per_axis + static_cast<u32>(coord.x);
+}
+
+void ChunkGrid::neighbor_lods(u32 chunk_index, u32 (&out)[4]) const {
+    const u32 own_lod = chunk_index < m_chunks.size() ? m_chunks[chunk_index].lod : 0u;
+    for (u32& lod : out) {
+        lod = own_lod;
+    }
+    if (chunk_index >= m_chunks.size()) {
+        return;
+    }
+    const ivec2 coord = m_chunks[chunk_index].chunk_coord;
+    const ivec2 offsets[4] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+    for (u32 e = 0; e < 4; ++e) {
+        const u32 neighbor = chunk_index_at({coord.x + offsets[e].x, coord.y + offsets[e].y});
+        if (neighbor != kInvalidChunkIndex && is_resident_state(m_chunks[neighbor].residency)) {
+            out[e] = m_chunks[neighbor].lod;
+        }
+    }
+}
+
 void ChunkGrid::update_lod(vec3 camera_pos, f32 /*dt*/) {
     if (!m_initialized) {
         return;
     }
 
+    m_last_camera_pos = camera_pos;
     drain_completed_requests_();
 
     for (TerrainChunk& chunk : m_chunks) {
@@ -400,7 +425,7 @@ void ChunkGrid::apply_completed_request_(const CompletedLodResidencyRequest& com
 
     if (completed.kind == LodResidencyRequestKind::Load) {
         if (chunk.residency == ChunkResidencyState::Loading) {
-            const f32 focus_distance = chunk_stream_distance_(chunk.chunk_coord, {0.f, 0.f, 0.f});
+            const f32 focus_distance = chunk_stream_distance_(chunk.chunk_coord, m_last_camera_pos);
             execute_load_(completed.chunk_index, chunk, focus_distance);
             sync_morph_after_residency(chunk, completed.morph_snapshot);
         }

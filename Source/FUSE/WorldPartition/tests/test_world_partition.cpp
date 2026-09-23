@@ -801,7 +801,7 @@ void testInvalidGridCoordSentinel() {
     expectTrue(!fuse::world_partition::is_valid_grid_coord(fuse::world_partition::kInvalidGridCoord),
                "invalid sentinel coord is not valid");
     expectTrue(fuse::world_partition::is_valid_grid_coord({0, 0}), "origin coord is valid");
-    expectTrue(!fuse::world_partition::is_valid_grid_coord({-1, 0}), "negative x is invalid");
+    expectTrue(fuse::world_partition::is_valid_grid_coord({-1, 0}), "negative x is a valid cell");
 }
 
 void testPickEvictionCandidateGuarded() {
@@ -1898,7 +1898,8 @@ void testInvalidCoordResidencyEarlyOuts() {
     const fuse::world_partition::GridCoord negative{-1, 0};
 
     expectTrue(!residency.add(invalid, 100.f), "add rejects invalid coord");
-    expectTrue(!residency.add(negative, 100.f), "add rejects negative coord");
+    expectTrue(residency.add(negative, 100.f), "add accepts negative coord (grid extends in every direction)");
+    expectTrue(residency.remove(negative), "negative coord removes cleanly");
     expectTrue(!residency.remove(invalid), "remove rejects invalid coord");
     expectTrue(!residency.update_focus_distance(invalid, 50.f), "update rejects invalid coord");
     expectTrue(!fuse::world_partition::try_add_resident(residency, invalid, 100.f),
@@ -1931,16 +1932,20 @@ void testWorldPartitionAsyncEnqueueFlushCarryover() {
         desc.budget.max_async_in_flight = 1;
         desc.budget.max_loads_per_tick = 2;
         desc.max_loaded_cells = 4;
+        desc.stream_in_distance = 200.f;
+        desc.stream_out_distance = 400.f;
         partition.init(desc);
 
+        // Exactly two cell centres ({0,0} and {1,0}) lie within stream-in of this camera. force_load is
+        // synchronous by contract, so drive the async path through update().
         const fuse::world_partition::GridCoord low{0, 0};
         const fuse::world_partition::GridCoord high{1, 0};
-        partition.force_load(low);
-        partition.force_load(high);
+        partition.update({256.f, 0.f, 128.f, 0.f});
 
         expectTrue(partition.cell_residency(low) == fuse::world_partition::CellResidencyState::Loading ||
                        partition.cell_residency(high) == fuse::world_partition::CellResidencyState::Loading,
-                   "async force_load enqueues work");
+                   "async streaming enqueues work");
+        expectTrue(partition.in_flight_request_count() <= 1u, "in-flight cap of one holds the second load back");
 
         for (int frame = 0; frame < 64 && partition.loaded_cell_count() < 2u; ++frame) {
             partition.drain_completed_requests();

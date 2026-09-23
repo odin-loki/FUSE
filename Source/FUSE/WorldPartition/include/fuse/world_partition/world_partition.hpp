@@ -2,16 +2,25 @@
 
 #include <fuse/ecs/math/vec.hpp>
 #include <fuse/types.hpp>
+#include <fuse/world_partition/cell_file.hpp>
 #include <fuse/world_partition/grid_cell.hpp>
 #include <fuse/world_partition/residency_set.hpp>
 #include <fuse/world_partition/streaming_budget.hpp>
 #include <fuse/world_partition/streaming_request_queue.hpp>
 #include <fuse/world_partition/streaming_volume.hpp>
 
+#include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
+namespace fuse::ecs {
+class Registry;
+} // namespace fuse::ecs
+
 namespace fuse::world_partition {
+
+struct CellStagingStore;
 
 struct WorldPartitionDesc {
     f32 cell_size = 256.f;
@@ -22,6 +31,9 @@ struct WorldPartitionDesc {
     StreamingBudget budget{};
     EvictionPolicy eviction_policy = EvictionPolicy::DistanceFromFocus;
     bool async_loading = true;
+    /// Directory holding `cells/cell_<x>_<y>.fusecell` files. Empty = no disk I/O (stub cells).
+    /// Worker threads read and decode cell files; entities are spawned on the game thread.
+    std::string cell_root;
 };
 
 /// Load/unload callback hooks — production wiring supplies scene + asset I/O.
@@ -40,10 +52,16 @@ public:
 
     void set_callbacks(CellLoadCallbacks callbacks) { m_callbacks = callbacks; }
 
+    /// Registry that receives entities from loaded cell files (non-owning; must outlive the
+    /// partition or be detached with nullptr). Unloading a cell destroys its entities.
+    void set_registry(fuse::ecs::Registry* registry) { m_registry = registry; }
+
     /// Re-evaluate streaming volume and advance load/unload queues.
     void update(fuse::ecs::vec3 camera_pos);
 
-    void force_load(GridCoord coord);
+    /// Load a cell synchronously on the calling thread (teleport path). On return the cell is Resident
+    /// with its entities spawned, unless the budget rejected it or its file is corrupt (returns false).
+    bool force_load(GridCoord coord);
     void force_unload(GridCoord coord);
 
     [[nodiscard]] bool cell_loaded(GridCoord coord) const;
@@ -55,9 +73,16 @@ public:
     [[nodiscard]] u32 queued_load_count() const;
     [[nodiscard]] u32 queued_unload_count() const;
     [[nodiscard]] u32 rejected_load_count() const;
+    /// Loads that failed because the cell file was corrupt.
+    [[nodiscard]] u32 failed_load_count() const { return m_failed_loads; }
+    /// Resident plus in-progress load footprint used for budget admission.
+    [[nodiscard]] u32 committed_cell_count() const;
+    [[nodiscard]] u64 committed_byte_count() const;
     [[nodiscard]] const StreamingBudgetCounters& budget_counters() const { return m_budget_counters; }
     [[nodiscard]] u32 in_flight_request_count() const;
     [[nodiscard]] u32 pending_completion_count() const;
+    /// True when no load/unload is queued, buffered for submission, in flight or awaiting drain.
+    [[nodiscard]] bool streaming_idle() const;
     [[nodiscard]] u32 current_tick() const { return m_tick; }
     [[nodiscard]] const WorldCell* find_cell(GridCoord coord) const;
     [[nodiscard]] const WorldPartitionDesc& desc() const { return m_desc; }
@@ -88,7 +113,11 @@ private:
     [[nodiscard]] f32 eviction_score_for_(const WorldCell& cell) const;
     [[nodiscard]] f32 budget_eviction_score_for_(const WorldCell& cell) const;
     void drain_completed_requests_();
-    void execute_load_(WorldCell& cell);
+    bool execute_load_(WorldCell& cell);
+    [[nodiscard]] bool take_staged_(GridCoord coord, CellFileData& out, u64& bytes);
+    void spawn_cell_entities_(WorldCell& cell, const CellFileData& data);
+    void destroy_cell_entities_(WorldCell& cell);
+    [[nodiscard]] u64 incoming_bytes_for_(const WorldCell& cell) const;
     void execute_unload_(WorldCell& cell);
     void apply_completed_request_(const CompletedStreamingRequest& completed);
     void collect_stream_candidates_(fuse::ecs::vec3 camera_pos);
@@ -107,6 +136,10 @@ private:
     StreamingRequestQueue m_async_queue{};
     ResidencySet m_residency_set{};
     std::vector<CompletedStreamingRequest> m_completed_batch_;
+    std::vector<LoadRequest> m_candidates_;
+    std::shared_ptr<CellStagingStore> m_staging;
+    fuse::ecs::Registry* m_registry = nullptr;
+    u32 m_failed_loads = 0;
 };
 
 } // namespace fuse::world_partition
