@@ -12,7 +12,12 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <type_traits>
 #include <vector>
+
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#include <intrin.h>
+#endif
 
 namespace fuse::jobs {
 
@@ -24,7 +29,113 @@ thread_local WorkerState* g_workerState = nullptr;
 /// Upper bound on job fibers per worker. Each parked wait holds one fiber; beyond this the worker
 /// stops taking new jobs and only resumes parked ones (64 KiB stacks -> 8 MiB per worker max).
 constexpr std::size_t kMaxFibersPerWorker = 128;
+
+/// How long an idle worker polls for new work before sleeping on the condition variable. A futex
+/// wakeup costs tens of microseconds on virtualised hosts, so back-to-back fork-joins (a frame's
+/// systems) find the workers still awake; an idle pool sleeps after this window.
+constexpr std::chrono::microseconds kWorkerSpin{100};
+
+/// How long a parallel_for caller polls for in-flight chunks before parking / sleeping.
+constexpr std::chrono::microseconds kCallerSpin{200};
+
+/// Safety net for a sleeping worker; wakeups are explicit (see JobScheduler::Impl::wakeSleepers).
+constexpr std::chrono::milliseconds kWorkerSleep{10};
+
+inline void cpuRelax() {
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+    _mm_pause();
+#elif defined(__x86_64__) || defined(__i386__)
+    __builtin_ia32_pause();
+#elif defined(__aarch64__) || defined(__arm__)
+    __asm__ __volatile__("yield");
+#endif
+}
+
+/// Poll `ready` for up to `budget`, yielding the core between polls so an oversubscribed machine
+/// still runs the thread being waited on. Returns true once `ready` holds.
+template <typename Ready>
+bool spinUntil(Ready&& ready, std::chrono::microseconds budget) {
+    for (u32 i = 0; i < 32; ++i) {
+        if (ready()) {
+            return true;
+        }
+        cpuRelax();
+    }
+    const auto deadline = std::chrono::steady_clock::now() + budget;
+    for (u32 i = 1;; ++i) {
+        if (ready()) {
+            return true;
+        }
+        std::this_thread::yield();
+        if ((i & 7u) == 0u && std::chrono::steady_clock::now() >= deadline) {
+            return ready();
+        }
+    }
+}
 } // namespace
+
+/// Pooled fork-join record for JobScheduler::parallel_for. The caller and up to one helper job per
+/// worker claim chunks from `claim`, which packs a use generation with the number of unclaimed
+/// chunks. Helpers carry the generation they were issued for, so a helper that only starts after
+/// the caller returned (every chunk already claimed and done) sees a finished or newer generation
+/// and leaves without touching the record's fields or the caller's stack. The caller therefore
+/// returns as soon as its chunks complete and the record is recycled straight away.
+struct ParallelForTask {
+    static constexpr u32 kChunkBits = 24;
+    static constexpr u64 kChunkMask = (u64{1} << kChunkBits) - 1u;
+    /// Largest chunk count per dispatch; larger ranges widen the grain (bodies see the same indices).
+    static constexpr u32 kMaxChunks = static_cast<u32>(kChunkMask);
+    static constexpr u64 kGenerationMask = (u64{1} << (64u - kChunkBits)) - 1u;
+
+    /// (generation << kChunkBits) | unclaimed chunks.
+    std::atomic<u64> claim{0};
+    std::atomic<u32> pendingChunks{0};
+    u64 generation = 0;
+    u32 begin = 0;
+    u32 end = 0;
+    u32 grainSize = 1;
+    u32 chunkCount = 0;
+    ParallelForRangeFn invoke = nullptr;
+    const void* body = nullptr;
+    std::mutex doneMutex;
+    std::condition_variable doneCv;
+    ParallelForTask* nextFree = nullptr;
+    /// The owning scheduler's count of helper jobs queued but not yet started.
+    std::atomic<u32>* queuedHelpers = nullptr;
+
+    /// Entry point of a helper job issued for use `gen`.
+    void runHelper(u64 gen) {
+        queuedHelpers->fetch_sub(1, std::memory_order_relaxed);
+        runChunks(gen);
+    }
+
+    /// Claim and run chunks of use `gen` until none are left.
+    void runChunks(u64 gen) {
+        u64 word = claim.load(std::memory_order_acquire);
+        for (;;) {
+            const u64 unclaimed = word & kChunkMask;
+            if ((word >> kChunkBits) != gen || unclaimed == 0u) {
+                return;
+            }
+            // acquire on success: the fields below were published with this generation's word.
+            if (!claim.compare_exchange_weak(word, word - 1u, std::memory_order_acq_rel, std::memory_order_acquire)) {
+                continue;
+            }
+            const u32 chunk = chunkCount - static_cast<u32>(unclaimed);
+            const u64 chunkBegin = static_cast<u64>(begin) + static_cast<u64>(chunk) * grainSize;
+            const u64 chunkEnd = chunkBegin + grainSize < end ? chunkBegin + grainSize : end;
+            invoke(body, static_cast<u32>(chunkBegin), static_cast<u32>(chunkEnd));
+            // acq_rel: the caller observing zero sees every write the chunk bodies made. The record
+            // outlives this call (it is pooled), so notifying after a possible reuse is harmless.
+            if (pendingChunks.fetch_sub(1, std::memory_order_acq_rel) == 1u) {
+                // A waiting caller checks pendingChunks under doneMutex before sleeping.
+                std::lock_guard<std::mutex> lock(doneMutex);
+                doneCv.notify_all();
+            }
+            word = claim.load(std::memory_order_acquire);
+        }
+    }
+};
 
 /// Growable FIFO ring. Steady-state push/pop never touches the heap (capacity only grows), which
 /// keeps job submit -> execute allocation-free once the queues are warm.
@@ -79,7 +190,8 @@ struct JobFiber {
     WorkerState* owner = nullptr;
     platform::UniqueFiber context;
     JobScheduler::JobFn job;
-    JobCounter* waitingOn = nullptr;
+    /// Parked until this word reads zero (a JobCounter or a parallel_for's pending chunks).
+    const std::atomic<u32>* waitingOn = nullptr;
     bool finished = false;
 };
 
@@ -147,7 +259,7 @@ struct WorkerState {
     int resumeReadyParked() {
         for (std::size_t i = 0; i < parked.size(); ++i) {
             JobFiber* fiber = parked[i];
-            if (fiber->waitingOn != nullptr && !fiber->waitingOn->isComplete()) {
+            if (fiber->waitingOn != nullptr && fiber->waitingOn->load(std::memory_order_acquire) != 0u) {
                 continue;
             }
             parked[i] = parked.back();
@@ -157,10 +269,10 @@ struct WorkerState {
         return 0;
     }
 
-    /// Called on a job fiber: park until the scheduler fiber sees `counter` complete.
-    void yieldOnCounter(JobCounter* counter) {
+    /// Called on a job fiber: park until the scheduler fiber sees `*word` reach zero.
+    void yieldOnZero(const std::atomic<u32>* word) {
         JobFiber* self = current;
-        self->waitingOn = counter;
+        self->waitingOn = word;
         platform::fiberSwap(self->context.get(), schedulerFiber.get());
         self->waitingOn = nullptr;
     }
@@ -178,16 +290,20 @@ bool isWorkerThread() {
     return g_workerState != nullptr;
 }
 
-bool workerWaitOnCounter(JobCounter* counter) {
+bool workerWaitOnZero(const std::atomic<u32>* word) {
     WorkerState* state = g_workerState;
     if (!state || !state->schedulerFiber || !state->current) {
         return false;
     }
 
-    while (!counter->isComplete()) {
-        state->yieldOnCounter(counter);
+    while (word->load(std::memory_order_acquire) != 0u) {
+        state->yieldOnZero(word);
     }
     return true;
+}
+
+bool workerWaitOnCounter(JobCounter* counter) {
+    return workerWaitOnZero(&counter->m_remaining);
 }
 
 WorkerState* currentWorkerState() {
@@ -210,16 +326,98 @@ struct JobScheduler::Impl {
     std::condition_variable waitCv;
     std::atomic<bool> stop{false};
     std::atomic<u32> activeJobs{0};
-    /// Jobs sitting in any queue. Incremented under waitMutex before notify so a worker that just
-    /// found its queues empty cannot miss the wakeup and sleep out the 1 ms wait (lost-wakeup race).
+    /// Jobs sitting in any queue. Raised (seq_cst) before a job is published; see `sleepers`.
     std::atomic<u32> queued{0};
+    /// Workers blocked (or about to block) on waitCv. Paired with `queued` in a store-load
+    /// handshake (both seq_cst): a pusher that reads zero here is guaranteed the sleeper sees its
+    /// job, so the common submit path skips waitMutex and the futex entirely.
+    std::atomic<u32> sleepers{0};
     std::atomic<bool> useFibers{false};
     std::atomic<u32> roundRobin{0};
     u32 workerCount = 0;
 
+    /// parallel_for records, recycled through an intrusive free list (grows only during warm-up).
+    std::mutex taskPoolMutex;
+    detail::ParallelForTask* freeTasks = nullptr;
+    std::vector<std::unique_ptr<detail::ParallelForTask>> tasks;
+    /// parallel_for helper jobs queued but not yet started. Capped so a caller that outpaces busy or
+    /// sleeping workers (it runs the chunks itself) cannot pile up no-op helpers and grow the queues.
+    std::atomic<u32> queuedHelpers{0};
+
     void finishJob() {
+        // Nothing blocks on activeJobs (drain() polls), so completion needs no wakeup.
         activeJobs.fetch_sub(1, std::memory_order_acq_rel);
-        waitCv.notify_all();
+    }
+
+    bool hasQueuedWork() const {
+        return stop.load(std::memory_order_acquire) || queued.load(std::memory_order_seq_cst) > 0u;
+    }
+
+    /// Wake up to `count` sleeping workers after `queued` was raised.
+    void wakeSleepers(u32 count) {
+        if (count == 0u) {
+            return;
+        }
+        const u32 sleeping = sleepers.load(std::memory_order_seq_cst);
+        if (sleeping == 0u) {
+            return;
+        }
+        {
+            // A sleeper holds waitMutex from registering in `sleepers` until it blocks, so once we
+            // hold it here every registered sleeper is either blocked or will re-check `queued`.
+            std::lock_guard<std::mutex> lock(waitMutex);
+        }
+        if (count >= sleeping) {
+            waitCv.notify_all();
+        } else {
+            for (u32 i = 0; i < count; ++i) {
+                waitCv.notify_one();
+            }
+        }
+    }
+
+    /// Returns true when woken for work, false on the safety-net timeout.
+    bool sleepUntilWork() {
+        std::unique_lock<std::mutex> lock(waitMutex);
+        sleepers.fetch_add(1, std::memory_order_seq_cst);
+        const bool woken = waitCv.wait_for(lock, detail::kWorkerSleep, [this] { return hasQueuedWork(); });
+        sleepers.fetch_sub(1, std::memory_order_relaxed);
+        return woken;
+    }
+
+    detail::ParallelForTask* createTask() {
+        tasks.push_back(std::make_unique<detail::ParallelForTask>());
+        tasks.back()->queuedHelpers = &queuedHelpers;
+        return tasks.back().get();
+    }
+
+    /// Pre-size the record pool for the usual nesting depth (every worker plus outside callers
+    /// running a nested parallel_for) so the first frames do not grow it.
+    void reserveTasks(u32 count) {
+        std::lock_guard<std::mutex> lock(taskPoolMutex);
+        tasks.reserve(count);
+        for (u32 i = 0; i < count; ++i) {
+            detail::ParallelForTask* task = createTask();
+            task->nextFree = freeTasks;
+            freeTasks = task;
+        }
+    }
+
+    detail::ParallelForTask* acquireTask() {
+        std::lock_guard<std::mutex> lock(taskPoolMutex);
+        if (freeTasks != nullptr) {
+            detail::ParallelForTask* task = freeTasks;
+            freeTasks = task->nextFree;
+            task->nextFree = nullptr;
+            return task;
+        }
+        return createTask();
+    }
+
+    void releaseTask(detail::ParallelForTask* task) {
+        std::lock_guard<std::mutex> lock(taskPoolMutex);
+        task->nextFree = freeTasks;
+        freeTasks = task;
     }
 
     void workerLoop(u32 index) {
@@ -229,6 +427,10 @@ struct JobScheduler::Impl {
         bool fibersEnabled = useFibers.load(std::memory_order_acquire);
         if (fibersEnabled) {
             state.fiberStackBytes = platform::recommendedFiberStackBytes();
+            // Bookkeeping never exceeds the fiber cap; reserving it keeps park/resume heap-free.
+            state.fibers.reserve(detail::kMaxFibersPerWorker);
+            state.freeFibers.reserve(detail::kMaxFibersPerWorker);
+            state.parked.reserve(detail::kMaxFibersPerWorker);
             state.schedulerFiber.reset(platform::fiberAllocateContext());
             if (state.schedulerFiber) {
                 platform::fiberCaptureCurrent(state.schedulerFiber.get());
@@ -242,6 +444,9 @@ struct JobScheduler::Impl {
             }
         }
 
+        // Spin before sleeping only after real activity; a timed-out sleep goes straight back to
+        // sleep so an idle pool costs a few wakeups per second, not a spin window per timeout.
+        bool spinBeforeSleep = true;
         while (!stop.load(std::memory_order_acquire)) {
             if (fibersEnabled && !state.parked.empty()) {
                 const int resumed = state.resumeReadyParked();
@@ -261,13 +466,15 @@ struct JobScheduler::Impl {
                     std::this_thread::yield();
                     continue;
                 }
-                std::unique_lock<std::mutex> lock(waitMutex);
-                waitCv.wait_for(lock, std::chrono::milliseconds(1), [this] {
-                    return stop.load(std::memory_order_acquire) || queued.load(std::memory_order_acquire) > 0u;
-                });
+                // Stay awake briefly: the next fork-join usually arrives within microseconds.
+                if (spinBeforeSleep && detail::spinUntil([this] { return hasQueuedWork(); }, detail::kWorkerSpin)) {
+                    continue;
+                }
+                spinBeforeSleep = sleepUntilWork();
                 continue;
             }
             queued.fetch_sub(1, std::memory_order_acq_rel);
+            spinBeforeSleep = true;
 
             activeJobs.fetch_add(1, std::memory_order_acq_rel);
             detail::JobFiber* fiber = fibersEnabled ? state.acquireFiber() : nullptr;
@@ -345,17 +552,78 @@ struct JobScheduler::Impl {
     }
 
     void pushJob(JobFn job, JobPriority priority) {
+        // Count before publishing so a worker that pops the job never drives `queued` below zero.
+        queued.fetch_add(1, std::memory_order_seq_cst);
         const u32 target = roundRobin.fetch_add(1, std::memory_order_relaxed) % workerCount;
         {
             std::lock_guard<std::mutex> lock(queueMutexes[target]);
             auto& dest = isUrgent(priority) ? queues[target].high : queues[target].normal;
             dest.pushBack(std::move(job));
         }
-        {
-            std::lock_guard<std::mutex> lock(waitMutex);
-            queued.fetch_add(1, std::memory_order_acq_rel);
+        wakeSleepers(1);
+    }
+
+    /// Reserve up to `wanted` helper slots under the queued-helper cap (2 per worker).
+    u32 reserveHelpers(u32 wanted) {
+        const u32 cap = 2u * workerCount;
+        u32 current = queuedHelpers.load(std::memory_order_relaxed);
+        for (;;) {
+            const u32 available = current < cap ? cap - current : 0u;
+            const u32 granted = wanted < available ? wanted : available;
+            if (granted == 0u ||
+                queuedHelpers.compare_exchange_weak(current, current + granted, std::memory_order_relaxed)) {
+                return granted;
+            }
         }
-        waitCv.notify_one();
+    }
+
+    void parallelFor(u32 begin, u32 end, u32 grainSize, detail::ParallelForRangeFn invoke, const void* body) {
+        const u64 range = static_cast<u64>(end) - begin;
+        if ((range + grainSize - 1u) / grainSize > detail::ParallelForTask::kMaxChunks) {
+            grainSize = static_cast<u32>((range + detail::ParallelForTask::kMaxChunks - 1u) /
+                                         detail::ParallelForTask::kMaxChunks);
+        }
+        const u32 chunkCount = static_cast<u32>((range + grainSize - 1u) / grainSize);
+        const u32 wanted = (chunkCount - 1u < workerCount) ? chunkCount - 1u : workerCount;
+        const u32 helpers = reserveHelpers(wanted);
+
+        detail::ParallelForTask* task = acquireTask();
+        // Wraps after 2^40 uses of one record; a helper would need to sit queued that long.
+        task->generation = (task->generation + 1u) & detail::ParallelForTask::kGenerationMask;
+        const u64 gen = task->generation;
+        task->begin = begin;
+        task->end = end;
+        task->grainSize = grainSize;
+        task->chunkCount = chunkCount;
+        task->invoke = invoke;
+        task->body = body;
+        task->pendingChunks.store(chunkCount, std::memory_order_relaxed);
+        task->claim.store((gen << detail::ParallelForTask::kChunkBits) | chunkCount, std::memory_order_release);
+
+        // Helpers go to distinct queues so idle workers pick them up without stealing. The queue
+        // mutex publishes the task fields above to whichever worker runs the helper.
+        queued.fetch_add(helpers, std::memory_order_seq_cst);
+        for (u32 h = 0; h < helpers; ++h) {
+            auto helper = [task, gen]() { task->runHelper(gen); };
+            static_assert(std::is_trivially_copyable<decltype(helper)>::value && sizeof(helper) <= 2 * sizeof(void*),
+                          "parallel_for helper job must fit std::function's inline storage");
+            const u32 target = roundRobin.fetch_add(1, std::memory_order_relaxed) % workerCount;
+            std::lock_guard<std::mutex> lock(queueMutexes[target]);
+            queues[target].high.pushBack(JobFn(helper));
+        }
+        wakeSleepers(helpers);
+
+        // The caller works too: with every worker busy or asleep it simply runs all chunks itself,
+        // so parallel_for never depends on a queued job being picked up.
+        task->runChunks(gen);
+
+        const auto chunksDone = [task] { return task->pendingChunks.load(std::memory_order_acquire) == 0u; };
+        if (!chunksDone() && !detail::spinUntil(chunksDone, detail::kCallerSpin) &&
+            !detail::workerWaitOnZero(&task->pendingChunks)) {
+            std::unique_lock<std::mutex> lock(task->doneMutex);
+            task->doneCv.wait(lock, chunksDone);
+        }
+        releaseTask(task);
     }
 
     void drain() {
@@ -408,6 +676,7 @@ void JobScheduler::initialize(u32 workerCount) {
     m_impl->queueMutexes = std::vector<std::mutex>(workerCount);
     m_impl->workerStates.resize(workerCount);
     m_impl->useFibers.store(platform::cooperativeFibersAvailable(), std::memory_order_release);
+    m_impl->reserveTasks(16u + 8u * workerCount);
 
     for (u32 i = 0; i < workerCount; ++i) {
         m_impl->workerStates[i] = std::make_unique<detail::WorkerState>();
@@ -465,6 +734,15 @@ void JobScheduler::drainActiveJobs() {
     if (m_impl) {
         m_impl->drain();
     }
+}
+
+void JobScheduler::parallelForDispatch(u32 begin, u32 end, u32 grainSize, detail::ParallelForRangeFn invoke,
+                                       const void* body) {
+    if (!m_impl) {
+        invoke(body, begin, end);
+        return;
+    }
+    m_impl->parallelFor(begin, end, grainSize, invoke, body);
 }
 
 void JobScheduler::submit(JobFn job) {

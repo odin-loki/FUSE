@@ -207,6 +207,16 @@ fuse_core_apply_tsan(fuse_core_b1_jobs_gates)
 add_test(NAME fuse_core_b1_jobs_gates COMMAND fuse_core_b1_jobs_gates)
 set_tests_properties(fuse_core_b1_jobs_gates PROPERTIES RUN_SERIAL TRUE LABELS "gate" TIMEOUT 900)
 
+# Steady-state parallel_for is heap-free on every thread; also reports dispatch latency percentiles
+# (median bound enforced only in optimized, unsanitized builds).
+add_executable(fuse_core_b1_parallel_for_alloc_gates
+    test_b1_parallel_for_alloc_gates.cpp
+)
+target_link_libraries(fuse_core_b1_parallel_for_alloc_gates PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b1_parallel_for_alloc_gates)
+add_test(NAME fuse_core_b1_parallel_for_alloc_gates COMMAND fuse_core_b1_parallel_for_alloc_gates)
+set_tests_properties(fuse_core_b1_parallel_for_alloc_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate" TIMEOUT 600)
+
 add_executable(fuse_core_b1_memory_gates
     test_b1_memory_gates.cpp
 )
