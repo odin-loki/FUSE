@@ -4,6 +4,9 @@
 //  - adding/removing entities mid-frame does not corrupt the BVH or draw list
 //  - 10k entity transform update < 1 ms on all cores via each_parallel (optimised builds)
 //  - full scene build (cull -> draw list -> SDF object buffer) < 2 ms for 1k entities
+// Timing budgets are only enforced in optimised, uninstrumented runs
+// (fuse::core::timingBudgetsEnforced(): off under sanitizers and valgrind); timings are always printed.
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/ecs/components/camera.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
@@ -32,6 +35,22 @@ void expectTrue(bool condition, const char* message) {
 }
 
 using fuse::ecs::EntityID;
+
+/// Wall-clock budgets only hold in optimised builds that are not instrumented.
+bool enforceBudgets() {
+#if defined(NDEBUG)
+    static const bool enforced = [] {
+        const bool on = fuse::core::timingBudgetsEnforced();
+        if (!on) {
+            std::printf("timing budgets not enforced (sanitizer build or instrumented run)\n");
+        }
+        return on;
+    }();
+    return enforced;
+#else
+    return false;
+#endif
+}
 
 double millisSince(std::chrono::steady_clock::time_point start) {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -125,10 +144,10 @@ void testBuildAndCull() {
     std::printf("scene: steady update+build median %.3f ms, BVH rebuilds %u\n", samples[25],
                 scene.spatialBvhRebuildCount());
     expectTrue(scene.spatialBvhRebuildCount() == 1u, "steady frames refit instead of rebuilding");
-#if defined(NDEBUG)
-    expectTrue(firstBuildMs < 1.0, "1000 mesh+SDF entities build render data (incl. BVH build) < 1 ms");
-    expectTrue(samples[25] < 2.0, "full scene build for 1k entities < 2 ms");
-#endif
+    if (enforceBudgets()) {
+        expectTrue(firstBuildMs < 1.0, "1000 mesh+SDF entities build render data (incl. BVH build) < 1 ms");
+        expectTrue(samples[25] < 2.0, "full scene build for 1k entities < 2 ms");
+    }
 
     // Mid-frame edits: destroy a third, spawn new ones, move some — BVH and draw list stay exact.
     std::vector<EntityID> all;
@@ -184,9 +203,9 @@ void testTransformUpdate10k() {
     reg.each<fuse::ecs::Transform>([&](EntityID, fuse::ecs::Transform& t) { allClean = allClean && !t.dirty; });
     std::printf("transform update 10k (4 workers): median %.3f ms\n", samples[10]);
     expectTrue(allClean, "every dirty transform recomputed");
-#if defined(NDEBUG)
-    expectTrue(samples[10] < 1.0, "10k entity transform update < 1 ms via each_parallel");
-#endif
+    if (enforceBudgets()) {
+        expectTrue(samples[10] < 1.0, "10k entity transform update < 1 ms via each_parallel");
+    }
     scheduler.shutdown();
 }
 

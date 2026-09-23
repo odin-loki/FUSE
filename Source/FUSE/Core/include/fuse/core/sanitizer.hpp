@@ -1,6 +1,8 @@
 #pragma once
 // Sanitizer build detection for tests that cannot run meaningfully under
-// ASan/UBSan (fork-crash probes, wall-clock timing gates, RSS budgets).
+// ASan/UBSan (fork-crash probes, wall-clock timing gates, RSS budgets), plus
+// timingBudgetsEnforced() for wall-clock gates that must be skipped under any
+// instrumentation (sanitizers, valgrind).
 //
 // FUSE_SANITIZE_ADDRESS / FUSE_SANITIZE_UNDEFINED are defined 0/1 by
 // fuse_sanitize_finalize() (cmake/FuseSanitizers.cmake) on every FUSE target
@@ -33,8 +35,59 @@
 
 #define FUSE_SANITIZER_BUILD (FUSE_SANITIZE_ADDRESS || FUSE_SANITIZE_UNDEFINED)
 
+// TSan (FUSE_CORE_ENABLE_TSAN) is not part of FUSE_SANITIZER_BUILD, but it
+// still slows code down far too much for wall-clock budgets.
+#if !defined(FUSE_SANITIZE_THREAD)
+#  if defined(__SANITIZE_THREAD__)
+#    define FUSE_SANITIZE_THREAD 1
+#  elif defined(__has_feature)
+#    if __has_feature(thread_sanitizer)
+#      define FUSE_SANITIZE_THREAD 1
+#    endif
+#  endif
+#endif
+#if !defined(FUSE_SANITIZE_THREAD)
+#  define FUSE_SANITIZE_THREAD 0
+#endif
+
+// valgrind client requests are optional: only used when the header exists.
+#if defined(__has_include)
+#  if __has_include(<valgrind/valgrind.h>)
+#    include <valgrind/valgrind.h>
+#    define FUSE_HAVE_VALGRIND_H 1
+#  endif
+#endif
+
+#include <cstdlib>
+
 namespace fuse::core {
 
 inline constexpr bool kSanitizerBuild = FUSE_SANITIZER_BUILD != 0;
+
+/// True when the binary itself is instrumented (ASan, UBSan or TSan).
+inline constexpr bool kInstrumentedBuild = kSanitizerBuild || FUSE_SANITIZE_THREAD != 0;
+
+/// Name of the environment variable set on instrumented test runs (cmake/FuseValgrind.cmake
+/// sets FUSE_INSTRUMENTED_RUN=valgrind on every valgrind.* ctest).
+inline constexpr const char* kInstrumentedRunEnv = "FUSE_INSTRUMENTED_RUN";
+
+/// True when the process is running under an external instrumentation tool
+/// (valgrind detected directly, or FUSE_INSTRUMENTED_RUN set to a non-empty value other than "0").
+inline bool instrumentedRun() {
+#if defined(FUSE_HAVE_VALGRIND_H)
+    if (RUNNING_ON_VALGRIND) {
+        return true;
+    }
+#endif
+    const char* env = std::getenv(kInstrumentedRunEnv);
+    return env != nullptr && env[0] != '\0' && !(env[0] == '0' && env[1] == '\0');
+}
+
+/// Whether tests should enforce wall-clock timing budgets (e.g. "build < 2 ms").
+/// False in sanitizer builds and under valgrind/other instrumented runs; tests must still
+/// run their correctness checks and print measured times either way.
+inline bool timingBudgetsEnforced() {
+    return !kInstrumentedBuild && !instrumentedRun();
+}
 
 } // namespace fuse::core

@@ -4,7 +4,8 @@
 # existing test executables (fuse_core unit tests, ECS + scene tests, fuse_runtime_smoke). Each twin
 # runs the binary under memcheck with --leak-check=full and fails (exit 1) on any memory error or
 # any definitely/indirectly lost block. Third-party noise is silenced only through the checked-in,
-# commented suppression file cmake/valgrind/fuse.supp.
+# commented suppression file cmake/valgrind/fuse.supp. Twins run with FUSE_INSTRUMENTED_RUN=valgrind so
+# wall-clock budget asserts are skipped (fuse::core::timingBudgetsEnforced() in fuse/core/sanitizer.hpp).
 #
 #   ctest --test-dir build/fuse-debug -L valgrind            # run the leak gate
 #   ctest --test-dir build/fuse-debug -LE valgrind           # everything else, without valgrind
@@ -59,7 +60,10 @@ function(fuse_add_valgrind_test name target)
     add_test(NAME valgrind.${name}
              COMMAND ${FUSE_VALGRIND_EXECUTABLE} ${FUSE_VALGRIND_ARGS} $<TARGET_FILE:${target}> ${_vg_ARGS}
              WORKING_DIRECTORY "${_vg_WORKING_DIRECTORY}")
-    set_tests_properties(valgrind.${name} PROPERTIES LABELS "valgrind" TIMEOUT ${_vg_TIMEOUT})
+    # FUSE_INSTRUMENTED_RUN tells tests (fuse::core::timingBudgetsEnforced()) to skip wall-clock
+    # budgets: memcheck slows code ~50x, so only correctness + leak checks are meaningful here.
+    set_tests_properties(valgrind.${name} PROPERTIES LABELS "valgrind" TIMEOUT ${_vg_TIMEOUT}
+                         ENVIRONMENT "FUSE_INSTRUMENTED_RUN=valgrind")
 endfunction()
 
 function(fuse_add_valgrind_tests)
