@@ -53,3 +53,16 @@ add_test(NAME fuse_world_converter COMMAND fuse_world_converter_tests)
 add_test(NAME fuse_assets_b79 COMMAND fuse_asset_pipeline_tests)
 add_test(NAME fuse_cook_cache_b79 COMMAND fuse_cook_cache_tests)
 add_test(NAME fuse_cook_dependency_graph_b79 COMMAND fuse_cook_dependency_graph_tests)
+
+add_executable(fuse_b7_cook_gates_tests
+    test_b7_cook_gates.cpp
+)
+target_link_libraries(fuse_b7_cook_gates_tests PRIVATE fuse_project fuse_cook_stubs fuse_core)
+target_include_directories(fuse_b7_cook_gates_tests PRIVATE
+    "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/stb"
+)
+target_compile_definitions(fuse_b7_cook_gates_tests PRIVATE
+    FUSE_SOURCE_DIR="${FUSE_SOURCE_DIR_CMAKE}"
+)
+add_test(NAME fuse_b7_cook_gates COMMAND fuse_b7_cook_gates_tests)
+set_tests_properties(fuse_b7_cook_gates PROPERTIES LABELS "gate")

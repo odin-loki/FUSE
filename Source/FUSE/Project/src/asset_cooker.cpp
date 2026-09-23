@@ -1,6 +1,8 @@
 #include <fuse/project/asset_cooker.hpp>
 
 #include <fuse/cook/cook_stub_writer.hpp>
+#include <fuse/cook/mesh_cook.hpp>
+#include <fuse/cook/texture_cook.hpp>
 #include <fuse/project/cook_content_hash.hpp>
 #include <fuse/log/logger.hpp>
 
@@ -46,22 +48,6 @@ CookRecord makeStubRecord(CookAssetKind kind,
     return record;
 }
 
-CookRecord finalizeStubCook_(CookRecord record, const fuse::cook::CookStubWriteResult& written) {
-    if (!record.ok) {
-        return record;
-    }
-
-    if (!written.ok) {
-        record.ok = false;
-        record.status = CookStatus::InvalidInput;
-        record.note = written.note;
-        return record;
-    }
-
-    record.note += " (" + written.note + ", bytes=" + std::to_string(written.byteCount) + ")";
-    return record;
-}
-
 u64 hash_upstream_from_jobs(const CookJob& job, const std::vector<CookJob>& jobs) {
     u64 hash = 0;
     for (const std::string& dependency_id : job.dependency_ids) {
@@ -80,17 +66,50 @@ u64 hash_upstream_from_jobs(const CookJob& job, const std::vector<CookJob>& jobs
 
 } // namespace
 
+u64 AssetCooker::effective_cache_key_(u64 content_hash, u64 upstream_hash) const {
+    return combine_cook_cache_key(content_hash, upstream_hash);
+}
+
+bool AssetCooker::lookup_live_entry_(u64 cache_key, CookCacheEntry* out_entry) {
+    CookCacheEntry cached;
+    if (m_cache.lookup(cache_key, &cached) != CookCacheLookup::Hit) {
+        return false;
+    }
+    bool live = path_exists(cached.output_path);
+    if (live && m_strictImport) {
+        // Strict cooks only reuse outputs that load as real cooked assets (not lenient stubs or
+        // truncated/corrupted files).
+        if (cached.kind == CookAssetKind::Mesh) {
+            fuse::cook::CookedMesh mesh;
+            live = fuse::cook::load_cooked_mesh(cached.output_path, mesh);
+        } else if (cached.kind == CookAssetKind::Texture) {
+            fuse::cook::CookedTexture texture;
+            live = fuse::cook::load_cooked_texture(cached.output_path, texture);
+        }
+    }
+    if (!live) {
+        // Cooked output deleted or damaged behind the cache's back: the entry is stale, re-cook.
+        (void)m_cache.invalidate(cache_key);
+        return false;
+    }
+    if (out_entry != nullptr) {
+        *out_entry = cached;
+    }
+    return true;
+}
+
 CookRecord AssetCooker::cook_with_cache_(CookAssetKind kind,
                                          const std::string& source_path,
                                          const std::string& output_path,
                                          u64 content_hash,
                                          u64 upstream_hash,
-                                         const char* stub_note) {
-    const u64 cache_key = combine_cook_cache_key(content_hash, upstream_hash);
+                                         const char* stub_note,
+                                         const CookWriteFn& write) {
+    const u64 cache_key = effective_cache_key_(content_hash, upstream_hash);
     const bool cacheable = is_valid_cook_cache_key(cache_key);
 
     CookCacheEntry cached;
-    if (cacheable && m_cache.lookup(cache_key, &cached) == CookCacheLookup::Hit) {
+    if (cacheable && lookup_live_entry_(cache_key, &cached)) {
         CookRecord record;
         record.kind = kind;
         record.source_path = source_path;
@@ -106,8 +125,21 @@ CookRecord AssetCooker::cook_with_cache_(CookAssetKind kind,
     CookRecord record = makeStubRecord(kind, source_path, output_path, stub_note);
     record.content_hash = cache_key;
     record.cache_hit = false;
+    if (!record.ok) {
+        return record;
+    }
 
-    if (record.ok && cacheable) {
+    const CookWriteOutcome written = write();
+    if (!written.ok) {
+        record.ok = false;
+        record.status = CookStatus::InvalidInput;
+        record.note = written.note;
+        return record;
+    }
+
+    record.note = std::string(stub_note) + (cacheable ? " (cache miss)" : "") + " (" + written.note +
+                  ", bytes=" + std::to_string(written.byte_count) + ")";
+    if (cacheable) {
         m_cache.invalidate_stale_content_for_source(source_path, cache_key);
 
         CookCacheEntry entry;
@@ -117,9 +149,7 @@ CookRecord AssetCooker::cook_with_cache_(CookAssetKind kind,
         entry.source_path = source_path;
         entry.kind = kind;
         m_cache.store(entry);
-        record.note = std::string(stub_note) + " (cache miss)";
     }
-
     return record;
 }
 
@@ -158,13 +188,13 @@ bool AssetCooker::probe_cook_cache_hit(const CookManifestEntry& entry, const Coo
     }
     }
 
-    const u64 cache_key = combine_cook_cache_key(content_hash, upstream_hash);
+    const u64 cache_key = effective_cache_key_(content_hash, upstream_hash);
     if (!is_valid_cook_cache_key(cache_key)) {
         return false;
     }
 
     CookCacheEntry cached;
-    if (m_cache.lookup(cache_key, &cached) != CookCacheLookup::Hit) {
+    if (!lookup_live_entry_(cache_key, &cached)) {
         return false;
     }
 
@@ -181,39 +211,50 @@ bool AssetCooker::probe_cook_cache_hit(const CookManifestEntry& entry, const Coo
     return true;
 }
 
+namespace {
+
+CookWriteOutcome to_outcome(const fuse::cook::CookStubWriteResult& written) {
+    return {written.ok, written.byteCount, written.note};
+}
+
+} // namespace
+
 CookRecord AssetCooker::cook_mesh(const MeshImportDesc& desc) {
     std::ostringstream note;
-    note << "stub mesh cook (lods=" << (desc.generate_lods ? desc.lod_count : 0u)
+    note << (m_strictImport ? "mesh cook" : "stub mesh cook") << " (lods=" << (desc.generate_lods ? desc.lod_count : 0u)
          << ", compress=" << (desc.compress ? "on" : "off") << ")";
     const u64 content_hash = hash_mesh_import(desc);
-    CookRecord record =
-        cook_with_cache_(CookAssetKind::Mesh, desc.input_path, desc.output_path, content_hash, 0,
-                         note.str().c_str());
-    if (record.ok && !record.cache_hit) {
-        const fuse::cook::CookStubWriteResult written =
-            fuse::cook::write_mesh_stub(desc.input_path, desc.output_path,
-                                        desc.generate_lods ? desc.lod_count : 0u, desc.compress);
-        record = finalizeStubCook_(std::move(record), written);
-    }
-    return record;
+    const bool strict = m_strictImport;
+    return cook_with_cache_(CookAssetKind::Mesh, desc.input_path, desc.output_path, content_hash, 0,
+                            note.str().c_str(), [&desc, strict]() {
+                                if (strict) {
+                                    fuse::cook::MeshCookOptions options;
+                                    options.generate_normals = desc.generate_normals;
+                                    return to_outcome(
+                                        fuse::cook::cook_mesh_file(desc.input_path, desc.output_path, options));
+                                }
+                                return to_outcome(fuse::cook::write_mesh_stub(
+                                    desc.input_path, desc.output_path, desc.generate_lods ? desc.lod_count : 0u,
+                                    desc.compress));
+                            });
 }
 
 CookRecord AssetCooker::cook_texture(const TextureImportDesc& desc) {
     const char* compression = desc.is_normal_map ? "BC5" : "BC7";
     std::ostringstream note;
-    note << "stub texture cook (compression=" << compression
+    note << (m_strictImport ? "texture cook" : "stub texture cook") << " (compression=" << compression
          << ", mipmaps=" << (desc.generate_mipmaps ? "on" : "off") << ")";
     const u64 content_hash = hash_texture_import(desc);
-    CookRecord record =
-        cook_with_cache_(CookAssetKind::Texture, desc.input_path, desc.output_path, content_hash, 0,
-                         note.str().c_str());
-    if (record.ok && !record.cache_hit) {
-        const fuse::cook::CookStubWriteResult written =
-            fuse::cook::write_texture_stub(desc.input_path, desc.output_path, compression,
-                                            desc.generate_mipmaps);
-        record = finalizeStubCook_(std::move(record), written);
-    }
-    return record;
+    const bool strict = m_strictImport;
+    return cook_with_cache_(CookAssetKind::Texture, desc.input_path, desc.output_path, content_hash, 0,
+                            note.str().c_str(), [&desc, compression, strict]() {
+                                if (strict) {
+                                    return to_outcome(fuse::cook::cook_texture_bc7_file(
+                                        desc.input_path, desc.output_path, desc.generate_mipmaps));
+                                }
+                                return to_outcome(fuse::cook::write_texture_stub(
+                                    desc.input_path, desc.output_path, compression, desc.generate_mipmaps));
+                            });
 }
 
 CookRecord AssetCooker::cook_audio(const AudioImportDesc& desc) {
@@ -221,16 +262,11 @@ CookRecord AssetCooker::cook_audio(const AudioImportDesc& desc) {
     std::ostringstream note;
     note << "stub audio cook (rate=" << desc.target_sample_rate << ", format=" << format << ")";
     const u64 content_hash = hash_audio_import(desc);
-    CookRecord record =
-        cook_with_cache_(CookAssetKind::Audio, desc.input_path, desc.output_path, content_hash, 0,
-                         note.str().c_str());
-    if (record.ok && !record.cache_hit) {
-        const fuse::cook::CookStubWriteResult written =
-            fuse::cook::write_audio_stub(desc.input_path, desc.output_path, desc.target_sample_rate,
-                                         format);
-        record = finalizeStubCook_(std::move(record), written);
-    }
-    return record;
+    return cook_with_cache_(CookAssetKind::Audio, desc.input_path, desc.output_path, content_hash, 0,
+                            note.str().c_str(), [&desc, format]() {
+                                return to_outcome(fuse::cook::write_audio_stub(
+                                    desc.input_path, desc.output_path, desc.target_sample_rate, format));
+                            });
 }
 
 CookRecord AssetCooker::cook_shader(const ShaderImportDesc& desc) {
@@ -240,15 +276,11 @@ CookRecord AssetCooker::cook_shader(const ShaderImportDesc& desc) {
     std::ostringstream note;
     note << "stub shader cook (stage=" << stage << ", version=" << desc.target_version << ")";
     const u64 content_hash = hash_shader_import(desc);
-    CookRecord record =
-        cook_with_cache_(CookAssetKind::Shader, desc.input_path, desc.output_path, content_hash, 0,
-                         note.str().c_str());
-    if (record.ok && !record.cache_hit) {
-        const fuse::cook::CookStubWriteResult written = fuse::cook::write_shader_stub(
-            desc.input_path, desc.output_path, stage, desc.target_version);
-        record = finalizeStubCook_(std::move(record), written);
-    }
-    return record;
+    return cook_with_cache_(CookAssetKind::Shader, desc.input_path, desc.output_path, content_hash, 0,
+                            note.str().c_str(), [&desc, stage]() {
+                                return to_outcome(fuse::cook::write_shader_stub(desc.input_path, desc.output_path,
+                                                                                stage, desc.target_version));
+                            });
 }
 
 CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry) {
@@ -257,68 +289,57 @@ CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry) {
 
 CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry, const CookManifest& manifest) {
     const u64 upstream_hash = hash_upstream_dependencies(entry.dependencies, manifest);
+    const bool strict = m_strictImport;
 
     switch (entry.kind) {
     case CookAssetKind::Mesh: {
         MeshImportDesc desc;
         desc.input_path = entry.source_path;
         desc.output_path = entry.output_path;
-        const u64 content_hash = hash_mesh_import(desc);
-        CookRecord record =
-            cook_with_cache_(CookAssetKind::Mesh, entry.source_path, entry.output_path, content_hash,
-                             upstream_hash, "stub mesh cook from manifest entry");
-        if (record.ok && !record.cache_hit) {
-            const fuse::cook::CookStubWriteResult written =
-                fuse::cook::write_mesh_stub(desc.input_path, desc.output_path, 0u, false);
-            record = finalizeStubCook_(std::move(record), written);
-        }
-        return record;
+        return cook_with_cache_(CookAssetKind::Mesh, entry.source_path, entry.output_path, hash_mesh_import(desc),
+                                upstream_hash, "stub mesh cook from manifest entry", [&desc, strict]() {
+                                    if (strict) {
+                                        return to_outcome(fuse::cook::cook_mesh_file(desc.input_path, desc.output_path));
+                                    }
+                                    return to_outcome(
+                                        fuse::cook::write_mesh_stub(desc.input_path, desc.output_path, 0u, false));
+                                });
     }
     case CookAssetKind::Texture: {
         TextureImportDesc desc;
         desc.input_path = entry.source_path;
         desc.output_path = entry.output_path;
-        const u64 content_hash = hash_texture_import(desc);
-        CookRecord record =
-            cook_with_cache_(CookAssetKind::Texture, entry.source_path, entry.output_path, content_hash,
-                             upstream_hash, "stub texture cook from manifest entry");
-        if (record.ok && !record.cache_hit) {
-            const fuse::cook::CookStubWriteResult written = fuse::cook::write_texture_stub(
-                desc.input_path, desc.output_path, "BC7", desc.generate_mipmaps);
-            record = finalizeStubCook_(std::move(record), written);
-        }
-        return record;
+        return cook_with_cache_(CookAssetKind::Texture, entry.source_path, entry.output_path,
+                                hash_texture_import(desc), upstream_hash, "stub texture cook from manifest entry",
+                                [&desc, strict]() {
+                                    if (strict) {
+                                        return to_outcome(fuse::cook::cook_texture_bc7_file(
+                                            desc.input_path, desc.output_path, desc.generate_mipmaps));
+                                    }
+                                    return to_outcome(fuse::cook::write_texture_stub(
+                                        desc.input_path, desc.output_path, "BC7", desc.generate_mipmaps));
+                                });
     }
     case CookAssetKind::Audio: {
         AudioImportDesc desc;
         desc.input_path = entry.source_path;
         desc.output_path = entry.output_path;
-        const u64 content_hash = hash_audio_import(desc);
-        CookRecord record =
-            cook_with_cache_(CookAssetKind::Audio, entry.source_path, entry.output_path, content_hash,
-                             upstream_hash, "stub audio cook from manifest entry");
-        if (record.ok && !record.cache_hit) {
-            const fuse::cook::CookStubWriteResult written =
-                fuse::cook::write_audio_stub(desc.input_path, desc.output_path, desc.target_sample_rate, "ogg");
-            record = finalizeStubCook_(std::move(record), written);
-        }
-        return record;
+        return cook_with_cache_(CookAssetKind::Audio, entry.source_path, entry.output_path, hash_audio_import(desc),
+                                upstream_hash, "stub audio cook from manifest entry", [&desc]() {
+                                    return to_outcome(fuse::cook::write_audio_stub(
+                                        desc.input_path, desc.output_path, desc.target_sample_rate, "ogg"));
+                                });
     }
     case CookAssetKind::Shader: {
         ShaderImportDesc desc;
         desc.input_path = entry.source_path;
         desc.output_path = entry.output_path;
-        const u64 content_hash = hash_shader_import(desc);
-        CookRecord record =
-            cook_with_cache_(CookAssetKind::Shader, entry.source_path, entry.output_path, content_hash,
-                             upstream_hash, "stub shader cook from manifest entry");
-        if (record.ok && !record.cache_hit) {
-            const fuse::cook::CookStubWriteResult written =
-                fuse::cook::write_shader_stub(desc.input_path, desc.output_path, "fragment",
-                                              desc.target_version);
-            record = finalizeStubCook_(std::move(record), written);
-        }
-        return record;
+        return cook_with_cache_(CookAssetKind::Shader, entry.source_path, entry.output_path,
+                                hash_shader_import(desc), upstream_hash, "stub shader cook from manifest entry",
+                                [&desc]() {
+                                    return to_outcome(fuse::cook::write_shader_stub(desc.input_path, desc.output_path,
+                                                                                    "fragment", desc.target_version));
+                                });
     }
     }
     return {};

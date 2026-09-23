@@ -491,6 +491,10 @@ CookBatchResult cookBatchFromJobGraphResult(const CookJobGraphExecuteResult& gra
             const auto failed_stage = std::find_if(job.stages.begin(), job.stages.end(), [](const CookStageRecord& stage) {
                 return stage.status == CookStageStatus::Failed;
             });
+            if (failed_stage != job.stages.end() && !failed_stage->note.empty()) {
+                // Keep the importer's reason (e.g. "mesh import failed: ...") in the batch record.
+                record.note += " (" + failed_stage->note + ")";
+            }
             if (failed_stage != job.stages.end() && failed_stage->kind == CookStageKind::Import &&
                 failed_stage->note.find("not found") != std::string::npos) {
                 record.status = CookStatus::SourceMissing;

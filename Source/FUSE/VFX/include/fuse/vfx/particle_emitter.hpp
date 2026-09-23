@@ -7,6 +7,21 @@
 
 namespace fuse::vfx {
 
+enum class ParticleColliderShape : u8 {
+    Plane,
+    Sphere,
+};
+
+/// Analytic signed-distance collider. Plane: `dot(normal, p) - offset` (normal must be unit length).
+/// Sphere: solid ball, `|p - center| - radius`. Particles are pushed to the zero level set.
+struct ParticleCollider {
+    ParticleColliderShape shape = ParticleColliderShape::Plane;
+    math::Vec3 normal{0.f, 1.f, 0.f};
+    f32 offset = 0.f;
+    math::Vec3 center{};
+    f32 radius = 1.f;
+};
+
 struct ParticleEmitterDesc {
     u32 max_particles = 4096;
     f32 emit_rate = 100.f;
@@ -26,6 +41,12 @@ struct ParticleEmitterDesc {
     math::Vec3 gravity{0.f, -9.81f, 0.f};
     f32 drag = 0.1f;
     bool collide_with_world = false;
+    /// Colliders tested when `collide_with_world` is set.
+    std::vector<ParticleCollider> colliders;
+    /// Normal velocity retained after impact (0 = stick, 1 = perfectly elastic).
+    f32 restitution = 0.5f;
+    /// Fraction of tangential velocity removed on impact.
+    f32 friction = 0.f;
     bool affected_by_wind = false;
 
     u32 material_id = 0;
@@ -61,6 +82,8 @@ public:
 
     void simulate(f32 dt);
     u32 alive_count() const;
+    /// Particles emitted since `init` (burst + rate), including ones that already expired.
+    u64 total_emitted() const { return m_totalEmitted; }
     u32 free_slot_count() const { return static_cast<u32>(m_particles.free_slots.size()); }
 
     const ParticleEmitterDesc& desc() const { return m_desc; }
@@ -75,7 +98,8 @@ private:
     math::Vec3 m_worldPos{};
     bool m_enabled = true;
     bool m_initialized = false;
-    f32 m_emitAccum = 0.f;
+    f64 m_emitAccum = 0.0;
+    u64 m_totalEmitted = 0;
     u64 m_frameSeed = 1;
 };
 

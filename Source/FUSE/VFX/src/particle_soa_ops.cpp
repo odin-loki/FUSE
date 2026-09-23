@@ -62,6 +62,35 @@ bool advance_age_and_cull_slot(ParticleSoA& soa, u32 index, f32 dt) {
     return false;
 }
 
+f32 collider_distance(const ParticleCollider& collider, const math::Vec3& position, math::Vec3& gradient) {
+    if (collider.shape == ParticleColliderShape::Sphere) {
+        const math::Vec3 offset = position - collider.center;
+        const f32 length = offset.length();
+        gradient = length > 1e-6f ? offset * (1.f / length) : math::Vec3{0.f, 1.f, 0.f};
+        return length - collider.radius;
+    }
+    gradient = collider.normal;
+    return collider.normal.dot(position) - collider.offset;
+}
+
+void resolve_collisions(const ParticleEmitterDesc& desc, math::Vec3& position, math::Vec3& velocity) {
+    for (const ParticleCollider& collider : desc.colliders) {
+        math::Vec3 normal{};
+        const f32 distance = collider_distance(collider, position, normal);
+        if (distance >= 0.f) {
+            continue;
+        }
+        // Project back onto the surface, then reflect the approaching normal velocity component.
+        position = position - normal * distance;
+        const f32 normal_speed = velocity.dot(normal);
+        if (normal_speed < 0.f) {
+            const math::Vec3 normal_velocity = normal * normal_speed;
+            const math::Vec3 tangent_velocity = velocity - normal_velocity;
+            velocity = tangent_velocity * (1.f - desc.friction) - normal_velocity * desc.restitution;
+        }
+    }
+}
+
 void integrate_slot(ParticleSoA& soa, u32 index, const ParticleEmitterDesc& desc, f32 dt,
                     std::vector<u32>& dead_slots, std::mutex& dead_mutex, std::atomic<u32>& alive_count,
                     std::atomic<u32>& integrated_count, std::atomic<u32>& culled_count) {
@@ -78,6 +107,9 @@ void integrate_slot(ParticleSoA& soa, u32 index, const ParticleEmitterDesc& desc
 
     math::Vec3& position = soa.positions[index];
     position = position + velocity * dt;
+    if (desc.collide_with_world && !desc.colliders.empty()) {
+        resolve_collisions(desc, position, velocity);
+    }
 
     const f32 t = soa.ages[index];
     soa.sizes[index] = desc.size_start + (desc.size_end - desc.size_start) * t;
@@ -85,6 +117,12 @@ void integrate_slot(ParticleSoA& soa, u32 index, const ParticleEmitterDesc& desc
     soa.alphas[index] = desc.alpha_start + (desc.alpha_end - desc.alpha_start) * t;
     alive_count.fetch_add(1U, std::memory_order_relaxed);
     integrated_count.fetch_add(1U, std::memory_order_relaxed);
+}
+
+/// Workers append expired slots in completion order; sort descending so the free list (popped from
+/// the back) hands out the lowest index first regardless of thread count — keeps runs deterministic.
+void sort_dead_slots(std::vector<u32>& dead_slots) {
+    std::sort(dead_slots.begin(), dead_slots.end(), [](u32 a, u32 b) { return a > b; });
 }
 
 } // namespace
@@ -229,6 +267,7 @@ LifetimeCullResult lifetime_cull(ParticleSoA& soa, f32 dt, u32 grain_size) {
     result.aged = aged_count.load(std::memory_order_relaxed);
     result.alive_after = soa.count;
     result.culled = culled_count.load(std::memory_order_relaxed);
+    sort_dead_slots(result.dead_slots);
     recycle_slots(soa, result.dead_slots);
     return result;
 }
@@ -308,6 +347,7 @@ SimStepResult simulate_step(ParticleSoA& soa, const ParticleEmitterDesc& desc, f
     result.integrated = integrated_count.load(std::memory_order_relaxed);
     result.culled = culled_count.load(std::memory_order_relaxed);
     result.alive_after = soa.count;
+    sort_dead_slots(result.dead_slots);
     recycle_slots(soa, result.dead_slots);
     return result;
 }

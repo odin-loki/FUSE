@@ -6,6 +6,9 @@
 #include <fuse/project/cook_manifest.hpp>
 #include <fuse/project/import_desc.hpp>
 
+#include <functional>
+#include <string>
+
 namespace fuse::project {
 
 /// Read-only reconcile planning breakdown for cache + dependency invalidation (B7.9 deepen).
@@ -27,6 +30,13 @@ struct CookCacheUpstreamReconcileEstimate {
     u32 downstream_entries = 0;
 
     [[nodiscard]] u32 total() const { return direct_source_entries + downstream_entries; }
+};
+
+/// Result of writing one cooked output (importer/encoder outcome).
+struct CookWriteOutcome {
+    bool ok = false;
+    u32 byte_count = 0;
+    std::string note;
 };
 
 /// Offline asset cooker — mesh/texture/audio transforms (B7.9 stub; no runtime link).
@@ -72,6 +82,11 @@ public:
     [[nodiscard]] std::vector<std::string> probe_upstream_invalidation_sources(
         const CookManifest& manifest, const std::string& changed_source) const;
 
+    /// Strict import: sources the real importers cannot decode (malformed meshes, non-images) fail
+    /// with `CookStatus::InvalidInput` and write nothing, instead of cooking a labelled stub.
+    void set_strict_import(bool strict) { m_strictImport = strict; }
+    [[nodiscard]] bool strict_import() const { return m_strictImport; }
+
     CookCache& cache() { return m_cache; }
     const CookCache& cache() const { return m_cache; }
 
@@ -80,14 +95,22 @@ public:
                                             CookRecord* out_record = nullptr);
 
 private:
+    using CookWriteFn = std::function<CookWriteOutcome()>;
+
+    /// Cache lookup → (on miss) write → cache store. Entries are stored only after the output was
+    /// written successfully; a hit whose output file is gone is dropped and re-cooked.
     CookRecord cook_with_cache_(CookAssetKind kind,
                                 const std::string& source_path,
                                 const std::string& output_path,
                                 u64 content_hash,
                                 u64 upstream_hash,
-                                const char* stub_note);
+                                const char* stub_note,
+                                const CookWriteFn& write);
+    [[nodiscard]] u64 effective_cache_key_(u64 content_hash, u64 upstream_hash) const;
+    bool lookup_live_entry_(u64 cache_key, CookCacheEntry* out_entry);
 
     CookCache m_cache;
+    bool m_strictImport = false;
 };
 
 } // namespace fuse::project

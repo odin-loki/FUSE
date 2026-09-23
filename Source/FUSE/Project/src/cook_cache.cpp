@@ -678,6 +678,13 @@ bool CookCache::save(const std::string& path) const {
 
     out << "  ]\n}\n";
 
+    // The default location (`<project>/.fuse/`) does not exist on a fresh project; without it the
+    // cache never persisted and every cook run re-cooked everything.
+    std::error_code ec;
+    const std::filesystem::path parent = std::filesystem::path(path).parent_path();
+    if (!parent.empty()) {
+        std::filesystem::create_directories(parent, ec);
+    }
     std::ofstream file(path, std::ios::binary);
     if (!file) {
         return false;
@@ -702,7 +709,14 @@ bool CookCache::load(const std::string& path) {
 
     clear();
 
+    // Entry objects live inside the `"entries"` array. Scanning from the file start would treat
+    // the enclosing document object as one entry and silently drop every entry after the first.
     std::size_t cursor = 0;
+    const std::size_t entriesKey = contents.find("\"entries\"");
+    if (entriesKey != std::string::npos) {
+        const std::size_t arrayStart = contents.find('[', entriesKey);
+        cursor = arrayStart == std::string::npos ? contents.size() : arrayStart + 1;
+    }
     while (cursor < contents.size()) {
         const std::size_t objectStart = contents.find('{', cursor);
         if (objectStart == std::string::npos) {

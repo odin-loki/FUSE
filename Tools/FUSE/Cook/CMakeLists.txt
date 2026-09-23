@@ -1,10 +1,14 @@
 add_library(fuse_cook_stubs STATIC
     src/bc7_encoder.cpp
     src/cook_stub_writer.cpp
+    src/mesh_cook.cpp
+    src/texture_cook.cpp
     src/cook_stb_image.cpp
     src/ispc_texcomp_hook.cpp
     include/fuse/cook/bc7_encoder.hpp
     include/fuse/cook/cook_stub_writer.hpp
+    include/fuse/cook/mesh_cook.hpp
+    include/fuse/cook/texture_cook.hpp
     include/fuse/cook/ispc_texcomp_hook.hpp
 )
 

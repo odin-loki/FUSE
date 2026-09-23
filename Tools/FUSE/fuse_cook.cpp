@@ -10,6 +10,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 
 namespace {
@@ -24,7 +25,30 @@ void printUsage() {
                  "  fuse_cook --texture --input <path> --output <path> Stub texture cook\n"
                  "  fuse_cook --audio --input <path> --output <path>  Stub audio cook\n"
                  "  fuse_cook --fuselevel --mis <file.mis> --output <world.fuselevel>\n"
-                 "  fuse_cook --fuselevel --module <file.cs> --output <world.fuselevel>\n");
+                 "  fuse_cook --fuselevel --module <file.cs> --output <world.fuselevel>\n"
+                 "Options:\n"
+                 "  --strict   Fail (exit 1) on sources the real importers cannot decode instead of\n"
+                 "             writing placeholder stubs\n");
+}
+
+/// Manifest paths are relative to the manifest's directory, not the caller's working directory.
+void resolveManifestPaths(fuse::project::CookManifest& manifest) {
+    if (manifest.project_root.empty()) {
+        return;
+    }
+    const std::filesystem::path root(manifest.project_root);
+    auto resolve = [&root](std::string& path) {
+        if (!path.empty() && std::filesystem::path(path).is_relative()) {
+            path = (root / path).lexically_normal().string();
+        }
+    };
+    for (fuse::project::CookManifestEntry& entry : manifest.assets) {
+        resolve(entry.source_path);
+        resolve(entry.output_path);
+        for (std::string& dependency : entry.dependencies) {
+            resolve(dependency);
+        }
+    }
 }
 
 int printCookResult(const fuse::project::CookBatchResult& result,
@@ -67,6 +91,7 @@ int main(int argc, char** argv) {
     std::string inputPath;
     std::string outputPath;
     bool dryRun = false;
+    bool strictImport = false;
     bool meshCook = false;
     bool textureCook = false;
     bool audioCook = false;
@@ -86,6 +111,8 @@ int main(int argc, char** argv) {
             outputPath = argv[++i];
         } else if (arg == "--dry-run") {
             dryRun = true;
+        } else if (arg == "--strict") {
+            strictImport = true;
         } else if (arg == "--mesh") {
             meshCook = true;
         } else if (arg == "--texture") {
@@ -133,6 +160,7 @@ int main(int argc, char** argv) {
         }
 
         fuse::project::AssetCooker cooker;
+        cooker.set_strict_import(strictImport);
         const std::string cachePath = fuse::project::defaultCookCachePath(".");
         cooker.cache().load(cachePath);
 
@@ -157,7 +185,7 @@ int main(int argc, char** argv) {
         fuse::project::CookBatchResult result;
         result.records.push_back(record);
         result.ok = record.ok;
-        result.summary = record.ok ? "single asset cook stub ok" : "single asset cook stub failed";
+        result.summary = record.ok ? "single asset cook ok" : "single asset cook failed";
         cooker.cache().save(cachePath);
         const int exitCode = printCookResult(result, &cooker.cache().stats());
         fuse::core::shutdown();
@@ -172,19 +200,23 @@ int main(int argc, char** argv) {
             return EXIT_FAILURE;
         }
 
+        fuse::project::CookManifest manifest = loaded.manifest;
+        resolveManifestPaths(manifest);
+
         fuse::project::ImportPipeline pipeline;
-        pipeline.set_project_root(loaded.manifest.project_root);
+        pipeline.set_project_root(manifest.project_root);
+        pipeline.cooker().set_strict_import(strictImport);
         const std::string cachePath =
-            fuse::project::defaultCookCachePath(loaded.manifest.project_root);
+            fuse::project::defaultCookCachePath(manifest.project_root);
         if (!dryRun) {
             pipeline.load_cook_cache(cachePath);
-            if (pipeline.cooker().would_reconcile_invalidation(loaded.manifest)) {
+            if (pipeline.cooker().would_reconcile_invalidation(manifest)) {
                 const fuse::u32 invalidated =
-                    pipeline.cooker().invalidate_stale_dependency_hashes(loaded.manifest);
+                    pipeline.cooker().invalidate_stale_dependency_hashes(manifest);
                 std::printf("fuse_cook: reconciled %u stale cache entries\n", invalidated);
             }
         }
-        pipeline.plan_from_manifest(loaded.manifest);
+        pipeline.plan_from_manifest(manifest);
         const fuse::project::CookBatchResult result = pipeline.execute(dryRun);
         if (!dryRun) {
             pipeline.save_cook_cache(cachePath);
@@ -218,6 +250,7 @@ int main(int argc, char** argv) {
 
         fuse::project::ImportPipeline pipeline;
         pipeline.set_project_root(projectDir);
+        pipeline.cooker().set_strict_import(strictImport);
         const std::string cachePath = fuse::project::defaultCookCachePath(projectDir);
         if (!dryRun) {
             pipeline.load_cook_cache(cachePath);

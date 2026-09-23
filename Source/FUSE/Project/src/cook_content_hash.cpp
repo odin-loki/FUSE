@@ -11,6 +11,9 @@ namespace {
 
 constexpr u64 kFnvOffset = 14695981039346656037ull;
 constexpr u64 kFnvPrime = 1099511628211ull;
+/// Bump whenever a cooker's output format or encoder changes so existing cache entries miss.
+/// 2: FMSH binary meshes, spec-conformant BC7 mode 6 with mip chains.
+constexpr u64 kCookFormatVersion = 2;
 
 u64 hash_u64(u64 value) {
     return fnv1a64_bytes(reinterpret_cast<const u8*>(&value), sizeof(value));
@@ -124,6 +127,7 @@ u64 hash_mesh_import(const MeshImportDesc& desc) {
     hash = fnv1a64_combine(hash, hash_u64(desc.lod_count));
     hash = fnv1a64_combine(hash, hash_u64(static_cast<u64>(desc.lod_error_target * 1000000.0f)));
     hash = fnv1a64_combine(hash, hash_bool(desc.compress));
+    hash = fnv1a64_combine(hash, hash_u64(kCookFormatVersion));
     return hash;
 }
 
@@ -145,6 +149,7 @@ u64 hash_texture_import(const TextureImportDesc& desc) {
     hash = fnv1a64_combine(hash, hash_u64(static_cast<u64>(desc.compression)));
     hash = fnv1a64_combine(hash, hash_bool(desc.is_normal_map));
     hash = fnv1a64_combine(hash, hash_bool(desc.is_hdr));
+    hash = fnv1a64_combine(hash, hash_u64(kCookFormatVersion));
     return hash;
 }
 
@@ -166,6 +171,7 @@ u64 hash_audio_import(const AudioImportDesc& desc) {
     hash = fnv1a64_combine(hash, hash_bool(desc.trim_silence));
     hash = fnv1a64_combine(hash, hash_u64(static_cast<u64>(desc.format)));
     hash = fnv1a64_combine(hash, hash_u64(static_cast<u64>(desc.ogg_quality * 1000000.0f)));
+    hash = fnv1a64_combine(hash, hash_u64(kCookFormatVersion));
     return hash;
 }
 
@@ -185,6 +191,7 @@ u64 hash_shader_import(const ShaderImportDesc& desc) {
     hash = fnv1a64_combine(hash, hash_u64(static_cast<u64>(desc.stage)));
     hash = fnv1a64_combine(hash, hash_u64(desc.target_version));
     hash = fnv1a64_combine(hash, hash_bool(desc.debug_info));
+    hash = fnv1a64_combine(hash, hash_u64(kCookFormatVersion));
     return hash;
 }
 
