@@ -351,8 +351,14 @@ void testProfilingAndStats() {
     const kernel::LaunchResult r2 = kernel::launch(Backend::CpuParallel, launch, kt::HashKernel{}, params);
     expectTrue(r1.ok && r2.ok && r1.items == 300u && r1.workgroups == 3u * 2u, "launch result: items / workgroups");
 
+#if defined(FUSE_NO_PROFILER) && FUSE_NO_PROFILER
+    // Shipping compiles FUSE_PROFILE_SCOPE out, so launches must record no profiler events at all.
+    expectTrue(fuse::profiler::countEventsByName("test_profiled_kernel") == 0u,
+               "shipping: kernel launches record no profiler scopes (FUSE_NO_PROFILER)");
+#else
     expectTrue(fuse::profiler::countEventsByName("test_profiled_kernel") == 4u,
                "each launch opens a profiler scope named after the kernel (begin + end x 2)");
+#endif
 
     kernel::KernelStats stats{};
     const bool found = kernel::find_kernel_stats("test_profiled_kernel", stats);
