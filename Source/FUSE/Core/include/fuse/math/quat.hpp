@@ -14,17 +14,17 @@ struct Quat {
     f32 w = 1.f;
 
     Quat() = default;
-    Quat(f32 x_, f32 y_, f32 z_, f32 w_) : x(x_), y(y_), z(z_), w(w_) {}
+    FUSE_HOST_DEVICE Quat(f32 x_, f32 y_, f32 z_, f32 w_) : x(x_), y(y_), z(z_), w(w_) {}
 
-    static Quat identity() { return {}; }
+    FUSE_HOST_DEVICE static Quat identity() { return {}; }
 
-    f32 dot(const Quat& other) const {
+    FUSE_HOST_DEVICE f32 dot(const Quat& other) const {
         return x * other.x + y * other.y + z * other.z + w * other.w;
     }
 
-    f32 length() const { return std::sqrt(dot(*this)); }
+    FUSE_HOST_DEVICE f32 length() const { return std::sqrt(dot(*this)); }
 
-    Quat normalized() const {
+    FUSE_HOST_DEVICE Quat normalized() const {
         const f32 len = length();
         if (len < 1e-8f) {
             return identity();
@@ -32,9 +32,9 @@ struct Quat {
         return {x / len, y / len, z / len, w / len};
     }
 
-    Quat conjugate() const { return {-x, -y, -z, w}; }
+    FUSE_HOST_DEVICE Quat conjugate() const { return {-x, -y, -z, w}; }
 
-    Quat operator*(const Quat& other) const {
+    FUSE_HOST_DEVICE Quat operator*(const Quat& other) const {
         return {
             w * other.x + x * other.w + y * other.z - z * other.y,
             w * other.y - x * other.z + y * other.w + z * other.x,
@@ -43,21 +43,21 @@ struct Quat {
         };
     }
 
-    Vec3 rotate(const Vec3& v) const {
+    FUSE_HOST_DEVICE Vec3 rotate(const Vec3& v) const {
         const Vec3 qv{x, y, z};
         const Vec3 t = cross(qv, v) * 2.f;
         return v + t * w + cross(qv, t);
     }
 };
 
-inline Quat fromAxisAngle(const Vec3& axis, f32 radians) {
+FUSE_HOST_DEVICE inline Quat fromAxisAngle(const Vec3& axis, f32 radians) {
     const Vec3 n = axis.normalized();
     const f32 half = radians * 0.5f;
     const f32 s = std::sin(half);
     return {n.x * s, n.y * s, n.z * s, std::cos(half)};
 }
 
-inline Quat slerp(const Quat& a, const Quat& b, f32 t) {
+FUSE_HOST_DEVICE inline Quat slerp(const Quat& a, const Quat& b, f32 t) {
     Quat q0 = a.normalized();
     Quat q1 = b.normalized();
 

@@ -1,5 +1,7 @@
 #include <fuse/fx/particle_pool_gpu.hpp>
 
+#include <fuse/jobs/cuda_jobs.hpp>
+
 #include <algorithm>
 #include <cstring>
 
@@ -30,7 +32,9 @@ constexpr bool kCudaCompiled = false;
 
 ParticlePoolGpuBackend::ParticlePoolGpuBackend(u32 capacity)
     : m_capacity(capacity)
-    , m_cudaEnabled(kCudaCompiled)
+    // Compiled-in CUDA is not enough: without a device (e.g. CUDA compile-only CI) the pool takes the
+    // Disabled skip path instead of issuing cudaMalloc/kernel launches that can only fail.
+    , m_cudaEnabled(kCudaCompiled && fuse::jobs::cudaJobsAvailable())
     , m_packed(capacity * kBytesPerSlot, 0) {}
 
 void ParticlePoolGpuBackend::syncFromCpu(const ParticlePool& pool) {

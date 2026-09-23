@@ -1018,7 +1018,7 @@ Phase 1 is complete when every item in this checklist passes. Nothing moves to P
 *Carry-forward deliverable/test checklist (FUSE-adapted):*
 
 - [x] CMake builds cleanly in Debug, Release, Profile, Shipping — zero warnings with `-Wall -Wextra` (`FUSE_WARNINGS`/`FUSE_WARNINGS_AS_ERRORS`, `fuse-werror-*` presets, CI `fuse-warnings-as-errors`)
-- [ ] CUDA compiles against C++23 FUSE host headers (CUDA device dialect may remain C++23) — no separate CUDA type system or duplicate definitions
+- [x] CUDA compiles against C++23 FUSE host headers (CUDA device dialect may remain C++23) — no separate CUDA type system or duplicate definitions — compile-only (no GPU): nvcc 12.0 supports at most a C++20 dialect, so `.cu` TUs build as `CUDA_STANDARD 20` (plan header: "CUDA device dialect may remain C++20") while host TUs stay C++23; `fuse/types.hpp` owns `FUSE_HOST_DEVICE`, and `fuse/math/{vec,quat,mat,sdf}.hpp` + `fuse/gria.hpp` are annotated in place (no CUDA copies). `fuse_cuda_shared_headers_gate` (`ctest -L cuda`) includes them from a C++23 TU and a `.cu` TU whose `__global__` kernel evaluates Vec/Quat/Mat4/SDF/`Alpha`; `shared_layout_asserts.hpp` static_asserts identical size/align/offsets in the C++23 host, nvcc host and nvcc device passes, and nvcc-host results are compared with C++23-host results. `fuse_cuda_compile_gate` requires every `Source/FUSE/**/*.cu` (7 TUs) to be built with an sm_86 cubin (`cuobjdump`). CI: `.github/workflows/fuse-cuda-compile.yml` (nvidia-cuda-toolkit, host `g++-12`). Kernels are compile-verified only; ray_march/ssao/ssr/ssgi are empty stubs
 - [ ] All four build configs produce correct binaries on Windows; Linux build compiles without error
 - [x] Third-party dependencies (VMA) build from vendored source with pinned commits — VMA 3.4.0 @3aa92122 in `Engine/lib/vma` (header + LICENSE + VERSION pin), `fuse_lint_vendored_pins_vma` + compile-time `VMA_VERSION` check; Catch2 dropped (tests are plain CTest executables)
 - [ ] Unity builds reduce full rebuild time below 60 seconds on ThinkStation P920
@@ -1037,7 +1037,7 @@ Phase 1 is complete when every item in this checklist passes. Nothing moves to P
 - [x] `vec4` SIMD operations produce bit-identical results to scalar reference implementation — `fuse_core_b1_math_gates`
 - [x] All SDF primitives match reference ray marcher within 0.0001f tolerance — `fuse_core_b1_math_gates`
 - [x] SDF normals via gradient match finite-difference normals within 0.001f — `fuse_core_b1_math_gates`
-- [ ] GRIA `Alpha` evaluates correctly on both host and CUDA device kernel — partial: host path proven in `fuse_core_b1_math_gates`; CUDA device kernel needs hardware
+- [ ] GRIA `Alpha` evaluates correctly on both host and CUDA device kernel — partial: host path proven in `fuse_core_b1_math_gates`; CUDA device kernel needs hardware; the device kernel now exists and compiles (`fuse_cuda_shared_headers_gate` evaluates `Alpha` in `__global__` code and compares against the C++23 host when a CUDA device is present — reports compile-only otherwise)
 - [x] `mat4` multiply matches reference scalar implementation exactly — `fuse_core_b1_math_gates`
 - [x] Quaternion slerp produces unit quaternion at all interpolation points — `fuse_core_b1_math_gates`
 - [x] Logger ring buffer survives concurrent writes from all worker threads — no corruption — `fuse_core_b1_logging_gates`

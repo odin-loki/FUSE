@@ -228,7 +228,12 @@ void testSubmitCudaJob() {
     desc.kernel_launcher = [&](fuse::jobs::CUDAStreamHandle stream) {
         launcherRan = true;
 #if defined(FUSE_HAS_CUDA)
-        expectTrue(stream.native != nullptr, "CUDA path receives a stream handle");
+        // Toolkit compiled in: a managed stream exists only when a CUDA device is present.
+        if (fuse::jobs::cudaJobsAvailable()) {
+            expectTrue(stream.native != nullptr, "CUDA path receives a stream handle");
+        } else {
+            expectTrue(stream.native == nullptr, "no CUDA device keeps stream null");
+        }
 #else
         expectTrue(stream.native == nullptr, "CPU stub passes null stream");
 #endif

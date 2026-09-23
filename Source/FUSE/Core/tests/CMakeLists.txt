@@ -42,6 +42,24 @@ target_link_libraries(fuse_cuda_job_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_cuda_job_tests)
 add_test(NAME fuse_cuda_jobs COMMAND fuse_cuda_job_tests)
 
+# B1 row "CUDA compiles against C++23 FUSE host headers": one .cu TU (CUDA C++20, device + nvcc host
+# pass) and one C++23 host TU include the same fuse/types.hpp + fuse/math/* + fuse/gria.hpp and
+# static_assert identical layouts; the exe compares nvcc-host vs C++23-host results (device results
+# only when a GPU exists — otherwise it reports compile-only). Objects are checked by
+# fuse_cuda_compile_gate (Source/FUSE/CMakeLists.txt).
+if(FUSE_CUDA_BACKEND)
+    add_executable(fuse_cuda_shared_headers_gate
+        cuda/test_cuda_shared_headers_host.cpp
+        cuda/test_cuda_shared_headers.cu
+    )
+    target_link_libraries(fuse_cuda_shared_headers_gate PRIVATE fuse_core CUDA::cudart)
+    fuse_apply_cxx23(fuse_cuda_shared_headers_gate)
+    set_target_properties(fuse_cuda_shared_headers_gate PROPERTIES
+        CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON CUDA_EXTENSIONS OFF)
+    add_test(NAME fuse_cuda_shared_headers_gate COMMAND fuse_cuda_shared_headers_gate)
+    set_tests_properties(fuse_cuda_shared_headers_gate PROPERTIES LABELS "gate;cuda" TIMEOUT 120)
+endif()
+
 add_executable(fuse_core_services_tests
     test_services.cpp
 )

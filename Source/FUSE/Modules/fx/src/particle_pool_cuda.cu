@@ -2,6 +2,10 @@
 
 #include <cuda_runtime.h>
 
+using fuse::u32;
+using fuse::u8;
+using fuse::usize;
+
 namespace {
 
 __global__ void fuse_fx_integrate_particles_kernel(u8* packed, u32 activeCount, float dt) {

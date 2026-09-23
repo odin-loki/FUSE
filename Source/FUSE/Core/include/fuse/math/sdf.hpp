@@ -7,9 +7,9 @@
 
 namespace fuse::math::SDF {
 
-inline f32 sphere(Vec3 p, f32 radius) { return p.length() - radius; }
+FUSE_HOST_DEVICE inline f32 sphere(Vec3 p, f32 radius) { return p.length() - radius; }
 
-inline f32 box(Vec3 p, Vec3 halfExtents) {
+FUSE_HOST_DEVICE inline f32 box(Vec3 p, Vec3 halfExtents) {
     const Vec3 q{std::abs(p.x) - halfExtents.x, std::abs(p.y) - halfExtents.y,
                  std::abs(p.z) - halfExtents.z};
     const Vec3 outer{std::max(q.x, 0.f), std::max(q.y, 0.f), std::max(q.z, 0.f)};
@@ -18,13 +18,13 @@ inline f32 box(Vec3 p, Vec3 halfExtents) {
     return outside + inside;
 }
 
-inline f32 opSmoothUnion(f32 d1, f32 d2, f32 k) {
+FUSE_HOST_DEVICE inline f32 opSmoothUnion(f32 d1, f32 d2, f32 k) {
     const f32 h = std::max(k - std::abs(d1 - d2), 0.f) / k;
     return std::min(d1, d2) - h * h * k * 0.25f;
 }
 
 /// Analytic gradient of sphere(): unit direction away from the centre (+X at the centre).
-inline Vec3 sphereGradient(Vec3 p) {
+FUSE_HOST_DEVICE inline Vec3 sphereGradient(Vec3 p) {
     const f32 len = p.length();
     if (len < 1e-8f) {
         return {1.f, 0.f, 0.f};
@@ -34,7 +34,7 @@ inline Vec3 sphereGradient(Vec3 p) {
 
 /// Analytic gradient of box(). Outside: direction from the closest surface point. Inside: the
 /// normal of the nearest face (undefined on the medial axis, where any adjacent face is returned).
-inline Vec3 boxGradient(Vec3 p, Vec3 halfExtents) {
+FUSE_HOST_DEVICE inline Vec3 boxGradient(Vec3 p, Vec3 halfExtents) {
     const Vec3 q{std::abs(p.x) - halfExtents.x, std::abs(p.y) - halfExtents.y, std::abs(p.z) - halfExtents.z};
     const Vec3 sign{p.x < 0.f ? -1.f : 1.f, p.y < 0.f ? -1.f : 1.f, p.z < 0.f ? -1.f : 1.f};
     const Vec3 outer{std::max(q.x, 0.f), std::max(q.y, 0.f), std::max(q.z, 0.f)};
@@ -53,7 +53,7 @@ inline Vec3 boxGradient(Vec3 p, Vec3 halfExtents) {
 
 /// Central-difference normal of any SDF `f(Vec3) -> f32` with step `h`.
 template <typename Sdf>
-inline Vec3 finiteDifferenceNormal(const Sdf& f, Vec3 p, f32 h = 1e-3f) {
+FUSE_HOST_DEVICE inline Vec3 finiteDifferenceNormal(const Sdf& f, Vec3 p, f32 h = 1e-3f) {
     const Vec3 g{
         f(Vec3{p.x + h, p.y, p.z}) - f(Vec3{p.x - h, p.y, p.z}),
         f(Vec3{p.x, p.y + h, p.z}) - f(Vec3{p.x, p.y - h, p.z}),

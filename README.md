@@ -11,6 +11,7 @@ One program for 2D, 3D, and hybrid worlds. ISO C++ host, handle-based ownership,
 [![FUSE fuse_core (Android NDK)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-core-android.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-core-android.yml)
 [![FUSE fuse_core (iOS simulator)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-core-ios.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-core-ios.yml)
 [![FUSE fuse_core (TSan nightly)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-tsan-nightly.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-tsan-nightly.yml)
+[![FUSE CUDA compile-only (Linux)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-cuda-compile.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-cuda-compile.yml)
 [![FUSE Linux Build](https://github.com/odin-loki/FUSE/actions/workflows/build-linux-gcc.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/build-linux-gcc.yml)
 [![FUSE macOS Build](https://github.com/odin-loki/FUSE/actions/workflows/build-macos-clang.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/build-macos-clang.yml)
 [![FUSE Windows Build](https://github.com/odin-loki/FUSE/actions/workflows/build-windows-msvc.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/build-windows-msvc.yml)

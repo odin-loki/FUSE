@@ -2,12 +2,6 @@
 
 #include <fuse/types.hpp>
 
-#if defined(__CUDACC__)
-#define FUSE_HOST_DEVICE __host__ __device__
-#else
-#define FUSE_HOST_DEVICE
-#endif
-
 namespace fuse {
 
 /// GRIA α ∈ [0, 1]: 0 = fully reversible/exact, 1 = fully irreversible/approximate (B1.2).

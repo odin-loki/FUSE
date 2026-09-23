@@ -53,11 +53,14 @@ InteropUnavailableReason interopUnavailableReason() {
     return InteropUnavailableReason::NoVulkanBackend;
 #elif !defined(FUSE_HAS_CUDA)
     return InteropUnavailableReason::NoCudaToolkit;
-#elif !fuse::jobs::cudaJobsAvailable()
-    return InteropUnavailableReason::NoCudaToolkit;
-#elif !cudaExternalMemoryImportSupported()
-    return InteropUnavailableReason::ExternalMemoryUnsupported;
 #else
+    // Runtime probes: these were previously (invalidly) written as #elif conditions.
+    if (!fuse::jobs::cudaJobsAvailable()) {
+        return InteropUnavailableReason::NoCudaToolkit;
+    }
+    if (!cudaExternalMemoryImportSupported()) {
+        return InteropUnavailableReason::ExternalMemoryUnsupported;
+    }
     return InteropUnavailableReason::None;
 #endif
 }
@@ -68,10 +71,12 @@ bool cudaExternalMemoryImportSupported() {
         return false;
     }
 
-    int supported = 0;
-    const cudaError_t err =
-        cudaDeviceGetAttribute(&supported, cudaDevAttrExternalMemorySupport, 0);
-    return err == cudaSuccess && supported != 0;
+    // The CUDA runtime has no "external memory supported" device attribute; cudaImportExternalMemory
+    // is the authoritative check. Mapping an imported allocation requires unified addressing, so
+    // gate on that (always 1 on 64-bit Linux/Windows TCC/WDDM devices that support interop).
+    int unifiedAddressing = 0;
+    const cudaError_t err = cudaDeviceGetAttribute(&unifiedAddressing, cudaDevAttrUnifiedAddressing, 0);
+    return err == cudaSuccess && unifiedAddressing != 0;
 #else
     return false;
 #endif

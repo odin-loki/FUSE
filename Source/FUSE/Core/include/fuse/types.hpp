@@ -3,6 +3,16 @@
 #include <cstddef>
 #include <cstdint>
 
+/// Shared host/device annotation for FUSE header-only types (math, GRIA). Under nvcc the same
+/// definitions compile for both host and device; plain C++23 host compilers see nothing.
+#ifndef FUSE_HOST_DEVICE
+#if defined(__CUDACC__)
+#define FUSE_HOST_DEVICE __host__ __device__
+#else
+#define FUSE_HOST_DEVICE
+#endif
+#endif
+
 namespace fuse {
 
 using u8 = std::uint8_t;
