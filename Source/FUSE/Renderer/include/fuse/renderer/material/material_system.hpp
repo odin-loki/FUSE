@@ -8,7 +8,9 @@
 
 namespace fuse::renderer {
 
-/// Bindless material table scaffold (B5.3).
+/// Bindless material table (B5.3): authoring materials -> std430 SSBO rows indexed by material id.
+/// flushGpuBuffer() repacks dirty rows, resolves texture handles to bindless heap slots and uploads the
+/// table (growing the SSBO when materials were added).
 class MaterialSystem {
 public:
     void init(ResourceManager& resources);
@@ -31,6 +33,7 @@ public:
 private:
     void ensureCapacity(u32 id);
     void markDirty(u32 id);
+    void resolveBindlessIndices(const Material& material, Material::GPUMaterial& gpu) const;
 
     ResourceManager* m_resources = nullptr;
     std::vector<Material> m_materials;
