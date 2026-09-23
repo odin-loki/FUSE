@@ -3,6 +3,8 @@
 //     (counted through this binary's replaced global operator new) for 1/2/4 workers, including
 //     nested parallel_for from inside chunks and parallel_for issued from inside a job, with
 //     simulated preemption of chunk-running threads (peak fiber park depth, as on a loaded host).
+//   - Bursts of 250 directly submitted jobs per frame (with work stealing) make zero steady-state
+//     heap allocations: stealing never grows the thief's ring.
 //   - Concurrent parallel_for from several non-worker threads stays correct.
 //   - Dispatch latency percentiles for a 4096-item / grain-256 parallel_for at 0/1/2/4 workers.
 //     Release builds (no sanitizer) enforce a loose median bound at 1 and 4 workers.
@@ -254,6 +256,60 @@ void testZeroAllocations(u32 workers) {
     scheduler.shutdown();
 }
 
+/// Bursts of directly submitted small jobs (a frame's worth of fire-and-forget work). Round-robin
+/// pushes fill every worker's ring and idle workers steal half of a victim's queue into their own
+/// ring; steady state must not grow any ring, whichever worker ends up holding the jobs.
+void testSubmitBurstsDoNotGrowQueues(u32 workers) {
+    char label[112];
+    std::snprintf(label, sizeof(label), "submit bursts zero-alloc (%u workers)", workers);
+    Watchdog watchdog(label, 300);
+
+    auto& scheduler = fuse::jobs::JobScheduler::instance();
+    scheduler.shutdown();
+    scheduler.initialize(workers);
+
+    constexpr u32 kJobsPerFrame = 250;
+    std::atomic<u32> ran{0};
+    fuse::jobs::JobCounter counter{0};
+    struct Context {
+        std::atomic<u32>* ran;
+        fuse::jobs::JobCounter* counter;
+    } context{&ran, &counter};
+
+    const auto runFrame = [&]() {
+        counter.reset(kJobsPerFrame);
+        for (u32 j = 0; j < kJobsPerFrame; ++j) {
+            // Uneven job cost keeps some workers busy while others go idle and steal.
+            scheduler.submit([ctx = &context]() {
+                const u32 n = ctx->ran->fetch_add(1u, std::memory_order_relaxed);
+                if ((n & 31u) == 0u) {
+                    std::this_thread::sleep_for(std::chrono::microseconds(20));
+                }
+                ctx->counter->signal();
+            });
+        }
+        counter.wait();
+    };
+
+    for (u32 frame = 0; frame < 200; ++frame) {
+        runFrame();
+    }
+    constexpr u32 kFrames = 1000;
+    const u64 before = g_heapAllocations.load(std::memory_order_acquire);
+    for (u32 frame = 0; frame < kFrames; ++frame) {
+        runFrame();
+    }
+    const u64 allocs = g_heapAllocations.load(std::memory_order_acquire) - before;
+    std::printf("  workers=%u: heap allocations over %u frames of %u submitted jobs: %llu\n", workers, kFrames,
+                kJobsPerFrame, static_cast<unsigned long long>(allocs));
+    std::snprintf(label, sizeof(label), "all submitted jobs ran (%u workers)", workers);
+    expectTrue(ran.load() == (200u + kFrames) * kJobsPerFrame, label);
+    std::snprintf(label, sizeof(label), "steady-state submit bursts + stealing make 0 heap allocations (%u workers)",
+                  workers);
+    expectTrue(allocs == 0u, label);
+    scheduler.shutdown();
+}
+
 void testConcurrentCallers() {
     Watchdog watchdog("parallel_for concurrent callers", 300);
     auto& scheduler = fuse::jobs::JobScheduler::instance();
@@ -359,6 +415,9 @@ int main() {
 
     for (u32 workers : {1u, 2u, 4u}) {
         testZeroAllocations(workers);
+    }
+    for (u32 workers : {2u, 4u}) {
+        testSubmitBurstsDoNotGrowQueues(workers);
     }
     testConcurrentCallers();
 

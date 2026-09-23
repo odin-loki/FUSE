@@ -148,6 +148,7 @@ class JobRing {
 public:
     bool empty() const { return m_count == 0; }
     std::size_t size() const { return m_count; }
+    std::size_t capacity() const { return m_slots.size(); }
 
     void pushBack(JobScheduler::JobFn&& job) {
         if (m_count == m_slots.size()) {
@@ -173,9 +174,18 @@ public:
         return job;
     }
 
+    /// Allocate the initial slots up front (power of two). Without this a band's first-ever push
+    /// allocates, and which worker's band first receives a job (round-robin target or steal
+    /// destination) depends on timing, so it can land in any later frame.
+    void reserveInitial(std::size_t capacity) {
+        if (m_slots.empty()) {
+            m_slots.resize(capacity);
+        }
+    }
+
 private:
     void grow() {
-        const std::size_t newCapacity = m_slots.empty() ? 64u : m_slots.size() * 2u;
+        const std::size_t newCapacity = m_slots.empty() ? kInitialCapacity : m_slots.size() * 2u;
         std::vector<JobScheduler::JobFn> slots(newCapacity);
         for (std::size_t i = 0; i < m_count; ++i) {
             slots[i] = std::move(m_slots[(m_head + i) & (m_slots.size() - 1)]);
@@ -184,6 +194,12 @@ private:
         m_head = 0;
     }
 
+public:
+    /// 512 x 32-byte jobs = 16 KiB per band. With stealing capped at half capacity, a ring never
+    /// grows unless more than 256 submitted jobs are outstanding on one worker at once.
+    static constexpr std::size_t kInitialCapacity = 512;
+
+private:
     std::vector<JobScheduler::JobFn> m_slots;
     std::size_t m_head = 0;
     std::size_t m_count = 0;
@@ -353,6 +369,9 @@ struct JobScheduler::Impl {
     /// parallel_for helper jobs queued but not yet started. Capped so a caller that outpaces busy or
     /// sleeping workers (it runs the chunks itself) cannot pile up no-op helpers and grow the queues.
     std::atomic<u32> queuedHelpers{0};
+    /// Workers that finished setup. initialize() blocks until all have, so the per-worker fiber
+    /// pool is never still being built (on the heap) while the first frames run.
+    std::atomic<u32> readyWorkers{0};
 
     void finishJob() {
         // Nothing blocks on activeJobs (drain() polls), so completion needs no wakeup.
@@ -464,6 +483,9 @@ struct JobScheduler::Impl {
                 fibersEnabled = false;
             }
         }
+        // Setup (fiber pool, bookkeeping) is the worker's only heap use; initialize() waits for it.
+        readyWorkers.fetch_add(1, std::memory_order_release);
+        readyWorkers.notify_all();
 
         // Spin before sleeping only after real activity; a timed-out sleep goes straight back to
         // sleep so an idle pool costs a few wakeups per second, not a spin window per timeout.
@@ -551,9 +573,15 @@ struct JobScheduler::Impl {
             const u32 batch = stealHalfQueueBatchSize(queueSize);
             out = victimQueue.popBack();
             // Remaining batch items become local work so the thief does not re-steal
-            // one-at-a-time from the same victim.
+            // one-at-a-time from the same victim. Stealing only relocates jobs, so it must never be
+            // what grows a ring: it fills the thief's ring to at most half its capacity and leaves
+            // the rest with the victim. The other half stays free for jobs submitted to the thief
+            // (round-robin) while it drains the stolen ones, so only a submitter's own burst
+            // (> capacity / 2 outstanding on one worker) can grow a ring.
             auto& dest = highBand ? queues[thief].high : queues[thief].normal;
-            for (u32 i = 1; i < batch && !victimQueue.empty(); ++i) {
+            const std::size_t stealLimit = dest.capacity() / 2u;
+            const std::size_t room = dest.size() < stealLimit ? stealLimit - dest.size() : 0u;
+            for (u32 i = 1; i < batch && i <= room && !victimQueue.empty(); ++i) {
                 dest.pushBack(victimQueue.popBack());
             }
             return true;
@@ -694,6 +722,10 @@ void JobScheduler::initialize(u32 workerCount) {
     m_impl = std::make_unique<Impl>();
     m_impl->workerCount = workerCount;
     m_impl->queues.resize(workerCount);
+    for (auto& queue : m_impl->queues) {
+        queue.high.reserveInitial(detail::JobRing::kInitialCapacity);
+        queue.normal.reserveInitial(detail::JobRing::kInitialCapacity);
+    }
     m_impl->queueMutexes = std::vector<std::mutex>(workerCount);
     m_impl->workerStates.resize(workerCount);
     m_impl->useFibers.store(platform::cooperativeFibersAvailable(), std::memory_order_release);
@@ -706,6 +738,12 @@ void JobScheduler::initialize(u32 workerCount) {
 
     for (u32 i = 0; i < workerCount; ++i) {
         m_impl->workers.emplace_back([this, i]() { m_impl->workerLoop(i); });
+    }
+    // A preempted worker could otherwise still be creating fibers during a caller's first frames,
+    // which zero-allocation gates on those frames observe as steady-state heap use.
+    for (u32 ready = m_impl->readyWorkers.load(std::memory_order_acquire); ready < workerCount;
+         ready = m_impl->readyWorkers.load(std::memory_order_acquire)) {
+        m_impl->readyWorkers.wait(ready, std::memory_order_acquire);
     }
 
     m_initialized = true;
