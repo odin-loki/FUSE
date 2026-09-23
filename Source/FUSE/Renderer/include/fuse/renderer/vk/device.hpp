@@ -62,10 +62,21 @@ struct VulkanDeviceInfo {
     bool samplerAnisotropy = false;
     float maxSamplerAnisotropy = 1.f;
     u32 deviceType = 0; // VkPhysicalDeviceType numeric
+    /// Physical device selection: index of the chosen device in vkEnumeratePhysicalDevices order
+    /// (UINT32_MAX when none), the number enumerated, and a per-device summary ("#i 'name' (type,
+    /// MiB device-local, 2D limit): selected | suitable | rejected, reason").
+    u32 physicalDeviceIndex = UINT32_MAX;
+    u32 physicalDeviceCount = 0;
+    std::string selection;
 };
 
 struct VulkanDeviceDesc {
     bool requirePresentation = false;
+    /// Devices missing a hard requirement (Vulkan 1.2, a graphics queue family, timeline
+    /// semaphores, and VK_KHR_swapchain + a present-capable family when `requirePresentation`) are
+    /// never picked. Among the rest: true ranks discrete > integrated > virtual > CPU, then more
+    /// device-local memory, then larger maxImageDimension2D, then enumeration order; false takes
+    /// the first suitable device in enumeration order.
     bool preferDiscreteGpu = true;
     /// Opaque VkSurfaceKHR; used to pick a present-capable graphics queue family.
     void* presentSurface = nullptr;

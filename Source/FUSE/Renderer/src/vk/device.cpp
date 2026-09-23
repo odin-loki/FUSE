@@ -28,18 +28,6 @@ bool extensionSupported(VkPhysicalDevice device, const char* name) {
     return false;
 }
 
-bool queueFamilySupports(VkPhysicalDevice device, u32 family, VkQueueFlagBits flags) {
-    VkQueueFamilyProperties props{};
-    u32 count = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &count, nullptr);
-    if (family >= count) {
-        return false;
-    }
-    std::vector<VkQueueFamilyProperties> families(count);
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &count, families.data());
-    return (families[family].queueFlags & flags) != 0;
-}
-
 u32 findQueueFamily(VkPhysicalDevice device, VkQueueFlagBits flags) {
     u32 count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(device, &count, nullptr);
@@ -143,6 +131,134 @@ const char* const kPlatformExternalExtensions[] = {
     VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
 #endif
 };
+
+const char* deviceTypeName(VkPhysicalDeviceType type) {
+    switch (type) {
+    case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+        return "discrete";
+    case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+        return "integrated";
+    case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+        return "virtual";
+    case VK_PHYSICAL_DEVICE_TYPE_CPU:
+        return "cpu";
+    default:
+        return "other";
+    }
+}
+
+/// Preference among suitable devices when `preferDiscreteGpu` is set: discrete > integrated >
+/// virtual > CPU > other.
+u32 deviceTypeRank(VkPhysicalDeviceType type) {
+    switch (type) {
+    case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+        return 4;
+    case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+        return 3;
+    case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+        return 2;
+    case VK_PHYSICAL_DEVICE_TYPE_CPU:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+struct DeviceCandidate {
+    VkPhysicalDevice handle = VK_NULL_HANDLE;
+    u32 index = 0;
+    VkPhysicalDeviceType type = VK_PHYSICAL_DEVICE_TYPE_OTHER;
+    std::string name;
+    VkDeviceSize deviceLocalBytes = 0;
+    u32 maxImageDimension2D = 0;
+    /// Empty when the device meets every hard requirement.
+    std::string rejectReason;
+};
+
+/// Hard requirements of the RHI: Vulkan 1.2 (the feature queries chain
+/// VkPhysicalDeviceVulkan12Features), a graphics queue family, timeline semaphores (FrameManager's
+/// per-slot timelines) and, when presentation is required, VK_KHR_swapchain plus a graphics
+/// family that presents to the given surface.
+DeviceCandidate evaluateCandidate(VkPhysicalDevice device, u32 index, const VulkanDeviceDesc& desc,
+                                  bool instanceHasSurface) {
+    DeviceCandidate candidate{};
+    candidate.handle = device;
+    candidate.index = index;
+    VkPhysicalDeviceProperties props{};
+    vkGetPhysicalDeviceProperties(device, &props);
+    candidate.type = props.deviceType;
+    candidate.name = props.deviceName;
+    candidate.maxImageDimension2D = props.limits.maxImageDimension2D;
+    VkPhysicalDeviceMemoryProperties memory{};
+    vkGetPhysicalDeviceMemoryProperties(device, &memory);
+    for (u32 i = 0; i < memory.memoryHeapCount; ++i) {
+        if ((memory.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0) {
+            candidate.deviceLocalBytes += memory.memoryHeaps[i].size;
+        }
+    }
+
+    if (props.apiVersion < VK_API_VERSION_1_2) {
+        candidate.rejectReason = "Vulkan 1.2 unsupported";
+        return candidate;
+    }
+    u32 familyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &familyCount, nullptr);
+    std::vector<VkQueueFamilyProperties> families(familyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &familyCount, families.data());
+    bool hasGraphics = false;
+    for (const VkQueueFamilyProperties& family : families) {
+        hasGraphics = hasGraphics || ((family.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0 && family.queueCount > 0);
+    }
+    if (!hasGraphics) {
+        candidate.rejectReason = "no graphics queue family";
+        return candidate;
+    }
+    VkPhysicalDeviceVulkan12Features features12{};
+    features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    VkPhysicalDeviceFeatures2 features2{};
+    features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    features2.pNext = &features12;
+    vkGetPhysicalDeviceFeatures2(device, &features2);
+    if (features12.timelineSemaphore != VK_TRUE) {
+        candidate.rejectReason = "timelineSemaphore unsupported";
+        return candidate;
+    }
+    if (desc.requirePresentation) {
+        if (!instanceHasSurface || !extensionSupported(device, VK_KHR_SWAPCHAIN_EXTENSION_NAME)) {
+            candidate.rejectReason = "VK_KHR_swapchain unavailable";
+            return candidate;
+        }
+        if (desc.presentSurface != nullptr) {
+            bool presentable = false;
+            findPresentableGraphicsFamily(device, reinterpret_cast<VkSurfaceKHR>(desc.presentSurface), presentable);
+            if (!presentable) {
+                candidate.rejectReason = "no graphics queue family presents to the surface";
+                return candidate;
+            }
+        }
+    }
+    return candidate;
+}
+
+/// True when `a` should be picked over `b` (both suitable). With `preferDiscrete`: device type rank,
+/// then more device-local memory, then larger maxImageDimension2D, then enumeration order.
+/// Without it: enumeration order only.
+bool betterCandidate(const DeviceCandidate& a, const DeviceCandidate& b, bool preferDiscrete) {
+    if (preferDiscrete) {
+        const u32 rankA = deviceTypeRank(a.type);
+        const u32 rankB = deviceTypeRank(b.type);
+        if (rankA != rankB) {
+            return rankA > rankB;
+        }
+        if (a.deviceLocalBytes != b.deviceLocalBytes) {
+            return a.deviceLocalBytes > b.deviceLocalBytes;
+        }
+        if (a.maxImageDimension2D != b.maxImageDimension2D) {
+            return a.maxImageDimension2D > b.maxImageDimension2D;
+        }
+    }
+    return a.index < b.index;
+}
 #endif
 
 } // namespace
@@ -208,17 +324,42 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(vkInstance, &deviceCount, devices.data());
 
-    VkPhysicalDevice selected = devices.front();
-    if (desc.preferDiscreteGpu) {
-        for (VkPhysicalDevice candidate : devices) {
-            VkPhysicalDeviceProperties props{};
-            vkGetPhysicalDeviceProperties(candidate, &props);
-            if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-                selected = candidate;
-                break;
-            }
+    // VK_KHR_swapchain and surface queries both depend on VK_KHR_surface at instance level.
+    const bool instanceHasSurface = instance.info().instanceHasExtension(VK_KHR_SURFACE_EXTENSION_NAME);
+
+    // Physical device selection: drop devices missing a hard requirement, then rank the rest
+    // (see betterCandidate). The summary lands in m_info.selection either way.
+    m_info.physicalDeviceCount = deviceCount;
+    const DeviceCandidate* best = nullptr;
+    std::vector<DeviceCandidate> candidates;
+    candidates.reserve(deviceCount);
+    for (u32 i = 0; i < deviceCount; ++i) {
+        candidates.push_back(evaluateCandidate(devices[i], i, desc, instanceHasSurface));
+    }
+    for (const DeviceCandidate& candidate : candidates) {
+        if (candidate.rejectReason.empty() &&
+            (best == nullptr || betterCandidate(candidate, *best, desc.preferDiscreteGpu))) {
+            best = &candidate;
         }
     }
+    for (const DeviceCandidate& candidate : candidates) {
+        if (!m_info.selection.empty()) {
+            m_info.selection += "; ";
+        }
+        m_info.selection += "#" + std::to_string(candidate.index) + " '" + candidate.name + "' (" +
+                            deviceTypeName(candidate.type) + ", " +
+                            std::to_string(candidate.deviceLocalBytes >> 20) + " MiB device-local, 2D " +
+                            std::to_string(candidate.maxImageDimension2D) + "): " +
+                            (&candidate == best                  ? std::string("selected")
+                             : candidate.rejectReason.empty() ? std::string("suitable")
+                                                               : "rejected, " + candidate.rejectReason);
+    }
+    if (best == nullptr) {
+        m_info.message = "No suitable Vulkan physical device — " + m_info.selection;
+        return false;
+    }
+    VkPhysicalDevice selected = best->handle;
+    m_info.physicalDeviceIndex = best->index;
 
     VkPhysicalDeviceProperties props{};
     vkGetPhysicalDeviceProperties(selected, &props);
@@ -227,9 +368,6 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     u32 graphicsFamily = findQueueFamily(selected, VK_QUEUE_GRAPHICS_BIT);
     const u32 computeFamily = findComputeFamily(selected);
     const u32 transferFamily = findTransferFamily(selected);
-
-    // VK_KHR_swapchain and surface queries both depend on VK_KHR_surface at instance level.
-    const bool instanceHasSurface = instance.info().instanceHasExtension(VK_KHR_SURFACE_EXTENSION_NAME);
 
     std::string presentNote;
     if (desc.presentSurface != nullptr && !instanceHasSurface) {

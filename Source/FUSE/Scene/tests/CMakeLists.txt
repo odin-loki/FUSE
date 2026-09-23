@@ -104,3 +104,22 @@ if(TARGET fuse_physics)
     add_test(NAME fuse_b7_save_reload_gates COMMAND fuse_b7_save_reload_gates)
     set_tests_properties(fuse_b7_save_reload_gates PROPERTIES LABELS "gate")
 endif()
+
+# B3 row "SceneData SDF object buffer uploads to GPU and ray marcher renders correct scene":
+# SceneData -> SDF object buffer -> device-local upload + byte-exact readback (Lavapipe) -> CPU
+# reference ray march vs closed-form intersections. fuse_compute is only built with
+# FUSE_BUILD_CUDA, so the CPU reference source is compiled in directly. Exit 77 = no Vulkan device.
+if(TARGET fuse_rhi)
+    add_executable(fuse_b3_sdf_buffer_ray_march test_b3_sdf_buffer_ray_march_gates.cpp
+                   ${CMAKE_SOURCE_DIR}/Source/FUSE/Compute/src/ray_march_cpu.cpp)
+    target_include_directories(fuse_b3_sdf_buffer_ray_march PRIVATE ${CMAKE_SOURCE_DIR}/Source/FUSE/Compute/include)
+    target_link_libraries(fuse_b3_sdf_buffer_ray_march PRIVATE fuse_scene fuse_ecs fuse_rhi fuse_core)
+    add_test(NAME fuse_b3_sdf_buffer_ray_march
+             COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh"
+                     "$<TARGET_FILE:fuse_b3_sdf_buffer_ray_march>")
+    set_tests_properties(fuse_b3_sdf_buffer_ray_march PROPERTIES
+        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        RUN_SERIAL TRUE
+        SKIP_RETURN_CODE 77
+        LABELS "gate;vulkan")
+endif()

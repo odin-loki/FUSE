@@ -1913,7 +1913,7 @@ int main() {
 *Carry-forward deliverable/test checklist (FUSE-adapted):*
 
 - [x] Instance creates cleanly with validation layers enabled — zero validation errors on startup — `fuse_vulkan_validation_gate`
-- [ ] Physical device selection picks the RTX 3090 correctly over any integrated GPU
+- [ ] Physical device selection picks the RTX 3090 correctly over any integrated GPU — partial: selection policy gated by `fuse_b2_physical_device_selection` (Lavapipe registered as two drivers + spoof layer, 21 scenarios); the RTX 3090 pick is manual
 - [x] Logical device created with graphics, compute, and transfer queues on separate families where available (`fuse_b2_device_queue_families_{split,transfer,shared}` — families emulated on Lavapipe by the split-family test layer)
 - [x] Swapchain creates at 1920×1080, triple-buffered — resize correctly rebuilds without crash (`fuse_b2_x11_swapchain_gates`)
 - [x] Frame-in-flight management holds three independent frame data sets — verified by timeline semaphore values — `fuse_b5_rhi_frame_timelines`
@@ -2738,7 +2738,7 @@ void CameraSystem::update(Registry& reg) {
 - [x] Active camera frustum correctly culls out-of-view entities — verified by checking draw list count vs total entity count — `fuse_b3_scene_gates`
 - [x] Scene save/load round-trips 10k entities with zero data loss — byte-identical component arrays — `fuse_b3_serialiser`
 - [x] Async scene load completes and calls callback on the main thread — `fuse_b3_serialiser`
-- [ ] SceneData SDF object buffer uploads to GPU and ray marcher renders correct scene
+- [ ] SceneData SDF object buffer uploads to GPU and ray marcher renders correct scene — partial: `fuse_b3_sdf_buffer_ray_march` uploads byte-exact on Lavapipe and renders via the CPU reference ray marcher vs analytic intersections; CUDA kernel still a stub
 - [ ] Renderer receives SceneData from scene and renders 500 SDF objects at 1080p > 60fps
 - [x] Adding and removing entities mid-frame does not corrupt the BVH or draw list — `fuse_b3_scene_gates`
 - [x] Free camera moves through the scene with correct frustum culling visible in draw call count — `fuse_b3_free_camera_gates`
