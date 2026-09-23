@@ -2,8 +2,8 @@
 
 namespace fuse::editor {
 
-ViewportVulkanSurfaceResult createViewportVulkanSurfaceFromWinId(u64 winId, u32 /*width*/,
-                                                                 u32 /*height*/) {
+ViewportVulkanSurfaceResult createViewportVulkanSurfaceFromWinId(u64 winId, [[maybe_unused]] u32 width,
+                                                                 [[maybe_unused]] u32 height) {
     ViewportVulkanSurfaceResult result{};
     if (winId == 0u) {
         result.message = "invalid Qt winId";
@@ -35,11 +35,11 @@ void destroyViewportVulkanSurface(ViewportVulkanSurfaceResult& result) {
 }
 
 QVulkanWindowWsiProbeResult probeQVulkanWindowWsi() {
-    QVulkanWindowWsiProbeResult result{};
 #if defined(FUSE_HAS_QT_VULKAN)
     extern QVulkanWindowWsiProbeResult probeQVulkanWindowWsiQt();
     return probeQVulkanWindowWsiQt();
 #else
+    QVulkanWindowWsiProbeResult result{};
     result.headlessSkipped = true;
     result.note = "qt_vulkan_module_unavailable";
     return result;
