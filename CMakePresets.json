@@ -148,6 +148,68 @@
         "fuse-shipping"
       ],
       "binaryDir": "${sourceDir}/build/fuse-werror-shipping"
+    },
+    {
+      "name": "fuse-mingw-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-x86_64.cmake",
+      "cacheVariables": {
+        "FUSE_UMBRELLA": "ON",
+        "FUSE_BUILD_T3D": "OFF",
+        "FUSE_BUILD_T2D": "OFF",
+        "FUSE_BUILD_VULKAN": "OFF",
+        "FUSE_BUILD_CUDA": "OFF",
+        "FUSE_BUILD_EDITOR": "OFF",
+        "FUSE_BUILD_CORE": "ON",
+        "FUSE_BUILD_CORE_TESTS": "ON",
+        "FUSE_WARNINGS": "ON",
+        "FUSE_WARNINGS_AS_ERRORS": "ON",
+        "CMAKE_C_FLAGS_DEBUG": "-O0",
+        "CMAKE_CXX_FLAGS_DEBUG": "-O0",
+        "CMAKE_C_FLAGS_RELWITHDEBINFO": "-O2 -DNDEBUG",
+        "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O2 -DNDEBUG"
+      },
+      "displayName": "FUSE Windows x64 cross base (no DWARF: static PE tests with -g need ~9 GB)"
+    },
+    {
+      "name": "fuse-mingw-debug",
+      "displayName": "FUSE Windows x64 Debug (MinGW-w64 cross, -Werror; ctest via Wine)",
+      "inherits": "fuse-mingw-base",
+      "binaryDir": "${sourceDir}/build/fuse-mingw-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "fuse-mingw-release",
+      "displayName": "FUSE Windows x64 Release (MinGW-w64 cross, -Werror; ctest via Wine)",
+      "inherits": "fuse-mingw-base",
+      "binaryDir": "${sourceDir}/build/fuse-mingw-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "fuse-mingw-profile",
+      "displayName": "FUSE Windows x64 Profile (MinGW-w64 cross, -Werror; ctest via Wine)",
+      "inherits": "fuse-mingw-base",
+      "binaryDir": "${sourceDir}/build/fuse-mingw-profile",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "FUSE_PROFILE": "ON"
+      }
+    },
+    {
+      "name": "fuse-mingw-shipping",
+      "displayName": "FUSE Windows x64 Shipping (MinGW-w64 cross, -Werror; ctest via Wine)",
+      "inherits": "fuse-mingw-base",
+      "binaryDir": "${sourceDir}/build/fuse-mingw-shipping",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FUSE_SHIPPING": "ON",
+        "FUSE_BUILD_EDITOR_API": "OFF"
+      }
     }
   ]
 }

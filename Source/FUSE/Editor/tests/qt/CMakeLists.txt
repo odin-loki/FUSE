@@ -35,7 +35,10 @@ else()
     set(_fuse_qt_gate_available OFF)
 endif()
 
-if(DEFINED FUSE_DISPLAY_TEST_WRAPPER AND EXISTS "${FUSE_DISPLAY_TEST_WRAPPER}")
+if(CMAKE_CROSSCOMPILING)
+    # Cross build (e.g. MinGW + Wine): the host X display wrapper cannot run the target binary.
+    set(_fuse_qt_gate_launcher ${CMAKE_CROSSCOMPILING_EMULATOR})
+elseif(DEFINED FUSE_DISPLAY_TEST_WRAPPER AND EXISTS "${FUSE_DISPLAY_TEST_WRAPPER}")
     set(_fuse_qt_gate_launcher "${FUSE_DISPLAY_TEST_WRAPPER}")
 else()
     set(_fuse_qt_gate_launcher "")

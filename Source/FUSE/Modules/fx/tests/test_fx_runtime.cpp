@@ -147,7 +147,11 @@ void testEffectGraphParentChildTick() {
 
     expectTrue(graph.activated(), "graph activated");
     expectTrue(graph.activeCount() == 1u, "only root active initially");
-    expectTrue(graph.nodes()[child].state == fuse::fx::EffectNodeState::Pending, "child waits for parent");
+    // Node ids start at 1; nodes() is insertion-ordered, so the child is element 1 (indexing by
+    // its id read past the end — undefined behaviour that only happened to pass on glibc).
+    expectTrue(graph.nodes().size() == 2u && graph.nodes()[1].id == child &&
+                   graph.nodes()[1].state == fuse::fx::EffectNodeState::Pending,
+               "child waits for parent");
 
     fuse::frame::FrameCtx ctx;
     ctx.dt = 0.2f;

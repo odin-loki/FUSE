@@ -29,6 +29,7 @@ add_executable(fuse_editor_viewport_present_gate_tests
 target_link_libraries(fuse_editor_viewport_present_gate_tests PRIVATE fuse_editor_api fuse_core)
 if(FUSE_BUILD_VULKAN)
     target_link_libraries(fuse_editor_viewport_present_gate_tests PRIVATE fuse_rhi)
+    target_compile_definitions(fuse_editor_viewport_present_gate_tests PRIVATE FUSE_TEST_HAS_RHI=1)
     add_test(NAME fuse_editor_viewport_present_gate COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_editor_viewport_present_gate_tests>")
     set_tests_properties(fuse_editor_viewport_present_gate PROPERTIES
         ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"

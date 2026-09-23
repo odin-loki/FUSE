@@ -1,5 +1,6 @@
 #include <fuse/script/script_hot_reload.hpp>
 
+#include <fuse/io/file_time.hpp>
 #include <fuse/script/script_runtime.hpp>
 
 #include <filesystem>
@@ -21,8 +22,8 @@ FileStamp stamp_of(const std::string& path) {
     FileStamp stamp;
     std::error_code ec;
     const std::filesystem::path p(path);
-    const auto write_time = std::filesystem::last_write_time(p, ec);
-    if (ec) {
+    const u64 write_time = io::fileWriteTimeNs(path); // sub-second on MinGW too
+    if (write_time == 0u) {
         return stamp;
     }
     const auto size = std::filesystem::file_size(p, ec);
@@ -30,7 +31,7 @@ FileStamp stamp_of(const std::string& path) {
         return stamp;
     }
     stamp.ok = true;
-    stamp.last_write = static_cast<s64>(write_time.time_since_epoch().count());
+    stamp.last_write = static_cast<s64>(write_time);
     stamp.size = static_cast<u64>(size);
     return stamp;
 }

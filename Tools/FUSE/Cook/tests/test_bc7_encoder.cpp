@@ -116,6 +116,9 @@ void testGlslangShaderCookHook() {
                "void main() { outColor = vec4(1.0, 0.0, 0.0, 1.0); }\n";
     }
 
+    // A cooked file left by an earlier run (e.g. a host build that has glslangValidator) must not
+    // be mistaken for this run's output when the validator is unavailable here.
+    std::remove("/tmp/fuse_glslang_output.fuseshader");
     const fuse::cook::CookStubWriteResult written =
         fuse::cook::tryCookShaderGlslang(source, "/tmp/fuse_glslang_output.fuseshader", "fragment", 450u);
 

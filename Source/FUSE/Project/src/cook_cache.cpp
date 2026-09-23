@@ -758,11 +758,16 @@ bool CookCache::load(const std::string& path) {
                 return;
             }
             ++fieldCursor;
-            std::size_t end = fieldCursor;
-            while (end < objectBody.size() && objectBody[end] != '"') {
-                ++end;
+            // Undo escapeJson (\\ and \"): Windows paths are full of backslashes, and a verbatim
+            // copy never matched the manifest's paths again, so nothing was ever a cache hit there.
+            value.clear();
+            while (fieldCursor < objectBody.size() && objectBody[fieldCursor] != '"') {
+                if (objectBody[fieldCursor] == '\\' && fieldCursor + 1 < objectBody.size()) {
+                    ++fieldCursor;
+                }
+                value.push_back(objectBody[fieldCursor]);
+                ++fieldCursor;
             }
-            value = std::string(objectBody.substr(fieldCursor, end - fieldCursor));
         };
 
         const std::string hashNeedle = "\"contentHash\":";

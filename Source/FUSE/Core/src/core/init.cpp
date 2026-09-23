@@ -3,6 +3,7 @@
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/jobs/worker_count.hpp>
 #include <fuse/platform/crash_report.hpp>
+#include <fuse/platform/dpi.hpp>
 #include <fuse/platform/thread.hpp>
 
 namespace fuse::core {
@@ -16,6 +17,9 @@ bool initialize() {
         return true;
     }
 
+    // Process-wide and only settable before the first window exists (B7.8): per-monitor v2 on
+    // Windows 10 1703+, with fallbacks; no-op elsewhere.
+    platform::enableHighDpiAwareness();
     const u32 workers = jobs::computeWorkerCountForCurrentPlatform();
     jobs::JobScheduler::instance().initialize(workers);
     platform::registerRenderThread();

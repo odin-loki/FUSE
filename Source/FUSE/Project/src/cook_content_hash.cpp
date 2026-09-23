@@ -1,5 +1,6 @@
 #include <fuse/project/cook_content_hash.hpp>
 
+#include <fuse/io/file_time.hpp>
 #include <fuse/project/cook_cache.hpp>
 
 #include <filesystem>
@@ -47,12 +48,7 @@ u64 fnv1a64_combine(u64 left, u64 right) {
 }
 
 u64 file_mtime_ns(const std::string& path) {
-    std::error_code ec;
-    const auto ftime = std::filesystem::last_write_time(std::filesystem::path(path), ec);
-    if (ec) {
-        return 0;
-    }
-    return static_cast<u64>(ftime.time_since_epoch().count());
+    return io::fileWriteTimeNs(path); // sub-second on every platform (MinGW last_write_time is not)
 }
 
 u64 hash_file_content(const std::string& path) {

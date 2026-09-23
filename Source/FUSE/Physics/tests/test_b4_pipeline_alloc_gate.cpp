@@ -29,6 +29,10 @@
 #include <string>
 #include <vector>
 
+#if defined(_WIN32)
+#include <malloc.h>
+#endif
+
 #if defined(__GLIBC__)
 #include <execinfo.h>
 #include <unistd.h>
@@ -38,7 +42,7 @@
 namespace {
 std::atomic<bool> g_counting{false};
 std::atomic<unsigned long> g_allocations{0};
-bool g_backtraces = false;
+[[maybe_unused]] bool g_backtraces = false; // glibc backtrace() builds only
 
 void noteAllocation() {
     if (g_counting.load(std::memory_order_relaxed)) {
@@ -76,7 +80,12 @@ void* operator new(std::size_t size, std::align_val_t alignment) {
     noteAllocation();
     const std::size_t align = static_cast<std::size_t>(alignment);
     const std::size_t rounded = ((size == 0 ? 1 : size) + align - 1u) / align * align;
+#if defined(_WIN32)
+    // No aligned_alloc in the Windows CRT; _aligned_malloc pairs with _aligned_free below.
+    if (void* p = _aligned_malloc(rounded, align)) {
+#else
     if (void* p = std::aligned_alloc(align, rounded)) {
+#endif
         return p;
     }
     throw std::bad_alloc();
@@ -86,10 +95,17 @@ void operator delete(void* p) noexcept { std::free(p); }
 void operator delete[](void* p) noexcept { std::free(p); }
 void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
+#if defined(_WIN32)
+void operator delete(void* p, std::align_val_t) noexcept { _aligned_free(p); }
+void operator delete[](void* p, std::align_val_t) noexcept { _aligned_free(p); }
+void operator delete(void* p, std::size_t, std::align_val_t) noexcept { _aligned_free(p); }
+void operator delete[](void* p, std::size_t, std::align_val_t) noexcept { _aligned_free(p); }
+#else
 void operator delete(void* p, std::align_val_t) noexcept { std::free(p); }
 void operator delete[](void* p, std::align_val_t) noexcept { std::free(p); }
 void operator delete(void* p, std::size_t, std::align_val_t) noexcept { std::free(p); }
 void operator delete[](void* p, std::size_t, std::align_val_t) noexcept { std::free(p); }
+#endif
 
 namespace {
 

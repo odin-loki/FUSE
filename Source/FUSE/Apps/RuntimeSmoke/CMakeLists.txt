@@ -64,9 +64,11 @@ if(TARGET fuse_hybrid AND TARGET fuse_scene AND TARGET fuse_animation AND TARGET
             fuse_apply_cxx23(fuse_runtime_steady_state_alloc)
         endif()
     endif()
-    set(_fuse_steady_cmd $<TARGET_FILE:fuse_runtime_steady_state_alloc>)
+    # Target-name COMMAND (not $<TARGET_FILE>) so a cross build goes through the emulator.
+    set(_fuse_steady_cmd fuse_runtime_steady_state_alloc)
     if(FUSE_BUILD_VULKAN AND EXISTS "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
-        set(_fuse_steady_cmd "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh" ${_fuse_steady_cmd})
+        set(_fuse_steady_cmd "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh"
+            $<TARGET_FILE:fuse_runtime_steady_state_alloc>)
     endif()
     add_test(NAME fuse_runtime_steady_state_alloc COMMAND ${_fuse_steady_cmd})
     set_tests_properties(fuse_runtime_steady_state_alloc PROPERTIES

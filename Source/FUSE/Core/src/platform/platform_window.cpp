@@ -1,3 +1,4 @@
+#include <fuse/platform/dpi.hpp>
 #include <fuse/platform/event_pump.hpp>
 #include <fuse/platform/window.hpp>
 #include <fuse/platform/window_wsi.hpp>
@@ -111,6 +112,22 @@ bool isWindowScopedEventType(PlatformEventType type) {
 
 #if defined(_WIN32)
 constexpr wchar_t kOwnedWindowClassName[] = L"FUSE_PlatformWindow";
+#ifndef WM_DPICHANGED
+#define WM_DPICHANGED 0x02E0
+#endif
+
+// Per-monitor-v2 DPI awareness (dpi.hpp) makes Windows send WM_DPICHANGED instead of stretching
+// the window when it moves to a monitor with a different scale; apply the suggested rectangle so
+// the window keeps its physical size. The resulting WM_SIZE reaches the pump as WindowResized.
+LRESULT CALLBACK ownedWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    if (message == WM_DPICHANGED && lParam != 0) {
+        const RECT* suggested = reinterpret_cast<const RECT*>(lParam);
+        SetWindowPos(hwnd, nullptr, suggested->left, suggested->top, suggested->right - suggested->left,
+                     suggested->bottom - suggested->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        return 0;
+    }
+    return DefWindowProcW(hwnd, message, wParam, lParam);
+}
 
 bool registerOwnedWindowClassOnce() {
     static bool ready = false;
@@ -118,9 +135,12 @@ bool registerOwnedWindowClassOnce() {
         return true;
     }
 
+    // DPI awareness is process-wide and must be fixed before the first window exists.
+    enableHighDpiAwareness();
+
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
-    wc.lpfnWndProc = DefWindowProcW;
+    wc.lpfnWndProc = ownedWindowProc;
     wc.hInstance = GetModuleHandleW(nullptr);
     wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
     wc.lpszClassName = kOwnedWindowClassName;

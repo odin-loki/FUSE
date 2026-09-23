@@ -271,12 +271,34 @@ add_executable(fuse_core_b7_platform_gates
     test_b7_platform_gates.cpp
 )
 target_link_libraries(fuse_core_b7_platform_gates PRIVATE fuse_core ${CMAKE_DL_LIBS})
-# Export the crash probes so the report's backtrace symbols and dladdr can name them.
-set_target_properties(fuse_core_b7_platform_gates PROPERTIES ENABLE_EXPORTS ON)
+# Export the crash probes so the report's backtrace symbols and dladdr can name them (ELF only:
+# on PE targets ENABLE_EXPORTS turns into --export-all-symbols + an import library, which is not
+# needed there and trips GCC 13's C++23 constexpr type_info::operator== against static libstdc++).
+if(NOT WIN32)
+    set_target_properties(fuse_core_b7_platform_gates PROPERTIES ENABLE_EXPORTS ON)
+endif()
 target_compile_definitions(fuse_core_b7_platform_gates PRIVATE
     FUSE_B7_SOURCE_ROOT="${CMAKE_SOURCE_DIR}/Source/FUSE")
 add_test(NAME fuse_core_b7_platform_gates COMMAND fuse_core_b7_platform_gates)
 set_tests_properties(fuse_core_b7_platform_gates PROPERTIES LABELS "gate" TIMEOUT 600)
+
+# B7.8 DPI awareness: core::initialize() opts into per-monitor-v2 on Windows (fallbacks: v1 context,
+# shcore, SetProcessDPIAware); a preset awareness (manifest/host) is kept. NotApplicable elsewhere.
+add_executable(fuse_core_b7_dpi_awareness test_b7_dpi_awareness.cpp)
+target_link_libraries(fuse_core_b7_dpi_awareness PRIVATE fuse_core)
+add_test(NAME fuse_core_b7_dpi_awareness COMMAND fuse_core_b7_dpi_awareness)
+set_tests_properties(fuse_core_b7_dpi_awareness PROPERTIES LABELS "gate" TIMEOUT 120)
+
+# B7.8 Win32 crash handler: child processes crash (null read, worker thread, failed FUSE_VERIFY);
+# the test validates fuse_crash_<pid>.dmp structurally (header, stream directory, Exception /
+# ThreadList / ModuleList / SystemInfo streams, cross-checked with dbghelp) and the .txt report.
+# x64 only (the fault-address checks read CONTEXT::Rip and the x64 unwind table).
+if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+    add_executable(fuse_core_b7_win32_crash_minidump test_b7_win32_crash_minidump.cpp)
+    target_link_libraries(fuse_core_b7_win32_crash_minidump PRIVATE fuse_core dbghelp)
+    add_test(NAME fuse_core_b7_win32_crash_minidump COMMAND fuse_core_b7_win32_crash_minidump)
+    set_tests_properties(fuse_core_b7_win32_crash_minidump PROPERTIES LABELS "gate" TIMEOUT 600)
+endif()
 
 # Shipping strip: every fuse_core public header plus the log/assert/profiler macros compiled with
 # the FUSE_SHIPPING definitions and warnings as errors, then the object is inspected.

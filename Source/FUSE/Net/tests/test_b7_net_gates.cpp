@@ -61,7 +61,8 @@ struct Rng {
     f32 real(f32 lo, f32 hi) { return lo + static_cast<f32>(unit()) * (hi - lo); }
 };
 
-u64 now_us() {
+// Only the POSIX two-process ENet gates use wall-clock deadlines.
+[[maybe_unused]] u64 now_us() {
     return static_cast<u64>(std::chrono::duration_cast<std::chrono::microseconds>(
                                 std::chrono::steady_clock::now().time_since_epoch())
                                 .count());

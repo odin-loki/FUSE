@@ -97,6 +97,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#if defined(_WIN32)
+#include <malloc.h>
+#endif
 #include <cstring>
 #include <memory>
 #include <new>
@@ -143,7 +146,8 @@ struct Site {
     void* frames[kStackDepth] = {};
 };
 
-Site g_sites[kSiteTableSize];
+// Only filled/read with the glibc malloc hook (backtrace attribution); unused elsewhere.
+[[maybe_unused]] Site g_sites[kSiteTableSize];
 std::atomic<unsigned> g_droppedSites{0};
 std::atomic<bool> g_measuring{false};
 std::atomic<int> g_phase{-1};
@@ -210,6 +214,8 @@ void record(Kind kind, std::size_t size) {
         }
     }
     g_droppedSites.fetch_add(1u, std::memory_order_relaxed);
+#else
+    (void)size;
 #endif
     t_inHook = false;
 }
@@ -225,6 +231,9 @@ void* rawMalloc(std::size_t size) {
 void* rawAligned(std::size_t align, std::size_t size) {
 #if FUSE_STEADY_HAVE_MALLOC_HOOK
     return __libc_memalign(align, size);
+#elif defined(_WIN32)
+    // The Windows CRT has no aligned_alloc; _aligned_malloc blocks go back through rawAlignedFree.
+    return _aligned_malloc(size == 0 ? 1 : size, align);
 #else
     return std::aligned_alloc(align, (size + align - 1u) / align * align);
 #endif
@@ -235,6 +244,14 @@ void rawFree(void* p) {
     __libc_free(p);
 #else
     std::free(p);
+#endif
+}
+
+void rawAlignedFree(void* p) {
+#if defined(_WIN32) && !FUSE_STEADY_HAVE_MALLOC_HOOK
+    _aligned_free(p);
+#else
+    rawFree(p);
 #endif
 }
 
@@ -276,10 +293,10 @@ void operator delete(void* p) noexcept { rawFree(p); }
 void operator delete[](void* p) noexcept { rawFree(p); }
 void operator delete(void* p, std::size_t) noexcept { rawFree(p); }
 void operator delete[](void* p, std::size_t) noexcept { rawFree(p); }
-void operator delete(void* p, std::align_val_t) noexcept { rawFree(p); }
-void operator delete[](void* p, std::align_val_t) noexcept { rawFree(p); }
-void operator delete(void* p, std::size_t, std::align_val_t) noexcept { rawFree(p); }
-void operator delete[](void* p, std::size_t, std::align_val_t) noexcept { rawFree(p); }
+void operator delete(void* p, std::align_val_t) noexcept { rawAlignedFree(p); }
+void operator delete[](void* p, std::align_val_t) noexcept { rawAlignedFree(p); }
+void operator delete(void* p, std::size_t, std::align_val_t) noexcept { rawAlignedFree(p); }
+void operator delete[](void* p, std::size_t, std::align_val_t) noexcept { rawAlignedFree(p); }
 void operator delete(void* p, const std::nothrow_t&) noexcept { rawFree(p); }
 void operator delete[](void* p, const std::nothrow_t&) noexcept { rawFree(p); }
 

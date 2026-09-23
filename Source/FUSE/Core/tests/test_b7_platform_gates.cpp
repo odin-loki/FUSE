@@ -12,7 +12,9 @@
 //     exactly the deliberately leaked allocations otherwise. The table is checked against an
 //     independent ledger under random churn with forced hash collisions, and an init/shutdown soak
 //     is checked against this binary's own global operator new/delete live-block counter.
-// Windows minidump / WinDbg, DPI awareness and the full shipping binary inspection are manual.
+// Windows: the minidump + SEH path is gated by fuse_core_b7_win32_crash_minidump and DPI awareness by
+// fuse_core_b7_dpi_awareness (MinGW cross build under Wine); opening the .dmp in WinDbg and the full
+// shipping binary inspection on MSVC stay manual.
 
 #include <fuse/alloc/freelist_allocator.hpp>
 #include <fuse/alloc/leak_detector.hpp>

@@ -39,6 +39,16 @@
 #if defined(__linux__)
 #include <malloc.h>
 #include <unistd.h>
+#elif defined(_WIN32)
+#include <malloc.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <psapi.h>
 #endif
 
 namespace {
@@ -50,6 +60,8 @@ std::atomic<long long> g_liveHeapBytes{0};
 std::size_t usableSize(void* p) {
 #if defined(__linux__)
     return p != nullptr ? malloc_usable_size(p) : 0u;
+#elif defined(_WIN32)
+    return p != nullptr ? _msize(p) : 0u;
 #else
     (void)p;
     return 0u;
@@ -79,14 +91,44 @@ void countedFree(void* p) {
 void* countedAlignedAlloc(std::size_t size, std::align_val_t align) {
     const std::size_t a = std::max<std::size_t>(static_cast<std::size_t>(align), sizeof(void*));
     void* p = nullptr;
+#if defined(_WIN32)
+    // Windows CRT: no posix_memalign, and msvcrt has no _aligned_msize. Keep the byte count in an
+    // `a`-byte header in front of the _aligned_malloc block; countedAlignedFree reads it back.
+    const std::size_t bytes = size == 0 ? a : size;
+    auto* base = static_cast<unsigned char*>(_aligned_malloc(bytes + a, a));
+    if (base == nullptr) {
+        throw std::bad_alloc();
+    }
+    *reinterpret_cast<std::size_t*>(base) = bytes;
+    p = base + a;
+    const std::size_t usable = bytes;
+#else
     if (posix_memalign(&p, a, size == 0 ? a : size) != 0) {
         throw std::bad_alloc();
     }
+    const std::size_t usable = usableSize(p);
+#endif
     if (g_counting.load(std::memory_order_relaxed)) {
         g_allocations.fetch_add(1u, std::memory_order_relaxed);
     }
-    g_liveHeapBytes.fetch_add(static_cast<long long>(usableSize(p)), std::memory_order_relaxed);
+    g_liveHeapBytes.fetch_add(static_cast<long long>(usable), std::memory_order_relaxed);
     return p;
+}
+
+void countedAlignedFree(void* p, std::align_val_t align) {
+#if defined(_WIN32)
+    if (p == nullptr) {
+        return;
+    }
+    const std::size_t a = std::max<std::size_t>(static_cast<std::size_t>(align), sizeof(void*));
+    unsigned char* base = static_cast<unsigned char*>(p) - a;
+    g_liveHeapBytes.fetch_sub(static_cast<long long>(*reinterpret_cast<std::size_t*>(base)),
+                              std::memory_order_relaxed);
+    _aligned_free(base);
+#else
+    (void)align;
+    countedFree(p);
+#endif
 }
 
 } // namespace
@@ -107,10 +149,10 @@ void operator delete(void* p) noexcept { countedFree(p); }
 void operator delete[](void* p) noexcept { countedFree(p); }
 void operator delete(void* p, std::size_t) noexcept { countedFree(p); }
 void operator delete[](void* p, std::size_t) noexcept { countedFree(p); }
-void operator delete(void* p, std::align_val_t) noexcept { countedFree(p); }
-void operator delete[](void* p, std::align_val_t) noexcept { countedFree(p); }
-void operator delete(void* p, std::size_t, std::align_val_t) noexcept { countedFree(p); }
-void operator delete[](void* p, std::size_t, std::align_val_t) noexcept { countedFree(p); }
+void operator delete(void* p, std::align_val_t align) noexcept { countedAlignedFree(p, align); }
+void operator delete[](void* p, std::align_val_t align) noexcept { countedAlignedFree(p, align); }
+void operator delete(void* p, std::size_t, std::align_val_t align) noexcept { countedAlignedFree(p, align); }
+void operator delete[](void* p, std::size_t, std::align_val_t align) noexcept { countedAlignedFree(p, align); }
 
 namespace {
 
@@ -149,6 +191,13 @@ long long residentBytes() {
     const int read = std::fscanf(f, "%lld %lld", &sizePages, &residentPages);
     std::fclose(f);
     return read == 2 ? residentPages * static_cast<long long>(sysconf(_SC_PAGESIZE)) : -1;
+#elif defined(_WIN32)
+    PROCESS_MEMORY_COUNTERS counters{};
+    counters.cb = sizeof(counters);
+    if (K32GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters)) == FALSE) {
+        return -1;
+    }
+    return static_cast<long long>(counters.WorkingSetSize); // resident set = working set
 #else
     return -1;
 #endif
@@ -302,7 +351,16 @@ int main() {
 
     // Sensitivity: a deterministic editor spike (here: +4x median at every 1000th tick, in every run)
     // must survive the per-index minimum and be flagged at each injected index.
-    {
+    // Needs a thread CPU clock finer than an idle frame: winpthreads' CLOCK_THREAD_CPUTIME_ID is
+    // GetThreadTimes (scheduler-tick granularity, ~15.6 ms), so on Windows the per-frame minimum is
+    // all zeros and a "4x median" spike is 0 — skip rather than report a meaningless failure.
+    timespec cpuRes{};
+    const bool cpuClockFine = clock_getres(CLOCK_THREAD_CPUTIME_ID, &cpuRes) == 0 && cpuRes.tv_sec == 0 &&
+                              cpuRes.tv_nsec <= 100000 && percentile(cpuMin, 0.5) > 0.0;
+    if (!cpuClockFine) {
+        std::printf("SKIP spike sensitivity: thread CPU clock resolution %lld ns is too coarse for per-frame timing\n",
+                    static_cast<long long>(cpuRes.tv_sec) * 1000000000ll + cpuRes.tv_nsec);
+    } else {
         const double median = percentile(cpuMin, 0.5);
         std::vector<long long> injectedMin(kFrames);
         for (u32 frame = 0; frame < kFrames; ++frame) {

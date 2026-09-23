@@ -86,6 +86,26 @@ ctest --test-dir build -C Release --output-on-failure
 
 Ninja + MSVC from a developer prompt is the same as the Linux command set.
 
+### Windows x64 from Linux (MinGW-w64 cross + Wine)
+
+The FUSE libraries that need no Vulkan/Qt/CUDA cross-compile for `x86_64-w64-mingw32` and their
+tests run headlessly under Wine (CI: `.github/workflows/fuse-windows-cross.yml`):
+
+```bash
+sudo apt-get install g++-mingw-w64-x86-64-posix mingw-w64-tools wine64
+cmake --preset fuse-mingw-release          # also: fuse-mingw-debug / -profile / -shipping
+cmake --build build/fuse-mingw-release
+ctest --test-dir build/fuse-mingw-release --output-on-failure
+```
+
+`cmake/toolchains/mingw-w64-x86_64.cmake` sets `CMAKE_CROSSCOMPILING_EMULATOR` to
+`cmake/toolchains/fuse-wine-run.sh`, which keeps a Wine prefix in the build tree (null graphics
+driver, no JIT debugger, `WINEDEBUG=-all`) and marks the run `FUSE_INSTRUMENTED_RUN=wine`, so
+wall-clock budgets are reported but not enforced. Executables link libgcc/libstdc++/winpthread
+statically and run on Windows as-is. The presets build without DWARF (static test executables with
+`-g` need ~9 GB); drop the `CMAKE_*_FLAGS_*` overrides for a debuggable build. MSVC is not covered
+by this path.
+
 ## Editor (Qt 6)
 
 Desktop only. Ignored on mobile toolchains.

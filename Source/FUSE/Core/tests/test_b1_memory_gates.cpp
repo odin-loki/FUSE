@@ -25,6 +25,27 @@
 #include <new>
 #include <random>
 #include <vector>
+#if defined(_WIN32)
+#include <malloc.h>
+#endif
+
+// Over-aligned replacement new: the Windows CRT has no std::aligned_alloc, and its _aligned_malloc
+// blocks must be released with _aligned_free (never free()), so the align_val_t deletes differ.
+#if defined(_WIN32)
+static inline void* fuseTestAlignedAlloc(std::size_t alignment, std::size_t size) {
+    return _aligned_malloc(size, alignment);
+}
+static inline void fuseTestAlignedFree(void* ptr) {
+    _aligned_free(ptr);
+}
+#else
+static inline void* fuseTestAlignedAlloc(std::size_t alignment, std::size_t size) {
+    return std::aligned_alloc(alignment, size);
+}
+static inline void fuseTestAlignedFree(void* ptr) {
+    std::free(ptr);
+}
+#endif
 
 // ---- global heap counter (whole binary) -------------------------------------------------------
 
@@ -48,7 +69,7 @@ void* operator new(std::size_t size, std::align_val_t alignment) {
     g_heapAllocations.fetch_add(1u, std::memory_order_relaxed);
     const std::size_t align = static_cast<std::size_t>(alignment);
     const std::size_t rounded = ((size == 0 ? 1 : size) + align - 1u) / align * align;
-    if (void* p = std::aligned_alloc(align, rounded)) {
+    if (void* p = fuseTestAlignedAlloc(align, rounded)) {
         return p;
     }
     throw std::bad_alloc();
@@ -62,10 +83,10 @@ void operator delete(void* ptr) noexcept { std::free(ptr); }
 void operator delete[](void* ptr) noexcept { std::free(ptr); }
 void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
 void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
-void operator delete(void* ptr, std::align_val_t) noexcept { std::free(ptr); }
-void operator delete[](void* ptr, std::align_val_t) noexcept { std::free(ptr); }
-void operator delete(void* ptr, std::size_t, std::align_val_t) noexcept { std::free(ptr); }
-void operator delete[](void* ptr, std::size_t, std::align_val_t) noexcept { std::free(ptr); }
+void operator delete(void* ptr, std::align_val_t) noexcept { fuseTestAlignedFree(ptr); }
+void operator delete[](void* ptr, std::align_val_t) noexcept { fuseTestAlignedFree(ptr); }
+void operator delete(void* ptr, std::size_t, std::align_val_t) noexcept { fuseTestAlignedFree(ptr); }
+void operator delete[](void* ptr, std::size_t, std::align_val_t) noexcept { fuseTestAlignedFree(ptr); }
 
 namespace {
 

@@ -1,0 +1,74 @@
+name: FUSE Windows x64 (MinGW-w64 cross + Wine)
+
+# Master plan rows exercised here:
+#   - "All four build configs produce correct binaries on Windows" — Debug / Release / Profile /
+#     Shipping of the FUSE subset that needs no Vulkan/Qt/CUDA (T3D/T2D off), built for
+#     x86_64-w64-mingw32 with -Wall -Wextra -Werror, then the whole ctest suite run through Wine
+#     (CMAKE_CROSSCOMPILING_EMULATOR = cmake/toolchains/fuse-wine-run.sh, headless null driver).
+#   - B7.8 "Crash handler writes valid minidump on intentional null dereference"
+#     (fuse_core_b7_win32_crash_minidump: structural .dmp validation; WinDbg itself stays manual).
+#   - B7.8 DPI awareness (fuse_core_b7_dpi_awareness). Wine 9.0 has no per-monitor-v2 context, so
+#     under Wine the v1 fallback is what gets proven; v2 needs a real Windows 10 1703+ runner.
+# MSVC is covered separately by build-windows-msvc.yml (legacy Torque3D) and is not exercised here.
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main, development]
+
+concurrency:
+  group: ci-${{ github.actor }}-${{ github.head_ref || github.run_number }}-${{ github.ref }}-fuse-windows-cross
+  cancel-in-progress: true
+
+jobs:
+  fuse-mingw-wine:
+    name: Windows x64 cross (${{ matrix.config }}) + Wine ctest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [debug, release, profile, shipping]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MinGW-w64 (posix threads) and Wine
+        run: |
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+            ninja-build cmake \
+            g++-mingw-w64-x86-64-posix gcc-mingw-w64-x86-64-posix mingw-w64-tools binutils-mingw-w64-x86-64 \
+            wine64
+          x86_64-w64-mingw32-g++-posix --version | head -1
+          (wine64 --version || /usr/lib/wine/wine64 --version) 2>/dev/null | head -1
+
+      - name: Configure (fuse-mingw-${{ matrix.config }})
+        run: cmake --preset fuse-mingw-${{ matrix.config }}
+
+      - name: Build (warnings are errors on FUSE targets)
+        run: cmake --build build/fuse-mingw-${{ matrix.config }}
+
+      - name: Verify PE32+ x86-64 binaries
+        run: |
+          set -e
+          count=0
+          while IFS= read -r exe; do
+            file "$exe" | grep -q 'PE32+ executable.*x86-64' || { file "$exe"; exit 1; }
+            count=$((count + 1))
+          done < <(find build/fuse-mingw-${{ matrix.config }} -name '*.exe' -not -path '*/CMakeFiles/*' -not -path '*/wineprefix/*')
+          echo "$count PE32+ x86-64 executables"
+          test "$count" -gt 0
+
+      - name: CTest under Wine (headless)
+        env:
+          WINEDEBUG: -all
+        run: ctest --test-dir build/fuse-mingw-${{ matrix.config }} --output-on-failure -j 2 --timeout 900
+
+      - name: Upload crash-handler artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuse-mingw-${{ matrix.config }}-testlog
+          path: build/fuse-mingw-${{ matrix.config }}/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore

@@ -1,7 +1,7 @@
 // Process crash handlers (B7.8 platform hardening).
 //
 // Everything reachable from the signal handler / exception filter is async-signal-safe: fixed
-// static buffers, open/write/close, no heap, no locks, no stdio. Configuration (directory, note)
+// static buffers, open/write/close (CreateFile/WriteFile on Win32), no heap, no locks, no stdio. Configuration (directory, note)
 // is copied into static storage from normal code before a crash can use it.
 #include <fuse/platform/crash_report.hpp>
 
@@ -14,8 +14,13 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <dbghelp.h>
+#include <psapi.h>
+#include <csignal>
 #define FUSE_CRASH_WIN32 1
 #elif (defined(__linux__) || defined(__APPLE__)) && !defined(__EMSCRIPTEN__)
 #include <csignal>
@@ -339,92 +344,379 @@ u64 currentPid() {
 
 #elif defined(FUSE_CRASH_WIN32)
 
+// Win32: a top-level unhandled-exception filter (SEH) plus a SIGABRT handler (abort() never raises
+// an SEH exception). Both hand the crash to a dedicated reporter thread created at install time,
+// which writes <dir>/fuse_crash_<pid>.dmp (dbghelp MiniDumpWriteDump, resolved at install time)
+// and <dir>/fuse_crash_<pid>.txt while the crashing thread waits. Writing from a separate thread
+// keeps a usable stack for EXCEPTION_STACK_OVERFLOW and lets dbghelp record the faulting thread
+// like any other suspended thread; the exception stream carries its fault context. The filter then
+// chains to the previous filter / returns EXCEPTION_CONTINUE_SEARCH, so the process still dies
+// with the original exception code (WER / exit status unchanged).
+
 using MiniDumpWriteDumpFn = BOOL(WINAPI*)(HANDLE, DWORD, HANDLE, MINIDUMP_TYPE,
                                            PMINIDUMP_EXCEPTION_INFORMATION,
                                            PMINIDUMP_USER_STREAM_INFORMATION,
                                            PMINIDUMP_CALLBACK_INFORMATION);
+using SignalHandlerFn = void (*)(int);
+
+/// Synthetic exception code recorded for abort() (customer bit set; "FUS" in the low bytes).
+constexpr DWORD kAbortExceptionCode = 0xE0465553u;
+constexpr DWORD kReporterWaitMs = 60000u;
+constexpr usize kMaxModules = 256u;
 
 LPTOP_LEVEL_EXCEPTION_FILTER g_previousFilter = nullptr;
 MiniDumpWriteDumpFn g_miniDumpWriteDump = nullptr;
+MINIDUMP_TYPE g_dumpType = MiniDumpNormal;
+SignalHandlerFn g_previousAbort = SIG_DFL;
+bool g_abortHooked = false;
 std::atomic<int> g_handling{0};
 
+struct CrashRequest {
+    EXCEPTION_POINTERS* exception = nullptr;
+    DWORD threadId = 0;
+    const char* reason = nullptr;
+};
+
+CrashRequest g_request;
+HANDLE g_reporterThread = nullptr;
+DWORD g_reporterThreadId = 0;
+HANDLE g_requestEvent = nullptr;
+HANDLE g_doneEvent = nullptr;
+std::atomic<bool> g_reporterExit{false};
+
 void writeAllWin(HANDLE file, const char* data, usize len) {
-    DWORD written = 0;
-    ::WriteFile(file, data, static_cast<DWORD>(len), &written, nullptr);
+    while (len > 0u) {
+        DWORD written = 0;
+        if (::WriteFile(file, data, static_cast<DWORD>(len), &written, nullptr) == FALSE || written == 0u) {
+            return;
+        }
+        data += written;
+        len -= written;
+    }
 }
 
-LONG WINAPI crashExceptionFilter(EXCEPTION_POINTERS* ep) {
-    int expected = 0;
-    if (!g_handling.compare_exchange_strong(expected, 1)) {
-        return EXCEPTION_CONTINUE_SEARCH;
-    }
-    const u64 pid = static_cast<u64>(::GetCurrentProcessId());
+void writeStrWin(HANDLE file, const char* s) {
+    writeAllWin(file, s, std::strlen(s));
+}
 
-    char path[kPathCapacity + 64];
-    Buf p{path, sizeof(path), 0u};
-    buildReportPath(p, pid, ".dmp");
-    if (g_miniDumpWriteDump != nullptr) {
-        HANDLE dump = ::CreateFileA(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
-                                    nullptr);
-        if (dump != INVALID_HANDLE_VALUE) {
-            MINIDUMP_EXCEPTION_INFORMATION mei{};
-            mei.ThreadId = ::GetCurrentThreadId();
-            mei.ExceptionPointers = ep;
-            mei.ClientPointers = FALSE;
-            const MINIDUMP_TYPE type = static_cast<MINIDUMP_TYPE>(
-                MiniDumpWithDataSegs | MiniDumpWithThreadInfo | MiniDumpWithIndirectlyReferencedMemory);
-            g_miniDumpWriteDump(::GetCurrentProcess(), ::GetCurrentProcessId(), dump, type, &mei, nullptr,
-                                nullptr);
-            ::CloseHandle(dump);
+const char* exceptionName(DWORD code) {
+    switch (code) {
+    case EXCEPTION_ACCESS_VIOLATION: return "EXCEPTION_ACCESS_VIOLATION";
+    case EXCEPTION_ARRAY_BOUNDS_EXCEEDED: return "EXCEPTION_ARRAY_BOUNDS_EXCEEDED";
+    case EXCEPTION_DATATYPE_MISALIGNMENT: return "EXCEPTION_DATATYPE_MISALIGNMENT";
+    case EXCEPTION_FLT_DIVIDE_BY_ZERO: return "EXCEPTION_FLT_DIVIDE_BY_ZERO";
+    case EXCEPTION_FLT_INVALID_OPERATION: return "EXCEPTION_FLT_INVALID_OPERATION";
+    case EXCEPTION_ILLEGAL_INSTRUCTION: return "EXCEPTION_ILLEGAL_INSTRUCTION";
+    case EXCEPTION_IN_PAGE_ERROR: return "EXCEPTION_IN_PAGE_ERROR";
+    case EXCEPTION_INT_DIVIDE_BY_ZERO: return "EXCEPTION_INT_DIVIDE_BY_ZERO";
+    case EXCEPTION_INT_OVERFLOW: return "EXCEPTION_INT_OVERFLOW";
+    case EXCEPTION_PRIV_INSTRUCTION: return "EXCEPTION_PRIV_INSTRUCTION";
+    case EXCEPTION_STACK_OVERFLOW: return "EXCEPTION_STACK_OVERFLOW";
+    case EXCEPTION_BREAKPOINT: return "EXCEPTION_BREAKPOINT";
+    case kAbortExceptionCode: return "abort (SIGABRT)";
+    default: return "exception";
+    }
+}
+
+/// Unwinds from the exception context (not from the reporter's own stack): frame 0 is the faulting
+/// instruction. x64 uses the PE unwind tables (.pdata/.xdata), which MinGW-w64 GCC and MSVC both
+/// emit; other architectures fall back to the calling thread's stack.
+usize walkStack(const CONTEXT* start, u64* frames, usize capacity) {
+#if defined(_M_X64) || defined(__x86_64__)
+    if (start == nullptr) {
+        return 0u;
+    }
+    CONTEXT ctx = *start;
+    usize count = 0u;
+    while (count < capacity && ctx.Rip != 0u) {
+        frames[count++] = ctx.Rip;
+        const DWORD64 previousSp = ctx.Rsp;
+        DWORD64 imageBase = 0u;
+        PRUNTIME_FUNCTION function = ::RtlLookupFunctionEntry(ctx.Rip, &imageBase, nullptr);
+        if (function == nullptr) {
+            // Leaf function (no unwind data): the return address is at [rsp].
+            if (ctx.Rsp == 0u || (ctx.Rsp & 7u) != 0u) {
+                break;
+            }
+            ctx.Rip = *reinterpret_cast<const DWORD64*>(ctx.Rsp);
+            ctx.Rsp += 8u;
+        } else {
+            PVOID handlerData = nullptr;
+            DWORD64 establisherFrame = 0u;
+            ::RtlVirtualUnwind(UNW_FLAG_NHANDLER, imageBase, ctx.Rip, function, &ctx, &handlerData,
+                               &establisherFrame, nullptr);
+        }
+        if (ctx.Rsp <= previousSp) {
+            break; // no progress: corrupt stack or end of chain
         }
     }
+    return count;
+#else
+    (void)start;
+    void* raw[kMaxFrames];
+    const usize limit = capacity < static_cast<usize>(kMaxFrames) ? capacity : static_cast<usize>(kMaxFrames);
+    const USHORT n = ::CaptureStackBackTrace(0, static_cast<DWORD>(limit), raw, nullptr);
+    for (USHORT i = 0; i < n; ++i) {
+        frames[i] = reinterpret_cast<u64>(raw[i]);
+    }
+    return n;
+#endif
+}
 
-    p.len = 0u;
-    buildReportPath(p, pid, ".txt");
+void writeMinidump(const CrashRequest& request, const char* path, char* status, usize statusCap) {
+    Buf s{status, statusCap, 0u};
+    if (g_miniDumpWriteDump == nullptr) {
+        s.put("none (dbghelp MiniDumpWriteDump unavailable)");
+        return;
+    }
+    HANDLE dump = ::CreateFileA(path, GENERIC_READ | GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                                FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (dump == INVALID_HANDLE_VALUE) {
+        s.put("none (cannot create ");
+        s.put(path);
+        s.put(")");
+        return;
+    }
+    MINIDUMP_EXCEPTION_INFORMATION mei{};
+    mei.ThreadId = request.threadId;
+    mei.ExceptionPointers = request.exception;
+    mei.ClientPointers = FALSE;
+    const BOOL ok = g_miniDumpWriteDump(::GetCurrentProcess(), ::GetCurrentProcessId(), dump, g_dumpType,
+                                        request.exception != nullptr ? &mei : nullptr, nullptr, nullptr);
+    const DWORD error = ok ? 0u : ::GetLastError();
+    ::FlushFileBuffers(dump);
+    ::CloseHandle(dump);
+    if (ok) {
+        s.put(path);
+    } else {
+        s.put("failed (MiniDumpWriteDump error ");
+        s.putHex(error);
+        s.put(")");
+    }
+}
+
+void writeTextReport(const CrashRequest& request, const char* path, const char* dumpStatus) {
     HANDLE text = ::CreateFileA(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (text != INVALID_HANDLE_VALUE) {
-        char line[512];
-        Buf b{line, sizeof(line), 0u};
-        b.put("FUSE crash report\nexception: ");
-        b.putHex(ep != nullptr && ep->ExceptionRecord ? ep->ExceptionRecord->ExceptionCode : 0u);
-        b.put("\npc: ");
-        b.putHex(ep != nullptr && ep->ExceptionRecord
-                     ? reinterpret_cast<u64>(ep->ExceptionRecord->ExceptionAddress)
-                     : 0u);
-        b.put("\npid: ");
-        b.putDec(pid);
-        b.put("\nnote: ");
+    if (text == INVALID_HANDLE_VALUE) {
+        return;
+    }
+    const EXCEPTION_RECORD* record =
+        request.exception != nullptr ? request.exception->ExceptionRecord : nullptr;
+    const CONTEXT* context = request.exception != nullptr ? request.exception->ContextRecord : nullptr;
+    const DWORD code = record != nullptr ? record->ExceptionCode : 0u;
+
+    char line[512];
+    Buf b{line, sizeof(line), 0u};
+    writeStrWin(text, "FUSE crash report\n");
+    b.put("exception: ");
+    b.putHex(code);
+    b.put(" ");
+    b.put(exceptionName(code));
+    b.put("\nfault_address: ");
+    if (record != nullptr && (code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_IN_PAGE_ERROR) &&
+        record->NumberParameters >= 2u) {
+        b.putHex(static_cast<u64>(record->ExceptionInformation[1]));
+        b.put("\naccess: ");
+        const ULONG_PTR kind = record->ExceptionInformation[0];
+        b.put(kind == 0u ? "read" : (kind == 1u ? "write" : (kind == 8u ? "execute" : "unknown")));
+    } else {
+        b.put("none");
+    }
+    b.put("\npc: ");
+    b.putHex(record != nullptr ? reinterpret_cast<u64>(record->ExceptionAddress) : 0u);
+    b.put("\npid: ");
+    b.putDec(static_cast<u64>(::GetCurrentProcessId()));
+    b.put("\ntid: ");
+    b.putDec(static_cast<u64>(request.threadId));
+    b.put("\n");
+    writeAllWin(text, line, b.len);
+
+    writeStrWin(text, "dump: ");
+    writeStrWin(text, dumpStatus);
+    writeStrWin(text, "\nnote: ");
+    writeAllWin(text, g_note, ::strnlen(g_note, sizeof(g_note)));
+    writeStrWin(text, "\nframes:\n");
+    u64 frames[kMaxFrames];
+    const usize count = walkStack(context, frames, static_cast<usize>(kMaxFrames));
+    for (usize i = 0; i < count; ++i) {
+        b.len = 0u;
+        b.put("  ");
+        b.putHex(frames[i]);
+        b.put("\n");
         writeAllWin(text, line, b.len);
-        writeAllWin(text, g_note, ::strnlen(g_note, sizeof(g_note)));
-        writeAllWin(text, "\nframes:\n", 9u);
-        void* frames[kMaxFrames];
-        const USHORT count = ::CaptureStackBackTrace(0, kMaxFrames, frames, nullptr);
-        for (USHORT i = 0; i < count; ++i) {
+    }
+
+    // Module map (base, size, path): symbolise the frames offline (addr2line / llvm-symbolizer on
+    // image-relative addresses, or WinDbg with the .dmp).
+    writeStrWin(text, "modules:\n");
+    HMODULE modules[kMaxModules];
+    DWORD needed = 0;
+    if (::K32EnumProcessModules(::GetCurrentProcess(), modules, sizeof(modules), &needed) != FALSE) {
+        usize n = needed / sizeof(HMODULE);
+        n = n < kMaxModules ? n : kMaxModules;
+        for (usize i = 0; i < n; ++i) {
+            MODULEINFO info{};
+            if (::K32GetModuleInformation(::GetCurrentProcess(), modules[i], &info, sizeof(info)) == FALSE) {
+                continue;
+            }
             b.len = 0u;
             b.put("  ");
-            b.putHex(reinterpret_cast<u64>(frames[i]));
+            b.putHex(reinterpret_cast<u64>(info.lpBaseOfDll));
+            b.put(" ");
+            b.putHex(static_cast<u64>(info.SizeOfImage));
+            b.put(" ");
+            char name[MAX_PATH];
+            const DWORD nameLen = ::GetModuleFileNameA(modules[i], name, MAX_PATH);
+            name[nameLen < MAX_PATH ? nameLen : MAX_PATH - 1] = '\0';
+            b.put(name);
             b.put("\n");
             writeAllWin(text, line, b.len);
         }
-        writeAllWin(text, "end\n", 4u);
-        ::CloseHandle(text);
     }
+    writeStrWin(text, "end\n");
+    ::FlushFileBuffers(text);
+    ::CloseHandle(text);
+}
 
+void writeCrashArtifacts(const CrashRequest& request) {
+    const u64 pid = static_cast<u64>(::GetCurrentProcessId());
+    char path[kPathCapacity + 64];
+    Buf p{path, sizeof(path), 0u};
+    buildReportPath(p, pid, ".dmp");
+    char dumpStatus[kPathCapacity + 128];
+    dumpStatus[0] = '\0';
+    writeMinidump(request, path, dumpStatus, sizeof(dumpStatus));
+
+    p.len = 0u;
+    buildReportPath(p, pid, ".txt");
+    writeTextReport(request, path, dumpStatus);
+
+    char msg[kPathCapacity + 160];
+    Buf m{msg, sizeof(msg), 0u};
+    m.put("FUSE: fatal ");
+    m.put(request.reason != nullptr ? request.reason : "exception");
+    m.put(", crash report written to ");
+    m.put(path);
+    m.put("\n");
+    HANDLE err = ::GetStdHandle(STD_ERROR_HANDLE);
+    if (err != nullptr && err != INVALID_HANDLE_VALUE) {
+        writeAllWin(err, msg, m.len);
+    }
+}
+
+DWORD WINAPI crashReporterMain(LPVOID) {
+    for (;;) {
+        ::WaitForSingleObject(g_requestEvent, INFINITE);
+        if (g_reporterExit.load(std::memory_order_acquire)) {
+            return 0;
+        }
+        writeCrashArtifacts(g_request);
+        ::SetEvent(g_doneEvent);
+    }
+}
+
+/// Returns false when another crash is already being reported (nested fault or a second thread).
+bool reportCrash(EXCEPTION_POINTERS* ep, const char* reason) {
+    int expected = 0;
+    if (!g_handling.compare_exchange_strong(expected, 1)) {
+        return false;
+    }
+    g_request.exception = ep;
+    g_request.threadId = ::GetCurrentThreadId();
+    g_request.reason = reason;
+    if (g_reporterThread != nullptr && g_request.threadId != g_reporterThreadId) {
+        ::SetEvent(g_requestEvent);
+        ::WaitForSingleObject(g_doneEvent, kReporterWaitMs);
+    } else {
+        writeCrashArtifacts(g_request);
+    }
+    return true;
+}
+
+LONG WINAPI crashExceptionFilter(EXCEPTION_POINTERS* ep) {
+    const DWORD code = (ep != nullptr && ep->ExceptionRecord != nullptr) ? ep->ExceptionRecord->ExceptionCode : 0u;
+    if (!reportCrash(ep, exceptionName(code))) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
     if (g_previousFilter != nullptr) {
         return g_previousFilter(ep);
     }
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+void crashAbortHandler(int sig) {
+    CONTEXT context{};
+    ::RtlCaptureContext(&context);
+    EXCEPTION_RECORD record{};
+    record.ExceptionCode = kAbortExceptionCode;
+    record.ExceptionFlags = EXCEPTION_NONCONTINUABLE;
+#if defined(_M_X64) || defined(__x86_64__)
+    record.ExceptionAddress = reinterpret_cast<PVOID>(context.Rip);
+#endif
+    EXCEPTION_POINTERS pointers{&record, &context};
+    reportCrash(&pointers, "abort (SIGABRT)");
+
+    // Chain: restore the previous disposition. With SIG_DFL, returning lets abort() terminate the
+    // process (exit code 3); a previously installed handler is invoked directly.
+    ::signal(SIGABRT, g_previousAbort);
+    if (g_previousAbort != SIG_DFL && g_previousAbort != SIG_IGN && g_previousAbort != SIG_ERR &&
+        g_previousAbort != nullptr) {
+        g_previousAbort(sig);
+    }
+}
+
+template <typename Fn>
+Fn resolveProc(HMODULE module, const char* name) {
+    // Via a generic function pointer: FARPROC -> specific signature without -Wcast-function-type.
+    return reinterpret_cast<Fn>(reinterpret_cast<void (*)()>(::GetProcAddress(module, name)));
+}
+
+HMODULE loadSystemLibrary(const char* name) {
+    // System32 only (no DLL planting from the working directory); plain search on systems without
+    // LOAD_LIBRARY_SEARCH_* support (pre-KB2533623 Windows 7).
+    HMODULE module = ::LoadLibraryExA(name, nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (module == nullptr) {
+        module = ::LoadLibraryA(name);
+    }
+    return module;
+}
+
 bool installOs() {
     if (g_miniDumpWriteDump == nullptr) {
-        HMODULE dbghelp = ::LoadLibraryA("dbghelp.dll");
+        HMODULE dbghelp = loadSystemLibrary("dbghelp.dll");
         if (dbghelp != nullptr) {
-            g_miniDumpWriteDump =
-                reinterpret_cast<MiniDumpWriteDumpFn>(::GetProcAddress(dbghelp, "MiniDumpWriteDump"));
+            g_miniDumpWriteDump = resolveProc<MiniDumpWriteDumpFn>(dbghelp, "MiniDumpWriteDump");
         }
     }
+    // Default: stacks, thread info, module data segments and memory referenced from the stacks
+    // (a few MB, enough for WinDbg `!analyze -v`, `.ecxr`, `k`). FUSE_CRASH_DUMP=full adds the whole
+    // address space (heap included) for post-mortem debugging of memory corruption.
+    int type = MiniDumpWithDataSegs | MiniDumpWithThreadInfo | MiniDumpWithIndirectlyReferencedMemory |
+               MiniDumpWithUnloadedModules;
+    const char* mode = std::getenv("FUSE_CRASH_DUMP");
+    if (mode != nullptr && std::strcmp(mode, "full") == 0) {
+        type |= MiniDumpWithFullMemory | MiniDumpWithHandleData | MiniDumpWithFullMemoryInfo;
+    }
+    g_dumpType = static_cast<MINIDUMP_TYPE>(type);
+
+    // Guarantee stack for the filter itself on the installing (main) thread after an overflow.
+    ULONG guarantee = 32u * 1024u;
+    ::SetThreadStackGuarantee(&guarantee);
+
+    if (g_reporterThread == nullptr) {
+        g_reporterExit.store(false, std::memory_order_release);
+        g_requestEvent = ::CreateEventA(nullptr, FALSE, FALSE, nullptr);
+        g_doneEvent = ::CreateEventA(nullptr, FALSE, FALSE, nullptr);
+        if (g_requestEvent != nullptr && g_doneEvent != nullptr) {
+            g_reporterThread = ::CreateThread(nullptr, 256u * 1024u, &crashReporterMain, nullptr,
+                                              STACK_SIZE_PARAM_IS_A_RESERVATION, &g_reporterThreadId);
+        }
+    }
+
     g_previousFilter = ::SetUnhandledExceptionFilter(&crashExceptionFilter);
+    const SignalHandlerFn previousAbort = ::signal(SIGABRT, &crashAbortHandler);
+    g_abortHooked = previousAbort != SIG_ERR;
+    g_previousAbort = g_abortHooked ? previousAbort : SIG_DFL;
     g_handling.store(0);
     return true;
 }
@@ -432,12 +724,31 @@ bool installOs() {
 void shutdownOs() {
     ::SetUnhandledExceptionFilter(g_previousFilter);
     g_previousFilter = nullptr;
+    if (g_abortHooked) {
+        ::signal(SIGABRT, g_previousAbort);
+        g_abortHooked = false;
+    }
+    if (g_reporterThread != nullptr) {
+        g_reporterExit.store(true, std::memory_order_release);
+        ::SetEvent(g_requestEvent);
+        ::WaitForSingleObject(g_reporterThread, INFINITE);
+        ::CloseHandle(g_reporterThread);
+        g_reporterThread = nullptr;
+        g_reporterThreadId = 0;
+    }
+    if (g_requestEvent != nullptr) {
+        ::CloseHandle(g_requestEvent);
+        g_requestEvent = nullptr;
+    }
+    if (g_doneEvent != nullptr) {
+        ::CloseHandle(g_doneEvent);
+        g_doneEvent = nullptr;
+    }
 }
 
 u64 currentPid() {
     return static_cast<u64>(::GetCurrentProcessId());
 }
-
 #else
 
 bool installOs() {

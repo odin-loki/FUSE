@@ -197,9 +197,14 @@ u64 residentEntityTotal(const wp::WorldPartition& partition, s32 minX, s32 maxX,
 
 template <typename Pred>
 void pumpUntil(wp::WorldPartition& partition, fuse::ecs::vec3 camera, Pred done, int maxIters = 5000) {
-    for (int i = 0; i < maxIters && !done(); ++i) {
+    // The budget is maxIters x 200 us of wall time, not just maxIters updates: sub-millisecond
+    // sleeps round down to Sleep(0) with MinGW/winpthreads, which turned this into a spin that gave
+    // up long before the async loads had a chance to finish.
+    constexpr auto kStep = std::chrono::microseconds(200);
+    const auto deadline = std::chrono::steady_clock::now() + kStep * maxIters;
+    for (int i = 0; !done() && (i < maxIters || std::chrono::steady_clock::now() < deadline); ++i) {
         partition.update(camera);
-        std::this_thread::sleep_for(std::chrono::microseconds(200));
+        std::this_thread::sleep_for(kStep);
     }
 }
 

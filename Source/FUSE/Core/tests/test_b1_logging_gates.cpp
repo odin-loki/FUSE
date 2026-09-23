@@ -7,6 +7,7 @@
 //   - Profiler output is valid chrome://tracing JSON (strict JSON parse + trace-event schema)
 
 #include <fuse/assert.hpp>
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/log/logger.hpp>
@@ -359,6 +360,9 @@ void testProfilerScopeOverhead() {
     const char* reference = std::getenv("FUSE_B1_REFERENCE_HARDWARE");
     if (reference != nullptr && reference[0] == '1') {
         expectTrue(best < 10.0, "profiler scope overhead < 10 ns per scope (reference hardware)");
+    } else if (!fuse::core::timingBudgetsEnforced()) {
+        // e.g. FUSE_INSTRUMENTED_RUN=wine: a steady_clock read alone costs ~100 ns under Wine.
+        std::printf("  SKIP 250 ns regression ceiling (instrumented/emulated run)\n");
     } else {
         expectTrue(best < 250.0, "profiler scope overhead under the 250 ns CI regression ceiling");
     }

@@ -41,6 +41,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/alloc/domain_budget.hpp
     include/fuse/alloc/leak_detector.hpp
     include/fuse/io/asset.hpp
+    include/fuse/io/file_time.hpp
     include/fuse/io/vfs.hpp
     include/fuse/jobs/worker_count.hpp
     include/fuse/jobs/worker_context.hpp
@@ -63,6 +64,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/platform/lifecycle.hpp
     include/fuse/platform/surface_loss.hpp
     include/fuse/platform/crash_report.hpp
+    include/fuse/platform/dpi.hpp
     include/fuse/platform/profile.hpp
     include/fuse/platform/thread.hpp
     include/fuse/platform/fiber.hpp
@@ -95,6 +97,7 @@ set(FUSE_CORE_SOURCES
     src/alloc/domain_budget.cpp
     src/alloc/leak_detector.cpp
     src/io/vfs.cpp
+    src/io/file_time.cpp
     src/jobs/worker_count.cpp
     src/jobs/work_steal.cpp
     src/jobs/job_scheduler.cpp
@@ -103,6 +106,7 @@ set(FUSE_CORE_SOURCES
     src/platform/platform_stub.cpp
     src/platform/platform_hardening.cpp
     src/platform/crash_handler.cpp
+    src/platform/dpi.cpp
     src/platform/platform_window.cpp
     src/platform/input.cpp
 )
@@ -202,7 +206,9 @@ endif()
 fuse_apply_cxx23(fuse_core)
 target_link_libraries(fuse_core PUBLIC Threads::Threads)
 if(WIN32)
-    target_link_libraries(fuse_core PUBLIC user32)
+    # user32: windows/input/DPI; gdi32: GetDeviceCaps DPI fallback. dbghelp/shcore are loaded at
+    # run time (crash_handler.cpp, dpi.cpp) so a missing DLL never blocks startup.
+    target_link_libraries(fuse_core PUBLIC user32 gdi32)
 endif()
 
 target_compile_definitions(fuse_core

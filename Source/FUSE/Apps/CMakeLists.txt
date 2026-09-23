@@ -29,8 +29,9 @@ if(FUSE_BUILD_PARITY_DEMOS AND FUSE_BUILD_PROJECT)
             demo_adventure_stub
         )
         foreach(_demo ${_fuse_parity_demo_tests})
+            # Target-name COMMAND so a cross build runs it through CMAKE_CROSSCOMPILING_EMULATOR.
             add_test(NAME fuse_u8_${_demo}
-                COMMAND $<TARGET_FILE:${_demo}> "${_fuse_parity_demo_root}/${_demo}")
+                COMMAND ${_demo} "${_fuse_parity_demo_root}/${_demo}")
             set_tests_properties(fuse_u8_${_demo} PROPERTIES
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
             )

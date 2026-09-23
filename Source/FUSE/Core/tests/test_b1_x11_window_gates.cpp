@@ -54,7 +54,7 @@ namespace {
 constexpr int kSkip = 77;
 int g_failures = 0;
 
-void expectTrue(bool condition, const char* message) {
+[[maybe_unused]] void expectTrue(bool condition, const char* message) { // unused without the X11 backend
     if (!condition) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
