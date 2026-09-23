@@ -9,10 +9,16 @@
 # Linux-native trees can opt in with -DFUSE_BUILD_RELIGHT=ON: the CPU-only Relight modules and gates
 # build there, and relight_dxvk.cmake reports that the DXVK DLLs are PE-only (no dxvk-native build).
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND MINGW)
+# The DXVK build compiles GLSL with glslangValidator, so the MinGW default only turns on when it
+# is available (the dedicated fuse-relight-wine workflow installs it and passes ON explicitly).
+find_program(FUSE_GLSLANG_VALIDATOR NAMES glslang glslangValidator)
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND MINGW AND FUSE_GLSLANG_VALIDATOR)
     set(_fuse_relight_default ON)
 else()
     set(_fuse_relight_default OFF)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND MINGW)
+        message(STATUS "FUSE: Relight off by default (glslangValidator not found; pass -DFUSE_BUILD_RELIGHT=ON after installing it)")
+    endif()
 endif()
 option(FUSE_BUILD_RELIGHT
     "Build FUSE Relight (vendored DXVK d3d9.dll/d3d8.dll + Relight modules); default ON for MinGW cross builds"
