@@ -50,6 +50,7 @@ struct vec3 {
 
     f32 dot(const vec3& other) const { return x * other.x + y * other.y + z * other.z; }
     f32 length() const { return std::sqrt(dot(*this)); }
+    vec3 cross(const vec3& o) const { return {y * o.z - z * o.y, z * o.x - x * o.z, x * o.y - y * o.x}; }
 
     vec3 normalized() const {
         const f32 len = length();
