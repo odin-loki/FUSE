@@ -1,6 +1,6 @@
 # fuse_vfx — B7.7 VFX System
 
-CPU-first particle VFX scaffolding for Track B7.7. Implements emitter descriptors, SoA particle storage with free-list slot recycling, jobified CPU reference simulation, effect instances, and a `ParticleSystem` facade. GPU buffer layout stubs (`particle_gpu.hpp`), CUDA dispatch counts, and a CPU mirror pack/unpack path support stub tests ahead of device kernels. Full CUDA simulation and billboard rendering remain deferred.
+CPU particle VFX for Track B7.7: emitter descriptors, SoA particle storage with free-list slot recycling, a jobified CPU simulation (exact rate emission, SDF plane/sphere collision, deterministic for any worker count), effect instances, and a `ParticleSystem` facade. The B7.7 CPU rows are proven by `fuse_b7_vfx_gates`. `particle_gpu.hpp` holds the GPU buffer layout, dispatch counts and a CPU mirror pack/unpack path; the CUDA simulation and billboard rendering are not written yet.
 
 ## Layout
 
@@ -8,12 +8,12 @@ CPU-first particle VFX scaffolding for Track B7.7. Implements emitter descriptor
 |--------|------|
 | `vfx_desc.hpp` | System limits and backend selection |
 | `particle_emitter.hpp` | `ParticleEmitterDesc`, CPU `ParticleSoA`, `ParticleEmitter` |
-| `particle_soa_ops.hpp` | Standalone `burst_emit`, `accumulate_rate_emit`, `clamp_burst_count` / `is_at_capacity` / `has_live_particles`, `free_slot_count` / `sync_alive_count`, `recycle_slots`, `lifetime_cull`, `simulate_step` CPU stubs |
+| `particle_soa_ops.hpp` | Standalone `burst_emit`, `accumulate_rate_emit`, `clamp_burst_count` / `is_at_capacity` / `has_live_particles`, `free_slot_count` / `sync_alive_count`, `recycle_slots`, `lifetime_cull`, `simulate_step` CPU helpers |
 | `particle_gpu.hpp` | `ParticleGpuBufferLayout`, `ParticleGpuDispatch`, `ParticleGpuMirror`, `ParticleSoAGPU` |
 | `effect_instance.hpp` | Spawned effect playback state |
 | `particle_system.hpp` | Emitter/effect registry and frame update |
 
-## P7 pipeline (stub)
+## P7 pipeline
 
 `spawn → simulate → (render deferred)`
 

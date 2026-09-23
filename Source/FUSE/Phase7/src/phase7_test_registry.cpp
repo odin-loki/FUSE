@@ -32,31 +32,54 @@ namespace fuse::phase7 {
 
 namespace {
 
+// stub_landed: an implementation exists. automated: a CTest checks it. gate_test: the B7 gate
+// CTest that proves the row against an independent reference (nullptr when none does yet).
 const std::vector<Phase7Deliverable> kChecklist = {
-    {"animation.skeleton_hierarchy", "Skeleton loads with parent/child chain", Phase7Module::Animation, true, true},
-    {"animation.clip_sampling", "ClipNode samples channels at keyframes", Phase7Module::Animation, true, true},
-    {"animation.blend_interpolation", "BlendNode2 interpolates at 0/0.5/1", Phase7Module::Animation, true, true},
+    {"animation.skeleton_hierarchy", "Skeleton loads with parent/child chain", Phase7Module::Animation, true, true,
+     "fuse_b7_animation_gates"},
+    {"animation.clip_sampling", "ClipNode samples channels at keyframes", Phase7Module::Animation, true, true,
+     "fuse_b7_animation_gates"},
+    {"animation.blend_interpolation", "BlendNode2 interpolates at 0/0.5/1", Phase7Module::Animation, true, true,
+     "fuse_b7_animation_gates"},
     {"animation.gpu_skinning", "GPU skinning 10k verts < 0.5ms", Phase7Module::Animation, false, false},
-    {"audio.engine_init", "Audio engine initialises backend without error", Phase7Module::Audio, true, true},
-    {"audio.spatial_attenuation", "Attenuation near-zero at max_distance", Phase7Module::Audio, true, true},
-    {"audio.cuda_reverb", "CUDA FFT reverb within -60dB of CPU reference", Phase7Module::Audio, false, false},
-    {"script.lua_hello", "Lua executes hello-world script", Phase7Module::Script, false, false},
+    {"audio.engine_init", "Audio engine initialises backend without error", Phase7Module::Audio, true, true,
+     "fuse_audio_b7_gates"},
+    {"audio.spatial_attenuation", "Attenuation near-zero at max_distance", Phase7Module::Audio, true, true,
+     "fuse_audio_b7_gates"},
+    // CPU FFT reverb (and the ReverbCuda CPU fallback) is proven at -132 dB vs direct convolution;
+    // the CUDA FFT path itself needs a CUDA device, so the row stays unautomated.
+    {"audio.cuda_reverb", "CUDA FFT reverb within -60dB of CPU reference (CPU path proven; CUDA needs hardware)",
+     Phase7Module::Audio, true, false, "fuse_audio_b7_gates"},
+    {"script.lua_hello", "Lua executes hello-world script", Phase7Module::Script, true, true, "fuse_script_b7_gates"},
     {"script.host_callbacks", "ScriptHost registers and dispatches callbacks", Phase7Module::Script, true, true},
-    {"script.hot_reload", "Hot-reload replaces function within 1 frame", Phase7Module::Script, false, false},
+    {"script.hot_reload", "Hot-reload replaces function within 1 frame", Phase7Module::Script, true, true,
+     "fuse_script_b7_gates"},
     {"net.loopback_reliable", "Loopback transport reliable send/receive", Phase7Module::Net, true, true},
-    {"net.enet_process_pair", "ENet reliable packet between two processes", Phase7Module::Net, false, false},
-    {"net.rollback_resim", "Rollback resimulates 4 frames after remote input", Phase7Module::Net, false, false},
-    {"terrain.heightfield_sample", "get_height matches bilinear heightmap read", Phase7Module::Terrain, true, true},
-    {"terrain.lod_streaming", "LOD loads/unloads chunks as camera moves", Phase7Module::Terrain, true, true},
-    {"terrain.svo_cave", "Terrain-SVO cave renders below surface", Phase7Module::Terrain, false, false},
-    {"partition.cell_residency", "Cell residency transitions on camera move", Phase7Module::WorldPartition, true, true},
-    {"partition.force_load", "force_load completes synchronously", Phase7Module::WorldPartition, true, true},
-    {"vfx.emit_rate", "emit_rate produces expected particles per second", Phase7Module::Vfx, true, true},
+    {"net.enet_process_pair", "ENet reliable packet between two processes", Phase7Module::Net, true, true,
+     "fuse_b7_net_gates"},
+    {"net.rollback_resim", "Rollback resimulates 4 frames after remote input", Phase7Module::Net, true, true,
+     "fuse_b7_net_gates"},
+    {"terrain.heightfield_sample", "get_height matches bilinear heightmap read", Phase7Module::Terrain, true, true,
+     "fuse_b7_terrain_gates"},
+    {"terrain.lod_streaming", "LOD loads/unloads chunks as camera moves", Phase7Module::Terrain, true, true,
+     "fuse_b7_terrain_gates"},
+    // CPU reference of the heightfield -> SVO ray-march transition; the GPU image is a manual check.
+    {"terrain.svo_cave", "Terrain-SVO cave renders below surface (CPU ray-march reference)", Phase7Module::Terrain,
+     true, true, "fuse_b7_terrain_gates"},
+    {"partition.cell_residency", "Cell residency transitions on camera move", Phase7Module::WorldPartition, true, true,
+     "fuse_b7_streaming_gates"},
+    {"partition.force_load", "force_load completes synchronously", Phase7Module::WorldPartition, true, true,
+     "fuse_b7_streaming_gates"},
+    {"vfx.emit_rate", "emit_rate produces expected particles per second", Phase7Module::Vfx, true, true,
+     "fuse_b7_vfx_gates"},
     {"vfx.cuda_occupancy", "CUDA particle kernel > 70% occupancy", Phase7Module::Vfx, false, false},
     {"platform.lifecycle_power", "Background visibility drives PowerState", Phase7Module::Platform, true, true},
     {"platform.crash_handlers", "OS minidump / signal handlers installed", Phase7Module::Platform, false, false},
     {"assets.cook_manifest", "Cook manifest plans mesh/texture entries", Phase7Module::Assets, true, true},
-    {"assets.real_mesh_cook", "FBX/GLTF mesh cook to engine binary", Phase7Module::Assets, false, false},
+    // Meshes cook through Assimp (when found) to .fusemesh; the gate checks OBJ sources against an
+    // independent OBJ parse. FBX/GLTF go through the same importer but have no gate fixture yet.
+    {"assets.real_mesh_cook", "Assimp mesh cook to engine binary (gate-tested on OBJ)", Phase7Module::Assets, true,
+     true, "fuse_b7_cook_gates"},
 };
 
 animation::Skeleton makeSmokeSkeleton() {

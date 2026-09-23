@@ -23,6 +23,8 @@ namespace fuse::core {
 
 namespace {
 
+// stub_landed: an implementation exists. automated: a CTest checks it. gate_test: the B1.8 gate
+// CTest that proves the row against an independent reference (nullptr when none does yet).
 const std::vector<Phase1Deliverable> kChecklist = {
     {"build.umbrella_cmake", "Umbrella CMake builds fuse_core on Linux CI", Phase1Module::Build, true, true},
     {"build.cpp23_host", "C++23 host dialect with zero-warning CI gate", Phase1Module::Build, false, false},
@@ -30,19 +32,31 @@ const std::vector<Phase1Deliverable> kChecklist = {
     {"types.fixed_width_aliases", "fuse::u8/u32/f32 aliases on public API", Phase1Module::Types, true, true},
     {"types.generation_handles", "Handle<T> generation/epoch invalidation", Phase1Module::Types, true, true},
     {"types.object_hierarchy", "fuse::Object handle publish path", Phase1Module::Types, true, true},
-    {"memory.frame_allocator", "Per-frame bump allocator reset semantics", Phase1Module::Memory, true, true},
-    {"memory.pool_allocator", "Pool allocator alloc/free and generation invalidation", Phase1Module::Memory, true, true},
+    {"memory.frame_allocator", "Per-frame bump allocator reset semantics", Phase1Module::Memory, true, true,
+     "fuse_core_b1_memory_gates"},
+    {"memory.pool_allocator", "Pool allocator alloc/free and generation invalidation", Phase1Module::Memory, true,
+     true, "fuse_core_b1_memory_gates"},
     {"memory.gpu_allocator", "CUDA device/pinned/managed allocators", Phase1Module::Memory, false, false},
-    {"math.mat4_transform", "Mat4 TRS + transformPoint match reference", Phase1Module::Math, true, true},
-    {"math.quat_slerp", "Quaternion slerp stays unit length", Phase1Module::Math, true, true},
-    {"math.sdf_primitives", "SDF primitives match ray march reference", Phase1Module::Math, false, false},
-    {"jobs.scheduler_init", "JobScheduler initialises worker threads", Phase1Module::Jobs, true, true},
-    {"jobs.dependency_chain", "JobCounter dependency ordering", Phase1Module::Jobs, true, true},
-    {"jobs.parallel_for", "parallel_for matches serial loop", Phase1Module::Jobs, true, true},
+    {"math.mat4_transform", "Mat4 TRS + transformPoint match reference", Phase1Module::Math, true, true,
+     "fuse_core_b1_math_gates"},
+    {"math.quat_slerp", "Quaternion slerp stays unit length", Phase1Module::Math, true, true,
+     "fuse_core_b1_math_gates"},
+    {"math.sdf_primitives", "SDF primitives match ray march reference", Phase1Module::Math, true, true,
+     "fuse_core_b1_math_gates"},
+    {"jobs.scheduler_init", "JobScheduler initialises worker threads", Phase1Module::Jobs, true, true,
+     "fuse_core_b1_jobs_gates"},
+    {"jobs.dependency_chain", "JobCounter dependency ordering", Phase1Module::Jobs, true, true,
+     "fuse_core_b1_jobs_gates"},
+    {"jobs.parallel_for", "parallel_for matches serial loop", Phase1Module::Jobs, true, true,
+     "fuse_core_b1_jobs_gates"},
     {"jobs.cuda_lane", "CUDA job lane dispatches when toolkit present", Phase1Module::Jobs, true, true},
+    // The ring's integrity under concurrent writers is proven by fuse_core_b1_logging_gates, but the
+    // logger is still mutex-serialised and synchronous, so the lock-free/async deliverable stays open.
     {"logging.async_ring", "Lock-free async logger ring buffer", Phase1Module::Logging, false, false},
-    {"logging.profiler_scopes", "CPU ProfileScope ring buffer + chrome JSON", Phase1Module::Logging, true, true},
-    {"logging.assert_macros", "FUSE_ASSERT/FUSE_VERIFY fatal hook path", Phase1Module::Logging, true, true},
+    {"logging.profiler_scopes", "CPU ProfileScope ring buffer + chrome JSON", Phase1Module::Logging, true, true,
+     "fuse_core_b1_logging_gates"},
+    {"logging.assert_macros", "FUSE_ASSERT/FUSE_VERIFY fatal hook path", Phase1Module::Logging, true, true,
+     "fuse_core_b1_logging_gates"},
     {"platform.window_stub", "Window stub stores metadata and null native handle", Phase1Module::Platform, true, true},
     {"platform.event_pump", "EventPump synthetic queue, resize coalesce, drainEvents, poll FIFO", Phase1Module::Platform, true, true},
     {"platform.vulkan_surface", "get_vulkan_surface returns valid VkSurfaceKHR", Phase1Module::Platform, false, false},

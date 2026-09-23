@@ -14,13 +14,13 @@
 | `DeferredFramePipeline` | `include/fuse/renderer/deferred/frame_pipeline.hpp` | 19-pass Phase 5 schedule (P5 §5.1 + B5.11 hooks) |
 | `DeferredRenderer` | `include/fuse/renderer/deferred/deferred_renderer.hpp` | Owns G-buffer, material table, cluster culler, frame graph |
 | `GBuffer` / `GBufferLayout` | `include/fuse/renderer/deferred/gbuffer.hpp` | Six attachments — octahedral normals, velocity, reversed-Z depth |
-| `MaterialSystem` | `include/fuse/renderer/material/` | Bindless SSBO material table scaffold |
-| `ClusteredLightCuller` | `include/fuse/renderer/lighting/clustered.hpp` | CPU cluster grid + sphere cull stub |
+| `MaterialSystem` | `include/fuse/renderer/material/` | Bindless SSBO material table, uploaded per frame; procedural wood/metal/concrete |
+| `ClusteredLightCuller` | `include/fuse/renderer/lighting/clustered.hpp` | CPU cluster grid + conservative sphere/cone cull (== brute force); CPU deferred shade reference |
 | `DirectionalShadow` / `ShadowPass` | `include/fuse/renderer/shadow/` | CSM atlas + render-graph shadow pass |
-| `DDGI` | `include/fuse/renderer/gi/ddgi.hpp` | Probe grid, irradiance cache, update/sample stubs |
+| `DDGI` | `include/fuse/renderer/gi/ddgi.hpp` | Probe grid, CPU probe trace/blend/sample with change detection; CUDA kernels pending |
 | `ScreenSpaceEffects` | `Source/FUSE/Compute/` | SSAO/SSR/SSGI via `submit_cuda` — see [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) |
-| `SkyPass` / `SkyLut` | `include/fuse/renderer/atmosphere/` | Rayleigh/Mie CPU reference + LUT build |
-| `TaaPass` / `TaaHistoryBuffer` | `include/fuse/renderer/taa/` | Halton jitter, ping-pong history, resolve facade |
+| `SkyPass` / `SkyLut` | `include/fuse/renderer/atmosphere/` | Single-scattering Rayleigh/Mie + LUT, sun disk, 10-bit dither |
+| `TaaPass` / `TaaHistoryBuffer` | `include/fuse/renderer/taa/` | Halton jitter, ping-pong history, CPU resolve (clip + depth/velocity rejection) |
 
 **Not in scope (follow-up):** Real `vkCmd*` G-buffer draws, CUDA deferred-shade kernels, bindless descriptor pool, GPU post-process shader chain, full volumetric fog CUDA kernels, RenderDoc visual gates, RTX 3090 perf baselines.
 
@@ -62,7 +62,7 @@ Pass schedule (19 total — 12 Vulkan, 7 CUDA):
 
 ## B5.2 — G-Buffer Layout
 
-**Status:** Six-attachment layout + octahedral normal encoding + **CPU MRT pack/unpack validation** landed.
+**Status:** Six-attachment layout + octahedral normal encoding + **CPU MRT pack/unpack validation** landed. **Gates proven** by `fuse_b5_gbuffer_materials_gates` (signed octahedral storage, 0.00085 rad through RGBA16F).
 
 | Attachment | Format | Role |
 |------------|--------|------|
@@ -87,7 +87,7 @@ Pass schedule (19 total — 12 Vulkan, 7 CUDA):
 
 ## B5.3 — PBR Material System
 
-**Status:** `Material` POD + `MaterialSystem` bindless SSBO scaffold + **parameter block extension rows** landed.
+**Status:** `Material` POD + `MaterialSystem` bindless SSBO scaffold + **parameter block extension rows** landed. **Gates proven** by `fuse_b5_gbuffer_materials_gates`: GGX BRDF fixed (α vs α², double 4·NoV·NoL), row layout fixed, SSBO actually uploaded, procedural wood/metal/concrete.
 
 | Component | Notes |
 |-----------|-------|
@@ -106,7 +106,7 @@ Pass schedule (19 total — 12 Vulkan, 7 CUDA):
 
 ## B5.4 — Clustered Deferred Shading
 
-**Status:** CPU cluster grid SoA + `ClusteredLightCuller` stub landed; tile/cluster index helpers, depth-slice mapping, light-grid rebuild overflow clamp, assignment lookup/count stubs, and zero-dimension grid paths deepened (B5.4 follow-up); CUDA kernels deferred.
+**Status:** CPU cluster grid SoA + `ClusteredLightCuller` stub landed; tile/cluster index helpers, depth-slice mapping, light-grid rebuild overflow clamp, assignment lookup/count stubs, and zero-dimension grid paths deepened (B5.4 follow-up); CUDA kernels deferred. **Gates proven** by `fuse_b5_clustered_gates`: cluster AABBs are now conservative and follow camera rotation/FOV; cull == brute force; CPU deferred shade bit-identical to all-lights.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
@@ -129,7 +129,7 @@ CUDA `build_cluster_aabbs_kernel` / `cull_lights_kernel` / `deferred_shade_kerne
 
 ## B5.5 — Shadow System
 
-**Status:** CSM layout + shadow atlas allocation + `ShadowPass` render-graph node landed; cascade split helpers (uniform/log/practical schemes, count clamp) and light-space AABB fitting deepened (B5.5 follow-up).
+**Status:** CSM layout + shadow atlas allocation + `ShadowPass` render-graph node landed; cascade split helpers (uniform/log/practical schemes, count clamp) and light-space AABB fitting deepened (B5.5 follow-up). **Gates proven** by `fuse_b5_shadows_gates` + `fuse_csm_guards`: bounding-sphere stabilised CSM (0 px shimmer), SDF soft shadows within 2.97% of a path tracer.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
@@ -149,7 +149,7 @@ SDF soft shadows and deferred shading sampling deferred to B2.6 interop + B5.4 C
 
 ## B5.6 — Global Illumination: DDGI
 
-**Status:** CPU-first probe grid, irradiance cache, update/sample stubs landed; probe grid indexing + trilinear irradiance lerp deepened; **B5.6 deepen** adds octahedral direction encoding, border/interior validity flags, and OOB clamp helpers.
+**Status:** CPU-first probe grid, irradiance cache, update/sample stubs landed; probe grid indexing + trilinear irradiance lerp deepened; **B5.6 deepen** adds octahedral direction encoding, border/interior validity flags, and OOB clamp helpers. **Now real:** CPU probe trace/blend/sample with change detection; **gates proven** by `fuse_b5_ddgi_gates` (0.96% vs Monte Carlo). CUDA kernels still pending.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
@@ -169,7 +169,7 @@ SDF soft shadows and deferred shading sampling deferred to B2.6 interop + B5.4 C
 
 ## B5.7 — Screen-Space Effects (CUDA)
 
-**Status:** SSAO / SSR / SSGI API + job wiring landed in `fuse_compute`; B5.7 follow-up expanded stub params, contact-harden helpers, and CPU validation tests. Full kernels and G-buffer interop deferred.
+**Status:** SSAO / SSR / SSGI API + job wiring landed in `fuse_compute`; B5.7 follow-up expanded stub params, contact-harden helpers, and CPU validation tests. Full kernels and G-buffer interop deferred. CPU HBAO/SSR references (with the TAA resolve) prove the gates in `fuse_b5_taa_ssfx_gates`; routing the `fuse_compute` SSAO/SSR entry points to those references is an open item.
 
 See [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) for component table, backend modes, contact helpers, and deferred pipeline slot (`DeferredPassId::ScreenSpaceAo`).
 
@@ -181,7 +181,7 @@ See [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) for component
 
 ## B5.8 — Atmosphere & Sky
 
-**Status:** B5.8 deepen — transmittance LUT indexing stubs, sun disk helpers, expanded CPU tests landed.
+**Status:** B5.8 deepen — transmittance LUT indexing stubs, sun disk helpers, expanded CPU tests landed. **Now:** single-scattering sky (5.9% vs brute force), inverted sky-LUT axis fixed, 0.5° sun disk, 10-bit dithered output; **gates proven** by `fuse_b5_atmosphere_gates`.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
@@ -199,7 +199,7 @@ See [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) for component
 
 ## B5.9 — Temporal Anti-Aliasing
 
-**Status:** Halton jitter layout helpers, monotonic frame counter, history validity flags, resolve skip-reason bookkeeping deepened (B5.9 follow-up); CUDA kernel deferred.
+**Status:** Halton jitter layout helpers, monotonic frame counter, history validity flags, resolve skip-reason bookkeeping deepened (B5.9 follow-up); CUDA kernel deferred. **CPU resolve** (neighbourhood clip, depth/velocity rejection) proves the gates in `fuse_b5_taa_ssfx_gates`.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
@@ -215,7 +215,7 @@ See [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) for component
 
 ## B5.10 — Post-Processing Stack
 
-**Status:** CPU-first `PostStack` scaffold landed — bloom, ACES/neutral tonemap, color grade stages; **B5.10 deepen** adds tonemap curve presets, EMA exposure adaptation, and log-luminance histogram metering stubs.
+**Status:** CPU-first `PostStack` scaffold landed — bloom, ACES/neutral tonemap, color grade stages; **B5.10 deepen** adds tonemap curve presets, EMA exposure adaptation, and log-luminance histogram metering stubs. **Gates proven** by `fuse_b5_post_gates`: bloom pyramid (knee fixed), thin-lens DoF, motion blur, calibrated ACES, per-pixel film grain, auto-exposure sign fixed.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
@@ -235,7 +235,7 @@ DOF, motion blur, film grain GPU shader chain, and CUDA histogram reduction rema
 
 ## B5.11 — Lens Flare & Volumetric Lighting
 
-**Status:** CPU-first volumetric fog, light shafts, and lens flare scaffolds wired into deferred pipeline; froxel grid indexing + density lerp helpers deepened (B5.11 follow-up).
+**Status:** CPU-first volumetric fog, light shafts, and lens flare scaffolds wired into deferred pipeline; froxel grid indexing + density lerp helpers deepened (B5.11 follow-up). Fog falloff **gate proven** by `fuse_b5_atmosphere_gates` (closed form vs quadrature).
 
 | Component | Location | Notes |
 |-----------|----------|-------|
@@ -253,7 +253,7 @@ DOF, motion blur, film grain GPU shader chain, and CUDA histogram reduction rema
 
 ## B5.12 — Phase 5 Deliverables & Test Suite
 
-**Status:** Headless integration test exercises `DeferredRenderer` + all B5.1–B5.9 subsystems together; full production gates from P5 §5.12 remain deferred.
+**Status:** Headless integration test exercises `DeferredRenderer` + all B5.1–B5.9 subsystems together. Every B5.12 correctness row is now proven by a `fuse_b5_*_gates` test (CPU reference against an independent reference, see checklist below); GPU timing, RenderDoc and on-screen rows remain hardware-only.
 
 | Deliverable | Location | B5.12 status |
 |-------------|----------|--------------|
@@ -271,81 +271,86 @@ DOF, motion blur, film grain GPU shader chain, and CUDA histogram reduction rema
 4. Per frame (3×): shadow update, DDGI probe update, cluster cull, TAA jitter advance, sky pass record, `DeferredRenderer::executeFrame`
 5. Asserts: all non-culled passes executed, key pass names present in `CommandBufferRecorder`, 12 Vulkan + 7 CUDA pass split, barriers planned, subsystem stats advance
 
-### Checklist — scaffold landed (B5.1–B5.9) vs deferred (full P5 gates)
+### Checklist — B5.12 gate rows
+
+**Done** = proven in CI by the named gate test (CPU reference implementation checked against an
+independent reference; the Vulkan/CUDA pass reuses the same maths). **Deferred (HW)** = needs GPU
+timing, RenderDoc or an on-screen present and is tracked in
+[EXECUTION-PLAN.md §5](./EXECUTION-PLAN.md#5-hardware--manual-gates-not-provable-in-ci).
 
 #### G-Buffer & Materials
 
 | Item | Status | Notes |
 |------|--------|-------|
-| G-buffer octahedral normal round-trip < 0.001 angular error | **Done** | `fuse_gbuffer` |
-| PBR dielectric→metallic smooth transition (visual) | **Deferred** | No on-screen present in CI |
-| Procedural wood/metal/concrete on SDF surfaces | **Deferred** | Material procedural flags scaffold only |
-| Material SSBO bindless lookup 1000 materials (RenderDoc) | **Deferred** | SSBO allocation stub; no descriptor pool |
-| Emissive surfaces contribute radiance to GI probes | **Deferred** | DDGI sample stub; no emissive feed-through |
+| G-buffer octahedral normal round-trip < 0.001 angular error | **Done** | `fuse_b5_gbuffer_materials_gates`: 0.00085 rad through the RGBA16F path (signed octahedral storage; the unsigned form measured 0.00205 rad) |
+| PBR dielectric→metallic smooth transition | **Done** | `fuse_b5_gbuffer_materials_gates`: 1000-step metallic sweep, max step / smoothness bound 0.999; BRDF vs GGX/Heitz-Smith reference 0.00032; white furnace α=1 matches 1 − ln 2 |
+| Procedural wood/metal/concrete on SDF surfaces | **Done** | `fuse_b5_gbuffer_materials_gates`: no seams (continuous across noise cells) and no tiling (shift/random difference ratio ≥ 0.89) |
+| Material SSBO bindless lookup 1000 materials | **Done** (RenderDoc capture: Deferred (HW)) | `fuse_b5_gbuffer_materials_gates`: 1000 rows × 128 B, 0 row / 0 bindless-slot mismatches |
+| Emissive surfaces contribute radiance to GI probes | **Done** | `fuse_b5_gbuffer_materials_gates` (0.09% vs analytic) and `fuse_b5_ddgi_gates` (panel 0.85% vs form factor) |
+| G-buffer pass 1000 objects < 2 ms | **Deferred (HW)** | GPU timing |
 
 #### Lighting
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Cluster culler assigns zero lights to empty clusters | **Done** | `fuse_clustered_light_culler` empty-scene test |
-| Light grid rebuild produces contiguous offsets | **Done (stub)** | `ClusterLightGridLayout::rebuildLightGrid` + `validateContiguousOffsets` |
-| Per-cluster light capacity clamp + overflow stats | **Done (stub)** | `maxLightsPerCluster` clamp in cull + rebuild; `clustersAtCapacity` / `lightsDroppedOverflow` stats |
-| 1000 point lights — no light leaking (visual) | **Deferred** | CPU cull stub only |
-| Clustered cull + deferred shade < 3 ms @ 1080p (CUDA events) | **Deferred** | No CUDA shade kernel |
-| CSM correct shadow across 4 cascades (visual) | **Deferred** | Allocation + matrix stubs only |
-| CSM stabilisation eliminates shimmer | **Deferred** | — |
-| SDF soft shadows correct penumbra | **Deferred** | B2.7 ray march stub |
-| SDF shadow vs path tracer within 5% luminance | **Deferred** | — |
+| Cluster culler assigns zero lights to empty clusters | **Done** | `fuse_b5_clustered_gates`: 432 empty clusters, count 0 |
+| Cluster light lists == brute force | **Done** | `fuse_b5_clustered_gates`: 1000 lights / 3456 clusters, 0 mismatches; cluster AABBs now conservative and follow camera rotation/FOV |
+| Per-cluster light capacity clamp + overflow stats | **Done** | `fuse_b5_clustered_gates` overflow case (@8/cluster) |
+| 1000 point lights — no light leaking | **Done** | `fuse_b5_clustered_gates`: CPU deferred shade bit-identical to all-lights reference; 0 px lit through the wall |
+| Clustered cull + deferred shade < 3 ms @ 1080p (CUDA events) | **Deferred (HW)** | CPU cull 1.8 ms reported for reference only |
+| CSM correct shadow across 4 cascades, no seam | **Done** | `fuse_b5_shadows_gates`: 0 mismatches at every cascade boundary |
+| CSM stabilisation eliminates shimmer | **Done** | `fuse_b5_shadows_gates`: bounding-sphere CSM, frame diff 0 px (24 px unstabilised); `fuse_csm_guards` covers the vertical-sun NaN |
+| SDF soft shadows correct penumbra | **Done** | `fuse_b5_shadows_gates`: penumbra width linear in occluder distance (R² 0.99999) |
+| SDF shadow vs path tracer within 5% luminance | **Done** | `fuse_b5_shadows_gates`: max error 2.97%, 0 px > 5% |
+| SDF shadows < 2 ms | **Deferred (HW)** | GPU timing |
 
 #### Global Illumination
 
 | Item | Status | Notes |
 |------|--------|-------|
-| DDGI probes initialise and first update without CUDA error | **Done** | `fuse_ddgi` |
-| 2048 probes, 64/frame update < 2 ms | **Deferred** | CPU stub; no perf gate |
-| Irradiance responds to dynamic lights within 64 frames | **Deferred** | Hysteresis math tested; no scene hookup |
-| Sun rotation changes GI colour cast (timelapse) | **Deferred** | — |
-| GI on white Lambertian within 10% of Monte Carlo | **Deferred** | — |
+| DDGI probes initialise and first update without error | **Done** | `fuse_b5_ddgi_gates`: real CPU probe trace/blend/sample; first update vs independent re-trace 2.5e-7 |
+| 2048 probes, 64/frame update < 2 ms | **Deferred (HW)** | Scheduling proven; `fuse_b5_ddgi_timing` reports CPU time only |
+| Irradiance responds to dynamic lights within 64 frames | **Done** | `fuse_b5_ddgi_gates`: step response ≈ 100% in 64 frames (change detection; plain 0.97 hysteresis reaches 5.9%) |
+| Sun rotation changes GI colour cast | **Done** | `fuse_b5_ddgi_gates`: cast vs −cos(azimuth) correlation 0.998 |
+| GI on white Lambertian within 10% of Monte Carlo | **Done** | `fuse_b5_ddgi_gates`: mean 0.96%, worst 2.10% luminance |
 
 #### Temporal & Screen-Space
 
 | Item | Status | Notes |
 |------|--------|-------|
-| TAA eliminates aliasing on edges (visual) | **Deferred** | Jitter + history scaffold only |
-| TAA history rejection on fast movers | **Deferred** | Resolve stub; no velocity wiring |
-| HBAO correct occlusion in corners | **Deferred** | SSAO CPU reference sample only |
-| SSR reflects floor colour within 15% of ground truth | **Deferred** | SSR CPU reference sample only |
+| TAA eliminates aliasing on edges | **Done** | `fuse_b5_taa_ssfx_gates`: CPU resolve vs 16×16 supersampled truth, mean edge error 0.294 → 0.054, sub-pixel line gaps 31 → 0 |
+| TAA history rejection on fast movers | **Done** | `fuse_b5_taa_ssfx_gates`: ghost residue 0.001 at 12 and 30 m/s |
+| HBAO correct occlusion in corners | **Done** | `fuse_b5_taa_ssfx_gates`: 0.500 at a 90° corner (true 0.500), max 0.008 vs ray-cast geometry |
+| SSR reflects floor colour within 15% of ground truth | **Done** | `fuse_b5_taa_ssfx_gates`: 98.2% coverage, mean colour error 0.85%, 99.6% of pixels within 15% |
+| HBAO < 1 ms, SSR < 1.5 ms, TAA < 0.5 ms | **Deferred (HW)** | GPU timing |
 
 #### Atmosphere & Sky
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Sky Rayleigh scattering — blue midday, orange/red low sun | **Done (stub)** | CPU reference colour; `fuse_atmosphere_sky` |
-| No banding in sky gradient at 10-bit | **Deferred** | — |
-| Sun disk 0.5° apparent diameter | **Done (stub)** | `sun_disk.hpp` angular radius + compositing; visual gate deferred |
-| Volumetric fog exponential falloff | **Done (stub)** | `fuse_volumetric_lighting_b511` CPU density test |
+| Sky Rayleigh scattering — blue midday, orange/red low sun | **Done** | `fuse_b5_atmosphere_gates`: single scattering, 5.9% vs brute-force reference; phase functions integrate to 1 |
+| No banding in sky gradient at 10-bit | **Done** | `fuse_b5_atmosphere_gates`: max step 1 code on sub-LSB gradients; TPDF dither |
+| Sun disk 0.5° apparent diameter | **Done** | `fuse_b5_atmosphere_gates`: measured 0.49999–0.50001° |
+| Volumetric fog exponential falloff | **Done** | `fuse_b5_atmosphere_gates`: closed form vs quadrature 2e-6; march converges O(h²) |
 
 #### Post-Processing
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Bloom threshold gate | **Done (stub)** | `fuse_post_process_b510` black-frame test |
-| Tonemap curve S-curve rolloff | **Done (stub)** | `fuse_post_process_b510` filmic curve tests |
-| Reinhard/ACES curve preset clamp | **Done (stub)** | `fuse_post_process_b510` Reinhard+ACES curve clamp tests |
-| Auto-exposure EMA adaptation | **Done (stub)** | `fuse_post_process_b510` EMA convergence test |
-| Log-luminance histogram metering | **Done (stub)** | `fuse_post_process_b510` empty histogram + percentile metering |
-| Auto-exposure EV metering/adaptation | **Done (stub)** | `fuse_post_process_b510` luminance→EV + clamp tests |
-| DOF circle of confusion thin-lens formula | **Deferred** | — |
-| Motion blur velocity trail | **Deferred** | — |
-| ACES tonemap 0.18 grey calibration | **Deferred** | Neutral pass-through calibrated; ACES sRGB gate deferred |
-| Film grain temporally decorrelated | **Deferred** | — |
+| Bloom threshold gate + spread | **Done** | `fuse_b5_post_gates`: knee continuous, sub-knee frame blooms exactly 0, energy-conserving 5-level pyramid |
+| Tonemap / exposure presets, EMA, histogram metering | **Done** | `fuse_post_process_b510` (unit), auto-exposure sign fixed in `fuse_b5_post_gates` |
+| DOF circle of confusion thin-lens formula | **Done** | `fuse_b5_post_gates`: CoC error 6.6e-8 vs geometric thin lens |
+| Motion blur velocity trail | **Done** | `fuse_b5_post_gates`: trail length = \|v\| × shutter, along v only |
+| ACES tonemap 0.18 grey calibration | **Done** | `fuse_b5_post_gates`: scene 0.18 → display 0.180000 (−0.468 EV bias) |
+| Film grain temporally decorrelated | **Done** | `fuse_b5_post_gates`: frame-to-frame correlation ≤ 0.016 |
+| Bloom + DoF + motion blur + tonemap < 1 ms | **Deferred (HW)** | GPU timing |
 
 #### Full Frame Performance (RTX 3090, 1920×1080)
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Total GPU frame time < 16 ms (60 fps) | **Deferred** | No present path / perf gate in CI |
-| Per-pass timing gates (depth, G-buffer, DDGI, TAA, etc.) | **Deferred** | — |
+| Total GPU frame time < 16 ms (60 fps) | **Deferred (HW)** | No present path / perf gate in CI |
+| Per-pass timing gates (depth, G-buffer, DDGI, TAA, etc.) | **Deferred (HW)** | — |
 
 ---
 
@@ -365,6 +370,13 @@ DOF, motion blur, film grain GPU shader chain, and CUDA histogram reduction rema
 | `fuse_post_process_b510` | B5.10 — bloom, tonemap, color grade stage chain, tonemap curve, auto-exposure |
 | `fuse_volumetric_lighting_b511` | B5.11 — fog, light shafts, lens flare, 19-pass graph hooks |
 | `fuse_phase5_deferred_integration` | **B5.12** — full deferred pipeline + all subsystems headless multi-frame |
+| `fuse_b5_gbuffer_materials_gates` | **B5.2/B5.3 gates** — octahedral normals, BRDF + metallic sweep, procedural materials, material SSBO, emissive |
+| `fuse_b5_clustered_gates` | **B5.4 gates** — cluster cull vs brute force, deferred shade vs all-lights, leaking |
+| `fuse_b5_shadows_gates`, `fuse_csm_guards` | **B5.5 gates** — CSM seams + shimmer, SDF penumbra, SDF vs path tracer |
+| `fuse_b5_ddgi_gates`, `fuse_b5_ddgi_timing` | **B5.6 gates** — probe trace/blend/sample, 64-frame response, sun cast, Monte Carlo, emissive |
+| `fuse_b5_taa_ssfx_gates` | **B5.7/B5.9 gates** — TAA edges + rejection, HBAO, SSR |
+| `fuse_b5_atmosphere_gates` | **B5.8/B5.11 gates** — sky scattering, 10-bit banding, sun disk, fog |
+| `fuse_b5_post_gates` | **B5.10 gates** — bloom, DoF, motion blur, ACES calibration, film grain |
 
 Run Phase 5 suite:
 
@@ -413,6 +425,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 - [x] **B5.12** End-to-end test: `DeferredRenderer` + shadows + DDGI + TAA + sky + materials + cluster cull (`fuse_phase5_deferred_integration`)
 - [x] All non-culled deferred passes execute and record in headless multi-frame test
 - [x] Phase 5 CTest targets registered and green under umbrella CI
+- [x] Master-plan correctness rows proven by CPU reference gates (`fuse_b5_*_gates`, see checklist)
 - [ ] Master-plan visual/perf baselines (RenderDoc, RTX 3090 timing) — deferred to GPU-present path
 
 ---

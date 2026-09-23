@@ -1,8 +1,10 @@
-# fuse_terrain — B7.5 Terrain System (stub)
+# fuse_terrain — B7.5 Terrain System
 
-CPU-first heightfield terrain scaffolding for Track B7.5. Implements the P7 pipeline stages as stubs:
+CPU heightfield terrain for Track B7.5: seeded fractal noise generation, bilinear height/normal
+queries and ray casts, clipmap LOD chunk streaming with crack-free seams, deformation, and SVO caves.
+The GPU displacement path and the on-screen cave ray march are not written yet.
 
-`generate → sample height → LOD chunk grid → raycast`
+`generate → sample height → LOD chunk grid → chunk meshes (+ SVO caves) → raycast`
 
 ## Layout
 

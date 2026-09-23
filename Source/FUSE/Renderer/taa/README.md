@@ -1,6 +1,10 @@
-# B5.9 — Temporal Anti-Aliasing (stub)
+# B5.9 — Temporal Anti-Aliasing
 
-CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, ping-pong history buffers, and a resolve pass facade. The CUDA `taa_resolve_kernel` (variance clamp, Catmull-Rom history, velocity rejection) is deferred until B2.6 interop and G-buffer velocity wiring land.
+Halton sub-pixel jitter, ping-pong history buffers, a `TaaPass` render-graph facade, and
+`TaaCpuResolver` — the CPU reference of `taa_resolve_kernel`: closest-depth velocity reprojection,
+Catmull-Rom history sampling, YCoCg variance clipping, and depth (disocclusion) + velocity-disagreement
+rejection. The B5.9 gate rows are proven against the CPU resolver. `TaaResolve` / `TaaPass` still only
+validate surfaces and keep history bookkeeping; the CUDA/Vulkan resolve kernel is not written yet.
 
 ## Layout
 
@@ -9,7 +13,8 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 | `taa_types.hpp` | `TAAParams`, `TaaHistoryValidity`, history/jitter/resolve descriptor types |
 | `taa_jitter.hpp` | `TaaJitterLayout` Halton helpers + `TaaJitter` frame state |
 | `taa_history.hpp` | Ping-pong `TextureHandle` history targets + validity flags |
-| `taa_resolve.hpp` | Resolve stub — records inputs, validity, and swaps history |
+| `taa_resolve.hpp` | Resolve facade — validates inputs, records validity/skip reasons, swaps history (no pixel work) |
+| `taa_cpu_resolve.hpp` | `TaaCpuResolver` — CPU reference resolve (reprojection, Catmull-Rom, YCoCg clip, depth/velocity rejection) |
 | `taa_pass.hpp` | `TaaPass` facade + render-graph hook |
 
 ## Jitter sequence (B5.9 deepen)
@@ -60,21 +65,25 @@ CPU-first TAA scaffolding for Track B5.9. Implements Halton sub-pixel jitter, pi
 - `TaaPass::stampObservedHistoryGeneration(desc)` — stamp observed generation from pass history
 - `TaaPass::syncJitterToFrameIndex(frame)` — align pass jitter to a monotonic frame counter
 
-## Pipeline (stub)
+## Pipeline
 
 `jitter → gbuffer (velocity) → resolve → history swap`
 
 - **Jitter** — `TaaJitter::currentNdcOffset()` feeds the projection matrix each frame
 - **History** — two RGBA16F targets allocated via `ResourceManager`
-- **Resolve** — validates surfaces, updates stats/validity, swaps history; kernel deferred
+- **Resolve** — `TaaResolve` validates surfaces, updates stats/validity, swaps history; pixel resolve is `TaaCpuResolver` on the CPU, GPU kernel pending
 - **Graph** — `addTaaPassToGraph()` inserts the `taa_resolve` pass (also scheduled by `DeferredFramePipeline`)
 
 ## Tests
 
-`fuse_taa_pass` (`ctest` name `fuse_taa_pass`) covers Halton layout helpers, sequence period/wrap, custom sequence length, history validity flags, empty-history rejection, validity reset after invalidate, ping-pong, resolve validation, `TaaPass` lifecycle, and render-graph registration.
+`fuse_b5_taa_ssfx_gates` proves the B5.9 rows with `TaaCpuResolver`: edges vs 16×16 supersampled truth
+(mean edge error 0.294 without TAA → 0.054 with 8-tap Halton, no sub-pixel line breakup) and history
+rejection on a fast mover (ghost residue 0.001 at 12 and 30 m/s).
+
+`fuse_taa_pass` covers Halton layout helpers, sequence period/wrap, custom sequence length, history validity flags, empty-history rejection, validity reset after invalidate, ping-pong, resolve validation, `TaaPass` lifecycle, and render-graph registration.
 
 ```bash
-ctest --test-dir build --output-on-failure -R fuse_taa_pass
+ctest --test-dir build --output-on-failure -R 'fuse_taa_pass|fuse_b5_taa_ssfx_gates'
 ```
 
 ## Build

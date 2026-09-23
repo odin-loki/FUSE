@@ -1,13 +1,13 @@
-# B5.11 — Lens Flare & Volumetric Lighting (stub)
+# B5.11 — Lens Flare & Volumetric Lighting
 
-CPU-first scaffolding for Track B5.11 under `fuse_rhi`. Implements analytic lens flare generation, volumetric fog density sampling, and light-shaft occlusion stubs with render-graph pass hooks wired into `DeferredFramePipeline`.
+CPU side of Track B5.11 under `fuse_rhi`: exponential height fog with a closed-form optical depth and a segment-exact march (the fog falloff gate is proven by `fuse_b5_atmosphere_gates`), analytic lens-flare generation, and a light-shaft occlusion scaffold, with render-graph pass hooks wired into `DeferredFramePipeline`. The CUDA fog kernel and GPU flare/shaft composites are not written yet.
 
 ## Layout
 
 | Header | Role |
 |--------|------|
 | `postprocess/lens_flare.hpp` | `LensFlareSample`, `generate_lens_flare`, lens-flare pass hook |
-| `volumetric/volumetric_fog.hpp` | `VolumetricFogParams`, froxel grid indexing, density lerp helpers, CUDA pass hook |
+| `volumetric/volumetric_fog.hpp` | `VolumetricFogParams`, froxel grid indexing, density lerp, analytic + marched optical depth / transmittance, CUDA pass hook |
 | `volumetric/light_shafts.hpp` | `LightShaftsParams`, screen-space occlusion stub, pass hook |
 
 ## Frame pipeline hooks

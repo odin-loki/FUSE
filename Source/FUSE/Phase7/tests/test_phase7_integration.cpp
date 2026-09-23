@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 
@@ -29,6 +30,51 @@ void testChecklistAndModules() {
                "assets module represented");
 }
 
+const fuse::phase7::Phase7Deliverable* findRow(const char* id) {
+    for (const fuse::phase7::Phase7Deliverable& item : fuse::phase7::Phase7TestRegistry::checklist()) {
+        if (std::strcmp(item.id, id) == 0) {
+            return &item;
+        }
+    }
+    return nullptr;
+}
+
+// Rows proven by a B7 gate CTest must be flagged automated and name that test.
+void expectGateProven(const char* id, const char* gateTest) {
+    const fuse::phase7::Phase7Deliverable* row = findRow(id);
+    const bool ok = row != nullptr && row->stub_landed && row->automated && row->gate_test != nullptr &&
+                    std::strcmp(row->gate_test, gateTest) == 0;
+    if (!ok) {
+        std::fprintf(stderr, "FAIL: %s should be automated and proven by %s\n", id, gateTest);
+        ++g_failures;
+    }
+}
+
+void testGateProvenRows() {
+    expectTrue(fuse::phase7::Phase7TestRegistry::automatedCount() >= 20u, "B7 gate-proven rows flagged automated");
+    for (const fuse::phase7::Phase7Deliverable& item : fuse::phase7::Phase7TestRegistry::checklist()) {
+        if (item.gate_test != nullptr) {
+            expectTrue(std::strncmp(item.gate_test, "fuse_", 5) == 0, "gate_test names a fuse CTest");
+        }
+    }
+    expectGateProven("script.lua_hello", "fuse_script_b7_gates");
+    expectGateProven("script.hot_reload", "fuse_script_b7_gates");
+    expectGateProven("net.enet_process_pair", "fuse_b7_net_gates");
+    expectGateProven("net.rollback_resim", "fuse_b7_net_gates");
+    expectGateProven("terrain.svo_cave", "fuse_b7_terrain_gates");
+    expectGateProven("assets.real_mesh_cook", "fuse_b7_cook_gates");
+
+    // CPU reverb is proven, the CUDA FFT path is hardware-only: landed, not automated.
+    const fuse::phase7::Phase7Deliverable* reverb = findRow("audio.cuda_reverb");
+    expectTrue(reverb != nullptr && reverb->stub_landed && !reverb->automated,
+               "audio.cuda_reverb: CPU path landed, CUDA row not automated");
+    // Hardware-only rows stay open.
+    const fuse::phase7::Phase7Deliverable* skinning = findRow("animation.gpu_skinning");
+    expectTrue(skinning != nullptr && !skinning->automated, "GPU skinning stays a hardware row");
+    const fuse::phase7::Phase7Deliverable* occupancy = findRow("vfx.cuda_occupancy");
+    expectTrue(occupancy != nullptr && !occupancy->automated, "CUDA occupancy stays a hardware row");
+}
+
 void testIntegrationSmoke() {
     expectTrue(fuse::phase7::Phase7TestRegistry::runIntegrationSmoke(),
                "phase 7 integration smoke constructs linked facades");
@@ -38,6 +84,7 @@ void testIntegrationSmoke() {
 
 int main() {
     testChecklistAndModules();
+    testGateProvenRows();
     testIntegrationSmoke();
 
     if (g_failures == 0) {
