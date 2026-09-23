@@ -387,9 +387,15 @@ void testSkinningCpuPath() {
                    (cudaUsable ? fuse::animation::SkinningBackend::Cuda
                                : fuse::animation::SkinningBackend::CpuReference),
                "skinning backend reports Cuda only with a CUDA kernel + device");
-    expectTrue(!fuse::animation::skinning_cuda_kernel_available(), "no CUDA skinning kernel built yet");
+    // The kernel counts as available only when compiled in (FUSE_HAS_CUDA) AND a device is usable.
+#if defined(FUSE_HAS_CUDA)
+    expectTrue(fuse::animation::skinning_cuda_kernel_available() == fuse::jobs::cudaJobsAvailable(),
+               "CUDA skinning kernel available exactly when a CUDA device is usable");
+#else
+    expectTrue(!fuse::animation::skinning_cuda_kernel_available(), "no CUDA skinning kernel without FUSE_HAS_CUDA");
     expectTrue(fuse::animation::skinning_backend() == fuse::animation::SkinningBackend::CpuReference,
-               "skinning reports the CPU reference path it actually runs (even with FUSE_HAS_CUDA)");
+               "skinning reports the CPU path it actually runs");
+#endif
 
     fuse::animation::SkinningInput input;
     input.rest_positions = {{0.f, 0.f, 0.f, 0.f}};

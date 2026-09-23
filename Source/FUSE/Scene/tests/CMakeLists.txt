@@ -107,13 +107,10 @@ endif()
 
 # B3 row "SceneData SDF object buffer uploads to GPU and ray marcher renders correct scene":
 # SceneData -> SDF object buffer -> device-local upload + byte-exact readback (Lavapipe) -> CPU
-# reference ray march vs closed-form intersections. fuse_compute is only built with
-# FUSE_BUILD_CUDA, so the CPU reference source is compiled in directly. Exit 77 = no Vulkan device.
-if(TARGET fuse_rhi)
-    add_executable(fuse_b3_sdf_buffer_ray_march test_b3_sdf_buffer_ray_march_gates.cpp
-                   ${CMAKE_SOURCE_DIR}/Source/FUSE/Compute/src/ray_march_cpu.cpp)
-    target_include_directories(fuse_b3_sdf_buffer_ray_march PRIVATE ${CMAKE_SOURCE_DIR}/Source/FUSE/Compute/include)
-    target_link_libraries(fuse_b3_sdf_buffer_ray_march PRIVATE fuse_scene fuse_ecs fuse_rhi fuse_core)
+# reference ray march vs closed-form intersections. Exit 77 = no Vulkan device.
+if(TARGET fuse_rhi AND TARGET fuse_compute)
+    add_executable(fuse_b3_sdf_buffer_ray_march test_b3_sdf_buffer_ray_march_gates.cpp)
+    target_link_libraries(fuse_b3_sdf_buffer_ray_march PRIVATE fuse_scene fuse_ecs fuse_rhi fuse_compute fuse_core)
     add_test(NAME fuse_b3_sdf_buffer_ray_march
              COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh"
                      "$<TARGET_FILE:fuse_b3_sdf_buffer_ray_march>")
@@ -123,3 +120,10 @@ if(TARGET fuse_rhi)
         SKIP_RETURN_CODE 77
         LABELS "gate;vulkan")
 endif()
+
+# Single-source "svo_ray_cast" kernel gate (docs/compute-kernels.md): backend parity, stats, fallback,
+# 1M-ray CPU timing.
+add_executable(fuse_svo_ray_kernel_parity test_svo_ray_kernel_parity.cpp)
+target_link_libraries(fuse_svo_ray_kernel_parity PRIVATE fuse_scene fuse_core)
+add_test(NAME fuse_svo_ray_kernel_parity COMMAND fuse_svo_ray_kernel_parity)
+set_tests_properties(fuse_svo_ray_kernel_parity PROPERTIES LABELS "gate" TIMEOUT 300)

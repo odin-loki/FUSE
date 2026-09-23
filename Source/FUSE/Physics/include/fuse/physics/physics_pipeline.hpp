@@ -1,9 +1,12 @@
 #pragma once
 
+#include <fuse/compute_kernel/kernel.hpp>
+#include <fuse/physics/broadphase/broadphase_kernels.hpp>
 #include <fuse/physics/broadphase/pair_buffer.hpp>
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/narrowphase/contact_buffer.hpp>
+#include <fuse/physics/narrowphase/narrowphase_kernels.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/types.hpp>
 
@@ -14,11 +17,23 @@ enum class BroadphaseMode : u8 {
     SpatialHash2D
 };
 
+/// How PhysicsPipeline::step runs broadphase + narrowphase. Both paths produce bit-identical pair
+/// and contact buffers (fuse_b4_physics_kernel_gates).
+enum class PhysicsComputePath : u8 {
+    /// Hand-written CPU stages (spatial_hash.cpp counting sort, serial narrowphase loop).
+    Legacy,
+    /// Single-source kernel launches (broadphase_kernels.hpp, narrowphase_kernels.hpp) on
+    /// `PhysicsPipelineDesc::kernelBackend`.
+    Kernels,
+};
+
 struct PhysicsPipelineDesc {
     u32 maxBodies = 4096;
     u32 maxPairs = 16384;
     f32 cellSize = 2.f;
     BroadphaseMode broadphaseMode = BroadphaseMode::SpatialHash3D;
+    PhysicsComputePath computePath = PhysicsComputePath::Legacy;
+    kernel::Backend kernelBackend = kernel::Backend::CpuParallel;
 };
 
 /// B4.1 frame pipeline — CPU stub of the CUDA-first physics stream.
@@ -42,6 +57,9 @@ public:
     const broadphase::PairBufferSoA& pairBuffer() const { return m_pairBuffer; }
     const std::vector<narrowphase::ContactManifold>& contacts() const { return m_contacts; }
     const narrowphase::ContactBufferSoA& contactBuffer() const { return m_contactBuffer; }
+    const PhysicsPipelineDesc& desc() const { return m_desc; }
+    /// Kernel-path statistics of the last broadphase (PhysicsComputePath::Kernels).
+    const broadphase::BroadphaseKernelStats& broadphaseKernelStats() const { return m_broadphaseKernels.stats; }
 
     u32 bodyCount() const { return m_bodies.count(); }
     u32 contactCount() const;
@@ -59,6 +77,8 @@ private:
     std::vector<broadphase::CandidatePair> m_candidatePairs;
     narrowphase::ContactBufferSoA m_contactBuffer;
     std::vector<narrowphase::ContactManifold> m_contacts;
+    broadphase::BroadphaseKernelContext m_broadphaseKernels;
+    narrowphase::NarrowphaseKernelContext m_narrowphaseKernels;
     f32 m_lastDt = 0.f;
     bool m_initialized = false;
 };

@@ -33,6 +33,17 @@
 
 namespace {
 
+#if defined(_WIN32)
+// The Windows CRT has no POSIX setenv; _putenv_s updates the CRT and process environment
+// (what the Vulkan loader reads through getenv at vkCreateInstance time).
+[[maybe_unused]] int setenv(const char* name, const char* value, int overwrite) {
+    if (overwrite == 0 && std::getenv(name) != nullptr) {
+        return 0;
+    }
+    return _putenv_s(name, value) == 0 ? 0 : -1;
+}
+#endif
+
 constexpr int kSkip = 77;
 
 #if defined(FUSE_VULKAN_BACKEND)

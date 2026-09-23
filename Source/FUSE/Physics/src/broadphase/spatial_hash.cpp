@@ -1,3 +1,5 @@
+#include <fuse/physics/broadphase/broadphase_kernel.hpp>
+#include <fuse/physics/broadphase/broadphase_kernels.hpp>
 #include <fuse/physics/broadphase/pair_buffer.hpp>
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/rotation.hpp>
@@ -300,63 +302,10 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
 }
 
 /// Calls `visit(key, bodyIndex)` for every hash cell the shape occupies (nothing when the shape
-/// insert preflight rejects it).
+/// insert preflight rejects it). Same code as the physics_broadphase_count / _keys kernels.
 template <typename Visit>
-void forEachShapeCell(
-    u32 shapeIndex,
-    const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes,
-    const SpatialHashParams& params,
-    bool use2D,
-    Visit&& visit) {
-    const ShapeCellInsertPreflight insertPreflight =
-        preflightShapeCellInsertImpl(shapeIndex, bodies, shapes, params, use2D);
-    if (!insertPreflight.canInsert()) {
-        return;
-    }
-
-    const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
-    const vec3 position = bodies.positions[bodyIndex];
-    const f32 cellSize = clampCellSize(params.cellSize);
-    const u32 tableSize = clampTableSize(params.tableSize);
-    const u32 maxSpan = params.maxCellSpanPerAxis;
-    const CollisionShapeType type = shapeType(shapes, shapeIndex);
-
-    if (use2D) {
-        CellRange2 range = {};
-        if (type == CollisionShapeType::Box) {
-            const vec3 halfExtents = worldBoxHalfExtents(bodies, bodyIndex, shapes.params[shapeIndex]);
-            const aabb bounds = aabbFromBox(position, halfExtents);
-            range = cellRangeFromAabb2D(bounds, cellSize, maxSpan);
-        } else {
-            const f32 radius = shapeRadius(shapes, shapeIndex);
-            range = cellRangeFromSphere2D({position.x, position.y}, radius, cellSize, maxSpan);
-        }
-        for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
-            for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
-                const u32 key = spatialHash2D(cx, cy, tableSize);
-                visit(key, bodyIndex);
-            }
-        }
-        return;
-    }
-
-    CellRange3 range = {};
-    if (type == CollisionShapeType::Box) {
-        const vec3 halfExtents = worldBoxHalfExtents(bodies, bodyIndex, shapes.params[shapeIndex]);
-        range = cellRangeFromBox(position, halfExtents, cellSize, maxSpan);
-    } else {
-        const f32 radius = shapeRadius(shapes, shapeIndex);
-        range = cellRangeFromSphere(position, radius, cellSize, maxSpan);
-    }
-    for (s32 cz = range.minCell.z; cz <= range.maxCell.z; ++cz) {
-        for (s32 cy = range.minCell.y; cy <= range.maxCell.y; ++cy) {
-            for (s32 cx = range.minCell.x; cx <= range.maxCell.x; ++cx) {
-                const u32 key = spatialHash(cx, cy, cz, tableSize);
-                visit(key, bodyIndex);
-            }
-        }
-    }
+void forEachShapeCell(u32 shapeIndex, const broadphase_kernel::ShapeView& view, Visit&& visit) {
+    broadphase_kernel::shapeCellsVisit(view, broadphase_kernel::shapeCells(view, shapeIndex), visit);
 }
 
 void mergePairsIntoBuffer(const std::vector<CandidatePair>& pairs, PairBufferSoA& buffer) {
@@ -570,6 +519,94 @@ bool pairPassesAabbRefine(
                        bodyShapeBounds(bodies, shapes, bodyB, bodies.positions[bodyB]));
 }
 
+} // namespace
+
+namespace detail {
+
+void mergePlanePairsAndClamp(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes, PairBufferSoA& buffer,
+                             BroadphaseScratch& scratch) {
+    const u32 shapeCount = shapes.count();
+    std::vector<u32>& planeBodies = scratch.planeBodies;
+    std::vector<u32>& dynamicBodies = scratch.dynamicBodies;
+    planeBodies.clear();
+    dynamicBodies.clear();
+    if (dynamicBodies.capacity() < shapeCount) {
+        dynamicBodies.reserve(shapeCount);
+    }
+    for (u32 shapeIndex = 0; shapeIndex < shapeCount; ++shapeIndex) {
+        const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
+        if (bodyIndex >= bodies.count()) {
+            continue;
+        }
+        if (shapeType(shapes, shapeIndex) == CollisionShapeType::Plane) {
+            planeBodies.push_back(bodyIndex);
+        } else if ((bodies.flags[bodyIndex] & RB_STATIC) == 0) {
+            dynamicBodies.push_back(bodyIndex);
+        }
+    }
+
+    if (shouldRunBroadphaseMerge(bodies, shapes)) {
+        std::vector<u64>& existing = scratch.pairSet;
+        pairSetReset(existing, buffer.activeCount);
+        for (u32 i = 0; i < buffer.activeCount; ++i) {
+            pairSetInsert(existing, pairKey(buffer.bodyA[i], buffer.bodyB[i]));
+        }
+
+        // One fixed slot row per dynamic body (at most one pair per plane), merged in body order.
+        const u32 dynamicCount = static_cast<u32>(dynamicBodies.size());
+        const u32 planeCount = static_cast<u32>(planeBodies.size());
+        resizeScratch(scratch.planePairs, static_cast<usize>(dynamicCount) * planeCount);
+        resizeScratch(scratch.planePairCounts, dynamicCount);
+        CandidatePair* planePairs = scratch.planePairs.data();
+        u32* planePairCounts = scratch.planePairCounts.data();
+        fuse::jobs::parallel_for(0u, dynamicCount, kPlanePairGrainSize, [&](u32 dynamicIndex) {
+            const u32 dynamicBody = dynamicBodies[dynamicIndex];
+            CandidatePair* row = planePairs + static_cast<usize>(dynamicIndex) * planeCount;
+            u32 count = 0u;
+            for (u32 planeBody : planeBodies) {
+                if (!isValidCandidatePair(dynamicBody, planeBody, bodies.count())) {
+                    continue;
+                }
+                if (!pairPassesCollisionLayers(dynamicBody, planeBody, bodies)) {
+                    continue;
+                }
+                const CandidatePair pair = canonicalPair(dynamicBody, planeBody);
+                if (!pairSetContains(existing, pairKey(pair.bodyA, pair.bodyB))) {
+                    row[count++] = pair;
+                }
+            }
+            planePairCounts[dynamicIndex] = count;
+        });
+
+        for (u32 dynamicIndex = 0; dynamicIndex < dynamicCount; ++dynamicIndex) {
+            const u32 count = planePairCounts[dynamicIndex];
+            // Same semantics as mergePairsIntoBuffer: skip empty rows and rows arriving at a full
+            // buffer, stop a row at the first rejected push.
+            if (count == 0u || buffer.isFull()) {
+                continue;
+            }
+            const CandidatePair* row = planePairs + static_cast<usize>(dynamicIndex) * planeCount;
+            for (u32 i = 0; i < count; ++i) {
+                if (!preflightPairBufferPush(buffer, row[i].bodyA, row[i].bodyB).canPush()) {
+                    break;
+                }
+                buffer.push(row[i].bodyA, row[i].bodyB);
+            }
+        }
+        dedupeBuffer(buffer, scratch.pairKeys, scratch.pairKeysTemp);
+    }
+
+    if (shouldRunPairBufferClamp(buffer)) {
+        buffer.applyMaxCapacityClamp();
+    }
+}
+
+} // namespace detail
+
+namespace {
+
+using detail::mergePlanePairsAndClamp;
+
 void runBroadphaseIntoBufferInternal(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
@@ -585,6 +622,7 @@ void runBroadphaseIntoBufferInternal(
     const SpatialHashParams normalizedParams = normalizeSpatialHashParams(params);
     const u32 tableSize = normalizedParams.tableSize;
     const u32 shapeCount = shapes.count();
+    const broadphase_kernel::ShapeView view = broadphase_kernel::makeShapeView(bodies, shapes, normalizedParams, use2D);
 
     // Shape -> cell occupancy as flat (key, body) entries: count per shape, prefix, then fill.
     // Each shape writes its own disjoint range, so both passes are job-safe and deterministic.
@@ -592,7 +630,7 @@ void runBroadphaseIntoBufferInternal(
     u32* shapeEntryOffsets = scratch.shapeEntryOffsets.data();
     fuse::jobs::parallel_for(0u, shapeCount, kBuildGrainSize, [&](u32 shapeIndex) {
         u32 count = 0u;
-        forEachShapeCell(shapeIndex, bodies, shapes, normalizedParams, use2D, [&](u32, u32) { ++count; });
+        forEachShapeCell(shapeIndex, view, [&](u32, u32) { ++count; });
         shapeEntryOffsets[shapeIndex] = count;
     });
     u32 totalEntries = 0u;
@@ -609,7 +647,7 @@ void runBroadphaseIntoBufferInternal(
     u32* entryBodies = scratch.entryBodies.data();
     fuse::jobs::parallel_for(0u, shapeCount, kBuildGrainSize, [&](u32 shapeIndex) {
         u32 write = shapeEntryOffsets[shapeIndex];
-        forEachShapeCell(shapeIndex, bodies, shapes, normalizedParams, use2D, [&](u32 key, u32 bodyIndex) {
+        forEachShapeCell(shapeIndex, view, [&](u32 key, u32 bodyIndex) {
             entryKeys[write] = key;
             entryBodies[write] = bodyIndex;
             ++write;
@@ -688,79 +726,7 @@ void runBroadphaseIntoBufferInternal(
         dedupeBuffer(buffer, scratch.pairKeys, scratch.pairKeysTemp);
     }
 
-    std::vector<u32>& planeBodies = scratch.planeBodies;
-    std::vector<u32>& dynamicBodies = scratch.dynamicBodies;
-    planeBodies.clear();
-    dynamicBodies.clear();
-    if (dynamicBodies.capacity() < shapeCount) {
-        dynamicBodies.reserve(shapeCount);
-    }
-    for (u32 shapeIndex = 0; shapeIndex < shapeCount; ++shapeIndex) {
-        const u32 bodyIndex = shapeBodyIndex(shapes, shapeIndex);
-        if (bodyIndex >= bodies.count()) {
-            continue;
-        }
-        if (shapeType(shapes, shapeIndex) == CollisionShapeType::Plane) {
-            planeBodies.push_back(bodyIndex);
-        } else if ((bodies.flags[bodyIndex] & RB_STATIC) == 0) {
-            dynamicBodies.push_back(bodyIndex);
-        }
-    }
-
-    if (shouldRunBroadphaseMerge(bodies, shapes)) {
-        std::vector<u64>& existing = scratch.pairSet;
-        pairSetReset(existing, buffer.activeCount);
-        for (u32 i = 0; i < buffer.activeCount; ++i) {
-            pairSetInsert(existing, pairKey(buffer.bodyA[i], buffer.bodyB[i]));
-        }
-
-        // One fixed slot row per dynamic body (at most one pair per plane), merged in body order.
-        const u32 dynamicCount = static_cast<u32>(dynamicBodies.size());
-        const u32 planeCount = static_cast<u32>(planeBodies.size());
-        resizeScratch(scratch.planePairs, static_cast<usize>(dynamicCount) * planeCount);
-        resizeScratch(scratch.planePairCounts, dynamicCount);
-        CandidatePair* planePairs = scratch.planePairs.data();
-        u32* planePairCounts = scratch.planePairCounts.data();
-        fuse::jobs::parallel_for(0u, dynamicCount, kPlanePairGrainSize, [&](u32 dynamicIndex) {
-            const u32 dynamicBody = dynamicBodies[dynamicIndex];
-            CandidatePair* row = planePairs + static_cast<usize>(dynamicIndex) * planeCount;
-            u32 count = 0u;
-            for (u32 planeBody : planeBodies) {
-                if (!isValidCandidatePair(dynamicBody, planeBody, bodies.count())) {
-                    continue;
-                }
-                if (!pairPassesCollisionLayers(dynamicBody, planeBody, bodies)) {
-                    continue;
-                }
-                const CandidatePair pair = canonicalPair(dynamicBody, planeBody);
-                if (!pairSetContains(existing, pairKey(pair.bodyA, pair.bodyB))) {
-                    row[count++] = pair;
-                }
-            }
-            planePairCounts[dynamicIndex] = count;
-        });
-
-        for (u32 dynamicIndex = 0; dynamicIndex < dynamicCount; ++dynamicIndex) {
-            const u32 count = planePairCounts[dynamicIndex];
-            // Same semantics as mergePairsIntoBuffer: skip empty rows and rows arriving at a full
-            // buffer, stop a row at the first rejected push.
-            if (count == 0u || buffer.isFull()) {
-                continue;
-            }
-            const CandidatePair* row = planePairs + static_cast<usize>(dynamicIndex) * planeCount;
-            for (u32 i = 0; i < count; ++i) {
-                if (!preflightPairBufferPush(buffer, row[i].bodyA, row[i].bodyB).canPush()) {
-                    break;
-                }
-                buffer.push(row[i].bodyA, row[i].bodyB);
-            }
-        }
-        dedupeBuffer(buffer, scratch.pairKeys, scratch.pairKeysTemp);
-    }
-
-    if (shouldRunPairBufferClamp(buffer)) {
-        buffer.applyMaxCapacityClamp();
-    }
+    mergePlanePairsAndClamp(bodies, shapes, buffer, scratch);
 }
 
 BroadphaseScratch& threadBroadphaseScratch() {

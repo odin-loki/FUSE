@@ -51,6 +51,10 @@ if(FUSE_BUILD_CORE_TESTS)
         else()
             target_include_directories(VkLayer_fuse_split_transfer_family PRIVATE ${Vulkan_INCLUDE_DIRS})
         endif()
+        if(MSVC)
+            target_link_options(VkLayer_fuse_split_transfer_family PRIVATE /EXPORT:vkGetInstanceProcAddr
+                /EXPORT:vkGetDeviceProcAddr /EXPORT:vkNegotiateLoaderLayerInterfaceVersion)
+        endif()
         set_target_properties(VkLayer_fuse_split_transfer_family PROPERTIES
             LIBRARY_OUTPUT_DIRECTORY "${_fuse_split_layer_dir}"
             CXX_VISIBILITY_PRESET hidden)
@@ -122,6 +126,10 @@ if(FUSE_BUILD_CORE_TESTS)
             target_link_libraries(VkLayer_fuse_spoof_multi_gpu PRIVATE Vulkan::Headers)
         else()
             target_include_directories(VkLayer_fuse_spoof_multi_gpu PRIVATE ${Vulkan_INCLUDE_DIRS})
+        endif()
+        if(MSVC)
+            target_link_options(VkLayer_fuse_spoof_multi_gpu PRIVATE /EXPORT:vkGetInstanceProcAddr
+                /EXPORT:vkGetDeviceProcAddr /EXPORT:vkNegotiateLoaderLayerInterfaceVersion)
         endif()
         set_target_properties(VkLayer_fuse_spoof_multi_gpu PROPERTIES
             LIBRARY_OUTPUT_DIRECTORY "${_fuse_spoof_layer_dir}"

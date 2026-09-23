@@ -11,6 +11,7 @@ This is the product documentation. Start here; then pick a guide.
 | [Programmer guide](programmer-guide.md) | Unified API, converters, demo wiring pattern |
 | [Building](building.md) | CMake options, platforms, sanitizers, editor |
 | [Architecture](architecture.md) | Process model, jobs, worlds, handles |
+| [Compute kernels](compute-kernels.md) | Single-source CPU/CUDA kernels, backends, profiling, porting guide |
 | [Modules](modules.md) | AI, FX, cinematics, mechanics, adventure |
 | [Editor](editor.md) | Qt 6 shell, command queue, desktop policy |
 | [Scripting](scripting.md) | Script host, callbacks, Lua-ready VM |

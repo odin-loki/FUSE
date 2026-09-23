@@ -43,6 +43,17 @@
 
 namespace {
 
+#if defined(_WIN32)
+// The Windows CRT has no POSIX setenv; _putenv_s updates the CRT and process environment
+// (what the Vulkan loader reads through getenv at vkCreateInstance time).
+[[maybe_unused]] int setenv(const char* name, const char* value, int overwrite) {
+    if (overwrite == 0 && std::getenv(name) != nullptr) {
+        return 0;
+    }
+    return _putenv_s(name, value) == 0 ? 0 : -1;
+}
+#endif
+
 using b5rhi::expectTrue;
 using fuse::u32;
 using fuse::u64;
@@ -451,8 +462,8 @@ int run() {
             {
                 std::vector<u32> big = makeKeys<u32>(Dist::Uniform, 300'000u, 32u, 1u);
                 expectTrue(sortAndCompare(*sorter, big, 32u).matches, "300k after 1M (buffer reuse)");
-                std::vector<u32> small = makeKeys<u32>(Dist::FewDistinct, 5000u, 32u, 2u);
-                expectTrue(sortAndCompare(*sorter, small, 32u).matches, "5000 after 300k (buffer reuse)");
+                std::vector<u32> fewKeys = makeKeys<u32>(Dist::FewDistinct, 5000u, 32u, 2u); // not `small`: rpcndr.h macro
+                expectTrue(sortAndCompare(*sorter, fewKeys, 32u).matches, "5000 after 300k (buffer reuse)");
             }
             // Invalid arguments are rejected without touching the data.
             {

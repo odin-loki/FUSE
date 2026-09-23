@@ -1,0 +1,240 @@
+name: FUSE Windows x64 (MSVC native)
+
+# Native Windows builds of the FUSE subset (T3D/T2D off, CUDA off) on GitHub's Windows runners,
+# with ctest run on real Windows — timing budgets, the Win32 crash handler / minidump gate
+# (fuse_core_b7_win32_crash_minidump, dbghelp) and per-monitor-v2 DPI awareness
+# (fuse_core_b7_dpi_awareness requires v2 on Windows 10 1703+) are enforced here, not under Wine.
+#
+#   native    cl.exe Debug / Release / Profile / Shipping + clang-cl Release, Ninja inside a VS x64
+#             developer shell, /W3 (cl) or /W4 (clang-cl) with /WX on FUSE targets
+#             (CMakePresets.json: fuse-msvc-*, fuse-clangcl-*). Vulkan off.
+#   editor    cl.exe Release with Qt 6 (fuse_editor + Qt gate binaries compile; the Qt gates are
+#             xcb-calibrated and skip without an X display), editor ctest subset.
+#   vulkan    cl.exe Release with FUSE_BUILD_VULKAN=ON against the Khronos headers + loader: compile
+#             and link only. Vulkan ctest on Windows (software ICD) is a follow-up: the Renderer test
+#             registration still launches through a bash/flock wrapper and a Linux ICD path.
+#
+# The MinGW-w64 cross build + Wine run stays in fuse-windows-cross.yml.
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main, development]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.actor }}-${{ github.head_ref || github.run_number }}-${{ github.ref }}-fuse-windows-native
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Compiler cache (MSVC-compatible: the presets use /Z7, so objects carry their own debug info).
+  SCCACHE_GHA_ENABLED: "true"
+  CTEST_OUTPUT_ON_FAILURE: "1"
+
+jobs:
+  native:
+    name: Windows x64 ${{ matrix.compiler }} ${{ matrix.config }}
+    runs-on: windows-2022
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { compiler: msvc, config: debug }
+          - { compiler: msvc, config: release }
+          - { compiler: msvc, config: profile }
+          - { compiler: msvc, config: shipping }
+          - { compiler: clangcl, config: release }
+    env:
+      PRESET: fuse-${{ matrix.compiler }}-${{ matrix.config }}
+    steps:
+      # LF checkout (as on Linux): fixtures, content hashes and the lint gates compare bytes.
+      - name: Git line endings
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - uses: actions/checkout@v4
+
+      - name: VS x64 developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: No Windows Error Reporting dialogs (crashing tests must exit, not wait for a click)
+        shell: pwsh
+        run: |
+          $key = 'HKCU:\Software\Microsoft\Windows\Windows Error Reporting'
+          New-Item -Path $key -Force | Out-Null
+          Set-ItemProperty -Path $key -Name DontShowUI -Value 1 -Type DWord
+          Set-ItemProperty -Path $key -Name Disabled -Value 1 -Type DWord
+
+      - name: Use the Visual Studio bundled clang-cl (matches the MSVC STL version check)
+        if: matrix.compiler == 'clangcl'
+        shell: pwsh
+        run: |
+          $bundled = Join-Path $env:VCINSTALLDIR 'Tools\Llvm\x64\bin'
+          if (Test-Path (Join-Path $bundled 'clang-cl.exe')) {
+            $bundled | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            Write-Host "clang-cl from $bundled"
+          } else {
+            Write-Host "VS bundled clang-cl not found; using clang-cl from PATH"
+          }
+
+      - name: Toolchain versions
+        shell: pwsh
+        run: |
+          cmake --version
+          ninja --version
+          if ('${{ matrix.compiler }}' -eq 'clangcl') { clang-cl --version } else { cl 2>&1 | Select-Object -First 1 }
+
+      - name: Compiler cache (sccache)
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Configure (${{ env.PRESET }})
+        run: cmake --preset ${{ env.PRESET }} -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+
+      # -k 0: keep going so one run reports every warning-as-error / compile error, not just the first.
+      - name: Build (warnings are errors on FUSE targets)
+        run: cmake --build build/${{ env.PRESET }} -- -k 0
+
+      - name: Verify PE32+ x86-64 executables
+        shell: pwsh
+        run: |
+          $exes = Get-ChildItem -Path build/${{ env.PRESET }} -Recurse -Filter *.exe |
+            Where-Object { $_.FullName -notmatch '\\CMakeFiles\\' }
+          foreach ($exe in $exes) {
+            $bytes = [System.IO.File]::ReadAllBytes($exe.FullName)
+            $pe = [BitConverter]::ToInt32($bytes, 0x3C)
+            $machine = [BitConverter]::ToUInt16($bytes, $pe + 4)
+            if ($machine -ne 0x8664) { throw "$($exe.FullName): machine 0x$('{0:X}' -f $machine), expected x64" }
+          }
+          Write-Host "$($exes.Count) x64 executables"
+          if ($exes.Count -eq 0) { throw "no executables built" }
+
+      - name: CTest (native Windows)
+        run: ctest --test-dir build/${{ env.PRESET }} --output-on-failure --no-tests=error -j 2 --timeout 900
+
+      - name: sccache stats
+        if: always()
+        run: sccache --show-stats
+
+      - name: Collect test logs and crash reports
+        if: failure()
+        shell: pwsh
+        run: |
+          $out = 'fuse-test-artifacts'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $log = 'build/${{ env.PRESET }}/Testing/Temporary/LastTest.log'
+          if (Test-Path $log) { Copy-Item $log $out }
+          foreach ($root in @('build/${{ env.PRESET }}', $env:TEMP)) {
+            if (-not (Test-Path $root)) { continue }
+            Get-ChildItem -Path $root -Recurse -File -Filter 'fuse_crash_*' -ErrorAction SilentlyContinue |
+              ForEach-Object {
+                $rel = $_.FullName.Replace(':', '').Replace('\', '_')
+                Copy-Item $_.FullName (Join-Path $out $rel)
+              }
+          }
+          Get-ChildItem $out
+
+      - name: Upload test logs and crash reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuse-windows-${{ matrix.compiler }}-${{ matrix.config }}-testlog
+          path: fuse-test-artifacts
+          if-no-files-found: ignore
+
+  editor:
+    name: Windows x64 msvc release + Qt 6 editor
+    runs-on: windows-2022
+    timeout-minutes: 180
+    env:
+      PRESET: fuse-msvc-release
+    steps:
+      - name: Git line endings
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - uses: actions/checkout@v4
+
+      - name: VS x64 developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.*"
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Compiler cache (sccache)
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Configure (${{ env.PRESET }} + FUSE_BUILD_EDITOR)
+        shell: pwsh
+        run: >
+          cmake --preset ${{ env.PRESET }} -B build/fuse-msvc-editor
+          -DFUSE_BUILD_EDITOR=ON "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR"
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+
+      - name: Build
+        run: cmake --build build/fuse-msvc-editor -- -k 0
+
+      - name: CTest (editor subset)
+        run: ctest --test-dir build/fuse-msvc-editor --output-on-failure --no-tests=error -j 2 --timeout 900 -R "editor"
+
+      - name: Upload test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuse-windows-msvc-editor-testlog
+          path: build/fuse-msvc-editor/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
+
+  vulkan:
+    name: Windows x64 msvc release + Vulkan (build only)
+    runs-on: windows-2022
+    timeout-minutes: 180
+    env:
+      PRESET: fuse-msvc-release
+    steps:
+      - name: Git line endings
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - uses: actions/checkout@v4
+
+      - name: VS x64 developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # Khronos headers + loader (vulkan-1.lib / vulkan-1.dll) built from source and cached.
+      - name: Vulkan headers and loader
+        uses: humbletim/setup-vulkan-sdk@v1.2.1
+        with:
+          vulkan-query-version: 1.4.304.0
+          vulkan-components: Vulkan-Headers, Vulkan-Loader
+          vulkan-use-cache: true
+
+      - name: Compiler cache (sccache)
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Configure (${{ env.PRESET }} + FUSE_BUILD_VULKAN)
+        run: >
+          cmake --preset ${{ env.PRESET }} -B build/fuse-msvc-vulkan -DFUSE_BUILD_VULKAN=ON
+          -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+
+      - name: Build
+        run: cmake --build build/fuse-msvc-vulkan -- -k 0

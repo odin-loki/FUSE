@@ -1,4 +1,5 @@
 #include <fuse/audio/reverb_cuda.hpp>
+#include <fuse/compute_kernel/stats.hpp>
 
 namespace fuse::audio {
 
@@ -8,10 +9,12 @@ void ReverbCuda::init(const float* ir_samples, u32 ir_len, u32 block_size) {
         return;
     }
     m_blockSize = block_size;
-    // No GPU FFT backend is compiled into fuse_audio yet; the CPU overlap-add path is the
-    // reference implementation the CUDA kernel must match (see test_b7_audio_gates).
-    m_cudaAvailable = false;
+    // Same partitioned FFT plan and single-source kernels as the CPU reverb. With a CUDA device the
+    // plan is mirrored on it; otherwise every launch requests Backend::Cuda and kernel::launch falls
+    // back to CpuParallel (recorded in the "reverb_fft" / "reverb_cmac" stats).
+    m_cpuFallback.set_backend(kernel::Backend::Cuda);
     m_cpuFallback.init(ir_samples, ir_len, block_size);
+    m_cudaAvailable = m_cpuFallback.enable_cuda();
     m_initialized = true;
 }
 

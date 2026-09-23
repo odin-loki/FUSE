@@ -1,30 +1,38 @@
 #include <fuse/vfx/particle_soa_ops.hpp>
 
-#include <fuse/jobs/parallel_for.hpp>
+#include <fuse/compute_kernel/launch.hpp>
+#include <fuse/compute_kernel/stats.hpp>
+#include <fuse/vfx/particle_sim_kernel.hpp>
+#include <fuse/vfx/particle_system.hpp>
 
 #include <algorithm>
-#include <atomic>
 #include <cmath>
-#include <mutex>
+#include <utility>
+
+namespace fuse::vfx {
+
+#if defined(FUSE_HAS_CUDA)
+/// kernels/particle_sim.cu: stages the SoA on the device and runs the same update + compaction bodies.
+/// `params` reference host memory; `dead_slots` must hold `capacity` entries.
+bool launchParticleSimCuda(const particle_sim_kernel::Params& params, u32 capacity, void* stream);
+#endif
+
+bool particle_cuda_kernel_available() {
+#if defined(FUSE_HAS_CUDA)
+    // kernels/particle_sim.cu is compiled whenever FUSE_HAS_CUDA is; a device must also be usable.
+    return kernel::backend_available(kernel::Backend::Cuda);
+#else
+    return false;
+#endif
+}
+
+} // namespace fuse::vfx
 
 namespace fuse::vfx::particle_soa {
 
+namespace psk = particle_sim_kernel;
+
 namespace {
-
-/// Below this many slots a job dispatch costs more than the loop itself (measured ~0.1 ms per
-/// parallel_for with 4 workers on a 4-vCPU host, against a few microseconds of per-slot work).
-constexpr u32 kParallelSlotThreshold = 16384u;
-
-template <typename Fn>
-void for_each_slot(u32 capacity, u32 grain_size, Fn&& fn) {
-    if (capacity < kParallelSlotThreshold) {
-        for (u32 index = 0; index < capacity; ++index) {
-            fn(index);
-        }
-        return;
-    }
-    fuse::jobs::parallel_for(0u, capacity, grain_size, fn);
-}
 
 u64 mix_seed(u64 seed) {
     seed ^= seed >> 33U;
@@ -68,76 +76,89 @@ void fill_slot(ParticleSoA& soa, u32 slot, const ParticleEmitterDesc& desc, cons
     ++soa.count;
 }
 
-bool advance_age_and_cull_slot(ParticleSoA& soa, u32 index, f32 dt) {
-    soa.ages[index] += dt / std::max(soa.lifetimes[index], 1e-4f);
-    if (soa.ages[index] >= 1.f) {
-        soa.alive_flags[index] = 0U;
-        return true;
+struct SimCounts {
+    u32 alive = 0;
+    u32 culled = 0;
+    bool ok = false;
+};
+
+/// Counters + per-workgroup dead counts, zeroed for the next update (allocates only when the
+/// capacity changed since `init`).
+void reset_sim_scratch(ParticleSoA& soa) {
+    const usize needed = psk::kCounterCount + psk::group_count(soa.capacity);
+    if (soa.sim_scratch.size() != needed) {
+        soa.sim_scratch.assign(needed, 0u);
+    } else {
+        std::fill(soa.sim_scratch.begin(), soa.sim_scratch.end(), 0u);
     }
-    return false;
 }
 
-f32 collider_distance(const ParticleCollider& collider, const math::Vec3& position, math::Vec3& gradient) {
-    if (collider.shape == ParticleColliderShape::Sphere) {
-        const math::Vec3 offset = position - collider.center;
-        const f32 length = offset.length();
-        gradient = length > 1e-6f ? offset * (1.f / length) : math::Vec3{0.f, 1.f, 0.f};
-        return length - collider.radius;
+psk::Params make_sim_params(ParticleSoA& soa, const ParticleEmitterDesc* desc, f32 dt, bool integrate,
+                            std::vector<u32>& dead_slots) {
+    const u32 n = soa.capacity;
+    psk::Params p{};
+    p.positions = {soa.positions.data(), n};
+    p.velocities = {soa.velocities.data(), n};
+    p.ages = {soa.ages.data(), n};
+    p.lifetimes = {soa.lifetimes.data(), n};
+    p.sizes = {soa.sizes.data(), n};
+    p.colors = {soa.colors.data(), n};
+    p.alphas = {soa.alphas.data(), n};
+    p.alive_flags = {soa.alive_flags.data(), n};
+    if (integrate && desc != nullptr && desc->collide_with_world && !desc->colliders.empty()) {
+        p.colliders = {desc->colliders.data(), static_cast<u32>(desc->colliders.size())};
     }
-    gradient = collider.normal;
-    return collider.normal.dot(position) - collider.offset;
+    p.counters = {soa.sim_scratch.data(), psk::kCounterCount};
+    p.group_dead = {soa.sim_scratch.data() + psk::kCounterCount, psk::group_count(n)};
+    p.dead_slots = {dead_slots.data(), static_cast<u32>(dead_slots.size())};
+    p.sim = psk::make_sim(desc, dt, integrate);
+    return p;
 }
 
-void resolve_collisions(const ParticleEmitterDesc& desc, math::Vec3& position, math::Vec3& velocity) {
-    for (const ParticleCollider& collider : desc.colliders) {
-        math::Vec3 normal{};
-        const f32 distance = collider_distance(collider, position, normal);
-        if (distance >= 0.f) {
-            continue;
+/// One update + compaction on `backend`. Writes the dead slots (descending) to `dead_slots`,
+/// updates `soa.count` and returns them to the free list.
+SimCounts run_sim(kernel::Backend backend, ParticleSoA& soa, const ParticleEmitterDesc* desc, f32 dt,
+                  bool integrate, u32 grain_size, std::vector<u32>& dead_slots) {
+    SimCounts counts{};
+    reset_sim_scratch(soa);
+    if (dead_slots.capacity() < soa.capacity) {
+        dead_slots.reserve(soa.capacity); // once per emitter: every later step stays heap-free
+    }
+
+#if defined(FUSE_HAS_CUDA)
+    if ((backend == kernel::Backend::Cuda || backend == kernel::Backend::Auto) && particle_cuda_kernel_available()) {
+        dead_slots.resize(soa.capacity);
+        counts.ok = launchParticleSimCuda(make_sim_params(soa, desc, dt, integrate, dead_slots), soa.capacity,
+                                          nullptr);
+        counts.culled = counts.ok ? soa.sim_scratch[psk::kCounterCulled] : 0u;
+        counts.alive = counts.ok ? soa.sim_scratch[psk::kCounterAlive] : soa.count;
+        dead_slots.resize(counts.culled);
+    } else
+#endif
+    {
+        // CPU backends, or a GPU backend that cannot run here: kernel::launch resolves the fallback
+        // (CpuParallel) and records the requested vs executed backend.
+        dead_slots.clear();
+        psk::Params params = make_sim_params(soa, desc, dt, integrate, dead_slots);
+        kernel::LaunchOptions options{};
+        options.grain_workgroups = kernel::div_up(std::max(grain_size, 1u), psk::kGroupSize);
+        counts.ok = kernel::launch(backend, psk::update_launch(soa.capacity), psk::UpdateKernel{}, params, options).ok;
+        counts.culled = counts.ok ? soa.sim_scratch[psk::kCounterCulled] : 0u;
+        counts.alive = counts.ok ? soa.sim_scratch[psk::kCounterAlive] : soa.count;
+        if (counts.culled > 0u) {
+            dead_slots.resize(counts.culled);
+            params.dead_slots = {dead_slots.data(), counts.culled};
+            counts.ok = kernel::launch(backend, psk::compact_launch(soa.capacity), psk::CompactKernel{}, params,
+                                       options)
+                            .ok;
         }
-        // Project back onto the surface, then reflect the approaching normal velocity component.
-        position = position - normal * distance;
-        const f32 normal_speed = velocity.dot(normal);
-        if (normal_speed < 0.f) {
-            const math::Vec3 normal_velocity = normal * normal_speed;
-            const math::Vec3 tangent_velocity = velocity - normal_velocity;
-            velocity = tangent_velocity * (1.f - desc.friction) - normal_velocity * desc.restitution;
-        }
-    }
-}
-
-void integrate_slot(ParticleSoA& soa, u32 index, const ParticleEmitterDesc& desc, f32 dt,
-                    std::vector<u32>& dead_slots, std::mutex& dead_mutex, std::atomic<u32>& alive_count,
-                    std::atomic<u32>& integrated_count, std::atomic<u32>& culled_count) {
-    if (advance_age_and_cull_slot(soa, index, dt)) {
-        std::lock_guard<std::mutex> guard(dead_mutex);
-        dead_slots.push_back(index);
-        culled_count.fetch_add(1U, std::memory_order_relaxed);
-        return;
     }
 
-    math::Vec3& velocity = soa.velocities[index];
-    velocity = velocity + desc.gravity * dt;
-    velocity = velocity * (1.f - desc.drag * dt);
-
-    math::Vec3& position = soa.positions[index];
-    position = position + velocity * dt;
-    if (desc.collide_with_world && !desc.colliders.empty()) {
-        resolve_collisions(desc, position, velocity);
+    if (counts.ok) {
+        soa.count = counts.alive;
+        recycle_slots(soa, dead_slots);
     }
-
-    const f32 t = soa.ages[index];
-    soa.sizes[index] = desc.size_start + (desc.size_end - desc.size_start) * t;
-    soa.colors[index] = desc.color_start + (desc.color_end - desc.color_start) * t;
-    soa.alphas[index] = desc.alpha_start + (desc.alpha_end - desc.alpha_start) * t;
-    alive_count.fetch_add(1U, std::memory_order_relaxed);
-    integrated_count.fetch_add(1U, std::memory_order_relaxed);
-}
-
-/// Workers append expired slots in completion order; sort descending so the free list (popped from
-/// the back) hands out the lowest index first regardless of thread count — keeps runs deterministic.
-void sort_dead_slots(std::vector<u32>& dead_slots) {
-    std::sort(dead_slots.begin(), dead_slots.end(), [](u32 a, u32 b) { return a > b; });
+    return counts;
 }
 
 } // namespace
@@ -152,6 +173,7 @@ void init(ParticleSoA& soa, u32 capacity) {
     soa.colors.assign(capacity, {});
     soa.alphas.assign(capacity, 0.f);
     soa.alive_flags.assign(capacity, 0U);
+    soa.sim_scratch.assign(psk::kCounterCount + psk::group_count(capacity), 0U);
     soa.free_slots.clear();
     soa.free_slots.reserve(capacity);
     for (u32 i = capacity; i > 0u; --i) {
@@ -251,40 +273,25 @@ bool should_skip_lifetime_cull(const ParticleSoA& soa, f32 dt) {
     return dt <= 0.f || soa.capacity == 0u || !has_live_particles(soa);
 }
 
-LifetimeCullResult lifetime_cull(ParticleSoA& soa, f32 dt, u32 grain_size) {
+kernel::Backend cpu_simulation_backend(u32 capacity) {
+    return capacity < kParallelSlotThreshold ? kernel::Backend::CpuReference : kernel::Backend::CpuParallel;
+}
+
+LifetimeCullResult lifetime_cull_on(kernel::Backend backend, ParticleSoA& soa, f32 dt, u32 grain_size) {
     LifetimeCullResult result{};
     if (should_skip_lifetime_cull(soa, dt)) {
         result.alive_after = soa.count;
         return result;
     }
-
-    result.dead_slots.reserve(soa.capacity / 8u + 1u);
-    std::mutex dead_mutex;
-    std::atomic<u32> alive_count{0};
-    std::atomic<u32> aged_count{0};
-    std::atomic<u32> culled_count{0};
-
-    for_each_slot(soa.capacity, grain_size, [&](u32 index) {
-        if (soa.alive_flags[index] == 0U) {
-            return;
-        }
-        aged_count.fetch_add(1U, std::memory_order_relaxed);
-        if (advance_age_and_cull_slot(soa, index, dt)) {
-            std::lock_guard<std::mutex> guard(dead_mutex);
-            result.dead_slots.push_back(index);
-            culled_count.fetch_add(1U, std::memory_order_relaxed);
-            return;
-        }
-        alive_count.fetch_add(1U, std::memory_order_relaxed);
-    });
-
-    soa.count = alive_count.load(std::memory_order_relaxed);
-    result.aged = aged_count.load(std::memory_order_relaxed);
+    const SimCounts counts = run_sim(backend, soa, nullptr, dt, false, grain_size, result.dead_slots);
+    result.aged = counts.alive + counts.culled;
+    result.culled = counts.culled;
     result.alive_after = soa.count;
-    result.culled = culled_count.load(std::memory_order_relaxed);
-    sort_dead_slots(result.dead_slots);
-    recycle_slots(soa, result.dead_slots);
     return result;
+}
+
+LifetimeCullResult lifetime_cull(ParticleSoA& soa, f32 dt, u32 grain_size) {
+    return lifetime_cull_on(cpu_simulation_backend(soa.capacity), soa, dt, grain_size);
 }
 
 bool should_skip_rate_emit(const ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt) {
@@ -335,53 +342,31 @@ SimStepPreflight preflight_simulate_step(const ParticleSoA& soa, f32 dt) {
     return preflight;
 }
 
-namespace {
-
-void simulate_step_into(ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt, u32 grain_size,
-                        SimStepResult& result, std::vector<u32>& dead_slots) {
-    const SimStepPreflight preflight = preflight_simulate_step(soa, dt);
-    if (preflight.skipped) {
+SimStepResult simulate_step_on(kernel::Backend backend, ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt,
+                               std::vector<u32>& dead_slots_scratch, u32 grain_size) {
+    SimStepResult result{};
+    if (preflight_simulate_step(soa, dt).skipped) {
         result.skipped = true;
         result.alive_after = soa.count;
-        return;
+        return result;
     }
-
-    dead_slots.clear();
-    dead_slots.reserve(soa.capacity / 8u + 1u);
-    std::mutex dead_mutex;
-    std::atomic<u32> alive_count{0};
-    std::atomic<u32> integrated_count{0};
-    std::atomic<u32> culled_count{0};
-
-    for_each_slot(soa.capacity, grain_size, [&](u32 index) {
-        if (soa.alive_flags[index] == 0U) {
-            return;
-        }
-        integrate_slot(soa, index, desc, dt, dead_slots, dead_mutex, alive_count, integrated_count,
-                       culled_count);
-    });
-
-    soa.count = alive_count.load(std::memory_order_relaxed);
-    result.integrated = integrated_count.load(std::memory_order_relaxed);
-    result.culled = culled_count.load(std::memory_order_relaxed);
+    const SimCounts counts = run_sim(backend, soa, &desc, dt, true, grain_size, dead_slots_scratch);
+    result.integrated = counts.alive;
+    result.culled = counts.culled;
     result.alive_after = soa.count;
-    sort_dead_slots(dead_slots);
-    recycle_slots(soa, dead_slots);
+    return result;
 }
 
-} // namespace
-
 SimStepResult simulate_step(ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt, u32 grain_size) {
-    SimStepResult result{};
-    simulate_step_into(soa, desc, dt, grain_size, result, result.dead_slots);
+    std::vector<u32> dead_slots;
+    SimStepResult result = simulate_step_on(cpu_simulation_backend(soa.capacity), soa, desc, dt, dead_slots, grain_size);
+    result.dead_slots = std::move(dead_slots);
     return result;
 }
 
 SimStepResult simulate_step(ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt,
                             std::vector<u32>& dead_slots_scratch, u32 grain_size) {
-    SimStepResult result{};
-    simulate_step_into(soa, desc, dt, grain_size, result, dead_slots_scratch);
-    return result;
+    return simulate_step_on(cpu_simulation_backend(soa.capacity), soa, desc, dt, dead_slots_scratch, grain_size);
 }
 
 } // namespace fuse::vfx::particle_soa

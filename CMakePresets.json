@@ -210,6 +210,102 @@
         "FUSE_SHIPPING": "ON",
         "FUSE_BUILD_EDITOR_API": "OFF"
       }
+    },
+    {
+      "name": "fuse-msvc-base",
+      "hidden": true,
+      "displayName": "FUSE Windows x64 native base (cl.exe, Ninja; run from a VS x64 developer shell)",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl",
+        "FUSE_UMBRELLA": "ON",
+        "FUSE_BUILD_T3D": "OFF",
+        "FUSE_BUILD_T2D": "OFF",
+        "FUSE_BUILD_VULKAN": "OFF",
+        "FUSE_BUILD_CUDA": "OFF",
+        "FUSE_BUILD_EDITOR": "OFF",
+        "FUSE_BUILD_CORE": "ON",
+        "FUSE_BUILD_CORE_TESTS": "ON",
+        "FUSE_WARNINGS": "ON",
+        "FUSE_WARNINGS_AS_ERRORS": "ON",
+        "CMAKE_C_FLAGS_DEBUG": "/Z7 /Ob0 /Od /RTC1",
+        "CMAKE_CXX_FLAGS_DEBUG": "/Z7 /Ob0 /Od /RTC1",
+        "CMAKE_C_FLAGS_RELWITHDEBINFO": "/Z7 /O2 /Ob1 /DNDEBUG",
+        "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "/Z7 /O2 /Ob1 /DNDEBUG"
+      }
+    },
+    {
+      "name": "fuse-msvc-debug",
+      "displayName": "FUSE Windows x64 Debug (MSVC, /W3 /WX)",
+      "inherits": "fuse-msvc-base",
+      "binaryDir": "${sourceDir}/build/fuse-msvc-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "fuse-msvc-release",
+      "displayName": "FUSE Windows x64 Release (MSVC, /W3 /WX)",
+      "inherits": "fuse-msvc-base",
+      "binaryDir": "${sourceDir}/build/fuse-msvc-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "fuse-msvc-profile",
+      "displayName": "FUSE Windows x64 Profile (MSVC, /W3 /WX)",
+      "inherits": "fuse-msvc-base",
+      "binaryDir": "${sourceDir}/build/fuse-msvc-profile",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "FUSE_PROFILE": "ON"
+      }
+    },
+    {
+      "name": "fuse-msvc-shipping",
+      "displayName": "FUSE Windows x64 Shipping (MSVC, /W3 /WX)",
+      "inherits": "fuse-msvc-base",
+      "binaryDir": "${sourceDir}/build/fuse-msvc-shipping",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FUSE_SHIPPING": "ON",
+        "FUSE_BUILD_EDITOR_API": "OFF"
+      }
+    },
+    {
+      "name": "fuse-clangcl-base",
+      "hidden": true,
+      "displayName": "FUSE Windows x64 native base (clang-cl, Ninja; run from a VS x64 developer shell)",
+      "inherits": "fuse-msvc-base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl"
+      }
+    },
+    {
+      "name": "fuse-clangcl-debug",
+      "displayName": "FUSE Windows x64 Debug (clang-cl, /W4 /WX)",
+      "inherits": "fuse-clangcl-base",
+      "binaryDir": "${sourceDir}/build/fuse-clangcl-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "fuse-clangcl-release",
+      "displayName": "FUSE Windows x64 Release (clang-cl, /W4 /WX)",
+      "inherits": "fuse-clangcl-base",
+      "binaryDir": "${sourceDir}/build/fuse-clangcl-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ]
 }

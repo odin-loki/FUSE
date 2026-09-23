@@ -138,7 +138,7 @@ void __libc_free(void*);
 namespace {
 
 constexpr int kStackDepth = 32;
-constexpr int kSkipFrames = 2; // record() + the replaced allocation function
+[[maybe_unused]] constexpr int kSkipFrames = 2; // record() + the replaced allocation function
 constexpr unsigned kSiteTableSize = 4096;
 
 enum class Kind : unsigned char { CxxNew = 0, CMalloc = 1 };
@@ -168,7 +168,7 @@ std::atomic<unsigned> g_winTraceCount{0};
 
 // Only filled/read with the glibc malloc hook (backtrace attribution); unused elsewhere.
 [[maybe_unused]] Site g_sites[kSiteTableSize];
-std::atomic<unsigned> g_droppedSites{0};
+[[maybe_unused]] std::atomic<unsigned> g_droppedSites{0};
 std::atomic<bool> g_measuring{false};
 std::atomic<int> g_phase{-1};
 std::atomic<std::uint64_t> g_newCount{0};

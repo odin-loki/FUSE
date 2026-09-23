@@ -99,7 +99,18 @@
 #include <string>
 #include <vector>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <psapi.h>
+#else
 #include <unistd.h>
+#endif
 
 using fuse::editor::qt::MainWindow;
 using fuse::editor::qt::ViewportPlaceholderWidget;
@@ -116,7 +127,9 @@ void expect(bool condition, const std::string& message) {
     }
 }
 
+#if defined(__GNUC__) || defined(__clang__)
 std::string fmt(const char* f, ...) __attribute__((format(printf, 1, 2)));
+#endif
 std::string fmt(const char* f, ...) {
     char buf[1024];
     va_list args;
@@ -161,6 +174,44 @@ bool releaseBuild() {
 #endif
 }
 
+#if defined(_WIN32)
+long long residentBytes() {
+    PROCESS_MEMORY_COUNTERS counters{};
+    counters.cb = sizeof(counters);
+    if (K32GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters)) == FALSE) {
+        return 0;
+    }
+    return static_cast<long long>(counters.WorkingSetSize);
+}
+
+/// Bytes in busy blocks of the process heap (the UCRT malloc heap).
+long long heapInUse() {
+    HANDLE heap = GetProcessHeap();
+    long long busy = 0;
+    if (HeapLock(heap) == FALSE) {
+        return 0;
+    }
+    PROCESS_HEAP_ENTRY entry{};
+    while (HeapWalk(heap, &entry) != FALSE) {
+        if ((entry.wFlags & PROCESS_HEAP_ENTRY_BUSY) != 0) {
+            busy += static_cast<long long>(entry.cbData);
+        }
+    }
+    HeapUnlock(heap);
+    return busy;
+}
+
+long long threadCpuNs() {
+    FILETIME created{}, exited{}, kernel{}, user{};
+    if (GetThreadTimes(GetCurrentThread(), &created, &exited, &kernel, &user) == FALSE) {
+        return 0;
+    }
+    const auto ticks = [](const FILETIME& ft) {
+        return (static_cast<long long>(ft.dwHighDateTime) << 32) | static_cast<long long>(ft.dwLowDateTime);
+    };
+    return (ticks(kernel) + ticks(user)) * 100ll;
+}
+#else
 long long residentBytes() {
     long pages = 0;
     long resident = 0;
@@ -183,6 +234,7 @@ long long threadCpuNs() {
     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
     return static_cast<long long>(ts.tv_sec) * 1000000000ll + ts.tv_nsec;
 }
+#endif
 
 /// Visible on screen: shown, inside a shown window and not covered (e.g. by a raised tab sibling).
 bool reallyVisible(QWidget* w) {

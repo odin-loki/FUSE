@@ -1,11 +1,13 @@
 #pragma once
 
+#include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/core/flat_u64_map.hpp>
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/ccd/ccd.hpp>
 #include <fuse/physics/ccd/toi_buffer.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/physics_data.hpp>
+#include <fuse/physics/solver/constraint_coloring.hpp>
 #include <fuse/physics/solver/contact_island_graph.hpp>
 #include <fuse/physics/solver/distance_constraint.hpp>
 #include <fuse/physics/solver/joint_constraint.hpp>
@@ -37,6 +39,13 @@ struct SolverParams {
     broadphase::SpatialHashParams broadphase{};
     /// Sweep RB_CCD bodies over the frame before the discrete substeps (B4.6).
     bool enableCcd = true;
+    /// Constraint iteration order. IslandGaussSeidel (default) is the reference solver;
+    /// ColoredKernel graph-colours the constraints and runs one "physics_solve_color" kernel launch
+    /// per colour and iteration (deterministic on every backend, but a different Gauss-Seidel order,
+    /// so not bit-identical to the island path). See constraint_coloring.hpp.
+    ConstraintSolveMode solveMode = ConstraintSolveMode::IslandGaussSeidel;
+    /// Backend of the colored solve launches (CPU backends; GPU requests fall back to CpuParallel).
+    kernel::Backend kernelBackend = kernel::Backend::CpuParallel;
 };
 
 /// B4.4 — CPU PBD/XPBD constraint solver wired to B4.2 broadphase + B4.3 narrowphase.
@@ -82,6 +91,8 @@ public:
     u32 lastIterationCount() const { return lastIterationCount_; }
     f32 lastConstraintResidual() const { return lastConstraintResidual_; }
     const ContactIslandGraph& islandGraph() const { return islandGraph_; }
+    /// Constraint colouring of the last substep (ConstraintSolveMode::ColoredKernel only).
+    const ConstraintColoring& constraintColoring() const { return coloring_; }
     const SolverWorkBuffers& workBuffers() const { return workBuffers_; }
 
 private:
@@ -141,6 +152,8 @@ private:
     std::vector<f32> priorContactLambdas_;
     SolverWorkBuffers workBuffers_;
     ContactIslandGraph islandGraph_;
+    ConstraintColoring coloring_;
+    void solveColored_(RigidBodySoA& bodies, const SolverParams& params, f32 dt);
     u32 maxBodies_ = 0;
     u32 maxContacts_ = 0;
     u32 lastContactCount_ = 0;

@@ -8,7 +8,8 @@
 
 namespace fuse::renderer {
 
-/// SDF soft shadows (B5.5) — CPU reference of the CUDA `sdf_soft_shadow` kernel helper.
+/// SDF soft shadows (B5.5). Device-safe (FUSE_HOST_DEVICE): the full-frame `sdf_shadows` kernel
+/// (shadow/sdf_shadow_kernel.hpp) runs this march against the ray-march scene SDF on every backend.
 ///
 /// Penumbra ray marching along the shadow ray with the improved distance estimate: consecutive SDF
 /// samples h_prev, h bound the closest approach between them at y = h^2 / (2 h_prev) behind the
@@ -40,13 +41,13 @@ struct SdfSoftShadowParams {
 };
 
 /// Angular radius (radians) of the spherical light equivalent to `penumbraK`.
-inline f32 sdfPenumbraLightAngularRadius(f32 penumbraK) {
+FUSE_HOST_DEVICE inline f32 sdfPenumbraLightAngularRadius(f32 penumbraK) {
     return penumbraK > 0.f ? 1.f / penumbraK : 0.f;
 }
 
 /// Fraction of a uniform disc on the visible side of a straight edge at signed offset `r` from the disc
 /// centre (r in units of the disc radius; r = -1 fully covered, r = +1 fully visible).
-inline f32 sdfDiscVisibility(f32 r) {
+FUSE_HOST_DEVICE inline f32 sdfDiscVisibility(f32 r) {
     const f32 c = std::clamp(r, -1.f, 1.f);
     constexpr f32 kInvPi = 0.318309886f;
     return 0.5f + kInvPi * (c * std::sqrt(std::max(0.f, 1.f - c * c)) + std::asin(c));
@@ -54,7 +55,7 @@ inline f32 sdfDiscVisibility(f32 r) {
 
 /// Signed normalised clearance r = k * min_t(angular clearance) in [-1, 1] (1 = light fully clear).
 template <typename SceneSdf>
-f32 sdfSoftShadowClearance(const SceneSdf& sceneSdf,
+FUSE_HOST_DEVICE f32 sdfSoftShadowClearance(const SceneSdf& sceneSdf,
                            const fuse::math::Vec3& rayOrigin,
                            const fuse::math::Vec3& rayDir,
                            const SdfSoftShadowParams& params) {
@@ -95,7 +96,7 @@ f32 sdfSoftShadowClearance(const SceneSdf& sceneSdf,
 
 /// Shadow factor in [0, 1]: 1 = fully lit, 0 = fully shadowed.
 template <typename SceneSdf>
-f32 sdfSoftShadow(const SceneSdf& sceneSdf,
+FUSE_HOST_DEVICE f32 sdfSoftShadow(const SceneSdf& sceneSdf,
                   const fuse::math::Vec3& rayOrigin,
                   const fuse::math::Vec3& rayDir,
                   f32 tMin,
@@ -112,7 +113,7 @@ f32 sdfSoftShadow(const SceneSdf& sceneSdf,
 
 /// Shadow factor in [0, 1] with full march parameters.
 template <typename SceneSdf>
-f32 sdfSoftShadow(const SceneSdf& sceneSdf,
+FUSE_HOST_DEVICE f32 sdfSoftShadow(const SceneSdf& sceneSdf,
                   const fuse::math::Vec3& rayOrigin,
                   const fuse::math::Vec3& rayDir,
                   const SdfSoftShadowParams& params) {

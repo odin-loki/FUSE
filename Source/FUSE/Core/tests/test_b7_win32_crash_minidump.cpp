@@ -23,6 +23,7 @@
 #include <fuse/assert.hpp>
 #include <fuse/platform/crash_report.hpp>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -444,6 +445,16 @@ void removeReports(const std::string& dir, DWORD pid) {
 
 /// Image-relative [begin, end) of a function from this image's x64 unwind table (.pdata).
 bool functionRva(const void* fn, u64& begin, u64& end) {
+    // MSVC incremental linking (/INCREMENTAL, CMake's Debug default for link.exe) makes &function
+    // the address of an incremental-link-table thunk, `jmp rel32` (E9), which has no unwind entry.
+    // Follow it (chained thunks included) to the function body.
+    const auto* code = static_cast<const unsigned char*>(fn);
+    for (int hops = 0; hops < 4 && code[0] == 0xE9u; ++hops) {
+        std::int32_t rel = 0;
+        std::memcpy(&rel, code + 1, sizeof(rel));
+        code = code + 5 + rel;
+    }
+    fn = code;
     DWORD64 imageBase = 0;
     PRUNTIME_FUNCTION entry = ::RtlLookupFunctionEntry(reinterpret_cast<DWORD64>(fn), &imageBase, nullptr);
     if (entry == nullptr) {

@@ -16,6 +16,7 @@
 #include <fuse/platform/window.hpp>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -55,6 +56,34 @@ const DpiContext kContextPerMonitorAwareV2 = reinterpret_cast<DpiContext>(static
 template <typename Fn>
 Fn user32Proc(const char* name) {
     return reinterpret_cast<Fn>(reinterpret_cast<void (*)()>(::GetProcAddress(::GetModuleHandleA("user32.dll"), name)));
+}
+
+/// Wine exports wine_get_version from ntdll; real Windows never does.
+bool runningUnderWine() {
+    HMODULE ntdll = ::GetModuleHandleA("ntdll.dll");
+    return ntdll != nullptr && ::GetProcAddress(ntdll, "wine_get_version") != nullptr;
+}
+
+/// OS build number from RtlGetVersion (GetVersionEx lies without a compatibility manifest).
+DWORD windowsBuildNumber() {
+    struct OsVersionInfo {
+        ULONG size;
+        ULONG major;
+        ULONG minor;
+        ULONG build;
+        ULONG platform;
+        WCHAR csd[128];
+    };
+    using RtlGetVersionFn = LONG(WINAPI*)(OsVersionInfo*);
+    HMODULE ntdll = ::GetModuleHandleA("ntdll.dll");
+    const auto rtlGetVersion = ntdll == nullptr ? nullptr
+        : reinterpret_cast<RtlGetVersionFn>(reinterpret_cast<void (*)()>(::GetProcAddress(ntdll, "RtlGetVersion")));
+    OsVersionInfo info{};
+    info.size = sizeof(info);
+    if (rtlGetVersion == nullptr || rtlGetVersion(&info) != 0) {
+        return 0;
+    }
+    return info.major > 10 || (info.major == 10 && info.build > 0) ? info.build : 0;
 }
 
 bool hasPerMonitorApi() {
@@ -128,6 +157,23 @@ void checkWindows() {
     if (osKnowsV2) {
         expectTrue(after == DpiAwareness::PerMonitorV2, "per-monitor-v2 context supported -> process is per-monitor v2");
     }
+    // Real Windows 10 1703 (build 15063) or later: per-monitor v2 is not optional, and it must come
+    // from the v2 context API itself (not a v1 / shcore / system-aware fallback). Wine is exempt
+    // (see above); FUSE_DPI_REQUIRE_V2=0 opts out on an exotic host, =1 forces the check.
+    const bool wine = runningUnderWine();
+    const DWORD build = windowsBuildNumber();
+    bool requireV2 = !wine && build >= 15063u;
+    if (const char* force = std::getenv("FUSE_DPI_REQUIRE_V2"); force != nullptr && force[0] != '\0') {
+        requireV2 = force[0] != '0';
+    }
+    std::printf("  host: %s, Windows build %lu -> per-monitor v2 %s\n", wine ? "Wine" : "Windows",
+                static_cast<unsigned long>(build), requireV2 ? "REQUIRED" : "not required");
+    if (requireV2) {
+        expectTrue(osKnowsV2, "Windows 10 1703+: OS accepts DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2");
+        expectTrue(after == DpiAwareness::PerMonitorV2, "Windows 10 1703+: process is per-monitor v2 after core::initialize()");
+        expectTrue(result.api == DpiAwarenessApi::SetProcessDpiAwarenessContextV2,
+                   "Windows 10 1703+: awareness set via SetProcessDpiAwarenessContext(PER_MONITOR_AWARE_V2)");
+    }
     const auto again = fuse::platform::enableHighDpiAwareness();
     expectTrue(again.api == result.api && again.awareness == result.awareness, "enableHighDpiAwareness is idempotent");
 
@@ -146,6 +192,10 @@ void checkWindows() {
     using ContextsEqualFn = BOOL(WINAPI*)(DpiContext, DpiContext);
     const auto windowContext = user32Proc<GetWindowContextFn>("GetWindowDpiAwarenessContext");
     const auto equal = user32Proc<ContextsEqualFn>("AreDpiAwarenessContextsEqual");
+    if (requireV2) {
+        expectTrue(windowContext != nullptr && equal != nullptr,
+                   "Windows 10 1703+: GetWindowDpiAwarenessContext / AreDpiAwarenessContextsEqual exported");
+    }
     if (hwnd != nullptr && windowContext != nullptr && equal != nullptr && after == DpiAwareness::PerMonitorV2) {
         expectTrue(equal(windowContext(static_cast<HWND>(hwnd)), kContextPerMonitorAwareV2) != FALSE,
                    "owned window created with the per-monitor-v2 awareness context");
@@ -156,6 +206,7 @@ void checkWindows() {
     const DWORD preset = spawnPresetChild();
     if (preset == 77u) {
         std::printf("  preset child: cannot preset awareness on this system (skipped)\n");
+        expectTrue(!requireV2, "Windows 10 1703+: preset child could set a system-aware context");
     } else {
         const DWORD expected = static_cast<DWORD>(DpiAwarenessApi::AlreadySet) * 16u +
                                static_cast<DWORD>(DpiAwareness::System);

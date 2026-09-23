@@ -8,12 +8,16 @@
 //   - PhysicsPipeline 2D (spatial hash 2D) mixing circles and boxes
 //   - World3D with physics enabled (World3D::tick: sync, PhysicsWorld3D::step, snapshot, cull)
 //   - World2D with physics enabled (World2D::tick)
+//   - PhysicsPipeline 3D / 2D on the compute-kernel path (PhysicsComputePath::Kernels, CpuParallel)
+//     — must also match the legacy pipeline's state hash after the measured frames
+//   - PBDSolver with the colored kernel solve (ConstraintSolveMode::ColoredKernel)
 // Also prints the median PhysicsPipeline::step wall time for the 1000-body 3D case.
 // Set FUSE_ALLOC_GATE_BACKTRACE=1 to print a backtrace (stderr) for every counted allocation.
 
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/physics/physics_pipeline.hpp>
+#include <fuse/physics/solver/pbd_solver.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world2d/world_2d.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
@@ -161,9 +165,34 @@ void report(const char* name, const Measurement& m, const char* failMessage) {
     expectTrue(perFrame <= kMaxAllocationsPerFrame, failMessage);
 }
 
-void testPipeline3D() {
+unsigned long long pipelineHash(const fuse::physics::PhysicsPipeline& p) {
+    unsigned long long h = 1469598103934665603ull;
+    const auto mix = [&](const void* data, std::size_t bytes) {
+        const unsigned char* b = static_cast<const unsigned char*>(data);
+        for (std::size_t i = 0; i < bytes; ++i) {
+            h = (h ^ b[i]) * 1099511628211ull;
+        }
+    };
+    mix(p.bodies().positions.data(), p.bodies().positions.size() * sizeof(fuse::physics::vec3));
+    for (const auto& pair : p.candidatePairs()) {
+        mix(&pair, sizeof(pair));
+    }
+    for (const auto& m : p.contacts()) {
+        mix(&m.contactNormal, sizeof(m.contactNormal));
+        mix(&m.penetrationDepth, sizeof(m.penetrationDepth));
+    }
+    return h;
+}
+
+unsigned long long g_pipeline3DHash = 0;
+unsigned long long g_pipeline2DHash = 0;
+
+void testPipeline3D(fuse::physics::PhysicsComputePath path = fuse::physics::PhysicsComputePath::Legacy) {
+    const bool kernels = path == fuse::physics::PhysicsComputePath::Kernels;
+    fuse::physics::PhysicsPipelineDesc desc{};
+    desc.computePath = path;
     fuse::physics::PhysicsPipeline pipeline;
-    pipeline.init({});
+    pipeline.init(desc);
     pipeline.addStaticPlane({0.f, 1.f, 0.f}, 0.f);
     for (int x = 0; x < kGrid; ++x) {
         for (int y = 0; y < kGrid; ++y) {
@@ -178,12 +207,21 @@ void testPipeline3D() {
     expectTrue(pipeline.contactCount() > 1000u, "3D pipeline produced contacts");
     std::printf("physics alloc gate: pipeline 3D candidate pairs %zu, contacts %u\n", pipeline.candidatePairs().size(),
                 pipeline.contactCount());
-    report("PhysicsPipeline 3D x1000", m, "steady-state PhysicsPipeline 3D step performs zero heap allocations");
+    report(kernels ? "PhysicsPipeline 3D kernels x1000" : "PhysicsPipeline 3D x1000", m,
+           "steady-state PhysicsPipeline 3D step performs zero heap allocations");
+    if (kernels) {
+        expectTrue(pipelineHash(pipeline) == g_pipeline3DHash, "3D kernel pipeline state hash == legacy pipeline");
+    } else {
+        g_pipeline3DHash = pipelineHash(pipeline);
+    }
 }
 
-void testPipeline2D() {
+
+void testPipeline2D(fuse::physics::PhysicsComputePath path = fuse::physics::PhysicsComputePath::Legacy) {
+    const bool kernels = path == fuse::physics::PhysicsComputePath::Kernels;
     fuse::physics::PhysicsPipelineDesc desc{};
     desc.broadphaseMode = fuse::physics::BroadphaseMode::SpatialHash2D;
+    desc.computePath = path;
     fuse::physics::PhysicsPipeline pipeline;
     pipeline.init(desc);
     for (int i = 0; i < kBodies; ++i) {
@@ -196,7 +234,40 @@ void testPipeline2D() {
     }
     const Measurement m = measureFrames([&](fuse::u32) { pipeline.step(kDt); });
     expectTrue(pipeline.candidatePairs().size() > 1000u, "2D pipeline produced candidate pairs");
-    report("PhysicsPipeline 2D x1000", m, "steady-state PhysicsPipeline 2D step performs zero heap allocations");
+    report(kernels ? "PhysicsPipeline 2D kernels x1000" : "PhysicsPipeline 2D x1000", m,
+           "steady-state PhysicsPipeline 2D step performs zero heap allocations");
+    if (kernels) {
+        expectTrue(pipelineHash(pipeline) == g_pipeline2DHash, "2D kernel pipeline state hash == legacy pipeline");
+    } else {
+        g_pipeline2DHash = pipelineHash(pipeline);
+    }
+}
+
+void testColoredSolver() {
+    using namespace fuse::physics;
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+    const fuse::u32 ground = bodies.addBody({0.f, 0.f, 0.f}, 0.f, RB_STATIC);
+    shapes.addShape(CollisionShapeType::Plane, ground, {0.f, 1.f, 0.f}, 0.f);
+    for (int i = 0; i < kBodies; ++i) {
+        const vec3 p{static_cast<float>(i % kGrid) * 1.2f, 0.5f + static_cast<float>(i / (kGrid * kGrid)) * 1.001f,
+                     static_cast<float>((i / kGrid) % kGrid) * 1.2f};
+        const fuse::u32 body = bodies.addBody(p, 1.f);
+        if (i % 2 == 0) {
+            shapes.addShape(CollisionShapeType::Box, body, {0.5f, 0.5f, 0.5f});
+        } else {
+            shapes.addShape(CollisionShapeType::Sphere, body, {0.5f, 0.f, 0.f});
+        }
+    }
+    PBDSolver solver;
+    solver.init(bodies.count(), 16384, 0);
+    SolverParams params;
+    params.solveMode = ConstraintSolveMode::ColoredKernel;
+    params.kernelBackend = fuse::kernel::Backend::CpuParallel;
+    params.sleepTimeRequired = 1e9f; // stay awake: every frame runs the full colored solve
+    const Measurement m = measureFrames([&](fuse::u32) { solver.step(bodies, shapes, params, kDt); });
+    expectTrue(solver.constraintColoring().colorCount > 1u, "colored solver built a multi-colour schedule");
+    report("PBDSolver colored x1000", m, "steady-state colored PBDSolver step performs zero heap allocations");
 }
 
 void testWorld3D() {
@@ -265,6 +336,9 @@ int main() {
     std::printf("physics alloc gate: %u job worker(s)\n", fuse::jobs::JobScheduler::instance().workerCount());
     testPipeline3D();
     testPipeline2D();
+    testPipeline3D(fuse::physics::PhysicsComputePath::Kernels);
+    testPipeline2D(fuse::physics::PhysicsComputePath::Kernels);
+    testColoredSolver();
     testWorld3D();
     testWorld2D();
     fuse::core::shutdown();

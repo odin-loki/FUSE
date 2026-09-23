@@ -1,4 +1,5 @@
-# fuse_ssfx — Qt-/Vulkan-free CPU screen-space effect references (B5.7: HBAO, SSR, SSGI).
+# fuse_ssfx — Qt-/Vulkan-free screen-space effect references (B5.7: HBAO, SSR, SSGI) as single-source kernels
+# (fuse/ssfx/*_kernel.hpp, FUSE_HOST_DEVICE — docs/compute-kernels.md), launched through fuse_core's kernel::launch.
 #
 # Shared by fuse_rhi (Renderer, forwarding headers under fuse/renderer/ssfx/) and fuse_compute (CPU path of
 # launch_ssao/launch_ssr/launch_ssgi). Depends on fuse_core only, so neither consumer depends on the other.
@@ -11,6 +12,9 @@ if(NOT TARGET fuse_ssfx)
         ${CMAKE_CURRENT_LIST_DIR}/include/fuse/ssfx/hbao.hpp
         ${CMAKE_CURRENT_LIST_DIR}/include/fuse/ssfx/ssr.hpp
         ${CMAKE_CURRENT_LIST_DIR}/include/fuse/ssfx/ssgi.hpp
+        ${CMAKE_CURRENT_LIST_DIR}/include/fuse/ssfx/hbao_kernel.hpp
+        ${CMAKE_CURRENT_LIST_DIR}/include/fuse/ssfx/ssr_kernel.hpp
+        ${CMAKE_CURRENT_LIST_DIR}/include/fuse/ssfx/ssgi_kernel.hpp
         ${CMAKE_CURRENT_LIST_DIR}/src/ssfx_view.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/hbao.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/ssr.cpp

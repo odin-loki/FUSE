@@ -1,33 +1,14 @@
 #pragma once
 
+#include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/scene/math.hpp>
+#include <fuse/scene/svo_ray_kernel.hpp>
 #include <fuse/types.hpp>
 
 #include <array>
 #include <vector>
 
 namespace fuse::scene {
-
-/// Interior octree node (B3.5). Each covers a cubic region; a child slot holds the index of the
-/// next interior node or, one level above the brick depth, a brick index (`SVO::kNoNode` = empty).
-struct SVONode {
-    u32 children[8] = {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
-                       0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};
-};
-
-/// Leaf brick record: an 8x8x8 voxel block (smaller when `maxDepth` < 3). The payload lives in a
-/// pooled word arena and takes one of four forms:
-///  - Sparse:  `count` sorted (localIndex, material) pairs; sdf is implicit (+/- half a voxel).
-///  - Masked:  one material shared by every written voxel plus a "written" bitmask (fill edges).
-///  - Dense:   one material per voxel, a "written" bitmask and an optional per-voxel sdf plane.
-///  - Uniform: every voxel written with one material (`payload` holds it) and the implicit sdf.
-/// Sparse grows into Masked or Dense; any write Masked/Uniform cannot express promotes to Dense.
-struct SVOBrick {
-    u32 payload = 0;
-    u16 count = 0; ///< sparse entry count
-    u8 mode = 0;
-    u8 sizeClass = 0;
-};
 
 struct SVODesc {
     vec3 origin{};
@@ -40,10 +21,12 @@ struct SVODesc {
 /// (O(depth) get/set). Every written voxel has a material and a signed distance at its centre;
 /// `sdfQuery` trilinearly interpolates those samples (continuous across voxel and brick
 /// boundaries) and `carve` applies CSG sphere subtraction. `rayCast` is an exact 3D-DDA over the
-/// voxel grid that jumps over empty octree cells and empty bricks.
+/// voxel grid that jumps over empty octree cells and empty bricks. The walk, payload decode and DDA
+/// live once in the single-source kernel header `svo_ray_kernel.hpp`; `rayCastBatch` runs it as the
+/// "svo_ray_cast" kernel (one ray per item) on any compute backend.
 class SVO {
 public:
-    static constexpr u32 kNoNode = 0xFFFFFFFFu;
+    static constexpr u32 kNoNode = svo_kernel::kNoNode;
 
     void init(const SVODesc& desc);
     void destroy();
@@ -55,6 +38,17 @@ public:
 
     bool rayCast(vec3 rayOrigin, vec3 rayDirection, f32 maxDistance, ivec3& hitVoxel, vec3& hitNormal,
                  f32& hitDistance) const;
+
+    /// Casts `count` rays through the "svo_ray_cast" kernel. CPU backends run the kernel body over the
+    /// host arrays; Cuda / Auto stage the view and rays on the device when one is available, otherwise
+    /// fall back to CpuParallel (recorded in the kernel stats). `stream` is a cudaStream_t.
+    /// Returns false for an invalid request (null arrays) or a failed launch.
+    bool rayCastBatch(kernel::Backend backend, const SvoRay* rays, SvoRayHit* hits, u32 count,
+                      void* stream = nullptr) const;
+
+    /// POD view of the node / brick / payload arrays for the single-source kernels (valid until the
+    /// next mutation).
+    [[nodiscard]] svo_kernel::SvoView view() const;
 
     f32 sdfQuery(vec3 worldPos) const;
 
@@ -83,17 +77,12 @@ private:
 
     [[nodiscard]] u32 findBrick(ivec3 coord) const; ///< kNoNode when no voxel of the brick was written
     u32 ensureBrick(ivec3 coord);
-    /// Walks towards `coord`; returns the brick index or kNoNode plus the voxel-space size of the
-    /// empty cell that stopped the walk (for ray skipping).
-    [[nodiscard]] u32 locate(ivec3 coord, u32& emptyCellSize) const;
 
     [[nodiscard]] VoxelState readVoxel(u32 brick, u32 local) const;
     void writeVoxel(u32 brick, u32 local, u32 material, f32 sdf);
     void makeUniform(u32 brick, u32 material);
     void toDense(u32 brick);
     void ensureSdfPlane(u32 brick);
-    /// Fills `mask` (one bit per voxel) with the brick's solid voxels; returns true if any.
-    bool solidMask(u32 brick, u64* mask) const;
 
     u32 allocWords(u32 sizeClass);
     void freeWords(u32 offset, u32 sizeClass);

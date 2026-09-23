@@ -1,36 +1,37 @@
+// CPU entry points of the DDGI probe update. All trace / sample / blend math lives once in
+// fuse/renderer/gi/ddgi_probe_kernel.hpp (FUSE_HOST_DEVICE, shared with kernels/ddgi_probe_update.cu);
+// this TU keeps the host-side state (atlases, ray set, schedule) and launches the kernel bodies.
+
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
 
+#include <fuse/compute_kernel/launch.hpp>
+#include <fuse/compute_kernel/load_scale.hpp>
+#include <fuse/compute_kernel/stats.hpp>
 #include <fuse/renderer/deferred/gbuffer.hpp>
+#include <fuse/renderer/gi/ddgi_probe_kernel.hpp>
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 
 namespace fuse::renderer {
+
+#if defined(FUSE_HAS_CUDA)
+/// kernels/ddgi_probe_update.cu: stages the scene, ray set and atlases on the device, runs the same
+/// trace + blend kernel bodies and reads the atlases / update counts / stats back. Only called for
+/// duplicate-free probe lists (device workgroups of one launch run concurrently).
+bool launchDdgiProbeUpdateCuda(const ddgi_kernel::TraceParams& trace,
+                               const ddgi_kernel::BlendParams& blend,
+                               u32 slots,
+                               void* stream);
+#endif
+
 namespace {
 
 using fuse::math::Vec2;
 using fuse::math::Vec3;
+using fuse::math::Vec4;
 
-constexpr f32 kPi = 3.14159265358979323846f;
-constexpr f32 kInvPi = 1.f / kPi;
-constexpr f32 kRayEpsilon = 1e-4f;
-
-Vec3 mul(const Vec3& a, const Vec3& b) {
-    return {a.x * b.x, a.y * b.y, a.z * b.z};
-}
-
-f32 maxComponent(const Vec3& v) {
-    return std::max(v.x, std::max(v.y, v.z));
-}
-
-Vec3 absVec(const Vec3& v) {
-    return {std::fabs(v.x), std::fabs(v.y), std::fabs(v.z)};
-}
-
-f32 axis(const Vec3& v, u32 i) {
-    return i == 0u ? v.x : (i == 1u ? v.y : v.z);
-}
+constexpr f32 kPi = ddgi_kernel::kPi;
 
 u64 splitMix64(u64& state) {
     state += 0x9E3779B97F4A7C15ull;
@@ -44,25 +45,25 @@ f32 uniform01(u64& state) {
     return static_cast<f32>(splitMix64(state) >> 40) * (1.f / 16777216.f);
 }
 
-/// Bordered-tile bilinear fetch at octahedral direction `direction`.
-template <typename T>
-T sampleTile(const T* tile, u32 res, const Vec3& direction) {
-    const u32 stride = res + 2u;
-    const Vec2 uv = DdgiIrradianceEncoding::encodeDirection(direction);
-    // Interior texel k covers [k+1, k+2) of the bordered tile; centres sit at +0.5.
-    const f32 px = 1.f + uv.x * static_cast<f32>(res) - 0.5f;
-    const f32 py = 1.f + uv.y * static_cast<f32>(res) - 0.5f;
-    const f32 fx = std::clamp(px, 0.f, static_cast<f32>(res));
-    const f32 fy = std::clamp(py, 0.f, static_cast<f32>(res));
-    const u32 x0 = std::min(static_cast<u32>(fx), res);
-    const u32 y0 = std::min(static_cast<u32>(fy), res);
-    const u32 x1 = x0 + 1u;
-    const u32 y1 = y0 + 1u;
-    const f32 tx = fx - static_cast<f32>(x0);
-    const f32 ty = fy - static_cast<f32>(y0);
-    const T a = tile[y0 * stride + x0] * (1.f - tx) + tile[y0 * stride + x1] * tx;
-    const T b = tile[y1 * stride + x0] * (1.f - tx) + tile[y1 * stride + x1] * tx;
-    return a * (1.f - ty) + b * ty;
+ddgi_kernel::SceneView sceneView(const DdgiCpuScene& scene) {
+    ddgi_kernel::SceneView view{};
+    view.boxes = scene.boxes.data();
+    view.box_count = static_cast<u32>(scene.boxes.size());
+    view.sun_direction = scene.sun_direction;
+    view.sun_irradiance = scene.sun_irradiance;
+    view.sky_radiance = scene.sky_radiance;
+    return view;
+}
+
+ddgi_kernel::VolumeView volumeView(const DdgiCpuVolume& volume) {
+    ddgi_kernel::VolumeView view{};
+    view.desc = volume.desc();
+    view.probe_count = volume.probeCount();
+    view.irradiance = volume.irradianceAtlas().data();
+    view.distance = volume.distanceAtlas().data();
+    view.normal_bias = volume.config().normal_bias;
+    view.weight_crush_threshold = volume.config().weight_crush_threshold;
+    return view;
 }
 
 } // namespace
@@ -89,81 +90,8 @@ bool DdgiCpuScene::intersect(const Vec3& origin,
                              f32 t_min,
                              f32 t_max,
                              DdgiCpuHit& out_hit) const {
-    out_hit = {};
-    f32 best = t_max;
-    for (u32 b = 0; b < static_cast<u32>(boxes.size()); ++b) {
-        const DdgiCpuBox& box = boxes[b];
-        f32 t_near = -std::numeric_limits<f32>::infinity();
-        f32 t_far = std::numeric_limits<f32>::infinity();
-        u32 near_axis = 0u;
-        u32 far_axis = 0u;
-        bool miss = false;
-        for (u32 a = 0; a < 3u; ++a) {
-            const f32 o = axis(origin, a);
-            const f32 d = axis(direction, a);
-            const f32 lo = axis(box.min, a);
-            const f32 hi = axis(box.max, a);
-            if (std::fabs(d) < 1e-12f) {
-                if (o < lo || o > hi) {
-                    miss = true;
-                    break;
-                }
-                continue;
-            }
-            const f32 inv = 1.f / d;
-            f32 t0 = (lo - o) * inv;
-            f32 t1 = (hi - o) * inv;
-            if (t0 > t1) {
-                std::swap(t0, t1);
-            }
-            if (t0 > t_near) {
-                t_near = t0;
-                near_axis = a;
-            }
-            if (t1 < t_far) {
-                t_far = t1;
-                far_axis = a;
-            }
-        }
-        if (miss || t_near > t_far) {
-            continue;
-        }
-        f32 t = 0.f;
-        bool backface = false;
-        u32 hit_axis = 0u;
-        if (t_near > t_min) {
-            t = t_near;
-            hit_axis = near_axis;
-        } else if (t_far > t_min) {
-            t = t_far;
-            hit_axis = far_axis;
-            backface = true;
-        } else {
-            continue;
-        }
-        if (t >= best) {
-            continue;
-        }
-        best = t;
-        const f32 d = axis(direction, hit_axis);
-        // Entry faces face against the ray; exit faces (backface) face along it.
-        const f32 sign = backface ? (d >= 0.f ? 1.f : -1.f) : (d >= 0.f ? -1.f : 1.f);
-        Vec3 n{};
-        if (hit_axis == 0u) {
-            n.x = sign;
-        } else if (hit_axis == 1u) {
-            n.y = sign;
-        } else {
-            n.z = sign;
-        }
-        out_hit.hit = true;
-        out_hit.backface = backface;
-        out_hit.t = t;
-        out_hit.position = origin + direction * t;
-        out_hit.normal = n;
-        out_hit.box_index = b;
-    }
-    return out_hit.hit;
+    return ddgi_kernel::intersect_boxes(boxes.data(), static_cast<u32>(boxes.size()), origin, direction, t_min, t_max,
+                                        out_hit);
 }
 
 bool DdgiCpuScene::occluded(const Vec3& origin, const Vec3& direction, f32 t_min, f32 t_max) const {
@@ -172,19 +100,7 @@ bool DdgiCpuScene::occluded(const Vec3& origin, const Vec3& direction, f32 t_min
 }
 
 Vec3 DdgiCpuScene::directRadiance(const DdgiCpuHit& hit) const {
-    if (!hit.hit || hit.backface || hit.box_index >= boxes.size()) {
-        return {};
-    }
-    const DdgiCpuSurface& surface = boxes[hit.box_index].surface;
-    Vec3 radiance = surface.emissive;
-    const f32 cos_sun = hit.normal.dot(sun_direction);
-    if (cos_sun > 0.f && maxComponent(sun_irradiance) > 0.f) {
-        const Vec3 shadow_origin = hit.position + hit.normal * kRayEpsilon;
-        if (!occluded(shadow_origin, sun_direction, 0.f, std::numeric_limits<f32>::infinity())) {
-            radiance = radiance + mul(surface.albedo, sun_irradiance) * (cos_sun * kInvPi);
-        }
-    }
-    return radiance;
+    return ddgi_kernel::direct_radiance(sceneView(*this), hit);
 }
 
 namespace ddgi_cpu {
@@ -284,7 +200,7 @@ void DdgiCpuVolume::reset() {
     m_scratch_texel_dirs.clear();
     m_scratch_distance_dirs.clear();
     m_scratch_incoming.clear();
-    m_scratch_valid.clear();
+    m_scratch_seen.clear();
     m_ready = false;
 }
 
@@ -300,38 +216,17 @@ DdgiCpuUpdateStats DdgiCpuVolume::update(const DdgiCpuScene& scene, u32 frame_in
     if (!m_ready) {
         return {};
     }
-    std::vector<u32> indices(std::max(m_desc.probes_per_frame, 1u));
+    // LoadScale::probes scales the rolling per-frame budget (1 = the authored probes_per_frame).
+    const u32 budget = kernel::scaled_count(m_desc.probes_per_frame, kernel::load_scale().probes);
+    std::vector<u32> indices(std::max(budget, 1u));
     u32 scheduled = 0u;
     ddgi_util::scheduleProbeUpdates(frame_index,
                                     m_probe_count,
-                                    m_desc.probes_per_frame,
+                                    budget,
                                     indices.data(),
                                     static_cast<u32>(indices.size()),
                                     &scheduled);
     return updateProbes(scene, indices.data(), scheduled, frame_index);
-}
-
-Vec3 DdgiCpuVolume::traceRadiance(const DdgiCpuScene& scene,
-                                  const Vec3& origin,
-                                  const Vec3& direction,
-                                  f32& out_distance) const {
-    DdgiCpuHit hit{};
-    if (!scene.intersect(origin, direction, 0.f, m_desc.max_ray_distance, hit)) {
-        out_distance = m_desc.max_ray_distance;
-        return scene.sky_radiance;
-    }
-    if (hit.backface) {
-        // Probe sits inside geometry: no light, and a short distance so visibility rejects it.
-        out_distance = hit.t * m_config.backface_distance_scale;
-        return {};
-    }
-    out_distance = hit.t;
-    Vec3 radiance = scene.directRadiance(hit);
-    if (m_config.multi_bounce) {
-        const Vec3& albedo = scene.boxes[hit.box_index].surface.albedo;
-        radiance = radiance + mul(albedo, sampleIrradiance(hit.position, hit.normal)) * kInvPi;
-    }
-    return radiance;
 }
 
 DdgiCpuUpdateStats DdgiCpuVolume::updateProbes(const DdgiCpuScene& scene,
@@ -351,163 +246,77 @@ DdgiCpuUpdateStats DdgiCpuVolume::updateProbes(const DdgiCpuScene& scene,
     const usize total = static_cast<usize>(probe_count) * rays;
     m_scratch_radiance.resize(total);
     m_scratch_distance.resize(total);
+    const u32 ir = m_desc.irradiance_res;
+    m_scratch_incoming.resize(static_cast<usize>(probe_count) * ir * ir);
 
-    // Trace pass: every scheduled probe reads the pre-update volume (multi-bounce feedback),
-    // mirroring the separate trace and blend kernels on the device.
+    // Valid slots count toward the stats; a probe listed twice makes the blend order-dependent, so
+    // such a list blends serially (CpuReference = list order, the pre-kernel behaviour).
+    m_scratch_seen.assign(m_probe_count, 0u);
+    bool duplicates = false;
     for (u32 p = 0; p < probe_count; ++p) {
         const u32 probe = probe_indices[p];
         if (probe >= m_probe_count) {
             continue;
         }
-        const Vec3 origin = ddgi_util::probeWorldPosition(m_desc, probe);
-        for (u32 r = 0; r < rays; ++r) {
-            const usize slot = static_cast<usize>(p) * rays + r;
-            m_scratch_radiance[slot] = traceRadiance(scene, origin, m_scratch_dirs[r], m_scratch_distance[slot]);
-        }
+        duplicates = duplicates || m_scratch_seen[probe] != 0u;
+        m_scratch_seen[probe] = 1u;
         stats.rays_traced += rays;
-    }
-
-    // Blend pass.
-    for (u32 p = 0; p < probe_count; ++p) {
-        const u32 probe = probe_indices[p];
-        if (probe >= m_probe_count) {
-            continue;
-        }
-        const usize base = static_cast<usize>(p) * rays;
-        blendProbe(probe, m_scratch_dirs.data(), &m_scratch_radiance[base], &m_scratch_distance[base], rays, stats);
         ++stats.probes_updated;
     }
+
+    ddgi_kernel::TraceParams trace{};
+    trace.probe_indices = {probe_indices, probe_count};
+    trace.ray_dirs = {m_scratch_dirs.data(), rays};
+    trace.scene = sceneView(scene);
+    trace.volume = volumeView(*this);
+    trace.backface_distance_scale = m_config.backface_distance_scale;
+    trace.multi_bounce = m_config.multi_bounce;
+    trace.out_radiance = {m_scratch_radiance.data(), static_cast<u32>(total)};
+    trace.out_distance = {m_scratch_distance.data(), static_cast<u32>(total)};
+
+    u32 fast_response = 0u;
+    ddgi_kernel::BlendParams blend{};
+    blend.probe_indices = {probe_indices, probe_count};
+    blend.probe_count = m_probe_count;
+    blend.ray_dirs = {m_scratch_dirs.data(), rays};
+    blend.radiance = {m_scratch_radiance.data(), static_cast<u32>(total)};
+    blend.distance = {m_scratch_distance.data(), static_cast<u32>(total)};
+    blend.irradiance_texel_dirs = {m_scratch_texel_dirs.data(), static_cast<u32>(m_scratch_texel_dirs.size())};
+    blend.distance_texel_dirs = {m_scratch_distance_dirs.data(), static_cast<u32>(m_scratch_distance_dirs.size())};
+    blend.irradiance = m_irradiance.data();
+    blend.distance_moments = m_distance.data();
+    blend.update_counts = m_update_counts.data();
+    blend.incoming = {m_scratch_incoming.data(), static_cast<u32>(m_scratch_incoming.size())};
+    blend.fast_response_texels = &fast_response;
+    blend.irradiance_res = ir;
+    blend.depth_res = m_desc.depth_res;
+    blend.hysteresis = std::clamp(m_desc.hysteresis, 0.f, 1.f);
+    blend.probe_change_hysteresis = std::clamp(m_config.probe_change_hysteresis, 0.f, 1.f);
+    blend.probe_change_threshold = m_config.probe_change_threshold;
+    blend.change_threshold = m_config.change_threshold;
+    blend.change_hysteresis_drop = m_config.change_hysteresis_drop;
+    blend.change_floor = m_config.change_floor;
+    // Rays whose cos^power weight is below 1e-6 cannot move the weighted mean; the kernel skips them.
+    blend.distance_power = std::max(m_config.distance_power, 1e-3f);
+    blend.distance_min_cos = std::pow(1e-6f, 1.f / blend.distance_power);
+    blend.max_distance = m_desc.max_ray_distance;
+
+#if defined(FUSE_HAS_CUDA)
+    if (!duplicates && (m_backend == kernel::Backend::Cuda || m_backend == kernel::Backend::Auto) &&
+        kernel::backend_available(kernel::Backend::Cuda) &&
+        launchDdgiProbeUpdateCuda(trace, blend, probe_count, nullptr)) {
+        stats.fast_response_texels = fast_response;
+        return stats;
+    }
+#endif
+    // CPU backends, or a GPU backend that cannot run here: kernel::launch resolves the fallback
+    // (CpuParallel) and records the requested vs executed backend. The trace reads the pre-update
+    // volume for every probe (multi-bounce feedback), exactly like the separate device kernels.
+    kernel::launch(m_backend, ddgi_kernel::make_trace_launch(rays, probe_count), ddgi_kernel::TraceKernel{}, trace);
+    kernel::launch(duplicates ? kernel::Backend::CpuReference : m_backend, ddgi_kernel::make_blend_launch(probe_count),
+                   ddgi_kernel::BlendKernel{}, blend);
+    stats.fast_response_texels = fast_response;
     return stats;
-}
-
-void DdgiCpuVolume::blendProbe(u32 probe_index,
-                               const Vec3* ray_dirs,
-                               const Vec3* radiance,
-                               const f32* distances,
-                               u32 ray_count,
-                               DdgiCpuUpdateStats& stats) {
-    const bool first = m_update_counts[probe_index] == 0u;
-    const f32 hysteresis = first ? 0.f : std::clamp(m_desc.hysteresis, 0.f, 1.f);
-
-    const u32 ir = m_desc.irradiance_res;
-    const u32 irr_stride = ir + 2u;
-    Vec3* irr_tile = &m_irradiance[irradianceOffset(probe_index)];
-    m_scratch_incoming.resize(static_cast<usize>(ir) * ir);
-    m_scratch_valid.resize(static_cast<usize>(ir) * ir);
-    Vec3 incoming_mean{};
-    Vec3 history_mean{};
-    u32 valid_count = 0u;
-    for (u32 y = 0; y < ir; ++y) {
-        for (u32 x = 0; x < ir; ++x) {
-            const u32 t = y * ir + x;
-            const Vec3& texel_dir = m_scratch_texel_dirs[t];
-            const f32 tx = texel_dir.x;
-            const f32 ty = texel_dir.y;
-            const f32 tz = texel_dir.z;
-            f32 sum_r = 0.f;
-            f32 sum_g = 0.f;
-            f32 sum_b = 0.f;
-            f32 weight_sum = 0.f;
-            for (u32 r = 0; r < ray_count; ++r) {
-                const Vec3& d = ray_dirs[r];
-                const f32 w = tx * d.x + ty * d.y + tz * d.z;
-                if (w > 0.f) {
-                    const Vec3& l = radiance[r];
-                    sum_r += l.x * w;
-                    sum_g += l.y * w;
-                    sum_b += l.z * w;
-                    weight_sum += w;
-                }
-            }
-            m_scratch_valid[t] = weight_sum > 0.f ? 1u : 0u;
-            if (weight_sum <= 0.f) {
-                continue;
-            }
-            const f32 inv_weight = 1.f / weight_sum;
-            m_scratch_incoming[t] = {sum_r * inv_weight, sum_g * inv_weight, sum_b * inv_weight};
-            incoming_mean = incoming_mean + m_scratch_incoming[t];
-            history_mean = history_mean + irr_tile[(y + 1u) * irr_stride + (x + 1u)];
-            ++valid_count;
-        }
-    }
-
-    // Lighting discontinuity detection. Probe level: the mean over all texels averages out most
-    // per-texel ray noise, so a modest threshold catches global changes (sun, sky) with few
-    // false triggers, and the stale history is dropped. Texel level: a larger threshold catches
-    // local changes (one light in one direction) and lowers the hysteresis by
-    // `change_hysteresis_drop`. Without either, a probe updated every N frames at hysteresis h
-    // needs log(0.1)/log(h) updates (76 at h = 0.97) to reach 90% of a step.
-    bool probe_changed = false;
-    if (!first && valid_count > 0u) {
-        const f32 inv = 1.f / static_cast<f32>(valid_count);
-        const Vec3 in_mean = incoming_mean * inv;
-        const Vec3 hist_mean = history_mean * inv;
-        const f32 scale = std::max(std::max(maxComponent(in_mean), maxComponent(hist_mean)), m_config.change_floor);
-        probe_changed = maxComponent(absVec(in_mean - hist_mean)) > m_config.probe_change_threshold * scale;
-    }
-    const f32 fast_hysteresis = std::max(0.f, hysteresis - m_config.change_hysteresis_drop);
-    for (u32 y = 0; y < ir; ++y) {
-        for (u32 x = 0; x < ir; ++x) {
-            const u32 t = y * ir + x;
-            if (m_scratch_valid[t] == 0u) {
-                continue;
-            }
-            const Vec3& incoming = m_scratch_incoming[t];
-            Vec3& texel = irr_tile[(y + 1u) * irr_stride + (x + 1u)];
-            f32 h = hysteresis;
-            if (!first) {
-                const f32 scale = std::max(std::max(maxComponent(texel), maxComponent(incoming)),
-                                           m_config.change_floor);
-                if (probe_changed) {
-                    h = std::min(hysteresis, std::clamp(m_config.probe_change_hysteresis, 0.f, 1.f));
-                    ++stats.fast_response_texels;
-                } else if (maxComponent(absVec(incoming - texel)) > m_config.change_threshold * scale) {
-                    h = fast_hysteresis;
-                    ++stats.fast_response_texels;
-                }
-            }
-            texel = incoming * (1.f - h) + texel * h;
-        }
-    }
-    ddgi_cpu::copyOctahedralBorder(irr_tile, ir, irr_stride);
-
-    const u32 dr = m_desc.depth_res;
-    const u32 dist_stride = dr + 2u;
-    Vec2* dist_tile = &m_distance[distanceOffset(probe_index)];
-    // Rays whose cos^power weight is below 1e-6 cannot move the weighted mean; skip them.
-    const f32 power = std::max(m_config.distance_power, 1e-3f);
-    const f32 min_cos = std::pow(1e-6f, 1.f / power);
-    const f32 max_distance = m_desc.max_ray_distance;
-    for (u32 y = 0; y < dr; ++y) {
-        for (u32 x = 0; x < dr; ++x) {
-            const Vec3& texel_dir = m_scratch_distance_dirs[y * dr + x];
-            const f32 tx = texel_dir.x;
-            const f32 ty = texel_dir.y;
-            const f32 tz = texel_dir.z;
-            f32 sum_d = 0.f;
-            f32 sum_d2 = 0.f;
-            f32 weight_sum = 0.f;
-            for (u32 r = 0; r < ray_count; ++r) {
-                const Vec3& dir = ray_dirs[r];
-                const f32 c = tx * dir.x + ty * dir.y + tz * dir.z;
-                if (c > min_cos) {
-                    const f32 w = std::pow(c, power);
-                    const f32 d = std::min(distances[r], max_distance);
-                    sum_d += d * w;
-                    sum_d2 += d * d * w;
-                    weight_sum += w;
-                }
-            }
-            if (weight_sum <= 1e-12f) {
-                continue;
-            }
-            const Vec2 incoming{sum_d / weight_sum, sum_d2 / weight_sum};
-            Vec2& texel = dist_tile[(y + 1u) * dist_stride + (x + 1u)];
-            texel = incoming * (1.f - hysteresis) + texel * hysteresis;
-        }
-    }
-    ddgi_cpu::copyOctahedralBorder(dist_tile, dr, dist_stride);
-    ++m_update_counts[probe_index];
 }
 
 u32 DdgiCpuVolume::probeUpdateCount(u32 probe_index) const {
@@ -559,97 +368,24 @@ Vec2 DdgiCpuVolume::probeMeanDistance(u32 probe_index) const {
 }
 
 Vec3 DdgiCpuVolume::probeIrradiance(u32 probe_index, const Vec3& direction) const {
-    if (!m_ready || probe_index >= m_probe_count) {
+    if (!m_ready) {
         return {};
     }
-    const Vec3 dir = DdgiIrradianceEncoding::resolveSampleDirection(direction);
-    return sampleTile(&m_irradiance[irradianceOffset(probe_index)], m_desc.irradiance_res, dir) * kPi;
+    return ddgi_kernel::probe_irradiance(volumeView(*this), probe_index, direction);
 }
 
 Vec2 DdgiCpuVolume::probeDistance(u32 probe_index, const Vec3& direction) const {
-    if (!m_ready || probe_index >= m_probe_count) {
+    if (!m_ready) {
         return {};
     }
-    const Vec3 dir = DdgiIrradianceEncoding::resolveSampleDirection(direction);
-    return sampleTile(&m_distance[distanceOffset(probe_index)], m_desc.depth_res, dir);
+    return ddgi_kernel::probe_distance(volumeView(*this), probe_index, direction);
 }
 
 Vec3 DdgiCpuVolume::sampleIrradiance(const Vec3& position, const Vec3& normal) const {
     if (!m_ready) {
         return {};
     }
-    const Vec3 n = DdgiIrradianceEncoding::resolveSampleDirection(normal);
-    const Vec3 biased = position + n * m_config.normal_bias;
-    const Vec3 grid = ProbeGridLayout::worldToProbeGridCoord(m_desc, biased);
-
-    const u32 dims[3] = {m_desc.grid_dims.x, m_desc.grid_dims.y, m_desc.grid_dims.z};
-    u32 base[3]{};
-    f32 alpha[3]{};
-    for (u32 a = 0; a < 3u; ++a) {
-        const f32 g = axis(grid, a);
-        const f32 max_base = static_cast<f32>(dims[a] - 1u);
-        const f32 fb = std::clamp(std::floor(g), 0.f, max_base);
-        base[a] = static_cast<u32>(fb);
-        alpha[a] = std::clamp(g - fb, 0.f, 1.f);
-    }
-
-    Vec3 sum{};
-    f32 weight_sum = 0.f;
-    for (u32 corner = 0; corner < 8u; ++corner) {
-        ProbeGridCoord coord{};
-        f32 trilinear = 1.f;
-        u32 c[3]{};
-        for (u32 a = 0; a < 3u; ++a) {
-            const u32 bit = (corner >> a) & 1u;
-            c[a] = std::min(base[a] + bit, dims[a] - 1u);
-            trilinear *= bit ? alpha[a] : (1.f - alpha[a]);
-        }
-        coord.x = c[0];
-        coord.y = c[1];
-        coord.z = c[2];
-        if (trilinear <= 0.f) {
-            continue;
-        }
-        const u32 probe = ProbeGridLayout::probeIndexFromCoord(m_desc, coord);
-        const Vec3 probe_pos = ddgi_util::probeWorldPosition(m_desc, probe);
-
-        // Smooth backface term: probes behind the surface fade out without a hard cut.
-        f32 weight = 1.f;
-        const Vec3 to_probe = probe_pos - position;
-        const f32 to_probe_len = to_probe.length();
-        if (to_probe_len > 1e-6f) {
-            const f32 wrap = (to_probe.dot(n) / to_probe_len + 1.f) * 0.5f;
-            weight *= wrap * wrap + 0.2f;
-        }
-
-        // Chebyshev visibility from the probe's distance moments toward the biased point.
-        const Vec3 probe_to_point = biased - probe_pos;
-        const f32 dist = probe_to_point.length();
-        if (dist > 1e-6f) {
-            const Vec2 moments = probeDistance(probe, probe_to_point * (1.f / dist));
-            const f32 mean = moments.x;
-            if (dist > mean) {
-                const f32 variance = std::fabs(moments.y - mean * mean);
-                const f32 delta = dist - mean;
-                f32 chebyshev = variance / std::max(variance + delta * delta, 1e-12f);
-                chebyshev = std::max(chebyshev * chebyshev * chebyshev, 0.f);
-                weight *= std::max(chebyshev, 0.05f);
-            }
-        }
-        weight = std::max(weight, 1e-6f);
-        const f32 crush = m_config.weight_crush_threshold;
-        if (crush > 0.f && weight < crush) {
-            weight *= (weight * weight) / (crush * crush);
-        }
-        weight *= trilinear;
-
-        sum = sum + probeIrradiance(probe, n) * weight;
-        weight_sum += weight;
-    }
-    if (weight_sum <= 0.f) {
-        return {};
-    }
-    return sum * (1.f / weight_sum);
+    return ddgi_kernel::sample_irradiance(volumeView(*this), position, normal);
 }
 
 namespace ddgi_cpu {

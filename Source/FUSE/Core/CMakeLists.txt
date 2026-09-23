@@ -50,6 +50,12 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/jobs/job_counter.hpp
     include/fuse/jobs/cuda_jobs.hpp
     include/fuse/jobs/parallel_for.hpp
+    include/fuse/compute_kernel/kernel.hpp
+    include/fuse/compute_kernel/atomics.hpp
+    include/fuse/compute_kernel/launch.hpp
+    include/fuse/compute_kernel/stats.hpp
+    include/fuse/compute_kernel/load_scale.hpp
+    include/fuse/compute_kernel/parity.hpp
     include/fuse/math/vec.hpp
     include/fuse/math/quat.hpp
     include/fuse/math/mat.hpp
@@ -78,6 +84,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
 set(FUSE_CORE_SOURCES
     src/fuse_core_stub.cpp
     src/core/init.cpp
+    src/compute_kernel/compute_kernel.cpp
     src/core/phase1_test_registry.cpp
     src/core/track_b.cpp
     src/frame/frame_barrier.cpp
@@ -113,6 +120,10 @@ set(FUSE_CORE_SOURCES
 
 if(WIN32)
     list(APPEND FUSE_CORE_SOURCES src/platform/win/fiber_win32.cpp)
+    if(MSVC)
+        # CRT reports -> stderr, abort() -> SIGABRT path + exit 3 (no modal Debug CRT dialogs).
+        list(APPEND FUSE_CORE_SOURCES src/platform/win/crt_reporting_msvc.cpp)
+    endif()
 else()
     list(APPEND FUSE_CORE_SOURCES src/platform/fiber_posix.cpp)
 endif()
@@ -210,6 +221,10 @@ if(WIN32)
     # run time (crash_handler.cpp, dpi.cpp) so a missing DLL never blocks startup.
     target_link_libraries(fuse_core PUBLIC user32 gdi32)
 endif()
+if(MSVC)
+    # Pull crt_reporting_msvc.cpp (a static initializer only) into every program linking fuse_core.
+    target_link_options(fuse_core INTERFACE "/INCLUDE:fuse_msvc_crt_reporting_anchor")
+endif()
 
 target_compile_definitions(fuse_core
     PUBLIC
@@ -241,6 +256,12 @@ if(FUSE_CUDA_BACKEND)
 endif()
 
 fuse_core_apply_tsan(fuse_core)
+if(FUSE_CORE_ENABLE_TSAN)
+    # fuse_core is static and TSan-instrumented: every consumer must link the TSan runtime (and
+    # should be instrumented too), not only the test targets that call fuse_core_apply_tsan().
+    target_compile_options(fuse_core INTERFACE $<$<COMPILE_LANGUAGE:C,CXX>:-fsanitize=thread -fno-omit-frame-pointer>)
+    target_link_options(fuse_core INTERFACE -fsanitize=thread)
+endif()
 fuse_core_apply_asan_ubsan(fuse_core)
 
 option(FUSE_PLATFORM_WINDOW_GLFW "Enable optional GLFW hidden-window WSI scaffold (desktop present path)" OFF)
@@ -320,9 +341,14 @@ endif()
 
 # ctest wrapper for window/WSI gates: reuse $DISPLAY when set, else a private Xvfb via xvfb-run;
 # exit 77 (ctest SKIP) when neither exists. Gate binaries also return 77 when no display opens.
-set(FUSE_DISPLAY_TEST_WRAPPER "${CMAKE_BINARY_DIR}/fuse_run_with_display.sh"
-    CACHE INTERNAL "Runs a test command on an X display (Xvfb fallback, 77 = skip)")
-file(WRITE "${FUSE_DISPLAY_TEST_WRAPPER}"
+# Not on Windows hosts/targets: a bash script cannot be a ctest COMMAND there (tests run directly on
+# the interactive desktop), so consumers see an empty FUSE_DISPLAY_TEST_WRAPPER.
+if(WIN32)
+    set(FUSE_DISPLAY_TEST_WRAPPER "" CACHE INTERNAL "Runs a test command on an X display (Xvfb fallback, 77 = skip)")
+else()
+    set(FUSE_DISPLAY_TEST_WRAPPER "${CMAKE_BINARY_DIR}/fuse_run_with_display.sh"
+        CACHE INTERNAL "Runs a test command on an X display (Xvfb fallback, 77 = skip)")
+    file(WRITE "${FUSE_DISPLAY_TEST_WRAPPER}"
 "#!/usr/bin/env bash
 if [ -n \"\${DISPLAY:-}\" ] && [ -z \"\${FUSE_FORCE_XVFB:-}\" ]; then
     exec \"$@\"
@@ -333,8 +359,9 @@ fi
 echo \"SKIP: no DISPLAY and xvfb-run not installed\"
 exit 77
 ")
-file(CHMOD "${FUSE_DISPLAY_TEST_WRAPPER}"
-    FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+    file(CHMOD "${FUSE_DISPLAY_TEST_WRAPPER}"
+        FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+endif()
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)

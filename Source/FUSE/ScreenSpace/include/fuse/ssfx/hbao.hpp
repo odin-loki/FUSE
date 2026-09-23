@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/ssfx/ssfx_view.hpp>
 #include <fuse/types.hpp>
 
@@ -33,7 +34,10 @@ HbaoParams clampHbaoParams(const HbaoParams& raw);
 f32 hbaoPixelVisibility(const SsfxGBufferView& view, const HbaoParams& params, u32 x, u32 y);
 
 /// Full-frame CPU HBAO; writes `width * height` visibility values (1 for sky pixels). False on bad input.
-bool computeHbaoCpu(const SsfxGBufferView& view, const HbaoParams& params, f32* visibilityOut);
+/// Launches the single-source `hbao_kernel` ("screen_space_ao") on `backend` (CPU backends: host surfaces;
+/// CpuReference and CpuParallel are bit-identical).
+bool computeHbaoCpu(const SsfxGBufferView& view, const HbaoParams& params, f32* visibilityOut,
+                    kernel::Backend backend = kernel::Backend::CpuReference);
 
 /// Brute-force SSAO reference: `sampleSqrt^2` stratified cosine-weighted hemisphere rays per pixel, each
 /// marched `marchSteps` times up to `radius` and tested against the same depth buffer (infinite-thickness

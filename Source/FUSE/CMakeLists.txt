@@ -54,7 +54,10 @@ if(FUSE_BUILD_VULKAN)
     add_subdirectory(Renderer)
 endif()
 
-if(FUSE_BUILD_CUDA)
+# fuse_compute hosts single-source compute kernels (docs/compute-kernels.md): they run on the CPU
+# backends in every build and additionally through CUDA when FUSE_BUILD_CUDA finds the toolkit.
+option(FUSE_BUILD_COMPUTE "Build fuse_compute single-source kernels (CPU backends; CUDA with FUSE_BUILD_CUDA)" ON)
+if(FUSE_BUILD_COMPUTE OR FUSE_BUILD_CUDA)
     add_subdirectory(Compute)
 endif()
 
@@ -170,9 +173,15 @@ if(FUSE_CUDA_BACKEND AND FUSE_BUILD_CORE_TESTS)
   set(_fuse_cuda_gate_expected)
   foreach(_pair IN ITEMS
       "fuse_compute:ray_march.cu|ssao.cu|ssr.cu|ssgi.cu"
-      "fuse_rhi:interop_fill.cu"
+      "fuse_rhi:interop_fill.cu|ddgi_probe_update.cu|clustered_lighting.cu|sdf_shadows.cu"
       "fuse_fx:particle_pool_cuda.cu"
-      "fuse_cuda_shared_headers_gate:test_cuda_shared_headers.cu")
+      "fuse_cuda_shared_headers_gate:test_cuda_shared_headers.cu"
+      "fuse_compute_kernel_cuda_gate:test_compute_kernel_device.cu"
+      "fuse_animation:skinning.cu"
+      "fuse_vfx:particle_sim.cu"
+      "fuse_scene:svo_ray_cast.cu"
+      "fuse_audio:reverb_fft.cu"
+      "fuse_physics:physics_broadphase.cu")
     string(REPLACE ":" ";" _pair "${_pair}")
     list(GET _pair 0 _tgt)
     list(GET _pair 1 _cus)

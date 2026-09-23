@@ -60,6 +60,25 @@ if(FUSE_CUDA_BACKEND)
     set_tests_properties(fuse_cuda_shared_headers_gate PROPERTIES LABELS "gate;cuda" TIMEOUT 120)
 endif()
 
+# Single-source compute kernels (fuse/compute_kernel/*, docs/compute-kernels.md): CpuReference vs
+# CpuParallel parity, deterministic order, zero steady-state heap allocations, workgroup emulation
+# (histogram + prefix scan), profiler scopes + stats registry, backend fallback, LoadScale.
+add_executable(fuse_core_compute_kernel_gates test_compute_kernel_gates.cpp)
+target_link_libraries(fuse_core_compute_kernel_gates PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_compute_kernel_gates)
+add_test(NAME fuse_core_compute_kernel_gates COMMAND fuse_core_compute_kernel_gates)
+set_tests_properties(fuse_core_compute_kernel_gates PROPERTIES RUN_SERIAL TRUE LABELS "gate" TIMEOUT 600)
+
+# Device side of the same test kernels through cuda_launch.cuh (compile gate; device parity when a GPU exists).
+if(FUSE_CUDA_BACKEND)
+    add_executable(fuse_compute_kernel_cuda_gate cuda/test_compute_kernel_device.cu)
+    target_link_libraries(fuse_compute_kernel_cuda_gate PRIVATE fuse_core CUDA::cudart)
+    set_target_properties(fuse_compute_kernel_cuda_gate PROPERTIES
+        CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON CUDA_EXTENSIONS OFF)
+    add_test(NAME fuse_compute_kernel_cuda_gate COMMAND fuse_compute_kernel_cuda_gate)
+    set_tests_properties(fuse_compute_kernel_cuda_gate PROPERTIES LABELS "gate;cuda" TIMEOUT 120)
+endif()
+
 add_executable(fuse_core_services_tests
     test_services.cpp
 )
@@ -314,10 +333,15 @@ target_include_directories(fuse_core_b7_shipping_probe PRIVATE ${CMAKE_CURRENT_S
 target_compile_definitions(fuse_core_b7_shipping_probe PRIVATE
     FUSE_SHIPPING=1 FUSE_NO_ASSERT=1 FUSE_NO_LOGGING=1 FUSE_NO_PROFILER=1 FUSE_TRACK_B_UNLOCK=0)
 fuse_apply_cxx23(fuse_core_b7_shipping_probe)
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+# MSVC is the MSVC-style command line (cl.exe and clang-cl): clang-cl reads -Wall as -Weverything,
+# and the nm checks below match GNU/Itanium symbol names, not COFF/MSVC-mangled ones.
+if(MSVC)
+    # No /O2: cl rejects it next to the Debug /RTC1 (D8016); the nm inspection is GNU-only anyway.
+    target_compile_options(fuse_core_b7_shipping_probe PRIVATE $<IF:$<CXX_COMPILER_ID:Clang>,/W4,/W3> /WX)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
     target_compile_options(fuse_core_b7_shipping_probe PRIVATE -O2 -Wall -Wextra -Werror)
 endif()
-if(CMAKE_NM AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+if(CMAKE_NM AND NOT MSVC)
     add_test(NAME fuse_core_b7_shipping_strip
         COMMAND ${CMAKE_COMMAND}
             -DNM=${CMAKE_NM}
@@ -329,7 +353,7 @@ endif()
 # FUSE_ASSERT codegen: Debug objects must call fuse::assertion::fatal, other configs must not.
 add_library(fuse_core_b1_assert_probe OBJECT b1_assert_probe.cpp)
 target_link_libraries(fuse_core_b1_assert_probe PRIVATE fuse_core)
-if(CMAKE_NM AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+if(CMAKE_NM AND NOT MSVC)
     add_test(NAME fuse_core_b1_assert_codegen
         COMMAND ${CMAKE_COMMAND}
             -DNM=${CMAKE_NM}

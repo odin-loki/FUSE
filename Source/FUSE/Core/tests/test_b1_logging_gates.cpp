@@ -13,8 +13,12 @@
 #include <fuse/log/logger.hpp>
 #include <fuse/profiler/profiler.hpp>
 
-#if defined(__x86_64__)
+#if defined(_MSC_VER) && defined(_M_X64)
+#include <intrin.h>
+#define FUSE_TEST_HAS_RDTSC 1
+#elif defined(__x86_64__)
 #include <x86intrin.h>
+#define FUSE_TEST_HAS_RDTSC 1
 #endif
 
 #include <algorithm>
@@ -357,7 +361,7 @@ void testProfilerScopeOverhead() {
     // The profiler stamps scopes with the invariant TSC where available (x86-64): two reads per
     // scope are the floor of FUSE_PROFILE_SCOPE on this host.
     double tscRead = 0.0;
-#if defined(__x86_64__)
+#if defined(FUSE_TEST_HAS_RDTSC)
     const u64 tscStart = nowNs();
     u64 tscSink = 0;
     for (u32 i = 0; i < kScopes; ++i) {

@@ -58,10 +58,17 @@ jobs:
           cmake --build build-cuda --target \
             fuse_core fuse_compute fuse_rhi fuse_fx \
             fuse_cuda_shared_headers_gate fuse_cuda_job_tests fuse_cuda_interop \
-            fuse_ray_march_stub fuse_screen_space_effects_stub fuse_fx_tests
+            fuse_ray_march_stub fuse_screen_space_effects_stub fuse_fx_tests \
+            fuse_compute_kernel_cuda_gate fuse_core_compute_kernel_gates fuse_ray_march_kernel_parity \
+            fuse_animation fuse_vfx fuse_skinning_kernel_parity fuse_particle_kernel_parity \
+            fuse_fx_particle_pool_kernel_parity fuse_animation_tests fuse_vfx_tests \
+            fuse_screen_space_kernel_parity \
+            fuse_scene fuse_audio fuse_svo_ray_kernel_parity fuse_reverb_fft_kernel_parity \
+            fuse_ddgi_kernel_parity fuse_clustered_kernel_parity fuse_sdf_shadows_kernel_parity \
+            fuse_physics fuse_b4_physics_kernel_gates
 
       - name: CUDA compile gates (ctest -L cuda)
         run: ctest --test-dir build-cuda -L cuda --output-on-failure
 
       - name: CUDA host-path tests (no device — CUDA paths report unavailable)
-        run: ctest --test-dir build-cuda -R "^(fuse_cuda_jobs|fuse_cuda_interop|fuse_ray_march_stub|fuse_screen_space_effects_stub|fuse_fx_runtime)$" --output-on-failure
+        run: ctest --test-dir build-cuda -R "^(fuse_cuda_jobs|fuse_cuda_interop|fuse_ray_march_stub|fuse_ray_march_kernel_parity|fuse_core_compute_kernel_gates|fuse_screen_space_effects_stub|fuse_fx_runtime|fuse_skinning_kernel_parity|fuse_particle_kernel_parity|fuse_fx_particle_pool_kernel_parity|fuse_animation_runtime|fuse_vfx_runtime|fuse_screen_space_kernel_parity|fuse_svo_ray_kernel_parity|fuse_reverb_fft_kernel_parity|fuse_ddgi_kernel_parity|fuse_clustered_kernel_parity|fuse_sdf_shadows_kernel_parity|fuse_b4_physics_kernel_gates)$" --output-on-failure

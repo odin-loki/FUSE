@@ -51,6 +51,45 @@
 #include <psapi.h>
 #endif
 
+#if defined(_WIN32) && !defined(__MINGW32__)
+// The MSVC CRT has no clock_gettime. Same clock sources winpthreads uses for MinGW builds:
+// QueryPerformanceCounter for CLOCK_MONOTONIC, GetThreadTimes (100 ns units, scheduler-tick
+// granularity) for CLOCK_THREAD_CPUTIME_ID — so the coarse-clock skip below behaves identically.
+namespace {
+using clockid_t = int;
+constexpr clockid_t CLOCK_MONOTONIC = 1;
+constexpr clockid_t CLOCK_THREAD_CPUTIME_ID = 3;
+
+int clock_gettime(clockid_t clock, timespec* ts) {
+    long long ns = 0;
+    if (clock == CLOCK_THREAD_CPUTIME_ID) {
+        FILETIME created{}, exited{}, kernel{}, user{};
+        if (GetThreadTimes(GetCurrentThread(), &created, &exited, &kernel, &user) == FALSE) {
+            return -1;
+        }
+        const auto ticks = [](const FILETIME& ft) {
+            return (static_cast<long long>(ft.dwHighDateTime) << 32) | static_cast<long long>(ft.dwLowDateTime);
+        };
+        ns = (ticks(kernel) + ticks(user)) * 100ll;
+    } else {
+        LARGE_INTEGER freq{}, counter{};
+        QueryPerformanceFrequency(&freq);
+        QueryPerformanceCounter(&counter);
+        ns = static_cast<long long>(static_cast<double>(counter.QuadPart) * 1e9 / static_cast<double>(freq.QuadPart));
+    }
+    ts->tv_sec = static_cast<decltype(ts->tv_sec)>(ns / 1000000000ll);
+    ts->tv_nsec = static_cast<long>(ns % 1000000000ll);
+    return 0;
+}
+
+int clock_getres(clockid_t clock, timespec* res) {
+    res->tv_sec = 0;
+    res->tv_nsec = clock == CLOCK_THREAD_CPUTIME_ID ? 15625000l : 100l;
+    return 0;
+}
+} // namespace
+#endif
+
 namespace {
 
 std::atomic<bool> g_counting{false};

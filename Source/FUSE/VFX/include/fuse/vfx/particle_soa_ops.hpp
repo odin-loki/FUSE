@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/vfx/particle_emitter.hpp>
 
 #include <vector>
@@ -93,9 +94,19 @@ struct LifetimeCullResult {
     std::vector<u32> dead_slots;
 };
 
+/// CPU kernel backend the simulation uses for `capacity` slots: CpuReference below
+/// kParallelSlotThreshold (a job dispatch costs more than the loop), CpuParallel above. Both give
+/// bit-identical results.
+inline constexpr u32 kParallelSlotThreshold = 16384u;
+[[nodiscard]] kernel::Backend cpu_simulation_backend(u32 capacity);
+
 /// Age live slots by `dt` and recycle expired particles without integrating motion or attributes.
-/// Uses `parallel_for` when the job scheduler has workers; otherwise runs serially.
+/// Runs the particle_sim_kernel update (integration off) + compaction on cpu_simulation_backend().
 [[nodiscard]] LifetimeCullResult lifetime_cull(ParticleSoA& soa, f32 dt, u32 grain_size = 64u);
+
+/// lifetime_cull on an explicit kernel backend (GPU requests fall back to CpuParallel).
+[[nodiscard]] LifetimeCullResult lifetime_cull_on(kernel::Backend backend, ParticleSoA& soa, f32 dt,
+                                                  u32 grain_size = 64u);
 
 /// True when lifetime cull would scan no live slots for the current SoA/dt.
 [[nodiscard]] bool should_skip_lifetime_cull(const ParticleSoA& soa, f32 dt);
@@ -120,14 +131,23 @@ struct SimStepPreflight {
 /// True when simulate_step would be a no-op for the current SoA/dt.
 [[nodiscard]] bool should_skip_simulate_step(const ParticleSoA& soa, f32 dt);
 
-/// One simulation step: age/kill, velocity integrate, attribute interpolation over live slots.
-/// Uses `parallel_for` when the job scheduler has workers; otherwise runs serially.
+/// One simulation step: age/kill, velocity integrate, attribute interpolation over live slots,
+/// then deterministic dead-slot compaction (fuse/vfx/particle_sim_kernel.hpp: "particle_update" +
+/// "particle_compact"). Runs on cpu_simulation_backend(capacity); `grain_size` is the CpuParallel
+/// chunk in slots (rounded up to whole 256-slot workgroups). `dead_slots` is sorted descending.
 [[nodiscard]] SimStepResult simulate_step(ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt,
                                           u32 grain_size = 64u);
 
 /// Heap-free form for per-frame use: dead-slot bookkeeping goes to the caller's
-/// `dead_slots_scratch` (cleared first, capacity kept) and the result's `dead_slots` stays empty.
+/// `dead_slots_scratch` (resized, capacity kept) and the result's `dead_slots` stays empty.
 [[nodiscard]] SimStepResult simulate_step(ParticleSoA& soa, const ParticleEmitterDesc& desc, f32 dt,
                                           std::vector<u32>& dead_slots_scratch, u32 grain_size = 64u);
+
+/// simulate_step on an explicit kernel backend. Cuda / Auto run the CUDA particle kernels when
+/// particle_cuda_kernel_available(); otherwise kernel::launch falls back to CpuParallel and records
+/// the requested vs executed backend. Every backend yields the same dead-slot order.
+[[nodiscard]] SimStepResult simulate_step_on(kernel::Backend backend, ParticleSoA& soa,
+                                             const ParticleEmitterDesc& desc, f32 dt,
+                                             std::vector<u32>& dead_slots_scratch, u32 grain_size = 64u);
 
 } // namespace fuse::vfx::particle_soa

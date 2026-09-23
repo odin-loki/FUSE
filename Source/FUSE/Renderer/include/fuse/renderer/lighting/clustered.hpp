@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/math/vec.hpp>
 #include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/resources.hpp>
@@ -111,7 +112,11 @@ fuse::math::Vec3 viewPositionFromScreen(f32 screenX, f32 screenY, f32 viewDepth,
 /// Tight view-space AABB of one frustum cell (tile x/y, exponential depth slice z).
 ClusterAABB buildClusterAabb(u32 tileX, u32 tileY, u32 sliceZ, const ClusterDesc& desc, const ClusterCameraDesc& camera);
 /// Build all cluster AABBs in flat cluster-index order; empty output for an empty grid.
-void buildClusterAabbs(const ClusterDesc& desc, const ClusterCameraDesc& camera, std::vector<ClusterAABB>& outAabbs);
+/// Runs the `clustered_cluster_build` kernel on `backend`.
+void buildClusterAabbs(const ClusterDesc& desc,
+                       const ClusterCameraDesc& camera,
+                       std::vector<ClusterAABB>& outAabbs,
+                       kernel::Backend backend = kernel::Backend::CpuParallel);
 /// Closed sphere-vs-AABB overlap (touching counts); false for negative or non-finite radius.
 bool sphereIntersectsAabb(const fuse::math::Vec3& center, f32 radius, const ClusterAABB& aabb);
 } // namespace cluster_math
@@ -378,6 +383,31 @@ struct ClusteredLightCullerStats {
     u32 lightsDroppedOverflow = 0;
 };
 
+/// View-space bounding sphere of one light and the depth slices it can reach (output of the
+/// `clustered_light_bounds` kernel). `sliceLo > sliceHi` marks a light that occupies no cluster.
+struct ClusterLightBounds {
+    fuse::math::Vec3 center{};
+    f32 radius = 0.f;
+    u32 sliceLo = 1u;
+    u32 sliceHi = 0u;
+};
+
+/// Fixed-capacity per-cluster light lists written by the `clustered_light_cull` kernel
+/// (cluster c owns slots [c * capacity, c * capacity + counts[c])).
+struct ClusterCullLists {
+    u32 capacity = 0;
+    std::vector<ClusterLightBounds> bounds;
+    /// Per depth slice: the lights whose slice window covers it (`clustered_light_bin`, ascending index,
+    /// slice s owns [s * bounds.size(), s * bounds.size() + sliceCounts[s])).
+    std::vector<u32> sliceLights;
+    std::vector<u32> sliceCounts;
+    std::vector<u32> slots;
+    std::vector<u32> counts;
+    std::vector<u32> dropped;
+
+    void clear();
+};
+
 /// Result of one CPU light-to-cluster assignment pass.
 struct ClusterCullResult {
     u32 lightsCulled = 0;          ///< Total (cluster, light) pairs stored.
@@ -395,7 +425,22 @@ ClusterCullResult cullLightsToClusters(const ClusterDesc& desc,
                                        const std::vector<ClusterAABB>& aabbs,
                                        const std::vector<PointLightInput>& pointLights,
                                        const std::vector<SpotLightInput>& spotLights,
-                                       std::vector<std::vector<u32>>& outPerClusterLights);
+                                       std::vector<std::vector<u32>>& outPerClusterLights,
+                                       kernel::Backend backend = kernel::Backend::CpuParallel);
+/// Same cull into fixed-capacity lists (the kernel's native output; no per-cluster vectors).
+ClusterCullResult cullLightsToClusterLists(const ClusterDesc& desc,
+                                           const ClusterCameraDesc& camera,
+                                           const std::vector<ClusterAABB>& aabbs,
+                                           const std::vector<PointLightInput>& pointLights,
+                                           const std::vector<SpotLightInput>& spotLights,
+                                           ClusterCullLists& outLists,
+                                           kernel::Backend backend = kernel::Backend::CpuParallel);
+/// Pack fixed-capacity lists into the flat light list + (offset, count) grid: host exclusive scan of
+/// the counts, then the `clustered_light_compact` kernel. Empty `lists` give `clusterCount` empty cells.
+void compactClusterLists(const ClusterCullLists& lists,
+                         u32 clusterCount,
+                         ClusterGridSoA& grid,
+                         kernel::Backend backend = kernel::Backend::CpuParallel);
 } // namespace cluster_math
 
 /// CPU clustered light assignment — mirrors the cluster build + cull kernels (CUDA path deferred).
@@ -421,6 +466,11 @@ public:
                         const std::vector<PointLightInput>& pointLights,
                         const std::vector<SpotLightInput>& spotLights);
 
+    /// Backend of the build / bounds / cull / compact launches (clustered_kernel.hpp). CpuParallel
+    /// (default) and CpuReference are bit-identical; GPU requests fall back to CpuParallel.
+    void setBackend(kernel::Backend backend) { m_backend = backend; }
+    kernel::Backend backend() const { return m_backend; }
+
     const ClusterBuffers& buffers() const { return m_buffers; }
     const ClusterGridSoA& gridSoA() const { return m_gridSoA; }
     const ClusterDesc& desc() const { return m_desc; }
@@ -439,8 +489,9 @@ private:
     ClusterBuffers m_buffers{};
     ClusterGridSoA m_gridSoA{};
     ClusteredLightCullerStats m_stats{};
-    std::vector<std::vector<u32>> m_pendingClusterLights{};
+    ClusterCullLists m_pendingClusterLights{};
     ResourceManager* m_resources = nullptr;
+    kernel::Backend m_backend = kernel::Backend::CpuParallel;
 };
 
 } // namespace fuse::renderer

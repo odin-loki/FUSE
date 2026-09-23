@@ -10,17 +10,17 @@ namespace fuse::scene {
 
 namespace {
 
-// Brick payload forms (SVOBrick::mode).
-constexpr u8 kModeSparse = 0;
-constexpr u8 kModeDense = 1;
-constexpr u8 kModeUniform = 2;
-constexpr u8 kModeMasked = 3;
+// Brick payload forms (SVOBrick::mode) and the brick size are shared with the ray-cast kernel.
+using svo_kernel::kModeDense;
+using svo_kernel::kModeMasked;
+using svo_kernel::kModeSparse;
+using svo_kernel::kModeUniform;
 
 // Bricks are 8^3 voxels: at depth 10 that stops the octree three levels early, so scattered
 // data needs ~1/8 of the interior nodes of per-voxel leaves, while sparse payloads keep a
 // lone voxel at 8 bytes. 4^3 bricks would need ~3.5x the interior nodes for scattered data
 // and 2^3 bricks gain almost nothing over per-voxel leaves.
-constexpr u32 kMaxBrickLog = 3;
+constexpr u32 kMaxBrickLog = svo_kernel::kMaxBrickLog;
 
 } // namespace
 
@@ -65,10 +65,27 @@ usize SVO::memoryBytes() const {
     return bytes;
 }
 
+svo_kernel::SvoView SVO::view() const {
+    svo_kernel::SvoView v{};
+    v.nodes = kernel::make_span(m_nodes.data(), static_cast<u32>(m_nodes.size()));
+    v.bricks = kernel::make_span(m_bricks.data(), static_cast<u32>(m_bricks.size()));
+    v.pool = kernel::make_span(m_pool.data(), static_cast<u32>(m_pool.size()));
+    v.origin[0] = m_desc.origin.x;
+    v.origin[1] = m_desc.origin.y;
+    v.origin[2] = m_desc.origin.z;
+    v.leaf_size = leafSize();
+    v.max_depth = m_desc.maxDepth;
+    v.brick_log = m_brickLog;
+    v.brick_depth = m_brickDepth;
+    v.brick_voxels = m_brickVoxels;
+    v.mask_words = m_maskWords;
+    v.initialized = m_initialized ? 1u : 0u;
+    v.has_voxels = m_voxelCount != 0u ? 1u : 0u;
+    return v;
+}
+
 bool SVO::inBounds(ivec3 coord) const {
-    const s32 resolution = static_cast<s32>(1u << m_desc.maxDepth);
-    return coord.x >= 0 && coord.y >= 0 && coord.z >= 0 && coord.x < resolution && coord.y < resolution &&
-           coord.z < resolution;
+    return svo_kernel::in_bounds(view(), coord.x, coord.y, coord.z);
 }
 
 f32 SVO::leafSize() const {
@@ -86,9 +103,7 @@ f32 SVO::defaultSdf(u32 material) const {
 }
 
 u32 SVO::localIndex(ivec3 coord) const {
-    const u32 mask = (1u << m_brickLog) - 1u;
-    return (static_cast<u32>(coord.x) & mask) | ((static_cast<u32>(coord.y) & mask) << m_brickLog) |
-           ((static_cast<u32>(coord.z) & mask) << (2u * m_brickLog));
+    return svo_kernel::local_index(view(), coord.x, coord.y, coord.z);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -127,45 +142,7 @@ void SVO::freeWords(u32 offset, u32 sizeClass) {
 // Octree walks.
 
 u32 SVO::findBrick(ivec3 coord) const {
-    if (!m_initialized || !inBounds(coord)) {
-        return kNoNode;
-    }
-    if (m_brickDepth == 0u) {
-        return 0u;
-    }
-    u32 nodeIndex = 0;
-    for (u32 depth = 0; depth < m_brickDepth; ++depth) {
-        const u32 mask = 1u << (m_desc.maxDepth - depth - 1u);
-        const u32 octant = ((static_cast<u32>(coord.x) & mask) ? 1u : 0u) |
-                           ((static_cast<u32>(coord.y) & mask) ? 2u : 0u) |
-                           ((static_cast<u32>(coord.z) & mask) ? 4u : 0u);
-        nodeIndex = m_nodes[nodeIndex].children[octant];
-        if (nodeIndex == kNoNode) {
-            return kNoNode;
-        }
-    }
-    return nodeIndex; // the last hop lands on a brick index
-}
-
-u32 SVO::locate(ivec3 coord, u32& emptyCellSize) const {
-    emptyCellSize = 1u;
-    if (m_brickDepth == 0u) {
-        return 0u;
-    }
-    u32 nodeIndex = 0;
-    for (u32 depth = 0; depth < m_brickDepth; ++depth) {
-        const u32 shift = m_desc.maxDepth - depth - 1u;
-        const u32 mask = 1u << shift;
-        const u32 octant = ((static_cast<u32>(coord.x) & mask) ? 1u : 0u) |
-                           ((static_cast<u32>(coord.y) & mask) ? 2u : 0u) |
-                           ((static_cast<u32>(coord.z) & mask) ? 4u : 0u);
-        nodeIndex = m_nodes[nodeIndex].children[octant];
-        if (nodeIndex == kNoNode) {
-            emptyCellSize = mask; // the missing child's cube, in voxels
-            return kNoNode;
-        }
-    }
-    return nodeIndex;
+    return svo_kernel::find_brick(view(), coord.x, coord.y, coord.z);
 }
 
 u32 SVO::ensureBrick(ivec3 coord) {
@@ -201,45 +178,16 @@ u32 SVO::ensureBrick(ivec3 coord) {
 
 namespace {
 
-/// Binary search over sorted (localIndex, material) pairs; returns the insertion slot.
-u32 sparseLowerBound(const u32* entries, u32 count, u32 local) {
-    u32 lo = 0;
-    u32 hi = count;
-    while (lo < hi) {
-        const u32 mid = (lo + hi) >> 1u;
-        if (entries[mid * 2u] < local) {
-            lo = mid + 1u;
-        } else {
-            hi = mid;
-        }
-    }
-    return lo;
-}
+using svo_kernel::sparse_lower_bound;
 
 } // namespace
 
 SVO::VoxelState SVO::readVoxel(u32 brick, u32 local) const {
-    const SVOBrick& b = m_bricks[brick];
     VoxelState state{};
-    if (b.mode == kModeUniform) {
-        state.written = true;
-        state.material = b.payload;
-    } else if (b.mode == kModeSparse) {
-        const u32* entries = m_pool.data() + b.payload;
-        const u32 slot = sparseLowerBound(entries, b.count, local);
-        if (slot < b.count && entries[slot * 2u] == local) {
-            state.written = true;
-            state.material = entries[slot * 2u + 1u];
-        }
-    } else if (b.mode == kModeMasked) {
-        const u32* words = m_pool.data() + b.payload;
-        state.written = (words[1u + (local >> 5u)] >> (local & 31u)) & 1u;
-        state.material = state.written ? words[0] : 0u;
-    } else {
-        const u32* words = m_pool.data() + b.payload;
-        state.written = (words[m_brickVoxels + (local >> 5u)] >> (local & 31u)) & 1u;
-        state.material = words[local];
-        const u32 plane = words[m_brickVoxels + m_maskWords];
+    state.written = svo_kernel::read_voxel(view(), brick, local, state.material);
+    const SVOBrick& b = m_bricks[brick];
+    if (b.mode == kModeDense) {
+        const u32 plane = m_pool[denseSdfSlot(brick)];
         if (plane != kNoNode) {
             f32 value = 0.f;
             std::memcpy(&value, m_pool.data() + plane + local, sizeof(f32));
@@ -315,7 +263,7 @@ void SVO::writeVoxel(u32 brick, u32 local, u32 material, f32 sdf) {
     }
 
     if (b.mode == kModeSparse && !needsSdf) {
-        const u32 slot = sparseLowerBound(m_pool.data() + b.payload, b.count, local);
+        const u32 slot = sparse_lower_bound(m_pool.data() + b.payload, b.count, local);
         if (slot < b.count && m_pool[b.payload + slot * 2u] == local) {
             previous = m_pool[b.payload + slot * 2u + 1u];
             m_pool[b.payload + slot * 2u + 1u] = material;
@@ -424,47 +372,6 @@ void SVO::makeUniform(u32 brick, u32 material) {
     m_voxelCount = m_voxelCount - solid + (material != 0u ? m_brickVoxels : 0u);
 }
 
-bool SVO::solidMask(u32 brick, u64* mask) const {
-    const SVOBrick& b = m_bricks[brick];
-    const u32 words64 = (m_brickVoxels + 63u) / 64u;
-    std::fill(mask, mask + words64, 0ull);
-    bool any = false;
-    if (b.mode == kModeUniform) {
-        if (b.payload == 0u) {
-            return false;
-        }
-        for (u32 i = 0; i < m_brickVoxels; ++i) {
-            mask[i >> 6u] |= 1ull << (i & 63u);
-        }
-        return true;
-    }
-    if (b.mode == kModeSparse) {
-        for (u32 i = 0; i < b.count; ++i) {
-            if (m_pool[b.payload + i * 2u + 1u] != 0u) {
-                const u32 local = m_pool[b.payload + i * 2u];
-                mask[local >> 6u] |= 1ull << (local & 63u);
-                any = true;
-            }
-        }
-        return any;
-    }
-    if (b.mode == kModeMasked) {
-        for (u32 i = 0; i < m_maskWords; ++i) {
-            const u64 bits = m_pool[b.payload + 1u + i];
-            mask[i >> 1u] |= bits << ((i & 1u) * 32u);
-            any = any || bits != 0u;
-        }
-        return any;
-    }
-    for (u32 i = 0; i < m_brickVoxels; ++i) {
-        if (m_pool[b.payload + i] != 0u) {
-            mask[i >> 6u] |= 1ull << (i & 63u);
-            any = true;
-        }
-    }
-    return any;
-}
-
 // ---------------------------------------------------------------------------------------------
 // Public API.
 
@@ -495,8 +402,7 @@ void SVO::set(ivec3 voxelCoord, u32 material) {
 }
 
 u32 SVO::get(ivec3 voxelCoord) const {
-    const u32 brick = findBrick(voxelCoord);
-    return brick == kNoNode ? 0u : readVoxel(brick, localIndex(voxelCoord)).material;
+    return svo_kernel::voxel_material(view(), voxelCoord.x, voxelCoord.y, voxelCoord.z);
 }
 
 void SVO::fill(ivec3 minCoord, ivec3 maxCoord, u32 material) {
@@ -647,156 +553,16 @@ f32 SVO::sdfQuery(vec3 worldPos) const {
 
 bool SVO::rayCast(vec3 rayOrigin, vec3 rayDirection, f32 maxDistance, ivec3& hitVoxel, vec3& hitNormal,
                   f32& hitDistance) const {
-    if (!m_initialized || m_voxelCount == 0u) {
+    const SvoRay ray{{rayOrigin.x, rayOrigin.y, rayOrigin.z}, {rayDirection.x, rayDirection.y, rayDirection.z},
+                     maxDistance};
+    SvoRayHit hit{};
+    if (!svo_kernel::ray_cast(view(), ray, hit)) {
         return false;
     }
-    const f32 length = rayDirection.length();
-    if (length < 1e-8f) {
-        return false;
-    }
-    const vec3 d = rayDirection * (1.f / length);
-    const f32 size = leafSize();
-    const s32 resolution = static_cast<s32>(1u << m_desc.maxDepth);
-    const f32 dir[3] = {d.x, d.y, d.z};
-    const f32 org[3] = {rayOrigin.x - m_desc.origin.x, rayOrigin.y - m_desc.origin.y, rayOrigin.z - m_desc.origin.z};
-    const f32 extent = size * static_cast<f32>(resolution);
-
-    // Slab test against the grid bounds; remember which face the ray enters through.
-    f32 tEnter = 0.f;
-    f32 tExit = std::numeric_limits<f32>::max();
-    int enterAxis = -1;
-    for (int a = 0; a < 3; ++a) {
-        if (std::abs(dir[a]) < 1e-12f) {
-            if (org[a] < 0.f || org[a] > extent) {
-                return false;
-            }
-            continue;
-        }
-        f32 t0 = (0.f - org[a]) / dir[a];
-        f32 t1 = (extent - org[a]) / dir[a];
-        if (t0 > t1) {
-            std::swap(t0, t1);
-        }
-        if (t0 > tEnter) {
-            tEnter = t0;
-            enterAxis = a;
-        }
-        tExit = std::min(tExit, t1);
-    }
-    if (tEnter > tExit || tEnter > maxDistance) {
-        return false;
-    }
-
-    // Amanatides & Woo 3D-DDA from the entry point. Boundary crossings are evaluated in closed
-    // form so that jumps over empty octree cells and bricks land exactly on the voxel grid.
-    constexpr f32 kInf = std::numeric_limits<f32>::max();
-    s32 cell[3];
-    s32 step[3];
-    f32 tMax[3];
-    const auto nextBoundary = [&](int a) {
-        if (step[a] == 0) {
-            return kInf;
-        }
-        const s32 plane = step[a] > 0 ? cell[a] + 1 : cell[a];
-        return (static_cast<f32>(plane) * size - org[a]) / dir[a];
-    };
-    for (int a = 0; a < 3; ++a) {
-        const f32 p = org[a] + dir[a] * tEnter;
-        cell[a] = std::clamp(static_cast<s32>(std::floor(p / size)), 0, resolution - 1);
-        step[a] = dir[a] > 0.f ? 1 : (dir[a] < 0.f ? -1 : 0);
-        tMax[a] = nextBoundary(a);
-    }
-
-    // Brick cache: consecutive voxels usually share a brick, so walk the tree once per brick.
-    const s32 log = static_cast<s32>(m_brickLog);
-    const s32 edge = 1 << log;
-    u32 brick = kNoNode;
-    ivec3 brickCoord{-1, -1, -1};
-    bool brickEmpty = false;
-    u64 mask[8] = {};
-
-    f32 t = tEnter;
-    int axis = enterAxis;
-    while (t <= maxDistance) {
-        const ivec3 coord{cell[0], cell[1], cell[2]};
-        const ivec3 bc{coord.x >> log, coord.y >> log, coord.z >> log};
-        u32 emptySize = 1u;
-        if (bc.x != brickCoord.x || bc.y != brickCoord.y || bc.z != brickCoord.z) {
-            brick = locate(coord, emptySize);
-            if (brick != kNoNode) {
-                brickCoord = bc;
-                const u8 mode = m_bricks[brick].mode;
-                brickEmpty = mode == kModeUniform ? m_bricks[brick].payload == 0u
-                                                  : (mode != kModeDense && !solidMask(brick, mask));
-            } else {
-                brickCoord = {-1, -1, -1};
-            }
-        }
-
-        if (brick != kNoNode) {
-            const SVOBrick& b = m_bricks[brick];
-            bool solid = false;
-            if (brickEmpty) {
-                emptySize = static_cast<u32>(edge);
-            } else if (b.mode == kModeUniform) {
-                solid = true;
-            } else {
-                const u32 local = localIndex(coord);
-                solid = b.mode != kModeDense ? ((mask[local >> 6u] >> (local & 63u)) & 1ull) != 0u
-                                             : m_pool[b.payload + local] != 0u;
-            }
-            if (solid) {
-                hitVoxel = coord;
-                hitDistance = t;
-                hitNormal = vec3(0.f, 0.f, 0.f);
-                if (axis >= 0) {
-                    const f32 n = dir[axis] > 0.f ? -1.f : 1.f; // face the ray entered through
-                    hitNormal = vec3(axis == 0 ? n : 0.f, axis == 1 ? n : 0.f, axis == 2 ? n : 0.f);
-                }
-                return true;
-            }
-        }
-
-        if (emptySize == 1u) {
-            axis = tMax[0] < tMax[1] ? (tMax[0] < tMax[2] ? 0 : 2) : (tMax[1] < tMax[2] ? 1 : 2);
-            t = tMax[axis];
-            cell[axis] += step[axis];
-            if (cell[axis] < 0 || cell[axis] >= resolution) {
-                return false;
-            }
-            tMax[axis] = nextBoundary(axis);
-            continue;
-        }
-
-        // Jump out of the empty aligned cube containing the current cell.
-        const s32 cubeSize = static_cast<s32>(emptySize);
-        s32 cubeMin[3];
-        f32 faceT[3];
-        for (int a = 0; a < 3; ++a) {
-            cubeMin[a] = cell[a] & ~(cubeSize - 1);
-            faceT[a] = step[a] == 0 ? kInf
-                                    : (static_cast<f32>(step[a] > 0 ? cubeMin[a] + cubeSize : cubeMin[a]) * size -
-                                       org[a]) /
-                                          dir[a];
-        }
-        axis = faceT[0] < faceT[1] ? (faceT[0] < faceT[2] ? 0 : 2) : (faceT[1] < faceT[2] ? 1 : 2);
-        t = faceT[axis];
-        for (int a = 0; a < 3; ++a) {
-            if (a == axis || step[a] == 0) {
-                continue;
-            }
-            const s32 inside = static_cast<s32>(std::floor((org[a] + dir[a] * t) / size));
-            cell[a] = std::max(cell[a] * step[a], std::clamp(inside, cubeMin[a], cubeMin[a] + cubeSize - 1) * step[a]) *
-                      step[a]; // never step backwards
-            tMax[a] = nextBoundary(a);
-        }
-        cell[axis] = step[axis] > 0 ? cubeMin[axis] + cubeSize : cubeMin[axis] - 1;
-        if (cell[axis] < 0 || cell[axis] >= resolution) {
-            return false;
-        }
-        tMax[axis] = nextBoundary(axis);
-    }
-    return false;
+    hitVoxel = {hit.voxel[0], hit.voxel[1], hit.voxel[2]};
+    hitNormal = vec3(hit.normal[0], hit.normal[1], hit.normal[2]);
+    hitDistance = hit.distance;
+    return true;
 }
 
 } // namespace fuse::scene

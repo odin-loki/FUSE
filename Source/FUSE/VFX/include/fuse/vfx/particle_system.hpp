@@ -12,7 +12,8 @@
 
 namespace fuse::vfx {
 
-/// True when this build contains a CUDA particle simulation kernel (none yet: CPU only).
+/// True only when the CUDA particle kernels (kernels/particle_sim.cu) are compiled into this build
+/// AND a CUDA device is usable (`kernel::backend_available(Backend::Cuda)`).
 bool particle_cuda_kernel_available();
 
 class ParticleSystem {

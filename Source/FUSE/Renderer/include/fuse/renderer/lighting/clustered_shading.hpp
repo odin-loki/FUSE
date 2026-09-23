@@ -31,7 +31,7 @@ struct DeferredShadeStats {
     u64 lightEvaluations = 0; ///< Point-light evaluations performed.
 };
 
-/// CPU reference of the clustered deferred shade kernel (B5.4). Point lights only; spot-light
+/// CPU entry points of the clustered deferred shade kernel (B5.4). Point lights only; spot-light
 /// indices encoded after the point lights in a cluster list are ignored here.
 namespace clustered_shading {
 
@@ -62,7 +62,8 @@ bool reconstructWorldPosition(const ClusterCameraDesc& camera,
                               fuse::math::Vec3& outWorld,
                               f32& outViewDepth);
 
-/// Shade every pixel: reconstruct position from depth, then either walk the pixel's cluster list
+/// Shade every pixel (the `deferred_shading` kernel, fuse/renderer/lighting/clustered_kernel.hpp, on
+/// `backend`; CpuReference and CpuParallel are bit-identical): reconstruct position from depth, then either walk the pixel's cluster list
 /// (`useClusters`) or loop all lights. Pixels outside [near, far] or with cleared depth are black.
 DeferredShadeStats shadeDeferredFrame(const DeferredGBufferView& gbuffer,
                                       const ClusterDesc& desc,
@@ -70,7 +71,8 @@ DeferredShadeStats shadeDeferredFrame(const DeferredGBufferView& gbuffer,
                                       const ClusterGridSoA& grid,
                                       const std::vector<PointLightInput>& lights,
                                       bool useClusters,
-                                      std::vector<fuse::math::Vec3>& outRadiance);
+                                      std::vector<fuse::math::Vec3>& outRadiance,
+                                      kernel::Backend backend = kernel::Backend::CpuParallel);
 
 } // namespace clustered_shading
 } // namespace fuse::renderer

@@ -14,6 +14,7 @@ set(FUSE_AUDIO_PUBLIC_HEADERS
     include/fuse/audio/math.hpp
     include/fuse/audio/occlusion.hpp
     include/fuse/audio/reverb_cuda.hpp
+    include/fuse/audio/reverb_fft_kernel.hpp
     include/fuse/audio/reverb_zones.hpp
     include/fuse/audio/spatial_mixer.hpp
 )
@@ -47,6 +48,13 @@ target_include_directories(fuse_audio
 
 target_link_libraries(fuse_audio PUBLIC fuse_core)
 target_compile_features(fuse_audio PUBLIC cxx_std_17)
+
+# Single-source "reverb_fft" / "reverb_cmac" kernels (docs/compute-kernels.md): CUDA device mirror when
+# the toolkit is found (CUDA::cudart and FUSE_HAS_CUDA come through fuse_core).
+if(FUSE_CUDA_BACKEND)
+    target_sources(fuse_audio PRIVATE kernels/reverb_fft.cu)
+    set_target_properties(fuse_audio PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+endif()
 
 option(FUSE_AUDIO_ENABLE_OPENAL "Link fuse_audio against OpenAL when available" ON)
 if(FUSE_AUDIO_ENABLE_OPENAL)

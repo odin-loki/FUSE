@@ -1,5 +1,6 @@
 #include <fuse/fx/particle_pool_gpu.hpp>
 
+#include <fuse/fx/particle_pool_kernel.hpp>
 #include <fuse/jobs/cuda_jobs.hpp>
 
 #include <algorithm>
@@ -9,20 +10,23 @@ namespace fuse::fx {
 
 namespace {
 
-constexpr usize kBytesPerSlot = 40u; // pos(12) + vel(12) + lifetime(4) + age(4) + blend(4) + alive(4)
+constexpr usize kBytesPerSlot = particle_pool_kernel::kBytesPerSlot; // pos vel lifetime age blend alive
 
 #if defined(FUSE_HAS_CUDA) && FUSE_HAS_CUDA
 constexpr bool kCudaCompiled = true;
 
-extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* packed, u32 activeCount, float dt, int hostDirty);
+extern "C" int fuse_fx_particle_pool_cuda_integrate(u8* packed, u32 slotCount, float dt, int hostDirty);
 extern "C" u32 fuse_fx_particle_pool_device_ssbo_alloc_count();
 extern "C" u32 fuse_fx_particle_pool_device_ssbo_reuse_count();
 extern "C" u32 fuse_fx_particle_pool_device_ssbo_capacity_bytes();
 extern "C" u32 fuse_fx_particle_pool_device_resident_frames();
 extern "C" u32 fuse_fx_particle_pool_host_to_device_skip_count();
 
-void launchParticlePoolCudaStub(std::vector<u8>& packed, u32 activeCount, float dt, bool hostDirty) {
-    fuse_fx_particle_pool_cuda_stub(packed.data(), activeCount, dt, hostDirty ? 1 : 0);
+/// Integrates every packed slot (live slots may sit anywhere in the pool, not only below the active
+/// count) with the single-source particle_pool_kernel::PackedKernel on the device.
+bool launchParticlePoolCuda(std::vector<u8>& packed, float dt, bool hostDirty) {
+    const u32 slotCount = static_cast<u32>(packed.size() / kBytesPerSlot);
+    return fuse_fx_particle_pool_cuda_integrate(packed.data(), slotCount, dt, hostDirty ? 1 : 0) != 0;
 }
 #else
 constexpr bool kCudaCompiled = false;
@@ -183,13 +187,13 @@ void ParticlePoolGpuBackend::cudaDispatchOrSkip([[maybe_unused]] const frame::Fr
     }
 
 #if defined(FUSE_HAS_CUDA) && FUSE_HAS_CUDA
-    launchParticlePoolCudaStub(m_packed, m_activeCount, ctx.dt, m_hostDirty);
+    const bool integrated = launchParticlePoolCuda(m_packed, ctx.dt, m_hostDirty);
     m_deviceSsboCapacityBytes = fuse_fx_particle_pool_device_ssbo_capacity_bytes();
     m_deviceSsboAllocCount = fuse_fx_particle_pool_device_ssbo_alloc_count();
     m_deviceSsboReuseCount = fuse_fx_particle_pool_device_ssbo_reuse_count();
     m_deviceResidentFrames = fuse_fx_particle_pool_device_resident_frames();
     m_hostToDeviceSkipCount = fuse_fx_particle_pool_host_to_device_skip_count();
-    m_hostDirty = false;
+    m_hostDirty = !integrated; // re-upload after a failed dispatch
 #endif
     syncResidencyFromPacked();
     ++m_cudaDispatchCount;

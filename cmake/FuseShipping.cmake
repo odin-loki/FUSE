@@ -104,7 +104,12 @@ fuse_shipping_force_options()
 # discards the unreachable ones, so debug-only helpers (assert fatal path, profiler scopes) that no
 # shipped call site references are not carried into shipped executables. fuse_b7_shipping_binaries
 # (below) inspects the result.
-if(FUSE_SHIPPING AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+if(FUSE_SHIPPING AND MSVC)
+    # cl.exe / clang-cl: COMDAT per function (/Gy) and per datum (/Gw); the linker's default
+    # /OPT:REF,ICF (no /DEBUG in Release-type configs) then discards the unreferenced ones.
+    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/Gy> $<$<COMPILE_LANGUAGE:C,CXX>:/Gw>)
+    add_link_options($<$<NOT:$<CONFIG:Debug>>:/OPT:REF> $<$<NOT:$<CONFIG:Debug>>:/OPT:ICF>)
+elseif(FUSE_SHIPPING AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
     add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-ffunction-sections> $<$<COMPILE_LANGUAGE:C,CXX>:-fdata-sections>)
     if(APPLE)
         add_link_options(-Wl,-dead_strip)
@@ -137,8 +142,8 @@ function(fuse_shipping_add_binary_strip_test)
     if(NOT FUSE_SHIPPING OR NOT FUSE_BUILD_CORE_TESTS)
         return()
     endif()
-    if(NOT CMAKE_NM OR CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-        message(STATUS "FUSE: fuse_b7_shipping_binaries skipped (needs nm; GNU/Clang toolchains)")
+    if(NOT CMAKE_NM OR MSVC)
+        message(STATUS "FUSE: fuse_b7_shipping_binaries skipped (needs nm; GNU/Clang toolchains, not cl/clang-cl)")
         return()
     endif()
 

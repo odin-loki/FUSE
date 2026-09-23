@@ -10,6 +10,16 @@
 
 namespace fuse::world2d {
 
+#if !(defined(FUSE_WORLD2D_HAS_FUSELEVEL) && FUSE_WORLD2D_HAS_FUSELEVEL)
+// fuselevel_bridge.cpp needs fuse_scene (FUSE_BUILD_PROJECT); report the load as unavailable instead.
+FuselevelLoadResult populateWorld2DFromFuselevel(World2D&, const std::string& fuselevelPath) {
+    FuselevelLoadResult result;
+    result.note = "fuselevel loading unavailable (built without FUSE_BUILD_PROJECT)";
+    log::warn("World2D: cannot load '%s' — fuselevel loading requires FUSE_BUILD_PROJECT", fuselevelPath.c_str());
+    return result;
+}
+#endif
+
 World2D::World2D() : m_root(std::make_unique<SceneObject2D>("World2DRoot")) {
     m_physics.init();
 }

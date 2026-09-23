@@ -1,6 +1,7 @@
 #include <fuse/renderer/gi/ddgi.hpp>
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
 #include <fuse/renderer/gi/ddgi_kernels.hpp>
+#include <fuse/renderer/gi/ddgi_probe_kernel.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -564,7 +565,7 @@ fuse::math::Vec2 DdgiIrradianceEncoding::clampEncodedUV(const fuse::math::Vec2& 
 }
 
 bool DdgiIrradianceEncoding::isEmptyDirection(const fuse::math::Vec3& direction) {
-    return direction.dot(direction) < 1e-8f;
+    return ddgi_kernel::is_empty_direction(direction);
 }
 
 bool DdgiIrradianceEncoding::isValidDirection(const fuse::math::Vec3& direction) {
@@ -573,13 +574,7 @@ bool DdgiIrradianceEncoding::isValidDirection(const fuse::math::Vec3& direction)
 
 fuse::math::Vec3 DdgiIrradianceEncoding::resolveSampleDirection(const fuse::math::Vec3& direction,
                                                                 const fuse::math::Vec3& fallback) {
-    if (!isEmptyDirection(direction)) {
-        return direction.normalized();
-    }
-    if (!isEmptyDirection(fallback)) {
-        return fallback.normalized();
-    }
-    return {0.f, 1.f, 0.f};
+    return ddgi_kernel::resolve_direction(direction, fallback);
 }
 
 fuse::math::Vec3 DdgiIrradianceEncoding::resolveSampleDirectionFromSurface(
@@ -589,23 +584,7 @@ fuse::math::Vec3 DdgiIrradianceEncoding::resolveSampleDirectionFromSurface(
 }
 
 fuse::math::Vec2 DdgiIrradianceEncoding::encodeDirection(const fuse::math::Vec3& direction) {
-    fuse::math::Vec3 n = resolveSampleDirection(direction);
-
-    const f32 sum = std::fabs(n.x) + std::fabs(n.y) + std::fabs(n.z);
-    if (sum > 1e-8f) {
-        n = n * (1.f / sum);
-    }
-
-    fuse::math::Vec2 o{};
-    if (n.z >= 0.f) {
-        o.x = n.x;
-        o.y = n.y;
-    } else {
-        o.x = (1.f - std::fabs(n.y)) * (n.x >= 0.f ? 1.f : -1.f);
-        o.y = (1.f - std::fabs(n.x)) * (n.y >= 0.f ? 1.f : -1.f);
-    }
-
-    return {o.x * 0.5f + 0.5f, o.y * 0.5f + 0.5f};
+    return ddgi_kernel::encode_direction(direction);
 }
 
 fuse::math::Vec3 DdgiIrradianceEncoding::decodeDirection(const fuse::math::Vec2& encoded) {
@@ -670,13 +649,7 @@ f32 DdgiIrradianceEncoding::angularErrorRadians(const fuse::math::Vec3& a, const
 
 fuse::math::Vec3 ProbeGridLayout::worldToProbeGridCoord(const DDGIDesc& desc,
                                                         const fuse::math::Vec3& world_position) {
-    const fuse::math::Vec3 delta = world_position - desc.grid_origin;
-    if (desc.probe_spacing.x <= 0.f || desc.probe_spacing.y <= 0.f || desc.probe_spacing.z <= 0.f) {
-        return {};
-    }
-    return {delta.x / desc.probe_spacing.x,
-            delta.y / desc.probe_spacing.y,
-            delta.z / desc.probe_spacing.z};
+    return ddgi_kernel::world_to_probe_grid(desc, world_position);
 }
 
 fuse::math::Vec3 ProbeGridLayout::clampWorldToProbeGridCoord(const DDGIDesc& desc,
@@ -1217,14 +1190,7 @@ bool isValidSampleRequest(const DDGIDesc& desc,
 }
 
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index) {
-    if (ProbeGridLayout::isEmptyGrid(desc)) {
-        return desc.grid_origin;
-    }
-    const ProbeGridCoord coord = ProbeGridLayout::probeCoordFromIndex(desc, probe_index);
-    return desc.grid_origin +
-           fuse::math::Vec3{desc.probe_spacing.x * static_cast<f32>(coord.x),
-                            desc.probe_spacing.y * static_cast<f32>(coord.y),
-                            desc.probe_spacing.z * static_cast<f32>(coord.z)};
+    return ddgi_kernel::probe_world_position(desc, probe_index);
 }
 
 fuse::math::Vec3 probeWorldPositionClamped(const DDGIDesc& desc, u32 probe_index) {

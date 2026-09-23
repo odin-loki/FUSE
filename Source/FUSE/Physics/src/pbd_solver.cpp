@@ -3,6 +3,7 @@
 #include <fuse/physics/solver/pbd_island_solve.hpp>
 #include <fuse/physics/rotation.hpp>
 
+#include <fuse/compute_kernel/launch.hpp>
 #include <fuse/jobs/parallel_for.hpp>
 
 #include <algorithm>
@@ -28,6 +29,44 @@ f32 effectiveInvMass(const RigidBodySoA& bodies, u32 index) {
     }
     return bodies.invMasses[index];
 }
+
+/// Params of the colored constraint solve: host SoA / work buffers (CPU kernel backends).
+struct SolveColorParams {
+    RigidBodySoA* bodies = nullptr;
+    SolverWorkBuffers* work = nullptr;
+    const narrowphase::ContactManifold* contacts = nullptr;
+    const DistanceConstraint* distances = nullptr;
+    const u32* items = nullptr; ///< this colour's constraint refs (ConstraintColoring::items)
+    f32 dt = 0.f;
+    f32 compliance = 0.f;
+};
+
+/// "physics_solve_color": one constraint per item. Constraints of a colour share no dynamic body,
+/// so items never race and no float atomics are needed. Same per-constraint solve as the island
+/// path (solveContactConstraint / solveDistanceConstraint with effective inverse masses).
+struct SolveColorKernel {
+    void operator()(const kernel::LaunchIndex& idx, const SolveColorParams& p) const {
+        RigidBodySoA& bodies = *p.bodies;
+        SolverWorkBuffers& work = *p.work;
+        const u32 ref = p.items[idx.linear];
+        if ((ref & ConstraintColoring::kDistanceBit) != 0u) {
+            const u32 index = ref & ~ConstraintColoring::kDistanceBit;
+            const DistanceConstraint& constraint = p.distances[index];
+            const f32 invMassA = effectiveInvMass(bodies, constraint.bodyA);
+            const f32 invMassB = effectiveInvMass(bodies, constraint.bodyB);
+            const ContactBody a{constraint.bodyA, invMassA, work.effectiveInvInertia(constraint.bodyA, invMassA)};
+            const ContactBody b{constraint.bodyB, invMassB, work.effectiveInvInertia(constraint.bodyB, invMassB)};
+            solveDistanceConstraint(bodies, constraint, a, b, p.dt, work.distanceLambda(index));
+            return;
+        }
+        const narrowphase::ContactManifold& contact = p.contacts[ref];
+        const f32 invMassA = effectiveInvMass(bodies, contact.bodyA);
+        const f32 invMassB = effectiveInvMass(bodies, contact.bodyB);
+        const ContactBody a{contact.bodyA, invMassA, work.effectiveInvInertia(contact.bodyA, invMassA)};
+        const ContactBody b{contact.bodyB, invMassB, work.effectiveInvInertia(contact.bodyB, invMassB)};
+        solveContactConstraint(bodies, work, ref, contact, a, b, p.dt, p.compliance, work.contactLambda(ref));
+    }
+};
 
 constexpr u32 kNoShape = 0xFFFFFFFFu;
 constexpr u32 kNoSlot = 0xFFFFFFFFu;
@@ -516,9 +555,15 @@ void PBDSolver::runConstraintIterations(RigidBodySoA& bodies, const SolverParams
     // on 1000 bodies / ~500 contacts, the serial loop is ~4x faster than per-iteration jobs.
     const bool parallelIslands =
         contacts.size() + distanceConstraints_.size() >= kParallelConstraintThreshold && islandGraph_.islandCount() > 1u;
+    const bool colored = params.solveMode == ConstraintSolveMode::ColoredKernel;
+    if (colored) {
+        coloring_.build(bodies, contacts, distanceConstraints_);
+    }
     for (u32 iter = 0; iter < maxIterations; ++iter) {
         const u32 islandCount = islandGraph_.islandCount();
-        if (islandCount == 0) {
+        if (colored) {
+            solveColored_(bodies, params, dt);
+        } else if (islandCount == 0) {
             for (u32 distanceIndex = 0; distanceIndex < distanceConstraints_.size(); ++distanceIndex) {
                 const DistanceConstraint& constraint = distanceConstraints_[distanceIndex];
                 const f32 invMassA = effectiveInvMass(bodies, constraint.bodyA);
@@ -572,6 +617,29 @@ void PBDSolver::runConstraintIterations(RigidBodySoA& bodies, const SolverParams
         if (params.residualTolerance > 0.f && lastConstraintResidual_ <= params.residualTolerance) {
             break;
         }
+    }
+}
+
+void PBDSolver::solveColored_(RigidBodySoA& bodies, const SolverParams& params, f32 dt) {
+    SolveColorParams p{};
+    p.bodies = &bodies;
+    p.work = &workBuffers_;
+    p.contacts = workBuffers_.contactManifolds().data();
+    p.distances = distanceConstraints_.data();
+    p.dt = dt;
+    p.compliance = params.contactCompliance;
+    for (u32 color = 0; color < coloring_.colorCount; ++color) {
+        p.items = coloring_.colorItems(color);
+        const kernel::KernelLaunch launch{kSolveColorKernelName, kernel::extent1(coloring_.colorSize(color)),
+                                          kernel::Dim3{64u, 1u, 1u}};
+        kernel::launch(params.kernelBackend, launch, SolveColorKernel{}, p);
+    }
+    if (coloring_.overflowCount > 0u) {
+        // Constraints that found no free colour: serial, in build order (still deterministic).
+        p.items = coloring_.colorItems(ConstraintColoring::kMaxColors);
+        const kernel::KernelLaunch launch{kSolveColorKernelName, kernel::extent1(coloring_.overflowCount),
+                                          kernel::Dim3{64u, 1u, 1u}};
+        kernel::launch(kernel::Backend::CpuReference, launch, SolveColorKernel{}, p);
     }
 }
 

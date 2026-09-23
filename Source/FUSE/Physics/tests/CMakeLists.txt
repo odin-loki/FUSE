@@ -142,3 +142,10 @@ target_link_libraries(fuse_b4_joint_gates PRIVATE fuse_physics fuse_core)
 target_compile_features(fuse_b4_joint_gates PRIVATE cxx_std_17)
 add_test(NAME fuse_b4_joint_gates COMMAND fuse_b4_joint_gates)
 set_tests_properties(fuse_b4_joint_gates PROPERTIES LABELS "gate")
+
+# Physics single-source compute kernels (docs/compute-kernels.md): scan / radix sort / broadphase /
+# narrowphase parity with the legacy CPU path, colored solver determinism, stats + fallback, timings.
+add_executable(fuse_b4_physics_kernel_gates test_b4_physics_kernel_gates.cpp)
+target_link_libraries(fuse_b4_physics_kernel_gates PRIVATE fuse_physics fuse_core)
+add_test(NAME fuse_b4_physics_kernel_gates COMMAND fuse_b4_physics_kernel_gates --no-timings)
+set_tests_properties(fuse_b4_physics_kernel_gates PROPERTIES LABELS "gate")

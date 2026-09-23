@@ -1,6 +1,6 @@
 # fuse_vfx — B7.7 VFX System
 
-CPU particle VFX for Track B7.7: emitter descriptors, SoA particle storage with free-list slot recycling, a jobified CPU simulation (exact rate emission, SDF plane/sphere collision, deterministic for any worker count), effect instances, and a `ParticleSystem` facade. The B7.7 CPU rows are proven by `fuse_b7_vfx_gates`. `particle_gpu.hpp` holds the GPU buffer layout, dispatch counts and a CPU mirror pack/unpack path; the CUDA simulation and billboard rendering are not written yet.
+CPU particle VFX for Track B7.7: emitter descriptors, SoA particle storage with free-list slot recycling, a jobified CPU simulation (exact rate emission, SDF plane/sphere collision, deterministic for any worker count), effect instances, and a `ParticleSystem` facade. The B7.7 CPU rows are proven by `fuse_b7_vfx_gates`. `particle_gpu.hpp` holds the GPU buffer layout, dispatch counts and a CPU mirror pack/unpack path; the simulation step is the single-source `particle_sim_kernel.hpp` (item update + count/scan/write compaction; CPU backends everywhere, `kernels/particle_sim.cu` when `FUSE_HAS_CUDA` and a device exists, gate `fuse_particle_kernel_parity`); billboard rendering is not written yet.
 
 ## Layout
 
@@ -18,7 +18,7 @@ CPU particle VFX for Track B7.7: emitter descriptors, SoA particle storage with 
 `spawn → simulate → (render deferred)`
 
 - **Emit** — rate-based or burst emission into CPU SoA slots via O(1) free-list allocation (`free_slot_count()` for diagnostics)
-- **Simulate** — gravity, drag, lifetime aging, size/color/alpha interpolation over `parallel_for` (serial when the job scheduler is single-threaded); non-positive `dt` and disabled emitters are no-ops
+- **Simulate** — gravity, drag, lifetime aging, size/color/alpha interpolation through `kernel::launch` (`particle_update` + `particle_compact`; CpuReference below 16384 slots, CpuParallel above, bit-identical); non-positive `dt` and disabled emitters are no-ops
 - **Collide** — when `collide_with_world` is set, each live particle is resolved against the analytic SDF colliders in `ParticleEmitterDesc::colliders` (planes and solid spheres): pushed back to the surface, normal velocity reflected with `restitution`, tangential velocity scaled by `1 - friction`
 - **Rate emission** — the emitter accumulates `emit_rate * dt` in double precision, so the emitted total is exactly `floor(rate * t)` (`total_emitted()`); expired slots are recycled in sorted order, so results are bit-identical for any worker count
 - **Render** — not implemented in this milestone

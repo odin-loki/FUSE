@@ -7,7 +7,17 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
 #endif
 
 namespace b5hooks {
@@ -26,8 +36,15 @@ std::uint32_t g_currentPush = UINT32_MAX;
 namespace detail {
 
 void* nextSymbol(const char* name) {
+#if defined(_WIN32)
+    // PE has no RTLD_NEXT: the hooks defined here win over the vulkan-1.lib import stubs at link
+    // time, and the real entry points are the loader DLL's exports.
+    static const HMODULE loader = ::LoadLibraryA("vulkan-1.dll");
+    return loader != nullptr ? reinterpret_cast<void*>(::GetProcAddress(loader, name)) : nullptr;
+#else
     void* fn = dlsym(RTLD_NEXT, name);
     return fn;
+#endif
 }
 
 void recordCreate(std::uint32_t type, std::uint64_t handle, const char* createdBy) {

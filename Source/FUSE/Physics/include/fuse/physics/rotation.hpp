@@ -12,11 +12,11 @@ namespace fuse::physics {
 /// Rigid-body rotation helpers: quaternion algebra, oriented shape bounds and the diagonal
 /// body-frame inverse inertia used by the XPBD solver (orientation-aware generalized masses).
 
-FUSE_PHYSICS_INLINE bool isIdentity(const quat& q) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE bool isIdentity(const quat& q) {
     return q.x == 0.f && q.y == 0.f && q.z == 0.f;
 }
 
-FUSE_PHYSICS_INLINE quat quatMul(const quat& a, const quat& b) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE quat quatMul(const quat& a, const quat& b) {
     return {
         a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
         a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
@@ -25,11 +25,11 @@ FUSE_PHYSICS_INLINE quat quatMul(const quat& a, const quat& b) {
     };
 }
 
-FUSE_PHYSICS_INLINE quat quatConjugate(const quat& q) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE quat quatConjugate(const quat& q) {
     return {-q.x, -q.y, -q.z, q.w};
 }
 
-FUSE_PHYSICS_INLINE quat quatNormalize(const quat& q) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE quat quatNormalize(const quat& q) {
     const f32 lenSq = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
     if (lenSq < 1e-20f) {
         return {};
@@ -39,14 +39,14 @@ FUSE_PHYSICS_INLINE quat quatNormalize(const quat& q) {
 }
 
 /// Rotation of `angle` radians about the unit `axis`.
-FUSE_PHYSICS_INLINE quat quatFromAxisAngle(vec3 axis, f32 angle) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE quat quatFromAxisAngle(vec3 axis, f32 angle) {
     const vec3 n = axis.normalized();
     const f32 s = std::sin(0.5f * angle);
     return {n.x * s, n.y * s, n.z * s, std::cos(0.5f * angle)};
 }
 
 /// v' = q v q*.
-FUSE_PHYSICS_INLINE vec3 rotate(const quat& q, vec3 v) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE vec3 rotate(const quat& q, vec3 v) {
     if (isIdentity(q)) {
         return v;
     }
@@ -56,18 +56,18 @@ FUSE_PHYSICS_INLINE vec3 rotate(const quat& q, vec3 v) {
 }
 
 /// v' = q* v q (world -> body frame).
-FUSE_PHYSICS_INLINE vec3 inverseRotate(const quat& q, vec3 v) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE vec3 inverseRotate(const quat& q, vec3 v) {
     return rotate(quatConjugate(q), v);
 }
 
 /// Integrates q by the rotation vector `theta` (angular velocity * dt): q + 0.5 [theta, 0] q.
-FUSE_PHYSICS_INLINE quat integrateRotation(const quat& q, vec3 theta) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE quat integrateRotation(const quat& q, vec3 theta) {
     const quat spin = quatMul({theta.x, theta.y, theta.z, 0.f}, q);
     return quatNormalize({q.x + 0.5f * spin.x, q.y + 0.5f * spin.y, q.z + 0.5f * spin.z, q.w + 0.5f * spin.w});
 }
 
 /// Rotates q by the rotation vector `theta` exactly (exponential map): exp(theta / 2) q.
-FUSE_PHYSICS_INLINE quat applyRotationVector(const quat& q, vec3 theta) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE quat applyRotationVector(const quat& q, vec3 theta) {
     const f32 angle = theta.length();
     if (angle < 1e-12f) {
         return q;
@@ -78,7 +78,7 @@ FUSE_PHYSICS_INLINE quat applyRotationVector(const quat& q, vec3 theta) {
 
 /// Angular velocity carrying `from` to `to` over `dt` along the shortest arc (logarithm map, the
 /// exact inverse of `applyRotationVector`).
-FUSE_PHYSICS_INLINE vec3 angularVelocityBetween(const quat& from, const quat& to, f32 dt) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE vec3 angularVelocityBetween(const quat& from, const quat& to, f32 dt) {
     quat delta = quatMul(to, quatConjugate(from));
     if (delta.w < 0.f) {
         delta = {-delta.x, -delta.y, -delta.z, -delta.w};
@@ -93,7 +93,7 @@ FUSE_PHYSICS_INLINE vec3 angularVelocityBetween(const quat& from, const quat& to
 }
 
 /// World-space inverse inertia applied to `v`: R diag(invInertiaLocal) R^T v.
-FUSE_PHYSICS_INLINE vec3 applyInverseInertia(const quat& q, vec3 invInertiaLocal, vec3 v) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE vec3 applyInverseInertia(const quat& q, vec3 invInertiaLocal, vec3 v) {
     if (isIdentity(q)) {
         return {v.x * invInertiaLocal.x, v.y * invInertiaLocal.y, v.z * invInertiaLocal.z};
     }
@@ -102,7 +102,7 @@ FUSE_PHYSICS_INLINE vec3 applyInverseInertia(const quat& q, vec3 invInertiaLocal
 }
 
 /// Generalized inverse mass of a unit direction `n` applied at arm `r`: 1/m + (r x n)^T I^-1 (r x n).
-FUSE_PHYSICS_INLINE f32 generalizedInverseMass(f32 invMass, const quat& q, vec3 invInertiaLocal, vec3 r, vec3 n) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE f32 generalizedInverseMass(f32 invMass, const quat& q, vec3 invInertiaLocal, vec3 r, vec3 n) {
     if (invInertiaLocal.x == 0.f && invInertiaLocal.y == 0.f && invInertiaLocal.z == 0.f) {
         return invMass;
     }
@@ -111,7 +111,7 @@ FUSE_PHYSICS_INLINE f32 generalizedInverseMass(f32 invMass, const quat& q, vec3 
 }
 
 /// World half extents of the AABB enclosing an oriented box.
-FUSE_PHYSICS_INLINE vec3 orientedBoxHalfExtents(const quat& q, vec3 halfExtents) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE vec3 orientedBoxHalfExtents(const quat& q, vec3 halfExtents) {
     if (isIdentity(q)) {
         return halfExtents;
     }
@@ -123,13 +123,13 @@ FUSE_PHYSICS_INLINE vec3 orientedBoxHalfExtents(const quat& q, vec3 halfExtents)
 }
 
 /// World half extents of the AABB enclosing a capsule (local Y axis, radius params.x, half height params.y).
-FUSE_PHYSICS_INLINE vec3 orientedCapsuleHalfExtents(const quat& q, vec3 params) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE vec3 orientedCapsuleHalfExtents(const quat& q, vec3 params) {
     const vec3 axis = rotate(q, {0.f, params.y, 0.f});
     return {std::fabs(axis.x) + params.x, std::fabs(axis.y) + params.x, std::fabs(axis.z) + params.x};
 }
 
 /// Capsule segment half-axis in world space (centre +- this vector are the cap centres).
-FUSE_PHYSICS_INLINE vec3 capsuleHalfAxis(const quat& q, f32 halfHeight) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE vec3 capsuleHalfAxis(const quat& q, f32 halfHeight) {
     return rotate(q, {0.f, halfHeight, 0.f});
 }
 
@@ -137,7 +137,7 @@ FUSE_PHYSICS_INLINE vec3 capsuleHalfAxis(const quat& q, f32 halfHeight) {
 /// w x (I w) for a body with diagonal body-frame inertia. Unlike the explicit form it is
 /// dissipative rather than energy-pumping, so free tumbling stays bounded. `invInertiaLocal` must be
 /// non-zero.
-FUSE_PHYSICS_INLINE vec3 implicitGyroscopicStep(const quat& q, vec3 invInertiaLocal, vec3 omega, f32 dt) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE vec3 implicitGyroscopicStep(const quat& q, vec3 invInertiaLocal, vec3 omega, f32 dt) {
     const vec3 inertia{1.f / invInertiaLocal.x, 1.f / invInertiaLocal.y, 1.f / invInertiaLocal.z};
     const f32 spread = std::max(inertia.x, std::max(inertia.y, inertia.z)) -
                        std::min(inertia.x, std::min(inertia.y, inertia.z));
@@ -167,7 +167,7 @@ FUSE_PHYSICS_INLINE vec3 implicitGyroscopicStep(const quat& q, vec3 invInertiaLo
 /// Diagonal body-frame inverse inertia of a solid shape with inverse mass `invMass`
 /// (sphere radius params.x; box half extents params; capsule radius params.x, half height params.y
 /// along local Y). Zero for massless bodies and for planes.
-FUSE_PHYSICS_INLINE vec3 shapeInverseInertia(CollisionShapeType type, vec3 params, f32 invMass) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE vec3 shapeInverseInertia(CollisionShapeType type, vec3 params, f32 invMass) {
     if (invMass <= 0.f) {
         return {};
     }

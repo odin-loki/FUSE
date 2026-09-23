@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/math/vec.hpp>
 #include <fuse/types.hpp>
 
@@ -52,13 +53,24 @@ enum class RayMarcherMode : u8 { Stub, CpuReference, Cuda };
 
 struct RayMarcherInfo {
     bool valid = false;
+    /// Backend compiled in (Cuda when built with FUSE_HAS_CUDA).
     RayMarcherMode mode = RayMarcherMode::Stub;
+    /// A CUDA device is usable right now; without one every launch falls back to the CPU backends.
+    bool device_available = false;
 };
 
 RayMarcherInfo ray_marcher_info();
 
-/// Host launcher — CUDA path when `FUSE_HAS_CUDA=1`, CPU reference otherwise.
+/// Host launcher: `launch_ray_march_on(Backend::Auto, ...)` — CUDA when built with `FUSE_HAS_CUDA` and a
+/// device is present, CpuParallel otherwise. The kernel body is fuse/compute/ray_march_kernel.hpp.
 bool launch_ray_march(const RayMarchParams& params, void* stream = nullptr);
+
+/// Full-frame launch on an explicit backend (kernel / profiler / stats name "sdf_ray_march"). GPU
+/// backends that cannot run here fall back to CpuParallel. False on invalid parameters.
+bool launch_ray_march_on(kernel::Backend backend, const RayMarchParams& params, void* stream = nullptr);
+
+/// CPU-only form of launch_ray_march_on (compiled without any CUDA dependency).
+bool launch_ray_march_cpu_backend(kernel::Backend backend, const RayMarchParams& params);
 
 /// CPU sphere-tracing reference for unit tests (returns hit distance, or -1 on miss).
 f32 ray_march_center_hit_distance(const RayMarchParams& params);
@@ -76,7 +88,7 @@ f32 ray_march_scene_distance(const RayMarchParams& params, const math::Vec3& pos
 /// Returns +Y where the gradient vanishes (empty scene / medial singularity).
 math::Vec3 ray_march_scene_normal(const RayMarchParams& params, const math::Vec3& position);
 
-/// CPU reference full-frame trace into the host surfaces; false on invalid parameters.
+/// CPU reference (serial, deterministic) full-frame trace into the host surfaces; false on invalid parameters.
 bool launch_ray_march_cpu(const RayMarchParams& params);
 
 } // namespace fuse::compute

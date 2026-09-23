@@ -124,7 +124,8 @@ void testHalfConversionAgainstReference() {
     expectTrue(std::isinf(GBufferQuantize::toHalf(65520.f)), "65520 rounds to inf");
     expectTrue(GBufferQuantize::toHalf(std::ldexp(1.f, -24)) == std::ldexp(1.f, -24), "smallest subnormal");
 
-#if defined(__FLT16_MAX__)
+// clang-cl defines __FLT16_MAX__ but links no compiler-rt (__truncsfhf2); cl.exe has no _Float16.
+#if defined(__FLT16_MAX__) && !defined(_MSC_VER)
     // Independent reference: the compiler's own IEEE binary16 conversion.
     std::mt19937 rng(7u);
     std::uniform_real_distribution<float> expo(-30.f, 17.f);

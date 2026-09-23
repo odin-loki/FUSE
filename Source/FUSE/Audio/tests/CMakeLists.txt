@@ -48,3 +48,10 @@ if(FUSE_AUDIO_HAS_OPENAL)
         LABELS "gate"
         ENVIRONMENT "ALSOFT_DRIVERS=null;ALSOFT_CONF=/dev/null")
 endif()
+
+# Single-source "reverb_fft" / "reverb_cmac" kernel gate (docs/compute-kernels.md): backend parity,
+# accuracy vs direct convolution, delay-line reuse, zero steady-state allocations, stats, fallback, timing.
+add_executable(fuse_reverb_fft_kernel_parity test_reverb_fft_kernel_parity.cpp)
+target_link_libraries(fuse_reverb_fft_kernel_parity PRIVATE fuse_audio fuse_core)
+add_test(NAME fuse_reverb_fft_kernel_parity COMMAND fuse_reverb_fft_kernel_parity)
+set_tests_properties(fuse_reverb_fft_kernel_parity PROPERTIES LABELS "gate" TIMEOUT 300)

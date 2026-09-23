@@ -1,44 +1,40 @@
+// CPU entry points of the clustered deferred shade. The point-light / reconstruction math lives once
+// in fuse/renderer/lighting/clustered_kernel.hpp (FUSE_HOST_DEVICE); the full-frame shade is the
+// `deferred_shading` kernel launched through kernel::launch.
+
 #include <fuse/renderer/lighting/clustered_shading.hpp>
+
+#include <fuse/compute_kernel/launch.hpp>
+#include <fuse/compute_kernel/stats.hpp>
+#include <fuse/renderer/lighting/clustered_kernel.hpp>
 
 #include <algorithm>
 #include <cmath>
 
 namespace fuse::renderer {
 
+#if defined(FUSE_HAS_CUDA)
+/// kernels/clustered_lighting.cu: stages the G-buffer, lights and light grid and runs the shade body.
+bool launchDeferredShadingCuda(const clustered_kernel::ShadeParams& params, void* stream);
+#endif
+
 f32 clustered_shading::pointLightFalloff(f32 distance, f32 radius) {
-    if (!(radius > 0.f) || !(distance < radius)) {
-        return 0.f;
-    }
-    const f32 ratio = distance / radius;
-    const f32 ratio2 = ratio * ratio;
-    const f32 window = std::clamp(1.f - ratio2 * ratio2, 0.f, 1.f);
-    return (window * window) / std::max(distance * distance, 1e-4f);
+    return clustered_kernel::point_light_falloff(distance, radius);
 }
 
 fuse::math::Vec3 clustered_shading::pointLightContribution(const PointLightInput& light,
                                                            const DeferredSurfaceSample& surface) {
-    const fuse::math::Vec3 toLight = light.position - surface.worldPos;
-    const f32 distance = toLight.length();
-    const f32 falloff = pointLightFalloff(distance, light.radius);
-    if (falloff == 0.f) {
-        return {};
-    }
-    const f32 nDotL = std::max(surface.normal.dot(toLight * (1.f / std::max(distance, 1e-6f))), 0.f);
-    const f32 scale = light.intensity * falloff * nDotL;
-    return {light.color.x * surface.albedo.x * scale,
-            light.color.y * surface.albedo.y * scale,
-            light.color.z * surface.albedo.z * scale};
+    return clustered_kernel::point_light_contribution(light, surface.worldPos, surface.normal, surface.albedo);
 }
 
 fuse::math::Vec3 clustered_shading::shadeAllLights(const std::vector<PointLightInput>& lights,
                                                    const DeferredSurfaceSample& surface,
                                                    u64* outEvaluations) {
-    fuse::math::Vec3 radiance{};
-    for (const PointLightInput& light : lights) {
-        radiance = radiance + pointLightContribution(light, surface);
-    }
+    u32 evaluations = 0u;
+    const fuse::math::Vec3 radiance = clustered_kernel::shade_all_lights(
+        {lights.data(), static_cast<u32>(lights.size())}, surface.worldPos, surface.normal, surface.albedo, evaluations);
     if (outEvaluations != nullptr) {
-        *outEvaluations += lights.size();
+        *outEvaluations += evaluations;
     }
     return radiance;
 }
@@ -48,21 +44,12 @@ fuse::math::Vec3 clustered_shading::shadeClusterLights(const ClusterGridSoA& gri
                                                        const std::vector<PointLightInput>& lights,
                                                        const DeferredSurfaceSample& surface,
                                                        u64* outEvaluations) {
-    fuse::math::Vec3 radiance{};
-    if (clusterIdx >= grid.grid.size()) {
-        return radiance;
-    }
-    const ClusterGridEntry& entry = grid.grid[clusterIdx];
-    const u32 end = std::min(entry.offset + entry.count, static_cast<u32>(grid.lightList.size()));
-    u64 evaluations = 0u;
-    for (u32 i = entry.offset; i < end; ++i) {
-        const u32 lightIdx = grid.lightList[i];
-        if (lightIdx >= lights.size()) {
-            continue; // Spot light (encoded after point lights) — not handled by this reference.
-        }
-        radiance = radiance + pointLightContribution(lights[lightIdx], surface);
-        ++evaluations;
-    }
+    u32 evaluations = 0u;
+    const fuse::math::Vec3 radiance = clustered_kernel::shade_cluster_lights(
+        {grid.grid.data(), static_cast<u32>(grid.grid.size())},
+        {grid.lightList.data(), static_cast<u32>(grid.lightList.size())}, clusterIdx,
+        {lights.data(), static_cast<u32>(lights.size())}, surface.worldPos, surface.normal, surface.albedo,
+        evaluations);
     if (outEvaluations != nullptr) {
         *outEvaluations += evaluations;
     }
@@ -91,7 +78,8 @@ DeferredShadeStats clustered_shading::shadeDeferredFrame(const DeferredGBufferVi
                                                          const ClusterGridSoA& grid,
                                                          const std::vector<PointLightInput>& lights,
                                                          bool useClusters,
-                                                         std::vector<fuse::math::Vec3>& outRadiance) {
+                                                         std::vector<fuse::math::Vec3>& outRadiance,
+                                                         kernel::Backend backend) {
     DeferredShadeStats stats{};
     const usize pixelCount = static_cast<usize>(gbuffer.width) * gbuffer.height;
     outRadiance.assign(pixelCount, fuse::math::Vec3{});
@@ -100,36 +88,41 @@ DeferredShadeStats clustered_shading::shadeDeferredFrame(const DeferredGBufferVi
         return stats;
     }
 
-    const f32 invWidth = 1.f / static_cast<f32>(gbuffer.width);
-    const f32 invHeight = 1.f / static_cast<f32>(gbuffer.height);
-    for (u32 py = 0; py < gbuffer.height; ++py) {
-        for (u32 px = 0; px < gbuffer.width; ++px) {
-            const usize pixel = static_cast<usize>(py) * gbuffer.width + px;
-            const f32 screenX = (static_cast<f32>(px) + 0.5f) * invWidth;
-            const f32 screenY = (static_cast<f32>(py) + 0.5f) * invHeight;
-
-            DeferredSurfaceSample surface{};
-            f32 viewDepth = 0.f;
-            if (!reconstructWorldPosition(camera, screenX, screenY, gbuffer.deviceDepth[pixel], surface.worldPos,
-                                          viewDepth)) {
-                ++stats.skippedPixels;
-                continue;
-            }
-            u32 clusterIdx = 0u;
-            if (!ClusterGridLayout::mapScreenDepthToClusterIndex(screenX, screenY, viewDepth, desc, camera,
-                                                                 clusterIdx)) {
-                ++stats.skippedPixels;
-                continue;
-            }
-            surface.normal = gbuffer.normals[pixel];
-            surface.albedo = gbuffer.albedo[pixel];
-
-            outRadiance[pixel] = useClusters
-                                     ? shadeClusterLights(grid, clusterIdx, lights, surface, &stats.lightEvaluations)
-                                     : shadeAllLights(lights, surface, &stats.lightEvaluations);
-            ++stats.shadedPixels;
-        }
+    u32 shaded = 0u;
+    u32 skipped = 0u;
+    u32 evaluations[2] = {0u, 0u};
+    clustered_kernel::ShadeParams params{};
+    params.width = gbuffer.width;
+    params.height = gbuffer.height;
+    params.inv_width = 1.f / static_cast<f32>(gbuffer.width);
+    params.inv_height = 1.f / static_cast<f32>(gbuffer.height);
+    params.grid = clustered_kernel::make_grid(desc);
+    params.camera = clustered_kernel::make_camera(camera);
+    params.device_depth = gbuffer.deviceDepth;
+    params.normals = gbuffer.normals;
+    params.albedo = gbuffer.albedo;
+    params.lights = {lights.data(), static_cast<u32>(lights.size())};
+    params.cluster_grid = {grid.grid.data(), static_cast<u32>(grid.grid.size())};
+    params.light_list = {grid.lightList.data(), static_cast<u32>(grid.lightList.size())};
+    params.use_clusters = useClusters;
+    params.out_radiance = outRadiance.data();
+    params.shaded_pixels = &shaded;
+    params.skipped_pixels = &skipped;
+    params.evaluations = evaluations;
+    bool onDevice = false;
+#if defined(FUSE_HAS_CUDA)
+    onDevice = (backend == kernel::Backend::Cuda || backend == kernel::Backend::Auto) &&
+               kernel::backend_available(kernel::Backend::Cuda) && launchDeferredShadingCuda(params, nullptr);
+#endif
+    if (!onDevice) {
+        // CPU backends, or a GPU backend that cannot run here: kernel::launch resolves the fallback.
+        kernel::launch(backend, clustered_kernel::make_shade_launch(gbuffer.width, gbuffer.height),
+                       clustered_kernel::ShadeKernel{}, params);
     }
+
+    stats.shadedPixels = shaded;
+    stats.skippedPixels = skipped;
+    stats.lightEvaluations = (static_cast<u64>(evaluations[1]) << 32u) | evaluations[0];
     return stats;
 }
 

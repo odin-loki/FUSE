@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/math/vec.hpp>
 #include <fuse/ssfx/ssfx_view.hpp>
 #include <fuse/types.hpp>
@@ -55,7 +56,10 @@ SsrHit ssrTraceRay(const SsfxGBufferView& view, const math::Vec3* sceneColor, co
 
 /// Full-frame CPU SSR. `reflectiveMask` (optional, `width * height`) skips pixels where it is <= 0.
 /// Writes reflected colour (unfaded) and confidence per pixel; either output may be null.
+/// Launches the single-source `ssr_kernel` ("screen_space_reflections") on `backend` (CPU backends: host
+/// surfaces; CpuReference and CpuParallel are bit-identical).
 bool computeSsrCpu(const SsfxGBufferView& view, const math::Vec3* sceneColor, const SsrParams& params,
-                   const f32* reflectiveMask, math::Vec3* colorOut, f32* confidenceOut);
+                   const f32* reflectiveMask, math::Vec3* colorOut, f32* confidenceOut,
+                   kernel::Backend backend = kernel::Backend::CpuReference);
 
 } // namespace fuse::ssfx

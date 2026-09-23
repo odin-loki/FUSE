@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/math/vec.hpp>
 #include <fuse/renderer/gi/ddgi.hpp>
 #include <fuse/renderer/material/material.hpp>
@@ -120,9 +121,9 @@ DdgiRayRotation updateRotation(u64 seed, u32 frame_index);
 /// Direction of the centre of interior texel (x, y) of a `res` x `res` octahedral tile.
 fuse::math::Vec3 texelDirection(u32 x, u32 y, u32 res);
 /// Fill the 1-texel border of a (res+2)^2 tile from its interior (octahedral wrap).
-/// `stride` elements separate rows; T is copy-assignable.
+/// `stride` elements separate rows; T is copy-assignable. Device-safe (the DDGI blend kernel's phase 4).
 template <typename T>
-void copyOctahedralBorder(T* tile, u32 res, u32 stride) {
+FUSE_HOST_DEVICE inline void copyOctahedralBorder(T* tile, u32 res, u32 stride) {
     const u32 last = res + 1u;
     for (u32 i = 1u; i <= res; ++i) {
         const u32 mirror = last - i;
@@ -162,7 +163,8 @@ public:
     /// Bordered tile edge in texels: depth_res + 2.
     u32 distanceTileSize() const { return m_desc.depth_res + 2u; }
 
-    /// Rolling update: schedule `probes_per_frame` probes for `frame_index` and update them.
+    /// Rolling update: schedule `probes_per_frame` probes (scaled by kernel::LoadScale::probes) for
+    /// `frame_index` and update them.
     DdgiCpuUpdateStats update(const DdgiCpuScene& scene, u32 frame_index);
     /// Trace + blend an explicit probe list with the ray rotation for `frame_index`.
     DdgiCpuUpdateStats updateProbes(const DdgiCpuScene& scene,
@@ -189,17 +191,17 @@ public:
     /// backface (wrap) and Chebyshev visibility weights.
     fuse::math::Vec3 sampleIrradiance(const fuse::math::Vec3& position, const fuse::math::Vec3& normal) const;
 
+    /// Backend of the probe trace + blend launches (fuse/renderer/gi/ddgi_probe_kernel.hpp). CpuParallel
+    /// (default) and CpuReference are bit-identical; Cuda / Auto use the device when one is present
+    /// (FUSE_HAS_CUDA builds) and otherwise fall back to CpuParallel (recorded in the kernel stats).
+    void setBackend(kernel::Backend backend) { m_backend = backend; }
+    kernel::Backend backend() const { return m_backend; }
+    /// Bordered irradiance tiles (probe-major, (irradiance_res + 2)^2 texels each, E/pi).
+    const std::vector<fuse::math::Vec3>& irradianceAtlas() const { return m_irradiance; }
+    /// Bordered distance-moment tiles (probe-major, (depth_res + 2)^2 texels each).
+    const std::vector<fuse::math::Vec2>& distanceAtlas() const { return m_distance; }
+
 private:
-    fuse::math::Vec3 traceRadiance(const DdgiCpuScene& scene,
-                                   const fuse::math::Vec3& origin,
-                                   const fuse::math::Vec3& direction,
-                                   f32& out_distance) const;
-    void blendProbe(u32 probe_index,
-                    const fuse::math::Vec3* ray_dirs,
-                    const fuse::math::Vec3* radiance,
-                    const f32* distances,
-                    u32 ray_count,
-                    DdgiCpuUpdateStats& stats);
     usize irradianceOffset(u32 probe_index) const;
     usize distanceOffset(u32 probe_index) const;
 
@@ -214,8 +216,9 @@ private:
     std::vector<f32> m_scratch_distance;
     std::vector<fuse::math::Vec3> m_scratch_texel_dirs;
     std::vector<fuse::math::Vec3> m_scratch_distance_dirs;
-    std::vector<fuse::math::Vec3> m_scratch_incoming;
-    std::vector<u8> m_scratch_valid;
+    std::vector<fuse::math::Vec4> m_scratch_incoming;
+    std::vector<u8> m_scratch_seen;
+    kernel::Backend m_backend = kernel::Backend::CpuParallel;
     bool m_ready = false;
 };
 

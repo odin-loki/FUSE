@@ -55,13 +55,13 @@
 #define FUSE_B7_LINUX 1
 #endif
 
-// AddressSanitizer owns SIGSEGV/SIGFPE (it ignores user sigaction for them unless told otherwise),
-// so the fault-signal probes run in the plain Debug/Release builds; sanitizer builds keep the
-// SIGABRT, leak and ownership gates.
-#if defined(__SANITIZE_ADDRESS__)
+// AddressSanitizer / ThreadSanitizer own SIGSEGV/SIGFPE (they ignore user sigaction for them unless
+// told otherwise), so the fault-signal probes run in the plain Debug/Release builds; sanitizer builds
+// keep the SIGABRT, leak and ownership gates.
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
 #define FUSE_B7_ASAN 1
 #elif defined(__has_feature)
-#if __has_feature(address_sanitizer)
+#if __has_feature(address_sanitizer) || __has_feature(thread_sanitizer)
 #define FUSE_B7_ASAN 1
 #endif
 #endif
@@ -870,7 +870,7 @@ int main() {
     constexpr bool kAsanBuild = false;
 #endif
     if (kAsanBuild) {
-        std::printf("  AddressSanitizer build: fault-signal crash probes skipped (ASan owns SIGSEGV/SIGFPE)\n");
+        std::printf("  Sanitizer build: fault-signal crash probes skipped (ASan/TSan own SIGSEGV/SIGFPE)\n");
     } else {
         testNullDereferenceReport();
         testDivideByZeroReport();

@@ -526,9 +526,15 @@ void testParticleSystemSpawnAndUpdate() {
         expectTrue(gpuRequested.backend_kind() ==
                        (cudaUsable ? fuse::vfx::VfxBackendKind::Cuda : fuse::vfx::VfxBackendKind::CpuReference),
                    "gpu_simulation reports Cuda only with a CUDA kernel + device");
-        expectTrue(!fuse::vfx::particle_cuda_kernel_available(), "no CUDA particle kernel built yet");
+        // The kernel counts as available only when compiled in (FUSE_HAS_CUDA) AND a device is usable.
+#if defined(FUSE_HAS_CUDA)
+        expectTrue(fuse::vfx::particle_cuda_kernel_available() == fuse::jobs::cudaJobsAvailable(),
+                   "CUDA particle kernel available exactly when a CUDA device is usable");
+#else
+        expectTrue(!fuse::vfx::particle_cuda_kernel_available(), "no CUDA particle kernel without FUSE_HAS_CUDA");
         expectTrue(gpuRequested.backend_kind() == fuse::vfx::VfxBackendKind::CpuReference,
                    "gpu_simulation request still reports the CPU path it runs");
+#endif
         gpuRequested.destroy();
     }
 

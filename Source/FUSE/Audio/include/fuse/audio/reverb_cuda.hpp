@@ -5,8 +5,10 @@
 
 namespace fuse::audio {
 
-/// CUDA convolution reverb facade — uses GPU when compiled with FUSE_AUDIO_CUDA, else the CPU
-/// overlap-add path (\ref ConvReverbCpu) so output is identical in headless / non-CUDA builds.
+/// CUDA convolution reverb facade over the partitioned FFT plan of \ref ConvReverbCpu: the same
+/// single-source "reverb_fft" / "reverb_cmac" kernels run on a CUDA device mirror when a device is
+/// present, else each launch requests Backend::Cuda and falls back to CpuParallel (recorded in the
+/// kernel stats), so output matches the CPU reverb in headless / non-CUDA builds.
 class ReverbCuda {
 public:
     bool available() const { return m_cudaAvailable; }

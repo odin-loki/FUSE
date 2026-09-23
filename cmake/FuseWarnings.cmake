@@ -3,9 +3,23 @@
 # Release, Profile, Shipping — zero warnings with -Wall -Wextra" and "Shipping
 # build compiles with zero warnings".
 #
-#   FUSE_WARNINGS=ON (default)          -Wall -Wextra (GNU/Clang), /W3 (MSVC)
+#   FUSE_WARNINGS=ON (default)          -Wall -Wextra (GNU/Clang), /W3 (MSVC), /W4 (clang-cl)
 #   FUSE_WARNINGS_AS_ERRORS=OFF (default) adds -Werror (/WX); ON in the CI
 #                                        fuse-warnings-as-errors job/presets.
+#
+# MSVC-style front ends (cl.exe and clang-cl; CMake's MSVC variable):
+#   * clang-cl gets /W4 — clang-cl maps /W4 to -Wall -Wextra, while a literal -Wall (or /Wall)
+#     there means -Weverything, so the GNU branch must never apply to it.
+#   * cl.exe gets /W3 minus the level-2/3 conversion warnings GCC/Clang only emit under
+#     -Wconversion (not part of -Wall -Wextra): C4244/C4267 (integer/float narrowing), C4305
+#     (double -> float truncation), C4146 (unary minus on unsigned, well-defined modular math).
+#   * Every FUSE target (whatever FUSE_WARNINGS says) gets NOMINMAX (windows.h min/max macros
+#     break std::min/std::max/numeric_limits::max) and _CRT_SECURE_NO_WARNINGS /
+#     _CRT_NONSTDC_NO_WARNINGS (C4996 on fopen/getenv/strncpy/POSIX names — portable ISO C
+#     calls, not deprecated anywhere else), plus the conformance options GCC/Clang behave like by
+#     default: /utf-8 (sources and literals are UTF-8; the runner code page would otherwise
+#     re-encode them and raise C4819), /permissive- (two-phase lookup, and/or/not tokens even in
+#     C++17 targets), /Zc:__cplusplus (honest __cplusplus) and /bigobj (large test TUs).
 #
 # Applied once, at the end of the top-level CMakeLists (fuse_warnings_finalize),
 # to every buildsystem target whose SOURCE_DIR lives under Source/FUSE or
@@ -43,11 +57,28 @@ endfunction()
 
 # Call once at the end of the top-level CMakeLists.txt.
 function(fuse_warnings_finalize)
-    if(NOT FUSE_WARNINGS AND NOT FUSE_WARNINGS_AS_ERRORS)
-        return()
-    endif()
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
-        set(_flags)
+    set(_flags)
+    set(_defs)
+    set(_conformance)
+    set(_vendored_flags)
+    if(MSVC)
+        # cl.exe or clang-cl (both take MSVC-style options; see the header comment).
+        set(_defs NOMINMAX _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS)
+        set(_conformance
+            $<$<COMPILE_LANGUAGE:C,CXX>:/utf-8> $<$<COMPILE_LANGUAGE:C,CXX>:/bigobj>
+            $<$<COMPILE_LANGUAGE:CXX>:/permissive-> $<$<COMPILE_LANGUAGE:CXX>:/Zc:__cplusplus>)
+        if(FUSE_WARNINGS)
+            if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+                list(APPEND _flags /W4)
+            else()
+                list(APPEND _flags /W3 /wd4244 /wd4267 /wd4305 /wd4146)
+            endif()
+        endif()
+        if(FUSE_WARNINGS_AS_ERRORS)
+            list(APPEND _flags /WX)
+        endif()
+        set(_vendored_flags /W0)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
         if(FUSE_WARNINGS)
             list(APPEND _flags -Wall -Wextra)
         endif()
@@ -55,17 +86,10 @@ function(fuse_warnings_finalize)
             list(APPEND _flags -Werror)
         endif()
         set(_vendored_flags -w)
-    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-        set(_flags)
-        if(FUSE_WARNINGS)
-            list(APPEND _flags /W3)
-        endif()
-        if(FUSE_WARNINGS_AS_ERRORS)
-            list(APPEND _flags /WX)
-        endif()
-        set(_vendored_flags /W0)
-    else()
+    elseif(FUSE_WARNINGS OR FUSE_WARNINGS_AS_ERRORS)
         message(STATUS "FUSE: FUSE_WARNINGS ignored on ${CMAKE_CXX_COMPILER_ID}")
+    endif()
+    if(NOT _flags AND NOT _defs)
         return()
     endif()
 
@@ -83,6 +107,13 @@ function(fuse_warnings_finalize)
         get_target_property(_sdir ${_t} SOURCE_DIR)
         _fuse_warnings_is_fuse_path("${_sdir}" _is_fuse)
         if(NOT _is_fuse)
+            continue()
+        endif()
+        if(_defs)
+            target_compile_definitions(${_t} PRIVATE ${_defs})
+            target_compile_options(${_t} PRIVATE ${_conformance})
+        endif()
+        if(NOT _flags)
             continue()
         endif()
         target_compile_options(${_t} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:${_flags}>)
@@ -110,6 +141,9 @@ function(fuse_warnings_finalize)
             endif()
         endforeach()
     endforeach()
+    if(NOT _flags)
+        return()
+    endif()
     set(_mode "${_flags}")
     message(STATUS "FUSE: warnings (${_mode}) applied to ${_count} Source/FUSE + Tools/FUSE targets")
 endfunction()

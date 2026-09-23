@@ -1,7 +1,5 @@
 #include <fuse/vfx/particle_system.hpp>
 
-#include <fuse/jobs/cuda_jobs.hpp>
-
 #include <algorithm>
 
 namespace fuse::vfx {
@@ -61,6 +59,7 @@ Handle<ParticleEmitter> ParticleSystem::create_emitter(const ParticleEmitterDesc
 
     ParticleEmitter emitter{};
     emitter.init(desc);
+    emitter.set_gpu_simulation(backend_kind() == VfxBackendKind::Cuda);
     Handle<ParticleEmitter> handle = m_emitters.insert(std::move(emitter));
     m_activeEmitters.push_back(handle);
     return handle;
@@ -151,13 +150,9 @@ u32 ParticleSystem::effect_count() const {
     return static_cast<u32>(m_activeEffects.size());
 }
 
-bool particle_cuda_kernel_available() {
-    // update() only has the CPU SoA path; there is no CUDA particle kernel to dispatch to yet.
-    return false;
-}
-
 VfxBackendKind ParticleSystem::backend_kind() const {
-    if (m_desc.gpu_simulation && particle_cuda_kernel_available() && fuse::jobs::cudaJobsAvailable()) {
+    // particle_cuda_kernel_available() (src/particle_soa_ops.cpp) already requires a usable device.
+    if (m_desc.gpu_simulation && particle_cuda_kernel_available()) {
         return VfxBackendKind::Cuda;
     }
     return VfxBackendKind::CpuReference;

@@ -14,6 +14,8 @@ void PhysicsPipeline::init(const PhysicsPipelineDesc& desc) {
     }
     m_hashParams.cellSize = desc.cellSize;
     m_hashParams.tableSize = desc.maxBodies > 0 ? desc.maxBodies * 2u : 1024u;
+    m_broadphaseKernels.backend = desc.kernelBackend;
+    m_narrowphaseKernels.backend = desc.kernelBackend;
     m_initialized = true;
 }
 
@@ -71,7 +73,11 @@ void PhysicsPipeline::step(f32 dt) {
 
     integrateStub(dt);
 
-    if (m_desc.broadphaseMode == BroadphaseMode::SpatialHash2D) {
+    const bool use2D = m_desc.broadphaseMode == BroadphaseMode::SpatialHash2D;
+    const bool kernels = m_desc.computePath == PhysicsComputePath::Kernels;
+    if (kernels) {
+        broadphase::runBroadphaseKernels(m_bodies, m_shapes, m_hashParams, use2D, m_pairBuffer, m_broadphaseKernels);
+    } else if (use2D) {
         broadphase::runBroadphase2DIntoBuffer(m_bodies, m_shapes, m_hashParams, m_pairBuffer, m_broadphaseScratch);
     } else {
         broadphase::runBroadphaseIntoBuffer(m_bodies, m_shapes, m_hashParams, m_pairBuffer, m_broadphaseScratch);
@@ -79,7 +85,11 @@ void PhysicsPipeline::step(f32 dt) {
     broadphase::refineBroadphasePairsParallelWithPreflight(m_bodies, m_shapes, m_pairBuffer);
     m_pairBuffer.copyTo(m_candidatePairs);
 
-    narrowphase::runNarrowphaseIntoBuffer(m_candidatePairs, m_bodies, m_shapes, m_contactBuffer);
+    if (kernels) {
+        narrowphase::runNarrowphaseKernels(m_candidatePairs, m_bodies, m_shapes, m_contactBuffer, m_narrowphaseKernels);
+    } else {
+        narrowphase::runNarrowphaseIntoBuffer(m_candidatePairs, m_bodies, m_shapes, m_contactBuffer);
+    }
     m_contactBuffer.copyTo(m_contacts);
 }
 

@@ -13,7 +13,7 @@ CPU skeletal animation for Track B7.1 (GPU skinning is not written yet). Impleme
 | `blend_tree.hpp` | `ClipNode`, `BlendNode2`, `BlendSpace1D/2D`, `LayeredBlendNode`, `AdditiveBlendNode`, state machine |
 | `ik_solver.hpp` | FABRIK (forward + backward passes, lengths preserved, reach warm start) and closed-form two-bone IK (AoS + SoA); both write joint rotations |
 | `retarget.hpp` | Name-driven `RetargetMap` bone pairing, manual mapping, and local-TRS pose copy |
-| `skinning.hpp` | CPU linear blend skinning (`Cuda` when `FUSE_HAS_CUDA`) |
+| `skinning.hpp` / `skinning_kernel.hpp` | Linear blend skinning as the single-source `skinning_lbs` kernel (CPU backends; `kernels/skinning.cu` when `FUSE_HAS_CUDA` and a device exists) |
 | `animator.hpp` | Game-thread animator component; builds the bone palette each tick |
 
 ## Clip evaluation

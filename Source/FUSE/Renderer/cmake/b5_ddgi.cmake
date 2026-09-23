@@ -26,3 +26,20 @@ if(FUSE_BUILD_CORE_TESTS)
         RUN_SERIAL TRUE
     )
 endif()
+
+# Single-source DDGI probe update (docs/compute-kernels.md): trace + blend kernel bodies shared by the CPU
+# backends and the CUDA wrapper; ddgi_cpu.cpp launches them through kernel::launch.
+target_sources(fuse_rhi PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/fuse/renderer/gi/ddgi_probe_kernel.hpp
+)
+if(FUSE_CUDA_BACKEND)
+    target_sources(fuse_rhi PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/kernels/ddgi_probe_update.cu)
+endif()
+
+if(FUSE_BUILD_CORE_TESTS)
+    # CpuReference == CpuParallel bit-exact (0/2/4 workers), "ddgi_probe_*" stats, GPU-request fallback.
+    add_executable(fuse_ddgi_kernel_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ddgi_kernel_parity.cpp)
+    target_link_libraries(fuse_ddgi_kernel_parity PRIVATE fuse_rhi)
+    add_test(NAME fuse_ddgi_kernel_parity COMMAND fuse_ddgi_kernel_parity)
+    set_tests_properties(fuse_ddgi_kernel_parity PROPERTIES LABELS "gate" TIMEOUT 300)
+endif()

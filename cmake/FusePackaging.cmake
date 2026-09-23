@@ -172,6 +172,21 @@ string(REPLACE ";" "|" _fuse_required_arg "${_fuse_required_programs}")
 string(REPLACE ";" "|" _fuse_programs_arg "${FUSE_PACKAGE_PROGRAMS}")
 string(REPLACE ";" "|" _fuse_sizes_arg "${FUSE_ICON_SIZES}")
 
+set(_fuse_missing_tools)
+foreach(_t IN LISTS _fuse_required_programs)
+    if(NOT TARGET ${_t})
+        list(APPEND _fuse_missing_tools ${_t})
+    endif()
+endforeach()
+if(_fuse_missing_tools)
+    # Trimmed configurations (e.g. FUSE_BUILD_PROJECT/FUSE_BUILD_TOOLS OFF) have nothing to package.
+    add_test(NAME fuse_package_gate
+        COMMAND "${CMAKE_COMMAND}" -E echo "FUSE_PACKAGE_SKIP: tools not configured: ${_fuse_missing_tools}")
+    set_tests_properties(fuse_package_gate PROPERTIES LABELS "gate;lint"
+        SKIP_REGULAR_EXPRESSION "FUSE_PACKAGE_SKIP: ")
+    return()
+endif()
+
 add_test(NAME fuse_package_gate
     COMMAND "${CMAKE_COMMAND}"
         "-DFUSE_CPACK=${CMAKE_CPACK_COMMAND}"

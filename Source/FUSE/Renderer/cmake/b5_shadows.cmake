@@ -18,3 +18,24 @@ if(FUSE_BUILD_CORE_TESTS)
     target_link_libraries(fuse_csm_guards PRIVATE fuse_rhi)
     add_test(NAME fuse_csm_guards COMMAND fuse_csm_guards)
 endif()
+
+# Single-source `sdf_shadows` pass (docs/compute-kernels.md). The occluder SDF is the ray march's
+# compute::ray_march_kernel::scene_eval: fuse_rhi uses fuse_compute's device-safe headers only (header-only,
+# no link dependency, so fuse_rhi still does not depend on the fuse_compute library).
+target_include_directories(fuse_rhi PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/../../Compute/include>)
+target_sources(fuse_rhi PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/../include/fuse/renderer/shadow/sdf_shadows.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/../include/fuse/renderer/shadow/sdf_shadow_kernel.hpp
+    ${CMAKE_CURRENT_LIST_DIR}/../src/shadow/sdf_shadows.cpp
+)
+if(FUSE_CUDA_BACKEND)
+    target_sources(fuse_rhi PRIVATE ${CMAKE_CURRENT_LIST_DIR}/../kernels/sdf_shadows.cu)
+endif()
+
+if(FUSE_BUILD_CORE_TESTS)
+    # CpuReference == CpuParallel bit-exact (0/2/4 workers), "sdf_shadows" stats, GPU-request fallback.
+    add_executable(fuse_sdf_shadows_kernel_parity ${CMAKE_CURRENT_LIST_DIR}/../tests/test_sdf_shadows_kernel_parity.cpp)
+    target_link_libraries(fuse_sdf_shadows_kernel_parity PRIVATE fuse_rhi)
+    add_test(NAME fuse_sdf_shadows_kernel_parity COMMAND fuse_sdf_shadows_kernel_parity)
+    set_tests_properties(fuse_sdf_shadows_kernel_parity PROPERTIES LABELS "gate" TIMEOUT 300)
+endif()

@@ -210,12 +210,11 @@ void testLaunchRayMarch() {
     std::vector<fuse::f32> depth(params.width * params.height, -2.f);
     params.depth_surface = depth.data();
     expectTrue(fuse::compute::launch_ray_march(params), "launch_ray_march succeeds");
-#if !defined(FUSE_HAS_CUDA)
+    // CUDA device, or (no toolkit / no device) the CpuParallel fallback: either way every pixel is written.
     expectTrue(std::none_of(depth.begin(), depth.end(), [](fuse::f32 v) { return v == -2.f; }),
-               "CPU launch writes every depth pixel");
+               "launch writes every depth pixel");
     const fuse::f32 centre = depth[(params.height / 2) * params.width + params.width / 2];
-    expectTrue(centre > 1.9f && centre < 2.1f, "CPU launch depth near the sphere front at the centre");
-#endif
+    expectTrue(centre > 1.9f && centre < 2.1f, "launch depth near the sphere front at the centre");
 }
 
 void testSubmitCudaJob() {

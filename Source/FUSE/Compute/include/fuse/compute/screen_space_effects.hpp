@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/math/vec.hpp>
 #include <fuse/types.hpp>
 
@@ -10,11 +11,13 @@ enum class ScreenSpaceEffectsMode : u8 { Stub, CpuReference, Cuda };
 struct ScreenSpaceEffectsInfo {
     bool valid = false;
     ScreenSpaceEffectsMode mode = ScreenSpaceEffectsMode::Stub;
+    /// A CUDA device can run the kernels right now (kernel::backend_available(Backend::Cuda)).
+    bool device_available = false;
 };
 
 ScreenSpaceEffectsInfo screen_space_effects_info();
 
-// CPU reference surfaces (`launch_*_cpu`, `*_center_sample`, and `launch_*` without CUDA): every `*_surface` is a
+// Host surfaces (every launcher; the CUDA path stages them in device buffers): every `*_surface` is a
 // tightly packed host array of `width * height` elements, row 0 = top of the image:
 //   depth_surface         const f32*         linear view depth (> 0; <= 0 = sky / no geometry)
 //   normal_surface        const math::Vec3*  unit view-space normals, engine view convention (right-handed, +Y up,
@@ -26,7 +29,7 @@ ScreenSpaceEffectsInfo screen_space_effects_info();
 //   ssr_out_surface       math::Vec4*        rgb = reflected radiance (unfaded), w = confidence in [0, 1]
 //   ssgi_out_surface      math::Vec3*        outgoing indirect radiance
 // `proj` is a column-major perspective projection as built by math::perspective (Vulkan depth range); only the
-// intrinsics are used (focal lengths, principal point, near plane). The CPU path is the fuse_ssfx reference
+// intrinsics are used (focal lengths, principal point, near plane). The kernels are the fuse_ssfx references
 // (HBAO: GTAO-form horizon integral; SSR: perspective-correct screen-space march + bisection; SSGI: stratified
 // cosine-weighted gather traced with the SSR march), shared with the renderer's gate-tested references.
 
@@ -128,12 +131,30 @@ struct SSGIParams {
     f32 intensity = 1.f;
 };
 
-/// Host launchers — CUDA path when `FUSE_HAS_CUDA=1`, CPU reference otherwise.
+// Single-source kernels (docs/compute-kernels.md, fuse/compute/screen_space_kernels.hpp): SSAO runs
+// "screen_space_ao" (+ "screen_space_ao_blur"), SSR "screen_space_reflections", SSGI one "screen_space_gi"
+// launch per bounce. Every backend runs the same FUSE_HOST_DEVICE bodies; CpuReference and CpuParallel
+// produce bit-identical surfaces.
+
+/// Host launchers on the host surfaces: CUDA (staged through device buffers) when a device is available,
+/// otherwise the CpuParallel fallback — `launch_*_on(Backend::Auto, ...)`.
 bool launch_ssao(const SSAOParams& params, void* stream = nullptr);
 bool launch_ssr(const SSRParams& params, void* stream = nullptr);
 bool launch_ssgi(const SSGIParams& params, void* stream = nullptr);
 
-/// CPU reference passes on host surfaces (layout above); always available. False when a parameter is invalid,
+/// Launch on a requested backend. Cuda / Auto use the device when one is available; a GPU backend that cannot
+/// run here falls back to CpuParallel through kernel::launch (recorded in the kernel stats).
+bool launch_ssao_on(kernel::Backend backend, const SSAOParams& params, void* stream = nullptr);
+bool launch_ssr_on(kernel::Backend backend, const SSRParams& params, void* stream = nullptr);
+bool launch_ssgi_on(kernel::Backend backend, const SSGIParams& params, void* stream = nullptr);
+
+/// Host-surface launches through kernel::launch on `backend` (GPU backends fall back to CpuParallel).
+bool launch_ssao_cpu_backend(kernel::Backend backend, const SSAOParams& params);
+bool launch_ssr_cpu_backend(kernel::Backend backend, const SSRParams& params);
+bool launch_ssgi_cpu_backend(kernel::Backend backend, const SSGIParams& params);
+
+/// CPU reference passes on host surfaces (layout above; `launch_*_cpu_backend(Backend::CpuReference, ...)`);
+/// always available. False when a parameter is invalid,
 /// `proj` is not a perspective projection, or a required surface (depth, output, and scene colour for SSR/SSGI)
 /// is null.
 bool launch_ssao_cpu(const SSAOParams& params);

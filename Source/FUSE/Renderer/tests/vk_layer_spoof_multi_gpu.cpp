@@ -36,7 +36,11 @@
 #include <unordered_map>
 #include <vector>
 
-#if defined(_WIN32)
+#if defined(_MSC_VER)
+// vulkan.h already declared these entry points without dllexport (redeclaring with it is
+// ill-formed for cl / clang-cl); vk_followups.cmake exports them with /EXPORT instead.
+#define FUSE_LAYER_EXPORT extern "C"
+#elif defined(_WIN32)
 #define FUSE_LAYER_EXPORT extern "C" __declspec(dllexport)
 #else
 #define FUSE_LAYER_EXPORT extern "C" __attribute__((visibility("default")))

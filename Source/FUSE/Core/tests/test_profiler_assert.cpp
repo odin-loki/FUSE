@@ -2194,7 +2194,9 @@ fuse::u32 countedValue(fuse::u32 value) {
     return value;
 }
 
-void testShippingProfilerMacrosAreStripped() {
+// Only called from an `if constexpr` branch outside shipping: clang (-Wunneeded-internal-declaration)
+// would otherwise flag it in non-shipping builds.
+[[maybe_unused]] void testShippingProfilerMacrosAreStripped() {
     resetState();
     fuse::platform::registerMainThread();
     g_profilerArgEvaluations = 0;

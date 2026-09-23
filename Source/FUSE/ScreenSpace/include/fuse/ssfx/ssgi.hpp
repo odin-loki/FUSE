@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/math/vec.hpp>
 #include <fuse/ssfx/ssfx_view.hpp>
 #include <fuse/types.hpp>
@@ -41,7 +42,10 @@ math::Vec3 ssgiPixelGather(const SsfxGBufferView& view, const math::Vec3* radian
 /// Full-frame CPU SSGI. `directRadiance` is the lit scene colour (linear RGB, `width * height`); `albedo` is the
 /// diffuse albedo per pixel (null = 1). Writes the outgoing indirect radiance
 /// `intensity * albedo * gather(direct + indirect_prev)` after `bounces` iterations. False on bad input.
+/// One launch of the single-source `ssgi_kernel` ("screen_space_gi") per bounce on `backend` (CPU backends:
+/// host surfaces; CpuReference and CpuParallel are bit-identical).
 bool computeSsgiCpu(const SsfxGBufferView& view, const math::Vec3* directRadiance, const math::Vec3* albedo,
-                    const SsgiParams& params, math::Vec3* indirectOut);
+                    const SsgiParams& params, math::Vec3* indirectOut,
+                    kernel::Backend backend = kernel::Backend::CpuReference);
 
 } // namespace fuse::ssfx

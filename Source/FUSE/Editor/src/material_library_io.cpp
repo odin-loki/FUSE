@@ -16,8 +16,8 @@ namespace fuse::editor {
 
 namespace {
 
-constexpr const char* kMagic = "FUSEMATLIB";
-constexpr u32 kVersion = 1u;
+[[maybe_unused]] constexpr const char* kMagic = "FUSEMATLIB";
+[[maybe_unused]] constexpr u32 kVersion = 1u;
 
 #if defined(FUSE_EDITOR_HAS_RHI)
 
