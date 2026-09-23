@@ -200,6 +200,15 @@ everything the player walks next to, 1024 px/m for anything held or seen within 
 5. **Tools versus outputs**: GPL *tools* (Blender, Sverchok, Sapling, MPFB's code) are fine to run;
    their *output* belongs to the user unless the tool embeds licensed assets in it. MPFB's bundled
    assets are CC0 (below).
+6. **FOSS tools and models first**: every tool or AI model that produces assets must be FOSS in
+   both code and weights (OSI-approved licences, or CC0 for weights), run locally on the user's RTX
+   3090 where it needs a GPU, and have every sub-model it loads pass the same test. "Open weights"
+   under community, research or non-commercial licences (Tencent Hunyuan, Llama, Gemma, Stability
+   community, NVIDIA Open Model License, CC-BY-NC, RAIL) are not used. GPL tools run only as
+   separate processes. The single exception is the Gemini API family, chosen by the user as the
+   AI agent; its outputs are tracked as `LicenseRef-AI-Gemini*`. The allow-list, deny-list and
+   per-model checks live in
+   [`FUSE_REMASTER_PLAN.md`](FUSE_REMASTER_PLAN.md) §0.1.0 and §3.4.
 
 ### 2.2 Source catalogue
 
