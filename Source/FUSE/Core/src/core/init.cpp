@@ -1,3 +1,4 @@
+#include <fuse/alloc/leak_detector.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/jobs/worker_count.hpp>
@@ -29,6 +30,9 @@ void shutdown() {
     }
     jobs::JobScheduler::instance().shutdown();
     platform::shutdownCrashHandlers();
+    if constexpr (alloc::kLeakDetectorEnabled) {
+        alloc::LeakDetector::reportLeaks();
+    }
     g_initialized = false;
 }
 

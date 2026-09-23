@@ -238,6 +238,44 @@ target_link_libraries(fuse_core_b1_platform_gates PRIVATE fuse_core)
 add_test(NAME fuse_core_b1_platform_gates COMMAND fuse_core_b1_platform_gates)
 set_tests_properties(fuse_core_b1_platform_gates PROPERTIES LABELS "gate")
 
+# B7.8 platform hardening: crash handler reports (forked crashing children), leak detector.
+add_executable(fuse_core_b7_platform_gates
+    test_b7_platform_gates.cpp
+)
+target_link_libraries(fuse_core_b7_platform_gates PRIVATE fuse_core ${CMAKE_DL_LIBS})
+# Export the crash probes so the report's backtrace symbols and dladdr can name them.
+set_target_properties(fuse_core_b7_platform_gates PROPERTIES ENABLE_EXPORTS ON)
+target_compile_definitions(fuse_core_b7_platform_gates PRIVATE
+    FUSE_B7_SOURCE_ROOT="${CMAKE_SOURCE_DIR}/Source/FUSE")
+add_test(NAME fuse_core_b7_platform_gates COMMAND fuse_core_b7_platform_gates)
+set_tests_properties(fuse_core_b7_platform_gates PROPERTIES LABELS "gate" TIMEOUT 600)
+
+# Shipping strip: every fuse_core public header plus the log/assert/profiler macros compiled with
+# the FUSE_SHIPPING definitions and warnings as errors, then the object is inspected.
+set(_fuse_b7_shipping_headers_cpp "${CMAKE_CURRENT_BINARY_DIR}/b7_shipping_headers.cpp")
+set(_fuse_b7_shipping_includes "// Generated: every fuse_core public header under the shipping definitions.\n")
+foreach(_fuse_b7_header IN LISTS FUSE_CORE_PUBLIC_HEADERS)
+    string(REGEX REPLACE "^include/" "" _fuse_b7_header "${_fuse_b7_header}")
+    string(APPEND _fuse_b7_shipping_includes "#include <${_fuse_b7_header}>\n")
+endforeach()
+file(CONFIGURE OUTPUT "${_fuse_b7_shipping_headers_cpp}" CONTENT "${_fuse_b7_shipping_includes}")
+add_library(fuse_core_b7_shipping_probe OBJECT b7_shipping_probe.cpp "${_fuse_b7_shipping_headers_cpp}")
+target_include_directories(fuse_core_b7_shipping_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+target_compile_definitions(fuse_core_b7_shipping_probe PRIVATE
+    FUSE_SHIPPING=1 FUSE_NO_ASSERT=1 FUSE_NO_LOGGING=1 FUSE_NO_PROFILER=1 FUSE_TRACK_B_UNLOCK=0)
+fuse_apply_cxx23(fuse_core_b7_shipping_probe)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    target_compile_options(fuse_core_b7_shipping_probe PRIVATE -O2 -Wall -Wextra -Werror)
+endif()
+if(CMAKE_NM AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    add_test(NAME fuse_core_b7_shipping_strip
+        COMMAND ${CMAKE_COMMAND}
+            -DNM=${CMAKE_NM}
+            "-DOBJECTS=$<TARGET_OBJECTS:fuse_core_b7_shipping_probe>"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_b7_shipping_strip.cmake)
+    set_tests_properties(fuse_core_b7_shipping_strip PROPERTIES LABELS "gate")
+endif()
+
 # FUSE_ASSERT codegen: Debug objects must call fuse::assertion::fatal, other configs must not.
 add_library(fuse_core_b1_assert_probe OBJECT b1_assert_probe.cpp)
 target_link_libraries(fuse_core_b1_assert_probe PRIVATE fuse_core)

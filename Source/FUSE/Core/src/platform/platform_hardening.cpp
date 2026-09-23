@@ -16,7 +16,6 @@ namespace {
 std::atomic<PowerState> g_powerState{PowerState::Normal};
 std::atomic<AppVisibility> g_appVisibility{AppVisibility::Foreground};
 std::atomic<bool> g_surfaceValid{true};
-std::atomic<bool> g_crashHandlersInstalled{false};
 
 std::vector<LifecycleCallback> g_lifecycleCallbacks;
 std::vector<PowerStateCallback> g_powerStateCallbacks;
@@ -166,15 +165,6 @@ bool isSurfaceValid() {
     return g_surfaceValid.load(std::memory_order_acquire);
 }
 
-bool installCrashHandlers() {
-    g_crashHandlersInstalled.store(true, std::memory_order_release);
-    return true;
-}
-
-void shutdownCrashHandlers() {
-    g_crashHandlersInstalled.store(false, std::memory_order_release);
-}
-
 void setCrashReportCallback(CrashReportCallback callback) {
     const std::lock_guard<std::mutex> lock(g_crashMutex);
     g_crashCallback = std::move(callback);
@@ -190,10 +180,6 @@ void submitCrashReport(const CrashReportContext& context) {
     if (callback) {
         callback(context);
     }
-}
-
-bool crashHandlersInstalled() {
-    return g_crashHandlersInstalled.load(std::memory_order_acquire);
 }
 
 PlatformProfile activeProfile() {

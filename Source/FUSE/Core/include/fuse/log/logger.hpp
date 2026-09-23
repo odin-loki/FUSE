@@ -129,9 +129,22 @@ inline void fatal(const char* fmt, ...) {
 #define FUSE_LOG_AT(level, channel, ...)                                                          \
     ::fuse::log::Logger::instance().logAt((level), (channel), __FILE__,                           \
                                           static_cast<::fuse::u32>(__LINE__), __VA_ARGS__)
+#if defined(FUSE_NO_LOGGING) && FUSE_NO_LOGGING
+namespace fuse::log::detail {
+/// Shipping (B7.8): arguments are still evaluated, but no call, format string or file name is emitted.
+template <typename... Args>
+inline void discardLog(Args&&...) {}
+} // namespace fuse::log::detail
+#define FUSE_LOG_TRACE(...) ::fuse::log::detail::discardLog(__VA_ARGS__)
+#define FUSE_LOG_DEBUG(...) ::fuse::log::detail::discardLog(__VA_ARGS__)
+#define FUSE_LOG_INFO(...) ::fuse::log::detail::discardLog(__VA_ARGS__)
+#define FUSE_LOG_WARN(...) ::fuse::log::detail::discardLog(__VA_ARGS__)
+#define FUSE_LOG_ERROR(...) ::fuse::log::detail::discardLog(__VA_ARGS__)
+#else
 #define FUSE_LOG_TRACE(...) FUSE_LOG_AT(::fuse::log::Level::Trace, ::fuse::log::Channel::Core, __VA_ARGS__)
 #define FUSE_LOG_DEBUG(...) FUSE_LOG_AT(::fuse::log::Level::Debug, ::fuse::log::Channel::Core, __VA_ARGS__)
 #define FUSE_LOG_INFO(...) FUSE_LOG_AT(::fuse::log::Level::Info, ::fuse::log::Channel::Core, __VA_ARGS__)
 #define FUSE_LOG_WARN(...) FUSE_LOG_AT(::fuse::log::Level::Warn, ::fuse::log::Channel::Core, __VA_ARGS__)
 #define FUSE_LOG_ERROR(...) FUSE_LOG_AT(::fuse::log::Level::Error, ::fuse::log::Channel::Core, __VA_ARGS__)
+#endif
 #define FUSE_LOG_FATAL(...) FUSE_LOG_AT(::fuse::log::Level::Fatal, ::fuse::log::Channel::Core, __VA_ARGS__)

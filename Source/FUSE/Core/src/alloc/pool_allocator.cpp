@@ -1,6 +1,7 @@
 #include <fuse/alloc/pool_allocator.hpp>
 
 #include <fuse/alloc/alloc_stats.hpp>
+#include <fuse/alloc/leak_detector.hpp>
 #include <fuse/assert.hpp>
 
 namespace fuse::alloc {
@@ -43,6 +44,9 @@ void* PoolAllocator::alloc(AllocInfo info) {
     void* block = m_storage.data() + static_cast<usize>(blockIndex) * m_blockSize;
     detail::recordBlockAlloc(m_stats, m_blockSize, m_stats.totalBytes);
     notifyStats(m_name, m_stats);
+    if constexpr (kLeakDetectorEnabled) {
+        LeakDetector::recordAlloc(block, info.size, info.tag != nullptr ? info.tag : m_name);
+    }
     return block;
 }
 
@@ -96,6 +100,9 @@ void PoolAllocator::free(void* ptr, usize size) {
 
     ++m_generations[blockIndex];
     m_freeList.push_back(blockIndex);
+    if constexpr (kLeakDetectorEnabled) {
+        LeakDetector::recordFree(ptr);
+    }
     detail::recordFree(m_stats, size > 0 ? size : m_blockSize);
     notifyStats(m_name, m_stats);
 }
@@ -107,6 +114,9 @@ void PoolAllocator::reset() {
         generation += generation & 1u;
     }
     m_doubleFrees = 0;
+    if constexpr (kLeakDetectorEnabled) {
+        LeakDetector::releaseRange(m_storage.data(), m_storage.size());
+    }
     m_freeList.clear();
     for (u32 i = 0; i < m_blockCount; ++i) {
         m_freeList.push_back(m_blockCount - 1u - i);

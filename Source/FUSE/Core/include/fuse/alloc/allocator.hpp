@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/alloc/alloc_stats.hpp>
+#include <fuse/alloc/leak_detector.hpp>
 #include <fuse/types.hpp>
 
 #include <cstddef>
@@ -104,6 +105,9 @@ private:
     }
     void release() {
         if (m_data != nullptr) {
+            if constexpr (kLeakDetectorEnabled) {
+                LeakDetector::releaseRange(m_data, m_size);
+            }
             ::operator delete(m_data, std::align_val_t{kArenaAlignment});
         }
         m_data = nullptr;

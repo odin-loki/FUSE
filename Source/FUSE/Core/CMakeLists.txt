@@ -37,6 +37,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/alloc/ring_allocator.hpp
     include/fuse/alloc/freelist_allocator.hpp
     include/fuse/alloc/domain_budget.hpp
+    include/fuse/alloc/leak_detector.hpp
     include/fuse/io/asset.hpp
     include/fuse/io/vfs.hpp
     include/fuse/jobs/worker_count.hpp
@@ -89,6 +90,7 @@ set(FUSE_CORE_SOURCES
     src/alloc/ring_allocator.cpp
     src/alloc/freelist_allocator.cpp
     src/alloc/domain_budget.cpp
+    src/alloc/leak_detector.cpp
     src/io/vfs.cpp
     src/jobs/worker_count.cpp
     src/jobs/work_steal.cpp
@@ -97,6 +99,7 @@ set(FUSE_CORE_SOURCES
     src/jobs/cuda_jobs.cpp
     src/platform/platform_stub.cpp
     src/platform/platform_hardening.cpp
+    src/platform/crash_handler.cpp
     src/platform/platform_window.cpp
     src/platform/input.cpp
 )
@@ -210,7 +213,7 @@ if(FUSE_PROFILE)
 endif()
 
 if(FUSE_SHIPPING)
-    target_compile_definitions(fuse_core PUBLIC FUSE_NO_ASSERT=1 FUSE_SHIPPING=1)
+    target_compile_definitions(fuse_core PUBLIC FUSE_NO_ASSERT=1 FUSE_SHIPPING=1 FUSE_NO_LOGGING=1 FUSE_NO_PROFILER=1)
 endif()
 
 if(FUSE_CORE_BAN_GLOBAL_NEW)

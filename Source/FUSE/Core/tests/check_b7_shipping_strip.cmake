@@ -1,0 +1,45 @@
+# Usage: cmake -DNM=<nm> -DOBJECTS=<obj;...> -P check_b7_shipping_strip.cmake
+# Binary inspection of the shipping probe object (see b7_shipping_probe.cpp).
+if(NOT NM OR NOT OBJECTS)
+    message(FATAL_ERROR "NM and OBJECTS are required")
+endif()
+set(_undefined "")
+set(_strings "")
+foreach(_obj IN LISTS OBJECTS)
+    execute_process(COMMAND "${NM}" -u "${_obj}" OUTPUT_VARIABLE _u RESULT_VARIABLE _rc)
+    if(NOT _rc EQUAL 0)
+        message(FATAL_ERROR "${NM} failed on ${_obj}")
+    endif()
+    string(APPEND _undefined "${_u}")
+    file(STRINGS "${_obj}" _s)
+    string(APPEND _strings "${_s}")
+endforeach()
+set(_errors "")
+# Debug code that must be gone: assert/verify calls and profiler scopes.
+foreach(_sym IN ITEMS
+        "_ZN4fuse9assertion5fatalEPKcS2_j"
+        "_ZN4fuse8profiler12ProfileScope")
+    string(FIND "${_undefined}" "${_sym}" _pos)
+    if(NOT _pos EQUAL -1)
+        list(APPEND _errors "references ${_sym}")
+    endif()
+endforeach()
+foreach(_text IN ITEMS
+        "b7 shipping assert message" "b7 shipping verify message" "b7.shipping.scope"
+        "b7 shipping trace" "b7 shipping debug" "b7 shipping info" "b7 shipping warn" "b7 shipping error")
+    string(FIND "${_strings}" "${_text}" _pos)
+    if(NOT _pos EQUAL -1)
+        list(APPEND _errors "contains string '${_text}'")
+    endif()
+endforeach()
+# Kept on purpose (guards against a vacuous check): the fatal log call and its message.
+string(FIND "${_strings}" "b7 shipping fatal kept" _fatalText)
+string(FIND "${_undefined}" "_ZN4fuse3log6Logger5logAt" _fatalCall)
+if(_fatalText EQUAL -1 OR _fatalCall EQUAL -1)
+    list(APPEND _errors "fatal log path missing (probe not inspected correctly)")
+endif()
+if(_errors)
+    list(JOIN _errors "; " _msg)
+    message(FATAL_ERROR "shipping strip: ${_msg}")
+endif()
+message(STATUS "shipping strip: no assert/profiler calls or debug strings; fatal log kept")
