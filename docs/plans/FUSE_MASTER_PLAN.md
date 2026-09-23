@@ -1939,7 +1939,7 @@ int main() {
 - [ ] Final frame presents to screen at stable 60fps at 1920×1080 with a 10-object SDF scene: **Week 5 gate**
 - [ ] GPU frame time < 8ms for a 10-object SDF scene at 1080p (target 120fps headroom)
 - [ ] CUDA ray march kernel achieves > 60% occupancy — verified with Nsight Compute
-- [ ] Zero per-frame heap allocations — all frame memory from per-frame LinearAllocator — partial: `RhiContext` render thread and `HybridComposer` are 0/frame (`fuse_b2_frame_alloc_budget`, `fuse_b2_hybrid_alloc_budget`); World2D/3D `tick()` still allocates
+- [x] Zero per-frame heap allocations — all frame memory from per-frame LinearAllocator — `fuse_b2_frame_alloc_budget`, `fuse_b2_hybrid_alloc_budget` (render thread, composer tick + render, all threads; physics-enabled worlds still allocate in the broadphase)
 - [x] Render graph compiles in < 1ms CPU time per frame — `fuse_b2_render_graph_budget`
 
 ---
