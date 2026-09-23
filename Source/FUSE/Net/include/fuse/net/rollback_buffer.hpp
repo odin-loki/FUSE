@@ -63,6 +63,8 @@ private:
     bool m_has_any_frame = false;
 
     [[nodiscard]] std::optional<u32> slot_index_(u32 frame) const;
+    /// Returns the slot for `frame`, resetting it first when it still holds an older frame.
+    u32 claim_slot_(u32 frame);
 };
 
 } // namespace fuse::net

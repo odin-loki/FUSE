@@ -2,6 +2,7 @@
 
 #include <fuse/ecs/components/transform.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <unordered_map>
 
@@ -122,25 +123,45 @@ void ClientInterpolator::receive_state(const EntityNetState& state) {
     }
 
     StateBuffer& buffer = m_buffers[state.entity.index];
-    if (!buffer.has_next) {
-        buffer.next = state;
-        buffer.has_next = true;
-        if (!buffer.has_prev) {
-            buffer.prev = state;
-            buffer.has_prev = true;
+    if (buffer.entity.generation != state.entity.generation && !buffer.states.empty() &&
+        state.entity.generation > buffer.entity.generation) {
+        buffer.states.clear(); // Slot reused by a newer entity generation.
+    } else if (!buffer.states.empty() && state.entity.generation < buffer.entity.generation) {
+        return; // Stale state for a destroyed generation.
+    }
+    buffer.entity = state.entity;
+
+    std::vector<EntityNetState>& states = buffer.states;
+    const auto order = [](const EntityNetState& a, const EntityNetState& b) {
+        if (a.timestamp != b.timestamp) {
+            return a.timestamp < b.timestamp;
         }
+        return a.sequence < b.sequence;
+    };
+
+    for (const EntityNetState& existing : states) {
+        if (existing.sequence == state.sequence && existing.timestamp == state.timestamp) {
+            return; // Duplicate delivery.
+        }
+    }
+
+    // Older than everything retained once the buffer is full: it can no longer be rendered.
+    if (states.size() >= kMaxBufferedStates && order(state, states.front())) {
         return;
     }
 
-    if (state.sequence >= buffer.next.sequence) {
-        buffer.prev = buffer.next;
-        buffer.has_prev = true;
-        buffer.next = state;
-        buffer.has_next = true;
-    } else if (state.sequence > buffer.prev.sequence) {
-        buffer.prev = state;
-        buffer.has_prev = true;
+    states.insert(std::upper_bound(states.begin(), states.end(), state, order), state);
+    if (states.size() > kMaxBufferedStates) {
+        states.erase(states.begin());
     }
+}
+
+usize ClientInterpolator::buffered_state_count(ecs::EntityID entity) const {
+    const auto it = m_buffers.find(entity.index);
+    if (it == m_buffers.end() || it->second.entity.generation != entity.generation) {
+        return 0;
+    }
+    return it->second.states.size();
 }
 
 void ClientInterpolator::update(ecs::Registry& registry, u64 current_time_us) {
@@ -148,28 +169,42 @@ void ClientInterpolator::update(ecs::Registry& registry, u64 current_time_us) {
     const u64 render_time = current_time_us > delay_us ? current_time_us - delay_us : 0ull;
 
     for (auto& [entity_index, buffer] : m_buffers) {
-        if (!buffer.has_prev || !buffer.has_next) {
+        std::vector<EntityNetState>& states = buffer.states;
+        if (states.empty()) {
             continue;
         }
 
-        const u64 span = buffer.next.timestamp > buffer.prev.timestamp
-                               ? buffer.next.timestamp - buffer.prev.timestamp
-                               : 1ull;
-        f32 alpha = 0.f;
-        if (render_time <= buffer.prev.timestamp) {
-            alpha = 0.f;
-        } else if (render_time >= buffer.next.timestamp) {
-            alpha = 1.f;
+        // First state strictly after render time; its predecessor is the lower bracket.
+        const auto upper = std::upper_bound(states.begin(), states.end(), render_time,
+                                            [](u64 t, const EntityNetState& s) { return t < s.timestamp; });
+
+        ecs::vec3 position{};
+        ecs::quat rotation{};
+        if (upper == states.begin()) {
+            position = states.front().position; // Render time precedes all data — hold first.
+            rotation = states.front().rotation;
+        } else if (upper == states.end()) {
+            position = states.back().position; // Starved — hold last (no extrapolation).
+            rotation = states.back().rotation;
         } else {
-            alpha = static_cast<f32>(render_time - buffer.prev.timestamp) / static_cast<f32>(span);
+            const EntityNetState& prev = *(upper - 1);
+            const EntityNetState& next = *upper;
+            const u64 span = next.timestamp - prev.timestamp; // > 0: upper is strictly later.
+            const f32 alpha =
+                clamp01(static_cast<f32>(static_cast<double>(render_time - prev.timestamp) /
+                                         static_cast<double>(span)));
+            position = lerp_vec3_(prev.position, next.position, alpha);
+            rotation = slerp_quat_(prev.rotation, next.rotation, alpha);
         }
-        alpha = clamp01(alpha);
 
-        ecs::EntityID id = buffer.next.entity;
-        if (id.index != entity_index) {
-            id.index = entity_index;
+        // Drop states that can never bracket a future render time (keep the lower bracket).
+        if (upper != states.begin()) {
+            const auto keep_from = upper - 1;
+            states.erase(states.begin(), keep_from);
         }
 
+        ecs::EntityID id = buffer.entity;
+        id.index = entity_index;
         if (!registry.alive(id)) {
             continue;
         }
@@ -179,8 +214,10 @@ void ClientInterpolator::update(ecs::Registry& registry, u64 current_time_us) {
             continue;
         }
 
-        transform->position = lerp_vec3_(buffer.prev.position, buffer.next.position, alpha);
-        transform->rotation = slerp_quat_(buffer.prev.rotation, buffer.next.rotation, alpha);
+        transform->position.x = position.x;
+        transform->position.y = position.y;
+        transform->position.z = position.z;
+        transform->rotation = rotation;
         transform->dirty = true;
     }
 }
@@ -203,8 +240,17 @@ ecs::quat ClientInterpolator::slerp_quat_(const ecs::quat& a, const ecs::quat& b
     }
 
     if (dot > 0.9995f) {
-        return {lerp_f32_(a.x, end.x, t), lerp_f32_(a.y, end.y, t), lerp_f32_(a.z, end.z, t),
-                lerp_f32_(a.w, end.w, t)};
+        // Nearly parallel: normalised lerp (a raw lerp would shrink the quaternion off unit length).
+        ecs::quat q{lerp_f32_(a.x, end.x, t), lerp_f32_(a.y, end.y, t), lerp_f32_(a.z, end.z, t),
+                    lerp_f32_(a.w, end.w, t)};
+        const f32 length = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+        if (length > 1e-12f) {
+            q.x /= length;
+            q.y /= length;
+            q.z /= length;
+            q.w /= length;
+        }
+        return q;
     }
 
     const f32 theta = std::acos(clamp01(dot));

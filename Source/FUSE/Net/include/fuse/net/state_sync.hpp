@@ -61,20 +61,28 @@ private:
 };
 
 /// Client-side interpolation between received authoritative states (B7.4).
+///
+/// Keeps a per-entity jitter buffer ordered by server timestamp and renders at
+/// `current_time - interpolation_delay`, interpolating between the two buffered states that
+/// bracket the render time. Late, duplicated or reordered states are merged into the timeline,
+/// so the rendered position is continuous regardless of snapshot rate vs. delay.
 class ClientInterpolator {
 public:
+    static constexpr usize kMaxBufferedStates = 32;
+
     void set_interpolation_delay_ms(u32 delay_ms) { m_interpolation_delay_ms = delay_ms; }
     [[nodiscard]] u32 interpolation_delay_ms() const { return m_interpolation_delay_ms; }
 
     void receive_state(const EntityNetState& state);
     void update(ecs::Registry& registry, u64 current_time_us);
 
+    /// Number of states currently buffered for `entity` (0 when unknown).
+    [[nodiscard]] usize buffered_state_count(ecs::EntityID entity) const;
+
 private:
     struct StateBuffer {
-        EntityNetState prev{};
-        EntityNetState next{};
-        bool has_prev = false;
-        bool has_next = false;
+        std::vector<EntityNetState> states; ///< Sorted by (timestamp, sequence).
+        ecs::EntityID entity = ecs::EntityID::null();
     };
 
     std::unordered_map<u32, StateBuffer> m_buffers;

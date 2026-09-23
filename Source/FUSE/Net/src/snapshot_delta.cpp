@@ -1,6 +1,7 @@
 #include <fuse/net/snapshot_delta.hpp>
 
 #include <algorithm>
+#include <cstring>
 #include <unordered_map>
 
 namespace fuse::net {
@@ -25,6 +26,10 @@ struct EntityRecord {
 };
 
 void read_bytes(NetSerializer& in, std::vector<byte>& out, u32 size) {
+    // Untrusted wire length: never allocate past the bytes actually present.
+    if (static_cast<usize>(size) > in.bytes_remaining()) {
+        size = static_cast<u32>(in.bytes_remaining());
+    }
     out.resize(size);
     for (u32 i = 0; i < size; ++i) {
         out[i] = in.read_u8();
@@ -147,12 +152,16 @@ EntityComponents decode_masked_physics(u8 mask, const std::vector<byte>& physics
     return components;
 }
 
+// Bitwise comparisons: deltas must reproduce the target bytes exactly (-0.0 vs +0.0, NaN payloads).
+bool f32_bits_equal(f32 a, f32 b) { return std::memcmp(&a, &b, sizeof(f32)) == 0; }
+
 bool vec3_equal(const ecs::vec3& a, const ecs::vec3& b) {
-    return a.x == b.x && a.y == b.y && a.z == b.z;
+    return f32_bits_equal(a.x, b.x) && f32_bits_equal(a.y, b.y) && f32_bits_equal(a.z, b.z);
 }
 
 bool quat_equal(const ecs::quat& a, const ecs::quat& b) {
-    return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w;
+    return f32_bits_equal(a.x, b.x) && f32_bits_equal(a.y, b.y) && f32_bits_equal(a.z, b.z) &&
+           f32_bits_equal(a.w, b.w);
 }
 
 u8 compute_ecs_field_mask(const EntityComponents& base, const EntityComponents& target) {
@@ -177,7 +186,7 @@ u8 compute_physics_field_mask(const EntityComponents& base, const EntityComponen
     if (!vec3_equal(base.angular_velocity, target.angular_velocity)) {
         mask |= static_cast<u8>(SnapshotPhysicsField::AngularVelocity);
     }
-    if (base.mass != target.mass) {
+    if (!f32_bits_equal(base.mass, target.mass)) {
         mask |= static_cast<u8>(SnapshotPhysicsField::Mass);
     }
     return mask;
@@ -204,8 +213,11 @@ void merge_masked_components(EntityComponents& base, u8 ecs_mask, u8 physics_mas
     }
 }
 
+/// Parses snapshot rows preserving stream order (ECS rows first, then physics-only rows), so a
+/// reconstruction re-emits rows in the same order as the snapshot they came from.
 std::vector<EntityRecord> parse_entity_records(const GameSnapshot& snapshot) {
-    std::unordered_map<u64, EntityRecord> records;
+    std::vector<EntityRecord> ordered;
+    std::unordered_map<u64, usize> index_by_key;
 
     NetSerializer ecs_reader;
     ecs_reader.buffer = snapshot.ecs_state;
@@ -220,7 +232,13 @@ std::vector<EntityRecord> parse_entity_records(const GameSnapshot& snapshot) {
         encode_ecs_components(record.components, record.ecs_bytes);
 
         const u64 key = (static_cast<u64>(record.generation) << 32) | record.index;
-        records[key] = std::move(record);
+        const auto it = index_by_key.find(key);
+        if (it != index_by_key.end()) {
+            ordered[it->second] = std::move(record);
+        } else {
+            index_by_key.emplace(key, ordered.size());
+            ordered.push_back(std::move(record));
+        }
     }
 
     NetSerializer physics_reader;
@@ -234,7 +252,12 @@ std::vector<EntityRecord> parse_entity_records(const GameSnapshot& snapshot) {
         const f32 mass = physics_reader.read_f32();
 
         const u64 key = (static_cast<u64>(generation) << 32) | index;
-        EntityRecord& record = records[key];
+        auto it = index_by_key.find(key);
+        if (it == index_by_key.end()) {
+            it = index_by_key.emplace(key, ordered.size()).first;
+            ordered.emplace_back();
+        }
+        EntityRecord& record = ordered[it->second];
         record.index = index;
         record.generation = generation;
         record.components.linear_velocity = linear_velocity;
@@ -243,26 +266,17 @@ std::vector<EntityRecord> parse_entity_records(const GameSnapshot& snapshot) {
         encode_physics_components(record.components, record.physics_bytes);
     }
 
-    std::vector<EntityRecord> ordered;
-    ordered.reserve(records.size());
-    for (auto& entry : records) {
-        ordered.push_back(std::move(entry.second));
-    }
-    std::sort(ordered.begin(), ordered.end(), [](const EntityRecord& a, const EntityRecord& b) {
-        if (a.generation != b.generation) {
-            return a.generation < b.generation;
-        }
-        return a.index < b.index;
-    });
     return ordered;
 }
 
 void append_entity_record(NetSerializer& ecs_out, NetSerializer& physics_out, const EntityRecord& record) {
-    ecs_out.write_u32(record.index);
-    ecs_out.write_u32(record.generation);
-    ecs_out.write_vec3(record.components.position);
-    ecs_out.write_quat(record.components.rotation);
-    ecs_out.write_vec3(record.components.scale);
+    if (!record.ecs_bytes.empty()) {
+        ecs_out.write_u32(record.index);
+        ecs_out.write_u32(record.generation);
+        ecs_out.write_vec3(record.components.position);
+        ecs_out.write_quat(record.components.rotation);
+        ecs_out.write_vec3(record.components.scale);
+    }
 
     if (!record.physics_bytes.empty()) {
         physics_out.write_u32(record.index);
@@ -599,10 +613,20 @@ SnapshotDelta compute_snapshot_delta(const GameSnapshot& base, const GameSnapsho
     delta.base_checksum = base.checksum;
     delta.target_checksum = target.checksum;
 
-    if (snapshots_equivalent(base, target)) {
+    if (snapshots_equivalent(base, target) ||
+        (base.ecs_state == target.ecs_state && base.physics_state == target.physics_state)) {
         delta.kind = SnapshotDeltaKind::None;
         return delta;
     }
+
+    const auto make_full = [&]() {
+        delta.kind = SnapshotDeltaKind::Full;
+        delta.full_ecs_state = target.ecs_state;
+        delta.full_physics_state = target.physics_state;
+        delta.entity_patches.clear();
+        delta.changed_entity_mask = 0;
+        return delta;
+    };
 
     const std::vector<EntityRecord> base_records = parse_entity_records(base);
     const std::vector<EntityRecord> target_records = parse_entity_records(target);
@@ -629,12 +653,7 @@ SnapshotDelta compute_snapshot_delta(const GameSnapshot& base, const GameSnapsho
         }
 
         if (!entity_index_trackable(target_record.index)) {
-            delta.kind = SnapshotDeltaKind::Full;
-            delta.full_ecs_state = target.ecs_state;
-            delta.full_physics_state = target.physics_state;
-            delta.entity_patches.clear();
-            delta.changed_entity_mask = 0;
-            return delta;
+            return make_full();
         }
 
         SnapshotEntityPatch patch;
@@ -658,15 +677,17 @@ SnapshotDelta compute_snapshot_delta(const GameSnapshot& base, const GameSnapsho
 
     const usize full_bytes = target.ecs_state.size() + target.physics_state.size();
     if (delta.entity_patches.empty() || patch_bytes >= full_bytes) {
-        delta.kind = SnapshotDeltaKind::Full;
-        delta.full_ecs_state = target.ecs_state;
-        delta.full_physics_state = target.physics_state;
-        delta.entity_patches.clear();
-        delta.changed_entity_mask = 0;
-        return delta;
+        return make_full();
     }
 
     delta.kind = SnapshotDeltaKind::EntityPatch;
+
+    // Patches cannot express removed entities or a row order that differs from the canonical
+    // reconstruction order — verify the reconstruction is byte-exact, else send the full state.
+    const GameSnapshot rebuilt = apply_snapshot_delta(base, delta);
+    if (rebuilt.ecs_state != target.ecs_state || rebuilt.physics_state != target.physics_state) {
+        return make_full();
+    }
     return delta;
 }
 
@@ -704,13 +725,24 @@ GameSnapshot apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta&
                 created.index = patch.entity_index;
                 created.generation = patch.entity_generation;
                 created.components = patch_components;
+                if (patch.changed_ecs_fields != 0) {
+                    encode_ecs_components(created.components, created.ecs_bytes);
+                }
+                if (patch.changed_physics_fields != 0) {
+                    encode_physics_components(created.components, created.physics_bytes);
+                }
                 index_by_key[key] = records.size();
                 records.push_back(std::move(created));
             } else {
                 merge_masked_components(records[it->second].components, patch.changed_ecs_fields,
                                         patch.changed_physics_fields, patch_components);
-                encode_ecs_components(records[it->second].components, records[it->second].ecs_bytes);
-                encode_physics_components(records[it->second].components, records[it->second].physics_bytes);
+                EntityRecord& existing = records[it->second];
+                if (!existing.ecs_bytes.empty() || patch.changed_ecs_fields != 0) {
+                    encode_ecs_components(existing.components, existing.ecs_bytes);
+                }
+                if (!existing.physics_bytes.empty() || patch.changed_physics_fields != 0) {
+                    encode_physics_components(existing.components, existing.physics_bytes);
+                }
             }
         }
 
@@ -871,7 +903,12 @@ SnapshotDelta deserialize_snapshot_delta(NetSerializer& in) {
         break;
     }
     case SnapshotDeltaKind::EntityPatch: {
-        const u32 patch_count = in.read_u32();
+        // Each wire patch is at least 18 bytes; bound the count by what the buffer can hold.
+        constexpr usize kMinWirePatchBytes = 18;
+        u32 patch_count = in.read_u32();
+        if (static_cast<usize>(patch_count) > in.bytes_remaining() / kMinWirePatchBytes) {
+            patch_count = static_cast<u32>(in.bytes_remaining() / kMinWirePatchBytes);
+        }
         delta.entity_patches.resize(patch_count);
         for (u32 i = 0; i < patch_count; ++i) {
             SnapshotEntityPatch& patch = delta.entity_patches[i];

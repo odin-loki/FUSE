@@ -31,10 +31,11 @@ Deterministic rollback and authoritative state-sync scaffolding for Track B7.4. 
 
 `compute_snapshot_delta(base, target)` emits `SnapshotDeltaKind::None`, `EntityPatch`, or `Full` depending on how many entity rows changed (entity indices ≥ 64 force `Full`). Entity patches include `SnapshotEcsField` / `SnapshotPhysicsField` masks with `ecs_field_mask_contains` / `physics_field_mask_contains` helpers and a `changed_entity_mask` bitset validated by `validate_changed_entity_mask`. `preflight_snapshot_delta` checks baseline checksum and entity-mask consistency; `apply_snapshot_delta_verified` reconstructs and verifies the target frame. `SnapshotHistoryRing` stores recent snapshots via `RollbackBuffer`, exposes `stored_frame_count`, `can_apply_delta`, `pop_oldest`, and wrap-safe `apply_delta_and_store`. `StateSyncDeltaBroadcaster` maps authoritative `StateSyncSnapshot` bundles into the same delta path.
 
-## Transport stubs
+## Transports
 
 - **Loopback** — in-process linked peers, channel stats, `UnreliableSeq` newest-wins delivery
-- **ENet / Steam** — compile-safe stubs (`init` returns false) with `last_error()` diagnostics
+- **ENet** — real UDP backend compiled from the in-tree ENet 1.3.x sources (`FUSE_NET_WITH_ENET`, defines `FUSE_NET_HAS_ENET`). Channels map to ENet channel 0 reliable-ordered, 1 unsequenced, 2 sequenced-unreliable. `init(0)` binds an ephemeral port (`bound_port()`), `connect_peer()` is non-blocking (handshake completes in `poll()`, reported via `set_connection_callback`), `set_timeouts()` sets the peer timeout policy.
+- **Steam** — compile-safe stub (`init` returns false) with `last_error()` diagnostics
 
 Use `create_transport(TransportBackend)` to instantiate the active backend.
 
@@ -50,8 +51,14 @@ Server-side area-of-interest scaffolding mirrors Torque ghost scoping with FUSE-
 
 Hysteresis keeps entities in scope until they pass the unload radius, matching B7.5 terrain streaming semantics.
 
+## Rollback / desync
+
+`RollbackManager` snapshots are taken *before* a frame integrates (both in `tick` and during resimulation), restore is bit-exact (homogeneous `w` lanes and static `inv_mass` preserved), and `RollbackBuffer` resets a ring slot when it is reused for a newer frame. `check_remote_checksum(frame, checksum)` compares a peer's per-frame checksum and latches `desync_detected()` / `first_desync_frame()`.
+
 ## Tests
 
 `fuse_net_tests` (`ctest` name `fuse_net_b74`) covers loopback channels/stats, serializer round-trip, rollback resimulation, rollback window rewind bounds, rollback buffer retention, checksum helpers, input history push/pop eviction, reconcile outcomes, snapshot delta apply/serialize, client interpolation, relevance radius classification/hysteresis, radius filter stubs, enter/leave scope diff, and interest priority queue ordering (empty drain + tie-break) without ENet or Steam dependencies.
 
 See [docs/unification/TRACK-B-NET.md](../../docs/unification/TRACK-B-NET.md) for the B7.4 deepen checklist.
+
+`fuse_b7_net_gates` (`ctest -R fuse_b7_net_gates`) proves the B7.10 networking rows against independent references: ENet reliable delivery between two processes (clean and through a loss/duplication/reordering UDP proxy), handshake/peer-loss timeouts, rollback snapshot byte-identity, 4-frame and 240-frame rollback resimulation vs. a non-rollback run and a hand-written integrator, checksum desync detection, interpolation continuity, snapshot-delta round-trip exactness/bandwidth/hostile input, and AOI relevance vs. brute force.

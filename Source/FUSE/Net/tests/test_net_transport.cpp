@@ -46,8 +46,14 @@ void run_transport_tests() {
     expectTrue(host_received, "host received client packet");
 
     fuse::net::ENetTransport enet;
+#if defined(FUSE_NET_HAS_ENET)
+    expectTrue(enet.init(0), "ENet transport binds an ephemeral port");
+    expectTrue(enet.bound_port() != 0u, "ENet transport reports bound port");
+    enet.destroy();
+#else
     expectTrue(!enet.init(27017), "ENet transport stub rejects init");
-    expectTrue(enet.peer_count() == 0u, "ENet stub has no peers");
+#endif
+    expectTrue(enet.peer_count() == 0u, "ENet transport has no peers before connect");
 
     fuse::net::SteamTransport steam;
     expectTrue(!steam.init(27018), "Steam transport stub rejects init");
@@ -59,8 +65,13 @@ void run_transport_tests() {
     expectTrue(loopback != nullptr, "loopback factory succeeds");
     expectTrue(fuse::net::transport_backend_available(fuse::net::TransportBackend::Loopback),
                "loopback backend available");
+#if defined(FUSE_NET_HAS_ENET)
+    expectTrue(fuse::net::transport_backend_available(fuse::net::TransportBackend::ENet),
+               "ENet backend available when compiled in");
+#else
     expectTrue(!fuse::net::transport_backend_available(fuse::net::TransportBackend::ENet),
                "ENet backend unavailable in stub build");
+#endif
 
     const fuse::net::byte seq_payload_a = 1;
     const fuse::net::byte seq_payload_b = 2;

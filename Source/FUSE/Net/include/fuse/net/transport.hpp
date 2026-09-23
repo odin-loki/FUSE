@@ -91,9 +91,22 @@ private:
     bool m_drop_stale_unreliable_seq = true;
 };
 
-/// ENet-backed transport — stub until ENet is wired in CI (returns false from init).
+/// ENet-backed UDP transport (reliable ordered / unreliable / unreliable-sequenced channels).
+///
+/// Built against the in-tree ENet sources when `FUSE_NET_HAS_ENET` is defined; otherwise every
+/// call fails and `last_error()` reports that the backend is not compiled. `init(0)` binds an
+/// ephemeral port (see `bound_port()`); `connect()` is non-blocking — the handshake completes
+/// during `poll()`, which reports connect/disconnect through the connection callback.
 class ENetTransport : public Transport {
 public:
+    using ConnectionCallback = std::function<void(u32 peer_id, bool connected)>;
+
+    ENetTransport();
+    ~ENetTransport() override;
+
+    ENetTransport(const ENetTransport&) = delete;
+    ENetTransport& operator=(const ENetTransport&) = delete;
+
     bool init(u16 port) override;
     void destroy() override;
     bool connect(const char* address, u16 port) override;
@@ -105,9 +118,22 @@ public:
     [[nodiscard]] u32 ping_ms(u32 peer_id) const override;
     [[nodiscard]] TransportStats stats() const override;
 
+    /// Starts a connection and returns its peer id (0 on failure). The peer is usable once
+    /// `is_connected(id)` turns true during `poll()`.
+    [[nodiscard]] u32 connect_peer(const char* address, u16 port);
+    [[nodiscard]] bool is_connected(u32 peer_id) const;
+    /// UDP port the host is bound to (resolves `init(0)` to the OS-assigned port).
+    [[nodiscard]] u16 bound_port() const;
+    /// Peer timeout policy applied to new connections: a peer is dropped once an unacknowledged
+    /// reliable packet exceeds `timeout_max_ms`, or `timeout_min_ms` after `timeout_limit` retries.
+    void set_timeouts(u32 timeout_limit, u32 timeout_min_ms, u32 timeout_max_ms);
+    void set_connection_callback(ConnectionCallback callback);
+
     [[nodiscard]] const char* last_error() const { return m_last_error; }
 
 private:
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
     const char* m_last_error = "ENet backend not compiled";
 };
 
