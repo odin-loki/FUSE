@@ -5,6 +5,7 @@
 namespace fuse::renderer {
 
 struct TextureDesc;
+enum class GpuFormat : u32;
 
 /// GPU allocator counters for debug overlays and budget checks (B2.3 deepen).
 struct GpuAllocStats {
@@ -43,6 +44,10 @@ void recordFailedAlloc(GpuAllocStats& stats);
 void updatePeak(GpuAllocStats& stats);
 
 usize estimateImageBytes(const TextureDesc& desc);
+/// Bytes of one texel of `format` (4 for unknown formats).
+usize bytesPerTexel(GpuFormat format);
+/// Tightly packed bytes of one mip level of one array layer (depth slices included).
+usize mipLevelBytes(const TextureDesc& desc, u32 mipLevel);
 
 /// Query device-local heap size and optional VK_EXT_memory_budget.
 /// `vkInstance` / `vkPhysicalDevice` are opaque VkInstance / VkPhysicalDevice.

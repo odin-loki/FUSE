@@ -7,6 +7,7 @@
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/upload_queue.hpp>
 
+#include <deque>
 #include <memory>
 
 namespace fuse::renderer {
@@ -24,6 +25,19 @@ public:
         u32 samplers = 0;
     };
 
+    /// Deferred-destroy bookkeeping: a texture/buffer destroyed while an upload into it is still in
+    /// flight is released only after that upload's batch retires (no CPU wait in destroy).
+    struct DestroyStats {
+        /// Released at once (no upload in flight).
+        u32 immediate = 0;
+        /// Queued behind an in-flight upload serial.
+        u32 deferred = 0;
+        /// Deferred entries released after their upload retired.
+        u32 retired = 0;
+        /// Destroys that had to wait on an upload fence (always 0: kept to prove it).
+        u32 fenceWaits = 0;
+    };
+
     ResourceManager() = default;
     ~ResourceManager();
 
@@ -39,8 +53,12 @@ public:
     TextureHandle createTexture(const TextureDesc& desc, const void* initialData = nullptr);
     BufferHandle createBuffer(const BufferDesc& desc, const void* initialData = nullptr);
     SamplerHandle createSampler(const SamplerDesc& desc);
+    /// Blits mip i-1 -> mip i (linear filter) for the whole chain, transitioning from each level's
+    /// tracked layout (so uploaded mip 0 data is preserved); leaves every level SHADER_READ_ONLY.
     bool generateMips(TextureHandle handle);
 
+    /// The handle is invalid on return. If an upload into the resource is still in flight, the GPU
+    /// object is released once that upload's batch retires (see `collectDeferredDestroys`).
     void destroyTexture(TextureHandle handle);
     void destroyBuffer(BufferHandle handle);
     void destroySampler(SamplerHandle handle);
@@ -50,7 +68,16 @@ public:
     Buffer* getBuffer(BufferHandle handle);
     const Buffer* getBuffer(BufferHandle handle) const;
     bool readBuffer(BufferHandle handle, void* dst, usize size);
+    /// Reads mip 0 (every array layer); texel size follows the texture format.
     bool readTexture(TextureHandle handle, void* dst, usize size);
+    /// Reads one mip level (every array layer). The level is returned to its prior layout
+    /// (TRANSFER_SRC_OPTIMAL when it was UNDEFINED).
+    bool readTexture(TextureHandle handle, void* dst, usize size, u32 mipLevel);
+
+    /// Tracked `VkImageLayout` (as u32) of `mipLevel`; 0 (UNDEFINED) for unknown handles.
+    u32 textureLayout(TextureHandle handle, u32 mipLevel = 0) const;
+    /// Record a transition of every mip level done outside ResourceManager (render graph, CUDA).
+    void setTextureLayout(TextureHandle handle, u32 layout);
 
     /// Asynchronous uploads through the staging ring (B2.11 gate 3.4). Data is copied into the
     /// ring immediately (the source may be reused on return); the GPU copy is recorded into the
@@ -66,6 +93,7 @@ public:
     bool isUploadComplete(UploadTicket ticket);
     bool waitUpload(UploadTicket ticket, u64 timeoutNs = UploadQueue::kDefaultFenceTimeoutNs);
     bool waitAllUploads(u64 timeoutNs = UploadQueue::kDefaultFenceTimeoutNs);
+    /// Retires completed upload batches and releases deferred destroys whose uploads retired.
     u32 retireUploads();
     bool hasPendingUploads() const { return m_uploads.hasPendingWork(); }
     /// Every ticket with serial <= this value has completed.
@@ -89,6 +117,13 @@ public:
     u32 lastTextureReadbackBytes() const { return m_lastTextureReadbackBytes; }
 
     LiveCounts liveCounts() const;
+    /// Destroyed resources still waiting for an in-flight upload to retire.
+    u32 pendingDestroyCount() const {
+        return static_cast<u32>(m_deferredTextures.size() + m_deferredBuffers.size());
+    }
+    const DestroyStats& destroyStats() const { return m_destroyStats; }
+    /// Release deferred destroys whose upload serial has completed (non-blocking poll).
+    u32 collectDeferredDestroys();
     const GpuAllocStats* allocatorStats() const;
 
 private:
@@ -96,8 +131,18 @@ private:
     bool ensureStagingRing();
     UploadTicket stageBufferUpload(Buffer& dest, const void* data, usize size, usize dstOffset);
     UploadTicket stageTextureUpload(Texture& dest, const void* data);
-    /// Waits for in-flight uploads before a resource they may reference is destroyed or read back.
-    void drainUploads();
+    /// Waits (bounded) until the upload batch `serial` has retired; submits it first if still open.
+    bool waitUploadSerial(u64 serial);
+    void releaseTexture(Texture& texture);
+    void releaseBuffer(Buffer& buffer);
+    /// True when a copy into a resource stamped with `serial` may still be pending on the GPU.
+    bool uploadInFlight(u64 serial);
+
+    template <typename T>
+    struct DeferredDestroy {
+        u64 serial = 0;
+        T resource{};
+    };
 
     VulkanDevice* m_device = nullptr;
     BindlessDescriptors* m_bindless = nullptr;
@@ -109,6 +154,9 @@ private:
     usize m_stagingRingCapacity = 0;
     UploadQueue m_uploads;
     UploadTicket m_lastUploadTicket{};
+    std::deque<DeferredDestroy<Texture>> m_deferredTextures;
+    std::deque<DeferredDestroy<Buffer>> m_deferredBuffers;
+    DestroyStats m_destroyStats{};
     bool m_lastGpuTextureCopySubmitted = false;
     u32 m_lastGpuTextureCopyBytes = 0;
     bool m_lastGpuCopyUsedTransferQueue = false;

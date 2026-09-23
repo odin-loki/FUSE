@@ -18,4 +18,21 @@ if(FUSE_BUILD_CORE_TESTS)
         RUN_SERIAL TRUE
         LABELS "gate"
     )
+
+    # Layout tracking (generateMips / readback preserve uploaded data) + deferred destroy.
+    add_executable(fuse_resource_layout_tracking tests/test_resource_layout_tracking.cpp)
+    target_link_libraries(fuse_resource_layout_tracking PRIVATE fuse_rhi)
+    add_test(NAME fuse_resource_layout_tracking
+             COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_resource_layout_tracking>")
+
+    # TaaResolve runs the CPU reference resolver when host surfaces are bound.
+    add_executable(fuse_taa_cpu_resolve_wiring tests/test_taa_cpu_resolve_wiring.cpp)
+    target_link_libraries(fuse_taa_cpu_resolve_wiring PRIVATE fuse_rhi)
+    add_test(NAME fuse_taa_cpu_resolve_wiring
+             COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_taa_cpu_resolve_wiring>")
+
+    set_tests_properties(fuse_resource_layout_tracking fuse_taa_cpu_resolve_wiring PROPERTIES
+        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        RUN_SERIAL TRUE
+    )
 endif()

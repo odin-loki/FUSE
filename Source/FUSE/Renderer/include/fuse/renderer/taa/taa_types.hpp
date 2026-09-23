@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/math/vec.hpp>
 #include <fuse/types.hpp>
 
 namespace fuse::renderer {
@@ -35,12 +36,31 @@ struct TaaResolveSurfaces {
     void* output = nullptr;
 };
 
+/// Host-memory surfaces for the CPU reference resolve (`TaaCpuResolver`). Arrays are row-major
+/// `width * height`; when `current_frame` and `output` are both bound, `TaaResolve::resolve` runs the
+/// CPU resolver instead of recording a device kernel. `velocity` / `depth` may be null (static scene /
+/// no disocclusion rejection) unless `enforce_rejection_surfaces` requires them.
+struct TaaResolveCpuSurfaces {
+    /// Jittered current-frame linear RGB.
+    const fuse::math::Vec3* current_frame = nullptr;
+    /// Screen motion in pixels (current - previous position, jitter excluded).
+    const fuse::math::Vec2* velocity_buffer = nullptr;
+    /// Linear view depth.
+    const f32* depth_buffer = nullptr;
+    /// Resolved RGB (also becomes next frame's history).
+    fuse::math::Vec3* output = nullptr;
+
+    bool isBound() const { return current_frame != nullptr && output != nullptr; }
+};
+
 /// Sentinel for `TaaResolveDesc::observed_history_generation` — skip stale-history guard.
 static constexpr u32 kTaaResolveNoHistoryGeneration = 0xFFFFFFFFu;
 
 /// Per-frame resolve request — consumed by `TaaResolve` / `TaaPass`.
 struct TaaResolveDesc {
     TaaResolveSurfaces surfaces{};
+    /// CPU surfaces — take precedence over the opaque device `surfaces` when bound.
+    TaaResolveCpuSurfaces cpu{};
     TAAParams params{};
     u32 width = 0;
     u32 height = 0;
@@ -187,6 +207,10 @@ struct TaaResolveStats {
     u32 accumulated_frames = 0;
     /// `TaaHistoryBuffer::invalidateGeneration()` at resolve time.
     u32 history_invalidate_generation = 0;
+    /// True when the CPU reference resolver produced `TaaResolveCpuSurfaces::output` this frame.
+    bool cpu_resolved = false;
+    /// True when the CPU resolver blended prior history (false on warm-up / after invalidation).
+    bool cpu_history_used = false;
 };
 
 /// True when history allocation dimensions are non-zero (B5.9 deepen).

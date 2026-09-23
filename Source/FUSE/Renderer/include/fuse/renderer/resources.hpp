@@ -18,7 +18,7 @@ enum class GpuFormat : u32 {
     Undefined = 0,
     R8G8B8A8Unorm = 37,
     R8G8B8A8Srgb = 43,
-    R16G16Sfloat = 76,
+    R16G16Sfloat = 83, // VK_FORMAT_R16G16_SFLOAT (76 is R16_SFLOAT)
     R16G16B16A16Sfloat = 97,
     D32Sfloat = 126,
     R32Sfloat = 100,
@@ -82,6 +82,13 @@ struct Texture {
     u32 bindlessIndex = UINT32_MAX;
     void* exportedHandle = nullptr;  // Win32 HANDLE or fd as void*
     u64 allocationSize = 0;
+    /// Current `VkImageLayout` (as u32, 0 = UNDEFINED) of mip 0 and of mips 1.. as left by the
+    /// transitions ResourceManager records (uploads, mip generation, readback). Code that
+    /// transitions the image elsewhere reports it through `ResourceManager::setTextureLayout`.
+    u32 layout = 0;
+    u32 mipTailLayout = 0;
+    /// Upload-queue serial of the newest copy into this image (0: never uploaded).
+    u64 lastUploadSerial = 0;
 };
 
 /// GPU buffer resource — device_address populated when BDA extension enabled.
@@ -94,6 +101,8 @@ struct Buffer {
     u32 bindlessIndex = UINT32_MAX;
     void* exportedHandle = nullptr;  // Win32 HANDLE or fd as void*
     u64 allocationSize = 0;
+    /// Upload-queue serial of the newest copy into this buffer (0: never uploaded).
+    u64 lastUploadSerial = 0;
 };
 
 struct SamplerDesc {

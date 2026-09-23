@@ -219,4 +219,15 @@ private:
     bool m_ready = false;
 };
 
+namespace ddgi_cpu {
+
+/// Pack the volume's bordered irradiance tiles into the GPU atlas layout
+/// (`ddgi_util::irradianceAtlasWidth` x `Height`, `ProbeGridLayout::probeIrradianceAtlasOrigin`) as
+/// RGBA16F half bits (alpha 1). Texels are E/pi, as the CPU reference stores them.
+bool packIrradianceAtlasRgba16f(const DdgiCpuVolume& volume, std::vector<u16>& out);
+/// Pack the bordered distance-moment tiles (mean, mean^2) into the depth atlas layout as RG16F bits.
+bool packDistanceAtlasRg16f(const DdgiCpuVolume& volume, std::vector<u16>& out);
+
+} // namespace ddgi_cpu
+
 } // namespace fuse::renderer

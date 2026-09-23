@@ -57,8 +57,11 @@ void testProbeGridMath() {
     expectNear(p7.y, 4.f, 1e-5f, "probe 7 y");
     expectNear(p7.z, 5.f, 1e-5f, "probe 7 z");
 
-    expectTrue(fuse::renderer::ddgi_util::irradianceAtlasWidth(desc) == 16u, "irradiance atlas width");
-    expectTrue(fuse::renderer::ddgi_util::irradianceAtlasHeight(desc) == 32u, "irradiance atlas height");
+    // Bordered tiles: (irradiance_res + 2) = 10 texels per probe, matching DdgiCpuVolume.
+    expectTrue(fuse::renderer::ddgi_util::irradianceAtlasWidth(desc) == 20u, "irradiance atlas width");
+    expectTrue(fuse::renderer::ddgi_util::irradianceAtlasHeight(desc) == 40u, "irradiance atlas height");
+    expectTrue(fuse::renderer::ddgi_util::depthAtlasWidth(desc) == 36u, "depth atlas width");
+    expectTrue(fuse::renderer::ddgi_util::depthAtlasHeight(desc) == 72u, "depth atlas height");
 }
 
 void testProbeGridIndexing() {
@@ -540,9 +543,10 @@ void testIrradianceOctahedralEncoding() {
         fuse::renderer::ProbeGridLayout::probeIrradianceAtlasTexel(desc, coord, up);
     const fuse::math::Vec2 origin =
         fuse::renderer::ProbeGridLayout::probeIrradianceAtlasOrigin(desc, coord);
-    expectTrue(texel.x >= origin.x && texel.y >= origin.y, "atlas texel within probe tile");
-    expectTrue(texel.x < origin.x + static_cast<fuse::f32>(desc.irradiance_res),
-               "atlas texel x within tile width");
+    expectTrue(texel.x >= origin.x + 1.f && texel.y >= origin.y + 1.f, "atlas texel inside the tile border");
+    expectTrue(texel.x <= origin.x + static_cast<fuse::f32>(desc.irradiance_res) &&
+                   texel.y <= origin.y + static_cast<fuse::f32>(desc.irradiance_res),
+               "atlas texel within tile interior");
 
     fuse::renderer::DDGIDesc emptyDesc{};
     emptyDesc.grid_dims = {0, 2, 2};
@@ -593,12 +597,17 @@ void testProbeAtlasLayout() {
     const fuse::renderer::ProbeGridCoord coord{1, 1, 2};
     const fuse::math::Vec2 irradianceOrigin =
         fuse::renderer::ProbeGridLayout::probeIrradianceAtlasOrigin(desc, coord);
-    expectNear(irradianceOrigin.x, 8.f, 1e-5f, "irradiance atlas x origin");
-    expectNear(irradianceOrigin.y, 40.f, 1e-5f, "irradiance atlas y origin");
+    // Tiles are bordered: 10 texels (irradiance) and 18 texels (depth) per probe.
+    expectTrue(fuse::renderer::ProbeGridLayout::irradianceTileSize(desc) == 10u, "irradiance tile size");
+    expectTrue(fuse::renderer::ProbeGridLayout::depthTileSize(desc) == 18u, "depth tile size");
+    expectNear(irradianceOrigin.x, 10.f, 1e-5f, "irradiance atlas x origin");
+    expectNear(irradianceOrigin.y, 50.f, 1e-5f, "irradiance atlas y origin");
 
     const fuse::math::Vec2 depthOrigin = fuse::renderer::ProbeGridLayout::probeDepthAtlasOrigin(desc, coord);
-    expectNear(depthOrigin.x, 16.f, 1e-5f, "depth atlas x origin");
-    expectNear(depthOrigin.y, 80.f, 1e-5f, "depth atlas y origin");
+    expectNear(depthOrigin.x, 18.f, 1e-5f, "depth atlas x origin");
+    expectNear(depthOrigin.y, 90.f, 1e-5f, "depth atlas y origin");
+    expectTrue(fuse::renderer::ddgi_util::irradianceAtlasWidth(desc) == 40u, "4-wide grid irradiance atlas width");
+    expectTrue(fuse::renderer::ddgi_util::irradianceAtlasHeight(desc) == 60u, "2x3 grid irradiance atlas height");
 }
 
 void testIrradianceLerp() {

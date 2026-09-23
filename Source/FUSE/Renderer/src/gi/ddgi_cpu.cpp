@@ -1,5 +1,7 @@
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
 
+#include <fuse/renderer/deferred/gbuffer.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -649,5 +651,72 @@ Vec3 DdgiCpuVolume::sampleIrradiance(const Vec3& position, const Vec3& normal) c
     }
     return sum * (1.f / weight_sum);
 }
+
+namespace ddgi_cpu {
+
+namespace {
+
+/// Visit every bordered tile texel with its atlas position (column x, row z * dims.y + y).
+template <typename Fn>
+bool forEachAtlasTexel(const DdgiCpuVolume& volume, u32 tile, u32 atlasWidth, Fn&& fn) {
+    const DDGIDesc& desc = volume.desc();
+    for (u32 probe = 0; probe < volume.probeCount(); ++probe) {
+        const ProbeGridCoord coord = ProbeGridLayout::probeCoordFromIndex(desc, probe);
+        const usize originX = static_cast<usize>(coord.x) * tile;
+        const usize originY = static_cast<usize>(coord.z * desc.grid_dims.y + coord.y) * tile;
+        for (u32 y = 0; y < tile; ++y) {
+            for (u32 x = 0; x < tile; ++x) {
+                fn(probe, x, y, (originY + y) * atlasWidth + originX + x);
+            }
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+bool packIrradianceAtlasRgba16f(const DdgiCpuVolume& volume, std::vector<u16>& out) {
+    if (!volume.isReady()) {
+        return false;
+    }
+    const DDGIDesc& desc = volume.desc();
+    const u32 width = ddgi_util::irradianceAtlasWidth(desc);
+    const u32 height = ddgi_util::irradianceAtlasHeight(desc);
+    const u32 tile = volume.irradianceTileSize();
+    if (width == 0u || height == 0u || tile != ProbeGridLayout::irradianceTileSize(desc)) {
+        return false;
+    }
+    out.assign(static_cast<usize>(width) * height * 4u, 0u);
+    const u16 one = GBufferQuantize::floatToHalf(1.f);
+    return forEachAtlasTexel(volume, tile, width, [&](u32 probe, u32 x, u32 y, usize texel) {
+        const Vec3 e = volume.irradianceTexel(probe, x, y);
+        u16* dst = &out[texel * 4u];
+        dst[0] = GBufferQuantize::floatToHalf(e.x);
+        dst[1] = GBufferQuantize::floatToHalf(e.y);
+        dst[2] = GBufferQuantize::floatToHalf(e.z);
+        dst[3] = one;
+    });
+}
+
+bool packDistanceAtlasRg16f(const DdgiCpuVolume& volume, std::vector<u16>& out) {
+    if (!volume.isReady()) {
+        return false;
+    }
+    const DDGIDesc& desc = volume.desc();
+    const u32 width = ddgi_util::depthAtlasWidth(desc);
+    const u32 height = ddgi_util::depthAtlasHeight(desc);
+    const u32 tile = volume.distanceTileSize();
+    if (width == 0u || height == 0u || tile != ProbeGridLayout::depthTileSize(desc)) {
+        return false;
+    }
+    out.assign(static_cast<usize>(width) * height * 2u, 0u);
+    return forEachAtlasTexel(volume, tile, width, [&](u32 probe, u32 x, u32 y, usize texel) {
+        const Vec2 moments = volume.distanceTexel(probe, x, y);
+        out[texel * 2u + 0u] = GBufferQuantize::floatToHalf(moments.x);
+        out[texel * 2u + 1u] = GBufferQuantize::floatToHalf(moments.y);
+    });
+}
+
+} // namespace ddgi_cpu
 
 } // namespace fuse::renderer

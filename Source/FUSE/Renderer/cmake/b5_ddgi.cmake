@@ -13,4 +13,16 @@ if(FUSE_BUILD_CORE_TESTS)
     # CPU timing of one 64-probe x 256-ray update; serial so parallel tests do not skew it.
     add_test(NAME fuse_b5_ddgi_timing COMMAND fuse_b5_ddgi_gates --timing)
     set_tests_properties(fuse_b5_ddgi_timing PROPERTIES RUN_SERIAL TRUE)
+
+    # Bordered atlas layout + CPU volume -> atlas texture upload, read back on Lavapipe.
+    add_executable(fuse_ddgi_atlas_upload ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_ddgi_atlas_upload.cpp)
+    target_link_libraries(fuse_ddgi_atlas_upload PRIVATE fuse_rhi)
+    # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
+    add_test(NAME fuse_ddgi_atlas_upload
+             COMMAND "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh"
+                     "$<TARGET_FILE:fuse_ddgi_atlas_upload>")
+    set_tests_properties(fuse_ddgi_atlas_upload PROPERTIES
+        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        RUN_SERIAL TRUE
+    )
 endif()

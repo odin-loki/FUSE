@@ -703,13 +703,21 @@ ProbeGridCoord ProbeGridLayout::clampProbeGridCoord(const DDGIDesc& desc, const 
     return clamped;
 }
 
+u32 ProbeGridLayout::irradianceTileSize(const DDGIDesc& desc) {
+    return desc.irradiance_res == 0u ? 0u : desc.irradiance_res + 2u;
+}
+
+u32 ProbeGridLayout::depthTileSize(const DDGIDesc& desc) {
+    return desc.depth_res == 0u ? 0u : desc.depth_res + 2u;
+}
+
 fuse::math::Vec2 ProbeGridLayout::probeIrradianceAtlasOrigin(const DDGIDesc& desc,
                                                              const ProbeGridCoord& coord) {
     if (isEmptyGrid(desc) || !isValidProbeCoord(desc, coord) || desc.irradiance_res == 0u) {
         return {};
     }
-    return {static_cast<f32>(coord.x * desc.irradiance_res),
-            static_cast<f32>((coord.z * desc.grid_dims.y + coord.y) * desc.irradiance_res)};
+    const u32 tile = irradianceTileSize(desc);
+    return {static_cast<f32>(coord.x * tile), static_cast<f32>((coord.z * desc.grid_dims.y + coord.y) * tile)};
 }
 
 fuse::math::Vec2 ProbeGridLayout::probeIrradianceAtlasTexel(const DDGIDesc& desc,
@@ -721,15 +729,16 @@ fuse::math::Vec2 ProbeGridLayout::probeIrradianceAtlasTexel(const DDGIDesc& desc
     const fuse::math::Vec2 origin = probeIrradianceAtlasOrigin(desc, coord);
     const fuse::math::Vec2 offset =
         DdgiIrradianceEncoding::directionToTexelOffset(direction, desc.irradiance_res);
-    return {origin.x + offset.x, origin.y + offset.y};
+    // Interior texels start one texel in from the tile origin (octahedral border ring).
+    return {origin.x + 1.f + offset.x, origin.y + 1.f + offset.y};
 }
 
 fuse::math::Vec2 ProbeGridLayout::probeDepthAtlasOrigin(const DDGIDesc& desc, const ProbeGridCoord& coord) {
     if (isEmptyGrid(desc) || !isValidProbeCoord(desc, coord) || desc.depth_res == 0u) {
         return {};
     }
-    return {static_cast<f32>(coord.x * desc.depth_res),
-            static_cast<f32>((coord.z * desc.grid_dims.y + coord.y) * desc.depth_res)};
+    const u32 tile = depthTileSize(desc);
+    return {static_cast<f32>(coord.x * tile), static_cast<f32>((coord.z * desc.grid_dims.y + coord.y) * tile)};
 }
 
 namespace ddgi_util {
@@ -1223,19 +1232,19 @@ fuse::math::Vec3 probeWorldPositionClamped(const DDGIDesc& desc, u32 probe_index
 }
 
 u32 irradianceAtlasWidth(const DDGIDesc& desc) {
-    return desc.grid_dims.x * desc.irradiance_res;
+    return desc.grid_dims.x * ProbeGridLayout::irradianceTileSize(desc);
 }
 
 u32 irradianceAtlasHeight(const DDGIDesc& desc) {
-    return desc.grid_dims.y * desc.grid_dims.z * desc.irradiance_res;
+    return desc.grid_dims.y * desc.grid_dims.z * ProbeGridLayout::irradianceTileSize(desc);
 }
 
 u32 depthAtlasWidth(const DDGIDesc& desc) {
-    return desc.grid_dims.x * desc.depth_res;
+    return desc.grid_dims.x * ProbeGridLayout::depthTileSize(desc);
 }
 
 u32 depthAtlasHeight(const DDGIDesc& desc) {
-    return desc.grid_dims.y * desc.grid_dims.z * desc.depth_res;
+    return desc.grid_dims.y * desc.grid_dims.z * ProbeGridLayout::depthTileSize(desc);
 }
 
 bool tryCanScheduleProbeUpdates(u32 probe_count,
@@ -2039,6 +2048,30 @@ DDGISampleResult DDGI::sampleIrradiance(const DDGISampleRequest& request) const 
     return result;
 }
 
+bool DDGI::uploadAtlases(UploadTicket* outTicket) {
+    if (outTicket != nullptr) {
+        *outTicket = UploadTicket{};
+    }
+    if (!m_ready || m_resources == nullptr || m_cpu == nullptr) {
+        return false;
+    }
+    if (!ddgi_cpu::packIrradianceAtlasRgba16f(*m_cpu, m_irradiance_staging) ||
+        !ddgi_cpu::packDistanceAtlasRg16f(*m_cpu, m_distance_staging)) {
+        return false;
+    }
+    const UploadTicket irradiance = m_resources->uploadTexture(m_volume.irradiance_atlas, m_irradiance_staging.data());
+    const UploadTicket distance = m_resources->uploadTexture(m_volume.depth_atlas, m_distance_staging.data());
+    if (!irradiance.isValid() || !distance.isValid()) {
+        return false;
+    }
+    // Both copies share the open batch; submit it so later graphics work sees the texels.
+    const UploadTicket submitted = m_resources->flushUploads();
+    if (outTicket != nullptr) {
+        *outTicket = submitted.serial >= distance.serial ? submitted : distance;
+    }
+    return true;
+}
+
 bool DDGI::allocateResources(ResourceManager& resources) {
     const u32 count = ddgi_util::probeCount(m_desc);
 
@@ -2046,8 +2079,10 @@ bool DDGI::allocateResources(ResourceManager& resources) {
     irradianceDesc.width = ddgi_util::irradianceAtlasWidth(m_desc);
     irradianceDesc.height = ddgi_util::irradianceAtlasHeight(m_desc);
     irradianceDesc.format = GpuFormat::R16G16B16A16Sfloat;
-    irradianceDesc.usage = static_cast<ImageUsage>(static_cast<u32>(ImageUsage::Sampled) |
-                                                   static_cast<u32>(ImageUsage::Storage));
+    // TransferDst: CPU reference texels are uploaded (`uploadAtlases`); TransferSrc: readback.
+    irradianceDesc.usage = static_cast<ImageUsage>(
+        static_cast<u32>(ImageUsage::Sampled) | static_cast<u32>(ImageUsage::Storage) |
+        static_cast<u32>(ImageUsage::TransferDst) | static_cast<u32>(ImageUsage::TransferSrc));
     irradianceDesc.cudaInterop = true;
     irradianceDesc.name = "ddgi_irradiance_atlas";
 
@@ -2055,8 +2090,9 @@ bool DDGI::allocateResources(ResourceManager& resources) {
     depthDesc.width = ddgi_util::depthAtlasWidth(m_desc);
     depthDesc.height = ddgi_util::depthAtlasHeight(m_desc);
     depthDesc.format = GpuFormat::R16G16Sfloat;
-    depthDesc.usage = static_cast<ImageUsage>(static_cast<u32>(ImageUsage::Sampled) |
-                                              static_cast<u32>(ImageUsage::Storage));
+    depthDesc.usage = static_cast<ImageUsage>(
+        static_cast<u32>(ImageUsage::Sampled) | static_cast<u32>(ImageUsage::Storage) |
+        static_cast<u32>(ImageUsage::TransferDst) | static_cast<u32>(ImageUsage::TransferSrc));
     depthDesc.cudaInterop = true;
     depthDesc.name = "ddgi_depth_atlas";
 
