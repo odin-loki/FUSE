@@ -2,6 +2,7 @@
 
 #include <fuse/dimension/idimension.hpp>
 #include <fuse/physics/physics_world_3d.hpp>
+#include <fuse/world2d/cull_fork_join.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
 #include <fuse/world3d/scene_snapshot.hpp>
 
@@ -25,7 +26,7 @@ public:
 
     /// Game-thread phase: physics step + immutable snapshot build (no worker reads yet).
     void tickGameThread(frame::FrameCtx& ctx);
-    /// Worker-safe cull over the snapshot built by tickGameThread (JobScheduler parallel_for).
+    /// Worker-safe cull over the snapshot built by tickGameThread (heap-free JobScheduler fork-join).
     void runParallelCull();
 
     void loadWorld(dimension::WorldHandle world) override;
@@ -62,7 +63,9 @@ private:
 
     SceneSnapshot3D m_snapshot;
     SceneTransformSoA3D m_transformSoA;
-    std::vector<bool> m_cullVisible;
+    /// One byte per entry (not vector<bool>): cull jobs write neighbouring entries concurrently.
+    std::vector<u8> m_cullVisible;
+    world2d::CullForkJoin m_cullJobs;
 
     float m_clearR = 0.1f;
     float m_clearG = 0.15f;

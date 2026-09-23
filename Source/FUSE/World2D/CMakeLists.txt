@@ -4,6 +4,7 @@ add_library(fuse_world2d STATIC
     src/transform_stubs.cpp
     src/world_2d.cpp
     src/fuselevel_bridge.cpp
+    include/fuse/world2d/cull_fork_join.hpp
     include/fuse/world2d/scene_object_2d.hpp
     include/fuse/world2d/scene_snapshot.hpp
     include/fuse/world2d/transform_stubs.hpp

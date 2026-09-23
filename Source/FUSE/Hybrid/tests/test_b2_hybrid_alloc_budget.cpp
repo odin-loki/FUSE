@@ -1,12 +1,15 @@
-// B2.11 gate 3.5 follow-up: "Zero per-frame heap allocations" for the HybridComposer::render path
-// (the RhiContext-only gate lives in fuse_b2_frame_alloc_budget). Global operator new is replaced
-// with counters: render-thread allocations inside render() are enforced to be zero in steady state;
-// allocations on any thread during tick() (game thread + job workers) are measured and reported.
+// B2.11 gate 3.5 follow-up: "Zero per-frame heap allocations" for the HybridComposer tick + render
+// frame (the RhiContext-only gate lives in fuse_b2_frame_alloc_budget). Global operator new is
+// replaced with counters: render-thread allocations inside render() and allocations on every thread
+// during tick() (game thread + job workers running the World2D/World3D cull chunks) are enforced to
+// be zero in steady state.
 #include <fuse/core/init.hpp>
 #include <fuse/hybrid/hybrid_composer.hpp>
+#include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world2d/world_2d.hpp>
+#include <fuse/world3d/scene_object_3d.hpp>
 #include <fuse/world3d/world_3d.hpp>
 
 #include <atomic>
@@ -70,8 +73,9 @@ void expectTrue(bool condition, const char* message) {
 constexpr fuse::u32 kWarmupFrames = 8;
 constexpr fuse::u32 kMeasuredFrames = 64;
 constexpr int kSprites = 48;
+constexpr int kObjects3D = 24;
 
-void testHybridRenderDoesNotAllocate() {
+void testHybridFrameDoesNotAllocate() {
     fuse::hybrid::HybridComposer composer;
     fuse::world2d::World2D world2D;
     fuse::world3d::World3D world3D;
@@ -81,6 +85,15 @@ void testHybridRenderDoesNotAllocate() {
         sprites.back()->setPosition(static_cast<float>(i * 4 - 96), static_cast<float>((i % 8) * 10 - 40));
         world2D.addSprite(sprites.back().get());
     }
+    // 3D objects keep the World3D snapshot + parallel cull on the measured path (one outside the
+    // z window so the cull result is non-trivial).
+    std::vector<std::unique_ptr<fuse::SceneObject3D>> objects;
+    for (int i = 0; i < kObjects3D; ++i) {
+        objects.push_back(std::make_unique<fuse::SceneObject3D>("object" + std::to_string(i)));
+        objects.back()->setPosition(static_cast<float>(i), static_cast<float>(-i));
+        objects.back()->setZ(i == 0 ? 1000.f : static_cast<float>(i * 10 - 120));
+        world3D.addObject(objects.back().get());
+    }
     world3D.setClearColor(0.1f, 0.15f, 0.25f);
     composer.attachWorld2D(&world2D);
     composer.attachWorld3D(&world3D);
@@ -88,32 +101,49 @@ void testHybridRenderDoesNotAllocate() {
     const bool gpu = composer.rhiContext() != nullptr && composer.rhiContext()->bootstrap().status().deviceReady;
     std::printf("hybrid alloc budget: RHI device %s\n", gpu ? "ready" : "unavailable (software path only)");
 
+    const fuse::u32 workers = fuse::jobs::JobScheduler::instance().workerCount();
+    std::printf("hybrid alloc budget: %u job worker(s)\n", workers);
+
     fuse::frame::FrameCtx ctx;
     ctx.dt = 1.f / 60.f;
     unsigned long tickAllocations = 0;
+    unsigned long tickGameThreadAllocations = 0;
     for (fuse::u32 frame = 0; frame < kWarmupFrames + kMeasuredFrames; ++frame) {
         const bool measuring = frame >= kWarmupFrames;
         ctx.frameIndex = frame + 1u;
         ctx.time = static_cast<float>(frame) * ctx.dt;
 
+        const unsigned long gameThreadBefore = t_allocationCount;
         g_allThreadAllocations.store(0u);
         g_countAllThreads.store(measuring);
+        t_countAllocations = measuring;
         composer.tick(ctx);
+        t_countAllocations = false;
         g_countAllThreads.store(false);
         tickAllocations += measuring ? g_allThreadAllocations.load() : 0u;
+        tickGameThreadAllocations += t_allocationCount - gameThreadBefore;
+        t_allocationCount = gameThreadBefore;
 
         t_countAllocations = measuring;
         composer.render(ctx);
         t_countAllocations = false;
     }
 
+    const double frames = static_cast<double>(kMeasuredFrames);
     std::printf("hybrid alloc budget: render() %lu heap allocations over %u frames (%.2f/frame); "
-                "tick() all threads %lu (%.2f/frame, reported)\n",
-                t_allocationCount, kMeasuredFrames,
-                static_cast<double>(t_allocationCount) / static_cast<double>(kMeasuredFrames), tickAllocations,
-                static_cast<double>(tickAllocations) / static_cast<double>(kMeasuredFrames));
+                "tick() all threads %lu (%.2f/frame: game thread %lu, job workers %lu)\n",
+                t_allocationCount, kMeasuredFrames, static_cast<double>(t_allocationCount) / frames,
+                tickAllocations, static_cast<double>(tickAllocations) / frames, tickGameThreadAllocations,
+                tickAllocations - tickGameThreadAllocations);
     expectTrue(composer.lastCommandList().commandCount() >= static_cast<fuse::u32>(kSprites),
                "frame recorded clear + sprites");
+    expectTrue(world2D.readSnapshot().visibleCount() == static_cast<fuse::u32>(kSprites),
+               "World2D cull kept every sprite visible");
+    expectTrue(world3D.readSnapshot().visibleCount() == static_cast<fuse::u32>(kObjects3D - 1),
+               "World3D cull dropped only the object outside the z window");
+    // tick() never touches Vulkan, so it is enforced even with a validation layer injected.
+    expectTrue(tickAllocations == 0u,
+               "steady-state HybridComposer::tick performs zero heap allocations on any thread");
     const char* layers = std::getenv("VK_INSTANCE_LAYERS");
     if (layers != nullptr && std::strstr(layers, "validation") != nullptr) {
         std::printf("NOTE: validation layer injected — allocation count reported, not enforced\n");
@@ -126,7 +156,7 @@ void testHybridRenderDoesNotAllocate() {
 
 int main() {
     fuse::core::initialize();
-    testHybridRenderDoesNotAllocate();
+    testHybridFrameDoesNotAllocate();
     fuse::core::shutdown();
 
     if (g_failures == 0) {
