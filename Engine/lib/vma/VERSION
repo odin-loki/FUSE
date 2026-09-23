@@ -1,0 +1,17 @@
+# FUSE third-party pin: Vulkan Memory Allocator (header-only). Vendored verbatim, no local edits.
+# Checked by `fuse_lint vendored-pins` (ctest: fuse_lint_vendored_pins_vma) and, at compile time,
+# by a static_assert on VMA_VERSION in Source/FUSE/Renderer/src/vk/allocator.cpp.
+# To update: replace include/vk_mem_alloc.h and LICENSE.txt from the new upstream tag, then update
+# every field below (version, tag, commit, sha256) together. sha256 is over the file with CRLF
+# normalized to LF (git text=auto may check *.h out with CRLF on Windows).
+name=VulkanMemoryAllocator
+upstream=https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
+version=3.4.0
+tag=v3.4.0
+commit=3aa921224c154a0d2c43912bc88e1c42ce1f7607
+retrieved=2026-09-23 (raw.githubusercontent.com at the tag commit)
+license=MIT
+license_file=LICENSE.txt
+version_header=include/vk_mem_alloc.h
+sha256:include/vk_mem_alloc.h=8487b7995ad3b263eb73bc5b9a77d71aa69b6bef5d58a715c02d2663afd81f1a
+sha256:LICENSE.txt=52df2c03d6cfc9ffec13c9d3626c530fc9ce0cbe41d5ea3d10cd46edeb1aeb38

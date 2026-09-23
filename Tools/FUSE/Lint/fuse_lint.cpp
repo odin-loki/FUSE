@@ -17,9 +17,15 @@
 //   cxx-standard   Appendix C: CMAKE_CXX_STANDARD 23 on all non-CUDA fuse_* host targets.
 //   qt-includes    Appendix C: no #include <Q*> in core/renderer/physics/ecs/compute.
 //   doc-headings   Appendix C: every `### B*.*` has a matching `## N.M` in docs/sources/P*.md.
+//   vendored-pins  B1 gate "Third-party dependencies build from vendored source with pinned commits":
+//                  --dir <vendored lib> holds a VERSION pin (upstream, version, tag, 40-hex commit,
+//                  license, sha256 per file) that matches the vendored files and the version the
+//                  header itself declares.
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -713,6 +719,179 @@ Violations checkDocHeadings(const fs::path& plan, const fs::path& sources) {
     return v;
 }
 
+// ---- check: vendored-pins ---------------------------------------------------------------------------
+
+/// SHA-256 (FIPS 180-4) of `data`, lowercase hex.
+std::string sha256Hex(const std::string& data) {
+    static constexpr std::uint32_t k[64] = {
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
+    std::array<std::uint32_t, 8> h = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                                      0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+    std::string msg = data;
+    const std::uint64_t bitLen = std::uint64_t(data.size()) * 8u;
+    msg.push_back(char(0x80));
+    while (msg.size() % 64u != 56u) {
+        msg.push_back('\0');
+    }
+    for (int i = 7; i >= 0; --i) {
+        msg.push_back(char((bitLen >> (i * 8)) & 0xffu));
+    }
+    auto rotr = [](std::uint32_t x, int n) { return (x >> n) | (x << (32 - n)); };
+    for (size_t off = 0; off < msg.size(); off += 64u) {
+        std::uint32_t w[64];
+        for (int i = 0; i < 16; ++i) {
+            w[i] = std::uint32_t(std::uint8_t(msg[off + i * 4])) << 24 | std::uint32_t(std::uint8_t(msg[off + i * 4 + 1])) << 16 |
+                   std::uint32_t(std::uint8_t(msg[off + i * 4 + 2])) << 8 | std::uint32_t(std::uint8_t(msg[off + i * 4 + 3]));
+        }
+        for (int i = 16; i < 64; ++i) {
+            const std::uint32_t s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
+            const std::uint32_t s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+        }
+        std::array<std::uint32_t, 8> v = h;
+        for (int i = 0; i < 64; ++i) {
+            const std::uint32_t S1 = rotr(v[4], 6) ^ rotr(v[4], 11) ^ rotr(v[4], 25);
+            const std::uint32_t ch = (v[4] & v[5]) ^ (~v[4] & v[6]);
+            const std::uint32_t t1 = v[7] + S1 + ch + k[i] + w[i];
+            const std::uint32_t S0 = rotr(v[0], 2) ^ rotr(v[0], 13) ^ rotr(v[0], 22);
+            const std::uint32_t maj = (v[0] & v[1]) ^ (v[0] & v[2]) ^ (v[1] & v[2]);
+            const std::uint32_t t2 = S0 + maj;
+            v = {t1 + t2, v[0], v[1], v[2], v[3] + t1, v[4], v[5], v[6]};
+        }
+        for (int i = 0; i < 8; ++i) {
+            h[i] += v[i];
+        }
+    }
+    std::string hex;
+    char buf[9];
+    for (std::uint32_t x : h) {
+        std::snprintf(buf, sizeof(buf), "%08x", static_cast<unsigned>(x));
+        hex += buf;
+    }
+    return hex;
+}
+
+std::string withoutCr(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '\r' && i + 1 < text.size() && text[i + 1] == '\n') {
+            continue;
+        }
+        out.push_back(text[i]);
+    }
+    return out;
+}
+
+Violations checkVendoredPins(const fs::path& dir) {
+    Violations v;
+    const fs::path pinPath = dir / "VERSION";
+    const std::string where = pinPath.generic_string();
+    if (!fs::is_regular_file(pinPath)) {
+        v.push_back(where + ": missing pin file");
+        return v;
+    }
+    std::map<std::string, std::string> kv;
+    std::vector<std::pair<std::string, std::string>> hashes; // relative path -> expected sha256
+    std::istringstream in(withoutCr(readFile(pinPath)));
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+        const size_t eq = line.find('=');
+        if (eq == std::string::npos) {
+            v.push_back(where + ": malformed line '" + line + "'");
+            continue;
+        }
+        const std::string key = line.substr(0, eq);
+        const std::string value = line.substr(eq + 1);
+        if (key.rfind("sha256:", 0) == 0) {
+            hashes.emplace_back(key.substr(7), value);
+        } else {
+            kv[key] = value;
+        }
+    }
+    for (const char* key : {"name", "upstream", "version", "tag", "commit", "license", "license_file", "version_header"}) {
+        if (kv[key].empty()) {
+            v.push_back(where + ": required field '" + std::string(key) + "' missing or empty");
+        }
+    }
+    const std::string& version = kv["version"];
+    if (!std::regex_match(version, std::regex(R"([0-9]+\.[0-9]+\.[0-9]+)"))) {
+        v.push_back(where + ": version '" + version + "' is not X.Y.Z");
+    }
+    if (!std::regex_match(kv["commit"], std::regex("[0-9a-f]{40}"))) {
+        v.push_back(where + ": commit '" + kv["commit"] + "' is not a full 40-hex commit hash");
+    }
+    if (!version.empty() && kv["tag"] != version && kv["tag"] != "v" + version) {
+        v.push_back(where + ": tag '" + kv["tag"] + "' does not name version " + version);
+    }
+    if (kv["upstream"].rfind("https://", 0) != 0) {
+        v.push_back(where + ": upstream '" + kv["upstream"] + "' is not an https URL");
+    }
+    if (!kv["license_file"].empty()) {
+        const fs::path license = dir / kv["license_file"];
+        if (!fs::is_regular_file(license) || readFile(license).find("Copyright") == std::string::npos) {
+            v.push_back(license.generic_string() + ": license file missing or has no copyright notice");
+        }
+    }
+
+    // The version the vendored header declares must be the pinned one.
+    const std::string& headerRel = kv["version_header"];
+    if (!headerRel.empty()) {
+        const fs::path header = dir / headerRel;
+        if (!fs::is_regular_file(header)) {
+            v.push_back(header.generic_string() + ": version_header missing");
+        } else {
+            const std::string text = readFile(header);
+            const std::regex makeVersion(R"(#define\s+\w*VERSION\s+\(\s*VK_MAKE_VERSION\(\s*([0-9]+)\s*,\s*([0-9]+)\s*,\s*([0-9]+)\s*\)\s*\))");
+            const std::regex docVersion(R"(<b>Version ([0-9]+\.[0-9]+\.[0-9]+)</b>)");
+            std::vector<std::string> declared;
+            for (std::sregex_iterator it(text.begin(), text.end(), makeVersion), end; it != end; ++it) {
+                declared.push_back((*it).str(1) + "." + (*it).str(2) + "." + (*it).str(3));
+            }
+            for (std::sregex_iterator it(text.begin(), text.end(), docVersion), end; it != end; ++it) {
+                declared.push_back((*it).str(1));
+            }
+            if (declared.empty()) {
+                v.push_back(header.generic_string() + ": declares no version (VK_MAKE_VERSION define or <b>Version X.Y.Z</b>)");
+            }
+            for (const std::string& d : declared) {
+                if (d != version) {
+                    v.push_back(header.generic_string() + ": declares version " + d + ", pin says " + version);
+                }
+            }
+        }
+    }
+
+    // Vendored bytes match the pin (CRLF-normalized, so a text=auto checkout still verifies).
+    bool headerHashed = false;
+    for (const auto& [relPath, expected] : hashes) {
+        headerHashed = headerHashed || relPath == headerRel;
+        const fs::path file = dir / relPath;
+        if (!fs::is_regular_file(file)) {
+            v.push_back(file.generic_string() + ": pinned file missing");
+            continue;
+        }
+        const std::string actual = sha256Hex(withoutCr(readFile(file)));
+        if (actual != expected) {
+            v.push_back(file.generic_string() + ": sha256 " + actual + " != pinned " + expected);
+        }
+    }
+    if (!headerRel.empty() && !headerHashed) {
+        v.push_back(where + ": no sha256:" + headerRel + " entry");
+    }
+    return v;
+}
+
 // ---- self-tests -------------------------------------------------------------------------------------
 
 struct SelfTest {
@@ -923,6 +1102,46 @@ bool selfTest(const std::string& check, const fs::path& scratch) {
             std::fprintf(stderr, "  unexpected: %s\n", s.c_str());
         }
         t.expect(vg.empty(), "doc-headings: matching plan/sources pass");
+    } else if (check == "vendored-pins") {
+        t.expect(sha256Hex("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+                 "vendored-pins: sha256(\"abc\") known answer");
+        t.expect(sha256Hex("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                 "vendored-pins: sha256(\"\") known answer");
+        const std::string header = "// lib\n#define LIB_VERSION (VK_MAKE_VERSION(1, 2, 3))\n/* <b>Version 1.2.3</b> */\n";
+        const std::string license = "Copyright (c) 2020 Someone\nPermission is hereby granted...\n";
+        auto pin = [&](const std::string& version, const std::string& commit, const std::string& headerSha) {
+            return "# pin\nname=lib\nupstream=https://example.com/lib\nversion=" + version + "\ntag=v" + version +
+                   "\ncommit=" + commit + "\nlicense=MIT\nlicense_file=LICENSE.txt\nversion_header=include/lib.h\n" +
+                   "sha256:include/lib.h=" + headerSha + "\nsha256:LICENSE.txt=" + sha256Hex(license) + "\n";
+        };
+        const std::string commit(40, 'a');
+        seedTree(good, {});
+        writeFile(good / "include/lib.h", header);
+        writeFile(good / "LICENSE.txt", license);
+        writeFile(good / "VERSION", pin("1.2.3", commit, sha256Hex(header)));
+        const Violations vg = checkVendoredPins(good);
+        for (const auto& s : vg) {
+            std::fprintf(stderr, "  unexpected: %s\n", s.c_str());
+        }
+        t.expect(vg.empty(), "vendored-pins: consistent pin passes");
+        // CRLF checkout of the same bytes still verifies.
+        std::string crlf;
+        for (char c : header) {
+            if (c == '\n') crlf += '\r';
+            crlf += c;
+        }
+        writeFile(good / "include/lib.h", crlf);
+        t.expect(checkVendoredPins(good).empty(), "vendored-pins: CRLF checkout of pinned header passes");
+        // Bad: pin says 1.2.4 (header declares 1.2.3 twice -> 2), short commit (1), header edited
+        // after pinning (sha mismatch, 1), license file missing (license check + pinned hash, 2) => 6.
+        seedTree(bad, {});
+        writeFile(bad / "include/lib.h", header);
+        writeFile(bad / "VERSION", pin("1.2.4", "abc123", sha256Hex(header + "// local edit\n")));
+        const Violations vb = checkVendoredPins(bad);
+        t.expect(vb.size() == 6u && countContaining(vb, "declares version 1.2.3") == 2u &&
+                     countContaining(vb, "40-hex") == 1u && countContaining(vb, "sha256") >= 1u,
+                 "vendored-pins: seeded version/commit/hash/license violations flagged (got " + std::to_string(vb.size()) + ")");
+        t.expect(checkVendoredPins(bad / "nonexistent").size() == 1u, "vendored-pins: missing pin file flagged");
     } else {
         std::fprintf(stderr, "unknown check '%s'\n", check.c_str());
         return false;
@@ -936,7 +1155,7 @@ bool selfTest(const std::string& check, const fs::path& scratch) {
 int usage() {
     std::fprintf(stderr,
                  "usage: fuse_lint <ownership|namespace|macros|torque-macros|torque-names|banned-deps|cxx-standard|"
-                 "qt-includes|doc-headings> [--root DIR] [--dir DIR] [--manifest FILE] [--repo DIR] [--plan FILE] "
+                 "qt-includes|doc-headings|vendored-pins> [--root DIR] [--dir DIR] [--manifest FILE] [--repo DIR] [--plan FILE] "
                  "[--sources DIR] --scratch DIR\n");
     return 2;
 }
@@ -981,6 +1200,7 @@ int main(int argc, char** argv) {
     else if (a.check == "qt-includes") v = checkQtIncludes(shown = a.root, a.manifest);
     else if (a.check == "cxx-standard") v = checkCxxStandard(shown = a.manifest, a.repo);
     else if (a.check == "doc-headings") v = checkDocHeadings(shown = a.plan, a.sources);
+    else if (a.check == "vendored-pins") v = checkVendoredPins(shown = a.dir);
     else return usage();
 
     for (const std::string& s : v) {

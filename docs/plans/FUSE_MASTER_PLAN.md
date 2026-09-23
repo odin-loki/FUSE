@@ -74,7 +74,7 @@ FUSE treats Torque3D as a **behavioural and asset-compat reference**, not as sac
 3. **Allocators over `new`.** Linear / Pool / FreeList–TLSF / Ring / GPUAllocator + per-domain budgets; route Torque `FrameAllocator` / `Memory::` call sites through FUSE allocators during port.
 4. **Qt owns chrome; engine owns viewport.** Qt main window + docks; Vulkan surface embedded; editor input Qt→FUSE; game path uses raw platform input.
 5. **Scripts last.** TorqueScript quarantined under `compat/`; new gameplay prefers C++23 (+ Lua in Track B7).
-6. **Vendored deps, pinned.** Catch2, VMA, etc. under `third_party/`; Qt via SDK is the documented exception (pin version in `THIRD_PARTY.md`).
+6. **Vendored deps, pinned.** VMA, ENet, Lua, etc. under `Engine/lib/<dep>` with a `VERSION` pin file (upstream, tag, commit, sha256); Qt via SDK is the documented exception.
 
 ## A2. Language subset & banned patterns
 
@@ -307,9 +307,9 @@ Three CMake presets: `debug`, `release`, `profile`. A fourth `shipping` preset s
 
 #### Third-Party Policy
 
-No package manager (vcpkg, Conan). All dependencies vendored under `third_party/` as git submodules with pinned commit hashes. This gives you reproducible builds in air-gapped environments. Permitted third-party libs at this phase:
+No package manager (vcpkg, Conan). All dependencies vendored under `Engine/lib/<dep>` with a `VERSION` pin file (upstream, tag, commit hash, file sha256s) checked by `fuse_lint`. This gives you reproducible builds in air-gapped environments. Permitted third-party libs at this phase:
 
-- **Catch2** — unit testing only
+- ~~Catch2~~ — dropped: FUSE tests are plain CTest executables
 - **VMA (Vulkan Memory Allocator)** — GPU heap management
 - **Tracy** (optional) — external profiler backend
 
@@ -1020,7 +1020,7 @@ Phase 1 is complete when every item in this checklist passes. Nothing moves to P
 - [ ] CMake builds cleanly in Debug, Release, Profile, Shipping — zero warnings with `-Wall -Wextra`
 - [ ] CUDA compiles against C++23 FUSE host headers (CUDA device dialect may remain C++23) — no separate CUDA type system or duplicate definitions
 - [ ] All four build configs produce correct binaries on Windows; Linux build compiles without error
-- [ ] Third-party dependencies (Catch2, VMA) build from vendored source with pinned commits
+- [x] Third-party dependencies (VMA) build from vendored source with pinned commits — VMA 3.4.0 @3aa92122 in `Engine/lib/vma` (header + LICENSE + VERSION pin), `fuse_lint_vendored_pins_vma` + compile-time `VMA_VERSION` check; Catch2 dropped (tests are plain CTest executables)
 - [ ] Unity builds reduce full rebuild time below 60 seconds on ThinkStation P920
 - [x] All allocators pass 1M alloc/free stress cycles — zero leaks, alignment always correct — `fuse_core_b1_alloc_million_cycles` (exactly 1M full alloc→free cycles each for Pool/FreeList/Ring/Stack/Frame via `IAllocator`; alignment, overlap, periodic stats invariants, allocCount==freeCount==1M, LeakDetector live-record tracking + zero live/unknown frees at exit)
 - [x] LinearAllocator correctly ping-pongs between frames — no use-after-reset in debug — `fuse_core_b1_memory_gates`

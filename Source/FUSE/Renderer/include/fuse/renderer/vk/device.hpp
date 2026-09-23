@@ -42,8 +42,10 @@ struct VulkanDeviceInfo {
     std::string message;
     VulkanQueues queues{};
     std::vector<const char*> enabledExtensions;
-    /// VMA placeholder — wired in a later B2.1 follow-up.
+    /// VmaAllocator of the GpuAllocator bound to this device (null on the native/stub paths).
     void* vmaAllocator = nullptr;
+    /// Effective Vulkan API version: min(instance apiVersion, physical device apiVersion).
+    u32 apiVersion = 0;
     bool descriptorIndexing = false;
     /// Per-descriptor-type UPDATE_AFTER_BIND support (bindless layout gates binding flags on these).
     bool sampledImageUpdateAfterBind = false; ///< Also covers VK_DESCRIPTOR_TYPE_SAMPLER

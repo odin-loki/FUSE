@@ -118,6 +118,8 @@ _fuse_lint_add(fuse_lint_c_cxx23_targets       cxx-standard   --manifest "${FUSE
 _fuse_lint_add(fuse_lint_c_no_qt_in_core       qt-includes    --root "${_fuse_lint_src}" --manifest "${FUSE_LINT_MANIFEST}")
 _fuse_lint_add(fuse_lint_c_doc_headings        doc-headings
     --plan "${CMAKE_SOURCE_DIR}/docs/plans/FUSE_MASTER_PLAN.md" --sources "${CMAKE_SOURCE_DIR}/docs/sources")
+# B1 gate: third-party dependencies build from vendored source with pinned commits.
+_fuse_lint_add(fuse_lint_vendored_pins_vma     vendored-pins  --dir "${CMAKE_SOURCE_DIR}/Engine/lib/vma")
 
 get_property(_fuse_lint_all GLOBAL PROPERTY _FUSE_LINT_TESTS)
 set_tests_properties(${_fuse_lint_all} PROPERTIES LABELS "gate;lint" TIMEOUT 300)

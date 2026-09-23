@@ -207,6 +207,12 @@ int main() {
     auto allocator = GpuAllocator::create(device);
     expectTrue(allocator != nullptr && allocator->isValid() && !allocator->isStub(), "real GPU allocator");
     std::printf("allocator mode: %s\n", allocator->info().message.c_str());
+#if defined(FUSE_RHI_ALLOCATOR_VMA)
+    // Default Vulkan build: the row is about VMA memory types, so it must run on the vendored VMA.
+    expectTrue(allocator->info().mode == GpuAllocatorMode::Vma, "GpuAllocator runs on vendored VMA");
+#else
+    expectTrue(allocator->info().mode == GpuAllocatorMode::Native, "FUSE_RHI_USE_VMA=OFF: native allocator");
+#endif
 
     // ---- Buffers ------------------------------------------------------------------------------
     Buffer buffers[4];
@@ -312,6 +318,13 @@ int main() {
 
     expectTrue(allocator->stats().bufferCount == 4u && allocator->stats().imageCount == 5u,
                "allocator tracks 4 buffers + 5 images");
+    for (const Buffer& buffer : buffers) {
+        expectTrue(buffer.allocationSize >= kBufferBytes, "buffer allocationSize covers the request");
+    }
+#if defined(FUSE_RHI_ALLOCATOR_VMA)
+    expectTrue(allocator->stats().vmaPoolCount > 0u && allocator->stats().vmaPoolUsedBytes >= 4u * kBufferBytes,
+               "VMA block statistics reflect the live allocations");
+#endif
     for (Buffer& buffer : buffers) {
         allocator->destroyBuffer(buffer);
     }

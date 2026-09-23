@@ -422,6 +422,7 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
         }
     }
     m_info.deviceType = static_cast<u32>(props.deviceType);
+    m_info.apiVersion = std::min(instance.info().apiVersion, props.apiVersion);
     m_info.queues.graphicsFamily = graphicsFamily;
     m_info.queues.computeFamily = computeFamily;
     m_info.queues.transferFamily = transferFamily;

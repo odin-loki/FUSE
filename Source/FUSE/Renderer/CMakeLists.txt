@@ -165,14 +165,40 @@ target_compile_definitions(fuse_rhi PRIVATE
     FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
 )
 
-# Optional VMA — stub allocator when header not vendored.
-set(FUSE_VMA_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/third_party/VulkanMemoryAllocator/include")
-if(EXISTS "${FUSE_VMA_INCLUDE_DIR}/vk_mem_alloc.h")
-    target_include_directories(fuse_rhi PRIVATE "${FUSE_VMA_INCLUDE_DIR}")
-    target_compile_definitions(fuse_rhi PRIVATE FUSE_VMA_AVAILABLE=1)
-    message(STATUS "FUSE: VMA found at ${FUSE_VMA_INCLUDE_DIR}")
+# GpuAllocator backend. Vulkan builds use the vendored, pinned VMA (Engine/lib/vma, see its VERSION
+# file) by default; FUSE_RHI_USE_VMA=OFF keeps the native one-vkAllocateMemory-per-resource path as
+# a fallback. Never picks up a system vk_mem_alloc.h. Stub builds (no Vulkan) use neither.
+option(FUSE_RHI_USE_VMA "Back fuse_rhi GpuAllocator with vendored VMA (OFF = native vkAllocateMemory fallback)" ON)
+set(FUSE_VMA_DIR "${CMAKE_SOURCE_DIR}/Engine/lib/vma")
+if(FUSE_VULKAN_BACKEND AND FUSE_RHI_USE_VMA)
+    if(NOT EXISTS "${FUSE_VMA_DIR}/include/vk_mem_alloc.h" OR NOT EXISTS "${FUSE_VMA_DIR}/VERSION")
+        message(FATAL_ERROR "FUSE_RHI_USE_VMA=ON but vendored VMA is missing under ${FUSE_VMA_DIR} "
+                            "(expected include/vk_mem_alloc.h + VERSION); configure with -DFUSE_RHI_USE_VMA=OFF "
+                            "for the native allocator")
+    endif()
+    file(STRINGS "${FUSE_VMA_DIR}/VERSION" _fuse_vma_version_line REGEX "^version=")
+    if(NOT _fuse_vma_version_line MATCHES "^version=([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
+        message(FATAL_ERROR "${FUSE_VMA_DIR}/VERSION: no 'version=X.Y.Z' pin line")
+    endif()
+    set(FUSE_VMA_VERSION "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${FUSE_VMA_DIR}/VERSION")
+    # SYSTEM: third-party header, keep FUSE warning levels off VMA's own code.
+    target_include_directories(fuse_rhi SYSTEM PRIVATE "${FUSE_VMA_DIR}/include")
+    target_compile_definitions(fuse_rhi
+        PRIVATE
+            FUSE_VMA_AVAILABLE=1
+            FUSE_VMA_PIN_MAJOR=${CMAKE_MATCH_1}
+            FUSE_VMA_PIN_MINOR=${CMAKE_MATCH_2}
+            FUSE_VMA_PIN_PATCH=${CMAKE_MATCH_3}
+            FUSE_VMA_VERSION_STRING="${FUSE_VMA_VERSION}"
+        # Lets tests assert which allocator backend fuse_rhi was built with.
+        PUBLIC
+            FUSE_RHI_ALLOCATOR_VMA=1)
+    message(STATUS "FUSE: fuse_rhi GpuAllocator uses vendored VMA ${FUSE_VMA_VERSION} (${FUSE_VMA_DIR})")
+elseif(FUSE_VULKAN_BACKEND)
+    message(STATUS "FUSE: fuse_rhi GpuAllocator uses native vkAllocateMemory (FUSE_RHI_USE_VMA=OFF)")
 else()
-    message(STATUS "FUSE: VMA not found — fuse_rhi uses stub GpuAllocator")
+    message(STATUS "FUSE: fuse_rhi GpuAllocator stub (Vulkan backend off)")
 endif()
 
 if(FUSE_VULKAN_BACKEND)
