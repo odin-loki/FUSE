@@ -158,9 +158,13 @@ was re-verified from a clean checkout. Every stream found real bugs in the scaff
 
 | Batch 4 | `fuse_b4_pipeline_alloc_gate`, `fuse_b4_joint_gates`, `fuse_b2_upload_queue_family`, `fuse_core_b1_log_async_ring_gates`, `fuse_core_b1_x11_window_gates`, `fuse_b2_x11_swapchain_gates`, `fuse_b5_rhi_*`, `fuse_editor_b6_viewport*_gates`, `fuse_editor_b6_material_profiler_gates`, `fuse_scene_magic_gates`, `fuse_b7_save_reload_gates`, `fuse_b3_free_camera_gates`, `fuse_runtime_steady_state_alloc`, `ctest -L lint`, `ctest -L valgrind`, `fuse-asan` preset | Physics worlds 18.8k → 0 allocs/frame; joint API with XPBD limits and break events; cross-queue-family uploads fixed (test layer splits Lavapipe's family); lock-free async log ring; native X11 window + real swapchain under Xvfb; ENet/Lua vendored; strict asset import by default; draw lists reached the GPU for the first time; ASan+UBSan over every FUSE target |
 
-**Open items:** CUDA kernels are stubs; lavapipe allocates inside `vkCmd*` (engine code itself is 0/frame);
-Windows crash minidump and DPI awareness untested (no Windows toolchain); the editor presents headless
-until `RhiContext` can adopt the `QVulkanInstance`.
+| Batch 5 | `ctest -L qt` (Qt 6 editor: startup, layout, theme, fonts, WASD, menus, UI frame, idle, present adopt), `fuse_lint_b6_editor_qt6_only`, `fuse-werror-*` presets + `fuse_b7_shipping_binaries`, `fuse_core_b1_x11_window_gates` (XInput2 raw mouse), `fuse_b2_physical_device_selection`, `fuse_b3_sdf_buffer_ray_march`, `fuse_runtime_steady_state_alloc` (script/net/editor), `fuse_b4_ccd_gates` (TOI < 8 iterations), `fuse_b7_terrain_cave_render`, `fuse_lint_vendored_pins_vma` | Zero warnings in Debug/Release/Profile/Shipping with and without Vulkan (306 → 0); full suite green in Shipping; VMA 3.4.0 vendored and default; Qt editor builds (its Vulkan code had never compiled) and passes under Xvfb; Lua/ENet/snapshot deltas at 0 allocations/frame; CCD TOI 64 → 7 iterations worst case; jobs startup race (fiber prewarm after `initialize()` returned) fixed |
+
+**Open items:** CUDA kernels are stubs (no nvcc here); lavapipe allocates inside `vkCmd*` (engine code
+is 0/frame); Windows crash minidump and DPI awareness untested (no Windows toolchain); the live Qt
+editor viewport still presents headless (in progress); ECS single-thread rate and a GPU radix sort are
+being worked on; remaining unchecked plan rows are hardware timings (RTX 3090 / ThinkStation),
+CUDA, Windows or manual visual checks.
 
 ## 5. Hardware / manual gates (not provable in CI)
 
