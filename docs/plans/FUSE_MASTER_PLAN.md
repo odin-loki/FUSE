@@ -332,7 +332,7 @@ Everything else is written from scratch.
 
 #### Gates
 
-- [ ] **B1.1** implemented on FUSE APIs (not ungated Torque guts)
+- [x] **B1.1** implemented on FUSE APIs (not ungated Torque guts) (CMake presets incl. `fuse-werror-*`/`fuse-asan`, `cmake/FuseWarnings.cmake`, `cmake/FuseSanitizers.cmake`, vendored pins; `ctest -L lint`)
 - [ ] Source narrative tests/acceptance for this topic green
 - [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
 - [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
@@ -974,7 +974,7 @@ struct InputState {
 #### Gates
 
 - [x] **B1.7** implemented on FUSE APIs (not ungated Torque guts) (`fuse_core_b1_platform_gates`)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] Source narrative tests/acceptance for this topic green (`fuse_core_b1_x11_window_gates`, `fuse_core_b1_platform_gates`, `fuse_b2_x11_swapchain_gates`)
 - [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
 - [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
 
@@ -3202,7 +3202,7 @@ swept_sphere_sphere(
 #### Gates
 
 - [x] **B4.6** implemented on FUSE APIs (not ungated Torque guts) (`fuse_b4_ccd_gates`)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] Source narrative tests/acceptance for this topic green (`fuse_b4_ccd_gates`)
 - [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
 - [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
 
@@ -4605,7 +4605,7 @@ public:
 #### Gates
 
 - [x] **B6.1** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_qt_fuse_api`)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] Source narrative tests/acceptance for this topic green (`fuse_editor_qt_startup`, `fuse_editor_qt_layout`, `fuse_editor_qt_theme`, `fuse_editor_qt_ui_frame`, `fuse_editor_qt_idle_frames`)
 - [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
 - [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
 - [x] Qt 6 only for editor chrome — **no Dear ImGui** (`fuse_lint_b6_editor_qt6_only`: fuse_editor link closure is Qt6-only, no ImGui)
@@ -4760,7 +4760,7 @@ void ViewportPanel::handle_camera_input_(EditorState& state, f32 dt) {
 #### Gates
 
 - [x] **B6.3** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_viewport_gates`)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] Source narrative tests/acceptance for this topic green (`fuse_editor_qt_wasd`, `fuse_editor_b6_viewport_gates`, `fuse_editor_b6_viewport_resize_vk_gates`, `fuse_editor_qt_context_menu`)
 - [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
 - [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
 - [x] Qt 6 only for editor chrome — **no Dear ImGui** (`fuse_lint_b6_editor_qt6_only`: fuse_editor link closure is Qt6-only, no ImGui)
