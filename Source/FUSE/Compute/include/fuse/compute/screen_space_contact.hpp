@@ -23,5 +23,6 @@ f32 ssr_screen_edge_fade(f32 uv_x, f32 uv_y, const SSRParams& params);
 /// Reject invalid launch parameters before host/CUDA dispatch.
 bool validate_ssao_params(const SSAOParams& params);
 bool validate_ssr_params(const SSRParams& params);
+bool validate_ssgi_params(const SSGIParams& params);
 
 } // namespace fuse::compute

@@ -2,10 +2,6 @@
 
 namespace fuse::compute {
 
-bool launch_ssao_cpu(const SSAOParams& params);
-bool launch_ssr_cpu(const SSRParams& params);
-bool launch_ssgi_cpu(const SSGIParams& params);
-
 #if defined(FUSE_HAS_CUDA)
 bool launchSsaoCuda(const SSAOParams& params, void* stream);
 bool launchSsrCuda(const SSRParams& params, void* stream);

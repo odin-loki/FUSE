@@ -1,9 +1,9 @@
-#include <fuse/renderer/ssfx/ssr.hpp>
+#include <fuse/ssfx/ssr.hpp>
 
 #include <algorithm>
 #include <cmath>
 
-namespace fuse::renderer {
+namespace fuse::ssfx {
 namespace {
 
 f32 saturate(f32 v) {
@@ -35,23 +35,33 @@ math::Vec3 ssrReflect(const math::Vec3& incident, const math::Vec3& n) {
     return incident - n * (2.f * incident.dot(n));
 }
 
-SsrHit ssrTracePixel(const SsfxGBufferView& view, const math::Vec3* sceneColor, const SsrParams& rawParams, u32 x,
+SsrHit ssrTracePixel(const SsfxGBufferView& view, const math::Vec3* sceneColor, const SsrParams& params, u32 x,
                      u32 y) {
-    SsrHit result{};
     if (!view.valid() || sceneColor == nullptr || x >= view.camera.width || y >= view.camera.height ||
         view.depthAt(x, y) <= 0.f) {
-        return result;
+        return SsrHit{};
     }
-    const SsrParams params = clampSsrParams(rawParams);
-    const SsfxCamera& cam = view.camera;
-
     const math::Vec3 p = view.positionAt(x, y);
     math::Vec3 n = view.normalAt(x, y).normalized();
     const math::Vec3 v = p.normalized();
     if (n.dot(v) > 0.f) {
         n = n * -1.f;
     }
-    const math::Vec3 r = ssrReflect(v, n).normalized();
+    return ssrTraceRay(view, sceneColor, params, x, y, ssrReflect(v, n));
+}
+
+SsrHit ssrTraceRay(const SsfxGBufferView& view, const math::Vec3* sceneColor, const SsrParams& rawParams, u32 x,
+                   u32 y, const math::Vec3& direction) {
+    SsrHit result{};
+    if (!view.valid() || sceneColor == nullptr || x >= view.camera.width || y >= view.camera.height ||
+        view.depthAt(x, y) <= 0.f || direction.length() <= 0.f) {
+        return result;
+    }
+    const SsrParams params = clampSsrParams(rawParams);
+    const SsfxCamera& cam = view.camera;
+
+    const math::Vec3 p = view.positionAt(x, y);
+    const math::Vec3 r = direction.normalized();
 
     // Clip the ray against the near plane so both endpoints project.
     f32 rayLength = params.max_distance;
@@ -175,4 +185,4 @@ bool computeSsrCpu(const SsfxGBufferView& view, const math::Vec3* sceneColor, co
     return true;
 }
 
-} // namespace fuse::renderer
+} // namespace fuse::ssfx

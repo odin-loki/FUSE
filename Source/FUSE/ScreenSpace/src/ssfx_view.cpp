@@ -1,8 +1,8 @@
-#include <fuse/renderer/ssfx/ssfx_view.hpp>
+#include <fuse/ssfx/ssfx_view.hpp>
 
 #include <cmath>
 
-namespace fuse::renderer {
+namespace fuse::ssfx {
 
 SsfxCamera SsfxCamera::fromVerticalFov(u32 width, u32 height, f32 fovY) {
     SsfxCamera camera{};
@@ -124,4 +124,4 @@ math::Vec3 ssfxReconstructNormal(const SsfxGBufferView& view, u32 x, u32 y) {
     return n;
 }
 
-} // namespace fuse::renderer
+} // namespace fuse::ssfx

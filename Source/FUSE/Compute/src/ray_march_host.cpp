@@ -2,8 +2,6 @@
 
 namespace fuse::compute {
 
-bool launch_ray_march_cpu(const RayMarchParams& params);
-
 #if defined(FUSE_HAS_CUDA)
 bool launchRayMarchCuda(const RayMarchParams& params, void* stream);
 #endif

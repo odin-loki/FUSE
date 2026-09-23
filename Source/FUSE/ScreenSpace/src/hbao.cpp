@@ -1,10 +1,10 @@
-#include <fuse/renderer/ssfx/hbao.hpp>
+#include <fuse/ssfx/hbao.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <vector>
 
-namespace fuse::renderer {
+namespace fuse::ssfx {
 namespace {
 
 constexpr f32 kPi = 3.14159265358979323846f;
@@ -237,4 +237,4 @@ f32 ssaoHemisphereReferenceVisibility(const SsfxGBufferView& view, u32 x, u32 y,
     return static_cast<f32>(visible) / static_cast<f32>(total);
 }
 
-} // namespace fuse::renderer
+} // namespace fuse::ssfx

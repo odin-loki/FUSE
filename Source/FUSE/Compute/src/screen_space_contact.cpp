@@ -109,6 +109,19 @@ bool validate_ssr_params(const SSRParams& params) {
     return true;
 }
 
+bool validate_ssgi_params(const SSGIParams& params) {
+    if (params.width == 0 || params.height == 0) {
+        return false;
+    }
+    if (params.sample_sqrt == 0 || params.max_steps == 0 || params.ray_step_size <= 0.f) {
+        return false;
+    }
+    if (params.thickness <= 0.f || params.max_distance <= 0.f || params.intensity < 0.f) {
+        return false;
+    }
+    return true;
+}
+
 f32 ssao_contact_ao_weight(f32 depth_delta, f32 normal_similarity, const SSAOParams& params) {
     if (params.contact_depth_scale <= 0.f) {
         return 1.f;
