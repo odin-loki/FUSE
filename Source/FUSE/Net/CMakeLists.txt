@@ -44,44 +44,18 @@ target_include_directories(fuse_net
 target_link_libraries(fuse_net PUBLIC fuse_ecs fuse_core)
 target_compile_features(fuse_net PUBLIC cxx_std_17)
 
-# ENet backend — compiled from the in-tree ENet 1.3.x sources (MIT) when present.
+# ENet backend — vendored ENet 1.3.7 (MIT) under Engine/lib/enet (target fuse_enet).
 option(FUSE_NET_WITH_ENET "Build the ENet UDP transport backend for fuse_net" ON)
-set(FUSE_NET_ENET_DIR "${CMAKE_SOURCE_DIR}/Engine/lib/bullet/examples/ThirdPartyLibs/enet"
-    CACHE PATH "ENet source directory (host.c, protocol.c, include/enet/enet.h)")
+set(_fuse_enet_dir "${CMAKE_SOURCE_DIR}/Engine/lib/enet")
 set(FUSE_NET_HAS_ENET OFF)
-if(FUSE_NET_WITH_ENET AND EXISTS "${FUSE_NET_ENET_DIR}/include/enet/enet.h")
-    get_property(_fuse_net_languages GLOBAL PROPERTY ENABLED_LANGUAGES)
-    if(NOT "C" IN_LIST _fuse_net_languages)
-        enable_language(C)
+if(FUSE_NET_WITH_ENET AND EXISTS "${_fuse_enet_dir}/include/enet/enet.h")
+    if(NOT TARGET fuse_enet)
+        add_subdirectory("${_fuse_enet_dir}" "${CMAKE_BINARY_DIR}/fuse_vendor/enet" EXCLUDE_FROM_ALL)
     endif()
-    set(_fuse_enet_sources
-        ${FUSE_NET_ENET_DIR}/callbacks.c
-        ${FUSE_NET_ENET_DIR}/compress.c
-        ${FUSE_NET_ENET_DIR}/host.c
-        ${FUSE_NET_ENET_DIR}/list.c
-        ${FUSE_NET_ENET_DIR}/packet.c
-        ${FUSE_NET_ENET_DIR}/peer.c
-        ${FUSE_NET_ENET_DIR}/protocol.c
-    )
-    if(WIN32)
-        list(APPEND _fuse_enet_sources ${FUSE_NET_ENET_DIR}/win32.c)
-    else()
-        list(APPEND _fuse_enet_sources ${FUSE_NET_ENET_DIR}/unix.c)
-    endif()
-    add_library(fuse_net_enet STATIC ${_fuse_enet_sources})
-    target_include_directories(fuse_net_enet PUBLIC $<BUILD_INTERFACE:${FUSE_NET_ENET_DIR}/include>)
-    set_target_properties(fuse_net_enet PROPERTIES POSITION_INDEPENDENT_CODE ON)
-    if(WIN32)
-        target_compile_definitions(fuse_net_enet PUBLIC WIN32)
-        target_link_libraries(fuse_net_enet PUBLIC ws2_32 winmm)
-    else()
-        target_compile_definitions(fuse_net_enet PRIVATE
-            HAS_SOCKLEN_T=1 HAS_POLL=1 HAS_FCNTL=1 HAS_INET_PTON=1 HAS_INET_NTOP=1 HAS_MSGHDR_FLAGS=1)
-    endif()
-    target_link_libraries(fuse_net PRIVATE fuse_net_enet)
+    target_link_libraries(fuse_net PRIVATE fuse_enet)
     target_compile_definitions(fuse_net PUBLIC FUSE_NET_HAS_ENET=1)
     set(FUSE_NET_HAS_ENET ON)
-    message(STATUS "FUSE: fuse_net ENet backend enabled (${FUSE_NET_ENET_DIR})")
+    message(STATUS "FUSE: fuse_net ENet backend enabled (${_fuse_enet_dir})")
 else()
     message(STATUS "FUSE: fuse_net ENet backend disabled — ENetTransport is a stub")
 endif()

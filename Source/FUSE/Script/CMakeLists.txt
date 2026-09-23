@@ -52,10 +52,8 @@ target_compile_features(fuse_script PUBLIC cxx_std_17)
 
 option(FUSE_SCRIPT_ENABLE_LUA "Link fuse_script against Lua when available" ON)
 option(FUSE_SCRIPT_BUNDLED_LUA
-    "Build the in-tree Lua 5.2 sources when no system Lua >= 5.2 is found" ON)
-set(FUSE_SCRIPT_BUNDLED_LUA_DIR
-    "${CMAKE_SOURCE_DIR}/Engine/lib/bullet/examples/ThirdPartyLibs/lua-5.2.3/src"
-    CACHE PATH "In-tree Lua 5.2 source directory used by FUSE_SCRIPT_BUNDLED_LUA")
+    "Build the vendored Lua 5.2.3 (Engine/lib/lua) when no system Lua >= 5.2 is found" ON)
+set(_fuse_lua_dir "${CMAKE_SOURCE_DIR}/Engine/lib/lua")
 
 set(FUSE_SCRIPT_LUA_BACKEND "null")
 if(FUSE_SCRIPT_ENABLE_LUA)
@@ -73,39 +71,14 @@ if(FUSE_SCRIPT_ENABLE_LUA)
     endif()
 
     if(FUSE_SCRIPT_LUA_BACKEND STREQUAL "null" AND FUSE_SCRIPT_BUNDLED_LUA
-       AND EXISTS "${FUSE_SCRIPT_BUNDLED_LUA_DIR}/lapi.c")
-        enable_language(C)
-        set(_fuse_lua_core
-            lapi.c lcode.c lctype.c ldebug.c ldo.c ldump.c lfunc.c lgc.c llex.c lmem.c
-            lobject.c lopcodes.c lparser.c lstate.c lstring.c ltable.c ltm.c lundump.c
-            lvm.c lzio.c
-            lauxlib.c lbaselib.c lbitlib.c lcorolib.c ldblib.c liolib.c lmathlib.c
-            loslib.c lstrlib.c ltablib.c loadlib.c linit.c)
-        list(TRANSFORM _fuse_lua_core PREPEND "${FUSE_SCRIPT_BUNDLED_LUA_DIR}/")
-        add_library(fuse_script_lua STATIC ${_fuse_lua_core})
-        set_target_properties(fuse_script_lua PROPERTIES
-            LINKER_LANGUAGE C
-            POSITION_INDEPENDENT_CODE ON)
-        target_include_directories(fuse_script_lua SYSTEM PUBLIC "${FUSE_SCRIPT_BUNDLED_LUA_DIR}")
-        if(APPLE)
-            target_compile_definitions(fuse_script_lua PRIVATE LUA_USE_MACOSX)
-        elseif(UNIX)
-            target_compile_definitions(fuse_script_lua PRIVATE LUA_USE_LINUX)
-        endif()
-        if(MSVC)
-            target_compile_options(fuse_script_lua PRIVATE /w)
-        else()
-            # Lua 5.2 hashes numbers with wrapping signed int arithmetic (ltable.c hashnum):
-            # -fwrapv makes that well-defined (UBSan-clean) with identical codegen.
-            target_compile_options(fuse_script_lua PRIVATE -w -fwrapv)
-        endif()
-        if(UNIX)
-            target_link_libraries(fuse_script_lua PUBLIC m)
+       AND EXISTS "${_fuse_lua_dir}/src/lapi.c")
+        if(NOT TARGET fuse_lua)
+            add_subdirectory("${_fuse_lua_dir}" "${CMAKE_BINARY_DIR}/fuse_vendor/lua" EXCLUDE_FROM_ALL)
         endif()
         target_compile_definitions(fuse_script PUBLIC FUSE_SCRIPT_LUA=1)
-        target_link_libraries(fuse_script PUBLIC fuse_script_lua)
+        target_link_libraries(fuse_script PUBLIC fuse_lua)
         set(FUSE_SCRIPT_LUA_BACKEND "bundled")
-        message(STATUS "FUSE: fuse_script using bundled Lua 5.2 (${FUSE_SCRIPT_BUNDLED_LUA_DIR})")
+        message(STATUS "FUSE: fuse_script using bundled Lua 5.2.3 (${_fuse_lua_dir})")
     endif()
 
     if(FUSE_SCRIPT_LUA_BACKEND STREQUAL "null")

@@ -1,7 +1,7 @@
 # fuse_script — B7.3 Scripting Layer
 
 Lua scripting for Track B7.3. CMake links a system Lua >= 5.2 when found, otherwise builds the
-in-tree Lua 5.2.3 sources (`FUSE_SCRIPT_BUNDLED_LUA`, default ON) and defines `FUSE_SCRIPT_LUA=1`;
+vendored Lua 5.2.3 in `Engine/lib/lua` (target `fuse_lua`, `FUSE_SCRIPT_BUNDLED_LUA`, default ON) and defines `FUSE_SCRIPT_LUA=1`;
 with neither, `ScriptVM` falls back to a null backend that only records chunk names.
 
 Every Lua entry point runs inside `ScriptVM::run_protected` (`lua_pcall` + traceback): script

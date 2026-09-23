@@ -156,8 +156,8 @@ was re-verified from a clean checkout. Every stream found real bugs in the scaff
 | B4 follow-ups | `fuse_b4_joint_gates`, `fuse_b4_ccd_gates`, `fuse_b4_rotation_gates` | Joint anchors were ignored; pendulum periods within 0.04%; rotational CCD (spinning bar stopped at post); twisted 8/12-box stacks sleep; cloth 64×64 ~0.65 → ~0.4 ms |
 | Batch 3 | see commits | Compute SSAO/SSR/SSGI via shared `fuse_ssfx`; ECS `create_at` + SDF CSG; editor Play drives `PhysicsManager`; renderer TAA/DDGI integration with 0 sync-validation hazards |
 
-**Open items:** strict asset import is opt-in; ENet and Lua are read from
-`Engine/lib/bullet/examples/ThirdPartyLibs`; CUDA kernels are stubs; cross-queue-family upload path
+**Open items:** strict asset import is opt-in; ENet 1.3.7 and Lua 5.2.3 are vendored
+under `Engine/lib/enet` / `Engine/lib/lua` (no longer from Bullet's examples); CUDA kernels are stubs; cross-queue-family upload path
 untested; physics-enabled worlds still allocate in the legacy `PhysicsPipeline` spatial hash;
 `logging.async_ring` is not lock-free; Windows crash minidump and DPI awareness untested (no Windows
 toolchain); no `PhysicsManager` joint API or angle-limited hinges yet.
