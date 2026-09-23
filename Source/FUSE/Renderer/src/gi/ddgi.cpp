@@ -1,4 +1,5 @@
 #include <fuse/renderer/gi/ddgi.hpp>
+#include <fuse/renderer/gi/ddgi_cpu.hpp>
 #include <fuse/renderer/gi/ddgi_kernels.hpp>
 
 #include <algorithm>
@@ -612,10 +613,11 @@ fuse::math::Vec3 DdgiIrradianceEncoding::decodeDirection(const fuse::math::Vec2&
     fuse::math::Vec2 enc = {clamped.x * 2.f - 1.f, clamped.y * 2.f - 1.f};
     fuse::math::Vec3 n = {enc.x, enc.y, 1.f - std::fabs(enc.x) - std::fabs(enc.y)};
     if (n.z < 0.f) {
-        const f32 signX = n.x >= 0.f ? 1.f : -1.f;
-        const f32 signY = n.y >= 0.f ? 1.f : -1.f;
-        n.x = (1.f - std::fabs(n.y)) * signX;
-        n.y = (1.f - std::fabs(n.x)) * signY;
+        // Unfold the lower hemisphere from the pre-fold x/y (both axes read the originals).
+        const f32 fold_x = n.x;
+        const f32 fold_y = n.y;
+        n.x = (1.f - std::fabs(fold_y)) * (fold_x >= 0.f ? 1.f : -1.f);
+        n.y = (1.f - std::fabs(fold_x)) * (fold_y >= 0.f ? 1.f : -1.f);
     }
     return n.normalized();
 }
@@ -1894,6 +1896,14 @@ bool launch_probe_blend_kernel(const DDGIKernelParams& params, void* cuda_stream
 
 } // namespace gi
 
+DDGI::DDGI() = default;
+
+DDGI::~DDGI() = default;
+
+void DDGI::setCpuScene(const DdgiCpuScene* scene) {
+    m_scene = scene;
+}
+
 bool DDGI::init(const DDGIDesc& desc, ResourceManager& resources) {
     destroy();
     m_desc = desc;
@@ -1917,6 +1927,18 @@ bool DDGI::init(const DDGIDesc& desc, ResourceManager& resources) {
         entry.depth_variance = 0.1f;
     }
 
+    DdgiCpuConfig cpu_config{};
+    cpu_config.initial_irradiance = defaultAmbientIrradiance();
+    m_cpu = std::make_unique<DdgiCpuVolume>();
+    if (!m_cpu->init(m_desc, cpu_config)) {
+        destroy();
+        return false;
+    }
+    m_ambient_scene = std::make_unique<DdgiCpuScene>();
+    m_ambient_scene->sky_radiance = defaultAmbientIrradiance();
+    m_info.backend = DdgiBackend::CpuReference;
+    m_info.message = "DDGI CPU reference probe trace + blend";
+
     m_data.desc = m_desc;
     m_data.irradiance_atlas = m_volume.irradiance_atlas;
     m_data.depth_atlas = m_volume.depth_atlas;
@@ -1935,6 +1957,8 @@ void DDGI::destroy() {
     m_last_update = {};
     m_info = {};
     m_resources = nullptr;
+    m_cpu.reset();
+    m_ambient_scene.reset();
     m_ready = false;
 }
 
@@ -1971,17 +1995,24 @@ bool DDGI::update(u32 frame_index, void* cuda_stream) {
     m_last_update.kernel_launched =
         launch_ddgi_probe_update(m_desc, scheduled_indices, scheduled_count, cuda_stream);
 
-    const fuse::math::Vec3 incoming = defaultAmbientIrradiance();
+    const DdgiCpuScene& scene = m_scene != nullptr ? *m_scene : *m_ambient_scene;
+    const DdgiCpuUpdateStats cpu_stats =
+        m_cpu->updateProbes(scene, scheduled_indices, scheduled_count, frame_index);
+
+    // Mirror the per-probe summary (mean texel irradiance E/pi and distance moments).
     for (u32 i = 0; i < scheduled_count; ++i) {
         const u32 probe_index = ProbeGridLayout::clampProbeIndex(scheduled_indices[i], m_desc);
         if (probe_index >= m_cache.size()) {
             continue;
         }
         IrradianceCacheEntry& entry = m_cache[probe_index];
-        entry.irradiance = ddgi_util::blendIrradiance(entry.irradiance, incoming, m_desc.hysteresis);
+        entry.irradiance = m_cpu->probeMeanTexel(probe_index);
+        const fuse::math::Vec2 moments = m_cpu->probeMeanDistance(probe_index);
+        entry.mean_depth = moments.x;
+        entry.depth_variance = std::max(0.f, moments.y - moments.x * moments.x);
     }
 
-    return m_last_update.kernel_launched;
+    return m_last_update.kernel_launched && cpu_stats.probes_updated == scheduled_count;
 }
 
 DDGISampleResult DDGI::sampleIrradiance(const DDGISampleRequest& request) const {
@@ -2003,11 +2034,7 @@ DDGISampleResult DDGI::sampleIrradiance(const DDGISampleRequest& request) const 
     const fuse::math::Vec3 sample_direction =
         DdgiIrradianceEncoding::resolveSampleDirectionFromSurface(request.world_normal,
                                                                   request.world_normal);
-    result.irradiance = ddgi_util::trilinearDirectionalProbeIrradiance(m_desc,
-                                                                       request.world_position,
-                                                                       sample_direction,
-                                                                       m_cache.data(),
-                                                                       static_cast<u32>(m_cache.size()));
+    result.irradiance = m_cpu->sampleIrradiance(request.world_position, sample_direction);
     result.valid = true;
     return result;
 }

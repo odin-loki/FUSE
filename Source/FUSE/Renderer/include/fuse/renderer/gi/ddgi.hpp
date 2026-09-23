@@ -5,9 +5,13 @@
 #include <fuse/renderer/resources.hpp>
 #include <fuse/types.hpp>
 
+#include <memory>
 #include <vector>
 
 namespace fuse::renderer {
+
+class DdgiCpuVolume;
+struct DdgiCpuScene;
 
 /// 3D probe grid dimensions (B5.6 — P5 §5.6).
 struct DDGIGridDims {
@@ -666,10 +670,15 @@ u32 nearestProbeIndex(const DDGIDesc& desc, const fuse::math::Vec3& world_positi
 
 DdgiInfo ddgi_info();
 
-/// DDGI probe volume scaffold — allocates atlas textures via ResourceManager.
+/// DDGI probe volume — allocates atlas textures via ResourceManager and runs the
+/// CPU reference probe trace/blend (`DdgiCpuVolume`) each update. Without an attached
+/// scene the probes trace an empty scene lit by a uniform ambient sky.
 class DDGI {
 public:
-    DDGI() = default;
+    DDGI();
+    ~DDGI();
+    DDGI(const DDGI&) = delete;
+    DDGI& operator=(const DDGI&) = delete;
 
     bool init(const DDGIDesc& desc, ResourceManager& resources);
     void destroy();
@@ -682,11 +691,18 @@ public:
     const DDGIUpdateStats& lastUpdateStats() const { return m_last_update; }
     const DdgiInfo& info() const { return m_info; }
 
-    /// Update a rotating subset of probes — CUDA path when available, CPU reference otherwise.
+    /// Update a rotating subset of probes: device kernels are launched when available and the
+    /// CPU reference trace + blend runs against the attached scene. True when both succeed.
     bool update(u32 frame_index, void* cuda_stream = nullptr);
 
-    /// Sample nearest-probe irradiance (CPU stub for deferred shading integration).
+    /// Irradiance E at a surface point: Chebyshev-weighted trilinear probe sample.
     DDGISampleResult sampleIrradiance(const DDGISampleRequest& request) const;
+
+    /// Scene traced by probe rays; nullptr restores the ambient-sky default. Not owned —
+    /// must outlive subsequent `update` calls.
+    void setCpuScene(const DdgiCpuScene* scene);
+    /// CPU reference probe volume (null before `init`).
+    const DdgiCpuVolume* cpuVolume() const { return m_cpu.get(); }
 
 private:
     void releaseResources();
@@ -699,6 +715,9 @@ private:
     DDGIUpdateStats m_last_update{};
     DdgiInfo m_info{};
     ResourceManager* m_resources = nullptr;
+    std::unique_ptr<DdgiCpuVolume> m_cpu;
+    std::unique_ptr<DdgiCpuScene> m_ambient_scene;
+    const DdgiCpuScene* m_scene = nullptr;
     bool m_ready = false;
 };
 
