@@ -160,7 +160,8 @@ bool smokeWorldPartitionFacade() {
     desc.async_loading = false;
     partition.init(desc);
     partition.update({0.f, 0.f, 0.f});
-    const bool hasCells = partition.loaded_cell_count() >= 0u;
+    // Synchronous loading: the first update must stream in the cell under the focus point.
+    const bool hasCells = partition.loaded_cell_count() > 0u;
     partition.destroy();
     return hasCells;
 }

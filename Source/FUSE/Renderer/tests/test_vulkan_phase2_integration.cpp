@@ -82,8 +82,6 @@ void testPhase2HeadlessIntegration() {
         expectTrue(rhi->queueSubmitCount() == frameIndex + 1u,
                    "vkQueueSubmit issued each frame on headless ICD");
         expectTrue(rhi->lastQueueSubmitOk(), "last queue submit succeeded");
-        expectTrue(rhi->timestampWriteCount() >= 0u,
-                   "timestampWriteCount is non-negative after submitFrame");
         if (rhi->timestampsReady()) {
             expectTrue(rhi->timestampWriteCount() > 0u,
                        "submitFrame writes GPU timestamps when timestampsReady");

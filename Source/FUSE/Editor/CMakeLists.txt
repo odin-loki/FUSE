@@ -118,16 +118,23 @@ if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)
 endif()
 
+set(FUSE_EDITOR_QT_AVAILABLE OFF CACHE INTERNAL "Qt6 found for fuse_editor")
 if(FUSE_BUILD_EDITOR)
     if(FUSE_PLATFORM_MOBILE)
         message(WARNING "FUSE_BUILD_EDITOR is desktop-only; skipping fuse_editor on mobile profile")
     else()
         find_package(Qt6 QUIET COMPONENTS Widgets Gui)
-        if(Qt6_FOUND)
+        if(Qt6_FOUND AND TARGET Qt6::Widgets)
             set(FUSE_EDITOR_QT_AVAILABLE ON CACHE INTERNAL "Qt6 found for fuse_editor")
 
-            add_executable(fuse_editor
-                src/qt/main.cpp
+            # Qt host (B6.1): every panel / window class lives in fuse_editor_qt so the Qt gate
+            # tests drive the same code the fuse_editor binary runs. Qt 6 widgets only (no immediate-mode UI)
+            # (fuse_lint_b6_editor_qt6_only checks the link graph and includes).
+            add_library(fuse_editor_qt STATIC
+                src/qt/editor_panels.cpp
+                src/qt/editor_panels.hpp
+                src/qt/editor_theme.cpp
+                src/qt/editor_theme.hpp
                 src/qt/main_window.cpp
                 src/qt/main_window.hpp
                 src/qt/project_hub_widget.cpp
@@ -143,22 +150,25 @@ if(FUSE_BUILD_EDITOR)
                 src/qt/game_loop_thread.cpp
                 src/qt/game_loop_thread.hpp
             )
+            target_include_directories(fuse_editor_qt PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/qt)
+            target_link_libraries(fuse_editor_qt PUBLIC fuse_editor_api Qt6::Widgets Qt6::Gui)
+            target_compile_definitions(fuse_editor_qt PUBLIC FUSE_HAS_QT=1 FUSE_EDITOR_HAS_QT_VULKAN=1)
+            set_target_properties(fuse_editor_qt PROPERTIES AUTOMOC ON)
+            fuse_apply_cxx23(fuse_editor_qt)
 
-            target_link_libraries(fuse_editor
-                PRIVATE
-                    fuse_editor_api
-                    Qt6::Widgets
+            # Editor UI font (Open Sans, Apache-2.0, vendored in Engine/lib/fonts/opensans) as a Qt resource.
+            set(_fuse_editor_font "${CMAKE_SOURCE_DIR}/Engine/lib/fonts/opensans/OpenSans.ttf")
+            set_source_files_properties("${_fuse_editor_font}" PROPERTIES QT_RESOURCE_ALIAS "OpenSans.ttf")
+            qt_add_resources(fuse_editor_qt fuse_editor_fonts
+                PREFIX "/fuse/editor/fonts"
+                FILES "${_fuse_editor_font}"
             )
-            target_compile_definitions(fuse_editor PRIVATE FUSE_HAS_QT=1)
-            if(TARGET Qt6::Gui)
-                target_link_libraries(fuse_editor PRIVATE Qt6::Gui)
-                target_compile_definitions(fuse_editor PRIVATE FUSE_EDITOR_HAS_QT_VULKAN=1)
-            endif()
 
+            add_executable(fuse_editor src/qt/main.cpp)
+            target_link_libraries(fuse_editor PRIVATE fuse_editor_qt)
             fuse_apply_cxx23(fuse_editor)
 
             set_target_properties(fuse_editor PROPERTIES
-                AUTOMOC ON
                 WIN32_EXECUTABLE ON
                 MACOSX_BUNDLE ON
             )
@@ -166,4 +176,8 @@ if(FUSE_BUILD_EDITOR)
             message(STATUS "FUSE_BUILD_EDITOR=ON but Qt6 Widgets not found — fuse_editor binary skipped (sources retained)")
         endif()
     endif()
+endif()
+
+if(FUSE_BUILD_CORE_TESTS)
+    add_subdirectory(tests/qt)
 endif()

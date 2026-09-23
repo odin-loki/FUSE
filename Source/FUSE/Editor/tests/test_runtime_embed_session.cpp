@@ -168,8 +168,8 @@ void testRuntimeEmbedEcsWorld3DSync() {
                    "ecs world3d mirror creates scene objects");
         expectTrue(host.runtimeViewport().embedSession().ecsWorld3DSyncTicks >= 1u,
                    "ecs world3d sync ticks recorded");
-        expectTrue(host.runtimeViewport().embedSession().ecsWorld3DSnapshotVisible >= 0u,
-                   "ecs world3d snapshot visible count recorded after hybrid compose");
+        // Snapshot visibility is only refreshed on frames the hybrid composer advances.
+        (void)host.runtimeViewport().embedSession().ecsWorld3DSnapshotVisible;
     }
 #endif
     expectTrue(host.runtimeViewport().embedSession().qVulkanWindowWsiProbed,

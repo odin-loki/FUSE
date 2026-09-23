@@ -5,8 +5,6 @@
 
 namespace fuse::adventure {
 
-MechanicsBridge::MechanicsBridge(InteractionSystem& system) : m_system(system) {}
-
 InteractContext MechanicsBridge::buildContext(mechanics::Component* instigator) const {
     InteractContext ctx;
     ctx.actorName = instigator != nullptr ? instigator->name().c_str() : nullptr;

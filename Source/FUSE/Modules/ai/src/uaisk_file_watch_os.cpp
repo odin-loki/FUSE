@@ -56,6 +56,8 @@ u64 statModifiedNs(const std::string& pathStr, u64& outSize) {
 #endif
 }
 
+#if !defined(__linux__) && !defined(__APPLE__)
+// Portable fallback: no OS mtime query, so the content hash stands in for lastModifiedNs.
 u64 contentHashNs(const std::string& content) {
     u64 hash = 2166136261u;
     for (unsigned char ch : content) {
@@ -64,6 +66,7 @@ u64 contentHashNs(const std::string& content) {
     }
     return hash;
 }
+#endif
 
 } // namespace
 

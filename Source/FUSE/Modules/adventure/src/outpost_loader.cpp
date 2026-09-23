@@ -6,25 +6,6 @@ namespace fuse::adventure {
 
 namespace {
 
-std::string trim(const std::string& input) {
-    std::size_t start = 0;
-    while (start < input.size() && std::isspace(static_cast<unsigned char>(input[start]))) {
-        ++start;
-    }
-    std::size_t end = input.size();
-    while (end > start && std::isspace(static_cast<unsigned char>(input[end - 1]))) {
-        --end;
-    }
-    return input.substr(start, end - start);
-}
-
-std::string parseJsonString(const std::string& token) {
-    if (token.size() >= 2 && token.front() == '"' && token.back() == '"') {
-        return token.substr(1, token.size() - 2);
-    }
-    return token;
-}
-
 std::string findObjectBody(const std::string& json, const std::string& objectKey) {
     const std::string needle = "\"" + objectKey + "\"";
     const std::size_t keyPos = json.find(needle);

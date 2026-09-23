@@ -33,13 +33,6 @@ ecs::EntityID handleToEntity(Handle<Object> handle) {
     return entity;
 }
 
-Handle<Object> entityToHandle(ecs::EntityID entity) {
-    if (!entity.valid()) {
-        return Handle<Object>::invalid();
-    }
-    return Handle<Object>(entity.index, entity.generation);
-}
-
 bool parseVec3(const std::string& text, ecs::vec3& out) {
     std::string normalized = text;
     for (char& ch : normalized) {

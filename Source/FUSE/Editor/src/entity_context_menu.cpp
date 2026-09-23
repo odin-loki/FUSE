@@ -149,6 +149,10 @@ ContextMenuPlacement EntityContextMenu::place(const ContextMenuHostGeometry& hos
     return out;
 }
 
+void EntityContextMenu::setMenuSize(f32 width, f32 height) {
+    m_placement = place(m_host, m_placement.clickX, m_placement.clickY, width, height);
+}
+
 f32 EntityContextMenu::menuHeight() const {
     f32 height = 2.f * kMenuPadding;
     for (const ContextMenuItem& item : m_items) {

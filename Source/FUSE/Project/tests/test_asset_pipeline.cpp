@@ -1305,7 +1305,7 @@ void testCookCacheInvalidateChain() {
     expectTrue(cooker.cache().lookup(hashC) == fuse::project::CookCacheLookup::Miss, "tail misses after chain invalidation");
 
     const fuse::u32 stale_removed = cooker.invalidate_stale_dependency_hashes(manifest);
-    expectTrue(stale_removed >= 0u, "stale dependency hash reconcile runs after chain invalidation");
+    expectTrue(stale_removed == 0u, "stale dependency hash reconcile finds nothing left after full chain invalidation");
 }
 
 void testCookCacheStaleDependencyHashInvalidation() {

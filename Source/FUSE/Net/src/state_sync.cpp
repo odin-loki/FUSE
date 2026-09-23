@@ -10,8 +10,6 @@ namespace fuse::net {
 
 namespace {
 
-constexpr f32 kPi = 3.14159265358979323846f;
-
 f32 clamp01(f32 t) {
     if (t < 0.f) {
         return 0.f;

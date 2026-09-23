@@ -1,3 +1,4 @@
+#include "editor_theme.hpp"
 #include "main_window.hpp"
 
 #include <fuse/core/init.hpp>
@@ -12,6 +13,7 @@ int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     QApplication::setApplicationName("fuse_editor");
     QApplication::setApplicationVersion("0.1.0");
+    fuse::editor::qt::applyEditorTheme(app);
 
     QCommandLineParser parser;
     parser.setApplicationDescription("FUSE Qt 6 editor shell (desktop-only, U6/WP-08)");

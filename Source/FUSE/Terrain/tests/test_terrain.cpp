@@ -802,6 +802,7 @@ void testVertexMorphSnapsToGrid() {
     const fuse::terrain::TerrainDesc desc = makeTestDesc();
     const fuse::terrain::LodLevel lod1 = fuse::terrain::make_lod_level(desc, 1);
     const fuse::f32 base_stride = desc.world_size / static_cast<fuse::f32>(desc.chunk_resolution);
+    expectNear(lod1.world_stride, base_stride * 2.f, 0.01f, "LOD 1 stride is the coarser morph grid");
 
     const fuse::terrain::vec3 original{base_stride * 1.5f, 4.f, base_stride * 2.5f};
     const fuse::terrain::vec3 morphed =

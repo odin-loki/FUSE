@@ -145,6 +145,11 @@ bool smokeHandlesAndVfsAsync() {
 }
 
 bool smokeProfilerScopes() {
+#if defined(FUSE_NO_PROFILER) && FUSE_NO_PROFILER
+    // Shipping compiles profiler scopes out (no events, no scope names in the binary): run the
+    // wrapped subsystems without the trace checks.
+    return smokeJobsAndMath() && smokeHandlesAndVfsAsync();
+#else
     fuse::profiler::setEnabled(true);
     fuse::profiler::reset();
     fuse::profiler::beginFrame();
@@ -174,6 +179,7 @@ bool smokeProfilerScopes() {
     const std::string trace = fuse::profiler::exportChromeTraceJson();
     return trace.find("\"traceEvents\"") != std::string::npos &&
            trace.find("phase1_jobs_math") != std::string::npos;
+#endif
 }
 
 bool smokePlatformWindow() {

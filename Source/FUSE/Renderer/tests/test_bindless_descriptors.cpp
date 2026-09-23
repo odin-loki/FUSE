@@ -204,6 +204,7 @@ void testHeapCounts() {
 
     const fuse::renderer::BindlessSlotHandle a = bindless.allocateBufferSlot();
     const fuse::renderer::BindlessSlotHandle b = bindless.allocateBufferSlot();
+    expectTrue(a.isValid() && b.isValid() && !(a == b), "two distinct buffer slots");
     expectTrue(bindless.heapLiveCount(fuse::renderer::BindlessHeapKind::Buffer) == 2u, "two live buffer slots");
     expectTrue(bindless.heapFreeCount(fuse::renderer::BindlessHeapKind::Buffer) == 0u, "no free buffer slots");
 

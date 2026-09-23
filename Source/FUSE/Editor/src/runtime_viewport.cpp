@@ -760,7 +760,7 @@ void recreateHybridForExternalSurface(RuntimeViewportHook& hook, RuntimeViewport
 }
 #endif
 
-void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
+void RuntimeViewportHook::tickHeadlessPresentStub_() {
     if (!m_embedded) {
         return;
     }
@@ -876,9 +876,6 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
         }
     }
 
-#else
-    (void)host;
-    (void)dt;
 #endif
 }
 
@@ -971,7 +968,7 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
     }
 #endif
 
-    tickHeadlessPresentStub_(host, dt);
+    tickHeadlessPresentStub_();
     ++m_runtimeTickCount;
 }
 

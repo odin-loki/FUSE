@@ -19,19 +19,6 @@ void printUsage() {
                  "  fuse_convert --project <dir> [--output-dir <dir>]\n");
 }
 
-std::string joinPath(const std::string& root, const std::string& relative) {
-    if (root.empty()) {
-        return relative;
-    }
-
-    std::string path = root;
-    if (path.back() != '/' && path.back() != '\\') {
-        path.push_back('/');
-    }
-    path += relative;
-    return path;
-}
-
 } // namespace
 
 int main(int argc, char** argv) {

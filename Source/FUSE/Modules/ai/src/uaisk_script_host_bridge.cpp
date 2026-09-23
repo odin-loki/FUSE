@@ -6,18 +6,6 @@ namespace {
 
 constexpr const char* kUaiskChunkPrefix = "uaisk:";
 
-bool isUaiskChunk(const char* chunkName) {
-    return chunkName != nullptr && std::string_view(chunkName).rfind(kUaiskChunkPrefix, 0) == 0;
-}
-
-std::string_view csModuleFromChunk(const char* chunkName) {
-    const std::string_view chunk(chunkName);
-    if (!isUaiskChunk(chunkName)) {
-        return {};
-    }
-    return chunk.substr(std::char_traits<char>::length(kUaiskChunkPrefix));
-}
-
 } // namespace
 
 ScriptHostBridge::ScriptHostBridge(script::ScriptHost& host, BehaviorRuntime& runtime)

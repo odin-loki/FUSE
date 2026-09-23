@@ -20,11 +20,6 @@ std::string readFileToString(const std::string& path) {
     return buffer.str();
 }
 
-bool endsWith(std::string_view text, std::string_view suffix) {
-    return text.size() >= suffix.size() &&
-           text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
-
 } // namespace
 
 LoadResult parseManifest(std::string_view jsonText, const std::string& projectRoot) {

@@ -735,6 +735,8 @@ void trySetDebugName(void* vkDevice, u32 vkObjectType, void* handle, const char*
 }
 #endif
 
+#if !defined(FUSE_VULKAN_BACKEND)
+// Host-side stand-in for mapped buffers when the Vulkan backend is compiled out.
 void* allocateStubMappedBuffer(usize size) {
     if (size == 0) {
         return nullptr;
@@ -748,6 +750,7 @@ void freeStubMappedBuffer(void* mapped) {
         delete[] static_cast<u8*>(mapped);
     }
 }
+#endif
 
 } // namespace
 

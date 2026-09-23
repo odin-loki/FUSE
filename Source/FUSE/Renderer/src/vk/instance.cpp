@@ -186,17 +186,20 @@ bool VulkanInstance::initialize(const VulkanInstanceDesc& desc) {
     m_handle = instance;
     m_info.valid = true;
     m_info.apiVersion = appInfo.apiVersion;
-    m_info.enabledExtensions = extensions;
-    m_info.enabledLayers = layers;
+    // Moved, not copied: the locals are dead after vkCreateInstance (and copying the 0/1-element
+    // layer vector trips GCC 13's -Warray-bounds false positive in vector::operator=).
+    const bool validationEnabled = !layers.empty();
+    m_info.enabledExtensions = std::move(extensions);
+    m_info.enabledLayers = std::move(layers);
     if (validationRequested && !validationAvailable) {
         m_info.message = "Instance ready (validation layers unavailable — CI-safe stub path)";
-    } else if (!layers.empty()) {
+    } else if (validationEnabled) {
         m_info.message = "Instance ready with validation layers";
     } else {
         m_info.message = "Instance ready (validation disabled)";
     }
 
-    if (extensionAvailable(VK_EXT_DEBUG_UTILS_EXTENSION_NAME) && !layers.empty()) {
+    if (extensionAvailable(VK_EXT_DEBUG_UTILS_EXTENSION_NAME) && validationEnabled) {
         auto vkCreateDebugUtilsMessengerEXT =
             reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
                 vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT"));

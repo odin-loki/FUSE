@@ -25,6 +25,7 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+#if defined(FUSE_PLATFORM_WINDOW_WIN32)
 bool hasExtension(const std::vector<const char*>& extensions, const char* name) {
     for (const char* extension : extensions) {
         if (extension != nullptr && name != nullptr && std::strcmp(extension, name) == 0) {
@@ -33,6 +34,7 @@ bool hasExtension(const std::vector<const char*>& extensions, const char* name) 
     }
     return false;
 }
+#endif
 
 void testBackendIdentity() {
 #if defined(FUSE_PLATFORM_WINDOW_WIN32)

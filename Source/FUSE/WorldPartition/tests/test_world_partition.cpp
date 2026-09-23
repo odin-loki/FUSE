@@ -1872,7 +1872,6 @@ void testStreamingRequestQueueMixedCompletionOrdering() {
 void testResidencySetEmptyStubOperations() {
     fuse::world_partition::ResidencySet residency;
     const fuse::world_partition::GridCoord missing{7, 7};
-    const fuse::world_partition::GridCoord invalid = fuse::world_partition::kInvalidGridCoord;
 
     expectTrue(residency.empty(), "fresh residency set is empty");
     expectTrue(!residency.contains(missing), "missing coord not resident");

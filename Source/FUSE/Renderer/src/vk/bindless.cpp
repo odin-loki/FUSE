@@ -43,7 +43,8 @@ bool createVulkanBindlessDescriptors(const VulkanDevice& device, const BindlessA
     const VulkanDeviceInfo& features = device.info();
     auto flagsFor = [](bool updateAfterBind) -> VkDescriptorBindingFlags {
         return VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
-               (updateAfterBind ? VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT : 0u);
+               (updateAfterBind ? VkDescriptorBindingFlags{VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT}
+                                : VkDescriptorBindingFlags{0});
     };
     std::array<VkDescriptorBindingFlags, 5> bindingFlags = {
         flagsFor(features.storageImageUpdateAfterBind),

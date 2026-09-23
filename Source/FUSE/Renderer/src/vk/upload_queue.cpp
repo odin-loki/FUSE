@@ -864,7 +864,7 @@ bool UploadQueue::recordImageCopy(void* dstImage, usize srcOffset, const UploadI
         // layout transition's write-after-write.
         VkImageMemoryBarrier toTransfer{};
         toTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        toTransfer.srcAccessMask = earlierCopies ? VK_ACCESS_TRANSFER_WRITE_BIT : 0u;
+        toTransfer.srcAccessMask = earlierCopies ? VkAccessFlags{VK_ACCESS_TRANSFER_WRITE_BIT} : VkAccessFlags{0};
         toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         toTransfer.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;

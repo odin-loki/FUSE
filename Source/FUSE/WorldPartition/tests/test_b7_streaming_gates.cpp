@@ -45,12 +45,14 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+#ifdef NDEBUG // timing gates only run in optimised builds
 void expectLe(f64 actual, f64 limit, const char* message) {
     if (!(actual <= limit)) {
         std::fprintf(stderr, "FAIL: %s (%.6g > limit %.6g)\n", message, actual, limit);
         ++g_failures;
     }
 }
+#endif
 
 template <typename Body>
 void withScheduler(u32 workers, Body&& body) {

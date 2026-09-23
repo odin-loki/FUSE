@@ -4,29 +4,284 @@
 #include <fuse/cinematics/timeline_loader.hpp>
 #include <fuse/editor/command_queue.hpp>
 
+#include <QAction>
 #include <QColor>
+#include <QKeyEvent>
+#include <QMenu>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPalette>
 #include <QResizeEvent>
 #include <QShowEvent>
 #include <QWindow>
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <string>
 
 namespace fuse::editor::qt {
 
-ViewportPlaceholderWidget::ViewportPlaceholderWidget(EditorHost& host, QWidget* parent)
-    : QWidget(parent), m_host(host) {
-    setMinimumSize(640, 360);
+ViewportPlaceholderWidget::ViewportPlaceholderWidget(EditorHost& host, std::mutex& sceneMutex, QWidget* parent)
+    : QWidget(parent), m_host(host), m_sceneMutex(sceneMutex) {
+    setObjectName(QStringLiteral("fuseViewport"));
+    setMinimumSize(320, 180);
     setAutoFillBackground(true);
+    setFocusPolicy(Qt::StrongFocus);
+    setMouseTracking(false);
+    // Right-click is resolved on release (click = context menu, drag = fly camera).
+    setContextMenuPolicy(Qt::PreventContextMenu);
     QPalette palette = this->palette();
     palette.setColor(QPalette::Window, QColor(32, 36, 44));
     setPalette(palette);
+
+    m_frameTimer.setTimerType(Qt::PreciseTimer);
+    m_frameTimer.setInterval(kFrameIntervalMs);
+    connect(&m_frameTimer, &QTimer::timeout, this, &ViewportPlaceholderWidget::onFrameTimer);
+}
+
+ViewportPlaceholderWidget::~ViewportPlaceholderWidget() {
+    if (m_activeMenu) {
+        m_activeMenu->close();
+    }
 }
 
 void ViewportPlaceholderWidget::setProjectLabel(const QString& projectName) {
     m_projectName = projectName;
+    m_panel.setProjectLabel(projectName.toStdString());
     update();
+}
+
+// ---- frame pump ------------------------------------------------------------------------------------
+
+void ViewportPlaceholderWidget::setFramePumpEnabled(bool enabled) {
+    if (enabled && !m_frameTimer.isActive()) {
+        m_frameClock.start();
+        m_frameTimer.start();
+    } else if (!enabled) {
+        m_frameTimer.stop();
+    }
+}
+
+void ViewportPlaceholderWidget::onFrameTimer() {
+    const qint64 ns = m_frameClock.nsecsElapsed();
+    m_frameClock.restart();
+    advanceFrame(static_cast<float>(static_cast<double>(ns) * 1e-9));
+}
+
+void ViewportPlaceholderWidget::advanceFrame(float dt) {
+    dt = std::clamp(dt, 0.f, kMaxFrameDt);
+    ViewportInput input{};
+    input.lookHeld = m_lookHeld;
+    input.mouseDeltaX = m_pendingMouseDx;
+    input.mouseDeltaY = m_pendingMouseDy;
+    input.moveForward = m_keys.forward;
+    input.moveBack = m_keys.back;
+    input.moveLeft = m_keys.left;
+    input.moveRight = m_keys.right;
+    input.moveUp = m_keys.up;
+    input.moveDown = m_keys.down;
+    input.fast = m_keys.fast;
+    m_pendingMouseDx = 0.f;
+    m_pendingMouseDy = 0.f;
+    m_panel.submitInput(input);
+    m_panel.tick(dt);
+    ++m_frameCount;
+    emit frameAdvanced(dt);
+    if (m_lookHeld || m_keys.forward || m_keys.back || m_keys.left || m_keys.right || m_keys.up || m_keys.down) {
+        update();
+    }
+}
+
+// ---- input -----------------------------------------------------------------------------------------
+
+bool ViewportPlaceholderWidget::setKey(int key, bool down) {
+    switch (key) {
+    case Qt::Key_W: m_keys.forward = down; break;
+    case Qt::Key_S: m_keys.back = down; break;
+    case Qt::Key_A: m_keys.left = down; break;
+    case Qt::Key_D: m_keys.right = down; break;
+    case Qt::Key_E: m_keys.up = down; break;
+    case Qt::Key_Q: m_keys.down = down; break;
+    case Qt::Key_Shift: m_keys.fast = down; break;
+    default: return false;
+    }
+    if (down && m_lookHeld && key != Qt::Key_Shift) {
+        m_flyKeyUsedDuringLook = true;
+    }
+    return true;
+}
+
+void ViewportPlaceholderWidget::keyPressEvent(QKeyEvent* event) {
+    if (event->isAutoRepeat()) {
+        // Held keys are level-triggered; X11 auto-repeat arrives as release+press pairs.
+        event->accept();
+        return;
+    }
+    if (setKey(event->key(), true)) {
+        event->accept();
+        return;
+    }
+    QWidget::keyPressEvent(event);
+}
+
+void ViewportPlaceholderWidget::keyReleaseEvent(QKeyEvent* event) {
+    if (event->isAutoRepeat()) {
+        event->accept();
+        return;
+    }
+    if (setKey(event->key(), false)) {
+        event->accept();
+        return;
+    }
+    QWidget::keyReleaseEvent(event);
+}
+
+void ViewportPlaceholderWidget::focusOutEvent(QFocusEvent* event) {
+    // Releases may be delivered elsewhere once focus leaves: never leave the camera drifting.
+    m_keys = HeldKeys{};
+    m_lookHeld = false;
+    QWidget::focusOutEvent(event);
+}
+
+void ViewportPlaceholderWidget::mousePressEvent(QMouseEvent* event) {
+    setFocus(Qt::MouseFocusReason);
+    const QPoint pos = event->position().toPoint();
+    if (event->button() == Qt::RightButton) {
+        m_lookHeld = true;
+        m_rmbDragged = false;
+        m_flyKeyUsedDuringLook = false;
+        m_rmbPressPos = pos;
+        m_lastMousePos = pos;
+        event->accept();
+        return;
+    }
+    if (event->button() == Qt::LeftButton) {
+        syncPanelSize();
+        const qreal dpr = devicePixelRatioF();
+        {
+            std::lock_guard<std::mutex> lock(m_sceneMutex);
+            m_sceneView.pickAndSelect(m_host.editorScene(), m_panel, static_cast<f32>(event->position().x() * dpr),
+                                      static_cast<f32>(event->position().y() * dpr), m_host.editorState());
+        }
+        emit selectionChanged();
+        update();
+        event->accept();
+        return;
+    }
+    QWidget::mousePressEvent(event);
+}
+
+void ViewportPlaceholderWidget::mouseMoveEvent(QMouseEvent* event) {
+    if (m_lookHeld) {
+        const QPoint pos = event->position().toPoint();
+        m_pendingMouseDx += static_cast<float>(pos.x() - m_lastMousePos.x());
+        m_pendingMouseDy += static_cast<float>(pos.y() - m_lastMousePos.y());
+        m_lastMousePos = pos;
+        if ((pos - m_rmbPressPos).manhattanLength() >= kContextMenuClickSlop) {
+            m_rmbDragged = true;
+        }
+        event->accept();
+        return;
+    }
+    QWidget::mouseMoveEvent(event);
+}
+
+void ViewportPlaceholderWidget::mouseReleaseEvent(QMouseEvent* event) {
+    if (event->button() == Qt::RightButton && m_lookHeld) {
+        m_lookHeld = false;
+        const bool click = !m_rmbDragged && !m_flyKeyUsedDuringLook;
+        event->accept();
+        if (click) {
+            openContextMenuAt(event->position().toPoint());
+        }
+        return;
+    }
+    QWidget::mouseReleaseEvent(event);
+}
+
+// ---- context menu ----------------------------------------------------------------------------------
+
+ContextMenuHostGeometry ViewportPlaceholderWidget::hostGeometry() const {
+    ContextMenuHostGeometry g{};
+    const QWidget* top = window();
+    const QPoint origin = mapTo(top, QPoint(0, 0));
+    g.viewportOriginX = static_cast<f32>(origin.x());
+    g.viewportOriginY = static_cast<f32>(origin.y());
+    g.devicePixelRatio = static_cast<f32>(devicePixelRatioF());
+    g.windowWidth = static_cast<f32>(top->width());
+    g.windowHeight = static_cast<f32>(top->height());
+    return g;
+}
+
+QMenu* ViewportPlaceholderWidget::openContextMenuAt(const QPoint& localPos) {
+    if (m_activeMenu) {
+        m_activeMenu->close();
+    }
+    syncPanelSize();
+    const qreal dpr = devicePixelRatioF();
+    m_contextMenu.setHostGeometry(hostGeometry());
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        m_contextMenu.openInViewport(m_host.editorScene(), m_sceneView, m_panel,
+                                     static_cast<f32>(localPos.x() * dpr), static_cast<f32>(localPos.y() * dpr),
+                                     m_host.editorState());
+    }
+    emit selectionChanged();
+
+    auto* menu = new QMenu(this);
+    menu->setObjectName(QStringLiteral("fuseEntityContextMenu"));
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    menu->setFixedWidth(static_cast<int>(std::lround(m_contextMenu.menuWidth())));
+    for (const ContextMenuItem& item : m_contextMenu.items()) {
+        if (item.separatorBefore) {
+            menu->addSeparator();
+        }
+        QAction* action = menu->addAction(QString::fromUtf8(item.label));
+        action->setEnabled(item.enabled);
+        const ContextMenuAction id = item.action;
+        connect(action, &QAction::triggered, this, [this, id]() {
+            bool changed = false;
+            {
+                std::lock_guard<std::mutex> lock(m_sceneMutex);
+                changed = m_contextMenu.activate(id, m_host.editorScene(), m_host.editorState(), m_host.undoStack());
+            }
+            if (changed) {
+                emit sceneEdited();
+                emit selectionChanged();
+                update();
+            }
+        });
+    }
+    connect(menu, &QMenu::aboutToHide, this, [this]() { m_contextMenu.close(); });
+
+    // The model sized the menu from its item metrics; the stylesheet matches them, but the real
+    // QMenu size is authoritative (fonts / styles vary): re-place with it so flip / clamp decisions
+    // use what is actually shown.
+    menu->ensurePolished();
+    const QSize hint = menu->sizeHint();
+    if (hint.width() != std::lround(m_contextMenu.placement().width) ||
+        hint.height() != std::lround(m_contextMenu.placement().height)) {
+        m_contextMenu.setMenuSize(static_cast<f32>(hint.width()), static_cast<f32>(hint.height()));
+    }
+
+    m_activeMenu = menu;
+    menu->popup(placementGlobalRect().topLeft());
+    return menu;
+}
+
+QRect ViewportPlaceholderWidget::placementGlobalRect() const {
+    const ContextMenuPlacement& p = m_contextMenu.placement();
+    const QPoint topLeft = window()->mapToGlobal(
+        QPoint(static_cast<int>(std::lround(p.x)), static_cast<int>(std::lround(p.y))));
+    return {topLeft, QSize(static_cast<int>(std::lround(p.width)), static_cast<int>(std::lround(p.height)))};
+}
+
+// ---- size / surface hand-off -----------------------------------------------------------------------
+
+void ViewportPlaceholderWidget::syncPanelSize() {
+    const qreal dpr = devicePixelRatioF();
+    m_panel.setDimensions(static_cast<u32>(std::lround(width() * dpr)), static_cast<u32>(std::lround(height() * dpr)));
 }
 
 void ViewportPlaceholderWidget::postViewportResize() {
@@ -34,17 +289,18 @@ void ViewportPlaceholderWidget::postViewportResize() {
     if (size.width() <= 0 || size.height() <= 0) {
         return;
     }
+    syncPanelSize();
 
     EditorCommand widthCmd;
     widthCmd.kind = CommandKind::SetProperty;
     widthCmd.propertyName = "viewport.width";
-    widthCmd.propertyValue = std::to_string(static_cast<unsigned>(size.width()));
+    widthCmd.propertyValue = std::to_string(m_panel.width());
     m_host.postFromUi(std::move(widthCmd));
 
     EditorCommand heightCmd;
     heightCmd.kind = CommandKind::SetProperty;
     heightCmd.propertyName = "viewport.height";
-    heightCmd.propertyValue = std::to_string(static_cast<unsigned>(size.height()));
+    heightCmd.propertyValue = std::to_string(m_panel.height());
     m_host.postFromUi(std::move(heightCmd));
 }
 
@@ -92,21 +348,30 @@ void ViewportPlaceholderWidget::resizeEvent(QResizeEvent* event) {
     postViewportResize();
 }
 
+// ---- paint -----------------------------------------------------------------------------------------
+
 void ViewportPlaceholderWidget::paintEvent(QPaintEvent* /*event*/) {
     QPainter painter(this);
     painter.fillRect(rect(), palette().color(QPalette::Window));
 
     const RuntimeViewportHook& hook = m_host.runtimeViewport();
     const QString project = m_projectName.isEmpty() ? tr("(none)") : m_projectName;
+    const ViewportCamera& cam = m_panel.camera();
 
     painter.setPen(QColor(180, 190, 210));
     painter.drawText(
         rect().adjusted(16, 16, -16, -80),
         Qt::AlignCenter,
-        tr("Runtime viewport hook\n\nProject: %1\nSize: %2 × %3\nRuntime ticks: %4\nEmbedded: %5")
+        tr("Runtime viewport\n\nProject: %1\nSize: %2 × %3\nCamera: (%4, %5, %6) yaw %7° pitch %8°\n"
+           "Runtime ticks: %9\nEmbedded: %10")
             .arg(project)
-            .arg(hook.panel().width())
-            .arg(hook.panel().height())
+            .arg(m_panel.width())
+            .arg(m_panel.height())
+            .arg(cam.positionX, 0, 'f', 2)
+            .arg(cam.positionY, 0, 'f', 2)
+            .arg(cam.positionZ, 0, 'f', 2)
+            .arg(cam.yaw, 0, 'f', 1)
+            .arg(cam.pitch, 0, 'f', 1)
             .arg(hook.runtimeTickCount())
             .arg(hook.isEmbedded() ? tr("yes") : tr("no")));
 

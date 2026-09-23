@@ -63,7 +63,7 @@ private:
     void syncEcsToEmbedWorld3D_(EditorHost& host);
     void syncMeshSdfPreviewFromEcs_(EditorHost& host);
     void bindCookedAssetsToHybrid_();
-    void tickHeadlessPresentStub_(EditorHost& host, f32 dt);
+    void tickHeadlessPresentStub_();
 
     ViewportPanel m_panel;
     RuntimeEmbedSession m_embedSession;

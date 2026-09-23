@@ -4,14 +4,21 @@
 
 namespace fuse::editor::qt {
 
-GameLoopThread::GameLoopThread(EditorHost* host, QObject* parent)
-    : QThread(parent), m_host(host) {}
+GameLoopThread::GameLoopThread(EditorHost* host, std::mutex* sceneMutex, QObject* parent)
+    : QThread(parent), m_host(host), m_sceneMutex(sceneMutex) {}
 
 void GameLoopThread::run() {
     QTimer timer;
+    timer.setTimerType(Qt::PreciseTimer);
     timer.setInterval(16);
-    connect(&timer, &QTimer::timeout, this, [this]() {
-        if (m_host != nullptr) {
+    connect(&timer, &QTimer::timeout, &timer, [this]() {
+        if (m_host == nullptr) {
+            return;
+        }
+        if (m_sceneMutex != nullptr) {
+            std::lock_guard<std::mutex> lock(*m_sceneMutex);
+            m_host->gameTick();
+        } else {
             m_host->gameTick();
         }
     });

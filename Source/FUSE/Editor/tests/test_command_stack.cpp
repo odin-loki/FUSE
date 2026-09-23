@@ -124,7 +124,7 @@ void testUndoStackMaxHistoryEviction() {
     fuse::editor::UndoStack stack;
     int counter = 0;
 
-    for (int step = 0; step < fuse::editor::UndoStack::kMaxHistory + 10; ++step) {
+    for (fuse::u32 step = 0; step < fuse::editor::UndoStack::kMaxHistory + 10; ++step) {
         stack.execute(std::make_unique<CounterCommand>(counter, counter, counter + 1,
                                                        "step " + std::to_string(step)));
     }
@@ -1120,7 +1120,7 @@ void testUndoStackEvictionAdjustsBaseline() {
     fuse::editor::UndoStack stack;
     int counter = 0;
 
-    for (int step = 0; step < fuse::editor::UndoStack::kMaxHistory; ++step) {
+    for (fuse::u32 step = 0; step < fuse::editor::UndoStack::kMaxHistory; ++step) {
         stack.execute(std::make_unique<CounterCommand>(counter, counter, counter + 1,
                                                        "step " + std::to_string(step)));
     }

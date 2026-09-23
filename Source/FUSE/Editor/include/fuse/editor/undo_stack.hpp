@@ -50,7 +50,7 @@ public:
     virtual std::string description() const = 0;
 
     /// Merge consecutive commands (e.g. transform drags). Returns true when merged.
-    virtual bool merge(const UndoCommand& other) { return false; }
+    virtual bool merge(const UndoCommand& /*other*/) { return false; }
 };
 
 /// Macro / compound command: children execute in order and undo in reverse as one step (B6.2).

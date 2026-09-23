@@ -30,7 +30,7 @@ public:
     struct ComponentSection {
         std::string componentName;
         u32 exposedFieldCount = 0;
-        std::vector<Field> fields;
+        std::vector<Field> fields{};
         /// True when no typed field layout is known for the component (module-registered type):
         /// the section then shows its size and raw bytes read-only.
         bool generic = false;

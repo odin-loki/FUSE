@@ -1833,6 +1833,12 @@ void testCellSpanRejectReasonAndPreflight() {
 void testPairBufferInvalidateSlotRejectReasonGuards() {
     fuse::physics::broadphase::PairBufferSoA buffer;
     buffer.preparePairSlots(2u);
+    // Prepared slots start invalid; only a written slot can be invalidated.
+    expectEq(static_cast<fuse::u32>(
+                 fuse::physics::broadphase::pairBufferInvalidateSlotRejectReason(buffer, 0u)),
+             static_cast<fuse::u32>(fuse::physics::broadphase::PairBufferInvalidateSlotRejectReason::AlreadyInvalid),
+             "unwritten prepared slot reports AlreadyInvalid reject reason");
+    buffer.writeSlot(0u, 1u, 2u);
 
     expectEq(static_cast<fuse::u32>(
                  fuse::physics::broadphase::pairBufferInvalidateSlotRejectReason(buffer, 0u)),
@@ -2177,6 +2183,7 @@ int main() {
     testMergePairsIntoBufferPreflightGuards();
     testPairBufferShouldRunDedupeGuards();
     testPairBufferWriteSlotRejectReasonGuards();
+    testPairBufferInvalidateSlotRejectReasonGuards();
     testCellPairGenRejectReasonGuards();
     testShapeCellInsertRejectReasonGuards();
     testBroadphaseCellPairGenRejectReasonGuards();

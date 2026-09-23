@@ -25,6 +25,7 @@
 #include <thread>
 #include <vector>
 
+
 // ---- heap counter ------------------------------------------------------------------------------
 
 namespace {
@@ -40,7 +41,17 @@ void noteAllocation() {
 }
 } // namespace
 
-void* operator new(std::size_t size) {
+// Replacement allocation/deallocation functions stay out of line: once GCC inlines one of them into
+// a std::allocator call site it pairs its malloc()/free() with the other side's builtin
+// ::operator new/delete and reports a false -Wmismatched-new-delete (replacement functions must not
+// be inline anyway, [replacement.functions]).
+#if defined(__GNUC__)
+#define FUSE_TEST_REPLACEMENT_NOINLINE __attribute__((noinline))
+#else
+#define FUSE_TEST_REPLACEMENT_NOINLINE
+#endif
+
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new(std::size_t size) {
     noteAllocation();
     if (void* p = std::malloc(size == 0 ? 1 : size)) {
         return p;
@@ -48,20 +59,20 @@ void* operator new(std::size_t size) {
     throw std::bad_alloc();
 }
 
-void* operator new[](std::size_t size) {
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new[](std::size_t size) {
     return ::operator new(size);
 }
 
-void* operator new(std::size_t size, const std::nothrow_t&) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new(std::size_t size, const std::nothrow_t&) noexcept {
     noteAllocation();
     return std::malloc(size == 0 ? 1 : size);
 }
 
-void* operator new[](std::size_t size, const std::nothrow_t& tag) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new[](std::size_t size, const std::nothrow_t& tag) noexcept {
     return ::operator new(size, tag);
 }
 
-void* operator new(std::size_t size, std::align_val_t alignment) {
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new(std::size_t size, std::align_val_t alignment) {
     noteAllocation();
     const std::size_t align = static_cast<std::size_t>(alignment);
     const std::size_t rounded = ((size == 0 ? 1 : size) + align - 1u) / align * align;
@@ -71,11 +82,11 @@ void* operator new(std::size_t size, std::align_val_t alignment) {
     throw std::bad_alloc();
 }
 
-void* operator new[](std::size_t size, std::align_val_t alignment) {
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new[](std::size_t size, std::align_val_t alignment) {
     return ::operator new(size, alignment);
 }
 
-void* operator new(std::size_t size, std::align_val_t alignment, const std::nothrow_t&) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new(std::size_t size, std::align_val_t alignment, const std::nothrow_t&) noexcept {
     try {
         return ::operator new(size, alignment);
     } catch (...) {
@@ -83,22 +94,22 @@ void* operator new(std::size_t size, std::align_val_t alignment, const std::noth
     }
 }
 
-void* operator new[](std::size_t size, std::align_val_t alignment, const std::nothrow_t& tag) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new[](std::size_t size, std::align_val_t alignment, const std::nothrow_t& tag) noexcept {
     return ::operator new(size, alignment, tag);
 }
 
-void operator delete(void* ptr) noexcept { std::free(ptr); }
-void operator delete[](void* ptr) noexcept { std::free(ptr); }
-void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
-void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
-void operator delete(void* ptr, const std::nothrow_t&) noexcept { std::free(ptr); }
-void operator delete[](void* ptr, const std::nothrow_t&) noexcept { std::free(ptr); }
-void operator delete(void* ptr, std::align_val_t) noexcept { std::free(ptr); }
-void operator delete[](void* ptr, std::align_val_t) noexcept { std::free(ptr); }
-void operator delete(void* ptr, std::size_t, std::align_val_t) noexcept { std::free(ptr); }
-void operator delete[](void* ptr, std::size_t, std::align_val_t) noexcept { std::free(ptr); }
-void operator delete(void* ptr, std::align_val_t, const std::nothrow_t&) noexcept { std::free(ptr); }
-void operator delete[](void* ptr, std::align_val_t, const std::nothrow_t&) noexcept { std::free(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* ptr) noexcept { std::free(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* ptr) noexcept { std::free(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* ptr, const std::nothrow_t&) noexcept { std::free(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* ptr, const std::nothrow_t&) noexcept { std::free(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* ptr, std::align_val_t) noexcept { std::free(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* ptr, std::align_val_t) noexcept { std::free(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* ptr, std::size_t, std::align_val_t) noexcept { std::free(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* ptr, std::size_t, std::align_val_t) noexcept { std::free(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* ptr, std::align_val_t, const std::nothrow_t&) noexcept { std::free(ptr); }
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* ptr, std::align_val_t, const std::nothrow_t&) noexcept { std::free(ptr); }
 
 namespace {
 

@@ -93,6 +93,9 @@ public:
     void openAt(ecs::EntityID clicked, const ecs::vec3& spawnPoint, EditorState& state, f32 windowX, f32 windowY);
     /// Placement computed by the last open (viewport opens map px/py through `hostGeometry()`).
     [[nodiscard]] const ContextMenuPlacement& placement() const { return m_placement; }
+    /// Re-place the open menu for the size the host actually shows (e.g. `QMenu::sizeHint`),
+    /// keeping the recorded click: flip / clamp decisions then use the real menu size.
+    void setMenuSize(f32 width, f32 height);
     void close() { m_open = false; }
 
     [[nodiscard]] bool isOpen() const { return m_open; }

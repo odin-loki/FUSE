@@ -250,7 +250,8 @@ void recordImageLayoutBarrier(VkCommandBuffer cmd, VkImage image, u32 baseMip, u
     barrier.subresourceRange.levelCount = mipCount;
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = layerCount;
-    barrier.srcAccessMask = oldLayout == VK_IMAGE_LAYOUT_UNDEFINED ? 0u : VK_ACCESS_MEMORY_WRITE_BIT;
+    barrier.srcAccessMask =
+        oldLayout == VK_IMAGE_LAYOUT_UNDEFINED ? VkAccessFlags{0} : VkAccessFlags{VK_ACCESS_MEMORY_WRITE_BIT};
     barrier.dstAccessMask = dstAccess;
     barrier.oldLayout = oldLayout;
     barrier.newLayout = newLayout;

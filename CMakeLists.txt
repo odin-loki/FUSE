@@ -58,6 +58,7 @@ option(FUSE_CORE_ENABLE_ASAN "Enable AddressSanitizer for fuse_core and fuse_cor
 option(FUSE_CORE_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer for fuse_core and fuse_core_* tests" OFF)
 option(FUSE_CORE_ENABLE_TSAN "Enable ThreadSanitizer for fuse_core and fuse_core_tests" OFF)
 include("${CMAKE_SOURCE_DIR}/cmake/FuseSanitizers.cmake")
+include("${CMAKE_SOURCE_DIR}/cmake/FuseWarnings.cmake")
 option(FUSE_BUILD_T3D "Build Torque3D application target(s)" ON)
 option(FUSE_BUILD_T2D "Build Torque2D engine target (requires submodule)" ON)
 option(FUSE_ENABLE_CLANG_TIDY "Export compile_commands.json for the optional fuse_clang_tidy seed gate (does not set CMAKE_CXX_CLANG_TIDY)" OFF)
@@ -106,6 +107,13 @@ endif()
 # CMAKE_EXPORT_COMPILE_COMMANDS is ON (FUSE_ENABLE_CLANG_TIDY or fuse-debug / fuse-asan).
 # cmake --build is recommended before `fuse_clang_tidy` / ctest -R fuse_p7_clang_tidy.
 include("${CMAKE_SOURCE_DIR}/cmake/FuseClangTidy.cmake")
+
+# Shipping: binary inspection of every fuse_* library / shipped executable (B7.10).
+fuse_shipping_add_binary_strip_test()
+
+# -Wall -Wextra (+ -Werror with FUSE_WARNINGS_AS_ERRORS) on every Source/FUSE +
+# Tools/FUSE target; vendored Engine/lib subprojects excluded (cmake/FuseWarnings.cmake).
+fuse_warnings_finalize()
 
 # FUSE_SANITIZE (fuse-asan preset): instrument every Source/FUSE + Tools/FUSE
 # target and wire sanitizer runtime options into their tests. Must run last.

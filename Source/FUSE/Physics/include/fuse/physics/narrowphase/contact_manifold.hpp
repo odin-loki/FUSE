@@ -165,7 +165,8 @@ struct ManifoldPrunePreflight {
         return !skipped && (hasSeparated || hasDuplicates || exceedsMaxPoints);
     }
 
-    bool needs_shallow_pruning(f32 minDepth) const { return !skipped && hasShallow; }
+    /// Shallow pruning only applies to a positive depth threshold (preflight leaves hasShallow false otherwise).
+    bool needs_shallow_pruning(f32 minDepth) const { return !skipped && minDepth > 0.f && hasShallow; }
 
     bool can_prune_in_place() const { return needs_pruning() && !wouldBeEmpty; }
 

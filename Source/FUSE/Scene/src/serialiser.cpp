@@ -13,6 +13,7 @@ namespace {
 constexpr u32 kHeaderSize = 64u;
 constexpr u32 kCameraBlockSize = 40u; // f32×9 + u32 active flag
 constexpr u32 kTransformBlockSize = 40u; // f32×10 (position, rotation, scale)
+static_assert(kTransformBlockSize == 10u * sizeof(f32), "transform block is ten f32 fields");
 constexpr u8 kCameraMarker = 'C';
 constexpr u8 kTransformTableMarker = 'T';
 constexpr u8 kHierarchyTableMarker = 'H';

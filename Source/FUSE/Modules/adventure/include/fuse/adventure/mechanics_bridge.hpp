@@ -7,9 +7,9 @@
 namespace fuse::adventure {
 
 /// Game-thread bridge from mechanics registry dispatch to adventure inventory + interaction APIs.
+/// Stateless: each AdventureInteractableComponent carries its own InteractionSystem reference.
 class MechanicsBridge {
 public:
-    explicit MechanicsBridge(InteractionSystem& system);
 
     InteractResult use(mechanics::MechanicsRegistry& registry,
                        mechanics::Component* target,
@@ -28,8 +28,6 @@ public:
 
 private:
     InteractContext buildContext(mechanics::Component* instigator) const;
-
-    InteractionSystem& m_system;
 };
 
 } // namespace fuse::adventure

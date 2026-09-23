@@ -110,9 +110,9 @@ struct BehaviorNode {
     u32 loopCount = 1;
     u32 childA = 0;
     u32 childB = 0;
-    ParallelPolicy parallelPolicy;
+    ParallelPolicy parallelPolicy{};
     u32 scalarSlot = kNoScalarSlot;
-    std::string scriptHook;
+    std::string scriptHook{};
 };
 
 /// Job-friendly BT evaluator — read-only snapshot + blackboard view, no scene mutation.

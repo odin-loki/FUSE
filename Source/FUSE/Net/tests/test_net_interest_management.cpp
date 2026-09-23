@@ -69,9 +69,9 @@ void run_interest_management_tests() {
     manager.set_policy(policy);
     manager.set_observer_position(origin);
 
-    manager.register_entity({make_entity(1), near_pos, 0.f});
-    manager.register_entity({make_entity(2), mid_pos, 0.1f});
-    manager.register_entity({make_entity(3), far_pos, 0.f});
+    expectTrue(manager.register_entity({make_entity(1), near_pos, 0.f}), "register_entity accepts candidate");
+    expectTrue(manager.register_entity({make_entity(2), mid_pos, 0.1f}), "register_entity accepts candidate");
+    expectTrue(manager.register_entity({make_entity(3), far_pos, 0.f}), "register_entity accepts candidate");
     manager.evaluate();
 
     expectTrue(manager.in_scope_count() == 2u, "manager counts in-scope entities");
@@ -99,11 +99,11 @@ void run_interest_management_tests() {
 
     manager.clear_entities();
     manager.set_observer_position(origin);
-    manager.register_entity({make_entity(10), {95.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(manager.register_entity({make_entity(10), {95.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     manager.evaluate();
     expectTrue(manager.in_scope_count() == 1u, "entity within relevance radius is scoped");
 
-    manager.register_entity({make_entity(11), {110.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(manager.register_entity({make_entity(11), {110.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     manager.evaluate();
     expectTrue(manager.entries()[0].scope == fuse::net::InterestScope::InScope,
                "hysteresis keeps entity in scope past relevance radius");
@@ -174,31 +174,31 @@ void run_interest_management_tests() {
     fuse::net::InterestManager diff_manager;
     diff_manager.set_policy(policy);
     diff_manager.set_observer_position(origin);
-    diff_manager.register_entity({make_entity(40), {10.f, 0.f, 0.f, 0.f}, 0.f});
-    diff_manager.register_entity({make_entity(41), {20.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(diff_manager.register_entity({make_entity(40), {10.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
+    expectTrue(diff_manager.register_entity({make_entity(41), {20.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     diff_manager.evaluate();
     expectTrue(diff_manager.scope_set().size() == 2u, "initial scope set has two entities");
 
     fuse::net::InterestSetDiff first_diff{};
-    diff_manager.compute_scope_diff(first_diff);
+    (void)diff_manager.compute_scope_diff(first_diff);
     expectTrue(first_diff.entered.empty() && first_diff.left.empty(),
                "first evaluation produces empty enter/leave diff");
 
     diff_manager.set_observer_position({200.f, 0.f, 0.f, 0.f});
     diff_manager.evaluate();
     fuse::net::InterestSetDiff move_diff{};
-    diff_manager.compute_scope_diff(move_diff);
+    (void)diff_manager.compute_scope_diff(move_diff);
     expectTrue(move_diff.entered.empty(), "moving away does not enter new entities");
     expectTrue(move_diff.left.size() == 2u, "moving away leaves prior in-scope entities");
 
     diff_manager.clear_entities();
     diff_manager.set_observer_position(origin);
-    diff_manager.register_entity({make_entity(50), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(diff_manager.register_entity({make_entity(50), {10.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     diff_manager.evaluate();
-    diff_manager.register_entity({make_entity(51), {15.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(diff_manager.register_entity({make_entity(51), {15.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     diff_manager.evaluate();
     fuse::net::InterestSetDiff add_diff{};
-    diff_manager.compute_scope_diff(add_diff);
+    (void)diff_manager.compute_scope_diff(add_diff);
     expectTrue(add_diff.entered.size() == 1u, "new in-scope entity appears in entered set");
     expectTrue(add_diff.entered[0].index == 51u, "entered set identifies new entity");
     expectTrue(add_diff.left.empty(), "adding entity does not leave prior scope");
@@ -210,7 +210,7 @@ void run_interest_management_tests() {
     diff_manager.set_observer_position({200.f, 0.f, 0.f, 0.f});
     diff_manager.evaluate();
     manual_curr.build_from_entries(diff_manager.entries());
-    fuse::net::diff_interest_scope_sets(manual_prev, manual_curr, manual_diff);
+    (void)fuse::net::diff_interest_scope_sets(manual_prev, manual_curr, manual_diff);
     expectTrue(manual_diff.left.size() == 2u, "manual diff detects entities leaving scope");
     expectTrue(manual_diff.entered.empty(), "manual diff has no enters when observer moves away");
 
@@ -241,8 +241,8 @@ void run_interest_management_tests() {
     fuse::net::InterestManager empty_manager;
     empty_manager.set_policy(policy);
     empty_manager.set_observer_position(origin);
-    empty_manager.register_entity({make_entity(70), {500.f, 0.f, 0.f, 0.f}, 0.f});
-    empty_manager.register_entity({make_entity(71), {600.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(empty_manager.register_entity({make_entity(70), {500.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
+    expectTrue(empty_manager.register_entity({make_entity(71), {600.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     empty_manager.evaluate();
     expectTrue(empty_manager.scope_set().empty(), "all far entities produce empty scope set");
     expectTrue(empty_manager.in_scope_count() == 0u, "empty scope has zero in-scope count");
@@ -250,13 +250,13 @@ void run_interest_management_tests() {
                "is_entity_in_scope returns false for out-of-scope entity");
 
     fuse::net::InterestSetDiff empty_first_diff{};
-    empty_manager.compute_scope_diff(empty_first_diff);
+    (void)empty_manager.compute_scope_diff(empty_first_diff);
     expectTrue(empty_first_diff.empty(), "first empty-scope evaluation diff is empty");
 
     empty_manager.set_observer_position({490.f, 0.f, 0.f, 0.f});
     empty_manager.evaluate();
     fuse::net::InterestSetDiff empty_to_scope_diff{};
-    empty_manager.compute_scope_diff(empty_to_scope_diff);
+    (void)empty_manager.compute_scope_diff(empty_to_scope_diff);
     expectTrue(empty_to_scope_diff.entered.size() == 1u,
                "moving observer into range enters one entity");
     expectTrue(empty_to_scope_diff.entered[0].index == 70u,
@@ -272,7 +272,7 @@ void run_interest_management_tests() {
     scope_b.entities = {make_entity(4), make_entity(2)};
 
     fuse::net::InterestSetDiff sorted_diff{};
-    fuse::net::diff_interest_scope_sets(scope_a, scope_b, sorted_diff);
+    (void)fuse::net::diff_interest_scope_sets(scope_a, scope_b, sorted_diff);
     expectTrue(sorted_diff.entered.size() == 1u && sorted_diff.entered[0].index == 4u,
                "diff entered set is sorted and contains new entity");
     expectTrue(sorted_diff.left.size() == 2u && sorted_diff.left[0].index == 1u &&
@@ -287,7 +287,7 @@ void run_interest_management_tests() {
     update_manager.set_policy(policy);
     update_manager.set_observer_position(origin);
     const fuse::ecs::EntityID moving_entity = make_entity(80);
-    update_manager.register_entity({moving_entity, {200.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(update_manager.register_entity({moving_entity, {200.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     update_manager.evaluate();
     expectTrue(update_manager.scope_set().empty(), "entity starts out of scope");
 
@@ -297,7 +297,7 @@ void run_interest_management_tests() {
                "update_entity_position rejects unknown entity");
     update_manager.evaluate();
     fuse::net::InterestSetDiff position_diff{};
-    update_manager.compute_scope_diff(position_diff);
+    (void)update_manager.compute_scope_diff(position_diff);
     expectTrue(position_diff.entered.size() == 1u && position_diff.entered[0] == moving_entity,
                "moving entity into radius enters scope");
     expectTrue(update_manager.is_entity_in_scope(moving_entity),
@@ -307,7 +307,7 @@ void run_interest_management_tests() {
                "update_entity_position can move entity back out");
     update_manager.evaluate();
     fuse::net::InterestSetDiff leave_diff{};
-    update_manager.compute_scope_diff(leave_diff);
+    (void)update_manager.compute_scope_diff(leave_diff);
     expectTrue(leave_diff.left.size() == 1u && leave_diff.left[0] == moving_entity,
                "moving entity out of radius leaves scope");
     expectTrue(leave_diff.entered.empty(), "leave-only diff has no enters");
@@ -359,7 +359,7 @@ void run_interest_management_tests() {
     fuse::net::InterestSetDiff patch_diff{};
     patch_diff.entered = {make_entity(4)};
     patch_diff.left = {make_entity(2)};
-    patch_diff.apply_diff(applied_scope);
+    (void)patch_diff.apply_diff(applied_scope);
     expectTrue(applied_scope.size() == 3u, "apply_to preserves net scope size");
     expectTrue(applied_scope.contains(make_entity(1)), "apply_to keeps unchanged entities");
     expectTrue(applied_scope.contains(make_entity(3)), "apply_to keeps unchanged entities");
@@ -368,20 +368,20 @@ void run_interest_management_tests() {
 
     fuse::net::InterestSetDiff noop_diff{};
     const fuse::net::InterestScopeSet before_noop = applied_scope;
-    noop_diff.apply_to(applied_scope);
+    (void)noop_diff.apply_to(applied_scope);
     expectTrue(applied_scope.equal_to(before_noop), "empty diff apply_to is a no-op");
 
     // --- evaluate_and_diff ---
     fuse::net::InterestManager eval_diff_manager;
     eval_diff_manager.set_policy(policy);
     eval_diff_manager.set_observer_position(origin);
-    eval_diff_manager.register_entity({make_entity(110), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(eval_diff_manager.register_entity({make_entity(110), {10.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     fuse::net::InterestSetDiff eval_first{};
     expectTrue(!eval_diff_manager.evaluate_and_diff(eval_first),
                "evaluate_and_diff first pass is empty");
     expectTrue(eval_first.empty(), "evaluate_and_diff first pass clears diff output");
 
-    eval_diff_manager.register_entity({make_entity(111), {12.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(eval_diff_manager.register_entity({make_entity(111), {12.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     fuse::net::InterestSetDiff eval_second{};
     expectTrue(eval_diff_manager.evaluate_and_diff(eval_second),
                "evaluate_and_diff reports scope change on entity add");
@@ -390,7 +390,7 @@ void run_interest_management_tests() {
 
     fuse::net::InterestScopeSet replicated_scope;
     replicated_scope.entities = {make_entity(110)};
-    eval_second.apply_to(replicated_scope);
+    (void)eval_second.apply_to(replicated_scope);
     expectTrue(replicated_scope.contains(make_entity(111)),
                "apply_to replicates enter from evaluate_and_diff");
     expectTrue(replicated_scope.size() == 2u, "apply_to grows replicated scope on enter");
@@ -399,7 +399,7 @@ void run_interest_management_tests() {
     fuse::net::InterestManager transition_manager;
     transition_manager.set_policy(policy);
     transition_manager.set_observer_position(origin);
-    transition_manager.register_entity({make_entity(120), {500.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(transition_manager.register_entity({make_entity(120), {500.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     fuse::net::InterestSetDiff transition_first{};
     expectTrue(!transition_manager.evaluate_and_diff(transition_first),
                "first empty-scope evaluate_and_diff returns false");
@@ -410,7 +410,7 @@ void run_interest_management_tests() {
     expectTrue(transition_second.empty(), "empty-to-empty evaluate_and_diff stays empty");
 
     transition_manager.clear_entities();
-    transition_manager.register_entity({make_entity(121), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(transition_manager.register_entity({make_entity(121), {10.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     fuse::net::InterestSetDiff after_clear{};
     expectTrue(!transition_manager.evaluate_and_diff(after_clear),
                "first evaluate after clear_entities returns false");
@@ -437,14 +437,14 @@ void run_interest_management_tests() {
     fuse::net::InterestScopeSet empty_prev;
     fuse::net::InterestScopeSet empty_curr;
     fuse::net::InterestSetDiff both_empty_diff{};
-    fuse::net::diff_interest_scope_sets(empty_prev, empty_curr, both_empty_diff);
+    (void)fuse::net::diff_interest_scope_sets(empty_prev, empty_curr, both_empty_diff);
     expectTrue(both_empty_diff.empty(), "diff of two empty scope sets is empty");
 
     // --- evaluate_and_diff return value + previous_scope_set ---
     fuse::net::InterestManager return_manager;
     return_manager.set_policy(policy);
     return_manager.set_observer_position(origin);
-    return_manager.register_entity({make_entity(130), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(return_manager.register_entity({make_entity(130), {10.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     fuse::net::InterestSetDiff return_first{};
     expectTrue(!return_manager.evaluate_and_diff(return_first),
                "evaluate_and_diff returns false on first empty diff");
@@ -453,7 +453,7 @@ void run_interest_management_tests() {
     expectTrue(return_manager.previous_scope_set().equal_to(return_manager.scope_set()),
                "previous_scope_set matches scope on first evaluation");
 
-    return_manager.register_entity({make_entity(131), {12.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(return_manager.register_entity({make_entity(131), {12.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     fuse::net::InterestSetDiff return_second{};
     expectTrue(return_manager.evaluate_and_diff(return_second),
                "evaluate_and_diff returns true when scope changes");
@@ -502,7 +502,7 @@ void run_interest_management_tests() {
     fuse::net::InterestSetDiff alias_diff{};
     alias_diff.entered = {make_entity(3)};
     alias_diff.left = {make_entity(1)};
-    alias_diff.apply_diff(alias_scope);
+    (void)alias_diff.apply_diff(alias_scope);
     expectTrue(alias_scope.size() == 2u, "apply_diff preserves net scope size");
     expectTrue(alias_scope.contains(make_entity(2)), "apply_diff keeps unchanged entity");
     expectTrue(alias_scope.contains(make_entity(3)), "apply_diff inserts entered entity");
@@ -510,7 +510,7 @@ void run_interest_management_tests() {
 
     fuse::net::InterestSetDiff guarded_empty_diff{};
     const fuse::net::InterestScopeSet alias_before_guard = alias_scope;
-    guarded_empty_diff.apply_diff(alias_scope);
+    (void)guarded_empty_diff.apply_diff(alias_scope);
     expectTrue(alias_scope.equal_to(alias_before_guard), "apply_diff no-op on empty diff");
     expectTrue(!guarded_empty_diff.apply_diff(alias_scope),
                "apply_diff returns false on empty diff");
@@ -547,14 +547,14 @@ void run_interest_management_tests() {
     fuse::net::InterestManager scope_diff_manager;
     scope_diff_manager.set_policy(policy);
     scope_diff_manager.set_observer_position(origin);
-    scope_diff_manager.register_entity({make_entity(150), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(scope_diff_manager.register_entity({make_entity(150), {10.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     scope_diff_manager.evaluate();
     fuse::net::InterestSetDiff unchanged_diff{};
     expectTrue(!scope_diff_manager.compute_scope_diff(unchanged_diff),
                "compute_scope_diff returns false when scope unchanged");
     expectTrue(unchanged_diff.empty(), "unchanged compute_scope_diff clears output");
 
-    scope_diff_manager.register_entity({make_entity(151), {12.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(scope_diff_manager.register_entity({make_entity(151), {12.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     scope_diff_manager.evaluate();
     fuse::net::InterestSetDiff changed_diff{};
     expectTrue(scope_diff_manager.compute_scope_diff(changed_diff),
@@ -565,8 +565,8 @@ void run_interest_management_tests() {
     fuse::net::InterestManager registered_manager;
     registered_manager.set_policy(hysteresis_policy);
     registered_manager.set_observer_position(origin);
-    registered_manager.register_entity({make_entity(160), {40.f, 0.f, 0.f, 0.f}, 0.f});
-    registered_manager.register_entity({make_entity(161), {55.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(registered_manager.register_entity({make_entity(160), {40.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
+    expectTrue(registered_manager.register_entity({make_entity(161), {55.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     registered_manager.evaluate();
 
     expectTrue(registered_manager.count_registered_in_radius() == 1u,
@@ -582,8 +582,8 @@ void run_interest_management_tests() {
     fuse::net::InterestManager hysteresis_manager;
     hysteresis_manager.set_policy(hysteresis_policy);
     hysteresis_manager.set_observer_position(origin);
-    hysteresis_manager.register_entity({make_entity(162), {40.f, 0.f, 0.f, 0.f}, 0.f});
-    hysteresis_manager.register_entity({make_entity(163), {45.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(hysteresis_manager.register_entity({make_entity(162), {40.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
+    expectTrue(hysteresis_manager.register_entity({make_entity(163), {45.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     hysteresis_manager.evaluate();
     expectTrue(hysteresis_manager.update_entity_position(make_entity(163), {55.f, 0.f, 0.f, 0.f}),
                "update moves entity past relevance while prior scope retains it");
@@ -674,7 +674,7 @@ void run_interest_management_tests() {
     registration_manager.set_policy(policy);
     registration_manager.set_observer_position(origin);
     const fuse::ecs::EntityID registered_entity = make_entity(170);
-    registration_manager.register_entity({registered_entity, {10.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(registration_manager.register_entity({registered_entity, {10.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     expectTrue(registration_manager.is_entity_registered(registered_entity),
                "is_entity_registered reports registered entity");
     expectTrue(!registration_manager.is_entity_registered(make_entity(999)),
@@ -713,7 +713,7 @@ void run_interest_management_tests() {
                "unregistered entity no longer reported as registered");
     expectTrue(register_manager.candidates().empty(), "unregister_entity clears candidate list");
 
-    register_manager.register_entity({make_entity(181), {10.f, 0.f, 0.f, 0.f}, 0.f});
+    expectTrue(register_manager.register_entity({make_entity(181), {10.f, 0.f, 0.f, 0.f}, 0.f}), "register_entity accepts candidate");
     register_manager.evaluate();
     expectTrue(register_manager.unregister_entity(make_entity(181)),
                "unregister_entity succeeds after evaluate");

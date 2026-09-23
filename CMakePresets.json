@@ -103,6 +103,51 @@
         "FUSE_BUILD_CORE_TESTS": "ON",
         "FUSE_SHIPPING": "OFF"
       }
+    },
+    {
+      "name": "fuse-werror-base",
+      "hidden": true,
+      "cacheVariables": {
+        "FUSE_WARNINGS": "ON",
+        "FUSE_WARNINGS_AS_ERRORS": "ON",
+        "FUSE_BUILD_VULKAN": "ON"
+      }
+    },
+    {
+      "name": "fuse-werror-debug",
+      "displayName": "FUSE Debug (-Wall -Wextra -Werror on FUSE targets)",
+      "inherits": [
+        "fuse-werror-base",
+        "fuse-debug"
+      ],
+      "binaryDir": "${sourceDir}/build/fuse-werror-debug"
+    },
+    {
+      "name": "fuse-werror-release",
+      "displayName": "FUSE Release (-Wall -Wextra -Werror on FUSE targets)",
+      "inherits": [
+        "fuse-werror-base",
+        "fuse-release"
+      ],
+      "binaryDir": "${sourceDir}/build/fuse-werror-release"
+    },
+    {
+      "name": "fuse-werror-profile",
+      "displayName": "FUSE Profile (-Wall -Wextra -Werror on FUSE targets)",
+      "inherits": [
+        "fuse-werror-base",
+        "fuse-profile"
+      ],
+      "binaryDir": "${sourceDir}/build/fuse-werror-profile"
+    },
+    {
+      "name": "fuse-werror-shipping",
+      "displayName": "FUSE Shipping (-Wall -Wextra -Werror on FUSE targets)",
+      "inherits": [
+        "fuse-werror-base",
+        "fuse-shipping"
+      ],
+      "binaryDir": "${sourceDir}/build/fuse-werror-shipping"
     }
   ]
 }

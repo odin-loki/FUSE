@@ -130,7 +130,7 @@ bool VulkanSwapchain::initialize(VulkanDevice& device, const SwapchainDesc& desc
 #endif
 }
 
-void VulkanSwapchain::destroyPresentTargets(VulkanDevice& device) {
+void VulkanSwapchain::destroyPresentTargets([[maybe_unused]] VulkanDevice& device) {
 #if defined(FUSE_VULKAN_BACKEND)
     if (m_device == nullptr) {
         m_presentRenderPass = nullptr;

@@ -49,6 +49,7 @@
 #include <link.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
 #define FUSE_B7_LINUX 1
 #endif
 
@@ -74,7 +75,17 @@ namespace {
 std::atomic<long long> g_liveHeapBlocks{0};
 } // namespace
 
-void* operator new(std::size_t size) {
+// Replacement allocation/deallocation functions stay out of line: once GCC inlines one of them into
+// a std::allocator call site it pairs its malloc()/free() with the other side's builtin
+// ::operator new/delete and reports a false -Wmismatched-new-delete (replacement functions must not
+// be inline anyway, [replacement.functions]).
+#if defined(__GNUC__)
+#define FUSE_TEST_REPLACEMENT_NOINLINE __attribute__((noinline))
+#else
+#define FUSE_TEST_REPLACEMENT_NOINLINE
+#endif
+
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new(std::size_t size) {
     void* p = std::malloc(size == 0 ? 1 : size);
     if (p == nullptr) {
         throw std::bad_alloc();
@@ -82,20 +93,20 @@ void* operator new(std::size_t size) {
     g_liveHeapBlocks.fetch_add(1, std::memory_order_relaxed);
     return p;
 }
-void* operator new[](std::size_t size) {
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new[](std::size_t size) {
     return ::operator new(size);
 }
-void* operator new(std::size_t size, const std::nothrow_t&) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new(std::size_t size, const std::nothrow_t&) noexcept {
     void* p = std::malloc(size == 0 ? 1 : size);
     if (p != nullptr) {
         g_liveHeapBlocks.fetch_add(1, std::memory_order_relaxed);
     }
     return p;
 }
-void* operator new[](std::size_t size, const std::nothrow_t& tag) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new[](std::size_t size, const std::nothrow_t& tag) noexcept {
     return ::operator new(size, tag);
 }
-void* operator new(std::size_t size, std::align_val_t alignment) {
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new(std::size_t size, std::align_val_t alignment) {
     const std::size_t a = static_cast<std::size_t>(alignment);
     void* p = std::aligned_alloc(a, ((size == 0 ? 1 : size) + a - 1) / a * a);
     if (p == nullptr) {
@@ -104,34 +115,34 @@ void* operator new(std::size_t size, std::align_val_t alignment) {
     g_liveHeapBlocks.fetch_add(1, std::memory_order_relaxed);
     return p;
 }
-void* operator new[](std::size_t size, std::align_val_t alignment) {
+FUSE_TEST_REPLACEMENT_NOINLINE void* operator new[](std::size_t size, std::align_val_t alignment) {
     return ::operator new(size, alignment);
 }
-void operator delete(void* p) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p) noexcept {
     if (p != nullptr) {
         g_liveHeapBlocks.fetch_sub(1, std::memory_order_relaxed);
         std::free(p);
     }
 }
-void operator delete[](void* p) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* p) noexcept {
     ::operator delete(p);
 }
-void operator delete(void* p, std::size_t) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p, std::size_t) noexcept {
     ::operator delete(p);
 }
-void operator delete[](void* p, std::size_t) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* p, std::size_t) noexcept {
     ::operator delete(p);
 }
-void operator delete(void* p, std::align_val_t) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p, std::align_val_t) noexcept {
     ::operator delete(p);
 }
-void operator delete[](void* p, std::align_val_t) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* p, std::align_val_t) noexcept {
     ::operator delete(p);
 }
-void operator delete(void* p, std::size_t, std::align_val_t) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p, std::size_t, std::align_val_t) noexcept {
     ::operator delete(p);
 }
-void operator delete[](void* p, std::size_t, std::align_val_t) noexcept {
+FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* p, std::size_t, std::align_val_t) noexcept {
     ::operator delete(p);
 }
 
@@ -380,10 +391,12 @@ void testNullDereferenceReport() {
     std::printf("  null deref: report %zu bytes, %zu frames\n", report.size(), frames.size());
 }
 
+#if !(defined(FUSE_NO_ASSERT) && FUSE_NO_ASSERT)
 constexpr int kVerifyProbeLine = __LINE__ + 2;
 void verifyProbe() {
     FUSE_VERIFY(g_b7Zero == 1, "b7 crash probe verify");
 }
+#endif
 
 void testAssertAbortReport() {
 #if !(defined(FUSE_NO_ASSERT) && FUSE_NO_ASSERT)

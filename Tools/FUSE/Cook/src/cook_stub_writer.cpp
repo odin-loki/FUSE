@@ -24,6 +24,8 @@ namespace fuse::cook {
 
 namespace {
 
+#if defined(FUSE_HAS_OGG_VORBIS)
+// WAV input is only read by the Ogg Vorbis encode path.
 struct WavHeaderInfo {
     bool valid = false;
     u32 channels = 0;
@@ -110,6 +112,7 @@ bool readWavPcm16(std::ifstream& in, const WavHeaderInfo& wav, std::vector<std::
     in.read(reinterpret_cast<char*>(pcm.data()), static_cast<std::streamsize>(wav.dataBytes));
     return in.good();
 }
+#endif // FUSE_HAS_OGG_VORBIS
 
 } // namespace
 

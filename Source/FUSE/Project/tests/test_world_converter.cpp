@@ -491,7 +491,8 @@ void testT3DMissionShaderVfsAsyncLoad() {
 
     fuse::project::ProjectManifest manifest{};
     manifest.projectRoot = projectRoot.string();
-    fuse::project::mountProjectAssetRoots(manifest);
+    // Roots may already be mounted by an earlier test in this process (mounting is idempotent).
+    (void)fuse::project::mountProjectAssetRoots(manifest);
 
     const std::string missionText =
         "new Scene(ShaderLevel) {\n"
@@ -518,7 +519,7 @@ void testT3DMissionShaderVfsAsyncLoad() {
     }
 
     fuse::HandleTable<fuse::io::Asset> table;
-    fuse::project::drainT3DShaderLoads(table, nullptr);
+    (void)fuse::project::drainT3DShaderLoads(table, nullptr); // teardown: flush pending shader loads
 }
 
 void testT3DShaderVfsAsyncLoad() {
@@ -530,7 +531,8 @@ void testT3DShaderVfsAsyncLoad() {
 
     fuse::project::ProjectManifest manifest{};
     manifest.projectRoot = projectRoot.string();
-    fuse::project::mountProjectAssetRoots(manifest);
+    // Roots may already be mounted by an earlier test in this process (mounting is idempotent).
+    (void)fuse::project::mountProjectAssetRoots(manifest);
 
     fuse::project::T3DDatablockResolveResult bindings;
     bindings.bindings.push_back({"Post", "Common:ScreenSpace", "shader", 2u});

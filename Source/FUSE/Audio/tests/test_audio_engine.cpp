@@ -1703,6 +1703,7 @@ void testReverbZoneListenerPositionAffectsMix() {
     const fuse::audio::EntityId listener_entity = registry.create_entity();
     registry.set_position(listener_entity, fuse::audio::Vec3{0.f, 0.f, 0.f});
     fuse::audio::AudioListener* listener = registry.set_listener(listener_entity);
+    expectTrue(listener != nullptr, "reverb-zone test listener registered");
 
     const fuse::audio::EntityId source_entity = registry.create_entity();
     fuse::audio::AudioSourceDesc source_desc;
@@ -1724,6 +1725,7 @@ void testReverbZoneListenerPositionAffectsMix() {
 
     registry.set_position(listener_entity, fuse::audio::Vec3{50.f, 0.f, 0.f});
     listener = registry.set_listener(listener_entity);
+    expectTrue(listener != nullptr, "reverb-zone test listener re-registered after move");
     source->play_head = 0.f;
     engine.update(registry, 1.f / 60.f);
     const float outside_energy = bufferEnergy(engine.last_mix_buffer());

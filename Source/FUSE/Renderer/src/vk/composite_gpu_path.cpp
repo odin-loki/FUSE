@@ -54,7 +54,10 @@ u32 findMemoryType(VkPhysicalDevice physicalDevice, u32 typeFilter, VkMemoryProp
     }
     return 0;
 }
+#endif
 
+#if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_HAS_CUDA)
+// Only the CUDA interop path shares the composite image memory.
 bool exportDeviceMemoryHandle(VkDevice device, VkDeviceMemory memory, void*& outHandle) {
 #if defined(_WIN32)
     using GetMemoryFn = PFN_vkGetMemoryWin32HandleKHR;

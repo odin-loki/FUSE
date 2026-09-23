@@ -62,7 +62,7 @@ private:
     GpuAllocStats m_stats;
     const char* m_statsName = "gpu_allocator";
     void* m_allocator = nullptr;
-    u64 m_stubId = 1;
+    [[maybe_unused]] u64 m_stubId = 1; ///< Fake handles; only the non-Vulkan stub path mints them.
 
     void notifyStats() const;
     usize trackedBufferBytes(const Buffer& buffer) const;

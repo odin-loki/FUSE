@@ -6,7 +6,7 @@
 
 namespace fuse::vfx {
 
-struct ParticleEmitter;
+class ParticleEmitter;
 
 struct EffectInstance {
     Handle<ParticleEmitter> emitter = Handle<ParticleEmitter>::invalid();

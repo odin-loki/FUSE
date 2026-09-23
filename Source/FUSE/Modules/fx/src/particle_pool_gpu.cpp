@@ -30,8 +30,8 @@ constexpr bool kCudaCompiled = false;
 
 ParticlePoolGpuBackend::ParticlePoolGpuBackend(u32 capacity)
     : m_capacity(capacity)
-    , m_packed(capacity * kBytesPerSlot, 0)
-    , m_cudaEnabled(kCudaCompiled) {}
+    , m_cudaEnabled(kCudaCompiled)
+    , m_packed(capacity * kBytesPerSlot, 0) {}
 
 void ParticlePoolGpuBackend::syncFromCpu(const ParticlePool& pool) {
     m_activeCount = pool.activeCount();
@@ -122,12 +122,13 @@ u32 ParticlePoolGpuBackend::syncSelectivePositionsToCpu(ParticlePool& pool) {
         float velocity[3];
         std::memcpy(velocity, m_packed.data() + offset, sizeof(float) * 3);
         offset += sizeof(float) * 3;
-        const float lifetime = *reinterpret_cast<const float*>(m_packed.data() + offset);
+        offset += sizeof(float); // lifetime: not written back
+        float age = 0.f;
+        std::memcpy(&age, m_packed.data() + offset, sizeof(float));
         offset += sizeof(float);
-        const float age = *reinterpret_cast<const float*>(m_packed.data() + offset);
         offset += sizeof(float);
-        offset += sizeof(float);
-        const u32 aliveFlag = *reinterpret_cast<const u32*>(m_packed.data() + offset);
+        u32 aliveFlag = 0;
+        std::memcpy(&aliveFlag, m_packed.data() + offset, sizeof(u32));
         offset += sizeof(u32);
 
         if (aliveFlag == 0u || age <= 0.f) {
@@ -150,7 +151,7 @@ void ParticlePoolGpuBackend::tick(const frame::FrameCtx& ctx) {
     cudaDispatchOrSkip(ctx);
 }
 
-void ParticlePoolGpuBackend::cudaDispatchOrSkip(const frame::FrameCtx& ctx) {
+void ParticlePoolGpuBackend::cudaDispatchOrSkip([[maybe_unused]] const frame::FrameCtx& ctx) {
     m_lastCudaSkipReason = ParticlePoolCudaSkipReason::None;
 
     if (!m_syncedFromCpu) {

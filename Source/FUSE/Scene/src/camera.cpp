@@ -27,7 +27,9 @@ void multiply4(const float a[16], const float b[16], float out[16]) {
     }
 }
 
-void perspectiveReversedZ(float fovYRad, float aspect, float nearZ, float farZ, float m[16]) {
+// Reversed-Z with an infinite far plane: depth depends on nearZ only, so the camera's far plane
+// feeds culling/clustering, not the projection matrix.
+void perspectiveReversedZInfinite(float fovYRad, float aspect, float nearZ, float m[16]) {
     const float f = 1.f / std::tan(fovYRad * 0.5f);
     identity4(m);
     m[0] = f / aspect;
@@ -140,7 +142,7 @@ void Camera::update() {
     lookAt(positionX, positionY, positionZ, targetX, targetY, targetZ, 0.f, 1.f, 0.f, m_view);
 
     const float fovRad = fovDeg * (kPi / 180.f);
-    perspectiveReversedZ(fovRad, aspectRatio, nearPlane, farPlane, m_projection);
+    perspectiveReversedZInfinite(fovRad, aspectRatio, nearPlane, m_projection);
     multiply4(m_projection, m_view, m_viewProjection);
     extractFrustum(m_viewProjection, m_frustum);
     m_matricesValid = true;

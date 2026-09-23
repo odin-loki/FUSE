@@ -448,12 +448,13 @@ bool apply_afx_mission_spell_assignments(const std::string& misText, std::vector
 
 bool register_afx_mission_from_mis(const std::string& misText, FxComposer& composer, AfxMissionScriptVm& vm,
                                    std::string* errorOut) {
+    // The mission body is optional: a .mis without one leaves `body` empty and codegen yields nothing.
     AfxMissionBody body;
-    parse_afx_mission_body_from_mis(misText, body);
+    (void)parse_afx_mission_body_from_mis(misText, body);
     std::vector<AfxMissionBodyEffect> bodyEffects;
-    codegen_effects_from_mission_body(body, bodyEffects);
+    (void)codegen_effects_from_mission_body(body, bodyEffects);
     std::vector<AfxMissionBodySpell> bodySpells;
-    codegen_spells_from_mission_body(body, bodySpells);
+    (void)codegen_spells_from_mission_body(body, bodySpells);
 
     std::vector<AfxMissionHook> hooks;
     if (!load_afx_mission_hooks_from_mis(misText, hooks, errorOut)) {
@@ -468,7 +469,7 @@ bool register_afx_mission_from_mis(const std::string& misText, FxComposer& compo
         }
     }
 
-    apply_afx_mission_spell_assignments(misText, hooks);
+    (void)apply_afx_mission_spell_assignments(misText, hooks); // false = no spell assignments present
     vm.registerHooks(hooks);
 
     for (const AfxMissionBodyEffect& bodyEffect : bodyEffects) {
@@ -498,7 +499,7 @@ bool dispatch_afx_mission_from_mis(const std::string& misText, FxComposer& compo
     }
 
     AfxMissionBody body;
-    parse_afx_mission_body_from_mis(misText, body);
+    (void)parse_afx_mission_body_from_mis(misText, body); // optional body; empty schedule otherwise
 
     bool dispatched = false;
     if (!body.scheduleEntries.empty()) {
@@ -597,7 +598,7 @@ bool execute_afx_mission_from_mis(const std::string& misText, FxComposer& compos
     }
 
     std::vector<AfxMissionFunctionBody> functions;
-    parse_afx_mission_functions_from_mis(misText, functions);
+    (void)parse_afx_mission_functions_from_mis(misText, functions); // count is functions.size()
     bool executed = false;
     for (const AfxMissionFunctionBody& function : functions) {
         executed = vm.executeFunctionBody(function.functionName, function.bodyText, composer) || executed;

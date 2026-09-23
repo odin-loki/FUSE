@@ -161,15 +161,6 @@ bool methodImpliesCodegen(const UaiskCsAst& ast, std::string_view methodName) {
     return false;
 }
 
-const UaiskCsMethodRef* findMethod(const UaiskCsAst& ast, std::string_view methodName) {
-    for (const UaiskCsMethodRef& method : ast.methods) {
-        if (method.name == methodName) {
-            return &method;
-        }
-    }
-    return nullptr;
-}
-
 bool bodyContains(const std::string& body, std::string_view needle) {
     return body.find(needle) != std::string::npos;
 }

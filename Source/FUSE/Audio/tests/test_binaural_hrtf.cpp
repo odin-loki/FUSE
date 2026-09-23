@@ -856,6 +856,16 @@ void testGuardedPanRoutesThroughCompositePreflight() {
     expectNear(ir_guarded.right, ir_direct.right, 1e-5f,
                "IR-aware guarded pan still matches for_path on valid path");
 
+    const fuse::audio::BinauralPanGains empty_guarded =
+        fuse::audio::compute_binaural_pan_gains_guarded(true, empty, offset);
+    const fuse::audio::BinauralPanGains empty_direct =
+        fuse::audio::compute_binaural_pan_gains_for_path(
+            fuse::audio::resolve_hrtf_pan_path(true, empty, offset), offset);
+    expectNear(empty_guarded.left, empty_direct.left, 1e-5f,
+               "IR-aware guarded pan matches for_path on empty-IR stub path");
+    expectNear(empty_guarded.right, empty_direct.right, 1e-5f,
+               "IR-aware guarded pan matches for_path on empty-IR stub path");
+
     const fuse::audio::BinauralPanGains bypass_guarded =
         fuse::audio::compute_binaural_pan_gains_guarded(false, valid, offset);
     expectTrue(fuse::audio::is_centre_panned(bypass_guarded),

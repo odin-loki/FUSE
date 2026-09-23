@@ -116,6 +116,9 @@ _fuse_lint_add(fuse_lint_a_no_meridian_imgui   banned-deps    --root "${_fuse_li
 # Appendix C — Phase 1 carry-forward.
 _fuse_lint_add(fuse_lint_c_cxx23_targets       cxx-standard   --manifest "${FUSE_LINT_MANIFEST}" --repo "${CMAKE_SOURCE_DIR}")
 _fuse_lint_add(fuse_lint_c_no_qt_in_core       qt-includes    --root "${_fuse_lint_src}" --manifest "${FUSE_LINT_MANIFEST}")
+# B6.1-B6.12 "Qt 6 only for editor chrome — no Dear ImGui": fuse_editor link closure + editor includes.
+# Skips (77) when fuse_editor is not configured (Qt6 not found / FUSE_BUILD_EDITOR=OFF).
+_fuse_lint_add(fuse_lint_b6_editor_qt6_only    editor-qt6     --root "${_fuse_lint_src}" --manifest "${FUSE_LINT_MANIFEST}")
 _fuse_lint_add(fuse_lint_c_doc_headings        doc-headings
     --plan "${CMAKE_SOURCE_DIR}/docs/plans/FUSE_MASTER_PLAN.md" --sources "${CMAKE_SOURCE_DIR}/docs/sources")
 # B1 gate: third-party dependencies build from vendored source with pinned commits.
@@ -123,3 +126,4 @@ _fuse_lint_add(fuse_lint_vendored_pins_vma     vendored-pins  --dir "${CMAKE_SOU
 
 get_property(_fuse_lint_all GLOBAL PROPERTY _FUSE_LINT_TESTS)
 set_tests_properties(${_fuse_lint_all} PROPERTIES LABELS "gate;lint" TIMEOUT 300)
+set_tests_properties(fuse_lint_b6_editor_qt6_only PROPERTIES LABELS "gate;lint;qt" SKIP_RETURN_CODE 77)
