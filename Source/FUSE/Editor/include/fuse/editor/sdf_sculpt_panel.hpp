@@ -46,16 +46,27 @@ public:
     bool handleBrushStroke(const ecs::vec3& hitPoint, const ecs::vec3& hitNormal, EditorScene& scene,
                            CommandStack& cmds);
 
-    /// Applies an Add-brush sample to the ECS scene: spawns an `SDFObject` primitive (brush shape,
-    /// radius in `params.x`, blend α, material) with a Transform at `hitPoint`, plus its X=0 mirror
-    /// when symmetry is on, as one undoable step. Other brush ops need an SDF CSG op on
-    /// `ecs::SDFObject` (not modelled yet) and return false. Stroke spacing applies as above.
+    /// Applies one brush sample to the ECS scene as one undoable step (plus its X=0 mirror when
+    /// symmetry is on). Brush ops map onto the SDF CSG op on `ecs::SDFObject`
+    /// (`fuse/ecs/sdf_csg.hpp`), each new primitive taking the next `csg_order`:
+    ///  - Add: spawn a Union primitive (brush shape, radius in `params.x`, α, material) at `hitPoint`.
+    ///  - Subtract: spawn a Subtract primitive that carves its volume out of everything before it.
+    ///  - Smooth: spawn a SmoothUnion primitive with blend radius `blendAlpha * radius`.
+    ///  - Roughen: raise `roughness` by `strength * kRoughenStep * radius` (capped at
+    ///    `kMaxRoughness * radius`) on every object whose surface lies within the brush radius.
+    ///  - Paint: set `material_id` to the brush material on every object whose surface lies within
+    ///    the brush radius.
+    /// Roughen/Paint touching nothing return false (no undo step). Stroke spacing applies as above.
+    static constexpr f32 kRoughenStep = 0.05f;
+    static constexpr f32 kMaxRoughness = 0.25f;
     bool applyBrushStroke(const ecs::vec3& hitPoint, const ecs::vec3& hitNormal, EditorScene& scene,
                           UndoStack& undo);
 
 private:
     bool shouldEmitStroke(const ecs::vec3& hitPoint) const;
     ecs::vec3 mirrorHitPoint(const ecs::vec3& hitPoint) const;
+    bool applySpawnBrush(const ecs::vec3& hitPoint, bool mirror, EditorScene& scene, UndoStack& undo);
+    bool applyEditBrush(const ecs::vec3& hitPoint, bool mirror, EditorScene& scene, UndoStack& undo);
 
     BrushState m_brush{};
     bool m_sculptActive = false;

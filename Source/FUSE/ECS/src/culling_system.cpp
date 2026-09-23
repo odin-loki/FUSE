@@ -2,6 +2,7 @@
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/ecs/sdf_csg.hpp>
 #include <fuse/ecs/systems/culling_system.hpp>
 #include <fuse/spatial/frustum.hpp>
 
@@ -9,22 +10,6 @@
 #include <cmath>
 
 namespace fuse::ecs {
-
-namespace {
-
-f32 sdf_bounding_radius(const SDFObject& sdf) {
-    switch (sdf.type) {
-    case SDFPrimitive::Sphere:
-        return sdf.params.x;
-    case SDFPrimitive::Box:
-        return std::sqrt(sdf.params.x * sdf.params.x + sdf.params.y * sdf.params.y +
-                         sdf.params.z * sdf.params.z);
-    default:
-        return sdf.params.x;
-    }
-}
-
-} // namespace
 
 Camera::Frustum CullingSystem::extract_frustum(const mat4& view_projection) {
     return spatial::extract_frustum(view_projection);

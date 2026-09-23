@@ -28,6 +28,12 @@ struct SceneSdfObject {
     vec3 params = {1.f, 0.f, 0.f, 0.f};
     u32 material_id = 0;
     mat4 transform = mat4::identity();
+    /// CSG combine op, smooth-union blend radius, roughness and evaluation order (see
+    /// `fuse/ecs/sdf_csg.hpp`); `SceneData::sdf_objects` is sorted by (csg_order, entity index).
+    SDFCsgOp op = SDFCsgOp::Union;
+    f32 blend_radius = 0.f;
+    f32 roughness = 0.f;
+    u32 csg_order = 0;
 };
 
 struct SceneData {

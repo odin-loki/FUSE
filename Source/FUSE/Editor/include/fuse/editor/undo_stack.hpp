@@ -251,6 +251,24 @@ private:
     State m_after{};
 };
 
+/// Replace an entity's SDFObject (sculpt Paint / Roughen edits) with before/after values.
+class SdfObjectEditCommand final : public UndoCommand {
+public:
+    SdfObjectEditCommand(ecs::Registry& registry, ecs::EntityID entity, const ecs::SDFObject& before,
+                         const ecs::SDFObject& after, std::string description = "Edit SDF object");
+
+    void execute() override;
+    void undo() override;
+    std::string description() const override { return m_description; }
+
+private:
+    ecs::Registry& m_registry;
+    ecs::EntityID m_entity = ecs::EntityID::null();
+    ecs::SDFObject m_before{};
+    ecs::SDFObject m_after{};
+    std::string m_description;
+};
+
 /// Every built-in component an entity may carry (matches `ecs::register_builtin_components`).
 using EntityComponentSet =
     std::tuple<std::optional<ecs::Transform>, std::optional<ecs::Mesh>, std::optional<ecs::RigidBody>,
@@ -265,12 +283,13 @@ EntityComponentSet captureEntityComponents(const ecs::Registry& registry, ecs::E
 void restoreEntityComponents(ecs::Registry& registry, ecs::EntityID entity,
                              const EntityComponentSet& components);
 
-/// Create an ECS entity carrying `components`; undo destroys it, redo recreates it (fresh
-/// generation, see `createdEntity()`).
+/// Create an ECS entity carrying `components`; undo destroys it, redo revives the same id via
+/// `Registry::create_at` (a fresh id only if the slot was reused meanwhile, see `createdEntity()`).
 class CreateEntityCommand final : public UndoCommand {
 public:
     CreateEntityCommand(ecs::Registry& registry, EntityComponentSet components,
                         std::string description = "Create entity");
+    ~CreateEntityCommand() override;
 
     void execute() override;
     void undo() override;
@@ -287,11 +306,14 @@ private:
 
 /// Destroy an ECS entity and orphan its transform children (U6 game-thread apply). Undo recreates
 /// the entity with every built-in component restored byte-for-byte and re-links the children;
-/// redo destroys the recreated entity. The recreated entity gets a fresh generation
-/// (`liveEntity()`), because `ecs::Registry` cannot revive a destroyed id.
+/// redo destroys it again. The slot is reserved while deleted (`destroy_entity_reserved`) and undo
+/// revives the SAME id via `Registry::create_at`, so earlier undo history that refers to the
+/// entity keeps working; the reservation is released when the command is dropped. The registry
+/// must outlive the command.
 class DeleteEntityCommand final : public UndoCommand {
 public:
     DeleteEntityCommand(ecs::Registry& registry, ecs::EntityID entity);
+    ~DeleteEntityCommand() override;
 
     void execute() override;
     void undo() override;

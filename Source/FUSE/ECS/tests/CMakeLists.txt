@@ -29,3 +29,4 @@ fuse_ecs_add_test(fuse_b3_bvh_gates test_b3_bvh_gates.cpp)
 fuse_ecs_add_test(fuse_b3_serialiser test_b3_serialiser.cpp)
 # Timing budgets are meaningless while other tests compete for cores.
 set_tests_properties(fuse_b3_ecs_gates fuse_b3_bvh_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate")
+fuse_ecs_add_test(fuse_ecs_sdf_csg test_sdf_csg.cpp)

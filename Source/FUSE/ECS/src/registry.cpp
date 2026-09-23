@@ -55,7 +55,7 @@ EntityID Registry::create() {
             return EntityID::null();
         }
         index = static_cast<u32>(m_records.size());
-        m_records.push_back(EntityRecord{0, 0, generation, true});
+        m_records.push_back(EntityRecord{0, 0, generation, true, false});
         EntityRecord& rec = m_records[index];
         rec.row = static_cast<u32>(m_archetypes[0].append_entity(EntityID{index, generation}));
     }
@@ -64,7 +64,48 @@ EntityID Registry::create() {
     return EntityID{index, generation};
 }
 
+bool Registry::can_create_at(EntityID id) const {
+    if (!id.valid() || id.index >= m_records.size()) {
+        return false;
+    }
+    const EntityRecord& rec = m_records[id.index];
+    return !rec.alive && rec.generation == id.generation;
+}
+
+EntityID Registry::create_at(EntityID id) {
+    ensureInitialized();
+    if (!can_create_at(id)) {
+        return EntityID::null();
+    }
+
+    EntityRecord& rec = m_records[id.index];
+    if (rec.reserved) {
+        rec.reserved = false;
+    } else {
+        // A free slot is on the free list; remove it so create() cannot hand the index out twice.
+        auto it = std::find(m_free_list.begin(), m_free_list.end(), id.index);
+        if (it == m_free_list.end()) {
+            return EntityID::null();
+        }
+        m_free_list.erase(it);
+    }
+
+    rec.alive = true;
+    rec.archetype_index = 0;
+    rec.row = static_cast<u32>(m_archetypes[0].append_entity(id));
+    ++m_alive_count;
+    return id;
+}
+
 void Registry::destroy_entity(EntityID id) {
+    destroy_entity_(id, false);
+}
+
+void Registry::destroy_entity_reserved(EntityID id) {
+    destroy_entity_(id, true);
+}
+
+void Registry::destroy_entity_(EntityID id, bool reserve) {
     ensureInitialized();
 
     EntityRecord* rec = record(id);
@@ -84,8 +125,27 @@ void Registry::destroy_entity(EntityID id) {
     rec->alive = false;
     rec->archetype_index = 0;
     rec->row = 0;
-    m_free_list.push_back(id.index);
+    rec->reserved = reserve;
+    if (!reserve) {
+        m_free_list.push_back(id.index);
+    }
     --m_alive_count;
+}
+
+void Registry::release_reserved(EntityID id) {
+    if (!is_reserved(id)) {
+        return;
+    }
+    m_records[id.index].reserved = false;
+    m_free_list.push_back(id.index);
+}
+
+bool Registry::is_reserved(EntityID id) const {
+    if (!id.valid() || id.index >= m_records.size()) {
+        return false;
+    }
+    const EntityRecord& rec = m_records[id.index];
+    return !rec.alive && rec.reserved && rec.generation == id.generation;
 }
 
 bool Registry::alive(EntityID id) const {

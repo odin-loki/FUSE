@@ -147,6 +147,33 @@ void testRoundTrip10k() {
         deadStayDead = deadStayDead && !loaded.alive(ids[i]);
     }
     expectTrue(deadStayDead, "destroyed entities stay dead after load");
+    // create_at works on a loaded registry: the free list and generations came back exactly, so a
+    // destroyed id revives with the same handle and is not handed out by create() again.
+    const EntityID revive = ids[3];
+    expectTrue(loaded.create_at(revive) == revive && loaded.alive(revive),
+               "create_at revives a destroyed id after load");
+    Registry reloaded;
+    const std::string revivedPath = tempPath("fuse_b3_scene_revived.fecs");
+    expectTrue(RegistrySerialiser::save(loaded, revivedPath).ok &&
+                   RegistrySerialiser::load(revivedPath, reloaded).ok && reloaded.alive(revive) &&
+                   reloaded.count() == loaded.count(),
+               "revived entity survives a second save/load round trip");
+    std::filesystem::remove(revivedPath);
+
+    // A reserved slot (editor delete in undo history) stays reserved across save/load.
+    loaded.destroy_entity_reserved(revive);
+    Registry reservedLoad;
+    const std::string reservedPath = tempPath("fuse_b3_scene_reserved.fecs");
+    expectTrue(RegistrySerialiser::save(loaded, reservedPath).ok &&
+                   RegistrySerialiser::load(reservedPath, reservedLoad).ok,
+               "save/load with a reserved slot");
+    std::filesystem::remove(reservedPath);
+    expectTrue(reservedLoad.is_reserved(revive) && !reservedLoad.alive(revive), "reserved slot restored as reserved");
+    const EntityID fresh = reservedLoad.create();
+    expectTrue(fresh.index != revive.index, "create() does not reuse a restored reserved slot");
+    expectTrue(reservedLoad.create_at(revive) == revive, "create_at revives a restored reserved slot");
+    loaded.release_reserved(revive);
+
     const EntityID recycled = loaded.create();
     bool reusedFromFreeList = false;
     for (fuse::u32 i = 3; i < ids.size(); i += 21u) {

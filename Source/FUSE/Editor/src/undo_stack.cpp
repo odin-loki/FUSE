@@ -462,6 +462,27 @@ bool TransformCommand::merge(const UndoCommand& other) {
     return true;
 }
 
+SdfObjectEditCommand::SdfObjectEditCommand(ecs::Registry& registry, ecs::EntityID entity,
+                                           const ecs::SDFObject& before, const ecs::SDFObject& after,
+                                           std::string description)
+    : m_registry(registry),
+      m_entity(entity),
+      m_before(before),
+      m_after(after),
+      m_description(std::move(description)) {}
+
+void SdfObjectEditCommand::execute() {
+    if (ecs::SDFObject* sdf = m_registry.get<ecs::SDFObject>(m_entity)) {
+        *sdf = m_after;
+    }
+}
+
+void SdfObjectEditCommand::undo() {
+    if (ecs::SDFObject* sdf = m_registry.get<ecs::SDFObject>(m_entity)) {
+        *sdf = m_before;
+    }
+}
+
 namespace {
 
 template <typename T>
@@ -503,20 +524,37 @@ void CreateEntityCommand::execute() {
     if (m_entity.valid() && m_registry.alive(m_entity)) {
         return;
     }
-    m_entity = m_registry.create();
+    // Redo revives the id undo destroyed so later history that refers to it stays valid.
+    ecs::EntityID revived = m_entity.valid() ? m_registry.create_at(m_entity) : ecs::EntityID::null();
+    m_entity = revived.valid() ? revived : m_registry.create();
     if (m_entity.valid()) {
         restoreEntityComponents(m_registry, m_entity, m_components);
     }
 }
 
+CreateEntityCommand::~CreateEntityCommand() {
+    // Dropped while undone (redo branch discarded / history evicted): the id can never be revived.
+    if (m_entity.valid()) {
+        m_registry.release_reserved(m_entity);
+    }
+}
+
 void CreateEntityCommand::undo() {
     if (m_entity.valid() && m_registry.alive(m_entity)) {
-        m_registry.destroy_entity(m_entity);
+        // Reserve the slot so redo can revive the same id even if other entities are created.
+        m_registry.destroy_entity_reserved(m_entity);
     }
 }
 
 DeleteEntityCommand::DeleteEntityCommand(ecs::Registry& registry, ecs::EntityID entity)
     : m_registry(registry), m_entity(entity), m_liveEntity(entity) {}
+
+DeleteEntityCommand::~DeleteEntityCommand() {
+    // Dropped while deleted (history evicted / cleared): release the id's slot for reuse.
+    if (m_deleted) {
+        m_registry.release_reserved(m_liveEntity);
+    }
+}
 
 void DeleteEntityCommand::execute() {
     if (m_deleted || !m_liveEntity.valid() || !m_registry.alive(m_liveEntity)) {
@@ -533,7 +571,8 @@ void DeleteEntityCommand::execute() {
     });
 
     m_components = captureEntityComponents(m_registry, m_liveEntity);
-    m_registry.destroy_entity(m_liveEntity);
+    // Reserve the slot: entities created meanwhile cannot take the id, so undo revives it exactly.
+    m_registry.destroy_entity_reserved(m_liveEntity);
     m_deleted = true;
 }
 
@@ -542,7 +581,12 @@ void DeleteEntityCommand::undo() {
         return;
     }
 
-    m_liveEntity = m_registry.create();
+    // Revive the exact id so older history (transform edits, reparents) that refers to it keeps
+    // working; fall back to a fresh id only if the slot was reused outside the undo stack.
+    m_liveEntity = m_registry.create_at(m_liveEntity);
+    if (!m_liveEntity.valid()) {
+        m_liveEntity = m_registry.create();
+    }
     if (!m_liveEntity.valid()) {
         return;
     }

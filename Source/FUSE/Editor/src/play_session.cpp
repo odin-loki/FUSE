@@ -101,6 +101,14 @@ void PlaySession::start(EditorScene& editorScene, scene::Scene& scene, EditorSta
     m_registrySnapshot = editorScene.registry();
     m_hasRegistrySnapshot = true;
     m_controller.enterPlay(scene, physics);
+    // Fresh physics world per session: its body mapping is tied to the play registry, which Stop
+    // replaces with the edit-time snapshot.
+    m_physicsWorld.destroy();
+    m_physicsWorldLive = false;
+    if (physics.drivePhysics && !physics.stepHook) {
+        m_physicsWorld.init(physics.desc);
+        m_physicsWorldLive = true;
+    }
     m_sessionTickCount = 0;
     m_tickAccumulator = 0.f;
     m_coalescedDirtyCount = 0;
@@ -119,6 +127,8 @@ void PlaySession::stop(EditorScene& editorScene, scene::Scene& scene, EditorStat
     }
 
     m_controller.stop(scene, physics);
+    m_physicsWorld.destroy();
+    m_physicsWorldLive = false;
     if (m_hasRegistrySnapshot) {
         restoreRegistry(editorScene.registry(), m_registrySnapshot);
         m_registrySnapshot = ecs::Registry{};
@@ -158,13 +168,18 @@ void PlaySession::resume(scene::Scene& scene, EditorState& state, PlayModePhysic
 }
 
 void PlaySession::tick(f32 dt, EditorScene& editorScene, PlayModePhysicsState& physics) {
+    tick_(dt, editorScene, physics, true);
+}
+
+void PlaySession::tick_(f32 dt, EditorScene& editorScene, PlayModePhysicsState& physics,
+                        bool stepPhysics) {
     if (shouldSkipVariableTick(dt, physics)) {
         ++m_skippedInactiveTickCount;
         return;
     }
 
     m_tickAccumulator += dt;
-    simulateStep_(editorScene, physics);
+    simulateStep_(editorScene, physics, stepPhysics ? dt : 0.f);
 }
 
 u32 PlaySession::consumeFixedSteps(f32 fixedDt, EditorScene& editorScene,
@@ -182,7 +197,7 @@ u32 PlaySession::consumeFixedSteps(f32 fixedDt, EditorScene& editorScene,
         }
 
         m_tickAccumulator -= fixedDt;
-        simulateStep_(editorScene, physics);
+        simulateStep_(editorScene, physics, fixedDt);
         ++steps;
     }
 
@@ -192,7 +207,7 @@ u32 PlaySession::consumeFixedSteps(f32 fixedDt, EditorScene& editorScene,
 
 u32 PlaySession::tickFixedStep(f32 dt, f32 fixedDt, EditorScene& editorScene,
                                PlayModePhysicsState& physics, u32 maxSteps) {
-    tick(dt, editorScene, physics);
+    tick_(dt, editorScene, physics, false);
     return consumeFixedSteps(fixedDt, editorScene, physics, maxSteps);
 }
 
@@ -493,9 +508,17 @@ void PlaySession::restoreWorldSnapshot_(EditorScene& editorScene) const {
     m_worldSnapshot.apply(editorScene);
 }
 
-void PlaySession::simulateStep_(EditorScene& editorScene, PlayModePhysicsState& physics) {
+void PlaySession::simulateStep_(EditorScene& editorScene, PlayModePhysicsState& physics,
+                                f32 physicsDt) {
     ++m_sessionTickCount;
     ++physics.stepCount;
+    if (physicsDt > 0.f && physics.drivePhysics) {
+        if (physics.stepHook) {
+            physics.stepHook(editorScene.registry(), physicsDt);
+        } else if (m_physicsWorldLive) {
+            m_physicsWorld.step(editorScene.registry(), physicsDt, m_physicsStreams);
+        }
+    }
     coalesceTransformDirty_(editorScene);
 }
 

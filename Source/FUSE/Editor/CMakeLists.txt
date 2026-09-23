@@ -75,7 +75,9 @@ target_include_directories(fuse_editor_api
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-target_link_libraries(fuse_editor_api PUBLIC fuse_core fuse_ecs fuse_scene fuse_project fuse_world_converter)
+# fuse_physics depends only on fuse_core + fuse_ecs, so the editor can drive it in Play mode
+# without a dependency cycle.
+target_link_libraries(fuse_editor_api PUBLIC fuse_core fuse_ecs fuse_physics fuse_scene fuse_project fuse_world_converter)
 if(FUSE_BUILD_MODULES)
     target_link_libraries(fuse_editor_api PUBLIC fuse_ai fuse_cinematics)
 endif()

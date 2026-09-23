@@ -37,8 +37,20 @@ SceneData SceneBuildSystem::build(Registry& reg, const CullResult& visible) {
         item.params = sdf->params;
         item.material_id = sdf->material_id;
         item.transform = transform->local_to_world;
+        item.op = sdf->op;
+        item.blend_radius = sdf->blend_radius;
+        item.roughness = sdf->roughness;
+        item.csg_order = sdf->csg_order;
         scene.sdf_objects.push_back(item);
     }
+    // CSG is order dependent (subtract carves what precedes it): hand consumers the fold order.
+    std::stable_sort(scene.sdf_objects.begin(), scene.sdf_objects.end(),
+                     [](const SceneSdfObject& a, const SceneSdfObject& b) {
+                         if (a.csg_order != b.csg_order) {
+                             return a.csg_order < b.csg_order;
+                         }
+                         return a.entity.index < b.entity.index;
+                     });
 
     reg.each<DirectionalLight>([&](EntityID, DirectionalLight& light) {
         scene.sun = light;

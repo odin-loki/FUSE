@@ -261,10 +261,20 @@ RegistrySerialiseResult RegistrySerialiser::apply(const RegistryImage& image, Re
         auto& rec = registry.m_records[i];
         rec.generation = image.generations[i];
         rec.alive = false;
+        rec.reserved = false;
         rec.archetype_index = 0;
         rec.row = 0;
     }
     registry.m_free_list = image.freeList;
+    // Dead slots that are not on the free list were reserved (destroy_entity_reserved) when saved;
+    // keep them reserved so create() still cannot reuse them and create_at can revive them.
+    std::vector<u8> onFreeList(image.generations.size(), 0u);
+    for (const u32 index : image.freeList) {
+        onFreeList[index] = 1u;
+    }
+    for (usize i = 0; i < image.generations.size(); ++i) {
+        registry.m_records[i].reserved = image.alive[i] == 0u && onFreeList[i] == 0u && image.generations[i] != 0u;
+    }
 
     usize placed = 0;
     for (const ArchetypeImage& block : image.archetypes) {

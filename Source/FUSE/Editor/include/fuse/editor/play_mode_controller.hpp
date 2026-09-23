@@ -1,18 +1,39 @@
 #pragma once
 
+#include <fuse/ecs/registry.hpp>
+#include <fuse/physics/physics_manager.hpp>
 #include <fuse/scene/scene.hpp>
 #include <fuse/scene/scene_snapshot.hpp>
 #include <fuse/types.hpp>
 
+#include <functional>
 #include <string>
 #include <vector>
 
 namespace fuse::editor {
 
-/// Lightweight physics simulation flag for play mode (full PhysicsManager deferred).
+/// Play-mode physics settings and status. While playing, `PlaySession` steps a real
+/// `fuse::physics::PhysicsManager` (created on Play from `desc`, destroyed on Stop) against the
+/// play registry every simulated step; `stepHook` replaces it (tests, custom solvers).
 struct PlayModePhysicsState {
+    using StepHook = std::function<void(ecs::Registry& registry, f32 dt)>;
+
+    /// Editor-sized pools (the runtime defaults reserve for 64k bodies).
+    static fuse::physics::PhysicsManagerDesc defaultDesc() {
+        fuse::physics::PhysicsManagerDesc desc{};
+        desc.maxBodies = 4096;
+        desc.maxContacts = 16384;
+        desc.maxConstraints = 8192;
+        return desc;
+    }
+
     bool simulationActive = false;
     u32 stepCount = 0;
+    /// False: steps only advance counters (no physics).
+    bool drivePhysics = true;
+    fuse::physics::PhysicsManagerDesc desc = defaultDesc();
+    /// When set, called instead of the built-in PhysicsManager for each simulated step.
+    StepHook stepHook;
 };
 
 /// Play-in-editor transport controller (B6.12 stub — Qt toolbar deferred to U6 chrome).

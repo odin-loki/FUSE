@@ -270,6 +270,7 @@ void testDeleteEntityRestoresAllComponents() {
     stack.undo();
     const fuse::ecs::EntityID restored = deleteCommand->liveEntity();
     expectTrue(registry.alive(restored), "undo recreates the entity");
+    expectTrue(restored == victim, "undo revives the SAME entity id (index + generation)");
     const fuse::editor::EntityComponentSet after =
         fuse::editor::captureEntityComponents(registry, restored);
 
@@ -307,6 +308,83 @@ void testDeleteEntityRestoresAllComponents() {
     expectTrue(registry.alive(deleteCommand->liveEntity()) &&
                    registry.get<fuse::ecs::Mesh>(deleteCommand->liveEntity())->material_id == 17u,
                "second undo restores again");
+    registry.destroy();
+}
+
+// Undo of a delete keeps the id, so earlier history that refers to the entity keeps working:
+// move -> move -> delete, then undo x3 / redo x3 walks the full chain on the same entity.
+void testUndoDeleteKeepsEarlierHistory() {
+    fuse::ecs::Registry registry;
+    registry.init(16);
+    const fuse::ecs::EntityID entity = registry.create();
+    registry.add(entity, fuse::ecs::Transform{});
+    const fuse::ecs::EntityID bystander = registry.create();
+    registry.add(bystander, fuse::ecs::Transform{});
+    const fuse::ecs::EntityID childEntity = registry.create();
+    fuse::ecs::Transform childTransform{};
+    childTransform.parent = entity;
+    registry.add(childEntity, childTransform);
+
+    fuse::editor::UndoStack stack;
+    stack.execute(std::make_unique<TransformCommand>(registry, entity, makeState(0, 0, 0), makeState(1, 2, 3)));
+    stack.execute(std::make_unique<TransformCommand>(registry, bystander, makeState(0, 0, 0), makeState(9, 0, 0)));
+    stack.execute(std::make_unique<TransformCommand>(registry, entity, makeState(1, 2, 3), makeState(4, 5, 6)));
+    stack.execute(std::make_unique<fuse::editor::DeleteEntityCommand>(registry, entity));
+    expectTrue(!registry.alive(entity), "delete destroys the moved entity");
+
+    // Something else allocates while the entity is deleted: it must not steal the deleted slot's id.
+    const fuse::ecs::EntityID other = registry.create();
+    expectTrue(other.index != entity.index || other.generation != entity.generation, "fresh entity has its own id");
+
+    stack.undo(); // undo delete
+    expectTrue(registry.alive(entity), "undo delete revives the original id");
+    expectTrue(registry.get<fuse::ecs::Transform>(entity) != nullptr &&
+                   registry.get<fuse::ecs::Transform>(entity)->position.x == 4.f,
+               "revived entity keeps its last transform");
+    expectTrue(registry.get<fuse::ecs::Transform>(childEntity)->parent == entity,
+               "child re-linked to the original id");
+
+    stack.undo(); // undo second move of the entity (refers to the original id)
+    const fuse::ecs::Transform* t = registry.get<fuse::ecs::Transform>(entity);
+    expectTrue(t != nullptr && t->position.x == 1.f && t->position.y == 2.f && t->position.z == 3.f,
+               "earlier TransformCommand undoes on the revived entity");
+    stack.undo(); // bystander
+    stack.undo(); // first move
+    t = registry.get<fuse::ecs::Transform>(entity);
+    expectTrue(t != nullptr && t->position.x == 0.f && t->position.y == 0.f && t->position.z == 0.f,
+               "oldest TransformCommand undoes on the revived entity");
+    expectTrue(registry.get<fuse::ecs::Transform>(bystander)->position.x == 0.f, "bystander undone");
+
+    stack.redo();
+    stack.redo();
+    stack.redo();
+    t = registry.get<fuse::ecs::Transform>(entity);
+    expectTrue(t != nullptr && t->position.x == 4.f && t->position.y == 5.f && t->position.z == 6.f,
+               "TransformCommand redo applies to the revived entity");
+    stack.redo(); // delete again
+    expectTrue(!registry.alive(entity), "redo delete destroys the original id again");
+    stack.undo();
+    expectTrue(registry.alive(entity) && registry.get<fuse::ecs::Transform>(entity)->position.x == 4.f,
+               "second undo of delete revives the same id again");
+
+    // Create command: undo/redo keeps the created id too, so a later move on it survives.
+    auto create = std::make_unique<fuse::editor::CreateEntityCommand>(
+        registry, fuse::editor::EntityComponentSet{fuse::ecs::Transform{}, std::nullopt, std::nullopt,
+                                                   std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+                                                   std::nullopt, std::nullopt, std::nullopt, std::nullopt,
+                                                   std::nullopt, std::nullopt, std::nullopt});
+    fuse::editor::CreateEntityCommand* createCommand = create.get();
+    stack.execute(std::move(create));
+    const fuse::ecs::EntityID created = createCommand->createdEntity();
+    stack.execute(std::make_unique<TransformCommand>(registry, created, makeState(0, 0, 0), makeState(7, 0, 0)));
+    stack.undo();
+    stack.undo();
+    expectTrue(!registry.alive(created), "undo create destroys it");
+    stack.redo();
+    stack.redo();
+    expectTrue(createCommand->createdEntity() == created && registry.alive(created) &&
+                   registry.get<fuse::ecs::Transform>(created)->position.x == 7.f,
+               "redo create revives the same id and the later move re-applies to it");
     registry.destroy();
 }
 
@@ -561,6 +639,7 @@ int main() {
     testHundredCommandsLifo();
     testConsecutiveDragsMerge();
     testDeleteEntityRestoresAllComponents();
+    testUndoDeleteKeepsEarlierHistory();
     testMaxHistoryDropsOldest();
     testRedoInvalidation();
     testMacroCommands();

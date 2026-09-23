@@ -4,6 +4,7 @@
 #include <fuse/editor/editor_state.hpp>
 #include <fuse/editor/play_mode_controller.hpp>
 #include <fuse/editor/play_session.hpp>
+#include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/tags.hpp>
@@ -209,6 +210,102 @@ void testPauseResume() {
     world.scene.destroy();
 }
 
+// Play drives a real fuse::physics::PhysicsManager against the play registry; Stop restores the
+// exact pre-play state, and a second Play replays the same fall bit-for-bit.
+void testPlayDrivesPhysicsManager() {
+    fuse::editor::EditorScene scene;
+    scene.init(64);
+    fuse::ecs::Registry& r = scene.registry();
+    const fuse::ecs::EntityID ground = r.create();
+    r.add(ground, fuse::ecs::Transform{});
+    fuse::ecs::RigidBody groundBody{};
+    groundBody.is_static = true;
+    r.add(ground, groundBody);
+    fuse::ecs::Collider plane{};
+    plane.shape = fuse::ecs::Collider::Plane;
+    plane.params = {0.f, 1.f, 0.f, 0.f};
+    r.add(ground, plane);
+
+    const fuse::ecs::EntityID ball = r.create();
+    fuse::ecs::Transform ballT{};
+    ballT.position = {0.5f, 5.f, -2.f, 1.f};
+    ballT.dirty = false;
+    r.add(ball, ballT);
+    r.add(ball, fuse::ecs::RigidBody{});
+    fuse::ecs::Collider sphere{};
+    sphere.shape = fuse::ecs::Collider::Sphere;
+    sphere.params = {0.5f, 0.f, 0.f, 0.f};
+    r.add(ball, sphere);
+    const fuse::ecs::EntityID prop = r.create(); // no physics components
+    r.add(prop, fuse::ecs::Transform{});
+
+    fuse::scene::Scene runtime("PhysicsPlay");
+    fuse::editor::EditorState state;
+    fuse::editor::PlayModePhysicsState physics;
+    fuse::editor::PlaySession session;
+    const std::vector<char> before = serialise(scene.registry(), "physics_before");
+
+    auto runPlay = [&](int frames) {
+        session.start(scene, runtime, state, physics);
+        std::vector<float> heights;
+        for (int i = 0; i < frames; ++i) {
+            session.tick(1.f / 60.f, scene, physics);
+            heights.push_back(scene.registry().get<fuse::ecs::Transform>(ball)->position.y);
+        }
+        return heights;
+    };
+
+    const std::vector<float> first = runPlay(90);
+    expectTrue(session.physicsWorldLive(), "Play creates a live PhysicsManager");
+    expectTrue(session.physicsWorld().stepCount() == 90u, "PhysicsManager stepped once per play tick");
+    expectTrue(session.physicsWorld().bodies().count() == 2u, "Transform+RigidBody+Collider entities are bodies");
+    bool falling = first.size() == 90u && first[0] < 5.f;
+    for (std::size_t i = 1; i < 20u && falling; ++i) {
+        falling = first[i] < first[i - 1];
+    }
+    expectTrue(falling, "body falls under gravity during Play");
+    expectTrue(scene.registry().get<fuse::ecs::RigidBody>(ball)->velocity.y != 0.f ||
+                   first.back() < 1.f,
+               "physics wrote velocities / resting pose back into the play registry");
+    expectTrue(first.back() > 0.25f && first.back() < 1.f, "ground plane stops the ball (rests on radius)");
+    expectTrue(scene.registry().get<fuse::ecs::Transform>(ground)->position.y == 0.f, "static ground did not move");
+
+    session.stop(scene, runtime, state, physics);
+    expectTrue(!session.physicsWorldLive(), "Stop tears the physics world down");
+    expectTrue(serialise(scene.registry(), "physics_after") == before,
+               "Stop restores the exact pre-play registry (byte-identical image)");
+    expectTrue(scene.registry().get<fuse::ecs::Transform>(ball)->position.y == 5.f &&
+                   scene.registry().get<fuse::ecs::RigidBody>(ball)->velocity.y == 0.f,
+               "ball back at its edit-time pose with zero velocity");
+
+    const std::vector<float> second = runPlay(90);
+    expectTrue(second == first, "second Play replays the identical fall (no stale physics state)");
+    session.stop(scene, runtime, state, physics);
+    expectTrue(serialise(scene.registry(), "physics_after2") == before, "second Stop restores exactly");
+
+    // Fixed-step frames advance physics only in the fixed slices (no double integration).
+    session.start(scene, runtime, state, physics);
+    const fuse::u32 fixedSteps = session.tickFixedStep(1.f / 30.f, 1.f / 60.f, scene, physics);
+    expectTrue(fixedSteps == 2u && session.physicsWorld().stepCount() == 2u,
+               "tickFixedStep steps physics once per fixed slice");
+    session.stop(scene, runtime, state, physics);
+
+    // Injectable hook replaces the built-in manager.
+    fuse::u32 hookCalls = 0;
+    physics.stepHook = [&](fuse::ecs::Registry& registry, float dt) {
+        ++hookCalls;
+        registry.get<fuse::ecs::Transform>(ball)->position.y -= dt;
+    };
+    session.start(scene, runtime, state, physics);
+    session.tick(0.5f, scene, physics);
+    expectTrue(!session.physicsWorldLive() && hookCalls == 1u &&
+                   scene.registry().get<fuse::ecs::Transform>(ball)->position.y == 4.5f,
+               "step hook replaces the built-in PhysicsManager");
+    session.stop(scene, runtime, state, physics);
+    expectTrue(serialise(scene.registry(), "physics_after3") == before, "Stop after hook-driven play restores exactly");
+    scene.destroy();
+}
+
 // Play pressed twice must not overwrite the edit-time snapshot with simulated state.
 void testReenterPlayKeepsSnapshot() {
     fuse::scene::Scene scene("Controller");
@@ -236,6 +333,7 @@ int main() {
     testStopUndoesStructuralChanges();
     testPauseResume();
     testReenterPlayKeepsSnapshot();
+    testPlayDrivesPhysicsManager();
 
     fuse::core::shutdown();
 

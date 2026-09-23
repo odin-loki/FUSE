@@ -22,6 +22,21 @@ public:
     void destroy();
 
     EntityID create();
+    /// Revives a destroyed entity with exactly `id` (same index and generation), e.g. for editor
+    /// undo of a delete so older history that refers to `id` stays valid. Succeeds only when the
+    /// slot is free (on the free list or reserved) and its last generation is `id.generation`
+    /// (the slot was not reused since `id` died); returns `EntityID::null()` otherwise.
+    EntityID create_at(EntityID id);
+    /// True when `create_at(id)` would succeed.
+    [[nodiscard]] bool can_create_at(EntityID id) const;
+    /// Destroys `id` but keeps its slot off the free list, so `create()` cannot reuse the index
+    /// and only `create_at(id)` can bring it back. Pair with `release_reserved` when the revival
+    /// can no longer happen (e.g. the undo step that owns it is dropped).
+    void destroy_entity_reserved(EntityID id);
+    /// Returns a reserved slot (destroyed via `destroy_entity_reserved`) to the free list.
+    /// No-op when `id` is not a reserved slot of this registry.
+    void release_reserved(EntityID id);
+    [[nodiscard]] bool is_reserved(EntityID id) const;
     void destroy_entity(EntityID id);
     [[nodiscard]] bool alive(EntityID id) const;
     [[nodiscard]] usize count() const;
@@ -87,6 +102,7 @@ private:
         u32 row = 0;
         u32 generation = 0;
         bool alive = false;
+        bool reserved = false; ///< dead, off the free list, revivable only via create_at
     };
 
     friend struct Archetype;
@@ -95,6 +111,7 @@ private:
 
     [[nodiscard]] EntityRecord* record(EntityID id);
     [[nodiscard]] const EntityRecord* record(EntityID id) const;
+    void destroy_entity_(EntityID id, bool reserve);
 
     u32 find_or_create_archetype(const std::vector<std::type_index>& sorted_types);
     void migrate_entity(EntityID id, const std::vector<std::type_index>& target_types,

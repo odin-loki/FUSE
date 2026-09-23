@@ -57,6 +57,60 @@ void testStaleHandle() {
     expectTrue(reg.alive(recycled), "new generation accepted");
 }
 
+void testCreateAtRevivesSameId() {
+    fuse::ecs::Registry reg;
+    reg.init(16);
+
+    const fuse::ecs::EntityID a = reg.create();
+    const fuse::ecs::EntityID b = reg.create();
+    const fuse::ecs::EntityID c = reg.create();
+    reg.add(b, fuse::ecs::Transform{});
+    expectTrue(!reg.can_create_at(b) && !reg.create_at(b).valid(), "create_at rejects a live id");
+
+    reg.destroy_entity(b);
+    reg.destroy_entity(a);
+    const fuse::ecs::EntityID stale{b.index, b.generation + 1u};
+    expectTrue(!reg.create_at(stale).valid(), "create_at rejects a generation that was never issued");
+    expectTrue(!reg.create_at(fuse::ecs::EntityID{99u, 1u}).valid(), "create_at rejects unknown slots");
+    expectTrue(!reg.create_at(fuse::ecs::EntityID::null()).valid(), "create_at rejects null");
+
+    const fuse::ecs::EntityID revived = reg.create_at(b);
+    expectTrue(revived == b && reg.alive(b), "create_at revives the exact id");
+    expectEq(static_cast<fuse::u32>(reg.count()), 2u, "revival counted as live");
+    expectTrue(!reg.has<fuse::ecs::Transform>(b), "revived entity starts with no components");
+    reg.add(b, fuse::ecs::Transform{});
+    expectTrue(reg.has<fuse::ecs::Transform>(b), "revived entity accepts components");
+
+    // The revived slot left the free list: the next create() takes a's slot, then a fresh index.
+    const fuse::ecs::EntityID next = reg.create();
+    expectTrue(next.index == a.index && next.generation == a.generation + 1u, "create() recycles the remaining free slot");
+    const fuse::ecs::EntityID fresh = reg.create();
+    expectTrue(fresh.index == 3u, "revived index is never handed out twice");
+    expectTrue(!reg.create_at(a).valid(), "create_at fails once the slot was reused");
+
+    // Destroy + revive + destroy + recycle keeps generations monotonic.
+    reg.destroy_entity(b);
+    const fuse::ecs::EntityID recycled = reg.create();
+    expectTrue(recycled.index == b.index && recycled.generation == b.generation + 1u && !reg.alive(b),
+               "slot recycles normally after the revived entity dies again");
+    expectTrue(reg.alive(c), "unrelated entity untouched");
+
+    // Reserved destroy: create() cannot reuse the slot, create_at can, release returns it.
+    reg.destroy_entity_reserved(c);
+    expectTrue(!reg.alive(c) && reg.is_reserved(c), "reserved destroy kills the entity and reserves the slot");
+    const fuse::ecs::EntityID other = reg.create();
+    expectTrue(other.index != c.index, "create() skips a reserved slot");
+    expectTrue(reg.create_at(c) == c && reg.alive(c) && !reg.is_reserved(c), "create_at revives a reserved slot");
+    reg.destroy_entity_reserved(c);
+    reg.release_reserved(c);
+    expectTrue(!reg.is_reserved(c) && reg.can_create_at(c), "released slot is free again (still revivable)");
+    reg.release_reserved(c); // second release is a no-op (no duplicate free-list entry)
+    const fuse::ecs::EntityID reuse = reg.create();
+    expectTrue(reuse.index == c.index && reuse.generation == c.generation + 1u, "released slot recycles");
+    const fuse::ecs::EntityID after = reg.create();
+    expectTrue(after.index != c.index, "released slot was on the free list exactly once");
+}
+
 void testAddGetRemove() {
     fuse::ecs::Registry reg;
     reg.init(64);
@@ -172,6 +226,7 @@ void testCameraThenTransformAdd() {
 int main() {
     testCreateDestroy();
     testStaleHandle();
+    testCreateAtRevivesSameId();
     testAddGetRemove();
     testCameraThenTransformAdd();
     testArchetypeGrouping();

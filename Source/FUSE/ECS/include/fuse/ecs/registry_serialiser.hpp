@@ -23,7 +23,8 @@ struct RegistrySerialiseResult {
 /// Versioned binary ECS scene format (B3.7): header, entity-record table (generations + free
 /// list, so EntityIDs and parent links survive), then one block per archetype holding component
 /// names, element sizes, entity ids and raw column bytes. Components are identified by
-/// `component_name` via ComponentTypes, so files stay valid across builds.
+/// `component_name` via ComponentTypes, so files stay valid across builds. Dead slots missing from
+/// the free list load as reserved (`Registry::destroy_entity_reserved`), so `create_at` still works.
 class RegistrySerialiser {
 public:
     static constexpr u32 kMagic = 0x53434546u; // 'FECS'
