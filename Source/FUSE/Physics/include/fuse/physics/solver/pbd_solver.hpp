@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/core/flat_u64_map.hpp>
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/ccd/ccd.hpp>
 #include <fuse/physics/ccd/toi_buffer.hpp>
@@ -125,7 +126,8 @@ private:
     std::vector<broadphase::CandidatePair> candidatePairs_;
     std::vector<narrowphase::ContactManifold> narrowManifolds_;
     std::vector<FrameContact> frameContacts_;
-    std::unordered_map<u64, u32> frameContactSlot_;
+    /// Contact pair -> frameContacts_ slot; storage survives clear() (no per-step allocation).
+    FlatU64Map<u32> frameContactSlot_;
     std::vector<u32> substepContactSlot_;
     std::vector<u32> bodyShape_;
     std::vector<aabb> sweptBounds_;
@@ -134,6 +136,9 @@ private:
     ToiBufferSoA ccdBuffer_;
     u32 lastCcdHitCount_ = 0;
     std::vector<f32> substepLambdaStart_;
+    /// Previous step's lambdas for warm starting (members, not per-step copies: capacity reused).
+    std::vector<f32> priorDistanceLambdas_;
+    std::vector<f32> priorContactLambdas_;
     SolverWorkBuffers workBuffers_;
     ContactIslandGraph islandGraph_;
     u32 maxBodies_ = 0;

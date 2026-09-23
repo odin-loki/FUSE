@@ -1,5 +1,7 @@
 #include <fuse/script/script_vm.hpp>
 
+#include <fuse/alloc/size_class_allocator.hpp>
+
 #include "script_lua_compat.hpp"
 
 #if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
@@ -33,6 +35,10 @@ struct ScriptVM::Impl {
 
 #if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
     lua_State* state = nullptr;
+    /// Lua heap: every lua_Alloc request is served from this size-class pool, so a steady-state
+    /// script frame (GC'd temporaries, table resizes) recycles pooled blocks instead of reaching
+    /// the system heap (FUSE_MASTER_PLAN B1.8).
+    alloc::SizeClassAllocator heap{alloc::SizeClassAllocatorDesc{"script.lua", 64u * 1024u, 0u, false}};
     usize bytes = 0;
     usize peak_bytes = 0;
     usize memory_limit = 0;
@@ -55,7 +61,7 @@ void* counting_alloc(void* ud, void* ptr, size_t osize, size_t nsize) {
     auto* impl = static_cast<ScriptVM::Impl*>(ud);
     const usize old_size = (ptr != nullptr) ? osize : 0u;
     if (nsize == 0) {
-        std::free(ptr);
+        impl->heap.deallocate(ptr, old_size);
         impl->bytes -= old_size;
         return nullptr;
     }
@@ -65,7 +71,7 @@ void* counting_alloc(void* ud, void* ptr, size_t osize, size_t nsize) {
         impl->bytes - old_size + nsize > impl->memory_limit) {
         return nullptr;
     }
-    void* block = std::realloc(ptr, nsize);
+    void* block = impl->heap.reallocate(ptr, old_size, nsize);
     if (block == nullptr) {
         return nullptr;
     }

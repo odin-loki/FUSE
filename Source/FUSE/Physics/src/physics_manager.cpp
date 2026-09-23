@@ -377,8 +377,8 @@ void PhysicsManager::raiseEvents_() {
         event.contactPoint = contact.point;
         event.contactNormal = contact.normal;
         event.impulse = contact.impulse;
-        const auto previous = m_activePairs_.find(key);
-        if (previous == m_activePairs_.end() || previous->second.a != a && previous->second.a != b) {
+        const PairKey* previous = m_activePairs_.find(key);
+        if (previous == nullptr || (previous->a != a && previous->a != b)) {
             event.type = contact.trigger ? CollisionEventType::Trigger : CollisionEventType::Enter;
             m_lastEvents_.push_back(event);
         } else if (!contact.trigger) {
@@ -386,11 +386,11 @@ void PhysicsManager::raiseEvents_() {
             m_lastEvents_.push_back(event);
         }
     }
-    for (const auto& [key, pair] : m_activePairs_) {
-        const auto now = m_currentPairs_.find(key);
-        if (now == m_currentPairs_.end() || (now->second.a != pair.a && now->second.a != pair.b)) {
+    m_activePairs_.for_each([this](u64 key, const PairKey& pair) {
+        const PairKey* now = m_currentPairs_.find(key);
+        if (now == nullptr || (now->a != pair.a && now->a != pair.b)) {
             if (bodyIndex(pair.a) == kNoBody || bodyIndex(pair.b) == kNoBody) {
-                continue; // an entity was destroyed / left the simulation: never name it in an event
+                return; // an entity was destroyed / left the simulation: never name it in an event
             }
             CollisionEvent event{};
             event.type = CollisionEventType::Exit;
@@ -398,8 +398,8 @@ void PhysicsManager::raiseEvents_() {
             event.entityB = pair.b;
             m_lastEvents_.push_back(event);
         }
-    }
-    std::swap(m_activePairs_, m_currentPairs_);
+    });
+    m_activePairs_.swap(m_currentPairs_);
     m_lastEvents_.insert(m_lastEvents_.end(), m_jointEvents_.begin(), m_jointEvents_.end());
     m_jointEvents_.clear();
     m_collisionEvents_.dispatch(m_lastEvents_);

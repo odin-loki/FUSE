@@ -16,14 +16,30 @@
 //   audio      AudioEngine::update (spatial mix of looping sources)
 //   vfx        ParticleSystem::update (continuous emitters)
 //   log        one fuse::log::info line per frame
+//   script     Lua ScriptRuntime tick: PhysicsManager step + collision dispatch + on_update of 32
+//              behaviours doing Entity.get/set_position, get_rotation/set_rotation_euler,
+//              Physics.ray_cast/get_velocity/apply_impulse every frame (Lua heap on a FUSE pool)
+//   net        server + client exchanging a snapshot delta (compute -> serialize -> send -> poll ->
+//              deserialize -> apply -> checksum verify) and an ack every frame over localhost ENet
+//              (LoopbackTransport when ENet is not built); ENet allocates from a FUSE pool
+//   editor     headless EditorHost::gameTick over a 256-entity edit scene with 8 entities moved
+//              per frame (command drain, runtime viewport mirror, headless GPU present)
 //
 // Global operator new/new[] (all overloads) and, on glibc, the C malloc family are replaced with
 // counters. While measuring, every allocation's call stack is captured (execinfo backtrace) into
 // a fixed table so the report can name the top allocation sites (file:line via addr2line).
 //
-// Enforcement: phases listed in kEnforcedPhases must be allocation-free (the test fails
-// otherwise). The remaining phases are reported with their allocation sites; they are owned by
-// other work streams (physics pipeline, logging ring, Vulkan upload) — see the plan row.
+// Attribution: an allocation is "FUSE" when the first frame above the allocator hook (skipping
+// libc / libstdc++ / libgcc) lies in this executable — i.e. engine code or a library the engine
+// statically links (Lua, ENet) asked for memory — and "driver" when it lies in another shared
+// object (the Vulkan loader, lavapipe's libvulkan_lvp.so / LLVM). Allocations on threads with no
+// engine frame at all (lavapipe rasterizer / compiler threads) form the driver-threads bucket.
+//
+// Enforcement (malloc hook available): every phase must make zero FUSE-attributed allocations.
+// Driver-internal allocations (lavapipe allocating inside vkCmd* / vkQueueSubmit called from the
+// hybrid and editor render paths, and its worker threads) are reported, not enforced: they are
+// the software Vulkan driver's own heap use, outside engine control. Without the hook (ASan
+// builds) the per-phase totals of the CPU-only phases are enforced.
 
 #include <fuse/alloc/frame_allocator.hpp>
 #include <fuse/animation/animator.hpp>
@@ -46,8 +62,38 @@
 #include <fuse/world3d/scene_object_3d.hpp>
 #include <fuse/world3d/world_3d.hpp>
 
+#ifndef FUSE_STEADY_HAS_SCRIPT
+#define FUSE_STEADY_HAS_SCRIPT 0
+#endif
+#ifndef FUSE_STEADY_HAS_NET
+#define FUSE_STEADY_HAS_NET 0
+#endif
+#ifndef FUSE_STEADY_HAS_EDITOR
+#define FUSE_STEADY_HAS_EDITOR 0
+#endif
+
+#if FUSE_STEADY_HAS_SCRIPT
+#include <fuse/ecs/components/collider.hpp>
+#include <fuse/ecs/components/rigidbody.hpp>
+#include <fuse/ecs/registry.hpp>
+#include <fuse/physics/physics_manager.hpp>
+#include <fuse/script/script_physics_bridge.hpp>
+#include <fuse/script/script_runtime.hpp>
+#include <fuse/script/script_vm.hpp>
+#endif
+#if FUSE_STEADY_HAS_NET
+#include <fuse/net/checksum.hpp>
+#include <fuse/net/serializer.hpp>
+#include <fuse/net/snapshot_delta.hpp>
+#include <fuse/net/transport.hpp>
+#endif
+#if FUSE_STEADY_HAS_EDITOR
+#include <fuse/editor/editor_host.hpp>
+#endif
+
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -56,6 +102,7 @@
 #include <new>
 #include <random>
 #include <string>
+#include <thread>
 #include <vector>
 
 #if defined(__GLIBC__) && !defined(__SANITIZE_ADDRESS__) && !defined(__SANITIZE_THREAD__)
@@ -300,15 +347,17 @@ enum Phase : int {
     kAudio,
     kVfx,
     kLog,
+    kScript,
+    kNet,
+    kEditor,
     kPhaseCount
 };
+static_assert(kPhaseCount <= kForeignPhase, "phase ids must stay below the driver-threads bucket");
 
-const char* const kPhaseNames[kPhaseCount] = {"input",   "profiler", "jobs",      "frame-mem", "scene", "hybrid",
-                                              "physics", "animation", "audio",    "vfx",       "log"};
+const char* const kPhaseNames[kPhaseCount] = {"input", "profiler", "jobs",   "frame-mem", "scene",
+                                              "hybrid", "physics", "animation", "audio",  "vfx",
+                                              "log",   "script",  "net",       "editor"};
 
-/// Phases whose steady state is required to be allocation-free by this gate. Physics (being
-/// de-allocated by the PhysicsPipeline work stream), hybrid render (Vulkan driver / upload) and
-/// log (async-ring rewrite in flight) are reported, not enforced.
 const char* phaseName(int phase) {
     if (phase == kForeignPhase) {
         return "driver-threads";
@@ -316,9 +365,24 @@ const char* phaseName(int phase) {
     return phase >= 0 && phase < kPhaseCount ? kPhaseNames[phase] : "?";
 }
 
-constexpr Phase kEnforcedPhases[] = {kInput, kProfiler, kJobs, kFrameMem, kScene, kAnimation, kAudio, kVfx};
+/// Phases whose GPU work runs inside the (software) Vulkan driver on the engine thread. Without a
+/// backtrace hook their driver-internal allocations cannot be told apart from engine ones, so
+/// only the other phases are enforced in that mode.
+bool phaseCallsVulkanDriver(int phase) { return phase == kHybrid || phase == kEditor; }
 
-constexpr fuse::u32 kWarmupFrames = 32;
+/// Per-phase allocation counts split by attribution (see the file comment).
+struct PhaseSplit {
+    std::uint64_t engine = 0;
+    std::uint64_t driver = 0;
+};
+
+/// Whether a phase actually ran (its subsystem is built / came up in this configuration).
+bool g_phaseActive[kPhaseCount] = {true, true, true, true, true, true, true, true, true, true, true,
+                                   false, false, false};
+
+// Warm-up covers one full bounce cycle of the script world's physics bodies (first ground contacts,
+// kicks, landings) so every per-step buffer has reached its working size before measuring.
+constexpr fuse::u32 kWarmupFrames = 120;
 constexpr fuse::u32 kMeasuredFrames = 120;
 constexpr float kDt = 1.f / 60.f;
 
@@ -352,6 +416,18 @@ struct Engine {
 
     fuse::frame::FrameCtx ctx;
 };
+
+// Script / net / editor worlds are defined below; Engine holds them by pointer.
+struct ScriptWorld;
+struct NetWorld;
+struct EditorWorld;
+
+struct OptionalWorlds {
+    ScriptWorld* script = nullptr;
+    NetWorld* net = nullptr;
+    EditorWorld* editor = nullptr;
+};
+OptionalWorlds g_worlds;
 
 void setupScene(Engine& e) {
     fuse::scene::SceneManagerDesc desc{};
@@ -486,6 +562,392 @@ void setupVfx(Engine& e) {
     }
 }
 
+// ---- script -------------------------------------------------------------------------------------
+
+#if FUSE_STEADY_HAS_SCRIPT
+/// Lua behaviours on a physics-driven ECS world: every frame each actor queries its transform and
+/// velocity, casts a ray at the ground, kicks itself up when resting and spins; movers write their
+/// position along a circle. Every Entity/Physics call returns fresh Lua tables (GC'd garbage).
+constexpr const char* kActorScript = R"lua(
+function on_start(self)
+    self.t = 0
+    self.hits = 0
+    self.contacts = 0
+    self.kicks = 0
+end
+
+function on_update(self, dt)
+    self.t = self.t + dt
+    if not Entity.alive(self) then return end
+    local p = Entity.get_position(self)
+    local v = Physics.get_velocity(self)
+    local hit = Physics.ray_cast({x = p.x, y = p.y + 2.0, z = p.z}, {x = 0, y = -1, z = 0}, 100)
+    if hit ~= nil then
+        self.hits = self.hits + 1
+        self.ground = hit.distance
+    end
+    if v ~= nil and p.y < 0.56 and v.y <= 0.1 then
+        Physics.apply_impulse(self, {x = 0, y = 3.0, z = 0})
+        self.kicks = self.kicks + 1
+    end
+    local r = Entity.get_rotation(self)
+    self.w = r.w
+    Entity.set_rotation_euler(self, {x = 0, y = self.t * 45, z = 0})
+end
+
+function on_collision(self, other, point)
+    self.contacts = self.contacts + 1
+    self.last_contact_y = point.y
+end
+)lua";
+
+constexpr const char* kMoverScript = R"lua(
+function on_start(self)
+    self.t = (self.entity % 7) * 0.5
+end
+
+function on_update(self, dt)
+    self.t = self.t + dt
+    local p = Entity.get_position(self)
+    Entity.set_position(self, {x = math.cos(self.t) * 6, y = p.y, z = math.sin(self.t) * 6})
+end
+)lua";
+
+struct ScriptWorld {
+    fuse::ecs::Registry registry;
+    fuse::physics::PhysicsManager physics;
+    fuse::physics::PhysicsStreamManager streams{};
+    std::unique_ptr<fuse::script::PhysicsManagerScriptBackend> backend;
+    fuse::script::ScriptVM vm;
+    fuse::script::ScriptRuntime runtime; // after vm: shut down (and released) first
+    std::vector<fuse::ecs::EntityID> actors;
+    std::vector<fuse::ecs::EntityID> movers;
+};
+
+fuse::ecs::EntityID spawnScriptBody(fuse::ecs::Registry& reg, float x, float y, float z, fuse::u32 shape,
+                                    float radius, bool isStatic) {
+    const fuse::ecs::EntityID id = reg.create();
+    fuse::ecs::Transform t{};
+    t.position = {x, y, z, 1.f};
+    reg.add(id, t);
+    fuse::ecs::RigidBody rb{};
+    rb.is_static = isStatic;
+    rb.restitution = 0.2f;
+    reg.add(id, rb);
+    fuse::ecs::Collider c{};
+    c.shape = shape;
+    c.params = shape == fuse::ecs::Collider::Plane ? fuse::ecs::vec3{0.f, 1.f, 0.f, 0.f}
+                                                   : fuse::ecs::vec3{radius, 0.f, 0.f, 0.f};
+    reg.add(id, c);
+    return id;
+}
+
+bool setupScript(ScriptWorld& s) {
+    s.registry.init(256);
+    (void)spawnScriptBody(s.registry, 0.f, 0.f, 0.f, fuse::ecs::Collider::Plane, 0.f, true);
+    for (int i = 0; i < 24; ++i) {
+        const float x = static_cast<float>(i % 6) * 1.5f - 4.f;
+        const float z = static_cast<float>(i / 6) * 1.5f - 3.f;
+        s.actors.push_back(spawnScriptBody(s.registry, x, 1.f + static_cast<float>(i % 3), z,
+                                           fuse::ecs::Collider::Sphere, 0.5f, false));
+    }
+    for (int i = 0; i < 8; ++i) {
+        const fuse::ecs::EntityID id = s.registry.create();
+        fuse::ecs::Transform t{};
+        t.position = {static_cast<float>(i), 4.f, 0.f, 1.f};
+        s.registry.add(id, t);
+        s.movers.push_back(id);
+    }
+    s.physics.init({});
+    s.physics.step(s.registry, kDt, s.streams);
+    s.backend = std::make_unique<fuse::script::PhysicsManagerScriptBackend>(s.physics, s.registry);
+
+    fuse::script::ScriptVMDesc desc;
+    desc.memory_limit_bytes = 32u * 1024u * 1024u;
+    desc.instruction_budget = 5'000'000u;
+    if (!s.vm.init(desc) || !s.vm.has_lua_backend()) {
+        return false;
+    }
+    fuse::script::ScriptEngineBindings bindings;
+    bindings.registry = &s.registry;
+    bindings.physics = s.backend.get();
+    if (!s.runtime.init(s.vm, bindings) || !s.runtime.load_module_source("actor", kActorScript).ok() ||
+        !s.runtime.load_module_source("mover", kMoverScript).ok()) {
+        return false;
+    }
+    for (fuse::ecs::EntityID id : s.actors) {
+        s.runtime.attach(id, "actor");
+    }
+    for (fuse::ecs::EntityID id : s.movers) {
+        s.runtime.attach(id, "mover");
+    }
+    return true;
+}
+
+void tickScript(ScriptWorld& s) {
+    s.physics.step(s.registry, kDt, s.streams);
+    fuse::script::dispatch_physics_events(s.physics.lastEvents(), s.runtime);
+    s.runtime.update(kDt);
+}
+
+double scriptField(ScriptWorld& s, fuse::ecs::EntityID id, const char* field) {
+    fuse::script::bind::ScriptValue value;
+    if (!s.runtime.get_instance_field(id, field, value) || !fuse::script::bind::is_number(value)) {
+        return -1.0;
+    }
+    return fuse::script::bind::to_number(value);
+}
+#endif
+
+// ---- net ----------------------------------------------------------------------------------------
+
+#if FUSE_STEADY_HAS_NET
+constexpr fuse::u32 kNetEntities = 48; // < 64: rows replicate as masked entity patches
+
+struct NetEntity {
+    fuse::ecs::vec3 position{};
+    fuse::ecs::quat rotation{};
+    fuse::ecs::vec3 velocity{};
+};
+
+struct NetWorld {
+    bool enet = false;
+    std::unique_ptr<fuse::net::Transport> server;
+    std::unique_ptr<fuse::net::Transport> client;
+    fuse::u32 serverToClient = 0; // server-side peer id of the client
+    fuse::u32 clientToServer = 0; // client-side peer id of the server
+
+    NetEntity entities[kNetEntities];
+    fuse::net::GameSnapshot serverSnap[2];
+    fuse::u32 serverCur = 0;
+    fuse::net::SnapshotDelta txDelta;
+    fuse::net::SnapshotDeltaWorkspace txWorkspace;
+    fuse::net::NetSerializer txBuffer;
+
+    fuse::net::GameSnapshot clientSnap[2];
+    fuse::u32 clientCur = 0;
+    fuse::net::SnapshotDelta rxDelta;
+    fuse::net::SnapshotDeltaWorkspace rxWorkspace;
+    fuse::net::NetSerializer rxBuffer;
+    fuse::net::NetSerializer ackBuffer;
+
+    fuse::u32 frame = 0;
+    fuse::u64 deltasSent = 0;
+    fuse::u64 deltasApplied = 0;
+    fuse::u64 patchDeltas = 0;
+    fuse::u64 rejected = 0;
+    fuse::u64 checksumFailures = 0;
+    fuse::u64 acksReceived = 0;
+    fuse::u32 lastAckFrame = 0;
+};
+
+void appendRaw(std::vector<fuse::net::byte>& out, const void* data, std::size_t n) {
+    const std::size_t offset = out.size();
+    out.resize(offset + n);
+    std::memcpy(out.data() + offset, data, n);
+}
+void appendU32(std::vector<fuse::net::byte>& out, fuse::u32 v) { appendRaw(out, &v, sizeof(v)); }
+void appendF32(std::vector<fuse::net::byte>& out, float v) { appendRaw(out, &v, sizeof(v)); }
+void appendVec3(std::vector<fuse::net::byte>& out, const fuse::ecs::vec3& v) {
+    appendF32(out, v.x);
+    appendF32(out, v.y);
+    appendF32(out, v.z);
+}
+
+/// Server snapshot in the fuse_net wire layout (ECS rows, then physics rows), capacity reused.
+void buildNetSnapshot(NetWorld& n, fuse::net::GameSnapshot& snap, fuse::u32 frame) {
+    snap.frame = frame;
+    snap.ecs_state.clear();
+    snap.physics_state.clear();
+    for (fuse::u32 i = 0; i < kNetEntities; ++i) {
+        const NetEntity& e = n.entities[i];
+        appendU32(snap.ecs_state, i);
+        appendU32(snap.ecs_state, 1u);
+        appendVec3(snap.ecs_state, e.position);
+        appendF32(snap.ecs_state, e.rotation.x);
+        appendF32(snap.ecs_state, e.rotation.y);
+        appendF32(snap.ecs_state, e.rotation.z);
+        appendF32(snap.ecs_state, e.rotation.w);
+        appendVec3(snap.ecs_state, {1.f, 1.f, 1.f, 0.f});
+        appendU32(snap.physics_state, i);
+        appendU32(snap.physics_state, 1u);
+        appendVec3(snap.physics_state, e.velocity);
+        appendVec3(snap.physics_state, {0.f, 0.f, 0.f, 0.f});
+        appendF32(snap.physics_state, 1.f);
+    }
+    snap.checksum = fuse::net::compute_snapshot_checksum(snap);
+}
+
+void onClientPacket(NetWorld& n, const fuse::net::Packet& packet) {
+    n.rxBuffer.buffer.assign(packet.data.begin(), packet.data.end());
+    n.rxBuffer.reset_read();
+    fuse::net::deserialize_snapshot_delta(n.rxBuffer, n.rxDelta, n.rxWorkspace);
+    const fuse::net::GameSnapshot& base = n.clientSnap[n.clientCur];
+    if (!fuse::net::can_apply_snapshot_delta(base, n.rxDelta)) {
+        ++n.rejected;
+        return;
+    }
+    fuse::net::GameSnapshot& next = n.clientSnap[n.clientCur ^ 1u];
+    fuse::net::apply_snapshot_delta(base, n.rxDelta, next, n.rxWorkspace);
+    if (!fuse::net::verify_snapshot_checksum(next)) {
+        ++n.checksumFailures;
+        return;
+    }
+    n.clientCur ^= 1u;
+    ++n.deltasApplied;
+    n.patchDeltas += n.rxDelta.kind == fuse::net::SnapshotDeltaKind::EntityPatch ? 1u : 0u;
+    n.ackBuffer.clear();
+    n.ackBuffer.write_u32(next.frame);
+    (void)n.client->send(n.clientToServer, n.ackBuffer.buffer.data(), n.ackBuffer.buffer.size(),
+                         fuse::net::PacketChannel::Unreliable);
+}
+
+void onServerPacket(NetWorld& n, const fuse::net::Packet& packet) {
+    if (packet.data.size() >= sizeof(fuse::u32)) {
+        std::memcpy(&n.lastAckFrame, packet.data.data(), sizeof(fuse::u32));
+        ++n.acksReceived;
+    }
+}
+
+bool connectENet(NetWorld& n) {
+#if defined(FUSE_NET_HAS_ENET)
+    auto server = std::make_unique<fuse::net::ENetTransport>();
+    auto client = std::make_unique<fuse::net::ENetTransport>();
+    if (!server->init(0) || !client->init(0)) {
+        std::printf("steady-state alloc: net: ENet init failed (%s) - falling back to loopback\n",
+                    server->last_error());
+        return false;
+    }
+    fuse::net::ENetTransport* serverRaw = server.get();
+    serverRaw->set_connection_callback([&n](fuse::u32 id, bool connected) {
+        if (connected) {
+            n.serverToClient = id;
+        }
+    });
+    n.clientToServer = client->connect_peer("127.0.0.1", server->bound_port());
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    const auto noop = [](const fuse::net::Packet&) {};
+    while (std::chrono::steady_clock::now() < deadline &&
+           (n.serverToClient == 0u || !client->is_connected(n.clientToServer))) {
+        server->poll(noop);
+        client->poll(noop);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (n.serverToClient == 0u || !client->is_connected(n.clientToServer)) {
+        std::printf("steady-state alloc: net: ENet localhost handshake timed out - falling back to loopback\n");
+        return false;
+    }
+    n.server = std::move(server);
+    n.client = std::move(client);
+    return true;
+#else
+    (void)n;
+    return false;
+#endif
+}
+
+void setupNet(NetWorld& n) {
+    for (fuse::u32 i = 0; i < kNetEntities; ++i) {
+        n.entities[i].position = {static_cast<float>(i % 8) * 2.f, 0.f, static_cast<float>(i / 8) * 2.f, 0.f};
+        n.entities[i].rotation = {0.f, 0.f, 0.f, 1.f};
+        n.entities[i].velocity = {0.5f + 0.01f * static_cast<float>(i), 0.f, 0.25f, 0.f};
+    }
+    n.enet = connectENet(n);
+    if (!n.enet) {
+        auto server = std::make_unique<fuse::net::LoopbackTransport>();
+        auto client = std::make_unique<fuse::net::LoopbackTransport>();
+        server->init(1);
+        client->init(2);
+        fuse::net::LoopbackTransport::link_peers(*server, *client);
+        n.serverToClient = 1;
+        n.clientToServer = 1;
+        n.server = std::move(server);
+        n.client = std::move(client);
+    }
+    n.txWorkspace.reserve(kNetEntities);
+    n.rxWorkspace.reserve(kNetEntities);
+    buildNetSnapshot(n, n.serverSnap[0], 0u);
+    n.clientSnap[0] = n.serverSnap[0];
+}
+
+void tickNet(NetWorld& n) {
+    ++n.frame;
+    // A quarter of the entities move each frame; every 8th one also changes velocity now and then.
+    for (fuse::u32 i = 0; i < kNetEntities; ++i) {
+        NetEntity& e = n.entities[i];
+        if (((i + n.frame) & 3u) == 0u) {
+            e.position.x += e.velocity.x * kDt;
+            e.position.z += e.velocity.z * kDt;
+        }
+        if ((i & 7u) == 0u && (n.frame % 16u) == i / 8u) {
+            e.velocity.x = -e.velocity.x;
+        }
+    }
+    const fuse::u32 prev = n.serverCur;
+    n.serverCur ^= 1u;
+    buildNetSnapshot(n, n.serverSnap[n.serverCur], n.frame);
+    fuse::net::compute_snapshot_delta(n.serverSnap[prev], n.serverSnap[n.serverCur], n.txDelta, n.txWorkspace);
+    n.txBuffer.clear();
+    fuse::net::serialize_snapshot_delta(n.txDelta, n.txBuffer);
+    if (n.server->send(n.serverToClient, n.txBuffer.buffer.data(), n.txBuffer.buffer.size(),
+                       fuse::net::PacketChannel::Reliable)) {
+        ++n.deltasSent;
+    }
+    // Single-pointer captures fit std::function's small buffer: polling does not allocate.
+    NetWorld* world = &n;
+    n.server->poll([world](const fuse::net::Packet& p) { onServerPacket(*world, p); });
+    n.client->poll([world](const fuse::net::Packet& p) { onClientPacket(*world, p); });
+}
+#endif
+
+// ---- editor -------------------------------------------------------------------------------------
+
+#if FUSE_STEADY_HAS_EDITOR
+struct EditorWorld {
+    std::unique_ptr<fuse::editor::EditorHost> host;
+    std::vector<fuse::ecs::EntityID> moved;
+};
+
+void setupEditor(EditorWorld& w) {
+    w.host = std::make_unique<fuse::editor::EditorHost>();
+    fuse::ecs::Registry& reg = w.host->editorScene().registry();
+    for (fuse::u32 i = 0; i < 256u; ++i) {
+        const fuse::ecs::EntityID id = reg.create();
+        fuse::ecs::Transform t{};
+        t.position = {static_cast<float>(i % 16) * 2.f, 0.f, static_cast<float>(i / 16) * 2.f, 1.f};
+        reg.add(id, t);
+        if ((i & 1u) == 0u) {
+            fuse::ecs::SDFObject sdf{};
+            sdf.type = fuse::ecs::SDFPrimitive::Sphere;
+            sdf.params = {0.5f, 0.f, 0.f, 0.f};
+            reg.add(id, sdf);
+        } else {
+            fuse::ecs::Mesh mesh{};
+            mesh.aabb_min = {-0.5f, -0.5f, -0.5f, 0.f};
+            mesh.aabb_max = {0.5f, 0.5f, 0.5f, 0.f};
+            reg.add(id, mesh);
+        }
+        if (i % 32u == 0u) {
+            w.moved.push_back(id);
+        }
+    }
+    w.host->runtimeViewport().setProjectLabel("steady_state_alloc");
+    w.host->runtimeViewport().requestResize(320, 180);
+}
+
+void tickEditor(EditorWorld& w, fuse::u32 frame) {
+    // An entity being dragged in the viewport: its transform changes every frame.
+    fuse::ecs::Registry& reg = w.host->editorScene().registry();
+    for (fuse::ecs::EntityID id : w.moved) {
+        if (fuse::ecs::Transform* t = reg.get<fuse::ecs::Transform>(id)) {
+            t->position.y = ((frame & 1u) != 0u) ? 0.25f : 0.f;
+            t->dirty = true;
+        }
+    }
+    w.host->gameTick();
+}
+#endif
+
 struct PhaseScope {
     explicit PhaseScope(Phase p) { g_phase.store(p, std::memory_order_relaxed); }
     ~PhaseScope() { g_phase.store(-1, std::memory_order_relaxed); }
@@ -572,6 +1034,24 @@ void runFrame(Engine& e, fuse::u32 frame) {
         PhaseScope p(kLog);
         fuse::log::info("steady frame %u", frame);
     }
+#if FUSE_STEADY_HAS_SCRIPT
+    if (g_worlds.script != nullptr) {
+        PhaseScope p(kScript);
+        tickScript(*g_worlds.script);
+    }
+#endif
+#if FUSE_STEADY_HAS_NET
+    if (g_worlds.net != nullptr) {
+        PhaseScope p(kNet);
+        tickNet(*g_worlds.net);
+    }
+#endif
+#if FUSE_STEADY_HAS_EDITOR
+    if (g_worlds.editor != nullptr) {
+        PhaseScope p(kEditor);
+        tickEditor(*g_worlds.editor, frame);
+    }
+#endif
 }
 
 // ---- report ------------------------------------------------------------------------------------
@@ -639,6 +1119,61 @@ bool isPlumbing(const std::string& sym) {
     return false;
 }
 
+/// True for frames inside the C / C++ runtime (allocation plumbing, libc helpers like fopen).
+bool isRuntimeLibrary(const char* path) {
+    const char* base = std::strrchr(path, '/');
+    base = base != nullptr ? base + 1 : path;
+    static const char* const kRuntime[] = {"libc.so", "libc-", "libstdc++", "libgcc_s", "libm.so", "libm-",
+                                           "ld-linux", "libpthread", "libdl.so"};
+    for (const char* prefix : kRuntime) {
+        if (std::strncmp(base, prefix, std::strlen(prefix)) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool inExecutable(void* addr) {
+    const char* f = static_cast<const char*>(addr);
+    return f >= &__executable_start && f < &etext;
+}
+
+/// Driver-internal: the first frame above the allocator hook (the hook's own frames are the
+/// leading run inside this executable) that is not in the C/C++ runtime lies in another shared
+/// object — the Vulkan loader or driver allocated, not engine code. See the file comment.
+bool siteIsDriver(const Site& s) {
+    if (s.phase == kForeignPhase) {
+        return true;
+    }
+    int i = 0;
+    while (i < s.depth && inExecutable(s.frames[i])) {
+        ++i;
+    }
+    for (; i < s.depth; ++i) {
+        void* addr = s.frames[i];
+        if (inExecutable(addr)) {
+            return false;
+        }
+        Dl_info info{};
+        if (::dladdr(addr, &info) == 0 || info.dli_fname == nullptr) {
+            return false; // unknown: attribute to the engine (conservative)
+        }
+        if (!isRuntimeLibrary(info.dli_fname)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void splitByAttribution(PhaseSplit (&out)[kMaxPhases]) {
+    for (const Site& s : g_sites) {
+        if (s.hash.load() == 0 || s.count.load() == 0 || s.phase < 0 || s.phase >= kMaxPhases) {
+            continue;
+        }
+        (siteIsDriver(s) ? out[s.phase].driver : out[s.phase].engine) += s.count.load();
+    }
+}
+
 void printTopSites(unsigned limit) {
     std::vector<const Site*> sites;
     for (const Site& s : g_sites) {
@@ -646,11 +1181,11 @@ void printTopSites(unsigned limit) {
             sites.push_back(&s);
         }
     }
-    // Engine-thread sites first (those are actionable), then driver threads; by count within each.
+    // FUSE-attributed sites first (those are actionable), then driver ones; by count within each.
     std::sort(sites.begin(), sites.end(), [](const Site* a, const Site* b) {
-        const bool fa = a->phase == kForeignPhase;
-        const bool fb = b->phase == kForeignPhase;
-        return fa != fb ? fb : a->count.load() > b->count.load();
+        const bool da = siteIsDriver(*a);
+        const bool db = siteIsDriver(*b);
+        return da != db ? db : a->count.load() > b->count.load();
     });
     if (const char* only = std::getenv("FUSE_STEADY_PHASE")) {
         sites.erase(std::remove_if(sites.begin(), sites.end(),
@@ -665,8 +1200,8 @@ void printTopSites(unsigned limit) {
             break;
         }
         const double perFrame = static_cast<double>(s->count.load()) / kMeasuredFrames;
-        std::printf("\n  #%u [%s] %s  %llu allocs (%.2f/frame), %llu bytes\n", printed,
-                    phaseName(s->phase), s->kind == Kind::CxxNew ? "operator new" : "malloc",
+        std::printf("\n  #%u [%s] %s %s  %llu allocs (%.2f/frame), %llu bytes\n", printed, phaseName(s->phase),
+                    siteIsDriver(*s) ? "driver" : "FUSE", s->kind == Kind::CxxNew ? "operator new" : "malloc",
                     static_cast<unsigned long long>(s->count.load()), perFrame,
                     static_cast<unsigned long long>(s->bytes.load()));
         int shown = 0;
@@ -694,6 +1229,29 @@ void measure() {
     setupVfx(e);
     fuse::profiler::setEnabled(true);
 
+#if FUSE_STEADY_HAS_SCRIPT
+    auto script = std::make_unique<ScriptWorld>();
+    if (setupScript(*script)) {
+        g_worlds.script = script.get();
+        g_phaseActive[kScript] = true;
+    } else {
+        std::printf("steady-state alloc: script phase skipped (no Lua backend: %s)\n",
+                    script->vm.last_error().c_str());
+    }
+#endif
+#if FUSE_STEADY_HAS_NET
+    auto net = std::make_unique<NetWorld>();
+    setupNet(*net);
+    g_worlds.net = net.get();
+    g_phaseActive[kNet] = true;
+#endif
+#if FUSE_STEADY_HAS_EDITOR
+    auto editor = std::make_unique<EditorWorld>();
+    setupEditor(*editor);
+    g_worlds.editor = editor.get();
+    g_phaseActive[kEditor] = true;
+#endif
+
 #if FUSE_STEADY_HAVE_MALLOC_HOOK
     // Prime backtrace(): its first call loads libgcc_s (which allocates).
     void* prime[4];
@@ -714,17 +1272,35 @@ void measure() {
     std::printf("steady-state alloc: %u job worker(s), %u warm-up + %u measured frames, malloc hook %s\n",
                 fuse::jobs::JobScheduler::instance().workerCount(), kWarmupFrames, kMeasuredFrames,
                 FUSE_STEADY_HAVE_MALLOC_HOOK ? "on" : "off");
-    std::printf("steady-state alloc: %-10s %12s %12s %10s\n", "phase", "operator new", "malloc", "per frame");
+
+    PhaseSplit split[kMaxPhases] = {};
+#if FUSE_STEADY_HAVE_MALLOC_HOOK
+    const bool attributed = g_droppedSites.load() == 0u;
+    if (attributed) {
+        splitByAttribution(split);
+    }
+#else
+    const bool attributed = false;
+#endif
+    std::printf("steady-state alloc: %-10s %12s %12s %10s %8s %8s\n", "phase", "operator new", "malloc", "per frame",
+                "FUSE", "driver");
     for (int p = 0; p < kPhaseCount; ++p) {
         const std::uint64_t n = g_phaseNew[p].load();
         const std::uint64_t m = g_phaseMalloc[p].load();
-        bool enforced = false;
-        for (Phase q : kEnforcedPhases) {
-            enforced = enforced || q == p;
+        const char* mode = !g_phaseActive[p] ? "  [not built/run]"
+                           : attributed      ? "  [enforced: FUSE = 0; driver reported]"
+                           : phaseCallsVulkanDriver(p) ? "  [reported: no attribution]"
+                                                       : "  [enforced: total = 0]";
+        if (attributed) {
+            std::printf("steady-state alloc: %-10s %12llu %12llu %10.2f %8llu %8llu%s\n", kPhaseNames[p],
+                        static_cast<unsigned long long>(n), static_cast<unsigned long long>(m),
+                        static_cast<double>(n + m) / kMeasuredFrames, static_cast<unsigned long long>(split[p].engine),
+                        static_cast<unsigned long long>(split[p].driver), mode);
+        } else {
+            std::printf("steady-state alloc: %-10s %12llu %12llu %10.2f %8s %8s%s\n", kPhaseNames[p],
+                        static_cast<unsigned long long>(n), static_cast<unsigned long long>(m),
+                        static_cast<double>(n + m) / kMeasuredFrames, "-", "-", mode);
         }
-        std::printf("steady-state alloc: %-10s %12llu %12llu %10.2f%s\n", kPhaseNames[p],
-                    static_cast<unsigned long long>(n), static_cast<unsigned long long>(m),
-                    static_cast<double>(n + m) / kMeasuredFrames, enforced ? "  [enforced]" : "  [reported]");
     }
     std::printf("steady-state alloc: %-10s %12llu %12llu %10.2f  [reported: non-engine threads, e.g. lavapipe]\n",
                 phaseName(kForeignPhase), static_cast<unsigned long long>(g_phaseNew[kForeignPhase].load()),
@@ -743,17 +1319,87 @@ void measure() {
     }
 #endif
 
-    for (Phase p : kEnforcedPhases) {
-        char msg[160];
-        std::snprintf(msg, sizeof(msg), "steady-state '%s' phase performs zero heap allocations (new + malloc)",
-                      kPhaseNames[p]);
-        expectTrue(g_phaseNew[p].load() + g_phaseMalloc[p].load() == 0u, msg);
+    for (int p = 0; p < kPhaseCount; ++p) {
+        if (!g_phaseActive[p]) {
+            continue;
+        }
+        const std::uint64_t total = g_phaseNew[p].load() + g_phaseMalloc[p].load();
+        char msg[192];
+        if (attributed) {
+            std::snprintf(msg, sizeof(msg), "steady-state '%s' phase performs zero FUSE heap allocations (new + malloc)",
+                          kPhaseNames[p]);
+            expectTrue(split[p].engine == 0u, msg);
+        } else if (!phaseCallsVulkanDriver(p)) {
+            std::snprintf(msg, sizeof(msg), "steady-state '%s' phase performs zero heap allocations (new + malloc)",
+                          kPhaseNames[p]);
+            expectTrue(total == 0u, msg);
+        }
     }
     if (std::getenv("FUSE_STEADY_STRICT") != nullptr) {
         expectTrue(totalNew + totalMalloc == 0u, "FUSE_STEADY_STRICT: whole frame performs zero heap allocations");
     }
     expectTrue(e.animator.tick_count == kWarmupFrames + kMeasuredFrames, "animator ticked every frame");
     expectTrue(e.vfx.alive_particle_count() > 0u, "particles alive");
+
+    const fuse::u32 frames = kWarmupFrames + kMeasuredFrames;
+#if FUSE_STEADY_HAS_SCRIPT
+    if (g_worlds.script != nullptr) {
+        ScriptWorld& sw = *g_worlds.script;
+        double hits = 0.0;
+        double kicks = 0.0;
+        double contacts = 0.0;
+        for (fuse::ecs::EntityID id : sw.actors) {
+            hits += scriptField(sw, id, "hits");
+            kicks += scriptField(sw, id, "kicks");
+            contacts += scriptField(sw, id, "contacts");
+        }
+        std::printf("steady-state alloc: script: %zu behaviours, %llu callbacks, %.0f ray hits, %.0f impulses, "
+                    "%.0f contacts, Lua heap %zu KiB (peak %zu KiB), errors %zu\n",
+                    sw.runtime.instance_count(), static_cast<unsigned long long>(sw.runtime.callback_count()), hits,
+                    kicks, contacts, sw.vm.memory_bytes() / 1024u, sw.vm.peak_memory_bytes() / 1024u,
+                    sw.runtime.error_count());
+        expectTrue(sw.runtime.frame_count() == frames, "script runtime ticked every frame");
+        expectTrue(sw.runtime.error_count() == 0u, "script behaviours ran without errors");
+        expectTrue(hits > 0.0 && kicks > 0.0, "scripts performed physics queries (ray hits, impulses)");
+        if (sw.runtime.error_count() != 0u) {
+            std::fprintf(stderr, "script error: %s\n", sw.runtime.last_error().c_str());
+        }
+    }
+#endif
+#if FUSE_STEADY_HAS_NET
+    if (g_worlds.net != nullptr) {
+        NetWorld& nw = *g_worlds.net;
+        std::printf("steady-state alloc: net (%s): %llu deltas sent, %llu applied (%llu entity-patch), %llu rejected, "
+                    "%llu checksum failures, %llu acks (last frame %u), last delta %zu bytes\n",
+                    nw.enet ? "ENet localhost" : "loopback", static_cast<unsigned long long>(nw.deltasSent),
+                    static_cast<unsigned long long>(nw.deltasApplied), static_cast<unsigned long long>(nw.patchDeltas),
+                    static_cast<unsigned long long>(nw.rejected), static_cast<unsigned long long>(nw.checksumFailures),
+                    static_cast<unsigned long long>(nw.acksReceived), nw.lastAckFrame, nw.txBuffer.buffer.size());
+        expectTrue(nw.deltasSent == frames, "net: server sent a snapshot delta every frame");
+        expectTrue(nw.deltasApplied + 2u >= frames, "net: client applied (nearly) every delta");
+        expectTrue(nw.rejected == 0u && nw.checksumFailures == 0u, "net: every delta applied checksum-exact");
+        expectTrue(nw.patchDeltas > 0u, "net: deltas replicate as entity patches");
+        expectTrue(nw.acksReceived > 0u, "net: server received client acks");
+    }
+#endif
+#if FUSE_STEADY_HAS_EDITOR
+    if (g_worlds.editor != nullptr) {
+        expectTrue(g_worlds.editor->host->gameTickCount() == frames, "editor ticked every frame");
+    }
+#endif
+
+#if FUSE_STEADY_HAS_EDITOR
+    g_worlds.editor = nullptr;
+    editor.reset();
+#endif
+#if FUSE_STEADY_HAS_NET
+    g_worlds.net = nullptr;
+    net.reset();
+#endif
+#if FUSE_STEADY_HAS_SCRIPT
+    g_worlds.script = nullptr;
+    script.reset();
+#endif
     e.audio.destroy();
     e.vfx.destroy();
     e.scene.destroy();

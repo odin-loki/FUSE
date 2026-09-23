@@ -132,6 +132,7 @@ bool shouldRunContactIslandGraphBuild(
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
+    islandCount_ = 0;
 }
 
 u32 ContactIslandGraph::findRoot(u32 index) const {
@@ -207,7 +208,10 @@ void ContactIslandGraph::build(u32 bodyCount,
             rootToIsland[root] = islandCount++;
         }
     }
-    islands_.resize(islandCount);
+    if (islands_.size() < islandCount) {
+        islands_.resize(islandCount);
+    }
+    islandCount_ = islandCount;
     for (Island& island : islands_) {
         island.bodyIndices.clear();
         island.contactIndices.clear();
@@ -259,8 +263,8 @@ bool ContactIslandGraph::buildGuarded(u32 bodyCount,
 
 u32 ContactIslandGraph::constrainedIslandCount() const {
     u32 count = 0;
-    for (const Island& island : islands_) {
-        if (!island.isEmpty()) {
+    for (u32 i = 0; i < islandCount_; ++i) {
+        if (!islands_[i].isEmpty()) {
             ++count;
         }
     }
@@ -273,7 +277,7 @@ u32 ContactIslandGraph::bodyIsland(u32 bodyIndex) const {
     }
 
     const u32 root = findRoot(bodyIndex);
-    for (u32 islandIndex = 0; islandIndex < islands_.size(); ++islandIndex) {
+    for (u32 islandIndex = 0; islandIndex < islandCount_; ++islandIndex) {
         for (u32 index : islands_[islandIndex].bodyIndices) {
             if (index == bodyIndex || findRoot(index) == root) {
                 return islandIndex;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/core/flat_u64_map.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/physics/ccd/ccd.hpp>
 #include <fuse/physics/ccd/toi_buffer.hpp>
@@ -227,8 +228,9 @@ private:
         quat orientation{};
     };
     std::unordered_map<u32, KinematicTarget> m_kinematicTargets_{};
-    std::unordered_map<u64, PairKey> m_activePairs_{};
-    std::unordered_map<u64, PairKey> m_currentPairs_{};
+    // Flat maps: cleared and refilled every step without per-contact node allocations (B1.8).
+    FlatU64Map<PairKey> m_activePairs_{};
+    FlatU64Map<PairKey> m_currentPairs_{};
     std::vector<DestructionEvent> m_destructionEvents_{};
     std::unordered_map<u32, DestructibleVolume> m_destructibles_{};
     std::vector<DebrisSpawn> m_lastDebris_{};

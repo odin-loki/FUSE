@@ -22,6 +22,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/dimension/world_handle.hpp
     include/fuse/dimension/idimension.hpp
     include/fuse/object.hpp
+    include/fuse/core/flat_u64_map.hpp
     include/fuse/core/init.hpp
     include/fuse/core/phase1_test_registry.hpp
     include/fuse/core/track_b.hpp
@@ -33,6 +34,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/alloc/new_ban.hpp
     include/fuse/alloc/frame_allocator.hpp
     include/fuse/alloc/pool_allocator.hpp
+    include/fuse/alloc/size_class_allocator.hpp
     include/fuse/alloc/stack_allocator.hpp
     include/fuse/alloc/ring_allocator.hpp
     include/fuse/alloc/freelist_allocator.hpp
@@ -86,6 +88,7 @@ set(FUSE_CORE_SOURCES
     src/alloc/new_ban.cpp
     src/alloc/frame_allocator.cpp
     src/alloc/pool_allocator.cpp
+    src/alloc/size_class_allocator.cpp
     src/alloc/stack_allocator.cpp
     src/alloc/ring_allocator.cpp
     src/alloc/freelist_allocator.cpp

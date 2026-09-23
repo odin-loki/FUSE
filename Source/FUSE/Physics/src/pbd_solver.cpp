@@ -193,12 +193,12 @@ u32 PBDSolver::slotForFrameContact_(const narrowphase::ContactManifold& manifold
     const u32 lo = std::min(manifold.bodyA, manifold.bodyB);
     const u32 hi = std::max(manifold.bodyA, manifold.bodyB);
     const u64 key = (static_cast<u64>(lo) << 32u) | hi;
-    const auto [it, inserted] = frameContactSlot_.try_emplace(key, static_cast<u32>(frameContacts_.size()));
+    const auto [slot, inserted] = frameContactSlot_.try_emplace(key, static_cast<u32>(frameContacts_.size()));
     if (inserted) {
         frameContacts_.push_back({manifold.bodyA, manifold.bodyB, manifold.contactNormal, manifold.contactPoint, 0.f,
                                   trigger});
     }
-    return it->second;
+    return *slot;
 }
 
 void PBDSolver::wakeJointedBodies_(RigidBodySoA& bodies, const SolverParams& params) {
@@ -833,8 +833,8 @@ void PBDSolver::step(RigidBodySoA& bodies,
     const f32 subDt = dt / static_cast<f32>(std::max(1u, params.substeps));
     lastActiveCount_ = 0;
     lastContactCount_ = 0;
-    const std::vector<f32> priorDistanceLambdas = workBuffers_.distanceLambdas();
-    const std::vector<f32> priorContactLambdas = workBuffers_.contactLambdas();
+    priorDistanceLambdas_ = workBuffers_.distanceLambdas();
+    priorContactLambdas_ = workBuffers_.contactLambdas();
 
     for (u32 substep = 0; substep < std::max(1u, params.substeps); ++substep) {
         predict(bodies, params, subDt);
@@ -844,8 +844,8 @@ void PBDSolver::step(RigidBodySoA& bodies,
         if (substep == 0u) {
             frame_lambda_warm_start(workBuffers_,
                                     distanceConstraints_,
-                                    priorDistanceLambdas,
-                                    priorContactLambdas);
+                                    priorDistanceLambdas_,
+                                    priorContactLambdas_);
         }
         recordFrameContacts_(bodies, params);
         workBuffers_.prepareContactPoints(bodies);

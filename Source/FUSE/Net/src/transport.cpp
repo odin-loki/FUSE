@@ -1,5 +1,7 @@
 #include <fuse/net/transport.hpp>
 
+#include <fuse/alloc/size_class_allocator.hpp>
+
 #if defined(FUSE_NET_HAS_ENET)
 #include <enet/enet.h>
 #if !defined(_WIN32)
@@ -9,8 +11,8 @@
 #endif
 
 #include <cstdint>
-#include <deque>
 #include <mutex>
+#include <new>
 #include <unordered_map>
 #include <utility>
 
@@ -18,11 +20,28 @@ namespace fuse::net {
 
 namespace {
 
+/// Packet queue whose slots (and their byte buffers) are recycled: after warm-up, loopback
+/// send/poll cycles reuse capacity instead of allocating per packet (FUSE_MASTER_PLAN B1.8).
+struct PacketQueue {
+    std::vector<Packet> slots;
+    usize count = 0;
+
+    Packet& push() {
+        if (count == slots.size()) {
+            slots.emplace_back();
+        }
+        return slots[count++];
+    }
+    void clear() { count = 0; }
+    [[nodiscard]] usize size() const { return count; }
+};
+
 struct LoopbackPeer {
     u32 local_id = 0;
     LoopbackTransport* linked = nullptr;
     u32 linked_remote_id = 0;
-    std::deque<Packet> inbox;
+    PacketQueue inbox;
+    PacketQueue delivering; // inbox contents being dispatched by poll() (swapped out under the lock)
     u32 ping = 1;
     bool connected = false;
     u32 next_unreliable_seq = 1;
@@ -123,24 +142,19 @@ bool LoopbackTransport::send(u32 peer_id, const byte* data, usize size, PacketCh
     if (!m_impl->active || data == nullptr || size == 0) {
         return false;
     }
-
-    Packet packet;
-    packet.data.assign(data, data + size);
-    packet.peer_id = peer_id;
-    packet.channel = channel;
-    packet.timestamp_us = 0;
+    (void)peer_id;
 
     std::lock_guard lock(g_loopback_mutex);
     if (m_impl->peer.linked == nullptr || !m_impl->peer.linked->m_impl->active) {
         return false;
     }
 
-    if (channel == PacketChannel::UnreliableSeq) {
-        packet.sequence = m_impl->peer.next_unreliable_seq++;
-    }
-
+    Packet& packet = m_impl->peer.linked->m_impl->peer.inbox.push();
+    packet.data.assign(data, data + size);
+    packet.channel = channel;
+    packet.timestamp_us = 0;
+    packet.sequence = channel == PacketChannel::UnreliableSeq ? m_impl->peer.next_unreliable_seq++ : 0u;
     packet.peer_id = m_impl->peer.local_id;
-    m_impl->peer.linked->m_impl->peer.inbox.push_back(packet);
     ++m_impl->peer.stats.packets_sent;
     m_impl->peer.stats.bytes_sent += size;
     m_impl->peer.linked->m_impl->peer.stats.pending_outbox =
@@ -157,15 +171,17 @@ void LoopbackTransport::poll(std::function<void(const Packet&)> on_packet) {
         return;
     }
 
-    std::deque<Packet> local_inbox;
+    PacketQueue& local_inbox = m_impl->peer.delivering;
     {
         std::lock_guard lock(g_loopback_mutex);
-        local_inbox.swap(m_impl->peer.inbox);
+        std::swap(local_inbox, m_impl->peer.inbox);
+        m_impl->peer.inbox.clear();
         m_impl->peer.stats.pending_outbox = 0;
     }
 
     const Packet* best_unreliable_seq = nullptr;
-    for (const Packet& packet : local_inbox) {
+    for (usize i = 0; i < local_inbox.size(); ++i) {
+        const Packet& packet = local_inbox.slots[i];
         if (packet.channel != PacketChannel::UnreliableSeq) {
             ++m_impl->peer.stats.packets_received;
             m_impl->peer.stats.bytes_received += packet.data.size();
@@ -194,6 +210,7 @@ void LoopbackTransport::poll(std::function<void(const Packet&)> on_packet) {
         m_impl->peer.stats.bytes_received += best_unreliable_seq->data.size();
         on_packet(*best_unreliable_seq);
     }
+    local_inbox.clear();
 }
 
 u32 LoopbackTransport::peer_count() const {
@@ -226,10 +243,32 @@ namespace {
 std::mutex g_enet_init_mutex;
 u32 g_enet_init_refs = 0;
 
+/// Every ENet-internal allocation (packets, fragments, incoming/outgoing commands,
+/// acknowledgements, peers) goes through this process-wide, thread-safe size-class pool instead
+/// of malloc: a steady-state send/receive loop recycles pooled blocks (FUSE_MASTER_PLAN B1.8).
+/// Constructed on first use and intentionally never destroyed, so ENet memory stays valid for
+/// the whole process regardless of static destruction order.
+alloc::SizeClassAllocator& enet_pool() {
+    alignas(alloc::SizeClassAllocator) static unsigned char storage[sizeof(alloc::SizeClassAllocator)];
+    static alloc::SizeClassAllocator* const pool = new (storage) alloc::SizeClassAllocator(
+        alloc::SizeClassAllocatorDesc{"net.enet", 64u * 1024u, 0u, true});
+    return *pool;
+}
+
+void* ENET_CALLBACK enet_pool_malloc(size_t size) { return enet_pool().allocateUnsized(size); }
+
+void ENET_CALLBACK enet_pool_free(void* memory) { enet_pool().deallocateUnsized(memory); }
+
 bool enet_acquire() {
     std::lock_guard lock(g_enet_init_mutex);
-    if (g_enet_init_refs == 0 && enet_initialize() != 0) {
-        return false;
+    if (g_enet_init_refs == 0) {
+        ENetCallbacks callbacks{};
+        callbacks.malloc = enet_pool_malloc;
+        callbacks.free = enet_pool_free;
+        callbacks.no_memory = nullptr; // keep ENet's default (abort)
+        if (enet_initialize_with_callbacks(ENET_VERSION, &callbacks) != 0) {
+            return false;
+        }
     }
     ++g_enet_init_refs;
     return true;
@@ -296,6 +335,7 @@ struct ENetTransport::Impl {
     std::unordered_map<u32, ENetPeer*> peers; // Non-owning: peers belong to `host`.
     std::unordered_map<u32, bool> connected;
     TransportStats stats{};
+    Packet rx_packet; // reused for every received packet (keeps its buffer capacity)
     u32 timeout_limit = 0;
     u32 timeout_min_ms = 0;
     u32 timeout_max_ms = 0;
@@ -460,10 +500,11 @@ void ENetTransport::poll(std::function<void(const Packet&)> on_packet) {
             break;
         }
         case ENET_EVENT_TYPE_RECEIVE: {
-            Packet packet;
+            Packet& packet = m_impl->rx_packet;
             packet.data.assign(event.packet->data, event.packet->data + event.packet->dataLength);
             packet.peer_id = peer_handle(event.peer);
             packet.channel = channel_from_index(event.channelID);
+            packet.sequence = 0;
             packet.timestamp_us = static_cast<u64>(enet_time_get()) * 1000ull;
             enet_packet_destroy(event.packet);
             ++m_impl->stats.packets_received;

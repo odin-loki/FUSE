@@ -39,13 +39,31 @@ endif()
 
 # B1.8 "Zero heap allocations anywhere in engine code": engine-wide steady-state frame audit.
 # Replaces global operator new (and the glibc malloc family) with backtrace-capturing counters and
-# drives input/profiler/jobs/frame memory/scene/hybrid/physics/animation/audio/vfx/log per frame.
+# drives input/profiler/jobs/frame memory/scene/hybrid/physics/animation/audio/vfx/log plus the
+# Lua script runtime, a net snapshot-delta exchange and the headless editor tick per frame.
 if(TARGET fuse_hybrid AND TARGET fuse_scene AND TARGET fuse_animation AND TARGET fuse_audio AND TARGET fuse_vfx)
     add_executable(fuse_runtime_steady_state_alloc steady_state_alloc.cpp)
     target_link_libraries(fuse_runtime_steady_state_alloc PRIVATE
         fuse_hybrid fuse_scene fuse_animation fuse_audio fuse_vfx fuse_world3d fuse_world2d fuse_ecs fuse_core
         ${CMAKE_DL_LIBS})
     target_compile_features(fuse_runtime_steady_state_alloc PRIVATE cxx_std_20)
+    # Script (Lua ScriptRuntime + physics bridge), Net (ENet/loopback snapshot deltas) and the
+    # headless editor tick join the frame when their modules are part of this build.
+    if(TARGET fuse_script AND TARGET fuse_script_physics)
+        target_link_libraries(fuse_runtime_steady_state_alloc PRIVATE fuse_script fuse_script_physics)
+        target_compile_definitions(fuse_runtime_steady_state_alloc PRIVATE FUSE_STEADY_HAS_SCRIPT=1)
+    endif()
+    if(TARGET fuse_net)
+        target_link_libraries(fuse_runtime_steady_state_alloc PRIVATE fuse_net)
+        target_compile_definitions(fuse_runtime_steady_state_alloc PRIVATE FUSE_STEADY_HAS_NET=1)
+    endif()
+    if(TARGET fuse_editor_api)
+        target_link_libraries(fuse_runtime_steady_state_alloc PRIVATE fuse_editor_api)
+        target_compile_definitions(fuse_runtime_steady_state_alloc PRIVATE FUSE_STEADY_HAS_EDITOR=1)
+        if(COMMAND fuse_apply_cxx23)
+            fuse_apply_cxx23(fuse_runtime_steady_state_alloc)
+        endif()
+    endif()
     set(_fuse_steady_cmd $<TARGET_FILE:fuse_runtime_steady_state_alloc>)
     if(FUSE_BUILD_VULKAN AND EXISTS "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
         set(_fuse_steady_cmd "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh" ${_fuse_steady_cmd})

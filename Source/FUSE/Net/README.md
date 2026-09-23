@@ -31,6 +31,8 @@ Deterministic rollback and authoritative state-sync scaffolding for Track B7.4. 
 
 `compute_snapshot_delta(base, target)` emits `SnapshotDeltaKind::None`, `EntityPatch`, or `Full` depending on how many entity rows changed (entity indices ≥ 64 force `Full`). Entity patches include `SnapshotEcsField` / `SnapshotPhysicsField` masks with `ecs_field_mask_contains` / `physics_field_mask_contains` helpers and a `changed_entity_mask` bitset validated by `validate_changed_entity_mask`. `preflight_snapshot_delta` checks baseline checksum and entity-mask consistency; `apply_snapshot_delta_verified` reconstructs and verifies the target frame. `SnapshotHistoryRing` stores recent snapshots via `RollbackBuffer`, exposes `stored_frame_count`, `can_apply_delta`, `pop_oldest`, and wrap-safe `apply_delta_and_store`. `StateSyncDeltaBroadcaster` maps authoritative `StateSyncSnapshot` bundles into the same delta path.
 
+Allocation-free replication (B1.8): the in-place overloads `compute_snapshot_delta(base, target, out, workspace)`, `apply_snapshot_delta(base, delta, out, workspace)` and `deserialize_snapshot_delta(in, out, workspace)` reuse the output's byte vectors / patch rows and a `SnapshotDeltaWorkspace` (parsed rows, flat lookup tables, parked patch rows), so a steady-state compute → serialize → send → deserialize → apply loop performs no heap allocations once warm (`fuse_runtime_steady_state_alloc` net phase). The value-returning forms are thin wrappers over them. ENet's internal allocations go through a pooled `fuse::alloc::SizeClassAllocator` (`enet_initialize_with_callbacks`), and loopback / ENet receive paths recycle their `Packet` buffers.
+
 ## Transports
 
 - **Loopback** — in-process linked peers, channel stats, `UnreliableSeq` newest-wins delivery
