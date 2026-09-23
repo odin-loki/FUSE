@@ -52,7 +52,8 @@ const std::vector<Phase1Deliverable> kChecklist = {
     {"jobs.cuda_lane", "CUDA job lane dispatches when toolkit present", Phase1Module::Jobs, true, true},
     // The ring's integrity under concurrent writers is proven by fuse_core_b1_logging_gates, but the
     // logger is still mutex-serialised and synchronous, so the lock-free/async deliverable stays open.
-    {"logging.async_ring", "Lock-free async logger ring buffer", Phase1Module::Logging, false, false},
+    {"logging.async_ring", "Lock-free async logger ring buffer", Phase1Module::Logging, true, true,
+     "fuse_core_b1_log_async_ring_gates"},
     {"logging.profiler_scopes", "CPU ProfileScope ring buffer + chrome JSON", Phase1Module::Logging, true, true,
      "fuse_core_b1_logging_gates"},
     {"logging.assert_macros", "FUSE_ASSERT/FUSE_VERIFY fatal hook path", Phase1Module::Logging, true, true,

@@ -316,3 +316,14 @@ endif()
 fuse_core_apply_tsan(fuse_core_window_wsi_win32_tests)
 fuse_core_apply_asan_ubsan(fuse_core_window_wsi_win32_tests)
 add_test(NAME fuse_core_window_wsi_win32 COMMAND fuse_core_window_wsi_win32_tests)
+
+# B1.6 follow-up: lock-free async logger ring (logging.async_ring) — MPSC stress, exact overflow drop
+# count, zero producer allocations (replaced operator new), producer latency.
+add_executable(fuse_core_b1_log_async_ring_gates
+    test_b1_log_async_ring_gates.cpp
+)
+target_link_libraries(fuse_core_b1_log_async_ring_gates PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b1_log_async_ring_gates)
+fuse_core_apply_asan_ubsan(fuse_core_b1_log_async_ring_gates)
+add_test(NAME fuse_core_b1_log_async_ring_gates COMMAND fuse_core_b1_log_async_ring_gates)
+set_tests_properties(fuse_core_b1_log_async_ring_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate" TIMEOUT 900)

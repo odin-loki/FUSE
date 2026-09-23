@@ -51,9 +51,10 @@ void testGateProvenRows() {
     expectTrue(sdf != nullptr && sdf->automated && sdf->gate_test != nullptr &&
                    std::strcmp(sdf->gate_test, "fuse_core_b1_math_gates") == 0,
                "math.sdf_primitives proven by fuse_core_b1_math_gates");
-    // Ring integrity is gated, but the logger is still mutex-serialised: the lock-free row stays open.
     const fuse::core::Phase1Deliverable* ring = findRow("logging.async_ring");
-    expectTrue(ring != nullptr && !ring->automated, "logging.async_ring stays open until the logger is lock-free");
+    expectTrue(ring != nullptr && ring->automated && ring->gate_test != nullptr &&
+                   std::strcmp(ring->gate_test, "fuse_core_b1_log_async_ring_gates") == 0,
+               "logging.async_ring proven by fuse_core_b1_log_async_ring_gates");
 }
 
 void testIntegrationSmoke() {
