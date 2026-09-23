@@ -233,3 +233,8 @@ endif()
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)
 endif()
+
+# B5 gate work streams: one fragment per topic (sources added to fuse_rhi + gate tests).
+foreach(_fuse_b5_topic gbuffer_materials clustered shadows ddgi atmosphere post taa_ssfx)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/b5_${_fuse_b5_topic}.cmake")
+endforeach()
