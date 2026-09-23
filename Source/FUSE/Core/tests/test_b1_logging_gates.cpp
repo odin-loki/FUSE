@@ -37,6 +37,19 @@ namespace {
 using fuse::u32;
 using fuse::u64;
 
+// Shipping strips sub-Fatal logging (FUSE_NO_LOGGING) and compiles profiler macros out
+// (FUSE_NO_PROFILER): the affected checks then assert the stripped behaviour instead.
+#if defined(FUSE_NO_LOGGING) && FUSE_NO_LOGGING
+constexpr bool kLoggingStripped = true;
+#else
+constexpr bool kLoggingStripped = false;
+#endif
+#if defined(FUSE_NO_PROFILER) && FUSE_NO_PROFILER
+constexpr bool kProfilerStripped = true;
+#else
+constexpr bool kProfilerStripped = false;
+#endif
+
 int g_failures = 0;
 
 void expectTrue(bool condition, const char* message) {
@@ -152,10 +165,16 @@ void testLoggerConcurrentWorkers() {
                 "%u racing snapshots corrupt=%u\n",
                 workers, kWriters * kLinesPerWriter, capture.malformed, missing, reordered, ringCorrupt,
                 snapshotsTaken.load(), snapshotsCorrupt.load());
-    expectTrue(snap.count == fuse::log::kRecordCapacity, "ring holds the last kRecordCapacity entries");
-    expectTrue(capture.malformed == 0u && missing == 0u && reordered == 0u,
-               "every concurrent line reaches the sink whole, once, in per-writer order");
     expectTrue(ringCorrupt == 0u && snapshotsCorrupt.load() == 0u, "ring buffer entries are never torn");
+    if constexpr (kLoggingStripped) {
+        expectTrue(snap.count == 0u, "shipping: concurrent Info lines leave the record ring empty");
+        expectTrue(capture.malformed == 0u && missing == kWriters * kLinesPerWriter,
+                   "shipping: concurrent Info lines never reach the sink");
+    } else {
+        expectTrue(snap.count == fuse::log::kRecordCapacity, "ring holds the last kRecordCapacity entries");
+        expectTrue(capture.malformed == 0u && missing == 0u && reordered == 0u,
+                   "every concurrent line reaches the sink whole, once, in per-writer order");
+    }
     expectTrue(tsMonotonic, "ring entries are in timestamp order");
     logger.setMinLevel(fuse::log::Level::Info);
 }
@@ -168,7 +187,12 @@ void testLogEntryTimestampFileLine() {
     logger.setSink(quietSink, nullptr);
 
     const u64 before = nowNs();
-    FUSE_LOG_INFO("located entry %d", 42);
+    int argEvaluations = 0;
+    const auto answer = [&argEvaluations] {
+        ++argEvaluations;
+        return 42;
+    };
+    FUSE_LOG_INFO("located entry %d", answer());
     const u32 expectedLine = __LINE__ - 1u;
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
     FUSE_LOG_WARN("second located entry");
@@ -189,7 +213,28 @@ void testLogEntryTimestampFileLine() {
             plain = &snap.records[i];
         }
     }
-    expectTrue(first != nullptr && second != nullptr && plain != nullptr, "located entries recorded");
+    // Log macro arguments are evaluated in every configuration (shipping keeps side effects).
+    expectTrue(argEvaluations == 1, "FUSE_LOG_INFO evaluates its arguments exactly once");
+    if constexpr (kLoggingStripped) {
+        expectTrue(first == nullptr && second == nullptr && plain == nullptr,
+                   "shipping: FUSE_LOG_INFO / FUSE_LOG_WARN / log(Info) produce no records");
+        // Fatal is never stripped and still carries its call site.
+        FUSE_LOG_FATAL("located fatal %d", 7);
+        const u32 fatalLine = __LINE__ - 1u;
+        const fuse::log::RecordSnapshot fatalSnap = logger.snapshotRecords();
+        const fuse::log::Record* fatal = nullptr;
+        for (u32 i = 0; i < fatalSnap.count; ++i) {
+            if (std::strcmp(fatalSnap.records[i].message, "located fatal 7") == 0) {
+                fatal = &fatalSnap.records[i];
+            }
+        }
+        expectTrue(fatal != nullptr && fatal->level == fuse::log::Level::Fatal && fatal->line == fatalLine &&
+                       fatal->file != nullptr && std::strstr(fatal->file, "test_b1_logging_gates.cpp") != nullptr &&
+                       fatal->timestampNs >= after,
+                   "shipping: FUSE_LOG_FATAL still records level, file, line and timestamp");
+    } else {
+        expectTrue(first != nullptr && second != nullptr && plain != nullptr, "located entries recorded");
+    }
     if (first != nullptr && second != nullptr && plain != nullptr) {
         expectTrue(first->file != nullptr && std::strstr(first->file, "test_b1_logging_gates.cpp") != nullptr,
                    "entry records the calling file");
@@ -281,6 +326,10 @@ void testProfilerScopeOverhead() {
         }
         const double perScope = static_cast<double>(nowNs() - start) / kScopes;
         best = std::min(best, perScope);
+    }
+
+    if constexpr (kProfilerStripped) {
+        expectTrue(fuse::profiler::eventCount() == 0u, "shipping: enabled profiler captures zero macro scopes");
     }
 
     fuse::profiler::setEnabled(false);
@@ -594,6 +643,7 @@ void testChromeTraceJsonValid() {
     }
     fuse::profiler::endFrame();
 
+    const fuse::u32 capturedEvents = fuse::profiler::eventCount();
     const std::string json = fuse::profiler::exportChromeTraceJson();
     JsonValidator validator(json);
     const bool valid = validator.validate();
@@ -633,10 +683,16 @@ void testChromeTraceJsonValid() {
     }
     std::printf("  chrome trace: %zu bytes, %zu events, %u B/E pairs, schema errors=%u, unbalanced tids=%u\n",
                 json.size(), events.size(), begins, schemaErrors, unbalanced);
-    expectTrue(!events.empty(), "trace has events");
     expectTrue(schemaErrors == 0u, "every trace event has name/ph/ts/pid/tid (+dur for X, id for flows)");
     expectTrue(unbalanced == 0u, "B/E events balance per thread");
-    expectTrue(json.find(std::string(longName)) != std::string::npos, "long event names are exported intact");
+    if constexpr (kProfilerStripped) {
+        expectTrue(capturedEvents == 0u, "shipping: profiler macros capture zero events");
+        expectTrue(events.empty(), "shipping: exported trace has no events");
+        expectTrue(json.find(std::string(longName)) == std::string::npos, "shipping: no scope names exported");
+    } else {
+        expectTrue(!events.empty(), "trace has events");
+        expectTrue(json.find(std::string(longName)) != std::string::npos, "long event names are exported intact");
+    }
     fuse::profiler::reset();
 }
 

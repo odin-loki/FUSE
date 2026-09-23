@@ -11,6 +11,7 @@ namespace fuse::renderer {
 
 namespace {
 
+#if defined(FUSE_VULKAN_BACKEND)
 bool isRealVulkanCommandBuffer(void* nativeCommandBuffer) {
     return nativeCommandBuffer != nullptr && nativeCommandBuffer != reinterpret_cast<void*>(0x1);
 }
@@ -19,7 +20,6 @@ bool isDepthAttachmentLayout(RGImageLayout layout) {
     return layout == RGImageLayout::DepthAttachment;
 }
 
-#if defined(FUSE_VULKAN_BACKEND)
 void bindRasterBindlessDescriptorSets(VkCommandBuffer commandBuffer, const VkFrameEncodeContext& context) {
     if (context.bindlessDescriptorSet == nullptr || context.graphicsPipelineLayout == nullptr) {
         return;

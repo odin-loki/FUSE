@@ -7,6 +7,14 @@
 
 namespace {
 
+// Shipping (FUSE_NO_PROFILER) compiles profiler macros out and no-ops the chrome export: the
+// export must still be a well-formed, empty trace.
+#if defined(FUSE_NO_PROFILER) && FUSE_NO_PROFILER
+constexpr bool kProfilerStripped = true;
+#else
+constexpr bool kProfilerStripped = false;
+#endif
+
 int g_failures = 0;
 
 void expectTrue(bool condition, const char* message) {
@@ -61,7 +69,12 @@ void testEnabledP2GateChromeTrace() {
 
     const fuse::profiler::ChromeTraceExportPreflight preflight =
         fuse::profiler::preflightChromeTraceExport();
-    expectTrue(preflight.canExport(), "enabled profiler canExport per preflight");
+    if constexpr (kProfilerStripped) {
+        expectTrue(!preflight.canExport() && preflight.profilerDisabled,
+                   "shipping: preflight reports export disabled");
+    } else {
+        expectTrue(preflight.canExport(), "enabled profiler canExport per preflight");
+    }
 
     fuse::profiler::beginFrame();
     {
@@ -72,10 +85,16 @@ void testEnabledP2GateChromeTrace() {
     const std::string json = fuse::profiler::exportChromeTraceJson();
     expectTrue(isJsonObject(json), "enabled export is a JSON object");
     expectTrue(json.find("\"traceEvents\"") != std::string::npos, "enabled export has traceEvents");
-    expectTrue(json.find("\"name\":\"P2Gate\"") != std::string::npos,
-               "enabled export includes P2Gate scope name");
-    expectTrue(hasOnlyValidChromePhaseTokens(json, true),
-               "enabled export has valid chrome ph tokens including B and E");
+    if constexpr (kProfilerStripped) {
+        expectTrue(fuse::profiler::eventCount() == 0u, "shipping: FUSE_PROFILE_SCOPE captures zero events");
+        expectTrue(json.find("P2Gate") == std::string::npos, "shipping: export carries no scope name");
+        expectTrue(json.find("\"ph\":") == std::string::npos, "shipping: export has no trace events");
+    } else {
+        expectTrue(json.find("\"name\":\"P2Gate\"") != std::string::npos,
+                   "enabled export includes P2Gate scope name");
+        expectTrue(hasOnlyValidChromePhaseTokens(json, true),
+                   "enabled export has valid chrome ph tokens including B and E");
+    }
 }
 
 void testDisabledProfilerStillExportsJsonObject() {
@@ -112,6 +131,15 @@ void testGpuCudaMarkersExportChromeCompleteEvents() {
 
     const std::string json = fuse::profiler::exportChromeTraceJson();
     expectTrue(isJsonObject(json), "gpu/cuda export is a JSON object");
+    expectTrue(hasOnlyValidChromePhaseTokens(json, false),
+               "gpu/cuda export has valid chrome ph tokens");
+    if constexpr (kProfilerStripped) {
+        expectTrue(json.find("\"traceEvents\":[]") != std::string::npos,
+                   "shipping: chrome export is an empty trace");
+        expectTrue(json.find("GpuMarker") == std::string::npos && json.find("CudaMarker") == std::string::npos,
+                   "shipping: chrome export carries no marker names");
+        return;
+    }
     expectTrue(json.find("\"name\":\"GpuMarker\"") != std::string::npos,
                "enabled export includes GpuMarker name");
     expectTrue(json.find("\"name\":\"CudaMarker\"") != std::string::npos,
@@ -122,8 +150,6 @@ void testGpuCudaMarkersExportChromeCompleteEvents() {
                "gpu marker uses gpu chrome category");
     expectTrue(json.find("\"cat\":\"cuda\"") != std::string::npos,
                "cuda marker uses cuda chrome category");
-    expectTrue(hasOnlyValidChromePhaseTokens(json, false),
-               "gpu/cuda export has valid chrome ph tokens");
 }
 
 } // namespace

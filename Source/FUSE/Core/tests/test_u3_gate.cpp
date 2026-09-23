@@ -50,10 +50,15 @@ void testBothDimensionsLogViaFuseLogger() {
     fuse_t3d_Con_execute("echo T3D dimension alive");
     fuse_t2d_Con_execute("echo T2D dimension alive");
 
+#if defined(FUSE_NO_LOGGING) && FUSE_NO_LOGGING
+    // Shipping strips sub-Fatal logging: the console shims still run, but nothing reaches the sink.
+    expectTrue(capture.messages.empty(), "shipping: console Info output never reaches the sink");
+#else
     expectTrue(capture.contains("[t3d] Con::execute"), "t3d console routes through FUSE logger");
     expectTrue(capture.contains("[t2d] Con::execute"), "t2d console routes through FUSE logger");
     expectTrue(capture.contains("T3D dimension alive"), "t3d console payload captured");
     expectTrue(capture.contains("T2D dimension alive"), "t2d console payload captured");
+#endif
 
     fuse::log::Logger::instance().setSink(nullptr, nullptr);
 }

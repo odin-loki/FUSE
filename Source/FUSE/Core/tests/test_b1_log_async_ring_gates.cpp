@@ -130,6 +130,15 @@ constexpr bool kSanitized = false;
 constexpr bool kSanitized = false;
 #endif
 
+// Shipping (FUSE_NO_LOGGING) drops every sub-Fatal message before it reaches the async ring: the
+// sections below then prove the stripped behaviour instead (nothing enqueued, dropped or delivered,
+// producers still allocation-free and non-blocking; Fatal still delivered synchronously).
+#if defined(FUSE_NO_LOGGING) && FUSE_NO_LOGGING
+constexpr bool kLoggingStripped = true;
+#else
+constexpr bool kLoggingStripped = false;
+#endif
+
 int g_failures = 0;
 
 void expectTrue(bool condition, const char* message) {
@@ -380,6 +389,7 @@ void testStressNoLossPerThreadOrder() {
     // are possible and any missing message is a loss.
     plan.flushEvery = 8192u;
     const u64 droppedBefore = logger.droppedCount();
+    const fuse::log::AsyncStats statsBefore = logger.asyncStats();
     ProducerResult r = runProducers(plan);
     logger.flush();
     const fuse::log::AsyncStats stats = logger.asyncStats();
@@ -403,12 +413,18 @@ void testStressNoLossPerThreadOrder() {
     printLatency("producer log() latency (async):", lat);
 
     expectTrue(logger.droppedCount() == droppedBefore, "stress: nothing dropped while occupancy < capacity");
-    expectTrue(g_capture.total() == expected, "stress: every message delivered (no loss)");
-    expectTrue(perThreadComplete, "stress: each producer's full sequence delivered");
     expectTrue(g_capture.orderViolations == 0u && g_capture.gaps == 0u, "stress: per-producer order preserved");
     expectTrue(g_capture.malformed == 0u, "stress: no torn/malformed messages");
     expectTrue(r.producerAllocs == 0u, "stress: zero heap allocations on the producer path");
-    expectTrue(stats.delivered >= expected, "stress: asyncStats counts deliveries");
+    if constexpr (kLoggingStripped) {
+        expectTrue(g_capture.total() == 0u && g_capture.other == 0u, "shipping stress: no Info message reaches the sink");
+        expectTrue(stats.enqueued == statsBefore.enqueued, "shipping stress: nothing enqueued on the async ring");
+        expectTrue(stats.delivered == statsBefore.delivered, "shipping stress: nothing delivered by the consumer");
+    } else {
+        expectTrue(g_capture.total() == expected, "stress: every message delivered (no loss)");
+        expectTrue(perThreadComplete, "stress: each producer's full sequence delivered");
+        expectTrue(stats.delivered >= expected, "stress: asyncStats counts deliveries");
+    }
 
     // Record ring still works in async mode (snapshotRecords flushes first).
     logger.log(Level::Warn, fuse::log::Channel::Renderer, "snapshot probe %d", 42);
@@ -419,7 +435,11 @@ void testStressNoLossPerThreadOrder() {
                           snap.records[i].channel == fuse::log::Channel::Renderer &&
                           std::strcmp(snap.records[i].message, "snapshot probe 42") == 0);
     }
-    expectTrue(found, "async: snapshotRecords sees an entry logged just before it");
+    if constexpr (kLoggingStripped) {
+        expectTrue(!found, "shipping async: Warn entry is never recorded");
+    } else {
+        expectTrue(found, "async: snapshotRecords sees an entry logged just before it");
+    }
     logger.stopAsync();
     expectTrue(!logger.isAsync(), "stopAsync returns to synchronous mode");
 }
@@ -463,8 +483,12 @@ void testSteadyStateHeapWholeProcess() {
     std::printf("  steady state: %u msgs, whole-process heap allocations during logging=%llu\n", kThreads * kPer,
                 static_cast<unsigned long long>(during));
     expectTrue(during == 0u, "steady state: zero heap allocations anywhere (producers, consumer, flush)");
-    expectTrue(g_capture.total() == static_cast<u64>(kThreads) * kPer && g_capture.gaps == 0u,
-               "steady state: no loss, per-producer order");
+    if constexpr (kLoggingStripped) {
+        expectTrue(g_capture.total() == 0u, "shipping steady state: no Info message reaches the sink");
+    } else {
+        expectTrue(g_capture.total() == static_cast<u64>(kThreads) * kPer && g_capture.gaps == 0u,
+                   "steady state: no loss, per-producer order");
+    }
     logger.stopAsync();
 }
 
@@ -474,6 +498,33 @@ void testForcedOverflowExactDropCount() {
     Logger& logger = Logger::instance();
     constexpr u32 kCapacity = 256u;
     expectTrue(logger.startAsync({kCapacity}), "startAsync (overflow section)");
+
+    if constexpr (kLoggingStripped) {
+        // The gate message would never reach the sink: instead prove that a tiny ring cannot
+        // overflow, because stripped producers never enqueue (no drops, never block, no allocations).
+        ProducerPlan stripped;
+        stripped.threads = 4u;
+        stripped.messagesPerThread = 10000u;
+        const u64 droppedBefore = logger.droppedCount();
+        const fuse::log::AsyncStats statsBefore = logger.asyncStats();
+        const ProducerResult r = runProducers(stripped);
+        logger.flush();
+        const fuse::log::AsyncStats statsAfter = logger.asyncStats();
+        std::printf("  overflow (shipping strip): capacity %u, produced=%llu enqueued=%llu dropped=%llu "
+                    "delivered=%llu producer_allocs=%llu\n",
+                    kCapacity,
+                    static_cast<unsigned long long>(static_cast<u64>(stripped.threads) * stripped.messagesPerThread),
+                    static_cast<unsigned long long>(statsAfter.enqueued - statsBefore.enqueued),
+                    static_cast<unsigned long long>(logger.droppedCount() - droppedBefore),
+                    static_cast<unsigned long long>(g_capture.total()),
+                    static_cast<unsigned long long>(r.producerAllocs));
+        expectTrue(logger.droppedCount() == droppedBefore, "shipping overflow: nothing dropped");
+        expectTrue(statsAfter.enqueued == statsBefore.enqueued, "shipping overflow: nothing enqueued");
+        expectTrue(g_capture.total() == 0u && !g_capture.gateEntered.load(), "shipping overflow: sink never called");
+        expectTrue(r.producerAllocs == 0u, "shipping overflow: zero heap allocations on the producer path");
+        logger.stopAsync();
+        return;
+    }
 
     // Park the consumer inside the sink while holding the first slot.
     logger.log(Level::Info, fuse::log::Channel::Core, "gate");
@@ -543,7 +594,11 @@ void testStopWhileLoggingKeepsOrder() {
                 static_cast<unsigned long long>(g_capture.gaps),
                 static_cast<unsigned long long>(g_capture.orderViolations));
     expectTrue(!logger.isAsync(), "stop: logger synchronous after stopAsync");
-    expectTrue(g_capture.total() == expected, "stop: no loss across async -> sync switch");
+    if constexpr (kLoggingStripped) {
+        expectTrue(g_capture.total() == 0u, "shipping stop: no Info message reaches the sink in either mode");
+    } else {
+        expectTrue(g_capture.total() == expected, "stop: no loss across async -> sync switch");
+    }
     expectTrue(g_capture.gaps == 0u && g_capture.orderViolations == 0u,
                "stop: per-producer order preserved across the switch");
 }
@@ -575,7 +630,12 @@ void testFatalFlushesAndIsSynchronous() {
     logger.log(Level::Info, fuse::log::Channel::Core, "before fatal");
     logger.log(Level::Fatal, fuse::log::Channel::Core, "fatal line");
     // No flush: Fatal is delivered before log() returns, after everything queued ahead of it.
-    expectTrue(cap.lines == 2u && cap.fatalAfterInfo, "fatal: synchronous and ordered after queued messages");
+    if constexpr (kLoggingStripped) {
+        // Fatal is never stripped: still synchronous; the Info line before it was dropped.
+        expectTrue(cap.lines == 1u && !cap.sawInfo, "shipping fatal: only the Fatal line is delivered, synchronously");
+    } else {
+        expectTrue(cap.lines == 2u && cap.fatalAfterInfo, "fatal: synchronous and ordered after queued messages");
+    }
     logger.stopAsync();
 }
 

@@ -11,6 +11,16 @@
 
 namespace {
 
+// Shipping (FUSE_NO_PROFILER) compiles every FUSE_PROFILE_* macro out (arguments unevaluated, no
+// events) and no-ops the chrome export. The tests that assert on macro-emitted events, nesting /
+// flow state or exported trace content only run where the macros record; shipping runs
+// testShippingProfilerMacrosAreStripped instead. Everything else runs in every configuration.
+#if defined(FUSE_NO_PROFILER) && FUSE_NO_PROFILER
+constexpr bool kMacrosRecordEvents = false;
+#else
+constexpr bool kMacrosRecordEvents = true;
+#endif
+
 int g_failures = 0;
 
 void expectTrue(bool condition, const char* message) {
@@ -2158,102 +2168,195 @@ void testVerifyMacro() {
     expectTrue(!handlerCalled, "FUSE_ASSERT(true) does not fatal");
 
     FUSE_VERIFY(false, "expected failure");
+#if defined(FUSE_NO_ASSERT) && FUSE_NO_ASSERT
+    // Shipping strips FUSE_VERIFY to a bare evaluation of its condition: it never reaches fatal().
+    expectTrue(!handlerCalled, "shipping: FUSE_VERIFY(false) never fires the fatal handler");
+    int verifyEvaluations = 0;
+    FUSE_VERIFY(++verifyEvaluations == 1, "verify condition side effect");
+    expectTrue(verifyEvaluations == 1, "shipping: FUSE_VERIFY still evaluates its condition once");
+#else
     expectTrue(handlerCalled, "verify fires fatal handler on false condition");
+#endif
+    fuse::assertion::setSuppressAbortForTests(false);
+    fuse::assertion::clearFatalHandler();
+}
+
+int g_profilerArgEvaluations = 0;
+
+const char* countedName(const char* name) {
+    ++g_profilerArgEvaluations;
+    return name;
+}
+
+fuse::u32 countedValue(fuse::u32 value) {
+    ++g_profilerArgEvaluations;
+    return value;
+}
+
+void testShippingProfilerMacrosAreStripped() {
+    resetState();
+    fuse::platform::registerMainThread();
+    g_profilerArgEvaluations = 0;
+
+    fuse::profiler::beginFrame();
+    {
+        FUSE_PROFILE_SCOPE(countedName("stripped_scope"));
+        {
+            FUSE_PROFILE_SCOPE(countedName("stripped_inner"));
+            expectTrue(fuse::profiler::scopeNestingDepth() == 0u, "shipping: scopes never nest");
+        }
+        const fuse::u32 flowId = fuse::profiler::nextFlowId();
+        FUSE_PROFILE_ASYNC_FLOW_BEGIN(countedName("stripped_flow"), countedValue(flowId));
+        expectTrue(fuse::profiler::openAsyncFlowCount() == 0u, "shipping: async flow begin opens nothing");
+        FUSE_PROFILE_COUNTER(countedName("stripped_counter"), countedValue(7u));
+        FUSE_PROFILE_COUNTER("stripped_float", 0.5);
+        FUSE_PROFILE_COUNTER_SNAPSHOT_AT_FRAME(countedName("stripped_snapshot"), countedValue(9u));
+        FUSE_PROFILE_ASYNC_FLOW_END(countedName("stripped_flow"), countedValue(flowId));
+        int cmd = 0;
+        FUSE_PROFILE_GPU_BEGIN(countedName("stripped_gpu"), &cmd);
+        FUSE_PROFILE_GPU_END(&cmd);
+        FUSE_PROFILE_CUDA_BEGIN(countedName("stripped_cuda"), &cmd);
+        FUSE_PROFILE_CUDA_END(&cmd);
+    }
+    fuse::profiler::endFrame();
+
+    expectTrue(g_profilerArgEvaluations == 0, "shipping: profiler macro arguments are never evaluated");
+    expectTrue(fuse::profiler::eventCount() == 0u, "shipping: enabled profiler captures zero events from macros");
+    expectTrue(!fuse::profiler::hasEvents() && fuse::profiler::isBufferEmpty(),
+               "shipping: event buffer stays empty");
+    expectTrue(fuse::profiler::maxNestingDepth() == 0u && fuse::profiler::maxFlowNestingDepth() == 0u,
+               "shipping: no scope or flow depth was ever reached");
+    expectTrue(!fuse::profiler::hasUnbalancedNesting() && !fuse::profiler::hasOpenAsyncFlows(),
+               "shipping: nesting and flow state stay balanced");
+    expectTrue(!fuse::profiler::hasEventsWithName("stripped_scope"), "shipping: no scope name recorded");
+
+    const fuse::profiler::ChromeTraceExportPreflight preflight = fuse::profiler::preflightChromeTraceExport();
+    expectTrue(preflight.profilerDisabled && !preflight.canExport(),
+               "shipping: chrome export preflight reports export disabled");
+    const std::string json = fuse::profiler::exportChromeTraceJson();
+    expectTrue(json.find("\"traceEvents\":[]") != std::string::npos, "shipping: chrome export is an empty trace");
+    expectTrue(json.find("stripped_") == std::string::npos, "shipping: chrome export carries no names");
+    resetState();
 }
 
 } // namespace
 
 int main() {
-    testProfileScopeRecordsEvents();
+    if constexpr (kMacrosRecordEvents) {
+        testProfileScopeRecordsEvents();
+    }
     testProfilerDisabledSkipsEvents();
     testFrameBoundaryIncrementsIndex();
-    testNestedScopeOrdering();
-    testThreadIdStubs();
-    testChromeTraceExport();
-    testAsyncFlowStubs();
-    testAsyncFlowCrossThread();
-    testCounterSamples();
-    testFloatCounterSamples();
-    testAsyncFlowMatchingIdsInExport();
-    testChromeTraceNestingDepthExport();
+    if constexpr (kMacrosRecordEvents) {
+        testNestedScopeOrdering();
+        testThreadIdStubs();
+        testChromeTraceExport();
+        testAsyncFlowStubs();
+        testAsyncFlowCrossThread();
+        testCounterSamples();
+        testFloatCounterSamples();
+        testAsyncFlowMatchingIdsInExport();
+        testChromeTraceNestingDepthExport();
+    }
     testChromeTraceEmptyExport();
-    testNestedAsyncFlowWithinScope();
+    if constexpr (kMacrosRecordEvents) {
+        testNestedAsyncFlowWithinScope();
+    }
     testDisabledProfilerSkipsAsyncFlowAndCounter();
-    testChromeTraceEscapedNameExport();
-    testChromeTraceEscapedControlCharsExport();
-    testChromeTraceEscapedScopeAndFlowNames();
-    testCounterSampleInsideScopeDepthExport();
-    testMultipleAsyncFlowsInNestedScopes();
-    testChromeTraceExportFrameIndex();
-    testChromeTraceExportMixedEvents();
-    testHasEventsAndEmptyBufferGuards();
-    testNestedAsyncFlowDepth();
-    testCounterSnapshotAtFrame();
-    testCounterSnapshotAtFrameInsideScope();
-    testChromeTraceEscapedLowControlChars();
-    testNestedFlowInsideScopeExportsBothDepths();
-    testDisabledProfilerDoesNotMutateFlowNestingDepth();
-    testCounterInsideNestedFlowRecordsFlowDepth();
-    testSnapshotAtFrameCounterInsideNestedFlowAndScope();
-    testFlowNestingDepthIntrospection();
-    testOpenAsyncFlowCountTracking();
-    testLastEventIndexAndLastEvent();
-    testBufferEmptyAndFullGuards();
-    testOrphanAsyncFlowEndIsIgnored();
+    if constexpr (kMacrosRecordEvents) {
+        testChromeTraceEscapedNameExport();
+        testChromeTraceEscapedControlCharsExport();
+        testChromeTraceEscapedScopeAndFlowNames();
+        testCounterSampleInsideScopeDepthExport();
+        testMultipleAsyncFlowsInNestedScopes();
+        testChromeTraceExportFrameIndex();
+        testChromeTraceExportMixedEvents();
+        testHasEventsAndEmptyBufferGuards();
+        testNestedAsyncFlowDepth();
+        testCounterSnapshotAtFrame();
+        testCounterSnapshotAtFrameInsideScope();
+        testChromeTraceEscapedLowControlChars();
+        testNestedFlowInsideScopeExportsBothDepths();
+        testDisabledProfilerDoesNotMutateFlowNestingDepth();
+        testCounterInsideNestedFlowRecordsFlowDepth();
+        testSnapshotAtFrameCounterInsideNestedFlowAndScope();
+        testFlowNestingDepthIntrospection();
+        testOpenAsyncFlowCountTracking();
+        testLastEventIndexAndLastEvent();
+        testBufferEmptyAndFullGuards();
+        testOrphanAsyncFlowEndIsIgnored();
+    }
     testNullNameFlowAndCounterGuards();
     testNullScopeNameGuard();
-    testDisabledProfilerDoesNotMutateScopeNestingDepth();
+    if constexpr (kMacrosRecordEvents) {
+        testDisabledProfilerDoesNotMutateScopeNestingDepth();
+    }
     testDisabledAsyncFlowBeginSkipsDepthAndOpenCount();
-    testResetClearsOpenAsyncFlowCount();
-    testDisabledCounterPreservesFlowNestingDepth();
-    testScopeNestingDepthIntrospection();
-    testOpenAsyncFlowCountIntrospection();
+    if constexpr (kMacrosRecordEvents) {
+        testResetClearsOpenAsyncFlowCount();
+        testDisabledCounterPreservesFlowNestingDepth();
+        testScopeNestingDepthIntrospection();
+        testOpenAsyncFlowCountIntrospection();
+    }
     testNullNameProfileScopeGuard();
-    testResetClearsNestingAndFlowGuardState();
-    testDisabledScopeDoesNotMutateNestingDepth();
-    testMultipleOrphanAsyncFlowEndsAreIgnored();
-    testDisabledBeginAsyncFlowDoesNotIncrementOpenCount();
+    if constexpr (kMacrosRecordEvents) {
+        testResetClearsNestingAndFlowGuardState();
+        testDisabledScopeDoesNotMutateNestingDepth();
+        testMultipleOrphanAsyncFlowEndsAreIgnored();
+        testDisabledBeginAsyncFlowDoesNotIncrementOpenCount();
+    }
     testEmptyStringNameGuards();
-    testNestingBalanceIntrospection();
-    testTryEventAtGuard();
-    testResetRestoresNestingBalance();
+    if constexpr (kMacrosRecordEvents) {
+        testNestingBalanceIntrospection();
+        testTryEventAtGuard();
+        testResetRestoresNestingBalance();
+    }
     testIsValidEventNameGuard();
     testRingCapacityAndEmptyProfileEventSentinel();
-    testTryLastEventGuard();
-    testChromeTraceExportPreflightEmptyBuffer();
-    testChromeTraceExportPreflightWithEvents();
-    testChromeTraceExportPreflightOpenFlows();
+    if constexpr (kMacrosRecordEvents) {
+        testTryLastEventGuard();
+        testChromeTraceExportPreflightEmptyBuffer();
+        testChromeTraceExportPreflightWithEvents();
+        testChromeTraceExportPreflightOpenFlows();
+    }
     testChromeTraceExportPreflightDisabledProfiler();
-    testCrossThreadFlowPreservesOpenCountGuard();
-    testExportableEventCountGuard();
-    testIsEventExportableGuard();
-    testFirstEventIndexAndTryFirstEventGuard();
-    testHasUnbalancedNestingGuard();
-    testIsFlowDepthDetachedGuard();
-    testMixedEmptyAndValidNameGuards();
-    testDisabledEndAsyncFlowPreservesOpenCount();
-    testChromeTraceExportPreflightActiveScope();
-    testChromeTraceExportPreflightNestingDepths();
-    testChromeTraceExportPreflightDetachedFlow();
-    testIsProfileEventSentinelGuard();
+    if constexpr (kMacrosRecordEvents) {
+        testCrossThreadFlowPreservesOpenCountGuard();
+        testExportableEventCountGuard();
+        testIsEventExportableGuard();
+        testFirstEventIndexAndTryFirstEventGuard();
+        testHasUnbalancedNestingGuard();
+        testIsFlowDepthDetachedGuard();
+        testMixedEmptyAndValidNameGuards();
+        testDisabledEndAsyncFlowPreservesOpenCount();
+        testChromeTraceExportPreflightActiveScope();
+        testChromeTraceExportPreflightNestingDepths();
+        testChromeTraceExportPreflightDetachedFlow();
+        testIsProfileEventSentinelGuard();
+    }
     testInvalidNameEventCountGuard();
-    testTryExportableEventAtGuard();
-    testFindEventIndexByPhaseGuard();
-    testIsCrossThreadFlowHandoffPendingGuard();
-    testChromeTraceExportPreflightSafetyFlags();
-    testChromeTraceExportPreflightCrossThreadHandoff();
-    testEmptyNameAttemptsDoNotAffectPhaseLookup();
-    testFindEventIndexByNameGuard();
-    testTryEventByNameGuard();
-    testFindEventIndexByFlowIdGuard();
-    testTryFlowEventGuard();
-    testEventNameMatchesGuard();
-    testEmptyNameAttemptsDoNotAffectNameAndFlowLookup();
-    testPreflightNestingAndAsyncFlowBalanced();
-    testPreflightNestingAndAsyncFlowCrossThreadHandoff();
-    testChromeTraceExportPreflightWithNameAndFlowLookup();
+    if constexpr (kMacrosRecordEvents) {
+        testTryExportableEventAtGuard();
+        testFindEventIndexByPhaseGuard();
+        testIsCrossThreadFlowHandoffPendingGuard();
+        testChromeTraceExportPreflightSafetyFlags();
+        testChromeTraceExportPreflightCrossThreadHandoff();
+        testEmptyNameAttemptsDoNotAffectPhaseLookup();
+        testFindEventIndexByNameGuard();
+        testTryEventByNameGuard();
+        testFindEventIndexByFlowIdGuard();
+        testTryFlowEventGuard();
+        testEventNameMatchesGuard();
+        testEmptyNameAttemptsDoNotAffectNameAndFlowLookup();
+        testPreflightNestingAndAsyncFlowBalanced();
+        testPreflightNestingAndAsyncFlowCrossThreadHandoff();
+        testChromeTraceExportPreflightWithNameAndFlowLookup();
+    }
     testFatalHandlerHook();
     testVerifyMacro();
+    if constexpr (!kMacrosRecordEvents) {
+        testShippingProfilerMacrosAreStripped();
+    }
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d test(s) failed\n", g_failures);

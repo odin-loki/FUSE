@@ -29,7 +29,13 @@ void testLoggerSink() {
         &lastMessage);
 
     fuse::log::info("hello %s", "fuse");
+#if defined(FUSE_NO_LOGGING) && FUSE_NO_LOGGING
+    // Shipping strips sub-Fatal log records: the sink must never see the message.
+    expectTrue(lastMessage.empty(), "shipping: info log never reaches sink");
+#else
     expectTrue(lastMessage == "hello fuse", "logger routes through sink");
+#endif
+    fuse::log::Logger::instance().setSink(nullptr, nullptr);
 }
 
 void testHandleGeneration() {
