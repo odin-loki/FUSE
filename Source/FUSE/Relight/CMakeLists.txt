@@ -62,3 +62,4 @@ add_subdirectory(mods/import)                                                   
 add_subdirectory(replace)                                                                # RL-3.4
 add_subdirectory(particles)                                                              # RL-3.6
 add_subdirectory(logic)                                                                  # RL-3.5
+add_subdirectory(render/material)                                                        # RL-4.3
