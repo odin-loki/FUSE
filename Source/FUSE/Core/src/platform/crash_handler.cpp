@@ -469,30 +469,40 @@ void writeMinidump(const CrashRequest& request, const char* path, char* status, 
         s.put("none (dbghelp MiniDumpWriteDump unavailable)");
         return;
     }
-    HANDLE dump = ::CreateFileA(path, GENERIC_READ | GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
-                                FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (dump == INVALID_HANDLE_VALUE) {
-        s.put("none (cannot create ");
-        s.put(path);
-        s.put(")");
-        return;
-    }
     MINIDUMP_EXCEPTION_INFORMATION mei{};
     mei.ThreadId = request.threadId;
     mei.ExceptionPointers = request.exception;
     mei.ClientPointers = FALSE;
-    const BOOL ok = g_miniDumpWriteDump(::GetCurrentProcess(), ::GetCurrentProcessId(), dump, g_dumpType,
-                                        request.exception != nullptr ? &mei : nullptr, nullptr, nullptr);
-    const DWORD error = ok ? 0u : ::GetLastError();
-    ::FlushFileBuffers(dump);
-    ::CloseHandle(dump);
-    if (ok) {
-        s.put(path);
-    } else {
-        s.put("failed (MiniDumpWriteDump error ");
-        s.putHex(error);
-        s.put(")");
+    // dbghelp occasionally fails a dump for transient reasons (seen on CI: 0x800706F8,
+    // ERROR_INVALID_USER_BUFFER, on one abort dump in many runs). A lost dump loses the crash, so
+    // retry into a freshly truncated file before giving up.
+    constexpr int kDumpAttempts = 3;
+    DWORD error = 0u;
+    for (int attempt = 1; attempt <= kDumpAttempts; ++attempt) {
+        HANDLE dump = ::CreateFileA(path, GENERIC_READ | GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                                    FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (dump == INVALID_HANDLE_VALUE) {
+            s.put("none (cannot create ");
+            s.put(path);
+            s.put(")");
+            return;
+        }
+        const BOOL ok = g_miniDumpWriteDump(::GetCurrentProcess(), ::GetCurrentProcessId(), dump, g_dumpType,
+                                            request.exception != nullptr ? &mei : nullptr, nullptr, nullptr);
+        error = ok ? 0u : ::GetLastError();
+        ::FlushFileBuffers(dump);
+        ::CloseHandle(dump);
+        if (ok) {
+            s.put(path);
+            return;
+        }
+        if (attempt < kDumpAttempts) {
+            ::Sleep(10u);
+        }
     }
+    s.put("failed (MiniDumpWriteDump error ");
+    s.putHex(error);
+    s.put(")");
 }
 
 void writeTextReport(const CrashRequest& request, const char* path, const char* dumpStatus) {
