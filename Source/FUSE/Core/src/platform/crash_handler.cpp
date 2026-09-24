@@ -473,9 +473,30 @@ void writeMinidump(const CrashRequest& request, const char* path, char* status, 
     mei.ThreadId = request.threadId;
     mei.ExceptionPointers = request.exception;
     mei.ClientPointers = FALSE;
-    // dbghelp occasionally fails a dump for transient reasons (seen on CI: 0x800706F8,
-    // ERROR_INVALID_USER_BUFFER, on one abort dump in many runs). A lost dump loses the crash, so
-    // retry into a freshly truncated file before giving up.
+    // Fallback exception pointers: a copy of the OS-built record and context in 16-byte-aligned
+    // static storage with the extended-state (XSTATE) bit cleared. On some CI runners dbghelp fails
+    // the abort dump with 0x800706F8 (ERROR_INVALID_USER_BUFFER) on every attempt within a process,
+    // while other runners never do. That points at the CPU-dependent XSAVE area appended to an XSTATE
+    // context. The copy keeps the integer, control and legacy FP/SSE state a debugger needs.
+    alignas(16) static CONTEXT s_contextCopy;
+    static EXCEPTION_RECORD s_recordCopy;
+    static EXCEPTION_POINTERS s_pointersCopy;
+    MINIDUMP_EXCEPTION_INFORMATION meiCopy = mei;
+    const bool canSanitize = request.exception != nullptr && request.exception->ExceptionRecord != nullptr &&
+                             request.exception->ContextRecord != nullptr;
+    if (canSanitize) {
+        std::memcpy(&s_recordCopy, request.exception->ExceptionRecord, sizeof(EXCEPTION_RECORD));
+        s_recordCopy.ExceptionRecord = nullptr;
+        std::memcpy(&s_contextCopy, request.exception->ContextRecord, sizeof(CONTEXT));
+#if defined(CONTEXT_XSTATE) && (defined(_M_X64) || defined(__x86_64__))
+        s_contextCopy.ContextFlags &= ~(CONTEXT_XSTATE & ~CONTEXT_AMD64);
+#endif
+        s_pointersCopy.ExceptionRecord = &s_recordCopy;
+        s_pointersCopy.ContextRecord = &s_contextCopy;
+        meiCopy.ExceptionPointers = &s_pointersCopy;
+    }
+    // Attempt 1 uses the OS pointers as they are, attempts 2 and 3 the sanitized copy (or the OS
+    // pointers again if there is nothing to copy), each into a freshly truncated file.
     constexpr int kDumpAttempts = 3;
     DWORD error = 0u;
     for (int attempt = 1; attempt <= kDumpAttempts; ++attempt) {
@@ -487,8 +508,12 @@ void writeMinidump(const CrashRequest& request, const char* path, char* status, 
             s.put(")");
             return;
         }
+        MINIDUMP_EXCEPTION_INFORMATION* info = nullptr;
+        if (request.exception != nullptr) {
+            info = (attempt > 1 && canSanitize) ? &meiCopy : &mei;
+        }
         const BOOL ok = g_miniDumpWriteDump(::GetCurrentProcess(), ::GetCurrentProcessId(), dump, g_dumpType,
-                                            request.exception != nullptr ? &mei : nullptr, nullptr, nullptr);
+                                            info, nullptr, nullptr);
         error = ok ? 0u : ::GetLastError();
         ::FlushFileBuffers(dump);
         ::CloseHandle(dump);
