@@ -1,0 +1,22 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#include "cl_common.glsl"
+
+// WP-8.3 "clouds.reconstruct": one thread per cloud pixel: fresh sample, reprojected / clamped history, running
+// mean. GLSL twin of cl_reconstruct.slang; CPU twin: clouds::reconstruct_texel.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+    const CloudParams P = cl_load(pc.params);
+    const uint x = gl_GlobalInvocationID.x;
+    const uint y = gl_GlobalInvocationID.y;
+    if (x >= P.width || y >= P.height) {
+        return;
+    }
+    vec4 o0;
+    vec4 o1;
+    cl_reconstruct_texel(P, x, y, o0, o1);
+    ClTexelsRef out_ = ClTexelsRef(P.historyOut);
+    out_.v[(y * P.width + x) * 2u] = o0;
+    out_.v[(y * P.width + x) * 2u + 1u] = o1;
+}

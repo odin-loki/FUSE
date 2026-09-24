@@ -1,0 +1,22 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#include "cl_common.glsl"
+
+// WP-8.3 "clouds.probe": the single-ray integration and the density field for a list of probes (gates and tools):
+// see kClProbeInputs / kClProbeOutputs (cloud_types.hpp). GLSL twin of cl_probe.slang.
+layout(local_size_x = 64) in;
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.mode) {
+        return;
+    }
+    const CloudParams P = cl_load(pc.params);
+    ClTexelsRef src = ClTexelsRef(pc.src);
+    ClTexelsRef dst = ClTexelsRef(pc.dst);
+    const vec4 a = src.v[i * 2u];
+    const vec4 b = src.v[i * 2u + 1u];
+    const ClRay ray = cl_integrate(P, a.xyz, b.xyz, a.w);
+    dst.v[i * 2u] = vec4(ray.scatter, ray.transmittance);
+    dst.v[i * 2u + 1u] = vec4(ray.depth, ray.hasCloud, cl_density_at(P, a.xyz), 0.0);
+}

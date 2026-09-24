@@ -1,0 +1,22 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#include "cl_common.glsl"
+
+// WP-8.3 "clouds.march": one thread per block x block tile: raymarches this frame's pixel of the tile (Bayer
+// offset) into the fresh texel pair. GLSL twin of cl_march.slang; CPU twin: clouds::march_texel.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+    const CloudParams P = cl_load(pc.params);
+    const uint fx = gl_GlobalInvocationID.x;
+    const uint fy = gl_GlobalInvocationID.y;
+    if (fx >= P.freshWidth || fy >= P.freshHeight) {
+        return;
+    }
+    vec4 o0;
+    vec4 o1;
+    cl_march_texel(P, fx, fy, o0, o1);
+    ClTexelsRef out_ = ClTexelsRef(P.fresh);
+    out_.v[(fy * P.freshWidth + fx) * 2u] = o0;
+    out_.v[(fy * P.freshWidth + fx) * 2u + 1u] = o1;
+}

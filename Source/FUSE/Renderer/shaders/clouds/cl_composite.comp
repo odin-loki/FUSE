@@ -1,0 +1,17 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#include "cl_common.glsl"
+
+// WP-8.3 "clouds.composite": one thread per output pixel: background x T + aerial-perspective-attenuated cloud
+// radiance. GLSL twin of cl_composite.slang; CPU twin: clouds::composite_texel.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+    const CloudParams P = cl_load(pc.params);
+    const uint x = gl_GlobalInvocationID.x;
+    const uint y = gl_GlobalInvocationID.y;
+    if (x >= P.outWidth || y >= P.outHeight) {
+        return;
+    }
+    ClTexelsRef(P.result).v[y * P.outWidth + x] = cl_composite_texel(P, x, y);
+}
