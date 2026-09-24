@@ -60,3 +60,4 @@ add_subdirectory(bridge/client)                                                 
 add_subdirectory(mods/usd)                                                               # RL-3.1
 add_subdirectory(mods/import)                                                            # RL-3.2
 add_subdirectory(replace)                                                                # RL-3.4
+add_subdirectory(particles)                                                              # RL-3.6
