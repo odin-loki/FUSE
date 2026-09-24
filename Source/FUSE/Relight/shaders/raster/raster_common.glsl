@@ -16,7 +16,7 @@ struct RasterVertex {
     vec3 pos;
     uint color; // RGBA8, r in the low byte
     vec3 normal;
-    uint pad0;
+    uint color1; // COLOR1 RGBA8 (emissive with D3DMCS_COLOR2)
     vec2 uv;
     uint pad1;
     uint pad2;
@@ -64,6 +64,7 @@ struct RasterFrame {
     uint64_t lightList;
     uint64_t directional;
     uint64_t lut;
+    mat4 viewProj;     // main camera world -> clip (the light-cluster lookup)
 };
 
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer RasterVerticesRef { RasterVertex v[]; };
@@ -96,6 +97,8 @@ layout(push_constant) uniform RasterPush {
 #define RASTER_MAT_TEXTURED 32u
 #define RASTER_MAT_FOG 64u
 #define RASTER_MAT_CAST_SHADOW 128u
+#define RASTER_MAT_EMISSIVE_COLOR0 256u
+#define RASTER_MAT_EMISSIVE_COLOR1 512u
 
 // RasterFrame::counts.w (RasterFeature)
 #define RASTER_FEATURE_FOG 16u

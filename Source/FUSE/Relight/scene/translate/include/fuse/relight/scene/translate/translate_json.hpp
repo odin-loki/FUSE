@@ -5,10 +5,12 @@
 // Floats as %.9g (round-trips a float), non-finite floats as the strings "inf" / "-inf" / "nan"; hashes as
 // "0x%016x" strings.
 //   translatedDrawJson  {"frame":F,"index":I,"status":..,"reason":..,"categories":..,"translated":b,
-//                        "texture_stage":b[,"material":{..},"fog":{..},"texgen":..,"texture_transform":[16],
-//                        "object_to_view":[16],"clip_plane":b,"clip_plane_eq":[4],"lights":[..],"min_z":..,
-//                        "max_z":..,"z_write":b,"z_enable":b,"stencil":b],"camera":..,"alpha_swizzle":b}
-//                        (the bracketed fields for translated draws only)
+//                        "texture_stage":b[,"raster_only":true][,"material":{..},"fog":{..},"texgen":..,
+//                        "texture_transform":[16],"object_to_view":[16],"clip_plane":b,"clip_plane_eq":[4],
+//                        "lights":[..],"viewport":[x,y,w,h],"min_z":..,"max_z":..,"z_write":b,"z_enable":b,
+//                        "stencil":b],"camera":..,"alpha_swizzle":b}
+//                        (the bracketed fields for translated and raster-only draws only; "raster_only" for the
+//                        latter; material.emissive_source "Material" / "VertexColor0" / "VertexColor1")
 //   translatedFrameJson {"frame":F,"lights":[..],"rejected_lights":N,"fog":{..},"fog_states":[..],
 //                        "cameras":[{..}],"camera_cut":b}
 #pragma once

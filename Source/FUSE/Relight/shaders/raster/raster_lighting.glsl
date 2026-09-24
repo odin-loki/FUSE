@@ -84,8 +84,15 @@ BsdfMaterial rasterBsdf(vec3 albedo, float roughness, float metallic) {
     return m;
 }
 
-uint rasterCluster(RasterFrame f, vec2 pixel, vec3 world) {
+// The cluster grid is the main camera's over the whole target: the pixel is the world position through the main
+// camera's VIEW x PROJECTION (draws in a smaller D3D viewport land elsewhere on screen than their grid cell).
+uint rasterCluster(RasterFrame f, vec2 fragPixel, vec3 world) {
     const uint tx = uint(f.cluster.x), ty = uint(f.cluster.y), tz = uint(f.cluster.z);
+    vec2 pixel = fragPixel;
+    const vec4 clip = f.viewProj * vec4(world, 1.0);
+    if (clip.w > 1e-6) {
+        pixel = vec2(clip.x / clip.w * 0.5 + 0.5, 0.5 - clip.y / clip.w * 0.5) * f.screen.xy + 0.5;
+    }
     const uint x = min(uint(pixel.x * f.screen.z * float(tx)), tx - 1u);
     const uint y = min(uint(pixel.y * f.screen.w * float(ty)), ty - 1u);
     uint z = 0u;

@@ -12,9 +12,13 @@
 //   draws      per draw objectToWorld, worldToClip (D3D row-vector VIEW x PROJECTION), the normal matrix and the
 //              legacy material (below); bucketed: opaque (G-buffer, alpha test in the shader), decal (Decal*
 //              categories: blended into the G-buffer albedo), blend (alpha-blended: the forward pass, in submission
-//              order), skipped (points / lines, pre-transformed or programmable-VS vertices, no captured geometry);
-//   camera     the main camera (the first draw the RL-1.5 camera manager classified Main; else the first scene draw):
-//              eye, forward, near / far and vertical field of view from its D3D projection;
+//              order), skipped (points / lines, no captured geometry, a programmable-VS draw whose RL-1.6 capture did
+//              not come back, a pre-transformed draw with the stencil test on);
+//   viewport   per draw its D3D viewport rectangle (RL-1.5 translation, FUSE addition) and depth range: the GPU half
+//              draws into that rectangle (flipped, DXVK's half-pixel origin) with a scissor of the same rectangle;
+//   camera     the main camera (the first draw the RL-1.5 camera manager classified Main; else the first translated
+//              scene draw): eye, forward, near / far and vertical field of view from its D3D projection; its VIEW x
+//              PROJECTION places the light-cluster lookup of every pixel (RasterFrameGpu::viewProj);
 //   lights     the GPU-scene light slots: directional ones in a list, point / spot ones assigned to a 16 x 9 x 16
 //              cluster grid by the renderer's WP-2.1 CPU oracle (cluster_math: buildClusterAabbs,
 //              cullLightsToClusterLists, compactClusterLists) - the shaders read the rows from the GPU scene;
@@ -26,10 +30,29 @@
 // Legacy material (Remix LegacyMaterialData semantics, shaded by the RL-4.3 BSDF in the shaders): texture stage 0
 // colour / alpha operation and arguments (Texture, the draw's diffuse, TFACTOR); the diffuse is COLOR0 when the
 // material colour source says so, else D3DMATERIAL9 diffuse (opaque white when the material was never set); the
-// emissive term D3DMATERIAL9 emissive; roughness from the specular power (Blinn-Phong n -> GGX alpha = sqrt(2 /
-// (n + 2))); metallic 0. A RL-3.2 replacement material (the replacement engine's material for the draw's texture
+// emissive term D3DMATERIAL9 emissive, or the vertex's COLOR0 / COLOR1 with D3DRS_EMISSIVEMATERIALSOURCE = D3DMCS_COLOR1
+// / COLOR2 (RL-1.5's FUSE emissive source: FFP lighting and COLORVERTEX on); roughness from the specular power
+// (Blinn-Phong n -> GGX alpha = sqrt(2 / (n + 2))); metallic 0. A RL-3.2 replacement material (the replacement engine's material for the draw's texture
 // hash) supplies base colour (multiplies the texture), roughness, metallic and emission instead. Sky-category draws
 // are unlit (their colour is emitted as is).
+//
+// Positions (PositionSource):
+//   fixed function  the captured POSITION stream, object space, x WORLD, x VIEW x PROJECTION in the shader;
+//   programmable VS the RL-1.6 vertex capture (CaptureDrawRecord::vertexCapture, delivered before the injection point):
+//                   Remix's back-transformed object-space positions with the same matrices, VS output TEXCOORD0 /
+//                   COLOR0 when the shader writes them, flat normals. When the draw's D3D transforms do not reproduce
+//                   the captured clip positions (NDC within 1e-3; e.g. a shader that ignores D3DTS_*), the captured
+//                   clip positions instead, mapped to world space by the main camera's inverse VIEW x PROJECTION (the
+//                   shader re-projects them to the same clip position up to a positive scale);
+//   pre-transformed POSITIONT (XYZRHW) draws RL-1.5 translated for the raster only (TranslatedDraw::rasterOnly: Remix
+//                   rasterizes them, rtx.preTransformedVerticesIsUI off): DXVK's inverse viewport mapping to clip space
+//                   (preTransformedToClip), then the main camera's inverse VIEW x PROJECTION as above. Unlit (the
+//                   fixed-function pipeline does not light pre-transformed vertices), no shadow casting; skipped with
+//                   the stencil test on (the remaster has no stencil). The re-projection lands on the same pixel and
+//                   depth; its w is the main camera's view depth of that point, not 1 / rhw, so attributes interpolate
+//                   perspective-correctly for that depth (identical for the usual constant-rhw quads). Without a main
+//                   camera the mapping is the identity (clip space as world space: no perspective-correct
+//                   interpolation).
 //
 // Tiers (RendererCaps tier, capped by FUSE_RENDER_TIER_MAX and relight.raster.tier; degrades when a feature is not
 // available in this build or its pipeline could not be created):
@@ -61,7 +84,7 @@ struct RasterVertex {
     float pos[3] = {0.f, 0.f, 0.f};
     std::uint32_t color = 0xffffffffu; ///< COLOR0 as RGBA8 (r in the low byte)
     float normal[3] = {0.f, 0.f, 0.f};
-    std::uint32_t pad0 = 0;
+    std::uint32_t color1 = 0;          ///< COLOR1 (the D3D specular colour) as RGBA8: the emissive of D3DMCS_COLOR2
     float uv[2] = {0.f, 0.f};
     std::uint32_t pad1 = 0, pad2 = 0;
 };
@@ -77,6 +100,8 @@ enum RasterMaterialFlag : std::uint32_t {
     kMatTextured = 1u << 5,
     kMatFog = 1u << 6,          ///< the frame's fog applies
     kMatCastShadow = 1u << 7,
+    kMatEmissiveColor0 = 1u << 8, ///< emissive = COLOR0 (D3DRS_EMISSIVEMATERIALSOURCE = D3DMCS_COLOR1)
+    kMatEmissiveColor1 = 1u << 9, ///< emissive = COLOR1 (D3DMCS_COLOR2)
 };
 
 /// RasterMaterial::ops: 4 bits each (TextureOperation / TextureArgSource values of scene/translate).
@@ -144,13 +169,26 @@ struct RasterFrameGpu {
     std::uint64_t lightList = 0;   ///< BDA: GPU-scene light slots
     std::uint64_t directional = 0; ///< BDA: GPU-scene light slots
     std::uint64_t lut = 0;         ///< BDA: the RL-4.3 BSDF albedo table (kBsdfLutWords floats)
+    /// World -> clip of the main camera (D3D row-major VIEW x PROJECTION): a pixel's light cluster comes from its world
+    /// position through it (draws in other viewports than the full target share the main camera's cluster grid).
+    float viewProj[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 };
-static_assert(sizeof(RasterFrameGpu) == 320, "RasterFrameGpu (raster_common.glsl)");
+static_assert(sizeof(RasterFrameGpu) == 384, "RasterFrameGpu (raster_common.glsl)");
 
 // ---- CPU side ------------------------------------------------------------------------------------------------------
 
 enum class Bucket : std::uint8_t { Opaque = 0, Decal, Blend, Skipped };
 const char* bucketName(Bucket b);
+
+/// Where a draw's vertex positions come from (see the header comment, "Positions").
+enum class PositionSource : std::uint8_t {
+    FixedFunction = 0, ///< the captured vertex stream (object space) x the draw's WORLD, VIEW x PROJECTION
+    VertexCapture,     ///< programmable VS: RL-1.6's back-transformed object-space positions, same matrices
+    CaptureClip,       ///< programmable VS whose D3D transforms do not reproduce the shader's clip positions: the
+                       ///< captured clip positions through the main camera's inverse VIEW x PROJECTION
+    PreTransformed,    ///< POSITIONT (XYZRHW): DXVK's inverse viewport mapping to clip space, then as CaptureClip
+};
+const char* positionSourceName(PositionSource s);
 
 struct RasterDraw {
     std::uint32_t source = 0; ///< index in the frame's draws
@@ -162,6 +200,9 @@ struct RasterDraw {
     bool zEnable = true, zWrite = true;
     std::uint32_t cullMode = 1;     ///< D3DCULL
     float minZ = 0.f, maxZ = 1.f;
+    /// D3D viewport rectangle (X, Y, Width, Height) in render-target pixels; width 0: the whole target.
+    std::uint32_t viewportX = 0, viewportY = 0, viewportWidth = 0, viewportHeight = 0;
+    PositionSource positions = PositionSource::FixedFunction;
     bool castShadow = false;
     tap::ResourceId texture = tap::kNoResource;
 };
@@ -175,6 +216,11 @@ struct RasterStats {
     std::uint32_t fogMode = 0;
     bool shadow = false;
     std::uint32_t texgenIgnored = 0;
+    std::uint32_t vertexCaptured = 0;  ///< programmable-VS draws from RL-1.6 object-space positions
+    std::uint32_t captureClip = 0;     ///< programmable-VS draws from the captured clip positions
+    std::uint32_t preTransformed = 0;  ///< POSITIONT draws
+    std::uint32_t emissiveVertex = 0;  ///< draws whose emissive is a vertex colour
+    std::uint32_t viewports = 0;       ///< draws with a viewport rectangle smaller than the target
 };
 
 /// A light of the frame as the raster uses it: the GPU-scene row and its slot.
@@ -261,8 +307,15 @@ struct BuildInputs {
 /// Builds the frame (see the header comment). False when there is nothing to draw (no scene draw survived).
 bool buildRasterFrame(const BuildInputs& in, const BuildOptions& options, RasterFrame& out);
 
-/// Legacy material mapping (exposed for the CPU gates).
-RasterMaterial legacyMaterial(const scene::LegacyMaterialRecord& m, bool hasColor0, bool sky);
+/// Legacy material mapping (exposed for the CPU gates). `hasColor0` / `hasColor1`: the draw's vertices carry COLOR0 /
+/// COLOR1.
+RasterMaterial legacyMaterial(const scene::LegacyMaterialRecord& m, bool hasColor0, bool sky, bool hasColor1 = false);
+/// DXVK's POSITIONT vertex transform (d3d9_fixed_function_vert.vert): screen (x, y, z, rhw) in the D3D viewport
+/// (vx, vy, vw, vh) -> clip space: xy through the inverse viewport, z kept (0 without a depth test), w = 1 / rhw (1
+/// for rhw 0), xyz scaled by w. The rasterizer's viewport maps it back to the same pixel and MinZ + z (MaxZ - MinZ).
+void preTransformedToClip(const float xyzrhw[4], float vx, float vy, float vw, float vh, bool zEnable, float clip[4]);
+/// 4x4 inverse (double precision, rounded to float). False when singular.
+bool invertMatrix(const float* m, float* out);
 /// Roughness from a D3D specular power (see the header comment).
 float roughnessFromPower(float power);
 /// D3D row-vector matrix product a x b.

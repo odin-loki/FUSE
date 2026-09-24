@@ -112,6 +112,9 @@ struct SlicedVertices {
     VertexAttribute normal;       ///< NORMAL[0]
     VertexAttribute texcoord;     ///< TEXCOORD[texcoordIndex]
     VertexAttribute color0;       ///< COLOR[0]
+    /// FUSE: COLOR[1] when its stream is copied for one of the attributes above (no copy of its own; not hashed).
+    /// The raster remaster's emissive from D3DMCS_COLOR2.
+    VertexAttribute color1;
     bool hasBlendIndicesElement = false; ///< D3D9VertexDeclFlag::HasBlendIndices (any usage index)
     bool hasPositionT = false;           ///< D3D9VertexDeclFlag::HasPositionT
     std::uint32_t streamsCopied = 0;

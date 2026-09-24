@@ -75,6 +75,7 @@ std::string legacyMaterialJson(const LegacyMaterialRecord& m) {
     s += ",\"tex_alpha_arg2\":\"" + std::string(textureArgSourceName(m.textureAlphaArg2Source)) + "\"";
     s += ",\"tf_blend\":" + std::string(b(m.isTextureFactorBlend));
     s += ",\"vc_baked\":" + std::string(b(m.isVertexColorBakedLighting));
+    s += ",\"emissive_source\":\"" + std::string(emissiveSourceName(m.emissiveSource)) + "\"";
     s += ",\"d3d_material\":{\"diffuse\":" + c4(m.d3dMaterial.diffuse) + ",\"ambient\":" + c4(m.d3dMaterial.ambient) +
          ",\"specular\":" + c4(m.d3dMaterial.specular) + ",\"emissive\":" + c4(m.d3dMaterial.emissive) +
          ",\"power\":" + num(m.d3dMaterial.power) + "}";
@@ -124,7 +125,10 @@ std::string translatedDrawJson(const TranslatedDraw& d) {
                     ",\"status\":\"" + geometryStatusName(r.status) + "\",\"reason\":\"" + classifyReasonName(r.reason) +
                     "\",\"categories\":\"" + r.categories.toString() + "\",\"translated\":" + b(d.translated) +
                     ",\"texture_stage\":" + b(d.textureStageApplied);
-    if (d.translated) {
+    if (d.rasterOnly) {
+        s += ",\"raster_only\":true";
+    }
+    if (d.translated || d.rasterOnly) {
         const DrawTransforms& t = d.transforms;
         s += ",\"material\":" + legacyMaterialJson(d.material) + ",\"fog\":" + fogRecordJson(d.fog);
         s += ",\"texgen\":\"" + std::string(texGenModeName(t.texgenMode)) + "\"";
@@ -133,6 +137,8 @@ std::string translatedDrawJson(const TranslatedDraw& d) {
         s += ",\"clip_plane\":" + std::string(b(t.enableClipPlane));
         s += ",\"clip_plane_eq\":" + floats(t.clipPlane.begin(), t.clipPlane.end());
         s += ",\"lights\":" + lightsJson(d.addedLights);
+        s += ",\"viewport\":[" + std::to_string(d.viewportX) + "," + std::to_string(d.viewportY) + "," +
+             std::to_string(d.viewportWidth) + "," + std::to_string(d.viewportHeight) + "]";
         s += ",\"min_z\":" + num(d.minZ) + ",\"max_z\":" + num(d.maxZ) + ",\"z_write\":" + b(d.zWriteEnable) +
              ",\"z_enable\":" + b(d.zEnable) + ",\"stencil\":" + b(d.stencilEnabled);
     }

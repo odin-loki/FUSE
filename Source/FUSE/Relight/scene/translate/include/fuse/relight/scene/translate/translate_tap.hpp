@@ -40,7 +40,11 @@
 // whose counter differs from the one last acted on re-sends the lights / recomputes the clip plane, and
 // the clip plane of the other translated draws is the last one computed (Remix keeps it in the active draw
 // call state). Producers that do not track them (counter 0) fall back to LightTranslator's state
-// comparison and a clip plane computed per draw. The render-target alpha swizzle is DXVK's mask when the
+// comparison and a clip plane computed per draw.
+//
+// FUSE additions (RL-4.2 raster remaster): every translated draw carries its viewport rectangle; pre-transformed draws
+// Remix rasterizes (reason PositionT) get a raster-only translation (TranslatedDraw::rasterOnly); the legacy material
+// carries the emissive colour source (LegacyMaterialRecord::emissiveSource). Nothing Remix computes changes. The render-target alpha swizzle is DXVK's mask when the
 // producer reports it (hasAlphaSwizzleMask), else derived from render target 0's format.
 #pragma once
 
@@ -87,6 +91,14 @@ struct TranslatedDraw {
     /// processCameraData result (Unknown for draws that are not committed).
     CameraType cameraType = CameraType::Unknown;
     float minZ = 0.f, maxZ = 1.f; ///< viewport, clamped to [0, 1]
+    /// FUSE: the D3D viewport rectangle (D3DVIEWPORT9 X, Y, Width, Height) of translated and raster-only draws
+    /// (Remix keeps only MinZ / MaxZ; the raster remaster draws into this rectangle).
+    std::uint32_t viewportX = 0, viewportY = 0, viewportWidth = 0, viewportHeight = 0;
+    /// FUSE: a pre-transformed (POSITIONT) draw Remix rasterizes (ClassifyReason::PositionT: not UI, not committed)
+    /// that the raster remaster renders: material, texture stage, fog, depth state and viewport are translated as
+    /// for a translated draw; of the transforms only the texture transform / texgen mode, no light step, no camera,
+    /// no fog discovery. `translated` stays false.
+    bool rasterOnly = false;
     bool zWriteEnable = false, zEnable = false, stencilEnabled = false;
     bool alphaSwizzle = false; ///< render target 0 reads alpha as one
 };

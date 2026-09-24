@@ -11,6 +11,7 @@ layout(location = 1) out vec3 vNormal;
 layout(location = 2) out vec2 vUv;
 layout(location = 3) out vec4 vColor;
 layout(location = 4) flat out uint vDraw;
+layout(location = 5) out vec4 vColor1;
 
 void main() {
     const RasterDraw d = RasterDrawsRef(pc.draws).v[gl_InstanceIndex];
@@ -20,6 +21,7 @@ void main() {
     vNormal = (d.normalToWorld * vec4(v.normal, 0.0)).xyz;
     vUv = v.uv;
     vColor = unpackUnorm4x8(v.color);
+    vColor1 = unpackUnorm4x8(v.color1);
     vDraw = uint(gl_InstanceIndex);
     if (pc.pass == RASTER_PASS_SHADOW) {
         gl_Position = RasterFrameRef(pc.frame).f.shadowMatrix * vec4(vWorld, 1.0);

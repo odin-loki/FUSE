@@ -213,6 +213,32 @@ void test_colorSources() {
     m.renderStates[d3dff::RS_DIFFUSEMATERIALSOURCE] = d3dff::MCS_MATERIAL;
     r = setLegacyMaterialState(m, ff, false);
     CHECK(r.diffuseColorSource == TextureArgSource::VertexColor0);
+    CHECK(r.emissiveSource == EmissiveSource::Material); // POSITIONT: no FFP lighting, no emissive term
+}
+
+/// FUSE: D3DRS_EMISSIVEMATERIALSOURCE (lighting and COLORVERTEX on, the vertex has the colour; else the material).
+void test_emissiveSource() {
+    FixedFunctionState ff;
+    D3DStateModel m = baseModel();
+    ff.hasColor0 = ff.hasColor1 = true;
+    CHECK(setLegacyMaterialState(m, ff, false).emissiveSource == EmissiveSource::Material); // D3D default
+    m.renderStates[d3dff::RS_EMISSIVEMATERIALSOURCE] = d3dff::MCS_COLOR1;
+    CHECK(setLegacyMaterialState(m, ff, false).emissiveSource == EmissiveSource::VertexColor0);
+    m.renderStates[d3dff::RS_EMISSIVEMATERIALSOURCE] = d3dff::MCS_COLOR2;
+    CHECK(setLegacyMaterialState(m, ff, false).emissiveSource == EmissiveSource::VertexColor1);
+    ff.hasColor1 = false; // COLOR2 requested, no specular colour in the vertex: the material
+    CHECK(setLegacyMaterialState(m, ff, false).emissiveSource == EmissiveSource::Material);
+    ff.hasColor1 = true;
+    m.renderStates[d3dff::RS_COLORVERTEX] = 0;
+    CHECK(setLegacyMaterialState(m, ff, false).emissiveSource == EmissiveSource::Material);
+    m.renderStates[d3dff::RS_COLORVERTEX] = 1;
+    m.renderStates[d3dff::RS_LIGHTING] = 0;
+    CHECK(setLegacyMaterialState(m, ff, false).emissiveSource == EmissiveSource::Material);
+    // The hash (the colour texture) does not depend on it.
+    m.renderStates[d3dff::RS_LIGHTING] = 1;
+    const LegacyMaterialRecord a = setLegacyMaterialState(m, ff, false);
+    m.renderStates[d3dff::RS_EMISSIVEMATERIALSOURCE] = d3dff::MCS_MATERIAL;
+    CHECK(a.hash() == setLegacyMaterialState(m, ff, false).hash());
 }
 
 void test_alphaTest() {
@@ -525,6 +551,8 @@ struct TapHarness {
     float clipPlanes[tap::kClipPlaneCount][4] = {};
     bool hasAlphaSwizzleMask = false;
     std::uint32_t alphaSwizzleRenderTargets = 0;
+    tap::Viewport viewport{0, 0, 128, 96, 0.f, 1.f};
+    bool positionT = false; ///< D3DDECLUSAGE_POSITIONT (FLOAT4) instead of POSITION
 
     std::uint64_t presents = 0;
 
@@ -577,10 +605,11 @@ struct TapHarness {
         s.transforms = reinterpret_cast<const float(*)[16]>(transforms.data());
         s.lights = lights.empty() ? nullptr : lights.data();
         s.lightCount = static_cast<std::uint32_t>(lights.size());
-        s.viewport = {0, 0, 128, 96, 0.f, 1.f};
+        s.viewport = viewport;
         s.renderTargets[0] = 1;
         s.elementCount = 2;
-        s.elements[0] = {0, 0, 2, 0, d3d::DECLUSAGE_POSITION, 0};
+        s.elements[0] = positionT ? tap::VertexElement{0, 0, 3, 0, d3d::DECLUSAGE_POSITIONT, 0}
+                                  : tap::VertexElement{0, 0, 2, 0, d3d::DECLUSAGE_POSITION, 0};
         s.elements[1] = {0, 12, 4, 0, d3dff::DECLUSAGE_COLOR, 0};
         s.clipPlanes = clipPlanes;
         s.lightsVersion = lightsVersion;
@@ -649,6 +678,46 @@ void test_translateTap() {
     }
     h.present();
     CHECK(h.frames.size() == 2);
+}
+
+/// FUSE additions for the raster remaster: the viewport rectangle of translated draws, the raster-only translation of
+/// pre-transformed draws Remix rasterizes (no light step, no camera, no fog discovery), and their JSON spelling.
+void test_fuseAdditions() {
+    TapHarness h;
+    h.viewport = {64, 48, 64, 48, 0.25f, 0.75f};
+    h.draw();
+    CHECK(h.draws[0].translated && !h.draws[0].rasterOnly);
+    CHECK(h.draws[0].viewportX == 64 && h.draws[0].viewportY == 48 && h.draws[0].viewportWidth == 64 &&
+          h.draws[0].viewportHeight == 48);
+    CHECK(h.draws[0].minZ == 0.25f && h.draws[0].maxZ == 0.75f);
+    const std::string j0 = translatedDrawJson(h.draws[0]);
+    CHECK(j0.find("\"viewport\":[64,48,64,48]") != std::string::npos);
+    CHECK(j0.find("\"raster_only\"") == std::string::npos);
+    CHECK(j0.find("\"emissive_source\":\"Material\"") != std::string::npos);
+    // POSITIONT with rtx.preTransformedVerticesIsUI off: Remix rasterizes it (PositionT); FUSE translates it for the
+    // raster remaster only.
+    h.positionT = true;
+    h.viewport = {0, 0, 128, 96, 0.f, 1.f};
+    h.rs[d3dff::RS_FOGENABLE] = 1;
+    h.rs[d3dff::RS_FOGVERTEXMODE] = d3dff::FOG_LINEAR;
+    h.draw();
+    const TranslatedDraw& p = h.draws[1];
+    CHECK(p.classification.reason == ClassifyReason::PositionT && !p.classification.committed());
+    CHECK(!p.translated && p.rasterOnly && p.textureStageApplied);
+    CHECK(p.material.diffuseColorSource == TextureArgSource::VertexColor0); // no FFP lighting with POSITIONT
+    CHECK(p.addedLights.empty() && p.cameraType == CameraType::Unknown && p.viewportWidth == 128);
+    const std::string j1 = translatedDrawJson(p);
+    CHECK(j1.find("\"raster_only\":true") != std::string::npos && j1.find("\"translated\":false") != std::string::npos &&
+          j1.find("\"material\":") != std::string::npos);
+    h.present();
+    CHECK(h.frames.size() == 1 && h.frames[0].fogStates.empty()); // not a committed draw: no fog discovery
+    {
+        // As UI (rtx.preTransformedVerticesIsUI): neither translated nor raster-only.
+        ScopedConf conf("rtx.preTransformedVerticesIsUI = True\n");
+        h.draw();
+        CHECK(!h.draws[2].translated && !h.draws[2].rasterOnly &&
+              translatedDrawJson(h.draws[2]).find("\"material\"") == std::string::npos);
+    }
 }
 
 /// processRenderState's DirtyLights / DirtyClipPlanes, driven by the tap's change counters, and DXVK's
@@ -1258,7 +1327,8 @@ int main(int argc, char** argv) {
         {"textureStage", test_textureStage},     {"textureFactorBlending", test_textureFactorBlending},
         {"terrainDecalModulate", test_terrainDecalModulate}, {"transforms", test_transforms},
         {"fog", test_fog},                       {"translateTap", test_translateTap},
-        {"changeCounters", test_changeCounters},
+        {"changeCounters", test_changeCounters}, {"emissiveSource", test_emissiveSource},
+        {"fuseAdditions", test_fuseAdditions},
     };
     const TestCase lights[] = {
         {"stableHash", test_stableHash},

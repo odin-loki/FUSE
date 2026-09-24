@@ -61,7 +61,8 @@ set(_rl_apps
     "texture_formats     twin"
     "shader_sm1          twin"
     "vs_sm2              -"
-    "vs_sm3              -")
+    "vs_sm3              -"
+    "raster_vs_rhw       -")                                   # RL-4.2: VS capture / XYZRHW in the raster remaster
 
 set(_rl_apps_common_src
     "${_rl_apps_dir}/common/rl_app.cpp"

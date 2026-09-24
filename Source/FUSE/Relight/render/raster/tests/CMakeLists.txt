@@ -1,17 +1,23 @@
 # FUSE Relight RL-4.2 tests. Added from ../CMakeLists.txt.
 #
-#   rl_raster_cpu_<suite>        (gate;relight) the CPU frame builder: tiers, material, build (native; PE through the
-#                                Wine emulator in the MinGW tree).
+#   rl_raster_cpu_<suite>        (gate;relight) the CPU frame builder: tiers, material, build, viewport (per-draw D3D
+#                                rectangles), positions (programmable VS from the RL-1.6 capture, POSITIONT), emissive
+#                                (vertex-colour emissive) (native; PE through the Wine emulator in the MinGW tree).
 #   rl_raster_tier_<app>_<tier>  (golden;wine;relight;tier_t0/t1/t2) in-process, d3d9.dll: relight.frame.mode = raster
-#                                with FUSE_RENDER_TIER_MAX = 0 / 1 / 2 for ff_lit, ff_alpha and sky_ui_hud: the last
+#                                with FUSE_RENDER_TIER_MAX = 0 / 1 / 2 for ff_lit, ff_alpha, sky_ui_hud and
+#                                raster_vs_rhw (programmable-VS draws from the RL-1.6 capture, XYZRHW draws): the last
 #                                frame's dump vs the committed golden (Tests/relight/golden/raster/<app>_<tier>.png) and
 #                                the documented per-app checks (rl_raster_run.py: lit vs unlit regions, background =
 #                                the clear colour, the emissive probe, alpha test, blend order / blend math relations,
 #                                HUD on top, shadows from T1, T2 = T1 with the absent RT features reported degraded).
 #   rl_raster_decal_ff_alpha     (wine;relight) rtx.decalTextures on ff_alpha's ramp: the decal pass (rl_raster_run.py).
-#   rl_raster_fog_ff_fog         (wine;relight) D3D linear fog: the far wall is the fog colour (rl_raster_run.py).
+#   rl_raster_fog_ff_fog         (wine;relight) D3D linear fog: the far wall is the fog colour; the four quadrant
+#                                viewports are drawn into their own rectangles (no overlap) (rl_raster_run.py).
+#   rl_raster_replace_feed_ff_lit (wine;relight) RL-3.4 replacements active (fixture mod lit_lights): the GPU scene is
+#                                fed at the injection point (no frame of lag) with the replaced draws and lights, and
+#                                the replacement record equals a capture-only run's (rl_raster_run.py replace).
 #   rl_raster_determinism        (wine;relight) one app rendered twice: bit-identical dumps.
-#   rl_raster_validation         (relight;wine;vulkan;gate) the three apps in raster mode with the host validation layer
+#   rl_raster_validation         (relight;wine;vulkan;gate) the four apps in raster mode with the host validation layer
 #                                + synchronization validation: no message id beyond the capture tap alone.
 
 add_executable(fuse_relight_raster_tests test_raster_cpu.cpp)
@@ -19,7 +25,7 @@ target_link_libraries(fuse_relight_raster_tests PRIVATE fuse_relight_render_rast
 if(COMMAND fuse_apply_cxx23)
     fuse_apply_cxx23(fuse_relight_raster_tests)
 endif()
-foreach(_suite tiers material build)
+foreach(_suite tiers material build viewport positions emissive)
     add_test(NAME rl_raster_cpu_${_suite} COMMAND fuse_relight_raster_tests ${_suite})
     set_tests_properties(rl_raster_cpu_${_suite} PROPERTIES LABELS "gate;relight" TIMEOUT 300)
 endforeach()
@@ -43,7 +49,7 @@ get_filename_component(_rl_raster_taptools "${CMAKE_CURRENT_SOURCE_DIR}/../../..
 set(_rl_raster_common --tap-tools "${_rl_raster_taptools}" --d3d9 "$<TARGET_FILE:relight_d3d9>"
                       --d3d8 "$<TARGET_FILE:relight_d3d8>" --runner "${_rl_raster_runner}"
                       --prefix-root "${_rl_raster_prefix}" --golden-dir "${_rl_raster_golden}")
-foreach(_app ff_lit ff_alpha sky_ui_hud)
+foreach(_app ff_lit ff_alpha sky_ui_hud raster_vs_rhw)
     if(NOT TARGET rl_app_${_app})
         continue()
     endif()
@@ -73,6 +79,17 @@ if(TARGET rl_app_ff_fog)
     set_tests_properties(rl_raster_fog_ff_fog PROPERTIES LABELS "relight;wine" SKIP_RETURN_CODE 77 TIMEOUT 600
                                                          RESOURCE_LOCK fuse_relight_renderer_pe)
 endif()
+if(TARGET rl_app_ff_lit AND TARGET fuse_relight_replace_tests)
+    get_filename_component(_rl_raster_fixtures "${_rl_raster_repo}/Tests/relight/fixtures/replace" ABSOLUTE)
+    string(REPLACE ";" "|" _rl_raster_emulator "${CMAKE_CROSSCOMPILING_EMULATOR}")
+    add_test(NAME rl_raster_replace_feed_ff_lit
+             COMMAND "${Python3_EXECUTABLE}" "${_rl_raster_driver}" ${_rl_raster_common}
+                     --exe "$<TARGET_FILE:rl_app_ff_lit>" --app ff_lit
+                     replace --out "${_rl_raster_out}/replace" --stager "$<TARGET_FILE:fuse_relight_replace_tests>"
+                     --fixtures "${_rl_raster_fixtures}" --emulator "${_rl_raster_emulator}")
+    set_tests_properties(rl_raster_replace_feed_ff_lit PROPERTIES LABELS "relight;wine" SKIP_RETURN_CODE 77
+                                                                  TIMEOUT 600 RESOURCE_LOCK fuse_relight_renderer_pe)
+endif()
 if(TARGET rl_app_sky_ui_hud)
     add_test(NAME rl_raster_determinism
              COMMAND "${Python3_EXECUTABLE}" "${_rl_raster_driver}" ${_rl_raster_common}
@@ -82,7 +99,7 @@ if(TARGET rl_app_sky_ui_hud)
                                                           RESOURCE_LOCK fuse_relight_renderer_pe)
 endif()
 set(_rl_raster_validation_exes "")
-foreach(_app ff_lit ff_alpha sky_ui_hud)
+foreach(_app ff_lit ff_alpha sky_ui_hud raster_vs_rhw)
     if(TARGET rl_app_${_app})
         list(APPEND _rl_raster_validation_exes --exe "$<TARGET_FILE:rl_app_${_app}>")
     endif()

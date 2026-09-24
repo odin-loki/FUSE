@@ -134,6 +134,35 @@ tap::DrawDecision TranslateTap::onDraw(const tap::DrawCall& call, const tap::Dra
         if (TranslateOptions::fogIgnoreSky() && c.categories.test(InstanceCategories::Sky)) {
             d.fog.mode = d3dff::FOG_NONE;
         }
+    } else if (c.reason == ClassifyReason::PositionT) {
+        // FUSE: the raster remaster's translation of a pre-transformed draw Remix leaves to DXVK (see rasterOnly).
+        d.rasterOnly = true;
+        d.material = setLegacyMaterialState(model, ff, d.alphaSwizzle);
+        d.fog = setFogState(model);
+        d.stencilEnabled = model.rs(d3d::RS_STENCILENABLE) != 0;
+        const ColorTextureSelection sel = selectColorTextures(model);
+        for (std::size_t i = 0; i < kMaxSupportedTextures; ++i) {
+            d.material.colorTextureSlots[i] = sel.slots[i];
+            d.material.colorTextureHashes[i] =
+                sel.slots[i] >= 0 ? model.textures[static_cast<std::size_t>(sel.slots[i])].imageHash : hash::kEmptyHash;
+        }
+        const TextureFactorBlending tf = textureFactorBlending(model);
+        DrawTransforms unused;
+        setTextureStageState(model, ff, sel.firstStage, tf.useStageTextureFactorBlending,
+                             tf.useMultipleStageTextureFactorBlending, d.material, unused);
+        d.transforms.textureTransform = unused.textureTransform;
+        d.transforms.texgenMode = unused.texgenMode;
+        d.textureStageApplied = true;
+        d.minZ = std::clamp(model.viewport.minZ, 0.0f, 1.0f);
+        d.maxZ = std::clamp(model.viewport.maxZ, 0.0f, 1.0f);
+        d.zWriteEnable = model.rs(d3d::RS_ZWRITEENABLE) != 0;
+        d.zEnable = model.rs(d3d::RS_ZENABLE) == d3d::ZB_TRUE;
+    }
+    if (d.translated || d.rasterOnly) {
+        d.viewportX = model.viewport.x;
+        d.viewportY = model.viewport.y;
+        d.viewportWidth = model.viewport.width;
+        d.viewportHeight = model.viewport.height;
     }
 
     if (c.committed()) {

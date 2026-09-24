@@ -20,6 +20,10 @@
 #include <cinttypes>
 #include <string_view>
 
+namespace fuse::relight::replace {
+class CaptureReplaceProcessor;
+}
+
 namespace fuse::relight::render::frame {
 
 namespace inst = fuse::relight::scene::instances;
@@ -49,6 +53,20 @@ const replace::ReplacedDraw* replacedDraw([[maybe_unused]] tap::IFrameProcessor*
     }
 #endif
     return nullptr;
+}
+
+/// The replacement engine's processor itself (unwrapping the logic runtime); null when replacements are off.
+replace::CaptureReplaceProcessor* replaceProcessor([[maybe_unused]] tap::IFrameProcessor* processor) {
+#if defined(FUSE_RELIGHT_HAVE_REPLACE)
+#if defined(FUSE_RELIGHT_HAVE_LOGIC)
+    if (auto* logic = dynamic_cast<logic::LogicFrameProcessor*>(processor)) {
+        processor = logic->inner();
+    }
+#endif
+    return dynamic_cast<replace::CaptureReplaceProcessor*>(processor);
+#else
+    return nullptr;
+#endif
 }
 
 const replace::ReplacedFrame* replacedFrame([[maybe_unused]] tap::IFrameProcessor* processor) {
@@ -306,13 +324,17 @@ void RenderTap::doInject(const char* where) {
     IFrameRecorder* recorder = nullptr;
     tap::IFrameProcessor* processor = m_capture->frameProcessor();
     IGpuSceneSink* s = sink();
-    // The injection-time feed: without RL-3.4's engine the draws recorded so far are the frame's scene.
-    const bool feedNow = processor == nullptr;
+    // The injection-time feed: the draws recorded so far are the frame's scene. With RL-3.4's engine they are
+    // processed now (CaptureReplaceProcessor::processPending; its flush continues after them, same record), so the GPU
+    // scene holds this frame's replaced draws and lights. Only an unknown processor keeps the feed at the flush.
+    replace::CaptureReplaceProcessor* rp = replaceProcessor(processor);
+    const bool feedNow = processor == nullptr || rp != nullptr;
     const bool raster = m_config.mode == FrameMode::Raster && m_frameRenderer && m_renderer && m_renderer->attached();
     if (m_frameRenderer) {
         // Before the orchestrator's collect (in inject): per-frame views die before the images they view.
         m_frameRenderer->collect(m_orchestrator.gpu().acquireCompleted());
     }
+    std::vector<AdapterLight> sceneLights; // the GPU scene's lights of this frame (inject feed)
     m_capture->visitPendingDraws([&](std::uint64_t frame, const std::vector<tap::CaptureDrawRecord>& draws) {
         std::size_t n = draws.size();
         if (atUi) {
@@ -332,7 +354,8 @@ void RenderTap::doInject(const char* where) {
                 scene::DrawClassifier::applyGeometryCategories(
                     cls[i], r.geometry->assetHash(m_capture->geometry().config().assetRule));
             }
-            sceneDraw[i] = (r.translated && captured && cls[i].committed()) ? 1u : 0u;
+            // Committed draws, plus the pre-transformed draws RL-1.5 translated for the raster remaster only.
+            sceneDraw[i] = (r.translated && captured && (cls[i].committed() || r.translation.rasterOnly)) ? 1u : 0u;
         }
         if (feedNow) {
             m_current.scene = SceneRecord{};
@@ -344,8 +367,19 @@ void RenderTap::doInject(const char* where) {
                     m_renderer->setRetireSerial(m_orchestrator.retireSerial());
                 }
             }
-            feedDraws(draws, 0, n, &cls, s, nullptr);
-            const std::vector<AdapterLight> lights = adapterLights(m_capture->translator().lights().frameLights());
+#if defined(FUSE_RELIGHT_HAVE_REPLACE)
+            if (rp) {
+                rp->processPending(frame, draws, n, cls);
+            }
+#endif
+            feedDraws(draws, 0, n, &cls, s, rp ? processor : nullptr);
+            const std::vector<scene::LightRecord>& gameLights = m_capture->translator().lights().frameLights();
+#if defined(FUSE_RELIGHT_HAVE_REPLACE)
+            sceneLights = rp ? adapterLights(rp->previewLights(gameLights)) : adapterLights(gameLights);
+#else
+            sceneLights = adapterLights(gameLights);
+#endif
+            const std::vector<AdapterLight>& lights = sceneLights;
             m_current.scene.lights = static_cast<std::uint32_t>(lights.size());
             if (s) {
                 s->submitLights(lights);
@@ -366,6 +400,7 @@ void RenderTap::doInject(const char* where) {
             in.classifications = &cls;
             in.sceneDraw = &sceneDraw;
             in.lights = &m_capture->translator().lights().frameLights();
+            in.sceneLights = feedNow ? &sceneLights : nullptr;
             in.haveClear = m_haveClear;
             in.clearColor = m_clearColor;
             in.capture = m_capture.get();

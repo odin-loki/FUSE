@@ -9,6 +9,7 @@
 
 #include <fuse/relight/render/frame/frame_gpu.hpp>
 #include <fuse/relight/render/frame/frame_options.hpp>
+#include <fuse/relight/render/frame/scene_feed.hpp>
 #include <fuse/relight/scene/lights/legacy_light.hpp>
 #include <fuse/relight/tap/capture_tap.hpp>
 
@@ -37,6 +38,9 @@ struct FrameInputs {
     /// Per draw in [0, count): a scene draw (translated, committed, captured geometry).
     const std::vector<std::uint8_t>* sceneDraw = nullptr;
     const std::vector<scene::LightRecord>* lights = nullptr;    ///< the frame's game lights so far
+    /// The lights the GPU scene received at this injection (with RL-3.4: the replaced list), keyed as the GPU scene
+    /// keys them; null when the scene was fed at the flush (then `lights`).
+    const std::vector<AdapterLight>* sceneLights = nullptr;
     bool haveClear = false;
     std::uint32_t clearColor = 0;                               ///< the back buffer's last clear (D3DCOLOR)
     tap::CaptureTap* capture = nullptr;                         ///< texture tracker, replacement processor

@@ -19,8 +19,11 @@
 //                 feed (scene_feed.hpp): AdapterDraws / AdapterLights for the IGpuSceneSink (the adopted
 //                 renderer's GpuSceneAdapter, or setSceneSink's), so the GPU scene holds this frame's scene when
 //                 FUSE renders it; the draws after the injection point join the SceneModel at the flush. With
-//                 RL-3.4's replacement engine running, the whole feed stays at the flush (its replaced draws exist
-//                 only then) and the GPU scene is one frame behind (record: "feed":"flush");
+//                 RL-3.4's replacement engine running, its injection-time half runs first
+//                 (CaptureReplaceProcessor::processPending: the replaced draws so far; previewLights: the frame's
+//                 replaced light list so far), so the GPU scene still holds this frame (record: "feed":"inject");
+//                 the engine's flush continues after those draws with an identical record. Only an unknown frame
+//                 processor keeps the whole feed at the flush, one frame behind (record: "feed":"flush");
 //   raster        relight.frame.mode = raster: the RL-4.2 frame renderer (frame_renderer.hpp) prepares the
 //                 frame from the same draws and records its graph into FUSE's frame submission.
 //

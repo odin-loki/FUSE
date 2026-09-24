@@ -8,7 +8,8 @@
               1. an independent reference computed here from the app's sidecar alone (its own record of
                  what it fed D3D9): setLegacyMaterialState, the texture stage, setFogState, the D3DLIGHT9
                  -> light conversion with Remix's stable light hash (float operations emulated step by
-                 step, hashes with Tools/FUSE/Relight/remix_hash_ref.py), fog discovery, and the camera
+                 step, hashes with Tools/FUSE/Relight/remix_hash_ref.py), fog discovery, the FUSE additions
+                 (viewport rectangle, emissive colour source), and the camera
                  (decomposed here in double precision: within 1e-5; and the app's own camera annotation);
               2. the hand-written semantics in expectations/<scene>.json.
   selftest  the expectation files parse, and the reference and matchers catch seeded mismatches.
@@ -93,6 +94,7 @@ DEFAULT_RS = {
     "ALPHABLENDENABLE": 0, "FOGENABLE": 0, "FOGCOLOR": 0, "FOGTABLEMODE": 0, "FOGSTART": fbits(0.0),
     "FOGEND": fbits(1.0), "FOGDENSITY": fbits(1.0), "STENCILENABLE": 0, "TEXTUREFACTOR": 0xFFFFFFFF, "LIGHTING": 1,
     "FOGVERTEXMODE": 0, "COLORVERTEX": 1, "DIFFUSEMATERIALSOURCE": 1, "SPECULARMATERIALSOURCE": 2,
+    "EMISSIVEMATERIALSOURCE": 0,
     "CLIPPLANEENABLE": 0, "COLORWRITEENABLE": 0xF, "BLENDOP": 1, "SEPARATEALPHABLENDENABLE": 0, "SRCBLENDALPHA": 2,
     "DESTBLENDALPHA": 1, "BLENDOPALPHA": 1, "ADAPTIVETESS_Y": 0, "POINTSIZE": fbits(1.0),
 }
@@ -161,6 +163,11 @@ def ref_material(s, elements, alpha_swizzle, d3d8, multisampled):
         mask = (diffuse | specular) if s.rs["COLORVERTEX"] else 0
         diffuse = s.rs["DIFFUSEMATERIALSOURCE"] & mask
         specular = s.rs["SPECULARMATERIALSOURCE"] & mask
+    # FUSE: the emissive colour source (D3D9 FFP semantics: lighting and COLORVERTEX on, the vertex has the colour).
+    emissive = "Material"
+    if lighting and s.rs["COLORVERTEX"]:
+        src = s.rs["EMISSIVEMATERIALSOURCE"]
+        emissive = "VertexColor0" if src == 1 and has_c0 else ("VertexColor1" if src == 2 and has_c1 else "Material")
     alpha_test = s.rs["ALPHATESTENABLE"] != 0
     if alpha_test and not d3d8 and multisampled and s.rs["ADAPTIVETESS_Y"] == REF.fourcc("ATOC"):
         alpha_test = False  # alpha to coverage
@@ -193,6 +200,7 @@ def ref_material(s, elements, alpha_swizzle, d3d8, multisampled):
     m["alpha_dst"] = norm(blend_factor(alpha[1], True))
     m["alpha_op"] = VK_BLENDOP.get(alpha[2], 0)
     m["vc_baked"] = True
+    m["emissive_source"] = emissive
     m["d3d_material"] = {k: s.material[k] for k in ("diffuse", "ambient", "specular", "emissive", "power")}
     return m
 
@@ -560,6 +568,10 @@ def check_reference(sidecar, translated, errors):
             m = ref_material(s, elements, alpha_swizzle, d3d8, False)
             texgen = ref_texture_stage(s, m)
             diff(m, g["material"], where + " material", errors, 1e-7)
+            vp = s.viewport
+            want_vp = [vp.get("x", 0), vp.get("y", 0), vp.get("width", 0), vp.get("height", 0)]
+            if g.get("viewport") != want_vp:
+                errors.append(f"{where}: viewport {g.get('viewport')!r}, expected the sidecar's {want_vp!r}")
             if g.get("texgen") != texgen:
                 errors.append(f"{where}: texgen {g.get('texgen')!r}, expected {texgen!r}")
             fog = ref_fog(s)
@@ -724,7 +736,7 @@ def cmd_capture(args):
     frames = [t for t in translated if t["ev"] == "frame" and t["frame"] in sidecar["recorded_frames"]]
     nl = sum(len(f["lights"]) for f in frames)
     print(f"PASS: {args.app}: {n_ref} draw(s) match the sidecar reference (material, texture stage, fog, lights, "
-          f"camera within 1e-5); {n_exp} expectation check(s); {nl} light(s) in the recorded frame(s)")
+          f"viewport, camera within 1e-5); {n_exp} expectation check(s); {nl} light(s) in the recorded frame(s)")
     return 0
 
 
@@ -733,7 +745,7 @@ def cmd_capture(args):
 # ---------------------------------------------------------------------------------------------------
 
 EXPECT_KEYS = {"index", "api", "why", "translated", "camera", "material", "fog", "texgen", "lights", "status",
-               "alpha_swizzle", "z_write", "z_enable", "stencil"}
+               "alpha_swizzle", "z_write", "z_enable", "stencil", "viewport"}
 
 
 def synthetic():
@@ -763,7 +775,7 @@ def synthetic():
     cam = ref_camera(proj, view)
     cam.update(type="Main")
     draw = {"ev": "draw", "frame": 1, "index": 0, "translated": True, "material": m, "fog": fog, "texgen": texgen,
-            "lights": lights, "camera": "Main"}
+            "lights": lights, "camera": "Main", "viewport": [0, 0, 128, 96]}
     frame = {"ev": "frame", "frame": 1, "lights": lights, "fog": fog, "fog_states": [fog], "cameras": [cam],
              "camera_cut": False}
     return sidecar, [draw, frame]
@@ -805,6 +817,8 @@ def cmd_selftest(args):
         ("camera fov 2e-5", lambda o: o[1]["cameras"][0].__setitem__("fov", o[1]["cameras"][0]["fov"] * (1 + 2e-5))),
         ("camera type", lambda o: o[0].__setitem__("camera", "Sky")),
         ("frame light list", lambda o: o[1].__setitem__("lights", [])),
+        ("viewport rectangle", lambda o: o[0].__setitem__("viewport", [64, 0, 64, 48])),
+        ("emissive source", lambda o: o[0]["material"].__setitem__("emissive_source", "VertexColor0")),
     ]
     for what, mutate in seeds:
         out = json.loads(json.dumps(good))

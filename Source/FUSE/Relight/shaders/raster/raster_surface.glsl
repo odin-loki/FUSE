@@ -78,7 +78,8 @@ bool rasterAlphaTest(uint packed, float alpha) {
     }
 }
 
-RasterSurface rasterEvalSurface(RasterMaterial m, vec2 uv, vec4 vertexColor, vec3 world, vec3 vertexNormal, vec3 eye) {
+RasterSurface rasterEvalSurface(RasterMaterial m, vec2 uv, vec4 vertexColor, vec4 vertexColor1, vec3 world,
+                                vec3 vertexNormal, vec3 eye) {
     RasterSurface s;
     const vec4 dif = (m.flags & RASTER_MAT_VERTEX_COLOR) != 0u ? vertexColor : m.diffuse;
     vec4 tex = vec4(1.0);
@@ -94,7 +95,10 @@ RasterSurface rasterEvalSurface(RasterMaterial m, vec2 uv, vec4 vertexColor, vec
     if ((m.flags & RASTER_MAT_REPLACEMENT) != 0u) {
         s.color.rgb = m.diffuse.rgb * ((m.flags & RASTER_MAT_TEXTURED) != 0u ? tex.rgb : vec3(1.0));
     }
-    s.emissive = m.emissive.rgb;
+    // D3DRS_EMISSIVEMATERIALSOURCE: the vertex's COLOR0 / COLOR1 instead of the material's emissive.
+    s.emissive = (m.flags & RASTER_MAT_EMISSIVE_COLOR0) != 0u
+                     ? vertexColor.rgb
+                     : ((m.flags & RASTER_MAT_EMISSIVE_COLOR1) != 0u ? vertexColor1.rgb : m.emissive.rgb);
     vec3 n = (m.flags & RASTER_MAT_HAS_NORMALS) != 0u ? vertexNormal : vec3(0.0);
     if (dot(n, n) < 1e-12) {
         n = cross(dFdx(world), dFdy(world));

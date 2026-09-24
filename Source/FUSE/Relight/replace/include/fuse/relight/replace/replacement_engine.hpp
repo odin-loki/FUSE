@@ -171,6 +171,10 @@ public:
     ReplacedDraw replaceDraw(const DrawInput& draw);
     /// `gameLights`: the frame's game lights (TranslatedFrame::lights).
     ReplacedFrame endFrame(const std::vector<scene::LightRecord>& gameLights);
+    /// The light list endFrame(gameLights) would return now (game lights kept / replaced, deleted ones dropped, the
+    /// lights attached by the draws looked up so far), without ending the frame or counting stats. For the renderer's
+    /// injection-time GPU-scene feed (RL-4.x).
+    std::vector<ReplacedLight> previewLights(const std::vector<scene::LightRecord>& gameLights) const;
 
     /// Reloads every mod now (rediscovery included), as a notification at `frame` would.
     void reloadAll(std::uint64_t frame);
@@ -193,6 +197,8 @@ private:
     void rebuildCatalog();
     void debugWaitForNotification(std::uint64_t frame);
     void refreshSwitches();
+    /// endFrame's game light step: false when a light_<H> deletes it; `replaced` tells a light_<H> replaced it.
+    bool gameLight(const scene::LightRecord& rec, ReplacedLight& out, bool& replaced) const;
 
     EngineConfig m_config;
     bool m_loaded = false;

@@ -15,14 +15,18 @@ namespace fuse::relight::render::raster {
 
 namespace gs = fuse::renderer::gpu_scene;
 namespace geo = fuse::relight::capture::geometry;
+namespace vc = fuse::relight::capture::vertex_capture;
 using scene::InstanceCategories;
 
-static_assert(offsetof(RasterVertex, normal) == 16 && offsetof(RasterVertex, uv) == 32, "RasterVertex layout");
+static_assert(offsetof(RasterVertex, normal) == 16 && offsetof(RasterVertex, color1) == 28 &&
+                  offsetof(RasterVertex, uv) == 32,
+              "RasterVertex layout");
 static_assert(offsetof(RasterMaterial, texture) == 64 && offsetof(RasterMaterial, metallic) == 84,
               "RasterMaterial layout");
 static_assert(offsetof(RasterDrawGpu, material) == 192, "RasterDrawGpu layout");
 static_assert(offsetof(RasterFrameGpu, shadowMatrix) == 160 && offsetof(RasterFrameGpu, counts) == 240 &&
-                  offsetof(RasterFrameGpu, grid) == 288 && offsetof(RasterFrameGpu, lut) == 312,
+                  offsetof(RasterFrameGpu, grid) == 288 && offsetof(RasterFrameGpu, lut) == 312 &&
+                  offsetof(RasterFrameGpu, viewProj) == 320,
               "RasterFrameGpu layout");
 
 namespace {
@@ -139,6 +143,33 @@ std::uint32_t packRgba8(const std::array<float, 4>& c) {
         out |= (static_cast<std::uint32_t>(f) & 0xffu) << (8u * i);
     }
     return out;
+}
+
+/// D3DCOLOR (0xAARRGGBB) -> RGBA8 (r in the low byte).
+std::uint32_t d3dColorToRgba8(std::uint32_t c) {
+    return ((c >> 16) & 0xffu) | (c & 0xff00u) | ((c & 0xffu) << 16) | (c & 0xff000000u);
+}
+
+/// Homogeneous clip position -> world through `invViewProj` (row-vector D3D convention). False for w ~ 0.
+bool clipToWorld(const float* inv, const float clip[4], float out[3]) {
+    float h[4];
+    for (int c = 0; c < 4; ++c) {
+        h[c] = clip[0] * inv[c] + clip[1] * inv[4 + c] + clip[2] * inv[8 + c] + clip[3] * inv[12 + c];
+    }
+    if (!(std::fabs(h[3]) > 1e-20f) || !std::isfinite(h[3])) {
+        return false;
+    }
+    out[0] = h[0] / h[3];
+    out[1] = h[1] / h[3];
+    out[2] = h[2] / h[3];
+    return std::isfinite(out[0]) && std::isfinite(out[1]) && std::isfinite(out[2]);
+}
+
+/// p (w = 1) x m (row-vector D3D convention), all four components.
+void transformPoint4(const float* m, const float* p, float* out) {
+    for (int c = 0; c < 4; ++c) {
+        out[c] = p[0] * m[c] + p[1] * m[4 + c] + p[2] * m[8 + c] + m[12 + c];
+    }
 }
 
 bool isIdentity(const scene::Mat4f& m) {
@@ -280,6 +311,78 @@ TierPlan planTier(std::uint32_t deviceTier, int optionTier, std::uint32_t availa
     return p;
 }
 
+const char* positionSourceName(PositionSource s) {
+    switch (s) {
+    case PositionSource::FixedFunction:
+        return "fixed_function";
+    case PositionSource::VertexCapture:
+        return "vertex_capture";
+    case PositionSource::CaptureClip:
+        return "capture_clip";
+    case PositionSource::PreTransformed:
+        return "pretransformed";
+    }
+    return "?";
+}
+
+void preTransformedToClip(const float p[4], float vx, float vy, float vw, float vh, bool zEnable, float clip[4]) {
+    // transformed = coord * inverseExtent + inverseOffset (d3d9_device.cpp UpdateFixedFunctionVS), then xyz *= 1 / w.
+    const float ex = vw != 0.f ? 2.f / vw : 0.f, ey = vh != 0.f ? -2.f / vh : 0.f;
+    const float t[4] = {p[0] * ex + (-vx * ex - 1.f), p[1] * ey + (-vy * ey + 1.f), zEnable ? p[2] : 0.f, p[3]};
+    const float w = t[3] == 0.f ? 1.f : 1.f / t[3];
+    clip[0] = t[0] * w;
+    clip[1] = t[1] * w;
+    clip[2] = t[2] * w;
+    clip[3] = w;
+}
+
+bool invertMatrix(const float* m, float* out) {
+    double a[16], inv[16];
+    for (int i = 0; i < 16; ++i) {
+        a[i] = m[i];
+    }
+    inv[0] = a[5] * a[10] * a[15] - a[5] * a[11] * a[14] - a[9] * a[6] * a[15] + a[9] * a[7] * a[14] +
+             a[13] * a[6] * a[11] - a[13] * a[7] * a[10];
+    inv[4] = -a[4] * a[10] * a[15] + a[4] * a[11] * a[14] + a[8] * a[6] * a[15] - a[8] * a[7] * a[14] -
+             a[12] * a[6] * a[11] + a[12] * a[7] * a[10];
+    inv[8] = a[4] * a[9] * a[15] - a[4] * a[11] * a[13] - a[8] * a[5] * a[15] + a[8] * a[7] * a[13] +
+             a[12] * a[5] * a[11] - a[12] * a[7] * a[9];
+    inv[12] = -a[4] * a[9] * a[14] + a[4] * a[10] * a[13] + a[8] * a[5] * a[14] - a[8] * a[6] * a[13] -
+              a[12] * a[5] * a[10] + a[12] * a[6] * a[9];
+    inv[1] = -a[1] * a[10] * a[15] + a[1] * a[11] * a[14] + a[9] * a[2] * a[15] - a[9] * a[3] * a[14] -
+             a[13] * a[2] * a[11] + a[13] * a[3] * a[10];
+    inv[5] = a[0] * a[10] * a[15] - a[0] * a[11] * a[14] - a[8] * a[2] * a[15] + a[8] * a[3] * a[14] +
+             a[12] * a[2] * a[11] - a[12] * a[3] * a[10];
+    inv[9] = -a[0] * a[9] * a[15] + a[0] * a[11] * a[13] + a[8] * a[1] * a[15] - a[8] * a[3] * a[13] -
+             a[12] * a[1] * a[11] + a[12] * a[3] * a[9];
+    inv[13] = a[0] * a[9] * a[14] - a[0] * a[10] * a[13] - a[8] * a[1] * a[14] + a[8] * a[2] * a[13] +
+              a[12] * a[1] * a[10] - a[12] * a[2] * a[9];
+    inv[2] = a[1] * a[6] * a[15] - a[1] * a[7] * a[14] - a[5] * a[2] * a[15] + a[5] * a[3] * a[14] +
+             a[13] * a[2] * a[7] - a[13] * a[3] * a[6];
+    inv[6] = -a[0] * a[6] * a[15] + a[0] * a[7] * a[14] + a[4] * a[2] * a[15] - a[4] * a[3] * a[14] -
+             a[12] * a[2] * a[7] + a[12] * a[3] * a[6];
+    inv[10] = a[0] * a[5] * a[15] - a[0] * a[7] * a[13] - a[4] * a[1] * a[15] + a[4] * a[3] * a[13] +
+              a[12] * a[1] * a[7] - a[12] * a[3] * a[5];
+    inv[14] = -a[0] * a[5] * a[14] + a[0] * a[6] * a[13] + a[4] * a[1] * a[14] - a[4] * a[2] * a[13] -
+              a[12] * a[1] * a[6] + a[12] * a[2] * a[5];
+    inv[3] = -a[1] * a[6] * a[11] + a[1] * a[7] * a[10] + a[5] * a[2] * a[11] - a[5] * a[3] * a[10] -
+             a[9] * a[2] * a[7] + a[9] * a[3] * a[6];
+    inv[7] = a[0] * a[6] * a[11] - a[0] * a[7] * a[10] - a[4] * a[2] * a[11] + a[4] * a[3] * a[10] +
+             a[8] * a[2] * a[7] - a[8] * a[3] * a[6];
+    inv[11] = -a[0] * a[5] * a[11] + a[0] * a[7] * a[9] + a[4] * a[1] * a[11] - a[4] * a[3] * a[9] -
+              a[8] * a[1] * a[7] + a[8] * a[3] * a[5];
+    inv[15] = a[0] * a[5] * a[10] - a[0] * a[6] * a[9] - a[4] * a[1] * a[10] + a[4] * a[2] * a[9] +
+              a[8] * a[1] * a[6] - a[8] * a[2] * a[5];
+    const double det = a[0] * inv[0] + a[1] * inv[4] + a[2] * inv[8] + a[3] * inv[12];
+    if (!(std::fabs(det) > 1e-30) || !std::isfinite(det)) {
+        return false;
+    }
+    for (int i = 0; i < 16; ++i) {
+        out[i] = static_cast<float>(inv[i] / det);
+    }
+    return true;
+}
+
 const char* bucketName(Bucket b) {
     switch (b) {
     case Bucket::Opaque:
@@ -301,7 +404,7 @@ float roughnessFromPower(float power) {
     return std::clamp(std::sqrt(alpha), 0.05f, 1.f);
 }
 
-RasterMaterial legacyMaterial(const scene::LegacyMaterialRecord& m, bool hasColor0, bool sky) {
+RasterMaterial legacyMaterial(const scene::LegacyMaterialRecord& m, bool hasColor0, bool sky, bool hasColor1) {
     RasterMaterial r;
     const tap::Material& d = m.d3dMaterial;
     const bool neverSet = d.diffuse.r == 0.f && d.diffuse.g == 0.f && d.diffuse.b == 0.f && d.diffuse.a == 0.f &&
@@ -333,6 +436,11 @@ RasterMaterial legacyMaterial(const scene::LegacyMaterialRecord& m, bool hasColo
                     static_cast<std::uint32_t>(m.textureAlphaArg2Source));
     if (m.diffuseColorSource == scene::TextureArgSource::VertexColor0 && hasColor0) {
         r.flags |= kMatVertexColor;
+    }
+    if (m.emissiveSource == scene::EmissiveSource::VertexColor0 && hasColor0) {
+        r.flags |= kMatEmissiveColor0;
+    } else if (m.emissiveSource == scene::EmissiveSource::VertexColor1 && hasColor1) {
+        r.flags |= kMatEmissiveColor1;
     }
     if (m.alphaTestEnabled) {
         r.flags |= kMatAlphaTest;
@@ -400,10 +508,11 @@ bool buildRasterFrame(const BuildInputs& in, const BuildOptions& opt, RasterFram
     const std::vector<tap::CaptureDrawRecord>& draws = *in.draws;
     const std::uint32_t count = std::min<std::uint32_t>(in.count, static_cast<std::uint32_t>(draws.size()));
 
-    // Camera: the first Main-camera scene draw, else the first scene draw.
+    // Camera: the first Main-camera scene draw, else the first translated scene draw (raster-only draws carry no
+    // transforms).
     const tap::CaptureDrawRecord* cameraDraw = nullptr;
     for (std::uint32_t i = 0; i < count; ++i) {
-        if (!(*in.sceneDraw)[i]) {
+        if (!(*in.sceneDraw)[i] || !draws[i].translation.translated) {
             continue;
         }
         if (!cameraDraw) {
@@ -414,14 +523,26 @@ bool buildRasterFrame(const BuildInputs& in, const BuildOptions& opt, RasterFram
             break;
         }
     }
+    // The main camera's VIEW x PROJECTION and its inverse (identity without a camera or when singular).
+    float viewProj[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    float invViewProj[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     if (cameraDraw) {
         out.camera = cameraOf(cameraDraw->translation.transforms);
+        float vp[16], inv[16];
+        multiplyRowMajor(cameraDraw->translation.transforms.worldToView.data(),
+                         cameraDraw->translation.transforms.viewToProjection.data(), vp);
+        if (invertMatrix(vp, inv)) {
+            std::memcpy(viewProj, vp, sizeof(vp));
+            std::memcpy(invViewProj, inv, sizeof(inv));
+        }
     }
+    std::memcpy(out.constants.viewProj, viewProj, sizeof(viewProj));
 
-    // Fog: the first scene draw with a fog mode.
+    // Fog: the first translated scene draw with a fog mode.
     scene::FogRecord fog;
     for (std::uint32_t i = 0; i < count && (opt.features & kFeatureFog) && opt.fog; ++i) {
-        if ((*in.sceneDraw)[i] && draws[i].translation.fog.mode != scene::d3dff::FOG_NONE) {
+        if ((*in.sceneDraw)[i] && draws[i].translation.translated &&
+            draws[i].translation.fog.mode != scene::d3dff::FOG_NONE) {
             fog = draws[i].translation.fog;
             break;
         }
@@ -451,13 +572,33 @@ bool buildRasterFrame(const BuildInputs& in, const BuildOptions& opt, RasterFram
             skip("no_geometry");
             continue;
         }
-        if (g->vertices.hasPositionT) {
-            skip("pretransformed");
+        if (!r.translation.translated && !r.translation.rasterOnly) {
+            skip("not_translated");
             continue;
         }
+        // Position source (see the header comment).
+        const vc::DrawVertexCapture* cap = nullptr;
         if (g->programmableVs) {
-            skip("programmable_vs");
-            continue;
+            cap = r.vertexCapture.get();
+            if (!cap) {
+                skip("programmable_vs"); // vertex capture off (rtx.useVertexCapture) or unavailable on the device
+                continue;
+            }
+            if (!cap->captured || cap->written == 0 || cap->raw.empty()) {
+                skip("vertex_capture_missing");
+                continue;
+            }
+            rd.positions = PositionSource::VertexCapture;
+        } else if (g->vertices.hasPositionT) {
+            if (!r.translation.rasterOnly && !r.translation.translated) {
+                skip("pretransformed");
+                continue;
+            }
+            if (r.translation.stencilEnabled) {
+                skip("stencil");
+                continue;
+            }
+            rd.positions = PositionSource::PreTransformed;
         }
         if (cls.categories.test(InstanceCategories::Hidden) || cls.categories.test(InstanceCategories::Ignore)) {
             skip("hidden");
@@ -506,18 +647,89 @@ bool buildRasterFrame(const BuildInputs& in, const BuildOptions& opt, RasterFram
         }
 
         const scene::TranslatedDraw& t = r.translation;
+        // Viewport rectangle (clamped to the target; a zero-sized one means the whole target).
+        rd.minZ = t.minZ;
+        rd.maxZ = t.maxZ;
+        if (t.viewportWidth > 0 && t.viewportHeight > 0 && out.width > 0 && out.height > 0 &&
+            t.viewportX < out.width && t.viewportY < out.height) {
+            rd.viewportX = t.viewportX;
+            rd.viewportY = t.viewportY;
+            rd.viewportWidth = std::min(t.viewportWidth, out.width - t.viewportX);
+            rd.viewportHeight = std::min(t.viewportHeight, out.height - t.viewportY);
+            if (rd.viewportX != 0 || rd.viewportY != 0 || rd.viewportWidth != out.width ||
+                rd.viewportHeight != out.height) {
+                ++out.stats.viewports;
+            }
+        }
+        // The capture slot of a window vertex (programmable VS): index value = slot + baseVertex - vertexOffset.
+        auto captureSlot = [&](std::uint32_t v) -> std::int64_t {
+            const std::int64_t indexValue = g->indices ? std::int64_t(v) + std::int64_t(g->indices->minIndex())
+                                                       : g->vertexIndexOffset + std::int64_t(v);
+            const std::int64_t slot = indexValue + cap->vertexOffset - cap->baseVertex;
+            if (slot < 0 || slot >= std::int64_t(cap->raw.size()) ||
+                (cap->raw[static_cast<std::size_t>(slot)].fields & vc::fields::kWritten) == 0) {
+                return -1;
+            }
+            return slot;
+        };
+        std::uint32_t capFields = 0;
+        if (rd.positions == PositionSource::VertexCapture) {
+            // Do the draw's D3D transforms reproduce the shader's clip positions? Else use the clip positions.
+            float wvp[16];
+            multiplyRowMajor(t.transforms.objectToWorld.data(), t.transforms.worldToView.data(), wvp);
+            multiplyRowMajor(wvp, t.transforms.viewToProjection.data(), wvp);
+            bool consistent = true, any = false;
+            for (const std::uint32_t v : tri) {
+                const std::int64_t k = captureSlot(v);
+                if (k < 0) {
+                    continue;
+                }
+                const vc::RawCapturedVertex& raw = cap->raw[static_cast<std::size_t>(k)];
+                capFields |= raw.fields;
+                const vc::CapturedVertex& cv = cap->vertices[static_cast<std::size_t>(k)];
+                float c[4];
+                transformPoint4(wvp, cv.position, c);
+                if (!(raw.clip[3] > 1e-6f) || !(c[3] > 1e-6f)) {
+                    consistent = consistent && std::fabs(c[3] - raw.clip[3]) <= 1e-3f * std::max(1.f, std::fabs(raw.clip[3]));
+                    continue;
+                }
+                any = true;
+                for (int a = 0; a < 3; ++a) {
+                    if (!(std::fabs(c[a] / c[3] - raw.clip[a] / raw.clip[3]) <= 1e-3f)) {
+                        consistent = false;
+                    }
+                }
+            }
+            if (!any && capFields == 0) {
+                skip("vertex_capture_missing");
+                continue;
+            }
+            if (!consistent) {
+                rd.positions = PositionSource::CaptureClip;
+            }
+        }
+        const bool clipRoute = rd.positions == PositionSource::CaptureClip || rd.positions == PositionSource::PreTransformed;
+        const bool vsDraw = rd.positions == PositionSource::VertexCapture || rd.positions == PositionSource::CaptureClip;
+
         const bool sky = cls.categories.test(InstanceCategories::Sky);
-        const bool hasColor0 = g->vertices.color0.defined();
-        const bool hasNormals = g->vertices.normal.defined();
+        const bool hasColor0 = vsDraw ? (capFields & vc::fields::kColor) != 0 : g->vertices.color0.defined();
+        const bool hasColor1 = !vsDraw && g->vertices.color1.defined();
+        const bool hasNormals = !vsDraw && !clipRoute && g->vertices.normal.defined();
         RasterDrawGpu gd;
-        gd.material = legacyMaterial(t.material, hasColor0, sky);
+        gd.material = legacyMaterial(t.material, hasColor0, sky, hasColor1);
+        if (vsDraw) {
+            // The fixed-function pixel stage's DIFFUSE is the shader's COLOR0 output when it writes one.
+            gd.material.flags = hasColor0 ? (gd.material.flags | kMatVertexColor) : (gd.material.flags & ~kMatVertexColor);
+        }
+        if (rd.positions == PositionSource::PreTransformed) {
+            gd.material.flags |= kMatUnlit; // the fixed-function pipeline does not light pre-transformed vertices
+        }
         if (hasNormals) {
             gd.material.flags |= kMatHasNormals;
         }
         // Bucket.
         if (sky) {
             rd.bucket = Bucket::Opaque;
-            ++out.stats.unlit;
         } else if (isDecal(cls.categories) && (opt.features & kFeatureDecals)) {
             rd.bucket = Bucket::Decal;
         } else if (t.material.blendMode.enableBlending && (opt.features & kFeatureForward)) {
@@ -551,7 +763,7 @@ bool buildRasterFrame(const BuildInputs& in, const BuildOptions& opt, RasterFram
                     for (int c = 0; c < 4; ++c) {
                         m.diffuse[c] = static_cast<float>(def->baseColor[static_cast<std::size_t>(c)]);
                     }
-                    m.flags &= ~kMatVertexColor;
+                    m.flags &= ~(kMatVertexColor | kMatEmissiveColor0 | kMatEmissiveColor1);
                     m.roughness = std::clamp(static_cast<float>(def->roughness), 0.02f, 1.f);
                     m.metallic = std::clamp(static_cast<float>(def->metallic), 0.f, 1.f);
                     // Emission: nits relative to an 80-nit display white, tinted by the base colour.
@@ -564,39 +776,85 @@ bool buildRasterFrame(const BuildInputs& in, const BuildOptions& opt, RasterFram
                 }
             }
         }
+        if ((gd.material.flags & kMatUnlit) != 0) {
+            ++out.stats.unlit;
+        }
+        if ((gd.material.flags & (kMatEmissiveColor0 | kMatEmissiveColor1)) != 0) {
+            ++out.stats.emissiveVertex;
+        }
         if (fog.mode != scene::d3dff::FOG_NONE && !sky) {
             gd.material.flags |= kMatFog;
         }
-        rd.castShadow = rd.bucket == Bucket::Opaque && !sky;
+        rd.castShadow = rd.bucket == Bucket::Opaque && !sky && rd.positions != PositionSource::PreTransformed;
         if (rd.castShadow) {
             gd.material.flags |= kMatCastShadow;
         }
-        // Transforms.
-        std::memcpy(gd.objectToWorld, t.transforms.objectToWorld.data(), sizeof(gd.objectToWorld));
-        multiplyRowMajor(t.transforms.worldToView.data(), t.transforms.viewToProjection.data(), gd.worldToClip);
-        normalMatrix(gd.objectToWorld, gd.normalToWorld);
+        // Transforms: the draw's own, or (clip-space positions mapped to world space) the main camera's.
+        if (clipRoute) {
+            std::memcpy(gd.worldToClip, viewProj, sizeof(gd.worldToClip));
+        } else {
+            std::memcpy(gd.objectToWorld, t.transforms.objectToWorld.data(), sizeof(gd.objectToWorld));
+            multiplyRowMajor(t.transforms.worldToView.data(), t.transforms.viewToProjection.data(), gd.worldToClip);
+            normalMatrix(gd.objectToWorld, gd.normalToWorld);
+        }
         rd.blend = t.material.blendMode;
         rd.zEnable = t.zEnable;
         rd.zWrite = t.zWriteEnable;
         rd.cullMode = r.cullMode;
-        rd.minZ = t.minZ;
-        rd.maxZ = t.maxZ;
         // Vertices (de-indexed).
-        const bool texTransform = !isIdentity(t.transforms.textureTransform);
+        const bool texTransform = !vsDraw && !isIdentity(t.transforms.textureTransform);
         if (t.transforms.texgenMode != scene::TexGenMode::None) {
             ++out.stats.texgenIgnored;
         }
         const float* tt = t.transforms.textureTransform.data();
-        rd.firstVertex = static_cast<std::uint32_t>(out.vertices.size());
-        for (const std::uint32_t v : tri) {
+        const float vpX = rd.viewportWidth ? float(rd.viewportX) : 0.f, vpY = rd.viewportWidth ? float(rd.viewportY) : 0.f;
+        const float vpW = rd.viewportWidth ? float(rd.viewportWidth) : float(out.width);
+        const float vpH = rd.viewportWidth ? float(rd.viewportHeight) : float(out.height);
+        // One vertex of the window; false when it has no position (a capture slot the shader did not write, a w of 0).
+        auto makeVertex = [&](std::uint32_t v, RasterVertex& rv) -> bool {
             if (v >= g->vertexCount) {
-                continue;
+                return false;
             }
-            RasterVertex rv;
+            if (vsDraw) {
+                const std::int64_t k = captureSlot(v);
+                if (k < 0) {
+                    return false;
+                }
+                const vc::RawCapturedVertex& raw = cap->raw[static_cast<std::size_t>(k)];
+                const vc::CapturedVertex& cv = cap->vertices[static_cast<std::size_t>(k)];
+                if (rd.positions == PositionSource::VertexCapture) {
+                    rv.pos[0] = cv.position[0];
+                    rv.pos[1] = cv.position[1];
+                    rv.pos[2] = cv.position[2];
+                } else if (!clipToWorld(invViewProj, raw.clip, rv.pos)) {
+                    return false;
+                }
+                if (raw.fields & vc::fields::kTexcoord) {
+                    rv.uv[0] = cv.texcoord0[0];
+                    rv.uv[1] = cv.texcoord0[1];
+                } else if (g->vertices.texcoord.defined()) {
+                    const std::array<float, 4> uv = readAttribute(g->vertices.texcoord, v);
+                    rv.uv[0] = uv[0];
+                    rv.uv[1] = uv[1];
+                }
+                if (raw.fields & vc::fields::kColor) {
+                    rv.color = d3dColorToRgba8(cv.color0);
+                }
+                return true;
+            }
             const std::array<float, 4> p = readAttribute(g->vertices.position, v);
-            rv.pos[0] = p[0];
-            rv.pos[1] = p[1];
-            rv.pos[2] = p[2];
+            if (rd.positions == PositionSource::PreTransformed) {
+                const float xyzrhw[4] = {p[0], p[1], p[2], p[3]};
+                float clip[4];
+                preTransformedToClip(xyzrhw, vpX, vpY, vpW, vpH, t.zEnable, clip);
+                if (!clipToWorld(invViewProj, clip, rv.pos)) {
+                    return false;
+                }
+            } else {
+                rv.pos[0] = p[0];
+                rv.pos[1] = p[1];
+                rv.pos[2] = p[2];
+            }
             if (hasNormals) {
                 const std::array<float, 4> n = readAttribute(g->vertices.normal, v);
                 rv.normal[0] = n[0];
@@ -615,21 +873,47 @@ bool buildRasterFrame(const BuildInputs& in, const BuildOptions& opt, RasterFram
             if (hasColor0) {
                 rv.color = packRgba8(readAttribute(g->vertices.color0, v));
             }
-            if (rd.castShadow) {
-                float w[3];
-                transformPoint(gd.objectToWorld, rv.pos, w);
-                for (int c = 0; c < 3; ++c) {
-                    casterMin[c] = std::min(casterMin[c], w[c]);
-                    casterMax[c] = std::max(casterMax[c], w[c]);
-                }
+            if (hasColor1) {
+                rv.color1 = packRgba8(readAttribute(g->vertices.color1, v));
             }
-            out.vertices.push_back(rv);
+            return true;
+        };
+        rd.firstVertex = static_cast<std::uint32_t>(out.vertices.size());
+        for (std::size_t k = 0; k + 2 < tri.size(); k += 3) {
+            RasterVertex tv[3];
+            if (!makeVertex(tri[k], tv[0]) || !makeVertex(tri[k + 1], tv[1]) || !makeVertex(tri[k + 2], tv[2])) {
+                continue; // the whole triangle, so the rest keep their winding
+            }
+            for (const RasterVertex& rv : tv) {
+                if (rd.castShadow) {
+                    float w[3];
+                    transformPoint(gd.objectToWorld, rv.pos, w);
+                    for (int c = 0; c < 3; ++c) {
+                        casterMin[c] = std::min(casterMin[c], w[c]);
+                        casterMax[c] = std::max(casterMax[c], w[c]);
+                    }
+                }
+                out.vertices.push_back(rv);
+            }
         }
         rd.vertexCount = static_cast<std::uint32_t>(out.vertices.size()) - rd.firstVertex;
         if (rd.vertexCount < 3) {
             out.vertices.resize(rd.firstVertex);
             skip("empty");
             continue;
+        }
+        switch (rd.positions) {
+        case PositionSource::VertexCapture:
+            ++out.stats.vertexCaptured;
+            break;
+        case PositionSource::CaptureClip:
+            ++out.stats.captureClip;
+            break;
+        case PositionSource::PreTransformed:
+            ++out.stats.preTransformed;
+            break;
+        case PositionSource::FixedFunction:
+            break;
         }
         out.stats.triangles += rd.vertexCount / 3;
         rd.gpu = static_cast<std::uint32_t>(out.gpuDraws.size());

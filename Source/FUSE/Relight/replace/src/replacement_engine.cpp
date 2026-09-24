@@ -480,40 +480,62 @@ ReplacedDraw ReplacementEngine::replaceDraw(const DrawInput& draw) {
     return out;
 }
 
+bool ReplacementEngine::gameLight(const scene::LightRecord& rec, ReplacedLight& l, bool& replaced) const {
+    const ReplacementIndex::LightHit* hit = m_lightsOn ? m_index.light(rec.hash) : nullptr;
+    replaced = false;
+    if (hit && hit->def->deleted) {
+        return false;
+    }
+    l = ReplacedLight{};
+    l.gameHash = rec.hash;
+    if (hit) {
+        const LightDef& d = hit->def->light;
+        l.origin = ReplacedLight::Origin::Replaced;
+        l.mod = hit->mod->location.name;
+        l.recordId = d.recordId;
+        l.type = d.type;
+        l.position = transformPoint(d.transform, {0.0, 0.0, 0.0});
+        l.direction = transformDirection(d.transform, {0.0, 0.0, -1.0});
+        l.color = d.color;
+        l.intensity = d.intensity;
+        replaced = true;
+    } else {
+        l.origin = ReplacedLight::Origin::Game;
+        l.type = rec.type == hash::LightType::Sphere ? "sphere" : "distant";
+        l.position = {rec.position[0], rec.position[1], rec.position[2]};
+        l.direction = {rec.direction[0], rec.direction[1], rec.direction[2]};
+        l.color = {rec.radiance[0], rec.radiance[1], rec.radiance[2]};
+        l.intensity = rec.intensity;
+    }
+    return true;
+}
+
+std::vector<ReplacedLight> ReplacementEngine::previewLights(const std::vector<scene::LightRecord>& gameLights) const {
+    std::vector<ReplacedLight> out;
+    for (const scene::LightRecord& rec : gameLights) {
+        ReplacedLight l;
+        bool replaced = false;
+        if (gameLight(rec, l, replaced)) {
+            out.push_back(std::move(l));
+        }
+    }
+    out.insert(out.end(), m_attached.begin(), m_attached.end());
+    return out;
+}
+
 ReplacedFrame ReplacementEngine::endFrame(const std::vector<scene::LightRecord>& gameLights) {
     ReplacedFrame f;
     f.frame = m_frame;
     f.generation = m_generation;
-    const bool lightsOn = m_lightsOn;
     for (const scene::LightRecord& rec : gameLights) {
-        const ReplacementIndex::LightHit* hit = lightsOn ? m_index.light(rec.hash) : nullptr;
-        if (hit && hit->def->deleted) {
+        ReplacedLight l;
+        bool replaced = false;
+        if (!gameLight(rec, l, replaced)) {
             f.deletedLights.push_back(rec.hash);
             ++m_stats.lightsDeleted;
             continue;
         }
-        ReplacedLight l;
-        l.gameHash = rec.hash;
-        if (hit) {
-            const LightDef& d = hit->def->light;
-            l.origin = ReplacedLight::Origin::Replaced;
-            l.mod = hit->mod->location.name;
-            l.recordId = d.recordId;
-            l.type = d.type;
-            l.position = transformPoint(d.transform, {0.0, 0.0, 0.0});
-            l.direction = transformDirection(d.transform, {0.0, 0.0, -1.0});
-            l.color = d.color;
-            l.intensity = d.intensity;
-            ++m_stats.lightsReplaced;
-        } else {
-            l.origin = ReplacedLight::Origin::Game;
-            l.type = rec.type == hash::LightType::Sphere ? "sphere" : "distant";
-            l.position = {rec.position[0], rec.position[1], rec.position[2]};
-            l.direction = {rec.direction[0], rec.direction[1], rec.direction[2]};
-            l.color = {rec.radiance[0], rec.radiance[1], rec.radiance[2]};
-            l.intensity = rec.intensity;
-            ++m_stats.lightsGame;
-        }
+        ++(replaced ? m_stats.lightsReplaced : m_stats.lightsGame);
         f.lights.push_back(std::move(l));
     }
     for (ReplacedLight& a : m_attached) {

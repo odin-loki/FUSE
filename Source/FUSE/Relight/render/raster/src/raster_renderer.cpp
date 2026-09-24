@@ -695,8 +695,8 @@ bool RasterRenderer::prepare(const rf::FrameInputs& in, std::uint64_t serial) {
     bi.textureHandle = textureHandle;
     bi.samplerHandle = [this](const tap::CaptureDrawRecord::SamplerFacts& s) { return samplerHandle(s); };
     bi.replacementMaterial = in.replacementMaterial;
-    if (in.lights) {
-        for (const rf::AdapterLight& a : rf::adapterLights(*in.lights)) {
+    if (in.sceneLights || in.lights) {
+        for (const rf::AdapterLight& a : in.sceneLights ? *in.sceneLights : rf::adapterLights(*in.lights)) {
             RasterLight l;
             l.light = a.light;
             l.slot = m_context->adapter().lightSlot(a.key);
@@ -925,13 +925,22 @@ void RasterRenderer::beginPass(VkCommandBuffer cmd, VkPipeline pipeline) const {
 }
 
 void RasterRenderer::setDrawState(VkCommandBuffer cmd, const RasterDraw& d) const {
-    // DXVK's D3D9 viewport: origin + half-pixel correction, flipped (negative height), MinZ bias below 0.5.
-    const float w = static_cast<float>(m_frame.width), h = static_cast<float>(m_frame.height);
+    // DXVK's D3D9 viewport: the draw's D3D rectangle (the whole target when it has none), origin + half-pixel
+    // correction, flipped (negative height), MinZ bias below 0.5; the scissor is the rectangle (D3D clips to it).
+    std::uint32_t rx = 0, ry = 0, rw = m_frame.width, rh = m_frame.height;
+    if (d.viewportWidth > 0 && d.viewportHeight > 0) {
+        rx = d.viewportX;
+        ry = d.viewportY;
+        rw = d.viewportWidth;
+        rh = d.viewportHeight;
+    }
+    const float x = static_cast<float>(rx), y = static_cast<float>(ry);
+    const float w = static_cast<float>(rw), h = static_cast<float>(rh);
     const float zBias = d.minZ >= 0.5f ? 0.f : 0.001f;
-    VkViewport vp{0.5f, h + 0.5f, w, -h, std::clamp(d.minZ, 0.f, 1.f),
+    VkViewport vp{x + 0.5f, y + h + 0.5f, w, -h, std::clamp(d.minZ, 0.f, 1.f),
                   std::clamp(std::max(d.maxZ, d.minZ + zBias), 0.f, 1.f)};
     vkCmdSetViewport(cmd, 0, 1, &vp);
-    const VkRect2D scissor{{0, 0}, {m_frame.width, m_frame.height}};
+    const VkRect2D scissor{{static_cast<std::int32_t>(rx), static_cast<std::int32_t>(ry)}, {rw, rh}};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     // D3DCULL: 1 none, 2 CW -> front, 3 CCW -> back; front face clockwise (DXVK).
     vkCmdSetCullMode(cmd, d.cullMode == 2 ? VK_CULL_MODE_FRONT_BIT
@@ -1116,17 +1125,20 @@ std::string RasterRenderer::recordJson() const {
     for (const auto& [why, n] : skips) {
         skipJson += (skipJson.empty() ? "\"" : ",\"") + why + "\":" + std::to_string(n);
     }
-    char buf[1024];
+    char buf[1536];
     std::snprintf(buf, sizeof(buf),
                   "\"rendered\":%s,\"error\":\"%s\",\"tier\":%u,\"features\":\"%s\",\"degraded\":\"%s\",\"draws\":%u,"
                   "\"opaque\":%u,\"decals\":%u,\"blended\":%u,\"skipped\":%u,\"unlit\":%u,\"textured\":%u,"
                   "\"replaced\":%u,\"triangles\":%u,\"lights\":%u,\"directional\":%u,\"clustered\":%u,"
-                  "\"clusters_used\":%u,\"fallback_light\":%s,\"fog\":%u,\"shadow\":%s,\"game_textures\":%zu",
+                  "\"clusters_used\":%u,\"fallback_light\":%s,\"fog\":%u,\"shadow\":%s,\"game_textures\":%zu,"
+                  "\"vertex_captured\":%u,\"capture_clip\":%u,\"pretransformed\":%u,\"emissive_vertex\":%u,"
+                  "\"viewports\":%u",
                   m_prepared ? "true" : "false", m_error.c_str(), m_plan.tier,
                   featureList(m_frame.constants.counts[3]).c_str(), m_plan.degraded.c_str(), s.draws, s.opaque,
                   s.decals, s.blended, s.skipped, s.unlit, s.textured, s.replaced, s.triangles, s.lights, s.directional,
                   s.clustered, s.clustersUsed, s.fallbackLight ? "true" : "false", s.fogMode,
-                  s.shadow ? "true" : "false", m_gameTextures.size());
+                  s.shadow ? "true" : "false", m_gameTextures.size(), s.vertexCaptured, s.captureClip, s.preTransformed,
+                  s.emissiveVertex, s.viewports);
     return std::string(buf) + ",\"blend_order\":[" + order + "],\"skips\":{" + skipJson + "}";
 }
 

@@ -162,6 +162,23 @@ SliceStatus sliceVertexStreams(std::span<const tap::VertexElement> elements, std
         attribute.windowBytes = std::size_t(src.stride) * request.vertexCount;
         *target = std::move(attribute);
     }
+    // FUSE (RL-4.2 emissive from COLOR1): COLOR[1] over a stream copy made above; never a copy of its own, so the
+    // hashes, the copied bytes and the status stay upstream's.
+    for (const tap::VertexElement& e : elements) {
+        if (e.usage != std::uint8_t(DeclUsage::Color) || e.usageIndex != 1 || !request.colorAllowed ||
+            e.stream >= streams.size() || !copies[e.stream]) {
+            continue;
+        }
+        VertexAttribute attribute;
+        attribute.data = copies[e.stream];
+        attribute.offset = e.offset;
+        attribute.stride = streams[e.stream].stride;
+        attribute.type = hash::D3DDeclType(e.type);
+        attribute.stream = e.stream;
+        attribute.usageIndex = e.usageIndex;
+        attribute.windowBytes = std::size_t(streams[e.stream].stride) * request.vertexCount;
+        out.color1 = std::move(attribute);
+    }
     return SliceStatus::Ok;
 }
 

@@ -18,6 +18,7 @@ layout(location = 1) in vec3 vNormal;
 layout(location = 2) in vec2 vUv;
 layout(location = 3) in vec4 vColor;
 layout(location = 4) flat in uint vDraw;
+layout(location = 5) in vec4 vColor1;
 
 #if defined(RASTER_SHADOW)
 #elif defined(RASTER_GBUFFER)
@@ -32,7 +33,7 @@ layout(location = 0) out vec4 oColor;
 void main() {
     const RasterFrame f = RasterFrameRef(pc.frame).f;
     const RasterMaterial m = RasterDrawsRef(pc.draws).v[vDraw].mat;
-    const RasterSurface s = rasterEvalSurface(m, vUv, vColor, vWorld, vNormal, f.eye.xyz);
+    const RasterSurface s = rasterEvalSurface(m, vUv, vColor, vColor1, vWorld, vNormal, f.eye.xyz);
     if ((m.flags & RASTER_MAT_ALPHA_TEST) != 0u && !rasterAlphaTest(m.alphaTest, s.color.a)) {
         discard;
     }

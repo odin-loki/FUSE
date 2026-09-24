@@ -17,9 +17,17 @@ in raster mode and FUSE_RENDER_TIER_MAX = the tier (the adopted device's Rendere
                graph pass than without; the rejected (low-alpha) quarter still shows the background exactly, the
                kept quarter is brighter than it.
   fog          ff_fog at T0: the frame fog is its first fogged draw's (vertex LINEAR, start 2, end 22, colour
-               0x8090a0); the far wall (z = 40, beyond FOGEND) is exactly the fog colour (+- 1), the nearest pillar
-               keeps more of its own colour than the wall. (The app's four quadrant viewports overlap in the remaster:
-               the translation carries no viewport rectangle, see the open issues.)
+               0x8090a0); the far wall (z = 40, beyond FOGEND) at the app's three probes is exactly the fog colour
+               (+- 1), the nearest pillar keeps more of its own colour than the wall. Per-draw viewports: every draw
+               carries its 64 x 48 quadrant rectangle (28 per frame) and the remaster covers the same pixels as the
+               game's own four quadrants (IoU >= 0.97 of the non-black masks, every quadrant drawn, equal within 5%):
+               the quadrants no longer overlap.
+  replace      ff_lit with the RL-3.4 fixture mod lit_lights (a game light replaced, one deleted, lights attached to the
+               preserved spheres), capture-only run vs raster run at T1: the replacement record (every replace_frame
+               line and draw replacement) is identical (the engine's injection-time half + its flush half = the flush
+               alone); in the raster run every frame feeds the GPU scene at the injection point with this frame
+               ("feed": "inject", gpu_frame = the frame), at least one replaced draw, and the GPU scene's and the
+               remaster's light count = the frame's replaced light list; the image is not the unmodded T1 golden.
   determinism  the same app rendered twice at T1: bit-identical dumps and frame records.
   validation   the host validation layer + synchronization validation (injected into the host loader): the capture tap
                alone vs raster mode, legacy binding model (gate: no message id's count grows) and DXVK's default
@@ -32,7 +40,10 @@ Documented checks (hand-inspected once, then enforced; W x H = 128 x 96, (x, y) 
               shadow map; the background shows the game's clear colour; blend order = submission order.
   ff_lit      (1, 1) is the black clear colour; the emissive-only sphere (probe from the app's JSON) shows its emissive
               colour (64, 128, 191) +- 8 (black material: only the dielectric specular); lit spheres are shaded (a lit pixel differs
-              from the unlit albedo and the sphere tops are brighter than their undersides under the directional light).
+              from the unlit albedo and the sphere tops are brighter than their undersides under the directional light);
+              the D3DRS_EMISSIVEMATERIALSOURCE = D3DMCS_COLOR1 sphere (lower left) emits its vertex colour (G = 0xc0 on
+              every vertex): one emissive-vertex draw per frame, and each of its pixels (the game's own non-black
+              pixels in its box) has G >= 184 even on the side the lights miss.
   ff_alpha    fallback light (no game light); the GREATER alpha-test cell rejects its low-alpha quarter (the pixel
               equals the background seen through the gap next to the cell exactly) and keeps the high-alpha quarter
               (brighter); the
@@ -43,6 +54,12 @@ Documented checks (hand-inspected once, then enforced; W x H = 128 x 96, (x, y) 
               the reference's sky within 3 per channel; the lit floor differs from the reference (remastered
               lighting); from T1 the sun's shadows only darken (>= 15 pixels darker than the T0 golden by more than
               8 in luminance, none brighter by more than 2).
+  raster_vs_rhw injected at Present (no UI: rtx.preTransformedVerticesIsUI off for this app); per frame 5 scene draws,
+              none skipped: 1 programmable-VS draw from the RL-1.6 object-space positions, 1 from the captured clip
+              positions (its constants carry a world translation D3DTS_WORLD does not), 2 XYZRHW draws; the unlit
+              XYZRHW backdrop / panel pixels equal their colours (+- 1); the backdrop (z 0.995) shows exactly where the
+              game's image shows it (<= 1% of its band differs: depth from DXVK's POSITIONT mapping); the VS quads keep
+              their vertex colours' hue at the app's probes; the non-black coverage matches the game's (IoU >= 0.97).
 
 Exit codes: 0 pass, 1 fail, 77 skip (no Wine / Xvfb, or no validation layer for 'validation').
 """
@@ -144,11 +161,18 @@ def load_tap_tools(path):
     return rl_tap_run
 
 
-def rtx_conf(out_dir):
-    """An rtx.conf (Wine path) that makes pre-transformed (POSITIONT) draws UI (as rl_frame_run.py)."""
-    path = os.path.join(os.path.abspath(out_dir), "raster.rtx.conf")
+# Apps whose pre-transformed (XYZRHW) draws are scene geometry, not UI.
+PRETRANSFORMED_SCENE = {"raster_vs_rhw"}
+
+
+def rtx_conf(out_dir, app=""):
+    """An rtx.conf (Wine path) that makes pre-transformed (POSITIONT) draws UI (as rl_frame_run.py), except for the apps
+    whose XYZRHW draws are scene geometry (rtx.preTransformedVerticesIsUI off: Remix rasterizes them, the remaster
+    renders them)."""
+    scene = app in PRETRANSFORMED_SCENE
+    path = os.path.join(os.path.abspath(out_dir), "raster_scene.rtx.conf" if scene else "raster.rtx.conf")
     with open(path, "w") as f:
-        f.write("rtx.preTransformedVerticesIsUI = True\n")
+        f.write("rtx.preTransformedVerticesIsUI = %s\n" % ("False" if scene else "True"))
     return "Z:" + path.replace("/", "\\")
 
 
@@ -168,7 +192,7 @@ def run(tools, args, exe, run_dir, env):
 
 
 def raster_run(tools, args, exe, app, run_dir, tier):
-    env = dict(RASTER, FUSE_RENDER_TIER_MAX=str(tier), DXVK_RTX_CONFIG_FILE=rtx_conf(args.out))
+    env = dict(RASTER, FUSE_RENDER_TIER_MAX=str(tier), DXVK_RTX_CONFIG_FILE=rtx_conf(args.out, app))
     rc, text = run(tools, args, exe, run_dir, env)
     if rc != 0:
         return rc, None, None, text
@@ -266,6 +290,13 @@ def check_ff_lit(rgb, ref, frames, run_dir, tier, fail, note):
     if not lum(t) > lum(b):
         fail(f"ff_lit: sphere 0 top {t} not brighter than its bottom {b} (directional light from above)")
     del top
+    if last.get("emissive_vertex") != 1:
+        fail(f"ff_lit: {last.get('emissive_vertex')} emissive-vertex draw(s), expected 1 (D3DMCS_COLOR1 sphere)")
+    dim = [(x, y, px(rgb, x, y)) for x in range(44, 61) for y in range(54, 73)
+           if px(ref, x, y) != (0, 0, 0) and px(rgb, x, y)[1] < 184]
+    note(f"emissive COLOR1 sphere (52, 64) = {px(rgb, 52, 64)}; {len(dim)} pixel(s) with G < 184")
+    if dim:
+        fail(f"ff_lit: the COLOR1-emissive sphere does not emit its vertex colour (G 0xc0): {dim[:4]}")
 
 
 def check_ff_alpha(rgb, ref, frames, run_dir, tier, fail, note):
@@ -336,7 +367,53 @@ def check_sky_ui_hud(rgb, ref, frames, run_dir, tier, fail, note):
     note(f"floor (80, 80): {px(rgb, 80, 80)} vs reference {px(ref, 80, 80)}")
 
 
-CHECKS = {"ff_lit": check_ff_lit, "ff_alpha": check_ff_alpha, "sky_ui_hud": check_sky_ui_hud}
+def check_raster_vs_rhw(rgb, ref, frames, run_dir, tier, fail, note):
+    """Programmable-VS draws from the RL-1.6 capture and XYZRHW draws land where the game draws them."""
+    if any(r["inject"] != "present" for r in frames):
+        fail(f"raster_vs_rhw: injections {[r['inject'] for r in frames]}, expected present (no UI)")
+    last = frames[-1]["raster"]
+    want = {"draws": 5, "skipped": 0, "vertex_captured": 1, "capture_clip": 1, "pretransformed": 2}
+    got = {k: last.get(k) for k in want}
+    note(f"draw sources {got}")
+    if got != want:
+        fail(f"raster_vs_rhw: draw sources {got}, expected {want}")
+    if last.get("skips"):
+        fail(f"raster_vs_rhw: skipped draws {last['skips']}")
+    backdrop, panel = (0x20, 0x38, 0x60), (0xe0, 0xa0, 0x20)
+    # Unlit XYZRHW colours pass through; their pixels match the game's.
+    for (x, y), c, what in (((4, 4), backdrop, "backdrop"), ((106, 75), panel, "panel")):
+        note(f"{what} ({x}, {y}) = {px(rgb, x, y)}")
+        if not close(px(rgb, x, y), c, 1):
+            fail(f"raster_vs_rhw: XYZRHW {what} ({x}, {y}) = {px(rgb, x, y)}, expected {c} (unlit, as the game)")
+    # Depth: the backdrop (z 0.995) is covered wherever the game covers it; the panel (z 0.2) covers everything.
+    band = [(x, y) for y in range(40) for x in range(W)]
+    wrong = [p for p in band if close(px(rgb, *p), backdrop, 1) != close(px(ref, *p), backdrop, 1)]
+    note(f"backdrop band: {len(wrong)} pixel(s) where the backdrop shows in one image only")
+    if len(wrong) > len(band) // 100:
+        fail(f"raster_vs_rhw: backdrop occlusion differs from the game's at {len(wrong)} pixel(s), e.g. {wrong[:4]}")
+    # The VS quads: their probes (the app's) keep the vertex colour's hue; A green, B red.
+    probes = {p["what"]: p for p in app_json(run_dir, "raster_vs_rhw").get("probes", [])}
+    for key, hue in (("vs_2_0 quad A (vertex colour)", 1), ("vs_2_0 quad B (constants-only world)", 0)):
+        p = probes.get(key)
+        if not p:
+            fail(f"raster_vs_rhw: no probe '{key}'")
+            continue
+        c = px(rgb, p["x"], p["y"])
+        note(f"{key} ({p['x']}, {p['y']}) = {c}")
+        if c[hue] <= max(c[k] for k in range(3) if k != hue) or c == (0, 0, 0):
+            fail(f"raster_vs_rhw: {key} at ({p['x']}, {p['y']}) = {c} lost its vertex colour's hue")
+    # Coverage: every object where the game has it (lighting changes the colours, not the silhouettes).
+    covered = lambda img, x, y: px(img, x, y) != (0, 0, 0)
+    both = sum(1 for y in range(H) for x in range(W) if covered(rgb, x, y) and covered(ref, x, y))
+    either = sum(1 for y in range(H) for x in range(W) if covered(rgb, x, y) or covered(ref, x, y))
+    iou = both / either if either else 0.0
+    note(f"coverage IoU vs the game {iou:.4f}")
+    if iou < 0.97:
+        fail(f"raster_vs_rhw: coverage IoU {iou:.4f} with the game's image (>= 0.97)")
+
+
+CHECKS = {"ff_lit": check_ff_lit, "ff_alpha": check_ff_alpha, "sky_ui_hud": check_sky_ui_hud,
+          "raster_vs_rhw": check_raster_vs_rhw}
 
 
 def cmd_tier(tools, args):
@@ -482,24 +559,151 @@ def cmd_fog(tools, args):
     if rc != 0:
         print(f"FAIL: {app}: raster run exited with {rc}")
         return 1
+    run_dir = os.path.join(args.out, "fog")
     frames = [r for r in recs if r.get("ev") == "frame"]
     failed = False
     if not frames or any(r["raster"]["fog"] != 3 for r in frames):
         print(f"FAIL: {app}: frame fog {[r['raster'].get('fog') for r in frames]}, expected D3DFOG_LINEAR (3)")
         failed = True
-    fog = (0x80, 0x90, 0xa0)
-    wall = px(rgb, 64, 38)
-    print(f"  wall (64, 38) = {wall}, fog colour {fog}")
-    if not close(wall, fog, 1):
-        print(f"FAIL: {app}: the far wall {wall} is not the fog colour {fog}")
+    # Four quadrant viewports x (6 pillars + wall): every draw has its 64 x 48 rectangle.
+    if not frames or any(r["raster"].get("viewports") != 28 for r in frames):
+        print(f"FAIL: {app}: draws with a viewport rectangle {[r['raster'].get('viewports') for r in frames]}, "
+              f"expected 28 per frame")
         failed = True
-    nearest = px(rgb, 35, 65)  # the nearest pillar's front face (4 units from the eye)
+    fog = (0x80, 0x90, 0xa0)
+    # The app's own probes (the far wall of the linear quadrants, beyond FOGEND): the fog colour. The remaster applies
+    # the frame fog (Remix: one fog per frame, the first fogged draw's LINEAR 2..22) in every quadrant.
+    probes = app_json(run_dir, app).get("probes", [])
+    for p in probes:
+        got = px(rgb, p["x"], p["y"])
+        print(f"  probe {p['what']} ({p['x']}, {p['y']}) = {got}")
+        if not close(got, fog, 1):
+            print(f"FAIL: {app}: the far wall at ({p['x']}, {p['y']}) {got} is not the fog colour {fog}")
+            failed = True
+    if len(probes) != 3:
+        print(f"FAIL: {app}: {len(probes)} probe(s) in ff_fog.json, expected 3")
+        failed = True
+    nearest = px(rgb, 17, 32)  # quadrant 0: the nearest pillar's front face (4 units from the eye)
+    print(f"  nearest pillar (17, 32) = {nearest}")
     if nearest == (0, 0, 0) or sum(abs(a - b) for a, b in zip(nearest, fog)) < 40:
         print(f"FAIL: {app}: the nearest pillar {nearest} does not keep its own colour against the fog {fog}")
         failed = True
+    # No overlap: the remaster covers the same pixels as the game's own quadrants (its back buffer before the
+    # composite), the scene drawn once per quadrant rectangle.
+    with open(os.path.join(run_dir, app + ".rgba"), "rb") as f:
+        game = rgb_of(f.read())
+    covered = lambda img, x, y: px(img, x, y) != (0, 0, 0)
+    both = either = 0
+    per_quadrant = [0, 0, 0, 0]
+    for y in range(H):
+        for x in range(W):
+            a, b = covered(rgb, x, y), covered(game, x, y)
+            both += 1 if a and b else 0
+            either += 1 if a or b else 0
+            per_quadrant[(y // 48) * 2 + x // 64] += 1 if a else 0
+    iou = both / either if either else 0.0
+    print(f"  coverage vs the game's quadrants: IoU {iou:.4f}; per quadrant {per_quadrant}")
+    if iou < 0.97 or min(per_quadrant) == 0 or max(per_quadrant) - min(per_quadrant) > max(per_quadrant) // 20:
+        print(f"FAIL: {app}: the quadrant viewports overlap or differ from the game's (IoU {iou:.4f}, per quadrant "
+              f"{per_quadrant})")
+        failed = True
     if failed:
         return 1
-    print(f"PASS: {app}: D3D linear fog in the deferred pass (far wall = fog colour {wall}, near geometry {nearest})")
+    print(f"PASS: {app}: four quadrant viewports drawn into their rectangles (IoU {iou:.4f} with the game's); D3D "
+          f"linear fog in the deferred pass (far wall = fog colour, near geometry {nearest})")
+    return 0
+
+
+def replace_lines(path):
+    """The replacement engine's record lines of a capture record: per frame the replace_frame line and every draw's
+    replacement, keyed (frame, di)."""
+    out = {}
+    with open(path) as f:
+        for line in f:
+            if not line.strip():
+                continue
+            r = json.loads(line)
+            if r.get("ev") == "replace_frame":
+                out[("frame", r["frame"])] = r
+            elif r.get("ev") == "draw" and "replacement" in r:
+                out[(r["frame"], r["di"])] = r["replacement"]
+    return out
+
+
+def cmd_replace(tools, args):
+    """RL-3.4 replacements active in raster mode: the GPU scene is fed at the injection point (no frame of lag)."""
+    import subprocess
+    exe, app = args.exe[0], args.app
+    if not (args.stager and args.fixtures):
+        print("FAIL: replace needs --stager and --fixtures")
+        return 1
+    mods_root = os.path.join(os.path.abspath(args.out), "mods")
+    if os.path.isdir(mods_root):
+        shutil.rmtree(mods_root)
+    os.makedirs(mods_root)
+    emulator = [p for p in (args.emulator or "").split("|") if p]
+    proc = subprocess.run(emulator + [args.stager, "--stage", os.path.join(args.fixtures, "mods", "lit_lights"),
+                                      os.path.join(mods_root, "lit_lights")],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc.returncode != 0:
+        print(proc.stdout.decode(errors="replace")[-2000:])
+        print(f"FAIL: {app}: staging the lit_lights fixture mod failed ({proc.returncode})")
+        return 1
+    mod_env = {"FUSE_RELIGHT_REPLACE_MOD_PATHS": "remix:Z:" + mods_root.replace("/", "\\"),
+               "FUSE_RELIGHT_TAP_CAPTURE_PATH": "relight_capture.jsonl", "DXVK_RTX_CONFIG_FILE": rtx_conf(args.out, app)}
+    # The capture-only run: the replacement engine at the flush alone (RL-3.4's own path).
+    cap_dir = os.path.join(args.out, "capture")
+    rc, text = run(tools, args, exe, cap_dir, dict(CAPTURE, **mod_env))
+    if rc == SKIP:
+        print(text.strip())
+        return SKIP
+    if rc != 0:
+        print(f"FAIL: {app}: capture run exited with {rc}")
+        return 1
+    run_dir = os.path.join(args.out, "raster")
+    rc, text = run(tools, args, exe, run_dir, dict(RASTER, FUSE_RENDER_TIER_MAX="1", **mod_env))
+    if rc != 0:
+        print(f"FAIL: {app}: raster run exited with {rc}")
+        return 1
+    failed = []
+    base = replace_lines(os.path.join(cap_dir, "relight_capture.jsonl"))
+    live = replace_lines(os.path.join(run_dir, "relight_capture.jsonl"))
+    if not any(k[0] == "frame" for k in base):
+        failed.append("the capture run has no replace_frame line (no replacement engine?)")
+    if base != live:
+        diff = sorted(str(k) for k in set(base) | set(live) if base.get(k) != live.get(k))
+        failed.append(f"the replacement record differs between the capture-only and the raster run: {diff[:6]}")
+    frames = [r for r in records(run_dir) or [] if r.get("ev") == "frame"]
+    if not frames:
+        failed.append("no frame records")
+    for r in frames:
+        sc, rs = r["scene"], r["raster"]
+        rf = live.get(("frame", r["frame"]), {})
+        lights = len(rf.get("lights", []))
+        if sc["feed"] != "inject" or sc["gpu_frame"] != r["frame"] or not sc["sink"]:
+            failed.append(f"frame {r['frame']}: scene feed {sc['feed']} of frame {sc['gpu_frame']} (sink {sc['sink']}),"
+                          f" expected this frame's at the injection point")
+        if sc["replaced"] < 1:
+            failed.append(f"frame {r['frame']}: {sc['replaced']} replaced draw(s) fed at the injection point")
+        if sc["lights"] != lights or rs["lights"] != lights or lights == 0:
+            failed.append(f"frame {r['frame']}: GPU-scene lights {sc['lights']}, raster lights {rs['lights']}, "
+                          f"expected the frame's replaced light list ({lights})")
+        if r.get("pass") != "raster":
+            failed.append(f"frame {r['frame']}: not rendered by the raster pass")
+    with open(os.path.join(run_dir, "relight_output.rgba"), "rb") as f:
+        rgb = rgb_of(f.read())
+    golden = os.path.join(args.golden_dir, f"{app}_t1.png")
+    if os.path.isfile(golden) and png_read(golden)[0] == rgb:
+        failed.append("the image equals the unmodded T1 golden: the replaced / attached lights do not reach the remaster")
+    for r in frames[-1:]:
+        print(f"  frame {r['frame']}: feed {r['scene']['feed']}, {r['scene']['replaced']} replaced draw(s), "
+              f"{r['scene']['lights']} light(s), raster lights {r['raster']['lights']}")
+    if failed:
+        print("\n".join(f"FAIL: {app}: {f}" for f in failed))
+        return 1
+    print(f"PASS: {app}: with RL-3.4 replacements (lit_lights) the GPU scene is fed at the injection point with the "
+          f"frame's replaced draws and lights ({len(frames)} frame(s)); the replacement record equals the capture-only "
+          f"run's")
     return 0
 
 
@@ -543,16 +747,16 @@ def cmd_validation(tools, args):
         "DXVK_LOG_LEVEL": "info",
         "FUSE_RELIGHT_VK_VALIDATION": "1",
     }
-    conf = rtx_conf(args.out)
     legacy = {"DXVK_CONFIG": "dxvk.enableDescriptorBuffer = False"}
-    runs = []
-    for model, extra in (("legacy", legacy), ("default", {})):
-        runs += [(model + "_capture", dict(CAPTURE, DXVK_RTX_CONFIG_FILE=conf, **extra)),
-                 (model + "_raster", dict(RASTER, FUSE_RENDER_TIER_MAX="2", DXVK_RTX_CONFIG_FILE=conf, **extra))]
     failed = False
     lines = []
     for exe in args.exe:
         app = tools.app_name_of(exe)
+        conf = rtx_conf(args.out, app)
+        runs = []
+        for model, extra in (("legacy", legacy), ("default", {})):
+            runs += [(model + "_capture", dict(CAPTURE, DXVK_RTX_CONFIG_FILE=conf, **extra)),
+                     (model + "_raster", dict(RASTER, FUSE_RENDER_TIER_MAX="2", DXVK_RTX_CONFIG_FILE=conf, **extra))]
         result = {}
         for name, env in runs:
             e = dict(common)
@@ -609,9 +813,13 @@ def main():
     t.add_argument("--tier", required=True, choices=sorted(TIERS))
     t.add_argument("--out", required=True)
     t.add_argument("--bless", action="store_true")
-    for name in ("determinism", "validation", "decal", "fog"):
+    for name in ("determinism", "validation", "decal", "fog", "replace"):
         s = sub.add_parser(name)
         s.add_argument("--out", required=True)
+        if name == "replace":
+            s.add_argument("--stager")
+            s.add_argument("--fixtures")
+            s.add_argument("--emulator", default="")
     args = p.parse_args()
     if not shutil.which("wine") and not shutil.which("wine64"):
         print("SKIP: wine not installed")
@@ -619,7 +827,7 @@ def main():
     tools = load_tap_tools(args.tap_tools)
     os.makedirs(args.out, exist_ok=True)
     return {"tier": cmd_tier, "determinism": cmd_determinism, "validation": cmd_validation,
-            "decal": cmd_decal, "fog": cmd_fog}[args.cmd](tools, args)
+            "decal": cmd_decal, "fog": cmd_fog, "replace": cmd_replace}[args.cmd](tools, args)
 
 
 if __name__ == "__main__":

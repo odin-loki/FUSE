@@ -9,6 +9,7 @@
 #include <fuse/relight/scene/instances/scene_model.hpp>
 #include <fuse/relight/tap/capture_export_live.hpp>
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <system_error>
@@ -29,43 +30,81 @@ CaptureReplaceProcessor::CaptureReplaceProcessor(EngineConfig config, hash::Hash
 
 CaptureReplaceProcessor::~CaptureReplaceProcessor() = default;
 
+void CaptureReplaceProcessor::processDraw(std::size_t i, const tap::CaptureDrawRecord& r,
+                                          const scene::DrawClassification& cls, std::string& json) {
+    if (!r.translated || !cls.committed()) {
+        return;
+    }
+    const bool captured = r.geometry && r.geometry->captured();
+    inst::SceneDrawInput input = captured ? inst::sceneDrawInput(r.translation, *r.geometry, m_assetRule)
+                                          : inst::sceneDrawInput(r.translation);
+    input.categories = cls.categories;
+    const inst::SceneDrawResult res = m_scene->model.submitDraw(input);
+
+    DrawInput d;
+    d.index = r.drawInFrame;
+    d.geometryValid = captured;
+    if (captured) {
+        d.hashes = r.geometry->hashes.get();
+        const capture::geometry::CapturedDrawPtr g = r.geometry;
+        d.legacyHashes = [g] { return g->geometryHashes(); };
+    }
+    d.materialHash = r.translation.material.hash();
+    d.categories = cls.categories;
+    d.objectToWorld = toMat4d(r.translation.transforms.objectToWorld);
+    d.instanceId = res.instanceId;
+    ReplacedDraw rd = m_engine.replaceDraw(d);
+    json = capture::exporter::json::write(replacedDrawJson(rd));
+    if (i >= m_lastDraws.size()) {
+        m_lastDraws.resize(i + 1);
+    }
+    m_lastDraws[i] = std::move(rd);
+}
+
+std::size_t CaptureReplaceProcessor::processPending(std::uint64_t frame, const std::vector<tap::CaptureDrawRecord>& draws,
+                                                    std::size_t count,
+                                                    const std::vector<scene::DrawClassification>& classifications) {
+    if (m_pendingFrame != frame) {
+        m_pendingFrame = frame;
+        m_pendingCount = 0;
+        m_pendingJson.clear();
+        m_engine.beginFrame(frame);
+        m_lastDraws.clear();
+    }
+    count = std::min({count, draws.size(), classifications.size()});
+    m_pendingJson.resize(std::max(m_pendingJson.size(), count));
+    for (std::size_t i = m_pendingCount; i < count; ++i) {
+        processDraw(i, draws[i], classifications[i], m_pendingJson[i]);
+    }
+    m_pendingCount = std::max(m_pendingCount, count);
+    return m_pendingCount;
+}
+
 tap::IFrameProcessor::Output CaptureReplaceProcessor::processFrame(std::uint64_t frame,
                                                                     const std::vector<tap::CaptureDrawRecord>& draws,
                                                                     const scene::TranslatedFrame* translatedFrame,
                                                                     bool presented) {
     Output out;
+    const bool continued = m_pendingFrame == frame;
+    const std::size_t first = continued ? std::min(m_pendingCount, draws.size()) : 0;
+    std::vector<std::string> early = std::move(m_pendingJson);
+    m_pendingFrame.reset();
+    m_pendingCount = 0;
+    m_pendingJson.clear();
     if (!presented) {
         return out; // the draws after the last Present at device destruction: not a frame
     }
-    m_engine.beginFrame(frame);
-    m_lastDraws.assign(draws.size(), std::nullopt);
+    if (!continued) {
+        m_engine.beginFrame(frame);
+        m_lastDraws.clear();
+    }
+    m_lastDraws.resize(draws.size());
     out.draws.resize(draws.size());
-    for (std::size_t i = 0; i < draws.size(); ++i) {
-        const tap::CaptureDrawRecord& r = draws[i];
-        if (!r.translated || !r.classification.committed()) {
-            continue;
-        }
-        const bool captured = r.geometry && r.geometry->captured();
-        inst::SceneDrawInput input = captured ? inst::sceneDrawInput(r.translation, *r.geometry, m_assetRule)
-                                              : inst::sceneDrawInput(r.translation);
-        input.categories = r.classification.categories;
-        const inst::SceneDrawResult res = m_scene->model.submitDraw(input);
-
-        DrawInput d;
-        d.index = r.drawInFrame;
-        d.geometryValid = captured;
-        if (captured) {
-            d.hashes = r.geometry->hashes.get();
-            const capture::geometry::CapturedDrawPtr g = r.geometry;
-            d.legacyHashes = [g] { return g->geometryHashes(); };
-        }
-        d.materialHash = r.translation.material.hash();
-        d.categories = r.classification.categories;
-        d.objectToWorld = toMat4d(r.translation.transforms.objectToWorld);
-        d.instanceId = res.instanceId;
-        ReplacedDraw rd = m_engine.replaceDraw(d);
-        out.draws[i] = capture::exporter::json::write(replacedDrawJson(rd));
-        m_lastDraws[i] = std::move(rd);
+    for (std::size_t i = 0; i < first && i < early.size(); ++i) {
+        out.draws[i] = std::move(early[i]);
+    }
+    for (std::size_t i = first; i < draws.size(); ++i) {
+        processDraw(i, draws[i], draws[i].classification, out.draws[i]);
     }
     std::optional<scene::CameraState> mainCamera;
     static const std::vector<scene::LightRecord> kNoLights;

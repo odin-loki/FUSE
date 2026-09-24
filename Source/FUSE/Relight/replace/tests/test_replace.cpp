@@ -19,7 +19,8 @@
 // applied at the first frame boundary after the notification: latency <= 1 frame; mods added / removed; a broken
 // write keeps the last good content; per-hash invalidation); the texture residency policy; and the capture tap
 // integration (CaptureTap + CaptureReplaceProcessor on a synthetic D3D9 stream: the record's "replacement" members
-// and "replace_frame" lines).
+// and "replace_frame" lines; the injection-time half, processPending before Present + previewLights, leaves the record
+// identical to the flush alone).
 #include <fuse/relight/capture/export/json.hpp>
 #include <fuse/relight/hash/hash_string.hpp>
 #include <fuse/relight/mods/assets/dds.hpp>
@@ -898,6 +899,72 @@ void testCaptureTap(const fs::path& tmp) {
         }
     }
     CHECK(draws == 3 && frames == 3);
+    // 4. The injection-time half (RL-4.x RenderTap): processPending on the frame's draws before Present, then the
+    //    flush continues after them. The record is identical to the flush alone; the preview has the attached light.
+    const fs::path record2 = root / "record_pending.jsonl";
+    std::size_t pendingCalls = 0, previewLights = 0;
+    {
+        std::atomic<std::uint32_t> counter{0};
+        EngineConfig ec;
+        ec.roots = {{mods.generic_string(), ModKind::Remix}};
+        ec.gameId = "unit";
+        ec.watchBackend = WatchBackend::Poll;
+        ec.optionLayers = false;
+        CaptureTapConfig config;
+        config.path = record2.string();
+        config.texture.renderTargetCounter = &counter;
+        config.processor = std::make_unique<CaptureReplaceProcessor>(ec, hash::parseHashRule(hash::rules::kDefaultAssetRuleString));
+        CaptureTap tap(std::move(config));
+        auto* p = static_cast<CaptureReplaceProcessor*>(tap.frameProcessor());
+        struct PendingTap final : IRelightTap {
+            CaptureTap& tap;
+            CaptureReplaceProcessor& p;
+            std::size_t& calls;
+            std::size_t& preview;
+            PendingTap(CaptureTap& t, CaptureReplaceProcessor& pr, std::size_t& c, std::size_t& v)
+                : tap(t), p(pr), calls(c), preview(v) {}
+            void onDeviceCreate(const DeviceEvent& e) override { tap.onDeviceCreate(e); }
+            void onDeviceDestroy() override { tap.onDeviceDestroy(); }
+            void onTextureCreate(const TextureDesc& d) override { tap.onTextureCreate(d); }
+            void onTextureUpload(const TextureUpload& u) override { tap.onTextureUpload(u); }
+            void onTextureWriteLock(const TextureWriteLock& l) override { tap.onTextureWriteLock(l); }
+            void onBufferCreate(const BufferDesc& d) override { tap.onBufferCreate(d); }
+            void onBufferWrite(const BufferWrite& w) override { tap.onBufferWrite(w); }
+            DrawDecision onDraw(const DrawCall& c, const DrawState& st) override { return tap.onDraw(c, st); }
+            void onPresent(const FrameEvent& f) override {
+                tap.visitPendingDraws([&](std::uint64_t frame, const std::vector<CaptureDrawRecord>& draws) {
+                    std::vector<scene::DrawClassification> cls;
+                    for (const CaptureDrawRecord& r : draws) {
+                        cls.push_back(r.classification);
+                        if (r.geometry && r.geometry->captured()) {
+                            scene::DrawClassifier::applyGeometryCategories(
+                                cls.back(), r.geometry->assetHash(tap.geometry().config().assetRule));
+                        }
+                    }
+                    // Twice: a repeated call for the same frame processes nothing new.
+                    calls += p.processPending(frame, draws, draws.size(), cls) == draws.size() ? 1u : 0u;
+                    calls += p.processPending(frame, draws, draws.size(), cls) == draws.size() ? 1u : 0u;
+                    preview = p.previewLights(tap.translator().lights().frameLights()).size();
+                });
+                tap.onPresent(f);
+            }
+        } pending(tap, *p, pendingCalls, previewLights);
+        App app;
+        app.run(pending, 3);
+    }
+    CHECK(pendingCalls == 6 && previewLights == 1);
+    auto replaceLines = [](const fs::path& path) {
+        std::vector<std::string> out;
+        std::ifstream in(path);
+        for (std::string l; std::getline(in, l);) {
+            if (l.find("\"replace_frame\"") != std::string::npos || l.find("\"replacement\"") != std::string::npos) {
+                out.push_back(l);
+            }
+        }
+        return out;
+    };
+    const std::vector<std::string> flushOnly = replaceLines(record), injected = replaceLines(record2);
+    CHECK(flushOnly.size() == 6 && flushOnly == injected);
     // No roots, no processor.
     CHECK(createCaptureReplaceProcessor(0) == nullptr);
     fs::remove_all(root);

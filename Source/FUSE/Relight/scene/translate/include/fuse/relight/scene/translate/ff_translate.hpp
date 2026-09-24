@@ -52,7 +52,8 @@ inline constexpr std::uint32_t RS_ALPHAREF = 24, RS_ALPHAFUNC = 25, RS_SRCBLEND 
                                RS_FOGENABLE = 28, RS_FOGCOLOR = 34, RS_FOGTABLEMODE = 35, RS_FOGSTART = 36,
                                RS_FOGEND = 37, RS_FOGDENSITY = 38, RS_TEXTUREFACTOR = 60, RS_LIGHTING = 137,
                                RS_FOGVERTEXMODE = 140, RS_COLORVERTEX = 141, RS_DIFFUSEMATERIALSOURCE = 145,
-                               RS_SPECULARMATERIALSOURCE = 146, RS_CLIPPLANEENABLE = 152, RS_BLENDOP = 171,
+                               RS_SPECULARMATERIALSOURCE = 146, RS_EMISSIVEMATERIALSOURCE = 148,
+                               RS_CLIPPLANEENABLE = 152, RS_BLENDOP = 171,
                                RS_SEPARATEALPHABLENDENABLE = 206, RS_SRCBLENDALPHA = 207, RS_DESTBLENDALPHA = 208,
                                RS_BLENDOPALPHA = 209;
 inline constexpr std::uint32_t MCS_MATERIAL = 0, MCS_COLOR1 = 1, MCS_COLOR2 = 2;
@@ -107,6 +108,8 @@ bool renderTargetHasAlphaSwizzle(std::uint32_t d3dFormat);
 
 // ---- Remix material enums (shaders/rtx/concept/surface/surface_shared.h) -------------------------------
 enum class TextureArgSource : std::uint8_t { None = 0, Texture, VertexColor0, TFactor };
+/// LegacyMaterialRecord::emissiveSource (FUSE).
+enum class EmissiveSource : std::uint8_t { Material = 0, VertexColor0, VertexColor1 };
 enum class TextureOperation : std::uint8_t {
     Disable = 0,
     SelectArg1,
@@ -121,6 +124,7 @@ enum class TexGenMode : std::uint8_t { None = 0, ViewPositions, CascadedViewPosi
 
 const char* textureArgSourceName(TextureArgSource s);
 const char* textureOperationName(TextureOperation o);
+const char* emissiveSourceName(EmissiveSource s);
 const char* texGenModeName(TexGenMode m);
 
 // ---- inputs ----------------------------------------------------------------------------------------------
@@ -169,6 +173,11 @@ struct LegacyMaterialRecord {
     tap::Material d3dMaterial;
     bool isTextureFactorBlend = false;
     bool isVertexColorBakedLighting = true;
+    /// FUSE (not in Remix's LegacyMaterialData): D3DRS_EMISSIVEMATERIALSOURCE resolved like the diffuse source (FFP
+    /// lighting on, D3DRS_COLORVERTEX on, the vertex has that colour; else the material): the emissive colour is
+    /// the vertex's COLOR0 (D3DMCS_COLOR1) or COLOR1 (D3DMCS_COLOR2) instead of D3DMATERIAL9 emissive. Not part of
+    /// any hash. The raster remaster (RL-4.2) emits it.
+    EmissiveSource emissiveSource = EmissiveSource::Material;
     std::array<std::int32_t, kMaxSupportedTextures> colorTextureSlots{-1, -1};
     std::array<hash::Hash64, kMaxSupportedTextures> colorTextureHashes{hash::kEmptyHash, hash::kEmptyHash};
 

@@ -209,6 +209,15 @@ const char* textureArgSourceName(TextureArgSource s) {
     return "?";
 }
 
+const char* emissiveSourceName(EmissiveSource s) {
+    switch (s) {
+    case EmissiveSource::Material: return "Material";
+    case EmissiveSource::VertexColor0: return "VertexColor0";
+    case EmissiveSource::VertexColor1: return "VertexColor1";
+    }
+    return "?";
+}
+
 const char* textureOperationName(TextureOperation o) {
     switch (o) {
     case TextureOperation::Disable: return "Disable";
@@ -314,6 +323,16 @@ LegacyMaterialRecord setLegacyMaterialState(const D3DStateModel& s, const FixedF
 
     m.diffuseColorSource = convertColorSource(diffuseSource);
     m.specularColorSource = convertColorSource(specularSource);
+    // FUSE: the emissive colour source (D3D9 FFP: used when lighting and D3DRS_COLORVERTEX are on and the vertex has
+    // the colour; otherwise the material's emissive).
+    if (lighting && s.rs(d3dff::RS_COLORVERTEX) != 0) {
+        const std::uint32_t emissive = s.rs(d3dff::RS_EMISSIVEMATERIALSOURCE);
+        if (emissive == d3dff::MCS_COLOR1 && hasColor0) {
+            m.emissiveSource = EmissiveSource::VertexColor0;
+        } else if (emissive == d3dff::MCS_COLOR2 && hasColor1) {
+            m.emissiveSource = EmissiveSource::VertexColor1;
+        }
+    }
 
     m.tFactor = s.rs(d3dff::RS_TEXTUREFACTOR);
 
