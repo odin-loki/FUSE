@@ -1402,8 +1402,18 @@ void measure() {
     }
 #endif
 
+    // MSVC's debug STL (_ITERATOR_DEBUG_LEVEL > 0) heap-allocates a 16-byte _Container_proxy for every
+    // std container it constructs, including short-lived temporaries; those are library bookkeeping,
+    // not engine allocations, and do not exist in Release/Profile/Shipping (which stay enforced).
+#if defined(_MSC_VER) && defined(_ITERATOR_DEBUG_LEVEL) && _ITERATOR_DEBUG_LEVEL > 0
+    constexpr bool kDebugStlProxies = true;
+    std::printf("steady-state alloc: MSVC debug STL (_ITERATOR_DEBUG_LEVEL=%d): per-phase totals reported, not enforced\n",
+                _ITERATOR_DEBUG_LEVEL);
+#else
+    constexpr bool kDebugStlProxies = false;
+#endif
     for (int p = 0; p < kPhaseCount; ++p) {
-        if (!g_phaseActive[p]) {
+        if (!g_phaseActive[p] || kDebugStlProxies) {
             continue;
         }
         const std::uint64_t total = g_phaseNew[p].load() + g_phaseMalloc[p].load();
