@@ -76,16 +76,20 @@ private:
     struct FreeBlock {
         FreeBlock* next;
     };
-    struct PageHeader {
+    // alignas: blocks start right after a header, so every header spans a multiple of kAlignment
+    // (on 32-bit targets the members alone are 8 bytes).
+    struct alignas(kAlignment) PageHeader {
         PageHeader* next;
         usize bytes;
     };
-    struct OversizeHeader {
+    struct alignas(kAlignment) OversizeHeader {
         OversizeHeader* prev;
         OversizeHeader* next;
         usize bytes;
         usize pad;
     };
+    static_assert(sizeof(PageHeader) % kAlignment == 0u && sizeof(OversizeHeader) % kAlignment == 0u,
+                  "blocks after a page / oversize header must stay kAlignment-aligned");
 
     void* allocateLocked(usize size);
     void deallocateLocked(void* ptr, usize size);

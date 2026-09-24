@@ -5,6 +5,7 @@
 #include <fuse/compute_kernel/stats.hpp>
 
 #include <algorithm>
+#include <utility>
 
 namespace fuse::animation {
 
@@ -29,7 +30,7 @@ SkinningBackend skinning_backend() {
 bool skin_vertices_on(kernel::Backend backend, const SkinningInput& input, SkinningOutput& output, void* stream) {
     const usize vertexCount = input.rest_positions.size();
     const bool hasNormals = !input.rest_normals.empty();
-    if (vertexCount == 0 || static_cast<u64>(vertexCount) > 0xffffffffull || input.weights.size() != vertexCount ||
+    if (vertexCount == 0 || !std::in_range<u32>(vertexCount) || input.weights.size() != vertexCount ||
         (hasNormals && input.rest_normals.size() != vertexCount)) {
         return false;
     }

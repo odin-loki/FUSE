@@ -7,10 +7,14 @@
 #   fuse_relight_tap_vk     (PE builds) plain-Vulkan bootstrap of the FUSE-owned VkInstance/VkDevice
 #                           that DXVK imports (FUSE-DXVK patches RL-1.1-01/02). Link-only
 #                           dependency of relight_dxvk, so d3d9.dll and d3d8.dll both carry it.
-#   fuse_relight_tap_d3d9   (PE builds) the dispatcher inside d3d9.dll (dxvk/fuse_tap_dxvk.cpp):
+#   relight_tap_d3d9        (PE builds) the dispatcher inside d3d9.dll (dxvk/fuse_tap_dxvk.cpp):
 #                           DXVK state -> IRelightTap events. Compiled against DXVK's private d3d9
 #                           headers as system headers and linked into relight_d3d9. It creates the
 #                           tap with createTapForDevice (device_tap.hpp), which capture/ defines.
+#                           C++17 like relight_dxvk: DXVK's private headers do not compile as C++23
+#                           (std::memory_order::memory_order_acquire, explicit std::pair() in `= {}`
+#                           member initialisers), so it carries the relight_* (vendored DXVK) prefix
+#                           and stays outside fuse_lint_c_cxx23_targets, which covers fuse_* targets.
 #   fuse_relight_tap_capture  (capture/CMakeLists.txt, added after RL-1.2/1.3/1.4) the capture mode.
 # Tests: ../tests/tap (rl_tap_unit; Wine: rl_passthrough_golden_*, rl_tap_record_*, rl_tap_validation).
 
@@ -30,22 +34,23 @@ if(TARGET relight_d3d9)
     add_library(fuse_relight_tap_vk STATIC src/vk_bootstrap.cpp)
     target_include_directories(fuse_relight_tap_vk SYSTEM PRIVATE "${FUSE_DXVK_DIR}/include/vulkan/include")
     target_link_libraries(fuse_relight_tap_vk PUBLIC fuse_relight_tap)
-    set_target_properties(fuse_relight_tap_vk PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+    set_target_properties(fuse_relight_tap_vk PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
     # DXVK's instance/adapter code calls into it (patches RL-1.1-01/02); link only, so FUSE's usage
     # requirements (fuse_core include dirs and defines) do not reach the vendored sources.
     target_link_libraries(relight_dxvk PUBLIC $<LINK_ONLY:fuse_relight_tap_vk>)
 
     # ---- d3d9 dispatcher ----------------------------------------------------------------------------
-    add_library(fuse_relight_tap_d3d9 OBJECT dxvk/fuse_tap_dxvk.cpp)
-    set_target_properties(fuse_relight_tap_d3d9 PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
-    target_include_directories(fuse_relight_tap_d3d9 SYSTEM PRIVATE
+    # C++17: see the target list above (DXVK's private headers are C++17-only).
+    add_library(relight_tap_d3d9 OBJECT dxvk/fuse_tap_dxvk.cpp)
+    set_target_properties(relight_tap_d3d9 PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+    target_include_directories(relight_tap_d3d9 SYSTEM PRIVATE
         "${FUSE_DXVK_DIR}/src/d3d9"
         "${CMAKE_BINARY_DIR}/relight/dxvk-gen/d3d9")
-    target_include_directories(fuse_relight_tap_d3d9 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/dxvk)
-    target_link_libraries(fuse_relight_tap_d3d9 PRIVATE relight_dxvk fuse_relight_tap)
-    add_dependencies(fuse_relight_tap_d3d9 fuse_relight_tap_vk)
+    target_include_directories(relight_tap_d3d9 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/dxvk)
+    target_link_libraries(relight_tap_d3d9 PRIVATE relight_dxvk fuse_relight_tap)
+    add_dependencies(relight_tap_d3d9 fuse_relight_tap_vk)
 
-    target_sources(relight_d3d9 PRIVATE $<TARGET_OBJECTS:fuse_relight_tap_d3d9>)
+    target_sources(relight_d3d9 PRIVATE $<TARGET_OBJECTS:relight_tap_d3d9>)
     # d3d9_device.h includes fuse_tap_dxvk.h (patch RL-1.1-03).
     target_include_directories(relight_d3d9 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/dxvk)
     target_link_libraries(relight_d3d9 PRIVATE $<LINK_ONLY:fuse_relight_tap>)

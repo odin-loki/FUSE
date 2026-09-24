@@ -8,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -90,12 +91,17 @@ struct ParallelForTask {
     static constexpr u64 kChunkMask = (u64{1} << kChunkBits) - 1u;
     /// Largest chunk count per dispatch; larger ranges widen the grain (bodies see the same indices).
     static constexpr u32 kMaxChunks = static_cast<u32>(kChunkMask);
-    static constexpr u64 kGenerationMask = (u64{1} << (64u - kChunkBits)) - 1u;
+    /// A helper job captures (task, generation), which must fit std::function's two-pointer inline
+    /// storage, so the generation is pointer-width: 40 bits on 64-bit targets (all that `claim`
+    /// leaves beside the chunk count), 32 bits on 32-bit targets.
+    using Generation = std::uintptr_t;
+    static constexpr u64 kGenerationMask =
+        sizeof(Generation) >= sizeof(u64) ? (u64{1} << (64u - kChunkBits)) - 1u : u64{~Generation{0}};
 
     /// (generation << kChunkBits) | unclaimed chunks.
     std::atomic<u64> claim{0};
     std::atomic<u32> pendingChunks{0};
-    u64 generation = 0;
+    Generation generation = 0;
     u32 begin = 0;
     u32 end = 0;
     u32 grainSize = 1;
@@ -109,17 +115,17 @@ struct ParallelForTask {
     std::atomic<u32>* queuedHelpers = nullptr;
 
     /// Entry point of a helper job issued for use `gen`.
-    void runHelper(u64 gen) {
+    void runHelper(Generation gen) {
         queuedHelpers->fetch_sub(1, std::memory_order_relaxed);
         runChunks(gen);
     }
 
     /// Claim and run chunks of use `gen` until none are left.
-    void runChunks(u64 gen) {
+    void runChunks(Generation gen) {
         u64 word = claim.load(std::memory_order_acquire);
         for (;;) {
             const u64 unclaimed = word & kChunkMask;
-            if ((word >> kChunkBits) != gen || unclaimed == 0u) {
+            if ((word >> kChunkBits) != static_cast<u64>(gen) || unclaimed == 0u) {
                 return;
             }
             // acquire on success: the fields below were published with this generation's word.
@@ -637,9 +643,11 @@ struct JobScheduler::Impl {
         const u32 helpers = reserveHelpers(wanted);
 
         detail::ParallelForTask* task = acquireTask();
-        // Wraps after 2^40 uses of one record; a helper would need to sit queued that long.
-        task->generation = (task->generation + 1u) & detail::ParallelForTask::kGenerationMask;
-        const u64 gen = task->generation;
+        // Wraps after 2^40 (2^32 on 32-bit) uses of one record; a helper would need to sit queued
+        // that long.
+        task->generation = static_cast<detail::ParallelForTask::Generation>(
+            (task->generation + 1u) & detail::ParallelForTask::kGenerationMask);
+        const detail::ParallelForTask::Generation gen = task->generation;
         task->begin = begin;
         task->end = end;
         task->grainSize = grainSize;
@@ -647,14 +655,16 @@ struct JobScheduler::Impl {
         task->invoke = invoke;
         task->body = body;
         task->pendingChunks.store(chunkCount, std::memory_order_relaxed);
-        task->claim.store((gen << detail::ParallelForTask::kChunkBits) | chunkCount, std::memory_order_release);
+        task->claim.store((static_cast<u64>(gen) << detail::ParallelForTask::kChunkBits) | chunkCount,
+                          std::memory_order_release);
 
         // Helpers go to distinct queues so idle workers pick them up without stealing. The queue
         // mutex publishes the task fields above to whichever worker runs the helper.
         queued.fetch_add(helpers, std::memory_order_seq_cst);
         for (u32 h = 0; h < helpers; ++h) {
             auto helper = [task, gen]() { task->runHelper(gen); };
-            static_assert(std::is_trivially_copyable<decltype(helper)>::value && sizeof(helper) <= 2 * sizeof(void*),
+            static_assert(std::is_trivially_copyable<decltype(helper)>::value && sizeof(helper) <= 2 * sizeof(void*) &&
+                              alignof(decltype(helper)) <= alignof(void*),
                           "parallel_for helper job must fit std::function's inline storage");
             const u32 target = roundRobin.fetch_add(1, std::memory_order_relaxed) % workerCount;
             std::lock_guard<std::mutex> lock(queueMutexes[target]);

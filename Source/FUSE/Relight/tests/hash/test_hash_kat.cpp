@@ -208,6 +208,8 @@ bool runDigestCheck(const std::string& path, std::uint64_t seed, std::size_t cou
 
 // ---- properties ---------------------------------------------------------------------------------------
 
+// The hardware comparison helpers are only used where runSoftFloatChecks compares (x86-64).
+#if defined(__x86_64__) || defined(_M_X64)
 std::uint32_t hwMul(std::uint32_t a, std::uint32_t b) {
     volatile float fa = std::bit_cast<float>(a);
     volatile float fb = std::bit_cast<float>(b);
@@ -228,6 +230,7 @@ std::uint32_t randomFloatBits(Rng& rng) {
 bool isNaNBits(std::uint32_t b) {
     return (b & 0x7f800000u) == 0x7f800000u && (b & 0x007fffffu) != 0;
 }
+#endif
 
 void runSoftFloatChecks() {
 #if defined(__x86_64__) || defined(_M_X64)
