@@ -29,6 +29,7 @@
 #include "options_state.hpp"
 
 #include <fstream>
+#include <new>
 #include <vector>
 
 namespace fuse::relight::options {
@@ -39,48 +40,55 @@ namespace fuse::relight::options {
 
 namespace detail {
 
+namespace {
+/// Process-lifetime object that is never destroyed. Options are static objects in many translation
+/// units and can outlive any function-local static (their destructors unregister, and handles held
+/// in statics drop references at exit), so the shared state must survive static destruction.
+/// The storage is static, so the objects stay reachable (no leak report).
+/// `Tag` keeps objects of the same type apart (the option registry and the dirty set are both
+/// std::map<std::string, OptionBase*>).
+template <typename T, typename Tag>
+T& immortal() {
+    alignas(T) static unsigned char storage[sizeof(T)];
+    static T* instance = ::new (static_cast<void*>(storage)) T();
+    return *instance;
+}
+} // namespace
+
 std::recursive_mutex& optionMutex() {
-    static std::recursive_mutex mutex;
-    return mutex;
+    return immortal<std::recursive_mutex, struct MutexTag>();
 }
 
 SystemLayerState& systemLayerState() {
-    static SystemLayerState state;
-    return state;
+    return immortal<SystemLayerState, struct SystemTag>();
 }
 
 std::map<std::string, std::string, std::less<>>& aliasTable() {
-    static std::map<std::string, std::string, std::less<>> table;
-    return table;
+    return immortal<std::map<std::string, std::string, std::less<>>, struct AliasTag>();
 }
 
 std::atomic<bool>& graphicsPresetIsCustom() {
-    static std::atomic<bool> custom{false};
-    return custom;
+    return immortal<std::atomic<bool>, struct PresetTag>();
 }
 
 bool& drawcallTranslationInvalid() {
-    static bool invalid = false;
-    return invalid;
+    return immortal<bool, struct DrawcallTag>();
 }
 
 } // namespace detail
 
 OptionManager::OptionMap& OptionManager::optionRegistry() {
-    static OptionMap registry;
-    return registry;
+    return detail::immortal<OptionMap, struct RegistryTag>();
 }
 
 std::map<std::string, OptionBase*, std::less<>>& OptionManager::dirtyOptions() {
-    static std::map<std::string, OptionBase*, std::less<>> dirty;
-    return dirty;
+    return detail::immortal<std::map<std::string, OptionBase*, std::less<>>, struct DirtyTag>();
 }
 
 const OptionManager::OptionMap& OptionManager::getOptions() { return optionRegistry(); }
 
 OptionManager::LayerMap& OptionManager::getLayerRegistry() {
-    static LayerMap registry;
-    return registry;
+    return detail::immortal<LayerMap, struct LayerTag>();
 }
 
 OptionLayer* OptionManager::getLayer(const OptionLayerKey& layerKey) {
