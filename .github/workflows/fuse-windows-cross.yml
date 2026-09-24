@@ -35,7 +35,7 @@ jobs:
 
       - name: Install MinGW-w64 (posix threads) and Wine
         run: |
-          sudo apt-get update -q
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update -q
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
             ninja-build cmake \
             g++-mingw-w64-x86-64-posix gcc-mingw-w64-x86-64-posix mingw-w64-tools binutils-mingw-w64-x86-64 \

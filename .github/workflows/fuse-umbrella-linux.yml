@@ -19,7 +19,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
           sudo apt-get install -y ninja-build cmake g++-13 libvulkan-dev mesa-vulkan-drivers vulkan-tools vulkan-validationlayers
 
       - name: Configure umbrella (core + legacy + smoke + U7/U8)
@@ -83,7 +83,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
           sudo apt-get install -y ninja-build cmake g++-13
 
       - name: Configure fuse_core single-thread profile
@@ -124,7 +124,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
           sudo apt-get install -y ninja-build cmake g++-13 libvulkan-dev mesa-vulkan-drivers vulkan-tools glslang-tools spirv-tools
 
       - name: Configure (fuse-werror-${{ matrix.config }})
@@ -150,7 +150,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
           sudo apt-get install -y ninja-build cmake g++-13 libvulkan-dev mesa-vulkan-drivers vulkan-tools glslang-tools spirv-tools
 
       - name: Configure (fuse-asan preset, FUSE_SANITIZE=address,undefined)
@@ -186,7 +186,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
           sudo apt-get install -y ninja-build cmake g++-13 libvulkan-dev mesa-vulkan-drivers vulkan-tools \
             vulkan-validationlayers glslang-tools spirv-tools qt6-base-dev libgl-dev xvfb xauth \
             libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0
