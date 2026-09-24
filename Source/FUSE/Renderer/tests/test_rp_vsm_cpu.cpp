@@ -19,6 +19,7 @@
 //               frame 2 renders 0 pages, a moving object re-renders only pages under its footprint, a
 //               camera move re-renders only the pages that scrolled in, a light rotation re-renders all
 //   api         VirtualShadowMap without a device: init fails cleanly, calls are no-ops; capabilities
+#include <bit>
 #include <fuse/compute_kernel/launch.hpp>
 #include <fuse/compute_kernel/stats.hpp>
 #include <fuse/renderer/shadow/vsm/virtual_shadow_map.hpp>
@@ -696,7 +697,7 @@ void kernelBits(const VsmFrameConstants& c, const MiniScene& s, const gpu_scene:
 u32 popcount(const std::vector<u32>& w) {
     u32 n = 0;
     for (const u32 v : w) {
-        n += static_cast<u32>(__builtin_popcount(v));
+        n += static_cast<u32>(std::popcount(v));
     }
     return n;
 }

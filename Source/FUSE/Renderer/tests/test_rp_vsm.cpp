@@ -33,6 +33,7 @@
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
 #include "test_rp_material_resolve_scene.hpp"
 
+#include <bit>
 #include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/renderer/culling/instance_culler.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
@@ -818,7 +819,7 @@ struct FrameReport {
 u32 popcount(const std::vector<u32>& w) {
     u32 n = 0;
     for (const u32 v : w) {
-        n += static_cast<u32>(__builtin_popcount(v));
+        n += static_cast<u32>(std::popcount(v));
     }
     return n;
 }
