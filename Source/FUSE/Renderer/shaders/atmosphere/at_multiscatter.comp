@@ -1,0 +1,17 @@
+#version 460
+// WP-8.2 "atmos.multiscatter": multi-scattering LUT (Psi_ms, alpha = max f_ms), one texel per invocation
+// (8 x 8 tiles; each texel integrates msDirSqrt^2 directions). Reads the transmittance LUT.
+// CPU reference: atmosphere::multiscatter_texel. GLSL twin of at_multiscatter.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "at_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+    const AtParams P = at_load(pc.params);
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= P.msWidth || p.y >= P.msHeight) {
+        return;
+    }
+    AtTexelsRef(P.multiscatter).v[p.y * P.msWidth + p.x] = at_multiscatter_texel(P, p.x, p.y);
+}

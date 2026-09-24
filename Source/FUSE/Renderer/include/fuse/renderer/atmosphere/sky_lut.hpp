@@ -30,6 +30,8 @@ public:
 
     /// Sample LUT by sun and view elevation in radians (clamped to table range, nearest bin).
     math::Vec3 sample(f32 sun_elevation_rad, f32 view_elevation_rad) const;
+    /// Bilinear sample between the four surrounding bins (clamped to the table range).
+    math::Vec3 sampleBilinear(f32 sun_elevation_rad, f32 view_elevation_rad) const;
 
 private:
     SkyLutDesc m_desc{};

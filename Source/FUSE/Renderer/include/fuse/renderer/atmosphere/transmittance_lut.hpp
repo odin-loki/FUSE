@@ -60,6 +60,8 @@ public:
 
     /// Sample LUT by radial distance from the planet centre (metres) and cos(zenith), nearest bin.
     math::Vec3 sample(f32 altitude_m, f32 cos_zenith) const;
+    /// Bilinear sample between the four surrounding bins (bin i sits at i / (bins - 1) of each axis; clamped).
+    math::Vec3 sampleBilinear(f32 altitude_m, f32 cos_zenith) const;
 
 private:
     TransmittanceLutDesc m_desc{};

@@ -66,4 +66,27 @@ math::Vec3 SkyLut::sample(f32 sun_elevation_rad, f32 view_elevation_rad) const {
     return m_entries[lutIndex(sun_bin, view_bin, m_desc.view_elevation_bins)];
 }
 
+math::Vec3 SkyLut::sampleBilinear(f32 sun_elevation_rad, f32 view_elevation_rad) const {
+    if (!m_ready || m_entries.empty()) {
+        return {};
+    }
+    const u32 sun_bins = m_desc.sun_elevation_bins;
+    const u32 view_bins = m_desc.view_elevation_bins;
+    const f32 sun_t = std::max(0.f, std::min(1.f, (sun_elevation_rad + kHalfPi) / kPi));
+    const f32 view_t = std::max(0.f, std::min(1.f, (view_elevation_rad + kHalfPi) / kPi));
+    const f32 fs = sun_t * static_cast<f32>(sun_bins - 1u);
+    const f32 fv = view_t * static_cast<f32>(view_bins - 1u);
+    const u32 s0 = std::min(static_cast<u32>(fs), sun_bins - 2u);
+    const u32 v0 = std::min(static_cast<u32>(fv), view_bins - 2u);
+    const f32 ts = fs - static_cast<f32>(s0);
+    const f32 tv = fv - static_cast<f32>(v0);
+    const math::Vec3& a = m_entries[lutIndex(s0, v0, view_bins)];
+    const math::Vec3& b = m_entries[lutIndex(s0, v0 + 1u, view_bins)];
+    const math::Vec3& c = m_entries[lutIndex(s0 + 1u, v0, view_bins)];
+    const math::Vec3& d = m_entries[lutIndex(s0 + 1u, v0 + 1u, view_bins)];
+    const math::Vec3 low = a + (b - a) * tv;
+    const math::Vec3 high = c + (d - c) * tv;
+    return low + (high - low) * ts;
+}
+
 } // namespace fuse::renderer

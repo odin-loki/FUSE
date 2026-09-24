@@ -107,4 +107,29 @@ math::Vec3 TransmittanceLut::sample(f32 altitude_m, f32 cos_zenith) const {
     return m_entries[index.flat_index];
 }
 
+math::Vec3 TransmittanceLut::sampleBilinear(f32 altitude_m, f32 cos_zenith) const {
+    if (!m_ready || m_entries.empty()) {
+        return {};
+    }
+    const u32 alt_bins = m_desc.altitude_bins;
+    const u32 cos_bins = m_desc.cos_zenith_bins;
+    const f32 min_alt = m_desc.atmosphere.earth_radius;
+    const f32 max_alt = m_desc.atmosphere.atmo_radius;
+    const f32 alt_t = std::max(0.f, std::min(1.f, (altitude_m - min_alt) / (max_alt - min_alt)));
+    const f32 cos_t = (clampCosZenith(cos_zenith) + 1.f) * 0.5f;
+    const f32 fa = alt_t * static_cast<f32>(alt_bins - 1u);
+    const f32 fc = cos_t * static_cast<f32>(cos_bins - 1u);
+    const u32 a0 = std::min(static_cast<u32>(fa), alt_bins - 2u);
+    const u32 c0 = std::min(static_cast<u32>(fc), cos_bins - 2u);
+    const f32 ta = fa - static_cast<f32>(a0);
+    const f32 tc = fc - static_cast<f32>(c0);
+    const math::Vec3& v00 = m_entries[transmittance_lut_flat_index(a0, c0, cos_bins)];
+    const math::Vec3& v01 = m_entries[transmittance_lut_flat_index(a0, c0 + 1u, cos_bins)];
+    const math::Vec3& v10 = m_entries[transmittance_lut_flat_index(a0 + 1u, c0, cos_bins)];
+    const math::Vec3& v11 = m_entries[transmittance_lut_flat_index(a0 + 1u, c0 + 1u, cos_bins)];
+    const math::Vec3 low = v00 + (v01 - v00) * tc;
+    const math::Vec3 high = v10 + (v11 - v10) * tc;
+    return low + (high - low) * ta;
+}
+
 } // namespace fuse::renderer

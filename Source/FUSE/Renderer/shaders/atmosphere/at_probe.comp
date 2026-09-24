@@ -1,0 +1,30 @@
+#version 460
+// WP-8.2 "atmos.probe": runs the includable sampling helpers (at_sample.glsl) for a list of probes, so the
+// gates check the consumer-side lookups on the device against their CPU twins (atmosphere::at_*). Inputs /
+// outputs: see kAtProbeInputs / kAtProbeOutputs (atmosphere_lut_types.hpp). GLSL twin of at_probe.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "at_common.glsl"
+
+layout(local_size_x = 64) in;
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.mode) {
+        return;
+    }
+    const AtParams P = at_load(pc.params);
+    AtTexelsRef src = AtTexelsRef(pc.src);
+    AtTexelsRef dst = AtTexelsRef(pc.dst);
+    const vec4 a = src.v[i * 3u];
+    const vec4 b = src.v[i * 3u + 1u];
+    const vec4 c = src.v[i * 3u + 2u];
+    vec3 s;
+    vec3 t;
+    at_aerial(P, b.xy, b.z, s, t);
+    dst.v[i * 6u] = vec4(at_sky_radiance(P, a.xyz, true), 0.0);
+    dst.v[i * 6u + 1u] = vec4(at_sky_radiance(P, a.xyz, false), 0.0);
+    dst.v[i * 6u + 2u] = vec4(at_sun_illuminance_at(P, c.xyz), 0.0);
+    dst.v[i * 6u + 3u] = vec4(s, 0.0);
+    dst.v[i * 6u + 4u] = vec4(t, 0.0);
+    dst.v[i * 6u + 5u] = vec4(at_multiscatter(P, P.up[3], P.sunDir[3]), 0.0);
+}
