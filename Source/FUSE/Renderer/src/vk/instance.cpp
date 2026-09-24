@@ -1,4 +1,5 @@
 #include <fuse/renderer/vk/instance.hpp>
+#include <fuse/renderer/vk/loader.hpp>
 
 #include <fuse/platform/window_wsi.hpp>
 
@@ -139,6 +140,12 @@ void* VulkanInstance::nativeHandle() const {
 
 bool VulkanInstance::initialize(const VulkanInstanceDesc& desc) {
 #if defined(FUSE_VULKAN_BACKEND)
+    // fuse_rhi does not link the loader; volk opens it at run time (vk/loader.hpp).
+    if (!vkloader::initialize()) {
+        m_info.mode = VulkanBackendMode::Stub;
+        m_info.message = "Vulkan loader library not found (volk) — falling back to stub semantics";
+        return false;
+    }
     m_info.mode = VulkanBackendMode::Headless;
 
     VkApplicationInfo appInfo{};
@@ -205,6 +212,9 @@ bool VulkanInstance::initialize(const VulkanInstanceDesc& desc) {
         return false;
     }
 
+    // Load the instance-level table (and loader trampolines for device entry points) before any
+    // other call on this instance.
+    vkloader::registerInstance(instance);
     m_handle = instance;
     m_info.valid = true;
     m_info.apiVersion = appInfo.apiVersion;
@@ -272,6 +282,7 @@ void VulkanInstance::shutdown() {
     }
 
     vkDestroyInstance(instance, nullptr);
+    vkloader::unregisterInstance(instance);
     m_handle = nullptr;
 #endif
 }

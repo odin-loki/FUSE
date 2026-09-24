@@ -25,10 +25,13 @@
 
 #if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_VMA_AVAILABLE)
 // Vendored header-only VMA (Engine/lib/vma, pinned in Engine/lib/vma/VERSION); this TU holds the
-// implementation. Static Vulkan functions: VMA calls the loader's exported entry points, so every
-// vkAllocateMemory / vkCreateBuffer / vkCreateImage it issues goes through the same symbols as the
-// rest of fuse_rhi (layers, the b5 call-interposition tests). VMA_VULKAN_VERSION matches the 1.2
-// instance (instance.cpp) so no 1.3+ entry points are referenced.
+// implementation. "Static" Vulkan functions: with volk (WP-0.2, vk/loader.hpp) every vk* name here
+// is volk's function-pointer global, so vmaCreateAllocator copies the table that is current for
+// the device (device-level dispatch, or loader trampolines while several devices are live) and
+// every vkAllocateMemory / vkCreateBuffer / vkCreateImage VMA issues goes through the same
+// pointers as the rest of fuse_rhi (layers, the b5 call-hook tests, which wrap them on reload).
+// VMA_DYNAMIC_VULKAN_FUNCTIONS stays 0: nothing is fetched with vkGet*ProcAddr behind volk's back.
+// VMA_VULKAN_VERSION matches the 1.2 instance (instance.cpp) so no 1.3+ entry points are referenced.
 #define VMA_STATIC_VULKAN_FUNCTIONS 1
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
 #define VMA_VULKAN_VERSION 1002000

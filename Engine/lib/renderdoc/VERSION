@@ -1,0 +1,21 @@
+# FUSE third-party pin: RenderDoc in-application API header (Baldur Karlsson), single file, vendored
+# verbatim, no local edits. MIT: the licence text is the header's own banner (license_file below).
+# Only the header is vendored: FUSE never links RenderDoc, it dlopens/LoadLibrary's an already
+# injected librenderdoc.so / renderdoc.dll at run time (Source/FUSE/Renderer/src/vk/renderdoc_capture.cpp).
+# Checked by ctest fuse_rp_renderdoc_header_pin (Source/FUSE/Renderer/cmake/rp_wp06_pin_check.cmake):
+# every sha256 line and the newest eRENDERDOC_API_Version_* the header declares (api_version).
+# Not registered with `fuse_lint vendored-pins`: RenderDoc tags are vMAJOR.MINOR (v1.46) and that check
+# requires an X.Y.Z version equal to the tag.
+# To update: re-fetch renderdoc/api/app/renderdoc_app.h at the new tag, then update version, tag,
+# commit, api_version and sha256 together. sha256 is over the file with CRLF normalized to LF.
+name=RenderDoc in-application API (renderdoc_app.h)
+upstream=https://github.com/baldurk/renderdoc
+version=1.46
+tag=v1.46
+commit=e4bd23b671d3d5a747ff5221dbe08a63eb6ca200
+retrieved=2026-09-23 (raw.githubusercontent.com at the tag commit, renderdoc/api/app/renderdoc_app.h)
+license=MIT
+license_file=include/renderdoc_app.h
+version_header=include/renderdoc_app.h
+api_version=1.7.0
+sha256:include/renderdoc_app.h=b7005e7dc34c3635046868bbd76d81b9b055aede0f56daa0bd39fedee0639ffb

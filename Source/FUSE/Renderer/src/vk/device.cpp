@@ -1,4 +1,5 @@
 #include <fuse/renderer/vk/device.hpp>
+#include <fuse/renderer/vk/loader.hpp>
 
 #include <algorithm>
 #include <cstdlib>
@@ -798,6 +799,9 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
         enabledSet.v13.synchronization2 = wantSync2 ? VK_TRUE : VK_FALSE;
         enabledSet.v13.dynamicRendering = wantDynamic ? VK_TRUE : VK_FALSE;
         enabledSet.v13.maintenance4 = wantMaintenance4 ? VK_TRUE : VK_FALSE;
+        // Optional (WP-0.5 pipeline cache: FAIL_ON_PIPELINE_COMPILE_REQUIRED probes); core 1.3 only.
+        enabledSet.v13.pipelineCreationCacheControl =
+            desc.enableOptionalFeatures ? supportedSet.v13.pipelineCreationCacheControl : VK_FALSE;
     } else {
         // Legacy (FUSE_VK_ALLOW_1_2) path: the promoted extensions' own feature structs.
         if (wantSync2 && hasEnabledExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME)) {
@@ -891,6 +895,9 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
         m_info.message = "vkCreateDevice failed";
         return false;
     }
+    // Device-level dispatch (volkLoadDevice) while this is the only live device; loader
+    // trampolines while several are (vk/loader.hpp). Before any other call on the device.
+    vkloader::registerDevice(logicalDevice, vkInstance);
 
     m_physicalDevice = selected;
     m_handle = logicalDevice;
@@ -910,6 +917,7 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     m_info.bufferDeviceAddress = enabled12.bufferDeviceAddress == VK_TRUE;
     m_info.timelineSemaphore = enabled12.timelineSemaphore == VK_TRUE;
     m_info.dynamicRendering = enabledFeature(RenderFeature::DynamicRendering);
+    m_info.pipelineCreationCacheControl = api13 && enabledSet.v13.pipelineCreationCacheControl == VK_TRUE;
     m_info.samplerAnisotropy = deviceFeatures.samplerAnisotropy == VK_TRUE;
     m_info.maxSamplerAnisotropy = props.limits.maxSamplerAnisotropy;
     {
@@ -992,6 +1000,7 @@ void VulkanDevice::shutdown() {
 #if defined(FUSE_VULKAN_BACKEND)
     if (m_handle != nullptr) {
         vkDestroyDevice(static_cast<VkDevice>(m_handle), nullptr);
+        vkloader::unregisterDevice(m_handle);
         m_handle = nullptr;
     }
     m_physicalDevice = nullptr;

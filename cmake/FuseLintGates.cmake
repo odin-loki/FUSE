@@ -131,11 +131,13 @@ _fuse_lint_add(fuse_lint_vendored_pins_fidelityfx vendored-pins --dir "${CMAKE_S
 _fuse_lint_add(fuse_lint_vendored_pins_nvidia_nis vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/nvidia-nis")
 # Optional NVIDIA plugin (docs/nvidia-plugin.md): Streamline public headers subset, MIT (binaries never vendored).
 _fuse_lint_add(fuse_lint_vendored_pins_streamline vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/streamline")
+_fuse_lint_add(fuse_lint_vendored_pins_volk vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/volk")  # WP-0.2 volk meta-loader (MIT)
 # FUSE Relight (RL-0.2): vendored DXVK 3.1.1 subset (zlib) and dxbc-spirv (MIT).
 _fuse_lint_add(fuse_lint_vendored_pins_dxvk vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/dxvk")
 _fuse_lint_add(fuse_lint_vendored_pins_dxbc_spirv vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/dxbc-spirv")
 # FUSE Relight RL-0.5: xxHash 0.8.x (BSD-2) for the Remix-compatible asset hashes.
 _fuse_lint_add(fuse_lint_vendored_pins_xxhash vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/xxhash")
+_fuse_lint_add(fuse_lint_vendored_pins_tracy vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/tracy")  # WP-0.6 Tracy client (BSD-3), optional FUSE_TRACY
 
 get_property(_fuse_lint_all GLOBAL PROPERTY _FUSE_LINT_TESTS)
 set_tests_properties(${_fuse_lint_all} PROPERTIES LABELS "gate;lint" TIMEOUT 300)

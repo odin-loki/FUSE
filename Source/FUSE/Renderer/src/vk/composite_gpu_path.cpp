@@ -522,7 +522,7 @@ bool CompositeGpuPath::initialize(VulkanDevice& device, const CompositeGpuPathDe
         return false;
     }
 
-    m_pipelineCache = PipelineCache::create(device);
+    m_pipelineCache = PipelineCache::create(device, PipelineCacheDesc{device.info().pipelineCreationCacheControl});
     if (m_pipelineCache == nullptr || !m_pipelineCache->isValid()) {
         m_stats.message = "composite pipeline cache failed";
         return false;

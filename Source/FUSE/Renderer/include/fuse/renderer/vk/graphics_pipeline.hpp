@@ -46,6 +46,11 @@ struct GraphicsPipelineDesc {
     /// When true, create with VkPipelineRenderingCreateInfo and VK_NULL_HANDLE render pass.
     bool useDynamicRendering = false;
     const char* debugName = nullptr;
+    /// Pipeline-cache manifest key; 0 derives it from both shaders' SPIR-V hashes and the state
+    /// above.
+    u64 cacheKey = 0;
+    /// See ComputePipelineDesc::failIfNotCached.
+    bool failIfNotCached = false;
 };
 
 struct GraphicsPipelineInfo {
@@ -60,6 +65,7 @@ struct GraphicsPipelineInfo {
     u32 cacheSnapshotBytes = 0;
     u32 rebuildCount = 0;
     std::string message;
+    PipelineCacheUse cache{};
 };
 
 /// B2.8 — graphics pipeline scaffold built from B2.4 shader modules + pipeline layout.

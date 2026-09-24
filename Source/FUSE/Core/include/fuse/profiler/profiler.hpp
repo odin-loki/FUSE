@@ -270,3 +270,6 @@ int unevaluatedUse(const Args&... args) noexcept;
 #define FUSE_PROFILE_CUDA_BEGIN(name, stream) ::fuse::profiler::profile_cuda_begin(name, stream)
 #define FUSE_PROFILE_CUDA_END(stream) ::fuse::profiler::profile_cuda_end(stream)
 #endif
+
+// WP-0.6: optional Tracy backend (FUSE_TRACY=1); expands nothing Tracy-related otherwise.
+#include <fuse/profiler/tracy_adapter.hpp>

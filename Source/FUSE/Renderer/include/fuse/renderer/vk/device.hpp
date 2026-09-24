@@ -60,6 +60,9 @@ struct VulkanDeviceInfo {
     bool bufferDeviceAddress = false;
     bool timelineSemaphore = false;
     bool dynamicRendering = false;
+    /// VkPhysicalDeviceVulkan13Features::pipelineCreationCacheControl enabled (Vulkan 1.3 device,
+    /// supported, VulkanDeviceDesc::enableOptionalFeatures). Feeds PipelineCacheDesc.
+    bool pipelineCreationCacheControl = false;
     bool samplerAnisotropy = false;
     float maxSamplerAnisotropy = 1.f;
     u32 deviceType = 0; // VkPhysicalDeviceType numeric

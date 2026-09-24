@@ -293,7 +293,7 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
     }
     m_stats.bindlessLayoutReady = m_pipelineLayout->info().hasBindlessSet;
 
-    m_pipelineCache = PipelineCache::create(device);
+    m_pipelineCache = PipelineCache::create(device, PipelineCacheDesc{device.info().pipelineCreationCacheControl});
     if (m_pipelineCache == nullptr || !m_pipelineCache->isValid()) {
         m_stats.message = "pipeline cache creation failed";
         return false;

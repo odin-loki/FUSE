@@ -1,11 +1,14 @@
 // Test-only Vulkan call interposition for the B5 RHI gate rows (fuse_b5_rhi_* tests).
 //
-// b5_vk_call_hooks.cpp defines selected `vk*` entry points inside the test executable. The
-// statically linked fuse_rhi objects resolve to these definitions at link time (the executable's
-// own symbols win over libvulkan's), and each hook forwards to the loader via dlsym(RTLD_NEXT).
+// fuse_rhi loads Vulkan through volk (WP-0.2, fuse/renderer/vk/loader.hpp): every vk* call it
+// makes (and VMA's, which copies the same table) goes through volk's function-pointer globals, not
+// through exported symbols. b5_vk_call_hooks.cpp registers a loader reload hook during static
+// initialisation. After every table (re)load (instance/device creation or destruction) the hook
+// swaps selected globals for wrappers that record the call and forward to the pointer they replaced.
 // This gives the tests a RenderDoc-like view of what the engine actually records/creates:
 //   * object creation + vkSetDebugUtilsObjectNameEXT (row: "all Vulkan objects named")
 //   * vkCmdBind* / vkCmdPushConstants / vkCmdDraw* counts (row: "no redundant state changes")
+// The same code runs on every platform (no dlsym / RTLD_NEXT / import-library tricks).
 // Stub (non-Vulkan) builds compile the hooks out; the API then reports nothing.
 #pragma once
 
@@ -42,6 +45,8 @@ struct ObjectRecord {
 
 /// True when the hooks are compiled in (Vulkan backend build).
 bool available();
+/// Number of times the wrappers were (re)installed over a freshly loaded volk table.
+std::uint32_t installCount();
 
 void resetCmdCounters();
 const CmdCounters& cmdCounters();

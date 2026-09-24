@@ -366,3 +366,4 @@ endif()
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)
 endif()
+include("${CMAKE_SOURCE_DIR}/cmake/FuseTracy.cmake")  # WP-0.6 optional Tracy backend (FUSE_TRACY) + its tests

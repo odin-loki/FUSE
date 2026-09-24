@@ -6,18 +6,9 @@
 #include <utility>
 
 #if defined(FUSE_VULKAN_BACKEND)
-#include <vulkan/vulkan.h>
-#if defined(_WIN32)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#else
-#include <dlfcn.h>
-#endif
+#include <fuse/renderer/vk/loader.hpp>
+
+#include <vulkan/vulkan.h> // volk shim: vk* names are volk's function-pointer globals
 #endif
 
 namespace b5hooks {
@@ -28,24 +19,13 @@ std::vector<ObjectRecord> g_objects;
 std::map<std::pair<std::uint32_t, std::uint64_t>, std::size_t> g_live; // (type, handle) -> g_objects
 bool g_capturing = false;
 std::uint32_t g_namesApplied = 0;
+std::uint32_t g_installs = 0;
 std::uint32_t g_currentPush = UINT32_MAX;
 
 } // namespace
 
 #if defined(FUSE_VULKAN_BACKEND)
 namespace detail {
-
-void* nextSymbol(const char* name) {
-#if defined(_WIN32)
-    // PE has no RTLD_NEXT: the hooks defined here win over the vulkan-1.lib import stubs at link
-    // time, and the real entry points are the loader DLL's exports.
-    static const HMODULE loader = ::LoadLibraryA("vulkan-1.dll");
-    return loader != nullptr ? reinterpret_cast<void*>(::GetProcAddress(loader, name)) : nullptr;
-#else
-    void* fn = dlsym(RTLD_NEXT, name);
-    return fn;
-#endif
-}
 
 void recordCreate(std::uint32_t type, std::uint64_t handle, const char* createdBy) {
     if (handle == 0) {
@@ -127,17 +107,21 @@ std::uint32_t namesApplied() {
     return g_namesApplied;
 }
 
+std::uint32_t installCount() {
+    return g_installs;
+}
+
 } // namespace b5hooks
 
 #if defined(FUSE_VULKAN_BACKEND)
 
 using b5hooks::detail::h64;
-using b5hooks::detail::nextSymbol;
 using b5hooks::detail::recordCreate;
 using b5hooks::detail::recordDestroy;
 
-#define B5_NEXT(fnName) \
-    static const auto next_##fnName = reinterpret_cast<PFN_##fnName>(nextSymbol(#fnName))
+// Every wrapped entry point: hook_<fn> records, then calls next_<fn>, the volk pointer it replaced
+// at the last (re)install.
+#define B5_NEXT(fnName) static PFN_##fnName next_##fnName = nullptr
 
 // ---- Debug names -------------------------------------------------------------------------------
 
@@ -145,7 +129,7 @@ namespace {
 
 PFN_vkSetDebugUtilsObjectNameEXT g_realSetName = nullptr;
 
-VKAPI_ATTR VkResult VKAPI_CALL hookSetDebugUtilsObjectNameEXT(VkDevice device,
+VKAPI_ATTR VkResult VKAPI_CALL hook_vkSetDebugUtilsObjectNameEXT(VkDevice device,
                                                               const VkDebugUtilsObjectNameInfoEXT* info) {
     if (info != nullptr) {
         b5hooks::detail::recordName(static_cast<std::uint32_t>(info->objectType), info->objectHandle,
@@ -154,16 +138,15 @@ VKAPI_ATTR VkResult VKAPI_CALL hookSetDebugUtilsObjectNameEXT(VkDevice device,
     return g_realSetName != nullptr ? g_realSetName(device, info) : VK_SUCCESS;
 }
 
-} // namespace
-
-extern "C" {
-
-VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char* pName) {
-    B5_NEXT(vkGetDeviceProcAddr);
+// Engine code that fetches vkSetDebugUtilsObjectNameEXT itself (debug_utils.cpp) gets the wrapper.
+B5_NEXT(vkGetDeviceProcAddr);
+VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL hook_vkGetDeviceProcAddr(VkDevice device, const char* pName) {
     PFN_vkVoidFunction fn = next_vkGetDeviceProcAddr(device, pName);
     if (fn != nullptr && pName != nullptr && std::strcmp(pName, "vkSetDebugUtilsObjectNameEXT") == 0) {
-        g_realSetName = reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(fn);
-        return reinterpret_cast<PFN_vkVoidFunction>(&hookSetDebugUtilsObjectNameEXT);
+        if (reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(fn) != &hook_vkSetDebugUtilsObjectNameEXT) {
+            g_realSetName = reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(fn);
+        }
+        return reinterpret_cast<PFN_vkVoidFunction>(&hook_vkSetDebugUtilsObjectNameEXT);
     }
     return fn;
 }
@@ -171,17 +154,18 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
 // ---- Object creation / destruction ------------------------------------------------------------
 
 #define B5_CREATE_DESTROY(Type, TypeEnum, CreateFn, DestroyFn, CreateInfoT)                               \
-    VKAPI_ATTR VkResult VKAPI_CALL CreateFn(VkDevice device, const CreateInfoT* pCreateInfo,              \
-                                            const VkAllocationCallbacks* pAllocator, Type* pOut) {        \
-        B5_NEXT(CreateFn);                                                                                 \
+    B5_NEXT(CreateFn);                                                                                     \
+    B5_NEXT(DestroyFn);                                                                                    \
+    VKAPI_ATTR VkResult VKAPI_CALL hook_##CreateFn(VkDevice device, const CreateInfoT* pCreateInfo,       \
+                                                   const VkAllocationCallbacks* pAllocator, Type* pOut) { \
         const VkResult result = next_##CreateFn(device, pCreateInfo, pAllocator, pOut);                    \
         if (result == VK_SUCCESS && pOut != nullptr) {                                                     \
             recordCreate(TypeEnum, h64(*pOut), #CreateFn);                                                 \
         }                                                                                                  \
         return result;                                                                                     \
     }                                                                                                      \
-    VKAPI_ATTR void VKAPI_CALL DestroyFn(VkDevice device, Type object, const VkAllocationCallbacks* pAllocator) { \
-        B5_NEXT(DestroyFn);                                                                                \
+    VKAPI_ATTR void VKAPI_CALL hook_##DestroyFn(VkDevice device, Type object,                              \
+                                                const VkAllocationCallbacks* pAllocator) {                 \
         recordDestroy(TypeEnum, h64(object));                                                              \
         next_##DestroyFn(device, object, pAllocator);                                                      \
     }
@@ -213,9 +197,9 @@ B5_CREATE_DESTROY(VkQueryPool, VK_OBJECT_TYPE_QUERY_POOL, vkCreateQueryPool, vkD
 B5_CREATE_DESTROY(VkPipelineCache, VK_OBJECT_TYPE_PIPELINE_CACHE, vkCreatePipelineCache,
                   vkDestroyPipelineCache, VkPipelineCacheCreateInfo)
 
-VKAPI_ATTR VkResult VKAPI_CALL vkAllocateMemory(VkDevice device, const VkMemoryAllocateInfo* pAllocateInfo,
+B5_NEXT(vkAllocateMemory);
+VKAPI_ATTR VkResult VKAPI_CALL hook_vkAllocateMemory(VkDevice device, const VkMemoryAllocateInfo* pAllocateInfo,
                                                 const VkAllocationCallbacks* pAllocator, VkDeviceMemory* pMemory) {
-    B5_NEXT(vkAllocateMemory);
     const VkResult result = next_vkAllocateMemory(device, pAllocateInfo, pAllocator, pMemory);
     if (result == VK_SUCCESS && pMemory != nullptr) {
         recordCreate(VK_OBJECT_TYPE_DEVICE_MEMORY, h64(*pMemory), "vkAllocateMemory");
@@ -223,18 +207,18 @@ VKAPI_ATTR VkResult VKAPI_CALL vkAllocateMemory(VkDevice device, const VkMemoryA
     return result;
 }
 
-VKAPI_ATTR void VKAPI_CALL vkFreeMemory(VkDevice device, VkDeviceMemory memory,
+B5_NEXT(vkFreeMemory);
+VKAPI_ATTR void VKAPI_CALL hook_vkFreeMemory(VkDevice device, VkDeviceMemory memory,
                                         const VkAllocationCallbacks* pAllocator) {
-    B5_NEXT(vkFreeMemory);
     recordDestroy(VK_OBJECT_TYPE_DEVICE_MEMORY, h64(memory));
     next_vkFreeMemory(device, memory, pAllocator);
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache cache, uint32_t count,
+B5_NEXT(vkCreateGraphicsPipelines);
+VKAPI_ATTR VkResult VKAPI_CALL hook_vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache cache, uint32_t count,
                                                          const VkGraphicsPipelineCreateInfo* pCreateInfos,
                                                          const VkAllocationCallbacks* pAllocator,
                                                          VkPipeline* pPipelines) {
-    B5_NEXT(vkCreateGraphicsPipelines);
     const VkResult result = next_vkCreateGraphicsPipelines(device, cache, count, pCreateInfos, pAllocator, pPipelines);
     if (result == VK_SUCCESS && pPipelines != nullptr) {
         for (uint32_t i = 0; i < count; ++i) {
@@ -244,11 +228,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateGraphicsPipelines(VkDevice device, VkPipe
     return result;
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateComputePipelines(VkDevice device, VkPipelineCache cache, uint32_t count,
+B5_NEXT(vkCreateComputePipelines);
+VKAPI_ATTR VkResult VKAPI_CALL hook_vkCreateComputePipelines(VkDevice device, VkPipelineCache cache, uint32_t count,
                                                         const VkComputePipelineCreateInfo* pCreateInfos,
                                                         const VkAllocationCallbacks* pAllocator,
                                                         VkPipeline* pPipelines) {
-    B5_NEXT(vkCreateComputePipelines);
     const VkResult result = next_vkCreateComputePipelines(device, cache, count, pCreateInfos, pAllocator, pPipelines);
     if (result == VK_SUCCESS && pPipelines != nullptr) {
         for (uint32_t i = 0; i < count; ++i) {
@@ -258,16 +242,16 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateComputePipelines(VkDevice device, VkPipel
     return result;
 }
 
-VKAPI_ATTR void VKAPI_CALL vkDestroyPipeline(VkDevice device, VkPipeline pipeline,
+B5_NEXT(vkDestroyPipeline);
+VKAPI_ATTR void VKAPI_CALL hook_vkDestroyPipeline(VkDevice device, VkPipeline pipeline,
                                              const VkAllocationCallbacks* pAllocator) {
-    B5_NEXT(vkDestroyPipeline);
     recordDestroy(VK_OBJECT_TYPE_PIPELINE, h64(pipeline));
     next_vkDestroyPipeline(device, pipeline, pAllocator);
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL vkAllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo* pInfo,
+B5_NEXT(vkAllocateCommandBuffers);
+VKAPI_ATTR VkResult VKAPI_CALL hook_vkAllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo* pInfo,
                                                         VkCommandBuffer* pBuffers) {
-    B5_NEXT(vkAllocateCommandBuffers);
     const VkResult result = next_vkAllocateCommandBuffers(device, pInfo, pBuffers);
     if (result == VK_SUCCESS && pInfo != nullptr && pBuffers != nullptr) {
         for (uint32_t i = 0; i < pInfo->commandBufferCount; ++i) {
@@ -277,18 +261,18 @@ VKAPI_ATTR VkResult VKAPI_CALL vkAllocateCommandBuffers(VkDevice device, const V
     return result;
 }
 
-VKAPI_ATTR void VKAPI_CALL vkFreeCommandBuffers(VkDevice device, VkCommandPool pool, uint32_t count,
+B5_NEXT(vkFreeCommandBuffers);
+VKAPI_ATTR void VKAPI_CALL hook_vkFreeCommandBuffers(VkDevice device, VkCommandPool pool, uint32_t count,
                                                 const VkCommandBuffer* pBuffers) {
-    B5_NEXT(vkFreeCommandBuffers);
     for (uint32_t i = 0; pBuffers != nullptr && i < count; ++i) {
         recordDestroy(VK_OBJECT_TYPE_COMMAND_BUFFER, h64(pBuffers[i]));
     }
     next_vkFreeCommandBuffers(device, pool, count, pBuffers);
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL vkAllocateDescriptorSets(VkDevice device, const VkDescriptorSetAllocateInfo* pInfo,
+B5_NEXT(vkAllocateDescriptorSets);
+VKAPI_ATTR VkResult VKAPI_CALL hook_vkAllocateDescriptorSets(VkDevice device, const VkDescriptorSetAllocateInfo* pInfo,
                                                         VkDescriptorSet* pSets) {
-    B5_NEXT(vkAllocateDescriptorSets);
     const VkResult result = next_vkAllocateDescriptorSets(device, pInfo, pSets);
     if (result == VK_SUCCESS && pInfo != nullptr && pSets != nullptr) {
         for (uint32_t i = 0; i < pInfo->descriptorSetCount; ++i) {
@@ -298,9 +282,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkAllocateDescriptorSets(VkDevice device, const V
     return result;
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL vkFreeDescriptorSets(VkDevice device, VkDescriptorPool pool, uint32_t count,
+B5_NEXT(vkFreeDescriptorSets);
+VKAPI_ATTR VkResult VKAPI_CALL hook_vkFreeDescriptorSets(VkDevice device, VkDescriptorPool pool, uint32_t count,
                                                     const VkDescriptorSet* pSets) {
-    B5_NEXT(vkFreeDescriptorSets);
     for (uint32_t i = 0; pSets != nullptr && i < count; ++i) {
         recordDestroy(VK_OBJECT_TYPE_DESCRIPTOR_SET, h64(pSets[i]));
     }
@@ -309,9 +293,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkFreeDescriptorSets(VkDevice device, VkDescripto
 
 // ---- Command recording ------------------------------------------------------------------------
 
-VKAPI_ATTR void VKAPI_CALL vkCmdBindPipeline(VkCommandBuffer cmd, VkPipelineBindPoint bindPoint,
+B5_NEXT(vkCmdBindPipeline);
+VKAPI_ATTR void VKAPI_CALL hook_vkCmdBindPipeline(VkCommandBuffer cmd, VkPipelineBindPoint bindPoint,
                                              VkPipeline pipeline) {
-    B5_NEXT(vkCmdBindPipeline);
     if (bindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS) {
         ++b5hooks::g_counters.bindPipelineGraphics;
         b5hooks::g_counters.graphicsPipelines.push_back(h64(pipeline));
@@ -321,33 +305,33 @@ VKAPI_ATTR void VKAPI_CALL vkCmdBindPipeline(VkCommandBuffer cmd, VkPipelineBind
     next_vkCmdBindPipeline(cmd, bindPoint, pipeline);
 }
 
-VKAPI_ATTR void VKAPI_CALL vkCmdBindVertexBuffers(VkCommandBuffer cmd, uint32_t firstBinding, uint32_t bindingCount,
+B5_NEXT(vkCmdBindVertexBuffers);
+VKAPI_ATTR void VKAPI_CALL hook_vkCmdBindVertexBuffers(VkCommandBuffer cmd, uint32_t firstBinding, uint32_t bindingCount,
                                                   const VkBuffer* pBuffers, const VkDeviceSize* pOffsets) {
-    B5_NEXT(vkCmdBindVertexBuffers);
     ++b5hooks::g_counters.bindVertexBuffers;
     next_vkCmdBindVertexBuffers(cmd, firstBinding, bindingCount, pBuffers, pOffsets);
 }
 
-VKAPI_ATTR void VKAPI_CALL vkCmdBindIndexBuffer(VkCommandBuffer cmd, VkBuffer buffer, VkDeviceSize offset,
+B5_NEXT(vkCmdBindIndexBuffer);
+VKAPI_ATTR void VKAPI_CALL hook_vkCmdBindIndexBuffer(VkCommandBuffer cmd, VkBuffer buffer, VkDeviceSize offset,
                                                 VkIndexType indexType) {
-    B5_NEXT(vkCmdBindIndexBuffer);
     ++b5hooks::g_counters.bindIndexBuffer;
     next_vkCmdBindIndexBuffer(cmd, buffer, offset, indexType);
 }
 
-VKAPI_ATTR void VKAPI_CALL vkCmdBindDescriptorSets(VkCommandBuffer cmd, VkPipelineBindPoint bindPoint,
+B5_NEXT(vkCmdBindDescriptorSets);
+VKAPI_ATTR void VKAPI_CALL hook_vkCmdBindDescriptorSets(VkCommandBuffer cmd, VkPipelineBindPoint bindPoint,
                                                    VkPipelineLayout layout, uint32_t firstSet, uint32_t setCount,
                                                    const VkDescriptorSet* pSets, uint32_t dynamicCount,
                                                    const uint32_t* pDynamicOffsets) {
-    B5_NEXT(vkCmdBindDescriptorSets);
     ++b5hooks::g_counters.bindDescriptorSets;
     next_vkCmdBindDescriptorSets(cmd, bindPoint, layout, firstSet, setCount, pSets, dynamicCount, pDynamicOffsets);
 }
 
-VKAPI_ATTR void VKAPI_CALL vkCmdPushConstants(VkCommandBuffer cmd, VkPipelineLayout layout,
+B5_NEXT(vkCmdPushConstants);
+VKAPI_ATTR void VKAPI_CALL hook_vkCmdPushConstants(VkCommandBuffer cmd, VkPipelineLayout layout,
                                               VkShaderStageFlags stages, uint32_t offset, uint32_t size,
                                               const void* pValues) {
-    B5_NEXT(vkCmdPushConstants);
     ++b5hooks::g_counters.pushConstants;
     std::uint32_t first = 0;
     if (pValues != nullptr && size >= sizeof(first)) {
@@ -360,21 +344,92 @@ VKAPI_ATTR void VKAPI_CALL vkCmdPushConstants(VkCommandBuffer cmd, VkPipelineLay
     next_vkCmdPushConstants(cmd, layout, stages, offset, size, pValues);
 }
 
-VKAPI_ATTR void VKAPI_CALL vkCmdDrawIndexed(VkCommandBuffer cmd, uint32_t indexCount, uint32_t instanceCount,
+B5_NEXT(vkCmdDrawIndexed);
+VKAPI_ATTR void VKAPI_CALL hook_vkCmdDrawIndexed(VkCommandBuffer cmd, uint32_t indexCount, uint32_t instanceCount,
                                             uint32_t firstIndex, int32_t vertexOffset, uint32_t firstInstance) {
-    B5_NEXT(vkCmdDrawIndexed);
     ++b5hooks::g_counters.drawIndexed;
     b5hooks::g_counters.drawIndexedMaterial.push_back(b5hooks::g_currentPush);
     next_vkCmdDrawIndexed(cmd, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
-VKAPI_ATTR void VKAPI_CALL vkCmdDraw(VkCommandBuffer cmd, uint32_t vertexCount, uint32_t instanceCount,
+B5_NEXT(vkCmdDraw);
+VKAPI_ATTR void VKAPI_CALL hook_vkCmdDraw(VkCommandBuffer cmd, uint32_t vertexCount, uint32_t instanceCount,
                                      uint32_t firstVertex, uint32_t firstInstance) {
-    B5_NEXT(vkCmdDraw);
     ++b5hooks::g_counters.draw;
     next_vkCmdDraw(cmd, vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
-} // extern "C"
+// ---- Installation over volk's table ----------------------------------------------------------
+
+// Replace a volk global with its wrapper, remembering the pointer it replaced. A global that already
+// holds the wrapper (hook re-run without a reload) keeps its previous next_ pointer.
+#define B5_INSTALL(fn)                          \
+    if (fn != nullptr && fn != &hook_##fn) {    \
+        next_##fn = fn;                         \
+        fn = &hook_##fn;                        \
+    }
+
+void installHooks(void* /*user*/) {
+    B5_INSTALL(vkGetDeviceProcAddr)
+    if (vkSetDebugUtilsObjectNameEXT != nullptr && vkSetDebugUtilsObjectNameEXT != &hook_vkSetDebugUtilsObjectNameEXT) {
+        g_realSetName = vkSetDebugUtilsObjectNameEXT;
+        vkSetDebugUtilsObjectNameEXT = &hook_vkSetDebugUtilsObjectNameEXT;
+    }
+    B5_INSTALL(vkCreateBuffer)
+    B5_INSTALL(vkDestroyBuffer)
+    B5_INSTALL(vkCreateImage)
+    B5_INSTALL(vkDestroyImage)
+    B5_INSTALL(vkCreateImageView)
+    B5_INSTALL(vkDestroyImageView)
+    B5_INSTALL(vkCreateSampler)
+    B5_INSTALL(vkDestroySampler)
+    B5_INSTALL(vkCreateShaderModule)
+    B5_INSTALL(vkDestroyShaderModule)
+    B5_INSTALL(vkCreatePipelineLayout)
+    B5_INSTALL(vkDestroyPipelineLayout)
+    B5_INSTALL(vkCreateRenderPass)
+    B5_INSTALL(vkDestroyRenderPass)
+    B5_INSTALL(vkCreateFramebuffer)
+    B5_INSTALL(vkDestroyFramebuffer)
+    B5_INSTALL(vkCreateDescriptorSetLayout)
+    B5_INSTALL(vkDestroyDescriptorSetLayout)
+    B5_INSTALL(vkCreateDescriptorPool)
+    B5_INSTALL(vkDestroyDescriptorPool)
+    B5_INSTALL(vkCreateCommandPool)
+    B5_INSTALL(vkDestroyCommandPool)
+    B5_INSTALL(vkCreateFence)
+    B5_INSTALL(vkDestroyFence)
+    B5_INSTALL(vkCreateSemaphore)
+    B5_INSTALL(vkDestroySemaphore)
+    B5_INSTALL(vkCreateQueryPool)
+    B5_INSTALL(vkDestroyQueryPool)
+    B5_INSTALL(vkCreatePipelineCache)
+    B5_INSTALL(vkDestroyPipelineCache)
+    B5_INSTALL(vkAllocateMemory)
+    B5_INSTALL(vkFreeMemory)
+    B5_INSTALL(vkCreateGraphicsPipelines)
+    B5_INSTALL(vkCreateComputePipelines)
+    B5_INSTALL(vkDestroyPipeline)
+    B5_INSTALL(vkAllocateCommandBuffers)
+    B5_INSTALL(vkFreeCommandBuffers)
+    B5_INSTALL(vkAllocateDescriptorSets)
+    B5_INSTALL(vkFreeDescriptorSets)
+    B5_INSTALL(vkCmdBindPipeline)
+    B5_INSTALL(vkCmdBindVertexBuffers)
+    B5_INSTALL(vkCmdBindIndexBuffer)
+    B5_INSTALL(vkCmdBindDescriptorSets)
+    B5_INSTALL(vkCmdPushConstants)
+    B5_INSTALL(vkCmdDrawIndexed)
+    B5_INSTALL(vkCmdDraw)
+    ++b5hooks::g_installs;
+}
+
+#undef B5_INSTALL
+
+// Registered before main(): every table fuse_rhi loads from now on is wrapped.
+[[maybe_unused]] const bool g_hooksRegistered =
+    (fuse::renderer::vkloader::setReloadHook(&installHooks, nullptr), true);
+
+} // namespace
 
 #endif // FUSE_VULKAN_BACKEND

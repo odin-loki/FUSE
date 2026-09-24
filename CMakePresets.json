@@ -45,6 +45,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "FUSE_PROFILE": "ON",
+        "FUSE_TRACY": "ON",
         "FUSE_UMBRELLA": "ON",
         "FUSE_BUILD_T3D": "OFF",
         "FUSE_BUILD_T2D": "OFF",

@@ -1,0 +1,22 @@
+# FUSE third-party pin: volk, the Vulkan meta-loader (volk.h + volk.c). Vendored verbatim, no local edits;
+# fuse_volk_pin.h is FUSE-authored (see its header comment) and exists only to carry the pinned version in a
+# form the lint reads. fuse_rhi compiles volk.c through Source/FUSE/Renderer/src/vk/vk_loader.cpp
+# (VOLK_IMPLEMENTATION); cmake/FuseVolk.cmake wires it (WP-0.2, docs/unification/RENDERER-EXECUTION.md).
+# Checked by `fuse_lint vendored-pins` (ctest: fuse_lint_vendored_pins_volk) and, at compile time, by a
+# static_assert on VOLK_HEADER_VERSION in vk_loader.cpp.
+# To update: replace volk.h, volk.c and LICENSE.md from the new upstream tag, set the three defines in
+# fuse_volk_pin.h, then update every field below (version, tag, commit, sha256) together. sha256 is over the
+# file with CRLF normalized to LF (git text=auto may check *.c / *.h out with CRLF on Windows).
+name=volk
+upstream=https://github.com/zeux/volk
+version=1.4.304
+tag=1.4.304
+commit=0b17a763ba5643e32da1b2152f8140461b3b7345
+retrieved=2026-09-23 (raw.githubusercontent.com at the tag commit)
+license=MIT
+license_file=LICENSE.md
+version_header=fuse_volk_pin.h
+sha256:volk.h=45dc84d3055048e181516a7caa0029cc54d1db6d5dbc5e8ff1017ac0720bf0c1
+sha256:volk.c=40a6ed31067b244b97c444e866876746574d3c3ad1c9bb9fac1588e2b4160628
+sha256:LICENSE.md=e85b35831f01da6aa8c029f0a06a0468be143534babe9014e37ee03bf078bf36
+sha256:fuse_volk_pin.h=d84044077e7115991cd8a593d888c32a90860ed38b221fd81922e37d89b41cca

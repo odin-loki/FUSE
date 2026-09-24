@@ -19,6 +19,12 @@ struct ComputePipelineDesc {
     u32 localSizeY = 1;
     u32 localSizeZ = 1;
     const char* debugName = nullptr;
+    /// Pipeline-cache manifest key; 0 derives it from the shader's SPIR-V hash.
+    u64 cacheKey = 0;
+    /// With a PipelineCache whose creationCacheControl() is true: create with
+    /// VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT, so an uncached pipeline fails fast
+    /// (info().cache.compileRequired) instead of compiling; schedule a background compile instead.
+    bool failIfNotCached = false;
 };
 
 struct ComputePipelineInfo {
@@ -29,6 +35,7 @@ struct ComputePipelineInfo {
     u32 cacheSnapshotBytes = 0;
     u32 rebuildCount = 0;
     std::string message;
+    PipelineCacheUse cache{};
 };
 
 /// B2.4 — compute pipeline built from a compute ShaderModule + PipelineLayout.
