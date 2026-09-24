@@ -306,3 +306,4 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp71.cmake")  # WP-7.1 light tree 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp82.cmake")  # WP-8.2 Hillaire atmosphere on Vulkan (atmosphere/, shaders/atmosphere/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp42.cmake")  # WP-4.2 FSR 3.1 temporal upscaler (upscale_backends/fsr3/, Engine/lib/fidelityfx)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp81.cmake")  # WP-8.1 froxel volumetric fog on Vulkan (volumetric/gpu/, shaders/volumetric/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp72.cmake")  # WP-7.2 ReSTIR DI and GI, T2 (restir/, shaders/restir/)

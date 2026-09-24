@@ -1,0 +1,27 @@
+#version 460
+// WP-7.2 "restir.prepare" (twin: restir_prepare.slang). One pixel per thread: the WP-1.5 G-buffer (RT4 forward z/w depth, RT0 signed-octahedral normal, RT1 albedo) -> this frame's surface records (position + linear depth, normal, albedo; zero without a surface).
+// CPU reference: rsPrepare in include/fuse/renderer/restir/restir_kernel.hpp (bit for bit on the same inputs).
+#extension GL_GOOGLE_include_directive : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+#include "lt_common.glsl"
+#include "restir_common.glsl"
+
+layout(local_size_x = RS_TILE, local_size_y = RS_TILE) in;
+
+void main() {
+    const RestirFrame F = rs_frame();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const uint pixel = p.y * F.width + p.x;
+    const float depth = texelFetch(fuse_textures_2d[fuse_handle_index(F.gbufferDepth)], ivec2(p), 0).x;
+    const vec4 rt0 = texelFetch(fuse_textures_2d[fuse_handle_index(F.gbufferNormal)], ivec2(p), 0);
+    const vec4 rt1 = texelFetch(fuse_textures_2d[fuse_handle_index(F.gbufferAlbedo)], ivec2(p), 0);
+    RsSurface s;
+    const bool ok = rs_prepare(F, p.x, p.y, depth, rt0.x, rt0.y, s);
+    RsVec4Ref(F.surfPos[0]).v[pixel] = ok ? vec4(s.p, s.depth) : vec4(0.0);
+    RsVec4Ref(F.surfNormal[0]).v[pixel] = ok ? vec4(s.n, 0.0) : vec4(0.0);
+    RsVec4Ref(F.surfAlbedo[0]).v[pixel] = ok ? vec4(rt1.xyz, 1.0) : vec4(0.0);
+}

@@ -1,0 +1,20 @@
+#version 460
+// WP-7.2 "restir.gi.temporal / restir.gi.spatial" (twin: restir_gi_reuse.slang). One pixel per thread: reconnection reuse of the canonical GI reservoir (push.src) with the history (mode 0) or spatial neighbours (mode 1), Jacobian of the reconnection, biased or unbiased Talbot MIS; writes push.dst.
+// CPU reference: rsGiReuse in include/fuse/renderer/restir/restir_kernel.hpp (bit for bit on the same inputs).
+#extension GL_GOOGLE_include_directive : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+#include "lt_common.glsl"
+#include "restir_common.glsl"
+
+layout(local_size_x = RS_TILE, local_size_y = RS_TILE) in;
+
+void main() {
+    const RestirFrame F = rs_frame();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const uint pixel = p.y * F.width + p.x;
+    RsGiRef(pc.p.dst).v[pixel] = rs_gi_reuse(F, p.x, p.y, pc.p.mode, pc.p.iteration);
+}
