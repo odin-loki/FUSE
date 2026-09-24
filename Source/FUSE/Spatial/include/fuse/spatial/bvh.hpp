@@ -75,7 +75,9 @@ private:
     void query_node(u32 node_index, const AABB& box, std::vector<BVHLeaf>& results) const;
     void query_node_sphere(u32 node_index, const ecs::vec3& center, f32 radius_sq,
                            std::vector<BVHLeaf>& results) const;
-    void query_node_frustum(u32 node_index, const Frustum& frustum, std::vector<BVHLeaf>& results) const;
+    void query_node_frustum(u32 node_index, const Frustum& frustum, u32 plane_mask,
+                            std::vector<BVHLeaf>& results) const;
+    void append_subtree(u32 node_index, std::vector<BVHLeaf>& results) const;
     bool ray_cast_node(u32 node_index, const ecs::vec3& origin, const ecs::vec3& direction, f32 max_t,
                        BVHLeaf& hit, f32& closest_t) const;
 

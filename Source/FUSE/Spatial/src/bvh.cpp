@@ -376,9 +376,60 @@ void BVH::query_sphere(const vec3& center, f32 radius, std::vector<BVHLeaf>& res
     }
 }
 
-void BVH::query_node_frustum(u32 node_index, const Frustum& frustum, std::vector<BVHLeaf>& results) const {
+namespace {
+
+/// Plane-masked AABB test. For each plane still in `mask`, the AABB is either rejected (its
+/// positive vertex is behind the plane), kept for further tests, or dropped from the mask when
+/// even its negative vertex is in front (every box inside it is then also in front, because the
+/// distance formula is monotone in each coordinate and float rounding is monotone). Returns false
+/// when rejected; on success `mask` holds the planes descendants still have to test.
+bool classify_aabb_masked(const Frustum& frustum, const ecs::vec3& mn, const ecs::vec3& mx, u32& mask) {
+    for (u32 p = 0; p < 6u; ++p) {
+        const u32 bit = 1u << p;
+        if ((mask & bit) == 0u) {
+            continue;
+        }
+        const ecs::vec4& plane = frustum.planes[p];
+        const f32 px = plane.x >= 0.f ? mx.x : mn.x;
+        const f32 py = plane.y >= 0.f ? mx.y : mn.y;
+        const f32 pz = plane.z >= 0.f ? mx.z : mn.z;
+        // Same expression and evaluation order as test_aabb_frustum, so accepted leaves are
+        // bit-for-bit the brute-force set.
+        if (plane.x * px + plane.y * py + plane.z * pz + plane.w < 0.f) {
+            return false;
+        }
+        const f32 nx = plane.x >= 0.f ? mn.x : mx.x;
+        const f32 ny = plane.y >= 0.f ? mn.y : mx.y;
+        const f32 nz = plane.z >= 0.f ? mn.z : mx.z;
+        if (plane.x * nx + plane.y * ny + plane.z * nz + plane.w >= 0.f) {
+            mask &= ~bit;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+void BVH::append_subtree(u32 node_index, std::vector<BVHLeaf>& results) const {
     const BVHNode& node = m_nodes[node_index];
-    if (!test_aabb_frustum(frustum, node.aabb.min, node.aabb.max)) {
+    if (node.leaf_count > 0) {
+        const u32 begin = node.left_child;
+        results.insert(results.end(), m_leaves.begin() + begin, m_leaves.begin() + begin + node.leaf_count);
+        return;
+    }
+    append_subtree(node.left_child, results);
+    append_subtree(node.right_child, results);
+}
+
+void BVH::query_node_frustum(u32 node_index, const Frustum& frustum, u32 plane_mask,
+                             std::vector<BVHLeaf>& results) const {
+    const BVHNode& node = m_nodes[node_index];
+    if (!classify_aabb_masked(frustum, node.aabb.min, node.aabb.max, plane_mask)) {
+        return;
+    }
+    if (plane_mask == 0u) {
+        // Fully inside every plane: every leaf below passes test_aabb_frustum.
+        append_subtree(node_index, results);
         return;
     }
 
@@ -386,20 +437,21 @@ void BVH::query_node_frustum(u32 node_index, const Frustum& frustum, std::vector
         const u32 begin = node.left_child;
         for (u16 i = 0; i < node.leaf_count; ++i) {
             const BVHLeaf& leaf = m_leaves[begin + i];
-            if (test_aabb_frustum(frustum, leaf.aabb.min, leaf.aabb.max)) {
+            u32 leaf_mask = plane_mask;
+            if (classify_aabb_masked(frustum, leaf.aabb.min, leaf.aabb.max, leaf_mask)) {
                 results.push_back(leaf);
             }
         }
         return;
     }
 
-    query_node_frustum(node.left_child, frustum, results);
-    query_node_frustum(node.right_child, frustum, results);
+    query_node_frustum(node.left_child, frustum, plane_mask, results);
+    query_node_frustum(node.right_child, frustum, plane_mask, results);
 }
 
 void BVH::query_frustum(const Frustum& frustum, std::vector<BVHLeaf>& results) const {
     if (!m_nodes.empty()) {
-        query_node_frustum(0, frustum, results);
+        query_node_frustum(0, frustum, 0x3Fu, results);
     }
 }
 
