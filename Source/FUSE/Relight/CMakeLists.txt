@@ -53,3 +53,4 @@ add_subdirectory(bridge/ipc)                                                    
 add_subdirectory(scene/translate)                                                        # RL-1.5
 add_subdirectory(tap/capture)                                                            # RL-1.1 capture mode (after 1.2-1.5)
 add_subdirectory(scene/instances)                                                        # RL-1.7
+add_subdirectory(capture/export)                                                         # RL-1.8
