@@ -475,9 +475,13 @@ size_t computeOptimalVertexStride(const RasterGeometry& input, bool forceNormals
 }
 
 XXH64_hash_t hashVertexLayout(const RasterGeometry& input) {
-    const size_t vertexStride = (input.isVertexDataInterleaved() && input.areFormatsGpuFriendly())
-                                    ? input.positionBuffer.stride()
-                                    : computeOptimalVertexStride(input);
+    // Upstream declares this `const size_t` and hashes sizeof(size_t) bytes. Remix only ships for
+    // x64, so the contract is the 8-byte little-endian stride; a literal size_t would hash only 4
+    // bytes on a 32-bit build of this oracle and disagree with the (x64-generated) KAT table.
+    const uint64_t vertexStride = (input.isVertexDataInterleaved() && input.areFormatsGpuFriendly())
+                                      ? input.positionBuffer.stride()
+                                      : computeOptimalVertexStride(input);
+    static_assert(sizeof(vertexStride) == 8, "Remix hashes the x64 size_t stride: 8 bytes on every target");
     return XXH3_64bits(&vertexStride, sizeof(vertexStride));
 }
 

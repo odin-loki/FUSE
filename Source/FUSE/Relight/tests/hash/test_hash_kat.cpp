@@ -384,6 +384,18 @@ void runProperties() {
     check(isTextureHashed(D3DResourceType::Texture, 0) && !isTextureHashed(D3DResourceType::Texture, kD3DUsageDepthStencil) &&
               !isTextureHashed(D3DResourceType::CubeTexture, 0),
           "only non-depth 2D textures are hashed");
+    // The vertex-layout hash is over the stride as 8 little-endian bytes (x64 size_t) on every target.
+    for (const std::uint64_t stride : {std::uint64_t(0), std::uint64_t(12), std::uint64_t(36), std::uint64_t(0x1122334455667788)}) {
+        std::uint8_t le[8];
+        for (std::size_t b = 0; b < 8; ++b) {
+            le[b] = std::uint8_t(stride >> (8 * b));
+        }
+        check(hashVertexLayoutStride(stride) == xxh3_64(le, sizeof(le)), "vertex-layout hash = XXH3 over 8 LE stride bytes");
+    }
+    if (const auto o = oracleCompute("vlayout", KeyValues{{"p", "1:0:36:106"}, {"n", "0:0:0:0"}, {"t", "0:0:0:0"}, {"c", "0:0:0:0"}})) {
+        check(req(*o, "stride") == "36" && req(*o, "out") == hex64(hashVertexLayoutStride(36)),
+              "vertex-layout hash: oracle and library agree on every target");
+    }
     check(legacyMaterialHash(0x1234) == 0x1234, "material hash = colour texture hash");
     check(fullMipLevelCount(256, 64, 1) == 9 && fullMipLevelCount(1, 1, 1) == 1, "mip level count");
     for (D3DFormat f : allD3DFormats()) {

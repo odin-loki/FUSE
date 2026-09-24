@@ -152,6 +152,9 @@ Hash64 hashGeometryDescriptor(std::uint32_t indexCount, std::uint32_t vertexCoun
 }
 
 Hash64 hashVertexLayoutStride(std::uint64_t vertexStride) noexcept {
+    // Upstream hashes a size_t, i.e. 8 bytes on the x64-only Remix. Pin the width so 32-bit builds
+    // hash the same 8 little-endian bytes instead of a 4-byte size_t.
+    static_assert(sizeof(vertexStride) == 8, "Remix vertex-layout hash is over the 8-byte x64 size_t stride");
     return xxh3_64(&vertexStride, sizeof(vertexStride));
 }
 
