@@ -65,12 +65,32 @@
 
 namespace fuse::relight::tap {
 
+struct CaptureDrawRecord;
+
+/// RL-3.4 hook: consumes each flushed frame (runs under the tap's lock; must not send events to the tap).
+class IFrameProcessor {
+public:
+    virtual ~IFrameProcessor() = default;
+    struct Output {
+        /// Per draw of the frame (same order): a JSON value written as the draw line's "replacement" member; ""
+        /// writes none. May be empty (no draw annotated).
+        std::vector<std::string> draws;
+        /// JSON object members (no braces) of the frame's "replace_frame" line; "" writes none.
+        std::string frame;
+    };
+    /// `translatedFrame`: TranslateTap's summary of this frame (null when the frame was not presented or had
+    /// none); `presented` false: the draws after the last Present at device destruction.
+    virtual Output processFrame(std::uint64_t frame, const std::vector<CaptureDrawRecord>& draws,
+                                const scene::TranslatedFrame* translatedFrame, bool presented) = 0;
+};
+
 struct CaptureTapConfig {
     std::string path;                     ///< capture record (JSON Lines); empty: none
     std::unique_ptr<IRelightTap> forward; ///< receives every event first (e.g. RecordingTap); may be null
     capture::texture::TextureTrackerConfig texture;
     capture::geometry::GeometryCaptureConfig geometry;
     CaptureExportConfig exportConfig;     ///< RL-1.8 capture written live; disabled by default
+    std::unique_ptr<IFrameProcessor> processor; ///< RL-3.4 runtime replacements; may be null
 
     /// The rtx.* / relight.* options of the three packages and of the capture export, resolved now.
     static CaptureTapConfig fromOptions();
@@ -127,6 +147,8 @@ public:
     scene::TranslateTap& translator() { return m_translate; }
     /// The live capture export (null when CaptureTapConfig::exportConfig is disabled).
     const LiveCaptureExport* captureExport() const { return m_export.get(); }
+    /// The frame processor (null when none was configured).
+    IFrameProcessor* frameProcessor() { return m_processor.get(); }
 
     void onDeviceCreate(const DeviceEvent& e) override;
     void onDeviceReset(const DeviceEvent& e) override;
@@ -174,6 +196,7 @@ private:
     bool m_haveTranslatedFrame = false;
     capture::geometry::CapturedDrawPtr m_lastGeometry;
     std::unique_ptr<LiveCaptureExport> m_export; ///< after the packages: it reads them while writing
+    std::unique_ptr<IFrameProcessor> m_processor;
 };
 
 } // namespace fuse::relight::tap

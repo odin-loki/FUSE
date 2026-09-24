@@ -1,0 +1,443 @@
+{
+  "frames": 60,
+  "generation": 2,
+  "last_frame": {
+    "deleted_lights": [],
+    "draws": [
+      {
+        "color_texture": "0xffcdfe91287689c8",
+        "di": 0,
+        "key": "4dea70187d2d1944",
+        "replacement": {
+          "categories": "",
+          "draw_original": true,
+          "instance": 1,
+          "lights": [],
+          "material": null,
+          "mesh": {
+            "key": "4DEA70187D2D1944",
+            "mod": "multi",
+            "parts": [
+              {
+                "material": null,
+                "material_mod": null,
+                "material_source": "legacy",
+                "mesh": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944/v2",
+                "translation": [
+                  -600,
+                  1,
+                  0
+                ]
+              }
+            ],
+            "preserve": true,
+            "record": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      },
+      {
+        "color_texture": "0xf21c4bcc08014719",
+        "di": 1,
+        "key": "4dea70187d2d1944",
+        "replacement": {
+          "categories": "",
+          "draw_original": true,
+          "instance": 2,
+          "lights": [],
+          "material": {
+            "ignore": false,
+            "mod": "multi",
+            "record": "mod/ff_multi_instance/multi/mat_F21C4BCC08014719",
+            "shadowed": []
+          },
+          "mesh": {
+            "key": "4DEA70187D2D1944",
+            "mod": "multi",
+            "parts": [
+              {
+                "material": "mod/ff_multi_instance/multi/mat_F21C4BCC08014719",
+                "material_mod": "multi",
+                "material_source": "replacement",
+                "mesh": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944/v2",
+                "translation": [
+                  -300,
+                  1,
+                  0
+                ]
+              }
+            ],
+            "preserve": true,
+            "record": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      },
+      {
+        "color_texture": "0xf21c4bcc08014719",
+        "di": 2,
+        "key": "4dea70187d2d1944",
+        "replacement": {
+          "categories": "",
+          "draw_original": true,
+          "instance": 3,
+          "lights": [],
+          "material": {
+            "ignore": false,
+            "mod": "multi",
+            "record": "mod/ff_multi_instance/multi/mat_F21C4BCC08014719",
+            "shadowed": []
+          },
+          "mesh": {
+            "key": "4DEA70187D2D1944",
+            "mod": "multi",
+            "parts": [
+              {
+                "material": "mod/ff_multi_instance/multi/mat_F21C4BCC08014719",
+                "material_mod": "multi",
+                "material_source": "replacement",
+                "mesh": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944/v2",
+                "translation": [
+                  0,
+                  1,
+                  0
+                ]
+              }
+            ],
+            "preserve": true,
+            "record": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      },
+      {
+        "color_texture": "0xffcdfe91287689c8",
+        "di": 3,
+        "key": "4dea70187d2d1944",
+        "replacement": {
+          "categories": "",
+          "draw_original": true,
+          "instance": 4,
+          "lights": [],
+          "material": null,
+          "mesh": {
+            "key": "4DEA70187D2D1944",
+            "mod": "multi",
+            "parts": [
+              {
+                "material": null,
+                "material_mod": null,
+                "material_source": "legacy",
+                "mesh": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944/v2",
+                "translation": [
+                  300,
+                  1,
+                  0
+                ]
+              }
+            ],
+            "preserve": true,
+            "record": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      },
+      {
+        "color_texture": "0xf21c4bcc08014719",
+        "di": 4,
+        "key": "4dea70187d2d1944",
+        "replacement": {
+          "categories": "",
+          "draw_original": true,
+          "instance": 5,
+          "lights": [],
+          "material": {
+            "ignore": false,
+            "mod": "multi",
+            "record": "mod/ff_multi_instance/multi/mat_F21C4BCC08014719",
+            "shadowed": []
+          },
+          "mesh": {
+            "key": "4DEA70187D2D1944",
+            "mod": "multi",
+            "parts": [
+              {
+                "material": "mod/ff_multi_instance/multi/mat_F21C4BCC08014719",
+                "material_mod": "multi",
+                "material_source": "replacement",
+                "mesh": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944/v2",
+                "translation": [
+                  836,
+                  -5,
+                  -118
+                ]
+              }
+            ],
+            "preserve": true,
+            "record": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      },
+      {
+        "color_texture": "0xf21c4bcc08014719",
+        "di": 5,
+        "key": "4dea70187d2d1944",
+        "replacement": {
+          "categories": "",
+          "draw_original": true,
+          "instance": 6,
+          "lights": [],
+          "material": {
+            "ignore": false,
+            "mod": "multi",
+            "record": "mod/ff_multi_instance/multi/mat_F21C4BCC08014719",
+            "shadowed": []
+          },
+          "mesh": {
+            "key": "4DEA70187D2D1944",
+            "mod": "multi",
+            "parts": [
+              {
+                "material": "mod/ff_multi_instance/multi/mat_F21C4BCC08014719",
+                "material_mod": "multi",
+                "material_source": "replacement",
+                "mesh": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944/v2",
+                "translation": [
+                  -364,
+                  4,
+                  282
+                ]
+              }
+            ],
+            "preserve": true,
+            "record": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      },
+      {
+        "color_texture": "0xffcdfe91287689c8",
+        "di": 6,
+        "key": "4dea70187d2d1944",
+        "replacement": {
+          "categories": "",
+          "draw_original": true,
+          "instance": 7,
+          "lights": [],
+          "material": null,
+          "mesh": {
+            "key": "4DEA70187D2D1944",
+            "mod": "multi",
+            "parts": [
+              {
+                "material": null,
+                "material_mod": null,
+                "material_source": "legacy",
+                "mesh": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944/v2",
+                "translation": [
+                  -64,
+                  -8,
+                  282
+                ]
+              }
+            ],
+            "preserve": true,
+            "record": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      },
+      {
+        "color_texture": "0xf21c4bcc08014719",
+        "di": 7,
+        "key": "4dea70187d2d1944",
+        "replacement": {
+          "categories": "",
+          "draw_original": true,
+          "instance": 8,
+          "lights": [],
+          "material": {
+            "ignore": false,
+            "mod": "multi",
+            "record": "mod/ff_multi_instance/multi/mat_F21C4BCC08014719",
+            "shadowed": []
+          },
+          "mesh": {
+            "key": "4DEA70187D2D1944",
+            "mod": "multi",
+            "parts": [
+              {
+                "material": "mod/ff_multi_instance/multi/mat_F21C4BCC08014719",
+                "material_mod": "multi",
+                "material_source": "replacement",
+                "mesh": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944/v2",
+                "translation": [
+                  0,
+                  1,
+                  400
+                ]
+              }
+            ],
+            "preserve": true,
+            "record": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      },
+      {
+        "color_texture": "0xf21c4bcc08014719",
+        "di": 8,
+        "key": "4dea70187d2d1944",
+        "replacement": {
+          "categories": "",
+          "draw_original": true,
+          "instance": 10,
+          "lights": [],
+          "material": {
+            "ignore": false,
+            "mod": "multi",
+            "record": "mod/ff_multi_instance/multi/mat_F21C4BCC08014719",
+            "shadowed": []
+          },
+          "mesh": {
+            "key": "4DEA70187D2D1944",
+            "mod": "multi",
+            "parts": [
+              {
+                "material": "mod/ff_multi_instance/multi/mat_F21C4BCC08014719",
+                "material_mod": "multi",
+                "material_source": "replacement",
+                "mesh": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944/v2",
+                "translation": [
+                  600,
+                  151,
+                  800
+                ]
+              }
+            ],
+            "preserve": true,
+            "record": "mod/ff_multi_instance/multi/mesh_4DEA70187D2D1944",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      }
+    ],
+    "frame": 59,
+    "lights": [],
+    "residency": {
+      "budget_bytes": 1073741824,
+      "demoted": 0,
+      "evicted": 0,
+      "loaded": 0,
+      "over_budget": false,
+      "requested": 0,
+      "resident": 0,
+      "resident_bytes": 0
+    }
+  },
+  "mods": [
+    {
+      "deleted_lights": 0,
+      "errors": 0,
+      "format": "usd",
+      "kind": "remix",
+      "layer": null,
+      "lights": 0,
+      "materials": 1,
+      "meshes": 1,
+      "name": "multi",
+      "ok": true,
+      "priority": null,
+      "rank": 0
+    }
+  ],
+  "reloads": [
+    {
+      "added": [
+        "multi"
+      ],
+      "applied_frame": 0,
+      "changed": [],
+      "failed": [],
+      "generation": 1,
+      "invalidated": {
+        "lights": [],
+        "materials": [],
+        "meshes": [
+          "4DEA70187D2D1944"
+        ]
+      },
+      "latency_frames": 0,
+      "notified_frame": 0,
+      "removed": []
+    },
+    {
+      "added": [],
+      "applied_frame": 10,
+      "changed": [
+        "multi"
+      ],
+      "failed": [],
+      "generation": 2,
+      "invalidated": {
+        "lights": [],
+        "materials": [
+          "F21C4BCC08014719"
+        ],
+        "meshes": [
+          "4DEA70187D2D1944"
+        ]
+      },
+      "latency_frames": 0,
+      "notified_frame": 10,
+      "removed": []
+    }
+  ],
+  "stats_runs": [
+    {
+      "first": 0,
+      "last": 9,
+      "stats": {
+        "draws": 9,
+        "hidden": 9,
+        "lights_attached": 0,
+        "lights_deleted": 0,
+        "lights_game": 0,
+        "lights_replaced": 0,
+        "material_replaced": 0,
+        "mesh_replaced": 9,
+        "part_material_replaced": 0,
+        "parts": 9,
+        "preserved": 0
+      }
+    },
+    {
+      "first": 10,
+      "last": 59,
+      "stats": {
+        "draws": 9,
+        "hidden": 0,
+        "lights_attached": 0,
+        "lights_deleted": 0,
+        "lights_game": 0,
+        "lights_replaced": 0,
+        "material_replaced": 6,
+        "mesh_replaced": 9,
+        "part_material_replaced": 6,
+        "parts": 9,
+        "preserved": 9
+      }
+    }
+  ],
+  "watch": "poll"
+}

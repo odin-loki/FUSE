@@ -7,6 +7,10 @@
 #include <fuse/relight/tap/device_tap.hpp>
 #include <fuse/relight/tap/recording_tap.hpp>
 
+#if defined(FUSE_RELIGHT_HAVE_REPLACE)
+#include <fuse/relight/replace/replace_live.hpp> // RL-3.4 runtime replacements (linked when the target exists)
+#endif
+
 #include <cinttypes>
 #include <cstring>
 #include <utility>
@@ -211,7 +215,7 @@ CaptureTap::CaptureTap(CaptureTapConfig config)
                       m_translatedFrame = f;
                       m_haveTranslatedFrame = true;
                   }),
-      m_geometry(wireGeometry(std::move(config.geometry))) {
+      m_geometry(wireGeometry(std::move(config.geometry))), m_processor(std::move(config.processor)) {
     m_geometry.setDrawSink([this](const geo::CapturedDrawPtr& d) { m_lastGeometry = d; });
     if (config.exportConfig.enabled()) {
         m_export = std::make_unique<LiveCaptureExport>(*this, std::move(config.exportConfig));
@@ -508,6 +512,11 @@ void CaptureTap::flushFrame(bool final) {
                                                            r.geometry->assetHash(m_geometry.config().assetRule));
         }
     }
+    IFrameProcessor::Output processed;
+    if (m_processor && (!m_pending.empty() || !final)) {
+        processed = m_processor->processFrame(m_frame, m_pending,
+                                              !final && m_haveTranslatedFrame ? &m_translatedFrame : nullptr, !final);
+    }
     if (m_export) {
         m_export->onFrame(m_frame, m_pending, !final);
     }
@@ -515,7 +524,8 @@ void CaptureTap::flushFrame(bool final) {
         m_sink(m_frame, m_pending);
     }
     std::uint64_t captured = 0;
-    for (const CaptureDrawRecord& r : m_pending) {
+    for (std::size_t di = 0; di < m_pending.size(); ++di) {
+        const CaptureDrawRecord& r = m_pending[di];
         std::vector<std::string> textures;
         for (const CaptureDrawRecord::BoundTexture& t : r.textures) {
             textures.push_back(Obj()
@@ -528,16 +538,22 @@ void CaptureTap::flushFrame(bool final) {
         if (r.geometry && r.geometry->captured()) {
             ++captured;
         }
-        writeLine(Obj()
-                      .str("ev", "draw")
-                      .u("n", r.n)
-                      .u("frame", r.frame)
-                      .u("di", r.drawInFrame)
-                      .raw("geometry", r.geometry ? geometryJson(*r.geometry, m_geometry.config()) : "null")
-                      .raw("textures", array(textures))
-                      .raw("classification", classificationJson(r.classification))
-                      .raw("translation", r.translated ? scene::translatedDrawJson(r.translation) : "null")
-                      .done());
+        Obj line;
+        line.str("ev", "draw")
+            .u("n", r.n)
+            .u("frame", r.frame)
+            .u("di", r.drawInFrame)
+            .raw("geometry", r.geometry ? geometryJson(*r.geometry, m_geometry.config()) : "null")
+            .raw("textures", array(textures))
+            .raw("classification", classificationJson(r.classification))
+            .raw("translation", r.translated ? scene::translatedDrawJson(r.translation) : "null");
+        if (di < processed.draws.size() && !processed.draws[di].empty()) {
+            line.raw("replacement", processed.draws[di]);
+        }
+        writeLine(line.done());
+    }
+    if (!processed.frame.empty()) {
+        writeLine("{\"ev\":\"replace_frame\"," + processed.frame + "}");
     }
     if (final && m_pending.empty()) {
         return;
@@ -586,6 +602,9 @@ std::unique_ptr<IRelightTap> createTapForDevice(const RuntimeConfig& config, uns
     if (config.captureRecord) {
         c.forward = std::make_unique<RecordingTap>(devicePath(config.recordPath, deviceOrdinal));
     }
+#if defined(FUSE_RELIGHT_HAVE_REPLACE)
+    c.processor = replace::createCaptureReplaceProcessor(deviceOrdinal); // null: relight.replace.enable off, no mods
+#endif
     return std::make_unique<CaptureTap>(std::move(c));
 }
 

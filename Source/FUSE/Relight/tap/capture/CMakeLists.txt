@@ -29,6 +29,11 @@ target_link_libraries(fuse_relight_tap_capture PUBLIC
 # which are added after this directory (neither depends on this target): CMake resolves the names when it
 # generates the build.
 target_link_libraries(fuse_relight_tap_capture PRIVATE fuse_relight_scene_instances fuse_relight_capture_export)
+# RL-3.4: createTapForDevice installs the runtime replacement engine (replace/replace_live.hpp) when its library
+# exists (added later; the two static libraries reference each other, which CMake allows for static libraries).
+target_link_libraries(fuse_relight_tap_capture PRIVATE $<TARGET_NAME_IF_EXISTS:fuse_relight_replace_live>)
+target_compile_definitions(fuse_relight_tap_capture PRIVATE
+    $<$<TARGET_EXISTS:fuse_relight_replace_live>:FUSE_RELIGHT_HAVE_REPLACE=1>)
 if(COMMAND fuse_apply_cxx23)
     fuse_apply_cxx23(fuse_relight_tap_capture)
 else()

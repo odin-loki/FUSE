@@ -1,0 +1,107 @@
+#usda 1.0
+(
+    customLayerData = {
+        string lightspeed_game_name = "ff_textured"
+        string lightspeed_layer_type = "replacement"
+    }
+    defaultPrim = "RootNode"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+# RL-3.4 fixture (Remix mod, rtx-remix/mods/textured_a) for the ff_textured app. Hashes are the app's Remix asset keys
+# (positions,indices,geometrydescriptor) and texture hashes:
+#   mesh_06A0E3ABADEB3249  replaced, original hidden; one quad bound to a material of this mod (brick.dds)
+#   mesh_59D6CC6C20964C16  preserveOriginalDrawCall; one unbound quad (takes the draw's mat_<H>), an attached light,
+#                          remix_category:terrain
+#   mesh_E99F3D1C2EE20781  empty: the original draw is removed
+#   mat_6808D561B4C64EC4   the checker texture's material (also in textured_b, which wins unless relight.modOrder)
+def Xform "RootNode"
+{
+    def Scope "meshes"
+    {
+        def Xform "mesh_06A0E3ABADEB3249"
+        {
+            def Mesh "brick_quad" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-0.5, -0.5, 0), (0.5, -0.5, 0), (0.5, 0.5, 0), (-0.5, 0.5, 0)]
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                rel material:binding = </RootNode/meshes/mesh_06A0E3ABADEB3249/Looks/Brick>
+                double3 xformOp:translate = (0, 0.25, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+            }
+
+            def Scope "Looks"
+            {
+                def Material "Brick"
+                {
+                    token outputs:mdl:surface.connect = </RootNode/meshes/mesh_06A0E3ABADEB3249/Looks/Brick/Shader.outputs:out>
+
+                    def Shader "Shader"
+                    {
+                        uniform token info:implementationSource = "sourceAsset"
+                        uniform asset info:mdl:sourceAsset = @AperturePBR_Opacity.mdl@
+                        uniform token info:mdl:sourceAsset:subIdentifier = "AperturePBR_Opacity"
+                        asset inputs:diffuse_texture = @./textures/brick.dds@
+                        float inputs:reflection_roughness_constant = 0.8
+                        token outputs:out
+                    }
+                }
+            }
+        }
+
+        def Xform "mesh_59D6CC6C20964C16"
+        {
+            int preserveOriginalDrawCall = 1
+            custom uniform bool remix_category:terrain = 1
+
+            def Mesh "overlay_quad"
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-0.25, -0.25, 0), (0.25, -0.25, 0), (0.25, 0.25, 0), (-0.25, 0.25, 0)]
+                uniform token subdivisionScheme = "none"
+                double3 xformOp:translate = (0, 0, -0.5)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+            }
+
+            def SphereLight "lamp"
+            {
+                color3f inputs:color = (1, 0.8, 0.6)
+                float inputs:intensity = 25
+                float inputs:radius = 0.05
+                double3 xformOp:translate = (0, 1, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+            }
+        }
+
+        def Xform "mesh_E99F3D1C2EE20781"
+        {
+        }
+    }
+
+    def Scope "Looks"
+    {
+        def Material "mat_6808D561B4C64EC4"
+        {
+            token outputs:mdl:surface.connect = </RootNode/Looks/mat_6808D561B4C64EC4/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @AperturePBR_Opacity.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "AperturePBR_Opacity"
+                asset inputs:diffuse_texture = @./textures/checker_a.dds@
+                float inputs:reflection_roughness_constant = 0.3
+                token outputs:out
+            }
+        }
+    }
+}

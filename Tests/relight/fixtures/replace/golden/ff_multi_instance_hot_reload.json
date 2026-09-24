@@ -1,0 +1,8 @@
+{
+  "app": "ff_multi_instance",
+  "description": "Hot reload: multi_v1 (originals hidden) is replaced by multi_v2 (originals kept, a material replaced) while the app runs, at frame 10; the reload is applied within one frame of its notification.",
+  "mods": [
+    {"fixture": "multi_v1", "root": "remix", "name": "multi"}
+  ],
+  "hot_reload": {"frame": 10, "fixture": "multi_v2", "root": "remix", "name": "multi"}
+}

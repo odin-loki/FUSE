@@ -59,3 +59,4 @@ add_subdirectory(bridge/host)                                                   
 add_subdirectory(bridge/client)                                                          # RL-2.2
 add_subdirectory(mods/usd)                                                               # RL-3.1
 add_subdirectory(mods/import)                                                            # RL-3.2
+add_subdirectory(replace)                                                                # RL-3.4

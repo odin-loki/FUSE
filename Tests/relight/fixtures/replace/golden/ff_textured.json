@@ -1,0 +1,8 @@
+{
+  "app": "ff_textured",
+  "description": "Remix mod textured_a + FUSE-native mod textured_b: hidden / preserved / removed draws, a bound part material, materials by texture hash; textured_b's mat_6808D561B4C64EC4 wins (FUSE-native above Remix).",
+  "mods": [
+    {"fixture": "textured_a", "root": "remix"},
+    {"fixture": "textured_b", "root": "fuse"}
+  ]
+}

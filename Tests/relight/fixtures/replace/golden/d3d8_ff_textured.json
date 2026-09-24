@@ -1,0 +1,18 @@
+{
+  "app": "d3d8_ff_textured",
+  "description": "The D3D8 twin of ff_textured with the same mods, imported under the same game id (relight.replace.gameId): the same keys, so the same replaced scene.",
+  "mods": [
+    {
+      "fixture": "textured_a",
+      "root": "remix"
+    },
+    {
+      "fixture": "textured_b",
+      "root": "fuse"
+    }
+  ],
+  "env": {
+    "FUSE_RELIGHT_REPLACE_GAME_ID": "ff_textured"
+  },
+  "expected": "ff_textured"
+}

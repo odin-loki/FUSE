@@ -1,0 +1,68 @@
+#usda 1.0
+(
+    customLayerData = {
+        string lightspeed_game_name = "ff_textured"
+        string lightspeed_layer_type = "replacement"
+    }
+    defaultPrim = "RootNode"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+# RL-3.4 fixture (FUSE-native mod, fuse-relight/mods/textured_b) for the ff_textured app:
+#   mat_6808D561B4C64EC4   the checker texture's material; FUSE-native mods stack above Remix mods, so this one wins
+#                          over textured_a's (relight.modOrder = textured_a reverses it)
+#   mat_B1718C8D5A971E7B   the second texture's material (preloaded)
+#   mesh_0ED0711C76285B12  replaced, original hidden; one quad (no bound material: the draw's mat_<H>)
+def Xform "RootNode"
+{
+    def Scope "meshes"
+    {
+        def Xform "mesh_0ED0711C76285B12"
+        {
+            int preserveOriginalDrawCall = 0
+
+            def Mesh "panel"
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-1, -1, 0), (1, -1, 0), (1, 1, 0), (-1, 1, 0)]
+                uniform token subdivisionScheme = "none"
+            }
+        }
+    }
+
+    def Scope "Looks"
+    {
+        def Material "mat_6808D561B4C64EC4"
+        {
+            token outputs:mdl:surface.connect = </RootNode/Looks/mat_6808D561B4C64EC4/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @AperturePBR_Opacity.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "AperturePBR_Opacity"
+                asset inputs:diffuse_texture = @./textures/checker_b.dds@
+                float inputs:reflection_roughness_constant = 0.6
+                token outputs:out
+            }
+        }
+
+        def Material "mat_B1718C8D5A971E7B"
+        {
+            token outputs:mdl:surface.connect = </RootNode/Looks/mat_B1718C8D5A971E7B/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @AperturePBR_Opacity.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "AperturePBR_Opacity"
+                asset inputs:diffuse_texture = @./textures/stripes.dds@
+                bool inputs:preload_textures = 1
+                float inputs:metallic_constant = 1
+                token outputs:out
+            }
+        }
+    }
+}

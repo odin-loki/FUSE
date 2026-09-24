@@ -1,0 +1,9 @@
+{
+  "app": "ff_textured",
+  "description": "As ff_textured with relight.modOrder = textured_a: textured_a stacks first and wins mat_6808D561B4C64EC4.",
+  "mods": [
+    {"fixture": "textured_a", "root": "remix"},
+    {"fixture": "textured_b", "root": "fuse"}
+  ],
+  "env": {"FUSE_RELIGHT_MOD_ORDER": "textured_a"}
+}
