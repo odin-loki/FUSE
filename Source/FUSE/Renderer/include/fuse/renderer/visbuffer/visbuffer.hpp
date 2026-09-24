@@ -156,6 +156,8 @@ public:
     const char* kernelLanguage() const { return m_language; }
     /// Bindless sampled handle of the depth the Hi-Z reads (D32 view or R32F export).
     u32 depthSampledHandle() const;
+    /// Bindless storage-image handle of the R32G32_UINT visibility image (WP-1.5 material resolve).
+    u32 visStorageHandle() const;
     const Texture& visImage() const { return m_targets.vis; }
     const Texture& depthImage() const { return m_targets.depth; }
     const Texture& image64() const { return m_targets.image64; }

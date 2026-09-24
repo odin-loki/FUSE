@@ -1,0 +1,65 @@
+#version 460
+// WP-1.5 attribute dump, one thread per pixel: what the resolve reconstructs before it evaluates the
+// material (barycentrics + analytic derivatives, UV0 + derivatives, world normal / tangent, velocity,
+// material row, bin) as ResolveAttributeTexel through BDA. fuse_rp_material_resolve compares it with
+// the CPU reference kernel "material_resolve_attributes". GLSL twin of mr_attributes.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "mr_includes.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(rg32ui) uniform readonly uimage2D fuse_vis_images[];
+
+struct FuseMrAttributeTexel {
+    float b1;
+    float b2;
+    float depth;
+    uint flags;
+    float db1dx;
+    float db1dy;
+    float db2dx;
+    float db2dy;
+    vec2 uv;
+    vec2 duvdx;
+    vec2 duvdy;
+    uint material;
+    uint bin;
+    vec3 normal;
+    float tangentSign;
+    vec3 tangent;
+    float pad0;
+    vec2 velocity;
+    vec2 pad1;
+};
+layout(buffer_reference, std430, buffer_reference_align = 16) writeonly buffer FuseMrAttributesOut { FuseMrAttributeTexel t[]; };
+
+void main() {
+    const FuseMrFrame f = FuseMrFrameRef(pc.frame).f;
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= f.width || p.y >= f.height) {
+        return;
+    }
+    const uvec2 v = imageLoad(fuse_vis_images[fuse_handle_index(f.vis)], ivec2(p)).xy;
+    const FuseMrAttributes a = fuse_mr_attributes(fuse_gpu_scene(f.scene), f, p, v);
+    FuseMrAttributeTexel o;
+    o.b1 = a.bary.b.y;
+    o.b2 = a.bary.b.z;
+    o.depth = a.depth;
+    o.flags = a.flags;
+    o.db1dx = a.bary.dbdx.y;
+    o.db1dy = a.bary.dbdy.y;
+    o.db2dx = a.bary.dbdx.z;
+    o.db2dy = a.bary.dbdy.z;
+    o.uv = a.uv;
+    o.duvdx = a.duvdx;
+    o.duvdy = a.duvdy;
+    o.material = a.material;
+    o.bin = a.bin;
+    o.normal = a.normal;
+    o.tangentSign = a.tangentSign;
+    o.tangent = a.tangent;
+    o.pad0 = 0.0;
+    o.velocity = a.velocity;
+    o.pad1 = vec2(0.0);
+    FuseMrAttributesOut(pc.out_).t[p.y * f.width + p.x] = o;
+}

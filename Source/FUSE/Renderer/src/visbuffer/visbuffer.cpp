@@ -448,6 +448,10 @@ u32 VisBuffer::depthSampledHandle() const {
     return m_targets.depthSampled.isValid() ? m_desc.bindless->shaderHandle(m_targets.depthSampled) : 0u;
 }
 
+u32 VisBuffer::visStorageHandle() const {
+    return m_targets.visStorage.isValid() ? m_desc.bindless->shaderHandle(m_targets.visStorage) : 0u;
+}
+
 bool VisBuffer::beginFrame(u64 frameSerial, const f32 viewProj[16], u32 sceneHandle, u32 instanceHighWater) {
     if (!m_initialized || m_targets.vis.image == nullptr) {
         return false;

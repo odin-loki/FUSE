@@ -1,0 +1,39 @@
+#version 460
+// WP-1.5 material classification, one 8 x 8 workgroup per screen tile: every thread finds its pixel's
+// resolve bin (fuse_mr_pixel_bin: empty / flat / textured / normal-mapped), the tile takes the
+// maximum (the bins are nested feature classes), and thread 0 appends the tile to that bin's list and
+// counts it into the bin's VkDrawIndirectCommand::instanceCount (ResolveBinLayout). CPU reference:
+// resolve_kernel::ClassifyKernel ("material_resolve_classify"). GLSL twin of mr_classify.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "mr_includes.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(rg32ui) uniform readonly uimage2D fuse_vis_images[];
+FUSE_BINDLESS_SSBO_LAYOUT buffer FuseMrBinWords { uint words[]; } fuse_mr_bin_buffers[];
+
+shared uint s_bin;
+
+void main() {
+    const FuseMrFrame f = FuseMrFrameRef(pc.frame).f;
+    if (gl_LocalInvocationIndex == 0u) {
+        s_bin = FUSE_MR_BIN_EMPTY;
+    }
+    barrier();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x < f.width && p.y < f.height) {
+        const uvec2 v = imageLoad(fuse_vis_images[fuse_handle_index(f.vis)], ivec2(p)).xy;
+        const uint bin = fuse_mr_pixel_bin(fuse_gpu_scene(f.scene), v);
+        if (bin != FUSE_MR_BIN_EMPTY) {
+            atomicMax(s_bin, bin);
+        }
+    }
+    barrier();
+    if (gl_LocalInvocationIndex == 0u) {
+        const uint bin = s_bin;
+        const uint h = fuse_handle_index(f.binsHandle);
+        const uint slot = atomicAdd(fuse_mr_bin_buffers[h].words[bin * 4u + 1u], 1u);
+        fuse_mr_bin_buffers[h].words[FUSE_MR_BIN_LIST_OFFSET_WORDS + bin * f.tileCapacity + slot] =
+            gl_WorkGroupID.x | (gl_WorkGroupID.y << 16u);
+    }
+}
