@@ -1,0 +1,98 @@
+#version 460
+// FUSE Relight RL-5.1 "relight.pt.trace": one pixel per invocation, samplesPerPixel paths of the single-source core
+// (kernels/pt_reference_core.h: primary rays from the camera, NEE over the RL-4.4 light set with MIS, RL-4.3 BSDF
+// sampling, Russian roulette, PSR, portals, legacy alpha) on the WP-6.0 TLAS by ray query. Writes the frame's
+// radiance, the accumulation sums (accumulation reference mode), the demodulated channels and the G-buffer of the
+// frame's first sample (output sections: pt_gpu.hpp PtOutputSection). CPU reference: PtReferenceKernel
+// (kernels/pt_reference_kernels.hpp). GLSL twin of rl_pt_trace.slang.
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(push_constant) uniform PtTracePush {
+    uint64_t params;
+    uint64_t instances;
+    uint64_t triangles;
+    uint64_t materials;
+    uint64_t portals;
+    uint64_t lightMap;
+    uint64_t lightTable;
+    uint64_t lightTree;
+    uint64_t tlas;
+    uint64_t lut;
+    uint64_t outputs;
+    uint64_t outStride;
+    uint width;
+    uint height;
+    uint accumulate;
+    uint lightCount;
+} pc;
+
+#include "rl_pt.glsl"
+
+layout(buffer_reference, std430, buffer_reference_align = 16) buffer PtOut4 { vec4 v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 8) buffer PtOut2 { vec2 v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer PtOut1 { float v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer PtOutU { uint v[]; };
+
+uint64_t ptSection(uint s) { return pc.outputs + uint64_t(s) * pc.outStride; }
+
+// The output writes live in their own function: with them in main(), glslang's `precise` propagation (the WP-7.1
+// tree code marks its bounds math precise) runs out of memory on this shader.
+void ptStore(uint i, uint spp, vec3 sum, vec3 sumSq, vec3 em, vec3 di, vec3 sp, PtSample g) {
+    float inv = 1.0 / float(spp);
+    PtOut4(ptSection(0u)).v[i] = vec4(sum * inv, float(spp));
+    vec4 acc = vec4(sum, float(spp));
+    vec4 accSq = vec4(sumSq, 0.0);
+    if (pc.accumulate != 0u) {
+        acc += PtOut4(ptSection(1u)).v[i];
+        accSq += PtOut4(ptSection(2u)).v[i];
+    }
+    PtOut4(ptSection(1u)).v[i] = acc;
+    PtOut4(ptSection(2u)).v[i] = accSq;
+    PtOut4(ptSection(3u)).v[i] = vec4(em * inv, 0.0);
+    float specHit = float((g.flags & kPtSampleSpecularHit) != 0u ? 1u : 0u);
+    PtOut4(ptSection(4u)).v[i] = vec4(di * inv, g.hitDist * (1.0 - specHit));
+    PtOut4(ptSection(5u)).v[i] = vec4(sp * inv, g.hitDist * specHit);
+    PtOut4(ptSection(6u)).v[i] = vec4(g.albedoD, float(g.psr));
+    PtOut4(ptSection(7u)).v[i] = vec4(g.albedoS, float(g.flags));
+    PtOut4(ptSection(8u)).v[i] = vec4(g.normal, g.roughness);
+    PtOut2(ptSection(9u)).v[i] = vec2(g.motionX, g.motionY);
+    PtOut1(ptSection(10u)).v[i] = g.depth;
+    PtOutU(ptSection(11u)).v[i] = g.instance;
+}
+
+void main() {
+    uvec2 pix = gl_GlobalInvocationID.xy;
+    if (pix.x >= pc.width || pix.y >= pc.height) {
+        return;
+    }
+    vec4 w[11];
+    for (uint k = 0u; k < 11u; ++k) {
+        w[k] = PtWordsRef(pc.params).v[k];
+    }
+    PtParams P = ptParamsUnpack(w);
+    uint i = pix.y * pc.width + pix.x;
+    vec3 sum = vec3(0.0);
+    vec3 sumSq = vec3(0.0);
+    vec3 em = vec3(0.0);
+    vec3 di = vec3(0.0);
+    vec3 sp = vec3(0.0);
+    PtSample g = ptRenderSample(P, pix.x, pix.y, P.sampleBase);
+    uint spp = max(P.samplesPerPixel, 1u);
+    for (uint s = 0u; s < spp; ++s) {
+        PtSample r = g;
+        if (s != 0u) {
+            r = ptRenderSample(P, pix.x, pix.y, P.sampleBase + s);
+        }
+        sum += r.radiance;
+        sumSq += r.radiance * r.radiance;
+        em += r.emissive;
+        di += r.diffuse;
+        sp += r.specular;
+    }
+    ptStore(i, spp, sum, sumSq, em, di, sp, g);
+}
