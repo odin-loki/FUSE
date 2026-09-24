@@ -302,6 +302,63 @@ struct DeviceProbe {
     std::string missingT0;
 };
 
+/// RenderFeature bits set in a feature struct set. `plan` says which structs carry values (were
+/// queried / declared, and their extension is present); on Vulkan 1.3 sync2 / dynamic rendering /
+/// maintenance4 come from the 1.3 struct or the promoted extension struct.
+u64 featureMask(const DeviceFeatureSet& f, const FeatureChainPlan& plan, bool api13, const DeviceExtensionPresence& ext) {
+    (void)ext;
+    const bool sync2 = (api13 && plan.v13 && f.v13.synchronization2 == VK_TRUE) ||
+                       (plan.sync2 && f.sync2.synchronization2 == VK_TRUE);
+    const bool dynamic = (api13 && plan.v13 && f.v13.dynamicRendering == VK_TRUE) ||
+                         (plan.dynamic && f.dynamic.dynamicRendering == VK_TRUE);
+    const bool maintenance4 = (api13 && plan.v13 && f.v13.maintenance4 == VK_TRUE) ||
+                              (plan.maintenance4 && f.maintenance4.maintenance4 == VK_TRUE);
+    const bool accelerationStructure =
+        plan.accelerationStructure && f.accelerationStructure.accelerationStructure == VK_TRUE;
+    const bool bda = f.v12.bufferDeviceAddress == VK_TRUE;
+
+    u64 mask = 0;
+    auto set = [&mask](RenderFeature feature, bool value) {
+        if (value) {
+            mask |= renderFeatureBit(feature);
+        }
+    };
+    set(RenderFeature::Synchronization2, sync2);
+    set(RenderFeature::DynamicRendering, dynamic);
+    set(RenderFeature::Maintenance4, maintenance4);
+    set(RenderFeature::TimelineSemaphore, f.v12.timelineSemaphore == VK_TRUE);
+    set(RenderFeature::DescriptorIndexing, f.v12.descriptorIndexing == VK_TRUE);
+    set(RenderFeature::BufferDeviceAddress, bda);
+    set(RenderFeature::DrawIndirectCount, f.v12.drawIndirectCount == VK_TRUE);
+    set(RenderFeature::MultiDrawIndirect, f.core.features.multiDrawIndirect == VK_TRUE);
+    set(RenderFeature::ShaderDrawParameters, f.v11.shaderDrawParameters == VK_TRUE);
+    set(RenderFeature::ShaderInt64, f.core.features.shaderInt64 == VK_TRUE);
+    set(RenderFeature::ShaderBufferInt64Atomics, f.v12.shaderBufferInt64Atomics == VK_TRUE);
+    set(RenderFeature::ShaderImageInt64Atomics,
+        plan.imageAtomicInt64 && f.imageAtomicInt64.shaderImageInt64Atomics == VK_TRUE);
+    set(RenderFeature::DescriptorBuffer, plan.descriptorBuffer && f.descriptorBuffer.descriptorBuffer == VK_TRUE && bda);
+#if defined(VK_EXT_device_generated_commands)
+    set(RenderFeature::DeviceGeneratedCommands,
+        plan.deviceGeneratedCommands && f.deviceGeneratedCommands.deviceGeneratedCommands == VK_TRUE &&
+            f.maintenance5.maintenance5 == VK_TRUE && bda);
+#else
+    // Headers predate the extension: reported as supported when advertised, never enabled.
+    set(RenderFeature::DeviceGeneratedCommands, ext.deviceGeneratedCommands && ext.maintenance5 && bda);
+#endif
+    set(RenderFeature::ShaderObject, plan.shaderObject && f.shaderObject.shaderObject == VK_TRUE && dynamic);
+    // Task shaders are only useful in front of mesh shaders: no meshShader, no taskShader.
+    const bool meshShader = plan.meshShader && f.meshShader.meshShader == VK_TRUE;
+    set(RenderFeature::TaskShader, meshShader && f.meshShader.taskShader == VK_TRUE);
+    set(RenderFeature::MeshShader, meshShader);
+    set(RenderFeature::AccelerationStructure, accelerationStructure && bda);
+    set(RenderFeature::RayQuery, accelerationStructure && bda && plan.rayQuery && f.rayQuery.rayQuery == VK_TRUE);
+    set(RenderFeature::RayTracingPipeline, accelerationStructure && bda && plan.rayTracingPipeline &&
+                                               f.rayTracingPipeline.rayTracingPipeline == VK_TRUE);
+    set(RenderFeature::CooperativeMatrix,
+        plan.cooperativeMatrix && f.cooperativeMatrix.cooperativeMatrix == VK_TRUE);
+    return mask;
+}
+
 DeviceProbe probeDevice(VkPhysicalDevice device, u32 instanceApiVersion) {
     DeviceProbe probe{};
     VkPhysicalDeviceProperties props{};
@@ -356,55 +413,7 @@ DeviceProbe probeDevice(VkPhysicalDevice device, u32 instanceApiVersion) {
 #endif
     DeviceFeatureSet& f = probe.supported;
     vkGetPhysicalDeviceFeatures2(device, linkFeatureChain(f, plan));
-
-    const bool sync2 = api13 ? f.v13.synchronization2 == VK_TRUE : plan.sync2 && f.sync2.synchronization2 == VK_TRUE;
-    const bool dynamic =
-        api13 ? f.v13.dynamicRendering == VK_TRUE : plan.dynamic && f.dynamic.dynamicRendering == VK_TRUE;
-    const bool maintenance4 =
-        api13 ? f.v13.maintenance4 == VK_TRUE : plan.maintenance4 && f.maintenance4.maintenance4 == VK_TRUE;
-    const bool accelerationStructure =
-        plan.accelerationStructure && f.accelerationStructure.accelerationStructure == VK_TRUE;
-    const bool bda = f.v12.bufferDeviceAddress == VK_TRUE;
-
-    u64 mask = 0;
-    auto set = [&mask](RenderFeature feature, bool value) {
-        if (value) {
-            mask |= renderFeatureBit(feature);
-        }
-    };
-    set(RenderFeature::Synchronization2, sync2);
-    set(RenderFeature::DynamicRendering, dynamic);
-    set(RenderFeature::Maintenance4, maintenance4);
-    set(RenderFeature::TimelineSemaphore, f.v12.timelineSemaphore == VK_TRUE);
-    set(RenderFeature::DescriptorIndexing, f.v12.descriptorIndexing == VK_TRUE);
-    set(RenderFeature::BufferDeviceAddress, bda);
-    set(RenderFeature::DrawIndirectCount, f.v12.drawIndirectCount == VK_TRUE);
-    set(RenderFeature::MultiDrawIndirect, f.core.features.multiDrawIndirect == VK_TRUE);
-    set(RenderFeature::ShaderDrawParameters, f.v11.shaderDrawParameters == VK_TRUE);
-    set(RenderFeature::ShaderInt64, f.core.features.shaderInt64 == VK_TRUE);
-    set(RenderFeature::ShaderBufferInt64Atomics, f.v12.shaderBufferInt64Atomics == VK_TRUE);
-    set(RenderFeature::ShaderImageInt64Atomics,
-        plan.imageAtomicInt64 && f.imageAtomicInt64.shaderImageInt64Atomics == VK_TRUE);
-    set(RenderFeature::DescriptorBuffer, plan.descriptorBuffer && f.descriptorBuffer.descriptorBuffer == VK_TRUE && bda);
-#if defined(VK_EXT_device_generated_commands)
-    set(RenderFeature::DeviceGeneratedCommands,
-        plan.deviceGeneratedCommands && f.deviceGeneratedCommands.deviceGeneratedCommands == VK_TRUE &&
-            f.maintenance5.maintenance5 == VK_TRUE && bda);
-#else
-    // Headers predate the extension: reported as supported when advertised, never enabled.
-    set(RenderFeature::DeviceGeneratedCommands, ext.deviceGeneratedCommands && ext.maintenance5 && bda);
-#endif
-    set(RenderFeature::ShaderObject, plan.shaderObject && f.shaderObject.shaderObject == VK_TRUE && dynamic);
-    // Task shaders are only useful in front of mesh shaders: no meshShader, no taskShader.
-    const bool meshShader = plan.meshShader && f.meshShader.meshShader == VK_TRUE;
-    set(RenderFeature::TaskShader, meshShader && f.meshShader.taskShader == VK_TRUE);
-    set(RenderFeature::MeshShader, meshShader);
-    set(RenderFeature::AccelerationStructure, accelerationStructure && bda);
-    set(RenderFeature::RayQuery, accelerationStructure && bda && plan.rayQuery && f.rayQuery.rayQuery == VK_TRUE);
-    set(RenderFeature::RayTracingPipeline, accelerationStructure && bda && plan.rayTracingPipeline &&
-                                               f.rayTracingPipeline.rayTracingPipeline == VK_TRUE);
-    set(RenderFeature::CooperativeMatrix,
-        plan.cooperativeMatrix && f.cooperativeMatrix.cooperativeMatrix == VK_TRUE);
+    const u64 mask = featureMask(f, plan, api13, ext);
     probe.supportedMask = mask;
     probe.hardwareTier = renderTierFromMask(api13 ? mask : 0);
 
@@ -542,9 +551,74 @@ bool betterCandidate(const DeviceCandidate& a, const DeviceCandidate& b, bool pr
     }
     return a.index < b.index;
 }
+/// Descriptor limits for the bindless layout (VulkanDescriptorLimits): update-after-bind limits
+/// when descriptor indexing is enabled, else the core limits.
+void fillDescriptorLimits(VkPhysicalDevice physical, const VkPhysicalDeviceProperties& props, bool descriptorIndexing,
+                          VulkanDescriptorLimits& limits) {
+    VkPhysicalDeviceVulkan12Properties props12{};
+    props12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES;
+    VkPhysicalDeviceProperties2 props2{};
+    props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    props2.pNext = &props12;
+    vkGetPhysicalDeviceProperties2(physical, &props2);
+    const VkPhysicalDeviceLimits& core = props.limits;
+    if (descriptorIndexing && props12.maxPerStageUpdateAfterBindResources > 0u) {
+        limits.sampledImages = std::min(props12.maxDescriptorSetUpdateAfterBindSampledImages,
+                                        props12.maxPerStageDescriptorUpdateAfterBindSampledImages);
+        limits.storageImages = std::min(props12.maxDescriptorSetUpdateAfterBindStorageImages,
+                                        props12.maxPerStageDescriptorUpdateAfterBindStorageImages);
+        limits.storageBuffers = std::min(props12.maxDescriptorSetUpdateAfterBindStorageBuffers,
+                                         props12.maxPerStageDescriptorUpdateAfterBindStorageBuffers);
+        limits.uniformBuffers = std::min(props12.maxDescriptorSetUpdateAfterBindUniformBuffers,
+                                         props12.maxPerStageDescriptorUpdateAfterBindUniformBuffers);
+        limits.samplers = std::min(props12.maxDescriptorSetUpdateAfterBindSamplers,
+                                   props12.maxPerStageDescriptorUpdateAfterBindSamplers);
+        limits.perStageResources = props12.maxPerStageUpdateAfterBindResources;
+        limits.allPools = props12.maxUpdateAfterBindDescriptorsInAllPools;
+    } else {
+        limits.sampledImages = std::min(core.maxDescriptorSetSampledImages, core.maxPerStageDescriptorSampledImages);
+        limits.storageImages = std::min(core.maxDescriptorSetStorageImages, core.maxPerStageDescriptorStorageImages);
+        limits.storageBuffers = std::min(core.maxDescriptorSetStorageBuffers, core.maxPerStageDescriptorStorageBuffers);
+        limits.uniformBuffers = std::min(core.maxDescriptorSetUniformBuffers, core.maxPerStageDescriptorUniformBuffers);
+        limits.samplers = std::min(core.maxDescriptorSetSamplers, core.maxPerStageDescriptorSamplers);
+        limits.perStageResources = core.maxPerStageResources;
+        limits.allPools = UINT32_MAX;
+    }
+}
+
+bool containsName(const std::vector<const char*>& names, const char* name) {
+    for (const char* n : names) {
+        if (n != nullptr && std::strcmp(n, name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Copies a feature struct out of a caller's pNext chain (keeps our sType; pNext is relinked later).
+template <typename T>
+void copyFeatureStruct(T& dst, const VkBaseInStructure* node) {
+    const VkStructureType sType = dst.sType;
+    std::memcpy(static_cast<void*>(&dst), node, sizeof(T));
+    dst.sType = sType;
+    dst.pNext = nullptr;
+}
 #endif
 
 } // namespace
+
+/// The enabled feature structs of a device and the plan that links them (adoptionDesc() hands out
+/// &set.core as the chain).
+struct VulkanDevice::EnabledFeatures {
+#if defined(FUSE_VULKAN_BACKEND)
+    DeviceFeatureSet set{};
+    FeatureChainPlan plan{};
+#endif
+};
+
+void VulkanDevice::EnabledFeaturesDeleter::operator()(EnabledFeatures* features) const {
+    delete features;
+}
 
 std::unique_ptr<VulkanDevice> VulkanDevice::create(VulkanInstance& instance,
                                                    const VulkanDeviceDesc& desc) {
@@ -553,6 +627,336 @@ std::unique_ptr<VulkanDevice> VulkanDevice::create(VulkanInstance& instance,
         device->m_info.valid = false;
     }
     return device;
+}
+
+std::unique_ptr<VulkanDevice> VulkanDevice::adopt(const VulkanDeviceAdoptDesc& desc) {
+    auto device = std::unique_ptr<VulkanDevice>(new VulkanDevice());
+    if (!device->initializeAdopted(desc)) {
+        device->m_info.valid = false;
+    }
+    return device;
+}
+
+VulkanDeviceAdoptDesc VulkanDevice::adoptionDesc() const {
+    VulkanDeviceAdoptDesc d{};
+    d.instance = instanceHandle();
+    d.physicalDevice = m_physicalDevice;
+    d.device = m_handle;
+    d.instanceApiVersion = m_instanceApiVersion;
+    d.enabledExtensions = m_info.enabledExtensions.empty() ? nullptr : m_info.enabledExtensions.data();
+    d.enabledExtensionCount = static_cast<u32>(m_info.enabledExtensions.size());
+    const std::vector<const char*>& instanceExtensions =
+        m_instance != nullptr ? m_instance->info().enabledExtensions : m_instanceExtensions;
+    d.instanceExtensions = instanceExtensions.empty() ? nullptr : instanceExtensions.data();
+    d.instanceExtensionCount = static_cast<u32>(instanceExtensions.size());
+#if defined(FUSE_VULKAN_BACKEND)
+    d.enabledFeatureChain = m_features != nullptr ? static_cast<const void*>(&m_features->set.core) : nullptr;
+#endif
+    d.graphicsFamily = m_info.queues.graphicsFamily;
+    d.computeFamily = m_info.queues.computeFamily;
+    d.transferFamily = m_info.queues.transferFamily;
+    d.graphicsQueue = m_info.queues.graphics;
+    d.computeQueue = m_info.queues.compute;
+    d.transferQueue = m_info.queues.transfer;
+    d.takeOwnership = false;
+    d.maxTier = m_info.caps.valid ? m_info.caps.tierCap : kMaxRenderTier;
+    return d;
+}
+
+bool VulkanDevice::initializeAdopted(const VulkanDeviceAdoptDesc& desc) {
+    m_adopted = true;
+    m_ownsDevice = false;
+#if defined(FUSE_VULKAN_BACKEND)
+    if (desc.instance == nullptr || desc.physicalDevice == nullptr || desc.device == nullptr) {
+        m_info.message = "Adopt failed: instance, physical device and device handles are required";
+        return false;
+    }
+    // volk: the host's vkGetInstanceProcAddr when given (no loader library opened by us), else the
+    // loader library. Then the instance and device tables, before any other call on them.
+    const bool loaded = desc.getInstanceProcAddr != nullptr ? vkloader::initializeWithProcAddr(desc.getInstanceProcAddr)
+                                                            : vkloader::initialize();
+    if (!loaded) {
+        m_info.message = "Adopt failed: no Vulkan loader (volk)";
+        return false;
+    }
+    const auto vkInstance = static_cast<VkInstance>(desc.instance);
+    const auto physical = static_cast<VkPhysicalDevice>(desc.physicalDevice);
+    const auto logicalDevice = static_cast<VkDevice>(desc.device);
+    vkloader::registerInstance(vkInstance);
+    vkloader::registerDevice(logicalDevice, vkInstance);
+    m_registered = true;
+    m_instanceHandle = desc.instance;
+    m_physicalDevice = desc.physicalDevice;
+    m_handle = desc.device;
+    m_ownsDevice = desc.takeOwnership;
+
+    VkPhysicalDeviceProperties props{};
+    vkGetPhysicalDeviceProperties(physical, &props);
+    m_info.deviceName = props.deviceName;
+    m_info.deviceType = static_cast<u32>(props.deviceType);
+    m_instanceApiVersion = desc.instanceApiVersion != 0u ? desc.instanceApiVersion : props.apiVersion;
+    m_info.apiVersion = std::min(m_instanceApiVersion, props.apiVersion);
+    const u32 apiVersion = apiMajorMinor(m_info.apiVersion);
+    const bool api13 = apiVersion >= VK_API_VERSION_1_3;
+
+    {
+        u32 count = 0;
+        vkEnumeratePhysicalDevices(vkInstance, &count, nullptr);
+        std::vector<VkPhysicalDevice> devices(count);
+        vkEnumeratePhysicalDevices(vkInstance, &count, devices.data());
+        m_info.physicalDeviceCount = count;
+        for (u32 i = 0; i < count; ++i) {
+            if (devices[i] == physical) {
+                m_info.physicalDeviceIndex = i;
+            }
+        }
+        m_info.selection = "#" + (m_info.physicalDeviceIndex == UINT32_MAX ? std::string("?")
+                                                                            : std::to_string(m_info.physicalDeviceIndex)) +
+                           " '" + m_info.deviceName + "' (" + deviceTypeName(props.deviceType) + "): adopted";
+    }
+
+    // Extensions: our own copies (the caller's strings may not outlive adopt()).
+    for (u32 i = 0; i < desc.enabledExtensionCount; ++i) {
+        const char* name = desc.enabledExtensions != nullptr ? desc.enabledExtensions[i] : nullptr;
+        if (name != nullptr) {
+            m_extensionNames.emplace_back(name);
+        }
+    }
+    for (const std::string& name : m_extensionNames) {
+        m_info.enabledExtensions.push_back(name.c_str());
+    }
+    for (u32 i = 0; i < desc.instanceExtensionCount; ++i) {
+        const char* name = desc.instanceExtensions != nullptr ? desc.instanceExtensions[i] : nullptr;
+        if (name != nullptr) {
+            m_instanceExtensionNames.emplace_back(name);
+        }
+    }
+    for (const std::string& name : m_instanceExtensionNames) {
+        m_instanceExtensions.push_back(name.c_str());
+    }
+    const std::vector<const char*>& extensions = m_info.enabledExtensions;
+    auto enabledExt = [&extensions](const char* name) { return containsName(extensions, name); };
+    DeviceExtensionPresence ext{};
+    ext.synchronization2 = enabledExt(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+    ext.dynamicRendering = enabledExt(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+    ext.maintenance4 = enabledExt(VK_KHR_MAINTENANCE_4_EXTENSION_NAME);
+    ext.imageAtomicInt64 = enabledExt(VK_EXT_SHADER_IMAGE_ATOMIC_INT64_EXTENSION_NAME);
+    ext.descriptorBuffer = enabledExt(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME);
+    ext.deviceGeneratedCommands = enabledExt("VK_EXT_device_generated_commands");
+    ext.maintenance5 = enabledExt(VK_KHR_MAINTENANCE_5_EXTENSION_NAME);
+    ext.shaderObject = enabledExt(VK_EXT_SHADER_OBJECT_EXTENSION_NAME);
+    ext.meshShader = enabledExt(VK_EXT_MESH_SHADER_EXTENSION_NAME);
+    ext.deferredHostOperations = enabledExt(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+    ext.accelerationStructure = enabledExt(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) && ext.deferredHostOperations;
+    ext.rayQuery = enabledExt(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+    ext.rayTracingPipeline = enabledExt(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+    ext.cooperativeMatrix = enabledExt(VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
+
+    // Enabled features: the declared chain, struct by struct (promoted 1.1/1.2 structs folded into
+    // the Vulkan11/12 structs), then pEnabledFeatures when no VkPhysicalDeviceFeatures2 came.
+    m_features.reset(new EnabledFeatures{});
+    DeviceFeatureSet& f = m_features->set;
+    FeatureChainPlan present{};
+    linkFeatureChain(f, present); // sTypes
+    bool haveFeatures2 = false;
+    for (auto node = static_cast<const VkBaseInStructure*>(desc.enabledFeatureChain); node != nullptr;
+         node = node->pNext) {
+        switch (node->sType) {
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2:
+            copyFeatureStruct(f.core, node);
+            haveFeatures2 = true;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES:
+            copyFeatureStruct(f.v11, node);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES:
+            copyFeatureStruct(f.v12, node);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES:
+            copyFeatureStruct(f.v13, node);
+            present.v13 = true;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES: {
+            const auto* s = reinterpret_cast<const VkPhysicalDeviceShaderDrawParametersFeatures*>(node);
+            f.v11.shaderDrawParameters |= s->shaderDrawParameters;
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES: {
+            const auto* s = reinterpret_cast<const VkPhysicalDeviceTimelineSemaphoreFeatures*>(node);
+            f.v12.timelineSemaphore |= s->timelineSemaphore;
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES: {
+            const auto* s = reinterpret_cast<const VkPhysicalDeviceBufferDeviceAddressFeatures*>(node);
+            f.v12.bufferDeviceAddress |= s->bufferDeviceAddress;
+            f.v12.bufferDeviceAddressCaptureReplay |= s->bufferDeviceAddressCaptureReplay;
+            f.v12.bufferDeviceAddressMultiDevice |= s->bufferDeviceAddressMultiDevice;
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_INT64_FEATURES: {
+            const auto* s = reinterpret_cast<const VkPhysicalDeviceShaderAtomicInt64Features*>(node);
+            f.v12.shaderBufferInt64Atomics |= s->shaderBufferInt64Atomics;
+            f.v12.shaderSharedInt64Atomics |= s->shaderSharedInt64Atomics;
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES: {
+            const auto* s = reinterpret_cast<const VkPhysicalDeviceDescriptorIndexingFeatures*>(node);
+            VkPhysicalDeviceVulkan12Features& v12 = f.v12;
+            // No umbrella bit in the extension struct: enabling it is enabling the extension.
+            v12.descriptorIndexing |= (apiVersion >= VK_API_VERSION_1_2 ||
+                                       enabledExt(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME))
+                                          ? VK_TRUE
+                                          : VK_FALSE;
+            v12.shaderSampledImageArrayNonUniformIndexing |= s->shaderSampledImageArrayNonUniformIndexing;
+            v12.shaderStorageBufferArrayNonUniformIndexing |= s->shaderStorageBufferArrayNonUniformIndexing;
+            v12.shaderStorageImageArrayNonUniformIndexing |= s->shaderStorageImageArrayNonUniformIndexing;
+            v12.descriptorBindingUniformBufferUpdateAfterBind |= s->descriptorBindingUniformBufferUpdateAfterBind;
+            v12.descriptorBindingSampledImageUpdateAfterBind |= s->descriptorBindingSampledImageUpdateAfterBind;
+            v12.descriptorBindingStorageImageUpdateAfterBind |= s->descriptorBindingStorageImageUpdateAfterBind;
+            v12.descriptorBindingStorageBufferUpdateAfterBind |= s->descriptorBindingStorageBufferUpdateAfterBind;
+            v12.descriptorBindingPartiallyBound |= s->descriptorBindingPartiallyBound;
+            v12.runtimeDescriptorArray |= s->runtimeDescriptorArray;
+            break;
+        }
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES:
+            copyFeatureStruct(f.sync2, node);
+            present.sync2 = api13 || ext.synchronization2;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES:
+            copyFeatureStruct(f.dynamic, node);
+            present.dynamic = api13 || ext.dynamicRendering;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES:
+            copyFeatureStruct(f.maintenance4, node);
+            present.maintenance4 = api13 || ext.maintenance4;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_IMAGE_ATOMIC_INT64_FEATURES_EXT:
+            copyFeatureStruct(f.imageAtomicInt64, node);
+            present.imageAtomicInt64 = ext.imageAtomicInt64;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT:
+            copyFeatureStruct(f.descriptorBuffer, node);
+            present.descriptorBuffer = ext.descriptorBuffer;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT:
+            copyFeatureStruct(f.shaderObject, node);
+            present.shaderObject = ext.shaderObject;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT:
+            copyFeatureStruct(f.meshShader, node);
+            present.meshShader = ext.meshShader;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR:
+            copyFeatureStruct(f.accelerationStructure, node);
+            present.accelerationStructure = ext.accelerationStructure;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR:
+            copyFeatureStruct(f.rayQuery, node);
+            present.rayQuery = ext.rayQuery;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR:
+            copyFeatureStruct(f.rayTracingPipeline, node);
+            present.rayTracingPipeline = ext.rayTracingPipeline;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR:
+            copyFeatureStruct(f.cooperativeMatrix, node);
+            present.cooperativeMatrix = ext.cooperativeMatrix;
+            break;
+#if defined(VK_EXT_device_generated_commands)
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_FEATURES_EXT:
+            copyFeatureStruct(f.deviceGeneratedCommands, node);
+            present.deviceGeneratedCommands = ext.deviceGeneratedCommands && ext.maintenance5;
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES_KHR:
+            copyFeatureStruct(f.maintenance5, node);
+            present.maintenance5 = ext.maintenance5;
+            break;
+#endif
+        default:
+            break; // not a feature the renderer tracks
+        }
+    }
+    if (!haveFeatures2 && desc.enabledCoreFeatures != nullptr) {
+        std::memcpy(&f.core.features, desc.enabledCoreFeatures, sizeof(VkPhysicalDeviceFeatures));
+    }
+    present.v13 = present.v13 && api13;
+    m_features->plan = present;
+    linkFeatureChain(f, present);
+
+    // Caps / tier from what is enabled, never more than the device supports, capped like create().
+    const DeviceProbe probe = probeDevice(physical, m_instanceApiVersion);
+    RenderTier tierCap = minTier(desc.maxTier, renderTierMaxFromEnv());
+    u64 enabledMask = featureMask(f, present, api13, ext) & probe.supportedMask & ~renderFeaturesAboveTier(tierCap);
+#if !defined(VK_EXT_device_generated_commands)
+    enabledMask &= ~renderFeatureBit(RenderFeature::DeviceGeneratedCommands);
+#endif
+    if ((enabledMask & renderFeatureBit(RenderFeature::AccelerationStructure)) == 0) {
+        enabledMask &= ~(renderFeatureBit(RenderFeature::RayQuery) | renderFeatureBit(RenderFeature::RayTracingPipeline));
+    }
+    {
+        RendererCaps& caps = m_info.caps;
+        caps.valid = true;
+        caps.apiVersion = m_info.apiVersion;
+        caps.supportedMask = probe.supportedMask;
+        caps.setEnabledMask(enabledMask);
+        caps.meetsT0 = api13 && (enabledMask & renderT0RequiredMask()) == renderT0RequiredMask();
+        caps.hardwareTier = probe.hardwareTier;
+        caps.tierCap = tierCap;
+        caps.tier = caps.meetsT0 ? minTier(renderTierFromMask(enabledMask), tierCap) : RenderTier::T0;
+    }
+
+    const VkPhysicalDeviceVulkan12Features& v12 = f.v12;
+    m_info.descriptorIndexing = v12.descriptorIndexing == VK_TRUE;
+    m_info.sampledImageUpdateAfterBind = v12.descriptorBindingSampledImageUpdateAfterBind == VK_TRUE;
+    m_info.storageImageUpdateAfterBind = v12.descriptorBindingStorageImageUpdateAfterBind == VK_TRUE;
+    m_info.storageBufferUpdateAfterBind = v12.descriptorBindingStorageBufferUpdateAfterBind == VK_TRUE;
+    m_info.uniformBufferUpdateAfterBind = v12.descriptorBindingUniformBufferUpdateAfterBind == VK_TRUE;
+    m_info.sampledImageNonUniformIndexing = v12.shaderSampledImageArrayNonUniformIndexing == VK_TRUE;
+    m_info.swapchainExtension = enabledExt(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    m_info.bufferDeviceAddress = v12.bufferDeviceAddress == VK_TRUE;
+    m_info.timelineSemaphore = v12.timelineSemaphore == VK_TRUE;
+    m_info.dynamicRendering = (enabledMask & renderFeatureBit(RenderFeature::DynamicRendering)) != 0;
+    m_info.pipelineCreationCacheControl = present.v13 && f.v13.pipelineCreationCacheControl == VK_TRUE;
+    m_info.samplerAnisotropy = f.core.features.samplerAnisotropy == VK_TRUE;
+    m_info.geometryShader = f.core.features.geometryShader == VK_TRUE;
+    m_info.fragmentStoresAndAtomics = f.core.features.fragmentStoresAndAtomics == VK_TRUE;
+    m_info.maxSamplerAnisotropy = props.limits.maxSamplerAnisotropy;
+    fillDescriptorLimits(physical, props, m_info.descriptorIndexing, m_info.descriptorLimits);
+
+    const u32 graphicsFamily = desc.graphicsFamily;
+    const u32 computeFamily = desc.computeFamily == kAdoptSameAsGraphics ? graphicsFamily : desc.computeFamily;
+    const u32 transferFamily = desc.transferFamily == kAdoptSameAsGraphics ? graphicsFamily : desc.transferFamily;
+    auto queueOf = [logicalDevice](void* given, u32 family) {
+        if (given != nullptr) {
+            return static_cast<VkQueue>(given);
+        }
+        VkQueue queue = VK_NULL_HANDLE;
+        vkGetDeviceQueue(logicalDevice, family, 0, &queue);
+        return queue;
+    };
+    VulkanQueues& queues = m_info.queues;
+    queues.graphicsFamily = graphicsFamily;
+    queues.computeFamily = computeFamily;
+    queues.transferFamily = transferFamily;
+    queues.dedicatedCompute = computeFamily != graphicsFamily;
+    queues.dedicatedTransfer = transferFamily != graphicsFamily;
+    queues.graphics = queueOf(desc.graphicsQueue, graphicsFamily);
+    queues.compute = computeFamily == graphicsFamily && desc.computeQueue == nullptr ? queues.graphics
+                                                                                     : queueOf(desc.computeQueue, computeFamily);
+    queues.transfer = transferFamily == graphicsFamily && desc.transferQueue == nullptr
+                          ? queues.graphics
+                          : queueOf(desc.transferQueue, transferFamily);
+
+    m_info.vmaAllocator = nullptr;
+    m_info.valid = true;
+    m_info.message = desc.takeOwnership ? "Adopted device (owning: destroyed with this object)"
+                                        : "Adopted device (non-owning: the creator destroys it)";
+    return true;
+#else
+    (void)desc;
+    m_info.message = "Adopt skipped — Vulkan backend disabled at build time";
+    return false;
+#endif
 }
 
 VulkanDevice::~VulkanDevice() {
@@ -569,7 +973,7 @@ void* VulkanDevice::nativePhysicalDevice() const {
 
 void* VulkanDevice::instanceHandle() const {
     if (m_instance == nullptr) {
-        return nullptr;
+        return m_instanceHandle;
     }
     return m_instance->nativeHandle();
 }
@@ -903,6 +1307,11 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     // Device-level dispatch (volkLoadDevice) while this is the only live device; loader
     // trampolines while several are (vk/loader.hpp). Before any other call on the device.
     vkloader::registerDevice(logicalDevice, vkInstance);
+    m_registered = true;
+    m_features.reset(new EnabledFeatures{});
+    m_features->set = enabledSet;
+    m_features->plan = enablePlan;
+    linkFeatureChain(m_features->set, m_features->plan);
 
     m_physicalDevice = selected;
     m_handle = logicalDevice;
@@ -927,41 +1336,9 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     m_info.geometryShader = deviceFeatures.geometryShader == VK_TRUE;
     m_info.fragmentStoresAndAtomics = deviceFeatures.fragmentStoresAndAtomics == VK_TRUE;
     m_info.maxSamplerAnisotropy = props.limits.maxSamplerAnisotropy;
-    {
-        VkPhysicalDeviceVulkan12Properties props12{};
-        props12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES;
-        VkPhysicalDeviceProperties2 props2{};
-        props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-        props2.pNext = &props12;
-        vkGetPhysicalDeviceProperties2(selected, &props2);
-        const VkPhysicalDeviceLimits& core = props.limits;
-        VulkanDescriptorLimits& limits = m_info.descriptorLimits;
-        if (m_info.descriptorIndexing && props12.maxPerStageUpdateAfterBindResources > 0u) {
-            limits.sampledImages = std::min(props12.maxDescriptorSetUpdateAfterBindSampledImages,
-                                            props12.maxPerStageDescriptorUpdateAfterBindSampledImages);
-            limits.storageImages = std::min(props12.maxDescriptorSetUpdateAfterBindStorageImages,
-                                            props12.maxPerStageDescriptorUpdateAfterBindStorageImages);
-            limits.storageBuffers = std::min(props12.maxDescriptorSetUpdateAfterBindStorageBuffers,
-                                             props12.maxPerStageDescriptorUpdateAfterBindStorageBuffers);
-            limits.uniformBuffers = std::min(props12.maxDescriptorSetUpdateAfterBindUniformBuffers,
-                                             props12.maxPerStageDescriptorUpdateAfterBindUniformBuffers);
-            limits.samplers = std::min(props12.maxDescriptorSetUpdateAfterBindSamplers,
-                                       props12.maxPerStageDescriptorUpdateAfterBindSamplers);
-            limits.perStageResources = props12.maxPerStageUpdateAfterBindResources;
-            limits.allPools = props12.maxUpdateAfterBindDescriptorsInAllPools;
-        } else {
-            limits.sampledImages = std::min(core.maxDescriptorSetSampledImages, core.maxPerStageDescriptorSampledImages);
-            limits.storageImages = std::min(core.maxDescriptorSetStorageImages, core.maxPerStageDescriptorStorageImages);
-            limits.storageBuffers =
-                std::min(core.maxDescriptorSetStorageBuffers, core.maxPerStageDescriptorStorageBuffers);
-            limits.uniformBuffers =
-                std::min(core.maxDescriptorSetUniformBuffers, core.maxPerStageDescriptorUniformBuffers);
-            limits.samplers = std::min(core.maxDescriptorSetSamplers, core.maxPerStageDescriptorSamplers);
-            limits.perStageResources = core.maxPerStageResources;
-            limits.allPools = UINT32_MAX;
-        }
-    }
+    fillDescriptorLimits(selected, props, m_info.descriptorIndexing, m_info.descriptorLimits);
     m_info.deviceType = static_cast<u32>(props.deviceType);
+    m_instanceApiVersion = instance.info().apiVersion;
     m_info.apiVersion = std::min(instance.info().apiVersion, props.apiVersion);
     {
         RendererCaps& caps = m_info.caps;
@@ -1006,11 +1383,22 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
 void VulkanDevice::shutdown() {
 #if defined(FUSE_VULKAN_BACKEND)
     if (m_handle != nullptr) {
-        vkDestroyDevice(static_cast<VkDevice>(m_handle), nullptr);
-        vkloader::unregisterDevice(m_handle);
+        if (m_ownsDevice) {
+            vkDestroyDevice(static_cast<VkDevice>(m_handle), nullptr);
+        }
+        if (m_registered) {
+            // Drops this object's reference only: a device adopted from a live VulkanDevice (or the
+            // creator of an adopted one) keeps its registration and its dispatch tables.
+            vkloader::unregisterDevice(m_handle);
+            if (m_adopted) {
+                vkloader::unregisterInstance(m_instanceHandle);
+            }
+        }
         m_handle = nullptr;
     }
+    m_registered = false;
     m_physicalDevice = nullptr;
+    m_instanceHandle = nullptr;
 #endif
 }
 

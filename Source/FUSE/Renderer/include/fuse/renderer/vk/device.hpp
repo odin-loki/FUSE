@@ -109,11 +109,74 @@ struct VulkanDeviceDesc {
     bool allowBelowT0 = false;
 };
 
+/// Queue family value meaning "the graphics family" in VulkanDeviceAdoptDesc.
+static constexpr u32 kAdoptSameAsGraphics = UINT32_MAX;
+
+/// An externally created device to wrap (VulkanDevice::adopt): DXVK's device inside d3d9.dll, the
+/// RL-1.1 bootstrap's, or another VulkanDevice's (VulkanDevice::adoptionDesc). Every pointer is read
+/// during adopt() only; nothing is retained.
+struct VulkanDeviceAdoptDesc {
+    void* instance = nullptr;       ///< VkInstance the device was created from (required)
+    void* physicalDevice = nullptr; ///< VkPhysicalDevice (required)
+    void* device = nullptr;         ///< VkDevice (required)
+    /// VkApplicationInfo::apiVersion of the instance. 0: assume the physical device's version.
+    u32 instanceApiVersion = 0;
+
+    /// Device extensions enabled at vkCreateDevice (VkDeviceCreateInfo::ppEnabledExtensionNames).
+    const char* const* enabledExtensions = nullptr;
+    u32 enabledExtensionCount = 0;
+    /// Instance extensions enabled on `instance` (only VK_KHR_surface matters: swapchain support).
+    const char* const* instanceExtensions = nullptr;
+    u32 instanceExtensionCount = 0;
+    /// Features enabled at vkCreateDevice: the VkDeviceCreateInfo::pNext chain as passed (a
+    /// VkPhysicalDeviceFeatures2 and/or Vulkan11/12/13 and extension feature structs; unknown
+    /// structs are skipped) and/or VkDeviceCreateInfo::pEnabledFeatures (const VkPhysicalDeviceFeatures*).
+    /// A feature counts as enabled only when its struct says so and, for extension features, the
+    /// extension is in `enabledExtensions`. Declaring a subset of what is really enabled is fine:
+    /// the renderer then uses only that subset.
+    const void* enabledFeatureChain = nullptr;
+    const void* enabledCoreFeatures = nullptr;
+
+    /// Queue families the device was created with. Queue index 0 of each family is used unless
+    /// the handle is given (VkQueue). Compute / transfer default to the graphics family.
+    u32 graphicsFamily = 0;
+    u32 computeFamily = kAdoptSameAsGraphics;
+    u32 transferFamily = kAdoptSameAsGraphics;
+    void* graphicsQueue = nullptr;
+    void* computeQueue = nullptr;
+    void* transferQueue = nullptr;
+
+    /// false (default): the adoptee never destroys the device (nor the instance: a VulkanDevice
+    /// never owns an instance). The creator must keep instance and device alive until the adoptee
+    /// is destroyed. true: the adoptee's destruction calls vkDestroyDevice.
+    bool takeOwnership = false;
+    /// Highest renderer tier to report (capped like VulkanDeviceDesc::maxTier and FUSE_RENDER_TIER_MAX).
+    RenderTier maxTier = kMaxRenderTier;
+    /// The host's PFN_vkGetInstanceProcAddr. When volk has no loader yet it is initialised from it
+    /// (vkloader::initializeWithProcAddr) instead of opening the loader library; null: open it.
+    void* getInstanceProcAddr = nullptr;
+};
+
 class VulkanDevice {
 public:
     static std::unique_ptr<VulkanDevice> create(VulkanInstance& instance,
                                                 const VulkanDeviceDesc& desc = {});
+    /// Wraps an externally created device (see VulkanDeviceAdoptDesc). Fills VulkanDeviceInfo and
+    /// RendererCaps / tier from what `desc` says is enabled, initialises volk from the instance and
+    /// device (vk/loader.hpp: registrations are reference counted, so adopting a device fuse_rhi
+    /// already registered keeps its dispatch mode), and fetches the queues. The result is invalid
+    /// (isValid() false, info().message says why) when a handle is missing or the loader cannot be
+    /// loaded. instanceHandle() is `desc.instance`.
+    static std::unique_ptr<VulkanDevice> adopt(const VulkanDeviceAdoptDesc& desc);
     ~VulkanDevice();
+
+    /// True for a device from adopt(); ownsDevice() says whether destruction destroys it.
+    bool isAdopted() const { return m_adopted; }
+    bool ownsDevice() const { return m_ownsDevice; }
+    /// Describes this device for adopt() (non-owning; pointers valid while this device lives): the
+    /// handles, the enabled extensions, the exact feature chain it was created with (or adopted),
+    /// the queue families and queues.
+    VulkanDeviceAdoptDesc adoptionDesc() const;
 
     VulkanDevice(const VulkanDevice&) = delete;
     VulkanDevice& operator=(const VulkanDevice&) = delete;
@@ -131,14 +194,30 @@ public:
     const VulkanQueues& queues() const { return m_info.queues; }
 
 private:
+    /// Enabled-feature storage (device.cpp): the chain adoptionDesc() hands out.
+    struct EnabledFeatures;
+    struct EnabledFeaturesDeleter {
+        void operator()(EnabledFeatures* features) const;
+    };
+
     VulkanDevice() = default;
     bool initialize(VulkanInstance& instance, const VulkanDeviceDesc& desc);
+    bool initializeAdopted(const VulkanDeviceAdoptDesc& desc);
     void shutdown();
 
     VulkanInstance* m_instance = nullptr;
     VulkanDeviceInfo m_info;
     void* m_handle = nullptr;
     void* m_physicalDevice = nullptr;
+    void* m_instanceHandle = nullptr; ///< adopted devices (no VulkanInstance)
+    bool m_adopted = false;
+    bool m_ownsDevice = true;
+    bool m_registered = false;       ///< holds a vkloader device (+ instance, when adopted) registration
+    std::vector<std::string> m_extensionNames; ///< storage behind m_info.enabledExtensions
+    std::vector<std::string> m_instanceExtensionNames;
+    std::vector<const char*> m_instanceExtensions; ///< adopted: instance extensions (adoptionDesc)
+    u32 m_instanceApiVersion = 0;
+    std::unique_ptr<EnabledFeatures, EnabledFeaturesDeleter> m_features;
 };
 
 } // namespace fuse::renderer

@@ -18,6 +18,18 @@
 # is why vk_loader.cpp #undefs every VK_USE_PLATFORM_* before the implementation: the platform surface
 # entry points stay loader exports.
 #
+# fuse_volk_auto_init(<target> SOURCE <source> SYMBOL <anchor> [DISABLED])
+#   * <source> (src/vk/vk_loader_autoinit.cpp) opens the loader during static initialisation. It is
+#     an archive member nothing references, pulled into an image only by a forced undefined <anchor>
+#     (`-u` / `/INCLUDE:`) on <target>'s INTERFACE_LINK_OPTIONS, i.e. into every image that links
+#     <target> directly or transitively.
+#   * A consuming image opts out with the target property FUSE_RHI_VOLK_NO_AUTO_INIT (evaluated on the
+#     image being linked): `set_target_properties(d3d9 PROPERTIES FUSE_RHI_VOLK_NO_AUTO_INIT ON)`.
+#     Nothing in <target> then loads the loader before an explicit vkloader::initialize() (or the
+#     first VulkanInstance / adopted VulkanDevice): no LoadLibrary from DllMain.
+#   * DISABLED (the FUSE_RHI_VOLK_AUTO_INIT=OFF cache option) drops it for every image and compiles
+#     <source> with FUSE_RHI_VOLK_NO_AUTO_INIT.
+#
 # Windows: FuseFindVulkan.cmake is unchanged. MinGW's fallback imported target (System32/vulkan-1.dll plus
 # the vendored Khronos headers) and the SDK target both still supply the headers here. fuse_core's Win32
 # WSI keeps linking the loader for vkCreateWin32SurfaceKHR.
@@ -88,4 +100,30 @@ function(fuse_volk_attach target)
     file(STRINGS "${_volk_dir}/VERSION" _volk_version REGEX "^version=")
     set_property(DIRECTORY "${_srcdir}" APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_volk_dir}/VERSION")
     message(STATUS "FUSE: ${target} loads Vulkan through vendored volk (${_volk_version}; headers ${_vk_inc})")
+endfunction()
+
+function(fuse_volk_auto_init target)
+    cmake_parse_arguments(ARG "DISABLED" "SOURCE;SYMBOL" "" ${ARGN})
+    if(NOT ARG_SOURCE OR NOT ARG_SYMBOL)
+        message(FATAL_ERROR "fuse_volk_auto_init(${target}): SOURCE and SYMBOL are required")
+    endif()
+    target_sources(${target} PRIVATE "${ARG_SOURCE}")
+    if(ARG_DISABLED)
+        set_source_files_properties("${ARG_SOURCE}" TARGET_DIRECTORY ${target}
+                                    PROPERTIES COMPILE_DEFINITIONS FUSE_RHI_VOLK_NO_AUTO_INIT=1)
+        message(STATUS "FUSE: ${target} volk auto-init disabled (FUSE_RHI_VOLK_AUTO_INIT=OFF): explicit vkloader::initialize()")
+        return()
+    endif()
+    # C symbol decoration: a leading underscore on Mach-O and 32-bit Windows (i686 MinGW / x86 MSVC).
+    set(_sym "${ARG_SYMBOL}")
+    if(APPLE OR (WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 4))
+        set(_sym "_${ARG_SYMBOL}")
+    endif()
+    if(MSVC)
+        set(_force "LINKER:/INCLUDE:${_sym}")
+    else()
+        set(_force "LINKER:-u,${_sym}")
+    endif()
+    target_link_options(${target} INTERFACE
+        "$<$<NOT:$<BOOL:$<TARGET_PROPERTY:FUSE_RHI_VOLK_NO_AUTO_INIT>>>:${_force}>")
 endfunction()

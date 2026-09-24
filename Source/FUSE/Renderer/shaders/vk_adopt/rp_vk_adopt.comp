@@ -1,0 +1,30 @@
+#version 460
+// fuse_rp_vk_adopt smoke shader: every buffer is reached through bindless handles.
+//   dst[i] = src[i] (bindless storage buffer) + src[i] (through the buffer-address table) + add
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
+#include "bindless.glsl"
+
+layout(local_size_x = 64) in;
+
+FUSE_BINDLESS_SSBO_LAYOUT buffer FuseWords { uint words[]; } fuse_words[];
+
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer WordsRef { uint v[]; };
+
+layout(push_constant) uniform Push {
+    uint srcBuffer; // storage buffer handle
+    uint dstBuffer; // storage buffer handle
+    uint count;
+    uint add;
+} pc;
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.count || !fuse_handle_is(pc.srcBuffer, FUSE_HANDLE_TYPE_STORAGE_BUFFER) ||
+        !fuse_handle_is(pc.dstBuffer, FUSE_HANDLE_TYPE_STORAGE_BUFFER)) {
+        return;
+    }
+    WordsRef viaAddress = WordsRef(fuse_buffer_address(pc.srcBuffer));
+    fuse_words[fuse_handle_index(pc.dstBuffer)].words[i] =
+        fuse_words[fuse_handle_index(pc.srcBuffer)].words[i] + viaAddress.v[i] + pc.add;
+}
