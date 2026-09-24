@@ -1,0 +1,59 @@
+#version 460
+// FUSE Relight RL-4.4 "relight.lights.sample": one light-set query per invocation (kRlQueryWords in, kRlResultWords
+// out; layout in kernels/light_core.h): WP-7.1 tree selection + the chosen light's sample, and the set density /
+// radiance of an evaluation light and direction. CPU reference: SetSampleKernel (kernels/light_kernels.hpp). GLSL
+// twin of rl_light_sample.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "rl_lights.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(push_constant) uniform RlSamplePush {
+    uint64_t table;
+    uint64_t tree;
+    uint64_t queries;
+    uint64_t results;
+    uint count;
+    uint lightCount;
+    uint reserved0;
+    uint reserved1;
+} pc;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.count) {
+        return;
+    }
+    RlWordsRef qs = RlWordsRef(pc.queries);
+    RlWordsRef rs = RlWordsRef(pc.results);
+    vec4 q0 = qs.v[i * kRlQueryWords + 0u];
+    vec4 q1 = qs.v[i * kRlQueryWords + 1u];
+    vec4 q2 = qs.v[i * kRlQueryWords + 2u];
+    vec4 q3 = qs.v[i * kRlQueryWords + 3u];
+    vec3 p = q0.xyz;
+    vec4 r0 = vec4(0.0, 0.0, 0.0, -1.0);
+    vec4 r1 = vec4(0.0);
+    vec4 r2 = vec4(0.0);
+    vec4 r3 = vec4(0.0);
+    vec4 r4 = vec4(0.0);
+    RlSetSample s = rlSetSample(pc.table, pc.lightCount, pc.tree, p, q1.xyz, q0.w, q1.w, q2.w);
+    if (s.light != LT_INVALID) {
+        r0 = vec4(s.s.position, float(s.light));
+        r1 = vec4(s.s.wi, s.pdf);
+        r2 = vec4(s.s.radiance, s.pmf);
+        r4 = vec4(s.s.dist, float(s.s.flags), s.s.pdf, 0.0);
+    }
+    if (q3.x >= 0.0 && uint(q3.x) < pc.lightCount) {
+        uint light = uint(q3.x);
+        RlLight L = rlLoadLight(pc.table, light);
+        vec3 rad = rlLightEval(L, p, q2.xyz);
+        float pmf = lt_pmf(pc.tree, p, q1.xyz, light);
+        r3 = vec4(rad, pmf * rlLightPdf(L, p, q2.xyz));
+    }
+    uint base = i * kRlResultWords;
+    rs.v[base + 0u] = r0;
+    rs.v[base + 1u] = r1;
+    rs.v[base + 2u] = r2;
+    rs.v[base + 3u] = r3;
+    rs.v[base + 4u] = r4;
+}
