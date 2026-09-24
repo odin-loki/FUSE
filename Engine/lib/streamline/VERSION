@@ -1,0 +1,44 @@
+# FUSE third-party pin: NVIDIA Streamline SDK public headers (subset). Vendored verbatim, no local
+# edits (upstream files use CRLF line endings; sha256 below is over the CRLF->LF normalized bytes).
+# Checked by `fuse_lint vendored-pins` (ctest: fuse_lint_vendored_pins_streamline) and, at compile
+# time, by a static_assert on SL_VERSION_* in
+# Source/FUSE/Renderer/plugins/nvidia/src/nv_streamline_mapping.cpp.
+#
+# Licence decision (docs/nvidia-plugin.md "Licensing"): the Streamline repository licence.txt is MIT
+# (Copyright (c) 2023 NVIDIA CORPORATION); every vendored header carries the same MIT notice except
+# sl_appidentity.h and sl_device_wrappers.h, which have no per-file header and fall under the
+# repository-level MIT licence.txt. NOT vendored on purpose:
+#   * include/sl_nvperf.h - governed by the proprietary NVIDIA Nsight Perf SDK License (licence.txt).
+#   * include/sl_directsr.h, sl_deepdvc.h, sl_nis.h, sl_helpers.h, sl_hooks.h, sl_matrix_helpers.h,
+#     sl_security.h, sl_template.h - MIT but unused by FUSE.
+#   * include/sl_reflex.h, sl_pcl.h - MIT, needed only for the hardware frame-generation path (Reflex /
+#     PCL markers). Not vendored yet: v2.14.1 sl_pcl.h has `using to_underlying = std::to_underlying;`
+#     under `__cplusplus == 202302L`, which is ill-formed and breaks Clang 18 in C++23 mode.
+#   * every binary (sl.interposer.dll, sl.*.dll, nvngx_*.dll) - NVIDIA RTX SDKs License; never
+#     committed (see .gitignore + ctest fuse_nvidia_no_committed_binaries).
+#
+# To update: copy the listed include/*.h and licence.txt (as LICENSE.txt) from the new upstream tag,
+# then update version, tag, commit and every sha256 together.
+name=Streamline
+upstream=https://github.com/NVIDIA-RTX/Streamline
+version=2.14.1
+tag=v2.14.1
+commit=2122257e0fce486f91b385aa63b9a09b0a34b363
+retrieved=2026-09-23 (git clone --branch v2.14.1; tag object ae6294f2a75dbd318765bd98e423f56627d347b3)
+license=MIT
+license_file=LICENSE.txt
+version_header=include/sl_version.h
+sha256:LICENSE.txt=c7782fdc4dfc64f7e6b09f37a694dcfa64034b712903986d252b13a08d5849cd
+sha256:include/sl.h=e8efb374ab4d68cfca92ed7664f70173cf4158caceb5b7837ebfa0c5b6ec71ec
+sha256:include/sl_appidentity.h=5e130035fb687de0fd6a0d266b804c979678afda7c3eabf52da631c3c9226a67
+sha256:include/sl_consts.h=56d2ced0319ac2086e9032bea2c0b42601cd309e2db5d60343f9044a3797e7cb
+sha256:include/sl_core_api.h=227ce30af8b64b932ce3a37f07e53b07c9c4b5d814b52829fca9199ced05201b
+sha256:include/sl_core_types.h=2f614c47638b9ea7173b49ef5b3bce528aba536a6a8fb7a29a14d60caac8f2d8
+sha256:include/sl_device_wrappers.h=d7a0cfa144895fe00987af89e81ec8ef46bd49507ad6bd70f5a18a60d4be13d6
+sha256:include/sl_dlss.h=00a26ea060f67c7ea03ced3efde83479ac9e088a5c024625a291be4b17aaf09b
+sha256:include/sl_dlss_d.h=cd49f7388c5b5263034b013edfccbe7a748059452b2c54a1412ae7676dada9a3
+sha256:include/sl_dlss_g.h=075bc65a5d30a59e158d3c1ea4dff34f8335bc16486c31b33394e9270ee59e8c
+sha256:include/sl_helpers_vk.h=36de94fa0339232a2c50d449eed639d2c6831c18409a580aa95ead903297b301
+sha256:include/sl_result.h=8219c300c7084b55f2cc2e095bef21b03db91e3189014f6281cbc942313d8fee
+sha256:include/sl_struct.h=0af81b9f0be3e9928b81eb229df36aa0776d79bf06335cb2d398b11e124f7917
+sha256:include/sl_version.h=03323ce842aec752265df0fc5aa1d8655bcc52a9bc813ae48a6e877e6d7175fc

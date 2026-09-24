@@ -267,3 +267,12 @@ endforeach()
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/vk_followups.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/b5_rhi_rows.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/gpu_radix_sort.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/upscale_quality.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/look.cmake")
+# Optional, runtime-loaded NVIDIA DLSS / Streamline plugin seam + CI mocks (docs/nvidia-plugin.md).
+add_subdirectory(plugins/nvidia)
+# Upscaler abstraction (ITemporalUpscaler / ISpatialUpscaler, registry) + FSR1 / NIS / CAS ports (docs/upscalers.md).
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/upscale.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp01.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_harness.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp03.cmake")

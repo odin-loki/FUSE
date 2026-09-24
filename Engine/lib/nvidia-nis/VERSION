@@ -1,0 +1,23 @@
+# FUSE third-party pin: NVIDIA Image Scaling SDK (NVScaler + NVSharpen). Vendored verbatim, no local edits.
+# NIS_Scaler.h / NIS_Main.glsl are the GPU shader sources; NIS_Config.h is the host-side constant setup and
+# the 64-phase scaler / USM filter coefficient tables. FUSE includes NIS_Config.h from C++ (constants and
+# coefficients) and ports NIS_Scaler.h to the CPU single-source kernel in
+# Source/FUSE/Renderer/include/fuse/renderer/upscale/nis_kernel.hpp; the fuse_upscale_gpu_reference gate
+# compiles NIS_Main.glsl with glslangValidator and runs it on Lavapipe to check the port numerically.
+# Checked by `fuse_lint vendored-pins` (ctest: fuse_lint_vendored_pins_nvidia_nis).
+# To update: re-fetch NIS/* and licence.txt from the new tag, then update version, tag, commit and every
+# sha256 together. sha256 is over the file with CRLF normalized to LF.
+name=NVIDIAImageScaling
+upstream=https://github.com/NVIDIAGameWorks/NVIDIAImageScaling
+version=1.0.3
+tag=v1.0.3
+commit=35e13ba316c98eeecf16f37eae70ce88019911f6
+retrieved=2026-09-23 (git fetch of the tag commit from github.com; spot-checked against raw.githubusercontent.com)
+license=MIT
+license_file=licence.txt
+version_header=NIS/NIS_Scaler.h
+sha256:NIS/NIS_Config.h=f33c5dd82bb63f3c1cc7cefd86690053de0bd3fe0e730463a5e63e90e7778754
+sha256:NIS/NIS_Main.glsl=4fcd5d351ada2974110718e6b6adf294cdaf30356da4035761f3b8af56fba69a
+sha256:NIS/NIS_Main.hlsl=46402103801007b402aeeb8481d60b1bda37799bf68b543b32daea65f255f301
+sha256:NIS/NIS_Scaler.h=2d3bd5b45d6a0c4169fe36dfe349e7ff5a099dff6fb6876f8a3286489f74d3bf
+sha256:licence.txt=62207f1c0fae72800ea7d28ee108e7dbeb852dde20b00c70fc7b0d235e19e46d

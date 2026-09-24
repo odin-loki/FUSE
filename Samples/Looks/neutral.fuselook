@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "kind": "fuse.look",
+  "name": "neutral",
+  "description": "Reference look: schema defaults with grain and vignette off. Scene mid grey lands on display mid grey; the grading LUT bakes to identity.",
+  "base": {
+    "exposure": { "autoEnabled": true },
+    "toneMap": { "operator": "aces", "calibrateMidGrey": true },
+    "vignette": { "enabled": false },
+    "filmGrain": { "enabled": false },
+    "colorGrade": { "lut": null }
+  }
+}

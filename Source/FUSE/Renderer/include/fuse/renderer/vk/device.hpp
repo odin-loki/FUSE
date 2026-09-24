@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/renderer/vk/instance.hpp>
+#include <fuse/renderer/vk/render_tier.hpp>
 #include <fuse/types.hpp>
 
 #include <memory>
@@ -68,18 +69,36 @@ struct VulkanDeviceInfo {
     u32 physicalDeviceIndex = UINT32_MAX;
     u32 physicalDeviceCount = 0;
     std::string selection;
+    /// Renderer tier and per-feature capabilities the logical device was created with (WP-0.1).
+    /// `caps.valid` is false in the stub backend / when no device was created.
+    RendererCaps caps{};
 };
 
 struct VulkanDeviceDesc {
     bool requirePresentation = false;
-    /// Devices missing a hard requirement (Vulkan 1.2, a graphics queue family, timeline
-    /// semaphores, and VK_KHR_swapchain + a present-capable family when `requirePresentation`) are
-    /// never picked. Among the rest: true ranks discrete > integrated > virtual > CPU, then more
-    /// device-local memory, then larger maxImageDimension2D, then enumeration order; false takes
-    /// the first suitable device in enumeration order.
+    /// Devices missing a hard requirement are never picked. Hard requirements: the renderer T0
+    /// set (render_tier.hpp: Vulkan 1.3, synchronization2, dynamicRendering, maintenance4,
+    /// timelineSemaphore, descriptorIndexing, bufferDeviceAddress, drawIndirectCount,
+    /// multiDrawIndirect, shaderDrawParameters, shaderInt64, shaderBufferInt64Atomics), a graphics
+    /// queue family, and VK_KHR_swapchain + a present-capable family when `requirePresentation`.
+    /// Among the rest: true ranks discrete > integrated > virtual > CPU, then higher renderer tier
+    /// (capped as below), then more device-local memory, then larger maxImageDimension2D, then
+    /// enumeration order; false takes the first suitable device in enumeration order.
     bool preferDiscreteGpu = true;
     /// Opaque VkSurfaceKHR; used to pick a present-capable graphics queue family.
     void* presentSurface = nullptr;
+    /// Highest renderer tier to enable; the effective cap is min(maxTier, FUSE_RENDER_TIER_MAX).
+    /// Features above the cap (mesh/task above T0, AS + ray query above T1, RT pipeline +
+    /// cooperative matrix above T2) are neither enabled nor reported.
+    RenderTier maxTier = kMaxRenderTier;
+    /// Enable optional features (image int64 atomics, descriptor buffer, device-generated
+    /// commands, shader object) and tier features up to the cap when supported. False enables the
+    /// T0 set only (tier still reflects what the hardware could do, capped at T0).
+    bool enableOptionalFeatures = true;
+    /// Legacy escape (one release, also FUSE_VK_ALLOW_1_2=1): accept a Vulkan 1.2 device with
+    /// timeline semaphores that misses T0 requirements. Such a device ranks below every T0 device
+    /// and reports `caps.meetsT0 == false`.
+    bool allowBelowT0 = false;
 };
 
 class VulkanDevice {

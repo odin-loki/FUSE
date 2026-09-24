@@ -60,12 +60,15 @@ struct RGBarrier {
     RGImageLayout toLayout = RGImageLayout::Undefined;
     RGResourceAccess fromAccess = RGResourceAccess::ShaderRead;
     RGResourceAccess toAccess = RGResourceAccess::ShaderRead;
+    /// Pass the barrier is recorded in front of (execute() emits barriers per pass).
+    u32 passIndex = 0;
 };
 
 struct RGBufferBarrier {
     RGBufferRef buffer;
     RGResourceAccess fromAccess = RGResourceAccess::ShaderRead;
     RGResourceAccess toAccess = RGResourceAccess::ShaderRead;
+    u32 passIndex = 0;
 };
 
 using RGPassExecuteFn = void (*)(void* commandBuffer, void* userData);
@@ -139,11 +142,22 @@ struct RenderGraphExecuteInfo {
     u32 executeDurationUs = 0;
 };
 
-/// Lightweight render graph — pass ordering, barrier planning, and stub command recording.
+/// Render graph v1 — kept as the facade the B5 schedules, the deferred pipeline and the CUDA passes
+/// compile against (WP-0.3). Pass ordering, culling, lifetimes and alias groups are unchanged;
+/// execute() now records each pass's barriers directly in front of that pass (per-pass batches,
+/// encoded by the render graph module, src/rg/). There is no pass cap any more.
+///
+/// New code should use render graph v2 (`fuse/renderer/rg/graph.hpp` + `rg/executor.hpp`):
+/// synchronization2 barriers derived from declared accesses on real VkImage/VkBuffer resources,
+/// subresource and byte ranges, aliased transient memory, async compute / transfer queues with
+/// timeline semaphores and queue-family ownership transfers, and per-pass debug labels.
 class RenderGraph {
 public:
     static constexpr u32 kBackbufferTextureId = 1u;
     static constexpr u32 kDepthTextureId = 2u;
+    /// Size of the per-feature static pass storage the v1 populate helpers keep (sky, shadow,
+    /// composite, ...). No longer a graph limit: addPass() accepts any number of passes (pools grow
+    /// once and keep their capacity, so warm frames still do not allocate).
     static constexpr u32 kMaxPassesPerFrame = 32u;
 
     void reset();
@@ -208,7 +222,7 @@ private:
     std::span<const RGBufferAccess> bufferAccessesOf(const PassNode& pass) const;
     TextureState& textureStateAt(u32 textureId);
     BufferState& bufferStateAt(u32 id);
-    void planBarriersForPass(const PassNode& pass);
+    void planBarriersForPass(u32 passIndex, const PassNode& pass);
     void cullUnusedPasses();
     void buildDependencyEdges();
     void resolveCompileOrder();

@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "kind": "fuse.look",
+  "name": "filmic_warm",
+  "description": "Warm filmic grade: print-style creative LUT, soft bloom with lens dirt, gentle vignette and grain. Golden hours at dawn and dusk, cooler midday, a darker neutral night. An interior volume (the tavern) warms and lifts the shadows.",
+  "base": {
+    "bloom": { "intensity": 0.07, "threshold": 1.2, "knee": 0.6, "tint": [1.0, 0.95, 0.88] },
+    "lensDirt": { "enabled": true, "intensity": 0.6 },
+    "toneMap": { "operator": "filmic" },
+    "colorGrade": {
+      "temperatureK": 7200, "tint": 0.05, "contrast": 1.08, "saturation": 1.05,
+      "lift": [0.01, 0.005, 0.0], "gain": [1.02, 1.0, 0.97],
+      "curve1": [0.24, 0.24, 0.235], "curve3": [0.77, 0.765, 0.75],
+      "lut": "luts/fuse_warm_print.cube", "lutStrength": 0.8
+    },
+    "vignette": { "intensity": 0.25, "falloff": 2.5, "roundness": 0.6 },
+    "filmGrain": { "intensity": 0.015, "response": 0.6 },
+    "sharpen": { "enabled": true, "sharpness": 0.3 }
+  },
+  "timeOfDay": {
+    "interpolation": "smooth",
+    "keys": [
+      { "hour": 6.0, "settings": { "colorGrade": { "temperatureK": 8200, "saturation": 1.12 }, "exposure": { "biasEv": 0.3 } } },
+      { "hour": 12.0, "settings": { "colorGrade": { "temperatureK": 6800, "saturation": 1.0 }, "exposure": { "biasEv": 0.0 } } },
+      { "hour": 18.5, "settings": { "colorGrade": { "temperatureK": 8600, "saturation": 1.15 }, "lensFlare": { "enabled": true, "intensity": 0.4 } } },
+      { "hour": 22.0, "settings": { "colorGrade": { "temperatureK": 6000, "saturation": 0.85, "lut": null }, "exposure": { "biasEv": -0.4 } } }
+    ]
+  },
+  "weather": [
+    { "name": "overcast", "settings": { "colorGrade": { "saturation": 0.85, "contrast": 0.95 }, "bloom": { "intensity": 0.04 } } },
+    { "name": "rain", "settings": { "colorGrade": { "saturation": 0.8, "temperatureK": 6200 }, "lensDirt": { "intensity": 1.2 } } }
+  ],
+  "volumes": [
+    {
+      "name": "tavern_interior", "shape": "box", "center": [12.0, 1.5, -4.0], "halfExtents": [6.0, 2.0, 5.0],
+      "falloff": 1.5, "priority": 10, "weight": 1.0,
+      "settings": { "colorGrade": { "temperatureK": 9000, "lift": [0.03, 0.02, 0.0] }, "exposure": { "biasEv": 0.5 }, "bloom": { "intensity": 0.1 } }
+    }
+  ]
+}

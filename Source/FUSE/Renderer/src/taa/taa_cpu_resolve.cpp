@@ -1,4 +1,5 @@
 #include <fuse/renderer/taa/taa_cpu_resolve.hpp>
+#include <fuse/renderer/taa/taa_kernel_common.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -6,99 +7,37 @@
 namespace fuse::renderer {
 namespace {
 
-f32 saturate(f32 v) {
-    return std::max(0.f, std::min(1.f, v));
-}
-
-math::Vec3 lerp3(const math::Vec3& a, const math::Vec3& b, f32 t) {
-    return a + (b - a) * t;
-}
-
-math::Vec3 min3(const math::Vec3& a, const math::Vec3& b) {
-    return {std::min(a.x, b.x), std::min(a.y, b.y), std::min(a.z, b.z)};
-}
-
-math::Vec3 max3(const math::Vec3& a, const math::Vec3& b) {
-    return {std::max(a.x, b.x), std::max(a.y, b.y), std::max(a.z, b.z)};
-}
-
-i32 clampIndex(i32 v, i32 hi) {
-    return v < 0 ? 0 : (v > hi ? hi : v);
-}
+// The math lives in the device-safe taa_kernel_common.hpp (shared with the single-source TAAU kernel).
+using taa_common::clamp_index;
+using taa_common::lerp3;
+using taa_common::max3;
+using taa_common::min3;
+using taa_common::saturate;
 
 const math::Vec3& texel(const math::Vec3* image, u32 width, u32 height, i32 x, i32 y) {
-    const i32 cx = clampIndex(x, static_cast<i32>(width) - 1);
-    const i32 cy = clampIndex(y, static_cast<i32>(height) - 1);
-    return image[static_cast<u32>(cy) * width + static_cast<u32>(cx)];
-}
-
-void catmullRomWeights(f32 t, f32 w[4]) {
-    const f32 t2 = t * t;
-    const f32 t3 = t2 * t;
-    w[0] = 0.5f * (-t3 + 2.f * t2 - t);
-    w[1] = 0.5f * (3.f * t3 - 5.f * t2 + 2.f);
-    w[2] = 0.5f * (-3.f * t3 + 4.f * t2 + t);
-    w[3] = 0.5f * (t3 - t2);
+    return taa_common::texel(image, width, height, x, y);
 }
 
 } // namespace
 
 math::Vec3 taaRgbToYCoCg(const math::Vec3& rgb) {
-    return {0.25f * rgb.x + 0.5f * rgb.y + 0.25f * rgb.z, 0.5f * rgb.x - 0.5f * rgb.z,
-            -0.25f * rgb.x + 0.5f * rgb.y - 0.25f * rgb.z};
+    return taa_common::rgb_to_ycocg(rgb);
 }
 
 math::Vec3 taaYCoCgToRgb(const math::Vec3& c) {
-    const f32 tmp = c.x - c.z;
-    return {tmp + c.y, c.x + c.z, tmp - c.y};
+    return taa_common::ycocg_to_rgb(c);
 }
 
 math::Vec3 taaClipToAabb(const math::Vec3& history, const math::Vec3& boxMin, const math::Vec3& boxMax) {
-    const math::Vec3 center = (boxMin + boxMax) * 0.5f;
-    const math::Vec3 extent = (boxMax - boxMin) * 0.5f;
-    const math::Vec3 offset = history - center;
-    const f32 eps = 1e-6f;
-    const f32 ux = std::fabs(offset.x) / std::max(extent.x, eps);
-    const f32 uy = std::fabs(offset.y) / std::max(extent.y, eps);
-    const f32 uz = std::fabs(offset.z) / std::max(extent.z, eps);
-    const f32 maxUnit = std::max(ux, std::max(uy, uz));
-    if (maxUnit > 1.f) {
-        return center + offset * (1.f / maxUnit);
-    }
-    return history;
+    return taa_common::clip_to_aabb(history, boxMin, boxMax);
 }
 
 math::Vec3 taaSampleBilinear(const math::Vec3* image, u32 width, u32 height, f32 px, f32 py) {
-    const f32 fx = px - 0.5f;
-    const f32 fy = py - 0.5f;
-    const i32 x0 = static_cast<i32>(std::floor(fx));
-    const i32 y0 = static_cast<i32>(std::floor(fy));
-    const f32 tx = fx - static_cast<f32>(x0);
-    const f32 ty = fy - static_cast<f32>(y0);
-    const math::Vec3 top = lerp3(texel(image, width, height, x0, y0), texel(image, width, height, x0 + 1, y0), tx);
-    const math::Vec3 bottom =
-        lerp3(texel(image, width, height, x0, y0 + 1), texel(image, width, height, x0 + 1, y0 + 1), tx);
-    return lerp3(top, bottom, ty);
+    return taa_common::sample_bilinear(image, width, height, px, py);
 }
 
 math::Vec3 taaSampleCatmullRom(const math::Vec3* image, u32 width, u32 height, f32 px, f32 py) {
-    const f32 fx = px - 0.5f;
-    const f32 fy = py - 0.5f;
-    const i32 x1 = static_cast<i32>(std::floor(fx));
-    const i32 y1 = static_cast<i32>(std::floor(fy));
-    f32 wx[4];
-    f32 wy[4];
-    catmullRomWeights(fx - static_cast<f32>(x1), wx);
-    catmullRomWeights(fy - static_cast<f32>(y1), wy);
-    math::Vec3 sum{};
-    for (i32 j = 0; j < 4; ++j) {
-        math::Vec3 row{};
-        for (i32 i = 0; i < 4; ++i) {
-            row = row + texel(image, width, height, x1 - 1 + i, y1 - 1 + j) * wx[i];
-        }
-        sum = sum + row * wy[j];
-    }
-    return sum;
+    return taa_common::sample_catmull_rom(image, width, height, px, py);
 }
 
 bool TaaCpuResolver::resize(u32 width, u32 height) {
@@ -139,7 +78,7 @@ bool TaaCpuResolver::resolve(const TaaCpuFrameInputs& in, const TAAParams& rawPa
         if (in.velocity == nullptr) {
             return {};
         }
-        return in.velocity[static_cast<u32>(clampIndex(y, maxY)) * w + static_cast<u32>(clampIndex(x, maxX))];
+        return in.velocity[static_cast<u32>(clamp_index(y, maxY)) * w + static_cast<u32>(clamp_index(x, maxX))];
     };
 
     for (u32 y = 0u; y < h; ++y) {

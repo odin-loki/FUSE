@@ -115,12 +115,19 @@ public:
 
     /// Records a stable ascending sort of the first `count` (key, value) pairs of the bound
     /// keys/values buffers; only the low `keyBits` bits of each key are compared (higher bits
-    /// must be zero for a total order on the full key). The caller makes prior writes to
-    /// keys/values visible to COMPUTE_SHADER reads before, and afterwards synchronises with
+    /// must be zero for a total order on the full key). The command buffer must belong to the
+    /// device's compute queue family. The sort is a chain of render graph v2 passes
+    /// (histogram / scan / scan_add / scatter per digit, copy-back on odd pass counts); every
+    /// barrier is derived by the graph from the passes' declared buffer accesses, including the
+    /// one ordering it after earlier work on the buffers. Afterwards the caller synchronises with
     /// srcStage COMPUTE_SHADER|TRANSFER, srcAccess SHADER_WRITE|TRANSFER_WRITE. Returns false
-    /// (records nothing) on invalid arguments.
+    /// (records nothing) on invalid arguments. Not thread-safe (one graph per sorter).
     bool recordSort(void* commandBuffer, const GpuRadixSortBinding& binding, u32 count, u32 keyBits,
                     GpuRadixSortStats* stats = nullptr) const;
+    /// Render graph passes the last recordSort()/sort() built (0 before the first call).
+    u32 lastGraphPassCount() const;
+    /// vkCmdPipelineBarrier[2] calls the graph recorded for the last sort.
+    u32 lastGraphBarrierCalls() const;
 
     /// Blocking host sorts. Keys/values are overwritten with the sorted result only on success.
     bool sort(u32* keys, u32* values, u32 count, u32 keyBits = 32, GpuRadixSortStats* stats = nullptr);
@@ -133,9 +140,14 @@ private:
     bool sortHost(void* keys, u32* values, u32 count, u32 keyBits, RadixSortKeyType keyType,
                   GpuRadixSortStats* stats);
     bool ensureHostBuffers(u32 count, RadixSortKeyType keyType);
+    /// Adds the sort's render graph passes (rg::Graph*, RadixPassData*, SortRefs*: opaque here so
+    /// the header stays free of the implementation types). Returns the dispatch count.
+    u32 appendSortPasses(void* graph, void* passData, const GpuRadixSortBinding* binding, const void* refs, u32 count,
+                         u32 passes) const;
     void releaseHostBuffers();
 
     struct HostState;
+    struct GraphState;
 
     VulkanDevice* m_device = nullptr;
     bool m_valid = false;
@@ -149,6 +161,7 @@ private:
     f64 m_timestampPeriodNs = 0.0;
     bool m_timestamps = false;
     std::unique_ptr<HostState> m_host;
+    std::unique_ptr<GraphState> m_graph;
 };
 
 } // namespace fuse::renderer

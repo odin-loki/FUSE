@@ -1,5 +1,6 @@
 #include <fuse/renderer/command_buffer.hpp>
 #include <fuse/renderer/render_graph.hpp>
+#include <fuse/renderer/rg/legacy_barriers.hpp>
 
 #include <cstring>
 
@@ -80,19 +81,9 @@ void transitionTrackedImage(VkCommandBuffer commandBuffer, void* image, u32* tra
         layoutStageAccessMask(newLayout, dstStage, dstAccess);
     }
 
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = oldLayout;
-    barrier.newLayout = newLayout;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = static_cast<VkImage>(image);
-    barrier.subresourceRange.aspectMask = aspect;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.layerCount = 1;
-    barrier.srcAccessMask = srcAccess;
-    barrier.dstAccessMask = dstAccess;
-    vkCmdPipelineBarrier(commandBuffer, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    // Recorded by the render graph module (the only place allowed to encode barriers).
+    rg::recordLegacyImageBarrier(commandBuffer, image, static_cast<u32>(oldLayout), static_cast<u32>(newLayout),
+                                 aspect, srcStage, srcAccess, dstStage, dstAccess);
 
     if (trackedLayout != nullptr) {
         *trackedLayout = static_cast<u32>(newLayout);
@@ -366,18 +357,8 @@ void CommandBufferRecorder::encodeVulkanBufferBarrier(u32 fromAccess, u32 toAcce
     accessStageMask(static_cast<RGResourceAccess>(fromAccess), srcStage, srcAccess);
     accessStageMask(static_cast<RGResourceAccess>(toAccess), dstStage, dstAccess);
 
-    VkBufferMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    barrier.srcAccessMask = srcAccess;
-    barrier.dstAccessMask = dstAccess;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.buffer = static_cast<VkBuffer>(m_encodeContext->barrierBuffer);
-    barrier.offset = 0;
-    barrier.size = VK_WHOLE_SIZE;
-
-    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
-    vkCmdPipelineBarrier(commandBuffer, srcStage, dstStage, 0, 0, nullptr, 1, &barrier, 0, nullptr);
+    rg::recordLegacyBufferBarrier(m_nativeCommandBuffer, m_encodeContext->barrierBuffer, srcStage, srcAccess, dstStage,
+                                  dstAccess);
     ++m_vulkanBufferBarrierCount;
 #else
     (void)fromAccess;

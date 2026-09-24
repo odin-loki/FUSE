@@ -196,3 +196,19 @@ Engine/lib/assimp/revision.h
 
 # Crash reports written by the crash handler when tests run from the repo root
 fuse_crash_*.txt
+
+# NVIDIA RTX SDK runtime binaries (DLSS / NGX / Streamline plugins; NVIDIA RTX SDKs License): never
+# committed — FUSE is MIT. Enforced by ctest fuse_nvidia_no_committed_binaries (docs/nvidia-plugin.md).
+nvngx_*.dll
+nvngx*.bin
+libnvidia-ngx-*.so
+libnvidia-ngx-*.so.*
+libnvsdk_ngx*.a
+nvsdk_ngx*.lib
+sl.*.dll
+sl.*.pdb
+sl.*.so
+nvperf_grfx_target*
+# FUSE's Linux NGX bridge statically links NVIDIA's NGX loader: its binary is RTX-SDK-licensed too.
+libfuse_nvplugin_ngx*.so
+fuse_nvplugin_ngx*.dll

@@ -57,6 +57,28 @@ bool layerAvailable(const char* name) {
     return false;
 }
 
+/// Highest API version the renderer is written against (1.4 when the headers know it, else 1.3),
+/// clamped to what the loader implements (vkEnumerateInstanceVersion) so core entry points resolve
+/// through the loader's trampolines. Never below 1.2: a 1.2 loader still gets an instance, and
+/// device selection then rejects every device unless the FUSE_VK_ALLOW_1_2 escape is set.
+u32 requestedInstanceApiVersion() {
+#if defined(VK_API_VERSION_1_4)
+    u32 wanted = VK_API_VERSION_1_4;
+#else
+    u32 wanted = VK_API_VERSION_1_3;
+#endif
+    u32 loader = VK_API_VERSION_1_0;
+    if (vkEnumerateInstanceVersion(&loader) != VK_SUCCESS) {
+        loader = VK_API_VERSION_1_0;
+    }
+    // Compare major.minor only (VkApplicationInfo::apiVersion patch is ignored).
+    const u32 loaderMinor = VK_MAKE_API_VERSION(0, VK_API_VERSION_MAJOR(loader), VK_API_VERSION_MINOR(loader), 0);
+    if (loaderMinor < wanted) {
+        wanted = loaderMinor < VK_API_VERSION_1_2 ? VK_API_VERSION_1_2 : loaderMinor;
+    }
+    return wanted;
+}
+
 bool extensionAvailable(const char* name) {
     u32 extensionCount = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
@@ -125,7 +147,7 @@ bool VulkanInstance::initialize(const VulkanInstanceDesc& desc) {
     appInfo.applicationVersion = desc.appVersion;
     appInfo.pEngineName = "FUSE";
     appInfo.engineVersion = VK_MAKE_VERSION(0, 1, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_2;
+    appInfo.apiVersion = requestedInstanceApiVersion();
 
     std::vector<const char*> extensions;
     if (extensionAvailable(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {

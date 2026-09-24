@@ -1,6 +1,8 @@
 #include <fuse/renderer/compute/gpu_radix_sort.hpp>
 
 #include <fuse/renderer/resources.hpp>
+#include <fuse/renderer/rg/executor.hpp>
+#include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/shader/shader_module.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/debug_utils.hpp>
@@ -100,25 +102,63 @@ constexpr const char* kShaderFiles[6] = {
     "radix_scatter.comp.spv",   "radix_histogram_k64.comp.spv", "radix_scatter_k64.comp.spv",
 };
 
-void computeBarrier(VkCommandBuffer cmd) {
-    VkMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1,
-                         &barrier, 0, nullptr, 0, nullptr);
+/// Per-pass payload of the render graph passes a sort is made of (sized before passes are added,
+/// so the user pointers stay valid).
+struct RadixPassData {
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    RadixPush push{};
+    u32 groups = 0;
+    VkBuffer copySrc[2] = {};
+    VkBuffer copyDst[2] = {};
+    VkBufferCopy regions[2] = {};
+    u32 copyCount = 0;
+    VkQueryPool queries = VK_NULL_HANDLE;
+    u32 query = 0;
+    VkPipelineStageFlagBits timestampStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+};
+
+void radixDispatchPass(const rg::PassContext& context, void* user) {
+    const auto* data = static_cast<const RadixPassData*>(user);
+    const VkCommandBuffer cmd = static_cast<VkCommandBuffer>(context.commandBuffer);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, data->pipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, data->layout, 0, 1, &data->set, 0, nullptr);
+    vkCmdPushConstants(cmd, data->layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(RadixPush), &data->push);
+    vkCmdDispatch(cmd, data->groups, 1, 1);
 }
 
-void memoryBarrier(VkCommandBuffer cmd, VkPipelineStageFlags srcStage, VkAccessFlags srcAccess,
-                   VkPipelineStageFlags dstStage, VkAccessFlags dstAccess) {
-    VkMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    barrier.srcAccessMask = srcAccess;
-    barrier.dstAccessMask = dstAccess;
-    vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+void radixCopyPass(const rg::PassContext& context, void* user) {
+    const auto* data = static_cast<const RadixPassData*>(user);
+    const VkCommandBuffer cmd = static_cast<VkCommandBuffer>(context.commandBuffer);
+    for (u32 i = 0; i < data->copyCount; ++i) {
+        vkCmdCopyBuffer(cmd, data->copySrc[i], data->copyDst[i], 1, &data->regions[i]);
+    }
 }
+
+void radixTimestampPass(const rg::PassContext& context, void* user) {
+    const auto* data = static_cast<const RadixPassData*>(user);
+    vkCmdWriteTimestamp(static_cast<VkCommandBuffer>(context.commandBuffer), data->timestampStage, data->queries,
+                        data->query);
+}
+
+/// Graph buffers of one sort.
+struct SortRefs {
+    rg::BufferRef keys, values, keysTemp, valuesTemp, scratch;
+};
+
+constexpr u8 kCompute = rg::kStageCompute;
 
 } // namespace
+
+/// Render graph state: one reusable graph + inline executor (steady-state sorts do not allocate).
+struct GpuRadixSort::GraphState {
+    std::unique_ptr<rg::Executor> executor;
+    rg::Graph graph;
+    std::vector<RadixPassData> passes;
+    u32 lastPassCount = 0;
+    u32 lastBarrierCalls = 0;
+};
 
 /// Blocking host path: buffers grow on demand and are reused across calls.
 struct GpuRadixSort::HostState {
@@ -268,6 +308,19 @@ bool GpuRadixSort::initialize(VulkanDevice& device, const GpuRadixSortDesc& desc
         return false;
     }
 
+    m_graph = std::make_unique<GraphState>();
+    rg::ExecutorDesc executorDesc{};
+    executorDesc.framesInFlight = 1;
+    executorDesc.enableAsyncCompute = false;
+    executorDesc.enableTransferQueue = false;
+    executorDesc.name = "fuse.radix_sort.rg";
+    m_graph->executor = rg::Executor::create(device, m_host->allocator, executorDesc);
+    if (m_graph->executor == nullptr || !m_graph->executor->isValid()) {
+        m_message = "render graph executor unavailable";
+        return false;
+    }
+    m_graph->passes.reserve(64);
+
     m_valid = true;
     m_message = "ok";
     return true;
@@ -309,6 +362,7 @@ void GpuRadixSort::shutdown() {
         releaseHostBuffers();
         m_host.reset();
     }
+    m_graph.reset();
     for (void*& pipeline : m_pipelines) {
         if (pipeline != nullptr) {
             vkDestroyPipeline(vkDevice, static_cast<VkPipeline>(pipeline), nullptr);
@@ -396,6 +450,23 @@ std::unique_ptr<GpuRadixSortBinding> GpuRadixSort::bind(const GpuRadixSortBuffer
     return binding;
 }
 
+namespace {
+
+/// Pass-data entries appendSortPasses() fills for `passes` digits over `plan`.
+u32 sortPassDataCount(u32 passes, const ScanPlan& plan) {
+    return passes * (2u + plan.levels + (plan.levels - 1u)) + ((passes & 1u) != 0u ? 1u : 0u);
+}
+
+} // namespace
+
+u32 GpuRadixSort::lastGraphPassCount() const {
+    return m_graph != nullptr ? m_graph->lastPassCount : 0u;
+}
+
+u32 GpuRadixSort::lastGraphBarrierCalls() const {
+    return m_graph != nullptr ? m_graph->lastBarrierCalls : 0u;
+}
+
 bool GpuRadixSort::recordSort(void* commandBuffer, const GpuRadixSortBinding& binding, u32 count, u32 keyBits,
                               GpuRadixSortStats* stats) const {
     const u32 maxBits = binding.keyType() == RadixSortKeyType::U64 ? 64u : 32u;
@@ -414,7 +485,44 @@ bool GpuRadixSort::recordSort(void* commandBuffer, const GpuRadixSortBinding& bi
         return true;
     }
 
-    const VkCommandBuffer cmd = static_cast<VkCommandBuffer>(commandBuffer);
+    GraphState& state = *m_graph;
+    rg::Graph& graph = state.graph;
+    graph.reset();
+    const GpuRadixSortBuffers& b = binding.buffers();
+    const u64 capacity = binding.capacity();
+    const u64 kb = keyBytes(binding.keyType());
+    SortRefs refs;
+    refs.keys = graph.importBuffer({b.keys, capacity * kb, rg::kNoQueue, nullptr, "radix.keys"});
+    refs.values = graph.importBuffer({b.values, capacity * 4u, rg::kNoQueue, nullptr, "radix.values"});
+    refs.keysTemp = graph.importBuffer({b.keysTemp, capacity * kb, rg::kNoQueue, nullptr, "radix.keys_temp"});
+    refs.valuesTemp = graph.importBuffer({b.valuesTemp, capacity * 4u, rg::kNoQueue, nullptr, "radix.values_temp"});
+    refs.scratch = graph.importBuffer({b.scratch, scratchBytes(binding.capacity()), rg::kNoQueue, nullptr,
+                                       "radix.scratch"});
+    const ScanPlan plan = makeScanPlan(count);
+    state.passes.clear();
+    state.passes.resize(sortPassDataCount(passes, plan));
+    const u32 dispatches = appendSortPasses(&graph, state.passes.data(), &binding, &refs, count, passes);
+
+    const rg::ExecuteResult result =
+        state.executor->recordInline(graph, commandBuffer, rg::QueueClass::AsyncCompute);
+    state.lastPassCount = graph.stats().executedPasses;
+    state.lastBarrierCalls = result.barrierCalls;
+    if (!result.ok) {
+        return false;
+    }
+    if (stats != nullptr) {
+        stats->dispatches = dispatches;
+        stats->scanLevels = plan.levels;
+    }
+    return true;
+}
+
+u32 GpuRadixSort::appendSortPasses(void* graphPtr, void* passDataPtr, const GpuRadixSortBinding* bindingPtr,
+                                   const void* refsPtr, u32 count, u32 passes) const {
+    rg::Graph& graph = *static_cast<rg::Graph*>(graphPtr);
+    RadixPassData* data = static_cast<RadixPassData*>(passDataPtr);
+    const GpuRadixSortBinding& binding = *bindingPtr;
+    const SortRefs& refs = *static_cast<const SortRefs*>(refsPtr);
     const VkPipelineLayout layout = static_cast<VkPipelineLayout>(m_pipelineLayout);
     const bool k64 = binding.keyType() == RadixSortKeyType::U64;
     const VkPipeline histogram = static_cast<VkPipeline>(m_pipelines[k64 ? kHistogram64 : kHistogram]);
@@ -422,33 +530,47 @@ bool GpuRadixSort::recordSort(void* commandBuffer, const GpuRadixSortBinding& bi
     const VkPipeline scan = static_cast<VkPipeline>(m_pipelines[kScan]);
     const VkPipeline scanAdd = static_cast<VkPipeline>(m_pipelines[kScanAdd]);
     const ScanPlan plan = makeScanPlan(count);
+    u32 next = 0;
     u32 dispatches = 0;
 
-    auto dispatch = [&](VkPipeline pipeline, const RadixPush& push, u32 groups) {
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
-        vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(RadixPush), &push);
-        vkCmdDispatch(cmd, groups, 1, 1);
+    auto dispatchData = [&](VkPipeline pipeline, VkDescriptorSet set, const RadixPush& push, u32 groups) {
+        RadixPassData& pass = data[next++];
+        pass.pipeline = pipeline;
+        pass.layout = layout;
+        pass.set = set;
+        pass.push = push;
+        pass.groups = groups;
         ++dispatches;
+        return &pass;
     };
 
     for (u32 pass = 0; pass < passes; ++pass) {
+        // Even digits: keys -> temp (descriptor set 0); odd digits: temp -> keys (set 1).
+        const bool even = (pass & 1u) == 0u;
+        const rg::BufferRef inKeys = even ? refs.keys : refs.keysTemp;
+        const rg::BufferRef inValues = even ? refs.values : refs.valuesTemp;
+        const rg::BufferRef outKeys = even ? refs.keysTemp : refs.keys;
+        const rg::BufferRef outValues = even ? refs.valuesTemp : refs.values;
         const VkDescriptorSet set = static_cast<VkDescriptorSet>(binding.m_sets[pass & 1u]);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, nullptr);
         RadixPush push{};
         push.count = count;
         push.shift = pass * kDigitBits;
         push.numBlocks = plan.numBlocks;
 
-        dispatch(histogram, push, plan.numBlocks);
-        computeBarrier(cmd);
+        graph.addPass("radix.histogram", radixDispatchPass, dispatchData(histogram, set, push, plan.numBlocks),
+                      rg::QueueClass::AsyncCompute)
+            .use(inKeys, rg::Access::StorageRead, {}, kCompute)
+            .use(refs.scratch, rg::Access::StorageWrite, {}, kCompute);
         // Up-sweep: scan every level in place; each level's chunk totals form the next level.
         for (u32 level = 0; level < plan.levels; ++level) {
             RadixPush scanPush = push;
             scanPush.dataOffset = plan.offset[level];
             scanPush.dataLen = plan.len[level];
             scanPush.sumsOffset = level + 1u < plan.levels ? plan.offset[level + 1u] : plan.dummy;
-            dispatch(scan, scanPush, divUp(plan.len[level], kScanChunk));
-            computeBarrier(cmd);
+            graph.addPass("radix.scan", radixDispatchPass,
+                          dispatchData(scan, set, scanPush, divUp(plan.len[level], kScanChunk)),
+                          rg::QueueClass::AsyncCompute)
+                .use(refs.scratch, rg::Access::StorageReadWrite, {}, kCompute);
         }
         // Down-sweep: fold the scanned totals of level i+1 into level i.
         for (u32 level = plan.levels - 1u; level-- > 0u;) {
@@ -456,30 +578,40 @@ bool GpuRadixSort::recordSort(void* commandBuffer, const GpuRadixSortBinding& bi
             addPush.dataOffset = plan.offset[level];
             addPush.dataLen = plan.len[level];
             addPush.sumsOffset = plan.offset[level + 1u];
-            dispatch(scanAdd, addPush, divUp(plan.len[level], kScanChunk));
-            computeBarrier(cmd);
+            graph.addPass("radix.scan_add", radixDispatchPass,
+                          dispatchData(scanAdd, set, addPush, divUp(plan.len[level], kScanChunk)),
+                          rg::QueueClass::AsyncCompute)
+                .use(refs.scratch, rg::Access::StorageReadWrite, {}, kCompute);
         }
-        dispatch(scatter, push, plan.numBlocks);
-        if (pass + 1u < passes) {
-            computeBarrier(cmd);
-        }
+        graph.addPass("radix.scatter", radixDispatchPass, dispatchData(scatter, set, push, plan.numBlocks),
+                      rg::QueueClass::AsyncCompute)
+            .use(inKeys, rg::Access::StorageRead, {}, kCompute)
+            .use(inValues, rg::Access::StorageRead, {}, kCompute)
+            .use(refs.scratch, rg::Access::StorageRead, {}, kCompute)
+            .use(outKeys, rg::Access::StorageWrite, {}, kCompute)
+            .use(outValues, rg::Access::StorageWrite, {}, kCompute);
     }
 
     if ((passes & 1u) != 0u) {
         // Odd pass count: the result sits in the temp buffers.
-        memoryBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-                      VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT);
-        VkBufferCopy keyCopy{0, 0, static_cast<VkDeviceSize>(count) * keyBytes(binding.keyType())};
-        VkBufferCopy valueCopy{0, 0, static_cast<VkDeviceSize>(count) * sizeof(u32)};
+        RadixPassData& copy = data[next++];
         const GpuRadixSortBuffers& b = binding.buffers();
-        vkCmdCopyBuffer(cmd, static_cast<VkBuffer>(b.keysTemp), static_cast<VkBuffer>(b.keys), 1, &keyCopy);
-        vkCmdCopyBuffer(cmd, static_cast<VkBuffer>(b.valuesTemp), static_cast<VkBuffer>(b.values), 1, &valueCopy);
+        const VkDeviceSize keyBytesCount = static_cast<VkDeviceSize>(count) * keyBytes(binding.keyType());
+        const VkDeviceSize valueBytesCount = static_cast<VkDeviceSize>(count) * sizeof(u32);
+        copy.copyCount = 2;
+        copy.copySrc[0] = static_cast<VkBuffer>(b.keysTemp);
+        copy.copyDst[0] = static_cast<VkBuffer>(b.keys);
+        copy.regions[0] = {0, 0, keyBytesCount};
+        copy.copySrc[1] = static_cast<VkBuffer>(b.valuesTemp);
+        copy.copyDst[1] = static_cast<VkBuffer>(b.values);
+        copy.regions[1] = {0, 0, valueBytesCount};
+        graph.addPass("radix.copy_back", radixCopyPass, &copy, rg::QueueClass::AsyncCompute)
+            .use(refs.keysTemp, rg::Access::TransferSrc, {0, keyBytesCount})
+            .use(refs.valuesTemp, rg::Access::TransferSrc, {0, valueBytesCount})
+            .use(refs.keys, rg::Access::TransferDst, {0, keyBytesCount})
+            .use(refs.values, rg::Access::TransferDst, {0, valueBytesCount});
     }
-    if (stats != nullptr) {
-        stats->dispatches = dispatches;
-        stats->scanLevels = plan.levels;
-    }
-    return true;
+    return dispatches;
 }
 
 bool GpuRadixSort::ensureHostBuffers(u32 count, RadixSortKeyType keyType) {
@@ -606,39 +738,86 @@ bool GpuRadixSort::sortHost(void* keys, u32* values, u32 count, u32 keyBits, Rad
     if (host.queries != VK_NULL_HANDLE) {
         vkCmdResetQueryPool(cmd, host.queries, 0, 2);
     }
+
+    // upload -> [timestamp] -> sort passes -> [timestamp] -> readback -> host read, one graph: every
+    // barrier (transfer -> compute, compute -> transfer, transfer -> host, the staging WAR) is
+    // derived from the declared accesses.
+    const GpuRadixSortBinding& binding = keyType == RadixSortKeyType::U64 ? *host.binding64 : *host.binding32;
+    const u32 passes = passCount(keyBits);
+    const ScanPlan plan = makeScanPlan(count);
+    GraphState& state = *m_graph;
+    rg::Graph& graph = state.graph;
+    graph.reset();
+    const u64 capacity = host.capacity;
+    const rg::BufferRef stagingRef =
+        graph.importBuffer({host.staging.handle, capacity * 12u, rg::kNoQueue, nullptr, "radix.staging"});
+    SortRefs refs;
+    refs.keys = graph.importBuffer({host.keys.handle, capacity * 8u, rg::kNoQueue, nullptr, "radix.keys"});
+    refs.values = graph.importBuffer({host.values.handle, capacity * 4u, rg::kNoQueue, nullptr, "radix.values"});
+    refs.keysTemp = graph.importBuffer({host.keysTemp.handle, capacity * 8u, rg::kNoQueue, nullptr, "radix.keys_temp"});
+    refs.valuesTemp =
+        graph.importBuffer({host.valuesTemp.handle, capacity * 4u, rg::kNoQueue, nullptr, "radix.values_temp"});
+    refs.scratch =
+        graph.importBuffer({host.scratch.handle, scratchBytes(host.capacity), rg::kNoQueue, nullptr, "radix.scratch"});
+    const u32 extra = 4u; // upload, 2 timestamps, readback
+    state.passes.clear();
+    state.passes.resize(sortPassDataCount(passes, plan) + extra);
+    RadixPassData& upload = state.passes[0];
+    RadixPassData& tsBegin = state.passes[1];
+    RadixPassData& tsEnd = state.passes[2];
+    RadixPassData& readback = state.passes[3];
+
     const VkBuffer stagingBuffer = static_cast<VkBuffer>(host.staging.handle);
     const VkBuffer keyBuffer = static_cast<VkBuffer>(host.keys.handle);
     const VkBuffer valueBuffer = static_cast<VkBuffer>(host.values.handle);
     // Host writes to the mapped staging buffer are made available by vkQueueSubmit.
-    VkBufferCopy upKeys{0, 0, keyBytesTotal};
-    VkBufferCopy upValues{keyBytesTotal, 0, valueBytesTotal};
-    vkCmdCopyBuffer(cmd, stagingBuffer, keyBuffer, 1, &upKeys);
-    vkCmdCopyBuffer(cmd, stagingBuffer, valueBuffer, 1, &upValues);
-    memoryBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
-                  VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT |
-                      VK_ACCESS_TRANSFER_WRITE_BIT);
+    upload.copyCount = 2;
+    upload.copySrc[0] = stagingBuffer;
+    upload.copyDst[0] = keyBuffer;
+    upload.regions[0] = {0, 0, keyBytesTotal};
+    upload.copySrc[1] = stagingBuffer;
+    upload.copyDst[1] = valueBuffer;
+    upload.regions[1] = {keyBytesTotal, 0, valueBytesTotal};
+    graph.addPass("radix.upload", radixCopyPass, &upload, rg::QueueClass::AsyncCompute)
+        .use(stagingRef, rg::Access::TransferSrc, {0, keyBytesTotal + valueBytesTotal})
+        .use(refs.keys, rg::Access::TransferDst, {0, keyBytesTotal})
+        .use(refs.values, rg::Access::TransferDst, {0, valueBytesTotal});
     if (host.queries != VK_NULL_HANDLE) {
-        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, host.queries, 0);
+        tsBegin.queries = host.queries;
+        tsBegin.query = 0;
+        tsBegin.timestampStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        graph.addPass("radix.timestamp_begin", radixTimestampPass, &tsBegin, rg::QueueClass::AsyncCompute).neverCull();
     }
-    const GpuRadixSortBinding& binding =
-        keyType == RadixSortKeyType::U64 ? *host.binding64 : *host.binding32;
     GpuRadixSortStats recordStats{};
-    const bool recorded = recordSort(cmd, binding, count, keyBits, &recordStats);
+    recordStats.count = count;
+    recordStats.passes = passes;
+    recordStats.scanLevels = plan.levels;
+    recordStats.dispatches = appendSortPasses(&graph, state.passes.data() + extra, &binding, &refs, count, passes);
     if (host.queries != VK_NULL_HANDLE) {
-        vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, host.queries, 1);
+        tsEnd.queries = host.queries;
+        tsEnd.query = 1;
+        tsEnd.timestampStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        graph.addPass("radix.timestamp_end", radixTimestampPass, &tsEnd, rg::QueueClass::AsyncCompute).neverCull();
     }
-    memoryBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
-                  VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                  VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT);
-    VkBufferCopy downKeys{0, 0, keyBytesTotal};
-    VkBufferCopy downValues{0, keyBytesTotal, valueBytesTotal};
-    vkCmdCopyBuffer(cmd, keyBuffer, stagingBuffer, 1, &downKeys);
-    vkCmdCopyBuffer(cmd, valueBuffer, stagingBuffer, 1, &downValues);
-    memoryBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_HOST_BIT,
-                  VK_ACCESS_HOST_READ_BIT);
+    readback.copyCount = 2;
+    readback.copySrc[0] = keyBuffer;
+    readback.copyDst[0] = stagingBuffer;
+    readback.regions[0] = {0, 0, keyBytesTotal};
+    readback.copySrc[1] = valueBuffer;
+    readback.copyDst[1] = stagingBuffer;
+    readback.regions[1] = {0, keyBytesTotal, valueBytesTotal};
+    graph.addPass("radix.readback", radixCopyPass, &readback, rg::QueueClass::AsyncCompute)
+        .use(refs.keys, rg::Access::TransferSrc, {0, keyBytesTotal})
+        .use(refs.values, rg::Access::TransferSrc, {0, valueBytesTotal})
+        .use(stagingRef, rg::Access::TransferDst, {0, keyBytesTotal + valueBytesTotal});
+    graph.addPass("radix.host_read", nullptr, nullptr, rg::QueueClass::AsyncCompute)
+        .use(stagingRef, rg::Access::HostRead, {0, keyBytesTotal + valueBytesTotal});
+    const rg::ExecuteResult recorded = state.executor->recordInline(graph, cmd, rg::QueueClass::AsyncCompute);
+    state.lastPassCount = graph.stats().executedPasses;
+    state.lastBarrierCalls = recorded.barrierCalls;
     vkEndCommandBuffer(cmd);
-    if (!recorded) {
+    if (!recorded.ok) {
+        m_message = "radix sort graph failed: " + state.executor->message();
         return false;
     }
 
@@ -673,6 +852,19 @@ bool GpuRadixSort::sortHost(void* keys, u32* values, u32 count, u32 keyBits, Rad
 #else // !FUSE_VULKAN_BACKEND
 
 struct GpuRadixSort::HostState {};
+struct GpuRadixSort::GraphState {};
+
+u32 GpuRadixSort::lastGraphPassCount() const {
+    return 0;
+}
+
+u32 GpuRadixSort::lastGraphBarrierCalls() const {
+    return 0;
+}
+
+u32 GpuRadixSort::appendSortPasses(void*, void*, const GpuRadixSortBinding*, const void*, u32, u32) const {
+    return 0;
+}
 
 GpuRadixSortBinding::~GpuRadixSortBinding() = default;
 

@@ -1,0 +1,16 @@
+#version 450
+// Render graph v2 gate kernel (tests/test_rp_rg_vulkan.cpp): dst[i] = src[i] + add.
+layout(local_size_x = 64) in;
+layout(std430, set = 0, binding = 0) readonly buffer Src { uint src[]; };
+layout(std430, set = 0, binding = 1) buffer Dst { uint dst[]; };
+layout(push_constant) uniform Push {
+    uint count;
+    uint add;
+} pc;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i < pc.count) {
+        dst[i] = src[i] + pc.add;
+    }
+}

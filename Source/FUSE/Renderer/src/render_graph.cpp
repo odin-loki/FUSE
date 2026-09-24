@@ -140,10 +140,6 @@ RGTextureRef RenderGraph::createTransient(const TextureDesc& /*desc*/) {
 }
 
 void RenderGraph::addPass(const RGPassDesc& desc) {
-    if (m_passes.size() >= kMaxPassesPerFrame) {
-        return;
-    }
-
     PassNode node;
     node.desc = desc;
     node.textureAccessBegin = static_cast<u32>(m_textureAccessPool.size());
@@ -224,7 +220,7 @@ RGResourceAccess RenderGraph::accessForLayout(RGImageLayout layout) const {
     }
 }
 
-void RenderGraph::planBarriersForPass(const PassNode& pass) {
+void RenderGraph::planBarriersForPass(u32 passIndex, const PassNode& pass) {
     for (const RGTextureAccess& access : textureAccessesOf(pass)) {
         TextureState& state = textureStateAt(access.texture.id);
         const RGImageLayout requiredLayout = layoutForAccess(access.access);
@@ -240,6 +236,7 @@ void RenderGraph::planBarriersForPass(const PassNode& pass) {
             barrier.toLayout = requiredLayout;
             barrier.fromAccess = state.lastAccess;
             barrier.toAccess = access.access;
+            barrier.passIndex = passIndex;
             m_barriers.push_back(barrier);
         }
 
@@ -260,6 +257,7 @@ void RenderGraph::planBarriersForPass(const PassNode& pass) {
             barrier.buffer = access.buffer;
             barrier.fromAccess = state.lastAccess;
             barrier.toAccess = access.access;
+            barrier.passIndex = passIndex;
             m_bufferBarriers.push_back(barrier);
         }
 
@@ -406,7 +404,7 @@ void RenderGraph::resolveCompileOrder() {
         return;
     }
 
-    // Kahn's algorithm over at most kMaxPassesPerFrame nodes, always taking the lowest ready pass
+    // Kahn's algorithm over the pass list, always taking the lowest ready pass
     // index (deterministic, declaration-order tie break). Edges touching culled passes are ignored.
     const usize passCount = m_passes.size();
     std::vector<u32>& indegree = m_scratchIndegree;
@@ -572,7 +570,7 @@ void RenderGraph::compile() {
     }
 
     for (const u32 passIndex : m_compileOrder) {
-        planBarriersForPass(m_passes[passIndex]);
+        planBarriersForPass(passIndex, m_passes[passIndex]);
     }
 
     assignExecutionOrder();
@@ -627,19 +625,24 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
         frames.writeTimestampBegin(nativeCommandBuffer);
     }
 
-    for (const RGBarrier& barrier : m_barriers) {
-        recorder.pipelineBarrier(barrier.texture.id,
-                                 static_cast<u32>(barrier.fromLayout),
-                                 static_cast<u32>(barrier.toLayout));
-    }
-
     result.bufferBarrierCount = static_cast<u32>(m_bufferBarriers.size());
 
-    for (const RGBufferBarrier& barrier : m_bufferBarriers) {
-        recorder.bufferBarrier(barrier.buffer.id,
-                               static_cast<u32>(barrier.fromAccess),
-                               static_cast<u32>(barrier.toAccess));
-    }
+    // Barriers were planned in compile order, so each pass's batch is the next contiguous run.
+    usize nextBarrier = 0;
+    usize nextBufferBarrier = 0;
+    auto recordBarriersForPass = [&](u32 passIndex) {
+        while (nextBarrier < m_barriers.size() && m_barriers[nextBarrier].passIndex == passIndex) {
+            const RGBarrier& barrier = m_barriers[nextBarrier++];
+            recorder.pipelineBarrier(barrier.texture.id, static_cast<u32>(barrier.fromLayout),
+                                     static_cast<u32>(barrier.toLayout));
+        }
+        while (nextBufferBarrier < m_bufferBarriers.size() &&
+               m_bufferBarriers[nextBufferBarrier].passIndex == passIndex) {
+            const RGBufferBarrier& barrier = m_bufferBarriers[nextBufferBarrier++];
+            recorder.bufferBarrier(barrier.buffer.id, static_cast<u32>(barrier.fromAccess),
+                                   static_cast<u32>(barrier.toAccess));
+        }
+    };
 
     auto releaseTransientsAfterPass = [&](u32 passIndex) {
         for (RGResourceLifetime& lifetime : m_resourceLifetimes) {
@@ -654,6 +657,7 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
 
     for (const u32 passIndex : m_compileOrder) {
         const PassNode& pass = m_passes[passIndex];
+        recordBarriersForPass(passIndex);
 
         if (pass.desc.isCuda) {
             if (pass.desc.execute != nullptr) {

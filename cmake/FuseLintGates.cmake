@@ -126,6 +126,11 @@ _fuse_lint_add(fuse_lint_c_doc_headings        doc-headings
     --plan "${CMAKE_SOURCE_DIR}/docs/plans/FUSE_MASTER_PLAN.md" --sources "${CMAKE_SOURCE_DIR}/docs/sources")
 # B1 gate: third-party dependencies build from vendored source with pinned commits.
 _fuse_lint_add(fuse_lint_vendored_pins_vma     vendored-pins  --dir "${CMAKE_SOURCE_DIR}/Engine/lib/vma")
+# Upscalers (Renderer/upscale): FidelityFX SDK FSR1 + CAS subset and NVIDIA Image Scaling, both MIT.
+_fuse_lint_add(fuse_lint_vendored_pins_fidelityfx vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/fidelityfx")
+_fuse_lint_add(fuse_lint_vendored_pins_nvidia_nis vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/nvidia-nis")
+# Optional NVIDIA plugin (docs/nvidia-plugin.md): Streamline public headers subset, MIT (binaries never vendored).
+_fuse_lint_add(fuse_lint_vendored_pins_streamline vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/streamline")
 # FUSE Relight (RL-0.2): vendored DXVK 3.1.1 subset (zlib) and dxbc-spirv (MIT).
 _fuse_lint_add(fuse_lint_vendored_pins_dxvk vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/dxvk")
 _fuse_lint_add(fuse_lint_vendored_pins_dxbc_spirv vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/dxbc-spirv")

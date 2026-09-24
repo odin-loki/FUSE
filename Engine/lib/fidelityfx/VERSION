@@ -1,0 +1,50 @@
+# FUSE third-party pin: AMD FidelityFX SDK, FSR1 (EASU + RCAS) and CAS subset. Vendored verbatim, no local edits.
+# Only the files listed below are vendored: the portable core headers (ffx_core*.h, ffx_common_types.h),
+# the FSR1 and CAS GPU headers, the two host headers that declare the effect versions (kept for the pin;
+# FUSE does not compile the FidelityFX host runtime), and the Vulkan GLSL pass entry points.
+# FUSE uses them two ways: the CPU single-source ports in
+# Source/FUSE/Renderer/include/fuse/renderer/upscale/{fsr1,cas}_kernel.hpp transcribe the float32 paths, and the
+# fuse_upscale_gpu_reference gate compiles shaders/vk/**.glsl with glslangValidator and runs them on
+# Lavapipe to check the ports numerically.
+# Checked by `fuse_lint vendored-pins` (ctest: fuse_lint_vendored_pins_fidelityfx).
+# To update: re-fetch every file below from the new SDK tag (same paths under sdk/ and the repo root
+# LICENSE.txt), then update version, tag, commit, header_version and every sha256 together. sha256 is
+# over the file with CRLF normalized to LF.
+name=FidelityFX-SDK (FSR1 + CAS subset)
+upstream=https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK
+version=1.1.4
+tag=v1.1.4
+commit=c6efa6bf7f2027b3ec94f28578bb5965eabb9e55
+retrieved=2026-09-23 (git fetch of the tag commit from github.com; spot-checked against raw.githubusercontent.com)
+license=MIT
+license_file=LICENSE.txt
+# FSR1 and CAS both declare effect version 1.2.0 (FFX_FSR1_VERSION_*, FFX_CAS_VERSION_*) in SDK v1.1.4.
+version_header=include/FidelityFX/host/ffx_fsr1.h
+header_version=1.2.0
+# Upstream paths: LICENSE.txt (repo root), include/** = sdk/include/FidelityFX/**,
+# shaders/vk/** = sdk/src/backends/vk/shaders/**.
+sha256:LICENSE.txt=82cf74fc23885107c7f69249ac3f1dac55898ff68320eb2c753984cae6b2d78a
+sha256:include/FidelityFX/gpu/cas/ffx_cas.h=5d8a93b77128895f7aef4647ec1da55c44999f10603508fb7eaa6ec8f74c9067
+sha256:include/FidelityFX/gpu/cas/ffx_cas_callbacks_glsl.h=d7bf7b3bbfdfba3a36f8e3f478756a4e161257b97a952a6abc7bdbacd4572d70
+sha256:include/FidelityFX/gpu/cas/ffx_cas_callbacks_hlsl.h=5c69569ca4a9e6a28856ebb999e9f4e6db34f91b289088788b88fbb02101e8ce
+sha256:include/FidelityFX/gpu/cas/ffx_cas_resources.h=605b4c3d97b2895398d8d8f59b358b2b3f7a84278a0db8f09992a816856451a8
+sha256:include/FidelityFX/gpu/cas/ffx_cas_sharpen.h=491ef41cdf27de121d8437a64b75db71e3e900450bb8980681d6f70973c800e5
+sha256:include/FidelityFX/gpu/ffx_common_types.h=a19560f837c09f0c990e98b5925b731135d908e372af41c5895cbfa70cc9e5c8
+sha256:include/FidelityFX/gpu/ffx_core.h=e439aa5f516b2d2ebf070ff1d24561f04fa5f00262a2e4f760764a7d07de7997
+sha256:include/FidelityFX/gpu/ffx_core_cpu.h=bdb58574cf3ba80803c4198b4661e3a1cd63c877d59833f22bf15962b164a7fe
+sha256:include/FidelityFX/gpu/ffx_core_glsl.h=01afe5b65549b2c0951b494ca4bf570ee2aa89a64344e4c7d98ef86e6613ab42
+sha256:include/FidelityFX/gpu/ffx_core_gpu_common.h=0e3c50cb0b4592c051d87e028a1dfa54fbd097942ebb3146964db801dec095d0
+sha256:include/FidelityFX/gpu/ffx_core_gpu_common_half.h=d10466cbf027c8c23858a25f8e8cbbbf521d29f373db663c9354221651e9a498
+sha256:include/FidelityFX/gpu/ffx_core_hlsl.h=98722d4b1331c437f5aee645e6f12ed722b721f2ffcb0ec523ee817857f394c7
+sha256:include/FidelityFX/gpu/ffx_core_portability.h=a7c3a1c213ec083bec401181036cffe7a222af2c430c0bab6bd8c14e83e8a567
+sha256:include/FidelityFX/gpu/fsr1/ffx_fsr1.h=5d608d9d0645da03a3aa6c729c5ad990c6f222053eab850b8e218607c1baaa9d
+sha256:include/FidelityFX/gpu/fsr1/ffx_fsr1_callbacks_glsl.h=1859aa7ebdaa8ab92da5d0034d7392b6daa5eb54c8775f18b5ad622fd759513b
+sha256:include/FidelityFX/gpu/fsr1/ffx_fsr1_callbacks_hlsl.h=26dc1e08945df01278e975b9baca62746967efeb2e668f7c96c41e601bd3a92c
+sha256:include/FidelityFX/gpu/fsr1/ffx_fsr1_easu.h=4247ba45634dba21bf27b6d81c27ee4ce323b6978fc772f1209b2b313aab25d7
+sha256:include/FidelityFX/gpu/fsr1/ffx_fsr1_rcas.h=26305f114f77faaa69e5e1eb89bf16009ac2373e96009624917aba5db645b522
+sha256:include/FidelityFX/gpu/fsr1/ffx_fsr1_resources.h=df2891141e2332cf309782e9e4183bf01a7c8bd3628a5035b99838f0e7a9f0bd
+sha256:include/FidelityFX/host/ffx_cas.h=b23f16998287cd4544c280c422e818e8f25212aef08c230d2d9baf093dd42f5b
+sha256:include/FidelityFX/host/ffx_fsr1.h=9e548017e56016530bee0d683f69176cc3dcd98d908da16c7ddf9cd6a0fe5691
+sha256:shaders/vk/cas/ffx_cas_sharpen_pass.glsl=d9e1a89855cf6d06e561d873fc3e95aed9d0348ea41ecabe01c48c4f990a3c04
+sha256:shaders/vk/fsr1/ffx_fsr1_easu_pass.glsl=c9361e76f595c97ade92894dbf4c04557f5c6ab28a710402d07ad92e17e62e9c
+sha256:shaders/vk/fsr1/ffx_fsr1_rcas_pass.glsl=e109b6587d4fb92a1b887fb2dfe10b1ea7f4147164ef2e067267cbe3fdf4e3c7
