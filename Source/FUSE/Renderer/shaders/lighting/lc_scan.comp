@@ -1,0 +1,68 @@
+#version 460
+// WP-2.1 "light.scan": one 256-wide workgroup turns the per-cluster counts into the light grid
+// (offset = exclusive prefix sum in cluster order, count) with chunked workgroup scans, and writes
+// the list totals into the header: the oracle's host scan in compactClusterLists. GLSL twin of
+// lc_scan.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "lc_includes.glsl"
+
+layout(local_size_x = 256) in;
+
+shared uint s_scan[256];
+shared uint s_atCapacity;
+shared uint s_nonEmpty;
+shared uint s_dropped;
+
+void main() {
+    const FuseLcFrame F = fuse_lc_frame();
+    const uint t = gl_LocalInvocationIndex;
+    if (t == 0u) {
+        s_atCapacity = 0u;
+        s_nonEmpty = 0u;
+        s_dropped = 0u;
+    }
+    FuseLcWordsRef counts = FuseLcWordsRef(F.clusterCounts);
+    FuseLcWordsRef droppedWords = FuseLcWordsRef(F.clusterDropped);
+    FuseLcWordsRef grid = FuseLcWordsRef(F.grid);
+    uint running = 0u;
+    uint atCapacity = 0u;
+    uint nonEmpty = 0u;
+    uint dropped = 0u;
+    for (uint base = 0u; base < F.clusterCount; base += 256u) {
+        const uint c = base + t;
+        const uint count = c < F.clusterCount ? counts.v[c] : 0u;
+        const uint drop = c < F.clusterCount ? droppedWords.v[c] : 0u;
+        s_scan[t] = count;
+        barrier();
+        for (uint offset = 1u; offset < 256u; offset <<= 1u) {
+            const uint v = t >= offset ? s_scan[t - offset] : 0u;
+            barrier();
+            s_scan[t] += v;
+            barrier();
+        }
+        if (c < F.clusterCount) {
+            grid.v[c * 2u] = running + s_scan[t] - count;
+            grid.v[c * 2u + 1u] = count;
+        }
+        atCapacity += drop != 0u ? 1u : 0u;
+        nonEmpty += count != 0u ? 1u : 0u;
+        dropped += drop;
+        const uint total = s_scan[255];
+        barrier();
+        running += total;
+    }
+    atomicAdd(s_atCapacity, atCapacity);
+    atomicAdd(s_nonEmpty, nonEmpty);
+    atomicAdd(s_dropped, dropped);
+    barrier();
+    if (t == 0u) {
+        FuseLcWordsRef header = FuseLcWordsRef(F.listHeader);
+        header.v[FUSE_LC_HEADER_TOTAL] = running;
+        header.v[FUSE_LC_HEADER_AT_CAPACITY] = s_atCapacity;
+        header.v[FUSE_LC_HEADER_DROPPED] = s_dropped;
+        header.v[FUSE_LC_HEADER_NON_EMPTY] = s_nonEmpty;
+        header.v[FUSE_LC_HEADER_CLUSTERS] = F.clusterCount;
+        header.v[FUSE_LC_HEADER_CAPACITY] = F.capacity;
+        header.v[FUSE_LC_HEADER_LIGHTS] = F.lightCount;
+    }
+}

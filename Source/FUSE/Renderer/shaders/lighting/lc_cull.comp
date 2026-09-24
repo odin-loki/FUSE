@@ -1,0 +1,40 @@
+#version 460
+// WP-2.1 "light.cull": one thread per cluster walks its depth slice's candidate list in ascending slot
+// order and keeps the lights whose sphere touches the cluster AABB (the oracle's exact closed test),
+// the first `capacity` of them in its fixed-capacity list, counting the rest as dropped: the
+// oracle's clustered_kernel::CullKernel. GLSL twin of lc_cull.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "lc_includes.glsl"
+
+layout(local_size_x = 64) in;
+
+void main() {
+    const FuseLcFrame F = fuse_lc_frame();
+    const uint c = gl_GlobalInvocationID.x;
+    if (c >= F.clusterCount) {
+        return;
+    }
+    const uint slice = c % F.slicesZ;
+    const FuseLcAabb aabb = FuseLcAabbsRef(F.aabbs).v[c];
+    FuseLcBoundsRef bounds = FuseLcBoundsRef(F.bounds);
+    FuseLcWordsRef candidates = FuseLcWordsRef(F.sliceLights + uint64_t(slice) * uint64_t(F.lightCapacity) * 4ul);
+    const uint candidateCount = FuseLcWordsRef(F.sliceCounts).v[slice];
+    FuseLcWordsRef slots = FuseLcWordsRef(F.clusterSlots + uint64_t(c) * uint64_t(F.capacity) * 4ul);
+    uint count = 0u;
+    uint dropped = 0u;
+    for (uint i = 0u; i < candidateCount; ++i) {
+        const uint light = candidates.v[i];
+        const FuseLcBounds b = bounds.v[light];
+        if (!fuse_lc_sphere_aabb(fuse_lc_vec3(b.center), b.radius, aabb)) {
+            continue;
+        }
+        if (count < F.capacity) {
+            slots.v[count] = light;
+            ++count;
+        } else {
+            ++dropped;
+        }
+    }
+    FuseLcWordsRef(F.clusterCounts).v[c] = count;
+    FuseLcWordsRef(F.clusterDropped).v[c] = dropped;
+}
