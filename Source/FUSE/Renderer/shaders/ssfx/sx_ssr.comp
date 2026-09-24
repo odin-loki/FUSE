@@ -1,0 +1,59 @@
+#version 460
+// WP-6.3 "ssfx.ssr": screen-space reflections per pixel (8 x 8 tiles) -> the f32x4 SSR section (reflected
+// radiance of the lit image, unfaded; w = confidence). A line-for-line port of
+// fuse::ssfx::ssr_kernel::shade_pixel: roughness gate (>= 1 not traced), mirror trace (sx_trace.glsl),
+// gloss fade with contact hardening (contact_harden_roughness / gloss_fade). GLSL twin of sx_ssr.slang.
+#extension GL_GOOGLE_include_directive : require
+#define SX_VIEW_HELPERS
+#include "sx_trace.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+float sx_contact_harden_roughness(float rayHitDistance, float materialRoughness) {
+    if ((F.flags & SX_FLAG_SSR_CONTACT) == 0u || F.ssrContactDistance <= 0.0) {
+        return sx_clamp(materialRoughness, 0.0, 1.0);
+    }
+    const float distance = max(rayHitDistance, 0.0);
+    precise float q = 1.0 - distance / F.ssrContactDistance;
+    const float contactFactor = pow(sx_clamp(q, 0.0, 1.0), F.ssrContactExponent);
+    precise float hardened = materialRoughness + (F.ssrContactFloor - materialRoughness) * contactFactor;
+    return sx_clamp(hardened, F.ssrContactFloor, 1.0);
+}
+
+float sx_gloss_fade(float hitDistance, float roughness) {
+    const float r = sx_clamp(roughness, 0.0, 1.0);
+    const float hardened = r <= F.ssrContactFloor ? r : sx_contact_harden_roughness(hitDistance, r);
+    precise float q = 1.0 - hardened;
+    return sx_clamp(q, 0.0, 1.0);
+}
+
+void main() {
+    sx_begin();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const uint i = sx_index(p.x, p.y);
+    SxTrace P;
+    P.maxSteps = F.ssrMaxSteps;
+    P.stride = F.ssrStride;
+    P.thickness = F.ssrThickness;
+    P.maxDistance = F.ssrMaxDistance;
+    P.fadeEdge = F.ssrFadeEdge;
+    P.refineSteps = F.ssrRefineSteps;
+    const bool useRoughness = (F.flags & SX_FLAG_SSR_ROUGHNESS) != 0u;
+    const float r = useRoughness ? SxTexelsRef(F.prepared).v[i].y : 0.0;
+    vec4 result = vec4(0.0);
+    if (r < 1.0) {
+        const SxHit hit = sx_trace_pixel(F.radiance, P, p.x, p.y);
+        if (hit.hit) {
+            float fade = 1.0;
+            if (useRoughness) {
+                fade = sx_gloss_fade(hit.distance, r);
+            }
+            precise float conf = hit.confidence * fade;
+            result = vec4(hit.color, conf);
+        }
+    }
+    SxTexelsRef(F.ssr).v[i] = result;
+}

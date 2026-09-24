@@ -1,0 +1,206 @@
+#version 460
+// WP-6.3 "ssfx.gtao": GTAO visibility per pixel (8 x 8 tiles) -> the f32 AO section. A line-for-line port of
+// fuse::ssfx::gtao_kernel::pixel_visibility (ScreenSpace/include/fuse/ssfx/gtao_kernel.hpp): slices uniform
+// around the view vector (host-built cos / sin table), horizon search in screen space, polynomial acos / cos,
+// ratio estimator. Only IEEE-exact operations (+ - * / sqrt), so it matches the CPU kernel bit for bit.
+// GLSL twin of sx_gtao.slang.
+#extension GL_GOOGLE_include_directive : require
+#define SX_VIEW_HELPERS
+#include "sx_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+const float SX_PI = 3.14159274;
+const float SX_HALF_PI = 1.57079637;
+const float SX_TWO_PI = 6.28318548;
+
+float sx_acos_poly(float x) {
+    const float c = max(-1.0, min(1.0, x));
+    const float a = abs(c);
+    precise float p = -0.0012624911;
+    p = p * a + 0.0066700899;
+    p = p * a - 0.0170881264;
+    p = p * a + 0.0308918804;
+    p = p * a - 0.0501743034;
+    p = p * a + 0.0889789909;
+    p = p * a - 0.214598805;
+    p = p * a + 1.57079625;
+    precise float r = sqrt(1.0 - a) * p;
+    precise float rr = SX_PI - r;
+    return c < 0.0 ? rr : r;
+}
+
+float sx_cos_poly(float x) {
+    precise float a = abs(x);
+    if (a > SX_PI) {
+        a = SX_TWO_PI - a;
+    }
+    float sign_ = 1.0;
+    if (a > SX_HALF_PI) {
+        a = SX_PI - a;
+        sign_ = -1.0;
+    }
+    precise float a2 = a * a;
+    precise float p = 2.08767559e-09;
+    p = p * a2 - 2.755732e-07;
+    p = p * a2 + 2.48015876e-05;
+    p = p * a2 - 0.00138888892;
+    p = p * a2 + 0.0416666679;
+    p = p * a2 - 0.5;
+    p = p * a2 + 1.0;
+    precise float r = sign_ * p;
+    return r;
+}
+
+float sx_arc(float h, float gamma, float cosN, float sinG) {
+    precise float twoH = 2.0 * h;
+    precise float r = 0.25 * (cosN + twoH * sinG - sx_cos_poly(twoH - gamma));
+    return r;
+}
+
+float sx_gtao(uint x, uint y) {
+    if (x >= F.width || y >= F.height || sx_depth_at(x, y) <= 0.0) {
+        return 1.0;
+    }
+    const vec3 p = sx_position_at(x, y);
+    vec3 n = sx_normalize(sx_normal_at(x, y));
+    if (sx_dot(n, p) > 0.0) {
+        n = sx_neg(n);
+    }
+    const vec3 viewVec = sx_normalize(sx_neg(p));
+
+    precise float rq = F.aoRadius * F.fx / p.z;
+    const float radiusPx = min(F.aoMaxRadiusPx, rq);
+    if (radiusPx < 1.0) {
+        return 1.0;
+    }
+    const uint steps = max(1u, min(F.aoSteps, uint(radiusPx)));
+    precise float cxp = float(x) + 0.5;
+    precise float cyp = float(y) + 0.5;
+
+    vec3 viewT, viewB;
+    sx_tangent_basis(viewVec, viewT, viewB);
+
+    float ra = 1.0;
+    float rb = 0.0;
+    float offset = 1.0;
+    if ((F.flags & SX_FLAG_AO_JITTER) != 0u) {
+        const uint seed = (x * 73856093u) ^ (y * 19349663u) ^ (F.aoFrame * 83492791u);
+        precise float u = sx_hash_unit(seed) - 0.5;
+        precise float v = sx_hash_unit(seed ^ 0x9e3779b9u) - 0.5;
+        precise float len = sqrt(u * u + v * v);
+        if (len > 1e-4) {
+            precise float qa = u / len;
+            precise float qb = v / len;
+            ra = qa;
+            rb = qb;
+        }
+        precise float o = 1.0 - sx_hash_unit(seed ^ 0x85ebca6bu);
+        offset = o;
+    }
+
+    precise float numerator = 0.0;
+    precise float denominator = 0.0;
+    for (uint k = 0u; k < F.aoSlices; ++k) {
+        precise float c = F.aoSliceCos[k] * ra - F.aoSliceSin[k] * rb;
+        precise float s = F.aoSliceSin[k] * ra + F.aoSliceCos[k] * rb;
+        const vec3 d = sx_add(sx_scale(viewT, c), sx_scale(viewB, s));
+        precise float sdx = F.fx * (d.x * p.z - p.x * d.z);
+        precise float sdy = F.fy * (d.y * p.z - p.y * d.z);
+        precise float slen = sqrt(sdx * sdx + sdy * sdy);
+        if (slen < 1e-20) {
+            continue;
+        }
+        sdx = sdx / slen;
+        sdy = sdy / slen;
+
+        const vec3 axis = sx_normalize(sx_cross(d, viewVec));
+        const vec3 projN = sx_sub(n, sx_scale(axis, sx_dot(n, axis)));
+        const float projNLen = sx_length(projN);
+        if (projNLen < 1e-6) {
+            continue;
+        }
+        const float signN = sx_dot(d, projN) >= 0.0 ? 1.0 : -1.0;
+        precise float cq = sx_dot(projN, viewVec) / projNLen;
+        const float cosN = sx_saturate(cq);
+        precise float gamma = signN * sx_acos_poly(cosN);
+        precise float sinG = signN * sqrt(max(0.0, 1.0 - cosN * cosN));
+
+        float lowCos[2] = float[2](-sinG, sinG);
+        float horizonCos[2] = float[2](lowCos[0], lowCos[1]);
+        for (uint side = 0u; side < 2u; ++side) {
+            const float dirX = side == 0u ? sdx : -sdx;
+            const float dirY = side == 0u ? sdy : -sdy;
+            int lastX = int(x);
+            int lastY = int(y);
+            for (uint st = 1u; st <= steps; ++st) {
+                precise float t = radiusPx * (float(st - 1u) + offset) / float(steps);
+                precise float sx = cxp + dirX * t;
+                precise float sy = cyp + dirY * t;
+                if (!sx_inside(sx, sy)) {
+                    break;
+                }
+                const int ix = int(sx);
+                const int iy = int(sy);
+                if (ix == lastX && iy == lastY) {
+                    continue;
+                }
+                lastX = ix;
+                lastY = iy;
+                const uint ux = uint(ix);
+                const uint uy = uint(iy);
+                if (sx_depth_at(ux, uy) <= 0.0) {
+                    continue;
+                }
+                const vec3 h = sx_sub(sx_position_at(ux, uy), p);
+                const float dist = sx_length(h);
+                if (dist < 1e-6 || dist > F.aoRadius) {
+                    continue;
+                }
+                precise float invDist = 1.0 / dist;
+                const vec3 hn = sx_scale(h, invDist);
+                if (sx_dot(hn, n) <= F.aoBias) {
+                    continue;
+                }
+                float hc = sx_dot(hn, viewVec);
+                if (F.aoFalloff > 0.0) {
+                    precise float wq = (F.aoRadius - dist) / (F.aoFalloff * F.aoRadius);
+                    const float w = sx_saturate(wq);
+                    precise float lerped = lowCos[side] + (hc - lowCos[side]) * w;
+                    hc = lerped;
+                }
+                horizonCos[side] = max(horizonCos[side], hc);
+            }
+        }
+
+        precise float h1 = gamma + SX_HALF_PI;
+        precise float h0 = gamma - SX_HALF_PI;
+        if (horizonCos[0] > lowCos[0]) {
+            precise float rel = sx_acos_poly(horizonCos[0]) - gamma;
+            h1 = gamma + max(-SX_HALF_PI, min(SX_HALF_PI, rel));
+        }
+        if (horizonCos[1] > lowCos[1]) {
+            precise float rel = -sx_acos_poly(horizonCos[1]) - gamma;
+            h0 = gamma + max(-SX_HALF_PI, min(SX_HALF_PI, rel));
+        }
+        precise float lo = gamma - SX_HALF_PI;
+        precise float hi = gamma + SX_HALF_PI;
+        numerator = numerator + projNLen * (sx_arc(h0, gamma, cosN, sinG) + sx_arc(h1, gamma, cosN, sinG));
+        denominator = denominator + projNLen * (sx_arc(lo, gamma, cosN, sinG) + sx_arc(hi, gamma, cosN, sinG));
+    }
+    if (!(denominator > 0.0)) {
+        return 1.0;
+    }
+    precise float q = numerator / denominator;
+    const float visibility = sx_saturate(q);
+    return F.aoStrength == 1.0 ? visibility : pow(visibility, F.aoStrength);
+}
+
+void main() {
+    sx_begin();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    SxFloatsRef(F.ao).v[sx_index(p.x, p.y)] = sx_gtao(p.x, p.y);
+}

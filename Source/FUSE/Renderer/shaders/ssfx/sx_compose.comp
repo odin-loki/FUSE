@@ -1,0 +1,88 @@
+#version 460
+// WP-6.3 "ssfx.compose": the screen-space effects into the lit image (8 x 8 tiles) -> the RGBA16F output
+// (+ the optional f32x4 dump). CPU reference: ssfx_gpu::compose_pixel (ssfx_gpu_reference.hpp):
+//   AO:   lit + ambient x albedo x material AO x (visibility - 1)   (the WP-2.1 ambient term re-weighted;
+//         per channel through the GTAO multi-bounce fit when enabled)
+//   SSR:  + reflection x confidence x Schlick(F0 = lerp(0.04, albedo, metallic), N.V)
+//   SSGI: + indirect radiance
+//   max(0), alpha = the lit image's. GLSL twin of sx_compose.slang.
+#extension GL_GOOGLE_include_directive : require
+#define SX_VIEW_HELPERS
+#include "sx_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(rgba16f) uniform writeonly image2D fuse_sx_images[];
+
+float sx_multi_bounce(float visibility, float albedo) {
+    precise float a = 2.04040003 * albedo - 0.332399994;
+    precise float b = -4.79510021 * albedo + 0.641700029;
+    precise float c = 2.75519991 * albedo + 0.690299988;
+    precise float m = ((visibility * a + b) * visibility + c) * visibility;
+    return max(visibility, m);
+}
+
+void main() {
+    sx_begin();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const uint i = sx_index(p.x, p.y);
+    const vec4 prep = SxTexelsRef(F.prepared).v[i];
+    const vec4 lit = SxTexelsRef(F.radiance).v[i];
+    const vec3 albedo = SxTexelsRef(F.albedo).v[i].xyz;
+    precise float r = lit.x;
+    precise float g = lit.y;
+    precise float b = lit.z;
+    if ((F.flags & SX_FLAG_AO) != 0u) {
+        const float ao = SxFloatsRef(F.ao).v[i];
+        float vr = ao;
+        float vg = ao;
+        float vb = ao;
+        if ((F.flags & SX_FLAG_MULTI_BOUNCE) != 0u) {
+            vr = sx_multi_bounce(ao, albedo.x);
+            vg = sx_multi_bounce(ao, albedo.y);
+            vb = sx_multi_bounce(ao, albedo.z);
+        }
+        const float k = prep.w;
+        r = r + F.ambient[0] * albedo.x * k * (vr - 1.0);
+        g = g + F.ambient[1] * albedo.y * k * (vg - 1.0);
+        b = b + F.ambient[2] * albedo.z * k * (vb - 1.0);
+    }
+    if ((F.flags & SX_FLAG_SSR) != 0u) {
+        const vec4 ssr = SxTexelsRef(F.ssr).v[i];
+        if (prep.x > 0.0 && ssr.w > 0.0) {
+            precise float px = float(p.x) + 0.5;
+            precise float py = float(p.y) + 0.5;
+            const vec3 q = sx_unproject(px, py, prep.x);
+            vec3 n = sx_normalize(SxTexelsRef(F.normals).v[i].xyz);
+            if (sx_dot(n, q) > 0.0) {
+                n = sx_neg(n);
+            }
+            const vec3 v = sx_normalize(sx_neg(q));
+            const float nov = max(0.0, min(1.0, sx_dot(n, v)));
+            precise float m = 1.0 - nov;
+            precise float m5 = m * m * m * m * m;
+            const float metal = prep.z;
+            precise float dielectric = 0.04 * (1.0 - metal);
+            precise float f0r = dielectric + albedo.x * metal;
+            precise float f0g = dielectric + albedo.y * metal;
+            precise float f0b = dielectric + albedo.z * metal;
+            r = r + ssr.x * ssr.w * (f0r + (1.0 - f0r) * m5);
+            g = g + ssr.y * ssr.w * (f0g + (1.0 - f0g) * m5);
+            b = b + ssr.z * ssr.w * (f0b + (1.0 - f0b) * m5);
+        }
+    }
+    if ((F.flags & SX_FLAG_SSGI) != 0u) {
+        const vec3 gi = SxTexelsRef(F.gi).v[i].xyz;
+        r = r + gi.x;
+        g = g + gi.y;
+        b = b + gi.z;
+    }
+    const vec4 result = vec4(max(r, 0.0), max(g, 0.0), max(b, 0.0), lit.w);
+    imageStore(fuse_sx_images[fuse_handle_index(F.output_)], ivec2(p), result);
+    if (F.dump != 0ul) {
+        SxTexelsRef(F.dump).v[i] = result;
+    }
+}

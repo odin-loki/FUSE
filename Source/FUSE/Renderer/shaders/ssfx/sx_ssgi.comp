@@ -1,0 +1,89 @@
+#version 460
+// WP-6.3 "ssfx.ssgi": one screen-space GI bounce per dispatch (8 x 8 tiles). A line-for-line port of
+// fuse::ssfx::ssgi_kernel (sample_direction: stratified cosine-weighted directions with the integer-hash
+// jitter; pixel_gather: rays traced with the SSR march of sx_trace.glsl, front-facing hits only, mean = E / pi;
+// Kernel: indirect = intensity x diffuse albedo x gather -> the GI section, and direct + indirect -> pc.dst
+// for the next bounce). pc.src = the radiance this bounce gathers (bounce 0: the lit image).
+// GLSL twin of sx_ssgi.slang.
+#extension GL_GOOGLE_include_directive : require
+#define SX_VIEW_HELPERS
+#include "sx_trace.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+const float SX_GI_TWO_PI = 6.28318548;
+
+vec3 sx_sample_direction(vec3 n, uint x, uint y, uint i, uint j, uint sampleSqrt) {
+    const uint k = max(1u, sampleSqrt);
+    const uint seed = (x * 73856093u) ^ (y * 19349663u) ^ ((i * k + j) * 83492791u);
+    precise float u1 = (float(i) + sx_hash_unit(seed)) / float(k);
+    precise float u2 = (float(j) + sx_hash_unit(seed ^ 0x9e3779b9u)) / float(k);
+    const vec3 helper = abs(n.x) < 0.9 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
+    const vec3 tangent = sx_normalize(sx_cross(helper, n));
+    const vec3 bitangent = sx_cross(n, tangent);
+    precise float r = sqrt(u1);
+    precise float phi = SX_GI_TWO_PI * u2;
+    precise float lz = sqrt(max(0.0, 1.0 - u1));
+    precise float rc = r * cos(phi);
+    precise float rs = r * sin(phi);
+    return sx_add(sx_add(sx_scale(tangent, rc), sx_scale(bitangent, rs)), sx_scale(n, lz));
+}
+
+vec3 sx_pixel_gather(uint64_t radianceIn, uint x, uint y) {
+    if (x >= F.width || y >= F.height || sx_depth_at(x, y) <= 0.0) {
+        return vec3(0.0);
+    }
+    SxTrace P;
+    P.maxSteps = F.giMaxSteps;
+    P.stride = F.giStride;
+    P.thickness = F.giThickness;
+    P.maxDistance = F.giMaxDistance;
+    P.fadeEdge = 0.0;
+    P.refineSteps = F.giRefineSteps;
+    const vec3 p = sx_position_at(x, y);
+    vec3 n = sx_normalize(sx_normal_at(x, y));
+    if (sx_dot(n, p) > 0.0) {
+        n = sx_neg(n);
+    }
+    vec3 sum = vec3(0.0);
+    const uint total = F.giSampleSqrt * F.giSampleSqrt;
+    for (uint i = 0u; i < F.giSampleSqrt; ++i) {
+        for (uint j = 0u; j < F.giSampleSqrt; ++j) {
+            const vec3 dir = sx_sample_direction(n, x, y, i, j, F.giSampleSqrt);
+            const SxHit hit = sx_trace_ray(radianceIn, P, x, y, dir);
+            if (!hit.hit) {
+                continue;
+            }
+            const uint hx = min(F.width - 1u, uint(max(0.0, hit.px)));
+            const uint hy = min(F.height - 1u, uint(max(0.0, hit.py)));
+            vec3 hitN = sx_normalize(sx_normal_at(hx, hy));
+            if (sx_dot(hitN, sx_position_at(hx, hy)) > 0.0) {
+                hitN = sx_neg(hitN);
+            }
+            if (sx_dot(hitN, dir) >= 0.0) {
+                continue;
+            }
+            sum = sx_add(sum, hit.color);
+        }
+    }
+    precise float inv = 1.0 / float(total);
+    return sx_scale(sum, inv);
+}
+
+void main() {
+    sx_begin();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const uint i = sx_index(p.x, p.y);
+    const vec3 gathered = sx_pixel_gather(pc.src, p.x, p.y);
+    const vec3 a = SxTexelsRef(F.diffuse).v[i].xyz;
+    precise vec3 ag = vec3(a.x * gathered.x, a.y * gathered.y, a.z * gathered.z);
+    const vec3 indirect = sx_scale(ag, F.giIntensity);
+    SxTexelsRef(F.gi).v[i] = vec4(indirect, 0.0);
+    if (pc.dst != 0ul) {
+        const vec3 direct = SxTexelsRef(F.radiance).v[i].xyz;
+        SxTexelsRef(pc.dst).v[i] = vec4(sx_add(direct, indirect), 0.0);
+    }
+}
