@@ -6,16 +6,15 @@
 //   rl_translate_replay --stream relight_tap.jsonl [--conf rtx.conf] [--texture-hashes file] --out out.jsonl
 //
 // Every recorded event is turned back into the tap event struct DXVK's dispatcher passed (DeviceEvent,
-// TextureDesc, DrawCall + DrawState including lights and material, QueryEvent, FrameEvent). Not carried
-// by the recording: shader bytecode, clip planes (zero) and Remix texture hashes (supplied per texture id
-// in --texture-hashes, "<id> 0x<hash>" lines). --conf is rtx.conf text applied as an option layer.
+// TextureDesc, DrawCall + DrawState including lights, material, clip planes, the render-target alpha-swizzle
+// mask and the light / clip-plane change counters (tap interface 3; recordings without them replay with
+// clip planes of zero, no mask and untracked counters), QueryEvent, FrameEvent). Not carried by the
+// recording: shader bytecode and Remix texture hashes (supplied per texture id in --texture-hashes,
+// "<id> 0x<hash>" lines). --conf is rtx.conf text applied as an option layer.
 //
-// Output lines (floats %.9g, non-finite floats as strings "inf" / "-inf" / "nan"):
-//   {"ev":"draw","frame":F,"index":I,"status":..,"reason":..,"translated":b,"texture_stage":b,
-//    "material":{...},"fog":{...},"texgen":..,"texture_transform":[16],"lights":[...],"camera":"Main",
-//    "min_z":..,"max_z":..,"z_write":b,"z_enable":b,"stencil":b,"alpha_swizzle":b}
-//   {"ev":"frame","frame":F,"lights":[...],"rejected_lights":N,"fog":{...},"fog_states":[...],
-//    "cameras":[{...}],"camera_cut":b}
+// Output lines: {"ev":"draw", + translatedDrawJson} and {"ev":"frame", + translatedFrameJson}
+// (scene/translate/translate_json.hpp, the spelling the capture tap's record uses too).
+#include <fuse/relight/scene/translate/translate_json.hpp>
 #include <fuse/relight/scene/translate/translate_tap.hpp>
 #include <fuse/relight/tap/d3d9_names.hpp>
 
@@ -223,6 +222,9 @@ struct StateBlock {
     tap::Viewport viewport;
     tap::ResourceId renderTargets[tap::kRenderTargetCount] = {};
     tap::ResourceId depthStencil = tap::kNoResource;
+    float clipPlanes[tap::kClipPlaneCount][4] = {};
+    bool hasAlphaSwizzleMask = false;
+    std::uint32_t alphaSwizzleRenderTargets = 0;
 };
 
 std::unique_ptr<StateBlock> parseStateBlock(const Json& st) {
@@ -315,6 +317,17 @@ std::unique_ptr<StateBlock> parseStateBlock(const Json& st) {
     if (const Json* ds = st.get("depth_stencil"); ds && ds->kind == Json::Number) {
         b->depthStencil = static_cast<tap::ResourceId>(ds->n);
     }
+    if (const Json* planes = st.get("clip_planes"); planes && planes->kind == Json::Array) {
+        for (std::size_t p = 0; p < planes->a.size() && p < tap::kClipPlaneCount; ++p) {
+            for (std::size_t k = 0; k < 4; ++k) {
+                b->clipPlanes[p][k] = planes->a[p].at(k);
+            }
+        }
+    }
+    if (const Json* sw = st.get("alpha_swizzle_rts"); sw && sw->kind == Json::Number) {
+        b->hasAlphaSwizzleMask = true;
+        b->alphaSwizzleRenderTargets = static_cast<std::uint32_t>(sw->n);
+    }
     return b;
 }
 
@@ -335,111 +348,6 @@ std::uint32_t transformSlot(const std::string& name) {
         return tap::kTransformWorld0 + static_cast<std::uint32_t>(std::atoi(name.c_str() + 12));
     }
     return tap::kTransformCount;
-}
-
-// ---- JSON writer ------------------------------------------------------------------------------------------------
-std::string num(double v) {
-    if (std::isnan(v)) {
-        return "\"nan\"";
-    }
-    if (std::isinf(v)) {
-        return v > 0 ? "\"inf\"" : "\"-inf\"";
-    }
-    char buf[40];
-    std::snprintf(buf, sizeof buf, "%.9g", v);
-    return buf;
-}
-template <typename It>
-std::string floats(It begin, It end) {
-    std::string s = "[";
-    for (It it = begin; it != end; ++it) {
-        s += (it == begin ? "" : ",") + num(static_cast<double>(*it));
-    }
-    return s + "]";
-}
-std::string hex64(std::uint64_t v) {
-    char buf[24];
-    std::snprintf(buf, sizeof buf, "\"0x%016llx\"", static_cast<unsigned long long>(v));
-    return buf;
-}
-const char* b(bool v) { return v ? "true" : "false"; }
-std::string c4(const tap::Color4& c) {
-    const float v[4] = {c.r, c.g, c.b, c.a};
-    return floats(v, v + 4);
-}
-
-std::string materialJson(const scene::LegacyMaterialRecord& m) {
-    const scene::BlendMode& bm = m.blendMode;
-    std::string s = "{";
-    s += "\"alpha_test\":" + std::string(b(m.alphaTestEnabled));
-    s += ",\"alpha_test_op\":" + std::to_string(m.alphaTestCompareOp);
-    s += ",\"alpha_ref\":" + std::to_string(m.alphaTestReferenceValue);
-    s += ",\"blend\":" + std::string(b(bm.enableBlending));
-    s += ",\"color_src\":" + std::to_string(bm.colorSrcFactor) + ",\"color_dst\":" + std::to_string(bm.colorDstFactor) +
-         ",\"color_op\":" + std::to_string(bm.colorBlendOp);
-    s += ",\"alpha_src\":" + std::to_string(bm.alphaSrcFactor) + ",\"alpha_dst\":" + std::to_string(bm.alphaDstFactor) +
-         ",\"alpha_op\":" + std::to_string(bm.alphaBlendOp);
-    s += ",\"write_mask\":" + std::to_string(bm.writeMask);
-    s += ",\"diffuse_source\":\"" + std::string(scene::textureArgSourceName(m.diffuseColorSource)) + "\"";
-    s += ",\"specular_source\":\"" + std::string(scene::textureArgSourceName(m.specularColorSource)) + "\"";
-    s += ",\"tfactor\":" + std::to_string(m.tFactor);
-    s += ",\"tex_color_op\":\"" + std::string(scene::textureOperationName(m.textureColorOperation)) + "\"";
-    s += ",\"tex_color_arg1\":\"" + std::string(scene::textureArgSourceName(m.textureColorArg1Source)) + "\"";
-    s += ",\"tex_color_arg2\":\"" + std::string(scene::textureArgSourceName(m.textureColorArg2Source)) + "\"";
-    s += ",\"tex_alpha_op\":\"" + std::string(scene::textureOperationName(m.textureAlphaOperation)) + "\"";
-    s += ",\"tex_alpha_arg1\":\"" + std::string(scene::textureArgSourceName(m.textureAlphaArg1Source)) + "\"";
-    s += ",\"tex_alpha_arg2\":\"" + std::string(scene::textureArgSourceName(m.textureAlphaArg2Source)) + "\"";
-    s += ",\"tf_blend\":" + std::string(b(m.isTextureFactorBlend));
-    s += ",\"vc_baked\":" + std::string(b(m.isVertexColorBakedLighting));
-    s += ",\"d3d_material\":{\"diffuse\":" + c4(m.d3dMaterial.diffuse) + ",\"ambient\":" + c4(m.d3dMaterial.ambient) +
-         ",\"specular\":" + c4(m.d3dMaterial.specular) + ",\"emissive\":" + c4(m.d3dMaterial.emissive) +
-         ",\"power\":" + num(m.d3dMaterial.power) + "}";
-    s += ",\"texture_slots\":[" + std::to_string(m.colorTextureSlots[0]) + "," + std::to_string(m.colorTextureSlots[1]) + "]";
-    s += ",\"hash\":" + hex64(m.hash());
-    return s + "}";
-}
-
-std::string fogJson(const scene::FogRecord& f) {
-    return "{\"mode\":" + std::to_string(f.mode) + ",\"color\":" + floats(f.color.begin(), f.color.end()) +
-           ",\"scale\":" + num(f.scale) + ",\"end\":" + num(f.end) + ",\"density\":" + num(f.density) +
-           ",\"hash\":" + hex64(f.mode == 0 ? 0 : f.hash()) + "}";
-}
-
-std::string lightJson(const scene::LightRecord& l) {
-    const char* type = l.type == hash::LightType::Distant ? "distant" : "sphere";
-    std::string s = "{\"index\":" + std::to_string(l.d3dIndex) + ",\"d3d_type\":" + std::to_string(l.d3dType) +
-                    ",\"type\":\"" + type + "\",\"hash\":" + hex64(l.hash) +
-                    ",\"radiance\":" + floats(l.radiance.begin(), l.radiance.end()) +
-                    ",\"intensity\":" + num(l.intensity);
-    if (l.type == hash::LightType::Distant) {
-        s += ",\"direction\":" + floats(l.direction.begin(), l.direction.end()) + ",\"half_angle\":" + num(l.halfAngle);
-    } else {
-        s += ",\"position\":" + floats(l.position.begin(), l.position.end()) + ",\"radius\":" + num(l.radius);
-        s += ",\"shaping\":{\"enabled\":" + std::string(b(l.shaping.enabled)) +
-             ",\"direction\":" + floats(l.shaping.direction.begin(), l.shaping.direction.end()) +
-             ",\"cos_cone\":" + num(l.shaping.cosConeAngle) + ",\"softness\":" + num(l.shaping.coneSoftness) +
-             ",\"focus\":" + num(l.shaping.focusExponent) + "}";
-    }
-    return s + "}";
-}
-
-std::string lightsJson(const std::vector<scene::LightRecord>& lights) {
-    std::string s = "[";
-    for (std::size_t i = 0; i < lights.size(); ++i) {
-        s += (i ? "," : "") + lightJson(lights[i]);
-    }
-    return s + "]";
-}
-
-std::string cameraJson(const scene::CameraState& c) {
-    const std::array<float, 3> p = c.position();
-    const std::array<float, 3> d = c.direction();
-    return std::string("{\"type\":\"") + scene::cameraTypeName(c.type) + "\",\"fov\":" + num(c.fov) +
-           ",\"aspect\":" + num(c.aspectRatio) + ",\"near\":" + num(c.nearPlane) + ",\"far\":" + num(c.farPlane) +
-           ",\"lhs\":" + b(c.isLHS) + ",\"reverse_z\":" + b(c.isReverseZ) + ",\"shear_x\":" + num(c.shearX) +
-           ",\"shear_y\":" + num(c.shearY) + ",\"position\":" + floats(p.begin(), p.end()) +
-           ",\"direction\":" + floats(d.begin(), d.end()) + ",\"jitter_px\":[" + num(c.jitter.pixelX) + "," +
-           num(c.jitter.pixelY) + "],\"jitter\":" + b(c.jitterDetected) + "}";
 }
 
 int usage() {
@@ -491,39 +399,12 @@ int main(int argc, char** argv) {
     scene::TranslateTap translate(
         nullptr,
         [out](const scene::TranslatedDraw& d) {
-            const scene::DrawClassification& r = d.classification;
-            std::string s = "{\"ev\":\"draw\",\"frame\":" + std::to_string(d.frame) +
-                            ",\"index\":" + std::to_string(d.indexInFrame) + ",\"status\":\"" +
-                            scene::geometryStatusName(r.status) + "\",\"reason\":\"" + scene::classifyReasonName(r.reason) +
-                            "\",\"categories\":\"" + r.categories.toString() + "\",\"translated\":" + b(d.translated) +
-                            ",\"texture_stage\":" + b(d.textureStageApplied);
-            if (d.translated) {
-                s += ",\"material\":" + materialJson(d.material) + ",\"fog\":" + fogJson(d.fog);
-                s += ",\"texgen\":\"" + std::string(scene::texGenModeName(d.transforms.texgenMode)) + "\"";
-                s += ",\"texture_transform\":" + floats(d.transforms.textureTransform.begin(), d.transforms.textureTransform.end());
-                s += ",\"object_to_view\":" + floats(d.transforms.objectToView.begin(), d.transforms.objectToView.end());
-                s += ",\"clip_plane\":" + std::string(b(d.transforms.enableClipPlane));
-                s += ",\"lights\":" + lightsJson(d.addedLights);
-                s += ",\"min_z\":" + num(d.minZ) + ",\"max_z\":" + num(d.maxZ) + ",\"z_write\":" + b(d.zWriteEnable) +
-                     ",\"z_enable\":" + b(d.zEnable) + ",\"stencil\":" + b(d.stencilEnabled);
-            }
-            s += ",\"camera\":\"" + std::string(scene::cameraTypeName(d.cameraType)) + "\"";
-            s += ",\"alpha_swizzle\":" + std::string(b(d.alphaSwizzle)) + "}\n";
-            std::fputs(s.c_str(), out);
+            const std::string line = "{\"ev\":\"draw\"," + scene::translatedDrawJson(d).substr(1) + "\n";
+            std::fputs(line.c_str(), out);
         },
         [out](const scene::TranslatedFrame& f) {
-            std::string s = "{\"ev\":\"frame\",\"frame\":" + std::to_string(f.frame) + ",\"lights\":" + lightsJson(f.lights) +
-                            ",\"rejected_lights\":" + std::to_string(f.rejectedLights) + ",\"fog\":" + fogJson(f.fog) +
-                            ",\"fog_states\":[";
-            for (std::size_t i = 0; i < f.fogStates.size(); ++i) {
-                s += (i ? "," : "") + fogJson(f.fogStates[i]);
-            }
-            s += "],\"cameras\":[";
-            for (std::size_t i = 0; i < f.cameras.size(); ++i) {
-                s += (i ? "," : "") + cameraJson(f.cameras[i]);
-            }
-            s += "],\"camera_cut\":" + std::string(b(f.cameraCut)) + "}\n";
-            std::fputs(s.c_str(), out);
+            const std::string line = "{\"ev\":\"frame\"," + scene::translatedFrameJson(f).substr(1) + "\n";
+            std::fputs(line.c_str(), out);
         });
 
     if (!hashesPath.empty()) {
@@ -563,6 +444,9 @@ int main(int argc, char** argv) {
         if (type == "device_create" || type == "device_reset") {
             tap::DeviceEvent e;
             e.d3d8 = ev.flag("d3d8");
+            if (const Json* bb = ev.get("back_buffer"); bb && bb->kind == Json::Number) {
+                e.backBuffer = static_cast<tap::ResourceId>(bb->n);
+            }
             if (const Json* p = ev.get("present")) {
                 e.present.backBufferWidth = p->u32("back_buffer_width");
                 e.present.backBufferHeight = p->u32("back_buffer_height");
@@ -634,6 +518,11 @@ int main(int argc, char** argv) {
             s.lights = blk.lights.empty() ? nullptr : blk.lights.data();
             s.lightCount = static_cast<std::uint32_t>(blk.lights.size());
             s.material = blk.material;
+            s.clipPlanes = blk.clipPlanes;
+            s.hasAlphaSwizzleMask = blk.hasAlphaSwizzleMask;
+            s.alphaSwizzleRenderTargets = blk.alphaSwizzleRenderTargets;
+            s.lightsVersion = ev.u32("lights_version");
+            s.clipPlanesVersion = ev.u32("clip_planes_version");
             if (const Json* elems = ev.get("elements")) {
                 for (const Json& e : elems->a) {
                     if (s.elementCount >= tap::kMaxVertexElements) {
@@ -677,8 +566,10 @@ int main(int argc, char** argv) {
         } else if (type == "present") {
             tap::FrameEvent f;
             f.frame = static_cast<std::uint64_t>(ev.num("frame"));
+            f.backBuffer = ev.u32("back_buffer");
             f.width = ev.u32("width");
             f.height = ev.u32("height");
+            f.format = ev.u32("format");
             translate.onPresent(f);
             ++frames;
         }

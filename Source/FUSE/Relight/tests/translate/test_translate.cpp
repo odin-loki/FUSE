@@ -8,9 +8,16 @@
 //       LightTranslator (addGameLight, "off" lights, same-frame rule, dirty detection).
 //   fuse_relight_translate_tests camera      (ctest rl_camera_kat)  decomposeProjection known-answer tests
 //       within 1e-5 (MathLib DecomposeProjection), jitter detection and CameraManager::processCameraData.
+//   fuse_relight_translate_tests record <stream.jsonl> <expected.jsonl>   (ctest rl_translate_replay_roundtrip)
+//       a synthetic session (clip planes, light / clip-plane change counters, alpha-swizzle mask, fog, lights,
+//       two frames) through TranslateTap with a RecordingTap as its forward tap: writes the recorded event
+//       stream and TranslateTap's own output in rl_translate_replay's spelling, which the replay of the
+//       stream must reproduce line for line (rl_translate_capture.py roundtrip).
 // Options are set through RL-0.6 layers built from rtx.conf text, as a game's rtx.conf would set them.
+#include <fuse/relight/scene/translate/translate_json.hpp>
 #include <fuse/relight/scene/translate/translate_options.hpp>
 #include <fuse/relight/scene/translate/translate_tap.hpp>
+#include <fuse/relight/tap/recording_tap.hpp>
 
 #include <fuse/relight/scene/camera/camera_options.hpp>
 #include <fuse/relight/scene/classify/classify_options.hpp>
@@ -508,14 +515,22 @@ void test_fog() {
 struct TapHarness {
     std::vector<TranslatedDraw> draws;
     std::vector<TranslatedFrame> frames;
-    TranslateTap tap{nullptr, [this](const TranslatedDraw& d) { draws.push_back(d); },
-                     [this](const TranslatedFrame& f) { frames.push_back(f); }};
+    TranslateTap tap;
     std::uint32_t rs[tap::kRenderStateCount] = {};
     std::uint32_t tss[tap::kTextureStageCount][32] = {};
     std::vector<float> transforms = std::vector<float>(tap::kTransformCount * 16, 0.f);
     std::vector<tap::Light> lights;
+    // Tap interface 3 fields (0 / false: an untracked producer, the fallback paths).
+    std::uint32_t lightsVersion = 0, clipPlanesVersion = 0;
+    float clipPlanes[tap::kClipPlaneCount][4] = {};
+    bool hasAlphaSwizzleMask = false;
+    std::uint32_t alphaSwizzleRenderTargets = 0;
 
-    TapHarness() {
+    std::uint64_t presents = 0;
+
+    explicit TapHarness(tap::IRelightTap* forward = nullptr)
+        : tap{forward, [this](const TranslatedDraw& d) { draws.push_back(d); },
+              [this](const TranslatedFrame& f) { frames.push_back(f); }} {
         tap::DeviceEvent e;
         e.present.backBufferWidth = 128;
         e.present.backBufferHeight = 96;
@@ -567,9 +582,22 @@ struct TapHarness {
         s.elementCount = 2;
         s.elements[0] = {0, 0, 2, 0, d3d::DECLUSAGE_POSITION, 0};
         s.elements[1] = {0, 12, 4, 0, d3dff::DECLUSAGE_COLOR, 0};
+        s.clipPlanes = clipPlanes;
+        s.lightsVersion = lightsVersion;
+        s.clipPlanesVersion = clipPlanesVersion;
+        s.hasAlphaSwizzleMask = hasAlphaSwizzleMask;
+        s.alphaSwizzleRenderTargets = alphaSwizzleRenderTargets;
         tap.onDraw(c, s);
     }
-    void present() { tap.onPresent(tap::FrameEvent{}); }
+    void present() {
+        tap::FrameEvent f;
+        f.frame = presents++;
+        f.backBuffer = 1;
+        f.width = 128;
+        f.height = 96;
+        f.format = 22;
+        tap.onPresent(f);
+    }
 };
 
 void test_translateTap() {
@@ -621,6 +649,152 @@ void test_translateTap() {
     }
     h.present();
     CHECK(h.frames.size() == 2);
+}
+
+/// processRenderState's DirtyLights / DirtyClipPlanes, driven by the tap's change counters, and DXVK's
+/// alpha-swizzle mask.
+void test_changeCounters() {
+    TapHarness h;
+    tap::Light point;
+    point.index = 0;
+    point.enabled = true;
+    point.type = d3dlight::POINT;
+    point.diffuse = {1.f, 0.5f, 0.25f, 1.f};
+    point.position = {1.f, 2.f, 3.f};
+    point.range = 10.f;
+    point.attenuation0 = 1.f;
+    h.lights.push_back(point);
+    h.lightsVersion = 1;
+    h.clipPlanesVersion = 1;
+    h.rs[d3dff::RS_CLIPPLANEENABLE] = 0x2; // plane 1
+    h.clipPlanes[1][1] = 1.f;
+    h.clipPlanes[1][3] = -2.f;
+    h.draw(); // 0: dirty lights and clip planes
+    CHECK(h.draws[0].translated && h.draws[0].addedLights.size() == 1);
+    CHECK(h.draws[0].transforms.enableClipPlane);
+    CHECK(h.draws[0].transforms.clipPlane[1] == 1.f && h.draws[0].transforms.clipPlane[3] == -2.f);
+    // 1: the plane changed but the counter did not: Remix keeps the plane it last computed.
+    h.clipPlanes[1][0] = 1.f;
+    h.clipPlanes[1][1] = 0.f;
+    h.draw();
+    CHECK(h.draws[1].transforms.enableClipPlane && h.draws[1].transforms.clipPlane[1] == 1.f);
+    CHECK(h.draws[1].addedLights.empty());
+    // 2: counter advanced: recomputed.
+    h.clipPlanesVersion = 2;
+    h.draw();
+    CHECK(h.draws[2].transforms.clipPlane[0] == 1.f && h.draws[2].transforms.clipPlane[1] == 0.f);
+    // 3: clip planes disabled and dirty: no plane.
+    h.rs[d3dff::RS_CLIPPLANEENABLE] = 0;
+    h.clipPlanesVersion = 3;
+    h.draw();
+    CHECK(!h.draws[3].transforms.enableClipPlane);
+    h.present();
+    CHECK(h.frames.size() == 1 && h.frames[0].lights.size() == 1);
+    // Next frame, lights untouched: upstream does not re-send them (the fallback would).
+    h.draw(); // 4
+    CHECK(h.draws[4].addedLights.empty());
+    // A draw that does not reach processRenderState (no colour writes) leaves the flag set ...
+    h.lightsVersion = 2;
+    h.rs[d3d::RS_COLORWRITEENABLE] = 0;
+    h.draw(); // 5
+    CHECK(!h.draws[5].translated);
+    // ... for the next translated draw, which re-sends the (same) light.
+    h.rs[d3d::RS_COLORWRITEENABLE] = 0xf;
+    h.draw(); // 6
+    CHECK(h.draws[6].addedLights.size() == 1);
+    h.draw(); // 7: consumed
+    CHECK(h.draws[7].addedLights.empty());
+    h.present();
+    CHECK(h.frames.size() == 2 && h.frames[1].lights.size() == 1);
+    // DXVK's alpha-swizzle mask wins over the format rule when reported.
+    CHECK(h.draws[7].alphaSwizzle); // X8R8G8B8, no mask: format rule
+    h.hasAlphaSwizzleMask = true;
+    h.alphaSwizzleRenderTargets = 0;
+    h.draw();
+    CHECK(!h.draws[8].alphaSwizzle);
+    h.alphaSwizzleRenderTargets = 1;
+    h.draw();
+    CHECK(h.draws[9].alphaSwizzle);
+}
+
+/// `record`: the synthetic session for rl_translate_replay_roundtrip (see the header).
+int recordSession(const char* streamPath, const char* expectedPath) {
+    std::vector<TranslatedDraw> draws;
+    std::vector<TranslatedFrame> frames;
+    {
+        tap::RecordingTap recording(streamPath);
+        if (!recording.isOpen()) {
+            return 1;
+        }
+        TapHarness h(&recording);
+        tap::Light point;
+        point.index = 0;
+        point.enabled = true;
+        point.type = d3dlight::POINT;
+        point.diffuse = {1.f, 0.5f, 0.25f, 1.f};
+        point.position = {1.f, 2.f, 3.f};
+        point.range = 10.f;
+        point.attenuation0 = 1.f;
+        tap::Light spot = point;
+        spot.index = 2;
+        spot.type = d3dlight::SPOT;
+        spot.direction = {0.f, -1.f, 0.f};
+        spot.theta = 0.35f;
+        spot.phi = 0.9f;
+        spot.falloff = 1.f;
+        h.lights = {point, spot};
+        h.rs[d3dff::RS_FOGENABLE] = 1;
+        h.rs[d3dff::RS_FOGVERTEXMODE] = d3dff::FOG_LINEAR;
+        h.rs[d3dff::RS_FOGCOLOR] = 0xff8090a0u;
+        h.hasAlphaSwizzleMask = true;
+        h.alphaSwizzleRenderTargets = 1;
+        h.lightsVersion = 1;
+        h.clipPlanesVersion = 1;
+        h.rs[d3dff::RS_CLIPPLANEENABLE] = 0x4; // plane 2
+        h.clipPlanes[2][0] = 0.25f;
+        h.clipPlanes[2][1] = 1.f;
+        h.clipPlanes[2][3] = -2.5f;
+        h.draw();                  // lights + clip plane dirty
+        h.clipPlanes[2][1] = 0.5f; // state changed, counter not: the plane is kept
+        h.draw();
+        h.clipPlanesVersion = 2; // recomputed
+        h.draw();
+        h.present();
+        h.draw(); // frame 1: nothing dirty (no lights re-sent)
+        h.lightsVersion = 2;
+        h.rs[d3d::RS_COLORWRITEENABLE] = 0; // not translated: the flag stays set
+        h.draw();
+        h.rs[d3d::RS_COLORWRITEENABLE] = 0xf;
+        h.lights[1].enabled = false;
+        h.draw(); // re-sends the point light
+        h.rs[d3dff::RS_CLIPPLANEENABLE] = 0;
+        h.clipPlanesVersion = 3;
+        h.alphaSwizzleRenderTargets = 0;
+        h.draw(); // clip plane off, no alpha swizzle
+        h.present();
+        draws = h.draws;
+        frames = h.frames;
+    }
+    std::FILE* out = std::fopen(expectedPath, "wb");
+    if (!out) {
+        return 1;
+    }
+    std::size_t next = 0;
+    for (const TranslatedFrame& f : frames) {
+        for (; next < draws.size() && draws[next].frame == f.frame; ++next) {
+            std::fprintf(out, "{\"ev\":\"draw\",%s\n", translatedDrawJson(draws[next]).c_str() + 1);
+        }
+        std::fprintf(out, "{\"ev\":\"frame\",%s\n", translatedFrameJson(f).c_str() + 1);
+    }
+    std::fclose(out);
+    bool clip = false, kept = false;
+    for (const TranslatedDraw& d : draws) {
+        clip = clip || d.transforms.enableClipPlane;
+    }
+    kept = draws.size() > 1 && draws[1].transforms.clipPlane[1] == 1.f;
+    std::printf("record: %zu draw(s), %zu frame(s), clip plane %s, kept until dirty %s\n", draws.size(), frames.size(),
+                clip ? "yes" : "no", kept ? "yes" : "no");
+    return clip && kept && frames.size() == 2 ? 0 : 1;
 }
 
 // ==================================================================================================
@@ -1069,12 +1243,22 @@ int main(int argc, char** argv) {
     options::OptionManager::applyPendingValues(nullptr, false);
 
     const std::string group = argc > 1 ? argv[1] : "all";
+    if (group == "record") {
+        if (argc != 4) {
+            std::fprintf(stderr, "usage: fuse_relight_translate_tests record <stream.jsonl> <expected.jsonl>\n");
+            return 2;
+        }
+        const int rc = recordSession(argv[2], argv[3]);
+        options::OptionManager::applyPendingValues(nullptr, false);
+        return rc;
+    }
     const TestCase translate[] = {
         {"colorSources", test_colorSources},     {"alphaTest", test_alphaTest},
         {"blendState", test_blendState},         {"alphaSwizzleFormats", test_alphaSwizzleFormats},
         {"textureStage", test_textureStage},     {"textureFactorBlending", test_textureFactorBlending},
         {"terrainDecalModulate", test_terrainDecalModulate}, {"transforms", test_transforms},
         {"fog", test_fog},                       {"translateTap", test_translateTap},
+        {"changeCounters", test_changeCounters},
     };
     const TestCase lights[] = {
         {"stableHash", test_stableHash},

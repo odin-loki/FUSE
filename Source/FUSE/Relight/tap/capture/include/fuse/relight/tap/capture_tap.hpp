@@ -8,9 +8,11 @@
 //   * GeometryCapture (RL-1.3): the application's real vertex / index bytes (a CPU shadow of every
 //     buffer write, or DXVK's own mapping), index rebasing, the geometry hash components, the
 //     asset key, bounding box and skinning data;
-//   * ClassifyTap (RL-1.2): the draw classifier, fed the texture hashes TextureTracker computed.
+//   * TranslateTap (RL-1.5): the RL-1.2 draw classifier (its ClassifyTap), fed the texture hashes
+//     TextureTracker computed, then the fixed-function translation (material, texture stage, fog,
+//     transforms and clip plane), the game lights and the camera, per draw and per frame.
 // Per event the order is: forward tap (optional; the recording tap, so one run yields the replay
-// tools' input too), TextureTracker, classifier, GeometryCapture. Geometry asks TextureTracker
+// tools' input too), TextureTracker, TranslateTap (classifier, then translation), GeometryCapture. Geometry asks TextureTracker
 // whether a texture has an image hash (Remix processTextures); the geometry categories
 // (rtx.skyBoxGeometries) are applied to the classification once the asset key is known.
 //
@@ -26,9 +28,14 @@
 //               leg0 / leg1, memo, aabb, skin), captured draws only beyond status / tci / stage;
 //             textures: [{slot, texture, hash, desc}] bound sampler slots with TextureTracker's hashes;
 //             classification: rl_classify_replay's fields (draw_call_id, status, reason, inject,
-//               categories, decision, sky_auto, using_rt_rt, drawing_to_rt_rt, color_texture)
+//               categories, decision, sky_auto, using_rt_rt, drawing_to_rt_rt, color_texture);
+//             translation: TranslateTap's draw (scene/translate/translate_json.hpp translatedDrawJson,
+//               rl_translate_replay's draw line without "ev": material, fog, texture stage, transforms,
+//               clip plane, lights the draw added, depth state, camera type, alpha swizzle)
 //   textures  frame, every live tracked texture (id, hash, desc, origin, from, pending, obsolete,
 //             preview, registered): the fields of the texture replay driver's "tex" lines
+//   translate_frame  TranslateTap's frame (translatedFrameJson, rl_translate_replay's frame line without
+//             "ev": the frame's light list, fog, fog states, cameras, camera cut); presented frames only
 //   frame     frame, draws, captured
 //   device_destroy
 // Hashes are 16 upper-case hex digits in "textures" entries, as the texture replay prints them;
@@ -39,6 +46,7 @@
 #include <fuse/relight/capture/texture/external_image_registry.hpp>
 #include <fuse/relight/capture/texture/texture_tracker.hpp>
 #include <fuse/relight/scene/classify/classify_tap.hpp>
+#include <fuse/relight/scene/translate/translate_tap.hpp>
 #include <fuse/relight/tap/relight_tap.hpp>
 
 #include <cstdio>
@@ -67,6 +75,9 @@ struct CaptureDrawRecord {
     std::uint32_t drawInFrame = 0;
     capture::geometry::CapturedDrawPtr geometry;
     scene::DrawClassification classification;
+    scene::TranslatedDraw translation; ///< TranslateTap's draw (its classification is `classification`
+                                       ///< before the geometry categories are applied)
+    bool translated = false;           ///< TranslateTap reported the draw
     struct BoundTexture {
         std::uint32_t slot = 0; ///< tap sampler slot
         ResourceId texture = kNoResource;
@@ -90,11 +101,14 @@ public:
     /// may query the packages (textures(), geometry(), ...) but must not send events to the tap.
     using FrameSink = std::function<void(std::uint64_t frame, const std::vector<CaptureDrawRecord>& draws)>;
     void setFrameSink(FrameSink sink);
+    /// TranslateTap's summary of the last presented frame (lights, fog, cameras).
+    const scene::TranslatedFrame& lastTranslatedFrame() const { return m_translatedFrame; }
 
     capture::texture::TextureTracker& textures() { return m_textures; }
     capture::texture::ExternalImageRegistry& imageRegistry() { return m_registry; }
     capture::geometry::GeometryCapture& geometry() { return m_geometry; }
-    scene::ClassifyTap& classifier() { return m_classify; }
+    scene::ClassifyTap& classifier() { return m_translate.classifyTap(); }
+    scene::TranslateTap& translator() { return m_translate; }
 
     void onDeviceCreate(const DeviceEvent& e) override;
     void onDeviceReset(const DeviceEvent& e) override;
@@ -126,7 +140,7 @@ private:
     std::unique_ptr<IRelightTap> m_forward;
     capture::texture::ExternalImageRegistry m_registry;
     capture::texture::TextureTracker m_textures;
-    scene::ClassifyTap m_classify;
+    scene::TranslateTap m_translate;
     capture::geometry::GeometryCapture m_geometry;
 
     std::FILE* m_file = nullptr;
@@ -136,8 +150,10 @@ private:
     std::uint64_t m_drawCount = 0;
     std::uint32_t m_drawInFrame = 0;
     std::vector<CaptureDrawRecord> m_pending;
-    scene::ClassifiedDraw m_lastClassified;
-    bool m_haveClassified = false;
+    scene::TranslatedDraw m_lastTranslated;
+    bool m_haveTranslated = false;
+    scene::TranslatedFrame m_translatedFrame;
+    bool m_haveTranslatedFrame = false;
     capture::geometry::CapturedDrawPtr m_lastGeometry;
 };
 

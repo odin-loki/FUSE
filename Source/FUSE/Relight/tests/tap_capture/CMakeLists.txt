@@ -11,7 +11,10 @@
 #                              on the recorded event stream of the same run - geometry_replay (RL-1.3:
 #                              every hash component, asset key, legacy keys, counts, AABB, skinning),
 #                              the TextureTracker replay (RL-1.4: every texture's hashes per frame) and
-#                              rl_classify_replay (RL-1.2: every classification field). The replay tests
+#                              rl_classify_replay (RL-1.2: every classification field); for ff_lit, ff_alpha,
+#                              ff_fog and their D3D8 twins also rl_translate_replay (RL-1.5: every draw's
+#                              material, fog, transforms, clip plane, lights, camera, and every frame's
+#                              light list, fog and cameras). The replay tests
 #                              (rl_capture_geometry_*, rl_capture_texture_*, rl_classify_capture_*) stay
 #                              the oracles' own checks. Skips (77) without Wine / Xvfb.
 
@@ -32,7 +35,7 @@ find_package(Python3 COMPONENTS Interpreter QUIET)
 if(NOT Python3_Interpreter_FOUND)
     return()
 endif()
-foreach(_tool fuse_relight_geometry_replay fuse_relight_capture_texture_tests rl_classify_replay)
+foreach(_tool fuse_relight_geometry_replay fuse_relight_capture_texture_tests rl_classify_replay rl_translate_replay)
     if(NOT TARGET ${_tool})
         message(FATAL_ERROR "rl_capture_live needs the replay tool ${_tool}")
     endif()
@@ -53,9 +56,15 @@ set(_rl_live_apps
     d3d8_ff_triangle d3d8_ff_textured d3d8_ff_lit d3d8_ff_alpha d3d8_ff_fog d3d8_ff_skinned
     d3d8_ff_multi_instance d3d8_sky_ui_hud d3d8_stencil_shadow d3d8_rt_target d3d8_dynamic_buffers
     d3d8_texture_formats d3d8_shader_sm1)
+# The RL-1.5 apps: the live TranslateTap is compared with rl_translate_replay too.
+set(_rl_live_translate_apps ff_lit ff_alpha ff_fog d3d8_ff_lit d3d8_ff_alpha d3d8_ff_fog)
 foreach(_app IN LISTS _rl_live_apps)
     if(NOT TARGET rl_app_${_app})
         continue()
+    endif()
+    set(_rl_live_translate "")
+    if(_app IN_LIST _rl_live_translate_apps)
+        set(_rl_live_translate --translate-replay "$<TARGET_FILE:rl_translate_replay>")
     endif()
     add_test(NAME rl_capture_live_${_app}
              COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/rl_capture_live.py"
@@ -66,6 +75,7 @@ foreach(_app IN LISTS _rl_live_apps)
                      --geometry-replay "$<TARGET_FILE:fuse_relight_geometry_replay>"
                      --texture-replay "$<TARGET_FILE:fuse_relight_capture_texture_tests>"
                      --classify-replay "$<TARGET_FILE:rl_classify_replay>"
+                     ${_rl_live_translate}
                      --emulator "${_rl_live_emulator}"
                      --out "${CMAKE_BINARY_DIR}/relight/capture_live/${_app}")
     set_tests_properties(rl_capture_live_${_app} PROPERTIES

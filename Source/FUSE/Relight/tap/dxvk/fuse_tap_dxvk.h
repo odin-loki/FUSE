@@ -40,6 +40,10 @@ namespace dxvk {
     static void BufferLock(D3D9DeviceEx* pDevice, D3D9CommonBuffer* pBuffer, UINT Offset, UINT Size, DWORD Flags);
     static void BufferUnlock(D3D9DeviceEx* pDevice, D3D9CommonBuffer* pBuffer);
 
+    // Fixed-function lights changed where Remix sets D3D9RtxFlag::DirtyLights (SetLight on an enabled
+    // light, LightEnable flipping the enable bit). Called only when the tap is on.
+    static void LightsChanged(D3D9DeviceEx* pDevice);
+
     // Draws (called only when the tap is on). Returns true when the tap decided Ignore: the
     // caller returns D3D_OK without drawing.
     static bool SkipDraw(D3D9DeviceEx* pDevice, DrawCall Call, D3DPRIMITIVETYPE PrimitiveType, UINT PrimitiveCount,

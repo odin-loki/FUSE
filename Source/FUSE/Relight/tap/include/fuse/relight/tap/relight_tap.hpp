@@ -29,7 +29,8 @@ namespace fuse::relight::tap {
 
 /// Bumped when an event struct or IRelightTap changes incompatibly.
 /// 2: TextureCopy carries the UpdateSurface extent and destination point.
-inline constexpr std::uint32_t kTapInterfaceVersion = 2;
+/// 3: DrawState carries the light / clip-plane change counters and the render-target alpha-swizzle mask.
+inline constexpr std::uint32_t kTapInterfaceVersion = 3;
 
 using ResourceId = std::uint32_t;
 inline constexpr ResourceId kNoResource = 0;
@@ -320,6 +321,21 @@ struct DrawState {
     const std::uint32_t* psConstB = nullptr;
     std::uint32_t psConstBCount = 0;
     bool softwareVertexProcessing = false;
+
+    /// Change counters (interface 3): Remix's D3D9RtxFlag::DirtyLights / DirtyClipPlanes as counters. A
+    /// counter advances on every event that sets the flag upstream; a consumer that keeps the value it last
+    /// acted on sees "changed since" as a different value (the flag set), and acts exactly where upstream
+    /// clears the flag. 0 = the producer does not track changes (consumers compare state instead).
+    /// lightsVersion: SetLight on an enabled light, LightEnable that flips a light's enable bit, device
+    ///   creation and reset (ResetState).
+    /// clipPlanesVersion: SetClipPlane changing an enabled plane, SetRenderState(D3DRS_CLIPPLANEENABLE),
+    ///   device creation and reset.
+    std::uint32_t lightsVersion = 0;
+    std::uint32_t clipPlanesVersion = 0;
+    /// Bit i: render target i's image view reads alpha as ONE (DXVK's hasAlphaSwizzle, Remix's
+    /// m_alphaSwizzleRTs). Meaningful when hasAlphaSwizzleMask; otherwise consumers derive it from the format.
+    std::uint32_t alphaSwizzleRenderTargets = 0;
+    bool hasAlphaSwizzleMask = false;
 };
 
 /// What DXVK does with the draw (plan §2.3). RayTracedPreserveRaster keeps the raster draw while

@@ -3,6 +3,7 @@
 
 #include <fuse/relight/capture/texture/texture_options.hpp>
 #include <fuse/relight/scene/classify/classify_options.hpp>
+#include <fuse/relight/scene/translate/translate_json.hpp>
 #include <fuse/relight/tap/device_tap.hpp>
 #include <fuse/relight/tap/recording_tap.hpp>
 
@@ -187,11 +188,15 @@ geo::GeometryCaptureConfig CaptureTap::wireGeometry(geo::GeometryCaptureConfig c
 CaptureTap::CaptureTap(CaptureTapConfig config)
     : m_forward(std::move(config.forward)),
       m_textures(config.texture, &m_registry),
-      m_classify(nullptr,
-                 [this](const scene::ClassifiedDraw& d) {
-                     m_lastClassified = d;
-                     m_haveClassified = true;
-                 }),
+      m_translate(nullptr,
+                  [this](const scene::TranslatedDraw& d) {
+                      m_lastTranslated = d;
+                      m_haveTranslated = true;
+                  },
+                  [this](const scene::TranslatedFrame& f) {
+                      m_translatedFrame = f;
+                      m_haveTranslatedFrame = true;
+                  }),
       m_geometry(wireGeometry(std::move(config.geometry))) {
     m_geometry.setDrawSink([this](const geo::CapturedDrawPtr& d) { m_lastGeometry = d; });
     if (!config.path.empty()) {
@@ -239,7 +244,7 @@ void CaptureTap::onDeviceCreate(const DeviceEvent& e) {
         m_forward->onDeviceCreate(e);
     }
     m_textures.onDeviceCreate(e);
-    m_classify.onDeviceCreate(e);
+    m_translate.onDeviceCreate(e);
     m_geometry.onDeviceCreate(e);
 }
 
@@ -249,7 +254,7 @@ void CaptureTap::onDeviceReset(const DeviceEvent& e) {
         m_forward->onDeviceReset(e);
     }
     m_textures.onDeviceReset(e);
-    m_classify.onDeviceReset(e);
+    m_translate.onDeviceReset(e);
     m_geometry.onDeviceReset(e);
 }
 
@@ -260,7 +265,7 @@ void CaptureTap::onDeviceDestroy() {
     }
     flushFrame(true);
     m_textures.onDeviceDestroy();
-    m_classify.onDeviceDestroy();
+    m_translate.onDeviceDestroy();
     m_geometry.onDeviceDestroy();
     writeLine(Obj().str("ev", "device_destroy").u("frame", m_frame).u("draws", m_drawCount).done());
     if (m_file) {
@@ -275,7 +280,7 @@ void CaptureTap::onTextureCreate(const TextureDesc& d) {
         m_forward->onTextureCreate(d);
     }
     m_textures.onTextureCreate(d);
-    m_classify.onTextureCreate(d);
+    m_translate.onTextureCreate(d);
     m_geometry.onTextureCreate(d);
 }
 
@@ -285,7 +290,7 @@ void CaptureTap::onTextureUpload(const TextureUpload& u) {
         m_forward->onTextureUpload(u);
     }
     m_textures.onTextureUpload(u);
-    m_classify.onTextureUpload(u);
+    m_translate.onTextureUpload(u);
     m_geometry.onTextureUpload(u);
 }
 
@@ -295,7 +300,7 @@ void CaptureTap::onTextureCopy(const TextureCopy& c) {
         m_forward->onTextureCopy(c);
     }
     m_textures.onTextureCopy(c);
-    m_classify.onTextureCopy(c);
+    m_translate.onTextureCopy(c);
     m_geometry.onTextureCopy(c);
 }
 
@@ -305,7 +310,7 @@ void CaptureTap::onTextureWriteLock(const TextureWriteLock& l) {
         m_forward->onTextureWriteLock(l);
     }
     m_textures.onTextureWriteLock(l);
-    m_classify.onTextureWriteLock(l);
+    m_translate.onTextureWriteLock(l);
     m_geometry.onTextureWriteLock(l);
 }
 
@@ -315,7 +320,7 @@ void CaptureTap::onImageDestroy(const ImageDestroy& d) {
         m_forward->onImageDestroy(d);
     }
     m_textures.onImageDestroy(d);
-    m_classify.onImageDestroy(d);
+    m_translate.onImageDestroy(d);
     m_geometry.onImageDestroy(d);
 }
 
@@ -325,7 +330,7 @@ void CaptureTap::onBufferCreate(const BufferDesc& d) {
         m_forward->onBufferCreate(d);
     }
     m_textures.onBufferCreate(d);
-    m_classify.onBufferCreate(d);
+    m_translate.onBufferCreate(d);
     m_geometry.onBufferCreate(d);
 }
 
@@ -335,7 +340,7 @@ void CaptureTap::onBufferWrite(const BufferWrite& w) {
         m_forward->onBufferWrite(w);
     }
     m_textures.onBufferWrite(w);
-    m_classify.onBufferWrite(w);
+    m_translate.onBufferWrite(w);
     m_geometry.onBufferWrite(w); // keeps the written bytes (GeometryCaptureConfig::shadowBuffers)
 }
 
@@ -345,14 +350,14 @@ void CaptureTap::onBufferDestroy(ResourceId id) {
         m_forward->onBufferDestroy(id);
     }
     m_textures.onBufferDestroy(id);
-    m_classify.onBufferDestroy(id);
+    m_translate.onBufferDestroy(id);
     m_geometry.onBufferDestroy(id);
 }
 
 void CaptureTap::syncClassifierTextures(const DrawState& state) {
     // The classifier reads Remix's texture hashes (DxvkImage::getHash): TextureTracker's, now that
     // it has flushed the managed textures this draw samples.
-    scene::D3DStateTracker& tracker = m_classify.tracker();
+    scene::D3DStateTracker& tracker = m_translate.tracker();
     auto sync = [&](ResourceId id) {
         if (id != kNoResource) {
             tracker.setTextureHash(id, m_textures.imageHash(id));
@@ -373,8 +378,8 @@ DrawDecision CaptureTap::onDraw(const DrawCall& call, const DrawState& state) {
     }
     m_textures.onDraw(call, state); // flushes (hashes) the managed textures the draw samples
     syncClassifierTextures(state);
-    m_haveClassified = false;
-    m_classify.onDraw(call, state);
+    m_haveTranslated = false;
+    m_translate.onDraw(call, state); // the classifier, then the fixed-function translation
     m_lastGeometry.reset();
     m_geometry.onDraw(call, state);
 
@@ -383,8 +388,10 @@ DrawDecision CaptureTap::onDraw(const DrawCall& call, const DrawState& state) {
     r.frame = m_frame;
     r.drawInFrame = m_drawInFrame++;
     r.geometry = std::move(m_lastGeometry);
-    if (m_haveClassified) {
-        r.classification = m_lastClassified.result;
+    if (m_haveTranslated) {
+        r.classification = m_lastTranslated.classification;
+        r.translation = std::move(m_lastTranslated);
+        r.translated = true;
     }
     for (std::uint32_t slot = 0; slot < kSamplerSlotCount; ++slot) {
         if (const ResourceId id = state.textures[slot]; id != kNoResource) {
@@ -406,7 +413,7 @@ void CaptureTap::onQueryBegin(const QueryEvent& q) {
     if (m_forward) {
         m_forward->onQueryBegin(q);
     }
-    m_classify.onQueryBegin(q);
+    m_translate.onQueryBegin(q);
 }
 
 void CaptureTap::onQueryEnd(const QueryEvent& q) {
@@ -414,7 +421,7 @@ void CaptureTap::onQueryEnd(const QueryEvent& q) {
     if (m_forward) {
         m_forward->onQueryEnd(q);
     }
-    m_classify.onQueryEnd(q);
+    m_translate.onQueryEnd(q);
 }
 
 void CaptureTap::onClear(const ClearEvent& c) {
@@ -422,7 +429,7 @@ void CaptureTap::onClear(const ClearEvent& c) {
     if (m_forward) {
         m_forward->onClear(c);
     }
-    m_classify.onClear(c);
+    m_translate.onClear(c);
 }
 
 void CaptureTap::onSetRenderTarget(const SetRenderTargetEvent& e) {
@@ -430,7 +437,7 @@ void CaptureTap::onSetRenderTarget(const SetRenderTargetEvent& e) {
     if (m_forward) {
         m_forward->onSetRenderTarget(e);
     }
-    m_classify.onSetRenderTarget(e);
+    m_translate.onSetRenderTarget(e);
 }
 
 void CaptureTap::onInjectPoint(const FrameEvent& f) {
@@ -438,7 +445,7 @@ void CaptureTap::onInjectPoint(const FrameEvent& f) {
     if (m_forward) {
         m_forward->onInjectPoint(f);
     }
-    m_classify.onInjectPoint(f);
+    m_translate.onInjectPoint(f);
 }
 
 void CaptureTap::onPresent(const FrameEvent& f) {
@@ -447,7 +454,8 @@ void CaptureTap::onPresent(const FrameEvent& f) {
         m_forward->onPresent(f);
     }
     m_textures.onPresent(f);
-    m_classify.onPresent(f);
+    m_haveTranslatedFrame = false;
+    m_translate.onPresent(f); // delivers the TranslatedFrame
     m_geometry.onPresent(f);
     flushFrame(false);
     ++m_frame;
@@ -493,6 +501,7 @@ void CaptureTap::flushFrame(bool final) {
                       .raw("geometry", r.geometry ? geometryJson(*r.geometry, m_geometry.config()) : "null")
                       .raw("textures", array(textures))
                       .raw("classification", classificationJson(r.classification))
+                      .raw("translation", r.translated ? scene::translatedDrawJson(r.translation) : "null")
                       .done());
     }
     if (final && m_pending.empty()) {
@@ -515,6 +524,9 @@ void CaptureTap::flushFrame(bool final) {
                            .done());
     }
     writeLine(Obj().str("ev", "textures").u("frame", m_frame).raw("textures", array(live)).done());
+    if (!final && m_haveTranslatedFrame) {
+        writeLine("{\"ev\":\"translate_frame\"," + scene::translatedFrameJson(m_translatedFrame).substr(1));
+    }
     writeLine(Obj()
                   .str("ev", "frame")
                   .u("frame", m_frame)

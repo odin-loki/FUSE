@@ -220,6 +220,14 @@ void testRecordingTap() {
         state.elements[0].type = 2;  // FLOAT3
         state.elements[0].usage = 0; // POSITION
         state.fvf = 0x002;
+        float clip[kClipPlaneCount][4] = {};
+        clip[1][1] = 1.0f;
+        clip[1][3] = -2.0f;
+        state.clipPlanes = clip;
+        state.lightsVersion = 3;
+        state.clipPlanesVersion = 5;
+        state.hasAlphaSwizzleMask = true;
+        state.alphaSwizzleRenderTargets = 1;
         CHECK(tap.onDraw(call, state) == DrawDecision::Raster);
         CHECK(tap.onDraw(call, state) == DrawDecision::Raster);
 
@@ -270,6 +278,7 @@ void testRecordingTap() {
             CHECK(contains(l, "\"primitive\":\"TRIANGLELIST\""));
             CHECK(contains(l, "\"type\":\"FLOAT3\",\"size\":12"));
             CHECK(contains(l, "\"fvf\":2"));
+            CHECK(contains(l, "\"lights_version\":3,\"clip_planes_version\":5"));
         }
         if (contains(l, "\"call\":\"DrawIndexedPrimitiveUP\"")) {
             CHECK(contains(l, "\"vertex_blob\":\"" + detail::sha256Hex(verts, sizeof verts) + "\""));
@@ -279,6 +288,8 @@ void testRecordingTap() {
         }
         if (contains(l, "\"ev\":\"state_block\"") && contains(l, "\"index\":0")) {
             CHECK(contains(l, "\"ZENABLE\":1"));
+            CHECK(contains(l, "\"clip_planes\":[[0,0,0,0],[0,1,0,-2],[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]]"));
+            CHECK(contains(l, "\"alpha_swizzle_rts\":1"));
             CHECK(contains(l, "\"vs_const_f\":[{\"register\":3,\"value\":[0,0.5,0,0]}]"));
         }
         if (contains(l, "\"ev\":\"clear\"")) {

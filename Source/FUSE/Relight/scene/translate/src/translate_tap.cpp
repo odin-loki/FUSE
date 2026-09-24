@@ -83,7 +83,10 @@ tap::DrawDecision TranslateTap::onDraw(const tap::DrawCall& call, const tap::Dra
 
     const D3DStateModel model = m_classify.tracker().buildModel(call, state);
     const FixedFunctionState ff = buildFixedFunctionState(state);
-    d.alphaSwizzle = model.renderTarget0.valid() && renderTargetHasAlphaSwizzle(model.renderTarget0.format);
+    // m_alphaSwizzleRTs & (1 << kRenderTargetIndex): DXVK's own mask when the producer has it.
+    d.alphaSwizzle = state.hasAlphaSwizzleMask
+                         ? (state.alphaSwizzleRenderTargets & 1u) != 0
+                         : model.renderTarget0.valid() && renderTargetHasAlphaSwizzle(model.renderTarget0.format);
 
     if (reachesMaterialTranslation(c)) {
         d.translated = true;
@@ -92,7 +95,24 @@ tap::DrawDecision TranslateTap::onDraw(const tap::DrawCall& call, const tap::Dra
         d.fog = setFogState(model);
         // processRenderState: transforms, clip plane, lights, then textures.
         d.transforms = processTransforms(model, ff, ClassifyOptions::useVertexCapture());
-        d.addedLights = m_lights.processDraw(state.lights, state.lightCount);
+        if (state.clipPlanesVersion != 0) {
+            // if (DirtyClipPlanes) { clear; find one truly enabled clip plane } - else keep the last one.
+            if (state.clipPlanesVersion != m_clipPlanesVersion) {
+                m_clipPlanesVersion = state.clipPlanesVersion;
+                m_enableClipPlane = d.transforms.enableClipPlane;
+                m_clipPlane = d.transforms.clipPlane;
+            }
+            d.transforms.enableClipPlane = m_enableClipPlane;
+            d.transforms.clipPlane = m_clipPlane;
+        }
+        if (state.lightsVersion != 0) {
+            // if (DirtyLights) { clear; addLights(enabled lights) }
+            const bool dirty = state.lightsVersion != m_lightsVersion;
+            m_lightsVersion = state.lightsVersion;
+            d.addedLights = m_lights.processDraw(state.lights, state.lightCount, dirty);
+        } else {
+            d.addedLights = m_lights.processDraw(state.lights, state.lightCount);
+        }
         d.stencilEnabled = model.rs(d3d::RS_STENCILENABLE) != 0;
         if (c.reason != ClassifyReason::ColorTextureWithoutHash) {
             const ColorTextureSelection sel = selectColorTextures(model);

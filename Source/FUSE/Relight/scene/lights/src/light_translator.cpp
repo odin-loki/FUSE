@@ -64,13 +64,32 @@ std::vector<LightRecord> LightTranslator::processDraw(const tap::Light* lights, 
     for (std::size_t i = 0; !dirty && i < enabled.size(); ++i) {
         dirty = !sameLight(enabled[i], m_lastEnabled[i]);
     }
-    std::vector<LightRecord> added;
     if (!dirty) {
-        return added;
+        return {};
     }
     m_lastEnabled = enabled;
     m_haveLastEnabled = true;
+    return addLights(enabled);
+}
 
+std::vector<LightRecord> LightTranslator::processDraw(const tap::Light* lights, std::uint32_t count, bool dirty) {
+    if (!dirty) {
+        return {};
+    }
+    std::vector<tap::Light> enabled;
+    for (std::uint32_t i = 0; lights && i < count; ++i) {
+        if (lights[i].enabled) {
+            enabled.push_back(lights[i]);
+        }
+    }
+    // Keep the fallback's snapshot current, in case a producer mixes tracked and untracked draws.
+    m_lastEnabled = enabled;
+    m_haveLastEnabled = true;
+    return addLights(enabled);
+}
+
+std::vector<LightRecord> LightTranslator::addLights(const std::vector<tap::Light>& enabled) {
+    std::vector<LightRecord> added;
     for (const tap::Light& light : enabled) {
         // SceneManager::addLight: LightData::tryCreate (skip malformed lights) -> toRtLight.
         std::optional<LightRecord> record = convertLegacyLight(light);

@@ -12,11 +12,17 @@
                  (decomposed here in double precision: within 1e-5; and the app's own camera annotation);
               2. the hand-written semantics in expectations/<scene>.json.
   selftest  the expectation files parse, and the reference and matchers catch seeded mismatches.
+  roundtrip the recording tap -> rl_translate_replay path on a synthetic session (clip planes, the light /
+            clip-plane change counters, the alpha-swizzle mask): `fuse_relight_translate_tests record` writes
+            the recorded stream and TranslateTap's in-process output; the replay of the stream must equal
+            that output line for line, and must use a clip plane.
 
   rl_translate_capture.py capture --exe app.exe --app ff_lit --d3d9 d3d9.dll --d3d8 d3d8.dll --runner run.sh
       --prefix-root DIR --replay rl_translate_replay.exe [--emulator 'wine-run.sh|prefix'] --expect DIR
       --hash-ref DIR --out DIR
   rl_translate_capture.py capture --from-run DIR ...   (reuse a recorded run: relight_tap.jsonl + <app>.json)
+  rl_translate_capture.py roundtrip --gen fuse_relight_translate_tests --replay rl_translate_replay
+      [--emulator 'wine-run.sh|prefix'] --out DIR
 
 Exit codes: 0 pass, 1 fail, 77 skip (no Wine / Xvfb).
 """
@@ -829,9 +835,54 @@ def cmd_selftest(args):
     return 0
 
 
+def cmd_roundtrip(args):
+    os.makedirs(args.out, exist_ok=True)
+    stream = os.path.join(args.out, "roundtrip_tap.jsonl")
+    expected = os.path.join(args.out, "roundtrip_expected.jsonl")
+    got_path = os.path.join(args.out, "roundtrip_replayed.jsonl")
+    emu = [p for p in args.emulator.split("|") if p] if args.emulator else []
+    proc = subprocess.run(emu + [args.gen, "record", stream, expected], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc.returncode != 0:
+        print(proc.stdout.decode(errors="replace").strip()[-4000:])
+        print("FAIL: roundtrip: the recording session exited with %d" % proc.returncode)
+        return 1
+    cmd = emu + [args.replay, "--stream", stream, "--out", got_path]
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc.returncode != 0 or not os.path.isfile(got_path):
+        print(proc.stdout.decode(errors="replace").strip()[-4000:])
+        print("FAIL: roundtrip: rl_translate_replay exited with %d" % proc.returncode)
+        return 1
+    want, got = read_stream(expected), read_stream(got_path)
+    rec = read_stream(stream)
+    errors = []
+    blocks = [e["state"] for e in rec if e["ev"] == "state_block"]
+    if not any(any(any(v != 0 for v in p) for p in b.get("clip_planes", [])) for b in blocks):
+        errors.append("the recorded stream has no non-zero clip plane")
+    if not all("lights_version" in e and "clip_planes_version" in e for e in rec if e["ev"] == "draw"):
+        errors.append("recorded draws lack the change counters")
+    if len(want) != len(got):
+        errors.append("in-process output has %d line(s), the replay %d" % (len(want), len(got)))
+    for i, (w, g) in enumerate(zip(want, got)):
+        if w != g:
+            keys = sorted(k for k in set(w) | set(g) if w.get(k) != g.get(k))
+            errors.append("line %d (%s frame %s): differs in %s" % (i, w.get("ev"), w.get("frame"), keys))
+    if not any(g.get("clip_plane") for g in got):
+        errors.append("no replayed draw uses a clip plane")
+    if errors:
+        print("FAIL: roundtrip: %d problem(s):" % len(errors))
+        for e in errors[:40]:
+            print("  " + e)
+        return 1
+    clipped = sum(1 for g in got if g.get("clip_plane"))
+    print("PASS: roundtrip: %d replayed line(s) equal TranslateTap in-process (%d draw(s) with a clip plane; "
+          "recorded clip planes, change counters and alpha-swizzle mask)" % (len(got), clipped))
+    return 0
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("mode", choices=["capture", "selftest"])
+    p.add_argument("mode", choices=["capture", "selftest", "roundtrip"])
+    p.add_argument("--gen")
     p.add_argument("--exe")
     p.add_argument("--app")
     p.add_argument("--d3d9")
@@ -840,11 +891,17 @@ def main():
     p.add_argument("--prefix-root")
     p.add_argument("--replay")
     p.add_argument("--emulator", default="")
-    p.add_argument("--expect", required=True)
-    p.add_argument("--hash-ref", required=True)
+    p.add_argument("--expect")
+    p.add_argument("--hash-ref")
     p.add_argument("--from-run")
     p.add_argument("--out")
     args = p.parse_args()
+    if args.mode == "roundtrip":
+        if not (args.gen and args.replay and args.out):
+            p.error("roundtrip needs --gen, --replay and --out")
+        return cmd_roundtrip(args)
+    if not (args.expect and args.hash_ref):
+        p.error("--expect and --hash-ref are required")
     if args.mode == "selftest":
         return cmd_selftest(args)
     if not args.from_run and not shutil.which("wine") and not shutil.which("wine64"):

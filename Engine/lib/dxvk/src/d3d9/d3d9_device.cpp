@@ -2223,6 +2223,10 @@ namespace dxvk {
     if (light.isEnabled)
       m_dirty.set(D3D9DeviceDirtyFlag::FFVertexData);
 
+    // FUSE-DXVK begin: RL-1.1-24 FUSE Relight tap: lights changed (SetLight on an enabled light)
+    if (unlikely(m_fuseTap) && light.isEnabled)
+      FuseTap::LightsChanged(this);
+    // FUSE-DXVK end
     return D3D_OK;
   }
 
@@ -2266,6 +2270,10 @@ namespace dxvk {
     light.isEnabled = bool(Enable);
 
     m_dirty.set(D3D9DeviceDirtyFlag::FFVertexData);
+    // FUSE-DXVK begin: RL-1.1-25 FUSE Relight tap: lights changed (LightEnable flipped the enable bit)
+    if (unlikely(m_fuseTap))
+      FuseTap::LightsChanged(this);
+    // FUSE-DXVK end
     return D3D_OK;
   }
 

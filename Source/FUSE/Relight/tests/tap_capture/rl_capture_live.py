@@ -17,10 +17,18 @@
    snapshot of that frame, for the frames the replay script snapshots before its synthetic
    flush-all of never-drawn managed textures). Draws whose bytes the sidecar cannot restore are compared on everything
    but geometry and counted.
+4. With --translate-replay (the RL-1.5 apps ff_lit, ff_alpha, ff_fog and their D3D8 twins): also replays the
+   stream through rl_translate_replay (TranslateTap: classifier + fixed-function translation, with the same
+   texture hashes as rl_classify_replay) and compares, on every draw, the live record's "translation"
+   (material, fog, texture stage, transforms, clip plane, lights added, depth state, camera, alpha swizzle)
+   with the replay's draw line, and, per presented frame, the live "translate_frame" (light list, fog,
+   fog states, cameras, camera cut) with the replay's frame line - exactly, as both print through
+   scene/translate/translate_json.hpp.
 
   rl_capture_live.py --exe app.exe --app ff_lit --d3d9 d3d9.dll --d3d8 d3d8.dll --runner run.sh
       --prefix-root DIR --geometry-replay geometry_replay.exe --texture-replay tests.exe
-      --classify-replay rl_classify_replay.exe [--emulator 'runner|prefix'] --out DIR
+      --classify-replay rl_classify_replay.exe [--translate-replay rl_translate_replay.exe]
+      [--emulator 'runner|prefix'] --out DIR
   rl_capture_live.py --from-run DIR ...   (reuse a run directory: relight_tap.jsonl, relight_capture.jsonl,
                                            <app>.json)
 Exit codes: 0 pass, 1 fail, 77 skip (no Wine / Xvfb).
@@ -125,6 +133,59 @@ def classify_oracle(args, stream_path, snaps, work):
     return read_jsonl(out_path)
 
 
+def translate_oracle(args, stream_path, work):
+    """rl_translate_replay's lines, with the texture hashes classify_oracle wrote."""
+    out_path = os.path.join(work, "translated.jsonl")
+    cmd = emulator(args) + [args.translate_replay, "--stream", stream_path, "--texture-hashes",
+                            os.path.join(work, "texture_hashes.txt"), "--out", out_path]
+    rc, out, err = run_tool(cmd)
+    if rc != 0 or not os.path.isfile(out_path):
+        raise RuntimeError("rl_translate_replay exited with %d: %s" % (rc, (out + err)[-2000:]))
+    return read_jsonl(out_path)
+
+
+def compare_translation(capture, translated):
+    """Live TranslateTap (the capture record) vs rl_translate_replay: (errors, counts)."""
+    errors = []
+    draws = [r for r in capture if r["ev"] == "draw"]
+    live_frames = {r["frame"]: r for r in capture if r["ev"] == "translate_frame"}
+    rdraws = [t for t in translated if t["ev"] == "draw"]
+    rframes = {t["frame"]: t for t in translated if t["ev"] == "frame"}
+    counts = dict(draws=0, translated=0, lights=0, frames=0, frame_lights=0)
+    if len(rdraws) != len(draws):
+        errors.append("live capture has %d draws, rl_translate_replay %d" % (len(draws), len(rdraws)))
+    for d, r in zip(draws, rdraws):
+        where = "draw %d (frame %d, #%d)" % (d["n"], d["frame"], d["di"])
+        live = d.get("translation")
+        if live is None:
+            errors.append("%s: no translation in the live record" % where)
+            continue
+        want = {k: v for k, v in r.items() if k != "ev"}
+        if live != want:
+            keys = sorted(k for k in set(live) | set(want) if live.get(k) != want.get(k))
+            errors.append("%s: translation differs in %s" % (where, ", ".join(keys)))
+            for k in keys[:3]:
+                errors.append("    %s: replay %s, live %s" % (k, json.dumps(want.get(k))[:300], json.dumps(live.get(k))[:300]))
+        counts["draws"] += 1
+        counts["translated"] += 1 if live.get("translated") else 0
+        counts["lights"] += len(live.get("lights", []))
+    if not live_frames:
+        errors.append("the live capture recorded no translate_frame")
+    for frame, lf in sorted(live_frames.items()):
+        rf = rframes.get(frame)
+        if rf is None:
+            errors.append("frame %d: no frame line from rl_translate_replay" % frame)
+            continue
+        want = {k: v for k, v in rf.items() if k != "ev"}
+        got = {k: v for k, v in lf.items() if k != "ev"}
+        if got != want:
+            keys = sorted(k for k in set(got) | set(want) if got.get(k) != want.get(k))
+            errors.append("frame %d: translate_frame differs in %s" % (frame, ", ".join(keys)))
+        counts["frames"] += 1
+        counts["frame_lights"] += len(lf.get("lights", []))
+    return errors, counts
+
+
 # ---- comparison ---------------------------------------------------------------------------------------
 
 def jstr(v):
@@ -223,7 +284,13 @@ def check(args, run_dir, work):
     geo, resolved = geometry_oracle(args, lines, sidecar, work)
     snaps, tex_errors = texture_oracle(args, stream, sidecar, work)
     classified = classify_oracle(args, os.path.abspath(stream_path), snaps, work)
-    return compare(capture, geo, resolved, snaps, tex_errors, classified)
+    errors, counts = compare(capture, geo, resolved, snaps, tex_errors, classified)
+    if args.translate_replay:
+        translated = translate_oracle(args, os.path.abspath(stream_path), work)
+        terr, tcounts = compare_translation(capture, translated)
+        errors.extend("translation: " + e for e in terr)
+        counts["translate"] = tcounts
+    return errors, counts
 
 
 def main():
@@ -237,6 +304,7 @@ def main():
     p.add_argument("--geometry-replay", required=True)
     p.add_argument("--texture-replay", required=True)
     p.add_argument("--classify-replay", required=True)
+    p.add_argument("--translate-replay")
     p.add_argument("--emulator", default="")
     p.add_argument("--from-run")
     p.add_argument("--out", required=True)
@@ -275,6 +343,11 @@ def main():
           "classification %d; %d bound-texture hashes), texture state of %d frame(s) (%d entries)"
           % (args.app, c["draws"], c["geometry"], c["captured"], c["unresolved"], c["classified"], c["textures"],
              c["frames"], c["texture_entries"]))
+    if "translate" in c:
+        t = c["translate"]
+        print("PASS: %s: live TranslateTap == rl_translate_replay on %d draws (%d translated, %d light(s) added) and "
+              "%d frame(s) (%d frame light(s))" % (args.app, t["draws"], t["translated"], t["lights"], t["frames"],
+                                                   t["frame_lights"]))
     return 0
 
 

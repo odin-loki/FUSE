@@ -34,6 +34,14 @@
 //     the light step; texture-stage state follows the colour texture choice;
 //   - committed draws (CommitToRayTracing) get a camera type and feed the frame's fog discovery.
 // Frames end at Present: the sink receives a TranslatedFrame (lights, fog, cameras) first.
+//
+// Lights and the clip plane follow processRenderState's DirtyLights / DirtyClipPlanes flags when the tap
+// producer tracks them (tap::DrawState::lightsVersion / clipPlanesVersion non-zero): a translated draw
+// whose counter differs from the one last acted on re-sends the lights / recomputes the clip plane, and
+// the clip plane of the other translated draws is the last one computed (Remix keeps it in the active draw
+// call state). Producers that do not track them (counter 0) fall back to LightTranslator's state
+// comparison and a clip plane computed per draw. The render-target alpha swizzle is DXVK's mask when the
+// producer reports it (hasAlphaSwizzleMask), else derived from render target 0's format.
 #pragma once
 
 #include <fuse/relight/scene/camera/camera_manager.hpp>
@@ -41,6 +49,7 @@
 #include <fuse/relight/scene/lights/light_translator.hpp>
 #include <fuse/relight/scene/translate/ff_translate.hpp>
 
+#include <array>
 #include <functional>
 #include <vector>
 
@@ -139,6 +148,11 @@ private:
     CameraManager m_cameras;
     FogTracker m_fog;
     std::uint64_t m_frame = 0;
+    // The DirtyLights / DirtyClipPlanes emulation: the counter values last acted on (0: none yet).
+    std::uint32_t m_lightsVersion = 0;
+    std::uint32_t m_clipPlanesVersion = 0;
+    bool m_enableClipPlane = false;
+    std::array<float, 4> m_clipPlane{0.f, 0.f, 0.f, 0.f};
 };
 
 /// The classify reasons after which Remix has already run setLegacyMaterialState / processRenderState.

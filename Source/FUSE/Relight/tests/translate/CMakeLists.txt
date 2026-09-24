@@ -11,6 +11,10 @@
 #                                 shear), jitter detection, camera classification and camera cuts.
 #   rl_translate_expect_selftest  (relight) the expectation files parse; the reference and the matcher catch
 #                                 seeded mismatches.
+#   rl_translate_replay_roundtrip (relight;gate) the recording tap -> rl_translate_replay path: a synthetic
+#                                 session with clip planes, the light / clip-plane change counters and the
+#                                 alpha-swizzle mask, recorded through a RecordingTap and replayed, equals
+#                                 TranslateTap's in-process output line for line.
 #   rl_translate_capture_<app>    (relight;wine;capture) the RL-0.4 app through our d3d9.dll / d3d8.dll with
 #                                 the recording tap; the stream replayed through TranslateTap
 #                                 (rl_translate_replay) must match, draw by draw and frame by frame, an
@@ -54,6 +58,14 @@ add_test(NAME rl_translate_expect_selftest
          COMMAND "${Python3_EXECUTABLE}" "${_rl_tr_script}" selftest --expect "${_rl_tr_expect}"
                  --hash-ref "${_rl_tr_repo}/Tools/FUSE/Relight")
 set_tests_properties(rl_translate_expect_selftest PROPERTIES LABELS "relight" TIMEOUT 120)
+
+# In a MinGW tree both executables are PE: the driver runs them through the emulator ('|'-joined).
+string(REPLACE ";" "|" _rl_tr_rt_emulator "${CMAKE_CROSSCOMPILING_EMULATOR}")
+add_test(NAME rl_translate_replay_roundtrip
+         COMMAND "${Python3_EXECUTABLE}" "${_rl_tr_script}" roundtrip
+                 --gen "$<TARGET_FILE:fuse_relight_translate_tests>" --replay "$<TARGET_FILE:rl_translate_replay>"
+                 --emulator "${_rl_tr_rt_emulator}" --out "${CMAKE_CURRENT_BINARY_DIR}/roundtrip")
+set_tests_properties(rl_translate_replay_roundtrip PROPERTIES LABELS "gate;relight" TIMEOUT 300)
 
 if(NOT (TARGET relight_d3d9 AND TARGET rl_apps AND CMAKE_CROSSCOMPILING))
     return()

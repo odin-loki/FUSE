@@ -93,6 +93,12 @@ public:
     std::map<std::pair<const D3D9CommonTexture*, UINT>, TextureLockEntry> locks;
     std::vector<rt::Light> lights;
     uint64_t frame = 0;
+    // DrawState change counters (never 0: 0 means "not tracked"). lightsVersion advances in LightsChanged
+    // (patches RL-1.1-24/25); clipPlanesVersion when DXVK's own ClipPlanes dirty flag is set at a draw,
+    // i.e. SetClipPlane / SetRenderState(CLIPPLANEENABLE) / ResetState since DXVK's last PrepareDraw.
+    // Both advance at device creation and reset (Remix's ResetState dirties both).
+    uint32_t lightsVersion = 1;
+    uint32_t clipPlanesVersion = 1;
 
     rt::ResourceId textureId(D3D9CommonTexture* t);
     rt::ResourceId bufferId(D3D9CommonBuffer* b);
@@ -247,6 +253,9 @@ void FuseTap::SwapChainReset(D3D9DeviceEx* dev, const D3DPRESENT_PARAMETERS* pp)
         return;
     }
     FuseTapContext* ctx = dev->m_fuseTap;
+    // Reset runs ResetState, which dirties the lights and clip planes upstream.
+    ++ctx->lightsVersion;
+    ++ctx->clipPlanesVersion;
     ctx->tap->onDeviceReset(ctx->deviceEvent(dev, pp));
 }
 
@@ -444,6 +453,14 @@ void FuseTap::BufferUnlock(D3D9DeviceEx* dev, D3D9CommonBuffer* b) {
     }
 }
 
+void FuseTap::LightsChanged(D3D9DeviceEx* dev) {
+    if (FuseTapContext* ctx = dev->m_fuseTap) {
+        if (++ctx->lightsVersion == 0) {
+            ctx->lightsVersion = 1; // 0 is "not tracked"
+        }
+    }
+}
+
 // ---- draws -----------------------------------------------------------------------------------------
 
 namespace {
@@ -605,6 +622,17 @@ bool FuseTap::SkipDraw(D3D9DeviceEx* dev, DrawCall call, D3DPRIMITIVETYPE type, 
                               st.viewport.MaxZ};
     s.scissor = rt::Rect{st.scissorRect.left, st.scissorRect.top, st.scissorRect.right, st.scissorRect.bottom};
     s.clipPlanes = reinterpret_cast<const float(*)[4]>(st.clipPlanes.get().data());
+    // DXVK sets its ClipPlanes dirty flag exactly where Remix sets D3D9RtxFlag::DirtyClipPlanes and clears
+    // it in the PrepareDraw that follows this hook, so a set flag here means "changed since the last
+    // draw". (A draw the tap skipped (Ignore) leaves the flag set: the next draw advances the counter
+    // again, which only makes a consumer recompute from unchanged state.)
+    if (dev->m_dirty.test(D3D9DeviceDirtyFlag::ClipPlanes) && ++ctx->clipPlanesVersion == 0) {
+        ctx->clipPlanesVersion = 1;
+    }
+    s.lightsVersion = ctx->lightsVersion;
+    s.clipPlanesVersion = ctx->clipPlanesVersion;
+    s.alphaSwizzleRenderTargets = dev->m_rtSlotTracking.hasAlphaSwizzle;
+    s.hasAlphaSwizzleMask = true;
     for (uint32_t i = 0; i < rt::kRenderTargetCount; ++i) {
         s.renderTargets[i] = st.renderTargets[i] != nullptr ? ctx->textureId(st.renderTargets[i]->GetCommonTexture())
                                                             : rt::kNoResource;

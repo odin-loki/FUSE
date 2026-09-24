@@ -8,7 +8,9 @@
 #   fuse_relight_scene_translate  setLegacyMaterialState / setTextureStageState / setFogState /
 #                                 processRenderState transforms, the rtx.legacyMaterial.* and related
 #                                 options, and TranslateTap (an IRelightTap running RL-1.2's classifier and
-#                                 all of the above per draw). Pure CPU logic: native and MinGW.
+#                                 all of the above per draw), and its JSON spelling (translate_json.hpp,
+#                                 shared by rl_translate_replay and the capture tap's record). Pure CPU
+#                                 logic: native and MinGW.
 # Tests: ../../tests/translate (rl_translate_unit, rl_lights_unit, rl_camera_kat, rl_translate_expect_selftest;
 # Wine: rl_translate_capture_<app>).
 
@@ -21,6 +23,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../camera ${CMAKE_CURRENT_BINARY_DI
 
 add_library(fuse_relight_scene_translate STATIC
     src/ff_translate.cpp
+    src/translate_json.cpp
     src/translate_tap.cpp
 )
 target_include_directories(fuse_relight_scene_translate PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

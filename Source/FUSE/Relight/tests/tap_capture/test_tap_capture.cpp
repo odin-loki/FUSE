@@ -3,10 +3,13 @@
 // One synthetic event stream (textures: managed upload, UpdateSurface full / partial rect, render
 // target back buffer; buffers: indexed u16 draw, UP draw, a DISCARD rewrite; two frames) is fed to
 // CaptureTap and, separately, to the packages the replay tools drive (TextureTracker,
-// GeometryCapture with its default texture facts, ClassifyTap with the tracker's final hashes set
-// up front, as rl_classify_replay does). Every draw's asset key and geometry hashes, bound texture
-// hashes and classification must be equal; the capture record must hold the documented lines;
+// GeometryCapture with its default texture facts, TranslateTap - the classifier + fixed-function
+// translation - with the tracker's final hashes set up front, as rl_classify_replay and
+// rl_translate_replay do). Every draw's asset key and geometry hashes, bound texture hashes,
+// classification and translation (material, fog, transforms, lights, camera), and every frame's
+// translation summary, must be equal; the capture record must hold the documented lines;
 // createTapForDevice must build every mode.
+#include <fuse/relight/scene/translate/translate_json.hpp>
 #include <fuse/relight/tap/capture_tap.hpp>
 #include <fuse/relight/tap/device_tap.hpp>
 #include <fuse/relight/tap/null_tap.hpp>
@@ -253,7 +256,8 @@ struct Separate {
     std::unique_ptr<tex::TextureTracker> textures;
     std::map<ResourceId, std::uint64_t> hashes; ///< the tracker's hashes before destruction
     std::unique_ptr<geo::GeometryCapture> geometry;
-    std::vector<scene::ClassifiedDraw> classified;
+    std::vector<scene::TranslatedDraw> classified;
+    std::vector<scene::TranslatedFrame> translatedFrames;
 
     explicit Separate(bool mapped) {
         tex::TextureTrackerConfig tc;
@@ -285,7 +289,8 @@ struct Separate {
                 hashes[x.desc.id] = x.imageHash;
             }
         }
-        scene::ClassifyTap classify(nullptr, [this](const scene::ClassifiedDraw& d) { classified.push_back(d); });
+        scene::TranslateTap classify(nullptr, [this](const scene::TranslatedDraw& d) { classified.push_back(d); },
+                                     [this](const scene::TranslatedFrame& f) { translatedFrames.push_back(f); });
         for (const auto& [id, h] : hashes) {
             classify.tracker().setTextureHash(id, h);
         }
@@ -311,6 +316,7 @@ void testLiveEqualsSeparate(bool mapped) {
     std::atomic<std::uint32_t> counter{0};
     std::vector<CaptureDrawRecord> live;
     std::vector<std::uint64_t> frames;
+    std::vector<std::string> liveFrames; ///< translatedFrameJson of each presented frame
     {
         CaptureTapConfig config;
         config.path = path;
@@ -320,6 +326,9 @@ void testLiveEqualsSeparate(bool mapped) {
         tap.setFrameSink([&](std::uint64_t frame, const std::vector<CaptureDrawRecord>& draws) {
             frames.push_back(frame);
             live.insert(live.end(), draws.begin(), draws.end());
+            if (tap.lastTranslatedFrame().frame == frame) {
+                liveFrames.push_back(scene::translatedFrameJson(tap.lastTranslatedFrame()));
+            }
             if (frame == 0) {
                 // UpdateSurface extent (tap interface 2): the 4x4 rect inherits, the 2x4 one does not.
                 CHECK(tap.textures().imageHash(4) != 0);
@@ -359,8 +368,10 @@ void testLiveEqualsSeparate(bool mapped) {
             }
         }
         CHECK(r.geometry->texcoord.texcoordIndex == geometry[i]->texcoord.texcoordIndex);
-        CHECK(sameClassification(r.classification, sep.classified[i].result));
+        CHECK(sameClassification(r.classification, sep.classified[i].classification));
         CHECK(r.frame == sep.classified[i].frame && r.drawInFrame == sep.classified[i].indexInFrame);
+        CHECK(r.translated);
+        CHECK(scene::translatedDrawJson(r.translation) == scene::translatedDrawJson(sep.classified[i]));
         CHECK(r.textures.size() == 1);
         for (const CaptureDrawRecord::BoundTexture& t : r.textures) {
             CHECK(t.slot == 0);
@@ -383,6 +394,23 @@ void testLiveEqualsSeparate(bool mapped) {
     CHECK(countPrefix(lines, "{\"ev\":\"textures\"") == 2);
     CHECK(countPrefix(lines, "{\"ev\":\"frame\"") == 2);
     CHECK(countPrefix(lines, "{\"ev\":\"device_destroy\"") == 1);
+    // One translate_frame line per presented frame, equal to the separate TranslateTap's frames.
+    std::size_t presented = 0;
+    for (const std::string& l : lines) {
+        presented += l.find("\"ev\":\"frame\"") != std::string::npos && l.find("\"presented\":true") != std::string::npos;
+    }
+    CHECK(presented >= 1);
+    CHECK(static_cast<std::size_t>(countPrefix(lines, "{\"ev\":\"translate_frame\"")) == presented);
+    CHECK(liveFrames.size() == presented && sep.translatedFrames.size() >= presented);
+    for (std::size_t f = 0; f < liveFrames.size() && f < sep.translatedFrames.size(); ++f) {
+        CHECK(liveFrames[f] == scene::translatedFrameJson(sep.translatedFrames[f]));
+    }
+    bool translatedLine = false;
+    for (const std::string& l : lines) {
+        translatedLine = translatedLine || (l.find("\"translation\":{\"frame\":") != std::string::npos &&
+                                            l.find("\"material\":{") != std::string::npos);
+    }
+    CHECK(translatedLine);
     bool keyed = false;
     for (const std::string& l : lines) {
         keyed = keyed || (l.find("\"key\":\"") != std::string::npos && l.find("\"classification\":{") != std::string::npos);

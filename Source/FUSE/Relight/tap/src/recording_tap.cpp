@@ -467,6 +467,17 @@ std::size_t RecordingTap::stateBlock(const DrawState& s) {
         j.raw("render_targets", Json::array(rts));
     }
     j.raw("depth_stencil", idOrNull(s.depthStencil));
+    {
+        // D3D9 user clip planes (SetClipPlane), all six; zeros when the producer has none.
+        std::vector<std::string> planes;
+        static const float kZero[4] = {0, 0, 0, 0};
+        for (std::uint32_t p = 0; p < kClipPlaneCount; ++p) {
+            planes.push_back(Json::floats(s.clipPlanes ? s.clipPlanes[p] : kZero, 4));
+        }
+        j.raw("clip_planes", Json::array(planes));
+    }
+    j.raw("alpha_swizzle_rts",
+          s.hasAlphaSwizzleMask ? std::to_string(s.alphaSwizzleRenderTargets) : std::string("null"));
     // Shader constants: non-zero registers only (a missing register reads as zero).
     auto constF = [](const float (*v)[4], std::uint32_t n) {
         std::vector<std::string> out;
@@ -609,6 +620,9 @@ DrawDecision RecordingTap::onDraw(const DrawCall& c, const DrawState& s) {
     j.raw("vertex_shader", shaderJson(s.vertexShader));
     j.raw("pixel_shader", shaderJson(s.pixelShader));
     j.u("state", block);
+    // Change counters (tap interface 3); 0 = not tracked by the producer.
+    j.u("lights_version", s.lightsVersion);
+    j.u("clip_planes_version", s.clipPlanesVersion);
     j.str("decision", "raster");
     writeLine(j.done());
     return DrawDecision::Raster;

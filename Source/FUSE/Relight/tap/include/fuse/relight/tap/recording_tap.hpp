@@ -13,11 +13,13 @@
 //                   bytes the application wrote; D3DLOCK_DISCARD zeroes the shadow first, as the
 //                   RL-0.4 sidecars model it), buffer_destroy
 //   state_block     a deduplicated draw state (render / stage / sampler states by name, textures,
-//                   lights, material, viewport, targets, non-zero shader constants), written once
-//                   before the first draw that references it
+//                   lights, material, viewport, targets, the six clip planes, the render-target
+//                   alpha-swizzle mask or null, non-zero shader constants), written once before the
+//                   first draw that references it
 //   draw            call arguments, vertex elements, stream / index bindings with the shadow
 //                   sha256 of each bound buffer, UP data sha256, non-identity transforms,
-//                   shaders (id, version, bytecode sha256), state block index, decision
+//                   shaders (id, version, bytecode sha256), state block index, the light and
+//                   clip-plane change counters (lights_version, clip_planes_version), decision
 //   clear, set_render_target, query_begin, query_end, inject_point, present
 // Every line carries "frame" (presents so far). Content is hashed, never dumped.
 #pragma once

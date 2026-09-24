@@ -31,8 +31,10 @@
 // same light hash within a frame. Light replacement (mods) and the cross-frame light lifecycle
 // (similarity matching, sleeping, garbage collection) belong to the replacement and render packages.
 //
-// FUSE change: the tap reports state, not calls, so "dirty" is a change of the enabled lights' D3D9
-// data since the last processed draw, plus the first processed draw of each frame.
+// Dirty: when the tap producer tracks light changes (tap::DrawState::lightsVersion, the DXVK hooks
+// RL-1.1-24/25), the caller passes Remix's DirtyLights flag itself (processDraw with `dirty`). FUSE
+// fallback for producers that report state only: "dirty" is a change of the enabled lights' D3D9 data
+// since the last processed draw, plus the first processed draw of each frame.
 #pragma once
 
 #include <fuse/relight/scene/lights/legacy_light.hpp>
@@ -48,6 +50,9 @@ public:
     /// set, with its enable bit). Returns the lights this draw added to the frame (empty when the lights
     /// were not dirty or every enabled light was already added this frame).
     std::vector<LightRecord> processDraw(const tap::Light* lights, std::uint32_t count);
+    /// As above with Remix's DirtyLights flag given by the caller: re-sends the enabled lights when `dirty`,
+    /// adds nothing otherwise (the content-comparison fallback is not used).
+    std::vector<LightRecord> processDraw(const tap::Light* lights, std::uint32_t count, bool dirty);
 
     /// End of frame (Present): the next processed draw re-sends the lights.
     void endFrame();
@@ -58,6 +63,9 @@ public:
     std::uint32_t frameRejected() const { return m_frameRejected; }
 
 private:
+    /// SceneManager::addLight for each enabled light: conversion, type filter, "off" and same-frame rules.
+    std::vector<LightRecord> addLights(const std::vector<tap::Light>& enabled);
+
     std::vector<tap::Light> m_lastEnabled;
     bool m_haveLastEnabled = false;
     std::vector<LightRecord> m_frameLights;

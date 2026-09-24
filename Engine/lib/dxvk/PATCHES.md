@@ -9,7 +9,7 @@ The plan's patch budget is at most 30 marked blocks (§2.4). An edited file gets
 
 ## Patch list
 
-Each patch has an ID (`RL-x.y-NN`), which is the first token after `FUSE-DXVK begin:`. Block count: 24 of 30 (RL-0.2-01, RL-1.1-01 to -23; one block each). `VERSION` pins every patched file twice:
+Each patch has an ID (`RL-x.y-NN`), which is the first token after `FUSE-DXVK begin:`. Block count: 26 of 30 (RL-0.2-01, RL-1.1-01 to -25; one block each). `VERSION` pins every patched file twice:
 - `sha256:` is the file as vendored;
 - `upstream_sha256:` is the file with its marked blocks removed, which must equal the upstream file.
 
@@ -41,10 +41,20 @@ Each patch has an ID (`RL-x.y-NN`), which is the first token after `FUSE-DXVK be
 | RL-1.1-21 | `src/d3d9/d3d9_common_buffer.cpp` (`D3D9CommonBuffer` constructor, end) | `onBufferCreate`. There is no destructor hook (patch budget): a buffer created at a known address reports `onBufferDestroy` for the old id first. | RL-1.1 | FUSE-only. |
 | RL-1.1-22 | `src/d3d9/d3d9_swapchain.cpp` (`D3D9SwapChainEx::Present`) | `onInjectPoint` (Present until RL-1.2's classifier finds the first UI draw) and `onPresent`; frame boundary. | RL-1.1 | FUSE-only. |
 | RL-1.1-23 | `src/d3d9/d3d9_query.cpp` (`D3D9Query::Issue`) | `onQueryBegin` / `onQueryEnd`. | RL-1.1 | FUSE-only. |
+| RL-1.1-24 | `src/d3d9/d3d9_device.cpp` (`SetLight`, end) | Lights changed (`FuseTap::LightsChanged`) when the light set is enabled: advances `DrawState::lightsVersion` (tap interface 3), where dxvk-remix sets `D3D9RtxFlag::DirtyLights`, so the translation re-sends the game lights exactly when upstream does rather than on every frame. | RL-1.5 follow-up (RL-1.1 tap) | FUSE-only (dxvk-remix has the equivalent `m_rtx.SetDirty(DirtyLights)` edit). |
+| RL-1.1-25 | `src/d3d9/d3d9_device.cpp` (`LightEnable`, after the enable bit changes) | As RL-1.1-24, when `LightEnable` flips a light's enable bit (the early return for an unchanged bit comes first, as upstream). | RL-1.5 follow-up (RL-1.1 tap) | FUSE-only (as RL-1.1-24). |
 
 ## Capture tap mode (no source edits)
 
-`relight.tap.mode = capture` (RL-1.1, `Source/FUSE/Relight/tap/capture`) runs the RL-1.2 classifier, RL-1.3 geometry capture and RL-1.4 texture tracking inside d3d9.dll on the events of the hooks above, and writes a per-frame capture record. It adds no marked block: the tap is chosen once, at the RL-1.1-06 attach, so a device whose mode is not `capture` runs no capture code, and with the tap off every hook stays the one null-pointer test. The UpdateSurface extent comes from the arguments RL-1.1-07 already passes. `fuse_relight_tap_capture` is linked into `relight_d3d9` link-only, like `fuse_relight_tap`. The block count stays 24 of 30.
+`relight.tap.mode = capture` (RL-1.1, `Source/FUSE/Relight/tap/capture`) runs the RL-1.2 classifier, RL-1.3 geometry capture, RL-1.4 texture tracking and the RL-1.5 fixed-function translation (TranslateTap: material, fog, transforms / clip plane, game lights, camera) inside d3d9.dll on the events of the hooks above, and writes a per-frame capture record. It adds no marked block: the tap is chosen once, at the RL-1.1-06 attach, so a device whose mode is not `capture` runs no capture code, and with the tap off every hook stays the one null-pointer test. The UpdateSurface extent comes from the arguments RL-1.1-07 already passes. `fuse_relight_tap_capture` is linked into `relight_d3d9` link-only, like `fuse_relight_tap`. The capture mode itself adds no block; the translation's change tracking below adds two (RL-1.1-24/25).
+
+## Draw-state change tracking (tap interface 3)
+
+`DrawState` carries two change counters and the render-target alpha-swizzle mask, so the RL-1.5 translation follows processRenderState's `DirtyLights` / `DirtyClipPlanes` flags and `setLegacyMaterialState`'s `m_alphaSwizzleRTs` instead of re-deriving them every frame:
+
+- `lightsVersion`: RL-1.1-24 / RL-1.1-25 above, plus device creation and `Reset` (the RL-1.1-06 hook; upstream's `ResetState` dirties the lights). Two marked blocks; DXVK tracks nothing light-specific that the draw hooks could read.
+- `clipPlanesVersion`: no source edit. DXVK sets its own `D3D9DeviceDirtyFlag::ClipPlanes` in exactly the places dxvk-remix sets `DirtyClipPlanes` (`SetClipPlane` changing an enabled plane, `SetRenderState(D3DRS_CLIPPLANEENABLE)`, `ResetState`) and clears it in the `PrepareDraw` after the draw hooks (RL-1.1-11 to -14). The dispatcher reads the flag in the draw hook, so a set flag means "changed since the last draw".
+- `alphaSwizzleRenderTargets`: no source edit. The draw hooks read `m_rtSlotTracking.hasAlphaSwizzle` (DXVK's mask of render targets whose view maps alpha to ONE), through the RL-1.1-04 friend access.
 
 ## Build notes (no source edits)
 
