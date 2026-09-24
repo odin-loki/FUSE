@@ -29,6 +29,8 @@ constexpr u64 kStageBottomOfPipe = 0x2000;
 constexpr u64 kStageHost = 0x4000;
 constexpr u64 kStageAllGraphics = 0x8000;
 constexpr u64 kStageAllCommands = 0x10000;
+constexpr u64 kStageTaskShader = 0x80000;  ///< VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT (WP-5.1)
+constexpr u64 kStageMeshShader = 0x100000; ///< VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT (WP-5.1)
 // VkAccessFlagBits2
 constexpr u64 kAccessIndirectCommandRead = 0x1;
 constexpr u64 kAccessIndexRead = 0x2;

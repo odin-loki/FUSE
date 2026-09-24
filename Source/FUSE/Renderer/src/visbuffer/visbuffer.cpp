@@ -448,6 +448,10 @@ u32 VisBuffer::depthSampledHandle() const {
     return m_targets.depthSampled.isValid() ? m_desc.bindless->shaderHandle(m_targets.depthSampled) : 0u;
 }
 
+u32 VisBuffer::target64Handle() const {
+    return m_targets.target64.isValid() ? m_desc.bindless->shaderHandle(m_targets.target64) : 0u;
+}
+
 u32 VisBuffer::visStorageHandle() const {
     return m_targets.visStorage.isValid() ? m_desc.bindless->shaderHandle(m_targets.visStorage) : 0u;
 }
@@ -575,6 +579,12 @@ void VisBuffer::addDraw(rg::Graph& graph, const VisGraphRefs& refs, const gpu_sc
 void VisBuffer::addExport(rg::Graph& graph, const VisGraphRefs& refs) {
     if (m_initialized && m_desc.mode == VisMode::Atomic64 && refs.vis.valid()) {
         addVis64Pass(graph, refs, kVis64ModeExport);
+    }
+}
+
+void VisBuffer::addClear(rg::Graph& graph, const VisGraphRefs& refs) {
+    if (m_initialized && m_desc.mode == VisMode::Atomic64 && refs.vis.valid()) {
+        addVis64Pass(graph, refs, kVis64ModeClear);
     }
 }
 

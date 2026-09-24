@@ -140,6 +140,9 @@ public:
                  bool clear);
     /// Atomic64: "vis.export" (R32G32 + R32F depth from the words). Raster: no-op.
     void addExport(rg::Graph& graph, const VisGraphRefs& refs);
+    /// Atomic64: "vis.clear" (every word <- kVis64Clear), for draw passes recorded by another
+    /// component into these targets (WP-5.1 mesh-shader path). Raster: no-op (use loadOp CLEAR).
+    void addClear(rg::Graph& graph, const VisGraphRefs& refs);
     /// The whole two-phase frame (see the header comment); the culler must have begun its frame.
     void addCulledFrame(rg::Graph& graph, const VisGraphRefs& refs, const gpu_scene::GpuSceneGraphRefs& scene,
                         u32 sceneHandle, culling::InstanceCuller& culler, const culling::CullGraphRefs& cullRefs);
@@ -158,6 +161,9 @@ public:
     u32 depthSampledHandle() const;
     /// Bindless storage-image handle of the R32G32_UINT visibility image (WP-1.5 material resolve).
     u32 visStorageHandle() const;
+    /// Bindless handle of the Atomic64 target (storage image or storage buffer; 0 in Raster mode):
+    /// VisRasterPush::target64 for draw passes recorded by another component (WP-5.1).
+    u32 target64Handle() const;
     const Texture& visImage() const { return m_targets.vis; }
     const Texture& depthImage() const { return m_targets.depth; }
     const Texture& image64() const { return m_targets.image64; }

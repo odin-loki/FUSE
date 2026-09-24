@@ -22,6 +22,12 @@ static_assert(vkc::kStageBottomOfPipe == VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT)
 static_assert(vkc::kStageHost == VK_PIPELINE_STAGE_2_HOST_BIT);
 static_assert(vkc::kStageAllGraphics == VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
 static_assert(vkc::kStageAllCommands == VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
+#if defined(VK_EXT_mesh_shader)
+static_assert(vkc::kStageTaskShader == VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT);
+static_assert(vkc::kStageMeshShader == VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT);
+static_assert(vkc::kStageTaskShader == VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT);
+static_assert(vkc::kStageMeshShader == VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT);
+#endif
 static_assert(vkc::kStageTransfer == VK_PIPELINE_STAGE_TRANSFER_BIT);
 static_assert(vkc::kStageAllCommands == VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 static_assert(vkc::kAccessIndirectCommandRead == VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
@@ -83,6 +89,12 @@ u64 shaderStageMask(u8 stages, QueueClass queue) {
     }
     if ((stages & kStageCompute) != 0u) {
         mask |= vkc::kStageComputeShader;
+    }
+    if ((stages & kStageTask) != 0u) {
+        mask |= vkc::kStageTaskShader;
+    }
+    if ((stages & kStageMesh) != 0u) {
+        mask |= vkc::kStageMeshShader;
     }
     return mask;
 }

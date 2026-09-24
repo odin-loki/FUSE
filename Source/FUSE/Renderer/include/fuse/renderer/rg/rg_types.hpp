@@ -52,6 +52,8 @@ enum ShaderStage : u8 {
     kStageVertex = 1u << 0,
     kStageFragment = 1u << 1,
     kStageCompute = 1u << 2,
+    kStageTask = 1u << 3, ///< VK_EXT_mesh_shader task stage (WP-5.1; only on devices with taskShader)
+    kStageMesh = 1u << 4, ///< VK_EXT_mesh_shader mesh stage (WP-5.1; only on devices with meshShader)
 };
 
 /// Image subresource range. Counts of 0 mean "all remaining" (VK_REMAINING_*).
