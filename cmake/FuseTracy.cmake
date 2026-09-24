@@ -94,12 +94,21 @@ if(FUSE_BUILD_CORE_TESTS)
     add_test(NAME fuse_core_profiler_tracy_mode COMMAND fuse_core_profiler_tracy_mode_tests)
     set_tests_properties(fuse_core_profiler_tracy_mode PROPERTIES LABELS "gate;core;profiler")
 
+    # MSVC-style linkers keep executable symbols in the PDB, so nm sees none in a .exe; inspect the
+    # static libraries (COFF symbol tables) there instead of the test executables.
+    if(MSVC)
+        set(_fuse_tracy_absent_files "$<TARGET_FILE:fuse_core>")
+        set(_fuse_tracy_present_files "$<TARGET_FILE:fuse_profiler_tracy>")
+    else()
+        set(_fuse_tracy_absent_files "$<TARGET_FILE:fuse_core>|$<TARGET_FILE:fuse_core_profiler_tracy_mode_tests>")
+        set(_fuse_tracy_present_files "$<TARGET_FILE:fuse_core_profiler_tracy_on_tests>")
+    endif()
     if(NOT FUSE_TRACY)
         # Zero overhead: no Tracy symbol in fuse_core or in a binary using every profiler macro.
         if(FUSE_NM_TOOL)
             add_test(NAME fuse_core_profiler_tracy_zero_overhead
                 COMMAND "${CMAKE_COMMAND}" -DNM=${FUSE_NM_TOOL} -DEXPECT=absent
-                        "-DFILES=$<TARGET_FILE:fuse_core>|$<TARGET_FILE:fuse_core_profiler_tracy_mode_tests>"
+                        "-DFILES=${_fuse_tracy_absent_files}"
                         -P "${_fuse_tracy_nm_check}")
             set_tests_properties(fuse_core_profiler_tracy_zero_overhead PROPERTIES LABELS "gate;core;profiler")
         endif()
@@ -114,7 +123,7 @@ if(FUSE_BUILD_CORE_TESTS)
             # Negative control for the symbol check: the enabled binary must carry Tracy symbols.
             add_test(NAME fuse_core_profiler_tracy_on_symbols
                 COMMAND "${CMAKE_COMMAND}" -DNM=${FUSE_NM_TOOL} -DEXPECT=present
-                        "-DFILES=$<TARGET_FILE:fuse_core_profiler_tracy_on_tests>"
+                        "-DFILES=${_fuse_tracy_present_files}"
                         -P "${_fuse_tracy_nm_check}")
             set_tests_properties(fuse_core_profiler_tracy_on_symbols PROPERTIES LABELS "gate;core;profiler")
         endif()
