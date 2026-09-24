@@ -84,6 +84,22 @@ MeshletGeometryLayout packMeshletGeometry(const geometry::MeshletMesh& mesh, std
     return l;
 }
 
+u32 appendMeshletIndices(const geometry::MeshletMesh& mesh, std::vector<u32>& indices) {
+    const usize base = indices.size();
+    indices.resize(base + mesh.meshlet_triangles.size() * 3u);
+    u32* out = indices.data() + base;
+    for (const geometry::MeshletRecord& m : mesh.meshlets) {
+        for (u32 t = 0; t < m.triangle_count; ++t) {
+            const u32 packed = mesh.meshlet_triangles[m.triangle_offset + t];
+            u32* tri = out + static_cast<usize>(m.triangle_offset + t) * 3u;
+            for (u32 c = 0; c < 3u; ++c) {
+                tri[c] = mesh.meshlet_vertices[m.vertex_offset + geometry::triangle_index(packed, c)];
+            }
+        }
+    }
+    return static_cast<u32>(indices.size() - base);
+}
+
 GpuMesh makeGpuMesh(const geometry::MeshletMesh& mesh, const MeshletGeometryLayout& layout, u64 baseAddress,
                     u32 geometryHandle) {
     GpuMesh g{};
@@ -176,7 +192,70 @@ u32 GpuScene::addMeshletMesh(const geometry::MeshletMesh& mesh) {
         m_geometry.push_back(geometry);
     }
 #endif
-    return addMesh(makeGpuMesh(mesh, layout, geometry.buffer.deviceAddress, handle));
+    const u32 firstIndex = static_cast<u32>(m_indexMirror.size());
+    const u32 indexCount = appendMeshletIndices(mesh, m_indexMirror);
+    if (!uploadIndices(firstIndex, indexCount)) {
+        m_indexMirror.resize(firstIndex);
+        return kInvalidIndex;
+    }
+    GpuMesh gpuMesh = makeGpuMesh(mesh, layout, geometry.buffer.deviceAddress, handle);
+    gpuMesh.firstIndex = firstIndex;
+    gpuMesh.indexCount = indexCount;
+    gpuMesh.vertexOffset = 0;
+    return addMesh(gpuMesh);
+}
+
+bool GpuScene::uploadIndices(u32 firstIndex, u32 count) {
+    if (!m_gpu || count == 0u) {
+        return true;
+    }
+#if defined(FUSE_VULKAN_BACKEND)
+    const u32 needed = firstIndex + count;
+    usize from = firstIndex;
+    if (needed > m_indexCapacity || m_indexBuffer.handle == nullptr) {
+        // Grow by doubling: a new buffer receives the whole mirror, the old one retires at this serial.
+        u32 capacity = std::max(m_indexCapacity, 16384u);
+        while (capacity < needed) {
+            capacity *= 2u;
+        }
+        BufferDesc desc{};
+        desc.size = static_cast<usize>(capacity) * sizeof(u32);
+        desc.usage = static_cast<BufferUsage>(static_cast<u32>(BufferUsage::Index) | static_cast<u32>(BufferUsage::Storage) |
+                                              static_cast<u32>(BufferUsage::TransferDst) |
+                                              static_cast<u32>(BufferUsage::TransferSrc) |
+                                              static_cast<u32>(BufferUsage::ShaderDeviceAddress));
+        desc.memoryUsage = MemoryUsage::GpuOnly;
+        desc.name = "gpu_scene.indices";
+        Buffer fresh{};
+        if (!m_desc.allocator->createBuffer(desc, fresh) || fresh.deviceAddress == 0u) {
+            if (fresh.handle != nullptr) {
+                m_desc.allocator->destroyBuffer(fresh);
+            }
+            return false;
+        }
+        BindlessSlotHandle none{};
+        retire(m_indexBuffer, none);
+        m_indexBuffer = fresh;
+        m_indexCapacity = capacity;
+        from = 0;
+    }
+    const u8* bytes = reinterpret_cast<const u8*>(m_indexMirror.data());
+    const usize end = static_cast<usize>(needed) * sizeof(u32);
+    const usize maxPiece = std::max<usize>((m_desc.upload->ringCapacity() / 2u) & ~usize{3u}, 4u);
+    for (usize done = from * sizeof(u32); done < end;) {
+        const usize piece = std::min(maxPiece, end - done);
+        usize ring = 0;
+        if (!m_desc.upload->stage(bytes + done, piece, ring) ||
+            !m_desc.upload->recordBufferCopy(m_indexBuffer.handle, ring, done, piece)) {
+            return false;
+        }
+        done += piece;
+    }
+    return true;
+#else
+    (void)firstIndex;
+    return true;
+#endif
 }
 
 } // namespace fuse::renderer::gpu_scene

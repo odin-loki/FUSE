@@ -18,8 +18,8 @@
 //   culler.addHizBuild(graph, cull, depth, depthHandle);            // full depth: next frame's phase 1
 //   ... executor.execute(graph); later culler.collectRetired(completedSerial);
 //
-// Buffers (persistent, device local, bindless storage-buffer slots; args and counts also carry
-// INDIRECT usage):
+// Buffers (persistent, GpuAllocator, device local except the constants ring, bindless storage-buffer
+// slots; args and counts also carry BufferUsage::Indirect):
 //   args        2 x capacity VkDrawIndexedIndirectCommand: [0, capacity) phase 1, [capacity, 2 capacity) phase 2
 //   counts      16 u32 (cull_types.hpp CullCount): draw counts, candidate count, Hi-Z counter,
 //               phase-2 VkDispatchIndirectCommand
@@ -137,7 +137,9 @@ public:
 
     /// Declares the IndirectRead of a phase's args and count on the caller's draw pass.
     void useDraws(rg::PassBuilder& pass, const CullGraphRefs& refs, CullPhase phase) const;
-    /// vkCmdDrawIndexedIndirectCount for a phase (bind the pipeline, index and vertex buffers first).
+    /// vkCmdDrawIndexedIndirectCount for a phase. Bind the pipeline and the index buffer first: the
+    /// args carry each mesh's draw range in GpuScene::indexBuffer() (WP-1.4 index layout), or
+    /// {3 x triangleCount, 0, 0} for meshes without one (caller-bound index / vertex buffers).
     void recordDraws(void* commandBuffer, CullPhase phase) const;
 
     /// Destroys buffers / images retired at serials <= completedSerial.
@@ -160,7 +162,7 @@ public:
 
 private:
     struct OwnedBuffer {
-        Buffer buffer{};       ///< handle / deviceAddress / desc.size (allocation = VkDeviceMemory)
+        Buffer buffer{};       ///< GpuAllocator buffer (BufferUsage::Indirect for args / counts)
         BindlessSlotHandle slot{};
         u32 handle = 0;        ///< bindless shader handle
     };

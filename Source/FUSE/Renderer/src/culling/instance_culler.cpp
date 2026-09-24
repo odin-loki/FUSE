@@ -181,98 +181,36 @@ bool InstanceCuller::createPipelines() {
 }
 
 bool InstanceCuller::createBuffer(OwnedBuffer& out, u64 bytes, bool indirect, bool hostVisible, const char* name) {
-#if defined(FUSE_VULKAN_BACKEND)
-    // Raw Vulkan: GpuAllocator's BufferUsage has no INDIRECT bit, and the draw args / counts need it.
-    const VkDevice device = static_cast<VkDevice>(m_desc.device->nativeHandle());
-    const VkPhysicalDevice physical = static_cast<VkPhysicalDevice>(m_desc.device->nativePhysicalDevice());
-    VkBufferCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    info.size = bytes;
-    info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-                 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | (indirect ? static_cast<VkBufferUsageFlags>(VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT) : 0u);
-    info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    VkBuffer buffer = VK_NULL_HANDLE;
-    if (vkCreateBuffer(device, &info, nullptr, &buffer) != VK_SUCCESS) {
-        return false;
-    }
-    VkMemoryRequirements req{};
-    vkGetBufferMemoryRequirements(device, buffer, &req);
-    VkPhysicalDeviceMemoryProperties props{};
-    vkGetPhysicalDeviceMemoryProperties(physical, &props);
-    const VkMemoryPropertyFlags want = hostVisible
-                                           ? (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
-                                           : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    u32 type = UINT32_MAX;
-    for (u32 i = 0; i < props.memoryTypeCount && type == UINT32_MAX; ++i) {
-        if ((req.memoryTypeBits & (1u << i)) != 0u && (props.memoryTypes[i].propertyFlags & want) == want) {
-            type = i;
-        }
-    }
-    if (type == UINT32_MAX) {
-        vkDestroyBuffer(device, buffer, nullptr);
-        return false;
-    }
-    VkMemoryAllocateFlagsInfo flags{};
-    flags.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
-    flags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
-    VkMemoryAllocateInfo alloc{};
-    alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    alloc.pNext = &flags;
-    alloc.allocationSize = req.size;
-    alloc.memoryTypeIndex = type;
-    VkDeviceMemory memory = VK_NULL_HANDLE;
-    if (vkAllocateMemory(device, &alloc, nullptr, &memory) != VK_SUCCESS) {
-        vkDestroyBuffer(device, buffer, nullptr);
-        return false;
-    }
-    void* mapped = nullptr;
-    if (vkBindBufferMemory(device, buffer, memory, 0) != VK_SUCCESS ||
-        (hostVisible && vkMapMemory(device, memory, 0, VK_WHOLE_SIZE, 0, &mapped) != VK_SUCCESS)) {
-        vkFreeMemory(device, memory, nullptr);
-        vkDestroyBuffer(device, buffer, nullptr);
-        return false;
-    }
-    VkBufferDeviceAddressInfo addressInfo{};
-    addressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-    addressInfo.buffer = buffer;
     out = OwnedBuffer{};
-    out.buffer.handle = buffer;
-    out.buffer.allocation = memory;
-    out.buffer.mapped = mapped;
-    out.buffer.deviceAddress = vkGetBufferDeviceAddress(device, &addressInfo);
-    out.buffer.desc.size = static_cast<usize>(bytes);
-    out.buffer.desc.usage = static_cast<BufferUsage>(static_cast<u32>(BufferUsage::Storage) |
-                                                     static_cast<u32>(BufferUsage::ShaderDeviceAddress) |
-                                                     static_cast<u32>(BufferUsage::TransferSrc) |
-                                                     static_cast<u32>(BufferUsage::TransferDst));
-    out.buffer.desc.memoryUsage = hostVisible ? MemoryUsage::CpuToGpu : MemoryUsage::GpuOnly;
-    out.buffer.desc.name = name;
+    BufferDesc desc{};
+    desc.size = static_cast<usize>(bytes);
+    desc.usage = static_cast<BufferUsage>(static_cast<u32>(BufferUsage::Storage) | static_cast<u32>(BufferUsage::TransferDst) |
+                                          static_cast<u32>(BufferUsage::TransferSrc) |
+                                          static_cast<u32>(BufferUsage::ShaderDeviceAddress) |
+                                          (indirect ? static_cast<u32>(BufferUsage::Indirect) : 0u));
+    // Host-visible (the constants ring): persistently mapped, HOST_COHERENT (GpuAllocator contract).
+    desc.memoryUsage = hostVisible ? MemoryUsage::CpuToGpu : MemoryUsage::GpuOnly;
+    desc.name = name;
+    if (!m_desc.allocator->createBuffer(desc, out.buffer) || out.buffer.deviceAddress == 0u ||
+        (hostVisible && out.buffer.mapped == nullptr)) {
+        if (out.buffer.handle != nullptr) {
+            m_desc.allocator->destroyBuffer(out.buffer);
+        }
+        out = OwnedBuffer{};
+        return false;
+    }
     out.slot = m_desc.bindless->registerBufferSlot(out.buffer, false);
     out.handle = m_desc.bindless->shaderHandle(out.slot);
     return out.slot.isValid();
-#else
-    (void)out;
-    (void)bytes;
-    (void)indirect;
-    (void)hostVisible;
-    (void)name;
-    return false;
-#endif
 }
 
 void InstanceCuller::destroyBuffer(OwnedBuffer& buffer) {
-#if defined(FUSE_VULKAN_BACKEND)
     if (buffer.slot.isValid()) {
         m_desc.bindless->unregisterSlot(buffer.slot);
     }
-    const VkDevice device = static_cast<VkDevice>(m_desc.device->nativeHandle());
     if (buffer.buffer.handle != nullptr) {
-        vkDestroyBuffer(device, static_cast<VkBuffer>(buffer.buffer.handle), nullptr);
+        m_desc.allocator->destroyBuffer(buffer.buffer);
     }
-    if (buffer.buffer.allocation != nullptr) {
-        vkFreeMemory(device, static_cast<VkDeviceMemory>(buffer.buffer.allocation), nullptr);
-    }
-#endif
     buffer = OwnedBuffer{};
 }
 

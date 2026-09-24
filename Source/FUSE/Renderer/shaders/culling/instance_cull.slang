@@ -19,10 +19,12 @@ struct Push {
 void writeDraw(CullConstants* C, uint slot, GpuMesh mesh, uint instance) {
     const uint args = fuseHandleIndex(C.argsBuffer);
     const uint o = slot * 5u;
-    fuse_cull_words[args][o + 0u] = mesh.triangleCount * 3u;
+    // Draw range of the mesh in the scene index buffer (instance_cull_kernel.hpp make_draw).
+    const bool ranged = mesh.indexCount != 0u;
+    fuse_cull_words[args][o + 0u] = ranged ? mesh.indexCount : mesh.triangleCount * 3u;
     fuse_cull_words[args][o + 1u] = 1u;
-    fuse_cull_words[args][o + 2u] = 0u;
-    fuse_cull_words[args][o + 3u] = 0u;
+    fuse_cull_words[args][o + 2u] = ranged ? mesh.firstIndex : 0u;
+    fuse_cull_words[args][o + 3u] = ranged ? uint(mesh.vertexOffset) : 0u;
     fuse_cull_words[args][o + 4u] = instance;
 }
 

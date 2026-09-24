@@ -1,0 +1,46 @@
+#version 460
+// WP-1.4 full-frame visibility decode, one thread per pixel (8 x 8 groups): reads the R32G32
+// visibility image, reconstructs the triangle from the GPU scene (instance -> mesh -> index range ->
+// VPOS -> clip) and writes {depth, b1, b2, flags} per pixel (VisDecodeTexel, vis_types.hpp) through
+// BDA. The gate checks it against the depth buffer and the CPU reference kernel
+// (vis_decode_kernel.hpp); WP-1.5's resolve starts from the same fuse_vis_decode(). GLSL twin of
+// vis_decode.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+#include "vis_format.glsl"
+#include "vis_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(rg32ui) uniform readonly uimage2D fuse_vis_images[];
+
+struct FuseVisDecodeTexel {
+    float depth;
+    float b1;
+    float b2;
+    uint flags;
+};
+layout(buffer_reference, std430, buffer_reference_align = 16) writeonly buffer FuseVisDecodeOut { FuseVisDecodeTexel t[]; };
+
+layout(push_constant) uniform Push {
+    vec4 viewProj[4];
+    uint64_t out_;
+    uint scene;
+    uint vis;
+    uint width;
+    uint height;
+    uint pad0;
+    uint pad1;
+} pc;
+
+void main() {
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= pc.width || p.y >= pc.height) {
+        return;
+    }
+    const uvec2 v = imageLoad(fuse_vis_images[fuse_handle_index(pc.vis)], ivec2(p)).xy;
+    const FuseVisDecoded d =
+        fuse_vis_decode(fuse_gpu_scene(pc.scene), pc.viewProj, v.x, v.y, fuse_vis_pixel_ndc(p, pc.width, pc.height));
+    FuseVisDecodeOut(pc.out_).t[p.y * pc.width + p.x] = FuseVisDecodeTexel(d.depth, d.b1, d.b2, d.flags);
+}

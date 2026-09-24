@@ -775,6 +775,11 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     deviceFeatures.samplerAnisotropy = supportedSet.core.features.samplerAnisotropy;
     deviceFeatures.multiDrawIndirect = supportedSet.core.features.multiDrawIndirect;
     deviceFeatures.shaderInt64 = supportedSet.core.features.shaderInt64;
+    // WP-1.4 visibility buffer: gl_PrimitiveID / SV_PrimitiveID in a fragment shader needs the SPIR-V
+    // Geometry capability (geometryShader feature; no geometry stage is used), and the 64-bit atomic
+    // path writes from the fragment stage (fragmentStoresAndAtomics). Enabled when supported.
+    deviceFeatures.geometryShader = supportedSet.core.features.geometryShader;
+    deviceFeatures.fragmentStoresAndAtomics = supportedSet.core.features.fragmentStoresAndAtomics;
 
     auto hasEnabledExtension = [&enabledExtensions](const char* name) {
         for (const char* extension : enabledExtensions) {
@@ -919,6 +924,8 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     m_info.dynamicRendering = enabledFeature(RenderFeature::DynamicRendering);
     m_info.pipelineCreationCacheControl = api13 && enabledSet.v13.pipelineCreationCacheControl == VK_TRUE;
     m_info.samplerAnisotropy = deviceFeatures.samplerAnisotropy == VK_TRUE;
+    m_info.geometryShader = deviceFeatures.geometryShader == VK_TRUE;
+    m_info.fragmentStoresAndAtomics = deviceFeatures.fragmentStoresAndAtomics == VK_TRUE;
     m_info.maxSamplerAnisotropy = props.limits.maxSamplerAnisotropy;
     {
         VkPhysicalDeviceVulkan12Properties props12{};

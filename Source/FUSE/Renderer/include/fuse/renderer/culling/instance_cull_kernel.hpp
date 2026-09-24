@@ -201,13 +201,16 @@ FUSE_HOST_DEVICE inline bool eligible(const GpuInstance& inst, u32 meshCount) {
     return (inst.flags & kNeed) == kNeed && inst.mesh < meshCount;
 }
 
-/// The draw an eligible instance emits.
+/// The draw an eligible instance emits: the mesh's draw range in the scene index buffer (WP-1.4,
+/// gpu_scene_types.hpp "Index layout"), or the legacy implicit range {3 x triangleCount, 0, 0} for a
+/// mesh without one (indexCount 0).
 FUSE_HOST_DEVICE inline DrawIndexedIndirectCommand make_draw(const GpuMesh& mesh, u32 slot) {
     DrawIndexedIndirectCommand d{};
-    d.indexCount = mesh.triangleCount * 3u;
+    const bool ranged = mesh.indexCount != 0u;
+    d.indexCount = gpu_scene::meshDrawIndexCount(mesh);
     d.instanceCount = 1u;
-    d.firstIndex = 0u;
-    d.vertexOffset = 0;
+    d.firstIndex = ranged ? mesh.firstIndex : 0u;
+    d.vertexOffset = ranged ? mesh.vertexOffset : 0;
     d.firstInstance = slot;
     return d;
 }

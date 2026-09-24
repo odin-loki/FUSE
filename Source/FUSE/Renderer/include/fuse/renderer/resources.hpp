@@ -33,6 +33,8 @@ enum class BufferUsage : u32 {
     Index = 1u << 4,
     Vertex = 1u << 5,
     ShaderDeviceAddress = 1u << 6,
+    /// VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT: draw / dispatch arguments and counts (WP-1.3 culling).
+    Indirect = 1u << 7,
 };
 
 enum class ImageUsage : u32 {

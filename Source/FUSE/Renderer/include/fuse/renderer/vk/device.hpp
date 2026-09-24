@@ -65,6 +65,11 @@ struct VulkanDeviceInfo {
     bool pipelineCreationCacheControl = false;
     bool samplerAnisotropy = false;
     float maxSamplerAnisotropy = 1.f;
+    /// Core features enabled when supported (WP-1.4 visibility buffer): geometryShader carries the
+    /// SPIR-V Geometry capability that PrimitiveId in a fragment shader needs; fragmentStoresAndAtomics
+    /// lets the 64-bit atomic path write from the fragment stage.
+    bool geometryShader = false;
+    bool fragmentStoresAndAtomics = false;
     u32 deviceType = 0; // VkPhysicalDeviceType numeric
     /// Physical device selection: index of the chosen device in vkEnumeratePhysicalDevices order
     /// (UINT32_MAX when none), the number enumerated, and a per-device summary ("#i 'name' (type,

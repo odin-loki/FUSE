@@ -90,6 +90,10 @@ struct GpuMesh {
     float boundsRadius;
     uint geometryHandle;
     uint flags;
+    uint firstIndex;  // draw range in the scene index buffer (gpu_scene_types.hpp "Index layout")
+    uint indexCount;  // 0 = none: implicit {3 x triangleCount, 0, 0}
+    int vertexOffset;
+    uint reserved;
 };
 
 struct GpuLight {
@@ -114,7 +118,7 @@ struct GpuSceneHeader {
     uint liveLights;
     uint magic;
     uint version;
-    uint reserved[2];
+    uint64_t indexAddress; // scene index buffer (u32), 0 = none
 };
 
 GpuSceneHeader* fuseGpuScene(uint sceneHandle) { return (GpuSceneHeader*)fuse_buffer_address(sceneHandle); }
@@ -123,6 +127,8 @@ GpuTransform* fuseGpuSceneTransforms(GpuSceneHeader* scene) { return (GpuTransfo
 GpuTransform* fuseGpuScenePrevTransforms(GpuSceneHeader* scene) { return (GpuTransform*)scene.addresses[kFuseGpuScenePrevTransforms]; }
 GpuMesh* fuseGpuSceneMeshes(GpuSceneHeader* scene) { return (GpuMesh*)scene.addresses[kFuseGpuSceneMeshes]; }
 GpuLight* fuseGpuSceneLights(GpuSceneHeader* scene) { return (GpuLight*)scene.addresses[kFuseGpuSceneLights]; }
+uint* fuseGpuSceneIndices(GpuSceneHeader* scene) { return (uint*)scene.indexAddress; }
+uint fuseGpuMeshDrawIndexCount(GpuMesh m) { return m.indexCount != 0u ? m.indexCount : m.triangleCount * 3u; }
 
 float3 fuseGpuTransformPoint(GpuTransform t, float3 p) {
     const float4 h = float4(p, 1.0);

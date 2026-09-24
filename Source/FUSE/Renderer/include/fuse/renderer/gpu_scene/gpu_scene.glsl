@@ -96,6 +96,10 @@ struct FuseGpuMesh {
     float boundsRadius;
     uint geometryHandle;
     uint flags;
+    uint firstIndex;  // draw range in the scene index buffer (gpu_scene_types.hpp "Index layout")
+    uint indexCount;  // 0 = none: implicit {3 x triangleCount, 0, 0}
+    int vertexOffset;
+    uint reserved;
 };
 
 struct FuseGpuLight {
@@ -120,7 +124,7 @@ layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Fu
     uint liveLights;
     uint magic;
     uint version;
-    uint reserved[2];
+    uint64_t indexAddress; // scene index buffer (u32), 0 = none
 };
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseGpuInstancesRef { FuseGpuInstance v[]; };
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseGpuTransformsRef { FuseGpuTransform v[]; };
@@ -128,6 +132,7 @@ layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Fu
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseGpuLightsRef { FuseGpuLight v[]; };
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseGpuMeshletsRef { FuseGpuMeshlet v[]; };
 layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer FuseGpuSceneWordsRef { uint v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer FuseGpuSceneIndicesRef { uint v[]; };
 
 FuseGpuSceneHeaderRef fuse_gpu_scene(uint sceneHandle) { return FuseGpuSceneHeaderRef(fuse_buffer_address(sceneHandle)); }
 uint64_t fuse_gpu_scene_address(FuseGpuSceneHeaderRef scene, uint table) { return scene.addresses[table]; }
@@ -136,6 +141,8 @@ FuseGpuTransformsRef fuse_gpu_scene_transforms(FuseGpuSceneHeaderRef scene) { re
 FuseGpuTransformsRef fuse_gpu_scene_prev_transforms(FuseGpuSceneHeaderRef scene) { return FuseGpuTransformsRef(scene.addresses[FUSE_GPU_SCENE_PREV_TRANSFORMS]); }
 FuseGpuMeshesRef fuse_gpu_scene_meshes(FuseGpuSceneHeaderRef scene) { return FuseGpuMeshesRef(scene.addresses[FUSE_GPU_SCENE_MESHES]); }
 FuseGpuLightsRef fuse_gpu_scene_lights(FuseGpuSceneHeaderRef scene) { return FuseGpuLightsRef(scene.addresses[FUSE_GPU_SCENE_LIGHTS]); }
+FuseGpuSceneIndicesRef fuse_gpu_scene_indices(FuseGpuSceneHeaderRef scene) { return FuseGpuSceneIndicesRef(scene.indexAddress); }
+uint fuse_gpu_mesh_draw_index_count(FuseGpuMesh m) { return m.indexCount != 0u ? m.indexCount : m.triangleCount * 3u; }
 
 vec3 fuse_gpu_transform_point(FuseGpuTransform t, vec3 p) {
     const vec4 h = vec4(p, 1.0);

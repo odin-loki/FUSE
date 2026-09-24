@@ -211,6 +211,12 @@ void GpuScene::destroy() {
         release(geometry.buffer, geometry.slot);
     }
     m_geometry.clear();
+    {
+        BindlessSlotHandle none{};
+        release(m_indexBuffer, none);
+    }
+    m_indexMirror.clear();
+    m_indexCapacity = 0;
     for (Retired& retired : m_retired) {
         // Retired slots were already invalidated (retireSlot); the heap reclaims them itself.
         BindlessSlotHandle none{};
@@ -521,6 +527,7 @@ void GpuScene::refreshHeader() {
     h.liveLights = m_lightSlots.live();
     h.magic = kGpuSceneMagic;
     h.version = kGpuSceneLayoutVersion;
+    h.indexAddress = m_indexBuffer.deviceAddress;
 }
 
 GpuSceneCommitStats GpuScene::commit() {
@@ -804,6 +811,12 @@ GpuSceneGraphRefs GpuScene::importInto(rg::Graph& graph) {
                                                                static_cast<u64>(gt.capacityRows) * kTableStrides[t],
                                                                static_cast<u8>(rg::QueueClass::Graphics), nullptr,
                                                                kTableNames[t]});
+    }
+    if (m_indexBuffer.handle != nullptr) {
+        refs.indices = graph.importBuffer(rg::ImportedBuffer{m_indexBuffer.handle,
+                                                             static_cast<u64>(m_indexCapacity) * sizeof(u32),
+                                                             static_cast<u8>(rg::QueueClass::Graphics), nullptr,
+                                                             "gpu_scene.indices"});
     }
     if (m_jobCount > 0u && m_scatterBuffer.handle != nullptr) {
         // Hand the frame's jobs to the pass (the callback runs at execute time) and start a new batch.

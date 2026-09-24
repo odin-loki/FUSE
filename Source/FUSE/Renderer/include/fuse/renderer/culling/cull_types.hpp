@@ -12,9 +12,11 @@
 //   * the Hi-Z pyramid is square and power of two: P = nextPow2(max(depthW, depthH)), mip 0 is
 //     P/2 x P/2 and each mip-0 texel is the max of a 2x2 depth quad (texels outside the depth
 //     image count as far = 1), mip k+1 is the max of a 2x2 quad of mip k (hiz_build_kernel.hpp);
-//   * one draw per visible instance: VkDrawIndexedIndirectCommand{3 x mesh.triangleCount, 1, 0,
-//     0, instance slot}, so gl_InstanceIndex (SV_InstanceID + SV_StartInstanceLocation) is the
-//     GPU-scene slot.
+//   * one draw per visible instance: VkDrawIndexedIndirectCommand{mesh.indexCount, 1,
+//     mesh.firstIndex, mesh.vertexOffset, instance slot} (the mesh's draw range in the scene index
+//     buffer, WP-1.4; {3 x triangleCount, 1, 0, 0, slot} for a mesh without one), so
+//     gl_InstanceIndex (SV_InstanceID + SV_StartInstanceLocation) is the GPU-scene slot and
+//     gl_PrimitiveID the mesh triangle (MTRI index).
 //
 // Device-safe (only <fuse/types.hpp>).
 

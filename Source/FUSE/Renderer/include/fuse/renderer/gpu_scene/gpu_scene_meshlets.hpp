@@ -47,6 +47,11 @@ GpuMeshlet packGpuMeshlet(const geometry::MeshletRecord& record);
 /// Lays the streams of `mesh` out into `blob` (resized, zero padding between sections).
 MeshletGeometryLayout packMeshletGeometry(const geometry::MeshletMesh& mesh, std::vector<u8>& blob);
 
+/// Appends the mesh's triangle list in the scene index layout (gpu_scene_types.hpp, GpuMesh "Index
+/// layout"): for every MTRI entry t in order, the three mesh-local vertex indices
+/// MVRT[meshlet.vertex_offset + micro-index]. Returns the number of indices appended (3 x triangles).
+u32 appendMeshletIndices(const geometry::MeshletMesh& mesh, std::vector<u32>& indices);
+
 /// GpuMesh for `mesh` whose geometry buffer starts at `baseAddress` (0: addresses stay 0, e.g. the
 /// CPU-only mode). Bounds: exact over the decoded positions (AABB centre, farthest vertex, radius
 /// rounded up to f32), i.e. the sphere of what the GPU rasterises.

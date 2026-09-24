@@ -157,6 +157,9 @@ struct GpuSceneCommitStats {
 struct GpuSceneGraphRefs {
     rg::BufferRef header;
     rg::BufferRef tables[kGpuSceneTableCount];
+    /// Scene index buffer (GpuMesh "Index layout"), when any meshlet mesh was added. Not part of
+    /// useAll(): raster passes declare IndexRead, BDA readers StorageRead.
+    rg::BufferRef indices;
 };
 
 /// Kernel-facing views for bulk writers (the ECS extractor): mirror rows plus dirty storage.
@@ -230,6 +233,14 @@ public:
     /// Uploads a WP-1.2 meshlet mesh into its own geometry buffer (BDA + bindless handle) and adds
     /// its GpuMesh. CPU-only mode records the counts, quantisation and bounds with zero addresses.
     u32 addMeshletMesh(const geometry::MeshletMesh& mesh);
+    /// Scene index buffer (u32 triangle lists of every meshlet mesh, GpuMesh::firstIndex /
+    /// indexCount; see gpu_scene_types.hpp "Index layout"). Uploaded by addMeshletMesh() through the
+    /// UploadQueue; grows by doubling (the old buffer retires like a table). Its BDA is
+    /// GpuSceneHeader::indexAddress. Bind it for every indexed draw of the scene.
+    const Buffer& indexBuffer() const { return m_indexBuffer; }
+    /// CPU copy of the scene index buffer (entries [0, indexCount())), also kept in CPU-only mode.
+    const u32* indexData() const { return m_indexMirror.data(); }
+    u32 indexCount() const { return static_cast<u32>(m_indexMirror.size()); }
     const GpuMesh& mesh(u32 index) const { return m_meshes[index]; }
     u32 meshCount() const { return m_meshes.count(); }
 
@@ -320,6 +331,7 @@ private:
     bool createBuffer(Buffer& out, u64 bytes, const char* name);
     void retire(Buffer& buffer, BindlessSlotHandle& slot);
     void refreshHeader();
+    bool uploadIndices(u32 firstIndex, u32 count);
     void growInstanceTables(u32 count);
 
     GpuSceneDesc m_desc{};
@@ -346,6 +358,9 @@ private:
     GpuTable m_gpuTables[kGpuSceneTableCount] = {};
     std::vector<Retired> m_retired;
     std::vector<Geometry> m_geometry;
+    std::vector<u32> m_indexMirror;
+    Buffer m_indexBuffer{};
+    u32 m_indexCapacity = 0; ///< u32 entries of m_indexBuffer
     std::vector<u8> m_scratch;
     std::vector<PendingCopy> m_pending;
     usize m_pendingBytes = 0;

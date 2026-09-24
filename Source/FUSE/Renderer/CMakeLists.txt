@@ -284,3 +284,4 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp06.cmake")  # WP-0.6 GPU profile
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp12.cmake")  # WP-1.2 meshlet cook (geometry/, Engine/lib/meshoptimizer)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp11.cmake")  # WP-1.1 GPU scene (include/fuse/renderer/gpu_scene, src/gpu_scene)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp13.cmake")  # WP-1.3 instance cull + Hi-Z + indirect count (culling/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp14.cmake")  # WP-1.4 visibility buffer (visbuffer/)

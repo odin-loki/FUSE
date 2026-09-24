@@ -98,6 +98,18 @@ static_assert(sizeof(GpuSubmesh) == 16u, "GpuSubmesh layout");
 /// MVRT u32, MTRI packed u32, VPOS u16x4 quantised, VNRM / VTAN oct snorm16x2, VUV0 half2).
 /// Decoded position = quantOffset + float(q) * quantStep (exact, see vertex_codec_kernel.hpp).
 /// An address of 0 means the stream is absent (e.g. a mesh registered from bounds only).
+///
+/// Index layout (WP-1.4, the draw range of the mesh): the scene owns ONE u32 index buffer
+/// (GpuScene::indexBuffer(), BDA in GpuSceneHeader::indexAddress). A meshlet mesh's triangles are
+/// stored there as a plain triangle list in meshlet order (MTRI order), each index the mesh-local
+/// vertex MVRT[meshlet.vertexOffset + micro-index], so
+///   triangle t of the mesh == MTRI entry t == indices[firstIndex + 3t .. 3t + 2],
+/// gl_PrimitiveID of an indexed draw of the range is t, and every indexed draw of every mesh uses the
+/// same bound index buffer (one vkCmdDrawIndexedIndirectCount for the whole scene). Vertex pulling
+/// reads VPOS[index] through BDA; vertexOffset stays 0 for meshlet meshes (the raw index is the
+/// mesh-local vertex). indexCount == 0 means "no range in the scene index buffer" (a mesh added from
+/// bounds only, drawn with a caller-bound index buffer): draws then use the legacy implicit range
+/// {3 x triangleCount, firstIndex 0, vertexOffset 0} (meshDrawIndexCount()).
 struct GpuMesh {
     u64 meshlets = 0;         ///< GpuMeshlet[meshletCount]
     u64 meshletVertices = 0;  ///< u32 per meshlet vertex (MVRT)
@@ -117,11 +129,21 @@ struct GpuMesh {
     f32 boundsRadius = 0.f;
     u32 geometryHandle = 0; ///< bindless storage-buffer handle of the geometry buffer (0 = none)
     u32 flags = 0;
+    u32 firstIndex = 0;   ///< first u32 of the mesh's triangle list in the scene index buffer
+    u32 indexCount = 0;   ///< 3 x triangleCount; 0 = no range in the scene index buffer (see above)
+    s32 vertexOffset = 0; ///< VkDrawIndexedIndirectCommand::vertexOffset (0 for meshlet meshes)
+    u32 reserved = 0;
 };
-static_assert(sizeof(GpuMesh) == 128u, "GpuMesh layout");
+static_assert(sizeof(GpuMesh) == 144u, "GpuMesh layout");
 static_assert(offsetof(GpuMesh, meshletCount) == 64u && offsetof(GpuMesh, quantOffset) == 80u &&
-                  offsetof(GpuMesh, boundsCenter) == 104u && offsetof(GpuMesh, geometryHandle) == 120u,
+                  offsetof(GpuMesh, boundsCenter) == 104u && offsetof(GpuMesh, geometryHandle) == 120u &&
+                  offsetof(GpuMesh, firstIndex) == 128u,
               "GpuMesh offsets (gpu_scene.glsl / .slang)");
+
+/// Index count an indexed draw of `mesh` uses (the legacy implicit range when it has none).
+FUSE_HOST_DEVICE inline u32 meshDrawIndexCount(const GpuMesh& mesh) {
+    return mesh.indexCount != 0u ? mesh.indexCount : mesh.triangleCount * 3u;
+}
 
 enum class GpuLightType : u32 {
     None = 0, ///< free slot
@@ -156,7 +178,8 @@ enum class GpuSceneTable : u32 {
 };
 inline constexpr u32 kGpuSceneTableCount = 6u;
 inline constexpr u32 kGpuSceneMagic = 0x43534746u; ///< "FGSC"
-inline constexpr u32 kGpuSceneLayoutVersion = 1u;
+/// 2: GpuMesh 144 bytes with the draw range, GpuSceneHeader::indexAddress (WP-1.4).
+inline constexpr u32 kGpuSceneLayoutVersion = 2u;
 
 /// Root record: one small buffer whose bindless handle is the only thing a pass needs.
 struct GpuSceneHeader {
@@ -168,11 +191,12 @@ struct GpuSceneHeader {
     u32 liveLights = 0;
     u32 magic = kGpuSceneMagic;
     u32 version = kGpuSceneLayoutVersion;
-    u32 reserved[2] = {0u, 0u};
+    u64 indexAddress = 0; ///< BDA of the scene index buffer (u32 triangle lists, GpuMesh::firstIndex); 0 = none
 };
 static_assert(sizeof(GpuSceneHeader) == 144u, "GpuSceneHeader layout");
 static_assert(offsetof(GpuSceneHeader, counts) == 48u && offsetof(GpuSceneHeader, handles) == 72u &&
-                  offsetof(GpuSceneHeader, capacities) == 96u && offsetof(GpuSceneHeader, liveInstances) == 120u,
+                  offsetof(GpuSceneHeader, capacities) == 96u && offsetof(GpuSceneHeader, liveInstances) == 120u &&
+                  offsetof(GpuSceneHeader, indexAddress) == 136u,
               "GpuSceneHeader offsets (gpu_scene.glsl / .slang)");
 
 } // namespace fuse::renderer::gpu_scene
