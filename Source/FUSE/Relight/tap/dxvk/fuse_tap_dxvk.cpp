@@ -15,9 +15,13 @@
 
 #include <fuse/relight/tap/d3d9_names.hpp>
 #include <fuse/relight/tap/device_tap.hpp>
+#include <fuse/relight/tap/frame_host.hpp>
 #include <fuse/relight/tap/relight_tap.hpp>
 #include <fuse/relight/tap/tap_config.hpp>
 #include <fuse/relight/tap/vk_bootstrap.hpp>
+#if defined(FUSE_RELIGHT_HAVE_VERTEX_CAPTURE)
+#include "fuse_vertex_capture_dxvk.h" // RL-1.6 vertex capture (Source/FUSE/Relight/capture/vertex_capture/dxvk)
+#endif
 
 #include <atomic>
 #include <cstring>
@@ -78,12 +82,26 @@ bool isBlockCompressed(D3D9Format f) {
 
 } // namespace
 
-/// Per-device dispatcher state (D3D9DeviceEx::m_fuseTap).
-class FuseTapContext {
+/// A passthrough texture swap (RL-4.1): the FUSE-owned twin DXVK samples instead of the texture.
+struct TextureSwap {
+    Rc<DxvkImage> image;               ///< the twin, imported from FUSE
+    uint64_t version = 1;              ///< the texture's content version (bumped on every write we see)
+    uint64_t copiedVersion = 0;        ///< the version the twin holds
+    const DxvkImage* copiedFrom = nullptr; ///< the texture image it was copied from (DXVK may replace it)
+};
+
+/// Per-device dispatcher state (D3D9DeviceEx::m_fuseTap). It is also the device's RL-4.1 frame host
+/// (frame_host.hpp): FUSE's injection, composite, timeline sync and texture swap go through DXVK's own
+/// command stream (EmitCs), so they are ordered with the application's calls.
+class FuseTapContext final : public rt::IFrameHost {
 public:
+    ~FuseTapContext() override;
+
+    D3D9DeviceEx* device = nullptr;
     std::unique_ptr<rt::IRelightTap> tap;
     std::mutex queryMutex;
     std::unordered_map<const D3D9CommonTexture*, rt::ResourceId> textures;
+    std::unordered_map<rt::ResourceId, D3D9CommonTexture*> texturesById;
     rt::ResourceId nextTexture = 1;
     std::unordered_map<const D3D9CommonBuffer*, BufferEntry> buffers;
     rt::ResourceId nextBuffer = 1;
@@ -99,6 +117,11 @@ public:
     // Both advance at device creation and reset (Remix's ResetState dirties both).
     uint32_t lightsVersion = 1;
     uint32_t clipPlanesVersion = 1;
+    uint64_t drawOrdinal = 0; ///< onDraw calls so far (RL-1.6 VertexCaptureDraw::draw)
+#if defined(FUSE_RELIGHT_HAVE_VERTEX_CAPTURE)
+    /// RL-1.6: capture regions and the SPIR-V substitutor, when the tap wants vertex capture.
+    std::unique_ptr<FuseVertexCapture> vertexCapture;
+#endif
 
     rt::ResourceId textureId(D3D9CommonTexture* t);
     rt::ResourceId bufferId(D3D9CommonBuffer* b);
@@ -106,6 +129,40 @@ public:
     rt::DeviceEvent deviceEvent(D3D9DeviceEx* dev, const D3DPRESENT_PARAMETERS* pp);
     template <typename T>
     rt::ShaderRef shaderRef(std::unordered_map<const T*, ShaderEntry<T>>& cache, T* shader);
+
+    // ---- RL-4.1 frame host -------------------------------------------------------------------------------
+    uint64_t getInstanceProcAddr() const override;
+    rt::VulkanDevice vulkan() const override;
+    uint64_t acquireSemaphore() override;
+    uint64_t releaseSemaphore() override;
+    bool backBufferInfo(rt::HostImageInfo& out) const override;
+    bool textureInfo(rt::ResourceId texture, rt::HostImageInfo& out) const override;
+    rt::HostImageHandle importImage(const rt::FuseImage& image) override;
+    void releaseImage(rt::HostImageHandle image) override;
+    bool copyBackBuffer(rt::HostImageHandle dst) override;
+    bool flushAndSignal(uint64_t acquireValue) override;
+    bool composite(rt::HostImageHandle src, uint64_t releaseValue) override;
+    bool setTextureSwap(rt::ResourceId texture, const rt::FuseImage* image) override;
+    void lockQueue() override;
+    void unlockQueue() override;
+    bool waitIdle() override;
+
+    /// The texture's content changed (upload, UpdateTexture / UpdateSurface destination): a swapped texture's
+    /// twin is refreshed at its next bind.
+    void contentChanged(D3D9CommonTexture* t);
+    /// The texture is being destroyed: its swap ends.
+    void textureDestroyed(D3D9CommonTexture* t);
+    bool bindSwapped(DWORD sampler, D3D9CommonTexture* t, bool srgb);
+
+private:
+    void ensureFences();
+    Rc<DxvkImage> backBuffer() const;
+    void markBindingsDirty(const D3D9CommonTexture* t);
+
+    Rc<DxvkFence> m_acquire, m_release;
+    std::unordered_map<rt::HostImageHandle, Rc<DxvkImage>> m_images;
+    rt::HostImageHandle m_nextImage = 1;
+    std::unordered_map<const D3D9CommonTexture*, TextureSwap> m_swaps;
 };
 
 void FuseTapContext::describeTexture(D3D9CommonTexture* t, rt::ResourceId id) {
@@ -140,6 +197,7 @@ rt::ResourceId FuseTapContext::textureId(D3D9CommonTexture* t) {
     // Created before the tap attached (implicit back buffer, auto depth-stencil): report it now.
     const rt::ResourceId id = nextTexture++;
     textures.emplace(t, id);
+    texturesById[id] = t;
     describeTexture(t, id);
     return id;
 }
@@ -234,6 +292,7 @@ rt::DeviceEvent FuseTapContext::deviceEvent(D3D9DeviceEx* dev, const D3DPRESENT_
     e.vulkan.queue = uint64_t(reinterpret_cast<uintptr_t>(dxvk->queues().graphics.queueHandle));
     e.vulkan.queueFamily = dxvk->queues().graphics.queueFamily;
     e.vulkan.imported = rt::vkboot::isImportedDevice(e.vulkan.device);
+    e.host = this;
     return e;
 }
 
@@ -247,8 +306,14 @@ void FuseTap::SwapChainReset(D3D9DeviceEx* dev, const D3DPRESENT_PARAMETERS* pp)
             return;
         }
         auto* ctx = new FuseTapContext();
+        ctx->device = dev;
         ctx->tap = std::move(tap);
         dev->m_fuseTap = ctx;
+#if defined(FUSE_RELIGHT_HAVE_VERTEX_CAPTURE)
+        if (ctx->tap->wantsVertexCapture()) {
+            ctx->vertexCapture = FuseVertexCapture::create(dev->m_dxvkDevice, ctx->tap.get());
+        }
+#endif
         ctx->tap->onDeviceCreate(ctx->deviceEvent(dev, pp));
         return;
     }
@@ -264,6 +329,9 @@ void FuseTap::DeviceDestroy(D3D9DeviceEx* dev) {
     if (!ctx) {
         return;
     }
+#if defined(FUSE_RELIGHT_HAVE_VERTEX_CAPTURE)
+    ctx->vertexCapture.reset(); // first: stops the SPIR-V offers to the tap
+#endif
     ctx->tap->onDeviceDestroy();
     dev->m_fuseTap = nullptr;
     delete ctx;
@@ -291,6 +359,8 @@ void FuseTap::TextureDestroy(D3D9DeviceEx* dev, D3D9CommonTexture* t) {
     const Rc<DxvkImage>& image = t->GetImage();
     d.vkImage = image != nullptr ? uint64_t(image->handle()) : 0;
     ctx->textures.erase(it);
+    ctx->texturesById.erase(d.texture);
+    ctx->textureDestroyed(t);
     for (auto lock = ctx->locks.begin(); lock != ctx->locks.end();) {
         lock = lock->first.first == t ? ctx->locks.erase(lock) : std::next(lock);
     }
@@ -357,6 +427,7 @@ void FuseTap::TextureUnlock(D3D9DeviceEx* dev, D3D9CommonTexture* t, UINT face, 
     if (e.flags & D3DLOCK_READONLY) {
         return;
     }
+    ctx->contentChanged(t);
     const VkExtent3D extent = t->GetExtentMip(sub);
     rt::TextureUpload u;
     u.texture = ctx->textureId(t);
@@ -381,6 +452,7 @@ void FuseTap::UpdateTexture(D3D9DeviceEx* dev, D3D9CommonTexture* src, D3D9Commo
     c.method = rt::CopyMethod::UpdateTexture;
     c.source = ctx->textureId(src);
     c.destination = ctx->textureId(dst);
+    ctx->contentChanged(dst);
     ctx->tap->onTextureCopy(c);
 }
 
@@ -413,6 +485,7 @@ void FuseTap::UpdateSurface(D3D9DeviceEx* dev, IDirect3DSurface9* pSrc, const RE
         c.destX = uint32_t(dstPoint->x);
         c.destY = uint32_t(dstPoint->y);
     }
+    ctx->contentChanged(dst->GetCommonTexture());
     ctx->tap->onTextureCopy(c);
 }
 
@@ -654,7 +727,20 @@ bool FuseTap::SkipDraw(D3D9DeviceEx* dev, DrawCall call, D3DPRIMITIVETYPE type, 
     s.psConstB = reinterpret_cast<const uint32_t*>(st.psConsts->bConsts);
     s.psConstBCount = caps::MaxOtherConstants;
 
-    return ctx->tap->onDraw(c, s) == rt::DrawDecision::Ignore;
+    const uint64_t drawOrdinal = ctx->drawOrdinal++;
+    const bool skip = ctx->tap->onDraw(c, s) == rt::DrawDecision::Ignore;
+#if defined(FUSE_RELIGHT_HAVE_VERTEX_CAPTURE)
+    // RL-1.6: once capture is on every D3D9 vertex shader has the capture binding (patch RL-1.6-01),
+    // so each programmable-VS draw DXVK draws binds its region (or the empty one).
+    if (!skip && ctx->vertexCapture && dev->UseProgrammableVS()) {
+        dev->EmitCs([cSlice = ctx->vertexCapture->sliceForDraw(drawOrdinal, c)](DxvkContext* cctx) mutable {
+            cctx->bindUniformBuffer(VK_SHADER_STAGE_VERTEX_BIT, FuseVertexCapture::kResourceSlot, std::move(cSlice));
+        });
+    }
+#else
+    (void)drawOrdinal;
+#endif
+    return skip;
 }
 
 // ---- other events ----------------------------------------------------------------------------------
@@ -706,6 +792,15 @@ void FuseTap::Present(D3D9DeviceEx* dev, D3D9SwapChainEx* swapchain) {
         f.height = t->Desc()->Height;
         f.format = uint32_t(t->Desc()->Format);
     }
+#if defined(FUSE_RELIGHT_HAVE_VERTEX_CAPTURE)
+    // RL-1.6: the frame's capture regions, once the GPU has written them.
+    if (ctx->vertexCapture && ctx->vertexCapture->active()) {
+        if (ctx->vertexCapture->pending()) {
+            dev->WaitForResource(*ctx->vertexCapture->buffer(), DxvkCsThread::SynchronizeAll, 0);
+        }
+        ctx->vertexCapture->deliver(*ctx->tap, ctx->frame);
+    }
+#endif
     // No classifier yet (RL-1.2): the injection point is Present (plan §2.3).
     ctx->tap->onInjectPoint(f);
     ctx->tap->onPresent(f);
@@ -726,6 +821,291 @@ void FuseTap::QueryIssue(D3D9DeviceEx* dev, const void* query, D3DQUERYTYPE type
     } else {
         ctx->tap->onQueryEnd(e);
     }
+}
+
+// ---- RL-4.1 frame host (frame_host.hpp) --------------------------------------------------------------------
+//
+// Everything below runs on the application thread inside a tap event (device lock held) and reaches DXVK
+// through its own command stream (EmitCs), so FUSE's work is ordered with the application's D3D9 calls.
+
+namespace {
+
+/// A DXVK image as FUSE may create its twin. False for images FUSE cannot mirror.
+bool describeImage(const Rc<DxvkImage>& image, rt::HostImageInfo& out) {
+    if (image == nullptr) {
+        return false;
+    }
+    const DxvkImageCreateInfo& i = image->info();
+    if (i.viewFormatCount > 4 || i.tiling != VK_IMAGE_TILING_OPTIMAL) {
+        return false;
+    }
+    out = rt::HostImageInfo{};
+    out.vkImage = uint64_t(image->handle());
+    out.imageType = uint32_t(i.type);
+    out.format = uint32_t(i.format);
+    out.flags = uint32_t(i.flags);
+    out.usage = uint32_t(i.usage);
+    out.width = i.extent.width;
+    out.height = i.extent.height;
+    out.depth = i.extent.depth;
+    out.mipLevels = i.mipLevels;
+    out.arrayLayers = i.numLayers;
+    out.samples = uint32_t(i.sampleCount);
+    out.aspects = uint32_t(image->formatInfo()->aspectMask);
+    out.viewFormatCount = i.viewFormatCount;
+    for (uint32_t f = 0; f < i.viewFormatCount; ++f) {
+        out.viewFormats[f] = uint32_t(i.viewFormats[f]);
+    }
+    return true;
+}
+
+VkImageSubresourceLayers colorLayers(uint32_t mip, uint32_t layers) {
+    return VkImageSubresourceLayers{VK_IMAGE_ASPECT_COLOR_BIT, mip, 0u, layers};
+}
+
+} // namespace
+
+FuseTapContext::~FuseTapContext() {
+    // FUSE released its images in onDeviceDestroy (before this); drop whatever the host still holds.
+    m_swaps.clear();
+    m_images.clear();
+    m_acquire = nullptr;
+    m_release = nullptr;
+}
+
+uint64_t FuseTapContext::getInstanceProcAddr() const {
+    return uint64_t(reinterpret_cast<uintptr_t>(device->m_dxvkDevice->instance()->vki()->getLoaderProc()));
+}
+
+rt::VulkanDevice FuseTapContext::vulkan() const {
+    const Rc<DxvkDevice>& dxvk = device->m_dxvkDevice;
+    rt::VulkanDevice v;
+    v.device = uint64_t(reinterpret_cast<uintptr_t>(dxvk->vkd()->device()));
+    v.physicalDevice = uint64_t(reinterpret_cast<uintptr_t>(dxvk->adapter()->handle()));
+    v.instance = uint64_t(reinterpret_cast<uintptr_t>(dxvk->instance()->vki()->instance()));
+    v.queue = uint64_t(reinterpret_cast<uintptr_t>(dxvk->queues().graphics.queueHandle));
+    v.queueFamily = dxvk->queues().graphics.queueFamily;
+    v.imported = rt::vkboot::isImportedDevice(v.device);
+    return v;
+}
+
+void FuseTapContext::ensureFences() {
+    if (m_acquire == nullptr) {
+        DxvkFenceCreateInfo info = {};
+        info.initialValue = 0;
+        m_acquire = device->m_dxvkDevice->createFence(info);
+        m_release = device->m_dxvkDevice->createFence(info);
+    }
+}
+
+uint64_t FuseTapContext::acquireSemaphore() {
+    ensureFences();
+    return uint64_t(m_acquire->handle());
+}
+
+uint64_t FuseTapContext::releaseSemaphore() {
+    ensureFences();
+    return uint64_t(m_release->handle());
+}
+
+Rc<DxvkImage> FuseTapContext::backBuffer() const {
+    if (device->m_implicitSwapchain == nullptr) {
+        return nullptr;
+    }
+    D3D9Surface* bb = device->m_implicitSwapchain->GetBackBuffer(0);
+    return bb ? bb->GetCommonTexture()->GetImage() : nullptr;
+}
+
+bool FuseTapContext::backBufferInfo(rt::HostImageInfo& out) const { return describeImage(backBuffer(), out); }
+
+bool FuseTapContext::textureInfo(rt::ResourceId texture, rt::HostImageInfo& out) const {
+    auto it = texturesById.find(texture);
+    return it != texturesById.end() && describeImage(it->second->GetImage(), out);
+}
+
+rt::HostImageHandle FuseTapContext::importImage(const rt::FuseImage& image) {
+    if (!image.vkImage) {
+        return 0;
+    }
+    const rt::HostImageInfo& f = image.info;
+    VkFormat viewFormats[4] = {};
+    DxvkImageCreateInfo info = {};
+    info.type = VkImageType(f.imageType);
+    info.format = VkFormat(f.format);
+    info.flags = VkImageCreateFlags(f.flags);
+    info.sampleCount = VkSampleCountFlagBits(f.samples ? f.samples : 1u);
+    info.extent = VkExtent3D{f.width, f.height, f.depth ? f.depth : 1u};
+    info.numLayers = f.arrayLayers ? f.arrayLayers : 1u;
+    info.mipLevels = f.mipLevels ? f.mipLevels : 1u;
+    info.usage = VkImageUsageFlags(f.usage);
+    // FUSE writes these images on its own submissions (transfer), DXVK copies from / into them.
+    info.stages = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    info.access = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+    info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    info.layout = VK_IMAGE_LAYOUT_GENERAL;        // the hand-over layout (frame_host.hpp)
+    info.initialLayout = VK_IMAGE_LAYOUT_GENERAL; // FUSE transitioned it before importing
+    info.shared = VK_TRUE;                        // back in GENERAL at the end of every DXVK submission
+    info.viewFormatCount = std::min<uint32_t>(f.viewFormatCount, 4u);
+    for (uint32_t i = 0; i < info.viewFormatCount; ++i) {
+        viewFormats[i] = VkFormat(f.viewFormats[i]);
+    }
+    info.viewFormats = viewFormats;
+    Rc<DxvkImage> dxvkImage =
+        device->m_dxvkDevice->importImage(info, VkImage(image.vkImage), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (dxvkImage == nullptr) {
+        return 0;
+    }
+    const rt::HostImageHandle handle = m_nextImage++;
+    m_images.emplace(handle, std::move(dxvkImage));
+    return handle;
+}
+
+void FuseTapContext::releaseImage(rt::HostImageHandle image) { m_images.erase(image); }
+
+bool FuseTapContext::copyBackBuffer(rt::HostImageHandle dst) {
+    auto it = m_images.find(dst);
+    Rc<DxvkImage> bb = backBuffer();
+    if (it == m_images.end() || bb == nullptr) {
+        return false;
+    }
+    device->EmitCs([cDst = it->second, cSrc = bb](DxvkContext* c) {
+        const VkExtent3D extent = cSrc->mipLevelExtent(0);
+        c->copyImage(cDst, colorLayers(0, 1), VkOffset3D{0, 0, 0}, cSrc, colorLayers(0, 1), VkOffset3D{0, 0, 0}, extent);
+    });
+    return true;
+}
+
+bool FuseTapContext::flushAndSignal(uint64_t acquireValue) {
+    ensureFences();
+    device->EmitCs([cFence = m_acquire, cValue = acquireValue](DxvkContext* c) { c->signalFence(cFence, cValue); });
+    // Flush and wait until the command list (ending with the signal) reached the Vulkan queue: FUSE's batch,
+    // submitted next under lockQueue, then follows the signal on the queue (no wait-before-signal).
+    device->FlushAndSync9On12();
+    return true;
+}
+
+bool FuseTapContext::composite(rt::HostImageHandle src, uint64_t releaseValue) {
+    auto it = m_images.find(src);
+    Rc<DxvkImage> bb = backBuffer();
+    if (it == m_images.end() || bb == nullptr) {
+        return false;
+    }
+    ensureFences();
+    device->EmitCs([cFence = m_release, cValue = releaseValue, cSrc = it->second, cDst = bb](DxvkContext* c) {
+        // The command list recorded from here waits (on its first submission) for FUSE's frame.
+        c->waitFence(cFence, cValue);
+        const VkExtent3D extent = cDst->mipLevelExtent(0);
+        c->copyImage(cDst, colorLayers(0, 1), VkOffset3D{0, 0, 0}, cSrc, colorLayers(0, 1), VkOffset3D{0, 0, 0}, extent);
+    });
+    return true;
+}
+
+void FuseTapContext::markBindingsDirty(const D3D9CommonTexture* t) {
+    for (uint32_t i = 0; i < SamplerCount; ++i) {
+        IDirect3DBaseTexture9* bound = device->m_state.textures[i];
+        if (bound != nullptr && GetCommonTexture(bound) == t) {
+            device->m_textureSlotTracking.textureDirty |= 1u << i;
+        }
+    }
+}
+
+bool FuseTapContext::setTextureSwap(rt::ResourceId texture, const rt::FuseImage* image) {
+    auto it = texturesById.find(texture);
+    if (it == texturesById.end()) {
+        return false;
+    }
+    D3D9CommonTexture* t = it->second;
+    if (!image) {
+        if (m_swaps.erase(t)) {
+            markBindingsDirty(t);
+        }
+        return true;
+    }
+    const Rc<DxvkImage>& original = t->GetImage();
+    rt::HostImageInfo info;
+    if (!describeImage(original, info) || info.aspects != VK_IMAGE_ASPECT_COLOR_BIT || info.samples != 1u ||
+        image->info.format != info.format || image->info.width != info.width || image->info.height != info.height ||
+        image->info.depth != info.depth || image->info.mipLevels != info.mipLevels ||
+        image->info.arrayLayers != info.arrayLayers) {
+        return false;
+    }
+    // The twin is the original's twin in every create parameter DXVK looks at (usage from FUSE: a superset);
+    // DXVK writes it (the passthrough copy) and lays it out, from UNDEFINED.
+    DxvkImageCreateInfo ci = original->info();
+    ci.usage = VkImageUsageFlags(image->info.usage);
+    ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    ci.shared = VK_FALSE;
+    ci.sharing = DxvkSharedHandleInfo();
+    Rc<DxvkImage> twin = device->m_dxvkDevice->importImage(ci, VkImage(image->vkImage), VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (twin == nullptr) {
+        return false;
+    }
+    TextureSwap swap;
+    swap.image = std::move(twin);
+    m_swaps[t] = std::move(swap);
+    markBindingsDirty(t);
+    return true;
+}
+
+void FuseTapContext::contentChanged(D3D9CommonTexture* t) {
+    auto it = m_swaps.find(t);
+    if (it != m_swaps.end()) {
+        ++it->second.version;
+        markBindingsDirty(t);
+    }
+}
+
+void FuseTapContext::textureDestroyed(D3D9CommonTexture* t) { m_swaps.erase(t); }
+
+bool FuseTapContext::bindSwapped(DWORD sampler, D3D9CommonTexture* t, bool srgb) {
+    auto it = m_swaps.find(t);
+    if (it == m_swaps.end()) {
+        return false;
+    }
+    TextureSwap& swap = it->second;
+    const Rc<DxvkImage>& original = t->GetImage();
+    const Rc<DxvkImageView>& originalView = t->GetSampleView(srgb);
+    if (original == nullptr || originalView == nullptr) {
+        return false;
+    }
+    if (swap.copiedVersion != swap.version || swap.copiedFrom != original.ptr()) {
+        // Passthrough: the twin takes every subresource of the texture as DXVK holds it now (managed uploads
+        // and mip generation are recorded before the bind, in PrepareDraw).
+        device->EmitCs([cDst = swap.image, cSrc = original](DxvkContext* c) {
+            const DxvkImageCreateInfo& info = cSrc->info();
+            for (uint32_t mip = 0; mip < info.mipLevels; ++mip) {
+                c->copyImage(cDst, colorLayers(mip, info.numLayers), VkOffset3D{0, 0, 0}, cSrc,
+                             colorLayers(mip, info.numLayers), VkOffset3D{0, 0, 0}, cSrc->mipLevelExtent(mip));
+            }
+        });
+        swap.copiedVersion = swap.version;
+        swap.copiedFrom = original.ptr();
+    }
+    // The same view (format, swizzle, type, mip / layer range, layout) on the twin.
+    Rc<DxvkImageView> view = swap.image->createView(originalView->info());
+    device->EmitCs([cSlot = sampler, cView = std::move(view)](DxvkContext* c) mutable {
+        auto [stage, slot] = D3D9ShaderResourceMapping::getTextureSlotInfo(cSlot);
+        c->bindResourceImageView(stage, slot, std::move(cView));
+    });
+    return true;
+}
+
+void FuseTapContext::lockQueue() { device->m_dxvkDevice->lockSubmission(); }
+
+void FuseTapContext::unlockQueue() { device->m_dxvkDevice->unlockSubmission(); }
+
+bool FuseTapContext::waitIdle() {
+    if (this_thread::isInModuleDetachment()) {
+        return false; // DXVK's threads may be gone (see ~D3D9DeviceEx)
+    }
+    device->SynchronizeCsThread(DxvkCsThread::SynchronizeAll);
+    device->m_dxvkDevice->waitForIdle();
+    return true;
+}
+
+bool FuseTap::BindTexture(D3D9DeviceEx* dev, DWORD sampler, D3D9CommonTexture* t, bool srgb) {
+    FuseTapContext* ctx = dev->m_fuseTap;
+    return ctx != nullptr && t != nullptr && ctx->bindSwapped(sampler, t, srgb);
 }
 
 // ---- the tap's D3D9 name tables match the SDK --------------------------------------------------------

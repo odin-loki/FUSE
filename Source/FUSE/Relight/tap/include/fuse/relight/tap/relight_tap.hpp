@@ -27,10 +27,14 @@
 
 namespace fuse::relight::tap {
 
+class IFrameHost; // frame_host.hpp (RL-4.1)
+
 /// Bumped when an event struct or IRelightTap changes incompatibly.
 /// 2: TextureCopy carries the UpdateSurface extent and destination point.
 /// 3: DrawState carries the light / clip-plane change counters and the render-target alpha-swizzle mask.
-inline constexpr std::uint32_t kTapInterfaceVersion = 3;
+/// 4: DeviceEvent carries the frame host (RL-4.1, frame_host.hpp).
+/// 5: vertex capture (RL-1.6): wantsVertexCapture, onVertexCapture, ShaderModule name and capture binding.
+inline constexpr std::uint32_t kTapInterfaceVersion = 5;
 
 using ResourceId = std::uint32_t;
 inline constexpr ResourceId kNoResource = 0;
@@ -104,6 +108,9 @@ struct DeviceEvent {
     ResourceId backBuffer = kNoResource;       ///< implicit swap chain back buffer 0
     ResourceId autoDepthStencil = kNoResource; ///< kNoResource without EnableAutoDepthStencil
     VulkanDevice vulkan;
+    /// RL-4.1: injection / composite / texture-swap services of the device's host (frame_host.hpp);
+    /// valid until onDeviceDestroy returns. Not owned. Null when the producer offers none.
+    IFrameHost* host = nullptr;
 };
 
 // ---- textures ------------------------------------------------------------------------------------
@@ -371,11 +378,39 @@ struct FrameEvent {
     std::uint32_t width = 0, height = 0, format = 0;
 };
 
-/// A vertex shader's SPIR-V, offered for substitution (vertex capture, plan §2.5).
+/// A vertex shader's SPIR-V, offered for substitution (vertex capture, plan §2.5). DXVK generates
+/// SPIR-V lazily, per pipeline, on its compile threads: the offer comes from those threads, without
+/// the D3D9 device lock, possibly several times per shader (one per pipeline layout).
 struct ShaderModule {
-    ResourceId shader = kNoResource;
+    ResourceId shader = kNoResource; ///< kNoResource: DXVK does not know the D3D9 shader object
     const std::uint32_t* spirv = nullptr;
     std::size_t wordCount = 0;
+    const char* name = nullptr;           ///< interface 5: DXVK's shader name ("vs.<md5 of the bytecode>")
+    std::uint32_t captureSet = 0;         ///< interface 5: descriptor set of the vertex capture buffer
+    std::uint32_t captureBinding = 0;     ///< interface 5: binding of the vertex capture buffer
+};
+
+/// Interface 5 (RL-1.6): one draw's vertex capture region, read back after the GPU ran the frame.
+/// Slot k of `data` holds the vertex whose gl_VertexIndex is baseVertex + k: for indexed draws the
+/// index value baseVertex + k - vertexOffset, for non-indexed draws the vertex number baseVertex + k
+/// (vertexOffset 0). Slots are 48-byte RawCapturedVertex records
+/// (Source/FUSE/Relight/capture/vertex_capture/include/.../capture_layout.hpp); a slot the shader
+/// did not write has fields == 0.
+struct VertexCaptureDraw {
+    std::uint64_t draw = 0;        ///< onDraw calls on the device before this draw (0-based)
+    std::int32_t baseVertex = 0;   ///< gl_VertexIndex of slot 0
+    std::int32_t vertexOffset = 0; ///< the draw's vertexOffset (BaseVertexIndex of DrawIndexedPrimitive, else 0)
+    std::uint32_t vertexCount = 0;
+    const void* data = nullptr;    ///< vertexCount * 48 bytes, valid during onVertexCapture only
+};
+
+/// Every captured draw of a frame (draws with a programmable VS that DXVK drew), delivered just
+/// before onInjectPoint / onPresent of that frame.
+struct VertexCaptureFrame {
+    std::uint64_t frame = 0;
+    const VertexCaptureDraw* draws = nullptr;
+    std::uint32_t drawCount = 0;
+    std::uint32_t dropped = 0; ///< programmable-VS draws that got no region (capture buffer full)
 };
 
 // ---- the interface -------------------------------------------------------------------------------
@@ -402,10 +437,18 @@ public:
 
     virtual DrawDecision onDraw(const DrawCall&, const DrawState&) { return DrawDecision::Raster; }
     /// Offer a vertex shader's SPIR-V for replacement; return true with `replacement` filled to
-    /// substitute it. Reserved for RL-1.6 (vertex capture): the RL-1.1 patch set does not call it.
+    /// substitute it. Called only for a tap that wants vertex capture (FUSE-DXVK patch RL-1.6-02),
+    /// from DXVK's compile threads (see ShaderModule): must be thread-safe and must not call D3D9.
     virtual bool substituteVertexShader(const ShaderModule&, std::vector<std::uint32_t>& /*replacement*/) {
         return false;
     }
+    /// Interface 5 (RL-1.6): asked once, when the tap is attached. True: the dispatcher binds a capture region
+    /// for every programmable-VS draw, offers every vertex shader to substituteVertexShader and
+    /// reports the regions through onVertexCapture (it waits for the GPU at each Present that has
+    /// captured draws). Needs vertexPipelineStoresAndAtomics; the process-wide pipeline-layout
+    /// change is latched by the first tap that asks.
+    virtual bool wantsVertexCapture() { return false; }
+    virtual void onVertexCapture(const VertexCaptureFrame&) {}
 
     virtual void onQueryBegin(const QueryEvent&) {}
     virtual void onQueryEnd(const QueryEvent&) {}

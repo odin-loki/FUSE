@@ -70,9 +70,11 @@ struct GeometryCaptureConfig {
     /// Keep a CPU copy of every buffer write, used when a binding has no CPU mapping.
     bool shadowBuffers = true;
 
-    /// The vertexshader component for programmable-VS draws (needs shader analysis for the
-    /// constant ranges: RL-1.6). Called in onDraw when the VS is programmable, useVertexCapture is
-    /// on and the generation rule has geometrydescriptor (upstream's gate). Unset or nullopt: 0.
+    /// The vertexshader component for programmable-VS draws. Called in onDraw when the VS is
+    /// programmable, useVertexCapture is on and the generation rule has geometrydescriptor
+    /// (upstream's gate). Unset or nullopt: 0. fromOptions() sets it to RL-1.6's
+    /// vertex_capture::vertexShaderHashHook() (capture/vertex_capture/vs_hash.hpp: the bytecode and the
+    /// constant ranges its dxso compile reads) and useVertexCapture to rtx.useVertexCapture.
     std::function<std::optional<hash::Hash64>(const tap::DrawState&)> vertexShaderHash;
     /// Texture facts the capture cannot know by itself (RL-1.4 texture hashes and rtx.* lists).
     /// hashKnown: default = the texture had a level-0 upload or a copy from such a texture.

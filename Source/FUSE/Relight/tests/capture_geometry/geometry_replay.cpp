@@ -15,6 +15,9 @@
 //        el=<s>:<offset>:<type>:<method>:<usage>:<usageIndex>;... fvf= rs=<index>:<value>,...|-
 //        tss=<stage>:<type>:<value>,...|- tex=<slot>:<id>,...|- vs=<id> ps=<id> xf=<slot>:<16 x f32 bits hex>;...|-
 //        upv=<hex>|- ups= upi=<hex>|- upf=
+//        [vsb=<hex bytecode> vcf=<reg>:<4 x f32 bits hex>;...|- vci=<reg>:<4 x i32>;...|- vcb=<reg>,...|- swvp=0|1]
+//        (RL-1.6: the vertex shader's bytecode and constants, for the vertexshader hash component;
+//        registers not listed are 0)
 // Output: `draw n= frame= di= status= ...` (see printDraw), then `stats ...`.
 //
 // Options: --rule STR (generation rule), --asset STR, --scale F, --sync (jobs inline), --workers N,
@@ -298,6 +301,55 @@ private:
             std::memcpy(m_transforms[num(p.at(0))], bytes.data(), 64);
         }
         state.vertexShader.id = tap::ResourceId(num(get("vs")));
+        // RL-1.6: bytecode and constants for the vertexshader component (absent: the component stays 0).
+        if (!unhex(get("vsb"), m_vsBytes)) {
+            return fail(lineNo, "bad vsb");
+        }
+        if (!m_vsBytes.empty()) {
+            m_vsTokens.assign((m_vsBytes.size() + 3) / 4, 0);
+            std::memcpy(m_vsTokens.data(), m_vsBytes.data(), m_vsBytes.size());
+            state.vertexShader.tokens = m_vsTokens.data();
+            state.vertexShader.byteSize = std::uint32_t(m_vsBytes.size());
+            state.vertexShader.version = m_vsTokens[0];
+            state.softwareVertexProcessing = num(get("swvp")) != 0;
+            const std::size_t nf = state.softwareVertexProcessing ? 8192 : 256;
+            const std::size_t no = state.softwareVertexProcessing ? 2048 : 16;
+            m_vsF.assign(nf * 4, 0.0f);
+            m_vsI.assign(no * 4, 0);
+            m_vsB.assign((no + 31) / 32, 0);
+            for (std::string_view c : split(get("vcf"), ';')) {
+                const auto p = split(c, ':');
+                std::vector<std::uint8_t> bytes;
+                const std::size_t r = num(p.at(0));
+                if (r >= nf || !unhex(p.at(1), bytes) || bytes.size() != 16) {
+                    return fail(lineNo, "bad vcf");
+                }
+                std::memcpy(&m_vsF[r * 4], bytes.data(), 16);
+            }
+            for (std::string_view c : split(get("vci"), ';')) {
+                const auto p = split(c, ':');
+                const std::size_t r = num(p.at(0));
+                if (r >= no || p.size() != 5) {
+                    return fail(lineNo, "bad vci");
+                }
+                for (std::size_t k = 0; k < 4; ++k) {
+                    m_vsI[r * 4 + k] = std::int32_t(snum(p[k + 1]));
+                }
+            }
+            for (std::string_view c : split(get("vcb"), ',')) {
+                const std::size_t r = num(c);
+                if (r >= no) {
+                    return fail(lineNo, "bad vcb");
+                }
+                m_vsB[r / 32] |= 1u << (r % 32);
+            }
+            state.vsConstF = reinterpret_cast<const float(*)[4]>(m_vsF.data());
+            state.vsConstFCount = std::uint32_t(nf);
+            state.vsConstI = reinterpret_cast<const std::int32_t(*)[4]>(m_vsI.data());
+            state.vsConstICount = std::uint32_t(no);
+            state.vsConstB = m_vsB.data();
+            state.vsConstBCount = std::uint32_t(no);
+        }
         state.pixelShader.id = tap::ResourceId(num(get("ps")));
         state.fvf = std::uint32_t(num(get("fvf")));
 
@@ -395,6 +447,11 @@ private:
     std::map<std::string, std::string> m_kv;
     std::map<tap::ResourceId, std::vector<std::uint8_t>> m_buffers;
     std::array<std::uint32_t, tap::kRenderStateCount> m_renderStates{};
+    std::vector<std::uint8_t> m_vsBytes;   // RL-1.6: the draw's vertex shader and constants
+    std::vector<std::uint32_t> m_vsTokens;
+    std::vector<float> m_vsF;
+    std::vector<std::int32_t> m_vsI;
+    std::vector<std::uint32_t> m_vsB;
     std::uint32_t m_tss[tap::kTextureStageCount][32]{};
     float m_transforms[tap::kTransformCount][16]{};
     std::array<float, 16> m_identity{};

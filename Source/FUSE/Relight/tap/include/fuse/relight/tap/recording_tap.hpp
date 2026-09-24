@@ -16,12 +16,15 @@
 //                   lights, material, viewport, targets, the six clip planes, the render-target
 //                   alpha-swizzle mask or null, non-zero shader constants), written once before the
 //                   first draw that references it
+//   shader          (RL-1.6) a shader's id, version, bytecode sha256 and bytecode (hex), written once
+//                   before the first draw that binds it
 //   draw            call arguments, vertex elements, stream / index bindings with the shadow
 //                   sha256 of each bound buffer, UP data sha256, non-identity transforms,
 //                   shaders (id, version, bytecode sha256), state block index, the light and
 //                   clip-plane change counters (lights_version, clip_planes_version), decision
 //   clear, set_render_target, query_begin, query_end, inject_point, present
-// Every line carries "frame" (presents so far). Content is hashed, never dumped.
+// Every line carries "frame" (presents so far). Content is hashed, never dumped, except shader
+// bytecode (the replay tools hash vertex shaders, and a D3D8 app's shaders reach the tap translated).
 #pragma once
 
 #include <fuse/relight/tap/relight_tap.hpp>

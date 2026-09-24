@@ -108,6 +108,10 @@ struct StateBlock {
     bool hasAlphaSwizzleMask = false;
     std::uint32_t alphaSwizzle = 0;
     bool softwareVp = false;
+    // RL-1.6: the vertex shader constants (the vertexshader hash component), registers not listed = 0.
+    std::vector<float> vsF;
+    std::vector<std::int32_t> vsI;
+    std::vector<std::uint32_t> vsB;
 };
 
 std::unique_ptr<StateBlock> parseStateBlock(const Value& st) {
@@ -209,6 +213,36 @@ std::unique_ptr<StateBlock> parseStateBlock(const Value& st) {
         b->alphaSwizzle = static_cast<std::uint32_t>(sw->n);
     }
     b->softwareVp = st.flag("software_vp");
+    const std::size_t nf = b->softwareVp ? 8192 : 256, no = b->softwareVp ? 2048 : 16;
+    b->vsF.assign(nf * 4, 0.0f);
+    b->vsI.assign(no * 4, 0);
+    b->vsB.assign((no + 31) / 32, 0u);
+    if (const Value* cf = st.get("vs_const_f")) {
+        for (const Value& c : cf->a) {
+            const std::uint32_t r = c.u32("register");
+            const Value* v = c.get("value");
+            for (std::size_t k = 0; v && r < nf && k < 4 && k < v->a.size(); ++k) {
+                b->vsF[r * 4 + k] = static_cast<float>(v->a[k].n);
+            }
+        }
+    }
+    if (const Value* ci = st.get("vs_const_i")) {
+        for (const Value& c : ci->a) {
+            const std::uint32_t r = c.u32("register");
+            const Value* v = c.get("value");
+            for (std::size_t k = 0; v && r < no && k < 4 && k < v->a.size(); ++k) {
+                b->vsI[r * 4 + k] = static_cast<std::int32_t>(v->a[k].n);
+            }
+        }
+    }
+    if (const Value* cb = st.get("vs_const_b")) {
+        for (const Value& c : cb->a) {
+            const std::uint32_t r = c.u32("register");
+            if (r < no && c.flag("value")) {
+                b->vsB[r / 32] |= 1u << (r % 32);
+            }
+        }
+    }
     return b;
 }
 
@@ -617,6 +651,14 @@ int main(int argc, char** argv) {
             const tap::ResourceId id = ev.u32("buffer");
             capture.onBufferDestroy(id);
             buffers.erase(id);
+        } else if (type == "shader") {
+            // RL-1.6: the shader's bytecode (a D3D8 app's shaders are not in its sidecar: d3d8 translates them).
+            const std::string data = ev.str("data");
+            std::vector<std::uint8_t> bytes(data.size() / 2);
+            for (std::size_t i = 0; i < bytes.size(); ++i) {
+                bytes[i] = static_cast<std::uint8_t>(std::stoul(data.substr(2 * i, 2), nullptr, 16));
+            }
+            blobs.emplace(ev.str("blob"), std::move(bytes));
         } else if (type == "state_block") {
             const std::size_t index = static_cast<std::size_t>(ev.num("index"));
             if (blocks.size() <= index) {
@@ -679,6 +721,12 @@ int main(int argc, char** argv) {
             s.hasAlphaSwizzleMask = blk.hasAlphaSwizzleMask;
             s.alphaSwizzleRenderTargets = blk.alphaSwizzle;
             s.softwareVertexProcessing = blk.softwareVp;
+            s.vsConstF = reinterpret_cast<const float(*)[4]>(blk.vsF.data());
+            s.vsConstFCount = static_cast<std::uint32_t>(blk.vsF.size() / 4);
+            s.vsConstI = reinterpret_cast<const std::int32_t(*)[4]>(blk.vsI.data());
+            s.vsConstICount = static_cast<std::uint32_t>(blk.vsI.size() / 4);
+            s.vsConstB = blk.vsB.data();
+            s.vsConstBCount = blk.softwareVp ? 2048u : 16u;
             s.lightsVersion = ev.u32("lights_version");
             s.clipPlanesVersion = ev.u32("clip_planes_version");
             if (const Value* elems = ev.get("elements")) {

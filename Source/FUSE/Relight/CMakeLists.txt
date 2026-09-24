@@ -53,14 +53,16 @@ add_subdirectory(bridge/ipc)                                                    
 add_subdirectory(scene/translate)                                                        # RL-1.5
 add_subdirectory(tap/capture)                                                            # RL-1.1 capture mode (after 1.2-1.5)
 add_subdirectory(scene/instances)                                                        # RL-1.7
-add_subdirectory(capture/export)                                                         # RL-1.8
-add_subdirectory(mods/assets)                                                            # RL-3.3
 add_subdirectory(bridge/host)                                                            # RL-2.3
 add_subdirectory(bridge/client)                                                          # RL-2.2
+add_subdirectory(capture/export)                                                         # RL-1.8
+add_subdirectory(mods/assets)                                                            # RL-3.3
 add_subdirectory(mods/usd)                                                               # RL-3.1
 add_subdirectory(mods/import)                                                            # RL-3.2
 add_subdirectory(replace)                                                                # RL-3.4
-add_subdirectory(particles)                                                              # RL-3.6
 add_subdirectory(logic)                                                                  # RL-3.5
+add_subdirectory(particles)                                                              # RL-3.6
 add_subdirectory(render/material)                                                        # RL-4.3
 include(cmake/relight_renderer_mingw.cmake)                                              # RL-0.7 (MinGW PE renderer; last: defers its gate registration)
+include(cmake/relight_vertex_capture.cmake)                                              # RL-1.6 (after RL-0.7: hooks the DXVK and renderer targets)
+add_subdirectory(render/frame)                                                           # RL-4.1 (after RL-0.7: needs fuse_rhi / the renderer)

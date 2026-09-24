@@ -368,13 +368,33 @@ std::string RecordingTap::shaderJson(const ShaderRef& s) {
     if (s.id == kNoResource) {
         return "null";
     }
-    auto it = m_shaderSha.find(s.id);
-    if (it == m_shaderSha.end()) {
-        it = m_shaderSha.emplace(s.id, s.tokens ? detail::sha256Hex(s.tokens, s.byteSize) : std::string()).first;
-    }
     char ver[32];
     const bool pixel = (s.version & 0xffff0000u) == 0xffff0000u;
     std::snprintf(ver, sizeof ver, "%s_%u_%u", pixel ? "ps" : "vs", (s.version >> 8) & 0xffu, s.version & 0xffu);
+    auto it = m_shaderSha.find(s.id);
+    if (it == m_shaderSha.end()) {
+        it = m_shaderSha.emplace(s.id, s.tokens ? detail::sha256Hex(s.tokens, s.byteSize) : std::string()).first;
+        if (s.tokens && s.byteSize) {
+            // First sight of the shader: its bytecode once (RL-1.6: the replay tools hash vertex shaders;
+            // a D3D8 app's shaders reach the tap translated, so the app's sidecar does not have them).
+            static const char kHex[] = "0123456789abcdef";
+            const auto* bytes = reinterpret_cast<const std::uint8_t*>(s.tokens);
+            std::string data;
+            data.reserve(std::size_t(s.byteSize) * 2);
+            for (std::uint32_t i = 0; i < s.byteSize; ++i) {
+                data += kHex[bytes[i] >> 4];
+                data += kHex[bytes[i] & 15];
+            }
+            writeLine(Json()
+                          .str("ev", "shader")
+                          .u("frame", m_frame)
+                          .u("id", s.id)
+                          .str("version", ver)
+                          .str("blob", it->second)
+                          .str("data", data)
+                          .done());
+        }
+    }
     return Json().u("id", s.id).str("version", ver).u("byte_size", s.byteSize).str("blob", it->second).done();
 }
 

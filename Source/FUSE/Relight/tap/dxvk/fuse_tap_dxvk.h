@@ -57,6 +57,12 @@ namespace dxvk {
     static void SetRenderTarget(D3D9DeviceEx* pDevice, DWORD RenderTargetIndex, IDirect3DSurface9* pRenderTarget);
     static void Present(D3D9DeviceEx* pDevice, D3D9SwapChainEx* pSwapChain);
     static void QueryIssue(D3D9DeviceEx* pDevice, const void* pQuery, D3DQUERYTYPE Type, DWORD IssueFlags);
+
+    // RL-4.1 passthrough texture swap (patch RL-4.1-01 in D3D9DeviceEx::BindTexture, called only when the tap
+    // is on): binds the FUSE-owned twin of the sampler's texture when FUSE swapped it, copying the texture's
+    // content into the twin first when it changed. Returns false when the texture is not swapped (the caller
+    // binds it as upstream).
+    static bool BindTexture(D3D9DeviceEx* pDevice, DWORD StateSampler, D3D9CommonTexture* pTexture, bool Srgb);
   };
 
 }

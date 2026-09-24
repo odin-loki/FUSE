@@ -11,7 +11,9 @@
                hash component on JobScheduler workers, and the default generation rule inline with no
                CPU mappings (buffer shadows) and no index memoization;
             3. compares every draw of the stream with Tools/FUSE/Relight/remix_hash_ref.py computed
-               from the same bytes (status, the 9 components, index/vertex counts, min/max, topology,
+               from the same bytes (status, the 9 components - vertexshader (RL-1.6) from the stream's
+               shader bytecode and constants with tests/vertex_capture/rl_vs_analysis.py's constant
+               ranges -, index/vertex counts, min/max, topology,
                index type, position stride, the asset key and both legacy keys, texcoordIndex,
                bounding box, skinning bone count / range / hash);
             4. compares every sidecar draw of the recorded frames (the app's ground truth) with the
@@ -32,6 +34,10 @@ import os
 import struct
 import subprocess
 import sys
+
+# RL-1.6: the vertexshader component's constant-range analysis (Python twin of vs_hash.cpp).
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "vertex_capture"))
+import rl_vs_analysis  # noqa: E402
 
 SKIP = 77
 M64 = (1 << 64) - 1
@@ -237,7 +243,8 @@ def expect_draw(d, rule_bits):
         return (placed[s] + off - lo * streams[s][2], streams[s][2], typ, s)
 
     elements = {k: elem(k) for k in ("pos", "tc", "n", "c")}
-    r = REF.draw_hashes(prim, pc, itype if indexed else 0x7fffffff, idx, vb, elements, None, rule_bits, 0x3F800000)
+    r = REF.draw_hashes(prim, pc, itype if indexed else 0x7fffffff, idx, vb, elements, vs_component(d), rule_bits,
+                        0x3F800000)
     if r is None:
         out["status"] = "skipped_by_reference"
         return out
@@ -278,6 +285,57 @@ def expect_draw(d, rule_bits):
         bone_hash = REF.xxh3_64(mats[mnb * 64:]) if nb > 0 and mnb < nb else 0
         out["skin"] = "%d:%d:%d:%016x" % (nb, per, mnb, bone_hash)
     return out
+
+
+def vs_constants(vs_const_f, vs_const_i, vs_const_b, swvp):
+    """(f, i, b) constant bytes as D3D9 keeps them: 16 bytes per float / int register, u32 bool words."""
+    nf, no = (8192, 2048) if swvp else (256, 16)
+    f = bytearray(nf * 16)
+    i = bytearray(no * 16)
+    b = bytearray((no + 31) // 32 * 4)
+    for c in vs_const_f:
+        struct.pack_into("<4f", f, c["register"] * 16, *c["value"])
+    for c in vs_const_i:
+        struct.pack_into("<4i", i, c["register"] * 16, *c["value"])
+    for c in vs_const_b:
+        if c["value"]:
+            b[c["register"] // 8] |= 1 << (c["register"] % 8)
+    return bytes(f), bytes(i), bytes(b)
+
+
+def vs_data(bytecode, state, swvp):
+    """The vertexshader component's inputs of a draw: (bytecode, f, i, b, swvp), or None."""
+    if not bytecode:
+        return None
+    f, i, b = vs_constants(state.get("vs_const_f", []), state.get("vs_const_i", []), state.get("vs_const_b", []), swvp)
+    return (bytecode, f, i, b, swvp)
+
+
+def vs_component(d):
+    """REF.draw_hashes' vs argument (RL-1.6): a programmable VS (no POSITIONT declaration) with its
+    bytecode and constants; the constant ranges come from rl_vs_analysis."""
+    data = d.get("vs_data")
+    if not d["vs"] or data is None or any(e[3] == 9 for e in d["elements"]):
+        return None
+    bc, f, i, b, swvp = data
+    tokens = list(struct.unpack("<%dI" % (len(bc) // 4), bc[:len(bc) // 4 * 4]))
+    valid, mf, mi, mb = rl_vs_analysis.analyze(tokens, swvp)
+    if not valid:
+        return None
+    return (bc, f, mf, i, mi, b, mb)
+
+
+def vs_tokens(data):
+    """geometry_replay's vsb / vcf / vci / vcb / swvp tokens."""
+    if data is None:
+        return ["vsb=-"]
+    bc, f, i, b, swvp = data
+    vcf = ";".join("%d:%s" % (r, f[r * 16:r * 16 + 16].hex()) for r in range(len(f) // 16) if any(f[r * 16:r * 16 + 16]))
+    vci = ";".join("%d:%s" % (r, ":".join(str(v) for v in struct.unpack_from("<4i", i, r * 16)))
+                   for r in range(len(i) // 16) if any(i[r * 16:r * 16 + 16]))
+    vcb = ",".join(str(r) for r in range(len(b) * 8) if b[r // 8] >> (r % 8) & 1)
+    return ["vsb=%s" % bc.hex(), "vcf=%s" % (vcf or "-"), "vci=%s" % (vci or "-"), "vcb=%s" % (vcb or "-"),
+            "swvp=%d" % (1 if swvp else 0)]
 
 
 def finish_fields(exp, rule_bits):
@@ -341,6 +399,7 @@ def convert_stream(lines, blobs):
     script, draws = [], []
     buffers, resolved = {}, {}
     tex_types, states = {}, {}
+    shaders = {}  # RL-1.6: shader id -> bytecode (the tap's "shader" events)
     frame, di = 0, 0
     for line in lines:
         ev = json.loads(line)
@@ -376,6 +435,8 @@ def convert_stream(lines, blobs):
                                                               0 if ev["method"] == "UpdateTexture" else 1))
         elif kind == "state_block":
             states[ev["index"]] = ev["state"]
+        elif kind == "shader":
+            shaders[ev["id"]] = bytes.fromhex(ev["data"])
         elif kind == "present":
             script.append("present")
             frame += 1
@@ -430,7 +491,13 @@ def convert_stream(lines, blobs):
                           nv=ev["num_vertices"], elements=elements, streams=streams,
                           ib=(ib[0], ib[1]) if ib else None, upv=upv, ups=ups, upi=upi, upf=upf, stages=stages,
                           textures=textures, tex_types=dict(tex_types), vs=bool(ev["vertex_shader"]),
-                          ps=bool(ev["pixel_shader"]), rs=rs, xf=xf)
+                          ps=bool(ev["pixel_shader"]), rs=rs, xf=xf, vs_data=None)
+            if ev["vertex_shader"]:
+                vsref = ev["vertex_shader"]
+                bc = shaders.get(vsref["id"]) or blobs.get(vsref.get("blob"))
+                if bc is not None and hashlib.sha256(bc).hexdigest() != vsref.get("blob"):
+                    bc = None
+                inputs["vs_data"] = vs_data(bc, st, bool(st.get("software_vp")))
             tokens = ["draw", "n=%d" % n, "call=%d" % inputs["call"], "prim=%d" % inputs["prim"], "pc=%d" % inputs["pc"],
                       "sv=%d" % inputs["sv"], "bv=%d" % inputs["bv"], "mi=%d" % inputs["mi"], "nv=%d" % inputs["nv"],
                       "si=%d" % inputs["si"], "ib=%s" % ("%d:%d" % (ib[2], ib[1]) if ib else "-"),
@@ -445,7 +512,8 @@ def convert_stream(lines, blobs):
                       "ps=%d" % (ev["pixel_shader"]["id"] if ev["pixel_shader"] else 0),
                       "xf=%s" % (";".join("%d:%s" % (slot, struct.pack("<16f", *m).hex()) for slot, m in sorted(xf.items()))
                                  or "-"),
-                      "upv=%s" % hexs(upv), "ups=%d" % ups, "upi=%s" % hexs(upi), "upf=%d" % upf]
+                      "upv=%s" % hexs(upv), "ups=%d" % ups, "upi=%s" % hexs(upi), "upf=%d" % upf] + \
+                vs_tokens(inputs["vs_data"])
             script.append(" ".join(tokens))
             draws.append(dict(n=n, frame=frame, di=di, inputs=inputs, resolved=ok))
             di += 1
@@ -466,7 +534,7 @@ def transform_slot(name):
     raise ValueError(name)
 
 
-def sidecar_inputs(sc, draw, blobs, tap_elements=None):
+def sidecar_inputs(sc, draw, blobs, tap_elements=None, tap_vs=None):
     """The same inputs as convert_stream, from the sidecar alone (the app's ground truth).
     D3D8 programmable draws: d3d8 turns the declaration's input registers (v0, v1, ...) into D3D9
     usages by register number (D3D8_VERTEX_INPUT_REGISTERS), so the sidecar's usages are not what
@@ -510,7 +578,21 @@ def sidecar_inputs(sc, draw, blobs, tap_elements=None):
                 sv=draw.get("start_vertex", 0), bv=draw.get("base_vertex", 0), si=draw.get("start_index", 0),
                 mi=draw.get("min_index", 0), nv=draw.get("num_vertices", 0), elements=elements, streams=streams, ib=ib,
                 upv=upv, ups=ups, upi=upi, upf=upf, stages=stages, textures=textures, tex_types=tex_types,
-                vs=st.get("vertex_shader") is not None, ps=st.get("pixel_shader") is not None, rs=rs, xf=xf)
+                vs=st.get("vertex_shader") is not None, ps=st.get("pixel_shader") is not None, rs=rs, xf=xf,
+                vs_data=sidecar_vs_data(sc, st, blobs, tap_vs))
+
+
+def sidecar_vs_data(sc, st, blobs, tap_vs):
+    """RL-1.6: the sidecar's vertex shader and constants. D3D8 twins: d3d8 translates the shader, so
+    the bytecode D3D9 hashes is the tap's (tap_vs); the constants are the app's."""
+    vs_id = st.get("vertex_shader")
+    if vs_id is None:
+        return None
+    swvp = sc.get("device", {}).get("vertex_processing") == "software"
+    if sc.get("api") == "d3d8":
+        return vs_data(tap_vs[0], st, swvp) if tap_vs else None
+    shader = next((x for x in sc.get("shaders", []) if x["id"] == vs_id), None)
+    return vs_data(blobs.get(shader["blob"]) if shader else None, st, swvp)
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -604,7 +686,8 @@ def check(sidecar_path, stream_path, replay_cmd, work, corrupt=None):
             continue
         for sd, td in zip(sc_draws, tap_draws):
             try:
-                exp = expect_draw(sidecar_inputs(sc, sd, blobs, td["inputs"]["elements"]), all_bits)
+                exp = expect_draw(sidecar_inputs(sc, sd, blobs, td["inputs"]["elements"], td["inputs"]["vs_data"]),
+                                  all_bits)
             except ValueError as e:
                 errors.append("sidecar frame %d seq %d: %s" % (fr, sd["seq"], e))
                 continue

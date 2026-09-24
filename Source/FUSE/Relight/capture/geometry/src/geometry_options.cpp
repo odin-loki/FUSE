@@ -3,9 +3,12 @@
 // as dxvk-remix @0867d3c src/dxvk/rtx_render/rtx_options.h and src/d3d9/d3d9_rtx.h.
 #include <fuse/relight/capture/geometry/geometry_capture.hpp>
 
+#include <fuse/relight/capture/vertex_capture/vs_hash.hpp>
+#include <fuse/relight/options/option_manager.hpp>
 #include <fuse/relight/options/options.hpp>
 
 #include <string>
+#include <variant>
 
 namespace fuse::relight::capture::geometry {
 
@@ -29,6 +32,15 @@ GeometryCaptureConfig GeometryCaptureConfig::fromOptions() {
     config.generationRule = hash::parseHashRule(GeometryHashOptions::geometryGenerationHashRuleString());
     config.assetRule = hash::parseHashRule(GeometryHashOptions::geometryAssetHashRuleString());
     config.indexBufferMemoization = GeometryHashOptions::enableIndexBufferMemoization();
+    // RL-1.6: the vertexshader component (shader bytecode + the constant ranges its dxso compile
+    // reads), gated like upstream on rtx.useVertexCapture (declared by the classifier, RL-1.2).
+    if (const options::OptionBase* o = options::OptionManager::findOption("rtx.useVertexCapture")) {
+        const options::OptionValue v = o->getResolvedValue();
+        if (const bool* b = std::get_if<bool>(&v)) {
+            config.useVertexCapture = *b;
+        }
+    }
+    config.vertexShaderHash = vertex_capture::vertexShaderHashHook();
     return config;
 }
 

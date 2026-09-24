@@ -32,6 +32,11 @@
 //             translation: TranslateTap's draw (scene/translate/translate_json.hpp translatedDrawJson,
 //               rl_translate_replay's draw line without "ev": material, fog, texture stage, transforms,
 //               clip plane, lights the draw added, depth state, camera type, alpha swizzle)
+//             vertex_capture (RL-1.6, programmable-VS draws whose region came back): base (gl_VertexIndex
+//               of slot 0), offset (vertexOffset: index value = base + k - offset), count, written,
+//               fields, truncated, slots [{k, f, clip[4], pos[3], tex[2], nrm[3], col}] for the written
+//               slots (at most 4096; floats as f32 bit patterns in hex, col as D3DCOLOR hex): clip is what
+//               the shader saw, pos / nrm the CPU back-transform (back_transform.hpp)
 //   textures  frame, every live tracked texture (id, hash, desc, origin, from, pending, obsolete,
 //             preview, registered): the fields of the texture replay driver's "tex" lines
 //   translate_frame  TranslateTap's frame (translatedFrameJson, rl_translate_replay's frame line without
@@ -50,6 +55,7 @@
 #include <fuse/relight/tap/capture_export_live.hpp>
 
 #include <fuse/relight/capture/geometry/geometry_capture.hpp>
+#include <fuse/relight/capture/vertex_capture/draw_capture.hpp>
 #include <fuse/relight/capture/texture/external_image_registry.hpp>
 #include <fuse/relight/capture/texture/texture_tracker.hpp>
 #include <fuse/relight/scene/classify/classify_tap.hpp>
@@ -90,6 +96,9 @@ struct CaptureTapConfig {
     capture::texture::TextureTrackerConfig texture;
     capture::geometry::GeometryCaptureConfig geometry;
     CaptureExportConfig exportConfig;     ///< RL-1.8 capture written live; disabled by default
+    /// RL-1.6: rtx.useVertexCapture (the vertex capture SPIR-V pass + per-draw regions) and its options.
+    bool vertexCapture = true;
+    capture::vertex_capture::VertexCaptureOptions vertexCaptureOptions;
     std::unique_ptr<IFrameProcessor> processor; ///< RL-3.4 runtime replacements; may be null
 
     /// The rtx.* / relight.* options of the three packages and of the capture export, resolved now.
@@ -121,6 +130,9 @@ struct CaptureDrawRecord {
     };
     std::uint32_t cullMode = 2; ///< D3DRS_CULLMODE
     SamplerFacts colorSampler;  ///< sampler of translation.material.colorTextureSlots[0] (defaults: none)
+    /// RL-1.6: the programmable-VS draw's captured vertices (null for fixed-function draws or with
+    /// vertex capture off; `captured` once the dispatcher delivered the region).
+    std::shared_ptr<capture::vertex_capture::DrawVertexCapture> vertexCapture;
 };
 
 class CaptureTap final : public IRelightTap {
@@ -163,6 +175,8 @@ public:
     void onBufferDestroy(ResourceId id) override;
     DrawDecision onDraw(const DrawCall& call, const DrawState& state) override;
     bool substituteVertexShader(const ShaderModule& m, std::vector<std::uint32_t>& replacement) override;
+    bool wantsVertexCapture() override { return m_vertexCapture; }
+    void onVertexCapture(const VertexCaptureFrame& f) override;
     void onQueryBegin(const QueryEvent& q) override;
     void onQueryEnd(const QueryEvent& q) override;
     void onClear(const ClearEvent& c) override;
@@ -195,6 +209,8 @@ private:
     scene::TranslatedFrame m_translatedFrame;
     bool m_haveTranslatedFrame = false;
     capture::geometry::CapturedDrawPtr m_lastGeometry;
+    bool m_vertexCapture = false; ///< RL-1.6 (CaptureTapConfig::vertexCapture)
+    capture::vertex_capture::VertexCaptureOptions m_vertexCaptureOptions;
     std::unique_ptr<LiveCaptureExport> m_export; ///< after the packages: it reads them while writing
     std::unique_ptr<IFrameProcessor> m_processor;
 };

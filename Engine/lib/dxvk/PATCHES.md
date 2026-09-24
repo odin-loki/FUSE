@@ -9,7 +9,7 @@ The plan's patch budget is at most 30 marked blocks (§2.4). An edited file gets
 
 ## Patch list
 
-Each patch has an ID (`RL-x.y-NN`), which is the first token after `FUSE-DXVK begin:`. Block count: 26 of 30 (RL-0.2-01, RL-1.1-01 to -25; one block each). `VERSION` pins every patched file twice:
+Each patch has an ID (`RL-x.y-NN`), which is the first token after `FUSE-DXVK begin:`. Block count: 29 of 30 (RL-0.2-01, RL-1.1-01 to -25, RL-1.6-01 and -02, RL-4.1-01; one block each). `VERSION` pins every patched file twice:
 - `sha256:` is the file as vendored;
 - `upstream_sha256:` is the file with its marked blocks removed, which must equal the upstream file.
 
@@ -43,6 +43,33 @@ Each patch has an ID (`RL-x.y-NN`), which is the first token after `FUSE-DXVK be
 | RL-1.1-23 | `src/d3d9/d3d9_query.cpp` (`D3D9Query::Issue`) | `onQueryBegin` / `onQueryEnd`. | RL-1.1 | FUSE-only. |
 | RL-1.1-24 | `src/d3d9/d3d9_device.cpp` (`SetLight`, end) | Lights changed (`FuseTap::LightsChanged`) when the light set is enabled: advances `DrawState::lightsVersion` (tap interface 3), where dxvk-remix sets `D3D9RtxFlag::DirtyLights`, so the translation re-sends the game lights exactly when upstream does rather than on every frame. | RL-1.5 follow-up (RL-1.1 tap) | FUSE-only (dxvk-remix has the equivalent `m_rtx.SetDirty(DirtyLights)` edit). |
 | RL-1.1-25 | `src/d3d9/d3d9_device.cpp` (`LightEnable`, after the enable bit changes) | As RL-1.1-24, when `LightEnable` flips a light's enable bit (the early return for an unchanged bit comes first, as upstream). | RL-1.5 follow-up (RL-1.1 tap) | FUSE-only (as RL-1.1-24). |
+| RL-1.6-01 | `src/dxvk/dxvk_shader_ir.cpp` (`DxvkIrShader::getLayout()`, 1 block) | Vertex capture (plan §2.5): once FUSE Relight enabled it (the d3d9 dispatcher, for a tap that wants vertex capture on a device with `vertexPipelineStoresAndAtomics`), every D3D9 vertex shader (`vs.` name) gets one extra binding: a storage buffer in the constant-buffer set (set 1, binding 120) sourced from uniform-buffer slot 120, which the dispatcher binds per programmable-VS draw (`Source/FUSE/Relight/capture/vertex_capture/dxvk`). The answer is latched per shader name (`dxvk::fuseRelightVertexCaptureBinding`, `capture/vertex_capture/src/dxvk_hook.cpp`), so layout and code agree; a layout that came from DXVK's shader cache with the binding is not extended twice. | RL-1.6 | FUSE-only. dxvk-remix emits its capture buffer from its dxso compiler; upstream DXVK compiles SM1-3 through dxbc-spirv, so the binding is added to the pipeline layout here. |
+| RL-1.6-02 | `src/dxvk/dxvk_shader_ir.cpp` (`DxvkIrShader::getCode()`, 1 block) | For a shader RL-1.6-01 gave the binding: offers the finished SPIR-V, with the set and binding this pipeline's binding map assigns the capture buffer, to FUSE Relight (`dxvk::fuseRelightVertexCaptureCode` -> the tap's `substituteVertexShader`), which appends the capture stores as a SPIR-V pass (`capture/vertex_capture/src/spirv_vertex_capture.cpp`). Declined: the upstream code. | RL-1.6 | FUSE-only (as RL-1.6-01). |
+| RL-4.1-01 | `src/d3d9/d3d9_device.cpp` (`D3D9DeviceEx::BindTexture`, before the bind) | Passthrough texture swap (plan §2.3, RL-4.1): with the tap on, `FuseTap::BindTexture` binds the FUSE-owned twin of the sampler's texture when FUSE swapped it (relight.frame.textureSwap), with the same image-view key as the original's sample view; the dispatcher first copies the texture's content into the twin whenever it changed (uploads, `UpdateTexture` / `UpdateSurface`), in DXVK's command stream after the managed upload and mip generation that `PrepareDraw` records before the bind. Returns false for textures that are not swapped, and the upstream bind runs. The rest of RL-4.1 (injection at the first UI draw, the composite, the timeline semaphores, image import) goes through the existing hooks and DXVK's own API from the dispatcher (see "Frame orchestration" below). | RL-4.1 | FUSE-only. |
+
+## Frame orchestration (RL-4.1; one source edit, RL-4.1-01)
+
+`relight.frame.mode` / `relight.frame.textureSwap` (Source/FUSE/Relight/render/frame) wrap the capture tap in a
+RenderTap; the dispatcher is the device's frame host (`Source/FUSE/Relight/tap/include/fuse/relight/tap/frame_host.hpp`,
+`DeviceEvent::host`, tap interface 4). Everything except the texture-swap bind uses hooks that already exist:
+
+- **Injection point.** The first draw the RL-1.2 classifier marks as the RTX injection point (the first UI draw) injects
+  from inside its draw hook (RL-1.1-11 to -14), which runs before DXVK records the draw; without a UI draw, Present
+  (RL-1.1-22).
+- **Timeline sync.** Two DXVK fences (`DxvkDevice::createFence`, timeline semaphores): at the injection point the dispatcher
+  records `signalFence(acquire, A)` and flushes with `FlushAndSync9On12` (the submission reached the queue); FUSE then
+  submits its frame (wait acquire >= A, signal release = R) under `lockSubmission` / `unlockSubmission`, which also takes
+  FUSE's queue lock through the RL-1.1-02 `queueCallback`; the composite is recorded as `waitFence(release, R)` +
+  `copyImage`. On the one shared queue FUSE's batch always follows the signal it waits for.
+- **Composite.** FUSE's images are imported with `DxvkDevice::importImage` (non-owning: `DxvkAllocationFlag::Imported`),
+  shared, in GENERAL at every hand-over; DXVK copies FUSE's image over the back buffer with `copyImage`, and the UI draws
+  that follow land on top.
+- **Texture swap.** The twins are imported the same way from the original's `DxvkImageCreateInfo` (UNDEFINED, DXVK-laid-out);
+  the dispatcher bumps a content version in the upload / copy hooks (RL-1.1-07, -08, -16) and marks the bound slots dirty,
+  so RL-4.1-01 re-copies before the next bind.
+
+With `relight.frame.*` off (the default) the RenderTap is not created, no fence or image is created, and RL-4.1-01 finds no
+swap: the passthrough goldens stay bit-identical.
 
 ## Capture tap mode (no source edits)
 
@@ -55,6 +82,27 @@ Each patch has an ID (`RL-x.y-NN`), which is the first token after `FUSE-DXVK be
 - `lightsVersion`: RL-1.1-24 / RL-1.1-25 above, plus device creation and `Reset` (the RL-1.1-06 hook; upstream's `ResetState` dirties the lights). Two marked blocks; DXVK tracks nothing light-specific that the draw hooks could read.
 - `clipPlanesVersion`: no source edit. DXVK sets its own `D3D9DeviceDirtyFlag::ClipPlanes` in exactly the places dxvk-remix sets `DirtyClipPlanes` (`SetClipPlane` changing an enabled plane, `SetRenderState(D3DRS_CLIPPLANEENABLE)`, `ResetState`) and clears it in the `PrepareDraw` after the draw hooks (RL-1.1-11 to -14). The dispatcher reads the flag in the draw hook, so a set flag means "changed since the last draw".
 - `alphaSwizzleRenderTargets`: no source edit. The draw hooks read `m_rtSlotTracking.hasAlphaSwizzle` (DXVK's mask of render targets whose view maps alpha to ONE), through the RL-1.1-04 friend access.
+
+## Vertex capture (RL-1.6; two source edits, RL-1.6-01 and -02)
+
+Remix emits vertex capture from its dxso compiler; DXVK 3.1.1 compiles SM1-3 through dxbc-spirv, so Relight adds it to the
+finished SPIR-V of each D3D9 vertex shader (`Source/FUSE/Relight/capture/vertex_capture`, plan §2.5). Only the pipeline
+layout (RL-1.6-01) and the SPIR-V hand-off (RL-1.6-02) touch DXVK; the rest uses hooks that already exist:
+
+- **Enable.** At the RL-1.1-06 attach the dispatcher asks the tap (`IRelightTap::wantsVertexCapture`, tap interface 5; the
+  capture tap answers `rtx.useVertexCapture`). With `vertexPipelineStoresAndAtomics` it turns capture on for the process
+  (`dxvk_hook::enable`, sticky) and registers the tap as the SPIR-V substitutor until the device is destroyed.
+- **Per draw.** In the draw hooks (RL-1.1-11 to -14), after `onDraw`, a programmable-VS draw that DXVK will draw gets a
+  48-byte-slot region of a host-visible buffer (header: base vertex, vertex count), bound with
+  `DxvkContext::bindUniformBuffer` at slot 120 through the CS stream; other programmable-VS draws bind an empty region.
+- **Readback.** In the Present hook (RL-1.1-22), when the frame had regions, the dispatcher waits for the buffer
+  (`D3D9DeviceEx::WaitForResource`) and reports the regions (`IRelightTap::onVertexCapture`) before `onInjectPoint` /
+  `onPresent`.
+- **Recording tap.** The event stream carries each shader's bytecode once (`"ev":"shader"`), so the replay tools can
+  compute the vertexshader hash component (a D3D8 app's shaders reach the tap translated).
+
+Without a tap that wants capture nothing is enabled: RL-1.6-01 / -02 answer "no binding" and DXVK's layout and SPIR-V are
+unchanged. The passthrough goldens stay bit-identical with capture on (the pass only reads the shader's outputs).
 
 ## Build notes (no source edits)
 

@@ -7351,6 +7351,10 @@ namespace dxvk {
     bool srgb = m_state.samplerStates[StateSampler][D3DSAMP_SRGBTEXTURE] & 0x1;
     D3D9CommonTexture* commonTex = GetCommonTexture(m_state.textures[StateSampler]);
 
+    // FUSE-DXVK begin: RL-4.1-01 FUSE Relight passthrough texture swap: bind the FUSE-owned twin instead
+    if (unlikely(m_fuseTap != nullptr) && FuseTap::BindTexture(this, StateSampler, commonTex, srgb))
+      return;
+    // FUSE-DXVK end
     EmitCs([
       cSlot       = StateSampler,
       cImageView  = commonTex->GetSampleView(srgb)

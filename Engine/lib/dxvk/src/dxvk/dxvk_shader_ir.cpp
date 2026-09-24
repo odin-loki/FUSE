@@ -2139,6 +2139,28 @@ namespace dxvk {
     dxbc_spv::spirv::SpirvBuilder spirvBuilder(irBuilder, mapping, options);
     spirvBuilder.buildSpirvBinary();
 
+    // FUSE-DXVK begin: RL-1.6-02 FUSE Relight vertex capture: offer a D3D9 vertex shader's SPIR-V
+    // When RL-1.6-01 gave the shader the capture buffer binding, FUSE Relight appends the capture
+    // stores (a SPIR-V pass, Source/FUSE/Relight/capture/vertex_capture) at the set and binding
+    // this pipeline layout maps the buffer to. Declined: the upstream code below.
+    if (m_metadata.stage == VK_SHADER_STAGE_VERTEX_BIT) {
+      bool fuseRelightVertexCaptureBinding(const char*, uint32_t*, uint32_t*, uint32_t*);
+      bool fuseRelightVertexCaptureCode(const char*, const uint32_t*, size_t, uint32_t, uint32_t, std::vector<uint32_t>*);
+      uint32_t fuseSet = 0u, fuseBinding = 0u, fuseSlot = 0u;
+      if (fuseRelightVertexCaptureBinding(m_debugName.c_str(), &fuseSet, &fuseBinding, &fuseSlot)) {
+        DxvkShaderBinding fuseTarget(m_metadata.stage, fuseSet, fuseBinding);
+        if (bindings) {
+          if (auto fuseMapped = bindings->mapBinding(fuseTarget))
+            fuseTarget = *fuseMapped;
+        }
+        std::vector<uint32_t> fuseCode = spirvBuilder.getSpirvBinary();
+        std::vector<uint32_t> fuseOut;
+        if (fuseRelightVertexCaptureCode(m_debugName.c_str(), fuseCode.data(), fuseCode.size(),
+            fuseTarget.getSet(), fuseTarget.getBinding(), &fuseOut))
+          return SpirvCodeBuffer(std::move(fuseOut));
+      }
+    }
+    // FUSE-DXVK end
     return SpirvCodeBuffer(spirvBuilder.getSpirvBinary());
   }
 
@@ -2146,6 +2168,35 @@ namespace dxvk {
   DxvkPipelineLayoutBuilder DxvkIrShader::getLayout() {
     convertIr("getLayout()");
 
+    // FUSE-DXVK begin: RL-1.6-01 FUSE Relight vertex capture: the capture buffer binding
+    // Once FUSE Relight enabled vertex capture, D3D9 vertex shaders get one storage buffer in the
+    // constant-buffer set, sourced from a uniform-buffer slot the d3d9 tap dispatcher binds per
+    // draw. Latched per shader, so getCode() (RL-1.6-02) agrees; not added twice when the layout
+    // came from the shader cache with it.
+    if (m_metadata.stage == VK_SHADER_STAGE_VERTEX_BIT) {
+      bool fuseRelightVertexCaptureBinding(const char*, uint32_t*, uint32_t*, uint32_t*);
+      uint32_t fuseSet = 0u, fuseBinding = 0u, fuseSlot = 0u;
+      if (fuseRelightVertexCaptureBinding(m_debugName.c_str(), &fuseSet, &fuseBinding, &fuseSlot)) {
+        auto fuseRange = m_layout.getBindings();
+        bool fusePresent = false;
+        for (size_t i = 0u; i < fuseRange.bindingCount; i++)
+          fusePresent |= fuseRange.bindings[i].getSet() == fuseSet && fuseRange.bindings[i].getBinding() == fuseBinding;
+        if (!fusePresent) {
+          DxvkBindingInfo fuseInfo = { };
+          fuseInfo.set = fuseSet;
+          fuseInfo.binding = fuseBinding;
+          fuseInfo.resourceIndex = fuseSlot;
+          fuseInfo.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+          fuseInfo.access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+          fuseInfo.flags.set(DxvkDescriptorFlag::UniformBuffer);
+          DxvkShaderDescriptor fuseDescriptor(fuseInfo, m_metadata.stage);
+          DxvkPipelineLayoutBuilder fuseLayout = m_layout;
+          fuseLayout.addBindings(1u, &fuseDescriptor);
+          return fuseLayout;
+        }
+      }
+    }
+    // FUSE-DXVK end
     return m_layout;
   }
 

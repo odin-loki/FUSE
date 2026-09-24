@@ -25,6 +25,9 @@ add_library(fuse_relight_capture_geometry STATIC
 target_include_directories(fuse_relight_capture_geometry PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(fuse_relight_capture_geometry
     PUBLIC fuse_relight_hash fuse_relight_tap fuse_relight_options fuse_core)
+# RL-1.6: GeometryCaptureConfig::fromOptions wires the vertexshader component (vs_hash.hpp); the
+# target is added later (capture/vertex_capture), which CMake resolves at generation time.
+target_link_libraries(fuse_relight_capture_geometry PRIVATE fuse_relight_vertex_capture)
 if(COMMAND fuse_apply_cxx23)
     fuse_apply_cxx23(fuse_relight_capture_geometry)
 else()

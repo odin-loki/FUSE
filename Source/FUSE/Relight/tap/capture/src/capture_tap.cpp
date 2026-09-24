@@ -2,6 +2,7 @@
 #include <fuse/relight/tap/capture_tap.hpp>
 
 #include <fuse/relight/capture/texture/texture_options.hpp>
+#include <fuse/relight/capture/vertex_capture/spirv_vertex_capture.hpp>
 #include <fuse/relight/scene/classify/classify_options.hpp>
 #include <fuse/relight/scene/translate/translate_json.hpp>
 #include <fuse/relight/tap/device_tap.hpp>
@@ -10,12 +11,17 @@
 #if defined(FUSE_RELIGHT_HAVE_REPLACE)
 #include <fuse/relight/replace/replace_live.hpp> // RL-3.4 runtime replacements (linked when the target exists)
 #endif
+#if defined(FUSE_RELIGHT_HAVE_RENDER_FRAME)
+#include <fuse/relight/render/frame/frame_tap.hpp> // RL-4.1 frame orchestration (linked when the target exists)
+#endif
 #if defined(FUSE_RELIGHT_HAVE_LOGIC)
 #include <fuse/relight/logic/logic_live.hpp> // RL-3.5 Logic graphs on the replaced draws (linked when the target exists)
 #endif
 
+#include <algorithm>
 #include <cinttypes>
 #include <cstring>
+#include <span>
 #include <utility>
 
 namespace fuse::relight::tap {
@@ -148,6 +154,49 @@ std::string geometryJson(const geo::CapturedDraw& d, const geo::GeometryCaptureC
     return o.done();
 }
 
+/// RL-1.6: the draw's captured vertices (capture_tap.hpp, "vertex_capture").
+std::string vertexCaptureJson(const capture::vertex_capture::DrawVertexCapture& c) {
+    namespace vc = capture::vertex_capture;
+    constexpr std::size_t kMaxSlots = 4096;
+    auto floats = [](const float* v, std::size_t n) {
+        std::string out = "[";
+        for (std::size_t i = 0; i < n; ++i) {
+            out += (i ? ",\"" : "\"") + f32bits(v[i]) + "\"";
+        }
+        return out + "]";
+    };
+    std::vector<std::string> slots;
+    std::size_t emitted = 0;
+    for (std::size_t k = 0; k < c.raw.size() && emitted < kMaxSlots; ++k) {
+        const vc::RawCapturedVertex& raw = c.raw[k];
+        if ((raw.fields & vc::fields::kWritten) == 0) {
+            continue;
+        }
+        const vc::CapturedVertex& v = c.vertices[k];
+        char col[12];
+        std::snprintf(col, sizeof col, "%08X", v.color0);
+        slots.push_back(Obj()
+                            .u("k", k)
+                            .u("f", raw.fields)
+                            .raw("clip", floats(raw.clip, 4))
+                            .raw("pos", floats(v.position, 3))
+                            .raw("tex", floats(v.texcoord0, 2))
+                            .raw("nrm", floats(v.normal0, 3))
+                            .str("col", col)
+                            .done());
+        ++emitted;
+    }
+    return Obj()
+        .raw("base", std::to_string(c.baseVertex))
+        .raw("offset", std::to_string(c.vertexOffset))
+        .u("count", c.raw.size())
+        .u("written", c.written)
+        .u("fields", c.fields)
+        .b("truncated", emitted < c.written)
+        .raw("slots", array(slots))
+        .done();
+}
+
 std::string classificationJson(const scene::DrawClassification& r) {
     return Obj()
         .u("draw_call_id", r.drawCallId)
@@ -172,6 +221,8 @@ CaptureTapConfig CaptureTapConfig::fromOptions() {
     c.texture = tex::textureTrackerConfigFromOptions();
     c.geometry = geo::GeometryCaptureConfig::fromOptions();
     c.exportConfig = CaptureExportConfig::fromOptions();
+    c.vertexCapture = scene::ClassifyOptions::useVertexCapture();
+    c.vertexCaptureOptions = capture::vertex_capture::VertexCaptureOptions::fromOptions();
     return c;
 }
 
@@ -220,6 +271,8 @@ CaptureTap::CaptureTap(CaptureTapConfig config)
                   }),
       m_geometry(wireGeometry(std::move(config.geometry))), m_processor(std::move(config.processor)) {
     m_geometry.setDrawSink([this](const geo::CapturedDrawPtr& d) { m_lastGeometry = d; });
+    m_vertexCapture = config.vertexCapture;
+    m_vertexCaptureOptions = config.vertexCaptureOptions;
     if (config.exportConfig.enabled()) {
         m_export = std::make_unique<LiveCaptureExport>(*this, std::move(config.exportConfig));
     }
@@ -418,6 +471,11 @@ DrawDecision CaptureTap::onDraw(const DrawCall& call, const DrawState& state) {
     r.frame = m_frame;
     r.drawInFrame = m_drawInFrame++;
     r.geometry = std::move(m_lastGeometry);
+    if (m_vertexCapture && state.vertexShader.id != kNoResource) {
+        // RL-1.6: the back-transform of this draw; the dispatcher delivers the region at Present.
+        r.vertexCapture = std::make_shared<capture::vertex_capture::DrawVertexCapture>(
+            capture::vertex_capture::beginDrawCapture(state, m_vertexCaptureOptions));
+    }
     if (m_haveTranslated) {
         r.classification = m_lastTranslated.classification;
         r.translation = std::move(m_lastTranslated);
@@ -443,8 +501,41 @@ DrawDecision CaptureTap::onDraw(const DrawCall& call, const DrawState& state) {
 }
 
 bool CaptureTap::substituteVertexShader(const ShaderModule& m, std::vector<std::uint32_t>& replacement) {
+    // DXVK's compile threads, without the device lock: the transform is pure, so no tap state (and
+    // no m_mutex, which the device thread may hold) is involved. The forward tap locks itself.
+    if (m_forward && m_forward->substituteVertexShader(m, replacement)) {
+        return true;
+    }
+    if (!m_vertexCapture || !m.spirv) {
+        return false;
+    }
+    capture::vertex_capture::SpirvCaptureOptions options;
+    options.descriptorSet = m.captureSet;
+    options.binding = m.captureBinding;
+    capture::vertex_capture::SpirvCaptureResult r =
+        capture::vertex_capture::addVertexCapture(std::span(m.spirv, m.wordCount), options);
+    if (!r.transformed()) {
+        std::fprintf(stderr, "fuse-relight: vertex capture skipped %s: %s (%s)\n", m.name ? m.name : "shader",
+                     std::string(capture::vertex_capture::spirvCaptureStatusName(r.status)).c_str(), r.detail.c_str());
+        return false;
+    }
+    replacement = std::move(r.words);
+    return true;
+}
+
+void CaptureTap::onVertexCapture(const VertexCaptureFrame& f) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_forward ? m_forward->substituteVertexShader(m, replacement) : false;
+    if (m_forward) {
+        m_forward->onVertexCapture(f);
+    }
+    for (std::uint32_t i = 0; i < f.drawCount && f.draws; ++i) {
+        const VertexCaptureDraw& d = f.draws[i];
+        const auto it = std::lower_bound(m_pending.begin(), m_pending.end(), d.draw,
+                                         [](const CaptureDrawRecord& r, std::uint64_t n) { return r.n < n; });
+        if (it != m_pending.end() && it->n == d.draw && it->vertexCapture) {
+            capture::vertex_capture::completeDrawCapture(*it->vertexCapture, d);
+        }
+    }
 }
 
 void CaptureTap::onQueryBegin(const QueryEvent& q) {
@@ -550,6 +641,9 @@ void CaptureTap::flushFrame(bool final) {
             .raw("textures", array(textures))
             .raw("classification", classificationJson(r.classification))
             .raw("translation", r.translated ? scene::translatedDrawJson(r.translation) : "null");
+        if (r.vertexCapture && r.vertexCapture->captured) {
+            line.raw("vertex_capture", vertexCaptureJson(*r.vertexCapture));
+        }
         if (di < processed.draws.size() && !processed.draws[di].empty()) {
             line.raw("replacement", processed.draws[di]);
         }
@@ -611,7 +705,12 @@ std::unique_ptr<IRelightTap> createTapForDevice(const RuntimeConfig& config, uns
 #if defined(FUSE_RELIGHT_HAVE_LOGIC)
     c.processor = logic::attachLogicProcessor(std::move(c.processor)); // unchanged when null or rtx.graph.enable is off
 #endif
+#if defined(FUSE_RELIGHT_HAVE_RENDER_FRAME)
+    // RL-4.1: the capture tap unchanged unless relight.frame.* asks for frame orchestration.
+    return render::frame::attachFrameTap(std::make_unique<CaptureTap>(std::move(c)), deviceOrdinal);
+#else
     return std::make_unique<CaptureTap>(std::move(c));
+#endif
 }
 
 } // namespace fuse::relight::tap
