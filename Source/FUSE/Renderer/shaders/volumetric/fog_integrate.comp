@@ -1,0 +1,57 @@
+#version 460
+// WP-8.1 "fog.integrate": one thread per froxel column, front to back from the camera (slice 0 starts at
+// depth 0). Step length = slice thickness x |view ray| of the column centre; energy-conserving step
+// (Hillaire 2015): S_int = S (1 - e^{-sigma ds}) / sigma (7-term series below optical depth 0.1),
+// accum += T S_int, T *= e^{-sigma ds}; (accum, T) stored at each slice's far boundary. Reads this frame's
+// temporal output. CPU reference: fog_kernel::integrate_column (froxel_fog_kernel.hpp). GLSL twin of
+// fog_integrate.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "fog_common.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(push_constant) uniform FuseFogPush {
+    uint64_t frame;
+    uint64_t reserved;
+} pc;
+
+void main() {
+    FuseFogFrameRef R = FuseFogFrameRef(pc.frame);
+    const uint col = gl_GlobalInvocationID.x;
+    if (col >= R.f.gridX * R.f.gridY) {
+        return;
+    }
+    const uint x = col % R.f.gridX;
+    const uint y = col / R.f.gridX;
+    FuseFogTexelsRef src = FuseFogTexelsRef(R.f.historyCur);
+    FuseFogTexelsRef dst = FuseFogTexelsRef(R.f.integrated);
+    precise float sx = (float(x) + 0.5) * R.f.invGridX;
+    precise float sy = (float(y) + 0.5) * R.f.invGridY;
+    precise float rx = (sx * 2.0 - 1.0) * R.f.tanX;
+    precise float ry = (1.0 - sy * 2.0) * R.f.tanY;
+    precise float scale = sqrt(rx * rx + ry * ry + 1.0);
+    precise float ar = 0.0;
+    precise float ag = 0.0;
+    precise float ab = 0.0;
+    precise float t = 1.0;
+    for (uint z = 0u; z < R.f.gridZ; ++z) {
+        const uint i = fuse_fog_index(R, x, y, z);
+        const vec4 s = src.v[i];
+        const float start = z == 0u ? 0.0 : R.f.sliceDepth[z];
+        precise float ds = (R.f.sliceDepth[z + 1u] - start) * scale;
+        const float sigma = max(s.w, 0.0);
+        precise float tau = sigma * ds;
+        precise float stepT = exp(-sigma * ds);
+        precise float k = 0.0;
+        if (tau < FUSE_FOG_SERIES_TAU) {
+            k = ds * (1.0 - tau * (0.5 - tau * (1.0 / 6.0 - tau * (1.0 / 24.0 - tau * (1.0 / 120.0 - tau * (1.0 / 720.0 - tau * (1.0 / 5040.0)))))));
+        } else {
+            k = (1.0 - stepT) / sigma;
+        }
+        ar = ar + t * (s.x * k);
+        ag = ag + t * (s.y * k);
+        ab = ab + t * (s.z * k);
+        t = t * stepT;
+        dst.v[i] = vec4(ar, ag, ab, t);
+    }
+}

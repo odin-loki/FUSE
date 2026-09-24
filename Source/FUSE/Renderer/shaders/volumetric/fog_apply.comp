@@ -1,0 +1,56 @@
+#version 460
+// WP-8.1 "fog.apply": 8 x 8 tiles, one pixel per thread. RT4 device depth -> view depth (sky: the whole fog
+// range) -> fuse_fog_sample (piecewise linear in depth between slice boundaries, bilinear across columns) ->
+// lit x transmittance + in-scattering, alpha = lit's; RGBA16F output + optional f32x4 dump. CPU reference:
+// fog_kernel::apply_pixel (froxel_fog_kernel.hpp). GLSL twin of fog_apply.slang.
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_samplerless_texture_functions : require
+#include "bindless.glsl"
+#include "fog_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(push_constant) uniform FuseFogPush {
+    uint64_t frame;
+    uint64_t reserved;
+} pc;
+
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(rgba16f) uniform writeonly image2D fuse_fog_images[];
+
+float fuse_fog_view_depth(FuseFogFrameRef R, float d) {
+    if ((R.f.flags & FUSE_FOG_FLAG_REVERSED_Z) != 0u) {
+        precise float z = R.f.depthNear / d;
+        return d > 0.0 ? z : 0.0;
+    }
+    if (d >= 1.0 || R.f.depthFar <= R.f.depthNear) {
+        return 0.0;
+    }
+    precise float r = (R.f.depthNear * R.f.depthFar) / (R.f.depthFar - d * (R.f.depthFar - R.f.depthNear));
+    return r;
+}
+
+void main() {
+    FuseFogFrameRef R = FuseFogFrameRef(pc.frame);
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= R.f.width || p.y >= R.f.height) {
+        return;
+    }
+    const ivec2 ip = ivec2(p);
+    const float device = texelFetch(fuse_textures_2d[fuse_handle_index(R.f.inputDepth)], ip, 0).x;
+    const vec4 lit = texelFetch(fuse_textures_2d[fuse_handle_index(R.f.inputLit)], ip, 0);
+    float depth = fuse_fog_view_depth(R, device);
+    if (!(depth > 0.0) || isinf(depth)) {
+        depth = R.f.farPlane;
+    }
+    precise float sx = (float(p.x) + 0.5) * R.f.invWidth;
+    precise float sy = (float(p.y) + 0.5) * R.f.invHeight;
+    const vec4 fog = fuse_fog_sample(R, FuseFogTexelsRef(R.f.integrated), sx, sy, depth);
+    precise float r = lit.x * fog.w + fog.x;
+    precise float g = lit.y * fog.w + fog.y;
+    precise float b = lit.z * fog.w + fog.z;
+    const vec4 result = vec4(r, g, b, lit.w);
+    imageStore(fuse_fog_images[fuse_handle_index(R.f.output_)], ip, result);
+    if (R.f.dump != 0ul) {
+        FuseFogTexelsRef(R.f.dump).v[p.y * R.f.width + p.x] = result;
+    }
+}

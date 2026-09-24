@@ -304,3 +304,4 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp62.cmake")  # WP-6.2 ray-traced 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp61.cmake")  # WP-6.1 DDGI on Vulkan, T0 global SDF + T2 ray query (gi/gpu/, shaders/ddgi/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp71.cmake")  # WP-7.1 light tree (light_tree/, shaders/light_tree/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp82.cmake")  # WP-8.2 Hillaire atmosphere on Vulkan (atmosphere/, shaders/atmosphere/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp81.cmake")  # WP-8.1 froxel volumetric fog on Vulkan (volumetric/gpu/, shaders/volumetric/)
