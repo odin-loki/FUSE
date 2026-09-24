@@ -1,0 +1,38 @@
+{
+  "schema": "fuse.relight.classify_expect/1",
+  "scene": "rt_target",
+  "comment": [
+    "Render to a 64x64 texture (non-primary), then sample it on a back-buffer quad. Without the texture in",
+    "rtx.raytracedRenderTargetTextures the offscreen pass rasterizes; with its descriptor hash listed it is ray traced",
+    "(isDrawingToRaytracedRenderTarget) and the quad sampling it is flagged isUsingRaytracedRenderTarget (IgnoreOpacityMicromap)."
+  ],
+  "configs": [
+    {
+      "name": "default",
+      "conf": [],
+      "tags": {
+        "offscreen": {"status": "rasterized", "reason": "NonPrimaryTarget", "inject": false, "drawing_to_rt_rt": false},
+        "world": {"status": "raytraced", "reason": "RayTraced", "using_rt_rt": false, "categories": ""}
+      }
+    },
+    {
+      "name": "raytraced_render_target",
+      "conf": ["rtx.raytracedRenderTargetTextures = {rtdesc:0}"],
+      "tags": {
+        "offscreen": {"status": "raytraced", "reason": "DrawingToRaytracedTarget", "drawing_to_rt_rt": true, "decision": "ignore"},
+        "world": [
+          {"status": "raytraced", "using_rt_rt": true, "categories": "IgnoreOpacityMicromap"},
+          {"status": "raytraced", "using_rt_rt": false, "categories": ""}
+        ]
+      }
+    },
+    {
+      "name": "raytraced_render_target_disabled",
+      "conf": ["rtx.raytracedRenderTargetTextures = {rtdesc:0}", "rtx.raytracedRenderTarget.enable = False"],
+      "tags": {
+        "offscreen": {"status": "rasterized", "reason": "NonPrimaryTarget"},
+        "world": {"status": "raytraced", "using_rt_rt": false, "categories": ""}
+      }
+    }
+  ]
+}

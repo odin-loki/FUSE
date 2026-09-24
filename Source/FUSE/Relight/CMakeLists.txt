@@ -46,3 +46,6 @@ add_subdirectory(tests/options)                                                 
 add_subdirectory(hash)                                                                   # RL-0.5
 add_subdirectory(tests/hash)                                                             # RL-0.5
 add_subdirectory(tap)                                                                    # RL-1.1
+add_subdirectory(scene/classify)                                                         # RL-1.2
+add_subdirectory(capture/texture)                                                        # RL-1.4
+add_subdirectory(capture/geometry)                                                       # RL-1.3

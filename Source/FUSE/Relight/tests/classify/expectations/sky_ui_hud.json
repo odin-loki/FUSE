@@ -1,0 +1,72 @@
+{
+  "schema": "fuse.relight.classify_expect/1",
+  "scene": "sky_ui_hud",
+  "comment": [
+    "Remix draw classification (dxvk-remix @0867d3c, d3d9_rtx.cpp makeDrawCallType / rtx_types.cpp heuristics) expected for the app's sidecar tags.",
+    "Per tag: one expectation for every draw with that tag in a recorded frame, or a list applied to the tag's draws in order (the last entry repeats).",
+    "Fields: status (ignored|rasterized|raytraced), reason (ClassifyReason), inject, sky_auto, using_rt_rt, drawing_to_rt_rt, categories (exact '|' list, '' = none), categories_include.",
+    "Conf placeholders: {upload:K} = Remix hash of the K-th texture uploaded (level 0), {rtdesc:K} = descriptor hash of the K-th render-target texture."
+  ],
+  "configs": [
+    {
+      "name": "default",
+      "conf": [],
+      "tags": {
+        "sky": {"status": "raytraced", "reason": "RayTraced", "inject": false, "categories": "Sky", "sky_auto": false},
+        "world": {"status": "raytraced", "reason": "RayTraced", "inject": false, "categories": ""},
+        "hud": {"status": "raytraced", "reason": "RayTraced", "inject": false, "categories": "",
+                "why": "isRenderingUI needs PROJECTION[3][3] == 1 AND ZWRITEENABLE off; the app leaves ZWRITEENABLE on (only ZENABLE off), so Remix ray traces the ortho HUD"},
+        "hud_positiont": {"status": "rasterized", "reason": "PositionT", "inject": false, "categories": ""}
+      }
+    },
+    {
+      "name": "positiont_is_ui",
+      "conf": ["rtx.preTransformedVerticesIsUI = True"],
+      "tags": {
+        "sky": {"status": "raytraced", "categories": "Sky"},
+        "world": {"status": "raytraced", "categories": ""},
+        "hud": {"status": "raytraced", "inject": false},
+        "hud_positiont": [
+          {"status": "rasterized", "reason": "PositionTAsUI", "inject": true},
+          {"status": "rasterized", "reason": "PostInjection", "inject": false}
+        ]
+      }
+    },
+    {
+      "name": "ui_texture",
+      "conf": ["rtx.uiTextures = {upload:2}"],
+      "comment": "The HUD icon texture also textures the three world cubes: the first cube becomes the injection point and everything after it is rasterized (Remix: the first UI draw triggers injection).",
+      "tags": {
+        "sky": {"status": "raytraced", "categories": "Sky"},
+        "world": [
+          {"status": "raytraced", "reason": "RayTraced"},
+          {"status": "rasterized", "reason": "UserInterface", "inject": true},
+          {"status": "rasterized", "reason": "PostInjection", "inject": false}
+        ],
+        "hud": {"status": "rasterized", "reason": "PostInjection", "inject": false},
+        "hud_positiont": {"status": "rasterized", "reason": "PostInjection", "inject": false}
+      }
+    },
+    {
+      "name": "sky_texture_list",
+      "conf": ["rtx.skyMinZThreshold = 1.5", "rtx.skyBoxTextures = {upload:0}"],
+      "tags": {
+        "sky": {"status": "raytraced", "categories": "Sky", "sky_auto": false},
+        "world": {"status": "raytraced", "categories": ""},
+        "hud": {"status": "raytraced", "categories": ""},
+        "hud_positiont": {"status": "rasterized", "reason": "PositionT"}
+      }
+    },
+    {
+      "name": "sky_auto_depth_flags",
+      "conf": ["rtx.skyMinZThreshold = 1.5", "rtx.skyAutoDetect = 2"],
+      "comment": "One camera per frame (sky and world share VIEW; the HUD's VIEW is identity), so checkSkyAutoDetect uses its fallback for frames without two cameras: depth test off = sky. The ortho HUD runs with ZENABLE off and is auto-detected as sky too.",
+      "tags": {
+        "sky": {"status": "raytraced", "categories": "Sky", "sky_auto": true},
+        "world": {"status": "raytraced", "categories": "", "sky_auto": false},
+        "hud": {"status": "raytraced", "categories": "Sky", "sky_auto": true},
+        "hud_positiont": {"status": "rasterized", "reason": "PositionT"}
+      }
+    }
+  ]
+}

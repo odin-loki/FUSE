@@ -1,0 +1,37 @@
+{
+  "schema": "fuse.relight.classify_expect/1",
+  "scene": "stencil_shadow",
+  "comment": [
+    "The app draws a z-pass volume (STENCILPASS INCR/DECR, STENCILZFAIL KEEP) with COLORWRITEENABLE = 0: Remix's colour-write rule",
+    "(d3d9_rtx.cpp, RGB write mask) ignores it before the z-fail stencil-shadow rule is reached; the z-fail rule is covered by rl_classify_unit."
+  ],
+  "configs": [
+    {
+      "name": "default",
+      "conf": [],
+      "tags": {
+        "world": {"status": "raytraced", "reason": "RayTraced", "inject": false, "categories": ""},
+        "shadow_volume": {"status": "ignored", "reason": "ColorWriteDisabled", "inject": false, "decision": "ignore"},
+        "shadow_darken": {"status": "rasterized", "reason": "PositionT", "inject": false, "decision": "raster"}
+      }
+    },
+    {
+      "name": "raytracing_off",
+      "conf": ["rtx.enableRaytracing = False"],
+      "tags": {
+        "world": {"status": "raytraced"},
+        "shadow_volume": {"status": "ignored", "reason": "ColorWriteDisabled", "decision": "raster"},
+        "shadow_darken": {"status": "rasterized", "reason": "PositionT"}
+      }
+    },
+    {
+      "name": "positiont_is_ui",
+      "conf": ["rtx.preTransformedVerticesIsUI = True"],
+      "tags": {
+        "world": {"status": "raytraced"},
+        "shadow_volume": {"status": "ignored", "reason": "ColorWriteDisabled"},
+        "shadow_darken": {"status": "rasterized", "reason": "PositionTAsUI", "inject": true}
+      }
+    }
+  ]
+}
