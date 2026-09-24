@@ -83,12 +83,11 @@ struct LightingFrameConstants {
     f32 ndcY[20] = {};       ///< [y] = NDC y of tile row edge y (0..tilesY; row 0 = top, ndc +1)
     u32 rtShadowsLo = 0;     ///< WP-6.2: BDA of the RtfxShadowView light.shade reads (low / high 32 bits; 0 = none):
     u32 rtShadowsHi = 0;     ///< RT-shadowed lights take the pixel's ray-traced visibility. LightingFrameDesc::rtShadows.
-    /// WP-6.1: [0] / [1] = BDA of the DdgiVolumeView light.shade samples for indirect diffuse (low / high
-    /// 32 bits; 0 = no DDGI). LightingFrameDesc::ddgi. The name stays `reserved1` because the WP-6.2 layout
-    /// gate pins the shader tail (rtShadowsLo, rtShadowsHi, reserved1).
-    u32 reserved1[2] = {0u, 0u};
+    u32 ddgiLo = 0;          ///< WP-6.1: BDA of the DdgiVolumeView light.shade samples for indirect diffuse
+    u32 ddgiHi = 0;          ///< (low / high 32 bits; 0 = no DDGI). LightingFrameDesc::ddgi.
 };
 static_assert(sizeof(LightingFrameConstants) == 768u && offsetof(LightingFrameConstants, rtShadowsLo) == 752u &&
+                  offsetof(LightingFrameConstants, ddgiLo) == 760u && offsetof(LightingFrameConstants, ddgiHi) == 764u &&
                   offsetof(LightingFrameConstants, cameraPosition) == 96u &&
                   offsetof(LightingFrameConstants, ambient) == 160u && offsetof(LightingFrameConstants, width) == 176u &&
                   offsetof(LightingFrameConstants, tilesX) == 192u && offsetof(LightingFrameConstants, clusterCount) == 208u &&

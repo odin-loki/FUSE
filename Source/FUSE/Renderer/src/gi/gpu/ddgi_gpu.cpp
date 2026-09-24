@@ -1,6 +1,8 @@
 // WP-6.1 DDGI on Vulkan (see include/fuse/renderer/gi/gpu/ddgi_gpu.hpp).
 #include <fuse/renderer/gi/gpu/ddgi_gpu.hpp>
 
+#include <fuse/compute_kernel/load_scale.hpp>
+
 #include <fuse/renderer/gi/gpu/ddgi_gpu_reference.hpp>
 #include <fuse/renderer/rt/rt_caps.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
@@ -69,6 +71,8 @@ DdgiWorkLayout DdgiWorkLayout::compute(const DDGIDesc& volume, u32 probeCapacity
     at = alignUp(at + static_cast<u64>(probeCapacity) * volume.rays_per_probe * 16u, kSectionAlign);
     l.slotStats = at;
     at = alignUp(at + static_cast<u64>(probeCapacity) * sizeof(u32), kSectionAlign);
+    l.probeData = at;
+    at = alignUp(at + probes * 16u, kSectionAlign);
     l.bytes = at;
     return l;
 }
@@ -211,6 +215,7 @@ bool DdgiGpu::createPipelines() {
                           : Code{kDdgiTraceSdfSlangSpv, sizeof(kDdgiTraceSdfSlangSpv)};
         code[kBlend] = {kDdgiBlendSlangSpv, sizeof(kDdgiBlendSlangSpv)};
         code[kProbe] = {kDdgiProbeSlangSpv, sizeof(kDdgiProbeSlangSpv)};
+        code[kState] = {kDdgiStateSlangSpv, sizeof(kDdgiStateSlangSpv)};
         name = "slang";
     }
 #endif
@@ -222,6 +227,7 @@ bool DdgiGpu::createPipelines() {
                           : Code{kDdgiTraceSdfGlslSpv, sizeof(kDdgiTraceSdfGlslSpv)};
         code[kBlend] = {kDdgiBlendGlslSpv, sizeof(kDdgiBlendGlslSpv)};
         code[kProbe] = {kDdgiProbeGlslSpv, sizeof(kDdgiProbeGlslSpv)};
+        code[kState] = {kDdgiStateGlslSpv, sizeof(kDdgiStateGlslSpv)};
         name = "glsl";
     }
 #endif
@@ -375,8 +381,10 @@ bool DdgiGpu::beginFrame(u64 frameSerial, const DdgiFrameDesc& frame) {
                 m_seen[m_schedule[i]] = 0u;
             }
         } else {
-            ddgi_util::scheduleProbeUpdates(frame.frameIndex, m_probeCount, std::min(std::max(m_desc.volume.probes_per_frame, 1u), m_probeCapacity),
-                                            m_schedule.data(), m_probeCapacity, &scheduled);
+            // The oracle's rolling budget (DdgiCpuVolume::update): probes_per_frame x LoadScale::probes.
+            const u32 budget = kernel::scaled_count(m_desc.volume.probes_per_frame, kernel::load_scale().probes);
+            // Same window start as the oracle (frameIndex x budget); the count is clamped to the capacity.
+            ddgi_util::scheduleProbeUpdates(frame.frameIndex, m_probeCount, budget, m_schedule.data(), m_probeCapacity, &scheduled);
         }
     }
     m_constants = makeFrameConstants(m_desc.volume, m_desc.config, m_desc.tuning, frame, scheduled);
@@ -386,6 +394,7 @@ bool DdgiGpu::beginFrame(u64 frameSerial, const DdgiFrameDesc& frame) {
     const u64 work = m_work.deviceAddress;
     m_constants.volume.irradiance = work + m_layout.irradiance;
     m_constants.volume.distance = work + m_layout.distance;
+    m_constants.volume.probeData = probeStatesEnabled() ? work + m_layout.probeData : 0u;
     m_constants.schedule = ring + m_ringSchedule;
     m_constants.rayDirs = work + m_layout.rayDirs;
     m_constants.rays = work + m_layout.rays;
@@ -491,6 +500,19 @@ bool DdgiGpu::addUpdate(rg::Graph& graph, const DdgiGraphRefs& refs, const rt::R
     blend->groups[0] = scheduled;
     graph.addPass("ddgi.blend", &DdgiGpu::recordDispatch, blend).use(refs.work, rg::Access::StorageReadWrite, {}, rg::kStageCompute);
     m_stats.passes += 3u;
+
+    if (probeStatesEnabled()) {
+        // After the blend (which reads the states from before this update), from this update's rays.
+        PassRecord* state = nextRecord();
+        if (state == nullptr) {
+            return false;
+        }
+        state->kernel = kState;
+        state->groups[0] = groupsFor(scheduled, kWorkgroup);
+        graph.addPass("ddgi.state", &DdgiGpu::recordDispatch, state).use(refs.work, rg::Access::StorageReadWrite, {}, rg::kStageCompute);
+        ++m_stats.passes;
+        m_stats.probeStates = true;
+    }
     return true;
 }
 

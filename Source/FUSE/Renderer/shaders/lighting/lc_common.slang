@@ -70,7 +70,8 @@ struct LcFrame {
     float ndcY[20];
     uint rtShadowsLo; // WP-6.2: BDA of the RtfxShadowView (0 = no ray-traced shadows)
     uint rtShadowsHi;
-    uint reserved1[2]; // WP-6.1: BDA of the DdgiVolumeView (lo, hi; 0 = no DDGI indirect diffuse)
+    uint ddgiLo; // WP-6.1: BDA of the DdgiVolumeView (0 = no DDGI indirect diffuse)
+    uint ddgiHi;
 };
 
 struct LcAabb {

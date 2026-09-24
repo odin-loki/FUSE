@@ -91,6 +91,10 @@ struct DdgiCpuConfig {
     f32 backface_distance_scale = 0.2f;
     /// Offset of the sample point along the surface normal, in world units.
     f32 normal_bias = 0.1f;
+    /// Offset of the sample point toward the viewer, in world units (RTXGI probeViewBias), applied by the
+    /// sampleIrradiance overload with a view direction and by the probe rays' multi-bounce lookups (the
+    /// probe views its hits). 0 (default) = normal bias only, the behaviour without it.
+    f32 view_bias = 0.f;
     /// Probe-weight crush threshold for the visibility weight.
     f32 weight_crush_threshold = 0.2f;
     /// Add probe-sampled indirect light at ray hits (infinite bounces through the volume).
@@ -99,6 +103,34 @@ struct DdgiCpuConfig {
     u64 rotation_seed = 0x9E3779B97F4A7C15ull;
     /// Texel value (E/pi) before a probe's first update.
     fuse::math::Vec3 initial_irradiance{};
+
+    // --- Probe relocation + classification (RTXGI DDGI: Majercik et al. 2021, "Scaling Probe-Based
+    // Real-Time Dynamic Global Illumination for Production", JCGT 10(2); RTXGI SDK ProbeRelocationCS /
+    // ProbeClassificationCS). Both off by default: the volume then behaves exactly as without them.
+    // Per-probe data = (world offset xyz, state w) (ddgi_kernel::kProbeActive / kProbeInactive), updated
+    // after each blend from the probe's ray results (ddgi_kernel::update_probe_state).
+    /// Move probes out of geometry (backface ratio above the threshold: through the closest backface) and
+    /// away from front faces closer than `probe_min_frontface_distance`; offsets stay within
+    /// `probe_max_offset` x spacing of the grid position (RTXGI: 0.45, so a probe never leaves its cell).
+    bool probe_relocation = false;
+    /// Deactivate probes inside geometry (backface ratio above the threshold) and probes with no front-face
+    /// hit inside their cell (no surface they could light). Inactive probes are not blended and are
+    /// skipped by sample_irradiance (their trilinear weight goes to the active neighbours).
+    bool probe_classification = false;
+    /// World units (RTXGI probeMinFrontfaceDistance).
+    f32 probe_min_frontface_distance = 0.1f;
+    /// Fraction of a probe's rays hitting backfaces above which it counts as inside geometry
+    /// (RTXGI probeFixedRayBackfaceThreshold).
+    f32 probe_backface_threshold = 0.25f;
+    /// Largest relocation offset as a fraction of the probe spacing (per axis, spherical in spacing units).
+    f32 probe_max_offset = 0.45f;
+    /// Longest step (world units) a probe too close to a front face moves per update toward its farthest
+    /// front face (RTXGI: 1). A step that would leave the probe's max offset is not taken.
+    f32 probe_relocation_step = 1.f;
+    /// Hit distances blended into the distance moments are clamped to this (world units); 0 = the volume's
+    /// max_ray_distance (the default). RTXGI clamps to 1.5 x |probe_spacing| so escaping rays do not inflate
+    /// the moments' variance (which lets Chebyshev visibility pass behind thin walls).
+    f32 distance_clamp = 0.f;
 };
 
 /// Row-major 3x3 rotation used to rotate the spherical Fibonacci ray set.
@@ -145,6 +177,8 @@ struct DdgiCpuUpdateStats {
     u32 rays_traced = 0;
     /// Texels whose hysteresis was reduced by change detection.
     u32 fast_response_texels = 0;
+    /// Scheduled probes not blended because classification marked them inactive.
+    u32 probes_inactive = 0;
 };
 
 /// CPU probe volume: irradiance + distance atlases with bordered octahedral tiles.
@@ -190,6 +224,10 @@ public:
     /// World-space irradiance E at a surface point: trilinear over 8 probes with
     /// backface (wrap) and Chebyshev visibility weights.
     fuse::math::Vec3 sampleIrradiance(const fuse::math::Vec3& position, const fuse::math::Vec3& normal) const;
+    /// The same with the view bias: `view` = unit direction from the surface toward the camera.
+    fuse::math::Vec3 sampleIrradiance(const fuse::math::Vec3& position,
+                                      const fuse::math::Vec3& normal,
+                                      const fuse::math::Vec3& view) const;
 
     /// Backend of the probe trace + blend launches (fuse/renderer/gi/ddgi_probe_kernel.hpp). CpuParallel
     /// (default) and CpuReference are bit-identical; Cuda / Auto use the device when one is present
@@ -200,6 +238,15 @@ public:
     const std::vector<fuse::math::Vec3>& irradianceAtlas() const { return m_irradiance; }
     /// Bordered distance-moment tiles (probe-major, (depth_res + 2)^2 texels each).
     const std::vector<fuse::math::Vec2>& distanceAtlas() const { return m_distance; }
+    /// Per-probe relocation offset (xyz, world units) and state (w: ddgi_kernel::kProbeActive / kProbeInactive).
+    /// All zero (active, not moved) unless DdgiCpuConfig::probe_relocation / probe_classification are on.
+    const std::vector<fuse::math::Vec4>& probeData() const { return m_probe_data; }
+    /// Grid position + relocation offset (the ray origin and the position sampling weighs).
+    fuse::math::Vec3 probePosition(u32 probe_index) const;
+    /// False when classification marked the probe inactive.
+    bool probeActive(u32 probe_index) const;
+    /// True when relocation or classification is on (the probe data takes part in trace / blend / sample).
+    bool probeStatesEnabled() const { return m_config.probe_relocation || m_config.probe_classification; }
 
 private:
     usize irradianceOffset(u32 probe_index) const;
@@ -211,6 +258,7 @@ private:
     std::vector<fuse::math::Vec3> m_irradiance;
     std::vector<fuse::math::Vec2> m_distance;
     std::vector<u32> m_update_counts;
+    std::vector<fuse::math::Vec4> m_probe_data;
     std::vector<fuse::math::Vec3> m_scratch_dirs;
     std::vector<fuse::math::Vec3> m_scratch_radiance;
     std::vector<f32> m_scratch_distance;

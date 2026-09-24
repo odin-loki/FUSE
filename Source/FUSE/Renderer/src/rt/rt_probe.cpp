@@ -1,6 +1,7 @@
 // WP-6.0 ray-query compute probe (see include/fuse/renderer/rt/rt_probe.hpp).
 #include <fuse/renderer/rt/rt_probe.hpp>
 
+#include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/device.hpp>
 
 #if defined(FUSE_VULKAN_BACKEND)
@@ -14,7 +15,7 @@ RtProbe::~RtProbe() {
     destroy();
 }
 
-bool RtProbe::init(VulkanDevice* device, RtKernelLanguage language) {
+bool RtProbe::init(VulkanDevice* device, RtKernelLanguage language, BindlessDescriptors* bindless) {
     destroy();
     const RtCapabilities caps = queryRtCapabilities(device);
     if (!caps.usable) {
@@ -65,6 +66,7 @@ bool RtProbe::init(VulkanDevice* device, RtKernelLanguage language) {
     if (ok) {
         VkComputePipelineCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        ci.flags = bindless != nullptr ? static_cast<VkPipelineCreateFlags>(bindless->pipelineCreateFlags()) : 0u;
         ci.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         ci.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
         ci.stage.module = module;
@@ -88,6 +90,7 @@ bool RtProbe::init(VulkanDevice* device, RtKernelLanguage language) {
     return true;
 #else
     (void)language;
+    (void)bindless;
     m_reason = "stub backend";
     return false;
 #endif

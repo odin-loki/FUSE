@@ -1,6 +1,6 @@
 #version 460
 // WP-6.1 "ddgi.probe" (twin: ddgi_probe.slang): the volume's irradiance at explicit surface points through
-// the shared sampling code the lighting shade uses (ddgi_sample.glsl). One thread per DdgiProbePoint at
+// the shared sampling code the lighting shade uses (ddgi_sample.glsl, with the point's view direction). One thread per DdgiProbePoint at
 // pc.aux; f32x4 (E, 1) at pc.out_. The exit-test instrument of the sampling path (and a small API for
 // consumers without a G-buffer).
 #extension GL_GOOGLE_include_directive : require
@@ -14,6 +14,6 @@ void main() {
         return;
     }
     const FuseDdgiPoint p = FuseDdgiPointsRef(pc.aux).v[i];
-    const vec3 e = fuse_ddgi_sample_irradiance(pc.frame, p.position.xyz, p.normal.xyz);
+    const vec3 e = fuse_ddgi_sample_irradiance_view(pc.frame, p.position.xyz, p.normal.xyz, p.view.xyz);
     FuseDdgiVec4Ref(pc.out_).v[i] = vec4(e, 1.0);
 }

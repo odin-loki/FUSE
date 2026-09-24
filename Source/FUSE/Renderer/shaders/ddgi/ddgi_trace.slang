@@ -4,7 +4,7 @@
 
 bool fuseDdgiSunOccluded(DdgiFrame F, float3 position, float3 normal);
 
-float3 fuseDdgiHitRadiance(DdgiFrame F, float3 position, float3 normal, float3 albedo, float3 emissive) {
+float3 fuseDdgiHitRadiance(DdgiFrame F, float3 position, float3 normal, float3 albedo, float3 emissive, float3 dir) {
     float3 radiance = emissive;
     const float3 sunDir = fuseDdgiVec3(F.sunDirection);
     const float3 sunIrr = fuseDdgiVec3(F.sunIrradiance);
@@ -15,7 +15,7 @@ float3 fuseDdgiHitRadiance(DdgiFrame F, float3 position, float3 normal, float3 a
                           radiance.z + (albedo.z * sunIrr.z) * k);
     }
     if ((F.flags & kFuseDdgiFlagMultiBounce) != 0u) {
-        const float3 e = fuseDdgiSampleVolume(F.volume, position, normal);
+        const float3 e = fuseDdgiSampleVolumeView(F.volume, position, normal, -dir); // the probe views the hit
         radiance = float3(radiance.x + (albedo.x * e.x) * kFuseDdgiInvPi, radiance.y + (albedo.y * e.y) * kFuseDdgiInvPi,
                           radiance.z + (albedo.z * e.z) * kFuseDdgiInvPi);
     }
@@ -137,7 +137,7 @@ float4 fuseDdgiTrace(DdgiFrame F, float3 origin, float3 dir) {
     if (n.x == 0.0 && n.y == 0.0 && n.z == 0.0) {
         n = -dir;
     } else if (facing > 0.0) {
-        return float4(0.0, 0.0, 0.0, t * F.backfaceDistanceScale);
+        return float4(0.0, 0.0, 0.0, -(t * F.backfaceDistanceScale)); // backface: signed (negative)
     }
     float3 albedo = float3(0.8, 0.8, 0.8);
     float3 emissive = float3(0.0, 0.0, 0.0);
@@ -150,7 +150,7 @@ float4 fuseDdgiTrace(DdgiFrame F, float3 origin, float3 dir) {
         emissive = float3(m[b + 5u] * intensity, m[b + 6u] * intensity, m[b + 7u] * intensity);
     }
     const float3 position = float3(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t);
-    return float4(fuseDdgiHitRadiance(F, position, n, albedo, emissive), t);
+    return float4(fuseDdgiHitRadiance(F, position, n, albedo, emissive, dir), t);
 }
 
 #else
@@ -310,7 +310,7 @@ float4 fuseDdgiTrace(DdgiFrame F, float3 origin, float3 dir) {
             }
             t += max(-d, F.sdfMinDistance);
         }
-        return float4(0.0, 0.0, 0.0, min(t, maxD) * F.backfaceDistanceScale);
+        return float4(0.0, 0.0, 0.0, -(min(t, maxD) * F.backfaceDistanceScale)); // backface: signed
     }
     float t = 0.0;
     bool hit = false;
@@ -349,7 +349,7 @@ float4 fuseDdgiTrace(DdgiFrame F, float3 origin, float3 dir) {
         albedo = s.albedo.xyz;
         emissive = s.emissive.xyz;
     }
-    return float4(fuseDdgiHitRadiance(F, position, n, albedo, emissive), t);
+    return float4(fuseDdgiHitRadiance(F, position, n, albedo, emissive, dir), t);
 }
 #endif
 
@@ -365,7 +365,7 @@ void main(uint3 tid: SV_DispatchThreadID) {
     if (probe >= F.volume.probeCount) {
         return;
     }
-    const float3 origin = fuseDdgiProbePosition(F.volume, probe);
+    const float3 origin = fuseDdgiProbePositionRelocated(F.volume, probe);
     const float3 dir = ((float4*)F.rayDirs)[ray].xyz;
     ((float4*)F.rays)[slot * F.raysPerProbe + ray] = fuseDdgiTrace(F, origin, dir);
 }

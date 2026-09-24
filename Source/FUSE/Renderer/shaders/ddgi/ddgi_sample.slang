@@ -1,10 +1,11 @@
 // WP-6.1 DDGI: volume sampling, Slang twin of ddgi_sample.glsl (see there). Compile with -fp-mode precise.
 //   float3 E = fuseDdgiSampleIrradiance(volumeAddress, position, normal);   // 0 when address == 0
+//   float3 E = fuseDdgiSampleIrradianceView(volumeAddress, position, normal, view); // + view bias
 #pragma once
 
 static const float kFuseDdgiPi = 3.14159265358979323846;
 
-struct DdgiVolume { // DdgiVolumeView, 80 bytes
+struct DdgiVolume { // DdgiVolumeView, 96 bytes
     float origin[3];
     uint probeCount;
     float spacing[3];
@@ -17,6 +18,9 @@ struct DdgiVolume { // DdgiVolumeView, 80 bytes
     uint flags;
     uint64_t irradiance;
     uint64_t distance;
+    uint64_t probeData;
+    float viewBias;
+    uint pad;
 };
 
 float3 fuseDdgiNormalized(float3 d) {
@@ -35,6 +39,14 @@ float3 fuseDdgiResolveDirection(float3 d) {
         return fuseDdgiNormalized(d);
     }
     return float3(0.0, 1.0, 0.0);
+}
+
+float3 fuseDdgiResolveDirectionOr(float3 d, float3 fallback) {
+    const float dd = d.x * d.x + d.y * d.y + d.z * d.z;
+    if (!(dd < 1e-8)) {
+        return fuseDdgiNormalized(d);
+    }
+    return fuseDdgiResolveDirection(fallback);
 }
 
 float fuseDdgiLength(float3 d) {
@@ -115,10 +127,20 @@ float3 fuseDdgiProbePosition(DdgiVolume V, uint probe) {
                   V.origin[2] + V.spacing[2] * float(z));
 }
 
-float3 fuseDdgiSampleVolume(DdgiVolume V, float3 position, float3 normal) {
-    const float3 n = fuseDdgiResolveDirection(normal);
-    const float3 biased = float3(position.x + n.x * V.normalBias, position.y + n.y * V.normalBias,
-                                 position.z + n.z * V.normalBias);
+float3 fuseDdgiProbePositionRelocated(DdgiVolume V, uint probe) {
+    const float3 p = fuseDdgiProbePosition(V, probe);
+    if (V.probeData == 0 || probe >= V.probeCount) {
+        return p;
+    }
+    const float4 d = ((float4*)V.probeData)[probe];
+    return float3(p.x + d.x, p.y + d.y, p.z + d.z);
+}
+
+bool fuseDdgiProbeActive(DdgiVolume V, uint probe) {
+    return V.probeData == 0 || probe >= V.probeCount || ((float4*)V.probeData)[probe].w == 0.0;
+}
+
+float3 fuseDdgiSampleVolumeBiased(DdgiVolume V, float3 position, float3 n, float3 biased) {
     float3 grid = float3(0.0, 0.0, 0.0);
     if (V.spacing[0] > 0.0 && V.spacing[1] > 0.0 && V.spacing[2] > 0.0) {
         grid = float3((biased.x - V.origin[0]) / V.spacing[0], (biased.y - V.origin[1]) / V.spacing[1],
@@ -147,7 +169,10 @@ float3 fuseDdgiSampleVolume(DdgiVolume V, float3 position, float3 normal) {
             continue;
         }
         const uint probe = c[2] * V.dims[0] * V.dims[1] + c[1] * V.dims[0] + c[0];
-        const float3 probePos = fuseDdgiProbePosition(V, probe);
+        if (!fuseDdgiProbeActive(V, probe)) {
+            continue;
+        }
+        const float3 probePos = fuseDdgiProbePositionRelocated(V, probe);
 
         float weight = 1.0;
         const float3 toProbe = float3(probePos.x - position.x, probePos.y - position.y, probePos.z - position.z);
@@ -191,6 +216,27 @@ float3 fuseDdgiSampleVolume(DdgiVolume V, float3 position, float3 normal) {
     return float3(sum.x * invSum, sum.y * invSum, sum.z * invSum);
 }
 
+float3 fuseDdgiSampleVolume(DdgiVolume V, float3 position, float3 normal) {
+    const float3 n = fuseDdgiResolveDirection(normal);
+    const float3 biased = float3(position.x + n.x * V.normalBias, position.y + n.y * V.normalBias,
+                                 position.z + n.z * V.normalBias);
+    return fuseDdgiSampleVolumeBiased(V, position, n, biased);
+}
+
+float3 fuseDdgiSampleVolumeView(DdgiVolume V, float3 position, float3 normal, float3 view) {
+    const float3 n = fuseDdgiResolveDirection(normal);
+    if (V.viewBias == 0.0) {
+        const float3 biased = float3(position.x + n.x * V.normalBias, position.y + n.y * V.normalBias,
+                                     position.z + n.z * V.normalBias);
+        return fuseDdgiSampleVolumeBiased(V, position, n, biased);
+    }
+    const float3 w = fuseDdgiResolveDirectionOr(view, n);
+    const float3 biased = float3((position.x + n.x * V.normalBias) + w.x * V.viewBias,
+                                 (position.y + n.y * V.normalBias) + w.y * V.viewBias,
+                                 (position.z + n.z * V.normalBias) + w.z * V.viewBias);
+    return fuseDdgiSampleVolumeBiased(V, position, n, biased);
+}
+
 float3 fuseDdgiSampleIrradiance(uint64_t volumeAddress, float3 position, float3 normal) {
     if (volumeAddress == 0) {
         return float3(0.0, 0.0, 0.0);
@@ -200,4 +246,15 @@ float3 fuseDdgiSampleIrradiance(uint64_t volumeAddress, float3 position, float3 
         return float3(0.0, 0.0, 0.0);
     }
     return fuseDdgiSampleVolume(V, position, normal);
+}
+
+float3 fuseDdgiSampleIrradianceView(uint64_t volumeAddress, float3 position, float3 normal, float3 view) {
+    if (volumeAddress == 0) {
+        return float3(0.0, 0.0, 0.0);
+    }
+    const DdgiVolume V = ((DdgiVolume*)volumeAddress)[0];
+    if (V.probeCount == 0u || V.irradiance == 0 || V.distance == 0) {
+        return float3(0.0, 0.0, 0.0);
+    }
+    return fuseDdgiSampleVolumeView(V, position, normal, view);
 }

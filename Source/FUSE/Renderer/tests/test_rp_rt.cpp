@@ -31,6 +31,13 @@
 //                       (validated run first; validation off for the count)
 //   --mode caps_gate    T2 gate on real devices: FUSE_RENDER_TIER_MAX=T1 and VulkanDeviceDesc::maxTier=T0
 //                       reject (init false with the reason, no AS / ray query enabled), uncapped accepts
+//   --mode bindless_order  the descriptor-free rt.* compute pipelines (rt.blas.decode, rt.tlas.instances,
+//                       rt.probe) dispatched AFTER a bindless pass on the descriptor-buffer backend (the pass binds
+//                       the heap's descriptor buffers at the compute bind point before every rt.* pass), 4 frames of
+//                       motion + deformation + probe: 0 validation messages when AccelerationStructuresDesc::
+//                       bindless / RtProbe::init(..., bindless) carry the heap (VUID-vkCmdDispatch-None-08117
+//                       otherwise: a control run without the heap reports it and its messages are not counted);
+//                       hit parity as in `refit`. Skips when the device has no VK_EXT_descriptor_buffer
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, device below T2, no kernel built).
 #include "test_rp_visbuffer_meshes.hpp"
@@ -43,6 +50,7 @@
 #include <fuse/renderer/rt/rt_probe.hpp>
 #include <fuse/renderer/rt/rt_reference.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
+#include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
 #include <fuse/renderer/vk/upload_queue.hpp>
@@ -462,12 +470,24 @@ void recordCopy(const rg::PassContext& context, void* user) {
                     static_cast<VkBuffer>(job.dst), 1, &region);
 }
 
+/// A pass that does what a bindless pass does to the command buffer's compute state: binds the heap.
+struct BindlessPass {
+    const BindlessDescriptors* heap = nullptr;
+    VkPipelineLayout layout = VK_NULL_HANDLE; ///< set 0 = the heap's layout
+};
+
+void recordBindlessPass(const rg::PassContext& context, void* user) {
+    const BindlessPass& b = *static_cast<const BindlessPass*>(user);
+    b.heap->bind(context.commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, b.layout, 0);
+}
+
 struct FrameIo {
     rg::Graph graph;
     CopyJob copy{};
     bool readInstances = false;
     bool probe = true;
     RtCommitStats stats{};
+    BindlessPass* bindlessFirst = nullptr; ///< added after the gpu_scene.* passes, before every rt.* pass
 };
 
 void beginSceneFrame(Context& ctx, Scene& s, AccelerationStructures& rt) {
@@ -481,6 +501,10 @@ void buildGraph(Context& ctx, Scene& s, AccelerationStructures& rt, RtProbe& pro
     rg::Graph& graph = io.graph;
     graph.reset();
     const GpuSceneGraphRefs sceneRefs = s.gpu.importInto(graph);
+    if (io.bindlessFirst != nullptr) {
+        // After the gpu_scene.* passes (this scene has no heap; their pipelines are not under test), before rt.*.
+        graph.addPass("test.bindless_pass", &recordBindlessPass, io.bindlessFirst).neverCull();
+    }
     const RtGraphRefs rtRefs = rt.importInto(graph, sceneRefs);
     probe.beginFrame();
     rg::BufferRef hits{};
@@ -613,7 +637,7 @@ struct Rt {
 };
 
 int initRt(Context& ctx, Scene& s, Rt& rt, RtInstancePacking packing, RtKernelLanguage language, bool compaction = true,
-           u32 maxTlasUpdates = 64, bool forceCompactionCopy = false) {
+           u32 maxTlasUpdates = 64, bool forceCompactionCopy = false, BindlessDescriptors* bindless = nullptr) {
     RtMeshOptions deformable{};
     deformable.deformable = true;
     rt.as.setMeshOptions(kDeformMesh, deformable);
@@ -629,11 +653,12 @@ int initRt(Context& ctx, Scene& s, Rt& rt, RtInstancePacking packing, RtKernelLa
     d.forceCompactionCopy = forceCompactionCopy;
     d.instanceCapacity = 64;
     d.meshCapacity = 16;
+    d.bindless = bindless;
     if (!rt.as.init(d)) {
         std::printf("  rt init: %s\n", rt.as.reason());
         return kSkip;
     }
-    if (!rt.probe.init(ctx.device.get(), language)) {
+    if (!rt.probe.init(ctx.device.get(), language, bindless)) {
         std::printf("  probe init: %s\n", rt.probe.reason());
         return kSkip;
     }
@@ -767,6 +792,94 @@ int runRefit(Context& ctx) {
     rt.as.destroy();
     s.gpu.destroy();
     return 0;
+}
+
+int runBindlessOrder(Context& ctx) {
+    BindlessDescriptors heap;
+    BindlessDesc hd{};
+    hd.backend = BindlessBackendPreference::DescriptorBuffer;
+    if (!heap.init(*ctx.device, hd) || heap.backend() != BindlessBackend::DescriptorBuffer) {
+        std::printf("SKIP: no descriptor-buffer backend on this device\n");
+        heap.destroy(*ctx.device);
+        return kSkip;
+    }
+    const VkDescriptorSetLayout setLayout = static_cast<VkDescriptorSetLayout>(heap.layoutHandle());
+    VkPipelineLayoutCreateInfo li{};
+    li.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    li.setLayoutCount = 1;
+    li.pSetLayouts = &setLayout;
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    if (vkCreatePipelineLayout(ctx.vkDevice, &li, nullptr, &layout) != VK_SUCCESS) {
+        std::fprintf(stderr, "FAIL: pipeline layout\n");
+        heap.destroy(*ctx.device);
+        return 1;
+    }
+    BindlessPass bindlessPass{&heap, layout};
+    int rc = 0;
+    // Pass 0: control, the rt.* pipelines built without the heap (the pre-fix behaviour). Pass 1: with it.
+    for (u32 pass = 0; pass < 2u && rc == 0; ++pass) {
+        Scene s;
+        if (!buildScene(ctx, s)) {
+            std::fprintf(stderr, "FAIL: scene\n");
+            rc = 1;
+            break;
+        }
+        s.ref.setInstances(s.gpu);
+        Rt rt;
+        if (initRt(ctx, s, rt, RtInstancePacking::Gpu, RtKernelLanguage::Auto, true, 64, false, pass == 1u ? &heap : nullptr) != 0) {
+            std::printf("SKIP: rt unavailable\n");
+            rc = kSkip;
+            break;
+        }
+        makeRays(ctx, 4321);
+        FrameIo io;
+        io.bindlessFirst = &bindlessPass;
+        const u32 before = g_messages;
+        u32 decodes = 0;
+        for (u32 frame = 0; frame < 4u && rc == 0; ++frame) {
+            beginSceneFrame(ctx, s, rt.as);
+            if (frame > 0u) {
+                moveObjects(s, frame);
+                if (!deform(ctx, s, rt.as, frame)) {
+                    std::fprintf(stderr, "FAIL: deform\n");
+                    rc = 1;
+                    break;
+                }
+            }
+            if (!runFrame(ctx, s, rt.as, rt.probe, io)) {
+                std::fprintf(stderr, "FAIL: frame %u\n", frame);
+                rc = 1;
+                break;
+            }
+            decodes += io.stats.blasBuilds + io.stats.blasUpdates;
+            if (frame > 0u) {
+                s.ref.updateInstances(s.gpu);
+            }
+            if (pass == 1u) {
+                char label[64];
+                std::snprintf(label, sizeof(label), "bindless order frame %u", frame);
+                checkParity(ctx, s, label);
+            }
+        }
+        const u32 messages = g_messages - before;
+        if (pass == 0u) {
+            std::printf("bindless_order control (rt.* pipelines without the heap's flags): %u validation message(s) "
+                        "(expected: VUID-vkCmdDispatch-None-08117); not counted\n",
+                        messages);
+            g_messages = before; // the control's messages are the point of the control
+        } else {
+            std::printf("bindless_order: rt.* (%u BLAS builds / refits via rt.blas.decode, rt.tlas.instances, rt.probe x %u) after a "
+                        "bindless pass on the descriptor-buffer backend, 4 frames: %u validation message(s)\n",
+                        decodes, kDispatches, messages);
+            expect(messages == 0u, "rt.* dispatches after a bindless pass (descriptor-buffer backend): 0 validation messages");
+        }
+        rt.probe.destroy();
+        rt.as.destroy();
+        s.gpu.destroy();
+    }
+    vkDestroyPipelineLayout(ctx.vkDevice, layout, nullptr);
+    heap.destroy(*ctx.device);
+    return rc;
 }
 
 int runCompaction(Context& ctx) {
@@ -1056,6 +1169,8 @@ int main(int argc, char** argv) {
             rc = runRefit(ctx);
         } else if (mode == "compaction") {
             rc = runCompaction(ctx);
+        } else if (mode == "bindless_order") {
+            rc = runBindlessOrder(ctx);
         } else if (mode == "zero_alloc") {
             rc = runZeroAlloc(ctx, false);
         } else {

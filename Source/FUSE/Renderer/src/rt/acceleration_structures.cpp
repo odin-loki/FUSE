@@ -2,6 +2,7 @@
 #include <fuse/renderer/rt/acceleration_structures.hpp>
 
 #include <fuse/renderer/vk/allocator.hpp>
+#include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/upload_queue.hpp>
 
@@ -338,6 +339,10 @@ bool AccelerationStructures::createKernels() {
         im.layout = VK_NULL_HANDLE;
         return false;
     }
+    // Descriptor-free pipelines follow the frame's bindless backend (see AccelerationStructuresDesc::bindless).
+    const BindlessDescriptors* heap =
+        m_desc.bindless != nullptr ? m_desc.bindless : (m_desc.scene != nullptr ? m_desc.scene->desc().bindless : nullptr);
+    const VkPipelineCreateFlags createFlags = heap != nullptr ? static_cast<VkPipelineCreateFlags>(heap->pipelineCreateFlags()) : 0u;
     auto make = [&](const u32* code, usize bytes, VkPipeline& out) {
         VkShaderModuleCreateInfo mi{};
         mi.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -349,6 +354,7 @@ bool AccelerationStructures::createKernels() {
         }
         VkComputePipelineCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        info.flags = createFlags;
         info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
         info.stage.module = module;

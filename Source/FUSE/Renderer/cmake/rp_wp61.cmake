@@ -15,7 +15,8 @@ set(_fuse_wp61_kernels
     "TRACE_SDF|TraceSdf|ddgi_trace.comp|ddgi_trace.slang||"
     "TRACE_RQ|TraceRq|ddgi_trace.comp|ddgi_trace.slang|FUSE_DDGI_RAY_QUERY=1|-capability spvRayQueryKHR"
     "BLEND|Blend|ddgi_blend.comp|ddgi_blend.slang||"
-    "PROBE|Probe|ddgi_probe.comp|ddgi_probe.slang||")
+    "PROBE|Probe|ddgi_probe.comp|ddgi_probe.slang||"
+    "STATE|State|ddgi_state.comp|ddgi_state.slang||")
 
 # Script mode (build step): embed the kernels' SPIR-V into a C++ header.
 #   cmake -DOUT=<header> [-D<KEY>_SLANG=<spv> ...] [-D<KEY>_GLSL=<spv> ...] -P rp_wp61.cmake
@@ -166,7 +167,7 @@ target_link_libraries(fuse_rp_ddgi_gpu_cpu PRIVATE fuse_ddgi_gpu)
 target_compile_definitions(fuse_rp_ddgi_gpu_cpu PRIVATE "FUSE_DDGI_SHADER_DIR=\"${_fuse_wp61_shd}\"")
 target_compile_options(fuse_rp_ddgi_gpu_cpu PRIVATE ${_fuse_wp61_warn})
 fuse_apply_cxx23(fuse_rp_ddgi_gpu_cpu)
-foreach(_suite layout constants sdf blend api)
+foreach(_suite layout constants sdf blend api state leak)
     add_test(NAME fuse_rp_ddgi_gpu_${_suite} COMMAND fuse_rp_ddgi_gpu_cpu ${_suite})
     set_tests_properties(fuse_rp_ddgi_gpu_${_suite} PROPERTIES LABELS "gate;renderer;ddgi" TIMEOUT 600)
 endforeach()
@@ -180,7 +181,7 @@ fuse_apply_cxx23(fuse_rp_ddgi_gpu)
 # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
 set(_fuse_wp61_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
 set(_fuse_wp61_vk_tests "")
-foreach(_mode parity_rq parity_sdf converge leak tod shade zero_alloc)
+foreach(_mode parity_rq parity_sdf parity_rq_states parity_sdf_states converge leak tod shade zero_alloc)
     set(_name "fuse_rp_ddgi_gpu_vk_${_mode}")
     if(FUSE_VULKAN_BACKEND)
         add_test(NAME ${_name} COMMAND "${_fuse_wp61_lock}" "$<TARGET_FILE:fuse_rp_ddgi_gpu>" --mode ${_mode})

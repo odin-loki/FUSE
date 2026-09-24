@@ -144,9 +144,12 @@ void testLayout() {
            "the light loop's RtfxShadowView copies match");
     const std::string lcGlsl = readFile(lc + "/lc_common.glsl");
     const std::string lcSlang = readFile(lc + "/lc_common.slang");
-    const std::vector<std::string> tail = {"ndcY", "rtShadowsLo", "rtShadowsHi", "reserved1"};
+    const std::vector<std::string> tail = {"ndcY", "rtShadowsLo", "rtShadowsHi", "ddgiLo", "ddgiHi"};
     expect(fieldsInOrder(structBody(lcGlsl, "FuseLcFrame"), tail) && fieldsInOrder(structBody(lcSlang, "LcFrame"), tail),
-           "the lighting frame constants end with rtShadowsLo / Hi in both shader languages");
+           "the lighting frame constants end with rtShadowsLo / Hi, ddgiLo / Hi in both shader languages");
+    expect(sizeof(lighting_gpu::LightingFrameConstants) == 768u && offsetof(lighting_gpu::LightingFrameConstants, rtShadowsLo) == 752u &&
+               offsetof(lighting_gpu::LightingFrameConstants, ddgiLo) == 760u && offsetof(lighting_gpu::LightingFrameConstants, ddgiHi) == 764u,
+           "LightingFrameConstants: 768 bytes, rtShadowsLo / Hi at 752, ddgiLo / Hi at 760");
     for (const u32 w : {1u, 64u, 257u, 1920u}) {
         const RtEffectsOutputLayout l = RtEffectsOutputLayout::compute(w, 3u);
         const u64 px = static_cast<u64>(w) * 3u;

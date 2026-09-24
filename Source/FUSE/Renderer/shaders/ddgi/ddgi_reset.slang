@@ -24,5 +24,8 @@ void main(uint3 tid: SV_DispatchThreadID) {
     }
     if (i < V.probeCount) {
         ((uint*)F.updateCounts)[i] = 0u;
+        if (V.probeData != 0) {
+            ((float4*)V.probeData)[i] = float4(0.0, 0.0, 0.0, 0.0);
+        }
     }
 }

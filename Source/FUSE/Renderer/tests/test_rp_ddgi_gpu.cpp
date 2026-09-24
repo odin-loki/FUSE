@@ -24,17 +24,22 @@
 //                      probe with the same rotation sequence: per-probe mean irradiance of T2 vs T0 and of each
 //                      vs the oracle within 2% of the volume's mean (documented bound); ddgi.probe at 96 surface
 //                      points: T2 vs T0 within 3% of the points' mean
-//   --mode leak        thin-wall leak test: a closed room (5 cm walls) in sun + sky, probes on both sides of
-//                      the walls; irradiance sampled (ddgi.probe) on the inner / outer faces of the walls, T2 and
-//                      T0 against the CPU oracle run on the same frames: ddgi.probe == the oracle's
-//                      sample_irradiance on the read-back atlases (1e-5 relative), and the GPU's leak ratio
-//                      (inner / outer) == the oracle's within 10% (the port adds no leak). The row's criterion
-//                      (inner below epsilon) is NOT met by the oracle's rules (no probe relocation /
-//                      classification; the ratio is reported): see the WP-6.1 row's Open list
+//   --mode parity_rq_states / parity_sdf_states   the same, 6 frames, with relocation + classification + the
+//                      RTXGI surface bias (normal + view) + distance clamp (statesConfig; the room's blocker and
+//                      pillar hold probes inside geometry): additionally (e) probe data == the oracle's
+//                      ProbeStateKernel on the same ray results (states exact, offsets 1e-5) and Slang == GLSL
+//   --mode leak        thin-wall leak test: a closed room (5 cm walls and roof, probes 10 cm outside / 95 cm
+//                      inside the walls, spacing 1.1) lit (a) by a lamp inside, (b) by sun + sky outside;
+//                      statesConfig; 16 updates; irradiance sampled (ddgi.probe, with a camera view per side) on
+//                      the inner / outer faces of the four walls; T2, T0 and the CPU oracle on the same frames:
+//                      ddgi.probe == the oracle's sample_irradiance on the read-back atlases + probe data (1e-5),
+//                      and the criterion: max dark-side luminance <= 2% of the mean lit-side luminance, asserted
+//                      for the GPU volumes AND the oracle in both orientations
 //   --mode tod         60-step sun sweep (one update per step): temporal flicker (mean second difference of
 //                      the sampled irradiance / mean irradiance) below 3% on T2, and within 25% (+0.002) of the
 //                      CPU oracle's flicker on the same sweep
-//   --mode shade       DDGI as indirect diffuse in the WP-2.1 light.shade: the WP-1.4 / 1.5 G-buffer of the room,
+//   --mode shade       DDGI as indirect diffuse in the WP-2.1 light.shade (statesConfig: view bias toward the
+//                      camera, relocated / classified probes): the WP-1.4 / 1.5 G-buffer of the room,
 //                      lit by a sun; per lighting kernel language (Slang, GLSL) two ClusteredLighting instances
 //                      (LightingFrameDesc::ddgi off / on) in one graph after DdgiGpu::addSamplingUse: the difference
 //                      of their f32 dumps == albedo x (1 - metallic) x AO x E / pi with E = the oracle's
@@ -43,7 +48,8 @@
 //                      WP-2.1 / WP-3.2 shade, held by their gates.)
 //   --mode zero_alloc  64 steady-state frames (T2 + T0 volumes, rolling schedule, ddgi.probe, sampling use):
 //                      0 operator-new calls in DdgiGpu::beginFrame / importInto / addUpdate / addProbe /
-//                      addSamplingUse, the ddgi.* pass callbacks and the whole graph build (validated run first)
+//                      addSamplingUse, the ddgi.* pass callbacks and the whole graph build (validated run first);
+//                      the last 4 frames run under LoadScale::probes 0.5 / 2 (rolling schedule == the oracle's budget)
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
 #include "test_rp_vsm_raster_common.hpp"
@@ -55,6 +61,7 @@
 #include <fuse/renderer/gi/ddgi_probe_kernel.hpp>
 #include <fuse/renderer/gi/gpu/ddgi_gpu.hpp>
 #include <fuse/renderer/gi/gpu/ddgi_gpu_reference.hpp>
+#include <fuse/compute_kernel/load_scale.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 #include <fuse/renderer/lighting/clustered_kernel.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_gpu_kernel.hpp>
@@ -389,8 +396,9 @@ DDGIDesc roomVolume() {
     return d;
 }
 
-/// Thin-wall leak scene: ground, a closed room x, z in [-1.5, 1.5], y in [0, 2] with 5 cm walls and roof.
-DdgiCpuScene leakScene() {
+/// Thin-wall leak scene: ground, a closed room x, z in [-1.5, 1.5], y in [0, 2] with 5 cm walls and roof;
+/// lit by an emissive panel under the roof (lightInside; no sun, no sky) or by sun + sky outside.
+DdgiCpuScene leakScene(bool lightInside) {
     DdgiCpuScene s;
     const DdgiCpuSurface grey = surface(0.75f, 0.75f, 0.75f);
     constexpr f32 t = 0.05f;
@@ -400,9 +408,13 @@ DdgiCpuScene leakScene() {
     s.addBox({-1.5f, 0.f, -1.5f - t}, {1.5f, 2.f + t, -1.5f}, grey);         // -z wall
     s.addBox({-1.5f, 0.f, 1.5f}, {1.5f, 2.f + t, 1.5f + t}, grey);           // +z wall
     s.addBox({-1.5f, 2.f, -1.5f}, {1.5f, 2.f + t, 1.5f}, grey);              // roof
-    s.sun_direction = Vec3{-0.6f, 0.7f, -0.3f}.normalized();
-    s.sun_irradiance = {4.f, 4.f, 4.f};
-    s.sky_radiance = {0.4f, 0.45f, 0.5f};
+    if (lightInside) {
+        s.addBox({-0.5f, 1.85f, -0.5f}, {0.5f, 1.9f, 0.5f}, surface(0.2f, 0.2f, 0.2f, {8.f, 8.f, 8.f})); // ceiling lamp
+    } else {
+        s.sun_direction = Vec3{-0.6f, 0.7f, -0.3f}.normalized();
+        s.sun_irradiance = {4.f, 4.f, 4.f};
+        s.sky_radiance = {0.4f, 0.45f, 0.5f};
+    }
     return s;
 }
 
@@ -501,8 +513,9 @@ struct Volume {
 };
 
 bool initVolume(Context& ctx, Scene& s, Volume& v, const DDGIDesc& desc, DdgiTracer tracer, DdgiKernelLanguage language,
-                const char* label) {
+                const char* label, const DdgiCpuConfig& config = DdgiCpuConfig{}) {
     DdgiGpuDesc d{};
+    d.config = config;
     d.device = ctx.device.get();
     d.allocator = ctx.allocator.get();
     d.bindless = &ctx.bindless;
@@ -701,6 +714,8 @@ void readState(Context& ctx, const Volume& v, GpuState& out) {
     std::memcpy(out.state.distance.data(), base + l.distance, l.distanceBytes);
     out.state.updateCounts.resize(probes);
     std::memcpy(out.state.updateCounts.data(), base + l.updateCounts, probes * sizeof(u32));
+    out.state.probeData.resize(probes);
+    std::memcpy(out.state.probeData.data(), base + l.probeData, probes * sizeof(Vec4));
 }
 
 f64 relErr(f64 a, f64 b, f64 floor = 1e-6) {
@@ -758,6 +773,7 @@ struct TraceReport {
     u32 hits = 0;
     u32 misses = 0;
     u32 backfaces = 0;
+    u32 signBad = 0; ///< matching rays whose distance sign disagrees with the backface class
 };
 
 SdfTraceScene sdfScene(const Scene& s, const DdgiGpu& g, const BlendReferenceState& prev) {
@@ -795,25 +811,29 @@ TraceReport checkTrace(const Scene& s, const Volume& v, const GpuState& g, f64 d
     tp.multi_bounce = d.config.multi_bounce;
     const SdfTraceScene sdf = sdfScene(s, v.gpu, v.prev);
     for (u32 slot = 0; slot < v.gpu.scheduled(); ++slot) {
-        const Vec3 origin = ddgi_kernel::probe_world_position(d.volume, v.gpu.schedule()[slot]);
+        // The ray origin is the probe's relocated position (the previous frame's probe data).
+        const Vec3 origin = ddgi_kernel::probe_position(tp.volume, v.gpu.schedule()[slot]);
         for (u32 ray = 0; ray < rays; ++ray) {
             const usize i = static_cast<usize>(slot) * rays + ray;
             f32 dist = 0.f;
-            const Vec3 ref = v.rq ? ddgi_kernel::trace_radiance(tp, origin, g.dirs[ray], dist)
-                                  : sdf_trace_radiance(sdf, origin, g.dirs[ray], dist);
+            bool back = false;
+            const Vec3 ref = v.rq ? ddgi_kernel::trace_radiance(tp, origin, g.dirs[ray], dist, &back)
+                                  : sdf_trace_radiance(sdf, origin, g.dirs[ray], dist, &back);
             ++r.rays;
             const bool miss = dist == d.volume.max_ray_distance;
-            const bool back = !miss && ref.x == 0.f && ref.y == 0.f && ref.z == 0.f;
             r.misses += miss ? 1u : 0u;
             r.backfaces += back ? 1u : 0u;
             r.hits += !miss && !back ? 1u : 0u;
-            const f64 dd = std::fabs(static_cast<f64>(g.distance[i]) - dist);
+            // ddgi.trace stores backface distances negated (RTXGI convention).
+            const f64 dd = std::fabs(std::fabs(static_cast<f64>(g.distance[i])) - dist);
+            const bool signOk = (g.distance[i] < 0.f) == back;
             const f64 rr = std::max({relErr(g.radiance[i].x, ref.x, 1e-3), relErr(g.radiance[i].y, ref.y, 1e-3),
                                      relErr(g.radiance[i].z, ref.z, 1e-3)});
             if (dd > distTol * (1.0 + dist) || rr > radTol) {
                 ++r.outliers;
                 continue;
             }
+            r.signBad += signOk ? 0u : 1u;
             r.maxDist = std::max(r.maxDist, dd);
             r.maxRad = std::max(r.maxRad, rr);
         }
@@ -852,8 +872,27 @@ bool checkVolume(Context& ctx, const Scene& s, Volume& v, u32 frameIndex, GpuSta
     in.distance = g.distance.data();
     in.irradianceTexelDirs = v.gpu.irradianceTexelDirs().data();
     in.distanceTexelDirs = v.gpu.distanceTexelDirs().data();
-    const bool ran = runBlendReference(in, ref);
+    const bool ran = runBlendReference(in, ref) && runStateReference(in, ref);
     const AtlasDiff ad = compareAtlases(g.state, ref, kBlendTol);
+    // (e) probe data == the oracle's ProbeStateKernel on the same ray results (states exact, offsets 1e-5).
+    u32 stateBad = 0;
+    u32 inactive = 0;
+    u32 moved = 0;
+    f64 maxOffset = 0.0;
+    for (usize p = 0; p < ref.probeData.size() && p < g.state.probeData.size(); ++p) {
+        const Vec4& a = g.state.probeData[p];
+        const Vec4& b = ref.probeData[p];
+        const f64 off = std::max({std::fabs(static_cast<f64>(a.x) - b.x), std::fabs(static_cast<f64>(a.y) - b.y),
+                                  std::fabs(static_cast<f64>(a.z) - b.z)});
+        maxOffset = std::max(maxOffset, off);
+        stateBad += a.w != b.w || off > 1e-5 ? 1u : 0u;
+        inactive += b.w != ddgi_kernel::kProbeActive ? 1u : 0u;
+        moved += b.x != 0.f || b.y != 0.f || b.z != 0.f ? 1u : 0u;
+    }
+    if (v.gpu.probeStatesEnabled()) {
+        std::printf("    %-12s frame %u: probe states %u inactive, %u relocated, max |d offset| %.2e, %u / %zu differ\n", v.label,
+                    frameIndex, inactive, moved, maxOffset, stateBad, ref.probeData.size());
+    }
     u32 fast = 0;
     for (u32 x : g.slotStats) {
         fast += x;
@@ -866,6 +905,8 @@ bool checkVolume(Context& ctx, const Scene& s, Volume& v, u32 frameIndex, GpuSta
     expect(ran, "runBlendReference ran");
     expect(maxAngle <= 1e-5, "(a) GPU ray set == the oracle's rotation x spherical Fibonacci (1e-5 rad)");
     expect(static_cast<f64>(tr.rays - tr.outliers) >= minMatch * tr.rays, "(b) ray results == the CPU trace reference");
+    expect(tr.signBad == 0u, "(b) backface rays carry negative distances (and only they)");
+    expect(!v.gpu.probeStatesEnabled() || stateBad == 0u, "(e) probe data == the oracle's relocation / classification");
     expect(ad.irrBad == 0u && ad.distBad == 0u, "(c) atlases == the oracle's blend on the same ray results");
     expect(ad.countBad == 0u, "(c) update counts == the oracle's");
     expect(fast == ref.fastResponseTexels, "(c) fast-response texel count == the oracle's");
@@ -873,7 +914,20 @@ bool checkVolume(Context& ctx, const Scene& s, Volume& v, u32 frameIndex, GpuSta
     return true;
 }
 
-int runParity(Context& ctx, bool rq) {
+/// The WP-6.1 follow-up features on (relocation, classification, RTXGI surface bias and distance clamp).
+DdgiCpuConfig statesConfig(const DDGIDesc& desc) {
+    DdgiCpuConfig c{};
+    c.probe_relocation = true;
+    c.probe_classification = true;
+    c.probe_min_frontface_distance = 0.5f;
+    c.probe_relocation_step = 0.1f;
+    c.normal_bias = 0.2f;
+    c.view_bias = 0.5f;
+    c.distance_clamp = 1.5f * desc.probe_spacing.length();
+    return c;
+}
+
+int runParity(Context& ctx, bool rq, bool withStates) {
     if (rq && !ctx.rt) {
         std::printf("SKIP: T2 gate (no ray query on this device)\n");
         return kSkip;
@@ -890,8 +944,9 @@ int runParity(Context& ctx, bool rq) {
     const DDGIDesc desc = roomVolume();
     Volume vols[2];
     const DdgiTracer tracer = rq ? DdgiTracer::RayQuery : DdgiTracer::Sdf;
-    initVolume(ctx, s, vols[0], desc, tracer, DdgiKernelLanguage::Slang, rq ? "T2 slang" : "T0 slang");
-    initVolume(ctx, s, vols[1], desc, tracer, DdgiKernelLanguage::Glsl, rq ? "T2 glsl" : "T0 glsl");
+    const DdgiCpuConfig config = withStates ? statesConfig(desc) : DdgiCpuConfig{};
+    initVolume(ctx, s, vols[0], desc, tracer, DdgiKernelLanguage::Slang, rq ? "T2 slang" : "T0 slang", config);
+    initVolume(ctx, s, vols[1], desc, tracer, DdgiKernelLanguage::Glsl, rq ? "T2 glsl" : "T0 glsl", config);
     if (!vols[0].active && !vols[1].active) {
         std::printf("SKIP: no DDGI kernel built\n");
         return kSkip;
@@ -906,7 +961,8 @@ int runParity(Context& ctx, bool rq) {
     const u32 explicitList[] = {3, 7, 7, 11, 40, 41, 42, 3, 60, 74, 0, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
                                 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 50};
     GpuState g;
-    for (u32 frame = 0; frame < 4u; ++frame) {
+    const u32 frames = withStates ? 6u : 4u;
+    for (u32 frame = 0; frame < frames; ++frame) {
         DdgiFrameDesc fd{};
         fd.frameIndex = frame;
         if (frame == 1u) {
@@ -940,6 +996,13 @@ int runParity(Context& ctx, bool rq) {
             std::printf("    slang vs glsl frame %u: atlas max rel %.2e / %.2e (%u / %u exact), %u ray results differ\n", frame, lang.maxIrr,
                         lang.maxDist, lang.irrExact, lang.irrTotal, rayDiff);
             expect(lang.irrBad == 0u && lang.distBad == 0u && lang.countBad == 0u, "(d) Slang == GLSL atlases");
+            u32 stateDiff = 0;
+            for (usize p = 0; p < states[0].state.probeData.size(); ++p) {
+                const Vec4& a = states[0].state.probeData[p];
+                const Vec4& b = states[1].state.probeData[p];
+                stateDiff += a.x != b.x || a.y != b.y || a.z != b.z || a.w != b.w ? 1u : 0u;
+            }
+            expect(stateDiff == 0u, "(d) Slang == GLSL probe data");
         }
     }
     for (Volume& v : vols) {
@@ -1101,25 +1164,40 @@ int runConverge(Context& ctx) {
 }
 
 // --- leak -------------------------------------------------------------------------------------------
-int runLeak(Context& ctx) {
+// Criterion (both orientations, oracle and GPU): max dark-side luminance <= 2% of the mean lit-side luminance.
+// The correct dark-side value is exactly 0 (closed room), so all of it is leak; 2% is below the ~2% Weber
+// contrast threshold, i.e. invisible next to the lit side (and about one 8-bit sRGB step at mid grey).
+constexpr f64 kLeakEpsilon = 0.02;
+
+struct LeakStats {
+    f64 lit = 0.0;
+    f64 darkMean = 0.0;
+    f64 darkMax = 0.0;
+};
+
+int runLeakOrientation(Context& ctx, bool lightInside) {
+    const char* name = lightInside ? "light inside" : "sun outside";
+    std::printf("  -- %s --\n", name);
     Scene s;
-    if (!buildScene(ctx, s, leakScene())) {
+    if (!buildScene(ctx, s, leakScene(lightInside))) {
         std::fprintf(stderr, "FAIL: scene\n");
         return 1;
     }
     rt::AccelerationStructures rt;
     const bool haveRt = initRt(ctx, s, rt) == 0;
     const DDGIDesc desc = leakVolume();
+    const DdgiCpuConfig config = statesConfig(desc);
     Volume vols[2];
     if (haveRt) {
-        initVolume(ctx, s, vols[0], desc, DdgiTracer::RayQuery, DdgiKernelLanguage::Auto, "T2");
+        initVolume(ctx, s, vols[0], desc, DdgiTracer::RayQuery, DdgiKernelLanguage::Auto, "T2", config);
     }
-    initVolume(ctx, s, vols[1], desc, DdgiTracer::Sdf, DdgiKernelLanguage::Auto, "T0");
+    initVolume(ctx, s, vols[1], desc, DdgiTracer::Sdf, DdgiKernelLanguage::Auto, "T0", config);
     if (!vols[1].active) {
         std::printf("SKIP: DDGI kernels not built\n");
         return kSkip;
     }
-    // Points on the four walls: the inner face (normal into the room) and the outer face, 3 heights x 5.
+    // Points on the four walls: the inner face (normal into the room) and the outer face, 3 heights x 5, each
+    // viewed from a camera on its side (the room centre / 3 m out along the normal): the view bias.
     std::vector<DdgiProbePoint> pts;
     std::vector<u8> inner;
     constexpr f32 t = 0.05f;
@@ -1143,6 +1221,13 @@ int runLeak(Context& ctx) {
                     p.position[2] = sgn * face;
                     p.normal[2] = nrm;
                 }
+                const Vec3 pos{p.position[0], p.position[1], p.position[2]};
+                const Vec3 n{p.normal[0], p.normal[1], p.normal[2]};
+                const Vec3 camera = side == 0u ? Vec3{0.f, 1.f, 0.f} : pos + n * 3.f;
+                const Vec3 view = (camera - pos).normalized();
+                p.view[0] = view.x;
+                p.view[1] = view.y;
+                p.view[2] = view.z;
                 pts.push_back(p);
                 inner.push_back(side == 0u ? 1u : 0u);
             }
@@ -1162,9 +1247,9 @@ int runLeak(Context& ctx) {
             return 1;
         }
     }
-    // The CPU oracle on the same frames (same rotation sequence, the oracle's analytic boxes).
+    // The CPU oracle on the same frames (same rotation sequence, the oracle's analytic boxes, same config).
     DdgiCpuVolume oracle;
-    oracle.init(desc);
+    oracle.init(desc, config);
     std::vector<u32> all(oracle.probeCount());
     for (u32 i = 0; i < all.size(); ++i) {
         all[i] = i;
@@ -1172,33 +1257,43 @@ int runLeak(Context& ctx) {
     for (u32 frame = 0; frame < kFrames; ++frame) {
         oracle.updateProbes(s.cpu, all.data(), static_cast<u32>(all.size()), frame);
     }
-    auto ratio = [&](auto&& sample, f64& outerMean, f64& innerMax) {
-        f64 in = 0.0, out = 0.0;
-        u32 nIn = 0, nOut = 0;
-        innerMax = 0.0;
+    auto measure = [&](auto&& sample) {
+        LeakStats r{};
+        f64 lit = 0.0, dark = 0.0;
+        u32 nLit = 0, nDark = 0;
         for (u32 i = 0; i < pts.size(); ++i) {
             const f64 l = luminance(sample(i));
-            if (inner[i] != 0u) {
-                in += l;
-                innerMax = std::max(innerMax, l);
-                ++nIn;
+            if ((inner[i] != 0u) == lightInside) {
+                lit += l;
+                ++nLit;
             } else {
-                out += l;
-                ++nOut;
+                dark += l;
+                ++nDark;
+                r.darkMax = std::max(r.darkMax, l);
             }
         }
-        outerMean = out / nOut;
-        innerMax /= outerMean;
-        return (in / nIn) / outerMean;
+        r.lit = lit / nLit;
+        r.darkMean = dark / nDark;
+        return r;
     };
-    f64 oracleOuter = 0.0, oracleMax = 0.0;
-    const f64 oracleRatio = ratio(
-        [&](u32 i) {
-            return oracle.sampleIrradiance({pts[i].position[0], pts[i].position[1], pts[i].position[2]},
-                                           {pts[i].normal[0], pts[i].normal[1], pts[i].normal[2]});
-        },
-        oracleOuter, oracleMax);
-    std::printf("  oracle: outer faces mean E %.4f, leak ratio inner / outer mean %.4f, max %.4f\n", oracleOuter, oracleRatio, oracleMax);
+    auto point = [&](u32 i, Vec3& pos, Vec3& n, Vec3& view) {
+        pos = {pts[i].position[0], pts[i].position[1], pts[i].position[2]};
+        n = {pts[i].normal[0], pts[i].normal[1], pts[i].normal[2]};
+        view = {pts[i].view[0], pts[i].view[1], pts[i].view[2]};
+    };
+    const LeakStats o = measure([&](u32 i) {
+        Vec3 pos, n, view;
+        point(i, pos, n, view);
+        return oracle.sampleIrradiance(pos, n, view);
+    });
+    u32 oracleInactive = 0;
+    for (u32 i = 0; i < oracle.probeCount(); ++i) {
+        oracleInactive += oracle.probeActive(i) ? 0u : 1u;
+    }
+    std::printf("  oracle: lit mean E %.4f, dark mean %.5f (%.2f%%), dark max %.5f (%.2f%% of lit; eps %.0f%%), %u inactive probes\n", o.lit,
+                o.darkMean, 100.0 * o.darkMean / o.lit, o.darkMax, 100.0 * o.darkMax / o.lit, 100.0 * kLeakEpsilon, oracleInactive);
+    expect(o.lit > 0.1, "the lit side is lit (oracle)");
+    expect(o.darkMax <= kLeakEpsilon * o.lit, "thin-wall leak: oracle dark side <= 2% of the lit side");
     for (u32 k = 0; k < 2u; ++k) {
         Volume& v = vols[k];
         if (!v.active) {
@@ -1210,25 +1305,36 @@ int runLeak(Context& ctx) {
         f64 sampleErr = 0.0;
         for (u32 i = 0; i < pts.size(); ++i) {
             const Vec3 e = pointOut(ctx, k, i);
-            const Vec3 pos{pts[i].position[0], pts[i].position[1], pts[i].position[2]};
-            const Vec3 n{pts[i].normal[0], pts[i].normal[1], pts[i].normal[2]};
-            const Vec3 ref = ddgi_kernel::sample_irradiance(view, pos, n);
+            Vec3 pos, n, w;
+            point(i, pos, n, w);
+            const Vec3 ref = ddgi_kernel::sample_irradiance(view, pos, n, w);
             sampleErr = std::max({sampleErr, relErr(e.x, ref.x, 1e-4), relErr(e.y, ref.y, 1e-4), relErr(e.z, ref.z, 1e-4)});
         }
-        f64 outer = 0.0, innerMax = 0.0;
-        const f64 r = ratio([&](u32 i) { return pointOut(ctx, k, i); }, outer, innerMax);
-        std::printf("  %s: outer faces mean E %.4f, leak ratio inner / outer mean %.4f, max %.4f; ddgi.probe vs oracle sample on the "
-                    "same atlases max rel %.2e\n",
-                    v.label, outer, r, innerMax, sampleErr);
-        expect(outer > 0.1, "outer faces are lit");
-        expect(sampleErr <= 1e-5, "ddgi.probe == the oracle's sample_irradiance on the same atlases");
-        expect(std::fabs(r - oracleRatio) <= 0.1 * oracleRatio + 1e-3 && std::fabs(outer - oracleOuter) <= 0.05 * oracleOuter,
-               "the GPU volume leaks exactly as much as the oracle's (no leak added by the port)");
+        u32 inactive = 0;
+        for (const Vec4& d : g.state.probeData) {
+            inactive += d.w != ddgi_kernel::kProbeActive ? 1u : 0u;
+        }
+        const LeakStats r = measure([&](u32 i) { return pointOut(ctx, k, i); });
+        std::printf("  %s: lit mean E %.4f, dark mean %.5f (%.2f%%), dark max %.5f (%.2f%% of lit), %u inactive probes; ddgi.probe vs the "
+                    "oracle's sample on the same atlases + probe data max rel %.2e\n",
+                    v.label, r.lit, r.darkMean, 100.0 * r.darkMean / r.lit, r.darkMax, 100.0 * r.darkMax / r.lit, inactive, sampleErr);
+        expect(r.lit > 0.1, "the lit side is lit");
+        expect(sampleErr <= 1e-5, "ddgi.probe == the oracle's sample_irradiance (view bias, probe data) on the same atlases");
+        expect(r.darkMax <= kLeakEpsilon * r.lit, "thin-wall leak: GPU dark side <= 2% of the lit side");
+        expect(std::fabs(r.lit - o.lit) <= 0.05 * o.lit, "the GPU volume's lit side == the oracle's within 5%");
         v.gpu.destroy();
     }
     rt.destroy();
     s.gpu.destroy();
     return 0;
+}
+
+int runLeak(Context& ctx) {
+    const int a = runLeakOrientation(ctx, true);
+    if (a != 0) {
+        return a;
+    }
+    return runLeakOrientation(ctx, false);
 }
 
 // --- tod --------------------------------------------------------------------------------------------
@@ -1382,7 +1488,9 @@ int runShade(Context& ctx) {
     const bool haveRt = initRt(ctx, s, rt) == 0;
     const DDGIDesc desc = roomVolume();
     Volume vol;
-    if (!initVolume(ctx, s, vol, desc, haveRt ? DdgiTracer::RayQuery : DdgiTracer::Sdf, DdgiKernelLanguage::Auto, haveRt ? "T2" : "T0")) {
+    // The follow-up features on: the shade samples with the camera's view bias, relocated / classified probes.
+    if (!initVolume(ctx, s, vol, desc, haveRt ? DdgiTracer::RayQuery : DdgiTracer::Sdf, DdgiKernelLanguage::Auto, haveRt ? "T2" : "T0",
+                    statesConfig(desc))) {
         std::printf("SKIP: DDGI kernels not built\n");
         return kSkip;
     }
@@ -1593,7 +1701,9 @@ int runShade(Context& ctx) {
                 const f32 ao = halfAt(rb + offRt0, p * 4u + 3u);
                 const Vec3 albedo{rb[offRt1 + p * 4u] / 255.f, rb[offRt1 + p * 4u + 1u] / 255.f, rb[offRt1 + p * 4u + 2u] / 255.f};
                 const f32 metallic = rb[offRt2 + p * 4u + 1u] / 255.f;
-                const Vec3 e = ddgi_kernel::sample_irradiance(view, pos, n);
+                // light.shade's v: toward the camera (lighting_gpu::safe_normalize(camera - position, n)).
+                const Vec3 toCamera = lighting_gpu::safe_normalize(cv.position - pos, n);
+                const Vec3 e = ddgi_kernel::sample_irradiance(view, pos, n, toCamera);
                 const f32 k = (1.f - std::clamp(metallic, 0.f, 1.f)) * ao * (1.f * (1.f / ddgi_kernel::kPi));
                 const Vec3 ref{(albedo.x * e.x) * k, (albedo.y * e.y) * k, (albedo.z * e.z) * k};
                 const f32 diff[3] = {b.x - a.x, b.y - a.y, b.z - a.z};
@@ -1665,7 +1775,7 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
     if (haveRt) {
         initVolume(ctx, s, vols[0], desc, DdgiTracer::RayQuery, DdgiKernelLanguage::Auto, "T2");
     }
-    initVolume(ctx, s, vols[1], desc, DdgiTracer::Sdf, DdgiKernelLanguage::Auto, "T0");
+    initVolume(ctx, s, vols[1], desc, DdgiTracer::Sdf, DdgiKernelLanguage::Auto, "T0", statesConfig(desc)); // + ddgi.state
     if (!vols[1].active) {
         std::printf("SKIP: DDGI kernels not built\n");
         return kSkip;
@@ -1691,9 +1801,36 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
         s.cpu.sun_direction = Vec3{std::cos(0.05f * static_cast<f32>(frame)), 0.8f, 0.4f}.normalized();
         DdgiFrameDesc fd{};
         fd.frameIndex = frame;
+        // The last 4 frames run under LoadScale::probes 0.5 / 2 (the oracle's DdgiCpuVolume::update budget).
+        const f32 probeScale = frame + 4u >= kTotal ? (frame + 2u >= kTotal ? 2.f : 0.5f) : 1.f;
+        fuse::kernel::LoadScale scale = fuse::kernel::load_scale();
+        scale.probes = probeScale;
+        const fuse::kernel::ScopedLoadScale scopedScale(scale);
         t_allocations = 0;
         t_count = measure;
         const bool began = beginVolumes(ctx, s, haveRt ? &rt : nullptr, ptrs, 2, fd);
+        t_count = false;
+        {
+            // GPU rolling schedule == the oracle's (DdgiCpuVolume::update) under the frame's LoadScale.
+            u32 expected[256] = {};
+            u32 expectedCount = 0;
+            const u32 budget = fuse::kernel::scaled_count(desc.probes_per_frame, probeScale);
+            ddgi_util::scheduleProbeUpdates(frame, vols[1].gpu.probeCount(), budget, expected, 256u, &expectedCount);
+            // Same window (start = frameIndex x budget); a budget above the preallocated capacity is clamped to
+            // it (the oracle's list truncated), so the GPU list is the oracle's prefix of min(budget, capacity).
+            const u32 gpuCount = std::min(expectedCount, vols[1].gpu.probeCapacity());
+            bool same = vols[1].gpu.scheduled() == gpuCount;
+            for (u32 i = 0; same && i < gpuCount; ++i) {
+                same = vols[1].gpu.schedule()[i] == expected[i];
+            }
+            expect(same, "rolling schedule == the oracle's under LoadScale::probes (clamped to the capacity)");
+            if (frame + 4u == kTotal || frame + 2u == kTotal) {
+                std::printf("  LoadScale::probes %.1f: frame %u schedules %u probes (oracle %u, authored %u, capacity %u)\n",
+                            static_cast<double>(probeScale), frame, vols[1].gpu.scheduled(), expectedCount, desc.probes_per_frame,
+                            vols[1].gpu.probeCapacity());
+            }
+        }
+        t_count = measure;
         f.graph.reset();
         f.copyCount = 0;
         const GpuSceneGraphRefs sceneRefs = s.gpu.importInto(f.graph);
@@ -1755,9 +1892,13 @@ int main(int argc, char** argv) {
             return setupRc;
         }
         if (mode == "parity_rq") {
-            rc = runParity(ctx, true);
+            rc = runParity(ctx, true, false);
         } else if (mode == "parity_sdf") {
-            rc = runParity(ctx, false);
+            rc = runParity(ctx, false, false);
+        } else if (mode == "parity_rq_states") {
+            rc = runParity(ctx, true, true);
+        } else if (mode == "parity_sdf_states") {
+            rc = runParity(ctx, false, true);
         } else if (mode == "converge") {
             rc = runConverge(ctx);
         } else if (mode == "leak") {

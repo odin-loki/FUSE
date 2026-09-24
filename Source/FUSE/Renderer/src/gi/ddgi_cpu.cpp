@@ -63,6 +63,8 @@ ddgi_kernel::VolumeView volumeView(const DdgiCpuVolume& volume) {
     view.distance = volume.distanceAtlas().data();
     view.normal_bias = volume.config().normal_bias;
     view.weight_crush_threshold = volume.config().weight_crush_threshold;
+    view.probe_data = volume.probeStatesEnabled() ? volume.probeData().data() : nullptr;
+    view.view_bias = volume.config().view_bias;
     return view;
 }
 
@@ -169,6 +171,7 @@ bool DdgiCpuVolume::init(const DDGIDesc& desc, const DdgiCpuConfig& config) {
     const f32 initial_distance = desc.max_ray_distance;
     m_distance.assign(dist_tile * count, Vec2{initial_distance, initial_distance * initial_distance});
     m_update_counts.assign(count, 0u);
+    m_probe_data.assign(count, Vec4{0.f, 0.f, 0.f, ddgi_kernel::kProbeActive});
 
     const u32 ir = desc.irradiance_res;
     m_scratch_texel_dirs.resize(static_cast<usize>(ir) * ir);
@@ -194,6 +197,7 @@ void DdgiCpuVolume::reset() {
     m_irradiance.clear();
     m_distance.clear();
     m_update_counts.clear();
+    m_probe_data.clear();
     m_scratch_dirs.clear();
     m_scratch_radiance.clear();
     m_scratch_distance.clear();
@@ -262,7 +266,11 @@ DdgiCpuUpdateStats DdgiCpuVolume::updateProbes(const DdgiCpuScene& scene,
         m_scratch_seen[probe] = 1u;
         stats.rays_traced += rays;
         ++stats.probes_updated;
+        if (probeStatesEnabled() && m_probe_data[probe].w != ddgi_kernel::kProbeActive) {
+            ++stats.probes_inactive;
+        }
     }
+    const bool states = probeStatesEnabled();
 
     ddgi_kernel::TraceParams trace{};
     trace.probe_indices = {probe_indices, probe_count};
@@ -299,10 +307,29 @@ DdgiCpuUpdateStats DdgiCpuVolume::updateProbes(const DdgiCpuScene& scene,
     // Rays whose cos^power weight is below 1e-6 cannot move the weighted mean; the kernel skips them.
     blend.distance_power = std::max(m_config.distance_power, 1e-3f);
     blend.distance_min_cos = std::pow(1e-6f, 1.f / blend.distance_power);
-    blend.max_distance = m_desc.max_ray_distance;
+    blend.max_distance = m_config.distance_clamp > 0.f ? std::min(m_config.distance_clamp, m_desc.max_ray_distance)
+                                                       : m_desc.max_ray_distance;
+    blend.probe_data = states ? m_probe_data.data() : nullptr;
+
+    ddgi_kernel::ProbeStateParams state{};
+    state.probe_indices = {probe_indices, probe_count};
+    state.probe_count = m_probe_count;
+    state.ray_dirs = {m_scratch_dirs.data(), rays};
+    state.distance = {m_scratch_distance.data(), static_cast<u32>(total)};
+    state.probe_data = m_probe_data.data();
+    state.spacing = m_desc.probe_spacing;
+    state.max_distance = m_desc.max_ray_distance;
+    state.backface_distance_scale = m_config.backface_distance_scale;
+    state.min_frontface_distance = m_config.probe_min_frontface_distance;
+    state.backface_threshold = m_config.probe_backface_threshold;
+    state.max_offset = m_config.probe_max_offset;
+    state.relocation_step = m_config.probe_relocation_step;
+    state.relocation = m_config.probe_relocation;
+    state.classification = m_config.probe_classification;
 
 #if defined(FUSE_HAS_CUDA)
-    if (!duplicates && (m_backend == kernel::Backend::Cuda || m_backend == kernel::Backend::Auto) &&
+    // The CUDA wrapper stages no probe data: relocation / classification run on the CPU backends.
+    if (!duplicates && !states && (m_backend == kernel::Backend::Cuda || m_backend == kernel::Backend::Auto) &&
         kernel::backend_available(kernel::Backend::Cuda) &&
         launchDdgiProbeUpdateCuda(trace, blend, probe_count, nullptr)) {
         stats.fast_response_texels = fast_response;
@@ -315,8 +342,24 @@ DdgiCpuUpdateStats DdgiCpuVolume::updateProbes(const DdgiCpuScene& scene,
     kernel::launch(m_backend, ddgi_kernel::make_trace_launch(rays, probe_count), ddgi_kernel::TraceKernel{}, trace);
     kernel::launch(duplicates ? kernel::Backend::CpuReference : m_backend, ddgi_kernel::make_blend_launch(probe_count),
                    ddgi_kernel::BlendKernel{}, blend);
+    if (states) {
+        // After the blend (which used the states from before this update), from this update's rays.
+        kernel::launch(duplicates ? kernel::Backend::CpuReference : m_backend, ddgi_kernel::make_state_launch(probe_count),
+                       ddgi_kernel::ProbeStateKernel{}, state);
+    }
     stats.fast_response_texels = fast_response;
     return stats;
+}
+
+Vec3 DdgiCpuVolume::probePosition(u32 probe_index) const {
+    if (!m_ready) {
+        return {};
+    }
+    return ddgi_kernel::probe_position(volumeView(*this), probe_index);
+}
+
+bool DdgiCpuVolume::probeActive(u32 probe_index) const {
+    return m_ready && probe_index < m_probe_count && (!probeStatesEnabled() || m_probe_data[probe_index].w == ddgi_kernel::kProbeActive);
 }
 
 u32 DdgiCpuVolume::probeUpdateCount(u32 probe_index) const {
@@ -386,6 +429,13 @@ Vec3 DdgiCpuVolume::sampleIrradiance(const Vec3& position, const Vec3& normal) c
         return {};
     }
     return ddgi_kernel::sample_irradiance(volumeView(*this), position, normal);
+}
+
+Vec3 DdgiCpuVolume::sampleIrradiance(const Vec3& position, const Vec3& normal, const Vec3& view) const {
+    if (!m_ready) {
+        return {};
+    }
+    return ddgi_kernel::sample_irradiance(volumeView(*this), position, normal, view);
 }
 
 namespace ddgi_cpu {

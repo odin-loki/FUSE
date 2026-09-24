@@ -53,6 +53,7 @@ DdgiFrameConstants makeFrameConstants(const DDGIDesc& volume, const DdgiCpuConfi
     v.normalBias = config.normal_bias;
     v.weightCrushThreshold = config.weight_crush_threshold;
     v.intensity = tuning.intensity;
+    v.viewBias = config.view_bias;
 
     const DdgiRayRotation rotation = ddgi_cpu::updateRotation(config.rotation_seed, frame.frameIndex);
     const math::Vec3 rows[3] = {rotation.row0, rotation.row1, rotation.row2};
@@ -79,7 +80,8 @@ DdgiFrameConstants makeFrameConstants(const DDGIDesc& volume, const DdgiCpuConfi
     c.scheduled = scheduled;
     c.frameIndex = frame.frameIndex;
     c.flags = (config.multi_bounce ? kDdgiMultiBounce : 0u) | (tuning.frontFaceCounterClockwise ? kDdgiFrontFaceCcw : 0u) |
-              (ddgi_kernel::max_component(frame.sunIrradiance) > 0.f ? kDdgiSunEnabled : 0u);
+              (ddgi_kernel::max_component(frame.sunIrradiance) > 0.f ? kDdgiSunEnabled : 0u) |
+              (config.probe_relocation ? kDdgiRelocation : 0u) | (config.probe_classification ? kDdgiClassification : 0u);
     v.flags = c.flags;
     // The oracle's BlendParams (DdgiCpuVolume::updateProbes).
     c.hysteresis = std::clamp(volume.hysteresis, 0.f, 1.f);
@@ -98,7 +100,16 @@ DdgiFrameConstants makeFrameConstants(const DDGIDesc& volume, const DdgiCpuConfi
     c.initialIrradiance[0] = config.initial_irradiance.x;
     c.initialIrradiance[1] = config.initial_irradiance.y;
     c.initialIrradiance[2] = config.initial_irradiance.z;
+    c.distanceClamp = effectiveDistanceClamp(volume, config);
+    c.probeMinFrontfaceDistance = config.probe_min_frontface_distance;
+    c.probeBackfaceThreshold = config.probe_backface_threshold;
+    c.probeMaxOffset = config.probe_max_offset;
+    c.probeRelocationStep = config.probe_relocation_step;
     return c;
+}
+
+f32 effectiveDistanceClamp(const DDGIDesc& volume, const DdgiCpuConfig& config) {
+    return config.distance_clamp > 0.f ? std::min(config.distance_clamp, volume.max_ray_distance) : volume.max_ray_distance;
 }
 
 bool runBlendReference(const BlendReferenceInput& in, BlendReferenceState& state) {
@@ -144,9 +155,48 @@ bool runBlendReference(const BlendReferenceInput& in, BlendReferenceState& state
     blend.change_floor = config.change_floor;
     blend.distance_power = std::max(config.distance_power, 1e-3f);
     blend.distance_min_cos = std::pow(1e-6f, 1.f / blend.distance_power);
-    blend.max_distance = desc.max_ray_distance;
+    blend.max_distance = effectiveDistanceClamp(desc, config);
+    const bool states = config.probe_relocation || config.probe_classification;
+    if (states && state.probeData.size() != probes) {
+        return false;
+    }
+    blend.probe_data = states ? state.probeData.data() : nullptr;
     kernel::launch(kernel::Backend::CpuReference, ddgi_kernel::make_blend_launch(in.scheduled), ddgi_kernel::BlendKernel{}, blend);
     state.fastResponseTexels += fast;
+    return true;
+}
+
+bool runStateReference(const BlendReferenceInput& in, BlendReferenceState& state) {
+    if (in.volume == nullptr || in.config == nullptr) {
+        return false;
+    }
+    const DdgiCpuConfig& config = *in.config;
+    if (!config.probe_relocation && !config.probe_classification) {
+        return true;
+    }
+    const DDGIDesc& desc = *in.volume;
+    const u32 probes = ddgi_util::probeCount(desc);
+    if (in.schedule == nullptr || in.scheduled == 0u || in.rayDirs == nullptr || in.distance == nullptr ||
+        state.probeData.size() != probes) {
+        return false;
+    }
+    const u32 rays = desc.rays_per_probe;
+    ddgi_kernel::ProbeStateParams p{};
+    p.probe_indices = {in.schedule, in.scheduled};
+    p.probe_count = probes;
+    p.ray_dirs = {in.rayDirs, rays};
+    p.distance = {in.distance, in.scheduled * rays};
+    p.probe_data = state.probeData.data();
+    p.spacing = desc.probe_spacing;
+    p.max_distance = desc.max_ray_distance;
+    p.backface_distance_scale = config.backface_distance_scale;
+    p.min_frontface_distance = config.probe_min_frontface_distance;
+    p.backface_threshold = config.probe_backface_threshold;
+    p.max_offset = config.probe_max_offset;
+    p.relocation_step = config.probe_relocation_step;
+    p.relocation = config.probe_relocation;
+    p.classification = config.probe_classification;
+    kernel::launch(kernel::Backend::CpuReference, ddgi_kernel::make_state_launch(in.scheduled), ddgi_kernel::ProbeStateKernel{}, p);
     return true;
 }
 
@@ -158,6 +208,7 @@ void initialVolumeState(const DDGIDesc& volume, const DdgiCpuConfig& config, Ble
     const f32 d = volume.max_ray_distance;
     state.distance.assign(distTile * probes, math::Vec2{d, d * d});
     state.updateCounts.assign(probes, 0u);
+    state.probeData.assign(probes, math::Vec4{0.f, 0.f, 0.f, ddgi_kernel::kProbeActive});
     state.fastResponseTexels = 0u;
 }
 
@@ -169,6 +220,9 @@ ddgi_kernel::VolumeView volumeView(const DDGIDesc& volume, const DdgiCpuConfig& 
     v.distance = state.distance.data();
     v.normal_bias = config.normal_bias;
     v.weight_crush_threshold = config.weight_crush_threshold;
+    v.view_bias = config.view_bias;
+    const bool states = config.probe_relocation || config.probe_classification;
+    v.probe_data = states && state.probeData.size() == v.probe_count ? state.probeData.data() : nullptr;
     return v;
 }
 

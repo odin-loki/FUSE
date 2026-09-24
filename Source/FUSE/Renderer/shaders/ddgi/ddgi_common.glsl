@@ -14,10 +14,12 @@
 #define FUSE_DDGI_FLAG_MULTI_BOUNCE 1u
 #define FUSE_DDGI_FLAG_FRONT_CCW 2u
 #define FUSE_DDGI_FLAG_SUN 4u
+#define FUSE_DDGI_FLAG_RELOCATION 8u
+#define FUSE_DDGI_FLAG_CLASSIFICATION 16u
 #define FUSE_DDGI_MAX_IRRADIANCE_RES 16
 #define FUSE_DDGI_MAX_DEPTH_RES 32
 
-struct FuseDdgiFrame { // DdgiFrameConstants, 352 bytes
+struct FuseDdgiFrame { // DdgiFrameConstants, 400 bytes
     FuseDdgiVolume volume;
     vec4 rotation[3];
     float sunDirection[3];
@@ -46,6 +48,12 @@ struct FuseDdgiFrame { // DdgiFrameConstants, 352 bytes
     uint shadowMask;
     float initialIrradiance[3];
     uint sdfSurfaceCount;
+    float distanceClamp;
+    float probeMinFrontfaceDistance;
+    float probeBackfaceThreshold;
+    float probeMaxOffset;
+    float probeRelocationStep;
+    uint statePad[3];
     uint64_t schedule;
     uint64_t rayDirs;
     uint64_t rays;
@@ -73,9 +81,10 @@ struct FuseDdgiSurface { // DdgiSurface, 32 bytes
     vec4 emissive;
 };
 
-struct FuseDdgiPoint { // DdgiProbePoint, 32 bytes
+struct FuseDdgiPoint { // DdgiProbePoint, 48 bytes
     vec4 position;
     vec4 normal;
+    vec4 view;
 };
 
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseDdgiFrameRef { FuseDdgiFrame f; };

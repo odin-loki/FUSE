@@ -8,6 +8,6 @@ void main(uint3 tid: SV_DispatchThreadID) {
         return;
     }
     const DdgiPoint p = ((DdgiPoint*)pc.aux)[i];
-    const float3 e = fuseDdgiSampleIrradiance(pc.frame, p.position.xyz, p.normal.xyz);
+    const float3 e = fuseDdgiSampleIrradianceView(pc.frame, p.position.xyz, p.normal.xyz, p.view.xyz);
     ((float4*)pc.out_)[i] = float4(e, 1.0);
 }

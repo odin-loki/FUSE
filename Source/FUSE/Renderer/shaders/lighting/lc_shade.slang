@@ -38,9 +38,10 @@ void main(uint3 tid: SV_DispatchThreadID) {
         // The light loop (WP-2.2: shared with the forward transparency pass, lc_ltc.slang).
         float3 radiance = fuseLcShadeLightsPx(F, s, v, cluster, p); // WP-6.2: RT visibility
         // WP-6.1: DDGI irradiance E as indirect diffuse (Lambert: albedo x (1 - metallic) / pi), x AO.
-        const uint64_t ddgi = uint64_t(F.reserved1[0]) | (uint64_t(F.reserved1[1]) << 32u);
+        const uint64_t ddgi = uint64_t(F.ddgiLo) | (uint64_t(F.ddgiHi) << 32u);
         if (ddgi != 0ull) {
-            const float3 e = fuseDdgiSampleIrradiance(ddgi, s.position, s.normal);
+            // v (toward the camera) drives the volume's view bias (0 = normal bias only).
+            const float3 e = fuseDdgiSampleIrradianceView(ddgi, s.position, s.normal, v);
             const float k = (1.0 - clamp(s.metallic, 0.0, 1.0)) * s.ao * (((DdgiVolume*)ddgi)[0].intensity * (1.0 / kFuseDdgiPi));
             radiance = float3(radiance.x + (s.albedo.x * e.x) * k, radiance.y + (s.albedo.y * e.y) * k,
                               radiance.z + (s.albedo.z * e.z) * k);

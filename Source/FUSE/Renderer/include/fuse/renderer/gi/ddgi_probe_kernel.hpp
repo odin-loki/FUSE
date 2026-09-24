@@ -21,6 +21,16 @@
 // A blend reads and writes only its own probe's tiles, so workgroups never race unless one probe is
 // scheduled twice in one launch; the host then runs the blend on CpuReference (serial, in list order,
 // exactly the pre-port behaviour).
+//
+// Trace output distances are signed (RTXGI convention): a backface hit stores -(t x backface scale), so
+// the probe-state pass can count backfaces; the blend uses |distance| (identical atlases).
+//
+// Optional third launch (kStateName, "ddgi_probe_state"), when DdgiCpuConfig::probe_relocation or
+// probe_classification is on: item kernel, one scheduled probe per item, after the blend. Probe
+// relocation + classification as in RTXGI DDGI (Majercik et al. 2021, JCGT 10(2); RTXGI SDK
+// ProbeRelocationCS / ProbeClassificationCS) on the update's ray results; writes the per-probe data
+// (offset xyz, state w) that the NEXT update's trace (ray origins), blend (inactive probes skipped) and
+// every sample_irradiance (relocated positions, inactive probes skipped) read.
 
 #include <fuse/compute_kernel/atomics.hpp>
 #include <fuse/compute_kernel/kernel.hpp>
@@ -278,6 +288,10 @@ FUSE_HOST_DEVICE inline math::Vec3 direct_radiance(const SceneView& scene, const
 // Probe volume sampling (DdgiCpuVolume::probeIrradiance / probeDistance / sampleIrradiance)
 // ---------------------------------------------------------------------------------------------
 
+/// Probe states (VolumeView::probe_data[i].w).
+inline constexpr f32 kProbeActive = 0.f;
+inline constexpr f32 kProbeInactive = 1.f;
+
 /// Read-only POD view of a probe volume's bordered atlases.
 struct VolumeView {
     DDGIDesc desc{};
@@ -286,7 +300,27 @@ struct VolumeView {
     const math::Vec2* distance = nullptr;   ///< probe_count tiles of (depth_res + 2)^2 moments.
     f32 normal_bias = 0.1f;
     f32 weight_crush_threshold = 0.2f;
+    /// Optional per-probe (relocation offset xyz, state w); null = grid positions, every probe active.
+    const math::Vec4* probe_data = nullptr;
+    /// Offset of the sample point toward the viewer (world units; RTXGI probeViewBias). Used by the
+    /// sample_irradiance overload that takes a view direction; 0 = normal bias only.
+    f32 view_bias = 0.f;
 };
+
+/// Grid position + relocation offset (== probe_world_position without probe data).
+FUSE_HOST_DEVICE inline math::Vec3 probe_position(const VolumeView& v, u32 probe_index) {
+    const math::Vec3 p = probe_world_position(v.desc, probe_index);
+    if (v.probe_data == nullptr || probe_index >= v.probe_count) {
+        return p;
+    }
+    const math::Vec4& d = v.probe_data[probe_index];
+    return {p.x + d.x, p.y + d.y, p.z + d.z};
+}
+
+/// False when classification marked the probe inactive.
+FUSE_HOST_DEVICE inline bool probe_active(const VolumeView& v, u32 probe_index) {
+    return v.probe_data == nullptr || probe_index >= v.probe_count || v.probe_data[probe_index].w == kProbeActive;
+}
 
 FUSE_HOST_DEVICE inline usize irradiance_offset(const VolumeView& v, u32 probe_index) {
     const usize tile = static_cast<usize>(v.desc.irradiance_res) + 2u;
@@ -316,14 +350,12 @@ FUSE_HOST_DEVICE inline math::Vec2 probe_distance(const VolumeView& v, u32 probe
     return sample_tile(v.distance + distance_offset(v, probe_index), v.desc.depth_res, dir);
 }
 
-/// World-space irradiance E at a surface point: trilinear over 8 probes with backface (wrap) and
-/// Chebyshev visibility weights.
-FUSE_HOST_DEVICE inline math::Vec3 sample_irradiance(const VolumeView& v,
-                                                     const math::Vec3& position,
-                                                     const math::Vec3& normal) {
+/// Irradiance E at `position` whose visibility / interpolation point is `biased` (see below).
+FUSE_HOST_DEVICE inline math::Vec3 sample_irradiance_biased(const VolumeView& v,
+                                                            const math::Vec3& position,
+                                                            const math::Vec3& n,
+                                                            const math::Vec3& biased) {
     const DDGIDesc& desc = v.desc;
-    const math::Vec3 n = resolve_direction(normal);
-    const math::Vec3 biased = position + n * v.normal_bias;
     const math::Vec3 grid = world_to_probe_grid(desc, biased);
 
     const u32 dims[3] = {desc.grid_dims.x, desc.grid_dims.y, desc.grid_dims.z};
@@ -351,7 +383,14 @@ FUSE_HOST_DEVICE inline math::Vec3 sample_irradiance(const VolumeView& v,
             continue;
         }
         const u32 probe = c[2] * dims[0] * dims[1] + c[1] * dims[0] + c[0];
-        const math::Vec3 probe_pos = probe_world_position(desc, probe);
+        // Classification: inactive probes (inside geometry / nothing to light) take no part; their
+        // trilinear weight is renormalised onto the active neighbours.
+        if (!probe_active(v, probe)) {
+            continue;
+        }
+        // Relocation: visibility and the backface term use the moved probe; the trilinear weights keep
+        // the grid positions (RTXGI).
+        const math::Vec3 probe_pos = probe_position(v, probe);
 
         // Smooth backface term: probes behind the surface fade out without a hard cut.
         f32 weight = 1.f;
@@ -392,6 +431,31 @@ FUSE_HOST_DEVICE inline math::Vec3 sample_irradiance(const VolumeView& v,
     return sum * (1.f / weight_sum);
 }
 
+/// World-space irradiance E at a surface point: trilinear over 8 probes with backface (wrap) and
+/// Chebyshev visibility weights; the point is offset by normal_bias along the normal.
+FUSE_HOST_DEVICE inline math::Vec3 sample_irradiance(const VolumeView& v,
+                                                     const math::Vec3& position,
+                                                     const math::Vec3& normal) {
+    const math::Vec3 n = resolve_direction(normal);
+    return sample_irradiance_biased(v, position, n, position + n * v.normal_bias);
+}
+
+/// The same with the RTXGI surface bias: normal_bias along the normal plus view_bias toward the viewer
+/// (`view` = unit direction from the surface to the camera; for probe rays, minus the ray direction).
+/// The view term moves the point to the viewer's side of a thin wall, where the probes the viewer shares
+/// a room with pass the Chebyshev test and the probes behind the wall do not (Majercik et al. 2021, §5).
+FUSE_HOST_DEVICE inline math::Vec3 sample_irradiance(const VolumeView& v,
+                                                     const math::Vec3& position,
+                                                     const math::Vec3& normal,
+                                                     const math::Vec3& view) {
+    const math::Vec3 n = resolve_direction(normal);
+    if (v.view_bias == 0.f) {
+        return sample_irradiance_biased(v, position, n, position + n * v.normal_bias);
+    }
+    const math::Vec3 w = resolve_direction(view, n);
+    return sample_irradiance_biased(v, position, n, position + n * v.normal_bias + w * v.view_bias);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Trace kernel (kTraceName)
 // ---------------------------------------------------------------------------------------------
@@ -407,12 +471,17 @@ struct TraceParams {
     kernel::Span<f32> out_distance;        ///< slot * rays + ray
 };
 
-/// Radiance arriving at `origin` from `direction` (unit) and the hit distance used for visibility.
+/// Radiance arriving at `origin` from `direction` (unit) and the hit distance used for visibility
+/// (positive; `out_backface`, when given, reports a backface hit).
 FUSE_HOST_DEVICE inline math::Vec3 trace_radiance(const TraceParams& p,
                                                   const math::Vec3& origin,
                                                   const math::Vec3& direction,
-                                                  f32& out_distance) {
+                                                  f32& out_distance,
+                                                  bool* out_backface = nullptr) {
     const f32 max_distance = p.volume.desc.max_ray_distance;
+    if (out_backface != nullptr) {
+        *out_backface = false;
+    }
     DdgiCpuHit hit{};
     if (!intersect_boxes(p.scene.boxes, p.scene.box_count, origin, direction, 0.f, max_distance, hit)) {
         out_distance = max_distance;
@@ -421,13 +490,17 @@ FUSE_HOST_DEVICE inline math::Vec3 trace_radiance(const TraceParams& p,
     if (hit.backface) {
         // Probe sits inside geometry: no light, and a short distance so visibility rejects it.
         out_distance = hit.t * p.backface_distance_scale;
+        if (out_backface != nullptr) {
+            *out_backface = true;
+        }
         return {};
     }
     out_distance = hit.t;
     math::Vec3 radiance = direct_radiance(p.scene, hit);
     if (p.multi_bounce) {
         const math::Vec3& albedo = p.scene.boxes[hit.box_index].surface.albedo;
-        radiance = radiance + mul(albedo, sample_irradiance(p.volume, hit.position, hit.normal)) * kInvPi;
+        // The probe is the viewer of its ray's hit (RTXGI: surface bias with the ray direction).
+        radiance = radiance + mul(albedo, sample_irradiance(p.volume, hit.position, hit.normal, direction * -1.f)) * kInvPi;
     }
     return radiance;
 }
@@ -441,8 +514,11 @@ struct TraceKernel {
             return;
         }
         const u32 index = slot * p.ray_dirs.size + ray;
-        const math::Vec3 origin = probe_world_position(p.volume.desc, probe);
-        p.out_radiance[index] = trace_radiance(p, origin, p.ray_dirs[ray], p.out_distance[index]);
+        const math::Vec3 origin = probe_position(p.volume, probe);
+        f32 distance = 0.f;
+        bool backface = false;
+        p.out_radiance[index] = trace_radiance(p, origin, p.ray_dirs[ray], distance, &backface);
+        p.out_distance[index] = backface ? -distance : distance; // signed: backface hits negative
     }
 };
 
@@ -477,7 +553,9 @@ struct BlendParams {
     f32 change_floor = 1e-3f;
     f32 distance_power = 50.f; ///< max(config.distance_power, 1e-3)
     f32 distance_min_cos = 0.f; ///< pow(1e-6, 1 / distance_power): lighter rays cannot move the mean
-    f32 max_distance = 20.f;
+    f32 max_distance = 20.f; ///< distance clamp of the moments (DdgiCpuConfig::distance_clamp, else max_ray_distance)
+    /// Optional per-probe data (classification): probes whose state is not kProbeActive are not blended.
+    const math::Vec4* probe_data = nullptr;
 };
 
 /// One workgroup per scheduled probe (see the file comment for the phases).
@@ -493,6 +571,9 @@ struct BlendKernel {
         const u32 probe = p.probe_indices[slot];
         if (probe >= p.probe_count) {
             return; // uniform across the workgroup
+        }
+        if (p.probe_data != nullptr && p.probe_data[probe].w != kProbeActive) {
+            return; // inactive probe: history kept, not blended (uniform)
         }
         const u32 tid = idx.local_linear;
         const u32 threads = idx.workgroup.x;
@@ -619,7 +700,7 @@ struct BlendKernel {
                     const f32 c = tx * dir.x + ty * dir.y + tz * dir.z;
                     if (c > p.distance_min_cos) {
                         const f32 w = std::pow(c, p.distance_power);
-                        const f32 d = std::min(distances[r], p.max_distance);
+                        const f32 d = std::min(std::fabs(distances[r]), p.max_distance);
                         sum_d += d * w;
                         sum_d2 += d * d * w;
                         weight_sum += w;
@@ -658,6 +739,155 @@ struct BlendKernel {
 
 inline kernel::KernelLaunch make_blend_launch(u32 slots) {
     return kernel::KernelLaunch{kName, kernel::extent1(slots * kBlendThreads), {kBlendThreads, 1u, 1u}};
+}
+
+// ---------------------------------------------------------------------------------------------
+// Probe state kernel (kStateName): relocation + classification
+// ---------------------------------------------------------------------------------------------
+
+/// Probe-state sub-pass of the same render-graph pass (after the blend).
+inline constexpr const char* kStateName = "ddgi_probe_state";
+inline constexpr kernel::Dim3 kStateWorkgroup{64u, 1u, 1u};
+/// RTXGI's "no hit" sentinel for the closest-distance searches.
+inline constexpr f32 kStateFar = 1e27f;
+
+struct ProbeStateParams {
+    kernel::Span<const u32> probe_indices;
+    u32 probe_count = 0;
+    kernel::Span<const math::Vec3> ray_dirs;
+    kernel::Span<const f32> distance; ///< slot * rays + ray, signed (trace output)
+    math::Vec4* probe_data = nullptr; ///< updated in place
+    math::Vec3 spacing{1.f, 1.f, 1.f};
+    f32 max_distance = 20.f;               ///< a distance >= this is a miss (no surface)
+    f32 backface_distance_scale = 0.2f;    ///< undone for the closest-backface distance
+    f32 min_frontface_distance = 0.1f;
+    f32 backface_threshold = 0.25f;
+    f32 max_offset = 0.45f;                ///< fraction of the spacing
+    f32 relocation_step = 1.f;             ///< longest move toward the farthest front face per update
+    bool relocation = false;
+    bool classification = false;
+};
+
+/// New (offset, state) of one probe from its update's ray results. RTXGI ProbeRelocationCS then
+/// ProbeClassificationCS, on all rays of the update (RTXGI uses its unrotated "fixed" rays; this volume's
+/// ray set is rotated every update, so the decisions see a new sample of directions each time).
+FUSE_HOST_DEVICE inline math::Vec4 update_probe_state(const ProbeStateParams& p,
+                                                      const math::Vec3* dirs,
+                                                      const f32* distances,
+                                                      u32 ray_count,
+                                                      const math::Vec4& data) {
+    math::Vec3 offset{data.x, data.y, data.z};
+    f32 state = data.w;
+    u32 closest_back = 0xFFFFFFFFu;
+    u32 closest_front = 0xFFFFFFFFu;
+    u32 farthest_front = 0xFFFFFFFFu;
+    f32 closest_back_distance = kStateFar;
+    f32 closest_front_distance = kStateFar;
+    f32 farthest_front_distance = 0.f;
+    u32 backfaces = 0u;
+    const f32 undo = p.backface_distance_scale > 0.f ? 1.f / p.backface_distance_scale : 1.f;
+    for (u32 r = 0; r < ray_count; ++r) {
+        const f32 d = distances[r];
+        if (d < 0.f) {
+            ++backfaces;
+            const f32 full = -d * undo;
+            if (full < closest_back_distance) {
+                closest_back_distance = full;
+                closest_back = r;
+            }
+        } else if (d < closest_front_distance) {
+            closest_front_distance = d;
+            closest_front = r;
+        } else if (d > farthest_front_distance) {
+            farthest_front_distance = d;
+            farthest_front = r;
+        }
+    }
+    const f32 backface_ratio = ray_count > 0u ? static_cast<f32>(backfaces) / static_cast<f32>(ray_count) : 0.f;
+    const bool inside = backface_ratio > p.backface_threshold;
+
+    if (p.relocation) {
+        bool moved = false;
+        math::Vec3 full{};
+        if (closest_back != 0xFFFFFFFFu && inside) {
+            // Inside geometry: step through the closest backface, half the minimum distance beyond it.
+            const f32 step = closest_back_distance + p.min_frontface_distance * 0.5f;
+            full = offset + dirs[closest_back] * step;
+            moved = true;
+        } else if (closest_front_distance < p.min_frontface_distance) {
+            // Too close to a front face: move toward the farthest front face (never through it, at most
+            // relocation_step per update), when that is away from the closest one.
+            if (closest_front != 0xFFFFFFFFu && farthest_front != 0xFFFFFFFFu) {
+                const math::Vec3& a = dirs[closest_front];
+                const math::Vec3& b = dirs[farthest_front];
+                if (a.x * b.x + a.y * b.y + a.z * b.z <= 0.f) {
+                    full = offset + b * std::min(farthest_front_distance, p.relocation_step);
+                    moved = true;
+                }
+            }
+        } else if (closest_front_distance > p.min_frontface_distance) {
+            // Clear of surfaces: drift back toward the grid position.
+            const f32 len = std::sqrt(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z);
+            if (len > 0.f) {
+                const f32 margin = std::min(closest_front_distance - p.min_frontface_distance, len);
+                const f32 inv = 1.f / len;
+                full = offset + math::Vec3{-offset.x * inv, -offset.y * inv, -offset.z * inv} * margin;
+                moved = true;
+            }
+        }
+        if (moved) {
+            const math::Vec3 n{full.x / p.spacing.x, full.y / p.spacing.y, full.z / p.spacing.z};
+            if (n.x * n.x + n.y * n.y + n.z * n.z < p.max_offset * p.max_offset) {
+                offset = full;
+            }
+        }
+    }
+
+    if (p.classification) {
+        state = kProbeInactive;
+        if (!inside) {
+            // Active when a front face lies inside the probe's cell: the ray reaches it before the
+            // nearest of the three planes one spacing away.
+            for (u32 r = 0; r < ray_count; ++r) {
+                const f32 d = distances[r];
+                if (d < 0.f || d >= p.max_distance) {
+                    continue;
+                }
+                const math::Vec3& dir = dirs[r];
+                const f32 ax = std::fabs(dir.x);
+                const f32 ay = std::fabs(dir.y);
+                const f32 az = std::fabs(dir.z);
+                const f32 px = ax > 0.f ? p.spacing.x / std::max(ax, 1e-6f) : kStateFar;
+                const f32 py = ay > 0.f ? p.spacing.y / std::max(ay, 1e-6f) : kStateFar;
+                const f32 pz = az > 0.f ? p.spacing.z / std::max(az, 1e-6f) : kStateFar;
+                if (d <= std::min(px, std::min(py, pz))) {
+                    state = kProbeActive;
+                    break;
+                }
+            }
+        }
+    }
+    return {offset.x, offset.y, offset.z, state};
+}
+
+struct ProbeStateKernel {
+    FUSE_HOST_DEVICE void operator()(const kernel::LaunchIndex& idx, const ProbeStateParams& p) const {
+        const u32 slot = idx.global.x;
+        if (slot >= p.probe_indices.size) {
+            return;
+        }
+        const u32 probe = p.probe_indices[slot];
+        if (probe >= p.probe_count) {
+            return;
+        }
+        const u32 rays = p.ray_dirs.size;
+        p.probe_data[probe] = update_probe_state(p, p.ray_dirs.data, p.distance.data + static_cast<usize>(slot) * rays, rays,
+                                                 p.probe_data[probe]);
+    }
+};
+
+inline kernel::KernelLaunch make_state_launch(u32 slots) {
+    return kernel::KernelLaunch{kStateName, kernel::extent1(slots), kStateWorkgroup};
 }
 
 } // namespace fuse::renderer::ddgi_kernel

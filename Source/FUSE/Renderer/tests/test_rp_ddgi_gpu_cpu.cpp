@@ -12,6 +12,13 @@
 //   blend      runBlendReference (the oracle's BlendKernel on explicit ray results) == DdgiCpuVolume::updateProbes
 //              bit for bit over 6 updates (the harness the Vulkan gates use to compare the GPU atlases)
 //   api        DdgiWorkLayout sections; DdgiGpu without a device fails init with a reason; setSdfScene bounds
+//   state      the oracle's probe relocation + classification rules (ddgi_kernel::update_probe_state, RTXGI):
+//              inside geometry -> through the closest backface + inactive, too close to a front face -> steps
+//              away, offsets bounded by max_offset, drift back when clear, no surface in the cell -> inactive,
+//              features off -> unchanged; sample_irradiance skips inactive probes
+//   leak       the thin-wall leak criterion on the CPU oracle (the Vulkan leak gate's room, both orientations):
+//              max dark-side luminance <= 2% of the mean lit side with the features on; the pre-package rules
+//              are shown to leak (sun outside)
 #include <fuse/renderer/gi/ddgi.hpp>
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
 #include <fuse/renderer/gi/ddgi_probe_kernel.hpp>
@@ -137,11 +144,14 @@ DDGIDesc roomVolume() {
     return d;
 }
 
+DdgiCpuConfig statesConfig(const DDGIDesc& desc);
+
 // --- layout -----------------------------------------------------------------------------------------------
 void testLayout() {
-    expect(sizeof(DdgiVolumeView) == 80u && sizeof(DdgiFrameConstants) == 352u && sizeof(DdgiPush) == 32u &&
-               sizeof(DdgiSdfObject) == 40u && sizeof(DdgiSurface) == 32u && sizeof(DdgiProbePoint) == 32u,
+    expect(sizeof(DdgiVolumeView) == 96u && sizeof(DdgiFrameConstants) == 400u && sizeof(DdgiPush) == 32u &&
+               sizeof(DdgiSdfObject) == 40u && sizeof(DdgiSurface) == 32u && sizeof(DdgiProbePoint) == 48u,
            "record sizes");
+    expect(sizeof(fuse::math::Vec4) == 16u, "probe data texels are the oracle's Vec4 (offset xyz, state w)");
     expect(offsetof(DdgiFrameConstants, volume) == 0u, "the volume view heads the frame constants (one address)");
     expect(sizeof(fuse::compute::SdfObject) == sizeof(DdgiSdfObject) &&
                offsetof(fuse::compute::SdfObject, params) == offsetof(DdgiSdfObject, params) &&
@@ -152,18 +162,20 @@ void testLayout() {
            "DdgiSdfObject == compute::SdfObject");
     expect(sizeof(Vec3) == 12u && sizeof(Vec2) == 8u, "atlas texels are the oracle's Vec3 / Vec2 (3 / 2 f32)");
     expect(sizeof(lighting_gpu::LightingFrameConstants) == 768u &&
-               offsetof(lighting_gpu::LightingFrameConstants, reserved1) == 760u,
-           "the lighting constants carry the DDGI address in reserved1 (offset 760)");
+               offsetof(lighting_gpu::LightingFrameConstants, ddgiLo) == 760u &&
+               offsetof(lighting_gpu::LightingFrameConstants, ddgiHi) == 764u,
+           "the lighting constants carry the DDGI address in ddgiLo / ddgiHi (offsets 760 / 764, 768 bytes)");
 
     const std::vector<std::string> volume = {"origin", "probeCount", "spacing", "irradianceRes", "dims", "depthRes",
                                              "normalBias", "weightCrushThreshold", "intensity", "flags", "irradiance",
-                                             "distance"};
+                                             "distance", "probeData", "viewBias", "pad"};
     const std::vector<std::string> frame = {
         "volume", "rotation", "sunDirection", "maxRayDistance", "sunIrradiance", "backfaceDistanceScale", "skyRadiance",
         "rayEpsilon", "raysPerProbe", "scheduled", "frameIndex", "flags", "hysteresis", "probeChangeHysteresis",
         "probeChangeThreshold", "changeThreshold", "changeHysteresisDrop", "changeFloor", "distancePower", "distanceMinCos",
         "sdfMinDistance", "sdfMaxSteps", "sdfCount", "sdfShadowBias", "traceMask", "shadowMask", "initialIrradiance",
-        "sdfSurfaceCount", "schedule", "rayDirs", "rays", "updateCounts", "irradianceTexelDirs", "distanceTexelDirs", "tlas",
+        "sdfSurfaceCount", "distanceClamp", "probeMinFrontfaceDistance", "probeBackfaceThreshold", "probeMaxOffset",
+        "probeRelocationStep", "statePad", "schedule", "rayDirs", "rays", "updateCounts", "irradianceTexelDirs", "distanceTexelDirs", "tlas",
         "scene", "sdfObjects", "sdfSurfaces", "slotStats"};
     const std::vector<std::string> sdf = {"position", "params", "type", "alpha", "materialId", "rounding"};
     const std::vector<std::string> push = {"frame", "aux", "out_", "count", "pad"};
@@ -182,6 +194,15 @@ void testLayout() {
     expect(fieldsInOrder(commonGlsl.substr(commonGlsl.find("uniform FuseDdgiPush")), push) &&
                fieldsInOrder(structBody(commonSlang, "DdgiPush"), push),
            "DdgiPush mirrors");
+    const std::vector<std::string> point = {"position", "normal", "view"};
+    expect(fieldsInOrder(structBody(commonGlsl, "FuseDdgiPoint"), point) && fieldsInOrder(structBody(commonSlang, "DdgiPoint"), point),
+           "DdgiProbePoint mirrors (vec4 rows)");
+    // The lighting shade's frame tail (WP-2.1 / 6.2 / 6.1): ... rtShadowsLo, rtShadowsHi, ddgiLo, ddgiHi.
+    const std::string lc = std::string(FUSE_DDGI_SHADER_DIR) + "/../lighting";
+    const std::vector<std::string> tail = {"rtShadowsLo", "rtShadowsHi", "ddgiLo", "ddgiHi"};
+    expect(fieldsInOrder(structBody(readFile(lc + "/lc_common.glsl"), "FuseLcFrame"), tail) &&
+               fieldsInOrder(structBody(readFile(lc + "/lc_common.slang"), "LcFrame"), tail),
+           "lc_common.{glsl,slang}: the frame ends with rtShadowsLo / Hi, ddgiLo / Hi");
     std::printf("layout: records pinned, GLSL / Slang mirrors in C++ field order\n");
 }
 
@@ -210,6 +231,17 @@ void testConstants() {
     expect(k.traceMask == 0x7Fu, "trace mask never carries kRtMaskDead");
     expect(k.volume.probeCount == 75u && k.volume.dims[1] == 3u && k.scheduled == 12u && k.raysPerProbe == 64u, "grid");
     expect(k.initialIrradiance[2] == 0.3f && k.maxRayDistance == 12.f, "reset values");
+    expect(k.distanceClamp == 12.f && k.volume.viewBias == 0.f && (k.flags & (kDdgiRelocation | kDdgiClassification)) == 0u,
+           "defaults: clamp = max ray distance, no view bias, no probe states");
+    const DdgiCpuConfig sc = statesConfig(d);
+    const DdgiFrameConstants ks = makeFrameConstants(d, sc, t, f, 12u);
+    expect(ks.distanceClamp == sc.distance_clamp && ks.volume.viewBias == 0.5f && ks.volume.normalBias == 0.2f &&
+               (ks.flags & kDdgiRelocation) != 0u && (ks.flags & kDdgiClassification) != 0u && ks.probeMinFrontfaceDistance == 0.5f &&
+               ks.probeBackfaceThreshold == 0.25f && ks.probeMaxOffset == 0.45f && ks.probeRelocationStep == 0.1f,
+           "probe-state settings mapped");
+    DdgiCpuConfig big = sc;
+    big.distance_clamp = 100.f;
+    expect(makeFrameConstants(d, big, t, f, 1u).distanceClamp == 12.f, "distance clamp never above the max ray distance");
     std::printf("constants: oracle settings mapped (clamps, min cos %.6g, rotation, flags)\n", static_cast<f64>(k.distanceMinCos));
 }
 
@@ -339,10 +371,10 @@ void testSdf() {
 }
 
 // --- blend --------------------------------------------------------------------------------------------------
-void testBlend() {
+/// runBlendReference (+ runStateReference) fed the oracle's own trace == DdgiCpuVolume::updateProbes, bit for bit.
+void blendRun(const DdgiCpuConfig& config, const char* label) {
     const DdgiCpuScene scene = roomScene();
     const DDGIDesc desc = roomVolume();
-    DdgiCpuConfig config{};
     DdgiCpuVolume oracle;
     expect(oracle.init(desc, config), "oracle init");
     BlendReferenceState state;
@@ -386,9 +418,12 @@ void testBlend() {
         std::vector<Vec3> radiance(schedule.size() * rays);
         std::vector<f32> distance(schedule.size() * rays);
         for (u32 slot = 0; slot < schedule.size(); ++slot) {
-            const Vec3 origin = ddgi_kernel::probe_world_position(desc, schedule[slot]);
+            const Vec3 origin = ddgi_kernel::probe_position(tp.volume, schedule[slot]); // relocated when on
             for (u32 r = 0; r < rays; ++r) {
-                radiance[slot * rays + r] = ddgi_kernel::trace_radiance(tp, origin, dirs[r], distance[slot * rays + r]);
+                bool back = false;
+                f32 d = 0.f;
+                radiance[slot * rays + r] = ddgi_kernel::trace_radiance(tp, origin, dirs[r], d, &back);
+                distance[slot * rays + r] = back ? -d : d; // ddgi.trace's signed distances
             }
         }
         BlendReferenceInput in{};
@@ -403,6 +438,7 @@ void testBlend() {
         in.distanceTexelDirs = distDirs.data();
         const u32 before = state.fastResponseTexels;
         expect(runBlendReference(in, state), "runBlendReference");
+        expect(runStateReference(in, state), "runStateReference");
         const DdgiCpuUpdateStats st = oracle.updateProbes(scene, schedule.data(), static_cast<u32>(schedule.size()), frame);
         fastTotal += st.fast_response_texels;
         expect(state.fastResponseTexels - before == st.fast_response_texels, "fast-response texel count == the oracle's");
@@ -411,10 +447,299 @@ void testBlend() {
         for (u32 p = 0; p < oracle.probeCount(); ++p) {
             mismatches += state.updateCounts[p] != oracle.probeUpdateCount(p) ? 1u : 0u;
         }
+        mismatches += std::memcmp(state.probeData.data(), oracle.probeData().data(), state.probeData.size() * sizeof(fuse::math::Vec4)) != 0;
     }
-    std::printf("blend: 6 updates, runBlendReference == DdgiCpuVolume::updateProbes bit for bit (%u mismatches, %u fast texels)\n",
-                mismatches, fastTotal);
+    u32 inactive = 0;
+    u32 moved = 0;
+    for (u32 p = 0; p < oracle.probeCount(); ++p) {
+        inactive += oracle.probeActive(p) ? 0u : 1u;
+        const fuse::math::Vec4& d = oracle.probeData()[p];
+        moved += d.x != 0.f || d.y != 0.f || d.z != 0.f ? 1u : 0u;
+    }
+    std::printf("blend (%s): 6 updates, runBlendReference + runStateReference == DdgiCpuVolume::updateProbes bit for bit "
+                "(%u mismatches, %u fast texels, %u inactive, %u relocated probes)\n",
+                label, mismatches, fastTotal, inactive, moved);
     expect(mismatches == 0u, "runBlendReference == the oracle's update, bit for bit");
+}
+
+/// The volume with every WP-6.1 follow-up feature on (the leak gate's settings).
+DdgiCpuConfig statesConfig(const DDGIDesc& desc) {
+    DdgiCpuConfig c{};
+    c.probe_relocation = true;
+    c.probe_classification = true;
+    c.probe_min_frontface_distance = 0.5f;
+    c.probe_relocation_step = 0.1f;
+    c.normal_bias = 0.2f;
+    c.view_bias = 0.5f;
+    c.distance_clamp = 1.5f * desc.probe_spacing.length();
+    return c;
+}
+
+void testBlend() {
+    blendRun(DdgiCpuConfig{}, "default config");
+    blendRun(statesConfig(roomVolume()), "relocation + classification + view bias + distance clamp");
+}
+
+// --- state ------------------------------------------------------------------------------------------------
+/// ddgi_kernel::update_probe_state on synthetic ray sets (RTXGI relocation / classification rules).
+void testState() {
+    const u32 rays = 64;
+    std::vector<Vec3> dirs(rays);
+    for (u32 r = 0; r < rays; ++r) {
+        dirs[r] = ddgi_cpu::sphericalFibonacci(r, rays);
+    }
+    ddgi_kernel::ProbeStateParams p{};
+    p.spacing = {1.f, 1.f, 1.f};
+    p.max_distance = 10.f;
+    p.backface_distance_scale = 0.2f;
+    p.min_frontface_distance = 0.3f;
+    p.backface_threshold = 0.25f;
+    p.max_offset = 0.45f;
+    p.relocation_step = 0.1f;
+    p.relocation = true;
+    p.classification = true;
+    std::vector<f32> dist(rays);
+    const fuse::math::Vec4 origin{0.f, 0.f, 0.f, ddgi_kernel::kProbeActive};
+
+    // Inside a box: 50% backfaces (upper hemisphere, distances 0.2 -> stored -0.04), the rest far misses.
+    for (u32 r = 0; r < rays; ++r) {
+        dist[r] = dirs[r].z > 0.f ? -(0.2f + 0.01f * static_cast<f32>(r % 3u)) * 0.2f : 10.f;
+    }
+    fuse::math::Vec4 out = ddgi_kernel::update_probe_state(p, dirs.data(), dist.data(), rays, origin);
+    const Vec3 moved{out.x, out.y, out.z};
+    expect(out.w == ddgi_kernel::kProbeInactive, "inside geometry (backface ratio > threshold): inactive");
+    expect(moved.z > 0.f && std::fabs(moved.length() - (0.2f + 0.15f)) < 0.02f,
+           "inside geometry: moved through the closest backface by its distance + half the minimum front-face distance");
+
+    // Near a front face (0.1 below along -z) with open space above: moves up by the step, stays active.
+    for (u32 r = 0; r < rays; ++r) {
+        dist[r] = dirs[r].z < -0.9f ? 0.1f / -dirs[r].z : (dirs[r].z > 0.9f ? 3.f : 0.9f);
+    }
+    out = ddgi_kernel::update_probe_state(p, dirs.data(), dist.data(), rays, origin);
+    expect(out.w == ddgi_kernel::kProbeActive && out.z > 0.05f && out.z <= 0.1f + 1e-6f, "too close to a front face: steps away (<= step)");
+    // Repeated updates never leave the max offset.
+    fuse::math::Vec4 cur = origin;
+    for (u32 k = 0; k < 40u; ++k) {
+        cur = ddgi_kernel::update_probe_state(p, dirs.data(), dist.data(), rays, cur);
+    }
+    expect(Vec3{cur.x, cur.y, cur.z}.length() < 0.45f, "offset bounded by max_offset x spacing");
+    // Clear of surfaces: drifts back to the grid position.
+    for (u32 r = 0; r < rays; ++r) {
+        dist[r] = 0.8f;
+    }
+    const fuse::math::Vec4 displaced{0.2f, 0.f, 0.f, ddgi_kernel::kProbeActive};
+    out = ddgi_kernel::update_probe_state(p, dirs.data(), dist.data(), rays, displaced);
+    expect(out.x == 0.f && out.y == 0.f && out.z == 0.f && out.w == ddgi_kernel::kProbeActive,
+           "clear of surfaces: back to the grid position (margin 0.5 > offset 0.2)");
+
+    // Nothing within the cell (every hit farther than one spacing / misses): inactive, not moved.
+    for (u32 r = 0; r < rays; ++r) {
+        dist[r] = r % 2u == 0u ? 10.f : 1.9f;
+    }
+    out = ddgi_kernel::update_probe_state(p, dirs.data(), dist.data(), rays, origin);
+    expect(out.w == ddgi_kernel::kProbeInactive && out.x == 0.f && out.y == 0.f && out.z == 0.f, "no surface in the cell: inactive");
+    dist[5] = 0.5f;
+    out = ddgi_kernel::update_probe_state(p, dirs.data(), dist.data(), rays, origin);
+    expect(out.w == ddgi_kernel::kProbeActive, "one front face inside the cell: active");
+
+    // Features off: the data passes through unchanged.
+    p.relocation = false;
+    p.classification = false;
+    out = ddgi_kernel::update_probe_state(p, dirs.data(), dist.data(), rays, displaced);
+    expect(out.x == 0.2f && out.w == ddgi_kernel::kProbeActive, "relocation / classification off: unchanged");
+
+    // Sampling: an inactive corner probe takes no part; with every probe inactive the sample is 0.
+    const DDGIDesc desc = roomVolume();
+    BlendReferenceState st;
+    DdgiCpuConfig cfg = statesConfig(desc);
+    initialVolumeState(desc, cfg, st);
+    for (Vec3& t : st.irradiance) {
+        t = {1.f, 1.f, 1.f};
+    }
+    const ddgi_kernel::VolumeView v = volumeView(desc, cfg, st);
+    const Vec3 pos{0.1f, 1.f, 0.2f};
+    const Vec3 all = ddgi_kernel::sample_irradiance(v, pos, {0.f, 1.f, 0.f}, {0.f, 1.f, 0.f});
+    for (fuse::math::Vec4& d : st.probeData) {
+        d.w = ddgi_kernel::kProbeInactive;
+    }
+    const Vec3 none = ddgi_kernel::sample_irradiance(v, pos, {0.f, 1.f, 0.f}, {0.f, 1.f, 0.f});
+    expect(std::fabs(all.y - ddgi_kernel::kPi) < 1e-5f && none.y == 0.f, "inactive probes skipped by sample_irradiance");
+    std::printf("state: relocation (inside, near a face, bounded, drift back) and classification rules hold\n");
+}
+
+// --- leak -------------------------------------------------------------------------------------------------
+// Thin-wall leak (the WP-6.1 exit criterion) on the CPU oracle: the Vulkan leak gate's closed room (5 cm walls
+// and roof, probes 10 cm outside and 95 cm inside the walls, spacing 1.1) in two orientations, 16 updates of
+// every probe, irradiance sampled on the inner and outer faces of the four walls (60 points each) with the view
+// direction of a camera on that side (room centre / 3 m out):
+//   light inside   an emissive panel under the roof, no sun, no sky: the outer faces are dark
+//   sun outside    sun + sky, the room closed: the inner faces are dark
+// The physically correct dark-side irradiance is exactly 0 in both, so every bit of it is leak. Criterion:
+// max dark-side luminance <= eps = 2% of the mean lit-side luminance (2% is below the ~2% Weber contrast
+// threshold of vision, i.e. the leak is not visible next to the lit side; it is also what one 8-bit sRGB
+// code step is worth at mid grey).
+constexpr f64 kLeakEpsilon = 0.02;
+
+namespace leak_test {
+
+DdgiCpuScene scene(bool lightInside) {
+    DdgiCpuScene s;
+    DdgiCpuSurface grey{};
+    grey.albedo = {0.75f, 0.75f, 0.75f};
+    constexpr f32 t = 0.05f;
+    s.addBox({-6.f, -0.5f, -6.f}, {6.f, 0.f, 6.f}, grey);
+    s.addBox({-1.5f - t, 0.f, -1.5f - t}, {-1.5f, 2.f + t, 1.5f + t}, grey);
+    s.addBox({1.5f, 0.f, -1.5f - t}, {1.5f + t, 2.f + t, 1.5f + t}, grey);
+    s.addBox({-1.5f, 0.f, -1.5f - t}, {1.5f, 2.f + t, -1.5f}, grey);
+    s.addBox({-1.5f, 0.f, 1.5f}, {1.5f, 2.f + t, 1.5f + t}, grey);
+    s.addBox({-1.5f, 2.f, -1.5f}, {1.5f, 2.f + t, 1.5f}, grey);
+    if (lightInside) {
+        DdgiCpuSurface lamp{};
+        lamp.albedo = {0.2f, 0.2f, 0.2f};
+        lamp.emissive = {8.f, 8.f, 8.f};
+        s.addBox({-0.5f, 1.85f, -0.5f}, {0.5f, 1.9f, 0.5f}, lamp);
+    } else {
+        s.sun_direction = Vec3{-0.6f, 0.7f, -0.3f}.normalized();
+        s.sun_irradiance = {4.f, 4.f, 4.f};
+        s.sky_radiance = {0.4f, 0.45f, 0.5f};
+    }
+    return s;
+}
+
+DDGIDesc volume() {
+    DDGIDesc d{};
+    d.grid_origin = {-2.75f, 0.5f, -2.75f};
+    d.probe_spacing = {1.1f, 1.1f, 1.1f};
+    d.grid_dims = {6u, 3u, 6u};
+    d.rays_per_probe = 128;
+    d.probes_per_frame = 108;
+    d.irradiance_res = 8;
+    d.depth_res = 16;
+    d.hysteresis = 0.9f;
+    d.max_ray_distance = 12.f;
+    return d;
+}
+
+struct Point {
+    Vec3 position;
+    Vec3 normal;
+    Vec3 view;
+    bool inner = false;
+};
+
+std::vector<Point> points() {
+    std::vector<Point> pts;
+    constexpr f32 t = 0.05f;
+    for (u32 wall = 0; wall < 4u; ++wall) {
+        for (u32 side = 0; side < 2u; ++side) {
+            for (u32 k = 0; k < 15u; ++k) {
+                const f32 a = -1.2f + 2.4f * static_cast<f32>(k % 5u) / 4.f;
+                const f32 y = 0.3f + 1.4f * static_cast<f32>(k / 5u) / 2.f;
+                const f32 sgn = wall % 2u == 0u ? -1.f : 1.f;
+                const f32 face = side == 0u ? 1.5f : 1.5f + t;
+                const f32 nrm = side == 0u ? -sgn : sgn;
+                Point p{};
+                p.position = {0.f, y, 0.f};
+                if (wall < 2u) {
+                    p.position.x = sgn * face;
+                    p.position.z = a;
+                    p.normal.x = nrm;
+                } else {
+                    p.position.x = a;
+                    p.position.z = sgn * face;
+                    p.normal.z = nrm;
+                }
+                p.inner = side == 0u;
+                const Vec3 camera = p.inner ? Vec3{0.f, 1.f, 0.f} : p.position + p.normal * 3.f;
+                p.view = (camera - p.position).normalized();
+                pts.push_back(p);
+            }
+        }
+    }
+    return pts;
+}
+
+f64 luminance(const Vec3& e) {
+    return 0.2126 * e.x + 0.7152 * e.y + 0.0722 * e.z;
+}
+
+struct Result {
+    f64 lit = 0.0;     ///< mean lit-side luminance
+    f64 darkMean = 0.0;
+    f64 darkMax = 0.0;
+    bool pass() const { return darkMax <= kLeakEpsilon * lit; }
+};
+
+/// Lit / dark statistics of a sampler (lightInside: lit = inner faces).
+template <typename Sample>
+Result measure(const std::vector<Point>& pts, bool lightInside, Sample&& sample) {
+    Result r{};
+    f64 lit = 0.0, dark = 0.0;
+    u32 nLit = 0, nDark = 0;
+    for (u32 i = 0; i < pts.size(); ++i) {
+        const f64 l = luminance(sample(i));
+        if (pts[i].inner == lightInside) {
+            lit += l;
+            ++nLit;
+        } else {
+            dark += l;
+            ++nDark;
+            r.darkMax = std::max(r.darkMax, l);
+        }
+    }
+    r.lit = lit / nLit;
+    r.darkMean = dark / nDark;
+    return r;
+}
+
+} // namespace leak_test
+
+void testLeak() {
+    const DDGIDesc desc = leak_test::volume();
+    const std::vector<leak_test::Point> pts = leak_test::points();
+    for (const bool lightInside : {true, false}) {
+        const DdgiCpuScene scene = leak_test::scene(lightInside);
+        const char* name = lightInside ? "light inside" : "sun outside";
+        for (u32 variant = 0; variant < 3u; ++variant) {
+            DdgiCpuConfig c = statesConfig(desc);
+            const char* label = "relocation + classification + surface bias + clamp";
+            if (variant == 1u) {
+                c = DdgiCpuConfig{}; // the oracle's rules before this package
+                label = "baseline (no relocation / classification / view bias / clamp)";
+            } else if (variant == 2u) {
+                c.probe_relocation = false;
+                c.probe_classification = false;
+                label = "surface bias + clamp only";
+            }
+            DdgiCpuVolume v;
+            expect(v.init(desc, c), "leak volume init");
+            std::vector<u32> all(v.probeCount());
+            for (u32 i = 0; i < all.size(); ++i) {
+                all[i] = i;
+            }
+            for (u32 f = 0; f < 16u; ++f) {
+                v.updateProbes(scene, all.data(), static_cast<u32>(all.size()), f);
+            }
+            const leak_test::Result r = leak_test::measure(pts, lightInside, [&](u32 i) {
+                return v.sampleIrradiance(pts[i].position, pts[i].normal, pts[i].view);
+            });
+            u32 inactive = 0;
+            for (u32 i = 0; i < v.probeCount(); ++i) {
+                inactive += v.probeActive(i) ? 0u : 1u;
+            }
+            std::printf("leak (%s, %s): lit mean %.4f, dark mean %.5f (%.2f%%), dark max %.5f (%.2f%% of lit; eps %.0f%%), "
+                        "%u inactive probes -> %s\n",
+                        name, label, r.lit, r.darkMean, 100.0 * r.darkMean / r.lit, r.darkMax, 100.0 * r.darkMax / r.lit,
+                        100.0 * kLeakEpsilon, inactive, r.pass() ? "pass" : "leaks");
+            expect(r.lit > 0.1, "the lit side is lit");
+            if (variant == 0u) {
+                expect(r.pass(), "thin-wall leak: dark-side luminance <= 2% of the lit side (oracle, all features)");
+            }
+            if (variant == 1u && !lightInside) {
+                expect(!r.pass(), "the baseline rules leak through the 5 cm walls (what the features fix)");
+            }
+        }
+    }
 }
 
 // --- api ----------------------------------------------------------------------------------------------------
@@ -438,6 +763,9 @@ void testApi() {
     std::printf("api: layout sections, no-device init refused (%s)\n", gpu.reason());
 }
 
+
+
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -456,6 +784,12 @@ int main(int argc, char** argv) {
     }
     if (suite == "api" || suite == "all") {
         testApi();
+    }
+    if (suite == "state" || suite == "all") {
+        testState();
+    }
+    if (suite == "leak" || suite == "all") {
+        testLeak();
     }
     if (g_failures != 0) {
         std::fprintf(stderr, "%d failure(s)\n", g_failures);

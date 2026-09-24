@@ -8,8 +8,9 @@
 //     the SDF, its gradient and the union rules are the Compute agent's compute::ray_march_kernel
 //     (scene_eval / scene_normal / object_sdf, far = kSdfFar), the shading at a hit is the oracle's
 //     direct_radiance + multi-bounce term (trace_radiance), the backface rule the oracle's.
-//   * runBlendReference: the oracle's ddgi_kernel::BlendKernel (CpuReference) on explicit ray results;
-//     the gate feeds it the GPU's own ray set and ray results ("the same ray results").
+//   * runBlendReference / runStateReference: the oracle's ddgi_kernel::BlendKernel / ProbeStateKernel
+//     (CpuReference) on explicit ray results; the gates feed them the GPU's own ray set and ray results
+//     ("the same ray results").
 //   * makeFrameConstants: DdgiFrameConstants from the oracle's settings (DdgiGpu::beginFrame uses it).
 //   * sdfSceneFromBoxes: the oracle's analytic box scene as the global SDF (boxes, hard union).
 
@@ -93,26 +94,33 @@ FUSE_HOST_DEVICE inline bool sdf_sun_occluded(const SdfTraceScene& s, const comp
 /// multi-bounce term (albedo x the previous volume's irradiance / pi).
 FUSE_HOST_DEVICE inline math::Vec3 sdf_hit_radiance(const SdfTraceScene& s, const compute::RayMarchParams& rm,
                                                     const math::Vec3& position, const math::Vec3& normal,
-                                                    const math::Vec3& albedo, const math::Vec3& emissive) {
+                                                    const math::Vec3& albedo, const math::Vec3& emissive,
+                                                    const math::Vec3& view) {
     math::Vec3 radiance = emissive;
     const f32 cos_sun = normal.dot(s.sunDirection);
     if (cos_sun > 0.f && ddgi_kernel::max_component(s.sunIrradiance) > 0.f && !sdf_sun_occluded(s, rm, position, normal)) {
         radiance = radiance + ddgi_kernel::mul(albedo, s.sunIrradiance) * (cos_sun * ddgi_kernel::kInvPi);
     }
     if (s.multiBounce) {
-        radiance = radiance + ddgi_kernel::mul(albedo, ddgi_kernel::sample_irradiance(s.volume, position, normal)) *
+        // The probe views the hit (view bias toward the probe: minus the ray direction).
+        radiance = radiance + ddgi_kernel::mul(albedo, ddgi_kernel::sample_irradiance(s.volume, position, normal, view)) *
                                   ddgi_kernel::kInvPi;
     }
     return radiance;
 }
 
-/// One T0 probe ray (`direction` unit): radiance arriving at `origin` and the distance the blend uses.
+/// One T0 probe ray (`direction` unit): radiance arriving at `origin` and the distance the blend uses
+/// (positive; `out_backface` reports the backface case, which ddgi.trace stores negated).
 /// Rules: inside geometry (SDF < 0 at the probe) -> no light, distance = exit distance x backface scale;
 /// sphere trace until SDF < minDistance (hit), t >= maxDistance (miss: sky, maxDistance) or maxSteps
 /// (exhausted short of maxDistance = a grazing hit at t).
 FUSE_HOST_DEVICE inline math::Vec3 sdf_trace_radiance(const SdfTraceScene& s, const math::Vec3& origin,
-                                                      const math::Vec3& direction, f32& out_distance) {
+                                                      const math::Vec3& direction, f32& out_distance,
+                                                      bool* out_backface = nullptr) {
     const compute::RayMarchParams rm = sdf_params(s);
+    if (out_backface != nullptr) {
+        *out_backface = false;
+    }
     const f32 maxD = s.maxDistance;
     const f32 d0 = compute::ray_march_kernel::scene_eval(rm, origin, nullptr);
     if (d0 < 0.f) {
@@ -125,6 +133,9 @@ FUSE_HOST_DEVICE inline math::Vec3 sdf_trace_radiance(const SdfTraceScene& s, co
             t += std::max(-d, s.minDistance);
         }
         out_distance = std::min(t, maxD) * s.backfaceDistanceScale;
+        if (out_backface != nullptr) {
+            *out_backface = true;
+        }
         return {};
     }
     f32 t = 0.f;
@@ -158,7 +169,7 @@ FUSE_HOST_DEVICE inline math::Vec3 sdf_trace_radiance(const SdfTraceScene& s, co
         emissive = {row.emissive[0], row.emissive[1], row.emissive[2]};
     }
     out_distance = t;
-    return sdf_hit_radiance(s, rm, position, normal, albedo, emissive);
+    return sdf_hit_radiance(s, rm, position, normal, albedo, emissive, direction * -1.f);
 }
 
 /// The oracle's box scene as a global SDF: one sharp box primitive per box (hard union, material = box
@@ -169,6 +180,10 @@ void sdfSceneFromBoxes(const DdgiCpuScene& scene, std::vector<compute::SdfObject
 DdgiFrameConstants makeFrameConstants(const DDGIDesc& volume, const DdgiCpuConfig& config, const DdgiGpuTuning& tuning,
                                       const DdgiFrameDesc& frame, u32 scheduled);
 
+/// The blend's |distance| clamp: DdgiCpuConfig::distance_clamp (when > 0, at most max_ray_distance), else
+/// max_ray_distance (DdgiCpuVolume::updateProbes).
+f32 effectiveDistanceClamp(const DDGIDesc& volume, const DdgiCpuConfig& config);
+
 /// Explicit ray results of one update, run through the oracle's BlendKernel (CpuReference).
 struct BlendReferenceInput {
     const DDGIDesc* volume = nullptr;
@@ -177,7 +192,7 @@ struct BlendReferenceInput {
     u32 scheduled = 0;
     const math::Vec3* rayDirs = nullptr; ///< volume->rays_per_probe entries
     const math::Vec3* radiance = nullptr; ///< scheduled x rays
-    const f32* distance = nullptr;        ///< scheduled x rays
+    const f32* distance = nullptr;        ///< scheduled x rays, signed (backface hits negative)
     const math::Vec3* irradianceTexelDirs = nullptr; ///< irradiance_res^2
     const math::Vec3* distanceTexelDirs = nullptr;   ///< depth_res^2
 };
@@ -187,15 +202,21 @@ struct BlendReferenceState {
     std::vector<math::Vec3> irradiance;
     std::vector<math::Vec2> distance;
     std::vector<u32> updateCounts;
+    std::vector<math::Vec4> probeData; ///< (offset, state) per probe (DdgiCpuVolume::probeData)
     u32 fastResponseTexels = 0; ///< added by the run
 };
 
+/// The blend (inactive probes skipped when the config enables probe states).
 bool runBlendReference(const BlendReferenceInput& input, BlendReferenceState& state);
+/// The probe-state kernel (relocation + classification) on the same ray results; a no-op returning true
+/// when the config enables neither.
+bool runStateReference(const BlendReferenceInput& input, BlendReferenceState& state);
 
 /// The CPU oracle's initial volume (DdgiCpuVolume::init): what ddgi.reset writes.
 void initialVolumeState(const DDGIDesc& volume, const DdgiCpuConfig& config, BlendReferenceState& state);
 
-/// ddgi_kernel::VolumeView over a state (for sample_irradiance / trace references).
+/// ddgi_kernel::VolumeView over a state (for sample_irradiance / trace references): probe data when the
+/// config enables probe states, the config's view bias.
 ddgi_kernel::VolumeView volumeView(const DDGIDesc& volume, const DdgiCpuConfig& config, const BlendReferenceState& state);
 
 } // namespace fuse::renderer::gi_gpu

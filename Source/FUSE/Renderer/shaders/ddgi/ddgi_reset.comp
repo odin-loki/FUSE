@@ -1,7 +1,7 @@
 #version 460
 // WP-6.1 "ddgi.reset" (twin: ddgi_reset.slang): the volume's initial state, as DdgiCpuVolume::init
 // leaves it: every irradiance texel = initialIrradiance, every distance texel = (maxRayDistance,
-// maxRayDistance^2), every update count 0. One thread per texel slot (pc.count = the larger atlas).
+// maxRayDistance^2), every update count 0, every probe unmoved and active (probe data). One thread per texel slot (pc.count = the larger atlas).
 #extension GL_GOOGLE_include_directive : require
 #include "ddgi_common.glsl"
 
@@ -30,5 +30,8 @@ void main() {
     }
     if (i < V.probeCount) {
         FuseDdgiWordsRef(F.updateCounts).v[i] = 0u;
+        if (V.probeData != 0ul) {
+            FuseDdgiProbeDataRef(V.probeData).v[i] = vec4(0.0); // not moved, active
+        }
     }
 }

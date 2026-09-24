@@ -38,6 +38,13 @@ void main(uint3 gid: SV_GroupID, uint3 lid: SV_GroupThreadID) {
     if (probe >= F.volume.probeCount) {
         return;
     }
+    if (!fuseDdgiProbeActive(F.volume, probe)) {
+        // Classified inactive: history kept, not blended (uniform).
+        if (tid == 0u) {
+            ((uint*)F.slotStats)[slot] = 0u;
+        }
+        return;
+    }
     const uint ir = F.volume.irradianceRes;
     const uint texels = ir * ir;
     const uint irrStride = ir + 2u;
@@ -160,7 +167,7 @@ void main(uint3 gid: SV_GroupID, uint3 lid: SV_GroupThreadID) {
             const float c = td.x * d.x + td.y * d.y + td.z * d.z;
             if (c > F.distanceMinCos) {
                 const float w = pow(c, F.distancePower);
-                const float dd = min(results[rayBase + r].w, F.maxRayDistance);
+                const float dd = min(abs(results[rayBase + r].w), F.distanceClamp); // signed trace distances
                 sumD += dd * w;
                 sumD2 += dd * dd * w;
                 weightSum += w;

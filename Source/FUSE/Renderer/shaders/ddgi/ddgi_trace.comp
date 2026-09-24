@@ -2,10 +2,12 @@
 // WP-6.1 "ddgi.trace" (twin: ddgi_trace.slang): one probe ray per thread (x = ray, y = scheduled slot),
 // the GPU form of the CPU oracle's ddgi_kernel::TraceKernel / trace_radiance:
 //   miss            radiance = sky, distance = maxRayDistance
-//   backface hit    (the probe sits inside geometry) radiance 0, distance = t * backfaceDistanceScale
+//   backface hit    (the probe sits inside geometry) radiance 0, distance = -(t * backfaceDistanceScale)
+//                   (signed, RTXGI convention: ddgi.state counts backfaces; the blend uses |distance|)
 //   front-face hit  radiance = emissive + sun (shadow ray) x albedo x cos / pi
 //                   + multi-bounce: albedo x the PREVIOUS volume's irradiance at the hit / pi
-//                   (ddgi_sample.glsl, the oracle's sample_irradiance), distance = t
+//                   (ddgi_sample.glsl, the oracle's sample_irradiance with view = -ray), distance = t
+// Ray origin: the probe's relocated position (probe data, when relocation is on).
 // Output: f32x4 (radiance, distance) at rays[slot * raysPerProbe + ray].
 //
 // Two permutations of this source:
@@ -32,7 +34,7 @@ layout(local_size_x = FUSE_DDGI_WORKGROUP) in;
 // Direct light at a front-face hit: emissive + the sun term (the oracle's direct_radiance).
 bool fuse_ddgi_sun_occluded(FuseDdgiFrame F, vec3 origin, vec3 direction);
 
-vec3 fuse_ddgi_hit_radiance(FuseDdgiFrame F, vec3 position, vec3 normal, vec3 albedo, vec3 emissive) {
+vec3 fuse_ddgi_hit_radiance(FuseDdgiFrame F, vec3 position, vec3 normal, vec3 albedo, vec3 emissive, vec3 dir) {
     precise vec3 radiance = emissive;
     const vec3 sunDir = fuse_ddgi_vec3(F.sunDirection);
     const vec3 sunIrr = fuse_ddgi_vec3(F.sunIrradiance);
@@ -43,7 +45,7 @@ vec3 fuse_ddgi_hit_radiance(FuseDdgiFrame F, vec3 position, vec3 normal, vec3 al
                         radiance.z + (albedo.z * sunIrr.z) * k);
     }
     if ((F.flags & FUSE_DDGI_FLAG_MULTI_BOUNCE) != 0u) {
-        const vec3 e = fuse_ddgi_sample_volume(F.volume, position, normal);
+        const vec3 e = fuse_ddgi_sample_volume_view(F.volume, position, normal, -dir); // the probe views the hit
         const float inv = float(FUSE_DDGI_INV_PI);
         radiance = vec3(radiance.x + (albedo.x * e.x) * inv, radiance.y + (albedo.y * e.y) * inv,
                         radiance.z + (albedo.z * e.z) * inv);
@@ -166,7 +168,7 @@ vec4 fuse_ddgi_trace(FuseDdgiFrame F, vec3 origin, vec3 dir) {
         n = -dir; // degenerate triangle: treat as front facing
     } else if (facing > 0.0) {
         precise float d = t * F.backfaceDistanceScale;
-        return vec4(0.0, 0.0, 0.0, d);
+        return vec4(0.0, 0.0, 0.0, -d); // backface: signed (negative)
     }
     // Material::GPUMaterial row (128 bytes = 32 floats): base_color.rgb, metallic, roughness, emissive.rgb,
     // ..., emissive_intensity at float 14.
@@ -181,7 +183,7 @@ vec4 fuse_ddgi_trace(FuseDdgiFrame F, vec3 origin, vec3 dir) {
         emissive = vec3(m.v[b + 5u] * intensity, m.v[b + 6u] * intensity, m.v[b + 7u] * intensity);
     }
     precise vec3 position = vec3(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t);
-    return vec4(fuse_ddgi_hit_radiance(F, position, n, albedo, emissive), t);
+    return vec4(fuse_ddgi_hit_radiance(F, position, n, albedo, emissive, dir), t);
 }
 
 #else
@@ -357,7 +359,7 @@ vec4 fuse_ddgi_trace(FuseDdgiFrame F, vec3 origin, vec3 dir) {
             t += max(-d, F.sdfMinDistance);
         }
         precise float dist = min(t, maxD) * F.backfaceDistanceScale;
-        return vec4(0.0, 0.0, 0.0, dist);
+        return vec4(0.0, 0.0, 0.0, -dist); // backface: signed (negative)
     }
     precise float t = 0.0;
     bool hit = false;
@@ -397,7 +399,7 @@ vec4 fuse_ddgi_trace(FuseDdgiFrame F, vec3 origin, vec3 dir) {
         albedo = s.albedo.xyz;
         emissive = s.emissive.xyz;
     }
-    return vec4(fuse_ddgi_hit_radiance(F, position, n, albedo, emissive), t);
+    return vec4(fuse_ddgi_hit_radiance(F, position, n, albedo, emissive, dir), t);
 }
 #endif
 
@@ -412,7 +414,7 @@ void main() {
     if (probe >= F.volume.probeCount) {
         return;
     }
-    const vec3 origin = fuse_ddgi_probe_position(F.volume, probe);
+    const vec3 origin = fuse_ddgi_probe_position_relocated(F.volume, probe);
     const vec3 dir = FuseDdgiVec4Ref(F.rayDirs).v[ray].xyz;
     FuseDdgiVec4Ref(F.rays).v[slot * F.raysPerProbe + ray] = fuse_ddgi_trace(F, origin, dir);
 }

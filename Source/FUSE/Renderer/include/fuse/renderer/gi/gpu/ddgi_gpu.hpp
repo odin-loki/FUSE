@@ -14,7 +14,12 @@
 //                 radiance at hits = emissive + sun (shadow ray) + multi-bounce from the PREVIOUS volume;
 //                 miss = sky; backface (probe inside geometry) = 0 and a short distance
 //   ddgi.blend    one workgroup per scheduled probe: the oracle's BlendKernel phases (incoming irradiance,
-//                 probe / texel change detection, hysteresis blends, border rings, update counts)
+//                 probe / texel change detection, hysteresis blends, border rings, update counts);
+//                 probes classified inactive are skipped
+//   ddgi.state    when DdgiCpuConfig::probe_relocation / probe_classification is on: one thread per
+//                 scheduled probe, the oracle's ProbeStateKernel (RTXGI relocation + classification on the
+//                 update's ray results) -> the per-probe (offset, state) the next trace / blend / every
+//                 sample read
 //   ddgi.probe    optional: irradiance at explicit points (the sampling code the lighting shade uses)
 //
 // Frame protocol (one owner thread):
@@ -31,10 +36,11 @@
 // constants, the probe schedule and the T0 SDF scene in a host-visible ring (framesInFlight slots).
 // Steady-state frames make no heap allocation (fixed pass records, preallocated schedule / scratch).
 //
-// Probe relocation and inside / inactive classification are not part of the oracle (ddgi_probe_kernel.hpp
-// has the border-shell classification only), so this package does not add them either (see the row's
-// Open list); probes inside geometry are handled the oracle's way (backface rays: no light, short
-// distance, so Chebyshev visibility rejects them).
+// Probe relocation and inside / backface-heavy / inactive classification follow the oracle
+// (ddgi_kernel::update_probe_state, RTXGI DDGI: Majercik et al. 2021): ray results carry signed distances
+// (backface hits negative), the probe data lives in the work buffer, and sampling uses the relocated
+// positions, skips inactive probes and applies the RTXGI surface bias (normal + view, DdgiCpuConfig::
+// view_bias) and distance clamp (DdgiCpuConfig::distance_clamp) exactly as the oracle does.
 
 #include <fuse/compute/ray_march.hpp>
 #include <fuse/renderer/gi/ddgi.hpp>
@@ -119,7 +125,9 @@ struct DdgiFrameDesc {
     u64 tlasAddress = 0;  ///< T2: AccelerationStructures::tlasAddress()
     u64 sceneAddress = 0; ///< T2: GpuScene::headerAddress()
     /// Explicit probe list (duplicates dropped, clamped to the capacity); null = the oracle's rolling
-    /// schedule ddgi_util::scheduleProbeUpdates(frameIndex, probeCount, probes_per_frame).
+    /// schedule ddgi_util::scheduleProbeUpdates(frameIndex, probeCount, budget) with the oracle's budget
+    /// kernel::scaled_count(probes_per_frame, kernel::load_scale().probes) (DdgiCpuVolume::update), clamped
+    /// to the capacity (a LoadScale above 1 cannot grow the preallocated schedule).
     const u32* probes = nullptr;
     u32 probeCount = 0;
     bool update = true; ///< false: no trace / blend this frame (sampling only)
@@ -133,6 +141,7 @@ struct DdgiWorkLayout {
     u64 rayDirs = 0;      ///< f32 x 4 per ray
     u64 rays = 0;         ///< f32 x 4 per (slot, ray)
     u64 slotStats = 0;    ///< u32 per slot
+    u64 probeData = 0;    ///< f32 x 4 per probe (relocation offset, state)
     u64 irradianceBytes = 0;
     u64 distanceBytes = 0;
     u64 bytes = 0;
@@ -149,6 +158,7 @@ struct DdgiFrameStats {
     u32 passes = 0;        ///< ddgi.* passes added this frame
     bool reset = false;    ///< ddgi.reset ran this frame
     u32 duplicatesDropped = 0;
+    bool probeStates = false; ///< ddgi.state ran this frame (relocation / classification)
 };
 
 class DdgiGpu {
@@ -181,7 +191,7 @@ public:
     // --- frame ----------------------------------------------------------------------------------
     bool beginFrame(u64 frameSerial, const DdgiFrameDesc& frame);
     DdgiGraphRefs importInto(rg::Graph& graph);
-    /// ddgi.reset (when pending), ddgi.raygen, ddgi.trace, ddgi.blend. T2 needs the frame's rt / scene
+    /// ddgi.reset (when pending), ddgi.raygen, ddgi.trace, ddgi.blend [, ddgi.state]. T2 needs the frame's rt / scene
     /// refs (the trace declares AccelerationStructureRead on the TLAS and StorageRead on the scene).
     bool addUpdate(rg::Graph& graph, const DdgiGraphRefs& refs, const rt::RtGraphRefs* rtRefs = nullptr,
                    const gpu_scene::GpuSceneGraphRefs* sceneRefs = nullptr);
@@ -203,6 +213,8 @@ public:
     const u32* schedule() const { return m_schedule.data(); }
     u32 scheduled() const { return m_constants.scheduled; }
     u32 probeCapacity() const { return m_probeCapacity; }
+    /// Relocation or classification is on (the probe data takes part in trace / blend / sampling).
+    bool probeStatesEnabled() const { return m_desc.config.probe_relocation || m_desc.config.probe_classification; }
     u32 probeCount() const { return m_probeCount; }
     const DdgiFrameStats& stats() const { return m_stats; }
     /// The interior texel directions the blend uses (ddgi_cpu::texelDirection, == DdgiCpuVolume's).
@@ -210,7 +222,7 @@ public:
     const std::vector<math::Vec3>& distanceTexelDirs() const { return m_distTexelDirs; }
 
 private:
-    enum Kernel : u32 { kReset = 0, kRaygen, kTrace, kBlend, kProbe, kKernelCount };
+    enum Kernel : u32 { kReset = 0, kRaygen, kTrace, kBlend, kProbe, kState, kKernelCount };
     struct PassRecord {
         DdgiGpu* self = nullptr;
         DdgiPush push{};

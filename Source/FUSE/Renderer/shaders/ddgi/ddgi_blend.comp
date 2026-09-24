@@ -13,6 +13,8 @@
 // results; distance moments differ only through the device pow (fuse_rp_ddgi_gpu_vk_* tolerances).
 // The blended interiors are kept in shared memory, so phase 4 reads no global data written by other
 // invocations of the dispatch. A probe listed twice in one schedule is not supported (DdgiGpu dedups).
+// Distances: |signed trace distance| clamped to distanceClamp (the oracle's BlendParams::max_distance).
+// Probes classified inactive are skipped (BlendParams::probe_data).
 #extension GL_GOOGLE_include_directive : require
 #include "ddgi_common.glsl"
 
@@ -33,6 +35,13 @@ void main() {
     const uint probe = FuseDdgiWordsRef(F.schedule).v[slot];
     if (probe >= F.volume.probeCount) {
         return; // uniform
+    }
+    if (!fuse_ddgi_probe_active(F.volume, probe)) {
+        // Classified inactive (the states from before this update): history kept, not blended (uniform).
+        if (gl_LocalInvocationID.x == 0u) {
+            FuseDdgiWordsRef(F.slotStats).v[slot] = 0u;
+        }
+        return;
     }
     const uint ir = F.volume.irradianceRes;
     const uint texels = ir * ir;
@@ -163,7 +172,7 @@ void main() {
             precise float c = td.x * d.x + td.y * d.y + td.z * d.z;
             if (c > F.distanceMinCos) {
                 precise float w = pow(c, F.distancePower);
-                const float dd = min(results.v[rayBase + r].w, F.maxRayDistance);
+                const float dd = min(abs(results.v[rayBase + r].w), F.distanceClamp); // signed trace distances
                 sumD += dd * w;
                 sumD2 += dd * dd * w;
                 weightSum += w;

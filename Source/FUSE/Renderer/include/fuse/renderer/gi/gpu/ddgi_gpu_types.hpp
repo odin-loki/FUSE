@@ -10,6 +10,8 @@
 // Atlas layout (the CPU oracle's, DdgiCpuVolume::irradianceAtlas / distanceAtlas, byte for byte):
 //   irradiance  probe-major bordered tiles of (irradiance_res + 2)^2 texels, 3 x f32 each (E / pi)
 //   distance    probe-major bordered tiles of (depth_res + 2)^2 texels, 2 x f32 each (mean, mean^2)
+//   probe data  f32 x 4 per probe: relocation offset xyz, state w (DdgiCpuVolume::probeData; only when
+//               relocation / classification is on)
 // so a read-back atlas compares with the CPU volume element for element, and the sampling code
 // (ddgi_sample.{glsl,slang}) is a line-by-line port of ddgi_kernel::sample_irradiance.
 
@@ -32,10 +34,12 @@ enum DdgiFlag : u32 {
     kDdgiMultiBounce = 1u << 0,       ///< trace: add the previous volume's irradiance at hits
     kDdgiFrontFaceCcw = 1u << 1,      ///< trace (T2): triangles are counter-clockwise seen from outside
     kDdgiSunEnabled = 1u << 2,        ///< trace: the sun term is on (irradiance > 0)
+    kDdgiRelocation = 1u << 3,        ///< ddgi.state: relocation (DdgiCpuConfig::probe_relocation)
+    kDdgiClassification = 1u << 4,    ///< ddgi.state: classification (DdgiCpuConfig::probe_classification)
 };
 
-/// What sampling needs (ddgi_sample.{glsl,slang} fuse_ddgi_sample_irradiance): the probe grid and the
-/// two atlas addresses. The first 80 bytes of DdgiFrameConstants, so its address is the frame's.
+/// What sampling needs (ddgi_sample.{glsl,slang} fuse_ddgi_sample_irradiance): the probe grid, the two
+/// atlas addresses and the probe data. The first 96 bytes of DdgiFrameConstants, so its address is the frame's.
 struct DdgiVolumeView {
     f32 origin[3] = {0.f, 0.f, 0.f};
     u32 probeCount = 0;
@@ -49,12 +53,16 @@ struct DdgiVolumeView {
     u32 flags = 0;
     u64 irradiance = 0;             ///< f32 x 3 per bordered texel
     u64 distance = 0;               ///< f32 x 2 per bordered texel
+    u64 probeData = 0;              ///< f32 x 4 per probe (offset, state); 0 = grid positions, all active
+    f32 viewBias = 0.f;             ///< DdgiCpuConfig::view_bias (the view-direction sample overload)
+    u32 pad = 0;
 };
-static_assert(sizeof(DdgiVolumeView) == 80u, "DdgiVolumeView layout (ddgi_sample.glsl / .slang)");
-static_assert(offsetof(DdgiVolumeView, normalBias) == 48u && offsetof(DdgiVolumeView, irradiance) == 64u,
+static_assert(sizeof(DdgiVolumeView) == 96u, "DdgiVolumeView layout (ddgi_sample.glsl / .slang)");
+static_assert(offsetof(DdgiVolumeView, normalBias) == 48u && offsetof(DdgiVolumeView, irradiance) == 64u &&
+                  offsetof(DdgiVolumeView, probeData) == 80u && offsetof(DdgiVolumeView, viewBias) == 88u,
               "DdgiVolumeView offsets");
 
-/// Per-frame constants (host ring, one slot per frame in flight, read through BDA): 352 bytes.
+/// Per-frame constants (host ring, one slot per frame in flight, read through BDA): 400 bytes.
 struct DdgiFrameConstants {
     DdgiVolumeView volume{};
     f32 rotation[3][4] = {{1.f, 0.f, 0.f, 0.f}, {0.f, 1.f, 0.f, 0.f}, {0.f, 0.f, 1.f, 0.f}}; ///< ray-set rotation rows
@@ -87,6 +95,13 @@ struct DdgiFrameConstants {
     u32 shadowMask = 0x2u;  ///< rt::kRtMaskShadow
     f32 initialIrradiance[3] = {0.f, 0.f, 0.f}; ///< ddgi.reset
     u32 sdfSurfaceCount = 0; ///< T0: DdgiSurface rows at sdfSurfaces
+    // Distance clamp + probe states (ddgi_kernel::BlendParams::max_distance, ProbeStateParams).
+    f32 distanceClamp = 20.f;             ///< blend: |distance| clamp (DdgiCpuConfig::distance_clamp or maxRayDistance)
+    f32 probeMinFrontfaceDistance = 0.1f;
+    f32 probeBackfaceThreshold = 0.25f;
+    f32 probeMaxOffset = 0.45f;
+    f32 probeRelocationStep = 1.f;
+    u32 statePad[3] = {0u, 0u, 0u};
     // Addresses.
     u64 schedule = 0;            ///< u32 probe index per scheduled slot
     u64 rayDirs = 0;             ///< f32 x 4 per ray (ddgi.raygen output)
@@ -100,11 +115,11 @@ struct DdgiFrameConstants {
     u64 sdfSurfaces = 0;         ///< T0: DdgiSurface per material_id
     u64 slotStats = 0;           ///< u32 per scheduled slot: texels with reduced hysteresis
 };
-static_assert(sizeof(DdgiFrameConstants) == 352u, "DdgiFrameConstants layout (ddgi_common.glsl / .slang)");
-static_assert(offsetof(DdgiFrameConstants, rotation) == 80u && offsetof(DdgiFrameConstants, raysPerProbe) == 176u &&
-                  offsetof(DdgiFrameConstants, hysteresis) == 192u && offsetof(DdgiFrameConstants, sdfMinDistance) == 224u &&
-                  offsetof(DdgiFrameConstants, traceMask) == 240u && offsetof(DdgiFrameConstants, schedule) == 264u &&
-                  offsetof(DdgiFrameConstants, slotStats) == 344u,
+static_assert(sizeof(DdgiFrameConstants) == 400u, "DdgiFrameConstants layout (ddgi_common.glsl / .slang)");
+static_assert(offsetof(DdgiFrameConstants, rotation) == 96u && offsetof(DdgiFrameConstants, raysPerProbe) == 192u &&
+                  offsetof(DdgiFrameConstants, hysteresis) == 208u && offsetof(DdgiFrameConstants, sdfMinDistance) == 240u &&
+                  offsetof(DdgiFrameConstants, traceMask) == 256u && offsetof(DdgiFrameConstants, distanceClamp) == 280u &&
+                  offsetof(DdgiFrameConstants, schedule) == 312u && offsetof(DdgiFrameConstants, slotStats) == 392u,
               "DdgiFrameConstants offsets");
 
 /// Push constants of every DDGI kernel (32 bytes).
@@ -138,13 +153,16 @@ struct DdgiSurface {
 };
 static_assert(sizeof(DdgiSurface) == 32u, "DdgiSurface layout");
 
-/// ddgi.probe input: a surface point and its normal (32 bytes).
+/// ddgi.probe input: a surface point, its normal and the direction toward its viewer (48 bytes; the view
+/// takes part only when DdgiVolumeView::viewBias != 0; a zero view falls back to the normal).
 struct DdgiProbePoint {
     f32 position[3] = {0.f, 0.f, 0.f};
     f32 pad0 = 0.f;
     f32 normal[3] = {0.f, 1.f, 0.f};
     f32 pad1 = 0.f;
+    f32 view[3] = {0.f, 0.f, 0.f};
+    f32 pad2 = 0.f;
 };
-static_assert(sizeof(DdgiProbePoint) == 32u, "DdgiProbePoint layout");
+static_assert(sizeof(DdgiProbePoint) == 48u, "DdgiProbePoint layout");
 
 } // namespace fuse::renderer::gi_gpu

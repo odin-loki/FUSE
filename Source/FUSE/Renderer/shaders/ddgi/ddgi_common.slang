@@ -8,10 +8,12 @@ static const float kFuseDdgiInvPi = 1.0 / 3.14159265358979323846;
 static const uint kFuseDdgiFlagMultiBounce = 1u;
 static const uint kFuseDdgiFlagFrontCcw = 2u;
 static const uint kFuseDdgiFlagSun = 4u;
+static const uint kFuseDdgiFlagRelocation = 8u;
+static const uint kFuseDdgiFlagClassification = 16u;
 static const uint kFuseDdgiMaxIrradianceRes = 16;
 static const uint kFuseDdgiMaxDepthRes = 32;
 
-struct DdgiFrame { // DdgiFrameConstants, 352 bytes
+struct DdgiFrame { // DdgiFrameConstants, 400 bytes
     DdgiVolume volume;
     float4 rotation[3];
     float sunDirection[3];
@@ -40,6 +42,12 @@ struct DdgiFrame { // DdgiFrameConstants, 352 bytes
     uint shadowMask;
     float initialIrradiance[3];
     uint sdfSurfaceCount;
+    float distanceClamp;
+    float probeMinFrontfaceDistance;
+    float probeBackfaceThreshold;
+    float probeMaxOffset;
+    float probeRelocationStep;
+    uint statePad[3];
     uint64_t schedule;
     uint64_t rayDirs;
     uint64_t rays;
@@ -67,9 +75,10 @@ struct DdgiSurfaceRow { // DdgiSurface, 32 bytes
     float4 emissive;
 };
 
-struct DdgiPoint { // DdgiProbePoint, 32 bytes
+struct DdgiPoint { // DdgiProbePoint, 48 bytes
     float4 position;
     float4 normal;
+    float4 view;
 };
 
 struct DdgiPush { // DdgiPush, 32 bytes

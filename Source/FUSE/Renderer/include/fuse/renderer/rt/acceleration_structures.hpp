@@ -100,6 +100,11 @@ struct AccelerationStructuresDesc {
     /// Initial capacities (grow by doubling; the TLAS is sized for instanceCapacity instances).
     u32 instanceCapacity = 1024;
     u32 meshCapacity = 256;
+    /// The frame's bindless heap: the rt.* compute pipelines bind no descriptors but follow its backend
+    /// (VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT on the descriptor-buffer backend), so they may be
+    /// dispatched after a bindless pass bound its descriptor buffers (VUID-vkCmdDispatch-None-08117).
+    /// Null = the scene's heap (GpuSceneDesc::bindless); neither = plain pipelines.
+    BindlessDescriptors* bindless = nullptr;
     const char* name = "rt";
 };
 

@@ -46,7 +46,9 @@ public:
     RtProbe(const RtProbe&) = delete;
     RtProbe& operator=(const RtProbe&) = delete;
 
-    bool init(VulkanDevice* device, RtKernelLanguage language = RtKernelLanguage::Auto);
+    /// `bindless`: the frame's heap when the graph also runs bindless passes (the descriptor-free pipeline
+    /// then carries its pipelineCreateFlags(); see AccelerationStructuresDesc::bindless). Null = none.
+    bool init(VulkanDevice* device, RtKernelLanguage language = RtKernelLanguage::Auto, BindlessDescriptors* bindless = nullptr);
     void destroy();
     bool ready() const { return m_pipeline != nullptr; }
     const char* reason() const { return m_reason; }

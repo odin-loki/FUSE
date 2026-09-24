@@ -5,6 +5,9 @@
 //
 // Self-contained (buffer references only): the DDGI kernels and the WP-2.1 light.shade include it.
 //   vec3 E = fuse_ddgi_sample_irradiance(volumeAddress, position, normal);   // irradiance E, 0 when address == 0
+//   vec3 E = fuse_ddgi_sample_irradiance_view(volumeAddress, position, normal, view); // + view bias (toward the camera)
+// Probe relocation / classification (the oracle's probe_position / probe_active): relocated positions for the
+// backface and Chebyshev terms, inactive probes skipped, when the volume has probe data.
 // Layouts: include/fuse/renderer/gi/gpu/ddgi_gpu_types.hpp (DdgiVolumeView, atlas tiles).
 #ifndef FUSE_DDGI_SAMPLE_GLSL
 #define FUSE_DDGI_SAMPLE_GLSL
@@ -14,7 +17,7 @@
 
 #define FUSE_DDGI_PI 3.14159265358979323846
 
-struct FuseDdgiVolume { // DdgiVolumeView, 80 bytes
+struct FuseDdgiVolume { // DdgiVolumeView, 96 bytes
     float origin[3];
     uint probeCount;
     float spacing[3];
@@ -27,8 +30,12 @@ struct FuseDdgiVolume { // DdgiVolumeView, 80 bytes
     uint flags;
     uint64_t irradiance;
     uint64_t distance;
+    uint64_t probeData;
+    float viewBias;
+    uint pad;
 };
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseDdgiVolumeRef { FuseDdgiVolume v; };
+layout(buffer_reference, std430, buffer_reference_align = 16) buffer FuseDdgiProbeDataRef { vec4 v[]; };
 layout(buffer_reference, std430, buffer_reference_align = 4) buffer FuseDdgiFloatsRef { float v[]; };
 
 // ddgi_kernel::is_empty_direction / resolve_direction / Vec3::normalized.
@@ -49,6 +56,15 @@ vec3 fuse_ddgi_resolve_direction(vec3 d) {
         return fuse_ddgi_normalized(d);
     }
     return vec3(0.0, 1.0, 0.0);
+}
+
+// resolve_direction(d, fallback): d normalised, else the (normalised) fallback, else +Y.
+vec3 fuse_ddgi_resolve_direction_or(vec3 d, vec3 fallback) {
+    precise float dd = d.x * d.x + d.y * d.y + d.z * d.z;
+    if (!(dd < 1e-8)) {
+        return fuse_ddgi_normalized(d);
+    }
+    return fuse_ddgi_resolve_direction(fallback);
 }
 
 float fuse_ddgi_length(vec3 d) {
@@ -138,12 +154,26 @@ vec3 fuse_ddgi_probe_position(FuseDdgiVolume V, uint probe) {
     return p;
 }
 
-// ddgi_kernel::sample_irradiance: trilinear over 8 probes with the backface (wrap) and Chebyshev
-// visibility weights, weight crush; irradiance E.
-vec3 fuse_ddgi_sample_volume(FuseDdgiVolume V, vec3 position, vec3 normal) {
-    const vec3 n = fuse_ddgi_resolve_direction(normal);
-    precise vec3 biased = vec3(position.x + n.x * V.normalBias, position.y + n.y * V.normalBias,
-                               position.z + n.z * V.normalBias);
+// ddgi_kernel::probe_position: grid position + relocation offset (probe data).
+vec3 fuse_ddgi_probe_position_relocated(FuseDdgiVolume V, uint probe) {
+    const vec3 p = fuse_ddgi_probe_position(V, probe);
+    if (V.probeData == 0ul || probe >= V.probeCount) {
+        return p;
+    }
+    const vec4 d = FuseDdgiProbeDataRef(V.probeData).v[probe];
+    precise vec3 r = vec3(p.x + d.x, p.y + d.y, p.z + d.z);
+    return r;
+}
+
+// ddgi_kernel::probe_active: false when classification marked the probe inactive (state w != 0).
+bool fuse_ddgi_probe_active(FuseDdgiVolume V, uint probe) {
+    return V.probeData == 0ul || probe >= V.probeCount || FuseDdgiProbeDataRef(V.probeData).v[probe].w == 0.0;
+}
+
+// ddgi_kernel::sample_irradiance_biased: trilinear over 8 probes with the backface (wrap) and Chebyshev
+// visibility weights, weight crush; irradiance E at `position` (unit normal n) whose interpolation and
+// visibility point is `biased`.
+vec3 fuse_ddgi_sample_volume_biased(FuseDdgiVolume V, vec3 position, vec3 n, vec3 biased) {
     precise vec3 grid = vec3(0.0);
     if (V.spacing[0] > 0.0 && V.spacing[1] > 0.0 && V.spacing[2] > 0.0) {
         grid = vec3((biased.x - V.origin[0]) / V.spacing[0], (biased.y - V.origin[1]) / V.spacing[1],
@@ -173,7 +203,10 @@ vec3 fuse_ddgi_sample_volume(FuseDdgiVolume V, vec3 position, vec3 normal) {
             continue;
         }
         const uint probe = c[2] * V.dims[0] * V.dims[1] + c[1] * V.dims[0] + c[0];
-        const vec3 probePos = fuse_ddgi_probe_position(V, probe);
+        if (!fuse_ddgi_probe_active(V, probe)) {
+            continue; // classification: inactive probes take no part
+        }
+        const vec3 probePos = fuse_ddgi_probe_position_relocated(V, probe);
 
         precise float weight = 1.0;
         precise vec3 toProbe = vec3(probePos.x - position.x, probePos.y - position.y, probePos.z - position.z);
@@ -218,6 +251,30 @@ vec3 fuse_ddgi_sample_volume(FuseDdgiVolume V, vec3 position, vec3 normal) {
     return result;
 }
 
+// ddgi_kernel::sample_irradiance(v, position, normal): normal bias only.
+vec3 fuse_ddgi_sample_volume(FuseDdgiVolume V, vec3 position, vec3 normal) {
+    const vec3 n = fuse_ddgi_resolve_direction(normal);
+    precise vec3 biased = vec3(position.x + n.x * V.normalBias, position.y + n.y * V.normalBias,
+                               position.z + n.z * V.normalBias);
+    return fuse_ddgi_sample_volume_biased(V, position, n, biased);
+}
+
+// ddgi_kernel::sample_irradiance(v, position, normal, view): + viewBias toward the viewer (`view` = unit
+// direction from the surface to the camera; for probe rays minus the ray direction).
+vec3 fuse_ddgi_sample_volume_view(FuseDdgiVolume V, vec3 position, vec3 normal, vec3 view) {
+    const vec3 n = fuse_ddgi_resolve_direction(normal);
+    if (V.viewBias == 0.0) {
+        precise vec3 biased = vec3(position.x + n.x * V.normalBias, position.y + n.y * V.normalBias,
+                                   position.z + n.z * V.normalBias);
+        return fuse_ddgi_sample_volume_biased(V, position, n, biased);
+    }
+    const vec3 w = fuse_ddgi_resolve_direction_or(view, n);
+    precise vec3 biased = vec3((position.x + n.x * V.normalBias) + w.x * V.viewBias,
+                               (position.y + n.y * V.normalBias) + w.y * V.viewBias,
+                               (position.z + n.z * V.normalBias) + w.z * V.viewBias);
+    return fuse_ddgi_sample_volume_biased(V, position, n, biased);
+}
+
 // Irradiance E at a surface point of the volume at `volumeAddress` (a DdgiVolumeView); 0 without one.
 vec3 fuse_ddgi_sample_irradiance(uint64_t volumeAddress, vec3 position, vec3 normal) {
     if (volumeAddress == 0ul) {
@@ -228,6 +285,18 @@ vec3 fuse_ddgi_sample_irradiance(uint64_t volumeAddress, vec3 position, vec3 nor
         return vec3(0.0);
     }
     return fuse_ddgi_sample_volume(V, position, normal);
+}
+
+// The same with the view bias (`view` = unit direction from the surface toward the camera).
+vec3 fuse_ddgi_sample_irradiance_view(uint64_t volumeAddress, vec3 position, vec3 normal, vec3 view) {
+    if (volumeAddress == 0ul) {
+        return vec3(0.0);
+    }
+    const FuseDdgiVolume V = FuseDdgiVolumeRef(volumeAddress).v;
+    if (V.probeCount == 0u || V.irradiance == 0ul || V.distance == 0ul) {
+        return vec3(0.0);
+    }
+    return fuse_ddgi_sample_volume_view(V, position, normal, view);
 }
 
 #endif // FUSE_DDGI_SAMPLE_GLSL
