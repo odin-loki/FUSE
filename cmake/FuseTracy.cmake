@@ -45,7 +45,10 @@ if(NOT TARGET fuse_tracy_client)
     set_target_properties(fuse_tracy_client PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_link_libraries(fuse_tracy_client PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
     if(WIN32)
-        target_link_libraries(fuse_tracy_client PUBLIC ws2_32 dbghelp)
+        target_link_libraries(fuse_tracy_client PUBLIC ws2_32 dbghelp secur32 advapi32 user32)
+        # ETW system tracing/sampling needs administrator rights and is unimplemented under Wine
+        # (EnumerateTraceGuidsEx aborts); FUSE's zones and GPU timings do not depend on it.
+        target_compile_definitions(fuse_tracy_client PUBLIC TRACY_NO_SYSTEM_TRACING)
     endif()
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         set_source_files_properties("${FUSE_TRACY_DIR}/public/TracyClient.cpp" PROPERTIES COMPILE_OPTIONS "-w")
