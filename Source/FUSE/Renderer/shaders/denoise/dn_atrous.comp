@@ -1,0 +1,97 @@
+#version 460
+// WP-6.4 "denoise.atrous" ([SVGF] 4.3, 4.4): one 5 x 5 B3-spline a-trous iteration with step pc.step on
+// (rgb, variance) pc.src -> pc.dst; weight = h(dx) h(dy) max(0, n_p.n_q)^sigma_n exp(-|z_p - z_q| /
+// (sigma_z |grad z . offset| + eps) - |l_p - l_q| / (sigma_l sqrt(g3x3(var)) + 1e-6)); variance filtered with
+// squared weights. pc.aux != 0: also the colour history; DN_PASS_WRITE_IMAGE: also the RGBA16F output image.
+// GLSL twin of dn_atrous.slang; CPU reference: svgf_kernel::atrous_pixel.
+#extension GL_GOOGLE_include_directive : require
+#include "dn_common.glsl"
+
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(rgba16f) uniform writeonly image2D fuse_dn_images[];
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+    const DnFrame F = dn_frame();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const uint w = F.width;
+    const uint h = F.height;
+    const uint i = p.y * w + p.x;
+    DnTexelsRef guide = DnTexelsRef(F.guideCur);
+    DnTexelsRef src = DnTexelsRef(pc.src);
+    const vec4 g = guide.v[i];
+    const vec4 inp = src.v[i];
+    vec4 outv = inp;
+    if (g.w > 0.0) {
+        precise float gs = 0.0;
+        precise float gw = 0.0;
+        for (int dy = -1; dy <= 1; ++dy) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                const int qx = int(p.x) + dx;
+                const int qy = int(p.y) + dy;
+                if (qx < 0 || qy < 0 || qx >= int(w) || qy >= int(h)) {
+                    continue;
+                }
+                const uint q = uint(qy) * w + uint(qx);
+                if (!(guide.v[q].w > 0.0)) {
+                    continue;
+                }
+                precise float k = dn_gauss_tap(dx) * dn_gauss_tap(dy);
+                gs = gs + k * src.v[q].w;
+                gw = gw + k;
+            }
+        }
+        precise float gvar = gs / gw;
+        precise float phiL = F.sigmaLuminance * sqrt(gvar > 0.0 ? gvar : 0.0) + 1e-6;
+        const vec2 gz = DnPairsRef(F.gradZ).v[i];
+        const float lp = dn_luminance(inp, F.flags);
+        const int step = int(pc.step);
+        precise float sumW = 0.0;
+        precise float sr = 0.0;
+        precise float sg = 0.0;
+        precise float sb = 0.0;
+        precise float sv = 0.0;
+        for (int dy = -2; dy <= 2; ++dy) {
+            for (int dx = -2; dx <= 2; ++dx) {
+                const int ox = dx * step;
+                const int oy = dy * step;
+                const int qx = int(p.x) + ox;
+                const int qy = int(p.y) + oy;
+                if (qx < 0 || qy < 0 || qx >= int(w) || qy >= int(h)) {
+                    continue;
+                }
+                const uint q = uint(qy) * w + uint(qx);
+                const vec4 gq = guide.v[q];
+                if (!(gq.w > 0.0)) {
+                    continue;
+                }
+                const vec4 sq = src.v[q];
+                precise float k = dn_atrous_tap(dx) * dn_atrous_tap(dy);
+                const float wz = dn_depth_term(F, g.w, gq.w, gz, float(ox), float(oy));
+                const float wn = dn_normal_weight(g, gq, F.sigmaNormal);
+                precise float wl = abs(lp - dn_luminance(sq, F.flags)) / phiL;
+                precise float wgt = k * wn * exp(-(wz + wl));
+                sumW = sumW + wgt;
+                sr = sr + wgt * sq.x;
+                sg = sg + wgt * sq.y;
+                sb = sb + wgt * sq.z;
+                sv = sv + (wgt * wgt) * sq.w;
+            }
+        }
+        if (sumW > 0.0) {
+            precise vec4 r = vec4(sr / sumW, sg / sumW, sb / sumW, sv / (sumW * sumW));
+            outv = r;
+        }
+    }
+    DnTexelsRef(pc.dst).v[i] = outv;
+    if (pc.aux != 0ul) {
+        DnTexelsRef(pc.aux).v[i] = vec4(outv.xyz, 0.0);
+    }
+    if ((pc.flags & DN_PASS_WRITE_IMAGE) != 0u && F.outputImage != 0u) {
+        const vec4 img = (F.flags & DN_FLAG_SCALAR) != 0u ? vec4(outv.x, outv.x, outv.x, outv.w) : outv;
+        imageStore(fuse_dn_images[fuse_handle_index(F.outputImage)], ivec2(p), img);
+    }
+}

@@ -1,0 +1,71 @@
+#version 460
+// WP-6.4 A-SVGF gradients on the 3 x 3 stratum grid ([A-SVGF] Schied, Peters, Dachsbacher 2018).
+//   mode 0 "denoise.gradient.prepare": producer samples (cur, prev, valid) -> (cur - prev, max(|cur|, |prev|),
+//          valid, 0); strata whose representative pixel is sky are invalid
+//   mode 1 "denoise.gradient.atrous": one edge-aware 5 x 5 a-trous iteration (relative depth + normal
+//          stopping at the representative pixels), delta / normaliser / validity filtered with the same weights
+// GLSL twin of dn_gradient.slang; CPU reference: svgf_kernel::gradient_stratum.
+#extension GL_GOOGLE_include_directive : require
+#include "dn_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+    const DnFrame F = dn_frame();
+    const uvec2 sp = gl_GlobalInvocationID.xy;
+    if (sp.x >= F.strataW || sp.y >= F.strataH) {
+        return;
+    }
+    const uint s = sp.y * F.strataW + sp.x;
+    const uint pi = dn_stratum_pixel(F, sp.x, sp.y);
+    DnTexelsRef guide = DnTexelsRef(F.guideCur);
+    DnTexelsRef src = DnTexelsRef(pc.src);
+    DnTexelsRef dst = DnTexelsRef(pc.dst);
+    const vec4 g = guide.v[pi];
+    const vec4 inp = src.v[s];
+    if (pc.mode == DN_GRADIENT_PREPARE) {
+        if (!(inp.z > 0.0) || !(g.w > 0.0)) {
+            dst.v[s] = vec4(0.0);
+            return;
+        }
+        const float a = abs(inp.x);
+        const float b = abs(inp.y);
+        precise float d = inp.x - inp.y;
+        dst.v[s] = vec4(d, a > b ? a : b, 1.0, 0.0);
+        return;
+    }
+    if (!(g.w > 0.0)) {
+        dst.v[s] = inp;
+        return;
+    }
+    precise float sumW = 0.0;
+    precise float sd = 0.0;
+    precise float sm = 0.0;
+    precise float sv = 0.0;
+    for (int dy = -2; dy <= 2; ++dy) {
+        for (int dx = -2; dx <= 2; ++dx) {
+            const int qx = int(sp.x) + dx * int(pc.step);
+            const int qy = int(sp.y) + dy * int(pc.step);
+            if (qx < 0 || qy < 0 || qx >= int(F.strataW) || qy >= int(F.strataH)) {
+                continue;
+            }
+            const uint q = uint(qy) * F.strataW + uint(qx);
+            const uint qi = dn_stratum_pixel(F, uint(qx), uint(qy));
+            const vec4 gq = guide.v[qi];
+            if (!(gq.w > 0.0)) {
+                continue;
+            }
+            precise float h = dn_atrous_tap(dx) * dn_atrous_tap(dy);
+            precise float wz = abs(g.w - gq.w) / (F.sigmaDepth * g.w * F.reprojDepth + F.depthEpsilon);
+            const float wn = dn_normal_weight(g, gq, F.sigmaNormal);
+            precise float wgt = h * wn * exp(-wz);
+            const vec4 v = src.v[q];
+            sumW = sumW + wgt;
+            sd = sd + wgt * v.x;
+            sm = sm + wgt * v.y;
+            sv = sv + wgt * v.z;
+        }
+    }
+    precise vec4 r = vec4(sd / sumW, sm / sumW, sv / sumW, 0.0);
+    dst.v[s] = r;
+}

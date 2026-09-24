@@ -1,0 +1,125 @@
+#version 460
+// WP-6.4 "denoise.temporal" ([SVGF] 4.1, [A-SVGF] 5): bilinear reprojection through the UV motion; a history
+// tap counts when it is inside the image and passes the depth (|z_prev - z| <= reprojDepth z + |dz/dx| + |dz/dy|)
+// and normal (dot >= reprojNormal) tests; no valid tap = disocclusion (history length 1, alpha 1). Colour and
+// luminance moments blend with alpha = max(alpha_min, 1 / length); with A-SVGF gradients
+// length' = max(1, (1 - lambda) length) and alpha' = (1 - lambda) alpha + lambda.
+// GLSL twin of dn_temporal.slang; CPU reference: svgf_kernel::temporal_pixel.
+#extension GL_GOOGLE_include_directive : require
+#include "dn_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+    const DnFrame F = dn_frame();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const uint w = F.width;
+    const uint h = F.height;
+    const uint i = p.y * w + p.x;
+    const vec4 sig = dn_read_signal(F, i);
+    const float l = dn_luminance(sig, F.flags);
+    const vec4 g = DnTexelsRef(F.guideCur).v[i];
+    DnTexelsRef accum = DnTexelsRef(F.accum);
+    DnTexelsRef momCur = DnTexelsRef(F.momCur);
+    if (!(g.w > 0.0)) {
+        precise float l2 = l * l;
+        accum.v[i] = sig;
+        momCur.v[i] = vec4(l, l2, 0.0, 0.0);
+        return;
+    }
+    precise float sumW = 0.0;
+    precise float hr = 0.0;
+    precise float hg = 0.0;
+    precise float hb = 0.0;
+    precise float m1 = 0.0;
+    precise float m2 = 0.0;
+    precise float len = 0.0;
+    if ((F.flags & DN_FLAG_HISTORY) != 0u) {
+        const vec2 m = DnPairsRef(F.motion).v[i];
+        precise float px = (float(p.x) + 0.5) - m.x * float(w);
+        precise float py = (float(p.y) + 0.5) - m.y * float(h);
+        px = px - 0.5;
+        py = py - 0.5;
+        px = px > -2.0 ? (px < float(w) + 1.0 ? px : float(w) + 1.0) : -2.0;
+        py = py > -2.0 ? (py < float(h) + 1.0 ? py : float(h) + 1.0) : -2.0;
+        const float x0 = floor(px);
+        const float y0 = floor(py);
+        precise float fx = px - x0;
+        precise float fy = py - y0;
+        const int ix = int(x0);
+        const int iy = int(y0);
+        const vec2 gz = DnPairsRef(F.gradZ).v[i];
+        precise float tol = F.reprojDepth * g.w + (abs(gz.x) + abs(gz.y));
+        DnTexelsRef guidePrev = DnTexelsRef(F.guidePrev);
+        DnTexelsRef histPrev = DnTexelsRef(F.histPrev);
+        DnTexelsRef momPrev = DnTexelsRef(F.momPrev);
+        for (uint t = 0u; t < 4u; ++t) {
+            const int tx = ix + int(t & 1u);
+            const int ty = iy + int(t >> 1u);
+            precise float wx = (t & 1u) != 0u ? fx : 1.0 - fx;
+            precise float wy = (t >> 1u) != 0u ? fy : 1.0 - fy;
+            precise float wt = wx * wy;
+            if (tx < 0 || ty < 0 || tx >= int(w) || ty >= int(h) || !(wt > 0.0)) {
+                continue;
+            }
+            const uint j = uint(ty) * w + uint(tx);
+            const vec4 gp = guidePrev.v[j];
+            precise float dz = abs(gp.w - g.w);
+            if (!(gp.w > 0.0) || dz > tol || dn_dot3(gp, g) < F.reprojNormal) {
+                continue;
+            }
+            const vec4 hc = histPrev.v[j];
+            const vec4 hm = momPrev.v[j];
+            sumW = sumW + wt;
+            hr = hr + wt * hc.x;
+            hg = hg + wt * hc.y;
+            hb = hb + wt * hc.z;
+            m1 = m1 + wt * hm.x;
+            m2 = m2 + wt * hm.y;
+            len = len + wt * hm.z;
+        }
+    }
+    const bool valid = sumW >= F.minReprojWeight && sumW > 0.0;
+    precise float aC = 1.0;
+    precise float aM = 1.0;
+    precise float newLen = 1.0;
+    if (valid) {
+        hr = hr / sumW;
+        hg = hg / sumW;
+        hb = hb / sumW;
+        m1 = m1 / sumW;
+        m2 = m2 / sumW;
+        len = len / sumW;
+        newLen = len + 1.0;
+        newLen = newLen < F.maxHistory ? newLen : F.maxHistory;
+        float lambda = 0.0;
+        if ((F.flags & DN_FLAG_GRADIENTS) != 0u) {
+            const uint si = (p.y / DN_STRATUM) * F.strataW + p.x / DN_STRATUM;
+            lambda = dn_gradient_lambda(F, DnTexelsRef(F.lambda).v[si]);
+            newLen = newLen * (1.0 - lambda);
+            newLen = newLen > 1.0 ? newLen : 1.0;
+        }
+        precise float inv = 1.0 / newLen;
+        aC = F.alphaColor > inv ? F.alphaColor : inv;
+        aM = F.alphaMoments > inv ? F.alphaMoments : inv;
+        if ((F.flags & DN_FLAG_GRADIENTS) != 0u) {
+            aC = aC * (1.0 - lambda) + lambda;
+            aM = aM * (1.0 - lambda) + lambda;
+        }
+    } else {
+        hr = 0.0;
+        hg = 0.0;
+        hb = 0.0;
+        m1 = 0.0;
+        m2 = 0.0;
+    }
+    precise float bC = 1.0 - aC;
+    precise float bM = 1.0 - aM;
+    precise vec4 c = vec4(hr * bC + sig.x * aC, hg * bC + sig.y * aC, hb * bC + sig.z * aC, 0.0);
+    precise vec4 mo = vec4(m1 * bM + l * aM, m2 * bM + (l * l) * aM, newLen, 0.0);
+    accum.v[i] = c;
+    momCur.v[i] = mo;
+}

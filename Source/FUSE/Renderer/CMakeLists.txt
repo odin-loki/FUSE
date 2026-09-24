@@ -299,3 +299,4 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp54.cmake")  # WP-5.4 compute sof
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp53.cmake")  # WP-5.3 cluster streaming + residency (geometry_streaming/, core_logic/residency/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp60.cmake")  # WP-6.0 acceleration structures, T2 (rt/, shaders/rt/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp63.cmake")  # WP-6.3 screen-space fallback on Vulkan (ssfx_gpu/, shaders/ssfx/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp64.cmake")  # WP-6.4 in-tree denoiser, SVGF / A-SVGF (denoise/, shaders/denoise/)
