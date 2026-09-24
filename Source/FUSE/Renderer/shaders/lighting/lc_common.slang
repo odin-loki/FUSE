@@ -21,7 +21,7 @@ static const uint kFuseLcHeaderClusters = 5u;
 static const uint kFuseLcHeaderCapacity = 6u;
 static const uint kFuseLcHeaderLights = 7u;
 
-// LightingFrameConstants, 752 bytes.
+// LightingFrameConstants, 768 bytes.
 struct LcFrame {
     uint64_t aabbs;
     uint64_t bounds;
@@ -68,6 +68,9 @@ struct LcFrame {
     float sliceDepth[68];
     float ndcX[36];
     float ndcY[20];
+    uint rtShadowsLo; // WP-6.2: BDA of the RtfxShadowView (0 = no ray-traced shadows)
+    uint rtShadowsHi;
+    uint reserved1[2]; // WP-6.1: BDA of the DdgiVolumeView (lo, hi; 0 = no DDGI indirect diffuse)
 };
 
 struct LcAabb {

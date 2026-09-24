@@ -1,5 +1,6 @@
 // WP-2.1 "light.shade". Slang twin of lc_shade.comp (see there).
 #include "lc_includes.slang"
+#include "../ddgi/ddgi_sample.slang" // WP-6.1 DDGI indirect diffuse
 
 [[vk::binding(1, 0)]] Texture2D<float4> fuse_lc_textures[];
 [[vk::binding(0, 0)]] [format("rgba16f")] RWTexture2D<float4> fuse_lc_images[];
@@ -35,7 +36,15 @@ void main(uint3 tid: SV_DispatchThreadID) {
         s.emissive = rt5.xyz;
         const float3 v = fuseLcSafeNormalize(fuseLcVec3(F.cameraPosition) - s.position, s.normal);
         // The light loop (WP-2.2: shared with the forward transparency pass, lc_ltc.slang).
-        const float3 radiance = fuseLcShadeLights(F, s, v, cluster);
+        float3 radiance = fuseLcShadeLightsPx(F, s, v, cluster, p); // WP-6.2: RT visibility
+        // WP-6.1: DDGI irradiance E as indirect diffuse (Lambert: albedo x (1 - metallic) / pi), x AO.
+        const uint64_t ddgi = uint64_t(F.reserved1[0]) | (uint64_t(F.reserved1[1]) << 32u);
+        if (ddgi != 0ull) {
+            const float3 e = fuseDdgiSampleIrradiance(ddgi, s.position, s.normal);
+            const float k = (1.0 - clamp(s.metallic, 0.0, 1.0)) * s.ao * (((DdgiVolume*)ddgi)[0].intensity * (1.0 / kFuseDdgiPi));
+            radiance = float3(radiance.x + (s.albedo.x * e.x) * k, radiance.y + (s.albedo.y * e.y) * k,
+                              radiance.z + (s.albedo.z * e.z) * k);
+        }
         result = float4(radiance, 1.0);
     }
     fuse_lc_images[F.output_ & 0xFFFFFu][p] = result;

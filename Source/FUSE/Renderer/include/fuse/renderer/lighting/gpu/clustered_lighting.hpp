@@ -121,6 +121,14 @@ struct LightingFrameDesc {
     /// and the forward pass then scale each shadowed light by its visibility. The shadow images must be
     /// declared for the reading passes (VsmShadows::addSamplingUse). 0 = unshadowed.
     u64 shadows = 0;
+    /// WP-6.2: BDA of this frame's RtfxShadowView (RtEffects::shadowViewAddress()); light.shade then takes
+    /// each RT-shadowed light's visibility from the ray-traced pixel instead of the VSM (the forward pass is
+    /// unchanged). Declare the read (RtEffects::addSamplingUse) before light.shade. 0 = none.
+    u64 rtShadows = 0;
+    /// WP-6.1: BDA of this frame's DdgiVolumeView (gi_gpu::DdgiGpu::volumeAddress()); light.shade then adds
+    /// the volume's irradiance as indirect diffuse (E x albedo x (1 - metallic) x AO x intensity / pi,
+    /// shaders/ddgi/ddgi_sample.*). Declare the read (DdgiGpu::addSamplingUse) before light.shade. 0 = none.
+    u64 ddgi = 0;
 };
 
 struct LightingGraphRefs {

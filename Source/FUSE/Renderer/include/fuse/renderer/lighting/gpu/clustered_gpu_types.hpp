@@ -28,7 +28,7 @@ enum LightingFrameFlag : u32 {
 };
 
 /// Per-frame constants, read through BDA from a host-visible ring (ClusteredLighting::beginFrame):
-/// 752 bytes, std430 (FuseLcFrame in lc_common.glsl, LcFrame in lc_common.slang).
+/// 768 bytes, std430 (FuseLcFrame in lc_common.glsl, LcFrame in lc_common.slang).
 ///
 /// The camera basis, the projection tangents and the three edge tables are resolved on the host with
 /// the CPU oracle's own functions (clustered_kernel::make_camera / slice_near_z / slice_far_z and the
@@ -81,8 +81,15 @@ struct LightingFrameConstants {
     f32 sliceDepth[68] = {}; ///< [s] = near depth of slice s, [slicesZ] = far depth of the last slice
     f32 ndcX[36] = {};       ///< [x] = NDC x of tile column edge x (0..tilesX)
     f32 ndcY[20] = {};       ///< [y] = NDC y of tile row edge y (0..tilesY; row 0 = top, ndc +1)
+    u32 rtShadowsLo = 0;     ///< WP-6.2: BDA of the RtfxShadowView light.shade reads (low / high 32 bits; 0 = none):
+    u32 rtShadowsHi = 0;     ///< RT-shadowed lights take the pixel's ray-traced visibility. LightingFrameDesc::rtShadows.
+    /// WP-6.1: [0] / [1] = BDA of the DdgiVolumeView light.shade samples for indirect diffuse (low / high
+    /// 32 bits; 0 = no DDGI). LightingFrameDesc::ddgi. The name stays `reserved1` because the WP-6.2 layout
+    /// gate pins the shader tail (rtShadowsLo, rtShadowsHi, reserved1).
+    u32 reserved1[2] = {0u, 0u};
 };
-static_assert(sizeof(LightingFrameConstants) == 752u && offsetof(LightingFrameConstants, cameraPosition) == 96u &&
+static_assert(sizeof(LightingFrameConstants) == 768u && offsetof(LightingFrameConstants, rtShadowsLo) == 752u &&
+                  offsetof(LightingFrameConstants, cameraPosition) == 96u &&
                   offsetof(LightingFrameConstants, ambient) == 160u && offsetof(LightingFrameConstants, width) == 176u &&
                   offsetof(LightingFrameConstants, tilesX) == 192u && offsetof(LightingFrameConstants, clusterCount) == 208u &&
                   offsetof(LightingFrameConstants, output) == 224u && offsetof(LightingFrameConstants, gbufferDepth) == 240u &&

@@ -515,9 +515,53 @@ vec3 fuse_lc_shadowed(uint64_t shadows, uint slot, FuseLcSurface s, vec3 c) {
     return r;
 }
 
-vec3 fuse_lc_shade_lights(FuseLcFrame F, FuseLcSurface s, vec3 v, uint cluster) {
+// WP-6.2: ray-traced visibility of light `slot` at `pixel` from the RtfxShadowView at `rt`
+// (include/fuse/renderer/rt_effects/rt_effects_types.hpp). False when the light is not RT-shadowed or the
+// pixel lies outside the view: the light then keeps its VSM visibility (or none).
+struct FuseLcRtView { // RtfxShadowView (48 bytes)
+    uint64_t visibility;
+    uint width;
+    uint height;
+    uint count;
+    uint pad0;
+    uint slots[4];
+    uint pad1[2];
+};
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseLcRtViewRef { FuseLcRtView v; };
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer FuseLcRtFloatsRef { float v[]; };
+
+bool fuse_lc_rt_visibility(uint64_t rt, uint slot, uvec2 pixel, out float visibility) {
+    visibility = 1.0;
+    if (rt == 0ul) {
+        return false;
+    }
+    const FuseLcRtView view = FuseLcRtViewRef(rt).v;
+    if (pixel.x >= view.width || pixel.y >= view.height) {
+        return false;
+    }
+    for (uint c = 0u; c < min(view.count, 4u); ++c) {
+        if (view.slots[c] == slot) {
+            visibility = FuseLcRtFloatsRef(view.visibility).v[c * view.width * view.height + pixel.y * view.width + pixel.x];
+            return true;
+        }
+    }
+    return false;
+}
+
+vec3 fuse_lc_shadowed_px(uint64_t shadows, uint64_t rt, uvec2 pixel, uint slot, FuseLcSurface s, vec3 c) {
+    float visibility;
+    if (fuse_lc_rt_visibility(rt, slot, pixel, visibility)) {
+        precise vec3 r = vec3(c.x * visibility, c.y * visibility, c.z * visibility);
+        return r;
+    }
+    return fuse_lc_shadowed(shadows, slot, s, c);
+}
+
+// The light loop with the pixel light.shade shades (WP-6.2 ray-traced visibility); `pixel` = ~0u: none.
+vec3 fuse_lc_shade_lights_px(FuseLcFrame F, FuseLcSurface s, vec3 v, uint cluster, uvec2 pixel) {
     FuseGpuLightsRef lights = fuse_gpu_scene_lights(fuse_gpu_scene(F.scene));
     const uint64_t shadows = uint64_t(F.shadowsLo) | (uint64_t(F.shadowsHi) << 32u);
+    const uint64_t rt = pixel.x == 0xFFFFFFFFu ? 0ul : (uint64_t(F.rtShadowsLo) | (uint64_t(F.rtShadowsHi) << 32u));
     precise vec3 radiance = s.emissive + fuse_lc_vec3(F.ambient) * s.albedo * s.ao;
     const bool compensated = F.brdfLut != 0ul;
     FuseLcLutRef lut = FuseLcLutRef(F.brdfLut);
@@ -530,9 +574,9 @@ vec3 fuse_lc_shade_lights(FuseLcFrame F, FuseLcSurface s, vec3 v, uint cluster) 
     for (uint i = 0u; i < directionalCount; ++i) {
         const uint slot = directional.v[i];
         if (slot < F.lightCount) {
-            radiance = radiance + fuse_lc_shadowed(shadows, slot, s,
-                                                   compensated ? fuse_lc_light_ms(lights.v[slot], s, v, terms, lut)
-                                                               : fuse_lc_light(lights.v[slot], s, v));
+            radiance = radiance + fuse_lc_shadowed_px(shadows, rt, pixel, slot, s,
+                                                      compensated ? fuse_lc_light_ms(lights.v[slot], s, v, terms, lut)
+                                                                  : fuse_lc_light(lights.v[slot], s, v));
         }
     }
     FuseLcWordsRef grid = FuseLcWordsRef(F.grid);
@@ -542,12 +586,16 @@ vec3 fuse_lc_shade_lights(FuseLcFrame F, FuseLcSurface s, vec3 v, uint cluster) 
     for (uint i = 0u; i < count; ++i) {
         const uint slot = list.v[offset + i];
         if (slot < F.lightCount) {
-            radiance = radiance + fuse_lc_shadowed(shadows, slot, s,
-                                                   compensated ? fuse_lc_light_ms(lights.v[slot], s, v, terms, lut)
-                                                               : fuse_lc_light(lights.v[slot], s, v));
+            radiance = radiance + fuse_lc_shadowed_px(shadows, rt, pixel, slot, s,
+                                                      compensated ? fuse_lc_light_ms(lights.v[slot], s, v, terms, lut)
+                                                                  : fuse_lc_light(lights.v[slot], s, v));
         }
     }
     return radiance;
+}
+
+vec3 fuse_lc_shade_lights(FuseLcFrame F, FuseLcSurface s, vec3 v, uint cluster) {
+    return fuse_lc_shade_lights_px(F, s, v, cluster, uvec2(0xFFFFFFFFu));
 }
 
 #endif // FUSE_LC_LTC_GLSL

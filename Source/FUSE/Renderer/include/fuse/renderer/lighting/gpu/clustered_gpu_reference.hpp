@@ -68,6 +68,9 @@ struct ShadeReferenceDesc {
     /// WP-3.2: ShadeParams::shadow / shadow_user (null = unshadowed).
     f32 (*shadow)(const void* user, u32 slot, const SurfaceSample& s) = nullptr;
     const void* shadowUser = nullptr;
+    /// WP-6.2: ShadeParams::rt_shadow / rt_shadow_user (null = no ray-traced shadows).
+    f32 (*rtShadow)(const void* user, u32 slot, u32 px, u32 py) = nullptr;
+    const void* rtShadowUser = nullptr;
 };
 
 /// Shades every pixel ("light.shade" kernel on `backend`; CpuReference and CpuParallel are

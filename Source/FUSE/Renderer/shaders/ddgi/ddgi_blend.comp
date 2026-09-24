@@ -1,0 +1,245 @@
+#version 460
+// WP-6.1 "ddgi.blend" (twin: ddgi_blend.slang): the GPU form of the CPU oracle's
+// ddgi_kernel::BlendKernel (include/fuse/renderer/gi/ddgi_probe_kernel.hpp), one 64-thread workgroup per
+// scheduled probe, the oracle's phases separated by workgroup barriers:
+//   0  thread 0: flags (probe changed, fast texels, first update = update count 0)
+//   1  per interior irradiance texel: cosine-weighted mean incoming radiance over the rays, in ray order
+//   2  thread 0, texel order: probe-mean change detection against the history (global discontinuity)
+//   3  per texel: irradiance hysteresis blend (per-texel change detection lowers the hysteresis) and
+//      distance moments with cos^power weights, hysteresis blend
+//   4  octahedral border rings from the blended interiors (ddgi_cpu::copyOctahedralBorder), update count,
+//      the slot's fast-response texel count
+// Same expressions in the same order, `precise`: irradiance is bit-identical to the oracle on the same ray
+// results; distance moments differ only through the device pow (fuse_rp_ddgi_gpu_vk_* tolerances).
+// The blended interiors are kept in shared memory, so phase 4 reads no global data written by other
+// invocations of the dispatch. A probe listed twice in one schedule is not supported (DdgiGpu dedups).
+#extension GL_GOOGLE_include_directive : require
+#include "ddgi_common.glsl"
+
+layout(local_size_x = FUSE_DDGI_WORKGROUP) in;
+
+shared vec4 s_irr[FUSE_DDGI_MAX_IRRADIANCE_RES * FUSE_DDGI_MAX_IRRADIANCE_RES]; // incoming, then blended
+shared vec2 s_dist[FUSE_DDGI_MAX_DEPTH_RES * FUSE_DDGI_MAX_DEPTH_RES];          // blended moments
+shared uint s_flags[3]; // [0] probe changed, [1] fast texels, [2] first update
+
+void main() {
+    const uint slot = gl_WorkGroupID.x;
+    const uint tid = gl_LocalInvocationID.x;
+    const uint threads = gl_WorkGroupSize.x;
+    const FuseDdgiFrame F = fuse_ddgi_frame();
+    if (slot >= F.scheduled) {
+        return; // uniform across the workgroup
+    }
+    const uint probe = FuseDdgiWordsRef(F.schedule).v[slot];
+    if (probe >= F.volume.probeCount) {
+        return; // uniform
+    }
+    const uint ir = F.volume.irradianceRes;
+    const uint texels = ir * ir;
+    const uint irrStride = ir + 2u;
+    const uint irrBase = probe * irrStride * irrStride * 3u;
+    const uint dr = F.volume.depthRes;
+    const uint distStride = dr + 2u;
+    const uint distBase = probe * distStride * distStride * 2u;
+    const uint rays = F.raysPerProbe;
+    FuseDdgiFloatsRef irr = FuseDdgiFloatsRef(F.volume.irradiance);
+    FuseDdgiFloatsRef dist = FuseDdgiFloatsRef(F.volume.distance);
+    FuseDdgiVec4Ref dirs = FuseDdgiVec4Ref(F.rayDirs);
+    FuseDdgiVec4Ref results = FuseDdgiVec4Ref(F.rays);
+    FuseDdgiVec4Ref irrTexelDirs = FuseDdgiVec4Ref(F.irradianceTexelDirs);
+    FuseDdgiVec4Ref distTexelDirs = FuseDdgiVec4Ref(F.distanceTexelDirs);
+    FuseDdgiWordsRef counts = FuseDdgiWordsRef(F.updateCounts);
+    const uint rayBase = slot * rays;
+
+    // Phase 0.
+    if (tid == 0u) {
+        s_flags[0] = 0u;
+        s_flags[1] = 0u;
+        s_flags[2] = counts.v[probe] == 0u ? 1u : 0u;
+    }
+    barrier();
+
+    // Phase 1: cosine-weighted mean incoming radiance per interior irradiance texel.
+    for (uint t = tid; t < texels; t += threads) {
+        const vec3 td = irrTexelDirs.v[t].xyz;
+        precise float sumR = 0.0;
+        precise float sumG = 0.0;
+        precise float sumB = 0.0;
+        precise float weightSum = 0.0;
+        for (uint r = 0u; r < rays; ++r) {
+            const vec3 d = dirs.v[r].xyz;
+            precise float w = td.x * d.x + td.y * d.y + td.z * d.z;
+            if (w > 0.0) {
+                const vec3 l = results.v[rayBase + r].xyz;
+                sumR += l.x * w;
+                sumG += l.y * w;
+                sumB += l.z * w;
+                weightSum += w;
+            }
+        }
+        if (weightSum <= 0.0) {
+            s_irr[t] = vec4(0.0);
+            continue;
+        }
+        precise float inv = 1.0 / weightSum;
+        precise vec4 incoming = vec4(sumR * inv, sumG * inv, sumB * inv, 1.0);
+        s_irr[t] = incoming;
+    }
+    barrier();
+
+    // Phase 2: probe-level discontinuity (thread 0, texel order).
+    if (tid == 0u && s_flags[2] == 0u) {
+        precise vec3 inSum = vec3(0.0);
+        precise vec3 histSum = vec3(0.0);
+        uint valid = 0u;
+        for (uint t = 0u; t < texels; ++t) {
+            if (s_irr[t].w == 0.0) {
+                continue;
+            }
+            const uint y = t / ir;
+            const uint x = t % ir;
+            const uint o = irrBase + ((y + 1u) * irrStride + (x + 1u)) * 3u;
+            inSum = vec3(inSum.x + s_irr[t].x, inSum.y + s_irr[t].y, inSum.z + s_irr[t].z);
+            histSum = vec3(histSum.x + irr.v[o + 0u], histSum.y + irr.v[o + 1u], histSum.z + irr.v[o + 2u]);
+            ++valid;
+        }
+        if (valid > 0u) {
+            precise float inv = 1.0 / float(valid);
+            precise vec3 inMean = vec3(inSum.x * inv, inSum.y * inv, inSum.z * inv);
+            precise vec3 histMean = vec3(histSum.x * inv, histSum.y * inv, histSum.z * inv);
+            const float scale = max(max(fuse_ddgi_max_component(inMean), fuse_ddgi_max_component(histMean)), F.changeFloor);
+            precise vec3 diff = vec3(abs(inMean.x - histMean.x), abs(inMean.y - histMean.y), abs(inMean.z - histMean.z));
+            precise float threshold = F.probeChangeThreshold * scale;
+            s_flags[0] = fuse_ddgi_max_component(diff) > threshold ? 1u : 0u;
+        }
+    }
+    barrier();
+
+    // Phase 3: hysteresis blends.
+    const bool first = s_flags[2] != 0u;
+    const bool probeChanged = s_flags[0] != 0u;
+    const float hysteresis = first ? 0.0 : F.hysteresis;
+    const float fastHysteresis = max(0.0, hysteresis - F.changeHysteresisDrop);
+    for (uint t = tid; t < texels; t += threads) {
+        const uint y = t / ir;
+        const uint x = t % ir;
+        const uint o = irrBase + ((y + 1u) * irrStride + (x + 1u)) * 3u;
+        const vec3 texel = vec3(irr.v[o + 0u], irr.v[o + 1u], irr.v[o + 2u]);
+        const vec4 incoming = s_irr[t];
+        if (incoming.w == 0.0) {
+            s_irr[t] = vec4(texel, 0.0); // unchanged interior (border source)
+            continue;
+        }
+        const vec3 inc = incoming.xyz;
+        float h = hysteresis;
+        if (!first) {
+            const float scale = max(max(fuse_ddgi_max_component(texel), fuse_ddgi_max_component(inc)), F.changeFloor);
+            precise vec3 diff = vec3(abs(inc.x - texel.x), abs(inc.y - texel.y), abs(inc.z - texel.z));
+            precise float threshold = F.changeThreshold * scale;
+            if (probeChanged) {
+                h = min(hysteresis, F.probeChangeHysteresis);
+                atomicAdd(s_flags[1], 1u);
+            } else if (fuse_ddgi_max_component(diff) > threshold) {
+                h = fastHysteresis;
+                atomicAdd(s_flags[1], 1u);
+            }
+        }
+        precise float keep = 1.0 - h;
+        precise vec3 blended = vec3(inc.x * keep + texel.x * h, inc.y * keep + texel.y * h, inc.z * keep + texel.z * h);
+        irr.v[o + 0u] = blended.x;
+        irr.v[o + 1u] = blended.y;
+        irr.v[o + 2u] = blended.z;
+        s_irr[t] = vec4(blended, 0.0);
+    }
+    for (uint t = tid; t < dr * dr; t += threads) {
+        const uint o = distBase + (((t / dr) + 1u) * distStride + ((t % dr) + 1u)) * 2u;
+        const vec2 texel = vec2(dist.v[o + 0u], dist.v[o + 1u]);
+        const vec3 td = distTexelDirs.v[t].xyz;
+        precise float sumD = 0.0;
+        precise float sumD2 = 0.0;
+        precise float weightSum = 0.0;
+        for (uint r = 0u; r < rays; ++r) {
+            const vec3 d = dirs.v[r].xyz;
+            precise float c = td.x * d.x + td.y * d.y + td.z * d.z;
+            if (c > F.distanceMinCos) {
+                precise float w = pow(c, F.distancePower);
+                const float dd = min(results.v[rayBase + r].w, F.maxRayDistance);
+                sumD += dd * w;
+                sumD2 += dd * dd * w;
+                weightSum += w;
+            }
+        }
+        if (weightSum <= 1e-12) {
+            s_dist[t] = texel;
+            continue;
+        }
+        precise float keep = 1.0 - hysteresis;
+        precise vec2 incoming = vec2(sumD / weightSum, sumD2 / weightSum);
+        precise vec2 blended = vec2(incoming.x * keep + texel.x * hysteresis, incoming.y * keep + texel.y * hysteresis);
+        dist.v[o + 0u] = blended.x;
+        dist.v[o + 1u] = blended.y;
+        s_dist[t] = blended;
+    }
+    barrier();
+
+    // Phase 4: octahedral border rings (copyOctahedralBorder: tile[row][col] with interior rows / cols 1..res).
+    const uint irrBorder = 4u * ir + 4u;
+    for (uint e = tid; e < irrBorder; e += threads) {
+        uint row;
+        uint col;
+        uint srcRow;
+        uint srcCol;
+        const uint last = ir + 1u;
+        if (e < 4u * ir) {
+            const uint i = e % ir + 1u;
+            const uint mirror = last - i;
+            const uint side = e / ir;
+            if (side == 0u) { row = 0u; col = i; srcRow = 1u; srcCol = mirror; }
+            else if (side == 1u) { row = last; col = i; srcRow = ir; srcCol = mirror; }
+            else if (side == 2u) { row = i; col = 0u; srcRow = mirror; srcCol = 1u; }
+            else { row = i; col = last; srcRow = mirror; srcCol = ir; }
+        } else {
+            const uint k = e - 4u * ir;
+            if (k == 0u) { row = 0u; col = 0u; srcRow = ir; srcCol = ir; }
+            else if (k == 1u) { row = 0u; col = last; srcRow = ir; srcCol = 1u; }
+            else if (k == 2u) { row = last; col = 0u; srcRow = 1u; srcCol = ir; }
+            else { row = last; col = last; srcRow = 1u; srcCol = 1u; }
+        }
+        const vec3 v = s_irr[(srcRow - 1u) * ir + (srcCol - 1u)].xyz;
+        const uint o = irrBase + (row * irrStride + col) * 3u;
+        irr.v[o + 0u] = v.x;
+        irr.v[o + 1u] = v.y;
+        irr.v[o + 2u] = v.z;
+    }
+    const uint distBorder = 4u * dr + 4u;
+    for (uint e = tid; e < distBorder; e += threads) {
+        uint row;
+        uint col;
+        uint srcRow;
+        uint srcCol;
+        const uint last = dr + 1u;
+        if (e < 4u * dr) {
+            const uint i = e % dr + 1u;
+            const uint mirror = last - i;
+            const uint side = e / dr;
+            if (side == 0u) { row = 0u; col = i; srcRow = 1u; srcCol = mirror; }
+            else if (side == 1u) { row = last; col = i; srcRow = dr; srcCol = mirror; }
+            else if (side == 2u) { row = i; col = 0u; srcRow = mirror; srcCol = 1u; }
+            else { row = i; col = last; srcRow = mirror; srcCol = dr; }
+        } else {
+            const uint k = e - 4u * dr;
+            if (k == 0u) { row = 0u; col = 0u; srcRow = dr; srcCol = dr; }
+            else if (k == 1u) { row = 0u; col = last; srcRow = dr; srcCol = 1u; }
+            else if (k == 2u) { row = last; col = 0u; srcRow = 1u; srcCol = dr; }
+            else { row = last; col = last; srcRow = 1u; srcCol = 1u; }
+        }
+        const vec2 v = s_dist[(srcRow - 1u) * dr + (srcCol - 1u)];
+        const uint o = distBase + (row * distStride + col) * 2u;
+        dist.v[o + 0u] = v.x;
+        dist.v[o + 1u] = v.y;
+    }
+    if (tid == 0u) {
+        counts.v[probe] = counts.v[probe] + 1u;
+        FuseDdgiWordsRef(F.slotStats).v[slot] = s_flags[1];
+    }
+}

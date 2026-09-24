@@ -115,6 +115,8 @@ ShadeParams makeShadeParams(const ShadeReferenceDesc& desc, math::Vec4* out) {
     }
     p.shadow = desc.shadow;
     p.shadow_user = desc.shadowUser;
+    p.rt_shadow = desc.rtShadow;
+    p.rt_shadow_user = desc.rtShadowUser;
     return p;
 }
 

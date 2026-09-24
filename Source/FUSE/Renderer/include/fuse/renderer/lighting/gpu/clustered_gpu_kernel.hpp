@@ -274,10 +274,22 @@ struct ShadeParams {
     /// is multiplied by it (light.shade with LightingFrameConstants::shadowsLo / Hi != 0). Null = unshadowed.
     f32 (*shadow)(const void* user, u32 slot, const SurfaceSample& s) = nullptr;
     const void* shadow_user = nullptr;
+    /// WP-6.2 ray-traced shadows (light.shade with LightingFrameConstants::rtShadowsLo / Hi != 0): the
+    /// visibility of light `slot` at pixel (px, py), or < 0 when the light is not RT-shadowed (it then
+    /// takes the `shadow` hook). Null = none.
+    f32 (*rt_shadow)(const void* user, u32 slot, u32 px, u32 py) = nullptr;
+    const void* rt_shadow_user = nullptr;
 };
 
 /// One light's contribution, scaled by its shadow visibility when a shadow hook is set.
-FUSE_HOST_DEVICE inline math::Vec3 shadowed(const ShadeParams& p, u32 slot, const SurfaceSample& s, const math::Vec3& c) {
+FUSE_HOST_DEVICE inline math::Vec3 shadowed(const ShadeParams& p, u32 slot, const SurfaceSample& s, const math::Vec3& c,
+                                            u32 px = 0xFFFFFFFFu, u32 py = 0xFFFFFFFFu) {
+    if (p.rt_shadow != nullptr && px != 0xFFFFFFFFu) { // WP-6.2: the pixel's ray-traced visibility first
+        const f32 rt = p.rt_shadow(p.rt_shadow_user, slot, px, py);
+        if (rt >= 0.f) {
+            return {c.x * rt, c.y * rt, c.z * rt};
+        }
+    }
     if (p.shadow == nullptr) {
         return c;
     }
@@ -326,7 +338,8 @@ FUSE_HOST_DEVICE inline bool shade_pixel(const ShadeParams& p, u32 px, u32 py, m
         if (slot < p.lights.size) {
             radiance = radiance + shadowed(p, slot, s,
                                            compensated ? light_contribution(p.lights[slot], s, v, terms, p.brdf_lut.data)
-                                                       : light_contribution(p.lights[slot], s, v));
+                                                       : light_contribution(p.lights[slot], s, v),
+                                           px, py);
         }
     }
     if (cluster < p.cluster_grid.size) {
@@ -337,7 +350,8 @@ FUSE_HOST_DEVICE inline bool shade_pixel(const ShadeParams& p, u32 px, u32 py, m
             if (slot < p.lights.size) {
                 radiance = radiance + shadowed(p, slot, s,
                                                compensated ? light_contribution(p.lights[slot], s, v, terms, p.brdf_lut.data)
-                                                           : light_contribution(p.lights[slot], s, v));
+                                                           : light_contribution(p.lights[slot], s, v),
+                                               px, py);
             }
         }
     }

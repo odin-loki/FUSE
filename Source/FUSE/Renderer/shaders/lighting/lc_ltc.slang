@@ -459,9 +459,49 @@ float3 fuseLcShadowed(uint64_t shadows, uint slot, LcSurface s, float3 c) {
     return float3(c.x * visibility, c.y * visibility, c.z * visibility);
 }
 
-float3 fuseLcShadeLights(LcFrame F, LcSurface s, float3 v, uint cluster) {
+// WP-6.2: ray-traced visibility of light `slot` at `pixel` from the RtfxShadowView at `rt` (twin of
+// fuse_lc_rt_visibility, lc_ltc.glsl).
+struct LcRtView { // RtfxShadowView (48 bytes)
+    uint64_t visibility;
+    uint width;
+    uint height;
+    uint count;
+    uint pad0;
+    uint slots[4];
+    uint pad1[2];
+};
+
+bool fuseLcRtVisibility(uint64_t rt, uint slot, uint2 pixel, out float visibility) {
+    visibility = 1.0;
+    if (rt == 0ull) {
+        return false;
+    }
+    const LcRtView view = ((LcRtView*)rt)[0];
+    if (pixel.x >= view.width || pixel.y >= view.height) {
+        return false;
+    }
+    for (uint c = 0u; c < min(view.count, 4u); ++c) {
+        if (view.slots[c] == slot) {
+            visibility = ((float*)view.visibility)[c * view.width * view.height + pixel.y * view.width + pixel.x];
+            return true;
+        }
+    }
+    return false;
+}
+
+float3 fuseLcShadowedPx(uint64_t shadows, uint64_t rt, uint2 pixel, uint slot, LcSurface s, float3 c) {
+    float visibility;
+    if (fuseLcRtVisibility(rt, slot, pixel, visibility)) {
+        return float3(c.x * visibility, c.y * visibility, c.z * visibility);
+    }
+    return fuseLcShadowed(shadows, slot, s, c);
+}
+
+// The light loop with the pixel light.shade shades (WP-6.2 ray-traced visibility); `pixel` = ~0u: none.
+float3 fuseLcShadeLightsPx(LcFrame F, LcSurface s, float3 v, uint cluster, uint2 pixel) {
     GpuLight* lights = fuseGpuSceneLights(fuseGpuScene(F.scene));
     const uint64_t shadows = uint64_t(F.shadowsLo) | (uint64_t(F.shadowsHi) << 32u);
+    const uint64_t rt = pixel.x == 0xFFFFFFFFu ? 0ull : (uint64_t(F.rtShadowsLo) | (uint64_t(F.rtShadowsHi) << 32u));
     float3 radiance = s.emissive + fuseLcVec3(F.ambient) * s.albedo * s.ao;
     const bool compensated = F.brdfLut != 0ull;
     float* lut = (float*)F.brdfLut;
@@ -474,8 +514,8 @@ float3 fuseLcShadeLights(LcFrame F, LcSurface s, float3 v, uint cluster) {
     for (uint i = 0u; i < directionalCount; ++i) {
         const uint slot = directional[i];
         if (slot < F.lightCount) {
-            radiance = radiance + fuseLcShadowed(shadows, slot, s,
-                                                 compensated ? fuseLcLightMs(lights[slot], s, v, terms, lut) : fuseLcLight(lights[slot], s, v));
+            radiance = radiance + fuseLcShadowedPx(shadows, rt, pixel, slot, s,
+                                                   compensated ? fuseLcLightMs(lights[slot], s, v, terms, lut) : fuseLcLight(lights[slot], s, v));
         }
     }
     uint* grid = (uint*)F.grid;
@@ -485,9 +525,13 @@ float3 fuseLcShadeLights(LcFrame F, LcSurface s, float3 v, uint cluster) {
     for (uint i = 0u; i < count; ++i) {
         const uint slot = list[offset + i];
         if (slot < F.lightCount) {
-            radiance = radiance + fuseLcShadowed(shadows, slot, s,
-                                                 compensated ? fuseLcLightMs(lights[slot], s, v, terms, lut) : fuseLcLight(lights[slot], s, v));
+            radiance = radiance + fuseLcShadowedPx(shadows, rt, pixel, slot, s,
+                                                   compensated ? fuseLcLightMs(lights[slot], s, v, terms, lut) : fuseLcLight(lights[slot], s, v));
         }
     }
     return radiance;
+}
+
+float3 fuseLcShadeLights(LcFrame F, LcSurface s, float3 v, uint cluster) {
+    return fuseLcShadeLightsPx(F, s, v, cluster, uint2(0xFFFFFFFFu, 0xFFFFFFFFu));
 }

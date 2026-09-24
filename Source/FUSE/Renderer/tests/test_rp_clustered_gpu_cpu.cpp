@@ -136,7 +136,7 @@ void testLayout() {
     expect(sizeof(c.ndcX) / sizeof(f32) >= kMaxTilesX + 1u && sizeof(c.ndcY) / sizeof(f32) >= kMaxTilesY + 1u,
            "tile-edge tables hold every edge");
     expect(sizeof(GpuClusterAabb) == 32u && sizeof(GpuLightBounds) == 32u && sizeof(LightListHeader) == 64u &&
-               sizeof(LightingPush) == 16u && sizeof(LightingFrameConstants) == 752u,
+               sizeof(LightingPush) == 16u && sizeof(LightingFrameConstants) == 768u,
            "record sizes");
     expect(sizeof(ClusterGridEntry) == 8u, "grid entry == u32x2 (lists buffer grid section)");
     for (const u32 lights : {1u, 4096u, 5000u}) {

@@ -19,7 +19,7 @@
 #define FUSE_LC_MIN_ROUGHNESS 0.045
 #define FUSE_LC_SPOT_MIN_WIDTH 1e-4
 
-// LightingFrameConstants, 752 bytes.
+// LightingFrameConstants, 768 bytes.
 struct FuseLcFrame {
     uint64_t aabbs;
     uint64_t bounds;
@@ -66,6 +66,9 @@ struct FuseLcFrame {
     float sliceDepth[68];
     float ndcX[36];
     float ndcY[20];
+    uint rtShadowsLo; // WP-6.2: BDA of the RtfxShadowView (0 = no ray-traced shadows)
+    uint rtShadowsHi;
+    uint reserved1[2]; // WP-6.1: BDA of the DdgiVolumeView (lo, hi; 0 = no DDGI indirect diffuse)
 };
 
 // GpuClusterAabb / GpuLightBounds, 32 bytes each.

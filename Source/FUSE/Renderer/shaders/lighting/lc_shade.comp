@@ -8,6 +8,7 @@
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_samplerless_texture_functions : require
 #include "lc_includes.glsl"
+#include "../ddgi/ddgi_sample.glsl" // WP-6.1 DDGI indirect diffuse
 
 layout(local_size_x = 8, local_size_y = 8) in;
 
@@ -44,7 +45,16 @@ void main() {
         precise vec3 toCamera = fuse_lc_vec3(F.cameraPosition) - s.position;
         const vec3 v = fuse_lc_safe_normalize(toCamera, s.normal);
         // The light loop (WP-2.2: shared with the forward transparency pass, lc_ltc.glsl).
-        const vec3 radiance = fuse_lc_shade_lights(F, s, v, cluster);
+        vec3 radiance = fuse_lc_shade_lights_px(F, s, v, cluster, p); // WP-6.2: RT visibility
+        // WP-6.1: DDGI irradiance E as indirect diffuse (Lambert: albedo x (1 - metallic) / pi), x AO.
+        const uint64_t ddgi = uint64_t(F.reserved1[0]) | (uint64_t(F.reserved1[1]) << 32u);
+        if (ddgi != 0ul) {
+            const vec3 e = fuse_ddgi_sample_irradiance(ddgi, s.position, s.normal);
+            precise float k = (1.0 - clamp(s.metallic, 0.0, 1.0)) * s.ao * (FuseDdgiVolumeRef(ddgi).v.intensity * float(1.0 / FUSE_DDGI_PI));
+            precise vec3 lit = vec3(radiance.x + (s.albedo.x * e.x) * k, radiance.y + (s.albedo.y * e.y) * k,
+                                    radiance.z + (s.albedo.z * e.z) * k);
+            radiance = lit;
+        }
         result = vec4(radiance, 1.0);
     }
     imageStore(fuse_lc_images[fuse_handle_index(F.output_)], ip, result);

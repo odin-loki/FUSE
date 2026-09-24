@@ -1,0 +1,30 @@
+#version 460
+// WP-6.1 "ddgi.raygen" (twin: ddgi_raygen.slang): the probe ray set of this update, the CPU oracle's
+// rotation.apply(sphericalFibonacci(r, n)).normalized() (ddgi_cpu.cpp) with the host-built rotation of
+// ddgi_cpu::updateRotation(seed, frameIndex). The golden-angle phase is formed in 32-bit fixed point
+// (r * 0x61C88647 mod 2^32 == frac(r * (1 - 1/phi)) * 2^32, exact), so the only f32 rounding is the
+// conversion, cos / sin and the rotation; dirs match the f64 oracle to ~1e-6 (fuse_rp_ddgi_gpu_vk_*).
+// One thread per ray; every scheduled probe shares the set (as on the CPU).
+#extension GL_GOOGLE_include_directive : require
+#include "ddgi_common.glsl"
+
+layout(local_size_x = FUSE_DDGI_WORKGROUP) in;
+
+void main() {
+    const uint r = gl_GlobalInvocationID.x;
+    const FuseDdgiFrame F = fuse_ddgi_frame();
+    const uint n = F.raysPerProbe;
+    if (r >= n) {
+        return;
+    }
+    const uint phase = r * 0x61C88647u;
+    precise float phi = float(phase) * (6.28318530717958647692 / 4294967296.0);
+    precise float z = 1.0 - (2.0 * float(r) + 1.0) / float(n);
+    precise float rr2 = 1.0 - z * z;
+    const float rr = sqrt(max(0.0, rr2));
+    precise vec3 v = vec3(rr * cos(phi), rr * sin(phi), z);
+    precise vec3 d = vec3(F.rotation[0].x * v.x + F.rotation[0].y * v.y + F.rotation[0].z * v.z,
+                          F.rotation[1].x * v.x + F.rotation[1].y * v.y + F.rotation[1].z * v.z,
+                          F.rotation[2].x * v.x + F.rotation[2].y * v.y + F.rotation[2].z * v.z);
+    FuseDdgiVec4Ref(F.rayDirs).v[r] = vec4(fuse_ddgi_normalized(d), 0.0);
+}
