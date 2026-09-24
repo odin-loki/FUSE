@@ -3,9 +3,9 @@
 #include <fuse/renderer/vk/bindless.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstring>
-#include <deque>
 #include <numeric>
 #include <vector>
 
@@ -96,6 +96,32 @@ struct InFlight {
     usize bytes = 0;
 };
 
+/// FIFO of in-flight batches in fixed storage (no heap traffic on push/pop, unlike std::deque,
+/// which allocates a node every few pushes). Capacity kMaxBatches: at most kMaxBatches entries
+/// own a batch object; command-less entries queued behind them make the owner wait (see flush).
+class InFlightRing {
+public:
+    static constexpr u32 kCapacity = UploadQueue::kMaxBatches;
+
+    bool empty() const { return m_count == 0; }
+    bool full() const { return m_count == kCapacity; }
+    u32 size() const { return m_count; }
+    const InFlight& front() const { return m_entries[m_head]; }
+    void push_back(const InFlight& entry) {
+        m_entries[(m_head + m_count) % kCapacity] = entry;
+        ++m_count;
+    }
+    void pop_front() {
+        m_head = (m_head + 1u) % kCapacity;
+        --m_count;
+    }
+
+private:
+    std::array<InFlight, kCapacity> m_entries{};
+    u32 m_head = 0;
+    u32 m_count = 0;
+};
+
 } // namespace
 
 struct UploadQueue::Impl {
@@ -118,7 +144,7 @@ struct UploadQueue::Impl {
     u64 nextSerial = 1;
     u64 lastSubmittedSerial = 0;
     u64 completed = 0;
-    std::deque<InFlight> inFlight;
+    InFlightRing inFlight; ///< fixed storage inside Impl: flush never allocates
     UploadQueueStats stats{};
     bool lastStageTimedOut = false;
 
@@ -147,7 +173,7 @@ struct UploadQueue::Impl {
     }
 
     void refreshStats() {
-        stats.batchesInFlight = static_cast<u32>(inFlight.size());
+        stats.batchesInFlight = inFlight.size();
         stats.maxBatchesInFlight = std::max(stats.maxBatchesInFlight, stats.batchesInFlight);
         stats.bytesInFlight = used;
         stats.maxBytesInFlight = std::max(stats.maxBytesInFlight, used);
@@ -624,6 +650,17 @@ struct UploadQueue::Impl {
     UploadTicket flush() {
         if (openSerial == 0) {
             return UploadTicket{lastSubmittedSerial, true};
+        }
+        // Every in-flight slot taken (only possible with command-less entries queued behind
+        // kMaxBatches submitted ones): retire the oldest first, waiting (bounded) on its fence.
+        // On timeout drain the device so the slot can be reused without overwriting live data.
+        if (inFlight.full() && !pollFront() && !waitFront(UploadQueue::kDefaultFenceTimeoutNs)) {
+#if defined(FUSE_VULKAN_BACKEND)
+            if (vkDevice != VK_NULL_HANDLE) {
+                vkDeviceWaitIdle(vkDevice);
+            }
+#endif
+            retireFront();
         }
         InFlight entry{};
         entry.serial = openSerial;

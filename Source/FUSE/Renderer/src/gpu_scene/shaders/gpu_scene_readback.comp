@@ -1,0 +1,94 @@
+#version 460
+// WP-1.1 exit-test kernel (fuse_rp_gpu_scene): reads the GPU scene only through bindless handles and
+// BDA and writes what it saw into a bindless storage buffer, which the test compares bit for bit
+// with the CPU mirror. GLSL twin of gpu_scene_readback.slang (same push layout, same output).
+//
+//   mode 0 (raw):   out[outOffset + i] = word i of table `table` (0..5), of the header (6), or of
+//                   mesh (table - 8)'s geometry buffer (table >= 8, from GpuMesh::meshlets)
+//   mode 1 (typed): 40 words per instance, read through the gpu_scene.glsl structs (checks the
+//                   shader-side field layout, not just the bytes):
+//                   [0..7] GpuInstance, [8..19] transform rows, [20..31] prev transform rows,
+//                   [32] mesh.meshletCount, [33] mesh.boundsRadius bits, [34] mesh.geometryHandle,
+//                   [35] low word of mesh.meshlets, [36] material word 0, [37] material word 19,
+//                   [38] header.magic, [39] header.liveInstances
+//                   (mesh / material words are 0xFFFFFFFF when the index is out of range)
+#extension GL_GOOGLE_include_directive : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+
+layout(local_size_x = 64) in;
+
+FUSE_BINDLESS_SSBO_LAYOUT buffer FuseWords { uint words[]; } fuse_words[];
+
+layout(push_constant) uniform Push {
+    uint scene;     // header storage-buffer handle
+    uint outBuffer; // output storage-buffer handle
+    uint mode;
+    uint table;
+    uint wordCount; // mode 0: words to copy; mode 1: instances
+    uint outOffset;
+    uint pad0;
+    uint pad1;
+} pc;
+
+const uint kTypedWords = 40u;
+
+void store(uint index, uint value) { fuse_words[fuse_handle_index(pc.outBuffer)].words[index] = value; }
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.wordCount) {
+        return;
+    }
+    FuseGpuSceneHeaderRef scene = fuse_gpu_scene(pc.scene);
+    if (pc.mode == 0u) {
+        uint64_t base = fuse_buffer_address(pc.scene);
+        if (pc.table < FUSE_GPU_SCENE_TABLE_COUNT) {
+            base = scene.addresses[pc.table];
+        } else if (pc.table >= 8u) {
+            base = fuse_gpu_scene_meshes(scene).v[pc.table - 8u].meshlets;
+        }
+        store(pc.outOffset + i, FuseGpuSceneWordsRef(base).v[i]);
+        return;
+    }
+    const uint o = pc.outOffset + i * kTypedWords;
+    const FuseGpuInstance inst = fuse_gpu_scene_instances(scene).v[i];
+    store(o + 0u, inst.mesh);
+    store(o + 1u, inst.material);
+    store(o + 2u, inst.flags);
+    store(o + 3u, inst.generation);
+    store(o + 4u, inst.entityIndex);
+    store(o + 5u, inst.entityGeneration);
+    store(o + 6u, inst.userData);
+    store(o + 7u, inst.reserved);
+    const FuseGpuTransform cur = fuse_gpu_scene_transforms(scene).v[i];
+    const FuseGpuTransform prev = fuse_gpu_scene_prev_transforms(scene).v[i];
+    for (uint r = 0u; r < 3u; ++r) {
+        for (uint c = 0u; c < 4u; ++c) {
+            store(o + 8u + r * 4u + c, floatBitsToUint(cur.rows[r][c]));
+            store(o + 20u + r * 4u + c, floatBitsToUint(prev.rows[r][c]));
+        }
+    }
+    uint w32 = FUSE_GPU_SCENE_INVALID, w33 = FUSE_GPU_SCENE_INVALID, w34 = FUSE_GPU_SCENE_INVALID, w35 = FUSE_GPU_SCENE_INVALID;
+    if (inst.mesh < scene.counts[FUSE_GPU_SCENE_MESHES]) {
+        const FuseGpuMesh mesh = fuse_gpu_scene_meshes(scene).v[inst.mesh];
+        w32 = mesh.meshletCount;
+        w33 = floatBitsToUint(mesh.boundsRadius);
+        w34 = mesh.geometryHandle;
+        w35 = uint(mesh.meshlets & 0xFFFFFFFFul);
+    }
+    store(o + 32u, w32);
+    store(o + 33u, w33);
+    store(o + 34u, w34);
+    store(o + 35u, w35);
+    uint w36 = FUSE_GPU_SCENE_INVALID, w37 = FUSE_GPU_SCENE_INVALID;
+    if (inst.material < scene.counts[FUSE_GPU_SCENE_MATERIALS]) {
+        FuseGpuSceneWordsRef materials = FuseGpuSceneWordsRef(scene.addresses[FUSE_GPU_SCENE_MATERIALS]);
+        w36 = materials.v[inst.material * 32u + 0u];
+        w37 = materials.v[inst.material * 32u + 19u];
+    }
+    store(o + 36u, w36);
+    store(o + 37u, w37);
+    store(o + 38u, scene.magic);
+    store(o + 39u, scene.liveInstances);
+}

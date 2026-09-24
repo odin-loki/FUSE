@@ -19,6 +19,18 @@ if(FUSE_BUILD_CORE_TESTS)
         LABELS "gate"
     )
 
+    # Zero steady-state heap allocations in UploadQueue stage/record/flush/retire (host path in every
+    # build, Lavapipe path without validation; counts are reported, not enforced, under the gate).
+    add_executable(fuse_b2_upload_queue_alloc tests/test_b2_upload_queue_alloc.cpp)
+    target_link_libraries(fuse_b2_upload_queue_alloc PRIVATE fuse_rhi)
+    add_test(NAME fuse_b2_upload_queue_alloc
+             COMMAND "${_fuse_vk_followups_lock}" "$<TARGET_FILE:fuse_b2_upload_queue_alloc>")
+    set_tests_properties(fuse_b2_upload_queue_alloc PROPERTIES
+        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        RUN_SERIAL TRUE
+        LABELS "gate"
+    )
+
     # Layout tracking (generateMips / readback preserve uploaded data) + deferred destroy.
     add_executable(fuse_resource_layout_tracking tests/test_resource_layout_tracking.cpp)
     target_link_libraries(fuse_resource_layout_tracking PRIVATE fuse_rhi)
