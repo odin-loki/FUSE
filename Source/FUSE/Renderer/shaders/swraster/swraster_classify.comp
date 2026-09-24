@@ -1,0 +1,73 @@
+#version 460
+// WP-5.4 cluster classifier, GLSL twin of swraster_classify.slang. One workgroup per SwGroup record
+// of region pc.region (vkCmdDispatchIndirect), one invocation per meshlet: fuse_sw_classify (the CPU
+// reference kernel's classify_cluster), then the meshlet is appended to the region's SW list (SW
+// dispatch x follows it) or HW list (HW draw instanceCount follows it); culled / oversize meshlets are
+// dropped. Optional SwResult per meshlet slot.
+#extension GL_GOOGLE_include_directive : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+#include "vis_format.glsl"
+#include "vis_common.glsl"
+#include "swraster_common.glsl"
+
+layout(local_size_x = 32) in;
+
+FUSE_BINDLESS_SSBO_LAYOUT buffer FuseSwWords { uint w[]; } fuse_sw_words[];
+
+layout(push_constant) uniform Push {
+    uint64_t constants;
+    uint region;
+    uint pad;
+} pc;
+
+void main() {
+    FuseSwConstantsRef C = FuseSwConstantsRef(pc.constants);
+    const uint region = pc.region;
+    const uint g = gl_WorkGroupID.x;
+    const uint lane = gl_LocalInvocationID.x;
+    const uint cap = C.capacity;
+    if (g >= cap) {
+        return;
+    }
+    const uint groups = fuse_handle_index(C.groupsBuffer);
+    const uint counts = fuse_handle_index(C.countsBuffer);
+    const uint r = (region * cap + g) * 2u;
+    const uint instance = fuse_sw_words[groups].w[r];
+    const uint m = fuse_sw_words[groups].w[r + 1u] + lane;
+    FuseGpuSceneHeaderRef scene = fuse_gpu_scene(C.scene);
+    const FuseGpuInstance inst = fuse_gpu_scene_instances(scene).v[instance];
+    const FuseGpuMesh mesh = fuse_gpu_scene_meshes(scene).v[inst.mesh];
+    uint result = FUSE_SW_RESULT_NONE;
+    if (m < mesh.meshletCount) {
+        const FuseGpuMeshlet ml = FuseGpuMeshletsRef(mesh.meshlets).v[m];
+        const FuseGpuTransform xf = fuse_gpu_scene_transforms(scene).v[instance];
+        result = fuse_sw_classify(ml, xf, C);
+        if (result == FUSE_SW_RESULT_SOFTWARE) {
+            const uint at = atomicAdd(fuse_sw_words[counts].w[FUSE_SW_COUNT_SW_REQUESTED0 + region], 1u);
+            if (at < cap) {
+                const uint o = (region * cap + at) * 2u;
+                fuse_sw_words[fuse_handle_index(C.swBuffer)].w[o] = instance;
+                fuse_sw_words[fuse_handle_index(C.swBuffer)].w[o + 1u] = m;
+                atomicMax(fuse_sw_words[counts].w[FUSE_SW_COUNT_SOFTWARE0 + region * 3u], at + 1u);
+            } else {
+                atomicAdd(fuse_sw_words[counts].w[FUSE_SW_COUNT_OVERFLOW], 1u);
+            }
+        } else if (result >= FUSE_SW_RESULT_HARDWARE_SIZE && result <= FUSE_SW_RESULT_HARDWARE_FORCED) {
+            const uint at = atomicAdd(fuse_sw_words[counts].w[FUSE_SW_COUNT_HW_REQUESTED0 + region], 1u);
+            if (at < cap) {
+                const uint o = (region * cap + at) * 2u;
+                fuse_sw_words[fuse_handle_index(C.hwBuffer)].w[o] = instance;
+                fuse_sw_words[fuse_handle_index(C.hwBuffer)].w[o + 1u] = m;
+                atomicMax(fuse_sw_words[counts].w[FUSE_SW_COUNT_HARDWARE0 + region * 4u + 1u], at + 1u);
+            } else {
+                atomicAdd(fuse_sw_words[counts].w[FUSE_SW_COUNT_OVERFLOW], 1u);
+            }
+        } else if (result == FUSE_SW_RESULT_OVERSIZE) {
+            atomicAdd(fuse_sw_words[counts].w[FUSE_SW_COUNT_OVERSIZE], 1u);
+        }
+    }
+    if ((C.flags & FUSE_SW_FLAG_WRITE_RESULTS) != 0u && C.resultsBuffer != 0u) {
+        fuse_sw_words[fuse_handle_index(C.resultsBuffer)].w[(region * cap + g) * FUSE_SW_GROUP_SIZE + lane] = result;
+    }
+}

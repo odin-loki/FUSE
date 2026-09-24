@@ -1,0 +1,204 @@
+#version 460
+// WP-5.4 software rasteriser, GLSL twin of swraster_raster.slang and of swraster_kernel.hpp
+// RasterKernel (the CPU reference; GPU == CPU bit for bit). One workgroup per SW cluster of region
+// pc.region (vkCmdDispatchIndirect):
+//   1. every vertex through the WP-1.4 transform, snapped to 1/256 px with the exact integer divide
+//      (fuse_sw_project), into shared memory with the cluster's snapped bounds;
+//   2. a cluster with an invalid vertex or a span above FUSE_SW_MAX_SPAN_SUBPIXELS is demoted to the
+//      region's HW list (whole cluster, before any write), else one invocation per triangle scans its
+//      pixel-centre bounding box with integer edge functions (top-left rule) and writes
+//      atomicMin(fuse_sw_pack(depth24, instance, meshlet.triangleOffset + t)) into the WP-1.4 target.
+// FUSE_VIS64_IMAGE: R64_UINT storage image, else u64 storage buffer (row pitch = width).
+#extension GL_GOOGLE_include_directive : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+#include "vis_format.glsl"
+#include "vis_common.glsl"
+#include "swraster_common.glsl"
+
+layout(local_size_x = 64) in;
+
+FUSE_BINDLESS_SSBO_LAYOUT buffer FuseSwWords { uint w[]; } fuse_sw_words[];
+#if defined(FUSE_VIS64_IMAGE)
+#extension GL_EXT_shader_image_int64 : require
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(r64ui) uniform u64image2D fuse_vis64_images[];
+#else
+#extension GL_EXT_shader_atomic_int64 : require
+FUSE_BINDLESS_SSBO_LAYOUT buffer FuseVis64Words { uint64_t v[]; } fuse_vis64_buffers[];
+#endif
+
+layout(push_constant) uniform Push {
+    uint64_t constants;
+    uint region;
+    uint pad;
+} pc;
+
+shared int s_x[FUSE_SW_MAX_VERTICES];
+shared int s_y[FUSE_SW_MAX_VERTICES];
+shared uint s_z[FUSE_SW_MAX_VERTICES];
+shared int s_bounds[4]; // minX maxX minY maxY
+shared uint s_invalid;
+
+void fuse_sw_write(uint target, uint width, uint pixel, uint64_t word) {
+#if defined(FUSE_VIS64_IMAGE)
+    imageAtomicMin(fuse_vis64_images[target], ivec2(int(pixel % width), int(pixel / width)), word);
+#else
+    atomicMin(fuse_vis64_buffers[target].v[pixel], word);
+#endif
+}
+
+void main() {
+    FuseSwConstantsRef C = FuseSwConstantsRef(pc.constants);
+    const uint region = pc.region;
+    const uint ci = gl_WorkGroupID.x;
+    const uint lane = gl_LocalInvocationID.x;
+    const uint cap = C.capacity;
+    if (ci >= cap) {
+        return; // whole workgroup
+    }
+    const uint counts = fuse_handle_index(C.countsBuffer);
+    const uint sw = fuse_handle_index(C.swBuffer);
+    const uint r = (region * cap + ci) * 2u;
+    const uint instance = fuse_sw_words[sw].w[r];
+    const uint meshlet = fuse_sw_words[sw].w[r + 1u];
+    FuseGpuSceneHeaderRef scene = fuse_gpu_scene(C.scene);
+    const FuseGpuInstance inst = fuse_gpu_scene_instances(scene).v[instance];
+    const FuseGpuMesh mesh = fuse_gpu_scene_meshes(scene).v[inst.mesh];
+    const FuseGpuMeshlet ml = FuseGpuMeshletsRef(mesh.meshlets).v[meshlet];
+    const uint vertices = fuse_sw_meshlet_vertices(ml);
+    const uint triangles = fuse_sw_meshlet_triangles(ml);
+    const uint width = C.width;
+    const uint height = C.height;
+    if (lane == 0u) {
+        s_bounds[0] = 0x7FFFFFFF;
+        s_bounds[1] = -0x7FFFFFFF;
+        s_bounds[2] = 0x7FFFFFFF;
+        s_bounds[3] = -0x7FFFFFFF;
+        s_invalid = 0u;
+    }
+    barrier();
+    if (lane < vertices) {
+        vec4 vp[4];
+        fuse_sw_view_proj(C, vp);
+        const FuseGpuTransform xf = fuse_gpu_scene_transforms(scene).v[instance];
+        FuseGpuSceneWordsRef mvrt = FuseGpuSceneWordsRef(mesh.meshletVertices);
+        const uint vertex = uint(int(mvrt.v[ml.vertexOffset + lane]) + mesh.vertexOffset);
+        const FuseSwVertex v = fuse_sw_project(fuse_vis_clip(xf, vp, fuse_vis_mesh_position(mesh, vertex)), width, height);
+        s_x[lane] = v.x;
+        s_y[lane] = v.y;
+        s_z[lane] = v.z;
+        if (v.valid == 0u) {
+            atomicOr(s_invalid, 1u);
+        } else {
+            atomicMin(s_bounds[0], v.x);
+            atomicMax(s_bounds[1], v.x);
+            atomicMin(s_bounds[2], v.y);
+            atomicMax(s_bounds[3], v.y);
+        }
+    }
+    barrier();
+    const int spanX = s_bounds[1] - s_bounds[0];
+    const int spanY = s_bounds[3] - s_bounds[2];
+    if (s_invalid != 0u || spanX > FUSE_SW_MAX_SPAN_SUBPIXELS || spanY > FUSE_SW_MAX_SPAN_SUBPIXELS) {
+        if (lane == 0u) {
+            atomicAdd(fuse_sw_words[counts].w[FUSE_SW_COUNT_DEMOTED], 1u);
+            const uint at = atomicAdd(fuse_sw_words[counts].w[FUSE_SW_COUNT_HW_REQUESTED0 + region], 1u);
+            if (at < cap) {
+                const uint o = (region * cap + at) * 2u;
+                fuse_sw_words[fuse_handle_index(C.hwBuffer)].w[o] = instance;
+                fuse_sw_words[fuse_handle_index(C.hwBuffer)].w[o + 1u] = meshlet;
+                atomicMax(fuse_sw_words[counts].w[FUSE_SW_COUNT_HARDWARE0 + region * 4u + 1u], at + 1u);
+            } else {
+                atomicAdd(fuse_sw_words[counts].w[FUSE_SW_COUNT_OVERFLOW], 1u);
+            }
+        }
+        return;
+    }
+    if (lane == 0u) {
+        atomicAdd(fuse_sw_words[counts].w[FUSE_SW_COUNT_SW_TRIANGLES], triangles);
+    }
+    if ((C.flags & FUSE_SW_FLAG_SKIP_SOFTWARE) != 0u) {
+        return;
+    }
+    const uint target = fuse_handle_index(C.target64);
+    FuseGpuSceneWordsRef mtri = FuseGpuSceneWordsRef(mesh.meshletTriangles);
+    for (uint t = lane; t < triangles; t += FUSE_SW_RASTER_THREADS) {
+        const uint packed = mtri.v[ml.triangleOffset + t];
+        const uint i0 = packed & 0xFFu;
+        uint i1 = (packed >> 8u) & 0xFFu;
+        uint i2 = (packed >> 16u) & 0xFFu;
+        int area = (s_x[i1] - s_x[i0]) * (s_y[i2] - s_y[i0]) - (s_y[i1] - s_y[i0]) * (s_x[i2] - s_x[i0]);
+        if (area == 0) {
+            continue;
+        }
+        if (area < 0) {
+            const uint tmp = i1;
+            i1 = i2;
+            i2 = tmp;
+            area = -area;
+        }
+        const int x0 = s_x[i0];
+        const int y0 = s_y[i0];
+        const int x1 = s_x[i1];
+        const int y1 = s_y[i1];
+        const int x2 = s_x[i2];
+        const int y2 = s_y[i2];
+        const uint64_t z0 = uint64_t(s_z[i0]);
+        const uint64_t z1 = uint64_t(s_z[i1]);
+        const uint64_t z2 = uint64_t(s_z[i2]);
+        const int minX = x0 < x1 ? (x0 < x2 ? x0 : x2) : (x1 < x2 ? x1 : x2);
+        const int maxX = x0 > x1 ? (x0 > x2 ? x0 : x2) : (x1 > x2 ? x1 : x2);
+        const int minY = y0 < y1 ? (y0 < y2 ? y0 : y2) : (y1 < y2 ? y1 : y2);
+        const int maxY = y0 > y1 ? (y0 > y2 ? y0 : y2) : (y1 > y2 ? y1 : y2);
+        int px0 = fuse_sw_first_centre(minX);
+        int px1 = fuse_sw_last_centre(maxX);
+        int py0 = fuse_sw_first_centre(minY);
+        int py1 = fuse_sw_last_centre(maxY);
+        px0 = px0 > 0 ? px0 : 0;
+        py0 = py0 > 0 ? py0 : 0;
+        px1 = px1 < int(width) - 1 ? px1 : int(width) - 1;
+        py1 = py1 < int(height) - 1 ? py1 : int(height) - 1;
+        if (px0 > px1 || py0 > py1) {
+            continue;
+        }
+        const int dx0 = x2 - x1;
+        const int dy0 = y2 - y1;
+        const int dx1 = x0 - x2;
+        const int dy1 = y0 - y2;
+        const int dx2 = x1 - x0;
+        const int dy2 = y1 - y0;
+        const int b0 = fuse_sw_edge_bias(dx0, dy0);
+        const int b1 = fuse_sw_edge_bias(dx1, dy1);
+        const int b2 = fuse_sw_edge_bias(dx2, dy2);
+        const int ox = px0 * FUSE_SW_SUBPIXEL_ONE + FUSE_SW_SUBPIXEL_HALF;
+        const int oy = py0 * FUSE_SW_SUBPIXEL_ONE + FUSE_SW_SUBPIXEL_HALF;
+        int r0 = dx0 * (oy - y1) - dy0 * (ox - x1);
+        int r1 = dx1 * (oy - y2) - dy1 * (ox - x2);
+        int r2 = dx2 * (oy - y0) - dy2 * (ox - x0);
+        const int sx0 = -dy0 * FUSE_SW_SUBPIXEL_ONE;
+        const int sx1 = -dy1 * FUSE_SW_SUBPIXEL_ONE;
+        const int sx2 = -dy2 * FUSE_SW_SUBPIXEL_ONE;
+        const int sy0 = dx0 * FUSE_SW_SUBPIXEL_ONE;
+        const int sy1 = dx1 * FUSE_SW_SUBPIXEL_ONE;
+        const int sy2 = dx2 * FUSE_SW_SUBPIXEL_ONE;
+        const uint triangle = ml.triangleOffset + t;
+        for (int py = py0; py <= py1; ++py) {
+            int e0 = r0;
+            int e1 = r1;
+            int e2 = r2;
+            for (int px = px0; px <= px1; ++px) {
+                if (e0 + b0 >= 0 && e1 + b1 >= 0 && e2 + b2 >= 0) {
+                    const uint64_t num = uint64_t(uint(e0)) * z0 + uint64_t(uint(e1)) * z1 + uint64_t(uint(e2)) * z2;
+                    const uint64_t z = num / uint64_t(uint(area));
+                    fuse_sw_write(target, width, uint(py) * width + uint(px), fuse_sw_pack(uint(z >> 8u), instance, triangle));
+                }
+                e0 += sx0;
+                e1 += sx1;
+                e2 += sx2;
+            }
+            r0 += sy0;
+            r1 += sy1;
+            r2 += sy2;
+        }
+    }
+}
