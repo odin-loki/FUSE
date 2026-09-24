@@ -280,7 +280,7 @@ void test_scenarios() {
         CL_CHECK(f.out->resources[B].heapOffset == f.out->resources[A].heapOffset);
         CL_CHECK(f.out->resources[C].heapOffset != f.out->resources[B].heapOffset);
         const RgBarrier& bb = f.out->barriers[f.out->resources[B].initialBarrier];
-        CL_CHECK(bb.kind == RgBarrierKind::Alias && bb.srcPassMask == (1u << p1));
+        CL_CHECK(bb.kind == RgBarrierKind::Alias && bb.srcPassMask == (uint64_t(1) << p1));
         f.check_oracle();
     }
     // Unused transient gets no memory.
