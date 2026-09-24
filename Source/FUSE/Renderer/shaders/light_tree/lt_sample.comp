@@ -1,0 +1,32 @@
+#version 460
+// WP-7.1 "light_tree.sample": one LightTreeQuery per invocation -> LightTreeSample (the light, its selection pmf,
+// a point on it with its area density, and the pmf of query.evalLight). CPU reference: lt_sample / lt_pmf in
+// include/fuse/renderer/light_tree/light_tree_kernel.hpp (bit for bit). GLSL twin of lt_sample.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "lt_common.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer LtQueriesRef { LtQuery v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 16) writeonly buffer LtResultsRef { LtSampleResult v[]; };
+
+layout(push_constant) uniform LtPush {
+    uint64_t header;
+    uint64_t queries;
+    uint64_t results;
+    uint count;
+    uint reserved;
+} pc;
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.count) {
+        return;
+    }
+    const LtQuery q = LtQueriesRef(pc.queries).v[i];
+    const vec3 p = vec3(q.position[0], q.position[1], q.position[2]);
+    const vec3 n = vec3(q.normal[0], q.normal[1], q.normal[2]);
+    LtSampleResult s = lt_sample(pc.header, p, n, q.u0, q.u1, q.u2);
+    s.evalPmf = q.evalLight != LT_INVALID ? lt_pmf(pc.header, p, n, q.evalLight) : 0.0;
+    LtResultsRef(pc.results).v[i] = s;
+}
