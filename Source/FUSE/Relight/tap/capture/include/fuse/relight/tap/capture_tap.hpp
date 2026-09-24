@@ -149,6 +149,11 @@ public:
     /// may query the packages (textures(), geometry(), ...) but must not send events to the tap.
     using FrameSink = std::function<void(std::uint64_t frame, const std::vector<CaptureDrawRecord>& draws)>;
     void setFrameSink(FrameSink sink);
+    /// RL-4.1 injection-time scene feed: calls `fn` with the current frame's draws recorded so far (the ones
+    /// flushed at the next Present), under the tap's lock. Geometry categories are applied at the flush, not
+    /// yet here. `fn` may query the packages but must not send events to the tap.
+    using PendingVisitor = std::function<void(std::uint64_t frame, const std::vector<CaptureDrawRecord>& draws)>;
+    void visitPendingDraws(const PendingVisitor& fn);
     /// TranslateTap's summary of the last presented frame (lights, fog, cameras).
     const scene::TranslatedFrame& lastTranslatedFrame() const { return m_translatedFrame; }
 

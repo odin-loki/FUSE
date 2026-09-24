@@ -20,10 +20,12 @@
 #pragma once
 
 #include <fuse/relight/tap/frame_host.hpp>
+#include <fuse/renderer/rg/graph.hpp>
 
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace fuse::relight::render::frame {
 
@@ -36,12 +38,33 @@ struct GpuImage {
 
 enum class FramePass : std::uint8_t { Solid = 0, Passthrough = 1 };
 
+/// A frame graph from elsewhere (RL-4.2's raster remaster): its passes are declared on FrameGpu's render graph
+/// and recorded into FrameGpu's command buffer, between the acquire wait and the release signal; FrameGpu records
+/// every planned barrier (images and buffers). Vulkan handles as integers.
+class IFrameRecorder {
+public:
+    virtual ~IFrameRecorder() = default;
+    struct Image {
+        std::uint64_t vkImage = 0;
+        std::uint32_t aspect = 1; ///< VkImageAspectFlags
+    };
+    /// Adds the passes (and imports) to `graph` (reset; `output` is FUSE's output image `outputImage`, GENERAL at
+    /// graph start and end). False: nothing to render (the submission fails, see submitFrame).
+    virtual bool declare(renderer::rg::Graph& graph, renderer::rg::TextureRef output, const GpuImage& outputImage) = 0;
+    /// The image / VkBuffer of a resource the recorder imported (vkImage 0 / 0 when not its own).
+    virtual Image image(std::uint32_t resource) const = 0;
+    virtual std::uint64_t buffer(std::uint32_t resource) const = 0;
+    /// Records graph pass `pass` (the index addPass returned) into `commandBuffer` (VkCommandBuffer value).
+    virtual void record(std::uint32_t pass, std::uint64_t commandBuffer) = 0;
+};
+
 struct FrameSubmitStats {
     bool ok = false;
     std::uint32_t passes = 0;
     std::uint32_t imageBarriers = 0; ///< planned by the render graph
     std::uint32_t barrierCalls = 0;  ///< vkCmdPipelineBarrier2 calls recorded (graph + the two globals)
     std::uint32_t graphBatches = 0;
+    std::uint32_t bufferBarriers = 0; ///< planned by the render graph
 };
 
 class FrameGpu {
@@ -67,6 +90,18 @@ public:
     FrameSubmitStats submitFrame(FramePass pass, const GpuImage* input, const GpuImage& output, std::uint32_t solidRgb,
                                  std::uint64_t waitAcquire, std::uint64_t signalRelease);
 
+    /// As above with `recorder`'s graph (IFrameRecorder); the output keeps the GENERAL hand-over layout.
+    FrameSubmitStats submitFrame(IFrameRecorder& recorder, const GpuImage& output, std::uint64_t waitAcquire,
+                                 std::uint64_t signalRelease);
+
+    /// Output dump (relight.frame.dumpPath, tests): every frame submission also copies its output image into a
+    /// host-visible buffer (a "fuse.dump" pass at the end of the graph).
+    void setDumpEnabled(bool enabled) { m_dump = enabled; }
+    /// Waits for release >= `releaseValue` and returns the last submission's output as RGBA8 (B8G8R8A8 / R8G8B8A8
+    /// UNORM / SRGB outputs; false for other formats or without a dump).
+    bool readDump(std::uint64_t releaseValue, std::vector<std::uint8_t>& rgba, std::uint32_t& width,
+                  std::uint32_t& height);
+
     /// The acquire semaphore's completed value (0 before the first signal or without a host).
     std::uint64_t acquireCompleted() const;
     /// Blocks until release >= value (bounded; false on timeout / error).
@@ -78,10 +113,13 @@ public:
     const std::string& lastError() const { return m_error; }
 
 private:
+    FrameSubmitStats submit(FramePass pass, IFrameRecorder* recorder, const GpuImage* input, const GpuImage& output,
+                            std::uint32_t solidRgb, std::uint64_t waitAcquire, std::uint64_t signalRelease);
     struct Impl;
     std::unique_ptr<Impl> m_impl;
     std::uint64_t m_submissions = 0;
     std::string m_error;
+    bool m_dump = false;
 };
 
 } // namespace fuse::relight::render::frame

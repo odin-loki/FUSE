@@ -57,6 +57,13 @@ bool VkDispatch::load(PFN_vkGetInstanceProcAddr gipa, VkInstance inst, VkPhysica
     dev_(CmdPipelineBarrier2, "vkCmdPipelineBarrier2");
     dev_(CmdClearColorImage, "vkCmdClearColorImage");
     dev_(CmdCopyImage, "vkCmdCopyImage");
+    dev_(CmdCopyImageToBuffer, "vkCmdCopyImageToBuffer");
+    dev_(CreateBuffer, "vkCreateBuffer");
+    dev_(DestroyBuffer, "vkDestroyBuffer");
+    dev_(GetBufferMemoryRequirements, "vkGetBufferMemoryRequirements");
+    dev_(BindBufferMemory, "vkBindBufferMemory");
+    dev_(MapMemory, "vkMapMemory");
+    dev_(UnmapMemory, "vkUnmapMemory");
     dev_(QueueSubmit2, "vkQueueSubmit2");
     dev_(CreateFence, "vkCreateFence");
     dev_(DestroyFence, "vkDestroyFence");

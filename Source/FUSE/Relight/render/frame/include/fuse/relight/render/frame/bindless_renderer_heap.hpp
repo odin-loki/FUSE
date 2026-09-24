@@ -1,5 +1,5 @@
-// FUSE Relight RL-4.1: the renderer's WP-0.4 bindless heap behind BindlessImageRegistry (bindless_images.hpp).
-// In fuse_relight_render_frame_gpu (links fuse_rhi's BindlessDescriptors), not in the d3d9.dll part.
+// FUSE Relight RL-4.1: the renderer's WP-0.4 bindless heap behind BindlessImageRegistry (bindless_images.hpp). Inside
+// d3d9.dll it is the heap of the renderer adopted from DXVK's device (renderer_context.hpp).
 #pragma once
 
 #include <fuse/relight/render/frame/bindless_images.hpp>

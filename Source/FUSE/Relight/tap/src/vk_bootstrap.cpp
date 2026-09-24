@@ -153,7 +153,9 @@ const FeatureStruct kExtensionFeatures[] = {
               VkPhysicalDeviceUnifiedImageLayoutsFeaturesKHR),
     FUSE_FEAT(VK_NV_RAW_ACCESS_CHAINS_EXTENSION_NAME, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAW_ACCESS_CHAINS_FEATURES_NV,
               VkPhysicalDeviceRawAccessChainsFeaturesNV),
-    // FUSE renderer (T2/T3 ray tracing).
+    // FUSE renderer tiers: T1 mesh shading, T2/T3 ray tracing (RendererCaps; RL-4.1 adopts this device).
+    FUSE_FEAT(VK_EXT_MESH_SHADER_EXTENSION_NAME, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT,
+              VkPhysicalDeviceMeshShaderFeaturesEXT),
     FUSE_FEAT(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
               VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
               VkPhysicalDeviceAccelerationStructureFeaturesKHR),
@@ -485,6 +487,17 @@ Device* createDevice(State& s, VkPhysicalDevice pd) {
         dev->featureStorage.push_back(std::move(storage));
     }
     getFeatures2(pd, &dev->features); // everything supported is enabled
+    // Features whose prerequisites this device does not enable (valid usage): mesh-shader multiview needs
+    // multiview, primitive shading rate needs VK_KHR_fragment_shading_rate (not in the list).
+    for (auto* b = reinterpret_cast<VkBaseOutStructure*>(dev->features.pNext); b; b = b->pNext) {
+        if (b->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT) {
+            auto* m = reinterpret_cast<VkPhysicalDeviceMeshShaderFeaturesEXT*>(b);
+            m->primitiveFragmentShadingRateMeshShader = VK_FALSE;
+            if (!dev->vk11.multiview) {
+                m->multiviewMeshShader = VK_FALSE;
+            }
+        }
+    }
 
     const float priority = 1.0f;
     VkDeviceQueueCreateInfo queue = vkStruct<VkDeviceQueueCreateInfo>(VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO);
@@ -516,6 +529,31 @@ bool isImportedDevice(std::uint64_t device) {
         if (reinterpret_cast<std::uint64_t>(d->device) == device) {
             return true;
         }
+    }
+    return false;
+}
+
+bool deviceCreateInfo(std::uint64_t device, HostDeviceInfo& out) {
+    State& s = state();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    for (const auto& d : s.devices) {
+        if (reinterpret_cast<std::uint64_t>(d->device) != device) {
+            continue;
+        }
+        out = HostDeviceInfo{};
+        out.getInstanceProcAddr = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(s.getInstanceProcAddr));
+        out.instance = reinterpret_cast<std::uint64_t>(s.instance);
+        out.physicalDevice = reinterpret_cast<std::uint64_t>(d->physicalDevice);
+        out.device = device;
+        out.queue = reinterpret_cast<std::uint64_t>(d->queue);
+        out.queueFamily = d->queueFamily;
+        out.instanceApiVersion = VK_API_VERSION_1_3; // createInstance's VkApplicationInfo::apiVersion
+        out.enabledExtensions = d->extensionNames.data();
+        out.enabledExtensionCount = static_cast<std::uint32_t>(d->extensionNames.size());
+        out.instanceExtensions = s.instanceExtensionNames.data();
+        out.instanceExtensionCount = static_cast<std::uint32_t>(s.instanceExtensionNames.size());
+        out.enabledFeatureChain = &d->features;
+        return true;
     }
     return false;
 }

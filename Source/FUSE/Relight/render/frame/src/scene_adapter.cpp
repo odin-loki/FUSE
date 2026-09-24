@@ -235,3 +235,15 @@ std::uint32_t GpuSceneAdapter::materialOf(std::uint64_t materialKey) const {
 }
 
 } // namespace fuse::relight::render::frame
+
+namespace fuse::relight::render::frame {
+
+std::uint32_t GpuSceneAdapter::lightSlot(std::uint64_t lightKey) const {
+    auto it = m_lights.find(lightKey);
+    if (it == m_lights.end() || !m_scene.lightAlive(it->second.handle)) {
+        return gs::kInvalidIndex;
+    }
+    return it->second.handle.slot;
+}
+
+} // namespace fuse::relight::render::frame

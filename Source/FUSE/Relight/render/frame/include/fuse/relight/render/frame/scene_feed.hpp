@@ -3,9 +3,8 @@
 //
 // RenderTap turns every flushed frame of the capture tap into AdapterDraws (RL-1.7 SceneModel result + input, RL-3.4
 // replaced draw) and AdapterLights (game lights or RL-3.4's replaced list) and hands them to an IGpuSceneSink:
-// GpuSceneAdapter (renderer WP-1.1 gpu_scene::GpuScene) where the renderer's objects can live. Inside d3d9.dll no
-// sink is attached yet (render_tap.hpp): fuse_gpu_scene references fuse_rhi's volk globals, whose translation unit
-// loads vulkan-1.dll from its static initialiser, i.e. from d3d9.dll's DllMain.
+// GpuSceneAdapter (renderer WP-1.1 gpu_scene::GpuScene). Inside d3d9.dll that is the GPU scene of the renderer adopted
+// from DXVK's device (renderer_context.hpp; fuse_rhi's volk is initialised from DXVK's loader, never from DllMain).
 #pragma once
 
 #include <fuse/relight/hash/xxh.hpp>
@@ -16,6 +15,7 @@
 #include <fuse/renderer/gpu_scene/gpu_scene_types.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace fuse::relight::render::frame {
@@ -46,6 +46,9 @@ struct AdapterLight {
 std::vector<AdapterLight> adapterLights(const std::vector<scene::LightRecord>& lights);
 /// RL-3.4's replaced light list.
 std::vector<AdapterLight> adapterLights(const std::vector<replace::ReplacedLight>& lights);
+
+/// Bindless shader handle of a game texture (0: none), for the GPU scene's material rows.
+using GpuSceneAdapterTextureFn = std::function<std::uint32_t(tap::ResourceId)>;
 
 /// Where a frame's scene goes (GpuSceneAdapter).
 class IGpuSceneSink {

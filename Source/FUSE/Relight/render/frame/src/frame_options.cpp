@@ -10,7 +10,7 @@ namespace {
 
 const options::OptionBase* const kRegisteredOptions[] = {
     &FrameOptions::mode, &FrameOptions::solidColor, &FrameOptions::textureSwap, &FrameOptions::injectAtUi,
-    &FrameOptions::statsPath,
+    &FrameOptions::statsPath, &FrameOptions::dumpPath,
 };
 
 std::string lower(std::string_view s) {
@@ -37,6 +37,8 @@ bool parseFrameMode(std::string_view text, FrameMode& out) {
         out = FrameMode::Passthrough;
     } else if (s == "solid") {
         out = FrameMode::Solid;
+    } else if (s == "raster") {
+        out = FrameMode::Raster;
     } else {
         return false;
     }
@@ -49,6 +51,8 @@ const char* frameModeName(FrameMode mode) {
         return "passthrough";
     case FrameMode::Solid:
         return "solid";
+    case FrameMode::Raster:
+        return "raster";
     case FrameMode::Off:
         break;
     }
@@ -91,6 +95,7 @@ FrameConfig FrameConfig::fromOptions() {
     c.textureSwap = FrameOptions::textureSwap();
     c.injectAtUi = FrameOptions::injectAtUi();
     c.statsPath = FrameOptions::statsPath();
+    c.dumpPath = FrameOptions::dumpPath();
     return c;
 }
 

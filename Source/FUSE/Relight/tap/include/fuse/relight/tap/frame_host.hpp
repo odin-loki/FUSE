@@ -48,6 +48,26 @@ struct HostImageInfo {
     /// VkImageFormatListCreateInfo entries (views the host creates with other formats, e.g. sRGB).
     std::uint32_t viewFormatCount = 0;
     std::uint32_t viewFormats[4] = {};
+    /// VkImageLayout the host keeps the image in between its commands (0 = unknown). FUSE work that samples a
+    /// host image in another layout transitions it and restores this layout before its submission ends.
+    std::uint32_t layout = 0;
+};
+
+/// How the host created its VkInstance / VkDevice (RL-4.1: the renderer adopts the device, VulkanDevice::adopt).
+/// Pointers are the host's storage, valid until onDeviceDestroy returns; FUSE copies what it keeps.
+struct HostDeviceInfo {
+    std::uint64_t getInstanceProcAddr = 0; ///< PFN_vkGetInstanceProcAddr of the loader the device came from
+    std::uint64_t instance = 0, physicalDevice = 0, device = 0, queue = 0;
+    std::uint32_t queueFamily = 0;         ///< the graphics queue's family (queue index 0)
+    std::uint32_t instanceApiVersion = 0;  ///< VkApplicationInfo::apiVersion
+    const char* const* enabledExtensions = nullptr;
+    std::uint32_t enabledExtensionCount = 0;
+    const char* const* instanceExtensions = nullptr;
+    std::uint32_t instanceExtensionCount = 0;
+    /// VkDeviceCreateInfo::pNext as passed to vkCreateDevice (VkPhysicalDeviceFeatures2 + chained structs) and
+    /// VkDeviceCreateInfo::pEnabledFeatures (null when the chain carries them).
+    const void* enabledFeatureChain = nullptr;
+    const void* enabledCoreFeatures = nullptr;
 };
 
 /// An image FUSE created on the host's device, handed to the host.
@@ -65,6 +85,13 @@ public:
     /// PFN_vkGetInstanceProcAddr of the host's loader, as an integer.
     virtual std::uint64_t getInstanceProcAddr() const = 0;
     virtual VulkanDevice vulkan() const = 0;
+    /// The creation parameters of the host's device (extensions, feature chain, queue), when the host knows
+    /// them: the DXVK host does for the device FUSE's bootstrap created (RL-1.1 import). False otherwise; FUSE
+    /// then keeps its own dispatch and the CPU bindless heap.
+    virtual bool deviceCreateInfo(HostDeviceInfo& out) const {
+        (void)out;
+        return false;
+    }
     /// VkSemaphore values of the two timeline semaphores (created on first call).
     virtual std::uint64_t acquireSemaphore() = 0;
     virtual std::uint64_t releaseSemaphore() = 0;

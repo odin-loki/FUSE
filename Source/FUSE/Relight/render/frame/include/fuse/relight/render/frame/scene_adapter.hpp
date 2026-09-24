@@ -47,7 +47,7 @@ struct AdapterStats {
 
 class GpuSceneAdapter final : public IGpuSceneSink {
 public:
-    using TextureHandleFn = std::function<std::uint32_t(tap::ResourceId)>;
+    using TextureHandleFn = GpuSceneAdapterTextureFn;
 
     /// `scene` must be initialised (GPU or CPU mirror); not owned. `textureHandle`: bindless shader handle of a
     /// texture (0: none).
@@ -66,6 +66,8 @@ public:
     /// The GPU instance of (instanceId, part); invalid handle when none.
     renderer::gpu_scene::InstanceHandle instanceOf(std::uint64_t instanceId, std::uint32_t part = 0) const;
     std::uint32_t meshOf(std::uint64_t geometryKey) const;
+    /// The GPU-scene light slot of an AdapterLight key (0xFFFFFFFF when not live).
+    std::uint32_t lightSlot(std::uint64_t lightKey) const;
     std::uint32_t materialOf(std::uint64_t materialKey) const;
 
 private:

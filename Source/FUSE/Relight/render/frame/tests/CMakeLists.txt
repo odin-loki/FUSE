@@ -58,6 +58,19 @@ if(FUSE_VULKAN_BACKEND OR (CMAKE_CROSSCOMPILING AND FUSE_RELIGHT_RENDERER))
                          --no-validation)
         set_tests_properties(rl_pe.frame_vk_composite PROPERTIES
             LABELS "relight;wine;renderer_pe" SKIP_RETURN_CODE 77 RESOURCE_LOCK fuse_relight_renderer_pe TIMEOUT 900)
+        # The same harness with the host's Khronos validation layer + synchronization validation injected through the
+        # host loader (Wine's vulkan-1.dll enumerates no layer): a negative control proves the layer is live, then
+        # every message fails the test. Skips (77) when the host has no layer.
+        if(EXISTS "/usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json" OR
+           EXISTS "/usr/local/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json")
+            add_test(NAME rl_pe.frame_vk_validation
+                     COMMAND "${_rl_frame_runner}" "${_rl_frame_prefix}" "$<TARGET_FILE:fuse_relight_frame_vk_tests>"
+                             --external-validation)
+            set_tests_properties(rl_pe.frame_vk_validation PROPERTIES
+                ENVIRONMENT "VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation;VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
+                LABELS "relight;wine;renderer_pe;vulkan;gate" SKIP_RETURN_CODE 77 RESOURCE_LOCK fuse_relight_renderer_pe
+                TIMEOUT 900)
+        endif()
     endif()
 endif()
 
@@ -107,6 +120,20 @@ foreach(_app sky_ui_hud d3d8_sky_ui_hud)
         set_tests_properties(rl_frame_solid_hud_${_app} PROPERTIES LABELS "relight;wine" SKIP_RETURN_CODE 77 TIMEOUT 600)
     endif()
 endforeach()
+# RL-4.1: the renderer adopted inside d3d9.dll; no Vulkan loader from DllMain (loader_probe.c).
+add_executable(rl_frame_loader_probe loader_probe.c)
+set_target_properties(rl_frame_loader_probe PROPERTIES OUTPUT_NAME loader_probe)
+if(TARGET rl_app_sky_ui_hud)
+    add_test(NAME rl_frame_adopt
+             COMMAND "${Python3_EXECUTABLE}" "${_rl_frame_driver}" --tap-tools "${_rl_frame_taptools}"
+                     --exe "$<TARGET_FILE:rl_app_sky_ui_hud>" --app sky_ui_hud
+                     --d3d9 "$<TARGET_FILE:relight_d3d9>" --d3d8 "$<TARGET_FILE:relight_d3d8>"
+                     --runner "${_rl_frame_runner}" --prefix-root "${_rl_frame_prefix}"
+                     adopt --out "${_rl_frame_out}/adopt" --probe "$<TARGET_FILE:rl_frame_loader_probe>"
+                     --nm "${CMAKE_NM}")
+    set_tests_properties(rl_frame_adopt PROPERTIES LABELS "relight;wine;gate" SKIP_RETURN_CODE 77 TIMEOUT 600)
+endif()
+
 set(_rl_frame_validation_exes "")
 foreach(_app sky_ui_hud ff_textured texture_formats)
     if(TARGET rl_app_${_app})

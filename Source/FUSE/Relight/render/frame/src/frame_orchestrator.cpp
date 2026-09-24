@@ -147,7 +147,8 @@ void FrameOrchestrator::detach() {
 }
 
 bool FrameOrchestrator::ensureFrameImages(const tap::HostImageInfo& bb) {
-    const bool wantInput = m_config.mode == FrameMode::Passthrough;
+    // Raster keeps an input image too: a frame it cannot render is composited as passthrough.
+    const bool wantInput = m_config.mode == FrameMode::Passthrough || m_config.mode == FrameMode::Raster;
     if (m_output.valid() && m_frameFormat == bb.format && m_frameWidth == bb.width && m_frameHeight == bb.height &&
         m_input.valid() == wantInput) {
         return true;
@@ -167,7 +168,10 @@ bool FrameOrchestrator::ensureFrameImages(const tap::HostImageInfo& bb) {
     like.width = bb.width;
     like.height = bb.height;
     const auto create = [&](GpuImage& image, tap::ResourceId id) {
-        if (!m_gpu.createImage(like, kFrameUsage, true, image)) {
+        const std::uint32_t usage = kFrameUsage | (m_config.mode == FrameMode::Raster && id == kFrameOutputId
+                                                       ? static_cast<std::uint32_t>(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+                                                       : 0u);
+        if (!m_gpu.createImage(like, usage, true, image)) {
             m_error = "cannot create a FUSE frame image: " + m_gpu.lastError();
             return false;
         }
@@ -192,7 +196,7 @@ bool FrameOrchestrator::ensureFrameImages(const tap::HostImageInfo& bb) {
     return true;
 }
 
-InjectResult FrameOrchestrator::inject() {
+InjectResult FrameOrchestrator::inject(IFrameRecorder* recorder) {
     InjectResult r;
     if (!attached()) {
         r.error = m_error.empty() ? "not attached" : m_error;
@@ -224,7 +228,9 @@ InjectResult FrameOrchestrator::inject() {
     if (!ensureFrameImages(bb)) {
         return fail(m_error);
     }
-    const bool passthrough = m_config.mode == FrameMode::Passthrough;
+    const bool raster = m_config.mode == FrameMode::Raster && recorder != nullptr;
+    const bool passthrough =
+        m_config.mode == FrameMode::Passthrough || (m_config.mode == FrameMode::Raster && recorder == nullptr);
     const std::uint64_t acquire = m_acquire + 1, release = m_release + 1;
     if (passthrough && !m_host->copyBackBuffer(m_input.host)) {
         return fail("the host could not copy the back buffer");
@@ -234,8 +240,10 @@ InjectResult FrameOrchestrator::inject() {
     }
     m_acquire = acquire;
     r.acquire = acquire;
-    r.submit = m_gpu.submitFrame(passthrough ? FramePass::Passthrough : FramePass::Solid, &m_input, m_output,
-                                 m_config.solidColor, acquire, release);
+    r.pass = raster ? "raster" : (passthrough ? "passthrough" : "solid");
+    r.submit = raster ? m_gpu.submitFrame(*recorder, m_output, acquire, release)
+                      : m_gpu.submitFrame(passthrough ? FramePass::Passthrough : FramePass::Solid, &m_input, m_output,
+                                          m_config.solidColor, acquire, release);
     if (!r.submit.ok) {
         return fail("FUSE frame submission failed: " + m_gpu.lastError());
     }

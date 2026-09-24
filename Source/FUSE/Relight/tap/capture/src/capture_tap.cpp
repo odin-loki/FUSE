@@ -597,6 +597,11 @@ void CaptureTap::onPresent(const FrameEvent& f) {
 
 // ---- the per-frame record -----------------------------------------------------------------------------
 
+void CaptureTap::visitPendingDraws(const PendingVisitor& fn) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    fn(m_frame, m_pending);
+}
+
 void CaptureTap::flushFrame(bool final) {
     // Geometry jobs finish here (JobFuture::get waits), off the draw call's path when the
     // JobScheduler runs them on workers.

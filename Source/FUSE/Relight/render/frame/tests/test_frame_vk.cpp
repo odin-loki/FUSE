@@ -20,7 +20,10 @@
 #include <fuse/relight/render/frame/bindless_images.hpp>
 #include <fuse/relight/render/frame/bindless_renderer_heap.hpp>
 #include <fuse/relight/render/frame/frame_orchestrator.hpp>
+#include <fuse/relight/render/frame/renderer_context.hpp>
+#include <fuse/relight/render/frame/scene_adapter.hpp>
 #include <fuse/relight/render/frame/vk_dispatch.hpp>
+#include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
@@ -339,8 +342,53 @@ public:
         m_swaps[texture] = s;
         return true;
     }
-    void lockQueue() override { m_queueLock.lock(); }
+    void lockQueue() override {
+        m_queueLock.lock();
+        ++m_locks;
+    }
     void unlockQueue() override { m_queueLock.unlock(); }
+    std::uint64_t locks() const { return m_locks; }
+    /// A fresh pair of timeline semaphores (DXVK's host creates them per device): each orchestrator below starts
+    /// its timeline values at 1 again.
+    void newTimelines() {
+        vkDeviceWaitIdle(m_device);
+        vkDestroySemaphore(m_device, m_acquireSem, nullptr);
+        vkDestroySemaphore(m_device, m_releaseSem, nullptr);
+        auto type = vks<VkSemaphoreTypeCreateInfo>(VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO);
+        type.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+        auto sem = vks<VkSemaphoreCreateInfo>(VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, &type);
+        vkCreateSemaphore(m_device, &sem, nullptr, &m_acquireSem);
+        vkCreateSemaphore(m_device, &sem, nullptr, &m_releaseSem);
+        m_signal = 0;
+        m_waits.clear();
+    }
+    /// The device FUSE adopts (VulkanDevice::adoptionDesc of the harness device): what DXVK's host reports for
+    /// the bootstrap device.
+    void setAdoption(const rr::VulkanDeviceAdoptDesc& d) {
+        m_adopt = d;
+        m_haveAdopt = true;
+    }
+    bool deviceCreateInfo(rt::HostDeviceInfo& out) const override {
+        if (!m_haveAdopt) {
+            return false;
+        }
+        const rt::VulkanDevice v = vulkan();
+        out = rt::HostDeviceInfo{};
+        out.getInstanceProcAddr = getInstanceProcAddr();
+        out.instance = v.instance;
+        out.physicalDevice = v.physicalDevice;
+        out.device = v.device;
+        out.queue = v.queue;
+        out.queueFamily = v.queueFamily;
+        out.instanceApiVersion = m_adopt.instanceApiVersion;
+        out.enabledExtensions = m_adopt.enabledExtensions;
+        out.enabledExtensionCount = m_adopt.enabledExtensionCount;
+        out.instanceExtensions = m_adopt.instanceExtensions;
+        out.instanceExtensionCount = m_adopt.instanceExtensionCount;
+        out.enabledFeatureChain = m_adopt.enabledFeatureChain;
+        out.enabledCoreFeatures = m_adopt.enabledCoreFeatures;
+        return true;
+    }
     bool waitIdle() override {
         std::lock_guard<std::recursive_mutex> lock(m_queueLock);
         vkQueueWaitIdle(m_queue);
@@ -348,6 +396,9 @@ public:
     }
 
 private:
+    rr::VulkanDeviceAdoptDesc m_adopt{};
+    bool m_haveAdopt = false;
+    std::uint64_t m_locks = 0;
     struct Texture {
         HostImage image;
         std::uint64_t version = 0;
@@ -701,14 +752,35 @@ std::vector<std::vector<std::uint8_t>> runFrames(SimHost& host, rf::FrameOrchest
 
 } // namespace
 
+/// Negative control for a layer the process cannot enumerate (Wine: the host loader injects it): an invalid sampler
+/// (mipLodBias above maxSamplerLodBias, VUID-VkSamplerCreateInfo-mipLodBias-01069) must produce a message.
+int validationControl(VkPhysicalDevice pd, VkDevice device) {
+    VkPhysicalDeviceProperties props{};
+    vkGetPhysicalDeviceProperties(pd, &props);
+    const int before = g_validation;
+    auto ci = vks<VkSamplerCreateInfo>(VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO);
+    ci.mipLodBias = props.limits.maxSamplerLodBias + 64.f;
+    ci.maxLod = 1.f;
+    VkSampler sampler = VK_NULL_HANDLE;
+    if (vkCreateSampler(device, &ci, nullptr, &sampler) == VK_SUCCESS) {
+        vkDestroySampler(device, sampler, nullptr);
+    }
+    const int produced = g_validation - before;
+    g_validation = before;
+    return produced;
+}
+
 int main(int argc, char** argv) {
     bool validation = true;
+    bool external = false; // the layer is injected by the (host) loader: no enumeration, negative control instead
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--no-validation") == 0) {
             validation = false;
+        } else if (std::strcmp(argv[i], "--external-validation") == 0) {
+            external = true;
         }
     }
-    if (validation) {
+    if (validation && !external) {
         if (!layerAvailable("VK_LAYER_KHRONOS_validation")) {
             std::printf("SKIP: VK_LAYER_KHRONOS_validation not installed (run with --no-validation)\n");
             return kSkip;
@@ -731,7 +803,7 @@ int main(int argc, char** argv) {
         vkGetInstanceProcAddr(vkInstance, "vkCreateDebugUtilsMessengerEXT"));
     auto destroyMessenger = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
         vkGetInstanceProcAddr(vkInstance, "vkDestroyDebugUtilsMessengerEXT"));
-    if (validation) {
+    if (validation || external) {
         if (!createMessenger) {
             std::printf("FAIL: VK_EXT_debug_utils unavailable with validation\n");
             return 1;
@@ -749,6 +821,16 @@ int main(int argc, char** argv) {
         return kSkip;
     }
     const VkDevice vkDevice = static_cast<VkDevice>(device->nativeHandle());
+    if (external) {
+        const int control = validationControl(static_cast<VkPhysicalDevice>(device->nativePhysicalDevice()), vkDevice);
+        if (control == 0) {
+            std::printf("SKIP: no validation layer reached this process (the loader injected none; negative control "
+                        "silent)\n");
+            return kSkip;
+        }
+        std::printf("external validation layer live (negative control: %d message(s), not counted)\n", control);
+        validation = true;
+    }
     std::printf("device: %s (%s)\n", device->info().deviceName.c_str(), validation ? "validation + sync validation"
                                                                                    : "no validation layer");
 
@@ -828,6 +910,7 @@ int main(int argc, char** argv) {
             cfg.mode = rf::FrameMode::Solid;
             cfg.solidColor = 0x2050d0u;
             rf::FrameOrchestrator orch(cfg, nullptr);
+            host.newTimelines();
             check(orch.attach(&host), "attach (solid): " + orch.lastError());
             const auto got = runFrames(host, &orch, nullptr, 3);
             const auto& img = got.back();
@@ -840,6 +923,81 @@ int main(int argc, char** argv) {
         }
         registry.releaseAll();
         check(views.live == 0, "every bindless view destroyed (" + std::to_string(views.live) + " live)");
+
+        // RL-4.1 adopted renderer: the host describes its device (as DXVK does for FUSE's bootstrap device);
+        // RendererContext adopts it (non-owning VulkanDevice, volk already loaded here), brings up the WP-0.4
+        // bindless heap with GPU descriptors and the WP-1.1 GPU scene with GPU tables, and every submission it
+        // makes goes through the host's queue lock.
+        {
+            host.setAdoption(device->adoptionDesc());
+            rf::RendererContext ctx;
+            const bool adopted = ctx.attach(host, [](rt::ResourceId) { return 0u; });
+            check(adopted, "adopt the host's device: " + ctx.stats().error);
+            if (adopted) {
+                const rf::RendererContextStats& cs = ctx.stats();
+                check(cs.gpuDescriptors && cs.gpuScene, "adopted: GPU bindless descriptors and GPU scene tables");
+                check(ctx.device().isAdopted() && !ctx.device().ownsDevice(), "non-owning adoption");
+                check(rf::RendererContext::loaderReport().loaded, "volk loaded");
+                std::printf("adopted: %s, bindless %s, tier T%u (hardware T%u)\n", cs.device.c_str(),
+                            cs.bindlessBackend.c_str(), cs.tier, cs.hardwareTier);
+                rf::BindlessImageRegistry adoptedRegistry(ctx.heap(), &ctx.views());
+                rf::FrameConfig cfg;
+                cfg.mode = rf::FrameMode::Passthrough;
+                cfg.textureSwap = true;
+                rf::FrameOrchestrator orch(cfg, &adoptedRegistry);
+                host.newTimelines();
+                check(orch.attach(&host), "attach (adopted): " + orch.lastError());
+                const std::uint32_t writes = ctx.bindless().descriptorUpdateCount();
+                const auto got = runFrames(host, &orch, &adoptedRegistry, frames);
+                for (int f = 0; f < frames; ++f) {
+                    check(got[static_cast<std::size_t>(f)] == reference[static_cast<std::size_t>(f)],
+                          "adopted heap: passthrough frame " + std::to_string(f) + " bit-identical");
+                }
+                check(ctx.bindless().descriptorUpdateCount() > writes,
+                      "the adopted heap wrote descriptors for DXVK / FUSE images");
+                // The GPU scene through the sink: commit + upload flush under the host's queue lock.
+                const std::uint64_t locksBefore = host.locks();
+                rf::AdapterDraw a;
+                a.instanceId = 1;
+                a.blasId = 10;
+                a.created = true;
+                a.bounds.minPos = {-1, -1, -1};
+                a.bounds.maxPos = {1, 1, 1};
+                rf::AdapterDraw b = a;
+                b.instanceId = 2;
+                b.objectToWorld[12] = 3.f;
+                std::vector<fuse::relight::scene::LightRecord> lights(1);
+                lights[0].radiance = {1.f, 0.5f, 0.25f};
+                lights[0].radius = 0.5f;
+                lights[0].hash = 7;
+                for (std::uint64_t serial = 1; serial <= 3; ++serial) {
+                    ctx.setRetireSerial(serial);
+                    ctx.sink().beginFrame(serial);
+                    ctx.sink().submit(a);
+                    if (serial != 2) {
+                        ctx.sink().submit(b);
+                    }
+                    ctx.sink().submitLights(rf::adapterLights(lights));
+                    ctx.sink().endFrame();
+                    check(ctx.sink().instanceCount() == (serial == 2 ? 1u : 2u), "GPU scene instances per frame");
+                    host.waitIdle();
+                    ctx.collect(serial);
+                }
+                check(ctx.stats().uploadBatches > 0, "GPU scene deltas uploaded (" +
+                                                         std::to_string(ctx.stats().uploadBatches) + " batches)");
+                check(host.locks() > locksBefore && ctx.stats().queueLocks > 0,
+                      "the renderer's submissions took the host's queue lock");
+                check(ctx.scene().gpuEnabled() && ctx.scene().headerAddress() != 0, "GPU scene header on the GPU");
+                std::printf("adopted GPU scene: %u live instance(s), %llu upload batch(es) under %llu queue lock(s)\n",
+                            ctx.scene().liveInstances(), static_cast<unsigned long long>(ctx.stats().uploadBatches),
+                            static_cast<unsigned long long>(ctx.stats().queueLocks));
+                orch.detach();
+                adoptedRegistry.releaseAll();
+                host.waitIdle();
+                ctx.detach();
+                check(!ctx.attached(), "detached");
+            }
+        }
         host.releaseScratch();
         heap.destroy(*device);
     }
@@ -855,7 +1013,8 @@ int main(int argc, char** argv) {
         return 1;
     }
     std::printf("PASS: passthrough composite + texture swap bit-identical over %d frames (resize, texture update, "
-                "texture destroy); solid composite below the HUD; bindless registration; %s\n",
+                "texture destroy); solid composite below the HUD; bindless registration; adopted device: renderer "
+                "bindless heap + GPU scene in-process under the host's queue lock; %s\n",
                 frames, validation ? "validation + synchronization validation clean" : "validation not run");
     return 0;
 }

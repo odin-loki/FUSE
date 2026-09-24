@@ -8,10 +8,10 @@
 // The heap behind the registry (IBindlessHeap):
 //   RendererBindlessHeap  the renderer's WP-0.4 BindlessDescriptors (GPU descriptor set / descriptor buffer, or
 //                         its CPU heap): descriptors are written when the heap has a GPU backend and a view exists
-//                         (bindless_renderer_heap.hpp, library fuse_relight_render_frame_gpu);
+//                         (bindless_renderer_heap.hpp; RendererContext brings it up on the adopted device);
 //   CpuBindlessHeap       a generation-checked slot table with the same 32-bit shader handles
-//                         (renderer::packBindlessShaderHandle), for a process where the renderer does not own the
-//                         Vulkan device yet (inside d3d9.dll, RL-4.1: the device is the RL-1.1 bootstrap's).
+//                         (renderer::packBindlessShaderHandle), when the device could not be adopted (DXVK runs on
+//                         its own device: relight.device.import off, or no bootstrap).
 //
 // Lifetime: the tap reports DXVK's image destruction (onImageDestroy); release() retires the slot at once
 // (generation bump: a stale shader handle no longer validates) but keeps the descriptor index and the view

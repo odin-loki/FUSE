@@ -47,6 +47,15 @@ struct FrameGpu::Impl {
     VkPhysicalDeviceMemoryProperties memory{};
     rg::Graph graph;
     std::string lastError;
+    // Output dump (tests): host-visible copy of the last frame's output.
+    VkBuffer dumpBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory dumpMemory = VK_NULL_HANDLE;
+    void* dumpMapped = nullptr;
+    VkDeviceSize dumpSize = 0;
+    std::uint32_t dumpWidth = 0, dumpHeight = 0, dumpFormat = 0;
+    bool dumpValid = false;
+    bool ensureDump(VkDeviceSize bytes);
+    void destroyDump();
 
     bool beginSlot(std::uint32_t& slot);
     bool submitOneOff(VkImage image, const VkImageSubresourceRange& range, std::uint64_t& submissions);
@@ -150,6 +159,7 @@ void FrameGpu::shutdown() {
         return;
     }
     waitIdle();
+    d.destroyDump();
     for (std::uint32_t i = 0; i < Impl::kRing; ++i) {
         if (d.fence[i] != VK_NULL_HANDLE) {
             d.vk.DestroyFence(d.vk.device, d.fence[i], nullptr);
@@ -163,6 +173,53 @@ void FrameGpu::shutdown() {
     }
     d.host = nullptr;
     d.vk = VkDispatch{};
+}
+
+bool FrameGpu::Impl::ensureDump(VkDeviceSize bytes) {
+    if (dumpBuffer != VK_NULL_HANDLE && dumpSize >= bytes) {
+        return true;
+    }
+    destroyDump();
+    VkBufferCreateInfo bi{};
+    bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bi.size = bytes;
+    bi.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    if (vk.CreateBuffer(vk.device, &bi, nullptr, &dumpBuffer) != VK_SUCCESS) {
+        dumpBuffer = VK_NULL_HANDLE;
+        return false;
+    }
+    VkMemoryRequirements req{};
+    vk.GetBufferMemoryRequirements(vk.device, dumpBuffer, &req);
+    VkMemoryAllocateInfo mi{};
+    mi.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    mi.allocationSize = req.size;
+    mi.memoryTypeIndex =
+        memoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    if (mi.memoryTypeIndex == UINT32_MAX || vk.AllocateMemory(vk.device, &mi, nullptr, &dumpMemory) != VK_SUCCESS ||
+        vk.BindBufferMemory(vk.device, dumpBuffer, dumpMemory, 0) != VK_SUCCESS ||
+        vk.MapMemory(vk.device, dumpMemory, 0, VK_WHOLE_SIZE, 0, &dumpMapped) != VK_SUCCESS) {
+        destroyDump();
+        return false;
+    }
+    dumpSize = bytes;
+    return true;
+}
+
+void FrameGpu::Impl::destroyDump() {
+    if (dumpMemory != VK_NULL_HANDLE && dumpMapped) {
+        vk.UnmapMemory(vk.device, dumpMemory);
+    }
+    if (dumpBuffer != VK_NULL_HANDLE) {
+        vk.DestroyBuffer(vk.device, dumpBuffer, nullptr);
+    }
+    if (dumpMemory != VK_NULL_HANDLE) {
+        vk.FreeMemory(vk.device, dumpMemory, nullptr);
+    }
+    dumpBuffer = VK_NULL_HANDLE;
+    dumpMemory = VK_NULL_HANDLE;
+    dumpMapped = nullptr;
+    dumpSize = 0;
+    dumpValid = false;
 }
 
 std::uint32_t FrameGpu::Impl::memoryType(std::uint32_t bits, VkMemoryPropertyFlags flags) const {
@@ -326,12 +383,24 @@ void FrameGpu::destroyImage(GpuImage& image) {
 
 FrameSubmitStats FrameGpu::submitFrame(FramePass pass, const GpuImage* input, const GpuImage& output,
                                        std::uint32_t solidRgb, std::uint64_t waitAcquire, std::uint64_t signalRelease) {
+    return submit(pass, nullptr, input, output, solidRgb, waitAcquire, signalRelease);
+}
+
+FrameSubmitStats FrameGpu::submitFrame(IFrameRecorder& recorder, const GpuImage& output, std::uint64_t waitAcquire,
+                                       std::uint64_t signalRelease) {
+    return submit(FramePass::Solid, &recorder, nullptr, output, 0, waitAcquire, signalRelease);
+}
+
+FrameSubmitStats FrameGpu::submit(FramePass pass, IFrameRecorder* recorder, const GpuImage* input,
+                                  const GpuImage& output, std::uint32_t solidRgb, std::uint64_t waitAcquire,
+                                  std::uint64_t signalRelease) {
     if (!m_impl) {
         m_impl = std::make_unique<Impl>();
     }
     Impl& d = *m_impl;
     FrameSubmitStats stats;
-    if (!ready() || !output.valid() || (pass == FramePass::Passthrough && (!input || !input->valid()))) {
+    if (!ready() || !output.valid() ||
+        (!recorder && pass == FramePass::Passthrough && (!input || !input->valid()))) {
         m_error = "frame submission without images";
         return stats;
     }
@@ -354,7 +423,12 @@ FrameSubmitStats FrameGpu::submitFrame(FramePass pass, const GpuImage* input, co
     };
     const rg::TextureRef out = import(output, "fuse.output");
     rg::TextureRef in{};
-    if (pass == FramePass::Passthrough) {
+    if (recorder) {
+        if (!recorder->declare(d.graph, out, output)) {
+            m_error = "the frame recorder declared no frame";
+            return stats;
+        }
+    } else if (pass == FramePass::Passthrough) {
         in = import(*input, "fuse.input");
         d.graph.addPass("fuse.passthrough", nullptr, nullptr)
             .use(in, rg::Access::TransferSrc)
@@ -363,18 +437,30 @@ FrameSubmitStats FrameGpu::submitFrame(FramePass pass, const GpuImage* input, co
     } else {
         d.graph.addPass("fuse.solid", nullptr, nullptr).use(out, rg::Access::TransferDst).neverCull();
     }
+    // Tests: the output copied into a host-visible buffer after everything else.
+    const std::uint32_t dumpPass =
+        m_dump && d.ensureDump(VkDeviceSize(output.image.info.width) * output.image.info.height * 4u)
+            ? d.graph.addPass("fuse.dump", nullptr, nullptr).use(out, rg::Access::TransferSrc).neverCull().index()
+            : UINT32_MAX;
+    d.dumpValid = false;
     rg::CompileOptions options;
     options.forceQueue = static_cast<std::uint8_t>(rg::QueueClass::Graphics);
     if (!d.graph.compile(options) || !d.graph.plan()) {
         m_error = "frame graph compile / plan failed";
         return stats;
     }
-    auto imageOf = [&](std::uint32_t resource) -> VkImage {
+    auto imageOf = [&](std::uint32_t resource, VkImageAspectFlags& aspect) -> VkImage {
+        aspect = VK_IMAGE_ASPECT_COLOR_BIT;
         if (resource == out.id) {
             return vkHandle<VkImage>(output.image.vkImage);
         }
         if (in.valid() && resource == in.id) {
             return vkHandle<VkImage>(input->image.vkImage);
+        }
+        if (recorder) {
+            const IFrameRecorder::Image i = recorder->image(resource);
+            aspect = i.aspect;
+            return vkHandle<VkImage>(i.vkImage);
         }
         return VK_NULL_HANDLE;
     };
@@ -386,8 +472,30 @@ FrameSubmitStats FrameGpu::submitFrame(FramePass pass, const GpuImage* input, co
     }
     const VkCommandBuffer cmd = d.cmd[slot];
     std::vector<VkImageMemoryBarrier2> barriers;
-    auto record = [&](const std::vector<rg::ImageBarrier>& list, const rg::BarrierRange& range) {
+    std::vector<VkBufferMemoryBarrier2> bufferBarriers;
+    auto record = [&](const std::vector<rg::ImageBarrier>& list, const rg::BarrierRange& range, bool withBuffers) {
         barriers.clear();
+        bufferBarriers.clear();
+        if (withBuffers) {
+            const std::vector<rg::BufferBarrier>& blist = d.graph.bufferBarriers();
+            for (std::uint32_t i = range.bufferBegin; i < range.bufferBegin + range.bufferCount; ++i) {
+                const rg::BufferBarrier& b = blist[i];
+                VkBufferMemoryBarrier2 v{};
+                v.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+                v.srcStageMask = b.srcStages;
+                v.srcAccessMask = b.srcAccess;
+                v.dstStageMask = b.dstStages ? b.dstStages : VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                v.dstAccessMask = b.dstStages ? b.dstAccess : (VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT);
+                v.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                v.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                v.buffer = recorder ? vkHandle<VkBuffer>(recorder->buffer(b.resource)) : VK_NULL_HANDLE;
+                v.offset = b.offset;
+                v.size = b.size ? b.size : VK_WHOLE_SIZE;
+                if (v.buffer != VK_NULL_HANDLE) {
+                    bufferBarriers.push_back(v);
+                }
+            }
+        }
         for (std::uint32_t i = range.imageBegin; i < range.imageBegin + range.imageCount; ++i) {
             const rg::ImageBarrier& b = list[i];
             VkImageMemoryBarrier2 v{};
@@ -407,22 +515,26 @@ FrameSubmitStats FrameGpu::submitFrame(FramePass pass, const GpuImage* input, co
             v.newLayout = static_cast<VkImageLayout>(b.newLayout);
             v.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; // one queue
             v.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            v.image = imageOf(b.resource);
-            v.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, b.baseMip, b.mipCount, b.baseLayer, b.layerCount};
+            VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+            v.image = imageOf(b.resource, aspect);
+            v.subresourceRange = {aspect, b.baseMip, b.mipCount, b.baseLayer, b.layerCount};
             if (v.image != VK_NULL_HANDLE) {
                 barriers.push_back(v);
             }
         }
-        if (barriers.empty()) {
+        if (barriers.empty() && bufferBarriers.empty()) {
             return;
         }
         VkDependencyInfo dep{};
         dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
         dep.imageMemoryBarrierCount = static_cast<std::uint32_t>(barriers.size());
         dep.pImageMemoryBarriers = barriers.data();
+        dep.bufferMemoryBarrierCount = static_cast<std::uint32_t>(bufferBarriers.size());
+        dep.pBufferMemoryBarriers = bufferBarriers.data();
         d.vk.CmdPipelineBarrier2(cmd, &dep);
         ++stats.barrierCalls;
         stats.imageBarriers += dep.imageMemoryBarrierCount;
+        stats.bufferBarriers += dep.bufferMemoryBarrierCount;
     };
     auto global = [&](const VkMemoryBarrier2& b) {
         VkDependencyInfo dep{};
@@ -437,9 +549,21 @@ FrameSubmitStats FrameGpu::submitFrame(FramePass pass, const GpuImage* input, co
     global(globalBarrier(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
                          VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT));
     for (const std::uint32_t p : d.graph.executionOrder()) {
-        record(d.graph.imageBarriers(), d.graph.passBarriers(p));
-        record(d.graph.lateImageBarriers(), d.graph.passLateBarriers(p));
-        if (pass == FramePass::Solid) {
+        record(d.graph.imageBarriers(), d.graph.passBarriers(p), true);
+        record(d.graph.lateImageBarriers(), d.graph.passLateBarriers(p), false);
+        if (p == dumpPass) {
+            VkBufferImageCopy region{};
+            region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            region.imageExtent = {output.image.info.width, output.image.info.height, 1};
+            d.vk.CmdCopyImageToBuffer(cmd, vkHandle<VkImage>(output.image.vkImage), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                      d.dumpBuffer, 1, &region);
+            d.dumpWidth = output.image.info.width;
+            d.dumpHeight = output.image.info.height;
+            d.dumpFormat = output.image.info.format;
+            d.dumpValid = true;
+        } else if (recorder) {
+            recorder->record(p, vkValue(cmd));
+        } else if (pass == FramePass::Solid) {
             VkClearColorValue c{};
             c.float32[0] = static_cast<float>((solidRgb >> 16) & 0xffu) / 255.0f;
             c.float32[1] = static_cast<float>((solidRgb >> 8) & 0xffu) / 255.0f;
@@ -460,10 +584,14 @@ FrameSubmitStats FrameGpu::submitFrame(FramePass pass, const GpuImage* input, co
         ++stats.passes;
     }
     for (const rg::Batch& b : d.graph.batches()) {
-        record(d.graph.imageBarriers(), b.post);
+        record(d.graph.imageBarriers(), b.post, true);
     }
     global(globalBarrier(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_WRITE_BIT,
                          VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT));
+    if (d.dumpValid) {
+        global(globalBarrier(VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                             VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_READ_BIT));
+    }
     stats.graphBatches = static_cast<std::uint32_t>(d.graph.batches().size());
     if (d.vk.EndCommandBuffer(cmd) != VK_SUCCESS) {
         m_error = "vkEndCommandBuffer failed";
@@ -502,6 +630,27 @@ FrameSubmitStats FrameGpu::submitFrame(FramePass pass, const GpuImage* input, co
     ++m_submissions;
     stats.ok = true;
     return stats;
+}
+
+bool FrameGpu::readDump(std::uint64_t releaseValue, std::vector<std::uint8_t>& rgba, std::uint32_t& width,
+                        std::uint32_t& height) {
+    if (!m_impl || !m_impl->dumpValid || !m_impl->dumpMapped || !waitRelease(releaseValue)) {
+        return false;
+    }
+    const Impl& d = *m_impl;
+    const bool bgra = d.dumpFormat == VK_FORMAT_B8G8R8A8_UNORM || d.dumpFormat == VK_FORMAT_B8G8R8A8_SRGB;
+    const bool rgbaFormat = d.dumpFormat == VK_FORMAT_R8G8B8A8_UNORM || d.dumpFormat == VK_FORMAT_R8G8B8A8_SRGB;
+    if (!bgra && !rgbaFormat) {
+        return false;
+    }
+    width = d.dumpWidth;
+    height = d.dumpHeight;
+    const auto* src = static_cast<const std::uint8_t*>(d.dumpMapped);
+    rgba.assign(src, src + std::size_t(width) * height * 4u);
+    for (std::size_t i = 0; bgra && i < rgba.size(); i += 4) {
+        std::swap(rgba[i], rgba[i + 2]);
+    }
+    return true;
 }
 
 std::uint64_t FrameGpu::acquireCompleted() const {

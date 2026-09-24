@@ -5,9 +5,11 @@
 //   inject()   at the injection point (the first UI draw, or Present without UI):
 //                1. (re)create FUSE's frame images when the back buffer's size / format changed (the old ones
 //                   are released to the host and destroyed once their acquire value completed);
-//                2. passthrough: host copies the back buffer into FUSE's input image;
+//                2. passthrough (and raster without a recorder): host copies the back buffer into FUSE's input
+//                   image;
 //                3. host: flush + signal acquire = A (after everything recorded so far);
-//                4. FUSE: frame graph (FrameGpu::submitFrame) waiting acquire >= A, signalling release = R;
+//                4. FUSE: frame graph (FrameGpu::submitFrame; raster: the RL-4.2 recorder's passes) waiting
+//                   acquire >= A, signalling release = R;
 //                5. host: wait release >= R, copy FUSE's output over the back buffer (the composite) - the
 //                   host's following draws (the UI) land on top.
 //   swapTexture() / onTextureDestroyed(): the passthrough texture swap. A FUSE-owned twin of a game texture
@@ -35,6 +37,7 @@ namespace fuse::relight::render::frame {
 
 struct InjectResult {
     bool injected = false;
+    const char* pass = "none"; ///< what FUSE rendered: passthrough, solid or raster
     std::uint64_t acquire = 0, release = 0;
     FrameSubmitStats submit;
     std::string error; ///< why nothing was composited (empty when injected)
@@ -67,8 +70,13 @@ public:
     /// Waits for the host and FUSE, releases and destroys every FUSE image (onDeviceDestroy / before reset).
     void detach();
     bool attached() const { return m_host != nullptr && m_gpu.ready(); }
+    /// Where FUSE-owned images are registered from now on (the registry is recreated when the device's renderer
+    /// comes up). Only while detached.
+    void setBindless(BindlessImageRegistry* bindless) { m_bindless = bindless; }
 
-    InjectResult inject();
+    /// `recorder`: relight.frame.mode = raster's frame graph (RL-4.2), null when it has nothing to render (the
+    /// frame is then passthrough). Ignored in the other modes.
+    InjectResult inject(IFrameRecorder* recorder = nullptr);
     /// Creates the passthrough twin of `texture` and hands it to the host. False when not swappable.
     bool swapTexture(const tap::TextureDesc& texture);
     /// The texture is gone (the host already dropped its swap): the twin is retired.

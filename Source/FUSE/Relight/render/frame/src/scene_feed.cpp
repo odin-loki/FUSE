@@ -2,6 +2,7 @@
 #include <fuse/relight/render/frame/scene_feed.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <string>
 
@@ -49,15 +50,33 @@ std::vector<AdapterLight> adapterLights(const std::vector<scene::LightRecord>& l
         a.key = mixKey(l.hash, kSaltLight);
         gs::GpuLight& g = a.light;
         const bool distant = l.type == hash::LightType::Distant;
-        g.type = static_cast<std::uint32_t>(distant ? gs::GpuLightType::Directional : gs::GpuLightType::Point);
         std::memcpy(g.position, l.position.data(), sizeof(g.position));
-        std::memcpy(g.direction, l.direction.data(), sizeof(g.direction));
         const float maxc = std::max({l.radiance[0], l.radiance[1], l.radiance[2]});
-        g.intensity = maxc;
         for (int c = 0; c < 3; ++c) {
             g.color[c] = maxc > 0.f ? l.radiance[static_cast<std::size_t>(c)] / maxc : 0.f;
         }
-        g.range = distant ? 0.f : l.radius;
+        if (distant) {
+            // Distant: the radiance is the illuminance the light delivers at normal incidence.
+            g.type = static_cast<std::uint32_t>(gs::GpuLightType::Directional);
+            std::memcpy(g.direction, l.direction.data(), sizeof(g.direction));
+            g.intensity = maxc;
+            g.range = 0.f;
+        } else {
+            // Sphere of radius r and radiance L seen from d >> r: E = L pi r^2 / d^2, i.e. a point light of
+            // intensity L pi r^2. Range: where that falls to kNewLightEndValue / 16 (the windowed inverse-square
+            // falloff of the clustered lighting then only trims what is already below the legacy end value).
+            const float r = std::max(l.radius, 1e-3f);
+            g.intensity = maxc * scene::kLightPi * r * r;
+            g.range = std::sqrt(g.intensity / (scene::kNewLightEndValue / 16.f));
+            if (l.shaping.enabled) {
+                g.type = static_cast<std::uint32_t>(gs::GpuLightType::Spot);
+                std::memcpy(g.direction, l.shaping.direction.data(), sizeof(g.direction));
+                g.cosOuter = l.shaping.cosConeAngle;
+                g.cosInner = std::min(1.f, l.shaping.cosConeAngle + l.shaping.coneSoftness);
+            } else {
+                g.type = static_cast<std::uint32_t>(gs::GpuLightType::Point);
+            }
+        }
         out.push_back(a);
     }
     return out;

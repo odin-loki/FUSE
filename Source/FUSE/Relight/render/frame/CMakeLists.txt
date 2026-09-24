@@ -13,11 +13,16 @@
 #   fuse_relight_render_frame      RenderTap (the capture tap + frame orchestration), FrameOrchestrator (injection,
 #                                  composite, timeline values, passthrough texture swap), FrameGpu (FUSE's images
 #                                  and RG v2-planned submissions on the host's device, own Vulkan dispatch), the
-#                                  bindless registration of DXVK images (BindlessImageRegistry) and the scene feed
-#                                  (RL-1.7 SceneModel + RL-3.4 replaced scene -> AdapterDraw / AdapterLight). Linked
-#                                  into d3d9.dll through fuse_relight_tap_capture.
-#   fuse_relight_render_frame_gpu  GpuSceneAdapter (the feed -> gpu_scene::GpuScene) and RendererBindlessHeap (the
-#                                  registry on the renderer's BindlessDescriptors); not in d3d9.dll (see above).
+#                                  bindless registration of DXVK images (BindlessImageRegistry), the scene feed
+#                                  (RL-1.7 SceneModel + RL-3.4 replaced scene -> AdapterDraw / AdapterLight), the
+#                                  GpuSceneAdapter (feed -> gpu_scene::GpuScene) and RendererContext: the renderer on
+#                                  the host's device (volk from the host's loader, VulkanDevice::adopt, the WP-0.4
+#                                  bindless heap with GPU descriptors, the WP-1.1 GPU scene). Linked into d3d9.dll
+#                                  through fuse_relight_tap_capture; d3d9.dll / d3d8.dll set FUSE_RHI_VOLK_NO_AUTO_INIT,
+#                                  so fuse_rhi opens no Vulkan loader from DllMain (volk is initialised from DXVK's
+#                                  vkGetInstanceProcAddr at the first device attach).
+#   fuse_relight_render_frame_gpu  alias of the above (RL-4.1 kept the renderer objects out of d3d9.dll until
+#                                  VulkanDevice::adopt and the volk opt-out existed).
 # Tests: tests/ (rl_frame_*).
 
 foreach(_dep fuse_rhi fuse_gpu_scene fuse_relight_tap_capture fuse_relight_scene_instances fuse_relight_replace)
@@ -36,18 +41,19 @@ endif()
 
 add_library(fuse_relight_render_frame STATIC
     src/bindless_images.cpp
+    src/bindless_renderer_heap.cpp
     src/frame_gpu.cpp
     src/frame_options.cpp
     src/frame_orchestrator.cpp
     src/render_tap.cpp
+    src/renderer_context.cpp
+    src/scene_adapter.cpp
     src/scene_feed.cpp
     src/vk_dispatch.cpp)
 target_include_directories(fuse_relight_render_frame PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-# fuse_rhi: headers (bindless handle layout, gpu_scene row types) and render graph v2 (rg/graph.cpp, Vulkan-free).
-# Nothing here may reference fuse_rhi's volk globals: their translation unit loads vulkan-1.dll from a static
-# initialiser, which inside d3d9.dll would run in DllMain (scene_feed.hpp).
 target_link_libraries(fuse_relight_render_frame
     PUBLIC fuse_relight_tap_capture fuse_relight_scene_instances fuse_relight_replace fuse_relight_options fuse_rhi
+           fuse_gpu_scene
     PRIVATE fuse_relight_capture_geometry)
 foreach(_opt replace_live:REPLACE logic_live:LOGIC)
     string(REPLACE ":" ";" _opt "${_opt}")
@@ -58,18 +64,24 @@ foreach(_opt replace_live:REPLACE logic_live:LOGIC)
         target_compile_definitions(fuse_relight_render_frame PRIVATE FUSE_RELIGHT_HAVE_${_def}=1)
     endif()
 endforeach()
+# RL-4.2 raster remaster (render/raster, added after this directory; it links this library): relight.frame.mode =
+# raster creates its frame renderer. Resolved when the build is generated, like the RL-3.4 / RL-3.5 hooks.
+target_link_libraries(fuse_relight_render_frame PRIVATE $<TARGET_NAME_IF_EXISTS:fuse_relight_render_raster>)
+target_compile_definitions(fuse_relight_render_frame PRIVATE
+    $<$<TARGET_EXISTS:fuse_relight_render_raster>:FUSE_RELIGHT_HAVE_RASTER=1>)
+add_library(fuse_relight_render_frame_gpu ALIAS fuse_relight_render_frame)
 
-# The renderer-object side: GpuSceneAdapter (gpu_scene::GpuScene) and the WP-0.4 bindless heap behind the registry.
-add_library(fuse_relight_render_frame_gpu STATIC
-    src/bindless_renderer_heap.cpp
-    src/scene_adapter.cpp)
-target_link_libraries(fuse_relight_render_frame_gpu PUBLIC fuse_relight_render_frame fuse_gpu_scene fuse_rhi)
+if(COMMAND fuse_apply_cxx23)
+    fuse_apply_cxx23(fuse_relight_render_frame)
+else()
+    set_target_properties(fuse_relight_render_frame PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+endif()
 
-foreach(_t fuse_relight_render_frame fuse_relight_render_frame_gpu)
-    if(COMMAND fuse_apply_cxx23)
-        fuse_apply_cxx23(${_t})
-    else()
-        set_target_properties(${_t} PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+# The DXVK DLLs link fuse_rhi (through the tap): no volk auto-initialisation (a LoadLibrary of vulkan-1.dll from a
+# static initialiser would run inside DllMain). cmake/FuseVolk.cmake reads this on the image being linked.
+foreach(_dll relight_d3d9 relight_d3d8)
+    if(TARGET ${_dll})
+        set_target_properties(${_dll} PROPERTIES FUSE_RHI_VOLK_NO_AUTO_INIT ON)
     endif()
 endforeach()
 

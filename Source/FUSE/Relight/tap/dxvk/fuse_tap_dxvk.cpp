@@ -133,6 +133,7 @@ public:
     // ---- RL-4.1 frame host -------------------------------------------------------------------------------
     uint64_t getInstanceProcAddr() const override;
     rt::VulkanDevice vulkan() const override;
+    bool deviceCreateInfo(rt::HostDeviceInfo& out) const override;
     uint64_t acquireSemaphore() override;
     uint64_t releaseSemaphore() override;
     bool backBufferInfo(rt::HostImageInfo& out) const override;
@@ -856,6 +857,7 @@ bool describeImage(const Rc<DxvkImage>& image, rt::HostImageInfo& out) {
     for (uint32_t f = 0; f < i.viewFormatCount; ++f) {
         out.viewFormats[f] = uint32_t(i.viewFormats[f]);
     }
+    out.layout = uint32_t(i.layout); // DXVK returns every image to its default layout between commands
     return true;
 }
 
@@ -887,6 +889,18 @@ rt::VulkanDevice FuseTapContext::vulkan() const {
     v.queueFamily = dxvk->queues().graphics.queueFamily;
     v.imported = rt::vkboot::isImportedDevice(v.device);
     return v;
+}
+
+bool FuseTapContext::deviceCreateInfo(rt::HostDeviceInfo& out) const {
+    // Only the device FUSE's bootstrap created (RL-1.1 import) has known extensions and features.
+    const rt::VulkanDevice v = vulkan();
+    if (!v.imported || !rt::vkboot::deviceCreateInfo(v.device, out)) {
+        return false;
+    }
+    out.getInstanceProcAddr = getInstanceProcAddr();
+    out.queue = v.queue;
+    out.queueFamily = v.queueFamily;
+    return true;
 }
 
 void FuseTapContext::ensureFences() {

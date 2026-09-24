@@ -64,6 +64,13 @@ struct VkDispatch {
     PFN_vkCmdPipelineBarrier2 CmdPipelineBarrier2 = nullptr;
     PFN_vkCmdClearColorImage CmdClearColorImage = nullptr;
     PFN_vkCmdCopyImage CmdCopyImage = nullptr;
+    PFN_vkCmdCopyImageToBuffer CmdCopyImageToBuffer = nullptr;
+    PFN_vkCreateBuffer CreateBuffer = nullptr;
+    PFN_vkDestroyBuffer DestroyBuffer = nullptr;
+    PFN_vkGetBufferMemoryRequirements GetBufferMemoryRequirements = nullptr;
+    PFN_vkBindBufferMemory BindBufferMemory = nullptr;
+    PFN_vkMapMemory MapMemory = nullptr;
+    PFN_vkUnmapMemory UnmapMemory = nullptr;
     PFN_vkQueueSubmit2 QueueSubmit2 = nullptr;
     PFN_vkCreateFence CreateFence = nullptr;
     PFN_vkDestroyFence DestroyFence = nullptr;

@@ -3,6 +3,8 @@
 // through the FUSE-DXVK patches RL-1.1-01/02 and the options in tap_config.hpp.
 #pragma once
 
+#include <fuse/relight/tap/frame_host.hpp>
+
 #include <cstdint>
 
 namespace fuse::relight::tap::vkboot {
@@ -18,5 +20,10 @@ struct Stats {
 bool isImportedDevice(std::uint64_t device);
 
 Stats stats();
+
+/// The creation parameters of a bootstrap device (`device` a VkDevice value): the loader, instance, enabled
+/// instance / device extensions, the feature chain passed to vkCreateDevice and the queue (storage owned by the
+/// bootstrap, alive for the process). False for a device the bootstrap did not create.
+bool deviceCreateInfo(std::uint64_t device, HostDeviceInfo& out);
 
 } // namespace fuse::relight::tap::vkboot

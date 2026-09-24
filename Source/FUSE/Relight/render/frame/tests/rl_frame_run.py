@@ -21,6 +21,15 @@ draw, and the injection happens mid-frame, before it.
                and with frame solid, in DXVK's legacy binding model (gate: no message id's count grows) and its
                default descriptor-buffer model (gate: no new message id).
 
+  adopt        RL-4.1 renderer adoption inside d3d9.dll: (1) the DLL links fuse_rhi without volk's static
+               auto-initialisation (nm: volkInitializeCustom present, fuse_rhi_volk_auto_init absent); (2) loader_probe.exe:
+               no vulkan-1.dll / winevulkan.dll mapped after LoadLibrary(d3d9.dll) returned (DllMain done), one mapped
+               after Direct3DCreate9 (first use); (3) an app with the frame passthrough: the header shows volk loaded
+               from DXVK's vkGetInstanceProcAddr (not before the first attach, no auto-init), the device adopted with
+               GPU bindless descriptors and GPU scene tables; every frame registers DXVK images in the renderer's heap
+               (bindless.gpu), feeds the GPU scene at the injection point with that frame's draws (scene.feed = inject,
+               gpu_frame = frame) and submits the scene's uploads under the host's queue lock.
+
 Exit codes: 0 pass, 1 fail, 77 skip (no Wine / Xvfb, or no validation layer for 'validation').
 """
 import argparse
@@ -255,6 +264,74 @@ def cmd_validation(tools, args):
     return 0
 
 
+def cmd_adopt(tools, args):
+    import subprocess
+    failed = False
+    # (1) the DLL: fuse_rhi linked, the auto-init translation unit not.
+    if args.nm:
+        syms = subprocess.run([args.nm, args.d3d9], stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.decode(
+            errors="replace")
+        if "volkInitializeCustom" not in syms:
+            print("FAIL: d3d9.dll does not link fuse_rhi's volk (volkInitializeCustom missing)")
+            failed = True
+        if "fuse_rhi_volk_auto_init" in syms:
+            print("FAIL: d3d9.dll links fuse_rhi's volk auto-initialisation (FUSE_RHI_VOLK_NO_AUTO_INIT not applied)")
+            failed = True
+    # (2) DllMain: no loader mapped by LoadLibrary(d3d9.dll).
+    probe_dir = os.path.join(args.out, "loader_probe")
+    rc, text = run(tools, args, args.probe, probe_dir, dict(FRAME_PASSTHROUGH))
+    if rc == SKIP:
+        print(text.strip())
+        return SKIP
+    line = next((l for l in text.splitlines() if l.startswith("probe ")), "")
+    if rc != 0 or not line:
+        print(f"FAIL: loader probe exited with {rc}: {line or text.strip()[-2000:]}")
+        failed = True
+    # (3) in-process adoption.
+    exe, app = args.exe[0], args.app
+    run_dir = os.path.join(args.out, "frame_passthrough")
+    rc, _ = run(tools, args, exe, run_dir, dict(FRAME_PASSTHROUGH, DXVK_RTX_CONFIG_FILE=rtx_conf(args.out)))
+    if rc != 0:
+        print(f"FAIL: {app}: frame passthrough run exited with {rc}")
+        return 1
+    recs = frame_records(run_dir) or []
+    header = next((r for r in recs if r.get("ev") == "header"), None)
+    frames = [r for r in recs if r.get("ev") == "frame"]
+    if not header or not frames:
+        print(f"FAIL: {app}: no frame record header / frames")
+        return 1
+    ld, rd = header.get("loader", {}), header.get("renderer", {})
+    for key, want in (("auto_init", False), ("loaded_before_attach", False), ("proc_addr", True), ("loaded", True)):
+        if ld.get(key) != want:
+            print(f"FAIL: {app}: loader.{key} = {ld.get(key)}, expected {want}")
+            failed = True
+    for key in ("adopted", "gpu_descriptors", "gpu_scene"):
+        if rd.get(key) is not True:
+            print(f"FAIL: {app}: renderer.{key} = {rd.get(key)} ({rd.get('error')})")
+            failed = True
+    for r in frames:
+        f = r["frame"]
+        if not r["bindless"]["gpu"] or r["bindless"]["external"] == 0:
+            print(f"FAIL: {app}: frame {f}: DXVK images not in the renderer's GPU heap: {r['bindless']}")
+            failed = True
+        sc = r["scene"]
+        if sc["feed"] != "inject" or sc["gpu_frame"] != f or not sc["sink"] or sc["gpu_instances"] == 0:
+            print(f"FAIL: {app}: frame {f}: GPU scene not fed with this frame at the injection point: {sc}")
+            failed = True
+        if not r["renderer"]["adopted"] or r["renderer"]["queue_locks"] == 0:
+            print(f"FAIL: {app}: frame {f}: renderer submissions outside the host's queue lock: {r['renderer']}")
+            failed = True
+    if failed:
+        return 1
+    last = frames[-1]
+    print(f"PASS: {app}: {line.strip()}; volk from DXVK's vkGetInstanceProcAddr at the first attach (no auto-init); "
+          f"device adopted ({rd.get('device')}, tier T{rd.get('tier')}), bindless {rd.get('bindless')} with "
+          f"{last['bindless']['external']} DXVK image(s); GPU scene fed at the injection point in {len(frames)} "
+          f"frame(s) ({last['scene']['gpu_instances']} instance(s)), {last['renderer']['upload_batches']} upload "
+          f"batch(es) under {last['renderer']['queue_locks']} queue lock(s)")
+    return 0
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--tap-tools", required=True)
@@ -265,16 +342,20 @@ def main():
     p.add_argument("--runner", required=True)
     p.add_argument("--prefix-root", required=True)
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("passthrough", "solid", "validation"):
+    for name in ("passthrough", "solid", "validation", "adopt"):
         s = sub.add_parser(name)
         s.add_argument("--out", required=True)
+        if name == "adopt":
+            s.add_argument("--probe", required=True)
+            s.add_argument("--nm", default="")
     args = p.parse_args()
     if not shutil.which("wine") and not shutil.which("wine64"):
         print("SKIP: wine not installed")
         return SKIP
     tools = load_tap_tools(args.tap_tools)
     os.makedirs(args.out, exist_ok=True)
-    return {"passthrough": cmd_passthrough, "solid": cmd_solid, "validation": cmd_validation}[args.cmd](tools, args)
+    return {"passthrough": cmd_passthrough, "solid": cmd_solid, "validation": cmd_validation,
+            "adopt": cmd_adopt}[args.cmd](tools, args)
 
 
 if __name__ == "__main__":
