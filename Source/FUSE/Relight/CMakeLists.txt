@@ -63,3 +63,4 @@ add_subdirectory(replace)                                                       
 add_subdirectory(particles)                                                              # RL-3.6
 add_subdirectory(logic)                                                                  # RL-3.5
 add_subdirectory(render/material)                                                        # RL-4.3
+include(cmake/relight_renderer_mingw.cmake)                                              # RL-0.7 (MinGW PE renderer; last: defers its gate registration)

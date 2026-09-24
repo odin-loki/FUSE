@@ -213,6 +213,34 @@
       }
     },
     {
+      "name": "fuse-mingw-relight-base",
+      "hidden": true,
+      "inherits": "fuse-mingw-base",
+      "displayName": "FUSE Relight Windows x64 cross base: DXVK d3d9/d3d8 + the FUSE renderer as PE (RL-0.7)",
+      "cacheVariables": {
+        "FUSE_BUILD_RELIGHT": "ON",
+        "FUSE_RELIGHT_RENDERER": "ON"
+      }
+    },
+    {
+      "name": "fuse-mingw-relight-release",
+      "displayName": "FUSE Relight Windows x64 Release (MinGW-w64 cross, renderer via volk; ctest via Wine + Xvfb + Lavapipe)",
+      "inherits": "fuse-mingw-relight-base",
+      "binaryDir": "${sourceDir}/build/relight-mingw",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "fuse-mingw-relight-debug",
+      "displayName": "FUSE Relight Windows x64 Debug (MinGW-w64 cross, renderer via volk; ctest via Wine + Xvfb + Lavapipe)",
+      "inherits": "fuse-mingw-relight-base",
+      "binaryDir": "${sourceDir}/build/relight-mingw-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
       "name": "fuse-msvc-base",
       "hidden": true,
       "displayName": "FUSE Windows x64 native base (cl.exe, Ninja; run from a VS x64 developer shell)",
@@ -306,6 +334,21 @@
       "binaryDir": "${sourceDir}/build/fuse-clangcl-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "fuse-mingw-relight-renderer",
+      "displayName": "RL-0.7 renderer gates as PE under Wine + Xvfb + Lavapipe (label renderer_pe)",
+      "configurePreset": "fuse-mingw-relight-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "renderer_pe"
+        }
       }
     }
   ]

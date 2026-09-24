@@ -17,6 +17,14 @@ if(MSVC)
     message(STATUS "FUSE: no Vulkan SDK found (set VULKAN_SDK) — MSVC cannot link System32/vulkan-1.dll directly")
     return()
 endif()
+# Headers-only target for code that loads Vulkan through volk (cmake/FuseVolk.cmake), which needs no
+# loader or import library at link time: vulkan-1.dll is opened at run time. Defined for MinGW
+# whenever no SDK is found (the Relight MinGW renderer build uses it, RL-0.7); it does not by
+# itself enable the Vulkan backend or fuse_core's Win32 WSI, which still key on Vulkan::Vulkan.
+if(NOT TARGET Vulkan::Headers)
+    add_library(Vulkan::Headers INTERFACE IMPORTED)
+    set_target_properties(Vulkan::Headers PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${_fuse_vk_inc}")
+endif()
 
 set(_fuse_vk_loader "")
 if(DEFINED ENV{WINDIR} AND EXISTS "$ENV{WINDIR}/System32/vulkan-1.dll")
