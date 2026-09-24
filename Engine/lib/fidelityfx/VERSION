@@ -1,7 +1,17 @@
-# FUSE third-party pin: AMD FidelityFX SDK, FSR1 (EASU + RCAS) and CAS subset. Vendored verbatim, no local edits.
+# FUSE third-party pin: AMD FidelityFX SDK, FSR1 (EASU + RCAS), CAS and FSR 3.1 upscaler subset. Vendored verbatim,
+# no local edits.
 # Only the files listed below are vendored: the portable core headers (ffx_core*.h, ffx_common_types.h),
 # the FSR1 and CAS GPU headers, the two host headers that declare the effect versions (kept for the pin;
 # FUSE does not compile the FidelityFX host runtime), and the Vulkan GLSL pass entry points.
+# FSR 3.1 upscaler (WP-4.2, added 2026-09-24, same tag / commit): the GPU headers the eight Vulkan passes
+# include (gpu/fsr3upscaler/*.h minus the HLSL callbacks and the debug view), gpu/spd/ffx_spd.h (the luma and
+# shading-change pyramids) and the eight GLSL pass entry points (prepare inputs, luma pyramid, shading-change
+# pyramid, shading change, prepare reactivity, luma instability, accumulate, RCAS). Not vendored: the FSR 3.1
+# host component (sdk/src/components/fsr3upscaler), the FidelityFX Vulkan backend, FidelityFX-SC, frame
+# generation (WP-4.4) and anything FSR 4. The effect version is FFX_FSR3UPSCALER_VERSION 3.1.4
+# (sdk/include/FidelityFX/host/ffx_fsr3upscaler.h, not vendored). FUSE compiles the passes with
+# glslangValidator (Source/FUSE/Renderer/cmake/rp_wp42.cmake) and drives them from a clean-room host
+# (Source/FUSE/Renderer/src/upscale_backends/fsr3/).
 # FUSE uses them two ways: the CPU single-source ports in
 # Source/FUSE/Renderer/include/fuse/renderer/upscale/{fsr1,cas}_kernel.hpp transcribe the float32 paths, and the
 # fuse_upscale_gpu_reference gate compiles shaders/vk/**.glsl with glslangValidator and runs them on
@@ -10,7 +20,7 @@
 # To update: re-fetch every file below from the new SDK tag (same paths under sdk/ and the repo root
 # LICENSE.txt), then update version, tag, commit, header_version and every sha256 together. sha256 is
 # over the file with CRLF normalized to LF.
-name=FidelityFX-SDK (FSR1 + CAS subset)
+name=FidelityFX-SDK (FSR1 + CAS + FSR 3.1 upscaler subset)
 upstream=https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK
 version=1.1.4
 tag=v1.1.4
@@ -23,6 +33,7 @@ version_header=include/FidelityFX/host/ffx_fsr1.h
 header_version=1.2.0
 # Upstream paths: LICENSE.txt (repo root), include/** = sdk/include/FidelityFX/**,
 # shaders/vk/** = sdk/src/backends/vk/shaders/**.
+# FSR 3.1 files retrieved 2026-09-24 (git fetch of the tag commit c6efa6bf from github.com).
 sha256:LICENSE.txt=82cf74fc23885107c7f69249ac3f1dac55898ff68320eb2c753984cae6b2d78a
 sha256:include/FidelityFX/gpu/cas/ffx_cas.h=5d8a93b77128895f7aef4647ec1da55c44999f10603508fb7eaa6ec8f74c9067
 sha256:include/FidelityFX/gpu/cas/ffx_cas_callbacks_glsl.h=d7bf7b3bbfdfba3a36f8e3f478756a4e161257b97a952a6abc7bdbacd4572d70
@@ -48,3 +59,26 @@ sha256:include/FidelityFX/host/ffx_fsr1.h=9e548017e56016530bee0d683f69176cc3dcd9
 sha256:shaders/vk/cas/ffx_cas_sharpen_pass.glsl=d9e1a89855cf6d06e561d873fc3e95aed9d0348ea41ecabe01c48c4f990a3c04
 sha256:shaders/vk/fsr1/ffx_fsr1_easu_pass.glsl=c9361e76f595c97ade92894dbf4c04557f5c6ab28a710402d07ad92e17e62e9c
 sha256:shaders/vk/fsr1/ffx_fsr1_rcas_pass.glsl=e109b6587d4fb92a1b887fb2dfe10b1ea7f4147164ef2e067267cbe3fdf4e3c7
+sha256:include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_accumulate.h=7212a028c6ff3ca4a76f9d62b7f64f5f5adce0f108067d8995c7bc795234afbc
+sha256:include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_callbacks_glsl.h=875c2b8d8df93716fb46271886c768a9ef40c5ccc11ade39397952b4a4e54321
+sha256:include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_common.h=4898aa014fef875d3644b9b3bed03f31a963349e17ad553198f87ae8af82cb3f
+sha256:include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_luma_instability.h=82d13d21e161732e48b267d28906f067a8df306ead5aeeed65a1ef66b3e06003
+sha256:include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_luma_pyramid.h=fa6eeaf8197b214ee1853d73da3c66cd0c8fc24444a65237b0023bd68f10d887
+sha256:include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_prepare_inputs.h=acae0499b8805c363c105895afc28fc90e549b38c8bffdcbec1cf9e2f842abb0
+sha256:include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_prepare_reactivity.h=ddf7a6d9cd6e357328e972e0b654da977edcb2e337c992b06d6256eeae339e03
+sha256:include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_rcas.h=f1d8a9152bd3ceda8a10dafe44e0c6d27109b345fc4a5704f71c6bf23d6c5cb4
+sha256:include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_reproject.h=d2d01ea2f59658e5494414448f11435879bdac871c3ad7c84b951248bc223702
+sha256:include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_resources.h=10c6f7619a6c1ff9983fdff9bac565789b1cda52f97ef60b491498223e7b7097
+sha256:include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_sample.h=e8de656c71b15537ddd891b7485492b7829e6aec1dea96256fbc246c9a7c7366
+sha256:include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_shading_change.h=13e772ff9bd32244fb990704055040f8dbb945c014cc6f0fdbf553188b300e7e
+sha256:include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_shading_change_pyramid.h=b1e94d7cbb1b7d6e4556e4a080577a62fde07efbc8379b52223d322ed4b75912
+sha256:include/FidelityFX/gpu/fsr3upscaler/ffx_fsr3upscaler_upsample.h=c51f3af61b43fd779a6685202886dbb5dab3bfea989f8b5060c8c9ab4a93207b
+sha256:include/FidelityFX/gpu/spd/ffx_spd.h=d276f32ee18948cb053c991f3c8821f9664c93f12cb2483dd2978f333bca67b2
+sha256:shaders/vk/fsr3upscaler/ffx_fsr3upscaler_accumulate_pass.glsl=73b5be6db479475559d2374957b2854aa6d7f7ddadba76ef5e4ed7f248ea9564
+sha256:shaders/vk/fsr3upscaler/ffx_fsr3upscaler_luma_instability_pass.glsl=423345d36c811237af7a41ef5e6220638f5159952e90fa084aa952ddd267581b
+sha256:shaders/vk/fsr3upscaler/ffx_fsr3upscaler_luma_pyramid_pass.glsl=3e637a702c2cc6b6a222df4327a4ed565f731c6190e958e0ffec5b43741f7ea4
+sha256:shaders/vk/fsr3upscaler/ffx_fsr3upscaler_prepare_inputs_pass.glsl=bdf3b1ca0fdce968afb79f55d667960382139926eccdfdec46e08dbae3982657
+sha256:shaders/vk/fsr3upscaler/ffx_fsr3upscaler_prepare_reactivity_pass.glsl=176f6aa5f2f437487222c7fc057ce858795a6677d6ac3e937a1ce36521c6ddfc
+sha256:shaders/vk/fsr3upscaler/ffx_fsr3upscaler_rcas_pass.glsl=110b409d5e10b16e5a237c13932a707c1c07932bf790e814f1a9d76f02569ad7
+sha256:shaders/vk/fsr3upscaler/ffx_fsr3upscaler_shading_change_pass.glsl=246d24b76e292b7c8c5ba39dfc3a4dff1486701f5fccc6482284afac5a7daaf9
+sha256:shaders/vk/fsr3upscaler/ffx_fsr3upscaler_shading_change_pyramid_pass.glsl=ce34582f454925499523d30d2619e19aefd8f1c091545c37d4ebd8feea91cf55
