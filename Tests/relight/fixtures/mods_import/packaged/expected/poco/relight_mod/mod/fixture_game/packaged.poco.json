@@ -1,0 +1,98 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "relight_mod",
+  "id": "mod/fixture_game/packaged",
+  "name": "packaged",
+  "units": {
+    "length": "game",
+    "metersPerUnit": null,
+    "up": "+Z",
+    "handedness": "right"
+  },
+  "payload": {
+    "name": "packaged",
+    "kind": "mod",
+    "root_layer": "mod.usda",
+    "layers": ["mod.usda"],
+    "layer_type": "",
+    "game_name": "",
+    "rtx_conf": null,
+    "geometry_asset_rule": "positions,indices,geometrydescriptor",
+    "geometry_asset_rule_source": "default",
+    "licence": {
+      "id": "LicenseRef-ThirdPartyMod-packaged",
+      "file": null,
+      "text": null,
+      "detected": false
+    },
+    "graphs": [],
+    "counts": {
+      "mesh_replacements": 1,
+      "meshes": 1,
+      "materials": 2,
+      "textures": 2,
+      "lights": 0,
+      "particles": 0,
+      "keys": 2,
+      "replacements": 2
+    },
+    "diagnostics": [
+      {
+        "severity": "warning",
+        "code": "no_licence_file",
+        "where": ".",
+        "message": "the mod has no licence file; records use LicenseRef-ThirdPartyMod-packaged and are never shipped"
+      },
+      {
+        "severity": "warning",
+        "code": "unknown_mdl",
+        "where": "/RootNode/Looks/mat_00000000DEADBEEF",
+        "message": "unknown MDL 'OmniPBR.mdl'; read as AperturePBR_Opacity (as upstream)"
+      },
+      {
+        "severity": "warning",
+        "code": "material_param",
+        "where": "/RootNode/meshes/mesh_0123456789ABCDEF/Looks/WallMaterial/Shader",
+        "message": "opacity_constant: clamped to the Remix range"
+      },
+      {
+        "severity": "warning",
+        "code": "material_param",
+        "where": "/RootNode/meshes/mesh_0123456789ABCDEF/Looks/WallMaterial/Shader",
+        "message": "displace_in: clamped to the Remix range"
+      },
+      {
+        "severity": "warning",
+        "code": "missing_texture",
+        "where": "textures/wall_h.dds",
+        "message": "texture not found (file or package) for height_texture"
+      },
+      {
+        "severity": "warning",
+        "code": "unsupported_texture_format",
+        "where": "textures/wall_e.png",
+        "message": "only DDS textures are loaded (as upstream)"
+      }
+    ]
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:packaged"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "packaged",
+      "stage": "mod.usda",
+      "prim": ""
+    }
+  },
+  "licence_id": "LicenseRef-ThirdPartyMod-packaged",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

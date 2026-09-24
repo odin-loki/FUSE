@@ -1,0 +1,59 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "relight_replacement",
+  "id": "mod/fixture_game/remix_basic/mesh_7E2C8A4F1B3D5E60",
+  "name": "mesh_7E2C8A4F1B3D5E60",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 1,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "target_kind": "mesh",
+    "key": {
+      "algo": "remix.geom.asset",
+      "value": "7E2C8A4F1B3D5E60",
+      "rule_id": "4A0F5C58A6691050",
+      "rule": "positions,indices,geometrydescriptor"
+    },
+    "preserveOriginalDrawCall": true,
+    "instanceable": false,
+    "categories": {
+      "set": [],
+      "cleared": []
+    },
+    "parts": [
+      {
+        "mesh": "poco:mod/fixture_game/remix_basic/mesh_7E2C8A4F1B3D5E60/ref_crate/crate_mesh",
+        "prim": "/RootNode/meshes/mesh_7E2C8A4F1B3D5E60/ref_crate/crate_mesh",
+        "transform": [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 1, 0, 1],
+        "materials": ["poco:mod/fixture_game/remix_basic/mat_3F1A2B3C4D5E6F70"]
+      }
+    ],
+    "lights": ["poco:mod/fixture_game/remix_basic/mesh_7E2C8A4F1B3D5E60/attached_light"],
+    "material_bindings": ["/RootNode/Looks/mat_3F1A2B3C4D5E6F70"],
+    "particles": null
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:remix_basic"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "remix_basic",
+      "stage": "mod.usda",
+      "prim": "/RootNode/meshes/mesh_7E2C8A4F1B3D5E60",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "MIT",
+  "distribution": "never",
+  "replaces": ["oaid:b64cf7b6-c6ce-5acb-935a-93470ae40567"],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

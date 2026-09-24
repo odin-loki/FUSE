@@ -1,0 +1,97 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "mesh",
+  "id": "mod/fixture_game/legacy_particles/mesh_00000000000B0B01/body",
+  "name": "body",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 0.0254,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "streams": [
+      {
+        "semantic": "Position",
+        "format": "F32x3",
+        "data": {
+          "sha256": "2cb53b96139452fac28ddab32b2d63447581c3fa77fd121113b9ad0aef5ea9e7",
+          "size": 48,
+          "media": "fuse/mesh-stream"
+        }
+      },
+      {
+        "semantic": "Color0",
+        "format": "Unorm8x4",
+        "data": {
+          "sha256": "e7e895dfe7f9b3bf7ce698e145f3ae6ee560ca8e177a3dfb714e2425fe89220e",
+          "size": 16,
+          "media": "fuse/mesh-stream"
+        }
+      },
+      {
+        "semantic": "Joints0",
+        "format": "U16x4",
+        "data": {
+          "sha256": "c8ab409804add8e6816b2e750a955e4fd0ddf4b16952c603f41fe150a7b45fed",
+          "size": 32,
+          "media": "fuse/mesh-stream"
+        }
+      },
+      {
+        "semantic": "Weights0",
+        "format": "F32x4",
+        "data": {
+          "sha256": "5ab80b0aae14c161398334ac24879437d46bd532dc64c7071534c693d4600270",
+          "size": 64,
+          "media": "fuse/mesh-stream"
+        }
+      }
+    ],
+    "indices32": {
+      "sha256": "18689a54c1ff754be58500b2ed77a6c75b025be96f6d01fef89c42da1c953f34",
+      "size": 24,
+      "media": "fuse/mesh-stream"
+    },
+    "submeshes": [
+      {
+        "indexOffset": 0,
+        "indexCount": 6,
+        "materialSlot": "",
+        "subset": ""
+      }
+    ],
+    "bounds": [0, 0, 0, 1, 2, 0],
+    "skeletonId": "",
+    "lodIds": [],
+    "relight": {
+      "remix_hash": "00000000000B0B01",
+      "double_sided": false,
+      "left_handed": false,
+      "face_corner_vertices": false,
+      "uv_primvar": "",
+      "influences": 2
+    }
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:legacy_particles"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "legacy_particles",
+      "stage": "mod.usda",
+      "prim": "/RootNode/meshes/mesh_00000000000B0B01/body",
+      "layer": "assets/prop.usda"
+    }
+  },
+  "licence_id": "CC-BY-SA-4.0",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

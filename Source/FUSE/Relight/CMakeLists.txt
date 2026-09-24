@@ -58,3 +58,4 @@ add_subdirectory(mods/assets)                                                   
 add_subdirectory(bridge/host)                                                            # RL-2.3
 add_subdirectory(bridge/client)                                                          # RL-2.2
 add_subdirectory(mods/usd)                                                               # RL-3.1
+add_subdirectory(mods/import)                                                            # RL-3.2

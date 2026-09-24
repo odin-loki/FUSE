@@ -1,0 +1,17 @@
+# kind path format width height seed
+dds textures/opaque/diffuse_texture.dds bc7 4 4 100
+dds textures/opaque/normalmap_texture.dds bc5 4 4 101
+dds textures/opaque/tangent_texture.dds rgba8 4 4 102
+dds textures/opaque/height_texture.dds rgba8 4 4 103
+dds textures/opaque/reflectionroughness_texture.dds rgba8 4 4 104
+dds textures/opaque/metallic_texture.dds rgba8 4 4 105
+dds textures/opaque/emissive_mask_texture.dds bc7 4 4 106
+dds textures/opaque/subsurface_transmittance_texture.dds rgba8 4 4 107
+dds textures/opaque/subsurface_thickness_texture.dds rgba8 4 4 108
+dds textures/opaque/subsurface_single_scattering_texture.dds rgba8 4 4 109
+dds textures/opaque/subsurface_radius_texture.dds rgba8 4 4 110
+dds textures/opaque/secondary_texture.dds rgba8 4 4 111
+dds textures/translucent/normalmap_texture.dds bc5 4 4 112
+dds textures/translucent/transmittance_texture.dds rgba8 4 4 113
+dds textures/translucent/emissive_mask_texture.dds bc7 4 4 114
+dds textures/portal/emissive_mask_texture.dds bc7 4 4 115

@@ -1,0 +1,61 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "relight_mod",
+  "id": "capture/capgame/capture_layout",
+  "name": "capture_layout",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 0.0254,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "name": "capture_layout",
+    "kind": "capture",
+    "root_layer": "mod.usda",
+    "layers": ["mod.usda", "lights/light_5151515151515151.usda", "meshes/mesh_A1B2C3D4E5F60718.usda", "materials/mat_B436AD2B2A594950.usda"],
+    "layer_type": "capture",
+    "game_name": "Capture Fixture",
+    "rtx_conf": null,
+    "geometry_asset_rule": "positions,indices,geometrydescriptor",
+    "geometry_asset_rule_source": "layer",
+    "licence": {
+      "id": "LicenseRef-Original-capgame",
+      "file": null,
+      "text": null,
+      "detected": false
+    },
+    "graphs": [],
+    "counts": {
+      "mesh_replacements": 1,
+      "meshes": 1,
+      "materials": 1,
+      "textures": 1,
+      "lights": 1,
+      "particles": 0,
+      "keys": 5,
+      "replacements": 0
+    },
+    "diagnostics": []
+  },
+  "provenance": {
+    "origin": "original",
+    "derived_from": [],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "none",
+    "source": {
+      "mod": "capture_layout",
+      "stage": "mod.usda",
+      "prim": ""
+    }
+  },
+  "licence_id": "LicenseRef-Original-capgame",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["capture", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

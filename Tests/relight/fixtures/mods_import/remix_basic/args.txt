@@ -1,0 +1,4 @@
+--name
+remix_basic
+--game
+Fixture Game

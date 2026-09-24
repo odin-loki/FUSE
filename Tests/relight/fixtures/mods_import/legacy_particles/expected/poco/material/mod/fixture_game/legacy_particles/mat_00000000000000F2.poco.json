@@ -1,0 +1,45 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "material",
+  "id": "mod/fixture_game/legacy_particles/mat_00000000000000F2",
+  "name": "mat_00000000000000F2",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 0.0254,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "model": "Opaque",
+    "textureSetId": "",
+    "baseColor": [0.20000000298023224, 0.20000000298023224, 0.20000000298023224, 1],
+    "roughness": 0.5,
+    "metallic": 0,
+    "emissiveNits": 0,
+    "alphaCutoff": 0,
+    "twoSided": false,
+    "physicalCategory": "",
+    "layerRecipe": ""
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:legacy_particles"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "legacy_particles",
+      "stage": "mod.usda",
+      "prim": "/RootNode/Looks/mat_00000000000000F2",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "CC-BY-SA-4.0",
+  "distribution": "never",
+  "replaces": ["oaid:8f082d3d-de86-59ce-99ea-dd7ca59333f4"],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

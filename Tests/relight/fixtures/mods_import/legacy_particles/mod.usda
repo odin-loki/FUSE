@@ -1,0 +1,75 @@
+#usda 1.0
+(
+    defaultPrim = "RootNode"
+    metersPerUnit = 0.0254
+    upAxis = "Y"
+)
+
+# RL-3.2 fixture: a mod authored against the legacy geometry rule (--rule legacypositions0,legacyindices: the keys
+# are remix.geom.legacy0), ParticleSystemAPI on a mesh replacement and on a material override without a shader
+# (upstream: an empty opaque material carrying the particle system), an instanceable referenced prop with a skinned
+# mesh and constant display colour, rect / disk / cylinder lights attached to a replacement, and an OmniGraph prim
+# (listed for RL-3.5, not imported). Licence by SPDX line.
+def Xform "RootNode"
+{
+    def Scope "meshes"
+    {
+        def Xform "mesh_000000000000F12E" (
+            prepend apiSchemas = ["ParticleSystemAPI"]
+        )
+        {
+            float primvars:particle:minTimeToLive = 0.5
+            float primvars:particle:maxTimeToLive = 2
+            int primvars:particle:maxNumParticles = 64
+            color4f[] primvars:particle:minColor:values = [(1, 0.5, 0, 1), (1, 0, 0, 0)]
+            asset primvars:particle:spriteTexture = @./assets/spark.dds@
+        }
+
+        def Xform "mesh_00000000000B0B01" (
+            instanceable = true
+            prepend references = @./assets/prop.usda@
+        )
+        {
+            float3 xformOp:scale = (0.5, 0.5, 0.5)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+
+            def RectLight "panel_light"
+            {
+                float inputs:width = 2
+                float inputs:height = 0.5
+                float inputs:intensity = 50
+                color3f inputs:color = (0.5, 0.75, 1)
+            }
+
+            def DiskLight "disk_light"
+            {
+                float inputs:radius = 0.25
+                float inputs:intensity = 20
+                float inputs:volumetric_radiance_scale = 2
+            }
+
+            def CylinderLight "tube_light"
+            {
+                float inputs:radius = 0.125
+                float inputs:length = 3
+                float inputs:intensity = 5
+                bool inputs:enableColorTemperature = 1
+                float inputs:colorTemperature = 2700
+            }
+        }
+    }
+
+    def Scope "Looks"
+    {
+        over "mat_00000000000000F2" (
+            prepend apiSchemas = ["ParticleSystemAPI"]
+        )
+        {
+            float primvars:particle:initialVelocityFromNormal = 3
+        }
+    }
+
+    def OmniGraph "FlickerGraph"
+    {
+    }
+}

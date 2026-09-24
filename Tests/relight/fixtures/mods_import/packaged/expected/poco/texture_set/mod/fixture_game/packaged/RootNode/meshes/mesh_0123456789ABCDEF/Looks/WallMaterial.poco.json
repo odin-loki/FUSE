@@ -1,0 +1,48 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "texture_set",
+  "id": "mod/fixture_game/packaged/RootNode/meshes/mesh_0123456789ABCDEF/Looks/WallMaterial",
+  "name": "WallMaterial",
+  "units": {
+    "length": "game",
+    "metersPerUnit": null,
+    "up": "+Z",
+    "handedness": "right"
+  },
+  "payload": {
+    "albedo": {
+      "sha256": "3b0b930f32c7494e0c467d6604bbe2fb03707441eb94f8e8a7c5bd29b0a44518",
+      "size": 164,
+      "media": "image/vnd-ms.dds"
+    },
+    "normal": {
+      "sha256": "c4177e08726c754ff973b3977f7f875b9356955df648067376dd91f1b6ac0197",
+      "size": 164,
+      "media": "image/vnd-ms.dds"
+    },
+    "normalConvention": "GL",
+    "texelsPerMetre": 0,
+    "albedoSrgb": true
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:packaged"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "packaged",
+      "stage": "mod.usda",
+      "prim": "/RootNode/meshes/mesh_0123456789ABCDEF/Looks/WallMaterial",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "LicenseRef-ThirdPartyMod-packaged",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

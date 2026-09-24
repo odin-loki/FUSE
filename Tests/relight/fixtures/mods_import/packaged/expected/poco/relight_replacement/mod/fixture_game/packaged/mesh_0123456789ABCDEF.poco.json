@@ -1,0 +1,59 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "relight_replacement",
+  "id": "mod/fixture_game/packaged/mesh_0123456789ABCDEF",
+  "name": "mesh_0123456789ABCDEF",
+  "units": {
+    "length": "game",
+    "metersPerUnit": null,
+    "up": "+Z",
+    "handedness": "right"
+  },
+  "payload": {
+    "target_kind": "mesh",
+    "key": {
+      "algo": "remix.geom.asset",
+      "value": "0123456789ABCDEF",
+      "rule_id": "4A0F5C58A6691050",
+      "rule": "positions,indices,geometrydescriptor"
+    },
+    "preserveOriginalDrawCall": null,
+    "instanceable": false,
+    "categories": {
+      "set": [],
+      "cleared": []
+    },
+    "parts": [
+      {
+        "mesh": "poco:mod/fixture_game/packaged/mesh_0123456789ABCDEF/wall",
+        "prim": "/RootNode/meshes/mesh_0123456789ABCDEF/wall",
+        "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.5, 0.25, 0, 1],
+        "materials": ["poco:mod/fixture_game/packaged/RootNode/meshes/mesh_0123456789ABCDEF/Looks/WallMaterial"]
+      }
+    ],
+    "lights": [],
+    "material_bindings": ["/RootNode/meshes/mesh_0123456789ABCDEF/Looks/WallMaterial"],
+    "particles": null
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:packaged"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "packaged",
+      "stage": "mod.usda",
+      "prim": "/RootNode/meshes/mesh_0123456789ABCDEF",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "LicenseRef-ThirdPartyMod-packaged",
+  "distribution": "never",
+  "replaces": ["oaid:1f51a583-1eb9-5da6-978f-d0d887c65d16"],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

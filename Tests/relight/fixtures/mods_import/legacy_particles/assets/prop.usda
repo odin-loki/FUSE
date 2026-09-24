@@ -1,0 +1,27 @@
+#usda 1.0
+(
+    defaultPrim = "prop"
+)
+
+def Xform "prop"
+{
+    def Mesh "body"
+    {
+        int[] faceVertexCounts = [3, 3]
+        int[] faceVertexIndices = [0, 1, 2, 2, 1, 3]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 2, 0), (1, 2, 0)]
+        color3f[] primvars:displayColor = [(0.5, 0.25, 1)] (
+            interpolation = "constant"
+        )
+        int[] primvars:skel:jointIndices = [0, 0, 0, 1, 1, 0, 1, 1] (
+            elementSize = 2
+            interpolation = "vertex"
+        )
+        float[] primvars:skel:jointWeights = [1, 0, 0.75, 0.25, 0.5, 0.5, 1, 0] (
+            elementSize = 2
+            interpolation = "vertex"
+        )
+        double3 xformOp:translate = (0, 0, 4)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+}

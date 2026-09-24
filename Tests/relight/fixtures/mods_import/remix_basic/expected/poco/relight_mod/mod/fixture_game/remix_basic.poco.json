@@ -1,0 +1,69 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "relight_mod",
+  "id": "mod/fixture_game/remix_basic",
+  "name": "remix_basic",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 1,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "name": "remix_basic",
+    "kind": "mod",
+    "root_layer": "mod.usda",
+    "layers": ["mod.usda", "materials/materials.usda", "assets/meshes/crate.usda"],
+    "layer_type": "replacement",
+    "game_name": "Fixture Game",
+    "rtx_conf": {
+      "sha256": "c0f92d2408f9df18d8f726fbca813f6d17b8d1cf586bad4bcfe3b83bf5f26fb0",
+      "size": 152,
+      "media": "text/plain"
+    },
+    "geometry_asset_rule": "positions,indices,geometrydescriptor",
+    "geometry_asset_rule_source": "rtx.conf",
+    "licence": {
+      "id": "MIT",
+      "file": "LICENSE",
+      "text": {
+        "sha256": "f212279e4d4e4948568f0a8b1ef3dd87ba802a9ab7a7d6413132a2871ad571b6",
+        "size": 1063,
+        "media": "text/plain"
+      },
+      "detected": true
+    },
+    "graphs": [],
+    "counts": {
+      "mesh_replacements": 2,
+      "meshes": 1,
+      "materials": 1,
+      "textures": 2,
+      "lights": 3,
+      "particles": 0,
+      "keys": 5,
+      "replacements": 5
+    },
+    "diagnostics": []
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:remix_basic"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "remix_basic",
+      "stage": "mod.usda",
+      "prim": ""
+    }
+  },
+  "licence_id": "MIT",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

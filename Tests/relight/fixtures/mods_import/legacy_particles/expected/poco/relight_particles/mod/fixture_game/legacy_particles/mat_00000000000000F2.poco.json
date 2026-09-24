@@ -1,0 +1,39 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "relight_particles",
+  "id": "mod/fixture_game/legacy_particles/mat_00000000000000F2",
+  "name": "mat_00000000000000F2",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 0.0254,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "owner": "poco:mod/fixture_game/legacy_particles/mat_00000000000000F2",
+    "primvars": {
+      "initialVelocityFromNormal": 3
+    }
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:legacy_particles"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "legacy_particles",
+      "stage": "mod.usda",
+      "prim": "/RootNode/Looks/mat_00000000000000F2",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "CC-BY-SA-4.0",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

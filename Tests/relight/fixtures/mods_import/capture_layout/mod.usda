@@ -1,0 +1,64 @@
+#usda 1.0
+(
+    customLayerData = {
+        dictionary cameraSettings = {
+            string boundCamera = "/RootNode/cameras/Camera"
+        }
+        string lightspeed_exe_name = "game.exe"
+        string lightspeed_game_icon = ""
+        string lightspeed_game_name = "Capture Fixture"
+        string lightspeed_geometry_hash_rules = "positions,indices,geometrydescriptor"
+        string lightspeed_layer_type = "capture"
+    }
+    defaultPrim = "RootNode"
+    metersPerUnit = 0.0254
+    upAxis = "Y"
+)
+
+# RL-3.2 fixture: a capture in the RL-1.8 / Remix capture layout (captures are mods too). Detected by
+# lightspeed_layer_type = "capture": the records are originals (LicenseRef-Original-<game>), the DB gets the original
+# assets and their keys (remix.geom.asset + fuse.capture.sha256 of the canonical mesh stream, remix.tex, remix.light)
+# and no replacement rows. The sampler state is read from the un-prefixed attributes RL-1.8 writes.
+def Xform "RootNode"
+{
+    def Scope "lights"
+    {
+        def SphereLight "light_5151515151515151" (
+            prepend references = @./lights/light_5151515151515151.usda@
+        )
+        {
+            float inputs:intensity = 100
+        }
+    }
+
+    def Scope "meshes"
+    {
+        def Xform "mesh_A1B2C3D4E5F60718" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+            prepend references = @./meshes/mesh_A1B2C3D4E5F60718.usda@</mesh_A1B2C3D4E5F60718>
+        )
+        {
+            rel material:binding = </RootNode/Looks/mat_B436AD2B2A594950>
+            token visibility = "invisible"
+        }
+    }
+
+    def Scope "Looks"
+    {
+        def Material "mat_B436AD2B2A594950" (
+            prepend references = @./materials/mat_B436AD2B2A594950.usda@</Looks/mat_B436AD2B2A594950>
+        )
+        {
+        }
+    }
+
+    def Scope "instances"
+    {
+        def Xform "inst_A1B2C3D4E5F60718_0" (
+            prepend references = </RootNode/meshes/mesh_A1B2C3D4E5F60718>
+        )
+        {
+            token visibility = "inherited"
+        }
+    }
+}

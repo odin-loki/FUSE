@@ -1,0 +1,98 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "mesh",
+  "id": "capture/capgame/capture_layout/mesh_A1B2C3D4E5F60718/mesh",
+  "name": "mesh",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 0.0254,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "streams": [
+      {
+        "semantic": "Position",
+        "format": "F32x3",
+        "data": {
+          "sha256": "7a1ffe4e560c6c025e21a8e22b1140e0bae26d5fd0bf8e9dc966967b86d864e2",
+          "size": 48,
+          "media": "fuse/mesh-stream"
+        }
+      },
+      {
+        "semantic": "Normal",
+        "format": "F32x3",
+        "data": {
+          "sha256": "796f0b940d4268e7d9ccbd67f52dca773c768e372dae64d3c1b1caf59e6c8247",
+          "size": 48,
+          "media": "fuse/mesh-stream"
+        }
+      },
+      {
+        "semantic": "Uv0",
+        "format": "F32x2",
+        "data": {
+          "sha256": "89ec4be34fccdfe44d775e799236f1e9c5611898f8c1dec5a2a45ec40498b28e",
+          "size": 32,
+          "media": "fuse/mesh-stream"
+        }
+      },
+      {
+        "semantic": "Color0",
+        "format": "Unorm8x4",
+        "data": {
+          "sha256": "7b68a4973864251ddfb7c2a93a36d69f75156a496c75cc501ab9aacfe07e1ec8",
+          "size": 16,
+          "media": "fuse/mesh-stream"
+        }
+      }
+    ],
+    "indices32": {
+      "sha256": "18689a54c1ff754be58500b2ed77a6c75b025be96f6d01fef89c42da1c953f34",
+      "size": 24,
+      "media": "fuse/mesh-stream"
+    },
+    "submeshes": [
+      {
+        "indexOffset": 0,
+        "indexCount": 6,
+        "materialSlot": "poco:capture/capgame/capture_layout/mat_B436AD2B2A594950",
+        "subset": ""
+      }
+    ],
+    "bounds": [0, 0, 0, 1.5, 2.25, 0.30000001192092896],
+    "skeletonId": "",
+    "lodIds": [],
+    "relight": {
+      "remix_hash": "A1B2C3D4E5F60718",
+      "double_sided": true,
+      "left_handed": false,
+      "face_corner_vertices": false,
+      "uv_primvar": "primvars:st",
+      "influences": 0
+    }
+  },
+  "provenance": {
+    "origin": "original",
+    "derived_from": [],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "none",
+    "source": {
+      "mod": "capture_layout",
+      "stage": "mod.usda",
+      "prim": "/RootNode/meshes/mesh_A1B2C3D4E5F60718/mesh",
+      "layer": "meshes/mesh_A1B2C3D4E5F60718.usda"
+    }
+  },
+  "licence_id": "LicenseRef-Original-capgame",
+  "distribution": "never",
+  "replaces": [],
+  "original_asset": "oaid:616efd59-1fd8-5494-b968-4aa701b9c073",
+  "tags": ["capture", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

@@ -1,0 +1,4 @@
+# kind path format width height seed | pkg package asset format width height seed
+pkg textures_a.pkg textures/wall_a.dds bc1 8 8 21
+pkg textures_b.pkg textures/wall_a.dds bc7 4 4 22
+pkg textures_a.pkg textures\wall_n.dds bc5 4 4 23

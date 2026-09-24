@@ -1,0 +1,67 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "light",
+  "id": "mod/fixture_game/legacy_particles/mesh_00000000000B0B01/disk_light",
+  "name": "disk_light",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 0.0254,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "type": "Disk",
+    "colorLinear": [1, 1, 1],
+    "intensity": 20,
+    "range": 0,
+    "innerCone": 0,
+    "outerCone": 0,
+    "size": [0.5, 0.5],
+    "castsShadows": true,
+    "relight": {
+      "usd_type": "DiskLight",
+      "intensity_units": "remix",
+      "params": {
+        "radius": 0.25,
+        "width": 0,
+        "height": 0,
+        "length": 0,
+        "angle": 0,
+        "enableColorTemperature": false,
+        "color": [1, 1, 1],
+        "colorTemperature": 6500,
+        "exposure": 0,
+        "intensity": 20,
+        "shaping:cone:angle": 180,
+        "shaping:cone:softness": 0,
+        "shaping:focus": 0,
+        "volumetric_radiance_scale": 2
+      },
+      "authored": ["intensity", "radius", "volumetric_radiance_scale"],
+      "transform": [0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 1],
+      "remix_hash": null,
+      "attached_to": "poco:mod/fixture_game/legacy_particles/mesh_00000000000B0B01"
+    }
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:legacy_particles"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "legacy_particles",
+      "stage": "mod.usda",
+      "prim": "/RootNode/meshes/mesh_00000000000B0B01/disk_light",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "CC-BY-SA-4.0",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

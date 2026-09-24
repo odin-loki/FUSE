@@ -1,0 +1,68 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "light",
+  "id": "capture/capgame/capture_layout/light_5151515151515151",
+  "name": "light_5151515151515151",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 0.0254,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "type": "Point",
+    "colorLinear": [1, 0.5, 0.25],
+    "intensity": 100,
+    "range": 0,
+    "innerCone": 0,
+    "outerCone": 0,
+    "size": [0, 0],
+    "castsShadows": true,
+    "relight": {
+      "usd_type": "SphereLight",
+      "intensity_units": "remix",
+      "params": {
+        "radius": 0.5,
+        "width": 0,
+        "height": 0,
+        "length": 0,
+        "angle": 0,
+        "enableColorTemperature": false,
+        "color": [1, 0.5, 0.25],
+        "colorTemperature": 6500,
+        "exposure": 0,
+        "intensity": 100,
+        "shaping:cone:angle": 180,
+        "shaping:cone:softness": 0,
+        "shaping:focus": 0,
+        "volumetric_radiance_scale": 1
+      },
+      "authored": ["color", "intensity", "radius", "shaping:cone:angle"],
+      "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 2, 3, 1],
+      "remix_hash": "5151515151515151",
+      "attached_to": null
+    }
+  },
+  "provenance": {
+    "origin": "original",
+    "derived_from": [],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "none",
+    "source": {
+      "mod": "capture_layout",
+      "stage": "mod.usda",
+      "prim": "/RootNode/lights/light_5151515151515151",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "LicenseRef-Original-capgame",
+  "distribution": "never",
+  "replaces": [],
+  "original_asset": "oaid:f393d6ef-b09f-5f60-b826-440ee7830647",
+  "tags": ["capture", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

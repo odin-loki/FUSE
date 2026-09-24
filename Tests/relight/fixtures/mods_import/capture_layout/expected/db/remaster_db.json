@@ -1,0 +1,62 @@
+{
+  "schema": "fuse.remaster.db-shim/1",
+  "game_id": "capgame",
+  "original_asset": [
+    {
+      "oaid": "616efd59-1fd8-5494-b968-4aa701b9c073",
+      "kind": "mesh",
+      "game_id": "capgame",
+      "first_key": "remix.geom.asset:A1B2C3D4E5F60718"
+    },
+    {
+      "oaid": "e1971995-8e3b-57b9-8bb8-78f01222bc96",
+      "kind": "texture",
+      "game_id": "capgame",
+      "first_key": "remix.tex:B436AD2B2A594950"
+    },
+    {
+      "oaid": "f393d6ef-b09f-5f60-b826-440ee7830647",
+      "kind": "light",
+      "game_id": "capgame",
+      "first_key": "remix.light:5151515151515151"
+    }
+  ],
+  "hash_key": [
+    {
+      "algo": "fuse.capture.sha256",
+      "value": "1d77689fa7baff77e7e2f6e3528a0127c97ad69821e4649c5c2a06ec6f70511a",
+      "oaid": "616efd59-1fd8-5494-b968-4aa701b9c073",
+      "rule_id": null,
+      "kind": "mesh"
+    },
+    {
+      "algo": "fuse.capture.sha256",
+      "value": "db80de32ab389fd1052a06b24537e75d27c8d24955833ec05375bd2f48436477",
+      "oaid": "e1971995-8e3b-57b9-8bb8-78f01222bc96",
+      "rule_id": null,
+      "kind": "texture"
+    },
+    {
+      "algo": "remix.geom.asset",
+      "value": "A1B2C3D4E5F60718",
+      "oaid": "616efd59-1fd8-5494-b968-4aa701b9c073",
+      "rule_id": "4A0F5C58A6691050",
+      "kind": "mesh"
+    },
+    {
+      "algo": "remix.light",
+      "value": "5151515151515151",
+      "oaid": "f393d6ef-b09f-5f60-b826-440ee7830647",
+      "rule_id": null,
+      "kind": "light"
+    },
+    {
+      "algo": "remix.tex",
+      "value": "B436AD2B2A594950",
+      "oaid": "e1971995-8e3b-57b9-8bb8-78f01222bc96",
+      "rule_id": null,
+      "kind": "texture"
+    }
+  ],
+  "replacement": []
+}

@@ -1,0 +1,77 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "material_ext",
+  "id": "mod/fixture_game/material_table/mat_00000000000000A3",
+  "name": "mat_00000000000000A3",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 1,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "surface": "portal",
+    "mdl": {
+      "sourceAsset": "AperturePBR_Portal.mdl",
+      "subIdentifier": "AperturePBR_Portal"
+    },
+    "ignore_material": false,
+    "preload_textures": false,
+    "params": {
+      "portal_index": 1,
+      "sprite_sheet_rows": 5,
+      "sprite_sheet_cols": 6,
+      "sprite_sheet_fps": 12,
+      "rotation_speed": 0.5,
+      "enable_emission": true,
+      "emissive_intensity": 80,
+      "filter_mode": 0,
+      "wrap_mode_u": 3,
+      "wrap_mode_v": 0
+    },
+    "textures": {
+      "emissive_mask_texture": {
+        "asset": "./textures/portal/emissive_mask_texture.dds",
+        "colorSpace": "auto",
+        "slot": "emissive",
+        "path": "textures/portal/emissive_mask_texture.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "2d5f9470b2b24b19198f22d4fe790bc4897af07d6a8a318f02879a749be01c93",
+          "size": 164,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "BC7_UNORM_BLOCK",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": true
+      }
+    },
+    "authored": ["emissive_intensity", "emissive_mask_texture", "enable_emission", "filter_mode", "portal_index", "rotation_speed", "sprite_sheet_cols", "sprite_sheet_fps", "sprite_sheet_rows", "wrap_mode_u", "wrap_mode_v"],
+    "remix_hash": "00000000000000A3",
+    "particles": null
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:material_table"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "material_table",
+      "stage": "mod.usda",
+      "prim": "/RootNode/Looks/mat_00000000000000A3",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "CC0-1.0",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}
