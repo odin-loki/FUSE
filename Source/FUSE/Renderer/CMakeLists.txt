@@ -294,3 +294,4 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp32.cmake")  # WP-3.2 VSM raster,
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp41.cmake")  # WP-4.1 GPU motion vectors + TAAU dispatch (temporal/, shaders/temporal/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp45.cmake")  # WP-4.5 GPU post stack (postprocess/gpu/, shaders/post/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp51.cmake")  # WP-5.1 mesh-shader path, T1 (meshlet/, shaders/meshlet/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp52.cmake")  # WP-5.2 cluster DAG + LOD (geometry/dag/)
