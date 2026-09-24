@@ -1,0 +1,51 @@
+#version 460
+// WP-0.4 exit test shader (fuse_rp_bindless): every resource is reached through bindless handles.
+//   out[i] = packUnorm4x8(texelFetch(texture[handles[i]], sampler)) ^ bda[i] ^ params.salt
+// The handle table and the output are bindless storage buffers, the per-element XOR words come from
+// a buffer reached only through the buffer-address table (BDA), the salt from a bindless UBO, and
+// the first `storageCount` results are also written to a bindless r32ui storage image.
+// A handle whose type bits do not name a sampled image yields kBadHandle.
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
+#include "bindless.glsl"
+
+layout(local_size_x = 64) in;
+
+FUSE_BINDLESS_SSBO_LAYOUT buffer FuseWords { uint words[]; } fuse_words[];
+FUSE_BINDLESS_UBO_LAYOUT uniform FuseParams { uvec4 salt; } fuse_params[];
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(r32ui) uniform uimage2D fuse_images_r32ui[];
+
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer WordsRef { uint v[]; };
+
+layout(push_constant) uniform Push {
+    uint handleTable;  // storage buffer handle: uint textureHandles[count]
+    uint outputBuffer; // storage buffer handle: uint out[count]
+    uint bdaBuffer;    // storage buffer handle, read through fuse_buffer_address()
+    uint samplerHandle;
+    uint paramsHandle; // uniform buffer handle
+    uint imageHandle;  // storage image handle (r32ui, storageCount x 1)
+    uint count;
+    uint storageCount;
+} pc;
+
+const uint kBadHandle = 0xBAD0BAD0u;
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.count) {
+        return;
+    }
+    const uint tex = fuse_words[fuse_handle_index(pc.handleTable)].words[i];
+    uint result = kBadHandle;
+    if (fuse_handle_is(tex, FUSE_HANDLE_TYPE_SAMPLED_IMAGE) && fuse_handle_is(pc.samplerHandle, FUSE_HANDLE_TYPE_SAMPLER) &&
+        fuse_handle_is(pc.bdaBuffer, FUSE_HANDLE_TYPE_STORAGE_BUFFER) &&
+        fuse_handle_is(pc.paramsHandle, FUSE_HANDLE_TYPE_UNIFORM_BUFFER)) {
+        const uint texel = packUnorm4x8(fuse_fetch_2d(tex, pc.samplerHandle, ivec2(0), 0));
+        WordsRef bda = WordsRef(fuse_buffer_address(pc.bdaBuffer));
+        result = texel ^ bda.v[i] ^ fuse_params[fuse_handle_index(pc.paramsHandle)].salt.x;
+    }
+    fuse_words[fuse_handle_index(pc.outputBuffer)].words[i] = result;
+    if (i < pc.storageCount && fuse_handle_is(pc.imageHandle, FUSE_HANDLE_TYPE_STORAGE_IMAGE)) {
+        imageStore(fuse_images_r32ui[fuse_handle_index(pc.imageHandle)], ivec2(int(i), 0), uvec4(result));
+    }
+}

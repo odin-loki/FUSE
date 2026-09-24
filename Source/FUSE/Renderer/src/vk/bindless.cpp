@@ -2,8 +2,11 @@
 #include <fuse/renderer/vk/debug_utils.hpp>
 
 #include <algorithm>
+#include <cstring>
 
 #if defined(FUSE_VULKAN_BACKEND)
+#include "bindless_internal.hpp"
+
 #include <vulkan/vulkan.h>
 
 #include <array>
@@ -14,44 +17,84 @@ namespace fuse::renderer {
 namespace {
 
 #if defined(FUSE_VULKAN_BACKEND)
-VkDescriptorSetLayoutBinding makeBinding(u32 binding, VkDescriptorType type, u32 count) {
+VkDescriptorSetLayoutBinding makeBinding(u32 binding, VkDescriptorType type, u32 count, VkShaderStageFlags stages) {
     VkDescriptorSetLayoutBinding layoutBinding{};
     layoutBinding.binding = binding;
     layoutBinding.descriptorType = type;
     layoutBinding.descriptorCount = count;
-    layoutBinding.stageFlags = VK_SHADER_STAGE_ALL;
+    layoutBinding.stageFlags = stages;
     return layoutBinding;
 }
 
-bool createVulkanBindlessDescriptors(const VulkanDevice& device, const BindlessArraySizes& sizes, void*& outPool,
-                                     void*& outLayout, void*& outSet) {
-    if (!device.isValid()) {
+/// Stage mask of the bindless bindings. The descriptor-set backend keeps VK_SHADER_STAGE_ALL (the
+/// B2 contract). The descriptor-buffer backend lists only real stages the device can run:
+/// Lavapipe (Mesa 25.2) walks every bit of a descriptor-buffer set layout's stage mask in
+/// vkCmdSetDescriptorBufferOffsetsEXT and maps it to a shader stage index
+/// (vk_to_mesa_shader_stage = ffs - 1). The undefined high bits of VK_SHADER_STAGE_ALL
+/// (0x7FFFFFFF) index past its per-stage constant-buffer table, corrupting driver state: shaders
+/// then read the set from a wrong base and crash or write through garbage descriptors.
+VkShaderStageFlags bindlessStageFlags(const VulkanDevice& device, BindlessBackend backend) {
+    if (backend != BindlessBackend::DescriptorBuffer) {
+        return VK_SHADER_STAGE_ALL;
+    }
+    const RendererCaps& caps = device.info().caps;
+    VkShaderStageFlags stages = VK_SHADER_STAGE_ALL_GRAPHICS | VK_SHADER_STAGE_COMPUTE_BIT;
+#if defined(VK_EXT_mesh_shader)
+    if (caps.taskShader) {
+        stages |= VK_SHADER_STAGE_TASK_BIT_EXT;
+    }
+    if (caps.meshShader) {
+        stages |= VK_SHADER_STAGE_MESH_BIT_EXT;
+    }
+#endif
+#if defined(VK_KHR_ray_tracing_pipeline)
+    if (caps.rayTracingPipeline) {
+        stages |= VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR |
+                  VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR |
+                  VK_SHADER_STAGE_INTERSECTION_BIT_KHR | VK_SHADER_STAGE_CALLABLE_BIT_KHR;
+    }
+#endif
+    (void)caps;
+    return stages;
+}
+
+/// DescriptorSet backend: UPDATE_AFTER_BIND pool + layout + one set. DescriptorBuffer backend:
+/// layout only (DESCRIPTOR_BUFFER_BIT, no update-after-bind flags, no pool / set).
+bool createVulkanBindlessDescriptors(const VulkanDevice& device, const BindlessArraySizes& sizes,
+                                     BindlessBackend backend, void*& outPool, void*& outLayout, void*& outSet) {
+    if (!device.isValid() || backend == BindlessBackend::None) {
         return false;
     }
 
     auto vkDevice = static_cast<VkDevice>(device.nativeHandle());
+    const bool descriptorBuffer = backend == BindlessBackend::DescriptorBuffer;
 
-    std::array<VkDescriptorSetLayoutBinding, 5> bindings = {
-        makeBinding(kBindlessBindingStorageImages, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, sizes.storageImages),
-        makeBinding(kBindlessBindingSampledImages, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, sizes.sampledImages),
-        makeBinding(kBindlessBindingSamplers, VK_DESCRIPTOR_TYPE_SAMPLER, sizes.samplers),
-        makeBinding(kBindlessBindingStorageBuffers, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, sizes.storageBuffers),
-        makeBinding(kBindlessBindingUniformBuffers, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, sizes.uniformBuffers),
+    const VkShaderStageFlags stages = bindlessStageFlags(device, backend);
+    std::array<VkDescriptorSetLayoutBinding, kBindlessBindingCount> bindings = {
+        makeBinding(kBindlessBindingStorageImages, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, sizes.storageImages, stages),
+        makeBinding(kBindlessBindingSampledImages, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, sizes.sampledImages, stages),
+        makeBinding(kBindlessBindingSamplers, VK_DESCRIPTOR_TYPE_SAMPLER, sizes.samplers, stages),
+        makeBinding(kBindlessBindingStorageBuffers, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, sizes.storageBuffers, stages),
+        makeBinding(kBindlessBindingUniformBuffers, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, sizes.uniformBuffers, stages),
+        makeBinding(kBindlessBindingBufferAddressTable, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1u, stages),
     };
 
-    // UPDATE_AFTER_BIND is only legal per descriptor type the device enabled (VUID-03005/03007...).
+    // UPDATE_AFTER_BIND is only legal per descriptor type the device enabled (VUID-03005/03007...),
+    // and never on a descriptor-buffer layout.
     const VulkanDeviceInfo& features = device.info();
-    auto flagsFor = [](bool updateAfterBind) -> VkDescriptorBindingFlags {
+    auto flagsFor = [descriptorBuffer](bool updateAfterBind) -> VkDescriptorBindingFlags {
         return VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |
-               (updateAfterBind ? VkDescriptorBindingFlags{VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT}
-                                : VkDescriptorBindingFlags{0});
+               (updateAfterBind && !descriptorBuffer
+                    ? VkDescriptorBindingFlags{VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT}
+                    : VkDescriptorBindingFlags{0});
     };
-    std::array<VkDescriptorBindingFlags, 5> bindingFlags = {
+    std::array<VkDescriptorBindingFlags, kBindlessBindingCount> bindingFlags = {
         flagsFor(features.storageImageUpdateAfterBind),
         flagsFor(features.sampledImageUpdateAfterBind),
         flagsFor(features.sampledImageUpdateAfterBind),
         flagsFor(features.storageBufferUpdateAfterBind),
         flagsFor(features.uniformBufferUpdateAfterBind),
+        flagsFor(features.storageBufferUpdateAfterBind),
     };
 
     VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo{};
@@ -61,7 +104,15 @@ bool createVulkanBindlessDescriptors(const VulkanDevice& device, const BindlessA
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+#if defined(VK_EXT_descriptor_buffer)
+    layoutInfo.flags = descriptorBuffer ? VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
+                                        : VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+#else
+    if (descriptorBuffer) {
+        return false;
+    }
     layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+#endif
     layoutInfo.bindingCount = static_cast<u32>(bindings.size());
     layoutInfo.pBindings = bindings.data();
     layoutInfo.pNext = &bindingFlagsInfo;
@@ -70,12 +121,20 @@ bool createVulkanBindlessDescriptors(const VulkanDevice& device, const BindlessA
     if (vkCreateDescriptorSetLayout(vkDevice, &layoutInfo, nullptr, &layout) != VK_SUCCESS) {
         return false;
     }
+    nameVkObject(vkDevice, vk_object_type::kDescriptorSetLayout, static_cast<void*>(layout), "fuse.bindless.layout");
+
+    if (descriptorBuffer) {
+        outPool = nullptr;
+        outLayout = layout;
+        outSet = nullptr;
+        return true;
+    }
 
     std::array<VkDescriptorPoolSize, 5> poolSizes = {
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, sizes.storageImages},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, sizes.sampledImages},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, sizes.samplers},
-        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, sizes.storageBuffers},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, sizes.storageBuffers + 1u},
         VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, sizes.uniformBuffers},
     };
 
@@ -109,8 +168,6 @@ bool createVulkanBindlessDescriptors(const VulkanDevice& device, const BindlessA
     outLayout = layout;
     outSet = set;
     nameVkObject(vkDevice, vk_object_type::kDescriptorPool, static_cast<void*>(pool), "fuse.bindless.pool");
-    nameVkObject(vkDevice, vk_object_type::kDescriptorSetLayout, static_cast<void*>(layout),
-                       "fuse.bindless.layout");
     nameVkObject(vkDevice, vk_object_type::kDescriptorSet, static_cast<void*>(set), "fuse.bindless.set");
     return true;
 }
@@ -297,9 +354,79 @@ BindlessSlotHandle unpackBindlessSlotHandle(u64 packed) {
     return handle;
 }
 
+namespace {
+
+[[maybe_unused]] void clampSizesToDesc(BindlessArraySizes& sizes, const BindlessDesc& desc) {
+    const u32 textures = std::max(1u, std::min(desc.maxTextures, kMaxTextures));
+    const u32 buffers = std::max(1u, std::min(desc.maxBuffers, kMaxBuffers));
+    const u32 samplers = std::max(1u, std::min(desc.maxSamplers, kMaxSamplers));
+    sizes.sampledImages = std::min(sizes.sampledImages, textures);
+    sizes.storageImages = std::min(sizes.storageImages, sizes.sampledImages);
+    sizes.storageBuffers = std::min(sizes.storageBuffers, buffers);
+    sizes.uniformBuffers = std::min(sizes.uniformBuffers, sizes.storageBuffers);
+    sizes.samplers = std::min(sizes.samplers, samplers);
+}
+
+void setAddressTableEntry(const BindlessGpuHeapState& gpu, u32 index, u64 address) {
+    if (gpu.addressTableMapped != nullptr && index < gpu.addressTableEntries) {
+        gpu.addressTableMapped[index] = address;
+    }
+}
+
+bool sameSamplerDesc(const SamplerDesc& a, const SamplerDesc& b) {
+    return a.minFilter == b.minFilter && a.magFilter == b.magFilter && a.addressMode == b.addressMode &&
+           a.anisotropy == b.anisotropy && a.maxAnisotropy == b.maxAnisotropy && a.minLod == b.minLod &&
+           a.maxLod == b.maxLod && a.mipLodBias == b.mipLodBias && a.compareEnable == b.compareEnable &&
+           a.compareOp == b.compareOp;
+}
+
+BindlessHeapKind kindForResourceType(BindlessResourceType type, bool& flag, bool& ok) {
+    ok = true;
+    flag = false;
+    switch (type) {
+    case BindlessResourceType::SampledImage:
+        return BindlessHeapKind::Texture;
+    case BindlessResourceType::StorageImage:
+        flag = true;
+        return BindlessHeapKind::Texture;
+    case BindlessResourceType::Sampler:
+        return BindlessHeapKind::Sampler;
+    case BindlessResourceType::StorageBuffer:
+        return BindlessHeapKind::Buffer;
+    case BindlessResourceType::UniformBuffer:
+        flag = true;
+        return BindlessHeapKind::Buffer;
+    case BindlessResourceType::Invalid:
+        break;
+    }
+    ok = false;
+    return BindlessHeapKind::Texture;
+}
+
+} // namespace
+
+const char* bindlessBackendName(BindlessBackend backend) {
+    switch (backend) {
+    case BindlessBackend::None:
+        return "none";
+    case BindlessBackend::DescriptorSet:
+        return "descriptor-set";
+    case BindlessBackend::DescriptorBuffer:
+        return "descriptor-buffer";
+    }
+    return "unknown";
+}
+
 void BindlessDescriptors::init(const VulkanDevice& device) {
+    // Existing consumers bind descriptorSetHandle() with vkCmdBindDescriptorSets: keep that backend.
+    BindlessDesc desc{};
+    desc.backend = BindlessBackendPreference::DescriptorSet;
+    (void)init(device, desc);
+}
+
+bool BindlessDescriptors::init(const VulkanDevice& device, const BindlessDesc& desc) {
     if (m_initialized) {
-        return;
+        return m_backend != BindlessBackend::None;
     }
 
     m_device = &device;
@@ -309,47 +436,412 @@ void BindlessDescriptors::init(const VulkanDevice& device) {
     m_freeTextureIndices.clear();
     m_freeBufferIndices.clear();
     m_freeSamplerIndices.clear();
+    m_retired.clear();
+    m_samplerCache.clear();
+    m_frameSerial = 0;
     m_descriptorUpdateCount = 0;
     m_descriptorClearCount = 0;
-
+    m_gpu = BindlessGpuHeapState{};
+    m_backend = BindlessBackend::None;
+    m_pool = nullptr;
+    m_layout = nullptr;
+    m_set = nullptr;
     m_arraySizes = BindlessArraySizes{};
+
 #if defined(FUSE_VULKAN_BACKEND)
     if (device.isValid()) {
-        m_arraySizes = computeBindlessArraySizes(device.info().descriptorLimits);
-    }
-    if (!createVulkanBindlessDescriptors(device, m_arraySizes, m_pool, m_layout, m_set)) {
-        m_pool = nullptr;
-        m_layout = nullptr;
-        m_set = nullptr;
+        (void)createGpuHeap(device, desc);
     }
 #else
     // Stub builds may pass a null-backed device reference: never touch it.
     (void)device;
-    m_pool = nullptr;
-    m_layout = nullptr;
-    m_set = nullptr;
+    (void)desc;
 #endif
     m_initialized = true;
+    return m_backend != BindlessBackend::None;
 }
 
-void BindlessDescriptors::destroy([[maybe_unused]] const VulkanDevice& device) {
+bool BindlessDescriptors::createGpuHeap([[maybe_unused]] const VulkanDevice& device,
+                                        [[maybe_unused]] const BindlessDesc& desc) {
 #if defined(FUSE_VULKAN_BACKEND)
-    destroyVulkanBindlessDescriptors(device, m_pool, m_layout, m_set);
+    using namespace bindless_detail;
+    auto vkDevice = static_cast<VkDevice>(device.nativeHandle());
+    auto physicalDevice = static_cast<VkPhysicalDevice>(device.nativePhysicalDevice());
+
+    BindlessBackend backend = BindlessBackend::DescriptorSet;
+    if (desc.backend != BindlessBackendPreference::DescriptorSet && descriptorBufferAvailable(device)) {
+        backend = BindlessBackend::DescriptorBuffer;
+    }
+    for (;;) {
+        const bool descriptorBuffer = backend == BindlessBackend::DescriptorBuffer;
+        BindlessArraySizes sizes =
+            computeBindlessArraySizes(descriptorBuffer ? descriptorBufferLimits(device) : device.info().descriptorLimits);
+        clampSizesToDesc(sizes, desc);
+        void* pool = nullptr;
+        void* layout = nullptr;
+        void* set = nullptr;
+        bool created = createVulkanBindlessDescriptors(device, sizes, backend, pool, layout, set);
+        if (created && descriptorBuffer &&
+            !createDescriptorBuffer(device, static_cast<VkDescriptorSetLayout>(layout), m_gpu)) {
+            destroyVulkanBindlessDescriptors(device, pool, layout, set);
+            created = false;
+        }
+        if (created) {
+            m_pool = pool;
+            m_layout = layout;
+            m_set = set;
+            m_arraySizes = sizes;
+            m_backend = backend;
+            break;
+        }
+        if (!descriptorBuffer) {
+            return false;
+        }
+        backend = BindlessBackend::DescriptorSet; // descriptor-indexing fallback
+    }
+
+    // Buffer-address table (binding 5): u64 per buffer slot.
+    if (desc.bufferAddressTable && device.info().bufferDeviceAddress && physicalDevice != VK_NULL_HANDLE) {
+        HostVisibleBuffer table{};
+        const u32 entries = m_arraySizes.storageBuffers;
+        if (createHostVisibleBuffer(vkDevice, physicalDevice, static_cast<VkDeviceSize>(entries) * sizeof(u64),
+                                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, "fuse.bindless.address_table", table)) {
+            m_gpu.addressTable = table.buffer;
+            m_gpu.addressTableMemory = table.memory;
+            m_gpu.addressTableMapped = static_cast<u64*>(table.mapped);
+            m_gpu.addressTableAddress = table.address;
+            m_gpu.addressTableEntries = entries;
+            const VkDeviceSize range = static_cast<VkDeviceSize>(entries) * sizeof(u64);
+            if (m_backend == BindlessBackend::DescriptorBuffer) {
+#if defined(VK_EXT_descriptor_buffer)
+                VkDescriptorAddressInfoEXT addressInfo{};
+                addressInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
+                addressInfo.address = table.address;
+                addressInfo.range = range;
+                VkDescriptorGetInfoEXT info{};
+                info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
+                info.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                info.data.pStorageBuffer = &addressInfo;
+                writeDescriptorBufferEntry(vkDevice, m_gpu, kBindlessBindingBufferAddressTable, 0, info);
+#endif
+            } else {
+                VkDescriptorBufferInfo bufferInfo{table.buffer, 0, range};
+                VkWriteDescriptorSet write{};
+                write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                write.dstSet = static_cast<VkDescriptorSet>(m_set);
+                write.dstBinding = kBindlessBindingBufferAddressTable;
+                write.descriptorCount = 1;
+                write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                write.pBufferInfo = &bufferInfo;
+                vkUpdateDescriptorSets(vkDevice, 1, &write, 0, nullptr);
+            }
+        }
+    }
+    return true;
 #else
+    return false;
+#endif
+}
+
+void BindlessDescriptors::destroyGpuHeap([[maybe_unused]] const VulkanDevice& device) {
+#if defined(FUSE_VULKAN_BACKEND)
+    using namespace bindless_detail;
+    if (device.isValid()) {
+        auto vkDevice = static_cast<VkDevice>(device.nativeHandle());
+        for (Slot& slot : m_samplerSlots) {
+            if (slot.ownedSampler != nullptr) {
+                vkDestroySampler(vkDevice, static_cast<VkSampler>(slot.ownedSampler), nullptr);
+                slot.ownedSampler = nullptr;
+            }
+        }
+        destroyDescriptorBuffer(vkDevice, m_gpu);
+        HostVisibleBuffer table{};
+        table.buffer = static_cast<VkBuffer>(m_gpu.addressTable);
+        table.memory = static_cast<VkDeviceMemory>(m_gpu.addressTableMemory);
+        table.mapped = m_gpu.addressTableMapped;
+        destroyHostVisibleBuffer(vkDevice, table);
+    }
+    destroyVulkanBindlessDescriptors(device, m_pool, m_layout, m_set);
+#endif
+    m_gpu = BindlessGpuHeapState{};
     m_pool = nullptr;
     m_layout = nullptr;
     m_set = nullptr;
-#endif
+    m_backend = BindlessBackend::None;
+}
+
+void BindlessDescriptors::destroy(const VulkanDevice& device) {
+    destroyGpuHeap(device);
     m_textureSlots.clear();
     m_bufferSlots.clear();
     m_samplerSlots.clear();
     m_freeTextureIndices.clear();
     m_freeBufferIndices.clear();
     m_freeSamplerIndices.clear();
+    m_retired.clear();
+    m_samplerCache.clear();
     m_initialized = false;
     m_device = nullptr;
+    m_frameSerial = 0;
     m_descriptorUpdateCount = 0;
     m_descriptorClearCount = 0;
+}
+
+u32 BindlessDescriptors::pipelineCreateFlags() const {
+#if defined(FUSE_VULKAN_BACKEND) && defined(VK_EXT_descriptor_buffer)
+    if (m_backend == BindlessBackend::DescriptorBuffer) {
+        return static_cast<u32>(VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT);
+    }
+#endif
+    return 0u;
+}
+
+void BindlessDescriptors::bind([[maybe_unused]] void* commandBuffer, [[maybe_unused]] u32 pipelineBindPoint,
+                               [[maybe_unused]] void* pipelineLayout, [[maybe_unused]] u32 setIndex) const {
+#if defined(FUSE_VULKAN_BACKEND)
+    auto cmd = static_cast<VkCommandBuffer>(commandBuffer);
+    auto layout = static_cast<VkPipelineLayout>(pipelineLayout);
+    const auto bindPoint = static_cast<VkPipelineBindPoint>(pipelineBindPoint);
+    if (cmd == VK_NULL_HANDLE || layout == VK_NULL_HANDLE) {
+        return;
+    }
+    if (m_backend == BindlessBackend::DescriptorBuffer) {
+        bindless_detail::bindDescriptorBuffer(m_gpu, cmd, bindPoint, layout, setIndex);
+    } else if (m_backend == BindlessBackend::DescriptorSet && m_set != nullptr) {
+        VkDescriptorSet set = static_cast<VkDescriptorSet>(m_set);
+        vkCmdBindDescriptorSets(cmd, bindPoint, layout, setIndex, 1, &set, 0, nullptr);
+    }
+#endif
+}
+
+u64 BindlessDescriptors::bufferAddressAt(u32 index) const {
+    if (m_gpu.addressTableMapped == nullptr || index >= m_gpu.addressTableEntries) {
+        return 0;
+    }
+    return m_gpu.addressTableMapped[index];
+}
+
+u32 BindlessDescriptors::shaderHandle(BindlessSlotHandle handle) const {
+    if (!validateSlot(handle)) {
+        return kBindlessInvalidShaderHandle;
+    }
+    const bool flag = slotsFor(handle.kind)[handle.index].storage;
+    BindlessResourceType type = BindlessResourceType::Invalid;
+    switch (handle.kind) {
+    case BindlessHeapKind::Texture:
+        type = flag ? BindlessResourceType::StorageImage : BindlessResourceType::SampledImage;
+        break;
+    case BindlessHeapKind::Buffer:
+        type = flag ? BindlessResourceType::UniformBuffer : BindlessResourceType::StorageBuffer;
+        break;
+    case BindlessHeapKind::Sampler:
+        type = BindlessResourceType::Sampler;
+        break;
+    }
+    return packBindlessShaderHandle(type, handle.index, handle.generation);
+}
+
+BindlessSlotHandle BindlessDescriptors::slotHandleFromShaderHandle(u32 packed) const {
+    bool flag = false;
+    bool ok = false;
+    const BindlessHeapKind kind = kindForResourceType(bindlessShaderHandleType(packed), flag, ok);
+    if (!ok) {
+        return BindlessSlotHandle::invalid();
+    }
+    const BindlessSlotHandle live = slotHandleAt(kind, bindlessShaderHandleIndex(packed));
+    if (!live.isValid() || slotsFor(kind)[live.index].storage != flag ||
+        (live.generation & kBindlessHandleGenerationMask) != bindlessShaderHandleGeneration(packed)) {
+        return BindlessSlotHandle::invalid();
+    }
+    return live;
+}
+
+bool BindlessDescriptors::validateShaderHandle(u32 packed) const {
+    return slotHandleFromShaderHandle(packed).isValid();
+}
+
+std::vector<u32>& BindlessDescriptors::freeListFor(BindlessHeapKind kind) {
+    switch (kind) {
+    case BindlessHeapKind::Texture:
+        return m_freeTextureIndices;
+    case BindlessHeapKind::Buffer:
+        return m_freeBufferIndices;
+    case BindlessHeapKind::Sampler:
+        return m_freeSamplerIndices;
+    }
+    return m_freeTextureIndices;
+}
+
+void BindlessDescriptors::releaseSlotResources(BindlessHeapKind kind, u32 index) {
+    Slot& slot = slotsFor(kind)[index];
+    if (slot.descriptorWritten) {
+        // Bindings are PARTIALLY_BOUND: a released slot keeps its stale descriptor (null writes
+        // need VK_EXT_robustness2::nullDescriptor); shaders must stop indexing it.
+        ++m_descriptorClearCount;
+    }
+    if (kind == BindlessHeapKind::Buffer) {
+        setAddressTableEntry(m_gpu, index, 0);
+    }
+    if (slot.ownedSampler != nullptr) {
+#if defined(FUSE_VULKAN_BACKEND)
+        if (m_device != nullptr && m_device->isValid()) {
+            vkDestroySampler(static_cast<VkDevice>(m_device->nativeHandle()), static_cast<VkSampler>(slot.ownedSampler),
+                             nullptr);
+        }
+#endif
+        slot.ownedSampler = nullptr;
+    }
+    slot.storage = false;
+    slot.descriptorWritten = false;
+}
+
+bool BindlessDescriptors::retireSlot(BindlessSlotHandle handle) {
+    return retireSlot(handle, m_frameSerial);
+}
+
+bool BindlessDescriptors::retireSlot(BindlessSlotHandle handle, u64 retireSerial) {
+    if (!canFreeSlot(handle)) {
+        return false;
+    }
+    Slot& slot = slotsFor(handle.kind)[handle.index];
+    slot.occupied = false;
+    slot.retired = true;
+    ++slot.generation;
+    if (slot.generation == 0) {
+        slot.generation = 1;
+    }
+    m_retired.push_back(RetiredSlot{handle.kind, handle.index, retireSerial});
+    return true;
+}
+
+u32 BindlessDescriptors::collectRetired(u64 completedSerial) {
+    u32 reclaimed = 0;
+    usize keep = 0;
+    for (usize i = 0; i < m_retired.size(); ++i) {
+        const RetiredSlot entry = m_retired[i];
+        if (entry.serial > completedSerial) {
+            m_retired[keep++] = entry;
+            continue;
+        }
+        releaseSlotResources(entry.kind, entry.index);
+        slotsFor(entry.kind)[entry.index].retired = false;
+        freeListFor(entry.kind).push_back(entry.index);
+        ++reclaimed;
+    }
+    m_retired.resize(keep);
+    return reclaimed;
+}
+
+u32 BindlessDescriptors::collectRetiredFromTimeline([[maybe_unused]] void* timelineSemaphore) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (m_device == nullptr || !m_device->isValid() || timelineSemaphore == nullptr) {
+        return 0;
+    }
+    uint64_t value = 0;
+    if (vkGetSemaphoreCounterValue(static_cast<VkDevice>(m_device->nativeHandle()),
+                                   static_cast<VkSemaphore>(timelineSemaphore), &value) != VK_SUCCESS) {
+        return 0;
+    }
+    return collectRetired(static_cast<u64>(value));
+#else
+    return 0;
+#endif
+}
+
+u32 BindlessDescriptors::retiredCount(BindlessHeapKind kind) const {
+    u32 count = 0;
+    for (const RetiredSlot& entry : m_retired) {
+        count += entry.kind == kind ? 1u : 0u;
+    }
+    return count;
+}
+
+bool BindlessDescriptors::isSlotRetired(BindlessHeapKind kind, u32 index) const {
+    const std::vector<Slot>& slots = slotsFor(kind);
+    return index < slots.size() && slots[index].retired;
+}
+
+BindlessSlotHandle BindlessDescriptors::acquireSampler(const SamplerDesc& desc) {
+    if (!m_initialized) {
+        return BindlessSlotHandle::invalid();
+    }
+    for (SamplerCacheEntry& entry : m_samplerCache) {
+        if (sameSamplerDesc(entry.desc, desc) && validateSlot(entry.slot)) {
+            ++entry.refs;
+            return entry.slot;
+        }
+    }
+
+    void* samplerHandle = nullptr;
+#if defined(FUSE_VULKAN_BACKEND)
+    if (m_device != nullptr && m_device->isValid()) {
+        const VulkanDeviceInfo& info = m_device->info();
+        VkSamplerCreateInfo samplerInfo{};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = static_cast<VkFilter>(desc.magFilter);
+        samplerInfo.minFilter = static_cast<VkFilter>(desc.minFilter);
+        samplerInfo.mipmapMode =
+            desc.minFilter == VK_FILTER_LINEAR ? VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        const auto address = static_cast<VkSamplerAddressMode>(desc.addressMode);
+        samplerInfo.addressModeU = address;
+        samplerInfo.addressModeV = address;
+        samplerInfo.addressModeW = address;
+        samplerInfo.mipLodBias = desc.mipLodBias;
+        samplerInfo.anisotropyEnable = desc.anisotropy && info.samplerAnisotropy ? VK_TRUE : VK_FALSE;
+        samplerInfo.maxAnisotropy =
+            samplerInfo.anisotropyEnable == VK_TRUE ? std::clamp(desc.maxAnisotropy, 1.f, info.maxSamplerAnisotropy) : 1.f;
+        samplerInfo.compareEnable = desc.compareEnable ? VK_TRUE : VK_FALSE;
+        samplerInfo.compareOp = static_cast<VkCompareOp>(desc.compareOp);
+        samplerInfo.minLod = desc.minLod;
+        samplerInfo.maxLod = desc.maxLod;
+        samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+        auto vkDevice = static_cast<VkDevice>(m_device->nativeHandle());
+        VkSampler sampler = VK_NULL_HANDLE;
+        if (vkCreateSampler(vkDevice, &samplerInfo, nullptr, &sampler) == VK_SUCCESS) {
+            samplerHandle = sampler;
+            nameVkObject(vkDevice, vk_object_type::kSampler, samplerHandle,
+                         desc.name != nullptr ? desc.name : "fuse.bindless.sampler");
+        }
+    }
+#endif
+
+    const BindlessSlotHandle slot = allocateSamplerSlot();
+    if (!slot.isValid()) {
+#if defined(FUSE_VULKAN_BACKEND)
+        if (samplerHandle != nullptr) {
+            vkDestroySampler(static_cast<VkDevice>(m_device->nativeHandle()), static_cast<VkSampler>(samplerHandle),
+                             nullptr);
+        }
+#endif
+        return BindlessSlotHandle::invalid();
+    }
+    m_samplerSlots[slot.index].ownedSampler = samplerHandle;
+    if (bindlessNativeHandleReady(samplerHandle)) {
+        updateVulkanDescriptor(slot, nullptr, nullptr, samplerHandle, false);
+    }
+    SamplerCacheEntry entry{};
+    entry.desc = desc;
+    entry.desc.name = nullptr;
+    entry.slot = slot;
+    entry.refs = 1;
+    m_samplerCache.push_back(entry);
+    return slot;
+}
+
+void BindlessDescriptors::releaseSampler(BindlessSlotHandle handle) {
+    for (usize i = 0; i < m_samplerCache.size(); ++i) {
+        SamplerCacheEntry& entry = m_samplerCache[i];
+        if (entry.slot != handle) {
+            continue;
+        }
+        if (entry.refs > 1u) {
+            --entry.refs;
+            return;
+        }
+        (void)retireSlot(handle, m_frameSerial);
+        m_samplerCache.erase(m_samplerCache.begin() + static_cast<std::ptrdiff_t>(i));
+        return;
+    }
 }
 
 void BindlessDescriptors::updateVulkanDescriptor(BindlessSlotHandle handle, const Texture* texture,
@@ -358,101 +850,121 @@ void BindlessDescriptors::updateVulkanDescriptor(BindlessSlotHandle handle, cons
     if (!vulkanDescriptorsReady() || m_device == nullptr || !m_device->isValid() || !handle.isValid()) {
         return;
     }
-    if (!clear && rejectStaleSlotHandle(handle)) {
+    if (clear) {
+        // Bindings are PARTIALLY_BOUND: a released slot may keep its stale descriptor as long as
+        // shaders stop indexing it (null writes need VK_EXT_robustness2::nullDescriptor).
+        ++m_descriptorClearCount;
+        return;
+    }
+    if (rejectStaleSlotHandle(handle)) {
         return;
     }
 
     const BindlessBindingIndex binding = bindingIndexForHandle(handle);
-    if (!clear && binding.binding == 0u && binding.arrayIndex == 0u &&
-        rejectStaleSlotHandle(handle)) {
-        return;
-    }
-
-    if (clear) {
-        // Null writes need VK_EXT_robustness2::nullDescriptor. Bindings are PARTIALLY_BOUND, so a
-        // released slot may keep its stale descriptor as long as shaders stop indexing it.
-        ++m_descriptorClearCount;
-        return;
-    }
-
     auto vkDevice = static_cast<VkDevice>(m_device->nativeHandle());
-    VkDescriptorSet set = static_cast<VkDescriptorSet>(m_set);
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = set;
-    write.dstBinding = binding.binding;
-    write.dstArrayElement = binding.arrayIndex;
-    write.descriptorCount = 1;
 
+    VkDescriptorType descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
     VkDescriptorImageInfo imageInfo{};
     VkDescriptorBufferInfo bufferInfo{};
+    u64 bufferAddress = 0;
     VkSampler sampler = VK_NULL_HANDLE;
 
     switch (handle.kind) {
     case BindlessHeapKind::Texture: {
         const bool storage = slotIsStorageTexture(handle.index);
-        write.descriptorType = storage ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        descriptorType = storage ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
         const ImageUsage requiredUsage = storage ? ImageUsage::Storage : ImageUsage::Sampled;
-        if (texture != nullptr &&
+        if (texture == nullptr || !bindlessNativeHandleReady(texture->view) ||
             (static_cast<u32>(texture->desc.usage) & static_cast<u32>(requiredUsage)) == 0u) {
             // CPU slot stays valid; the view lacks the usage the descriptor type needs
             // (VUID-VkWriteDescriptorSet-descriptorType-00336/00339).
             return;
         }
-        if (!clear && texture != nullptr && bindlessNativeHandleReady(texture->view)) {
-            imageInfo.imageView = static_cast<VkImageView>(texture->view);
-            imageInfo.imageLayout = slotIsStorageTexture(handle.index) ? VK_IMAGE_LAYOUT_GENERAL
-                                                                       : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        } else if (!clear) {
-            return;
-        }
-        write.pImageInfo = &imageInfo;
+        imageInfo.imageView = static_cast<VkImageView>(texture->view);
+        imageInfo.imageLayout = storage ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         break;
     }
     case BindlessHeapKind::Buffer: {
         const bool uniform = slotIsUniformBuffer(handle.index);
-        write.descriptorType = uniform ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorType = uniform ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         const BufferUsage requiredUsage = uniform ? BufferUsage::Uniform : BufferUsage::Storage;
-        if (buffer != nullptr &&
+        if (buffer == nullptr || !bindlessNativeHandleReady(buffer->handle) ||
             (static_cast<u32>(buffer->desc.usage) & static_cast<u32>(requiredUsage)) == 0u) {
             // CPU slot stays valid; the GPU descriptor would violate VUID-VkWriteDescriptorSet-00330/00331.
             return;
         }
-        if (!clear && buffer != nullptr && bindlessNativeHandleReady(buffer->handle)) {
-            bufferInfo.buffer = static_cast<VkBuffer>(buffer->handle);
-            bufferInfo.offset = 0;
-            bufferInfo.range = buffer->desc.size > 0 ? buffer->desc.size : VK_WHOLE_SIZE;
-        } else if (!clear) {
-            return;
-        }
-        write.pBufferInfo = &bufferInfo;
+        bufferInfo.buffer = static_cast<VkBuffer>(buffer->handle);
+        bufferInfo.offset = 0;
+        bufferInfo.range = buffer->desc.size > 0 ? buffer->desc.size : VK_WHOLE_SIZE;
+        bufferAddress = buffer->deviceAddress;
         break;
     }
     case BindlessHeapKind::Sampler: {
-        write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
-        if (!clear && bindlessNativeHandleReady(samplerHandle)) {
-            sampler = static_cast<VkSampler>(samplerHandle);
-        } else if (!clear) {
-            return;
-        } else if (!bindlessNativeHandleReady(samplerHandle)) {
-            // Null sampler writes are invalid without nullDescriptor; drop the GPU write.
-            ++m_descriptorClearCount;
+        if (!bindlessNativeHandleReady(samplerHandle)) {
             return;
         }
+        sampler = static_cast<VkSampler>(samplerHandle);
         imageInfo.sampler = sampler;
-        write.pImageInfo = &imageInfo;
         break;
     }
     }
 
-    vkUpdateDescriptorSets(vkDevice, 1, &write, 0, nullptr);
-    if (clear) {
-        ++m_descriptorClearCount;
+    if (m_backend == BindlessBackend::DescriptorBuffer) {
+#if defined(VK_EXT_descriptor_buffer)
+        VkDescriptorAddressInfoEXT addressInfo{};
+        addressInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
+        VkDescriptorGetInfoEXT info{};
+        info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
+        info.type = descriptorType;
+        switch (descriptorType) {
+        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+            info.data.pStorageImage = &imageInfo;
+            break;
+        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+            info.data.pSampledImage = &imageInfo;
+            break;
+        case VK_DESCRIPTOR_TYPE_SAMPLER:
+            info.data.pSampler = &sampler;
+            break;
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+            if (bufferAddress == 0u) {
+                return; // descriptor-buffer buffer descriptors are address based
+            }
+            addressInfo.address = bufferAddress;
+            addressInfo.range = buffer->desc.size;
+            if (descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
+                info.data.pUniformBuffer = &addressInfo;
+            } else {
+                info.data.pStorageBuffer = &addressInfo;
+            }
+            break;
+        default:
+            return;
+        }
+        if (!bindless_detail::writeDescriptorBufferEntry(vkDevice, m_gpu, binding.binding, binding.arrayIndex, info)) {
+            return;
+        }
+#else
+        return;
+#endif
     } else {
-        ++m_descriptorUpdateCount;
-        Slot& slot = slotsFor(handle.kind)[handle.index];
-        slot.descriptorWritten = true;
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = static_cast<VkDescriptorSet>(m_set);
+        write.dstBinding = binding.binding;
+        write.dstArrayElement = binding.arrayIndex;
+        write.descriptorCount = 1;
+        write.descriptorType = descriptorType;
+        if (handle.kind == BindlessHeapKind::Buffer) {
+            write.pBufferInfo = &bufferInfo;
+        } else {
+            write.pImageInfo = &imageInfo;
+        }
+        vkUpdateDescriptorSets(vkDevice, 1, &write, 0, nullptr);
     }
+    ++m_descriptorUpdateCount;
+    slotsFor(handle.kind)[handle.index].descriptorWritten = true;
 #else
     (void)handle;
     (void)texture;
@@ -538,13 +1050,9 @@ void BindlessDescriptors::freeSlot(std::vector<Slot>& slots, std::vector<u32>& f
         return;
     }
 
+    releaseSlotResources(handle.kind, handle.index);
     Slot& slot = slots[handle.index];
-    if (slot.descriptorWritten) {
-        updateVulkanDescriptor(handle, nullptr, nullptr, nullptr, true);
-    }
     slot.occupied = false;
-    slot.storage = false;
-    slot.descriptorWritten = false;
     ++slot.generation;
     if (slot.generation == 0) {
         slot.generation = 1;
@@ -818,6 +1326,7 @@ u32 BindlessDescriptors::registerBuffer(const Buffer& buffer, bool uniform) {
     }
     if (bindlessNativeHandleReady(buffer.handle)) {
         updateVulkanDescriptor(handle, nullptr, &buffer, nullptr, false);
+        setAddressTableEntry(m_gpu, handle.index, buffer.deviceAddress);
     }
     return handle.index;
 }
@@ -872,6 +1381,7 @@ BindlessSlotHandle BindlessDescriptors::registerBufferSlot(const Buffer& buffer,
     const BindlessSlotHandle handle = allocateBufferSlot(uniform);
     if (handle.isValid() && bindlessNativeHandleReady(buffer.handle)) {
         updateVulkanDescriptor(handle, nullptr, &buffer, nullptr, false);
+        setAddressTableEntry(m_gpu, handle.index, buffer.deviceAddress);
     }
     return handle;
 }

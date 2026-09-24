@@ -281,3 +281,4 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp02.cmake")  # WP-0.2 volk loader
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp05.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp06.cmake")  # WP-0.6 GPU profiler (Tracy GPU zones) + RenderDoc capture
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp12.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp04.cmake")
