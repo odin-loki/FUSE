@@ -49,3 +49,4 @@ add_subdirectory(tap)                                                           
 add_subdirectory(scene/classify)                                                         # RL-1.2
 add_subdirectory(capture/texture)                                                        # RL-1.4
 add_subdirectory(capture/geometry)                                                       # RL-1.3
+add_subdirectory(bridge/ipc)                                                             # RL-2.1
