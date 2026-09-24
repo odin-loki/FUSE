@@ -56,6 +56,18 @@ void withScheduler(u32 workers, Body&& body) {
     scheduler.shutdown();
 }
 
+/// Block for at least `duration`. std::this_thread::sleep_for cannot be trusted below 1 ms: on
+/// MinGW-w64 it is winpthreads' nanosleep, which truncates to whole milliseconds and returns at once
+/// for anything shorter (a 500 us sleep takes ~0.2 us, on Windows and under Wine alike). The
+/// streaming gates pace frames with sub-millisecond sleeps, so they top up against steady_clock.
+void sleepAtLeast(std::chrono::microseconds duration) {
+    const auto deadline = std::chrono::steady_clock::now() + duration;
+    std::this_thread::sleep_for(duration);
+    while (std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::yield();
+    }
+}
+
 f64 nowMs() {
     using clock = std::chrono::steady_clock;
     return std::chrono::duration<f64, std::milli>(clock::now().time_since_epoch()).count();
@@ -548,9 +560,16 @@ void testLodStreamingAsync() {
                                      grid.resident_chunk_count() == 0);
              ++i) {
             terrain.update_lod(camera, 1.f / 60.f);
-            std::this_thread::sleep_for(std::chrono::microseconds(200));
+            sleepAtLeast(std::chrono::microseconds(200));
         }
 
+        // With wall-clock budgets enforced, a frame's loads must finish within the ~64 frames
+        // (>= 32 ms) of lead the queue keeps ahead of the camera. Emulated / instrumented runs
+        // (Wine, valgrind, sanitizers) give no such latency guarantee, so there each frame also
+        // waits for its jobs: the gate then checks the queue's lead and prioritisation, not host
+        // scheduling. A job that never completes still fails (bounded wait, reported below).
+        const bool paceByCompletion = !fuse::core::timingBudgetsEnforced();
+        u32 stalledFrames = 0;
         u32 missingInner = 0;
         u32 maxInFlight = 0;
         const f32 speed = 1.5f; // metres per frame
@@ -565,14 +584,21 @@ void testLodStreamingAsync() {
                     ++missingInner;
                 }
             }
-            std::this_thread::sleep_for(std::chrono::microseconds(500));
+            sleepAtLeast(std::chrono::microseconds(500));
+            if (paceByCompletion) {
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+                while (grid.in_flight_request_count() > 0 && std::chrono::steady_clock::now() < deadline) {
+                    std::this_thread::yield();
+                }
+                stalledFrames += grid.in_flight_request_count() > 0 ? 1u : 0u;
+            }
         }
 
         for (int i = 0; i < 5000 && (grid.in_flight_request_count() > 0 || grid.queued_load_count() > 0 ||
                                      grid.queued_unload_count() > 0);
              ++i) {
             terrain.update_lod(camera, 1.f / 60.f);
-            std::this_thread::sleep_for(std::chrono::microseconds(200));
+            sleepAtLeast(std::chrono::microseconds(200));
         }
         terrain.update_lod(camera, 1.f / 60.f);
 
@@ -586,6 +612,7 @@ void testLodStreamingAsync() {
             stale += (d > loadRadius * 1.25f && is_resident_state(state)) ? 1u : 0u;
             transitional += is_transitional_state(state) ? 1u : 0u;
         }
+        expectTrue(stalledFrames == 0, "async: load jobs complete (no job left in flight for 10 s)");
         expectTrue(missingInner == 0, "async: chunks near the camera stay resident with meshes while moving");
         expectTrue(maxInFlight <= desc.max_async_in_flight, "async: in-flight loads respect max_async_in_flight");
         expectTrue(missing == 0 && stale == 0, "async: settled residency matches load/unload radii");
@@ -596,8 +623,8 @@ void testLodStreamingAsync() {
         u32 mixed = 0;
         u32 pairs = 0;
         expectTrue(checkSeams(terrain, maxGap, mixed, pairs) == 0, "async: seams crack-free after streaming");
-        std::printf("  async LOD stream: max in-flight %u, inner-radius misses %u, resident %u\n", maxInFlight,
-                    missingInner, grid.resident_chunk_count());
+        std::printf("  async LOD stream: max in-flight %u, inner-radius misses %u, resident %u%s\n", maxInFlight,
+                    missingInner, grid.resident_chunk_count(), paceByCompletion ? " (frames paced by job completion)" : "");
         terrain.destroy();
     });
 }
