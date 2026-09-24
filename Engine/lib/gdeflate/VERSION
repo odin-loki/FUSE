@@ -1,0 +1,79 @@
+# FUSE third-party pin: GDeflate CPU codec (FUSE Relight RL-3.3, docs/plans/FUSE_REMIX_PORT_PLAN.md §4.6).
+# Two upstreams, vendored verbatim except one marked patch (PATCHES.md, not hashed):
+#   libdeflate/  NVIDIA's GDeflate branch of libdeflate (the codec): COPYING, libdeflate.h, common/**, lib/**
+#                minus the gzip/zlib/adler32 sources GDeflate does not use. Licence (COPYING): MIT
+#                (Copyright 2016 Eric Biggers) for libdeflate, Apache-2.0 (SPDX, Copyright 2020-2022 NVIDIA
+#                CORPORATION & AFFILIATES) for NVIDIA's GDeflate additions; per-file headers say which.
+#                Not vendored: programs/, scripts/, Makefile*, README.md, NEWS.md.
+#   GDeflate/    Microsoft DirectStorage's GDeflate reference wrapper (tile stream, CPU compress/decompress),
+#                Apache-2.0 (GDeflate/LICENSE; files: Copyright NVIDIA CORPORATION & AFFILIATES and Microsoft
+#                Corporation). Commit below as `component_directstorage`; its gitlink for libdeflate is the pin.
+#                Not vendored: shaders/ (HLSL GPU decoder), GDeflateDemo/, GDeflateTest/, gdeflate_stream.png,
+#                CMake files, vcpkg.
+# Edits: every edit sits inside `/* FUSE-GDEFLATE begin: <id> */` / `/* FUSE-GDEFLATE end */`; sha256: pins the
+# file as vendored (with the patch), upstream_sha256: the same file with the marked lines removed (= upstream).
+# Apache-2.0 has no NOTICE file in either upstream. CPU only; no NVIDIA proprietary (RTX IO) code involved.
+# NVIDIA/libdeflate publishes no tags on the gdeflate branch: version/tag carry the version libdeflate.h
+# declares (LIBDEFLATE_VERSION_MAJOR 1, _MINOR 8) because the pin format requires them; `v1.8.0` is NOT an
+# upstream git tag. The commit is the authoritative pin (= DirectStorage's GDeflate/3rdparty/libdeflate gitlink).
+# fuse_gdeflate_version.h is FUSE's own pin header (version_header): *_VERSION_MAJOR/MINOR/PATCH defines
+# and an #error if libdeflate.h disagrees.
+# Checked by `fuse_lint vendored-pins` (ctest: fuse_lint_vendored_pins_gdeflate). Built by
+# Source/FUSE/Relight/mods/assets/CMakeLists.txt (fuse_relight_gdeflate; -DFUSE_RELIGHT_GDEFLATE=OFF drops it).
+# To update: re-copy both subsets from the new commits, update every field and sha256 together.
+# sha256 is over the file with CRLF normalized to LF (the DirectStorage sources are CRLF upstream).
+name=GDeflate (NVIDIA libdeflate gdeflate branch + Microsoft DirectStorage GDeflate)
+upstream=https://github.com/NVIDIA/libdeflate
+version=1.8.0
+tag=v1.8.0
+commit=8ba9502fb30d2bf728592d121f0d402e40c8cb05
+branch=gdeflate
+component_directstorage=https://github.com/microsoft/DirectStorage c53f1499d5f67a61b69a1a348d22dcd2b4cb4ede GDeflate/GDeflate
+retrieved=2026-09-24 (git clone --depth 1 --filter=blob:none --sparse DirectStorage; git fetch --depth 1 of the libdeflate gitlink)
+license=MIT AND Apache-2.0
+license_file=libdeflate/COPYING
+license_file_directstorage=GDeflate/LICENSE
+version_header=fuse_gdeflate_version.h
+sha256:fuse_gdeflate_version.h=12d6f324ef6286d0b74688fac71572e037a77d57062cc798c294b01370f23e98
+sha256:libdeflate/COPYING=8640f41453395fa7bb99393d01a2bf619a6b3e4a882d596ff130428c77e85407
+sha256:libdeflate/libdeflate.h=5958e607c4ba1e630938d1870fe5d8b802922266bbbc057c6db228fc86dc8f4a
+sha256:libdeflate/common/common_defs.h=1ff753453fea2e99024c2c51ad53ead38be6d34b0c656fb6e55080b38d6aa371
+sha256:libdeflate/common/compiler_gcc.h=1b19937ebe906c85e8fa3152e4ee01f3a0574944e4e04805379b3c79942f0bcd
+sha256:libdeflate/common/compiler_msc.h=432610eab160bf6e6dcc87550e03dea71825bbc16cb099cd54a131b00dd1c9f0
+sha256:libdeflate/lib/bt_matchfinder.h=2399cd2e6ad85482393c657afb30f7d83a40fd2091a8c487c908851b49261eff
+sha256:libdeflate/lib/cpu_features_common.h=992d91b9d5923b5cf9fe79b25fb26c1c226ca16f1902dee114ced6654ff5ec97
+sha256:libdeflate/lib/crc32.c=c269e47ce706743009a29139bccffdecf457a40aa95124062b1e4f73d3947d0e
+sha256:libdeflate/lib/crc32_table.h=4b3f2db3854461f33928ee2118d07d8cb2aeff81b9db8c53620ea06395bd31bc
+sha256:libdeflate/lib/crc32_vec_template.h=258ad462dfd9713bdc9f620fb36da90c31778e0e290d94e98b10201232b0eccb
+sha256:libdeflate/lib/decompress_template.h=f6c73bdcd692fb9eee1b389a7d3f49920704157a2a157d265d326e6980551fdf
+sha256:libdeflate/lib/deflate_compress.c=a0a80d97837879c3f0f67a83751098d9bd171b1b1280e884abf1198e9f3a111b
+sha256:libdeflate/lib/deflate_compress.h=bd69029333f4b0e6035400300898acf69991685df44cf01cfdeb123368077616
+sha256:libdeflate/lib/deflate_constants.h=8bffce92e27f045c5d039e0452252630a4a89071e431d7d9e8fbb941a03ef899
+sha256:libdeflate/lib/deflate_decompress.c=27e50251c3be5e02abfb6ae461781bcac9449eeb936922f32330bdd42d7345d1
+sha256:libdeflate/lib/gdeflate_compress.c=6539abe55978aa01f8fcc5af5bf85b4463705141c485311b0ea136973948f6a3
+sha256:libdeflate/lib/gdeflate_decompress.c=8b3579adf5932cba08ca57740d91eb00f683ad67e79c2647f150a567e57d8dc4
+sha256:libdeflate/lib/gdeflate_decompress_template.h=657bb4ff85f45140e9ae6e7a52c73ef0bfce8d5452c440d822beadd1df57f7e8
+upstream_sha256:libdeflate/lib/gdeflate_decompress_template.h=dd54a0b6987fcb95380335b381b0ce75e55ef54677aafa6d23de5319436a2be0
+sha256:libdeflate/lib/hc_matchfinder.h=302aceb3690fd2c187413c12690ee1da3e22bfd4ddadc2845350a371c9e7aa4d
+sha256:libdeflate/lib/lib_common.h=a8ee4becbda0d99d964bab65b369715750ffe7db0c023ed43b309090f225339d
+sha256:libdeflate/lib/matchfinder_common.h=8bdf37aa5975c0d9c988f8dc7ae404a0120f50831ce1acdfc7c6f4a23b94f128
+sha256:libdeflate/lib/unaligned.h=a2251cda65fde0b61d34095f76a85f3e4a381c1457c2ad24b1a5b08d0e42c98b
+sha256:libdeflate/lib/utils.c=d85f7aaa21565f444094c00333bd12ed0f51bab43037337df7228c4c8b3522ac
+sha256:libdeflate/lib/x86/cpu_features.c=e1aecd99d953d0f559ca538903d6e84f0b0fa60e972da2c62e426bf86de88811
+sha256:libdeflate/lib/x86/cpu_features.h=5dab47f9cf5b7ca6d6b7c3434c2005fc1df46085d3880a5868ce53def273b65d
+sha256:libdeflate/lib/x86/crc32_impl.h=e35d71476e387a20ee23dcb6a05400644b2759c8cf6390b088cfd09a17812a1c
+sha256:libdeflate/lib/x86/crc32_pclmul_template.h=e48a8a576adc568bddcc4de837a7c02af25c379f4aa86509b59b68432b7ae4c4
+sha256:libdeflate/lib/x86/decompress_impl.h=925d67b9904dd7bc120b847a0e95a2e5aba3d77e5a761fc52737f59204a406e6
+sha256:libdeflate/lib/x86/matchfinder_impl.h=3555d96974194d385c0dad72196e30d43325d4493cef1911f9bb1ae0d72ddfbe
+sha256:libdeflate/lib/arm/cpu_features.c=0c40cd411da38b2d78a3ee5a568ba3d8fe16d2b73c0a9244d8bc71e7c9520629
+sha256:libdeflate/lib/arm/cpu_features.h=c2cadc1a9a0c73ef04fd08de3d2660ce20fc9888dcf006af82eb275c530ae9d1
+sha256:libdeflate/lib/arm/crc32_impl.h=0de8ffac1469f1443d3aef98af2830a770cc8feeaf312a4ad1135521fd021fdb
+sha256:libdeflate/lib/arm/matchfinder_impl.h=7f987b478f070e6a0513c6685334bd6d4e310fec578c6873ab61700650c67d9d
+sha256:GDeflate/LICENSE=93d6676c6015b6d2f6d4d3a523215efb0c43141c1e24dcaa2180a06f8dc6664d
+sha256:GDeflate/README.md=d4ee50991fc3679bed35597c2ccc0bd0229ce8210b58e7cc7cac096d14b39492
+sha256:GDeflate/GDeflate.h=a89f25b5db13a2e6703a53f0d596e18509e478a83ee1273eea3c16da5dee260a
+sha256:GDeflate/GDeflateCompress.cpp=4e75360f581e5d5561c543dc5ae006fb006ee25bafd4092de1ed693f50a636d6
+sha256:GDeflate/GDeflateDecompress.cpp=8e9c328857e0b1c24c8c1b2af885b40bcf6ef40b0f97024cb9928e0c8e616470
+sha256:GDeflate/TileStream.h=20e1ab958652bb3d9268cb4da8e8b94526a61eab888a7b2004a5f7729591a7a3
+sha256:GDeflate/Utils.h=c3e7267101d62cab994604a8ef10bbe043e442873d23efaf9c33f38d01196319
+sha256:GDeflate/config.h=addf7bb5dcd2993782f8f2d770634e6e8073995707c9ec1bd723fe918721410c
