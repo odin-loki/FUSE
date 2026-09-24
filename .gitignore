@@ -215,3 +215,6 @@ fuse_nvplugin_ngx*.dll
 
 # Relight USD fixtures use a parts/ layer directory (the generic "parts" rule above is for build output).
 !/Tests/relight/fixtures/**/parts/
+
+# fuse_cook incremental cache written at the working directory
+/.fuse/
