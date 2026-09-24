@@ -30,12 +30,25 @@ target_sources(fuse_rhi PRIVATE
 # header, keep FUSE warning levels off it.
 target_include_directories(fuse_rhi SYSTEM PRIVATE "${FUSE_NVIDIA_NIS_DIR}/NIS")
 
-# Optional FSR 3.1 temporal backend (FidelityFX SDK v1.1.4, Vulkan). Off by default and not vendored in this
-# pass: docs/upscalers.md ("FSR 3.1") lists exactly what enabling it requires.
-option(FUSE_UPSCALER_FSR3 "Build the optional FidelityFX FSR 3.1 (Vulkan) upscaler backend (not vendored yet)" OFF)
-if(FUSE_UPSCALER_FSR3)
-    message(FATAL_ERROR "FUSE_UPSCALER_FSR3=ON: the FSR 3.1 upscaler sources are not vendored yet "
-                        "(see docs/upscalers.md, section 'FSR 3.1'). Configure with -DFUSE_UPSCALER_FSR3=OFF.")
+# FSR 3.1 temporal backend (WP-4.2, cmake/rp_wp42.cmake: lib fuse_fsr3 over the vendored FidelityFX SDK v1.1.4,
+# Engine/lib/fidelityfx). FUSE_UPSCALER_FSR3 controls whether fsr3::register_fsr3_backend() registers "fsr3"
+# (compile definition FUSE_UPSCALER_FSR3=1 on fuse_fsr3); fuse_fsr3 and its CPU gates build either way. Default
+# ON with the Vulkan backend; without it registration is impossible (no device) and the option has no effect.
+if(FUSE_VULKAN_BACKEND)
+    set(_fuse_upscaler_fsr3_default ON)
+else()
+    set(_fuse_upscaler_fsr3_default OFF)
+endif()
+# Trees configured before FSR 3 was vendored cached a forced OFF (ON was a FATAL_ERROR): drop that entry so the
+# new default applies; a value set with the current description is a user choice and is kept.
+get_property(_fuse_upscaler_fsr3_help CACHE FUSE_UPSCALER_FSR3 PROPERTY HELPSTRING)
+if(_fuse_upscaler_fsr3_help MATCHES "not vendored yet")
+    unset(FUSE_UPSCALER_FSR3 CACHE)
+endif()
+option(FUSE_UPSCALER_FSR3 "Register the FidelityFX FSR 3.1 (Vulkan) temporal upscaler backend \"fsr3\" (WP-4.2)"
+       ${_fuse_upscaler_fsr3_default})
+if(FUSE_UPSCALER_FSR3 AND NOT FUSE_VULKAN_BACKEND)
+    message(STATUS "FUSE: FUSE_UPSCALER_FSR3=ON has no effect without the Vulkan backend (fsr3 not registered)")
 endif()
 
 # Vendored GLSL passes -> SPIR-V (glslangValidator -V, + spirv-val), same convention as gpu_radix_sort.cmake.

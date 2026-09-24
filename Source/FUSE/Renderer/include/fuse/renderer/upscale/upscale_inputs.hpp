@@ -11,8 +11,13 @@
 // Conventions (all images row-major, row 0 = top, texel centres at integer + 0.5):
 //   * jitter      `jitter_px` is the sub-pixel offset of every render sample from its pixel centre, in RENDER
 //                 pixels, +x right, +y down, in [-0.5, 0.5). Render pixel (i, j) samples the (unjittered) scene
-//                 at continuous render coordinate (i + 0.5 + jitter.x, j + 0.5 + jitter.y). The NDC offset
-//                 applied to the projection is (2 jitter.x / render_w, -2 jitter.y / render_h) (NDC y is up).
+//                 at continuous render coordinate (i + 0.5 + jitter.x, j + 0.5 + jitter.y), so the jittered
+//                 projection moves every point by -jitter render pixels. In Vulkan clip space (NDC y down,
+//                 pixel = (ndc + 1) / 2 * size with a positive-height viewport) that is the NDC offset
+//                 (-2 jitter.x / render_w, -2 jitter.y / render_h) (`upscaleJitterNdc`), i.e. the matrix
+//                 temporal::jitter_view_proj builds. Every jitter consumer (IJitterProvider::offset_ndc, the
+//                 WP-4.1 visibility buffer, FSR 3's projection_jitter_ndc) uses this one offset; gate
+//                 fuse_rp_fsr3_jitter pins them against each other.
 //   * motion      `motion` is the screen motion of the surface seen by each render pixel in UV units
 //                 (current_uv - previous_uv, both from UNJITTERED projections; uv (0,0) = top-left,
 //                 (1,1) = bottom-right). It covers static geometry (camera motion), dynamic / skinned objects
@@ -91,7 +96,8 @@ u32 upscaleJitterPhaseCount(const UpscaleResolution& resolution);
 /// Index 0 of the cycle uses Halton index 1 (Halton index 0 is the degenerate (0, 0)).
 math::Vec2 upscaleJitterOffset(u32 frameIndex, u32 phaseCount);
 
-/// NDC translation for a render-pixel jitter (NDC y up): (2 jx / w, -2 jy / h).
+/// NDC translation for a render-pixel jitter (Vulkan NDC y down): (-2 jx / w, -2 jy / h) — moves every point by
+/// -jitter pixels (the sample convention above); jitterProjection(P, upscaleJitterNdc(j)) == jitter_view_proj(P, j).
 math::Vec2 upscaleJitterNdc(const math::Vec2& jitterPx, u32 renderWidth, u32 renderHeight);
 
 /// Applies an NDC jitter to any projection matrix (column-major, clip = P * view): clip.xy += ndc * clip.w,

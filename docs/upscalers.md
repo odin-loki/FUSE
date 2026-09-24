@@ -1,10 +1,10 @@
 # Upscalers
 
-FUSE has one upscaler abstraction with swappable backends. Temporal backends (native TAAU now; FSR 3.1, DLSS
-and XeSS later) and spatial backends (FSR 1, NVIDIA Image Scaling) share one registry and one set of
-capability queries. The CAS sharpener is registered as a 1x backend and can also run on its own in the post
-chain. The design follows `docs/research/upscaling-framegen-and-post-injectors.md` (§4.1 and recommendation 3
-for the order of backends, §6 for licensing).
+FUSE has one upscaler abstraction with swappable backends. Temporal backends (native TAAU, FSR 3.1 on Vulkan,
+DLSS through the NVIDIA plugin; XeSS later) and spatial backends (FSR 1, NVIDIA Image Scaling) share one
+registry and one set of capability queries. The CAS sharpener is registered as a 1x backend and can also run
+on its own in the post chain. The design follows `docs/research/upscaling-framegen-and-post-injectors.md` (§4.1
+and recommendation 3 for the order of backends, §6 for licensing).
 
 | File | Contents |
 | --- | --- |
@@ -13,7 +13,8 @@ for the order of backends, §6 for licensing).
 | `Renderer/include/fuse/renderer/upscale/upscale_passes.hpp` | Host entry points `run_easu`, `run_rcas`, `run_cas`, `run_nis` and `run_bilinear`, plus constant setup that matches the SDK host helpers |
 | `Renderer/include/fuse/renderer/upscale/{fsr1,cas,nis}_kernel.hpp` | Single-source `FUSE_HOST_DEVICE` ports of the vendored shaders (see `docs/compute-kernels.md`) |
 | `Renderer/src/upscale/upscaler_backends.cpp` | The built-in backends: `native_taau`, `fsr1`, `nis` and `cas` |
-| `Renderer/cmake/upscale.cmake` | Sources, build-time SPIR-V of the vendored GLSL, gate tests and the `FUSE_UPSCALER_FSR3` option |
+| `Renderer/cmake/upscale.cmake` | Sources, build-time SPIR-V of the vendored GLSL, gate tests and the `FUSE_UPSCALER_FSR3` option (FSR 3.1 registration) |
+| `Renderer/{include/fuse/renderer,src}/upscale_backends/fsr3/`, `Renderer/cmake/rp_wp42.cmake` | The FSR 3.1 backend (see "FSR 3.1" below) |
 
 ## Interface
 
@@ -47,8 +48,13 @@ class ITemporalUpscaler : IUpscaler { evaluate(dispatch, UpscaleInputs, Temporal
   - `register_backend` / `unregister_backend` let optional plugins add backends at runtime. The NVIDIA plugin
     registers `dlss_sr` and `dlss_rr` this way.
 - **Jitter**: `HaltonJitterProvider` gives Halton(2,3) offsets over `ceil(8 * ratio^2)` phases, the same as
-  `ffxFsr3GetJitterPhaseCount` / `ffxFsr3GetJitterOffset`. The offsets are in render pixels with +y down.
-  `offset_ndc()` converts them for the projection matrix.
+  `ffxFsr3GetJitterPhaseCount` / `ffxFsr3GetJitterOffset`. The offsets are in render pixels with +y down:
+  render pixel (i, j) samples the unjittered scene at (i + 0.5 + jx, j + 0.5 + jy), so the jittered
+  projection moves every point by -jitter. `offset_ndc()` (= `upscaleJitterNdc`) converts them for a Vulkan
+  projection (NDC y down): (-2 jx / w, -2 jy / h), the same matrix as `temporal::jitter_view_proj`. Every
+  temporal backend (native TAAU, WP-4.1 GPU TAAU, FSR 3.1) uses this one convention; the gate
+  `fuse_rp_fsr3_jitter` pins them against each other. (Before the WP-4.2 follow-up the x term was +2 jx / w,
+  which moved points by +jitter in x.)
 - **History**: temporal backends drop history in three cases, each with a `HistoryResetReason` and a bumped
   `history_generation()`:
   - a resolution or ratio change (`ResolutionChange`);
@@ -168,53 +174,32 @@ block starts at -1, so the first 2x2 load batch wraps to about 4.3e9 and the sam
 edge. As a result, source rows and columns -3 and -2 read the last row or column of the image instead of the
 first. `nis_pixel` reproduces this so the CPU and GPU outputs stay identical.
 
-## FSR 3.1 (optional, not vendored in this pass)
+## FSR 3.1 (WP-4.2, Vulkan)
 
-`FUSE_UPSCALER_FSR3` (default OFF) is reserved for this backend. Configuring with it ON fails with a pointer
-to this section. The evaluation was done against FidelityFX SDK v1.1.4 (`c6efa6bf`).
+FSR 3.1 is vendored and built: the AMD FidelityFX SDK v1.1.4 (`c6efa6bf`, MIT, FSR 3.1 upscaler 3.1.4) subset
+in `Engine/lib/fidelityfx` (`gpu/fsr3upscaler/*.h`, `gpu/spd/ffx_spd.h`, the 8 Vulkan GLSL passes), pinned by
+SHA-256 in its `VERSION` file (lint `fuse_lint_vendored_pins_fidelityfx`). No SDK host runtime, FidelityFX
+Vulkan backend, FidelityFX-SC or frame generation is vendored.
 
-**Size.** The FSR 3.1 upscaler needs the following, besides the portable core headers already vendored:
+| Piece | Where |
+| --- | --- |
+| Build (lib `fuse_fsr3`, passes compiled with `glslangValidator -V -Os` for one permutation and embedded, gates) | `Renderer/cmake/rp_wp42.cmake` |
+| Clean-room host port of `ffx_fsr3upscaler.cpp`, `Fsr3Gpu` (render graph v2), the `fsr3.convert` input adapter | `Renderer/{include/fuse/renderer,src}/upscale_backends/fsr3/` |
+| `"fsr3"` `ITemporalUpscaler` adapter (`Fsr3TemporalUpscaler`) and `register_fsr3_backend()` | `upscale_backends/fsr3/fsr3_upscaler.hpp` |
 
-| Part | Files | Lines (approx.) |
-| --- | --- | --- |
-| GPU headers (`gpu/fsr3upscaler/*.h`) and the Vulkan GLSL passes (`shaders/vk/fsr3upscaler/*.glsl`) | 16 headers + 10 passes (prepare inputs, luma pyramid, shading change pyramid, shading change, prepare reactivity, luma instability, accumulate, RCAS, autogen reactive, debug view) | 5.9 k |
-| `gpu/spd` (the luma and shading-change pyramids use SPD) | 5 | 1.6 k |
-| Host component (`src/components/fsr3upscaler`: context, resource creation, pass scheduling, jitter, reactive helpers) | 2 | 1.7 k |
-| FidelityFX Vulkan backend (`src/backends/vk/ffx_vk.cpp`) and the host interface headers (`host/ffx_interface.h`, `ffx_types.h`, `ffx_fsr3upscaler.h`, `backends/vk/*.h`) | ~10 | 4.7 k + 2.9 k |
-| Shader blobs | SDK builds generate them with FidelityFX-SC (`sdk/tools/ffx_shader_compiler`, a Windows/DXC and glslang driver) into permutation headers consumed by `src/backends/shared/blob_accessors` | generated |
+**Registration.** `"fsr3"` needs a Vulkan device, so it is not a built-in: the renderer calls
+`fsr3::register_fsr3_backend(registry, {device, allocator, executor})`, which registers it (caps: temporal,
+Vulkan, MIT, ratio 1 to 3, RCAS, dynamic resolution) when the device can run the passes.
 
-**Build complexity.**
+**`FUSE_UPSCALER_FSR3`** (CMake option in `upscale.cmake`, default ON when the Vulkan backend is on, OFF in
+stub builds) controls that registration: with it OFF, `register_fsr3_backend()` always returns false and
+`"fsr3"` is never registered (the `fuse_rp_fsr3_vk_switch_set` gate then skips). `fuse_fsr3`, `Fsr3Gpu` and
+the CPU gates build either way. Trees configured before FSR 3 was vendored had a forced OFF cached; that entry
+is dropped once so the new default applies.
 
-- **Shader compilation.** The SDK's own build cannot be reused on Linux. It drives shader compilation through
-  FidelityFX-SC and expects the SDK's CMake layout, which targets Windows (DX12 + VK).
-- **Direct glslang works for most passes.** 8 of the 10 FSR 3.1 GLSL passes compile directly with
-  `glslangValidator -V` using the SDK's base defines (`FFX_GPU=1`, `FFX_GLSL=1`, the `FFX_FSR3UPSCALER_OPTION_*`
-  permutation defines).
-- **The two pyramid passes don't compile yet.** Luma pyramid and shading-change pyramid need the SPD
-  configuration defines (wave-op / subgroup variant and entry-point selection). They are not yet worked out.
-- **Permutation count.** The permutation space is 5 binary options per pass: reprojection Lanczos LUT, HDR
-  input, low-res motion vectors, jittered motion vectors, inverted depth. An engine picks one permutation per
-  context, so building 1 to 4 permutations covers FUSE.
+**Conventions** (`fsr3_types.hpp`): FSR `jitterOffset = -jitter_px` (the SDK's `Jitter()` is the content
+displacement, FUSE's `jitter_px` the sample offset); the projection is jittered with `IJitterProvider::offset_ndc`
+/ `upscaleJitterNdc` like every other temporal backend; UV motion is passed unchanged with
+`fMotionVectorScale = -1`; linear depth is converted to reverse-Z device depth by `fsr3.convert`.
 
-**What enabling it needs (the next pass):**
-
-1. **Vendor.** Add `Engine/lib/fidelityfx` with `gpu/fsr3upscaler/*`, `gpu/spd/*` and
-   `shaders/vk/fsr3upscaler/*.glsl`, and extend the VERSION pin (same tag, add SHA-256 lines). Do not vendor
-   the SDK Vulkan backend or FidelityFX-SC.
-2. **Compile shaders.** In `upscale.cmake`, compile the 10 passes with glslang for FUSE's permutation:
-   HDR input, low-res motion vectors, non-jittered motion vectors, and non-inverted or inverted depth to
-   match the renderer's `DepthConvention`. Resolve the SPD defines for the two pyramid passes.
-3. **Write a native host.** Write a FUSE-native host (about 800 lines) instead of the SDK's
-   `ffx_fsr3upscaler.cpp` + `ffx_vk.cpp`. It creates the internal resources (luma history, accumulation,
-   lock, reactive and pyramid mips), fills the constant buffer (`Fsr3UpscalerConstants`: jitter, motion
-   vector scale `-motion * render_size`, exposure, pre-exposure, device depth from `camera.near/far`), and
-   records the pass sequence with `fuse_rhi` Vulkan compute pipelines and the render graph.
-4. **Register the backend.** Register `"fsr3"` as an `ITemporalUpscaler` with caps `apis = Vulkan`:
-   temporal, needs depth, motion and exposure, accepts reactive and T&C masks, HDR input, ratio 1 to 3.
-   Put it behind `FUSE_UPSCALER_FSR3` and `FUSE_VULKAN_BACKEND`.
-5. **Add a smoke test.** Run a Lavapipe smoke test on a static jittered sequence of the analytic scene: no
-   NaNs, output converges, and PSNR ≥ bilinear. Add a CPU-port parity test only if the shader logic is
-   later ported, which the research doc marks as "mostly" CPU-provable.
-
-The estimated effort is two focused passes. The main risk is the SPD configuration and resource-state
-handling on Lavapipe, not licensing: FSR 3.1 is MIT (research doc §6).
+Gates, measured quality and open items: the WP-4.2 row of `docs/unification/RENDERER-EXECUTION.md`.

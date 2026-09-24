@@ -113,7 +113,10 @@ math::Vec2 upscaleJitterNdc(const math::Vec2& jitterPx, u32 renderWidth, u32 ren
     if (renderWidth == 0u || renderHeight == 0u) {
         return {};
     }
-    return {2.f * jitterPx.x / static_cast<f32>(renderWidth), -2.f * jitterPx.y / static_cast<f32>(renderHeight)};
+    // Render pixel (i, j) samples the unjittered scene at (i + 0.5 + jitter): every point must move by -jitter
+    // pixels, i.e. clip.xy -= 2 jitter / size * clip.w in Vulkan clip space (NDC y down) — the same matrix as
+    // temporal::jitter_view_proj.
+    return {-2.f * jitterPx.x / static_cast<f32>(renderWidth), -2.f * jitterPx.y / static_cast<f32>(renderHeight)};
 }
 
 math::Mat4 jitterProjection(const math::Mat4& projection, const math::Vec2& jitterNdc) {

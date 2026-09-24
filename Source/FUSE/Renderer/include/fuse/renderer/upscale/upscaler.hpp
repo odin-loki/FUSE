@@ -11,8 +11,10 @@
 //   "nis"          spatial    NVIDIA Image Scaling NVScaler (nis_kernel.hpp), up to 2x.
 //   "cas"          sharpen    AMD FidelityFX CAS (cas_kernel.hpp), 1x only; also a post-process pass via
 //                             upscale_passes.hpp run_cas().
-// Optional, compiled only with FUSE_UPSCALER_FSR3 (off by default; not vendored yet — docs/upscalers.md):
-//   "fsr3"         temporal   FidelityFX SDK v1.1.4 FSR 3.1 upscaler (Vulkan).
+// Optional, registered at run time (needs a Vulkan device, so not a built-in) by
+// fsr3::register_fsr3_backend() (upscale_backends/fsr3/fsr3_upscaler.hpp, WP-4.2) when the build has
+// FUSE_UPSCALER_FSR3 (CMake option, default ON with the Vulkan backend; docs/upscalers.md):
+//   "fsr3"         temporal   FidelityFX SDK v1.1.4 FSR 3.1 upscaler (Vulkan, vendored in Engine/lib/fidelityfx).
 //
 // Temporal backends take the renderer's canonical `UpscaleInputs` (upscale/upscale_inputs.hpp: render/display
 // resolution, jittered linear colour, depth, UV motion, exposure, reactive / transparency masks, cameras,
@@ -190,7 +192,9 @@ public:
     virtual u32 phase_count(Extent2D render, Extent2D display) const = 0;
     /// Jitter in render pixels, in [-0.5, 0.5) per axis (+x right, +y down), for monotonic `frame_index`.
     virtual math::Vec2 offset_px(u32 frame_index, Extent2D render, Extent2D display) const = 0;
-    /// Same offset in NDC for a projection matrix: (2 * x / render.width, -2 * y / render.height).
+    /// Same offset in NDC for a projection matrix (upscaleJitterNdc, Vulkan NDC y down):
+    /// (-2 * x / render.width, -2 * y / render.height), i.e. every point moves by -offset_px render pixels —
+    /// the same matrix as temporal::jitter_view_proj.
     math::Vec2 offset_ndc(u32 frame_index, Extent2D render, Extent2D display) const;
 };
 

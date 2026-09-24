@@ -38,7 +38,8 @@ struct Fsr3BackendBinding {
 upscale::UpscalerCaps fsr3_caps();
 
 /// Binds `binding` and registers "fsr3" (false when the device cannot run the passes, "fsr3" is already
-/// registered, or in the stub backend). unregister_fsr3_backend() removes it and drops the binding.
+/// registered, in the stub backend, or when the build has FUSE_UPSCALER_FSR3=OFF). unregister_fsr3_backend()
+/// removes it and drops the binding.
 bool register_fsr3_backend(upscale::UpscalerRegistry& registry, const Fsr3BackendBinding& binding);
 void unregister_fsr3_backend(upscale::UpscalerRegistry& registry);
 

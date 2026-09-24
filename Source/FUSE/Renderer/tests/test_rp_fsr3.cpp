@@ -652,6 +652,11 @@ int runReset(Context& ctx) {
 
 // --- switch mode ---------------------------------------------------------------------------------------
 int runSwitch(Context& ctx) {
+#if !defined(FUSE_UPSCALER_FSR3)
+    (void)ctx;
+    std::printf("SKIP: switch: built with FUSE_UPSCALER_FSR3=OFF (register_fsr3_backend never registers \"fsr3\")\n");
+    return kSkip;
+#else
     up::UpscalerRegistry registry;
     registry.register_builtin_backends();
     expect(register_fsr3_backend(registry, ctx.binding()), "register fsr3");
@@ -737,6 +742,7 @@ int runSwitch(Context& ctx) {
     unregister_fsr3_backend(registry);
     expect(registry.find(up::kFsr3Name) == nullptr, "unregister fsr3");
     return 0;
+#endif
 }
 
 // --- zero_alloc mode -----------------------------------------------------------------------------------

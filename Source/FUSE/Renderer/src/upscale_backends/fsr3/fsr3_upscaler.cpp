@@ -112,7 +112,7 @@ upscale::UpscalerCaps fsr3_caps() {
 }
 
 bool register_fsr3_backend(upscale::UpscalerRegistry& registry, const Fsr3BackendBinding& binding) {
-#if defined(FUSE_VULKAN_BACKEND)
+#if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_UPSCALER_FSR3)
     if (binding.device == nullptr || binding.allocator == nullptr || binding.executor == nullptr ||
         !queryFsr3Capabilities(binding.device).supported || registry.find(upscale::kFsr3Name) != nullptr) {
         return false;
@@ -123,6 +123,10 @@ bool register_fsr3_backend(upscale::UpscalerRegistry& registry, const Fsr3Backen
     }
     return registry.register_backend(fsr3_caps(), &makeFsr3);
 #else
+    // Stub backend, or FUSE_UPSCALER_FSR3=OFF (cmake/upscale.cmake): "fsr3" is never registered.
+#if defined(FUSE_VULKAN_BACKEND)
+    (void)&makeFsr3;
+#endif
     (void)registry;
     (void)binding;
     return false;

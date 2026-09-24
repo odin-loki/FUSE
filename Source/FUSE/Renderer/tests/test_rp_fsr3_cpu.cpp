@@ -12,12 +12,15 @@
 //             pre-exposure, motion-vector scale, downscale factor, tan(half horizontal fov), dispatch sizes,
 //             invalid input rejected with the state untouched
 //   jitter    sign conventions: FSR Jitter() = -jitter_px puts the FSR sample position (upsample.h) exactly on
-//             the FUSE sample position; projection_jitter_ndc == temporal::jitter_view_proj and moves points by
-//             -jitter (the sample convention); SDK Halton offsets == upscaleJitterOffset; phase counts
+//             the FUSE sample position; upscaleJitterNdc + jitterProjection == projection_jitter_ndc ==
+//             temporal::jitter_view_proj and moves points by -jitter (the sample convention) in both axes;
+//             IJitterProvider::offset_ndc of every temporal provider (Halton, native_taau) == upscaleJitterNdc of
+//             its offset_px; SDK Halton offsets == upscaleJitterOffset; phase counts
 //   convert   CPU twin of fsr3.convert: reverse-Z device depth -> the SDK's inverted transform returns the linear
 //             depth (rel 2e-6), sky -> far plane, monotonic
 #include <fuse/renderer/temporal/temporal_types.hpp>
 #include <fuse/renderer/upscale/upscale_inputs.hpp>
+#include <fuse/renderer/upscale/upscaler.hpp>
 #include <fuse/renderer/upscale_backends/fsr3/fsr3_gpu.hpp>
 #include <fuse/renderer/upscale_backends/fsr3/fsr3_reflect.hpp>
 #include <fuse/renderer/upscale_backends/fsr3/fsr3_types.hpp>
@@ -28,6 +31,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iterator>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -383,6 +387,19 @@ int runJitter() {
     proj[14] = 0.1f * 100.f / (0.1f - 100.f);
     f64 worstMine = 0.0, worstTemporal = 0.0;
     f64 renderer[2] = {0.0, 0.0};
+    f64 worstMatrix = 0.0; // |jitterProjection(P, upscaleJitterNdc(j)) - jitter_view_proj(P, j)| per element
+    bool aliasExact = true, providersExact = true;
+    // Every jitter provider of the upscaler stack: the Halton provider (native_taau, and "fsr3" whose adapter
+    // owns one too — Fsr3TemporalUpscaler::m_jitter), the registry's native_taau instance; spatial backends
+    // (fsr1 / nis / cas) use ZeroJitterProvider.
+    const upscale::HaltonJitterProvider halton;
+    std::unique_ptr<upscale::IUpscaler> taauBackend = upscale::UpscalerRegistry::instance().create(upscale::kNativeTaauName);
+    const auto* taau = dynamic_cast<const upscale::ITemporalUpscaler*>(taauBackend.get());
+    expect(taau != nullptr, "native_taau is a temporal backend");
+    const upscale::Extent2D render{w, h}, display{w * 3u / 2u, h * 3u / 2u};
+    const u32 phases = halton.phase_count(render, display);
+    math::Mat4 projM{};
+    std::memcpy(projM.data.data(), proj, sizeof(proj));
     for (u32 i = 0; i < 32u; ++i) {
         const math::Vec2 j = upscaleJitterOffset(i, 32u);
         // projection_jitter_ndc as a translation: clip.xy += ndc * clip.w.
@@ -395,13 +412,26 @@ int runJitter() {
         }
         f32 wp[16];
         temporal::jitter_view_proj(proj, j.x, j.y, w, h, wp);
-        // The renderer's upscaleJitterNdc through jitterProjection (the open WP-4.1 question).
+        // The renderer's upscaleJitterNdc through jitterProjection (what IJitterProvider::offset_ndc feeds).
         const math::Vec2 rn = upscaleJitterNdc(j, w, h);
-        f32 rp[16];
-        std::memcpy(rp, proj, sizeof(rp));
-        for (u32 c = 0; c < 4u; ++c) {
-            rp[c * 4 + 0] += rn.x * proj[c * 4 + 3];
-            rp[c * 4 + 1] += rn.y * proj[c * 4 + 3];
+        aliasExact = aliasExact && rn.x == ndc.x && rn.y == ndc.y;
+        const math::Mat4 rpM = jitterProjection(projM, rn);
+        const f32* rp = rpM.data.data();
+        for (u32 e = 0; e < 16u; ++e) {
+            worstMatrix = std::max(worstMatrix, static_cast<f64>(std::fabs(rp[e] - wp[e])));
+        }
+        // Providers: offset_ndc(frame) == upscaleJitterNdc(offset_px(frame)) and offset_px == the renderer's Halton.
+        for (const upscale::IJitterProvider* prov : {static_cast<const upscale::IJitterProvider*>(&halton),
+                                                     taau ? &taau->jitter_provider() : nullptr}) {
+            if (prov == nullptr) {
+                continue;
+            }
+            const math::Vec2 px = prov->offset_px(i, render, display);
+            const math::Vec2 pn = prov->offset_ndc(i, render, display);
+            const math::Vec2 ref = upscaleJitterOffset(i, phases);
+            const math::Vec2 refNdc = upscaleJitterNdc(px, w, h);
+            providersExact = providersExact && prov->phase_count(render, display) == phases && px.x == ref.x &&
+                             px.y == ref.y && pn.x == refNdc.x && pn.y == refNdc.y;
         }
         for (u32 k = 0; k < 8u; ++k) {
             const f64 pt[3] = {-2.0 + 0.5 * k, 1.0 - 0.3 * k, -3.0 - 2.0 * k};
@@ -432,11 +462,15 @@ int runJitter() {
     std::printf("jitter: projection_jitter_ndc moves points by -jitter (max err %.2e px), == temporal::jitter_view_proj "
                 "(max %.2e px)\n",
                 worstMine, worstTemporal);
-    std::printf("jitter: INFO renderer upscaleJitterNdc (+2jx/w, -2jy/h) through jitterProjection on a Vulkan projection: "
-                "x off by up to %.3f px (moves points by +jx), y off by %.2e px — the open WP-4.1 sign question; use "
-                "projection_jitter_ndc / temporal::jitter_view_proj\n",
-                renderer[0], renderer[1]);
+    std::printf("jitter: upscaleJitterNdc (-2jx/w, -2jy/h) through jitterProjection on a Vulkan projection: x err %.2e px, "
+                "y err %.2e px; matrix vs temporal::jitter_view_proj max |diff| %.2e; projection_jitter_ndc alias %s; "
+                "IJitterProvider::offset_ndc (Halton, native_taau) %s\n",
+                renderer[0], renderer[1], worstMatrix, aliasExact ? "exact" : "DIFFERS", providersExact ? "exact" : "DIFFERS");
     expect(worstMine < 1e-3 && worstTemporal < 1e-3, "projection jitter follows the sample convention");
+    expect(renderer[0] < 1e-3 && renderer[1] < 1e-3, "upscaleJitterNdc + jitterProjection move points by -jitter (both axes)");
+    expect(worstMatrix < 1e-6, "jitterProjection(P, upscaleJitterNdc(j)) == temporal::jitter_view_proj(P, j)");
+    expect(aliasExact, "projection_jitter_ndc == upscaleJitterNdc");
+    expect(providersExact, "IJitterProvider::offset_ndc == upscaleJitterNdc(offset_px) for every temporal provider");
     // SDK Halton == the renderer's jitter sequence.
     f32 worstHalton = 0.f;
     for (i32 n : {8, 18, 23, 32, 72}) {

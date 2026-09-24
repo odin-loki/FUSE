@@ -20,13 +20,13 @@
 //            uvJittered = uv + Jitter() / RenderSize()). Hence FSR jitterOffset = -jitter_px
 //            (fsr3_jitter_offset). The projection matrix for that sample convention moves every point by
 //            -jitter_px: in Vulkan clip space (NDC y down) clip.xy -= 2 jitter / size * clip.w, i.e. the NDC
-//            offset (-2 jx / w, -2 jy / h) (projection_jitter_ndc, identical to temporal::jitter_view_proj).
-//            NOTE: upscale_inputs.hpp / upscaleJitterNdc document (+2 jx / w, -2 jy / h) "(NDC y is up)", which
-//            moves points by +jitter in x — the open "jitter sign" question of WP-4.1. It is wrong for the
-//            sample convention in x under either NDC orientation (and in y for a y-up NDC); callers that
-//            jitter a Vulkan projection must use projection_jitter_ndc / temporal::jitter_view_proj. The
-//            fuse_rp_fsr3_jitter gate pins all three conventions and fuse_rp_fsr3_vk_quality shows the wrong
-//            FSR sign measurably blurs the output.
+//            offset (-2 jx / w, -2 jy / h) = upscaleJitterNdc = IJitterProvider::offset_ndc (projection_jitter_ndc
+//            is kept as an alias), identical to temporal::jitter_view_proj. (Until the WP-4.2 follow-up,
+//            upscaleJitterNdc returned +2 jx / w and moved points by +jitter in x; it was fixed at the source.)
+//            FSR's jitterOffset = -jitter_px is NOT a compensation for that: it is the SDK's own sign (content
+//            displacement vs sample offset) and is independent of how the projection is jittered. The
+//            fuse_rp_fsr3_jitter gate pins every provider / consumer against each other and
+//            fuse_rp_fsr3_vk_quality shows the wrong FSR sign measurably blurs the output.
 //   motion   FUSE motion = uv_cur - uv_prev (unjittered). FSR wants the UV offset to the previous position
 //            (prev - cur) after `MotionVectorScale()`: the convert pass stores the FUSE UV motion unchanged
 //            and the host sets fMotionVectorScale = (-1, -1) (= SDK motionVectorScale -renderSize / renderSize).
@@ -206,9 +206,9 @@ struct Fsr3Settings {
 /// FSR jitterOffset (content displacement, SDK sign) for a FUSE sample jitter: -jitter_px.
 inline math::Vec2 fsr3_jitter_offset(math::Vec2 fuseJitterPx) { return math::Vec2(-fuseJitterPx.x, -fuseJitterPx.y); }
 /// NDC translation of a Vulkan projection (NDC y down) that realises the FUSE sample jitter:
-/// (-2 jx / w, -2 jy / h) — the same as temporal::jitter_view_proj.
+/// (-2 jx / w, -2 jy / h) — upscaleJitterNdc (alias kept for WP-4.2 callers), same as temporal::jitter_view_proj.
 inline math::Vec2 projection_jitter_ndc(math::Vec2 jitterPx, u32 renderWidth, u32 renderHeight) {
-    return math::Vec2(-2.f * jitterPx.x / static_cast<f32>(renderWidth), -2.f * jitterPx.y / static_cast<f32>(renderHeight));
+    return upscaleJitterNdc(jitterPx, renderWidth, renderHeight);
 }
 /// ffxFsr3UpscalerGetJitterPhaseCount: int(8 * (display / render)^2) (truncation; the renderer's
 /// upscaleJitterPhaseCount rounds up, e.g. 23 vs 24 at 1.7x — only the lock / accumulation constant uses this).

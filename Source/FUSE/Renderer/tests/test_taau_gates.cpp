@@ -132,8 +132,9 @@ void testInputContract() {
         const Vec2 delta = ndc(jproj) - ndc(proj);
         shiftOk = shiftOk && std::fabs(delta.x - jndc.x) < 1e-5f && std::fabs(delta.y - jndc.y) < 1e-5f;
     }
-    expectTrue(shiftOk && std::fabs(jndc.x - 2.f * 0.25f / 120.f) < 1e-7f && std::fabs(jndc.y - 2.f * 0.375f / 72.f) < 1e-7f,
-               "jitterProjection: NDC shift = (2 jx / w, -2 jy / h) at every depth");
+    // (-2 jx / w, -2 jy / h): points move by -jitter pixels (Vulkan NDC y down), == temporal::jitter_view_proj.
+    expectTrue(shiftOk && std::fabs(jndc.x + 2.f * 0.25f / 120.f) < 1e-7f && std::fabs(jndc.y - 2.f * 0.375f / 72.f) < 1e-7f,
+               "jitterProjection: NDC shift = (-2 jx / w, -2 jy / h) at every depth");
 
     UpscaleInputs bad{};
     expectTrue(validateUpscaleInputs(bad) == UpscaleInputsError::InvalidResolution, "validate: invalid resolution");

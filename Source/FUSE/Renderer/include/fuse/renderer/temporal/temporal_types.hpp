@@ -10,8 +10,9 @@
 //     drawViewProj = jitter_view_proj(viewProj, jitter)       (clip.xy -= 2 jitter / size * clip.w)
 // in Vulkan clip space (NDC y down, the visbuffer / resolve convention), which moves every projected point by
 // -jitter pixels, so the pixel centre (i + 0.5) sees the point whose unjittered position is (i + 0.5 + jitter).
-// (upscale_inputs.hpp documents the NDC offset as (+2 jx / w, -2 jy / h) for a y-up NDC; that moves points by
-// +jitter and contradicts its own sample convention and the TAAU kernel. WP-4.1 follows the kernel.)
+// This equals jitterProjection(viewProj, upscaleJitterNdc(jitter)) = IJitterProvider::offset_ndc
+// (upscale_inputs.hpp, NDC offset (-2 jx / w, -2 jy / h); the x sign there was fixed in the WP-4.2 follow-up),
+// pinned by gate fuse_rp_fsr3_jitter.
 //
 // Motion vectors ("temporal.motion"): per render pixel, UV motion current - previous, both from the UNJITTERED
 // projections (the UpscaleInputs contract), so no jitter term ever reaches the TAAU:

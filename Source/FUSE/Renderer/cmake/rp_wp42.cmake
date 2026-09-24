@@ -87,6 +87,11 @@ add_library(fuse_fsr3 STATIC
 )
 set_source_files_properties(${_fuse_wp42_shader_files} PROPERTIES HEADER_FILE_ONLY TRUE)
 target_link_libraries(fuse_fsr3 PUBLIC fuse_rhi)
+# FUSE_UPSCALER_FSR3 (option in cmake/upscale.cmake, default ON with Vulkan): register_fsr3_backend() registers
+# "fsr3" only when set (PUBLIC so consumers can test it too).
+if(FUSE_UPSCALER_FSR3 AND FUSE_VULKAN_BACKEND)
+    target_compile_definitions(fuse_fsr3 PUBLIC FUSE_UPSCALER_FSR3=1)
+endif()
 # The FFX_CPU host helpers (FsrRcasCon, ffxSpdSetup) of the vendored headers; SYSTEM: third-party code.
 target_include_directories(fuse_fsr3 SYSTEM PRIVATE "${_fuse_wp42_ffx}/include")
 fuse_apply_cxx23(fuse_fsr3)

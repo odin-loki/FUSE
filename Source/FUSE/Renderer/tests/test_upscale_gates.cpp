@@ -111,7 +111,7 @@ void testRegistry() {
     const up::UpscalerCaps* nis = reg.find(up::kNisName);
     const up::UpscalerCaps* cas = reg.find(up::kCasName);
     expectTrue(taau && fsr1 && nis && cas, "built-ins found by name");
-    expectTrue(reg.find(up::kFsr3Name) == nullptr, "fsr3 absent without FUSE_UPSCALER_FSR3");
+    expectTrue(reg.find(up::kFsr3Name) == nullptr, "fsr3 is not a built-in (runtime register_fsr3_backend, WP-4.2)");
     if (!(taau && fsr1 && nis && cas)) {
         return;
     }
@@ -213,7 +213,7 @@ void testJitter() {
     expectTrue(std::fabs(sx / n) < 0.05 && std::fabs(sy / n) < 0.05, "jitter is centred over a cycle");
     const Vec2 ndc = jitter.offset_ndc(1, {960, 540}, {1920, 1080});
     const Vec2 px = jitter.offset_px(1, {960, 540}, {1920, 1080});
-    expectNear(ndc.x, 2.0 * px.x / 960.0, 1e-7, "ndc x = 2 px / width");
+    expectNear(ndc.x, -2.0 * px.x / 960.0, 1e-7, "ndc x = -2 px / width (points move by -jitter)");
     expectNear(ndc.y, -2.0 * px.y / 540.0, 1e-7, "ndc y = -2 px / height (+y down in pixels)");
     const up::ZeroJitterProvider zero;
     expectTrue(zero.phase_count({1, 1}, {1, 1}) == 1u && zero.offset_px(5, {1, 1}, {1, 1}).x == 0.f, "zero jitter");
