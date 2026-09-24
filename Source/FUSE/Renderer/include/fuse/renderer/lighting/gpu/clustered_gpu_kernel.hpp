@@ -19,8 +19,15 @@
 //   contributes nothing); spot = that x smooth cone t^2, t = saturate((cos - cosOuter) /
 //   max(cosInner - cosOuter, 1e-4)); directional = 1 (L = -direction). Alpha = 1 on shaded pixels.
 //
-// Every shading model uses this lobe for now (per-model lobes and multi-scatter compensation are
-// later Phase-2 packages). The kernels evaluate the same expressions in the same order in f32.
+// Every shading model uses this lobe for now (per-model lobes are a later Phase-2 package). The
+// kernels evaluate the same expressions in the same order in f32.
+//
+// WP-2.2: with a BRDF LUT (ShadeParams::brdf_lut, LightingFrameConstants::brdfLut != 0; ltc_kernel.hpp)
+// the lobe is the multi-scatter compensated BRDF (brdf::multi_scatter_cos: Fdez-Aguera compensation,
+// diffuse weighted by 1 - E_spec, exact metallic blend), and two more light types shade: rectangle and
+// disk area lights (LTC, x the area window of the distance to the centre, 0 at d >= range), and a
+// directional light with an angular radius (cosOuter < ltc::kMinSunCos) shades as a disk at infinity.
+// Without the LUT the WP-2.1 lobe above is used unchanged and area lights contribute nothing.
 
 #include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/math/vec.hpp>
@@ -28,6 +35,8 @@
 #include <fuse/renderer/lighting/clustered.hpp>
 #include <fuse/renderer/lighting/clustered_kernel.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_gpu_types.hpp>
+#include <fuse/renderer/lighting/ltc/ltc_kernel.hpp>
+#include <fuse/renderer/material/brdf.hpp>
 #include <fuse/types.hpp>
 
 #include <algorithm>
@@ -162,6 +171,76 @@ FUSE_HOST_DEVICE inline math::Vec3 light_contribution(const gpu_scene::GpuLight&
 }
 
 // ---------------------------------------------------------------------------------------------
+// WP-2.2: compensated BRDF and area lights (with a BRDF LUT)
+// ---------------------------------------------------------------------------------------------
+
+/// Per-pixel terms: the multi-scatter weights (DFG at N.V) and the LTC frame / matrix.
+struct SurfaceTerms {
+    brdf::MultiScatterTerms ms{};
+    ltc::LtcFrame frame{};
+};
+
+FUSE_HOST_DEVICE inline SurfaceTerms surface_terms(const SurfaceSample& s, const math::Vec3& v, const f32* lut) {
+    SurfaceTerms t{};
+    const f32 n_dot_v = std::max(s.normal.dot(v), brdf::kMinNoV);
+    f32 dfg_a = 0.f;
+    f32 dfg_b = 0.f;
+    ltc::sample_dfg(lut, n_dot_v, s.roughness, dfg_a, dfg_b);
+    t.ms = brdf::multi_scatter_terms(s.albedo, s.metallic, dfg_a, dfg_b);
+    t.frame = ltc::make_frame(s.normal, v);
+    ltc::sample_ltc(lut, n_dot_v, s.roughness, t.frame.m);
+    return t;
+}
+
+/// Outgoing radiance towards `v` from one light with the compensated BRDF; 0 for free slots and
+/// unknown types.
+FUSE_HOST_DEVICE inline math::Vec3 light_contribution(const gpu_scene::GpuLight& light, const SurfaceSample& s,
+                                                      const math::Vec3& v, const SurfaceTerms& t, const f32* lut) {
+    math::Vec3 response{};
+    f32 attenuation = 1.f;
+    if (light.type == static_cast<u32>(gpu_scene::GpuLightType::Directional)) {
+        const math::Vec3 l = safe_normalize(light_vec3(light.direction) * -1.f, math::Vec3{0.f, 0.f, 1.f});
+        if (light.cosOuter < ltc::kMinSunCos) {
+            response = ltc::sun_response(lut, t.frame, t.ms, s.albedo, s.roughness, v, l, light.cosOuter);
+        } else {
+            response = brdf::multi_scatter_cos(t.ms, s.albedo, s.roughness, s.normal, v, l);
+        }
+    } else if (light.type == static_cast<u32>(gpu_scene::GpuLightType::Point) ||
+               light.type == static_cast<u32>(gpu_scene::GpuLightType::Spot)) {
+        const math::Vec3 to_light = light_vec3(light.position) - s.position;
+        const f32 distance = to_light.length();
+        attenuation = clustered_kernel::point_light_falloff(distance, light.range);
+        if (attenuation == 0.f) {
+            return {};
+        }
+        const math::Vec3 l = to_light * (1.f / std::max(distance, 1e-6f));
+        if (light.type == static_cast<u32>(gpu_scene::GpuLightType::Spot)) {
+            const math::Vec3 axis = safe_normalize(light_vec3(light.direction), math::Vec3{0.f, 0.f, -1.f});
+            attenuation = attenuation * spot_cone(-(l.dot(axis)), light.cosInner, light.cosOuter);
+            if (attenuation == 0.f) {
+                return {};
+            }
+        }
+        response = brdf::multi_scatter_cos(t.ms, s.albedo, s.roughness, s.normal, v, l);
+    } else if (light.type == ltc::kLightRect || light.type == ltc::kLightDisk) {
+        const math::Vec3 c = light_vec3(light.position) - s.position;
+        attenuation = ltc::area_window(c.length(), light.range);
+        if (attenuation == 0.f) {
+            return {};
+        }
+        const math::Vec3 normal = safe_normalize(light_vec3(light.direction), math::Vec3{0.f, 0.f, -1.f});
+        math::Vec3 ex{};
+        math::Vec3 ey{};
+        ltc::area_axes(normal, ltc::decode_tangent(light.flags), light.cosInner, light.cosOuter, ex, ey);
+        response = ltc::area_light_response(t.frame, t.ms, light.type == ltc::kLightDisk, c, ex, ey);
+    } else {
+        return {};
+    }
+    const f32 scale = light.intensity * attenuation;
+    return {response.x * light.color[0] * scale, response.y * light.color[1] * scale, response.z * light.color[2] * scale};
+}
+
+// ---------------------------------------------------------------------------------------------
 // light.shade reference kernel
 // ---------------------------------------------------------------------------------------------
 
@@ -188,6 +267,9 @@ struct ShadeParams {
     kernel::Span<const u32> light_list;                  ///< flat list of light slots
     kernel::Span<const u32> directional;                 ///< directional light slots, ascending
     math::Vec4* out = nullptr;                           ///< width * height radiance (alpha 1 = shaded)
+    /// WP-2.2 BRDF LUT (ltc::kLutWords, ltc::BrdfLut): compensated BRDF + area lights; empty = the
+    /// WP-2.1 lobe.
+    kernel::Span<const f32> brdf_lut;
 };
 
 /// Shades one pixel; false (and zero radiance) for sky / out-of-range pixels.
@@ -221,10 +303,16 @@ FUSE_HOST_DEVICE inline bool shade_pixel(const ShadeParams& p, u32 px, u32 py, m
     const math::Vec3 v = safe_normalize(c.position - s.position, s.normal);
 
     math::Vec3 radiance = s.emissive + vmul(p.ambient, s.albedo) * s.ao;
+    const bool compensated = p.brdf_lut.size >= ltc::kLutWords;
+    SurfaceTerms terms{};
+    if (compensated) {
+        terms = surface_terms(s, v, p.brdf_lut.data);
+    }
     for (u32 i = 0; i < p.directional.size; ++i) {
         const u32 slot = p.directional[i];
         if (slot < p.lights.size) {
-            radiance = radiance + light_contribution(p.lights[slot], s, v);
+            radiance = radiance + (compensated ? light_contribution(p.lights[slot], s, v, terms, p.brdf_lut.data)
+                                               : light_contribution(p.lights[slot], s, v));
         }
     }
     if (cluster < p.cluster_grid.size) {
@@ -233,7 +321,8 @@ FUSE_HOST_DEVICE inline bool shade_pixel(const ShadeParams& p, u32 px, u32 py, m
         for (u32 i = entry.offset; i < end; ++i) {
             const u32 slot = p.light_list[i];
             if (slot < p.lights.size) {
-                radiance = radiance + light_contribution(p.lights[slot], s, v);
+                radiance = radiance + (compensated ? light_contribution(p.lights[slot], s, v, terms, p.brdf_lut.data)
+                                                   : light_contribution(p.lights[slot], s, v));
             }
         }
     }

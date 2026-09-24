@@ -287,3 +287,5 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp13.cmake")  # WP-1.3 instance cu
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp14.cmake")  # WP-1.4 visibility buffer (visbuffer/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp15.cmake")  # WP-1.5 material resolve (material_resolve/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp21.cmake")  # WP-2.1 GPU clustered lighting (lighting/gpu/, shaders/lighting/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp22.cmake")  # WP-2.2 LTC area lights + BRDF energy compensation (lighting/ltc/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp23.cmake")  # WP-2.3 forward transparency (forward/, shaders/forward/)

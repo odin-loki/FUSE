@@ -27,7 +27,9 @@ void makeOracleLights(const gpu_scene::GpuLight* lights, u32 count, OracleLights
         const gpu_scene::GpuLight& l = lights[slot];
         const math::Vec3 position{l.position[0], l.position[1], l.position[2]};
         const math::Vec3 color{l.color[0], l.color[1], l.color[2]};
-        if (l.type == static_cast<u32>(gpu_scene::GpuLightType::Point)) {
+        // WP-2.2 area lights are clustered by their range sphere around the centre, like points.
+        if (l.type == static_cast<u32>(gpu_scene::GpuLightType::Point) || l.type == ltc::kLightRect ||
+            l.type == ltc::kLightDisk) {
             PointLightInput p{};
             p.position = position;
             p.color = color;
@@ -108,6 +110,9 @@ ShadeParams makeShadeParams(const ShadeReferenceDesc& desc, math::Vec4* out) {
         p.directional = {desc.directional->data(), static_cast<u32>(desc.directional->size())};
     }
     p.out = out;
+    if (desc.brdfLut != nullptr) {
+        p.brdf_lut = {desc.brdfLut, ltc::kLutWords};
+    }
     return p;
 }
 

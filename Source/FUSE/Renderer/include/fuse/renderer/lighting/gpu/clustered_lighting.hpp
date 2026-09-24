@@ -29,6 +29,8 @@
 // Shade: light.shade, 8 x 8 tiles, one pixel per thread (clustered_gpu_kernel.hpp is the reference):
 // G-buffer texelFetch (bindless sampled images), world position from depth, cluster lookup, the
 // directional list then the cluster's point / spot lights, Cook-Torrance BRDF, + emissive + ambient.
+// WP-2.2 (energyCompensation, the default): multi-scatter compensated BRDF, rectangle / disk area
+// lights (LTC; clustered by their range sphere) and sun disks, from a LUT uploaded once at init.
 //
 // Kernels: Slang primary (-fp-mode precise) with GLSL twins (`precise`), embedded by
 // cmake/rp_wp21.cmake. Steady-state frames make no heap allocations (buffers grow only when the light
@@ -99,6 +101,10 @@ struct ClusteredLightingDesc {
     LightingKernelLanguage language = LightingKernelLanguage::Auto;
     u32 framesInFlight = 3; ///< frame-constant ring slots
     const char* name = "clustered_lighting";
+    /// WP-2.2: shade with the multi-scatter compensated BRDF, rectangle / disk area lights (LTC) and
+    /// sun disks: init uploads ltc::sharedBrdfLut() once (LightingFrameConstants::brdfLut). false =
+    /// the WP-2.1 single-scatter lobe (area lights contribute nothing).
+    bool energyCompensation = true;
 };
 
 struct LightingFrameDesc {
@@ -169,6 +175,13 @@ public:
     u32 width() const { return m_width; }
     u32 height() const { return m_height; }
     const LightingStats& stats() const { return m_stats; }
+    /// The LUT the shade reads (ltc::kLutWords f32, for ShadeReferenceDesc::brdfLut); null without
+    /// energy compensation.
+    const f32* brdfLut() const { return m_brdfLut; }
+    /// BDA of this frame's LightingFrameConstants (valid after beginFrame, until the next one):
+    /// consumers of the cluster lists (WP-2.3 forward transparency) read the grid / lists / camera
+    /// through it, together with a StorageRead of LightingGraphRefs::lists.
+    u64 frameConstantsAddress() const { return m_frameAddress; }
 
 private:
     struct Buffers {
@@ -223,6 +236,8 @@ private:
     std::vector<Retired> m_retired;
     Buffer m_frameRing{};
     u64 m_frameAddress = 0;
+    Buffer m_lutBuffer{};          ///< WP-2.2 BRDF / LTC LUT (host-visible, written once at init)
+    const f32* m_brdfLut = nullptr;
     const material_resolve::MaterialResolve* m_gbuffer = nullptr;
     void* m_gbufferImages[kGBufferInputs] = {};
     BindlessSlotHandle m_gbufferSlots[kGBufferInputs]{};

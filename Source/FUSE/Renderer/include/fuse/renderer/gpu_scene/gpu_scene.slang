@@ -33,6 +33,7 @@ static const uint kFuseInstanceVisible = 2u;
 static const uint kFuseInstanceCastShadow = 4u;
 static const uint kFuseInstanceReceiveShadow = 8u;
 static const uint kFuseInstanceStatic = 16u;
+static const uint kFuseInstanceTransparent = 32u;
 
 struct GpuInstance {
     uint mesh;

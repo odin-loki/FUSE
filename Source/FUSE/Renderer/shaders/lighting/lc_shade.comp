@@ -43,26 +43,8 @@ void main() {
         s.emissive = rt5.xyz;
         precise vec3 toCamera = fuse_lc_vec3(F.cameraPosition) - s.position;
         const vec3 v = fuse_lc_safe_normalize(toCamera, s.normal);
-        FuseGpuLightsRef lights = fuse_gpu_scene_lights(fuse_gpu_scene(F.scene));
-        precise vec3 radiance = s.emissive + fuse_lc_vec3(F.ambient) * s.albedo * s.ao;
-        FuseLcWordsRef directional = FuseLcWordsRef(F.directional);
-        const uint directionalCount = FuseLcWordsRef(F.listHeader).v[FUSE_LC_HEADER_DIRECTIONAL];
-        for (uint i = 0u; i < directionalCount; ++i) {
-            const uint slot = directional.v[i];
-            if (slot < F.lightCount) {
-                radiance = radiance + fuse_lc_light(lights.v[slot], s, v);
-            }
-        }
-        FuseLcWordsRef grid = FuseLcWordsRef(F.grid);
-        FuseLcWordsRef list = FuseLcWordsRef(F.lightList);
-        const uint offset = grid.v[cluster * 2u];
-        const uint count = grid.v[cluster * 2u + 1u];
-        for (uint i = 0u; i < count; ++i) {
-            const uint slot = list.v[offset + i];
-            if (slot < F.lightCount) {
-                radiance = radiance + fuse_lc_light(lights.v[slot], s, v);
-            }
-        }
+        // The light loop (WP-2.2: shared with the forward transparency pass, lc_ltc.glsl).
+        const vec3 radiance = fuse_lc_shade_lights(F, s, v, cluster);
         result = vec4(radiance, 1.0);
     }
     imageStore(fuse_lc_images[fuse_handle_index(F.output_)], ip, result);

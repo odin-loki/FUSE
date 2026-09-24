@@ -60,7 +60,8 @@ void main() {
         b.pad = 0u;
         const vec3 p = fuse_lc_vec3(light.position);
         const float radius = light.range;
-        const bool clustered = light.type == FUSE_LIGHT_POINT || light.type == FUSE_LIGHT_SPOT;
+        const bool clustered = light.type == FUSE_LIGHT_POINT || light.type == FUSE_LIGHT_SPOT ||
+                               light.type == FUSE_LIGHT_RECT || light.type == FUSE_LIGHT_DISK; // WP-2.2 area lights: range sphere
         if (clustered && radius > 0.0 && !isinf(radius) && !any(isinf(p)) && !any(isnan(p))) {
             const vec3 c = fuse_lc_world_to_view(p, F);
             b.center = float[3](c.x, c.y, c.z);

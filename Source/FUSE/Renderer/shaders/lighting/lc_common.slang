@@ -34,7 +34,7 @@ struct LcFrame {
     uint64_t grid;
     uint64_t directional;
     uint64_t lightList;
-    uint64_t reserved64;
+    uint64_t brdfLut; // WP-2.2 BRDF / LTC LUT (f32), 0 = WP-2.1 lobe
     float cameraPosition[3];
     float nearPlane;
     float right[3];

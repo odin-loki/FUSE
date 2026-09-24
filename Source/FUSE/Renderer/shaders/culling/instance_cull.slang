@@ -48,7 +48,7 @@ void main(uint3 tid: SV_DispatchThreadID) {
     GpuSceneHeader* scene = fuseGpuScene(pc.scene);
     const GpuInstance inst = fuseGpuSceneInstances(scene)[i];
     const uint need = kFuseInstanceValid | kFuseInstanceVisible;
-    if ((inst.flags & need) != need || inst.mesh >= scene.counts[kFuseGpuSceneMeshes]) {
+    if ((inst.flags & (need | kFuseInstanceTransparent)) != need || inst.mesh >= scene.counts[kFuseGpuSceneMeshes]) {
         fuse_cull_words[results][i] = kFuseCullResultNone;
         return;
     }

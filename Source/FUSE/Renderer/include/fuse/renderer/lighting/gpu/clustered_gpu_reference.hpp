@@ -3,7 +3,7 @@
 // WP-2.1 CPU references of the GPU clustered lighting:
 //
 //  * light lists: the B5 oracle (ClusteredLightCuller / cluster_math, the single-source clustered
-//    kernels) takes point lights then spot lights as two arrays and names a light by its index in
+//    kernels) takes point lights (WP-2.2: and area lights, by their range sphere) then spot lights as two arrays and names a light by its index in
 //    that order; the GPU names a light by its GpuScene slot. makeOracleLights() builds the oracle's
 //    inputs from the scene's light table (point slots ascending, then spot slots ascending; free
 //    slots and directional lights are not clustered) plus the index -> slot map, and
@@ -62,6 +62,9 @@ struct ShadeReferenceDesc {
     u32 lightCount = 0;
     const ClusterGridSoA* grid = nullptr;      ///< in scene slots
     const std::vector<u32>* directional = nullptr;
+    /// WP-2.2: ltc::kLutWords f32 (ltc::BrdfLut::data(), ClusteredLighting::brdfLut()): compensated
+    /// BRDF + area lights, as the GPU with a LUT; null = the WP-2.1 lobe.
+    const f32* brdfLut = nullptr;
 };
 
 /// Shades every pixel ("light.shade" kernel on `backend`; CpuReference and CpuParallel are

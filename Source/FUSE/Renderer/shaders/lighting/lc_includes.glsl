@@ -6,6 +6,7 @@
 #include "bindless.glsl"
 #include "gpu_scene.glsl"
 #include "lc_common.glsl"
+#include "lc_ltc.glsl" // WP-2.2 compensated BRDF + area lights
 
 layout(push_constant) uniform FuseLcPush {
     uint64_t frame; // BDA of LightingFrameConstants

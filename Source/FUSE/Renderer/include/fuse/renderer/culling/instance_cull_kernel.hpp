@@ -195,10 +195,11 @@ FUSE_HOST_DEVICE inline u32 classify_phase2(const GpuTransform& xf, const GpuMes
     return hiz_visible(c.viewProj, s, c, hiz) ? kResultPhase2Drawn : kResultOccluded;
 }
 
-/// Instance eligibility shared by both kernels: valid + visible flags and an existing mesh.
+/// Instance eligibility shared by both kernels: valid + visible flags, not transparent (WP-2.3 draws
+/// those in the forward pass) and an existing mesh.
 FUSE_HOST_DEVICE inline bool eligible(const GpuInstance& inst, u32 meshCount) {
     constexpr u32 kNeed = gpu_scene::kInstanceValid | gpu_scene::kInstanceVisible;
-    return (inst.flags & kNeed) == kNeed && inst.mesh < meshCount;
+    return (inst.flags & (kNeed | gpu_scene::kInstanceTransparent)) == kNeed && inst.mesh < meshCount;
 }
 
 /// The draw an eligible instance emits: the mesh's draw range in the scene index buffer (WP-1.4,

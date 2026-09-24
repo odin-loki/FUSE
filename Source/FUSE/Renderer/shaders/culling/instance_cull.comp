@@ -59,7 +59,7 @@ void main() {
     FuseGpuSceneHeaderRef scene = fuse_gpu_scene(pc.scene);
     const FuseGpuInstance inst = fuse_gpu_scene_instances(scene).v[i];
     const uint need = FUSE_INSTANCE_VALID | FUSE_INSTANCE_VISIBLE;
-    if ((inst.flags & need) != need || inst.mesh >= scene.counts[FUSE_GPU_SCENE_MESHES]) {
+    if ((inst.flags & (need | FUSE_INSTANCE_TRANSPARENT)) != need || inst.mesh >= scene.counts[FUSE_GPU_SCENE_MESHES]) {
         fuse_cull_words[results].w[i] = FUSE_CULL_RESULT_NONE;
         return;
     }

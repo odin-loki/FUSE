@@ -32,6 +32,9 @@ enum GpuInstanceFlag : u32 {
     kInstanceCastShadow = 1u << 2,
     kInstanceReceiveShadow = 1u << 3,
     kInstanceStatic = 1u << 4,
+    /// Drawn by the forward transparency pass (WP-2.3), never by the opaque visibility-buffer path
+    /// (the WP-1.3 culler skips it).
+    kInstanceTransparent = 1u << 5,
 };
 
 /// One renderable instance. Instance slots are stable for the instance's lifetime (temporal GPU

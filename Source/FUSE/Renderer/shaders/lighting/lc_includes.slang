@@ -2,6 +2,7 @@
 #pragma once
 #include "gpu_scene.slang"
 #include "lc_common.slang"
+#include "lc_ltc.slang" // WP-2.2 compensated BRDF + area lights
 
 struct LcPush {
     uint64_t frame; // BDA of LightingFrameConstants

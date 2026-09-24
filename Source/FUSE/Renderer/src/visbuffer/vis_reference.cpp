@@ -96,7 +96,7 @@ void raster_reference(const VisSceneView& scene, const f32 viewProj[16], u32 wid
     for (u32 i = 0; i < scene.instances.size; ++i) {
         const gpu_scene::GpuInstance& inst = scene.instances[i];
         constexpr u32 kNeed = gpu_scene::kInstanceValid | gpu_scene::kInstanceVisible;
-        if ((inst.flags & kNeed) != kNeed || inst.mesh >= scene.meshes.size) {
+        if ((inst.flags & (kNeed | gpu_scene::kInstanceTransparent)) != kNeed || inst.mesh >= scene.meshes.size) {
             continue;
         }
         const gpu_scene::GpuMesh& mesh = scene.meshes[inst.mesh];

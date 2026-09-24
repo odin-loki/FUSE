@@ -56,7 +56,8 @@ void main(uint3 tid: SV_DispatchThreadID) {
         b.pad = 0u;
         const float3 p = fuseLcVec3(light.position);
         const float radius = light.range;
-        const bool clustered = light.type == kFuseLightPoint || light.type == kFuseLightSpot;
+        const bool clustered = light.type == kFuseLightPoint || light.type == kFuseLightSpot ||
+                               light.type == kFuseLightRect || light.type == kFuseLightDisk; // WP-2.2 area lights: range sphere
         if (clustered && radius > 0.0 && !isinf(radius) && !any(isinf(p)) && !any(isnan(p))) {
             const float3 c = fuseLcWorldToView(p, F);
             b.center[0] = c.x;

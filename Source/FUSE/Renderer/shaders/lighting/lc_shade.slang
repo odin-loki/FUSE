@@ -34,26 +34,8 @@ void main(uint3 tid: SV_DispatchThreadID) {
         s.metallic = rt2.y;
         s.emissive = rt5.xyz;
         const float3 v = fuseLcSafeNormalize(fuseLcVec3(F.cameraPosition) - s.position, s.normal);
-        GpuLight* lights = fuseGpuSceneLights(fuseGpuScene(F.scene));
-        float3 radiance = s.emissive + fuseLcVec3(F.ambient) * s.albedo * s.ao;
-        uint* directional = fuseLcWords(F.directional);
-        const uint directionalCount = fuseLcWords(F.listHeader)[kFuseLcHeaderDirectional];
-        for (uint i = 0u; i < directionalCount; ++i) {
-            const uint slot = directional[i];
-            if (slot < F.lightCount) {
-                radiance = radiance + fuseLcLight(lights[slot], s, v);
-            }
-        }
-        uint* grid = fuseLcWords(F.grid);
-        uint* list = fuseLcWords(F.lightList);
-        const uint offset = grid[cluster * 2u];
-        const uint count = grid[cluster * 2u + 1u];
-        for (uint i = 0u; i < count; ++i) {
-            const uint slot = list[offset + i];
-            if (slot < F.lightCount) {
-                radiance = radiance + fuseLcLight(lights[slot], s, v);
-            }
-        }
+        // The light loop (WP-2.2: shared with the forward transparency pass, lc_ltc.slang).
+        const float3 radiance = fuseLcShadeLights(F, s, v, cluster);
         result = float4(radiance, 1.0);
     }
     fuse_lc_images[F.output_ & 0xFFFFFu][p] = result;

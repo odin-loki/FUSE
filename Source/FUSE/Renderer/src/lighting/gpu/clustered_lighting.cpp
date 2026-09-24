@@ -3,6 +3,7 @@
 
 #include <fuse/renderer/deferred/gbuffer.hpp>
 #include <fuse/renderer/lighting/clustered_kernel.hpp>
+#include <fuse/renderer/lighting/ltc/ltc_lut.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/device.hpp>
 
@@ -144,6 +145,22 @@ bool ClusteredLighting::init(const ClusteredLightingDesc& desc) {
         destroy();
         return false;
     }
+    if (desc.energyCompensation) {
+        // WP-2.2: the BRDF / LTC LUT, baked once per process, uploaded once (read-only afterwards).
+        const ltc::BrdfLut& lut = ltc::sharedBrdfLut();
+        BufferDesc lutDesc{};
+        lutDesc.size = static_cast<usize>(lut.bytes());
+        lutDesc.usage = bufferUsage({BufferUsage::Storage, BufferUsage::ShaderDeviceAddress});
+        lutDesc.memoryUsage = MemoryUsage::CpuToGpu;
+        lutDesc.name = "clustered_lighting.brdf_lut";
+        if (!lut.valid() || !m_desc.allocator->createBuffer(lutDesc, m_lutBuffer) || m_lutBuffer.mapped == nullptr ||
+            m_lutBuffer.deviceAddress == 0u) {
+            destroy();
+            return false;
+        }
+        std::memcpy(m_lutBuffer.mapped, lut.data(), static_cast<usize>(lut.bytes()));
+        m_brdfLut = lut.data();
+    }
     m_lightCapacity = lightCapacity;
     if (desc.width > 0u && desc.height > 0u) {
         m_width = desc.width;
@@ -175,6 +192,9 @@ void ClusteredLighting::destroy() {
     if (m_frameRing.handle != nullptr) {
         m_desc.allocator->destroyBuffer(m_frameRing);
     }
+    if (m_lutBuffer.handle != nullptr) {
+        m_desc.allocator->destroyBuffer(m_lutBuffer);
+    }
     const VkDevice device = static_cast<VkDevice>(m_desc.device->nativeHandle());
     for (void*& pipeline : m_pipelines) {
         if (pipeline != nullptr) {
@@ -191,6 +211,8 @@ void ClusteredLighting::destroy() {
     m_output = Output{};
     m_frameRing = Buffer{};
     m_frameAddress = 0;
+    m_lutBuffer = Buffer{};
+    m_brdfLut = nullptr;
     m_retired.clear();
     m_gbuffer = nullptr;
     for (u32 i = 0; i < kGBufferInputs; ++i) {
@@ -475,6 +497,7 @@ bool ClusteredLighting::beginFrame(u64 frameSerial, const LightingFrameDesc& fra
     c.grid = lists + m_layout.grid;
     c.directional = lists + m_layout.directional;
     c.lightList = lists + m_layout.lightList;
+    c.brdfLut = m_lutBuffer.deviceAddress;
     // The oracle's camera resolution (clustered_kernel::make_camera): same basis, same tangents.
     const clustered_kernel::CameraView view = clustered_kernel::make_camera(frame.camera);
     const math::Vec3 vecs[4] = {view.position, view.right, view.up, view.back};

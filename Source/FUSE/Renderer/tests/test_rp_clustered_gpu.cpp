@@ -8,7 +8,8 @@
 //   light.shade (+ an f32 radiance dump)                                   (deferred shading)
 // and read-back copies. Scene: the WP-1.5 scene (241 instances, 4 meshlet meshes, 7 materials, 7
 // textures) lit by 4,096 scene light slots (points, then spots, 2 directional lights, lights without a
-// range, after the spots), 16x9x24 clusters, 256x192; 4 frames of camera / object / light motion, point lights removed
+// range, after the spots; WP-2.2: 100 rectangle / disk area lights between the points and the spots and
+// a sun disk, shaded with the compensated BRDF from the BRDF LUT), 16x9x24 clusters, 256x192; 4 frames of camera / object / light motion, point lights removed
 // (free slots) and re-added. Checked every frame, for each language:
 //   lists      GPU grid (offset, count) + flat list == the B5 oracle, the real ClusteredLightCuller,
 //              on the scene's point / spot lights (translated to scene slots; points sit below spots,
@@ -38,6 +39,7 @@
 #include <fuse/renderer/lighting/clustered.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_gpu_reference.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_lighting.hpp>
+#include <fuse/renderer/lighting/ltc/ltc_lut.hpp>
 #include <fuse/renderer/material_resolve/material_resolve.hpp>
 #include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/rg/executor.hpp>
@@ -165,7 +167,11 @@ constexpr u32 kLanguages = 2; // Slang, GLSL
 // pick the neighbouring cluster through the log's rounding; the lights that differ between the two
 // lists barely reach the pixel (window (1 - (d/r)^4)^2 ~ 0 at d ~ r), far below the absolute term.
 // kTolRel = 1e-4 (20x the per-term bound; the plan's §7 asks 1e-3) + kTolAbs = 1e-6 radiance units
-// (lit pixels are 1e-2..1e2). Measured on Lavapipe: max relative 3.1e-6.
+// (lit pixels are 1e-2..1e2). Measured on Lavapipe: max relative 3.1e-6 (WP-2.1 lobe). WP-2.2 (the
+// compensated BRDF from the LUT, 100 LTC area lights, a sun disk; same tolerance): the worst pixel sits
+// at 0.95 of the bound (relative 1.2e-4 on a 0.04 pixel next to two disks): an area light's form factor
+// is ~2e-6 of the light's full response sensitive to the device's sqrt / division ulps (N.V, the LUT
+// coordinate, the edge / boundary sums), measured per light by fuse_rp_ltc_vk_probe_*.
 constexpr f64 kTolRel = 1e-4;
 constexpr f64 kTolAbs = 1e-6;
 
@@ -639,6 +645,7 @@ bool ensureReadback(Context& ctx, const ReadbackLayout& layout) {
 // --- scene ----------------------------------------------------------------------------------------
 struct LightScene {
     u32 points = 0;
+    u32 areas = 0; ///< WP-2.2 rectangle / disk lights (after the points: the oracle clusters them as points)
     u32 spots = 0;
     f32 rangeScale = 1.f;
     bool dense = false; ///< overflow mode: a dense ball of lights in front of the camera
@@ -691,6 +698,22 @@ GpuLight makeSpot(std::mt19937& rng, const LightScene& ls) {
     return l;
 }
 
+/// WP-2.2 area light (rectangle for even `i`, disk for odd), facing down-ish, points' placement.
+GpuLight makeArea(std::mt19937& rng, const LightScene& ls, u32 i) {
+    std::uniform_real_distribution<f32> u(-1.f, 1.f);
+    const GpuLight p = makePoint(rng, ls);
+    ltc::AreaLightDesc d{};
+    d.center = {p.position[0], p.position[1], p.position[2]};
+    d.normal = Vec3{0.4f * u(rng), -1.f, 0.4f * u(rng)}.normalized();
+    d.tangent = Vec3{u(rng), u(rng), u(rng)};
+    d.halfWidth = 0.15f + 0.35f * (u(rng) * 0.5f + 0.5f);
+    d.halfHeight = i % 4u == 1u ? d.halfWidth : 0.15f + 0.35f * (u(rng) * 0.5f + 0.5f);
+    d.color = {p.color[0], p.color[1], p.color[2]};
+    d.intensity = 2.f * p.intensity;
+    d.range = p.range * 1.5f;
+    return i % 2u == 0u ? ltc::makeRectLight(d) : ltc::makeDiskLight(d);
+}
+
 bool buildScene(Context& ctx, Scene& s, const LightScene& ls) {
     GpuSceneDesc d{};
     d.device = ctx.device.get();
@@ -737,11 +760,15 @@ bool buildScene(Context& ctx, Scene& s, const LightScene& ls) {
             s.movers.push_back(static_cast<u32>(s.handles.size() - 1u));
         }
     }
-    // Lights: points, then spots (slot order), then 2 directional lights, then lights without a range;
+    // Lights: points, then (WP-2.2) area lights, then spots (slot order), then 2 directional lights (the
+    // first a 0.27-degree sun disk when the scene has area lights), then lights without a range;
     // the table is padded to kLightSlots with more points' worth of no-range slots.
     for (u32 i = 0; i < ls.points; ++i) {
         s.lights.push_back(s.gpu.addLight(makePoint(s.rng, ls)));
         s.pointSlots.push_back(static_cast<u32>(s.lights.size() - 1u));
+    }
+    for (u32 i = 0; i < ls.areas; ++i) {
+        s.lights.push_back(s.gpu.addLight(makeArea(s.rng, ls, i)));
     }
     for (u32 i = 0; i < ls.spots; ++i) {
         s.lights.push_back(s.gpu.addLight(makeSpot(s.rng, ls)));
@@ -756,8 +783,11 @@ bool buildScene(Context& ctx, Scene& s, const LightScene& ls) {
     sun.color[1] = 0.95f;
     sun.color[2] = 0.85f;
     sun.intensity = 0.6f;
-    s.lights.push_back(s.gpu.addLight(sun));
     GpuLight sky = sun;
+    if (ls.areas > 0u) {
+        ltc::setSunAngularRadius(sun, 0.0047f); // WP-2.2: the sun as a disk (0.27 degrees)
+    }
+    s.lights.push_back(s.gpu.addLight(sun));
     sky.direction[0] = -0.2f;
     sky.direction[1] = -0.3f;
     sky.direction[2] = 0.93f;
@@ -786,7 +816,7 @@ void animate(Scene& s, u32 frame, const LightScene& ls, u32 lightStep) {
         s.gpu.setTransform(s.handles[i], t);
     }
     std::uniform_real_distribution<f32> u(-1.f, 1.f);
-    for (u32 k = frame % lightStep; k < ls.points + ls.spots; k += lightStep) {
+    for (u32 k = frame % lightStep; k < ls.points + ls.areas + ls.spots; k += lightStep) {
         if (!s.gpu.lightAlive(s.lights[k])) {
             continue;
         }
@@ -1163,6 +1193,7 @@ void analyse(Context& ctx, Scene& s, Rig& rig, const FrameState& fs, const Frame
     sd.lightCount = slots;
     sd.grid = &expected;
     sd.directional = &oracle.directional;
+    sd.brdfLut = rig.lighting[rig.built[0] ? 0u : 1u].brdfLut(); // WP-2.2: the compensated BRDF + area lights
     std::vector<Vec4> ref;
     shadeReferenceFrame(sd, ref);
     for (const Vec4& v : ref) {
@@ -1246,8 +1277,8 @@ int runParity(Context& ctx, const ClusterDesc& clusters, const LightScene& ls, c
         std::fprintf(stderr, "FAIL: readback buffer\n");
         return 1;
     }
-    std::printf("  %s: %u light slots (%u points, %u spots, 2 directional), %ux%ux%u clusters, capacity %u, %ux%u\n", label,
-                s.gpu.lightHighWater(), ls.points, ls.spots, clusters.tilesX, clusters.tilesY, clusters.slicesZ,
+    std::printf("  %s: %u light slots (%u points, %u area, %u spots, 2 directional), %ux%ux%u clusters, capacity %u, %ux%u\n",
+                label, s.gpu.lightHighWater(), ls.points, ls.areas, ls.spots, clusters.tilesX, clusters.tilesY, clusters.slicesZ,
                 rig.lighting[lang].capacity(), kWidth, kHeight);
     std::printf("  frame live clustered covered | entries non-empty max/cl at-cap dropped | lang lists totals dir "
                 "shaded alpha-bad shade-bad max-rel max-abs out16-bad\n");
@@ -1450,7 +1481,8 @@ int main(int argc, char** argv) {
         }
         if (mode == "parity_4096") {
             LightScene ls{};
-            ls.points = 2600;
+            ls.points = 2500;
+            ls.areas = 100; // WP-2.2: 50 rectangles + 50 disks (clustered like points)
             ls.spots = 1400;
             rc = runParity(ctx, ClusterDesc{}, ls, "parity_4096");
         } else if (mode == "overflow") {

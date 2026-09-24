@@ -47,7 +47,7 @@ struct LightingFrameConstants {
     u64 grid = 0;           ///< u32x2[clusterCount]: (offset, count) into lightList == ClusterGridEntry
     u64 directional = 0;    ///< u32[lightCapacity]: directional light slots, ascending
     u64 lightList = 0;      ///< u32[clusterCount * capacity]: flat light list (ClusterGridSoA::lightList)
-    u64 reserved64 = 0;
+    u64 brdfLut = 0;        ///< WP-2.2: BDA of the f32 BRDF / LTC LUT (ltc_kernel.hpp layout); 0 = WP-2.1 lobe
     f32 cameraPosition[3] = {0.f, 0.f, 0.f};
     f32 nearPlane = 0.1f;
     f32 right[3] = {1.f, 0.f, 0.f};

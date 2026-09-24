@@ -72,4 +72,22 @@ fuse::math::Vec3 Brdf::shade(const fuse::math::Vec3& albedo,
     return evaluate(albedo, roughness, metallic, N, V, L) * NoL;
 }
 
+fuse::math::Vec3 Brdf::evaluateMultiScatter(const fuse::math::Vec3& albedo,
+                                            f32 roughness,
+                                            f32 metallic,
+                                            const fuse::math::Vec3& N,
+                                            const fuse::math::Vec3& V,
+                                            const fuse::math::Vec3& L,
+                                            f32 dfgA,
+                                            f32 dfgB) {
+    const f32 NoL = N.dot(L);
+    if (!(NoL > 0.f)) {
+        return {};
+    }
+    const brdf::MultiScatterTerms t = brdf::multi_scatter_terms(albedo, metallic, dfgA, dfgB);
+    return brdf::multi_scatter_cos(t, albedo, roughness, N, V, L) * (1.f / NoL);
+}
+
+f32 Brdf::energyCompensation(f32 f0, f32 dfgA, f32 dfgB) { return brdf::energy_compensation(f0, dfgA, dfgB); }
+
 } // namespace fuse::renderer
