@@ -23,8 +23,8 @@ Each patch has an ID (`RL-x.y-NN`), which is the first token after `FUSE-DXVK be
 | RL-1.1-03 | `src/d3d9/d3d9_device.h` (includes, 1 block) | Include the tap entry points (`Source/FUSE/Relight/tap/dxvk/fuse_tap_dxvk.h`, declarations only). | RL-1.1 | FUSE-only. |
 | RL-1.1-04 | `src/d3d9/d3d9_device.h` (`D3D9DeviceEx`, 1 block) | Per-device tap dispatcher pointer `m_fuseTap` (null when the tap is off) and friend access for the dispatcher (`FuseTap`, `FuseTapContext`). | RL-1.1 | FUSE-only. |
 | RL-1.1-05 | `src/d3d9/d3d9_device.cpp` (`~D3D9DeviceEx`) | `onDeviceDestroy`; frees the dispatcher. | RL-1.1 | FUSE-only. |
-| RL-1.1-06 | `src/d3d9/d3d9_device.cpp` (`ResetSwapChain`, end) | Attaches the tap on the first successful reset (`InitialReset`) according to `relight.tap.mode` (`onDeviceCreate`); `onDeviceReset` afterwards. | RL-1.1 | FUSE-only. |
-| RL-1.1-07 | `src/d3d9/d3d9_device.cpp` (`UpdateSurface`, end) | `onTextureCopy` (UpdateSurface). | RL-1.1 | FUSE-only. |
+| RL-1.1-06 | `src/d3d9/d3d9_device.cpp` (`ResetSwapChain`, end) | Attaches the tap on the first successful reset (`InitialReset`) according to `relight.tap.mode` (`onDeviceCreate`); `onDeviceReset` afterwards. The dispatcher builds the tap with `createTapForDevice`, which also covers the `capture` mode (live in-process capture, see below). | RL-1.1 | FUSE-only. |
+| RL-1.1-07 | `src/d3d9/d3d9_device.cpp` (`UpdateSurface`, end) | `onTextureCopy` (UpdateSurface), with the copied extent (the source rect, or the whole source level) and the destination point (tap interface 2), computed by the dispatcher from the hook's existing arguments. | RL-1.1 | FUSE-only. |
 | RL-1.1-08 | `src/d3d9/d3d9_device.cpp` (`UpdateTexture`, end) | `onTextureCopy` (UpdateTexture). | RL-1.1 | FUSE-only. |
 | RL-1.1-09 | `src/d3d9/d3d9_device.cpp` (`SetRenderTarget`) | With the tap on: runs `SetRenderTargetInternal` itself and reports `onSetRenderTarget` on success. | RL-1.1 | FUSE-only. |
 | RL-1.1-10 | `src/d3d9/d3d9_device.cpp` (`Clear`, after validation) | `onClear`. | RL-1.1 | FUSE-only. |
@@ -41,6 +41,10 @@ Each patch has an ID (`RL-x.y-NN`), which is the first token after `FUSE-DXVK be
 | RL-1.1-21 | `src/d3d9/d3d9_common_buffer.cpp` (`D3D9CommonBuffer` constructor, end) | `onBufferCreate`. There is no destructor hook (patch budget): a buffer created at a known address reports `onBufferDestroy` for the old id first. | RL-1.1 | FUSE-only. |
 | RL-1.1-22 | `src/d3d9/d3d9_swapchain.cpp` (`D3D9SwapChainEx::Present`) | `onInjectPoint` (Present until RL-1.2's classifier finds the first UI draw) and `onPresent`; frame boundary. | RL-1.1 | FUSE-only. |
 | RL-1.1-23 | `src/d3d9/d3d9_query.cpp` (`D3D9Query::Issue`) | `onQueryBegin` / `onQueryEnd`. | RL-1.1 | FUSE-only. |
+
+## Capture tap mode (no source edits)
+
+`relight.tap.mode = capture` (RL-1.1, `Source/FUSE/Relight/tap/capture`) runs the RL-1.2 classifier, RL-1.3 geometry capture and RL-1.4 texture tracking inside d3d9.dll on the events of the hooks above, and writes a per-frame capture record. It adds no marked block: the tap is chosen once, at the RL-1.1-06 attach, so a device whose mode is not `capture` runs no capture code, and with the tap off every hook stays the one null-pointer test. The UpdateSurface extent comes from the arguments RL-1.1-07 already passes. `fuse_relight_tap_capture` is linked into `relight_d3d9` link-only, like `fuse_relight_tap`. The block count stays 24 of 30.
 
 ## Build notes (no source edits)
 

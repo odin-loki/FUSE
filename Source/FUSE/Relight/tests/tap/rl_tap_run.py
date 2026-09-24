@@ -6,9 +6,9 @@ cmake/toolchains/fuse-wine-xvfb-run.sh (Xvfb + Wine + Lavapipe) in a private run
 holds the exe and both DLLs, with the environment of the configuration under test:
 
   golden      reference: FUSE_RELIGHT=0 (DXVK creates its own device, no tap: the RL-0.2
-              behaviour), then relight.device.import on with relight.tap.mode off, null and
-              record. Every dump (<app>.rgba and <app>.<name>.rgba) must be bit-identical to the
-              reference.
+              behaviour), then relight.device.import on with relight.tap.mode off, null, record
+              and capture (the live in-process capture: advisory, every draw stays a raster draw).
+              Every dump (<app>.rgba and <app>.<name>.rgba) must be bit-identical to the reference.
   record      relight.tap.mode = record; the event stream must equal the one derived from the
               app's sidecar (rl_tap_expect.py) and report an imported device.
   validation  apps on the imported device with the Khronos validation layer (see cmd_validation).
@@ -79,6 +79,7 @@ CONFIGS = [
     ("import_tap_off", {"FUSE_RELIGHT": "1", "FUSE_RELIGHT_TAP_MODE": "off"}),
     ("import_tap_null", {"FUSE_RELIGHT": "1", "FUSE_RELIGHT_TAP_MODE": "null"}),
     ("import_tap_record", {"FUSE_RELIGHT": "1", "FUSE_RELIGHT_TAP_MODE": "record"}),
+    ("import_tap_capture", {"FUSE_RELIGHT": "1", "FUSE_RELIGHT_TAP_MODE": "capture"}),
 ]
 
 
@@ -123,7 +124,7 @@ def cmd_golden(args):
             failed = True
     if failed:
         return 1
-    print(f"PASS: {app}: {len(ref)} dump(s) bit-identical across FUSE_RELIGHT=0 / import+tap off / null / record")
+    print(f"PASS: {app}: {len(ref)} dump(s) bit-identical across FUSE_RELIGHT=0 / import+tap off / null / record / capture")
     return 0
 
 

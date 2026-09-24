@@ -18,10 +18,20 @@ namespace {
 struct TapOptions {
     FUSE_RELIGHT_OPTION_ENV("relight.tap", std::string, mode, "off", "FUSE_RELIGHT_TAP_MODE",
                             "Relight tap on the D3D9 front end: off (no tap; every hook is a null check), "
-                            "null (events dispatched and ignored) or record (events written as JSON Lines).");
+                            "null (events dispatched and ignored), record (events written as JSON Lines) or "
+                            "capture (live texture / geometry capture and draw classification in-process, "
+                            "written as a per-frame capture record).");
     FUSE_RELIGHT_OPTION_ENV("relight.tap", std::string, recordPath, "relight_tap.jsonl",
                             "FUSE_RELIGHT_TAP_RECORD_PATH",
-                            "Output file of the recording tap (relight.tap.mode = record).");
+                            "Output file of the recording tap (relight.tap.mode = record, or capture with "
+                            "relight.tap.captureRecord).");
+    FUSE_RELIGHT_OPTION_ENV("relight.tap", std::string, capturePath, "relight_capture.jsonl",
+                            "FUSE_RELIGHT_TAP_CAPTURE_PATH",
+                            "Per-frame capture record of the capture tap (relight.tap.mode = capture): per draw "
+                            "the geometry hashes and asset key, the bound textures' hashes and the classification.");
+    FUSE_RELIGHT_OPTION_ENV("relight.tap", bool, captureRecord, false, "FUSE_RELIGHT_TAP_CAPTURE_RECORD",
+                            "Capture mode also writes the recording tap's event stream (relight.tap.recordPath) "
+                            "from the same events, so the replay tools can check the live capture.");
 };
 
 struct DeviceOptions {
@@ -59,6 +69,8 @@ bool parseTapMode(std::string_view text, TapMode& out) {
         out = TapMode::Null;
     } else if (s == "record" || s == "recording") {
         out = TapMode::Record;
+    } else if (s == "capture") {
+        out = TapMode::Capture;
     } else {
         return false;
     }
@@ -73,6 +85,8 @@ const char* tapModeName(TapMode mode) {
         return "null";
     case TapMode::Record:
         return "record";
+    case TapMode::Capture:
+        return "capture";
     }
     return "off";
 }
@@ -96,6 +110,10 @@ RuntimeConfig resolveRuntimeConfig() {
     if (!TapOptions::recordPath().empty()) {
         config.recordPath = TapOptions::recordPath();
     }
+    if (!TapOptions::capturePath().empty()) {
+        config.capturePath = TapOptions::capturePath();
+    }
+    config.captureRecord = TapOptions::captureRecord();
     config.importDevice = DeviceOptions::import();
     config.vkValidation = VkOptions::validation();
     return config;
@@ -117,15 +135,16 @@ std::unique_ptr<IRelightTap> createTap(const RuntimeConfig& config, unsigned dev
         return nullptr;
     case TapMode::Null:
         return std::make_unique<NullTap>();
-    case TapMode::Record: {
-        std::string path = config.recordPath;
-        if (deviceOrdinal > 0) {
-            path += "." + std::to_string(deviceOrdinal);
-        }
-        return std::make_unique<RecordingTap>(path);
-    }
+    case TapMode::Record:
+        return std::make_unique<RecordingTap>(devicePath(config.recordPath, deviceOrdinal));
+    case TapMode::Capture:
+        return nullptr; // createTapForDevice (fuse_relight_tap_capture)
     }
     return nullptr;
+}
+
+std::string devicePath(const std::string& path, unsigned deviceOrdinal) {
+    return deviceOrdinal > 0 ? path + "." + std::to_string(deviceOrdinal) : path;
 }
 
 } // namespace fuse::relight::tap

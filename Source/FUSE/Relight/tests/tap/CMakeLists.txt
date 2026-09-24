@@ -7,8 +7,9 @@
 #                                 sidecar/stream pair, and that seeded differences are caught.
 #   rl_passthrough_golden_<app>   (relight;golden;wine) the RL-0.4 app through our d3d9.dll / d3d8.dll:
 #                                 FUSE_RELIGHT=0 (the RL-0.2 behaviour: DXVK's own device, no tap)
-#                                 vs device import + tap off, import + null tap and import +
-#                                 recording tap: every dump (.rgba) bit-identical.
+#                                 vs device import + tap off, import + null tap, import +
+#                                 recording tap and import + capture tap: every dump (.rgba)
+#                                 bit-identical.
 #   rl_tap_record_<app>           (relight;wine;capture) the recording tap's event stream equals the
 #                                 stream derived from the app's sidecar (rl_tap_expect.py).
 #   rl_tap_validation             (relight;wine;vulkan;gate) apps on the imported device with the

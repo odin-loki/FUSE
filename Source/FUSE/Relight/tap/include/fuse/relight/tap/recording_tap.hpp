@@ -6,7 +6,8 @@
 // Line types ("ev"), in call order:
 //   header          schema, interface version
 //   device_create / device_reset / device_destroy
-//   texture_create, texture_upload (sha256 of the locked bytes), texture_copy, texture_write_lock,
+//   texture_create, texture_upload (sha256 of the locked bytes), texture_copy (UpdateSurface: the
+//                   copied width / height and dest_x / dest_y), texture_write_lock,
 //   image_destroy
 //   buffer_create, buffer_write (sha256 of the tap's shadow of the whole buffer after the write:
 //                   bytes the application wrote; D3DLOCK_DISCARD zeroes the shadow first, as the

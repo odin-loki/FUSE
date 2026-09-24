@@ -9,7 +9,9 @@
 #                           dependency of relight_dxvk, so d3d9.dll and d3d8.dll both carry it.
 #   fuse_relight_tap_d3d9   (PE builds) the dispatcher inside d3d9.dll (dxvk/fuse_tap_dxvk.cpp):
 #                           DXVK state -> IRelightTap events. Compiled against DXVK's private d3d9
-#                           headers as system headers and linked into relight_d3d9.
+#                           headers as system headers and linked into relight_d3d9. It creates the
+#                           tap with createTapForDevice (device_tap.hpp), which capture/ defines.
+#   fuse_relight_tap_capture  (capture/CMakeLists.txt, added after RL-1.2/1.3/1.4) the capture mode.
 # Tests: ../tests/tap (rl_tap_unit; Wine: rl_passthrough_golden_*, rl_tap_record_*, rl_tap_validation).
 
 add_library(fuse_relight_tap STATIC

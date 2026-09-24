@@ -90,6 +90,8 @@ void testModes() {
     m = TapMode::Null;
     CHECK(!parseTapMode("bogus", m) && m == TapMode::Null);
     CHECK(std::string(tapModeName(TapMode::Record)) == "record");
+    CHECK(parseTapMode("Capture", m) && m == TapMode::Capture);
+    CHECK(std::string(tapModeName(TapMode::Capture)) == "capture");
 }
 
 void testRuntimeConfig() {
@@ -107,12 +109,23 @@ void testRuntimeConfig() {
     setEnv("FUSE_RELIGHT_TAP_MODE", "null");
     setEnv("FUSE_RELIGHT_DEVICE_IMPORT", "False");
     setEnv("FUSE_RELIGHT_TAP_RECORD_PATH", "rl_tap_unit_env.jsonl");
+    setEnv("FUSE_RELIGHT_TAP_CAPTURE_PATH", "rl_tap_unit_capture.jsonl");
+    setEnv("FUSE_RELIGHT_TAP_CAPTURE_RECORD", "True");
     RuntimeConfig on = resolveRuntimeConfig();
     CHECK(on.relightEnabled);
     CHECK(on.tapMode == TapMode::Null);
     CHECK(!on.importDevice);
     CHECK(on.recordPath == "rl_tap_unit_env.jsonl");
     CHECK(!on.vkValidation);
+    CHECK(on.capturePath == "rl_tap_unit_capture.jsonl");
+    CHECK(on.captureRecord);
+
+    // The capture packages depend on this library: createTapForDevice (fuse_relight_tap_capture,
+    // rl_tap_capture_unit) builds capture mode, createTap declines it.
+    RuntimeConfig cap;
+    cap.tapMode = TapMode::Capture;
+    CHECK(createTap(cap, 0) == nullptr);
+    CHECK(devicePath("a.jsonl", 0) == "a.jsonl" && devicePath("a.jsonl", 3) == "a.jsonl.3");
 
     RuntimeConfig cfg;
     cfg.tapMode = TapMode::Off;

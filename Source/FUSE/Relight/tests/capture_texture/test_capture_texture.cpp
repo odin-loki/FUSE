@@ -431,6 +431,27 @@ void testUpdateSurfaceInheritance() {
     write(t2, 3, 0, b, 16, 8);
     copy(t2, tap::CopyMethod::UpdateSurface, 3, 4);
     CHECK(t2.imageHash(4) == xxh3Of(b));
+    // Tap interface 2 reports the copied extent: it decides, whatever the policy says.
+    auto rectCopy = [](TextureTracker& tr, tap::ResourceId src, tap::ResourceId dst, std::uint32_t w,
+                       std::uint32_t h) {
+        tap::TextureCopy cp;
+        cp.method = tap::CopyMethod::UpdateSurface;
+        cp.source = src;
+        cp.destination = dst;
+        cp.hasSourceRect = true;
+        cp.width = w;
+        cp.height = h;
+        tr.onTextureCopy(cp);
+    };
+    t2.onTextureCreate(desc(5, kTexture, 8, 8, D3DFormat::R5G6B5, kDefault));
+    rectCopy(t2, 1, 5, 8, 8); // full-size rect under NeverInherit: inherits
+    CHECK(t2.imageHash(5) == xxh3Of(a));
+    t.onTextureCreate(desc(7, kTexture, 8, 8, D3DFormat::R5G6B5, kDefault));
+    rectCopy(t, 1, 7, 4, 8); // partial rect under the default policy: no inheritance
+    CHECK(t.imageHash(7) == 0);
+    t.onTextureCreate(desc(8, kTexture, 8, 8, D3DFormat::R5G6B5, kDefault));
+    rectCopy(t, 3, 8, 8, 8); // an 8x8 rect of the 16x16 level 0 covers the 8x8 destination
+    CHECK(t.imageHash(8) == xxh3Of(big));
 }
 
 // ---- recompute on write -----------------------------------------------------------------------------

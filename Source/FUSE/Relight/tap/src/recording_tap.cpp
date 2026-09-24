@@ -273,6 +273,10 @@ void RecordingTap::onTextureCopy(const TextureCopy& c) {
                   .u("dest_face", c.destFace)
                   .u("dest_level", c.destLevel)
                   .b("has_rect", c.hasSourceRect)
+                  .u("width", c.width)
+                  .u("height", c.height)
+                  .u("dest_x", c.destX)
+                  .u("dest_y", c.destY)
                   .done());
 }
 

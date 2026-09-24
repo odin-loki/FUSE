@@ -14,6 +14,7 @@
 #include <d3d9_vertex_declaration.h>
 
 #include <fuse/relight/tap/d3d9_names.hpp>
+#include <fuse/relight/tap/device_tap.hpp>
 #include <fuse/relight/tap/relight_tap.hpp>
 #include <fuse/relight/tap/tap_config.hpp>
 #include <fuse/relight/tap/vk_bootstrap.hpp>
@@ -234,7 +235,8 @@ void FuseTap::SwapChainReset(D3D9DeviceEx* dev, const D3DPRESENT_PARAMETERS* pp)
     if (!dev->m_fuseTap) {
         // Attach (first reset of a device, i.e. InitialReset). With the tap off this stays a
         // cheap no-op on every later reset.
-        std::unique_ptr<rt::IRelightTap> tap = rt::createTap(rt::runtimeConfig(), g_deviceOrdinal.fetch_add(1));
+        // createTapForDevice: every mode, including capture (RL-1.2/1.3/1.4 live in-process).
+        std::unique_ptr<rt::IRelightTap> tap = rt::createTapForDevice(rt::runtimeConfig(), g_deviceOrdinal.fetch_add(1));
         if (!tap) {
             return;
         }
@@ -387,6 +389,21 @@ void FuseTap::UpdateSurface(D3D9DeviceEx* dev, IDirect3DSurface9* pSrc, const RE
     c.destFace = dst->GetFace();
     c.destLevel = dst->GetMipLevel();
     c.hasSourceRect = srcRect != nullptr || dstPoint != nullptr;
+    // The copied extent: the source rect (validated by UpdateSurface before this hook), else the
+    // whole source level.
+    if (srcRect) {
+        c.width = uint32_t(srcRect->right - srcRect->left);
+        c.height = uint32_t(srcRect->bottom - srcRect->top);
+    } else {
+        D3D9CommonTexture* s = src->GetCommonTexture();
+        const VkExtent3D extent = s->GetExtentMip(s->CalcSubresource(src->GetFace(), src->GetMipLevel()));
+        c.width = extent.width;
+        c.height = extent.height;
+    }
+    if (dstPoint) {
+        c.destX = uint32_t(dstPoint->x);
+        c.destY = uint32_t(dstPoint->y);
+    }
     ctx->tap->onTextureCopy(c);
 }
 

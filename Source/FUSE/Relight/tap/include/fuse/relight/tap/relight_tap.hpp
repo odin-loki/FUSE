@@ -28,7 +28,8 @@
 namespace fuse::relight::tap {
 
 /// Bumped when an event struct or IRelightTap changes incompatibly.
-inline constexpr std::uint32_t kTapInterfaceVersion = 1;
+/// 2: TextureCopy carries the UpdateSurface extent and destination point.
+inline constexpr std::uint32_t kTapInterfaceVersion = 2;
 
 using ResourceId = std::uint32_t;
 inline constexpr ResourceId kNoResource = 0;
@@ -149,6 +150,11 @@ struct TextureCopy {
     std::uint32_t sourceFace = 0, sourceLevel = 0; ///< UpdateSurface only
     std::uint32_t destFace = 0, destLevel = 0;     ///< UpdateSurface only
     bool hasSourceRect = false;                    ///< UpdateSurface with a source rect / dest point
+    /// UpdateSurface only: the copied extent in texels (the source rect, or the whole source level
+    /// without one) and where it lands in the destination level (the dest point, or 0,0). 0 x 0
+    /// for UpdateTexture, and when a producer does not know the extent.
+    std::uint32_t width = 0, height = 0;
+    std::uint32_t destX = 0, destY = 0;
 };
 
 struct TextureWriteLock {

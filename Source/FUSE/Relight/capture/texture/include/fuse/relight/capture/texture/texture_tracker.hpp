@@ -17,7 +17,8 @@
 //    subresource still "needs upload" (managed textures; never D3DPOOL_DEFAULT ones).
 //  * UpdateTexture / full-size UpdateSurface (SYSTEMMEM -> DEFAULT): the destination inherits the
 //    hash of the *source's* subresource-0 buffer (SetupForRtxFrom(source)), when it has none yet.
-//    UpdateSurface inherits only when the copied extent equals the destination's mip-0 extent.
+//    UpdateSurface inherits only when the copied extent (TextureCopy::width x height when the tap
+//    reports it) equals the destination's mip-0 extent.
 //  * rtx.recomputeTextureHashOnWrite: a write lock of mip 0 (any face) clears the image and
 //    descriptor hashes (ClearHash), unless the hash is listed in rtx.terrainTextures,
 //    rtx.lightmapTextures, rtx.ignoreTextures or rtx.ignoreBakedLightingTextures; the next flush
@@ -56,9 +57,11 @@ namespace fuse::relight::capture::texture {
 /// in D3D9CommonTexture::CreatePrimaryImage). Tests pass their own.
 std::atomic<std::uint32_t>& processRenderTargetHashCounter();
 
-/// How a UpdateSurface with a source rectangle or destination point is judged, since the tap
-/// reports only that one was given (TextureCopy::hasSourceRect), not its extent. DXVK's d3d8
-/// CopyRects always passes a rectangle (the whole surface when the application passes none).
+/// How a UpdateSurface with a source rectangle or destination point is judged when the event does
+/// not carry the copied extent (TextureCopy::width / height 0: producers older than tap interface
+/// 2, replay scripts). With the extent, it is compared with the destination's mip 0 directly.
+/// DXVK's d3d8 CopyRects always passes a rectangle (the whole surface when the application passes
+/// none).
 enum class SourceRectPolicy : std::uint8_t {
     AssumeFullWhenExtentsMatch, ///< inherit when the source level's extent equals the destination's mip 0
     NeverInherit,               ///< treat every rectangle copy as partial

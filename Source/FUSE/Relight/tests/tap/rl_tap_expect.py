@@ -222,6 +222,15 @@ class Compare:
                                    f"{w}: {u['method']} source tap {g['source']} != sidecar {u['source']}")
                         self.check(g["dest_level"] == u["level"] and g["source_level"] == u.get("source_level", 0),
                                    f"{w}: {u['method']} levels {g['source_level']}->{g['dest_level']}")
+                        # Tap interface 2: the copied extent. The apps copy whole levels (no rect, or
+                        # d3d8 CopyRects' implicit whole-surface rect) to the destination origin.
+                        src = next((t for t in self.sc["textures"] if t["id"] == u["source"]), None)
+                        if src is not None and "width" in g:
+                            lv = u.get("source_level", 0)
+                            want = (max(1, src["width"] >> lv), max(1, src["height"] >> lv))
+                            self.check((g["width"], g["height"]) == want and (g["dest_x"], g["dest_y"]) == (0, 0),
+                                       f"{w}: {u['method']} extent {g['width']}x{g['height']} at "
+                                       f"({g['dest_x']},{g['dest_y']}) != {want[0]}x{want[1]} at (0,0)")
                     i += 1
             if got:
                 self.err(f"{w}: {len(got)} tap upload/copy event(s) beyond the sidecar's")

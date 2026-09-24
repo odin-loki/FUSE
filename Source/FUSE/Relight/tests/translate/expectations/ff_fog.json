@@ -1,0 +1,23 @@
+{
+  "schema": "fuse.relight.translate_expect/1",
+  "scene": "ff_fog",
+  "why": "Tests/relight/apps/scenes/ff_fog.cpp: four viewports x (6 pillars + a far wall). Fog colour 0xff8090a0. Quadrant 0: vertex LINEAR 2..22; 1: the same with RANGEFOGENABLE (not part of Remix's FogState); 2: table EXP density 0.06 (the wall EXP2); 3: table LINEAR 3..24.",
+  "draw_count": 28,
+  "draws": [
+    {"index": [0, 27], "translated": true, "camera": "Main", "material": {"blend": false, "diffuse_source": "VertexColor0"}},
+    {"index": [0, 13], "why": "vertex LINEAR fog (RANGEFOGENABLE does not change the fog state)",
+     "fog": {"mode": 3, "color": [0.501960814, 0.564705908, 0.627451003], "scale": 0.0500000007, "end": 22, "density": 0}},
+    {"index": [14, 19], "why": "table EXP: FOGSTART = FOGEND = 0, so scale = 1 / 0",
+     "fog": {"mode": 1, "color": [0.501960814, 0.564705908, 0.627451003], "scale": "inf", "end": 0, "density": 0.0599999987}},
+    {"index": 20, "why": "the EXP quadrant's wall uses EXP2", "fog": {"mode": 2, "density": 0.0599999987}},
+    {"index": [21, 27], "why": "table LINEAR 3..24",
+     "fog": {"mode": 3, "scale": 0.0476190485, "end": 24, "density": 0}}
+  ],
+  "frame": {
+    "why": "the frame fog is the first one discovered (quadrant 0); four distinct fog states (quadrants 0 and 1 share one)",
+    "light_count": 0,
+    "fog": {"mode": 3, "color": [0.501960814, 0.564705908, 0.627451003], "scale": 0.0500000007, "end": 22, "density": 0},
+    "fog_states": 4, "cameras": ["Main"],
+    "camera": {"fov": 1.04719758, "aspect": 1.33333337, "near": 0.5, "lhs": true}
+  }
+}

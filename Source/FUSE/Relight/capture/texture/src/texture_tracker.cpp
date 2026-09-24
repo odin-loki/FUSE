@@ -305,7 +305,11 @@ void TextureTracker::onTextureCopy(const tap::TextureCopy& c) {
     }
     // UpdateSurface: only a copy covering the destination image's (mip-0) extent inherits.
     bool full = false;
-    if (!c.hasSourceRect || m_config.sourceRectPolicy == SourceRectPolicy::AssumeFullWhenExtentsMatch) {
+    if (c.hasSourceRect && c.width != 0 && c.height != 0) {
+        // The tap reports the copied extent (tap interface 2): compare it directly.
+        full = c.width == std::max(1u, dst->desc.width) && c.height == std::max(1u, dst->desc.height) &&
+               std::max(1u, dst->desc.depth) == 1;
+    } else if (!c.hasSourceRect || m_config.sourceRectPolicy == SourceRectPolicy::AssumeFullWhenExtentsMatch) {
         full = mipExtent(src->desc.width, c.sourceLevel) == std::max(1u, dst->desc.width) &&
                mipExtent(src->desc.height, c.sourceLevel) == std::max(1u, dst->desc.height) &&
                std::max(1u, dst->desc.depth) == 1;
