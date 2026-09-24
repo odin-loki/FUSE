@@ -149,7 +149,9 @@ int runLayout() {
     expect(bin_features(kBinEmpty) == 0u && bin_features(kBinFlat) == 0u && bin_features(kBinTextured) == kFeatureTextures &&
                bin_features(kBinNormalMapped) == kFeatureAll && bin_features(kBinUber) == kFeatureAll,
            "bin feature classes are nested and the uber path has every feature");
-    expect(ResolveBinLayout::kListOffset == 64u && ResolveBinLayout::bytes(10u) == 64u + 160u, "bin buffer layout");
+    expect(ResolveBinLayout::kDrawCountOffset == 64u && ResolveBinLayout::kResetBytes == 80u &&
+               ResolveBinLayout::kListOffset == 80u && ResolveBinLayout::bytes(10u) == 80u + 160u,
+           "bin buffer layout (args, draw count, tile lists)");
     expect(pack_tile(3u, 7u) == (3u | (7u << 16)) && tile_x(pack_tile(3u, 7u)) == 3u && tile_y(pack_tile(3u, 7u)) == 7u,
            "tile packing");
     const GpuFormat expected[6] = {GpuFormat::R16G16B16A16Sfloat, GpuFormat::R8G8B8A8Unorm, GpuFormat::R8G8B8A8Unorm,

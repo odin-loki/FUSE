@@ -614,11 +614,15 @@ void MaterialResolve::addForward(rg::Graph& graph, const ResolveGraphRefs& refs,
 void MaterialResolve::recordReset(const rg::PassContext& context, void* user) {
 #if defined(FUSE_VULKAN_BACKEND)
     const PassRecord& r = *static_cast<const PassRecord*>(user);
-    static constexpr u32 kArgs[ResolveBinLayout::kArgsBytes / 4u] = {
+    // kBinCount VkDrawIndirectCommand {6, 0, 0, 0} (classify counts instances) + the draw count 1.
+    static constexpr u32 kReset[ResolveBinLayout::kResetBytes / 4u] = {
         ResolveBinLayout::kVerticesPerTile, 0u, 0u, 0u, ResolveBinLayout::kVerticesPerTile, 0u, 0u, 0u,
-        ResolveBinLayout::kVerticesPerTile, 0u, 0u, 0u, ResolveBinLayout::kVerticesPerTile, 0u, 0u, 0u};
+        ResolveBinLayout::kVerticesPerTile, 0u, 0u, 0u, ResolveBinLayout::kVerticesPerTile, 0u, 0u, 0u,
+        1u,                                 0u, 0u, 0u};
+    static_assert(ResolveBinLayout::kDrawCountOffset == 64u && sizeof(kReset) == ResolveBinLayout::kResetBytes,
+                  "reset block: args then the draw count");
     vkCmdUpdateBuffer(static_cast<VkCommandBuffer>(context.commandBuffer), static_cast<VkBuffer>(context.buffer(r.refs.bins)),
-                      0, sizeof(kArgs), kArgs);
+                      0, sizeof(kReset), kReset);
 #else
     (void)context;
     (void)user;
@@ -686,11 +690,14 @@ void MaterialResolve::recordResolve(const rg::PassContext& context, void* user) 
     vkCmdSetScissor(cmd, 0, 1, &scissor);
     vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, kPushBytes, &r.push);
     if (r.path == ResolvePath::Binned) {
+        // One draw per bin, as vkCmdDrawIndirectCount with the constant count 1 (maxDrawCount 1), not
+        // vkCmdDrawIndirect: Lavapipe's vkCmdDrawIndirect inherits the indirect draw-count buffer of an
+        // earlier *IndirectCount draw in the command buffer (the visibility pass's), see ResolveBinLayout.
         const VkBuffer bins = static_cast<VkBuffer>(context.buffer(r.refs.bins));
         for (u32 b = 0; b < kBinCount; ++b) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, static_cast<VkPipeline>(self.m_resolvePipelines[b]));
-            vkCmdDrawIndirect(cmd, bins, static_cast<VkDeviceSize>(b) * ResolveBinLayout::kArgsStride, 1,
-                              ResolveBinLayout::kArgsStride);
+            vkCmdDrawIndirectCount(cmd, bins, static_cast<VkDeviceSize>(b) * ResolveBinLayout::kArgsStride, bins,
+                                   ResolveBinLayout::kDrawCountOffset, 1u, ResolveBinLayout::kArgsStride);
         }
     } else {
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, static_cast<VkPipeline>(self.m_resolvePipelines[kBinUber]));

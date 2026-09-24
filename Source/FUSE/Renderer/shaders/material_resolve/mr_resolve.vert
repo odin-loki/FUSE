@@ -1,6 +1,6 @@
 #version 460
 // WP-1.5 material resolve, vertex stage. Specialisation constant 0 = the bin:
-//   0..3  binned path: one instance per tile of that bin (vkCmdDrawIndirect, instanceCount = the
+//   0..3  binned path: one instance per tile of that bin (vkCmdDrawIndirectCount, instanceCount = the
 //         classify pass's tile count), 6 vertices = the tile's quad, from the bin's tile list (BDA)
 //   4     uber path: one full-screen triangle (vkCmdDraw(3))
 // GLSL twin of mr_resolve_vs.slang.

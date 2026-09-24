@@ -25,7 +25,7 @@
 #define FUSE_MR_ATTR_BAD_ID 2u
 #define FUSE_MR_ATTR_DEGENERATE 3u
 #define FUSE_MR_NO_MATERIAL 0xFFFFFFFFu
-#define FUSE_MR_BIN_LIST_OFFSET_WORDS 16u // ResolveBinLayout::kListOffset / 4
+#define FUSE_MR_BIN_LIST_OFFSET_WORDS 20u // ResolveBinLayout::kListOffset / 4 (args + draw count)
 
 // ResolveFrameConstants (resolve_types.hpp), 176 bytes.
 struct FuseMrFrame {

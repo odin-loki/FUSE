@@ -17,8 +17,9 @@
 // and packs the G-buffer. Two paths, identical output:
 //
 //   Binned   "resolve.reset" + "resolve.classify" (8 x 8 tiles into 4 nested feature bins: empty,
-//            flat, textured, normal-mapped) + "resolve.gbuffer": one vkCmdDrawIndirect of tile quads
-//            per bin, each with a pipeline specialised to that bin's features.
+//            flat, textured, normal-mapped) + "resolve.gbuffer": one indirect draw of tile quads per
+//            bin (vkCmdDrawIndirectCount, count 1: see ResolveBinLayout), each with a pipeline
+//            specialised to that bin's features.
 //   Uber     "resolve.gbuffer": one full-screen triangle, every feature, per-pixel branches (fallback).
 //
 //   resolve.beginFrame(serial, {viewProj, prevViewProj, scene.headerHandle(), vb.visStorageHandle(), sampler});

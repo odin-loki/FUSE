@@ -68,12 +68,26 @@ struct ResolvePush {
 static_assert(sizeof(ResolvePush) == 16u, "ResolvePush layout");
 
 /// Byte layout of the bin buffer: kBinCount VkDrawIndirectCommand {6, tiles, 0, 0} (the classify
-/// kernel counts tiles into instanceCount), then kBinCount tile lists of `tileCapacity` u32 entries
-/// (x | y << 16), bin b at listOffset + b * tileCapacity * 4.
+/// kernel counts tiles into instanceCount), then the draw-count block {1, 0, 0, 0} (the count buffer of
+/// every bin's vkCmdDrawIndirectCount, maxDrawCount 1), then kBinCount tile lists of `tileCapacity`
+/// u32 entries (x | y << 16), bin b at listOffset + b * tileCapacity * 4. "resolve.reset" writes the
+/// first kResetBytes every frame.
+///
+/// Why a draw count at all: a plain vkCmdDrawIndirect is not self-contained on Lavapipe (Mesa
+/// lvp_execute.c handle_draw_indirect sets offset / stride / draw_count / buffer of the command
+/// buffer's pipe_draw_indirect_info but never clears indirect_draw_count, which an earlier
+/// vkCmdDraw(Indexed)IndirectCount of the same command buffer set, e.g. the visibility buffer's
+/// culled draws). The draw then runs min(1, that stale count), and once the culler's last count is 0
+/// (a steady frame whose phase 2 draws nothing) no tile is drawn and the G-buffer keeps its old
+/// contents. vkCmdDrawIndirectCount sets every field (drawIndirectCount is already a visibility-buffer
+/// requirement), and on every other driver it is the same single draw.
 struct ResolveBinLayout {
     static constexpr u32 kArgsStride = 16u;
     static constexpr u32 kArgsBytes = kArgsStride * kBinCount;
-    static constexpr u32 kListOffset = kArgsBytes;
+    static constexpr u32 kDrawCountOffset = kArgsBytes; ///< u32 1 (16-byte block)
+    static constexpr u32 kDrawCountBytes = 16u;
+    static constexpr u32 kResetBytes = kArgsBytes + kDrawCountBytes;
+    static constexpr u32 kListOffset = kResetBytes;
     static constexpr u32 kVerticesPerTile = 6u; ///< two triangles per tile quad
     static constexpr u64 bytes(u32 tileCapacity) { return kListOffset + static_cast<u64>(tileCapacity) * 4u * kBinCount; }
 };

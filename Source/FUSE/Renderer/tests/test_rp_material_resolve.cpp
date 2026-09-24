@@ -34,6 +34,12 @@
 //
 //   --mode parity          raster visibility buffer
 //   --mode parity_atomic   64-bit atomic visibility buffer (skip without 64-bit atomics)
+//   --mode multiframe      6 frames of a small scene that stays visible (no phase-2 draws after frame 0)
+//                          while every object moves, changes material row and the rows change (frames
+//                          0..2 flat materials only, 3..5 every bin): binned == uber bit for bit on every
+//                          frame, the G-buffer changes every frame, negative controls (the previous
+//                          frame's G-buffer and one flipped byte both fail the comparison). Regression
+//                          gate for the binned path keeping the first frame's G-buffer on Lavapipe.
 //   --mode zero_alloc      64 steady-state frames (binned): 0 operator-new calls in
 //                          MaterialResolve::beginFrame, the graph build and the resolve.* / vis.* /
 //                          cull.* pass callbacks (validated run first; validation off for the count)
@@ -355,6 +361,7 @@ struct ReadbackLayout {
     u64 attributes = 0;
     u64 bins = 0;
     u64 binsBytes = 0;
+    u64 cullCounts = 0; ///< the culler's draw counts (multiframe: phase-2 draws of the frame)
     u64 end = 0;
 };
 
@@ -377,6 +384,7 @@ ReadbackLayout makeLayout() {
     const u32 tiles = ((kWidth + 7u) / 8u) * ((kHeight + 7u) / 8u);
     l.binsBytes = ResolveBinLayout::bytes(tiles);
     l.bins = take(l.binsBytes);
+    l.cullCounts = take(kCountResetWords * 4u);
     l.end = cursor;
     return l;
 }
@@ -786,7 +794,10 @@ struct FrameOptions {
     u32 sampler = 0;
     bool withReference = true;
     bool readback = true;
+    bool binnedVsUberOnly = false; ///< multiframe: binned + uber resolve and their read-back only
 };
+
+void buildBinnedVsUberGraph(Context& ctx, Scene& s, Rig& rig, rg::Graph& graph, FrameState& fs);
 
 bool beginFrame(Context& ctx, Scene& s, Rig& rig, const FrameOptions& opt) {
     CullFrameDesc frame{};
@@ -813,6 +824,10 @@ bool beginFrame(Context& ctx, Scene& s, Rig& rig, const FrameOptions& opt) {
 }
 
 void buildGraph(Context& ctx, Scene& s, Rig& rig, rg::Graph& graph, const FrameOptions& opt, FrameState& fs) {
+    if (opt.binnedVsUberOnly) {
+        buildBinnedVsUberGraph(ctx, s, rig, graph, fs);
+        return;
+    }
     graph.reset();
     fs.copyCount = 0;
     const GpuSceneGraphRefs sceneRefs = s.gpu.importInto(graph);
@@ -1259,6 +1274,285 @@ int runParity(Context& ctx, VisMode mode) {
     return 0;
 }
 
+// --- multiframe -----------------------------------------------------------------------------------
+// Regression gate for a binned resolve that kept the first frame's G-buffer (Lavapipe): a plain
+// vkCmdDrawIndirect there inherits the indirect draw-count buffer of the command buffer's last
+// vkCmdDraw*IndirectCount (the visibility pass's phase-2 draws, see ResolveBinLayout), so on every
+// steady frame whose phase 2 draws nothing the bins drew no tile. The parity scene has phase-2 draws
+// every frame and missed it; this scene is built so that frames 1.. have none: every instance stays
+// visible and unoccluded (one row, no overlap, over a ground plane) while it moves, its material row
+// changes and the rows themselves change. Frames 0..2 use flat materials only (the WP-2.3 scene's
+// case: tiles in the empty and flat bins only), frames 3..5 every bin.
+constexpr u32 kSteadyFrames = 6;
+constexpr u32 kSteadyFlatFrames = 3;
+constexpr u32 kSteadyObjects = 8;
+constexpr u32 kMatSteadyA = mr_test::kMatCount;      ///< extra flat rows, rewritten every frame
+constexpr u32 kMatSteadyB = mr_test::kMatCount + 1u;
+constexpr u32 kMatSteadyGround = mr_test::kMatCount + 2u;
+
+Material::GPUMaterial steadyFlat(u32 frame, u32 which) {
+    Material::GPUMaterial m{};
+    const f32 t = static_cast<f32>(frame) * 0.13f + static_cast<f32>(which) * 0.29f;
+    m.baseColor = {0.15f + 0.7f * (t - std::floor(t)), 0.25f + 0.1f * static_cast<f32>(which),
+                   0.8f - 0.09f * static_cast<f32>(frame), 0.f};
+    m.roughnessEmissive = {0.3f + 0.1f * static_cast<f32>((frame + which) % 5u), 0.f, 0.f, 0.f};
+    return m;
+}
+
+GpuTransform steadyTransform(u32 object, u32 frame) {
+    const f32 f = static_cast<f32>(frame);
+    const f32 i = static_cast<f32>(object);
+    // Row at z ~ -8, 1.25 apart; bounding radius <= 0.55 (torus 1.35 x 0.4), so no two overlap.
+    return place(-4.375f + 1.25f * i + 0.12f * std::sin(0.9f * f + i), 0.1f * std::cos(0.7f * f + 2.f * i) - 0.2f,
+                 -8.f - 0.25f * static_cast<f32>(object % 2u) + 0.1f * f, 0.4f, 0.4f, 0.4f, 0.45f * f + 0.8f * i);
+}
+
+Mat4 steadyCamera(u32 frame) {
+    const f32 t = static_cast<f32>(frame);
+    const f32 eye[3] = {0.1f * t - 0.2f, 1.2f - 0.03f * t, 2.f};
+    const f32 at[3] = {0.05f * t, -0.4f, -8.f};
+    return mul(perspective(1.1f, static_cast<f32>(kWidth) / static_cast<f32>(kHeight), 0.3f, 120.f), lookAt(eye, at));
+}
+
+u32 steadyMaterial(u32 object, u32 frame) {
+    static constexpr u32 kFlat[4] = {mr_test::kMatFlat, kMatSteadyA, mr_test::kMatEmissive, kMatSteadyB};
+    static constexpr u32 kAll[7] = {mr_test::kMatTextured,     kMatSteadyA,         mr_test::kMatNormalMapped,
+                                    mr_test::kMatAoEmissiveTex, mr_test::kMatFlat,   mr_test::kMatLodProbe,
+                                    mr_test::kMatBoxSide};
+    return frame < kSteadyFlatFrames ? kFlat[(object + frame) % 4u] : kAll[(object + frame) % 7u];
+}
+
+bool buildSteadyScene(Context& ctx, Scene& s) {
+    GpuSceneDesc d{};
+    d.device = ctx.device.get();
+    d.allocator = ctx.allocator.get();
+    d.upload = &ctx.upload;
+    d.bindless = &ctx.bindless;
+    d.instanceCapacity = 64u;
+    if (!s.gpu.init(d) || !s.gpu.gpuEnabled()) {
+        return false;
+    }
+    ++ctx.serial;
+    ctx.bindless.setFrameSerial(ctx.serial);
+    s.gpu.beginFrame(ctx.serial);
+    const mr_test::SourceMesh sources[3] = {mr_test::uvSphere(16, 24, 1.f), mr_test::torus(24, 12, 1.f, 0.35f),
+                                            mr_test::plane(8, 40.f, 6.f)};
+    s.meshes.resize(3);
+    for (u32 i = 0; i < 3u; ++i) {
+        if (!mr_test::build(sources[i], s.meshes[i]) || s.gpu.addMeshletMesh(s.meshes[i]) != i) {
+            return false;
+        }
+    }
+    s.materials = mr_test::makeMaterials(ctx.textureHandles);
+    s.materials.push_back(steadyFlat(0u, 0u));
+    s.materials.push_back(steadyFlat(0u, 1u));
+    s.materials.push_back(steadyFlat(0u, 2u));
+    for (u32 i = 0; i < s.materials.size(); ++i) {
+        s.gpu.setMaterial(i, s.materials[i]);
+    }
+    InstanceDesc ground{};
+    ground.mesh = 2;
+    ground.material = kMatSteadyGround;
+    ground.transform = place(0.f, -1.f, -12.f, 1.f, 1.f, 1.f, 0.f);
+    s.handles.push_back(s.gpu.addInstance(ground));
+    for (u32 i = 0; i < kSteadyObjects; ++i) {
+        InstanceDesc id{};
+        id.mesh = i % 2u;
+        id.material = steadyMaterial(i, 0u);
+        id.transform = steadyTransform(i, 0u);
+        s.handles.push_back(s.gpu.addInstance(id));
+    }
+    const GpuSceneCommitStats stats = s.gpu.commit();
+    ctx.upload.flush();
+    return stats.ok && ctx.upload.waitAll();
+}
+
+void steadyUpdate(Scene& s, u32 frame) {
+    for (u32 i = 0; i < kSteadyObjects; ++i) {
+        s.gpu.setTransform(s.handles[1u + i], steadyTransform(i, frame));
+        s.gpu.setInstanceMaterial(s.handles[1u + i], steadyMaterial(i, frame));
+    }
+    s.gpu.setMaterial(kMatSteadyA, steadyFlat(frame, 0u));
+    s.gpu.setMaterial(kMatSteadyB, steadyFlat(frame, 1u));
+    s.gpu.setMaterial(kMatSteadyGround, steadyFlat(frame, 2u));
+}
+
+void buildBinnedVsUberGraph(Context& ctx, Scene& s, Rig& rig, rg::Graph& graph, FrameState& fs) {
+    graph.reset();
+    fs.copyCount = 0;
+    const GpuSceneGraphRefs sceneRefs = s.gpu.importInto(graph);
+    const CullGraphRefs cull = rig.culler.importInto(graph);
+    const VisGraphRefs vis = rig.vb.importInto(graph);
+    rig.vb.addCulledFrame(graph, vis, sceneRefs, s.gpu.headerHandle(), rig.culler, cull);
+    const ResolveGraphRefs binned = rig.binned.importInto(graph);
+    rig.binned.addResolve(graph, binned, vis.vis, sceneRefs, ResolvePath::Binned);
+    const ResolveGraphRefs uber = rig.uber.importInto(graph);
+    rig.uber.addResolve(graph, uber, vis.vis, sceneRefs, ResolvePath::Uber);
+    const rg::BufferRef readback = graph.importBuffer(
+        rg::ImportedBuffer{ctx.readback.handle, g_layout.end, rg::kNoQueue, nullptr, "rp_material_resolve.readback"});
+    auto addCopy = [&](CopyRecord::Kind kind, rg::TextureRef image, rg::BufferRef buffer, u64 dstOffset, u64 bytes) {
+        CopyRecord& c = fs.copies[fs.copyCount++];
+        c = CopyRecord{};
+        c.kind = kind;
+        c.image = image;
+        c.buffer = buffer;
+        c.dst = readback;
+        c.dstOffset = dstOffset;
+        c.bytes = bytes;
+        rg::PassBuilder pass = graph.addPass("readback.copy", &recordCopy, &c);
+        if (kind == CopyRecord::Buffer) {
+            pass.use(buffer, rg::Access::TransferSrc, rg::BufferRange{0, bytes});
+        } else {
+            pass.use(image, rg::Access::TransferSrc);
+        }
+        pass.use(readback, rg::Access::TransferDst, rg::BufferRange{dstOffset, bytes});
+    };
+    addCopy(CopyRecord::Image, vis.vis, {}, g_layout.vis, kPixels * 8ull);
+    const ResolveGraphRefs* sets[2] = {&binned, &uber};
+    for (u32 k = 0; k < 2u; ++k) {
+        for (u32 t = 0; t < kTargets; ++t) {
+            addCopy(CopyRecord::Image, t + 1u < kTargets ? sets[k]->gbuffer[t] : sets[k]->materialId, {}, g_layout.sets[k][t],
+                    static_cast<u64>(kPixels) * kTexelBytes[t]);
+        }
+    }
+    addCopy(CopyRecord::Buffer, {}, binned.bins, g_layout.bins, g_layout.binsBytes);
+    addCopy(CopyRecord::Buffer, {}, cull.counts, g_layout.cullCounts, kCountResetWords * 4u);
+    graph.addPass("readback.host", nullptr, nullptr).use(readback, rg::Access::HostRead);
+}
+
+/// Pixels whose texel differs in any of the 7 targets between two copies (target-major, like sets[k]).
+u32 diffPixels(const std::vector<u8>& a, const std::vector<u8>& b) {
+    std::vector<u8> differs(kPixels, 0u);
+    u64 offset = 0;
+    for (u32 t = 0; t < kTargets; ++t) {
+        for (u32 p = 0; p < kPixels; ++p) {
+            const u64 at = offset + static_cast<u64>(p) * kTexelBytes[t];
+            differs[p] |= std::memcmp(a.data() + at, b.data() + at, kTexelBytes[t]) != 0 ? 1u : 0u;
+        }
+        offset += static_cast<u64>(kPixels) * kTexelBytes[t];
+    }
+    u32 n = 0;
+    for (const u8 d : differs) {
+        n += d;
+    }
+    return n;
+}
+
+std::vector<u8> copySet(Context& ctx, u32 set) {
+    std::vector<u8> out;
+    for (u32 t = 0; t < kTargets; ++t) {
+        const u8* at = rb(ctx, g_layout.sets[set][t]);
+        out.insert(out.end(), at, at + static_cast<usize>(kPixels) * kTexelBytes[t]);
+    }
+    return out;
+}
+
+int runMultiFrame(Context& ctx) {
+    u32 languagesRun = 0;
+    for (const ResolveKernelLanguage language : {ResolveKernelLanguage::Slang, ResolveKernelLanguage::Glsl}) {
+        const char* want = language == ResolveKernelLanguage::Slang ? "slang" : "glsl";
+        Rig rig;
+        const int rc = initRig(ctx, rig, VisMode::Raster, language, true);
+        if (rc < 0) {
+            std::fprintf(stderr, "FAIL: rig init (%s)\n", want);
+            return 1;
+        }
+        if (rc == 0) {
+            std::printf("  language %s: not built, skipped\n", want);
+            destroyRig(rig);
+            continue;
+        }
+        Scene s;
+        if (!buildSteadyScene(ctx, s)) {
+            std::fprintf(stderr, "FAIL: scene\n");
+            return 1;
+        }
+        ++languagesRun;
+        std::printf("  kernels: %s, %u instances, %zu material rows, %u frames\n", rig.language, s.gpu.instanceHighWater(),
+                    s.materials.size(), kSteadyFrames);
+        std::printf("  frame materials phase1/2 draws covered bin!=uber | tiles e/f/t/n | changed vs prev (uber) | "
+                    "prev-frame G-buffer vs this uber\n");
+        rg::Graph graph;
+        FrameState fs;
+        std::vector<u8> prevUber;
+        std::vector<u8> prevBinned;
+        u32 steadyZeroPhase2 = 0;
+        Mat4 prev = steadyCamera(0);
+        for (u32 frame = 0; frame < kSteadyFrames; ++frame) {
+            beginSceneFrame(ctx, s);
+            if (frame > 0u) {
+                steadyUpdate(s, frame);
+            }
+            FrameOptions opt{};
+            opt.viewProj = steadyCamera(frame);
+            opt.prevViewProj = prev;
+            opt.sampler = ctx.samplerHandles[frame % 2u];
+            opt.binnedVsUberOnly = true;
+            if (!runFrame(ctx, s, rig, graph, opt, fs)) {
+                std::fprintf(stderr, "FAIL: frame %u\n", frame);
+                return 1;
+            }
+            prev = opt.viewProj;
+            const u32* counts = reinterpret_cast<const u32*>(rb(ctx, g_layout.cullCounts));
+            const u32* bins = reinterpret_cast<const u32*>(rb(ctx, g_layout.bins));
+            const u32* vis = reinterpret_cast<const u32*>(rb(ctx, g_layout.vis));
+            u32 covered = 0;
+            for (u32 p = 0; p < kPixels; ++p) {
+                covered += vis[p * 2u] != kVisInvalid ? 1u : 0u;
+            }
+            u32 tiles[kBinCount] = {};
+            bool args = bins[ResolveBinLayout::kDrawCountOffset / 4u] == 1u;
+            for (u32 b = 0; b < kBinCount; ++b) {
+                tiles[b] = bins[b * 4u + 1u];
+                args = args && bins[b * 4u] == ResolveBinLayout::kVerticesPerTile && bins[b * 4u + 2u] == 0u &&
+                       bins[b * 4u + 3u] == 0u;
+            }
+            std::vector<u8> binnedCopy = copySet(ctx, 0u);
+            std::vector<u8> uberCopy = copySet(ctx, 1u);
+            const u32 binnedUber = diffPixels(binnedCopy, uberCopy);
+            const u32 changed = prevUber.empty() ? 0u : diffPixels(prevUber, uberCopy);
+            const u32 staleDetect = prevBinned.empty() ? 0u : diffPixels(prevBinned, uberCopy);
+            std::printf("  %5u %9s %6u/%-6u %7u %9u | %u/%u/%u/%u | %22u | %u\n", frame,
+                        frame < kSteadyFlatFrames ? "flat" : "all bins", counts[kCountPhase1Draws], counts[kCountPhase2Draws],
+                        covered, binnedUber, tiles[0], tiles[1], tiles[2], tiles[3], changed, staleDetect);
+            expect(covered > kPixels / 4u, "multiframe: the scene covers the view");
+            expect(args, "multiframe: bin args {6, n, 0, 0} and the draw count 1");
+            expect(binnedUber == 0u, "multiframe: binned == uber, bit for bit, on every frame");
+            if (frame < kSteadyFlatFrames) {
+                expect(tiles[1] > 0u && tiles[2] == 0u && tiles[3] == 0u,
+                       "multiframe: flat frames fill only the empty / flat bins");
+            } else {
+                expect(tiles[1] > 0u && tiles[2] > 0u && tiles[3] > 0u, "multiframe: mixed frames fill every bin");
+            }
+            if (frame > 0u) {
+                steadyZeroPhase2 += counts[kCountPhase2Draws] == 0u ? 1u : 0u;
+                // Negative control: the previous frame's G-buffer (what a stale binned path returns) is
+                // told apart from this frame's by the bit-exact comparison above.
+                expect(changed > 1000u, "multiframe: moving geometry / changing materials change the G-buffer every frame");
+                expect(staleDetect > 1000u,
+                       "multiframe negative control: a stale (previous-frame) G-buffer fails binned == uber");
+            }
+            // Negative control: one flipped byte in any target breaks the comparison.
+            std::vector<u8> flipped = binnedCopy;
+            flipped[flipped.size() / 2u + 1u] ^= 0x01u;
+            expect(diffPixels(flipped, binnedCopy) == 1u,
+                   "multiframe negative control: one flipped byte is one differing pixel");
+            prevUber = std::move(uberCopy);
+            prevBinned = std::move(binnedCopy);
+        }
+        // The hazard needs steady frames whose last *IndirectCount draw (vis phase 2) has count 0.
+        expect(steadyZeroPhase2 >= kSteadyFrames - 2u,
+               "multiframe: steady frames with no phase-2 draws (the Lavapipe hazard)");
+        s.gpu.destroy();
+        destroyRig(rig);
+    }
+    if (languagesRun == 0u) {
+        std::printf("SKIP: no material-resolve kernels built\n");
+        return kSkip;
+    }
+    return 0;
+}
+
 // --- zero_alloc -----------------------------------------------------------------------------------
 thread_local bool t_inPass = false;
 
@@ -1383,6 +1677,8 @@ int main(int argc, char** argv) {
                 return kSkip;
             }
             rc = runParity(ctx, VisMode::Atomic64);
+        } else if (mode == "multiframe") {
+            rc = runMultiFrame(ctx);
         } else if (mode == "zero_alloc") {
             rc = runZeroAlloc(ctx, false);
         } else {

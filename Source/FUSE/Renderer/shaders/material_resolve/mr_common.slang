@@ -18,7 +18,7 @@ static const uint kFuseMrAttrOk = 1u;
 static const uint kFuseMrAttrBadId = 2u;
 static const uint kFuseMrAttrDegenerate = 3u;
 static const uint kFuseMrNoMaterial = 0xFFFFFFFFu;
-static const uint kFuseMrBinListOffsetWords = 16u;
+static const uint kFuseMrBinListOffsetWords = 20u; // ResolveBinLayout::kListOffset / 4 (args + draw count)
 
 [[vk::binding(1, 0)]] Texture2D<float4> fuse_mr_textures[];
 [[vk::binding(2, 0)]] SamplerState fuse_mr_samplers[];
