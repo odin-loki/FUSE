@@ -11,6 +11,8 @@ enum class ToneMapper : u8 {
     Filmic = 1,
     Reinhard = 2,
     Neutral = 3,
+    /// Troy Sobotka's AgX base transform (no look), display-linear output (WP-4.5).
+    AgX = 4,
 };
 
 /// CPU reference tone mapping — mirrors renderer/postprocess/tonemapping.cuh.
@@ -24,6 +26,17 @@ enum class ToneMapper : u8 {
 fuse::math::Vec3 aces_tonemap(const fuse::math::Vec3& x);
 fuse::math::Vec3 filmic_tonemap(const fuse::math::Vec3& x);
 fuse::math::Vec3 reinhard_tonemap(const fuse::math::Vec3& x);
+
+/// AgX base transform (T. Sobotka; the widely used polynomial fit of the default AgX sigmoid, no
+/// "look" / punch): scene-linear Rec.709 -> inset matrix -> log2 encoding over
+/// [kAgxMinEv, kAgxMaxEv] stops -> 6th-order sigmoid approximation -> outset (inverse inset)
+/// matrix -> 2.2 power to display-linear, clamped to [0, 1]. Unlike the per-channel operators it
+/// mixes channels (the inset desaturates highlights toward white instead of skewing hue). The GPU
+/// post stack (WP-4.5, shaders/post/pp_common) evaluates the same expressions in the same order.
+inline constexpr f32 kAgxMinEv = -12.47393f;
+inline constexpr f32 kAgxMaxEv = 4.026069f;
+f32 agx_contrast_approx(f32 x);
+fuse::math::Vec3 agx_tonemap(const fuse::math::Vec3& x);
 
 fuse::math::Vec3 apply_tone_map(const fuse::math::Vec3& hdr, ToneMapper mapper);
 const char* tone_mapper_name(ToneMapper mapper);

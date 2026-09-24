@@ -1,0 +1,139 @@
+#version 460
+// WP-4.5 exposure histogram + adaptation (renderer::LuminanceHistogram / AutoExposure,
+// auto_exposure.cpp):
+//   histogram  one 16 x 16 workgroup per 64 x 64 pixel tile: log2-luminance bins (logBinIndex:
+//              clamp((log2(max(L, 1e-8)) - min) / range, 0, 1) * (bins - 1), rounded) counted in
+//              shared memory, written as the tile's partial row (no global atomics: deterministic)
+//   adapt      one 256-wide workgroup: sums the partial rows per bin into PostExposureState::bins,
+//              then thread 0 meters the percentile luminance (percentileLuminance) and advances the
+//              adaptation state (AutoExposure::updateFromLuminance: linear EV steps, or the EMA
+//              variant) - the state never leaves the GPU.
+// GLSL twin of pp_exposure.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "pp_common.glsl"
+
+layout(local_size_x = 256) in;
+
+shared uint s_bins[PP_HIST_MAX_BINS];
+
+uint pp_bin(float luminance, PpFrame F) {
+    const float logLum = log2(max(luminance, 1e-8));
+    precise float range = F.histMaxLog - F.histMinLog;
+    if (range <= 0.0 || F.histBins == 0u) {
+        return 0u;
+    }
+    precise float normalized = (logLum - F.histMinLog) / range;
+    precise float scaled = pp_clamp(normalized, 0.0, 1.0) * float(F.histBins - 1u);
+    return min(pp_round_pos(scaled), F.histBins - 1u);
+}
+
+float pp_bin_log(uint bin, PpFrame F) {
+    if (F.histBins <= 1u) {
+        return F.histMinLog;
+    }
+    precise float normalized = float(bin) / float(F.histBins - 1u);
+    precise float range = F.histMaxLog - F.histMinLog;
+    precise float r = F.histMinLog + normalized * range;
+    return r;
+}
+
+void adaptLinear(PpFrame F, float luminance, inout float current, inout float measured) {
+    measured = luminance;
+    if (F.adaptValid == 0u) {
+        return;
+    }
+    precise float ratio = max(luminance, 1e-8) / max(F.targetLuminance, 1e-8);
+    precise float target = pp_clamp(log2(ratio) + F.meteringBias, F.minEv, F.maxEv);
+    precise float delta = target - current;
+    const float speed = delta > 0.0 ? F.speedUp : F.speedDown;
+    precise float maxStep = speed * F.deltaSeconds;
+    if (abs(delta) <= maxStep) {
+        current = target;
+    } else {
+        current += delta > 0.0 ? maxStep : -maxStep;
+    }
+    current = pp_clamp(current, F.minEv, F.maxEv);
+}
+
+void main() {
+    const PpFrame F = pp_frame();
+    const uint t = gl_LocalInvocationIndex;
+    s_bins[t] = 0u;
+    barrier();
+    if (pc.mode == 0u) {
+        const uint gx = gl_WorkGroupID.x % F.histGroupsX;
+        const uint gy = gl_WorkGroupID.x / F.histGroupsX;
+        PpTexelsRef src = PpTexelsRef(pc.src);
+        for (uint k = 0u; k < 16u; ++k) {
+            const uint x = gx * PP_HIST_TILE + (t % 16u) + (k % 4u) * 16u;
+            const uint y = gy * PP_HIST_TILE + (t / 16u) + (k / 4u) * 16u;
+            if (x < F.width && y < F.height) {
+                atomicAdd(s_bins[pp_bin(pp_luminance(src.v[y * F.width + x].xyz), F)], 1u);
+            }
+        }
+        barrier();
+        PpWordsRef(F.histPartials).v[gl_WorkGroupID.x * PP_HIST_MAX_BINS + t] = s_bins[t];
+        return;
+    }
+    // adapt
+    PpWordsRef partials = PpWordsRef(F.histPartials);
+    uint total = 0u;
+    for (uint g = 0u; g < F.histGroups; ++g) {
+        total += partials.v[g * PP_HIST_MAX_BINS + t];
+    }
+    s_bins[t] = total;
+    PpWordsRef state = PpWordsRef(F.exposureState);
+    state.v[PP_STATE_BINS + t] = total;
+    barrier();
+    if (t != 0u) {
+        return;
+    }
+    PpFloatsRef stateF = PpFloatsRef(F.exposureState);
+    float current = stateF.v[PP_STATE_CURRENT_EV];
+    float measured = stateF.v[PP_STATE_MEASURED];
+    float smoothed = stateF.v[PP_STATE_SMOOTHED];
+    uint frames = state.v[PP_STATE_FRAMES];
+    if ((F.flags & PP_FLAG_EXPOSURE_RESET) != 0u) {
+        current = F.resetEv;
+        measured = 0.0;
+        smoothed = 0.0;
+        frames = 0u;
+    }
+    const uint count = F.width * F.height;
+    float metered = 0.0;
+    if (F.histValid != 0u && count > 0u) {
+        const uint target = uint(ceil(pp_clamp(F.percentile, 0.0, 1.0) * float(count)));
+        const uint desired = max(target, 1u);
+        uint running = 0u;
+        uint bin = F.histBins - 1u;
+        for (uint b = 0u; b < F.histBins; ++b) {
+            running += s_bins[b];
+            if (running >= desired) {
+                bin = b;
+                break;
+            }
+        }
+        metered = exp2(pp_bin_log(bin, F));
+        if (metered >= 1e-8) {
+            if ((F.flags & PP_FLAG_AUTO_EMA) != 0u) {
+                const bool brightening = metered > smoothed;
+                const float alpha = pp_clamp(brightening ? F.emaUp : F.emaDown, 0.0, 1.0);
+                if (smoothed <= 0.0) {
+                    smoothed = metered;
+                } else {
+                    precise float blended = alpha * metered + (1.0 - alpha) * smoothed;
+                    smoothed = blended;
+                }
+                adaptLinear(F, smoothed, current, measured);
+            } else {
+                adaptLinear(F, metered, current, measured);
+            }
+        }
+    }
+    stateF.v[PP_STATE_CURRENT_EV] = current;
+    stateF.v[PP_STATE_MEASURED] = measured;
+    stateF.v[PP_STATE_SMOOTHED] = smoothed;
+    stateF.v[PP_STATE_METERED] = metered;
+    state.v[PP_STATE_SAMPLES] = count;
+    state.v[PP_STATE_FRAMES] = frames + 1u;
+}

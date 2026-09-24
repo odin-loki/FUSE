@@ -1,0 +1,137 @@
+#version 460
+// WP-4.1 "temporal.motion": camera + per-object motion vectors and linear depth, one render pixel per
+// thread (8 x 8 tiles). Line-for-line twin of include/fuse/renderer/temporal/motion_kernel.hpp (the CPU
+// reference "temporal_motion"; conventions in temporal_types.hpp): the visibility sample's triangle under
+// drawViewProj gives the barycentrics at the pixel centre (the WP-1.4 decode operations), the object-space
+// point is reprojected with the unjittered current / previous view-projections and the instance's current /
+// previous transforms; the sky gets the rotation-only reprojection. GLSL twin of tm_motion.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+#include "vis_format.glsl"
+#include "vis_common.glsl"
+#include "tm_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(rg32ui) uniform readonly uimage2D fuse_tm_vis_images[];
+
+struct FuseTmMotion {
+    vec2 motion;
+    float depth;
+};
+
+// UV of a clip position (Vulkan NDC y down): ndc * 0.5 + 0.5 (motion_kernel::clip_uv).
+vec2 fuse_tm_clip_uv(vec4 c) {
+    precise vec2 uv;
+    uv.x = c.x / c.w * 0.5 + 0.5;
+    uv.y = c.y / c.w * 0.5 + 0.5;
+    return uv;
+}
+
+// motion_kernel::sky.
+FuseTmMotion fuse_tm_sky(FuseTmMotionFrame f, uvec2 p) {
+    FuseTmMotion r;
+    r.motion = vec2(0.0);
+    r.depth = 0.0;
+    if ((f.flags & FUSE_TM_MOTION_SKY_VALID) == 0u) {
+        return r;
+    }
+    precise float sx = float(p.x) + 0.5 + f.jitterX;
+    precise float sy = float(p.y) + 0.5 + f.jitterY;
+    precise float nx = sx * (2.0 / float(f.width)) - 1.0;
+    precise float ny = sy * (2.0 / float(f.height)) - 1.0;
+    precise float px = f.skyReproj[0].x * nx + f.skyReproj[1].x * ny + f.skyReproj[2].x;
+    precise float py = f.skyReproj[0].y * nx + f.skyReproj[1].y * ny + f.skyReproj[2].y;
+    precise float pw = f.skyReproj[0].z * nx + f.skyReproj[1].z * ny + f.skyReproj[2].z;
+    if (pw > 0.0) {
+        precise float cu = sx / float(f.width);
+        precise float cv = sy / float(f.height);
+        precise float mx = cu - (px / pw * 0.5 + 0.5);
+        precise float my = cv - (py / pw * 0.5 + 0.5);
+        r.motion = vec2(mx, my);
+    }
+    return r;
+}
+
+// motion_kernel::pixel.
+FuseTmMotion fuse_tm_motion(FuseGpuSceneHeaderRef scene, FuseTmMotionFrame f, uvec2 p, uvec2 vis) {
+    const uint instance = vis.x;
+    const uint triangle = vis.y;
+    if (instance == FUSE_VIS_INVALID) {
+        return fuse_tm_sky(f, p);
+    }
+    FuseTmMotion r;
+    r.motion = vec2(0.0);
+    r.depth = 0.0;
+    if (instance >= scene.counts[FUSE_GPU_SCENE_INSTANCES]) {
+        return r;
+    }
+    const FuseGpuInstance inst = fuse_gpu_scene_instances(scene).v[instance];
+    if ((inst.flags & FUSE_INSTANCE_VALID) == 0u || inst.mesh >= scene.counts[FUSE_GPU_SCENE_MESHES]) {
+        return r;
+    }
+    const FuseGpuMesh mesh = fuse_gpu_scene_meshes(scene).v[inst.mesh];
+    if (mesh.indexCount == 0u || scene.indexAddress == 0ul || triangle >= mesh.indexCount / 3u) {
+        return r;
+    }
+    FuseGpuSceneIndicesRef indices = fuse_gpu_scene_indices(scene);
+    const FuseGpuTransform t = fuse_gpu_scene_transforms(scene).v[instance];
+    const uint base = mesh.firstIndex + triangle * 3u;
+    vec3 v[3];
+    vec4 c[3];
+    for (uint k = 0u; k < 3u; ++k) {
+        const uint vi = uint(int(indices.v[base + k]) + mesh.vertexOffset);
+        if (vi >= mesh.vertexCount) {
+            return r;
+        }
+        v[k] = fuse_vis_mesh_position(mesh, vi);
+        c[k] = fuse_vis_clip(t, f.drawViewProj, v[k]);
+    }
+    const vec2 ndc = fuse_vis_pixel_ndc(p, f.width, f.height);
+    precise float u0x = c[0].x - ndc.x * c[0].w;
+    precise float u0y = c[0].y - ndc.y * c[0].w;
+    precise float u1x = c[1].x - ndc.x * c[1].w;
+    precise float u1y = c[1].y - ndc.y * c[1].w;
+    precise float u2x = c[2].x - ndc.x * c[2].w;
+    precise float u2y = c[2].y - ndc.y * c[2].w;
+    precise float e0 = u1x * u2y - u1y * u2x;
+    precise float e1 = u2x * u0y - u2y * u0x;
+    precise float e2 = u0x * u1y - u0y * u1x;
+    precise float s = e0 + e1 + e2;
+    if (s == 0.0) {
+        return r;
+    }
+    precise float b0 = e0 / s;
+    precise float b1 = e1 / s;
+    precise float b2 = e2 / s;
+    precise vec3 obj;
+    obj.x = b0 * v[0].x + b1 * v[1].x + b2 * v[2].x;
+    obj.y = b0 * v[0].y + b1 * v[1].y + b2 * v[2].y;
+    obj.z = b0 * v[0].z + b1 * v[1].z + b2 * v[2].z;
+    const vec4 cc = fuse_vis_clip(t, f.viewProj, obj);
+    const vec4 pcl = fuse_vis_clip(fuse_gpu_scene_prev_transforms(scene).v[instance], f.prevViewProj, obj);
+    if (cc.w > 0.0) {
+        r.depth = cc.w;
+        if (pcl.w > 0.0) {
+            const vec2 cu = fuse_tm_clip_uv(cc);
+            const vec2 pu = fuse_tm_clip_uv(pcl);
+            precise vec2 m = cu - pu;
+            r.motion = m;
+        }
+    }
+    return r;
+}
+
+void main() {
+    const FuseTmMotionFrame f = FuseTmMotionFrameRef(pc.frame).f;
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= f.width || p.y >= f.height) {
+        return;
+    }
+    const uvec2 vis = imageLoad(fuse_tm_vis_images[fuse_handle_index(f.vis)], ivec2(p)).xy;
+    const FuseTmMotion m = fuse_tm_motion(fuse_gpu_scene(f.scene), f, p, vis);
+    const uint i = p.y * f.width + p.x;
+    FuseTmVec2Ref(f.motion).v[i] = m.motion;
+    FuseTmFloatsRef(f.depth).v[i] = m.depth;
+}

@@ -1,0 +1,81 @@
+#version 460
+// WP-4.5 bloom (renderer::bloom_image / bloom_composite, bloom.cpp): pc.mode selects the sub-pass
+//   prefilter   soft-knee threshold on Rec.709 luminance (Bloom::extractBright)
+//   down_h/v    separable [1 3 3 1] / 8 tent, 2x decimation, clamp to edge (downsampleAxis)
+//   up_h/v      separable bilinear [1/4 3/4] 2x expansion (upsampleAxis); up_v also combines
+//               dst = down * (1 - scatter) + up * scatter when pc.aux (the down level) != 0
+//   composite   dst += aux * intensity * tint (in place; tint = 1 is bloom_composite exactly)
+// One output texel per thread, same operation order as the oracle. GLSL twin of pp_bloom.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "pp_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+    const PpFrame F = pp_frame();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= pc.dstW || p.y >= pc.dstH) {
+        return;
+    }
+    PpTexelsRef src = PpTexelsRef(pc.src);
+    PpTexelsRef dst = PpTexelsRef(pc.dst);
+    const uint o = p.y * pc.dstW + p.x;
+    if (pc.mode == 0u) {
+        const vec3 hdr = src.v[o].xyz;
+        const float lum = pp_luminance(hdr);
+        const float knee = max(F.bloomKnee, 0.0);
+        precise float response = 0.0;
+        if (lum <= F.bloomThreshold - knee) {
+            response = 0.0;
+        } else if (knee > 0.0 && lum < F.bloomThreshold + knee) {
+            precise float soft = lum - F.bloomThreshold + knee;
+            response = (soft * soft) / (4.0 * knee);
+        } else {
+            response = max(lum - F.bloomThreshold, 0.0);
+        }
+        precise vec3 bright = (response <= 0.0 || lum <= 0.0) ? vec3(0.0) : hdr * (response / lum);
+        dst.v[o] = vec4(bright, 0.0);
+        return;
+    }
+    if (pc.mode == 1u || pc.mode == 2u) {
+        const float w[4] = float[4](1.0 / 8.0, 3.0 / 8.0, 3.0 / 8.0, 1.0 / 8.0);
+        precise vec3 sum = vec3(0.0);
+        for (int k = 0; k < 4; ++k) {
+            vec3 s;
+            if (pc.mode == 1u) {
+                s = src.v[p.y * pc.srcW + pp_clamp_index(2 * int(p.x) - 1 + k, pc.srcW)].xyz;
+            } else {
+                s = src.v[pp_clamp_index(2 * int(p.y) - 1 + k, pc.srcH) * pc.srcW + p.x].xyz;
+            }
+            sum = sum + s * w[k];
+        }
+        dst.v[o] = vec4(sum, 0.0);
+        return;
+    }
+    if (pc.mode == 3u || pc.mode == 4u) {
+        const bool horizontal = pc.mode == 3u;
+        const uint pos = horizontal ? p.x : p.y;
+        const uint srcSize = horizontal ? pc.srcW : pc.srcH;
+        const int i = int(pos / 2u);
+        const int other = (pos % 2u == 0u) ? i - 1 : i + 1;
+        const uint a = pp_clamp_index(i, srcSize);
+        const uint b = pp_clamp_index(other, srcSize);
+        const vec3 va = horizontal ? src.v[p.y * pc.srcW + a].xyz : src.v[a * pc.srcW + p.x].xyz;
+        const vec3 vb = horizontal ? src.v[p.y * pc.srcW + b].xyz : src.v[b * pc.srcW + p.x].xyz;
+        precise vec3 up = va * 0.75 + vb * 0.25;
+        if (pc.aux != 0ul) {
+            const vec3 down = PpTexelsRef(pc.aux).v[o].xyz;
+            const float scatter = pp_clamp(F.bloomScatter, 0.0, 1.0);
+            precise vec3 combined = down * (1.0 - scatter) + up * scatter;
+            up = combined;
+        }
+        dst.v[o] = vec4(up, 0.0);
+        return;
+    }
+    // composite
+    const vec3 bloom = PpTexelsRef(pc.aux).v[o].xyz;
+    precise vec3 b = bloom * F.bloomIntensity;
+    precise vec3 tinted = vec3(b.x * F.bloomTint[0], b.y * F.bloomTint[1], b.z * F.bloomTint[2]);
+    precise vec3 result = dst.v[o].xyz + tinted;
+    dst.v[o] = vec4(result, 0.0);
+}

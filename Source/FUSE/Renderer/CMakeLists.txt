@@ -291,3 +291,5 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp22.cmake")  # WP-2.2 LTC area li
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp23.cmake")  # WP-2.3 forward transparency (forward/, shaders/forward/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp31.cmake")  # WP-3.1 virtual shadow map core (shadow/vsm/, core_logic/vsm_pages/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp32.cmake")  # WP-3.2 VSM raster, filtering, local lights (shadow/vsm_raster/, shaders/shadow_vsm/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp41.cmake")  # WP-4.1 GPU motion vectors + TAAU dispatch (temporal/, shaders/temporal/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp45.cmake")  # WP-4.5 GPU post stack (postprocess/gpu/, shaders/post/)
