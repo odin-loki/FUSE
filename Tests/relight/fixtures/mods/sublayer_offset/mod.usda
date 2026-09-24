@@ -1,0 +1,11 @@
+#usda 1.0
+(
+    subLayers = [
+        @./anim.usd@ (offset = 10; scale = 2)
+    ]
+)
+
+# RL-3.1 fixture: sublayer offsets are ignored by the Remix profile (time samples keep their authored times).
+over "RootNode"
+{
+}

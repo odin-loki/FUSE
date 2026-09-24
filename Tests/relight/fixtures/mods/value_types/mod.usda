@@ -1,0 +1,53 @@
+#usda 1.0
+(
+    doc = "RL-3.1 fixture: value types a mod can author reach FUSE intact (USDA and USDC)."
+)
+
+def Xform "RootNode" (
+    customData = {
+        int answer = 42
+        string note = "custom data"
+        dictionary nested = {
+            double pi = 3.25
+        }
+    }
+)
+{
+    def Scope "values"
+    {
+        bool b = true
+        bool[] bs = [true, false, true]
+        int i = -7
+        int[] is = [1, -2, 3]
+        uint u = 4000000000
+        int64 i64 = -9000000000
+        uint64 u64 = 18000000000000000000
+        half h = 0.5
+        float f = 0.1
+        double d = 0.1
+        float2 f2 = (1.5, -2.5)
+        float3 f3 = (1, 2, 3)
+        float4 f4 = (1, 2, 3, 4)
+        double3 d3 = (1e-10, 2e20, -3)
+        int2 i2 = (4, 5)
+        half3 h3 = (0.25, 0.5, 1)
+        quatf q = (1, 0, 0, 0)
+        quatf[] qs = [(0.70710677, 0, 0.70710677, 0), (1, 0, 0, 0)]
+        matrix4d m = ( (2, 0, 0, 0), (0, 2, 0, 0), (0, 0, 2, 0), (1, 2, 3, 1) )
+        matrix3d m3 = ( (1, 0, 0), (0, 1, 0), (0, 0, 1) )
+        string s = "quote \" and backslash \\ and newline \n end"
+        token t = "a_token"
+        token[] ts = ["x", "y", "z"]
+        asset a = @./textures/a.dds@
+        asset[] as = [@./one.dds@, @../two.dds@]
+        color3f c = (0.25, 0.5, 0.75)
+        color4f c4 = (0.25, 0.5, 0.75, 1)
+        vector3f v = (0, 1, 0)
+        normal3f n = (0, 0, 1)
+        point3f p = (1, 1, 1)
+        texCoord2f st = (0.5, 0.5)
+        float[] empty = []
+        float[] infs = [inf, -inf]
+        uniform token purpose = "render"
+    }
+}

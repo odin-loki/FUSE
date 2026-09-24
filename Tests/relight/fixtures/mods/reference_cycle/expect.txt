@@ -1,0 +1,5 @@
+attr /RootNode/meshes/mesh_0000000000005001.from_a = 1
+attr /RootNode/meshes/mesh_0000000000005001.from_b = 1
+diag error arc_cycle /RootNode/meshes/mesh_0000000000005001
+diag error arc_cycle /RootNode/meshes/mesh_0000000000005002/child
+noprim /RootNode/meshes/mesh_0000000000005002/child/child

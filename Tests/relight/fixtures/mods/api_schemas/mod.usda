@@ -1,0 +1,26 @@
+#usda 1.0
+(
+    subLayers = [
+        @./base.usd@
+    ]
+)
+
+# RL-3.1 fixture: apiSchemas are list ops composed across layers (prepended in each layer, or explicit). TinyUSDZ
+# 0.9.4 accepts only explicit and prepend edits for apiSchemas (delete / append are parse errors there).
+over "RootNode"
+{
+    over "meshes"
+    {
+        over "mesh_0000000000008001" (
+            prepend apiSchemas = ["ParticleSystemAPI", "ShapingAPI"]
+        )
+        {
+        }
+
+        over "mesh_0000000000008002" (
+            apiSchemas = ["SkelBindingAPI"]
+        )
+        {
+        }
+    }
+}

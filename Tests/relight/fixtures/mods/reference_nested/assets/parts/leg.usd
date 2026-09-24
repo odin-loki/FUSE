@@ -1,0 +1,14 @@
+#usda 1.0
+
+def Xform "Leg"
+{
+    float length = 10
+    asset tex = @../../textures/leg.dds@
+
+    def "Bolt" (
+        references = @./leaf/bolt.usd@</Bolt>
+    )
+    {
+        float size = 20
+    }
+}

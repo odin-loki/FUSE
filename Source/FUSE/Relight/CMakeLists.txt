@@ -57,3 +57,4 @@ add_subdirectory(capture/export)                                                
 add_subdirectory(mods/assets)                                                            # RL-3.3
 add_subdirectory(bridge/host)                                                            # RL-2.3
 add_subdirectory(bridge/client)                                                          # RL-2.2
+add_subdirectory(mods/usd)                                                               # RL-3.1

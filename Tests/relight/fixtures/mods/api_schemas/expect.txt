@@ -1,0 +1,9 @@
+# TinyUSDZ keeps schemas it knows and unknown ones (ParticleSystemAPI) in separate lists, so the relative order
+# of the two kinds is not preserved: membership is what the Remix view uses (HasAPI).
+api /RootNode/meshes/mesh_0000000000008001 ParticleSystemAPI
+api /RootNode/meshes/mesh_0000000000008001 ShapingAPI
+api /RootNode/meshes/mesh_0000000000008001 MaterialBindingAPI
+apis /RootNode/meshes/mesh_0000000000008002 SkelBindingAPI
+noapi /RootNode/meshes/mesh_0000000000008002 MaterialBindingAPI
+replacement mesh 0000000000008001 particles=yes
+nodiag any

@@ -1,0 +1,22 @@
+#usda 1.0
+
+# RL-3.1 fixture: nested external references (mod -> assets/prop.usd -> parts/leg.usd -> leaf/bolt.usd). Every asset
+# path anchors to the layer that authored it; stronger arcs win over weaker ones at every level.
+def Xform "RootNode"
+{
+    def Xform "meshes"
+    {
+        def Xform "mesh_00000000000000F1" (
+            references = @assets/prop.usd@</Prop>
+        )
+        {
+            over "Leg"
+            {
+                over "Bolt"
+                {
+                    float size = 30
+                }
+            }
+        }
+    }
+}

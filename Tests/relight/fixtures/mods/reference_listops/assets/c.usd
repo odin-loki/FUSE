@@ -1,0 +1,14 @@
+#usda 1.0
+(
+    defaultPrim = "Asset"
+)
+
+def Xform "Asset"
+{
+    custom string winner = "c"
+    custom string from_c = "c"
+
+    def Mesh "geo_c"
+    {
+    }
+}

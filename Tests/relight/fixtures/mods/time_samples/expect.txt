@@ -1,0 +1,9 @@
+layermeta timeCodesPerSecond = 30
+layermeta endTimeCode = 10
+samples /RootNode/lights/light_0000000000007001.inputs:intensity = { 0: 1, 10: 2 }
+attr /RootNode/lights/light_0000000000007001.inputs:intensity = 5
+novalue /RootNode/lights/light_0000000000007001.inputs:radius
+samples /RootNode/lights/light_0000000000007001.xformOp:transform = { 0: ((1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1)), 10: ((1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (5, 6, 7, 1)) }
+samples /RootNode/lights/light_0000000000007001.visibility = { 0: "invisible", 1: "inherited" }
+replacement light 0000000000007001 type=SphereLight
+nodiag any

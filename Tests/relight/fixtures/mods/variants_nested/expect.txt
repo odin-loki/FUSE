@@ -1,0 +1,9 @@
+variant /RootNode/meshes/mesh_0000000000000C01 kind prop
+variant /RootNode/meshes/mesh_0000000000000C01/fromVariant size big
+attr /RootNode/meshes/mesh_0000000000000C01.scale = 1
+attr /RootNode/meshes/mesh_0000000000000C01/fromVariant.scale = 2
+attr /RootNode/meshes/mesh_0000000000000C01.from_reference = "barrel"
+prim /RootNode/meshes/mesh_0000000000000C01/fromVariant type=Xform specifier=def
+prim /RootNode/meshes/mesh_0000000000000C01/body type=Mesh
+replacement mesh 0000000000000C01 meshes=/RootNode/meshes/mesh_0000000000000C01/body
+nodiag any

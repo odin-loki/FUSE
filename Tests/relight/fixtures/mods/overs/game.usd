@@ -1,0 +1,23 @@
+#usda 1.0
+
+def Xform "RootNode"
+{
+    def Xform "meshes"
+    {
+        def Xform "mesh_0000000000000D01"
+        {
+            float value = 1
+
+            def Mesh "geo"
+            {
+            }
+        }
+
+        def Xform "mesh_0000000000000D02"
+        {
+            def Mesh "geo"
+            {
+            }
+        }
+    }
+}

@@ -1,0 +1,11 @@
+# Strength among references follows the composed list order: a > b > d; c was deleted.
+layers 5
+attr /RootNode/meshes/mesh_00000000000000E1.winner = "a"
+attr /RootNode/meshes/mesh_00000000000000E1.from_a = "a"
+attr /RootNode/meshes/mesh_00000000000000E1.from_b = "b"
+attr /RootNode/meshes/mesh_00000000000000E1.from_d = "d"
+noattr /RootNode/meshes/mesh_00000000000000E1.from_c
+noprim /RootNode/meshes/mesh_00000000000000E1/geo_c
+children /RootNode/meshes/mesh_00000000000000E1 geo_d geo_b geo_a
+replacement mesh 00000000000000E1 meshes=/RootNode/meshes/mesh_00000000000000E1/geo_d,/RootNode/meshes/mesh_00000000000000E1/geo_b,/RootNode/meshes/mesh_00000000000000E1/geo_a
+nodiag any

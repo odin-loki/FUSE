@@ -1,0 +1,48 @@
+#usda 1.0
+
+# RL-3.1 fixture: ParticleSystemAPI on a material override and on a mesh replacement's mesh prim, with legacy
+# spawn/target primvars and the animated-curve primvars (names from the Remix particle schema).
+def Xform "RootNode"
+{
+    def Scope "Looks"
+    {
+        over "mat_0000000000001001" (
+            prepend apiSchemas = ["ParticleSystemAPI"]
+        )
+        {
+            int primvars:particle:maxNumParticles = 5000
+            float primvars:particle:minTimeToLive = 1.5
+            float primvars:particle:maxTimeToLive = 3
+            float4 primvars:particle:minSpawnColor = (1, 0.5, 0, 1)
+            token primvars:particle:billboardType = "FaceCamera_UpAxisLocked"
+            bool primvars:particle:useTurbulence = 1
+            float primvars:particle:spawnRatePerSecond = 250
+        }
+    }
+
+    def Xform "meshes"
+    {
+        def Xform "mesh_0000000000001002"
+        {
+            def Mesh "emitter" (
+                prepend apiSchemas = ["ParticleSystemAPI"]
+            )
+            {
+                float[] primvars:particle:minRotationSpeed:times = [0, 0.5, 1]
+                float[] primvars:particle:minRotationSpeed:values = [0, 2, 0]
+                float4[] primvars:particle:minColor:values = [(1, 1, 1, 1), (1, 1, 1, 0)]
+                float[] primvars:particle:minColor:times = [0, 1]
+                float3 primvars:particle:attractorPosition = (0, 10, 0)
+                custom uniform bool remix_category:particle_emitter = 1
+            }
+        }
+
+        def Xform "mesh_0000000000001003"
+        {
+            def Mesh "no_api"
+            {
+                float primvars:particle:minTimeToLive = 9
+            }
+        }
+    }
+}

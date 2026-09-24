@@ -1,0 +1,20 @@
+# Sublayer strength: mod.usda > strong.usd > weak.usd > deeper/base.usd (weak.usd's sublayer).
+layers 4
+prim /RootNode type=Xform specifier=def
+prim /RootNode/meshes type=Xform
+prim /RootNode/meshes/mesh_00000000000000A1/mesh type=Mesh specifier=def
+attr /RootNode/meshes/mesh_00000000000000A1/mesh.root_only = 1
+attr /RootNode/meshes/mesh_00000000000000A1/mesh.shared = 1
+attr /RootNode/meshes/mesh_00000000000000A1/mesh.strong_over_weak = 2
+attr /RootNode/meshes/mesh_00000000000000A1/mesh.weak_over_base = 3
+attr /RootNode/meshes/mesh_00000000000000A1/mesh.base_only = 4
+attr /RootNode/meshes/mesh_00000000000000A1/mesh.where = "strong"
+attr /RootNode/meshes/mesh_00000000000000A1/mesh.points = [(0, 0, 0), (1, 0, 0), (1, 1, 0)]
+# Asset paths anchor to the layer that authored them (layers/deeper/ -> ../../textures).
+resolved /RootNode/meshes/mesh_00000000000000A1/mesh.base_texture textures/base.dds
+# Child names compose weak to strong.
+children /RootNode/meshes/mesh_00000000000000A1 mesh base_child weak_child
+class /RootNode/meshes/mesh_00000000000000A1 mesh 00000000000000A1
+remix meshes 1
+replacement mesh 00000000000000A1 meshes=/RootNode/meshes/mesh_00000000000000A1/mesh
+nodiag any

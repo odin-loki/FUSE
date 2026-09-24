@@ -140,6 +140,7 @@ _fuse_lint_add(fuse_lint_vendored_pins_xxhash vendored-pins --dir "${CMAKE_SOURC
 _fuse_lint_add(fuse_lint_vendored_pins_tracy vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/tracy")  # WP-0.6 Tracy client (BSD-3), optional FUSE_TRACY
 _fuse_lint_add(fuse_lint_vendored_pins_meshoptimizer vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/meshoptimizer")  # WP-1.2 meshlet cook (MIT)
 _fuse_lint_add(fuse_lint_vendored_pins_gdeflate vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/gdeflate")  # RL-3.3 GDeflate CPU codec (MIT + Apache-2.0)
+_fuse_lint_add(fuse_lint_vendored_pins_tinyusdz vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/tinyusdz")  # RL-3.1 / Remaster W2.2 TinyUSDZ USDA + USDC reader (Apache-2.0)
 
 get_property(_fuse_lint_all GLOBAL PROPERTY _FUSE_LINT_TESTS)
 set_tests_properties(${_fuse_lint_all} PROPERTIES LABELS "gate;lint" TIMEOUT 300)

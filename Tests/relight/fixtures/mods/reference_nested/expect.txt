@@ -1,0 +1,10 @@
+layers 4
+resolved /RootNode/meshes/mesh_00000000000000F1.tex assets/prop.dds
+attr /RootNode/meshes/mesh_00000000000000F1/Leg.length = 20
+resolved /RootNode/meshes/mesh_00000000000000F1/Leg.tex textures/leg.dds
+prim /RootNode/meshes/mesh_00000000000000F1/Leg/Bolt type=Mesh
+attr /RootNode/meshes/mesh_00000000000000F1/Leg/Bolt.size = 30
+attr /RootNode/meshes/mesh_00000000000000F1/Leg/Bolt.bolt_only = 1
+resolved /RootNode/meshes/mesh_00000000000000F1/Leg/Bolt.tex assets/parts/leaf/bolt.dds
+replacement mesh 00000000000000F1 meshes=/RootNode/meshes/mesh_00000000000000F1/Leg/Bolt
+nodiag any

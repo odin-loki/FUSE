@@ -5,7 +5,7 @@
 # generate its seeded fixtures from the very same tables):
 #
 #   MODE=text    Walks every file under ROOTS (default: the Relight trees and the vendored
-#                Engine/lib/{dxvk,dxbc-spirv,xxhash,gdeflate}) and fails on
+#                Engine/lib/{dxvk,dxbc-spirv,xxhash,gdeflate,tinyusdz}) and fails on
 #                  - NVIDIA proprietary licence titles / SPDX ids               (category T)
 #                  - NVIDIA proprietary header / EULA phrases                    (category H)
 #                  - names and distinctive identifiers of the clean-room files   (category N)
@@ -141,7 +141,7 @@ set(RL_BINARY_PATTERNS
     "(^|/)libxe(ss|ll)[^/]*\\.(dll|so|lib)$")
 # Any native binary or MDL module inside the Relight / vendored trees (vendored code is source-only).
 set(RL_BINARY_SCOPED_ROOTS "source/fuse/relight/" "tests/relight/" "tools/fuse/relight/"
-    "engine/lib/dxvk/" "engine/lib/dxbc-spirv/" "engine/lib/xxhash/" "engine/lib/gdeflate/")
+    "engine/lib/dxvk/" "engine/lib/dxbc-spirv/" "engine/lib/xxhash/" "engine/lib/gdeflate/" "engine/lib/tinyusdz/")
 set(RL_BINARY_SCOPED_RE "\\.(dll|so|so\\.[0-9.]+|exe|lib|a|pdb|dylib|obj|o|mdl)$")
 
 function(rl_binary_match path out)
@@ -229,7 +229,7 @@ if(MODE STREQUAL "text")
         set(ROOTS
             "${REPO}/Source/FUSE/Relight" "${REPO}/Tests/relight" "${REPO}/Tools/FUSE/Relight"
             "${REPO}/Engine/lib/dxvk" "${REPO}/Engine/lib/dxbc-spirv" "${REPO}/Engine/lib/xxhash"
-            "${REPO}/Engine/lib/gdeflate")
+            "${REPO}/Engine/lib/gdeflate" "${REPO}/Engine/lib/tinyusdz")
     endif()
     set(_violations 0)
     set(_nfiles 0)

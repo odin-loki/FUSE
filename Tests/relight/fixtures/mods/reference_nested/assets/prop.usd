@@ -1,0 +1,13 @@
+#usda 1.0
+
+def Xform "Prop"
+{
+    asset tex = @./prop.dds@
+
+    def Xform "Leg" (
+        references = @parts/leg.usd@</Leg>
+    )
+    {
+        float length = 20
+    }
+}

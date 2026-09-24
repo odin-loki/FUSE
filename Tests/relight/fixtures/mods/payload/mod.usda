@@ -1,0 +1,15 @@
+#usda 1.0
+
+# RL-3.1 fixture: payloads load by default and sit below references in strength.
+def Xform "RootNode"
+{
+    def Xform "meshes"
+    {
+        def Xform "mesh_0000000000000A01" (
+            prepend payload = @./assets/heavy.usd@
+            prepend references = @./assets/light.usd@
+        )
+        {
+        }
+    }
+}

@@ -1,0 +1,25 @@
+layers 3
+defaultPrim RootNode
+layermeta upAxis = "Y"
+customLayerData lightspeed_layer_type = "replacement"
+customLayerData lightspeed_game_name = "Fixture Game"
+prim /RootNode type=Xform specifier=def
+attr /RootNode/meshes/mesh_7E2C8A4F1B3D5E60.preserveOriginalDrawCall = 1
+attr /RootNode/meshes/mesh_7E2C8A4F1B3D5E60/ref_crate/crate_mesh.faceVertexIndices = [0, 1, 2, 0, 2, 3]
+attr /RootNode/meshes/mesh_7E2C8A4F1B3D5E60/ref_crate/crate_mesh.extent = [(-50, -50, 0), (50, 50, 100)]
+attr /RootNode/meshes/mesh_7E2C8A4F1B3D5E60/ref_crate.xformOp:rotateXYZ = (0, 90, 0)
+attr /RootNode/Looks/mat_3F1A2B3C4D5E6F70/Shader.inputs:emissive_intensity = 3
+attr /RootNode/Looks/mat_3F1A2B3C4D5E6F70/Shader.inputs:enable_emission = true
+resolved /RootNode/Looks/mat_3F1A2B3C4D5E6F70/Shader.inputs:diffuse_texture assets/textures/crate_a.dds
+attrmeta /RootNode/Looks/mat_3F1A2B3C4D5E6F70/Shader.inputs:diffuse_texture colorSpace = "auto"
+attrmeta /RootNode/Looks/mat_3F1A2B3C4D5E6F70/Shader.inputs:normalmap_texture colorSpace = "raw"
+conn /RootNode/Looks/mat_3F1A2B3C4D5E6F70.outputs:mdl:surface = [</RootNode/Looks/mat_3F1A2B3C4D5E6F70/Shader.outputs:out>]
+remix meshes 2
+remix materials 1
+remix lights 2
+replacement mesh 7E2C8A4F1B3D5E60 preserve=true meshes=/RootNode/meshes/mesh_7E2C8A4F1B3D5E60/ref_crate/crate_mesh lights=/RootNode/meshes/mesh_7E2C8A4F1B3D5E60/attached_light bindings=/RootNode/Looks/mat_3F1A2B3C4D5E6F70
+replacement mesh 00000000000A11CE meshes= categories=Ignore
+replacement material 3F1A2B3C4D5E6F70 mdl=AperturePBR_Opacity.mdl key=name
+replacement light 1D2C3B4A59687706 type=DistantLight legacy=false
+replacement light 0A0B0C0D0E0F1011 type=SphereLight legacy=true
+nodiag any

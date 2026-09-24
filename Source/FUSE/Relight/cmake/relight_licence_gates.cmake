@@ -4,7 +4,7 @@
 #   rl_licence_text_scan  NVIDIA proprietary licence titles / header phrases / clean-room file names
 #                         and identifiers / MDL bodies, LGPL/GPL text and DXVK's LGPL
 #                         mingw-directx-headers, under Source/FUSE/Relight, Tests/relight,
-#                         Tools/FUSE/Relight and Engine/lib/{dxvk,dxbc-spirv,xxhash,gdeflate};
+#                         Tools/FUSE/Relight and Engine/lib/{dxvk,dxbc-spirv,xxhash,gdeflate,tinyusdz};
 #   rl_binary_gate        NVIDIA RTX SDK / Intel XeSS runtime binaries (and any native binary in the
 #                         Relight / vendored trees) tracked or addable by git, repository-wide.
 # Both first prove, on fixtures generated at test time, that every seeded violation is caught and

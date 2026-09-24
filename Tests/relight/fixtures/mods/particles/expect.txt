@@ -1,0 +1,16 @@
+api /RootNode/Looks/mat_0000000000001001 ParticleSystemAPI
+particle /RootNode/Looks/mat_0000000000001001 count 7
+particle /RootNode/Looks/mat_0000000000001001 maxNumParticles = 5000
+particle /RootNode/Looks/mat_0000000000001001 minTimeToLive = 1.5
+particle /RootNode/Looks/mat_0000000000001001 minSpawnColor = (1, 0.5, 0, 1)
+particle /RootNode/Looks/mat_0000000000001001 billboardType = "FaceCamera_UpAxisLocked"
+particle /RootNode/Looks/mat_0000000000001001 useTurbulence = true
+particle /RootNode/meshes/mesh_0000000000001002/emitter count 5
+particle /RootNode/meshes/mesh_0000000000001002/emitter minRotationSpeed:values = [0, 2, 0]
+particle /RootNode/meshes/mesh_0000000000001002/emitter minColor:values = [(1, 1, 1, 1), (1, 1, 1, 0)]
+particle /RootNode/meshes/mesh_0000000000001002/emitter attractorPosition = (0, 10, 0)
+particle /RootNode/meshes/mesh_0000000000001003/no_api none
+replacement material 0000000000001001 particles=yes
+replacement mesh 0000000000001002 particles=yes categories=ParticleEmitter
+replacement mesh 0000000000001003 particles=no
+nodiag any

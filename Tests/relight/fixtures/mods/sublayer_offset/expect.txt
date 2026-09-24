@@ -1,0 +1,7 @@
+# Sublayer offsets are not applied; the profile says so with a warning.
+samples /RootNode/lights/light_000000000000BEEF.inputs:intensity = { 0: 100, 5: 200 }
+# TinyUSDZ's crate writer cannot encode subLayerOffsets, so the generated USDC twin has no offsets to report.
+[usda] diag warning layer_offset_ignored
+same-as-ignore-diagnostic layer_offset_ignored
+count errors 0
+replacement light 000000000000BEEF type=SphereLight

@@ -1,0 +1,23 @@
+class /RootNode section
+class /RootNode/Looks section
+class /RootNode/meshes/mesh_00000000DEADBEEF mesh 00000000DEADBEEF
+class /RootNode/meshes/mesh_00000000DEADBEEF/mesh_1234567812345678 none
+class /RootNode/meshes/mesh_abc mesh 0000000000000ABC
+class /RootNode/meshes/not_a_mesh unrecognized
+class /RootNode/Looks/mat_0000000000002002 material 0000000000002002
+class /RootNode/Looks/BrickMaterial unrecognized
+class /RootNode/lights/light_0000000000002003 light 0000000000002003
+class /RootNode/lights/sphereLight_0000000000002004 light 0000000000002004
+class /RootNode/lights/sun unrecognized
+class /RootNode/elsewhere/mesh_0000000000002005 none
+class /Other/meshes/mesh_0000000000002005 none
+remix meshes 2
+remix materials 2
+remix lights 2
+replacement light 0000000000002004 legacy=true
+replacement light 0000000000002003 legacy=false
+replacement material origin path=/RootNode/Looks/BrickMaterial key=origin shader=/RootNode/Looks/BrickMaterial/Shader
+diag warning unrecognized_prim_name /RootNode/meshes/not_a_mesh
+diag warning unrecognized_prim_name /RootNode/Looks/notes
+diag warning unrecognized_prim_name /RootNode/lights/sun
+nodiag any

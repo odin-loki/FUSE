@@ -1,0 +1,24 @@
+#usda 1.0
+
+# RL-3.1 fixture: reference cycles (external A -> B -> A, and an internal reference to an ancestor) are errors, not
+# hangs; the non-cyclic opinions still compose.
+def Xform "RootNode"
+{
+    def Xform "meshes"
+    {
+        def Xform "mesh_0000000000005001" (
+            prepend references = @./a.usd@
+        )
+        {
+        }
+
+        def Xform "mesh_0000000000005002"
+        {
+            def Xform "child" (
+                prepend references = </RootNode/meshes/mesh_0000000000005002>
+            )
+            {
+            }
+        }
+    }
+}

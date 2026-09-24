@@ -1,0 +1,12 @@
+category /RootNode/meshes/mesh_0000000000000F01/mesh sky true
+category /RootNode/meshes/mesh_0000000000000F01/mesh ignore false
+category /RootNode/meshes/mesh_0000000000000F01/mesh decal_Static true
+# Declared without a value: Get() fails upstream, so the category does not "exist".
+category /RootNode/meshes/mesh_0000000000000F01/mesh world_ui unset
+category /RootNode/meshes/mesh_0000000000000F01/mesh terrain unset
+uniform /RootNode/meshes/mesh_0000000000000F01/mesh.remix_category:sky true
+replacement mesh 0000000000000F01 categories=Sky|DecalStatic
+# Root prim categories take precedence over the mesh child's.
+replacement mesh 0000000000000F02 categories=Terrain|HairCards
+replacement mesh 0000000000000F03 categories=
+nodiag any

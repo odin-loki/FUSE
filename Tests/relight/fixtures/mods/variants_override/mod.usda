@@ -1,0 +1,26 @@
+#usda 1.0
+(
+    subLayers = [
+        @./base.usd@
+    ]
+)
+
+# RL-3.1 fixture: the strongest selection wins. base.usd selects "red"; this layer selects "blue" on the prim that
+# references an asset whose variant set (and default selection "green") live in the asset.
+over "RootNode"
+{
+    over "Looks"
+    {
+        over "mat_0000000000000B02" (
+            variants = {
+                string color = "blue"
+            }
+        )
+        {
+        }
+
+        over "mat_0000000000000B03"
+        {
+        }
+    }
+}

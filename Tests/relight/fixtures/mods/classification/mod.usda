@@ -1,0 +1,66 @@
+#usda 1.0
+
+# RL-3.1 fixture: prim classification by name (Remix getModelHash / getMaterialHash / getLightHash): valid names,
+# lower-case and short hashes, a legacy sphereLight_ name, names without a hash, a Material without the mat_
+# prefix (keyed by its shader's strongest opinion site), inactive and deeper prims.
+def Xform "RootNode"
+{
+    def Xform "meshes"
+    {
+        def Xform "mesh_00000000DEADBEEF"
+        {
+            def Xform "mesh_1234567812345678"
+            {
+            }
+        }
+        def Xform "mesh_abc"
+        {
+        }
+        def Xform "not_a_mesh"
+        {
+        }
+        def Xform "mesh_0000000000002001" (
+            active = false
+        )
+        {
+        }
+    }
+
+    def Scope "Looks"
+    {
+        def Material "mat_0000000000002002"
+        {
+        }
+        def Material "BrickMaterial"
+        {
+            def Shader "Shader"
+            {
+                uniform asset info:mdl:sourceAsset = @AperturePBR_Opacity.mdl@
+                float inputs:roughness = 0.5
+            }
+        }
+        def Scope "notes"
+        {
+        }
+    }
+
+    def Xform "lights"
+    {
+        def SphereLight "light_0000000000002003"
+        {
+        }
+        def SphereLight "sphereLight_0000000000002004"
+        {
+        }
+        def DistantLight "sun"
+        {
+        }
+    }
+
+    def Xform "elsewhere"
+    {
+        def Xform "mesh_0000000000002005"
+        {
+        }
+    }
+}

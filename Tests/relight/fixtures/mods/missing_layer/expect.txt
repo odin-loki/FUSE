@@ -1,0 +1,8 @@
+diag error missing_layer
+diag error missing_layer /RootNode/meshes/mesh_0000000000004001
+attr /RootNode/meshes/mesh_0000000000004001.survives = 1
+diag error missing_default_prim /RootNode/meshes/mesh_0000000000004002
+diag error unresolved_arc_path /RootNode/meshes/mesh_0000000000004003
+attr /RootNode/meshes/mesh_0000000000004004.present = 1
+count errors 4
+remix meshes 4
