@@ -1,0 +1,97 @@
+#version 460
+// WP-1.3 instance cull (both phases), GLSL twin of instance_cull.slang: same push layout, same
+// outputs. Reads the GPU scene only through its header handle and BDA (gpu_scene.glsl), the
+// constants through BDA, and writes draws / counts / candidates / results into bindless storage
+// buffers (atomics). Decisions: cull_common.glsl == instance_cull_kernel.hpp.
+//
+//   phase 1: one thread per instance slot < instanceCount
+//            Phase1Drawn -> draw slot atomicAdd(counts[0]) in the phase-1 region
+//            Candidate   -> candidates[atomicAdd(counts[2])], counts[4] = max(groups needed)
+//   phase 2: vkCmdDispatchIndirect(counts[4..6]); one thread per candidate
+//            Phase2Drawn -> draw slot phase2DrawBase + atomicAdd(counts[1])
+#extension GL_GOOGLE_include_directive : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+#include "cull_common.glsl"
+
+layout(local_size_x = 64) in;
+
+FUSE_BINDLESS_SSBO_LAYOUT buffer FuseCullWords { uint w[]; } fuse_cull_words[];
+
+layout(push_constant) uniform Push {
+    uint64_t constants;
+    uint scene;
+    uint phase;
+    uint pad0;
+    uint pad1;
+    uint pad2;
+    uint pad3;
+} pc;
+
+void writeDraw(FuseCullConstantsRef C, uint slot, FuseGpuMesh mesh, uint instance) {
+    const uint args = fuse_handle_index(C.argsBuffer);
+    const uint o = slot * 5u;
+    fuse_cull_words[args].w[o + 0u] = mesh.triangleCount * 3u;
+    fuse_cull_words[args].w[o + 1u] = 1u;
+    fuse_cull_words[args].w[o + 2u] = 0u;
+    fuse_cull_words[args].w[o + 3u] = 0u;
+    fuse_cull_words[args].w[o + 4u] = instance;
+}
+
+void main() {
+    FuseCullConstantsRef C = FuseCullConstantsRef(pc.constants);
+    const uint counts = fuse_handle_index(C.countsBuffer);
+    const uint results = fuse_handle_index(C.resultsBuffer);
+    const uint candidates = fuse_handle_index(C.candidatesBuffer);
+    uint i = gl_GlobalInvocationID.x;
+    if (pc.phase == 1u) {
+        if (i >= C.instanceCount) {
+            return;
+        }
+    } else {
+        if (i >= fuse_cull_words[counts].w[FUSE_CULL_COUNT_CANDIDATES]) {
+            return;
+        }
+        i = fuse_cull_words[candidates].w[i];
+    }
+    FuseGpuSceneHeaderRef scene = fuse_gpu_scene(pc.scene);
+    const FuseGpuInstance inst = fuse_gpu_scene_instances(scene).v[i];
+    const uint need = FUSE_INSTANCE_VALID | FUSE_INSTANCE_VISIBLE;
+    if ((inst.flags & need) != need || inst.mesh >= scene.counts[FUSE_GPU_SCENE_MESHES]) {
+        fuse_cull_words[results].w[i] = FUSE_CULL_RESULT_NONE;
+        return;
+    }
+    const FuseGpuMesh mesh = fuse_gpu_scene_meshes(scene).v[inst.mesh];
+    const FuseGpuTransform xf = fuse_gpu_scene_transforms(scene).v[i];
+    const FuseCullSphere s = fuse_cull_world_sphere(xf, mesh, 1.0);
+    uint result;
+    if (pc.phase == 1u) {
+        if ((C.flags & FUSE_CULL_FRUSTUM) != 0u && !fuse_cull_frustum_visible(C, s)) {
+            result = FUSE_CULL_RESULT_FRUSTUM_CULLED;
+        } else if ((C.flags & FUSE_CULL_OCCLUSION) == 0u) {
+            result = FUSE_CULL_RESULT_PHASE1_DRAWN;
+        } else if ((C.flags & FUSE_CULL_HISTORY_VALID) == 0u) {
+            result = FUSE_CULL_RESULT_CANDIDATE;
+        } else {
+            const FuseGpuTransform prevXf = fuse_gpu_scene_prev_transforms(scene).v[i];
+            const FuseCullSphere prev = fuse_cull_world_sphere(prevXf, mesh, 1.0);
+            result = fuse_cull_hiz_visible(C, 1u, prev) ? FUSE_CULL_RESULT_PHASE1_DRAWN : FUSE_CULL_RESULT_CANDIDATE;
+        }
+        fuse_cull_words[results].w[i] = result;
+        if (result == FUSE_CULL_RESULT_PHASE1_DRAWN) {
+            const uint slot = atomicAdd(fuse_cull_words[counts].w[FUSE_CULL_COUNT_PHASE1_DRAWS], 1u);
+            writeDraw(C, slot, mesh, i);
+        } else if (result == FUSE_CULL_RESULT_CANDIDATE) {
+            const uint c = atomicAdd(fuse_cull_words[counts].w[FUSE_CULL_COUNT_CANDIDATES], 1u);
+            fuse_cull_words[candidates].w[c] = i;
+            atomicMax(fuse_cull_words[counts].w[FUSE_CULL_COUNT_DISPATCH_X], c / 64u + 1u);
+        }
+        return;
+    }
+    result = fuse_cull_hiz_visible(C, 0u, s) ? FUSE_CULL_RESULT_PHASE2_DRAWN : FUSE_CULL_RESULT_OCCLUDED;
+    fuse_cull_words[results].w[i] = result;
+    if (result == FUSE_CULL_RESULT_PHASE2_DRAWN) {
+        const uint slot = atomicAdd(fuse_cull_words[counts].w[FUSE_CULL_COUNT_PHASE2_DRAWS], 1u);
+        writeDraw(C, C.phase2DrawBase + slot, mesh, i);
+    }
+}

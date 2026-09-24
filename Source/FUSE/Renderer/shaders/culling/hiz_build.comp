@@ -1,0 +1,142 @@
+#version 460
+// WP-1.3 single-pass Hi-Z build (SPD-style), GLSL twin of hiz_build.slang. Pyramid layout and the
+// CPU reference: include/fuse/renderer/culling/hiz_build_kernel.hpp (bit-exact: only max()).
+//
+// Dispatch groupsX x groupsX workgroups of 16 x 16 threads; workgroup (gx, gy) owns the 64 x 64
+// mip-0 tile at (64 gx, 64 gy):
+//   * each thread reduces 8 x 8 depth texels to a 4 x 4 mip-0 block, 2 x 2 of mip 1 and 1 texel of
+//     mip 2 in registers;
+//   * mips 3..6 are reduced in shared memory (8x8, 4x4, 2x2, 1x1 per tile);
+//   * when the pyramid has more than 7 levels, every workgroup bumps counts[3] after its mip-6
+//     texel is written (coherent image, memory barrier); the last one resets the counter and
+//     reduces mip 6 (at most 64 x 64) to the top with the same code (base level 7).
+// Writes outside the level's extent are skipped; a pyramid is square and power of two, so an
+// in-range texel only ever reads in-range children.
+#extension GL_GOOGLE_include_directive : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+#include "cull_common.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(r32f) uniform coherent image2D fuse_hiz_mips[];
+FUSE_BINDLESS_SSBO_LAYOUT coherent buffer FuseHizWords { uint w[]; } fuse_hiz_words[];
+
+layout(push_constant) uniform Push {
+    uint64_t constants;
+    uint depthTexture;
+    uint depthSampler;
+    uint depthWidth;
+    uint depthHeight;
+    uint groupsX;
+    uint pad;
+} pc;
+
+shared float s_tile[256];
+shared uint s_last;
+
+uint levelDim(FuseCullConstantsRef C, uint level) { return max(C.hizDim >> level, 1u); }
+
+float depthAt(uint x, uint y) {
+    if (x >= pc.depthWidth || y >= pc.depthHeight) {
+        return 1.0;
+    }
+    return texelFetch(sampler2D(fuse_textures_2d[fuse_handle_index(pc.depthTexture)], fuse_samplers[fuse_handle_index(pc.depthSampler)]),
+                      ivec2(x, y), 0).r;
+}
+
+float mipAt(FuseCullConstantsRef C, uint level, uint x, uint y) {
+    const uint d = levelDim(C, level);
+    if (x >= d || y >= d) {
+        return 0.0; // never read for an in-range output
+    }
+    return imageLoad(fuse_hiz_mips[fuse_handle_index(C.hizMips[level])], ivec2(x, y)).r;
+}
+
+// Value of level `base` at p: level 0 from the depth image, level b > 0 from mip b - 1.
+float baseValue(FuseCullConstantsRef C, uint base, uvec2 p) {
+    if (base == 0u) {
+        return fuse_cull_max4(depthAt(2u * p.x, 2u * p.y), depthAt(2u * p.x + 1u, 2u * p.y),
+                              depthAt(2u * p.x, 2u * p.y + 1u), depthAt(2u * p.x + 1u, 2u * p.y + 1u));
+    }
+    return fuse_cull_max4(mipAt(C, base - 1u, 2u * p.x, 2u * p.y), mipAt(C, base - 1u, 2u * p.x + 1u, 2u * p.y),
+                          mipAt(C, base - 1u, 2u * p.x, 2u * p.y + 1u), mipAt(C, base - 1u, 2u * p.x + 1u, 2u * p.y + 1u));
+}
+
+void storeLevel(FuseCullConstantsRef C, uint level, uvec2 p, float v) {
+    if (level < C.hizMipCount) {
+        const uint d = levelDim(C, level);
+        if (p.x < d && p.y < d) {
+            imageStore(fuse_hiz_mips[fuse_handle_index(C.hizMips[level])], ivec2(p), vec4(v, 0.0, 0.0, 0.0));
+        }
+    }
+}
+
+// Reduces the 64 x 64 tile `group` of level `base` down to one texel of level base + 6.
+void reduceTile(FuseCullConstantsRef C, uint base, uvec2 group) {
+    const uvec2 t = gl_LocalInvocationID.xy;
+    float v0[16];
+    const uvec2 o0 = group * 64u + t * 4u;
+    for (uint j = 0u; j < 4u; ++j) {
+        for (uint i = 0u; i < 4u; ++i) {
+            const float v = baseValue(C, base, o0 + uvec2(i, j));
+            v0[j * 4u + i] = v;
+            storeLevel(C, base, o0 + uvec2(i, j), v);
+        }
+    }
+    float v1[4];
+    const uvec2 o1 = group * 32u + t * 2u;
+    for (uint j = 0u; j < 2u; ++j) {
+        for (uint i = 0u; i < 2u; ++i) {
+            const uint k = (2u * j) * 4u + 2u * i;
+            const float v = fuse_cull_max4(v0[k], v0[k + 1u], v0[k + 4u], v0[k + 5u]);
+            v1[j * 2u + i] = v;
+            storeLevel(C, base + 1u, o1 + uvec2(i, j), v);
+        }
+    }
+    const float v2 = fuse_cull_max4(v1[0], v1[1], v1[2], v1[3]);
+    storeLevel(C, base + 2u, group * 16u + t, v2);
+    s_tile[t.y * 16u + t.x] = v2;
+    barrier();
+    for (uint l = 3u; l <= 6u; ++l) {
+        const uint n = 16u >> (l - 2u);
+        const bool inTile = t.x < n && t.y < n;
+        float v = 0.0;
+        if (inTile) {
+            const uint k = (2u * t.y) * 16u + 2u * t.x;
+            v = fuse_cull_max4(s_tile[k], s_tile[k + 1u], s_tile[k + 16u], s_tile[k + 17u]);
+        }
+        barrier();
+        if (inTile) {
+            s_tile[t.y * 16u + t.x] = v;
+            storeLevel(C, base + l, group * n + t, v);
+        }
+        barrier();
+    }
+}
+
+void main() {
+    FuseCullConstantsRef C = FuseCullConstantsRef(pc.constants);
+    reduceTile(C, 0u, gl_WorkGroupID.xy);
+    if (C.hizMipCount <= 7u) {
+        return;
+    }
+    memoryBarrierImage();
+    memoryBarrierBuffer();
+    barrier();
+    if (gl_LocalInvocationIndex == 0u) {
+        const uint counter = fuse_handle_index(C.countsBuffer);
+        const uint done = atomicAdd(fuse_hiz_words[counter].w[FUSE_CULL_COUNT_HIZ_COUNTER], 1u);
+        const bool last = done == pc.groupsX * pc.groupsX - 1u;
+        if (last) {
+            atomicExchange(fuse_hiz_words[counter].w[FUSE_CULL_COUNT_HIZ_COUNTER], 0u);
+        }
+        s_last = last ? 1u : 0u;
+    }
+    barrier();
+    if (s_last == 0u) {
+        return;
+    }
+    memoryBarrierImage();
+    reduceTile(C, 7u, uvec2(0u, 0u));
+}
