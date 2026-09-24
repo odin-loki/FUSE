@@ -1,0 +1,66 @@
+#version 460
+// WP-3.1 "vsm.invalidate": static-page cache invalidation from GPU-scene bounds changes. Dispatch
+// (ceil(instanceCount / 64), levels): thread (i, L) builds instance slot i's world bounds record
+// (vsm_common.glsl fuse_vsm_bounds_record == vsm_kernel.hpp make_bounds_record), compares it bit for
+// bit with last frame's (bounds buffer, read half); when it differs, it clears the cached bit of every
+// page of level L under the old and the new record's light-space footprint (atomicAnd, counting the
+// bits that were set). Thread (i, 0) stores the record in this frame's half (ping-pong: no thread reads
+// the half another writes). GLSL twin of vsm_invalidate.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "vsm_includes.glsl"
+
+layout(local_size_x = 64) in;
+
+void clearRect(FuseVsmConstantsRef C, uint level, ivec4 rect) {
+    const uint table = C.pageTableHandle;
+    const uint work = C.workHandle;
+    const uint base = level * FUSE_VSM_PAGES_PER_LEVEL;
+    for (int y = rect.y; y <= rect.w; ++y) {
+        for (int x = rect.x; x <= rect.z; ++x) {
+            const uint v = base + fuse_vsm_slot(y) * FUSE_VSM_PAGES_PER_AXIS + fuse_vsm_slot(x);
+            const uint before = atomicAnd(FUSE_VSM_WORDS(table)[v], ~FUSE_VSM_PTE_CACHED);
+            if ((before & FUSE_VSM_PTE_CACHED) != 0u) {
+                atomicAdd(FUSE_VSM_WORDS(work)[FUSE_VSM_COUNTER_INVALIDATED], 1u);
+            }
+        }
+    }
+}
+
+void main() {
+    FuseVsmConstantsRef C = fuse_vsm_constants();
+    const uint i = gl_GlobalInvocationID.x;
+    const uint level = gl_GlobalInvocationID.y;
+    if (i >= C.instanceCount || level >= C.levels) {
+        return;
+    }
+    FuseGpuSceneHeaderRef scene = fuse_gpu_scene(C.scene);
+    const FuseGpuInstance inst = fuse_gpu_scene_instances(scene).v[i];
+    const bool meshValid = inst.mesh < scene.counts[FUSE_GPU_SCENE_MESHES];
+    FuseGpuMesh mesh;
+    if (meshValid) {
+        mesh = fuse_gpu_scene_meshes(scene).v[inst.mesh];
+    }
+    const FuseVsmBounds cur = fuse_vsm_bounds_record(inst, meshValid, mesh, fuse_gpu_scene_transforms(scene).v[i]);
+    const uint bounds = C.boundsHandle;
+    FuseVsmBounds old;
+    bool same = true;
+    for (uint k = 0u; k < 8u; ++k) {
+        old.w[k] = FUSE_VSM_WORDS(bounds)[(C.boundsRead + i) * 8u + k];
+        same = same && old.w[k] == cur.w[k];
+    }
+    if (level == 0u) {
+        for (uint k = 0u; k < 8u; ++k) {
+            FUSE_VSM_WORDS(bounds)[(C.boundsWrite + i) * 8u + k] = cur.w[k];
+        }
+    }
+    if (same) {
+        return;
+    }
+    ivec4 rect;
+    if (fuse_vsm_bounds_rect(C, old, level, rect)) {
+        clearRect(C, level, rect);
+    }
+    if (fuse_vsm_bounds_rect(C, cur, level, rect)) {
+        clearRect(C, level, rect);
+    }
+}

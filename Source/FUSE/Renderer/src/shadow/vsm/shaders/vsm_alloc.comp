@@ -1,0 +1,112 @@
+#version 460
+// WP-3.1 "vsm.alloc": physical page allocation, ONE workgroup of 256 threads (core_logic VsmPagePool
+// allocate, bit for bit):
+//   A  need list: thread t owns a contiguous run of need words; popcounts -> exclusive workgroup scan
+//      -> the rank of every need in ascending virtual-page order;
+//   B  candidate list: thread t owns a contiguous run of physical pages; for each key from free (16)
+//      down to age bucket 1 (fuse_vsm_candidate_key; key 0 = used this frame, never a candidate): count,
+//      scan, write the thread's pages of that key at candidates[base + offset] -> key descending, then
+//      physical index ascending;
+//   C  need of rank i < min(needs, candidates) takes candidates[i]: an owned page is evicted (its old
+//      virtual page's entry cleared), owner / lastUsed / entry written. Needs past the candidates fail.
+// Scans: Hillis-Steele in shared memory (deterministic). The candidate list lives in the work buffer
+// (coherent + memoryBarrierBuffer between B and C). GLSL twin of vsm_alloc.slang.
+#extension GL_GOOGLE_include_directive : require
+#define FUSE_VSM_COHERENT_WORDS 1
+#include "vsm_includes.glsl"
+
+layout(local_size_x = 256) in;
+
+shared uint s_scan[256];
+
+// Exclusive scan of `value` over the workgroup; `total` = sum. Called uniformly.
+uint scan(uint t, uint value, out uint total) {
+    s_scan[t] = value;
+    barrier();
+    for (uint off = 1u; off < 256u; off <<= 1u) {
+        uint v = s_scan[t];
+        if (t >= off) {
+            v += s_scan[t - off];
+        }
+        barrier();
+        s_scan[t] = v;
+        barrier();
+    }
+    total = s_scan[255];
+    const uint inclusive = s_scan[t];
+    barrier();
+    return inclusive - value;
+}
+
+void main() {
+    FuseVsmConstantsRef C = fuse_vsm_constants();
+    const uint t = gl_LocalInvocationID.x;
+    const uint work = C.workHandle;
+    const uint meta = C.physMetaHandle;
+    const uint table = C.pageTableHandle;
+    const uint frame = C.frame;
+    // A: needs.
+    const uint words = C.requestWords;
+    const uint wpt = (words + 255u) / 256u;
+    const uint w0 = min(t * wpt, words);
+    const uint w1 = min(w0 + wpt, words);
+    uint count = 0u;
+    for (uint w = w0; w < w1; ++w) {
+        count += uint(bitCount(FUSE_VSM_WORDS(work)[C.offNeed + w]));
+    }
+    uint needs = 0u;
+    const uint needBase = scan(t, count, needs);
+    // B: candidates.
+    const uint phys = C.physPages;
+    const uint ppt = (phys + 255u) / 256u;
+    const uint p0 = min(t * ppt, phys);
+    const uint p1 = min(p0 + ppt, phys);
+    uint candidates = 0u;
+    for (uint key = FUSE_VSM_FREE_KEY; key >= 1u; --key) {
+        uint k = 0u;
+        for (uint p = p0; p < p1; ++p) {
+            if (fuse_vsm_candidate_key(FUSE_VSM_WORDS(meta)[p * 2u], FUSE_VSM_WORDS(meta)[p * 2u + 1u], frame) == key) {
+                ++k;
+            }
+        }
+        uint total = 0u;
+        uint pos = candidates + scan(t, k, total);
+        if (k != 0u) {
+            for (uint p = p0; p < p1; ++p) {
+                if (fuse_vsm_candidate_key(FUSE_VSM_WORDS(meta)[p * 2u], FUSE_VSM_WORDS(meta)[p * 2u + 1u], frame) == key) {
+                    FUSE_VSM_WORDS(work)[C.offCandidates + pos] = p;
+                    ++pos;
+                }
+            }
+        }
+        candidates += total;
+    }
+    memoryBarrierBuffer();
+    barrier();
+    // C: assignment.
+    const uint grant = min(needs, candidates);
+    uint rank = needBase;
+    for (uint w = w0; w < w1 && rank < grant; ++w) {
+        uint bits = FUSE_VSM_WORDS(work)[C.offNeed + w];
+        while (bits != 0u && rank < grant) {
+            const uint b = uint(findLSB(bits));
+            bits &= bits - 1u;
+            const uint v = w * 32u + b;
+            const uint p = FUSE_VSM_WORDS(work)[C.offCandidates + rank];
+            const uint old = FUSE_VSM_WORDS(meta)[p * 2u];
+            if (old != FUSE_VSM_PAGE_NONE) {
+                FUSE_VSM_WORDS(table)[old] = 0u;
+                atomicAdd(FUSE_VSM_WORDS(work)[FUSE_VSM_COUNTER_EVICTED], 1u);
+            }
+            FUSE_VSM_WORDS(meta)[p * 2u] = v;
+            FUSE_VSM_WORDS(meta)[p * 2u + 1u] = frame;
+            FUSE_VSM_WORDS(table)[v] = FUSE_VSM_PTE_MAPPED | p;
+            ++rank;
+        }
+    }
+    if (t == 0u) {
+        FUSE_VSM_WORDS(work)[FUSE_VSM_COUNTER_CANDIDATES] = candidates;
+        FUSE_VSM_WORDS(work)[FUSE_VSM_COUNTER_ALLOCATED] = grant;
+        FUSE_VSM_WORDS(work)[FUSE_VSM_COUNTER_FAILED] = needs - grant;
+    }
+}

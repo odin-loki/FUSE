@@ -289,3 +289,4 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp15.cmake")  # WP-1.5 material re
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp21.cmake")  # WP-2.1 GPU clustered lighting (lighting/gpu/, shaders/lighting/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp22.cmake")  # WP-2.2 LTC area lights + BRDF energy compensation (lighting/ltc/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp23.cmake")  # WP-2.3 forward transparency (forward/, shaders/forward/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp31.cmake")  # WP-3.1 virtual shadow map core (shadow/vsm/, core_logic/vsm_pages/)
