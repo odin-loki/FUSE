@@ -9,7 +9,7 @@ The plan's patch budget is at most 30 marked blocks (§2.4). An edited file gets
 
 ## Patch list
 
-Each patch has an ID (`RL-x.y-NN`), which is the first token after `FUSE-DXVK begin:`. `VERSION` pins every patched file twice:
+Each patch has an ID (`RL-x.y-NN`), which is the first token after `FUSE-DXVK begin:`. Block count: 24 of 30 (RL-0.2-01, RL-1.1-01 to -23; one block each). `VERSION` pins every patched file twice:
 - `sha256:` is the file as vendored;
 - `upstream_sha256:` is the file with its marked blocks removed, which must equal the upstream file.
 
@@ -18,6 +18,29 @@ Each patch has an ID (`RL-x.y-NN`), which is the first token after `FUSE-DXVK be
 | ID | Files | Purpose | Work package | Upstream status |
 |---|---|---|---|---|
 | RL-0.2-01 | `src/dxvk/dxvk_device_info.cpp` (`DxvkDeviceCapabilities::initSupportedExtensions`, 1 block) | Accept `VK_EXT_load_store_op_none` as DXVK's required `VK_KHR_load_store_op_none`. The two are aliases with identical enums and semantics. When the device exposes only the EXT name, the KHR entry is pointed at it, so it is detected and enabled at device creation. Why it is needed: Wine 9.0's winevulkan (Ubuntu 24.04, the CI image) hides the KHR name even though Lavapipe has it, so DXVK 3.1.1 rejected every device and `rl_dxvk_smoke` could not run. | RL-0.2 | FUSE-only, not submitted. Upstream DXVK targets newer Wine and requires the KHR name on purpose (it is core in Vulkan 1.4). Drop the patch when CI's Wine exposes the KHR name. |
+| RL-1.1-01 | `src/dxvk/dxvk_instance.cpp` (`DxvkInstance::DxvkInstance(const DxvkInstanceImportInfo&, DxvkInstanceFlags)`, 1 block) | Import the FUSE-created `VkInstance` (plan §2.2 AD-2). When the constructor gets no instance (the `DxvkInstance(flags)` path used by d3d9, whose argument is a non-const temporary), it asks FUSE Relight (`dxvk::fuseRelightImportInstance`, `Source/FUSE/Relight/tap/src/vk_bootstrap.cpp`) to fill in the loader, instance and enabled extensions; upstream's own import path then runs unchanged. FUSE declines with `FUSE_RELIGHT=0`, `relight.device.import = false` or without a loader, and DXVK creates its instance as upstream. | RL-1.1 | FUSE-only. |
+| RL-1.1-02 | `src/dxvk/dxvk_adapter.cpp` (`DxvkAdapter::createDevice()`, 1 block) | Import the FUSE-created `VkDevice` through upstream's `DxvkAdapter::importDevice`, with a `queueCallback` that takes FUSE's queue (submission) lock. Only when the adapter's instance is FUSE's; otherwise upstream device creation. | RL-1.1 | FUSE-only. |
+| RL-1.1-03 | `src/d3d9/d3d9_device.h` (includes, 1 block) | Include the tap entry points (`Source/FUSE/Relight/tap/dxvk/fuse_tap_dxvk.h`, declarations only). | RL-1.1 | FUSE-only. |
+| RL-1.1-04 | `src/d3d9/d3d9_device.h` (`D3D9DeviceEx`, 1 block) | Per-device tap dispatcher pointer `m_fuseTap` (null when the tap is off) and friend access for the dispatcher (`FuseTap`, `FuseTapContext`). | RL-1.1 | FUSE-only. |
+| RL-1.1-05 | `src/d3d9/d3d9_device.cpp` (`~D3D9DeviceEx`) | `onDeviceDestroy`; frees the dispatcher. | RL-1.1 | FUSE-only. |
+| RL-1.1-06 | `src/d3d9/d3d9_device.cpp` (`ResetSwapChain`, end) | Attaches the tap on the first successful reset (`InitialReset`) according to `relight.tap.mode` (`onDeviceCreate`); `onDeviceReset` afterwards. | RL-1.1 | FUSE-only. |
+| RL-1.1-07 | `src/d3d9/d3d9_device.cpp` (`UpdateSurface`, end) | `onTextureCopy` (UpdateSurface). | RL-1.1 | FUSE-only. |
+| RL-1.1-08 | `src/d3d9/d3d9_device.cpp` (`UpdateTexture`, end) | `onTextureCopy` (UpdateTexture). | RL-1.1 | FUSE-only. |
+| RL-1.1-09 | `src/d3d9/d3d9_device.cpp` (`SetRenderTarget`) | With the tap on: runs `SetRenderTargetInternal` itself and reports `onSetRenderTarget` on success. | RL-1.1 | FUSE-only. |
+| RL-1.1-10 | `src/d3d9/d3d9_device.cpp` (`Clear`, after validation) | `onClear`. | RL-1.1 | FUSE-only. |
+| RL-1.1-11 | `src/d3d9/d3d9_device.cpp` (`DrawPrimitive`) | `onDraw` with the call and a view of `Direct3DState9`; decision `Ignore` returns `D3D_OK` without drawing (the §2.4 skip path). | RL-1.1 | FUSE-only. |
+| RL-1.1-12 | `src/d3d9/d3d9_device.cpp` (`DrawIndexedPrimitive`) | As RL-1.1-11. | RL-1.1 | FUSE-only. |
+| RL-1.1-13 | `src/d3d9/d3d9_device.cpp` (`DrawPrimitiveUP`) | As RL-1.1-11, with the application's vertex pointer. | RL-1.1 | FUSE-only. |
+| RL-1.1-14 | `src/d3d9/d3d9_device.cpp` (`DrawIndexedPrimitiveUP`) | As RL-1.1-11, with the application's vertex and index pointers. | RL-1.1 | FUSE-only. |
+| RL-1.1-15 | `src/d3d9/d3d9_device.cpp` (`LockImage`, end) | Remembers the lock (pointer, pitches, box, flags) for the upload event; `onTextureWriteLock` for write locks. | RL-1.1 | FUSE-only. |
+| RL-1.1-16 | `src/d3d9/d3d9_device.cpp` (`UnlockImage`) | `onTextureUpload` with the bytes the application wrote. | RL-1.1 | FUSE-only. |
+| RL-1.1-17 | `src/d3d9/d3d9_device.cpp` (`LockBuffer`, start) | Remembers the write range and the application's lock flags (before DXVK adjusts them). | RL-1.1 | FUSE-only. |
+| RL-1.1-18 | `src/d3d9/d3d9_device.cpp` (`UnlockBuffer`) | `onBufferWrite` for each remembered range once the last lock is released. | RL-1.1 | FUSE-only. |
+| RL-1.1-19 | `src/d3d9/d3d9_common_texture.cpp` (`D3D9CommonTexture` constructor, end) | `onTextureCreate`. | RL-1.1 | FUSE-only. |
+| RL-1.1-20 | `src/d3d9/d3d9_common_texture.cpp` (`~D3D9CommonTexture`) | `onImageDestroy` (bindless release, plan §2.3). | RL-1.1 | FUSE-only. |
+| RL-1.1-21 | `src/d3d9/d3d9_common_buffer.cpp` (`D3D9CommonBuffer` constructor, end) | `onBufferCreate`. There is no destructor hook (patch budget): a buffer created at a known address reports `onBufferDestroy` for the old id first. | RL-1.1 | FUSE-only. |
+| RL-1.1-22 | `src/d3d9/d3d9_swapchain.cpp` (`D3D9SwapChainEx::Present`) | `onInjectPoint` (Present until RL-1.2's classifier finds the first UI draw) and `onPresent`; frame boundary. | RL-1.1 | FUSE-only. |
+| RL-1.1-23 | `src/d3d9/d3d9_query.cpp` (`D3D9Query::Issue`) | `onQueryBegin` / `onQueryEnd`. | RL-1.1 | FUSE-only. |
 
 ## Build notes (no source edits)
 

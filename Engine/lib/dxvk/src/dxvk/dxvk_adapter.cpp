@@ -197,6 +197,24 @@ namespace dxvk {
 
 
   Rc<DxvkDevice> DxvkAdapter::createDevice() {
+    // FUSE-DXVK begin: RL-1.1-02 import the FUSE-created VkDevice (plan AD-2)
+    // FUSE Relight owns the device on its instance; DXVK imports it and takes FUSE's queue lock
+    // around every submission. Declined (DXVK's own instance, or no device): upstream behaviour.
+    {
+      bool fuseRelightImportDevice(VkInstance, VkPhysicalDevice, VkDevice*, VkQueue*, uint32_t*,
+        uint32_t*, const char***, const VkPhysicalDeviceFeatures2**);
+      void fuseRelightQueueLock(bool);
+
+      DxvkDeviceImportInfo fuseImport = { };
+
+      if (fuseRelightImportDevice(m_instance->vki()->instance(), m_handle, &fuseImport.device,
+          &fuseImport.queue, &fuseImport.queueFamily, &fuseImport.extensionCount,
+          &fuseImport.extensionNames, &fuseImport.features)) {
+        fuseImport.queueCallback = [] (bool locked) { fuseRelightQueueLock(locked); };
+        return importDevice(fuseImport);
+      }
+    }
+    // FUSE-DXVK end
     Rc<DxvkDevice> device = createDevice(false);
 
     if (!device)

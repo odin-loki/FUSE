@@ -23,6 +23,17 @@ namespace dxvk {
 
 
   DxvkInstance::DxvkInstance(const DxvkInstanceImportInfo& args, DxvkInstanceFlags flags) {
+    // FUSE-DXVK begin: RL-1.1-01 import the FUSE-created VkInstance (plan AD-2)
+    // Without an instance to import (the DxvkInstance(flags) path, whose argument is a non-const
+    // temporary), ask FUSE Relight for its instance; the upstream import path below then runs as
+    // is. Declined (FUSE_RELIGHT=0, relight.device.import off, no loader): upstream behaviour.
+    if (!args.instance) {
+      bool fuseRelightImportInstance(PFN_vkGetInstanceProcAddr*, VkInstance*, uint32_t*, const char***, uint32_t);
+      auto& fuseArgs = const_cast<DxvkInstanceImportInfo&>(args);
+      fuseRelightImportInstance(&fuseArgs.loaderProc, &fuseArgs.instance,
+        &fuseArgs.extensionCount, &fuseArgs.extensionNames, flags.raw());
+    }
+    // FUSE-DXVK end
     Logger::info(str::format("Game: ", env::getExeName()));
     Logger::info(str::format("DXVK: ", DXVK_VERSION));
     Logger::info(str::format("Build: ", DXVK_TARGET, " ", DXVK_COMPILER, " ", DXVK_COMPILER_VERSION));

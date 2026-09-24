@@ -95,6 +95,9 @@ namespace dxvk {
 
 
   HRESULT STDMETHODCALLTYPE D3D9Query::Issue(DWORD dwIssueFlags) {
+    // FUSE-DXVK begin: RL-1.1-23 FUSE Relight tap: onQueryBegin / onQueryEnd
+    FuseTap::QueryIssue(m_parent, this, m_queryType, dwIssueFlags);
+    // FUSE-DXVK end
     // Note: No need to submit to CS if we don't do anything!
 
     if (dwIssueFlags == D3DISSUE_BEGIN) {

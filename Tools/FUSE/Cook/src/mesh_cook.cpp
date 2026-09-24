@@ -513,6 +513,17 @@ CookStubWriteResult cook_mesh_file(const std::string& input_path, const std::str
     result.note = result.ok ? ("mesh cooked, vertices=" + std::to_string(mesh.vertex_count()) +
                                " triangles=" + std::to_string(mesh.indices.size() / 3u))
                             : "cooked mesh write failed";
+    if (result.ok && options.post_hook != nullptr) {
+        out.close();
+        std::string hookNote;
+        if (!options.post_hook(mesh, bytes, output_path, &hookNote)) {
+            result.ok = false;
+            result.failure = CookFailure::WriteFailed;
+            result.note = "mesh post-cook hook failed: " + hookNote;
+        } else if (!hookNote.empty()) {
+            result.note += "; " + hookNote;
+        }
+    }
     return result;
 }
 

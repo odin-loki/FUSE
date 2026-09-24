@@ -125,6 +125,9 @@ namespace dxvk {
     if (m_backBuffers.empty())
       return D3D_OK;
 
+    // FUSE-DXVK begin: RL-1.1-22 FUSE Relight tap: onInjectPoint + onPresent (frame boundary)
+    FuseTap::Present(m_parent, this);
+    // FUSE-DXVK end
     uint32_t presentInterval = m_presentParams.PresentationInterval;
 
     // This is not true directly in d3d9 to to timing differences that don't matter for us.

@@ -20,6 +20,9 @@ namespace dxvk {
       m_dirtyRange = D3D9Range(0, m_desc.Size);
 
     m_uploadAtDraw = m_parent->GetOptions()->forceDrawTimeBufferUpload;
+    // FUSE-DXVK begin: RL-1.1-21 FUSE Relight tap: onBufferCreate (a recycled address gets a new id)
+    FuseTap::BufferCreate(m_parent, this);
+    // FUSE-DXVK end
   }
 
   D3D9CommonBuffer::~D3D9CommonBuffer() {

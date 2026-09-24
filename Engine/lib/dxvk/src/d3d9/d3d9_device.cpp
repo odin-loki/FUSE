@@ -155,6 +155,9 @@ namespace dxvk {
 
 
   D3D9DeviceEx::~D3D9DeviceEx() {
+    // FUSE-DXVK begin: RL-1.1-05 FUSE Relight tap: onDeviceDestroy, release the dispatcher
+    FuseTap::DeviceDestroy(this);
+    // FUSE-DXVK end
     // Avoids hanging when in this state, see comment
     // in DxvkDevice::~DxvkDevice.
     if (this_thread::isInModuleDetachment())
@@ -1033,6 +1036,10 @@ namespace dxvk {
     if (dstTextureInfo->IsAutomaticMip())
       MarkTextureMipsDirty(dstTextureInfo);
 
+    // FUSE-DXVK begin: RL-1.1-07 FUSE Relight tap: onTextureCopy (UpdateSurface)
+    if (unlikely(m_fuseTap))
+      FuseTap::UpdateSurface(this, pSourceSurface, pSourceRect, pDestinationSurface, pDestPoint);
+    // FUSE-DXVK end
     return D3D_OK;
   }
 
@@ -1125,6 +1132,10 @@ namespace dxvk {
     if (dstTexInfo->IsAutomaticMip() && dstMipLevels != dstTexInfo->Desc()->MipLevels)
       MarkTextureMipsDirty(dstTexInfo);
 
+    // FUSE-DXVK begin: RL-1.1-08 FUSE Relight tap: onTextureCopy (UpdateTexture)
+    if (unlikely(m_fuseTap))
+      FuseTap::UpdateTexture(this, srcTexInfo, dstTexInfo);
+    // FUSE-DXVK end
     ConsiderFlush(GpuFlushType::ImplicitWeakHint);
 
     return D3D_OK;
@@ -1648,6 +1659,16 @@ namespace dxvk {
     if (unlikely(rt != nullptr && rt->GetDevice() != this))
       return D3DERR_INVALIDCALL;
 
+    // FUSE-DXVK begin: RL-1.1-09 FUSE Relight tap: onSetRenderTarget after a successful SetRenderTarget
+    if (unlikely(m_fuseTap)) {
+      HRESULT fuseHr = SetRenderTargetInternal(RenderTargetIndex, pRenderTarget);
+
+      if (SUCCEEDED(fuseHr))
+        FuseTap::SetRenderTarget(this, RenderTargetIndex, pRenderTarget);
+
+      return fuseHr;
+    }
+    // FUSE-DXVK end
     return SetRenderTargetInternal(RenderTargetIndex, pRenderTarget);
   }
 
@@ -1911,6 +1932,10 @@ namespace dxvk {
             && (Flags & (D3DCLEAR_ZBUFFER | D3DCLEAR_STENCIL))))
       return D3DERR_INVALIDCALL;
 
+    // FUSE-DXVK begin: RL-1.1-10 FUSE Relight tap: onClear
+    if (unlikely(m_fuseTap))
+      FuseTap::Clear(this, Count, pRects, Flags, Color, Z, Stencil);
+    // FUSE-DXVK end
     const auto& vp = m_state.viewport;
     const auto& sc = m_state.scissorRect;
 
@@ -3032,6 +3057,11 @@ namespace dxvk {
     if (unlikely(!PrimitiveCount))
       return D3D_OK;
 
+    // FUSE-DXVK begin: RL-1.1-11 FUSE Relight tap: onDraw (DrawPrimitive); decision Ignore skips the draw
+    if (unlikely(m_fuseTap) && FuseTap::SkipDraw(this, FuseTap::Draw, PrimitiveType, PrimitiveCount,
+          StartVertex, 0, 0, 0, 0, nullptr, D3DFMT_UNKNOWN, nullptr, 0))
+      return D3D_OK;
+    // FUSE-DXVK end
     bool dynamicSysmemVBOs = false;
 
     uint32_t firstIndex     = 0;
@@ -3084,6 +3114,11 @@ namespace dxvk {
     if (unlikely(!PrimitiveCount || !NumVertices))
       return D3D_OK;
 
+    // FUSE-DXVK begin: RL-1.1-12 FUSE Relight tap: onDraw (DrawIndexedPrimitive); decision Ignore skips the draw
+    if (unlikely(m_fuseTap) && FuseTap::SkipDraw(this, FuseTap::DrawIndexed, PrimitiveType, PrimitiveCount,
+          0, BaseVertexIndex, MinVertexIndex, NumVertices, StartIndex, nullptr, D3DFMT_UNKNOWN, nullptr, 0))
+      return D3D_OK;
+    // FUSE-DXVK end
     bool dynamicSysmemVBOs = false;
     bool dynamicSysmemIBO = false;
 
@@ -3148,6 +3183,11 @@ namespace dxvk {
     if (unlikely(!PrimitiveCount))
       return D3D_OK;
 
+    // FUSE-DXVK begin: RL-1.1-13 FUSE Relight tap: onDraw (DrawPrimitiveUP); decision Ignore skips the draw
+    if (unlikely(m_fuseTap) && FuseTap::SkipDraw(this, FuseTap::DrawUP, PrimitiveType, PrimitiveCount,
+          0, 0, 0, 0, 0, nullptr, D3DFMT_UNKNOWN, pVertexStreamZeroData, VertexStreamZeroStride))
+      return D3D_OK;
+    // FUSE-DXVK end
     PrepareDraw(PrimitiveType, false, false);
 
     uint32_t vertexCount = GetVertexCount(PrimitiveType, PrimitiveCount);
@@ -3202,6 +3242,12 @@ namespace dxvk {
     if (unlikely(!PrimitiveCount || !NumVertices))
       return D3D_OK;
 
+    // FUSE-DXVK begin: RL-1.1-14 FUSE Relight tap: onDraw (DrawIndexedPrimitiveUP); decision Ignore skips the draw
+    if (unlikely(m_fuseTap) && FuseTap::SkipDraw(this, FuseTap::DrawIndexedUP, PrimitiveType, PrimitiveCount,
+          0, 0, MinVertexIndex, NumVertices, 0, pIndexData, IndexDataFormat, pVertexStreamZeroData,
+          VertexStreamZeroStride))
+      return D3D_OK;
+    // FUSE-DXVK end
     PrepareDraw(PrimitiveType, false, false);
 
     uint32_t vertexCount = GetVertexCount(PrimitiveType, PrimitiveCount);
@@ -5204,6 +5250,10 @@ namespace dxvk {
     uint8_t* data = reinterpret_cast<uint8_t*>(mapPtr);
     data += offset;
     pLockedBox->pBits = data;
+    // FUSE-DXVK begin: RL-1.1-15 FUSE Relight tap: remember the lock for onTextureUpload; onTextureWriteLock
+    if (unlikely(m_fuseTap))
+      FuseTap::TextureLock(this, pResource, Face, MipLevel, pLockedBox, pBox, Flags);
+    // FUSE-DXVK end
     return D3D_OK;
   }
 
@@ -5224,6 +5274,10 @@ namespace dxvk {
         return D3DERR_INVALIDCALL;
     }
 
+    // FUSE-DXVK begin: RL-1.1-16 FUSE Relight tap: onTextureUpload with the data the application wrote
+    if (unlikely(m_fuseTap))
+      FuseTap::TextureUnlock(this, pResource, Face, MipLevel);
+    // FUSE-DXVK end
     MapTexture(pResource, Subresource); // Add it to the list of mapped resources
     pResource->SetLocked(Subresource, false);
 
@@ -5459,6 +5513,10 @@ namespace dxvk {
     if (unlikely(ppbData == nullptr))
       return D3DERR_INVALIDCALL;
 
+    // FUSE-DXVK begin: RL-1.1-17 FUSE Relight tap: remember the write range and the application's lock flags
+    if (unlikely(m_fuseTap))
+      FuseTap::BufferLock(this, pResource, OffsetToLock, SizeToLock, Flags);
+    // FUSE-DXVK end
     if (unlikely(!m_d3d9Options.allowDiscard))
       Flags &= ~D3DLOCK_DISCARD;
 
@@ -5639,6 +5697,10 @@ namespace dxvk {
     if (pResource->DecrementLockCount() != 0)
       return D3D_OK;
 
+    // FUSE-DXVK begin: RL-1.1-18 FUSE Relight tap: onBufferWrite once the last lock is released
+    if (unlikely(m_fuseTap))
+      FuseTap::BufferUnlock(this, pResource);
+    // FUSE-DXVK end
     // Nothing else to do for directly mapped buffers. Those were already written.
     if (pResource->GetMapMode() != D3D9_COMMON_BUFFER_MAP_MODE_BUFFER)
       return D3D_OK;
@@ -8980,6 +9042,9 @@ namespace dxvk {
     // Force this if we end up binding the same RT to make scissor change go into effect.
     BindViewportAndScissor();
 
+    // FUSE-DXVK begin: RL-1.1-06 FUSE Relight tap: attach + onDeviceCreate (first reset), onDeviceReset
+    FuseTap::SwapChainReset(this, pPresentationParameters);
+    // FUSE-DXVK end
     return D3D_OK;
   }
 

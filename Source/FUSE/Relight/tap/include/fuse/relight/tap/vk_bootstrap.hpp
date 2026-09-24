@@ -1,0 +1,22 @@
+// FUSE Relight RL-1.1: queries on the FUSE-created Vulkan instance / device that DXVK imports
+// (src/vk_bootstrap.cpp; Windows / MinGW builds only). The creation itself is driven by DXVK
+// through the FUSE-DXVK patches RL-1.1-01/02 and the options in tap_config.hpp.
+#pragma once
+
+#include <cstdint>
+
+namespace fuse::relight::tap::vkboot {
+
+struct Stats {
+    std::uint32_t validationErrors = 0;   ///< debug-utils ERROR messages (validation / performance)
+    std::uint32_t validationWarnings = 0; ///< debug-utils WARNING messages
+    bool validationLayer = false;         ///< VK_LAYER_KHRONOS_validation enabled on the PE side
+    bool debugMessenger = false;          ///< a messenger is installed (relight.vk.validation)
+};
+
+/// True when `device` (a VkDevice value) was created by the bootstrap and imported by DXVK.
+bool isImportedDevice(std::uint64_t device);
+
+Stats stats();
+
+} // namespace fuse::relight::tap::vkboot

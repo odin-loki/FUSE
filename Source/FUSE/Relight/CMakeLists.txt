@@ -45,3 +45,4 @@ add_subdirectory(options)                                                       
 add_subdirectory(tests/options)                                                          # RL-0.6
 add_subdirectory(hash)                                                                   # RL-0.5
 add_subdirectory(tests/hash)                                                             # RL-0.5
+add_subdirectory(tap)                                                                    # RL-1.1

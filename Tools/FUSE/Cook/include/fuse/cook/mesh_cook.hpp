@@ -29,8 +29,16 @@ struct CookedMesh {
     [[nodiscard]] u32 vertex_count() const { return static_cast<u32>(positions.size() / 3u); }
 };
 
+/// Optional post-write hook for `cook_mesh_file` (WP-1.2: the renderer's meshlet cook installs one
+/// that writes a `.fusemeshlet` sidecar, see Source/FUSE/Renderer/geometry/meshlet_cook_hook.hpp).
+/// Called after the `.fusemesh` is written, with the cooked mesh, its exact FMSH bytes and the output
+/// path. It never changes the FMSH bytes. Returning false fails the cook (`WriteFailed`, hook note).
+using MeshCookPostHook = bool (*)(const CookedMesh& mesh, const std::vector<u8>& fmsh_bytes,
+                                  const std::string& output_path, std::string* note);
+
 struct MeshCookOptions {
     bool generate_normals = true;
+    MeshCookPostHook post_hook = nullptr; ///< nullptr: FMSH only (default)
 };
 
 inline constexpr u32 kCookedMeshVersion = 1;

@@ -1,0 +1,46 @@
+# FUSE third-party pin: meshoptimizer (Arseny Kapoulkine), library sources only. src/*.cpp,
+# src/meshoptimizer.h, demo/clusterlod.h and LICENSE.md are vendored verbatim from the tag below, no
+# local edits. Not vendored: demo/ (except clusterlod.h), gltf/ (gltfpack), js/, tools/, extern/.
+# fuse_meshoptimizer_version.h is FUSE's own pin header: it restates the version as
+# *_VERSION_MAJOR/MINOR/PATCH defines (meshoptimizer.h only has MESHOPTIMIZER_VERSION = 1010) and
+# #errors if meshoptimizer.h disagrees.
+# Checked by `fuse_lint vendored-pins` (ctest: fuse_lint_vendored_pins_meshoptimizer).
+# Built as the static library fuse_meshoptimizer (Source/FUSE/Renderer/cmake/rp_wp12.cmake) and used by
+# the WP-1.2 meshlet cook (Source/FUSE/Renderer/geometry). clusterlod.h (cluster DAG, renderer plan
+# Phase 5 / asset plan section 1.4) is vendored for WP-5.x and not compiled yet.
+# v1.1.1 rather than the newer v1.2: the lint requires an X.Y.Z tag, and upstream tagged 1.2 as "v1.2".
+# To update: copy src/*.cpp, src/meshoptimizer.h, demo/clusterlod.h and LICENSE.md from the new upstream
+# tag, bump the defines in fuse_meshoptimizer_version.h, then update every field below (version, tag,
+# commit, sha256) together. sha256 is over the file with CRLF normalized to LF.
+name=meshoptimizer
+upstream=https://github.com/zeux/meshoptimizer
+version=1.1.1
+tag=v1.1.1
+commit=b22872835dbabc56a6e4a366ea9917f62b7daf1a
+retrieved=2026-09-24 (git clone --depth 1 --branch v1.1.1)
+license=MIT
+license_file=LICENSE.md
+version_header=fuse_meshoptimizer_version.h
+sha256:fuse_meshoptimizer_version.h=9fb040216db60f44274c02b1d07689e690d9850c612e23c77972421c3471f97c
+sha256:LICENSE.md=f03037ca7bad1e3eb7f4a63fa6084a8baabd5ba30d3c239a9a7f35705d873e26
+sha256:src/meshoptimizer.h=497a1d8db6d9549bb4b0346d5f34a9bd67a15fe41d458cdd6a27eb608421f46c
+sha256:src/allocator.cpp=d2cc48691fe2f4c6d097bf7a766389cfb7f83ca14a5f747e3944332656d02254
+sha256:src/clusterizer.cpp=4eb53fd05140cefa440c67bbe10b304a8bb22a1f85f455634d2fefe3c1879140
+sha256:src/indexanalyzer.cpp=bff37aecb10cefa33f3f6a217413c6ac98899c23e6de5282420c60e6baf786ec
+sha256:src/indexcodec.cpp=f98c84b7ee1bc15b075fdba430b8c2d69b21ff9ff7e782b9ff84a6db8f8c8e19
+sha256:src/indexgenerator.cpp=9dc12451a3bf2dcabd76b59237cc25ec8b40e31ef5558512df5ec98fe65de37c
+sha256:src/meshletcodec.cpp=f7bad517cb77a646ba0beef916ac42715c2fe18002f29e12c6cd4ccd5835e678
+sha256:src/meshletutils.cpp=4813a0c9e8648c6de53f317322fa17c9486ff024f186aa9d631e7c60ba96c33e
+sha256:src/opacitymap.cpp=81037b530d10aaac80a43197294aef5b27b3ccf8d1e323c5ccdc0945fc4c5d69
+sha256:src/overdrawoptimizer.cpp=a70412562f991133ce52b2833adee9de0a9029dc45312ada1eb5c2452dc4f3ee
+sha256:src/partition.cpp=0bec6b8a326ce15521283dcea2d1a7ca2d5d5a2ee1ba2d3bd3e82f65ff174a91
+sha256:src/quantization.cpp=8293cf0810796dab81474a8b53bc4e26619f2407e327f7db60b52a5f25b42860
+sha256:src/rasterizer.cpp=2172e0ac82359a19f2880763e2088f51b7ec361b23fb54f743b618691967dbe5
+sha256:src/simplifier.cpp=b645cdaffe9e3eaf64ff77bc82c3e3b8c57c0a4459b7405a0b3d2716ed92d928
+sha256:src/spatialorder.cpp=9005ee0069ed8c56797606de80c0cd951ab55ffb608bc3af83c4e5b2517371b1
+sha256:src/stripifier.cpp=e653e6be3a9b821016a1f6a90b756b971422f1246ebd03e60b478251a288bfd4
+sha256:src/vcacheoptimizer.cpp=618429ef4db8ab9b16fde4e73dcf425d89452acbf103085478bc8b1761fa6689
+sha256:src/vertexcodec.cpp=bc46b3d4113eb1ba34ab54736c5d534ba07f52019af73e176e0ef4c5b9c2a97b
+sha256:src/vertexfilter.cpp=a773dcdc20bb4401a737d7cb0a0d047311a819e1efc55bfc0d1fb6e62c88d574
+sha256:src/vfetchoptimizer.cpp=aa534bb8150ca27ae229c58a0dc51f85f9acccbc5d4214f4c82edd91fc08e478
+sha256:demo/clusterlod.h=a8bc56a985ba23ba1313f8a2ca35e1805cbf0816a1304def9df874540433815a

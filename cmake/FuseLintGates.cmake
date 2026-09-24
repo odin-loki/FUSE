@@ -139,6 +139,8 @@ _fuse_lint_add(fuse_lint_vendored_pins_dxbc_spirv vendored-pins --dir "${CMAKE_S
 _fuse_lint_add(fuse_lint_vendored_pins_xxhash vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/xxhash")
 _fuse_lint_add(fuse_lint_vendored_pins_tracy vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/tracy")  # WP-0.6 Tracy client (BSD-3), optional FUSE_TRACY
 
+_fuse_lint_add(fuse_lint_vendored_pins_meshoptimizer vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/meshoptimizer")  # WP-1.2 meshlet cook (MIT)
+
 get_property(_fuse_lint_all GLOBAL PROPERTY _FUSE_LINT_TESTS)
 set_tests_properties(${_fuse_lint_all} PROPERTIES LABELS "gate;lint" TIMEOUT 300)
 set_tests_properties(fuse_lint_b6_editor_qt6_only PROPERTIES LABELS "gate;lint;qt" SKIP_RETURN_CODE 77)

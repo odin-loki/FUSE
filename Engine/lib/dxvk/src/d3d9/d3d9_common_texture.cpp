@@ -98,10 +98,16 @@ namespace dxvk {
       m_data = MemoryFileRegion(*m_device->GetAllocator(), paddedSize);
     else if (m_mapMode != D3D9_COMMON_TEXTURE_MAP_MODE_NONE && m_desc.Pool != D3DPOOL_DEFAULT)
       CreateBuffer(false, paddedSize);
+    // FUSE-DXVK begin: RL-1.1-19 FUSE Relight tap: onTextureCreate
+    FuseTap::TextureCreate(m_device, this);
+    // FUSE-DXVK end
   }
 
 
   D3D9CommonTexture::~D3D9CommonTexture() {
+    // FUSE-DXVK begin: RL-1.1-20 FUSE Relight tap: onImageDestroy
+    FuseTap::TextureDestroy(m_device, this);
+    // FUSE-DXVK end
     if (m_size != 0)
       m_device->ChangeReportedMemory(m_size);
 

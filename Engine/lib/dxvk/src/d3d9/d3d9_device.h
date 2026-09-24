@@ -34,6 +34,9 @@
 #include "../util/util_flush.h"
 #include "../util/util_lru.h"
 #include "../util/util_unmap.h"
+// FUSE-DXVK begin: RL-1.1-03 FUSE Relight tap entry points (Source/FUSE/Relight/tap/dxvk)
+#include "fuse_tap_dxvk.h"
+// FUSE-DXVK end
 
 namespace dxvk {
 
@@ -227,6 +230,11 @@ namespace dxvk {
     friend class D3D9UserDefinedAnnotation;
     friend class DxvkLegacyD3DDeviceBridge;
     friend D3D9VkInteropDevice;
+    // FUSE-DXVK begin: RL-1.1-04 FUSE Relight tap: per-device dispatcher, null when the tap is off
+    friend struct FuseTap;
+    friend class FuseTapContext;
+    FuseTapContext* m_fuseTap = nullptr;
+    // FUSE-DXVK end
 
     using CbvIndex = D3D9ShaderResourceMapping::CbvIndex;
   public:
