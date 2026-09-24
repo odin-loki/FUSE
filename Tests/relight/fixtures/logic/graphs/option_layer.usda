@@ -1,0 +1,102 @@
+#usda 1.0
+(
+    defaultPrim = "RootNode"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+# RL-3.5 logic graph fixture: a graph toggles an rtx.conf option layer (Act) and blends another one; sensors read them back.
+def Xform "RootNode"
+{
+    def Scope "meshes"
+    {
+        def Xform "mesh_0123456789ABCDEF"
+        {
+            int preserveOriginalDrawCall = 1
+
+            def OmniGraph "LogicGraph"
+            {
+            def OmniGraphNode "counter"
+            {
+                custom token node:type = "lightspeed.trex.logic.Counter"
+                custom int node:typeVersion = 1
+                custom bool inputs:increment = 1
+                custom float outputs:value
+            }
+            def OmniGraphNode "window"
+            {
+                custom token node:type = "lightspeed.trex.logic.Between"
+                custom int node:typeVersion = 1
+                custom float inputs:value
+                custom float inputs:value.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/counter.outputs:value>
+                custom float inputs:minValue = 3
+                custom float inputs:maxValue = 6
+                custom bool outputs:result
+            }
+            def OmniGraphNode "toggleLayer"
+            {
+                custom token node:type = "lightspeed.trex.logic.RtxOptionLayerAction"
+                custom int node:typeVersion = 1
+                custom token inputs:configPath = "./option_layer.conf"
+                custom bool inputs:enabled
+                custom bool inputs:enabled.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/window.outputs:result>
+                custom float inputs:priority = 20000
+            }
+            def OmniGraphNode "fade"
+            {
+                custom token node:type = "lightspeed.trex.logic.Remap"
+                custom int node:typeVersion = 1
+                custom float inputs:value
+                custom float inputs:value.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/counter.outputs:value>
+                custom float inputs:inputMin = 2
+                custom float inputs:inputMax = 6
+                custom bool inputs:clampInput = 1
+                custom float inputs:outputMin = 0
+                custom float inputs:outputMax = 1
+                custom float outputs:output
+            }
+            def OmniGraphNode "blendLayer"
+            {
+                custom token node:type = "lightspeed.trex.logic.RtxOptionLayerAction"
+                custom int node:typeVersion = 1
+                custom asset inputs:configPath = @./option_blend.conf@
+                custom float inputs:blendStrength
+                custom float inputs:blendStrength.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/fade.outputs:output>
+                custom float inputs:blendThreshold = 0.5
+                custom float inputs:priority = 30000
+            }
+            def OmniGraphNode "sensor"
+            {
+                custom token node:type = "lightspeed.trex.logic.RtxOptionLayerSensor"
+                custom int node:typeVersion = 1
+                custom token inputs:configPath = "./option_layer.conf"
+                custom float inputs:priority = 20000.2
+                custom bool outputs:isEnabled
+                custom float outputs:blendStrength
+                custom float outputs:blendThreshold
+            }
+            def OmniGraphNode "readFlag"
+            {
+                custom token node:type = "lightspeed.trex.logic.RtxOptionReadBool"
+                custom int node:typeVersion = 1
+                custom string inputs:optionName = "rtx.logicFixture.flag"
+                custom bool outputs:value
+            }
+            def OmniGraphNode "readValue"
+            {
+                custom token node:type = "lightspeed.trex.logic.RtxOptionReadNumber"
+                custom int node:typeVersion = 1
+                custom string inputs:optionName = "rtx.logicFixture.value"
+                custom float outputs:value
+            }
+            def OmniGraphNode "readColor"
+            {
+                custom token node:type = "lightspeed.trex.logic.RtxOptionReadColor3"
+                custom int node:typeVersion = 1
+                custom string inputs:optionName = "rtx.logicFixture.color"
+                custom float3 outputs:value
+            }
+            }
+        }
+    }
+}

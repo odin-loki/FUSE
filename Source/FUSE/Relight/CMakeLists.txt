@@ -61,3 +61,4 @@ add_subdirectory(mods/usd)                                                      
 add_subdirectory(mods/import)                                                            # RL-3.2
 add_subdirectory(replace)                                                                # RL-3.4
 add_subdirectory(particles)                                                              # RL-3.6
+add_subdirectory(logic)                                                                  # RL-3.5

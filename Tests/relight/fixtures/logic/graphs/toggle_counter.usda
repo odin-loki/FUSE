@@ -1,0 +1,156 @@
+#usda 1.0
+(
+    defaultPrim = "RootNode"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+# RL-3.5 logic graph fixture: counters, toggles and sample-and-hold over frames (Transform components).
+def Xform "RootNode"
+{
+    def Scope "meshes"
+    {
+        def Xform "mesh_0123456789ABCDEF"
+        {
+            int preserveOriginalDrawCall = 1
+
+            def OmniGraph "LogicGraph"
+            {
+            def OmniGraphNode "counter"
+            {
+                custom token node:type = "lightspeed.trex.logic.Counter"
+                custom int node:typeVersion = 1
+                custom bool inputs:increment = 1
+                custom float inputs:incrementValue = 1
+                custom float inputs:defaultValue = 0
+                custom float outputs:value
+            }
+            def OmniGraphNode "above"
+            {
+                custom token node:type = "lightspeed.trex.logic.GreaterThan"
+                custom int node:typeVersion = 1
+                custom float inputs:a
+                custom float inputs:a.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/counter.outputs:value>
+                custom float inputs:b = 3
+                custom bool outputs:result
+            }
+            def OmniGraphNode "toggle"
+            {
+                custom token node:type = "lightspeed.trex.logic.Toggle"
+                custom int node:typeVersion = 1
+                custom bool inputs:triggerToggle
+                custom bool inputs:triggerToggle.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/above.outputs:result>
+                custom bool inputs:defaultState = 0
+                custom bool outputs:isOn
+            }
+            def OmniGraphNode "edges"
+            {
+                custom token node:type = "lightspeed.trex.logic.CountToggles"
+                custom int node:typeVersion = 1
+                custom bool inputs:value
+                custom bool inputs:value.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/toggle.outputs:isOn>
+                custom float inputs:resetValue = 3
+                custom float outputs:count
+            }
+            def OmniGraphNode "previous"
+            {
+                custom token node:type = "lightspeed.trex.logic.PreviousFrameValue"
+                custom int node:typeVersion = 1
+                custom bool inputs:input
+                custom bool inputs:input.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/toggle.outputs:isOn>
+                custom bool inputs:previousValue = 0
+                custom bool outputs:output
+            }
+            def OmniGraphNode "hold"
+            {
+                custom token node:type = "lightspeed.trex.logic.ConditionallyStore"
+                custom int node:typeVersion = 1
+                custom bool inputs:store
+                custom bool inputs:store.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/toggle.outputs:isOn>
+                custom float inputs:input
+                custom float inputs:input.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/counter.outputs:value>
+                custom float outputs:output
+            }
+            def OmniGraphNode "hundred"
+            {
+                custom token node:type = "lightspeed.trex.logic.ConstFloat"
+                custom int node:typeVersion = 1
+                custom float inputs:value = 100
+            }
+            def OmniGraphNode "choose"
+            {
+                custom token node:type = "lightspeed.trex.logic.Select"
+                custom int node:typeVersion = 1
+                custom bool inputs:condition
+                custom bool inputs:condition.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/toggle.outputs:isOn>
+                custom float inputs:inputA
+                custom float inputs:inputA.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/counter.outputs:value>
+                custom float inputs:inputB
+                custom float inputs:inputB.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/hundred.inputs:value>
+                custom float outputs:output
+            }
+            def OmniGraphNode "both"
+            {
+                custom token node:type = "lightspeed.trex.logic.BoolAnd"
+                custom int node:typeVersion = 1
+                custom bool inputs:a
+                custom bool inputs:a.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/toggle.outputs:isOn>
+                custom bool inputs:b
+                custom bool inputs:b.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/previous.outputs:output>
+                custom bool outputs:result
+            }
+            def OmniGraphNode "either"
+            {
+                custom token node:type = "lightspeed.trex.logic.BoolOr"
+                custom int node:typeVersion = 1
+                custom bool inputs:a
+                custom bool inputs:a.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/toggle.outputs:isOn>
+                custom bool inputs:b
+                custom bool inputs:b.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/previous.outputs:output>
+                custom bool outputs:result
+            }
+            def OmniGraphNode "neither"
+            {
+                custom token node:type = "lightspeed.trex.logic.BoolNot"
+                custom int node:typeVersion = 1
+                custom bool inputs:input
+                custom bool inputs:input.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/either.outputs:result>
+                custom bool outputs:result
+            }
+            def OmniGraphNode "third"
+            {
+                custom token node:type = "lightspeed.trex.logic.Divide"
+                custom int node:typeVersion = 1
+                custom float inputs:a
+                custom float inputs:a.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/counter.outputs:value>
+                custom float inputs:b = 3
+                custom float outputs:quotient
+            }
+            def OmniGraphNode "down"
+            {
+                custom token node:type = "lightspeed.trex.logic.Floor"
+                custom int node:typeVersion = 1
+                custom float inputs:input
+                custom float inputs:input.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/third.outputs:quotient>
+                custom float outputs:result
+            }
+            def OmniGraphNode "up"
+            {
+                custom token node:type = "lightspeed.trex.logic.Ceil"
+                custom int node:typeVersion = 1
+                custom float inputs:input
+                custom float inputs:input.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/third.outputs:quotient>
+                custom float outputs:result
+            }
+            def OmniGraphNode "nearest"
+            {
+                custom token node:type = "lightspeed.trex.logic.Round"
+                custom int node:typeVersion = 1
+                custom float inputs:input
+                custom float inputs:input.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/third.outputs:quotient>
+                custom float outputs:result
+            }
+            }
+        }
+    }
+}

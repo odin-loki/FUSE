@@ -34,6 +34,11 @@ target_link_libraries(fuse_relight_tap_capture PRIVATE fuse_relight_scene_instan
 target_link_libraries(fuse_relight_tap_capture PRIVATE $<TARGET_NAME_IF_EXISTS:fuse_relight_replace_live>)
 target_compile_definitions(fuse_relight_tap_capture PRIVATE
     $<$<TARGET_EXISTS:fuse_relight_replace_live>:FUSE_RELIGHT_HAVE_REPLACE=1>)
+# RL-3.5: Logic graphs run on the replaced draws (logic/logic_live.hpp) when that library exists (added later, same
+# mutual static-library reference as RL-3.4).
+target_link_libraries(fuse_relight_tap_capture PRIVATE $<TARGET_NAME_IF_EXISTS:fuse_relight_logic_live>)
+target_compile_definitions(fuse_relight_tap_capture PRIVATE
+    $<$<TARGET_EXISTS:fuse_relight_logic_live>:FUSE_RELIGHT_HAVE_LOGIC=1>)
 if(COMMAND fuse_apply_cxx23)
     fuse_apply_cxx23(fuse_relight_tap_capture)
 else()

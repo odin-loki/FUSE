@@ -1,0 +1,7 @@
+{
+  "description": "Time (x2) -> Loop (PingPong) -> Remap (EaseInOut, reversed on the way back) -> Smooth and Velocity; a Float3 Remap (Sine) -> Normalize / Vector Length; Clamp, Min, Max, Invert, Elastic and Bounce easing, over 16 frames of 0.1 s.",
+  "stage": "animation.usda",
+  "mesh": "0123456789ABCDEF",
+  "frames": 16,
+  "dt": 0.1
+}

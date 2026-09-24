@@ -1,0 +1,53 @@
+diagnostic error /RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/tooNew: Component is newer than this runtime can handle.  This means the graph was authored with a newer version of the runtime.
+diagnostic warning /RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/primPick.inputs:inputA: Could not resolve flexible type for property inputA, defaulting to Float
+diagnostic warning /RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/primPick.inputs:inputB: Could not resolve flexible type for property inputB, defaulting to Float
+diagnostic warning /RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/hashLoose.inputs:storedValue: Could not resolve flexible type for property storedValue, defaulting to Float
+diagnostic warning /RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/hashLoose: Could not find matching variant for component lightspeed.trex.logic.ConditionallyStore with resolved input types
+frame 0
+  owner 1 LogicGraph sum.sum = (1.5, 2.5, 3.5)
+  owner 1 LogicGraph scaled.product = (3, 5, 7)
+  owner 1 LogicGraph parts.x = 3
+  owner 1 LogicGraph parts.y = 5
+  owner 1 LogicGraph parts.z = 7
+  owner 1 LogicGraph same.result = true
+  owner 1 LogicGraph pair.vector = (7, -1)
+  owner 1 LogicGraph quarter.quotient = (1, 2, 3, 4)
+  owner 1 LogicGraph lagged.output = (1.5, 2.5, 3.5)
+  owner 1 LogicGraph pairInv.output = (-6, 2)
+  owner 1 LogicGraph diff.difference = (5, 5)
+  owner 1 LogicGraph primPick.output = 0
+  owner 1 LogicGraph label.output = match
+  owner 1 LogicGraph hashLoose.output = 3405691648
+  owner 1 LogicGraph hashHold.output = 0x00000000CAFEBABE
+frame 1
+  owner 1 LogicGraph sum.sum = (1.5, 2.5, 3.5)
+  owner 1 LogicGraph scaled.product = (3, 5, 7)
+  owner 1 LogicGraph parts.x = 3
+  owner 1 LogicGraph parts.y = 5
+  owner 1 LogicGraph parts.z = 7
+  owner 1 LogicGraph same.result = true
+  owner 1 LogicGraph pair.vector = (7, -1)
+  owner 1 LogicGraph quarter.quotient = (1, 2, 3, 4)
+  owner 1 LogicGraph lagged.output = (1.5, 2.5, 3.5)
+  owner 1 LogicGraph pairInv.output = (-6, 2)
+  owner 1 LogicGraph diff.difference = (5, 5)
+  owner 1 LogicGraph primPick.output = 0
+  owner 1 LogicGraph label.output = match
+  owner 1 LogicGraph hashLoose.output = 3405691648
+  owner 1 LogicGraph hashHold.output = 0x00000000CAFEBABE
+frame 2
+  owner 1 LogicGraph sum.sum = (1.5, 2.5, 3.5)
+  owner 1 LogicGraph scaled.product = (3, 5, 7)
+  owner 1 LogicGraph parts.x = 3
+  owner 1 LogicGraph parts.y = 5
+  owner 1 LogicGraph parts.z = 7
+  owner 1 LogicGraph same.result = true
+  owner 1 LogicGraph pair.vector = (7, -1)
+  owner 1 LogicGraph quarter.quotient = (1, 2, 3, 4)
+  owner 1 LogicGraph lagged.output = (1.5, 2.5, 3.5)
+  owner 1 LogicGraph pairInv.output = (-6, 2)
+  owner 1 LogicGraph diff.difference = (5, 5)
+  owner 1 LogicGraph primPick.output = 0
+  owner 1 LogicGraph label.output = match
+  owner 1 LogicGraph hashLoose.output = 3405691648
+  owner 1 LogicGraph hashHold.output = 0x00000000CAFEBABE

@@ -10,6 +10,9 @@
 #if defined(FUSE_RELIGHT_HAVE_REPLACE)
 #include <fuse/relight/replace/replace_live.hpp> // RL-3.4 runtime replacements (linked when the target exists)
 #endif
+#if defined(FUSE_RELIGHT_HAVE_LOGIC)
+#include <fuse/relight/logic/logic_live.hpp> // RL-3.5 Logic graphs on the replaced draws (linked when the target exists)
+#endif
 
 #include <cinttypes>
 #include <cstring>
@@ -604,6 +607,9 @@ std::unique_ptr<IRelightTap> createTapForDevice(const RuntimeConfig& config, uns
     }
 #if defined(FUSE_RELIGHT_HAVE_REPLACE)
     c.processor = replace::createCaptureReplaceProcessor(deviceOrdinal); // null: relight.replace.enable off, no mods
+#endif
+#if defined(FUSE_RELIGHT_HAVE_LOGIC)
+    c.processor = logic::attachLogicProcessor(std::move(c.processor)); // unchanged when null or rtx.graph.enable is off
 #endif
     return std::make_unique<CaptureTap>(std::move(c));
 }

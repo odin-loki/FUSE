@@ -1,0 +1,105 @@
+#usda 1.0
+(
+    customLayerData = {
+        string lightspeed_game_name = "ff_multi_instance"
+        string lightspeed_layer_type = "replacement"
+    }
+    defaultPrim = "RootNode"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+# RL-3.5 fixture (Remix mod with a logic graph) for the ff_multi_instance app (9 instances of mesh_4DEA70187D2D1944
+# per frame, 60 frames). The mesh replacement keeps the originals (preserveOriginalDrawCall) and adds a quad; the
+# second texture's material is replaced (mat_F21C4BCC08014719, 6 of the 9 draws). The graph, one instance per
+# replacement instance:
+#   counter (+1 per frame) -> late (value > 20) -> materialsOff: RtxOptionLayerAction on logic_materials_off.conf
+#   (rtx.enableReplacementMaterials = False) at priority 20000.
+# The counter reaches 21 at the end of frame 19 (2 after the instance's first frame), the layer is enabled when the
+# frame's requests resolve, and the replacement engine reads the switch at the next frame: from frame 20 on, no
+# material is replaced. seen (MeshHashChecker on the mesh's own hash) and clock (Time) are recorded too.
+def Xform "RootNode"
+{
+    def Scope "meshes"
+    {
+        def Xform "mesh_4DEA70187D2D1944"
+        {
+            int preserveOriginalDrawCall = 1
+
+            def Mesh "quad"
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-0.25, -0.25, 0), (0.25, -0.25, 0), (0.25, 0.25, 0), (-0.25, 0.25, 0)]
+                uniform token subdivisionScheme = "none"
+                double3 xformOp:translate = (0, 1, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+            }
+
+            def OmniGraph "Logic"
+            {
+                def OmniGraphNode "counter"
+                {
+                    custom token node:type = "lightspeed.trex.logic.Counter"
+                    custom int node:typeVersion = 1
+                    custom bool inputs:increment = 1
+                    custom float inputs:incrementValue = 1
+                    custom float outputs:value
+                }
+
+                def OmniGraphNode "late"
+                {
+                    custom token node:type = "lightspeed.trex.logic.GreaterThan"
+                    custom int node:typeVersion = 1
+                    custom float inputs:a
+                    custom float inputs:a.connect = </RootNode/meshes/mesh_4DEA70187D2D1944/Logic/counter.outputs:value>
+                    custom float inputs:b = 20
+                    custom bool outputs:result
+                }
+
+                def OmniGraphNode "materialsOff"
+                {
+                    custom token node:type = "lightspeed.trex.logic.RtxOptionLayerAction"
+                    custom int node:typeVersion = 1
+                    custom token inputs:configPath = "./logic_materials_off.conf"
+                    custom bool inputs:enabled
+                    custom bool inputs:enabled.connect = </RootNode/meshes/mesh_4DEA70187D2D1944/Logic/late.outputs:result>
+                    custom float inputs:priority = 20000
+                }
+
+                def OmniGraphNode "seen"
+                {
+                    custom token node:type = "lightspeed.trex.logic.MeshHashChecker"
+                    custom int node:typeVersion = 1
+                    custom token inputs:meshHash = "0x4DEA70187D2D1944"
+                    custom bool outputs:isUsed
+                    custom float outputs:usageCount
+                }
+
+                def OmniGraphNode "clock"
+                {
+                    custom token node:type = "lightspeed.trex.logic.Time"
+                    custom int node:typeVersion = 1
+                    custom float outputs:currentTime
+                }
+            }
+        }
+    }
+
+    def Scope "Looks"
+    {
+        def Material "mat_F21C4BCC08014719"
+        {
+            token outputs:mdl:surface.connect = </RootNode/Looks/mat_F21C4BCC08014719/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @AperturePBR_Opacity.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "AperturePBR_Opacity"
+                float inputs:reflection_roughness_constant = 0.1
+                token outputs:out
+            }
+        }
+    }
+}

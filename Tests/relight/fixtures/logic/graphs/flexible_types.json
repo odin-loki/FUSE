@@ -1,0 +1,7 @@
+{
+  "description": "Flexible variants: Add Float3 (typed + token), Multiply Float * Float3 through a connection, Subtract Float2 tokens, Divide Float4 / Float, EqualTo Float3, Compose / Decompose, Invert Float2, Select String (tokens), ConditionallyStore Hash, PreviousFrameValue Float3, Prim constants and a node newer than the runtime (skipped). Upstream quirks kept on purpose: a '[1, 2]' token parses as (0, 0) (parseVector only skips '('); an Any state left unauthored resolves to Float, so hashLoose falls back to the first (Float) variant and reads '0xCAFEBABE' as a hex float; relationship-valued Any inputs (primPick) never resolve to Prim.",
+  "stage": "flexible_types.usda",
+  "mesh": "0123456789ABCDEF",
+  "frames": 3,
+  "dt": 0.1
+}

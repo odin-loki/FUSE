@@ -1,0 +1,185 @@
+{
+  "first_instance_outputs": {
+    "0": {
+      "clock.currentTime": "0.125",
+      "counter.value": "2",
+      "late.result": "false",
+      "seen.isUsed": "true",
+      "seen.usageCount": "9"
+    },
+    "59": {
+      "clock.currentTime": "3.8125",
+      "counter.value": "61",
+      "late.result": "true",
+      "seen.isUsed": "true",
+      "seen.usageCount": "9"
+    }
+  },
+  "frames": 60,
+  "logic_frames": 60,
+  "logic_runs": [
+    {
+      "first": 0,
+      "last": 0,
+      "state": {
+        "added": 9,
+        "batches": 1,
+        "enabled": true,
+        "graphs": 1,
+        "instances": 9,
+        "layers": [
+          {
+            "config": "rtx-remix/mods/multi_logic/logic_materials_off.conf",
+            "enabled": false,
+            "priority": 20000,
+            "references": 9,
+            "strength": 1,
+            "threshold": 0.100000001
+          }
+        ],
+        "owners": 9,
+        "paused": false,
+        "removed": 0
+      }
+    },
+    {
+      "first": 1,
+      "last": 18,
+      "state": {
+        "added": 0,
+        "batches": 1,
+        "enabled": true,
+        "graphs": 1,
+        "instances": 9,
+        "layers": [
+          {
+            "config": "rtx-remix/mods/multi_logic/logic_materials_off.conf",
+            "enabled": false,
+            "priority": 20000,
+            "references": 9,
+            "strength": 1,
+            "threshold": 0.100000001
+          }
+        ],
+        "owners": 9,
+        "paused": false,
+        "removed": 0
+      }
+    },
+    {
+      "first": 19,
+      "last": 29,
+      "state": {
+        "added": 0,
+        "batches": 1,
+        "enabled": true,
+        "graphs": 1,
+        "instances": 9,
+        "layers": [
+          {
+            "config": "rtx-remix/mods/multi_logic/logic_materials_off.conf",
+            "enabled": true,
+            "priority": 20000,
+            "references": 9,
+            "strength": 1,
+            "threshold": 0.100000001
+          }
+        ],
+        "owners": 9,
+        "paused": false,
+        "removed": 0
+      }
+    },
+    {
+      "first": 30,
+      "last": 30,
+      "state": {
+        "added": 1,
+        "batches": 1,
+        "enabled": true,
+        "graphs": 1,
+        "instances": 9,
+        "layers": [
+          {
+            "config": "rtx-remix/mods/multi_logic/logic_materials_off.conf",
+            "enabled": true,
+            "priority": 20000,
+            "references": 9,
+            "strength": 1,
+            "threshold": 0.100000001
+          }
+        ],
+        "owners": 9,
+        "paused": false,
+        "removed": 1
+      }
+    },
+    {
+      "first": 31,
+      "last": 59,
+      "state": {
+        "added": 0,
+        "batches": 1,
+        "enabled": true,
+        "graphs": 1,
+        "instances": 9,
+        "layers": [
+          {
+            "config": "rtx-remix/mods/multi_logic/logic_materials_off.conf",
+            "enabled": true,
+            "priority": 20000,
+            "references": 9,
+            "strength": 1,
+            "threshold": 0.100000001
+          }
+        ],
+        "owners": 9,
+        "paused": false,
+        "removed": 0
+      }
+    }
+  ],
+  "mods": [
+    {
+      "errors": 0,
+      "name": "multi_logic",
+      "ok": true
+    }
+  ],
+  "stats_runs": [
+    {
+      "first": 0,
+      "last": 19,
+      "stats": {
+        "draws": 9,
+        "hidden": 0,
+        "lights_attached": 0,
+        "lights_deleted": 0,
+        "lights_game": 0,
+        "lights_replaced": 0,
+        "material_replaced": 6,
+        "mesh_replaced": 9,
+        "part_material_replaced": 6,
+        "parts": 9,
+        "preserved": 9
+      }
+    },
+    {
+      "first": 20,
+      "last": 59,
+      "stats": {
+        "draws": 9,
+        "hidden": 0,
+        "lights_attached": 0,
+        "lights_deleted": 0,
+        "lights_game": 0,
+        "lights_replaced": 0,
+        "material_replaced": 0,
+        "mesh_replaced": 9,
+        "part_material_replaced": 0,
+        "parts": 9,
+        "preserved": 9
+      }
+    }
+  ]
+}

@@ -1,0 +1,154 @@
+#usda 1.0
+(
+    defaultPrim = "RootNode"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+# RL-3.5 logic graph fixture: time-driven animation: Time -> Loop (ping-pong) -> Remap (easing) -> Smooth / Velocity; vector remaps.
+def Xform "RootNode"
+{
+    def Scope "meshes"
+    {
+        def Xform "mesh_0123456789ABCDEF"
+        {
+            def OmniGraph "LogicGraph"
+            {
+            def OmniGraphNode "clock"
+            {
+                custom token node:type = "lightspeed.trex.logic.Time"
+                custom int node:typeVersion = 1
+                custom float inputs:speedMultiplier = 2
+                custom float outputs:currentTime
+            }
+            def OmniGraphNode "bounce"
+            {
+                custom token node:type = "lightspeed.trex.logic.Loop"
+                custom int node:typeVersion = 1
+                custom float inputs:value
+                custom float inputs:value.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/clock.outputs:currentTime>
+                custom float inputs:minRange = 0
+                custom float inputs:maxRange = 1
+                custom token inputs:loopingType = "PingPong"
+                custom float outputs:loopedValue
+                custom bool outputs:isReversing
+            }
+            def OmniGraphNode "ease"
+            {
+                custom token node:type = "lightspeed.trex.logic.Remap"
+                custom int node:typeVersion = 1
+                custom float inputs:value
+                custom float inputs:value.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/bounce.outputs:loopedValue>
+                custom token inputs:easingType = "EaseInOut"
+                custom bool inputs:shouldReverse
+                custom bool inputs:shouldReverse.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/bounce.outputs:isReversing>
+                custom float inputs:outputMin = 0
+                custom float inputs:outputMax = 10
+                custom float outputs:output
+            }
+            def OmniGraphNode "smooth"
+            {
+                custom token node:type = "lightspeed.trex.logic.Smooth"
+                custom int node:typeVersion = 1
+                custom float inputs:input
+                custom float inputs:input.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/ease.outputs:output>
+                custom float inputs:smoothingFactor = 5
+                custom float outputs:output
+            }
+            def OmniGraphNode "speed"
+            {
+                custom token node:type = "lightspeed.trex.logic.Velocity"
+                custom int node:typeVersion = 1
+                custom float inputs:input
+                custom float inputs:input.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/ease.outputs:output>
+                custom float outputs:velocity
+            }
+            def OmniGraphNode "colour"
+            {
+                custom token node:type = "lightspeed.trex.logic.Remap"
+                custom int node:typeVersion = 1
+                custom float inputs:value
+                custom float inputs:value.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/bounce.outputs:loopedValue>
+                custom token inputs:easingType = "Sine"
+                custom float3 inputs:outputMin = (0, 0, 0)
+                custom float3 inputs:outputMax = (1, 2, 3)
+                custom float3 outputs:output
+            }
+            def OmniGraphNode "unit"
+            {
+                custom token node:type = "lightspeed.trex.logic.Normalize"
+                custom int node:typeVersion = 1
+                custom float3 inputs:input
+                custom float3 inputs:input.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/colour.outputs:output>
+                custom float3 outputs:output
+            }
+            def OmniGraphNode "len"
+            {
+                custom token node:type = "lightspeed.trex.logic.VectorLength"
+                custom int node:typeVersion = 1
+                custom float3 inputs:input
+                custom float3 inputs:input.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/colour.outputs:output>
+                custom float outputs:length
+            }
+            def OmniGraphNode "limited"
+            {
+                custom token node:type = "lightspeed.trex.logic.Clamp"
+                custom int node:typeVersion = 1
+                custom float inputs:value
+                custom float inputs:value.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/ease.outputs:output>
+                custom float inputs:minValue = 2
+                custom float inputs:maxValue = 8
+                custom float outputs:result
+            }
+            def OmniGraphNode "low"
+            {
+                custom token node:type = "lightspeed.trex.logic.Min"
+                custom int node:typeVersion = 1
+                custom float inputs:a
+                custom float inputs:a.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/ease.outputs:output>
+                custom float inputs:b = 5
+                custom float outputs:result
+            }
+            def OmniGraphNode "high"
+            {
+                custom token node:type = "lightspeed.trex.logic.Max"
+                custom int node:typeVersion = 1
+                custom float inputs:a
+                custom float inputs:a.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/ease.outputs:output>
+                custom float inputs:b = 5
+                custom float outputs:result
+            }
+            def OmniGraphNode "flip"
+            {
+                custom token node:type = "lightspeed.trex.logic.Invert"
+                custom int node:typeVersion = 1
+                custom float inputs:input
+                custom float inputs:input.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/bounce.outputs:loopedValue>
+                custom float outputs:output
+            }
+            def OmniGraphNode "elastic"
+            {
+                custom token node:type = "lightspeed.trex.logic.Remap"
+                custom int node:typeVersion = 1
+                custom float inputs:value
+                custom float inputs:value.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/bounce.outputs:loopedValue>
+                custom token inputs:easingType = "Elastic"
+                custom float inputs:outputMin = 0
+                custom float inputs:outputMax = 1
+                custom float outputs:output
+            }
+            def OmniGraphNode "bouncy"
+            {
+                custom token node:type = "lightspeed.trex.logic.Remap"
+                custom int node:typeVersion = 1
+                custom float inputs:value
+                custom float inputs:value.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/bounce.outputs:loopedValue>
+                custom token inputs:easingType = "Bounce"
+                custom float inputs:outputMin = 0
+                custom float inputs:outputMax = 1
+                custom float outputs:output
+            }
+            }
+        }
+    }
+}

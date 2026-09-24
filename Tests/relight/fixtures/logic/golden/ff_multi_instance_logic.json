@@ -1,0 +1,9 @@
+{
+  "app": "ff_multi_instance",
+  "description": "multi_logic: a logic graph on the 9 instances of mesh_4DEA70187D2D1944 enables an option layer (rtx.enableReplacementMaterials = False) once its per-instance counter passes 20: material replacements stop at frame 20.",
+  "mods": [
+    {"fixture": "multi_logic", "root": "remix"}
+  ],
+  "env": {"FUSE_RELIGHT_LOGIC_FIXED_DELTA_TIME": "0.0625"},
+  "switch": {"stat": "material_replaced", "before": 6, "after": 0, "frame": 20}
+}
