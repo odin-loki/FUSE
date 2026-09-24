@@ -1,4 +1,5 @@
 #include <fuse/log/logger.hpp>
+#include <fuse/platform/sleep.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -446,10 +447,16 @@ void Logger::flush() {
         if (g_async.consumerParked.load(std::memory_order_seq_cst)) {
             wakeConsumer();
         }
-        if (++spins < 64u) {
+        // Backoff: yield briefly, then short sleeps (~1 ms in total), then block 1 ms at a time so a
+        // slow sink never has flush() burn a core. sleepAtLeast, not sleep_for: on MinGW
+        // sleep_for(50us) returns at once and this loop became a busy spin for the whole wait.
+        ++spins;
+        if (spins < 64u) {
             std::this_thread::yield();
+        } else if (spins < 64u + 20u) {
+            platform::sleepAtLeast(std::chrono::microseconds(50));
         } else {
-            std::this_thread::sleep_for(std::chrono::microseconds(50));
+            platform::sleepAtLeast(std::chrono::milliseconds(1));
         }
     }
 }

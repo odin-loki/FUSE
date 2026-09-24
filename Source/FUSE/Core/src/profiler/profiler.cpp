@@ -1,5 +1,6 @@
 #include <fuse/profiler/profiler.hpp>
 
+#include <fuse/platform/sleep.hpp>
 #include <fuse/platform/thread.hpp>
 
 #include <algorithm>
@@ -126,7 +127,9 @@ void calibrateClock() {
     constexpr u64 kCalibrationNs = 10'000'000u;
     u64 ns = steadyNanoseconds();
     if (ns - g_clockNs0 < kCalibrationNs) {
-        std::this_thread::sleep_for(std::chrono::nanoseconds(kCalibrationNs - (ns - g_clockNs0)));
+        // sleep_for would truncate to whole ms on MinGW (and skip a sub-ms remainder entirely).
+        platform::sleepAtLeast(std::chrono::ceil<std::chrono::microseconds>(
+            std::chrono::nanoseconds(kCalibrationNs - (ns - g_clockNs0))));
     }
     const u64 ticks = readTicks();
     ns = steadyNanoseconds();

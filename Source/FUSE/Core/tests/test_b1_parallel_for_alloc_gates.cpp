@@ -15,6 +15,7 @@
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/jobs/parallel_for.hpp>
+#include <fuse/platform/sleep.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -199,7 +200,7 @@ bool runNested(std::vector<u32>& data, u32 stamp, bool stallChunks = false) {
             const u32 i = outer * kInner + inner;
             data[i] = stamp ^ i;
             if (stallChunks && ((stamp * 2654435761u) ^ i) % 997u == 0u) {
-                std::this_thread::sleep_for(std::chrono::microseconds(300));
+                fuse::platform::sleepAtLeast(std::chrono::microseconds(300));
             }
         });
     });
@@ -313,7 +314,7 @@ void testSubmitBurstsDoNotGrowQueues(u32 workers) {
             scheduler.submit([ctx = &context]() {
                 const u32 n = ctx->ran->fetch_add(1u, std::memory_order_relaxed);
                 if ((n & 31u) == 0u) {
-                    std::this_thread::sleep_for(std::chrono::microseconds(20));
+                    fuse::platform::sleepAtLeast(std::chrono::microseconds(20));
                 }
                 ctx->counter->signal();
             });

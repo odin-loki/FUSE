@@ -103,6 +103,16 @@ target_link_libraries(fuse_core_platform_hardening_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_platform_hardening_tests)
 add_test(NAME fuse_core_platform_hardening COMMAND fuse_core_platform_hardening_tests)
 
+# sleepAtLeast never returns early (MinGW sleep_for truncates sub-ms waits to nothing).
+add_executable(fuse_core_platform_sleep_tests
+    test_platform_sleep.cpp
+)
+
+target_link_libraries(fuse_core_platform_sleep_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_platform_sleep_tests)
+add_test(NAME fuse_core_platform_sleep COMMAND fuse_core_platform_sleep_tests)
+set_tests_properties(fuse_core_platform_sleep PROPERTIES TIMEOUT 120)
+
 add_executable(fuse_core_io_handle_tests
     test_io_handle.cpp
 )

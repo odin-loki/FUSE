@@ -6,6 +6,7 @@
 #include <fuse/core/sanitizer.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/platform/sleep.hpp>
 #include <fuse/terrain/chunk_grid.hpp>
 #include <fuse/terrain/chunk_mesh.hpp>
 #include <fuse/terrain/heightfield.hpp>
@@ -54,18 +55,6 @@ void withScheduler(u32 workers, Body&& body) {
     scheduler.initialize(workers);
     body();
     scheduler.shutdown();
-}
-
-/// Block for at least `duration`. std::this_thread::sleep_for cannot be trusted below 1 ms: on
-/// MinGW-w64 it is winpthreads' nanosleep, which truncates to whole milliseconds and returns at once
-/// for anything shorter (a 500 us sleep takes ~0.2 us, on Windows and under Wine alike). The
-/// streaming gates pace frames with sub-millisecond sleeps, so they top up against steady_clock.
-void sleepAtLeast(std::chrono::microseconds duration) {
-    const auto deadline = std::chrono::steady_clock::now() + duration;
-    std::this_thread::sleep_for(duration);
-    while (std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::yield();
-    }
 }
 
 f64 nowMs() {
@@ -560,7 +549,7 @@ void testLodStreamingAsync() {
                                      grid.resident_chunk_count() == 0);
              ++i) {
             terrain.update_lod(camera, 1.f / 60.f);
-            sleepAtLeast(std::chrono::microseconds(200));
+            fuse::platform::sleepAtLeast(std::chrono::microseconds(200));
         }
 
         // With wall-clock budgets enforced, a frame's loads must finish within the ~64 frames
@@ -584,7 +573,7 @@ void testLodStreamingAsync() {
                     ++missingInner;
                 }
             }
-            sleepAtLeast(std::chrono::microseconds(500));
+            fuse::platform::sleepAtLeast(std::chrono::microseconds(500));
             if (paceByCompletion) {
                 const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
                 while (grid.in_flight_request_count() > 0 && std::chrono::steady_clock::now() < deadline) {
@@ -598,7 +587,7 @@ void testLodStreamingAsync() {
                                      grid.queued_unload_count() > 0);
              ++i) {
             terrain.update_lod(camera, 1.f / 60.f);
-            sleepAtLeast(std::chrono::microseconds(200));
+            fuse::platform::sleepAtLeast(std::chrono::microseconds(200));
         }
         terrain.update_lod(camera, 1.f / 60.f);
 

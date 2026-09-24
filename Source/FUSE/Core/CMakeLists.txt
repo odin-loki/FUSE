@@ -73,6 +73,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/platform/dpi.hpp
     include/fuse/platform/profile.hpp
     include/fuse/platform/thread.hpp
+    include/fuse/platform/sleep.hpp
     include/fuse/platform/fiber.hpp
     include/fuse/platform/gl_context.hpp
     include/fuse/platform/window.hpp
@@ -111,6 +112,7 @@ set(FUSE_CORE_SOURCES
     src/jobs/job_counter.cpp
     src/jobs/cuda_jobs.cpp
     src/platform/platform_stub.cpp
+    src/platform/sleep.cpp
     src/platform/platform_hardening.cpp
     src/platform/crash_handler.cpp
     src/platform/dpi.cpp

@@ -17,6 +17,7 @@
 #include <fuse/net/snapshot_delta.hpp>
 #include <fuse/net/state_sync.hpp>
 #include <fuse/net/transport.hpp>
+#include <fuse/platform/sleep.hpp>
 
 #include "test_helpers.hpp"
 
@@ -260,7 +261,7 @@ int run_echo_client(u16 proxy_port, u32 total) {
     const u64 connect_deadline = now_us() + 10'000'000ull;
     while (peer != 0 && !client.is_connected(peer) && now_us() < connect_deadline) {
         client.poll([](const Packet&) {});
-        std::this_thread::sleep_for(std::chrono::microseconds(200));
+        fuse::platform::sleepAtLeast(std::chrono::microseconds(200));
     }
     if (peer == 0 || !client.is_connected(peer)) {
         return kChildConnectFailed;
@@ -292,7 +293,7 @@ int run_echo_client(u16 proxy_port, u32 total) {
             }
             ++next_expected;
         });
-        std::this_thread::sleep_for(std::chrono::microseconds(200));
+        fuse::platform::sleepAtLeast(std::chrono::microseconds(200));
     }
     if (status == kChildOk && next_expected < total) {
         status = kChildTimeout;
@@ -302,7 +303,7 @@ int run_echo_client(u16 proxy_port, u32 total) {
     const u64 linger = now_us() + 300'000ull;
     while (now_us() < linger) {
         client.poll([](const Packet&) {});
-        std::this_thread::sleep_for(std::chrono::microseconds(500));
+        fuse::platform::sleepAtLeast(std::chrono::microseconds(500));
     }
     client.destroy();
     return status;
@@ -356,7 +357,7 @@ void run_enet_two_process_case(const char* label, Impairment impairment, u32 tot
             child_done = true;
             child_status = WIFEXITED(status) ? WEXITSTATUS(status) : -2;
         }
-        std::this_thread::sleep_for(std::chrono::microseconds(200));
+        fuse::platform::sleepAtLeast(std::chrono::microseconds(200));
     }
     if (!child_done) {
         ::kill(child, SIGKILL);
@@ -541,7 +542,7 @@ void run_enet_unreliable_sequenced_case() {
         server.poll([](const Packet&) {});
         client.poll([](const Packet&) {});
         proxy.pump();
-        std::this_thread::sleep_for(std::chrono::microseconds(200));
+        fuse::platform::sleepAtLeast(std::chrono::microseconds(200));
     }
     expectTrue(client.is_connected(peer), "sequenced client connected through proxy");
 

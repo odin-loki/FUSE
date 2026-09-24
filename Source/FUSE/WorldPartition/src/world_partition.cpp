@@ -3,6 +3,7 @@
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/platform/sleep.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -10,7 +11,6 @@
 #include <limits>
 #include <mutex>
 #include <string>
-#include <thread>
 
 namespace fuse::world_partition {
 
@@ -69,8 +69,9 @@ void WorldPartition::init(const WorldPartitionDesc& desc) {
 
 void WorldPartition::destroy() {
     // Let in-flight jobs retire so stale completions cannot leak into a re-initialised partition.
+    // Up to ~1 s: sleepAtLeast, because sleep_for(200us) returns at once on MinGW.
     for (int attempt = 0; attempt < 5000 && m_async_queue.in_flight_count() > 0u; ++attempt) {
-        std::this_thread::sleep_for(std::chrono::microseconds(200));
+        fuse::platform::sleepAtLeast(std::chrono::microseconds(200));
     }
     for (auto& entry : m_cells) {
         WorldCell& cell = entry.second;
