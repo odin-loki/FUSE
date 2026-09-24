@@ -19,3 +19,4 @@
 
 # Vendored third-party trees pinned by sha256 (fuse_lint vendored-pins): keep upstream bytes (CRLF) as-is.
 Engine/lib/streamline/** -text
+Engine/lib/gdeflate/** -text
