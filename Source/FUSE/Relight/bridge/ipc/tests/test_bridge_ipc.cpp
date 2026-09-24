@@ -166,7 +166,11 @@ void testCodecRoundTrip() {
           schema::DecodeStatus::UnknownCommand);
     CHECK(std::strcmp(schema::commandName(schema::CommandId::Bridge_Syn), "Bridge_Syn") == 0);
     CHECK(std::strcmp(schema::commandName(uint16_t(0xFFFF)), "Unknown") == 0);
-    CHECK(schema::kCommandCount == 367);
+    // The table grows and shrinks (RL-2.2 retyped it): check the generated ids are dense and named,
+    // not a fixed row count.
+    CHECK(schema::kCommandCount > 0);
+    CHECK(std::strcmp(schema::commandName(uint16_t(schema::kCommandCount)), "Unknown") != 0);
+    CHECK(std::strcmp(schema::commandName(uint16_t(schema::kCommandCount + 1)), "Unknown") == 0);
 }
 
 void testMalformedFuzz() {

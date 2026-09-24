@@ -55,3 +55,5 @@ add_subdirectory(tap/capture)                                                   
 add_subdirectory(scene/instances)                                                        # RL-1.7
 add_subdirectory(capture/export)                                                         # RL-1.8
 add_subdirectory(mods/assets)                                                            # RL-3.3
+add_subdirectory(bridge/host)                                                            # RL-2.3
+add_subdirectory(bridge/client)                                                          # RL-2.2
