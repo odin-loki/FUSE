@@ -270,7 +270,20 @@ struct ShadeParams {
     /// WP-2.2 BRDF LUT (ltc::kLutWords, ltc::BrdfLut): compensated BRDF + area lights; empty = the
     /// WP-2.1 lobe.
     kernel::Span<const f32> brdf_lut;
+    /// WP-3.2 shadows: visibility in [0, 1] of light `slot` at the surface; each light's contribution
+    /// is multiplied by it (light.shade with LightingFrameConstants::shadowsLo / Hi != 0). Null = unshadowed.
+    f32 (*shadow)(const void* user, u32 slot, const SurfaceSample& s) = nullptr;
+    const void* shadow_user = nullptr;
 };
+
+/// One light's contribution, scaled by its shadow visibility when a shadow hook is set.
+FUSE_HOST_DEVICE inline math::Vec3 shadowed(const ShadeParams& p, u32 slot, const SurfaceSample& s, const math::Vec3& c) {
+    if (p.shadow == nullptr) {
+        return c;
+    }
+    const f32 visibility = p.shadow(p.shadow_user, slot, s);
+    return {c.x * visibility, c.y * visibility, c.z * visibility};
+}
 
 /// Shades one pixel; false (and zero radiance) for sky / out-of-range pixels.
 FUSE_HOST_DEVICE inline bool shade_pixel(const ShadeParams& p, u32 px, u32 py, math::Vec4& out) {
@@ -311,8 +324,9 @@ FUSE_HOST_DEVICE inline bool shade_pixel(const ShadeParams& p, u32 px, u32 py, m
     for (u32 i = 0; i < p.directional.size; ++i) {
         const u32 slot = p.directional[i];
         if (slot < p.lights.size) {
-            radiance = radiance + (compensated ? light_contribution(p.lights[slot], s, v, terms, p.brdf_lut.data)
-                                               : light_contribution(p.lights[slot], s, v));
+            radiance = radiance + shadowed(p, slot, s,
+                                           compensated ? light_contribution(p.lights[slot], s, v, terms, p.brdf_lut.data)
+                                                       : light_contribution(p.lights[slot], s, v));
         }
     }
     if (cluster < p.cluster_grid.size) {
@@ -321,8 +335,9 @@ FUSE_HOST_DEVICE inline bool shade_pixel(const ShadeParams& p, u32 px, u32 py, m
         for (u32 i = entry.offset; i < end; ++i) {
             const u32 slot = p.light_list[i];
             if (slot < p.lights.size) {
-                radiance = radiance + (compensated ? light_contribution(p.lights[slot], s, v, terms, p.brdf_lut.data)
-                                                   : light_contribution(p.lights[slot], s, v));
+                radiance = radiance + shadowed(p, slot, s,
+                                               compensated ? light_contribution(p.lights[slot], s, v, terms, p.brdf_lut.data)
+                                                           : light_contribution(p.lights[slot], s, v));
             }
         }
     }

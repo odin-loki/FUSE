@@ -943,7 +943,8 @@ void suite_format() {
            "file write + load round trip");
     expect(!geo::load_meshlet_file((dir / "missing.fusemeshlet").string(), loaded), "missing file rejected");
     expect(std::string(geo::meshlet_format_error_name(E::UnsupportedVersion)) == "unsupported-version", "error names");
-    expect(geo::meshlet_sidecar_path("a/b/rock.fusemesh") == (fs::path("a/b") / "rock.fusemeshlet").string(), "sidecar path");
+    // Compare as paths: operator/ joins with '\\' on Windows while the input keeps its '/'.
+    expect(fs::path(geo::meshlet_sidecar_path("a/b/rock.fusemesh")) == fs::path("a/b") / "rock.fusemeshlet", "sidecar path");
     fs::remove_all(dir);
 }
 

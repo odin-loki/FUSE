@@ -6,6 +6,7 @@
 #define FUSE_LC_LTC_GLSL
 
 #include "../common/brdf.glsl"
+#include "../shadow_vsm/vsm_shadow.glsl" // WP-3.2 shadow lookup (fuse_vsm_shadow)
 
 #define FUSE_LIGHT_RECT 4u
 #define FUSE_LIGHT_DISK 5u
@@ -504,8 +505,19 @@ vec3 fuse_lc_light_ms(FuseGpuLight light, FuseLcSurface s, vec3 v, FuseLcTerms t
 // (fuse_fw_shade): emissive + ambient x albedo x AO + the directional list + the cluster's lights
 // (ascending slot); with the BRDF LUT (F.brdfLut != 0) the compensated fuse_lc_light_ms, else the
 // WP-2.1 fuse_lc_light. CPU reference: lighting_gpu::shade_pixel (clustered_gpu_kernel.hpp).
+// WP-3.2: one light's contribution scaled by its shadow visibility (unchanged without shadows).
+vec3 fuse_lc_shadowed(uint64_t shadows, uint slot, FuseLcSurface s, vec3 c) {
+    if (shadows == 0ul) {
+        return c;
+    }
+    const float visibility = fuse_vsm_shadow(shadows, slot, s.position, s.normal);
+    precise vec3 r = vec3(c.x * visibility, c.y * visibility, c.z * visibility);
+    return r;
+}
+
 vec3 fuse_lc_shade_lights(FuseLcFrame F, FuseLcSurface s, vec3 v, uint cluster) {
     FuseGpuLightsRef lights = fuse_gpu_scene_lights(fuse_gpu_scene(F.scene));
+    const uint64_t shadows = uint64_t(F.shadowsLo) | (uint64_t(F.shadowsHi) << 32u);
     precise vec3 radiance = s.emissive + fuse_lc_vec3(F.ambient) * s.albedo * s.ao;
     const bool compensated = F.brdfLut != 0ul;
     FuseLcLutRef lut = FuseLcLutRef(F.brdfLut);
@@ -518,8 +530,9 @@ vec3 fuse_lc_shade_lights(FuseLcFrame F, FuseLcSurface s, vec3 v, uint cluster) 
     for (uint i = 0u; i < directionalCount; ++i) {
         const uint slot = directional.v[i];
         if (slot < F.lightCount) {
-            radiance = radiance + (compensated ? fuse_lc_light_ms(lights.v[slot], s, v, terms, lut)
-                                               : fuse_lc_light(lights.v[slot], s, v));
+            radiance = radiance + fuse_lc_shadowed(shadows, slot, s,
+                                                   compensated ? fuse_lc_light_ms(lights.v[slot], s, v, terms, lut)
+                                                               : fuse_lc_light(lights.v[slot], s, v));
         }
     }
     FuseLcWordsRef grid = FuseLcWordsRef(F.grid);
@@ -529,8 +542,9 @@ vec3 fuse_lc_shade_lights(FuseLcFrame F, FuseLcSurface s, vec3 v, uint cluster) 
     for (uint i = 0u; i < count; ++i) {
         const uint slot = list.v[offset + i];
         if (slot < F.lightCount) {
-            radiance = radiance + (compensated ? fuse_lc_light_ms(lights.v[slot], s, v, terms, lut)
-                                               : fuse_lc_light(lights.v[slot], s, v));
+            radiance = radiance + fuse_lc_shadowed(shadows, slot, s,
+                                                   compensated ? fuse_lc_light_ms(lights.v[slot], s, v, terms, lut)
+                                                               : fuse_lc_light(lights.v[slot], s, v));
         }
     }
     return radiance;

@@ -2,6 +2,7 @@
 // lighting_gpu::light_contribution). #include after lc_common.slang; compile with -fp-mode precise.
 #pragma once
 #include "../common/brdf.slang"
+#include "../shadow_vsm/vsm_shadow.slang" // WP-3.2 shadow lookup (fuseVsmShadow)
 
 static const uint kFuseLightRect = 4u;
 static const uint kFuseLightDisk = 5u;
@@ -449,8 +450,18 @@ float3 fuseLcLightMs(GpuLight light, LcSurface s, float3 v, FuseLcTerms t, float
 
 // The shade's light loop, shared by light.shade (lc_shade.slang) and the forward transparency pass
 // (fuseFwShade); twin of fuse_lc_shade_lights (lc_ltc.glsl). CPU reference: lighting_gpu::shade_pixel.
+// WP-3.2: one light's contribution scaled by its shadow visibility (unchanged without shadows).
+float3 fuseLcShadowed(uint64_t shadows, uint slot, LcSurface s, float3 c) {
+    if (shadows == 0ull) {
+        return c;
+    }
+    const float visibility = fuseVsmShadow(shadows, slot, s.position, s.normal);
+    return float3(c.x * visibility, c.y * visibility, c.z * visibility);
+}
+
 float3 fuseLcShadeLights(LcFrame F, LcSurface s, float3 v, uint cluster) {
     GpuLight* lights = fuseGpuSceneLights(fuseGpuScene(F.scene));
+    const uint64_t shadows = uint64_t(F.shadowsLo) | (uint64_t(F.shadowsHi) << 32u);
     float3 radiance = s.emissive + fuseLcVec3(F.ambient) * s.albedo * s.ao;
     const bool compensated = F.brdfLut != 0ull;
     float* lut = (float*)F.brdfLut;
@@ -463,7 +474,8 @@ float3 fuseLcShadeLights(LcFrame F, LcSurface s, float3 v, uint cluster) {
     for (uint i = 0u; i < directionalCount; ++i) {
         const uint slot = directional[i];
         if (slot < F.lightCount) {
-            radiance = radiance + (compensated ? fuseLcLightMs(lights[slot], s, v, terms, lut) : fuseLcLight(lights[slot], s, v));
+            radiance = radiance + fuseLcShadowed(shadows, slot, s,
+                                                 compensated ? fuseLcLightMs(lights[slot], s, v, terms, lut) : fuseLcLight(lights[slot], s, v));
         }
     }
     uint* grid = (uint*)F.grid;
@@ -473,7 +485,8 @@ float3 fuseLcShadeLights(LcFrame F, LcSurface s, float3 v, uint cluster) {
     for (uint i = 0u; i < count; ++i) {
         const uint slot = list[offset + i];
         if (slot < F.lightCount) {
-            radiance = radiance + (compensated ? fuseLcLightMs(lights[slot], s, v, terms, lut) : fuseLcLight(lights[slot], s, v));
+            radiance = radiance + fuseLcShadowed(shadows, slot, s,
+                                                 compensated ? fuseLcLightMs(lights[slot], s, v, terms, lut) : fuseLcLight(lights[slot], s, v));
         }
     }
     return radiance;

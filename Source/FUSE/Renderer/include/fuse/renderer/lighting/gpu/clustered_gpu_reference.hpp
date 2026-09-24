@@ -65,6 +65,9 @@ struct ShadeReferenceDesc {
     /// WP-2.2: ltc::kLutWords f32 (ltc::BrdfLut::data(), ClusteredLighting::brdfLut()): compensated
     /// BRDF + area lights, as the GPU with a LUT; null = the WP-2.1 lobe.
     const f32* brdfLut = nullptr;
+    /// WP-3.2: ShadeParams::shadow / shadow_user (null = unshadowed).
+    f32 (*shadow)(const void* user, u32 slot, const SurfaceSample& s) = nullptr;
+    const void* shadowUser = nullptr;
 };
 
 /// Shades every pixel ("light.shade" kernel on `backend`; CpuReference and CpuParallel are

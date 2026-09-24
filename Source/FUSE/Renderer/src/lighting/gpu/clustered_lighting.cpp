@@ -498,6 +498,8 @@ bool ClusteredLighting::beginFrame(u64 frameSerial, const LightingFrameDesc& fra
     c.directional = lists + m_layout.directional;
     c.lightList = lists + m_layout.lightList;
     c.brdfLut = m_lutBuffer.deviceAddress;
+    c.shadowsLo = static_cast<u32>(frame.shadows & 0xFFFFFFFFu); // WP-3.2 VsmShadowConstants (0 = unshadowed)
+    c.shadowsHi = static_cast<u32>(frame.shadows >> 32u);
     // The oracle's camera resolution (clustered_kernel::make_camera): same basis, same tangents.
     const clustered_kernel::CameraView view = clustered_kernel::make_camera(frame.camera);
     const math::Vec3 vecs[4] = {view.position, view.right, view.up, view.back};

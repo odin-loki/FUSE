@@ -61,8 +61,8 @@ struct FuseLcFrame {
     uint gbufferRoughMetal;
     uint gbufferDepth;
     uint gbufferEmissive;
-    uint reserved0;
-    uint reserved1;
+    uint shadowsLo; // WP-3.2: BDA of VsmShadowConstants (0 = unshadowed)
+    uint shadowsHi;
     float sliceDepth[68];
     float ndcX[36];
     float ndcY[20];

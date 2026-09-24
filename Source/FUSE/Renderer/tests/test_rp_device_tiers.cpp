@@ -119,7 +119,21 @@ void checkTierLogic() {
     expectTrue(caps.missingT0() == "Vulkan 1.3", "missingT0 names the API version");
 }
 
-#if defined(FUSE_VULKAN_BACKEND) && defined(__linux__)
+#if defined(FUSE_VULKAN_BACKEND) && (defined(__linux__) || defined(_WIN32))
+
+#if defined(__linux__)
+constexpr bool kMaskLayerAvailable = true;
+#else
+// Windows PE (Relight RL-0.7: Wine + Lavapipe): the mask layer and the second ICD are Linux-only, so
+// only the unmasked scenarios run (tier report, tier caps, optional features, feature exercise).
+constexpr bool kMaskLayerAvailable = false;
+int setenv(const char* name, const char* value, int /*overwrite*/) {
+    return _putenv_s(name, value);
+}
+int unsetenv(const char* name) {
+    return _putenv_s(name, "");
+}
+#endif
 
 constexpr const char* kValidationLayer = "VK_LAYER_KHRONOS_validation";
 constexpr const char* kMaskLayer = "VK_LAYER_FUSE_mask_features";
@@ -140,6 +154,7 @@ bool layerAvailable(const char* name) {
     return false;
 }
 
+#if defined(__linux__)
 std::string readFile(const std::string& path) {
     std::ifstream in(path);
     std::stringstream buffer;
@@ -212,6 +227,7 @@ int registerIcdTwice(const std::string& dir) {
     unsetenv("VK_DRIVER_FILES");
     return 0;
 }
+#endif // __linux__
 
 /// What the mask layer saw reach the driver at the last vkCreateDevice.
 struct DeviceCreateRecord {
@@ -231,6 +247,7 @@ struct DeviceCreateRecord {
     bool hasFeature(const char* name) const { return contains(features, name); }
 };
 
+#if defined(__linux__)
 std::vector<std::string> splitList(const std::string& text) {
     std::vector<std::string> out;
     size_t start = 0;
@@ -246,10 +263,12 @@ std::vector<std::string> splitList(const std::string& text) {
     }
     return out;
 }
+#endif
 
 /// Reads the record from the mask layer instance the loader has loaded (instance must be alive).
 DeviceCreateRecord lastDeviceCreate() {
     DeviceCreateRecord record{};
+#if defined(__linux__)
     void* handle = dlopen(g_layerLibrary.c_str(), RTLD_NOW | RTLD_NOLOAD);
     if (handle == nullptr) {
         return record;
@@ -266,6 +285,7 @@ DeviceCreateRecord lastDeviceCreate() {
         }
     }
     dlclose(handle);
+#endif
     return record;
 }
 
@@ -582,7 +602,7 @@ void runScenario(const Scenario& s) {
 
             // Query back: what reached the driver (recorded by the mask layer below validation).
             const DeviceCreateRecord record = lastDeviceCreate();
-            expectTrue(record.valid, tag + "mask layer recorded vkCreateDevice");
+            expectTrue(record.valid || !kMaskLayerAvailable, tag + "mask layer recorded vkCreateDevice");
             if (record.valid) {
                 for (u32 i = 0; i < kRenderFeatureCount; ++i) {
                     const auto f = static_cast<RenderFeature>(i);
@@ -639,6 +659,7 @@ void runScenario(const Scenario& s) {
 }
 
 int run(const char* layerDir) {
+#if defined(__linux__)
     if (layerDir == nullptr) {
         std::fprintf(stderr, "FAIL: --layer-dir required\n");
         return 1;
@@ -669,6 +690,17 @@ int run(const char* layerDir) {
         std::fprintf(stderr, "FAIL: %s not found under %s\n", kMaskLayer, layerDir);
         return 1;
     }
+#else
+    (void)layerDir;
+    const bool validation = layerAvailable(kValidationLayer);
+    if (validation) {
+        setenv("VK_INSTANCE_LAYERS", kValidationLayer, 1);
+        setenv("VK_LAYER_ENABLES", "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", 1);
+        setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", "true", 1);
+    } else {
+        std::printf("note: %s not available — running without validation\n", kValidationLayer);
+    }
+#endif
     {
         VulkanInstanceDesc probeDesc{};
         probeDesc.enableValidation = false;
@@ -770,8 +802,13 @@ int run(const char* layerDir) {
          .expectIndex = 0, .expectTier = RenderTier::T0, .expectHardwareTier = RenderTier::T0});
     add({.what = "legacy device ranks below T0 device", .mask = "0:api=1.2", .desc = allowLegacy, .expectIndex = 1});
 
+    size_t ran = 0;
     for (const Scenario& s : scenarios) {
+        if (!kMaskLayerAvailable && s.mask[0] != '\0') {
+            continue; // needs VK_LAYER_FUSE_mask_features (Linux)
+        }
         runScenario(s);
+        ++ran;
     }
     unsetenv("FUSE_MASK_FEATURES");
     unsetenv("FUSE_RENDER_TIER_MAX");
@@ -783,18 +820,18 @@ int run(const char* layerDir) {
         std::fprintf(stderr, "%d failure(s)\n", g_failures);
         return 1;
     }
-    std::printf("fuse_rp_device_tiers: OK (%zu scenarios, %s validation)\n", scenarios.size(),
+    std::printf("fuse_rp_device_tiers: OK (%zu of %zu scenarios, %s validation)\n", ran, scenarios.size(),
                 validation ? "with" : "without");
     return 0;
 }
 
-#endif // FUSE_VULKAN_BACKEND && __linux__
+#endif // FUSE_VULKAN_BACKEND && (__linux__ || _WIN32)
 
 } // namespace
 
 int main(int argc, char** argv) {
     checkTierLogic();
-#if defined(FUSE_VULKAN_BACKEND) && defined(__linux__)
+#if defined(FUSE_VULKAN_BACKEND) && (defined(__linux__) || defined(_WIN32))
     if (g_failures != 0) {
         return 1;
     }
@@ -811,7 +848,7 @@ int main(int argc, char** argv) {
     if (g_failures != 0) {
         return 1;
     }
-    std::printf("SKIP: tier logic OK; device checks need the Vulkan backend on Linux\n");
+    std::printf("SKIP: tier logic OK; device checks need the Vulkan backend on Linux or Windows\n");
     return kSkip;
 #endif
 }

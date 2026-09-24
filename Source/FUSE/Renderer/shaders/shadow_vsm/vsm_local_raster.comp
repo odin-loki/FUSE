@@ -1,0 +1,89 @@
+#version 460
+// WP-3.2 "vsm.local_raster": renders the local render list (vsm.local_list) into the local atlas.
+// vkCmdDispatchIndirect: one 64-thread workgroup per entry {light | face << 8, atlas page} (a spot's
+// page or one cube face of a point light); vsm.local_clear has cleared the page. The casters whose
+// conservative box (raster_math::caster_bounds) touches the light's range sphere
+// (raster_math::box_sphere, the CPU reference's own test) are walked in order; each thread takes a
+// triangle: view space of the face, skipped when every vertex is beyond the range, clipped against the
+// near plane (0, 1 or 2 triangles), projected, rasterised with the depth of the triangle's view plane
+// along each texel's ray (raster_math::persp_depth) times invRange. No shared memory, no barriers.
+// CPU reference: VsmRasterReference::renderLocal. GLSL twin of vsm_local_raster.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "vsm_raster_common.glsl"
+
+layout(local_size_x = 64) in;
+
+void main() {
+    FuseVsmShadowRef S = fuse_vsmr_shadow();
+    const uint tid = gl_LocalInvocationIndex;
+    const uint words = fuse_handle_index(S.workHandle);
+    const uint key = fuse_vsmr_words[words].w[FUSE_VSMR_WORD_LOCAL_LIST + gl_WorkGroupID.x * 2u];
+    const uint page = fuse_vsmr_words[words].w[FUSE_VSMR_WORD_LOCAL_LIST + gl_WorkGroupID.x * 2u + 1u];
+    const uint light = key & 0xFFu;
+    const uint face = (key >> 8u) & 0xFFu;
+    if (tid == 0u) {
+        atomicAdd(fuse_vsmr_words[words].w[FUSE_VSMR_WORD_LOCAL_PAGES], 1u);
+    }
+    if (light >= min(S.localCount, FUSE_VSMR_MAX_LOCAL) || S.localPagesX == 0u) {
+        return;
+    }
+    const FuseVsmLocal e = S.local[light];
+    vec3 f;
+    vec3 r;
+    vec3 u;
+    fuse_vsmr_local_basis(e, face, f, r, u);
+    const ivec2 origin = ivec2((page % S.localPagesX) * 128u, (page / S.localPagesX) * 128u);
+    const uint image = fuse_handle_index(S.localPool);
+    FuseGpuSceneHeaderRef scene = fuse_gpu_scene(S.scene);
+    FuseGpuInstancesRef instances = fuse_gpu_scene_instances(scene);
+    FuseGpuTransformsRef transforms = fuse_gpu_scene_transforms(scene);
+    FuseGpuMeshesRef meshes = fuse_gpu_scene_meshes(scene);
+    const uint meshCount = scene.counts[FUSE_GPU_SCENE_MESHES];
+    const uint instanceCount = S.instanceCount;
+    const vec3 lightPos = vec3(e.position[0], e.position[1], e.position[2]);
+    uint tris = 0u;
+    for (uint i = 0u; i < instanceCount; ++i) {
+        const FuseGpuInstance inst = instances.v[i];
+        if (inst.mesh >= meshCount) {
+            continue;
+        }
+        const FuseGpuMesh mesh = meshes.v[inst.mesh];
+        const FuseGpuTransform xf = transforms.v[i];
+        vec3 c;
+        vec3 x;
+        if (!fuse_vsmr_caster_bounds(inst, mesh, xf, c, x) || !fuse_vsmr_box_sphere(c, x, lightPos, e.range)) {
+            continue;
+        }
+        const uint triangles = mesh.indexCount / 3u;
+        for (uint t = tid; t < triangles; t += FUSE_VSMR_THREADS) {
+            vec3 w[3];
+            if (!fuse_vsmr_triangle_world(scene, mesh, xf, t, w)) {
+                continue;
+            }
+            vec3 v[3];
+            for (uint j = 0u; j < 3u; ++j) {
+                v[j] = fuse_vsmr_local_view(e, f, r, u, w[j]);
+            }
+            if (v[0].z > e.range && v[1].z > e.range && v[2].z > e.range) {
+                continue;
+            }
+            FuseVsmrTri clipped[2];
+            const uint n = fuse_vsmr_clip_project(e, v, clipped);
+            for (uint j = 0u; j < n; ++j) {
+                FuseVsmrSetup s;
+                if (!fuse_vsmr_setup(clipped[j], s)) {
+                    continue;
+                }
+                ++tris;
+                for (int py = s.box.y; py <= s.box.w; ++py) {
+                    for (int px = s.box.x; px <= s.box.z; ++px) {
+                        fuse_vsmr_write_local(image, origin, clipped[j], s, px, py, e);
+                    }
+                }
+            }
+        }
+    }
+    if (tris != 0u) {
+        atomicAdd(fuse_vsmr_words[words].w[FUSE_VSMR_WORD_LOCAL_TRIANGLES], tris);
+    }
+}

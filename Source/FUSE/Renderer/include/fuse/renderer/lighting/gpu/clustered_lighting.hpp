@@ -117,6 +117,10 @@ struct LightingFrameDesc {
     /// G-buffer source for addShade (its RT0, RT1, RT2, RT4 and RT5 are bound as bindless sampled
     /// images; rebound only when the images change). Null: assignment only.
     const material_resolve::MaterialResolve* gbuffer = nullptr;
+    /// WP-3.2: BDA of this frame's VsmShadowConstants (VsmShadows::shadowConstantsAddress()); light.shade
+    /// and the forward pass then scale each shadowed light by its visibility. The shadow images must be
+    /// declared for the reading passes (VsmShadows::addSamplingUse). 0 = unshadowed.
+    u64 shadows = 0;
 };
 
 struct LightingGraphRefs {

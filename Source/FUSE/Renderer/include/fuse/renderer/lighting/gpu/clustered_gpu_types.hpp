@@ -76,8 +76,8 @@ struct LightingFrameConstants {
     u32 gbufferRoughMetal = 0;
     u32 gbufferDepth = 0;
     u32 gbufferEmissive = 0;
-    u32 reserved0 = 0;
-    u32 reserved1 = 0;
+    u32 shadowsLo = 0;     ///< WP-3.2: BDA of the VsmShadowConstants light.shade samples (low / high
+    u32 shadowsHi = 0;     ///< 32 bits; 0 = unshadowed). LightingFrameDesc::shadows.
     f32 sliceDepth[68] = {}; ///< [s] = near depth of slice s, [slicesZ] = far depth of the last slice
     f32 ndcX[36] = {};       ///< [x] = NDC x of tile column edge x (0..tilesX)
     f32 ndcY[20] = {};       ///< [y] = NDC y of tile row edge y (0..tilesY; row 0 = top, ndc +1)

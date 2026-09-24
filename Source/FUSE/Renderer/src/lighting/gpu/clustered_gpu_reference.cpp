@@ -113,6 +113,8 @@ ShadeParams makeShadeParams(const ShadeReferenceDesc& desc, math::Vec4* out) {
     if (desc.brdfLut != nullptr) {
         p.brdf_lut = {desc.brdfLut, ltc::kLutWords};
     }
+    p.shadow = desc.shadow;
+    p.shadow_user = desc.shadowUser;
     return p;
 }
 
