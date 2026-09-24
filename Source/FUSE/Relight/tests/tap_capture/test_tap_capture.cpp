@@ -8,7 +8,9 @@
 // rl_translate_replay do). Every draw's asset key and geometry hashes, bound texture hashes,
 // classification and translation (material, fog, transforms, lights, camera), and every frame's
 // translation summary, must be equal; the capture record must hold the documented lines;
-// createTapForDevice must build every mode.
+// createTapForDevice must build every mode. With the capture export on, the same stream writes the
+// RL-1.8 capture (USDA + store + DDS) at device destruction or when its frame window closes, never into a
+// non-empty directory.
 #include <fuse/relight/scene/translate/translate_json.hpp>
 #include <fuse/relight/tap/capture_tap.hpp>
 #include <fuse/relight/tap/device_tap.hpp>
@@ -18,6 +20,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <optional>
@@ -458,12 +461,94 @@ void testFactory() {
     std::remove("rl_tap_capture_factory_record.jsonl.1");
 }
 
+// ---- capture export (RL-1.8 live) -------------------------------------------------------------------
+
+std::size_t filesWithExtension(const std::filesystem::path& dir, const std::string& ext) {
+    std::size_t n = 0;
+    std::error_code ec;
+    for (auto it = std::filesystem::recursive_directory_iterator(dir, ec);
+         !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
+        n += it->is_regular_file() && it->path().extension() == ext;
+    }
+    return n;
+}
+
+/// Runs App through a CaptureTap exporting to `dir` with the frame window [first, first + frames).
+/// Returns the export's result; `writtenBeforeDestroy` whether the window closed at a Present.
+CaptureExportResult runExport(const std::string& dir, std::uint64_t first, std::uint64_t frames,
+                              bool& writtenBeforeDestroy) {
+    std::atomic<std::uint32_t> counter{0};
+    CaptureTapConfig config;
+    config.texture.renderTargetCounter = &counter;
+    config.exportConfig.dir = dir;
+    config.exportConfig.firstFrame = first;
+    config.exportConfig.frames = frames;
+    config.exportConfig.gameId = "rl_tap_capture_unit";
+    CaptureTap tap(std::move(config));
+    CHECK(!tap.isOpen()); // no capture record path: the export alone
+    CHECK(tap.captureExport() != nullptr);
+    writtenBeforeDestroy = false;
+    tap.setFrameSink([&](std::uint64_t frame, const std::vector<CaptureDrawRecord>& draws) {
+        (void)draws;
+        // The sink runs after the export saw the frame.
+        if (frame + 1 == first + frames && tap.captureExport()) {
+            writtenBeforeDestroy = tap.captureExport()->written();
+        }
+    });
+    App app;
+    app.run(tap, true);
+    CHECK(tap.captureExport() && tap.captureExport()->written());
+    return tap.captureExport() ? tap.captureExport()->result() : CaptureExportResult{};
+}
+
+void testCaptureExport() {
+    namespace fs = std::filesystem;
+    const fs::path dir = "rl_tap_capture_export";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::remove_all("rl_tap_capture_export_1", ec);
+    fs::remove_all("rl_tap_capture_export_window", ec);
+
+    bool early = false;
+    const CaptureExportResult all = runExport(dir.string(), 0, 0, early);
+    CHECK(all.ok);
+    CHECK(all.dir == dir.string());
+    CHECK(all.framesCaptured == 2);
+    CHECK(all.meshes >= 1 && all.instances >= 1 && all.keys >= 1);
+    CHECK(all.textures >= 1);
+    CHECK(filesWithExtension(dir, ".usda") >= 2); // stage + mesh / material layers
+    CHECK(filesWithExtension(dir, ".dds") >= 1);  // the managed texture's canonical bytes
+    CHECK(fs::is_regular_file(dir / "store" / "db" / "remaster_db.json"));
+    for (const std::string& e : all.errors) {
+        std::fprintf(stderr, "  export: %s\n", e.c_str());
+    }
+
+    // An existing, non-empty directory is kept: the second capture goes to <dir>_1.
+    const CaptureExportResult again = runExport(dir.string(), 0, 0, early);
+    CHECK(again.ok && again.dir == dir.string() + "_1");
+    CHECK(fs::is_regular_file(dir / "store" / "db" / "remaster_db.json"));
+
+    // Frame window: frame 1 only, written at its Present (before device destruction).
+    const CaptureExportResult one = runExport("rl_tap_capture_export_window", 1, 1, early);
+    CHECK(one.ok && one.framesCaptured == 1);
+    CHECK(early);
+
+    // The factory reads the options: off by default.
+    CHECK(!CaptureExportConfig::fromOptions().enabled());
+    CHECK(!processExeName().empty() && !processExeStem().empty());
+
+    fs::remove_all(dir, ec);
+    fs::remove_all("rl_tap_capture_export_1", ec);
+    fs::remove_all("rl_tap_capture_export_window", ec);
+}
+
 } // namespace
 
 int main() {
     testLiveEqualsSeparate(true);
     testLiveEqualsSeparate(false);
     testFactory();
+    testCaptureExport();
     std::printf("rl_tap_capture_unit: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

@@ -25,12 +25,23 @@
    fog states, cameras, camera cut) with the replay's frame line - exactly, as both print through
    scene/translate/translate_json.hpp.
 
+5. With --export-replay and --capture-diff (RL-1.8 live): the run also has relight.tap.captureExport on
+   (FUSE_RELIGHT_TAP_CAPTURE_EXPORT=1, _DIR=capture_export; with --export-window F:N also _FIRST_FRAME=F and
+   _FRAMES=N, so d3d9.dll writes the capture when frame F+N-1 is presented): d3d9.dll writes the USDA + POCO
+   store + DDS capture itself (tap/capture/capture_export_live.hpp: SceneModel + GameCapturer on CaptureTap's
+   frames). rl_capture_export_replay replays the recorded stream of the same run into DIR/check/export_replay
+   (--game <app>, and --first-frame F --frames N), and Tools/FUSE/Relight/capture_diff.py must find the live
+   capture and the replayed one identical (files, hash_key rows, assets, POCO records, blobs, DDS bytes, USD
+   prims, attributes and transforms).
+
   rl_capture_live.py --exe app.exe --app ff_lit --d3d9 d3d9.dll --d3d8 d3d8.dll --runner run.sh
       --prefix-root DIR --geometry-replay geometry_replay.exe --texture-replay tests.exe
       --classify-replay rl_classify_replay.exe [--translate-replay rl_translate_replay.exe]
-      [--emulator 'runner|prefix'] --out DIR
+      [--export-replay rl_capture_export_replay.exe --capture-diff capture_diff.py [--export-window F:N]]
+      [--emulator 'runner|prefix'] --out DIR [--keep]
   rl_capture_live.py --from-run DIR ...   (reuse a run directory: relight_tap.jsonl, relight_capture.jsonl,
-                                           <app>.json)
+                                           <app>.json, capture_export/)
+On a pass the bulky outputs (the run's streams and captures, the replayed capture) are removed unless --keep.
 Exit codes: 0 pass, 1 fail, 77 skip (no Wine / Xvfb).
 """
 import argparse
@@ -265,6 +276,65 @@ def compare(capture, geo, resolved, snaps, tex_errors, classified):
     return errors, counts
 
 
+def export_window(args):
+    """(first frame, frame count) of --export-window F:N, or None."""
+    if not args.export_window:
+        return None
+    first, _, count = args.export_window.partition(":")
+    return int(first), int(count or 0)
+
+
+def export_env(args):
+    if not args.export_replay:
+        return {}
+    env = {"FUSE_RELIGHT_TAP_CAPTURE_EXPORT": "1", "FUSE_RELIGHT_TAP_CAPTURE_EXPORT_DIR": "capture_export"}
+    window = export_window(args)
+    if window:
+        env["FUSE_RELIGHT_TAP_CAPTURE_EXPORT_FIRST_FRAME"] = str(window[0])
+        env["FUSE_RELIGHT_TAP_CAPTURE_EXPORT_FRAMES"] = str(window[1])
+    return env
+
+
+def check_export(args, run_dir, work):
+    """RL-1.8 live: the capture d3d9.dll wrote == rl_capture_export_replay's capture of the same run
+    (capture_diff). Returns (errors, counts)."""
+    live = os.path.join(run_dir, "capture_export")
+    if not os.path.isdir(live):
+        return ["d3d9.dll wrote no capture (%s)" % live], {}
+    extra = [d for d in os.listdir(run_dir) if d.startswith("capture_export") and d != "capture_export"]
+    errors = ["unexpected capture directories %s" % sorted(extra)] if extra else []
+    out = os.path.join(work, "export_replay")
+    if os.path.isdir(out):
+        shutil.rmtree(out)
+    cmd = emulator(args) + [args.export_replay, "--stream", os.path.abspath(os.path.join(run_dir, "relight_tap.jsonl")),
+                            "--sidecar", os.path.abspath(os.path.join(run_dir, args.app + ".json")),
+                            "--out", out, "--game", args.app]
+    window = export_window(args)
+    if window:
+        cmd += ["--first-frame", str(window[0]), "--frames", str(window[1])]
+    rc, stdout, stderr = run_tool(cmd)
+    summary_path = os.path.join(out, "summary.json")
+    if rc not in (0, 1) or not os.path.isfile(summary_path):
+        raise RuntimeError("rl_capture_export_replay exited with %d: %s" % (rc, (stdout + stderr)[-2000:]))
+    with open(summary_path) as f:
+        summary = json.load(f)
+    # The replay's own RL-1.8 checks (re-ingest, USDA, DDS) are rl_capture_export_<app>'s; here they are
+    # reported, and the capture it wrote is the oracle of the live one.
+    replay_failures = summary.get("failures", [])
+    rc, text = run_tool([sys.executable, args.capture_diff, live, os.path.join(out, "capture"), "--max", "20"])[:2]
+    if rc != 0:
+        errors.append("live capture != replayed capture (capture_diff exit %d):" % rc)
+        errors.extend("    " + l for l in text.strip().splitlines()[:40])
+    c = summary.get("counts", {})
+    counts = dict(frames=c.get("frames_captured", 0), meshes=c.get("meshes", 0), materials=c.get("materials", 0),
+                  textures=c.get("textures", 0), instances=c.get("instances", 0),
+                  lights=c.get("sphere_lights", 0) + c.get("distant_lights", 0), keys=len(summary.get("keys", [])),
+                  replay_failures=replay_failures)
+    if counts["frames"] < 1:
+        errors.append("the replay captured no frame")
+    return errors, counts
+
+
 def check(args, run_dir, work):
     stream_path = os.path.join(run_dir, "relight_tap.jsonl")
     capture_path = os.path.join(run_dir, "relight_capture.jsonl")
@@ -290,7 +360,25 @@ def check(args, run_dir, work):
         terr, tcounts = compare_translation(capture, translated)
         errors.extend("translation: " + e for e in terr)
         counts["translate"] = tcounts
+    if args.export_replay:
+        eerr, ecounts = check_export(args, run_dir, work)
+        errors.extend("capture export: " + e for e in eerr)
+        counts["export"] = ecounts
     return errors, counts
+
+
+def cleanup(args, run_dir, work):
+    """Removes the bulky outputs of a passing run (disk space: 28 apps x captures)."""
+    if args.keep:
+        return
+    for p in (os.path.join(work, "export_replay"), os.path.join(run_dir, "capture_export")):
+        if os.path.isdir(p):
+            shutil.rmtree(p, ignore_errors=True)
+    if not args.from_run:
+        for name in ("relight_tap.jsonl", "relight_capture.jsonl", args.app + ".json", args.app + ".rgba"):
+            p = os.path.join(run_dir, name)
+            if os.path.isfile(p):
+                os.remove(p)
 
 
 def main():
@@ -305,11 +393,17 @@ def main():
     p.add_argument("--texture-replay", required=True)
     p.add_argument("--classify-replay", required=True)
     p.add_argument("--translate-replay")
+    p.add_argument("--export-replay")
+    p.add_argument("--capture-diff")
+    p.add_argument("--export-window")
+    p.add_argument("--keep", action="store_true")
     p.add_argument("--emulator", default="")
     p.add_argument("--from-run")
     p.add_argument("--out", required=True)
     args = p.parse_args()
     args.out = os.path.abspath(args.out)
+    if bool(args.export_replay) != bool(args.capture_diff):
+        p.error("--export-replay and --capture-diff go together")
     os.makedirs(args.out, exist_ok=True)
     if args.from_run:
         run_dir = args.from_run
@@ -321,7 +415,7 @@ def main():
         rc, text = TAP.run_app(args, args.exe, run_dir, {
             "FUSE_RELIGHT": "1", "FUSE_RELIGHT_TAP_MODE": "capture",
             "FUSE_RELIGHT_TAP_CAPTURE_PATH": "relight_capture.jsonl", "FUSE_RELIGHT_TAP_CAPTURE_RECORD": "1",
-            "FUSE_RELIGHT_TAP_RECORD_PATH": "relight_tap.jsonl"})
+            "FUSE_RELIGHT_TAP_RECORD_PATH": "relight_tap.jsonl", **export_env(args)})
         if rc == SKIP:
             print(text.strip())
             return SKIP
@@ -329,8 +423,9 @@ def main():
             print(text.strip()[-4000:])
             print("FAIL: %s: exited with %d" % (args.app, rc))
             return 1
+    work = os.path.join(args.out, "check")
     try:
-        errors, c = check(args, run_dir, os.path.join(args.out, "check"))
+        errors, c = check(args, run_dir, work)
     except RuntimeError as e:
         print("FAIL: %s: %s" % (args.app, e))
         return 1
@@ -348,6 +443,14 @@ def main():
         print("PASS: %s: live TranslateTap == rl_translate_replay on %d draws (%d translated, %d light(s) added) and "
               "%d frame(s) (%d frame light(s))" % (args.app, t["draws"], t["translated"], t["lights"], t["frames"],
                                                    t["frame_lights"]))
+    if "export" in c:
+        e = c["export"]
+        print("PASS: %s: live capture export == rl_capture_export_replay (capture_diff) on %d frame(s)%s: %d mesh(es), "
+              "%d material(s), %d texture(s), %d instance(s), %d light(s), %d key(s)%s"
+              % (args.app, e["frames"], " (window %s)" % args.export_window if args.export_window else "", e["meshes"],
+                 e["materials"], e["textures"], e["instances"], e["lights"], e["keys"],
+                 "; replay's own checks: %s" % "; ".join(e["replay_failures"][:3]) if e["replay_failures"] else ""))
+    cleanup(args, run_dir, work)
     return 0
 
 

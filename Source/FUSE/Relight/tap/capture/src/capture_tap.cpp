@@ -18,6 +18,10 @@ namespace tex = capture::texture;
 
 namespace {
 
+// D3D9 state indices the capture export reads (D3DRENDERSTATETYPE / D3DSAMPLERSTATETYPE values).
+constexpr std::uint32_t kD3DRS_CULLMODE = 22;
+constexpr std::uint32_t kD3DSAMP_ADDRESSU = 1, kD3DSAMP_ADDRESSV = 2, kD3DSAMP_MAGFILTER = 5;
+
 // ---- formatting (the replay tools' spelling, so the checks compare strings) ------------------------
 
 std::string h64(std::uint64_t v) { // geometry_replay: lower-case, no prefix
@@ -160,6 +164,7 @@ CaptureTapConfig CaptureTapConfig::fromOptions() {
     CaptureTapConfig c;
     c.texture = tex::textureTrackerConfigFromOptions();
     c.geometry = geo::GeometryCaptureConfig::fromOptions();
+    c.exportConfig = CaptureExportConfig::fromOptions();
     return c;
 }
 
@@ -185,9 +190,18 @@ geo::GeometryCaptureConfig CaptureTap::wireGeometry(geo::GeometryCaptureConfig c
     return config;
 }
 
+namespace {
+tex::TextureTrackerConfig textureConfig(tex::TextureTrackerConfig config, const CaptureExportConfig& exportConfig) {
+    if (exportConfig.enabled()) {
+        config.retainShadowAfterHash = true; // the DDS files hold the canonical mip 0 TextureTracker hashed
+    }
+    return config;
+}
+} // namespace
+
 CaptureTap::CaptureTap(CaptureTapConfig config)
     : m_forward(std::move(config.forward)),
-      m_textures(config.texture, &m_registry),
+      m_textures(textureConfig(config.texture, config.exportConfig), &m_registry),
       m_translate(nullptr,
                   [this](const scene::TranslatedDraw& d) {
                       m_lastTranslated = d;
@@ -199,6 +213,9 @@ CaptureTap::CaptureTap(CaptureTapConfig config)
                   }),
       m_geometry(wireGeometry(std::move(config.geometry))) {
     m_geometry.setDrawSink([this](const geo::CapturedDrawPtr& d) { m_lastGeometry = d; });
+    if (config.exportConfig.enabled()) {
+        m_export = std::make_unique<LiveCaptureExport>(*this, std::move(config.exportConfig));
+    }
     if (!config.path.empty()) {
         m_file = std::fopen(config.path.c_str(), "wb");
         if (!m_file) {
@@ -216,6 +233,9 @@ CaptureTap::~CaptureTap() {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_destroyed) {
         flushFrame(true);
+    }
+    if (m_export) {
+        m_export->finish();
     }
     if (m_file) {
         std::fclose(m_file);
@@ -264,6 +284,9 @@ void CaptureTap::onDeviceDestroy() {
         m_forward->onDeviceDestroy();
     }
     flushFrame(true);
+    if (m_export) {
+        m_export->finish(); // before the packages drop their state (texture bytes)
+    }
     m_textures.onDeviceDestroy();
     m_translate.onDeviceDestroy();
     m_geometry.onDeviceDestroy();
@@ -398,6 +421,15 @@ DrawDecision CaptureTap::onDraw(const DrawCall& call, const DrawState& state) {
             r.textures.push_back({slot, id, m_textures.imageHash(id), m_textures.descriptorHash(id)});
         }
     }
+    if (state.renderStates) {
+        r.cullMode = state.renderStates[kD3DRS_CULLMODE];
+    }
+    if (const std::int32_t slot = r.translation.material.colorTextureSlots[0];
+        r.translated && state.samplerStates && slot >= 0 && slot < std::int32_t(kSamplerSlotCount)) {
+        r.colorSampler.addressU = state.samplerStates[slot][kD3DSAMP_ADDRESSU];
+        r.colorSampler.addressV = state.samplerStates[slot][kD3DSAMP_ADDRESSV];
+        r.colorSampler.magFilter = state.samplerStates[slot][kD3DSAMP_MAGFILTER];
+    }
     m_pending.push_back(std::move(r));
     // Advisory until Relight renders: DXVK keeps drawing everything.
     return DrawDecision::Raster;
@@ -476,6 +508,9 @@ void CaptureTap::flushFrame(bool final) {
                                                            r.geometry->assetHash(m_geometry.config().assetRule));
         }
     }
+    if (m_export) {
+        m_export->onFrame(m_frame, m_pending, !final);
+    }
     if (m_sink && (!m_pending.empty() || !final)) {
         m_sink(m_frame, m_pending);
     }
@@ -545,6 +580,9 @@ std::unique_ptr<IRelightTap> createTapForDevice(const RuntimeConfig& config, uns
     }
     CaptureTapConfig c = CaptureTapConfig::fromOptions();
     c.path = devicePath(config.capturePath, deviceOrdinal);
+    if (c.exportConfig.enabled()) {
+        c.exportConfig.dir = devicePath(c.exportConfig.dir, deviceOrdinal);
+    }
     if (config.captureRecord) {
         c.forward = std::make_unique<RecordingTap>(devicePath(config.recordPath, deviceOrdinal));
     }

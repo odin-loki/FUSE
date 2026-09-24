@@ -16,7 +16,13 @@
 #                              material, fog, transforms, clip plane, lights, camera, and every frame's
 #                              light list, fog and cameras). The replay tests
 #                              (rl_capture_geometry_*, rl_capture_texture_*, rl_classify_capture_*) stay
-#                              the oracles' own checks. Skips (77) without Wine / Xvfb.
+#                              the oracles' own checks. RL-1.8 live: the run also has
+#                              relight.tap.captureExport on, so d3d9.dll writes the USDA + POCO store +
+#                              DDS capture itself (capture_export_live.hpp), and it must equal, under
+#                              Tools/FUSE/Relight/capture_diff.py, the capture rl_capture_export_replay
+#                              writes from the recorded stream of the same run (ff_multi_instance and its
+#                              D3D8 twin with a frame window, 10:20, written at that frame's Present).
+#                              Skips (77) without Wine / Xvfb.
 
 add_executable(fuse_relight_tap_capture_tests test_tap_capture.cpp)
 target_link_libraries(fuse_relight_tap_capture_tests PRIVATE fuse_relight_tap_capture)
@@ -58,6 +64,10 @@ set(_rl_live_apps
     d3d8_texture_formats d3d8_shader_sm1)
 # The RL-1.5 apps: the live TranslateTap is compared with rl_translate_replay too.
 set(_rl_live_translate_apps ff_lit ff_alpha ff_fog d3d8_ff_lit d3d8_ff_alpha d3d8_ff_fog)
+# The live capture export (RL-1.8) vs rl_capture_export_replay: every app; these with a frame window.
+# rl_capture_export_replay is defined by capture/export (added after this directory; resolved at generation).
+set(_rl_live_export_window_apps ff_multi_instance d3d8_ff_multi_instance)
+set(_rl_live_diff "${_rl_live_repo}/Tools/FUSE/Relight/capture_diff.py")
 foreach(_app IN LISTS _rl_live_apps)
     if(NOT TARGET rl_app_${_app})
         continue()
@@ -65,6 +75,10 @@ foreach(_app IN LISTS _rl_live_apps)
     set(_rl_live_translate "")
     if(_app IN_LIST _rl_live_translate_apps)
         set(_rl_live_translate --translate-replay "$<TARGET_FILE:rl_translate_replay>")
+    endif()
+    set(_rl_live_export --export-replay "$<TARGET_FILE:rl_capture_export_replay>" --capture-diff "${_rl_live_diff}")
+    if(_app IN_LIST _rl_live_export_window_apps)
+        list(APPEND _rl_live_export --export-window 10:20)
     endif()
     add_test(NAME rl_capture_live_${_app}
              COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/rl_capture_live.py"
@@ -76,6 +90,7 @@ foreach(_app IN LISTS _rl_live_apps)
                      --texture-replay "$<TARGET_FILE:fuse_relight_capture_texture_tests>"
                      --classify-replay "$<TARGET_FILE:rl_classify_replay>"
                      ${_rl_live_translate}
+                     ${_rl_live_export}
                      --emulator "${_rl_live_emulator}"
                      --out "${CMAKE_BINARY_DIR}/relight/capture_live/${_app}")
     set_tests_properties(rl_capture_live_${_app} PROPERTIES

@@ -40,7 +40,14 @@
 //   device_destroy
 // Hashes are 16 upper-case hex digits in "textures" entries, as the texture replay prints them;
 // geometry values follow geometry_replay (lower-case hex).
+//
+// Capture export (RL-1.8 live, capture_export_live.hpp): with CaptureTapConfig::exportConfig enabled
+// (relight.tap.captureExport), each flushed frame also goes to a LiveCaptureExport (SceneModel +
+// GameCapturer), which writes the USDA + POCO store + DDS capture when its frame window closes or at
+// device destruction; TextureTracker then keeps every texture's canonical mip 0 for the DDS files.
 #pragma once
+
+#include <fuse/relight/tap/capture_export_live.hpp>
 
 #include <fuse/relight/capture/geometry/geometry_capture.hpp>
 #include <fuse/relight/capture/texture/external_image_registry.hpp>
@@ -63,8 +70,9 @@ struct CaptureTapConfig {
     std::unique_ptr<IRelightTap> forward; ///< receives every event first (e.g. RecordingTap); may be null
     capture::texture::TextureTrackerConfig texture;
     capture::geometry::GeometryCaptureConfig geometry;
+    CaptureExportConfig exportConfig;     ///< RL-1.8 capture written live; disabled by default
 
-    /// The rtx.* / relight.* options of the three packages, resolved now.
+    /// The rtx.* / relight.* options of the three packages and of the capture export, resolved now.
     static CaptureTapConfig fromOptions();
 };
 
@@ -85,6 +93,14 @@ struct CaptureDrawRecord {
         std::uint64_t descriptorHash = 0;
     };
     std::vector<BoundTexture> textures;
+    /// Draw state the capture export needs besides the packages' output (the D3D values).
+    struct SamplerFacts {
+        std::uint32_t addressU = 1;  ///< D3DSAMP_ADDRESSU (D3DTADDRESS_WRAP)
+        std::uint32_t addressV = 1;  ///< D3DSAMP_ADDRESSV
+        std::uint32_t magFilter = 2; ///< D3DSAMP_MAGFILTER (D3DTEXF_LINEAR)
+    };
+    std::uint32_t cullMode = 2; ///< D3DRS_CULLMODE
+    SamplerFacts colorSampler;  ///< sampler of translation.material.colorTextureSlots[0] (defaults: none)
 };
 
 class CaptureTap final : public IRelightTap {
@@ -109,6 +125,8 @@ public:
     capture::geometry::GeometryCapture& geometry() { return m_geometry; }
     scene::ClassifyTap& classifier() { return m_translate.classifyTap(); }
     scene::TranslateTap& translator() { return m_translate; }
+    /// The live capture export (null when CaptureTapConfig::exportConfig is disabled).
+    const LiveCaptureExport* captureExport() const { return m_export.get(); }
 
     void onDeviceCreate(const DeviceEvent& e) override;
     void onDeviceReset(const DeviceEvent& e) override;
@@ -155,6 +173,7 @@ private:
     scene::TranslatedFrame m_translatedFrame;
     bool m_haveTranslatedFrame = false;
     capture::geometry::CapturedDrawPtr m_lastGeometry;
+    std::unique_ptr<LiveCaptureExport> m_export; ///< after the packages: it reads them while writing
 };
 
 } // namespace fuse::relight::tap
