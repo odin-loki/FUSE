@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 // WP-4.4 FSR 3.1 frame generation: host-side records, conventions, the dispatch plan and the clean-room port of the
 // SDK's per-dispatch constant setup. Vulkan-free (built and gated in the stub tree).
 //
@@ -352,5 +354,16 @@ bool fg_init_state(FgHostState& state, u32 displayW, u32 displayH, u32 maxRender
 /// constants, reset logic, ping-pong and the ordered dispatch plan (FUSE passes included). Advances `state`.
 /// False (state untouched) on invalid input.
 bool fg_setup_frame(FgHostState& state, const FgFrameParams& params, FgFrameSetup& out);
+
+/// CPU twin of one optical-flow block-search dispatch (fg.of.search_portable == the vendored
+/// ffx_opticalflow_compute_optical_flow_v5.h with FFX_OPTICALFLOW_FIX_TOP_LEFT_BIAS = FFX_LOCAL_SEARCH_FALLBACK = 1,
+/// no MSAD4): per 8x8 block of the level's luma (`current` / `previous`, w x h, 8-bit, clamp-to-edge like
+/// GetPackedLuma's fillers), SAD over the 16x16 candidates prediction + [-8, 7]^2 in `previous`, minimum of the packed key
+/// (SAD << 16 | |dy'| << 12 | |dx'| << 8 | cy << 4 | cx, the top-left-bias fix), vector = prediction + (cx - 8, cy - 8);
+/// at level 0 the zero-offset SAD wins ties (local-search fallback). `prediction` (flowW x flowH int16 pairs, the
+/// previous level's scaled flow) is ignored when `usePrediction` is false (the coarsest level). Writes `flow`
+/// (flowW x flowH pairs, flowW = ceil(w / 8), flowH = ceil(h / 8)). `sceneChanged` stores (0, 0) everywhere.
+void fg_of_search_cpu(const u8* current, const u8* previous, u32 w, u32 h, u32 level, bool usePrediction, const std::int16_t* prediction,
+                      bool sceneChanged, std::int16_t* flow);
 
 } // namespace fuse::renderer::framegen

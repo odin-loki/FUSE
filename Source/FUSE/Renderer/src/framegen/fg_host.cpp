@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 
 // Vendored FidelityFX host-side helper (CPU mode of the portable FFX headers; SYSTEM include).
@@ -493,6 +494,50 @@ bool fg_setup_frame(FgHostState& state, const FgFrameParams& p, FgFrameSetup& ou
         d.compositeTarget = kSlotPresentReal;
     }
     return true;
+}
+
+void fg_of_search_cpu(const u8* current, const u8* previous, u32 w, u32 h, u32 level, bool usePrediction, const std::int16_t* prediction,
+                      bool sceneChanged, std::int16_t* flow) {
+    const u32 flowW = (w + 7u) / 8u, flowH = (h + 7u) / 8u;
+    const i32 iw = static_cast<i32>(w), ih = static_cast<i32>(h);
+    auto luma = [&](const u8* img, i32 x, i32 y) -> i32 {
+        return img[static_cast<usize>(std::clamp(y, 0, ih - 1)) * w + static_cast<usize>(std::clamp(x, 0, iw - 1))];
+    };
+    auto sad = [&](i32 bx, i32 by, i32 ox, i32 oy) {
+        u32 s = 0u;
+        for (i32 y = 0; y < 8; ++y) {
+            for (i32 x = 0; x < 8; ++x) {
+                s += static_cast<u32>(std::abs(luma(current, bx + x, by + y) - luma(previous, bx + x + ox, by + y + oy)));
+            }
+        }
+        return s;
+    };
+    for (u32 fy = 0; fy < flowH; ++fy) {
+        for (u32 fx = 0; fx < flowW; ++fx) {
+            std::int16_t* out = flow + (static_cast<usize>(fy) * flowW + fx) * 2u;
+            if (sceneChanged) {
+                out[0] = out[1] = 0;
+                continue;
+            }
+            const std::int16_t* p = prediction + (static_cast<usize>(fy) * flowW + fx) * 2u;
+            const i32 px = usePrediction ? p[0] : 0, py = usePrediction ? p[1] : 0;
+            const i32 bx = static_cast<i32>(fx * 8u), by = static_cast<i32>(fy * 8u);
+            u32 best = ~0u;
+            for (i32 cy = 0; cy < 16; ++cy) {
+                for (i32 cx = 0; cx < 16; ++cx) {
+                    const u32 key = (sad(bx, by, px + cx - 8, py + cy - 8) << 16) | (static_cast<u32>(std::abs(cy - 8)) << 12) |
+                                    (static_cast<u32>(std::abs(cx - 8)) << 8) | (static_cast<u32>(cy) << 4) | static_cast<u32>(cx);
+                    best = std::min(best, key);
+                }
+            }
+            i32 vx = px + static_cast<i32>(best & 0xfu) - 8, vy = py + static_cast<i32>((best >> 4) & 0xfu) - 8;
+            if (level == 0u && sad(bx, by, 0, 0) <= (best >> 16)) {
+                vx = vy = 0;
+            }
+            out[0] = static_cast<std::int16_t>(vx);
+            out[1] = static_cast<std::int16_t>(vy);
+        }
+    }
 }
 
 } // namespace fuse::renderer::framegen

@@ -19,12 +19,16 @@
 //                        never enters the interpolation).
 //   --mode reset         camera cut (pattern A -> B) with reset: the interpolated frame is exactly the current frame (no
 //                        mixing with the old scene); the next frame interpolates at the midpoint again; invalidate()
-//                        behaves like reset; a cut without reset is reported (the SDK's scene-change detection).
+//                        behaves like reset; a same-histogram cut without reset is reported (--mode scene_cut gates the SDK's
+//                        histogram scene-change detection).
 //   --mode determinism   the same 10-frame sequence through two fresh FrameGenGpu instances and through the GLSL twins
 //                        of the FUSE passes: interpolated and composited outputs bit-identical.
-//   --mode optical_flow  integer translation (4, 2): the level-0 optical-flow vectors of interior blocks equal -v (the
-//                        block's position in the previous frame) — the search variant the device runs (portable on
-//                        Lavapipe's 8-lane subgroups).
+//   --mode optical_flow  integer translation (4, 2), 14 frames: the level-0 optical-flow vectors are (0, 0) during the
+//                        SDK warm-up (IsSceneChanged() while the OF frame index <= 5) and afterwards within 1 px of -v
+//                        (the block's position in the previous frame) on >= 95% of interior blocks — the search variant
+//                        the device runs (portable on Lavapipe's 8-lane subgroups).
+//   --mode scene_cut     12 frames of A, then a cut to a scene with a different luminance histogram WITHOUT reset: the
+//                        SDK scene-change detection flags it and the interpolated frame is the current frame bit for bit.
 //   --mode zero_alloc    80 frames (16 warm-up): 0 operator-new calls in FrameGenGpu::beginFrame, the graph build
 //                        (imports + passes) and the fg.* pass callbacks (validated run first; validation off for the
 //                        count), 0 layout conflicts.
@@ -41,6 +45,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -324,7 +329,21 @@ u32 halfUlps(u16 a, u16 b) {
 // --- scene --------------------------------------------------------------------------------------------------
 struct Pattern {
     f32 phase = 0.f;
+    bool darkCut = false; ///< a different scene: other frequencies, darker and higher-contrast histogram (scene_cut)
+    bool broadband = false; ///< optical_flow: detail at every pyramid level (periods 13 .. 157 px, incommensurate)
     f32 value(f32 u, f32 v, u32 c) const {
+        if (broadband) {
+            constexpr f32 kTau = 6.28318530718f;
+            const f32 cc = static_cast<f32>(c);
+            return 0.5f + 0.14f * std::sin(kTau * (u / 157.f + v / 211.f) + 0.3f * cc) + 0.11f * std::cos(kTau * (v / 89.f - u / 263.f) + 1.1f) +
+                   0.08f * std::sin(kTau * (u / 47.f)) * std::cos(kTau * (v / 53.f)) + 0.06f * std::sin(kTau * ((u - 0.7f * v) / 23.f) + cc) +
+                   0.05f * std::cos(kTau * ((0.4f * u + v) / 13.f));
+        }
+        if (darkCut) {
+            Pattern base{};
+            const f32 b = base.value(u * 1.7f + 11.f, v * 0.6f - 5.f, (c + 1u) % 3u);
+            return std::clamp(0.2f + 2.6f * (b - 0.5f), 0.f, 1.f);
+        }
         constexpr f32 kTau = 6.28318530718f;
         const f32 cc = static_cast<f32>(c);
         return 0.5f + 0.18f * std::sin(kTau * (u / 19.f + 0.13f * cc + phase)) * std::cos(kTau * (v / 15.f - 0.07f * cc)) +
@@ -955,7 +974,9 @@ int runReset(Context& ctx) {
     }
     const f64 eNoReset = rmseVs(out.interpolated, c, Vec2(0.f, 0.f));
     std::printf("reset: cut B -> C WITHOUT reset: interpolated RMSE vs C %.5f (%s)\n", eNoReset,
-                eNoReset < 1e-6 ? "scene-change detection reset the interpolation" : "the frame mixes both scenes");
+                eNoReset < 1e-6 ? "scene-change detection reset the interpolation"
+                                 : "the frame mixes both scenes: C is B phase-shifted, same luminance histogram, and the SCD history "
+                                   "still holds the reset 4 frames ago; a histogram-changing cut is gated by --mode scene_cut");
     expect(eCut < 1e-2, "reset output is the new scene");
     expect(r.conflicts == 0u, "no layout conflicts");
     return 0;
@@ -1009,15 +1030,22 @@ int runDeterminism(Context& ctx) {
     return 0;
 }
 
+/// The SDK's optical flow is intentionally silent at first: IsSceneChanged() (ffx_opticalflow_callbacks_glsl.h) is
+/// true while the OF frame index is <= 5 after a reset, and afterwards while any of the last 4 scene-change history bits
+/// is set; the search then stores (0, 0) for every block. Blocks are therefore judged from OF frame index 6 on.
+constexpr u32 kOfWarmupFrames = 6;
+
 int runOpticalFlow(Context& ctx) {
     Runner r(ctx);
     if (!r.init()) {
         return 1;
     }
-    const Pattern pattern{};
+    Pattern pattern{};
+    pattern.broadband = std::getenv("FUSE_FG_OF_NARROW") == nullptr;
     const Vec2 v(4.f, 2.f);
-    u32 good = 0, total = 0;
-    for (u32 n = 0; n < 6; ++n) {
+    constexpr u32 kFrames = 14;
+    u32 good = 0, total = 0, warmupNonZero = 0;
+    for (u32 n = 0; n < kFrames; ++n) {
         FrameInput in{};
         in.pattern = &pattern;
         in.offset = offsetAt(v, n);
@@ -1027,33 +1055,92 @@ int runOpticalFlow(Context& ctx) {
         if (!r.frame(in, &out)) {
             return 1;
         }
-        if (n < 2u) {
+        if (n < kOfWarmupFrames) {
+            for (const std::int16_t c : out.ofVector) {
+                warmupNonZero += c != 0 ? 1u : 0u;
+            }
             continue;
         }
-        u32 frameGood = 0, frameTotal = 0;
-        i32 hx[3] = {}, hy[3] = {};
+        u32 frameGood = 0, frameTotal = 0, exact = 0;
         for (u32 by = 2; by + 2 < r.ofH; ++by) {
             for (u32 bx = 2; bx + 2 < r.ofW; ++bx) {
                 const i32 x = out.ofVector[(by * r.ofW + bx) * 2u];
                 const i32 y = out.ofVector[(by * r.ofW + bx) * 2u + 1u];
+                const i32 ex = -static_cast<i32>(v.x), ey = -static_cast<i32>(v.y);
                 ++frameTotal;
-                frameGood += (x == -static_cast<i32>(v.x) && y == -static_cast<i32>(v.y)) ? 1u : 0u;
-                hx[0] += x == -4 ? 1 : 0;
-                hx[1] += x == 4 ? 1 : 0;
-                hx[2] += x == 0 ? 1 : 0;
-                hy[0] += y == -2 ? 1 : 0;
-                hy[1] += y == 2 ? 1 : 0;
-                hy[2] += y == 0 ? 1 : 0;
+                frameGood += (std::abs(x - ex) <= 1 && std::abs(y - ey) <= 1) ? 1u : 0u;
+                exact += (x == ex && y == ey) ? 1u : 0u;
             }
         }
-        std::printf("optical_flow: frame %u: %u / %u interior blocks = (%d, %d) [x: -4 %d, +4 %d, 0 %d; y: -2 %d, +2 %d, 0 %d]\n", n, frameGood,
-                    frameTotal, -static_cast<i32>(v.x), -static_cast<i32>(v.y), hx[0], hx[1], hx[2], hy[0], hy[1], hy[2]);
+        if (std::getenv("FUSE_FG_OF_DUMP") != nullptr) {
+            std::map<std::pair<i32, i32>, u32> hist;
+            for (u32 by = 2; by + 2 < r.ofH; ++by) {
+                for (u32 bx = 2; bx + 2 < r.ofW; ++bx) {
+                    ++hist[{out.ofVector[(by * r.ofW + bx) * 2u], out.ofVector[(by * r.ofW + bx) * 2u + 1u]}];
+                }
+            }
+            for (const auto& [k, c] : hist) {
+                std::printf("  (%d, %d): %u\n", k.first, k.second, c);
+            }
+        }
+        std::printf("optical_flow: frame %2u: %u / %u interior blocks within 1 px of (%d, %d), %u exact\n", n, frameGood, frameTotal,
+                    -static_cast<i32>(v.x), -static_cast<i32>(v.y), exact);
         good += frameGood;
         total += frameTotal;
     }
-    std::printf("optical_flow (%s search): %u / %u = %.1f%% interior blocks exact\n", r.fg.portableSearch() ? "portable" : "vendored", good, total,
+    std::printf("optical_flow (%s search): warm-up frames 0..%u: %u non-zero components (SDK: IsSceneChanged while frame index <= 5)\n",
+                r.fg.portableSearch() ? "portable" : "vendored", kOfWarmupFrames - 1u, warmupNonZero);
+    std::printf("optical_flow: frames %u..%u: %u / %u = %.1f%% interior blocks within 1 px of -v\n", kOfWarmupFrames, kFrames - 1u, good, total,
                 100.0 * good / std::max(total, 1u));
-    expect(total > 0u && good >= total * 9u / 10u, ">= 90% of interior optical-flow blocks = -v");
+    expect(warmupNonZero == 0u, "optical flow is (0, 0) during the SDK warm-up (frame index <= 5)");
+    expect(total > 0u && good * 100u >= total * 95u, ">= 95% of interior optical-flow blocks within 1 px of the true motion");
+    expect(r.conflicts == 0u, "no layout conflicts");
+    return 0;
+}
+
+int runSceneCut(Context& ctx) {
+    Runner r(ctx);
+    if (!r.init()) {
+        return 1;
+    }
+    const Pattern a{};
+    Pattern cut{};
+    cut.darkCut = true;
+    const Vec2 v(3.f, 1.f);
+    u32 frame = 0;
+    auto run = [&](const Pattern& p, u32 local, FrameOut& o) {
+        FrameInput in{};
+        in.pattern = &p;
+        in.offset = offsetAt(v, local);
+        in.motionPx = v;
+        in.frameId = frame++;
+        return r.frame(in, &o);
+    };
+    FrameOut out{};
+    // Past the SDK's scene-change warm-up (frame index <= 5 counts as changed) and its 4-frame history.
+    for (u32 n = 0; n < 12; ++n) {
+        if (!run(a, n, out)) {
+            return 1;
+        }
+    }
+    const f64 eBefore = rmseVs(out.interpolated, a, Vec2(v.x * 10.5f, v.y * 10.5f));
+    std::printf("scene_cut: frame 11 (no cut) interpolates A: RMSE %.5f (PSNR %.2f dB)\n", eBefore, psnr(eBefore));
+    expect(psnr(eBefore) >= kGatePsnr, "scene_cut: steady state interpolates before the cut");
+    // Cut to a different scene WITHOUT reset: the OF scene-change detection (luminance-histogram divergence) must flag
+    // it, FI setup then zeroes FrameIndexSinceLastReset and the interpolation passes the current frame through.
+    if (!run(cut, 0, out)) {
+        return 1;
+    }
+    bool exact = !out.fiReset;
+    for (usize i = 0; exact && i < out.interpolated.size(); i += 4u) {
+        exact = out.interpolated[i] == out.source[i] && out.interpolated[i + 1u] == out.source[i + 1u] &&
+                out.interpolated[i + 2u] == out.source[i + 2u];
+    }
+    const f64 eCut = rmseVs(out.interpolated, cut, Vec2(0.f, 0.f));
+    std::printf("scene_cut: cut A -> B without reset: interpolated == current frame bit for bit: %s (RMSE vs B %.6f)\n", exact ? "yes" : "NO",
+                eCut);
+    expect(exact, "scene_cut: a cut without reset is detected (interpolated frame == current frame)");
+    expect(r.conflicts == 0u, "no layout conflicts");
     return 0;
 }
 
@@ -1142,6 +1229,8 @@ int main(int argc, char** argv) {
             rc = runReset(ctx);
         } else if (mode == "determinism") {
             rc = runDeterminism(ctx);
+        } else if (mode == "scene_cut") {
+            rc = runSceneCut(ctx);
         } else if (mode == "optical_flow") {
             rc = runOpticalFlow(ctx);
         } else if (mode == "zero_alloc") {

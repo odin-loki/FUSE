@@ -22,6 +22,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <iterator>
@@ -434,6 +435,62 @@ int runComposite() {
     return 0;
 }
 
+/// CPU twin of fg.of.search_portable (fg_of_search_cpu): the search semantics on synthetic 8-bit luma.
+int runOfSearch() {
+    constexpr u32 kW = 96, kH = 64, kFw = kW / 8u, kFh = kH / 8u;
+    auto noise = [](i32 x, i32 y) {
+        u32 hsh = static_cast<u32>(x) * 73856093u ^ static_cast<u32>(y) * 19349663u;
+        hsh ^= hsh >> 13;
+        hsh *= 0x5bd1e995u;
+        hsh ^= hsh >> 15;
+        return static_cast<std::uint8_t>(hsh & 0xffu);
+    };
+    std::vector<std::uint8_t> prev(kW * kH), cur(kW * kH), flat(kW * kH, 128u);
+    std::vector<std::int16_t> flow(kFw * kFh * 2u), pred(kFw * kFh * 2u, 0);
+    auto interiorExact = [&](i32 ex, i32 ey, u32 margin) {
+        u32 good = 0, total = 0;
+        for (u32 fy = margin; fy + margin < kFh; ++fy) {
+            for (u32 fx = margin; fx + margin < kFw; ++fx) {
+                ++total;
+                good += (flow[(fy * kFw + fx) * 2u] == ex && flow[(fy * kFw + fx) * 2u + 1u] == ey) ? 1u : 0u;
+            }
+        }
+        return good == total && total > 0u;
+    };
+    // Translation v = (3, -5): content at p in `cur` was at p - v in `prev` -> vector -v.
+    const i32 vx = 3, vy = -5;
+    for (i32 y = 0; y < static_cast<i32>(kH); ++y) {
+        for (i32 x = 0; x < static_cast<i32>(kW); ++x) {
+            prev[static_cast<usize>(y) * kW + x] = noise(x, y);
+            cur[static_cast<usize>(y) * kW + x] = noise(x - vx, y - vy);
+        }
+    }
+    fg_of_search_cpu(cur.data(), prev.data(), kW, kH, 0u, false, pred.data(), false, flow.data());
+    expect(interiorExact(-vx, -vy, 1u), "search: interior blocks recover -v exactly");
+    // With a prediction: the search is centred on it (level 1, prediction = -v + (2, 1) -> still -v).
+    for (u32 i = 0; i < kFw * kFh; ++i) {
+        pred[i * 2u] = static_cast<std::int16_t>(-vx + 2);
+        pred[i * 2u + 1u] = static_cast<std::int16_t>(-vy + 1);
+    }
+    fg_of_search_cpu(cur.data(), prev.data(), kW, kH, 1u, true, pred.data(), false, flow.data());
+    expect(interiorExact(-vx, -vy, 2u), "search: prediction + local search = -v");
+    // A displacement outside prediction + [-8, 7] is not found (search window).
+    fg_of_search_cpu(cur.data(), prev.data(), kW, kH, 1u, true, std::vector<std::int16_t>(kFw * kFh * 2u, 12).data(), false, flow.data());
+    expect(!interiorExact(-vx, -vy, 2u), "search: the window is prediction + [-8, 7]");
+    // No motion -> 0; flat image -> all SADs equal, the top-left-bias fix picks the centre (0, 0).
+    fg_of_search_cpu(prev.data(), prev.data(), kW, kH, 0u, false, pred.data(), false, flow.data());
+    expect(interiorExact(0, 0, 0u), "search: static image -> (0, 0)");
+    fg_of_search_cpu(flat.data(), flat.data(), kW, kH, 1u, false, pred.data(), false, flow.data());
+    expect(interiorExact(0, 0, 0u), "search: flat image -> centre (top-left-bias fix)");
+    // Level-0 local-search fallback: the zero-offset SAD wins ties even against a prediction.
+    fg_of_search_cpu(flat.data(), flat.data(), kW, kH, 0u, true, std::vector<std::int16_t>(kFw * kFh * 2u, 5).data(), false, flow.data());
+    expect(interiorExact(0, 0, 0u), "search: level-0 fallback to (0, 0) on ties");
+    fg_of_search_cpu(cur.data(), prev.data(), kW, kH, 0u, false, pred.data(), true, flow.data());
+    expect(interiorExact(0, 0, 0u), "search: scene change -> (0, 0)");
+    std::printf("of_search: CPU twin recovers v = (%d, %d); window, prediction, top-left bias, fallback and scene change hold\n", vx, vy);
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -449,6 +506,8 @@ int main(int argc, char** argv) {
         rc = runPlan();
     } else if (suite == "composite") {
         rc = runComposite();
+    } else if (suite == "of_search") {
+        rc = runOfSearch();
     } else {
         std::fprintf(stderr, "unknown suite %s\n", suite.c_str());
         return 2;
