@@ -1,0 +1,60 @@
+#version 460
+// WP-6.0 rt_probe: one ray query per ray against the TLAS (twin: rt_probe.slang). The TLAS is reached
+// by device address (accelerationStructureEXT(uint64_t)), so the probe needs no descriptor set.
+// Output: closest committed triangle hit (t, TLAS instance index, custom index, primitive, barycentrics,
+// front face) or a miss (flags 0, ids ~0u, t = -1).
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : require
+#include "rt_common.glsl"
+
+layout(local_size_x = FUSE_RT_WORKGROUP) in;
+
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseRtRays { FuseRtRay v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 16) writeonly buffer FuseRtHits { FuseRtHit v[]; };
+
+layout(push_constant) uniform Push { // RtProbePush
+    uint64_t tlas;
+    uint64_t rays;
+    uint64_t hits;
+    uint count;
+    uint cullMask;
+    uint rayFlags;
+    uint pad0;
+    uint pad1;
+    uint pad2;
+} pc;
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.count) {
+        return;
+    }
+    const FuseRtRay ray = FuseRtRays(pc.rays).v[i];
+    rayQueryEXT q;
+    rayQueryInitializeEXT(q, accelerationStructureEXT(pc.tlas), pc.rayFlags | gl_RayFlagsOpaqueEXT, pc.cullMask & 0x7Fu, // bit 7 = kRtMaskDead, never traced
+                         
+                          ray.originTMin.xyz, ray.originTMin.w, ray.directionTMax.xyz, ray.directionTMax.w);
+    while (rayQueryProceedEXT(q)) {
+    }
+    FuseRtHit h;
+    h.t = -1.0;
+    h.instance = FUSE_RT_INVALID;
+    h.customIndex = FUSE_RT_INVALID;
+    h.primitive = FUSE_RT_INVALID;
+    h.u = 0.0;
+    h.v = 0.0;
+    h.flags = 0u;
+    h.geometry = FUSE_RT_INVALID;
+    if (rayQueryGetIntersectionTypeEXT(q, true) == gl_RayQueryCommittedIntersectionTriangleEXT) {
+        const vec2 bary = rayQueryGetIntersectionBarycentricsEXT(q, true);
+        h.t = rayQueryGetIntersectionTEXT(q, true);
+        h.instance = uint(rayQueryGetIntersectionInstanceIdEXT(q, true));
+        h.customIndex = uint(rayQueryGetIntersectionInstanceCustomIndexEXT(q, true));
+        h.primitive = uint(rayQueryGetIntersectionPrimitiveIndexEXT(q, true));
+        h.geometry = uint(rayQueryGetIntersectionGeometryIndexEXT(q, true));
+        h.u = bary.x;
+        h.v = bary.y;
+        h.flags = FUSE_RT_HIT | (rayQueryGetIntersectionFrontFaceEXT(q, true) ? FUSE_RT_FRONT_FACE : 0u);
+    }
+    FuseRtHits(pc.hits).v[i] = h;
+}

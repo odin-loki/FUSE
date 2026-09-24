@@ -30,6 +30,17 @@ static_assert(vkc::kStageMeshShader == VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT);
 #endif
 static_assert(vkc::kStageTransfer == VK_PIPELINE_STAGE_TRANSFER_BIT);
 static_assert(vkc::kStageAllCommands == VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+#if defined(VK_KHR_acceleration_structure)
+static_assert(vkc::kStageAccelerationStructureBuild == VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+static_assert(vkc::kStageAccelerationStructureBuild == VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+static_assert(vkc::kAccessAccelerationStructureRead == VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+static_assert(vkc::kAccessAccelerationStructureWrite == VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR);
+static_assert(vkc::kAccessAccelerationStructureRead == VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+static_assert(vkc::kBufferUsageAccelerationStructureBuildInput ==
+              VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR);
+static_assert(vkc::kBufferUsageAccelerationStructureStorage == VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR);
+#endif
+static_assert(vkc::kBufferUsageShaderDeviceAddress == VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 static_assert(vkc::kAccessIndirectCommandRead == VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT);
 static_assert(vkc::kAccessIndexRead == VK_ACCESS_2_INDEX_READ_BIT);
 static_assert(vkc::kAccessVertexAttributeRead == VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT);
@@ -221,6 +232,27 @@ AccessInfo describeAccess(Access access, u8 shaderStages, QueueClass queue) {
         info.layout = vkc::kLayoutGeneral;
         info.write = true;
         break;
+    case Access::AccelerationStructureBuildInput:
+        info.stages = vkc::kStageAccelerationStructureBuild;
+        info.access = vkc::kAccessShaderRead;
+        info.bufferUsage = vkc::kBufferUsageAccelerationStructureBuildInput | vkc::kBufferUsageShaderDeviceAddress;
+        break;
+    case Access::AccelerationStructureBuildRead:
+        info.stages = vkc::kStageAccelerationStructureBuild;
+        info.access = vkc::kAccessAccelerationStructureRead;
+        info.bufferUsage = vkc::kBufferUsageAccelerationStructureStorage | vkc::kBufferUsageShaderDeviceAddress;
+        break;
+    case Access::AccelerationStructureBuildWrite:
+        info.stages = vkc::kStageAccelerationStructureBuild;
+        info.access = vkc::kAccessAccelerationStructureRead | vkc::kAccessAccelerationStructureWrite;
+        info.bufferUsage = vkc::kBufferUsageAccelerationStructureStorage | vkc::kBufferUsageShaderDeviceAddress;
+        info.write = true;
+        break;
+    case Access::AccelerationStructureRead:
+        info.stages = shaderStageMask(shaderStages, queue);
+        info.access = vkc::kAccessAccelerationStructureRead;
+        info.bufferUsage = vkc::kBufferUsageAccelerationStructureStorage | vkc::kBufferUsageShaderDeviceAddress;
+        break;
     }
     return info;
 }
@@ -275,6 +307,10 @@ const char* accessName(Access access) {
     case Access::Present: return "Present";
     case Access::ExternalRead: return "ExternalRead";
     case Access::ExternalWrite: return "ExternalWrite";
+    case Access::AccelerationStructureBuildInput: return "AccelerationStructureBuildInput";
+    case Access::AccelerationStructureBuildRead: return "AccelerationStructureBuildRead";
+    case Access::AccelerationStructureBuildWrite: return "AccelerationStructureBuildWrite";
+    case Access::AccelerationStructureRead: return "AccelerationStructureRead";
     }
     return "?";
 }

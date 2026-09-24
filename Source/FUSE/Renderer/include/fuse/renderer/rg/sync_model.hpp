@@ -31,6 +31,7 @@ constexpr u64 kStageAllGraphics = 0x8000;
 constexpr u64 kStageAllCommands = 0x10000;
 constexpr u64 kStageTaskShader = 0x80000;  ///< VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT (WP-5.1)
 constexpr u64 kStageMeshShader = 0x100000; ///< VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT (WP-5.1)
+constexpr u64 kStageAccelerationStructureBuild = 0x02000000; ///< VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR (WP-6.0)
 // VkAccessFlagBits2
 constexpr u64 kAccessIndirectCommandRead = 0x1;
 constexpr u64 kAccessIndexRead = 0x2;
@@ -48,8 +49,11 @@ constexpr u64 kAccessHostRead = 0x2000;
 constexpr u64 kAccessHostWrite = 0x4000;
 constexpr u64 kAccessMemoryRead = 0x8000;
 constexpr u64 kAccessMemoryWrite = 0x10000;
+constexpr u64 kAccessAccelerationStructureRead = 0x00200000;  ///< VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR (WP-6.0)
+constexpr u64 kAccessAccelerationStructureWrite = 0x00400000; ///< VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR (WP-6.0)
 constexpr u64 kAccessWriteMask = kAccessShaderWrite | kAccessColorAttachmentWrite | kAccessDepthStencilWrite |
-                                 kAccessTransferWrite | kAccessHostWrite | kAccessMemoryWrite;
+                                 kAccessTransferWrite | kAccessHostWrite | kAccessMemoryWrite |
+                                 kAccessAccelerationStructureWrite;
 // VkImageLayout
 constexpr u32 kLayoutUndefined = 0;
 constexpr u32 kLayoutGeneral = 1;
@@ -79,6 +83,9 @@ constexpr u32 kBufferUsageStorage = 0x20;
 constexpr u32 kBufferUsageIndex = 0x40;
 constexpr u32 kBufferUsageVertex = 0x80;
 constexpr u32 kBufferUsageIndirect = 0x100;
+constexpr u32 kBufferUsageShaderDeviceAddress = 0x20000;              ///< WP-6.0
+constexpr u32 kBufferUsageAccelerationStructureBuildInput = 0x80000;   ///< ..._BUILD_INPUT_READ_ONLY_BIT_KHR (WP-6.0)
+constexpr u32 kBufferUsageAccelerationStructureStorage = 0x100000;     ///< ..._STORAGE_BIT_KHR (WP-6.0)
 } // namespace vkc
 
 struct AccessInfo {

@@ -1,0 +1,36 @@
+#version 460
+// WP-6.0 rt_decode: WP-1.2 VPOS (u16 x 4, quantised) -> f32 x 3 BLAS vertex input (twin: rt_decode.slang).
+// decoded = quantOffset + float(q) * quantStep, not contracted (rt_types.hpp rtDecodePosition).
+#extension GL_GOOGLE_include_directive : require
+#include "rt_common.glsl"
+
+layout(local_size_x = FUSE_RT_WORKGROUP) in;
+
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer FuseRtWords { uint v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 4) writeonly buffer FuseRtFloats { float v[]; };
+
+layout(push_constant) uniform Push { // RtDecodePush
+    uint64_t src;
+    uint64_t dst;
+    uint vertexCount;
+    float qo0, qo1, qo2;
+    float qs0, qs1, qs2;
+    uint pad;
+} pc;
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.vertexCount) {
+        return;
+    }
+    FuseRtWords src = FuseRtWords(pc.src);
+    const uint xy = src.v[i * 2u + 0u];
+    const uint zw = src.v[i * 2u + 1u];
+    precise float x = pc.qo0 + float(xy & 0xFFFFu) * pc.qs0;
+    precise float y = pc.qo1 + float(xy >> 16u) * pc.qs1;
+    precise float z = pc.qo2 + float(zw & 0xFFFFu) * pc.qs2;
+    FuseRtFloats dst = FuseRtFloats(pc.dst);
+    dst.v[i * 3u + 0u] = x;
+    dst.v[i * 3u + 1u] = y;
+    dst.v[i * 3u + 2u] = z;
+}

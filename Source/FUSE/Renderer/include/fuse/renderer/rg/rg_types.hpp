@@ -44,6 +44,20 @@ enum class Access : u8 {
     Present,              ///< no GPU access; PRESENT_SRC_KHR
     ExternalRead,         ///< CUDA / foreign API: ALL_COMMANDS, MEMORY_READ, GENERAL
     ExternalWrite,        ///< CUDA / foreign API: ALL_COMMANDS, MEMORY_READ|WRITE, GENERAL
+    // Acceleration structures (WP-6.0; buffers only, numeric values of VK_KHR_acceleration_structure).
+    /// Geometry / instance input of vkCmdBuildAccelerationStructuresKHR (vertex, index, instance
+    /// buffers): ACCELERATION_STRUCTURE_BUILD, SHADER_READ, BUILD_INPUT_READ_ONLY usage.
+    AccelerationStructureBuildInput,
+    /// An acceleration structure read by a build or copy command (BLAS referenced by a TLAS build,
+    /// compaction source, vkCmdWriteAccelerationStructuresPropertiesKHR): ACCELERATION_STRUCTURE_BUILD,
+    /// ACCELERATION_STRUCTURE_READ.
+    AccelerationStructureBuildRead,
+    /// Build / update / copy destination and build scratch: ACCELERATION_STRUCTURE_BUILD,
+    /// ACCELERATION_STRUCTURE_READ|WRITE (an in-place update reads its source too).
+    AccelerationStructureBuildWrite,
+    /// Ray query / ray tracing reads of an acceleration structure: shader stages,
+    /// ACCELERATION_STRUCTURE_READ.
+    AccelerationStructureRead,
 };
 
 /// Shader stages of a shader access (SampledRead / Storage* / UniformRead). 0 = derived from the

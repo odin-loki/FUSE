@@ -220,10 +220,13 @@ bool GpuScene::uploadIndices(u32 firstIndex, u32 count) {
         }
         BufferDesc desc{};
         desc.size = static_cast<usize>(capacity) * sizeof(u32);
+        // WP-6.0: the scene index buffer is also the BLAS index input (the allocator drops the
+        // acceleration-structure usage on devices without VK_KHR_acceleration_structure).
         desc.usage = static_cast<BufferUsage>(static_cast<u32>(BufferUsage::Index) | static_cast<u32>(BufferUsage::Storage) |
                                               static_cast<u32>(BufferUsage::TransferDst) |
                                               static_cast<u32>(BufferUsage::TransferSrc) |
-                                              static_cast<u32>(BufferUsage::ShaderDeviceAddress));
+                                              static_cast<u32>(BufferUsage::ShaderDeviceAddress) |
+                                              static_cast<u32>(BufferUsage::AccelerationStructureBuildInput));
         desc.memoryUsage = MemoryUsage::GpuOnly;
         desc.name = "gpu_scene.indices";
         Buffer fresh{};

@@ -35,6 +35,12 @@ enum class BufferUsage : u32 {
     ShaderDeviceAddress = 1u << 6,
     /// VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT: draw / dispatch arguments and counts (WP-1.3 culling).
     Indirect = 1u << 7,
+    /// VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR: backing store of a BLAS / TLAS (WP-6.0).
+    /// Only valid on devices with VK_KHR_acceleration_structure enabled (RendererCaps).
+    AccelerationStructureStorage = 1u << 8,
+    /// VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR: vertex / index / instance
+    /// input of an acceleration-structure build (WP-6.0). Dropped on devices without acceleration structures.
+    AccelerationStructureBuildInput = 1u << 9,
 };
 
 enum class ImageUsage : u32 {

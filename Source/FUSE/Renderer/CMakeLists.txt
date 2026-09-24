@@ -297,3 +297,4 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp51.cmake")  # WP-5.1 mesh-shader
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp52.cmake")  # WP-5.2 cluster DAG + LOD (geometry/dag/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp54.cmake")  # WP-5.4 compute software rasteriser (swraster/, shaders/swraster/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp53.cmake")  # WP-5.3 cluster streaming + residency (geometry_streaming/, core_logic/residency/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp60.cmake")  # WP-6.0 acceleration structures, T2 (rt/, shaders/rt/)

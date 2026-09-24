@@ -86,6 +86,14 @@ VkBufferUsageFlags toVkBufferUsage(BufferUsage usage) {
     if (hasUsage(usage, BufferUsage::Indirect)) {
         flags |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
     }
+#if defined(VK_KHR_acceleration_structure)
+    if (hasUsage(usage, BufferUsage::AccelerationStructureStorage)) {
+        flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR;
+    }
+    if (hasUsage(usage, BufferUsage::AccelerationStructureBuildInput)) {
+        flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+    }
+#endif
     return flags;
 }
 
@@ -96,7 +104,8 @@ bool deviceHasBufferDeviceAddress(const VulkanDevice* device) {
 bool usageWantsDeviceAddress(BufferUsage usage) {
     return hasUsage(usage, BufferUsage::ShaderDeviceAddress) ||
            hasUsage(usage, BufferUsage::Storage) || hasUsage(usage, BufferUsage::Uniform) ||
-           hasUsage(usage, BufferUsage::Vertex);
+           hasUsage(usage, BufferUsage::Vertex) || hasUsage(usage, BufferUsage::AccelerationStructureStorage) ||
+           hasUsage(usage, BufferUsage::AccelerationStructureBuildInput);
 }
 
 VkBufferUsageFlags resolveVkBufferUsage(const VulkanDevice* device, BufferUsage usage) {
@@ -106,6 +115,13 @@ VkBufferUsageFlags resolveVkBufferUsage(const VulkanDevice* device, BufferUsage 
     } else if (!deviceHasBufferDeviceAddress(device)) {
         flags &= ~static_cast<VkBufferUsageFlags>(VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
     }
+#if defined(VK_KHR_acceleration_structure)
+    if (device == nullptr || !device->info().caps.accelerationStructure) {
+        // WP-6.0: the AS usages are only valid with VK_KHR_acceleration_structure enabled.
+        flags &= ~static_cast<VkBufferUsageFlags>(VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
+                                                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR);
+    }
+#endif
     return flags;
 }
 
