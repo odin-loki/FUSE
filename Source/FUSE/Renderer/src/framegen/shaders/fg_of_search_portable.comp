@@ -1,0 +1,260 @@
+// This file is derived from the FidelityFX SDK (sdk/src/backends/vk/shaders/opticalflow/
+// ffx_opticalflow_compute_optical_flow_advanced_pass_v5.glsl and sdk/include/FidelityFX/gpu/opticalflow/
+// ffx_opticalflow_compute_optical_flow_v5.h, SDK v1.1.4, commit c6efa6bf).
+//
+// Copyright (C) 2024 Advanced Micro Devices, Inc.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files(the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and /or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions :
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+//
+// FUSE modifications (WP-4.4 "fg.of.search_portable"): the SDK search pass reduces its 64-thread workgroup with wave
+// intrinsics that assume a wave of 32 or 64 lanes (BlockSad64, SadMapMinReduction256: ffxWaveSum / ffxWaveMin plus one
+// LDS exchange between two wave32 halves). On devices with another subgroup size (Lavapipe: 8, many others: 16) that
+// yields wrong vectors. This variant is the same algorithm with both reductions done in workgroup shared memory (a
+// 64 -> 1 tree; integer min / sum are exact, so on a wave32 / wave64 device it produces the vendored pass's output bit
+// for bit). Everything else — bindings, callbacks, search window, SAD packing, top-left-bias fix, local-search
+// fallback — is the vendored code, included from Engine/lib/fidelityfx unchanged. The host uses the vendored pass when
+// the device's subgroup size is fixed at 32 or 64 and this one otherwise.
+#version 450
+
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_samplerless_texture_functions : require
+
+#define FFX_OPTICALFLOW_BIND_SRV_OPTICAL_FLOW_INPUT                0
+#define FFX_OPTICALFLOW_BIND_SRV_OPTICAL_FLOW_PREVIOUS_INPUT       1
+
+#define FFX_OPTICALFLOW_BIND_UAV_OPTICAL_FLOW                      2
+#define FFX_OPTICALFLOW_BIND_UAV_OPTICAL_FLOW_SCD_OUTPUT           3
+
+#define FFX_OPTICALFLOW_BIND_CB_COMMON                             4
+
+#include "opticalflow/ffx_opticalflow_callbacks_glsl.h"
+#include "opticalflow/ffx_opticalflow_common.h"
+
+#define CompareSize (4 * 2)
+#define ThreadCount (4 * 16)
+#define SearchRadiusX (8)
+#define SearchRadiusY (8)
+#define BlockCount 2
+
+#define SearchBufferSizeX ((CompareSize + SearchRadiusX * 2) / 4)
+#define SearchBufferSizeY (CompareSize + SearchRadiusY * 2)
+
+FFX_GROUPSHARED FfxUInt32 pixels[CompareSize][CompareSize / 4];
+FFX_GROUPSHARED FfxUInt32 searchBuffer[1][SearchBufferSizeY * SearchBufferSizeX];
+#define bankBreaker 1
+FFX_GROUPSHARED FfxUInt32 sadMapBuffer[4][SearchRadiusY * 2][(SearchRadiusX * 2) / 4 + bankBreaker];
+
+// FUSE: workgroup reduction scratch (replaces the wave intrinsics + sWaveSad / sWaveMin).
+FFX_GROUPSHARED FfxUInt32 sReduceSum[ThreadCount];
+FFX_GROUPSHARED FfxUInt32 sReduceMin[ThreadCount];
+
+FfxUInt32 BlockSad64(FfxUInt32 blockSadSum, FfxInt32 iLocalIndex, FfxInt32 iLaneToBlockId, FfxInt32 block)
+{
+    if (iLaneToBlockId != block)
+    {
+        blockSadSum = 0u;
+    }
+    sReduceSum[iLocalIndex] = blockSadSum;
+    FFX_GROUP_MEMORY_BARRIER;
+    for (FfxInt32 stride = ThreadCount / 2; stride > 0; stride >>= 1)
+    {
+        if (iLocalIndex < stride)
+        {
+            sReduceSum[iLocalIndex] += sReduceSum[iLocalIndex + stride];
+        }
+        FFX_GROUP_MEMORY_BARRIER;
+    }
+    return sReduceSum[0];
+}
+
+FfxUInt32 SadMapMinReduction256(FfxInt32x2 iSearchId, FfxInt32 iLocalIndex)
+{
+    FfxUInt32 min01 = ffxMin(sadMapBuffer[0][iSearchId.y][iSearchId.x], sadMapBuffer[1][iSearchId.y][iSearchId.x]);
+    FfxUInt32 min23 = ffxMin(sadMapBuffer[2][iSearchId.y][iSearchId.x], sadMapBuffer[3][iSearchId.y][iSearchId.x]);
+    FfxUInt32 min0123 = ffxMin(min01, min23);
+    sReduceMin[iLocalIndex] = min0123;
+    FFX_GROUP_MEMORY_BARRIER;
+    for (FfxInt32 stride = ThreadCount / 2; stride > 0; stride >>= 1)
+    {
+        if (iLocalIndex < stride)
+        {
+            sReduceMin[iLocalIndex] = ffxMin(sReduceMin[iLocalIndex], sReduceMin[iLocalIndex + stride]);
+        }
+        FFX_GROUP_MEMORY_BARRIER;
+    }
+    return sReduceMin[0];
+}
+
+void LoadSearchBuffer(FfxInt32 iLocalIndex, FfxInt32x2 iPxPosShifted)
+{
+    FfxInt32 baseX = (iPxPosShifted.x - SearchRadiusX);
+    FfxInt32 baseY = (iPxPosShifted.y - SearchRadiusY);
+
+    for (FfxInt32 id = iLocalIndex; id < SearchBufferSizeX * SearchBufferSizeY; id += ThreadCount)
+    {
+        FfxInt32 idx = id % SearchBufferSizeX;
+        FfxInt32 idy = id / SearchBufferSizeX;
+        FfxInt32 x = baseX + idx * 4;
+        FfxInt32 y = baseY + idy;
+        searchBuffer[0][id] = LoadSecondImagePackedLuma(FfxInt32x2(x, y));
+    }
+    FFX_GROUP_MEMORY_BARRIER;
+}
+
+FfxUInt32x4 CalculateQSads2(FfxInt32x2 iSearchId)
+{
+    FfxUInt32x4 sad = ffxBroadcast4(0u);
+    for (FfxInt32 dy = 0; dy < CompareSize; dy++)
+    {
+        FfxInt32 rowOffset = (iSearchId.y + dy) * SearchBufferSizeX;
+        FfxUInt32 a0 = searchBuffer[0][rowOffset + iSearchId.x];
+        FfxUInt32 a1 = searchBuffer[0][rowOffset + iSearchId.x + 1];
+        FfxUInt32 a2 = searchBuffer[0][rowOffset + iSearchId.x + 2];
+        sad += QSad(a0, a1, pixels[dy][0]);
+        sad += QSad(a1, a2, pixels[dy][1]);
+    }
+    return sad;
+}
+
+FfxUInt32x2 abs_2(FfxInt32x2 val)
+{
+    FfxInt32x2 tmp = val;
+    FfxInt32x2 mask = tmp >> 31;
+    FfxUInt32x2 res = (tmp + mask) ^ mask;
+    return res;
+}
+
+FfxUInt32 EncodeSearchCoord(FfxInt32x2 coord)
+{
+#if FFX_OPTICALFLOW_FIX_TOP_LEFT_BIAS == 1
+    FfxUInt32x2 absCoord = FfxUInt32x2(abs_2(coord - 8));
+    return FfxUInt32(absCoord.y << 12) | FfxUInt32(absCoord.x << 8) | FfxUInt32(coord.y << 4) | FfxUInt32(coord.x);
+#else
+    return FfxUInt32(coord.y << 8) | FfxUInt32(coord.x);
+#endif
+}
+
+FfxInt32x2 DecodeSearchCoord(FfxUInt32 bits)
+{
+#if FFX_OPTICALFLOW_FIX_TOP_LEFT_BIAS == 1
+    FfxInt32 dx = FfxInt32(bits & 0xfu) - SearchRadiusX;
+    FfxInt32 dy = FfxInt32((bits >> 4) & 0xfu) - SearchRadiusY;
+    return FfxInt32x2(dx, dy);
+#else
+    FfxInt32 dx = FfxInt32(bits & 0xffu) - SearchRadiusX;
+    FfxInt32 dy = FfxInt32((bits >> 8) & 0xffu) - SearchRadiusY;
+    return FfxInt32x2(dx, dy);
+#endif
+}
+
+void PrepareSadMap(FfxInt32x2 iSearchId, FfxUInt32x4 qsad)
+{
+    sadMapBuffer[0][iSearchId.y][iSearchId.x] = (qsad.x << 16) | EncodeSearchCoord(FfxInt32x2(iSearchId.x * 4 + 0, iSearchId.y));
+    sadMapBuffer[1][iSearchId.y][iSearchId.x] = (qsad.y << 16) | EncodeSearchCoord(FfxInt32x2(iSearchId.x * 4 + 1, iSearchId.y));
+    sadMapBuffer[2][iSearchId.y][iSearchId.x] = (qsad.z << 16) | EncodeSearchCoord(FfxInt32x2(iSearchId.x * 4 + 2, iSearchId.y));
+    sadMapBuffer[3][iSearchId.y][iSearchId.x] = (qsad.w << 16) | EncodeSearchCoord(FfxInt32x2(iSearchId.x * 4 + 3, iSearchId.y));
+    FFX_GROUP_MEMORY_BARRIER;
+}
+
+uint ABfe(uint src, uint off, uint bits) { uint mask = (1u << bits) - 1u; return (src >> off) & mask; }
+void MapThreads(in FfxInt32x2 iGroupId, in FfxInt32 iLocalIndex,
+                out FfxInt32x2 iSearchId, out FfxInt32x2 iPxPos, out FfxInt32 iLaneToBlockId)
+{
+    iSearchId = FfxInt32x2(ABfe(iLocalIndex, 0u, 2u), ABfe(iLocalIndex, 2u, 4u));
+    iLaneToBlockId = FfxInt32(ABfe(iLocalIndex, 1u, 1u) | (ABfe(iLocalIndex, 5u, 1u) << 1u));
+    iPxPos = (iGroupId << 4u) + iSearchId * FfxInt32x2(4, 1);
+}
+
+void ComputeOpticalFlowAdvanced(FfxInt32x2 iGlobalId, FfxInt32x2 iLocalId, FfxInt32x2 iGroupId, FfxInt32 iLocalIndex)
+{
+    FfxInt32x2 iSearchId;
+    FfxInt32x2 iPxPos;
+    FfxInt32 iLaneToBlockId;
+    MapThreads(iGroupId, iLocalIndex, iSearchId, iPxPos, iLaneToBlockId);
+
+    FfxInt32x2 currentOFPos = iPxPos >> 3u;
+
+    if (IsSceneChanged())
+    {
+        if ((iSearchId.y & 0x7) == 0 && (iSearchId.x & 0x1) == 0)
+        {
+            StoreOpticalFlow(currentOFPos, FfxInt32x2(0, 0));
+        }
+        return;
+    }
+
+    const FfxBoolean bUsePredictionFromPreviousLevel = (OpticalFlowPyramidLevel() != OpticalFlowPyramidLevelCount() - 1);
+
+    FfxUInt32 packedLuma_4blocks = LoadFirstImagePackedLuma(iPxPos);
+
+#if FFX_LOCAL_SEARCH_FALLBACK == 1
+    FfxUInt32 prevPackedLuma_4blocks = LoadSecondImagePackedLuma(iPxPos);
+    FfxUInt32 sad_4blocks = Sad(packedLuma_4blocks, prevPackedLuma_4blocks);
+#endif
+
+    FfxInt32x2 ofGroupOffset = iGroupId << 1u;
+    FfxInt32x2 pixelGroupOffset = iGroupId << 4u;
+
+    FfxInt32x2 blockId;
+    for (blockId.y = 0; blockId.y < BlockCount; blockId.y++)
+    {
+        for (blockId.x = 0; blockId.x < BlockCount; blockId.x++)
+        {
+            FfxInt32x2 currentVector = LoadRwOpticalFlow(ofGroupOffset + blockId);
+            if (!bUsePredictionFromPreviousLevel)
+            {
+                currentVector = FfxInt32x2(0, 0);
+            }
+
+            if (iLaneToBlockId == blockId.y * 2 + blockId.x)
+            {
+                pixels[iSearchId.y & 0x7][iSearchId.x & 0x1] = packedLuma_4blocks;
+            }
+
+            LoadSearchBuffer(iLocalIndex, pixelGroupOffset + blockId * 8 + currentVector);
+
+            FfxUInt32x4 qsad = CalculateQSads2(iSearchId);
+
+            PrepareSadMap(iSearchId, qsad);
+            FfxUInt32 minSad = SadMapMinReduction256(iSearchId, iLocalIndex);
+
+            FfxInt32x2 minSadCoord = DecodeSearchCoord(minSad);
+            FfxInt32x2 newVector = currentVector + minSadCoord;
+
+#if FFX_LOCAL_SEARCH_FALLBACK == 1
+            FfxUInt32 blockSadSum = BlockSad64(sad_4blocks, iLocalIndex, iLaneToBlockId, blockId.x + blockId.y * 2);
+            if (OpticalFlowPyramidLevel() == 0 && blockSadSum <= (minSad >> 16u))
+            {
+                newVector = FfxInt32x2(0, 0);
+            }
+#endif
+
+            {
+                StoreOpticalFlow(ofGroupOffset + blockId, newVector);
+            }
+        }
+    }
+}
+
+layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    ComputeOpticalFlowAdvanced(FfxInt32x2(gl_GlobalInvocationID.xy), FfxInt32x2(gl_LocalInvocationID.xy), FfxInt32x2(gl_WorkGroupID.xy),
+                               FfxInt32(gl_LocalInvocationIndex));
+}

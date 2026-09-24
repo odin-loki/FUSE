@@ -1,0 +1,36 @@
+#version 460
+// WP-4.4 "fg.convert" (GLSL twin of fg_convert.slang): the FUSE temporal inputs -> the textures the vendored FSR 3.1
+// frame-interpolation passes read. Per render pixel: linear view depth (f32 buffer, <= 0 = sky) -> reverse-Z device
+// depth of a finite [near, far] perspective (fg_device_depth in fg_types.hpp; sky -> 0), UV motion (f32x2 buffer,
+// current - previous) copied unchanged (the host sets cbFI.fMotionVectorScale = -1). `precise`: the CPU twin evaluates
+// the same expression without contraction.
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer FgSourceDepth { float values[]; } fgSourceDepth;
+layout(set = 0, binding = 1, std430) readonly buffer FgSourceMotion { vec2 values[]; } fgSourceMotion;
+layout(set = 0, binding = 2, r32f) writeonly uniform image2D fgOutDepth;
+layout(set = 0, binding = 3, rg32f) writeonly uniform image2D fgOutMotion;
+
+layout(push_constant) uniform FgConvertPush {
+    uint renderW;
+    uint renderH;
+    float nearPlane;
+    float farPlane;
+} pc;
+
+void main() {
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= pc.renderW || p.y >= pc.renderH) {
+        return;
+    }
+    const uint i = p.y * pc.renderW + p.x;
+    const float linearDepth = fgSourceDepth.values[i];
+    precise float z = 0.0;
+    if (linearDepth > 0.0) {
+        precise float num = pc.nearPlane * (pc.farPlane - linearDepth);
+        precise float den = linearDepth * (pc.farPlane - pc.nearPlane);
+        z = clamp(num / den, 0.0, 1.0);
+    }
+    imageStore(fgOutDepth, ivec2(p), vec4(z, 0.0, 0.0, 0.0));
+    imageStore(fgOutMotion, ivec2(p), vec4(fgSourceMotion.values[i], 0.0, 0.0));
+}
