@@ -158,7 +158,15 @@ bool Connection::start() {
     link::HostLaunch hl;
     hl.hostExe = envString(kEnvHostPath);
     if (hl.hostExe.empty()) {
-        hl.hostExe = link::thisModuleDirectory() + "fuse_relight_host.exe";
+        // RL-6.4 packaged layout: the x64 host and its Relight d3d9.dll live in <client dir>/fuse_relight/
+        // (they cannot sit next to this x86 d3d9.dll); a host next to the client still wins.
+        const std::string dir = link::thisModuleDirectory();
+        hl.hostExe = dir + "fuse_relight_host.exe";
+        const std::string packaged = dir + "fuse_relight\\fuse_relight_host.exe";
+        if (::GetFileAttributesA(hl.hostExe.c_str()) == INVALID_FILE_ATTRIBUTES &&
+            ::GetFileAttributesA(packaged.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            hl.hostExe = packaged;
+        }
     }
     hl.extraArgs = splitArgs(envString(kEnvHostArgs));
     hl.sessionName = "fuse-relight-bridge-" + std::to_string(::GetCurrentProcessId()) + "-" + std::to_string(::GetTickCount());
