@@ -1,0 +1,45 @@
+#version 460
+// WP-7.3 "pathtrace.trace" ray-generation shader (tier T3, VK_KHR_ray_tracing_pipeline; twin: pt_raygen.slang).
+// One launch per pixel: samplesPerFrame paths (pt_integrator.glsl). Radiance rays use hit group 0 (closest hit
+// pt_closest_hit.rchit fills the surface record through the material dispatch, any hit pt_any_hit.rahit skips the
+// triangle the ray starts on), shadow rays hit group 1 (any hit only, TERMINATE_ON_FIRST_HIT | SKIP_CLOSEST_HIT);
+// miss 0 (pt_miss.rmiss) serves both ray types. Every ray is traced NO_OPAQUE so the any-hit shaders run (the
+// WP-6.0 instances are FORCE_OPAQUE).
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_ray_tracing : require
+#include "lt_common.glsl"
+#include "pt_common.glsl"
+#include "pt_payload.glsl"
+
+layout(location = 0) rayPayloadEXT PtPayload payload;
+
+bool pt_trace(PtFrame F, vec3 o, vec3 d, float tMin, float tMax, uint originInstance, uint originPrimitive, out PtHit hit) {
+    payload.hit = pt_miss_record();
+    payload.originInstance = originInstance;
+    payload.originPrimitive = originPrimitive;
+    traceRayEXT(accelerationStructureEXT(F.tlas), gl_RayFlagsNoOpaqueEXT, F.cullMask & PT_MASK_ALL, PT_RAY_RADIANCE, PT_RAY_TYPES,
+                0, o, tMin, d, tMax, 0);
+    hit = payload.hit;
+    return hit.t >= 0.0;
+}
+
+bool pt_occluded(PtFrame F, vec3 o, vec3 d, float tMax, uint originInstance, uint originPrimitive) {
+    payload.hit.t = 0.0; // stays 0 when a hit ends the ray; the miss shader writes -1
+    payload.originInstance = originInstance;
+    payload.originPrimitive = originPrimitive;
+    traceRayEXT(accelerationStructureEXT(F.tlas),
+                gl_RayFlagsNoOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
+                F.cullMask & PT_MASK_ALL, PT_RAY_SHADOW, PT_RAY_TYPES, 0, o, F.rayTMin, d, tMax, 0);
+    return payload.hit.t >= 0.0;
+}
+
+#include "pt_integrator.glsl"
+
+void main() {
+    const PtFrame F = pt_frame();
+    const uvec2 p = gl_LaunchIDEXT.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    pt_render_pixel(F, p.x, p.y);
+}

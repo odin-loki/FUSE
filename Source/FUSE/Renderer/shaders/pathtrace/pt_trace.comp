@@ -1,0 +1,60 @@
+#version 460
+// WP-7.3 "pathtrace.trace" on ray queries (tier T2; twin: pt_trace.slang). One pixel per thread: samplesPerFrame
+// paths (pt_integrator.glsl), accumulated. The material dispatch is SBT-free: the candidate loop plays the any-hit
+// shader (skip the triangle the ray starts on) and pt_surface the closest-hit shader of the T3 pipeline, so both
+// variants run the same integrator on the same surface records.
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_ray_query : require
+#include "lt_common.glsl"
+#include "pt_common.glsl"
+
+layout(local_size_x = PT_TILE, local_size_y = PT_TILE) in;
+
+bool pt_trace(PtFrame F, vec3 o, vec3 d, float tMin, float tMax, uint originInstance, uint originPrimitive, out PtHit hit) {
+    rayQueryEXT q;
+    rayQueryInitializeEXT(q, accelerationStructureEXT(F.tlas), gl_RayFlagsNoOpaqueEXT, F.cullMask & PT_MASK_ALL, o, tMin, d, tMax);
+    while (rayQueryProceedEXT(q)) {
+        if (rayQueryGetIntersectionTypeEXT(q, false) == gl_RayQueryCandidateIntersectionTriangleEXT) {
+            const uint instance = uint(rayQueryGetIntersectionInstanceIdEXT(q, false));
+            const uint primitive = uint(rayQueryGetIntersectionPrimitiveIndexEXT(q, false));
+            if (instance != originInstance || primitive != originPrimitive) {
+                rayQueryConfirmIntersectionEXT(q);
+            }
+        }
+    }
+    if (rayQueryGetIntersectionTypeEXT(q, true) != gl_RayQueryCommittedIntersectionTriangleEXT) {
+        hit = pt_miss_record();
+        return false;
+    }
+    const vec2 bary = rayQueryGetIntersectionBarycentricsEXT(q, true);
+    hit = pt_surface(F, uint(rayQueryGetIntersectionInstanceIdEXT(q, true)), uint(rayQueryGetIntersectionPrimitiveIndexEXT(q, true)),
+                     bary.x, bary.y, rayQueryGetIntersectionTEXT(q, true));
+    return true;
+}
+
+bool pt_occluded(PtFrame F, vec3 o, vec3 d, float tMax, uint originInstance, uint originPrimitive) {
+    rayQueryEXT q;
+    rayQueryInitializeEXT(q, accelerationStructureEXT(F.tlas), gl_RayFlagsNoOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
+                          F.cullMask & PT_MASK_ALL, o, F.rayTMin, d, tMax);
+    while (rayQueryProceedEXT(q)) {
+        if (rayQueryGetIntersectionTypeEXT(q, false) == gl_RayQueryCandidateIntersectionTriangleEXT) {
+            const uint instance = uint(rayQueryGetIntersectionInstanceIdEXT(q, false));
+            const uint primitive = uint(rayQueryGetIntersectionPrimitiveIndexEXT(q, false));
+            if (instance != originInstance || primitive != originPrimitive) {
+                rayQueryConfirmIntersectionEXT(q);
+            }
+        }
+    }
+    return rayQueryGetIntersectionTypeEXT(q, true) == gl_RayQueryCommittedIntersectionTriangleEXT;
+}
+
+#include "pt_integrator.glsl"
+
+void main() {
+    const PtFrame F = pt_frame();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    pt_render_pixel(F, p.x, p.y);
+}
