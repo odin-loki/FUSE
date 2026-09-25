@@ -63,6 +63,43 @@ ContactManifold collideCapsuleAgainstBox(vec3 capsulePos, vec3 capsuleParams, ve
     return best;
 }
 
+ContactManifold collideCapsuleCapsule(vec3 posA, vec3 paramsA, vec3 posB, vec3 paramsB, u32 idxA, u32 idxB) {
+    const f32 halfA = std::max(0.f, paramsA.y);
+    const f32 halfB = std::max(0.f, paramsB.y);
+    const f32 yA0 = posA.y - halfA;
+    const f32 yA1 = posA.y + halfA;
+    const f32 yB0 = posB.y - halfB;
+    const f32 yB1 = posB.y + halfB;
+    const f32 overlapLo = std::max(yA0, yB0);
+    const f32 overlapHi = std::min(yA1, yB1);
+
+    vec3 pointA{};
+    vec3 pointB{};
+    if (overlapLo <= overlapHi) {
+        const f32 y = 0.5f * (overlapLo + overlapHi);
+        pointA = {posA.x, y, posA.z};
+        pointB = {posB.x, y, posB.z};
+    } else if (yA1 < yB0) {
+        pointA = {posA.x, yA1, posA.z};
+        pointB = {posB.x, yB0, posB.z};
+    } else {
+        pointA = {posA.x, yA0, posA.z};
+        pointB = {posB.x, yB1, posB.z};
+    }
+
+    return collideSphereSphere(pointA, paramsA.x, pointB, paramsB.x, idxA, idxB);
+}
+
+ContactManifold collideCapsulePlane(vec3 capsulePos, vec3 capsuleParams, vec3 planeNormal, f32 planeDistance,
+                                    u32 idxCapsule, u32 idxPlane) {
+    const vec3 normal = planeNormal.normalized();
+    const f32 halfHeight = std::max(0.f, capsuleParams.y);
+    const vec3 endA = {capsulePos.x, capsulePos.y - halfHeight, capsulePos.z};
+    const vec3 endB = {capsulePos.x, capsulePos.y + halfHeight, capsulePos.z};
+    const vec3 closest = endA.dot(normal) <= endB.dot(normal) ? endA : endB;
+    return collideSpherePlane(closest, capsuleParams.x, normal, planeDistance, idxCapsule, idxPlane);
+}
+
 ContactManifold collideHullPlane(vec3 hullPos, vec3 halfExtents, vec3 planeNormal, f32 planeDistance, u32 idxHull,
                                  u32 idxPlane) {
     const vec3 normal = planeNormal.normalized();
@@ -204,6 +241,34 @@ ContactManifold dispatchShapePair(
             shapes.params[shapeB],
             pair.bodyA,
             pair.bodyB);
+    }
+
+    if (typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Capsule) {
+        return collideCapsuleCapsule(posA, shapes.params[shapeA], posB, shapes.params[shapeB], pair.bodyA,
+                                     pair.bodyB);
+    }
+
+    if (typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Box) {
+        return collideCapsuleAgainstBox(posA, shapes.params[shapeA], posB, shapes.params[shapeB], pair.bodyA,
+                                        pair.bodyB);
+    }
+
+    if (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Capsule) {
+        const ContactManifold swapped = collideCapsuleAgainstBox(
+            posB, shapes.params[shapeB], posA, shapes.params[shapeA], pair.bodyB, pair.bodyA);
+        return flipContactBodies(swapped, pair.bodyA, pair.bodyB);
+    }
+
+    if (typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Plane) {
+        return collideCapsulePlane(posA, shapes.params[shapeA], shapes.params[shapeB], shapes.scalars[shapeB],
+                                   pair.bodyA, pair.bodyB);
+    }
+
+    if (typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Capsule) {
+        const ContactManifold swapped =
+            collideCapsulePlane(posB, shapes.params[shapeB], shapes.params[shapeA], shapes.scalars[shapeA],
+                                pair.bodyB, pair.bodyA);
+        return flipContactBodies(swapped, pair.bodyA, pair.bodyB);
     }
 
     if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::ConvexHull) {

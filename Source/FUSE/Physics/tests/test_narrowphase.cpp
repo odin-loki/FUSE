@@ -1479,6 +1479,62 @@ void testSphereAndCapsuleHitConvexHull() {
     expectTrue(capsuleHit.penetrationDepth > 0.f, "capsule-hull penetration is positive");
 }
 
+void testCapsuleAgainstCapsuleBoxAndPlane() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 capsuleA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 capsuleB = bodies.addBody({0.8f, 0.f, 0.f}, 1.f);
+    const fuse::u32 separated = bodies.addBody({5.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 capsuleLow = bodies.addBody({0.f, 0.f, 6.f}, 1.f);
+    const fuse::u32 capsuleHigh = bodies.addBody({0.f, 1.2f, 6.f}, 1.f);
+    const fuse::u32 box = bodies.addBody({0.f, 0.f, 2.f}, 1.f);
+    const fuse::u32 capsuleOnBox = bodies.addBody({0.f, 0.8f, 2.f}, 1.f);
+    const fuse::u32 plane = bodies.addBody({0.f, 0.f, 4.f}, 0.f);
+    const fuse::u32 capsuleOnPlane = bodies.addBody({0.f, 0.4f, 4.f}, 1.f);
+
+    shapes.addShape(fuse::physics::CollisionShapeType::Capsule, capsuleA, {0.5f, 1.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Capsule, capsuleB, {0.5f, 1.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Capsule, separated, {0.4f, 0.5f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Capsule, capsuleLow, {0.3f, 0.5f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Capsule, capsuleHigh, {0.3f, 0.5f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Box, box, {0.5f, 0.5f, 0.5f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Capsule, capsuleOnBox, {0.5f, 0.2f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Plane, plane, {0.f, 1.f, 0.f}, 0.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Capsule, capsuleOnPlane, {0.5f, 0.2f, 0.f});
+
+    const auto side = fuse::physics::narrowphase::detect_contacts_pair({capsuleA, capsuleB}, bodies, shapes);
+    expectTrue(side.valid, "side-by-side capsules overlap");
+    expectNear(side.penetrationDepth, 0.2f, 1e-3f, "side capsule penetration is the radius overlap");
+    expectTrue(side.bodyA == capsuleA && side.bodyB == capsuleB, "capsule-capsule stores body order");
+
+    const auto miss = fuse::physics::narrowphase::detect_contacts_pair({capsuleA, separated}, bodies, shapes);
+    expectTrue(!miss.valid, "separated capsules produce no contact");
+
+    const auto stacked =
+        fuse::physics::narrowphase::detect_contacts_pair({capsuleLow, capsuleHigh}, bodies, shapes);
+    expectTrue(stacked.valid, "stacked capsules meet at their ends");
+    expectNear(stacked.penetrationDepth, 0.4f, 1e-3f, "stacked capsule penetration includes both radii");
+
+    const auto boxHit = fuse::physics::narrowphase::detect_contacts_pair({capsuleOnBox, box}, bodies, shapes);
+    expectTrue(boxHit.valid, "capsule overlaps the top of a box");
+    expectNear(boxHit.penetrationDepth, 0.4f, 1e-3f, "capsule-box penetration uses the deepest sphere sample");
+    expectTrue(boxHit.bodyA == capsuleOnBox && boxHit.bodyB == box, "capsule-box stores body order");
+
+    const auto boxFlip = fuse::physics::narrowphase::detect_contacts_pair({box, capsuleOnBox}, bodies, shapes);
+    expectTrue(boxFlip.valid, "box-capsule order still collides");
+    expectTrue(boxFlip.bodyA == box && boxFlip.bodyB == capsuleOnBox, "flipped capsule-box stores body order");
+
+    const auto planeHit =
+        fuse::physics::narrowphase::detect_contacts_pair({capsuleOnPlane, plane}, bodies, shapes);
+    expectTrue(planeHit.valid, "capsule intersects a ground plane");
+    expectNear(planeHit.penetrationDepth, 0.3f, 1e-3f, "capsule-plane penetration is measured from the lower end");
+
+    const auto planeFlip =
+        fuse::physics::narrowphase::detect_contacts_pair({plane, capsuleOnPlane}, bodies, shapes);
+    expectTrue(planeFlip.valid, "plane-capsule order still collides");
+    expectTrue(planeFlip.bodyA == plane && planeFlip.bodyB == capsuleOnPlane, "flipped capsule-plane stores body order");
+}
+
 void testContactPairDeepenFollowUpRejectGuards() {
     fuse::physics::RigidBodySoA bodies;
     fuse::physics::CollisionShapeSoA shapes;
@@ -1879,6 +1935,7 @@ int main() {
     testGjkSupportAndEpaStub();
     testConvexHullPairUsesEpa();
     testSphereAndCapsuleHitConvexHull();
+    testCapsuleAgainstCapsuleBoxAndPlane();
     testContactPairDeepenFollowUpRejectGuards();
     testManifoldPruneFinalizeFollowUpGuards();
     testFrictionBasisFollowUpRejectGuards();
