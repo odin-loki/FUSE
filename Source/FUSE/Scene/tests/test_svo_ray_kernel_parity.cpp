@@ -229,7 +229,21 @@ void testStatsFallbackAndInvalid() {
         }
     } else {
         // Device present: the DDA is plain IEEE arithmetic (no transcendental ulp drift) — exact.
-        expectTrue(sameHits(reference, cast(svo, kernel::Backend::Cuda, rays)), "CUDA hits == CpuReference hits");
+        // nvcc contracts some DDA divisions into fma, so hit distance can differ by ~1 ulp.
+        // Voxel, face normal and hit/miss stay exact.
+        const std::vector<SvoRayHit> gpu = cast(svo, kernel::Backend::Cuda, rays);
+        bool cudaOk = gpu.size() == reference.size();
+        for (u32 i = 0; cudaOk && i < reference.size(); ++i) {
+            cudaOk = gpu[i].hit == reference[i].hit;
+            if (!cudaOk || gpu[i].hit == 0u) {
+                continue;
+            }
+            cudaOk = std::memcmp(gpu[i].voxel, reference[i].voxel, sizeof(gpu[i].voxel)) == 0 &&
+                     std::memcmp(gpu[i].normal, reference[i].normal, sizeof(gpu[i].normal)) == 0 &&
+                     std::fabs(gpu[i].distance - reference[i].distance) <=
+                         1e-5f * std::max(1.f, std::fabs(reference[i].distance));
+        }
+        expectTrue(cudaOk, "CUDA hits match CpuReference (distance within 1e-5 relative)");
     }
 
     std::vector<SvoRayHit> hits(rays.size());

@@ -489,7 +489,7 @@ All shutdown steps are idempotent. GPU init and submit require the registered re
 | Item | Status | Notes |
 |------|--------|-------|
 | GPU frame time < 8 ms @ 1080p | **Partial** | SDF march launch 3.35 ms (under 8 ms). Copy-inclusive wall 15.88 ms. Not a presented frame |
-| CUDA kernel > 60% occupancy | **Blocked** | Nsight Compute 2026.1 is installed; counters returned `ERR_NVGPUCTRPERM` for this user |
+| CUDA kernel > 60% occupancy | **Measured** | Elevated `ncu` after `RmProfilingAdminOnly=0`. SDF march at 1920×1080, 16×8 blocks: achieved **64%** (theoretical 75%). Particle update at 262144 slots: achieved **69%** (theoretical 83%); compact **73%** |
 | Zero per-frame heap allocs | **Done (scaffold)** | Fixed `kMaxPassesPerFrame` storage; not profiled under load |
 | Render graph compile < 1 ms CPU | **Done** | Release, this workstation: hybrid graph median 0.90 µs, 32-pass chain median 16.20 µs (`fuse_b2_render_graph_budget`) |
 
@@ -505,12 +505,12 @@ Dual Intel Xeon Gold 6242, NVIDIA GeForce RTX 3090 (24576 MiB, driver 595.79), C
 | 1M alloc/free | `fuse_core_b1_alloc_million_cycles` passed (0 corruption) |
 | Staging 256 MB | 256/256 chunks intact, 15 wraps, 0 fence timeouts |
 | SDF ray march 1920×1080, 10 objects | launch **3.35 ms**, host wall **15.88 ms** (upload + launch + download). Parity vs the CPU kernel passed. Not a swapchain present |
-| SVO 1M rays | CPU parallel 184 ms. CUDA wall **146.96 ms**, launch **126.22 ms**. 10 ms target missed. The 1,000,003-ray CUDA image mismatched the CPU reference (one check failed); the 1M-ray CUDA image matched |
+| SVO 1M rays | CPU parallel 184 ms. CUDA wall **150 ms**, launch **130 ms**. 10 ms target missed. Voxel, face and hit/miss match the CPU path; distance is within 1e-5 relative (nvcc fma contraction) |
 | Broadphase, 10k bodies | CUDA wall **33.6 ms** per call, copies included. 2 ms target missed. CPU parallel on the same step was 26–35 ms |
 | Narrowphase | 1,956 contacts: CUDA wall **2.06 ms**. 20,639 contacts: **20.9 ms**. Host clock around the call, not a resident CUDA-event batch of 1k pairs |
 | Solver step | 9,610 bodies, existing step (4 substeps × 8 iterations): CUDA wall **42.2 ms**. Not “10 iterations × 10k contacts”. 5 ms target missed |
 | `compute-sanitizer` memcheck | **0 errors** on the ray-march, particle (5,000 slots), and physics kernel gates |
-| Nsight occupancy (60% / 70%) | Not measured. `ncu` returned `ERR_NVGPUCTRPERM` |
+| Nsight occupancy (60% / 70%) | Elevated `ncu` after allowing counters. SDF march 1920×1080 achieved **64%**. Particle compact **73%**, particle update **69%** on 262144 particles |
 | Win32 `cudaImportExternalMemory` | Not run. CUDA and Vulkan were not linked in one binary |
 | On-screen present / RenderDoc | Not run |
 

@@ -101,7 +101,7 @@ kernel::ParityReport compareImages(const Image& a, const Image& b) {
 }
 
 void testBackendParity() {
-    constexpr u32 kW = 173; // not a multiple of the 8x8 workgroup: partial edge tiles
+    constexpr u32 kW = 173; // not a multiple of the 16-wide workgroup: partial edge tiles
     constexpr u32 kH = 97;
     auto& scheduler = fuse::jobs::JobScheduler::instance();
     scheduler.shutdown();
@@ -164,9 +164,9 @@ void testStatsAndFallback() {
 
     kernel::KernelStats stats{};
     expectTrue(kernel::find_kernel_stats(compute::ray_march_kernel::kName, stats) && stats.launches == 1u &&
-                   stats.items == kW * kH && stats.workgroups == 8u * 5u &&
+                   stats.items == kW * kH && stats.workgroups == 4u * 5u &&
                    stats.last_backend == kernel::Backend::CpuReference,
-               "launch records sdf_ray_march stats (items, 8x8 workgroups, backend)");
+               "launch records sdf_ray_march stats (items, 16x8 workgroups, backend)");
 
     if (!kernel::backend_available(kernel::Backend::Cuda)) {
         for (kernel::Backend gpu : {kernel::Backend::Cuda, kernel::Backend::Auto, kernel::Backend::VulkanCompute}) {

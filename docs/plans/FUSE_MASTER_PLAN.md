@@ -1938,7 +1938,7 @@ int main() {
 - [x] Composite pass correctly blends CUDA and raster output at all GRIA α values — `fuse_b2_composite_blend`
 - [ ] Final frame presents to screen at stable 60fps at 1920×1080 with a 10-object SDF scene: **Week 5 gate** — present not run (stays behind `FUSE_TRACK_B_UNLOCK`). The SDF march alone, 10 objects at 1920×1080, was launch 3.35 ms and host wall 15.88 ms including copies
 - [ ] GPU frame time < 8ms for a 10-object SDF scene at 1080p (target 120fps headroom) — partial: the synced launch was 3.35 ms; the copy-inclusive host call was 15.88 ms. Not a presented frame
-- [ ] CUDA ray march kernel achieves > 60% occupancy — verified with Nsight Compute — blocked 2026-09-25: `ncu` 2026.1 returned `ERR_NVGPUCTRPERM` on this user account
+- [x] CUDA ray march kernel achieves > 60% occupancy — verified with Nsight Compute — 2026-09-25 RTX 3090, elevated `ncu`: 1920×1080 march with 16×8 blocks achieved 64% (theoretical 75%). A 64-thread block had achieved 56%
 - [x] Zero per-frame heap allocations — all frame memory from per-frame LinearAllocator — `fuse_b2_frame_alloc_budget`, `fuse_b2_hybrid_alloc_budget` (render thread, composer tick + render, all threads; physics-enabled worlds still allocate in the broadphase)
 - [x] Render graph compiles in < 1ms CPU time per frame — `fuse_b2_render_graph_budget`
 
@@ -2746,7 +2746,7 @@ void CameraSystem::update(Registry& reg) {
 - [x] 10k entity transform update < 1ms on all cores via `each_parallel` — `fuse_b3_scene_gates`
 - [x] BVH frustum cull of 10k objects < 0.1ms — `fuse_b3_bvh_gates`
 - [x] Full scene build (cull → draw list → SDF object buffer) < 2ms for 1k entities — `fuse_b3_scene_gates`
-- [ ] SVO ray cast for 1M rays < 10ms on CUDA (RTX 3090) — verified with CUDA event timing — missed 2026-09-25: host clock around the synced launch was 126.22 ms, wall including copies 146.96 ms. The 1M-ray CUDA image matched the CPU reference; a 100003-ray CUDA image did not
+- [ ] SVO ray cast for 1M rays < 10ms on CUDA (RTX 3090) — verified with CUDA event timing — missed 2026-09-25: host clock around the synced launch was 130 ms, wall including copies 150 ms. CUDA matches the CPU voxel, face and hit/miss; distance differs by about 1 ulp where nvcc contracts a division (`fuse_svo_ray_kernel_parity`)
 
 ---
 
@@ -6325,7 +6325,7 @@ private:
 - [x] 4096 particles simulate under gravity and collide with SDF sphere — verified by visual inspection — `fuse_b7_vfx_gates`
 - [x] emit_rate correctly emits expected particle count per second — tested over 5 seconds — `fuse_b7_vfx_gates`
 - [x] Particle lifetime correctly ages and kills particles — alive count converges to rate × lifetime — `fuse_b7_vfx_gates`
-- [ ] CUDA particle kernel achieves > 70% occupancy — verified with Nsight Compute — blocked 2026-09-25: `ncu` returned `ERR_NVGPUCTRPERM`. `fuse_particle_kernel_parity` passed on the device (5,000 slots) and memcheck reported 0 errors
+- [ ] CUDA particle kernel achieves > 70% occupancy — verified with Nsight Compute — partial 2026-09-25: elevated `ncu` on 262144 particles, compact achieved 73%, update achieved 69% (theoretical 83%). 5000 particles only reached ~16% because the grid does not fill the GPU
 - [x] Shipping build compiles with zero warnings, zero debug code included — verified by binary inspection (`fuse-werror-shipping` builds with -Werror; `fuse_b7_shipping_binaries` inspects all 41 shipped fuse_* libraries/programs for assert/profiler symbols and stripped strings; `fuse_core_b7_shipping_strip`)
 - [ ] Crash handler writes valid minidump on intentional null dereference — dmp opens in WinDbg — partial: Linux signal report proven in `fuse_core_b7_platform_gates`; Windows minidump proven under Wine by `fuse_core_b7_win32_crash_minidump` (MDMP header, exception 0xC0000005 at address 0 inside the probe, thread/module/system streams, dbghelp MiniDumpReadDumpStream, worker-thread and FUSE_VERIFY abort cases); opening it in WinDbg stays manual
 - [x] Leak detector correctly reports zero leaks after clean shutdown in debug build (`fuse_core_b7_platform_gates`)

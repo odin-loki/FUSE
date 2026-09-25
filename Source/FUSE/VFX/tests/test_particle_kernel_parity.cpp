@@ -249,6 +249,19 @@ void testStatsFallbackAndSteadyState() {
                                           {1e-4, 1e-5})
                        .ok,
                    "CUDA particle positions within tolerance");
+
+        // 5,000 particles leave most of the 3090 idle (achieved occupancy ~16%). A full grid is
+        // what the >70% Nsight gate measures.
+        constexpr u32 kFill = 262144u;
+        vfx::ParticleSoA fill{};
+        soa_ops::init(fill, kFill);
+        vfx::ParticleEmitterDesc fillDesc = desc;
+        fillDesc.max_particles = kFill;
+        (void)soa_ops::burst_emit(fill, fillDesc, {}, kFill, 1);
+        std::vector<u32> deadFill;
+        const soa_ops::SimStepResult filled =
+            soa_ops::simulate_step_on(kernel::Backend::Cuda, fill, fillDesc, 1.f / 60.f, deadFill);
+        expectTrue(filled.integrated == kFill, "CUDA fill launch of 262144 particles");
     }
 
     // Steady state: stepping reuses the dead-slot scratch, the kernel scratch and the free list.

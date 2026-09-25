@@ -204,6 +204,18 @@ SharedTimeline SharedTimeline::create(void* vkDevice, void* vkPhysicalDevice) {
             timeline.cudaSemaphore = cudaSemaphore;
             timeline.driverWired = true;
             timeline.message = "SharedTimeline driver-wired via export/import";
+        } else {
+            // An exported semaphore whose handle CUDA rejected is not a usable Vulkan-only
+            // timeline on this driver. Recreate it without the export bit.
+            vkDestroySemaphore(device, vkSemaphore, nullptr);
+            vkSemaphore = VK_NULL_HANDLE;
+            if (!createVulkanTimelineSemaphore(device, false, &vkSemaphore)) {
+                timeline.valid = false;
+                timeline.vkSemaphore = nullptr;
+                timeline.message = "vkCreateSemaphore timeline failed after CUDA import declined";
+                return timeline;
+            }
+            timeline.vkSemaphore = vkSemaphore;
         }
     }
 #else
