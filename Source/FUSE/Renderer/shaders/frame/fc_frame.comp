@@ -1,0 +1,73 @@
+#version 460
+// Frame composer kernel (include/fuse/renderer/frame/frame_types.hpp): one thread per render pixel (8 x 8
+// tiles), the mode in the push constants:
+//   Sky         background pixels (RT4 == 1) -> WP-8.2 sky radiance (+ sun disk); geometry -> aerial
+//               perspective (colour x T + S x E_sun); flags off keep the input bits
+//   Gather      HDR image -> f32x4 background + f32 view distance (the WP-8.3 clouds' inputs)
+//   Resolve     clouds result (or the HDR image) then splats (rgb x T + c), alpha 1 -> scene colour
+//   ShadowPack  denoised shadow (.x, clamped to [0, 1]) -> f32 visibility plane (RtfxShadowView layout)
+// GLSL twin of fc_frame.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "fc_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(rgba16f) uniform writeonly image2D fuse_fc_images[];
+
+void main() {
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const uint i = p.y * F.width + p.x;
+    const uint mode = pc.mode;
+    if (mode == FC_MODE_SHADOW_PACK) {
+        FcFloatsRef(F.visibility).v[i] = min(1.0, max(0.0, FcTexelsRef(F.denoised).v[i].x));
+        return;
+    }
+    if (mode == FC_MODE_RESOLVE) {
+        vec4 base;
+        if ((F.flags & FC_FLAG_CLOUDS) != 0u) {
+            base = FcTexelsRef(F.clouds).v[i];
+        } else {
+            base = fc_fetch(F.inColor, ivec2(p));
+        }
+        precise float r = base.x;
+        precise float g = base.y;
+        precise float b = base.z;
+        if ((F.flags & FC_FLAG_SPLATS) != 0u) {
+            const vec4 s = FcTexelsRef(F.splats).v[i];
+            r = r * s.w + s.x;
+            g = g * s.w + s.y;
+            b = b * s.w + s.z;
+        }
+        imageStore(fuse_fc_images[fuse_handle_index(F.outResolve)], ivec2(p), vec4(r, g, b, 1.0));
+        return;
+    }
+    const vec4 c = fc_fetch(F.inColor, ivec2(p));
+    const float depth = fc_fetch(F.inDepth, ivec2(p)).x;
+    if (mode == FC_MODE_GATHER) {
+        FcTexelsRef(F.background).v[i] = c;
+        FcFloatsRef(F.distance).v[i] = fc_view_distance(p, depth);
+        return;
+    }
+    // FC_MODE_SKY
+    vec4 result = c;
+    if (!(depth < 1.0)) {
+        if ((F.flags & FC_FLAG_SKY) != 0u) {
+            const AtParams atm = at_load(F.atmosphere);
+            const vec3 far = fc_unproject(p, 1.0);
+            const vec3 dir = normalize(vec3(far.x - F.cameraPos[0], far.y - F.cameraPos[1], far.z - F.cameraPos[2]));
+            result = vec4(at_sky_radiance(atm, dir, (F.flags & FC_FLAG_SUN_DISK) != 0u), 1.0);
+        }
+    } else if ((F.flags & FC_FLAG_AERIAL) != 0u) {
+        const AtParams atm = at_load(F.atmosphere);
+        const vec2 uv = vec2((float(p.x) + 0.5) / float(F.width), (float(p.y) + 0.5) / float(F.height));
+        vec3 s;
+        vec3 t;
+        at_aerial(atm, uv, fc_view_distance(p, depth), s, t);
+        const vec3 e = at_illuminance(atm);
+        result = vec4(c.xyz * t + s * e, c.w);
+    }
+    imageStore(fuse_fc_images[fuse_handle_index(F.outSky)], ivec2(p), result);
+}
