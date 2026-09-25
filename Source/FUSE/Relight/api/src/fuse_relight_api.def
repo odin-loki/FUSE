@@ -1,0 +1,20 @@
+; FUSE Relight RL-6.2: the C API exports of d3d9.dll (merged with DXVK's d3d9.def by CMake). Explicit ordinals far
+; above DXVK's (16-38) so the gaps of the D3D9 ordinal range stay free, as in the system d3d9.dll.
+EXPORTS
+  remixapi_InitializeLibrary @1000
+  fuse_relight_GetVersion @1001
+  fuse_relight_Initialize @1002
+  fuse_relight_Shutdown @1003
+  fuse_relight_CreateMaterial @1004
+  fuse_relight_DestroyMaterial @1005
+  fuse_relight_CreateMesh @1006
+  fuse_relight_DestroyMesh @1007
+  fuse_relight_CreateLight @1008
+  fuse_relight_DestroyLight @1009
+  fuse_relight_SetCamera @1010
+  fuse_relight_DrawInstance @1011
+  fuse_relight_DrawLight @1012
+  fuse_relight_SetOption @1013
+  fuse_relight_GetOption @1014
+  fuse_relight_EndFrame @1015
+  fuse_relight_GetFrameRecord @1016
