@@ -17,7 +17,8 @@
 //   quality       variance reduction factor and bias against the converged reference (ensemble of 32 noisy
 //                 sequences, 16 frames, 128 x 96, last frame, all surface pixels) for the three signal variants in
 //                 a dynamic (moving shadow, A-SVGF) and a static-lighting (SVGF) scenario; the thresholds are the
-//                 WP-6.4 acceptance (kQuality below).
+//                 WP-6.4 acceptance (kQuality below). quality_shadow / quality_reflection / quality_gi run the rows
+//                 of one signal (the ctest gates; "quality" runs all six).
 //   asvgf         A-SVGF against SVGF after an abrupt lighting change (GI x 0.25 at frame 10): mean relative error
 //                 over the 4 frames after the change at most half of SVGF's; before the change RMSE no worse
 //                 than 1.25 x SVGF's.
@@ -470,11 +471,16 @@ EnsembleResult runEnsemble(const SvgfSettings& s, const SyntheticDesc& d, u32 fr
     return e;
 }
 
-void testQuality() {
+/// `only`: run the rows of one signal (the quality_<signal> suites, one ctest each so a Debug tree stays well
+/// inside the timeout), or every row when null.
+void testQuality(const DenoiseSignal* only = nullptr) {
     auto& scheduler = jobs::JobScheduler::instance();
     scheduler.shutdown();
     scheduler.initialize(4);
     for (const QualityThreshold& q : kQuality) {
+        if (only != nullptr && q.signal != *only) {
+            continue;
+        }
         SyntheticDesc d{};
         d.width = kQualityWidth;
         d.height = kQualityHeight;
@@ -633,6 +639,12 @@ int main(int argc, char** argv) {
     if (all || suite == "quality") {
         testQuality();
         ran = true;
+    }
+    for (const DenoiseSignal sig : {DenoiseSignal::Shadow, DenoiseSignal::Reflection, DenoiseSignal::Gi}) {
+        if (suite == std::string("quality_") + signalName(sig)) {
+            testQuality(&sig);
+            ran = true;
+        }
     }
     if (all || suite == "asvgf") {
         testAsvgf();

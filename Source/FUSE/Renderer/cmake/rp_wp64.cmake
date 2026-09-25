@@ -73,6 +73,12 @@ add_library(fuse_denoise STATIC
 set_source_files_properties(${_fuse_wp64_shader_files} PROPERTIES HEADER_FILE_ONLY TRUE)
 target_link_libraries(fuse_denoise PUBLIC fuse_rhi)
 fuse_apply_cxx23(fuse_denoise)
+# The CPU reference and the synthetic scenes run the quality gate's 6 x 32 realisations x 16 frames (~330 s at
+# -O0): optimise them in Debug trees too (GCC / Clang; the result is bit-identical, no fast-math).
+if(NOT MSVC)
+    set_source_files_properties(${_fuse_wp64_src}/svgf_reference.cpp ${_fuse_wp64_src}/svgf_synthetic.cpp
+                                PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")
+endif()
 
 # Kernels, embedded into the library. Slang is the primary source (execution doc §8 decision 1a); the
 # GLSL twins keep the denoiser available where slangc is not (FUSE_SLANG=AUTO), and the gates run both.
@@ -143,7 +149,8 @@ add_executable(fuse_rp_denoise_cpu ${_fuse_wp64_tests_dir}/test_rp_denoise_cpu.c
 target_link_libraries(fuse_rp_denoise_cpu PRIVATE fuse_denoise)
 target_compile_definitions(fuse_rp_denoise_cpu PRIVATE FUSE_RP_DENOISE_SHADER_DIR="${_fuse_wp64_shd}")
 fuse_apply_cxx23(fuse_rp_denoise_cpu)
-foreach(_suite layout backends estimator disocclusion quality asvgf api)
+# quality: one ctest per signal (each ~1/3 of the ensemble work; "quality" alone still runs all six rows).
+foreach(_suite layout backends estimator disocclusion quality_shadow quality_reflection quality_gi asvgf api)
     add_test(NAME fuse_rp_denoise_${_suite} COMMAND fuse_rp_denoise_cpu ${_suite})
     set_tests_properties(fuse_rp_denoise_${_suite} PROPERTIES LABELS "gate;renderer;denoise" TIMEOUT 900)
 endforeach()
