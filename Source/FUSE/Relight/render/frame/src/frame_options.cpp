@@ -39,6 +39,8 @@ bool parseFrameMode(std::string_view text, FrameMode& out) {
         out = FrameMode::Solid;
     } else if (s == "raster") {
         out = FrameMode::Raster;
+    } else if (s == "pathtrace") {
+        out = FrameMode::PathTrace; // RL-5.1
     } else {
         return false;
     }
@@ -53,6 +55,8 @@ const char* frameModeName(FrameMode mode) {
         return "solid";
     case FrameMode::Raster:
         return "raster";
+    case FrameMode::PathTrace:
+        return "pathtrace";
     case FrameMode::Off:
         break;
     }

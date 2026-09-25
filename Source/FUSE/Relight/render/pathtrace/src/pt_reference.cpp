@@ -59,7 +59,7 @@ double PtReferenceImage::channel(u32 x, u32 y, u32 which, u32 c) const {
 
 bool renderReference(const PtCompiledScene& scene, const PtSettings& settings, u32 width, u32 height, u32 frameSeed,
                      u32 sampleBase, u32 samples, PtReferenceImage& image, kernel::Backend backend,
-                     PtReferenceStats* stats) {
+                     PtReferenceStats* stats, const ptk::PtDiHook* diHook) {
     if (!scene.valid() || width == 0u || height == 0u || image.width() != width || image.height() != height) {
         return false;
     }
@@ -92,6 +92,7 @@ bool renderReference(const PtCompiledScene& scene, const PtSettings& settings, u
     ctx.lightMapCount = static_cast<u32>(scene.lightMap().size());
     ctx.textures = textures.empty() ? nullptr : textures.data();
     ctx.textureCount = static_cast<u32>(textures.size());
+    ctx.diHook = diHook;
     Word params[kPtParamWords];
     scene.packParams(settings, width, height, frameSeed, sampleBase, params);
     ptk::PtReferenceParams p{};

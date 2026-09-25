@@ -98,4 +98,7 @@ float ptLightSetPdf(float3 p, float3 n, uint light, float3 wi) {
     return rlSetPdf(pc.lightTable, pc.lightCount, pc.lightTree, p, n, light, wi);
 }
 
+// RL-5.2: ptRestirDiVertex (ReSTIR DI record / apply hook; reads pc.restirDi).
+#include "restir_di_hook.slang"
+
 #include "pt_reference_core.h"

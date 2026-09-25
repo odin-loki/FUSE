@@ -69,6 +69,10 @@ endforeach()
 target_link_libraries(fuse_relight_render_frame PRIVATE $<TARGET_NAME_IF_EXISTS:fuse_relight_render_raster>)
 target_compile_definitions(fuse_relight_render_frame PRIVATE
     $<$<TARGET_EXISTS:fuse_relight_render_raster>:FUSE_RELIGHT_HAVE_RASTER=1>)
+# RL-5.1 path tracer (render/pathtrace, added later; it links this library): relight.frame.mode = pathtrace.
+target_link_libraries(fuse_relight_render_frame PRIVATE $<TARGET_NAME_IF_EXISTS:fuse_relight_pathtrace_frame>)
+target_compile_definitions(fuse_relight_render_frame PRIVATE
+    $<$<TARGET_EXISTS:fuse_relight_pathtrace_frame>:FUSE_RELIGHT_HAVE_PATHTRACE=1>)
 add_library(fuse_relight_render_frame_gpu ALIAS fuse_relight_render_frame)
 
 if(COMMAND fuse_apply_cxx23)

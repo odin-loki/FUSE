@@ -19,6 +19,10 @@ PT_CONST uint kPtFlagRussianRoulette = 8u;
 PT_CONST uint kPtFlagPsr = 16u;          ///< primary surface replacement (G-buffer only)
 PT_CONST uint kPtFlagMis = 32u;          ///< power-heuristic MIS (off with NEE + BSDF lights: both weighted 1/2)
 PT_CONST uint kPtFlagsDefault = 63u;
+PT_CONST uint kPtFlagRestirDi = 64u;     ///< RL-5.2: the frame's first sample takes the G-buffer vertex's direct light
+                                         ///< from ReSTIR DI (ptRestirDiVertex; render/pathtrace/restir_di*)
+PT_CONST uint kPtFlagDiRecord = 128u;    ///< RL-5.2 surface pass: the path stops at the G-buffer vertex after handing
+                                         ///< it to ptRestirDiVertex (record mode)
 
 // Instance flags (PtInstance)
 PT_CONST uint kPtInstanceVisible = 1u;

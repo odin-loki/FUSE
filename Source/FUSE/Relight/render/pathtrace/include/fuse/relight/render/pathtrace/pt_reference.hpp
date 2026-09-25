@@ -19,6 +19,7 @@
 
 namespace fuse::relight::ptk {
 struct PtReferencePixel;
+struct PtDiHook;
 }
 
 namespace fuse::relight::render::pathtrace {
@@ -57,8 +58,10 @@ private:
 
 /// Traces `samples` paths per pixel (sample indices sampleBase .. sampleBase + samples - 1) and adds them to `image`
 /// (sized width x height; its G-buffer fields come from sample `sampleBase`). False on invalid input.
+/// `diHook`: RL-5.2's ReSTIR DI hook (ptRestirDiVertex; render/pathtrace/restir_di.hpp), null: none.
 bool renderReference(const PtCompiledScene& scene, const PtSettings& settings, u32 width, u32 height, u32 frameSeed,
                      u32 sampleBase, u32 samples, PtReferenceImage& image,
-                     kernel::Backend backend = kernel::Backend::CpuParallel, PtReferenceStats* stats = nullptr);
+                     kernel::Backend backend = kernel::Backend::CpuParallel, PtReferenceStats* stats = nullptr,
+                     const ptk::PtDiHook* diHook = nullptr);
 
 } // namespace fuse::relight::render::pathtrace

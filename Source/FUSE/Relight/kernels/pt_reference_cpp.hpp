@@ -52,6 +52,8 @@ struct PtCpuTexture {
     const float4* texels = nullptr;
 };
 
+struct PtDiHook; // RL-5.2 ReSTIR DI hook (below)
+
 /// Everything the core reads on the CPU (not owned).
 struct PtCpuContext {
     const float* lut = nullptr;                       ///< RL-4.3 albedo table (kBsdfLutWords)
@@ -70,6 +72,7 @@ struct PtCpuContext {
     u32 lightMapCount = 0;
     const PtCpuTexture* textures = nullptr;
     u32 textureCount = 0;
+    const PtDiHook* diHook = nullptr;                 ///< RL-5.2 ptRestirDiVertex (null: returns 0)
 };
 
 #define PT_FN inline
@@ -138,6 +141,20 @@ inline float4 ptTextureSample(const PtCpuContext& ctx, uint texture, uint /*smp*
 inline lightk::RlLight ptLoadLight(const PtCpuContext& ctx, uint light) { return ctx.lightRecords[light]; }
 PtLightPick ptSampleLightSet(const PtCpuContext& ctx, float3 p, float3 n, float u0, float u1, float u2);
 float ptLightSetPdf(const PtCpuContext& ctx, float3 p, float3 n, uint light, float3 wi);
+
+/// RL-5.2: the C++ side of ptRestirDiVertex (render/pathtrace/restir_di*: the surface record / apply modes).
+struct PtDiHook {
+    uint (*vertex)(void* user, const PtParams& P, uint px, uint py, const PtRawHit& h, const float3& d,
+                   float3& direct) = nullptr;
+    void* user = nullptr;
+};
+inline uint ptRestirDiVertex(const PtCpuContext& ctx, PtParams P, uint px, uint py, PtRawHit h, float3 d,
+                             float3& direct) {
+    if (ctx.diHook == nullptr || ctx.diHook->vertex == nullptr) {
+        return 0u;
+    }
+    return ctx.diHook->vertex(ctx.diHook->user, P, px, py, h, d, direct);
+}
 
 #include "pt_reference_core.h"
 

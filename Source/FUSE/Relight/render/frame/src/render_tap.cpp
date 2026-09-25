@@ -16,6 +16,9 @@
 #if defined(FUSE_RELIGHT_HAVE_RASTER)
 #include <fuse/relight/render/raster/raster_renderer.hpp>
 #endif
+#if defined(FUSE_RELIGHT_HAVE_PATHTRACE)
+#include <fuse/relight/render/pathtrace/pt_frame_renderer.hpp>
+#endif
 
 #include <cinttypes>
 #include <string_view>
@@ -110,6 +113,11 @@ static std::unique_ptr<IFrameRenderer> makeFrameRenderer([[maybe_unused]] const 
 #if defined(FUSE_RELIGHT_HAVE_RASTER)
     if (config.mode == FrameMode::Raster) {
         return raster::createRasterRenderer(config);
+    }
+#endif
+#if defined(FUSE_RELIGHT_HAVE_PATHTRACE)
+    if (config.mode == FrameMode::PathTrace) {
+        return pathtrace::createPathTraceRenderer(config); // RL-5.1
     }
 #endif
     return nullptr;
@@ -329,7 +337,8 @@ void RenderTap::doInject(const char* where) {
     // scene holds this frame's replaced draws and lights. Only an unknown processor keeps the feed at the flush.
     replace::CaptureReplaceProcessor* rp = replaceProcessor(processor);
     const bool feedNow = processor == nullptr || rp != nullptr;
-    const bool raster = m_config.mode == FrameMode::Raster && m_frameRenderer && m_renderer && m_renderer->attached();
+    const bool raster = (m_config.mode == FrameMode::Raster || m_config.mode == FrameMode::PathTrace) &&
+                        m_frameRenderer && m_renderer && m_renderer->attached();
     if (m_frameRenderer) {
         // Before the orchestrator's collect (in inject): per-frame views die before the images they view.
         m_frameRenderer->collect(m_orchestrator.gpu().acquireCompleted());

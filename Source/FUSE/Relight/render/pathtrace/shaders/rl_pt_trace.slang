@@ -16,6 +16,7 @@ struct PtTracePush {
     uint height;
     uint accumulate;
     uint lightCount;
+    uint64_t restirDi; ///< RL-5.2 ReSTIR DI output (RestirDiGpu), 0: off
 };
 [[vk::push_constant]] ConstantBuffer<PtTracePush> pc;
 

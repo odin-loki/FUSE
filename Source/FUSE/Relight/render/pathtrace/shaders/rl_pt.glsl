@@ -99,6 +99,9 @@ float ptLightSetPdf(vec3 p, vec3 n, uint light, vec3 wi) {
     return rlSetPdf(pc.lightTable, pc.lightCount, pc.lightTree, p, n, light, wi);
 }
 
+// RL-5.2: ptRestirDiVertex (ReSTIR DI record / apply hook; reads pc.restirDi).
+#include "restir_di_hook.glsl"
+
 #include "pt_reference_core.h"
 
 #endif // FUSE_RELIGHT_PT_GLSL

@@ -30,6 +30,14 @@
 //   RlLight ptLoadLight(PT_CTX_PARAM uint light);
 //   PtLightPick ptSampleLightSet(PT_CTX_PARAM float3 p, float3 n, float u0, float u1, float u2);
 //   float ptLightSetPdf(PT_CTX_PARAM float3 p, float3 n, uint light, float3 wi);
+//   uint ptRestirDiVertex(PT_CTX_PARAM PtParams P, uint px, uint py, PtRawHit h, float3 d, PT_INOUT(float3) direct);
+//                                        RL-5.2 ReSTIR DI hook (render/pathtrace/restir_di*): with kPtFlagDiRecord,
+//                                        called at the G-buffer vertex (hit h, incoming direction d), returns 2 and
+//                                        the path stops (the surface pass); with kPtFlagRestirDi, called at every
+//                                        primary-chain vertex of sample sampleBase: 1 = `direct` is ReSTIR's estimate
+//                                        of this vertex's direct light (NEE is skipped, and light-set emitters seen
+//                                        by the continuation from it get MIS weight 0 unless it scattered by a dirac
+//                                        lobe), 0 = not ReSTIR's vertex (ordinary NEE).
 //
 // THE ESTIMATOR (unidirectional path tracing, one path per sample; ptRenderSample):
 //   * primary rays from a pinhole camera (the D3D view / projection's eye and field of view), jittered in the pixel
@@ -521,6 +529,8 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
     float3 chainThr = float3(1.0f, 1.0f, 1.0f);
     bool nee = (P.flags & kPtFlagNee) != 0u;
     bool bsdfLights = (P.flags & kPtFlagBsdfLights) != 0u;
+    bool diReplaced = false; // RL-5.2: this vertex's direct light is ReSTIR DI's (ptRestirDiVertex)
+    bool prevRestir = false; // ... the previous vertex's
 
     for (uint bounce = 0u; bounce < P.maxBounces + 1u; ++bounce) {
         uint dim = 2u + bounce * kPtDimsPerBounce;
@@ -532,7 +542,7 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
         }
         // Emitters along the ray: analytic lights (and distant ones / the sky when it escapes).
         float3 le = float3(0.0f, 0.0f, 0.0f);
-        if (prevDelta || bsdfLights) {
+        if (prevDelta || (bsdfLights && !prevRestir)) {
             le = ptAnalyticEmission(PT_CTX_ARG P, o, d, tHit, !h.hit, prevDelta, prevPdf, prevP, prevN);
         }
         if (!h.hit) {
@@ -559,7 +569,7 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
             float w = 1.0f;
             if (S.light != kPtInvalid) {
                 if (!prevDelta) {
-                    if (!bsdfLights) {
+                    if (!bsdfLights || prevRestir) {
                         w = 0.0f;
                     } else if (nee) {
                         w = ptMisWeight(P.flags, prevPdf, ptLightSetPdf(PT_CTX_ARG prevP, prevN, S.light, d));
@@ -632,9 +642,13 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
         float3 wo = float3(dot(woW, tx), dot(woW, ty), dot(woW, n));
         float3 treeN = ptTreeNormal(S, n);
 
-        // Next-event estimation.
+        // Next-event estimation (or ReSTIR DI's estimate at the G-buffer vertex, RL-5.2).
         float3 direct = float3(0.0f, 0.0f, 0.0f);
-        if (nee && P.lightCount > 0u) {
+        diReplaced = false;
+        if (chain && (P.flags & kPtFlagRestirDi) != 0u && sampleIndex == P.sampleBase) {
+            diReplaced = ptRestirDiVertex(PT_CTX_ARG P, px, py, h, d, direct) == 1u;
+        }
+        if (nee && !diReplaced && P.lightCount > 0u) {
             PtLightPick lp = ptSampleLightSet(PT_CTX_ARG S.position, treeN, ptRandom(seed, dim + 0u),
                                               ptRandom(seed, dim + 1u), ptRandom(seed, dim + 2u));
             if (lp.light != kPtInvalid && lp.pdf > 0.0f && ptMax3(lp.radiance) > 0.0f) {
@@ -686,6 +700,9 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
         }
         if (chain && !psrHere) {
             // This vertex is the G-buffer vertex.
+            if ((P.flags & kPtFlagDiRecord) != 0u && ptRestirDiVertex(PT_CTX_ARG P, px, py, h, d, direct) == 2u) {
+                break;
+            }
             float3 aD;
             float3 aS;
             ptAlbedos(S, aD, aS);
@@ -736,6 +753,7 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
             R.psr = R.psr + 1u;
         }
         prevDelta = delta;
+        prevRestir = diReplaced;
         prevPdf = bs.pdf;
         prevP = S.position;
         prevN = treeN;

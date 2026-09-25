@@ -339,6 +339,9 @@ bool PathTracerGpu::beginFrame(u64 frameSerial, const PtCompiledScene& scene, co
     }
     m_frameSerial = frameSerial;
     m_stats.tracePasses = 0;
+    m_lightsAdded = false;
+    m_restirDiAddress = 0;
+    m_restirDiBuffer = rg::BufferRef{};
     // GPU scene: instance transforms / flags of this frame (the compiled scene is authoritative).
     m_scene->beginFrame(frameSerial);
     m_as->beginFrame(frameSerial);
@@ -459,27 +462,67 @@ PtGraphRefs PathTracerGpu::importInto(rg::Graph& graph) {
     return refs;
 }
 
+bool PathTracerGpu::addLightsPass(rg::Graph& graph, const PtGraphRefs& refs) {
+    if (!m_initialized || !refs.valid) {
+        return false;
+    }
+    if (m_lightsAdded) {
+        return true;
+    }
+    m_lightsAdded = m_lights.addConvertPass(graph, refs.lights);
+    return m_lightsAdded;
+}
+
+PtTraceBindings PathTracerGpu::traceBindings() const {
+    PtTraceBindings b{};
+    if (!m_initialized || !m_sceneReady || m_ring.handle == nullptr) {
+        return b;
+    }
+    const u64 slotBase = m_ring.deviceAddress + u64(m_slot) * m_slotStride;
+    b.params = slotBase + m_ringLayout.params;
+    b.instances = slotBase + m_ringLayout.instances;
+    b.triangles = m_statics.deviceAddress + m_trianglesOffset;
+    b.materials = slotBase + m_ringLayout.materials;
+    b.portals = slotBase + m_ringLayout.portals;
+    b.lightMap = slotBase + m_ringLayout.lightMap;
+    b.lightTable = m_lights.tableAddress();
+    b.lightTree = m_lights.treeHeaderAddress();
+    b.tlas = m_as->tlasAddress();
+    b.lut = m_statics.deviceAddress + m_lutOffset;
+    b.lightCount = m_lightCount;
+    b.width = m_width;
+    b.height = m_height;
+    return b;
+}
+
+void PathTracerGpu::setRestirDi(u64 address, rg::BufferRef buffer, rg::BufferRange range) {
+    m_restirDiAddress = address;
+    m_restirDiBuffer = buffer;
+    m_restirDiRange = range;
+}
+
 bool PathTracerGpu::addTracePass(rg::Graph& graph, const PtGraphRefs& refs) {
     if (!m_initialized || !refs.valid) {
         return false;
     }
-    if (!m_lights.addConvertPass(graph, refs.lights)) {
+    if (!addLightsPass(graph, refs)) {
         return false;
     }
-    const u64 slotBase = m_ring.deviceAddress + u64(m_slot) * m_slotStride;
+    const PtTraceBindings b = traceBindings();
     PassRecord& r = m_record;
     r = PassRecord{};
     r.self = this;
-    r.push.params = slotBase + m_ringLayout.params;
-    r.push.instances = slotBase + m_ringLayout.instances;
-    r.push.triangles = m_statics.deviceAddress + m_trianglesOffset;
-    r.push.materials = slotBase + m_ringLayout.materials;
-    r.push.portals = slotBase + m_ringLayout.portals;
-    r.push.lightMap = slotBase + m_ringLayout.lightMap;
+    r.push.params = b.params;
+    r.push.instances = b.instances;
+    r.push.triangles = b.triangles;
+    r.push.materials = b.materials;
+    r.push.portals = b.portals;
+    r.push.lightMap = b.lightMap;
     r.push.lightTable = refs.lights.tableAddress;
     r.push.lightTree = refs.lights.tree.header;
-    r.push.tlas = m_as->tlasAddress();
-    r.push.lut = m_statics.deviceAddress + m_lutOffset;
+    r.push.tlas = b.tlas;
+    r.push.lut = b.lut;
+    r.push.restirDi = m_restirDiBuffer.valid() ? m_restirDiAddress : 0u;
     r.push.outputs = m_outputs.deviceAddress;
     r.push.outStride = m_outStride;
     r.push.width = m_width;
@@ -498,6 +541,9 @@ bool PathTracerGpu::addTracePass(rg::Graph& graph, const PtGraphRefs& refs) {
              rg::BufferRange{0u, m_outStride * kPtOutSections}, rg::kStageCompute);
     if (refs.lights.tree.tree.valid()) {
         pass.use(refs.lights.tree.tree, rg::Access::StorageRead, refs.lights.tree.range, rg::kStageCompute);
+    }
+    if (m_restirDiBuffer.valid()) {
+        pass.use(m_restirDiBuffer, rg::Access::StorageRead, m_restirDiRange, rg::kStageCompute);
     }
     return true;
 }

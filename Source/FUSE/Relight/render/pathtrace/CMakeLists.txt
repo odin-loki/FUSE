@@ -13,8 +13,8 @@
 #                                   "relight.pt.trace" on the WP-6.0 TLAS; "unsupported" in the stub backend).
 #   fuse_relight_pathtrace_kernels  the SPIR-V: Slang (shaders/rl_pt_trace.slang, -fp-mode precise) and the GLSL twin
 #                                   (rl_pt_trace.comp, glslangValidator), spirv-val'd and embedded (rl_pt_spv.h).
-# Not yet here (open, see the RL-5.1 report): the relight.frame.mode = pathtrace IFrameRenderer (needs a FrameMode hook
-# in RL-4.1's render/frame) and the Lavapipe GPU-vs-CPU gates of PathTracerGpu.
+#   fuse_relight_pathtrace_frame    relight.frame.mode = pathtrace (pt_frame_renderer.hpp): RL-4.2's CPU frame -> PtScene,
+#                                   PathTracerGpu with accumulation, output through RL-4.1's composite.
 # Tests: tests/ (rl_pt_*).
 
 foreach(_dep fuse_core fuse_relight_bsdf fuse_relight_material fuse_relight_lights fuse_relight_mods_import
@@ -75,7 +75,8 @@ set(_rl_pt_core_deps "${RL_PT_KERNELS_DIR}/pt_reference_types.h" "${RL_PT_KERNEL
                      "${RL_PT_RELIGHT_DIR}/render/lights/shaders/rl_lights.glsl"
                      "${RL_PT_RELIGHT_DIR}/shaders/material/bsdf.slang"
                      "${RL_PT_RELIGHT_DIR}/shaders/material/bsdf.glsl"
-                     "${RL_PT_SHADERS_DIR}/rl_pt.slang" "${RL_PT_SHADERS_DIR}/rl_pt.glsl")
+                     "${RL_PT_SHADERS_DIR}/rl_pt.slang" "${RL_PT_SHADERS_DIR}/rl_pt.glsl"
+                     "${RL_PT_SHADERS_DIR}/restir_di_hook.slang" "${RL_PT_SHADERS_DIR}/restir_di_hook.glsl")
 if(COMMAND fuse_add_slang_shaders)
     fuse_add_slang_shaders(fuse_relight_pathtrace_kernels
         SOURCES "${RL_PT_SHADERS_DIR}/rl_pt_trace.slang"
@@ -119,5 +120,76 @@ add_custom_target(fuse_relight_pathtrace_header DEPENDS "${_rl_pt_header}")
 add_dependencies(fuse_relight_pathtrace_header fuse_relight_pathtrace_kernels)
 add_dependencies(fuse_relight_pathtrace fuse_relight_pathtrace_header)
 target_include_directories(fuse_relight_pathtrace PRIVATE "${_rl_pt_gen}")
+
+# relight.frame.mode = pathtrace (pt_frame_renderer.hpp): the IFrameRenderer RL-4.1's render_tap creates; needs RL-4.2's
+# CPU frame (render/raster).
+if(TARGET fuse_relight_render_raster AND TARGET fuse_relight_render_frame)
+    add_library(fuse_relight_pathtrace_frame STATIC src/pt_frame_renderer.cpp)
+    target_link_libraries(fuse_relight_pathtrace_frame
+        PUBLIC fuse_relight_pathtrace fuse_relight_render_raster fuse_relight_render_frame fuse_relight_options
+        PRIVATE fuse_rhi)
+    _rl_pt_cxx23(fuse_relight_pathtrace_frame)
+endif()
+
+# RL-5.2 ReSTIR DI (restir_di*): the CPU runner and the GPU passes ("relight.restir_di.*"), the options rtx.useRTXDI /
+# rtx.di.*. The shared core is shaders/restir_di_core.h (C++ dialect src/restir_di_cpp.hpp).
+if(TARGET fuse_relight_options)
+    set(_rl_rdi_header "${_rl_pt_gen}/rl_restir_di_spv.h")
+    set(_rl_rdi_args "")
+    set(_rl_rdi_deps ${_rl_pt_core_deps} "${RL_PT_SHADERS_DIR}/restir_di_core.h")
+    add_custom_target(fuse_relight_restir_di_kernels)
+    if(COMMAND fuse_add_slang_shaders)
+        fuse_add_slang_shaders(fuse_relight_restir_di_kernels
+            SOURCES "${RL_PT_SHADERS_DIR}/restir_di.slang"
+            STAGE compute
+            INCLUDE_DIRS ${RL_PT_INCLUDE_DIRS}
+            FLAGS -fp-mode precise
+            OUTPUT_DIR "${_rl_pt_spv}"
+            OUTPUT_VAR _rl_rdi_slang_out)
+        list(LENGTH _rl_rdi_slang_out _n)
+        if(_n EQUAL 1)
+            list(APPEND _rl_rdi_args "-DSLANG_SPV=${_rl_rdi_slang_out}")
+            list(APPEND _rl_rdi_deps "${_rl_rdi_slang_out}")
+        endif()
+    endif()
+    if(FUSE_GLSLANG_VALIDATOR)
+        set(_out "${_rl_pt_spv}/restir_di.glsl.spv")
+        set(_incs "")
+        foreach(_d IN LISTS RL_PT_INCLUDE_DIRS)
+            list(APPEND _incs "-I${_d}")
+        endforeach()
+        set(_cmds COMMAND "${FUSE_GLSLANG_VALIDATOR}" --target-env vulkan1.3 ${_incs}
+                          "${RL_PT_SHADERS_DIR}/restir_di.comp" -o "${_out}")
+        if(FUSE_SPIRV_VAL)
+            list(APPEND _cmds COMMAND "${FUSE_SPIRV_VAL}" --target-env vulkan1.3 "${_out}")
+        endif()
+        add_custom_command(OUTPUT "${_out}" ${_cmds}
+            DEPENDS "${RL_PT_SHADERS_DIR}/restir_di.comp" ${_rl_pt_core_deps} "${RL_PT_SHADERS_DIR}/restir_di_core.h"
+                    "${RL_PT_RENDERER_DIR}/shaders/common/bindless.glsl"
+            COMMENT "glslangValidator restir_di.comp (GLSL twin of the ReSTIR DI stages)"
+            VERBATIM)
+        list(APPEND _rl_rdi_args "-DGLSL_SPV=${_out}")
+        list(APPEND _rl_rdi_deps "${_out}")
+    endif()
+    add_custom_command(OUTPUT "${_rl_rdi_header}"
+        COMMAND "${CMAKE_COMMAND}" "-DOUT=${_rl_rdi_header}" ${_rl_rdi_args}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/restir_di_embed.cmake"
+        DEPENDS ${_rl_rdi_deps} "${CMAKE_CURRENT_SOURCE_DIR}/restir_di_embed.cmake"
+        COMMENT "Embedding the ReSTIR DI SPIR-V"
+        VERBATIM)
+    add_custom_target(fuse_relight_restir_di_header DEPENDS "${_rl_rdi_header}")
+    add_dependencies(fuse_relight_restir_di_header fuse_relight_restir_di_kernels)
+
+    add_library(fuse_relight_restir_di STATIC src/restir_di.cpp src/restir_di_gpu.cpp src/restir_di_cpp.hpp
+                "${RL_PT_SHADERS_DIR}/restir_di_core.h")
+    target_include_directories(fuse_relight_restir_di PRIVATE "${RL_PT_SHADERS_DIR}" "${_rl_pt_gen}")
+    target_link_libraries(fuse_relight_restir_di PUBLIC fuse_relight_pathtrace fuse_relight_options
+                          PRIVATE fuse_relight_material)
+    add_dependencies(fuse_relight_restir_di fuse_relight_restir_di_header)
+    _rl_pt_cxx23(fuse_relight_restir_di)
+    if(TARGET fuse_relight_pathtrace_frame)
+        target_link_libraries(fuse_relight_pathtrace_frame PRIVATE fuse_relight_restir_di) # rtx.useRTXDI
+    endif()
+endif()
 
 add_subdirectory(tests)

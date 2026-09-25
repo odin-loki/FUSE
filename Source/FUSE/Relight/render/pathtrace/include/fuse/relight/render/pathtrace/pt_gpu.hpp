@@ -99,6 +99,23 @@ struct PtGraphRefs {
     bool valid = false;
 };
 
+/// The device addresses "relight.pt.trace" pushes (RL-5.2's ReSTIR DI passes run the same core on them).
+struct PtTraceBindings {
+    u64 params = 0;
+    u64 instances = 0;
+    u64 triangles = 0;
+    u64 materials = 0;
+    u64 portals = 0;
+    u64 lightMap = 0;
+    u64 lightTable = 0;
+    u64 lightTree = 0;
+    u64 tlas = 0;
+    u64 lut = 0;
+    u32 lightCount = 0;
+    u32 width = 0;
+    u32 height = 0;
+};
+
 struct PathTracerGpuStats {
     u32 frames = 0;
     u32 sceneBuilds = 0;     ///< structural (re)builds
@@ -126,10 +143,20 @@ public:
     /// previous structure) and the instance slots are handed to `scene` (setSlots). Otherwise the instances move.
     /// Call once per frame before beginFrame (after scene.update()).
     bool setScene(PtCompiledScene& scene);
+    /// The next setScene rebuilds the GPU scene / acceleration structures (a scene recompiled with new geometry of the
+    /// same structure; the caller retired every frame that used the current one).
+    void invalidateScene() { m_sceneReady = false; }
     /// This frame's scene commits, lights and ring slot (flush the UploadQueue afterwards, before executing).
     bool beginFrame(u64 frameSerial, const PtCompiledScene& scene, const PtFrameDesc& frame);
     PtGraphRefs importInto(renderer::rg::Graph& graph);
     bool addTracePass(renderer::rg::Graph& graph, const PtGraphRefs& refs);
+    /// RL-5.2 hooks. addLightsPass: "relight.lights.convert" now (once per frame; addTracePass then skips it), so
+    /// passes recorded before the trace can read the light table. traceBindings: the trace pass's addresses (valid
+    /// after beginFrame). setRestirDi: the next addTracePass reads ReSTIR DI's per-pixel output at `address`
+    /// (declared StorageRead on `buffer` / `range`); beginFrame clears it.
+    bool addLightsPass(renderer::rg::Graph& graph, const PtGraphRefs& refs);
+    PtTraceBindings traceBindings() const;
+    void setRestirDi(u64 address, renderer::rg::BufferRef buffer, renderer::rg::BufferRange range);
     u32 collectRetired(u64 completedSerial);
 
     /// Output buffer (host-visible; valid after the frame completed) and a section's first byte.
@@ -163,8 +190,9 @@ private:
         u32 height = 0;
         u32 accumulate = 0;
         u32 lightCount = 0;
+        u64 restirDi = 0; ///< RL-5.2: RestirDiGpu's per-pixel DI output (0: off)
     };
-    static_assert(sizeof(TracePush) == 112u, "PtTracePush (rl_pt_trace.comp / .slang)");
+    static_assert(sizeof(TracePush) == 120u, "PtTracePush (rl_pt_trace.comp / .slang)");
     struct PassRecord {
         PathTracerGpu* self = nullptr;
         TracePush push{};
@@ -215,6 +243,10 @@ private:
     u32 m_height = 0;
     bool m_accumulate = false;
     u32 m_lightCount = 0;
+    bool m_lightsAdded = false;
+    u64 m_restirDiAddress = 0;
+    renderer::rg::BufferRef m_restirDiBuffer{};
+    renderer::rg::BufferRange m_restirDiRange{};
     std::vector<Retired> m_retired;
     PassRecord m_record{};
     void* m_layoutHandle = nullptr;   ///< VkPipelineLayout

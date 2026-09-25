@@ -148,7 +148,8 @@ void FrameOrchestrator::detach() {
 
 bool FrameOrchestrator::ensureFrameImages(const tap::HostImageInfo& bb) {
     // Raster keeps an input image too: a frame it cannot render is composited as passthrough.
-    const bool wantInput = m_config.mode == FrameMode::Passthrough || m_config.mode == FrameMode::Raster;
+    const bool rendered = m_config.mode == FrameMode::Raster || m_config.mode == FrameMode::PathTrace;
+    const bool wantInput = m_config.mode == FrameMode::Passthrough || rendered;
     if (m_output.valid() && m_frameFormat == bb.format && m_frameWidth == bb.width && m_frameHeight == bb.height &&
         m_input.valid() == wantInput) {
         return true;
@@ -228,9 +229,10 @@ InjectResult FrameOrchestrator::inject(IFrameRecorder* recorder) {
     if (!ensureFrameImages(bb)) {
         return fail(m_error);
     }
-    const bool raster = m_config.mode == FrameMode::Raster && recorder != nullptr;
-    const bool passthrough =
-        m_config.mode == FrameMode::Passthrough || (m_config.mode == FrameMode::Raster && recorder == nullptr);
+    // Raster (RL-4.2) and path-traced (RL-5.1) frames come from a frame renderer; without one this frame, passthrough.
+    const bool renderedMode = m_config.mode == FrameMode::Raster || m_config.mode == FrameMode::PathTrace;
+    const bool raster = renderedMode && recorder != nullptr;
+    const bool passthrough = m_config.mode == FrameMode::Passthrough || (renderedMode && recorder == nullptr);
     const std::uint64_t acquire = m_acquire + 1, release = m_release + 1;
     if (passthrough && !m_host->copyBackBuffer(m_input.host)) {
         return fail("the host could not copy the back buffer");
@@ -240,7 +242,8 @@ InjectResult FrameOrchestrator::inject(IFrameRecorder* recorder) {
     }
     m_acquire = acquire;
     r.acquire = acquire;
-    r.pass = raster ? "raster" : (passthrough ? "passthrough" : "solid");
+    r.pass = raster ? (m_config.mode == FrameMode::PathTrace ? "pathtrace" : "raster")
+                    : (passthrough ? "passthrough" : "solid");
     r.submit = raster ? m_gpu.submitFrame(*recorder, m_output, acquire, release)
                       : m_gpu.submitFrame(passthrough ? FramePass::Passthrough : FramePass::Solid, &m_input, m_output,
                                           m_config.solidColor, acquire, release);

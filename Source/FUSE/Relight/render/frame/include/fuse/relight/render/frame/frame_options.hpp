@@ -1,6 +1,6 @@
 // FUSE Relight RL-4.1: frame orchestration options (RL-0.6 registry; each also answers to its rtx.* twin).
 //
-//   relight.frame.mode          off | passthrough | solid | raster (env FUSE_RELIGHT_FRAME_MODE, default off).
+//   relight.frame.mode          off | passthrough | solid | raster | pathtrace (env FUSE_RELIGHT_FRAME_MODE, default off).
 //                               Needs relight.tap.mode = capture (the classifier finds the injection point).
 //                               passthrough: FUSE's image of the frame is the back buffer as DXVK rendered it up
 //                               to the injection point, composited back (bit-identical to the tap being off);
@@ -29,9 +29,9 @@
 
 namespace fuse::relight::render::frame {
 
-enum class FrameMode : std::uint8_t { Off = 0, Passthrough, Solid, Raster };
+enum class FrameMode : std::uint8_t { Off = 0, Passthrough, Solid, Raster, PathTrace };
 
-/// "off" / "passthrough" / "solid" / "raster" (case-insensitive). False (out unchanged) for anything else.
+/// "off" / "passthrough" / "solid" / "raster" / "pathtrace" (case-insensitive). False (out unchanged) for anything else.
 bool parseFrameMode(std::string_view text, FrameMode& out);
 const char* frameModeName(FrameMode mode);
 /// "RRGGBB" (optionally "#" or "0x" prefixed) -> 0xRRGGBB. False for anything else.
