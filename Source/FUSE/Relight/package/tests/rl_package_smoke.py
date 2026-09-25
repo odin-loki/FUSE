@@ -116,6 +116,9 @@ def main():
     ap.add_argument("--runner", required=True)
     ap.add_argument("--prefix-root", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--frame-renderer", default="1",
+                    help="0 when the tree has no frame orchestration (FUSE_RELIGHT_RENDERER=OFF): the apps must still "
+                         "run from the packaged layout, but no raster frame records are expected")
     args = ap.parse_args()
 
     if not os.path.isfile(os.path.join(args.pkg, "manifest.json")):
@@ -134,8 +137,10 @@ def main():
     if rc == SKIP:
         print("SKIP: Wine / Xvfb not available")
         return SKIP
-    n = check_frames("x64", game, errors)
-    notes.append(f"x64: {n} frame(s) injected")
+    has_frames = args.frame_renderer != "0"
+    n = check_frames("x64", game, errors, require_records=has_frames)
+    notes.append(f"x64: {n} frame(s) injected" if has_frames
+                 else "x64: ran from the packaged layout (no frame renderer in this tree: raster not checked)")
 
     # ---- plugins: the packaged report tool, nothing installed ----
     rc, text = wine_run(args, game, "fuse_relight_plugins.exe", [], {})

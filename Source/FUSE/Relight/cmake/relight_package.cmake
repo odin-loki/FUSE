@@ -99,6 +99,9 @@ if(Python3_Interpreter_FOUND AND TARGET rl_app_ff_triangle AND TARGET relight_br
                 --x64-client-d3d9 "$<TARGET_FILE:relight_bridge_d3d9>" --x64-client-d3d8 "$<TARGET_FILE:relight_bridge_d3d8>"
                 --x86-app "${FUSE_RELIGHT_BRIDGE_X86_DIR}/relight/apps/ff_triangle.exe"
                 --runner "${_rl_pkg_repo}/cmake/toolchains/fuse-wine-xvfb-run.sh" --prefix-root "${_rl_pkg_prefix}"
-                --out "${CMAKE_BINARY_DIR}/relight/package/smoke")
+                --out "${CMAKE_BINARY_DIR}/relight/package/smoke"
+                # Trees without the RL-0.7 renderer (FUSE_RELIGHT_RENDERER=OFF, e.g. the CI fuse-mingw-release
+                # preset) build no frame orchestration, so the packaged rtx.conf's raster mode cannot attach there.
+                --frame-renderer "$<IF:$<TARGET_EXISTS:fuse_relight_render_frame>,1,0>")
     set_tests_properties(rl_package_wine_smoke PROPERTIES LABELS "relight;package;wine" SKIP_RETURN_CODE 77 TIMEOUT 900)
 endif()
