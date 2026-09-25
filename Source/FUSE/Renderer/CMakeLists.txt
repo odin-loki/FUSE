@@ -310,3 +310,4 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp83.cmake")  # WP-8.3 volumetric 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp72.cmake")  # WP-7.2 ReSTIR DI and GI, T2 (restir/, shaders/restir/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp44.cmake")  # WP-4.4 frame generation + latency (framegen/, present/latency/, Engine/lib/fidelityfx)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp93.cmake")  # WP-9.3 device-generated commands (vk/dgc/, shaders/dgc/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp92.cmake")  # WP-9.2 3D Gaussian splatting (gsplat/, shaders/gsplat/)

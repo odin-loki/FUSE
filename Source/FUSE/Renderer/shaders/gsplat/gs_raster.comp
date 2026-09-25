@@ -1,0 +1,102 @@
+#version 460
+// WP-9.2 "gsplat.raster": one 256-thread workgroup per 16 x 16 tile, one pixel per thread. The tile's sorted
+// splats are staged through shared memory in batches of 256; each pixel blends front to back:
+//   power = -(conic.x dx^2 + conic.z dy^2) / 2 - conic.y dx dy   (skip when > 0)
+//   alpha = min(0.99, opacity exp(power))                        (skip below alphaMin)
+//   T' = T (1 - alpha); stop when T' < transmittanceMin (that splat not blended)
+//   depth composite: stop at the first splat whose depth is not in front of the visibility-buffer depth at
+//   the pixel (the entries are sorted by view z, so every later one is behind too)
+// The workgroup leaves the batch loop once every pixel is done. Output f32x4 (sum c alpha T, T). CPU
+// reference: gs_raster_pixel. GLSL twin of gs_raster.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "gs_common.glsl"
+
+layout(local_size_x = 256) in;
+
+shared uvec4 s_w0[256];
+shared uvec4 s_w1[256];
+shared uvec4 s_w2[256];
+shared uint s_done;
+
+void main() {
+    const uint tid = gl_LocalInvocationID.x;
+    const uint tile = gl_WorkGroupID.x;
+    const uint x = (tile % F.tilesX) * GS_TILE + (tid % GS_TILE);
+    const uint y = (tile / F.tilesX) * GS_TILE + (tid / GS_TILE);
+    const bool inside = x < F.width && y < F.height;
+    const bool depthTest = (F.flags & GS_FLAG_DEPTH_TEST) != 0u;
+    const bool reversed = (F.flags & GS_FLAG_REVERSED_Z) != 0u;
+    float scene = 1.0;
+    if (inside && depthTest) {
+        scene = texelFetch(fuse_textures_2d[fuse_handle_index(F.depthHandle)], ivec2(x, y), 0).x;
+    }
+    GsUintsRef ranges = GsUintsRef(F.ranges);
+    GsUintsRef values = GsUintsRef(F.values);
+    const uint begin = ranges.v[tile * 2u];
+    const uint end = ranges.v[tile * 2u + 1u];
+    precise float pxc = float(x) + 0.5;
+    precise float pyc = float(y) + 0.5;
+    precise float T = 1.0;
+    precise float r = 0.0;
+    precise float g = 0.0;
+    precise float b = 0.0;
+    bool done = !inside;
+    for (uint base = begin; base < end; base += GS_GROUP) {
+        barrier();
+        if (tid == 0u) {
+            s_done = 0u;
+        }
+        barrier();
+        if (done) {
+            atomicAdd(s_done, 1u);
+        }
+        barrier();
+        if (s_done == GS_GROUP) {
+            break;
+        }
+        const uint e = base + tid;
+        if (e < end) {
+            const uint id = values.v[e];
+            s_w0[tid] = gs_projected(id, 0u);
+            s_w1[tid] = gs_projected(id, 1u);
+            s_w2[tid] = gs_projected(id, 2u);
+        }
+        barrier();
+        const uint batch = min(GS_GROUP, end - base);
+        for (uint j = 0u; !done && j < batch; ++j) {
+            const uvec4 w0 = s_w0[j];
+            const uvec4 w1 = s_w1[j];
+            const float depth = uintBitsToFloat(w0.w);
+            if (depthTest && !(reversed ? depth > scene : depth < scene)) {
+                done = true;
+                break;
+            }
+            precise float dx = uintBitsToFloat(w0.x) - pxc;
+            precise float dy = uintBitsToFloat(w0.y) - pyc;
+            const float c0 = uintBitsToFloat(w1.x);
+            const float c1 = uintBitsToFloat(w1.y);
+            const float c2 = uintBitsToFloat(w1.z);
+            precise float power = -0.5 * (c0 * dx * dx + c2 * dy * dy) - c1 * dx * dy;
+            if (power > 0.0) {
+                continue;
+            }
+            precise float alpha = min(0.99, uintBitsToFloat(w1.w) * exp(power));
+            if (alpha < F.alphaMin) {
+                continue;
+            }
+            precise float testT = T * (1.0 - alpha);
+            if (testT < F.transmittanceMin) {
+                done = true;
+                break;
+            }
+            const uvec4 w2 = s_w2[j];
+            r = r + uintBitsToFloat(w2.x) * alpha * T;
+            g = g + uintBitsToFloat(w2.y) * alpha * T;
+            b = b + uintBitsToFloat(w2.z) * alpha * T;
+            T = testT;
+        }
+    }
+    if (inside) {
+        GsTexelsRef(F.output_).v[y * F.width + x] = vec4(r, g, b, T);
+    }
+}

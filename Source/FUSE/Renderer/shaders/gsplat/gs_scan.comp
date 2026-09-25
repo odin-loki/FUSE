@@ -1,0 +1,56 @@
+#version 460
+// WP-9.2 "gsplat.scan": one workgroup of 256 threads. Zeroes the tile ranges, computes the exclusive prefix sum
+// of every splat's tiles touched (its first sort entry; chunks of 256, Hillis-Steele in shared memory, a
+// running carry), writes the counters (entries emitted, entries over the capacity) and fills the sort entries
+// past the emitted ones with the padding key (tileCount << 32 | 0xFFFFFFFF, value 0xFFFFFFFF) so the
+// fixed-size sort puts them last. CPU reference: gs_render_reference (offsets / padding). GLSL twin of
+// gs_scan.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "gs_common.glsl"
+
+layout(local_size_x = 256) in;
+
+shared uint s_scan[256];
+
+void main() {
+    const uint tid = gl_LocalInvocationID.x;
+    GsUintsRef ranges = GsUintsRef(F.ranges);
+    for (uint t = tid; t < F.tileCount; t += GS_GROUP) {
+        ranges.v[t * 2u] = 0u;
+        ranges.v[t * 2u + 1u] = 0u;
+    }
+    GsUintsRef offsets = GsUintsRef(F.offsets);
+    const uint n = F.splatCount;
+    uint carry = 0u;
+    for (uint base = 0u; base < n; base += GS_GROUP) {
+        const uint i = base + tid;
+        const uint v = i < n ? gs_tiles_touched(gs_projected(i, 3u)) : 0u;
+        s_scan[tid] = v;
+        barrier();
+        for (uint off = 1u; off < GS_GROUP; off <<= 1u) {
+            const uint add = tid >= off ? s_scan[tid - off] : 0u;
+            barrier();
+            s_scan[tid] += add;
+            barrier();
+        }
+        if (i < n) {
+            offsets.v[i] = carry + s_scan[tid] - v;
+        }
+        carry += s_scan[GS_GROUP - 1u];
+        barrier();
+    }
+    if (tid == 0u) {
+        GsUintsRef counters = GsUintsRef(F.counters);
+        counters.v[0] = carry;
+        counters.v[1] = carry > F.capacity ? carry - F.capacity : 0u;
+        counters.v[2] = 0u;
+        counters.v[3] = 0u;
+    }
+    GsKeysRef keys = GsKeysRef(F.keys);
+    GsUintsRef values = GsUintsRef(F.values);
+    const uint64_t pad = (uint64_t(pc.padKeyHigh) << 32) | uint64_t(0xFFFFFFFFu);
+    for (uint e = min(carry, F.capacity) + tid; e < F.capacity; e += GS_GROUP) {
+        keys.v[e] = pad;
+        values.v[e] = GS_PAD_VALUE;
+    }
+}

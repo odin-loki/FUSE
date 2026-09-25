@@ -1,0 +1,34 @@
+#version 460
+// WP-9.2 "gsplat.emit": one thread per splat. Writes one sort entry per touched tile (row-major over the tile
+// rectangle) from the splat's scanned offset: key = (tile << 32) | bits(view z) (view z > 0, so the bits order
+// as the depths), value = splat index. Entries past the capacity are dropped (counted by gsplat.scan). CPU
+// reference: gs_render_reference (emit). GLSL twin of gs_emit.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "gs_common.glsl"
+
+layout(local_size_x = 256) in;
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= F.splatCount) {
+        return;
+    }
+    const uvec4 rect = gs_projected(i, 3u);
+    if (gs_tiles_touched(rect) == 0u) {
+        return;
+    }
+    const uint64_t depthBits = uint64_t(gs_projected(i, 0u).z);
+    GsKeysRef keys = GsKeysRef(F.keys);
+    GsUintsRef values = GsUintsRef(F.values);
+    uint at = GsUintsRef(F.offsets).v[i];
+    const uint cap = F.capacity;
+    for (uint ty = rect.y; ty < rect.w; ++ty) {
+        for (uint tx = rect.x; tx < rect.z; ++tx) {
+            if (at < cap) {
+                keys.v[at] = (uint64_t(ty * F.tilesX + tx) << 32) | depthBits;
+                values.v[at] = i;
+            }
+            ++at;
+        }
+    }
+}
