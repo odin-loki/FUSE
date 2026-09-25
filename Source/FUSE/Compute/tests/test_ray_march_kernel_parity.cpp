@@ -13,6 +13,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -202,12 +203,42 @@ void testStatsAndFallback() {
     scheduler.shutdown();
 }
 
+void timeCuda1080() {
+    if (!kernel::backend_available(kernel::Backend::Cuda)) {
+        std::printf("sdf_ray_march 1080p: CUDA device not available\n");
+        return;
+    }
+    const std::vector<compute::SdfObject> base = sceneObjects();
+    std::vector<compute::SdfObject> objects = base;
+    objects.insert(objects.end(), base.begin(), base.end());
+    constexpr u32 kW = 1920;
+    constexpr u32 kH = 1080;
+    std::vector<f32> depth(static_cast<size_t>(kW) * kH);
+    std::vector<Vec4> normal(static_cast<size_t>(kW) * kH);
+    compute::RayMarchParams params = makeScene(kW, kH);
+    params.objects = objects.data();
+    params.object_count = static_cast<u32>(objects.size());
+    params.depth_surface = depth.data();
+    params.output_surface = normal.data();
+    expectTrue(compute::launch_ray_march_on(kernel::Backend::Cuda, params), "1080p cuda warmup");
+    kernel::reset_kernel_stats();
+    const auto t0 = std::chrono::steady_clock::now();
+    expectTrue(compute::launch_ray_march_on(kernel::Backend::Cuda, params), "1080p cuda timed");
+    const auto t1 = std::chrono::steady_clock::now();
+    kernel::KernelStats ks{};
+    const bool have = kernel::find_kernel_stats("sdf_ray_march", ks);
+    const double wallMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    std::printf("sdf_ray_march 1920x1080 %u objects CUDA: wall %.2f ms (upload+launch+download), kernel last %.2f ms\n",
+                params.object_count, wallMs, have ? static_cast<double>(ks.last_ns) / 1e6 : -1.0);
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
     testBackendParity();
     testStatsAndFallback();
+    timeCuda1080();
     fuse::core::shutdown();
     if (g_failures != 0) {
         std::fprintf(stderr, "%d ray march kernel parity check(s) failed\n", g_failures);

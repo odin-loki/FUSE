@@ -724,6 +724,35 @@ void printTimings() {
         }
         std::printf("  %5u bodies  solver step: island %8.1f | colored ref %8.1f | colored par %8.1f   (%u bodies)\n",
                     count, solve[0], solve[1], solve[2], columns * columns * height);
+        if (kernel::backend_available(kernel::Backend::Cuda)) {
+            bp::BroadphaseKernelContext cudaCtx;
+            cudaCtx.backend = kernel::Backend::Cuda;
+            bp::PairBufferSoA cudaOut;
+            const double cudaBp = medianUs(7, [&] {
+                bp::runBroadphaseKernels(scene.bodies, scene.shapes, params, false, cudaOut, cudaCtx);
+            });
+            std::vector<bp::CandidatePair> cudaPairs;
+            cudaOut.copyTo(cudaPairs);
+            np::NarrowphaseKernelContext cudaNp;
+            cudaNp.backend = kernel::Backend::Cuda;
+            np::ContactBufferSoA cudaContacts;
+            const double cudaNpUs = medianUs(7, [&] {
+                np::runNarrowphaseKernels(cudaPairs, scene.bodies, scene.shapes, cudaContacts, cudaNp);
+            });
+            SolverScene cudaScene = makeSolverScene(columns, height);
+            PBDSolver cudaSolver;
+            cudaSolver.init(cudaScene.bodies.count(), 65536, 0);
+            SolverParams cudaParams = solverParams(ConstraintSolveMode::ColoredKernel, kernel::Backend::Cuda);
+            cudaParams.sleepTimeRequired = 1e9f;
+            for (u32 f = 0; f < 4; ++f) {
+                cudaSolver.step(cudaScene.bodies, cudaScene.shapes, cudaParams, 1.f / 60.f);
+            }
+            const double cudaSolve = medianUs(5, [&] {
+                cudaSolver.step(cudaScene.bodies, cudaScene.shapes, cudaParams, 1.f / 60.f);
+            });
+            std::printf("  %5u bodies  CUDA wall us: broadphase %8.1f | narrowphase %8.1f (%u contacts) | solver step %8.1f\n",
+                        count, cudaBp, cudaNpUs, cudaContacts.activeCount, cudaSolve);
+        }
     }
 }
 

@@ -1913,7 +1913,7 @@ int main() {
 *Carry-forward deliverable/test checklist (FUSE-adapted):*
 
 - [x] Instance creates cleanly with validation layers enabled — zero validation errors on startup — `fuse_vulkan_validation_gate`
-- [ ] Physical device selection picks the RTX 3090 correctly over any integrated GPU — partial: selection policy gated by `fuse_b2_physical_device_selection` (Lavapipe registered as two drivers + spoof layer, 21 scenarios); the RTX 3090 pick is manual
+- [ ] Physical device selection picks the RTX 3090 correctly over any integrated GPU — partial: selection policy gated by `fuse_b2_physical_device_selection` (Lavapipe registered as two drivers + spoof layer, 21 scenarios). 2026-09-25 workstation: the only adapter is the RTX 3090 and `VulkanDevice` selected it (dedicated compute family 2, transfer family 1). No integrated GPU was present
 - [x] Logical device created with graphics, compute, and transfer queues on separate families where available (`fuse_b2_device_queue_families_{split,transfer,shared}` — families emulated on Lavapipe by the split-family test layer)
 - [x] Swapchain creates at 1920×1080, triple-buffered — resize correctly rebuilds without crash (`fuse_b2_x11_swapchain_gates`)
 - [x] Frame-in-flight management holds three independent frame data sets — verified by timeline semaphore values — `fuse_b5_rhi_frame_timelines`
@@ -1930,15 +1930,15 @@ int main() {
 - [ ] `SharedTimeline` semaphore correctly serialises Vulkan and CUDA execution — no race conditions under 10k frames
 - [ ] Vulkan-allocated external memory buffer reads back identical data when accessed via CUDA pointer
 - [ ] CUDA surface write to shared texture appears correctly in Vulkan composite pass
-- [ ] `cuda-memcheck` and `compute-sanitizer` report zero errors across full frame loop
+- [ ] `cuda-memcheck` and `compute-sanitizer` report zero errors across full frame loop — partial: 2026-09-25 `compute-sanitizer --tool memcheck` reported 0 errors on `fuse_ray_march_kernel_parity`, `fuse_particle_kernel_parity`, and `fuse_b4_physics_kernel_gates`. Not a full renderer frame loop
 - [x] Triangle on screen — white triangle, black background, correct winding, no validation errors: **Week 1 gate** — `fuse_b2_triangle_readback`
 - [x] G-buffer pass populates normal, albedo, depth attachments correctly — verified with RenderDoc — `fuse_b5_rhi_gbuffer_pass`
-- [ ] CUDA ray marcher produces correct sphere SDF at all angles — verified against reference renderer
-- [ ] SDF normals are smooth at surface — no faceting visible at any zoom level — partial: CPU reference ray marcher uses an analytic gradient, smooth to 1000x zoom (`fuse_b2_sdf_normal_smoothness`); CUDA kernel is still a stub
+- [ ] CUDA ray marcher produces correct sphere SDF at all angles — verified against reference renderer — partial: 2026-09-25 `fuse_ray_march_kernel_parity` passed on the RTX 3090 (CUDA vs the CPU kernel, 173×97). Not a separate reference renderer at all angles
+- [ ] SDF normals are smooth at surface — no faceting visible at any zoom level — partial: CPU reference ray marcher uses an analytic gradient, smooth to 1000x zoom (`fuse_b2_sdf_normal_smoothness`). CUDA `sdf_ray_march` matched that CPU kernel on the RTX 3090; the 1000x zoom check is still the CPU one
 - [x] Composite pass correctly blends CUDA and raster output at all GRIA α values — `fuse_b2_composite_blend`
-- [ ] Final frame presents to screen at stable 60fps at 1920×1080 with a 10-object SDF scene: **Week 5 gate**
-- [ ] GPU frame time < 8ms for a 10-object SDF scene at 1080p (target 120fps headroom)
-- [ ] CUDA ray march kernel achieves > 60% occupancy — verified with Nsight Compute
+- [ ] Final frame presents to screen at stable 60fps at 1920×1080 with a 10-object SDF scene: **Week 5 gate** — present not run (stays behind `FUSE_TRACK_B_UNLOCK`). The SDF march alone, 10 objects at 1920×1080, was launch 3.35 ms and host wall 15.88 ms including copies
+- [ ] GPU frame time < 8ms for a 10-object SDF scene at 1080p (target 120fps headroom) — partial: the synced launch was 3.35 ms; the copy-inclusive host call was 15.88 ms. Not a presented frame
+- [ ] CUDA ray march kernel achieves > 60% occupancy — verified with Nsight Compute — blocked 2026-09-25: `ncu` 2026.1 returned `ERR_NVGPUCTRPERM` on this user account
 - [x] Zero per-frame heap allocations — all frame memory from per-frame LinearAllocator — `fuse_b2_frame_alloc_budget`, `fuse_b2_hybrid_alloc_budget` (render thread, composer tick + render, all threads; physics-enabled worlds still allocate in the broadphase)
 - [x] Render graph compiles in < 1ms CPU time per frame — `fuse_b2_render_graph_budget`
 
@@ -2724,7 +2724,7 @@ void CameraSystem::update(Registry& reg) {
 - [x] `each<T>` iterates exactly the correct entities — no missed entities, no spurious iterations — `fuse_b3_ecs_gates`
 - [x] `each_parallel<T>` produces identical results to `each<T>` across 100 randomised test cases — `fuse_b3_ecs_gates`
 - [x] Component add/remove triggers archetype migration correctly — entity moves to new archetype, data preserved — `fuse_b3_ecs_gates`
-- [ ] 100k entities with Transform + Mesh + RigidBody iterated at > 500M components/sec on a single thread — partial: `fuse_b3_ecs_gates` (`each_chunk` span API) enforces a 200M/s floor; ~265–340M/s median here, memory-bandwidth bound (Transform+Mesh+RigidBody = 340 B/entity, 252 B/entity of cache-line traffic; 500M/s needs ~42 GB/s to one core vs ~25 GB/s here; 10k entities reach ~630M/s). Needs the workstation or a hot/cold component split
+- [ ] 100k entities with Transform + Mesh + RigidBody iterated at > 500M components/sec on a single thread — partial: `fuse_b3_ecs_gates` (`each_chunk` span API) enforces a 200M/s floor. 2026-09-25 dual Xeon Gold 6242 Release: `each_chunk` median 291.1 M/s (24.5 GB/s of cache-line traffic, 252 B/entity). 500M/s still needs ~42 GB/s to one core. Floor passed; target missed
 - [ ] CUDA kernel reads Transform positions from managed-memory ECS column — verified with device-side assert
 - [x] BVH SAH build on 100k random AABBs completes in < 500ms — `fuse_b3_bvh_gates`
 - [x] BVH ray cast returns correct closest hit for 100k random rays against 10k objects — verified against brute-force — `fuse_b3_bvh_gates`
@@ -2746,7 +2746,7 @@ void CameraSystem::update(Registry& reg) {
 - [x] 10k entity transform update < 1ms on all cores via `each_parallel` — `fuse_b3_scene_gates`
 - [x] BVH frustum cull of 10k objects < 0.1ms — `fuse_b3_bvh_gates`
 - [x] Full scene build (cull → draw list → SDF object buffer) < 2ms for 1k entities — `fuse_b3_scene_gates`
-- [ ] SVO ray cast for 1M rays < 10ms on CUDA (RTX 3090) — verified with CUDA event timing
+- [ ] SVO ray cast for 1M rays < 10ms on CUDA (RTX 3090) — verified with CUDA event timing — missed 2026-09-25: host clock around the synced launch was 126.22 ms, wall including copies 146.96 ms. The 1M-ray CUDA image matched the CPU reference; a 100003-ray CUDA image did not
 
 ---
 
@@ -3521,20 +3521,20 @@ struct CollisionEvent {
 - [x] Spatial hash correctly identifies all overlapping pairs for 10k random spheres — verified against brute force O(n²) — `fuse_b4_broadphase_gates`
 - [x] No missed pairs for bodies straddling multiple cells — edge case tested with grid-aligned bodies — `fuse_b4_broadphase_gates`
 - [x] GPU radix sort produces correctly sorted (key, value) pairs — verified with reference CPU sort — `fuse_gpu_radix_sort_gates` (Vulkan compute `GpuRadixSort` in fuse_rhi, 330 cases vs `std::stable_sort` on Lavapipe under sync validation; broadphase hook `SpatialHashParams::entrySorter` matches CPU pairs; CUDA variant not built — no CUDA toolchain)
-- [ ] Broad phase runs in < 2ms for 10k bodies on RTX 3090 — measured with CUDA events
+- [ ] Broad phase runs in < 2ms for 10k bodies on RTX 3090 — measured with CUDA events — missed 2026-09-25: CUDA wall 33.6 ms per call on 10k bodies, copies included (`fuse_b4_physics_kernel_gates`). Not a CUDA-event timing of a resident buffer
 - [x] Sphere-sphere analytic result matches Bullet reference to within 0.001f — `fuse_b4_narrowphase_gates`
 - [x] Sphere-plane produces correct normal and penetration depth at all angles — `fuse_b4_narrowphase_gates`
 - [x] Capsule-capsule handles parallel capsules and endpoint degeneracies correctly — `fuse_b4_narrowphase_gates`
 - [x] GJK returns correct intersection result for 10k random convex hull pairs — verified against SAT reference — `fuse_b4_narrowphase_gates`
 - [x] EPA returns penetration depth within 0.01f of reference for all test cases — `fuse_b4_narrowphase_gates`
 - [x] SDF collision produces smooth contact normals — no discontinuity at surface transitions — `fuse_b4_narrowphase_gates`
-- [ ] Narrow phase runs in < 3ms for 1k contact pairs on RTX 3090
+- [ ] Narrow phase runs in < 3ms for 1k contact pairs on RTX 3090 — partial 2026-09-25: 1,956 contacts took 2.06 ms CUDA wall (copies included); 20,639 contacts took 20.9 ms. Not a resident 1k-pair CUDA-event batch
 - [x] Single sphere under gravity hits ground plane at correct time (analytical reference: t = √(2h/g)) — `fuse_b4_solver_gates`
 - [x] Stack of 10 spheres remains stable at rest after 5 seconds of simulation — no drift or explosion — `fuse_b4_solver_gates`
 - [x] Restitution correctly produces elastic bounce (coefficient 1.0 → equal rebound height) — `fuse_b4_solver_gates`
 - [x] Friction correctly stops a sliding box at expected distance — matches analytical result — `fuse_b4_solver_gates`
 - [x] Distance constraint holds two bodies at rest_length ± 0.01f under external force — `fuse_b4_solver_gates`
-- [ ] Constraint solver runs 10 iterations over 10k contacts in < 5ms on RTX 3090
+- [ ] Constraint solver runs 10 iterations over 10k contacts in < 5ms on RTX 3090 — missed 2026-09-25: the existing step (4 substeps × 8 iterations) on 9,610 bodies was 42.2 ms CUDA wall. Not the 10×10k contact workload
 - [x] Sleep detection correctly deactivates resting bodies — confirmed by zero velocity reads — `fuse_b4_solver_gates`
 - [x] High-velocity sphere (100 m/s) does not tunnel through a 0.1m wall — discrete misses, CCD catches — `fuse_b4_ccd_gates`
 - [x] TOI binary search converges in < 8 iterations for all test cases — closed-form sweeps count 1; the iterative TOI (conservative advancement for rotating boxes/capsules) is instrumented (`TOIResult::iterations`, `ccdIterationStats()`) and stays < 8 on every CCD gate case plus 2373 seeded hard sweeps (fast spin, grazing, thin posts, tumbling, capsules; worst 7), each checked against a brute-force first contact (0 missed, 0 late) — `fuse_b4_ccd_gates`
@@ -6325,7 +6325,7 @@ private:
 - [x] 4096 particles simulate under gravity and collide with SDF sphere — verified by visual inspection — `fuse_b7_vfx_gates`
 - [x] emit_rate correctly emits expected particle count per second — tested over 5 seconds — `fuse_b7_vfx_gates`
 - [x] Particle lifetime correctly ages and kills particles — alive count converges to rate × lifetime — `fuse_b7_vfx_gates`
-- [ ] CUDA particle kernel achieves > 70% occupancy — verified with Nsight Compute
+- [ ] CUDA particle kernel achieves > 70% occupancy — verified with Nsight Compute — blocked 2026-09-25: `ncu` returned `ERR_NVGPUCTRPERM`. `fuse_particle_kernel_parity` passed on the device (5,000 slots) and memcheck reported 0 errors
 - [x] Shipping build compiles with zero warnings, zero debug code included — verified by binary inspection (`fuse-werror-shipping` builds with -Werror; `fuse_b7_shipping_binaries` inspects all 41 shipped fuse_* libraries/programs for assert/profiler symbols and stripped strings; `fuse_core_b7_shipping_strip`)
 - [ ] Crash handler writes valid minidump on intentional null dereference — dmp opens in WinDbg — partial: Linux signal report proven in `fuse_core_b7_platform_gates`; Windows minidump proven under Wine by `fuse_core_b7_win32_crash_minidump` (MDMP header, exception 0xC0000005 at address 0 inside the probe, thread/module/system streams, dbghelp MiniDumpReadDumpStream, worker-thread and FUSE_VERIFY abort cases); opening it in WinDbg stays manual
 - [x] Leak detector correctly reports zero leaks after clean shutdown in debug build (`fuse_core_b7_platform_gates`)

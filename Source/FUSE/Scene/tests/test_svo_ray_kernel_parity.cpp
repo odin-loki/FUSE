@@ -289,6 +289,19 @@ void timeMillionRays() {
     const double parMs = std::chrono::duration<double, std::milli>(t2 - t1).count();
     std::printf("svo_ray_cast 1M rays (%u hits): CpuReference %.1f ms, CpuParallel (%u workers) %.1f ms (%.2fx)\n",
                 hits, refMs, workers, parMs, refMs / std::max(parMs, 1e-3));
+    if (kernel::backend_available(kernel::Backend::Cuda)) {
+        expectTrue(svo.rayCastBatch(kernel::Backend::Cuda, rays.data(), a.data(), n), "1M cuda warmup");
+        kernel::reset_kernel_stats();
+        const auto c0 = clock::now();
+        expectTrue(svo.rayCastBatch(kernel::Backend::Cuda, rays.data(), b.data(), n), "1M cuda");
+        const auto c1 = clock::now();
+        kernel::KernelStats ks{};
+        const bool have = kernel::find_kernel_stats(fuse::scene::svo_kernel::kName, ks);
+        const double wallMs = std::chrono::duration<double, std::milli>(c1 - c0).count();
+        std::printf("svo_ray_cast 1M rays CUDA: wall %.2f ms (upload+launch+download), kernel last %.2f ms\n",
+                    wallMs, have ? static_cast<double>(ks.last_ns) / 1e6 : -1.0);
+        expectTrue(sameHits(a, b), "1M rays: CUDA == CpuReference");
+    }
 }
 
 } // namespace

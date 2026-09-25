@@ -173,4 +173,5 @@ only partially (CPU reference instead of CUDA, Wine instead of Windows) are anno
 RTX 3090 device selection, Nsight occupancy, ECS 500M components/s, CUDA physics timings (radix sort, 10k broadphase, 10k-contact solver), 60 fps / < 8 ms at 1080p, Win32 external memory
 handles, `cudaImportExternalMemory`, `compute-sanitizer`, RenderDoc captures, and on-screen WSI
 present. These need a developer machine with the target GPU; record results in
-[TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) when run.
+[TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) when run. The 2026-09-25 RTX 3090 workstation
+run is in that file under "Hardware run".

@@ -439,8 +439,8 @@ All shutdown steps are idempotent. GPU init and submit require the registered re
 | Item | Status | Notes |
 |------|--------|-------|
 | Instance/device bootstrap (headless) | **Done** | `VulkanBootstrap`, optional validation layers; stub when loader missing |
-| Physical device selection (discrete over integrated) | **Deferred** | No RTX-specific policy yet |
-| Graphics/compute/transfer queue families | **Deferred** | Single graphics queue path today |
+| Physical device selection (discrete over integrated) | **Measured** | 2026-09-25 workstation: the only adapter is the RTX 3090 and `VulkanDevice` selected it. No integrated GPU was present, so discrete-over-integrated was not exercised on this PC. Policy coverage remains `fuse_b2_physical_device_selection` |
+| Graphics/compute/transfer queue families | **Measured** | RTX 3090: 6 families, graphics 0, dedicated compute 2, dedicated transfer 1 |
 | Swapchain 1920×1080 triple-buffered + resize | **Deferred** | Headless stub + frame ring sketch only (`SurfaceKind::Headless`) |
 | Frame-in-flight (3 slots) | **Done** | `FrameManager` + fences/semaphores; timeline values not asserted |
 | `vkSetDebugUtilsObjectNameEXT` on all objects | **Deferred** | Debug naming not wired |
@@ -451,7 +451,7 @@ All shutdown steps are idempotent. GPU init and submit require the registered re
 |------|--------|-------|
 | VMA buffer/texture create/destroy | **Done (scaffold)** | Real VMA when vendored; stub handles otherwise (`fuse_vulkan_resources`) |
 | Bindless descriptor table | **Done (WP-06e)** | UPDATE_AFTER_BIND pool + `vkUpdateDescriptorSets` on register/unregister |
-| Staging ring wrap / large upload stress | **Deferred** | 64 MiB ring scaffold; no 256 MiB corruption test |
+| Staging ring wrap / large upload stress | **Done** | `fuse_b2_staging_wrap` on the RTX 3090: 256 × 1 MB chunks through a 16 MB ring (15 wraps), 256/256 read back intact, 0 fence timeouts |
 | Async upload fence timeout | **Deferred** | — |
 | Win32 external memory + `cudaImportExternalMemory` | **Deferred** | `import_vulkan_*` returns `ok=false` (B2.6 stub) |
 
@@ -471,7 +471,7 @@ All shutdown steps are idempotent. GPU init and submit require the registered re
 | `SharedTimeline` 10k-frame race-free | **Deferred** | Stub semaphore wrapper |
 | Vulkan buffer readback via CUDA pointer | **Deferred** | Import API surface only |
 | CUDA texture visible in composite pass | **Deferred** | Composite is logical stub |
-| `cuda-memcheck` / `compute-sanitizer` clean | **Deferred** | No toolkit on CI |
+| `cuda-memcheck` / `compute-sanitizer` clean | **Partial** | 2026-09-25: `compute-sanitizer --tool memcheck` reported 0 errors on the ray-march, particle, and physics kernel gates. Not a full renderer frame loop |
 
 #### Rendering correctness
 
@@ -479,19 +479,40 @@ All shutdown steps are idempotent. GPU init and submit require the registered re
 |------|--------|-------|
 | White triangle, black background (Week 1 gate) | **Done (headless)** | `RasterPath` clear + triangle; no on-screen present in CI |
 | G-buffer attachments (RenderDoc) | **Deferred** | Deferred renderer scaffold separate from B2.8 path |
-| CUDA ray march vs reference | **Done (CPU ref)** | `fuse_ray_march_stub`; full kernel deferred |
+| CUDA ray march vs reference | **Done (device parity)** | `fuse_ray_march_kernel_parity` passed on the RTX 3090 (CUDA vs CPU kernel). 1920×1080, 10 objects: launch 3.35 ms, host wall 15.88 ms including copies |
 | SDF normals smooth at surface | **Deferred** | — |
 | Composite blend at all GRIA α | **Done (WP-06f)** | `CompositeGpuPath` bindless shader + graph ordering; CUDA texture still placeholder colour |
-| 60 fps @ 1080p, 10-object SDF (Week 5 gate) | **Deferred** | No present path / perf gate in CI |
+| 60 fps @ 1080p, 10-object SDF (Week 5 gate) | **Measured, present not run** | SDF march only, no swapchain. Launch 3.35 ms; copy-inclusive wall 15.88 ms. On-screen present stays behind `FUSE_TRACK_B_UNLOCK` |
 
 #### Performance baselines (RTX 3090)
 
 | Item | Status | Notes |
 |------|--------|-------|
-| GPU frame time < 8 ms @ 1080p | **Deferred** | — |
-| CUDA kernel > 60% occupancy | **Deferred** | — |
+| GPU frame time < 8 ms @ 1080p | **Partial** | SDF march launch 3.35 ms (under 8 ms). Copy-inclusive wall 15.88 ms. Not a presented frame |
+| CUDA kernel > 60% occupancy | **Blocked** | Nsight Compute 2026.1 is installed; counters returned `ERR_NVGPUCTRPERM` for this user |
 | Zero per-frame heap allocs | **Done (scaffold)** | Fixed `kMaxPassesPerFrame` storage; not profiled under load |
-| Render graph compile < 1 ms CPU | **Deferred** | Not timed in CI |
+| Render graph compile < 1 ms CPU | **Done** | Release, this workstation: hybrid graph median 0.90 µs, 32-pass chain median 16.20 µs (`fuse_b2_render_graph_budget`) |
+
+### Hardware run (2026-09-25, this workstation)
+
+Dual Intel Xeon Gold 6242, NVIDIA GeForce RTX 3090 (24576 MiB, driver 595.79), CUDA 13.2.51. Release. CPU and Vulkan numbers are MinGW GCC 13.2 (`build-hw`). CUDA numbers are MSVC 19.51 (`build-cuda`, `sm_86`). This PC has no integrated GPU. The Vulkan SDK is not installed, so the MSVC tree did not link Vulkan. RenderDoc is not installed. Production present was not unlocked.
+
+| Gate | Result |
+|------|--------|
+| Device pick | `VulkanDevice` selected **NVIDIA GeForce RTX 3090**: 6 families, graphics 0, dedicated compute 2, dedicated transfer 1 |
+| ECS 100k Transform+Mesh+RigidBody | `each_chunk` median **291.1 M components/s** (24.5 GB/s). 500M/s target missed. 200M/s floor passed |
+| Render-graph compile | hybrid median **0.90 µs**, 32-pass median **16.20 µs** |
+| 1M alloc/free | `fuse_core_b1_alloc_million_cycles` passed (0 corruption) |
+| Staging 256 MB | 256/256 chunks intact, 15 wraps, 0 fence timeouts |
+| SDF ray march 1920×1080, 10 objects | launch **3.35 ms**, host wall **15.88 ms** (upload + launch + download). Parity vs the CPU kernel passed. Not a swapchain present |
+| SVO 1M rays | CPU parallel 184 ms. CUDA wall **146.96 ms**, launch **126.22 ms**. 10 ms target missed. The 1,000,003-ray CUDA image mismatched the CPU reference (one check failed); the 1M-ray CUDA image matched |
+| Broadphase, 10k bodies | CUDA wall **33.6 ms** per call, copies included. 2 ms target missed. CPU parallel on the same step was 26–35 ms |
+| Narrowphase | 1,956 contacts: CUDA wall **2.06 ms**. 20,639 contacts: **20.9 ms**. Host clock around the call, not a resident CUDA-event batch of 1k pairs |
+| Solver step | 9,610 bodies, existing step (4 substeps × 8 iterations): CUDA wall **42.2 ms**. Not “10 iterations × 10k contacts”. 5 ms target missed |
+| `compute-sanitizer` memcheck | **0 errors** on the ray-march, particle (5,000 slots), and physics kernel gates |
+| Nsight occupancy (60% / 70%) | Not measured. `ncu` returned `ERR_NVGPUCTRPERM` |
+| Win32 `cudaImportExternalMemory` | Not run. CUDA and Vulkan were not linked in one binary |
+| On-screen present / RenderDoc | Not run |
 
 ### Integration test flow (headless)
 
