@@ -1,0 +1,119 @@
+#version 460
+// "ssrc.gather": cascade 0 -> per pixel the cosine-weighted irradiance (E / pi) and AO over cascade 0's valid
+// bilinear probes; indirect = intensity x diffuse albedo x E / pi into the indirect section, and the output image
+// (indirect + AO, or the composed lit image). CPU reference: ssrc_gather_pixel (src/ssrc/ssrc_reference.cpp).
+// GLSL twin of src_gather.slang.
+#extension GL_GOOGLE_include_directive : require
+#define SRC_MATH
+#include "src_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(rgba16f) uniform writeonly image2D fuse_src_images[];
+
+// The arithmetic lives here (precise locals, plain arguments): glslang's precise propagation fails when a precise
+// expression shares a function with a bindless image access.
+vec4 src_gather(uint x, uint y, uint index, out vec4 composed) {
+    const vec4 g = SrcTexelsRef(F.geo).v[index];
+    const vec4 l = SrcTexelsRef(F.lit).v[index];
+    float ir = 0.0;
+    float ig = 0.0;
+    float ib = 0.0;
+    float ao = 1.0;
+    float cr = l.x;
+    float cg = l.y;
+    float cb = l.z;
+    if (g.x > 0.0) {
+        const float a = src_ray_coord(x, F.cx, F.fx);
+        const float b = src_ray_coord(y, F.cy, F.fy);
+        vec3 n = src_normalize(g.yzw);
+        if (src_dot(n, vec3(a, b, 1.0)) > 0.0) {
+            n = src_scale(n, -1.0);
+        }
+        const uint count = F.dirRes[0] * F.dirRes[0];
+        precise float cw = 0.0;
+        for (uint k = 0u; k < count; ++k) {
+            cw = cw + src_bin_weight(k, n);
+        }
+        precise float px = float(x) + 0.5;
+        precise float py = float(y) + 0.5;
+        vec4 w;
+        const uvec4 q = src_bilinear(px, py, F.spacing[0], F.probesX[0], F.probesY[0], w);
+        precise float sr = 0.0;
+        precise float sg = 0.0;
+        precise float sb = 0.0;
+        precise float sv = 0.0;
+        precise float sw = 0.0;
+        for (uint j = 0u; j < 4u; ++j) {
+            const float wj = w[j];
+            if (!(wj > 0.0)) {
+                continue;
+            }
+            const uint ux = (j & 1u) != 0u ? q.y : q.x;
+            const uint uy = (j >> 1u) != 0u ? q.w : q.z;
+            const SrcProbe qp = src_probe_at(0u, ux, uy);
+            if (!qp.valid) {
+                continue;
+            }
+            const uint base = (uy * F.probesX[0] + ux) * count;
+            precise float pr = 0.0;
+            precise float pg = 0.0;
+            precise float pb = 0.0;
+            precise float pv = 0.0;
+            for (uint k = 0u; k < count; ++k) {
+                const float wk = src_bin_weight(k, n);
+                const vec4 rec = src_decode(SrcRecordsRef(pc.upper).v[base + k]);
+                pr = pr + wk * rec.x;
+                pg = pg + wk * rec.y;
+                pb = pb + wk * rec.z;
+                pv = pv + wk * rec.w;
+            }
+            sr = sr + wj * pr;
+            sg = sg + wj * pg;
+            sb = sb + wj * pb;
+            sv = sv + wj * pv;
+            sw = sw + wj;
+        }
+        if (sw > 0.0 && cw > 0.0) {
+            precise float den = sw * cw;
+            const vec4 dif = SrcTexelsRef(F.diffuse).v[index];
+            const vec4 alb = SrcTexelsRef(F.albedo).v[index];
+            precise float er = sr / den;
+            precise float eg = sg / den;
+            precise float eb = sb / den;
+            precise float r0 = dif.x * er * F.intensity;
+            precise float g0 = dif.y * eg * F.intensity;
+            precise float b0 = dif.z * eb * F.intensity;
+            precise float a0 = sv / den;
+            ir = r0;
+            ig = g0;
+            ib = b0;
+            ao = a0;
+            precise float kk = dif.w * (a0 - 1.0);
+            precise float c0 = (l.x + r0) + F.ambient[0] * alb.x * kk;
+            precise float c1 = (l.y + g0) + F.ambient[1] * alb.y * kk;
+            precise float c2 = (l.z + b0) + F.ambient[2] * alb.z * kk;
+            cr = c0;
+            cg = c1;
+            cb = c2;
+        }
+    }
+    composed = vec4(max(cr, 0.0), max(cg, 0.0), max(cb, 0.0), l.w);
+    return vec4(ir, ig, ib, ao);
+}
+
+void main() {
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const uint index = p.y * F.width + p.x;
+    vec4 composed;
+    const vec4 indirect = src_gather(p.x, p.y, index, composed);
+    SrcTexelsRef(F.indirect).v[index] = indirect;
+    const vec4 result = (F.flags & SRC_FLAG_COMPOSE) != 0u ? composed : indirect;
+    imageStore(fuse_src_images[fuse_handle_index(F.output_)], ivec2(p), result);
+    if (F.dump != 0ul) {
+        SrcTexelsRef(F.dump).v[index] = result;
+    }
+}
