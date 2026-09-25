@@ -4,23 +4,29 @@
 //
 //   GPU scene (WP-1.1, caller-owned) -> instance cull + Hi-Z (WP-1.3) -> visibility buffer (WP-1.4, jittered)
 //   -> material resolve into the G-buffer (WP-1.5) -> motion vectors (WP-4.1)
+//   -> atmosphere LUTs (WP-8.2; for the sky, aerial perspective, clouds and the DDGI miss rays)
 //   -> VSM (WP-3.1 marking / allocation, WP-3.2 raster)            [vsm]
 //   -> T2: TLAS (WP-6.0) -> RT shadows (WP-6.2) -> SVGF (WP-6.4) -> frame.shadow_pack   [rtShadows, denoise]
-//   -> DDGI update (WP-6.1: T0 global SDF / T2 ray query)          [ddgi]
+//   -> DDGI update (WP-6.1: T0 global SDF / T2 ray query; misses see the WP-8.2 sky)   [ddgi]
 //   -> clustered lighting (WP-2.1 / 2.2: VSM visibility, RT visibility, DDGI indirect)
-//   -> GTAO / SSR / SSGI (WP-6.3)                                  [ssfx]
-//   -> atmosphere LUTs (WP-8.2) -> frame.sky (sky on background pixels, aerial perspective on geometry)
+//   -> T2: WP-7.1 light tree -> ReSTIR DI (WP-7.2) -> frame.restir  [restir: replaces light.shade's area lights]
+//   -> frame.sky (WP-8.2 sky radiance + sun disk on the background, before SSFX so SSR / SSGI see it)  [sky]
+//   -> GTAO / SSR / SSGI (WP-6.3; the jittered projection when an upscaler runs)        [ssfx]
+//   -> T2: RT reflections (WP-6.2) -> frame.reflect (Schlick-weighted; replaces SSR)     [rtReflections]
+//   -> frame.aerial (aerial perspective on geometry)               [aerialPerspective]
 //   -> froxel fog inject / temporal / integrate / apply (WP-8.1)   [fog]
 //   -> frame.gather -> volumetric clouds (WP-8.3)                  [clouds]
 //   -> gaussian splats (WP-9.2)                                    [splats]
-//   -> frame.resolve (render-resolution scene colour)
+//   -> frame.resolve (render-resolution opaque scene colour)
+//   -> forward transparency (WP-2.3) over the resolved scene colour [forward]
 //   -> TAAU (WP-4.1) or FSR 3.1 (WP-4.2)                           [upscaler]
 //   -> GPU post stack (WP-4.5)                                     [post]
 //   -> output (RGBA16F, display resolution)
+//   -> frame generation (WP-4.4: FSR 3.1 FI, the frame halfway to the previous output)  [frameGen]
 //
-// Tier-driven: T0 never touches ray query (DDGI traces the global SDF, no TLAS / RT effects); T2 builds the
-// TLAS, traces DDGI with ray query and adds RT shadows + the denoiser. No stage records a hand barrier: every
-// access is declared, the composer's own passes included.
+// Tier-driven: T0 never touches ray query (DDGI traces the global SDF, no TLAS / RT effects / ReSTIR); T2
+// builds the TLAS, traces DDGI with ray query and adds RT shadows + the denoiser, RT reflections and (optional)
+// ReSTIR DI. No stage records a hand barrier: every access is declared, the composer's own passes included.
 //
 // Frame protocol (the caller owns the GpuScene, the UploadQueue and the executor):
 //   scene.beginFrame(serial); composer.beginSceneFrame(serial);  ... scene edits ...
@@ -32,13 +38,18 @@
 #include <fuse/renderer/clouds/volumetric_clouds.hpp>
 #include <fuse/renderer/culling/instance_culler.hpp>
 #include <fuse/renderer/denoise/svgf_denoiser.hpp>
+#include <fuse/renderer/forward/forward_transparency.hpp>
 #include <fuse/renderer/frame/frame_types.hpp>
+#include <fuse/renderer/framegen/fg_gpu.hpp>
 #include <fuse/renderer/gi/gpu/ddgi_gpu.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 #include <fuse/renderer/gsplat/gsplat.hpp>
+#include <fuse/renderer/light_tree/light_tree.hpp>
+#include <fuse/renderer/light_tree/light_tree_gpu.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_lighting.hpp>
 #include <fuse/renderer/material_resolve/material_resolve.hpp>
 #include <fuse/renderer/postprocess/gpu/post_stack_gpu.hpp>
+#include <fuse/renderer/restir/restir_gpu.hpp>
 #include <fuse/renderer/rt/acceleration_structures.hpp>
 #include <fuse/renderer/rt_effects/rt_effects.hpp>
 #include <fuse/renderer/shadow/vsm/virtual_shadow_map.hpp>
@@ -50,6 +61,8 @@
 #include <fuse/renderer/visbuffer/visbuffer.hpp>
 #include <fuse/renderer/volumetric/gpu/froxel_fog.hpp>
 #include <fuse/types.hpp>
+
+#include <vector>
 
 namespace fuse::renderer {
 class GpuAllocator;
@@ -86,8 +99,8 @@ enum FrameStage : u32 {
     kStageDdgi = 1u << 5,
     kStageLighting = 1u << 6,   ///< always
     kStageSsfx = 1u << 7,
-    kStageAtmosphere = 1u << 8, ///< the LUTs (for sky, aerial perspective or clouds)
-    kStageSky = 1u << 9,        ///< frame.sky (sky and / or aerial perspective)
+    kStageAtmosphere = 1u << 8, ///< the LUTs (for sky, aerial perspective, clouds or the DDGI sky)
+    kStageSky = 1u << 9,        ///< frame.sky: sky radiance on the background, before SSFX
     kStageFog = 1u << 10,
     kStageClouds = 1u << 11,
     kStageSplats = 1u << 12,
@@ -95,6 +108,11 @@ enum FrameStage : u32 {
     kStageTaau = 1u << 14,
     kStageFsr3 = 1u << 15,
     kStagePost = 1u << 16,
+    kStageAerial = 1u << 17,        ///< frame.aerial: aerial perspective on geometry, after SSFX
+    kStageRestir = 1u << 18,        ///< T2: light tree + ReSTIR DI + frame.restir (area / emissive direct light)
+    kStageRtReflections = 1u << 19, ///< T2: rt.reflections + frame.reflect
+    kStageForward = 1u << 20,       ///< forward transparency (only when a transparent instance is drawn)
+    kStageFrameGen = 1u << 21,      ///< WP-4.4 frame interpolation of the output
 };
 
 struct FrameComposerDesc {
@@ -126,6 +144,9 @@ struct FrameComposerDesc {
     fsr3::Fsr3Settings fsr3{};
     FrameKernelLanguage language = FrameKernelLanguage::Auto;
     u32 framesInFlight = 3;
+    u32 forwardMaxDraws = 64;      ///< WP-2.3 transparent draws per frame
+    bool frameGen = true;          ///< create the WP-4.4 frame generator (display extent >= 64 x 64)
+    u32 restirInitialLights = 256; ///< WP-7.2 light-table / WP-7.1 ring pre-size
 };
 
 /// Camera of the frame (unjittered; the composer jitters the visibility buffer when an upscaler runs).
@@ -149,7 +170,8 @@ struct FrameSettings {
     bool vsm = true;
     vsm::VsmFilterDesc vsmFilter{};
     bool ddgi = true;
-    f32 ddgiSkyRadiance[3] = {0.05f, 0.07f, 0.1f};
+    f32 ddgiSkyRadiance[3] = {0.05f, 0.07f, 0.1f}; ///< DDGI misses without the atmosphere (and the RT reflection misses)
+    bool ddgiAtmosphereSky = true; ///< DDGI misses take the WP-8.2 sky radiance (plans the atmosphere LUTs)
     bool rtShadows = true; ///< T2 only
     bool denoise = true;   ///< T2 RT shadows through SVGF (else light.shade reads the raw 1-spp visibility)
     denoise::SvgfSettings denoiser{};  ///< the signal is forced to Shadow
@@ -165,6 +187,15 @@ struct FrameSettings {
     clouds::CloudSettings cloudSettings{}; ///< resolution.outWidth / outHeight follow the render extent
     bool splats = false;
     gsplat::GsSettings splatSettings{};
+    /// T2: ReSTIR DI over the setRestirLights() list replaces light.shade's rectangle / disk lights (and adds the
+    /// emissive triangles the caller listed). The GI chain stays off (DDGI is the indirect diffuse).
+    bool restir = false;
+    restir::RestirSettings restirSettings{};
+    /// T2: ray-traced reflections composited by frame.reflect; SSR is then switched off in the SSFX stage.
+    bool rtReflections = true;
+    u32 reflectionSamples = 1;
+    bool forward = true;    ///< WP-2.3 transparent instances over the opaque scene colour
+    bool frameGen = false;  ///< WP-4.4: interpolate between the previous and this frame's output
     FrameUpscaler upscaler = FrameUpscaler::Taau;
     bool post = true;
     post_gpu::PostGpuSettings postSettings{};
@@ -200,6 +231,14 @@ struct FrameGraphOutputs {
     rg::BufferRef clouds;      ///< WP-8.3 frame buffer (result section at FrameComposer::cloudsResultOffset())
     rg::BufferRef denoised;    ///< WP-6.4 output (f32x4 per pixel) and the frame.shadow_pack plane (f32 per pixel)
     rg::BufferRef visibility;
+    rg::TextureRef restir;     ///< frame.restir output (lit + ReSTIR DI)
+    rg::BufferRef restirOutput;///< WP-7.2 output buffer (DI signal at FrameComposer::restirDiOffset())
+    rg::BufferRef restirState; ///< WP-7.2 state buffer (surface albedo at FrameComposer::restirAlbedoOffset())
+    rg::TextureRef reflect;    ///< frame.reflect output (SSFX image + RT reflections)
+    rg::BufferRef rtOutput;    ///< WP-6.2 output buffer (reflection section at FrameComposer::reflectionOffset())
+    rg::TextureRef aerial;     ///< frame.aerial output
+    rg::TextureRef forward;    ///< WP-2.3 colour target (scene colour + transparents)
+    rg::TextureRef frameGen;   ///< WP-4.4 interpolated frame (HUD-less, display resolution)
 };
 
 struct FrameStats {
@@ -233,6 +272,12 @@ public:
                      u32 surfaceCount);
     /// WP-9.2 splat asset (no frame using the splat buffer may be in flight).
     bool setSplats(const gsplat::GsSplat* splats, u32 count, u32 shDegree);
+    /// WP-7.2 ReSTIR DI lights (T2): the WP-7.1 input list (area lights: light_tree::lightFromGpuLight of the
+    /// scene's rectangle / disk rows; emissive triangles: appendSceneEmissiveTriangles) and each light's RGB
+    /// (restir::RestirLight::radiance convention). Builds the tree (allocates; not per frame). count 0 clears.
+    bool setRestirLights(const light_tree::LightTreeLight* lights, const f32 (*rgb)[3], u32 count);
+    /// WP-2.3 opacity of a transparent instance (gpu_scene::kInstanceTransparent).
+    bool setOpacity(gpu_scene::InstanceHandle handle, f32 opacity);
 
     /// T2: AccelerationStructures::beginFrame (after scene.beginFrame). No-op at T0.
     void beginSceneFrame(u64 serial);
@@ -263,6 +308,14 @@ public:
     u64 splatOutputOffset() const;
     /// View-projection the visibility buffer used this frame (jittered when an upscaler runs).
     const f32* drawViewProj() const { return m_drawViewProj; }
+    /// Projection handed to the SSFX stage this frame (jittered like the G-buffer when an upscaler runs).
+    const f32* ssfxProjection() const { return m_ssfxProj; }
+    /// Byte offsets inside FrameGraphOutputs::restirOutput / restirState / rtOutput (this frame).
+    u64 restirDiOffset() const;
+    u64 restirAlbedoOffset() const;
+    u64 reflectionOffset() const;
+    const forward::ForwardTransparency& forwardPass() const { return m_forward; }
+    const framegen::FrameGenGpu& frameGenerator() const { return m_framegen; }
 
 private:
     struct OwnedImage {
@@ -286,8 +339,10 @@ private:
         FramePush push{};
         u32 groups[2] = {1u, 1u};
     };
-    static constexpr u32 kSampledSlots = 12u;
-    static constexpr u32 kMaxRecords = 8u;
+    static constexpr u32 kSampledSlots = 24u;
+    static constexpr u32 kMaxRecords = 12u;
+    /// Ring slots per frame: one FrameConstants per composer pass flavour.
+    enum ConstantSlot : u32 { kSlotMain = 0, kSlotSky, kSlotAerial, kSlotRestir, kSlotReflect, kSlotCount };
 
     bool createPipeline();
     bool createTargets();
@@ -297,7 +352,7 @@ private:
     rg::TextureRef importImage(rg::Graph& graph, OwnedImage& o, const char* name);
     rg::BufferRef importBuffer(rg::Graph& graph, OwnedBuffer& o, const char* name);
     u32 sampledHandle(const Texture& texture);
-    PassRecord* nextRecord(u32 mode);
+    PassRecord* nextRecord(u32 mode, u32 slot);
     static void recordDispatch(const rg::PassContext& context, void* user);
     void computeMatrices(const FrameDesc& desc, bool jitter);
 
@@ -327,19 +382,26 @@ private:
     temporal::TaauGpu m_taau;
     fsr3::Fsr3Gpu m_fsr3;
     post_gpu::PostStackGpu m_post;
+    light_tree::LightTree m_tree;
+    light_tree::LightTreeGpu m_treeGpu;
+    restir::RestirGpu m_restir;
+    std::vector<restir::RestirLight> m_restirTable;
+    forward::ForwardTransparency m_forward;
+    framegen::FrameGenGpu m_framegen;
 
     // composer-owned resources
     void* m_layoutHandle = nullptr; ///< VkPipelineLayout (bindless set + 16-byte push)
     void* m_pipeline = nullptr;
-    Buffer m_frameRing{};           ///< per ring slot: [gather / resolve constants][sky constants]
-    u64 m_frameAddress = 0;
-    u64 m_skyFrameAddress = 0;
-    u32 m_skyInColor = 0;
+    Buffer m_frameRing{};           ///< per ring slot: kSlotCount FrameConstants (ConstantSlot order)
+    u64 m_slotAddress[kSlotCount] = {};
     BindlessSlotHandle m_sampler{}; ///< material sampler (resolve)
     u32 m_samplerHandle = 0;
     Buffer m_viewRing{};            ///< RtfxShadowView ring (the denoised visibility)
     u64 m_viewAddress = 0;
     OwnedImage m_skyImage{};
+    OwnedImage m_aerialImage{};
+    OwnedImage m_restirImage{};
+    OwnedImage m_reflectImage{};
     OwnedImage m_resolveImage{};
     OwnedBuffer m_background{};     ///< f32x4 (clouds background)
     OwnedBuffer m_distance{};       ///< f32 (clouds scene distance)
@@ -364,7 +426,10 @@ private:
     f32 m_proj[16] = {};
     f32 m_prevView[16] = {};
     f32 m_jitter[2] = {0.f, 0.f};
-    const Texture* m_chain[6] = {}; ///< the HDR image each stage reads (beginFrame's plan)
+    f32 m_ssfxProj[16] = {};
+    u64 m_fgFrameId = 0;
+    bool m_ddgiSky = false;         ///< DDGI misses read the atmosphere this frame
+    bool m_fgHistory = false;
     u32 m_outputWidth = 0;
     u32 m_outputHeight = 0;
     FrameStats m_stats{};

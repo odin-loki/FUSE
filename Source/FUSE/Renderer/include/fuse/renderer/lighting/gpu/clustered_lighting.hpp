@@ -129,6 +129,9 @@ struct LightingFrameDesc {
     /// the volume's irradiance as indirect diffuse (E x albedo x (1 - metallic) x AO x intensity / pi,
     /// shaders/ddgi/ddgi_sample.*). Declare the read (DdgiGpu::addSamplingUse) before light.shade. 0 = none.
     u64 ddgi = 0;
+    /// light.shade leaves out the rectangle / disk area lights (ltc::kLightRect / kLightDisk): their direct
+    /// light is composited by another stage (frame composer: WP-7.2 ReSTIR DI). Forward shading keeps them.
+    bool skipAreaLights = false;
 };
 
 struct LightingGraphRefs {

@@ -15,6 +15,7 @@
 #define FUSE_LC_TILE 8u
 #define FUSE_LC_SLICE_PAD 2u
 #define FUSE_LC_FLAG_REVERSED_Z 1u
+#define FUSE_LC_FLAG_SKIP_AREA_LIGHTS 2u // light.shade (pixel given): no rectangle / disk lights
 #define FUSE_LC_PI 3.14159265358979
 #define FUSE_LC_MIN_ROUGHNESS 0.045
 #define FUSE_LC_SPOT_MIN_WIDTH 1e-4

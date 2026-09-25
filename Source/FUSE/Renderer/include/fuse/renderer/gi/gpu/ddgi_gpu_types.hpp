@@ -36,6 +36,7 @@ enum DdgiFlag : u32 {
     kDdgiSunEnabled = 1u << 2,        ///< trace: the sun term is on (irradiance > 0)
     kDdgiRelocation = 1u << 3,        ///< ddgi.state: relocation (DdgiCpuConfig::probe_relocation)
     kDdgiClassification = 1u << 4,    ///< ddgi.state: classification (DdgiCpuConfig::probe_classification)
+    kDdgiAtmosphereSky = 1u << 5,     ///< trace: misses take the WP-8.2 sky radiance (atmosphereLo / Hi) instead of skyRadiance
 };
 
 /// What sampling needs (ddgi_sample.{glsl,slang} fuse_ddgi_sample_irradiance): the probe grid, the two
@@ -101,7 +102,9 @@ struct DdgiFrameConstants {
     f32 probeBackfaceThreshold = 0.25f;
     f32 probeMaxOffset = 0.45f;
     f32 probeRelocationStep = 1.f;
-    u32 statePad[3] = {0u, 0u, 0u};
+    u32 atmosphereLo = 0u;  ///< WP-8.2 AtParams BDA (AtmosphereGpu::frameAddress(), low / high 32 bits) when
+    u32 atmosphereHi = 0u;  ///< kDdgiAtmosphereSky: miss radiance = at_sky_radiance(dir, no sun disk)
+    u32 statePad = 0u;
     // Addresses.
     u64 schedule = 0;            ///< u32 probe index per scheduled slot
     u64 rayDirs = 0;             ///< f32 x 4 per ray (ddgi.raygen output)

@@ -1,6 +1,16 @@
 // WP-6.1 "ddgi.trace", Slang twin of ddgi_trace.comp (see there): FUSE_DDGI_RAY_QUERY selects the T2
 // ray-query permutation, otherwise T0 sphere tracing of the global SDF.
 #include "ddgi_common.slang"
+#include "atmosphere/at_sample.slang"
+
+// Radiance of a ray that escapes (ddgi_trace.comp fuse_ddgi_miss).
+float3 fuseDdgiMiss(DdgiFrame F, float3 dir) {
+    if ((F.flags & kFuseDdgiFlagAtmosphereSky) != 0u) {
+        const uint64_t address = uint64_t(F.atmosphereLo) | (uint64_t(F.atmosphereHi) << 32u);
+        return at_sky_radiance(at_load(address), dir, false);
+    }
+    return fuseDdgiVec3(F.skyRadiance);
+}
 
 bool fuseDdgiSunOccluded(DdgiFrame F, float3 position, float3 normal);
 
@@ -112,7 +122,7 @@ float4 fuseDdgiTrace(DdgiFrame F, float3 origin, float3 dir) {
     while (q.Proceed()) {
     }
     if (q.CommittedStatus() != COMMITTED_TRIANGLE_HIT) {
-        return float4(fuseDdgiVec3(F.skyRadiance), F.maxRayDistance);
+        return float4(fuseDdgiMiss(F, dir), F.maxRayDistance);
     }
     const float t = q.CommittedRayT();
     const uint slot = q.CommittedInstanceID();
@@ -330,7 +340,7 @@ float4 fuseDdgiTrace(DdgiFrame F, float3 origin, float3 dir) {
         hit = true;
     }
     if (!hit) {
-        return float4(fuseDdgiVec3(F.skyRadiance), maxD);
+        return float4(fuseDdgiMiss(F, dir), maxD);
     }
     const float3 position = float3(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t);
     float3 gradient;

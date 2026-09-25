@@ -487,6 +487,9 @@ bool DdgiGpu::addUpdate(rg::Graph& graph, const DdgiGraphRefs& refs, const rt::R
     trace->groups[1] = scheduled;
     rg::PassBuilder tracePass = graph.addPass("ddgi.trace", &DdgiGpu::recordDispatch, trace);
     tracePass.use(refs.work, rg::Access::StorageReadWrite, {}, rg::kStageCompute);
+    if (refs.atmosphere.valid()) {
+        tracePass.use(refs.atmosphere, rg::Access::StorageRead, {}, rg::kStageCompute);
+    }
     if (m_tracer == DdgiTracer::RayQuery) {
         tracePass.use(rtRefs->tlas, rg::Access::AccelerationStructureRead, {}, rg::kStageCompute);
         gpu_scene::GpuScene::useAll(tracePass, *sceneRefs, rg::Access::StorageRead, rg::kStageCompute);

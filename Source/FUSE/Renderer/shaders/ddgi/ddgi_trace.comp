@@ -28,8 +28,19 @@
 #extension GL_EXT_ray_query : require
 #endif
 #include "ddgi_common.glsl"
+#include "atmosphere/at_sample.glsl"
 
 layout(local_size_x = FUSE_DDGI_WORKGROUP) in;
+
+// Radiance of a ray that escapes: the WP-8.2 sky (no sun disk: the sun is the direct term) when the frame
+// carries an atmosphere, else the constant skyRadiance.
+vec3 fuse_ddgi_miss(FuseDdgiFrame F, vec3 dir) {
+    if ((F.flags & FUSE_DDGI_FLAG_ATMOSPHERE_SKY) != 0u) {
+        const uint64_t address = uint64_t(F.atmosphereLo) | (uint64_t(F.atmosphereHi) << 32u);
+        return at_sky_radiance(at_load(address), dir, false);
+    }
+    return fuse_ddgi_vec3(F.skyRadiance);
+}
 
 // Direct light at a front-face hit: emissive + the sun term (the oracle's direct_radiance).
 bool fuse_ddgi_sun_occluded(FuseDdgiFrame F, vec3 origin, vec3 direction);
@@ -142,7 +153,7 @@ vec4 fuse_ddgi_trace(FuseDdgiFrame F, vec3 origin, vec3 dir) {
     while (rayQueryProceedEXT(q)) {
     }
     if (rayQueryGetIntersectionTypeEXT(q, true) != gl_RayQueryCommittedIntersectionTriangleEXT) {
-        return vec4(fuse_ddgi_vec3(F.skyRadiance), F.maxRayDistance);
+        return vec4(fuse_ddgi_miss(F, dir), F.maxRayDistance);
     }
     const float t = rayQueryGetIntersectionTEXT(q, true);
     const uint slot = uint(rayQueryGetIntersectionInstanceCustomIndexEXT(q, true));
@@ -379,7 +390,7 @@ vec4 fuse_ddgi_trace(FuseDdgiFrame F, vec3 origin, vec3 dir) {
         hit = true; // steps exhausted grazing a surface: a hit at t
     }
     if (!hit) {
-        return vec4(fuse_ddgi_vec3(F.skyRadiance), maxD);
+        return vec4(fuse_ddgi_miss(F, dir), maxD);
     }
     precise vec3 position = vec3(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t);
     vec3 gradient;

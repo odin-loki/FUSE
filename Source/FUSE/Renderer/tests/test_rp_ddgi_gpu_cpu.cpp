@@ -175,7 +175,7 @@ void testLayout() {
         "probeChangeThreshold", "changeThreshold", "changeHysteresisDrop", "changeFloor", "distancePower", "distanceMinCos",
         "sdfMinDistance", "sdfMaxSteps", "sdfCount", "sdfShadowBias", "traceMask", "shadowMask", "initialIrradiance",
         "sdfSurfaceCount", "distanceClamp", "probeMinFrontfaceDistance", "probeBackfaceThreshold", "probeMaxOffset",
-        "probeRelocationStep", "statePad", "schedule", "rayDirs", "rays", "updateCounts", "irradianceTexelDirs", "distanceTexelDirs", "tlas",
+        "probeRelocationStep", "atmosphereLo", "atmosphereHi", "statePad", "schedule", "rayDirs", "rays", "updateCounts", "irradianceTexelDirs", "distanceTexelDirs", "tlas",
         "scene", "sdfObjects", "sdfSurfaces", "slotStats"};
     const std::vector<std::string> sdf = {"position", "params", "type", "alpha", "materialId", "rounding"};
     const std::vector<std::string> push = {"frame", "aux", "out_", "count", "pad"};

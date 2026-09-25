@@ -5,13 +5,22 @@
 //   reference  the CPU twins of the composer kernel: frame_unproject inverts a view-projection (world point of a
 //              pixel at its projected depth within 1e-4 relative), frame_view_distance (sky pixels take
 //              skyDistance, geometry pixels the eye distance), frame_resolve_texel (splats off: bits kept; on:
-//              rgb x T + c; alpha 1), frame_pack_visibility (clamped .x).
+//              rgb x T + c; alpha 1), frame_pack_visibility (clamped .x), frame_restir_texel (background bits
+//              kept, geometry + albedo x DI), frame_oct_decode (inverse of the G-buffer octahedral encode),
+//              frame_reflect_texel (background kept; F = F0 at normal incidence, -> 1 at grazing; metal F0 =
+//              albedo); the SSFX jitter convention (the composer's proj[8] += 2 jx / w, proj[9] -= 2 jy / h on
+//              the unflipped SSFX projection puts every view point on the same pixel as the jittered
+//              visibility-buffer projection, temporal::jitter_view_proj).
 //   api        a FrameComposer without a device / with an invalid description fails init with a reason and
-//              records nothing; default FrameSettings enable every stage except splats; stage bits are disjoint.
+//              records nothing; default FrameSettings (every stage on except splats, ReSTIR and frame
+//              generation); stage bits are disjoint.
 #include <fuse/renderer/frame/frame_composer.hpp>
 #include <fuse/renderer/frame/frame_types.hpp>
 #include <fuse/renderer/rg/graph.hpp>
+#include <fuse/renderer/ssfx_gpu/ssfx_gpu_reference.hpp>
+#include <fuse/renderer/temporal/temporal_types.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
@@ -45,10 +54,11 @@ struct Field {
 };
 #define FC_FIELD(n) Field{#n, offsetof(FrameConstants, n)}
 const Field kFields[] = {
-    FC_FIELD(atmosphere), FC_FIELD(background), FC_FIELD(distance), FC_FIELD(clouds),     FC_FIELD(splats),
-    FC_FIELD(denoised),   FC_FIELD(visibility), FC_FIELD(reserved0), FC_FIELD(width),     FC_FIELD(height),
-    FC_FIELD(inColor),    FC_FIELD(inDepth),    FC_FIELD(outSky),    FC_FIELD(outResolve), FC_FIELD(flags),
-    FC_FIELD(reserved1),  FC_FIELD(invViewProj), FC_FIELD(cameraPos), FC_FIELD(skyDistance), FC_FIELD(reserved2),
+    FC_FIELD(atmosphere),   FC_FIELD(background), FC_FIELD(distance),      FC_FIELD(clouds),        FC_FIELD(splats),
+    FC_FIELD(denoised),     FC_FIELD(visibility), FC_FIELD(restirDi),      FC_FIELD(restirAlbedo),  FC_FIELD(reflection),
+    FC_FIELD(width),        FC_FIELD(height),     FC_FIELD(inColor),       FC_FIELD(inDepth),       FC_FIELD(outColor),
+    FC_FIELD(outResolve),   FC_FIELD(flags),      FC_FIELD(gbufferNormal), FC_FIELD(gbufferAlbedo), FC_FIELD(gbufferRoughMetal),
+    FC_FIELD(reserved1),    FC_FIELD(invViewProj), FC_FIELD(cameraPos),    FC_FIELD(skyDistance),   FC_FIELD(reserved2),
 };
 #undef FC_FIELD
 
@@ -99,7 +109,7 @@ bool parseShaderStruct(const std::string& text, const char* header, std::vector<
 }
 
 void testLayout() {
-    expect(sizeof(FrameConstants) == 192u, "FrameConstants is 192 bytes");
+    expect(sizeof(FrameConstants) == 224u, "FrameConstants is 224 bytes");
     expect(sizeof(FramePush) == 16u, "FramePush is 16 bytes");
     expect(offsetof(FramePush, mode) == 8u, "FramePush::mode at 8");
     const size_t fieldCount = sizeof(kFields) / sizeof(kFields[0]);
@@ -135,10 +145,12 @@ void testLayout() {
                "shader FcPush == FramePush");
         // Mode / flag constants.
         const bool glsl = std::strcmp(lang, "glsl") == 0;
-        const char* modes[4][2] = {{"FC_MODE_SKY 0u", "kFcModeSky = 0u"},
+        const char* modes[6][2] = {{"FC_MODE_SKY 0u", "kFcModeSky = 0u"},
                                    {"FC_MODE_GATHER 1u", "kFcModeGather = 1u"},
                                    {"FC_MODE_RESOLVE 2u", "kFcModeResolve = 2u"},
-                                   {"FC_MODE_SHADOW_PACK 3u", "kFcModeShadowPack = 3u"}};
+                                   {"FC_MODE_SHADOW_PACK 3u", "kFcModeShadowPack = 3u"},
+                                   {"FC_MODE_RESTIR 4u", "kFcModeRestir = 4u"},
+                                   {"FC_MODE_REFLECT 5u", "kFcModeReflect = 5u"}};
         for (const auto& m : modes) {
             expect(text.find(glsl ? m[0] : m[1]) != std::string::npos, "shader mode constant == FrameKernelMode");
         }
@@ -251,6 +263,103 @@ void testReference() {
     const f32 d2[4] = {3.f, 0.f, 0.f, 0.f};
     expect(frame_pack_visibility(d0) == 0.f && frame_pack_visibility(d1) == 0.25f && frame_pack_visibility(d2) == 1.f,
            "shadow pack clamps .x to [0, 1]");
+
+    // Restir: background bits kept, geometry + albedo x DI, alpha kept.
+    {
+        const f32 in[4] = {0.5f, 0.25f, 1.f, 0.75f};
+        const f32 albedo[4] = {0.5f, 1.f, 0.25f, 1.f};
+        const f32 di[4] = {2.f, 0.5f, 4.f, 0.f};
+        f32 o[4];
+        frame_restir_texel(in, 1.f, albedo, di, o);
+        expect(std::memcmp(o, in, sizeof(o)) == 0, "restir keeps background pixels");
+        frame_restir_texel(in, 0.5f, albedo, di, o);
+        expect(o[0] == 1.5f && o[1] == 0.75f && o[2] == 2.f && o[3] == 0.75f, "restir adds albedo x DI on geometry");
+    }
+    // Octahedral decode: inverse of the signed octahedral encode on a set of directions.
+    {
+        f64 worst = 0.0;
+        for (u32 i = 0; i < 64u; ++i) {
+            const f32 th = 0.1f + 3.0f * static_cast<f32>(i) / 64.f;
+            const f32 ph = 0.37f * static_cast<f32>(i);
+            f32 n[3] = {std::sin(th) * std::cos(ph), std::sin(th) * std::sin(ph), std::cos(th)};
+            const f32 s = std::fabs(n[0]) + std::fabs(n[1]) + std::fabs(n[2]);
+            f32 ox = n[0] / s;
+            f32 oy = n[1] / s;
+            if (n[2] < 0.f) {
+                const f32 x = ox;
+                const f32 y = oy;
+                ox = (1.f - std::fabs(y)) * (x >= 0.f ? 1.f : -1.f);
+                oy = (1.f - std::fabs(x)) * (y >= 0.f ? 1.f : -1.f);
+            }
+            f32 d[3];
+            frame_oct_decode(ox, oy, d);
+            for (u32 k = 0; k < 3u; ++k) {
+                worst = std::max(worst, static_cast<f64>(std::fabs(d[k] - n[k])));
+            }
+        }
+        std::printf("reference: frame_oct_decode worst component error %.3g over 64 directions\n", worst);
+        expect(worst < 1e-5, "octahedral decode inverts the G-buffer encode");
+    }
+    // Reflect: background kept; normal incidence -> F0; grazing -> ~1; metal F0 = albedo.
+    {
+        FrameConstants r = c; // camera at (1, 2, 3) looking down -z
+        const f32 in[4] = {0.1f, 0.2f, 0.3f, 1.f};
+        const f32 refl[4] = {2.f, 2.f, 2.f, 5.f};
+        const f32 rt0[4] = {0.f, 0.f, 0.f, 1.f};   // +z normal (towards the camera)
+        const f32 rt1[4] = {0.5f, 0.25f, 1.f, 1.f};
+        const f32 dielectric[4] = {0.5f, 0.f, 0.f, 0.f};
+        const f32 metal[4] = {0.5f, 1.f, 0.f, 0.f};
+        f32 o[4];
+        frame_reflect_texel(r, 32, 24, 1.f, in, rt0, rt1, dielectric, refl, o);
+        expect(std::memcmp(o, in, sizeof(o)) == 0, "reflect keeps background pixels");
+        // Pixel near the centre at 3 m: N.V ~ 1 -> F ~ F0.
+        const f64 zc = 3.0;
+        const f32 dc = static_cast<f32>((vp[10] * (3.0 - zc) + vp[14]) / (vp[11] * (3.0 - zc) + vp[15]));
+        frame_reflect_texel(r, 32, 24, dc, in, rt0, rt1, dielectric, refl, o);
+        const bool dielectricOk = std::fabs(o[0] - (0.1f + 0.04f * 2.f)) < 1e-4f && std::fabs(o[1] - (0.2f + 0.04f * 2.f)) < 1e-4f;
+        frame_reflect_texel(r, 32, 24, dc, in, rt0, rt1, metal, refl, o);
+        const bool metalOk = std::fabs(o[0] - (0.1f + 0.5f * 2.f)) < 1e-3f && std::fabs(o[2] - (0.3f + 1.f * 2.f)) < 1e-3f &&
+                             o[3] == 1.f;
+        const f32 grazing[4] = {1.f, 0.f, 0.f, 1.f}; // +x normal, perpendicular to the view axis
+        frame_reflect_texel(r, 32, 24, dc, in, grazing, rt1, dielectric, refl, o);
+        const bool grazingOk = o[0] > 0.1f + 0.9f * 2.f;
+        std::printf("reference: frame_reflect_texel dielectric %s, metal %s, grazing %s\n", dielectricOk ? "ok" : "BAD",
+                    metalOk ? "ok" : "BAD", grazingOk ? "ok" : "BAD");
+        expect(dielectricOk && metalOk && grazingOk, "reflect weight is Schlick F(F0, N.V)");
+    }
+    // SSFX jitter convention (FrameComposer::beginFrame): the unflipped SSFX projection with proj[8] += 2 jx / w and
+    // proj[9] -= 2 jy / h projects view points onto the same pixels as the jittered (y-flipped) G-buffer projection.
+    {
+        const f32 jx = 0.3125f, jy = -0.4375f;
+        f32 flipped[16] = {};
+        f32 ssfx[16] = {};
+        for (u32 i = 0; i < 16u; ++i) {
+            flipped[i] = static_cast<f32>(proj[i]);
+            ssfx[i] = static_cast<f32>(proj[i]);
+        }
+        ssfx[5] = -ssfx[5];
+        f32 jittered[16];
+        fuse::renderer::temporal::jitter_view_proj(flipped, jx, jy, w, h, jittered);
+        ssfx[8] += 2.f * jx / static_cast<f32>(w);
+        ssfx[9] -= 2.f * jy / static_cast<f32>(h);
+        fuse::ssfx::SsfxCamera cam{};
+        const bool camOk = fuse::renderer::ssfx_gpu::camera_from_projection(ssfx, w, h, cam);
+        f64 worstPx = 0.0;
+        const f32 pts[4][3] = {{0.3f, 0.2f, -2.f}, {-1.1f, 0.7f, -5.f}, {2.f, -1.5f, -9.f}, {0.f, 0.f, -1.f}};
+        for (const auto& p : pts) {
+            const f32 cx = jittered[0] * p[0] + jittered[4] * p[1] + jittered[8] * p[2] + jittered[12];
+            const f32 cy = jittered[1] * p[0] + jittered[5] * p[1] + jittered[9] * p[2] + jittered[13];
+            const f32 cw = jittered[3] * p[0] + jittered[7] * p[1] + jittered[11] * p[2] + jittered[15];
+            const f64 px = (cx / cw * 0.5 + 0.5) * w;
+            const f64 py = (cy / cw * 0.5 + 0.5) * h;
+            f32 sx = 0.f, sy = 0.f;
+            // SSFX view space: x right, y down, z forward.
+            cam.project(fuse::math::Vec3{p[0], -p[1], -p[2]}, sx, sy);
+            worstPx = std::max(worstPx, std::max(std::fabs(sx - px), std::fabs(sy - py)));
+        }
+        std::printf("reference: SSFX jitter convention, worst pixel mismatch %.3g\n", worstPx);
+        expect(camOk && worstPx < 1e-3, "the jittered SSFX projection matches the jittered G-buffer pixels");
+    }
 }
 
 // --- api -------------------------------------------------------------------------------------------
@@ -268,12 +377,17 @@ void testApi() {
     expect(!outs.output.valid() && graph.passCount() == 0u, "addFrame without beginFrame records nothing");
     expect(composer.commitScene(), "commitScene is a no-op without a TLAS");
     composer.collectRetired(~0ull);
-    expect(fs.vsm && fs.ddgi && fs.rtShadows && fs.denoise && fs.ssfx && fs.sky && fs.aerialPerspective && fs.fog && fs.clouds &&
-               !fs.splats && fs.post && fs.upscaler == FrameUpscaler::Taau,
-           "default FrameSettings: every stage on except splats, TAAU");
+    expect(fs.vsm && fs.ddgi && fs.ddgiAtmosphereSky && fs.rtShadows && fs.denoise && fs.ssfx && fs.sky && fs.aerialPerspective &&
+               fs.fog && fs.clouds && !fs.splats && fs.post && fs.upscaler == FrameUpscaler::Taau && fs.rtReflections &&
+               fs.forward && !fs.restir && !fs.frameGen,
+           "default FrameSettings: every stage on except splats, ReSTIR and frame generation, TAAU");
+    FrameComposer probe;
+    expect(!probe.setRestirLights(nullptr, nullptr, 0u) && probe.restirDiOffset() == 0u && probe.reflectionOffset() == 0u,
+           "ReSTIR / reflection inspection without a device");
     const u32 stages[] = {kStageScene, kStageVsm,  kStageTlas,  kStageRtShadows, kStageDenoise, kStageDdgi,
                           kStageLighting, kStageSsfx, kStageAtmosphere, kStageSky, kStageFog, kStageClouds,
-                          kStageSplats, kStageResolve, kStageTaau, kStageFsr3, kStagePost};
+                          kStageSplats, kStageResolve, kStageTaau, kStageFsr3, kStagePost, kStageAerial,
+                          kStageRestir, kStageRtReflections, kStageForward, kStageFrameGen};
     u32 all = 0;
     bool disjoint = true;
     for (const u32 s : stages) {

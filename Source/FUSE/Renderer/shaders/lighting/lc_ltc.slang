@@ -522,9 +522,11 @@ float3 fuseLcShadeLightsPx(LcFrame F, LcSurface s, float3 v, uint cluster, uint2
     uint* list = (uint*)F.lightList;
     const uint offset = grid[cluster * 2u];
     const uint count = grid[cluster * 2u + 1u];
+    const bool skipArea = pixel.x != 0xFFFFFFFFu && (F.flags & kFuseLcFlagSkipAreaLights) != 0u;
     for (uint i = 0u; i < count; ++i) {
         const uint slot = list[offset + i];
-        if (slot < F.lightCount) {
+        if (slot < F.lightCount &&
+            !(skipArea && (lights[slot].type == kFuseLightRect || lights[slot].type == kFuseLightDisk))) {
             radiance = radiance + fuseLcShadowedPx(shadows, rt, pixel, slot, s,
                                                    compensated ? fuseLcLightMs(lights[slot], s, v, terms, lut) : fuseLcLight(lights[slot], s, v));
         }

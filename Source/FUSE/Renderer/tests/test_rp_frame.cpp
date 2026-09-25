@@ -3,25 +3,40 @@
 //
 // Scene (the WP-6.1 / WP-3.2 box-world helpers): the WP-1.5 test cube (mr_test::box) instanced as a ground slab,
 // a back wall, three boxes, a floating slab and a small emissive block (DdgiCpuScene boxes, so the T0 DDGI global
-// SDF is the same world: gi_gpu::sdfSceneFromBoxes), a sun (directional, slot 0) + a point + a spot light, and 24
-// gaussian splats in front of the wall. Render 96 x 64, display 144 x 96 (1.5x upscale).
+// SDF is the same world: gi_gpu::sdfSceneFromBoxes), a sun (directional, slot 0) + a point + a spot + a WP-2.2
+// rectangle light, a transparent (kInstanceTransparent, opacity 0.5) glass box, and 24 gaussian splats in front
+// of the wall. T2: the WP-7.2 light list = the rectangle + the emissive block's 12 triangles. Render 96 x 64,
+// display 144 x 96 (1.5x upscale).
 //
-//   --mode full         8 frames with every stage the tier allows (splats included; TAAU frames 0-3, FSR 3 frames
-//                       4-7 at T2 / TAAU at T0) under validation + sync validation: the graph executes, every
-//                       planned stage ran, 0 messages, the output is finite and not black.
+//   --mode full         8 frames with every stage the tier allows (splats, forward transparency, frame generation;
+//                       T2: ReSTIR DI, RT reflections; TAAU frames 0-3, FSR 3 frames 4-7 at T2 / TAAU at T0) under
+//                       validation + sync validation: the graph executes, every planned stage ran, 0 messages, the
+//                       output and the interpolated frame are finite and not black, the SSFX projection carries
+//                       the visibility buffer's jitter.
 //   --mode toggles      one reset frame per configuration (render-resolution scene colour, upscaler / post off),
 //                       each toggle changes the image only where expected:
-//                         fog off == the fog-on frame's pre-fog image (bit for bit), fog on changes pixels
-//                         sky on vs off: only background pixels (RT4 depth == 1) change, all of them
+//                         fog off == the fog-on frame's pre-fog (aerial) image (bit for bit), fog on changes pixels
+//                         sky (written before SSFX) on vs off: every background pixel changes; with SSFX off no
+//                         geometry pixel changes (with SSFX on the count of geometry pixels that see the sky
+//                         through SSR / SSGI is reported); the SSFX image carries the sky
 //                         aerial perspective on vs off: only geometry pixels change
-//                         SSFX / VSM / DDGI on vs off: only geometry pixels change; SSFX off == the lit image
-//                         clouds on vs off: only background pixels change
+//                         SSFX / VSM / DDGI / DDGI atmosphere sky on vs off: only geometry pixels change; SSFX off
+//                         == the lit image
+//                         clouds on vs off: only background pixels change (+ a repeated reset frame reproduces
+//                         its bits)
 //                         splats on vs off: only pixels a splat covers (splat T < 1) change
-//                         T2: RT shadows and the denoiser on vs off: only geometry pixels change
-//                       and a repeated configuration reproduces its bits (the reset frame is self-contained).
-//   --mode determinism  two independent runs (scene + composer rebuilt) of 6 frames: final output and scene
-//                       colour bit-identical.
-//   --mode zero_alloc   64 steady-state frames (camera moving, every stage on): 0 operator-new calls in
+//                         forward on: the opaque scene colour is unchanged, the forward image differs on the
+//                         glass box's pixels only (a part of the frame)
+//                         T2: RT shadows, the denoiser and RT reflections on vs off: only geometry pixels change;
+//                         ReSTIR on: light.shade leaves the rectangle out (lit image: geometry only) and
+//                         frame.restir adds DI on geometry only
+//                       and a repeated configuration reproduces its bits with the fog jittered (resetHistory
+//                       rewinds the fog / clouds sequences).
+//   --mode determinism  two independent runs (scene + composer rebuilt) of 6 frames (frame generation on): final
+//                       output, scene colour, forward image, interpolated frame (T2: + frame.restir,
+//                       frame.reflect) bit-identical.
+//   --mode zero_alloc   64 steady-state frames (camera moving, every stage on incl. forward, frame generation,
+//                       T2: ReSTIR DI + RT reflections): 0 operator-new calls in
 //                       FrameComposer::beginFrame, the whole graph build (reset + addFrame) and every pass callback
 //                       (validated run first; validation off for the count: the layer allocates through operator new).
 //   --mode golden       4 frames (T0: TAAU, T2: FSR 3), post on: the display image (8-bit) against
@@ -32,7 +47,9 @@
 //   --mode parity       the composer's own kernel vs its CPU reference (frame_types.hpp) on a live frame:
 //                       frame.gather background == its input image, distance == frame_view_distance (1e-5 rel),
 //                       frame.resolve == half(frame_resolve_texel(clouds result, splat texel)) (<= 1 half ulp),
-//                       T2: frame.shadow_pack == frame_pack_visibility(denoised) bit for bit.
+//                       T2: frame.shadow_pack == frame_pack_visibility(denoised) bit for bit, frame.restir ==
+//                       half(frame_restir_texel(lit, ReSTIR albedo, DI)) (<= 1 half ulp), frame.reflect ==
+//                       half(frame_reflect_texel(SSFX image, RT0 / RT1 / RT2, reflection)) (<= 3 half ulps).
 //   --tier t0 | t2      T2 skips (77) without the T2 gate.
 //   --language auto | slang | glsl   the composer kernel's language (auto = Slang when built, else GLSL).
 //
@@ -45,6 +62,8 @@
 #include <fuse/renderer/frame/frame_composer.hpp>
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
 #include <fuse/renderer/gi/gpu/ddgi_gpu_reference.hpp>
+#include <fuse/renderer/lighting/ltc/ltc_lut.hpp>
+#include <fuse/renderer/upscale/upscale_inputs.hpp>
 #include <fuse/renderer/material/material.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
@@ -61,6 +80,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <array>
 #include <new>
 #include <string>
 #include <vector>
@@ -329,6 +349,10 @@ struct Scene {
     std::vector<fuse::compute::SdfObject> sdf;
     std::vector<gi_gpu::DdgiSurface> surfaces;
     std::vector<gsplat::GsSplat> splats;
+    gpu_scene::InstanceHandle glass{};                     ///< the transparent instance (WP-2.3)
+    std::vector<light_tree::LightTreeLight> restirLights; ///< rect light + the emissive block's triangles (WP-7.2)
+    std::vector<std::array<f32, 3>> restirRgb;
+    u32 rectSlot = 0;
 };
 
 DdgiCpuScene makeWorld() {
@@ -447,6 +471,50 @@ bool buildScene(Context& ctx, Scene& s) {
     spot.color[2] = 1.f;
     spot.intensity = 6.f;
     s.gpu.addLight(spot);
+    // WP-2.2 rectangle light over the red box, facing down (light.shade, or ReSTIR DI when enabled).
+    ltc::AreaLightDesc area{};
+    area.center = Vec3{-1.6f, 2.4f, -2.4f};
+    area.normal = Vec3{0.f, -1.f, 0.f};
+    area.tangent = Vec3{1.f, 0.f, 0.f};
+    area.halfWidth = 0.4f;
+    area.halfHeight = 0.25f;
+    area.color = Vec3{1.f, 0.85f, 0.7f};
+    area.intensity = 6.f;
+    area.range = 6.f;
+    const gpu_scene::GpuLight rect = ltc::makeRectLight(area);
+    s.rectSlot = s.gpu.addLight(rect).slot;
+    // WP-2.3 transparent box in front of the blue tower (culled from the visibility buffer, drawn forward).
+    {
+        Material m{};
+        m.baseColor = Vec3{0.3f, 0.8f, 0.5f};
+        m.roughness = 0.3f;
+        s.gpu.setMaterial(static_cast<u32>(s.cpu.boxes.size()), m);
+        DdgiCpuBox glass{};
+        glass.min = Vec3{0.2f, 0.f, -2.2f};
+        glass.max = Vec3{0.9f, 0.9f, -1.7f};
+        gpu_scene::InstanceDesc id{};
+        id.mesh = 0;
+        id.material = static_cast<u32>(s.cpu.boxes.size());
+        id.transform = boxTransform(glass);
+        id.flags |= gpu_scene::kInstanceTransparent;
+        s.glass = s.gpu.addInstance(id);
+    }
+    // WP-7.2 light list: the rectangle (light-tree adapter of its GpuLight row) + the emissive block's triangles.
+    {
+        s.restirLights.clear();
+        s.restirRgb.clear();
+        light_tree::LightTreeLight l{};
+        if (!light_tree::lightFromGpuLight(rect, s.rectSlot, l)) {
+            return false;
+        }
+        s.restirLights.push_back(l);
+        s.restirRgb.push_back({area.color.x * area.intensity, area.color.y * area.intensity, area.color.z * area.intensity});
+        const DdgiCpuBox& e = s.cpu.boxes[5];
+        const u32 n = light_tree::appendEmissiveTriangles(s.box, boxTransform(e), 2.f, false, s.restirLights);
+        for (u32 i = 0; i < n; ++i) {
+            s.restirRgb.push_back({e.surface.emissive.x, e.surface.emissive.y, e.surface.emissive.z});
+        }
+    }
     const gpu_scene::GpuSceneCommitStats stats = s.gpu.commit();
     ctx.upload.flush();
     return stats.ok && ctx.upload.waitAll();
@@ -529,6 +597,8 @@ FrameSettings baseSettings() {
     c.sampling.lightSteps = 3;
     c.medium.coverageBias = 0.2f;
     fs.splats = true;
+    fs.restir = true; // T2 only (the plan drops it at T0)
+    fs.restirSettings.diCandidates = 4;
     return fs;
 }
 
@@ -599,6 +669,17 @@ enum Readback : u32 {
     kRbClouds,     ///< f32x4 render
     kRbDenoised,   ///< f32x4 render (T2)
     kRbVisibility, ///< f32 render (T2)
+    kRbAerial,     ///< RGBA16F render
+    kRbRestir,     ///< RGBA16F render (T2)
+    kRbReflect,    ///< RGBA16F render (T2)
+    kRbForward,    ///< RGBA16F render
+    kRbFrameGen,   ///< RGBA16F display
+    kRbRestirDi,   ///< f32x4 render (T2)
+    kRbRestirAlbedo, ///< f32x4 render (T2)
+    kRbRtReflection, ///< f32x4 render (T2)
+    kRbRt0,        ///< RGBA16F render
+    kRbRt1,        ///< RGBA8 render
+    kRbRt2,        ///< RGBA8 render
     kRbCount,
 };
 
@@ -665,6 +746,21 @@ void buildFrame(Context& ctx, FrameComposer& composer, rg::Graph& graph, FrameIo
     add(kRbClouds, false, {}, outs.clouds, composer.cloudsResultOffset(), n * 16u, 0, 0);
     add(kRbDenoised, false, {}, outs.denoised, 0, n * 16u, 0, 0);
     add(kRbVisibility, false, {}, outs.visibility, 0, n * 4u, 0, 0);
+    add(kRbAerial, true, outs.aerial, {}, 0, n * 8u, kRenderW, kRenderH);
+    add(kRbRestir, true, outs.restir, {}, 0, n * 8u, kRenderW, kRenderH);
+    add(kRbReflect, true, outs.reflect, {}, 0, n * 8u, kRenderW, kRenderH);
+    add(kRbForward, true, outs.forward, {}, 0, n * 8u, kRenderW, kRenderH);
+    add(kRbFrameGen, true, outs.frameGen, {}, 0, static_cast<u64>(kDisplayW) * kDisplayH * 8u, kDisplayW, kDisplayH);
+    if (outs.restir.valid()) {
+        add(kRbRestirDi, false, {}, outs.restirOutput, composer.restirDiOffset(), n * 16u, 0, 0);
+        add(kRbRestirAlbedo, false, {}, outs.restirState, composer.restirAlbedoOffset(), n * 16u, 0, 0);
+    }
+    if (outs.reflect.valid()) {
+        add(kRbRtReflection, false, {}, outs.rtOutput, composer.reflectionOffset(), n * 16u, 0, 0);
+        add(kRbRt0, true, outs.gbuffer.gbuffer[0], {}, 0, n * 8u, kRenderW, kRenderH);
+        add(kRbRt1, true, outs.gbuffer.gbuffer[1], {}, 0, n * 4u, kRenderW, kRenderH);
+        add(kRbRt2, true, outs.gbuffer.gbuffer[2], {}, 0, n * 4u, kRenderW, kRenderH);
+    }
     graph.addPass("readback.host", nullptr, nullptr).use(rb, rg::Access::HostRead);
 }
 
@@ -824,12 +920,26 @@ int initRig(Context& ctx, Rig& rig, FrameTier tier) {
         std::fprintf(stderr, "FAIL: setSplats\n");
         return 1;
     }
+    if (!rig.composer.setOpacity(rig.scene.glass, 0.5f)) {
+        std::fprintf(stderr, "FAIL: setOpacity\n");
+        return 1;
+    }
+    if (tier == FrameTier::T2 &&
+        !rig.composer.setRestirLights(rig.scene.restirLights.data(),
+                                      reinterpret_cast<const f32(*)[3]>(rig.scene.restirRgb.data()),
+                                      static_cast<u32>(rig.scene.restirLights.size()))) {
+        std::fprintf(stderr, "FAIL: setRestirLights\n");
+        return 1;
+    }
     const u32 avail = rig.composer.available();
     std::printf("composer (%s kernel, tier %s): available 0x%05x (first missing: %s)\n", rig.composer.kernelLanguage(),
                 tierName(tier), avail, rig.composer.reason());
     const u32 required = kStageScene | kStageVsm | kStageDdgi | kStageLighting | kStageSsfx | kStageAtmosphere | kStageSky |
-                         kStageFog | kStageClouds | kStageSplats | kStageResolve | kStageTaau | kStagePost |
-                         (tier == FrameTier::T2 ? (kStageTlas | kStageRtShadows | kStageDenoise | kStageFsr3) : 0u);
+                         kStageAerial | kStageFog | kStageClouds | kStageSplats | kStageResolve | kStageTaau | kStagePost |
+                         kStageForward | kStageFrameGen |
+                         (tier == FrameTier::T2 ? (kStageTlas | kStageRtShadows | kStageDenoise | kStageFsr3 | kStageRestir |
+                                                   kStageRtReflections)
+                                                : 0u);
     expect((avail & required) == required, "every stage of the tier is available on Lavapipe");
     return 0;
 }
@@ -844,13 +954,21 @@ u32 plannedStages(FrameTier tier, const FrameSettings& fs) {
     }
     p |= fs.vsm ? kStageVsm : 0u;
     p |= fs.ddgi ? kStageDdgi : 0u;
+    if (tier == FrameTier::T2) {
+        p |= fs.restir ? kStageRestir : 0u;
+        p |= (fs.rtReflections && fs.reflectionSamples > 0u) ? kStageRtReflections : 0u;
+    }
     p |= fs.ssfx ? kStageSsfx : 0u;
-    p |= (fs.sky || fs.aerialPerspective) ? (kStageSky | kStageAtmosphere) : 0u;
+    p |= fs.sky ? (kStageSky | kStageAtmosphere) : 0u;
+    p |= fs.aerialPerspective ? (kStageAerial | kStageAtmosphere) : 0u;
+    p |= (fs.ddgi && fs.ddgiAtmosphereSky) ? kStageAtmosphere : 0u;
     p |= fs.fog ? kStageFog : 0u;
     p |= fs.clouds ? (kStageClouds | kStageAtmosphere) : 0u;
     p |= fs.splats ? kStageSplats : 0u;
+    p |= fs.forward ? kStageForward : 0u; // the glass box is in view
     p |= fs.upscaler == FrameUpscaler::Taau ? kStageTaau : (fs.upscaler == FrameUpscaler::Fsr3 ? kStageFsr3 : 0u);
     p |= fs.post ? kStagePost : 0u;
+    p |= (fs.frameGen && fs.upscaler != FrameUpscaler::None) ? kStageFrameGen : 0u; // display != render extent
     return p;
 }
 
@@ -861,6 +979,7 @@ int runFull(Context& ctx, FrameTier tier) {
         return rc;
     }
     FrameSettings fs = baseSettings();
+    fs.frameGen = true;
     for (u32 frame = 0; frame < 8u; ++frame) {
         fs.upscaler = (tier == FrameTier::T2 && frame >= 4u) ? FrameUpscaler::Fsr3 : FrameUpscaler::Taau;
         Frame out{};
@@ -869,17 +988,29 @@ int runFull(Context& ctx, FrameTier tier) {
         expect(ok, "frame executes");
         const u32 planned = plannedStages(tier, fs);
         if (out.ran != planned) {
-            std::fprintf(stderr, "  frame %u: ran 0x%05x, planned 0x%05x\n", frame, out.ran, planned);
+            std::fprintf(stderr, "  frame %u: ran 0x%06x, planned 0x%06x\n", frame, out.ran, planned);
         }
         expect(out.ran == planned, "every planned stage ran");
+        // SSFX gets the G-buffer's jitter (upscaler on): proj[8] = 2 jx / w, proj[9] = -2 jy / h.
+        const fuse::math::Vec2 j = upscaleJitterOffset(frame, 8u);
+        const f32* sp = rig.composer.ssfxProjection();
+        const bool jitterOk = std::fabs(sp[8] - 2.f * j.x / static_cast<f32>(kRenderW)) < 1e-6f &&
+                              std::fabs(sp[9] + 2.f * j.y / static_cast<f32>(kRenderH)) < 1e-6f;
+        expect(jitterOk, "SSFX projection carries the visibility buffer's jitter");
         if (frame == 3u || frame == 7u) {
             f64 mean = 0.0;
             expect(out.outW == kDisplayW && out.outH == kDisplayH, "output at display resolution");
             expect(finiteAndLit(out.bytes[kRbOutput], mean), "output finite and not black");
             f64 sceneMean = 0.0;
             expect(finiteAndLit(out.bytes[kRbSceneColor], sceneMean), "scene colour finite and not black");
-            std::printf("  frame %u (%s): output mean %.4f, scene colour mean %.4f, %u composer passes\n", frame,
-                        fs.upscaler == FrameUpscaler::Fsr3 ? "fsr3" : "taau", mean, sceneMean, rig.composer.stats().composerPasses);
+            f64 fgMean = 0.0;
+            expect(finiteAndLit(out.bytes[kRbFrameGen], fgMean), "interpolated frame finite and not black");
+            const u32 draws = rig.composer.forwardPass().drawCount();
+            expect(draws == 1u, "forward: the glass box is drawn");
+            std::printf("  frame %u (%s): output mean %.4f, scene colour mean %.4f, interpolated mean %.4f, %u composer passes, "
+                        "%u transparent draw(s), ssfx jitter (%.4f, %.4f)\n",
+                        frame, fs.upscaler == FrameUpscaler::Fsr3 ? "fsr3" : "taau", mean, sceneMean, fgMean,
+                        rig.composer.stats().composerPasses, draws, sp[8], sp[9]);
         }
     }
     std::printf("full %s: 8 frames, validation messages %u\n", tierName(tier), g_messages);
@@ -896,29 +1027,42 @@ int runToggles(Context& ctx, FrameTier tier) {
     if (const int rc = initRig(ctx, rig, tier); rc != 0) {
         return rc;
     }
+    const bool t2 = tier == FrameTier::T2;
     FrameSettings base = baseSettings();
     base.upscaler = FrameUpscaler::None;
     base.post = false;
     base.clouds = false;
     base.splats = false;
-    // FroxelFog keeps its own jitter sequence index (not reset by FogFrameDesc::resetHistory): unjittered fog makes
-    // a reset frame a function of the settings alone.
-    base.fogSettings.jitter = false;
+    base.restir = false;
+    base.rtReflections = false;
+    base.forward = false;
+    // Fog jitter stays on: resetHistory rewinds the fog / clouds sequences (FroxelFog / VolumetricClouds::
+    // resetSequence), so every reset frame is a function of its settings alone.
     auto run = [&](const FrameSettings& fs, Frame& out) {
         const bool ok = runFrame(ctx, rig.scene, rig.composer, rig.graph, frameDesc(0, 2u, true), fs, true, &out);
         expect(ok, "toggle frame executes");
-        expect(out.ran == plannedStages(tier, fs), "toggle frame ran its planned stages");
+        const u32 planned = plannedStages(tier, fs);
+        if (out.ran != planned) {
+            std::fprintf(stderr, "  toggle frame: ran 0x%06x, planned 0x%06x\n", out.ran, planned);
+        }
+        expect(out.ran == planned, "toggle frame ran its planned stages");
     };
     auto report = [&](const char* what, const Diff& d) {
-        std::printf("  %-34s geometry %5u / %5u changed, background %5u / %5u changed\n", what, d.geometryChanged, d.geometry,
+        std::printf("  %-38s geometry %5u / %5u changed, background %5u / %5u changed\n", what, d.geometryChanged, d.geometry,
                     d.backgroundChanged, d.background);
     };
-    // Reference frame (fog, sky, aerial, SSFX, VSM, DDGI on; clouds / splats off) and its repeat.
+    // Reference frame (fog (jittered), sky, aerial, SSFX, VSM, DDGI (atmosphere sky) on) and its repeat after
+    // other frames advanced every sequence.
     Frame ref{}, again{};
     run(base, ref);
+    {
+        Frame scratch{};
+        run(base, scratch);
+    }
     run(base, again);
-    expect(sameBytes(ref.bytes[kRbSceneColor], again.bytes[kRbSceneColor]), "a repeated reset frame reproduces its bits");
-    for (const Readback r : {kRbDepth, kRbLit, kRbSsfx, kRbSky, kRbFog, kRbSceneColor}) {
+    expect(sameBytes(ref.bytes[kRbSceneColor], again.bytes[kRbSceneColor]),
+           "a repeated reset frame reproduces its bits (fog jitter on)");
+    for (const Readback r : {kRbDepth, kRbLit, kRbSky, kRbSsfx, kRbAerial, kRbFog, kRbSceneColor}) {
         if (!sameBytes(ref.bytes[r], again.bytes[r])) {
             const Diff x = diffImages(ref, again, r == kRbDepth ? kRbLit : r);
             std::printf("  repeat differs at readback %u (geometry %u, background %u changed)\n", static_cast<u32>(r), x.geometryChanged,
@@ -935,28 +1079,44 @@ int runToggles(Context& ctx, FrameTier tier) {
         fs.fog = false;
         Frame off{};
         run(fs, off);
-        expect(sameRgb(off.bytes[kRbSceneColor], ref.bytes[kRbSky]), "fog off == the fog-on frame's pre-fog image");
-        d = diffImages(ref, ref, kRbSceneColor);
+        expect(sameRgb(off.bytes[kRbSceneColor], ref.bytes[kRbAerial]), "fog off == the fog-on frame's pre-fog image");
         const Diff fog = diffImages(ref, off, kRbSceneColor);
         report("fog on vs off", fog);
         expect(fog.geometryChanged > fog.geometry / 2u, "fog changes the geometry pixels");
     }
     // sky (aerial and fog off)
+    FrameSettings on = base;
+    on.fog = false;
+    on.aerialPerspective = false;
+    Frame a{};
+    run(on, a);
     {
-        FrameSettings on = base;
-        on.fog = false;
-        on.aerialPerspective = false;
         FrameSettings off = on;
         off.sky = false;
-        Frame a{}, b{};
-        run(on, a);
+        Frame b{};
         run(off, b);
         const Diff sky = diffImages(a, b, kRbSceneColor);
-        report("sky on vs off", sky);
-        expect(sky.geometryChanged == 0u, "sky on changes no geometry pixel");
+        report("sky on vs off (SSFX on)", sky);
         expect(sky.backgroundChanged == sky.background, "sky on writes every background pixel");
         expect(sameRgb(b.bytes[kRbSceneColor], b.bytes[kRbSsfx]), "sky / aerial / fog off: scene colour == the SSFX image");
-        // aerial perspective (sky on, fog off)
+        expect(sameRgb(a.bytes[kRbSceneColor], a.bytes[kRbSsfx]) && !a.bytes[kRbSky].empty(),
+               "sky before SSFX: the SSFX image carries the sky");
+        std::printf("  %-38s %u geometry pixels see the sky through SSR / SSGI\n", "sky before SSFX", sky.geometryChanged);
+        // Without SSFX the sky is exactly a background-only change.
+        FrameSettings on2 = on;
+        on2.ssfx = false;
+        FrameSettings off2 = off;
+        off2.ssfx = false;
+        Frame c{}, e{};
+        run(on2, c);
+        run(off2, e);
+        const Diff strict = diffImages(c, e, kRbSceneColor);
+        report("sky on vs off (SSFX off)", strict);
+        expect(strict.geometryChanged == 0u && strict.backgroundChanged == strict.background,
+               "SSFX off: the sky changes every background pixel and no geometry pixel");
+    }
+    // aerial perspective (sky on, fog off)
+    {
         FrameSettings aerial = on;
         aerial.aerialPerspective = true;
         Frame c{};
@@ -965,16 +1125,22 @@ int runToggles(Context& ctx, FrameTier tier) {
         report("aerial perspective on vs off", ap);
         expect(ap.backgroundChanged == 0u, "aerial perspective changes no background pixel");
         expect(ap.geometryChanged > 0u, "aerial perspective changes geometry pixels");
-        // clouds (sky on, aerial off, fog off)
+    }
+    // clouds (sky on, aerial off, fog off): only background, and a repeated reset frame reproduces its bits
+    {
         FrameSettings cl = on;
         cl.clouds = true;
-        Frame e{};
+        Frame e{}, e2{};
         run(cl, e);
+        run(cl, e2);
         const Diff clouds = diffImages(e, a, kRbSceneColor);
         report("clouds on vs off", clouds);
         expect(clouds.geometryChanged == 0u, "clouds change no geometry pixel");
         expect(clouds.backgroundChanged > 0u, "clouds change background pixels");
-        // splats (sky on, aerial off, fog off)
+        expect(sameBytes(e.bytes[kRbSceneColor], e2.bytes[kRbSceneColor]), "clouds: a repeated reset frame reproduces its bits");
+    }
+    // splats (sky on, aerial off, fog off)
+    {
         FrameSettings sp = on;
         sp.splats = true;
         Frame g{};
@@ -992,9 +1158,27 @@ int runToggles(Context& ctx, FrameTier tier) {
                 changedOutside += (diff && !cov) ? 1u : 0u;
             }
         }
-        std::printf("  %-34s %u pixels covered, %u changed, %u changed outside the splats\n", "splats on vs off", covered, changed,
+        std::printf("  %-38s %u pixels covered, %u changed, %u changed outside the splats\n", "splats on vs off", covered, changed,
                     changedOutside);
         expect(covered > 0u && changed > 0u && changedOutside == 0u, "splats change only the pixels they cover");
+    }
+    // forward transparency (after the opaque resolve): the opaque scene colour is unchanged, the forward image
+    // differs where the glass box is drawn.
+    {
+        FrameSettings fw = on;
+        fw.forward = true;
+        Frame f{};
+        run(fw, f);
+        expect(sameBytes(f.bytes[kRbSceneColor], a.bytes[kRbSceneColor]), "forward on: the opaque scene colour is unchanged");
+        u32 changed = 0;
+        const u32 n = kRenderW * kRenderH;
+        if (f.bytes[kRbForward].size() == n * 8u) {
+            for (u32 p = 0; p < n; ++p) {
+                changed += pixelEqual(f.bytes[kRbForward], f.bytes[kRbSceneColor], p, 8u) ? 0u : 1u;
+            }
+        }
+        std::printf("  %-38s %u pixels blended (%u draw)\n", "forward transparency", changed, rig.composer.forwardPass().drawCount());
+        expect(changed > 0u && changed < n / 4u, "forward: the glass box blends over a part of the frame");
     }
     // screen-space effects (sky / aerial / fog off: scene colour == SSFX output, or the lit image)
     FrameSettings plain = base;
@@ -1021,21 +1205,21 @@ int runToggles(Context& ctx, FrameTier tier) {
         expect(x.backgroundChanged == 0u, "the toggle changes no background pixel");
         expect(x.geometryChanged > 0u, "the toggle changes geometry pixels");
     };
-    if (tier == FrameTier::T0) {
+    if (!t2) {
         FrameSettings fs = plain;
         fs.vsm = false;
         geometryOnly("VSM on vs off", fs);
     } else {
         // T2: the sun (the only VSM-shadowed light) takes its visibility from the RT shadows, so the VSM toggle
         // is measured with RT shadows off (and then must not change anything with them on).
-        FrameSettings on = plain;
-        on.rtShadows = false;
-        FrameSettings off = on;
-        off.vsm = false;
-        Frame a{}, b{};
-        run(on, a);
-        run(off, b);
-        const Diff x = diffImages(a, b, kRbSceneColor);
+        FrameSettings von = plain;
+        von.rtShadows = false;
+        FrameSettings voff = von;
+        voff.vsm = false;
+        Frame va{}, vb{};
+        run(von, va);
+        run(voff, vb);
+        const Diff x = diffImages(va, vb, kRbSceneColor);
         report("VSM on vs off (RT shadows off)", x);
         expect(x.backgroundChanged == 0u && x.geometryChanged > 0u, "VSM changes geometry pixels only");
         FrameSettings rtOnly = plain;
@@ -1050,26 +1234,59 @@ int runToggles(Context& ctx, FrameTier tier) {
         FrameSettings fs = plain;
         fs.ddgi = false;
         geometryOnly("DDGI on vs off", fs);
+        fs = plain;
+        fs.ddgiAtmosphereSky = false;
+        geometryOnly("DDGI atmosphere sky vs constant sky", fs);
     }
-    if (tier == FrameTier::T2) {
+    if (t2) {
         FrameSettings fs = plain;
         fs.rtShadows = false;
         geometryOnly("RT shadows on vs off", fs);
         fs = plain;
         fs.denoise = false;
         geometryOnly("denoiser on vs off", fs);
+        // RT reflections: geometry only; SSR is switched off while they run.
+        fs = plain;
+        fs.rtReflections = true;
+        Frame r{};
+        run(fs, r);
+        const Diff rx = diffImages(p0, r, kRbSceneColor);
+        report("RT reflections on vs off", rx);
+        expect(rx.backgroundChanged == 0u && rx.geometryChanged > 0u, "RT reflections change geometry pixels only");
+        expect(sameRgb(r.bytes[kRbSceneColor], r.bytes[kRbReflect]), "RT reflections: scene colour == the frame.reflect image");
+        // ReSTIR DI: light.shade drops the rectangle light (lit image changes on geometry only), frame.restir adds
+        // the ReSTIR DI of the rectangle + the emissive triangles (geometry only).
+        fs = plain;
+        fs.restir = true;
+        Frame q{};
+        run(fs, q);
+        const Diff lit = diffImages(p0, q, kRbLit);
+        report("ReSTIR on: light.shade without area", lit);
+        expect(lit.backgroundChanged == 0u && lit.geometryChanged > 0u, "ReSTIR on: light.shade leaves the area light out");
+        u32 added = 0;
+        const u32 n = kRenderW * kRenderH;
+        if (q.bytes[kRbRestir].size() == n * 8u && q.bytes[kRbLit].size() == n * 8u) {
+            for (u32 p = 0; p < n; ++p) {
+                added += pixelEqual(q.bytes[kRbRestir], q.bytes[kRbLit], p, 8u) ? 0u : 1u;
+            }
+        }
+        const Diff rs = diffImages(p0, q, kRbSceneColor);
+        report("ReSTIR DI on vs off", rs);
+        std::printf("  %-38s %u pixels receive ReSTIR DI\n", "frame.restir", added);
+        expect(rs.backgroundChanged == 0u && rs.geometryChanged > 0u && added > 0u, "ReSTIR DI changes geometry pixels only");
     }
     std::printf("toggles %s: validation messages %u\n", tierName(tier), g_messages);
     return 0;
 }
 
-bool runSequence(Context& ctx, FrameTier tier, u32 frames, Frame& last) {
+bool runSequence(Context& ctx, FrameTier tier, u32 frames, Frame& last, bool frameGen) {
     Rig rig;
     if (initRig(ctx, rig, tier) != 0) {
         return false;
     }
     FrameSettings fs = baseSettings();
     fs.upscaler = tier == FrameTier::T2 ? FrameUpscaler::Fsr3 : FrameUpscaler::Taau;
+    fs.frameGen = frameGen;
     bool ok = true;
     for (u32 frame = 0; frame < frames; ++frame) {
         ok = runFrame(ctx, rig.scene, rig.composer, rig.graph, frameDesc(0, frame, frame == 0u), fs, frame + 1u == frames, &last) && ok;
@@ -1079,14 +1296,22 @@ bool runSequence(Context& ctx, FrameTier tier, u32 frames, Frame& last) {
 
 int runDeterminism(Context& ctx, FrameTier tier) {
     Frame a{}, b{};
-    const bool okA = runSequence(ctx, tier, 6u, a);
-    const bool okB = runSequence(ctx, tier, 6u, b);
+    const bool okA = runSequence(ctx, tier, 6u, a, true);
+    const bool okB = runSequence(ctx, tier, 6u, b, true);
     expect(okA && okB, "both runs execute");
     const bool output = sameBytes(a.bytes[kRbOutput], b.bytes[kRbOutput]);
     const bool scene = sameBytes(a.bytes[kRbSceneColor], b.bytes[kRbSceneColor]);
-    std::printf("determinism %s: output %s, scene colour %s (%zu / %zu bytes)\n", tierName(tier), output ? "identical" : "DIFFERS",
-                scene ? "identical" : "DIFFERS", a.bytes[kRbOutput].size(), a.bytes[kRbSceneColor].size());
-    expect(output && scene, "two runs are bit-identical");
+    const bool fg = sameBytes(a.bytes[kRbFrameGen], b.bytes[kRbFrameGen]);
+    const bool fw = sameBytes(a.bytes[kRbForward], b.bytes[kRbForward]);
+    const bool restirOk = tier != FrameTier::T2 || sameBytes(a.bytes[kRbRestir], b.bytes[kRbRestir]);
+    const bool reflectOk = tier != FrameTier::T2 || sameBytes(a.bytes[kRbReflect], b.bytes[kRbReflect]);
+    std::printf("determinism %s: output %s, scene colour %s, forward %s, interpolated frame %s, restir %s, reflect %s "
+                "(%zu / %zu bytes)\n",
+                tierName(tier), output ? "identical" : "DIFFERS", scene ? "identical" : "DIFFERS", fw ? "identical" : "DIFFERS",
+                fg ? "identical" : "DIFFERS", tier != FrameTier::T2 ? "n/a" : (restirOk ? "identical" : "DIFFERS"),
+                tier != FrameTier::T2 ? "n/a" : (reflectOk ? "identical" : "DIFFERS"), a.bytes[kRbOutput].size(),
+                a.bytes[kRbSceneColor].size());
+    expect(output && scene && fg && fw && restirOk && reflectOk, "two runs are bit-identical");
     return 0;
 }
 
@@ -1109,6 +1334,7 @@ int runZeroAlloc(Context& ctx, FrameTier tier, bool count) {
     }
     FrameSettings fs = baseSettings();
     fs.upscaler = tier == FrameTier::T2 ? FrameUpscaler::Fsr3 : FrameUpscaler::Taau;
+    fs.frameGen = true;
     constexpr u32 kWarmup = 8;
     const u32 total = count ? kWarmup + 64u : 12u;
     unsigned long long begin = 0, build = 0, callbacks = 0;
@@ -1158,11 +1384,12 @@ int runZeroAlloc(Context& ctx, FrameTier tier, bool count) {
     ctx.executor->setPassHooks(rg::PassHooks{});
     if (count) {
         std::printf("zero_alloc %s (validation layer off: it is C++ and allocates through operator new):\n"
-                    "  64 steady-state frames, every stage (%s upscaler), camera moving\n"
+                    "  64 steady-state frames, every stage (%s upscaler, forward, frame generation%s), camera moving\n"
                     "  FrameComposer::beginFrame: %llu operator-new calls\n"
                     "  whole graph build (reset + addFrame, every package's imports and passes): %llu\n"
                     "  pass callbacks (every pass of the frame): %llu\n",
-                    tierName(tier), tier == FrameTier::T2 ? "fsr3" : "taau", begin, build, callbacks);
+                    tierName(tier), tier == FrameTier::T2 ? "fsr3" : "taau",
+                    tier == FrameTier::T2 ? ", ReSTIR DI, RT reflections" : "", begin, build, callbacks);
         expect(begin == 0u, "FrameComposer::beginFrame makes no steady-state heap allocations");
         expect(build == 0u, "the composed graph build makes no steady-state heap allocations");
         expect(callbacks == 0u, "the composed frame's pass callbacks make no steady-state heap allocations");
@@ -1178,7 +1405,7 @@ f32 toUnorm(f32 v) { return std::min(1.f, std::max(0.f, v)); }
 
 int runGolden(Context& ctx, FrameTier tier) {
     Frame last{};
-    if (!runSequence(ctx, tier, 4u, last)) {
+    if (!runSequence(ctx, tier, 4u, last, false)) {
         expect(false, "golden sequence executes");
         return 0;
     }
@@ -1284,6 +1511,59 @@ int runParity(Context& ctx, FrameTier tier) {
                 ++packChecked;
             }
         }
+    }
+    // T2: frame.restir == half(frame_restir_texel(lit, albedo, DI)), frame.reflect == half(frame_reflect_texel(SSFX
+    // image, RT0 / RT1 / RT2, reflection)) (<= 1 half ulp, + 2 ulps for reflect's sqrt / division).
+    u32 restirBad = 0, reflectBad = 0, restirChecked = 0, reflectChecked = 0;
+    if (tier == FrameTier::T2) {
+        auto half4 = [&](const std::vector<u8>& img, u32 p, f32 (&o)[4]) {
+            for (u32 k = 0; k < 4u; ++k) {
+                u16 hv = 0;
+                std::memcpy(&hv, img.data() + p * 8u + k * 2u, 2u);
+                o[k] = halfToFloat(hv);
+            }
+        };
+        auto near = [](f32 g, f32 r, f32 ulps) { return std::fabs(g - r) <= ulps * std::max(std::fabs(r) * (1.f / 1024.f), 6.1e-5f); };
+        if (f.bytes[kRbRestir].size() != n * 8u || f.bytes[kRbRestirDi].size() != n * 16u || f.bytes[kRbRestirAlbedo].size() != n * 16u ||
+            f.bytes[kRbReflect].size() != n * 8u || f.bytes[kRbRtReflection].size() != n * 16u || f.bytes[kRbRt0].size() != n * 8u ||
+            f.bytes[kRbRt1].size() != n * 4u || f.bytes[kRbRt2].size() != n * 4u || f.bytes[kRbSsfx].size() != n * 8u) {
+            expect(false, "restir / reflect parity inputs read back");
+        } else {
+            for (u32 y = 0; y < kRenderH; ++y) {
+                for (u32 x = 0; x < kRenderW; ++x) {
+                    const u32 p = y * kRenderW + x;
+                    const f32 dep = depthAt(f, p);
+                    f32 in[4], albedo[4], di[4], out[4], gpu[4];
+                    half4(f.bytes[kRbLit], p, in);
+                    std::memcpy(albedo, f.bytes[kRbRestirAlbedo].data() + p * 16u, 16u);
+                    std::memcpy(di, f.bytes[kRbRestirDi].data() + p * 16u, 16u);
+                    frame_restir_texel(in, dep, albedo, di, out);
+                    half4(f.bytes[kRbRestir], p, gpu);
+                    for (u32 k = 0; k < 4u; ++k) {
+                        restirBad += near(gpu[k], out[k], 1.f) ? 0u : 1u;
+                    }
+                    ++restirChecked;
+                    f32 sx[4], rt0[4], rt1[4], rt2[4], refl[4];
+                    half4(f.bytes[kRbSsfx], p, sx);
+                    half4(f.bytes[kRbRt0], p, rt0);
+                    for (u32 k = 0; k < 4u; ++k) {
+                        rt1[k] = static_cast<f32>(f.bytes[kRbRt1][p * 4u + k]) / 255.f;
+                        rt2[k] = static_cast<f32>(f.bytes[kRbRt2][p * 4u + k]) / 255.f;
+                    }
+                    std::memcpy(refl, f.bytes[kRbRtReflection].data() + p * 16u, 16u);
+                    frame_reflect_texel(c, x, y, dep, sx, rt0, rt1, rt2, refl, out);
+                    half4(f.bytes[kRbReflect], p, gpu);
+                    for (u32 k = 0; k < 4u; ++k) {
+                        reflectBad += near(gpu[k], out[k], 3.f) ? 0u : 1u;
+                    }
+                    ++reflectChecked;
+                }
+            }
+        }
+        std::printf("parity %s: frame.restir %u / %u bad channels, frame.reflect %u / %u bad channels\n", tierName(tier), restirBad,
+                    restirChecked * 4u, reflectBad, reflectChecked * 4u);
+        expect(restirBad == 0u && restirChecked > 0u, "frame.restir == half(frame_restir_texel)");
+        expect(reflectBad == 0u && reflectChecked > 0u, "frame.reflect == half(frame_reflect_texel)");
     }
     std::printf("parity %s: shadow pack %u / %u bad\n", tierName(tier), packBad, packChecked);
     expect(packBad == 0u, "frame.shadow_pack == frame_pack_visibility (bit for bit)");

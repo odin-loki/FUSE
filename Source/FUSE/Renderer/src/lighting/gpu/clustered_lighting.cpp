@@ -519,6 +519,9 @@ bool ClusteredLighting::beginFrame(u64 frameSerial, const LightingFrameDesc& fra
     c.tanY = view.tan_y;
     std::memcpy(c.ambient, frame.ambient, sizeof(c.ambient));
     c.flags = view.reversed_z ? kFlagReversedZ : 0u;
+    if (frame.skipAreaLights) {
+        c.flags |= kFlagSkipAreaLights;
+    }
     c.width = m_width;
     c.height = m_height;
     c.invWidth = m_width > 0u ? 1.f / static_cast<f32>(m_width) : 0.f;

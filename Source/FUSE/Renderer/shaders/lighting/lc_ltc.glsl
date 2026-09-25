@@ -583,9 +583,11 @@ vec3 fuse_lc_shade_lights_px(FuseLcFrame F, FuseLcSurface s, vec3 v, uint cluste
     FuseLcWordsRef list = FuseLcWordsRef(F.lightList);
     const uint offset = grid.v[cluster * 2u];
     const uint count = grid.v[cluster * 2u + 1u];
+    const bool skipArea = pixel.x != 0xFFFFFFFFu && (F.flags & FUSE_LC_FLAG_SKIP_AREA_LIGHTS) != 0u;
     for (uint i = 0u; i < count; ++i) {
         const uint slot = list.v[offset + i];
-        if (slot < F.lightCount) {
+        if (slot < F.lightCount &&
+            !(skipArea && (lights.v[slot].type == FUSE_LIGHT_RECT || lights.v[slot].type == FUSE_LIGHT_DISK))) {
             radiance = radiance + fuse_lc_shadowed_px(shadows, rt, pixel, slot, s,
                                                       compensated ? fuse_lc_light_ms(lights.v[slot], s, v, terms, lut)
                                                                   : fuse_lc_light(lights.v[slot], s, v));

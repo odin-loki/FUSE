@@ -5,6 +5,7 @@
 
 static const uint kFuseLcSlicePad = 2u;
 static const uint kFuseLcFlagReversedZ = 1u;
+static const uint kFuseLcFlagSkipAreaLights = 2u; // light.shade (pixel given): no rectangle / disk lights
 static const float kFuseLcPi = 3.14159265358979;
 static const float kFuseLcMinRoughness = 0.045;
 static const float kFuseLcSpotMinWidth = 1e-4;

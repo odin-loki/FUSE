@@ -25,6 +25,9 @@ inline constexpr u32 kShadeTile = 8u;    ///< light.shade (8 x 8 pixels per work
 /// LightingFrameConstants::flags.
 enum LightingFrameFlag : u32 {
     kFlagReversedZ = 1u << 0, ///< device depth is reversed-Z infinite far (else forward [0,1], 1 = empty)
+    /// light.shade skips rectangle / disk area lights (their direct light comes from elsewhere, e.g. the WP-7.2
+    /// ReSTIR DI composite of the frame composer); the forward pass (no pixel) still shades them.
+    kFlagSkipAreaLights = 1u << 1,
 };
 
 /// Per-frame constants, read through BDA from a host-visible ring (ClusteredLighting::beginFrame):

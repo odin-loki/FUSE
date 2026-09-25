@@ -3,7 +3,9 @@
 # package; other packages must not edit this file.
 #
 #   fuse_frame          STATIC  FrameComposer (include/fuse/renderer/frame/**, src/frame/**) over the WP-1.x .. 9.2
-#                               packages + the composer's own kernel (frame.sky / .gather / .resolve / .shadow_pack)
+#                               packages (incl. 2.3 forward, 4.4 frame generation, 7.1 light tree, 7.2 ReSTIR) + the
+#                               composer's own kernel (frame.sky / .aerial / .gather / .resolve / .shadow_pack /
+#                               .restir / .reflect)
 #   fc_frame kernel     SPIR-V  Slang (primary) + GLSL twin, embedded in fuse_frame (shaders/frame/)
 #   fuse_rp_frame_*     ctest   CPU gates (stub-safe) and Lavapipe gates (validation + sync validation)
 
@@ -63,7 +65,7 @@ set_source_files_properties(${_fuse_frame_shader_files} PROPERTIES HEADER_FILE_O
 target_link_libraries(fuse_frame PUBLIC
     fuse_gpu_scene fuse_culling fuse_visbuffer fuse_material_resolve fuse_temporal fuse_vsm fuse_vsm_raster fuse_rt
     fuse_rt_effects fuse_denoise fuse_ddgi_gpu fuse_lighting_gpu fuse_ssfx_gpu fuse_atmosphere_gpu fuse_volumetric_gpu
-    fuse_clouds_gpu fuse_gsplat fuse_fsr3 fuse_post_gpu)
+    fuse_clouds_gpu fuse_gsplat fuse_fsr3 fuse_post_gpu fuse_light_tree fuse_restir fuse_forward fuse_framegen)
 fuse_apply_cxx23(fuse_frame)
 
 # Kernel, embedded into the library (Slang primary, GLSL twin; -fp-mode precise / `precise`).

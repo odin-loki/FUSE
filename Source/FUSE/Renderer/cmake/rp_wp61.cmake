@@ -93,7 +93,7 @@ set(_fuse_wp61_header "${_fuse_wp61_gen}/ddgi_gpu_spv.h")
 add_custom_target(fuse_ddgi_gpu_kernels)
 set(_fuse_wp61_embed_args "")
 set(_fuse_wp61_embed_deps "")
-file(GLOB _fuse_wp61_glsl_includes "${_fuse_wp61_shd}/*.glsl")
+file(GLOB _fuse_wp61_glsl_includes "${_fuse_wp61_shd}/*.glsl" "${_fuse_wp61_root}/shaders/atmosphere/at_sample.glsl")
 cmake_policy(PUSH)
 cmake_policy(SET CMP0007 NEW) # list(GET) keeps the empty fields
 foreach(_row IN LISTS _fuse_wp61_kernels)
@@ -115,7 +115,7 @@ foreach(_row IN LISTS _fuse_wp61_kernels)
             STAGE compute
             SUFFIX ".dg_${_suffix}"
             DEFINES ${_defines}
-            INCLUDE_DIRS "${_fuse_wp61_shd}"
+            INCLUDE_DIRS "${_fuse_wp61_shd}" "${_fuse_wp61_root}/shaders" # + atmosphere/at_sample (frame composer sky)
             FLAGS -fp-mode precise ${_flags}
             OUTPUT_DIR "${_fuse_wp61_spv}"
             OUTPUT_VAR _fuse_wp61_out)
@@ -127,6 +127,7 @@ foreach(_row IN LISTS _fuse_wp61_kernels)
     if(FUSE_GLSLANG_VALIDATOR)
         set(_out "${_fuse_wp61_spv}/dg_${_suffix}.glsl.spv")
         set(_cmds COMMAND "${FUSE_GLSLANG_VALIDATOR}" --target-env vulkan1.3 ${_glsl_defines} "-I${_fuse_wp61_shd}"
+                          "-I${_fuse_wp61_root}/shaders"
                           "${_fuse_wp61_shd}/${_glsl}" -o "${_out}")
         if(FUSE_SPIRV_VAL)
             list(APPEND _cmds COMMAND "${FUSE_SPIRV_VAL}" --target-env vulkan1.3 "${_out}")

@@ -7,6 +7,8 @@ static const uint kFcModeSky = 0u;
 static const uint kFcModeGather = 1u;
 static const uint kFcModeResolve = 2u;
 static const uint kFcModeShadowPack = 3u;
+static const uint kFcModeRestir = 4u;
+static const uint kFcModeReflect = 5u;
 
 static const uint kFcFlagSky = 1u << 0;
 static const uint kFcFlagAerial = 1u << 1;
@@ -14,7 +16,7 @@ static const uint kFcFlagSunDisk = 1u << 2;
 static const uint kFcFlagClouds = 1u << 3;
 static const uint kFcFlagSplats = 1u << 4;
 
-// FrameConstants, 192 bytes.
+// FrameConstants, 224 bytes.
 struct FcFrame {
     uint64_t atmosphere;
     uint64_t background;
@@ -23,15 +25,20 @@ struct FcFrame {
     uint64_t splats;
     uint64_t denoised;
     uint64_t visibility;
-    uint64_t reserved0;
+    uint64_t restirDi;
+    uint64_t restirAlbedo;
+    uint64_t reflection;
     uint width;
     uint height;
     uint inColor;
     uint inDepth;
-    uint outSky;
+    uint outColor;
     uint outResolve;
     uint flags;
-    uint reserved1;
+    uint gbufferNormal;
+    uint gbufferAlbedo;
+    uint gbufferRoughMetal;
+    uint reserved1[2];
     float invViewProj[16];
     float cameraPos[4];
     float skyDistance;
@@ -64,6 +71,18 @@ float3 fcUnproject(uint2 p, float depth) {
     const float pz = F.invViewProj[2] * nx + F.invViewProj[6] * ny + F.invViewProj[10] * depth + F.invViewProj[14];
     const float pw = F.invViewProj[3] * nx + F.invViewProj[7] * ny + F.invViewProj[11] * depth + F.invViewProj[15];
     return float3(px / pw, py / pw, pz / pw);
+}
+
+float3 fcOctDecode(float ox, float oy) {
+    float x = ox;
+    float y = oy;
+    const float z = 1.0 - abs(ox) - abs(oy);
+    if (z < 0.0) {
+        x = (1.0 - abs(oy)) * (ox >= 0.0 ? 1.0 : -1.0);
+        y = (1.0 - abs(ox)) * (oy >= 0.0 ? 1.0 : -1.0);
+    }
+    const float l = sqrt(x * x + y * y + z * z);
+    return float3(x / l, y / l, z / l);
 }
 
 float fcViewDistance(uint2 p, float depth) {

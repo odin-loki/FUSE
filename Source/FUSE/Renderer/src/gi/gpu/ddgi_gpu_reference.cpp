@@ -83,6 +83,11 @@ DdgiFrameConstants makeFrameConstants(const DDGIDesc& volume, const DdgiCpuConfi
               (ddgi_kernel::max_component(frame.sunIrradiance) > 0.f ? kDdgiSunEnabled : 0u) |
               (config.probe_relocation ? kDdgiRelocation : 0u) | (config.probe_classification ? kDdgiClassification : 0u);
     v.flags = c.flags;
+    if (frame.atmosphereAddress != 0u) {
+        c.flags |= kDdgiAtmosphereSky; // trace only (the volume view keeps the sampling flags)
+        c.atmosphereLo = static_cast<u32>(frame.atmosphereAddress & 0xFFFFFFFFu);
+        c.atmosphereHi = static_cast<u32>(frame.atmosphereAddress >> 32u);
+    }
     // The oracle's BlendParams (DdgiCpuVolume::updateProbes).
     c.hysteresis = std::clamp(volume.hysteresis, 0.f, 1.f);
     c.probeChangeHysteresis = std::clamp(config.probe_change_hysteresis, 0.f, 1.f);

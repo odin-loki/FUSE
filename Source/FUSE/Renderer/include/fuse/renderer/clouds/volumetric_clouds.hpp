@@ -125,6 +125,9 @@ public:
     void invalidateNoise() { m_noiseDirty = true; }
     /// Drops the history (camera cut): the next frame starts from its fresh samples.
     void resetHistory() { m_history.historyValid = false; }
+    /// resetHistory + rewinds the frame sequence (block offset / Bayer phase, history ping-pong) to frame 0, so
+    /// the next frame is a function of its inputs alone.
+    void resetSequence() { m_history = CloudHistoryState{}; }
 
     CloudGraphRefs importInto(rg::Graph& graph);
     void addPasses(rg::Graph& graph, const CloudGraphRefs& refs, const CloudInputs& inputs = {});

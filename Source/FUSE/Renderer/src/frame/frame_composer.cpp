@@ -315,13 +315,30 @@ bool FrameComposer::init(const FrameComposerDesc& desc) {
         fd.width = w;
         fd.height = h;
         fd.framesInFlight = desc.framesInFlight;
-        optional(m_rtfx.init(fd), kStageRtShadows, "rt effects");
+        optional(m_rtfx.init(fd), kStageRtShadows | kStageRtReflections, "rt effects");
         denoise::SvgfDenoiserDesc dd{};
         dd.device = desc.device;
         dd.allocator = desc.allocator;
         dd.bindless = desc.bindless;
         dd.framesInFlight = desc.framesInFlight;
         optional(m_svgf.init(dd), kStageDenoise, "denoiser");
+        light_tree::LightTreeGpuDesc td{};
+        td.device = desc.device;
+        td.allocator = desc.allocator;
+        td.bindless = desc.bindless;
+        td.framesInFlight = desc.framesInFlight;
+        td.initialLights = std::max(desc.restirInitialLights, 1u);
+        restir::RestirGpuDesc rd{};
+        rd.device = desc.device;
+        rd.allocator = desc.allocator;
+        rd.bindless = desc.bindless;
+        rd.framesInFlight = desc.framesInFlight;
+        rd.width = w;
+        rd.height = h;
+        rd.initialLights = std::max(desc.restirInitialLights, 1u);
+        optional(m_treeGpu.init(td) && m_restir.init(rd), kStageRestir, "restir / light tree");
+        m_restirTable.reserve(std::max(desc.restirInitialLights, 1u));
+        m_tree.reserve(std::max(desc.restirInitialLights, 1u));
     }
     {
         gi_gpu::DdgiGpuDesc d{};
@@ -350,7 +367,7 @@ bool FrameComposer::init(const FrameComposerDesc& desc) {
         d.allocator = desc.allocator;
         d.bindless = desc.bindless;
         d.framesInFlight = desc.framesInFlight;
-        optional(m_atmosphere.init(d), kStageAtmosphere | kStageSky, "atmosphere");
+        optional(m_atmosphere.init(d), kStageAtmosphere | kStageSky | kStageAerial, "atmosphere");
     }
     {
         volumetric_gpu::FroxelFogDesc d{};
@@ -410,10 +427,34 @@ bool FrameComposer::init(const FrameComposerDesc& desc) {
         d.framesInFlight = desc.framesInFlight;
         optional(m_post.init(d), kStagePost, "post stack");
     }
+    {
+        forward::ForwardTransparencyDesc d{};
+        d.device = desc.device;
+        d.allocator = desc.allocator;
+        d.bindless = desc.bindless;
+        d.width = w;
+        d.height = h;
+        d.maxDraws = std::max(desc.forwardMaxDraws, 1u);
+        d.instanceCapacity = desc.instanceCapacity;
+        d.framesInFlight = desc.framesInFlight;
+        optional(m_forward.init(d), kStageForward, "forward transparency");
+    }
+    if (desc.frameGen) {
+        framegen::FgGpuDesc d{};
+        d.device = desc.device;
+        d.allocator = desc.allocator;
+        d.displayWidth = m_desc.displayWidth;
+        d.displayHeight = m_desc.displayHeight;
+        d.maxRenderWidth = w;
+        d.maxRenderHeight = h;
+        d.sourceFormat = kColorFormat;
+        d.framesInFlight = desc.framesInFlight;
+        optional(m_framegen.init(d), kStageFrameGen, "frame generation");
+    }
 
     // --- composer-owned resources --------------------------------------------------------------------------
     BufferDesc ring{};
-    ring.size = static_cast<usize>(desc.framesInFlight) * kFrameStride * 2u;
+    ring.size = static_cast<usize>(desc.framesInFlight) * kFrameStride * kSlotCount;
     ring.usage = bufferUsage({BufferUsage::Storage, BufferUsage::ShaderDeviceAddress});
     ring.memoryUsage = MemoryUsage::CpuToGpu;
     ring.name = "frame.constants";
@@ -453,6 +494,10 @@ void FrameComposer::destroy() {
         return;
     }
 #if defined(FUSE_VULKAN_BACKEND)
+    m_framegen.destroy();
+    m_forward.destroy();
+    m_restir.destroy();
+    m_treeGpu.destroy();
     m_post.destroy();
     m_fsr3.destroy();
     m_taau.destroy();
@@ -503,7 +548,14 @@ void FrameComposer::destroy() {
     m_samplerHandle = 0;
     m_frameRing = Buffer{};
     m_viewRing = Buffer{};
-    m_frameAddress = m_viewAddress = 0;
+    m_viewAddress = 0;
+    for (u64& a : m_slotAddress) {
+        a = 0;
+    }
+    m_restirTable.clear();
+    m_tree.clear();
+    m_fgFrameId = 0;
+    m_fgHistory = false;
     m_recordCount = 0;
     m_available = 0;
     m_plan = 0;
@@ -614,13 +666,15 @@ bool FrameComposer::createTargets() {
     const u32 w = m_desc.renderWidth;
     const u32 h = m_desc.renderHeight;
     const u64 n = static_cast<u64>(w) * h;
-    return createImage(m_skyImage, w, h, "frame.sky") && createImage(m_resolveImage, w, h, "frame.scene_color") &&
+    return createImage(m_skyImage, w, h, "frame.sky") && createImage(m_aerialImage, w, h, "frame.aerial") &&
+           createImage(m_restirImage, w, h, "frame.restir") && createImage(m_reflectImage, w, h, "frame.reflect") &&
+           createImage(m_resolveImage, w, h, "frame.scene_color") &&
            createBuffer(m_background, n * 16u, "frame.background") && createBuffer(m_distance, n * 4u, "frame.distance") &&
            createBuffer(m_visibility, n * 4u, "frame.visibility");
 }
 
 void FrameComposer::destroyTargets() {
-    for (OwnedImage* o : {&m_skyImage, &m_resolveImage}) {
+    for (OwnedImage* o : {&m_skyImage, &m_aerialImage, &m_restirImage, &m_reflectImage, &m_resolveImage}) {
         if (o->storage.isValid()) {
             m_desc.bindless->unregisterSlot(o->storage);
         }
@@ -668,6 +722,30 @@ bool FrameComposer::setSdfScene(const compute::SdfObject* objects, u32 objectCou
 
 bool FrameComposer::setSplats(const gsplat::GsSplat* splats, u32 count, u32 shDegree) {
     return (m_available & kStageSplats) != 0u && m_gsplat.setSplats(splats, count, shDegree);
+}
+
+bool FrameComposer::setRestirLights(const light_tree::LightTreeLight* lights, const f32 (*rgb)[3], u32 count) {
+    if ((m_available & kStageRestir) == 0u) {
+        return false;
+    }
+    m_restirTable.clear();
+    if (count == 0u || lights == nullptr || rgb == nullptr) {
+        m_tree.clear();
+        return true;
+    }
+    for (u32 i = 0; i < count; ++i) {
+        m_restirTable.push_back(restir::makeRestirLight(lights[i], rgb[i]));
+    }
+    if (!m_tree.build(lights, count)) {
+        m_restirTable.clear();
+        m_tree.clear();
+        return false;
+    }
+    return true;
+}
+
+bool FrameComposer::setOpacity(gpu_scene::InstanceHandle handle, f32 opacity) {
+    return (m_available & kStageForward) != 0u && m_forward.setOpacity(handle, opacity);
 }
 
 void FrameComposer::beginSceneFrame(u64 serial) {
@@ -733,14 +811,26 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
             plan |= kStageDenoise;
         }
     }
+    if (t2 && settings.rtReflections && settings.reflectionSamples > 0u) {
+        plan |= kStageRtReflections;
+    }
     if (settings.ddgi) {
         plan |= kStageDdgi;
+        if (settings.ddgiAtmosphereSky) {
+            plan |= kStageAtmosphere;
+        }
+    }
+    if (t2 && settings.restir && !m_restirTable.empty()) {
+        plan |= kStageRestir;
     }
     if (settings.ssfx) {
         plan |= kStageSsfx;
     }
-    if (settings.sky || settings.aerialPerspective) {
+    if (settings.sky) {
         plan |= kStageSky | kStageAtmosphere;
+    }
+    if (settings.aerialPerspective) {
+        plan |= kStageAerial | kStageAtmosphere;
     }
     if (settings.fog) {
         plan |= kStageFog;
@@ -751,6 +841,9 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     if (settings.splats && m_gsplat.splatCount() > 0u) {
         plan |= kStageSplats;
     }
+    if (settings.forward) {
+        plan |= kStageForward;
+    }
     if (settings.upscaler == FrameUpscaler::Taau) {
         plan |= kStageTaau;
     } else if (settings.upscaler == FrameUpscaler::Fsr3) {
@@ -759,16 +852,24 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     if (settings.post) {
         plan |= kStagePost;
     }
+    if (settings.frameGen) {
+        plan |= kStageFrameGen;
+    }
     // A stage that is not available is dropped (its consumers take the previous image).
     plan &= m_available | kStageScene | kStageLighting | kStageResolve;
     if ((plan & kStageDenoise) != 0u && (plan & kStageRtShadows) == 0u) {
         plan &= ~static_cast<u32>(kStageDenoise);
     }
-    const bool upscale = (plan & (kStageTaau | kStageFsr3)) != 0u;
-    if (!upscale && (m_desc.displayWidth != w || m_desc.displayHeight != h)) {
-        // No upscaler: the output stays at render resolution.
+    const bool ddgiSky = (plan & kStageDdgi) != 0u && settings.ddgiAtmosphereSky && (plan & kStageAtmosphere) != 0u;
+    if ((plan & (kStageSky | kStageAerial | kStageClouds)) == 0u && !ddgiSky) {
+        plan &= ~static_cast<u32>(kStageAtmosphere);
     }
-    m_plan = plan;
+    const bool upscale = (plan & (kStageTaau | kStageFsr3)) != 0u;
+    // Frame generation interpolates display-resolution frames (its resources are sized at init).
+    if (!upscale && (m_desc.displayWidth != w || m_desc.displayHeight != h)) {
+        plan &= ~static_cast<u32>(kStageFrameGen);
+    }
+    m_ddgiSky = ddgiSky;
 
     computeMatrices(desc, upscale);
     f32 invDraw[16];
@@ -819,6 +920,21 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     mf.vis = m_vb.visStorageHandle();
     ok = m_motion.beginFrame(serial, mf) && ok;
 
+    // --- atmosphere (LUTs first: the DDGI miss rays, the sky, the aerial perspective and the clouds read them) --
+    if ((plan & kStageAtmosphere) != 0u) {
+        atmosphere::AtmosphereLutView av{};
+        av.cameraPosition = vec3(cam.eye);
+        av.cameraPosition.y = std::max(av.cameraPosition.y, 0.5f);
+        av.sunDirection = toSun;
+        av.sunIlluminance = vec3(desc.sun.illuminance);
+        av.forward = vec3(basis.f);
+        av.right = vec3(basis.s);
+        av.up = vec3(basis.u);
+        av.tanHalfFovX = tanY * aspect;
+        av.tanHalfFovY = tanY;
+        ok = m_atmosphere.beginFrame(serial, settings.atmosphere, av) && ok;
+    }
+
     // --- shadows ----------------------------------------------------------------------------------------------
     if ((plan & kStageVsm) != 0u) {
         vsm::VsmFrameDesc vf{};
@@ -843,18 +959,25 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         sf.filter = settings.vsmFilter;
         ok = m_vsmShadows.beginFrame(serial, sf) && ok;
     }
-    if ((plan & kStageRtShadows) != 0u) {
+    if ((plan & (kStageRtShadows | kStageRtReflections)) != 0u) {
         rt_effects::RtEffectsFrameDesc rd{};
         std::memcpy(rd.viewProj, m_drawViewProj, sizeof(rd.viewProj));
         std::memcpy(rd.cameraPosition, cam.eye, sizeof(rd.cameraPosition));
         rd.scene = scene.headerHandle();
         rd.gbuffer = &m_resolve;
         rd.tlasAddress = m_as.tlasAddress();
-        rd.shadowLights[0] = rt_effects::RtShadowLightDesc{desc.sun.slot, scene.light(desc.sun.slot), 1u};
-        rd.shadowLightCount = 1;
-        rd.reflectionSamples = 0; // WP-6.2 Open (3): no reflection consumer in the lit image yet
+        if ((plan & kStageRtShadows) != 0u) {
+            rd.shadowLights[0] = rt_effects::RtShadowLightDesc{desc.sun.slot, scene.light(desc.sun.slot), 1u};
+            rd.shadowLightCount = 1;
+        }
+        if (hasSun) {
+            rd.hitLights[0] = rt_effects::RtHitLightDesc{desc.sun.slot, scene.light(desc.sun.slot), true};
+            rd.hitLightCount = 1;
+        }
+        rd.reflectionSamples = (plan & kStageRtReflections) != 0u ? settings.reflectionSamples : 0u;
         rd.frameIndex = desc.frameIndex;
         std::memcpy(rd.ambient, settings.ambient, sizeof(rd.ambient));
+        std::memcpy(rd.sky, settings.ddgiSkyRadiance, sizeof(rd.sky));
         rd.farDistance = cam.farPlane;
         ok = m_rtfx.beginFrame(serial, rd) && ok;
         if ((plan & kStageDenoise) != 0u) {
@@ -890,6 +1013,7 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         gd.sunDirection = toSun;
         gd.sunIrradiance = hasSun ? vec3(desc.sun.illuminance) : math::Vec3{};
         gd.skyRadiance = vec3(settings.ddgiSkyRadiance);
+        gd.atmosphereAddress = ddgiSky ? m_atmosphere.frameAddress() : 0u;
         if (t2) {
             gd.tlasAddress = m_as.tlasAddress();
             gd.sceneAddress = scene.headerAddress();
@@ -912,15 +1036,54 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         lf.rtShadows = (plan & kStageDenoise) != 0u ? m_viewAddress : m_rtfx.shadowViewAddress();
     }
     lf.ddgi = (plan & kStageDdgi) != 0u ? m_ddgi.volumeAddress() : 0u;
+    lf.skipAreaLights = (plan & kStageRestir) != 0u; // ReSTIR DI owns the area lights' direct light
     ok = m_lighting.beginFrame(serial, lf) && ok;
 
-    // --- HDR chain --------------------------------------------------------------------------------------------
-    const Texture* chain = &m_lighting.outputImage();
+    // --- ReSTIR DI (T2) ---------------------------------------------------------------------------------------
+    if ((plan & kStageRestir) != 0u) {
+        ok = m_treeGpu.beginFrame(serial, m_tree) && ok;
+        restir::RestirSettings rs = settings.restirSettings;
+        rs.di = true;
+        rs.gi = false; // DDGI is the indirect diffuse of the composed frame
+        m_restir.setSettings(rs);
+        restir::RestirFrameDesc rd{};
+        std::memcpy(rd.camera.viewProj, m_drawViewProj, sizeof(rd.camera.viewProj));
+        std::memcpy(rd.camera.position, cam.eye, sizeof(rd.camera.position));
+        std::memcpy(rd.camera.forward, basis.f, sizeof(rd.camera.forward));
+        rd.gbuffer = &m_resolve;
+        rd.tlasAddress = m_as.tlasAddress();
+        rd.lightTreeHeader = m_treeGpu.headerAddress();
+        rd.sceneHeader = scene.headerAddress();
+        rd.lights = m_restirTable.data();
+        rd.lightCount = static_cast<u32>(m_restirTable.size());
+        rd.lightsVersion = m_tree.version();
+        rd.motion = m_motion.motionAddress();
+        rd.frameIndex = desc.frameIndex;
+        rd.reset = desc.resetHistory;
+        ok = m_restir.beginFrame(serial, rd) && ok;
+    }
+
+    // --- HDR chain (the image each stage reads) ---------------------------------------------------------------
     const Texture& depth = m_resolve.gbufferImage(4);
+    const Texture* chain = &m_lighting.outputImage();
+    const Texture* restirIn = chain;
+    if ((plan & kStageRestir) != 0u) {
+        chain = &m_restirImage.image;
+    }
+    const Texture* skyIn = chain;
+    if ((plan & kStageSky) != 0u) {
+        chain = &m_skyImage.image;
+    }
+    std::memset(m_ssfxProj, 0, sizeof(m_ssfxProj));
     if ((plan & kStageSsfx) != 0u) {
         ssfx_gpu::SsfxCameraDesc sc{};
         std::memcpy(sc.view, m_view, sizeof(sc.view));
         perspective(cam.fovY, aspect, cam.nearPlane, cam.farPlane, false, sc.proj);
+        // The G-buffer's jitter (temporal::jitter_view_proj: NDC - 2 j / extent) in the SSFX convention
+        // (y not flipped: pixel rows grow downwards through cy = h / 2 (1 + proj[9])).
+        sc.proj[8] += 2.f * m_jitter[0] / static_cast<f32>(w);
+        sc.proj[9] -= 2.f * m_jitter[1] / static_cast<f32>(h);
+        std::memcpy(m_ssfxProj, sc.proj, sizeof(m_ssfxProj));
         sc.nearPlane = cam.nearPlane;
         sc.farPlane = cam.farPlane;
         sc.reversedZ = false;
@@ -930,27 +1093,25 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         si.roughMetal = &m_resolve.gbufferImage(2);
         si.depth = &depth;
         si.lit = chain;
-        ok = m_ssfx.beginFrame(serial, settings.ssfxSettings, sc, settings.ambient, si) && ok;
+        ssfx_gpu::SsfxGpuSettings ss = settings.ssfxSettings;
+        if ((plan & kStageRtReflections) != 0u) {
+            ss.ssr = false; // the RT reflections replace SSR
+        }
+        ok = m_ssfx.beginFrame(serial, ss, sc, settings.ambient, si) && ok;
         chain = &m_ssfx.outputImage();
     }
-    if ((plan & kStageAtmosphere) != 0u) {
-        atmosphere::AtmosphereLutView av{};
-        av.cameraPosition = vec3(cam.eye);
-        av.cameraPosition.y = std::max(av.cameraPosition.y, 0.5f);
-        av.sunDirection = toSun;
-        av.sunIlluminance = vec3(desc.sun.illuminance);
-        av.forward = vec3(basis.f);
-        av.right = vec3(basis.s);
-        av.up = vec3(basis.u);
-        av.tanHalfFovX = tanY * aspect;
-        av.tanHalfFovY = tanY;
-        ok = m_atmosphere.beginFrame(serial, settings.atmosphere, av) && ok;
+    const Texture* reflectIn = chain;
+    if ((plan & kStageRtReflections) != 0u) {
+        chain = &m_reflectImage.image;
     }
-    m_chain[0] = chain; // frame.sky input
-    if ((plan & kStageSky) != 0u) {
-        chain = &m_skyImage.image;
+    const Texture* aerialIn = chain;
+    if ((plan & kStageAerial) != 0u) {
+        chain = &m_aerialImage.image;
     }
     if ((plan & kStageFog) != 0u) {
+        if (desc.resetHistory) {
+            m_fog.resetSequence();
+        }
         volumetric_gpu::FogFrameDesc fd{};
         fd.camera = cluster;
         fd.lighting = m_lighting.frameConstantsAddress();
@@ -961,7 +1122,7 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         ok = m_fog.beginFrame(serial, settings.fogSettings, fd) && ok;
         chain = &m_fog.outputImage();
     }
-    m_chain[1] = chain; // frame.gather / frame.resolve input
+    const Texture* mainIn = chain; // frame.gather / frame.resolve
     if ((plan & kStageClouds) != 0u) {
         clouds::CloudSettings cs = settings.cloudSettings;
         cs.resolution.outWidth = w;
@@ -983,7 +1144,7 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         cfr.backgroundAddress = m_background.buffer.deviceAddress;
         cfr.depthAddress = m_distance.buffer.deviceAddress;
         if (desc.resetHistory) {
-            m_clouds.resetHistory();
+            m_clouds.resetSequence(); // history + the block / Bayer sequence start over
         }
         ok = m_clouds.beginFrame(serial, cs, cfr) && ok;
     }
@@ -992,8 +1153,19 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         const gsplat::GsCamera gc = gsplat::gs_camera_look_at(cam.eye, cam.target, up, cam.fovY, w, h, cam.nearPlane, cam.farPlane);
         ok = m_gsplat.beginFrame(serial, gc, settings.splatSettings, w, h, &depth) && ok;
     }
+    if ((plan & kStageForward) != 0u) {
+        forward::ForwardFrameDesc fw{};
+        std::memcpy(fw.viewProj, m_drawViewProj, sizeof(fw.viewProj));
+        fw.scene = &scene;
+        fw.lighting = &m_lighting;
+        fw.sampler = m_samplerHandle;
+        ok = m_forward.beginFrame(serial, fw) && ok;
+        if (m_forward.drawCount() == 0u) {
+            plan &= ~static_cast<u32>(kStageForward); // nothing transparent in view: no copy
+        }
+    }
 
-    // --- composer constants -----------------------------------------------------------------------------------
+    // --- composer constants (one record per pass flavour) ----------------------------------------------------
     FrameConstants c{};
     c.atmosphere = (plan & kStageAtmosphere) != 0u ? m_atmosphere.frameAddress() : 0u;
     c.background = m_background.buffer.deviceAddress;
@@ -1002,48 +1174,61 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     c.splats = (plan & kStageSplats) != 0u ? m_gsplat.outputAddress() : 0u;
     c.denoised = (plan & kStageDenoise) != 0u ? m_svgf.outputAddress() : 0u;
     c.visibility = m_visibility.buffer.deviceAddress;
+    if ((plan & kStageRestir) != 0u) {
+        c.restirDi = m_restir.diSignalAddress();
+        c.restirAlbedo = m_restir.frameConstants().surfAlbedo[0];
+    }
+    if ((plan & kStageRtReflections) != 0u) {
+        c.reflection = m_rtfx.outputBuffer().deviceAddress + m_rtfx.outputLayout().reflection;
+        c.gbufferNormal = sampledHandle(m_resolve.gbufferImage(0));
+        c.gbufferAlbedo = sampledHandle(m_resolve.gbufferImage(1));
+        c.gbufferRoughMetal = sampledHandle(m_resolve.gbufferImage(2));
+        ok = ok && c.gbufferNormal != 0u && c.gbufferAlbedo != 0u && c.gbufferRoughMetal != 0u;
+    }
     c.width = w;
     c.height = h;
-    c.inColor = sampledHandle(*m_chain[1]); // resolve / gather; frame.sky reads m_chain[0] (push-free: see addFrame)
     c.inDepth = sampledHandle(depth);
-    c.outSky = m_skyImage.storageHandle;
     c.outResolve = m_resolveImage.storageHandle;
-    c.flags = 0u;
-    if (settings.sky) {
-        c.flags |= kFrameFlagSky;
-    }
-    if (settings.aerialPerspective) {
-        c.flags |= kFrameFlagAerial;
-    }
-    if (settings.sunDisk) {
-        c.flags |= kFrameFlagSunDisk;
-    }
-    if ((plan & kStageClouds) != 0u) {
-        c.flags |= kFrameFlagClouds;
-    }
-    if ((plan & kStageSplats) != 0u) {
-        c.flags |= kFrameFlagSplats;
-    }
     std::memcpy(c.invViewProj, invDraw, sizeof(c.invViewProj));
     c.cameraPos[0] = cam.eye[0];
     c.cameraPos[1] = cam.eye[1];
     c.cameraPos[2] = cam.eye[2];
     c.skyDistance = 1.0e30f;
-    m_skyInColor = sampledHandle(*m_chain[0]);
-    if (c.inColor == 0u || c.inDepth == 0u || m_skyInColor == 0u) {
+    FrameConstants slots[kSlotCount] = {c, c, c, c, c};
+    // [main] frame.gather / frame.resolve
+    slots[kSlotMain].inColor = sampledHandle(*mainIn);
+    slots[kSlotMain].flags = ((plan & kStageClouds) != 0u ? static_cast<u32>(kFrameFlagClouds) : 0u) |
+                             ((plan & kStageSplats) != 0u ? static_cast<u32>(kFrameFlagSplats) : 0u);
+    // [sky] frame.sky: background only (sky radiance + sun disk), before SSFX
+    slots[kSlotSky].inColor = sampledHandle(*skyIn);
+    slots[kSlotSky].outColor = m_skyImage.storageHandle;
+    slots[kSlotSky].flags = static_cast<u32>(kFrameFlagSky) | (settings.sunDisk ? static_cast<u32>(kFrameFlagSunDisk) : 0u);
+    // [aerial] frame.aerial: geometry only
+    slots[kSlotAerial].inColor = sampledHandle(*aerialIn);
+    slots[kSlotAerial].outColor = m_aerialImage.storageHandle;
+    slots[kSlotAerial].flags = kFrameFlagAerial;
+    // [restir] frame.restir
+    slots[kSlotRestir].inColor = sampledHandle(*restirIn);
+    slots[kSlotRestir].outColor = m_restirImage.storageHandle;
+    // [reflect] frame.reflect
+    slots[kSlotReflect].inColor = sampledHandle(*reflectIn);
+    slots[kSlotReflect].outColor = m_reflectImage.storageHandle;
+    for (const FrameConstants& s : slots) {
+        if (s.inColor == 0u) {
+            ok = false;
+        }
+    }
+    if (c.inDepth == 0u) {
         ok = false;
     }
-    m_constants = c;
-    // Two slots per ring entry: [0] = gather / resolve (chain[1]), [1] = sky (chain[0]).
-    const u64 slot = static_cast<u64>(serial % m_desc.framesInFlight) * kFrameStride * 2u;
-    FrameConstants skyC = c;
-    skyC.inColor = m_skyInColor;
-    std::memcpy(static_cast<u8*>(m_frameRing.mapped) + slot, &c, sizeof(c));
-    std::memcpy(static_cast<u8*>(m_frameRing.mapped) + slot + kFrameStride, &skyC, sizeof(skyC));
-    m_frameAddress = m_frameRing.deviceAddress + slot;
-    m_skyFrameAddress = m_frameAddress + kFrameStride;
+    m_constants = slots[kSlotMain];
+    const u64 base = static_cast<u64>(serial % m_desc.framesInFlight) * kFrameStride * kSlotCount;
+    for (u32 i = 0; i < kSlotCount; ++i) {
+        std::memcpy(static_cast<u8*>(m_frameRing.mapped) + base + i * kFrameStride, &slots[i], sizeof(FrameConstants));
+        m_slotAddress[i] = m_frameRing.deviceAddress + base + i * kFrameStride;
+    }
 
-    // --- upscale + post ---------------------------------------------------------------------------------------
+    // --- upscale + post + frame generation --------------------------------------------------------------------
     UpscaleResolution res{};
     res.render_width = w;
     res.render_height = h;
@@ -1059,7 +1244,7 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     ucam.far_plane = cam.farPlane;
     UpscaleCamera prevCam = ucam;
     prevCam.view = toMath(m_prevView);
-    const Texture* display = &m_resolveImage.image;
+    const Texture* display = (plan & kStageForward) != 0u ? &m_forward.colorImage() : &m_resolveImage.image;
     if ((plan & kStageTaau) != 0u) {
         temporal::TaauGpuFrameDesc td{};
         td.resolution = res;
@@ -1067,7 +1252,7 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         td.reset_history = desc.resetHistory;
         td.camera = ucam;
         td.previous_camera = prevCam;
-        td.color = sampledHandle(m_resolveImage.image);
+        td.color = sampledHandle(*display);
         td.depth = m_motion.depthAddress();
         td.motion = m_motion.motionAddress();
         ok = td.color != 0u && m_taau.beginFrame(serial, td) && ok;
@@ -1092,6 +1277,27 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     }
     m_outputWidth = display->desc.width;
     m_outputHeight = display->desc.height;
+    if ((plan & kStageFrameGen) != 0u &&
+        (m_outputWidth != m_desc.displayWidth || m_outputHeight != m_desc.displayHeight)) {
+        plan &= ~static_cast<u32>(kStageFrameGen);
+    }
+    if ((plan & kStageFrameGen) != 0u) {
+        framegen::FgGpuFrameDesc fg{};
+        fg.renderWidth = w;
+        fg.renderHeight = h;
+        fg.jitter_px = math::Vec2{m_jitter[0], m_jitter[1]};
+        fg.near_plane = cam.nearPlane;
+        fg.far_plane = cam.farPlane;
+        fg.vertical_fov_rad = cam.fovY;
+        fg.frame_time_ms = desc.deltaSeconds * 1000.f;
+        fg.reset = desc.resetHistory || !m_fgHistory;
+        fg.frame_id = ++m_fgFrameId;
+        ok = m_framegen.beginFrame(serial, fg) && ok;
+        m_fgHistory = true;
+    } else {
+        m_fgHistory = false;
+    }
+    m_plan = plan;
 
     // history for the next frame
     std::memcpy(m_prevViewProj, m_viewProj, sizeof(m_viewProj));
@@ -1102,21 +1308,20 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     return ok;
 }
 
-FrameComposer::PassRecord* FrameComposer::nextRecord(u32 mode) {
+FrameComposer::PassRecord* FrameComposer::nextRecord(u32 mode, u32 slot) {
     if (m_recordCount >= kMaxRecords) {
         return nullptr;
     }
     PassRecord* r = &m_records[m_recordCount++];
     *r = PassRecord{};
     r->self = this;
-    r->push.frame = mode == kFrameModeSky ? m_skyFrameAddress : m_frameAddress;
+    r->push.frame = m_slotAddress[slot < kSlotCount ? slot : 0u];
     r->push.mode = mode;
     r->groups[0] = groups(m_desc.renderWidth);
     r->groups[1] = groups(m_desc.renderHeight);
     ++m_stats.composerPasses;
     return r;
 }
-
 rg::TextureRef FrameComposer::importImage(rg::Graph& graph, OwnedImage& o, const char* name) {
     rg::ImportedImage i{};
     i.image = o.image.image;
@@ -1169,6 +1374,14 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
     ran |= kStageScene;
     const rg::TextureRef depth = gbuffer.gbuffer[4];
 
+    // --- atmosphere LUTs --------------------------------------------------------------------------------------
+    atmosphere::AtmosphereGraphRefs atm{};
+    if ((plan & kStageAtmosphere) != 0u) {
+        atm = m_atmosphere.importInto(graph);
+        m_atmosphere.addPasses(graph, atm);
+        ran |= kStageAtmosphere;
+    }
+
     // --- shadows ----------------------------------------------------------------------------------------------
     vsm::VsmGraphRefs vsmRefs{};
     vsm::VsmShadowGraphRefs shadowRefs{};
@@ -1181,8 +1394,11 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
     }
     rt_effects::RtEffectsGraphRefs fxRefs{};
     rg::BufferRef visibility{};
-    if ((plan & kStageRtShadows) != 0u) {
+    if ((plan & (kStageRtShadows | kStageRtReflections)) != 0u) {
         fxRefs = m_rtfx.importInto(graph);
+        out.rtOutput = fxRefs.output;
+    }
+    if ((plan & kStageRtShadows) != 0u) {
         if (m_rtfx.addShadows(graph, fxRefs, rtRefs.tlas, gbuffer)) {
             ran |= kStageRtShadows;
         }
@@ -1197,7 +1413,7 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
             visibility = importBuffer(graph, m_visibility, "frame.visibility");
             out.denoised = dn.output;
             out.visibility = visibility;
-            if (PassRecord* r = nextRecord(kFrameModeShadowPack)) {
+            if (PassRecord* r = nextRecord(kFrameModeShadowPack, kSlotMain)) {
                 graph.addPass("frame.shadow_pack", &FrameComposer::recordDispatch, r)
                     .use(dn.output, rg::Access::StorageRead, {}, rg::kStageCompute)
                     .use(visibility, rg::Access::StorageWrite, {}, rg::kStageCompute);
@@ -1210,6 +1426,9 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
     gi_gpu::DdgiGraphRefs ddgiRefs{};
     if ((plan & kStageDdgi) != 0u) {
         ddgiRefs = m_ddgi.importInto(graph);
+        if (m_ddgiSky) {
+            ddgiRefs.atmosphere = atm.luts; // ddgi.trace reads the sky-view LUT on misses
+        }
         const bool t2 = (plan & kStageTlas) != 0u;
         if (m_ddgi.addUpdate(graph, ddgiRefs, t2 ? &rtRefs : nullptr, t2 ? &sceneRefs : nullptr)) {
             ran |= kStageDdgi;
@@ -1240,6 +1459,49 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
     ran |= kStageLighting;
     rg::TextureRef chain = lighting.output;
 
+    // --- ReSTIR DI (T2) -> frame.restir -----------------------------------------------------------------------
+    if ((plan & kStageRestir) != 0u) {
+        const light_tree::LightTreeGraphRefs treeRefs = m_treeGpu.importInto(graph);
+        const restir::RestirGraphRefs rr = m_restir.importInto(graph);
+        restir::RestirGraphInputs ri{};
+        ri.tlas = rtRefs.tlas;
+        ri.lightTree = treeRefs;
+        ri.gbuffer = &gbuffer;
+        ri.scene = sceneRefs;
+        ri.motion = motion.motion;
+        if (m_restir.addPasses(graph, rr, ri)) {
+            const rg::TextureRef img = importImage(graph, m_restirImage, "frame.restir");
+            if (PassRecord* r = nextRecord(kFrameModeRestir, kSlotRestir)) {
+                graph.addPass("frame.restir", &FrameComposer::recordDispatch, r)
+                    .use(chain, rg::Access::SampledRead, {}, rg::kStageCompute)
+                    .use(depth, rg::Access::SampledRead, {}, rg::kStageCompute)
+                    .use(rr.output, rg::Access::StorageRead, {}, rg::kStageCompute)
+                    .use(rr.state, rg::Access::StorageRead, {}, rg::kStageCompute)
+                    .use(img, rg::Access::StorageWrite, {}, rg::kStageCompute);
+            }
+            out.restir = img;
+            out.restirOutput = rr.output;
+            out.restirState = rr.state;
+            chain = img;
+            ran |= kStageRestir;
+        }
+    }
+
+    // --- sky (before SSFX: SSR / SSGI see it) -----------------------------------------------------------------
+    if ((plan & kStageSky) != 0u) {
+        const rg::TextureRef sky = importImage(graph, m_skyImage, "frame.sky");
+        if (PassRecord* r = nextRecord(kFrameModeSky, kSlotSky)) {
+            graph.addPass("frame.sky", &FrameComposer::recordDispatch, r)
+                .use(chain, rg::Access::SampledRead, {}, rg::kStageCompute)
+                .use(depth, rg::Access::SampledRead, {}, rg::kStageCompute)
+                .use(atm.luts, rg::Access::StorageRead, {}, rg::kStageCompute)
+                .use(sky, rg::Access::StorageWrite, {}, rg::kStageCompute);
+        }
+        out.sky = sky;
+        chain = sky;
+        ran |= kStageSky;
+    }
+
     // --- SSFX -------------------------------------------------------------------------------------------------
     if ((plan & kStageSsfx) != 0u) {
         const ssfx_gpu::SsfxGraphRefs sx = m_ssfx.importInto(graph);
@@ -1255,27 +1517,39 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
         ran |= kStageSsfx;
     }
 
-    // --- atmosphere + sky -------------------------------------------------------------------------------------
-    atmosphere::AtmosphereGraphRefs atm{};
-    if ((plan & kStageAtmosphere) != 0u) {
-        atm = m_atmosphere.importInto(graph);
-        m_atmosphere.addPasses(graph, atm);
-        ran |= kStageAtmosphere;
-    }
-    if ((plan & kStageSky) != 0u) {
-        const rg::TextureRef sky = importImage(graph, m_skyImage, "frame.sky");
-        if (PassRecord* r = nextRecord(kFrameModeSky)) {
-            rg::PassBuilder pass = graph.addPass("frame.sky", &FrameComposer::recordDispatch, r);
-            pass.use(chain, rg::Access::SampledRead, {}, rg::kStageCompute)
-                .use(depth, rg::Access::SampledRead, {}, rg::kStageCompute)
-                .use(sky, rg::Access::StorageWrite, {}, rg::kStageCompute);
-            if (atm.luts.valid()) {
-                pass.use(atm.luts, rg::Access::StorageRead, {}, rg::kStageCompute);
+    // --- RT reflections (T2) -> frame.reflect -----------------------------------------------------------------
+    if ((plan & kStageRtReflections) != 0u) {
+        if (m_rtfx.addReflections(graph, fxRefs, rtRefs.tlas, gbuffer, sceneRefs)) {
+            const rg::TextureRef img = importImage(graph, m_reflectImage, "frame.reflect");
+            if (PassRecord* r = nextRecord(kFrameModeReflect, kSlotReflect)) {
+                graph.addPass("frame.reflect", &FrameComposer::recordDispatch, r)
+                    .use(chain, rg::Access::SampledRead, {}, rg::kStageCompute)
+                    .use(depth, rg::Access::SampledRead, {}, rg::kStageCompute)
+                    .use(gbuffer.gbuffer[0], rg::Access::SampledRead, {}, rg::kStageCompute)
+                    .use(gbuffer.gbuffer[1], rg::Access::SampledRead, {}, rg::kStageCompute)
+                    .use(gbuffer.gbuffer[2], rg::Access::SampledRead, {}, rg::kStageCompute)
+                    .use(fxRefs.output, rg::Access::StorageRead, {}, rg::kStageCompute)
+                    .use(img, rg::Access::StorageWrite, {}, rg::kStageCompute);
             }
+            out.reflect = img;
+            chain = img;
+            ran |= kStageRtReflections;
         }
-        out.sky = sky;
-        chain = sky;
-        ran |= kStageSky;
+    }
+
+    // --- aerial perspective -----------------------------------------------------------------------------------
+    if ((plan & kStageAerial) != 0u) {
+        const rg::TextureRef aerial = importImage(graph, m_aerialImage, "frame.aerial");
+        if (PassRecord* r = nextRecord(kFrameModeSky, kSlotAerial)) {
+            graph.addPass("frame.aerial", &FrameComposer::recordDispatch, r)
+                .use(chain, rg::Access::SampledRead, {}, rg::kStageCompute)
+                .use(depth, rg::Access::SampledRead, {}, rg::kStageCompute)
+                .use(atm.luts, rg::Access::StorageRead, {}, rg::kStageCompute)
+                .use(aerial, rg::Access::StorageWrite, {}, rg::kStageCompute);
+        }
+        out.aerial = aerial;
+        chain = aerial;
+        ran |= kStageAerial;
     }
 
     // --- fog --------------------------------------------------------------------------------------------------
@@ -1300,7 +1574,7 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
     if ((plan & kStageClouds) != 0u) {
         const rg::BufferRef bg = importBuffer(graph, m_background, "frame.background");
         const rg::BufferRef dist = importBuffer(graph, m_distance, "frame.distance");
-        if (PassRecord* r = nextRecord(kFrameModeGather)) {
+        if (PassRecord* r = nextRecord(kFrameModeGather, kSlotMain)) {
             graph.addPass("frame.gather", &FrameComposer::recordDispatch, r)
                 .use(chain, rg::Access::SampledRead, {}, rg::kStageCompute)
                 .use(depth, rg::Access::SampledRead, {}, rg::kStageCompute)
@@ -1330,7 +1604,7 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
 
     // --- resolve ----------------------------------------------------------------------------------------------
     const rg::TextureRef sceneColor = importImage(graph, m_resolveImage, "frame.scene_color");
-    if (PassRecord* r = nextRecord(kFrameModeResolve)) {
+    if (PassRecord* r = nextRecord(kFrameModeResolve, kSlotMain)) {
         rg::PassBuilder pass = graph.addPass("frame.resolve", &FrameComposer::recordDispatch, r);
         if ((plan & kStageClouds) != 0u) {
             pass.use(cloudRefs.frame, rg::Access::StorageRead, {}, rg::kStageCompute);
@@ -1346,11 +1620,25 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
     ran |= kStageResolve;
     rg::TextureRef display = sceneColor;
 
+    // --- forward transparency over the opaque scene colour ------------------------------------------------------
+    if ((plan & kStageForward) != 0u) {
+        if ((plan & kStageVsm) != 0u) {
+            m_vsmShadows.addSamplingUse(graph, shadowRefs, &vsmRefs, rg::kStageFragment);
+        }
+        const forward::ForwardGraphRefs f = m_forward.importInto(graph);
+        lighting_gpu::LightingGraphRefs fl = lighting;
+        fl.output = sceneColor; // forward.copy source: the resolved scene colour
+        m_forward.addForward(graph, f, sceneRefs, fl, vis.depth);
+        out.forward = f.color;
+        display = f.color;
+        ran |= kStageForward;
+    }
+
     // --- upscale ----------------------------------------------------------------------------------------------
     if ((plan & kStageTaau) != 0u) {
         const temporal::TaauGraphRefs t = m_taau.importInto(graph);
         temporal::TaauGpuInputs ti{};
-        ti.color = sceneColor;
+        ti.color = display;
         ti.depth = motion.depth;
         ti.motion = motion.motion;
         m_taau.addResolve(graph, t, ti);
@@ -1360,7 +1648,7 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
     } else if ((plan & kStageFsr3) != 0u) {
         const fsr3::Fsr3GraphRefs f = m_fsr3.importInto(graph);
         fsr3::Fsr3GpuInputs fi{};
-        fi.color = sceneColor;
+        fi.color = display;
         fi.depth = motion.depth;
         fi.motion = motion.motion;
         m_fsr3.addPasses(graph, f, fi);
@@ -1379,10 +1667,33 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
         ran |= kStagePost;
     }
     out.output = display;
+
+    // --- frame generation (last) ------------------------------------------------------------------------------
+    if ((plan & kStageFrameGen) != 0u) {
+        const framegen::FgGraphRefs fg = m_framegen.importInto(graph);
+        framegen::FgGpuInputs fi{};
+        fi.source = display;
+        fi.depth = motion.depth;
+        fi.motion = motion.motion;
+        m_framegen.addPasses(graph, fg, fi);
+        out.frameGen = fg.interpolated;
+        ran |= kStageFrameGen;
+    }
     m_stats.ran = ran;
     return out;
 }
 
+u64 FrameComposer::restirDiOffset() const {
+    return (m_available & kStageRestir) != 0u ? m_restir.layout().diSignal : 0u;
+}
+
+u64 FrameComposer::restirAlbedoOffset() const {
+    return (m_available & kStageRestir) != 0u ? m_restir.layout().surfAlbedo[m_restir.slot()] : 0u;
+}
+
+u64 FrameComposer::reflectionOffset() const {
+    return (m_available & kStageRtReflections) != 0u ? m_rtfx.outputLayout().reflection : 0u;
+}
 u64 FrameComposer::cloudsResultOffset() const {
     return (m_available & kStageClouds) != 0u ? m_clouds.layout().offset[static_cast<u32>(clouds::CloudSection::Result)] : 0u;
 }
@@ -1451,6 +1762,13 @@ void FrameComposer::collectRetired(u64 completedSerial) {
     }
     if ((m_available & kStagePost) != 0u) {
         m_post.collectRetired(completedSerial);
+    }
+    if ((m_available & kStageRestir) != 0u) {
+        m_treeGpu.collectRetired(completedSerial);
+        m_restir.collectRetired(completedSerial);
+    }
+    if ((m_available & kStageForward) != 0u) {
+        m_forward.collectRetired(completedSerial);
     }
 }
 

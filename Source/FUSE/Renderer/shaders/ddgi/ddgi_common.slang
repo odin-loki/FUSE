@@ -10,6 +10,7 @@ static const uint kFuseDdgiFlagFrontCcw = 2u;
 static const uint kFuseDdgiFlagSun = 4u;
 static const uint kFuseDdgiFlagRelocation = 8u;
 static const uint kFuseDdgiFlagClassification = 16u;
+static const uint kFuseDdgiFlagAtmosphereSky = 32u;
 static const uint kFuseDdgiMaxIrradianceRes = 16;
 static const uint kFuseDdgiMaxDepthRes = 32;
 
@@ -47,7 +48,9 @@ struct DdgiFrame { // DdgiFrameConstants, 400 bytes
     float probeBackfaceThreshold;
     float probeMaxOffset;
     float probeRelocationStep;
-    uint statePad[3];
+    uint atmosphereLo;
+    uint atmosphereHi;
+    uint statePad;
     uint64_t schedule;
     uint64_t rayDirs;
     uint64_t rays;

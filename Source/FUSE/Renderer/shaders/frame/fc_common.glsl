@@ -14,6 +14,8 @@
 #define FC_MODE_GATHER 1u
 #define FC_MODE_RESOLVE 2u
 #define FC_MODE_SHADOW_PACK 3u
+#define FC_MODE_RESTIR 4u
+#define FC_MODE_REFLECT 5u
 
 #define FC_FLAG_SKY (1u << 0)
 #define FC_FLAG_AERIAL (1u << 1)
@@ -21,7 +23,7 @@
 #define FC_FLAG_CLOUDS (1u << 3)
 #define FC_FLAG_SPLATS (1u << 4)
 
-// FrameConstants, 192 bytes.
+// FrameConstants, 224 bytes.
 struct FcFrame {
     uint64_t atmosphere;
     uint64_t background;
@@ -30,15 +32,20 @@ struct FcFrame {
     uint64_t splats;
     uint64_t denoised;
     uint64_t visibility;
-    uint64_t reserved0;
+    uint64_t restirDi;
+    uint64_t restirAlbedo;
+    uint64_t reflection;
     uint width;
     uint height;
     uint inColor;
     uint inDepth;
-    uint outSky;
+    uint outColor;
     uint outResolve;
     uint flags;
-    uint reserved1;
+    uint gbufferNormal;
+    uint gbufferAlbedo;
+    uint gbufferRoughMetal;
+    uint reserved1[2];
     float invViewProj[16];
     float cameraPos[4];
     float skyDistance;
@@ -81,6 +88,20 @@ float fc_view_distance(uvec2 p, float depth) {
     precise float dz = q.z - F.cameraPos[2];
     precise float d2 = dx * dx + dy * dy + dz * dz;
     return sqrt(d2);
+}
+
+// frame_oct_decode (frame_types.hpp).
+vec3 fc_oct_decode(float ox, float oy) {
+    float x = ox;
+    float y = oy;
+    precise float z = 1.0 - abs(ox) - abs(oy);
+    if (z < 0.0) {
+        x = (1.0 - abs(oy)) * (ox >= 0.0 ? 1.0 : -1.0);
+        y = (1.0 - abs(ox)) * (oy >= 0.0 ? 1.0 : -1.0);
+    }
+    precise float l2 = x * x + y * y + z * z;
+    const float l = sqrt(l2);
+    return vec3(x / l, y / l, z / l);
 }
 
 #endif

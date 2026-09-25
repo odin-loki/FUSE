@@ -6,6 +6,8 @@
 //   Gather      HDR image -> f32x4 background + f32 view distance (the WP-8.3 clouds' inputs)
 //   Resolve     clouds result (or the HDR image) then splats (rgb x T + c), alpha 1 -> scene colour
 //   ShadowPack  denoised shadow (.x, clamped to [0, 1]) -> f32 visibility plane (RtfxShadowView layout)
+//   Restir      geometry: colour + albedo x ReSTIR DI (demodulated); background keeps its bits
+//   Reflect     geometry: colour + Schlick F(F0, N.V) x RT reflection radiance; background keeps its bits
 // GLSL twin of fc_frame.slang.
 #extension GL_GOOGLE_include_directive : require
 #include "fc_common.glsl"
@@ -46,6 +48,52 @@ void main() {
     }
     const vec4 c = fc_fetch(F.inColor, ivec2(p));
     const float depth = fc_fetch(F.inDepth, ivec2(p)).x;
+    if (mode == FC_MODE_RESTIR) {
+        vec4 result = c;
+        if (depth < 1.0) {
+            const vec4 a = FcTexelsRef(F.restirAlbedo).v[i];
+            const vec4 d = FcTexelsRef(F.restirDi).v[i];
+            precise float mr = a.x * d.x;
+            precise float mg = a.y * d.y;
+            precise float mb = a.z * d.z;
+            precise float r = c.x + mr;
+            precise float g = c.y + mg;
+            precise float b = c.z + mb;
+            result = vec4(r, g, b, c.w);
+        }
+        imageStore(fuse_fc_images[fuse_handle_index(F.outColor)], ivec2(p), result);
+        return;
+    }
+    if (mode == FC_MODE_REFLECT) {
+        vec4 result = c;
+        if (depth < 1.0) {
+            const vec3 q = fc_unproject(p, depth);
+            precise float vx = F.cameraPos[0] - q.x;
+            precise float vy = F.cameraPos[1] - q.y;
+            precise float vz = F.cameraPos[2] - q.z;
+            precise float vl2 = vx * vx + vy * vy + vz * vz;
+            const float vl = sqrt(vl2);
+            const vec4 rt0 = fc_fetch(F.gbufferNormal, ivec2(p));
+            const vec4 rt1 = fc_fetch(F.gbufferAlbedo, ivec2(p));
+            const vec4 rt2 = fc_fetch(F.gbufferRoughMetal, ivec2(p));
+            const vec4 refl = FcTexelsRef(F.reflection).v[i];
+            const vec3 n = fc_oct_decode(rt0.x, rt0.y);
+            precise float dn = n.x * vx + n.y * vy + n.z * vz;
+            precise float d = dn / vl;
+            const float ndv = min(1.0, max(0.0, d));
+            precise float m = 1.0 - ndv;
+            precise float m2 = m * m;
+            precise float m5 = m2 * m2 * m;
+            const float metallic = rt2.y;
+            precise vec3 f0 = vec3(0.04 + (rt1.x - 0.04) * metallic, 0.04 + (rt1.y - 0.04) * metallic,
+                                   0.04 + (rt1.z - 0.04) * metallic);
+            precise vec3 f = vec3(f0.x + (1.0 - f0.x) * m5, f0.y + (1.0 - f0.y) * m5, f0.z + (1.0 - f0.z) * m5);
+            precise vec3 r = vec3(f.x * refl.x, f.y * refl.y, f.z * refl.z);
+            result = vec4(c.x + r.x, c.y + r.y, c.z + r.z, c.w);
+        }
+        imageStore(fuse_fc_images[fuse_handle_index(F.outColor)], ivec2(p), result);
+        return;
+    }
     if (mode == FC_MODE_GATHER) {
         FcTexelsRef(F.background).v[i] = c;
         FcFloatsRef(F.distance).v[i] = fc_view_distance(p, depth);
@@ -69,5 +117,5 @@ void main() {
         const vec3 e = at_illuminance(atm);
         result = vec4(c.xyz * t + s * e, c.w);
     }
-    imageStore(fuse_fc_images[fuse_handle_index(F.outSky)], ivec2(p), result);
+    imageStore(fuse_fc_images[fuse_handle_index(F.outColor)], ivec2(p), result);
 }

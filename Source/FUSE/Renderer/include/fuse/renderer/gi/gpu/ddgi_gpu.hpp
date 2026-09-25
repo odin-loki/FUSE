@@ -122,6 +122,9 @@ struct DdgiFrameDesc {
     math::Vec3 sunDirection{0.f, 1.f, 0.f}; ///< surface -> sun (normalised by beginFrame)
     math::Vec3 sunIrradiance{};             ///< irradiance on a surface facing the sun (0 = no sun)
     math::Vec3 skyRadiance{};               ///< radiance of rays that escape
+    /// WP-8.2 sky for misses: AtmosphereGpu::frameAddress() (0 = the constant skyRadiance). The caller sets
+    /// DdgiGraphRefs::atmosphere to the LUT buffer (AtmosphereGraphRefs::luts) so ddgi.trace declares the read.
+    u64 atmosphereAddress = 0;
     u64 tlasAddress = 0;  ///< T2: AccelerationStructures::tlasAddress()
     u64 sceneAddress = 0; ///< T2: GpuScene::headerAddress()
     /// Explicit probe list (duplicates dropped, clamped to the capacity); null = the oracle's rolling
@@ -151,6 +154,7 @@ struct DdgiWorkLayout {
 
 struct DdgiGraphRefs {
     rg::BufferRef work; ///< the persistent atlases / rays buffer
+    rg::BufferRef atmosphere; ///< optional (caller-set): WP-8.2 LUT buffer read by ddgi.trace (DdgiFrameDesc::atmosphereAddress)
 };
 
 struct DdgiFrameStats {

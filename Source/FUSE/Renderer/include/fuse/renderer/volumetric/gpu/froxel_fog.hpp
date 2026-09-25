@@ -146,6 +146,9 @@ public:
     /// buffer; a new grid drops the history) and the apply extent / images. False on an invalid camera or
     /// grid, mismatched apply inputs or a failed (re)allocation.
     bool beginFrame(u64 frameSerial, const FroxelFogSettings& settings, const FogFrameDesc& frame);
+    /// Rewinds the inject jitter sequence (Halton index) to its start, so the next frame is a function of its
+    /// inputs alone (FogFrameDesc::resetHistory drops the history but keeps the sequence running).
+    void resetSequence() { m_frameIndex = 0; }
 
     FogGraphRefs importInto(rg::Graph& graph);
     /// fog.inject, fog.temporal, fog.integrate, fog.apply (with apply inputs).

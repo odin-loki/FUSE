@@ -16,6 +16,7 @@
 #define FUSE_DDGI_FLAG_SUN 4u
 #define FUSE_DDGI_FLAG_RELOCATION 8u
 #define FUSE_DDGI_FLAG_CLASSIFICATION 16u
+#define FUSE_DDGI_FLAG_ATMOSPHERE_SKY 32u
 #define FUSE_DDGI_MAX_IRRADIANCE_RES 16
 #define FUSE_DDGI_MAX_DEPTH_RES 32
 
@@ -53,7 +54,9 @@ struct FuseDdgiFrame { // DdgiFrameConstants, 400 bytes
     float probeBackfaceThreshold;
     float probeMaxOffset;
     float probeRelocationStep;
-    uint statePad[3];
+    uint atmosphereLo;
+    uint atmosphereHi;
+    uint statePad;
     uint64_t schedule;
     uint64_t rayDirs;
     uint64_t rays;
