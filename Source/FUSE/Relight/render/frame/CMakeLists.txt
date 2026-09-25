@@ -73,6 +73,10 @@ target_compile_definitions(fuse_relight_render_frame PRIVATE
 target_link_libraries(fuse_relight_render_frame PRIVATE $<TARGET_NAME_IF_EXISTS:fuse_relight_pathtrace_frame>)
 target_compile_definitions(fuse_relight_render_frame PRIVATE
     $<$<TARGET_EXISTS:fuse_relight_pathtrace_frame>:FUSE_RELIGHT_HAVE_PATHTRACE=1>)
+# RL-6.1 developer overlay (Relight/overlay, added later; it links this library): drawn at Present.
+target_link_libraries(fuse_relight_render_frame PRIVATE $<TARGET_NAME_IF_EXISTS:fuse_relight_overlay>)
+target_compile_definitions(fuse_relight_render_frame PRIVATE
+    $<$<TARGET_EXISTS:fuse_relight_overlay>:FUSE_RELIGHT_HAVE_OVERLAY=1>)
 add_library(fuse_relight_render_frame_gpu ALIAS fuse_relight_render_frame)
 
 if(COMMAND fuse_apply_cxx23)

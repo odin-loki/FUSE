@@ -77,6 +77,10 @@ public:
     /// `recorder`: relight.frame.mode = raster's frame graph (RL-4.2), null when it has nothing to render (the
     /// frame is then passthrough). Ignored in the other modes.
     InjectResult inject(IFrameRecorder* recorder = nullptr);
+    /// RL-6.1 (the developer overlay at Present): one more round on the same timelines after this frame's
+    /// injection: the host copies the back buffer into `image` (an importImage'd GpuImage like the back buffer),
+    /// `recorder`'s graph runs with `image` as its output, and the host composites `image` back.
+    InjectResult postComposite(IFrameRecorder& recorder, const GpuImage& image);
     /// Creates the passthrough twin of `texture` and hands it to the host. False when not swappable.
     bool swapTexture(const tap::TextureDesc& texture);
     /// The texture is gone (the host already dropped its swap): the twin is retired.

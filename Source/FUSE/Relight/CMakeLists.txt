@@ -75,4 +75,5 @@ add_subdirectory(render/volumetrics)                                            
 add_subdirectory(terrain)                                                                # RL-5.6 terrain baking
 add_subdirectory(render/post)                                                            # RL-5.7 (after RL-5.1: hooks its frame renderer)
 add_subdirectory(setup)                                                                  # RL-6.3 (after RL-1.1 / 1.2: hooks the tap, reads the classifier options)
+add_subdirectory(overlay)                                                                # RL-6.1 (after RL-4.1: draws through the frame orchestration)
 include(cmake/relight_package.cmake)                                                     # RL-6.4 (last: packages the runtime targets)

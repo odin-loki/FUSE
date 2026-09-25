@@ -19,6 +19,9 @@
 #if defined(FUSE_RELIGHT_HAVE_PATHTRACE)
 #include <fuse/relight/render/pathtrace/pt_frame_renderer.hpp>
 #endif
+#if defined(FUSE_RELIGHT_HAVE_OVERLAY)
+#include <fuse/relight/overlay/overlay_tap.hpp> // RL-6.1
+#endif
 
 #include <cinttypes>
 #include <string_view>
@@ -137,6 +140,9 @@ RenderTap::RenderTap(std::unique_ptr<tap::CaptureTap> capture, FrameConfig confi
     if (!m_config.statsPath.empty()) {
         m_stats = std::fopen(m_config.statsPath.c_str(), "w");
     }
+#if defined(FUSE_RELIGHT_HAVE_OVERLAY)
+    m_overlay = overlay::createFrameOverlay(); // RL-6.1 (null when relight.overlay.enable is off)
+#endif
 }
 
 RenderTap::~RenderTap() {
@@ -156,6 +162,9 @@ IGpuSceneSink* RenderTap::sink() {
 
 void RenderTap::releaseDevice() {
     // Waits for the host and FUSE (orchestrator.detach), then drops every GPU object in dependency order.
+    if (m_overlay) {
+        m_overlay->detach(); // RL-6.1: its images and buffers first (FrameGpu is still up)
+    }
     m_orchestrator.detach();
     if (m_frameRenderer) {
         m_frameRenderer->detach();
@@ -229,6 +238,9 @@ void RenderTap::onDeviceCreate(const tap::DeviceEvent& e) {
     m_capture->onDeviceCreate(e);
     m_backBuffer = e.backBuffer;
     attachHost(e.host);
+    if (m_overlay) {
+        m_overlay->attach(*this, e);
+    }
 }
 
 void RenderTap::onDeviceReset(const tap::DeviceEvent& e) {
@@ -236,6 +248,9 @@ void RenderTap::onDeviceReset(const tap::DeviceEvent& e) {
     m_backBuffer = e.backBuffer;
     if (e.host != m_host) {
         attachHost(e.host);
+    }
+    if (m_overlay) {
+        m_overlay->attach(*this, e);
     }
 }
 
@@ -460,6 +475,9 @@ void RenderTap::onPresent(const tap::FrameEvent& f) {
     m_fedAtInject = false;
     m_fedCount = 0;
     m_drawInFrame = 0;
+    if (m_overlay) {
+        m_overlay->present(*this, f); // RL-6.1: over the finished frame (after the UI), before DXVK presents
+    }
 }
 
 void RenderTap::feedDraws(const std::vector<tap::CaptureDrawRecord>& draws, std::size_t begin, std::size_t end,
@@ -530,7 +548,9 @@ void RenderTap::onFlushedFrame(std::uint64_t frame, const std::vector<tap::Captu
             mainCamera = &c;
         }
     }
-    (void)frame;
+    if (m_overlay) {
+        m_overlay->onFrame(*this, frame, draws); // RL-6.1: texture list / capture (under the capture tap's lock)
+    }
     rec.instances = m_scene->model.endFrame(mainCamera).activeInstances;
 }
 

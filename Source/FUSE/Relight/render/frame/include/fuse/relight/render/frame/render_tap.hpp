@@ -69,6 +69,18 @@ struct FrameRecord {
     OrchestratorStats orchestrator;
 };
 
+class RenderTap;
+/// RL-6.1 developer overlay (Relight/overlay, overlay_tap.hpp): attached with the device, sees each flushed frame,
+/// draws over the finished frame at Present (FrameOrchestrator::postComposite).
+class IFrameOverlay {
+public:
+    virtual ~IFrameOverlay() = default;
+    virtual void attach(RenderTap& tap, const tap::DeviceEvent& e) = 0;
+    virtual void detach() = 0;
+    virtual void onFrame(RenderTap& tap, std::uint64_t frame, const std::vector<tap::CaptureDrawRecord>& draws) = 0;
+    virtual void present(RenderTap& tap, const tap::FrameEvent& f) = 0;
+};
+
 class RenderTap final : public tap::IRelightTap {
 public:
     RenderTap(std::unique_ptr<tap::CaptureTap> capture, FrameConfig config);
@@ -85,6 +97,9 @@ public:
     /// The adopted renderer (null before a device attached; check attached()).
     RendererContext* renderer() { return m_renderer.get(); }
     const FrameRecord& lastRecord() const { return m_last; }
+    /// The relight.frame.mode renderer (null in passthrough / solid) and the RL-6.1 overlay (null when disabled).
+    IFrameRenderer* frameRenderer() { return m_frameRenderer.get(); }
+    IFrameOverlay* overlay() { return m_overlay.get(); }
 
     void onDeviceCreate(const tap::DeviceEvent& e) override;
     void onDeviceReset(const tap::DeviceEvent& e) override;
@@ -131,6 +146,7 @@ private:
     FrameOrchestrator m_orchestrator;
     std::unique_ptr<IFrameRenderer> m_frameRenderer;
     IGpuSceneSink* m_externalSink = nullptr;
+    std::unique_ptr<IFrameOverlay> m_overlay; ///< RL-6.1
     std::unique_ptr<Scene> m_scene;
     std::FILE* m_stats = nullptr;
     FrameRecord m_current;

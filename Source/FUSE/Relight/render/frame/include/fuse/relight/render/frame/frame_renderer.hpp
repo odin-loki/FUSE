@@ -50,8 +50,26 @@ struct FrameInputs {
     std::function<const replace::MaterialDef*(hash::Hash64)> replacementMaterial;
 };
 
+/// RL-6.1 debug views (Relight/overlay, relight.overlay.debugView): the buffers a frame renderer may expose.
+enum class DebugBuffer : std::uint32_t { Albedo = 1, Normal, Depth, Motion, DiffuseDemod, SpecularDemod };
+/// A frame renderer's image holding a DebugBuffer after its last recorded frame, and how it maps to display values.
+struct DebugImage {
+    std::uint64_t vkImage = 0;
+    std::uint32_t format = 0, width = 0, height = 0; ///< VkFormat (float / unorm), extent
+    std::uint32_t aspect = 1;                         ///< VkImageAspectFlags of the view (depth: 2)
+    std::uint32_t layout = 1;                         ///< VkImageLayout it rests in between frames (1 = GENERAL)
+    float scale[4] = {1.f, 1.f, 1.f, 1.f}, bias[4] = {0.f, 0.f, 0.f, 0.f}; ///< display = saturate(texel * scale + bias)
+    std::uint32_t swizzle = 0;                        ///< 0 rgb, 1 rrr (depth), 2 rg0 (motion)
+};
+
 class IFrameRenderer : public IFrameRecorder {
 public:
+    /// RL-6.1: the image of `buffer` (valid until the next prepare()). False (the default): not offered.
+    virtual bool debugImage(DebugBuffer buffer, DebugImage& out) const {
+        (void)buffer;
+        (void)out;
+        return false;
+    }
     ~IFrameRenderer() override = default;
     /// The device's renderer came up (or went away: detach). `registry` names every game texture's bindless slot.
     virtual bool attach(RendererContext& context, tap::IFrameHost& host, BindlessImageRegistry& registry) = 0;

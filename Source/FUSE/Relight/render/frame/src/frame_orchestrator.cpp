@@ -262,6 +262,29 @@ InjectResult FrameOrchestrator::inject(IFrameRecorder* recorder) {
     return r;
 }
 
+InjectResult FrameOrchestrator::postComposite(IFrameRecorder& recorder, const GpuImage& image) {
+    // RL-6.1: copy back buffer -> image, flush + signal acquire, FUSE's graph, composite (same timelines as inject).
+    InjectResult r;
+    const std::uint64_t acquire = m_acquire + 1, release = m_release + 1;
+    if (!attached() || !image.host || !m_host->copyBackBuffer(image.host) || !m_host->flushAndSignal(acquire)) {
+        r.error = attached() ? "the host could not copy / flush for the overlay" : "not attached";
+        return r;
+    }
+    m_acquire = r.acquire = acquire;
+    r.pass = "overlay";
+    r.submit = m_gpu.submitFrame(recorder, image, acquire, release);
+    if (!r.submit.ok || !m_host->composite(image.host, release)) {
+        r.error = r.submit.ok ? "the host could not composite the overlay" : m_gpu.lastError();
+        m_release = r.submit.ok ? release : m_release;
+        return r;
+    }
+    m_release = r.release = release;
+    r.injected = true;
+    m_stats.acquireValue = m_acquire;
+    m_stats.releaseValue = m_release;
+    return r;
+}
+
 bool FrameOrchestrator::swapTexture(const tap::TextureDesc& texture) {
     if (!attached() || !swappable(texture) || m_swaps.count(texture.id)) {
         return false;
