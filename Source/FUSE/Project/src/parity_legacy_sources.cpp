@@ -29,32 +29,32 @@ const char* goldenMissionPathForDemo(const std::string& demoName) {
         return "Templates/BaseGame/game/data/ExampleModule/levels/ExampleLevel.mis";
     }
     if (demoName == "demo_adventure_stub") {
-        return "third_party/addons/3DAAK/Templates/Full/game/levels/Outpost.mis";
+        return "Samples/unification/demo_adventure_stub/worlds/outpost.mis";
     }
     if (demoName == "demo_ai_bt") {
-        return "third_party/addons/BadBehaviour/Templates/Full/game/levels/BehaviorTestbed.mis";
+        return "Samples/unification/demo_ai_bt/worlds/behavior_testbed.mis";
     }
     if (demoName == "demo_fx") {
-        return "third_party/addons/AFX-Template/game/levels/AFXDemo_Minimal.mis";
+        return "Samples/unification/demo_fx/worlds/afx_minimal.mis";
     }
     if (demoName == "demo_timeline") {
-        return "third_party/addons/Verve/Templates/Full/game/levels/default.mis";
+        return "Samples/unification/demo_timeline/worlds/verve_intro.mis";
     }
     return nullptr;
 }
 
 const char* goldenModulePathForDemo(const std::string& demoName) {
     if (demoName == "demo_2d_sprites") {
-        return "third_party/Torque2D/toybox/SpriteToy/1/main.cs";
+        return "Samples/unification/demo_2d_sprites/worlds/sprite_toy_stub.cs";
     }
     if (demoName == "demo_adventure_stub") {
-        return "third_party/addons/3DAAK/Templates/Full/game/data/interact.cs";
+        return "Samples/unification/demo_adventure_stub/worlds/interact_2d.cs";
     }
     if (demoName == "demo_ai_bt") {
-        return "third_party/Torque2D/toybox/SpriteToy/1/main.cs";
+        return "Samples/unification/demo_ai_bt/worlds/sprite_agent.cs";
     }
     if (demoName == "demo_fx") {
-        return "third_party/Torque2D/toybox/SpriteToy/1/main.cs";
+        return "Samples/unification/demo_fx/worlds/afx_sprite_stub.cs";
     }
     return nullptr;
 }
@@ -69,21 +69,14 @@ const char* goldenPathForDemo(const std::string& demoName, const char* extension
     return nullptr;
 }
 
-std::string submoduleRootForGoldenRelative(const char* goldenRel) {
+std::string goldenRootForRelative(const char* goldenRel) {
     if (goldenRel == nullptr) {
         return {};
     }
 
     const std::string path(goldenRel);
-    if (path.rfind("third_party/Torque2D/", 0) == 0) {
-        return "third_party/Torque2D";
-    }
-    if (path.rfind("third_party/addons/", 0) == 0) {
-        const std::size_t slash = path.find('/', 19);
-        if (slash != std::string::npos) {
-            return path.substr(0, slash);
-        }
-        return "third_party/addons";
+    if (path.rfind("Samples/unification/", 0) == 0) {
+        return "Samples/unification";
     }
     if (path.rfind("Templates/", 0) == 0) {
         return "Templates";
@@ -98,13 +91,13 @@ std::string bundledFallbackNote(const char* goldenRel, SubmodulePathStatus statu
 
     switch (status) {
     case SubmodulePathStatus::Uninitialized:
-        return "bundled stub (golden submodule checkout empty — no network init attempted)";
+        return "bundled stub (golden reference tree empty)";
     case SubmodulePathStatus::Absent:
-        return "bundled stub (golden submodule path absent in workspace)";
+        return "bundled stub (golden reference path absent in workspace)";
     case SubmodulePathStatus::Present:
-        return "bundled stub (golden file missing despite initialized submodule tree)";
+        return "bundled stub (golden file missing despite reference tree)";
     }
-    return "bundled stub (golden submodule absent)";
+    return "bundled stub (golden reference absent)";
 }
 
 } // namespace
@@ -187,18 +180,18 @@ LegacySourceResolution resolveParityLegacySource(const ProjectManifest& manifest
     const std::string repoRoot = findRepositoryRoot(manifest.projectRoot);
 
     if (goldenRel != nullptr && !repoRoot.empty()) {
-        const std::string submoduleRootRel = submoduleRootForGoldenRelative(goldenRel);
-        if (!submoduleRootRel.empty()) {
-            const std::string submoduleRoot =
-                (std::filesystem::path(repoRoot) / submoduleRootRel).lexically_normal().string();
-            result.goldenSubmoduleStatus = classifySubmoduleDirectory(submoduleRoot);
+        const std::string goldenRootRel = goldenRootForRelative(goldenRel);
+        if (!goldenRootRel.empty()) {
+            const std::string goldenRoot =
+                (std::filesystem::path(repoRoot) / goldenRootRel).lexically_normal().string();
+            result.goldenSubmoduleStatus = classifySubmoduleDirectory(goldenRoot);
         }
 
         const std::string golden = (std::filesystem::path(repoRoot) / goldenRel).lexically_normal().string();
         if (fileExists(golden)) {
             result.path = golden;
             result.origin = LegacySourceOrigin::GoldenSubmodule;
-            result.note = "golden submodule source";
+            result.note = "golden reference source";
             return result;
         }
     }

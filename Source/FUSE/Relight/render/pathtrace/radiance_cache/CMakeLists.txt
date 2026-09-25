@@ -1,7 +1,6 @@
 # FUSE Relight RL-5.4: world-space hash-grid radiance cache for the path tracer (docs/plans/FUSE_REMIX_PORT_PLAN.md
 # §5.4, §5.8 row `radiance_cache_*`; Wave R5). Added by one line in Source/FUSE/Relight/CMakeLists.txt, after RL-5.1's
-# render/pathtrace. Owns Relight/render/pathtrace/radiance_cache*, Relight/kernels/radiance_cache* and research/relight_nrc
-# (the neural research track, added from here).
+# render/pathtrace. Owns Relight/render/pathtrace/radiance_cache*, Relight/kernels/radiance_cache*.
 #
 # Targets
 #   fuse_relight_radiance_cache          RadianceCacheCpu (the CPU reference: kernels/radiance_cache_{types,core,path}.h
@@ -10,7 +9,7 @@
 #   fuse_relight_radiance_cache_kernels  the SPIR-V: Slang (shaders/radiance_cache.slang, -fp-mode precise) and the GLSL
 #                                        twin (radiance_cache.comp), spirv-val'd and embedded (rl_radiance_cache_spv.h).
 # The path tracer's hook (kernels/radiance_cache_hook.{slang,glsl}) is compiled into RL-5.1's kernels (rl_pt.*).
-# Tests: tests/ (rl_radiance_cache_*), research/relight_nrc (rl_nrc_*).
+# Tests: tests/ (rl_radiance_cache_*).
 
 foreach(_dep fuse_relight_pathtrace fuse_relight_options fuse_relight_material)
     if(NOT TARGET ${_dep})
@@ -29,7 +28,6 @@ endmacro()
 
 get_filename_component(RL_RC_RELIGHT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
 get_filename_component(RL_RC_RENDERER_DIR "${RL_RC_RELIGHT_DIR}/../Renderer" ABSOLUTE)
-get_filename_component(RL_RC_REPO_DIR "${RL_RC_RELIGHT_DIR}/../../.." ABSOLUTE)
 set(RL_RC_KERNELS_DIR "${RL_RC_RELIGHT_DIR}/kernels")
 set(RL_RC_PT_SHADERS_DIR "${RL_RC_RELIGHT_DIR}/render/pathtrace/shaders")
 set(RL_RC_SHADERS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
@@ -105,8 +103,3 @@ add_dependencies(fuse_relight_radiance_cache fuse_relight_radiance_cache_header)
 _rl_rc_cxx23(fuse_relight_radiance_cache)
 
 add_subdirectory(tests)
-
-# The neural research track (research/relight_nrc: online-trained MLP cache on the WP-9.1 runtime; reports only).
-if(TARGET fuse_neural AND EXISTS "${RL_RC_REPO_DIR}/research/relight_nrc/CMakeLists.txt")
-    add_subdirectory("${RL_RC_REPO_DIR}/research/relight_nrc" "${CMAKE_CURRENT_BINARY_DIR}/relight_nrc")
-endif()

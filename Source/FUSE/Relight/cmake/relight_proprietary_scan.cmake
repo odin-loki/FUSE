@@ -228,8 +228,8 @@ if(MODE STREQUAL "text")
     if(NOT DEFINED ROOTS)
         set(ROOTS
             "${REPO}/Source/FUSE/Relight" "${REPO}/Tests/relight" "${REPO}/Tools/FUSE/Relight"
-            "${REPO}/third_party/vendor/dxvk" "${REPO}/third_party/vendor/dxbc-spirv" "${REPO}/third_party/vendor/xxhash"
-            "${REPO}/third_party/vendor/gdeflate" "${REPO}/third_party/vendor/tinyusdz")
+            "${REPO}/vendor/dxvk" "${REPO}/vendor/dxbc-spirv" "${REPO}/vendor/xxhash"
+            "${REPO}/vendor/gdeflate" "${REPO}/vendor/tinyusdz")
     endif()
     set(_violations 0)
     set(_nfiles 0)

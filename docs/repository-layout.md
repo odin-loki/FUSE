@@ -1,6 +1,6 @@
 # Repository layout
 
-FUSE is one product graph under `Source/FUSE/`. Everything else is content, tools, vendored deps, or heritage reference.
+FUSE is one product graph under `Source/FUSE/`. Everything else is content, tools, vendored deps, or reference samples.
 
 ## Product (built by default)
 
@@ -19,21 +19,13 @@ FUSE is one product graph under `Source/FUSE/`. Everything else is content, tool
 
 **Language:** ISO C++23 for all targets under `Source/FUSE/` (`CMAKE_CXX_STANDARD 23` in `Source/FUSE/CMakeLists.txt`).
 
-## Third-party
+## Vendored libraries
 
 | Path | Role |
 |------|------|
-| `third_party/vendor/` | Pinned libraries (was `Engine/lib/`) — enet, lua, bullet, vma, dxvk, assimp, … |
-| `third_party/stb/` | STB image headers (was `Engine/source/.../stb/`) |
-| `third_party/Torque2D/` | Reference 2D engine submodule (not linked by FUSE umbrella) |
-| `third_party/addons/` | Torque3D addon submodules — porting reference only |
-
-## Heritage (not built by FUSE umbrella)
-
-| Path | Role |
-|------|------|
-| `heritage/torque3d/` | Full Torque3D `Engine/source`, modules, bin, standalone CMake |
-| `Engine/README.md` | Redirect stub for old paths |
+| `vendor/` | Pinned third-party libraries — enet, lua, bullet, vma, dxvk, assimp, … |
+| `vendor/stb/` | STB image headers |
+| `vendor/ispc_texcomp/` | BC texture compression headers for the cook pipeline |
 
 ## Content and tests
 

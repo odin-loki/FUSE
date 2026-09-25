@@ -29,50 +29,50 @@ _rl_notice(fuse "FUSE and FUSE Relight" "MIT" "Permission is hereby granted, fre
     "LICENSE.md")
 _rl_notice(dxvk "DXVK 3.1.1 (doitsujin/dxvk), with FUSE-DXVK marked modifications" "zlib"
     "Altered source versions must be plainly marked" "doitsujin/dxvk"
-    "third_party/vendor/dxvk/LICENSE")
+    "vendor/dxvk/LICENSE")
 _rl_notice(dxbc_spirv "dxbc-spirv (doitsujin/dxbc-spirv)" "MIT" "Philip Rebohle" "doitsujin/dxbc-spirv"
-    "third_party/vendor/dxbc-spirv/LICENSE")
+    "vendor/dxbc-spirv/LICENSE")
 _rl_notice(libdisplay_info "libdisplay-info (bundled with DXVK)" "MIT" "libdisplay-info Contributors" "libdisplay-info"
-    "third_party/vendor/dxvk/subprojects/libdisplay-info/LICENSE")
+    "vendor/dxvk/subprojects/libdisplay-info/LICENSE")
 _rl_notice(openvr "OpenVR headers (bundled with DXVK)" "BSD-3-Clause" "Valve Corporation" "OpenVR"
-    "third_party/vendor/dxvk/include/openvr/LICENSE")
+    "vendor/dxvk/include/openvr/LICENSE")
 _rl_notice(vulkan_headers "Vulkan-Headers (bundled with DXVK)" "Apache-2.0 OR MIT" "The Khronos Group" "Vulkan-Headers"
-    "third_party/vendor/dxvk/include/vulkan/LICENSE.md" "third_party/vendor/dxvk/include/vulkan/LICENSES/MIT.txt"
-    "third_party/vendor/dxvk/include/vulkan/LICENSES/Apache-2.0.txt")
+    "vendor/dxvk/include/vulkan/LICENSE.md" "vendor/dxvk/include/vulkan/LICENSES/MIT.txt"
+    "vendor/dxvk/include/vulkan/LICENSES/Apache-2.0.txt")
 _rl_notice(spirv_headers "SPIRV-Headers (bundled with DXVK and dxbc-spirv)" "MIT" "The Khronos Group" "SPIRV-Headers"
-    "third_party/vendor/dxvk/include/spirv/LICENSE" "third_party/vendor/dxbc-spirv/submodules/spirv_headers/LICENSE")
+    "vendor/dxvk/include/spirv/LICENSE" "vendor/dxbc-spirv/submodules/spirv_headers/LICENSE")
 _rl_notice(dxvk_remix "dxvk-remix runtime and bridge code, ported (NVIDIAGameWorks/dxvk-remix, MIT parts only)" "MIT"
     "Permission is hereby granted, free of charge" "NVIDIAGameWorks/dxvk-remix"
     "${_rl_pkg}/dxvk-remix-MIT.txt")
 _rl_notice(xxhash "xxHash (Yann Collet)" "BSD-2-Clause" "Yann Collet" "xxHash"
-    "third_party/vendor/xxhash/LICENSE")
+    "vendor/xxhash/LICENSE")
 _rl_notice(gdeflate "GDeflate CPU codec: libdeflate (gdeflate branch) and Microsoft DirectStorage GDeflate" "MIT; Apache-2.0"
     "Apache License" "GDeflate"
-    "third_party/vendor/gdeflate/libdeflate/COPYING" "third_party/vendor/gdeflate/GDeflate/LICENSE")
+    "vendor/gdeflate/libdeflate/COPYING" "vendor/gdeflate/GDeflate/LICENSE")
 _rl_notice(tinyusdz "TinyUSDZ 0.9.4 (lighttransport/tinyusdz) with its bundled components (lz4, xxHash, ghc::filesystem, glob, fast_float, dragonbox, jsteemann atoi, linalg)"
     "Apache-2.0; BSD-2-Clause; MIT; BSL-1.0; Unlicense" "Syoyo Fujita" "TinyUSDZ"
-    "third_party/vendor/tinyusdz/LICENSE"
-    "third_party/vendor/tinyusdz/src/lz4/LICENSE"
-    "third_party/vendor/tinyusdz/src/external/xxhash.LICENSE"
-    "third_party/vendor/tinyusdz/src/external/filesystem/LICENSE"
-    "third_party/vendor/tinyusdz/src/external/glob/LICENSE"
-    "third_party/vendor/tinyusdz/src/external/fast_float/LICENSE-MIT"
-    "third_party/vendor/tinyusdz/src/external/fast_float/LICENSE-APACHE"
-    "third_party/vendor/tinyusdz/src/external/fast_float/LICENSE-BOOST"
-    "third_party/vendor/tinyusdz/src/external/dragonbox/LICENSE-Boost"
-    "third_party/vendor/tinyusdz/src/external/dragonbox/LICENSE-Apache2-LLVM"
-    "third_party/vendor/tinyusdz/src/external/jsteemann/LICENSE"
-    "third_party/vendor/tinyusdz/src/external/linalg.UNLICENSE")
+    "vendor/tinyusdz/LICENSE"
+    "vendor/tinyusdz/src/lz4/LICENSE"
+    "vendor/tinyusdz/src/external/xxhash.LICENSE"
+    "vendor/tinyusdz/src/external/filesystem/LICENSE"
+    "vendor/tinyusdz/src/external/glob/LICENSE"
+    "vendor/tinyusdz/src/external/fast_float/LICENSE-MIT"
+    "vendor/tinyusdz/src/external/fast_float/LICENSE-APACHE"
+    "vendor/tinyusdz/src/external/fast_float/LICENSE-BOOST"
+    "vendor/tinyusdz/src/external/dragonbox/LICENSE-Boost"
+    "vendor/tinyusdz/src/external/dragonbox/LICENSE-Apache2-LLVM"
+    "vendor/tinyusdz/src/external/jsteemann/LICENSE"
+    "vendor/tinyusdz/src/external/linalg.UNLICENSE")
 _rl_notice(meshoptimizer "meshoptimizer (FUSE renderer)" "MIT" "Arseny Kapoulkine" ""
-    "third_party/vendor/meshoptimizer/LICENSE.md")
+    "vendor/meshoptimizer/LICENSE.md")
 _rl_notice(vma "Vulkan Memory Allocator (FUSE renderer)" "MIT" "Advanced Micro Devices" ""
-    "third_party/vendor/vma/LICENSE.txt")
+    "vendor/vma/LICENSE.txt")
 _rl_notice(volk "volk (FUSE renderer)" "MIT" "Arseny Kapoulkine" ""
-    "third_party/vendor/volk/LICENSE.md")
+    "vendor/volk/LICENSE.md")
 _rl_notice(fidelityfx "AMD FidelityFX SDK shaders (FUSE renderer)" "MIT" "Advanced Micro Devices" ""
-    "third_party/vendor/fidelityfx/LICENSE.txt")
+    "vendor/fidelityfx/LICENSE.txt")
 _rl_notice(nis "NVIDIA Image Scaling shaders (FUSE renderer)" "MIT" "The MIT License" ""
-    "third_party/vendor/nvidia-nis/licence.txt")
+    "vendor/nvidia-nis/licence.txt")
 
 # Licence file name inside the package: licenses/<id>.txt, or licenses/<id>-<n>.txt for the n-th (n >= 2).
 function(rl_notice_package_names id out)

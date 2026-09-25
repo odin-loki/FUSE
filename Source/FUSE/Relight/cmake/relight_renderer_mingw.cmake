@@ -52,7 +52,7 @@ function(_rl_rmw_add_renderer)
     endif()
     if(NOT TARGET Vulkan::Headers)
         message(FATAL_ERROR "FUSE_RELIGHT_RENDERER: no Vulkan headers (expected the vendored Khronos headers under "
-                            "third_party/vendor/sdl/src/video/khronos)")
+                            "vendor/sdl/src/video/khronos)")
     endif()
     if(NOT TARGET Vulkan::Vulkan)
         # Headers only: volk (fuse_volk_attach) replaces the loader, so there is nothing to link.

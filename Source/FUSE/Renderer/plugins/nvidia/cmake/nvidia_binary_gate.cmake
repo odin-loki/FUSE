@@ -46,9 +46,9 @@ set(_bad
     "lib/Windows_x86_64/nvsdk_ngx_d.lib" "sdk/sl.interposer.dll" "plugins/sl.dlss_g.dll" "sl.common.pdb"
     "tools/nvperf_grfx_target.dll" "out/libfuse_nvplugin_ngx.so")
 set(_good
-    "third_party/vendor/streamline/include/sl.h" "third_party/vendor/streamline/include/sl_dlss.h" "third_party/vendor/streamline/VERSION"
+    "vendor/streamline/include/sl.h" "vendor/streamline/include/sl_dlss.h" "vendor/streamline/VERSION"
     "Source/FUSE/Renderer/plugins/nvidia/mock/fuse_nvplugin_mock.cpp" "docs/nvidia-plugin.md"
-    "third_party/vendor/nvidia-nis/NIS/NIS_Scaler.h" "slides/sl.dlss.txt" "libfuse_nvplugin_mock.so" "d3dcompiler_47.dll"
+    "vendor/nvidia-nis/NIS/NIS_Scaler.h" "slides/sl.dlss.txt" "libfuse_nvplugin_mock.so" "d3dcompiler_47.dll"
     "Source/FUSE/Renderer/plugins/nvidia/providers/ngx/fuse_nvplugin_ngx.cpp")
 set(_selftest_errors 0)
 foreach(_p IN LISTS _bad)

@@ -9,7 +9,7 @@ name: FUSE Windows x64 (MinGW-w64 cross + Wine)
 #     (fuse_core_b7_win32_crash_minidump: structural .dmp validation; WinDbg itself stays manual).
 #   - B7.8 DPI awareness (fuse_core_b7_dpi_awareness). Wine 9.0 has no per-monitor-v2 context, so
 #     under Wine the v1 fallback is what gets proven; v2 needs a real Windows 10 1703+ runner.
-# MSVC is covered separately by build-windows-msvc.yml (legacy Torque3D) and is not exercised here.
+# MSVC native builds are covered separately by fuse-windows-native.yml.
 
 on:
   push:

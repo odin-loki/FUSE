@@ -49,7 +49,7 @@ void testSubmoduleDirectoryClassification() {
                "populated directory classified as present submodule checkout");
 }
 
-void testGoldenSubmoduleStatusOnSpriteToyFallback() {
+void testGoldenReferenceStatusOnSpriteToy() {
     const fuse::project::LoadResult project =
         fuse::project::loadFromDirectory("Samples/unification/demo_2d_sprites");
     expectTrue(project.status == fuse::project::LoadStatus::Ok, "demo_2d_sprites loads");
@@ -58,14 +58,14 @@ void testGoldenSubmoduleStatusOnSpriteToyFallback() {
         project.manifest.projectRoot + "/worlds/sprite_toy_stub.fuselevel";
     const fuse::project::LegacySourceResolution source =
         fuse::project::resolveParityLegacySource(project.manifest, fuselevelPath, ".cs");
-    expectTrue(source.origin == fuse::project::LegacySourceOrigin::Bundled,
-               "SpriteToy falls back to bundled stub when submodule absent");
-    expectTrue(source.goldenSubmoduleStatus != fuse::project::SubmodulePathStatus::Present,
-               "SpriteToy golden submodule status recorded when golden file missing");
-    expectTrue(!source.note.empty(), "SpriteToy fallback note explains golden-path status");
+    expectTrue(source.origin == fuse::project::LegacySourceOrigin::GoldenSubmodule,
+               "SpriteToy resolves the Samples golden reference");
+    expectTrue(source.goldenSubmoduleStatus == fuse::project::SubmodulePathStatus::Present,
+               "SpriteToy golden reference tree is present");
+    expectTrue(!source.note.empty(), "SpriteToy golden note recorded");
 }
 
-void testBundledSpriteToyFallback() {
+void testGoldenSpriteToyReference() {
     const fuse::project::LoadResult project =
         fuse::project::loadFromDirectory("Samples/unification/demo_2d_sprites");
     expectTrue(project.status == fuse::project::LoadStatus::Ok, "demo_2d_sprites loads");
@@ -74,12 +74,14 @@ void testBundledSpriteToyFallback() {
         project.manifest.projectRoot + "/worlds/sprite_toy_stub.fuselevel";
     const fuse::project::LegacySourceResolution source =
         fuse::project::resolveParityLegacySource(project.manifest, fuselevelPath, ".cs");
-    expectTrue(source.origin == fuse::project::LegacySourceOrigin::Bundled,
-               "SpriteToy falls back to bundled stub when submodule absent");
-    expectTrue(!source.path.empty(), "bundled SpriteToy stub path resolved");
+    expectTrue(source.origin == fuse::project::LegacySourceOrigin::GoldenSubmodule,
+               "SpriteToy resolves the Samples golden reference");
+    expectTrue(!source.path.empty(), "SpriteToy golden reference path resolved");
+    expectTrue(source.path.find("sprite_toy_stub.cs") != std::string::npos,
+               "SpriteToy golden path points at the bundled sample script");
 }
 
-void testBundledOutpostFallback() {
+void testGoldenOutpostReference() {
     const fuse::project::LoadResult project =
         fuse::project::loadFromDirectory("Samples/unification/demo_adventure_stub");
     expectTrue(project.status == fuse::project::LoadStatus::Ok, "demo_adventure_stub loads");
@@ -87,8 +89,8 @@ void testBundledOutpostFallback() {
     const std::string fuselevelPath = project.manifest.projectRoot + "/worlds/outpost.fuselevel";
     const fuse::project::LegacySourceResolution source =
         fuse::project::resolveParityLegacySource(project.manifest, fuselevelPath, ".mis");
-    expectTrue(source.origin == fuse::project::LegacySourceOrigin::Bundled,
-               "Outpost falls back to bundled stub when submodule absent");
+    expectTrue(source.origin == fuse::project::LegacySourceOrigin::GoldenSubmodule,
+               "Outpost resolves the Samples golden reference");
 }
 
 void testEnsure3DWorldFromBundledMis() {
@@ -102,7 +104,7 @@ void testEnsure3DWorldFromBundledMis() {
     expectTrue(prepared.entityCount >= 2u, "demo_3d_empty fuselevel has mission entities");
 }
 
-void testBundledAfxMinimalFallback() {
+void testGoldenAfxMinimalReference() {
     const fuse::project::LoadResult project =
         fuse::project::loadFromDirectory("Samples/unification/demo_fx");
     expectTrue(project.status == fuse::project::LoadStatus::Ok, "demo_fx loads");
@@ -110,12 +112,12 @@ void testBundledAfxMinimalFallback() {
     const std::string fuselevelPath = project.manifest.projectRoot + "/worlds/afx_minimal.fuselevel";
     const fuse::project::LegacySourceResolution source =
         fuse::project::resolveParityLegacySource(project.manifest, fuselevelPath, ".mis");
-    expectTrue(source.origin == fuse::project::LegacySourceOrigin::Bundled,
-               "AFX minimal falls back to bundled stub when submodule absent");
-    expectTrue(!source.note.empty(), "AFX minimal fallback note recorded");
+    expectTrue(source.origin == fuse::project::LegacySourceOrigin::GoldenSubmodule,
+               "AFX minimal resolves the Samples golden reference");
+    expectTrue(!source.note.empty(), "AFX minimal golden note recorded");
 }
 
-void testBundledBehaviorTestbedFallback() {
+void testGoldenBehaviorTestbedReference() {
     const fuse::project::LoadResult project =
         fuse::project::loadFromDirectory("Samples/unification/demo_ai_bt");
     expectTrue(project.status == fuse::project::LoadStatus::Ok, "demo_ai_bt loads");
@@ -124,11 +126,11 @@ void testBundledBehaviorTestbedFallback() {
         project.manifest.projectRoot + "/worlds/behavior_testbed.fuselevel";
     const fuse::project::LegacySourceResolution source =
         fuse::project::resolveParityLegacySource(project.manifest, fuselevelPath, ".mis");
-    expectTrue(source.origin == fuse::project::LegacySourceOrigin::Bundled,
-               "BehaviorTestbed falls back to bundled stub when submodule absent");
+    expectTrue(source.origin == fuse::project::LegacySourceOrigin::GoldenSubmodule,
+               "BehaviorTestbed resolves the Samples golden reference");
 }
 
-void testBundledVerveIntroFallback() {
+void testGoldenVerveIntroReference() {
     const fuse::project::LoadResult project =
         fuse::project::loadFromDirectory("Samples/unification/demo_timeline");
     expectTrue(project.status == fuse::project::LoadStatus::Ok, "demo_timeline loads");
@@ -136,8 +138,8 @@ void testBundledVerveIntroFallback() {
     const std::string fuselevelPath = project.manifest.projectRoot + "/worlds/verve_intro.fuselevel";
     const fuse::project::LegacySourceResolution source =
         fuse::project::resolveParityLegacySource(project.manifest, fuselevelPath, ".mis");
-    expectTrue(source.origin == fuse::project::LegacySourceOrigin::Bundled,
-               "Verve intro falls back to bundled stub when submodule absent");
+    expectTrue(source.origin == fuse::project::LegacySourceOrigin::GoldenSubmodule,
+               "Verve intro resolves the Samples golden reference");
 }
 
 void testEnsure2DWorldFromBundledCs() {
@@ -168,13 +170,13 @@ int main() {
     fuse::core::initialize();
     testRepositoryRootFromParityDemo();
     testSubmoduleDirectoryClassification();
-    testGoldenSubmoduleStatusOnSpriteToyFallback();
-    testBundledSpriteToyFallback();
-    testBundledOutpostFallback();
+    testGoldenReferenceStatusOnSpriteToy();
+    testGoldenSpriteToyReference();
+    testGoldenOutpostReference();
     testEnsure3DWorldFromBundledMis();
-    testBundledAfxMinimalFallback();
-    testBundledBehaviorTestbedFallback();
-    testBundledVerveIntroFallback();
+    testGoldenAfxMinimalReference();
+    testGoldenBehaviorTestbedReference();
+    testGoldenVerveIntroReference();
     testEnsure2DWorldFromBundledCs();
     testEnsure2DWorldFromAfxSpriteStub();
     fuse::core::shutdown();

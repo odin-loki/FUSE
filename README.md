@@ -14,9 +14,6 @@ One program for 2D, 3D, and hybrid worlds. ISO C++ host, handle-based ownership,
 [![FUSE CUDA compile-only (Linux)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-cuda-compile.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-cuda-compile.yml)
 [![FUSE Windows x64 (MinGW-w64 cross + Wine)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-cross.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-cross.yml)
 [![FUSE Windows x64 (MSVC native)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-native.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-native.yml)
-[![FUSE Linux Build](https://github.com/odin-loki/FUSE/actions/workflows/build-linux-gcc.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/build-linux-gcc.yml)
-[![FUSE macOS Build](https://github.com/odin-loki/FUSE/actions/workflows/build-macos-clang.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/build-macos-clang.yml)
-[![FUSE Windows Build](https://github.com/odin-loki/FUSE/actions/workflows/build-windows-msvc.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/build-windows-msvc.yml)
 [![FUSE Relight (MinGW-w64 cross + Wine/Xvfb/Lavapipe)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-relight-wine.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-relight-wine.yml)
 
 - Product docs: [`docs/README.md`](docs/README.md)
@@ -55,7 +52,7 @@ See [`docs/roadmap.md`](docs/roadmap.md) for the phase map.
 ## Quick start
 
 ```bash
-git clone --recurse-submodules https://github.com/odin-loki/FUSE.git
+git clone https://github.com/odin-loki/FUSE.git
 cd FUSE
 
 cmake -B build -G Ninja \
@@ -80,9 +77,7 @@ On Windows without Ninja, omit `-G Ninja` and pass `--config Release` to the bui
 
 ```
 Source/FUSE/          Product engine (C++23) — core, worlds, renderer, modules, editor, apps
-third_party/vendor/   Pinned third-party libraries
-third_party/stb/      STB image headers
-heritage/torque3d/    Torque3D reference source (not built by FUSE)
+vendor/               Pinned third-party libraries
 Samples/              Demo projects (`project.json`)
 Tools/FUSE/           Importers and cookers
 Tests/                Golden and integration fixtures

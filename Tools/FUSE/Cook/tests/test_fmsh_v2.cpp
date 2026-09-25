@@ -420,7 +420,7 @@ void test_assimp_import() {
     check(names, "material slot names from the MTL");
 
     // glTF skin (assimp's own test asset, MIT): joints + weights, ≤ 4 per vertex, summing to 1.
-    const std::string gltf = std::string(FUSE_SOURCE_DIR) + "/third_party/vendor/assimp/test/models/glTF2/simple_skin/simple_skin.gltf";
+    const std::string gltf = std::string(FUSE_SOURCE_DIR) + "/vendor/assimp/test/models/glTF2/simple_skin/simple_skin.gltf";
     if (std::filesystem::exists(gltf)) {
         MeshCookOptions skin;
         skin.import_skin = true;

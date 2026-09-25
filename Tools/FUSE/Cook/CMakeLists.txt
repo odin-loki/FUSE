@@ -108,7 +108,7 @@ else()
 endif()
 
 find_path(FUSE_ISPC_TEXCOMP_INCLUDE NAMES ispc_texcomp.h
-    PATHS "${CMAKE_SOURCE_DIR}/third_party/ispc_texcomp")
+    PATHS "${CMAKE_SOURCE_DIR}/vendor/ispc_texcomp")
 if(FUSE_ISPC_TEXCOMP_INCLUDE)
     target_compile_definitions(fuse_cook_stubs PUBLIC FUSE_HAS_ISPC_TEXCOMP=1)
     target_include_directories(fuse_cook_stubs PRIVATE "${FUSE_ISPC_TEXCOMP_INCLUDE}")

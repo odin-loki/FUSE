@@ -831,8 +831,8 @@ Violations checkCxxStandard(const fs::path& manifest, const fs::path& repo) {
             r = r.substr(repoGen.size());
         }
         // Torque quarantine is pinned to C++17 by design (Source/FUSE/CMakeLists.txt, FuseCxx23.cmake);
-        // third_party/vendor/* are vendored third-party C/C++ libraries built under fuse_* names.
-        if (r.rfind("/Source/FUSE/Legacy", 0) == 0 || r.rfind("/third_party/vendor/", 0) == 0) {
+        // vendor/* are vendored third-party C/C++ libraries built under fuse_* names.
+        if (r.rfind("/Source/FUSE/Legacy", 0) == 0 || r.rfind("/vendor/", 0) == 0) {
             continue;
         }
         ++checked;
@@ -1379,7 +1379,7 @@ bool selfTest(const std::string& check, const fs::path& scratch) {
                                   "Relight ImGui outside overlay/ flagged (got " + std::to_string(vb.size()) + ")");
         seedTree(good, {{"Editor/CMakeLists.txt", "target_link_libraries(fuse_editor PRIVATE Qt6::Widgets)\n"},
                         {"Relight/overlay/dev_menu.cpp", "#include <imgui.h>\n"},
-                        {"Relight/THIRD_PARTY.md", "| Dear ImGui | MIT | third_party/vendor/imgui |\n"}});
+                        {"Relight/THIRD_PARTY.md", "| Dear ImGui | MIT | vendor/imgui |\n"}});
         writeFile(scratch / "good.manifest", "fuse_editor|EXECUTABLE|/x|23|1|0|fuse_core,Qt6::Widgets|\n"
                                              "fuse_relight_overlay|STATIC_LIBRARY|/r/Source/FUSE/Relight/overlay|23|1|0|imgui|\n");
         const Violations vg = checkBannedDeps(good, scratch / "good.manifest");
@@ -1443,7 +1443,7 @@ bool selfTest(const std::string& check, const fs::path& scratch) {
         }
         const std::string goodRows = rows +
                                      "fuse_b7|STATIC_LIBRARY|/r/Source/FUSE/Core/b7|17|1|0||\n"
-                                     "fuse_lua|STATIC_LIBRARY|/r/third_party/vendor/lua||0|0||\n"
+                                     "fuse_lua|STATIC_LIBRARY|/r/vendor/lua||0|0||\n"
                                      "fuse_cuda_kernels|STATIC_LIBRARY|/r/Source/FUSE/Compute||0|1||\n"
                                      "fuse_headers|INTERFACE_LIBRARY|/r/Source/FUSE/Core||0|0||\n";
         writeFile(scratch / "bad.manifest", rows + "fuse_bad17|STATIC_LIBRARY|/r/Source/FUSE/ECS|17|1|0||\nfuse_unset|EXECUTABLE|/r/Tools/FUSE||1|0||\n");

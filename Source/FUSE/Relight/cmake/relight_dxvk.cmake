@@ -131,7 +131,7 @@ foreach(_part MAJOR MINOR PATCH)
 endforeach()
 list(JOIN _rl_pin_version "." _rl_pin_version)
 if(NOT _rl_pin_version STREQUAL _rl_release)
-    message(FATAL_ERROR "FUSE Relight: third_party/vendor/dxvk/RELEASE (${_rl_release}) != fuse_dxvk_version.h (${_rl_pin_version})")
+    message(FATAL_ERROR "FUSE Relight: vendor/dxvk/RELEASE (${_rl_release}) != fuse_dxvk_version.h (${_rl_pin_version})")
 endif()
 # meson's vcs_tag runs `git describe --dirty=+` in the DXVK checkout; the vendored tree is not one, so
 # the tag is the pinned release plus a FUSE marker (zlib clause 2: altered builds are marked).

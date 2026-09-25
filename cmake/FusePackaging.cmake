@@ -70,7 +70,7 @@ foreach(_entry IN LISTS FUSE_PACKAGE_THIRD_PARTY)
     string(REPLACE "=" ";" _kv "${_entry}")
     list(GET _kv 0 _name)
     list(GET _kv 1 _file)
-    install(FILES "${FUSE_VENDOR_DIR}/${_file}" DESTINATION "${_fuse_doc}/third_party/${_name}"
+    install(FILES "${FUSE_VENDOR_DIR}/${_file}" DESTINATION "${_fuse_doc}/vendor/${_name}"
         COMPONENT ${FUSE_PACKAGE_COMPONENT})
 endforeach()
 
@@ -162,7 +162,7 @@ foreach(_entry IN LISTS FUSE_PACKAGE_THIRD_PARTY)
     list(GET _kv 0 _name)
     list(GET _kv 1 _file)
     get_filename_component(_leaf "${_file}" NAME)
-    list(APPEND _fuse_expected "${_fuse_doc}/third_party/${_name}/${_leaf}")
+    list(APPEND _fuse_expected "${_fuse_doc}/vendor/${_name}/${_leaf}")
 endforeach()
 string(REPLACE ";" "|" _fuse_expected_arg "${_fuse_expected}")
 

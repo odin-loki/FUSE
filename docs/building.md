@@ -1,6 +1,6 @@
 # Building FUSE
 
-Root `CMakeLists.txt` configures the FUSE product graph: `fuse_core`, modules, Vulkan/CUDA, and native world/scene APIs under `Source/FUSE/`. Vendored deps live in `third_party/vendor/`. See [repository-layout.md](repository-layout.md).
+Root `CMakeLists.txt` configures the FUSE product graph: `fuse_core`, modules, Vulkan/CUDA, and native world/scene APIs under `Source/FUSE/`. Vendored deps live in `vendor/`. See [repository-layout.md](repository-layout.md).
 
 ## Prerequisites
 
@@ -37,7 +37,7 @@ git submodule update --init --recursive
 | `FUSE_SMOKE_ENABLE_ASAN` | OFF | AddressSanitizer on smoke (legacy; superseded by `FUSE_SANITIZE`) |
 | `FUSE_CORE_ENABLE_TSAN` | OFF | ThreadSanitizer on `fuse_core` tests |
 
-The full Torque3D/Torque2D **application** targets (`Engine/` exe, upstream `third_party/Torque2D`) are not part of this graph. World conversion and module bridges use native `fuse::world2d` / `fuse::scene` APIs.
+Legacy Torque3D/Torque2D application targets are not part of this graph. World conversion and module bridges use native `fuse::world2d` / `fuse::scene` APIs.
 
 ## Desktop (Linux example)
 
