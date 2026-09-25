@@ -28,6 +28,8 @@ public:
     static fuse::math::Vec3 apply(const fuse::math::Vec3& hdr, const BloomParams& params);
     /// Box-filter `src` (width x height) into `dst` at half resolution. Odd sizes are floored.
     static void downsampleBox(const fuse::math::Vec3* src, u32 width, u32 height, fuse::math::Vec3* dst);
+    /// Replicate `src` into a double-resolution `dst`. `dst` must be `(width * 2) * (height * 2)`.
+    static void upsampleBox(const fuse::math::Vec3* src, u32 width, u32 height, fuse::math::Vec3* dst);
 
 private:
     BloomParams m_params{};

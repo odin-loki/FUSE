@@ -56,4 +56,21 @@ void Bloom::downsampleBox(const fuse::math::Vec3* src, u32 width, u32 height, fu
     }
 }
 
+void Bloom::upsampleBox(const fuse::math::Vec3* src, u32 width, u32 height, fuse::math::Vec3* dst) {
+    if (src == nullptr || dst == nullptr || width == 0u || height == 0u) {
+        return;
+    }
+
+    const u32 dstWidth = width * 2u;
+    for (u32 y = 0; y < height; ++y) {
+        for (u32 x = 0; x < width; ++x) {
+            const fuse::math::Vec3 texel = src[y * width + x];
+            dst[(y * 2u) * dstWidth + (x * 2u)] = texel;
+            dst[(y * 2u) * dstWidth + (x * 2u + 1u)] = texel;
+            dst[(y * 2u + 1u) * dstWidth + (x * 2u)] = texel;
+            dst[(y * 2u + 1u) * dstWidth + (x * 2u + 1u)] = texel;
+        }
+    }
+}
+
 } // namespace fuse::renderer

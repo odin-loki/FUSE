@@ -52,6 +52,12 @@ void testBloomDownsampleAveragesQuad() {
     expectNear(dst.z, 2.f, 1e-4f, "bloom downsample averages blue");
     fuse::renderer::Bloom::downsampleBox(src, 1u, 1u, &dst);
     expectNear(dst.x, 2.f, 1e-4f, "bloom downsample ignores undersized sources");
+
+    const fuse::math::Vec3 coarse[1] = {{dst.x, dst.y, dst.z}};
+    fuse::math::Vec3 fine[4] = {};
+    fuse::renderer::Bloom::upsampleBox(coarse, 1u, 1u, fine);
+    expectNear(fine[0].x, 2.f, 1e-4f, "bloom upsample replicates red");
+    expectNear(fine[3].z, 2.f, 1e-4f, "bloom upsample replicates the last texel");
 }
 
 void testAcesTonemapClamps() {

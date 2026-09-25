@@ -32,6 +32,46 @@ u32 findShapeForBody(const CollisionShapeSoA& shapes, u32 bodyIndex, CollisionSh
     return shapes.count();
 }
 
+ContactManifold flipContactBodies(ContactManifold manifold, u32 bodyA, u32 bodyB) {
+    if (!manifold.valid) {
+        return invalidContactManifold();
+    }
+    manifold.contactNormal = manifold.contactNormal * -1.f;
+    manifold.bodyA = bodyA;
+    manifold.bodyB = bodyB;
+    return manifold;
+}
+
+ContactManifold collideCapsuleAgainstBox(vec3 capsulePos, vec3 capsuleParams, vec3 boxPos, vec3 boxHalfExtents,
+                                        u32 idxCapsule, u32 idxBox) {
+    const f32 radius = capsuleParams.x;
+    const f32 halfHeight = std::max(0.f, capsuleParams.y);
+    const vec3 samples[3] = {
+        capsulePos,
+        {capsulePos.x, capsulePos.y + halfHeight, capsulePos.z},
+        {capsulePos.x, capsulePos.y - halfHeight, capsulePos.z},
+    };
+
+    ContactManifold best{};
+    for (const vec3& sample : samples) {
+        const ContactManifold hit =
+            collideBoxSphere(sample, radius, boxPos, boxHalfExtents, idxCapsule, idxBox);
+        if (hit.valid && (!best.valid || hit.penetrationDepth > best.penetrationDepth)) {
+            best = hit;
+        }
+    }
+    return best;
+}
+
+ContactManifold collideHullPlane(vec3 hullPos, vec3 halfExtents, vec3 planeNormal, f32 planeDistance, u32 idxHull,
+                                 u32 idxPlane) {
+    const vec3 normal = planeNormal.normalized();
+    const f32 extent = std::fabs(normal.x) * halfExtents.x + std::fabs(normal.y) * halfExtents.y +
+                       std::fabs(normal.z) * halfExtents.z;
+    const vec3 closest = hullPos - normal * extent;
+    return collideSpherePlane(closest, 0.f, normal, planeDistance, idxHull, idxPlane);
+}
+
 void writeBoxCorners(vec3 center, vec3 halfExtents, vec3 out[8]) {
     u32 index = 0;
     for (f32 x = -1.f; x <= 1.f; x += 2.f) {
@@ -164,6 +204,40 @@ ContactManifold dispatchShapePair(
             shapes.params[shapeB],
             pair.bodyA,
             pair.bodyB);
+    }
+
+    if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::ConvexHull) {
+        return collideBoxSphere(posA, shapes.params[shapeA].x, posB, shapes.params[shapeB], pair.bodyA,
+                                pair.bodyB);
+    }
+
+    if (typeA == CollisionShapeType::ConvexHull && typeB == CollisionShapeType::Sphere) {
+        const ContactManifold swapped = collideBoxSphere(
+            posB, shapes.params[shapeB].x, posA, shapes.params[shapeA], pair.bodyB, pair.bodyA);
+        return flipContactBodies(swapped, pair.bodyA, pair.bodyB);
+    }
+
+    if (typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::ConvexHull) {
+        return collideCapsuleAgainstBox(posA, shapes.params[shapeA], posB, shapes.params[shapeB], pair.bodyA,
+                                        pair.bodyB);
+    }
+
+    if (typeA == CollisionShapeType::ConvexHull && typeB == CollisionShapeType::Capsule) {
+        const ContactManifold swapped = collideCapsuleAgainstBox(
+            posB, shapes.params[shapeB], posA, shapes.params[shapeA], pair.bodyB, pair.bodyA);
+        return flipContactBodies(swapped, pair.bodyA, pair.bodyB);
+    }
+
+    if (typeA == CollisionShapeType::ConvexHull && typeB == CollisionShapeType::Plane) {
+        return collideHullPlane(posA, shapes.params[shapeA], shapes.params[shapeB], shapes.scalars[shapeB],
+                                pair.bodyA, pair.bodyB);
+    }
+
+    if (typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::ConvexHull) {
+        const ContactManifold swapped =
+            collideHullPlane(posB, shapes.params[shapeB], shapes.params[shapeA], shapes.scalars[shapeA],
+                             pair.bodyB, pair.bodyA);
+        return flipContactBodies(swapped, pair.bodyA, pair.bodyB);
     }
 
     const bool convexA = typeA == CollisionShapeType::ConvexHull || typeA == CollisionShapeType::Box;
@@ -375,11 +449,26 @@ bool is_unsupported_shape_pair(
         }
     };
 
-    const bool convexPair = (typeA == CollisionShapeType::ConvexHull || typeA == CollisionShapeType::Box) &&
-                            (typeB == CollisionShapeType::ConvexHull || typeB == CollisionShapeType::Box) &&
-                            (typeA == CollisionShapeType::ConvexHull || typeB == CollisionShapeType::ConvexHull);
-    if (convexPair) {
-        return false;
+    const auto otherOfHull = [](CollisionShapeType typeA, CollisionShapeType typeB) -> CollisionShapeType {
+        if (typeA == CollisionShapeType::ConvexHull) {
+            return typeB;
+        }
+        if (typeB == CollisionShapeType::ConvexHull) {
+            return typeA;
+        }
+        return typeA;
+    };
+    if (typeA == CollisionShapeType::ConvexHull || typeB == CollisionShapeType::ConvexHull) {
+        switch (otherOfHull(typeA, typeB)) {
+        case CollisionShapeType::Sphere:
+        case CollisionShapeType::Box:
+        case CollisionShapeType::Capsule:
+        case CollisionShapeType::Plane:
+        case CollisionShapeType::ConvexHull:
+            return false;
+        default:
+            break;
+        }
     }
 
     if (!isSupported(typeA) || !isSupported(typeB)) {

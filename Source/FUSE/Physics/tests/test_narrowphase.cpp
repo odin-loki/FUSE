@@ -383,11 +383,18 @@ void testContactPairRejectReasonGuards() {
     shapes.addShape(fuse::physics::CollisionShapeType::ConvexHull, hullBody, {1.f, 0.f, 0.f});
     expectTrue(
         fuse::physics::narrowphase::contact_pair_reject_reason({bodyA, hullBody}, bodies, shapes) ==
-            fuse::physics::narrowphase::ContactPairRejectReason::UnsupportedShapePair,
-        "reject reason flags unsupported convex hull pair");
+            fuse::physics::narrowphase::ContactPairRejectReason::DegenerateShape,
+        "reject reason flags a flat convex hull as degenerate");
+
+    const fuse::u32 voxelBody = bodies.addBody({8.f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::Voxel, voxelBody, {1.f, 1.f, 1.f});
     expectTrue(
-        fuse::physics::narrowphase::is_unsupported_shape_pair({bodyA, hullBody}, shapes),
-        "unsupported shape guard flags convex hull dispatch gap");
+        fuse::physics::narrowphase::contact_pair_reject_reason({bodyA, voxelBody}, bodies, shapes) ==
+            fuse::physics::narrowphase::ContactPairRejectReason::UnsupportedShapePair,
+        "reject reason flags unsupported voxel pair");
+    expectTrue(
+        fuse::physics::narrowphase::is_unsupported_shape_pair({bodyA, voxelBody}, shapes),
+        "unsupported shape guard flags voxel dispatch gap");
 
     const auto triggerPair =
         fuse::physics::narrowphase::detect_contacts_pair({triggerA, triggerB}, bodies, shapes);
@@ -1452,6 +1459,26 @@ void testConvexHullPairUsesEpa() {
     expectNear(manifold.penetrationDepth, 0.5f, 0.05f, "convex hull penetration is the half-unit overlap");
 }
 
+void testSphereAndCapsuleHitConvexHull() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 hull = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 sphere = bodies.addBody({0.8f, 0.f, 0.f}, 1.f);
+    const fuse::u32 capsule = bodies.addBody({0.f, 0.9f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::ConvexHull, hull, {0.5f, 0.5f, 0.5f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Sphere, sphere, {0.5f, 0.f, 0.f});
+    shapes.addShape(fuse::physics::CollisionShapeType::Capsule, capsule, {0.4f, 0.2f, 0.f});
+
+    const auto sphereHit = fuse::physics::narrowphase::detect_contacts_pair({sphere, hull}, bodies, shapes);
+    expectTrue(sphereHit.valid, "sphere overlaps a convex hull");
+    expectTrue(sphereHit.penetrationDepth > 0.1f, "sphere-hull penetration is positive");
+    expectTrue(sphereHit.bodyA == sphere && sphereHit.bodyB == hull, "sphere-hull stores body order");
+
+    const auto capsuleHit = fuse::physics::narrowphase::detect_contacts_pair({capsule, hull}, bodies, shapes);
+    expectTrue(capsuleHit.valid, "capsule overlaps the top of a convex hull");
+    expectTrue(capsuleHit.penetrationDepth > 0.f, "capsule-hull penetration is positive");
+}
+
 void testContactPairDeepenFollowUpRejectGuards() {
     fuse::physics::RigidBodySoA bodies;
     fuse::physics::CollisionShapeSoA shapes;
@@ -1851,6 +1878,7 @@ int main() {
     testFrictionBasisDeepenPassPreflights();
     testGjkSupportAndEpaStub();
     testConvexHullPairUsesEpa();
+    testSphereAndCapsuleHitConvexHull();
     testContactPairDeepenFollowUpRejectGuards();
     testManifoldPruneFinalizeFollowUpGuards();
     testFrictionBasisFollowUpRejectGuards();
