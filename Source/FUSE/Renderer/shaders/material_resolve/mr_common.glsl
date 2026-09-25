@@ -17,9 +17,11 @@
 #define FUSE_MR_BIN_NORMAL_MAPPED 3u
 #define FUSE_MR_BIN_COUNT 4u
 #define FUSE_MR_BIN_UBER 4u
+#define FUSE_MR_BIN_LAYERED 5u // asset W0.7 layered materials (resolve_types.hpp kBinLayered)
 #define FUSE_MR_TILE 8u
 #define FUSE_MR_FEATURE_TEXTURES 1u
 #define FUSE_MR_FEATURE_NORMAL_MAP 2u
+#define FUSE_MR_FEATURE_LAYERED 4u
 #define FUSE_MR_ATTR_EMPTY 0u
 #define FUSE_MR_ATTR_OK 1u
 #define FUSE_MR_ATTR_BAD_ID 2u
@@ -41,7 +43,7 @@ struct FuseMrFrame {
     uint tileCapacity;
     uint64_t bins;
     uint binsHandle;
-    uint flags;
+    uint layered; // bindless storage-buffer handle of the layered-material table (MlResolveTable), 0 = none
 };
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseMrFrameRef { FuseMrFrame f; };
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseMrBinsRef { uint words[]; };
@@ -51,6 +53,22 @@ layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer Fu
 uint fuse_mr_bin_features(uint bin) {
     return bin >= FUSE_MR_BIN_NORMAL_MAPPED ? (FUSE_MR_FEATURE_TEXTURES | FUSE_MR_FEATURE_NORMAL_MAP)
                                             : (bin == FUSE_MR_BIN_TEXTURED ? FUSE_MR_FEATURE_TEXTURES : 0u);
+}
+
+// resolve_types.hpp resolve_features: + the layered evaluation for the layered bin and the uber path.
+uint fuse_mr_resolve_features(uint bin) {
+    return bin >= FUSE_MR_BIN_UBER ? (FUSE_MR_FEATURE_TEXTURES | FUSE_MR_FEATURE_NORMAL_MAP | FUSE_MR_FEATURE_LAYERED)
+                                   : fuse_mr_bin_features(bin);
+}
+
+// Bin-buffer words of bin `bin`'s VkDrawIndirectCommand and tile list (ResolveBinLayout::argsOffset / listOffset:
+// the layered bin is appended after the four feature-bin lists).
+uint fuse_mr_bin_args_word(uint bin, uint tileCapacity) {
+    return bin == FUSE_MR_BIN_LAYERED ? FUSE_MR_BIN_LIST_OFFSET_WORDS + 4u * tileCapacity : bin * 4u;
+}
+uint fuse_mr_bin_list_word(uint bin, uint tileCapacity) {
+    return bin == FUSE_MR_BIN_LAYERED ? FUSE_MR_BIN_LIST_OFFSET_WORDS + 4u * tileCapacity + 4u
+                                      : FUSE_MR_BIN_LIST_OFFSET_WORDS + bin * tileCapacity;
 }
 
 // --- vertices ------------------------------------------------------------------------------------
@@ -106,6 +124,14 @@ FuseMrVertex fuse_mr_vertex(FuseGpuMesh mesh, uint v) {
 }
 
 // --- transforms ----------------------------------------------------------------------------------
+vec3 fuse_mr_transform_point(FuseGpuTransform t, vec3 p) {
+    precise vec3 r;
+    r.x = t.rows[0].x * p.x + t.rows[0].y * p.y + t.rows[0].z * p.z + t.rows[0].w;
+    r.y = t.rows[1].x * p.x + t.rows[1].y * p.y + t.rows[1].z * p.z + t.rows[1].w;
+    r.z = t.rows[2].x * p.x + t.rows[2].y * p.y + t.rows[2].z * p.z + t.rows[2].w;
+    return r;
+}
+
 vec3 fuse_mr_transform_vector(FuseGpuTransform t, vec3 v) {
     precise vec3 r;
     r.x = t.rows[0].x * v.x + t.rows[0].y * v.y + t.rows[0].z * v.z;
@@ -205,6 +231,9 @@ float fuse_mr_interp(vec3 b, float a0, float a1, float a2) {
 
 // --- materials -----------------------------------------------------------------------------------
 uint fuse_mr_material_bin(FuseGpuMaterial m) {
+    if ((m.flags & FUSE_GPU_MATERIAL_LAYERED) != 0u) {
+        return FUSE_MR_BIN_LAYERED;
+    }
     if (m.normal_tex != FUSE_INVALID_TEXTURE) {
         return FUSE_MR_BIN_NORMAL_MAPPED;
     }
@@ -283,6 +312,9 @@ struct FuseMrAttributes {
     vec2 velocity; // pixels, current - previous
     uint material;
     uint bin;
+    vec3 position; // world position of the surface point + per-pixel derivatives (layered bin)
+    vec3 dPdx;
+    vec3 dPdy;
 };
 
 FuseMrAttributes fuse_mr_attributes(FuseGpuSceneHeaderRef scene, FuseMrFrame f, uvec2 pixel, uvec2 vis) {
@@ -303,6 +335,9 @@ FuseMrAttributes fuse_mr_attributes(FuseGpuSceneHeaderRef scene, FuseMrFrame f, 
     r.velocity = vec2(0.0);
     r.material = FUSE_MR_NO_MATERIAL;
     r.bin = FUSE_MR_BIN_EMPTY;
+    r.position = vec3(0.0);
+    r.dPdx = vec3(0.0);
+    r.dPdy = vec3(0.0);
     if (vis.x == FUSE_VIS_INVALID) {
         return r;
     }
@@ -357,6 +392,16 @@ FuseMrAttributes fuse_mr_attributes(FuseGpuSceneHeaderRef scene, FuseMrFrame f, 
     r.tangent = vec3(fuse_mr_interp(b.b, tg[0].x, tg[1].x, tg[2].x), fuse_mr_interp(b.b, tg[0].y, tg[1].y, tg[2].y),
                      fuse_mr_interp(b.b, tg[0].z, tg[1].z, tg[2].z));
     r.tangentSign = v[0].sign_ * fuse_mr_det_sign(t);
+    vec3 w[3];
+    for (uint k = 0u; k < 3u; ++k) {
+        w[k] = fuse_mr_transform_point(t, v[k].position);
+    }
+    r.position = vec3(fuse_mr_interp(b.b, w[0].x, w[1].x, w[2].x), fuse_mr_interp(b.b, w[0].y, w[1].y, w[2].y),
+                      fuse_mr_interp(b.b, w[0].z, w[1].z, w[2].z));
+    r.dPdx = vec3(fuse_mr_interp(b.dbdx, w[0].x, w[1].x, w[2].x), fuse_mr_interp(b.dbdx, w[0].y, w[1].y, w[2].y),
+                  fuse_mr_interp(b.dbdx, w[0].z, w[1].z, w[2].z));
+    r.dPdy = vec3(fuse_mr_interp(b.dbdy, w[0].x, w[1].x, w[2].x), fuse_mr_interp(b.dbdy, w[0].y, w[1].y, w[2].y),
+                  fuse_mr_interp(b.dbdy, w[0].z, w[1].z, w[2].z));
     const float px = fuse_mr_interp(b.b, pc[0].x, pc[1].x, pc[2].x);
     const float py = fuse_mr_interp(b.b, pc[0].y, pc[1].y, pc[2].y);
     const float pw = fuse_mr_interp(b.b, pc[0].w, pc[1].w, pc[2].w);

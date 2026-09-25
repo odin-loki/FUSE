@@ -8,6 +8,7 @@
 #include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/renderer/geometry/meshlet_format.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
+#include <fuse/renderer/material_layers/ml_kernel.hpp>
 #include <fuse/renderer/material_resolve/resolve_kernel.hpp>
 #include <fuse/renderer/material_resolve/resolve_types.hpp>
 
@@ -51,5 +52,28 @@ void classify_reference(const ResolveSceneView& scene, const u32* vis, u32 width
 
 /// Sorted packed tiles (pack_tile) of each bin, from per-tile bins.
 void tile_lists(const std::vector<u32>& tileBins, u32 tilesX, std::vector<u32> (&lists)[kBinCount]);
+/// Sorted packed tiles of the layered bin (kBinLayered), from per-tile bins.
+void layered_tile_list(const std::vector<u32>& tileBins, u32 tilesX, std::vector<u32>& list);
+
+// --- layered bin (asset W0.7) ---------------------------------------------------------------------
+/// What the layered bin hands the layered-material evaluation for one pixel (mr_layered.glsl
+/// fuse_mr_layered_surface): world position + per-pixel derivatives (the visibility buffer's triangle through
+/// the analytic barycentric derivatives), interpolated world normal / tangent / bitangent sign, UV0 +
+/// derivatives, view distance |P - camera centre| (resolve_kernel::camera_centre; 0 without a finite centre),
+/// the row's layered-table index (GPUMaterial::padding) and vertex colour (1, 1, 1, 1): the meshlet streams
+/// carry no colour stream, so vertex-colour layer masks read their coverage.
+struct LayeredSurface {
+    bool valid = false; ///< the pixel reconstructs and its material row is layered
+    u32 row = kNoMaterial;
+    material_layers::MlSurface surface{};
+    material_layers::MlGrad grad{};
+};
+
+/// The layered surface of one pixel (false: not a layered pixel).
+bool layered_surface(const resolve_kernel::Params& p, u32 x, u32 y, u32 instance, u32 triangle, LayeredSurface& out);
+
+/// layered_surface for every pixel of a row-major R32G32 visibility image.
+void layered_surfaces_reference(const ResolveSceneView& scene, const f32 viewProj[16], const f32 prevViewProj[16],
+                                const u32* vis, u32 width, u32 height, std::vector<LayeredSurface>& out);
 
 } // namespace fuse::renderer::material_resolve

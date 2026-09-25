@@ -5,6 +5,7 @@
 #include "vis_common.slang"
 #include "mr_gbuffer.slang"
 #include "mr_common.slang"
+#include "mr_layered.slang"
 
 struct MrPush {
     uint64_t frame; // BDA of ResolveFrameConstants

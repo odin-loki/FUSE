@@ -10,9 +10,11 @@ static const uint kFuseMrBinTextured = 2u;
 static const uint kFuseMrBinNormalMapped = 3u;
 static const uint kFuseMrBinCount = 4u;
 static const uint kFuseMrBinUber = 4u;
+static const uint kFuseMrBinLayered = 5u; // asset W0.7 layered materials (resolve_types.hpp kBinLayered)
 static const uint kFuseMrTile = 8u;
 static const uint kFuseMrFeatureTextures = 1u;
 static const uint kFuseMrFeatureNormalMap = 2u;
+static const uint kFuseMrFeatureLayered = 4u;
 static const uint kFuseMrAttrEmpty = 0u;
 static const uint kFuseMrAttrOk = 1u;
 static const uint kFuseMrAttrBadId = 2u;
@@ -37,12 +39,25 @@ struct MrFrame {
     uint tileCapacity;
     uint64_t bins;
     uint binsHandle;
-    uint flags;
+    uint layered; // bindless storage-buffer handle of the layered-material table (MlResolveTable), 0 = none
 };
 
 uint fuseMrBinFeatures(uint bin) {
     return bin >= kFuseMrBinNormalMapped ? (kFuseMrFeatureTextures | kFuseMrFeatureNormalMap)
                                          : (bin == kFuseMrBinTextured ? kFuseMrFeatureTextures : 0u);
+}
+
+uint fuseMrResolveFeatures(uint bin) {
+    return bin >= kFuseMrBinUber ? (kFuseMrFeatureTextures | kFuseMrFeatureNormalMap | kFuseMrFeatureLayered)
+                                 : fuseMrBinFeatures(bin);
+}
+
+uint fuseMrBinArgsWord(uint bin, uint tileCapacity) {
+    return bin == kFuseMrBinLayered ? kFuseMrBinListOffsetWords + 4u * tileCapacity : bin * 4u;
+}
+uint fuseMrBinListWord(uint bin, uint tileCapacity) {
+    return bin == kFuseMrBinLayered ? kFuseMrBinListOffsetWords + 4u * tileCapacity + 4u
+                                    : kFuseMrBinListOffsetWords + bin * tileCapacity;
 }
 
 // --- vertices ------------------------------------------------------------------------------------
@@ -94,6 +109,14 @@ MrVertex fuseMrVertex(GpuMesh mesh, uint v) {
 }
 
 // --- transforms ----------------------------------------------------------------------------------
+float3 fuseMrTransformPoint(GpuTransform t, float3 p) {
+    float3 r;
+    r.x = t.rows[0].x * p.x + t.rows[0].y * p.y + t.rows[0].z * p.z + t.rows[0].w;
+    r.y = t.rows[1].x * p.x + t.rows[1].y * p.y + t.rows[1].z * p.z + t.rows[1].w;
+    r.z = t.rows[2].x * p.x + t.rows[2].y * p.y + t.rows[2].z * p.z + t.rows[2].w;
+    return r;
+}
+
 float3 fuseMrTransformVector(GpuTransform t, float3 v) {
     float3 r;
     r.x = t.rows[0].x * v.x + t.rows[0].y * v.y + t.rows[0].z * v.z;
@@ -179,6 +202,9 @@ float fuseMrInterp(float3 b, float a0, float a1, float a2) { return b.x * a0 + b
 
 // --- materials -----------------------------------------------------------------------------------
 uint fuseMrMaterialBin(GpuMaterial m) {
+    if ((m.flags & kFuseGpuMaterialLayered) != 0u) {
+        return kFuseMrBinLayered;
+    }
     if (m.normal_tex != kFuseInvalidTexture) {
         return kFuseMrBinNormalMapped;
     }
@@ -253,6 +279,9 @@ struct MrAttributes {
     float2 velocity;
     uint material;
     uint bin;
+    float3 position; // world position of the surface point + per-pixel derivatives (layered bin)
+    float3 dPdx;
+    float3 dPdy;
 };
 
 MrAttributes fuseMrAttributes(GpuSceneHeader* scene, MrFrame f, uint2 pixel, uint2 vis) {
@@ -273,6 +302,9 @@ MrAttributes fuseMrAttributes(GpuSceneHeader* scene, MrFrame f, uint2 pixel, uin
     r.velocity = float2(0.0);
     r.material = kFuseMrNoMaterial;
     r.bin = kFuseMrBinEmpty;
+    r.position = float3(0.0);
+    r.dPdx = float3(0.0);
+    r.dPdy = float3(0.0);
     if (vis.x == kFuseVisInvalid) {
         return r;
     }
@@ -323,6 +355,16 @@ MrAttributes fuseMrAttributes(GpuSceneHeader* scene, MrFrame f, uint2 pixel, uin
     r.tangent = float3(fuseMrInterp(b.b, tg[0].x, tg[1].x, tg[2].x), fuseMrInterp(b.b, tg[0].y, tg[1].y, tg[2].y),
                        fuseMrInterp(b.b, tg[0].z, tg[1].z, tg[2].z));
     r.tangentSign = v[0].sign_ * fuseMrDetSign(t);
+    float3 w[3];
+    for (uint k = 0u; k < 3u; ++k) {
+        w[k] = fuseMrTransformPoint(t, v[k].position);
+    }
+    r.position = float3(fuseMrInterp(b.b, w[0].x, w[1].x, w[2].x), fuseMrInterp(b.b, w[0].y, w[1].y, w[2].y),
+                        fuseMrInterp(b.b, w[0].z, w[1].z, w[2].z));
+    r.dPdx = float3(fuseMrInterp(b.dbdx, w[0].x, w[1].x, w[2].x), fuseMrInterp(b.dbdx, w[0].y, w[1].y, w[2].y),
+                    fuseMrInterp(b.dbdx, w[0].z, w[1].z, w[2].z));
+    r.dPdy = float3(fuseMrInterp(b.dbdy, w[0].x, w[1].x, w[2].x), fuseMrInterp(b.dbdy, w[0].y, w[1].y, w[2].y),
+                    fuseMrInterp(b.dbdy, w[0].z, w[1].z, w[2].z));
     const float px = fuseMrInterp(b.b, pc[0].x, pc[1].x, pc[2].x);
     const float py = fuseMrInterp(b.b, pc[0].y, pc[1].y, pc[2].y);
     const float pw = fuseMrInterp(b.b, pc[0].w, pc[1].w, pc[2].w);

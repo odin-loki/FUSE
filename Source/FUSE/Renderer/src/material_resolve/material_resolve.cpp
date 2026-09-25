@@ -336,8 +336,8 @@ bool MaterialResolve::createPipelines() {
     if (!compute(k.classify, m_classifyPipeline) || !compute(k.attributes, m_attributesPipeline)) {
         return false;
     }
-    static constexpr u32 kBins[kBinCount + 1u] = {kBinEmpty, kBinFlat, kBinTextured, kBinNormalMapped, kBinUber};
-    for (u32 b = 0; b <= kBinCount; ++b) {
+    static constexpr u32 kBins[kBinLayered + 1u] = {kBinEmpty, kBinFlat, kBinTextured, kBinNormalMapped, kBinUber, kBinLayered};
+    for (u32 b = 0; b <= kBinLayered; ++b) {
         if (!graphics(k.resolveVs, k.resolveFs, &kBins[b], false, m_resolvePipelines[b])) {
             return false;
         }
@@ -376,7 +376,7 @@ bool MaterialResolve::createTargets(Targets& t, u32 width, u32 height) {
     }
     const u32 tiles = ((width + kTileSize - 1u) / kTileSize) * ((height + kTileSize - 1u) / kTileSize);
     BufferDesc bins{};
-    bins.size = static_cast<usize>(ResolveBinLayout::bytes(tiles));
+    bins.size = static_cast<usize>(ResolveBinLayout::totalBytes(tiles));
     bins.usage = bufferUsage({BufferUsage::Storage, BufferUsage::Indirect, BufferUsage::TransferDst, BufferUsage::TransferSrc,
                               BufferUsage::ShaderDeviceAddress});
     bins.memoryUsage = MemoryUsage::GpuOnly;
@@ -474,6 +474,7 @@ bool MaterialResolve::beginFrame(u64 frameSerial, const ResolveFrameDesc& frame)
     c.tileCapacity = c.tilesX * c.tilesY;
     c.bins = m_targets.bins.deviceAddress;
     c.binsHandle = m_desc.bindless->shaderHandle(m_targets.binsSlot);
+    c.layered = frame.layered;
     const u64 offset = (frameSerial % m_desc.framesInFlight) * kFrameStride;
     std::memcpy(static_cast<u8*>(m_frameRing.mapped) + offset, &c, sizeof(c));
     m_frameAddress = m_frameRing.deviceAddress + offset;
@@ -525,7 +526,7 @@ MaterialResolve::PassRecord* MaterialResolve::nextRecord() {
 }
 
 void MaterialResolve::addResolve(rg::Graph& graph, const ResolveGraphRefs& refs, rg::TextureRef vis,
-                                 const gpu_scene::GpuSceneGraphRefs& scene, ResolvePath path) {
+                                 const gpu_scene::GpuSceneGraphRefs& scene, ResolvePath path, rg::BufferRef layeredTable) {
     if (!m_initialized || !vis.valid() || !refs.bins.valid() || m_recordCount + 3u > kMaxPasses) {
         return;
     }
@@ -553,6 +554,9 @@ void MaterialResolve::addResolve(rg::Graph& graph, const ResolveGraphRefs& refs,
     }
     if (binned) {
         pass.use(refs.bins, rg::Access::IndirectRead).use(refs.bins, rg::Access::StorageRead, {}, rg::kStageVertex);
+    }
+    if (layeredTable.valid()) {
+        pass.use(layeredTable, rg::Access::StorageRead, {}, rg::kStageFragment);
     }
     for (const rg::TextureRef& t : refs.gbuffer) {
         pass.use(t, rg::Access::ColorAttachmentWrite);
@@ -623,6 +627,11 @@ void MaterialResolve::recordReset(const rg::PassContext& context, void* user) {
                   "reset block: args then the draw count");
     vkCmdUpdateBuffer(static_cast<VkCommandBuffer>(context.commandBuffer), static_cast<VkBuffer>(context.buffer(r.refs.bins)),
                       0, sizeof(kReset), kReset);
+    // The layered bin's VkDrawIndirectCommand, appended after the four tile lists.
+    static constexpr u32 kResetLayered[ResolveBinLayout::kArgsStride / 4u] = {ResolveBinLayout::kVerticesPerTile, 0u, 0u, 0u};
+    const u32 tileCapacity = r.self->tilesX() * r.self->tilesY();
+    vkCmdUpdateBuffer(static_cast<VkCommandBuffer>(context.commandBuffer), static_cast<VkBuffer>(context.buffer(r.refs.bins)),
+                      ResolveBinLayout::layeredArgsOffset(tileCapacity), sizeof(kResetLayered), kResetLayered);
 #else
     (void)context;
     (void)user;
@@ -694,9 +703,11 @@ void MaterialResolve::recordResolve(const rg::PassContext& context, void* user) 
         // vkCmdDrawIndirect: Lavapipe's vkCmdDrawIndirect inherits the indirect draw-count buffer of an
         // earlier *IndirectCount draw in the command buffer (the visibility pass's), see ResolveBinLayout.
         const VkBuffer bins = static_cast<VkBuffer>(context.buffer(r.refs.bins));
-        for (u32 b = 0; b < kBinCount; ++b) {
+        const u32 tileCapacity = self.tilesX() * self.tilesY();
+        static constexpr u32 kDrawBins[kBinDrawCount] = {kBinEmpty, kBinFlat, kBinTextured, kBinNormalMapped, kBinLayered};
+        for (const u32 b : kDrawBins) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, static_cast<VkPipeline>(self.m_resolvePipelines[b]));
-            vkCmdDrawIndirectCount(cmd, bins, static_cast<VkDeviceSize>(b) * ResolveBinLayout::kArgsStride, bins,
+            vkCmdDrawIndirectCount(cmd, bins, static_cast<VkDeviceSize>(ResolveBinLayout::argsOffset(b, tileCapacity)), bins,
                                    ResolveBinLayout::kDrawCountOffset, 1u, ResolveBinLayout::kArgsStride);
         }
     } else {

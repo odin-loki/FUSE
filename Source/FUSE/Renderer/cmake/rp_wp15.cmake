@@ -70,6 +70,8 @@ set(_fuse_wp15_shd "${_fuse_wp15_root}/shaders/material_resolve")
 set(_fuse_wp15_vis_shd "${_fuse_wp15_root}/shaders/visbuffer")
 set(_fuse_wp15_scene_inc "${_fuse_wp15_root}/include/fuse/renderer/gpu_scene")
 set(_fuse_wp15_common_inc "${_fuse_wp15_root}/shaders/common")
+# Asset W0.7 layered bin: mr_layered.{glsl,slang} include shaders/material_layers/ml_common.{glsl,slang}.
+set(_fuse_wp15_ml_shd "${_fuse_wp15_root}/shaders/material_layers")
 
 file(GLOB _fuse_wp15_shader_files CONFIGURE_DEPENDS "${_fuse_wp15_shd}/*")
 add_library(fuse_material_resolve STATIC
@@ -95,7 +97,7 @@ set(_fuse_wp15_header "${_fuse_wp15_gen}/material_resolve_spv.h")
 add_custom_target(fuse_material_resolve_kernels)
 set(_fuse_wp15_embed_args "")
 set(_fuse_wp15_embed_deps "")
-file(GLOB _fuse_wp15_glsl_includes "${_fuse_wp15_shd}/*.glsl" "${_fuse_wp15_vis_shd}/*.glsl")
+file(GLOB _fuse_wp15_glsl_includes "${_fuse_wp15_shd}/*.glsl" "${_fuse_wp15_vis_shd}/*.glsl" "${_fuse_wp15_ml_shd}/*.glsl")
 
 foreach(_row IN LISTS _fuse_wp15_kernels)
     string(REPLACE "|" ";" _entry "${_row}")
@@ -109,7 +111,7 @@ foreach(_row IN LISTS _fuse_wp15_kernels)
             SOURCES "${_fuse_wp15_shd}/${_slang}"
             STAGE ${_stage}
             SUFFIX ".${_suffix}"
-            INCLUDE_DIRS "${_fuse_wp15_scene_inc}" "${_fuse_wp15_vis_shd}" "${_fuse_wp15_shd}"
+            INCLUDE_DIRS "${_fuse_wp15_scene_inc}" "${_fuse_wp15_vis_shd}" "${_fuse_wp15_shd}" "${_fuse_wp15_ml_shd}"
             # 39001: the bindless arrays alias one binding on purpose; 41012: the fragment stage's
             # implicit capability upgrade (derivative control etc. are declared, not used).
             FLAGS -warnings-disable 39001 -warnings-disable 41012 -fp-mode precise
@@ -123,7 +125,7 @@ foreach(_row IN LISTS _fuse_wp15_kernels)
     if(FUSE_GLSLANG_VALIDATOR)
         set(_out "${_fuse_wp15_spv}/${_suffix}.glsl.spv")
         set(_cmds COMMAND "${FUSE_GLSLANG_VALIDATOR}" --target-env vulkan1.3 "-I${_fuse_wp15_common_inc}"
-                          "-I${_fuse_wp15_scene_inc}" "-I${_fuse_wp15_vis_shd}" "-I${_fuse_wp15_shd}"
+                          "-I${_fuse_wp15_scene_inc}" "-I${_fuse_wp15_vis_shd}" "-I${_fuse_wp15_shd}" "-I${_fuse_wp15_ml_shd}"
                           "${_fuse_wp15_shd}/${_glsl}" -o "${_out}")
         if(FUSE_SPIRV_VAL)
             list(APPEND _cmds COMMAND "${FUSE_SPIRV_VAL}" --target-env vulkan1.3 "${_out}")
@@ -189,3 +191,44 @@ set_tests_properties(${_fuse_wp15_vk_tests} PROPERTIES
     SKIP_RETURN_CODE 77
     TIMEOUT 900
     LABELS "gate;vulkan;renderer;material_resolve")
+
+# --- Asset W0.7 integration: the layered-material bin (material_layers/ x material_resolve/) --------------------
+# CPU gates (stub tree too) and Lavapipe gates of the layered bin; the golden G-buffer image lives next to the W0.7
+# fixtures (tests/material_layers/resolve_layered_gbuffer.png).
+set(_fuse_wp15_ml_fixtures "${_fuse_wp15_tests_dir}/material_layers")
+add_executable(fuse_rp_material_resolve_layered_cpu ${_fuse_wp15_tests_dir}/test_rp_material_resolve_layered_cpu.cpp)
+target_link_libraries(fuse_rp_material_resolve_layered_cpu PRIVATE fuse_material_resolve fuse_material_layers)
+target_compile_definitions(fuse_rp_material_resolve_layered_cpu PRIVATE
+    FUSE_RP_MR_SHADER_DIR="${_fuse_wp15_shd}" FUSE_RP_ML_SHADER_DIR="${_fuse_wp15_ml_shd}"
+    FUSE_RP_SCENE_SHADER_DIR="${_fuse_wp15_scene_inc}" FUSE_RP_ML_FIXTURE_DIR="${_fuse_wp15_ml_fixtures}")
+fuse_apply_cxx23(fuse_rp_material_resolve_layered_cpu)
+foreach(_suite layout mips surface classify api)
+    add_test(NAME fuse_rp_material_resolve_layered_${_suite} COMMAND fuse_rp_material_resolve_layered_cpu ${_suite})
+    set_tests_properties(fuse_rp_material_resolve_layered_${_suite} PROPERTIES
+        LABELS "gate;renderer;material_resolve;material_layers" TIMEOUT 600)
+endforeach()
+
+add_executable(fuse_rp_material_resolve_layered ${_fuse_wp15_tests_dir}/test_rp_material_resolve_layered.cpp)
+target_link_libraries(fuse_rp_material_resolve_layered PRIVATE fuse_material_resolve fuse_material_layers)
+target_compile_definitions(fuse_rp_material_resolve_layered PRIVATE FUSE_RP_ML_FIXTURE_DIR="${_fuse_wp15_ml_fixtures}"
+                                                                    FUSE_RP_MRL_OUTPUT_DIR="${CMAKE_CURRENT_BINARY_DIR}")
+fuse_apply_cxx23(fuse_rp_material_resolve_layered)
+set(_fuse_wp15_layered_tests "")
+foreach(_case "parity;set" "parity;buffer" "golden;set" "zero_alloc;set")
+    list(GET _case 0 _mode)
+    list(GET _case 1 _backend)
+    set(_name "fuse_rp_material_resolve_layered_vk_${_mode}_${_backend}")
+    if(FUSE_VULKAN_BACKEND)
+        add_test(NAME ${_name}
+                 COMMAND "${_fuse_wp15_lock}" "$<TARGET_FILE:fuse_rp_material_resolve_layered>" --mode ${_mode} --backend ${_backend})
+    else()
+        add_test(NAME ${_name} COMMAND fuse_rp_material_resolve_layered --mode ${_mode} --backend ${_backend})
+    endif()
+    list(APPEND _fuse_wp15_layered_tests ${_name})
+endforeach()
+set_tests_properties(${_fuse_wp15_layered_tests} PROPERTIES
+    ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+    RUN_SERIAL TRUE
+    SKIP_RETURN_CODE 77
+    TIMEOUT 900
+    LABELS "gate;vulkan;renderer;material_resolve;material_layers")

@@ -1,8 +1,10 @@
 // Asset plan W0.7 layered materials on Vulkan: see include/fuse/renderer/material_layers/material_layers.hpp.
 #include <fuse/renderer/material_layers/material_layers.hpp>
 
+#include <fuse/renderer/material_layers/ml_mips.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/device.hpp>
+#include <fuse/renderer/vk/upload_queue.hpp>
 
 #include <algorithm>
 #include <cstring>
@@ -119,7 +121,20 @@ void MaterialLayers::destroy() {
     }
 #if defined(FUSE_VULKAN_BACKEND)
     collectRetired(~0ull);
-    for (Buffer* b : {&m_library, &m_image, &m_frameRing}) {
+    for (BindlessSlotHandle& slot : m_resolveImageSlots) {
+        if (slot.isValid()) {
+            m_desc.bindless->unregisterSlot(slot);
+        }
+    }
+    if (m_resolveTableSlot.isValid()) {
+        m_desc.bindless->unregisterSlot(m_resolveTableSlot);
+    }
+    for (Texture& image : m_resolveImages) {
+        if (image.image != nullptr) {
+            m_desc.allocator->destroyImage(image);
+        }
+    }
+    for (Buffer* b : {&m_library, &m_image, &m_frameRing, &m_resolveTable}) {
         if (b->handle != nullptr) {
             m_desc.allocator->destroyBuffer(*b);
         }
@@ -136,6 +151,13 @@ void MaterialLayers::destroy() {
     }
 #endif
     m_layoutHandle = nullptr;
+    m_resolveTable = Buffer{};
+    m_resolveTableQueue = rg::kNoQueue;
+    m_resolveTableSlot = BindlessSlotHandle{};
+    m_resolveTableHandle = 0;
+    m_resolveImages.clear();
+    m_resolveImageSlots.clear();
+    m_resolveImageHandles.clear();
     m_library = Buffer{};
     m_image = Buffer{};
     m_frameRing = Buffer{};
@@ -263,6 +285,9 @@ u32 MaterialLayers::collectRetired(u64 completedSerial) {
         if (m_retired[i].buffer.handle != nullptr) {
             m_desc.allocator->destroyBuffer(m_retired[i].buffer);
         }
+        if (m_retired[i].image.image != nullptr) {
+            m_desc.allocator->destroyImage(m_retired[i].image);
+        }
         ++collected;
     }
     m_retired.resize(keep);
@@ -270,7 +295,99 @@ u32 MaterialLayers::collectRetired(u64 completedSerial) {
     return collected;
 }
 
-bool MaterialLayers::setLibrary(const MlLibrary& library) {
+void MaterialLayers::retireResolveTable() {
+    for (usize i = 0; i < m_resolveImages.size(); ++i) {
+        if (m_resolveImageSlots[i].isValid()) {
+            m_desc.bindless->retireSlot(m_resolveImageSlots[i], m_frameSerial);
+        }
+        if (m_resolveImages[i].image != nullptr) {
+            Retired old{};
+            old.image = m_resolveImages[i];
+            old.serial = m_frameSerial;
+            m_retired.push_back(old);
+            ++m_stats.retired;
+        }
+    }
+    m_resolveImages.clear();
+    m_resolveImageSlots.clear();
+    m_resolveImageHandles.clear();
+    if (m_resolveTableSlot.isValid()) {
+        m_desc.bindless->retireSlot(m_resolveTableSlot, m_frameSerial);
+    }
+    m_resolveTableSlot = BindlessSlotHandle{};
+    m_resolveTableHandle = 0;
+    retire(m_resolveTable);
+    m_resolveTableQueue = rg::kNoQueue;
+    m_stats.resolveImages = 0;
+    m_stats.resolveImageBytes = 0;
+}
+
+bool MaterialLayers::buildResolveTable(const MlLibrary& library, UploadQueue& upload) {
+    retireResolveTable();
+    MlMipChains chains;
+    ml_build_mips(library, chains);
+    const u32 tc = static_cast<u32>(library.textures().size());
+    const u32 mc = static_cast<u32>(library.materials().size());
+    std::vector<MlTexture> rows = library.textures();
+    m_resolveImages.resize(tc);
+    m_resolveImageSlots.resize(tc);
+    m_resolveImageHandles.assign(tc, 0u);
+    for (u32 t = 0; t < tc; ++t) {
+        const MlTexture& src = library.textures()[t];
+        TextureDesc td{};
+        td.width = src.width;
+        td.height = src.height;
+        td.mipLevels = chains.levelCount[t];
+        td.format = (src.flags & kMlTexSrgb) != 0u ? GpuFormat::R8G8B8A8Srgb : GpuFormat::R8G8B8A8Unorm;
+        td.usage = static_cast<ImageUsage>(static_cast<u32>(ImageUsage::Sampled) | static_cast<u32>(ImageUsage::TransferDst));
+        td.name = "materials.resolve_texture";
+        if (!m_desc.allocator->createImage(td, m_resolveImages[t])) {
+            return false;
+        }
+        UploadImageDesc ud{};
+        ud.width = src.width;
+        ud.height = src.height;
+        ud.mipLevels = td.mipLevels;
+        ud.bytesPerTexel = 4u;
+        usize offset = 0;
+        const u32* texels = chains.texels.data() + chains.levels[chains.firstLevel[t]].offset;
+        if (!upload.stageImage(texels, ud, offset) || !upload.recordImageCopy(m_resolveImages[t].image, offset, ud)) {
+            return false;
+        }
+        m_resolveImageSlots[t] = m_desc.bindless->registerTextureSlot(m_resolveImages[t], false);
+        m_resolveImageHandles[t] = m_desc.bindless->shaderHandle(m_resolveImageSlots[t]);
+        if (m_resolveImageHandles[t] == kBindlessInvalidShaderHandle) {
+            return false;
+        }
+        rows[t].offset = m_resolveImageHandles[t];
+        ++m_stats.resolveImages;
+        m_stats.resolveImageBytes += chains.textureTexels(t) * 4u;
+    }
+    const u64 materialsOffset = align256(sizeof(MlResolveTable));
+    const u64 texturesOffset = align256(materialsOffset + std::max<u64>(u64{mc} * sizeof(MlMaterial), 16u));
+    const u64 bytes = align256(texturesOffset + std::max<u64>(u64{tc} * sizeof(MlTexture), 16u));
+    if (!createBuffer(bytes, "materials.resolve_table", true, m_resolveTable, m_resolveTableQueue)) {
+        return false;
+    }
+    u8* base = static_cast<u8*>(m_resolveTable.mapped);
+    MlResolveTable header{};
+    header.materials = m_resolveTable.deviceAddress + materialsOffset;
+    header.textures = m_resolveTable.deviceAddress + texturesOffset;
+    header.materialCount = mc;
+    header.textureCount = tc;
+    std::memcpy(base, &header, sizeof(header));
+    if (mc > 0u) {
+        std::memcpy(base + materialsOffset, library.materials().data(), u64{mc} * sizeof(MlMaterial));
+    }
+    if (tc > 0u) {
+        std::memcpy(base + texturesOffset, rows.data(), u64{tc} * sizeof(MlTexture));
+    }
+    m_resolveTableSlot = m_desc.bindless->registerBufferSlot(m_resolveTable, false);
+    m_resolveTableHandle = m_desc.bindless->shaderHandle(m_resolveTableSlot);
+    return m_resolveTableHandle != kBindlessInvalidShaderHandle;
+}
+
+bool MaterialLayers::setLibrary(const MlLibrary& library, UploadQueue* upload) {
     if (!m_initialized) {
         return false;
     }
@@ -300,6 +417,10 @@ bool MaterialLayers::setLibrary(const MlLibrary& library) {
     m_materialCount = mc;
     m_ballCount = bc;
     ++m_stats.libraryUploads;
+    if (upload != nullptr) {
+        return buildResolveTable(library, *upload);
+    }
+    retireResolveTable();
     return true;
 }
 
@@ -338,13 +459,20 @@ bool MaterialLayers::beginFrame(u64 frameSerial, const MlFrameDesc& frame) {
 
 MaterialLayerRefs MaterialLayers::importInto(rg::Graph& graph) {
     MaterialLayerRefs refs{};
-    if (!m_initialized || m_library.handle == nullptr || m_image.handle == nullptr) {
+    if (!m_initialized || m_library.handle == nullptr) {
         return refs;
     }
     refs.library = graph.importBuffer(rg::ImportedBuffer{m_library.handle, m_library.desc.size, m_libraryQueue,
                                                          &m_libraryQueue, "materials.library"});
-    refs.image = graph.importBuffer(rg::ImportedBuffer{m_image.handle, m_image.desc.size, m_imageQueue, &m_imageQueue,
-                                                       "materials.image"});
+    if (m_image.handle != nullptr) {
+        refs.image = graph.importBuffer(rg::ImportedBuffer{m_image.handle, m_image.desc.size, m_imageQueue, &m_imageQueue,
+                                                           "materials.image"});
+    }
+    if (m_resolveTable.handle != nullptr) {
+        refs.resolveTable = graph.importBuffer(rg::ImportedBuffer{m_resolveTable.handle, m_resolveTable.desc.size,
+                                                                  m_resolveTableQueue, &m_resolveTableQueue,
+                                                                  "materials.resolve_table"});
+    }
     return refs;
 }
 

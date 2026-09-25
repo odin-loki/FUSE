@@ -6,12 +6,12 @@
 
 [shader("vertex")]
 float4 main(uint i : SV_VertexID, uint instance : SV_InstanceID) : SV_Position {
-    if (kFuseMrBinId >= kFuseMrBinUber) {
+    if (kFuseMrBinId == kFuseMrBinUber) {
         return float4(float((i << 1u) & 2u) * 2.0 - 1.0, float(i & 2u) * 2.0 - 1.0, 0.0, 1.0);
     }
     const MrFrame f = fuseMrFrame();
     uint* words = (uint*)f.bins;
-    const uint tile = words[kFuseMrBinListOffsetWords + kFuseMrBinId * f.tileCapacity + instance];
+    const uint tile = words[fuseMrBinListWord(kFuseMrBinId, f.tileCapacity) + instance];
     const uint cx = (i == 1u || i == 4u || i == 5u) ? 1u : 0u;
     const uint cy = (i == 2u || i == 3u || i == 5u) ? 1u : 0u;
     const float px = float(((tile & 0xFFFFu) + cx) * kFuseMrTile);

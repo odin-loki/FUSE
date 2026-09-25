@@ -24,8 +24,7 @@ FSOut main(float4 fragCoord : SV_Position) {
     const MrAttributes a = fuseMrAttributes(scene, f, p, v);
     MrGBuffer g = fuseMrGBufferEmpty();
     if (a.flags == kFuseMrAttrOk) {
-        g = fuseMrShade(scene, a.material, f.sampler_, fuseMrBinFeatures(kFuseMrBinId), a.uv, a.duvdx, a.duvdy, a.normal,
-                        a.tangent, a.tangentSign, a.depth, a.velocity);
+        g = fuseMrResolvePixel(scene, f, a, fuseMrResolveFeatures(kFuseMrBinId));
     }
     FSOut o;
     o.rt0 = g.rt0;

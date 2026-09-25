@@ -35,6 +35,9 @@ static const uint kFuseInstanceReceiveShadow = 8u;
 static const uint kFuseInstanceStatic = 16u;
 static const uint kFuseInstanceTransparent = 32u;
 
+// GpuMaterial::flags bit: layered material, GpuMaterial::padding = its layered-table index (kGpuMaterialLayered).
+static const uint kFuseGpuMaterialLayered = 0x80000u;
+
 struct GpuInstance {
     uint mesh;
     uint material;

@@ -17,6 +17,18 @@
 //   materials.copy    image -> caller buffer
 // Kernels: Slang primary (-fp-mode precise) with GLSL twins, embedded by cmake/rp_w07.cmake. Steady-state frames
 // make no heap allocation (the image buffer follows the size; pass records live in a fixed array).
+//
+// WP-1.5 integration (the material resolve's layered bin): setLibrary(library, &upload) also uploads every texture
+// as a mip-mapped bindless sampled image (the ml_mips.hpp chain, through UploadQueue: flush + wait before the first
+// resolve that reads them) and builds "materials.resolve_table" (MlResolveTable + the materials + MlTexture rows
+// whose offset is the image's bindless handle), registered as a bindless storage buffer:
+//
+//   ResolveFrameDesc::layered = layers.resolveTableHandle();
+//   MaterialLayerRefs r = layers.importInto(graph);
+//   resolve.addResolve(graph, gbuffer, vis.vis, sceneRefs, ResolvePath::Binned, r.resolveTable);
+//
+// The GPU scene's material rows opt in with gpu_scene::kGpuMaterialLayered + the table index
+// (gpu_scene::set_gpu_material_layered).
 
 #include <fuse/renderer/material_layers/ml_reference.hpp>
 #include <fuse/renderer/material_layers/ml_types.hpp>
@@ -29,6 +41,7 @@
 
 namespace fuse::renderer {
 class GpuAllocator;
+class UploadQueue;
 class VulkanDevice;
 } // namespace fuse::renderer
 
@@ -61,8 +74,9 @@ struct MlFrameDesc {
 };
 
 struct MaterialLayerRefs {
-    rg::BufferRef library; ///< materials, textures, texel pool, LUT, balls (read only)
-    rg::BufferRef image;   ///< the ball-scene image (f32x4 per pixel)
+    rg::BufferRef library;      ///< materials, textures, texel pool, LUT, balls (read only)
+    rg::BufferRef image;        ///< the ball-scene image (f32x4 per pixel); invalid before the first beginFrame
+    rg::BufferRef resolveTable; ///< the resolve's layered-material table (read only); invalid without one
 };
 
 struct MaterialLayerStats {
@@ -70,6 +84,8 @@ struct MaterialLayerStats {
     u32 imageRebuilds = 0;
     u32 retired = 0;
     u32 passes = 0; ///< this frame
+    u32 resolveImages = 0;      ///< mip-mapped bindless images of the resolve table
+    u64 resolveImageBytes = 0;  ///< their texel bytes (every level)
 };
 
 /// Byte layout of the library buffer (256-aligned sections).
@@ -97,8 +113,15 @@ public:
     void destroy();
     bool valid() const { return m_initialized; }
 
-    /// Load time: uploads the library into a new buffer (the old one is retired). Allocates.
-    bool setLibrary(const MlLibrary& library);
+    /// Load time: uploads the library into a new buffer (the old one is retired). Allocates. With `upload`, also
+    /// builds the WP-1.5 resolve table: every texture as a mip-mapped bindless image staged + recorded on `upload`
+    /// (the caller flushes it; the images are readable by graphics work submitted after that flush) and the
+    /// "materials.resolve_table" buffer (MlResolveTable header at offset 0) with its bindless handle.
+    bool setLibrary(const MlLibrary& library, UploadQueue* upload = nullptr);
+    /// Bindless storage-buffer handle of the resolve table (ResolveFrameDesc::layered); 0 without one.
+    u32 resolveTableHandle() const { return m_resolveTableHandle; }
+    /// Bindless sampled-image handle of texture `t` in the resolve table (0 without one).
+    u32 resolveImageHandle(u32 t) const { return t < m_resolveImageHandles.size() ? m_resolveImageHandles[t] : 0u; }
     /// This frame's MlParams into its ring slot; (re)allocates the image when its size changes.
     bool beginFrame(u64 frameSerial, const MlFrameDesc& frame);
 
@@ -120,6 +143,7 @@ public:
 private:
     struct Retired {
         Buffer buffer{};
+        Texture image{};
         u64 serial = 0;
     };
     struct PassRecord {
@@ -138,6 +162,8 @@ private:
     bool createPipelines();
     bool createBuffer(u64 bytes, const char* name, bool hostVisible, Buffer& target, u8& queue);
     void retire(Buffer& buffer);
+    void retireResolveTable();
+    bool buildResolveTable(const MlLibrary& library, UploadQueue& upload);
     PassRecord* nextRecord(u32 kernel);
     static void recordDispatch(const rg::PassContext& context, void* user);
     static void recordCopy(const rg::PassContext& context, void* user);
@@ -158,6 +184,13 @@ private:
     std::vector<Retired> m_retired;
     Buffer m_frameRing{};
     u64 m_frameAddress = 0;
+    Buffer m_resolveTable{};
+    u8 m_resolveTableQueue = rg::kNoQueue;
+    BindlessSlotHandle m_resolveTableSlot{};
+    u32 m_resolveTableHandle = 0;
+    std::vector<Texture> m_resolveImages;
+    std::vector<BindlessSlotHandle> m_resolveImageSlots;
+    std::vector<u32> m_resolveImageHandles;
     PassRecord m_records[kMaxPasses] = {};
     u32 m_recordCount = 0;
     void* m_layoutHandle = nullptr;

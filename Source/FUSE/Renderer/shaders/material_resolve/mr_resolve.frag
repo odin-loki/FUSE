@@ -3,9 +3,10 @@
 // full-screen triangle of the uber path). Reads the visibility sample, reconstructs the triangle's
 // attributes with analytic derivatives (fuse_mr_attributes; no hardware derivatives are used),
 // evaluates the material with textureGrad and writes the G-buffer (RT0..RT5, GBufferAttachment order,
-// packed by write_gbuffer) + the material id. Specialisation constant 0 = the bin (4 = uber): the
-// features it evaluates are fuse_mr_bin_features(bin), and every pixel of a tile in bin b needs at
-// most those, so both paths produce the same bits. GLSL twin of mr_resolve_fs.slang.
+// packed by write_gbuffer) + the material id. Specialisation constant 0 = the bin (4 = uber, 5 = layered):
+// the features it evaluates are fuse_mr_resolve_features(bin), and every pixel of a tile in bin b needs at
+// most those, so both paths produce the same bits. Layered rows go through fuse_mr_shade_layered
+// (mr_layered.glsl), every other pixel through fuse_mr_shade. GLSL twin of mr_resolve_fs.slang.
 #extension GL_GOOGLE_include_directive : require
 #include "mr_includes.glsl"
 
@@ -29,8 +30,7 @@ void main() {
     const FuseMrAttributes a = fuse_mr_attributes(scene, f, p, v);
     FuseMrGBuffer g = fuse_mr_gbuffer_empty();
     if (a.flags == FUSE_MR_ATTR_OK) {
-        g = fuse_mr_shade(scene, a.material, f.sampler_, fuse_mr_bin_features(FUSE_MR_BIN_ID), a.uv, a.duvdx, a.duvdy,
-                          a.normal, a.tangent, a.tangentSign, a.depth, a.velocity);
+        g = fuse_mr_resolve_pixel(scene, f, a, fuse_mr_resolve_features(FUSE_MR_BIN_ID));
     }
     outNormalAo = g.rt0;
     outAlbedoAlpha = g.rt1;

@@ -23,6 +23,11 @@
 // Any attribute A = sum b_i A_i then has dA/dx = sum (db_i/dx) A_i: that is what the resolve hands
 // to textureGrad / SampleGrad (texture LOD and anisotropic footprint).
 //
+// Layered bin (asset W0.7): material rows with gpu_scene::kGpuMaterialLayered are binned as kBinLayered;
+// world_position (the surface point + its per-pixel derivatives, for triplanar projection and texture
+// footprints) and camera_centre (the view distance of the detail fade) are twins of mr_common /
+// mr_layered; resolve_reference.hpp builds the layered surface record from them.
+//
 // GPU parity: adds and multiplies are correctly rounded on both sides (no contraction); divides,
 // sqrt and the per-vertex normalisation are not on Vulkan, so GPU and CPU agree to a few ulps
 // (fuse_rp_material_resolve uses relative tolerances scaled by each quantity's magnitude).
@@ -95,6 +100,13 @@ FUSE_HOST_DEVICE inline Vertex fetch_vertex(const GpuMesh& mesh, const MeshStrea
         r.uv[1] = geometry::vertex_codec::half_to_float(static_cast<u16>(s.uvs[v] >> 16));
     }
     return r;
+}
+
+/// World-space position of an object-space point (rows . (p, 1); fuse_mr_transform_point).
+FUSE_HOST_DEVICE inline void transform_point(const GpuTransform& t, const f32 p[3], f32 out[3]) {
+    for (u32 r = 0; r < 3u; ++r) {
+        out[r] = t.rows[r][0] * p[0] + t.rows[r][1] * p[1] + t.rows[r][2] * p[2] + t.rows[r][3];
+    }
 }
 
 /// World-space direction of an object-space vector (rows . v).
@@ -187,6 +199,9 @@ FUSE_HOST_DEVICE inline f32 interp(const f32 b[3], f32 a0, f32 a1, f32 a2) { ret
 
 /// Resolve bin of a material row (fuse_mr_material_bin).
 FUSE_HOST_DEVICE inline u32 material_bin(const GpuMaterial& m) {
+    if ((m.flags & gpu_scene::kGpuMaterialLayered) != 0u) {
+        return kBinLayered;
+    }
     if (m.normalTexIdx != kInvalid) {
         return kBinNormalMapped;
     }
@@ -348,6 +363,73 @@ FUSE_HOST_DEVICE inline ResolveAttributeTexel attributes(const Params& p, u32 x,
         r.velocity[1] = (static_cast<f32>(y) + 0.5f) - prevY;
     }
     return r;
+}
+
+/// Camera centre of a perspective view-projection (column-major): the point every clip-space x, y and w row maps to
+/// zero, i.e. the solution of rows {0, 1, 3} . (C, 1) = 0 by Cramer's rule (fuse_mr_camera_centre). False (and 0)
+/// when those rows are singular (an orthographic projection has no finite centre). The layered bin's detail fade uses
+/// |P - C| as the view distance.
+FUSE_HOST_DEVICE inline bool camera_centre(const f32 m[16], f32 out[3]) {
+    const f32 a0[3] = {m[0], m[4], m[8]};
+    const f32 a1[3] = {m[1], m[5], m[9]};
+    const f32 a2[3] = {m[3], m[7], m[11]};
+    const f32 c12[3] = {a1[1] * a2[2] - a1[2] * a2[1], a1[2] * a2[0] - a1[0] * a2[2], a1[0] * a2[1] - a1[1] * a2[0]};
+    const f32 c20[3] = {a2[1] * a0[2] - a2[2] * a0[1], a2[2] * a0[0] - a2[0] * a0[2], a2[0] * a0[1] - a2[1] * a0[0]};
+    const f32 c01[3] = {a0[1] * a1[2] - a0[2] * a1[1], a0[2] * a1[0] - a0[0] * a1[2], a0[0] * a1[1] - a0[1] * a1[0]};
+    const f32 det = a0[0] * c12[0] + a0[1] * c12[1] + a0[2] * c12[2];
+    out[0] = out[1] = out[2] = 0.f;
+    if (det == 0.f) {
+        return false;
+    }
+    const f32 b0 = m[12];
+    const f32 b1 = m[13];
+    const f32 b2 = m[15];
+    for (u32 k = 0; k < 3u; ++k) {
+        out[k] = -(b0 * c12[k] + b1 * c20[k] + b2 * c01[k]) / det;
+    }
+    return true;
+}
+
+/// World position of the pixel's surface point and its per-pixel derivatives (fuse_mr_attributes' position /
+/// dPdx / dPdy): the three vertices transformed to world space, interpolated with b, db/dx, db/dy. False when the
+/// pixel does not reconstruct (attributes() flags != kAttrOk).
+FUSE_HOST_DEVICE inline bool world_position(const Params& p, u32 x, u32 y, u32 instance, u32 triangle, f32 P[3],
+                                            f32 dPdx[3], f32 dPdy[3]) {
+    if (instance == visbuffer::kVisInvalid || !ids_valid(p, instance, triangle)) {
+        return false;
+    }
+    const GpuInstance& inst = p.instances[instance];
+    const GpuMesh& mesh = p.meshes[inst.mesh];
+    const MeshStreams& s = p.streams[inst.mesh];
+    const u32 base = mesh.firstIndex + triangle * 3u;
+    if (static_cast<u64>(base) + 3u > p.indices.size) {
+        return false;
+    }
+    const GpuTransform& t = p.transforms[instance];
+    f32 w[3][3];
+    Clip c[3];
+    for (u32 k = 0; k < 3u; ++k) {
+        const u32 vi = static_cast<u32>(static_cast<s32>(p.indices[base + k]) + mesh.vertexOffset);
+        if (vi >= s.vertexCount) {
+            return false;
+        }
+        const Vertex v = fetch_vertex(mesh, s, vi);
+        c[k] = visbuffer::decode_kernel::clip_position(t, p.viewProj, v.position);
+        transform_point(t, v.position, w[k]);
+    }
+    f32 nx = 0.f;
+    f32 ny = 0.f;
+    visbuffer::decode_kernel::pixel_ndc(x, y, p.width, p.height, nx, ny);
+    const Bary b = bary(c[0], c[1], c[2], nx, ny, 2.f / static_cast<f32>(p.width), 2.f / static_cast<f32>(p.height));
+    if (b.flags != kAttrOk) {
+        return false;
+    }
+    for (u32 a = 0; a < 3u; ++a) {
+        P[a] = interp(b.b, w[0][a], w[1][a], w[2][a]);
+        dPdx[a] = interp(b.dbdx, w[0][a], w[1][a], w[2][a]);
+        dPdy[a] = interp(b.dbdy, w[0][a], w[1][a], w[2][a]);
+    }
+    return true;
 }
 
 struct AttributesKernel {

@@ -26,7 +26,7 @@ void main(uint3 tid: SV_DispatchThreadID, uint3 group: SV_GroupID, uint local: S
         const uint bin = s_bin;
         const uint h = f.binsHandle & 0xFFFFFu;
         uint slot = 0u;
-        InterlockedAdd(fuse_mr_bin_buffers[h][bin * 4u + 1u], 1u, slot);
-        fuse_mr_bin_buffers[h][kFuseMrBinListOffsetWords + bin * f.tileCapacity + slot] = group.x | (group.y << 16u);
+        InterlockedAdd(fuse_mr_bin_buffers[h][fuseMrBinArgsWord(bin, f.tileCapacity) + 1u], 1u, slot);
+        fuse_mr_bin_buffers[h][fuseMrBinListWord(bin, f.tileCapacity) + slot] = group.x | (group.y << 16u);
     }
 }

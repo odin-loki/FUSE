@@ -17,14 +17,23 @@
 // and packs the G-buffer. Two paths, identical output:
 //
 //   Binned   "resolve.reset" + "resolve.classify" (8 x 8 tiles into 4 nested feature bins: empty,
-//            flat, textured, normal-mapped) + "resolve.gbuffer": one indirect draw of tile quads per
-//            bin (vkCmdDrawIndirectCount, count 1: see ResolveBinLayout), each with a pipeline
-//            specialised to that bin's features.
+//            flat, textured, normal-mapped, + the layered bin) + "resolve.gbuffer": one indirect draw of
+//            tile quads per bin (vkCmdDrawIndirectCount, count 1: see ResolveBinLayout), each with a
+//            pipeline specialised to that bin's features.
 //   Uber     "resolve.gbuffer": one full-screen triangle, every feature, per-pixel branches (fallback).
 //
 //   resolve.beginFrame(serial, {viewProj, prevViewProj, scene.headerHandle(), vb.visStorageHandle(), sampler});
 //   ResolveGraphRefs r = resolve.importInto(graph);
 //   resolve.addResolve(graph, r, visRefs.vis, sceneRefs, ResolvePath::Binned);   // after the VB passes
+//
+// Layered materials (asset W0.7, material_layers/): rows marked with gpu_scene::kGpuMaterialLayered
+// (set_gpu_material_layered) are classified into a fifth bin, kBinLayered, whose pipeline evaluates the
+// layered material (ml_common's ml_evaluate: triplanar / stochastic tiling / detail / height-blended and
+// wet layers) at the reconstructed world position with the analytic derivatives, sampling the
+// MaterialLayers resolve table's mip-mapped bindless images with textureGrad. Set
+// ResolveFrameDesc::layered = MaterialLayers::resolveTableHandle() and pass the table's graph ref:
+//   resolve.addResolve(graph, r, visRefs.vis, sceneRefs, ResolvePath::Binned, layers.importInto(graph).resolveTable);
+// Non-layered pixels are shaded by exactly the code they were before (bit-identical in every bin).
 //
 // Also: addAttributeDump ("resolve.attributes", the reconstructed attributes per pixel for parity
 // gates) and, with MaterialResolveDesc::forward, addForward ("resolve.forward"): a forward G-buffer
@@ -91,7 +100,8 @@ struct ResolveFrameDesc {
     f32 prevViewProj[16] = {}; ///< last frame's (velocity); equal to viewProj on the first frame
     u32 scene = 0;             ///< GpuScene::headerHandle()
     u32 vis = 0;               ///< VisBuffer::visStorageHandle() (unused by the forward reference)
-    u32 sampler = 0;           ///< bindless sampler handle for the material textures
+    u32 sampler = 0;           ///< bindless sampler handle for the material textures (REPEAT for layered rows)
+    u32 layered = 0;           ///< MaterialLayers::resolveTableHandle() (layered rows); 0 = none (default surface)
 };
 
 /// Render-graph handles of the targets for one frame (importInto()).
@@ -136,8 +146,10 @@ public:
     ResolveGraphRefs importInto(rg::Graph& graph);
 
     /// The resolve of `vis` (the visibility image the frame's `vis` handle names) into the G-buffer.
+    /// `layeredTable`: the layered-material table buffer (MaterialLayerRefs::resolveTable) the frame's
+    /// `layered` handle names, declared as read by the resolve; invalid when the frame has none.
     void addResolve(rg::Graph& graph, const ResolveGraphRefs& refs, rg::TextureRef vis,
-                    const gpu_scene::GpuSceneGraphRefs& scene, ResolvePath path);
+                    const gpu_scene::GpuSceneGraphRefs& scene, ResolvePath path, rg::BufferRef layeredTable = {});
     /// "resolve.attributes": ResolveAttributeTexel per pixel into `out` (>= width * height * 112 bytes).
     void addAttributeDump(rg::Graph& graph, const ResolveGraphRefs& refs, rg::TextureRef vis,
                           const gpu_scene::GpuSceneGraphRefs& scene, rg::BufferRef out, u64 outAddress);
@@ -211,7 +223,7 @@ private:
 
     void* m_graphicsLayout = nullptr; ///< VkPipelineLayout (bindless set + 16-byte push, vertex|fragment)
     void* m_computeLayout = nullptr;  ///< VkPipelineLayout (bindless set + 16-byte push, compute)
-    void* m_resolvePipelines[kBinCount + 1u] = {}; ///< per bin + uber (index kBinUber)
+    void* m_resolvePipelines[kBinLayered + 1u] = {}; ///< per bin id: feature bins, uber (kBinUber), layered
     void* m_classifyPipeline = nullptr;
     void* m_attributesPipeline = nullptr;
     void* m_forwardPipeline = nullptr;

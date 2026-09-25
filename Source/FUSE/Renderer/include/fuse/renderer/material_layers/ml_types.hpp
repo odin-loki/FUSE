@@ -11,7 +11,9 @@
 // Textures live in one texel pool (RGBA8 packed in a u32, x fastest) reached through a buffer device address and
 // are filtered with the same manual wrap-around bilinear filter on the CPU and the GPU; unorm / sRGB decode goes
 // through a 512-entry LUT (the same f32 values on both sides), so the CPU reference and the kernels only differ by
-// the rounding of the arithmetic (and the transcendentals).
+// the rounding of the arithmetic (and the transcendentals). The layered bin of the WP-1.5 material resolve samples
+// the same textures as mip-mapped bindless images with textureGrad instead (MlResolveTable; CPU twin: the
+// trilinear filter of ml_mips.hpp over the same mip chain).
 //
 // Texture-set convention (one set = two textures):
 //   albedo set texture  RGB = albedo (sRGB or linear, MlTexture::flags), A = height (linear, 0.5 = reference plane)
@@ -191,6 +193,21 @@ struct MlParams {
     f32 background[4] = {0.f, 0.f, 0.f, 0.f};
 };
 static_assert(sizeof(MlParams) == 224u, "MlParams layout (ml_common.glsl / .slang)");
+
+/// The layered-material table the WP-1.5 material resolve reads (its layered bin, see material_resolve.hpp): the
+/// header of the "materials.resolve_table" buffer MaterialLayers::setLibrary builds when it is given an UploadQueue,
+/// reached through its bindless storage-buffer handle (MaterialLayers::resolveTableHandle()). 32 bytes.
+/// `textures` rows are MlTexture records whose `offset` is the bindless sampled-image handle of that texture's
+/// mip-mapped image (R8G8B8A8_SRGB when kMlTexSrgb, else _UNORM; the mip chain of ml_mips.hpp), sampled with
+/// textureGrad instead of the texel pool's manual bilinear filter; width / height / flags / mean are unchanged.
+struct MlResolveTable {
+    u64 materials = 0; ///< BDA of MlMaterial[materialCount] (the library's resolved materials, same order)
+    u64 textures = 0;  ///< BDA of MlTexture[textureCount] (offset = bindless sampled-image handle)
+    u32 materialCount = 0;
+    u32 textureCount = 0;
+    u32 reserved[2] = {};
+};
+static_assert(sizeof(MlResolveTable) == 32u, "MlResolveTable layout (ml_common.glsl / .slang)");
 
 /// Push constants of every kernel: 32 bytes.
 struct MlPush {

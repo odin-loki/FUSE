@@ -170,6 +170,14 @@ struct GpuLight {
 };
 static_assert(sizeof(GpuLight) == 64u, "GpuLight layout");
 
+/// Material::GPUMaterial::flags bit (asset W0.7 layered materials; read by the WP-1.5 material resolve's layered
+/// bin): the row is a layered material and GPUMaterial::padding holds its index in the layered-material table
+/// (material_layers::MlResolveTable, ResolveFrameDesc::layered). Additive: MaterialFlagBits uses bits 0..18, the
+/// 128-byte row and every other field keep their meaning (base colour / roughness / metallic / texture fields are
+/// ignored by the layered bin; emissive and shading model still apply). gpu_scene.hpp: set_gpu_material_layered.
+/// Shader twins: FUSE_GPU_MATERIAL_LAYERED (gpu_scene.glsl), kFuseGpuMaterialLayered (gpu_scene.slang).
+inline constexpr u32 kGpuMaterialLayered = 1u << 19;
+
 /// Table order in GpuSceneHeader::addresses / handles / counts.
 enum class GpuSceneTable : u32 {
     Instances = 0,

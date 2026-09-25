@@ -1,5 +1,6 @@
 // WP-1.5: the include chain every material-resolve GLSL kernel uses (bindless heap, GPU scene,
-// visibility formats + decode, material rows, G-buffer packing, the resolve itself).
+// visibility formats + decode, material rows, G-buffer packing, the resolve itself, the layered bin
+// (mr_layered.glsl -> shaders/material_layers/ml_common.glsl)).
 #ifndef FUSE_MR_INCLUDES_GLSL
 #define FUSE_MR_INCLUDES_GLSL
 #extension GL_GOOGLE_include_directive : require
@@ -10,6 +11,7 @@
 #include "material.glsl"
 #include "gbuffer.glsl"
 #include "mr_common.glsl"
+#include "mr_layered.glsl"
 
 layout(push_constant) uniform FuseMrPush {
     uint64_t frame; // BDA of ResolveFrameConstants

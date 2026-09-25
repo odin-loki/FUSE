@@ -103,6 +103,15 @@ struct MlBall {
     uint reserved[3];
 };
 
+// MlResolveTable, 32 bytes (the WP-1.5 resolve's layered-material table; MlTexture::offset = bindless image handle).
+struct MlResolveTable {
+    uint64_t materials;
+    uint64_t textures;
+    uint materialCount;
+    uint textureCount;
+    uint reserved[2];
+};
+
 // MlParams, 224 bytes.
 struct MlParams {
     uint64_t materials;
@@ -145,7 +154,10 @@ struct MlPush {
     uint count;
     uint reserved;
 };
+// Includers with their own push constants (the WP-1.5 material resolve) define ML_NO_PUSH_CONSTANTS.
+#ifndef ML_NO_PUSH_CONSTANTS
 [[vk::push_constant]] ConstantBuffer<MlPush> pc;
+#endif
 
 MlParams ml_load(uint64_t address) { return ((MlParams*)address)[0]; }
 
@@ -157,6 +169,7 @@ struct MlView {
     uint textureCount;
     uint64_t texels;
     uint64_t lut;
+    uint sampler_; // ML_BINDLESS_TEXTURES: bindless sampler handle of every texture
 };
 
 MlView ml_view(MlParams P) {
@@ -167,8 +180,31 @@ MlView ml_view(MlParams P) {
     v.textureCount = P.textureCount;
     v.texels = P.texels;
     v.lut = P.lut;
+    v.sampler_ = 0u;
     return v;
 }
+
+// The view of a resolve table (textures are bindless images; no texel pool / LUT).
+MlView ml_resolve_view(uint64_t table, uint smp) {
+    const MlResolveTable t = ((MlResolveTable*)table)[0];
+    MlView v;
+    v.materials = t.materials;
+    v.materialCount = t.materialCount;
+    v.textures = t.textures;
+    v.textureCount = t.textureCount;
+    v.texels = 0ull;
+    v.lut = 0ull;
+    v.sampler_ = smp;
+    return v;
+}
+
+// Screen-space derivatives of a surface point (ml_kernel.hpp MlGrad).
+struct MlGrad {
+    float2 duvdx;
+    float2 duvdy;
+    float3 dPdx;
+    float3 dPdy;
+};
 
 struct MlSetSample {
     float3 albedo;
@@ -184,6 +220,10 @@ struct MlFrame {
     float3 T;
     float3 B;
     float2 uv;
+    float2 duvdx;
+    float2 duvdy;
+    float3 dPdx;
+    float3 dPdy;
     bool triplanar;
     bool stochastic;
     float sharpness;
@@ -318,17 +358,25 @@ MlStochastic ml_stochastic_lattice(float2 uv, float lattice, uint seed) {
     return s;
 }
 
-float4 ml_sample_tex(MlView v, uint tex, float2 uv, bool stochastic, MlStochastic s, float4 fallback) {
+#ifdef ML_BINDLESS_TEXTURES
+// The includer defines float4 ml_bindless_sample(uint image, uint smp, float2 uv, float2 dx, float2 dy) (SampleGrad on
+// the bindless sampled image); MlTexture::offset is the image's handle (MlResolveTable).
+float4 ml_filter(MlView v, MlTexture t, float2 uv, float2 dx, float2 dy) { return ml_bindless_sample(t.offset, v.sampler_, uv, dx, dy); }
+#else
+float4 ml_filter(MlView v, MlTexture t, float2 uv, float2 dx, float2 dy) { return ml_bilinear(v, t, uv); }
+#endif
+
+float4 ml_sample_tex(MlView v, uint tex, float2 uv, float2 dx, float2 dy, bool stochastic, MlStochastic s, float4 fallback) {
     if (tex == ML_NO_TEXTURE || tex >= v.textureCount) {
         return fallback;
     }
     const MlTexture t = ((MlTexture*)v.textures)[tex];
     if (!stochastic) {
-        return ml_bilinear(v, t, uv);
+        return ml_filter(v, t, uv, dx, dy);
     }
-    const float4 a = ml_bilinear(v, t, float2(uv.x + s.offset[0].x, uv.y + s.offset[0].y));
-    const float4 b = ml_bilinear(v, t, float2(uv.x + s.offset[1].x, uv.y + s.offset[1].y));
-    const float4 c = ml_bilinear(v, t, float2(uv.x + s.offset[2].x, uv.y + s.offset[2].y));
+    const float4 a = ml_filter(v, t, float2(uv.x + s.offset[0].x, uv.y + s.offset[0].y), dx, dy);
+    const float4 b = ml_filter(v, t, float2(uv.x + s.offset[1].x, uv.y + s.offset[1].y), dx, dy);
+    const float4 c = ml_filter(v, t, float2(uv.x + s.offset[2].x, uv.y + s.offset[2].y), dx, dy);
     const float inv = 1.0 / sqrt(s.w.x * s.w.x + s.w.y * s.w.y + s.w.z * s.w.z);
     const float rx = t.mean[0] + (s.w.x * (a.x - t.mean[0]) + s.w.y * (b.x - t.mean[0]) + s.w.z * (c.x - t.mean[0])) * inv;
     const float ry = t.mean[1] + (s.w.x * (a.y - t.mean[1]) + s.w.y * (b.y - t.mean[1]) + s.w.z * (c.y - t.mean[1])) * inv;
@@ -349,7 +397,7 @@ struct MlTap {
     float4 n;
 };
 
-MlTap ml_tap(MlView v, uint albedoTex, uint normalTex, float2 uv, MlFrame f, uint seed) {
+MlTap ml_tap(MlView v, uint albedoTex, uint normalTex, float2 uv, float2 dx, float2 dy, MlFrame f, uint seed) {
     MlStochastic s;
     s.w = float3(0.0, 0.0, 0.0);
     s.offset[0] = float2(0.0, 0.0);
@@ -359,15 +407,17 @@ MlTap ml_tap(MlView v, uint albedoTex, uint normalTex, float2 uv, MlFrame f, uin
         s = ml_stochastic_lattice(uv, f.lattice, seed);
     }
     MlTap t;
-    t.a = ml_sample_tex(v, albedoTex, uv, f.stochastic, s, float4(1.0, 1.0, 1.0, 0.5));
-    t.n = ml_sample_tex(v, normalTex, uv, f.stochastic, s, float4(0.5, 0.5, 1.0, 1.0));
+    t.a = ml_sample_tex(v, albedoTex, uv, dx, dy, f.stochastic, s, float4(1.0, 1.0, 1.0, 0.5));
+    t.n = ml_sample_tex(v, normalTex, uv, dx, dy, f.stochastic, s, float4(0.5, 0.5, 1.0, 1.0));
     return t;
 }
 
 MlSetSample ml_sample_set(MlView v, uint albedoTex, uint normalTex, float scale, float strength, uint seed, MlFrame f) {
     MlSetSample r;
     if (!f.triplanar) {
-        const MlTap t = ml_tap(v, albedoTex, normalTex, float2(f.uv.x * scale, f.uv.y * scale), f, seed);
+        const MlTap t = ml_tap(v, albedoTex, normalTex, float2(f.uv.x * scale, f.uv.y * scale),
+                               float2(f.duvdx.x * scale, f.duvdx.y * scale), float2(f.duvdy.x * scale, f.duvdy.y * scale),
+                               f, seed);
         r.albedo = t.a.xyz;
         r.height = t.a.w;
         r.roughness = t.n.z;
@@ -384,9 +434,14 @@ MlSetSample ml_sample_set(MlView v, uint albedoTex, uint normalTex, float scale,
     const float wx = ax * inv;
     const float wy = ay * inv;
     const float wz = az * inv;
-    const MlTap tx = ml_tap(v, albedoTex, normalTex, float2(f.P.z * scale, f.P.y * scale), f, seed);
-    const MlTap ty = ml_tap(v, albedoTex, normalTex, float2(f.P.x * scale, f.P.z * scale), f, seed ^ 0x51ed27u);
-    const MlTap tz = ml_tap(v, albedoTex, normalTex, float2(f.P.x * scale, f.P.y * scale), f, seed ^ 0xa3b195u);
+    const MlTap tx = ml_tap(v, albedoTex, normalTex, float2(f.P.z * scale, f.P.y * scale),
+                            float2(f.dPdx.z * scale, f.dPdx.y * scale), float2(f.dPdy.z * scale, f.dPdy.y * scale), f, seed);
+    const MlTap ty = ml_tap(v, albedoTex, normalTex, float2(f.P.x * scale, f.P.z * scale),
+                            float2(f.dPdx.x * scale, f.dPdx.z * scale), float2(f.dPdy.x * scale, f.dPdy.z * scale), f,
+                            seed ^ 0x51ed27u);
+    const MlTap tz = ml_tap(v, albedoTex, normalTex, float2(f.P.x * scale, f.P.y * scale),
+                            float2(f.dPdx.x * scale, f.dPdx.y * scale), float2(f.dPdy.x * scale, f.dPdy.y * scale), f,
+                            seed ^ 0xa3b195u);
     r.albedo = float3(tx.a.x * wx + ty.a.x * wy + tz.a.x * wz, tx.a.y * wx + ty.a.y * wy + tz.a.y * wz,
                     tx.a.z * wx + ty.a.z * wy + tz.a.z * wz);
     r.height = tx.a.w * wx + ty.a.w * wy + tz.a.w * wz;
@@ -426,8 +481,12 @@ float ml_height_blend(float hBase, float hLayer, float m, float contrast) {
     return ml_saturate((hLayer - hBase + 2.0 * (2.0 * m - 1.0)) * contrast * 0.5 + 0.5);
 }
 
-MlResult ml_evaluate(MlView v, MlSurface s) {
+MlResult ml_evaluate_grad(MlView v, MlSurface s, MlGrad g) {
     MlFrame f;
+    f.duvdx = g.duvdx;
+    f.duvdy = g.duvdy;
+    f.dPdx = g.dPdx;
+    f.dPdy = g.dPdy;
     f.P = float3(s.position[0], s.position[1], s.position[2]);
     f.N = ml_normalize_or(float3(s.normal[0], s.normal[1], s.normal[2]), float3(0.0, 1.0, 0.0));
     const float3 t0 = float3(s.tangent[0], s.tangent[1], s.tangent[2]);
@@ -521,6 +580,16 @@ MlResult ml_evaluate(MlView v, MlSurface s) {
     r.ao = ml_saturate(ao);
     r.height = height;
     return r;
+}
+
+// ml_evaluate_grad without derivatives (the texel-pool path).
+MlResult ml_evaluate(MlView v, MlSurface s) {
+    MlGrad g;
+    g.duvdx = float2(0.0, 0.0);
+    g.duvdy = float2(0.0, 0.0);
+    g.dPdx = float3(0.0, 0.0, 0.0);
+    g.dPdy = float3(0.0, 0.0, 0.0);
+    return ml_evaluate_grad(v, s, g);
 }
 
 // --- golden material-ball scene ----------------------------------------------------------------------------------

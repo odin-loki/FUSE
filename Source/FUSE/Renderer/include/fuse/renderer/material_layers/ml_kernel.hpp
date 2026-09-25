@@ -18,6 +18,12 @@
 // (B. Golus, "Normal Mapping for a Triplanar Shader", 2017). Every term is a continuous function of (P, N), so a
 // surface with a continuous normal (a bevelled / rounded cube edge) shades continuously.
 //
+// Texture filtering: MlView::filter (null = the texel pool's wrap-around bilinear, what materials.eval / .balls run).
+// The WP-1.5 resolve's layered bin samples mip-mapped bindless images with textureGrad instead; every tap gets the
+// screen-space derivatives of its projection coordinate (MlGrad: UV0's, or the world position's for triplanar, times
+// the scale; the stochastic offsets are constant, so all three taps share the footprint), and its CPU reference
+// installs ml_mips.hpp's trilinear filter here. The pool filter ignores the derivatives (results unchanged).
+//
 // Height blend of a layer: t = saturate((hLayer - hBase + 2 (2 m - 1)) * contrast / 2 + 1/2) for the mask m in [0, 1]
 // and contrast >= 1: t = 0 at m = 0, 1 at m = 1, and in between the higher of the two height maps wins.
 
@@ -37,6 +43,10 @@ struct MlF4 {
     f32 x = 0.f, y = 0.f, z = 0.f, w = 0.f;
 };
 
+/// Texture filter of an evaluation (CPU only): `texture` is the MlTexture index, `uv` the (unwrapped) coordinate and
+/// `dx` / `dy` its screen-space derivatives (textureGrad's). Returns decoded RGBA.
+using MlFilterFn = MlF4 (*)(const void* user, u32 texture, MlF2 uv, MlF2 dx, MlF2 dy);
+
 /// The library the kernels read (CPU side of MlParams' addresses).
 struct MlView {
     const MlMaterial* materials = nullptr;
@@ -45,6 +55,20 @@ struct MlView {
     u32 textureCount = 0;
     const u32* texels = nullptr;
     const f32* lut = nullptr; ///< kMlLutEntries
+    /// Null: the texel pool's wrap-around bilinear filter (ml_bilinear, what materials.eval / materials.balls run).
+    /// The WP-1.5 layered resolve bin samples mip-mapped bindless images with textureGrad instead; its CPU reference
+    /// installs the trilinear mip-chain filter of ml_mips.hpp here (the shaders: ML_BINDLESS_TEXTURES).
+    MlFilterFn filter = nullptr;
+    const void* filterUser = nullptr;
+};
+
+/// Screen-space derivatives of a surface point (per pixel): UV0 and world position. They only steer texture
+/// filtering (the projection coordinate's derivatives go to the filter); the pool filter ignores them.
+struct MlGrad {
+    MlF2 duvdx;
+    MlF2 duvdy;
+    MlF3 dPdx;
+    MlF3 dPdy;
 };
 
 /// Result of sampling one texture set in the material's projection.
@@ -63,6 +87,10 @@ struct MlFrame {
     MlF3 T; ///< orthonormalised tangent
     MlF3 B;
     MlF2 uv;
+    MlF2 duvdx; ///< derivatives (MlGrad)
+    MlF2 duvdy;
+    MlF3 dPdx;
+    MlF3 dPdy;
     bool triplanar = false;
     bool stochastic = false;
     f32 sharpness = 4.f;
@@ -210,19 +238,29 @@ inline MlStochastic ml_stochastic_lattice(MlF2 uv, f32 lattice, u32 seed) {
     return s;
 }
 
+/// One filtered sample of texture `tex`: the view's filter hook, else the pool's bilinear filter.
+inline MlF4 ml_filter(const MlView& v, u32 tex, const MlTexture& t, MlF2 uv, MlF2 dx, MlF2 dy) {
+    if (v.filter != nullptr) {
+        return v.filter(v.filterUser, tex, uv, dx, dy);
+    }
+    return ml_bilinear(v, t, uv);
+}
+
 /// One texture of a set: plain wrap-around bilinear, or the three stochastic taps blended with the variance-
-/// preserving operator. `fallback` for kMlNoTexture.
-inline MlF4 ml_sample_tex(const MlView& v, u32 tex, MlF2 uv, bool stochastic, const MlStochastic& s, MlF4 fallback) {
+/// preserving operator. `fallback` for kMlNoTexture. `dx` / `dy`: derivatives of `uv` (the stochastic offsets are
+/// constant per lattice vertex, so every tap has the same footprint).
+inline MlF4 ml_sample_tex(const MlView& v, u32 tex, MlF2 uv, MlF2 dx, MlF2 dy, bool stochastic, const MlStochastic& s,
+                          MlF4 fallback) {
     if (tex == kMlNoTexture || tex >= v.textureCount) {
         return fallback;
     }
     const MlTexture& t = v.textures[tex];
     if (!stochastic) {
-        return ml_bilinear(v, t, uv);
+        return ml_filter(v, tex, t, uv, dx, dy);
     }
-    const MlF4 a = ml_bilinear(v, t, MlF2{uv.x + s.offset[0].x, uv.y + s.offset[0].y});
-    const MlF4 b = ml_bilinear(v, t, MlF2{uv.x + s.offset[1].x, uv.y + s.offset[1].y});
-    const MlF4 c = ml_bilinear(v, t, MlF2{uv.x + s.offset[2].x, uv.y + s.offset[2].y});
+    const MlF4 a = ml_filter(v, tex, t, MlF2{uv.x + s.offset[0].x, uv.y + s.offset[0].y}, dx, dy);
+    const MlF4 b = ml_filter(v, tex, t, MlF2{uv.x + s.offset[1].x, uv.y + s.offset[1].y}, dx, dy);
+    const MlF4 c = ml_filter(v, tex, t, MlF2{uv.x + s.offset[2].x, uv.y + s.offset[2].y}, dx, dy);
     const f32 inv = 1.f / std::sqrt(s.w[0] * s.w[0] + s.w[1] * s.w[1] + s.w[2] * s.w[2]);
     const f32 rx = t.mean[0] + (s.w[0] * (a.x - t.mean[0]) + s.w[1] * (b.x - t.mean[0]) + s.w[2] * (c.x - t.mean[0])) * inv;
     const f32 ry = t.mean[1] + (s.w[0] * (a.y - t.mean[1]) + s.w[1] * (b.y - t.mean[1]) + s.w[2] * (c.y - t.mean[1])) * inv;
@@ -245,14 +283,15 @@ struct MlTap {
     MlF4 n;
 };
 
-inline MlTap ml_tap(const MlView& v, u32 albedoTex, u32 normalTex, MlF2 uv, const MlFrame& f, u32 seed) {
+inline MlTap ml_tap(const MlView& v, u32 albedoTex, u32 normalTex, MlF2 uv, MlF2 dx, MlF2 dy, const MlFrame& f,
+                    u32 seed) {
     MlStochastic s{};
     if (f.stochastic) {
         s = ml_stochastic_lattice(uv, f.lattice, seed);
     }
     MlTap t{};
-    t.a = ml_sample_tex(v, albedoTex, uv, f.stochastic, s, MlF4{1.f, 1.f, 1.f, 0.5f});
-    t.n = ml_sample_tex(v, normalTex, uv, f.stochastic, s, MlF4{0.5f, 0.5f, 1.f, 1.f});
+    t.a = ml_sample_tex(v, albedoTex, uv, dx, dy, f.stochastic, s, MlF4{1.f, 1.f, 1.f, 0.5f});
+    t.n = ml_sample_tex(v, normalTex, uv, dx, dy, f.stochastic, s, MlF4{0.5f, 0.5f, 1.f, 1.f});
     return t;
 }
 
@@ -261,7 +300,9 @@ inline MlSetSample ml_sample_set(const MlView& v, u32 albedoTex, u32 normalTex, 
                                  const MlFrame& f) {
     MlSetSample r{};
     if (!f.triplanar) {
-        const MlTap t = ml_tap(v, albedoTex, normalTex, MlF2{f.uv.x * scale, f.uv.y * scale}, f, seed);
+        const MlTap t = ml_tap(v, albedoTex, normalTex, MlF2{f.uv.x * scale, f.uv.y * scale},
+                               MlF2{f.duvdx.x * scale, f.duvdx.y * scale}, MlF2{f.duvdy.x * scale, f.duvdy.y * scale}, f,
+                               seed);
         r.albedo = MlF3{t.a.x, t.a.y, t.a.z};
         r.height = t.a.w;
         r.roughness = t.n.z;
@@ -276,9 +317,14 @@ inline MlSetSample ml_sample_set(const MlView& v, u32 albedoTex, u32 normalTex, 
     const f32 az = std::pow(std::fabs(f.N.z), f.sharpness);
     const f32 inv = 1.f / (ax + ay + az);
     const f32 wx = ax * inv, wy = ay * inv, wz = az * inv;
-    const MlTap tx = ml_tap(v, albedoTex, normalTex, MlF2{f.P.z * scale, f.P.y * scale}, f, seed);
-    const MlTap ty = ml_tap(v, albedoTex, normalTex, MlF2{f.P.x * scale, f.P.z * scale}, f, seed ^ 0x51ed27u);
-    const MlTap tz = ml_tap(v, albedoTex, normalTex, MlF2{f.P.x * scale, f.P.y * scale}, f, seed ^ 0xa3b195u);
+    const MlTap tx = ml_tap(v, albedoTex, normalTex, MlF2{f.P.z * scale, f.P.y * scale},
+                            MlF2{f.dPdx.z * scale, f.dPdx.y * scale}, MlF2{f.dPdy.z * scale, f.dPdy.y * scale}, f, seed);
+    const MlTap ty = ml_tap(v, albedoTex, normalTex, MlF2{f.P.x * scale, f.P.z * scale},
+                            MlF2{f.dPdx.x * scale, f.dPdx.z * scale}, MlF2{f.dPdy.x * scale, f.dPdy.z * scale}, f,
+                            seed ^ 0x51ed27u);
+    const MlTap tz = ml_tap(v, albedoTex, normalTex, MlF2{f.P.x * scale, f.P.y * scale},
+                            MlF2{f.dPdx.x * scale, f.dPdx.y * scale}, MlF2{f.dPdy.x * scale, f.dPdy.y * scale}, f,
+                            seed ^ 0xa3b195u);
     r.albedo = MlF3{tx.a.x * wx + ty.a.x * wy + tz.a.x * wz, tx.a.y * wx + ty.a.y * wy + tz.a.y * wz,
                     tx.a.z * wx + ty.a.z * wy + tz.a.z * wz};
     r.height = tx.a.w * wx + ty.a.w * wy + tz.a.w * wz;
@@ -315,9 +361,14 @@ inline f32 ml_height_blend(f32 hBase, f32 hLayer, f32 m, f32 contrast) {
     return ml_saturate((hLayer - hBase + 2.f * (2.f * m - 1.f)) * contrast * 0.5f + 0.5f);
 }
 
-/// Evaluates the layered material of `s` (an out-of-range material id gives the default surface).
-inline MlResult ml_evaluate(const MlView& v, const MlSurface& s) {
+/// Evaluates the layered material of `s` (an out-of-range material id gives the default surface). `g`: the point's
+/// screen-space derivatives (texture footprints; ignored by the pool filter).
+inline MlResult ml_evaluate(const MlView& v, const MlSurface& s, const MlGrad& g) {
     MlFrame f{};
+    f.duvdx = g.duvdx;
+    f.duvdy = g.duvdy;
+    f.dPdx = g.dPdx;
+    f.dPdy = g.dPdy;
     f.P = MlF3{s.position[0], s.position[1], s.position[2]};
     f.N = ml_normalize_or(MlF3{s.normal[0], s.normal[1], s.normal[2]}, MlF3{0.f, 1.f, 0.f});
     const MlF3 t0{s.tangent[0], s.tangent[1], s.tangent[2]};
@@ -402,6 +453,9 @@ inline MlResult ml_evaluate(const MlView& v, const MlSurface& s) {
     r.height = height;
     return r;
 }
+
+/// ml_evaluate without derivatives (the texel-pool path: materials.eval / materials.balls).
+inline MlResult ml_evaluate(const MlView& v, const MlSurface& s) { return ml_evaluate(v, s, MlGrad{}); }
 
 // --- golden material-ball scene --------------------------------------------------------------------------------------
 /// Nearest ball hit along the ray (o, d); false for none. `t` the distance, `ball` its index.

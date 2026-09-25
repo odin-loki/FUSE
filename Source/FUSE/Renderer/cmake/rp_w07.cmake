@@ -59,10 +59,12 @@ file(GLOB _fuse_w07_shader_files CONFIGURE_DEPENDS "${_fuse_w07_shd}/*")
 add_library(fuse_material_layers STATIC
     ${_fuse_w07_src}/fusemat.cpp
     ${_fuse_w07_src}/ml_reference.cpp
+    ${_fuse_w07_src}/ml_mips.cpp
     ${_fuse_w07_src}/material_layers.cpp
     ${_fuse_w07_inc}/ml_types.hpp
     ${_fuse_w07_inc}/ml_kernel.hpp
     ${_fuse_w07_inc}/ml_reference.hpp
+    ${_fuse_w07_inc}/ml_mips.hpp
     ${_fuse_w07_inc}/fusemat.hpp
     ${_fuse_w07_inc}/material_layers.hpp
     ${_fuse_w07_shader_files}

@@ -35,6 +35,9 @@
 #define FUSE_INSTANCE_STATIC 16u
 #define FUSE_INSTANCE_TRANSPARENT 32u
 
+// FuseGpuMaterial::flags bit: layered material, FuseGpuMaterial::padding = its layered-table index (kGpuMaterialLayered).
+#define FUSE_GPU_MATERIAL_LAYERED 0x80000u
+
 #define FUSE_LIGHT_NONE 0u
 #define FUSE_LIGHT_DIRECTIONAL 1u
 #define FUSE_LIGHT_POINT 2u

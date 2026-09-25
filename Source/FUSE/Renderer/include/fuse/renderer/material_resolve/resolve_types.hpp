@@ -14,17 +14,26 @@ namespace fuse::renderer::material_resolve {
 inline constexpr u32 kTileSize = 8u;
 
 /// Resolve bins (mr_common.glsl FUSE_MR_BIN_*). A pixel's bin is the feature class of its material;
-/// the classes are nested (Flat ⊂ Textured ⊂ NormalMapped), so a tile goes into the bin of the most
-/// demanding pixel in it and that bin's pipeline shades every pixel of the tile exactly as the uber
+/// the classes are nested (Flat ⊂ Textured ⊂ NormalMapped ⊂ Layered), so a tile goes into the bin of the
+/// most demanding pixel in it and that bin's pipeline shades every pixel of the tile exactly as the uber
 /// pipeline would. Empty tiles (no geometry) get their own bin, so every pixel is written once by
 /// either path and no clear pass is needed.
+///
+/// Layered (asset W0.7): material rows with gpu_scene::kGpuMaterialLayered are evaluated as layered
+/// materials (material_layers::ml_evaluate over the MlResolveTable of ResolveFrameDesc::layered: triplanar /
+/// stochastic tiling / detail maps / height-blended layers, world position + normal from the visibility
+/// buffer, bindless textures with textureGrad). Its id is above kBinUber so the ids 0..4 and the bin-buffer
+/// layout of the four feature bins stay what they were; tiles still take the maximum pixel bin (a pixel is
+/// never kBinUber), and its args + tile list are appended after the four lists (ResolveBinLayout).
 enum ResolveBin : u32 {
     kBinEmpty = 0u,        ///< no geometry (or a bad id): clear values
     kBinFlat = 1u,         ///< material without textures (or no material: the default surface)
     kBinTextured = 2u,     ///< base colour / roughness / metallic / AO / emissive textures, no normal map
     kBinNormalMapped = 3u, ///< normal map (tangent frame + extra fetch)
-    kBinCount = 4u,
+    kBinCount = 4u,        ///< feature bins in the ResolveBinLayout header (kBinLayered is appended)
     kBinUber = 4u,         ///< specialisation of the single-pass fallback: every feature, per-pixel branches
+    kBinLayered = 5u,      ///< layered material rows (+ every feature of kBinNormalMapped for the other pixels)
+    kBinDrawCount = 5u,    ///< indirect draws of the binned path (kBinCount feature bins + kBinLayered)
 };
 
 /// Resolve kernels' feature bits (derived from the bin specialisation constant).
@@ -32,11 +41,18 @@ enum ResolveFeature : u32 {
     kFeatureTextures = 1u << 0,
     kFeatureNormalMap = 1u << 1,
     kFeatureAll = kFeatureTextures | kFeatureNormalMap,
+    kFeatureLayered = 1u << 2, ///< layered-material evaluation (resolve_features)
 };
 
-/// Feature bits a pipeline specialised for `bin` evaluates.
+/// Feature bits of the non-layered material evaluation a pipeline specialised for `bin` runs.
 FUSE_HOST_DEVICE constexpr u32 bin_features(u32 bin) {
     return bin >= kBinNormalMapped ? kFeatureAll : (bin == kBinTextured ? kFeatureTextures : 0u);
+}
+
+/// Every feature bit a resolve pipeline specialised for `bin` evaluates: bin_features, plus the layered
+/// evaluation for the layered bin and the uber path (mr_common fuse_mr_resolve_features).
+FUSE_HOST_DEVICE constexpr u32 resolve_features(u32 bin) {
+    return bin >= kBinUber ? (kFeatureAll | kFeatureLayered) : bin_features(bin);
 }
 
 /// Per-frame constants, read through BDA from a host-visible ring (MaterialResolve::beginFrame):
@@ -54,7 +70,7 @@ struct ResolveFrameConstants {
     u32 tileCapacity = 0; ///< tile-list entries per bin (= tilesX * tilesY)
     u64 bins = 0;         ///< BDA of the bin buffer (ResolveBinLayout; tile lists read by the vertex stage)
     u32 binsHandle = 0;   ///< bindless storage-buffer handle of the bin buffer (classify atomics)
-    u32 flags = 0;
+    u32 layered = 0;      ///< bindless storage-buffer handle of the layered-material table (MlResolveTable), 0 = none
 };
 static_assert(sizeof(ResolveFrameConstants) == 176u && offsetof(ResolveFrameConstants, width) == 128u &&
                   offsetof(ResolveFrameConstants, scene) == 144u && offsetof(ResolveFrameConstants, bins) == 160u,
@@ -90,6 +106,21 @@ struct ResolveBinLayout {
     static constexpr u32 kListOffset = kResetBytes;
     static constexpr u32 kVerticesPerTile = 6u; ///< two triangles per tile quad
     static constexpr u64 bytes(u32 tileCapacity) { return kListOffset + static_cast<u64>(tileCapacity) * 4u * kBinCount; }
+    /// The layered bin, appended after the kBinCount lists (the layout above is unchanged): its
+    /// VkDrawIndirectCommand {6, tiles, 0, 0} ("resolve.reset" writes it too), then its tile list.
+    static constexpr u64 layeredArgsOffset(u32 tileCapacity) { return bytes(tileCapacity); }
+    static constexpr u64 layeredListOffset(u32 tileCapacity) { return bytes(tileCapacity) + kArgsStride; }
+    /// Size of the bin buffer MaterialResolve allocates.
+    static constexpr u64 totalBytes(u32 tileCapacity) {
+        return layeredListOffset(tileCapacity) + static_cast<u64>(tileCapacity) * 4u;
+    }
+    /// Byte offsets of bin `bin`'s args and tile list (any bin, kBinLayered included).
+    static constexpr u64 argsOffset(u32 bin, u32 tileCapacity) {
+        return bin == kBinLayered ? layeredArgsOffset(tileCapacity) : static_cast<u64>(bin) * kArgsStride;
+    }
+    static constexpr u64 listOffset(u32 bin, u32 tileCapacity) {
+        return bin == kBinLayered ? layeredListOffset(tileCapacity) : kListOffset + static_cast<u64>(bin) * tileCapacity * 4u;
+    }
 };
 
 FUSE_HOST_DEVICE constexpr u32 pack_tile(u32 x, u32 y) { return x | (y << 16); }

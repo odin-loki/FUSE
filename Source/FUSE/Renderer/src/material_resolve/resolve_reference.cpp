@@ -4,6 +4,7 @@
 #include <fuse/compute_kernel/launch.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace fuse::renderer::material_resolve {
@@ -87,6 +88,73 @@ void classify_reference(const ResolveSceneView& scene, const u32* vis, u32 width
     tileBins.assign(static_cast<usize>(p.tilesX) * p.tilesY, kBinEmpty);
     p.tileBins = {tileBins.data(), static_cast<u32>(tileBins.size())};
     kernel::launch(backend, resolve_kernel::make_classify_launch(p.tilesX, p.tilesY), resolve_kernel::ClassifyKernel{}, p);
+}
+
+void layered_tile_list(const std::vector<u32>& tileBins, u32 tilesX, std::vector<u32>& list) {
+    list.clear();
+    for (usize t = 0; t < tileBins.size(); ++t) {
+        if (tileBins[t] == kBinLayered) {
+            list.push_back(pack_tile(static_cast<u32>(t % tilesX), static_cast<u32>(t / tilesX)));
+        }
+    }
+    std::sort(list.begin(), list.end());
+}
+
+bool layered_surface(const resolve_kernel::Params& p, u32 x, u32 y, u32 instance, u32 triangle, LayeredSurface& out) {
+    out = LayeredSurface{};
+    const ResolveAttributeTexel a = resolve_kernel::attributes(p, x, y, instance, triangle);
+    if (a.flags != kAttrOk || a.material == kNoMaterial || a.bin != kBinLayered) {
+        return false;
+    }
+    f32 P[3];
+    f32 dPdx[3];
+    f32 dPdy[3];
+    if (!resolve_kernel::world_position(p, x, y, instance, triangle, P, dPdx, dPdy)) {
+        return false;
+    }
+    f32 C[3];
+    f32 dist = 0.f;
+    if (resolve_kernel::camera_centre(p.viewProj, C)) {
+        const f32 d0 = P[0] - C[0];
+        const f32 d1 = P[1] - C[1];
+        const f32 d2 = P[2] - C[2];
+        dist = std::sqrt(d0 * d0 + d1 * d1 + d2 * d2);
+    }
+    material_layers::MlSurface& s = out.surface;
+    for (u32 k = 0; k < 3u; ++k) {
+        s.position[k] = P[k];
+        s.normal[k] = a.normal[k];
+        s.tangent[k] = a.tangent[k];
+    }
+    s.viewDistance = dist;
+    s.tangentSign = a.tangentSign;
+    s.material = gpu_scene::gpu_material_layered_index(p.materials[a.material]);
+    s.uv[0] = a.uv[0];
+    s.uv[1] = a.uv[1];
+    s.reserved[0] = s.reserved[1] = 0.f;
+    s.color[0] = s.color[1] = s.color[2] = s.color[3] = 1.f;
+    material_layers::MlGrad& g = out.grad;
+    g.duvdx = material_layers::MlF2{a.duvdx[0], a.duvdx[1]};
+    g.duvdy = material_layers::MlF2{a.duvdy[0], a.duvdy[1]};
+    g.dPdx = material_layers::MlF3{dPdx[0], dPdx[1], dPdx[2]};
+    g.dPdy = material_layers::MlF3{dPdy[0], dPdy[1], dPdy[2]};
+    out.row = a.material;
+    out.valid = true;
+    return true;
+}
+
+void layered_surfaces_reference(const ResolveSceneView& scene, const f32 viewProj[16], const f32 prevViewProj[16],
+                                const u32* vis, u32 width, u32 height, std::vector<LayeredSurface>& out) {
+    resolve_kernel::Params p = makeParams(scene, vis, width, height);
+    std::memcpy(p.viewProj, viewProj, sizeof(p.viewProj));
+    std::memcpy(p.prevViewProj, prevViewProj, sizeof(p.prevViewProj));
+    out.assign(static_cast<usize>(width) * height, LayeredSurface{});
+    for (u32 y = 0; y < height; ++y) {
+        for (u32 x = 0; x < width; ++x) {
+            const u32 pixel = y * width + x;
+            layered_surface(p, x, y, vis[pixel * 2u], vis[pixel * 2u + 1u], out[pixel]);
+        }
+    }
 }
 
 void tile_lists(const std::vector<u32>& tileBins, u32 tilesX, std::vector<u32> (&lists)[kBinCount]) {

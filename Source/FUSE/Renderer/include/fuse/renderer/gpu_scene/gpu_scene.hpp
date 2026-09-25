@@ -73,6 +73,21 @@ namespace fuse::renderer::gpu_scene {
 
 using GpuMaterial = Material::GPUMaterial;
 static_assert(sizeof(GpuMaterial) == 128u, "material rows are Material::GPUMaterial (128-byte std430 stride)");
+static_assert((kGpuMaterialLayered & (MaterialFlagBits::kProcedural |
+                                      (MaterialFlagBits::kProceduralIdMask << MaterialFlagBits::kProceduralIdShift) |
+                                      MaterialFlagBits::kHasNormalMap | MaterialFlagBits::kHasAoMap |
+                                      MaterialFlagBits::kHasMetallicMap)) == 0u,
+              "kGpuMaterialLayered is a free GPUMaterial::flags bit");
+
+/// Marks a material row as layered (kGpuMaterialLayered): the resolve's layered bin evaluates entry `layeredIndex` of
+/// the layered-material table instead of the row's base colour / textures.
+inline void set_gpu_material_layered(GpuMaterial& m, u32 layeredIndex) {
+    m.flags |= kGpuMaterialLayered;
+    m.padding = layeredIndex;
+}
+inline bool gpu_material_layered(const GpuMaterial& m) { return (m.flags & kGpuMaterialLayered) != 0u; }
+/// Layered-table index of a layered row.
+inline u32 gpu_material_layered_index(const GpuMaterial& m) { return m.padding; }
 
 using InstanceHandle = SlotAllocator::Handle;
 using LightHandle = SlotAllocator::Handle;
