@@ -15,7 +15,7 @@
 //                        queue) and heap allocation (full heap), as client and as host; every wait
 //                        must return PeerDead within 1 s
 //   child <role> <name> [args]   peer roles used by the modes above
-// Copyright (c) 2026 FUSE contributors (MIT).
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0).
 #include <fuse/relight/bridge/ipc/atomic_queue.hpp>
 #include <fuse/relight/bridge/ipc/blocking_queue.hpp>
 #include <fuse/relight/bridge/ipc/data_ring.hpp>

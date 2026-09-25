@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_camera_manager.{h,cpp}@0867d3c (CameraManager::
 // processCameraData, isCameraCutThisFrame, onFrameEnd) and src/dxvk/rtx_render/rtx_camera.{h,cpp}@0867d3c
 // (CameraType, RtCamera::update's per-frame bookkeeping, isValid, isCameraCut, getPosition /

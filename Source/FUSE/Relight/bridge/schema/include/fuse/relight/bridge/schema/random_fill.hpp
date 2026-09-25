@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.1: random field values for the generated command randomizers (fuzz tests).
-// Copyright (c) 2026 FUSE contributors (MIT). New code.
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). New code.
 //
 // Rng: `uint64_t next()` (uniform 64-bit) and `uint32_t length()` (element count for counted fields;
 // the test decides the size profile). Floating-point fields get raw random bits (NaNs, infinities

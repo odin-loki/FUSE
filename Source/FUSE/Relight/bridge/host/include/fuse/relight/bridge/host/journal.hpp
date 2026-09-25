@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.3: command journal for the crash fallback.
-// Copyright (c) 2026 FUSE contributors (MIT). New code: upstream (dxvk-remix bridge, client
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). New code: upstream (dxvk-remix bridge, client
 // OnServerExited) shows a crash dialog and stops rendering when the server dies; FUSE instead
 // rebuilds the device state in-process on plain DXVK from this journal (plan §2.6, "hang and crash
 // detection with a clean fallback").

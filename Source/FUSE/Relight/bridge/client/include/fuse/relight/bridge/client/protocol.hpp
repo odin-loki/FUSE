@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.2: bridge client <-> host conventions on top of the RL-2.1 session.
-// Copyright (c) 2026 FUSE contributors (MIT). New code; the semantics it replaces are named inline
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). New code; the semantics it replaces are named inline
 // (dxvk-remix bridge/src/client/d3d9_lss.cpp InitServer, util_bridgecommand.h Flags, client_options.h).
 //
 // This header is the contract the RL-2.3 host (bridge/host) implements; the RL-2.2 tests carry a

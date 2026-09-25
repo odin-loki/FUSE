@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.2: test-local stub host for the bridge client tests (rl_bridge_*).
-// Copyright (c) 2026 FUSE contributors (MIT). New code; the replay semantics follow dxvk-remix
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). New code; the replay semantics follow dxvk-remix
 // bridge/src/server/main.cpp (MIT, @0867d3c): handles name host objects, children are fetched from
 // their containers, Unlock payloads are written through a host Lock, queries answer from the real
 // device.

@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_mod_usd.cpp@0867d3c (processParticleSystem),
 // src/lssusd/particle_system_helpers.h@0867d3c
 // (primvar conversions) and src/dxvk/rtx_render/rtx_particle_system.cpp@0867d3c (resolveSpawnPrevTransform)

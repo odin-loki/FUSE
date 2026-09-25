@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_camera.cpp@0867d3c, rtx_intersection_test_helpers.h@0867d3c
 // and rtx_draw_call_tracker.cpp@0867d3c. See anti_culling.hpp.
 #include <fuse/relight/scene/instances/anti_culling.hpp>

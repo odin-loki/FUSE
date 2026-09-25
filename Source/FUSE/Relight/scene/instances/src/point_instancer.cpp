@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_point_instancer_system.cpp@0867d3c and
 // src/dxvk/shaders/rtx/pass/instance_culling/point_instancer_culling.comp.slang@0867d3c. See point_instancer.hpp.
 #include <fuse/relight/scene/instances/instance_options.hpp>

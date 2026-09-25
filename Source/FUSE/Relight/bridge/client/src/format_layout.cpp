@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.2: D3DFORMAT memory layout (see format_layout.hpp).
-// Copyright (c) 2026 FUSE contributors (MIT). New code; the D3DFORMAT values are the public
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). New code; the D3DFORMAT values are the public
 // d3d9types.h enumeration.
 #include <fuse/relight/bridge/client/format_layout.hpp>
 

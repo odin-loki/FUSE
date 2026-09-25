@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_options.h@0867d3c and
 // src/dxvk/rtx_render/rtx_point_instancer_system.h@0867d3c (the cullingRadius / fadeStartRadius range
 // callbacks). FUSE Relight RL-1.7: the instance tracking options (see instance_options.hpp).

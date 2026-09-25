@@ -19,7 +19,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix bridge/src/client/{d3d9_module.cpp,d3d9_bootstrap.cpp,d3d9_lss.cpp}@0867d3c
 
 // FUSE Relight RL-2.2: client IDirect3D9Ex and the d3d9.dll entry points.

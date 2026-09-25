@@ -5,7 +5,7 @@ numbered list in the [Sources](#sources) section at the end.*
 
 > Scope: NVIDIA DLSS 5 and the DLSS/Streamline stack, ENBSeries, related upscalers, frame generation,
 > latency, denoisers, injectors, middleware and neural-rendering trends. It ends with a recommended
-> architecture and a prioritised plan for FUSE. FUSE is MIT-licensed (`LICENSE.md`). Its renderer already
+> architecture and a prioritised plan for FUSE. FUSE is AGPL-3.0-licensed (`LICENSE.md`). Its renderer already
 > has a same-resolution CPU-reference TAA (`Source/FUSE/Renderer/include/fuse/renderer/taa/`) and a CPU
 > reference post chain: bloom, DoF, motion blur, tone map, grade and grain
 > (`.../postprocess/post_stack.hpp`). Compute work goes through the single-source kernel model

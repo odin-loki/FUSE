@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_game_capturer.cpp@0867d3c, src/lssusd/game_exporter.cpp@0867d3c,
 // src/dxvk/shaders/rtx/pass/gen_tri_list_index_buffer.h@0867d3c, src/lssusd/mdl_helpers.h@0867d3c and
 // src/dxvk/rtx_render/rtx_lights.cpp@0867d3c (see capture_builder.hpp).

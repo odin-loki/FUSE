@@ -74,7 +74,7 @@ _rl_put("${REPO}/docs/relight.md" "docs/relight.md")
 # ---- licences + THIRD_PARTY_NOTICES.txt -------------------------------------------------------------------
 set(_n "FUSE Relight ${VERSION}: third-party notices\n")
 string(APPEND _n "==========================================================================\n\n")
-string(APPEND _n "FUSE Relight is MIT-licensed. It contains the components listed below; each one's licence\n")
+string(APPEND _n "FUSE Relight is AGPL-3.0-licensed. It contains the components listed below; each one's licence\n")
 string(APPEND _n "text follows and is also in licenses/. No NVIDIA, Intel or other proprietary runtime is\n")
 string(APPEND _n "included: DLSS, Reflex, XeSS and NRD are optional plugins the user installs separately.\n\n")
 foreach(_id IN LISTS RL_NOTICE_IDS)

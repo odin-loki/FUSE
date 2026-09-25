@@ -1,6 +1,6 @@
 // FUSE Relight RL-2.2: memory layout of D3DFORMAT surfaces as the bridge client stores and ships
 // them (tightly packed rows; BC formats in 4x4 blocks).
-// Copyright (c) 2026 FUSE contributors (MIT). Replaces dxvk-remix bridge/src/util/
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). Replaces dxvk-remix bridge/src/util/
 // util_texture_and_volume.h (calcRowSize / calcTotalSizeOfRect / calcImageByteOffset), which covered
 // fewer formats and treated every FOURCC as 4 bytes per pixel.
 //

@@ -19,7 +19,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix bridge/src/client/d3d9_lss.cpp (InitServer, OnServerExited),
 // bridge/src/client/d3d9_util.h, bridge/src/util/util_bridgecommand.h (ClientMessage,
 // WAIT_FOR_*_SERVER_RESPONSE)@0867d3c

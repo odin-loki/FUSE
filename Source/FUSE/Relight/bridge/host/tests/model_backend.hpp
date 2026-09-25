@@ -1,4 +1,4 @@
-// FUSE Relight RL-2.3 tests: a model D3D9 backend. Copyright (c) 2026 FUSE contributors (MIT).
+// FUSE Relight RL-2.3 tests: a model D3D9 backend. Copyright (c) 2026 FUSE contributors (AGPL-3.0).
 //
 // Executes a subset of the real command schema against a tiny device model (render states, texture
 // stages, one stream, textures with a 32-bit pixel grid, vertex buffers, state blocks) with D3D9's

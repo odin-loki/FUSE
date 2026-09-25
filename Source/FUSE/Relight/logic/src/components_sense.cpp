@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/graph/components/{camera,keyboard_input,mesh_hash_checker,
 // texture_hash_checker,light_hash_checker,fog_hash_checker,mesh_proximity,ray_mesh_intersection,angle_to_mesh,
 // read_transform,read_bone_transform,sphere_light_override}.h@0867d3c

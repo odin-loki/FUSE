@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/d3d9/d3d9_rtx.cpp@0867d3c (D3D9Rtx::internalPrepareDraw,
 // PrepareDrawGeometryForRT, PrepareDrawUPGeometryForRT, processIndexBuffer),
 // src/d3d9/d3d9_rtx_geometry.cpp@0867d3c (computeHash, computeAxisAlignedBoundingBox) and

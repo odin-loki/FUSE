@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_lights_data.h@0867d3c (LIST_LIGHT_CONSTANTS: USD token, type,
 // range, default) and the LightData USD facts of rtx_lights_data.cpp@0867d3c (the supported UsdLux types; every
 // attribute is read as `inputs:<token>` with the pre-USD-21.02 bare `<token>` as a fallback).

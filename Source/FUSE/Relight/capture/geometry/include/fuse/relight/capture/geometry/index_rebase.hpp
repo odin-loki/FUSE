@@ -26,7 +26,7 @@
 //   src/util/util_memoization.h  MemoryRegionMemoizer (keyed by the byte range of the index buffer)
 //   src/d3d9/d3d9_device.cpp     LockBuffer: D3DLOCK_DISCARD invalidates everything, any other
 //                                non-read-only lock invalidates the locked range
-// Modifications Copyright (c) 2026 FUSE contributors (MIT).
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0).
 //
 // A memoized result is shared (shared_ptr) between every draw that hits it, so the derived data
 // the hash jobs need (sorted unique indices, the indices / legacyindices component hashes) is also

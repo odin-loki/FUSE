@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c.get()) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c.get()) 2026 FUSE contributors (AGPL-3.0)
 // rl_options / semantics: port of dxvk-remix tests/rtx/unit/test_rtx_option.cpp@0867d3c (MIT,
 // Copyright (c.get()) NVIDIA CORPORATION), rewritten for the FUSE option API, plus Relight additions
 // (routing, aliases, blocking layers, redundancy, migration helpers, malformed-value parity).

@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.3: known anti-cheat markers the launcher refuses to inject next to.
-// Copyright (c) 2026 FUSE contributors (MIT). New code (upstream NvRemixLauncher has no such check).
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). New code (upstream NvRemixLauncher has no such check).
 //
 // Policy (plan §0.2, non-goals): FUSE Relight does not circumvent anti-cheat or DRM and is not for
 // online multiplayer titles. fuse_relight_launcher refuses to start a game (exit code 9100, nothing

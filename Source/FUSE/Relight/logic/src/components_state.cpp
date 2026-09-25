@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/graph/components/{animation_utils,counter,toggle,count_toggles,
 // conditionally_store,previous_frame_value,smooth,velocity,time,loop,remap}.h@0867d3c and rtx_component_list.cpp@0867d3c
 //

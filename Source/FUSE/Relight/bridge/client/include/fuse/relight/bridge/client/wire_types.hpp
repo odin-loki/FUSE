@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.2: cross-architecture wire forms of the D3D9 structures in commands.table.
-// Copyright (c) 2026 FUSE contributors (MIT). New code: upstream (dxvk-remix bridge/src/client,
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). New code: upstream (dxvk-remix bridge/src/client,
 // util_serializable.h) memcpy'd the structs and patched the x86/x64 differences by hand (e.g. the
 // "+4 bytes of padding" of D3DADAPTER_IDENTIFIER9 in d3d9_module.cpp).
 //

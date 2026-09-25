@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_instance_manager.{h,cpp}@0867d3c (RtInstance's identity,
 // transform history and lifecycle; InstanceManager::processSceneObject, addInstance, updateInstance's
 // per-frame bookkeeping and transform update, preserveInstance, garbageCollection,

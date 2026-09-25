@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/lssusd/game_exporter_types.h@0867d3c (lss::Export, Mesh, Instance, Material,
 // SphereLight, DistantLight, Camera, Skeleton, RenderingMetaData) and src/lssusd/remix_category_names.h@0867d3c
 // (the remix_category:* attribute names).

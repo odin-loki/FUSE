@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.3: host-crash test on real D3D9 (Wine + Xvfb + Lavapipe).
-// Copyright (c) 2026 FUSE contributors (MIT).
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0).
 //
 // A test-local client (RL-2.2's proxy is written concurrently): it owns a window, launches
 // fuse_relight_host.exe (vendored x64 DXVK + Relight) through BridgeLink and renders frames with

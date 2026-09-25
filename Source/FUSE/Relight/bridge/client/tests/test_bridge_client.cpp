@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.2: bridge client unit tests (rl_bridge_client_unit).
-// Copyright (c) 2026 FUSE contributors (MIT). New code.
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). New code.
 //
 // Portable (Linux + Windows): D3DFORMAT layout, DirectInput -> window-message translation
 // (the di_hook semantics), schema shapes the client relies on.

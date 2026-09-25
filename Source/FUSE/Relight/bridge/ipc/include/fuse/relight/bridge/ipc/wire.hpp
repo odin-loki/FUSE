@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.1: bridge wire format used by the generated command encoders and decoders.
-// Copyright (c) 2026 FUSE contributors (MIT). New code (upstream serialized ad hoc per call site).
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). New code (upstream serialized ad hoc per call site).
 //
 // Little-endian, unaligned, no padding: scalars are raw bytes; std::array<T, N> is N raw elements;
 // std::vector<T> and std::string are a u32 element count followed by the elements. The reader is

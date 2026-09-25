@@ -91,4 +91,4 @@ Layout details: [`docs/repository-layout.md`](docs/repository-layout.md).
 
 ## License
 
-MIT. See [`LICENSE.md`](LICENSE.md). Provenance notes: [`docs/heritage.md`](docs/heritage.md).
+AGPL-3.0. See [`LICENSE.md`](LICENSE.md). Provenance notes: [`docs/heritage.md`](docs/heritage.md).

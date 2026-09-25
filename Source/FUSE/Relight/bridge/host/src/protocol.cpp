@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.3: bridge host protocol rules (see protocol.hpp for the upstream notice and
-// what they port). Modifications Copyright (c) 2026 FUSE contributors (MIT).
+// what they port). Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0).
 // Ported from dxvk-remix bridge/src/server/main.cpp@0867d3c (which calls answer the client)
 
 #include <fuse/relight/bridge/host/protocol.hpp>

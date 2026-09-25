@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/d3d9/d3d9_state.h@0867d3c (CapturedVertex, NV-DXVK vertex capture)
 
 // FUSE Relight RL-1.6: the 48-byte vertex capture layout (docs/plans/FUSE_REMIX_PORT_PLAN.md §2.5).

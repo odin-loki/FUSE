@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/graph/components/{add,subtract,multiply,divide}.{h,cpp}@0867d3c,
 // {clamp,min,max,invert,normalize,vector_length,floor,ceil,round}.h@0867d3c,
 // {compose,decompose}_vector{2,3,4}.h@0867d3c and rtx_component_list.cpp@0867d3c (the variant lists)

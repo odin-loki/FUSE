@@ -18,7 +18,7 @@ Work happens on **`main`**. Open PRs against `main`.
 
 ### Rules
 
-- Code must be legally compatible with the MIT license in [`LICENSE.md`](LICENSE.md).
+- Code must be legally compatible with the AGPL-3.0 license in [`LICENSE.md`](LICENSE.md).
 - Follow [`docs/coding-standards.md`](docs/coding-standards.md).
 - Keep each PR focused. One intent, a small set of files, a clear test plan.
 - Do not leak Qt types into engine libraries. Editor chrome is Qt; core is Qt-free.

@@ -33,7 +33,7 @@
 //      fixed-function skinning data (processSkinning) as jobs on fuse::jobs::JobScheduler.
 // It does not classify draws (RL-1.2) or decide what DXVK does with them: onDraw always returns
 // DrawDecision::Raster. Consumers take the CapturedDraw records (sink or takeDraws()).
-// Modifications Copyright (c) 2026 FUSE contributors (MIT).
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0).
 #pragma once
 
 #include <fuse/relight/capture/geometry/index_rebase.hpp>

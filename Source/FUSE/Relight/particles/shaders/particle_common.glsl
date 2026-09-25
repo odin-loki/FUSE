@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/shaders/rtx/pass/particles/*.slang@0867d3c and
 // src/dxvk/shaders/rtx/utility/{noise,procedural_noise,
 // sampling,math,packing}.slangh@0867d3c

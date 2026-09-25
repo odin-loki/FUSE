@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_draw_call_tracker.{h,cpp}@0867d3c (DrawCallTracker) and
 // src/dxvk/rtx_render/rtx_types.h@0867d3c (ReplacementInstance, its LookupKey and dirty flags).
 //

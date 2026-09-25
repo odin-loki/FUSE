@@ -19,7 +19,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix bridge/src/server/main.cpp@0867d3c (wWinMain command loop, OnClientExited)
 
 // FUSE Relight RL-2.3: host command loop (see host_loop.hpp).

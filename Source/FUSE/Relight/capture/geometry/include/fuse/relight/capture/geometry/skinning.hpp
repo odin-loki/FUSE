@@ -25,7 +25,7 @@
 //   src/d3d9/d3d9_rtx.cpp        D3D9Rtx::processSkinning
 //   src/d3d9/d3d9_rtx_utils.cpp  getMinMaxBoneIndices
 //   src/dxvk/rtx_render/rtx_types.h  SkinningData::computeHash
-// Modifications Copyright (c) 2026 FUSE contributors (MIT).
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0).
 //
 // Rules kept:
 //   * programmable vertex shaders never produce skinning data;

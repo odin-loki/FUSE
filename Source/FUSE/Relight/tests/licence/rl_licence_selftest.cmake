@@ -114,7 +114,7 @@ if(MODE STREQUAL "text")
         "  uniform token info:mdl:sourceAsset:subIdentifier = \"AperturePBR_Opacity\"\n}\n")
     file(WRITE "${_good}/${_rl}/render/near_miss.cpp"
         "// SPDX-FileCopyrightText: Copyright (c) 2021-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n"
-        "// SPDX-License-Identifier: MIT\n// Modifications Copyright (c) 2026 FUSE contributors (MIT)\n"
+        "// SPDX-License-Identifier: MIT\n// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)\n"
         "#include \"NRC.hpp\"\n#include \"nrd_plugin_bridge.hpp\"\n// ReSTIR DI, RTXDI-style reservoirs (Bitterli 2020)\n"
         "int RTXDIish = 0; int kRAB = 1; int MyNRC_h = 2; // NRD denoiser via plugins/nvidia\n"
         "// model 1.6; import std::df;\n")

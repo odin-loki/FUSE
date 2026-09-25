@@ -19,7 +19,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix bridge/src/server/main.cpp (handshake), bridge/src/util/{util_bridge_state,util_version}.h@0867d3c
 
 // FUSE Relight RL-2.1: a bridge session — the two channels (client->host, host->client), the shared

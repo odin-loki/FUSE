@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_matrix_helpers.h@0867d3c and
 // include/MathLib/MathLib.h@0867d3c (MvpToPlanes, DecomposeProjection). FUSE changes: scalar float
 // code instead of MathLib's SSE types; the side planes are normalized with an exact 1 / sqrt instead

@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.2: DXVK d3d8 interop of the bridge client.
-// Copyright (c) 2026 FUSE contributors (MIT). New code (upstream bridge had no D3D8 path; Remix
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). New code (upstream bridge had no D3D8 path; Remix
 // packaging used crosire's d3d8to9). The interface declarations come from the vendored DXVK
 // src/d3d9/d3d9_bridge.h (zlib), unchanged.
 //

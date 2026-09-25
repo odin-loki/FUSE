@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.3: launcher self-test probe DLL (stands in for the Relight d3d9.dll).
-// Copyright (c) 2026 FUSE contributors (MIT). New code.
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). New code.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif

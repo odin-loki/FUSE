@@ -30,7 +30,7 @@
 // (the whole DWORD: with D3DTSS_TCI_* generation flags it is > MAXD3DDECLUSAGEINDEX and selects no
 // stream). The texture-factor bookkeeping of the same loop does not affect the choice and is not
 // ported here (it belongs to the material translation, RL-1.5).
-// Modifications Copyright (c) 2026 FUSE contributors (MIT).
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0).
 #pragma once
 
 #include <array>

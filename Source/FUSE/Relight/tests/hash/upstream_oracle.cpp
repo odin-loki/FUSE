@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Test oracle for FUSE Relight RL-0.5: the hashing code of dxvk-remix @0867d3c kept as close to
 // verbatim as a standalone build allows, used to derive the known-answer tables (kat_vectors.txt)
 // and to cross-check fuse_relight_hash live. Ported from:

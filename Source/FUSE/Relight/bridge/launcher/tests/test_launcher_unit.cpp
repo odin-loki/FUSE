@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.3: launcher unit tests (any platform): anti-cheat table and scans, glob, PE
-// machine detection, command-line quoting. Copyright (c) 2026 FUSE contributors (MIT).
+// machine detection, command-line quoting. Copyright (c) 2026 FUSE contributors (AGPL-3.0).
 
 #include <fuse/relight/bridge/launcher/launcher.hpp>
 

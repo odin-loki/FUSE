@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.1: bounded waits with peer-death and peer-close detection.
-// Copyright (c) 2026 FUSE contributors (MIT). New code: upstream waited with timeout x retries
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). New code: upstream waited with timeout x retries
 // loops (util_bridgecommand.cpp waitForCommand, util_atomiccircularqueue.h) plus an OS exit
 // callback that flipped a global "bridge running" flag. Here every blocking wait in the IPC core
 // polls the peer through one Waiter, so every wait returns PeerDead within peerCheckMs of the

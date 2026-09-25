@@ -19,7 +19,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix bridge/src/client/{base.h,d3d9_lss.h,d3d9_device.h,d3d9_device_base.h,
 // d3d9_resource.h,d3d9_base_texture.h,d3d9_texture.h,d3d9_cubetexture.h,d3d9_volumetexture.h,
 // d3d9_surface.h,d3d9_volume.h,d3d9_vertexbuffer.h,d3d9_indexbuffer.h,lockable_buffer.h,

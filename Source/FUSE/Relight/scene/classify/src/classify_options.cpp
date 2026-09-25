@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_options.cpp@0867d3c (the deprecated decal list
 // migration) and src/dxvk/rtx_render/rtx_terrain_baker.cpp@0867d3c (needsTerrainBaking).
 #include <fuse/relight/scene/classify/classify_options.hpp>

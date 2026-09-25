@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_types.h@0867d3c (the DrawCallState fields the scene
 // manager's instance tracking reads) and src/dxvk/rtx_render/rtx_materials.cpp@0867d3c
 // (LegacyMaterialData::computeIdentityHash).

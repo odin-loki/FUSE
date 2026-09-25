@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/d3d9/d3d9_rtx.cpp@0867d3c (D3D9Rtx::processVertices) and DXVK's
 // D3D9VertexDecl size classification (src/d3d9/d3d9_vertex_declaration.cpp).
 // FUSE changes: stream windows are bounds-checked and copied into padded, shared CPU buffers

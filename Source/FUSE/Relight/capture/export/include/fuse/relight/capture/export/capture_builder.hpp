@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_game_capturer.{h,cpp}@0867d3c (GameCapturer: captureFrame,
 // captureCamera, captureLights / captureSphereLight / captureDistantLight, captureInstances, newInstance,
 // captureMaterial, captureMesh and its buffer readers, createDrawCallMetadata, prepExport*),

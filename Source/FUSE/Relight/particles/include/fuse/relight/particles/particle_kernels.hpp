@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix
 // src/dxvk/shaders/rtx/pass/particles/particle_system_{spawn,evolve,generate_geometry}.comp.slang@0867d3c,
 // particle_system_binding_indices.h@0867d3c (GpuParticle) and

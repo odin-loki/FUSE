@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.3: bridge host tests on the model backend (any platform; Wine in the MinGW tree).
-// Copyright (c) 2026 FUSE contributors (MIT).
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0).
 //
 //   unit                 protocol rules, fault parsing, journal compaction (bounded, and replaying
 //                        the compacted journal reproduces the model state), heap-payload path

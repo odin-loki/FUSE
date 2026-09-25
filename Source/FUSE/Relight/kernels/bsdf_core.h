@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/shaders/rtx/utility/brdf.slangh@0867d3c (GGX D / Smith G1 / height-correlated
 // visibility, Schlick and TIR-Schlick Fresnel, Hammon diffuse, Beer-Lambert and thin-wall geometric series, the
 // Hanrahan single-scattering diffuse transmission, Henyey-Greenstein, perceptual roughness and anisotropy mapping),

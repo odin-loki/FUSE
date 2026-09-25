@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.3: fuse_relight_launcher --self-test.
-// Copyright (c) 2026 FUSE contributors (MIT). New code (upstream's launcher had a _DEBUG-only
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). New code (upstream's launcher had a _DEBUG-only
 // export-ordinal check of the DLL, which the remote LoadLibraryW does not need).
 //
 // Uses two helpers built next to the launcher:

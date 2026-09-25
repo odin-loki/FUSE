@@ -19,7 +19,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix bridge/src/util/{util_ipcchannel.h,util_bridgecommand.h,util_bridgecommand.cpp,util_common.h}@0867d3c
 
 // FUSE Relight RL-2.1: one direction of the bridge — a command queue of message headers plus the

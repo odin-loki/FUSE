@@ -27,7 +27,7 @@
 // ignored) becomes an attribute over one copy per stream of the draw's vertex window:
 // stride * vertexCount bytes starting at streamOffset + stride * vertexIndexOffset, where
 // vertexIndexOffset = BaseVertexIndex (+ minIndex for indexed draws) and can be negative.
-// Modifications Copyright (c) 2026 FUSE contributors (MIT).
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0).
 //
 // Differences from upstream, both only for draws upstream reads out of bounds for:
 //   * a window that is not inside the stream's buffer makes the draw OutOfBounds (upstream checks

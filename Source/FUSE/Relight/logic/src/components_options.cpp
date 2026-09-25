@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/graph/components/{rtx_option_layer_action,rtx_option_layer_sensor,
 // rtx_option_read_bool,rtx_option_read_number,rtx_option_read_vector2,rtx_option_read_vector3,rtx_option_read_color3,
 // rtx_option_read_color4}.h@0867d3c

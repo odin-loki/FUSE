@@ -24,7 +24,7 @@
 //     OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 //     DEALINGS IN THE SOFTWARE.
 //
-// Modifications Copyright (c) 2026 FUSE contributors (MIT): the rules are re-expressed over the
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0): the rules are re-expressed over the
 // FUSE Relight tap events (no DXVK objects); the staging buffer is FUSE's canonical mip-0 shadow.
 #include <fuse/relight/capture/texture/texture_tracker.hpp>
 

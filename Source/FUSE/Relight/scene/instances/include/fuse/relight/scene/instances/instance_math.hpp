@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/util/util_bounding_box.h@0867d3c (AxisAlignedBoundingBox: isValid,
 // getCentroid, getTransformedCentroid, unionWith, calculateHash).
 // FUSE Relight RL-1.7: the small float vector / matrix helpers of the instance tracker.

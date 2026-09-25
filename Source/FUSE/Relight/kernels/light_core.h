@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // The D3DLIGHT9 conversion (rlConvertD3dLight and its helpers) is the device port of
 // Source/FUSE/Relight/scene/lights/src/legacy_light.cpp (RL-1.5), itself ported from dxvk-remix
 // src/dxvk/rtx_render/rtx_lights_data.cpp@0867d3c (createFromPointSpot / createFromDirectional / toRtLight) and

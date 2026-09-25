@@ -19,7 +19,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix public/include/remix/remix_c.h@0867d3c (Remix API 0.6.5): the enums, structs, function
 // pointer types and remixapi_Interface are reproduced verbatim so the ABI (layouts, calling convention, interface
 // order) is identical. FUSE changes: no <windows.h> (the REMIX_WINAPI_NO_INCLUDE types are always used), no x64-only

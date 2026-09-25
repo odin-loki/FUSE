@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_matrix_helpers.h@0867d3c (decomposeProjection,
 // DecomposeProjectionParams) and include/MathLib/MathLib.h@0867d3c (DecomposeProjection settings
 // output and MvpToPlanes for NDC_D3D, MathLib 1.6, MIT).

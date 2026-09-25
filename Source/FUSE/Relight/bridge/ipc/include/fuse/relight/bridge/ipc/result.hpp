@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.1: bridge IPC core — result codes and wait constants.
-// Copyright (c) 2026 FUSE contributors (MIT). Semantics follow dxvk-remix bridge/src/util/util_common.h
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). Semantics follow dxvk-remix bridge/src/util/util_common.h
 // (Result::{Success,Timeout,Failure}); FUSE adds the peer, version and validation outcomes.
 #pragma once
 

@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_material_data.h@0867d3c (parameter tables) and
 // src/dxvk/rtx_render/rtx_mod_usd.cpp@0867d3c (material type selection). See material_table.hpp.
 #include <fuse/relight/mods/import/material_table.hpp>

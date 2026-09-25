@@ -5,7 +5,7 @@ FUSE Relight is a drop-in Direct3D 8 and Direct3D 9 runtime. It sits in a game's
 again with the FUSE renderer: remastered raster rendering, or path tracing on GPUs with Vulkan ray
 tracing. It reads RTX Remix mods and `rtx.conf` files, so existing community mods keep working.
 
-Relight is MIT-licensed. It ships no NVIDIA or Intel binary. DLSS, Reflex, XeSS and NRD are optional
+Relight is AGPL-3.0-licensed. It ships no NVIDIA or Intel binary. DLSS, Reflex, XeSS and NRD are optional
 plugins that you install yourself (see [Optional plugins](#optional-plugins)).
 
 Design and status: [plans/FUSE_REMIX_PORT_PLAN.md](plans/FUSE_REMIX_PORT_PLAN.md). Developer notes on the
@@ -214,7 +214,7 @@ When you report a bug, include the logs, `manifest.json` from the package, the o
 
 ## Licences
 
-FUSE and FUSE Relight are MIT-licensed. `THIRD_PARTY_NOTICES.txt` and `licenses/` in the package hold the
+FUSE and FUSE Relight are AGPL-3.0-licensed. `THIRD_PARTY_NOTICES.txt` and `licenses/` in the package hold the
 licence of every component compiled into the shipped files: DXVK (zlib, with FUSE's modifications marked
 in the source), dxbc-spirv, libdisplay-info, the Khronos Vulkan and SPIR-V headers, the OpenVR headers
 (BSD-3), the MIT-licensed parts of dxvk-remix that Relight ports, xxHash (BSD-2), the GDeflate codec (MIT

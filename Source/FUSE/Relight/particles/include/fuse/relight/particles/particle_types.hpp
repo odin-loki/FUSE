@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/shaders/rtx/pass/particles/particle_system_{common,enums,binding_indices}.h@0867d3c
 
 // FUSE Relight RL-3.6: the particle system's data layouts, shared by the CPU kernels (particle_kernels.hpp) and the

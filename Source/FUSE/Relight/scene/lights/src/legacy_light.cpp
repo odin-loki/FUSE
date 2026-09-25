@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_lights_data.cpp@0867d3c,
 // src/dxvk/rtx_render/rtx_light_utils.cpp@0867d3c and src/util/util_quat.h@0867d3c (getOrientation).
 // See legacy_light.hpp. The float expression order of every hashed or intensity-affecting value is

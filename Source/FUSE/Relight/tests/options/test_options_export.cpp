@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // rl_options / export: port of dxvk-remix tests/rtx/unit/test_option_layer_export.cpp@0867d3c (MIT,
 // Copyright (c) NVIDIA CORPORATION), rewritten for the FUSE option API.
 

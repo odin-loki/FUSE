@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/dxvk/rtx_render/rtx_lights.cpp@0867d3c (RtLightShaping::getHash and the
 // RtSphereLight/RtRectLight/RtDiskLight/RtCylinderLight/RtDistantLight::updateCachedHash functions).
 // FUSE changes: free functions over plain float arrays instead of the RtLight classes.

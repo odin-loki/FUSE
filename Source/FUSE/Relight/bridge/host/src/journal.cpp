@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.3: command journal for the crash fallback (see journal.hpp).
-// Copyright (c) 2026 FUSE contributors (MIT). New code.
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). New code.
 
 #include <fuse/relight/bridge/host/journal.hpp>
 #include <fuse/relight/bridge/host/protocol.hpp>

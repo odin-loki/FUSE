@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/lssusd/remix_category_names.h@0867d3c (attribute names) and
 // src/dxvk/rtx_render/rtx_game_capturer.cpp@0867d3c (prepExportInstances: instance names).
 // FUSE Relight RL-1.8: capture model helpers and the key set (see capture_model.hpp).

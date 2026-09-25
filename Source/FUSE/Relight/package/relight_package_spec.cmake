@@ -25,7 +25,7 @@ endmacro()
 
 set(_rl_pkg "Source/FUSE/Relight/package/dist/licenses")
 
-_rl_notice(fuse "FUSE and FUSE Relight" "MIT" "Permission is hereby granted, free of charge" ""
+_rl_notice(fuse "FUSE and FUSE Relight" "AGPL-3.0" "GNU Affero General Public License" ""
     "LICENSE.md")
 _rl_notice(dxvk "DXVK 3.1.1 (doitsujin/dxvk), with FUSE-DXVK marked modifications" "zlib"
     "Altered source versions must be plainly marked" "doitsujin/dxvk"

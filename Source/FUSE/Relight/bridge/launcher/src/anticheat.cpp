@@ -1,6 +1,6 @@
 // FUSE Relight RL-2.3: launcher checks that do not need Win32 — the anti-cheat marker table and
 // scans, PE machine detection, command-line quoting (see launcher.hpp).
-// Copyright (c) 2026 FUSE contributors (MIT). New code.
+// Copyright (c) 2026 FUSE contributors (AGPL-3.0). New code.
 
 #include <fuse/relight/bridge/launcher/launcher.hpp>
 

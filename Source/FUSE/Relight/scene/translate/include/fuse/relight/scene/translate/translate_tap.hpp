@@ -19,7 +19,7 @@
 * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 * DEALINGS IN THE SOFTWARE.
 */
-// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)
 // Ported from dxvk-remix src/d3d9/d3d9_rtx.cpp@0867d3c (the translation steps of internalPrepareDraw:
 // setLegacyMaterialState, setFogState, processRenderState, the colour-texture material binding,
 // minZ / maxZ / z / stencil state, fogIgnoreSky) and src/dxvk/rtx_render/rtx_scene_manager.cpp@0867d3c
