@@ -155,6 +155,7 @@ build-p4
 build-p5
 build-track-a
 build-vk
+/build-*/
 eggs
 parts
 bin
@@ -197,6 +198,7 @@ Engine/lib/assimp/revision.h
 
 # Crash reports written by the crash handler when tests run from the repo root
 fuse_crash_*.txt
+fuse_crash_*.dmp
 
 # NVIDIA RTX SDK runtime binaries (DLSS / NGX / Streamline plugins; NVIDIA RTX SDKs License): never
 # committed — FUSE is MIT. Enforced by ctest fuse_nvidia_no_committed_binaries (docs/nvidia-plugin.md).
