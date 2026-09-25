@@ -1,0 +1,29 @@
+{
+  "schema": "fuse.relight.setup_expect/1",
+  "scene": "rt_target",
+  "comment": [
+    "The render-target texture sampled by the world quad is suggested for rtx.raytracedRenderTargetTextures (its descriptor hash); nothing is applied by default.",
+    "Accepting it ray traces the offscreen pass (DrawingToRaytracedTarget) and flags the quad as using a raytraced render target."
+  ],
+  "proposals": {
+    "applied": {"exact": true},
+    "pending": {"textures": {"raytracedRenderTarget": ["world"]}},
+    "never_applied_tags": ["offscreen", "world"]
+  },
+  "runs": [
+    {"name": "profile_nothing_applied", "match": "name", "same_as_baseline": true},
+    {
+      "name": "accept_raytraced_rt",
+      "match": "name",
+      "accept": ["raytracedRenderTarget"],
+      "tags": {
+        "offscreen": {"status": "raytraced", "reason": "DrawingToRaytracedTarget", "drawing_to_rt_rt": true},
+        "world": [
+          {"status": "raytraced", "using_rt_rt": true, "categories_include": "IgnoreOpacityMicromap"},
+          {"status": "raytraced", "using_rt_rt": false}
+        ]
+      }
+    },
+    {"name": "other_exe", "match": "other", "same_as_baseline": true}
+  ]
+}

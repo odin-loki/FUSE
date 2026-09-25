@@ -6,6 +6,10 @@
 
 #include <fuse/relight/options/options.hpp>
 
+#if defined(FUSE_RELIGHT_HAVE_SETUP_PROFILE)
+#include <fuse/relight/setup/profile_runtime.hpp> // RL-6.3 (setup/CMakeLists.txt sets the define)
+#endif
+
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -100,7 +104,12 @@ RuntimeConfig resolveRuntimeConfig() {
         return config;
     }
     if (!options::OptionSystem::isInitialized()) {
+#if defined(FUSE_RELIGHT_HAVE_SETUP_PROFILE)
+        // RL-6.3: the per-game profile matching this executable becomes the app-config layer.
+        options::OptionSystem::initialize(setup::runtimeOptionSystemDesc(std::string()));
+#else
         options::OptionSystem::initialize();
+#endif
     }
     TapMode mode = TapMode::Off;
     if (!parseTapMode(TapOptions::mode(), mode)) {

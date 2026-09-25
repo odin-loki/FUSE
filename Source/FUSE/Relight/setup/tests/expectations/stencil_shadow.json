@@ -1,0 +1,25 @@
+{
+  "schema": "fuse.relight.setup_expect/1",
+  "scene": "stencil_shadow",
+  "comment": [
+    "The only POSITIONT draw is a full-screen darkening quad after the 3D pass: rtx.preTransformedVerticesIsUI is suggested with low confidence, not applied.",
+    "Accepting it turns the quad into the UI injection point."
+  ],
+  "proposals": {
+    "applied": {"exact": true},
+    "pending": {"options": {"rtx.preTransformedVerticesIsUI": "True"}}
+  },
+  "runs": [
+    {"name": "profile_nothing_applied", "match": "name", "same_as_baseline": true},
+    {
+      "name": "accept_positiont_ui",
+      "match": "hash",
+      "accept": ["rtx.preTransformedVerticesIsUI"],
+      "tags": {
+        "world": {"status": "raytraced"},
+        "shadow_volume": {"status": "ignored"},
+        "shadow_darken": {"status": "rasterized", "reason": "PositionTAsUI", "inject": true}
+      }
+    }
+  ]
+}
