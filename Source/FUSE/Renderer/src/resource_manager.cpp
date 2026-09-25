@@ -1208,6 +1208,158 @@ OneShotCopyOutcome oneShotCopyImageToBuffer(VulkanDevice& device, void* srcImage
     return outcome;
 }
 
+OneShotCopyOutcome oneShotCopyImage(VulkanDevice& device, void* srcImage, void* dstImage, u32 width, u32 height,
+                                    u32 depth, u32 arrayLayers) {
+    if (!device.isValid() || device.nativeHandle() == nullptr || srcImage == nullptr || dstImage == nullptr ||
+        srcImage == dstImage || width == 0u || height == 0u) {
+        return {};
+    }
+    if (!bindlessNativeHandleReady(srcImage) || !bindlessNativeHandleReady(dstImage)) {
+        return {};
+    }
+
+    const TransferSubmitTarget target = pickTransferTarget(device);
+    if (target.queue == VK_NULL_HANDLE) {
+        return {};
+    }
+
+    const u32 extentDepth = depth > 0u ? depth : 1u;
+    const u32 layerCount = arrayLayers > 0u ? arrayLayers : 1u;
+    const bool transferOwnership = needsGraphicsAcquire(device, target.family);
+    const u32 graphicsFamily = device.queues().graphicsFamily;
+    const u32 srcFamily = transferOwnership ? graphicsFamily : VK_QUEUE_FAMILY_IGNORED;
+    const u32 dstFamily = transferOwnership ? target.family : VK_QUEUE_FAMILY_IGNORED;
+
+    auto makeBarrier = [&](void* image, VkImageLayout oldLayout, VkImageLayout newLayout, VkAccessFlags srcAccess,
+                           VkAccessFlags dstAccess, bool release) {
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.srcAccessMask = srcAccess;
+        barrier.dstAccessMask = dstAccess;
+        barrier.oldLayout = oldLayout;
+        barrier.newLayout = newLayout;
+        barrier.srcQueueFamilyIndex = transferOwnership ? (release ? srcFamily : dstFamily) : VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = transferOwnership ? (release ? dstFamily : srcFamily) : VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = static_cast<VkImage>(image);
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.layerCount = layerCount;
+        return barrier;
+    };
+
+    if (transferOwnership) {
+        const VkImageMemoryBarrier releaseSrc = makeBarrier(
+            srcImage, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_ACCESS_SHADER_READ_BIT, 0, true);
+        const VkImageMemoryBarrier releaseDst = makeBarrier(
+            dstImage, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, 0, true);
+        if (!submitImageBarrier(device, graphicsFamily, static_cast<VkQueue>(device.queues().graphics), releaseSrc,
+                                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT)
+                 .submitted) {
+            return {};
+        }
+        if (!submitImageBarrier(device, graphicsFamily, static_cast<VkQueue>(device.queues().graphics), releaseDst,
+                                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT)
+                 .submitted) {
+            return {};
+        }
+    }
+
+    const VkDevice vkDevice = static_cast<VkDevice>(device.nativeHandle());
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    poolInfo.queueFamilyIndex = target.family;
+    VkCommandPool pool = VK_NULL_HANDLE;
+    if (vkCreateCommandPool(vkDevice, &poolInfo, nullptr, &pool) != VK_SUCCESS) {
+        return {};
+    }
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = pool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    if (vkAllocateCommandBuffers(vkDevice, &allocInfo, &cmd) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return {};
+    }
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return {};
+    }
+
+    VkImageMemoryBarrier toSrc = makeBarrier(
+        srcImage, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        transferOwnership ? 0 : VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT, false);
+    VkImageMemoryBarrier toDst = makeBarrier(
+        dstImage, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        transferOwnership ? 0 : VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, false);
+    if (transferOwnership) {
+        toSrc.srcQueueFamilyIndex = graphicsFamily;
+        toSrc.dstQueueFamilyIndex = target.family;
+        toDst.srcQueueFamilyIndex = graphicsFamily;
+        toDst.dstQueueFamilyIndex = target.family;
+    }
+    const VkImageMemoryBarrier prepare[2] = {toSrc, toDst};
+    const VkPipelineStageFlags prepareSrc =
+        transferOwnership ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    vkCmdPipelineBarrier(cmd, prepareSrc, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 2, prepare);
+
+    VkImageCopy region{};
+    region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.srcSubresource.layerCount = layerCount;
+    region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.dstSubresource.layerCount = layerCount;
+    region.extent = {width, height, extentDepth};
+    vkCmdCopyImage(cmd, static_cast<VkImage>(srcImage), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   static_cast<VkImage>(dstImage), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    VkImageMemoryBarrier backSrc = makeBarrier(
+        srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_ACCESS_TRANSFER_READ_BIT, transferOwnership ? 0 : VK_ACCESS_SHADER_READ_BIT, false);
+    VkImageMemoryBarrier backDst = makeBarrier(
+        dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_ACCESS_TRANSFER_WRITE_BIT, transferOwnership ? 0 : VK_ACCESS_SHADER_READ_BIT, false);
+    const VkImageMemoryBarrier restore[2] = {backSrc, backDst};
+    const VkPipelineStageFlags restoreDst =
+        transferOwnership ? VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, restoreDst, 0, 0, nullptr, 0, nullptr, 2, restore);
+
+    if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return {};
+    }
+    OneShotCopyOutcome outcome = submitOneShotAndWait(vkDevice, target.queue, cmd, true);
+    vkDestroyCommandPool(vkDevice, pool, nullptr);
+    if (!outcome.submitted) {
+        return outcome;
+    }
+
+    if (transferOwnership) {
+        VkImageMemoryBarrier acquireSrc = backSrc;
+        acquireSrc.srcAccessMask = 0;
+        acquireSrc.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        VkImageMemoryBarrier acquireDst = backDst;
+        acquireDst.srcAccessMask = 0;
+        acquireDst.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        const bool srcAcquired =
+            submitImageBarrier(device, graphicsFamily, static_cast<VkQueue>(device.queues().graphics), acquireSrc,
+                               VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT)
+                .submitted;
+        const bool dstAcquired =
+            submitImageBarrier(device, graphicsFamily, static_cast<VkQueue>(device.queues().graphics), acquireDst,
+                               VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT)
+                .submitted;
+        outcome.submitted = srcAcquired && dstAcquired;
+        outcome.ownershipTransferred = outcome.submitted;
+    }
+    return outcome;
+}
+
 } // namespace
 #endif
 
@@ -1268,6 +1420,53 @@ bool ResourceManager::readTexture(TextureHandle handle, void* dst, usize size) {
     return true;
 #else
     (void)copySize;
+    return false;
+#endif
+}
+
+bool ResourceManager::copyTexture(TextureHandle src, TextureHandle dst) {
+    m_lastGpuTextureCopyBytes = 0;
+    m_lastGpuTextureCopySubmitted = false;
+    m_lastOwnershipTransfer = false;
+
+    const Texture* source = getTexture(src);
+    const Texture* destination = getTexture(dst);
+    if (source == nullptr || destination == nullptr || src == dst) {
+        return false;
+    }
+    if (source->desc.format != destination->desc.format || source->desc.width != destination->desc.width ||
+        source->desc.height != destination->desc.height || source->desc.depth != destination->desc.depth ||
+        source->desc.arrayLayers != destination->desc.arrayLayers) {
+        return false;
+    }
+
+    const u32 width = source->desc.width > 0 ? source->desc.width : 1u;
+    const u32 height = source->desc.height > 0 ? source->desc.height : 1u;
+    const u32 depth = source->desc.depth > 0 ? source->desc.depth : 1u;
+    const u32 layers = source->desc.arrayLayers > 0 ? source->desc.arrayLayers : 1u;
+
+    if (!m_ready || m_allocator == nullptr || m_device == nullptr || !m_device->isValid()) {
+        return false;
+    }
+
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!bindlessNativeHandleReady(source->image) || !bindlessNativeHandleReady(destination->image)) {
+        return false;
+    }
+    const OneShotCopyOutcome copy =
+        oneShotCopyImage(*m_device, source->image, destination->image, width, height, depth, layers);
+    if (!copy.submitted) {
+        return false;
+    }
+    m_lastGpuTextureCopySubmitted = true;
+    m_lastGpuTextureCopyBytes = static_cast<u32>(gpu_alloc_detail::estimateImageBytes(source->desc));
+    m_lastOwnershipTransfer = copy.ownershipTransferred;
+    return true;
+#else
+    (void)width;
+    (void)height;
+    (void)depth;
+    (void)layers;
     return false;
 #endif
 }

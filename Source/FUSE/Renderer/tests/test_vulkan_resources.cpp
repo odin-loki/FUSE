@@ -765,11 +765,24 @@ void testTextureReadback() {
         expectTrue(resources.lastTextureReadbackBytes() == 4u,
                    "lastTextureReadbackBytes records a 1x1 RGBA copy");
     }
+    const u8 otherPayload[4] = {1, 2, 3, 4};
+    const fuse::renderer::TextureHandle copyDst = resources.createTexture(textureDesc, otherPayload);
+    expectTrue(copyDst.isValid(), "copy destination texture handle issued");
+    expectTrue(!resources.copyTexture(texture, texture), "copyTexture rejects a self copy");
+    expectTrue(resources.copyTexture(texture, copyDst), "copyTexture submits a 1x1 image copy");
+    expectTrue(resources.lastGpuTextureCopySubmitted(), "lastGpuTextureCopySubmitted records the image copy");
+    u8 copied[4] = {};
+    if (resources.readTexture(copyDst, copied, sizeof(copied))) {
+        expectTrue(copied[0] == payload[0] && copied[1] == payload[1] && copied[2] == payload[2] &&
+                       copied[3] == payload[3],
+                   "copyTexture pixels match the source texture");
+    }
 #else
     expectTrue(!resources.readTexture(texture, readback, sizeof(readback)),
                "stub readTexture returns false");
     expectTrue(resources.lastTextureReadbackBytes() == 0u,
                "stub lastTextureReadbackBytes stays zero");
+    expectTrue(!resources.copyTexture(texture, texture), "stub copyTexture returns false");
 #endif
 
     resources.destroyTexture(texture);

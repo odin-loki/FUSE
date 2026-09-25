@@ -50,6 +50,8 @@ public:
     const Buffer* getBuffer(BufferHandle handle) const;
     bool readBuffer(BufferHandle handle, void* dst, usize size);
     bool readTexture(TextureHandle handle, void* dst, usize size);
+    /// Copy mip 0 from `src` to `dst`. Both images must already be in shader-read layout and share extent and format.
+    bool copyTexture(TextureHandle src, TextureHandle dst);
 
     usize stagingRingCapacity() const { return m_stagingRingCapacity; }
     usize stagingRingOffset() const { return m_stagingOffset; }
