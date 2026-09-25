@@ -60,6 +60,8 @@ public:
     bool lastGpuCopyUsedTransferQueue() const { return m_lastGpuCopyUsedTransferQueue; }
     bool lastGpuCopyUsedFence() const { return m_lastGpuCopyUsedFence; }
     bool lastGpuCopyWaitTimedOut() const { return m_lastGpuCopyWaitTimedOut; }
+    /// True when the last image copy released and acquired across two queue families.
+    bool lastOwnershipTransfer() const { return m_lastOwnershipTransfer; }
     u32 lastMipGenerateCount() const { return m_lastMipGenerateCount; }
     bool lastMipGenerateOk() const { return m_lastMipGenerateOk; }
     u32 lastTextureReadbackBytes() const { return m_lastTextureReadbackBytes; }
@@ -88,6 +90,7 @@ private:
     bool m_lastGpuCopyUsedTransferQueue = false;
     bool m_lastGpuCopyUsedFence = false;
     bool m_lastGpuCopyWaitTimedOut = false;
+    bool m_lastOwnershipTransfer = false;
     u32 m_lastMipGenerateCount = 0;
     bool m_lastMipGenerateOk = false;
     u32 m_lastTextureReadbackBytes = 0;

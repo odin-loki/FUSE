@@ -478,6 +478,19 @@ void testFrustumCulling() {
 void testSdfPrimitives() {
     expectNear(fuse::math::SDF::sphere({0.f, 0.f, 0.f}, 2.f), -2.f, 1e-5f, "SDF sphere at origin");
     expectNear(fuse::math::SDF::sphere({3.f, 0.f, 0.f}, 2.f), 1.f, 1e-5f, "SDF sphere surface distance");
+    expectNear(fuse::math::SDF::capsule({0.f, 0.f, 0.f}, 1.f, 2.f), -1.f, 1e-4f, "SDF capsule at origin");
+    expectNear(fuse::math::SDF::cylinder({2.f, 0.f, 0.f}, 1.f, 1.f), 1.f, 1e-4f, "SDF cylinder radial distance");
+    expectNear(fuse::math::SDF::torus({2.f, 0.f, 0.f}, 2.f, 0.5f), -0.5f, 1e-4f, "SDF torus on the ring");
+
+    const auto sphere = [](fuse::math::Vec3 p) { return fuse::math::SDF::sphere(p, 1.f); };
+    const fuse::math::SDF::MarchHit hit =
+        fuse::math::SDF::march(fuse::math::Vec3{-4.f, 0.f, 0.f}, fuse::math::Vec3{1.f, 0.f, 0.f}, sphere);
+    expectTrue(hit.hit, "SDF march hits a unit sphere");
+    expectNear(hit.distance, 3.f, 1e-2f, "SDF march distance to the sphere surface");
+
+    const fuse::math::SDF::MarchHit miss =
+        fuse::math::SDF::march(fuse::math::Vec3{0.f, 4.f, 0.f}, fuse::math::Vec3{0.f, 1.f, 0.f}, sphere, 16u, 8.f);
+    expectTrue(!miss.hit, "SDF march misses when the ray leaves the sphere");
 }
 
 void testSimdBackend() {

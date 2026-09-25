@@ -227,6 +227,15 @@ void testResourceManagerBuffersAndTextures() {
     expectTrue(resources.getTexture(texture) != nullptr, "texture resolvable");
     expectTrue(resources.getTexture(texture)->bindlessIndex != UINT32_MAX,
                "texture bindless index assigned");
+#if defined(FUSE_VULKAN_BACKEND)
+    if (bootstrap->status().deviceReady && bootstrap->device() != nullptr) {
+        const auto& queues = bootstrap->device()->queues();
+        const bool separateFamily =
+            queues.transfer != nullptr && queues.transferFamily != queues.graphicsFamily;
+        expectTrue(resources.lastOwnershipTransfer() == separateFamily,
+                   "texture upload transfers queue ownership only across families");
+    }
+#endif
     const fuse::usize textureBytes = 4u * 4u * 4u;
     if (stagingBeforeTexture + textureBytes > resources.stagingRingCapacity()) {
         expectTrue(resources.stagingRingWrapCount() == wrapCountBeforeTexture + 1u,
