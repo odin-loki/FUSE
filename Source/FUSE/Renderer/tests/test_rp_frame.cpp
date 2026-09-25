@@ -1523,7 +1523,7 @@ int runParity(Context& ctx, FrameTier tier) {
                 o[k] = halfToFloat(hv);
             }
         };
-        auto near = [](f32 g, f32 r, f32 ulps) { return std::fabs(g - r) <= ulps * std::max(std::fabs(r) * (1.f / 1024.f), 6.1e-5f); };
+        auto nearUlps = [](f32 g, f32 r, f32 ulps) { return std::fabs(g - r) <= ulps * std::max(std::fabs(r) * (1.f / 1024.f), 6.1e-5f); };
         if (f.bytes[kRbRestir].size() != n * 8u || f.bytes[kRbRestirDi].size() != n * 16u || f.bytes[kRbRestirAlbedo].size() != n * 16u ||
             f.bytes[kRbReflect].size() != n * 8u || f.bytes[kRbRtReflection].size() != n * 16u || f.bytes[kRbRt0].size() != n * 8u ||
             f.bytes[kRbRt1].size() != n * 4u || f.bytes[kRbRt2].size() != n * 4u || f.bytes[kRbSsfx].size() != n * 8u) {
@@ -1540,7 +1540,7 @@ int runParity(Context& ctx, FrameTier tier) {
                     frame_restir_texel(in, dep, albedo, di, out);
                     half4(f.bytes[kRbRestir], p, gpu);
                     for (u32 k = 0; k < 4u; ++k) {
-                        restirBad += near(gpu[k], out[k], 1.f) ? 0u : 1u;
+                        restirBad += nearUlps(gpu[k], out[k], 1.f) ? 0u : 1u;
                     }
                     ++restirChecked;
                     f32 sx[4], rt0[4], rt1[4], rt2[4], refl[4];
@@ -1554,7 +1554,7 @@ int runParity(Context& ctx, FrameTier tier) {
                     frame_reflect_texel(c, x, y, dep, sx, rt0, rt1, rt2, refl, out);
                     half4(f.bytes[kRbReflect], p, gpu);
                     for (u32 k = 0; k < 4u; ++k) {
-                        reflectBad += near(gpu[k], out[k], 3.f) ? 0u : 1u;
+                        reflectBad += nearUlps(gpu[k], out[k], 3.f) ? 0u : 1u;
                     }
                     ++reflectChecked;
                 }
