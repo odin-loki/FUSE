@@ -1436,6 +1436,22 @@ void testGjkSupportAndEpaStub() {
     expectTrue(penetrating.bodyA == 4u && penetrating.bodyB == 5u, "epa stores body indices");
 }
 
+void testConvexHullPairUsesEpa() {
+    fuse::physics::RigidBodySoA bodies;
+    fuse::physics::CollisionShapeSoA shapes;
+    const fuse::u32 bodyA = bodies.addBody({0.f, 0.f, 0.f}, 1.f);
+    const fuse::u32 bodyB = bodies.addBody({0.5f, 0.f, 0.f}, 1.f);
+    shapes.addShape(fuse::physics::CollisionShapeType::ConvexHull, bodyA, {0.5f, 0.5f, 0.5f});
+    shapes.addShape(fuse::physics::CollisionShapeType::ConvexHull, bodyB, {0.5f, 0.5f, 0.5f});
+
+    expectTrue(
+        !fuse::physics::narrowphase::is_unsupported_shape_pair({bodyA, bodyB}, shapes),
+        "convex hull pair is a supported shape pair");
+    const auto manifold = fuse::physics::narrowphase::detect_contacts_pair({bodyA, bodyB}, bodies, shapes);
+    expectTrue(manifold.valid, "overlapping convex hulls produce a contact");
+    expectNear(manifold.penetrationDepth, 0.5f, 0.05f, "convex hull penetration is the half-unit overlap");
+}
+
 void testContactPairDeepenFollowUpRejectGuards() {
     fuse::physics::RigidBodySoA bodies;
     fuse::physics::CollisionShapeSoA shapes;
@@ -1834,6 +1850,7 @@ int main() {
     testManifoldPruneDeepenPassGuards();
     testFrictionBasisDeepenPassPreflights();
     testGjkSupportAndEpaStub();
+    testConvexHullPairUsesEpa();
     testContactPairDeepenFollowUpRejectGuards();
     testManifoldPruneFinalizeFollowUpGuards();
     testFrictionBasisFollowUpRejectGuards();

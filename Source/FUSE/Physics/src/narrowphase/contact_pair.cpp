@@ -2,6 +2,7 @@
 
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/narrowphase/friction.hpp>
+#include <fuse/physics/narrowphase/gjk.hpp>
 
 #include <cmath>
 
@@ -29,6 +30,18 @@ u32 findShapeForBody(const CollisionShapeSoA& shapes, u32 bodyIndex, CollisionSh
         }
     }
     return shapes.count();
+}
+
+void writeBoxCorners(vec3 center, vec3 halfExtents, vec3 out[8]) {
+    u32 index = 0;
+    for (f32 x = -1.f; x <= 1.f; x += 2.f) {
+        for (f32 y = -1.f; y <= 1.f; y += 2.f) {
+            for (f32 z = -1.f; z <= 1.f; z += 2.f) {
+                out[index++] = {center.x + halfExtents.x * x, center.y + halfExtents.y * y,
+                                center.z + halfExtents.z * z};
+            }
+        }
+    }
 }
 
 bool hasShapeForBody(const CollisionShapeSoA& shapes, u32 bodyIndex) {
@@ -153,6 +166,24 @@ ContactManifold dispatchShapePair(
             pair.bodyB);
     }
 
+    const bool convexA = typeA == CollisionShapeType::ConvexHull || typeA == CollisionShapeType::Box;
+    const bool convexB = typeB == CollisionShapeType::ConvexHull || typeB == CollisionShapeType::Box;
+    if (convexA && convexB &&
+        (typeA == CollisionShapeType::ConvexHull || typeB == CollisionShapeType::ConvexHull)) {
+        const vec3& halfA = shapes.params[shapeA];
+        const vec3& halfB = shapes.params[shapeB];
+        if (halfA.x <= 0.f || halfA.y <= 0.f || halfA.z <= 0.f || halfB.x <= 0.f || halfB.y <= 0.f ||
+            halfB.z <= 0.f) {
+            return invalidContactManifold();
+        }
+
+        vec3 cornersA[8];
+        vec3 cornersB[8];
+        writeBoxCorners(posA, shapes.params[shapeA], cornersA);
+        writeBoxCorners(posB, shapes.params[shapeB], cornersB);
+        return epa(cornersA, 8u, cornersB, 8u, pair.bodyA, pair.bodyB);
+    }
+
     return invalidContactManifold();
 }
 
@@ -162,6 +193,7 @@ bool isShapeDegenerate(CollisionShapeType type, const vec3& params) {
     case CollisionShapeType::Capsule:
         return params.x <= 0.f;
     case CollisionShapeType::Box:
+    case CollisionShapeType::ConvexHull:
         return params.x <= 0.f || params.y <= 0.f || params.z <= 0.f;
     case CollisionShapeType::Plane:
         return params.length() < 1e-8f;
@@ -342,6 +374,13 @@ bool is_unsupported_shape_pair(
             return false;
         }
     };
+
+    const bool convexPair = (typeA == CollisionShapeType::ConvexHull || typeA == CollisionShapeType::Box) &&
+                            (typeB == CollisionShapeType::ConvexHull || typeB == CollisionShapeType::Box) &&
+                            (typeA == CollisionShapeType::ConvexHull || typeB == CollisionShapeType::ConvexHull);
+    if (convexPair) {
+        return false;
+    }
 
     if (!isSupported(typeA) || !isSupported(typeB)) {
         return true;
