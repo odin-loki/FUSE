@@ -154,6 +154,7 @@ build-asan
 build-p4
 build-p5
 build-track-a
+build-vk
 eggs
 parts
 bin
