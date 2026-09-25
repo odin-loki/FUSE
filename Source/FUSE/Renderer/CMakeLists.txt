@@ -316,3 +316,4 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp64b.cmake") # WP-6.4b denoiser i
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp91.cmake")  # WP-9.1 neural runtime, CPU reference + portable/coopmat kernels (neural/, shaders/neural/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp65.cmake")  # WP-6.5 radiance cascades, research (research/radiance_cascades/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_frame.cmake") # Frame integration: FrameComposer (frame/, shaders/frame/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/content_golden.cmake") # Asset plan W0.8 content golden renders + vendored NVIDIA FLIP (Samples/content_golden, Engine/lib/nvidia-flip)

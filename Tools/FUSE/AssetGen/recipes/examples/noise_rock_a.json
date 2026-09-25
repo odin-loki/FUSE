@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "tex/test/noise_rock_a",
+  "generator": "noise_texture",
+  "seed": 1234,
+  "description": "AssetGen skeleton example: tileable fBm height + tinted albedo (asset_determinism gate input).",
+  "params": {
+    "size": 64,
+    "octaves": 5,
+    "base_cells": 4,
+    "gain": 0.55,
+    "albedo": {"enabled": true, "low": [0.06, 0.055, 0.05], "high": [0.42, 0.40, 0.36]}
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "id": "scatter/temperate/meadow_a",
+  "generator": "scatter_points",
+  "seed": 42,
+  "description": "AssetGen skeleton example: minimum-distance scatter tile (asset_determinism gate input).",
+  "params": {"extent_m": 32.0, "min_distance_m": 1.5, "attempts": 3000, "scale_range": [0.7, 1.3]}
+}
