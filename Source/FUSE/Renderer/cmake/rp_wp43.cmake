@@ -67,7 +67,10 @@ foreach(_variant IN ITEMS 0 1 2)
         PREFIX "lib"
         OUTPUT_NAME "xess"
         LIBRARY_OUTPUT_DIRECTORY "$<1:${_fuse_wp43_out}/${_d}>"
-        RUNTIME_OUTPUT_DIRECTORY "$<1:${_fuse_wp43_out}/${_d}>")
+        RUNTIME_OUTPUT_DIRECTORY "$<1:${_fuse_wp43_out}/${_d}>"
+        # MSVC writes each module's .exp / .lib next to ARCHIVE_OUTPUT_DIRECTORY; the three mocks share
+        # OUTPUT_NAME "xess", so give each its own directory or the links collide (LNK1104 on xess.exp).
+        ARCHIVE_OUTPUT_DIRECTORY "$<1:${_fuse_wp43_out}/${_d}>")
     fuse_apply_cxx23(${_t})
     list(APPEND _fuse_wp43_mocks ${_t})
 endforeach()

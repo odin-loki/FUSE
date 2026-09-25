@@ -396,13 +396,13 @@ int runParity(Context& ctx) {
                 f64 sumCpu = 0.0;
                 for (usize i = 0; i < n; ++i) {
                     bool same = true;
-                    bool near = true;
+                    bool nearOk = true; // not `near`: a <windows.h> macro under MSVC
                     for (u32 k = 0; k < 4u; ++k) {
                         const f64 a = gpu[i * 4u + k];
                         const f64 b = ref[i * 4u + k];
                         const f64 d = std::fabs(a - b);
                         same = same && a == b;
-                        near = near && d <= 1e-5 * std::fabs(b) + 1e-6;
+                        nearOk = nearOk && d <= 1e-5 * std::fabs(b) + 1e-6;
                         worst = std::max(worst, d / (std::fabs(b) + 0.1));
                         if (k < 3u) {
                             sumGpu += a;
@@ -410,7 +410,7 @@ int runParity(Context& ctx) {
                         }
                     }
                     exact += same ? 1u : 0u;
-                    close += near ? 1u : 0u;
+                    close += nearOk ? 1u : 0u;
                 }
                 const f64 meanRel = sumCpu > 0.0 ? std::fabs(sumGpu - sumCpu) / sumCpu : std::fabs(sumGpu - sumCpu);
                 std::printf("parity %s: %-14s s0 %u N0 %u %-12s %u cascades: bit-exact %.3f%%, within 1e-5 %.3f%%, "
