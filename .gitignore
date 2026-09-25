@@ -219,3 +219,6 @@ fuse_nvplugin_ngx*.dll
 
 # fuse_cook incremental cache written at the working directory
 /.fuse/
+
+# Relight package payload (README, rtx.conf, licences): not a build output
+!/Source/FUSE/Relight/package/dist/
