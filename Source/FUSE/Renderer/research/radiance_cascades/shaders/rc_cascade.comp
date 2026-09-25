@@ -1,0 +1,80 @@
+#version 460
+// WP-6.5 "rc.cascade": one record (probe, direction) of cascade i per invocation: trace the cascade's ray
+// interval and merge with cascade i + 1 (or the sky for the top cascade). CPU reference: rc_cascade_record
+// (src/rc_reference.cpp). GLSL twin of rc_cascade.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "rc_common.glsl"
+
+layout(local_size_x = 64) in;
+
+void main() {
+    const uint index = gl_GlobalInvocationID.x;
+    if (index >= pc.count) {
+        return;
+    }
+    const uint k = index % pc.dirCount;
+    const uint probe = index / pc.dirCount;
+    const uint probeX = probe % pc.probesX;
+    const uint probeY = probe / pc.probesX;
+    precise float px = (float(probeX) + 0.5) * pc.spacing;
+    precise float py = (float(probeY) + 0.5) * pc.spacing;
+    const vec4 dir = RcTexelsRef(pc.dirs).v[k];
+    const float dx = dir.x;
+    const float dy = dir.y;
+    precise float ax = px + dx * pc.tStart;
+    precise float ay = py + dy * pc.tStart;
+    precise float r = 0.0;
+    precise float g = 0.0;
+    precise float b = 0.0;
+    if ((pc.flags & RC_FLAG_HAS_UPPER) == 0u) {
+        precise float len = pc.tEnd - pc.tStart;
+        const vec4 h = rc_trace(vec2(ax, ay), vec2(dx, dy), len);
+        r = h.x + h.w * pc.skyR;
+        g = h.y + h.w * pc.skyG;
+        b = h.z + h.w * pc.skyB;
+    } else {
+        vec4 w;
+        const uvec4 q = rc_bilinear(vec2(px, py), pc.upperSpacing, pc.upperProbesX, pc.upperProbesY, w);
+        if ((pc.flags & RC_FLAG_BILINEAR_FIX) == 0u) {
+            precise float len = pc.tEnd - pc.tStart;
+            const vec4 h = rc_trace(vec2(ax, ay), vec2(dx, dy), len);
+            precise float fr = 0.0;
+            precise float fg = 0.0;
+            precise float fb = 0.0;
+            for (uint j = 0u; j < 4u; ++j) {
+                const vec3 c = rc_child_average((j & 1u) != 0u ? q.y : q.x, (j >> 1u) != 0u ? q.w : q.z, k);
+                fr = fr + w[j] * c.x;
+                fg = fg + w[j] * c.y;
+                fb = fb + w[j] * c.z;
+            }
+            r = h.x + h.w * fr;
+            g = h.y + h.w * fg;
+            b = h.z + h.w * fb;
+        } else {
+            for (uint j = 0u; j < 4u; ++j) {
+                const uint ux = (j & 1u) != 0u ? q.y : q.x;
+                const uint uy = (j >> 1u) != 0u ? q.w : q.z;
+                precise float qx = (float(ux) + 0.5) * pc.upperSpacing;
+                precise float qy = (float(uy) + 0.5) * pc.upperSpacing;
+                precise float bx = qx + dx * pc.tEnd;
+                precise float by = qy + dy * pc.tEnd;
+                precise float sx = bx - ax;
+                precise float sy = by - ay;
+                precise float l2 = sx * sx + sy * sy;
+                vec4 h = vec4(0.0, 0.0, 0.0, 1.0);
+                if (l2 > 1e-12) {
+                    precise float len = sqrt(l2);
+                    precise float inv = 1.0 / len;
+                    precise float ex = sx * inv;
+                    precise float ey = sy * inv;
+                    h = rc_trace(vec2(ax, ay), vec2(ex, ey), len);
+                }
+                const vec3 c = rc_child_average(ux, uy, k);
+                r = r + w[j] * (h.x + h.w * c.x);
+                g = g + w[j] * (h.y + h.w * c.y);
+                b = b + w[j] * (h.z + h.w * c.z);
+            }
+        }
+    }
+    RcTexelsRef(pc.dst).v[index] = vec4(r, g, b, 0.0);
+}
