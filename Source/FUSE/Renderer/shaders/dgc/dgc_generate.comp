@@ -1,0 +1,76 @@
+#version 460
+// WP-9.3 device-generated commands: turns the WP-1.3 culling output (compacted
+// VkDrawIndexedIndirectCommand array + GPU draw count, firstInstance = instance slot) into the
+// VK_EXT_device_generated_commands sequences (EXECUTION_SET pipeline index + DRAW_INDEXED; sequence
+// i = draw i) and / or the per-bucket indirect-count fallback args. The bucket (pipeline) of a draw
+// is chosen here: material = scene.instances[slot].material, bucket = materialBuckets[material].
+// GLSL twin of dgc_generate.slang; C++ side: include/fuse/renderer/vk/dgc/dgc_types.hpp
+// (DgcPush, DgcSequence, dgc_select_bucket) and dgc_reference.cpp (dgc_generate_reference).
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+layout(local_size_x = 64) in;
+
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer DgcWords { uint v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 8) readonly buffer DgcAddresses { uint64_t v[]; };
+
+layout(push_constant) uniform Push {
+    uint64_t args;
+    uint64_t drawCount;
+    uint64_t scene;           // GpuSceneHeader: addresses[0] = instance table
+    uint64_t materialBuckets;
+    uint64_t sequences;
+    uint64_t bucketArgs;
+    uint64_t counts;
+    uint maxDraws;
+    uint bucketCount;
+    uint materialCount;
+    uint defaultBucket;
+    uint flags;               // 1 = sequences, 2 = bucket args
+    uint pad;
+} pc;
+
+const uint kGpuInstanceWords = 8u;     // sizeof(GpuInstance) / 4
+const uint kGpuInstanceMaterial = 1u;  // offsetof(GpuInstance, material) / 4
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    const uint n = min(DgcWords(pc.drawCount).v[0], pc.maxDraws);
+    if (i == 0u && (pc.flags & 1u) != 0u) {
+        DgcWords(pc.counts).v[0] = n;
+    }
+    if (i >= n) {
+        return;
+    }
+    DgcWords args = DgcWords(pc.args);
+    const uint a = i * 5u;
+    const uint d0 = args.v[a + 0u];
+    const uint d1 = args.v[a + 1u];
+    const uint d2 = args.v[a + 2u];
+    const uint d3 = args.v[a + 3u];
+    const uint slot = args.v[a + 4u];
+    const uint64_t instances = DgcAddresses(pc.scene).v[0];
+    const uint material = DgcWords(instances).v[slot * kGpuInstanceWords + kGpuInstanceMaterial];
+    uint bucket = material < pc.materialCount ? DgcWords(pc.materialBuckets).v[material] : pc.defaultBucket;
+    bucket = bucket < pc.bucketCount ? bucket : pc.defaultBucket;
+    if ((pc.flags & 1u) != 0u) {
+        DgcWords s = DgcWords(pc.sequences);
+        const uint o = i * 6u;
+        s.v[o + 0u] = bucket;
+        s.v[o + 1u] = d0;
+        s.v[o + 2u] = d1;
+        s.v[o + 3u] = d2;
+        s.v[o + 4u] = d3;
+        s.v[o + 5u] = slot;
+    }
+    if ((pc.flags & 2u) != 0u) {
+        const uint k = atomicAdd(DgcWords(pc.counts).v[1u + bucket], 1u);
+        DgcWords b = DgcWords(pc.bucketArgs);
+        const uint o = (bucket * pc.maxDraws + k) * 5u;
+        b.v[o + 0u] = d0;
+        b.v[o + 1u] = d1;
+        b.v[o + 2u] = d2;
+        b.v[o + 3u] = d3;
+        b.v[o + 4u] = slot;
+    }
+}
