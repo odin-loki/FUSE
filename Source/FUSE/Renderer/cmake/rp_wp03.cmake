@@ -43,9 +43,21 @@ if(FUSE_BUILD_CORE_TESTS)
             DEPENDS "${_fuse_rg_src}"
             COMMENT "glslangValidator rg_test_add.comp -> rg_test_add.comp.spv"
             VERBATIM)
-        add_custom_target(fuse_rp_rg_shaders DEPENDS "${_fuse_rg_spv}")
+        # WP-7.3 follow-up: raygen kernel for the kStageRayTracing gate (Vulkan 1.2 SPIR-V for GL_EXT_ray_tracing).
+        set(_fuse_rg_rt_src "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rg/rg_test_rt.rgen")
+        set(_fuse_rg_rt_spv "${_fuse_rg_shader_dir}/rg_test_rt.rgen.spv")
+        set(_fuse_rg_rt_cmds COMMAND "${FUSE_GLSLANG_VALIDATOR}" -V --target-env vulkan1.2 "${_fuse_rg_rt_src}" -o "${_fuse_rg_rt_spv}")
+        if(FUSE_SPIRV_VAL)
+            list(APPEND _fuse_rg_rt_cmds COMMAND "${FUSE_SPIRV_VAL}" --target-env vulkan1.2 "${_fuse_rg_rt_spv}")
+        endif()
+        add_custom_command(OUTPUT "${_fuse_rg_rt_spv}" ${_fuse_rg_rt_cmds}
+            DEPENDS "${_fuse_rg_rt_src}"
+            COMMENT "glslangValidator rg_test_rt.rgen -> rg_test_rt.rgen.spv"
+            VERBATIM)
+        add_custom_target(fuse_rp_rg_shaders DEPENDS "${_fuse_rg_spv}" "${_fuse_rg_rt_spv}")
         add_dependencies(fuse_rp_rg_vulkan fuse_rp_rg_shaders)
-        target_compile_definitions(fuse_rp_rg_vulkan PRIVATE FUSE_RG_TEST_SHADER="${_fuse_rg_spv}")
+        target_compile_definitions(fuse_rp_rg_vulkan PRIVATE FUSE_RG_TEST_SHADER="${_fuse_rg_spv}"
+                                                             FUSE_RG_TEST_RT_SHADER="${_fuse_rg_rt_spv}")
     endif()
     set(_fuse_rg_env "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
     # (a) 12-pass synthetic graph, RAW/WAR/WAW on images + buffers, sync validation clean,
@@ -58,7 +70,13 @@ if(FUSE_BUILD_CORE_TESTS)
     # gpu_radix_sort migrated onto RG passes: sort through the graph under sync validation.
     add_test(NAME fuse_rp_rg_radix_sort
              COMMAND "${_fuse_rp_wp03_lock}" "$<TARGET_FILE:fuse_rp_rg_vulkan>" --mode radix)
-    set_tests_properties(fuse_rp_rg_hazard_sync fuse_rp_rg_transient_alias fuse_rp_rg_radix_sort PROPERTIES
+    # WP-7.3 follow-up: rg::kStageRayTracing. Compute write -> raygen storage read, transfer clear -> raygen sampled
+    # read, raygen read -> compute write (WAR); barriers at RAY_TRACING_SHADER, SBT from the allocator
+    # (BufferUsage::ShaderBindingTable), sync validation clean; negative control: the same reads declared at the
+    # compute stage trip sync validation. Skips (77) without VK_KHR_ray_tracing_pipeline enabled.
+    add_test(NAME fuse_rp_rg_rt_stage
+             COMMAND "${_fuse_rp_wp03_lock}" "$<TARGET_FILE:fuse_rp_rg_vulkan>" --mode rtstage)
+    set_tests_properties(fuse_rp_rg_hazard_sync fuse_rp_rg_transient_alias fuse_rp_rg_radix_sort fuse_rp_rg_rt_stage PROPERTIES
         ENVIRONMENT "${_fuse_rg_env}"
         RUN_SERIAL TRUE
         SKIP_RETURN_CODE 77

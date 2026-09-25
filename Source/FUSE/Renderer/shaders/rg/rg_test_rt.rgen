@@ -1,0 +1,20 @@
+#version 460
+// Render graph v2 gate kernel for rg::kStageRayTracing (tests/test_rp_rg_vulkan.cpp, --mode rtstage): a raygen shader
+// reading a storage buffer written by a compute pass and sampling an image cleared by a transfer pass:
+// dst[i] = src[i] + img[i % 16, (i / 16) % 16] + add.
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_samplerless_texture_functions : require
+layout(std430, set = 0, binding = 0) readonly buffer Src { uint src[]; };
+layout(std430, set = 0, binding = 1) writeonly buffer Dst { uint dst[]; };
+layout(set = 0, binding = 2) uniform utexture2D img;
+layout(push_constant) uniform Push {
+    uint count;
+    uint add;
+} pc;
+
+void main() {
+    uint i = gl_LaunchIDEXT.x;
+    if (i < pc.count) {
+        dst[i] = src[i] + texelFetch(img, ivec2(int(i % 16u), int((i / 16u) % 16u)), 0).x + pc.add;
+    }
+}

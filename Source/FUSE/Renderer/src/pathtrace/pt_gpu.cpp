@@ -21,6 +21,7 @@ namespace {
 constexpr u32 kFrameStride = 512u; ///< ring slot size (>= sizeof(PtFrameConstants), 256-aligned)
 static_assert(sizeof(PtFrameConstants) <= kFrameStride, "frame ring slot");
 constexpr u8 kCs = rg::kStageCompute;
+constexpr u8 kRt = rg::kStageRayTracing;
 /// Stages of the embedded kernels (the order of the SPIR-V table below).
 enum Stage : u32 { kStageTrace = 0, kStageRaygen, kStageMiss, kStageClosestHit, kStageAnyHit, kStageCount };
 
@@ -119,7 +120,7 @@ void PathTracerGpu::destroy() {
     }
 #if defined(FUSE_VULKAN_BACKEND)
     collectRetired(~0ull);
-    for (Buffer* b : {&m_state, &m_output, &m_frameRing, &m_tableRing}) {
+    for (Buffer* b : {&m_state, &m_output, &m_frameRing, &m_tableRing, &m_sbtBuffer}) {
         if (b->handle != nullptr) {
             m_desc.allocator->destroyBuffer(*b);
         }
@@ -131,17 +132,10 @@ void PathTracerGpu::destroy() {
     if (m_layoutHandle != nullptr) {
         vkDestroyPipelineLayout(device, static_cast<VkPipelineLayout>(m_layoutHandle), nullptr);
     }
-    if (m_sbtBuffer != nullptr) {
-        vkDestroyBuffer(device, static_cast<VkBuffer>(m_sbtBuffer), nullptr);
-    }
-    if (m_sbtMemory != nullptr) {
-        vkFreeMemory(device, static_cast<VkDeviceMemory>(m_sbtMemory), nullptr);
-    }
 #endif
     m_pipeline = nullptr;
     m_layoutHandle = nullptr;
-    m_sbtBuffer = nullptr;
-    m_sbtMemory = nullptr;
+    m_sbtBuffer = Buffer{};
     m_sbtAddress = 0;
     m_traceRays = nullptr;
     m_sbt = PtSbtLayout{};
@@ -329,71 +323,33 @@ bool PathTracerGpu::createRtPipeline(const u32* const* words, const usize* bytes
     if (!ok) {
         return false;
     }
-    // Shader binding table: host-visible, device-addressable (the allocator has no SBT usage bit, so the buffer is
-    // created here; it is written once and never changes, hence never imported into the graph).
+    // Shader binding table: host-visible (coherent), device-addressable, from the allocator
+    // (BufferUsage::ShaderBindingTable). Written once here and never changed, so it is not imported into the graph
+    // (the host write before the first submit is made visible by the submission itself). The allocation carries one
+    // extra shaderGroupBaseAlignment so the regions can start at an aligned device address.
     u8 handles[kPtGroupCount * 64u] = {};
     if (rtProps.shaderGroupHandleSize > 64u ||
         getHandles(device, pipeline, 0, kPtGroupCount, kPtGroupCount * rtProps.shaderGroupHandleSize, handles) != VK_SUCCESS) {
         return false;
     }
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = m_sbt.bytes + rtProps.shaderGroupBaseAlignment;
-    bufferInfo.usage = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    VkBuffer buffer = VK_NULL_HANDLE;
-    if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+    BufferDesc sbtDesc{};
+    sbtDesc.size = static_cast<usize>(m_sbt.bytes + rtProps.shaderGroupBaseAlignment);
+    sbtDesc.usage = static_cast<BufferUsage>(static_cast<u32>(BufferUsage::ShaderBindingTable) |
+                                             static_cast<u32>(BufferUsage::ShaderDeviceAddress));
+    sbtDesc.memoryUsage = MemoryUsage::CpuToGpu;
+    sbtDesc.name = "pathtrace.sbt";
+    if (!m_desc.allocator->createBuffer(sbtDesc, m_sbtBuffer) || m_sbtBuffer.mapped == nullptr || m_sbtBuffer.deviceAddress == 0u) {
         return false;
     }
-    m_sbtBuffer = buffer;
-    VkMemoryRequirements req{};
-    vkGetBufferMemoryRequirements(device, buffer, &req);
-    VkPhysicalDeviceMemoryProperties mem{};
-    vkGetPhysicalDeviceMemoryProperties(physical, &mem);
-    const VkMemoryPropertyFlags want = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    u32 type = UINT32_MAX;
-    for (u32 i = 0; i < mem.memoryTypeCount; ++i) {
-        if ((req.memoryTypeBits & (1u << i)) != 0u && (mem.memoryTypes[i].propertyFlags & want) == want) {
-            type = i;
-            break;
-        }
-    }
-    if (type == UINT32_MAX) {
-        return false;
-    }
-    VkMemoryAllocateFlagsInfo flagsInfo{};
-    flagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
-    flagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.pNext = &flagsInfo;
-    allocInfo.allocationSize = req.size;
-    allocInfo.memoryTypeIndex = type;
-    VkDeviceMemory memory = VK_NULL_HANDLE;
-    if (vkAllocateMemory(device, &allocInfo, nullptr, &memory) != VK_SUCCESS) {
-        return false;
-    }
-    m_sbtMemory = memory;
-    if (vkBindBufferMemory(device, buffer, memory, 0) != VK_SUCCESS) {
-        return false;
-    }
-    VkBufferDeviceAddressInfo addressInfo{};
-    addressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-    addressInfo.buffer = buffer;
-    const u64 base = vkGetBufferDeviceAddress(device, &addressInfo);
+    const u64 base = m_sbtBuffer.deviceAddress;
     const u64 alignment = rtProps.shaderGroupBaseAlignment;
     m_sbtAddress = (base + alignment - 1u) / alignment * alignment;
-    void* mapped = nullptr;
-    if (vkMapMemory(device, memory, 0, VK_WHOLE_SIZE, 0, &mapped) != VK_SUCCESS) {
-        return false;
-    }
-    u8* dst = static_cast<u8*>(mapped) + (m_sbtAddress - base);
+    u8* dst = static_cast<u8*>(m_sbtBuffer.mapped) + (m_sbtAddress - base);
     const u32 hs = rtProps.shaderGroupHandleSize;
     std::memcpy(dst + m_sbt.raygen.offset, handles + kPtGroupRaygen * hs, hs);
     std::memcpy(dst + m_sbt.miss.offset, handles + kPtGroupMiss * hs, hs);
     std::memcpy(dst + m_sbt.hit.offset, handles + kPtGroupHit * hs, hs);
     std::memcpy(dst + m_sbt.hit.offset + m_sbt.hit.stride, handles + kPtGroupShadowHit * hs, hs);
-    vkUnmapMemory(device, memory);
     return true;
 #else
     (void)words;
@@ -632,19 +588,18 @@ bool PathTracerGpu::addPasses(rg::Graph& graph, const PtGraphRefs& refs, const P
     rg::PassBuilder pass = graph.addPass("pathtrace.trace", &PathTracerGpu::recordTrace, &m_record);
     const rg::BufferRange tableRange{m_tableOffset, m_tableBytes > 0u ? m_tableBytes : 256u};
     if (m_rtPipeline) {
-        // Render graph v2 has no ray-tracing shader stage: ALL_COMMANDS / MEMORY_READ|WRITE covers the RT stages.
-        const rg::Access read = rg::Access::ExternalRead;
-        pass.use(in.tlas, read);
+        // vkCmdTraceRaysKHR: every shader access at the ray-tracing stage (RAY_TRACING_SHADER_BIT_KHR).
+        pass.use(in.tlas, rg::Access::AccelerationStructureRead, {}, kRt);
         if (m_lightTree) {
-            pass.use(in.lightTree.tree, read, in.lightTree.range);
+            pass.use(in.lightTree.tree, rg::Access::StorageRead, in.lightTree.range, kRt);
         }
-        pass.use(refs.lights, read, tableRange);
-        gpu_scene::GpuScene::useAll(pass, in.scene, read);
+        pass.use(refs.lights, rg::Access::StorageRead, tableRange, kRt);
+        gpu_scene::GpuScene::useAll(pass, in.scene, rg::Access::StorageRead, kRt);
         if (in.scene.indices.valid()) {
-            pass.use(in.scene.indices, read);
+            pass.use(in.scene.indices, rg::Access::StorageRead, {}, kRt);
         }
-        pass.use(refs.state, rg::Access::ExternalWrite);
-        pass.use(refs.output, rg::Access::ExternalWrite);
+        pass.use(refs.state, rg::Access::StorageReadWrite, {}, kRt);
+        pass.use(refs.output, rg::Access::StorageWrite, {}, kRt);
     } else {
         pass.use(in.tlas, rg::Access::AccelerationStructureRead, {}, kCs);
         if (m_lightTree) {

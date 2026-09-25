@@ -15,6 +15,14 @@
 //                   equal the single-queue run, 0 validation messages.
 //   --mode radix    gpu_radix_sort through its render graph passes (u32 and u64 keys, > 32 passes)
 //                   under sync validation, sorted output equals std::stable_sort.
+//   --mode rtstage  rg::kStageRayTracing (WP-7.3 follow-up): compute write -> raygen storage read, transfer
+//                   clear -> raygen sampled read, raygen read -> compute write (WAR), raygen write -> copy;
+//                   planned barriers name RAY_TRACING_SHADER, readback correct, 0 validation messages over 3
+//                   frames; SBT from the allocator (BufferUsage::ShaderBindingTable). Negative controls: with
+//                   barriers suppressed sync validation fires; the same accesses declared at the compute stage
+//                   must trip it on vkCmdTraceRaysKHR when the layer tracks trace rays (1.3.275 does not:
+//                   reported, not enforced). A T2-capped device drops the SBT usage silently. Skip (77)
+//                   without VK_KHR_ray_tracing_pipeline enabled.
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, test shader not built).
 #include <fuse/renderer/compute/gpu_radix_sort.hpp>
@@ -87,6 +95,7 @@ struct MessageLog {
     u32 count = 0;
     bool quiet = false;
     std::vector<std::string> ids;
+    u32 traceRaysHazards = 0; ///< SYNC-HAZARD messages naming vkCmdTraceRaysKHR (--mode rtstage)
 };
 MessageLog g_log;
 
@@ -101,6 +110,10 @@ VKAPI_ATTR VkBool32 VKAPI_CALL onMessage(VkDebugUtilsMessageSeverityFlagBitsEXT 
     ++g_log.count;
     const char* id = data != nullptr && data->pMessageIdName != nullptr ? data->pMessageIdName : "(no id)";
     g_log.ids.emplace_back(id);
+    if (std::strstr(id, "SYNC-HAZARD") != nullptr && data->pMessage != nullptr &&
+        std::strstr(data->pMessage, "vkCmdTraceRaysKHR") != nullptr) {
+        ++g_log.traceRaysHazards;
+    }
     if (!g_log.quiet) {
         std::fprintf(stderr, "VALIDATION MESSAGE: %s\n  %s\n", id,
                      data != nullptr && data->pMessage != nullptr ? data->pMessage : "");
@@ -929,6 +942,461 @@ int runRadix(Context& ctx) {
     return 0;
 }
 
+// --- ray-tracing stage (WP-7.3 follow-up) ---------------------------------------------------------
+
+constexpr u32 kRtWords = 256;
+constexpr u32 kRtExtent = 16;
+
+/// Raygen-only ray-tracing pipeline (rg_test_rt.rgen) + its SBT from the allocator.
+struct RtRig {
+    Context* ctx = nullptr;
+    VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkDescriptorPool pool = VK_NULL_HANDLE;
+    Buffer sbt{};
+    VkStridedDeviceAddressRegionKHR raygen{};
+    PFN_vkCmdTraceRaysKHR traceRays = nullptr;
+
+    ~RtRig() {
+        if (ctx == nullptr || ctx->vkDevice == VK_NULL_HANDLE) {
+            return;
+        }
+        vkDeviceWaitIdle(ctx->vkDevice);
+        if (sbt.handle != nullptr) {
+            ctx->allocator->destroyBuffer(sbt);
+        }
+        if (pool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(ctx->vkDevice, pool, nullptr);
+        }
+        if (pipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(ctx->vkDevice, pipeline, nullptr);
+        }
+        if (layout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(ctx->vkDevice, layout, nullptr);
+        }
+        if (setLayout != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(ctx->vkDevice, setLayout, nullptr);
+        }
+    }
+};
+
+int setupRtRig(Context& ctx, RtRig& rig) {
+#if defined(FUSE_RG_TEST_RT_SHADER) && defined(VK_KHR_ray_tracing_pipeline)
+    rig.ctx = &ctx;
+    if (!ctx.device->info().caps.rayTracingPipeline) {
+        std::printf("SKIP: VK_KHR_ray_tracing_pipeline not enabled on this device\n");
+        return kSkip;
+    }
+    std::ifstream file(FUSE_RG_TEST_RT_SHADER, std::ios::binary);
+    std::vector<char> code((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    if (code.empty() || code.size() % 4u != 0u) {
+        std::printf("SKIP: %s not readable\n", FUSE_RG_TEST_RT_SHADER);
+        return kSkip;
+    }
+    auto createRt = reinterpret_cast<PFN_vkCreateRayTracingPipelinesKHR>(
+        vkGetDeviceProcAddr(ctx.vkDevice, "vkCreateRayTracingPipelinesKHR"));
+    auto getHandles = reinterpret_cast<PFN_vkGetRayTracingShaderGroupHandlesKHR>(
+        vkGetDeviceProcAddr(ctx.vkDevice, "vkGetRayTracingShaderGroupHandlesKHR"));
+    rig.traceRays = reinterpret_cast<PFN_vkCmdTraceRaysKHR>(vkGetDeviceProcAddr(ctx.vkDevice, "vkCmdTraceRaysKHR"));
+    if (createRt == nullptr || getHandles == nullptr || rig.traceRays == nullptr) {
+        std::fprintf(stderr, "FAIL: ray-tracing pipeline entry points missing although the feature is enabled\n");
+        return 1;
+    }
+    VkDescriptorSetLayoutBinding bindings[3]{};
+    const VkDescriptorType types[3] = {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                       VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE};
+    for (u32 i = 0; i < 3; ++i) {
+        bindings[i].binding = i;
+        bindings[i].descriptorType = types[i];
+        bindings[i].descriptorCount = 1;
+        bindings[i].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+    }
+    VkDescriptorSetLayoutCreateInfo setInfo{};
+    setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    setInfo.bindingCount = 3;
+    setInfo.pBindings = bindings;
+    vkCreateDescriptorSetLayout(ctx.vkDevice, &setInfo, nullptr, &rig.setLayout);
+    VkPushConstantRange range{VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, 8};
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pSetLayouts = &rig.setLayout;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges = &range;
+    vkCreatePipelineLayout(ctx.vkDevice, &layoutInfo, nullptr, &rig.layout);
+    VkShaderModuleCreateInfo moduleInfo{};
+    moduleInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    moduleInfo.codeSize = code.size();
+    moduleInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+    VkShaderModule module = VK_NULL_HANDLE;
+    vkCreateShaderModule(ctx.vkDevice, &moduleInfo, nullptr, &module);
+    VkPipelineShaderStageCreateInfo stage{};
+    stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stage.stage = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+    stage.module = module;
+    stage.pName = "main";
+    VkRayTracingShaderGroupCreateInfoKHR group{};
+    group.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+    group.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+    group.generalShader = 0;
+    group.closestHitShader = VK_SHADER_UNUSED_KHR;
+    group.anyHitShader = VK_SHADER_UNUSED_KHR;
+    group.intersectionShader = VK_SHADER_UNUSED_KHR;
+    VkRayTracingPipelineCreateInfoKHR info{};
+    info.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
+    info.stageCount = 1;
+    info.pStages = &stage;
+    info.groupCount = 1;
+    info.pGroups = &group;
+    info.maxPipelineRayRecursionDepth = 0;
+    info.layout = rig.layout;
+    const VkResult created = createRt(ctx.vkDevice, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &info, nullptr, &rig.pipeline);
+    vkDestroyShaderModule(ctx.vkDevice, module, nullptr);
+    if (created != VK_SUCCESS) {
+        std::fprintf(stderr, "FAIL: vkCreateRayTracingPipelinesKHR (%d)\n", static_cast<int>(created));
+        return 1;
+    }
+
+    // SBT through the allocator: BufferUsage::ShaderBindingTable (+ device address), host-visible, one raygen record.
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtProps{};
+    rtProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+    VkPhysicalDeviceProperties2 props{};
+    props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    props.pNext = &rtProps;
+    vkGetPhysicalDeviceProperties2(static_cast<VkPhysicalDevice>(ctx.device->nativePhysicalDevice()), &props);
+    const u64 handleSize = rtProps.shaderGroupHandleSize;
+    const u64 baseAlign = (std::max)(static_cast<u64>(rtProps.shaderGroupBaseAlignment), u64{1});
+    const u64 record = (handleSize + baseAlign - 1u) / baseAlign * baseAlign;
+    u8 handle[64] = {};
+    if (handleSize == 0u || handleSize > sizeof(handle) ||
+        getHandles(ctx.vkDevice, rig.pipeline, 0, 1, static_cast<size_t>(handleSize), handle) != VK_SUCCESS) {
+        std::fprintf(stderr, "FAIL: shader group handle\n");
+        return 1;
+    }
+    BufferDesc sbtDesc{};
+    sbtDesc.size = static_cast<fuse::usize>(record + baseAlign);
+    sbtDesc.usage = static_cast<BufferUsage>(static_cast<u32>(BufferUsage::ShaderBindingTable) |
+                                             static_cast<u32>(BufferUsage::ShaderDeviceAddress));
+    sbtDesc.memoryUsage = MemoryUsage::CpuToGpu;
+    sbtDesc.name = "rg.rt_sbt";
+    const bool sbtOk = ctx.allocator->createBuffer(sbtDesc, rig.sbt) && rig.sbt.mapped != nullptr && rig.sbt.deviceAddress != 0u;
+    expect(sbtOk, "SBT buffer from the allocator: mapped, device address");
+    if (!sbtOk) {
+        return 1;
+    }
+    const u64 aligned = (rig.sbt.deviceAddress + baseAlign - 1u) / baseAlign * baseAlign;
+    std::memcpy(static_cast<u8*>(rig.sbt.mapped) + (aligned - rig.sbt.deviceAddress), handle, static_cast<size_t>(handleSize));
+    rig.raygen = {aligned, record, record};
+    std::printf("SBT: handle %llu B, base alignment %llu B, allocator buffer %llu B at 0x%llx\n",
+                static_cast<unsigned long long>(handleSize), static_cast<unsigned long long>(baseAlign),
+                static_cast<unsigned long long>(sbtDesc.size), static_cast<unsigned long long>(rig.sbt.deviceAddress));
+
+    VkDescriptorPoolSize sizes[2] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 16}, {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 8}};
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = 8;
+    poolInfo.poolSizeCount = 2;
+    poolInfo.pPoolSizes = sizes;
+    vkCreateDescriptorPool(ctx.vkDevice, &poolInfo, nullptr, &rig.pool);
+    return 0;
+#else
+    (void)ctx;
+    (void)rig;
+    std::printf("SKIP: rg_test_rt.rgen not built or VK_KHR_ray_tracing_pipeline headers missing\n");
+    return kSkip;
+#endif
+}
+
+struct TracePass {
+    RtRig* rig = nullptr;
+    rg::BufferRef src, dst;
+    rg::TextureRef image;
+    u32 count = 0;
+    u32 add = 0;
+    VkDescriptorSet set = VK_NULL_HANDLE;
+};
+void traceFn(const rg::PassContext& c, void* user) {
+#if defined(VK_KHR_ray_tracing_pipeline)
+    auto* p = static_cast<TracePass*>(user);
+    const VkDevice device = p->rig->ctx->vkDevice;
+    VkDescriptorBufferInfo buffers[2] = {{static_cast<VkBuffer>(c.buffer(p->src)), 0, VK_WHOLE_SIZE},
+                                         {static_cast<VkBuffer>(c.buffer(p->dst)), 0, VK_WHOLE_SIZE}};
+    VkDescriptorImageInfo image{VK_NULL_HANDLE, static_cast<VkImageView>(c.imageView(p->image)),
+                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet writes[3]{};
+    for (u32 i = 0; i < 3; ++i) {
+        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[i].dstSet = p->set;
+        writes[i].dstBinding = i;
+        writes[i].descriptorCount = 1;
+        writes[i].descriptorType = i < 2u ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        writes[i].pBufferInfo = i < 2u ? &buffers[i] : nullptr;
+        writes[i].pImageInfo = i < 2u ? nullptr : &image;
+    }
+    vkUpdateDescriptorSets(device, 3, writes, 0, nullptr);
+    const VkCommandBuffer cmd = static_cast<VkCommandBuffer>(c.commandBuffer);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, p->rig->pipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, p->rig->layout, 0, 1, &p->set, 0, nullptr);
+    const u32 push[2] = {p->count, p->add};
+    vkCmdPushConstants(cmd, p->rig->layout, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(push), push);
+    const VkStridedDeviceAddressRegionKHR empty{0, 0, 0};
+    p->rig->traceRays(cmd, &p->rig->raygen, &empty, &empty, &empty, p->count, 1, 1);
+#else
+    (void)c;
+    (void)user;
+#endif
+}
+
+struct RtGraph {
+    FillPass fill;
+    AddPass add1, add2;
+    ClearPass clear;
+    TracePass trace;
+    BufferCopyPass outDst, outB;
+    u32 traceIndex = 0;
+    u32 warIndex = 0;
+    rg::BufferRef b, dst;
+    rg::TextureRef image;
+};
+
+/// 01 fill src = 1 (transfer) -> 02 compute b = src + 10 -> 03 clear image = 7 (transfer) -> 04 raygen: dst = b + image
+/// + 100 (StorageRead b, SampledRead image, StorageWrite dst at `traceStages`) -> 05 compute b = src + 20 (WAR on b)
+/// -> 06/07 copies to the readback -> 08 host read. Expected: dst = 118, b = 21.
+void buildRtGraph(rg::Graph& g, RtGraph& h, Context& ctx, RtRig& rig, VkBuffer out, u8 traceStages) {
+    g.reset();
+    const rg::BufferRef src = g.createBuffer({kRtWords * 4u, 0, "rg.rt_src"});
+    h.b = g.createBuffer({kRtWords * 4u, 0, "rg.rt_b"});
+    h.dst = g.createBuffer({kRtWords * 4u, 0, "rg.rt_dst"});
+    rg::ImageDesc imageDesc;
+    imageDesc.width = kRtExtent;
+    imageDesc.height = kRtExtent;
+    imageDesc.format = kR32Uint;
+    imageDesc.name = "rg.rt_image";
+    h.image = g.createImage(imageDesc);
+    const rg::BufferRef outRef = g.importBuffer({out, 2048, rg::kNoQueue, nullptr, "rg.rt_out"});
+
+    VkDescriptorSetAllocateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    info.descriptorPool = rig.pool;
+    info.descriptorSetCount = 1;
+    info.pSetLayouts = &rig.setLayout;
+    VkDescriptorSet traceSet = VK_NULL_HANDLE;
+    vkAllocateDescriptorSets(ctx.vkDevice, &info, &traceSet);
+
+    h.fill = {src, 1u};
+    h.add1 = {&ctx, src, h.b, kRtWords, 10u, allocateSet(ctx)};
+    h.add2 = {&ctx, src, h.b, kRtWords, 20u, allocateSet(ctx)};
+    h.clear = {h.image, 0, {}};
+    h.clear.color.uint32[0] = 7u;
+    h.trace = {&rig, h.b, h.dst, h.image, kRtWords, 100u, traceSet};
+    h.outDst = {h.dst, outRef, 0, 0, kRtWords * 4u};
+    h.outB = {h.b, outRef, 0, 1024, kRtWords * 4u};
+
+    constexpr u8 kCs = rg::kStageCompute;
+    g.addPass("rt.01.fill_src", fillFn, &h.fill).use(src, rg::Access::TransferDst);
+    g.addPass("rt.02.compute_b", addFn, &h.add1)
+        .use(src, rg::Access::StorageRead, {}, kCs)
+        .use(h.b, rg::Access::StorageWrite, {}, kCs);
+    g.addPass("rt.03.clear_image", clearFn, &h.clear).use(h.image, rg::Access::TransferDst);
+    h.traceIndex = g.addPass("rt.04.trace", traceFn, &h.trace)
+                       .use(h.b, rg::Access::StorageRead, {}, traceStages)       // RAW: compute write -> RT read
+                       .use(h.image, rg::Access::SampledRead, {}, traceStages)   // RAW + layout: transfer -> RT sample
+                       .use(h.dst, rg::Access::StorageWrite, {}, traceStages)
+                       .index();
+    h.warIndex = g.addPass("rt.05.compute_b_again", addFn, &h.add2)
+                     .use(src, rg::Access::StorageRead, {}, kCs)
+                     .use(h.b, rg::Access::StorageWrite, {}, kCs) // WAR: RT read -> compute write
+                     .index();
+    g.addPass("rt.06.dst_to_out", bufferCopyFn, &h.outDst)
+        .use(h.dst, rg::Access::TransferSrc) // RAW: RT write -> transfer read
+        .use(outRef, rg::Access::TransferDst, {0, 1024});
+    g.addPass("rt.07.b_to_out", bufferCopyFn, &h.outB)
+        .use(h.b, rg::Access::TransferSrc)
+        .use(outRef, rg::Access::TransferDst, {1024, 1024});
+    g.addPass("rt.08.host_read", nullptr, nullptr).use(outRef, rg::Access::HostRead);
+}
+
+/// Stages of the planned barriers on `id` in front of `pass` (buffer or image), OR-ed.
+void barrierStages(const rg::Graph& g, u32 pass, u32 id, bool image, u64& src, u64& dst, u32& newLayout) {
+    src = dst = 0;
+    newLayout = 0;
+    const rg::BarrierRange& r = g.passBarriers(pass);
+    if (image) {
+        for (u32 i = r.imageBegin; i < r.imageBegin + r.imageCount; ++i) {
+            const rg::ImageBarrier& b = g.imageBarriers()[i];
+            if (b.resource == id) {
+                src |= b.srcStages;
+                dst |= b.dstStages;
+                newLayout = b.newLayout;
+            }
+        }
+        return;
+    }
+    for (u32 i = r.bufferBegin; i < r.bufferBegin + r.bufferCount; ++i) {
+        const rg::BufferBarrier& b = g.bufferBarriers()[i];
+        if (b.resource == id) {
+            src |= b.srcStages;
+            dst |= b.dstStages;
+        }
+    }
+}
+
+/// A device capped at T2 (no RT pipeline): BufferUsage::ShaderBindingTable is dropped, the buffer is created and
+/// validation stays quiet.
+void checkSbtUsageDroppedBelowT3(Context& ctx) {
+    VulkanDeviceDesc desc{};
+    desc.maxTier = RenderTier::T2;
+    auto device = VulkanDevice::create(*ctx.instance, desc);
+    if (device == nullptr || !device->isValid()) {
+        std::printf("T2-capped device unavailable, SBT drop check skipped\n");
+        return;
+    }
+    expect(!device->info().caps.rayTracingPipeline, "T2 cap: ray-tracing pipeline not enabled");
+    const u32 before = g_log.count;
+    {
+        auto allocator = GpuAllocator::create(*device);
+        expect(allocator != nullptr && allocator->isValid(), "T2 allocator");
+        if (allocator != nullptr && allocator->isValid()) {
+            BufferDesc d{};
+            d.size = 256;
+            d.usage = static_cast<BufferUsage>(static_cast<u32>(BufferUsage::ShaderBindingTable) |
+                                               static_cast<u32>(BufferUsage::ShaderDeviceAddress));
+            d.memoryUsage = MemoryUsage::CpuToGpu;
+            d.name = "rg.t2_sbt";
+            Buffer b{};
+            expect(allocator->createBuffer(d, b) && b.deviceAddress != 0u,
+                   "T2: ShaderBindingTable usage dropped, buffer created with a device address");
+            if (b.handle != nullptr) {
+                allocator->destroyBuffer(b);
+            }
+        }
+    }
+    const u32 afterAllocator = g_log.count;
+    // Informational: the same usage bit passed raw (what the allocator avoids) on this device.
+    u32 raw = 0;
+    {
+#if defined(VK_KHR_ray_tracing_pipeline)
+        g_log.quiet = true;
+        VkBufferCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        info.size = 256;
+        info.usage = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR;
+        info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        const VkDevice vkDevice = static_cast<VkDevice>(device->nativeHandle());
+        VkBuffer buffer = VK_NULL_HANDLE;
+        if (vkCreateBuffer(vkDevice, &info, nullptr, &buffer) == VK_SUCCESS) {
+            vkDestroyBuffer(vkDevice, buffer, nullptr);
+        }
+        raw = g_log.count - afterAllocator;
+        g_log.quiet = false;
+#endif
+    }
+    device.reset();
+    std::printf("T2-capped device: SBT usage through the allocator: %u validation message(s); raw "
+                "VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR: %u message(s)\n",
+                afterAllocator - before, raw);
+    expect(afterAllocator == before, "T2: no validation message from the SBT usage through the allocator");
+    g_log.count = afterAllocator;
+}
+
+int runRtStage(Context& ctx) {
+    RtRig rig;
+    const int rc = setupRtRig(ctx, rig);
+    if (rc != 0) {
+        return rc;
+    }
+    HostBuffer out;
+    if (!createReadback(ctx, out, 2048, "rg.rt_out")) {
+        std::fprintf(stderr, "FAIL: readback buffer\n");
+        return 1;
+    }
+    auto executor = rg::Executor::create(*ctx.device, ctx.allocator.get());
+    if (!executor->isValid()) {
+        std::fprintf(stderr, "executor: %s\n", executor->message().c_str());
+        return 1;
+    }
+    rg::Graph graph;
+    RtGraph h;
+    const u64 rt = rg::vkc::kStageRayTracingShader;
+    const u64 cs = rg::vkc::kStageComputeShader;
+    for (u32 frame = 0; frame < 3; ++frame) {
+        std::memset(out.buffer.mapped, 0, 2048);
+        vkResetDescriptorPool(ctx.vkDevice, ctx.pool, 0);
+        vkResetDescriptorPool(ctx.vkDevice, rig.pool, 0);
+        buildRtGraph(graph, h, ctx, rig, static_cast<VkBuffer>(out.buffer.handle), rg::kStageRayTracing);
+        const rg::ExecuteResult result = executor->execute(graph);
+        expect(result.ok, "ray-tracing graph executed");
+        expect(executor->waitIdle(), "ray-tracing graph retired");
+        expect(result.executedPasses == 8u, "8 passes executed");
+        u64 src = 0, dst = 0;
+        u32 layout = 0;
+        barrierStages(graph, h.traceIndex, h.b.id, false, src, dst, layout);
+        expect(src == cs && dst == rt, "compute write -> RT read: COMPUTE_SHADER -> RAY_TRACING_SHADER");
+        barrierStages(graph, h.traceIndex, h.image.id, true, src, dst, layout);
+        expect(src == rg::vkc::kStageTransfer && dst == rt && layout == rg::vkc::kLayoutShaderReadOnly,
+               "transfer clear -> RT sample: TRANSFER -> RAY_TRACING_SHADER, SHADER_READ_ONLY_OPTIMAL");
+        barrierStages(graph, h.warIndex, h.b.id, false, src, dst, layout);
+        expect((src & rt) != 0u && dst == cs, "RT read -> compute write (WAR): RAY_TRACING_SHADER -> COMPUTE_SHADER");
+        barrierStages(graph, h.warIndex + 1u, h.dst.id, false, src, dst, layout);
+        expect(src == rt && dst == rg::vkc::kStageTransfer, "RT write -> copy: RAY_TRACING_SHADER -> TRANSFER");
+        expect(allEqual(readWords(ctx, out, 0, kRtWords), 118u), "raygen output = (1 + 10) + 7 + 100");
+        expect(allEqual(readWords(ctx, out, 1024, kRtWords), 21u), "b rewritten after the RT read = 1 + 20");
+        std::printf("frame %u: %u passes, %u barrier calls (%u image, %u buffer barriers)\n", frame, result.executedPasses,
+                    result.barrierCalls, result.imageBarriers, result.bufferBarriers);
+    }
+    const u32 clean = g_log.count;
+    expect(clean == 0u, "sync validation clean: compute / transfer -> RT-stage reads and RT -> compute / transfer");
+
+    // Negative controls. (1) Is synchronization validation live for vkCmdTraceRaysKHR at all? The graph with no
+    // barriers recorded must trip it on the raygen's reads. (2) If it is: the raygen accesses declared at the compute
+    // stage (barriers that miss RAY_TRACING_SHADER) must trip it too. VK_LAYER_KHRONOS_validation 1.3.275 (Ubuntu
+    // 24.04) does not track ray-tracing pipeline descriptor accesses (it reports only the dispatch / transfer
+    // hazards), so there the RT-stage ordering rests on the planned-barrier checks above; (2) is enforced as soon as
+    // the layer covers trace rays.
+    g_log.quiet = true;
+    u32 before = g_log.count;
+    g_log.traceRaysHazards = 0;
+    {
+        rg::ExecutorDesc noBarriers{};
+        noBarriers.debugSkipBarriers = true;
+        auto unsafe = rg::Executor::create(*ctx.device, ctx.allocator.get(), noBarriers);
+        vkResetDescriptorPool(ctx.vkDevice, ctx.pool, 0);
+        vkResetDescriptorPool(ctx.vkDevice, rig.pool, 0);
+        buildRtGraph(graph, h, ctx, rig, static_cast<VkBuffer>(out.buffer.handle), rg::kStageRayTracing);
+        unsafe->execute(graph);
+        unsafe->waitIdle();
+    }
+    u32 hazards = 0;
+    for (u32 i = before; i < g_log.ids.size(); ++i) {
+        hazards += g_log.ids[i].find("SYNC-HAZARD") != std::string::npos ? 1u : 0u;
+    }
+    const bool rtTracked = g_log.traceRaysHazards > 0u;
+    std::printf("negative control 1 (barriers suppressed): %u messages, %u SYNC-HAZARD, %u on vkCmdTraceRaysKHR -> sync "
+                "validation %s ray-tracing pipeline accesses\n",
+                g_log.count - before, hazards, g_log.traceRaysHazards, rtTracked ? "tracks" : "does NOT track");
+    expect(hazards > 0u, "negative control 1: sync validation fires without the graph's barriers");
+    before = g_log.count;
+    g_log.traceRaysHazards = 0;
+    vkResetDescriptorPool(ctx.vkDevice, ctx.pool, 0);
+    vkResetDescriptorPool(ctx.vkDevice, rig.pool, 0);
+    buildRtGraph(graph, h, ctx, rig, static_cast<VkBuffer>(out.buffer.handle), rg::kStageCompute);
+    executor->execute(graph);
+    executor->waitIdle();
+    std::printf("negative control 2 (raygen accesses declared at the compute stage): %u messages, %u SYNC-HAZARD on "
+                "vkCmdTraceRaysKHR%s\n",
+                g_log.count - before, g_log.traceRaysHazards, rtTracked ? "" : " (not enforced: layer does not track trace rays)");
+    if (rtTracked) {
+        expect(g_log.traceRaysHazards > 0u, "negative control 2: compute-stage barriers miss the raygen's reads");
+    }
+    g_log.quiet = false;
+    g_log.count = clean;
+    executor.reset();
+
+    checkSbtUsageDroppedBelowT3(ctx);
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -954,7 +1422,7 @@ int main(int argc, char** argv) {
     std::printf("device: %s | %s\n", ctx.device->info().deviceName.c_str(),
                 ctx.device->info().caps.valid ? ctx.device->info().caps.summary().c_str() : "no caps");
     int rc = 0;
-    if (mode == "hazards" || mode == "async") {
+    if (mode == "hazards" || mode == "async" || mode == "rtstage") {
         rc = setupComputePipeline(ctx);
         if (rc != 0) {
             return rc;
@@ -968,6 +1436,8 @@ int main(int argc, char** argv) {
         rc = runAsyncMode(ctx);
     } else if (mode == "radix") {
         rc = runRadix(ctx);
+    } else if (mode == "rtstage") {
+        rc = runRtStage(ctx);
     } else {
         std::fprintf(stderr, "unknown --mode %s\n", mode.c_str());
         return 1;

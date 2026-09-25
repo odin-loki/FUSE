@@ -31,6 +31,7 @@ constexpr u64 kStageAllGraphics = 0x8000;
 constexpr u64 kStageAllCommands = 0x10000;
 constexpr u64 kStageTaskShader = 0x80000;  ///< VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT (WP-5.1)
 constexpr u64 kStageMeshShader = 0x100000; ///< VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT (WP-5.1)
+constexpr u64 kStageRayTracingShader = 0x200000; ///< VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR (WP-7.3 follow-up)
 constexpr u64 kStageAccelerationStructureBuild = 0x02000000; ///< VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR (WP-6.0)
 // VkAccessFlagBits2
 constexpr u64 kAccessIndirectCommandRead = 0x1;

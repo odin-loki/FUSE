@@ -28,6 +28,10 @@ static_assert(vkc::kStageMeshShader == VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT);
 static_assert(vkc::kStageTaskShader == VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT);
 static_assert(vkc::kStageMeshShader == VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT);
 #endif
+#if defined(VK_KHR_ray_tracing_pipeline)
+static_assert(vkc::kStageRayTracingShader == VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
+static_assert(vkc::kStageRayTracingShader == VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+#endif
 static_assert(vkc::kStageTransfer == VK_PIPELINE_STAGE_TRANSFER_BIT);
 static_assert(vkc::kStageAllCommands == VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
 #if defined(VK_KHR_acceleration_structure)
@@ -106,6 +110,9 @@ u64 shaderStageMask(u8 stages, QueueClass queue) {
     }
     if ((stages & kStageMesh) != 0u) {
         mask |= vkc::kStageMeshShader;
+    }
+    if ((stages & kStageRayTracing) != 0u) {
+        mask |= vkc::kStageRayTracingShader;
     }
     return mask;
 }

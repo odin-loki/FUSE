@@ -4,6 +4,8 @@
 //     (stage + access masks, layouts), image subresource ranges and buffer byte ranges.
 //   * Culling, the removed 32-pass cap, per-queue batches with timeline waits, queue-family
 //     ownership release/acquire pairs, prologue batches, final layouts + trackers.
+//   * kStageRayTracing (WP-7.3 follow-up): compute -> RT, transfer -> RT sample, RT -> compute / transfer
+//     barriers at RAY_TRACING_SHADER, on graphics and async-compute queues.
 //   * Steady-state frames (reset + declare + compile + plan) perform zero heap allocations (B2.11).
 #include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/rg/sync_model.hpp>
@@ -85,6 +87,109 @@ const BufferBarrier* bufferBarrierFor(const Graph& g, u32 pass, u32 id) {
         }
     }
     return found;
+}
+
+/// The single image barrier on `id` in front of `pass` (null when none or several).
+const ImageBarrier* imageBarrierFor(const Graph& g, u32 pass, u32 id) {
+    const BarrierRange& r = g.passBarriers(pass);
+    const ImageBarrier* found = nullptr;
+    for (u32 i = r.imageBegin; i < r.imageBegin + r.imageCount; ++i) {
+        if (g.imageBarriers()[i].resource == id) {
+            if (found != nullptr) {
+                return nullptr;
+            }
+            found = &g.imageBarriers()[i];
+        }
+    }
+    return found;
+}
+
+// WP-7.3 follow-up: kStageRayTracing maps shader accesses of a vkCmdTraceRaysKHR pass to
+// RAY_TRACING_SHADER_BIT_KHR (graphics and async-compute queues), so compute -> RT and RT -> compute /
+// transfer hazards get barriers naming that stage.
+void testRayTracingStage() {
+    constexpr u8 kRt = kStageRayTracing;
+    for (QueueClass q : {QueueClass::Graphics, QueueClass::AsyncCompute}) {
+        for (Access a : {Access::StorageRead, Access::StorageWrite, Access::StorageReadWrite, Access::SampledRead,
+                         Access::UniformRead, Access::AccelerationStructureRead}) {
+            const AccessInfo info = describeAccess(a, kRt, q);
+            expect(info.stages == vkc::kStageRayTracingShader && !info.graphicsOnly,
+                   "kStageRayTracing -> RAY_TRACING_SHADER on graphics and async compute");
+        }
+    }
+    expect(describeAccess(Access::StorageRead, kRt | kStageCompute, QueueClass::Graphics).stages ==
+               (vkc::kStageRayTracingShader | vkc::kStageComputeShader),
+           "kStageRayTracing combines with other stages");
+    expect(toSync1Stages(vkc::kStageRayTracingShader, false) == vkc::kStageRayTracingShader,
+           "ray-tracing stage survives the sync1 fallback (low 32 bits)");
+
+    Graph g;
+    const BufferRef t = g.createBuffer({4096, 0, "t"});
+    ImageDesc desc;
+    desc.width = 16;
+    desc.height = 16;
+    desc.format = kR32Uint;
+    const TextureRef img = g.createImage(desc);
+    const BufferRef tlas = g.importBuffer({fakeHandle(0x40), 1 << 16, kNoQueue, nullptr, "tlas"});
+    const BufferRef out = g.importBuffer({fakeHandle(0x41), 4096, kNoQueue, nullptr, "out"});
+    const BufferRef rb = g.importBuffer({fakeHandle(0x43), 4096, kNoQueue, nullptr, "readback"});
+    // 0: compute W t   1: transfer W img   2: RT R t, sample img, R tlas, W out   3: compute W t (WAR)
+    // 4: transfer R out (RAW from RT) -> readback, 5: host read
+    g.addPass("produce", nullptr, nullptr).use(t, Access::StorageWrite, {}, kStageCompute);
+    g.addPass("clear", nullptr, nullptr).use(img, Access::TransferDst);
+    g.addPass("trace", nullptr, nullptr)
+        .use(t, Access::StorageRead, {}, kRt)
+        .use(img, Access::SampledRead, {}, kRt)
+        .use(tlas, Access::AccelerationStructureRead, {}, kRt)
+        .use(out, Access::StorageWrite, {}, kRt);
+    g.addPass("overwrite", nullptr, nullptr)
+        .use(t, Access::StorageWrite, {}, kStageCompute)
+        .use(out, Access::StorageRead, {0, 16}, kStageCompute)
+        .neverCull();
+    g.addPass("copy", nullptr, nullptr).use(out, Access::TransferSrc).use(rb, Access::TransferDst);
+    g.addPass("host", nullptr, nullptr).use(rb, Access::HostRead);
+    expect(planAll(g), "ray-tracing graph compiles");
+    expect(g.stats().executedPasses == 6u, "ray-tracing graph: nothing culled");
+
+    const BufferBarrier* raw = bufferBarrierFor(g, 2, t.id);
+    expect(raw != nullptr && raw->srcStages == vkc::kStageComputeShader && raw->srcAccess == vkc::kAccessShaderWrite &&
+               raw->dstStages == vkc::kStageRayTracingShader && raw->dstAccess == vkc::kAccessShaderRead,
+           "compute write -> RT read: COMPUTE/SHADER_WRITE -> RAY_TRACING_SHADER/SHADER_READ");
+    const ImageBarrier* sampled = imageBarrierFor(g, 2, img.id);
+    expect(sampled != nullptr && sampled->oldLayout == vkc::kLayoutTransferDst &&
+               sampled->newLayout == vkc::kLayoutShaderReadOnly && sampled->srcStages == vkc::kStageTransfer &&
+               sampled->dstStages == vkc::kStageRayTracingShader && sampled->dstAccess == vkc::kAccessShaderRead,
+           "transfer write -> RT sample: TRANSFER_DST -> SHADER_READ_ONLY at RAY_TRACING_SHADER");
+    const BufferBarrier* war = bufferBarrierFor(g, 3, t.id);
+    // The WAR barrier also carries pass 0's compute write (made visible to the RT stage only) for the WAW.
+    expect(war != nullptr && war->srcStages == (vkc::kStageRayTracingShader | vkc::kStageComputeShader) &&
+               war->dstStages == vkc::kStageComputeShader,
+           "RT read -> compute write (WAR): RAY_TRACING_SHADER (+ COMPUTE for the WAW) -> COMPUTE");
+    const BufferBarrier* rawOut = bufferBarrierFor(g, 3, out.id);
+    expect(rawOut != nullptr && rawOut->srcStages == vkc::kStageRayTracingShader &&
+               rawOut->srcAccess == vkc::kAccessShaderWrite && rawOut->dstStages == vkc::kStageComputeShader,
+           "RT write -> compute read: RAY_TRACING_SHADER/SHADER_WRITE -> COMPUTE");
+    const BufferBarrier* copy = bufferBarrierFor(g, 4, out.id);
+    expect(copy != nullptr && (copy->srcStages & vkc::kStageRayTracingShader) != 0u &&
+               copy->dstStages == vkc::kStageTransfer,
+           "RT write -> transfer read: waits on RAY_TRACING_SHADER");
+
+    // The same trace pass on the async compute queue stays there (ray tracing is legal on compute queues).
+    Graph a;
+    const BufferRef at = a.createBuffer({256, 0, "t"});
+    const BufferRef aout = a.importBuffer({fakeHandle(0x42), 256, kNoQueue, nullptr, "out"});
+    a.addPass("produce", nullptr, nullptr, QueueClass::AsyncCompute).use(at, Access::StorageWrite, {}, kStageCompute);
+    a.addPass("trace", nullptr, nullptr, QueueClass::AsyncCompute)
+        .use(at, Access::StorageRead, {}, kRt)
+        .use(aout, Access::StorageWrite, {}, kRt);
+    CompileOptions options;
+    options.asyncComputeAvailable = true;
+    expect(planAll(a, options), "async ray-tracing graph compiles");
+    expect(a.passQueue(1) == QueueClass::AsyncCompute && a.stats().queueFallbacks == 0u,
+           "RT-stage accesses do not force a graphics queue");
+    const BufferBarrier* asyncRaw = bufferBarrierFor(a, 1, at.id);
+    expect(asyncRaw != nullptr && asyncRaw->dstStages == vkc::kStageRayTracingShader,
+           "async compute: compute write -> RT read barrier at RAY_TRACING_SHADER");
 }
 
 void testBufferHazards() {
@@ -418,6 +523,7 @@ int main() {
     testCullingAndNoPassCap();
     testQueuesAndOwnership();
     testPrologueAndFinalLayout();
+    testRayTracingStage();
     testZeroSteadyStateAllocations();
     if (g_failures == 0) {
         std::printf("fuse_rp_rg_compile: all checks passed\n");

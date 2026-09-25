@@ -7,7 +7,8 @@
 //                       raygen pt_raygen, miss pt_miss (both ray types), hit group 0 = closest hit pt_closest_hit
 //                       (the material dispatch: surface record from the GPU scene) + any hit pt_any_hit (skip the
 //                       origin triangle), hit group 1 = any hit only (shadow rays). Shader binding table built from
-//                       the device's handle size / alignments (computePtSbtLayout) in a host-visible buffer.
+//                       the device's handle size / alignments (computePtSbtLayout) in a host-visible allocator
+//                       buffer (BufferUsage::ShaderBindingTable).
 //   RayQuery            tier T2: one compute kernel (pt_trace), SBT-free (the candidate loop is the any-hit shader,
 //                       pt_surface the closest-hit shader).
 //
@@ -16,10 +17,9 @@
 // emitter map (pathtrace.hpp). Outputs (PtBufferLayout): the accumulated mean (f32x4 rgb + samples) and the
 // denoiser / ray-reconstruction guides (demodulated signal, linear depth, normal, albedo), in the WP-6.4 layouts.
 //
-// Accesses: the ray-query pass declares its compute accesses (TLAS AccelerationStructureRead, tables StorageRead,
-// accumulation StorageReadWrite, outputs StorageWrite). Render graph v2 has no ray-tracing shader stage yet, so the
-// RT-pipeline pass declares the same resources ExternalRead / ExternalWrite (ALL_COMMANDS, MEMORY_READ / WRITE):
-// correct and validation-clean, coarser than needed (WP-7.3 open issue for the WP-0.3 owner). No manual barriers.
+// Accesses: TLAS AccelerationStructureRead, tables StorageRead, accumulation StorageReadWrite, outputs StorageWrite,
+// declared at the compute stage (ray query) or at the ray-tracing stage (rg::kStageRayTracing, RT pipeline), so the
+// graph's barriers name exactly the stage that traces. No manual barriers.
 //
 //   pt.init({device, allocator, bindless});            // false below the T2 gate (reason()); Auto picks T3 if enabled
 //   pt.setSettings(settings);
@@ -237,8 +237,7 @@ private:
     PtSbtLayout m_sbt{};
     void* m_layoutHandle = nullptr;   ///< VkPipelineLayout (push constants only)
     void* m_pipeline = nullptr;       ///< VkPipeline (compute or ray tracing)
-    void* m_sbtBuffer = nullptr;      ///< VkBuffer
-    void* m_sbtMemory = nullptr;      ///< VkDeviceMemory
+    Buffer m_sbtBuffer{};             ///< allocator buffer, BufferUsage::ShaderBindingTable, host-visible
     u64 m_sbtAddress = 0;             ///< base-aligned
     void* m_traceRays = nullptr;      ///< PFN_vkCmdTraceRaysKHR
     PtGpuStats m_stats{};

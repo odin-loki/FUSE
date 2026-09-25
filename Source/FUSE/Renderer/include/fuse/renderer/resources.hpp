@@ -41,6 +41,10 @@ enum class BufferUsage : u32 {
     /// VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR: vertex / index / instance
     /// input of an acceleration-structure build (WP-6.0). Dropped on devices without acceleration structures.
     AccelerationStructureBuildInput = 1u << 9,
+    /// VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR (+ SHADER_DEVICE_ADDRESS): a ray-tracing pipeline's shader
+    /// binding table (WP-7.3 follow-up). Dropped on devices without VK_KHR_ray_tracing_pipeline enabled
+    /// (RendererCaps::rayTracingPipeline), like the acceleration-structure usages.
+    ShaderBindingTable = 1u << 10,
 };
 
 enum class ImageUsage : u32 {

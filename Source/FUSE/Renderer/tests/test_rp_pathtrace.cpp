@@ -9,7 +9,8 @@
 //                       pixel per variant, against the CPU reference (pt_reference.hpp, 4096 spp): per pixel and
 //                       channel |gpu - cpu| / sqrt(se_gpu^2 + se_cpu^2) (standard errors from each side's own sum of
 //                       squares): <= 4 for >= 99.5 % of the tests, <= 6 for all; per-channel image z < 4. Variants
-//                       compared bit for bit (reported: RT pipeline vs ray query, Slang vs GLSL)
+//                       compared bit for bit (reported: RT pipeline vs ray query, Slang vs GLSL). The last graph's
+//                       readback copies wait on RAY_TRACING_SHADER (rg::kStageRayTracing), no barrier into ALL_COMMANDS
 //   --mode furnace      Furnace scene: albedo 1 -> every pixel 1 (1e-5); albedo 0.6 -> every sample is 0.6 or 1
 //                       (mean and mean square of each pixel consistent with one two-valued mixture, 1e-5); Russian
 //                       roulette from bounce 0 with albedo 1: image mean within 5 sigma of 1
@@ -85,6 +86,7 @@ int main() {
 #include <fuse/renderer/pathtrace/pt_gpu.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
+#include <fuse/renderer/rg/sync_model.hpp>
 #include <fuse/renderer/rt/acceleration_structures.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
@@ -635,6 +637,26 @@ int runConverge(Context& ctx) {
         ok = runFrame(ctx, rig, graph, f);
     }
     expect(ok, "frames ran");
+    {
+        // The RT-pipeline passes declare their accesses at rg::kStageRayTracing: the readback copies of their state /
+        // output wait on RAY_TRACING_SHADER, and no barrier waits at ALL_COMMANDS (the old ExternalRead / ExternalWrite).
+        u32 rtVariants = 0;
+        for (u32 k = 0; k < 2u; ++k) {
+            rtVariants += rig.built[k] ? 1u : 0u;
+        }
+        u32 fromRt = 0;
+        u32 intoRt = 0;
+        u32 allCommands = 0;
+        for (const rg::BufferBarrier& b : graph.bufferBarriers()) {
+            fromRt += (b.srcStages & rg::vkc::kStageRayTracingShader) != 0u ? 1u : 0u;
+            intoRt += (b.dstStages & rg::vkc::kStageRayTracingShader) != 0u ? 1u : 0u;
+            allCommands += (b.dstStages & rg::vkc::kStageAllCommands) != 0u ? 1u : 0u; // imports start at ALL_COMMANDS (src)
+        }
+        std::printf("converge: last graph: %u buffer barriers from the ray-tracing stage, %u into it, %u into ALL_COMMANDS\n", fromRt,
+                    intoRt, allCommands);
+        expect(fromRt >= 2u * rtVariants, "readback copies wait on the RT-pipeline pass at RAY_TRACING_SHADER");
+        expect(allCommands == 0u, "no barrier into ALL_COMMANDS (RT-pipeline accesses declared at the ray-tracing stage)");
+    }
     std::printf("converge: %u frames x %u spp = %u spp per pixel per variant, %zu emitters (%zu traced + mapped)\n", kFrames, kSpp,
                 kFrames * kSpp, rig.world.table.size(), rig.world.emitterRefs.size());
     GpuImage img[kVariants];

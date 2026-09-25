@@ -68,6 +68,10 @@ enum ShaderStage : u8 {
     kStageCompute = 1u << 2,
     kStageTask = 1u << 3, ///< VK_EXT_mesh_shader task stage (WP-5.1; only on devices with taskShader)
     kStageMesh = 1u << 4, ///< VK_EXT_mesh_shader mesh stage (WP-5.1; only on devices with meshShader)
+    /// VK_KHR_ray_tracing_pipeline shader stages (raygen / miss / closest hit / any hit / intersection /
+    /// callable share one pipeline stage, RAY_TRACING_SHADER_BIT_KHR). Accesses of a vkCmdTraceRaysKHR pass
+    /// (WP-7.3 follow-up; only on devices with rayTracingPipeline enabled, legal on graphics and compute queues).
+    kStageRayTracing = 1u << 5,
 };
 
 /// Image subresource range. Counts of 0 mean "all remaining" (VK_REMAINING_*).

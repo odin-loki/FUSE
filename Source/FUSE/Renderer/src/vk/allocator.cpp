@@ -94,6 +94,11 @@ VkBufferUsageFlags toVkBufferUsage(BufferUsage usage) {
         flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
     }
 #endif
+#if defined(VK_KHR_ray_tracing_pipeline)
+    if (hasUsage(usage, BufferUsage::ShaderBindingTable)) {
+        flags |= VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR;
+    }
+#endif
     return flags;
 }
 
@@ -105,7 +110,7 @@ bool usageWantsDeviceAddress(BufferUsage usage) {
     return hasUsage(usage, BufferUsage::ShaderDeviceAddress) ||
            hasUsage(usage, BufferUsage::Storage) || hasUsage(usage, BufferUsage::Uniform) ||
            hasUsage(usage, BufferUsage::Vertex) || hasUsage(usage, BufferUsage::AccelerationStructureStorage) ||
-           hasUsage(usage, BufferUsage::AccelerationStructureBuildInput);
+           hasUsage(usage, BufferUsage::AccelerationStructureBuildInput) || hasUsage(usage, BufferUsage::ShaderBindingTable);
 }
 
 VkBufferUsageFlags resolveVkBufferUsage(const VulkanDevice* device, BufferUsage usage) {
@@ -120,6 +125,12 @@ VkBufferUsageFlags resolveVkBufferUsage(const VulkanDevice* device, BufferUsage 
         // WP-6.0: the AS usages are only valid with VK_KHR_acceleration_structure enabled.
         flags &= ~static_cast<VkBufferUsageFlags>(VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
                                                   VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR);
+    }
+#endif
+#if defined(VK_KHR_ray_tracing_pipeline)
+    if (device == nullptr || !device->info().caps.rayTracingPipeline) {
+        // WP-7.3 follow-up: the SBT usage is only valid with VK_KHR_ray_tracing_pipeline enabled.
+        flags &= ~static_cast<VkBufferUsageFlags>(VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR);
     }
 #endif
     return flags;
