@@ -22,7 +22,8 @@ void printUsage() {
                  "  fuse_cook --project <dir> [--dry-run]     Plan default cook manifest for project\n"
                  "  fuse_cook --manifest <cook.json> [--dry-run]  Load cook_manifest.json and plan/cook\n"
                  "  fuse_cook --mesh --input <path> --output <path>   Stub mesh cook\n"
-                 "  fuse_cook --texture --input <path> --output <path> Stub texture cook\n"
+                 "  fuse_cook --texture --input <path> --output <path> Texture cook (.png/.tga/.jpg/.hdr/.ktx2 in;\n"
+                 "             .fusetex out, or .ktx2 out for KTX2 transport export)\n"
                  "  fuse_cook --audio --input <path> --output <path>  Stub audio cook\n"
                  "  fuse_cook --fuselevel --mis <file.mis> --output <world.fuselevel>\n"
                  "  fuse_cook --fuselevel --module <file.cs> --output <world.fuselevel>\n"
@@ -30,7 +31,16 @@ void printUsage() {
                  "  --lenient  Cook undecodable mesh/texture sources to labelled placeholder stubs instead\n"
                  "             of failing. By default cooks are strict: malformed meshes and corrupt,\n"
                  "             zero-size or oversize textures fail (exit 1) with a specific status\n"
-                 "  --strict   Accepted for compatibility (strict is the default)\n");
+                 "  --strict   Accepted for compatibility (strict is the default)\n"
+                 "Texture options (asset plan W0.3/W0.4):\n"
+                 "  --format <BC1|BC4|BC5|BC6H|BC7>  Block format (default BC7)\n"
+                 "  --normal-map   Tangent-space normal map: BC5, linear, renormalised mips\n"
+                 "  --hdr          HDR source: BC6H\n"
+                 "  --linear       Data texture (not sRGB)\n"
+                 "  --no-mips      Level 0 only\n"
+                 "Mesh options (asset plan W0.1):\n"
+                 "  --fmsh-v2      FMSH v2 streams (tangent, uv1, colour, skin, material slots)\n"
+                 "  --quantize     FMSH v2 quantised positions (unorm16) and normals (oct16)\n");
 }
 
 /// Manifest paths are relative to the manifest's directory, not the caller's working directory.
@@ -100,6 +110,13 @@ int main(int argc, char** argv) {
     bool fuselevelCook = false;
     std::string missionPath;
     std::string modulePath;
+    std::string textureFormat;
+    bool normalMap = false;
+    bool hdrTexture = false;
+    bool linearTexture = false;
+    bool noMips = false;
+    bool fmshV2 = false;
+    bool quantize = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -129,6 +146,20 @@ int main(int argc, char** argv) {
             missionPath = argv[++i];
         } else if (arg == "--module" && i + 1 < argc) {
             modulePath = argv[++i];
+        } else if (arg == "--format" && i + 1 < argc) {
+            textureFormat = argv[++i];
+        } else if (arg == "--normal-map") {
+            normalMap = true;
+        } else if (arg == "--hdr") {
+            hdrTexture = true;
+        } else if (arg == "--linear") {
+            linearTexture = true;
+        } else if (arg == "--no-mips") {
+            noMips = true;
+        } else if (arg == "--fmsh-v2") {
+            fmshV2 = true;
+        } else if (arg == "--quantize") {
+            quantize = true;
         } else if (arg == "--help" || arg == "-h") {
             printUsage();
             fuse::core::shutdown();
@@ -173,11 +204,37 @@ int main(int argc, char** argv) {
             fuse::project::MeshImportDesc desc;
             desc.input_path = inputPath;
             desc.output_path = outputPath;
+            desc.fmsh_v2_streams = fmshV2;
+            desc.quantize_vertices = quantize;
             record = cooker.cook_mesh(desc);
         } else if (textureCook) {
             fuse::project::TextureImportDesc desc;
             desc.input_path = inputPath;
             desc.output_path = outputPath;
+            desc.is_normal_map = normalMap;
+            desc.is_hdr = hdrTexture;
+            desc.generate_mipmaps = !noMips;
+            if (linearTexture) {
+                desc.color_space = fuse::project::TextureImportDesc::ColorSpace::Linear;
+            }
+            if (!textureFormat.empty()) {
+                using Compression = fuse::project::TextureImportDesc::Compression;
+                if (textureFormat == "BC1" || textureFormat == "bc1") {
+                    desc.compression = Compression::BC1;
+                } else if (textureFormat == "BC4" || textureFormat == "bc4") {
+                    desc.compression = Compression::BC4;
+                } else if (textureFormat == "BC5" || textureFormat == "bc5") {
+                    desc.compression = Compression::BC5;
+                } else if (textureFormat == "BC6H" || textureFormat == "bc6h") {
+                    desc.is_hdr = true;
+                } else if (textureFormat == "BC7" || textureFormat == "bc7") {
+                    desc.compression = Compression::BC7;
+                } else {
+                    std::fprintf(stderr, "fuse_cook: unknown --format %s\n", textureFormat.c_str());
+                    fuse::core::shutdown();
+                    return EXIT_FAILURE;
+                }
+            }
             record = cooker.cook_texture(desc);
         } else {
             fuse::project::AudioImportDesc desc;

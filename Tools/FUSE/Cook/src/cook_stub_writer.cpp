@@ -181,8 +181,17 @@ CookStubWriteResult tryCookMeshAssimp(const std::string& input_path, const std::
 
 CookStubWriteResult tryCookTextureBc7(const std::string& input_path, const std::string& output_path,
                                       const char* compression, bool mipmaps) {
-    (void)compression; // BC5 / BC1 paths are not implemented; every texture cooks to BC7 mode 6.
-    return cook_texture_bc7_file(input_path, output_path, mipmaps);
+    // W0.3: BC1 / BC4 / BC5 / BC6H / BC7 through the in-house encoders (bcn_encoder.cpp).
+    TextureCookOptions options;
+    options.mipmaps = mipmaps;
+    if (compression != nullptr && !parse_bc_format(compression, options.format)) {
+        CookStubWriteResult result;
+        result.note = std::string("texture compression '") + compression + "' not supported";
+        result.failure = CookFailure::InvalidArgument;
+        return result;
+    }
+    options.normal_map = options.format == BcFormat::BC5;
+    return cook_texture_file(input_path, output_path, options);
 }
 
 CookStubWriteResult tryCookAudioOgg(const std::string& input_path, const std::string& output_path,

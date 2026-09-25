@@ -256,6 +256,13 @@ CookRecord AssetCooker::cook_mesh(const MeshImportDesc& desc) {
                                 if (strict) {
                                     fuse::cook::MeshCookOptions options;
                                     options.generate_normals = desc.generate_normals;
+                                    options.import_tangents = desc.fmsh_v2_streams && desc.generate_tangents;
+                                    options.import_uv1 = desc.fmsh_v2_streams;
+                                    options.import_colors = desc.fmsh_v2_streams;
+                                    options.import_skin = desc.fmsh_v2_streams;
+                                    options.import_material_names = desc.fmsh_v2_streams;
+                                    options.encoding.quantize_positions = desc.quantize_vertices;
+                                    options.encoding.quantize_normals = desc.quantize_vertices;
                                     return to_outcome(
                                         fuse::cook::cook_mesh_file(desc.input_path, desc.output_path, options));
                                 }
@@ -266,7 +273,34 @@ CookRecord AssetCooker::cook_mesh(const MeshImportDesc& desc) {
 }
 
 CookRecord AssetCooker::cook_texture(const TextureImportDesc& desc) {
-    const char* compression = desc.is_normal_map ? "BC5" : "BC7";
+    // Asset plan §1.3: normal maps → BC5 (linear), HDR → BC6H, otherwise the requested BC format.
+    const char* compression = "BC7";
+    if (desc.is_normal_map) {
+        compression = "BC5";
+    } else if (desc.is_hdr) {
+        compression = "BC6H";
+    } else {
+        switch (desc.compression) {
+        case TextureImportDesc::Compression::BC1:
+            compression = "BC1";
+            break;
+        case TextureImportDesc::Compression::BC4:
+            compression = "BC4";
+            break;
+        case TextureImportDesc::Compression::BC5:
+            compression = "BC5";
+            break;
+        case TextureImportDesc::Compression::BC7:
+            compression = "BC7";
+            break;
+        case TextureImportDesc::Compression::None:
+            compression = "none";
+            break;
+        case TextureImportDesc::Compression::BC3:
+            compression = "BC3";
+            break;
+        }
+    }
     std::ostringstream note;
     note << (strict_import() ? "texture cook" : "stub texture cook") << " (compression=" << compression
          << ", mipmaps=" << (desc.generate_mipmaps ? "on" : "off") << ")";
@@ -275,8 +309,19 @@ CookRecord AssetCooker::cook_texture(const TextureImportDesc& desc) {
     return cook_with_cache_(CookAssetKind::Texture, desc.input_path, desc.output_path, content_hash, 0,
                             note.str().c_str(), [&desc, compression, strict]() {
                                 if (strict) {
-                                    return to_outcome(fuse::cook::cook_texture_bc7_file(
-                                        desc.input_path, desc.output_path, desc.generate_mipmaps));
+                                    fuse::cook::TextureCookOptions options;
+                                    options.mipmaps = desc.generate_mipmaps;
+                                    options.normal_map = desc.is_normal_map;
+                                    options.srgb = desc.color_space == TextureImportDesc::ColorSpace::sRGB;
+                                    if (!fuse::cook::parse_bc_format(compression, options.format)) {
+                                        fuse::cook::CookStubWriteResult refused;
+                                        refused.failure = fuse::cook::CookFailure::InvalidArgument;
+                                        refused.note = std::string("texture compression ") + compression +
+                                                       " is not a cook format (use BC1/BC4/BC5/BC6H/BC7)";
+                                        return to_outcome(refused);
+                                    }
+                                    return to_outcome(
+                                        fuse::cook::cook_texture_file(desc.input_path, desc.output_path, options));
                                 }
                                 return to_outcome(fuse::cook::write_texture_stub(
                                     desc.input_path, desc.output_path, compression, desc.generate_mipmaps));

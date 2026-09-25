@@ -1,11 +1,17 @@
 add_library(fuse_cook_stubs STATIC
     src/bc7_encoder.cpp
+    src/bcn_encoder.cpp
+    src/ktx2.cpp
     src/cook_stub_writer.cpp
     src/mesh_cook.cpp
+    src/mesh_cook_meshopt.cpp
+    src/mesh_cook_meshopt.hpp
     src/texture_cook.cpp
     src/cook_stb_image.cpp
     src/ispc_texcomp_hook.cpp
     include/fuse/cook/bc7_encoder.hpp
+    include/fuse/cook/bcn_encoder.hpp
+    include/fuse/cook/ktx2.hpp
     include/fuse/cook/cook_stub_writer.hpp
     include/fuse/cook/mesh_cook.hpp
     include/fuse/cook/texture_cook.hpp
@@ -27,6 +33,18 @@ set(FUSE_ENGINE_STB_DIR "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/st
 if(EXISTS "${FUSE_ENGINE_STB_DIR}/stb_image.h")
     target_compile_definitions(fuse_cook_stubs PUBLIC FUSE_HAS_STB_IMAGE=1)
     target_include_directories(fuse_cook_stubs PRIVATE "${FUSE_ENGINE_STB_DIR}")
+endif()
+
+# Asset plan W0.2: meshoptimizer (LODs, vertex / index codecs) and the renderer's WP-1.2 meshlet +
+# WP-5.2 cluster DAG builders (Source/FUSE/Renderer/cmake/rp_wp12.cmake, rp_wp52.cmake; the Renderer is
+# added before this directory). Linked, not duplicated. Without them the W0.2 steps report unavailable.
+if(TARGET fuse_meshoptimizer)
+    target_link_libraries(fuse_cook_stubs PRIVATE fuse_meshoptimizer)
+    target_compile_definitions(fuse_cook_stubs PRIVATE FUSE_COOK_HAS_MESHOPTIMIZER=1)
+endif()
+if(TARGET fuse_geometry_dag)
+    target_link_libraries(fuse_cook_stubs PRIVATE fuse_geometry_dag)
+    target_compile_definitions(fuse_cook_stubs PRIVATE FUSE_COOK_HAS_GEOMETRY_DAG=1)
 endif()
 
 find_package(assimp QUIET)

@@ -17,6 +17,11 @@ struct MeshImportDesc {
     u32 lod_count = 4;
     f32 lod_error_target = 0.01f;
     bool compress = true;
+    /// FMSH v2 streams (asset plan W0.1): tangents (when `generate_tangents`), uv1, colour0, skin
+    /// joints/weights and material slot names, when the source has them. Off: FMSH v1 as before.
+    bool fmsh_v2_streams = false;
+    /// FMSH v2 quantisation: positions unorm16 in bounds, normals oct snorm16.
+    bool quantize_vertices = false;
 };
 
 /// Texture import descriptor (B7.9 stub).

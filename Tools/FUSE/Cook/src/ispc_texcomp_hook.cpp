@@ -45,6 +45,15 @@ CookStubWriteResult tryCookTextureIspc(const std::string& input_path, const std:
     const ispc::CompressionResult encoded =
         ispc::CompressBlocks(pixels, static_cast<uint32_t>(width), static_cast<uint32_t>(height),
                              format, blocks.data());
+    if (encoded.ok && encoded.note != nullptr && std::string(encoded.note).find("stub") != std::string::npos) {
+        // third_party/ispc_texcomp/ispc_texcomp.h is an API stub that fills blocks with placeholder
+        // bytes. Never emit those: report the hook as unavailable so callers use the in-house BCn
+        // encoders (bcn_encoder.cpp, asset plan W0.3).
+        stbi_image_free(pixels);
+        CookStubWriteResult result;
+        result.note = "ispc_texcomp unavailable (stub header only)";
+        return result;
+    }
     if (!encoded.ok) {
         stbi_image_free(pixels);
         CookStubWriteResult result;

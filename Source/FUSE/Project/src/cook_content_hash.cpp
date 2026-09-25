@@ -15,6 +15,8 @@ constexpr u64 kFnvPrime = 1099511628211ull;
 /// Bump whenever a cooker's output format or encoder changes so existing cache entries miss.
 /// 2: FMSH binary meshes, spec-conformant BC7 mode 6 with mip chains.
 constexpr u64 kCookFormatVersion = 2;
+/// Texture-only revision: 3 = asset plan W0.3 (BC1/BC4/BC5/BC6H/BC7, arrays, KTX2 transport).
+constexpr u64 kTextureCookFormatVersion = 3;
 
 u64 hash_u64(u64 value) {
     return fnv1a64_bytes(reinterpret_cast<const u8*>(&value), sizeof(value));
@@ -123,6 +125,11 @@ u64 hash_mesh_import(const MeshImportDesc& desc) {
     hash = fnv1a64_combine(hash, hash_u64(desc.lod_count));
     hash = fnv1a64_combine(hash, hash_u64(static_cast<u64>(desc.lod_error_target * 1000000.0f)));
     hash = fnv1a64_combine(hash, hash_bool(desc.compress));
+    if (desc.fmsh_v2_streams || desc.quantize_vertices) {
+        // Only folded in when set, so v1 cooks keep their cache keys.
+        hash = fnv1a64_combine(hash, hash_bool(desc.fmsh_v2_streams));
+        hash = fnv1a64_combine(hash, hash_bool(desc.quantize_vertices));
+    }
     hash = fnv1a64_combine(hash, hash_u64(kCookFormatVersion));
     return hash;
 }
@@ -146,6 +153,8 @@ u64 hash_texture_import(const TextureImportDesc& desc) {
     hash = fnv1a64_combine(hash, hash_bool(desc.is_normal_map));
     hash = fnv1a64_combine(hash, hash_bool(desc.is_hdr));
     hash = fnv1a64_combine(hash, hash_u64(kCookFormatVersion));
+    // Asset plan W0.3: compression / colour space / normal map / HDR now change the cooked bytes.
+    hash = fnv1a64_combine(hash, hash_u64(kTextureCookFormatVersion));
     return hash;
 }
 
