@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "assets": [
+    {
+      "id": "relight/profiles/sky_ui_hud",
+      "origin": "generated",
+      "source": "FUSE",
+      "author": "FUSE contributors",
+      "generator": "Source/FUSE/Relight/setup/tools/fuse_relight_setup.cpp@af7fa52f4effcc8c922e64be9b9d3e0ef7eeb0aa",
+      "seed": 0,
+      "inputs": "capture of the FUSE test scene Tests/relight/apps/scenes/sky_ui_hud.cpp (5 frames, 50 draws)",
+      "licence": "LicenseRef-FUSE-Generated",
+      "attribution": null,
+      "distribution": "ship",
+      "files": [
+        {"path": "relight/profiles/sky_ui_hud.json", "sha256": "3df9b02f090fd6ad8092c00dcc59523a81f83357e5f6b1069e50443a8b21c660"}
+      ],
+      "derived_from": [],
+      "review": {"required": false, "by": null, "date": null}
+    }
+  ]
+}

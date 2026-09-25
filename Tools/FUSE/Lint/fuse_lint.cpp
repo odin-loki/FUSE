@@ -29,6 +29,13 @@
 //   branding       Appendix A "Icons, installer, docs, CI badge names": --repo workflows' `name:`
 //                  fields say FUSE (no Torque/T3D job / step names), README.md is titled `# FUSE`
 //                  with one CI badge per workflow (alt = workflow name), docs titles say FUSE.
+//   asset-licences FUSE_ASSET_PLAN §2.4 / W0.5: --root Content holds licences.lock.json; every file under it
+//                  resolves to a record with a matching sha256 and an allowed (or reviewed) licence, no NC /
+//                  ND / editorial / research-only / unknown-provenance entries, no share-alike leakage over
+//                  derived_from, generator records carry path@revision + seed, CREDITS.md is current.
+//                  Optional --manifest <cook_manifest.json> (cooked outputs need a record) and --cache DIR.
+//                  (fuse_lint_asset_licences.cpp)
+//   asset-credits  Regenerates --root Content/CREDITS.md from the lock file (not a gate; exit 0 on success).
 
 #include <algorithm>
 #include <array>
@@ -46,13 +53,15 @@
 #include <string_view>
 #include <vector>
 
+#include "fuse_lint_asset_licences.hpp"
+
 namespace fs = std::filesystem;
 
 namespace {
 
 struct Args {
     std::string check;
-    fs::path root, dir, manifest, repo, plan, sources, scratch;
+    fs::path root, dir, manifest, repo, plan, sources, scratch, cache;
 };
 
 using Violations = std::vector<std::string>;
@@ -1557,6 +1566,9 @@ bool selfTest(const std::string& check, const fs::path& scratch) {
                      countContaining(vb, "missing workflow") == 1u && countContaining(vb, "no CI badge") == 2u,
                  "branding: seeded workflow/README/docs naming violations flagged (got " + std::to_string(vb.size()) + ")");
         t.expect(checkBranding(bad / "nonexistent").size() >= 2u, "branding: missing repo flagged");
+    } else if (check == "asset-licences" || check == "asset-credits") {
+        t.expect(fuse::tools::lint::selfTestAssetLicences(scratch, sha256Hex),
+                 "asset-licences: seeded licence / sha / provenance / credits violations flagged, clean lock passes");
     } else {
         std::fprintf(stderr, "unknown check '%s'\n", check.c_str());
         return false;
@@ -1570,8 +1582,8 @@ bool selfTest(const std::string& check, const fs::path& scratch) {
 int usage() {
     std::fprintf(stderr,
                  "usage: fuse_lint <ownership|namespace|macros|torque-macros|torque-names|banned-deps|cxx-standard|"
-                 "qt-includes|editor-qt6|doc-headings|vendored-pins|branding> [--root DIR] [--dir DIR] [--manifest FILE] [--repo DIR] [--plan FILE] "
-                 "[--sources DIR] --scratch DIR\n");
+                 "qt-includes|editor-qt6|doc-headings|vendored-pins|branding|asset-licences|asset-credits> [--root DIR] [--dir DIR] "
+                 "[--manifest FILE] [--repo DIR] [--plan FILE] [--sources DIR] [--cache DIR] --scratch DIR\n");
     return 2;
 }
 
@@ -1593,6 +1605,7 @@ int main(int argc, char** argv) {
         else if (k == "--plan") a.plan = val;
         else if (k == "--sources") a.sources = val;
         else if (k == "--scratch") a.scratch = val;
+        else if (k == "--cache") a.cache = val;
         else return usage();
     }
     if (a.scratch.empty()) {
@@ -1631,6 +1644,17 @@ int main(int argc, char** argv) {
     else if (a.check == "doc-headings") v = checkDocHeadings(shown = a.plan, a.sources);
     else if (a.check == "vendored-pins") v = checkVendoredPins(shown = a.dir);
     else if (a.check == "branding") v = checkBranding(shown = a.repo);
+    else if (a.check == "asset-licences") v = fuse::tools::lint::checkAssetLicences(shown = a.root, a.manifest, a.cache, sha256Hex);
+    else if (a.check == "asset-credits") {
+        std::string credits, error;
+        if (!fuse::tools::lint::renderAssetCredits(a.root / "licences.lock.json", credits, error)) {
+            std::fprintf(stderr, "fuse_lint asset-credits: %s\n", error.c_str());
+            return 1;
+        }
+        writeFile(a.root / "CREDITS.md", credits);
+        std::printf("fuse_lint asset-credits: wrote %s\n", (a.root / "CREDITS.md").generic_string().c_str());
+        return 0;
+    }
     else return usage();
 
     for (const std::string& s : v) {

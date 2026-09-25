@@ -74,7 +74,8 @@ endfunction()
 
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL fuse_lint_write_target_manifest)
 
-add_executable(fuse_lint "${CMAKE_SOURCE_DIR}/Tools/FUSE/Lint/fuse_lint.cpp")
+add_executable(fuse_lint "${CMAKE_SOURCE_DIR}/Tools/FUSE/Lint/fuse_lint.cpp"
+    "${CMAKE_SOURCE_DIR}/Tools/FUSE/Lint/fuse_lint_asset_licences.cpp")  # asset-licences (FUSE_ASSET_PLAN W0.5)
 set_target_properties(fuse_lint PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 # std::regex over ~2k files is ~10x slower unoptimised; keep the gates fast in Debug trees.
 target_compile_options(fuse_lint PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O2>)
@@ -141,8 +142,15 @@ _fuse_lint_add(fuse_lint_vendored_pins_tracy vendored-pins --dir "${CMAKE_SOURCE
 _fuse_lint_add(fuse_lint_vendored_pins_meshoptimizer vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/meshoptimizer")  # WP-1.2 meshlet cook (MIT)
 _fuse_lint_add(fuse_lint_vendored_pins_gdeflate vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/gdeflate")  # RL-3.3 GDeflate CPU codec (MIT + Apache-2.0)
 _fuse_lint_add(fuse_lint_vendored_pins_tinyusdz vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/tinyusdz")  # RL-3.1 / Remaster W2.2 TinyUSDZ USDA + USDC reader (Apache-2.0)
+_fuse_lint_add(fuse_lint_vendored_pins_nvidia_flip vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/nvidia-flip")  # Asset plan W0.8 NVIDIA FLIP golden metric (BSD-3)
 
 get_property(_fuse_lint_all GLOBAL PROPERTY _FUSE_LINT_TESTS)
 set_tests_properties(${_fuse_lint_all} PROPERTIES LABELS "gate;lint" TIMEOUT 300)
 set_tests_properties(fuse_lint_b6_editor_qt6_only PROPERTIES LABELS "gate;lint;qt" SKIP_RETURN_CODE 77)
+# FUSE_ASSET_PLAN §2.4 / W0.5: Content/licences.lock.json covers every file under Content/ (labels lint;asset).
+add_test(NAME fuse_lint_asset_licences COMMAND fuse_lint asset-licences --root "${CMAKE_SOURCE_DIR}/Content"
+         --scratch "${_fuse_lint_scratch}/fuse_lint_asset_licences")
+set_tests_properties(fuse_lint_asset_licences PROPERTIES LABELS "gate;lint;asset" TIMEOUT 300)
+# FUSE_ASSET_PLAN §5.3 / W0.6: fuse_assetcheck validation gates (labels asset;gate).
+include(${CMAKE_SOURCE_DIR}/cmake/FuseAssetCheck.cmake)
 include(${CMAKE_SOURCE_DIR}/Source/FUSE/Relight/cmake/relight_licence_gates.cmake)  # RL-0.1 licence gates (rl_licence_text_scan, rl_binary_gate)
