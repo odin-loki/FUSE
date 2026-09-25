@@ -1,0 +1,119 @@
+#version 460
+// FUSE Relight RL-5.6 "relight.vol.*": the volumetrics / particle composite stages of rl_vol_core.h (inject, temporal,
+// integrate, apply; push constant `stage`), one work item per invocation (froxel, column or pixel). Buffers through
+// the ring block's device addresses (VolumetricsGpu, volumetrics_gpu.hpp); lights: RL-4.4 rl_lights.glsl; shadow rays:
+// ray query on the WP-6.0 TLAS (cull mask kPtMaskShadow, opaque, first hit). GLSL twin of rl_vol.slang. CPU
+// reference: src/vol_cpp.hpp.
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+layout(local_size_x = 64) in;
+
+layout(push_constant) uniform VolPush {
+    uint64_t block;
+    uint64_t tlas;
+    uint64_t lightTable;
+    uint64_t lightTree;
+    uint stage;
+    uint count;
+    uint reserved0;
+    uint reserved1;
+} pc;
+
+#include "rl_lights.glsl"
+
+#define uint4 uvec4
+#define VOL_FN
+#define VOL_CONST const
+#define VOL_OUT(T) out T
+#define VOL_INOUT(T) inout T
+#define VOL_CTX_PARAM
+#define VOL_CTX_ARG
+#define VOL_PARAM_WORDS(name) vec4 name[11]
+#define VOL_INT_WORDS(name) uvec4 name[3]
+
+#include "rl_vol_types.h"
+
+layout(buffer_reference, std430, buffer_reference_align = 16) buffer VolF4 { vec4 v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer VolU4 { uvec4 v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 8) readonly buffer VolAddr { uint64_t a[]; };
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer VolU1 { uint v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer VolF1 { float v[]; };
+
+uint64_t volAddress(uint slot) { return VolAddr(pc.block).a[slot]; }
+
+vec4 volLoad(uint buf, uint index) { return VolF4(volAddress(buf)).v[index]; }
+void volStore(uint buf, uint index, vec4 v) { VolF4(volAddress(buf)).v[index] = v; }
+float volLoadDepth(uint pixel) {
+    uint64_t a = volAddress(8u);
+    return a != 0ul ? VolF1(a).v[pixel] : 0.0;
+}
+float volUnorm8(uint c, uint shift) { return float((c >> shift) & 255u) * (1.0 / 255.0); }
+VolVertex volLoadVertex(uint vertex) {
+    VolU1 w = VolU1(volAddress(9u));
+    VolVertex v;
+    v.position = vec3(uintBitsToFloat(w.v[vertex * 6u]), uintBitsToFloat(w.v[vertex * 6u + 1u]),
+                      uintBitsToFloat(w.v[vertex * 6u + 2u]));
+    uint c = w.v[vertex * 6u + 3u];
+    v.color = vec4(volUnorm8(c, 16u), volUnorm8(c, 8u), volUnorm8(c, 0u), volUnorm8(c, 24u));
+    return v;
+}
+uvec4 volLoadSystem(uint system) { return VolU4(pc.block + 352ul).v[system]; }
+RlLight volLoadLight(uint light) { return rlLoadLight(pc.lightTable, light); }
+VolLightPick volSampleLight(vec3 p, float u0, float u1, float u2) {
+    RlSetSample s = rlSetSample(pc.lightTable, VolU4(pc.block + 304ul).v[2].y, pc.lightTree, p, vec3(0.0), u0, u1, u2);
+    VolLightPick r;
+    r.light = s.light;
+    r.pdf = s.pdf;
+    r.wi = s.s.wi;
+    r.dist = s.s.dist;
+    r.radiance = s.s.radiance;
+    r.flags = s.s.flags;
+    return r;
+}
+bool volOccluded(vec3 o, vec3 d, float tmin, float tmax) {
+    if (pc.tlas == 0ul) {
+        return false;
+    }
+    rayQueryEXT q;
+    rayQueryInitializeEXT(q, accelerationStructureEXT(pc.tlas),
+                          gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT, 2u, o, tmin, d, tmax);
+    while (rayQueryProceedEXT(q)) {
+    }
+    return rayQueryGetIntersectionTypeEXT(q, true) == gl_RayQueryCommittedIntersectionTriangleEXT;
+}
+
+#include "rl_vol_core.h"
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= pc.count) {
+        return;
+    }
+    vec4 w[11];
+    for (uint k = 0u; k < 11u; ++k) {
+        w[k] = VolF4(pc.block + 128ul).v[k];
+    }
+    uvec4 iw[3];
+    for (uint k = 0u; k < 3u; ++k) {
+        iw[k] = VolU4(pc.block + 304ul).v[k];
+    }
+    VolParams P = volParamsUnpack(w, iw);
+    if (pc.stage == kVolStageInject || pc.stage == kVolStageTemporal) {
+        uint z = id % P.gz;
+        uint col = id / P.gz;
+        uint x = col % P.gx;
+        uint y = col / P.gx;
+        if (pc.stage == kVolStageInject) {
+            volInject(P, x, y, z);
+        } else {
+            volTemporal(P, x, y, z);
+        }
+    } else if (pc.stage == kVolStageIntegrate) {
+        volIntegrate(P, id % P.gx, id / P.gx);
+    } else {
+        volApply(P, id % P.width, id / P.width);
+    }
+}
