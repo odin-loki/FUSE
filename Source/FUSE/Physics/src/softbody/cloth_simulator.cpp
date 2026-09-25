@@ -74,6 +74,7 @@ void ClothSimulator::destroy() {
     m_packedDt = 0.f;
     m_structuralCount = 0;
     m_spheres.clear();
+    m_boxes.clear();
     m_wind = {};
     m_vertexBuffer = 0;
     m_indexBuffer = 0;
@@ -87,6 +88,13 @@ void ClothSimulator::applyWind(vec3 windVelocity) {
 
 void ClothSimulator::addSphereCollider(vec3 center, f32 radius) {
     m_spheres.push_back({center, radius});
+}
+
+void ClothSimulator::addBoxCollider(vec3 center, vec3 halfExtents) {
+    if (halfExtents.x <= 0.f || halfExtents.y <= 0.f || halfExtents.z <= 0.f) {
+        return;
+    }
+    m_boxes.push_back({center, halfExtents});
 }
 
 void ClothSimulator::step(f32 dt, vec3 gravity) {
@@ -125,6 +133,7 @@ void ClothSimulator::step(f32 dt, vec3 gravity) {
         }
         solveTethers_();
         collideSpheres_();
+        collideBoxes_();
     }
     for (u32 i = 0; i < count; ++i) {
         velocities[i] = invMasses[i] == 0.f ? vec3{} : (positions[i] - prevPositions[i]) * (invH * damping);
@@ -297,6 +306,46 @@ void ClothSimulator::collideSpheres_() {
             const vec3 slip = resolved - m_particles.prevPositions[i];
             const vec3 tangential = slip - n * slip.dot(n);
             resolved -= tangential * std::clamp(m_desc.friction, 0.f, 1.f);
+            m_particles.positions[i] = resolved;
+        }
+    }
+}
+
+void ClothSimulator::collideBoxes_() {
+    const f32 skin = m_desc.thickness;
+    const f32 friction = std::clamp(m_desc.friction, 0.f, 1.f);
+    for (const ClothBoxCollider& box : m_boxes) {
+        const vec3 expanded{box.halfExtents.x + skin, box.halfExtents.y + skin, box.halfExtents.z + skin};
+        for (u32 i = 0; i < m_particles.count; ++i) {
+            if (m_particles.invMasses[i] == 0.f) {
+                continue;
+            }
+            const vec3 local = m_particles.positions[i] - box.center;
+            const f32 ax = std::fabs(local.x);
+            const f32 ay = std::fabs(local.y);
+            const f32 az = std::fabs(local.z);
+            if (ax >= expanded.x || ay >= expanded.y || az >= expanded.z) {
+                continue;
+            }
+
+            const f32 penX = expanded.x - ax;
+            const f32 penY = expanded.y - ay;
+            const f32 penZ = expanded.z - az;
+            vec3 normal{local.x < 0.f ? -1.f : 1.f, 0.f, 0.f};
+            f32 penetration = penX;
+            if (penY < penetration) {
+                penetration = penY;
+                normal = {0.f, local.y < 0.f ? -1.f : 1.f, 0.f};
+            }
+            if (penZ < penetration) {
+                penetration = penZ;
+                normal = {0.f, 0.f, local.z < 0.f ? -1.f : 1.f};
+            }
+
+            vec3 resolved = m_particles.positions[i] + normal * penetration;
+            const vec3 slip = resolved - m_particles.prevPositions[i];
+            const vec3 tangential = slip - normal * slip.dot(normal);
+            resolved -= tangential * friction;
             m_particles.positions[i] = resolved;
         }
     }

@@ -148,6 +148,32 @@ void testClothDrapesOverSphere() {
     expectTrue(allFinite(cloth), "draped cloth stays finite");
 }
 
+void testClothRestsOnBox() {
+    ClothSimulator cloth;
+    ClothDesc desc{};
+    desc.rows = 16;
+    desc.cols = 16;
+    desc.pinnedCorners = 0u;
+    cloth.init(desc, {-0.75f, 1.2f, -0.75f});
+    const vec3 half{0.5f, 0.2f, 0.5f};
+    cloth.addBoxCollider({0.f, 0.f, 0.f}, half);
+
+    f32 worstPenetration = 0.f;
+    for (int frame = 0; frame < 180; ++frame) {
+        cloth.step(kDt, kGravity);
+        for (u32 i = 0; i < cloth.particleCount(); ++i) {
+            const vec3 p = cloth.position(i);
+            if (std::fabs(p.x) < half.x && std::fabs(p.z) < half.z) {
+                worstPenetration = std::max(worstPenetration, half.y - p.y);
+            }
+        }
+    }
+    const vec3 middle = cloth.position(cloth.index(8, 8));
+    expectTrue(worstPenetration <= 0.f, "no particle ends a frame inside the box");
+    expectTrue(middle.y > half.y && middle.y < half.y + 0.15f, "cloth rests on top of the box");
+    expectTrue(allFinite(cloth), "cloth on a box stays finite");
+}
+
 void testLargeClothBudget() {
     ClothSimulator cloth;
     ClothDesc desc{};
@@ -178,6 +204,7 @@ int main() {
     testHangingClothStableAndPinned();
     testWindDeflectsDownwind();
     testClothDrapesOverSphere();
+    testClothRestsOnBox();
     testLargeClothBudget();
     fuse::jobs::JobScheduler::instance().shutdown();
 

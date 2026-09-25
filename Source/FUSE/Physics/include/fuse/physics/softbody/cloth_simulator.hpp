@@ -42,6 +42,12 @@ struct ClothSphereCollider {
     f32 radius = 0.f;
 };
 
+/// Axis-aligned box collider. `halfExtents` are the solid half-sizes; cloth thickness is added outside.
+struct ClothBoxCollider {
+    vec3 center{};
+    vec3 halfExtents{};
+};
+
 /// B4.8 — XPBD cloth (CPU path; CUDA kernels deferred).
 class ClothSimulator {
 public:
@@ -60,7 +66,11 @@ public:
     vec3 wind() const { return m_wind; }
 
     void addSphereCollider(vec3 center, f32 radius);
-    void clearColliders() { m_spheres.clear(); }
+    void addBoxCollider(vec3 center, vec3 halfExtents);
+    void clearColliders() {
+        m_spheres.clear();
+        m_boxes.clear();
+    }
 
     BufferHandle vertexBuffer() const { return m_vertexBuffer; }
     BufferHandle indexBuffer() const { return m_indexBuffer; }
@@ -83,6 +93,7 @@ private:
     void applyAerodynamics_(f32 dt);
     void solveConstraints_(f32 dt);
     void collideSpheres_();
+    void collideBoxes_();
     void solveTethers_();
     void prepareSolve_(f32 dt);
     void solveRange_(u32 begin, u32 end);
@@ -108,6 +119,7 @@ private:
     std::vector<u32> m_bandStarts{}; // bandCount + 1 offsets into m_packed; the rest are crossings
     f32 m_packedDt = 0.f;
     std::vector<ClothSphereCollider> m_spheres{};
+    std::vector<ClothBoxCollider> m_boxes{};
     vec3 m_wind{};
     BufferHandle m_vertexBuffer = 0;
     BufferHandle m_indexBuffer = 0;
