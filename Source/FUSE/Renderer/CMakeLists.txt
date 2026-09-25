@@ -311,3 +311,5 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp72.cmake")  # WP-7.2 ReSTIR DI a
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp44.cmake")  # WP-4.4 frame generation + latency (framegen/, present/latency/, Engine/lib/fidelityfx)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp93.cmake")  # WP-9.3 device-generated commands (vk/dgc/, shaders/dgc/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp92.cmake")  # WP-9.2 3D Gaussian splatting (gsplat/, shaders/gsplat/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp43.cmake")  # WP-4.3 Intel XeSS plugin, runtime-loaded libxess (plugins/intel_xess/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp64b.cmake") # WP-6.4b denoiser interface + NVIDIA NRD plugin (denoise/denoiser.hpp, plugins/nvidia_nrd/)
