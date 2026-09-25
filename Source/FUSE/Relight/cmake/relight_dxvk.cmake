@@ -29,8 +29,8 @@
 #   rl_dxvk_smoke    Tests/relight/smoke/create_device.c through our d3d9.dll under Xvfb + Wine +
 #                    Lavapipe: device, clear, present, readback (skips 77 without Wine or Xvfb).
 
-set(FUSE_DXVK_DIR "${CMAKE_SOURCE_DIR}/Engine/lib/dxvk")
-set(FUSE_DXBC_SPIRV_DIR "${CMAKE_SOURCE_DIR}/Engine/lib/dxbc-spirv")
+set(FUSE_DXVK_DIR "${FUSE_VENDOR_DIR}/dxvk")
+set(FUSE_DXBC_SPIRV_DIR "${FUSE_VENDOR_DIR}/dxbc-spirv")
 set(FUSE_RELIGHT_SMOKE_DIR "${CMAKE_SOURCE_DIR}/Tests/relight/smoke")
 
 # The pin lint runs in every Relight tree (it is pure CPU); the DLL build is PE-only.
@@ -131,7 +131,7 @@ foreach(_part MAJOR MINOR PATCH)
 endforeach()
 list(JOIN _rl_pin_version "." _rl_pin_version)
 if(NOT _rl_pin_version STREQUAL _rl_release)
-    message(FATAL_ERROR "FUSE Relight: Engine/lib/dxvk/RELEASE (${_rl_release}) != fuse_dxvk_version.h (${_rl_pin_version})")
+    message(FATAL_ERROR "FUSE Relight: third_party/vendor/dxvk/RELEASE (${_rl_release}) != fuse_dxvk_version.h (${_rl_pin_version})")
 endif()
 # meson's vcs_tag runs `git describe --dirty=+` in the DXVK checkout; the vendored tree is not one, so
 # the tag is the pinned release plus a FUSE marker (zlib clause 2: altered builds are marked).

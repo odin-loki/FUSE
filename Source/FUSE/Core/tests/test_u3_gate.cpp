@@ -5,9 +5,6 @@
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/log/logger.hpp>
 
-extern "C" void fuse_t2d_Con_execute(const char* script);
-extern "C" void fuse_t3d_Con_execute(const char* script);
-
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -43,22 +40,17 @@ struct LogCapture {
     }
 };
 
-void testBothDimensionsLogViaFuseLogger() {
+void testFuseLoggerSink() {
     LogCapture capture;
     fuse::log::Logger::instance().setMinLevel(fuse::log::Level::Info);
     fuse::log::Logger::instance().setSink(&LogCapture::sink, &capture);
 
-    fuse_t3d_Con_execute("echo T3D dimension alive");
-    fuse_t2d_Con_execute("echo T2D dimension alive");
+    fuse::log::info("fuse u3 gate logger probe");
 
 #if defined(FUSE_NO_LOGGING) && FUSE_NO_LOGGING
-    // Shipping strips sub-Fatal logging: the console shims still run, but nothing reaches the sink.
-    expectTrue(capture.messages.empty(), "shipping: console Info output never reaches the sink");
+    expectTrue(capture.messages.empty(), "shipping: Info output never reaches the sink");
 #else
-    expectTrue(capture.contains("[t3d] Con::execute"), "t3d console routes through FUSE logger");
-    expectTrue(capture.contains("[t2d] Con::execute"), "t2d console routes through FUSE logger");
-    expectTrue(capture.contains("T3D dimension alive"), "t3d console payload captured");
-    expectTrue(capture.contains("T2D dimension alive"), "t2d console payload captured");
+    expectTrue(capture.contains("fuse u3 gate logger probe"), "FUSE logger routes through custom sink");
 #endif
 
     fuse::log::Logger::instance().setSink(nullptr, nullptr);
@@ -105,7 +97,7 @@ void testVfsAsyncLoadCommitsHandle() {
 } // namespace
 
 int main() {
-    testBothDimensionsLogViaFuseLogger();
+    testFuseLoggerSink();
     testVfsAsyncLoadCommitsHandle();
 
     if (g_failures == 0) {

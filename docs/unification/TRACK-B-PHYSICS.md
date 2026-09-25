@@ -37,7 +37,7 @@
 ## Build flag — `FUSE_BUILD_PHYSICS`
 
 ```bash
-cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_PHYSICS=ON -DFUSE_BUILD_CORE_TESTS=ON
+cmake -B build -DFUSE_BUILD_PHYSICS=ON -DFUSE_BUILD_CORE_TESTS=ON
 ```
 
 | Condition | Behaviour |

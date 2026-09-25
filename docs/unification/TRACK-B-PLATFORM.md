@@ -28,7 +28,7 @@
 Platform hardening ships inside `fuse_core` (always on when core builds):
 
 ```bash
-cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_CORE=ON -DFUSE_BUILD_CORE_TESTS=ON
+cmake -B build -DFUSE_BUILD_CORE=ON -DFUSE_BUILD_CORE_TESTS=ON
 cmake --build build --target fuse_core_platform_hardening_tests
 ctest --test-dir build -R fuse_core_platform_hardening
 ```

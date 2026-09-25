@@ -14,9 +14,6 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "FUSE_UMBRELLA": "ON",
-        "FUSE_BUILD_T3D": "OFF",
-        "FUSE_BUILD_T2D": "OFF",
         "FUSE_BUILD_CORE": "ON",
         "FUSE_BUILD_CORE_TESTS": "ON",
         "FUSE_BUILD_VULKAN": "ON",
@@ -30,9 +27,6 @@
       "binaryDir": "${sourceDir}/build/fuse-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "FUSE_UMBRELLA": "ON",
-        "FUSE_BUILD_T3D": "OFF",
-        "FUSE_BUILD_T2D": "OFF",
         "FUSE_BUILD_CORE": "ON",
         "FUSE_BUILD_CORE_TESTS": "ON"
       }
@@ -46,9 +40,6 @@
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "FUSE_PROFILE": "ON",
         "FUSE_TRACY": "ON",
-        "FUSE_UMBRELLA": "ON",
-        "FUSE_BUILD_T3D": "OFF",
-        "FUSE_BUILD_T2D": "OFF",
         "FUSE_BUILD_CORE": "ON",
         "FUSE_BUILD_CORE_TESTS": "ON",
         "FUSE_CORE_ENABLE_ASAN": "OFF",
@@ -84,8 +75,6 @@
         "FUSE_SHIPPING": "ON",
         "FUSE_BUILD_EDITOR": "OFF",
         "FUSE_BUILD_EDITOR_API": "OFF",
-        "FUSE_BUILD_T3D": "OFF",
-        "FUSE_BUILD_T2D": "OFF",
         "FUSE_ENABLE_QT_PRESENT": "OFF"
       }
     },
@@ -98,8 +87,6 @@
         "FUSE_TRACK_B_UNLOCK": "ON",
         "FUSE_ENABLE_WIN32_PRESENT": "ON",
         "FUSE_BUILD_VULKAN": "ON",
-        "FUSE_BUILD_T3D": "OFF",
-        "FUSE_BUILD_T2D": "OFF",
         "FUSE_BUILD_CORE": "ON",
         "FUSE_BUILD_CORE_TESTS": "ON",
         "FUSE_SHIPPING": "OFF"
@@ -156,9 +143,6 @@
       "generator": "Ninja",
       "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-x86_64.cmake",
       "cacheVariables": {
-        "FUSE_UMBRELLA": "ON",
-        "FUSE_BUILD_T3D": "OFF",
-        "FUSE_BUILD_T2D": "OFF",
         "FUSE_BUILD_VULKAN": "OFF",
         "FUSE_BUILD_CUDA": "OFF",
         "FUSE_BUILD_EDITOR": "OFF",
@@ -253,9 +237,6 @@
       "cacheVariables": {
         "CMAKE_C_COMPILER": "cl",
         "CMAKE_CXX_COMPILER": "cl",
-        "FUSE_UMBRELLA": "ON",
-        "FUSE_BUILD_T3D": "OFF",
-        "FUSE_BUILD_T2D": "OFF",
         "FUSE_BUILD_VULKAN": "OFF",
         "FUSE_BUILD_CUDA": "OFF",
         "FUSE_BUILD_EDITOR": "OFF",

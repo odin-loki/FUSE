@@ -51,7 +51,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | Field | Value |
 |-------|-------|
 | **Effort** | M |
-| **Scope** | Root CMake FUSE umbrella; `FUSE_BUILD_T3D`, `FUSE_BUILD_T2D`; `docs/unification/BUILD.md`; CI configure both targets |
+| **Scope** | Root CMake FUSE product graph; quarantine legacy adapters always on; `docs/unification/BUILD.md`; CI configure smoke + core tests |
 | **Parallel** | Stream A; can start **B stub** (`Source/FUSE/CMakeLists.txt` empty options) |
 | **Exit** | One `cmake` configure builds T3D app + T2D engine target; zero secret scripts |
 | **Deps** | WP-00 |

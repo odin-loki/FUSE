@@ -43,13 +43,10 @@ jobs:
             -DCMAKE_CUDA_HOST_COMPILER=g++-12 \
             -DCMAKE_CUDA_ARCHITECTURES=86 \
             -DCMAKE_BUILD_TYPE=Release \
-            -DFUSE_UMBRELLA=ON \
             -DFUSE_BUILD_CORE=ON \
             -DFUSE_BUILD_CORE_TESTS=ON \
             -DFUSE_BUILD_VULKAN=ON \
             -DFUSE_BUILD_CUDA=ON \
-            -DFUSE_BUILD_T3D=OFF \
-            -DFUSE_BUILD_T2D=OFF \
             -DFUSE_ENABLE_CLANG_TIDY=OFF
           test -f build-cuda/CMakeFiles/*/CMakeCUDACompiler.cmake  # CUDA language really enabled
 

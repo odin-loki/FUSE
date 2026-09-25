@@ -26,7 +26,6 @@ if(NOT TARGET fuse_ssfx)
             $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>
     )
     target_link_libraries(fuse_ssfx PUBLIC fuse_core)
-    target_compile_features(fuse_ssfx PUBLIC cxx_std_17)
     if(COMMAND fuse_apply_cxx23)
         fuse_apply_cxx23(fuse_ssfx)
     endif()

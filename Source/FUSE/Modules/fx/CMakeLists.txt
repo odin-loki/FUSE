@@ -46,7 +46,6 @@ target_include_directories(fuse_fx
 )
 
 target_link_libraries(fuse_fx PUBLIC fuse_core fuse_world2d fuse_world3d)
-target_compile_features(fuse_fx PUBLIC cxx_std_17)
 
 if(FUSE_CUDA_BACKEND)
     target_sources(fuse_fx PRIVATE src/particle_pool_cuda.cu)

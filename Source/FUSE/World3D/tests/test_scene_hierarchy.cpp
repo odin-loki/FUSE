@@ -1,5 +1,3 @@
-#include <fuse/legacy/t2d/scene_adapter.hpp>
-#include <fuse/legacy/t3d/scene_adapter.hpp>
 #include <fuse/object.hpp>
 #include <fuse/platform/thread.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
@@ -204,66 +202,30 @@ void testSnapshotWorkerThreadReadsHandlesOnly() {
     expectTrue(workerId.load() != mainId, "snapshot consumer runs on a worker thread");
 }
 
-void testLegacyAdapterRoundTrip() {
-    fuse::platform::registerMainThread();
+void testSceneObjectFieldRoundTrip() {
+    fuse::SceneObject2D sprite("placeholder");
+    sprite.setLegacyId(42u);
+    sprite.setName("sprite");
+    sprite.setPosition(8.f, 9.f);
+    sprite.setLayer(2);
 
-    fuse::legacy::t2d::LegacySceneObjectStub t2dLegacy{};
-    t2dLegacy.legacyId = 42;
-    t2dLegacy.name = "legacy_sprite";
-    t2dLegacy.x = 8.f;
-    t2dLegacy.y = 9.f;
-    t2dLegacy.layer = 2;
+    expectTrue(sprite.legacyId() == 42u, "2D legacyId round-trip");
+    expectTrue(sprite.name() == "sprite", "2D name round-trip");
+    expectNear(sprite.x(), 8.f, 1e-4f, "2D x round-trip");
+    expectNear(sprite.y(), 9.f, 1e-4f, "2D y round-trip");
+    expectTrue(sprite.layer() == 2, "2D layer round-trip");
 
-    fuse::SceneObject2D imported2d("placeholder");
-    expectTrue(fuse::legacy::t2d::importSceneObject(t2dLegacy, imported2d), "T2D adapter import");
-    fuse::legacy::t2d::LegacySceneObjectStub exported2d{};
-    expectTrue(fuse::legacy::t2d::exportSceneObject(imported2d, exported2d), "T2D adapter export");
-    expectTrue(exported2d.legacyId == 42u, "T2D round-trip legacyId");
-    expectTrue(exported2d.name == "legacy_sprite", "T2D round-trip name");
-    expectNear(exported2d.x, 8.f, 1e-4f, "T2D round-trip x");
-    expectNear(exported2d.y, 9.f, 1e-4f, "T2D round-trip y");
-    expectTrue(exported2d.layer == 2, "T2D round-trip layer");
+    fuse::SceneObject3D mesh("placeholder");
+    mesh.setLegacyId(7u);
+    mesh.setName("mesh");
+    mesh.setPosition(1.f, 2.f);
+    mesh.setZ(3.f);
 
-    fuse::legacy::t3d::LegacySceneObjectStub t3dLegacy{};
-    t3dLegacy.legacyId = 7;
-    t3dLegacy.name = "legacy_mesh";
-    t3dLegacy.x = 1.f;
-    t3dLegacy.y = 2.f;
-    t3dLegacy.z = 3.f;
-
-    fuse::SceneObject3D imported3d("placeholder");
-    expectTrue(fuse::legacy::t3d::importSceneObject(t3dLegacy, imported3d), "T3D adapter import");
-    fuse::legacy::t3d::LegacySceneObjectStub exported3d{};
-    expectTrue(fuse::legacy::t3d::exportSceneObject(imported3d, exported3d), "T3D adapter export");
-    expectTrue(exported3d.legacyId == 7u, "T3D round-trip legacyId");
-    expectTrue(exported3d.name == "legacy_mesh", "T3D round-trip name");
-    expectNear(exported3d.x, 1.f, 1e-4f, "T3D round-trip x");
-    expectNear(exported3d.y, 2.f, 1e-4f, "T3D round-trip y");
-    expectNear(exported3d.z, 3.f, 1e-4f, "T3D round-trip z");
-}
-
-void testLegacyAdapterRejectsOffMainThread() {
-    fuse::platform::registerMainThread();
-
-    fuse::legacy::t2d::LegacySceneObjectStub t2dLegacy{};
-    t2dLegacy.name = "off_thread";
-    t2dLegacy.x = 1.f;
-    t2dLegacy.y = 2.f;
-
-    std::atomic<bool> importOk{true};
-    std::atomic<bool> exportOk{true};
-
-    std::thread worker([&]() {
-        fuse::SceneObject2D node("worker");
-        importOk.store(fuse::legacy::t2d::importSceneObject(t2dLegacy, node), std::memory_order_relaxed);
-
-        fuse::legacy::t2d::LegacySceneObjectStub exported{};
-        exportOk.store(fuse::legacy::t2d::exportSceneObject(node, exported), std::memory_order_relaxed);
-    });
-    worker.join();
-
-    expectTrue(!importOk.load(), "T2D adapter import rejects off-main-thread");
-    expectTrue(!exportOk.load(), "T2D adapter export rejects off-main-thread");
+    expectTrue(mesh.legacyId() == 7u, "3D legacyId round-trip");
+    expectTrue(mesh.name() == "mesh", "3D name round-trip");
+    expectNear(mesh.x(), 1.f, 1e-4f, "3D x round-trip");
+    expectNear(mesh.y(), 2.f, 1e-4f, "3D y round-trip");
+    expectNear(mesh.z(), 3.f, 1e-4f, "3D z round-trip");
 }
 
 } // namespace
@@ -277,8 +239,7 @@ int main() {
     testSnapshotSoAFill3D();
     testSnapshotUsesHandlesNotRawPointers();
     testSnapshotWorkerThreadReadsHandlesOnly();
-    testLegacyAdapterRoundTrip();
-    testLegacyAdapterRejectsOffMainThread();
+    testSceneObjectFieldRoundTrip();
 
     if (g_failures == 0) {
         std::printf("fuse scene hierarchy tests: all checks passed\n");

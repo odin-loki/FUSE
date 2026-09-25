@@ -1,5 +1,5 @@
 # FUSE product source umbrella — L0 fuse_core and future layers.
-# C++23 for product subdirs. Legacy/ is pinned back to C++17 after it is added.
+# C++23 for product subdirs.
 
 include(${CMAKE_SOURCE_DIR}/cmake/FuseCxx23.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/FuseVulkanMobile.cmake)
@@ -20,7 +20,6 @@ add_subdirectory(Net)
 add_subdirectory(VFX)
 add_subdirectory(Terrain)
 add_subdirectory(WorldPartition)
-add_subdirectory(Phase7)
 add_subdirectory(World2D)
 add_subdirectory(World3D)
 
@@ -56,6 +55,8 @@ endif()
 
 # fuse_compute hosts single-source compute kernels (docs/compute-kernels.md): they run on the CPU
 # backends in every build and additionally through CUDA when FUSE_BUILD_CUDA finds the toolkit.
+add_subdirectory(ScreenSpace)
+
 option(FUSE_BUILD_COMPUTE "Build fuse_compute single-source kernels (CPU backends; CUDA with FUSE_BUILD_CUDA)" ON)
 if(FUSE_BUILD_COMPUTE OR FUSE_BUILD_CUDA)
     add_subdirectory(Compute)
@@ -69,6 +70,9 @@ if(FUSE_BUILD_PROJECT)
     add_subdirectory(Scene)
 endif()
 
+# B7.10 deliverable checklist + cross-module integration smoke (depends on B7 module libs).
+add_subdirectory(Core/b7)
+
 if(FUSE_BUILD_MODULES)
     add_subdirectory(Modules)
 endif()
@@ -77,9 +81,6 @@ if(FUSE_BUILD_EDITOR_API OR FUSE_BUILD_EDITOR)
     add_subdirectory(Editor)
 endif()
 
-if(FUSE_BUILD_LEGACY)
-    add_subdirectory(Legacy)
-endif()
 add_subdirectory(Relight)  # FUSE Relight (docs/plans/FUSE_REMIX_PORT_PLAN.md); FUSE_BUILD_RELIGHT inside, default ON for MinGW
 
 if(TARGET fuse_script AND TARGET fuse_compat_ts)
@@ -93,11 +94,7 @@ if(TARGET fuse_script AND TARGET fuse_compat_ts)
     endif()
 endif()
 
-if(TARGET fuse_world_converter AND TARGET fuse_t2d_legacy)
-    target_link_libraries(fuse_world_converter PUBLIC fuse_t2d_legacy)
-endif()
-
-if(FUSE_BUILD_LEGACY AND FUSE_BUILD_SMOKE OR FUSE_BUILD_HYBRID_DEMO OR FUSE_BUILD_PARITY_DEMOS)
+if(FUSE_BUILD_SMOKE OR FUSE_BUILD_HYBRID_DEMO OR FUSE_BUILD_PARITY_DEMOS)
     add_subdirectory(Apps)
 endif()
 
@@ -127,13 +124,13 @@ if(FUSE_CUDA_BACKEND)
 endif()
 
 # Product libs compile as C++23. cxx_std_23 stays PRIVATE so Legacy C++17
-# quarantine targets that PUBLIC-link fuse_* do not inherit cxx_std_23.
+# PRIVATE cxx_std_23 pin via fuse_apply_cxx23.
 set(_fuse_product_cxx23_targets
-  fuse_core fuse_ecs fuse_net fuse_scene fuse_project fuse_world_converter
+  fuse_core fuse_b7 fuse_ecs fuse_net fuse_scene fuse_project fuse_world_converter
   fuse_hybrid fuse_world2d fuse_world3d fuse_script fuse_audio
   fuse_animation fuse_physics fuse_vfx fuse_terrain fuse_world_partition
   fuse_ai fuse_cinematics fuse_fx fuse_mechanics fuse_adventure
-  fuse_rhi fuse_compute fuse_editor_api
+  fuse_ssfx fuse_rhi fuse_compute fuse_editor_api
 )
 set(_fuse_demo_cxx23_targets
   demo_3d_empty demo_2d_sprites demo_ai_bt demo_timeline demo_fx

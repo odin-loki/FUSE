@@ -33,12 +33,9 @@ sudo apt-get install -y qt6-base-dev
 
 cmake -B build-editor -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
   -DFUSE_BUILD_EDITOR_API=ON \
-  -DFUSE_BUILD_EDITOR=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_EDITOR=ON
 
 cmake --build build-editor --target fuse_editor
 ./build-editor/Source/FUSE/Editor/fuse_editor --samples Samples/unification

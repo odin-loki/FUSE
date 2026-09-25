@@ -41,14 +41,14 @@ endfunction()
 
 # 1. Self-test.
 set(_bad
-    "bin/nvngx_dlss.dll" "Engine/bin/NVNGX_DLSSD.DLL" "nvngx_dlssg.dll" "x/nvngx_dlss_310.bin"
+    "bin/nvngx_dlss.dll" "heritage/torque3d/bin/NVNGX_DLSSD.DLL" "nvngx_dlssg.dll" "x/nvngx_dlss_310.bin"
     "lib/Linux_x86_64/rel/libnvidia-ngx-dlss.so.310.9.1" "libnvidia-ngx-dlssg.so" "lib/libnvsdk_ngx.a"
     "lib/Windows_x86_64/nvsdk_ngx_d.lib" "sdk/sl.interposer.dll" "plugins/sl.dlss_g.dll" "sl.common.pdb"
     "tools/nvperf_grfx_target.dll" "out/libfuse_nvplugin_ngx.so")
 set(_good
-    "Engine/lib/streamline/include/sl.h" "Engine/lib/streamline/include/sl_dlss.h" "Engine/lib/streamline/VERSION"
+    "third_party/vendor/streamline/include/sl.h" "third_party/vendor/streamline/include/sl_dlss.h" "third_party/vendor/streamline/VERSION"
     "Source/FUSE/Renderer/plugins/nvidia/mock/fuse_nvplugin_mock.cpp" "docs/nvidia-plugin.md"
-    "Engine/lib/nvidia-nis/NIS/NIS_Scaler.h" "slides/sl.dlss.txt" "libfuse_nvplugin_mock.so" "d3dcompiler_47.dll"
+    "third_party/vendor/nvidia-nis/NIS/NIS_Scaler.h" "slides/sl.dlss.txt" "libfuse_nvplugin_mock.so" "d3dcompiler_47.dll"
     "Source/FUSE/Renderer/plugins/nvidia/providers/ngx/fuse_nvplugin_ngx.cpp")
 set(_selftest_errors 0)
 foreach(_p IN LISTS _bad)

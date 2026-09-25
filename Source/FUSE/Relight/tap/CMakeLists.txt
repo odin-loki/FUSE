@@ -27,7 +27,9 @@ target_include_directories(fuse_relight_tap
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(fuse_relight_tap PUBLIC fuse_relight_options)
-target_compile_features(fuse_relight_tap PUBLIC cxx_std_17)
+if(COMMAND fuse_apply_cxx23)
+    fuse_apply_cxx23(fuse_relight_tap)
+endif()
 
 if(TARGET relight_d3d9)
     # ---- Vulkan bootstrap (DXVK's vendored Vulkan headers: the struct set DXVK 3.1.1 uses) --------

@@ -31,11 +31,8 @@ git clone --recurse-submodules https://github.com/odin-loki/FUSE.git
 cd FUSE
 
 cmake -B build -G Ninja \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
-  -DFUSE_BUILD_CORE_TESTS=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_CORE_TESTS=ON
 
 cmake --build build
 ```
@@ -77,8 +74,7 @@ With Qt 6 installed:
 
 ```bash
 cmake -B build -G Ninja \
-  -DFUSE_BUILD_EDITOR=ON \
-  -DFUSE_BUILD_T3D=OFF -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_EDITOR=ON
 cmake --build build --target fuse_editor
 ```
 

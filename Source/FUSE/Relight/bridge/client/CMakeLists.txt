@@ -17,13 +17,12 @@
 
 add_library(fuse_relight_bridge_client_core STATIC src/format_layout.cpp src/input_translate.cpp)
 target_include_directories(fuse_relight_bridge_client_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_compile_features(fuse_relight_bridge_client_core PUBLIC cxx_std_17)
 set_target_properties(fuse_relight_bridge_client_core PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 
 set(FUSE_RELIGHT_BRIDGE_CLIENT_DIR "${CMAKE_BINARY_DIR}/relight/bridge/client")
 
 if(WIN32 AND MINGW AND TARGET relight_dxvk_util)
-    get_filename_component(_rl_bc_dxvk "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../Engine/lib/dxvk" ABSOLUTE)
+    set(_rl_bc_dxvk "${FUSE_VENDOR_DIR}/dxvk")
 
     add_library(fuse_relight_bridge_client_obj OBJECT
         src/connection.cpp

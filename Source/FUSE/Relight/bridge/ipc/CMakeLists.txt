@@ -21,7 +21,6 @@ add_library(fuse_relight_bridge_ipc_core STATIC
     src/shared_heap.cpp
 )
 target_include_directories(fuse_relight_bridge_ipc_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_compile_features(fuse_relight_bridge_ipc_core PUBLIC cxx_std_17)
 target_link_libraries(fuse_relight_bridge_ipc_core PUBLIC Threads::Threads)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(fuse_relight_bridge_ipc_core PUBLIC rt)  # shm_open on glibc < 2.34

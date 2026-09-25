@@ -45,7 +45,6 @@ target_link_libraries(fuse_ai PUBLIC fuse_core fuse_world2d)
 if(FUSE_BUILD_SCRIPT)
     target_link_libraries(fuse_ai PUBLIC fuse_script)
 endif()
-target_compile_features(fuse_ai PUBLIC cxx_std_17)
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)

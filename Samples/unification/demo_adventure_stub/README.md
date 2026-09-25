@@ -16,7 +16,7 @@
 
 ## Build
 
-The module is built with the FUSE umbrella (`cmake -B build -DFUSE_UMBRELLA=ON`).
+The module is built with the FUSE umbrella (`cmake -B build `).
 Run tests: `ctest -R fuse_adventure`.
 
 Full demo parity (Outpost mission import) is a U8 target — see [demo-corpus-parity-targets.md](../../docs/unification/demo-corpus-parity-targets.md).

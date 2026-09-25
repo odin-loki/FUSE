@@ -1,6 +1,5 @@
 #include <fuse/project/t2d_module_bridge.hpp>
 
-#include <fuse/legacy/t2d/scene_adapter.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/scene/scene.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
@@ -60,38 +59,39 @@ fuse::scene::SceneEntityTransform makeSceneTransform(const T2DSceneNodeStub& nod
     return transform;
 }
 
-legacy::t2d::LegacySceneObjectStub makeLegacyStub(const T2DSceneNodeStub& node, u32 spriteIndex) {
-    legacy::t2d::LegacySceneObjectStub legacy{};
-    legacy.legacyId = spriteIndex + 1u;
-    legacy.name = node.objectName.empty() ? node.className : node.objectName;
-    legacy.layer = node.layer;
-    legacy.sortKey = node.sortKey;
-    legacy.compositeSprite = node.isCompositeSprite;
-    legacy.physicsEnabled = node.physicsEnabled;
-    legacy.collisionLayer = node.collisionLayer;
-    legacy.collisionMask = node.collisionMask;
-    legacy.physicsRadius = node.physicsRadius;
-    legacy.boxHalfWidth = node.boxHalfWidth;
-    legacy.boxHalfHeight = node.boxHalfHeight;
-    legacy.imageMap = node.imageMap;
-    legacy.animationName = node.animationName;
-    legacy.frameCount = node.frameCount;
-    legacy.animationFps = node.animationFps;
+void applyNodeToSprite(const T2DSceneNodeStub& node, u32 spriteIndex, fuse::SceneObject2D& sprite) {
+    sprite.setLegacyId(spriteIndex + 1u);
+    const std::string name = node.objectName.empty() ? node.className : node.objectName;
+    if (!name.empty()) {
+        sprite.setName(name);
+    }
+
+    float x = 0.f;
+    float y = 0.f;
+    if (!node.position.empty()) {
+        parseFloatPair(node.position, x, y);
+    }
+    sprite.setPosition(x, y);
+    sprite.setLayer(node.layer);
+    sprite.setSortKey(node.sortKey);
+    sprite.setPhysicsEnabled(node.physicsEnabled);
+    sprite.setCollisionLayer(node.collisionLayer);
+    sprite.setCollisionMask(node.collisionMask);
+    sprite.setPhysicsRadius(node.physicsRadius);
+    sprite.setBoxHalfWidth(node.boxHalfWidth);
+    sprite.setBoxHalfHeight(node.boxHalfHeight);
+
     switch (node.physicsShape) {
     case T2DPhysicsShape::Circle:
-        legacy.physicsShape = legacy::t2d::LegacyPhysicsShape::Circle;
+        sprite.setPhysicsShape(fuse::PhysicsShape2D::Circle);
         break;
     case T2DPhysicsShape::Box:
-        legacy.physicsShape = legacy::t2d::LegacyPhysicsShape::Box;
+        sprite.setPhysicsShape(fuse::PhysicsShape2D::Box);
         break;
     default:
-        legacy.physicsShape = legacy::t2d::LegacyPhysicsShape::None;
+        sprite.setPhysicsShape(fuse::PhysicsShape2D::None);
         break;
     }
-    if (!node.position.empty()) {
-        parseFloatPair(node.position, legacy.x, legacy.y);
-    }
-    return legacy;
 }
 
 } // namespace
@@ -108,8 +108,7 @@ u32 populateSceneFromModuleExtract(fuse::scene::Scene& scene, const T2DModuleExt
             parentIndex = parentAtDepth[static_cast<std::size_t>(node.depth - 1)];
         }
 
-        const std::string entityName =
-            node.objectName.empty() ? node.className : node.objectName;
+        const std::string entityName = node.objectName.empty() ? node.className : node.objectName;
         scene.addEntity(entityName, makeSceneTransform(node), parentIndex);
         const s32 entityIndex = static_cast<s32>(scene.entityCount() - 1u);
 
@@ -159,10 +158,7 @@ T2DRuntimeBridgeResult populateWorld2DFromModuleExtract(fuse::world2d::World2D& 
         auto sprite = std::make_unique<fuse::SceneObject2D>(
             node.objectName.empty() ? node.className : node.objectName);
 
-        const legacy::t2d::LegacySceneObjectStub legacy = makeLegacyStub(node, spriteIndex);
-        if (!legacy::t2d::importSceneObject(legacy, *sprite)) {
-            continue;
-        }
+        applyNodeToSprite(node, spriteIndex, *sprite);
 
         if (node.physicsEnabled && sprite->physicsShape() == fuse::PhysicsShape2D::None) {
             sprite->setPhysicsShape(fuse::PhysicsShape2D::Circle);
@@ -212,8 +208,7 @@ T2DRuntimeBridgeResult populateWorld2DFromModuleExtract(fuse::world2d::World2D& 
     return result;
 }
 
-T2DRuntimeBridgeResult bridgeT2DModuleToRuntime(fuse::world2d::World2D& world,
-                                              const std::string& modulePath) {
+T2DRuntimeBridgeResult bridgeT2DModuleToRuntime(fuse::world2d::World2D& world, const std::string& modulePath) {
     T2DRuntimeBridgeResult result;
 
     const std::string text = readFileToString(modulePath);

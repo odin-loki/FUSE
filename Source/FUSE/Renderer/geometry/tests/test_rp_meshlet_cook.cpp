@@ -1043,8 +1043,8 @@ int suite_cook() {
         "Templates/BaseGame/game/data/Prototyping/shapes/Primitives/CylinderPrimitive.fbx",
         "Templates/BaseGame/game/data/Prototyping/shapes/Primitives/ArrowPrimitive.fbx",
         "Templates/BaseGame/game/core/gameObjects/shapes/camera.fbx",
-        "Engine/lib/assimp/test/models/glTF2/BoxTextured-glTF/BoxTextured.gltf",
-        "Engine/lib/assimp/test/models/glTF/CesiumMilkTruck/CesiumMilkTruck.gltf",
+        "third_party/vendor/assimp/test/models/glTF2/BoxTextured-glTF/BoxTextured.gltf",
+        "third_party/vendor/assimp/test/models/glTF/CesiumMilkTruck/CesiumMilkTruck.gltf",
     };
     u32 cooked = 0, present = 0;
     for (const char* rel : samples) {

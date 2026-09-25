@@ -26,13 +26,14 @@ target_include_directories(fuse_cook_stubs
 )
 
 target_link_libraries(fuse_cook_stubs PUBLIC fuse_core)
-target_compile_features(fuse_cook_stubs PUBLIC cxx_std_17)
+if(COMMAND fuse_apply_cxx23)
+    fuse_apply_cxx23(fuse_cook_stubs)
+endif()
 target_compile_definitions(fuse_cook_stubs PUBLIC FUSE_HAS_INHOUSE_BC7_ENCODER=1)
 
-set(FUSE_ENGINE_STB_DIR "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/stb")
-if(EXISTS "${FUSE_ENGINE_STB_DIR}/stb_image.h")
+if(EXISTS "${FUSE_STB_DIR}/stb_image.h")
     target_compile_definitions(fuse_cook_stubs PUBLIC FUSE_HAS_STB_IMAGE=1)
-    target_include_directories(fuse_cook_stubs PRIVATE "${FUSE_ENGINE_STB_DIR}")
+    fuse_stb_include(fuse_cook_stubs PRIVATE)
 endif()
 
 # Asset plan W0.2: meshoptimizer (LODs, vertex / index codecs) and the renderer's WP-1.2 meshlet +
@@ -53,7 +54,7 @@ if(assimp_FOUND OR ASSIMP_FOUND)
     if(TARGET assimp::assimp)
         target_link_libraries(fuse_cook_stubs PRIVATE assimp::assimp)
     endif()
-elseif(EXISTS "${CMAKE_SOURCE_DIR}/Engine/lib/assimp/CMakeLists.txt")
+elseif(EXISTS "${FUSE_VENDOR_DIR}/assimp/CMakeLists.txt")
     set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
     set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
@@ -66,7 +67,7 @@ elseif(EXISTS "${CMAKE_SOURCE_DIR}/Engine/lib/assimp/CMakeLists.txt")
     # assimp-vc143-mt.pdb through mspdbsrv, which fails under sccache with C1041/C1090 even with
     # /FS. We never install assimp, so drop its PDB install; the Debug /Zi is overridden below.
     set(ASSIMP_INSTALL_PDB OFF CACHE BOOL "" FORCE)
-    add_subdirectory("${CMAKE_SOURCE_DIR}/Engine/lib/assimp" "${CMAKE_BINARY_DIR}/fuse_vendored_assimp" EXCLUDE_FROM_ALL)
+    add_subdirectory("${FUSE_VENDOR_DIR}/assimp" "${CMAKE_BINARY_DIR}/fuse_vendored_assimp" EXCLUDE_FROM_ALL)
     if(TARGET assimp AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         # Object-embedded debug info (/Z7) like the rest of the tree (see the fuse-msvc presets):
         # target options come after CMAKE_CXX_FLAGS_<CONFIG>, so this wins over assimp's /Zi

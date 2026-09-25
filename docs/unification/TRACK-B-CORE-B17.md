@@ -25,7 +25,7 @@
 Window stubs ship inside `fuse_core`:
 
 ```bash
-cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_CORE=ON -DFUSE_BUILD_CORE_TESTS=ON
+cmake -B build -DFUSE_BUILD_CORE=ON -DFUSE_BUILD_CORE_TESTS=ON
 cmake --build build --target fuse_core_platform_window_tests
 ctest --test-dir build -R fuse_core_platform_window
 ```

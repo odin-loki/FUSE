@@ -24,14 +24,11 @@ Threading rules: [architecture.md](architecture.md). Coding rules: [coding-stand
 ```bash
 cmake -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Debug \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
   -DFUSE_BUILD_CORE_TESTS=ON \
   -DFUSE_BUILD_PROJECT=ON \
   -DFUSE_BUILD_PARITY_DEMOS=ON \
-  -DFUSE_BUILD_MODULES=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_MODULES=ON
 
 cmake --build build
 ctest --test-dir build --output-on-failure

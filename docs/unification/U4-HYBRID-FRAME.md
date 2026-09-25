@@ -64,13 +64,12 @@ Maps to future `project.json` dimension toggles.
 ## Build & run
 
 ```bash
-cmake -B build -DFUSE_UMBRELLA=ON \
+cmake -B build \
   -DFUSE_BUILD_CORE=ON \
   -DFUSE_BUILD_CORE_TESTS=ON \
   -DFUSE_BUILD_HYBRID_DEMO=ON \
-  -DFUSE_BUILD_LEGACY=ON \
-  -DFUSE_BUILD_SMOKE=ON \
-  -DFUSE_BUILD_T3D=OFF -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_SMOKE=ON
+
 cmake --build build
 ctest --test-dir build
 ./build/Source/FUSE/Apps/HybridHud/demo_hybrid_hud

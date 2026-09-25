@@ -77,7 +77,7 @@ if(CMAKE_SCRIPT_MODE_FILE)
 endif()
 
 get_filename_component(_fuse_wp44_root "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
-set(_fuse_wp44_ffx "${CMAKE_SOURCE_DIR}/Engine/lib/fidelityfx")
+set(_fuse_wp44_ffx "${FUSE_VENDOR_DIR}/fidelityfx")
 set(_fuse_wp44_ffx_gpu "${_fuse_wp44_ffx}/include/FidelityFX/gpu")
 set(_fuse_wp44_ffx_vk "${_fuse_wp44_ffx}/shaders/vk")
 

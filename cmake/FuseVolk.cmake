@@ -36,7 +36,7 @@
 
 function(fuse_volk_attach target)
     cmake_parse_arguments(ARG "" "IMPLEMENTATION" "" ${ARGN})
-    set(_volk_dir "${CMAKE_SOURCE_DIR}/Engine/lib/volk")
+    set(_volk_dir "${FUSE_VENDOR_DIR}/volk")
     if(NOT EXISTS "${_volk_dir}/volk.h" OR NOT EXISTS "${_volk_dir}/volk.c" OR NOT EXISTS "${_volk_dir}/VERSION")
         message(FATAL_ERROR "FuseVolk: vendored volk missing under ${_volk_dir} (volk.h, volk.c, VERSION)")
     endif()

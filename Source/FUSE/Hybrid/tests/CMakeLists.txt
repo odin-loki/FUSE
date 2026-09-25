@@ -10,7 +10,6 @@ target_link_libraries(fuse_hybrid_cooked_bindings PRIVATE fuse_hybrid fuse_core)
 add_test(NAME fuse_hybrid_cooked_bindings COMMAND fuse_hybrid_cooked_bindings)
 
 target_link_libraries(fuse_hybrid_tests PRIVATE fuse_hybrid fuse_core)
-target_compile_features(fuse_hybrid_tests PRIVATE cxx_std_17)
 
 if(FUSE_BUILD_VULKAN)
     add_test(NAME fuse_hybrid_tests COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh" "$<TARGET_FILE:fuse_hybrid_tests>")

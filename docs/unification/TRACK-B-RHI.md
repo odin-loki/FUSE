@@ -40,7 +40,7 @@ See [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) §B2.2 for the full state diagram a
 ## Build
 
 ```bash
-cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_VULKAN=ON -DFUSE_BUILD_CORE_TESTS=ON
+cmake -B build -DFUSE_BUILD_VULKAN=ON -DFUSE_BUILD_CORE_TESTS=ON
 cmake --build build --target fuse_rhi_resource_destroy_order fuse_vulkan_resources fuse_bindless_descriptors
 ctest --test-dir build -R 'fuse_rhi_resource_destroy_order|fuse_vulkan_resources|fuse_bindless_descriptors'
 ```
@@ -49,7 +49,7 @@ Optional VMA (developer machines):
 
 ```bash
 # vendor VulkanMemoryAllocator at third_party/VulkanMemoryAllocator/include/vk_mem_alloc.h
-cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_VULKAN=ON
+cmake -B build -DFUSE_BUILD_VULKAN=ON
 ```
 
 When VMA is present, `GpuAllocator::refreshVmaPoolStats()` fills `vmaPoolCount` / `vmaPoolUsedBytes` via `vmaCalculateStatistics`.

@@ -20,11 +20,9 @@ jobs:
       - name: Install dependencies
         run: sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update && sudo apt-get install -y ninja-build cmake g++ clang-tidy
 
-      - name: Configure fuse-debug (legacy engines off)
+      - name: Configure fuse-debug
         run: |
           cmake --preset fuse-debug \
-            -DFUSE_BUILD_T3D=OFF \
-            -DFUSE_BUILD_T2D=OFF \
             -DFUSE_ENABLE_CLANG_TIDY=ON
 
       - name: Build fuse_core

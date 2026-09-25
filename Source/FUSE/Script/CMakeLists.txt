@@ -48,12 +48,11 @@ target_include_directories(fuse_script
 )
 
 target_link_libraries(fuse_script PUBLIC fuse_core fuse_ecs)
-target_compile_features(fuse_script PUBLIC cxx_std_17)
 
 option(FUSE_SCRIPT_ENABLE_LUA "Link fuse_script against Lua when available" ON)
 option(FUSE_SCRIPT_BUNDLED_LUA
     "Build the vendored Lua 5.2.3 (Engine/lib/lua) when no system Lua >= 5.2 is found" ON)
-set(_fuse_lua_dir "${CMAKE_SOURCE_DIR}/Engine/lib/lua")
+set(_fuse_lua_dir "${FUSE_VENDOR_DIR}/lua")
 
 set(FUSE_SCRIPT_LUA_BACKEND "null")
 if(FUSE_SCRIPT_ENABLE_LUA)
@@ -94,7 +93,6 @@ if(TARGET fuse_physics)
     )
     add_library(fuse::script_physics ALIAS fuse_script_physics)
     target_link_libraries(fuse_script_physics PUBLIC fuse_script fuse_physics)
-    target_compile_features(fuse_script_physics PUBLIC cxx_std_17)
 endif()
 
 if(FUSE_BUILD_CORE_TESTS)

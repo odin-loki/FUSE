@@ -69,7 +69,7 @@ get_filename_component(_fuse_wp42_root "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set(_fuse_wp42_inc "${_fuse_wp42_root}/include/fuse/renderer/upscale_backends/fsr3")
 set(_fuse_wp42_src "${_fuse_wp42_root}/src/upscale_backends/fsr3")
 set(_fuse_wp42_shd "${_fuse_wp42_src}/shaders")
-set(_fuse_wp42_ffx "${CMAKE_SOURCE_DIR}/Engine/lib/fidelityfx")
+set(_fuse_wp42_ffx "${FUSE_VENDOR_DIR}/fidelityfx")
 set(_fuse_wp42_ffx_gpu "${_fuse_wp42_ffx}/include/FidelityFX/gpu")
 set(_fuse_wp42_ffx_vk "${_fuse_wp42_ffx}/shaders/vk/fsr3upscaler")
 

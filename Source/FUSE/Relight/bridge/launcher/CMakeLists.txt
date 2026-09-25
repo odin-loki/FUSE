@@ -14,7 +14,6 @@ if(WIN32)
 endif()
 add_library(fuse_relight_launcher_core STATIC ${_rl_launcher_src})
 target_include_directories(fuse_relight_launcher_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_compile_features(fuse_relight_launcher_core PUBLIC cxx_std_17)
 set_source_files_properties(src/anticheat.cpp PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/anticheat_list.inc")
 
 if(WIN32)

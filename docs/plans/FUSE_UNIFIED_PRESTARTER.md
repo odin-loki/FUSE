@@ -262,7 +262,7 @@ Track A (C++23, memory safety) **starts inside U1–U2** for *new* core code; le
 - Root `CMakeLists.txt` becomes **FUSE umbrella**:  
   - `add_subdirectory` / imported targets for `fuse_core` (stub), `fuse_t3d_legacy` (existing T3D), `fuse_t2d_legacy` (T2D), tools  
 - Stop requiring humans to open two totally separate generate scripts for daily work  
-- CMake options: `FUSE_BUILD_T3D`, `FUSE_BUILD_T2D`, `FUSE_BUILD_EDITOR`, `FUSE_BUILD_ADDON_CONTENT`  
+- CMake options: `FUSE_BUILD_EDITOR`, `FUSE_BUILD_ADDON_CONTENT`, `FUSE_BUILD_SMOKE`, `FUSE_BUILD_PARITY_DEMOS`  
 - CI job: configure + build umbrella on Linux (and Win when available)  
 - Document: `docs/unification/BUILD.md`  
 

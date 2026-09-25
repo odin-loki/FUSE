@@ -40,7 +40,6 @@ target_include_directories(fuse_animation
 )
 
 target_link_libraries(fuse_animation PUBLIC fuse_core fuse_ecs)
-target_compile_features(fuse_animation PUBLIC cxx_std_17)
 
 if(FUSE_CUDA_BACKEND)
     target_link_libraries(fuse_animation PUBLIC CUDA::cudart)

@@ -21,12 +21,8 @@ Both legacy dimensions call `initialize()` / `shutdown()` sequentially on the **
 
 ```bash
 cmake -B build -G Ninja -DCMAKE_CXX_COMPILER=g++-13 \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
-  -DFUSE_BUILD_LEGACY=ON \
-  -DFUSE_BUILD_SMOKE=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_SMOKE=ON
 
 cmake --build build --target fuse_runtime_smoke
 ./build/Source/FUSE/Apps/RuntimeSmoke/fuse_runtime_smoke

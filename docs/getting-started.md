@@ -37,11 +37,8 @@ This is the fast path: `fuse_core`, worlds, modules, smoke, and demos — no leg
 
 ```bash
 cmake -B build -G Ninja \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
-  -DFUSE_BUILD_CORE_TESTS=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_CORE_TESTS=ON
 
 cmake --build build
 ctest --test-dir build --output-on-failure
@@ -50,11 +47,9 @@ ctest --test-dir build --output-on-failure
 ### Windows (PowerShell)
 
 ```powershell
-cmake -B build -DFUSE_UMBRELLA=ON `
+cmake -B build `
   -DFUSE_BUILD_CORE=ON `
-  -DFUSE_BUILD_CORE_TESTS=ON `
-  -DFUSE_BUILD_T3D=OFF `
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_CORE_TESTS=ON
 
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
@@ -62,7 +57,7 @@ ctest --test-dir build -C Release --output-on-failure
 
 ## Run a demo
 
-After a successful umbrella build:
+After a successful build:
 
 ```bash
 # Hybrid 3D clear + spinning 2D sprite (software placeholder renderer)

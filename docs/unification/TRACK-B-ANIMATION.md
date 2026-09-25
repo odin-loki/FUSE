@@ -90,7 +90,6 @@ All `BlendNode` types expose `evaluate_soa(dt, skel, out)` alongside the legacy 
 ```bash
 cmake -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
   -DFUSE_BUILD_CORE_TESTS=ON
 

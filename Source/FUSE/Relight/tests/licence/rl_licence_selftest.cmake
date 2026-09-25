@@ -71,17 +71,17 @@ if(MODE STREQUAL "text")
         list(APPEND _expected "${_id} ${_rel}")
     endforeach()
     # mingw-directx-headers (LGPL-2.1+) vendored by path, with and without the LGPL text.
-    set(_rel "Engine/lib/dxvk/include/native/directx/d3d9.h")
+    set(_rel "third_party/vendor/dxvk/include/native/directx/d3d9.h")
     file(WRITE "${_bad}/${_rel}" "/* fixture: placeholder header */\n")
     list(APPEND _expected "lgpl_directx_header ${_rel}")
     set(_rel "${_rl}/shell/d3d8types.h")
     file(WRITE "${_bad}/${_rel}" "/* fixture */\n${RL_MARKER_SAMPLE_lgpl_text}\n")
     list(APPEND _expected "lgpl_directx_header ${_rel}" "lgpl_text ${_rel}")
-    set(_rel "Engine/lib/dxvk/include/dxgi1_6.h")
+    set(_rel "third_party/vendor/dxvk/include/dxgi1_6.h")
     file(WRITE "${_bad}/${_rel}" "/* fixture */\n")
     list(APPEND _expected "lgpl_directx_header ${_rel}")
     # Markers in the other vendored roots and the other Relight trees are scanned too.
-    foreach(_root "Engine/lib/dxbc-spirv" "Engine/lib/xxhash" "Tests/relight" "Tools/FUSE/Relight")
+    foreach(_root "third_party/vendor/dxbc-spirv" "third_party/vendor/xxhash" "Tests/relight" "Tools/FUSE/Relight")
         set(_rel "${_root}/fixture.txt")
         file(WRITE "${_bad}/${_rel}" "${RL_MARKER_SAMPLE_hdr_licensors_retain}\n")
         list(APPEND _expected "hdr_licensors_retain ${_rel}")
@@ -118,16 +118,16 @@ if(MODE STREQUAL "text")
         "#include \"NRC.hpp\"\n#include \"nrd_plugin_bridge.hpp\"\n// ReSTIR DI, RTXDI-style reservoirs (Bitterli 2020)\n"
         "int RTXDIish = 0; int kRAB = 1; int MyNRC_h = 2; // NRD denoiser via plugins/nvidia\n"
         "// model 1.6; import std::df;\n")
-    file(WRITE "${_good}/Engine/lib/dxvk/LICENSE"
+    file(WRITE "${_good}/third_party/vendor/dxvk/LICENSE"
         "This software is provided 'as-is', without any express or implied warranty.\n"
         "Altered source versions must be plainly marked as such.\n")
-    file(WRITE "${_good}/Engine/lib/dxvk/src/d3d9/d3d9_device.h" "#pragma once\n")
-    file(WRITE "${_good}/Engine/lib/dxvk/src/d3d9/d3d9_interfaces.h" "#pragma once\n")
-    file(WRITE "${_good}/Engine/lib/dxvk/src/dxgi/dxgi_format.h" "#pragma once\n")
-    file(WRITE "${_good}/Engine/lib/dxvk/src/d3d11/d3d11_include.h" "#pragma once\n")
-    file(WRITE "${_good}/Engine/lib/dxvk/include/native/windows/windows_base.h" "#pragma once\n")
-    file(WRITE "${_good}/Engine/lib/dxbc-spirv/LICENSE" "MIT License\nPermission is hereby granted, free of charge\n")
-    file(WRITE "${_good}/Engine/lib/xxhash/LICENSE" "BSD 2-Clause License\n")
+    file(WRITE "${_good}/third_party/vendor/dxvk/src/d3d9/d3d9_device.h" "#pragma once\n")
+    file(WRITE "${_good}/third_party/vendor/dxvk/src/d3d9/d3d9_interfaces.h" "#pragma once\n")
+    file(WRITE "${_good}/third_party/vendor/dxvk/src/dxgi/dxgi_format.h" "#pragma once\n")
+    file(WRITE "${_good}/third_party/vendor/dxvk/src/d3d11/d3d11_include.h" "#pragma once\n")
+    file(WRITE "${_good}/third_party/vendor/dxvk/include/native/windows/windows_base.h" "#pragma once\n")
+    file(WRITE "${_good}/third_party/vendor/dxbc-spirv/LICENSE" "MIT License\nPermission is hereby granted, free of charge\n")
+    file(WRITE "${_good}/third_party/vendor/xxhash/LICENSE" "BSD 2-Clause License\n")
     file(WRITE "${_good}/${_rl}/THIRD_PARTY.md"
         "# Third party\n${RL_MARKER_SAMPLE_rtx_sdks_licence}\n${RL_MARKER_SAMPLE_spdx_nv_proprietary}\n"
         "${RL_MARKER_SAMPLE_intel_simplified}\n${RL_MARKER_SAMPLE_name_rtxdi_bridge}\n"
@@ -153,14 +153,14 @@ elseif(MODE STREQUAL "binary")
         # Intel XeSS / XeLL
         "bin/libxess.dll" "bin/libxess_dx11.dll" "bin/libxell.dll"
         # any native binary or MDL module inside the Relight / vendored trees
-        "Source/FUSE/Relight/shell/d3d9.dll" "Tests/relight/apps/ff_triangle.exe" "Engine/lib/dxvk/lib/libdxvk_d3d9.a"
-        "Engine/lib/xxhash/xxhash.o" "Tools/FUSE/Relight/tool.pdb" "Tests/relight/fixtures/mods/m/custom.mdl")
+        "Source/FUSE/Relight/shell/d3d9.dll" "Tests/relight/apps/ff_triangle.exe" "third_party/vendor/dxvk/lib/libdxvk_d3d9.a"
+        "third_party/vendor/xxhash/xxhash.o" "Tools/FUSE/Relight/tool.pdb" "Tests/relight/fixtures/mods/m/custom.mdl")
     set(_good_paths
-        "Engine/lib/streamline/include/sl.h" "Source/FUSE/Relight/mods/usd/aperture_mdl_map.cpp"
+        "third_party/vendor/streamline/include/sl.h" "Source/FUSE/Relight/mods/usd/aperture_mdl_map.cpp"
         "Tests/relight/fixtures/mods/m/mod.usda" "Source/FUSE/Relight/shell/d3d9.def"
         "Source/FUSE/Relight/render/pathtrace/nrd_plugin_bridge.cpp" "Source/FUSE/Relight/render/pathtrace/radiance_cache.cpp"
-        "Engine/lib/xxhash/xxhash.h" "Engine/lib/dxvk/src/d3d9/d3d9_main.cpp" "d3dcompiler_47.dll"
-        "Engine/lib/assimp/test/models/MDL/MDL (HL1)/man.mdl" "docs/nvidia-plugin.md" "trex/readme.txt"
+        "third_party/vendor/xxhash/xxhash.h" "third_party/vendor/dxvk/src/d3d9/d3d9_main.cpp" "d3dcompiler_47.dll"
+        "third_party/vendor/assimp/test/models/MDL/MDL (HL1)/man.mdl" "docs/nvidia-plugin.md" "trex/readme.txt"
         "Source/FUSE/Relight/api/remixapi_compat.cpp" "libfuse_nvplugin_mock.so" "Source/FUSE/Relight/cmake/relight_dxvk.cmake")
     set(_expected "")
     foreach(_p IN LISTS _bad_paths)

@@ -150,7 +150,6 @@ Wire encode/decode preserves masks and entity bitsets. `compute_delta_checksum` 
 ```bash
 cmake -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
   -DFUSE_BUILD_CORE_TESTS=ON
 

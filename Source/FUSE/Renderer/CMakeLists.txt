@@ -160,7 +160,6 @@ target_include_directories(fuse_rhi
 )
 
 target_link_libraries(fuse_rhi PUBLIC fuse_core)
-target_compile_features(fuse_rhi PUBLIC cxx_std_17)
 target_compile_definitions(fuse_rhi PRIVATE
     FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
 )
@@ -169,7 +168,7 @@ target_compile_definitions(fuse_rhi PRIVATE
 # file) by default; FUSE_RHI_USE_VMA=OFF keeps the native one-vkAllocateMemory-per-resource path as
 # a fallback. Never picks up a system vk_mem_alloc.h. Stub builds (no Vulkan) use neither.
 option(FUSE_RHI_USE_VMA "Back fuse_rhi GpuAllocator with vendored VMA (OFF = native vkAllocateMemory fallback)" ON)
-set(FUSE_VMA_DIR "${CMAKE_SOURCE_DIR}/Engine/lib/vma")
+set(FUSE_VMA_DIR "${FUSE_VENDOR_DIR}/vma")
 if(FUSE_VULKAN_BACKEND AND FUSE_RHI_USE_VMA)
     if(NOT EXISTS "${FUSE_VMA_DIR}/include/vk_mem_alloc.h" OR NOT EXISTS "${FUSE_VMA_DIR}/VERSION")
         message(FATAL_ERROR "FUSE_RHI_USE_VMA=ON but vendored VMA is missing under ${FUSE_VMA_DIR} "

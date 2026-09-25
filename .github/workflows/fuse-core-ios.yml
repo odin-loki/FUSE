@@ -7,8 +7,7 @@
 #     -DCMAKE_SYSTEM_NAME=iOS \
 #     -DCMAKE_OSX_SYSROOT=iphonesimulator \
 #     -DCMAKE_OSX_ARCHITECTURES=arm64 \
-#     -DFUSE_UMBRELLA=ON -DFUSE_BUILD_CORE=ON \
-#     -DFUSE_BUILD_T3D=OFF -DFUSE_BUILD_T2D=OFF
+#     -DFUSE_BUILD_CORE=ON
 #   cmake --build build-ios --target fuse_core
 #
 # See docs/unification/BUILD.md for full mobile notes.
@@ -32,11 +31,7 @@ jobs:
             -DCMAKE_OSX_SYSROOT=iphonesimulator \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_BUILD_TYPE=Release \
-            -DFUSE_UMBRELLA=ON \
             -DFUSE_BUILD_CORE=ON \
-            -DFUSE_BUILD_CORE_TESTS=OFF \
-            -DFUSE_BUILD_T3D=OFF \
-            -DFUSE_BUILD_T2D=OFF
-
+            -DFUSE_BUILD_CORE_TESTS=OFF
       - name: Build fuse_core stub
         run: cmake --build build-ios --config Release --target fuse_core

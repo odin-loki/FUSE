@@ -24,9 +24,8 @@ if(FUSE_BUILD_CORE_TESTS)
     add_test(NAME fuse_render_quality_metrics COMMAND fuse_render_quality_metrics)
     set_tests_properties(fuse_render_quality_metrics PROPERTIES LABELS "gate" TIMEOUT 300)
     # Optional published FLIP pair check (FUSE_FLIP_REFERENCE_DIR) decodes PNGs with the vendored stb_image.
-    set(_fuse_quality_stb_dir "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/stb")
-    if(EXISTS "${_fuse_quality_stb_dir}/stb_image.h")
-        target_include_directories(fuse_render_quality_metrics SYSTEM PRIVATE "${_fuse_quality_stb_dir}")
+    if(EXISTS "${FUSE_STB_DIR}/stb_image.h")
+        target_include_directories(fuse_render_quality_metrics SYSTEM PRIVATE "${FUSE_STB_DIR}")
         target_compile_definitions(fuse_render_quality_metrics PRIVATE FUSE_QUALITY_TEST_HAS_STB=1)
     endif()
 endif()
@@ -39,7 +38,7 @@ if(FUSE_BUILD_COMPUTE OR FUSE_BUILD_CUDA)
         ${CMAKE_CURRENT_LIST_DIR}/../src/upscale/reference_scene.cpp
     )
     target_link_libraries(fuse_upscale_refscenes PUBLIC fuse_rhi fuse_compute)
-    target_compile_features(fuse_upscale_refscenes PUBLIC cxx_std_17)
+    fuse_apply_cxx23(fuse_upscale_refscenes)
 
     if(FUSE_BUILD_CORE_TESTS)
         # TAAU gates: 1.5x / 2x on the reference scenes vs native ground truth (PSNR / SSIM / FLIP, flicker,

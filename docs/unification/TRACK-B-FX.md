@@ -53,7 +53,7 @@
 ## Verification
 
 ```bash
-cmake -B build-fuse -G Ninja -DFUSE_UMBRELLA=ON -DFUSE_BUILD_MODULES=ON -DFUSE_BUILD_CORE_TESTS=ON
+cmake -B build-fuse -G Ninja -DFUSE_BUILD_MODULES=ON -DFUSE_BUILD_CORE_TESTS=ON
 cmake --build build-fuse --target fuse_fx_tests
 ./build-fuse/Source/FUSE/Modules/fx/tests/fuse_fx_tests
 ```

@@ -14,4 +14,3 @@ target_link_libraries(fuse_demo_wiring
         fuse_world2d
         fuse_core
 )
-target_compile_features(fuse_demo_wiring PUBLIC cxx_std_17)

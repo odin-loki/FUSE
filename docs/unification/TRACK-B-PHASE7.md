@@ -38,18 +38,18 @@ Submodule detail:
 
 ## B7.10 — Deliverable checklist registry
 
-`Phase7TestRegistry` (`Source/FUSE/Phase7/`) catalogs master-plan acceptance items per module. Entries record whether the stub scaffold landed and whether an automated probe exists today. Full GPU, ENet, Lua, and shipping-build gates from §B7.10 remain `automated=false` until upstream implementations land.
+`B7TestRegistry` (`Source/FUSE/Core/include/fuse/core/b7_test_registry.hpp`, target `fuse_b7`) catalogs master-plan acceptance items per module. Entries record whether the stub scaffold landed and whether an automated probe exists today. Full GPU, ENet, Lua, and shipping-build gates from §B7.10 remain `automated=false` until upstream implementations land.
 
 ```cpp
-const auto& checklist = fuse::phase7::Phase7TestRegistry::checklist();
-fuse::phase7::Phase7TestRegistry::runIntegrationSmoke(); // constructs linked facades
+const auto& checklist = fuse::core::B7TestRegistry::checklist();
+fuse::core::B7TestRegistry::runIntegrationSmoke(); // constructs linked facades
 ```
 
 ---
 
 ## B7.10 — Cross-module integration smoke
 
-`fuse_phase7_integration` links optional modules when CMake options are enabled and constructs their public facades in one process:
+`fuse_b7_integration` links optional modules when CMake options are enabled and constructs their public facades in one process:
 
 | Module | Facade exercised | CMake gate |
 |--------|------------------|------------|
@@ -69,12 +69,11 @@ No Torque legacy, GPU device, or OpenAL output is required — the smoke validat
 
 ## Build
 
-`fuse_phase7` builds whenever `FUSE_BUILD_CORE=ON` (default). Tests register when `FUSE_BUILD_CORE_TESTS=ON`.
+`fuse_b7` builds whenever `FUSE_BUILD_CORE=ON` (default). Tests register when `FUSE_BUILD_CORE_TESTS=ON`.
 
 ```bash
 cmake -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
   -DFUSE_BUILD_CORE_TESTS=ON \
   -DFUSE_BUILD_AUDIO=ON \
@@ -82,7 +81,7 @@ cmake -B build -G Ninja \
   -DFUSE_BUILD_PROJECT=ON
 
 cmake --build build
-ctest --test-dir build --output-on-failure -R fuse_phase7
+ctest --test-dir build --output-on-failure -R fuse_b7
 ```
 
 | Condition | Behaviour |
@@ -90,7 +89,7 @@ ctest --test-dir build --output-on-failure -R fuse_phase7
 | `FUSE_BUILD_AUDIO=OFF` | Audio facade skipped; checklist still lists B7.2 |
 | `FUSE_BUILD_SCRIPT=OFF` | Script facade skipped |
 | `FUSE_BUILD_PROJECT=OFF` | Asset pipeline facade skipped |
-| `FUSE_BUILD_CORE_TESTS=OFF` | No `fuse_phase7_integration` CTest target |
+| `FUSE_BUILD_CORE_TESTS=OFF` | No `fuse_b7_integration` CTest target |
 
 ---
 
@@ -98,12 +97,12 @@ ctest --test-dir build --output-on-failure -R fuse_phase7
 
 | Target | Validates |
 |--------|-----------|
-| `fuse_phase7_integration` | Checklist non-empty, per-module counts, `runIntegrationSmoke()` constructs linked facades |
+| `fuse_b7_integration` | Checklist non-empty, per-module counts, `runIntegrationSmoke()` constructs linked facades |
 
 Run:
 
 ```bash
-ctest --test-dir build --output-on-failure -R fuse_phase7
+ctest --test-dir build --output-on-failure -R fuse_b7
 ```
 
 ---
@@ -111,7 +110,7 @@ ctest --test-dir build --output-on-failure -R fuse_phase7
 ## Gates (B7.10 scaffold)
 
 - [x] B7.1–B7.9 status documented with stub/test pointers
-- [x] `Phase7TestRegistry` checklist on FUSE APIs
+- [x] `B7TestRegistry` checklist on FUSE APIs
 - [x] Cross-module integration smoke constructs linked facades
 - [x] CTest target green in Linux umbrella CI
 - [ ] Master-plan §B7.10 full acceptance matrix (GPU skinning, ENet processes, Lua hot-reload, shipping strip, etc.) — deferred per-module
@@ -120,7 +119,7 @@ ctest --test-dir build --output-on-failure -R fuse_phase7
 
 ## CI story (honest)
 
-1. **Linux umbrella** — all B7 module tests plus `fuse_phase7_integration` run in the Release CTest job.
+1. **Linux umbrella** — all B7 module tests plus `fuse_b7_integration` run in the Release CTest job.
 2. **ASan smoke** — `fuse_runtime_smoke` remains separate; phase-7 integration runs in the umbrella job (same pattern as B4.11).
 3. **Optional modules** — umbrella CI enables `FUSE_BUILD_AUDIO`, `FUSE_BUILD_SCRIPT`, and `FUSE_BUILD_PROJECT` so all nine facades are exercised.
 

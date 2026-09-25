@@ -1,0 +1,317 @@
+#include <fuse/core/b7_test_registry.hpp>
+
+#include <fuse/animation/animator.hpp>
+#include <fuse/animation/blend_tree.hpp>
+#include <fuse/animation/clip.hpp>
+#include <fuse/animation/skeleton.hpp>
+#include <fuse/core/init.hpp>
+#include <fuse/core/temp_path.hpp>
+#include <fuse/frame/frame_ctx.hpp>
+#include <fuse/net/transport.hpp>
+#include <fuse/platform/profile.hpp>
+#include <fuse/terrain/terrain.hpp>
+#include <fuse/vfx/particle_system.hpp>
+#include <fuse/world_partition/world_partition.hpp>
+
+#if defined(FUSE_B7_HAS_AUDIO)
+#include <fuse/audio/audio_engine.hpp>
+#endif
+
+#if defined(FUSE_B7_HAS_SCRIPT)
+#include <fuse/script/script_host.hpp>
+#endif
+
+#if defined(FUSE_B7_HAS_PROJECT)
+#include <fuse/project/cook_manifest.hpp>
+#include <fuse/project/import_pipeline.hpp>
+#endif
+
+#include <cstring>
+#include <memory>
+
+namespace fuse::core {
+
+namespace {
+
+// stub_landed: an implementation exists. automated: a CTest checks it. gate_test: the B7 gate
+// CTest that proves the row against an independent reference (nullptr when none does yet).
+const std::vector<B7Deliverable> kChecklist = {
+    {"animation.skeleton_hierarchy", "Skeleton loads with parent/child chain", B7Module::Animation, true, true,
+     "fuse_b7_animation_gates"},
+    {"animation.clip_sampling", "ClipNode samples channels at keyframes", B7Module::Animation, true, true,
+     "fuse_b7_animation_gates"},
+    {"animation.blend_interpolation", "BlendNode2 interpolates at 0/0.5/1", B7Module::Animation, true, true,
+     "fuse_b7_animation_gates"},
+    {"animation.gpu_skinning", "GPU skinning 10k verts < 0.5ms", B7Module::Animation, false, false},
+    {"audio.engine_init", "Audio engine initialises backend without error", B7Module::Audio, true, true,
+     "fuse_audio_b7_gates"},
+    {"audio.spatial_attenuation", "Attenuation near-zero at max_distance", B7Module::Audio, true, true,
+     "fuse_audio_b7_gates"},
+    // CPU FFT reverb (and the ReverbCuda CPU fallback) is proven at -132 dB vs direct convolution;
+    // the CUDA FFT path itself needs a CUDA device, so the row stays unautomated.
+    {"audio.cuda_reverb", "CUDA FFT reverb within -60dB of CPU reference (CPU path proven; CUDA needs hardware)",
+     B7Module::Audio, true, false, "fuse_audio_b7_gates"},
+    {"script.lua_hello", "Lua executes hello-world script", B7Module::Script, true, true, "fuse_script_b7_gates"},
+    {"script.host_callbacks", "ScriptHost registers and dispatches callbacks", B7Module::Script, true, true},
+    {"script.hot_reload", "Hot-reload replaces function within 1 frame", B7Module::Script, true, true,
+     "fuse_script_b7_gates"},
+    {"net.loopback_reliable", "Loopback transport reliable send/receive", B7Module::Net, true, true},
+    {"net.enet_process_pair", "ENet reliable packet between two processes", B7Module::Net, true, true,
+     "fuse_b7_net_gates"},
+    {"net.rollback_resim", "Rollback resimulates 4 frames after remote input", B7Module::Net, true, true,
+     "fuse_b7_net_gates"},
+    {"terrain.heightfield_sample", "get_height matches bilinear heightmap read", B7Module::Terrain, true, true,
+     "fuse_b7_terrain_gates"},
+    {"terrain.lod_streaming", "LOD loads/unloads chunks as camera moves", B7Module::Terrain, true, true,
+     "fuse_b7_terrain_gates"},
+    // CPU reference of the heightfield -> SVO ray-march transition; the GPU image is a manual check.
+    {"terrain.svo_cave", "Terrain-SVO cave renders below surface (CPU ray-march reference)", B7Module::Terrain,
+     true, true, "fuse_b7_terrain_gates"},
+    {"partition.cell_residency", "Cell residency transitions on camera move", B7Module::WorldPartition, true, true,
+     "fuse_b7_streaming_gates"},
+    {"partition.force_load", "force_load completes synchronously", B7Module::WorldPartition, true, true,
+     "fuse_b7_streaming_gates"},
+    {"vfx.emit_rate", "emit_rate produces expected particles per second", B7Module::Vfx, true, true,
+     "fuse_b7_vfx_gates"},
+    {"vfx.cuda_occupancy", "CUDA particle kernel > 70% occupancy", B7Module::Vfx, false, false},
+    {"platform.lifecycle_power", "Background visibility drives PowerState", B7Module::Platform, true, true},
+    {"platform.crash_handlers", "OS minidump / signal handlers installed", B7Module::Platform, false, false},
+    {"assets.cook_manifest", "Cook manifest plans mesh/texture entries", B7Module::Assets, true, true},
+    // Meshes cook through Assimp (when found) to .fusemesh; the gate checks OBJ sources against an
+    // independent OBJ parse. FBX/GLTF go through the same importer but have no gate fixture yet.
+    {"assets.real_mesh_cook", "Assimp mesh cook to engine binary (gate-tested on OBJ)", B7Module::Assets, true,
+     true, "fuse_b7_cook_gates"},
+};
+
+animation::Skeleton makeSmokeSkeleton() {
+    animation::Skeleton skel;
+    animation::Bone root{};
+    std::strncpy(root.name, "root", sizeof(root.name) - 1);
+    root.parent_index = -1;
+    root.local_transform = animation::mat4::identity();
+
+    animation::Bone child{};
+    std::strncpy(child.name, "child", sizeof(child.name) - 1);
+    child.parent_index = 0;
+    child.local_transform = animation::mat4::identity();
+    child.local_transform.data[13] = 1.f;
+
+    skel.bones = {root, child};
+    skel.bone_count = 2;
+    return skel;
+}
+
+bool smokeAnimationFacade() {
+    const animation::Skeleton skel = makeSmokeSkeleton();
+    animation::Animator animator;
+    auto idleNode = std::make_unique<animation::ClipNode>();
+    animation::AnimationClip idle{};
+    idle.duration = 1.f;
+    idleNode->clip = &idle;
+    animator.state_machine = std::make_unique<animation::AnimStateMachine>();
+    animator.state_machine->add_state("idle", std::move(idleNode));
+
+    frame::FrameCtx ctx;
+    ctx.dt = 1.f / 60.f;
+    animator.tick(skel, ctx);
+    return animator.tick_count == 1u && animator.current_pose.bone_count == 2u;
+}
+
+bool smokeNetFacade() {
+    net::LoopbackTransport host;
+    net::LoopbackTransport client;
+    if (!host.init(27100) || !client.init(27101)) {
+        return false;
+    }
+    net::LoopbackTransport::link_peers(host, client);
+
+    const char payload[] = "phase7";
+    if (!host.send(1, reinterpret_cast<const net::byte*>(payload), sizeof(payload) - 1,
+                   net::PacketChannel::Reliable)) {
+        return false;
+    }
+
+    bool received = false;
+    client.poll([&](const net::Packet& packet) { received = !packet.data.empty(); });
+    return received && host.peer_count() == 1u;
+}
+
+bool smokeTerrainFacade() {
+    terrain::Terrain terrain;
+    terrain::TerrainDesc desc{};
+    desc.resolution = 17;
+    desc.world_size = 16.f;
+    desc.max_height = 8.f;
+    desc.lod_levels = 2;
+    desc.chunk_resolution = 8;
+    terrain.init(desc);
+    if (!terrain.is_initialized()) {
+        return false;
+    }
+    terrain.generate(42);
+    const f32 height = terrain.get_height(0.f, 0.f);
+    terrain.update_lod({0.f, 0.f, 0.f}, 1.f / 60.f);
+    terrain.destroy();
+    return height >= 0.f;
+}
+
+bool smokeWorldPartitionFacade() {
+    world_partition::WorldPartition partition;
+    world_partition::WorldPartitionDesc desc{};
+    desc.async_loading = false;
+    partition.init(desc);
+    partition.update({0.f, 0.f, 0.f});
+    // Synchronous loading: the first update must stream in the cell under the focus point.
+    const bool hasCells = partition.loaded_cell_count() > 0u;
+    partition.destroy();
+    return hasCells;
+}
+
+bool smokeVfxFacade() {
+    vfx::ParticleSystem system;
+    vfx::VfxDesc desc{};
+    system.init(desc);
+    if (!system.is_initialized()) {
+        return false;
+    }
+
+    vfx::ParticleEmitterDesc emitterDesc{};
+    emitterDesc.max_particles = 16;
+    emitterDesc.emit_rate = 10.f;
+    emitterDesc.lifetime_min = 1.f;
+    emitterDesc.lifetime_max = 1.f;
+    const Handle<vfx::EffectInstance> effect = system.spawn_effect(emitterDesc, {0.f, 1.f, 0.f}, 0.5f);
+    system.update(0.1f);
+    system.destroy();
+    return effect.isValid();
+}
+
+bool smokePlatformFacade() {
+    const platform::JobProfileLimits limits = platform::currentJobProfileLimits();
+    return limits.minWorkers >= 1u && limits.maxWorkers >= limits.minWorkers && limits.fiberStackBytes > 0u;
+}
+
+#if defined(FUSE_B7_HAS_AUDIO)
+bool smokeAudioFacade() {
+    audio::AudioEngine engine;
+    audio::AudioDesc desc{};
+    desc.cuda_reverb = false;
+    engine.init(desc);
+    const bool ok = engine.is_initialized();
+    engine.destroy();
+    return ok;
+}
+#endif
+
+#if defined(FUSE_B7_HAS_SCRIPT)
+bool smokeScriptFacade() {
+    script::ScriptHost host;
+    if (!host.init()) {
+        return false;
+    }
+    const bool ok = host.is_initialized() && host.vm().is_initialized();
+    host.shutdown();
+    return ok;
+}
+#endif
+
+#if defined(FUSE_B7_HAS_PROJECT)
+bool smokeAssetsFacade() {
+    project::CookManifest manifest = project::makeDefaultCookManifest(fuse::test::tempPath("fuse_b7"));
+    project::ImportPipeline pipeline;
+    pipeline.set_project_root(fuse::test::tempPath("fuse_b7"));
+    const project::CookBatchResult plan = pipeline.plan_from_manifest(manifest);
+    return plan.ok && !plan.records.empty();
+}
+#endif
+
+} // namespace
+
+const std::vector<B7Deliverable>& B7TestRegistry::checklist() {
+    return kChecklist;
+}
+
+u32 B7TestRegistry::countByModule(B7Module module) {
+    u32 count = 0;
+    for (const B7Deliverable& item : kChecklist) {
+        if (item.module == module) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 B7TestRegistry::stubLandedCount() {
+    u32 count = 0;
+    for (const B7Deliverable& item : kChecklist) {
+        if (item.stub_landed) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u32 B7TestRegistry::automatedCount() {
+    u32 count = 0;
+    for (const B7Deliverable& item : kChecklist) {
+        if (item.automated) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool B7TestRegistry::runIntegrationSmoke() {
+    core::initialize();
+
+    if (!smokePlatformFacade()) {
+        core::shutdown();
+        return false;
+    }
+    if (!smokeAnimationFacade()) {
+        core::shutdown();
+        return false;
+    }
+    if (!smokeNetFacade()) {
+        core::shutdown();
+        return false;
+    }
+    if (!smokeTerrainFacade()) {
+        core::shutdown();
+        return false;
+    }
+    if (!smokeWorldPartitionFacade()) {
+        core::shutdown();
+        return false;
+    }
+    if (!smokeVfxFacade()) {
+        core::shutdown();
+        return false;
+    }
+
+#if defined(FUSE_B7_HAS_AUDIO)
+    if (!smokeAudioFacade()) {
+        core::shutdown();
+        return false;
+    }
+#endif
+
+#if defined(FUSE_B7_HAS_SCRIPT)
+    if (!smokeScriptFacade()) {
+        core::shutdown();
+        return false;
+    }
+#endif
+
+#if defined(FUSE_B7_HAS_PROJECT)
+    if (!smokeAssetsFacade()) {
+        core::shutdown();
+        return false;
+    }
+#endif
+
+    core::shutdown();
+    return true;
+}
+
+} // namespace fuse::core

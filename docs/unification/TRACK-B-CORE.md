@@ -66,11 +66,8 @@ Phase 1 registry ships inside `fuse_core`. Tests register when `FUSE_BUILD_CORE_
 ```bash
 cmake -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
-  -DFUSE_BUILD_CORE_TESTS=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_CORE_TESTS=ON
 
 cmake --build build
 ctest --test-dir build --output-on-failure -R fuse_core_phase1

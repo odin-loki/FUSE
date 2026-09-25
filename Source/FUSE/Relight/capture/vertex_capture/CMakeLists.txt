@@ -20,7 +20,7 @@ endforeach()
 
 get_filename_component(_rl_vc_repo "${CMAKE_CURRENT_SOURCE_DIR}/../../../../.." ABSOLUTE)
 # SPIRV-Headers as vendored with DXVK (Engine/lib/dxvk/include/spirv, pinned in its VERSION).
-set(_rl_vc_spirv_headers "${_rl_vc_repo}/Engine/lib/dxvk/include/spirv/include")
+set(_rl_vc_spirv_headers "${FUSE_VENDOR_DIR}/dxvk/include/spirv/include")
 
 add_library(fuse_relight_vertex_capture STATIC
     src/back_transform.cpp

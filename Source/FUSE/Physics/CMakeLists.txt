@@ -75,7 +75,6 @@ target_include_directories(fuse_physics
 )
 
 target_link_libraries(fuse_physics PUBLIC fuse_core fuse_ecs)
-target_compile_features(fuse_physics PUBLIC cxx_std_17)
 
 # Single-source compute kernels (docs/compute-kernels.md): broadphase (keys, radix sort, pair
 # emission), narrowphase and the colored constraint solve run as kernel::launch dispatches on the CPU

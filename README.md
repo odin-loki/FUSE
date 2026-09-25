@@ -46,7 +46,7 @@ Current public APIs live under `fuse::` in [`Source/FUSE/`](Source/FUSE/).
 
 ## Status
 
-FUSE is under active construction. The umbrella CMake graph, `fuse_core`, dimension worlds, hybrid compositor, feature modules, project format, and headless demos are in tree. The Vulkan renderer, CUDA compute path, and Qt editor are scaffolding toward Track B.
+FUSE is under active construction. The product CMake graph, `fuse_core`, dimension worlds, hybrid compositor, feature modules, project format, and headless demos are in tree. The Vulkan renderer, CUDA compute path, and Qt editor are scaffolding toward Track B.
 
 See [`docs/roadmap.md`](docs/roadmap.md) for the phase map.
 
@@ -59,11 +59,8 @@ git clone --recurse-submodules https://github.com/odin-loki/FUSE.git
 cd FUSE
 
 cmake -B build -G Ninja \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
-  -DFUSE_BUILD_CORE_TESTS=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_CORE_TESTS=ON
 
 cmake --build build
 ctest --test-dir build --output-on-failure
@@ -82,12 +79,18 @@ On Windows without Ninja, omit `-G Ninja` and pass `--config Release` to the bui
 ## Repository map
 
 ```
-Source/FUSE/     Product engine — core, worlds, renderer, modules, editor, apps
-Samples/         Demo projects (`project.json`)
-Tools/FUSE/      Importers and cookers
-docs/            User and engineering documentation
-cmake/           Umbrella platform and target helpers
+Source/FUSE/          Product engine (C++23) — core, worlds, renderer, modules, editor, apps
+third_party/vendor/   Pinned third-party libraries
+third_party/stb/      STB image headers
+heritage/torque3d/    Torque3D reference source (not built by FUSE)
+Samples/              Demo projects (`project.json`)
+Tools/FUSE/           Importers and cookers
+Tests/                Golden and integration fixtures
+docs/                 User and engineering documentation
+cmake/                Platform, vendor, and preset helpers
 ```
+
+Layout details: [`docs/repository-layout.md`](docs/repository-layout.md).
 
 ---
 

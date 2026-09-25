@@ -6,8 +6,8 @@
 #   Engine/lib/fidelityfx  — FidelityFX SDK v1.1.4 FSR1 (EASU + RCAS) + CAS headers and Vulkan GLSL passes
 #   Engine/lib/nvidia-nis  — NVIDIA Image Scaling SDK v1.0.3 (NIS_Scaler.h, NIS_Config.h, NIS_Main.glsl)
 
-set(FUSE_FIDELITYFX_DIR "${CMAKE_SOURCE_DIR}/Engine/lib/fidelityfx")
-set(FUSE_NVIDIA_NIS_DIR "${CMAKE_SOURCE_DIR}/Engine/lib/nvidia-nis")
+set(FUSE_FIDELITYFX_DIR "${FUSE_VENDOR_DIR}/fidelityfx")
+set(FUSE_NVIDIA_NIS_DIR "${FUSE_VENDOR_DIR}/nvidia-nis")
 foreach(_fuse_upscale_pin "${FUSE_FIDELITYFX_DIR}/VERSION" "${FUSE_NVIDIA_NIS_DIR}/VERSION")
     if(NOT EXISTS "${_fuse_upscale_pin}")
         message(FATAL_ERROR "FUSE upscalers: vendored pin ${_fuse_upscale_pin} is missing")

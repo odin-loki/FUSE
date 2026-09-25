@@ -18,7 +18,7 @@ option(FUSE_TRACY "Build the FUSE profiler with the Tracy backend (vendored Engi
 option(FUSE_TRACY_ON_DEMAND "Tracy records only while a server is connected (TRACY_ON_DEMAND)" ON)
 option(FUSE_TRACY_ONLY_LOCALHOST "Tracy listens on localhost only (TRACY_ONLY_LOCALHOST)" ON)
 
-set(FUSE_TRACY_DIR "${CMAKE_SOURCE_DIR}/Engine/lib/tracy")
+set(FUSE_TRACY_DIR "${FUSE_VENDOR_DIR}/tracy")
 if(NOT EXISTS "${FUSE_TRACY_DIR}/public/TracyClient.cpp" OR NOT EXISTS "${FUSE_TRACY_DIR}/VERSION")
     if(FUSE_TRACY)
         message(FATAL_ERROR "FUSE_TRACY=ON but the vendored Tracy client is missing under ${FUSE_TRACY_DIR}")

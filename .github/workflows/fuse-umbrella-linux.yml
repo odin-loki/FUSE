@@ -27,10 +27,8 @@ jobs:
           cmake -B build-fuse -G Ninja \
             -DCMAKE_CXX_COMPILER=g++-13 \
             -DCMAKE_BUILD_TYPE=Release \
-            -DFUSE_UMBRELLA=ON \
             -DFUSE_BUILD_CORE=ON \
             -DFUSE_BUILD_CORE_TESTS=ON \
-            -DFUSE_BUILD_LEGACY=ON \
             -DFUSE_BUILD_SMOKE=ON \
             -DFUSE_BUILD_HYBRID_DEMO=ON \
             -DFUSE_BUILD_PROJECT=ON \
@@ -39,10 +37,7 @@ jobs:
             -DFUSE_BUILD_EDITOR_API=ON \
             -DFUSE_BUILD_EDITOR=OFF \
             -DFUSE_BUILD_VULKAN=ON \
-            -DFUSE_BUILD_CUDA=ON \
-            -DFUSE_BUILD_T3D=OFF \
-            -DFUSE_BUILD_T2D=OFF
-
+            -DFUSE_BUILD_CUDA=ON
       - name: Build
         run: cmake --build build-fuse --config Release
 
@@ -70,11 +65,6 @@ jobs:
         run: |
           ./build-fuse/Tools/FUSE/fuse_cook --project Samples/unification/demo_3d_empty --dry-run
 
-      - name: Verify prefix shims
-        run: |
-          python3 Tools/FUSE/prefix_legacy_symbols.py --verify-shims --dimension t3d
-          python3 Tools/FUSE/prefix_legacy_symbols.py --verify-shims --dimension t2d
-
   fuse-core-single-thread:
     name: fuse_core jobs (FUSE_JOBS_SINGLE_THREAD)
     runs-on: ubuntu-latest
@@ -91,13 +81,9 @@ jobs:
           cmake -B build-st -G Ninja \
             -DCMAKE_CXX_COMPILER=g++-13 \
             -DCMAKE_BUILD_TYPE=Release \
-            -DFUSE_UMBRELLA=ON \
             -DFUSE_BUILD_CORE=ON \
             -DFUSE_BUILD_CORE_TESTS=ON \
-            -DFUSE_JOBS_SINGLE_THREAD=ON \
-            -DFUSE_BUILD_T3D=OFF \
-            -DFUSE_BUILD_T2D=OFF
-
+            -DFUSE_JOBS_SINGLE_THREAD=ON
       - name: Build
         run: cmake --build build-st --config Release
 
@@ -157,7 +143,6 @@ jobs:
         run: |
           cmake --preset fuse-asan \
             -DCMAKE_CXX_COMPILER=g++-13 \
-            -DFUSE_BUILD_LEGACY=ON \
             -DFUSE_BUILD_SMOKE=ON
 
       - name: Build
@@ -196,14 +181,10 @@ jobs:
           cmake -B build/editor-qt -G Ninja \
             -DCMAKE_CXX_COMPILER=g++-13 \
             -DCMAKE_BUILD_TYPE=Release \
-            -DFUSE_UMBRELLA=ON \
             -DFUSE_BUILD_CORE=ON \
             -DFUSE_BUILD_CORE_TESTS=ON \
             -DFUSE_BUILD_VULKAN=ON \
-            -DFUSE_BUILD_EDITOR=ON \
-            -DFUSE_BUILD_T3D=OFF \
-            -DFUSE_BUILD_T2D=OFF
-
+            -DFUSE_BUILD_EDITOR=ON
       - name: Build editor + Qt gates + lint
         run: cmake --build build/editor-qt --target fuse_editor fuse_editor_qt_gates fuse_lint
 

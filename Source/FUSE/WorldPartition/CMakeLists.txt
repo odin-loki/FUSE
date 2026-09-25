@@ -29,7 +29,6 @@ target_include_directories(fuse_world_partition
 )
 
 target_link_libraries(fuse_world_partition PUBLIC fuse_ecs fuse_core)
-target_compile_features(fuse_world_partition PUBLIC cxx_std_17)
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)

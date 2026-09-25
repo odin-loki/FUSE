@@ -126,23 +126,23 @@ _fuse_lint_add(fuse_lint_b6_editor_qt6_only    editor-qt6     --root "${_fuse_li
 _fuse_lint_add(fuse_lint_c_doc_headings        doc-headings
     --plan "${CMAKE_SOURCE_DIR}/docs/plans/FUSE_MASTER_PLAN.md" --sources "${CMAKE_SOURCE_DIR}/docs/sources")
 # B1 gate: third-party dependencies build from vendored source with pinned commits.
-_fuse_lint_add(fuse_lint_vendored_pins_vma     vendored-pins  --dir "${CMAKE_SOURCE_DIR}/Engine/lib/vma")
+_fuse_lint_add(fuse_lint_vendored_pins_vma     vendored-pins  --dir "${FUSE_VENDOR_DIR}/vma")
 # Upscalers (Renderer/upscale): FidelityFX SDK FSR1 + CAS subset and NVIDIA Image Scaling, both MIT.
-_fuse_lint_add(fuse_lint_vendored_pins_fidelityfx vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/fidelityfx")
-_fuse_lint_add(fuse_lint_vendored_pins_nvidia_nis vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/nvidia-nis")
+_fuse_lint_add(fuse_lint_vendored_pins_fidelityfx vendored-pins --dir "${FUSE_VENDOR_DIR}/fidelityfx")
+_fuse_lint_add(fuse_lint_vendored_pins_nvidia_nis vendored-pins --dir "${FUSE_VENDOR_DIR}/nvidia-nis")
 # Optional NVIDIA plugin (docs/nvidia-plugin.md): Streamline public headers subset, MIT (binaries never vendored).
-_fuse_lint_add(fuse_lint_vendored_pins_streamline vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/streamline")
-_fuse_lint_add(fuse_lint_vendored_pins_volk vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/volk")  # WP-0.2 volk meta-loader (MIT)
+_fuse_lint_add(fuse_lint_vendored_pins_streamline vendored-pins --dir "${FUSE_VENDOR_DIR}/streamline")
+_fuse_lint_add(fuse_lint_vendored_pins_volk vendored-pins --dir "${FUSE_VENDOR_DIR}/volk")  # WP-0.2 volk meta-loader (MIT)
 # FUSE Relight (RL-0.2): vendored DXVK 3.1.1 subset (zlib) and dxbc-spirv (MIT).
-_fuse_lint_add(fuse_lint_vendored_pins_dxvk vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/dxvk")
-_fuse_lint_add(fuse_lint_vendored_pins_dxbc_spirv vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/dxbc-spirv")
+_fuse_lint_add(fuse_lint_vendored_pins_dxvk vendored-pins --dir "${FUSE_VENDOR_DIR}/dxvk")
+_fuse_lint_add(fuse_lint_vendored_pins_dxbc_spirv vendored-pins --dir "${FUSE_VENDOR_DIR}/dxbc-spirv")
 # FUSE Relight RL-0.5: xxHash 0.8.x (BSD-2) for the Remix-compatible asset hashes.
-_fuse_lint_add(fuse_lint_vendored_pins_xxhash vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/xxhash")
-_fuse_lint_add(fuse_lint_vendored_pins_tracy vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/tracy")  # WP-0.6 Tracy client (BSD-3), optional FUSE_TRACY
-_fuse_lint_add(fuse_lint_vendored_pins_meshoptimizer vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/meshoptimizer")  # WP-1.2 meshlet cook (MIT)
-_fuse_lint_add(fuse_lint_vendored_pins_gdeflate vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/gdeflate")  # RL-3.3 GDeflate CPU codec (MIT + Apache-2.0)
-_fuse_lint_add(fuse_lint_vendored_pins_tinyusdz vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/tinyusdz")  # RL-3.1 / Remaster W2.2 TinyUSDZ USDA + USDC reader (Apache-2.0)
-_fuse_lint_add(fuse_lint_vendored_pins_nvidia_flip vendored-pins --dir "${CMAKE_SOURCE_DIR}/Engine/lib/nvidia-flip")  # Asset plan W0.8 NVIDIA FLIP golden metric (BSD-3)
+_fuse_lint_add(fuse_lint_vendored_pins_xxhash vendored-pins --dir "${FUSE_VENDOR_DIR}/xxhash")
+_fuse_lint_add(fuse_lint_vendored_pins_tracy vendored-pins --dir "${FUSE_VENDOR_DIR}/tracy")  # WP-0.6 Tracy client (BSD-3), optional FUSE_TRACY
+_fuse_lint_add(fuse_lint_vendored_pins_meshoptimizer vendored-pins --dir "${FUSE_VENDOR_DIR}/meshoptimizer")  # WP-1.2 meshlet cook (MIT)
+_fuse_lint_add(fuse_lint_vendored_pins_gdeflate vendored-pins --dir "${FUSE_VENDOR_DIR}/gdeflate")  # RL-3.3 GDeflate CPU codec (MIT + Apache-2.0)
+_fuse_lint_add(fuse_lint_vendored_pins_tinyusdz vendored-pins --dir "${FUSE_VENDOR_DIR}/tinyusdz")  # RL-3.1 / Remaster W2.2 TinyUSDZ USDA + USDC reader (Apache-2.0)
+_fuse_lint_add(fuse_lint_vendored_pins_nvidia_flip vendored-pins --dir "${FUSE_VENDOR_DIR}/nvidia-flip")  # Asset plan W0.8 NVIDIA FLIP golden metric (BSD-3)
 
 get_property(_fuse_lint_all GLOBAL PROPERTY _FUSE_LINT_TESTS)
 set_tests_properties(${_fuse_lint_all} PROPERTIES LABELS "gate;lint" TIMEOUT 300)

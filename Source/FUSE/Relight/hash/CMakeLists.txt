@@ -4,7 +4,7 @@
 # Added from Source/FUSE/Relight/CMakeLists.txt with `add_subdirectory(hash)` (tests:
 # `add_subdirectory(tests/hash)`).
 
-get_filename_component(FUSE_RELIGHT_XXHASH_DIR "${CMAKE_CURRENT_LIST_DIR}/../../../../Engine/lib/xxhash" ABSOLUTE)
+set(FUSE_RELIGHT_XXHASH_DIR "${FUSE_VENDOR_DIR}/xxhash")
 set(FUSE_RELIGHT_XXHASH_DIR "${FUSE_RELIGHT_XXHASH_DIR}" CACHE INTERNAL "Vendored xxHash 0.8.x (Engine/lib/xxhash)")
 
 add_library(fuse_relight_hash STATIC

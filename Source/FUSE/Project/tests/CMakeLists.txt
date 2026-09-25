@@ -58,9 +58,7 @@ add_executable(fuse_b7_cook_gates_tests
     test_b7_cook_gates.cpp
 )
 target_link_libraries(fuse_b7_cook_gates_tests PRIVATE fuse_project fuse_cook_stubs fuse_core)
-target_include_directories(fuse_b7_cook_gates_tests PRIVATE
-    "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/stb"
-)
+fuse_stb_include(fuse_b7_cook_gates_tests PRIVATE)
 target_compile_definitions(fuse_b7_cook_gates_tests PRIVATE
     FUSE_SOURCE_DIR="${FUSE_SOURCE_DIR_CMAKE}"
 )

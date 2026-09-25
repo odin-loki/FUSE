@@ -1,9 +1,6 @@
-# The scene-hierarchy test exercises the T2D/T3D legacy scene adapters (Legacy/, FUSE_BUILD_LEGACY).
-if(FUSE_BUILD_LEGACY)
-    add_executable(fuse_scene_tests
-        test_scene_hierarchy.cpp
-    )
+add_executable(fuse_scene_tests
+    test_scene_hierarchy.cpp
+)
 
-    target_link_libraries(fuse_scene_tests PRIVATE fuse_world3d fuse_t2d_legacy fuse_t3d_legacy)
-    add_test(NAME fuse_scene_hierarchy COMMAND fuse_scene_tests)
-endif()
+target_link_libraries(fuse_scene_tests PRIVATE fuse_world2d fuse_world3d)
+add_test(NAME fuse_scene_hierarchy COMMAND fuse_scene_tests)

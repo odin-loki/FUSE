@@ -9,7 +9,7 @@
 #   fuse_rp_meshlet_{codec,build,format,cook}   ctest gates, labels gate;renderer
 
 set(_fuse_geo_dir "${CMAKE_CURRENT_LIST_DIR}/../geometry")
-set(_fuse_meshopt_dir "${CMAKE_SOURCE_DIR}/Engine/lib/meshoptimizer")
+set(_fuse_meshopt_dir "${FUSE_VENDOR_DIR}/meshoptimizer")
 
 file(GLOB _fuse_meshopt_sources CONFIGURE_DEPENDS "${_fuse_meshopt_dir}/src/*.cpp")
 add_library(fuse_meshoptimizer STATIC ${_fuse_meshopt_sources})

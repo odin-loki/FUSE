@@ -33,7 +33,7 @@ add_library(fuse_rp_harness STATIC
 )
 target_include_directories(fuse_rp_harness PUBLIC "${_fuse_rp_harness_dir}")
 target_link_libraries(fuse_rp_harness PUBLIC fuse_rhi)
-target_compile_features(fuse_rp_harness PUBLIC cxx_std_17)
+fuse_apply_cxx23(fuse_rp_harness)
 # Scene geometry and the resolve must be bit-reproducible across compilers: no FMA contraction.
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(fuse_rp_harness PRIVATE -ffp-contract=off)
@@ -74,9 +74,8 @@ add_test(NAME rp_harness_image_io
          COMMAND fuse_rp_harness_image_io "${CMAKE_CURRENT_BINARY_DIR}/rp_harness_image_io")
 set_tests_properties(rp_harness_image_io PROPERTIES LABELS "renderer;golden;tier_t0")
 # Cross-check the PNG encoder with an independent decoder when the vendored stb_image is present.
-set(_fuse_rp_harness_stb_dir "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/stb")
-if(EXISTS "${_fuse_rp_harness_stb_dir}/stb_image.h")
-    target_include_directories(fuse_rp_harness_image_io SYSTEM PRIVATE "${_fuse_rp_harness_stb_dir}")
+if(EXISTS "${FUSE_STB_DIR}/stb_image.h")
+    target_include_directories(fuse_rp_harness_image_io SYSTEM PRIVATE "${FUSE_STB_DIR}")
     target_compile_definitions(fuse_rp_harness_image_io PRIVATE FUSE_RP_HARNESS_HAS_STB=1)
 endif()
 

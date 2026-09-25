@@ -4,7 +4,7 @@ These rules apply to product code under `Source/FUSE/` and `Tools/FUSE/`.
 
 ## Language
 
-- Host: ISO C++23 is the product target. The umbrella currently compiles as C++17 while that lands.
+- Host: ISO C++23 for all code under `Source/FUSE/` and product tools under `Tools/FUSE/`. Vendored third-party trees under `third_party/vendor/` keep their upstream dialect (DXVK stays C++17).
 - Allowed: concepts, `std::expected`, `std::optional`, `std::span`, `std::string_view`, `[[nodiscard]]`, aggressive `constexpr` on math and handles.
 - `std::format` / `std::print` for tools. The engine logger stays custom so shipping builds can strip it.
 - Ranges on non-hot paths. Coroutines only inside the job/fiber layer.

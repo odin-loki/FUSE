@@ -42,13 +42,9 @@ target_include_directories(fuse_compute
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-# CPU reference path routes SSAO/SSR/SSGI to the shared Qt-/Vulkan-free fuse_ssfx references (also used by
-# fuse_rhi); fuse_compute does not depend on fuse_rhi and fuse_rhi does not depend on fuse_compute.
-include(${CMAKE_CURRENT_SOURCE_DIR}/../ScreenSpace/fuse_ssfx.cmake)
-
+# fuse_ssfx is defined by Source/FUSE/ScreenSpace/ (included from the product umbrella before Compute).
 # PUBLIC: fuse/compute kernel headers (screen_space_kernels.hpp etc.) include fuse/ssfx headers.
 target_link_libraries(fuse_compute PUBLIC fuse_core fuse_ssfx)
-target_compile_features(fuse_compute PUBLIC cxx_std_17)
 
 if(FUSE_CUDA_BACKEND)
     target_link_libraries(fuse_compute PUBLIC CUDA::cudart)

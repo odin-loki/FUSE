@@ -13,7 +13,7 @@
 
 option(FUSE_RELIGHT_GDEFLATE "Build the vendored GDeflate CPU codec for Remix packages (Engine/lib/gdeflate)" ON)
 
-get_filename_component(FUSE_RELIGHT_GDEFLATE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../../../../Engine/lib/gdeflate" ABSOLUTE)
+set(FUSE_RELIGHT_GDEFLATE_DIR "${FUSE_VENDOR_DIR}/gdeflate")
 
 # Vendored sources, compiled verbatim (fuse_warnings_finalize gives files outside Source/FUSE `-w`).
 set(FUSE_RELIGHT_GDEFLATE_SOURCES

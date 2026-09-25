@@ -51,12 +51,9 @@ sudo apt-get install -y qt6-base-dev
 
 cmake -B build-editor -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
   -DFUSE_BUILD_EDITOR_API=ON \
-  -DFUSE_BUILD_EDITOR=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_EDITOR=ON
 
 cmake --build build-editor --target fuse_editor
 ./build-editor/Source/FUSE/Editor/fuse_editor --samples Samples/unification
@@ -80,13 +77,10 @@ Linux umbrella CI configures with `FUSE_BUILD_EDITOR=OFF` (default). Tests:
 
 ```bash
 cmake -B build-fuse -G Ninja \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
   -DFUSE_BUILD_CORE_TESTS=ON \
   -DFUSE_BUILD_EDITOR_API=ON \
-  -DFUSE_BUILD_EDITOR=OFF \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_EDITOR=OFF
 
 cmake --build build-fuse
 ctest --test-dir build-fuse -R fuse_editor --output-on-failure

@@ -11,7 +11,7 @@ set(_fuse_wp06_sources
     ${CMAKE_CURRENT_SOURCE_DIR}/include/fuse/renderer/vk/renderdoc_capture.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/vk/gpu_profiler.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/vk/renderdoc_capture.cpp)
-set(_fuse_wp06_renderdoc_dir "${CMAKE_SOURCE_DIR}/Engine/lib/renderdoc")
+set(_fuse_wp06_renderdoc_dir "${FUSE_VENDOR_DIR}/renderdoc")
 
 function(_fuse_wp06_profiling_library name)
     add_library(${name} STATIC ${_fuse_wp06_sources})

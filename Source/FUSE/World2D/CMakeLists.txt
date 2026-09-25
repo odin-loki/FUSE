@@ -30,7 +30,6 @@ if(FUSE_BUILD_PROJECT)
 else()
     message(STATUS "FUSE: FUSE_BUILD_PROJECT=OFF — fuse_world2d built without .fuselevel loading (no fuse_scene)")
 endif()
-target_compile_features(fuse_world2d PUBLIC cxx_std_17)
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)

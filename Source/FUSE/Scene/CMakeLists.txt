@@ -36,7 +36,6 @@ target_include_directories(fuse_scene
 )
 
 target_link_libraries(fuse_scene PUBLIC fuse_core fuse_ecs fuse_project)
-target_compile_features(fuse_scene PUBLIC cxx_std_17)
 
 # Single-source "svo_ray_cast" kernel (docs/compute-kernels.md): CUDA trampoline when the toolkit is found.
 if(FUSE_CUDA_BACKEND)

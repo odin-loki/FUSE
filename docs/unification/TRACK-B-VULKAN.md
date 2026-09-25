@@ -65,7 +65,7 @@ into its own offscreen target (never the raster framebuffer it samples).
 ## Build flag — `FUSE_BUILD_VULKAN`
 
 ```bash
-cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_VULKAN=ON
+cmake -B build -DFUSE_BUILD_VULKAN=ON
 ```
 
 | Condition | Behaviour |
@@ -176,7 +176,7 @@ ResizePending → (waitAllInFlightFences) → recreateSwapchain → Idle
 
 ```bash
 # Optional local GLFW window bootstrap (not used in CI):
-cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_VULKAN=ON -DFUSE_PLATFORM_WINDOW_GLFW=ON
+cmake -B build -DFUSE_BUILD_VULKAN=ON -DFUSE_PLATFORM_WINDOW_GLFW=ON
 ```
 
 Android CI keeps `FUSE_BUILD_VULKAN=OFF` — `VulkanPresentable` and `HybridRendererBootstrap` Vulkan sources are not compiled into `fuse_hybrid`.
@@ -312,7 +312,7 @@ spirv-val Source/FUSE/Renderer/shaders/fixtures/minimal.vert.spv
 Optional runtime glslang (off by default):
 
 ```bash
-cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_VULKAN=ON -DFUSE_SHADER_GLSLANG=ON
+cmake -B build -DFUSE_BUILD_VULKAN=ON -DFUSE_SHADER_GLSLANG=ON
 ```
 
 When `FUSE_SHADER_GLSLANG=ON` but glslang is missing, configure continues with offline SPIR-V only.
@@ -819,7 +819,7 @@ spirv-val Source/FUSE/Renderer/shaders/fixtures/composite.frag.spv
 > **Note:** Umbrella GitHub Actions may be paused on `main` — do **not** re-enable CI as part of Track B landings. Validation is local/`ctest` with Lavapipe or stub backend.
 
 1. **Linux umbrella (when CI runs)** — `FUSE_BUILD_VULKAN=ON`, Mesa Lavapipe for headless ICD; Khronos validation layers used when installed, otherwise stub message (non-fatal). Swapchain stays **headless** (no `VkSurfaceKHR`); frame ring exercises real fences/semaphores. `fuse_hybrid_vulkan_presentable` exercises null-window + External-surface wiring only — no GPU window on runner.
-2. **Local / agent validation** — `cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_VULKAN=ON -DFUSE_BUILD_T3D=OFF -DFUSE_BUILD_T2D=OFF` then `ctest -R 'fuse_vulkan|fuse_hybrid_renderer|fuse_hybrid_vulkan_presentable|fuse_rhi_present_path_stub|fuse_render_command'`.
+2. **Local / agent validation** — `cmake -B build -DFUSE_BUILD_VULKAN=ON` then `ctest -R 'fuse_vulkan|fuse_hybrid_renderer|fuse_hybrid_vulkan_presentable|fuse_rhi_present_path_stub|fuse_render_command'`.
 3. **Android NDK** — `FUSE_BUILD_VULKAN=OFF`; `fuse_core` + `fuse_hybrid` unchanged.
 4. **iOS stub workflow** — unchanged; Vulkan deferred.
 5. **CUDA** — umbrella Linux enables `FUSE_BUILD_CUDA=ON`; no NVIDIA toolkit required. `fuse_cuda_jobs`, `fuse_cuda_interop`, and `fuse_ray_march_stub` exercise stub paths.
@@ -837,7 +837,7 @@ No GPU window on runner is OK: stub backend keeps configure/build green; when La
 ### Build flag — `FUSE_BUILD_CUDA`
 
 ```bash
-cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_CUDA=ON
+cmake -B build -DFUSE_BUILD_CUDA=ON
 # With CUDA toolkit + GPU: defines FUSE_HAS_CUDA=1
 # Without toolkit (CI default): stub path — configure succeeds, APIs no-op gracefully
 ```

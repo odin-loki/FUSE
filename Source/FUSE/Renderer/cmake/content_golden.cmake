@@ -18,7 +18,7 @@ if(NOT FUSE_BUILD_CORE_TESTS OR NOT TARGET fuse_rp_harness)
 endif()
 
 set(_fuse_cg_dir "${CMAKE_SOURCE_DIR}/Samples/content_golden")
-set(_fuse_cg_flip "${CMAKE_SOURCE_DIR}/Engine/lib/nvidia-flip")
+set(_fuse_cg_flip "${FUSE_VENDOR_DIR}/nvidia-flip")
 
 add_library(fuse_content_golden_lib STATIC
     ${_fuse_cg_dir}/flip_metric.hpp
@@ -30,7 +30,7 @@ target_include_directories(fuse_content_golden_lib PUBLIC "${_fuse_cg_dir}")
 # SYSTEM: FLIP.h is third-party code and is not held to FUSE's warning flags.
 target_include_directories(fuse_content_golden_lib SYSTEM PRIVATE "${_fuse_cg_flip}")
 target_link_libraries(fuse_content_golden_lib PUBLIC fuse_rp_harness)
-target_compile_features(fuse_content_golden_lib PUBLIC cxx_std_17)
+fuse_apply_cxx23(fuse_content_golden_lib)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     # FLIP's separable convolutions are ~20x slower unoptimised; keep Debug trees fast. No FMA
     # contraction, so the metric is identical across -march settings.

@@ -42,11 +42,10 @@ target_include_directories(fuse_net
 )
 
 target_link_libraries(fuse_net PUBLIC fuse_ecs fuse_core)
-target_compile_features(fuse_net PUBLIC cxx_std_17)
 
 # ENet backend — vendored ENet 1.3.7 (MIT) under Engine/lib/enet (target fuse_enet).
 option(FUSE_NET_WITH_ENET "Build the ENet UDP transport backend for fuse_net" ON)
-set(_fuse_enet_dir "${CMAKE_SOURCE_DIR}/Engine/lib/enet")
+set(_fuse_enet_dir "${FUSE_VENDOR_DIR}/enet")
 set(FUSE_NET_HAS_ENET OFF)
 if(FUSE_NET_WITH_ENET AND EXISTS "${_fuse_enet_dir}/include/enet/enet.h")
     if(NOT TARGET fuse_enet)

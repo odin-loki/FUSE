@@ -70,7 +70,7 @@ foreach(_entry IN LISTS FUSE_PACKAGE_THIRD_PARTY)
     string(REPLACE "=" ";" _kv "${_entry}")
     list(GET _kv 0 _name)
     list(GET _kv 1 _file)
-    install(FILES "${CMAKE_SOURCE_DIR}/Engine/lib/${_file}" DESTINATION "${_fuse_doc}/third_party/${_name}"
+    install(FILES "${FUSE_VENDOR_DIR}/${_file}" DESTINATION "${_fuse_doc}/third_party/${_name}"
         COMPONENT ${FUSE_PACKAGE_COMPONENT})
 endforeach()
 

@@ -36,7 +36,6 @@ target_include_directories(fuse_vfx
 )
 
 target_link_libraries(fuse_vfx PUBLIC fuse_core)
-target_compile_features(fuse_vfx PUBLIC cxx_std_17)
 
 if(FUSE_CUDA_BACKEND)
     target_link_libraries(fuse_vfx PUBLIC CUDA::cudart)

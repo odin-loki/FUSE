@@ -1,6 +1,6 @@
 # Building FUSE
 
-Root `CMakeLists.txt` is the **umbrella**. Default configure is `FUSE_UMBRELLA=ON` unless you force a legacy-only application name.
+Root `CMakeLists.txt` configures the FUSE product graph: `fuse_core`, modules, Vulkan/CUDA, and native world/scene APIs under `Source/FUSE/`. Vendored deps live in `third_party/vendor/`. See [repository-layout.md](repository-layout.md).
 
 ## Prerequisites
 
@@ -18,7 +18,6 @@ git submodule update --init --recursive
 
 | Option | Default | Target |
 |--------|---------|--------|
-| `FUSE_UMBRELLA` | ON | Product graph (`fuse_core` and modules) |
 | `FUSE_BUILD_CORE` | ON | `fuse_core` |
 | `FUSE_BUILD_CORE_TESTS` | ON | `fuse_core_*` CTest binaries |
 | `FUSE_BUILD_SMOKE` | ON | `fuse_runtime_smoke` |
@@ -33,30 +32,20 @@ git submodule update --init --recursive
 | `FUSE_BUILD_EDITOR` | OFF | Qt 6 `fuse_editor` (desktop only) |
 | `FUSE_BUILD_VULKAN` | ON | `fuse_rhi` (stub if the loader is missing) |
 | `FUSE_BUILD_CUDA` | OFF | CUDA job lane / `fuse_compute` |
-| `FUSE_BUILD_LEGACY` | ON | Quarantine static libs used by smoke |
-| `FUSE_BUILD_T3D` | ON | Optional legacy 3D application target |
-| `FUSE_BUILD_T2D` | ON | Optional legacy 2D application target |
 | `FUSE_JOBS_SINGLE_THREAD` | OFF | Inline jobs on the caller thread |
-| `FUSE_SANITIZE` | "" | `address,undefined`: ASan+UBSan on every FUSE target and test (`fuse-asan` preset) |
+| `FUSE_SANITIZE` | "" | `address,undefined`: ASan+UBSan on FUSE targets (`fuse-asan` preset) |
 | `FUSE_SMOKE_ENABLE_ASAN` | OFF | AddressSanitizer on smoke (legacy; superseded by `FUSE_SANITIZE`) |
 | `FUSE_CORE_ENABLE_TSAN` | OFF | ThreadSanitizer on `fuse_core` tests |
 
-For product development, turn the optional legacy application targets **off**:
-
-```bash
--DFUSE_BUILD_T3D=OFF -DFUSE_BUILD_T2D=OFF
-```
+The full Torque3D/Torque2D **application** targets (`Engine/` exe, upstream `third_party/Torque2D`) are not part of this graph. World conversion and module bridges use native `fuse::world2d` / `fuse::scene` APIs.
 
 ## Desktop (Linux example)
 
 ```bash
 cmake -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
-  -DFUSE_BUILD_CORE_TESTS=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_CORE_TESTS=ON
 
 cmake --build build
 ctest --test-dir build --output-on-failure
@@ -74,11 +63,9 @@ Smoke and hybrid demo:
 Visual Studio generator:
 
 ```powershell
-cmake -B build -DFUSE_UMBRELLA=ON `
+cmake -B build `
   -DFUSE_BUILD_CORE=ON `
-  -DFUSE_BUILD_CORE_TESTS=ON `
-  -DFUSE_BUILD_T3D=OFF `
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_CORE_TESTS=ON
 
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
@@ -88,170 +75,32 @@ Ninja + MSVC from a developer prompt is the same as the Linux command set.
 
 ### Windows x64 from Linux (MinGW-w64 cross + Wine)
 
-The FUSE libraries that need no Vulkan/Qt/CUDA cross-compile for `x86_64-w64-mingw32` and their
-tests run headlessly under Wine (CI: `.github/workflows/fuse-windows-cross.yml`):
+See `CMakePresets.json` presets `fuse-mingw-*`.
+
+## Presets
 
 ```bash
-sudo apt-get install g++-mingw-w64-x86-64-posix mingw-w64-tools wine64
-cmake --preset fuse-mingw-release          # also: fuse-mingw-debug / -profile / -shipping
-cmake --build build/fuse-mingw-release
-ctest --test-dir build/fuse-mingw-release --output-on-failure
+cmake --preset fuse-debug
+cmake --build --preset fuse-debug
+ctest --test-dir build/fuse-debug --output-on-failure
 ```
 
-`cmake/toolchains/mingw-w64-x86_64.cmake` sets `CMAKE_CROSSCOMPILING_EMULATOR` to
-`cmake/toolchains/fuse-wine-run.sh`, which keeps a Wine prefix in the build tree (null graphics
-driver, no JIT debugger, `WINEDEBUG=-all`) and marks the run `FUSE_INSTRUMENTED_RUN=wine`, so
-wall-clock budgets are reported but not enforced. Executables link libgcc/libstdc++/winpthread
-statically and run on Windows as-is. The presets build without DWARF (static test executables with
-`-g` need ~9 GB); drop the `CMAKE_*_FLAGS_*` overrides for a debuggable build. MSVC is not covered
-by this path.
+| Preset | Use |
+|--------|-----|
+| `fuse-debug` | Daily development |
+| `fuse-release` | Optimized product build |
+| `fuse-asan` | Sanitizer sweep |
+| `fuse-shipping` | Game runtime without editor |
+| `fuse-track-b-unlock` | Local production-present defaults (still locked in CI) |
+| `fuse-editor-debug` | Qt editor shell |
 
-## Editor (Qt 6)
-
-Desktop only. Ignored on mobile toolchains.
+## CUDA (optional)
 
 ```bash
-cmake -B build-editor -G Ninja \
+cmake -B build-cuda -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DFUSE_UMBRELLA=ON \
-  -DFUSE_BUILD_EDITOR_API=ON \
-  -DFUSE_BUILD_EDITOR=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
-
-cmake --build build-editor --target fuse_editor
+  -DFUSE_BUILD_CUDA=ON \
+  -DFUSE_BUILD_VULKAN=ON
 ```
 
-Point CMake at Qt with `CMAKE_PREFIX_PATH` or `Qt6_DIR` if `find_package(Qt6)` fails. Details: [editor.md](editor.md).
-
-## Sanitizers
-
-ASan + UBSan on every FUSE library, test, demo and tool (the CI `fuse-smoke-asan` job):
-
-```bash
-cmake --preset fuse-asan          # FUSE_SANITIZE=address,undefined, build/fuse-asan
-cmake --build build/fuse-asan
-ctest --test-dir build/fuse-asan -j2 --output-on-failure
-```
-
-`cmake/FuseSanitizers.cmake` (`fuse_sanitize_finalize`) instruments every target under
-`Source/FUSE` and `Tools/FUSE`; vendored `Engine/lib` code (openal-soft, assimp, bullet,
-ENet, Lua) is linked but not instrumented. UBSan is non-recoverable, so any finding fails the
-test. Each test gets `ASAN_/LSAN_/UBSAN_OPTIONS` pointing at `cmake/sanitizers/*.supp`
-(third-party-only suppressions) and `VK_ICD_FILENAMES` pinned to Lavapipe. Tests that cannot
-run under sanitizers include `<fuse/core/sanitizer.hpp>` and skip on `FUSE_SANITIZER_BUILD`.
-
-AddressSanitizer on smoke only (legacy switch):
-
-```bash
-cmake -B build-asan -G Ninja \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DFUSE_UMBRELLA=ON \
-  -DFUSE_BUILD_SMOKE=ON \
-  -DFUSE_SMOKE_ENABLE_ASAN=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
-```
-
-ThreadSanitizer on core tests (Linux nightly CI uses this):
-
-```bash
-cmake -B build-tsan -G Ninja \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DFUSE_UMBRELLA=ON \
-  -DFUSE_BUILD_CORE=ON \
-  -DFUSE_BUILD_CORE_TESTS=ON \
-  -DFUSE_CORE_ENABLE_TSAN=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
-
-cmake --build build-tsan --target fuse_core_tests
-ctest --test-dir build-tsan -R '^fuse_core_' --output-on-failure
-```
-
-## Single-thread jobs
-
-Use for replay, golden tests, and bisect. `computeWorkerCount()` returns `0`; `submit()` and `parallel_for` run on the caller.
-
-```bash
-cmake -B build-st -G Ninja \
-  -DFUSE_UMBRELLA=ON \
-  -DFUSE_BUILD_CORE=ON \
-  -DFUSE_BUILD_CORE_TESTS=ON \
-  -DFUSE_JOBS_SINGLE_THREAD=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
-```
-
-Behaviour must match the parallel scheduler modulo timing.
-
-## Platforms
-
-`cmake/FusePlatforms.cmake` sets `FUSE_PLATFORM_*` from the toolchain:
-
-| Cache option | When |
-|--------------|------|
-| `FUSE_PLATFORM_WINDOWS` | Win32 desktop |
-| `FUSE_PLATFORM_LINUX` | Linux desktop |
-| `FUSE_PLATFORM_MACOS` | macOS desktop |
-| `FUSE_PLATFORM_IOS` | iOS / simulator |
-| `FUSE_PLATFORM_ANDROID` | Android NDK |
-
-These drive `FUSE_PLATFORM_MOBILE`, fiber stack defaults, and worker profiles. Gameplay code should not `#ifdef` on them; platform differences live in `fuse::platform`.
-
-### Android (`fuse_core`)
-
-```bash
-export ANDROID_NDK_HOME=/path/to/ndk
-cmake -B build-android -G Ninja \
-  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-  -DANDROID_ABI=arm64-v8a \
-  -DANDROID_PLATFORM=android-24 \
-  -DFUSE_UMBRELLA=ON \
-  -DFUSE_BUILD_CORE=ON \
-  -DFUSE_BUILD_CORE_TESTS=OFF \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
-
-cmake --build build-android --target fuse_core
-```
-
-### iOS simulator (`fuse_core`)
-
-Requires macOS and Xcode.
-
-```bash
-cmake -B build-ios -G Xcode \
-  -DCMAKE_SYSTEM_NAME=iOS \
-  -DCMAKE_OSX_SYSROOT=iphonesimulator \
-  -DCMAKE_OSX_ARCHITECTURES=arm64 \
-  -DFUSE_UMBRELLA=ON \
-  -DFUSE_BUILD_CORE=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
-
-cmake --build build-ios --target fuse_core
-```
-
-Emscripten is a separate future profile (`FUSE_PLATFORM_EMSCRIPTEN`). It does not gate desktop or mobile native work. When it lands, jobs default to `FUSE_JOBS_SINGLE_THREAD`.
-
-## Packaging
-
-CPack builds the `fuse` package (vendor/product **FUSE**): `fuse_editor` (when Qt 6 is configured), `fuse_cook`, `fuse_convert`, `fuse_import`, the FUSE app icon (hicolor 16/32/48/256 px + SVG), the `fuse.desktop` entry and the licences of the vendored dependencies.
-
-```bash
-cmake --build build
-cd build && cpack            # Linux: TGZ + DEB; Windows: NSIS + ZIP (fuse.ico); macOS: TGZ
-ctest -R "fuse_package_gate|fuse_branding_icons_regen|fuse_lint_a_branding_ci_docs"
-```
-
-The icon lives in `Source/FUSE/Branding/` and is generated by `gen_fuse_icons.py` (no third-party tools); `fuse_branding_icons_regen` fails if the committed SVG/PNG/ICO drift from the generator.
-
-## Directory map
-
-```
-CMakeLists.txt                 Umbrella entry
-cmake/FusePlatforms.cmake      FUSE_PLATFORM_* detection
-Source/FUSE/                   Product libraries and apps
-Tools/FUSE/                    CLI utilities
-```
+On Windows use MSVC + `vcvars64` and set `CMAKE_CUDA_ARCHITECTURES=86` for RTX 30xx.

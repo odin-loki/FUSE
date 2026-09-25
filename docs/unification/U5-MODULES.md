@@ -197,16 +197,12 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 
 ```bash
 cmake -B build-fuse -G Ninja \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
   -DFUSE_BUILD_CORE_TESTS=ON \
   -DFUSE_BUILD_MODULES=ON \
   -DFUSE_BUILD_EDITOR_API=ON \
-  -DFUSE_BUILD_LEGACY=ON \
   -DFUSE_BUILD_SMOKE=ON \
-  -DFUSE_BUILD_HYBRID_DEMO=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_HYBRID_DEMO=ON
 
 cmake --build build-fuse
 ctest --test-dir build-fuse -R "fuse_ai_tests|fuse_cinematics_tests|fuse_fx_tests|fuse_mechanics_toggle|fuse_mechanics_console_method|fuse_mechanics_polyhedron_trigger|fuse_mechanics_physics_trigger_bridge|fuse_mechanics_delay_rotate|fuse_adventure_door_hud|fuse_adventure_weapon_conversation|fuse_adventure_outpost_loader|fuse_hybrid_module_gates" --output-on-failure

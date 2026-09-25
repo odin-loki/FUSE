@@ -156,6 +156,7 @@ build-p5
 build-track-a
 build-vk
 /build-*/
+/build-verify/
 eggs
 parts
 bin

@@ -4,15 +4,12 @@
 **Status:** Initial umbrella CMake + `fuse_core` stub  
 **Architecture:** [architecture-parallel.md](./architecture-parallel.md) (platform + worker policy)
 
-The root `CMakeLists.txt` is the **FUSE umbrella** entry point. It can build:
+The root `CMakeLists.txt` configures the **FUSE product graph** (`fuse_core`, modules, Vulkan/CUDA). The full upstream Torque3D/Torque2D application targets are not part of this graph.
 
 | Option | Default | Target |
 |--------|---------|--------|
 | `FUSE_BUILD_CORE` | ON | `fuse_core` static library + optional `fuse_core_tests` |
-| `FUSE_BUILD_T3D` | ON | Legacy Torque3D app (`TORQUE_APP_NAME`, default `Torque3D`) |
-| `FUSE_BUILD_T2D` | ON | Torque2D engine via `fuse_torque2d` external project (if submodule present) |
 | `FUSE_BUILD_CORE_TESTS` | ON | CTest targets `fuse_core_worker_count`, `fuse_core_jobs` |
-| `FUSE_BUILD_LEGACY` | ON | `fuse_t3d_legacy`, `fuse_t2d_legacy` quarantine static libs |
 | `FUSE_BUILD_SMOKE` | ON | `fuse_runtime_smoke` one-process test binary |
 | `FUSE_BUILD_HYBRID_DEMO` | ON | `demo_hybrid_hud` U4 hybrid frame demo (software renderer) |
 | `FUSE_BUILD_MODULES` | ON | L3 feature modules (`fuse_cinematics`, …) |
@@ -20,14 +17,7 @@ The root `CMakeLists.txt` is the **FUSE umbrella** entry point. It can build:
 | `FUSE_SMOKE_ENABLE_ASAN` | OFF | AddressSanitizer for smoke target |
 | `FUSE_CORE_ENABLE_TSAN` | OFF | ThreadSanitizer for `fuse_core` and `fuse_core_*` tests |
 
-Legacy Torque3D-only workflow is **unchanged**:
-
-```bash
-cmake -B build -DTORQUE_APP_NAME=Torque3D
-cmake --build build
-```
-
-When `TORQUE_APP_NAME` is set and `FUSE_UMBRELLA` is not forced ON, the root CMake delegates to `cmake/LegacyTorque3D.cmake` (same behaviour as pre-U1).
+See [../building.md](../building.md) for the full option list.
 
 ---
 
@@ -53,13 +43,9 @@ Full T3D/T2D builds need the dependencies documented in upstream Torque READMEs 
 ```bash
 cmake -B build -G Ninja \
   -DCMAKE_CXX_COMPILER=g++-13 \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
   -DFUSE_BUILD_CORE_TESTS=ON \
-  -DFUSE_BUILD_LEGACY=ON \
-  -DFUSE_BUILD_SMOKE=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_SMOKE=ON
 
 cmake --build build
 ctest --test-dir build --output-on-failure
@@ -74,11 +60,8 @@ See [U2-SMOKE.md](./U2-SMOKE.md) for quarantine strategy and blockers. U4 hybrid
 ```bash
 cmake -B build -G Ninja \
   -DCMAKE_CXX_COMPILER=g++-13 \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
-  -DFUSE_BUILD_CORE_TESTS=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_CORE_TESTS=ON
 
 cmake --build build
 ctest --test-dir build --output-on-failure
@@ -94,32 +77,14 @@ Local repro:
 cmake -B build-tsan -G Ninja \
   -DCMAKE_CXX_COMPILER=g++-13 \
   -DCMAKE_BUILD_TYPE=Debug \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
   -DFUSE_BUILD_CORE_TESTS=ON \
-  -DFUSE_CORE_ENABLE_TSAN=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_CORE_ENABLE_TSAN=ON
 
 cmake --build build-tsan --target fuse_core_tests fuse_core_job_tests fuse_core_fiber_tests \
   fuse_core_services_tests fuse_core_platform_hardening_tests fuse_core_io_handle_tests
 ctest --test-dir build-tsan -R '^fuse_core_' --output-on-failure
 ```
-
-### Full umbrella (T3D + T2D + fuse_core)
-
-```bash
-cmake -B build -G Ninja \
-  -DFUSE_UMBRELLA=ON \
-  -DTORQUE_APP_NAME=Torque3D \
-  -DFUSE_BUILD_CORE=ON \
-  -DFUSE_BUILD_T3D=ON \
-  -DFUSE_BUILD_T2D=ON
-
-cmake --build build
-```
-
-Torque2D is built in `${CMAKE_BINARY_DIR}/third_party/Torque2D` because its CMake assumes a top-level source tree. If `third_party/Torque2D` is empty, configure continues with a status message.
 
 ---
 
@@ -149,11 +114,8 @@ cmake -B build-android -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
   -DANDROID_ABI=arm64-v8a \
   -DANDROID_PLATFORM=android-24 \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
-  -DFUSE_BUILD_CORE_TESTS=OFF \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_CORE_TESTS=OFF
 
 cmake --build build-android --target fuse_core
 ```
@@ -171,10 +133,7 @@ cmake -B build-ios -G Xcode \
   -DCMAKE_SYSTEM_NAME=iOS \
   -DCMAKE_OSX_SYSROOT=iphonesimulator \
   -DCMAKE_OSX_ARCHITECTURES=arm64 \
-  -DFUSE_UMBRELLA=ON \
-  -DFUSE_BUILD_CORE=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_CORE=ON
 
 cmake --build build-ios --target fuse_core
 ```
@@ -207,12 +166,9 @@ Desktop CI runs the default multi-thread profile. A dedicated Linux job builds w
 
 ```bash
 cmake -B build-st -G Ninja \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
   -DFUSE_BUILD_CORE_TESTS=ON \
-  -DFUSE_JOBS_SINGLE_THREAD=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_JOBS_SINGLE_THREAD=ON
 
 cmake --build build-st
 ctest --test-dir build-st --output-on-failure \
@@ -237,11 +193,8 @@ When targeting Emscripten, `FUSE_JOBS_SINGLE_THREAD` defaults to `ON` in `Source
 ```bash
 # Future web profile (requires Emscripten SDK; CI may omit initially)
 emcmake cmake -B build-wasm -G Ninja \
-  -DFUSE_UMBRELLA=ON \
   -DFUSE_BUILD_CORE=ON \
-  -DFUSE_BUILD_CORE_TESTS=ON \
-  -DFUSE_BUILD_T3D=OFF \
-  -DFUSE_BUILD_T2D=OFF
+  -DFUSE_BUILD_CORE_TESTS=ON
 
 cmake --build build-wasm
 ctest --test-dir build-wasm --output-on-failure -R fuse_core_jobs
@@ -268,11 +221,9 @@ U2 (`fuse_t3d_legacy` / `fuse_t2d_legacy`) will consume the JSON plans to apply 
 ## Directory map (U1)
 
 ```
-CMakeLists.txt              # FUSE umbrella entry
+CMakeLists.txt              # FUSE product graph entry
 cmake/
-  LegacyTorque3D.cmake      # Preserved T3D root logic
   FusePlatforms.cmake       # FUSE_PLATFORM_* detection
-  FuseTorque2D.cmake        # ExternalProject wrapper for T2D
-Source/FUSE/Core/           # fuse_core library + tests
+Source/FUSE/Core/           # fuse_core library + B7.10 integration registry (fuse_b7)
 Tools/FUSE/prefix_legacy_symbols.py
 ```

@@ -4,7 +4,7 @@
 #
 #   cmake -S . -B build/mingw -G Ninja \
 #     -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/mingw-w64-i686.cmake \
-#     -DFUSE_BUILD_T3D=OFF -DFUSE_BUILD_T2D=OFF -DFUSE_BUILD_VULKAN=OFF
+#     -DFUSE_BUILD_VULKAN=OFF
 #
 # Tests run through Wine when it is installed (CMAKE_CROSSCOMPILING_EMULATOR), so plain `ctest`
 # executes the Windows binaries headlessly. Debian/Ubuntu packages:

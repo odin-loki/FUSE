@@ -11,4 +11,3 @@ add_library(fuse_relight_options STATIC
 )
 target_include_directories(fuse_relight_options PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(fuse_relight_options PUBLIC fuse_core)
-target_compile_features(fuse_relight_options PUBLIC cxx_std_17)

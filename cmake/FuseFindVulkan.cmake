@@ -7,7 +7,7 @@ if(TARGET Vulkan::Vulkan)
     return()
 endif()
 
-set(_fuse_vk_inc "${CMAKE_SOURCE_DIR}/Engine/lib/sdl/src/video/khronos")
+set(_fuse_vk_inc "${FUSE_VENDOR_DIR}/sdl/src/video/khronos")
 if(NOT WIN32 OR NOT EXISTS "${_fuse_vk_inc}/vulkan/vulkan.h")
     return()
 endif()

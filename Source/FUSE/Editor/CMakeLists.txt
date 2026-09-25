@@ -167,7 +167,7 @@ if(FUSE_BUILD_EDITOR)
             fuse_apply_cxx23(fuse_editor_qt)
 
             # Editor UI font (Open Sans, Apache-2.0, vendored in Engine/lib/fonts/opensans) as a Qt resource.
-            set(_fuse_editor_font "${CMAKE_SOURCE_DIR}/Engine/lib/fonts/opensans/OpenSans.ttf")
+            set(_fuse_editor_font "${FUSE_VENDOR_DIR}/fonts/opensans/OpenSans.ttf")
             set_source_files_properties("${_fuse_editor_font}" PROPERTIES QT_RESOURCE_ALIAS "OpenSans.ttf")
             qt_add_resources(fuse_editor_qt fuse_editor_fonts
                 PREFIX "/fuse/editor/fonts"

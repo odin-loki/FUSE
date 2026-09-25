@@ -17,7 +17,7 @@ option(FUSE_ENABLE_NVIDIA_PLUGIN
 set(FUSE_NVIDIA_DLSS_SDK_DIR "" CACHE PATH
     "Linux only: root of the developer's NVIDIA DLSS SDK checkout (include/, lib/Linux_x86_64/) for fuse_nvplugin_ngx")
 
-set(FUSE_STREAMLINE_DIR "${CMAKE_SOURCE_DIR}/Engine/lib/streamline")
+set(FUSE_STREAMLINE_DIR "${FUSE_VENDOR_DIR}/streamline")
 set(FUSE_NVIDIA_PLUGIN_OUT "${CMAKE_BINARY_DIR}/fuse_nvidia_plugin")
 
 # The provider C ABI alone (header-only; what providers and mocks compile against — no fuse_core).

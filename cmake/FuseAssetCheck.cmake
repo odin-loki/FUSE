@@ -9,9 +9,8 @@
 add_executable(fuse_assetcheck "${CMAKE_SOURCE_DIR}/Tools/FUSE/AssetCheck/fuse_assetcheck.cpp")
 set_target_properties(fuse_assetcheck PROPERTIES CXX_STANDARD 23 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 # stb_image (public domain / MIT) decodes PNG / TGA / JPEG sources; without it only raw TGA is read.
-set(_fuse_assetcheck_stb "${CMAKE_SOURCE_DIR}/Engine/source/gfx/bitmap/loaders/stb")
-if(EXISTS "${_fuse_assetcheck_stb}/stb_image.h")
-    target_include_directories(fuse_assetcheck SYSTEM PRIVATE "${_fuse_assetcheck_stb}")
+if(EXISTS "${FUSE_STB_DIR}/stb_image.h")
+    target_include_directories(fuse_assetcheck SYSTEM PRIVATE "${FUSE_STB_DIR}")
     target_compile_definitions(fuse_assetcheck PRIVATE FUSE_ASSETCHECK_HAS_STB=1)
 endif()
 target_compile_options(fuse_assetcheck PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-O2>)

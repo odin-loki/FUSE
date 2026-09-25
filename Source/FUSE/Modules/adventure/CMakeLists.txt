@@ -60,7 +60,6 @@ target_include_directories(fuse_adventure
 )
 
 target_link_libraries(fuse_adventure PUBLIC fuse_core fuse_mechanics fuse_world3d fuse_animation)
-target_compile_features(fuse_adventure PUBLIC cxx_std_17)
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)

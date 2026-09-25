@@ -22,9 +22,9 @@ set(FUSE_ECS_PUBLIC_HEADERS
     include/fuse/ecs/component_types.hpp
     include/fuse/ecs/registry_serialiser.hpp
     include/fuse/ecs/sdf_csg.hpp
-    ../Spatial/include/fuse/spatial/aabb.hpp
-    ../Spatial/include/fuse/spatial/frustum.hpp
-    ../Spatial/include/fuse/spatial/bvh.hpp
+    Spatial/include/fuse/spatial/aabb.hpp
+    Spatial/include/fuse/spatial/frustum.hpp
+    Spatial/include/fuse/spatial/bvh.hpp
 )
 
 set(FUSE_ECS_SOURCES
@@ -40,8 +40,8 @@ set(FUSE_ECS_SOURCES
     src/component_types.cpp
     src/registry_serialiser.cpp
     src/sdf_csg.cpp
-    ../Spatial/src/bvh.cpp
-    ../Spatial/src/frustum.cpp
+    Spatial/src/bvh.cpp
+    Spatial/src/frustum.cpp
 )
 
 add_library(fuse_ecs STATIC
@@ -54,12 +54,11 @@ add_library(fuse::ecs ALIAS fuse_ecs)
 target_include_directories(fuse_ecs
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../Spatial/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/Spatial/include>
         $<INSTALL_INTERFACE:include>
 )
 
 target_link_libraries(fuse_ecs PUBLIC fuse_core)
-target_compile_features(fuse_ecs PUBLIC cxx_std_17)
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)

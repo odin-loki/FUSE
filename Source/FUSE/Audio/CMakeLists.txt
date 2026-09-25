@@ -47,7 +47,6 @@ target_include_directories(fuse_audio
 )
 
 target_link_libraries(fuse_audio PUBLIC fuse_core)
-target_compile_features(fuse_audio PUBLIC cxx_std_17)
 
 # Single-source "reverb_fft" / "reverb_cmac" kernels (docs/compute-kernels.md): CUDA device mirror when
 # the toolkit is found (CUDA::cudart and FUSE_HAS_CUDA come through fuse_core).
@@ -65,7 +64,7 @@ if(FUSE_AUDIO_ENABLE_OPENAL)
         set(FUSE_AUDIO_HAS_OPENAL ON)
         message(STATUS "FUSE: fuse_audio using system OpenAL")
     else()
-        set(_FUSE_OPENAL_SOFT_DIR "${CMAKE_SOURCE_DIR}/Engine/lib/openal-soft")
+        set(_FUSE_OPENAL_SOFT_DIR "${FUSE_VENDOR_DIR}/openal-soft")
         if(EXISTS "${_FUSE_OPENAL_SOFT_DIR}/include/AL/al.h")
             set(ALSOFT_UTILS OFF CACHE BOOL "" FORCE)
             set(ALSOFT_EXAMPLES OFF CACHE BOOL "" FORCE)

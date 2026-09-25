@@ -48,7 +48,7 @@ option(FUSE_SLANG_KEEP_LLVM "Keep libslang-llvm (host/CPU targets) when unpackin
 
 find_program(FUSE_SPIRV_VAL NAMES spirv-val)
 
-set(FUSE_SLANG_PIN_FILE "${CMAKE_CURRENT_LIST_DIR}/../Engine/lib/slang/VERSION")
+set(FUSE_SLANG_PIN_FILE "${FUSE_VENDOR_DIR}/slang/VERSION")
 get_filename_component(FUSE_SLANG_PIN_FILE "${FUSE_SLANG_PIN_FILE}" ABSOLUTE)
 
 # Code generation shared with the runtime compiler (ShaderCompiler::compileWithSlang mirrors it).

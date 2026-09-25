@@ -38,7 +38,6 @@ add_executable(fuse_physics_pbd_tests
 )
 
 target_link_libraries(fuse_physics_pbd_tests PRIVATE fuse_physics fuse_core)
-target_compile_features(fuse_physics_pbd_tests PRIVATE cxx_std_17)
 add_test(NAME fuse_physics_pbd_tests COMMAND fuse_physics_pbd_tests)
 
 add_executable(fuse_physics_barnes_hut_tests
@@ -46,7 +45,6 @@ add_executable(fuse_physics_barnes_hut_tests
 )
 
 target_link_libraries(fuse_physics_barnes_hut_tests PRIVATE fuse_physics fuse_core)
-target_compile_features(fuse_physics_barnes_hut_tests PRIVATE cxx_std_17)
 add_test(NAME fuse_physics_barnes_hut_tests COMMAND fuse_physics_barnes_hut_tests)
 
 add_executable(fuse_physics_ccd_tests
@@ -54,7 +52,6 @@ add_executable(fuse_physics_ccd_tests
 )
 
 target_link_libraries(fuse_physics_ccd_tests PRIVATE fuse_physics fuse_core)
-target_compile_features(fuse_physics_ccd_tests PRIVATE cxx_std_17)
 add_test(NAME fuse_physics_ccd_tests COMMAND fuse_physics_ccd_tests)
 
 # B4.7–B4.11
@@ -80,29 +77,24 @@ add_test(NAME fuse_phase4_deliverables COMMAND fuse_phase4_deliverables)
 
 add_executable(fuse_physics_phase4_integration test_physics_phase4_integration.cpp)
 target_link_libraries(fuse_physics_phase4_integration PRIVATE fuse_physics fuse_core)
-target_compile_features(fuse_physics_phase4_integration PRIVATE cxx_std_17)
 add_test(NAME fuse_physics_phase4_integration COMMAND fuse_physics_phase4_integration)
 
 # B4.11 gate rows
 add_executable(fuse_b4_broadphase_gates test_b4_broadphase_gates.cpp)
 target_link_libraries(fuse_b4_broadphase_gates PRIVATE fuse_physics fuse_core)
-target_compile_features(fuse_b4_broadphase_gates PRIVATE cxx_std_17)
 add_test(NAME fuse_b4_broadphase_gates COMMAND fuse_b4_broadphase_gates)
 
 add_executable(fuse_b4_solver_gates test_b4_solver_gates.cpp)
 target_link_libraries(fuse_b4_solver_gates PRIVATE fuse_physics fuse_core)
-target_compile_features(fuse_b4_solver_gates PRIVATE cxx_std_17)
 add_test(NAME fuse_b4_solver_gates COMMAND fuse_b4_solver_gates)
 
 add_executable(fuse_b4_ccd_gates test_b4_ccd_gates.cpp)
 target_link_libraries(fuse_b4_ccd_gates PRIVATE fuse_physics fuse_core)
-target_compile_features(fuse_b4_ccd_gates PRIVATE cxx_std_17)
 add_test(NAME fuse_b4_ccd_gates COMMAND fuse_b4_ccd_gates)
 set_tests_properties(fuse_b4_ccd_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate")
 
 add_executable(fuse_b4_cloth_gates test_b4_cloth_gates.cpp)
 target_link_libraries(fuse_b4_cloth_gates PRIVATE fuse_physics fuse_core)
-target_compile_features(fuse_b4_cloth_gates PRIVATE cxx_std_17)
 add_test(NAME fuse_b4_cloth_gates COMMAND fuse_b4_cloth_gates)
 set_tests_properties(fuse_b4_cloth_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate")
 
@@ -114,32 +106,27 @@ set_tests_properties(fuse_b4_narrowphase_gates PROPERTIES RUN_SERIAL TRUE LABELS
 
 add_executable(fuse_b4_manager_gates test_b4_manager_gates.cpp)
 target_link_libraries(fuse_b4_manager_gates PRIVATE fuse_physics fuse_core)
-target_compile_features(fuse_b4_manager_gates PRIVATE cxx_std_17)
 add_test(NAME fuse_b4_manager_gates COMMAND fuse_b4_manager_gates)
 set_tests_properties(fuse_b4_manager_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate")
 
 add_executable(fuse_b4_destruction_gates test_b4_destruction_gates.cpp)
 target_link_libraries(fuse_b4_destruction_gates PRIVATE fuse_physics fuse_core)
-target_compile_features(fuse_b4_destruction_gates PRIVATE cxx_std_17)
 add_test(NAME fuse_b4_destruction_gates COMMAND fuse_b4_destruction_gates)
 set_tests_properties(fuse_b4_destruction_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate")
 
 # Steady-state heap allocations per frame for physics-enabled worlds (pipeline + World2D/3D tick).
 add_executable(fuse_b4_pipeline_alloc_gate test_b4_pipeline_alloc_gate.cpp)
 target_link_libraries(fuse_b4_pipeline_alloc_gate PRIVATE fuse_world3d fuse_world2d fuse_physics fuse_core)
-target_compile_features(fuse_b4_pipeline_alloc_gate PRIVATE cxx_std_17)
 add_test(NAME fuse_b4_pipeline_alloc_gate COMMAND fuse_b4_pipeline_alloc_gate)
 set_tests_properties(fuse_b4_pipeline_alloc_gate PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate")
 
 add_executable(fuse_b4_rotation_gates test_b4_rotation_gates.cpp)
 target_link_libraries(fuse_b4_rotation_gates PRIVATE fuse_physics fuse_core)
-target_compile_features(fuse_b4_rotation_gates PRIVATE cxx_std_17)
 add_test(NAME fuse_b4_rotation_gates COMMAND fuse_b4_rotation_gates)
 set_tests_properties(fuse_b4_rotation_gates PROPERTIES LABELS "gate")
 
 add_executable(fuse_b4_joint_gates test_b4_joint_gates.cpp)
 target_link_libraries(fuse_b4_joint_gates PRIVATE fuse_physics fuse_core)
-target_compile_features(fuse_b4_joint_gates PRIVATE cxx_std_17)
 add_test(NAME fuse_b4_joint_gates COMMAND fuse_b4_joint_gates)
 set_tests_properties(fuse_b4_joint_gates PROPERTIES LABELS "gate")
 

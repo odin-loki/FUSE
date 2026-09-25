@@ -17,7 +17,7 @@
 # Tests: tests/ (rl_mod_usd_unit, rl_mod_capture_roundtrip, rl_mod_fixture_<name>_{usda,usdc},
 #        rl_mod_flatten_check_selftest, rl_mod_flatten_crosscheck).
 
-get_filename_component(FUSE_RELIGHT_TINYUSDZ_DIR "${CMAKE_CURRENT_LIST_DIR}/../../../../../Engine/lib/tinyusdz" ABSOLUTE)
+set(FUSE_RELIGHT_TINYUSDZ_DIR "${FUSE_VENDOR_DIR}/tinyusdz")
 
 # The vendored subset (Engine/lib/tinyusdz/VERSION lists every file). Only what USDA + USDC layer reading, the
 # value pretty-printer (values reach FUSE as USDA text) and the crate writer need.

@@ -8,16 +8,12 @@ function(fuse_shipping_force_options)
 
     get_property(_fuse_shipping_logged GLOBAL PROPERTY FUSE_SHIPPING_FORCE_LOGGED)
     if(NOT _fuse_shipping_logged)
-        message(STATUS "FUSE_SHIPPING=ON — forcing editor, T3D/T2D, and Qt present OFF")
+        message(STATUS "FUSE_SHIPPING=ON — forcing editor and Qt present OFF")
         set_property(GLOBAL PROPERTY FUSE_SHIPPING_FORCE_LOGGED TRUE)
     endif()
 
     set(FUSE_BUILD_EDITOR OFF CACHE BOOL
         "Build fuse_editor Qt 6 desktop shell (requires Qt6; desktop-only)" FORCE)
-    set(FUSE_BUILD_T3D OFF CACHE BOOL
-        "Build Torque3D application target(s)" FORCE)
-    set(FUSE_BUILD_T2D OFF CACHE BOOL
-        "Build Torque2D engine target (requires submodule)" FORCE)
     set(FUSE_ENABLE_QT_PRESENT OFF CACHE BOOL
         "Allow vkQueuePresentKHR when display+Qt Vulkan surface available (OFF for headless CI)" FORCE)
 

@@ -24,7 +24,9 @@ L1  Shared services    assets, audio, script, net, VFS, project
 L0  Core               types, handles, allocators, math, jobs, platform, log
 ```
 
-New product code lives under `Source/FUSE/` in namespace `fuse`.
+New product code lives under `Source/FUSE/` in namespace `fuse` (ISO C++23).
+
+Vendored libraries: `third_party/vendor/`. Torque3D heritage: `heritage/torque3d/` (not built by the product graph). Full tree: [repository-layout.md](repository-layout.md).
 
 ## Object identity
 

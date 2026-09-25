@@ -48,7 +48,6 @@ if(FUSE_BUILD_PROJECT)
     target_link_libraries(fuse_terrain PUBLIC fuse_scene)
     target_compile_definitions(fuse_terrain PUBLIC FUSE_TERRAIN_HAS_SVO=1)
 endif()
-target_compile_features(fuse_terrain PUBLIC cxx_std_17)
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)

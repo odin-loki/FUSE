@@ -23,11 +23,9 @@ jobs:
           cmake -B build-tsan -G Ninja \
             -DCMAKE_CXX_COMPILER=g++-13 \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DFUSE_UMBRELLA=ON \
             -DFUSE_BUILD_CORE=ON \
             -DFUSE_BUILD_CORE_TESTS=ON \
             -DFUSE_CORE_ENABLE_TSAN=ON \
-            -DFUSE_BUILD_LEGACY=OFF \
             -DFUSE_BUILD_SMOKE=OFF \
             -DFUSE_BUILD_HYBRID_DEMO=OFF \
             -DFUSE_BUILD_PROJECT=OFF \
@@ -38,10 +36,7 @@ jobs:
             -DFUSE_BUILD_AUDIO=OFF \
             -DFUSE_BUILD_SCRIPT=OFF \
             -DFUSE_BUILD_VULKAN=OFF \
-            -DFUSE_BUILD_CUDA=OFF \
-            -DFUSE_BUILD_T3D=OFF \
-            -DFUSE_BUILD_T2D=OFF
-
+            -DFUSE_BUILD_CUDA=OFF
       - name: Build fuse_core test targets
         run: |
           # Every executable/probe under Source/FUSE/Core/tests: ctest -R '^fuse_core_' below runs all of them.
