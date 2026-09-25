@@ -599,6 +599,11 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
         nativeCommandBuffer = reinterpret_cast<void*>(0x1);
     }
 
+    void* computeCommandBuffer = frames.isReady() ? frames.currentComputeCommandBuffer() : nullptr;
+    const bool routeCompute =
+        computeCommandBuffer != nullptr && computeCommandBuffer != reinterpret_cast<void*>(0x1);
+    std::vector<u32> deferredComputePasses;
+
     recorder.setVulkanEncodeContext(encodeContext);
     recorder.beginRecording(nativeCommandBuffer);
     if (recorder.vulkanEncodeActive()) {
@@ -606,17 +611,18 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
     }
 
     for (const RGBarrier& barrier : m_barriers) {
-        recorder.pipelineBarrier(barrier.texture.id,
-                                 static_cast<u32>(barrier.fromLayout),
-                                 static_cast<u32>(barrier.toLayout));
+        recorder.pipelineBarrier(barrier.texture.id, static_cast<u32>(barrier.fromLayout),
+                                 static_cast<u32>(barrier.toLayout), barrier.baseMip, barrier.levelCount,
+                                 barrier.baseLayer, barrier.layerCount, barrier.srcQueueFamily,
+                                 barrier.dstQueueFamily);
     }
 
     result.bufferBarrierCount = static_cast<u32>(m_bufferBarriers.size());
 
     for (const RGBufferBarrier& barrier : m_bufferBarriers) {
-        recorder.bufferBarrier(barrier.buffer.id,
-                               static_cast<u32>(barrier.fromAccess),
-                               static_cast<u32>(barrier.toAccess));
+        recorder.bufferBarrier(barrier.buffer.id, static_cast<u32>(barrier.fromAccess),
+                               static_cast<u32>(barrier.toAccess), barrier.srcQueueFamily,
+                               barrier.dstQueueFamily);
     }
 
     auto releaseTransientsAfterPass = [&](u32 passIndex) {
@@ -644,7 +650,9 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
         }
 
         if (pass.desc.isCompute) {
-            if (pass.desc.execute != nullptr) {
+            if (routeCompute) {
+                deferredComputePasses.push_back(passIndex);
+            } else if (pass.desc.execute != nullptr) {
                 pass.desc.execute(&recorder, pass.desc.userData);
             }
             ++result.computePassCount;
@@ -667,6 +675,23 @@ RenderGraphExecuteInfo RenderGraph::execute(VulkanDevice& device,
     }
     recorder.endRecording();
     result.recordedCommands = recorder.recordCount();
+
+    if (routeCompute && !deferredComputePasses.empty()) {
+        CommandBufferRecorder computeRecorder;
+        computeRecorder.setVulkanEncodeContext(encodeContext);
+        const bool began = computeRecorder.beginRecording(computeCommandBuffer);
+        for (const u32 passIndex : deferredComputePasses) {
+            const PassNode& pass = m_passes[passIndex];
+            if (pass.desc.execute != nullptr) {
+                pass.desc.execute(&computeRecorder, pass.desc.userData);
+            }
+        }
+        if (began) {
+            computeRecorder.endRecording();
+        }
+        result.computeQueueRecorded = computeRecorder.vulkanRecordingComplete();
+        result.recordedCommands += computeRecorder.recordCount();
+    }
     (void)device;
 
     const auto executeEnd = std::chrono::steady_clock::now();

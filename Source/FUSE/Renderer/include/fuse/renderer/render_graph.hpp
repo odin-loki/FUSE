@@ -59,12 +59,21 @@ struct RGBarrier {
     RGImageLayout toLayout = RGImageLayout::Undefined;
     RGResourceAccess fromAccess = RGResourceAccess::ShaderRead;
     RGResourceAccess toAccess = RGResourceAccess::ShaderRead;
+    u32 baseMip = 0;
+    u32 levelCount = 1;
+    u32 baseLayer = 0;
+    u32 layerCount = 1;
+    /// `0xFFFFFFFF` keeps `VK_QUEUE_FAMILY_IGNORED` (no ownership transfer).
+    u32 srcQueueFamily = 0xFFFFFFFFu;
+    u32 dstQueueFamily = 0xFFFFFFFFu;
 };
 
 struct RGBufferBarrier {
     RGBufferRef buffer;
     RGResourceAccess fromAccess = RGResourceAccess::ShaderRead;
     RGResourceAccess toAccess = RGResourceAccess::ShaderRead;
+    u32 srcQueueFamily = 0xFFFFFFFFu;
+    u32 dstQueueFamily = 0xFFFFFFFFu;
 };
 
 using RGPassExecuteFn = void (*)(void* commandBuffer, void* userData);
@@ -136,6 +145,8 @@ struct RenderGraphExecuteInfo {
     u32 transientsReleased = 0;
     u32 aliasGroups = 0;
     u32 executeDurationUs = 0;
+    /// True when compute passes were recorded into the frame-slot compute command buffer.
+    bool computeQueueRecorded = false;
 };
 
 /// Lightweight render graph — pass ordering, barrier planning, and stub command recording.

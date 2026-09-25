@@ -529,6 +529,8 @@ void testComputePassSkipsVulkanBeginEnd() {
 
     expectTrue(computeExecuteCount == 1u, "compute execute hook ran");
     expectTrue(info.computePassCount == 1u, "compute pass counted at execute");
+    expectTrue(!info.computeQueueRecorded,
+               "compute pass without an active encode context does not record the compute queue");
     expectTrue(info.executedPassCount == 1u, "compute pass counted as executed");
     expectTrue(recorder.vulkanRenderPassBeginCount() == 0u,
                "compute-only execute does not begin a Vulkan render pass");

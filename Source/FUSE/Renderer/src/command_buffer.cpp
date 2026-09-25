@@ -59,6 +59,9 @@ void CommandBufferRecorder::reset() {
     m_vulkanFillBufferCount = 0;
     m_vulkanUpdateBufferCount = 0;
     m_vulkanCopyBufferCount = 0;
+    m_vulkanDrawIndirectCount = 0;
+    m_vulkanDispatchIndirectCount = 0;
+    m_vulkanPushConstantCount = 0;
     m_records.clear();
 }
 
@@ -135,7 +138,9 @@ bool CommandBufferRecorder::shouldEncodeRasterPass(const char* passName) const {
     return std::strcmp(passName, "clear3d") == 0 || std::strcmp(passName, "sprites2d") == 0;
 }
 
-void CommandBufferRecorder::encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLayout) {
+void CommandBufferRecorder::encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLayout, u32 baseMip,
+                                                         u32 levelCount, u32 baseLayer, u32 layerCount,
+                                                         u32 srcQueueFamily, u32 dstQueueFamily) {
 #if defined(FUSE_VULKAN_BACKEND)
     if (!m_vulkanEncodeActive || m_encodeContext == nullptr ||
         !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
@@ -237,15 +242,15 @@ void CommandBufferRecorder::encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLa
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.oldLayout = toVkLayout(from);
     barrier.newLayout = toVkLayout(to);
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.srcQueueFamilyIndex = srcQueueFamily;
+    barrier.dstQueueFamilyIndex = dstQueueFamily;
     barrier.image = static_cast<VkImage>(barrierImage);
     barrier.subresourceRange.aspectMask =
         depthTransition ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.baseMipLevel = baseMip;
+    barrier.subresourceRange.levelCount = levelCount == 0u ? 1u : levelCount;
+    barrier.subresourceRange.baseArrayLayer = baseLayer;
+    barrier.subresourceRange.layerCount = layerCount == 0u ? 1u : layerCount;
     barrier.srcAccessMask = srcAccess;
     barrier.dstAccessMask = dstAccess;
 
@@ -255,6 +260,12 @@ void CommandBufferRecorder::encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLa
 #else
     (void)fromLayout;
     (void)toLayout;
+    (void)baseMip;
+    (void)levelCount;
+    (void)baseLayer;
+    (void)layerCount;
+    (void)srcQueueFamily;
+    (void)dstQueueFamily;
 #endif
 }
 
@@ -282,7 +293,8 @@ void CommandBufferRecorder::encodeFillBuffer(u32 value) {
 #endif
 }
 
-void CommandBufferRecorder::encodeVulkanBufferBarrier(u32 fromAccess, u32 toAccess) {
+void CommandBufferRecorder::encodeVulkanBufferBarrier(u32 fromAccess, u32 toAccess, u32 srcQueueFamily,
+                                                      u32 dstQueueFamily) {
 #if defined(FUSE_VULKAN_BACKEND)
     if (!m_vulkanEncodeActive || m_encodeContext == nullptr ||
         !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
@@ -331,8 +343,8 @@ void CommandBufferRecorder::encodeVulkanBufferBarrier(u32 fromAccess, u32 toAcce
     barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
     barrier.srcAccessMask = srcAccess;
     barrier.dstAccessMask = dstAccess;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.srcQueueFamilyIndex = srcQueueFamily;
+    barrier.dstQueueFamilyIndex = dstQueueFamily;
     barrier.buffer = static_cast<VkBuffer>(m_encodeContext->barrierBuffer);
     barrier.offset = 0;
     barrier.size = VK_WHOLE_SIZE;
@@ -343,6 +355,8 @@ void CommandBufferRecorder::encodeVulkanBufferBarrier(u32 fromAccess, u32 toAcce
 #else
     (void)fromAccess;
     (void)toAccess;
+    (void)srcQueueFamily;
+    (void)dstQueueFamily;
 #endif
 }
 
@@ -678,7 +692,9 @@ void CommandBufferRecorder::endPass() {
     m_activeRasterPass = false;
 }
 
-void CommandBufferRecorder::pipelineBarrier(u32 textureId, u32 fromLayout, u32 toLayout) {
+void CommandBufferRecorder::pipelineBarrier(u32 textureId, u32 fromLayout, u32 toLayout, u32 baseMip,
+                                            u32 levelCount, u32 baseLayer, u32 layerCount, u32 srcQueueFamily,
+                                            u32 dstQueueFamily) {
     if (!m_recording) {
         return;
     }
@@ -688,12 +704,20 @@ void CommandBufferRecorder::pipelineBarrier(u32 textureId, u32 fromLayout, u32 t
     record.textureId = textureId;
     record.fromLayout = fromLayout;
     record.toLayout = toLayout;
+    record.baseMip = baseMip;
+    record.levelCount = levelCount == 0u ? 1u : levelCount;
+    record.baseLayer = baseLayer;
+    record.layerCount = layerCount == 0u ? 1u : layerCount;
+    record.srcQueueFamily = srcQueueFamily;
+    record.dstQueueFamily = dstQueueFamily;
     m_records.push_back(record);
 
-    encodeVulkanPipelineBarrier(fromLayout, toLayout);
+    encodeVulkanPipelineBarrier(fromLayout, toLayout, record.baseMip, record.levelCount, record.baseLayer,
+                                record.layerCount, srcQueueFamily, dstQueueFamily);
 }
 
-void CommandBufferRecorder::bufferBarrier(u32 bufferId, u32 fromAccess, u32 toAccess) {
+void CommandBufferRecorder::bufferBarrier(u32 bufferId, u32 fromAccess, u32 toAccess, u32 srcQueueFamily,
+                                          u32 dstQueueFamily) {
     if (!m_recording) {
         return;
     }
@@ -703,9 +727,11 @@ void CommandBufferRecorder::bufferBarrier(u32 bufferId, u32 fromAccess, u32 toAc
     record.bufferId = bufferId;
     record.fromAccess = fromAccess;
     record.toAccess = toAccess;
+    record.srcQueueFamily = srcQueueFamily;
+    record.dstQueueFamily = dstQueueFamily;
     m_records.push_back(record);
 
-    encodeVulkanBufferBarrier(fromAccess, toAccess);
+    encodeVulkanBufferBarrier(fromAccess, toAccess, srcQueueFamily, dstQueueFamily);
 }
 
 void CommandBufferRecorder::clearColor(float r, float g, float b) {
@@ -820,6 +846,58 @@ void CommandBufferRecorder::drawIndexedIndirect(void* indirectBuffer, u32 offset
     encodeDrawIndexedIndirect(indirectBuffer, offset, drawCount, stride);
 }
 
+void CommandBufferRecorder::encodeDrawIndirect(void* indirectBuffer, u32 offset, u32 drawCount, u32 stride) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_vulkanEncodeActive || m_encodeContext == nullptr || !m_insideRenderPass ||
+        !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
+        return;
+    }
+
+    void* resolvedIndirect =
+        indirectBuffer != nullptr ? indirectBuffer : m_encodeContext->indirectBuffer;
+    if (resolvedIndirect == nullptr) {
+        return;
+    }
+
+    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
+    if (m_encodeContext->vertexBuffer != nullptr) {
+        VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(m_encodeContext->vertexBuffer)};
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+    }
+
+    const u32 resolvedDrawCount = drawCount > 0u ? drawCount : 1u;
+    const u32 resolvedStride = stride > 0u ? stride : 16u;
+    vkCmdDrawIndirect(commandBuffer, static_cast<VkBuffer>(resolvedIndirect), offset, resolvedDrawCount,
+                      resolvedStride);
+    ++m_vulkanDrawIndirectCount;
+#else
+    (void)indirectBuffer;
+    (void)offset;
+    (void)drawCount;
+    (void)stride;
+#endif
+}
+
+void CommandBufferRecorder::drawIndirect(void* indirectBuffer, u32 offset, u32 drawCount, u32 stride) {
+    if (!m_recording) {
+        return;
+    }
+
+    CommandRecord record;
+    record.kind = CommandRecordKind::DrawIndirect;
+    record.nativeIndirectBuffer = indirectBuffer;
+    record.bufferOffset = offset;
+    record.drawCount = drawCount;
+    record.stride = stride == 0u ? 16u : stride;
+    m_records.push_back(record);
+
+    if (m_activeRasterPass && !m_insideRenderPass) {
+        beginVulkanRenderPass();
+    }
+    encodeDrawIndirect(indirectBuffer, offset, drawCount, stride);
+}
+
 void CommandBufferRecorder::updateBuffer(void* dstBuffer, u32 data) {
     if (!m_recording) {
         return;
@@ -864,6 +942,107 @@ void CommandBufferRecorder::dispatch(u32 x, u32 y, u32 z) {
     encodeDispatch(x, y, z);
 }
 
+void CommandBufferRecorder::encodeDispatchIndirect(void* indirectBuffer, u32 offset) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_vulkanEncodeActive || m_encodeContext == nullptr ||
+        !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
+        return;
+    }
+
+    if (m_encodeContext->computePipeline == nullptr) {
+        return;
+    }
+
+    void* resolvedIndirect =
+        indirectBuffer != nullptr ? indirectBuffer : m_encodeContext->indirectBuffer;
+    if (resolvedIndirect == nullptr) {
+        return;
+    }
+
+    if (m_insideRenderPass) {
+        endVulkanRenderPass();
+    }
+
+    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                      static_cast<VkPipeline>(m_encodeContext->computePipeline));
+
+    if (m_encodeContext->bindlessDescriptorSet != nullptr &&
+        m_encodeContext->computePipelineLayout != nullptr) {
+        VkDescriptorSet bindlessSet = static_cast<VkDescriptorSet>(m_encodeContext->bindlessDescriptorSet);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                static_cast<VkPipelineLayout>(m_encodeContext->computePipelineLayout), 0, 1,
+                                &bindlessSet, 0, nullptr);
+    }
+
+    vkCmdDispatchIndirect(commandBuffer, static_cast<VkBuffer>(resolvedIndirect), offset);
+    ++m_vulkanDispatchIndirectCount;
+#else
+    (void)indirectBuffer;
+    (void)offset;
+#endif
+}
+
+void CommandBufferRecorder::dispatchIndirect(void* indirectBuffer, u32 offset) {
+    if (!m_recording) {
+        return;
+    }
+
+    CommandRecord record;
+    record.kind = CommandRecordKind::DispatchIndirect;
+    record.nativeIndirectBuffer = indirectBuffer;
+    record.bufferOffset = offset;
+    m_records.push_back(record);
+
+    encodeDispatchIndirect(indirectBuffer, offset);
+}
+
+void CommandBufferRecorder::encodePushConstants(u32 stageFlags, u32 offset, u32 size, const void* data) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_vulkanEncodeActive || m_encodeContext == nullptr || data == nullptr ||
+        !isRealVulkanCommandBuffer(m_nativeCommandBuffer)) {
+        return;
+    }
+
+    void* layout = m_insideRenderPass ? m_encodeContext->graphicsPipelineLayout
+                                      : m_encodeContext->computePipelineLayout;
+    if (layout == nullptr) {
+        layout = m_encodeContext->graphicsPipelineLayout;
+    }
+    if (layout == nullptr) {
+        return;
+    }
+
+    const u32 stages = stageFlags != 0u
+                           ? stageFlags
+                           : static_cast<u32>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
+    vkCmdPushConstants(commandBuffer, static_cast<VkPipelineLayout>(layout), stages, offset, size, data);
+    ++m_vulkanPushConstantCount;
+#else
+    (void)stageFlags;
+    (void)offset;
+    (void)size;
+    (void)data;
+#endif
+}
+
+void CommandBufferRecorder::pushConstants(u32 stageFlags, u32 offset, u32 size, const void* data) {
+    if (!m_recording || data == nullptr || size == 0u || size > 64u || (size % 4u) != 0u) {
+        return;
+    }
+
+    CommandRecord record;
+    record.kind = CommandRecordKind::PushConstants;
+    record.stageFlags = stageFlags;
+    record.bufferOffset = offset;
+    record.pushByteCount = size;
+    std::memcpy(record.pushBytes, data, size);
+    m_records.push_back(record);
+
+    encodePushConstants(stageFlags, offset, size, data);
+}
+
 void CommandBufferRecorder::encodeCompositePass(float blend) {
 #if defined(FUSE_VULKAN_BACKEND)
     if (!m_vulkanEncodeActive || m_encodeContext == nullptr || !m_encodeContext->compositeActive ||
@@ -901,10 +1080,12 @@ void CommandBufferRecorder::encodeCompositePass(float blend) {
         float blendFactor;
         u32 rasterTexIndex;
         u32 cudaTexIndex;
+        u32 depthTexIndex;
     } pushConstants{};
     pushConstants.blendFactor = blend;
     pushConstants.rasterTexIndex = m_encodeContext->rasterTextureBindlessIndex;
     pushConstants.cudaTexIndex = m_encodeContext->cudaTextureBindlessIndex;
+    pushConstants.depthTexIndex = m_encodeContext->depthTextureBindlessIndex;
     vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(pushConstants), &pushConstants);
 

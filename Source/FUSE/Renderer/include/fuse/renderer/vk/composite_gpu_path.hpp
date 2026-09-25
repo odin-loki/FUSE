@@ -54,7 +54,7 @@ public:
     /// Registers the raster color view for bindless sampling; call after RasterPath is ready.
     bool registerRasterSource(void* imageView);
 
-    /// Registers the raster depth view into bindless. Stats-only until the composite shader samples it.
+    /// Registers the raster depth view into bindless. The composite shader samples it when the index is set.
     bool registerRasterDepth(void* imageView);
 
     /// Registers a CUDA-interop Vulkan image view; when unavailable composite keeps placeholder colour.

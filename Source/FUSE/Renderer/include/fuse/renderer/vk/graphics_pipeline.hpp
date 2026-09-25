@@ -31,6 +31,14 @@ struct GraphicsPipelineDesc {
     float depthBiasConstantFactor = 0.f;
     float depthBiasClamp = 0.f;
     float depthBiasSlopeFactor = 0.f;
+    bool stencilTest = false;
+    u32 stencilFailOp = 0;       // VK_STENCIL_OP_KEEP
+    u32 stencilPassOp = 0;       // VK_STENCIL_OP_KEEP
+    u32 stencilDepthFailOp = 0;  // VK_STENCIL_OP_KEEP
+    u32 stencilCompareOp = 7;    // VK_COMPARE_OP_ALWAYS
+    u32 stencilCompareMask = 0xFFu;
+    u32 stencilWriteMask = 0xFFu;
+    u32 stencilReference = 0;
     bool depthTest = false;
     bool depthWrite = false;
     u32 depthCompareOp = 7; // VK_COMPARE_OP_ALWAYS to match current defaults
@@ -54,6 +62,7 @@ struct GraphicsPipelineInfo {
     u32 vertexStrideBytes = 0;
     u32 topology = 0;
     bool depthBiasEnabled = false;
+    bool stencilEnabled = false;
     u32 cacheSnapshotBytes = 0;
     u32 rebuildCount = 0;
     std::string message;

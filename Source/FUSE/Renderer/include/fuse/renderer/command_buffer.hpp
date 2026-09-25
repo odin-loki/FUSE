@@ -22,6 +22,9 @@ enum class CommandRecordKind : u8 {
     DrawIndexedIndirect = 13,
     UpdateBuffer = 14,
     CopyBuffer = 15,
+    DrawIndirect = 16,
+    DispatchIndirect = 17,
+    PushConstants = 18,
 };
 
 struct CommandRecord {
@@ -51,6 +54,15 @@ struct CommandRecord {
     u32 stride = 0;
     u32 copySize = 0;
     u32 bufferOffset = 0;
+    u32 baseMip = 0;
+    u32 levelCount = 1;
+    u32 baseLayer = 0;
+    u32 layerCount = 1;
+    u32 srcQueueFamily = 0xFFFFFFFFu;
+    u32 dstQueueFamily = 0xFFFFFFFFu;
+    u32 stageFlags = 0;
+    u32 pushByteCount = 0;
+    u8 pushBytes[64]{};
     /// Per-draw VkBuffer overrides; null uses `VkFrameEncodeContext` defaults.
     void* nativeVertexBuffer = nullptr;
     void* nativeIndexBuffer = nullptr;
@@ -118,8 +130,11 @@ public:
 
     void beginPass(const char* name);
     void endPass();
-    void pipelineBarrier(u32 textureId, u32 fromLayout, u32 toLayout);
-    void bufferBarrier(u32 bufferId, u32 fromAccess, u32 toAccess);
+    void pipelineBarrier(u32 textureId, u32 fromLayout, u32 toLayout, u32 baseMip = 0, u32 levelCount = 1,
+                         u32 baseLayer = 0, u32 layerCount = 1, u32 srcQueueFamily = 0xFFFFFFFFu,
+                         u32 dstQueueFamily = 0xFFFFFFFFu);
+    void bufferBarrier(u32 bufferId, u32 fromAccess, u32 toAccess, u32 srcQueueFamily = 0xFFFFFFFFu,
+                       u32 dstQueueFamily = 0xFFFFFFFFu);
     void clearColor(float r, float g, float b);
     void clearDepth(float depth = 1.f);
     void fillBuffer(u32 bufferId, u32 value);
@@ -128,9 +143,13 @@ public:
     void drawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 materialId,
                      void* vertexBuffer = nullptr, void* indexBuffer = nullptr);
     void drawIndexedIndirect(void* indirectBuffer, u32 offset = 0, u32 drawCount = 1, u32 stride = 20);
+    void drawIndirect(void* indirectBuffer, u32 offset = 0, u32 drawCount = 1, u32 stride = 16);
     void updateBuffer(void* dstBuffer, u32 data);
     void copyBuffer(void* src, void* dst, u32 size);
     void dispatch(u32 x, u32 y, u32 z);
+    void dispatchIndirect(void* indirectBuffer, u32 offset = 0);
+    /// General `vkCmdPushConstants`. `size` must be a non-zero multiple of 4 and at most 64.
+    void pushConstants(u32 stageFlags, u32 offset, u32 size, const void* data);
     void composite(float blend);
     void present();
 
@@ -153,6 +172,9 @@ public:
     u32 vulkanFillBufferCount() const { return m_vulkanFillBufferCount; }
     u32 vulkanUpdateBufferCount() const { return m_vulkanUpdateBufferCount; }
     u32 vulkanCopyBufferCount() const { return m_vulkanCopyBufferCount; }
+    u32 vulkanDrawIndirectCount() const { return m_vulkanDrawIndirectCount; }
+    u32 vulkanDispatchIndirectCount() const { return m_vulkanDispatchIndirectCount; }
+    u32 vulkanPushConstantCount() const { return m_vulkanPushConstantCount; }
 
 private:
     void push(CommandRecordKind kind);
@@ -160,8 +182,9 @@ private:
     void beginVulkanRenderPass();
     void endVulkanRenderPass();
     void encodeVulkanViewportAndScissor(u32 width = 0, u32 height = 0);
-    void encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLayout);
-    void encodeVulkanBufferBarrier(u32 fromAccess, u32 toAccess);
+    void encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLayout, u32 baseMip, u32 levelCount, u32 baseLayer,
+                                     u32 layerCount, u32 srcQueueFamily, u32 dstQueueFamily);
+    void encodeVulkanBufferBarrier(u32 fromAccess, u32 toAccess, u32 srcQueueFamily, u32 dstQueueFamily);
     void encodeFillBuffer(u32 value);
     void encodePresentSwapchainPass();
     void encodeCompositePass(float blend);
@@ -169,9 +192,12 @@ private:
     void encodeDrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 materialId,
                            void* vertexBuffer, void* indexBuffer);
     void encodeDrawIndexedIndirect(void* indirectBuffer, u32 offset, u32 drawCount, u32 stride);
+    void encodeDrawIndirect(void* indirectBuffer, u32 offset, u32 drawCount, u32 stride);
     void encodeUpdateBuffer(void* dstBuffer, u32 data);
     void encodeCopyBuffer(void* src, void* dst, u32 size);
     void encodeDispatch(u32 x, u32 y, u32 z);
+    void encodeDispatchIndirect(void* indirectBuffer, u32 offset);
+    void encodePushConstants(u32 stageFlags, u32 offset, u32 size, const void* data);
 
     const VkFrameEncodeContext* m_encodeContext = nullptr;
     void* m_nativeCommandBuffer = nullptr;
@@ -197,6 +223,9 @@ private:
     u32 m_vulkanFillBufferCount = 0;
     u32 m_vulkanUpdateBufferCount = 0;
     u32 m_vulkanCopyBufferCount = 0;
+    u32 m_vulkanDrawIndirectCount = 0;
+    u32 m_vulkanDispatchIndirectCount = 0;
+    u32 m_vulkanPushConstantCount = 0;
     std::vector<CommandRecord> m_records;
 };
 

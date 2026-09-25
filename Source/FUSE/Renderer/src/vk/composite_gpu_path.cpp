@@ -484,7 +484,7 @@ bool CompositeGpuPath::initialize(VulkanDevice& device, const CompositeGpuPathDe
     PipelineLayoutDesc layoutDesc{};
     layoutDesc.bindlessSetLayout = m_bindless.layoutHandle();
     layoutDesc.pushConstants.push_back(
-        {0, sizeof(float) + sizeof(u32) * 2u, 0x10}); // VK_SHADER_STAGE_FRAGMENT_BIT
+        {0, sizeof(float) + sizeof(u32) * 3u, 0x10}); // VK_SHADER_STAGE_FRAGMENT_BIT
     layoutDesc.debugName = "composite_bindless_layout";
     m_pipelineLayout = PipelineLayout::create(device, layoutDesc);
     if (m_pipelineLayout == nullptr || !m_pipelineLayout->isValid()) {

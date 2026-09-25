@@ -94,6 +94,12 @@ void testResourceManagerBuffersAndTextures() {
     const u8 payload[4] = {1, 2, 3, 4};
     const fuse::renderer::BufferHandle buffer =
         resources.createBuffer(bufferDesc, payload);
+    fuse::renderer::BufferDesc indirectDesc{};
+    indirectDesc.size = 64;
+    indirectDesc.usage = fuse::renderer::BufferUsage::Indirect;
+    indirectDesc.memoryUsage = fuse::renderer::MemoryUsage::GpuOnly;
+    const fuse::renderer::BufferHandle indirectBuffer = resources.createBuffer(indirectDesc);
+    expectTrue(indirectBuffer.isValid(), "indirect buffer handle issued");
     expectTrue(buffer.isValid(), "buffer handle issued");
     const fuse::renderer::Buffer* createdBuffer = resources.getBuffer(buffer);
     expectTrue(createdBuffer != nullptr, "buffer resolvable");

@@ -67,6 +67,9 @@ VkBufferUsageFlags toVkBufferUsage(BufferUsage usage) {
     if (hasUsage(usage, BufferUsage::ShaderDeviceAddress)) {
         flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
     }
+    if (hasUsage(usage, BufferUsage::Indirect)) {
+        flags |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+    }
     return flags;
 }
 

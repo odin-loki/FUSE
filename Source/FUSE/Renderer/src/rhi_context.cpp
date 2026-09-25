@@ -188,6 +188,7 @@ bool RhiContext::beginFrame(u32 frameIndex) {
 }
 
 bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) {
+    bool computeQueueRecorded = false;
     if (!platform::requireGpuContextThread()) {
         return false;
     }
@@ -281,6 +282,7 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
                 m_renderGraph.execute(*device, *frameManager, m_commandRecorder, encodeContext);
             m_lastGraphPassCount = executeInfo.executedPassCount;
             m_lastRecordedCommands = executeInfo.recordedCommands;
+            computeQueueRecorded = executeInfo.computeQueueRecorded;
         }
 
         m_lastGraphBarrierCount = m_renderGraph.compileInfo().barrierCount;
@@ -316,6 +318,17 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
             if (!m_lastQueueSubmit.ok) {
                 return false;
             }
+            if (computeQueueRecorded) {
+                GraphicsQueueSubmitDesc computeDesc = submitDesc;
+                computeDesc.commandsAlreadyRecorded = true;
+                const GraphicsQueueSubmitResult computeSubmit = submitComputeQueue(computeDesc);
+                if (!computeSubmit.ok) {
+                    return false;
+                }
+                if (computeSubmit.submitted) {
+                    ++m_computeQueueSubmitCount;
+                }
+            }
             captureGpuTimestampStats(*frameManager);
         }
         frameManager->endFrame();
@@ -328,6 +341,7 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
 }
 
 bool RhiContext::submitDrawList(const DrawList& draws, u32 frameIndex) {
+    bool computeQueueRecorded = false;
     if (!platform::requireGpuContextThread()) {
         return false;
     }
@@ -401,6 +415,7 @@ bool RhiContext::submitDrawList(const DrawList& draws, u32 frameIndex) {
                 m_renderGraph.execute(*device, *frameManager, m_commandRecorder, encodeContext);
             m_lastGraphPassCount = executeInfo.executedPassCount;
             m_lastRecordedCommands = executeInfo.recordedCommands;
+            computeQueueRecorded = executeInfo.computeQueueRecorded;
         }
 
         m_lastGraphBarrierCount = m_renderGraph.compileInfo().barrierCount;
@@ -433,6 +448,17 @@ bool RhiContext::submitDrawList(const DrawList& draws, u32 frameIndex) {
             }
             if (!m_lastQueueSubmit.ok) {
                 return false;
+            }
+            if (computeQueueRecorded) {
+                GraphicsQueueSubmitDesc computeDesc = submitDesc;
+                computeDesc.commandsAlreadyRecorded = true;
+                const GraphicsQueueSubmitResult computeSubmit = submitComputeQueue(computeDesc);
+                if (!computeSubmit.ok) {
+                    return false;
+                }
+                if (computeSubmit.submitted) {
+                    ++m_computeQueueSubmitCount;
+                }
             }
             captureGpuTimestampStats(*frameManager);
         }

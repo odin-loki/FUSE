@@ -60,6 +60,7 @@ public:
 
     u32 submittedFrameCount() const { return m_submittedFrames; }
     u32 queueSubmitCount() const { return m_queueSubmitCount; }
+    u32 computeQueueSubmitCount() const { return m_computeQueueSubmitCount; }
     bool lastQueueSubmitOk() const { return m_lastQueueSubmit.ok; }
     const GraphicsQueueSubmitResult& lastQueueSubmit() const { return m_lastQueueSubmit; }
     u32 lastSubmittedCommandCount() const { return m_lastCommandCount; }
@@ -115,6 +116,7 @@ private:
     u32 m_lastRecordedCommands = 0;
     u32 m_acquiredSwapchainImage = UINT32_MAX;
     u32 m_queueSubmitCount = 0;
+    u32 m_computeQueueSubmitCount = 0;
     GraphicsQueueSubmitResult m_lastQueueSubmit{};
     bool m_timestampsReady = false;
     u64 m_lastGpuTimeNs = 0;

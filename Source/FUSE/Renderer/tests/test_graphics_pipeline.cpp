@@ -139,6 +139,8 @@ void testGraphicsPipelineFromFixtures() {
                    "default pipeline topology is TRIANGLE_LIST (3)");
         expectTrue(!graphicsPipeline->info().depthBiasEnabled,
                    "default pipeline depthBiasEnabled is false");
+        expectTrue(!graphicsPipeline->info().stencilEnabled,
+                   "default pipeline stencilEnabled is false");
         expectTrue(graphicsPipeline->rebuild(), "graphics pipeline rebuild succeeds");
         expectTrue(graphicsPipeline->isValid(), "graphics pipeline valid after rebuild");
         expectTrue(graphicsPipeline->nativeHandle() != nullptr,
@@ -163,6 +165,8 @@ void testGraphicsPipelineFromFixtures() {
                "stub default pipeline topology is TRIANGLE_LIST (3)");
     expectTrue(!graphicsPipeline->info().depthBiasEnabled,
                "stub default pipeline depthBiasEnabled is false");
+    expectTrue(!graphicsPipeline->info().stencilEnabled,
+               "stub default pipeline stencilEnabled is false");
     expectTrue(graphicsPipeline->rebuild(), "stub graphics pipeline rebuild succeeds");
     expectTrue(graphicsPipeline->isValid(), "stub graphics pipeline valid after rebuild");
 #endif
@@ -224,6 +228,27 @@ void testGraphicsPipelineFromFixtures() {
                "stub info.depthBiasEnabled is true when valid");
     expectTrue(biasedPipeline->info().topology == 3u,
                "stub bias pipeline records default TRIANGLE_LIST topology");
+#endif
+
+    pipelineDesc.stencilTest = true;
+    pipelineDesc.stencilFailOp = 2u;  // VK_STENCIL_OP_REPLACE
+    pipelineDesc.stencilPassOp = 2u;
+    pipelineDesc.stencilCompareOp = 1u; // VK_COMPARE_OP_LESS
+    auto stencilPipeline = fuse::renderer::GraphicsPipeline::create(*device, pipelineDesc);
+    expectTrue(stencilPipeline != nullptr, "graphics pipeline allocated with stencilTest");
+#if defined(FUSE_VULKAN_BACKEND)
+    if (bootstrap->status().deviceReady) {
+        if (stencilPipeline->isValid()) {
+            expectTrue(stencilPipeline->info().stencilEnabled,
+                       "info.stencilEnabled is true when stencil pipeline is valid");
+        }
+    } else {
+        expectTrue(!stencilPipeline->isValid(), "stencilTest pipeline invalid without ICD");
+    }
+#else
+    expectTrue(stencilPipeline->isValid(), "stencilTest pipeline valid in stub backend");
+    expectTrue(stencilPipeline->info().stencilEnabled,
+               "stub info.stencilEnabled is true when valid");
 #endif
 }
 

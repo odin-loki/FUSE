@@ -353,6 +353,55 @@ void testCopyBufferRecordsWithoutDevice() {
     expectTrue(recorder.endRecording(), "endRecording succeeds after logical copyBuffer");
 }
 
+void testDrawIndirectDispatchIndirectAndPushConstants() {
+    fuse::renderer::CommandBufferRecorder recorder;
+    recorder.drawIndirect(nullptr);
+    recorder.dispatchIndirect(nullptr);
+    const fuse::u32 payload[4] = {1u, 2u, 3u, 4u};
+    recorder.pushConstants(0x11u, 0u, 16u, payload);
+    expectTrue(recorder.recordCount() == 0u, "new encodes without beginRecording are no-ops");
+
+    expectTrue(recorder.beginRecording(nullptr), "beginRecording succeeds for indirect and push constants");
+    void* indirect = reinterpret_cast<void*>(0x20);
+    recorder.drawIndirect(indirect, 16u, 3u, 16u);
+    recorder.dispatchIndirect(indirect, 12u);
+    recorder.pushConstants(0x11u, 0u, 16u, payload);
+    recorder.pipelineBarrier(7u, 1u, 3u, 1u, 4u, 0u, 6u, 1u, 2u);
+    recorder.bufferBarrier(3u, 5u, 6u, 2u, 1u);
+
+    expectTrue(recorder.recordCount() == 5u, "indirect, dispatch, push, and ranged barriers recorded");
+    expectTrue(recorder.records()[0].kind == fuse::renderer::CommandRecordKind::DrawIndirect,
+               "first record is DrawIndirect");
+    expectTrue(recorder.records()[0].nativeIndirectBuffer == indirect, "draw indirect buffer stored");
+    expectTrue(recorder.records()[0].drawCount == 3u, "draw indirect count stored");
+    expectTrue(recorder.records()[0].stride == 16u, "draw indirect stride stored");
+    expectTrue(recorder.records()[1].kind == fuse::renderer::CommandRecordKind::DispatchIndirect,
+               "second record is DispatchIndirect");
+    expectTrue(recorder.records()[1].bufferOffset == 12u, "dispatch indirect offset stored");
+    expectTrue(recorder.records()[2].kind == fuse::renderer::CommandRecordKind::PushConstants,
+               "third record is PushConstants");
+    expectTrue(recorder.records()[2].pushByteCount == 16u, "push constant byte count stored");
+    expectTrue(recorder.records()[2].pushBytes[0] == 1u, "push constant payload stored");
+    expectTrue(recorder.records()[3].levelCount == 4u, "image barrier mip count stored");
+    expectTrue(recorder.records()[3].layerCount == 6u, "image barrier layer count stored");
+    expectTrue(recorder.records()[3].srcQueueFamily == 1u, "image barrier source queue family stored");
+    expectTrue(recorder.records()[3].dstQueueFamily == 2u, "image barrier dest queue family stored");
+    expectTrue(recorder.records()[4].srcQueueFamily == 2u, "buffer barrier source queue family stored");
+    expectTrue(recorder.records()[4].dstQueueFamily == 1u, "buffer barrier dest queue family stored");
+    expectTrue(recorder.vulkanDrawIndirectCount() == 0u, "logical drawIndirect does not encode");
+    expectTrue(recorder.vulkanDispatchIndirectCount() == 0u, "logical dispatchIndirect does not encode");
+    expectTrue(recorder.vulkanPushConstantCount() == 0u, "logical pushConstants does not encode");
+    expectTrue(recorder.endRecording(), "endRecording succeeds after indirect and push constants");
+
+    recorder.reset();
+    expectTrue(recorder.beginRecording(nullptr), "beginRecording succeeds for rejected push constants");
+    recorder.pushConstants(0x11u, 0u, 3u, payload);
+    recorder.pushConstants(0x11u, 0u, 0u, payload);
+    recorder.pushConstants(0x11u, 0u, 16u, nullptr);
+    expectTrue(recorder.recordCount() == 0u, "misaligned, empty, and null push constants are rejected");
+    expectTrue(recorder.endRecording(), "endRecording succeeds after rejected push constants");
+}
+
 } // namespace
 
 int main() {
@@ -373,6 +422,7 @@ int main() {
     testDrawIndexedIndirectRecordsWithoutDevice();
     testUpdateBufferRecordsWithoutDevice();
     testCopyBufferRecordsWithoutDevice();
+    testDrawIndirectDispatchIndirectAndPushConstants();
 
     if (g_failures == 0) {
         std::printf("fuse_draw_list: all checks passed\n");

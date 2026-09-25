@@ -156,7 +156,17 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     depthStencil.depthWriteEnable = desc.depthWrite ? VK_TRUE : VK_FALSE;
     depthStencil.depthCompareOp = static_cast<VkCompareOp>(desc.depthCompareOp);
     depthStencil.depthBoundsTestEnable = VK_FALSE;
-    depthStencil.stencilTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = desc.stencilTest ? VK_TRUE : VK_FALSE;
+    VkStencilOpState stencilState{};
+    stencilState.failOp = static_cast<VkStencilOp>(desc.stencilFailOp);
+    stencilState.passOp = static_cast<VkStencilOp>(desc.stencilPassOp);
+    stencilState.depthFailOp = static_cast<VkStencilOp>(desc.stencilDepthFailOp);
+    stencilState.compareOp = static_cast<VkCompareOp>(desc.stencilCompareOp);
+    stencilState.compareMask = desc.stencilCompareMask;
+    stencilState.writeMask = desc.stencilWriteMask;
+    stencilState.reference = desc.stencilReference;
+    depthStencil.front = stencilState;
+    depthStencil.back = stencilState;
 
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
     colorBlendAttachment.colorWriteMask =
@@ -239,6 +249,7 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     m_info.vertexStrideBytes = desc.vertexStrideBytes;
     m_info.topology = desc.topology;
     m_info.depthBiasEnabled = desc.depthBiasEnable;
+    m_info.stencilEnabled = desc.stencilTest;
     if (desc.useDynamicRendering) {
         m_info.message = desc.debugName != nullptr
                              ? std::string(desc.debugName) + " (dynamic rendering)"
@@ -257,6 +268,7 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     m_info.vertexStrideBytes = desc.vertexStrideBytes;
     m_info.topology = desc.topology;
     m_info.depthBiasEnabled = desc.depthBiasEnable;
+    m_info.stencilEnabled = desc.stencilTest;
     if (desc.useDynamicRendering) {
         m_info.message = desc.debugName != nullptr
                              ? std::string(desc.debugName) + " (dynamic rendering)"
