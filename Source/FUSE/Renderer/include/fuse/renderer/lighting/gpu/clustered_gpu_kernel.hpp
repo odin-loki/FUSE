@@ -279,7 +279,16 @@ struct ShadeParams {
     /// takes the `shadow` hook). Null = none.
     f32 (*rt_shadow)(const void* user, u32 slot, u32 px, u32 py) = nullptr;
     const void* rt_shadow_user = nullptr;
+    /// LightingFrameConstants::flags & kFlagSkipAreaLights (light.shade): the cluster loop leaves out the
+    /// rectangle / disk area lights (their direct light comes from another stage, e.g. the frame composer's
+    /// WP-7.2 ReSTIR DI). Mirrors lc_ltc.{glsl,slang} fuse_lc_shade_lights_px (pixel given).
+    bool skip_area_lights = false;
 };
+
+/// True when the cluster loop of light.shade leaves light `l` out (kFlagSkipAreaLights).
+FUSE_HOST_DEVICE inline bool skips_light(const ShadeParams& p, const gpu_scene::GpuLight& l) {
+    return p.skip_area_lights && (l.type == ltc::kLightRect || l.type == ltc::kLightDisk);
+}
 
 /// One light's contribution, scaled by its shadow visibility when a shadow hook is set.
 FUSE_HOST_DEVICE inline math::Vec3 shadowed(const ShadeParams& p, u32 slot, const SurfaceSample& s, const math::Vec3& c,
@@ -347,7 +356,7 @@ FUSE_HOST_DEVICE inline bool shade_pixel(const ShadeParams& p, u32 px, u32 py, m
         const u32 end = std::min(entry.offset + entry.count, p.light_list.size);
         for (u32 i = entry.offset; i < end; ++i) {
             const u32 slot = p.light_list[i];
-            if (slot < p.lights.size) {
+            if (slot < p.lights.size && !skips_light(p, p.lights[slot])) {
                 radiance = radiance + shadowed(p, slot, s,
                                                compensated ? light_contribution(p.lights[slot], s, v, terms, p.brdf_lut.data)
                                                            : light_contribution(p.lights[slot], s, v),

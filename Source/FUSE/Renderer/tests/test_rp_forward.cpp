@@ -33,6 +33,15 @@
 //                   layer's shading == the CPU kernel; the draw order == back to front; the depth test
 //                   (layer coverage with the box == without it, minus the pixels where the box's depth is
 //                   nearer).
+//   --mode media    participating media on the transparent fragments (ForwardFrameDesc::atmosphereAddress / fogAddress,
+//                   kForwardFlagAerial | kForwardFlagFog): a synthetic WP-8.2 atmosphere (test_rp_sky_source.hpp) and a
+//                   synthetic WP-8.1 froxel volume (resolveFogConstants of the frame's camera + a patterned integrated
+//                   volume) in one host-visible buffer, declared through ForwardGraphRefs::atmosphere / fog. The RGBA16F
+//                   composite == a CPU composite of the lit image and the dumped layers (radiance before the media)
+//                   with each layer's radiance through at_aerial (screen uv, |P - camera|) x T + S x E and then
+//                   fog_kernel::sample_integrated (screen point, view depth) x T + S (the CPU twins on the same data),
+//                   premultiplied over rounded to half per layer (<= 1 half ulp per layer + 2e-4 relative); pixels
+//                   without a transparent layer keep the lit image; the media change > 1000 pixels.
 //   --mode zero_alloc  64 steady-state frames (spheres moving, opacities changing): 0 operator-new calls
 //                   in ForwardTransparency::beginFrame, the forward.* pass callbacks and the whole graph
 //                   build (validated run first; validation off for the count).
@@ -40,6 +49,7 @@
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no shader built).
 #include "test_rp_material_resolve_scene.hpp"
+#include "test_rp_sky_source.hpp"
 
 #include <fuse/renderer/culling/instance_culler.hpp>
 #include <fuse/renderer/deferred/gbuffer.hpp>
@@ -53,6 +63,8 @@
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/visbuffer/visbuffer.hpp>
+#include <fuse/renderer/volumetric/gpu/froxel_fog_kernel.hpp>
+#include <fuse/renderer/volumetric/gpu/froxel_fog_reference.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/device.hpp>
@@ -316,6 +328,7 @@ struct Context {
     Buffer readback{};
     Buffer shadeDump{};
     Buffer layerDumps[kLanguages]{};
+    Buffer media{}; ///< --mode media: synthetic atmosphere + fog constants + integrated volume
     BindlessSlotHandle sampler{};
     u32 samplerHandle = 0;
     u64 serial = 0;
@@ -336,6 +349,7 @@ struct Context {
             for (Buffer& b : layerDumps) {
                 allocator->destroyBuffer(b);
             }
+            allocator->destroyBuffer(media);
         }
         if (device != nullptr) {
             bindless.collectRetired(~0ull);
@@ -762,6 +776,15 @@ bool ensureReadback(Context& ctx, const ReadbackLayout& layout) {
     return ctx.allocator->createBuffer(readbackDesc, ctx.readback) && ctx.readback.mapped != nullptr;
 }
 
+/// --mode media: the synthetic media of the frame (null otherwise).
+struct Media {
+    fuse::renderer::test_sky::SyntheticSky sky;
+    volumetric_gpu::FogFrameConstants fog{};
+    std::vector<Vec4> integrated;
+    u64 fogAddress = 0;
+};
+const Media* g_media = nullptr;
+
 bool beginFrame(Context& ctx, Scene& s, Rig& rig, const FrameCamera& cam, bool dumps) {
     CullFrameDesc frame{};
     std::memcpy(frame.viewProj, cam.viewProj.m, sizeof(frame.viewProj));
@@ -792,6 +815,10 @@ bool beginFrame(Context& ctx, Scene& s, Rig& rig, const FrameCamera& cam, bool d
         fd.lighting = &rig.lighting;
         fd.sampler = ctx.samplerHandle;
         fd.dumpAddress = dumps ? ctx.layerDumps[k].deviceAddress : 0u;
+        if (g_media != nullptr) {
+            fd.atmosphereAddress = g_media->sky.address();
+            fd.fogAddress = g_media->fogAddress;
+        }
         if (dumps) {
             std::memset(ctx.layerDumps[k].mapped, 0, ctx.layerDumps[k].desc.size);
         }
@@ -822,11 +849,16 @@ void buildGraph(Context& ctx, Scene& s, Rig& rig, rg::Graph& graph, FrameState& 
     rig.lighting.addShade(graph, lighting, sceneRefs, gbuffer, shadeDump, ctx.shadeDump.deviceAddress);
     ForwardGraphRefs forward[kLanguages]{};
     rg::BufferRef layerDumps[kLanguages]{};
+    const rg::BufferRef media = g_media != nullptr ? graph.importBuffer(rg::ImportedBuffer{ctx.media.handle, ctx.media.desc.size, rg::kNoQueue,
+                                                                                           nullptr, "rp_forward.media"})
+                                                   : rg::BufferRef{};
     for (u32 k = 0; k < kLanguages; ++k) {
         if (!rig.built[k]) {
             continue;
         }
         forward[k] = rig.forward[k].importInto(graph);
+        forward[k].atmosphere = media; // one buffer holds both media
+        forward[k].fog = media;
         if (readback) {
             layerDumps[k] = graph.importBuffer(rg::ImportedBuffer{ctx.layerDumps[k].handle, ctx.layerDumps[k].desc.size,
                                                                   rg::kNoQueue, nullptr, "rp_forward.layer_dump"});
@@ -1413,6 +1445,167 @@ int runBlend(Context& ctx) {
     return 0;
 }
 
+// --- media ----------------------------------------------------------------------------------------
+int runMedia(Context& ctx) {
+    Rig rig;
+    const int rc = initRig(ctx, rig);
+    if (rc <= 0) {
+        destroyRig(rig);
+        if (rc < 0) {
+            std::fprintf(stderr, "FAIL: rig init\n");
+            return 1;
+        }
+        std::printf("SKIP: resolve / lighting / forward shaders not built\n");
+        return kSkip;
+    }
+    Scene s;
+    if (!buildScene(ctx, s)) {
+        std::fprintf(stderr, "FAIL: scene\n");
+        return 1;
+    }
+    const FrameCamera cam = makeCamera(Vec3{0.2f, 0.9f, 2.2f}, Vec3{0.f, 0.f, -5.f});
+    Media media;
+    const Vec3 fwd = cam.cluster.forward.normalized();
+    const Vec3 right = fuse::math::cross(fwd, Vec3{0.f, 1.f, 0.f}).normalized();
+    const Vec3 up = fuse::math::cross(right, fwd);
+    const f32 tanY = std::tan(kFovY * 0.5f);
+    if (!media.sky.build(cam.cluster.position, Vec3{0.3f, 0.8f, 0.2f}, fwd, right, up, tanY * static_cast<f32>(kWidth) / kHeight, tanY,
+                         12.f)) {
+        std::fprintf(stderr, "FAIL: synthetic sky\n");
+        return 1;
+    }
+    volumetric_gpu::FroxelFogSettings fs{};
+    fs.gridX = 16;
+    fs.gridY = 12;
+    fs.gridZ = 24;
+    fs.farPlane = 20.f;
+    if (!volumetric_gpu::resolveFogConstants(fs, cam.cluster, nullptr, false, 0u, kWidth, kHeight, media.fog)) {
+        std::fprintf(stderr, "FAIL: fog constants\n");
+        return 1;
+    }
+    const u32 gx = media.fog.gridX, gy = media.fog.gridY, gz = media.fog.gridZ;
+    media.integrated.resize(static_cast<usize>(gx) * gy * gz);
+    for (u32 y = 0; y < gy; ++y) {
+        for (u32 x = 0; x < gx; ++x) {
+            for (u32 z = 0; z < gz; ++z) {
+                const f32 k = static_cast<f32>(z + 1u) / static_cast<f32>(gz);
+                const f32 u = static_cast<f32>(x) / static_cast<f32>(gx);
+                const f32 v = static_cast<f32>(y) / static_cast<f32>(gy);
+                media.integrated[volumetric_gpu::fog_kernel::froxel_index(media.fog, x, y, z)] =
+                    Vec4{0.05f * k * (1.f + u), 0.04f * k * (1.f + v), 0.06f * k, std::exp(-0.8f * k * (1.f + 0.3f * u))};
+            }
+        }
+    }
+    const u64 skyBytes = (media.sky.bytes() + 255u) & ~u64{255u};
+    const u64 fogBytes = (sizeof(volumetric_gpu::FogFrameConstants) + 255u) & ~u64{255u};
+    BufferDesc bd{};
+    bd.size = static_cast<usize>(skyBytes + fogBytes + media.integrated.size() * sizeof(Vec4));
+    bd.usage = static_cast<BufferUsage>(static_cast<u32>(BufferUsage::Storage) | static_cast<u32>(BufferUsage::ShaderDeviceAddress));
+    bd.memoryUsage = MemoryUsage::CpuToGpu;
+    bd.name = "rp_forward.media";
+    if (!ctx.allocator->createBuffer(bd, ctx.media) || ctx.media.mapped == nullptr || ctx.media.deviceAddress == 0u) {
+        std::fprintf(stderr, "FAIL: media buffer\n");
+        return 1;
+    }
+    u8* mapped = static_cast<u8*>(ctx.media.mapped);
+    media.sky.write(mapped, ctx.media.deviceAddress);
+    media.fog.integrated = ctx.media.deviceAddress + skyBytes + fogBytes;
+    media.fogAddress = ctx.media.deviceAddress + skyBytes;
+    std::memcpy(mapped + skyBytes, &media.fog, sizeof(media.fog));
+    std::memcpy(mapped + skyBytes + fogBytes, media.integrated.data(), media.integrated.size() * sizeof(Vec4));
+    FrameState fstate;
+    fstate.layout = makeLayout(rig.lighting.layout().listsBytes);
+    if (!ensureReadback(ctx, fstate.layout)) {
+        std::fprintf(stderr, "FAIL: readback buffer\n");
+        return 1;
+    }
+    rg::Graph graph;
+    const f32 opacity[kLayers] = {0.35f, 0.6f, 0.8f};
+    Captured c{};
+    Captured plain{};
+    for (u32 pass = 0; pass < 2u; ++pass) { // without, then with the media
+        g_media = pass == 1u ? &media : nullptr;
+        beginSceneFrame(ctx, s);
+        setSpheres(s, kTransparentInstanceFlags);
+        for (u32 i = 0; i < kLayers; ++i) {
+            for (ForwardTransparency& f : rig.forward) {
+                if (f.valid()) {
+                    f.setOpacity(s.handles[kSphereObjects[i]], opacity[i]);
+                }
+            }
+        }
+        const bool ok = runFrame(ctx, s, rig, graph, cam, fstate, true);
+        g_media = nullptr;
+        if (!ok) {
+            std::fprintf(stderr, "FAIL: media frame %u\n", pass);
+            return 1;
+        }
+        capture(ctx, rig, fstate, pass == 1u ? c : plain);
+    }
+    const clustered_kernel::CameraView view = clustered_kernel::make_camera(cam.cluster);
+    const Vec3 E = media.sky.illuminance();
+    for (u32 k = 0; k < kLanguages; ++k) {
+        if (!rig.built[k]) {
+            continue;
+        }
+        const std::vector<SortedDraw>& draws = c.draws[k];
+        u32 compositeBad = 0, changed = 0, bareBad = 0, covered = 0;
+        f64 maxUlps = 0.0;
+        for (u32 py = 0; py < kHeight; ++py) {
+            for (u32 px = 0; px < kWidth; ++px) {
+                const usize p = static_cast<usize>(py) * kWidth + px;
+                const f32 sx = (static_cast<f32>(px) + 0.5f) * (1.f / static_cast<f32>(kWidth));
+                const f32 sy = (static_cast<f32>(py) + 0.5f) * (1.f / static_cast<f32>(kHeight));
+                Vec4 dst = c.lit[p];
+                u32 n = 0;
+                for (usize d = 0; d < draws.size(); ++d) {
+                    const ForwardDumpTexel& t = c.layers[k][d * kPixels + p];
+                    if (t.covered == 0u) {
+                        continue;
+                    }
+                    ++n;
+                    const f32 vd = clustered_kernel::view_depth_from_device_depth(t.depth, view.near_plane, view.far_plane, false);
+                    const Vec3 pos =
+                        clustered_kernel::view_to_world(view, clustered_kernel::view_position_from_screen(sx, sy, vd, view.tan_x, view.tan_y));
+                    const Vec3 toCam = view.position - pos;
+                    Vec3 L{t.radiance[0], t.radiance[1], t.radiance[2]};
+                    Vec3 sc{}, tr{};
+                    media.sky.aerial(sx, sy, std::sqrt(toCam.dot(toCam)), sc, tr);
+                    L = Vec3{L.x * tr.x + sc.x * E.x, L.y * tr.y + sc.y * E.y, L.z * tr.z + sc.z * E.z};
+                    const Vec4 fog = volumetric_gpu::fog_kernel::sample_integrated(media.fog, media.integrated.data(), sx, sy, vd);
+                    L = Vec3{L.x * fog.w + fog.x, L.y * fog.w + fog.y, L.z * fog.w + fog.z};
+                    const Vec4 o = blend_over(L, t.alpha, dst);
+                    dst = {toHalf(o.x), toHalf(o.y), toHalf(o.z), toHalf(o.w)};
+                }
+                const Vec4& g = c.color[k][p];
+                covered += n > 0u ? 1u : 0u;
+                if (n == 0u) {
+                    bareBad += std::memcmp(&g, &c.lit[p], sizeof(Vec4)) == 0 ? 0u : 1u;
+                    continue;
+                }
+                changed += std::memcmp(&g, &plain.color[k][p], sizeof(Vec4)) != 0 ? 1u : 0u;
+                const f32 gv[4] = {g.x, g.y, g.z, g.w};
+                const f32 cv[4] = {dst.x, dst.y, dst.z, dst.w};
+                for (u32 ch = 0; ch < 4u; ++ch) {
+                    const f64 ulp = std::max(std::fabs(static_cast<f64>(cv[ch])), std::fabs(static_cast<f64>(gv[ch]))) / 1024.0 + 6e-8;
+                    const f64 diff = std::fabs(static_cast<f64>(gv[ch]) - cv[ch]);
+                    maxUlps = std::max(maxUlps, diff / ulp);
+                    compositeBad += diff <= n * ulp + 2e-4 * std::fabs(static_cast<f64>(cv[ch])) ? 0u : 1u;
+                }
+            }
+        }
+        std::printf("  media %s: %u px with transparent layers (%u changed by the media), composite-bad %u (max %.2f half ulp), "
+                    "bare px != lit %u\n",
+                    rig.language[k], covered, changed, compositeBad, maxUlps, bareBad);
+        expect(covered > 1000u && changed * 10u >= covered * 9u, "the media change the transparent pixels");
+        expect(compositeBad == 0u, "RGBA16F composite == CPU composite of the fogged / aerial-perspective layers");
+        expect(bareBad == 0u, "pixels without a transparent layer keep the lit image (media only on transparent fragments)");
+    }
+    s.gpu.destroy();
+    destroyRig(rig);
+    return 0;
+}
+
 // --- zero_alloc -----------------------------------------------------------------------------------
 thread_local bool t_inPass = false;
 
@@ -1568,6 +1761,8 @@ int main(int argc, char** argv) {
             rc = runTwin(ctx);
         } else if (mode == "blend") {
             rc = runBlend(ctx);
+        } else if (mode == "media") {
+            rc = runMedia(ctx);
         } else if (mode == "zero_alloc") {
             rc = runZeroAlloc(ctx, false);
         } else {

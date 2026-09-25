@@ -23,6 +23,11 @@
 //                      reflection samples per pixel) == the offline reference (RtEffectsReference: stratified f64
 //                      sampling, 1024 shadow / 576 reflection samples) within a statistical tolerance (kZ below); the mean
 //                      occluder / hit distances agree; the error of one frame is several times the converged one
+//   --mode sky         --mode hard with RtEffectsFrameDesc::atmosphereAddress (kRtfxFlagAtmosphereSky) over a synthetic
+//                      WP-8.2 sky (test_rp_sky_source.hpp: AtParams + patterned LUTs in a host-visible buffer, the
+//                      graph declares it through RtEffectsGraphRefs::atmosphere): every check of --mode hard, where a
+//                      miss's radiance == at_sky_radiance(dir, no disk) on the CPU over the same texels (the reference's
+//                      setSkyRadiance hook, 1e-3 relative) instead of the constant sky
 //   --mode shade       light.shade with LightingFrameDesc::rtShadows == the CPU shade kernel with the RT visibility
 //                      (ShadeReferenceDesc::rtShadow over the read-back visibility), WP-2.1 tolerance
 //   --mode zero_alloc  64 steady-state frames (moving box, moving camera): 0 operator-new calls in
@@ -32,6 +37,7 @@
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, device below T2, no kernel built).
 #include "test_rp_vsm_raster_common.hpp"
+#include "test_rp_sky_source.hpp"
 
 #include <fuse/renderer/culling/instance_culler.hpp>
 #include <fuse/renderer/deferred/gbuffer.hpp>
@@ -215,6 +221,7 @@ struct Context {
     Buffer reflDump[kLanguages]{};
     Buffer shadeDump[kLanguages]{};
     Buffer plainDump[kLanguages]{};
+    Buffer sky{}; ///< --mode sky: the synthetic atmosphere (AtParams + LUTs)
     BindlessSlotHandle sampler{};
     u32 samplerHandle = 0;
     u64 serial = 0;
@@ -234,6 +241,7 @@ struct Context {
                 allocator->destroyBuffer(shadeDump[k]);
                 allocator->destroyBuffer(plainDump[k]);
             }
+            allocator->destroyBuffer(sky);
         }
         if (device != nullptr) {
             if (sampler.isValid()) {
@@ -757,6 +765,9 @@ bool ensureReadback(Context& ctx, const ReadbackLayout& layout) {
     return ctx.allocator->createBuffer(d, ctx.readback) && ctx.readback.mapped != nullptr;
 }
 
+/// --mode sky: the synthetic atmosphere reflection misses sample (null otherwise).
+fuse::renderer::test_sky::SyntheticSky* g_sky = nullptr;
+
 RtEffectsFrameDesc makeFrameDesc(const Scene& s, const Rig& rig, const Camera& cam, const FrameOptions& o) {
     RtEffectsFrameDesc d{};
     std::memcpy(d.viewProj, cam.viewProj.m, sizeof(d.viewProj));
@@ -778,6 +789,7 @@ RtEffectsFrameDesc makeFrameDesc(const Scene& s, const Rig& rig, const Camera& c
     d.frameIndex = o.frameIndex;
     std::memcpy(d.ambient, kAmbient, sizeof(d.ambient));
     std::memcpy(d.sky, kSky, sizeof(d.sky));
+    d.atmosphereAddress = g_sky != nullptr ? g_sky->address() : 0u;
     return d;
 }
 
@@ -830,11 +842,15 @@ void buildGraph(Context& ctx, Scene& s, Rig& rig, rg::Graph& graph, FrameState& 
     rig.resolve.addResolve(graph, gbuffer, vis.vis, sceneRefs, ResolvePath::Binned);
     RtEffectsGraphRefs fx[kLanguages]{};
     LightingGraphRefs lighting[kLanguages]{};
+    const rg::BufferRef skyRef = g_sky != nullptr ? graph.importBuffer(rg::ImportedBuffer{ctx.sky.handle, ctx.sky.desc.size, rg::kNoQueue,
+                                                                                         nullptr, "rp_rt_effects.sky"})
+                                                  : rg::BufferRef{};
     for (u32 k = 0; k < kLanguages; ++k) {
         if (!rig.built[k]) {
             continue;
         }
         fx[k] = rig.fx[k].importInto(graph);
+        fx[k].atmosphere = skyRef; // rt.reflections declares the LUTs its misses read
         RtEffectsDump sd{};
         RtEffectsDump rd{};
         if (o.dumps) {
@@ -1061,6 +1077,7 @@ struct HardStats {
     u32 secondaryAmbiguous = 0;
     f64 maxRadianceRel = 0.0;
     u32 mirrorPixels = 0;
+    u32 missChecked = 0; ///< misses whose radiance was checked (the sky: constant or the atmosphere)
 };
 
 void checkShadowRays(const Scene& s, const Rig& rig, u32 k, const GBufferCpu& g, const Outputs& out, const RtfxRayRecord* dump,
@@ -1125,7 +1142,16 @@ void checkShadowRays(const Scene& s, const Rig& rig, u32 k, const GBufferCpu& g,
 void checkReflectionRays(const Scene& s, const Rig& rig, u32 k, const GBufferCpu& g, const Outputs& out, const RtfxRayRecord* dump,
                          HardStats& st) {
     const RtfxFrameConstants& c = rig.fx[k].frameConstants();
-    const RtEffectsReference ref(s.bvh, s.gpu, s.materials.data(), static_cast<u32>(s.materials.size()));
+    RtEffectsReference ref(s.bvh, s.gpu, s.materials.data(), static_cast<u32>(s.materials.size()));
+    if (g_sky != nullptr) {
+        ref.setSkyRadiance(
+            [](const void* user, const V3& d) {
+                const fuse::math::Vec3 L = static_cast<const fuse::renderer::test_sky::SyntheticSky*>(user)->radiance(
+                    fuse::math::Vec3{static_cast<f32>(d.x), static_cast<f32>(d.y), static_cast<f32>(d.z)}, false);
+                return V3{L.x, L.y, L.z};
+            },
+            g_sky);
+    }
     const u32 W = rig.width, H = rig.height;
     for (u32 y = 0; y < H; ++y) {
         for (u32 x = 0; x < W; ++x) {
@@ -1195,6 +1221,7 @@ void checkReflectionRays(const Scene& s, const Rig& rig, u32 k, const GBufferCpu
                 continue;
             }
             ++st.radianceChecked;
+            st.missChecked += gHit ? 0u : 1u;
             const f64 ref3[3] = {rad.x, rad.y, rad.z};
             bool bad = false;
             for (u32 ch = 0; ch < 3u; ++ch) {
@@ -1213,8 +1240,9 @@ void printHard(const char* tag, const HardStats& st) {
                 tag, st.rays, st.sky, st.hits, st.robust, st.rays > 0u ? 100.0 * st.robust / st.rays : 0.0, st.robustMismatch, st.visBad,
                 st.hitDistBad, st.tBad, st.maxDt, st.maxOrigin, st.maxDir, st.genBad);
     if (st.radianceChecked + st.secondaryAmbiguous > 0u) {
-        std::printf(", %u mirror px, horizon mismatches %u, radiance checked %u (bad %u, max rel %.2e, %u secondary ambiguous)",
-                    st.mirrorPixels, st.validMismatch, st.radianceChecked, st.radianceBad, st.maxRadianceRel, st.secondaryAmbiguous);
+        std::printf(", %u mirror px, horizon mismatches %u, radiance checked %u (%u misses; bad %u, max rel %.2e, %u secondary ambiguous)",
+                    st.mirrorPixels, st.validMismatch, st.radianceChecked, st.missChecked, st.radianceBad, st.maxRadianceRel,
+                    st.secondaryAmbiguous);
     }
     std::printf("\n");
 }
@@ -1232,10 +1260,29 @@ void expectHard(const HardStats& st, bool reflection) {
         expect(st.radianceChecked > 500u && st.radianceBad == 0u, "reflection radiance == the reference hit shading");
         expect(st.secondaryAmbiguous * 50u <= st.radianceChecked, "ambiguous secondary shadow rays stay below 2%");
         expect(st.mirrorPixels > 100u, "mirror pixels on screen");
+        if (g_sky != nullptr) {
+            expect(st.missChecked > 100u, "sky mode: reflection misses checked against the atmosphere sky");
+        }
     }
 }
 
-int runHard(Context& ctx) {
+int runHard(Context& ctx, bool sky = false) {
+    fuse::renderer::test_sky::SyntheticSky synthetic;
+    if (sky) {
+        const Camera c0 = makeCamera(128, 96, 0);
+        const fuse::math::Vec3 eye{static_cast<f32>(c0.eye.x), static_cast<f32>(c0.eye.y), static_cast<f32>(c0.eye.z)};
+        if (!synthetic.build(eye, fuse::math::Vec3{0.3f, 0.8f, 0.2f}, fuse::math::Vec3{0.f, 0.f, -1.f}, fuse::math::Vec3{1.f, 0.f, 0.f},
+                             fuse::math::Vec3{0.f, 1.f, 0.f}, 0.7f, 0.5f) ||
+            !hostBuffer(ctx, ctx.sky, static_cast<usize>(synthetic.bytes()), MemoryUsage::CpuToGpu, "rp_rt_effects.sky")) {
+            std::fprintf(stderr, "FAIL: synthetic sky\n");
+            return 1;
+        }
+        synthetic.write(ctx.sky.mapped, ctx.sky.deviceAddress);
+        g_sky = &synthetic;
+    }
+    struct SkyReset {
+        ~SkyReset() { g_sky = nullptr; }
+    } skyReset;
     Scene s;
     if (!buildScene(ctx, s, false)) {
         std::fprintf(stderr, "FAIL: scene\n");
@@ -1866,6 +1913,8 @@ int main(int argc, char** argv) {
         }
         if (mode == "hard") {
             rc = runHard(ctx);
+        } else if (mode == "sky") {
+            rc = runHard(ctx, true);
         } else if (mode == "converge") {
             rc = runConverge(ctx);
         } else if (mode == "shade") {

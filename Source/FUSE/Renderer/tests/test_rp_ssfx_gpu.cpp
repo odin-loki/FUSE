@@ -22,6 +22,13 @@
 //                  (<= 1 half ulp: the device conversion may truncate).
 //   --mode analytic GTAO through the whole GPU path (engine G-buffer -> prepare -> gtao) on a plane (exactly 1)
 //                  and at the crease of 90 / 120 degree wedges ((1 - cos alpha) / 2), == the CPU kernel.
+//   --mode sky     the sky fallback (SsfxGpuSettings::skyFallback, kSsfxFlagSky) over a synthetic WP-8.2 sky
+//                  (test_rp_sky_source.hpp: AtParams + patterned LUTs in a host-visible buffer, declared through
+//                  SsfxGraphInputs::sky) on the room scene (open sky): ssfx.ssr == the sky-aware reference_frame (hits
+//                  bit for bit as in --mode passes; misses that leave the screen / reach the sky == at_sky_radiance
+//                  along the reflected world direction, 1e-3 relative, confidence == the gloss fade within 1e-5);
+//                  ssfx.ssgi with the sky == the sky-aware CPU gather (the --mode passes statistical gate); compose bit for
+//                  bit; the sky fallback lights > 50 SSR pixels and brightens the SSGI.
 //   --mode zero_alloc  64 steady-state frames (every pass, 2 SSGI bounces, camera moving): 0 operator-new calls
 //                  in SsfxGpu::beginFrame, the ssfx.* pass callbacks and the whole graph build (validated run
 //                  first; validation off for the count).
@@ -43,6 +50,7 @@
 #include <fuse/renderer/vk/instance.hpp>
 #include <fuse/ssfx/gtao_kernel.hpp>
 
+#include "test_rp_sky_source.hpp"
 #include "test_rp_ssfx_gpu_scene.hpp"
 
 #include <algorithm>
@@ -199,6 +207,7 @@ struct Context {
     Buffer staging{};
     Buffer readback{};
     Buffer dump{};
+    Buffer sky{}; ///< --mode sky: the synthetic atmosphere
     u8 stagingQueue = rg::kNoQueue;
     u8 readbackQueue = rg::kNoQueue;
     u8 dumpQueue = rg::kNoQueue;
@@ -214,7 +223,7 @@ struct Context {
             }
             t = Texture{};
         }
-        for (Buffer* b : {&staging, &readback, &dump}) {
+        for (Buffer* b : {&staging, &readback, &dump, &sky}) {
             if (b->handle != nullptr) {
                 allocator->destroyBuffer(*b);
             }
@@ -422,6 +431,8 @@ struct TestRecord {
 };
 
 TestRecord g_record{};
+/// --mode sky: the synthetic sky source (null otherwise).
+const fuse::renderer::test_sky::SyntheticSky* g_sky = nullptr;
 
 void recordUpload(const rg::PassContext& pc, void* user) {
     const TestRecord& r = *static_cast<const TestRecord*>(user);
@@ -486,6 +497,9 @@ void buildGraph(Context& ctx, SsfxGpu& ssfx, rg::Graph& graph, bool readback) {
         inputs.dump =
             graph.importBuffer(rg::ImportedBuffer{ctx.dump.handle, ctx.dump.desc.size, ctx.dumpQueue, &ctx.dumpQueue, "rp_ssfx.dump"});
     }
+    if (g_sky != nullptr) {
+        inputs.sky = graph.importBuffer(rg::ImportedBuffer{ctx.sky.handle, ctx.sky.desc.size, rg::kNoQueue, nullptr, "rp_ssfx.sky"});
+    }
     ssfx.addPasses(graph, refs, inputs);
     if (readback) {
         r.readback = graph.importBuffer(rg::ImportedBuffer{ctx.readback.handle, ctx.readback.desc.size, ctx.readbackQueue,
@@ -517,6 +531,7 @@ SsfxFrameImages frameImages(Context& ctx, bool dump) {
     images.depth = &ctx.images[3];
     images.lit = &ctx.images[4];
     images.dumpAddress = dump ? ctx.dump.deviceAddress : 0u;
+    images.skyAddress = g_sky != nullptr ? g_sky->address() : 0u;
     return images;
 }
 
@@ -833,6 +848,133 @@ int runPasses(Context& ctx) {
     return 0;
 }
 
+// --- sky fallback ----------------------------------------------------------------------------------------
+Vec3 skyRadiance(const void* user, const Vec3& w) { return static_cast<const fuse::renderer::test_sky::SyntheticSky*>(user)->radiance(w, false); }
+
+int runSky(Context& ctx) {
+    constexpr u32 kW = 97;
+    constexpr u32 kH = 71;
+    if (!ensureTargets(ctx, kW, kH)) {
+        std::fprintf(stderr, "FAIL: targets\n");
+        return 1;
+    }
+    ssfx_test::RoomScene room;
+    ssfx_test::buildRoom(room, kW, kH, 0);
+    fuse::renderer::test_sky::SyntheticSky sky;
+    const f32* m = room.camera.view.data.data();
+    // Camera basis from the view matrix rows (world -> view): right = row 0, up = row 1, forward = -row 2.
+    if (!sky.build(room.camera.eye, Vec3{0.3f, 0.8f, 0.2f}, Vec3{-m[2], -m[6], -m[10]}, Vec3{m[0], m[4], m[8]}, Vec3{m[1], m[5], m[9]},
+                   0.8f, 0.6f)) {
+        std::fprintf(stderr, "FAIL: synthetic sky\n");
+        return 1;
+    }
+    BufferDesc bd{};
+    bd.size = static_cast<usize>(sky.bytes());
+    bd.usage = static_cast<BufferUsage>(static_cast<u32>(BufferUsage::Storage) | static_cast<u32>(BufferUsage::ShaderDeviceAddress));
+    bd.memoryUsage = MemoryUsage::CpuToGpu;
+    bd.name = "rp_ssfx.sky";
+    if (!ctx.allocator->createBuffer(bd, ctx.sky) || ctx.sky.mapped == nullptr || ctx.sky.deviceAddress == 0u) {
+        std::fprintf(stderr, "FAIL: sky buffer\n");
+        return 1;
+    }
+    sky.write(ctx.sky.mapped, ctx.sky.deviceAddress);
+    writeStaging(ctx, room.g);
+    Config cfg = configA();
+    cfg.name = "gtao + ssr + ssgi x2 + sky fallback";
+    u32 built = 0;
+    for (u32 l = 0; l < 2u; ++l) {
+        SsfxGpu ssfx;
+        if (!initSsfx(ctx, ssfx, kLangs[l].language)) {
+            std::printf("  [%s] kernels not built: skipped\n", kLangs[l].name);
+            continue;
+        }
+        ++built;
+        rg::Graph graph;
+        // Without the sky source first (the fallback needs one: flag cleared, B5 misses), then with it.
+        SsfxGpuSettings settings = cfg.settings;
+        settings.skyFallback = true;
+        settings.ssgiSkyFallback = true;
+        Captured plain;
+        expect(runFrame(ctx, ssfx, graph, settings, ssfx_test::cameraDesc(room.camera), room.ambient, plain), "frame without a sky source");
+        expect((ssfx.constants().flags & (kSsfxFlagSky | kSsfxFlagSkyGi)) == 0u && ssfx.constants().sky == 0u,
+               "no sky source: the sky flags cleared");
+        g_sky = &sky;
+        Captured cap;
+        expect(runFrame(ctx, ssfx, graph, settings, ssfx_test::cameraDesc(room.camera), room.ambient, cap), "frame with the sky");
+        g_sky = nullptr;
+        const SsfxFrameConstants& c = ssfx.constants();
+        expect((c.flags & kSsfxFlagSky) != 0u && (c.flags & kSsfxFlagSkyGi) != 0u && c.sky == sky.address(),
+               "sky source: kSsfxFlagSky / SkyGi + the AtParams address");
+        SsfxReferenceFrame ref;
+        expect(reference_frame(settings, c, cap.prepared, ref, fuse::kernel::Backend::CpuReference, SsfxSkySource{&skyRadiance, &sky}),
+               "sky-aware reference_frame");
+        const usize n = cap.ssr.size();
+        u32 mismatch = 0, hitsExact = 0, hits = 0, skyPx = 0, skyBad = 0;
+        f64 skyErr = 0.0, confErr = 0.0;
+        for (usize i = 0; i < n; ++i) {
+            const Vec4& a = cap.ssr[i];
+            const Vec4& b = ref.ssr[i];
+            const bool plainHit = plain.ssr[i].w > 0.f; // the B5 hit (the prepared inputs are the same frame's)
+            if ((a.w > 0.f) != (b.w > 0.f)) {
+                ++mismatch;
+                continue;
+            }
+            if (!(b.w > 0.f)) {
+                continue;
+            }
+            confErr = std::max(confErr, relErr(a.w, b.w, 1e-6f));
+            if (plainHit && std::memcmp(&plain.ssr[i], &a, sizeof(Vec4)) == 0) {
+                ++hits;
+                hitsExact += sameBits(a.x, b.x) && sameBits(a.y, b.y) && sameBits(a.z, b.z) ? 1u : 0u;
+                continue;
+            }
+            ++skyPx;
+            const f64 e = std::max({relErr(a.x, b.x, 1e-3f), relErr(a.y, b.y, 1e-3f), relErr(a.z, b.z, 1e-3f)});
+            skyErr = std::max(skyErr, e);
+            skyBad += e > 1e-3 ? 1u : 0u;
+        }
+        std::printf("  [%s] ssfx.ssr with the sky: %u hit / miss mismatches, %u hits (%u bit-identical), %u sky pixels (max rel "
+                    "%.3g, %u beyond 1e-3), max confidence rel err %.3g\n",
+                    kLangs[l].name, mismatch, hits, hitsExact, skyPx, skyErr, skyBad, confErr);
+        expect(mismatch == 0u && hitsExact == hits && hits > 200u, "ssfx.ssr hits == ssr_kernel with the sky fallback on");
+        expect(skyPx > 50u && skyBad == 0u, "ssfx.ssr sky fallback == at_sky_radiance of the reflected world direction");
+        expect(confErr <= 1e-5, "ssfx.ssr confidence (sky: the gloss fade) within 1e-5 relative");
+        u32 giOk = 0, brighter = 0;
+        f64 sumGpu = 0.0, sumCpu = 0.0;
+        for (usize i = 0; i < n; ++i) {
+            const Vec3 d = cap.gi[i] - ref.gi[i];
+            giOk += (d.length() / std::max(1e-6, static_cast<f64>(ref.gi[i].length())) <= 1e-4 || d.length() <= 1e-5) ? 1u : 0u;
+            sumGpu += cap.gi[i].x + cap.gi[i].y + cap.gi[i].z;
+            sumCpu += ref.gi[i].x + ref.gi[i].y + ref.gi[i].z;
+            brighter += cap.gi[i].x > plain.gi[i].x + 1e-6f ? 1u : 0u;
+        }
+        const f64 meanRel = std::fabs(sumGpu - sumCpu) / std::max(1e-9, sumCpu);
+        std::printf("  [%s] ssfx.ssgi with the sky: %u / %zu within 1e-4 rel, frame mean rel diff %.3g, %u pixels brighter than "
+                    "without the sky\n",
+                    kLangs[l].name, giOk, n, meanRel, brighter);
+        expect(static_cast<f64>(giOk) >= 0.99 * static_cast<f64>(n) && meanRel <= 1e-3, "ssfx.ssgi with the sky == the CPU gather");
+        expect(brighter > 200u, "the sky fallback lights SSGI");
+        u32 composeExact = 0;
+        for (u32 y = 0; y < kH; ++y) {
+            for (u32 x = 0; x < kW; ++x) {
+                const usize i = static_cast<usize>(y) * kW + x;
+                const Vec4 e = compose_pixel(c, x, y, cap.prepared.prepared[i], cap.prepared.normal[i], cap.prepared.albedo[i],
+                                             cap.prepared.radiance[i], cap.prepared.litAlpha[i], cap.ao[i], cap.ssr[i], cap.gi[i]);
+                composeExact += std::memcmp(&e, &cap.dump[i], sizeof(Vec4)) == 0 ? 1u : 0u;
+            }
+        }
+        expect(composeExact == n, "ssfx.compose == compose_pixel with the sky fallback");
+        ssfx.destroy();
+    }
+    ctx.allocator->destroyBuffer(ctx.sky);
+    ctx.sky = Buffer{};
+    if (built == 0u) {
+        std::printf("SKIP: no screen-space kernel built\n");
+        return kSkip;
+    }
+    return 0;
+}
+
 // --- analytic ------------------------------------------------------------------------------------------
 int runAnalytic(Context& ctx) {
     constexpr u32 kSize = 160;
@@ -1050,6 +1192,8 @@ int main(int argc, char** argv) {
             rc = runPasses(ctx);
         } else if (mode == "analytic") {
             rc = runAnalytic(ctx);
+        } else if (mode == "sky") {
+            rc = runSky(ctx);
         } else if (mode == "zero_alloc") {
             rc = runZeroAlloc(ctx, false);
         } else {

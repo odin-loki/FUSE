@@ -1,5 +1,7 @@
 // WP-2.3 forward transparency, fragment stage. Slang twin of fw_forward.frag (see there).
 #include "fw_includes.slang"
+#include "atmosphere/at_sample.slang"  // aerial perspective (kForwardFlagAerial)
+#include "volumetric/fog_common.slang" // froxel fog (kForwardFlagFog)
 
 struct FSIn {
     [[vk::location(0)]] float2 uv : UV;
@@ -43,7 +45,8 @@ float4 main(FSIn input, float4 fragCoord : SV_Position, uint primitive : SV_Prim
     s.roughness = rt2.x;
     s.metallic = rt2.y;
     s.emissive = rt5.xyz;
-    const float3 v = fuseLcSafeNormalize(fuseLcVec3(F.cameraPosition) - s.position, s.normal);
+    const float3 toCamera = fuseLcVec3(F.cameraPosition) - s.position;
+    const float3 v = fuseLcSafeNormalize(toCamera, s.normal);
     const float3 radiance = fuseFwShade(F, s, v, cluster);
     const float alpha = clamp(draw.opacity, 0.0, 1.0);
     if (f.dump != 0ull) {
@@ -60,5 +63,18 @@ float4 main(FSIn input, float4 fragCoord : SV_Position, uint primitive : SV_Prim
         t.cluster = cluster;
         ((FwDumpTexel*)f.dump)[input.draw * f.width * f.height + p] = t;
     }
-    return float4(radiance * alpha, alpha);
+    float3 shaded = radiance;
+    if ((f.flags & kFuseFwFlagAerial) != 0u) {
+        const AtParams atm = at_load(f.atmosphere);
+        float3 scatter;
+        float3 trans;
+        at_aerial(atm, float2(sx, sy), sqrt(dot(toCamera, toCamera)), scatter, trans);
+        shaded = shaded * trans + scatter * at_illuminance(atm);
+    }
+    if ((f.flags & kFuseFwFlagFog) != 0u) {
+        FogFrame* R = (FogFrame*)f.fog;
+        const float4 fog = fogSample(R, (float4*)R.integrated, sx, sy, viewDepth);
+        shaded = shaded * fog.w + fog.xyz;
+    }
+    return float4(shaded * alpha, alpha);
 }

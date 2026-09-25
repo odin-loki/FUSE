@@ -434,6 +434,15 @@ bool ForwardTransparency::beginFrame(u64 frameSerial, const ForwardFrameDesc& fr
     c.width = m_width;
     c.height = m_height;
     c.drawCount = m_drawCount;
+    c.flags = 0u;
+    if (frame.atmosphereAddress != 0u) {
+        c.flags |= kForwardFlagAerial;
+        c.atmosphere = frame.atmosphereAddress;
+    }
+    if (frame.fogAddress != 0u) {
+        c.flags |= kForwardFlagFog;
+        c.fog = frame.fogAddress;
+    }
     std::memcpy(slot, &c, sizeof(c));
     m_frameAddress = m_frameRing.deviceAddress + offset;
     m_dumpAddress = frame.dumpAddress;
@@ -488,6 +497,12 @@ void ForwardTransparency::addForward(rg::Graph& graph, const ForwardGraphRefs& r
     pass.use(lightingRefs.lists, rg::Access::StorageRead, {}, rg::kStageFragment)
         .use(depth, rg::Access::DepthAttachmentRead)
         .use(refs.color, rg::Access::ColorAttachmentWrite);
+    if (refs.atmosphere.valid()) {
+        pass.use(refs.atmosphere, rg::Access::StorageRead, {}, rg::kStageFragment); // aerial-perspective LUTs
+    }
+    if (refs.fog.valid()) {
+        pass.use(refs.fog, rg::Access::StorageRead, {}, rg::kStageFragment); // the integrated fog volume
+    }
     if (dump.valid() && m_dumpAddress != 0u && m_drawCount > 0u) {
         pass.use(dump, rg::Access::StorageWrite,
                  rg::BufferRange{0, static_cast<u64>(m_drawCount) * m_width * m_height * sizeof(ForwardDumpTexel)},

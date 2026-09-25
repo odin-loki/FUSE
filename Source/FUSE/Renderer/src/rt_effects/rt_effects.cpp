@@ -194,6 +194,10 @@ bool buildFrameConstants(const RtEffectsFrameDesc& desc, u32 width, u32 height, 
     c.invHeight = 1.f / static_cast<f32>(height);
     c.scene = desc.scene;
     c.flags = desc.hitShadows ? kRtfxFlagHitShadows : 0u;
+    if (desc.atmosphereAddress != 0u) {
+        c.atmosphere = desc.atmosphereAddress;
+        c.flags |= kRtfxFlagAtmosphereSky;
+    }
     c.reflectionSamples = std::min(desc.reflectionSamples, kRtfxMaxSamples);
     c.normalBias = desc.normalBias;
     c.viewBias = desc.viewBias;
@@ -579,6 +583,9 @@ bool RtEffects::addReflections(rg::Graph& graph, const RtEffectsGraphRefs& refs,
     gpu_scene::GpuScene::useAll(pass, scene, rg::Access::StorageRead, rg::kStageCompute);
     for (const u32 attachment : kGBufferAttachments) {
         pass.use(gbuffer.gbuffer[attachment], rg::Access::SampledRead, {}, rg::kStageCompute);
+    }
+    if (refs.atmosphere.valid()) {
+        pass.use(refs.atmosphere, rg::Access::StorageRead, {}, rg::kStageCompute); // misses: the sky-view LUT
     }
     const u64 pixels = static_cast<u64>(m_width) * m_height;
     pass.use(refs.output, rg::Access::StorageWrite, rg::BufferRange{m_layout.reflection, pixels * sizeof(RtfxReflectionTexel)},

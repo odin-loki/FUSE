@@ -11,6 +11,8 @@
 // GLSL twin of fw_forward_fs.slang.
 #extension GL_GOOGLE_include_directive : require
 #include "fw_includes.glsl"
+#include "atmosphere/at_sample.glsl"  // aerial perspective (kForwardFlagAerial)
+#include "volumetric/fog_common.glsl" // froxel fog (kForwardFlagFog)
 
 layout(early_fragment_tests) in;
 
@@ -59,7 +61,24 @@ void main() {
     const vec3 v = fuse_lc_safe_normalize(toCamera, s.normal);
     const vec3 radiance = fuse_fw_shade(F, s, v, cluster);
     const float alpha = clamp(draw.opacity, 0.0, 1.0);
-    precise vec3 premultiplied = radiance * alpha;
+    // Participating media between the camera and the fragment (the opaque path's frame.aerial then fog.apply).
+    vec3 shaded = radiance;
+    if ((f.flags & FUSE_FW_FLAG_AERIAL) != 0u) {
+        const AtParams atm = at_load(f.atmosphere);
+        vec3 scatter;
+        vec3 trans;
+        at_aerial(atm, vec2(sx, sy), sqrt(dot(toCamera, toCamera)), scatter, trans);
+        const vec3 e = at_illuminance(atm);
+        precise vec3 aerial = shaded * trans + scatter * e;
+        shaded = aerial;
+    }
+    if ((f.flags & FUSE_FW_FLAG_FOG) != 0u) {
+        FuseFogFrameRef R = FuseFogFrameRef(f.fog);
+        const vec4 fog = fuse_fog_sample(R, FuseFogTexelsRef(R.f.integrated), sx, sy, viewDepth);
+        precise vec3 fogged = shaded * fog.w + fog.xyz;
+        shaded = fogged;
+    }
+    precise vec3 premultiplied = shaded * alpha;
     outColor = vec4(premultiplied, alpha);
     if (f.dump != 0ul) {
         const uint p = uint(gl_FragCoord.y) * f.width + uint(gl_FragCoord.x);

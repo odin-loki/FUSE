@@ -443,6 +443,11 @@ bool SsfxGpu::beginFrame(u64 frameSerial, const SsfxGpuSettings& settings, const
     if (c.giBounces == 0u) {
         c.flags &= ~static_cast<u32>(kSsfxFlagSsgi);
     }
+    // Sky fallback: only with a sky source (the WP-8.2 AtParams of this frame).
+    c.sky = (c.flags & (kSsfxFlagSky | kSsfxFlagSkyGi)) != 0u ? images.skyAddress : 0u;
+    if (c.sky == 0u) {
+        c.flags &= ~static_cast<u32>(kSsfxFlagSky | kSsfxFlagSkyGi);
+    }
     m_hasDump = images.dumpAddress != 0u;
     m_constants = c;
     const u32 slot = static_cast<u32>(frameSerial % m_desc.framesInFlight);
@@ -517,8 +522,11 @@ void SsfxGpu::addPasses(rg::Graph& graph, const SsfxGraphRefs& refs, const SsfxG
         if (PassRecord* r = nextRecord(kSsr)) {
             ++m_stats.passes;
             m_stats.ssrRan = true;
-            graph.addPass("ssfx.ssr", &SsfxGpu::recordDispatch, r)
-                .use(refs.work, rg::Access::StorageReadWrite, {}, rg::kStageCompute);
+            rg::PassBuilder pass = graph.addPass("ssfx.ssr", &SsfxGpu::recordDispatch, r);
+            pass.use(refs.work, rg::Access::StorageReadWrite, {}, rg::kStageCompute);
+            if ((c.flags & kSsfxFlagSky) != 0u && inputs.sky.valid()) {
+                pass.use(inputs.sky, rg::Access::StorageRead, {}, rg::kStageCompute); // the sky fallback's LUTs
+            }
         }
     }
     if ((c.flags & kSsfxFlagSsgi) != 0u) {
@@ -539,8 +547,11 @@ void SsfxGpu::addPasses(rg::Graph& graph, const SsfxGraphRefs& refs, const SsfxG
             r->push.mode = bounce;
             ++m_stats.passes;
             ++m_stats.ssgiBounces;
-            graph.addPass("ssfx.ssgi", &SsfxGpu::recordDispatch, r)
-                .use(refs.work, rg::Access::StorageReadWrite, {}, rg::kStageCompute);
+            rg::PassBuilder pass = graph.addPass("ssfx.ssgi", &SsfxGpu::recordDispatch, r);
+            pass.use(refs.work, rg::Access::StorageReadWrite, {}, rg::kStageCompute);
+            if ((c.flags & kSsfxFlagSkyGi) != 0u && inputs.sky.valid()) {
+                pass.use(inputs.sky, rg::Access::StorageRead, {}, rg::kStageCompute);
+            }
             if (!last) {
                 in = next;
                 const u64 written = next;

@@ -105,7 +105,7 @@ foreach(_row IN LISTS _fuse_wp62_kernels)
             SOURCES "${_fuse_wp62_shd}/${_slang}"
             STAGE compute
             SUFFIX ".rtfx_${_suffix}"
-            INCLUDE_DIRS "${_fuse_wp62_scene_inc}" "${_fuse_wp62_shd}"
+            INCLUDE_DIRS "${_fuse_wp62_scene_inc}" "${_fuse_wp62_shd}" "${_fuse_wp62_root}/shaders" # + atmosphere/at_sample
             # 39001: the bindless arrays alias one binding on purpose.
             FLAGS -warnings-disable 39001 -fp-mode precise -capability spvRayQueryKHR
             OUTPUT_DIR "${_fuse_wp62_spv}"
@@ -118,13 +118,13 @@ foreach(_row IN LISTS _fuse_wp62_kernels)
     if(FUSE_GLSLANG_VALIDATOR)
         set(_out "${_fuse_wp62_spv}/rtfx_${_suffix}.glsl.spv")
         set(_cmds COMMAND "${FUSE_GLSLANG_VALIDATOR}" --target-env vulkan1.3 "-I${_fuse_wp62_common_inc}" "-I${_fuse_wp62_scene_inc}"
-                          "-I${_fuse_wp62_shd}" "${_fuse_wp62_shd}/${_glsl}" -o "${_out}")
+                          "-I${_fuse_wp62_shd}" "-I${_fuse_wp62_root}/shaders" "${_fuse_wp62_shd}/${_glsl}" -o "${_out}")
         if(FUSE_SPIRV_VAL)
             list(APPEND _cmds COMMAND "${FUSE_SPIRV_VAL}" --target-env vulkan1.3 "${_out}")
         endif()
         add_custom_command(OUTPUT "${_out}" ${_cmds}
             DEPENDS "${_fuse_wp62_shd}/${_glsl}" "${_fuse_wp62_shd}/rtfx_common.glsl" "${_fuse_wp62_scene_inc}/gpu_scene.glsl"
-                    "${_fuse_wp62_common_inc}/bindless.glsl"
+                    "${_fuse_wp62_common_inc}/bindless.glsl" "${_fuse_wp62_root}/shaders/atmosphere/at_sample.glsl"
             COMMENT "glslangValidator ${_glsl} (rtfx_${_suffix}, GLSL twin)"
             VERBATIM)
         list(APPEND _fuse_wp62_embed_args "-D${_key}_GLSL=${_out}")
@@ -159,14 +159,14 @@ endforeach()
 
 # --- Lavapipe gates ------------------------------------------------------------------------------------------
 add_executable(fuse_rp_rt_effects ${_fuse_wp62_tests_dir}/test_rp_rt_effects.cpp)
-target_link_libraries(fuse_rp_rt_effects PRIVATE fuse_rt_effects_reference fuse_lighting_gpu fuse_geometry)
+target_link_libraries(fuse_rp_rt_effects PRIVATE fuse_rt_effects_reference fuse_lighting_gpu fuse_geometry fuse_atmosphere_gpu)
 target_compile_options(fuse_rp_rt_effects PRIVATE ${_fuse_wp62_warn})
 fuse_apply_cxx23(fuse_rp_rt_effects)
 
 # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
 set(_fuse_wp62_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
 set(_fuse_wp62_vk_tests "")
-foreach(_mode hard converge shade zero_alloc caps_gate)
+foreach(_mode hard converge shade zero_alloc caps_gate sky)
     set(_name "fuse_rp_rt_effects_vk_${_mode}")
     if(FUSE_VULKAN_BACKEND)
         add_test(NAME ${_name} COMMAND "${_fuse_wp62_lock}" "$<TARGET_FILE:fuse_rp_rt_effects>" --mode ${_mode})

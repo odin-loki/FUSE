@@ -14,6 +14,16 @@ namespace fuse::renderer::forward {
 /// image is copied into it, then the transparent draws blend over it.
 inline constexpr u32 kForwardColorFormat = 97u;
 
+/// ForwardFrameConstants::flags: participating media applied to every transparent fragment's radiance before
+/// the premultiplied blend (exact for the over operator: out = a (c T + S) + (1 - a) dst, the destination being
+/// the already-attenuated opaque scene), in the composer's opaque order (aerial perspective, then fog).
+enum ForwardFlag : u32 {
+    /// WP-8.2 aerial perspective: rgb x T + S x E_sun, at_aerial(atmosphere, fragment screen uv, |P - camera|)
+    kForwardFlagAerial = 1u << 0,
+    /// WP-8.1 froxel fog: rgb x T + S, fuse_fog_sample(fog, fragment screen point, view depth)
+    kForwardFlagFog = 1u << 1,
+};
+
 /// Per-frame constants, read through BDA from a host-visible ring (ForwardTransparency::beginFrame):
 /// 128 bytes, std430 (FuseFwFrame in fw_common.glsl, FwFrame in fw_common.slang). The frame's
 /// ForwardDraw table follows in the same ring slot.
@@ -27,11 +37,13 @@ struct ForwardFrameConstants {
     u32 width = 0;
     u32 height = 0;
     u32 drawCount = 0;
-    u32 flags = 0;
-    u32 reserved[4] = {};
+    u32 flags = 0;         ///< ForwardFlag
+    u64 atmosphere = 0;    ///< AtParams (AtmosphereGpu::frameAddress()) with kForwardFlagAerial, else 0
+    u64 fog = 0;           ///< FogFrameConstants (FroxelFog::frameConstantsAddress()) with kForwardFlagFog, else 0
 };
 static_assert(sizeof(ForwardFrameConstants) == 128u && offsetof(ForwardFrameConstants, lighting) == 64u &&
-                  offsetof(ForwardFrameConstants, scene) == 88u && offsetof(ForwardFrameConstants, drawCount) == 104u,
+                  offsetof(ForwardFrameConstants, scene) == 88u && offsetof(ForwardFrameConstants, drawCount) == 104u &&
+                  offsetof(ForwardFrameConstants, atmosphere) == 112u && offsetof(ForwardFrameConstants, fog) == 120u,
               "ForwardFrameConstants layout (fw_common.glsl / .slang)");
 
 /// One transparent draw (gl_InstanceIndex / SV_StartInstanceLocation = its index in the sorted

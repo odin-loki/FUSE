@@ -86,6 +86,10 @@ struct SsfxFrameImages {
     /// Optional f32x4-per-pixel buffer (BDA) receiving the composed radiance before RGBA16F rounding;
     /// declare it with SsfxGraphInputs::dump.
     u64 dumpAddress = 0;
+    /// Optional sky-radiance source of the sky fallback (SsfxGpuSettings::skyFallback): the WP-8.2
+    /// AtmosphereGpu::frameAddress() of this frame (AtParams + LUTs); declare it with SsfxGraphInputs::sky. 0 = no
+    /// fallback (misses stay 0 as without the setting).
+    u64 skyAddress = 0;
 };
 
 /// The graph refs of the images of SsfxFrameImages (as imported by their owners, e.g.
@@ -97,6 +101,7 @@ struct SsfxGraphInputs {
     rg::TextureRef depth;
     rg::TextureRef lit;
     rg::BufferRef dump;
+    rg::BufferRef sky; ///< the buffer behind SsfxFrameImages::skyAddress (AtmosphereGraphRefs::luts): ssfx.ssr / .ssgi read it
 };
 
 struct SsfxGraphRefs {

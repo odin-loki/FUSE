@@ -84,7 +84,8 @@ add_custom_target(fuse_forward_kernels)
 set(_fuse_wp23_embed_args "")
 set(_fuse_wp23_embed_deps "")
 file(GLOB _fuse_wp23_glsl_includes "${_fuse_wp23_shd}/*.glsl" "${_fuse_wp23_vis_shd}/*.glsl" "${_fuse_wp23_mr_shd}/*.glsl"
-     "${_fuse_wp23_lc_shd}/*.glsl" "${_fuse_wp23_common_inc}/*.glsl")
+     "${_fuse_wp23_lc_shd}/*.glsl" "${_fuse_wp23_common_inc}/*.glsl" "${_fuse_wp23_root}/shaders/atmosphere/at_sample.glsl"
+     "${_fuse_wp23_root}/shaders/volumetric/fog_common.glsl")
 
 foreach(_row IN LISTS _fuse_wp23_kernels)
     string(REPLACE "|" ";" _entry "${_row}")
@@ -99,7 +100,7 @@ foreach(_row IN LISTS _fuse_wp23_kernels)
             STAGE ${_stage}
             SUFFIX ".fw_${_suffix}"
             INCLUDE_DIRS "${_fuse_wp23_scene_inc}" "${_fuse_wp23_vis_shd}" "${_fuse_wp23_mr_shd}" "${_fuse_wp23_lc_shd}"
-                         "${_fuse_wp23_shd}"
+                         "${_fuse_wp23_shd}" "${_fuse_wp23_root}/shaders" # + atmosphere/at_sample, volumetric/fog_common
             # 39001: the bindless arrays alias one binding on purpose; 41012: the fragment stage's
             # implicit capability upgrade.
             FLAGS -warnings-disable 39001 -warnings-disable 41012 -fp-mode precise
@@ -114,7 +115,7 @@ foreach(_row IN LISTS _fuse_wp23_kernels)
         set(_out "${_fuse_wp23_spv}/fw_${_suffix}.glsl.spv")
         set(_cmds COMMAND "${FUSE_GLSLANG_VALIDATOR}" --target-env vulkan1.3 "-I${_fuse_wp23_common_inc}"
                           "-I${_fuse_wp23_scene_inc}" "-I${_fuse_wp23_vis_shd}" "-I${_fuse_wp23_mr_shd}" "-I${_fuse_wp23_lc_shd}"
-                          "-I${_fuse_wp23_shd}" "${_fuse_wp23_shd}/${_glsl}" -o "${_out}")
+                          "-I${_fuse_wp23_shd}" "-I${_fuse_wp23_root}/shaders" "${_fuse_wp23_shd}/${_glsl}" -o "${_out}")
         if(FUSE_SPIRV_VAL)
             list(APPEND _cmds COMMAND "${FUSE_SPIRV_VAL}" --target-env vulkan1.3 "${_out}")
         endif()
@@ -145,6 +146,7 @@ set(_fuse_wp23_tests_dir "${_fuse_wp23_root}/tests")
 # --- CPU gates (collection / sort / blend references; also run in the stub tree) -----------------
 add_executable(fuse_rp_forward_cpu ${_fuse_wp23_tests_dir}/test_rp_forward_cpu.cpp)
 target_link_libraries(fuse_rp_forward_cpu PRIVATE fuse_forward)
+target_compile_definitions(fuse_rp_forward_cpu PRIVATE FUSE_RP_FORWARD_SHADER_DIR="${_fuse_wp23_shd}")
 fuse_apply_cxx23(fuse_rp_forward_cpu)
 foreach(_suite layout collect sort blend api)
     add_test(NAME fuse_rp_forward_${_suite} COMMAND fuse_rp_forward_cpu ${_suite})
@@ -153,13 +155,13 @@ endforeach()
 
 # --- Lavapipe gates ------------------------------------------------------------------------------
 add_executable(fuse_rp_forward ${_fuse_wp23_tests_dir}/test_rp_forward.cpp)
-target_link_libraries(fuse_rp_forward PRIVATE fuse_forward)
+target_link_libraries(fuse_rp_forward PRIVATE fuse_forward fuse_atmosphere_gpu fuse_volumetric_gpu)
 fuse_apply_cxx23(fuse_rp_forward)
 
 # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
 set(_fuse_wp23_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
 set(_fuse_wp23_vk_tests "")
-foreach(_case "twin;set" "twin;buffer" "blend;set" "zero_alloc;set")
+foreach(_case "twin;set" "twin;buffer" "blend;set" "zero_alloc;set" "media;set")
     list(GET _case 0 _mode)
     list(GET _case 1 _backend)
     set(_name "fuse_rp_forward_vk_${_mode}_${_backend}")

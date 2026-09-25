@@ -83,7 +83,7 @@ set(_fuse_wp63_header "${_fuse_wp63_gen}/ssfx_gpu_spv.h")
 add_custom_target(fuse_ssfx_gpu_kernels)
 set(_fuse_wp63_embed_args "")
 set(_fuse_wp63_embed_deps "")
-file(GLOB _fuse_wp63_glsl_includes "${_fuse_wp63_shd}/*.glsl")
+file(GLOB _fuse_wp63_glsl_includes "${_fuse_wp63_shd}/*.glsl" "${_fuse_wp63_root}/shaders/atmosphere/at_sample.glsl")
 
 foreach(_row IN LISTS _fuse_wp63_kernels)
     string(REPLACE "|" ";" _entry "${_row}")
@@ -96,7 +96,7 @@ foreach(_row IN LISTS _fuse_wp63_kernels)
             SOURCES "${_fuse_wp63_shd}/${_slang}"
             STAGE compute
             SUFFIX ".sx_${_suffix}"
-            INCLUDE_DIRS "${_fuse_wp63_shd}"
+            INCLUDE_DIRS "${_fuse_wp63_shd}" "${_fuse_wp63_root}/shaders" # + atmosphere/at_sample (sky fallback)
             # 39001: the bindless arrays alias one binding on purpose.
             FLAGS -warnings-disable 39001 -fp-mode precise
             OUTPUT_DIR "${_fuse_wp63_spv}"
@@ -109,7 +109,7 @@ foreach(_row IN LISTS _fuse_wp63_kernels)
     if(FUSE_GLSLANG_VALIDATOR)
         set(_out "${_fuse_wp63_spv}/sx_${_suffix}.glsl.spv")
         set(_cmds COMMAND "${FUSE_GLSLANG_VALIDATOR}" --target-env vulkan1.3 "-I${_fuse_wp63_common_inc}"
-                          "-I${_fuse_wp63_shd}" "${_fuse_wp63_shd}/${_glsl}" -o "${_out}")
+                          "-I${_fuse_wp63_shd}" "-I${_fuse_wp63_root}/shaders" "${_fuse_wp63_shd}/${_glsl}" -o "${_out}")
         if(FUSE_SPIRV_VAL)
             list(APPEND _cmds COMMAND "${FUSE_SPIRV_VAL}" --target-env vulkan1.3 "${_out}")
         endif()
@@ -142,20 +142,20 @@ add_executable(fuse_rp_ssfx_gpu_cpu ${_fuse_wp63_tests_dir}/test_rp_ssfx_gpu_cpu
 target_link_libraries(fuse_rp_ssfx_gpu_cpu PRIVATE fuse_ssfx_gpu)
 target_compile_definitions(fuse_rp_ssfx_gpu_cpu PRIVATE FUSE_RP_SSFX_SHADER_DIR="${_fuse_wp63_shd}")
 fuse_apply_cxx23(fuse_rp_ssfx_gpu_cpu)
-foreach(_suite layout gtao_analytic gtao_parity reference api)
+foreach(_suite layout gtao_analytic gtao_parity reference api sky)
     add_test(NAME fuse_rp_ssfx_gpu_${_suite} COMMAND fuse_rp_ssfx_gpu_cpu ${_suite})
     set_tests_properties(fuse_rp_ssfx_gpu_${_suite} PROPERTIES LABELS "gate;renderer;ssfx" TIMEOUT 900)
 endforeach()
 
 # --- Lavapipe gates ------------------------------------------------------------------------------
 add_executable(fuse_rp_ssfx_gpu ${_fuse_wp63_tests_dir}/test_rp_ssfx_gpu.cpp)
-target_link_libraries(fuse_rp_ssfx_gpu PRIVATE fuse_ssfx_gpu)
+target_link_libraries(fuse_rp_ssfx_gpu PRIVATE fuse_ssfx_gpu fuse_atmosphere_gpu)
 fuse_apply_cxx23(fuse_rp_ssfx_gpu)
 
 # tests/CMakeLists.txt writes the ICD lock wrapper; its variable is scoped to that directory.
 set(_fuse_wp63_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
 set(_fuse_wp63_vk_tests "")
-foreach(_case "passes;set" "passes;buffer" "analytic;set" "zero_alloc;set")
+foreach(_case "passes;set" "passes;buffer" "analytic;set" "zero_alloc;set" "sky;set")
     list(GET _case 0 _mode)
     list(GET _case 1 _backend)
     set(_name "fuse_rp_ssfx_gpu_vk_${_mode}_${_backend}")

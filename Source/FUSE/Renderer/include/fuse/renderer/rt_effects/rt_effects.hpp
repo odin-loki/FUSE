@@ -96,6 +96,9 @@ struct RtEffectsFrameDesc {
     u32 seed = 0x5EEDu;
     f32 ambient[3] = {0.f, 0.f, 0.f};   ///< ambient radiance at reflection hits
     f32 sky[3] = {0.f, 0.f, 0.f};       ///< radiance of reflection misses
+    /// Optional WP-8.2 sky for reflection misses: AtmosphereGpu::frameAddress() of this frame (0 = the constant
+    /// `sky`). Sets kRtfxFlagAtmosphereSky; declare the LUTs with RtEffectsGraphRefs::atmosphere.
+    u64 atmosphereAddress = 0;
     f32 normalBias = 0.01f;
     f32 viewBias = 1.0e-3f;
     f32 farDistance = 1.0e4f;
@@ -107,6 +110,9 @@ struct RtEffectsFrameDesc {
 
 struct RtEffectsGraphRefs {
     rg::BufferRef output; ///< visibility / hit distance / reflection sections (RtEffectsOutputLayout)
+    /// Set by the caller (AtmosphereGraphRefs::luts) when RtEffectsFrameDesc::atmosphereAddress != 0:
+    /// rt.reflections declares it StorageRead (misses sample the sky-view LUT).
+    rg::BufferRef atmosphere;
 };
 
 /// Optional debug dump of the first sample's ray + hit (RtfxRayRecord): shadows [light][pixel], reflections [pixel].

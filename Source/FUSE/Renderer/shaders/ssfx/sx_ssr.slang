@@ -43,6 +43,11 @@ void main(uint3 tid: SV_DispatchThreadID) {
                 fade = sxGlossFade(hit.distance, r);
             }
             result = float4(hit.color, hit.confidence * fade);
+        } else if ((F.flags & kSxFlagSky) != 0u) {
+            const float3 dir = sxPixelReflection(p.x, p.y);
+            if (sxSkyExit(P, p.x, p.y, dir)) {
+                result = float4(sxSky(sxNormalize(dir)), useRoughness ? sxGlossFade(P.maxDistance, r) : 1.0);
+            }
         }
     }
     sxTexels(F.ssr)[i] = result;

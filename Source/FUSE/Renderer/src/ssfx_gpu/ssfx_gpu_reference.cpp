@@ -43,6 +43,12 @@ bool resolve_constants(const SsfxGpuSettings& settings, const SsfxCameraDesc& ca
     if (settings.ssgi) {
         c.flags |= kSsfxFlagSsgi;
     }
+    if (settings.skyFallback && settings.ssr) {
+        c.flags |= kSsfxFlagSky;
+    }
+    if (settings.ssgiSkyFallback && settings.ssgi) {
+        c.flags |= kSsfxFlagSkyGi;
+    }
     if (camera.reversedZ) {
         c.flags |= kSsfxFlagReversedZ;
     }
@@ -132,8 +138,58 @@ bool computeGtaoCpu(const ssfx::SsfxGBufferView& view, const ssfx::GtaoParams& p
         .ok;
 }
 
+namespace {
+
+/// ssgi_kernel::pixel_gather + the sky fallback (sx_ssgi's sx_pixel_gather with kSsfxFlagSky).
+math::Vec3 gather_with_sky(const ssfx::SsfxGBufferView& view, const math::Vec3* radiance, const ssfx::SsgiParams& params,
+                           const SsfxFrameConstants& c, const SsfxSkySource& sky, u32 x, u32 y) {
+    if (x >= view.camera.width || y >= view.camera.height || view.depthAt(x, y) <= 0.f) {
+        return {};
+    }
+    const ssfx::SsrParams trace = ssfx::ssgi_kernel::trace_params(params);
+    const math::Vec3 p = view.positionAt(x, y);
+    math::Vec3 n = view.normalAt(x, y).normalized();
+    if (n.dot(p) > 0.f) {
+        n = n * -1.f;
+    }
+    math::Vec3 sum{};
+    const u32 total = params.sample_sqrt * params.sample_sqrt;
+    for (u32 i = 0u; i < params.sample_sqrt; ++i) {
+        for (u32 j = 0u; j < params.sample_sqrt; ++j) {
+            const math::Vec3 dir = ssfx::ssgi_kernel::sample_direction(n, x, y, i, j, params.sample_sqrt);
+            const ssfx::SsrHit hit = ssfx::ssr_kernel::trace_ray(view, radiance, trace, x, y, dir);
+            if (!hit.hit) {
+                if (sky_exit(view, params.max_distance, x, y, dir)) {
+                    sum = sum + sky.radiance(sky.user, sky_world_dir(c, dir.normalized()));
+                }
+                continue;
+            }
+            const u32 hx = std::min(view.camera.width - 1u, static_cast<u32>(std::max(0.f, hit.px)));
+            const u32 hy = std::min(view.camera.height - 1u, static_cast<u32>(std::max(0.f, hit.py)));
+            math::Vec3 hitN = view.normalAt(hx, hy).normalized();
+            if (hitN.dot(view.positionAt(hx, hy)) > 0.f) {
+                hitN = hitN * -1.f;
+            }
+            if (hitN.dot(dir) >= 0.f) {
+                continue;
+            }
+            sum = sum + hit.color;
+        }
+    }
+    return sum * (1.f / static_cast<f32>(total));
+}
+
+} // namespace
+
 bool reference_frame(const SsfxGpuSettings& settings, const SsfxFrameConstants& c, const SsfxPreparedFrame& in,
                      SsfxReferenceFrame& out, kernel::Backend backend) {
+    return reference_frame(settings, c, in, out, backend, SsfxSkySource{});
+}
+
+bool reference_frame(const SsfxGpuSettings& settings, const SsfxFrameConstants& c, const SsfxPreparedFrame& in,
+                     SsfxReferenceFrame& out, kernel::Backend backend, const SsfxSkySource& sky) {
+    const bool skyOn = (c.flags & kSsfxFlagSky) != 0u && sky.radiance != nullptr;
+    const bool skyGi = (c.flags & kSsfxFlagSkyGi) != 0u && sky.radiance != nullptr;
     const usize n = static_cast<usize>(in.width) * in.height;
     if (n == 0u || in.width != c.width || in.height != c.height || in.prepared.size() != n || in.normal.size() != n ||
         in.radiance.size() != n || in.litAlpha.size() != n || in.albedo.size() != n || in.diffuse.size() != n) {
@@ -164,9 +220,45 @@ bool reference_frame(const SsfxGpuSettings& settings, const SsfxFrameConstants& 
         if (!kernel::launch(backend, ssfx::ssr_kernel::make_launch(view), ssfx::ssr_kernel::Kernel{}, kp).ok) {
             return false;
         }
+        if (skyOn) { // sx_ssr: a miss that sky_exit takes the sky at confidence 1 x the gloss fade at max distance
+            const ssfx::SsrParams sp = ssfx::ssr_kernel::clamp_params(settings.ssr_params);
+            for (u32 y = 0; y < in.height; ++y) {
+                for (u32 x = 0; x < in.width; ++x) {
+                    const usize i = static_cast<usize>(y) * in.width + x;
+                    const f32 r = settings.ssrRoughness ? roughness[i] : 0.f;
+                    if (!(r < 1.f) || view.depthAt(x, y) <= 0.f ||
+                        ssfx::ssr_kernel::trace_pixel(view, in.radiance.data(), sp, x, y).hit) {
+                        continue;
+                    }
+                    const math::Vec3 dir = pixel_reflection(view, x, y);
+                    if (!sky_exit(view, sp.max_distance, x, y, dir)) {
+                        continue;
+                    }
+                    const f32 fade = settings.ssrRoughness ? ssfx::ssr_kernel::gloss_fade(settings.contact, sp.max_distance, r) : 1.f;
+                    const math::Vec3 L = sky.radiance(sky.user, sky_world_dir(c, dir.normalized()));
+                    out.ssr[i] = math::Vec4{L.x, L.y, L.z, fade};
+                }
+            }
+        }
     }
-    if (settings.ssgi &&
-        !ssfx::computeSsgiCpu(view, in.radiance.data(), in.diffuse.data(), settings.ssgi_params, out.gi.data(), backend)) {
+    if (settings.ssgi && skyGi) { // the bounce chain of computeSsgiCpu with the sky fallback
+        const ssfx::SsgiParams gp = ssfx::ssgi_kernel::clamp_params(settings.ssgi_params);
+        std::vector<math::Vec3> src = in.radiance;
+        for (u32 b = 0; b < gp.bounces; ++b) {
+            for (u32 y = 0; y < in.height; ++y) {
+                for (u32 x = 0; x < in.width; ++x) {
+                    const usize i = static_cast<usize>(y) * in.width + x;
+                    const math::Vec3 g = gather_with_sky(view, src.data(), gp, c, sky, x, y);
+                    const math::Vec3 a = in.diffuse[i];
+                    out.gi[i] = math::Vec3{a.x * g.x, a.y * g.y, a.z * g.z} * gp.intensity;
+                }
+            }
+            for (usize i = 0; i < n; ++i) {
+                src[i] = in.radiance[i] + out.gi[i];
+            }
+        }
+    } else if (settings.ssgi &&
+               !ssfx::computeSsgiCpu(view, in.radiance.data(), in.diffuse.data(), settings.ssgi_params, out.gi.data(), backend)) {
         return false;
     }
     for (u32 y = 0; y < in.height; ++y) {

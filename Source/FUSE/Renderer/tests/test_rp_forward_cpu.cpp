@@ -14,6 +14,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <sstream>
 #include <new>
 #include <random>
 #include <string>
@@ -308,6 +310,32 @@ void suiteLayout() {
     inst.flags |= kInstanceTransparent;
     expect(!culling::cull_kernel::eligible(inst, 1u), "transparent instance not eligible for the culler");
     expect(kForwardColorFormat == static_cast<u32>(GpuFormat::R16G16B16A16Sfloat), "colour target RGBA16F");
+#if defined(FUSE_RP_FORWARD_SHADER_DIR)
+    // The media fields (kForwardFlagAerial / kForwardFlagFog) close the record in both shader languages, in C++ order.
+    expect(offsetof(ForwardFrameConstants, flags) == 108u && offsetof(ForwardFrameConstants, atmosphere) == 112u &&
+               offsetof(ForwardFrameConstants, fog) == 120u && kForwardFlagAerial == 1u && kForwardFlagFog == 2u,
+           "ForwardFrameConstants: flags 108, atmosphere 112, fog 120; ForwardFlag bits");
+    for (const char* file : {"/fw_common.glsl", "/fw_common.slang"}) {
+        std::ifstream in(std::string(FUSE_RP_FORWARD_SHADER_DIR) + file);
+        std::stringstream ss;
+        ss << in.rdbuf();
+        const std::string text = ss.str();
+        const bool glsl = std::string(file).find("glsl") != std::string::npos;
+        const size_t begin = text.find(glsl ? "struct FuseFwFrame {" : "struct FwFrame {");
+        const size_t end = text.find("};", begin);
+        const std::string body = begin != std::string::npos && end != std::string::npos ? text.substr(begin, end - begin) : "";
+        const size_t f = body.find("uint flags;");
+        const size_t a = body.find("uint64_t atmosphere;");
+        const size_t g = body.find("uint64_t fog;");
+        expect(f != std::string::npos && a != std::string::npos && g != std::string::npos && f < a && a < g &&
+                   body.find("reserved") == std::string::npos,
+               "fw_common FwFrame: flags, atmosphere, fog in C++ order (no reserved words left)");
+        expect(glsl ? (text.find("#define FUSE_FW_FLAG_AERIAL 1u") != std::string::npos &&
+                       text.find("#define FUSE_FW_FLAG_FOG 2u") != std::string::npos)
+                    : (text.find("kFuseFwFlagAerial = 1u") != std::string::npos && text.find("kFuseFwFlagFog = 2u") != std::string::npos),
+               "fw_common: the ForwardFlag bits");
+    }
+#endif
 }
 
 void suiteCollect() {

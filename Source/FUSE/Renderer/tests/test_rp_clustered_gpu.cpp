@@ -25,6 +25,9 @@
 //   --mode parity_4096     the scene above, capacity 256
 //   --mode overflow        capacity 24 + a dense light cluster: clusters overflow, dropped counts and the
 //                          kept lowest slots == the oracle
+//   --mode skip_area       parity_4096 with LightingFrameDesc::skipAreaLights (kFlagSkipAreaLights): light.shade
+//                          == the CPU shade with ShadeReferenceDesc::skipAreaLights (the rectangle / disk lights
+//                          left out of the cluster loop), same tolerances
 //   --mode zero_alloc      64 steady-state frames (lights moving): 0 operator-new calls in
 //                          ClusteredLighting::beginFrame, the light.* pass callbacks and the whole graph
 //                          build (validated run first; validation off for the count)
@@ -99,6 +102,7 @@ FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* p, std::size_t) noex
 namespace {
 constexpr int kSkip = 77;
 int g_failures = 0;
+[[maybe_unused]] bool g_skipAreaLights = false; ///< --mode skip_area
 
 [[maybe_unused]] void expect(bool condition, const char* message) {
     if (!condition) {
@@ -958,6 +962,7 @@ bool beginFrame(Context& ctx, Scene& s, Rig& rig, const FrameCamera& cam) {
     lf.lightCount = s.gpu.lightHighWater();
     std::memcpy(lf.ambient, kAmbient, sizeof(lf.ambient));
     lf.gbuffer = &rig.resolve;
+    lf.skipAreaLights = g_skipAreaLights;
     for (u32 k = 0; k < kLanguages; ++k) {
         if (rig.built[k]) {
             ok = rig.lighting[k].beginFrame(ctx.serial, lf) && ok;
@@ -1194,6 +1199,7 @@ void analyse(Context& ctx, Scene& s, Rig& rig, const FrameState& fs, const Frame
     sd.grid = &expected;
     sd.directional = &oracle.directional;
     sd.brdfLut = rig.lighting[rig.built[0] ? 0u : 1u].brdfLut(); // WP-2.2: the compensated BRDF + area lights
+    sd.skipAreaLights = g_skipAreaLights;
     std::vector<Vec4> ref;
     shadeReferenceFrame(sd, ref);
     for (const Vec4& v : ref) {
@@ -1485,6 +1491,13 @@ int main(int argc, char** argv) {
             ls.areas = 100; // WP-2.2: 50 rectangles + 50 disks (clustered like points)
             ls.spots = 1400;
             rc = runParity(ctx, ClusterDesc{}, ls, "parity_4096");
+        } else if (mode == "skip_area") {
+            g_skipAreaLights = true;
+            LightScene ls{};
+            ls.points = 2500;
+            ls.areas = 100;
+            ls.spots = 1400;
+            rc = runParity(ctx, ClusterDesc{}, ls, "skip_area");
         } else if (mode == "overflow") {
             ClusterDesc clusters{};
             clusters.maxLightsPerCluster = 24;

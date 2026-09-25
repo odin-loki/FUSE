@@ -21,6 +21,8 @@
 #define SX_FLAG_SSR_ROUGHNESS (1u << 5)
 #define SX_FLAG_SSR_CONTACT (1u << 6)
 #define SX_FLAG_AO_JITTER (1u << 7)
+#define SX_FLAG_SKY (1u << 8)
+#define SX_FLAG_SKY_GI (1u << 9)
 
 #define SX_MAX_SLICES 32
 
@@ -37,7 +39,7 @@ struct SxFrame {
     uint64_t bounce0;
     uint64_t bounce1;
     uint64_t dump;
-    uint64_t reserved0;
+    uint64_t sky;
     uint width;
     uint height;
     uint inputDepth;

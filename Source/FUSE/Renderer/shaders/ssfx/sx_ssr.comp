@@ -53,6 +53,12 @@ void main() {
             }
             precise float conf = hit.confidence * fade;
             result = vec4(hit.color, conf);
+        } else if ((F.flags & SX_FLAG_SKY) != 0u) {
+            // Sky fallback: the ray left the screen / reached the sky at full confidence (x the gloss fade).
+            const vec3 dir = sx_pixel_reflection(p.x, p.y);
+            if (sx_sky_exit(P, p.x, p.y, dir)) {
+                result = vec4(sx_sky(sx_normalize(dir)), useRoughness ? sx_gloss_fade(P.maxDistance, r) : 1.0);
+            }
         }
     }
     SxTexelsRef(F.ssr).v[i] = result;

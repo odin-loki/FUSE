@@ -1,6 +1,15 @@
 // WP-6.2 "rt.reflections", Slang twin of rtfx_reflections.comp (see there).
 #include "gpu_scene.slang"
 #include "rtfx_common.slang"
+#include "atmosphere/at_sample.slang"
+
+// Radiance of a reflection ray that misses (rtfx_reflections.comp fuse_rtfx_miss).
+float3 fuseRtfxMiss(RtfxFrame F, float3 dir) {
+    if ((F.flags & kFuseRtfxFlagAtmosphereSky) != 0u && F.atmosphere != uint64_t(0)) {
+        return at_sky_radiance(at_load(F.atmosphere), dir, false);
+    }
+    return fuseRtfxVec3(F.sky);
+}
 
 // First-bounce radiance of the closest hit (RtEffectsReference::shadeHit).
 float3 fuseRtfxShadeHit(RtfxFrame F, float3 origin, float3 dir, float t, uint instance, uint primitive) {
@@ -96,7 +105,7 @@ void main(uint3 tid: SV_DispatchThreadID) {
                 hits += 1u;
                 hitSum += t;
             } else {
-                sum += fuseRtfxVec3(F.sky);
+                sum += fuseRtfxMiss(F, dir);
             }
         }
         if (s == 0u) {

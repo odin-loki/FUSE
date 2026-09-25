@@ -322,6 +322,15 @@ bool FrameComposer::init(const FrameComposerDesc& desc) {
         dd.bindless = desc.bindless;
         dd.framesInFlight = desc.framesInFlight;
         optional(m_svgf.init(dd), kStageDenoise, "denoiser");
+        // The ReSTIR DI / RT reflection signals through the WP-6.4 SVGF behind the IDenoiser adapter (WP-6.4b).
+        denoise::SvgfDenoiserDesc rdn = dd;
+        rdn.name = "frame.restir_denoiser";
+        optional(m_restirDenoiser.init(rdn) && m_restirDenoiser.configure(frameDenoiserPreset(denoise::DenoiseSignal::Gi)),
+                 kStageRestirDenoise, "restir denoiser");
+        rdn.name = "frame.reflection_denoiser";
+        optional(m_reflectDenoiser.init(rdn) &&
+                     m_reflectDenoiser.configure(frameDenoiserPreset(denoise::DenoiseSignal::Reflection)),
+                 kStageReflectionDenoise, "reflection denoiser");
         light_tree::LightTreeGpuDesc td{};
         td.device = desc.device;
         td.allocator = desc.allocator;
@@ -509,6 +518,8 @@ void FrameComposer::destroy() {
     m_lighting.destroy();
     m_ddgi.destroy();
     m_svgf.destroy();
+    m_restirDenoiser.svgf().destroy();
+    m_reflectDenoiser.svgf().destroy();
     m_rtfx.destroy();
     m_as.destroy();
     m_vsmShadows.destroy();
@@ -813,6 +824,12 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     }
     if (t2 && settings.rtReflections && settings.reflectionSamples > 0u) {
         plan |= kStageRtReflections;
+        if (settings.reflectionDenoise) {
+            plan |= kStageReflectionDenoise;
+        }
+        if (settings.rtReflectionAtmosphereSky) {
+            plan |= kStageAtmosphere;
+        }
     }
     if (settings.ddgi) {
         plan |= kStageDdgi;
@@ -822,6 +839,9 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     }
     if (t2 && settings.restir && !m_restirTable.empty()) {
         plan |= kStageRestir;
+        if (settings.restirDenoise) {
+            plan |= kStageRestirDenoise;
+        }
     }
     if (settings.ssfx) {
         plan |= kStageSsfx;
@@ -860,8 +880,19 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     if ((plan & kStageDenoise) != 0u && (plan & kStageRtShadows) == 0u) {
         plan &= ~static_cast<u32>(kStageDenoise);
     }
-    const bool ddgiSky = (plan & kStageDdgi) != 0u && settings.ddgiAtmosphereSky && (plan & kStageAtmosphere) != 0u;
-    if ((plan & (kStageSky | kStageAerial | kStageClouds)) == 0u && !ddgiSky) {
+    if ((plan & kStageRestirDenoise) != 0u && (plan & kStageRestir) == 0u) {
+        plan &= ~static_cast<u32>(kStageRestirDenoise);
+    }
+    if ((plan & kStageReflectionDenoise) != 0u && (plan & kStageRtReflections) == 0u) {
+        plan &= ~static_cast<u32>(kStageReflectionDenoise);
+    }
+    const bool atmosphere = (plan & kStageAtmosphere) != 0u;
+    const bool ddgiSky = (plan & kStageDdgi) != 0u && settings.ddgiAtmosphereSky && atmosphere;
+    // SSR / SSGI see the sky only when the frame has one (frame.sky before SSFX): sky off = black background and
+    // no fallback, as before.
+    const bool ssfxSky = (plan & kStageSsfx) != 0u && (plan & kStageSky) != 0u && settings.ssfxSkyFallback && atmosphere;
+    const bool reflectionSky = (plan & kStageRtReflections) != 0u && settings.rtReflectionAtmosphereSky && atmosphere;
+    if ((plan & (kStageSky | kStageAerial | kStageClouds)) == 0u && !ddgiSky && !ssfxSky && !reflectionSky) {
         plan &= ~static_cast<u32>(kStageAtmosphere);
     }
     const bool upscale = (plan & (kStageTaau | kStageFsr3)) != 0u;
@@ -870,6 +901,8 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         plan &= ~static_cast<u32>(kStageFrameGen);
     }
     m_ddgiSky = ddgiSky;
+    m_ssfxSky = ssfxSky;
+    m_reflectionSky = reflectionSky;
 
     computeMatrices(desc, upscale);
     f32 invDraw[16];
@@ -978,8 +1011,23 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         rd.frameIndex = desc.frameIndex;
         std::memcpy(rd.ambient, settings.ambient, sizeof(rd.ambient));
         std::memcpy(rd.sky, settings.ddgiSkyRadiance, sizeof(rd.sky));
+        rd.atmosphereAddress = reflectionSky ? m_atmosphere.frameAddress() : 0u; // misses: the WP-8.2 sky
         rd.farDistance = cam.farPlane;
         ok = m_rtfx.beginFrame(serial, rd) && ok;
+        if ((plan & kStageReflectionDenoise) != 0u) {
+            denoise::DenoiserSettings ds = settings.reflectionDenoiser;
+            ds.signal = denoise::DenoiseSignal::Reflection;
+            ok = m_reflectDenoiser.configure(ds) && ok;
+            denoise::DenoiseFrameDesc dd{};
+            dd.width = w;
+            dd.height = h;
+            dd.signal = m_rtfx.outputBuffer().deviceAddress + m_rtfx.outputLayout().reflection; // RtfxReflectionTexel: rgb + hit distance
+            dd.motion = m_motion.motionAddress();
+            dd.depth = m_motion.depthAddress();
+            dd.normalImage = &m_resolve.gbufferImage(0);
+            dd.reset = desc.resetHistory;
+            ok = m_reflectDenoiser.beginFrame(serial, dd) && ok;
+        }
         if ((plan & kStageDenoise) != 0u) {
             denoise::SvgfSettings ds = settings.denoiser;
             ds.signal = denoise::DenoiseSignal::Shadow;
@@ -1061,6 +1109,20 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         rd.frameIndex = desc.frameIndex;
         rd.reset = desc.resetHistory;
         ok = m_restir.beginFrame(serial, rd) && ok;
+        if ((plan & kStageRestirDenoise) != 0u) {
+            denoise::DenoiserSettings ds = settings.restirDenoiser;
+            ds.signal = denoise::DenoiseSignal::Gi; // demodulated RGB radiance
+            ok = m_restirDenoiser.configure(ds) && ok;
+            denoise::DenoiseFrameDesc dd{};
+            dd.width = w;
+            dd.height = h;
+            dd.signal = m_restir.diSignalAddress();
+            dd.motion = m_motion.motionAddress();
+            dd.depth = m_motion.depthAddress();
+            dd.normalImage = &m_resolve.gbufferImage(0);
+            dd.reset = desc.resetHistory;
+            ok = m_restirDenoiser.beginFrame(serial, dd) && ok;
+        }
     }
 
     // --- HDR chain (the image each stage reads) ---------------------------------------------------------------
@@ -1093,7 +1155,12 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         si.roughMetal = &m_resolve.gbufferImage(2);
         si.depth = &depth;
         si.lit = chain;
+        si.skyAddress = ssfxSky ? m_atmosphere.frameAddress() : 0u;
         ssfx_gpu::SsfxGpuSettings ss = settings.ssfxSettings;
+        // SSR misses that leave the screen / reach the sky: the WP-8.2 sky. SSGI only without DDGI: DDGI's
+        // atmosphere misses already carry the sky irradiance (the SSGI fallback would add it twice).
+        ss.skyFallback = ssfxSky;
+        ss.ssgiSkyFallback = ssfxSky && (plan & kStageDdgi) == 0u;
         if ((plan & kStageRtReflections) != 0u) {
             ss.ssr = false; // the RT reflections replace SSR
         }
@@ -1159,6 +1226,11 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
         fw.scene = &scene;
         fw.lighting = &m_lighting;
         fw.sampler = m_samplerHandle;
+        if (settings.forwardMedia) { // the opaque scene's media, on every transparent fragment
+            fw.atmosphereAddress = (plan & kStageAerial) != 0u ? m_atmosphere.frameAddress() : 0u;
+            fw.fogAddress = (plan & kStageFog) != 0u ? m_fog.frameConstantsAddress() : 0u;
+        }
+        m_forwardMedia = fw.atmosphereAddress != 0u || fw.fogAddress != 0u;
         ok = m_forward.beginFrame(serial, fw) && ok;
         if (m_forward.drawCount() == 0u) {
             plan &= ~static_cast<u32>(kStageForward); // nothing transparent in view: no copy
@@ -1175,11 +1247,12 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     c.denoised = (plan & kStageDenoise) != 0u ? m_svgf.outputAddress() : 0u;
     c.visibility = m_visibility.buffer.deviceAddress;
     if ((plan & kStageRestir) != 0u) {
-        c.restirDi = m_restir.diSignalAddress();
+        c.restirDi = (plan & kStageRestirDenoise) != 0u ? m_restirDenoiser.svgf().outputAddress() : m_restir.diSignalAddress();
         c.restirAlbedo = m_restir.frameConstants().surfAlbedo[0];
     }
     if ((plan & kStageRtReflections) != 0u) {
-        c.reflection = m_rtfx.outputBuffer().deviceAddress + m_rtfx.outputLayout().reflection;
+        c.reflection = (plan & kStageReflectionDenoise) != 0u ? m_reflectDenoiser.svgf().outputAddress()
+                                                              : m_rtfx.outputBuffer().deviceAddress + m_rtfx.outputLayout().reflection;
         c.gbufferNormal = sampledHandle(m_resolve.gbufferImage(0));
         c.gbufferAlbedo = sampledHandle(m_resolve.gbufferImage(1));
         c.gbufferRoughMetal = sampledHandle(m_resolve.gbufferImage(2));
@@ -1396,6 +1469,9 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
     rg::BufferRef visibility{};
     if ((plan & (kStageRtShadows | kStageRtReflections)) != 0u) {
         fxRefs = m_rtfx.importInto(graph);
+        if (m_reflectionSky) {
+            fxRefs.atmosphere = atm.luts; // rt.reflections: misses read the sky-view LUT
+        }
         out.rtOutput = fxRefs.output;
     }
     if ((plan & kStageRtShadows) != 0u) {
@@ -1470,12 +1546,25 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
         ri.scene = sceneRefs;
         ri.motion = motion.motion;
         if (m_restir.addPasses(graph, rr, ri)) {
+            rg::BufferRef diSignal = rr.output;
+            if ((plan & kStageRestirDenoise) != 0u) { // WP-6.4 SVGF (IDenoiser) over the demodulated DI signal
+                const denoise::DenoiseGraphRefs dn = m_restirDenoiser.importInto(graph);
+                denoise::DenoiseGraphInputs di{};
+                di.signal = rr.output;
+                di.motion = motion.motion;
+                di.depth = motion.depth;
+                di.normalImage = gbuffer.gbuffer[0];
+                m_restirDenoiser.addPasses(graph, dn, di);
+                diSignal = dn.output;
+                out.restirDenoised = dn.output;
+                ran |= kStageRestirDenoise;
+            }
             const rg::TextureRef img = importImage(graph, m_restirImage, "frame.restir");
             if (PassRecord* r = nextRecord(kFrameModeRestir, kSlotRestir)) {
                 graph.addPass("frame.restir", &FrameComposer::recordDispatch, r)
                     .use(chain, rg::Access::SampledRead, {}, rg::kStageCompute)
                     .use(depth, rg::Access::SampledRead, {}, rg::kStageCompute)
-                    .use(rr.output, rg::Access::StorageRead, {}, rg::kStageCompute)
+                    .use(diSignal, rg::Access::StorageRead, {}, rg::kStageCompute)
                     .use(rr.state, rg::Access::StorageRead, {}, rg::kStageCompute)
                     .use(img, rg::Access::StorageWrite, {}, rg::kStageCompute);
             }
@@ -1511,6 +1600,9 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
         si.roughMetal = gbuffer.gbuffer[2];
         si.depth = depth;
         si.lit = chain;
+        if (m_ssfxSky) {
+            si.sky = atm.luts; // ssfx.ssr / .ssgi sky fallback
+        }
         m_ssfx.addPasses(graph, sx, si);
         out.ssfx = sx.output;
         chain = sx.output;
@@ -1520,6 +1612,19 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
     // --- RT reflections (T2) -> frame.reflect -----------------------------------------------------------------
     if ((plan & kStageRtReflections) != 0u) {
         if (m_rtfx.addReflections(graph, fxRefs, rtRefs.tlas, gbuffer, sceneRefs)) {
+            rg::BufferRef reflection = fxRefs.output;
+            if ((plan & kStageReflectionDenoise) != 0u) { // WP-6.4 SVGF (IDenoiser) over the reflected radiance
+                const denoise::DenoiseGraphRefs dn = m_reflectDenoiser.importInto(graph);
+                denoise::DenoiseGraphInputs di{};
+                di.signal = fxRefs.output;
+                di.motion = motion.motion;
+                di.depth = motion.depth;
+                di.normalImage = gbuffer.gbuffer[0];
+                m_reflectDenoiser.addPasses(graph, dn, di);
+                reflection = dn.output;
+                out.reflectionDenoised = dn.output;
+                ran |= kStageReflectionDenoise;
+            }
             const rg::TextureRef img = importImage(graph, m_reflectImage, "frame.reflect");
             if (PassRecord* r = nextRecord(kFrameModeReflect, kSlotReflect)) {
                 graph.addPass("frame.reflect", &FrameComposer::recordDispatch, r)
@@ -1528,7 +1633,7 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
                     .use(gbuffer.gbuffer[0], rg::Access::SampledRead, {}, rg::kStageCompute)
                     .use(gbuffer.gbuffer[1], rg::Access::SampledRead, {}, rg::kStageCompute)
                     .use(gbuffer.gbuffer[2], rg::Access::SampledRead, {}, rg::kStageCompute)
-                    .use(fxRefs.output, rg::Access::StorageRead, {}, rg::kStageCompute)
+                    .use(reflection, rg::Access::StorageRead, {}, rg::kStageCompute)
                     .use(img, rg::Access::StorageWrite, {}, rg::kStageCompute);
             }
             out.reflect = img;
@@ -1553,11 +1658,13 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
     }
 
     // --- fog --------------------------------------------------------------------------------------------------
+    volumetric_gpu::FogGraphRefs fogRefs{};
     if ((plan & kStageFog) != 0u) {
         if ((plan & kStageVsm) != 0u) {
             m_vsmShadows.addSamplingUse(graph, shadowRefs, &vsmRefs, rg::kStageCompute);
         }
         const volumetric_gpu::FogGraphRefs fog = m_fog.importInto(graph);
+        fogRefs = fog;
         volumetric_gpu::FogGraphInputs fi{};
         fi.lights = lighting.lists;
         fi.scene = &sceneRefs;
@@ -1625,7 +1732,11 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
         if ((plan & kStageVsm) != 0u) {
             m_vsmShadows.addSamplingUse(graph, shadowRefs, &vsmRefs, rg::kStageFragment);
         }
-        const forward::ForwardGraphRefs f = m_forward.importInto(graph);
+        forward::ForwardGraphRefs f = m_forward.importInto(graph);
+        if (m_forwardMedia) { // the aerial-perspective LUTs and the integrated fog volume (fragment stage)
+            f.atmosphere = (plan & kStageAerial) != 0u ? atm.luts : rg::BufferRef{};
+            f.fog = (plan & kStageFog) != 0u ? fogRefs.work : rg::BufferRef{};
+        }
         lighting_gpu::LightingGraphRefs fl = lighting;
         fl.output = sceneColor; // forward.copy source: the resolved scene colour
         m_forward.addForward(graph, f, sceneRefs, fl, vis.depth);
@@ -1737,6 +1848,12 @@ void FrameComposer::collectRetired(u64 completedSerial) {
     }
     if ((m_available & kStageDenoise) != 0u) {
         m_svgf.collectRetired(completedSerial);
+    }
+    if ((m_available & kStageRestirDenoise) != 0u) {
+        m_restirDenoiser.collectRetired(completedSerial);
+    }
+    if ((m_available & kStageReflectionDenoise) != 0u) {
+        m_reflectDenoiser.collectRetired(completedSerial);
     }
     m_lighting.collectRetired(completedSerial);
     if ((m_available & kStageSsfx) != 0u) {

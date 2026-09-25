@@ -10,6 +10,8 @@ static const uint kSxFlagMultiBounce = 1u << 4;
 static const uint kSxFlagSsrRoughness = 1u << 5;
 static const uint kSxFlagSsrContact = 1u << 6;
 static const uint kSxFlagAoJitter = 1u << 7;
+static const uint kSxFlagSky = 1u << 8;
+static const uint kSxFlagSkyGi = 1u << 9;
 
 // SsfxFrameConstants, 592 bytes.
 struct SxFrame {
@@ -24,7 +26,7 @@ struct SxFrame {
     uint64_t bounce0;
     uint64_t bounce1;
     uint64_t dump;
-    uint64_t reserved0;
+    uint64_t sky;
     uint width;
     uint height;
     uint inputDepth;

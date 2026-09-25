@@ -103,10 +103,20 @@ struct ForwardFrameDesc {
     u32 sampler = 0; ///< bindless sampler handle for the material textures
     /// Optional parity dump: BDA of ForwardDumpTexel[maxDraws * width * height] (layer = draw index).
     u64 dumpAddress = 0;
+    /// Optional participating media (ForwardFlag), each applied to the fragment radiance before the blend: the
+    /// WP-8.2 aerial perspective (AtmosphereGpu::frameAddress(); declare ForwardGraphRefs::atmosphere) and the
+    /// WP-8.1 froxel fog (FroxelFog::frameConstantsAddress() of this frame, after its beginFrame; declare
+    /// ForwardGraphRefs::fog = FogGraphRefs::work). 0 = none (the dump keeps the radiance before the media).
+    u64 atmosphereAddress = 0;
+    u64 fogAddress = 0;
 };
 
 struct ForwardGraphRefs {
     rg::TextureRef color; ///< RGBA16F: lit image + blended transparents
+    /// Set by the caller when ForwardFrameDesc::atmosphereAddress / fogAddress are: forward.draw declares them
+    /// StorageRead at the fragment stage (AtmosphereGraphRefs::luts, FogGraphRefs::work).
+    rg::BufferRef atmosphere;
+    rg::BufferRef fog;
 };
 
 struct ForwardStats {

@@ -40,6 +40,9 @@ float3 sxPixelGather(uint64_t radianceIn, uint x, uint y) {
             const float3 dir = sxSampleDirection(n, x, y, i, j, F.giSampleSqrt);
             const SxHit hit = sxTraceRay(radianceIn, P, x, y, dir);
             if (!hit.hit) {
+                if ((F.flags & kSxFlagSkyGi) != 0u && sxSkyExit(P, x, y, dir)) {
+                    sum = sxAdd(sum, sxSky(sxNormalize(dir)));
+                }
                 continue;
             }
             const uint hx = min(F.width - 1u, uint(max(0.0, hit.px)));

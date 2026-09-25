@@ -54,6 +54,12 @@ struct SsfxGpuSettings {
     ssfx::ssr_kernel::ContactHardening contact{true, 0.5f, 0.02f, 2.f};
     bool ssgi = true;
     ssfx::SsgiParams ssgi_params{};
+    /// Sky fallback (needs SsfxFrameImages::skyAddress): SSR (kSsfxFlagSky) / SSGI (kSsfxFlagSkyGi) rays that miss and
+    /// leave the screen or end over the sky (sky_exit below) return the atmosphere's sky radiance instead of nothing.
+    /// Off: the B5 kernels. (A renderer whose other GI already integrates the sky, e.g. DDGI with atmosphere misses,
+    /// keeps the SSGI one off: it would add the sky irradiance twice.)
+    bool skyFallback = false;
+    bool ssgiSkyFallback = false;
 };
 
 /// The camera the G-buffer was rendered with. `view` / `proj` are column-major (math::lookAt /
@@ -198,6 +204,71 @@ FUSE_HOST_DEVICE inline math::Vec4 compose_pixel(const SsfxFrameConstants& c, u3
     return math::Vec4{std::max(r, 0.f), std::max(g, 0.f), std::max(b, 0.f), litAlpha};
 }
 
+// --- sky fallback (kSsfxFlagSky; sx_trace.{glsl,slang} sx_sky_exit / sx_sky_dir twins) ---------------------
+
+/// True when a ray from pixel (x, y) along the view-space `direction` that the march MISSED counts as reaching the
+/// sky: the march's own setup (ssr_kernel::trace_ray: near-plane clip, max distance) and its end point leaves the
+/// screen or lies over a sky pixel (depth 0). A miss whose end point lies over geometry (the ray ran out of length
+/// or passed behind a surface) stays a miss. `maxDistance` = the clamped trace parameter.
+FUSE_HOST_DEVICE inline bool sky_exit(const ssfx::SsfxGBufferView& view, f32 maxDistance, u32 x, u32 y,
+                                      const math::Vec3& direction) {
+    if (!view.valid() || x >= view.camera.width || y >= view.camera.height || view.depthAt(x, y) <= 0.f ||
+        direction.length() <= 0.f) {
+        return false;
+    }
+    const ssfx::SsfxCamera& cam = view.camera;
+    const math::Vec3 p = view.positionAt(x, y);
+    const math::Vec3 r = direction.normalized();
+    f32 rayLength = maxDistance;
+    if (r.z < 0.f) {
+        const f32 maxLen = (p.z - cam.near_z * 1.01f) / -r.z;
+        rayLength = std::min(rayLength, maxLen);
+    }
+    if (rayLength <= 1e-4f) {
+        return false;
+    }
+    const math::Vec3 e = p + r * rayLength;
+    f32 ex = 0.f;
+    f32 ey = 0.f;
+    if (!cam.project(e, ex, ey)) {
+        return false;
+    }
+    if (!cam.inside(ex, ey)) {
+        return true;
+    }
+    return ssfx::ssr_kernel::depth_nearest(view, ex, ey) <= 0.f;
+}
+
+/// World direction of a view-space direction in the ssfx convention (+X right, +Y down, +Z forward): the
+/// engine view direction (x, -y, -z) through the transpose of the world -> view rotation.
+FUSE_HOST_DEVICE inline math::Vec3 sky_world_dir(const SsfxFrameConstants& c, const math::Vec3& d) {
+    const f32 ex = d.x;
+    const f32 ey = -d.y;
+    const f32 ez = -d.z;
+    const f32 wx = c.viewRot[0] * ex + c.viewRot[1] * ey + c.viewRot[2] * ez;
+    const f32 wy = c.viewRot[4] * ex + c.viewRot[5] * ey + c.viewRot[6] * ez;
+    const f32 wz = c.viewRot[8] * ex + c.viewRot[9] * ey + c.viewRot[10] * ez;
+    return math::Vec3{wx, wy, wz};
+}
+
+/// Mirror reflection direction ssfx.ssr traces from pixel (x, y) (ssr_kernel::trace_pixel's).
+FUSE_HOST_DEVICE inline math::Vec3 pixel_reflection(const ssfx::SsfxGBufferView& view, u32 x, u32 y) {
+    const math::Vec3 p = view.positionAt(x, y);
+    math::Vec3 n = view.normalAt(x, y).normalized();
+    const math::Vec3 v = p.normalized();
+    if (n.dot(v) > 0.f) {
+        n = n * -1.f;
+    }
+    return ssfx::ssr_kernel::reflect(v, n);
+}
+
+/// The CPU side of the sky source: the radiance along a unit world direction (the kernels'
+/// at_sky_radiance(atmosphere, dir, false); e.g. atmosphere::at_sky_radiance over the same LUT texels).
+struct SsfxSkySource {
+    math::Vec3 (*radiance)(const void* user, const math::Vec3& worldDir) = nullptr;
+    const void* user = nullptr;
+};
+
 // --- full-frame CPU reference --------------------------------------------------------------------------
 
 /// The prepare outputs of a frame (`width * height` each, row 0 = top), e.g. read back from the GPU.
@@ -223,6 +294,10 @@ struct SsfxReferenceFrame {
 /// resolve_constants): GTAO, SSR, SSGI (all bounces) on `backend`, then compose_pixel. False on bad input.
 bool reference_frame(const SsfxGpuSettings& settings, const SsfxFrameConstants& c, const SsfxPreparedFrame& in,
                      SsfxReferenceFrame& out, kernel::Backend backend = kernel::Backend::CpuReference);
+/// As above; with a `sky` source, SSR misses that sky_exit return the sky (kSsfxFlagSky; confidence 1 x
+/// gloss_fade(maxDistance)) and SSGI misses that sky_exit gather the sky radiance (kSsfxFlagSkyGi; every bounce).
+bool reference_frame(const SsfxGpuSettings& settings, const SsfxFrameConstants& c, const SsfxPreparedFrame& in,
+                     SsfxReferenceFrame& out, kernel::Backend backend, const SsfxSkySource& sky);
 
 /// View of the prepared depth / normals: `depth` must hold `prepared[i].x` (callers keep it alive).
 ssfx::SsfxGBufferView prepared_view(const SsfxFrameConstants& c, const std::vector<f32>& depth,

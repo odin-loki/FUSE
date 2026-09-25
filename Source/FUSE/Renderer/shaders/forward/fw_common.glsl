@@ -8,6 +8,9 @@
 #ifndef FUSE_FW_COMMON_GLSL
 #define FUSE_FW_COMMON_GLSL
 
+#define FUSE_FW_FLAG_AERIAL 1u // ForwardFlag
+#define FUSE_FW_FLAG_FOG 2u
+
 // ForwardFrameConstants, 128 bytes.
 struct FuseFwFrame {
     vec4 viewProj[4]; // columns
@@ -20,10 +23,8 @@ struct FuseFwFrame {
     uint height;
     uint drawCount;
     uint flags;
-    uint reserved0;
-    uint reserved1;
-    uint reserved2;
-    uint reserved3;
+    uint64_t atmosphere;
+    uint64_t fog;
 };
 
 // ForwardDraw, 16 bytes.

@@ -11,8 +11,18 @@
 #include "bindless.glsl"
 #include "gpu_scene.glsl"
 #include "rtfx_common.glsl"
+#include "atmosphere/at_sample.glsl"
 
 layout(local_size_x = FUSE_RTFX_TILE, local_size_y = FUSE_RTFX_TILE) in;
+
+// Radiance of a reflection ray that misses: the WP-8.2 sky (no sun disk: the sun is a hit light) when the frame
+// carries an atmosphere (kRtfxFlagAtmosphereSky), else the constant sky (RtEffectsReference::shadeHit's miss).
+vec3 fuse_rtfx_miss(FuseRtfxFrame F, vec3 dir) {
+    if ((F.flags & FUSE_RTFX_FLAG_ATMOSPHERE_SKY) != 0u && F.atmosphere != 0ul) {
+        return at_sky_radiance(at_load(F.atmosphere), dir, false);
+    }
+    return fuse_rtfx_vec3(F.sky);
+}
 
 // First-bounce radiance of the closest hit (instance, primitive) at distance t along the ray
 // (RtEffectsReference::shadeHit): geometric normal facing the ray, material emission + Lambert.
@@ -107,7 +117,7 @@ void main() {
                 hits += 1u;
                 hitSum += t;
             } else {
-                sum += fuse_rtfx_vec3(F.sky);
+                sum += fuse_rtfx_miss(F, dir);
             }
         }
         if (s == 0u) {

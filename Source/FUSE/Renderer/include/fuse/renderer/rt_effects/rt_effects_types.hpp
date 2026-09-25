@@ -76,6 +76,9 @@ static_assert(sizeof(RtfxShadowView) == 48u, "RtfxShadowView layout (lc_ltc.glsl
 /// RtfxFrameConstants::flags.
 enum RtfxFrameFlag : u32 {
     kRtfxFlagHitShadows = 1u << 0, ///< reflection hits trace shadow rays toward shadowed hit lights
+    /// Reflection misses take the WP-8.2 sky radiance (at_sky_radiance of `atmosphere`, no sun disk: the sun is
+    /// a hit light) instead of the constant `sky` (frame composer: the atmosphere LUTs of the frame).
+    kRtfxFlagAtmosphereSky = 1u << 1,
 };
 
 /// Per-frame constants, read through BDA from a host-visible ring (RtEffects::beginFrame): 576 bytes.
@@ -84,7 +87,7 @@ struct RtfxFrameConstants {
     u64 tlas = 0;                  ///< TLAS device address (AccelerationStructures::tlasAddress())
     u64 hitDistance = 0;           ///< BDA of the shadow hit-distance planes (f32)
     u64 reflection = 0;            ///< BDA of RtfxReflectionTexel[width * height]
-    u64 reserved0 = 0;
+    u64 atmosphere = 0;            ///< AtmosphereGpu::frameAddress() (AtParams) with kRtfxFlagAtmosphereSky, else 0
     f32 invViewProj[16] = {};      ///< column-major, clip (Vulkan, forward z/w) -> world
     f32 cameraPosition[3] = {0.f, 0.f, 0.f};
     u32 frameIndex = 0;            ///< sequence index: sample n of a pixel = frameIndex * samples + s

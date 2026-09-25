@@ -75,6 +75,14 @@ public:
 
     const rt::RtReferenceScene& bvh() const { return m_bvh; }
 
+    /// Radiance of a miss along unit `dir` when the frame has kRtfxFlagAtmosphereSky (the kernels'
+    /// at_sky_radiance(atmosphere, dir, false)); without it (or without the flag) misses return c.sky.
+    using SkyRadianceFn = RtfxVec3<f64> (*)(const void* user, const RtfxVec3<f64>& dir);
+    void setSkyRadiance(SkyRadianceFn fn, const void* user) {
+        m_sky = fn;
+        m_skyUser = user;
+    }
+
 private:
     rt::RtRefHit trace(const RtfxVec3<f64>& origin, const RtfxVec3<f64>& dir, f64 tMax, u32 cullMask) const;
 
@@ -82,6 +90,8 @@ private:
     const gpu_scene::GpuScene& m_scene;
     const Material::GPUMaterial* m_materials = nullptr;
     u32 m_materialCount = 0;
+    SkyRadianceFn m_sky = nullptr;
+    const void* m_skyUser = nullptr;
 };
 
 } // namespace fuse::renderer::rt_effects

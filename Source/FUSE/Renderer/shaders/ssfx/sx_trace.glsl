@@ -5,6 +5,7 @@
 #ifndef FUSE_SX_TRACE_GLSL
 #define FUSE_SX_TRACE_GLSL
 #include "sx_common.glsl"
+#include "atmosphere/at_sample.glsl"
 
 struct SxTrace {
     uint maxSteps;
@@ -158,6 +159,56 @@ SxHit sx_trace_ray(uint64_t sceneColor, SxTrace P, uint x, uint y, vec3 directio
     precise float conf = edgeFade * distanceFade;
     result.confidence = conf;
     return result;
+}
+
+// --- sky fallback (kSsfxFlagSky; CPU twins: ssfx_gpu::sky_exit / sky_world_dir / pixel_reflection) ------------
+// A ray the march missed counts as reaching the sky when its end point (the march's own near-plane clip and max
+// distance) leaves the screen or lies over a sky pixel (depth 0).
+bool sx_sky_exit(SxTrace P, uint x, uint y, vec3 direction) {
+    if (x >= F.width || y >= F.height || sx_depth_at(x, y) <= 0.0 || sx_length(direction) <= 0.0) {
+        return false;
+    }
+    const vec3 p = sx_position_at(x, y);
+    const vec3 r = sx_normalize(direction);
+    precise float rayLength = P.maxDistance;
+    if (r.z < 0.0) {
+        precise float maxLen = (p.z - F.nearZ * 1.01) / -r.z;
+        rayLength = min(rayLength, maxLen);
+    }
+    if (rayLength <= 1e-4) {
+        return false;
+    }
+    const vec3 e = sx_add(p, sx_scale(r, rayLength));
+    float ex, ey;
+    if (!sx_project(e, ex, ey)) {
+        return false;
+    }
+    if (!sx_inside(ex, ey)) {
+        return true;
+    }
+    return sx_depth_nearest(ex, ey) <= 0.0;
+}
+
+// The WP-8.2 sky radiance (no sun disk) along the view-space (ssfx convention) direction `d`.
+vec3 sx_sky(vec3 d) {
+    const float ex = d.x;
+    const float ey = -d.y;
+    const float ez = -d.z;
+    precise float wx = F.viewRot[0] * ex + F.viewRot[1] * ey + F.viewRot[2] * ez;
+    precise float wy = F.viewRot[4] * ex + F.viewRot[5] * ey + F.viewRot[6] * ez;
+    precise float wz = F.viewRot[8] * ex + F.viewRot[9] * ey + F.viewRot[10] * ez;
+    return at_sky_radiance(at_load(F.sky), vec3(wx, wy, wz), false);
+}
+
+// Mirror reflection direction of pixel (x, y) (sx_trace_pixel's).
+vec3 sx_pixel_reflection(uint x, uint y) {
+    const vec3 p = sx_position_at(x, y);
+    vec3 n = sx_normalize(sx_normal_at(x, y));
+    const vec3 v = sx_normalize(p);
+    if (sx_dot(n, v) > 0.0) {
+        n = sx_neg(n);
+    }
+    return sx_reflect(v, n);
 }
 
 SxHit sx_trace_pixel(uint64_t sceneColor, SxTrace P, uint x, uint y) {

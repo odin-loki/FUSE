@@ -165,6 +165,9 @@ V3 RtEffectsReference::shadeHit(const RtfxFrameConstants& c, const V3& origin, c
         *secondaryRobust = true;
     }
     if (!hit.hit) {
+        if ((c.flags & kRtfxFlagAtmosphereSky) != 0u && m_sky != nullptr) {
+            return m_sky(m_skyUser, dir);
+        }
         return rtfxLoad<f64>(c.sky);
     }
     const gpu_scene::GpuInstance& inst = m_scene.instance(hit.instance);

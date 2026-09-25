@@ -387,7 +387,8 @@ void testApi() {
     const u32 stages[] = {kStageScene, kStageVsm,  kStageTlas,  kStageRtShadows, kStageDenoise, kStageDdgi,
                           kStageLighting, kStageSsfx, kStageAtmosphere, kStageSky, kStageFog, kStageClouds,
                           kStageSplats, kStageResolve, kStageTaau, kStageFsr3, kStagePost, kStageAerial,
-                          kStageRestir, kStageRtReflections, kStageForward, kStageFrameGen};
+                          kStageRestir, kStageRtReflections, kStageForward, kStageFrameGen, kStageRestirDenoise,
+                          kStageReflectionDenoise};
     u32 all = 0;
     bool disjoint = true;
     for (const u32 s : stages) {
@@ -395,6 +396,24 @@ void testApi() {
         all |= s;
     }
     expect(disjoint, "FrameStage bits are distinct");
+    // Polish-pass settings: SSFX sky fallback, RT reflection atmosphere misses, the ReSTIR / reflection denoisers
+    // with the WP-6.4 presets (signals Gi / Reflection), forward media: all on by default.
+    const fuse::renderer::denoise::SvgfSettings gi = fuse::renderer::denoise::svgf_preset(fuse::renderer::denoise::DenoiseSignal::Gi);
+    const fuse::renderer::denoise::SvgfSettings rf =
+        fuse::renderer::denoise::svgf_preset(fuse::renderer::denoise::DenoiseSignal::Reflection);
+    const fuse::renderer::denoise::SvgfSettings giBack =
+        fuse::renderer::denoise::SvgfDenoiserAdapter::to_svgf_settings(fs.restirDenoiser);
+    const fuse::renderer::denoise::SvgfSettings rfBack =
+        fuse::renderer::denoise::SvgfDenoiserAdapter::to_svgf_settings(fs.reflectionDenoiser);
+    expect(fs.ssfxSkyFallback && fs.rtReflectionAtmosphereSky && fs.restirDenoise && fs.reflectionDenoise && fs.forwardMedia &&
+               !fs.ssfxSettings.skyFallback,
+           "default FrameSettings: sky fallback, atmosphere reflection misses, ReSTIR / reflection denoise, forward media on");
+    expect(fs.restirDenoiser.signal == fuse::renderer::denoise::DenoiseSignal::Gi &&
+               fs.reflectionDenoiser.signal == fuse::renderer::denoise::DenoiseSignal::Reflection &&
+               giBack.maxHistory == gi.maxHistory && giBack.reprojDepth == gi.reprojDepth &&
+               giBack.sigmaLuminance == gi.sigmaLuminance && rfBack.maxHistory == rf.maxHistory &&
+               rfBack.reprojDepth == rf.reprojDepth && rfBack.sigmaLuminance == rf.sigmaLuminance && !giBack.gradients,
+           "the denoiser settings reproduce the WP-6.4 presets through the IDenoiser adapter");
     std::printf("api: init failure reason \"%s\"\n", composer.reason());
 }
 

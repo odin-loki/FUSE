@@ -13,6 +13,7 @@ static const uint kFuseRtfxLightPoint = 3u;
 static const uint kFuseRtfxLightRect = 4u;
 static const uint kFuseRtfxLightDisk = 5u;
 static const uint kFuseRtfxFlagHitShadows = 1u;
+static const uint kFuseRtfxFlagAtmosphereSky = 2u;
 static const uint kFuseRtfxRayTraced = 1u;
 static const uint kFuseRtfxRayHit = 2u;
 static const uint kFuseRtfxStreamReflection = 16u;
@@ -54,7 +55,7 @@ struct RtfxFrame { // RtfxFrameConstants (576 bytes)
     uint64_t tlas;
     uint64_t hitDistance;
     uint64_t reflection;
-    uint64_t reserved0;
+    uint64_t atmosphere;
     float invViewProj[16];
     float cameraPosition[3];
     uint frameIndex;

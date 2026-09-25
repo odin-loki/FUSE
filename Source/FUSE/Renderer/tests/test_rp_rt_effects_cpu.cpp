@@ -111,7 +111,7 @@ void testLayout() {
     const std::vector<std::string> light = {"position", "kind", "axisX", "slot", "axisY", "cosCone", "direction", "samples"};
     const std::vector<std::string> hit = {"direction", "shadowed", "irradiance", "slot"};
     const std::vector<std::string> view = {"visibility", "width", "height", "count", "pad0", "slots", "pad1"};
-    const std::vector<std::string> frame = {"view",           "tlas",          "hitDistance",       "reflection",   "reserved0",
+    const std::vector<std::string> frame = {"view",           "tlas",          "hitDistance",       "reflection",   "atmosphere",
                                             "invViewProj",    "cameraPosition", "frameIndex",       "invWidth",     "invHeight",
                                             "scene",          "flags",         "gbufferNormal",     "gbufferRoughMetal",
                                             "gbufferDepth",   "reflectionSamples", "normalBias",    "viewBias",     "farDistance",
@@ -157,6 +157,10 @@ void testLayout() {
                    l.bytes >= l.reflection + px * 16u && l.hitDistance % 256u == 0u && l.reflection % 256u == 0u,
                "output sections disjoint and 256-aligned");
     }
+    expect(kRtfxFlagHitShadows == 1u && kRtfxFlagAtmosphereSky == 2u &&
+               glsl.find("#define FUSE_RTFX_FLAG_ATMOSPHERE_SKY 2u") != std::string::npos &&
+               slang.find("kFuseRtfxFlagAtmosphereSky = 2u") != std::string::npos,
+           "kRtfxFlagAtmosphereSky == FUSE_RTFX_FLAG_ATMOSPHERE_SKY == kFuseRtfxFlagAtmosphereSky");
     std::printf("layout: records pinned, GLSL / Slang / light-loop twins in C++ field order\n");
 }
 
@@ -580,6 +584,30 @@ void testReference() {
     }
     std::printf("  rough sky reflections: max z vs sky x P(above horizon) %.2f\n", worstSky);
     expect(worstSky < 4.0, "reflection estimator == the integrated lobe");
+    // kRtfxFlagAtmosphereSky: misses take the sky-radiance hook (the kernels' at_sky_radiance); without the flag
+    // (or without a hook) the constant sky.
+    {
+        RtEffectsReference ref3(open.bvh, open.gpu, open.materials.data(), static_cast<u32>(open.materials.size()));
+        ref3.setSkyRadiance([](const void*, const V3& d) { return V3{d.x + 2.0, d.y + 3.0, d.z + 4.0}; }, nullptr);
+        RtfxSurface surf{};
+        surf.valid = true;
+        surf.position = V3{0, 50, 10};
+        surf.origin = V3{0, 50.001, 10};
+        surf.normal = V3{0, 1, 0};
+        surf.view = rtfxNormalize(V3{0.0, 0.5, -1.0}, V3{0, 1, 0});
+        surf.roughness = 0.0; // mirror: one ray along reflect(-view, n)
+        const V3 r = rtfxNormalize(V3{-surf.view.x, surf.view.y, -surf.view.z}, V3{0, 1, 0});
+        const u32 flags = c.flags;
+        c.flags = flags | kRtfxFlagAtmosphereSky;
+        const RtfxEstimate a = ref3.reflection(c, surf, 1u, 1u);
+        c.flags = flags;
+        const RtfxEstimate b = ref3.reflection(c, surf, 1u, 1u);
+        const f64 errA = std::max({std::fabs(a.mean[0] - (r.x + 2.0)), std::fabs(a.mean[1] - (r.y + 3.0)), std::fabs(a.mean[2] - (r.z + 4.0))});
+        const f64 errB = std::max({std::fabs(b.mean[0] - c.sky[0]), std::fabs(b.mean[1] - c.sky[1]), std::fabs(b.mean[2] - c.sky[2])});
+        std::printf("  atmosphere-sky misses: hook error %.2e, flag off == constant sky error %.2e\n", errA, errB);
+        expect(a.hits == 0u && errA < 1e-9, "kRtfxFlagAtmosphereSky: a miss returns the sky-radiance hook along the ray");
+        expect(errB == 0.0, "without kRtfxFlagAtmosphereSky a miss returns the constant sky");
+    }
     // Mirror hit shading: a mirror at the origin looking at the wall (z = -20 face, normal +z).
     {
         c.ambient[0] = c.ambient[1] = c.ambient[2] = 0.1f;

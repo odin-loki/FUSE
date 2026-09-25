@@ -9,16 +9,20 @@
 //   -> T2: TLAS (WP-6.0) -> RT shadows (WP-6.2) -> SVGF (WP-6.4) -> frame.shadow_pack   [rtShadows, denoise]
 //   -> DDGI update (WP-6.1: T0 global SDF / T2 ray query; misses see the WP-8.2 sky)   [ddgi]
 //   -> clustered lighting (WP-2.1 / 2.2: VSM visibility, RT visibility, DDGI indirect)
-//   -> T2: WP-7.1 light tree -> ReSTIR DI (WP-7.2) -> frame.restir  [restir: replaces light.shade's area lights]
+//   -> T2: WP-7.1 light tree -> ReSTIR DI (WP-7.2) -> SVGF (WP-6.4 IDenoiser, Gi preset) -> frame.restir
+//      [restir (+ restirDenoise): replaces light.shade's area lights]
 //   -> frame.sky (WP-8.2 sky radiance + sun disk on the background, before SSFX so SSR / SSGI see it)  [sky]
-//   -> GTAO / SSR / SSGI (WP-6.3; the jittered projection when an upscaler runs)        [ssfx]
-//   -> T2: RT reflections (WP-6.2) -> frame.reflect (Schlick-weighted; replaces SSR)     [rtReflections]
+//   -> GTAO / SSR / SSGI (WP-6.3; the jittered projection when an upscaler runs; rays that leave the screen or
+//      reach the sky take the WP-8.2 sky radiance: ssfxSkyFallback)                      [ssfx]
+//   -> T2: RT reflections (WP-6.2; misses see the WP-8.2 sky: rtReflectionAtmosphereSky) -> SVGF (Reflection
+//      preset) -> frame.reflect (Schlick-weighted; replaces SSR)          [rtReflections (+ reflectionDenoise)]
 //   -> frame.aerial (aerial perspective on geometry)               [aerialPerspective]
 //   -> froxel fog inject / temporal / integrate / apply (WP-8.1)   [fog]
 //   -> frame.gather -> volumetric clouds (WP-8.3)                  [clouds]
 //   -> gaussian splats (WP-9.2)                                    [splats]
 //   -> frame.resolve (render-resolution opaque scene colour)
-//   -> forward transparency (WP-2.3) over the resolved scene colour [forward]
+//   -> forward transparency (WP-2.3) over the resolved scene colour, each fragment through the aerial perspective
+//      and the froxel fog of the frame (forwardMedia)                [forward]
 //   -> TAAU (WP-4.1) or FSR 3.1 (WP-4.2)                           [upscaler]
 //   -> GPU post stack (WP-4.5)                                     [post]
 //   -> output (RGBA16F, display resolution)
@@ -37,6 +41,7 @@
 #include <fuse/renderer/atmosphere/atmosphere_luts.hpp>
 #include <fuse/renderer/clouds/volumetric_clouds.hpp>
 #include <fuse/renderer/culling/instance_culler.hpp>
+#include <fuse/renderer/denoise/denoiser.hpp>
 #include <fuse/renderer/denoise/svgf_denoiser.hpp>
 #include <fuse/renderer/forward/forward_transparency.hpp>
 #include <fuse/renderer/frame/frame_types.hpp>
@@ -113,7 +118,21 @@ enum FrameStage : u32 {
     kStageRtReflections = 1u << 19, ///< T2: rt.reflections + frame.reflect
     kStageForward = 1u << 20,       ///< forward transparency (only when a transparent instance is drawn)
     kStageFrameGen = 1u << 21,      ///< WP-4.4 frame interpolation of the output
+    kStageRestirDenoise = 1u << 22,     ///< T2: the ReSTIR DI signal through SVGF (IDenoiser) before frame.restir
+    kStageReflectionDenoise = 1u << 23, ///< T2: the RT reflection signal through SVGF (IDenoiser) before frame.reflect
 };
+
+/// DenoiserSettings of the in-tree SVGF with the WP-6.4 preset of `signal` (svgf_preset: history length and
+/// reprojection depth kept, so SvgfDenoiserAdapter::to_svgf_settings reproduces the preset exactly).
+inline denoise::DenoiserSettings frameDenoiserPreset(denoise::DenoiseSignal signal) {
+    const denoise::SvgfSettings p = denoise::svgf_preset(signal);
+    denoise::DenoiserSettings s{};
+    s.signal = signal;
+    s.method = denoise::DenoiserMethod::Svgf;
+    s.max_history_frames = static_cast<u32>(p.maxHistory);
+    s.disocclusion_depth = p.reprojDepth;
+    return s;
+}
 
 struct FrameComposerDesc {
     VulkanDevice* device = nullptr;
@@ -177,6 +196,10 @@ struct FrameSettings {
     denoise::SvgfSettings denoiser{};  ///< the signal is forced to Shadow
     bool ssfx = true;
     ssfx_gpu::SsfxGpuSettings ssfxSettings{};
+    /// SSR rays (and SSGI rays when DDGI is off: DDGI's atmosphere misses already carry the sky irradiance) that
+    /// leave the screen or reach the sky return the WP-8.2 sky radiance, when the frame has a sky (`sky`: frame.sky
+    /// runs before SSFX); overrides ssfxSettings.skyFallback / ssgiSkyFallback.
+    bool ssfxSkyFallback = true;
     bool sky = true;
     bool aerialPerspective = true;
     bool sunDisk = true;
@@ -191,10 +214,23 @@ struct FrameSettings {
     /// emissive triangles the caller listed). The GI chain stays off (DDGI is the indirect diffuse).
     bool restir = false;
     restir::RestirSettings restirSettings{};
+    /// T2: the ReSTIR DI signal through the WP-6.4 SVGF (IDenoiser adapter; the signal is forced to Gi) before
+    /// frame.restir; off: composited raw.
+    bool restirDenoise = true;
+    denoise::DenoiserSettings restirDenoiser = frameDenoiserPreset(denoise::DenoiseSignal::Gi);
     /// T2: ray-traced reflections composited by frame.reflect; SSR is then switched off in the SSFX stage.
     bool rtReflections = true;
     u32 reflectionSamples = 1;
+    /// T2: reflection misses take the WP-8.2 sky radiance (RtEffectsFrameDesc::atmosphereAddress) instead of
+    /// ddgiSkyRadiance (plans the atmosphere LUTs).
+    bool rtReflectionAtmosphereSky = true;
+    /// T2: the RT reflection signal through the WP-6.4 SVGF (IDenoiser; signal forced to Reflection).
+    bool reflectionDenoise = true;
+    denoise::DenoiserSettings reflectionDenoiser = frameDenoiserPreset(denoise::DenoiseSignal::Reflection);
     bool forward = true;    ///< WP-2.3 transparent instances over the opaque scene colour
+    /// The transparent fragments take the frame's aerial perspective (when aerialPerspective runs) and froxel fog
+    /// (when fog runs), as the opaque scene does (ForwardFrameDesc::atmosphereAddress / fogAddress).
+    bool forwardMedia = true;
     bool frameGen = false;  ///< WP-4.4: interpolate between the previous and this frame's output
     FrameUpscaler upscaler = FrameUpscaler::Taau;
     bool post = true;
@@ -238,6 +274,8 @@ struct FrameGraphOutputs {
     rg::BufferRef rtOutput;    ///< WP-6.2 output buffer (reflection section at FrameComposer::reflectionOffset())
     rg::TextureRef aerial;     ///< frame.aerial output
     rg::TextureRef forward;    ///< WP-2.3 colour target (scene colour + transparents)
+    rg::BufferRef restirDenoised;     ///< SVGF output of the ReSTIR DI signal (f32x4 (rgb, variance) per pixel; frame.restir's input)
+    rg::BufferRef reflectionDenoised; ///< SVGF output of the RT reflections (f32x4 (rgb, variance); frame.reflect's input)
     rg::TextureRef frameGen;   ///< WP-4.4 interpolated frame (HUD-less, display resolution)
 };
 
@@ -316,6 +354,9 @@ public:
     u64 reflectionOffset() const;
     const forward::ForwardTransparency& forwardPass() const { return m_forward; }
     const framegen::FrameGenGpu& frameGenerator() const { return m_framegen; }
+    /// The IDenoiser instances of the ReSTIR DI / RT reflection signals (T2).
+    const denoise::SvgfDenoiserAdapter& restirDenoiser() const { return m_restirDenoiser; }
+    const denoise::SvgfDenoiserAdapter& reflectionDenoiser() const { return m_reflectDenoiser; }
 
 private:
     struct OwnedImage {
@@ -372,6 +413,8 @@ private:
     rt::AccelerationStructures m_as;
     rt_effects::RtEffects m_rtfx;
     denoise::SvgfDenoiser m_svgf;
+    denoise::SvgfDenoiserAdapter m_restirDenoiser;  ///< WP-6.4 IDenoiser over SVGF: the ReSTIR DI signal
+    denoise::SvgfDenoiserAdapter m_reflectDenoiser; ///< WP-6.4 IDenoiser over SVGF: the RT reflection signal
     gi_gpu::DdgiGpu m_ddgi;
     lighting_gpu::ClusteredLighting m_lighting;
     ssfx_gpu::SsfxGpu m_ssfx;
@@ -429,6 +472,9 @@ private:
     f32 m_ssfxProj[16] = {};
     u64 m_fgFrameId = 0;
     bool m_ddgiSky = false;         ///< DDGI misses read the atmosphere this frame
+    bool m_ssfxSky = false;         ///< SSR / SSGI sky fallback reads the atmosphere this frame
+    bool m_reflectionSky = false;   ///< RT reflection misses read the atmosphere this frame
+    bool m_forwardMedia = false;    ///< forward fragments read the aerial LUT / fog volume this frame
     bool m_fgHistory = false;
     u32 m_outputWidth = 0;
     u32 m_outputHeight = 0;

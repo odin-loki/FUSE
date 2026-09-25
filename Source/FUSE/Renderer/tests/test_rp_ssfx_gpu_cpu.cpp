@@ -68,7 +68,7 @@ struct Field {
 #define SX_FIELD(n) Field{#n, offsetof(SsfxFrameConstants, n)}
 const Field kFields[] = {
     SX_FIELD(prepared), SX_FIELD(normals), SX_FIELD(radiance), SX_FIELD(albedo), SX_FIELD(diffuse), SX_FIELD(ao),
-    SX_FIELD(ssr), SX_FIELD(gi), SX_FIELD(bounce0), SX_FIELD(bounce1), SX_FIELD(dump), SX_FIELD(reserved0),
+    SX_FIELD(ssr), SX_FIELD(gi), SX_FIELD(bounce0), SX_FIELD(bounce1), SX_FIELD(dump), SX_FIELD(sky),
     SX_FIELD(width), SX_FIELD(height), SX_FIELD(inputDepth), SX_FIELD(inputNormal), SX_FIELD(inputAlbedo),
     SX_FIELD(inputRoughMetal), SX_FIELD(inputLit), Field{"output_", offsetof(SsfxFrameConstants, output)},
     SX_FIELD(flags), SX_FIELD(reserved1), SX_FIELD(fx), SX_FIELD(fy), SX_FIELD(cx), SX_FIELD(cy), SX_FIELD(nearZ),
@@ -261,7 +261,11 @@ struct WedgeResult {
     f64 hbaoNearMean = 0.0;
 };
 
-WedgeResult wedgeAo(f32 alphaDeg, u32 slices, u32 size, bool withHbao) {
+/// Every statistic below reads only the pixels within 4 footprints of the crease (a ~3 % band of the frame), so
+/// only those are evaluated: per pixel, through the same gtao_kernel::pixel_visibility / hbaoPixelVisibility that
+/// the full-frame launches run (bit-identical; `checkLaunch` re-proves it against computeGtaoCpu). Evaluating the
+/// full 256^2 frame with 32 slices x 192 steps plus the 64-direction HBAO oracle took ~45 s per wedge in Debug.
+WedgeResult wedgeAo(f32 alphaDeg, u32 slices, u32 size, bool withHbao, bool checkLaunch = false) {
     ssfx_test::WedgeScene w;
     ssfx_test::buildWedge(w, size, size, alphaDeg, 90.f, 3.f, 25.f);
     SsfxGpuSettings s{};
@@ -272,20 +276,43 @@ WedgeResult wedgeAo(f32 alphaDeg, u32 slices, u32 size, bool withHbao) {
     const f32 ambient[3] = {0.f, 0.f, 0.f};
     CpuFrame f;
     makeFrame(w.g, w.camera, s, ambient, f);
+    const f64 foot = 2.0 * 3.0 / static_cast<f64>(size);
+    const auto inBand = [&](usize i) { return w.face[i] != 0u && w.creaseDistance[i] / foot <= 4.0; };
+    ssfx::HbaoParams hp{};
+    hp.radius = 1000.f;
+    hp.bias = 0.02f;
+    hp.directions = 2u * slices;
+    hp.steps_per_dir = 192;
+    hp.max_radius_px = 512.f;
+    const ssfx::gtao_kernel::Params gp = ssfx::gtao_kernel::make_params(f.view, s.gtao, nullptr);
     std::vector<f32> ao(static_cast<usize>(size) * size, -1.f);
-    computeGtaoCpu(f.view, s.gtao, ao.data());
     std::vector<f32> hbao;
     if (withHbao) {
-        ssfx::HbaoParams hp{};
-        hp.radius = 1000.f;
-        hp.bias = 0.02f;
-        hp.directions = 2u * slices;
-        hp.steps_per_dir = 192;
-        hp.max_radius_px = 512.f;
         hbao.assign(ao.size(), -1.f);
-        ssfx::computeHbaoCpu(f.view, hp, hbao.data());
     }
-    const f64 foot = 2.0 * 3.0 / static_cast<f64>(size);
+    for (u32 y = 0; y < size; ++y) {
+        for (u32 x = 0; x < size; ++x) {
+            const usize i = static_cast<usize>(y) * size + x;
+            if (!inBand(i)) {
+                continue;
+            }
+            ao[i] = ssfx::gtao_kernel::pixel_visibility(gp, x, y);
+            if (withHbao) {
+                hbao[i] = ssfx::hbaoPixelVisibility(f.view, hp, x, y);
+            }
+        }
+    }
+    if (checkLaunch) {
+        std::vector<f32> full(ao.size(), -1.f);
+        expect(computeGtaoCpu(f.view, s.gtao, full.data()), "wedge: full-frame GTAO launch");
+        bool same = true;
+        for (usize i = 0; i < ao.size(); ++i) {
+            if (inBand(i) && std::memcmp(&ao[i], &full[i], sizeof(f32)) != 0) {
+                same = false;
+            }
+        }
+        expect(same, "wedge: per-pixel GTAO == the full-frame launch bit for bit on the crease band");
+    }
     WedgeResult r{};
     f64 sx = 0.0, sy = 0.0, sxx = 0.0, sxy = 0.0;
     u32 n = 0;
@@ -336,7 +363,7 @@ void testWedges() {
     f64 first = 0.0;
     f64 last = 0.0;
     for (const u32 slices : {2u, 4u, 8u, 16u, 32u}) {
-        const WedgeResult r = wedgeAo(90.f, slices, 192, false);
+        const WedgeResult r = wedgeAo(90.f, slices, 192, false, /*checkLaunch=*/slices == 2u);
         const f64 err = std::fabs(r.intercept - 0.5);
         std::printf("gtao wedge 90 (192^2): %2u slices, d -> 0 limit %.4f |err| %.4f\n", slices, r.intercept, err);
         if (slices == 2u) {
@@ -544,6 +571,115 @@ void testReference() {
     expect(aoLess > 20u && hits > 100u && lit2 > 100u, "reference frame exercises AO, SSR hits and SSGI");
 }
 
+// --- sky fallback (kSsfxFlagSky) -------------------------------------------------------------------------------
+Vec3 testSky(const void*, const Vec3& w) { return Vec3{0.2f + 0.5f * std::max(0.f, w.y), 0.3f + 0.1f * w.x, 0.4f + 0.2f * w.z}; }
+
+void testSkyFallback() {
+    ssfx_test::RoomScene room;
+    ssfx_test::buildRoom(room, 64, 48);
+    SsfxGpuSettings s{};
+    s.ssgi_params.sample_sqrt = 3;
+    s.ssgi_params.bounces = 2;
+    CpuFrame off;
+    expect(makeFrame(room.g, room.camera, s, room.ambient, off), "frame without the sky fallback");
+    expect((off.c.flags & kSsfxFlagSky) == 0u, "skyFallback off: no kSsfxFlagSky");
+    s.skyFallback = true;
+    s.ssgiSkyFallback = true;
+    CpuFrame f;
+    expect(makeFrame(room.g, room.camera, s, room.ambient, f), "frame with the sky fallback");
+    expect((f.c.flags & kSsfxFlagSky) != 0u && (f.c.flags & kSsfxFlagSkyGi) != 0u, "skyFallback / ssgiSkyFallback on: kSsfxFlagSky / SkyGi");
+    SsfxGpuSettings none = s;
+    none.ssr = false;
+    none.ssgi = false;
+    SsfxFrameConstants cn{};
+    expect(resolve_constants(none, ssfx_test::cameraDesc(room.camera), room.ambient, 64, 48, cn) &&
+               (cn.flags & (kSsfxFlagSky | kSsfxFlagSkyGi)) == 0u,
+           "no SSR / SSGI: no sky flags");
+    SsfxGpuSettings ssrOnly = s;
+    ssrOnly.ssgiSkyFallback = false;
+    SsfxFrameConstants cs{};
+    expect(resolve_constants(ssrOnly, ssfx_test::cameraDesc(room.camera), room.ambient, 64, 48, cs) &&
+               (cs.flags & kSsfxFlagSky) != 0u && (cs.flags & kSsfxFlagSkyGi) == 0u,
+           "skyFallback alone: SSR only");
+    const usize n = f.depth.size();
+
+    // sky_world_dir inverts prepare_pixel's world -> ssfx-view rotation (the view normals map back to the world ones).
+    f64 dirErr = 0.0;
+    for (usize i = 0; i < n; ++i) {
+        if (room.g.viewZ[i] <= 0.f) {
+            continue;
+        }
+        const Vec3 w = sky_world_dir(f.c, f.prepared.normal[i]);
+        const Vec3 e = room.g.worldN[i];
+        dirErr = std::max({dirErr, static_cast<f64>(std::fabs(w.x - e.x)), static_cast<f64>(std::fabs(w.y - e.y)),
+                           static_cast<f64>(std::fabs(w.z - e.z))});
+    }
+    expect(dirErr < 5e-3, "sky_world_dir == the world direction of an ssfx view direction");
+
+    // sky_exit: a ray straight up the view (-Y ssfx) from a floor pixel leaves the screen; one into the floor does not.
+    u32 upExits = 0;
+    u32 downExits = 0;
+    u32 floorPx = 0;
+    for (u32 y = 24; y < 48; y += 3) {
+        for (u32 x = 2; x < 64; x += 5) {
+            if (f.view.depthAt(x, y) <= 0.f) {
+                continue;
+            }
+            ++floorPx;
+            upExits += sky_exit(f.view, f.c.ssrMaxDistance, x, y, Vec3{0.f, -1.f, 0.f}) ? 1u : 0u;
+            downExits += sky_exit(f.view, 1e-5f, x, y, Vec3{0.f, 1.f, 0.f}) ? 1u : 0u;
+        }
+    }
+    expect(floorPx > 20u && upExits == floorPx && downExits == 0u, "sky_exit: off-screen end -> sky; zero-length ray -> no sky");
+
+    const SsfxSkySource sky{&testSky, nullptr};
+    SsfxReferenceFrame a;
+    SsfxReferenceFrame b;
+    expect(reference_frame(s, off.c, off.prepared, a, kernel::Backend::CpuReference), "reference without the sky");
+    expect(reference_frame(s, f.c, f.prepared, b, kernel::Backend::CpuReference, sky), "reference with the sky");
+    SsfxReferenceFrame c0;
+    expect(reference_frame(s, f.c, f.prepared, c0, kernel::Backend::CpuReference, SsfxSkySource{}) &&
+               std::memcmp(c0.ssr.data(), a.ssr.data(), n * sizeof(Vec4)) == 0 &&
+               std::memcmp(c0.gi.data(), a.gi.data(), n * sizeof(Vec3)) == 0,
+           "kSsfxFlagSky without a sky source == no fallback");
+    u32 kept = 0;
+    u32 skySsr = 0;
+    u32 bad = 0;
+    u32 giMore = 0;
+    u32 giLess = 0;
+    const ssfx::SsrParams sp = ssfx::ssr_kernel::clamp_params(s.ssr_params);
+    for (u32 y = 0; y < 48u; ++y) {
+        for (u32 x = 0; x < 64u; ++x) {
+            const usize i = static_cast<usize>(y) * 64u + x;
+            const bool same = std::memcmp(&a.ssr[i], &b.ssr[i], sizeof(Vec4)) == 0;
+            const f32 r = f.prepared.prepared[i].y;
+            if (f.view.depthAt(x, y) <= 0.f || !(r < 1.f) ||
+                ssfx::ssr_kernel::trace_pixel(f.view, f.prepared.radiance.data(), sp, x, y).hit) {
+                kept += same ? 1u : 0u;
+                bad += same ? 0u : 1u; // sky pixels, rough surfaces and hits: unchanged
+                continue;
+            }
+            const Vec3 dir = pixel_reflection(f.view, x, y);
+            if (!sky_exit(f.view, sp.max_distance, x, y, dir)) {
+                bad += same ? 0u : 1u; // a miss over geometry stays a miss
+                continue;
+            }
+            ++skySsr;
+            const Vec3 L = testSky(nullptr, sky_world_dir(f.c, dir.normalized()));
+            const f32 fade = ssfx::ssr_kernel::gloss_fade(s.contact, sp.max_distance, r);
+            bad += (b.ssr[i].x == L.x && b.ssr[i].y == L.y && b.ssr[i].z == L.z && b.ssr[i].w == fade) ? 0u : 1u;
+        }
+    }
+    for (usize i = 0; i < n; ++i) {
+        giMore += b.gi[i].x > a.gi[i].x ? 1u : 0u;
+        giLess += b.gi[i].x < a.gi[i].x - 1e-6f ? 1u : 0u;
+    }
+    std::printf("sky fallback 64x48: SSR %u pixels kept (hits), %u take the sky (%u bad); SSGI brighter at %u pixels, darker %u\n",
+                kept, skySsr, bad, giMore, giLess);
+    expect(skySsr > 50u && bad == 0u, "SSR misses that leave the screen / reach the sky take the sky radiance, hits are unchanged");
+    expect(giMore > 100u && giLess == 0u, "SSGI gathers the sky on its missed rays (never less light)");
+}
+
 // --- api -----------------------------------------------------------------------------------------------------
 void testApi() {
     ssfx_test::Camera cam;
@@ -611,6 +747,9 @@ int main(int argc, char** argv) {
     }
     if (all || suite == "reference") {
         testReference();
+    }
+    if (all || suite == "sky") {
+        testSkyFallback();
     }
     if (all || suite == "api") {
         testApi();

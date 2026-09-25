@@ -29,6 +29,12 @@ enum SsfxFlag : u32 {
     kSsfxFlagSsrRoughness = 1u << 5,///< SSR gates / gloss-fades by the G-buffer roughness
     kSsfxFlagSsrContact = 1u << 6,  ///< SSR contact hardening (ssr_kernel::ContactHardening::enabled)
     kSsfxFlagAoJitter = 1u << 7,    ///< GtaoParams::jitter
+    /// SSR sky fallback (SsfxGpuSettings::skyFallback with a sky source, SsfxFrameConstants::sky): a reflection ray
+    /// that misses and leaves the screen or ends over a sky pixel (depth 0) returns the WP-8.2 sky radiance along its
+    /// world direction (at_sky_radiance, no sun disk) at confidence 1 x the gloss fade.
+    kSsfxFlagSky = 1u << 8,
+    /// SSGI sky fallback (SsfxGpuSettings::ssgiSkyFallback): the same for the gather rays (every bounce).
+    kSsfxFlagSkyGi = 1u << 9,
 };
 
 /// Per-frame constants, one host-visible ring slot per frame in flight, read through BDA.
@@ -45,7 +51,7 @@ struct SsfxFrameConstants {
     u64 bounce0 = 0;  ///< f32x4: SSGI re-lighting ping-pong (direct + indirect of the previous bounce)
     u64 bounce1 = 0;
     u64 dump = 0;     ///< f32x4: composed radiance before RGBA16F rounding (optional)
-    u64 reserved0 = 0;
+    u64 sky = 0;      ///< AtParams (WP-8.2 AtmosphereGpu::frameAddress()) of the sky fallback (kSsfxFlagSky), 0 = none
     // --- extent and bindless handles ---------------------------------------------------------------
     u32 width = 0;
     u32 height = 0;

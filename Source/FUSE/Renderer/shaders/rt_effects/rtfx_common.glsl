@@ -19,6 +19,7 @@
 #define FUSE_RTFX_LIGHT_RECT 4u
 #define FUSE_RTFX_LIGHT_DISK 5u
 #define FUSE_RTFX_FLAG_HIT_SHADOWS 1u
+#define FUSE_RTFX_FLAG_ATMOSPHERE_SKY 2u
 #define FUSE_RTFX_RAY_TRACED 1u
 #define FUSE_RTFX_RAY_HIT 2u
 #define FUSE_RTFX_STREAM_REFLECTION 16u
@@ -60,7 +61,7 @@ struct FuseRtfxFrame { // RtfxFrameConstants (576 bytes)
     uint64_t tlas;
     uint64_t hitDistance;
     uint64_t reflection;
-    uint64_t reserved0;
+    uint64_t atmosphere;
     float invViewProj[16];
     float cameraPosition[3];
     uint frameIndex;

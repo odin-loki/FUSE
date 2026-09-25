@@ -572,6 +572,29 @@ void testShade() {
     }
     std::printf("shade: area lights add %.3g radiance summed over the frame\n", areaEnergy);
     expect(areaEnergy > 1.0, "area lights light the ground");
+
+    // kFlagSkipAreaLights (LightingFrameDesc::skipAreaLights, the frame composer's ReSTIR DI stage): the CPU
+    // shade leaves the rectangle / disk lights out of the cluster loop == the lights at intensity 0, bit for
+    // bit; points / spots / directional lights are unchanged.
+    sd.lights = lights.data();
+    sd.skipAreaLights = true;
+    std::vector<Vec4> skipped;
+    shadeReferenceFrame(sd, skipped, kernel::Backend::CpuParallel);
+    std::vector<Vec4> skippedRef;
+    shadeReferenceFrame(sd, skippedRef, kernel::Backend::CpuReference);
+    sd.skipAreaLights = false;
+    u32 skipDiff = 0;
+    u32 skipChanged = 0;
+    for (usize i = 0; i < ref.size(); ++i) {
+        skipDiff += std::memcmp(&skipped[i], &withLutNoArea[i], sizeof(Vec4)) != 0 ? 1u : 0u;
+        skipChanged += std::memcmp(&skipped[i], &ref[i], sizeof(Vec4)) != 0 ? 1u : 0u;
+    }
+    std::printf("shade: skipAreaLights: %u px differ from the area-free frame, %u px changed by the skip\n", skipDiff,
+                skipChanged);
+    expect(skipDiff == 0u, "skipAreaLights == area lights at intensity 0, bit for bit");
+    expect(skipChanged > 100u, "skipAreaLights removes the area lights' light");
+    expect(std::memcmp(skipped.data(), skippedRef.data(), skipped.size() * sizeof(Vec4)) == 0,
+           "skipAreaLights: CpuReference == CpuParallel bit for bit");
 }
 
 } // namespace

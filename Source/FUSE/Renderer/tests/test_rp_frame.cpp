@@ -17,8 +17,9 @@
 //                       each toggle changes the image only where expected:
 //                         fog off == the fog-on frame's pre-fog (aerial) image (bit for bit), fog on changes pixels
 //                         sky (written before SSFX) on vs off: every background pixel changes; with SSFX off no
-//                         geometry pixel changes (with SSFX on the count of geometry pixels that see the sky
-//                         through SSR / SSGI is reported); the SSFX image carries the sky
+//                         geometry pixel changes; with SSFX on geometry pixels change (the WP-6.3 sky fallback: SSR
+//                         rays that leave the screen take the WP-8.2 sky), and the sky fallback alone (on vs off)
+//                         changes geometry pixels only; the SSFX image carries the sky
 //                         aerial perspective on vs off: only geometry pixels change
 //                         SSFX / VSM / DDGI / DDGI atmosphere sky on vs off: only geometry pixels change; SSFX off
 //                         == the lit image
@@ -26,10 +27,13 @@
 //                         its bits)
 //                         splats on vs off: only pixels a splat covers (splat T < 1) change
 //                         forward on: the opaque scene colour is unchanged, the forward image differs on the
-//                         glass box's pixels only (a part of the frame)
+//                         glass box's pixels only (a part of the frame); forward media (aerial perspective + fog on
+//                         the transparent fragments) on vs off: the opaque scene colour is unchanged and only the
+//                         glass pixels change
 //                         T2: RT shadows, the denoiser and RT reflections on vs off: only geometry pixels change;
-//                         ReSTIR on: light.shade leaves the rectangle out (lit image: geometry only) and
-//                         frame.restir adds DI on geometry only
+//                         RT reflection misses atmosphere vs constant sky, the reflection denoiser on vs off:
+//                         geometry only; ReSTIR on: light.shade leaves the rectangle out (lit image: geometry only)
+//                         and frame.restir adds DI on geometry only; the ReSTIR denoiser on vs off: geometry only
 //                       and a repeated configuration reproduces its bits with the fog jittered (resetHistory
 //                       rewinds the fog / clouds sequences).
 //   --mode determinism  two independent runs (scene + composer rebuilt) of 6 frames (frame generation on): final
@@ -49,7 +53,10 @@
 //                       frame.resolve == half(frame_resolve_texel(clouds result, splat texel)) (<= 1 half ulp),
 //                       T2: frame.shadow_pack == frame_pack_visibility(denoised) bit for bit, frame.restir ==
 //                       half(frame_restir_texel(lit, ReSTIR albedo, DI)) (<= 1 half ulp), frame.reflect ==
-//                       half(frame_reflect_texel(SSFX image, RT0 / RT1 / RT2, reflection)) (<= 3 half ulps).
+//                       half(frame_reflect_texel(SSFX image, RT0 / RT1 / RT2, reflection)) (<= 3 half ulps); DI and
+//                       reflection are read from the WP-6.4 SVGF outputs (FrameGraphOutputs::restirDenoised /
+//                       reflectionDenoised) when the denoisers run (default), so the gate pins frame.restir /
+//                       frame.reflect to the denoised signals.
 //   --tier t0 | t2      T2 skips (77) without the T2 gate.
 //   --language auto | slang | glsl   the composer kernel's language (auto = Slang when built, else GLSL).
 //
@@ -752,11 +759,21 @@ void buildFrame(Context& ctx, FrameComposer& composer, rg::Graph& graph, FrameIo
     add(kRbForward, true, outs.forward, {}, 0, n * 8u, kRenderW, kRenderH);
     add(kRbFrameGen, true, outs.frameGen, {}, 0, static_cast<u64>(kDisplayW) * kDisplayH * 8u, kDisplayW, kDisplayH);
     if (outs.restir.valid()) {
-        add(kRbRestirDi, false, {}, outs.restirOutput, composer.restirDiOffset(), n * 16u, 0, 0);
+        // frame.restir's DI input: the SVGF output when the ReSTIR denoiser ran, else the raw WP-7.2 signal.
+        if (outs.restirDenoised.valid()) {
+            add(kRbRestirDi, false, {}, outs.restirDenoised, 0, n * 16u, 0, 0);
+        } else {
+            add(kRbRestirDi, false, {}, outs.restirOutput, composer.restirDiOffset(), n * 16u, 0, 0);
+        }
         add(kRbRestirAlbedo, false, {}, outs.restirState, composer.restirAlbedoOffset(), n * 16u, 0, 0);
     }
     if (outs.reflect.valid()) {
-        add(kRbRtReflection, false, {}, outs.rtOutput, composer.reflectionOffset(), n * 16u, 0, 0);
+        // frame.reflect's input: the SVGF output when the reflection denoiser ran, else the raw WP-6.2 section.
+        if (outs.reflectionDenoised.valid()) {
+            add(kRbRtReflection, false, {}, outs.reflectionDenoised, 0, n * 16u, 0, 0);
+        } else {
+            add(kRbRtReflection, false, {}, outs.rtOutput, composer.reflectionOffset(), n * 16u, 0, 0);
+        }
         add(kRbRt0, true, outs.gbuffer.gbuffer[0], {}, 0, n * 8u, kRenderW, kRenderH);
         add(kRbRt1, true, outs.gbuffer.gbuffer[1], {}, 0, n * 4u, kRenderW, kRenderH);
         add(kRbRt2, true, outs.gbuffer.gbuffer[2], {}, 0, n * 4u, kRenderW, kRenderH);
@@ -938,7 +955,7 @@ int initRig(Context& ctx, Rig& rig, FrameTier tier) {
                          kStageAerial | kStageFog | kStageClouds | kStageSplats | kStageResolve | kStageTaau | kStagePost |
                          kStageForward | kStageFrameGen |
                          (tier == FrameTier::T2 ? (kStageTlas | kStageRtShadows | kStageDenoise | kStageFsr3 | kStageRestir |
-                                                   kStageRtReflections)
+                                                   kStageRtReflections | kStageRestirDenoise | kStageReflectionDenoise)
                                                 : 0u);
     expect((avail & required) == required, "every stage of the tier is available on Lavapipe");
     return 0;
@@ -955,8 +972,11 @@ u32 plannedStages(FrameTier tier, const FrameSettings& fs) {
     p |= fs.vsm ? kStageVsm : 0u;
     p |= fs.ddgi ? kStageDdgi : 0u;
     if (tier == FrameTier::T2) {
-        p |= fs.restir ? kStageRestir : 0u;
-        p |= (fs.rtReflections && fs.reflectionSamples > 0u) ? kStageRtReflections : 0u;
+        p |= fs.restir ? (kStageRestir | (fs.restirDenoise ? kStageRestirDenoise : 0u)) : 0u;
+        if (fs.rtReflections && fs.reflectionSamples > 0u) {
+            p |= kStageRtReflections | (fs.reflectionDenoise ? kStageReflectionDenoise : 0u);
+            p |= fs.rtReflectionAtmosphereSky ? kStageAtmosphere : 0u;
+        }
     }
     p |= fs.ssfx ? kStageSsfx : 0u;
     p |= fs.sky ? (kStageSky | kStageAtmosphere) : 0u;
@@ -1102,6 +1122,15 @@ int runToggles(Context& ctx, FrameTier tier) {
         expect(sameRgb(a.bytes[kRbSceneColor], a.bytes[kRbSsfx]) && !a.bytes[kRbSky].empty(),
                "sky before SSFX: the SSFX image carries the sky");
         std::printf("  %-38s %u geometry pixels see the sky through SSR / SSGI\n", "sky before SSFX", sky.geometryChanged);
+        expect(sky.geometryChanged > 0u, "sky before SSFX: SSR / SSGI rays that leave the screen take the sky (WP-6.3 sky fallback)");
+        // The sky fallback alone: geometry pixels only (SSR / SSGI), the background is frame.sky's either way.
+        FrameSettings nofb = on;
+        nofb.ssfxSkyFallback = false;
+        Frame fb{};
+        run(nofb, fb);
+        const Diff fallback = diffImages(a, fb, kRbSceneColor);
+        report("SSFX sky fallback on vs off", fallback);
+        expect(fallback.backgroundChanged == 0u && fallback.geometryChanged > 0u, "SSFX sky fallback changes geometry pixels only");
         // Without SSFX the sky is exactly a background-only change.
         FrameSettings on2 = on;
         on2.ssfx = false;
@@ -1180,6 +1209,32 @@ int runToggles(Context& ctx, FrameTier tier) {
         std::printf("  %-38s %u pixels blended (%u draw)\n", "forward transparency", changed, rig.composer.forwardPass().drawCount());
         expect(changed > 0u && changed < n / 4u, "forward: the glass box blends over a part of the frame");
     }
+    // forward media (aerial perspective + fog on): the transparent fragments are fogged; the opaque scene colour
+    // is unchanged and only the glass box's pixels differ.
+    {
+        FrameSettings fm = base;
+        fm.forward = true;
+        FrameSettings fn = fm;
+        fn.forwardMedia = false;
+        Frame m{}, nm{};
+        run(fm, m);
+        run(fn, nm);
+        expect(sameBytes(m.bytes[kRbSceneColor], nm.bytes[kRbSceneColor]), "forward media: the opaque scene colour is unchanged");
+        u32 box = 0, changed = 0, outside = 0;
+        const u32 n = kRenderW * kRenderH;
+        if (m.bytes[kRbForward].size() == n * 8u && nm.bytes[kRbForward].size() == n * 8u) {
+            for (u32 p = 0; p < n; ++p) {
+                const bool drawn = !pixelEqual(nm.bytes[kRbForward], nm.bytes[kRbSceneColor], p, 8u);
+                const bool diff = !pixelEqual(m.bytes[kRbForward], nm.bytes[kRbForward], p, 8u);
+                box += drawn ? 1u : 0u;
+                changed += diff ? 1u : 0u;
+                outside += (diff && !drawn) ? 1u : 0u;
+            }
+        }
+        std::printf("  %-38s %u glass pixels, %u changed by the media, %u changed elsewhere\n", "forward media (aerial + fog)", box,
+                    changed, outside);
+        expect(box > 0u && changed * 2u > box && outside == 0u, "forward media: the fog / aerial perspective change the transparent pixels only");
+    }
     // screen-space effects (sky / aerial / fog off: scene colour == SSFX output, or the lit image)
     FrameSettings plain = base;
     plain.fog = false;
@@ -1254,6 +1309,22 @@ int runToggles(Context& ctx, FrameTier tier) {
         report("RT reflections on vs off", rx);
         expect(rx.backgroundChanged == 0u && rx.geometryChanged > 0u, "RT reflections change geometry pixels only");
         expect(sameRgb(r.bytes[kRbSceneColor], r.bytes[kRbReflect]), "RT reflections: scene colour == the frame.reflect image");
+        {
+            FrameSettings rsky = fs;
+            rsky.rtReflectionAtmosphereSky = false;
+            Frame r2{};
+            run(rsky, r2);
+            const Diff x = diffImages(r, r2, kRbSceneColor);
+            report("RT reflection misses: atmosphere vs const", x);
+            expect(x.backgroundChanged == 0u && x.geometryChanged > 0u, "RT reflection misses see the atmosphere (geometry only)");
+            FrameSettings rden = fs;
+            rden.reflectionDenoise = false;
+            Frame r3{};
+            run(rden, r3);
+            const Diff y = diffImages(r, r3, kRbSceneColor);
+            report("RT reflection denoiser on vs off", y);
+            expect(y.backgroundChanged == 0u && y.geometryChanged > 0u, "the reflection denoiser changes geometry pixels only");
+        }
         // ReSTIR DI: light.shade drops the rectangle light (lit image changes on geometry only), frame.restir adds
         // the ReSTIR DI of the rectangle + the emissive triangles (geometry only).
         fs = plain;
@@ -1274,6 +1345,13 @@ int runToggles(Context& ctx, FrameTier tier) {
         report("ReSTIR DI on vs off", rs);
         std::printf("  %-38s %u pixels receive ReSTIR DI\n", "frame.restir", added);
         expect(rs.backgroundChanged == 0u && rs.geometryChanged > 0u && added > 0u, "ReSTIR DI changes geometry pixels only");
+        FrameSettings qraw = fs;
+        qraw.restirDenoise = false;
+        Frame q2{};
+        run(qraw, q2);
+        const Diff dn = diffImages(q, q2, kRbSceneColor);
+        report("ReSTIR denoiser on vs off", dn);
+        expect(dn.backgroundChanged == 0u && dn.geometryChanged > 0u, "the ReSTIR denoiser changes geometry pixels only");
     }
     std::printf("toggles %s: validation messages %u\n", tierName(tier), g_messages);
     return 0;

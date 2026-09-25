@@ -52,6 +52,9 @@ vec3 sx_pixel_gather(uint64_t radianceIn, uint x, uint y) {
             const vec3 dir = sx_sample_direction(n, x, y, i, j, F.giSampleSqrt);
             const SxHit hit = sx_trace_ray(radianceIn, P, x, y, dir);
             if (!hit.hit) {
+                if ((F.flags & SX_FLAG_SKY_GI) != 0u && sx_sky_exit(P, x, y, dir)) {
+                    sum = sx_add(sum, sx_sky(sx_normalize(dir))); // sky fallback
+                }
                 continue;
             }
             const uint hx = min(F.width - 1u, uint(max(0.0, hit.px)));

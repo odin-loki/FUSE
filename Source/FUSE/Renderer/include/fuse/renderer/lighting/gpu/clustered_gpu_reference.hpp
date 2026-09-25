@@ -71,6 +71,8 @@ struct ShadeReferenceDesc {
     /// WP-6.2: ShadeParams::rt_shadow / rt_shadow_user (null = no ray-traced shadows).
     f32 (*rtShadow)(const void* user, u32 slot, u32 px, u32 py) = nullptr;
     const void* rtShadowUser = nullptr;
+    /// LightingFrameDesc::skipAreaLights (kFlagSkipAreaLights): ShadeParams::skip_area_lights.
+    bool skipAreaLights = false;
 };
 
 /// Shades every pixel ("light.shade" kernel on `backend`; CpuReference and CpuParallel are

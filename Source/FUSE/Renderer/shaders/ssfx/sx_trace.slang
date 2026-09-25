@@ -1,6 +1,7 @@
 // WP-6.3: the screen-space ray march shared by ssfx.ssr and ssfx.ssgi. Slang twin of sx_trace.glsl (see there).
 #pragma once
 #include "sx_common.slang"
+#include "atmosphere/at_sample.slang"
 
 struct SxTrace {
     uint maxSteps;
@@ -139,6 +140,53 @@ SxHit sxTraceRay(uint64_t sceneColor, SxTrace P, uint x, uint y, float3 directio
     const float distanceFade = sxSaturate(4.0 * (1.0 - result.distance / P.maxDistance));
     result.confidence = edgeFade * distanceFade;
     return result;
+}
+
+// --- sky fallback (sx_trace.glsl sx_sky_exit / sx_sky / sx_pixel_reflection) --------------------------------
+bool sxSkyExit(SxTrace P, uint x, uint y, float3 direction) {
+    if (x >= F.width || y >= F.height || sxDepthAt(x, y) <= 0.0 || sxLength(direction) <= 0.0) {
+        return false;
+    }
+    const float3 p = sxPositionAt(x, y);
+    const float3 r = sxNormalize(direction);
+    float rayLength = P.maxDistance;
+    if (r.z < 0.0) {
+        const float maxLen = (p.z - F.nearZ * 1.01) / -r.z;
+        rayLength = min(rayLength, maxLen);
+    }
+    if (rayLength <= 1e-4) {
+        return false;
+    }
+    const float3 e = sxAdd(p, sxScale(r, rayLength));
+    float ex;
+    float ey;
+    if (!sxProject(e, ex, ey)) {
+        return false;
+    }
+    if (!sxInside(ex, ey)) {
+        return true;
+    }
+    return sxDepthNearest(ex, ey) <= 0.0;
+}
+
+float3 sxSky(float3 d) {
+    const float ex = d.x;
+    const float ey = -d.y;
+    const float ez = -d.z;
+    const float wx = F.viewRot[0] * ex + F.viewRot[1] * ey + F.viewRot[2] * ez;
+    const float wy = F.viewRot[4] * ex + F.viewRot[5] * ey + F.viewRot[6] * ez;
+    const float wz = F.viewRot[8] * ex + F.viewRot[9] * ey + F.viewRot[10] * ez;
+    return at_sky_radiance(at_load(F.sky), float3(wx, wy, wz), false);
+}
+
+float3 sxPixelReflection(uint x, uint y) {
+    const float3 p = sxPositionAt(x, y);
+    float3 n = sxNormalize(sxNormalAt(x, y));
+    const float3 v = sxNormalize(p);
+    if (sxDot(n, v) > 0.0) {
+        n = sxNeg(n);
+    }
+    return sxReflect(v, n);
 }
 
 SxHit sxTracePixel(uint64_t sceneColor, SxTrace P, uint x, uint y) {

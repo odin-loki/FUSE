@@ -117,6 +117,7 @@ ShadeParams makeShadeParams(const ShadeReferenceDesc& desc, math::Vec4* out) {
     p.shadow_user = desc.shadowUser;
     p.rt_shadow = desc.rtShadow;
     p.rt_shadow_user = desc.rtShadowUser;
+    p.skip_area_lights = desc.skipAreaLights;
     return p;
 }
 
