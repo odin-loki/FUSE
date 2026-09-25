@@ -38,6 +38,22 @@ void testBloomBlackFrameProducesZeroContribution() {
                "black frame produces zero bloom contribution");
 }
 
+void testBloomDownsampleAveragesQuad() {
+    const fuse::math::Vec3 src[4] = {
+        {4.f, 0.f, 0.f},
+        {0.f, 4.f, 0.f},
+        {0.f, 0.f, 4.f},
+        {4.f, 4.f, 4.f},
+    };
+    fuse::math::Vec3 dst{99.f, 99.f, 99.f};
+    fuse::renderer::Bloom::downsampleBox(src, 2u, 2u, &dst);
+    expectNear(dst.x, 2.f, 1e-4f, "bloom downsample averages red");
+    expectNear(dst.y, 2.f, 1e-4f, "bloom downsample averages green");
+    expectNear(dst.z, 2.f, 1e-4f, "bloom downsample averages blue");
+    fuse::renderer::Bloom::downsampleBox(src, 1u, 1u, &dst);
+    expectNear(dst.x, 2.f, 1e-4f, "bloom downsample ignores undersized sources");
+}
+
 void testAcesTonemapClamps() {
     const fuse::math::Vec3 hot{100.f, 50.f, 10.f};
     const fuse::math::Vec3 mapped = fuse::renderer::aces_tonemap(hot);
@@ -968,6 +984,7 @@ int main() {
     fuse::core::initialize();
 
     testBloomBlackFrameProducesZeroContribution();
+    testBloomDownsampleAveragesQuad();
     testAcesTonemapClamps();
     testNeutralCalibrationGrey();
     testPostStackStageChain();

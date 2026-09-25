@@ -1393,7 +1393,47 @@ void testGjkSupportAndEpaStub() {
     expectTrue(supportPoint.x == 1.f, "support picks furthest hull point");
 
     const auto manifold = fuse::physics::narrowphase::epa(hull, 2, hull, 2, 0u, 1u);
-    expectTrue(manifold.valid, "epa stub reports overlap for identical hulls");
+    expectTrue(manifold.valid, "epa reports overlap for identical hulls");
+    expectTrue(manifold.pointCount == 1u, "epa writes one contact for an overlapping hull");
+
+    const fuse::physics::vec3 shifted[] = {
+        {1.5f, -0.5f, -0.5f},
+        {2.5f, -0.5f, -0.5f},
+        {1.5f, 0.5f, -0.5f},
+        {2.5f, 0.5f, -0.5f},
+        {1.5f, -0.5f, 0.5f},
+        {2.5f, 0.5f, 0.5f},
+        {1.5f, 0.5f, 0.5f},
+        {2.5f, -0.5f, 0.5f},
+    };
+    const fuse::physics::vec3 box[] = {
+        {-0.5f, -0.5f, -0.5f},
+        {0.5f, -0.5f, -0.5f},
+        {-0.5f, 0.5f, -0.5f},
+        {0.5f, 0.5f, -0.5f},
+        {-0.5f, -0.5f, 0.5f},
+        {0.5f, 0.5f, 0.5f},
+        {-0.5f, 0.5f, 0.5f},
+        {0.5f, -0.5f, 0.5f},
+    };
+    const auto separated = fuse::physics::narrowphase::epa(box, 8, shifted, 8, 2u, 3u);
+    expectTrue(!separated.valid, "epa rejects boxes that only touch at an edge");
+
+    const fuse::physics::vec3 overlap[] = {
+        {0.f, -0.5f, -0.5f},
+        {1.f, -0.5f, -0.5f},
+        {0.f, 0.5f, -0.5f},
+        {1.f, 0.5f, -0.5f},
+        {0.f, -0.5f, 0.5f},
+        {1.f, 0.5f, 0.5f},
+        {0.f, 0.5f, 0.5f},
+        {1.f, -0.5f, 0.5f},
+    };
+    const auto penetrating = fuse::physics::narrowphase::epa(box, 8, overlap, 8, 4u, 5u);
+    expectTrue(penetrating.valid, "epa reports overlap for boxes sharing a half-unit slab");
+    expectTrue(penetrating.penetrationDepth > 0.4f && penetrating.penetrationDepth < 0.6f,
+               "epa penetration matches the half-unit overlap");
+    expectTrue(penetrating.bodyA == 4u && penetrating.bodyB == 5u, "epa stores body indices");
 }
 
 void testContactPairDeepenFollowUpRejectGuards() {

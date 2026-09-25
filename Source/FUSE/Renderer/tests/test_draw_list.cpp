@@ -400,6 +400,26 @@ void testDrawIndirectDispatchIndirectAndPushConstants() {
     recorder.pushConstants(0x11u, 0u, 16u, nullptr);
     expectTrue(recorder.recordCount() == 0u, "misaligned, empty, and null push constants are rejected");
     expectTrue(recorder.endRecording(), "endRecording succeeds after rejected push constants");
+
+    recorder.reset();
+    expectTrue(recorder.beginRecording(nullptr), "beginRecording succeeds for image copies");
+    void* srcImage = reinterpret_cast<void*>(0x30);
+    void* dstImage = reinterpret_cast<void*>(0x31);
+    recorder.copyImage(srcImage, dstImage, 32u, 16u);
+    recorder.blitImage(srcImage, dstImage, 32u, 16u, 8u, 4u);
+    recorder.copyImage(nullptr, dstImage, 1u, 1u);
+    expectTrue(recorder.recordCount() == 2u, "image copy and blit are recorded");
+    expectTrue(recorder.records()[0].kind == fuse::renderer::CommandRecordKind::CopyImage,
+               "first image record is CopyImage");
+    expectTrue(recorder.records()[0].copySize == 32u && recorder.records()[0].stride == 16u,
+               "copy image extent stored");
+    expectTrue(recorder.records()[1].kind == fuse::renderer::CommandRecordKind::BlitImage,
+               "second image record is BlitImage");
+    expectTrue(recorder.records()[1].dispatchX == 32u && recorder.records()[1].copySize == 8u,
+               "blit image extents stored");
+    expectTrue(recorder.vulkanCopyImageCount() == 0u, "logical copyImage does not encode");
+    expectTrue(recorder.vulkanBlitImageCount() == 0u, "logical blitImage does not encode");
+    expectTrue(recorder.endRecording(), "endRecording succeeds after image copies");
 }
 
 } // namespace

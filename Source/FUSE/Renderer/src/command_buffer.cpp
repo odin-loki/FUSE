@@ -62,6 +62,8 @@ void CommandBufferRecorder::reset() {
     m_vulkanDrawIndirectCount = 0;
     m_vulkanDispatchIndirectCount = 0;
     m_vulkanPushConstantCount = 0;
+    m_vulkanCopyImageCount = 0;
+    m_vulkanBlitImageCount = 0;
     m_records.clear();
 }
 
@@ -925,6 +927,102 @@ void CommandBufferRecorder::copyBuffer(void* src, void* dst, u32 size) {
     m_records.push_back(record);
 
     encodeCopyBuffer(src, dst, size);
+}
+
+void CommandBufferRecorder::encodeCopyImage(void* src, void* dst, u32 width, u32 height) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_vulkanEncodeActive || !isRealVulkanCommandBuffer(m_nativeCommandBuffer) || m_insideRenderPass) {
+        return;
+    }
+    if (src == nullptr || dst == nullptr || width == 0u || height == 0u) {
+        return;
+    }
+
+    VkImageCopy region{};
+    region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.srcSubresource.layerCount = 1;
+    region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.dstSubresource.layerCount = 1;
+    region.extent = {width, height, 1};
+
+    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
+    vkCmdCopyImage(commandBuffer, static_cast<VkImage>(src), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   static_cast<VkImage>(dst), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    ++m_vulkanCopyImageCount;
+#else
+    (void)src;
+    (void)dst;
+    (void)width;
+    (void)height;
+#endif
+}
+
+void CommandBufferRecorder::encodeBlitImage(void* src, void* dst, u32 srcWidth, u32 srcHeight, u32 dstWidth,
+                                            u32 dstHeight) {
+#if defined(FUSE_VULKAN_BACKEND)
+    if (!m_vulkanEncodeActive || !isRealVulkanCommandBuffer(m_nativeCommandBuffer) || m_insideRenderPass) {
+        return;
+    }
+    if (src == nullptr || dst == nullptr || srcWidth == 0u || srcHeight == 0u || dstWidth == 0u ||
+        dstHeight == 0u) {
+        return;
+    }
+
+    VkImageBlit region{};
+    region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.srcSubresource.layerCount = 1;
+    region.srcOffsets[1] = {static_cast<i32>(srcWidth), static_cast<i32>(srcHeight), 1};
+    region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.dstSubresource.layerCount = 1;
+    region.dstOffsets[1] = {static_cast<i32>(dstWidth), static_cast<i32>(dstHeight), 1};
+
+    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
+    vkCmdBlitImage(commandBuffer, static_cast<VkImage>(src), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                   static_cast<VkImage>(dst), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region,
+                   VK_FILTER_LINEAR);
+    ++m_vulkanBlitImageCount;
+#else
+    (void)src;
+    (void)dst;
+    (void)srcWidth;
+    (void)srcHeight;
+    (void)dstWidth;
+    (void)dstHeight;
+#endif
+}
+
+void CommandBufferRecorder::copyImage(void* src, void* dst, u32 width, u32 height) {
+    if (!m_recording || src == nullptr || dst == nullptr || width == 0u || height == 0u) {
+        return;
+    }
+
+    CommandRecord record;
+    record.kind = CommandRecordKind::CopyImage;
+    record.nativeSrcBuffer = src;
+    record.nativeDstBuffer = dst;
+    record.copySize = width;
+    record.stride = height;
+    m_records.push_back(record);
+    encodeCopyImage(src, dst, width, height);
+}
+
+void CommandBufferRecorder::blitImage(void* src, void* dst, u32 srcWidth, u32 srcHeight, u32 dstWidth,
+                                      u32 dstHeight) {
+    if (!m_recording || src == nullptr || dst == nullptr || srcWidth == 0u || srcHeight == 0u ||
+        dstWidth == 0u || dstHeight == 0u) {
+        return;
+    }
+
+    CommandRecord record;
+    record.kind = CommandRecordKind::BlitImage;
+    record.nativeSrcBuffer = src;
+    record.nativeDstBuffer = dst;
+    record.dispatchX = srcWidth;
+    record.dispatchY = srcHeight;
+    record.copySize = dstWidth;
+    record.stride = dstHeight;
+    m_records.push_back(record);
+    encodeBlitImage(src, dst, srcWidth, srcHeight, dstWidth, dstHeight);
 }
 
 void CommandBufferRecorder::dispatch(u32 x, u32 y, u32 z) {

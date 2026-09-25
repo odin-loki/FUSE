@@ -25,6 +25,8 @@ enum class CommandRecordKind : u8 {
     DrawIndirect = 16,
     DispatchIndirect = 17,
     PushConstants = 18,
+    CopyImage = 19,
+    BlitImage = 20,
 };
 
 struct CommandRecord {
@@ -146,6 +148,8 @@ public:
     void drawIndirect(void* indirectBuffer, u32 offset = 0, u32 drawCount = 1, u32 stride = 16);
     void updateBuffer(void* dstBuffer, u32 data);
     void copyBuffer(void* src, void* dst, u32 size);
+    void copyImage(void* src, void* dst, u32 width, u32 height);
+    void blitImage(void* src, void* dst, u32 srcWidth, u32 srcHeight, u32 dstWidth, u32 dstHeight);
     void dispatch(u32 x, u32 y, u32 z);
     void dispatchIndirect(void* indirectBuffer, u32 offset = 0);
     /// General `vkCmdPushConstants`. `size` must be a non-zero multiple of 4 and at most 64.
@@ -175,6 +179,8 @@ public:
     u32 vulkanDrawIndirectCount() const { return m_vulkanDrawIndirectCount; }
     u32 vulkanDispatchIndirectCount() const { return m_vulkanDispatchIndirectCount; }
     u32 vulkanPushConstantCount() const { return m_vulkanPushConstantCount; }
+    u32 vulkanCopyImageCount() const { return m_vulkanCopyImageCount; }
+    u32 vulkanBlitImageCount() const { return m_vulkanBlitImageCount; }
 
 private:
     void push(CommandRecordKind kind);
@@ -195,6 +201,8 @@ private:
     void encodeDrawIndirect(void* indirectBuffer, u32 offset, u32 drawCount, u32 stride);
     void encodeUpdateBuffer(void* dstBuffer, u32 data);
     void encodeCopyBuffer(void* src, void* dst, u32 size);
+    void encodeCopyImage(void* src, void* dst, u32 width, u32 height);
+    void encodeBlitImage(void* src, void* dst, u32 srcWidth, u32 srcHeight, u32 dstWidth, u32 dstHeight);
     void encodeDispatch(u32 x, u32 y, u32 z);
     void encodeDispatchIndirect(void* indirectBuffer, u32 offset);
     void encodePushConstants(u32 stageFlags, u32 offset, u32 size, const void* data);
@@ -226,6 +234,8 @@ private:
     u32 m_vulkanDrawIndirectCount = 0;
     u32 m_vulkanDispatchIndirectCount = 0;
     u32 m_vulkanPushConstantCount = 0;
+    u32 m_vulkanCopyImageCount = 0;
+    u32 m_vulkanBlitImageCount = 0;
     std::vector<CommandRecord> m_records;
 };
 

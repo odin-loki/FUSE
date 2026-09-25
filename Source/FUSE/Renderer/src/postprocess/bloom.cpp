@@ -36,4 +36,24 @@ fuse::math::Vec3 Bloom::apply(const fuse::math::Vec3& hdr, const BloomParams& pa
     return hdr + bright * params.intensity;
 }
 
+void Bloom::downsampleBox(const fuse::math::Vec3* src, u32 width, u32 height, fuse::math::Vec3* dst) {
+    if (src == nullptr || dst == nullptr || width < 2u || height < 2u) {
+        return;
+    }
+
+    const u32 dstWidth = width / 2u;
+    const u32 dstHeight = height / 2u;
+    for (u32 y = 0; y < dstHeight; ++y) {
+        for (u32 x = 0; x < dstWidth; ++x) {
+            const u32 srcX = x * 2u;
+            const u32 srcY = y * 2u;
+            const fuse::math::Vec3 a = src[srcY * width + srcX];
+            const fuse::math::Vec3 b = src[srcY * width + srcX + 1u];
+            const fuse::math::Vec3 c = src[(srcY + 1u) * width + srcX];
+            const fuse::math::Vec3 d = src[(srcY + 1u) * width + srcX + 1u];
+            dst[y * dstWidth + x] = (a + b + c + d) * 0.25f;
+        }
+    }
+}
+
 } // namespace fuse::renderer

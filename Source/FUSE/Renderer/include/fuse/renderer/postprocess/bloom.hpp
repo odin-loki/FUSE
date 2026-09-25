@@ -26,6 +26,8 @@ public:
     static f32 luminance(const fuse::math::Vec3& rgb);
     static fuse::math::Vec3 extractBright(const fuse::math::Vec3& hdr, const BloomParams& params);
     static fuse::math::Vec3 apply(const fuse::math::Vec3& hdr, const BloomParams& params);
+    /// Box-filter `src` (width x height) into `dst` at half resolution. Odd sizes are floored.
+    static void downsampleBox(const fuse::math::Vec3* src, u32 width, u32 height, fuse::math::Vec3* dst);
 
 private:
     BloomParams m_params{};

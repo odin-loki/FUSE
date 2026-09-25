@@ -27,7 +27,8 @@ FUSE_PHYSICS_INLINE vec3 support(const vec3* vertices, u32 count, vec3 direction
 /// GJK intersection test — returns true when convex hulls overlap (B4.3 stub).
 bool gjkIntersect(const vec3* hullA, u32 countA, const vec3* hullB, u32 countB);
 
-/// EPA stub — returns an invalid manifold until full B4.3 GPU path lands.
+/// Expanding-polytope approximation via sampled support directions.
+/// Fills one contact when the hulls overlap.
 ContactManifold epa(
     const vec3* hullA,
     u32 countA,

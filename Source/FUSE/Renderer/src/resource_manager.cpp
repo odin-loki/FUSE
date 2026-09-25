@@ -216,8 +216,58 @@ OneShotCopyOutcome submitImageBarrier(VulkanDevice& device, u32 family, VkQueue 
     return out;
 }
 
+OneShotCopyOutcome submitBufferBarrier(VulkanDevice& device, u32 family, VkQueue queue,
+                                      const VkBufferMemoryBarrier& barrier, VkPipelineStageFlags srcStage,
+                                      VkPipelineStageFlags dstStage) {
+    OneShotCopyOutcome out{};
+    if (!device.isValid() || device.nativeHandle() == nullptr || queue == VK_NULL_HANDLE) {
+        return out;
+    }
+
+    const VkDevice vkDevice = static_cast<VkDevice>(device.nativeHandle());
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    poolInfo.queueFamilyIndex = family;
+
+    VkCommandPool pool = VK_NULL_HANDLE;
+    if (vkCreateCommandPool(vkDevice, &poolInfo, nullptr, &pool) != VK_SUCCESS) {
+        return out;
+    }
+
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = pool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    if (vkAllocateCommandBuffers(vkDevice, &allocInfo, &cmd) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return out;
+    }
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return out;
+    }
+
+    vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, nullptr, 1, &barrier, 0, nullptr);
+    if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
+        vkDestroyCommandPool(vkDevice, pool, nullptr);
+        return out;
+    }
+
+    out = submitOneShotAndWait(vkDevice, queue, cmd, true);
+    vkDestroyCommandPool(vkDevice, pool, nullptr);
+    return out;
+}
+
 OneShotCopyOutcome oneShotCopyBuffer(VulkanDevice& device, void* srcHandle, void* dstHandle,
-                                     usize srcOffset, usize size) {
+                                     usize srcOffset, usize size, bool releaseToGraphics = false) {
     if (!device.isValid() || device.nativeHandle() == nullptr || size == 0) {
         return {};
     }
@@ -269,13 +319,51 @@ OneShotCopyOutcome oneShotCopyBuffer(VulkanDevice& device, void* srcHandle, void
     vkCmdCopyBuffer(cmd, static_cast<VkBuffer>(srcHandle), static_cast<VkBuffer>(dstHandle), 1,
                     &region);
 
+    const bool transferOwnership = releaseToGraphics && needsGraphicsAcquire(device, target.family);
+    const u32 graphicsFamily = device.queues().graphicsFamily;
+    if (transferOwnership) {
+        VkBufferMemoryBarrier release{};
+        release.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        release.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        release.dstAccessMask = 0;
+        release.srcQueueFamilyIndex = target.family;
+        release.dstQueueFamilyIndex = graphicsFamily;
+        release.buffer = static_cast<VkBuffer>(dstHandle);
+        release.offset = 0;
+        release.size = size;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
+                             0, nullptr, 1, &release, 0, nullptr);
+    }
+
     if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
         vkDestroyCommandPool(vkDevice, pool, nullptr);
         return {};
     }
 
-    const OneShotCopyOutcome outcome = submitOneShotAndWait(vkDevice, target.queue, cmd, false);
+    OneShotCopyOutcome outcome = submitOneShotAndWait(vkDevice, target.queue, cmd, false);
     vkDestroyCommandPool(vkDevice, pool, nullptr);
+    if (outcome.submitted && transferOwnership) {
+        VkBufferMemoryBarrier acquire{};
+        acquire.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        acquire.srcAccessMask = 0;
+        acquire.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT |
+                                VK_ACCESS_INDEX_READ_BIT;
+        acquire.srcQueueFamilyIndex = target.family;
+        acquire.dstQueueFamilyIndex = graphicsFamily;
+        acquire.buffer = static_cast<VkBuffer>(dstHandle);
+        acquire.offset = 0;
+        acquire.size = size;
+        const OneShotCopyOutcome acquired = submitBufferBarrier(
+            device, graphicsFamily, static_cast<VkQueue>(device.queues().graphics), acquire,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+        outcome.submitted = acquired.submitted;
+        outcome.ownershipTransferred = acquired.submitted;
+        if (acquired.usedFence) {
+            outcome.usedFence = true;
+        }
+        outcome.waitTimedOut = outcome.waitTimedOut || acquired.waitTimedOut;
+    }
     return outcome;
 }
 
@@ -718,6 +806,7 @@ BufferHandle ResourceManager::createBuffer(const BufferDesc& desc, const void* i
 }
 
 void ResourceManager::copyInitialDataViaStaging(Buffer& dest, const void* initialData, usize size) {
+    m_lastOwnershipTransfer = false;
     m_lastGpuCopyUsedTransferQueue = false;
     m_lastGpuCopyUsedFence = false;
     m_lastGpuCopyWaitTimedOut = false;
@@ -745,11 +834,12 @@ void ResourceManager::copyInitialDataViaStaging(Buffer& dest, const void* initia
 #if defined(FUSE_VULKAN_BACKEND)
     if (m_device != nullptr && hasBufferUsage(dest.desc.usage, BufferUsage::TransferDst)) {
         const OneShotCopyOutcome outcome =
-            oneShotCopyBuffer(*m_device, staging->handle, dest.handle, srcOffset, size);
+            oneShotCopyBuffer(*m_device, staging->handle, dest.handle, srcOffset, size, true);
         m_lastGpuCopyUsedFence = outcome.usedFence;
         m_lastGpuCopyWaitTimedOut = outcome.waitTimedOut;
         if (outcome.submitted) {
             m_lastGpuCopyUsedTransferQueue = usedDedicatedTransferQueue(*m_device);
+            m_lastOwnershipTransfer = outcome.ownershipTransferred;
         }
     }
 #else

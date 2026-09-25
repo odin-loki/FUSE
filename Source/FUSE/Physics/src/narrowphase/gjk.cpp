@@ -72,7 +72,44 @@ ContactManifold epa(
     ContactManifold manifold{};
     manifold.bodyA = idxA;
     manifold.bodyB = idxB;
-    manifold.valid = gjkIntersect(hullA, countA, hullB, countB);
+    if (!gjkIntersect(hullA, countA, hullB, countB)) {
+        return manifold;
+    }
+
+    const vec3 directions[] = {
+        {1.f, 0.f, 0.f},  {-1.f, 0.f, 0.f}, {0.f, 1.f, 0.f},  {0.f, -1.f, 0.f},
+        {0.f, 0.f, 1.f},  {0.f, 0.f, -1.f}, {1.f, 1.f, 0.f},  {1.f, -1.f, 0.f},
+        {-1.f, 1.f, 0.f}, {-1.f, -1.f, 0.f},{1.f, 0.f, 1.f},  {1.f, 0.f, -1.f},
+        {-1.f, 0.f, 1.f}, {-1.f, 0.f, -1.f},{0.f, 1.f, 1.f},  {0.f, 1.f, -1.f},
+        {0.f, -1.f, 1.f}, {0.f, -1.f, -1.f},{1.f, 1.f, 1.f},  {1.f, 1.f, -1.f},
+        {1.f, -1.f, 1.f}, {1.f, -1.f, -1.f},{-1.f, 1.f, 1.f}, {-1.f, 1.f, -1.f},
+        {-1.f, -1.f, 1.f},{-1.f, -1.f, -1.f},
+    };
+
+    vec3 bestNormal{0.f, 1.f, 0.f};
+    f32 bestDepth = 1e30f;
+    for (const vec3& raw : directions) {
+        const vec3 direction = raw.normalized();
+        const vec3 pointA = support(hullA, countA, direction);
+        const vec3 pointB = support(hullB, countB, direction * -1.f);
+        const f32 depth = (pointA - pointB).dot(direction);
+        if (depth < bestDepth) {
+            bestDepth = depth;
+            bestNormal = direction;
+        }
+    }
+
+    if (bestDepth < 0.f) {
+        bestDepth = 0.f;
+    }
+
+    const vec3 pointA = support(hullA, countA, bestNormal);
+    const vec3 pointB = support(hullB, countB, bestNormal * -1.f);
+    manifold.contactNormal = bestNormal;
+    manifold.addPoint((pointA + pointB) * 0.5f, bestDepth);
+    manifold.syncLegacyFields();
+    manifold.valid = true;
+    manifold.buildFrictionBasis();
     return manifold;
 }
 
