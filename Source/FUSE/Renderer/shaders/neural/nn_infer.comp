@@ -1,0 +1,48 @@
+#version 460
+// WP-9.1 "neural.infer", portable kernel: one sample per invocation, fp32 arithmetic (fp16 parameters widened
+// from packed halves; no 16-bit or cooperative-matrix features). CPU reference: NeuralNet::infer
+// (src/neural/neural_mlp.cpp), the same operations in the same order. GLSL twin of nn_infer.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "nn_common.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(buffer_reference, scalar, buffer_reference_align = 4) readonly buffer NnInputsRef { float v[]; };
+layout(buffer_reference, scalar, buffer_reference_align = 4) writeonly buffer NnOutputsRef { float v[]; };
+
+layout(push_constant, scalar) uniform NnPushBlock { NeuralPush pc; };
+
+void main() {
+    const uint s = gl_GlobalInvocationID.x;
+    if (s >= pc.count) {
+        return;
+    }
+    const NeuralGpuHeader h = NnHeaderRef(pc.header).h;
+    float x[4] = float[4](0.0, 0.0, 0.0, 0.0);
+    for (uint d = 0u; d < h.inputDims; ++d) {
+        x[d] = NnInputsRef(pc.inputs).v[s * h.inputDims + d];
+    }
+    float a[NN_MAX_WIDTH];
+    float b[NN_MAX_WIDTH];
+    nn_encode(h, pc.params, x, a);
+    for (uint j = 0u; j < h.layerCount; ++j) {
+        const uint nin = h.layerIn[j];
+        const uint nout = h.layerOut[j];
+        const uint act = j + 1u == h.layerCount ? h.outputActivation : h.hiddenActivation;
+        for (uint o = 0u; o < nout; ++o) {
+            precise float acc = nn_param(pc.params, h.paramPrecision, h.biasOffset[j] + o);
+            const uint row = h.weightOffset[j] + o * nin;
+            for (uint i = 0u; i < nin; ++i) {
+                precise float t = nn_param(pc.params, h.paramPrecision, row + i) * a[i];
+                acc = acc + t;
+            }
+            b[o] = nn_activation(act, acc, h.leakySlope);
+        }
+        for (uint o = 0u; o < nout; ++o) {
+            a[o] = b[o];
+        }
+    }
+    for (uint o = 0u; o < h.outputDims; ++o) {
+        NnOutputsRef(pc.outputs).v[s * h.outputDims + o] = a[o];
+    }
+}
