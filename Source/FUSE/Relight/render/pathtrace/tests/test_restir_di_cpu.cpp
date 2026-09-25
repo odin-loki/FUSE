@@ -538,8 +538,9 @@ void suiteLayout() {
                 "PtTracePush slang %zu / glsl %zu fields, last %s\n",
                 a.size(), b.size(), ta.size(), tb.size(), tb.empty() ? "-" : tb.back().c_str());
     check(a == rdi && b == rdi, "layout: RdiPush (restir_di.slang / .comp) == RestirDiGpu::Push field order");
-    check(ta.size() == 17u && ta == tb && ta.back() == "restirDi",
-          "layout: PtTracePush (rl_pt_trace.slang / .comp) ends with restirDi (PathTracerGpu::TracePush, 120 bytes)");
+    // RL-5.3 appended restirGi after restirDi (TracePush 128 bytes; checked by rl_restir_gi_layout).
+    check(ta.size() >= 17u && ta == tb && ta[16] == "restirDi",
+          "layout: PtTracePush (rl_pt_trace.slang / .comp) field 17 is restirDi (PathTracerGpu::TracePush)");
 }
 
 // --- options ----------------------------------------------------------------------------------------------------------

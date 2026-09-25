@@ -342,6 +342,8 @@ bool PathTracerGpu::beginFrame(u64 frameSerial, const PtCompiledScene& scene, co
     m_lightsAdded = false;
     m_restirDiAddress = 0;
     m_restirDiBuffer = rg::BufferRef{};
+    m_restirGiAddress = 0;
+    m_restirGiBuffer = rg::BufferRef{};
     // GPU scene: instance transforms / flags of this frame (the compiled scene is authoritative).
     m_scene->beginFrame(frameSerial);
     m_as->beginFrame(frameSerial);
@@ -501,6 +503,12 @@ void PathTracerGpu::setRestirDi(u64 address, rg::BufferRef buffer, rg::BufferRan
     m_restirDiRange = range;
 }
 
+void PathTracerGpu::setRestirGi(u64 address, rg::BufferRef buffer, rg::BufferRange range) {
+    m_restirGiAddress = address;
+    m_restirGiBuffer = buffer;
+    m_restirGiRange = range;
+}
+
 bool PathTracerGpu::addTracePass(rg::Graph& graph, const PtGraphRefs& refs) {
     if (!m_initialized || !refs.valid) {
         return false;
@@ -523,6 +531,7 @@ bool PathTracerGpu::addTracePass(rg::Graph& graph, const PtGraphRefs& refs) {
     r.push.tlas = b.tlas;
     r.push.lut = b.lut;
     r.push.restirDi = m_restirDiBuffer.valid() ? m_restirDiAddress : 0u;
+    r.push.restirGi = m_restirGiBuffer.valid() ? m_restirGiAddress : 0u;
     r.push.outputs = m_outputs.deviceAddress;
     r.push.outStride = m_outStride;
     r.push.width = m_width;
@@ -544,6 +553,9 @@ bool PathTracerGpu::addTracePass(rg::Graph& graph, const PtGraphRefs& refs) {
     }
     if (m_restirDiBuffer.valid()) {
         pass.use(m_restirDiBuffer, rg::Access::StorageRead, m_restirDiRange, rg::kStageCompute);
+    }
+    if (m_restirGiBuffer.valid()) {
+        pass.use(m_restirGiBuffer, rg::Access::StorageRead, m_restirGiRange, rg::kStageCompute);
     }
     return true;
 }

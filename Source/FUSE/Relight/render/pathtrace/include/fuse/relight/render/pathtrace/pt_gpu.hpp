@@ -157,6 +157,8 @@ public:
     bool addLightsPass(renderer::rg::Graph& graph, const PtGraphRefs& refs);
     PtTraceBindings traceBindings() const;
     void setRestirDi(u64 address, renderer::rg::BufferRef buffer, renderer::rg::BufferRange range);
+    /// RL-5.3: the next addTracePass reads ReSTIR GI's per-pixel output (as setRestirDi); beginFrame clears it.
+    void setRestirGi(u64 address, renderer::rg::BufferRef buffer, renderer::rg::BufferRange range);
     u32 collectRetired(u64 completedSerial);
 
     /// Output buffer (host-visible; valid after the frame completed) and a section's first byte.
@@ -191,8 +193,9 @@ private:
         u32 accumulate = 0;
         u32 lightCount = 0;
         u64 restirDi = 0; ///< RL-5.2: RestirDiGpu's per-pixel DI output (0: off)
+        u64 restirGi = 0; ///< RL-5.3: RestirGiGpu's per-pixel GI output (0: off)
     };
-    static_assert(sizeof(TracePush) == 120u, "PtTracePush (rl_pt_trace.comp / .slang)");
+    static_assert(sizeof(TracePush) == 128u, "PtTracePush (rl_pt_trace.comp / .slang)");
     struct PassRecord {
         PathTracerGpu* self = nullptr;
         TracePush push{};
@@ -247,6 +250,9 @@ private:
     u64 m_restirDiAddress = 0;
     renderer::rg::BufferRef m_restirDiBuffer{};
     renderer::rg::BufferRange m_restirDiRange{};
+    u64 m_restirGiAddress = 0;
+    renderer::rg::BufferRef m_restirGiBuffer{};
+    renderer::rg::BufferRange m_restirGiRange{};
     std::vector<Retired> m_retired;
     PassRecord m_record{};
     void* m_layoutHandle = nullptr;   ///< VkPipelineLayout

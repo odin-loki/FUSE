@@ -38,6 +38,15 @@
 //                                        of this vertex's direct light (NEE is skipped, and light-set emitters seen
 //                                        by the continuation from it get MIS weight 0 unless it scattered by a dirac
 //                                        lobe), 0 = not ReSTIR's vertex (ordinary NEE).
+//   uint ptRestirGiVertex(PT_CTX_PARAM PtParams P, uint px, uint py, PtRawHit h, float3 d, uint bounce,
+//                         PT_INOUT(float3) indirect);
+//                                        RL-5.3 ReSTIR GI hook (render/pathtrace/restir_gi*): with kPtFlagGiRecord,
+//                                        called at the G-buffer vertex (vertex index `bounce`), returns 2 and the path
+//                                        stops; with kPtFlagRestirGi, called at every primary-chain vertex of sample
+//                                        sampleBase: 1 = `indirect` is ReSTIR GI's estimate of everything the
+//                                        continuation from this vertex brings except the light-set emission of its
+//                                        first segment: NEE (or ReSTIR DI) runs as usual, the continuation collects
+//                                        that first segment's light-set emission (MIS as usual) and the path stops.
 //
 // THE ESTIMATOR (unidirectional path tracing, one path per sample; ptRenderSample):
 //   * primary rays from a pinhole camera (the D3D view / projection's eye and field of view), jittered in the pixel
@@ -531,6 +540,9 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
     bool bsdfLights = (P.flags & kPtFlagBsdfLights) != 0u;
     bool diReplaced = false; // RL-5.2: this vertex's direct light is ReSTIR DI's (ptRestirDiVertex)
     bool prevRestir = false; // ... the previous vertex's
+    bool giReplaced = false; // RL-5.3: this vertex's indirect light is ReSTIR GI's (ptRestirGiVertex)
+    bool giCut = false;      // ... the previous vertex's: this segment collects light-set emission only, then stops
+    float3 giIndirect = float3(0.0f, 0.0f, 0.0f);
 
     for (uint bounce = 0u; bounce < P.maxBounces + 1u; ++bounce) {
         uint dim = 2u + bounce * kPtDimsPerBounce;
@@ -545,7 +557,7 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
         if (prevDelta || (bsdfLights && !prevRestir)) {
             le = ptAnalyticEmission(PT_CTX_ARG P, o, d, tHit, !h.hit, prevDelta, prevPdf, prevP, prevN);
         }
-        if (!h.hit) {
+        if (!h.hit && !giCut) {
             le = le + P.sky;
         }
         float3 contrib = thr * le;
@@ -565,7 +577,7 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
             pathLength = pathLength + h.t;
         }
         // Surface emission (emissive triangles: MIS against the light set; unlit / non-light emitters: weight 1).
-        if (ptMax3(S.emission) > 0.0f) {
+        if (ptMax3(S.emission) > 0.0f && (!giCut || S.light != kPtInvalid)) {
             float w = 1.0f;
             if (S.light != kPtInvalid) {
                 if (!prevDelta) {
@@ -590,6 +602,9 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
             R.specular = R.specular + contrib;
         }
         R.radiance = R.radiance + contrib;
+        if (giCut) {
+            break; // RL-5.3: the rest of this path is ReSTIR GI's
+        }
         // A blended unlit layer: deterministic pass-through of 1 - alpha (no scattering; counts as a vertex).
         if ((S.flags & (kPtMatUnlit | kPtMatAlphaBlend)) == (kPtMatUnlit | kPtMatAlphaBlend) && S.alpha < 1.0f &&
             bounce < P.maxBounces) {
@@ -648,6 +663,13 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
         if (chain && (P.flags & kPtFlagRestirDi) != 0u && sampleIndex == P.sampleBase) {
             diReplaced = ptRestirDiVertex(PT_CTX_ARG P, px, py, h, d, direct) == 1u;
         }
+        giReplaced = false;
+        if (chain && (P.flags & kPtFlagRestirGi) != 0u && sampleIndex == P.sampleBase) {
+            giReplaced = ptRestirGiVertex(PT_CTX_ARG P, px, py, h, d, bounce, giIndirect) == 1u;
+        }
+        if (!giReplaced) {
+            giIndirect = float3(0.0f, 0.0f, 0.0f);
+        }
         if (nee && !diReplaced && P.lightCount > 0u) {
             PtLightPick lp = ptSampleLightSet(PT_CTX_ARG S.position, treeN, ptRandom(seed, dim + 0u),
                                               ptRandom(seed, dim + 1u), ptRandom(seed, dim + 2u));
@@ -703,6 +725,10 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
             if ((P.flags & kPtFlagDiRecord) != 0u && ptRestirDiVertex(PT_CTX_ARG P, px, py, h, d, direct) == 2u) {
                 break;
             }
+            if ((P.flags & kPtFlagGiRecord) != 0u &&
+                ptRestirGiVertex(PT_CTX_ARG P, px, py, h, d, bounce, giIndirect) == 2u) {
+                break;
+            }
             float3 aD;
             float3 aS;
             ptAlbedos(S, aD, aS);
@@ -717,7 +743,7 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
             float lumD = ptLum(aD);
             float lumS = ptLum(aS);
             float fs = lumD + lumS > 0.0f ? lumS / (lumD + lumS) : 0.0f;
-            float3 dcon = thr * direct;
+            float3 dcon = thr * (direct + giIndirect);
             R.diffuse = R.diffuse + dcon * (1.0f - fs);
             R.specular = R.specular + dcon * fs;
             R.radiance = R.radiance + dcon;
@@ -728,7 +754,7 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
             }
             needHitDist = true;
         } else {
-            float3 dcon = thr * direct;
+            float3 dcon = thr * (direct + giIndirect);
             if (channel == 0u) {
                 R.emissive = R.emissive + dcon;
             } else if (channel == 1u) {
@@ -754,6 +780,7 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
         }
         prevDelta = delta;
         prevRestir = diReplaced;
+        giCut = giReplaced;
         prevPdf = bs.pdf;
         prevP = S.position;
         prevN = treeN;

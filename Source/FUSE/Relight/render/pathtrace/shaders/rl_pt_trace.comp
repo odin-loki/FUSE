@@ -30,8 +30,10 @@ layout(push_constant) uniform PtTracePush {
     uint accumulate;
     uint lightCount;
     uint64_t restirDi; ///< RL-5.2 ReSTIR DI output (RestirDiGpu), 0: off
+    uint64_t restirGi; ///< RL-5.3 ReSTIR GI output (RestirGiGpu), 0: off
 } pc;
 
+#define RGI_HOOK_OUTPUT pc.restirGi
 #include "rl_pt.glsl"
 
 layout(buffer_reference, std430, buffer_reference_align = 16) buffer PtOut4 { vec4 v[]; };

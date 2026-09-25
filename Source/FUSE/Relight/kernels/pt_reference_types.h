@@ -23,6 +23,10 @@ PT_CONST uint kPtFlagRestirDi = 64u;     ///< RL-5.2: the frame's first sample t
                                          ///< from ReSTIR DI (ptRestirDiVertex; render/pathtrace/restir_di*)
 PT_CONST uint kPtFlagDiRecord = 128u;    ///< RL-5.2 surface pass: the path stops at the G-buffer vertex after handing
                                          ///< it to ptRestirDiVertex (record mode)
+PT_CONST uint kPtFlagRestirGi = 256u;    ///< RL-5.3: the frame's first sample takes the G-buffer vertex's indirect light
+                                         ///< from ReSTIR GI (ptRestirGiVertex; render/pathtrace/restir_gi*)
+PT_CONST uint kPtFlagGiRecord = 512u;    ///< RL-5.3 surface pass: the path stops at the G-buffer vertex after handing
+                                         ///< it (and its bounce index) to ptRestirGiVertex (record mode)
 
 // Instance flags (PtInstance)
 PT_CONST uint kPtInstanceVisible = 1u;

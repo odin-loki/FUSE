@@ -8,6 +8,7 @@
 #include <fuse/relight/render/pathtrace/pt_gpu.hpp>
 #include <fuse/relight/render/pathtrace/pt_reference.hpp>
 #include <fuse/relight/render/pathtrace/restir_di_gpu.hpp>
+#include <fuse/relight/render/pathtrace/restir_gi_gpu.hpp>
 
 #include "pt_reference_kernels.hpp"
 
@@ -17,6 +18,10 @@
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/upload_queue.hpp>
+
+#if defined(FUSE_RELIGHT_POST)
+#include <fuse/relight/render/post/pt_post.hpp> // RL-5.7 hook (render/post links it in)
+#endif
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <fuse/relight/render/frame/vk_dispatch.hpp>
@@ -258,6 +263,11 @@ private:
     PathTracerGpu m_gpu;
     RestirDiGpu m_restir;       ///< RL-5.2: rtx.useRTXDI (direct light of the first sample per frame)
     RestirDiSettings m_rdi{};
+    RestirGiGpu m_restirGi;     ///< RL-5.3: rtx.useReSTIRGI (indirect light of the first sample per frame)
+    RestirGiSettings m_rgi{};
+#if defined(FUSE_RELIGHT_POST)
+    post::PtPostHook m_post; ///< RL-5.7: relight.post.enable (composite, upscale, Look) replaces the sRGB pack
+#endif
     rg::Graph m_graph;
     PtScene m_scene;
     PtCompiledScene m_compiled;
@@ -324,6 +334,18 @@ bool PathTraceFrameRenderer::attach(rf::RendererContext& context, tap::IFrameHos
         rd.framesInFlight = 1;
         m_rdi.enabled = m_restir.init(rd); // unavailable: plain NEE
     }
+    m_rgi = RestirGiSettings::fromOptions();
+    if (m_rgi.enabled) {
+        RestirGiGpuDesc gd2{};
+        gd2.device = &context.device();
+        gd2.allocator = &context.allocator();
+        gd2.bindless = &context.bindless();
+        gd2.framesInFlight = 1;
+        m_rgi.enabled = m_restirGi.init(gd2); // unavailable: plain path tracing
+    }
+#if defined(FUSE_RELIGHT_POST)
+    m_post.attach(context, m_executor.get());
+#endif
     m_error.clear();
     return true;
 }
@@ -335,8 +357,12 @@ void PathTraceFrameRenderer::detach() {
     if (m_executor != nullptr) {
         m_executor->waitIdle();
     }
+#if defined(FUSE_RELIGHT_POST)
+    m_post.detach();
+#endif
     m_upload.waitAll();
     m_restir.destroy();
+    m_restirGi.destroy();
     m_gpu.destroy();
     m_executor.reset();
     m_upload.destroy();
@@ -373,14 +399,20 @@ bool PathTraceFrameRenderer::trace(u32 width, u32 height) {
     if (m_rdi.enabled) {
         fd.settings = withRestirDi(fd.settings);
     }
+    if (m_rgi.enabled) {
+        fd.settings = withRestirGi(fd.settings);
+    }
     if (!m_gpu.setScene(m_compiled) || !m_gpu.beginFrame(m_serial, m_compiled, fd) ||
-        (m_rdi.enabled && !m_restir.beginFrame(m_serial, m_compiled, fd, m_rdi))) {
-        return fail(m_rdi.enabled && m_restir.valid() ? m_restir.reason() : m_gpu.reason());
+        (m_rdi.enabled && !m_restir.beginFrame(m_serial, m_compiled, fd, m_rdi)) ||
+        (m_rgi.enabled && !m_restirGi.beginFrame(m_serial, m_compiled, fd, m_rgi))) {
+        return fail(m_rdi.enabled && m_restir.valid() ? m_restir.reason()
+                    : m_rgi.enabled && m_restirGi.valid() ? m_restirGi.reason()
+                                                          : m_gpu.reason());
     }
     m_graph.reset();
     const PtGraphRefs refs = m_gpu.importInto(m_graph);
     if (!refs.valid || (m_rdi.enabled && !m_restir.addPasses(m_graph, m_gpu, refs)) ||
-        !m_gpu.addTracePass(m_graph, refs)) {
+        (m_rgi.enabled && !m_restirGi.addPasses(m_graph, m_gpu, refs)) || !m_gpu.addTracePass(m_graph, refs)) {
         return fail("path tracer graph");
     }
     m_graph.addPass("relight.pt.readback", nullptr, nullptr).use(refs.outputs, rg::Access::HostRead);
@@ -391,6 +423,7 @@ bool PathTraceFrameRenderer::trace(u32 width, u32 height) {
     const bool waited = m_executor->waitIdle() && m_upload.waitAll();
     m_gpu.collectRetired(m_serial);
     m_restir.collectRetired(m_serial);
+    m_restirGi.collectRetired(m_serial);
     if (!result.ok || !waited) {
         return fail("path tracer submission failed");
     }
@@ -522,6 +555,7 @@ bool PathTraceFrameRenderer::prepare(const rf::FrameInputs& in, std::uint64_t re
         }
         m_gpu.invalidateScene();
         m_restir.resetHistory();
+        m_restirGi.resetHistory();
         m_geometryKey = g;
         ++m_recompiles;
     } else if (!m_compiled.update(m_scene)) {
@@ -533,10 +567,14 @@ bool PathTraceFrameRenderer::prepare(const rf::FrameInputs& in, std::uint64_t re
     m_sceneKey = k;
     m_width = bb.width;
     m_height = bb.height;
-    if (!trace(bb.width, bb.height)) {
+    u32 tw = bb.width, th = bb.height; // RL-5.7: the post pipeline's render extent (the output size without it)
+#if defined(FUSE_RELIGHT_POST)
+    m_post.renderExtent(bb.width, bb.height, tw, th);
+#endif
+    if (!trace(tw, th)) {
         return false;
     }
-    compareReference(bb.width, bb.height);
+    compareReference(tw, th);
     // The present slot: the accumulated mean, sRGB-encoded in the output's byte order.
     u32 slot = kRing;
     for (u32 i = 0; i < kRing; ++i) {
@@ -572,7 +610,17 @@ bool PathTraceFrameRenderer::prepare(const rf::FrameInputs& in, std::uint64_t re
     const bool bgra = format == kB8G8R8A8Unorm || format == kB8G8R8A8Srgb;
     auto* px = static_cast<std::uint8_t*>(sl.buffer.mapped);
     const double e = m_config.exposure;
-    for (std::size_t i = 0; i < std::size_t(bb.width) * bb.height; ++i) {
+    bool packed = false;
+#if defined(FUSE_RELIGHT_POST)
+    if (m_post.enabled()) {
+        if (!m_post.process(m_gpu.mappedOutputs(), m_gpu.outputStride(), tw, th, m_accumulated, float(e), px, bb.width,
+                            bb.height, bgra)) {
+            return fail(m_post.error());
+        }
+        packed = true;
+    }
+#endif
+    for (std::size_t i = 0; !packed && i < std::size_t(bb.width) * bb.height; ++i) {
         const double n = std::max(double(acc[i * 4u + 3u]), 1.0);
         const std::uint8_t r = srgbByte(acc[i * 4u + 0u] / n * e), gch = srgbByte(acc[i * 4u + 1u] / n * e),
                            b = srgbByte(acc[i * 4u + 2u] / n * e);
@@ -615,18 +663,23 @@ void PathTraceFrameRenderer::record(std::uint32_t pass, std::uint64_t commandBuf
 }
 
 std::string PathTraceFrameRenderer::recordJson() const {
-    char buf[1024];
+    char buf[1100];
     std::snprintf(buf, sizeof(buf),
                   "\"renderer\":\"pathtrace\",\"rendered\":%s,\"error\":\"%s\",\"draws\":%u,\"meshes\":%u,"
                   "\"triangles\":%u,\"skipped\":%u,\"lights\":%u,\"fallback_light\":%s,\"spp\":%u,\"sample_base\":%u,"
                   "\"accumulated\":%u,\"reset\":%s,\"recompiles\":%u,\"scene_builds\":%u,\"ref_spp\":%u,"
-                  "\"ref_rmse\":%.6g,\"ref_blocks\":%u,\"ref_failing\":%u,\"ref_worst_z\":%.3f,\"restir_di\":%s",
+                  "\"ref_rmse\":%.6g,\"ref_blocks\":%u,\"ref_failing\":%u,\"ref_worst_z\":%.3f,\"restir_di\":%s,"
+                  "\"restir_gi\":%s",
                   m_prepared ? "true" : "false", m_error.c_str(), m_stats.draws, m_stats.meshes, m_stats.triangles,
                   m_stats.skipped, m_stats.lights, m_stats.fallbackLight ? "true" : "false", m_config.samplesPerFrame,
                   m_sampleBase, m_sampleBase + m_config.samplesPerFrame, m_accumulated ? "false" : "true",
                   m_recompiles, m_gpu.stats().sceneBuilds, m_config.referenceSpp, m_refRmse, m_refBlocks,
-                  m_refFailing, m_refWorstZ, m_rdi.enabled ? "true" : "false");
+                  m_refFailing, m_refWorstZ, m_rdi.enabled ? "true" : "false", m_rgi.enabled ? "true" : "false");
+#if defined(FUSE_RELIGHT_POST)
+    return std::string(buf) + m_post.recordJson();
+#else
     return buf;
+#endif
 }
 
 std::string PathTraceFrameRenderer::headerJson() const {

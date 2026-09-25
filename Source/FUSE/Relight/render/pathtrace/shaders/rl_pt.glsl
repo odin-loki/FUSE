@@ -101,6 +101,8 @@ float ptLightSetPdf(vec3 p, vec3 n, uint light, vec3 wi) {
 
 // RL-5.2: ptRestirDiVertex (ReSTIR DI record / apply hook; reads pc.restirDi).
 #include "restir_di_hook.glsl"
+// RL-5.3: ptRestirGiVertex (ReSTIR GI record / apply hook; reads RGI_HOOK_OUTPUT).
+#include "restir_gi_hook.glsl"
 
 #include "pt_reference_core.h"
 

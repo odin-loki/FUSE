@@ -17,9 +17,11 @@ struct PtTracePush {
     uint accumulate;
     uint lightCount;
     uint64_t restirDi; ///< RL-5.2 ReSTIR DI output (RestirDiGpu), 0: off
+    uint64_t restirGi; ///< RL-5.3 ReSTIR GI output (RestirGiGpu), 0: off
 };
 [[vk::push_constant]] ConstantBuffer<PtTracePush> pc;
 
+#define RGI_HOOK_OUTPUT pc.restirGi
 #include "rl_pt.slang"
 
 uint64_t ptSection(uint s) { return pc.outputs + uint64_t(s) * pc.outStride; }

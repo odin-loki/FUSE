@@ -53,6 +53,7 @@ struct PtCpuTexture {
 };
 
 struct PtDiHook; // RL-5.2 ReSTIR DI hook (below)
+struct PtGiHook; // RL-5.3 ReSTIR GI hook (below)
 
 /// Everything the core reads on the CPU (not owned).
 struct PtCpuContext {
@@ -73,6 +74,7 @@ struct PtCpuContext {
     const PtCpuTexture* textures = nullptr;
     u32 textureCount = 0;
     const PtDiHook* diHook = nullptr;                 ///< RL-5.2 ptRestirDiVertex (null: returns 0)
+    const PtGiHook* giHook = nullptr;                 ///< RL-5.3 ptRestirGiVertex (null: returns 0)
 };
 
 #define PT_FN inline
@@ -154,6 +156,20 @@ inline uint ptRestirDiVertex(const PtCpuContext& ctx, PtParams P, uint px, uint 
         return 0u;
     }
     return ctx.diHook->vertex(ctx.diHook->user, P, px, py, h, d, direct);
+}
+
+/// RL-5.3: the C++ side of ptRestirGiVertex (render/pathtrace/restir_gi*: the surface record / apply modes).
+struct PtGiHook {
+    uint (*vertex)(void* user, const PtParams& P, uint px, uint py, const PtRawHit& h, const float3& d, uint bounce,
+                   float3& indirect) = nullptr;
+    void* user = nullptr;
+};
+inline uint ptRestirGiVertex(const PtCpuContext& ctx, PtParams P, uint px, uint py, PtRawHit h, float3 d, uint bounce,
+                             float3& indirect) {
+    if (ctx.giHook == nullptr || ctx.giHook->vertex == nullptr) {
+        return 0u;
+    }
+    return ctx.giHook->vertex(ctx.giHook->user, P, px, py, h, d, bounce, indirect);
 }
 
 #include "pt_reference_core.h"
