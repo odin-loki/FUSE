@@ -13,13 +13,23 @@ namespace {
 
 constexpr u32 kVkObjectTypePipeline = 19;
 
-void snapshotPipelineCache(ComputePipelineInfo& info, PipelineCache* cache) {
+[[maybe_unused]] void snapshotPipelineCache(ComputePipelineInfo& info, PipelineCache* cache) {
     if (cache == nullptr) {
         return;
     }
     std::vector<u8> blob;
     cache->snapshotData(blob);
     info.cacheSnapshotBytes = static_cast<u32>(blob.size());
+}
+
+[[maybe_unused]] u64 computeCacheKey(const ComputePipelineDesc& desc) {
+    if (desc.cacheKey != 0u) {
+        return desc.cacheKey;
+    }
+    u64 key = combinePipelineKey(0u, 0x636f6d7075746531ull); // "compute1"
+    key = combinePipelineKey(key, desc.computeShader->info().spirvHash);
+    return combinePipelineKey(key, (static_cast<u64>(desc.localSizeX) << 42u) ^
+                                       (static_cast<u64>(desc.localSizeY) << 21u) ^ desc.localSizeZ);
 }
 
 void recordLocalSize(ComputePipelineInfo& info, const ComputePipelineDesc& desc) {
@@ -120,26 +130,58 @@ bool ComputePipeline::initialize(VulkanDevice& device, const ComputePipelineDesc
     pipelineInfo.layout = static_cast<VkPipelineLayout>(desc.layout->nativeHandle());
 
     VkPipeline computePipeline = VK_NULL_HANDLE;
+    PipelineCache* cache =
+        desc.pipelineCache != nullptr && desc.pipelineCache->isValid() ? desc.pipelineCache : nullptr;
     VkPipelineCache pipelineCache =
-        desc.pipelineCache != nullptr && desc.pipelineCache->isValid()
-            ? static_cast<VkPipelineCache>(desc.pipelineCache->nativeHandle())
-            : VK_NULL_HANDLE;
+        cache != nullptr ? static_cast<VkPipelineCache>(cache->nativeHandle()) : VK_NULL_HANDLE;
+
+    // WP-0.5: creation feedback (core 1.3) reports driver cache hits; cache control (when enabled)
+    // turns an uncached pipeline into a fast VK_PIPELINE_COMPILE_REQUIRED.
+    VkPipelineCreationFeedback feedback{};
+    VkPipelineCreationFeedbackCreateInfo feedbackInfo{};
+    feedbackInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO;
+    feedbackInfo.pPipelineCreationFeedback = &feedback;
+    const bool useFeedback = cache != nullptr && cache->creationFeedback();
+    if (useFeedback) {
+        feedbackInfo.pNext = pipelineInfo.pNext;
+        pipelineInfo.pNext = &feedbackInfo;
+    }
+    if (desc.failIfNotCached && cache != nullptr && cache->creationCacheControl()) {
+        pipelineInfo.flags |= VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
+    }
+    m_info.cache = {};
+    m_info.cache.key = cache != nullptr ? computeCacheKey(desc) : 0u;
+
     const VkResult result =
         vkCreateComputePipelines(static_cast<VkDevice>(device.nativeHandle()), pipelineCache, 1,
                                  &pipelineInfo, nullptr, &computePipeline);
+    if (result == VK_PIPELINE_COMPILE_REQUIRED) {
+        m_info.cache.compileRequired = true;
+        cache->noteCompileRequired();
+        m_info.message = "compute pipeline not in cache (compile required)";
+        return false;
+    }
     if (result != VK_SUCCESS) {
         m_info.message = "vkCreateComputePipelines failed";
         return false;
+    }
+    if (cache != nullptr) {
+        m_info.cache.warmStart = cache->isWarm(m_info.cache.key);
+        m_info.cache.feedbackValid =
+            useFeedback && (feedback.flags & VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT) != 0u;
+        m_info.cache.driverCacheHit =
+            m_info.cache.feedbackValid &&
+            (feedback.flags & VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT) != 0u;
+        m_info.cache.durationNs = m_info.cache.feedbackValid ? feedback.duration : 0u;
+        cache->notePipelineCreated(m_info.cache.key, m_info.cache.feedbackValid, m_info.cache.driverCacheHit);
     }
 
     m_handle = computePipeline;
     m_info.valid = true;
     m_info.message = desc.debugName != nullptr ? desc.debugName : "compute pipeline";
-    if (desc.debugName != nullptr) {
-        const u64 objectHandle = static_cast<u64>(reinterpret_cast<uintptr_t>(m_handle));
-        setDebugObjectName(device.nativeHandle(), kVkObjectTypePipeline, objectHandle,
-                           desc.debugName);
-    }
+    setDebugObjectName(device.nativeHandle(), kVkObjectTypePipeline,
+                       static_cast<u64>(reinterpret_cast<uintptr_t>(m_handle)),
+                       desc.debugName != nullptr ? desc.debugName : "fuse.compute_pipeline");
     snapshotPipelineCache(m_info, desc.pipelineCache);
     return true;
 #else

@@ -1,7 +1,9 @@
 #include <fuse/assert.hpp>
 #include <fuse/log/logger.hpp>
+#include <fuse/platform/crash_report.hpp>
 
 #include <atomic>
+#include <cstdio>
 #include <cstdlib>
 #include <mutex>
 
@@ -34,6 +36,12 @@ bool setSuppressAbortForTests(bool suppress) {
 }
 
 void fatal(const char* message, const char* file, u32 line) {
+    // Recorded before anything else so the crash report written on the abort below names the
+    // failed check even if logging or the handler misbehaves.
+    char note[512];
+    std::snprintf(note, sizeof(note), "fatal: %s (%s:%u)", message ? message : "", file ? file : "?", line);
+    fuse::platform::setCrashContextNote(note);
+
     fuse::log::Logger::instance().log(
         fuse::log::Level::Fatal, "FATAL at %s:%u — %s", file, line, message);
 

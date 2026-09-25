@@ -1,3 +1,4 @@
+#include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/spawn_marker.hpp>
@@ -32,7 +33,7 @@ std::string writeTempFile(const std::string& path, const std::string& contents) 
 
 void testLegacyTableFromConvertedMission() {
     const std::string mission = writeTempFile(
-        "/tmp/fuse_wire_bind.mis",
+        fuse::test::tempPath("fuse_wire_bind.mis"),
         "new Scene(ExampleLevel) {\n"
         "   new GroundPlane() {\n"
         "      MaterialAsset = \"Prototyping:FloorGray\";\n"
@@ -41,7 +42,7 @@ void testLegacyTableFromConvertedMission() {
         "      dataBlock = \"SpawnSphereMarker\";\n"
         "   };\n"
         "};\n");
-    const std::string fuselevel = "/tmp/fuse_wire_bind.fuselevel";
+    const std::string fuselevel = fuse::test::tempPath("fuse_wire_bind.fuselevel");
     const fuse::project::ConvertResult converted =
         fuse::project::convertT3DMissionToFuselevel(mission, fuselevel);
     expectTrue(converted.status == fuse::project::ConvertStatus::Ok, "mission converts for wire bind");
@@ -94,13 +95,13 @@ void testApplyDatablockSpawnBinding() {
 
 void testApplyWireBindingsFromScene() {
     const std::string mission = writeTempFile(
-        "/tmp/fuse_wire_bind_scene.mis",
+        fuse::test::tempPath("fuse_wire_bind_scene.mis"),
         "new Scene(ExampleLevel) {\n"
         "   new SpawnSphere(DefaultCameraSpawnSphere) {\n"
         "      dataBlock = \"SpawnSphereMarker\";\n"
         "   };\n"
         "};\n");
-    const std::string fuselevel = "/tmp/fuse_wire_bind_scene.fuselevel";
+    const std::string fuselevel = fuse::test::tempPath("fuse_wire_bind_scene.fuselevel");
     const fuse::project::ConvertResult converted =
         fuse::project::convertT3DMissionToFuselevel(mission, fuselevel);
     expectTrue(converted.status == fuse::project::ConvertStatus::Ok, "mission converts for scene bind");

@@ -491,9 +491,11 @@ void InterestManager::clear_entities() {
 }
 
 void InterestManager::evaluate() {
-    if (m_entries.size() != m_candidates.size()) {
-        m_entries.assign(m_candidates.size(), InterestEntry{});
-        m_was_in_scope.assign(m_candidates.size(), false);
+    if (m_entries.size() != m_candidates.size() || m_was_in_scope.size() != m_candidates.size()) {
+        // register_entity appends and unregister_entity erases the same index from every array, so
+        // resizing keeps each existing entity's hysteresis state (new entities start out of scope).
+        m_entries.resize(m_candidates.size(), InterestEntry{});
+        m_was_in_scope.resize(m_candidates.size(), false);
     }
 
     for (u32 i = 0; i < m_candidates.size(); ++i) {

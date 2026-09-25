@@ -1,0 +1,99 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "material_ext",
+  "id": "capture/capgame/capture_layout/mat_B436AD2B2A594950",
+  "name": "mat_B436AD2B2A594950",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 0.0254,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "surface": "opaque",
+    "mdl": {
+      "sourceAsset": "./AperturePBR_Opacity.mdl",
+      "subIdentifier": "AperturePBR_Opacity"
+    },
+    "ignore_material": false,
+    "preload_textures": false,
+    "params": {
+      "anisotropy": 0,
+      "emissive_intensity": 40,
+      "emissive_color_constant": [1, 0.10000000149011612, 0.10000000149011612],
+      "enable_emission": false,
+      "sprite_sheet_rows": 0,
+      "sprite_sheet_cols": 0,
+      "sprite_sheet_fps": 0,
+      "enable_thin_film": false,
+      "thin_film_thickness_from_albedo_alpha": false,
+      "thin_film_thickness_constant": 200,
+      "use_legacy_alpha_state": true,
+      "blend_enabled": false,
+      "blend_type": 0,
+      "inverted_blend": false,
+      "alpha_test_type": 7,
+      "displace_in": 0.05000000074505806,
+      "displace_out": 0,
+      "subsurface_transmittance_color": [0.5, 0.5, 0.5],
+      "subsurface_measurement_distance": 0,
+      "subsurface_single_scattering_albedo": [0.5, 0.5, 0.5],
+      "subsurface_volumetric_anisotropy": 0,
+      "subsurface_diffusion_profile": false,
+      "subsurface_radius": [0.5, 0.5, 0.5],
+      "subsurface_radius_scale": 1,
+      "subsurface_max_sample_radius": 16,
+      "filter_mode": 0,
+      "wrap_mode_u": 0,
+      "wrap_mode_v": 1,
+      "enable_dlss_control_mask": true,
+      "dlss_control_mask_intensity": 1,
+      "dlss_control_mask_tone_strength": 0.30000001192092896,
+      "dlss_control_mask_structural_strength": 0.699999988079071
+    },
+    "textures": {
+      "diffuse_texture": {
+        "asset": "../textures/B436AD2B2A594950.dds",
+        "colorSpace": "auto",
+        "slot": "albedo",
+        "path": "textures/B436AD2B2A594950.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "2a720f4f3eefcad7179792c71f52f034f7cb2c4ebb4cdd4db22b033b7f18588c",
+          "size": 192,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "B8G8R8A8_UNORM",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": true
+      }
+    },
+    "authored": ["diffuse_texture", "filter_mode", "wrap_mode_u", "wrap_mode_v"],
+    "remix_hash": "B436AD2B2A594950",
+    "particles": null
+  },
+  "provenance": {
+    "origin": "original",
+    "derived_from": [],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "none",
+    "source": {
+      "mod": "capture_layout",
+      "stage": "mod.usda",
+      "prim": "/RootNode/Looks/mat_B436AD2B2A594950",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "LicenseRef-Original-capgame",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["capture", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

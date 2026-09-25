@@ -1,0 +1,10 @@
+prim /_class_Base specifier=class
+diag warning inherits /RootNode/meshes/mesh_0000000000003001
+attr /RootNode/meshes/mesh_0000000000003001.local = 1
+noattr /RootNode/meshes/mesh_0000000000003001.from_class
+diag warning specializes /RootNode/meshes/mesh_0000000000003002
+diag warning value_clips /RootNode/meshes/mesh_0000000000003003
+diag warning layer_offset_ignored /RootNode/meshes/mesh_0000000000003004
+attr /RootNode/meshes/mesh_0000000000003004.from_asset = 1
+count errors 0
+remix meshes 4

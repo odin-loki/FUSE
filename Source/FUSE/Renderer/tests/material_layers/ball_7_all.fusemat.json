@@ -1,0 +1,22 @@
+{
+  "fusemat": 1,
+  "name": "golden/material_ball/stone_all_features",
+  "shading_model": "default_lit",
+  "category": "stone",
+  "wind": "none",
+  "base": {"albedo": [1, 0.95, 0.9], "roughness": 1, "metallic": 0, "normal_strength": 1.2,
+           "textures": {"albedo": "stone_albedo", "normal": "stone_normal"}},
+  "uv_scale": 0.6,
+  "triplanar": {"enabled": true, "sharpness": 6},
+  "stochastic": {"enabled": true, "lattice": 2},
+  "macro": {"scale": 1.2, "strength": 0.2},
+  "detail": {"albedo": "grain_albedo", "normal": "grain_normal", "scale": 6, "strength": 0.8, "fade": [4, 12]},
+  "layers": [
+    {"name": "moss", "mode": "height", "mask": "vertex_r", "coverage": 0.9, "contrast": 6, "albedo": [1, 1, 1],
+     "roughness": 1, "uv_scale": 1.5, "textures": {"albedo": "moss_albedo", "normal": "moss_normal"}},
+    {"name": "snow", "mode": "height", "mask": "slope_up", "mask_bias": 0.45, "mask_scale": 3, "contrast": 10,
+     "albedo": [1, 1, 1], "roughness": 1, "textures": {"albedo": "snow_albedo", "normal": "snow_normal"}},
+    {"name": "wet", "mode": "wet", "mask": "vertex_b", "albedo": [0.5, 0.5, 0.55], "roughness": 0.1}
+  ],
+  "procedural": {"function": 0, "params": []}
+}

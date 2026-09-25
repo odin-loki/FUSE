@@ -39,7 +39,7 @@ void* StackAllocator::alloc(AllocInfo info) {
     }
 
     const usize aligned = detail::alignUp(m_offset, info.alignment);
-    if (aligned + info.size > m_storage.size()) {
+    if (!detail::isSupportedAlignment(info.alignment) || aligned + info.size > m_storage.size()) {
         detail::recordFailedAlloc(m_stats);
         notifyStats(m_name, m_stats);
         return nullptr;

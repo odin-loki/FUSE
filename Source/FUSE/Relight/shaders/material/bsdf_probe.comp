@@ -1,0 +1,40 @@
+#version 460
+// FUSE Relight RL-4.3 GPU gate kernel (rl_bsdf_vk_parity_glsl): GLSL twin of bsdf_probe.slang (see there).
+#extension GL_GOOGLE_include_directive : require
+
+layout(local_size_x = 64) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer FuseBsdfProbeCases { vec4 v[]; } g_cases;
+layout(std430, set = 0, binding = 1) readonly buffer FuseBsdfLut { float v[]; } g_bsdfLut;
+layout(std430, set = 0, binding = 2) writeonly buffer FuseBsdfProbeOut { vec4 v[]; } g_out;
+layout(push_constant) uniform FuseBsdfProbePush {
+    uint count;
+    uint pad0;
+    uint pad1;
+    uint pad2;
+} pc;
+
+#define FUSE_BSDF_LUT_READ(i) g_bsdfLut.v[(i)]
+#include "bsdf.glsl"
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.count) {
+        return;
+    }
+    uint base = i * 14u;
+    vec4 w[11];
+    for (uint k = 0u; k < 11u; ++k) {
+        w[k] = g_cases.v[base + k];
+    }
+    BsdfMaterial m = bsdfMaterialUnpack(w);
+    vec3 wo = g_cases.v[base + 11u].xyz;
+    vec3 wi = g_cases.v[base + 12u].xyz;
+    vec4 u = g_cases.v[base + 13u];
+    vec3 e = bsdfEval(m, wo, wi);
+    float pdf = bsdfPdf(m, wo, wi);
+    BsdfSample s = bsdfSample(m, wo, u);
+    g_out.v[i * 3u + 0u] = vec4(e, pdf);
+    g_out.v[i * 3u + 1u] = vec4(s.wi, s.pdf);
+    g_out.v[i * 3u + 2u] = vec4(s.weight, float(s.flags));
+}

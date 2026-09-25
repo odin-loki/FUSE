@@ -1,0 +1,17 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#include "cl_common.glsl"
+
+// WP-8.3 "clouds.noise.shape": one thread per texel of the shapeSize^3 shape volume (Perlin-Worley + Worley fBm).
+// GLSL twin of cl_noise_shape.slang; CPU twin: clouds::shape_noise_texel.
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+void main() {
+    const CloudParams P = cl_load(pc.params);
+    const uvec3 i = gl_GlobalInvocationID;
+    const uint n = P.shapeSize;
+    if (i.x >= n || i.y >= n || i.z >= n) {
+        return;
+    }
+    ClTexelsRef(P.shapeNoise).v[(i.z * n + i.y) * n + i.x] = cl_shape_texel(P, i);
+}

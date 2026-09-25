@@ -1,0 +1,48 @@
+#usda 1.0
+
+# RL-3.1 fixture: variant contents that add a reference, children and a child prim with its own variant set
+# (selected from outside the variant). TinyUSDZ 0.9.4 drops a variantSet authored directly inside a variant's
+# body, so the nested set lives on a child prim here.
+def Xform "RootNode"
+{
+    def Xform "meshes"
+    {
+        def Xform "mesh_0000000000000C01" (
+            variants = {
+                string kind = "prop"
+            }
+            prepend variantSets = "kind"
+        )
+        {
+            over "fromVariant" (
+                variants = {
+                    string size = "big"
+                }
+            )
+            {
+            }
+
+            variantSet "kind" = {
+                "prop" (
+                    prepend references = @./assets/barrel.usd@
+                ) {
+                    def Xform "fromVariant" (
+                        prepend variantSets = "size"
+                    )
+                    {
+                        variantSet "size" = {
+                            "big" {
+                                float scale = 2
+                            }
+                            "small" {
+                                float scale = 0.5
+                            }
+                        }
+                    }
+                }
+                "none" {
+                }
+            }
+        }
+    }
+}

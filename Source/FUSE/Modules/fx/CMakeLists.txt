@@ -29,6 +29,7 @@ add_library(fuse_fx STATIC
     include/fuse/fx/fx_socket.hpp
     include/fuse/fx/particle_pool.hpp
     include/fuse/fx/particle_pool_gpu.hpp
+    include/fuse/fx/particle_pool_kernel.hpp
     include/fuse/fx/afx_choreographer_bridge.hpp
     include/fuse/fx/parameter_bind.hpp
     include/fuse/fx/missile_descriptor.hpp

@@ -802,6 +802,7 @@ void testVertexMorphSnapsToGrid() {
     const fuse::terrain::TerrainDesc desc = makeTestDesc();
     const fuse::terrain::LodLevel lod1 = fuse::terrain::make_lod_level(desc, 1);
     const fuse::f32 base_stride = desc.world_size / static_cast<fuse::f32>(desc.chunk_resolution);
+    expectNear(lod1.world_stride, base_stride * 2.f, 0.01f, "LOD 1 stride is the coarser morph grid");
 
     const fuse::terrain::vec3 original{base_stride * 1.5f, 4.f, base_stride * 2.5f};
     const fuse::terrain::vec3 morphed =
@@ -1275,6 +1276,11 @@ void testChunkGridAsyncInFlightCapGuard() {
         }
 
         expectTrue(grid.resident_chunk_count() >= 1u, "in-flight cap carryover still completes loads");
+        // The last update_lod may submit the next capped load; drain it without re-submitting.
+        for (int attempt = 0; attempt < 1000 && grid.in_flight_request_count() > 0u; ++attempt) {
+            grid.drain_completed_requests();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
         expectEq(grid.in_flight_request_count(), 0u, "in-flight count returns to zero after drain");
 
         grid.destroy();

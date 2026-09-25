@@ -1,11 +1,14 @@
-# fuse_compute — Track B CUDA compute scaffolding (B2.7 + B5.7)
+# fuse_compute — single-source compute kernels (docs/compute-kernels.md): kernel bodies run on the CPU
+# backends everywhere and through CUDA trampolines when the toolkit is found (B2.7 + B5.7).
 
 set(FUSE_COMPUTE_PUBLIC_HEADERS
     include/fuse/compute/ray_march.hpp
     include/fuse/compute/ray_march_job.hpp
+    include/fuse/compute/ray_march_kernel.hpp
     include/fuse/compute/screen_space_effects.hpp
     include/fuse/compute/screen_space_effects_job.hpp
     include/fuse/compute/screen_space_contact.hpp
+    include/fuse/compute/screen_space_kernels.hpp
 )
 
 set(FUSE_COMPUTE_SOURCES
@@ -20,8 +23,6 @@ set(FUSE_COMPUTE_SOURCES
 
 if(FUSE_CUDA_BACKEND)
     list(APPEND FUSE_COMPUTE_SOURCES
-        src/ray_march_cuda_host.cpp
-        src/screen_space_effects_cuda_host.cpp
         kernels/ray_march.cu
         kernels/ssao.cu
         kernels/ssr.cu
@@ -41,7 +42,12 @@ target_include_directories(fuse_compute
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-target_link_libraries(fuse_compute PUBLIC fuse_core)
+# CPU reference path routes SSAO/SSR/SSGI to the shared Qt-/Vulkan-free fuse_ssfx references (also used by
+# fuse_rhi); fuse_compute does not depend on fuse_rhi and fuse_rhi does not depend on fuse_compute.
+include(${CMAKE_CURRENT_SOURCE_DIR}/../ScreenSpace/fuse_ssfx.cmake)
+
+# PUBLIC: fuse/compute kernel headers (screen_space_kernels.hpp etc.) include fuse/ssfx headers.
+target_link_libraries(fuse_compute PUBLIC fuse_core fuse_ssfx)
 target_compile_features(fuse_compute PUBLIC cxx_std_17)
 
 if(FUSE_CUDA_BACKEND)

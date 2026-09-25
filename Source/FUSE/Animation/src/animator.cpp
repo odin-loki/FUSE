@@ -13,6 +13,7 @@ void Animator::tick(const Skeleton& skel, const frame::FrameCtx& ctx) {
     } else {
         current_pose = Pose::make_bind_pose(skel);
     }
+    compute_skinning_palette(skel, current_pose, bone_palette);
 
     ++tick_count;
 }

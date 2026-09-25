@@ -2,11 +2,10 @@
 
 #if defined(FUSE_HAS_QT_VULKAN)
 
-#include <QByteArrayList>
 #include <QGuiApplication>
+#include <QThread>
 #include <QVersionNumber>
 #include <QVulkanInstance>
-#include <QVulkanWindow>
 #include <QWindow>
 
 #include <cstdlib>
@@ -17,6 +16,13 @@ namespace fuse::editor {
 
 namespace {
 
+/// QWindow / QVulkanInstance surface work needs a QGuiApplication and must run on its thread
+/// (the editor game thread and headless tests have neither).
+bool onQtGuiThread() {
+    QCoreApplication* app = QCoreApplication::instance();
+    return qobject_cast<QGuiApplication*>(app) != nullptr && QThread::currentThread() == app->thread();
+}
+
 QVulkanInstance* sharedQtVulkanInstance() {
     static QVulkanInstance* instance = nullptr;
     if (instance != nullptr) {
@@ -24,6 +30,7 @@ QVulkanInstance* sharedQtVulkanInstance() {
     }
 
     instance = new QVulkanInstance();
+    instance->setApiVersion(QVersionNumber(1, 0)); // apiVersion 0 is invalid (VUID-VkApplicationInfo-apiVersion)
     if (!instance->create()) {
         delete instance;
         instance = nullptr;
@@ -50,6 +57,9 @@ ViewportVulkanSurfaceResult createViewportVulkanSurfaceFromWinIdQt(u64 winId, u3
         return invalid;
     }
 
+    if (!onQtGuiThread()) {
+        return makeWinIdStub(winId, "not on the Qt GUI thread — winId stub handoff");
+    }
     QVulkanInstance* instance = sharedQtVulkanInstance();
     if (instance == nullptr) {
         return makeWinIdStub(winId, "QVulkanInstance::create failed — winId stub handoff");
@@ -59,10 +69,13 @@ ViewportVulkanSurfaceResult createViewportVulkanSurfaceFromWinIdQt(u64 winId, u3
     if (window == nullptr) {
         return makeWinIdStub(winId, "QWindow::fromWinId failed — winId stub handoff");
     }
+    window->setSurfaceType(QSurface::VulkanSurface);
+    window->setVulkanInstance(instance);
+    window->create();
 
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
-    if (!instance->createSurface(window, &surface) || surface == VK_NULL_HANDLE) {
-        return makeWinIdStub(winId, "QVulkanInstance::createSurface failed — winId stub handoff");
+    const VkSurfaceKHR surface = QVulkanInstance::surfaceForWindow(window);
+    if (surface == VK_NULL_HANDLE) {
+        return makeWinIdStub(winId, "QVulkanInstance::surfaceForWindow failed — winId stub handoff");
     }
 
     ViewportVulkanSurfaceResult result{};
@@ -94,6 +107,13 @@ QVulkanWindowWsiProbeResult probeQVulkanWindowWsiQt() {
         result.note = "headless_no_display_server";
         return result;
     }
+    if (!onQtGuiThread()) {
+        // QWindow creation off the GUI thread (the editor game thread) or without a
+        // QGuiApplication (headless tests) is undefined in Qt: skip instead of crashing.
+        result.headlessSkipped = true;
+        result.note = "not_qt_gui_thread";
+        return result;
+    }
 
     QVulkanInstance* instance = sharedQtVulkanInstance();
     if (instance == nullptr) {
@@ -102,25 +122,31 @@ QVulkanWindowWsiProbeResult probeQVulkanWindowWsiQt() {
     }
 
     result.instanceReady = true;
-    const QVersionNumber apiVersion = QVulkanInstance::supportedApiVersion();
+    const QVersionNumber apiVersion = instance->supportedApiVersion();
     result.instanceVersionMajor = static_cast<u32>(apiVersion.majorVersion());
     result.instanceVersionMinor = static_cast<u32>(apiVersion.minorVersion());
-    const QByteArrayList extensions = QVulkanInstance::supportedSurfaceExtensions();
+    u32 surfaceExtensions = 0;
+    for (const QVulkanExtension& ext : instance->supportedExtensions()) {
+        if (ext.name.contains("surface")) {
+            ++surfaceExtensions;
+        }
+    }
     result.extensionsProbed = true;
-    result.supportedExtensionCount = static_cast<u32>(extensions.size());
-    if (extensions.isEmpty()) {
+    result.supportedExtensionCount = surfaceExtensions;
+    if (surfaceExtensions == 0u) {
         result.note = "qvulkan_no_surface_extensions";
         return result;
     }
 
-    QVulkanWindow window;
+    QWindow window;
+    window.setSurfaceType(QSurface::VulkanSurface);
     window.setVulkanInstance(instance);
     window.setWidth(64);
     window.setHeight(64);
     window.create();
     result.windowCreated = window.vulkanInstance() != nullptr;
 
-    const VkSurfaceKHR surface = window.vulkanSurface();
+    const VkSurfaceKHR surface = QVulkanInstance::surfaceForWindow(&window);
     if (surface == VK_NULL_HANDLE) {
         result.note = "qvulkan_window_surface_failed";
         window.destroy();

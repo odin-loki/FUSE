@@ -54,7 +54,12 @@ void testArmedGuardFiresBanHandler() {
     void* ptr = nullptr;
     {
         fuse::alloc::HeapGuard guard;
+#if defined(FUSE_DEBUG) && FUSE_DEBUG
         expectTrue(fuse::alloc::isEngineHeapGuardArmed(), "HeapGuard arms the thread-local flag");
+#else
+        // engineHeapGuard is constexpr false outside FUSE_DEBUG (new_ban.hpp).
+        expectTrue(!fuse::alloc::isEngineHeapGuardArmed(), "HeapGuard is inert in non-debug builds");
+#endif
         ptr = fuse::alloc::invokeBannedOperatorNew(16u);
     }
 

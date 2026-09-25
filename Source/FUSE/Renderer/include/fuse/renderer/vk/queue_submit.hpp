@@ -27,7 +27,7 @@ struct GraphicsQueueSubmitResult {
     bool timelineSignaled = false;
     bool timelineWaited = false;
     u64 timelineValueAfter = 0;
-    std::string message;
+    const char* message = ""; ///< Static string: no per-frame heap allocation (B2.11)
 };
 
 /// True when acquire returned a real swapchain image and WSI semaphores should be wired.

@@ -1,4 +1,6 @@
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/property_inspector.hpp>
+#include <fuse/editor/gizmo_system.hpp>
 #include <fuse/editor/viewport_seq_preview_stub.hpp>
 #include <fuse/editor/viewport_vulkan_surface.hpp>
 
@@ -12,6 +14,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <cstdint>
 #include <sstream>
 
 namespace fuse::editor {
@@ -29,13 +32,6 @@ ecs::EntityID handleToEntity(Handle<Object> handle) {
     entity.index = handle.index();
     entity.generation = handle.generation();
     return entity;
-}
-
-Handle<Object> entityToHandle(ecs::EntityID entity) {
-    if (!entity.valid()) {
-        return Handle<Object>::invalid();
-    }
-    return Handle<Object>(entity.index, entity.generation);
 }
 
 bool parseVec3(const std::string& text, ecs::vec3& out) {
@@ -60,6 +56,13 @@ bool parseVec3(const std::string& text, ecs::vec3& out) {
     return true;
 }
 
+GizmoTransform gizmoFromEcs(const ecs::Transform& transform) {
+    return gizmoFromMath({transform.position.x, transform.position.y, transform.position.z},
+                         {transform.rotation.x, transform.rotation.y, transform.rotation.z,
+                          transform.rotation.w},
+                         {transform.scale.x, transform.scale.y, transform.scale.z});
+}
+
 void clearSelectionIfMatches(EditorState& state, ecs::EntityID entity) {
     if (state.primarySelection == entity) {
         state.primarySelection = ecs::EntityID::null();
@@ -78,13 +81,22 @@ std::string capturePropertyValueBefore(const EditorHost& host, const EditorComma
 
     const ecs::Registry& registry = host.editorScene().registry();
 
+    if (command.propertyName == "transform.trs") {
+        const ecs::Transform* transform = registry.get<ecs::Transform>(entity);
+        if (transform == nullptr) {
+            return {};
+        }
+        return formatGizmoTransform(gizmoFromEcs(*transform));
+    }
+
     if (command.propertyName == "transform.position") {
         if (!registry.has<ecs::Transform>(entity)) {
             return {};
         }
         const ecs::Transform* transform = registry.get<ecs::Transform>(entity);
-        return std::to_string(transform->position.x) + "," + std::to_string(transform->position.y) +
-               "," + std::to_string(transform->position.z);
+        return formatPropertyFloat(transform->position.x) + "," +
+               formatPropertyFloat(transform->position.y) + "," +
+               formatPropertyFloat(transform->position.z);
     }
 
     if (command.propertyName == "transform.scale") {
@@ -92,8 +104,8 @@ std::string capturePropertyValueBefore(const EditorHost& host, const EditorComma
             return {};
         }
         const ecs::Transform* transform = registry.get<ecs::Transform>(entity);
-        return std::to_string(transform->scale.x) + "," + std::to_string(transform->scale.y) + "," +
-               std::to_string(transform->scale.z);
+        return formatPropertyFloat(transform->scale.x) + "," +
+               formatPropertyFloat(transform->scale.y) + "," + formatPropertyFloat(transform->scale.z);
     }
 
     if (command.propertyName == "transform.rotation") {
@@ -101,9 +113,10 @@ std::string capturePropertyValueBefore(const EditorHost& host, const EditorComma
             return {};
         }
         const ecs::Transform* transform = registry.get<ecs::Transform>(entity);
-        return std::to_string(transform->rotation.x) + "," + std::to_string(transform->rotation.y) +
-               "," + std::to_string(transform->rotation.z) + "," +
-               std::to_string(transform->rotation.w);
+        return formatPropertyFloat(transform->rotation.x) + "," +
+               formatPropertyFloat(transform->rotation.y) + "," +
+               formatPropertyFloat(transform->rotation.z) + "," +
+               formatPropertyFloat(transform->rotation.w);
     }
 
     if (command.propertyName == "mesh.material_id") {
@@ -117,21 +130,29 @@ std::string capturePropertyValueBefore(const EditorHost& host, const EditorComma
         if (!registry.has<ecs::SDFObject>(entity)) {
             return {};
         }
-        return std::to_string(registry.get<ecs::SDFObject>(entity)->blend_alpha);
+        return formatPropertyFloat(registry.get<ecs::SDFObject>(entity)->blend_alpha);
+    }
+
+    if (command.propertyName == "sdf.shape") {
+        const ecs::SDFObject* sdf = registry.get<ecs::SDFObject>(entity);
+        if (sdf == nullptr) {
+            return {};
+        }
+        return PropertyInspector::formatSdfShape(sdf->type, sdf->params);
     }
 
     if (command.propertyName == "directional.intensity") {
         if (!registry.has<ecs::DirectionalLight>(entity)) {
             return {};
         }
-        return std::to_string(registry.get<ecs::DirectionalLight>(entity)->intensity);
+        return formatPropertyFloat(registry.get<ecs::DirectionalLight>(entity)->intensity);
     }
 
     if (command.propertyName == "spot.intensity") {
         if (!registry.has<ecs::SpotLight>(entity)) {
             return {};
         }
-        return std::to_string(registry.get<ecs::SpotLight>(entity)->intensity);
+        return formatPropertyFloat(registry.get<ecs::SpotLight>(entity)->intensity);
     }
 
     return {};
@@ -142,9 +163,11 @@ bool isUndoableEntityProperty(const EditorCommand& command) {
         return false;
     }
 
-    return command.propertyName == "transform.position" || command.propertyName == "transform.scale" ||
+    return command.propertyName == "transform.trs" || command.propertyName == "transform.position" ||
+           command.propertyName == "transform.scale" ||
            command.propertyName == "transform.rotation" || command.propertyName == "mesh.material_id" ||
-           command.propertyName == "sdf.blend_alpha" || command.propertyName == "directional.intensity" ||
+           command.propertyName == "sdf.blend_alpha" || command.propertyName == "sdf.shape" ||
+           command.propertyName == "directional.intensity" ||
            command.propertyName == "spot.intensity";
 }
 
@@ -156,6 +179,11 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
     }
 
     if (command.propertyName == "project.root") {
+        if (command.propertyValue != host.runtimeViewport().projectRoot()) {
+            // Opening a different project replaces the scene: the next viewport tick loads the
+            // project's default world into the (now empty) editor registry + runtime scene.
+            host.resetSceneForProjectOpen();
+        }
         host.runtimeViewport().setProjectRoot(command.propertyValue);
         return true;
     }
@@ -189,6 +217,26 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
             useStubPath ? "qt_winid_stub" : "qt_vulkan_instance",
             useStubPath, !useStubPath && !surfaceResult.stubPath, surfaceResult.vkInstance);
         host.runtimeViewport().setPendingQtStubSurface(useStubPath);
+        return true;
+    }
+
+    if (command.propertyName == "viewport.vk_surface_adopted") {
+        // "<VkSurfaceKHR> <VkInstance> <width> <height>": a surface the UI created on the instance it
+        // adopted from `RuntimeViewportHook::windowPresentInstance()` (window-system present path).
+        std::istringstream stream(command.propertyValue);
+        unsigned long long surface = 0;
+        unsigned long long instance = 0;
+        u32 width = 0;
+        u32 height = 0;
+        stream >> surface >> instance >> width >> height;
+        if (!stream || surface == 0 || instance == 0) {
+            return false;
+        }
+        host.runtimeViewport().setExternalSurfaceHandle(
+            reinterpret_cast<void*>(static_cast<std::uintptr_t>(surface)), width, height,
+            "qt_adopted_fuse_instance", false, true,
+            reinterpret_cast<void*>(static_cast<std::uintptr_t>(instance)));
+        host.runtimeViewport().setPendingQtStubSurface(false);
         return true;
     }
 
@@ -397,6 +445,21 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
 
     ecs::Registry& registry = host.editorScene().registry();
 
+    if (command.propertyName == "transform.trs") {
+        ecs::Transform* transform = registry.get<ecs::Transform>(entity);
+        GizmoTransform trs{};
+        if (transform == nullptr || !parseGizmoTransform(command.propertyValue, trs)) {
+            return false;
+        }
+
+        transform->position = {trs.posX, trs.posY, trs.posZ, transform->position.w};
+        transform->rotation = {trs.rotX, trs.rotY, trs.rotZ, trs.rotW};
+        transform->scale = {trs.scaleX, trs.scaleY, trs.scaleZ, transform->scale.w};
+        transform->dirty = true;
+        host.editorState().sceneModified = true;
+        return true;
+    }
+
     if (command.propertyName == "transform.position") {
         if (!registry.has<ecs::Transform>(entity)) {
             return false;
@@ -493,6 +556,22 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         return true;
     }
 
+    if (command.propertyName == "sdf.shape") {
+        ecs::SDFObject* sdf = registry.get<ecs::SDFObject>(entity);
+        if (sdf == nullptr) {
+            return false;
+        }
+        ecs::SDFPrimitive type{};
+        ecs::vec3 params = sdf->params;
+        if (!PropertyInspector::parseSdfShape(command.propertyValue, type, params)) {
+            return false;
+        }
+        sdf->type = type;
+        sdf->params = params;
+        host.editorState().sceneModified = true;
+        return true;
+    }
+
     if (command.propertyName == "directional.intensity") {
         if (!registry.has<ecs::DirectionalLight>(entity)) {
             return false;
@@ -525,6 +604,24 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
 }
 
 } // namespace
+
+void EditorHost::resetSceneForProjectOpen() {
+    ensureInitialized_();
+    if (m_playSession.isActive()) {
+        m_playSession.stop(m_editorScene, m_runtimeScene, m_state, m_physics);
+    }
+    // Undo commands hold registry references (and release reserved slots when destroyed): drop
+    // the history before the registry it points into.
+    m_undoStack.clear();
+    m_commandStack.clear();
+    m_state.selectedEntities.clear();
+    m_state.primarySelection = ecs::EntityID::null();
+    m_state.sceneModified = false;
+    m_aiAgentEntityBindings.clear();
+    m_editorScene.destroy();
+    m_editorScene.init();
+    m_runtimeScene.clearEntities();
+}
 
 void EditorHost::setLoadedProject(std::string project) {
     m_loadedProject = std::move(project);

@@ -1,6 +1,5 @@
 #include <fuse/world3d/world_3d.hpp>
 
-#include <fuse/jobs/parallel_for.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/platform/thread.hpp>
 
@@ -89,23 +88,23 @@ void World3D::buildSnapshot() {
 
 void World3D::runParallelCull() {
     const u32 count = static_cast<u32>(m_snapshot.objects().size());
-    m_cullVisible.assign(count, false);
+    m_cullVisible.assign(count, 0u);
 
     if (count == 0) {
         m_snapshot.setVisibleCount(0);
         return;
     }
 
-    jobs::parallel_for(0u, count, 4u, [this](u32 i) {
+    m_cullJobs.run(count, 4u, [this](u32 i) {
         const ObjectDrawCmd3D& cmd = m_snapshot.objects()[i];
         const float z = m_transformSoA.worldZ[i];
         const bool inFrustum = (z > -500.f && z < 500.f);
-        m_cullVisible[i] = cmd.visible && inFrustum;
+        m_cullVisible[i] = (cmd.visible && inFrustum) ? 1u : 0u;
     });
 
     u32 visible = 0;
-    for (bool v : m_cullVisible) {
-        if (v) {
+    for (u8 v : m_cullVisible) {
+        if (v != 0u) {
             ++visible;
         }
     }

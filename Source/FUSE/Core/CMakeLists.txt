@@ -22,6 +22,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/dimension/world_handle.hpp
     include/fuse/dimension/idimension.hpp
     include/fuse/object.hpp
+    include/fuse/core/flat_u64_map.hpp
     include/fuse/core/init.hpp
     include/fuse/core/phase1_test_registry.hpp
     include/fuse/core/track_b.hpp
@@ -33,11 +34,14 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/alloc/new_ban.hpp
     include/fuse/alloc/frame_allocator.hpp
     include/fuse/alloc/pool_allocator.hpp
+    include/fuse/alloc/size_class_allocator.hpp
     include/fuse/alloc/stack_allocator.hpp
     include/fuse/alloc/ring_allocator.hpp
     include/fuse/alloc/freelist_allocator.hpp
     include/fuse/alloc/domain_budget.hpp
+    include/fuse/alloc/leak_detector.hpp
     include/fuse/io/asset.hpp
+    include/fuse/io/file_time.hpp
     include/fuse/io/vfs.hpp
     include/fuse/jobs/worker_count.hpp
     include/fuse/jobs/worker_context.hpp
@@ -46,6 +50,12 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/jobs/job_counter.hpp
     include/fuse/jobs/cuda_jobs.hpp
     include/fuse/jobs/parallel_for.hpp
+    include/fuse/compute_kernel/kernel.hpp
+    include/fuse/compute_kernel/atomics.hpp
+    include/fuse/compute_kernel/launch.hpp
+    include/fuse/compute_kernel/stats.hpp
+    include/fuse/compute_kernel/load_scale.hpp
+    include/fuse/compute_kernel/parity.hpp
     include/fuse/math/vec.hpp
     include/fuse/math/quat.hpp
     include/fuse/math/mat.hpp
@@ -55,12 +65,15 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/math/sdf.hpp
     include/fuse/math/simd.hpp
     include/fuse/math/math.hpp
+    include/fuse/gria.hpp
     include/fuse/platform/power.hpp
     include/fuse/platform/lifecycle.hpp
     include/fuse/platform/surface_loss.hpp
     include/fuse/platform/crash_report.hpp
+    include/fuse/platform/dpi.hpp
     include/fuse/platform/profile.hpp
     include/fuse/platform/thread.hpp
+    include/fuse/platform/sleep.hpp
     include/fuse/platform/fiber.hpp
     include/fuse/platform/gl_context.hpp
     include/fuse/platform/window.hpp
@@ -72,6 +85,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
 set(FUSE_CORE_SOURCES
     src/fuse_core_stub.cpp
     src/core/init.cpp
+    src/compute_kernel/compute_kernel.cpp
     src/core/phase1_test_registry.cpp
     src/core/track_b.cpp
     src/frame/frame_barrier.cpp
@@ -84,24 +98,34 @@ set(FUSE_CORE_SOURCES
     src/alloc/new_ban.cpp
     src/alloc/frame_allocator.cpp
     src/alloc/pool_allocator.cpp
+    src/alloc/size_class_allocator.cpp
     src/alloc/stack_allocator.cpp
     src/alloc/ring_allocator.cpp
     src/alloc/freelist_allocator.cpp
     src/alloc/domain_budget.cpp
+    src/alloc/leak_detector.cpp
     src/io/vfs.cpp
+    src/io/file_time.cpp
     src/jobs/worker_count.cpp
     src/jobs/work_steal.cpp
     src/jobs/job_scheduler.cpp
     src/jobs/job_counter.cpp
     src/jobs/cuda_jobs.cpp
     src/platform/platform_stub.cpp
+    src/platform/sleep.cpp
     src/platform/platform_hardening.cpp
+    src/platform/crash_handler.cpp
+    src/platform/dpi.cpp
     src/platform/platform_window.cpp
     src/platform/input.cpp
 )
 
 if(WIN32)
     list(APPEND FUSE_CORE_SOURCES src/platform/win/fiber_win32.cpp)
+    if(MSVC)
+        # CRT reports -> stderr, abort() -> SIGABRT path + exit 3 (no modal Debug CRT dialogs).
+        list(APPEND FUSE_CORE_SOURCES src/platform/win/crt_reporting_msvc.cpp)
+    endif()
 else()
     list(APPEND FUSE_CORE_SOURCES src/platform/fiber_posix.cpp)
 endif()
@@ -195,7 +219,13 @@ endif()
 fuse_apply_cxx23(fuse_core)
 target_link_libraries(fuse_core PUBLIC Threads::Threads)
 if(WIN32)
-    target_link_libraries(fuse_core PUBLIC user32)
+    # user32: windows/input/DPI; gdi32: GetDeviceCaps DPI fallback. dbghelp/shcore are loaded at
+    # run time (crash_handler.cpp, dpi.cpp) so a missing DLL never blocks startup.
+    target_link_libraries(fuse_core PUBLIC user32 gdi32)
+endif()
+if(MSVC)
+    # Pull crt_reporting_msvc.cpp (a static initializer only) into every program linking fuse_core.
+    target_link_options(fuse_core INTERFACE "/INCLUDE:fuse_msvc_crt_reporting_anchor")
 endif()
 
 target_compile_definitions(fuse_core
@@ -209,7 +239,7 @@ if(FUSE_PROFILE)
 endif()
 
 if(FUSE_SHIPPING)
-    target_compile_definitions(fuse_core PUBLIC FUSE_NO_ASSERT=1 FUSE_SHIPPING=1)
+    target_compile_definitions(fuse_core PUBLIC FUSE_NO_ASSERT=1 FUSE_SHIPPING=1 FUSE_NO_LOGGING=1 FUSE_NO_PROFILER=1)
 endif()
 
 if(FUSE_CORE_BAN_GLOBAL_NEW)
@@ -228,6 +258,12 @@ if(FUSE_CUDA_BACKEND)
 endif()
 
 fuse_core_apply_tsan(fuse_core)
+if(FUSE_CORE_ENABLE_TSAN)
+    # fuse_core is static and TSan-instrumented: every consumer must link the TSan runtime (and
+    # should be instrumented too), not only the test targets that call fuse_core_apply_tsan().
+    target_compile_options(fuse_core INTERFACE $<$<COMPILE_LANGUAGE:C,CXX>:-fsanitize=thread -fno-omit-frame-pointer>)
+    target_link_options(fuse_core INTERFACE -fsanitize=thread)
+endif()
 fuse_core_apply_asan_ubsan(fuse_core)
 
 option(FUSE_PLATFORM_WINDOW_GLFW "Enable optional GLFW hidden-window WSI scaffold (desktop present path)" OFF)
@@ -265,6 +301,71 @@ if(NOT _fuse_glfw_wsi_active)
     endif()
 endif()
 
+# Native X11 (Xlib) window backend — the Linux/BSD desktop window path when GLFW is not
+# active. Windows open only with WindowDesc::createNative and a reachable DISPLAY; headless
+# CI (no DISPLAY) keeps null native handles. VK_KHR_xlib_surface is compiled in when the
+# Vulkan loader is found (not in the stub build).
+option(FUSE_PLATFORM_WINDOW_X11 "Native X11 (Xlib) game window + VK_KHR_xlib_surface when GLFW is unavailable" ON)
+set(FUSE_PLATFORM_WINDOW_X11_ACTIVE OFF CACHE INTERNAL "X11 window backend compiled into fuse_core")
+if(FUSE_PLATFORM_WINDOW_X11 AND NOT _fuse_glfw_wsi_active AND UNIX AND NOT APPLE
+   AND NOT ANDROID AND NOT EMSCRIPTEN)
+    find_package(X11 QUIET)
+    if(X11_FOUND)
+        target_sources(fuse_core PRIVATE src/platform/x11_window.cpp)
+        target_include_directories(fuse_core PRIVATE ${X11_INCLUDE_DIR})
+        target_link_libraries(fuse_core PRIVATE ${X11_LIBRARIES})
+        target_compile_definitions(fuse_core PUBLIC FUSE_PLATFORM_WINDOW_X11=1)
+        set(FUSE_PLATFORM_WINDOW_X11_ACTIVE ON CACHE INTERNAL "X11 window backend compiled into fuse_core")
+        # XInput2 raw mouse (XI_RawMotion): unaccelerated device deltas while a window is
+        # captured. Without libXi the backend falls back to MotionNotify cursor deltas.
+        if(X11_Xi_FOUND AND EXISTS "${X11_Xi_INCLUDE_PATH}/X11/extensions/XInput2.h")
+            target_include_directories(fuse_core PRIVATE ${X11_Xi_INCLUDE_PATH})
+            target_link_libraries(fuse_core PRIVATE ${X11_Xi_LIB})
+            target_compile_definitions(fuse_core PUBLIC FUSE_PLATFORM_X11_XI2=1)
+            message(STATUS "FUSE: fuse_core X11 XInput2 raw mouse (XI_RawMotion) enabled")
+        else()
+            message(STATUS "FUSE: libXi / XInput2.h not found — X11 raw mouse falls back to cursor deltas")
+        endif()
+        if(NOT TARGET Vulkan::Vulkan)
+            include(${CMAKE_SOURCE_DIR}/cmake/FuseFindVulkan.cmake)
+        endif()
+        if(TARGET Vulkan::Vulkan)
+            target_link_libraries(fuse_core PRIVATE Vulkan::Vulkan)
+            target_compile_definitions(fuse_core PRIVATE FUSE_PLATFORM_X11_VULKAN=1)
+            message(STATUS "FUSE: fuse_core X11 (Xlib) window + VK_KHR_xlib_surface enabled")
+        else()
+            message(STATUS "FUSE: fuse_core X11 (Xlib) window enabled (no Vulkan loader — no surface)")
+        endif()
+    else()
+        message(STATUS "FUSE: FUSE_PLATFORM_WINDOW_X11=ON but X11 headers/libs missing — null WSI")
+    endif()
+endif()
+
+# ctest wrapper for window/WSI gates: reuse $DISPLAY when set, else a private Xvfb via xvfb-run;
+# exit 77 (ctest SKIP) when neither exists. Gate binaries also return 77 when no display opens.
+# Not on Windows hosts/targets: a bash script cannot be a ctest COMMAND there (tests run directly on
+# the interactive desktop), so consumers see an empty FUSE_DISPLAY_TEST_WRAPPER.
+if(WIN32)
+    set(FUSE_DISPLAY_TEST_WRAPPER "" CACHE INTERNAL "Runs a test command on an X display (Xvfb fallback, 77 = skip)")
+else()
+    set(FUSE_DISPLAY_TEST_WRAPPER "${CMAKE_BINARY_DIR}/fuse_run_with_display.sh"
+        CACHE INTERNAL "Runs a test command on an X display (Xvfb fallback, 77 = skip)")
+    file(WRITE "${FUSE_DISPLAY_TEST_WRAPPER}"
+"#!/usr/bin/env bash
+if [ -n \"\${DISPLAY:-}\" ] && [ -z \"\${FUSE_FORCE_XVFB:-}\" ]; then
+    exec \"$@\"
+fi
+if command -v xvfb-run >/dev/null 2>&1; then
+    exec xvfb-run -a -s \"-screen 0 1920x1080x24 -nolisten tcp\" \"$@\"
+fi
+echo \"SKIP: no DISPLAY and xvfb-run not installed\"
+exit 77
+")
+    file(CHMOD "${FUSE_DISPLAY_TEST_WRAPPER}"
+        FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+endif()
+
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)
 endif()
+include("${CMAKE_SOURCE_DIR}/cmake/FuseTracy.cmake")  # WP-0.6 optional Tracy backend (FUSE_TRACY) + its tests

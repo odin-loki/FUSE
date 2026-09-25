@@ -22,7 +22,8 @@ struct GpuAllocatorInfo {
     std::string message;
 };
 
-/// VMA when vendored; native vkAllocateMemory when Vulkan is on without VMA; stub otherwise.
+/// Vulkan builds: vendored VMA (Engine/lib/vma) by default; plain vkAllocateMemory per resource
+/// when configured with FUSE_RHI_USE_VMA=OFF. Stub (host memory) when the Vulkan backend is off.
 class GpuAllocator {
 public:
     static std::unique_ptr<GpuAllocator> create(VulkanDevice& device);
@@ -50,6 +51,8 @@ public:
     void destroyImage(Texture& texture);
 
 private:
+    friend struct GpuAllocatorVmaAccess;
+
     GpuAllocator() = default;
     bool initialize(VulkanDevice& device);
     void shutdown();
@@ -59,7 +62,7 @@ private:
     GpuAllocStats m_stats;
     const char* m_statsName = "gpu_allocator";
     void* m_allocator = nullptr;
-    u64 m_stubId = 1;
+    [[maybe_unused]] u64 m_stubId = 1; ///< Fake handles; only the non-Vulkan stub path mints them.
 
     void notifyStats() const;
     usize trackedBufferBytes(const Buffer& buffer) const;

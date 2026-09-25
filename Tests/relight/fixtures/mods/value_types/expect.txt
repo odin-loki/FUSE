@@ -1,0 +1,37 @@
+attr /RootNode/values.b = true
+attr /RootNode/values.bs = [true, false, true]
+attr /RootNode/values.i = -7
+attr /RootNode/values.is = [1, -2, 3]
+attr /RootNode/values.u = 4000000000
+attr /RootNode/values.i64 = -9000000000
+attr /RootNode/values.u64 = 18000000000000000000
+attr /RootNode/values.h = 0.5
+attr /RootNode/values.f = 0.1
+attr /RootNode/values.d = 0.1
+attr /RootNode/values.f2 = (1.5, -2.5)
+attr /RootNode/values.f4 = (1, 2, 3, 4)
+attr /RootNode/values.d3 = (1e-10, 2e20, -3)
+attr /RootNode/values.i2 = (4, 5)
+attr /RootNode/values.h3 = (0.25, 0.5, 1)
+attr /RootNode/values.q = (1, 0, 0, 0)
+attr /RootNode/values.qs = [(0.70710677, 0, 0.70710677, 0), (1, 0, 0, 0)]
+attr /RootNode/values.m = ((2, 0, 0, 0), (0, 2, 0, 0), (0, 0, 2, 0), (1, 2, 3, 1))
+attr /RootNode/values.m3 = ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+attr /RootNode/values.s = "quote \" and backslash \\ and newline \n end"
+attr /RootNode/values.t = "a_token"
+attr /RootNode/values.ts = ["x", "y", "z"]
+attr /RootNode/values.a = @./textures/a.dds@
+resolved /RootNode/values.a textures/a.dds
+attr /RootNode/values.c = (0.25, 0.5, 0.75)
+attr /RootNode/values.c4 = (0.25, 0.5, 0.75, 1)
+attr /RootNode/values.st = (0.5, 0.5)
+attr /RootNode/values.empty = []
+attr /RootNode/values.infs = [inf, -inf]
+attrtype /RootNode/values.c color3f
+attrtype /RootNode/values.st texCoord2f
+attrtype /RootNode/values.qs quatf[]
+attrtype /RootNode/values.m matrix4d
+attrtype /RootNode/values.as asset[]
+uniform /RootNode/values.purpose true
+uniform /RootNode/values.t false
+nodiag any

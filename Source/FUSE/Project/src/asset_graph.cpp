@@ -1,5 +1,6 @@
 #include <fuse/project/asset_graph.hpp>
 
+#include <fuse/io/file_time.hpp>
 #include <fuse/log/logger.hpp>
 
 #include <chrono>
@@ -45,19 +46,7 @@ const AssetGraph::AssetRecord* AssetGraph::find_asset(const std::string& output_
 }
 
 u64 AssetGraph::file_mtime_ns(const std::string& path) const {
-    std::error_code ec;
-    const std::filesystem::path file_path(path);
-    if (!std::filesystem::exists(file_path, ec)) {
-        return 0;
-    }
-
-    const auto ftime = std::filesystem::last_write_time(file_path, ec);
-    if (ec) {
-        return 0;
-    }
-
-    const auto sctp = std::chrono::time_point_cast<std::chrono::nanoseconds>(ftime);
-    return static_cast<u64>(sctp.time_since_epoch().count());
+    return io::fileWriteTimeNs(path);
 }
 
 void AssetGraph::add_asset(const std::string& output_path, const std::string& source_path) {

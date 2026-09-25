@@ -43,3 +43,16 @@ function(fuse_log_platform_profile)
     message(STATUS "  android : ${FUSE_PLATFORM_ANDROID}")
     message(STATUS "  emscripten: ${FUSE_PLATFORM_EMSCRIPTEN}")
 endfunction()
+
+# MinGW-w64 GCC 13.0–13.2 + static libstdc++ + C++23: <typeinfo> makes type_info::operator==
+# constexpr-inline (emitted out of line at -O0), but libstdc++.a(tinfo.o) still carries a strong
+# definition of it next to type_info::__equal, which the inline version calls. Any TU that
+# compares typeids (std::function, std::regex, shared_ptr deleters) then fails to link with
+# "multiple definition of std::type_info::operator==" (GCC PR libstdc++/110572, fixed in 13.3).
+# Both definitions are the same library code, so let the linker keep the first one.
+if(MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+   AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13.0
+   AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 13.3)
+    add_link_options(-Wl,--allow-multiple-definition)
+    message(STATUS "FUSE: MinGW GCC ${CMAKE_CXX_COMPILER_VERSION} — linking with --allow-multiple-definition (PR 110572 type_info::operator==)")
+endif()

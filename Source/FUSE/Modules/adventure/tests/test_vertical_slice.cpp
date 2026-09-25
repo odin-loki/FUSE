@@ -32,7 +32,7 @@ void testPickupUseVerticalSlice() {
     expectTrue(player.attach(), "player hierarchy attaches");
 
     fuse::adventure::InteractionSystem interactions;
-    fuse::adventure::MechanicsBridge bridge(interactions);
+    fuse::adventure::MechanicsBridge bridge;
     fuse::mechanics::MechanicsRegistry registry;
 
     fuse::adventure::PickupInteractable keyPickup(fuse::adventure::ItemId("rusty_key"));

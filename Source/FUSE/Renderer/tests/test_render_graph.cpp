@@ -598,8 +598,9 @@ void testExecuteDurationFieldPresent() {
 
     fuse::renderer::CommandBufferRecorder recorder;
     const fuse::renderer::RenderGraphExecuteInfo info = graph.execute(*device, *frames, recorder);
-    expectTrue(info.executeDurationUs == 0u || info.executeDurationUs > 0u,
-               "executeDurationUs field is present after compiled execute");
+    // executeDurationUs is wall-clock and may round to 0 µs on a fast device; it is only timed when
+    // the compiled graph actually executed its passes.
+    expectTrue(info.executedPassCount >= 1u, "compiled graph executes its present pass (duration timed)");
 }
 
 void testImportBufferStoresHandle() {

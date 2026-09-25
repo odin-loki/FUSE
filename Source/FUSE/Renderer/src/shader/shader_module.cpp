@@ -1,7 +1,9 @@
 #include <fuse/renderer/shader/shader_module.hpp>
 
 #include <fuse/renderer/shader/shader_io.hpp>
+#include <fuse/renderer/vk/debug_utils.hpp>
 
+#include <string>
 #include <utility>
 
 #if defined(FUSE_VULKAN_BACKEND)
@@ -61,8 +63,23 @@ std::unique_ptr<ShaderModule> ShaderModule::createFromFile(VulkanDevice& device,
     auto module = create(device, stage, words.data(), static_cast<u32>(words.size()));
     if (module != nullptr) {
         module->m_sourcePath = std::move(path);
+        module->applyDebugName();
     }
     return module;
+}
+
+void ShaderModule::applyDebugName() {
+    if (m_handle == nullptr || m_device == nullptr) {
+        return;
+    }
+    std::string name;
+    if (!m_sourcePath.empty()) {
+        const std::size_t slash = m_sourcePath.find_last_of("/\\");
+        name = "fuse.shader." + (slash == std::string::npos ? m_sourcePath : m_sourcePath.substr(slash + 1));
+    } else {
+        name = "fuse.shader.stage" + std::to_string(static_cast<u32>(m_info.stage));
+    }
+    nameVkObject(m_device->nativeHandle(), vk_object_type::kShaderModule, m_handle, name.c_str());
 }
 
 ShaderModule::~ShaderModule() {
@@ -109,6 +126,7 @@ bool ShaderModule::reloadFromDisk() {
     if (!previousInfo.entryPoint.empty()) {
         m_info.entryPoint = previousInfo.entryPoint;
     }
+    applyDebugName();
     return true;
 }
 
@@ -148,6 +166,7 @@ bool ShaderModule::initialize(VulkanDevice& device, ShaderStage stage, const u32
     m_handle = shaderModule;
     m_info.valid = true;
     m_info.message = "shader module created";
+    applyDebugName();
     return true;
 #else
     m_info.message = "shader module recorded in stub mode";

@@ -1,9 +1,11 @@
 #include <fuse/scene/scene_manager.hpp>
 
 #include <fuse/ecs/components/camera.hpp>
+#include <fuse/ecs/components/mesh.hpp>
+#include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
-#include <fuse/jobs/job_counter.hpp>
-#include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/ecs/systems/camera_system.hpp>
+#include <fuse/ecs/systems/transform_system.hpp>
 
 namespace fuse::scene {
 
@@ -47,22 +49,76 @@ void SceneManager::update(f32 /*deltaSeconds*/) {
         return;
     }
 
-    fuse::jobs::JobCounter transformsDone(1);
-    fuse::jobs::JobScheduler::instance().submit([&]() {
-        // TransformSystem lands in B3.3 — scaffold keeps dependency edge only.
-        transformsDone.signal();
-    });
-    transformsDone.wait();
-
-    fuse::jobs::JobCounter camerasDone(1);
-    fuse::jobs::JobScheduler::instance().submit([&]() {
-        // CameraSystem lands in B3.8 — active camera handle retained here.
-        camerasDone.signal();
-    });
-    camerasDone.wait();
-
+    fuse::ecs::TransformSystem::update(m_registry);
+    fuse::ecs::CameraSystem::update(m_registry);
+    syncSpatialBvh();
     refitBvh();
     ++m_frameIndex;
+}
+
+void SceneManager::syncSpatialBvh() {
+    using fuse::ecs::CullingSystem;
+    using fuse::spatial::BVHLeafType;
+
+    m_bvhSourcesScratch.clear();
+    m_bvhLeaves.clear();
+    m_registry.each<fuse::ecs::Mesh, fuse::ecs::Transform>(
+        [&](fuse::ecs::EntityID id, fuse::ecs::Mesh& mesh, fuse::ecs::Transform& transform) {
+            m_bvhSourcesScratch.push_back({id, BVHLeafType::Mesh});
+            fuse::spatial::BVHLeaf leaf{};
+            leaf.type = BVHLeafType::Mesh;
+            leaf.entity = id;
+            leaf.aabb = CullingSystem::world_bounds(transform, mesh);
+            m_bvhLeaves.push_back(leaf);
+        });
+    m_registry.each<fuse::ecs::SDFObject, fuse::ecs::Transform>(
+        [&](fuse::ecs::EntityID id, fuse::ecs::SDFObject& sdf, fuse::ecs::Transform& transform) {
+            m_bvhSourcesScratch.push_back({id, BVHLeafType::SDF});
+            fuse::spatial::BVHLeaf leaf{};
+            leaf.type = BVHLeafType::SDF;
+            leaf.entity = id;
+            leaf.aabb = CullingSystem::world_bounds(transform, sdf);
+            m_bvhLeaves.push_back(leaf);
+        });
+
+    // Same entities in the same order: move bounds and refit. Otherwise (spawn/despawn or
+    // archetype change mid-frame) rebuild so the BVH never holds stale or missing entities.
+    if (m_bvhSourcesScratch == m_bvhSources && m_spatialBvh.leaf_count() == m_bvhLeaves.size()) {
+        for (u32 i = 0; i < m_bvhLeaves.size(); ++i) {
+            (void)m_spatialBvh.update_leaf_aabb(i, m_bvhLeaves[i].aabb);
+        }
+        m_spatialBvh.refit();
+        return;
+    }
+    m_spatialBvh.build(m_bvhLeaves);
+    m_bvhSources.swap(m_bvhSourcesScratch);
+    ++m_spatialBvhRebuilds;
+}
+
+fuse::ecs::SceneData SceneManager::buildFrame(fuse::ecs::CullResult* cullOut) {
+    fuse::ecs::SceneData scene;
+    buildFrame(scene, cullOut);
+    return scene;
+}
+
+void SceneManager::buildFrame(fuse::ecs::SceneData& out, fuse::ecs::CullResult* cullOut) {
+    const fuse::ecs::Camera* camera =
+        m_activeCamera.valid() ? m_registry.get<fuse::ecs::Camera>(m_activeCamera) : nullptr;
+    if (!m_initialized || camera == nullptr) {
+        if (cullOut != nullptr) {
+            *cullOut = {};
+        }
+        out = {};
+        return;
+    }
+
+    fuse::ecs::CullOptions options{};
+    options.bvh_covers_scene = true; // syncSpatialBvh keeps a leaf for every Mesh/SDFObject
+    fuse::ecs::CullingSystem::cull(m_registry, *camera, m_spatialBvh, options, m_visible, m_cullScratch);
+    fuse::ecs::SceneBuildSystem::build(m_registry, m_visible, out);
+    if (cullOut != nullptr) {
+        *cullOut = m_visible; // copy-assign reuses the caller's capacity
+    }
 }
 
 fuse::ecs::EntityID SceneManager::createCamera(f32 fovDegrees, bool active) {

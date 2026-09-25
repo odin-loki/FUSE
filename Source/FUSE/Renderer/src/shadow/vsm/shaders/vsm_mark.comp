@@ -1,0 +1,26 @@
+#version 460
+// WP-3.1 "vsm.mark": page marking from depth. One thread per depth texel (8 x 8 tiles): the texel's
+// light-space position selects a clipmap level and the page(s) under it (vsm_common.glsl
+// fuse_vsm_mark_pixel == vsm_kernel.hpp mark_pixel); their request bits are set with atomicOr.
+// GLSL twin of vsm_mark.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "vsm_includes.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+    FuseVsmConstantsRef C = fuse_vsm_constants();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= C.depthWidth || p.y >= C.depthHeight) {
+        return;
+    }
+    const float depth = fuse_fetch_2d(C.depthTexture, C.depthSampler, ivec2(p), 0).r;
+    uint pages[4];
+    const uint n = fuse_vsm_mark_pixel(C, p.x, p.y, depth, pages);
+    const uint offRequest = C.offRequest;
+    const uint work = C.workHandle;
+    for (uint i = 0u; i < n; ++i) {
+        const uint v = pages[i];
+        atomicOr(FUSE_VSM_WORDS(work)[offRequest + v / 32u], 1u << (v % 32u));
+    }
+}

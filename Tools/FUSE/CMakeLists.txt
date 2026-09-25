@@ -17,3 +17,9 @@ if(COMMAND fuse_apply_asan)
     fuse_apply_asan(fuse_cook)
     fuse_apply_asan(fuse_convert)
 endif()
+
+# WorldExtract: python world-model video -> 3D world tool (ctest fuse_world_extract_synthetic).
+if(FUSE_BUILD_CORE_TESTS)
+    add_subdirectory(WorldExtract)
+    add_subdirectory(AssetGen)  # FUSE_ASSET_PLAN W0.9 generators (ctest asset_determinism)
+endif()

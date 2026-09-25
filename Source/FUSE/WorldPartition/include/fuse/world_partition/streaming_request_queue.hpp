@@ -3,6 +3,7 @@
 #include <fuse/types.hpp>
 #include <fuse/world_partition/grid_cell.hpp>
 
+#include <condition_variable>
 #include <functional>
 #include <mutex>
 #include <vector>
@@ -51,6 +52,13 @@ using StreamingWorkFn = std::function<bool(GridCoord coord, StreamingRequestKind
 /// Async request queue stub backed by JobScheduler (mirrors fuse::io VFS async loads).
 class StreamingRequestQueue {
 public:
+    StreamingRequestQueue() = default;
+    /// Blocks until every submitted job has finished touching this queue.
+    ~StreamingRequestQueue();
+
+    StreamingRequestQueue(const StreamingRequestQueue&) = delete;
+    StreamingRequestQueue& operator=(const StreamingRequestQueue&) = delete;
+
     /// Queue a request for later submission. Promotes priority when the same coord/kind is already pending.
     bool enqueue(StreamingRequest request);
 
@@ -102,10 +110,11 @@ private:
 
     [[nodiscard]] bool would_exceed_budget_() const;
     void sort_pending_by_priority_();
-    void push_completed_(CompletedStreamingRequest completed);
 
     mutable std::mutex m_mutex;
+    std::condition_variable m_jobsIdle;
     u32 m_inFlight = 0;
+    u32 m_liveJobs = 0; ///< Jobs still referencing `this`; unlike m_inFlight, never reset by clear()
     u64 m_submit_sequence = 0;
     u64 m_enqueue_sequence = 0;
     u32 m_max_pending_submits = 0; ///< 0 = unlimited pending (in-flight + completed buffer)

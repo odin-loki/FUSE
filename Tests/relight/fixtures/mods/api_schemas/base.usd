@@ -1,0 +1,19 @@
+#usda 1.0
+
+def Xform "RootNode"
+{
+    def Xform "meshes"
+    {
+        def Xform "mesh_0000000000008001" (
+            prepend apiSchemas = ["MaterialBindingAPI", "ShapingAPI"]
+        )
+        {
+        }
+
+        def Xform "mesh_0000000000008002" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+        }
+    }
+}

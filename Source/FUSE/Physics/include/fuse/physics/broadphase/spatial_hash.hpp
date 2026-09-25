@@ -10,6 +10,19 @@
 
 namespace fuse::physics::broadphase {
 
+/// Optional external (key, value) sorter for the spatial-hash broadphase's (cell, body) entry
+/// grouping (runBroadphaseIntoBuffer). `sort` must stably sort keys[0..count) ascending, carrying
+/// values[i] with keys[i]; every key is < 2^keyBits. It returns false to decline (the arrays must
+/// then be left unchanged) and the CPU counting sort runs instead. The result is identical either
+/// way (the counting sort is stable too). Used to plug in a GPU radix sort (fuse_rhi
+/// GpuRadixSort) without the physics module depending on the renderer.
+struct BroadphaseKeyValueSorter {
+    bool (*sort)(void* user, u32* keys, u32* values, u32 count, u32 keyBits) = nullptr;
+    void* user = nullptr;
+    /// Entry counts below this stay on the CPU counting sort (upload/readback not worth it).
+    u32 minCount = 0u;
+};
+
 struct SpatialHashParams {
     f32 cellSize = 2.f;
     u32 tableSize = 1024;
@@ -18,6 +31,8 @@ struct SpatialHashParams {
     u32 maxCellSpanPerAxis = 64u;
     /// Per-shape cell occupancy budget before hash insertion is skipped (0 = unlimited stub).
     u32 maxCellOccupancy = 0u;
+    /// Optional entry sorter (null = CPU counting sort). Not owned; must outlive the call.
+    const BroadphaseKeyValueSorter* entrySorter = nullptr;
 };
 
 struct CandidatePair {
@@ -182,22 +197,22 @@ FUSE_PHYSICS_INLINE bool shouldRunBroadphasePairGeneration(
 }
 
 /// Clamp cell size to a positive stub default (broadphase occupancy guard).
-FUSE_PHYSICS_INLINE f32 clampCellSize(f32 cellSize) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE f32 clampCellSize(f32 cellSize) {
     return cellSize > 0.f ? cellSize : 1.f;
 }
 
 /// Clamp hash table size to at least one bucket (broadphase stub guard).
-FUSE_PHYSICS_INLINE u32 clampTableSize(u32 tableSize) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE u32 clampTableSize(u32 tableSize) {
     return tableSize > 0u ? tableSize : 1u;
 }
 
 /// Clamp hash key into `[0, tableSize)`.
-FUSE_PHYSICS_INLINE u32 clampHashKey(u32 key, u32 tableSize) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE u32 clampHashKey(u32 key, u32 tableSize) {
     return key % clampTableSize(tableSize);
 }
 
 /// Clamp a single cell coordinate between inclusive bounds.
-FUSE_PHYSICS_INLINE s32 clampCellCoord(s32 value, s32 minBound, s32 maxBound) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE s32 clampCellCoord(s32 value, s32 minBound, s32 maxBound) {
     if (value < minBound) {
         return minBound;
     }
@@ -218,17 +233,17 @@ struct CellRange2 {
 };
 
 /// True when any axis has an inverted min/max span (empty occupancy iteration).
-FUSE_PHYSICS_INLINE bool isEmptyCellRange(const CellRange3& range) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE bool isEmptyCellRange(const CellRange3& range) {
     return range.minCell.x > range.maxCell.x || range.minCell.y > range.maxCell.y ||
            range.minCell.z > range.maxCell.z;
 }
 
-FUSE_PHYSICS_INLINE bool isEmptyCellRange(const CellRange2& range) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE bool isEmptyCellRange(const CellRange2& range) {
     return range.minCell.x > range.maxCell.x || range.minCell.y > range.maxCell.y;
 }
 
 /// Per-axis inclusive cell span for occupancy budgeting stubs.
-FUSE_PHYSICS_INLINE ivec3 cellSpanPerAxis(const CellRange3& range) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE ivec3 cellSpanPerAxis(const CellRange3& range) {
     if (isEmptyCellRange(range)) {
         return {};
     }
@@ -239,7 +254,7 @@ FUSE_PHYSICS_INLINE ivec3 cellSpanPerAxis(const CellRange3& range) {
     };
 }
 
-FUSE_PHYSICS_INLINE ivec2 cellSpanPerAxis(const CellRange2& range) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE ivec2 cellSpanPerAxis(const CellRange2& range) {
     if (isEmptyCellRange(range)) {
         return {};
     }
@@ -250,7 +265,7 @@ FUSE_PHYSICS_INLINE ivec2 cellSpanPerAxis(const CellRange2& range) {
 }
 
 /// Occupancy cell count stub for budgeting (0 when the range is empty).
-FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCount(const CellRange3& range) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCount(const CellRange3& range) {
     if (isEmptyCellRange(range)) {
         return 0u;
     }
@@ -258,7 +273,7 @@ FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCount(const CellRange3& range) {
     return static_cast<u32>(span.x) * static_cast<u32>(span.y) * static_cast<u32>(span.z);
 }
 
-FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCount(const CellRange2& range) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCount(const CellRange2& range) {
     if (isEmptyCellRange(range)) {
         return 0u;
     }
@@ -267,19 +282,19 @@ FUSE_PHYSICS_INLINE u32 estimateCellOccupancyCount(const CellRange2& range) {
 }
 
 /// True when `maxCells == 0` (unlimited occupancy budget stub).
-FUSE_PHYSICS_INLINE bool isUnboundedCellOccupancyBudget(u32 maxCells) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE bool isUnboundedCellOccupancyBudget(u32 maxCells) {
     return maxCells == 0u;
 }
 
 /// Cell-capacity guard: true when occupancy exceeds `maxCells` (0 = unlimited budget).
-FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange3& range, u32 maxCells) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange3& range, u32 maxCells) {
     if (isUnboundedCellOccupancyBudget(maxCells)) {
         return false;
     }
     return estimateCellOccupancyCount(range) > maxCells;
 }
 
-FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange2& range, u32 maxCells) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE bool exceedsCellOccupancyBudget(const CellRange2& range, u32 maxCells) {
     if (isUnboundedCellOccupancyBudget(maxCells)) {
         return false;
     }
@@ -323,7 +338,7 @@ enum class CellOccupancyRejectReason : u8 {
 const char* cellOccupancyRejectReasonName(CellOccupancyRejectReason reason);
 
 /// Diagnose why cell occupancy iteration would reject; vacuously succeeds on valid ranges.
-FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReason(const CellRange3& range, u32 maxCells) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReason(const CellRange3& range, u32 maxCells) {
     if (isEmptyCellRange(range)) {
         return CellOccupancyRejectReason::EmptyRange;
     }
@@ -333,7 +348,7 @@ FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReason(const Ce
     return CellOccupancyRejectReason::None;
 }
 
-FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReason(const CellRange2& range, u32 maxCells) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE CellOccupancyRejectReason cellOccupancyRejectReason(const CellRange2& range, u32 maxCells) {
     if (isEmptyCellRange(range)) {
         return CellOccupancyRejectReason::EmptyRange;
     }
@@ -583,12 +598,12 @@ FUSE_PHYSICS_INLINE bool wouldSkipCellSpanClamp(
 }
 
 /// Pair-list sizing stub: unique-body pair count n*(n-1)/2 (0 when n < 2).
-FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE u32 estimatePairCountForUniqueBodies(u32 uniqueBodyCount) {
     return uniqueBodyCount > 1u ? uniqueBodyCount * (uniqueBodyCount - 1u) / 2u : 0u;
 }
 
 /// Per-cell pair-count stub from unique occupant count (alias for cell-pair gen budgeting).
-FUSE_PHYSICS_INLINE u32 estimateCellPairCount(u32 uniqueOccupantCount) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE u32 estimateCellPairCount(u32 uniqueOccupantCount) {
     return estimatePairCountForUniqueBodies(uniqueOccupantCount);
 }
 
@@ -603,7 +618,7 @@ enum class CellPairGenRejectReason : u8 {
 const char* cellPairGenRejectReasonName(CellPairGenRejectReason reason);
 
 /// Diagnose why cell pair generation would skip; vacuously succeeds when pairs may be emitted.
-FUSE_PHYSICS_INLINE CellPairGenRejectReason cellPairGenRejectReason(u32 uniqueOccupantCount) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE CellPairGenRejectReason cellPairGenRejectReason(u32 uniqueOccupantCount) {
     if (uniqueOccupantCount == 0u) {
         return CellPairGenRejectReason::EmptyCell;
     }
@@ -708,7 +723,7 @@ FUSE_PHYSICS_INLINE SpatialHashParams normalizeSpatialHashParams(SpatialHashPara
 }
 
 /// Limit per-axis cell span from the range center (CUDA occupancy iteration guard stub).
-FUSE_PHYSICS_INLINE CellRange3 clampCellRange3(CellRange3 range, u32 maxSpanPerAxis) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE CellRange3 clampCellRange3(CellRange3 range, u32 maxSpanPerAxis) {
     if (maxSpanPerAxis == 0u) {
         return range;
     }
@@ -728,7 +743,7 @@ FUSE_PHYSICS_INLINE CellRange3 clampCellRange3(CellRange3 range, u32 maxSpanPerA
     return range;
 }
 
-FUSE_PHYSICS_INLINE CellRange2 clampCellRange2(CellRange2 range, u32 maxSpanPerAxis) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE CellRange2 clampCellRange2(CellRange2 range, u32 maxSpanPerAxis) {
     if (maxSpanPerAxis == 0u) {
         return range;
     }
@@ -745,7 +760,7 @@ FUSE_PHYSICS_INLINE CellRange2 clampCellRange2(CellRange2 range, u32 maxSpanPerA
     return range;
 }
 
-FUSE_PHYSICS_INLINE u32 spatialHash(s32 cx, s32 cy, s32 cz, u32 tableSize) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE u32 spatialHash(s32 cx, s32 cy, s32 cz, u32 tableSize) {
     constexpr u32 p1 = 73856093u;
     constexpr u32 p2 = 19349663u;
     constexpr u32 p3 = 83492791u;
@@ -753,7 +768,7 @@ FUSE_PHYSICS_INLINE u32 spatialHash(s32 cx, s32 cy, s32 cz, u32 tableSize) {
     return clampHashKey(hash, tableSize);
 }
 
-FUSE_PHYSICS_INLINE ivec3 worldToCell(vec3 position, f32 cellSize) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE ivec3 worldToCell(vec3 position, f32 cellSize) {
     const f32 invCell = 1.f / clampCellSize(cellSize);
     return {
         static_cast<s32>(std::floor(position.x * invCell)),
@@ -762,14 +777,14 @@ FUSE_PHYSICS_INLINE ivec3 worldToCell(vec3 position, f32 cellSize) {
     };
 }
 
-FUSE_PHYSICS_INLINE u32 spatialHash2D(s32 cx, s32 cy, u32 tableSize) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE u32 spatialHash2D(s32 cx, s32 cy, u32 tableSize) {
     constexpr u32 p1 = 73856093u;
     constexpr u32 p2 = 19349663u;
     const u32 hash = static_cast<u32>(cx * p1) ^ static_cast<u32>(cy * p2);
     return clampHashKey(hash, tableSize);
 }
 
-FUSE_PHYSICS_INLINE ivec2 worldToCell2D(vec2 position, f32 cellSize) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE ivec2 worldToCell2D(vec2 position, f32 cellSize) {
     const f32 invCell = 1.f / clampCellSize(cellSize);
     return {
         static_cast<s32>(std::floor(position.x * invCell)),
@@ -777,21 +792,21 @@ FUSE_PHYSICS_INLINE ivec2 worldToCell2D(vec2 position, f32 cellSize) {
     };
 }
 
-FUSE_PHYSICS_INLINE aabb aabbFromSphere(vec3 center, f32 radius) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE aabb aabbFromSphere(vec3 center, f32 radius) {
     return {
         {center.x - radius, center.y - radius, center.z - radius},
         {center.x + radius, center.y + radius, center.z + radius},
     };
 }
 
-FUSE_PHYSICS_INLINE aabb aabbFromBox(vec3 center, vec3 halfExtents) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE aabb aabbFromBox(vec3 center, vec3 halfExtents) {
     return {
         {center.x - halfExtents.x, center.y - halfExtents.y, center.z - halfExtents.z},
         {center.x + halfExtents.x, center.y + halfExtents.y, center.z + halfExtents.z},
     };
 }
 
-FUSE_PHYSICS_INLINE CellRange3 cellRangeFromAabb(const aabb& bounds, f32 cellSize, u32 maxSpanPerAxis = 64u) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE CellRange3 cellRangeFromAabb(const aabb& bounds, f32 cellSize, u32 maxSpanPerAxis = 64u) {
     const f32 cell = clampCellSize(cellSize);
     CellRange3 range = {
         worldToCell(bounds.min, cell),
@@ -800,7 +815,7 @@ FUSE_PHYSICS_INLINE CellRange3 cellRangeFromAabb(const aabb& bounds, f32 cellSiz
     return clampCellRange3(range, maxSpanPerAxis);
 }
 
-FUSE_PHYSICS_INLINE CellRange2 cellRangeFromAabb2D(const aabb& bounds, f32 cellSize, u32 maxSpanPerAxis = 64u) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE CellRange2 cellRangeFromAabb2D(const aabb& bounds, f32 cellSize, u32 maxSpanPerAxis = 64u) {
     const f32 cell = clampCellSize(cellSize);
     CellRange2 range = {
         worldToCell2D({bounds.min.x, bounds.min.y}, cell),
@@ -809,11 +824,11 @@ FUSE_PHYSICS_INLINE CellRange2 cellRangeFromAabb2D(const aabb& bounds, f32 cellS
     return clampCellRange2(range, maxSpanPerAxis);
 }
 
-FUSE_PHYSICS_INLINE CellRange3 cellRangeFromSphere(vec3 center, f32 radius, f32 cellSize, u32 maxSpanPerAxis = 64u) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE CellRange3 cellRangeFromSphere(vec3 center, f32 radius, f32 cellSize, u32 maxSpanPerAxis = 64u) {
     return cellRangeFromAabb(aabbFromSphere(center, radius), cellSize, maxSpanPerAxis);
 }
 
-FUSE_PHYSICS_INLINE CellRange2 cellRangeFromSphere2D(vec2 center, f32 radius, f32 cellSize, u32 maxSpanPerAxis = 64u) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE CellRange2 cellRangeFromSphere2D(vec2 center, f32 radius, f32 cellSize, u32 maxSpanPerAxis = 64u) {
     const f32 cell = clampCellSize(cellSize);
     CellRange2 range = {
         worldToCell2D({center.x - radius, center.y - radius}, cell),
@@ -822,28 +837,80 @@ FUSE_PHYSICS_INLINE CellRange2 cellRangeFromSphere2D(vec2 center, f32 radius, f3
     return clampCellRange2(range, maxSpanPerAxis);
 }
 
-FUSE_PHYSICS_INLINE CellRange3 cellRangeFromBox(vec3 center, vec3 halfExtents, f32 cellSize, u32 maxSpanPerAxis = 64u) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE CellRange3 cellRangeFromBox(vec3 center, vec3 halfExtents, f32 cellSize, u32 maxSpanPerAxis = 64u) {
     return cellRangeFromAabb(aabbFromBox(center, halfExtents), cellSize, maxSpanPerAxis);
 }
 
-FUSE_PHYSICS_INLINE bool aabbOverlap(const aabb& a, const aabb& b) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE bool aabbOverlap(const aabb& a, const aabb& b) {
     return a.min.x <= b.max.x && a.max.x >= b.min.x && a.min.y <= b.max.y && a.max.y >= b.min.y &&
            a.min.z <= b.max.z && a.max.z >= b.min.z;
 }
 
 /// Sphere overlap stub via expanded AABB test (CPU reference for CUDA broadphase refine).
-FUSE_PHYSICS_INLINE bool sphereAabbOverlap(vec3 centerA, f32 radiusA, vec3 centerB, f32 radiusB) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE bool sphereAabbOverlap(vec3 centerA, f32 radiusA, vec3 centerB, f32 radiusB) {
     return aabbOverlap(aabbFromSphere(centerA, radiusA), aabbFromSphere(centerB, radiusB));
 }
 
+/// Sort-based uniform grid for the CPU solver path. Shapes are binned into every cell their
+/// AABB covers; (cell, body) entries are sorted so bodies sharing a cell are adjacent; each
+/// candidate gets an exact AABB test and is emitted only from the cell holding the minimum
+/// corner of the two boxes' intersection, so no pair is reported twice and none is lost.
+/// Planes pair with every non-static body whose bounds reach them. Static-static pairs and
+/// layer-filtered pairs are skipped. Scratch buffers are reused across calls.
+class GridBroadphase {
+public:
+    /// `margin` widens every body's bounds so shapes up to `margin` apart still pair up (the
+    /// solver's speculative contacts need them).
+    void findPairs(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes, f32 cellSize,
+                   std::vector<CandidatePair>& out, f32 margin = 0.f);
+
+private:
+    struct Entry {
+        u64 cell = 0;
+        u32 body = 0;
+    };
+    std::vector<aabb> m_bounds;
+    std::vector<u8> m_hasBounds;
+    std::vector<Entry> m_entries;
+    std::vector<u32> m_planeShapes;
+    std::vector<u32> m_large;
+};
+
 struct PairBufferSoA;
 
+/// Reusable working memory for the spatial-hash broadphase. Flat arrays only (counting-sort CSR
+/// cell table, open-addressing pair set, per-body plane-pair slots); they grow to the working
+/// size once and are reused, so a steady-state broadphase performs no heap allocations.
+struct BroadphaseScratch {
+    std::vector<u32> shapeEntryOffsets; ///< per shape: first (key, body) entry; shapeCount + 1
+    std::vector<u32> entryKeys;         ///< hash cell of each (shape, cell) occupancy
+    std::vector<u32> entryBodies;       ///< body of each (shape, cell) occupancy
+    std::vector<u32> cellStart;         ///< CSR offsets into cellBodies; tableSize + 1
+    std::vector<u32> cellCursor;        ///< scatter cursor / sorted-unique occupant count per cell
+    std::vector<u32> cellBodies;        ///< occupants grouped by cell (sorted, unique per cell)
+    std::vector<u32> cellSlotOffsets;   ///< first pair slot per cell
+    std::vector<u64> pairKeys;          ///< dedupe staging (packed canonical pairs)
+    std::vector<u64> pairKeysTemp;      ///< radix-sort ping-pong buffer
+    std::vector<u32> planeBodies;
+    std::vector<u32> dynamicBodies;
+    std::vector<u64> pairSet;           ///< open-addressing set of existing canonical pair keys
+    std::vector<CandidatePair> planePairs; ///< dynamicCount x planeCount slots
+    std::vector<u32> planePairCounts;      ///< valid plane pairs per dynamic body
+};
+
 /// Job-safe broadphase: parallel shape→cell + per-cell pair generation into reusable SoA slots.
+/// The overload without `scratch` uses a thread-local scratch.
 void runBroadphaseIntoBuffer(
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes,
     const SpatialHashParams& params,
     PairBufferSoA& buffer);
+void runBroadphaseIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    PairBufferSoA& buffer,
+    BroadphaseScratch& scratch);
 
 /// Job-safe 2D broadphase into reusable SoA pair slots.
 void runBroadphase2DIntoBuffer(
@@ -851,6 +918,12 @@ void runBroadphase2DIntoBuffer(
     const CollisionShapeSoA& shapes,
     const SpatialHashParams& params,
     PairBufferSoA& buffer);
+void runBroadphase2DIntoBuffer(
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    const SpatialHashParams& params,
+    PairBufferSoA& buffer,
+    BroadphaseScratch& scratch);
 
 /// Why broadphase pair refine would early-out (B4.2 deepen follow-up pass).
 enum class RefineBroadphaseRejectReason : u8 {

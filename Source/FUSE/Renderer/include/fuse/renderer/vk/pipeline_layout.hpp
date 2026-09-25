@@ -9,6 +9,8 @@
 
 namespace fuse::renderer {
 
+struct ShaderReflection;
+
 struct PushConstantRangeDesc {
     u32 offset = 0;
     u32 size = 0;
@@ -41,6 +43,14 @@ class PipelineLayout {
 public:
     static std::unique_ptr<PipelineLayout> create(VulkanDevice& device,
                                                   const PipelineLayoutDesc& desc = {});
+
+    /// WP-0.5: layout from shader reflection (merge stages with mergeShaderReflection first). Creates
+    /// and owns one VkDescriptorSetLayout per set index in [0, reflection.setCount()) (empty layouts
+    /// fill holes) plus one push-constant range [0, pushConstantBytes) for all reflected stages.
+    /// Runtime-sized arrays (count 0) are rejected: pass a bindless layout through `create` instead.
+    static std::unique_ptr<PipelineLayout> createFromReflection(VulkanDevice& device,
+                                                                const ShaderReflection& reflection,
+                                                                const char* debugName = nullptr);
     ~PipelineLayout();
 
     PipelineLayout(const PipelineLayout&) = delete;
@@ -51,10 +61,18 @@ public:
 
     void* nativeHandle() const;
 
+    /// VkDescriptorSetLayout of `set` for layouts made by createFromReflection (nullptr otherwise or
+    /// when out of range).
+    void* setLayoutHandle(u32 set) const;
+    u32 ownedSetLayoutCount() const { return static_cast<u32>(m_ownedSetLayouts.size()); }
+
 private:
     PipelineLayout() = default;
     bool initialize(VulkanDevice& device, const PipelineLayoutDesc& desc);
+    bool initializeFromReflection(VulkanDevice& device, const ShaderReflection& reflection, const char* debugName);
     void shutdown();
+
+    std::vector<void*> m_ownedSetLayouts;
 
     VulkanDevice* m_device = nullptr;
     PipelineLayoutInfo m_info;

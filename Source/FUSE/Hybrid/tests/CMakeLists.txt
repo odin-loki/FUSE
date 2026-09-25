@@ -47,6 +47,12 @@ if(FUSE_BUILD_VULKAN)
     target_link_libraries(fuse_hybrid_vulkan_presentable PRIVATE fuse_hybrid fuse_core)
     add_test(NAME fuse_hybrid_vulkan_presentable COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh" "$<TARGET_FILE:fuse_hybrid_vulkan_presentable>")
 
+    # B2.11 3.5 follow-up: HybridComposer::render steady-state heap allocations.
+    add_executable(fuse_b2_hybrid_alloc_budget test_b2_hybrid_alloc_budget.cpp)
+    target_link_libraries(fuse_b2_hybrid_alloc_budget PRIVATE fuse_hybrid fuse_core)
+    add_test(NAME fuse_b2_hybrid_alloc_budget COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh" "$<TARGET_FILE:fuse_b2_hybrid_alloc_budget>")
+    list(APPEND _fuse_hybrid_vulkan_icd_tests fuse_b2_hybrid_alloc_budget)
+
     add_executable(fuse_placeholder_renderer_retirement test_placeholder_renderer_retirement.cpp)
     target_link_libraries(fuse_placeholder_renderer_retirement PRIVATE fuse_hybrid fuse_core)
     add_test(NAME fuse_placeholder_renderer_retirement COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh" "$<TARGET_FILE:fuse_placeholder_renderer_retirement>")

@@ -91,7 +91,10 @@ void testResourceManagerBuffersAndTextures() {
     bufferDesc.usage = fuse::renderer::BufferUsage::Storage;
     bufferDesc.memoryUsage = fuse::renderer::MemoryUsage::CpuToGpu;
 
-    const u8 payload[4] = {1, 2, 3, 4};
+    // createBuffer copies desc.size bytes from initialData: the payload must cover the
+    // whole buffer (a 4-byte array here was an ASan stack-buffer-overflow).
+    u8 payload[256] = {1, 2, 3, 4};
+    static_assert(sizeof(payload) == 256, "payload must match bufferDesc.size");
     const fuse::renderer::BufferHandle buffer =
         resources.createBuffer(bufferDesc, payload);
     fuse::renderer::BufferDesc indirectDesc{};

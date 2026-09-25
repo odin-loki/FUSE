@@ -1,0 +1,16 @@
+#usda 1.0
+(
+    customLayerData = {
+        string lightspeed_game_name = "ff_lit"
+        string lightspeed_layer_type = "replacement"
+    }
+    defaultPrim = "RootNode"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+# RL-3.4 fixture (FUSE-native mod, fuse-relight/mods/lit_conf): no replacements, only an rtx.conf. As an option layer
+# above lit_lights' it turns light replacements off, so lit_lights' light replace / delete / attach do not apply.
+def Xform "RootNode"
+{
+}

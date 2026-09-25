@@ -1,0 +1,22 @@
+#usda 1.0
+(
+    subLayers = [
+        @./base.usd@
+    ]
+)
+
+# RL-3.1 fixture: reference list ops across the layer stack. base.usd authors [b, c] explicitly; this layer
+# prepends a, appends d and deletes c. Result (strongest first): a, b, d.
+over "RootNode"
+{
+    over "meshes"
+    {
+        over "mesh_00000000000000E1" (
+            prepend references = @./assets/a.usd@
+            append references = @./assets/d.usd@
+            delete references = @./assets/c.usd@
+        )
+        {
+        }
+    }
+}

@@ -1,0 +1,427 @@
+#version 460
+/*
+* Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+*
+* Permission is hereby granted, free of charge, to any person obtaining a
+* copy of this software and associated documentation files (the "Software"),
+* to deal in the Software without restriction, including without limitation
+* the rights to use, copy, modify, merge, publish, distribute, sublicense,
+* and/or sell copies of the Software, and to permit persons to whom the
+* Software is furnished to do so, subject to the following conditions:
+*
+* The above copyright notice and this permission notice shall be included in
+* all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+* THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+* DEALINGS IN THE SOFTWARE.
+*/
+// Modifications Copyright (c) 2026 FUSE contributors (MIT)
+// Ported from dxvk-remix
+// src/dxvk/shaders/rtx/pass/particles/particle_system_{spawn,evolve,generate_geometry}.comp.slang@0867d3c
+
+// FUSE Relight RL-3.6: the particle passes, GLSL twin of the kernels in particle_kernels.hpp. Compiled three times:
+//   PARTICLE_PASS 0  relight_particle_spawn      (SpawnKernel)
+//   PARTICLE_PASS 1  relight_particle_evolve     (EvolveKernel)
+//   PARTICLE_PASS 2  relight_particle_billboard  (BillboardKernel)
+// Modifications (FUSE): GLSL, one source for the three passes; see particle_kernels.hpp for the list.
+
+#extension GL_GOOGLE_include_directive : require
+#include "particle_common.glsl"
+
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+#ifndef PARTICLE_PASS
+#error "PARTICLE_PASS must be 0 (spawn), 1 (evolve) or 2 (billboard)"
+#endif
+
+#if PARTICLE_PASS == 0
+
+// SlotRandom: (slot, frame, system seed) -> [0, 1).
+uint g_seed;
+uint g_frame;
+uint g_system;
+float nextRandom() {
+    float r = unorm23ToFloat(uintHash3(g_seed, g_frame, g_system));
+    g_seed += 1u;
+    return r;
+}
+
+Particle respawn(FrameConstants c, uint slot, SpawnContext ctx) {
+    SystemDesc d = c.desc;
+    g_seed = slot;
+    g_frame = c.frameIdx;
+    g_system = c.systemSeed;
+    float r0 = nextRandom();
+    float r1 = nextRandom();
+    float r2 = nextRandom();
+    float sum = r0 + r1 + r2;
+    vec3 bary = sum > 0.0 ? vec3(saturatef(r0 / sum), saturatef(r1 / sum), saturatef(r2 / sum)) : vec3(1.0, 0.0, 0.0);
+    precise float triF = nextRandom() * float(ctx.triangleCount);
+    uint tri = uint(triF);
+    tri = tri < ctx.triangleCount ? tri : ctx.triangleCount - 1u;
+
+    vec3 pos[3];
+    vec3 prev[3];
+    bool hasColors = (ctx.flags & kSpawnHasColors) != 0u;
+    bool hasUv = (ctx.flags & kSpawnHasTexcoords) != 0u;
+    vec4 color = hasColors ? vec4(0.0) : vec4(1.0);
+    float uv[4] = float[4](0.0, 0.0, 1.0, 1.0);
+    float baryW[3] = float[3](bary.x, bary.y, bary.z);
+    for (uint i = 0u; i < 3u; ++i) {
+        uint index = indices[ctx.indexOffset + tri * 3u + i];
+        uint v = ctx.vertexOffset + index;
+        uint pv = ctx.prevVertexOffset + index;
+        pos[i] = vec3(positions[v * 3u], positions[v * 3u + 1u], positions[v * 3u + 2u]);
+        prev[i] = vec3(positions[pv * 3u], positions[pv * 3u + 1u], positions[pv * 3u + 2u]);
+        if (hasColors) {
+            color = color + unpackUnorm4x8f(colors[v]) * baryW[i];
+        }
+        if (hasUv && (d.flags & kFlagUseSpawnTexcoords) != 0u) {
+            float tu = texcoords[v * 2u];
+            float tv = texcoords[v * 2u + 1u];
+            if (i == 0u) {
+                uv[0] = tu;
+                uv[1] = tv;
+                uv[2] = tu;
+                uv[3] = tv;
+            } else {
+                uv[0] = minf(uv[0], tu);
+                uv[1] = minf(uv[1], tv);
+                uv[2] = maxf(uv[2], tu);
+                uv[3] = maxf(uv[3], tv);
+            }
+        }
+    }
+    float randSeed = nextRandom();
+    vec3 localPos = pos[0] * bary.x + pos[1] * bary.y + pos[2] * bary.z;
+    vec3 localPrev = prev[0] * bary.x + prev[1] * bary.y + prev[2] * bary.z;
+    vec3 prevWorld = transform34(ctx.prevObjectToWorld, localPrev, 1.0);
+    vec3 world = transform34(ctx.objectToWorld, localPos, 1.0);
+    vec3 spawnVelocity = (world - prevWorld) * c.invDeltaTimeSecs;
+
+    vec3 localNormal = cross3(safeNormalize3(pos[1] - pos[0], vec3(1.0, 0.0, 0.0)), safeNormalize3(pos[2] - pos[0], vec3(0.0, 1.0, 0.0)));
+    vec3 worldNormal = safeNormalize3(transform34(ctx.objectToWorld, localNormal, 0.0), vec3(0.0, 0.0, 1.0));
+    float cosCone = pcos(d.initialVelocityConeAngleDegrees * kDegToRad);
+    float u0 = nextRandom();
+    float u1 = nextRandom();
+    vec3 dir = sampleDirectionInCone(worldNormal, cosCone, u0, u1);
+    vec3 velocity = spawnVelocity * d.initialVelocityFromMotion + dir * (d.initialVelocityFromNormal * c.sceneScale);
+    vec3 spawnPos = vec3(lerpp(world.x, prevWorld.x, randSeed), lerpp(world.y, prevWorld.y, randSeed),
+                         lerpp(world.z, prevWorld.z, randSeed));
+
+    Particle q;
+    q.position[0] = spawnPos.x;
+    q.position[1] = spawnPos.y;
+    q.position[2] = spawnPos.z;
+    q.color = packUnorm4x8f(color);
+    q.velocity[0] = velocity.x;
+    q.velocity[1] = velocity.y;
+    q.velocity[2] = velocity.z;
+    q.randSeed = randSeed;
+    q.uvMinMax[0] = uv[0];
+    q.uvMinMax[1] = uv[1];
+    q.uvMinMax[2] = uv[2];
+    q.uvMinMax[3] = uv[3];
+    q.rotation = (randSeed * 2.0 - 1.0) * (d.initialRotationDeviationDegrees * kDegToRad);
+    q.timeToLive = initialTimeToLive(d, randSeed);
+    q.state = kParticleAlive;
+    q.pad = 0u;
+    return q;
+}
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    FrameConstants c = constants[push.systemIndex];
+    if (i >= c.spawnParticleCount) {
+        return;
+    }
+    uint slot = (i + c.spawnParticleOffset) % c.desc.maxNumParticles;
+    Particle q = particles[c.particleBase + slot];
+    if (!isDead(q) && !isSleeping(q)) {
+        return;
+    }
+    SpawnContext ctx = spawnContexts[spawnMap[c.spawnMapBase + i]];
+    if (ctx.triangleCount == 0u) {
+        return;
+    }
+    particles[c.particleBase + slot] = respawn(c, slot, ctx);
+}
+
+#elif PARTICLE_PASS == 1
+
+vec3 attractorAcceleration(FrameConstants c, vec3 pos) {
+    SystemDesc d = c.desc;
+    vec3 toAttractor = loadVec3(d.attractorPosition) - pos;
+    float distSq = maxf(dot3(toAttractor, toAttractor), 1e-4);
+    float scaledRadius = d.attractorRadius * c.sceneScale;
+    float invRadius = 1.0 / maxf(scaledRadius, 1e-3);
+    float falloff = 1.0 / (1.0 + distSq * invRadius * invRadius);
+    return toAttractor * ((1.0 / sqrt(distSq)) * (d.attractorForce * c.sceneScale * falloff));
+}
+
+void evolve(FrameConstants c, inout Particle q) {
+    SystemDesc d = c.desc;
+    float dt = c.deltaTimeSecs;
+    vec3 v = loadVec3(q.velocity);
+    vec3 pos = loadVec3(q.position);
+    if ((d.flags & kFlagUseTurbulence) != 0u) {
+        precise float freq = d.turbulenceFrequency * c.sceneScale;
+        precise vec3 np = pos * freq;
+        precise float nt = c.absoluteTimeSecs * freq;
+        vec3 curl = curlOfValueNoise(np, nt);
+        precise vec3 turbulent = v + curl * (d.turbulenceForce * c.sceneScale * dt);
+        v = turbulent;
+    }
+    v = v + loadVec3(c.upDirection) * (d.gravityForce * c.sceneScale * dt);
+    v = v + attractorAcceleration(c, pos) * dt;
+    v = v * maxf(1.0 - d.dragCoefficient * dt, 0.0);
+    if ((d.flags & kFlagRestrictVelocityX) != 0u) {
+        v.x = 0.0;
+    }
+    if ((d.flags & kFlagRestrictVelocityY) != 0u) {
+        v.y = 0.0;
+    }
+    if ((d.flags & kFlagRestrictVelocityZ) != 0u) {
+        v.z = 0.0;
+    }
+    vec3 maxV = particleMaxVelocity(d, c.animationBase, q) * c.sceneScale;
+    v.x = maxV.x > 0.0 ? clampf(v.x, -maxV.x, maxV.x) : v.x;
+    v.y = maxV.y > 0.0 ? clampf(v.y, -maxV.y, maxV.y) : v.y;
+    v.z = maxV.z > 0.0 ? clampf(v.z, -maxV.z, maxV.z) : v.z;
+    pos = pos + v * dt;
+    q.velocity[0] = v.x;
+    q.velocity[1] = v.y;
+    q.velocity[2] = v.z;
+    q.position[0] = pos.x;
+    q.position[1] = pos.y;
+    q.position[2] = pos.z;
+    if ((d.flags & kFlagEnableMotionTrail) == 0u) {
+        if ((d.flags & kFlagAlignParticlesToVelocity) != 0u) {
+            q.rotation = 0.0;
+        } else {
+            float r = q.rotation + particleRotationSpeed(d, c.animationBase, q) * dt;
+            q.rotation = r - kTwoPi * trunc(r / kTwoPi);
+        }
+    }
+}
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    FrameConstants c = constants[push.systemIndex];
+    if (i >= c.simulateParticleCount) {
+        return;
+    }
+    uint slot = (i + c.particleTailOffset) % c.desc.maxNumParticles;
+    Particle q = particles[c.particleBase + slot];
+    if (isDead(q)) {
+        return;
+    }
+    if (!isSleeping(q)) {
+        evolve(c, q);
+    }
+    precise float ttl = q.timeToLive - c.deltaTimeSecs;
+    q.timeToLive = ttl;
+    precise float retireAt = initialTimeToLive(c.desc, q.randSeed) - c.desc.maxTimeToLive;
+    if (ttl <= retireAt) {
+        q.state = kParticleDead;
+        atomicAdd(counters[c.counterIndex], 1u);
+    }
+    particles[c.particleBase + slot] = q;
+}
+
+#elif PARTICLE_PASS == 2
+
+void clearVertices(FrameConstants c, uint i) {
+    for (uint k = 0u; k < c.verticesPerParticle; ++k) {
+        ParticleVertex z;
+        z.position[0] = 0.0;
+        z.position[1] = 0.0;
+        z.position[2] = 0.0;
+        z.color = 0u;
+        z.texcoord[0] = 0.0;
+        z.texcoord[1] = 0.0;
+        vertices[c.vertexBase + i * c.verticesPerParticle + k] = z;
+    }
+}
+
+vec2 billboardSinCos(vec3 velocity, vec3 right, vec3 up) {
+    float len = length3(velocity);
+    if (len < 1e-6) {
+        return vec2(0.0, 1.0);
+    }
+    vec3 v = velocity * (1.0 / len);
+    float x = -dot3(v, right);
+    float y = dot3(v, up);
+    float l = sqrt(x * x + y * y);
+    return l > 0.0 ? vec2(x / l, y / l) : vec2(0.0, 1.0);
+}
+
+vec3 projectOntoPlaneDir(vec3 v, vec3 n, vec3 fallback) {
+    vec3 pr = v - n * dot3(v, n);
+    float l2 = dot3(pr, pr);
+    return l2 > 1e-12 ? pr * (1.0 / sqrt(l2)) : fallback;
+}
+
+vec2 randomFlip(uint mode, float seed) {
+    vec2 f = vec2(1.0, 1.0);
+    if (mode == kFlipHorizontal) {
+        f.x = seed < 0.5 ? -1.0 : 1.0;
+    } else if (mode == kFlipVertical) {
+        f.y = seed < 0.5 ? -1.0 : 1.0;
+    } else if (mode == kFlipBoth) {
+        if (seed < 0.25) {
+            f = vec2(-1.0, -1.0);
+        } else if (seed < 0.5) {
+            f.y = -1.0;
+        } else if (seed < 0.75) {
+            f.x = -1.0;
+        }
+    }
+    return f;
+}
+
+float chopMantissa(float v) { return uintBitsToFloat(floatBitsToUint(v) & 0xFFFFFFF0u); }
+
+void billboardBasis(FrameConstants c, vec3 pos, out vec3 right, out vec3 up) {
+    vec3 camRight = vec3(c.viewToWorld[0], c.viewToWorld[1], c.viewToWorld[2]);
+    vec3 camUp = vec3(c.viewToWorld[4], c.viewToWorld[5], c.viewToWorld[6]);
+    vec3 camPos = vec3(c.viewToWorld[12], c.viewToWorld[13], c.viewToWorld[14]);
+    vec3 worldUp = safeNormalize3(loadVec3(c.upDirection), vec3(0.0, 1.0, 0.0));
+    uint type = c.desc.billboardType;
+    if (type == kBillboardFaceCameraUpAxisLocked) {
+        vec3 toCam = safeNormalize3(camPos - pos, vec3(0.0, 0.0, 1.0));
+        vec3 plane = projectOntoPlaneDir(toCam, worldUp, vec3(0.0, 0.0, 1.0));
+        right = safeNormalize3(cross3(plane, worldUp), vec3(1.0, 0.0, 0.0));
+        up = worldUp;
+    } else if (type == kBillboardFaceCameraPosition) {
+        vec3 n = safeNormalize3(pos - camPos, vec3(0.0, 0.0, 1.0));
+        vec3 upInPlane = projectOntoPlaneDir(worldUp, n, vec3(0.0, 0.0, 1.0));
+        right = safeNormalize3(cross3(upInPlane, n), vec3(1.0, 0.0, 0.0));
+        up = upInPlane;
+    } else if (type == kBillboardFaceWorldUp) {
+        vec3 refV = abs(worldUp.z) < 0.98 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+        vec3 xAxis = projectOntoPlaneDir(refV, worldUp, vec3(1.0, 0.0, 0.0));
+        right = xAxis;
+        up = safeNormalize3(cross3(worldUp, xAxis), vec3(0.0, 0.0, 1.0));
+    } else {
+        right = camRight;
+        up = camUp;
+    }
+}
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    FrameConstants c = constants[push.systemIndex];
+    SystemDesc d = c.desc;
+    if (i >= d.maxNumParticles) {
+        return;
+    }
+    if (i >= c.particleCount) {
+        clearVertices(c, i);
+        return;
+    }
+    uint slot = (i + c.particleTailOffset) % d.maxNumParticles;
+    Particle q = particles[c.particleBase + slot];
+    if (isDead(q) || isSleeping(q)) {
+        clearVertices(c, i);
+        return;
+    }
+    vec2 size = particleSize(d, c.animationBase, q) * c.sceneScale;
+    vec4 color = particleColor(d, c.animationBase, q);
+    if (color.w < c.resolveTransparencyThreshold || maxf(size.x, size.y) < 0.1 * c.sceneScale) {
+        clearVertices(c, i);
+        return;
+    }
+    vec3 pos = loadVec3(q.position);
+    vec3 right, up;
+    billboardBasis(c, pos, right, up);
+
+    {
+        vec4 center = transform44(c.prevWorldToProjection, pos);
+        vec4 offset = transform44(c.prevWorldToProjection, pos + right * size.x + up * size.y);
+        float dx = (offset.x / offset.w - center.x / center.w) * float(c.renderingWidth);
+        float dy = (offset.y / offset.w - center.y / center.w) * float(c.renderingHeight);
+        if (dx * dx + dy * dy <= c.minParticleSize * c.minParticleSize) {
+            clearVertices(c, i);
+            return;
+        }
+    }
+
+    vec3 vel = loadVec3(q.velocity);
+    float rs = 0.0, rc = 1.0;
+    if ((d.flags & kFlagAlignParticlesToVelocity) != 0u) {
+        vec2 sc = billboardSinCos(vel, right, up);
+        rs = sc.x;
+        rc = sc.y;
+    } else {
+        rs = psin(q.rotation);
+        rc = pcos(q.rotation);
+    }
+
+    uint rows = d.spriteSheetRows > 1u ? d.spriteSheetRows : 1u;
+    uint cols = d.spriteSheetCols > 1u ? d.spriteSheetCols : 1u;
+    uint frames = rows * cols;
+    uint frame = 0u;
+    if (frames > 1u) {
+        if (d.spriteSheetMode == kSpriteSheetLifetime) {
+            float lifeFrac = 1.0 - normalizedLife(d, q);
+            float fi = floor(lifeFrac * float(frames));
+            frame = fi < 0.0 ? 0u : uint(fi);
+        } else if (d.spriteSheetMode == kSpriteSheetRandom) {
+            frame = uint(q.randSeed * float(frames));
+        }
+        frame = frame < frames - 1u ? frame : frames - 1u;
+    }
+    float cellW = (q.uvMinMax[2] - q.uvMinMax[0]) / float(cols);
+    float cellH = (q.uvMinMax[3] - q.uvMinMax[1]) / float(rows);
+    float frameU = q.uvMinMax[0] + float(frame % cols) * cellW;
+    float frameV = q.uvMinMax[1] + float(frame / cols) * cellH;
+    vec2 flip = randomFlip(d.randomFlipAxis, q.randSeed);
+    uint colorEnc = packUnorm4x8f(vec4(color.z, color.y, color.x, color.w));
+    bool trail = (d.flags & kFlagEnableMotionTrail) != 0u;
+
+    for (uint k = 0u; k < c.verticesPerParticle; ++k) {
+        float ox = c.vertexOffsets[k * 2u];
+        float oy = c.vertexOffsets[k * 2u + 1u];
+        vec3 worldOffset;
+        if (trail) {
+            float mx = -dot3(vel, right);
+            float my = -dot3(vel, up);
+            float speed = sqrt(mx * mx + my * my);
+            float dirX = speed > 0.0 ? mx / speed : 0.0;
+            float dirY = speed > 0.0 ? my / speed : 1.0;
+            float orthoX = -dirY;
+            float orthoY = dirX;
+            float width = ox * size.x;
+            float len = k >= 4u ? speed * d.motionTrailMultiplier * c.deltaTimeSecs : 0.0;
+            float height = oy * size.y + len;
+            float px = width * orthoX + height * dirX;
+            float py = width * orthoY + height * dirY;
+            worldOffset = right * px + up * py;
+        } else {
+            float lx = ox * size.x;
+            float ly = oy * size.y;
+            float rx = rc * lx - rs * ly;
+            float ry = rs * lx + rc * ly;
+            worldOffset = right * rx + up * ry;
+        }
+        vec3 vp = pos + worldOffset;
+        ParticleVertex o;
+        o.position[0] = chopMantissa(vp.x);
+        o.position[1] = chopMantissa(vp.y);
+        o.position[2] = chopMantissa(vp.z);
+        o.color = colorEnc;
+        float uvx = ox;
+        float uvy = trail ? oy : -oy;
+        o.texcoord[0] = (uvx * flip.x + 0.5) * cellW + frameU;
+        o.texcoord[1] = (uvy * flip.y + 0.5) * cellH + frameV;
+        vertices[c.vertexBase + i * c.verticesPerParticle + k] = o;
+    }
+}
+
+#endif

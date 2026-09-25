@@ -44,6 +44,22 @@ target_include_directories(fuse_net
 target_link_libraries(fuse_net PUBLIC fuse_ecs fuse_core)
 target_compile_features(fuse_net PUBLIC cxx_std_17)
 
+# ENet backend — vendored ENet 1.3.7 (MIT) under Engine/lib/enet (target fuse_enet).
+option(FUSE_NET_WITH_ENET "Build the ENet UDP transport backend for fuse_net" ON)
+set(_fuse_enet_dir "${CMAKE_SOURCE_DIR}/Engine/lib/enet")
+set(FUSE_NET_HAS_ENET OFF)
+if(FUSE_NET_WITH_ENET AND EXISTS "${_fuse_enet_dir}/include/enet/enet.h")
+    if(NOT TARGET fuse_enet)
+        add_subdirectory("${_fuse_enet_dir}" "${CMAKE_BINARY_DIR}/fuse_vendor/enet" EXCLUDE_FROM_ALL)
+    endif()
+    target_link_libraries(fuse_net PRIVATE fuse_enet)
+    target_compile_definitions(fuse_net PUBLIC FUSE_NET_HAS_ENET=1)
+    set(FUSE_NET_HAS_ENET ON)
+    message(STATUS "FUSE: fuse_net ENet backend enabled (${_fuse_enet_dir})")
+else()
+    message(STATUS "FUSE: fuse_net ENet backend disabled — ENetTransport is a stub")
+endif()
+
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)
 endif()

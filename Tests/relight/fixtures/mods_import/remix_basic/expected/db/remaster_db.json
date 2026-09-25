@@ -1,0 +1,115 @@
+{
+  "schema": "fuse.remaster.db-shim/1",
+  "game_id": "fixture_game",
+  "original_asset": [
+    {
+      "oaid": "3e05a8cf-95e2-5941-a26f-bb3fdc858e59",
+      "kind": "texture",
+      "game_id": "fixture_game",
+      "first_key": "remix.tex:3F1A2B3C4D5E6F70"
+    },
+    {
+      "oaid": "6c54764c-bf33-5ff3-b650-25487d70c66e",
+      "kind": "light",
+      "game_id": "fixture_game",
+      "first_key": "remix.light:1D2C3B4A59687706"
+    },
+    {
+      "oaid": "77929c71-c2b5-5ea3-a62f-b928e182f251",
+      "kind": "mesh",
+      "game_id": "fixture_game",
+      "first_key": "remix.geom.asset:00000000000A11CE"
+    },
+    {
+      "oaid": "b64cf7b6-c6ce-5acb-935a-93470ae40567",
+      "kind": "mesh",
+      "game_id": "fixture_game",
+      "first_key": "remix.geom.asset:7E2C8A4F1B3D5E60"
+    },
+    {
+      "oaid": "e791a383-e994-5fc7-a57b-d5d165f435e6",
+      "kind": "light",
+      "game_id": "fixture_game",
+      "first_key": "remix.light:0A0B0C0D0E0F1011"
+    }
+  ],
+  "hash_key": [
+    {
+      "algo": "remix.geom.asset",
+      "value": "00000000000A11CE",
+      "oaid": "77929c71-c2b5-5ea3-a62f-b928e182f251",
+      "rule_id": "4A0F5C58A6691050",
+      "kind": "mesh"
+    },
+    {
+      "algo": "remix.geom.asset",
+      "value": "7E2C8A4F1B3D5E60",
+      "oaid": "b64cf7b6-c6ce-5acb-935a-93470ae40567",
+      "rule_id": "4A0F5C58A6691050",
+      "kind": "mesh"
+    },
+    {
+      "algo": "remix.light",
+      "value": "0A0B0C0D0E0F1011",
+      "oaid": "e791a383-e994-5fc7-a57b-d5d165f435e6",
+      "rule_id": null,
+      "kind": "light"
+    },
+    {
+      "algo": "remix.light",
+      "value": "1D2C3B4A59687706",
+      "oaid": "6c54764c-bf33-5ff3-b650-25487d70c66e",
+      "rule_id": null,
+      "kind": "light"
+    },
+    {
+      "algo": "remix.tex",
+      "value": "3F1A2B3C4D5E6F70",
+      "oaid": "3e05a8cf-95e2-5941-a26f-bb3fdc858e59",
+      "rule_id": null,
+      "kind": "texture"
+    }
+  ],
+  "replacement": [
+    {
+      "oaid": "3e05a8cf-95e2-5941-a26f-bb3fdc858e59",
+      "variant": "default",
+      "tier": "remix",
+      "poco_id": "mod/fixture_game/remix_basic/mat_3F1A2B3C4D5E6F70",
+      "kind": "material",
+      "source": "mod/fixture_game/remix_basic"
+    },
+    {
+      "oaid": "6c54764c-bf33-5ff3-b650-25487d70c66e",
+      "variant": "default",
+      "tier": "remix",
+      "poco_id": "mod/fixture_game/remix_basic/light_1D2C3B4A59687706",
+      "kind": "light",
+      "source": "mod/fixture_game/remix_basic"
+    },
+    {
+      "oaid": "77929c71-c2b5-5ea3-a62f-b928e182f251",
+      "variant": "default",
+      "tier": "remix",
+      "poco_id": "mod/fixture_game/remix_basic/mesh_00000000000A11CE",
+      "kind": "relight_replacement",
+      "source": "mod/fixture_game/remix_basic"
+    },
+    {
+      "oaid": "b64cf7b6-c6ce-5acb-935a-93470ae40567",
+      "variant": "default",
+      "tier": "remix",
+      "poco_id": "mod/fixture_game/remix_basic/mesh_7E2C8A4F1B3D5E60",
+      "kind": "relight_replacement",
+      "source": "mod/fixture_game/remix_basic"
+    },
+    {
+      "oaid": "e791a383-e994-5fc7-a57b-d5d165f435e6",
+      "variant": "default",
+      "tier": "remix",
+      "poco_id": "mod/fixture_game/remix_basic/sphereLight_0A0B0C0D0E0F1011",
+      "kind": "light",
+      "source": "mod/fixture_game/remix_basic"
+    }
+  ]
+}

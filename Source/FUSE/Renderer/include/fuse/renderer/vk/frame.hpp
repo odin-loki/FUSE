@@ -27,7 +27,12 @@ struct FrameSyncData {
     void* timelineSemaphore = nullptr; // VkSemaphore — VK_SEMAPHORE_TYPE_TIMELINE
     u64 timelineValue = 0;
     bool fenceSignaled = false;
+    bool fenceSubmitted = false;       // inFlightFence attached to a real vkQueueSubmit not yet waited
+    void* pendingTransferQueue = nullptr; // VkQueue — fence-less aux submit from this slot's pool
+    void* pendingComputeQueue = nullptr;  // VkQueue — fence-less aux submit from this slot's pool
     void* timestampQueryPool = nullptr; // VkQueryPool — TIMESTAMP, 2 queries (begin/end)
+    bool timestampsPending = false;     // Queries recorded into the slot command buffer, not yet submitted
+    bool timestampsRecorded = false;    // Queries submitted at least once (reads before are invalid)
     FrameCommandData commands{};
 };
 

@@ -11,6 +11,7 @@ This is the product documentation. Start here; then pick a guide.
 | [Programmer guide](programmer-guide.md) | Unified API, converters, demo wiring pattern |
 | [Building](building.md) | CMake options, platforms, sanitizers, editor |
 | [Architecture](architecture.md) | Process model, jobs, worlds, handles |
+| [Compute kernels](compute-kernels.md) | Single-source CPU/CUDA kernels, backends, profiling, porting guide |
 | [Modules](modules.md) | AI, FX, cinematics, mechanics, adventure |
 | [Editor](editor.md) | Qt 6 shell, command queue, desktop policy |
 | [Scripting](scripting.md) | Script host, callbacks, Lua-ready VM |
@@ -19,6 +20,7 @@ This is the product documentation. Start here; then pick a guide.
 | [Coding standards](coding-standards.md) | Language, ownership, threading rules |
 | [Roadmap](roadmap.md) | Track A / Track B and current gates |
 | [Heritage](heritage.md) | License provenance |
+| [World extract](../Tools/FUSE/WorldExtract/README.md) | World-model video (Matrix-Game 2.0) to a 3D world as FUSE assets |
 
 Contributing process: [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 

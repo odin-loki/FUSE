@@ -14,6 +14,7 @@ set(FUSE_AUDIO_PUBLIC_HEADERS
     include/fuse/audio/math.hpp
     include/fuse/audio/occlusion.hpp
     include/fuse/audio/reverb_cuda.hpp
+    include/fuse/audio/reverb_fft_kernel.hpp
     include/fuse/audio/reverb_zones.hpp
     include/fuse/audio/spatial_mixer.hpp
 )
@@ -48,12 +49,20 @@ target_include_directories(fuse_audio
 target_link_libraries(fuse_audio PUBLIC fuse_core)
 target_compile_features(fuse_audio PUBLIC cxx_std_17)
 
+# Single-source "reverb_fft" / "reverb_cmac" kernels (docs/compute-kernels.md): CUDA device mirror when
+# the toolkit is found (CUDA::cudart and FUSE_HAS_CUDA come through fuse_core).
+if(FUSE_CUDA_BACKEND)
+    target_sources(fuse_audio PRIVATE kernels/reverb_fft.cu)
+    set_target_properties(fuse_audio PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+endif()
+
 option(FUSE_AUDIO_ENABLE_OPENAL "Link fuse_audio against OpenAL when available" ON)
 if(FUSE_AUDIO_ENABLE_OPENAL)
     find_package(OpenAL QUIET)
     if(OpenAL_FOUND)
         target_compile_definitions(fuse_audio PUBLIC FUSE_AUDIO_OPENAL=1)
         target_link_libraries(fuse_audio PUBLIC OpenAL::OpenAL)
+        set(FUSE_AUDIO_HAS_OPENAL ON)
         message(STATUS "FUSE: fuse_audio using system OpenAL")
     else()
         set(_FUSE_OPENAL_SOFT_DIR "${CMAKE_SOURCE_DIR}/Engine/lib/openal-soft")
@@ -67,6 +76,7 @@ if(FUSE_AUDIO_ENABLE_OPENAL)
             add_subdirectory("${_FUSE_OPENAL_SOFT_DIR}" "${CMAKE_BINARY_DIR}/openal-soft" EXCLUDE_FROM_ALL)
             target_compile_definitions(fuse_audio PUBLIC FUSE_AUDIO_OPENAL=1)
             target_link_libraries(fuse_audio PUBLIC OpenAL)
+            set(FUSE_AUDIO_HAS_OPENAL ON)
             message(STATUS "FUSE: fuse_audio using vendored openal-soft")
         else()
             message(STATUS "FUSE: OpenAL not found — fuse_audio uses null backend")

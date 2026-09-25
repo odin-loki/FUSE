@@ -1,0 +1,50 @@
+#version 460
+// RL-5.5 radiance denoiser: every pass of the single-source core (rdn_core.h has the algorithm), selected by
+// pc.pass; one invocation per pixel / stratum / pyramid texel (8 x 8 groups). GLSL twin of rdn.slang (primary);
+// CPU reference: include/fuse/renderer/denoise/rdn_kernel.hpp (RdnReference).
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// RdnPush (radiance_denoise.hpp), 64 bytes.
+layout(push_constant) uniform RdnPushBlock {
+    uint64_t frame;
+    uint64_t a0;
+    uint64_t a1;
+    uint64_t a2;
+    uint64_t a3;
+    uint64_t a4;
+    uint64_t a5;
+    uint pass;
+    uint stp;
+} pc;
+
+#define float2 vec2
+#define float3 vec3
+#define float4 vec4
+#define FUSE_RDN_FN
+#define FUSE_RDN_IN(T) T
+#define FUSE_RDN_INOUT(T) inout T
+
+layout(buffer_reference, std430, buffer_reference_align = 16) buffer RdnF4Ref { vec4 v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 8) readonly buffer RdnF2Ref { vec2 v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer RdnF1Ref { float v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer RdnU1Ref { uint v[]; };
+
+vec4 rdnLd4(uint64_t a, uint i) { return RdnF4Ref(a).v[i]; }
+void rdnSt4(uint64_t a, uint i, vec4 v) { RdnF4Ref(a).v[i] = v; }
+vec2 rdnLd2(uint64_t a, uint i) { return RdnF2Ref(a).v[i]; }
+float rdnLd1(uint64_t a, uint i) { return RdnF1Ref(a).v[i]; }
+uint rdnLdU(uint64_t a, uint i) { return RdnU1Ref(a).v[i]; }
+
+#include "rdn_core.h"
+
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer RdnFrameRef { RdnFrame f; };
+
+void main() {
+    RdnFrame F = RdnFrameRef(pc.frame).f;
+    rdnRun(F, pc.pass, pc.stp, pc.a0, pc.a1, pc.a2, pc.a3, pc.a4, pc.a5, gl_GlobalInvocationID.x,
+           gl_GlobalInvocationID.y);
+}

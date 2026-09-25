@@ -1,4 +1,4 @@
-name: MacOSX Build
+name: FUSE macOS Build
 on:
     push:
         branches: [development]

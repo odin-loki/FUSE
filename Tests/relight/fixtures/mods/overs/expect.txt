@@ -1,0 +1,14 @@
+prim /RootNode/meshes/mesh_0000000000000D01 type=Xform specifier=def active=true
+attr /RootNode/meshes/mesh_0000000000000D01.value = 2
+prim /RootNode/meshes/mesh_0000000000000D02 type=Xform specifier=def active=false
+# An inactive prim's subtree is not populated (UsdStage semantics).
+noprim /RootNode/meshes/mesh_0000000000000D02/geo
+children /RootNode/meshes/mesh_0000000000000D02
+prim /RootNode/meshes/mesh_0000000000000D03 type= specifier=over
+attr /RootNode/meshes/mesh_0000000000000D03.orphan = 1
+children /RootNode/meshes mesh_0000000000000D01 mesh_0000000000000D02 mesh_0000000000000D03
+# The Remix walk skips inactive prims; the over-only prim is still visited (upstream walks every active child).
+remix meshes 2
+replacement mesh 0000000000000D01 meshes=/RootNode/meshes/mesh_0000000000000D01/geo
+replacement mesh 0000000000000D03 meshes=
+nodiag any

@@ -1,0 +1,92 @@
+#usda 1.0
+(
+    customLayerData = {
+        dictionary cameraSettings = {
+            string boundCamera = "/OmniverseKit_Persp"
+        }
+        string lightspeed_game_name = "Fixture Game"
+        string lightspeed_layer_type = "replacement"
+        dictionary omni_layer = {
+            dictionary muteness = {
+            }
+        }
+    }
+    defaultPrim = "RootNode"
+    metersPerUnit = 1
+    subLayers = [
+        @./materials/materials.usd@
+    ]
+    upAxis = "Y"
+)
+
+# RL-3.1 fixture: laid out like a Remix Toolkit replacement layer. Mesh replacements reference asset files and bind
+# materials from a sublayered material library; preserveOriginalDrawCall, an attached light, a light replacement
+# and a legacy sphereLight_ name.
+over "RootNode"
+{
+    over "meshes"
+    {
+        over "mesh_7E2C8A4F1B3D5E60" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            int preserveOriginalDrawCall = 1
+            rel material:binding = </RootNode/Looks/mat_3F1A2B3C4D5E6F70>
+
+            def Xform "ref_crate" (
+                prepend references = @./assets/meshes/crate.usd@
+            )
+            {
+                double3 xformOp:rotateXYZ = (0, 90, 0)
+                double3 xformOp:scale = (1, 1, 1)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+            }
+
+            def SphereLight "attached_light" (
+                prepend apiSchemas = ["ShapingAPI"]
+            )
+            {
+                float inputs:intensity = 800
+                float inputs:radius = 0.25
+                double3 xformOp:translate = (0, 1.5, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+            }
+        }
+
+        over "mesh_00000000000A11CE"
+        {
+            over "mesh"
+            {
+                custom uniform bool remix_category:ignore = 1
+            }
+        }
+    }
+
+    over "Looks"
+    {
+        over "mat_3F1A2B3C4D5E6F70"
+        {
+            over "Shader"
+            {
+                float inputs:emissive_intensity = 3
+                bool inputs:enable_emission = 1
+            }
+        }
+    }
+
+    over "lights"
+    {
+        def DistantLight "light_1D2C3B4A59687706"
+        {
+            float inputs:angle = 0.53
+            color3f inputs:color = (1, 0.95, 0.9)
+            float inputs:intensity = 3
+        }
+
+        def SphereLight "sphereLight_0A0B0C0D0E0F1011"
+        {
+            float inputs:intensity = 40
+        }
+    }
+}

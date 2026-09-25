@@ -1,0 +1,8 @@
+{
+  "app": "ff_lit",
+  "description": "lit_lights + the FUSE-native lit_conf, whose rtx.conf layer sets rtx.enableReplacementLights = False: no light is replaced, deleted or attached.",
+  "mods": [
+    {"fixture": "lit_lights", "root": "remix"},
+    {"fixture": "lit_conf", "root": "fuse"}
+  ]
+}

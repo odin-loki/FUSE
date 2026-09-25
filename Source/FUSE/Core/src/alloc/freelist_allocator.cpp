@@ -1,6 +1,7 @@
 #include <fuse/alloc/freelist_allocator.hpp>
 
 #include <fuse/alloc/alloc_stats.hpp>
+#include <fuse/alloc/leak_detector.hpp>
 
 namespace fuse::alloc {
 
@@ -93,7 +94,7 @@ void* FreeListAllocator::alloc(AllocInfo info) {
     }
 
     const usize alignment = info.alignment == 0 ? 1u : info.alignment;
-    if (m_capacity < kMinBlock || info.size > m_capacity) {
+    if (!detail::isSupportedAlignment(alignment) || m_capacity < kMinBlock || info.size > m_capacity) {
         failAlloc();
         return nullptr;
     }
@@ -175,7 +176,11 @@ void* FreeListAllocator::alloc(AllocInfo info) {
 
             detail::recordBlockAlloc(m_stats, taken, m_capacity);
             notifyStats(m_name, m_stats);
-            return m_storage.data() + static_cast<usize>(headerPos) + kHeaderSize;
+            u8* payload = m_storage.data() + static_cast<usize>(headerPos) + kHeaderSize;
+            if constexpr (kLeakDetectorEnabled) {
+                LeakDetector::recordAlloc(payload, info.size, info.tag != nullptr ? info.tag : m_name);
+            }
+            return payload;
         }
 
         cur = nextFree;
@@ -229,11 +234,17 @@ void FreeListAllocator::free(void* ptr, usize /*size*/) {
 
     patchNextPrevSize(block);
     insertFree(block);
+    if constexpr (kLeakDetectorEnabled) {
+        LeakDetector::recordFree(ptr);
+    }
     detail::recordFree(m_stats, released);
     notifyStats(m_name, m_stats);
 }
 
 void FreeListAllocator::reset() {
+    if constexpr (kLeakDetectorEnabled) {
+        LeakDetector::releaseRange(m_storage.data(), m_storage.size());
+    }
     seedArena();
     m_stats.usedBytes = 0;
     notifyStats(m_name, m_stats);

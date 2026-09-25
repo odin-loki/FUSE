@@ -1,3 +1,4 @@
+#include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/project/cook_dependency_graph.hpp>
 #include <fuse/project/cook_job_graph.hpp>
@@ -147,21 +148,21 @@ void testClearResetsGraph() {
 }
 
 void testCookJobGraphTopologicalValidation() {
-    const std::string sourceA = writeTempFile("/tmp/fuse_b79_validate_a.obj", "# validate a\n");
-    const std::string sourceB = writeTempFile("/tmp/fuse_b79_validate_b.obj", "# validate b\n");
+    const std::string sourceA = writeTempFile(fuse::test::tempPath("fuse_b79_validate_a.obj"), "# validate a\n");
+    const std::string sourceB = writeTempFile(fuse::test::tempPath("fuse_b79_validate_b.obj"), "# validate b\n");
 
     fuse::project::CookManifest manifest;
 
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
     entryA.source_path = sourceA;
-    entryA.output_path = "/tmp/fuse_b79_validate_a.fusemesh";
+    entryA.output_path = fuse::test::tempPath("fuse_b79_validate_a.fusemesh");
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
     entryB.source_path = sourceB;
-    entryB.output_path = "/tmp/fuse_b79_validate_b.fusemesh";
+    entryB.output_path = fuse::test::tempPath("fuse_b79_validate_b.fusemesh");
     entryB.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryB);
 
@@ -180,29 +181,29 @@ void testCookJobGraphTopologicalValidation() {
 }
 
 void testCookJobGraphInvalidationBundle() {
-    const std::string sourceA = writeTempFile("/tmp/fuse_b79_bundle_a.obj", "# bundle a\n");
-    const std::string sourceB = writeTempFile("/tmp/fuse_b79_bundle_b.obj", "# bundle b\n");
-    const std::string sourceC = writeTempFile("/tmp/fuse_b79_bundle_c.obj", "# bundle c\n");
+    const std::string sourceA = writeTempFile(fuse::test::tempPath("fuse_b79_bundle_a.obj"), "# bundle a\n");
+    const std::string sourceB = writeTempFile(fuse::test::tempPath("fuse_b79_bundle_b.obj"), "# bundle b\n");
+    const std::string sourceC = writeTempFile(fuse::test::tempPath("fuse_b79_bundle_c.obj"), "# bundle c\n");
 
     fuse::project::CookManifest manifest;
 
     fuse::project::CookManifestEntry entryA;
     entryA.kind = fuse::project::CookAssetKind::Mesh;
     entryA.source_path = sourceA;
-    entryA.output_path = "/tmp/fuse_b79_bundle_a.fusemesh";
+    entryA.output_path = fuse::test::tempPath("fuse_b79_bundle_a.fusemesh");
     manifest.assets.push_back(entryA);
 
     fuse::project::CookManifestEntry entryB;
     entryB.kind = fuse::project::CookAssetKind::Mesh;
     entryB.source_path = sourceB;
-    entryB.output_path = "/tmp/fuse_b79_bundle_b.fusemesh";
+    entryB.output_path = fuse::test::tempPath("fuse_b79_bundle_b.fusemesh");
     entryB.dependencies.push_back(entryA.output_path);
     manifest.assets.push_back(entryB);
 
     fuse::project::CookManifestEntry entryC;
     entryC.kind = fuse::project::CookAssetKind::Mesh;
     entryC.source_path = sourceC;
-    entryC.output_path = "/tmp/fuse_b79_bundle_c.fusemesh";
+    entryC.output_path = fuse::test::tempPath("fuse_b79_bundle_c.fusemesh");
     entryC.dependencies.push_back(entryB.output_path);
     manifest.assets.push_back(entryC);
 

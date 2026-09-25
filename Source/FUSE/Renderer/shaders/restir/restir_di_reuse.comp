@@ -1,0 +1,20 @@
+#version 460
+// WP-7.2 "restir.di.temporal / restir.di.spatial" (twin: restir_di_reuse.slang). One pixel per thread: combines the canonical reservoir (push.src) with the reprojected history (mode 0) or spatial neighbours of push.src (mode 1); biased 1 / M or unbiased Talbot MIS with visibility-tested targets; writes push.dst.
+// CPU reference: rsDiReuse in include/fuse/renderer/restir/restir_kernel.hpp (bit for bit on the same inputs).
+#extension GL_GOOGLE_include_directive : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+#include "lt_common.glsl"
+#include "restir_common.glsl"
+
+layout(local_size_x = RS_TILE, local_size_y = RS_TILE) in;
+
+void main() {
+    const RestirFrame F = rs_frame();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const uint pixel = p.y * F.width + p.x;
+    RsDiRef(pc.p.dst).v[pixel] = rs_di_reuse(F, p.x, p.y, pc.p.mode, pc.p.iteration);
+}

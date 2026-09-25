@@ -26,6 +26,10 @@ public:
     [[nodiscard]] u32 resolution() const { return m_desc.resolution; }
     [[nodiscard]] bool is_initialized() const { return m_initialized; }
     [[nodiscard]] const std::vector<f32>& heights() const { return m_heights; }
+    /// Mutable texel storage (resolution x resolution, row-major z*res+x) for bulk generation.
+    [[nodiscard]] std::vector<f32>& mutable_heights() { return m_heights; }
+    /// World-space metres between adjacent texels.
+    [[nodiscard]] f32 meters_per_texel() const;
 
 private:
     [[nodiscard]] f32 sample_bilinear(f32 u, f32 v) const;

@@ -4,6 +4,7 @@
 #include <fuse/animation/ik_solver.hpp>
 #include <fuse/animation/retarget.hpp>
 #include <fuse/animation/skinning.hpp>
+#include <fuse/jobs/cuda_jobs.hpp>
 #include <fuse/animation/skeleton.hpp>
 #include <fuse/core/init.hpp>
 
@@ -355,19 +356,19 @@ void testStateMachineTransition() {
 }
 
 void testFabrikConverges() {
-    const fuse::animation::Skeleton skel = makeTwoBoneSkeleton();
+    const fuse::animation::Skeleton skel = makeThreeBoneSkeleton();
     fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
 
     fuse::animation::FABRIKChain chain;
-    chain.bone_indices = {0, 1};
-    chain.target = {0.5f, 2.f, 0.f, 0.f};
+    chain.bone_indices = {0, 1, 2};
+    chain.target = {0.5f, 1.5f, 0.f, 0.f};
     chain.max_iterations = 8;
     expectTrue(chain.solve(pose, skel), "fabrik solve succeeds for valid two-bone chain");
 
     const fuse::animation::vec3 end = {
-        pose.bone_world_transforms[1].data[12],
-        pose.bone_world_transforms[1].data[13],
-        pose.bone_world_transforms[1].data[14],
+        pose.bone_world_transforms[2].data[12],
+        pose.bone_world_transforms[2].data[13],
+        pose.bone_world_transforms[2].data[14],
         0.f,
     };
     const fuse::f32 dx = end.x - chain.target.x;
@@ -378,12 +379,22 @@ void testFabrikConverges() {
 }
 
 void testSkinningCpuPath() {
+    // The reported backend is the one skin_vertices() runs on: Cuda needs a CUDA skinning kernel
+    // and a CUDA device, never just a CUDA toolkit at build time.
+    const bool cudaUsable =
+        fuse::animation::skinning_cuda_kernel_available() && fuse::jobs::cudaJobsAvailable();
+    expectTrue(fuse::animation::skinning_backend() ==
+                   (cudaUsable ? fuse::animation::SkinningBackend::Cuda
+                               : fuse::animation::SkinningBackend::CpuReference),
+               "skinning backend reports Cuda only with a CUDA kernel + device");
+    // The kernel counts as available only when compiled in (FUSE_HAS_CUDA) AND a device is usable.
 #if defined(FUSE_HAS_CUDA)
-    expectTrue(fuse::animation::skinning_backend() == fuse::animation::SkinningBackend::Cuda,
-               "CUDA skinning backend when toolkit available");
+    expectTrue(fuse::animation::skinning_cuda_kernel_available() == fuse::jobs::cudaJobsAvailable(),
+               "CUDA skinning kernel available exactly when a CUDA device is usable");
 #else
+    expectTrue(!fuse::animation::skinning_cuda_kernel_available(), "no CUDA skinning kernel without FUSE_HAS_CUDA");
     expectTrue(fuse::animation::skinning_backend() == fuse::animation::SkinningBackend::CpuReference,
-               "CPU reference skinning without CUDA toolkit");
+               "skinning reports the CPU path it actually runs");
 #endif
 
     fuse::animation::SkinningInput input;
@@ -772,7 +783,10 @@ void testTwoBoneIKEmptySkeleton() {
 void testTwoBoneIKInPlace() {
     const fuse::animation::Skeleton skel = makeLimbSkeleton();
     fuse::animation::Pose pose = fuse::animation::Pose::make_bind_pose(skel);
-    pose.bone_world_transforms[0].data[12] = 3.f;
+    // Offset the whole limb (a consistent pose) so the solve starts from a non-origin root.
+    for (auto& world : pose.bone_world_transforms) {
+        world.data[12] += 3.f;
+    }
 
     fuse::animation::TwoBoneIK ik;
     ik.root_bone = 0;

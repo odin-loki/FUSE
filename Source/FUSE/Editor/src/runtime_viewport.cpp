@@ -1,5 +1,7 @@
 #include <fuse/editor/runtime_viewport.hpp>
 
+#include <fuse/core/track_b.hpp>
+
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/editor_scene.hpp>
 #include <fuse/editor/viewport_present_gate.hpp>
@@ -72,7 +74,7 @@ EulerDeg quatToEulerDeg(const ecs::quat& q) {
     return {yaw, pitch, roll};
 }
 
-void applyEcsTransformToSceneObject3D(const ecs::Transform& transform, fuse::SceneObject3D& object) {
+[[maybe_unused]] void applyEcsTransformToSceneObject3D(const ecs::Transform& transform, fuse::SceneObject3D& object) {
     object.setPosition(transform.position.x, transform.position.y);
     object.setZ(transform.position.z);
     const EulerDeg euler = quatToEulerDeg(transform.rotation);
@@ -174,6 +176,9 @@ void maybeRetireSoftwarePlaceholder(RuntimeViewportHeadlessGpuStub* gpu, Runtime
 #endif
 
 RuntimeViewportHook::~RuntimeViewportHook() {
+    if (m_windowPresentState.load(std::memory_order_acquire) == WindowPresentState::SurfaceWired) {
+        fuse::core::setTrackBHostFeature(fuse::core::TrackBHostFeature::EditorViewportPresent, false);
+    }
 #if defined(FUSE_VULKAN_BACKEND)
     RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
     if (gpu != nullptr) {
@@ -292,7 +297,31 @@ void RuntimeViewportHook::applyPendingResize_() {
 
 #if defined(FUSE_VULKAN_BACKEND)
         RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
-        if (gpu != nullptr) {
+        if (gpu != nullptr && windowPresentActive_()) {
+            // Presenting viewport: rebuild the swapchain on the UI surface before the next frame.
+            // No stand-alone present cycle here — every presented image is a rendered frame.
+            fuse::renderer::PresentPath* presentPath =
+                gpu->hybrid != nullptr ? gpu->hybrid->presentPath() : nullptr;
+            if (presentPath != nullptr && gpu->externalSwapchainWired) {
+                presentPath->requestResize(appliedWidth, appliedHeight);
+                if (presentPath->hasPendingResize()) {
+                    ++m_embedSession.swapchainRecreateAttempts;
+                    // Nothing may still reference the old images / render pass / framebuffers.
+                    drainViewportGpuContext(*gpu->hybrid->rendererBootstrap().rhiContext());
+                    const u32 before = presentPath->status().swapchainRecreateCount;
+                    if (presentPath->recreateSwapchain() &&
+                        presentPath->status().swapchainRecreateCount > before) {
+                        ++m_embedSession.swapchainRecreateCount;
+                        m_wpRecreates.fetch_add(1, std::memory_order_acq_rel);
+                    }
+                }
+                if (const fuse::renderer::VulkanSwapchain* swapchain =
+                        gpu->hybrid->rendererBootstrap().rhiContext()->bootstrap().swapchain()) {
+                    m_wpWidth.store(swapchain->info().width, std::memory_order_release);
+                    m_wpHeight.store(swapchain->info().height, std::memory_order_release);
+                }
+            }
+        } else if (gpu != nullptr) {
             const bool handoffConsumed = m_surfaceHandoff.consumed || gpu->externalSwapchainWired;
             fuse::renderer::PresentPath* presentPath =
                 gpu->hybrid != nullptr ? gpu->hybrid->presentPath() : nullptr;
@@ -409,9 +438,10 @@ void RuntimeViewportHook::ensureWorldLoaded_(EditorHost& host) {
     m_embedded = true;
 
 #if defined(FUSE_VULKAN_BACKEND)
+    m_loadedManifest = projectLoad.manifest;
     RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
     if (gpu != nullptr) {
-        attachEmbedWorldsToHybrid(gpu, m_embedSession, projectLoad.manifest);
+        attachEmbedWorldsToHybrid(gpu, m_embedSession, m_loadedManifest);
     }
 #endif
 
@@ -617,7 +647,9 @@ void RuntimeViewportHook::mirrorEditorEntities_(EditorHost& host) {
         return;
     }
 
-    std::vector<ecs::EntityID> entityOrder;
+    // Reused scratch: idle editor ticks must not allocate (fuse_editor_b6_idle_frame_gates).
+    std::vector<ecs::EntityID>& entityOrder = m_entityOrderScratch;
+    entityOrder.clear();
     host.editorScene().registry().each_query<ecs::Transform>(
         [&](ecs::EntityID id, ecs::Transform& /*transform*/) { entityOrder.push_back(id); });
 
@@ -678,7 +710,9 @@ void RuntimeViewportHook::syncEcsToEmbedWorld3D_(EditorHost& host) {
         return;
     }
 
-    std::vector<ecs::EntityID> entityOrder;
+    // Reused scratch: idle editor ticks must not allocate (fuse_editor_b6_idle_frame_gates).
+    std::vector<ecs::EntityID>& entityOrder = m_entityOrderScratch;
+    entityOrder.clear();
     host.editorScene().registry().each_query<ecs::Transform>(
         [&](ecs::EntityID id, ecs::Transform& /*transform*/) { entityOrder.push_back(id); });
 
@@ -741,6 +775,10 @@ void recreateHybridForExternalSurface(RuntimeViewportHook& hook, RuntimeViewport
     bootstrapDesc.renderer.rhi.bootstrap.instance.enableValidation = false;
     bootstrapDesc.renderer.rhi.bootstrap.createSwapchain = true;
     bootstrapDesc.renderer.rhi.bootstrap.swapchain = hook.buildSwapchainDescHandoff();
+    // The hybrid bootstrap creates its own VkInstance, which cannot own the handed-off surface
+    // (VkSurfaceKHR is per-instance). Start it headless; syncHybridBootstrapFromConsumedHandoff
+    // only attaches the surface when the instances match.
+    bootstrapDesc.renderer.rhi.bootstrap.swapchain.surface = fuse::renderer::SurfaceDesc{};
 
     gpu->hybrid = fuse::hybrid::HybridRendererBootstrap::create(bootstrapDesc);
     if (gpu->hybrid != nullptr && gpu->hybrid->isReady()) {
@@ -751,14 +789,19 @@ void recreateHybridForExternalSurface(RuntimeViewportHook& hook, RuntimeViewport
 }
 #endif
 
-void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
+void RuntimeViewportHook::tickHeadlessPresentStub_() {
     if (!m_embedded) {
         return;
     }
 
     m_embedSession.wsiBackendName = fuse::platform::windowWsiBackendName();
-    m_embedSession.usesHeadlessGpuPath =
-        fuse::platform::activeWindowWsiKind() == fuse::platform::WindowWsiKind::Null;
+    // The native X11 and Win32 backends only serve the standalone game window; the editor viewport
+    // stays Qt-owned, so it renders through the headless GPU path like the Null WSI (until a Qt
+    // surface handoff wires an external swapchain, which clears this below).
+    const fuse::platform::WindowWsiKind wsi = fuse::platform::activeWindowWsiKind();
+    m_embedSession.usesHeadlessGpuPath = wsi == fuse::platform::WindowWsiKind::Null ||
+                                         wsi == fuse::platform::WindowWsiKind::X11 ||
+                                         wsi == fuse::platform::WindowWsiKind::Win32;
     ++m_embedSession.headlessPresentTicks;
 
 #if defined(FUSE_VULKAN_BACKEND)
@@ -784,6 +827,9 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
         if (gpu->hybrid != nullptr && gpu->hybrid->isReady()) {
             m_embedSession.wsiPresentPathReady = true;
             m_embedSession.headlessGpuReady = true;
+            if (m_embedSession.worldLoaded) {
+                attachEmbedWorldsToHybrid(gpu, m_embedSession, m_loadedManifest);
+            }
 #if defined(FUSE_HAS_VULKAN_RHI)
             syncHybridBootstrapFromConsumedHandoff(*gpu->hybrid, m_surfaceHandoff);
             maybeRetireSoftwarePlaceholder(gpu, m_embedSession, m_surfaceHandoff);
@@ -861,9 +907,191 @@ void RuntimeViewportHook::tickHeadlessPresentStub_(EditorHost& host, f32 dt) {
         }
     }
 
+#endif
+}
+
+void RuntimeViewportHook::requestWindowSystemPresent(const WindowPresentRequest& request) {
+    if (m_windowPresentState.load(std::memory_order_acquire) != WindowPresentState::Off) {
+        return; // one request per hook; the game thread may already be reading it
+    }
+    WindowPresentState expected = WindowPresentState::Off;
+    m_windowPresentRequest = request;
+#if defined(FUSE_VULKAN_BACKEND)
+    m_windowPresentState.compare_exchange_strong(expected, WindowPresentState::InstancePending,
+                                                 std::memory_order_acq_rel);
 #else
-    (void)host;
-    (void)dt;
+    m_windowPresentState.compare_exchange_strong(expected, WindowPresentState::Failed,
+                                                 std::memory_order_acq_rel);
+#endif
+}
+
+WindowPresentStats RuntimeViewportHook::windowPresentStats() const {
+    WindowPresentStats stats{};
+    stats.frames = m_wpFrames.load(std::memory_order_acquire);
+    stats.acquiredImages = m_wpAcquired.load(std::memory_order_acquire);
+    stats.presentedImages = m_wpPresented.load(std::memory_order_acquire);
+    stats.swapchainRecreates = m_wpRecreates.load(std::memory_order_acquire);
+    stats.width = m_wpWidth.load(std::memory_order_acquire);
+    stats.height = m_wpHeight.load(std::memory_order_acquire);
+    return stats;
+}
+
+bool RuntimeViewportHook::windowPresentActive_() const {
+    const WindowPresentState state = m_windowPresentState.load(std::memory_order_acquire);
+    return state == WindowPresentState::InstancePending || state == WindowPresentState::InstanceReady ||
+           state == WindowPresentState::SurfaceWired;
+}
+
+void RuntimeViewportHook::releaseWindowSurface() {
+#if defined(FUSE_VULKAN_BACKEND)
+    RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
+    if (gpu != nullptr && gpu->hybrid != nullptr && gpu->externalSwapchainWired) {
+        fuse::renderer::RhiContext* rhi = gpu->hybrid->rendererBootstrap().rhiContext();
+        if (rhi != nullptr) {
+            drainViewportGpuContext(*rhi);
+            // Swapchain before the UI-owned surface: replace it with a headless one.
+            fuse::renderer::SwapchainDesc headless{};
+            headless.width = m_panel.width() > 0 ? m_panel.width() : 64u;
+            headless.height = m_panel.height() > 0 ? m_panel.height() : 64u;
+            (void)rhi->bootstrap().ensureSwapchain(headless);
+        }
+        gpu->externalSwapchainWired = false;
+    }
+#endif
+    m_surfaceHandoff = {};
+    m_embedSession.usesExternalSwapchain = false;
+    WindowPresentState wired = WindowPresentState::SurfaceWired;
+    if (m_windowPresentState.compare_exchange_strong(wired, WindowPresentState::InstanceReady,
+                                                     std::memory_order_acq_rel)) {
+        fuse::core::setTrackBHostFeature(fuse::core::TrackBHostFeature::EditorViewportPresent, false);
+    }
+}
+
+void RuntimeViewportHook::tickWindowPresent_() {
+#if defined(FUSE_VULKAN_BACKEND)
+    RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
+    if (gpu == nullptr) {
+        m_headlessGpuStub = new RuntimeViewportHeadlessGpuStub();
+        gpu = asHeadlessGpuStub(m_headlessGpuStub);
+    }
+
+    // 1. One renderer for the viewport, on an instance the UI can build its window surface on.
+    if (gpu->hybrid == nullptr) {
+        std::vector<const char*> extensions;
+        extensions.reserve(m_windowPresentRequest.instanceExtensions.size());
+        for (const std::string& name : m_windowPresentRequest.instanceExtensions) {
+            extensions.push_back(name.c_str());
+        }
+        fuse::hybrid::HybridRendererBootstrapDesc bootstrapDesc{};
+        bootstrapDesc.presentable.backend = fuse::hybrid::PresentableBackend::Headless;
+        bootstrapDesc.presentable.swapchainWidth = m_panel.width() > 0 ? m_panel.width() : 640u;
+        bootstrapDesc.presentable.swapchainHeight = m_panel.height() > 0 ? m_panel.height() : 480u;
+        bootstrapDesc.renderer.rhi.bootstrap.instance.enableValidation = m_windowPresentRequest.enableValidation;
+        bootstrapDesc.renderer.rhi.bootstrap.instance.extraExtensions = extensions.data();
+        bootstrapDesc.renderer.rhi.bootstrap.instance.extraExtensionCount = static_cast<u32>(extensions.size());
+        bootstrapDesc.renderer.rhi.bootstrap.createSwapchain = true;
+        gpu->hybrid = fuse::hybrid::HybridRendererBootstrap::create(bootstrapDesc);
+
+        fuse::renderer::RhiContext* rhi =
+            gpu->hybrid != nullptr && gpu->hybrid->isReady() ? gpu->hybrid->rendererBootstrap().rhiContext() : nullptr;
+        const fuse::renderer::VulkanInstance* instance = rhi != nullptr ? rhi->bootstrap().instance() : nullptr;
+        bool wsiReady = instance != nullptr && instance->isValid() && rhi->bootstrap().status().deviceReady &&
+                        instance->info().instanceHasExtension("VK_KHR_surface");
+        for (const std::string& name : m_windowPresentRequest.instanceExtensions) {
+            wsiReady = wsiReady && instance->info().instanceHasExtension(name.c_str());
+        }
+        if (gpu->hybrid != nullptr && gpu->hybrid->isReady()) {
+            m_embedSession.wsiPresentPathReady = true;
+            m_embedSession.headlessGpuReady = true;
+            if (m_embedSession.worldLoaded) {
+                attachEmbedWorldsToHybrid(gpu, m_embedSession, m_loadedManifest);
+            }
+        } else {
+            gpu->hybrid.reset();
+        }
+        if (!wsiReady) {
+            fuse::log::warn("RuntimeViewportHook: no Vulkan instance with the window-system extensions — "
+                            "viewport stays headless");
+            m_windowPresentState.store(WindowPresentState::Failed, std::memory_order_release);
+            return;
+        }
+        m_windowPresentInstance.store(instance->nativeHandle(), std::memory_order_release);
+        m_windowPresentState.store(WindowPresentState::InstanceReady, std::memory_order_release);
+    }
+
+    fuse::renderer::RhiContext* rhi = gpu->hybrid->rendererBootstrap().rhiContext();
+
+    // 2. The UI handed back a surface created on that instance: build the real swapchain on it.
+    //    (A winId stub hand-off is not a VkSurfaceKHR: consume it and keep waiting.)
+    if (m_surfaceHandoff.pending && !m_surfaceHandoff.qtRealSurface) {
+        m_surfaceHandoff.pending = false;
+        m_surfaceHandoff.consumed = true;
+        m_embedSession.surfaceHandoffPending = false;
+    }
+    if (m_surfaceHandoff.pending) {
+        ++m_embedSession.swapchainWiringAttempts;
+        drainViewportGpuContext(*rhi);
+        const ViewportSwapchainWiringResult wiring = wireExternalSwapchainFromHandoff(*rhi, m_surfaceHandoff);
+        m_embedSession.surfaceHandoffPending = false;
+        m_embedSession.surfaceHandoffConsumed = wiring.attempted;
+        if (wiring.swapchainReady) {
+            ++m_embedSession.swapchainWiringReady;
+            m_embedSession.usesExternalSwapchain = true;
+            m_embedSession.usesHeadlessGpuPath = false;
+            m_embedSession.qtLivePresentReady = true;
+            gpu->externalSwapchainWired = true;
+            const fuse::renderer::VulkanSwapchain* swapchain = rhi->bootstrap().swapchain();
+            m_wpWidth.store(swapchain->info().width, std::memory_order_release);
+            m_wpHeight.store(swapchain->info().height, std::memory_order_release);
+            // Editor-scoped Track B unlock: this process presents its own viewport surface.
+            fuse::core::setTrackBHostFeature(fuse::core::TrackBHostFeature::EditorViewportPresent, true);
+            m_windowPresentState.store(WindowPresentState::SurfaceWired, std::memory_order_release);
+            maybeRetireSoftwarePlaceholder(gpu, m_embedSession, m_surfaceHandoff);
+        } else {
+            fuse::log::warn("RuntimeViewportHook: viewport surface not presentable (%s) — headless path",
+                            wiring.note != nullptr ? wiring.note : "?");
+            gpu->externalSwapchainWired = false;
+            m_windowPresentState.store(WindowPresentState::Failed, std::memory_order_release);
+            return;
+        }
+    }
+
+    // 3. Render + present one viewport frame (fence wait -> acquire -> record/submit -> present).
+    fuse::renderer::PresentPath* presentPath = gpu->hybrid->presentPath();
+    if (presentPath == nullptr) {
+        return;
+    }
+    const fuse::renderer::PresentPathStatus& before = presentPath->status();
+    const u64 acquiredBefore = before.acquiredImageCount;
+    const u32 realPresentsBefore = before.realPresentCallCount;
+
+    fuse::frame::FrameCtx frameCtx{};
+    frameCtx.frameIndex = m_runtimeTickCount;
+    const u32 composerFramesBefore = gpu->hybrid->composer().frameCount();
+    gpu->hybrid->runFrame(frameCtx);
+    if (gpu->hybrid->composer().frameCount() > composerFramesBefore) {
+        ++m_embedSession.hybridComposerFrames;
+        m_embedSession.ecsWorld3DSnapshotVisible = gpu->embedWorld3D.readSnapshot().visibleCount();
+        m_embedSession.meshPreviewDraws = gpu->hybrid->composer().meshPreviewDraws();
+        m_embedSession.sdfPreviewDraws = gpu->hybrid->composer().sdfPreviewDraws();
+    }
+    ++gpu->submittedFrames;
+    m_embedSession.submittedFrames = gpu->submittedFrames;
+    ++m_embedSession.wsiPresentPathTicks;
+
+    const fuse::renderer::PresentPathStatus& after = presentPath->status();
+    if (gpu->externalSwapchainWired) {
+        m_wpFrames.fetch_add(1, std::memory_order_acq_rel);
+        m_wpAcquired.fetch_add(after.acquiredImageCount - acquiredBefore, std::memory_order_acq_rel);
+        m_wpPresented.fetch_add(after.realPresentCallCount - realPresentsBefore, std::memory_order_acq_rel);
+        ++m_embedSession.qtLivePresentAttempts;
+        if (after.realPresentCallCount > realPresentsBefore) {
+            ++m_embedSession.qtLivePresentTicks;
+        }
+    }
+    m_embedSession.realPresentCallCount = after.realPresentCallCount;
+    m_embedSession.qtRealPresentCallCount = after.qtRealPresentCallCount;
+    m_embedSession.presentSkippedNoWsiCount = after.presentSkippedNoWsiCount;
 #endif
 }
 
@@ -900,6 +1128,14 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
     m_panel.tick(dt);
 
 #if defined(FUSE_VULKAN_BACKEND)
+    if (windowPresentActive_()) {
+        tickWindowPresent_();
+        if (windowPresentActive_()) {
+            ++m_runtimeTickCount;
+            return;
+        }
+        // Instance / surface bring-up failed: fall through to the headless path this tick.
+    }
     if (m_surfaceHandoff.pending) {
         RuntimeViewportHeadlessGpuStub* gpu = asHeadlessGpuStub(m_headlessGpuStub);
         if (gpu == nullptr) {
@@ -956,7 +1192,7 @@ void RuntimeViewportHook::tick(EditorHost& host, f32 dt) {
     }
 #endif
 
-    tickHeadlessPresentStub_(host, dt);
+    tickHeadlessPresentStub_();
     ++m_runtimeTickCount;
 }
 

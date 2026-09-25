@@ -96,6 +96,10 @@ f32 Heightfield::sample_bilinear(f32 u, f32 v) const {
     return h0 + (h1 - h0) * tz;
 }
 
+f32 Heightfield::meters_per_texel() const {
+    return m_desc.world_size / static_cast<f32>(std::max(m_desc.resolution, 2u) - 1u);
+}
+
 bool Heightfield::in_bounds(u32 x, u32 z) const {
     return x < m_desc.resolution && z < m_desc.resolution;
 }

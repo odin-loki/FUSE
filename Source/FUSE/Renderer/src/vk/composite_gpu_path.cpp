@@ -1,4 +1,6 @@
 #include <fuse/renderer/vk/composite_gpu_path.hpp>
+#include <fuse/renderer/vk/debug_utils.hpp>
+#include <fuse/renderer/vk/image_readback.hpp>
 
 #include <fuse/renderer/cuda/interop.hpp>
 #include <fuse/renderer/cuda/interop_fill.hpp>
@@ -52,7 +54,10 @@ u32 findMemoryType(VkPhysicalDevice physicalDevice, u32 typeFilter, VkMemoryProp
     }
     return 0;
 }
+#endif
 
+#if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_HAS_CUDA)
+// Only the CUDA interop path shares the composite image memory.
 bool exportDeviceMemoryHandle(VkDevice device, VkDeviceMemory memory, void*& outHandle) {
 #if defined(_WIN32)
     using GetMemoryFn = PFN_vkGetMemoryWin32HandleKHR;
@@ -236,6 +241,12 @@ bool CompositeGpuPath::ensureCudaInteropTexture() {
     }
 
     m_cudaImage = image;
+    nameVkObject(vkDevice, vk_object_type::kImage, static_cast<void*>(image), "fuse.composite.cuda_image");
+    nameVkObject(vkDevice, vk_object_type::kDeviceMemory, static_cast<void*>(memory),
+                       "fuse.composite.cuda_image.memory");
+    nameVkObject(vkDevice, vk_object_type::kImageView, static_cast<void*>(view),
+                       "fuse.composite.cuda_image.view");
+    m_cudaImageLayout = 0; // VK_IMAGE_LAYOUT_UNDEFINED
     m_cudaImageMemory = memory;
     m_cudaImageView = view;
     m_cudaAllocationSize = memRequirements.size;
@@ -396,6 +407,20 @@ bool CompositeGpuPath::ensurePresentPipeline(void* presentRenderPass) {
 #endif
 }
 
+bool CompositeGpuPath::readbackOutput(std::vector<u8>& outRgba) const {
+    outRgba.clear();
+#if defined(FUSE_VULKAN_BACKEND)
+    if (m_device == nullptr || m_outputImage == nullptr) {
+        return false;
+    }
+    const u32 width = m_desc.width > 0u ? m_desc.width : 1u;
+    const u32 height = m_desc.height > 0u ? m_desc.height : 1u;
+    return readbackColorImage(*m_device, m_outputImage, width, height, m_outputLayout, outRgba);
+#else
+    return false;
+#endif
+}
+
 void CompositeGpuPath::fillEncodeContext(VkFrameEncodeContext& context, float blend,
                                          bool presentActive) {
 #if defined(FUSE_VULKAN_BACKEND)
@@ -413,6 +438,10 @@ void CompositeGpuPath::fillEncodeContext(VkFrameEncodeContext& context, float bl
     context.compositePipelineLayout = m_pipelineLayout->nativeHandle();
     context.compositeVertexBuffer = m_vertexBuffer;
     context.compositeTargetsSwapchain = presentActive && context.presentActive;
+    if (m_stats.cudaTextureActive && m_cudaImage != nullptr) {
+        context.cudaImage = m_cudaImage;
+        context.cudaImageLayout = &m_cudaImageLayout;
+    }
 
     if (presentActive && context.presentActive && context.presentFramebuffer != nullptr &&
         context.presentRenderPass != nullptr) {
@@ -423,11 +452,12 @@ void CompositeGpuPath::fillEncodeContext(VkFrameEncodeContext& context, float bl
         context.compositePipeline =
             m_presentPipeline != nullptr ? m_presentPipeline->nativeHandle()
                                          : m_offscreenPipeline->nativeHandle();
-    } else if (context.active) {
-        context.compositeRenderPass = context.renderPass;
-        context.compositeFramebuffer = context.framebuffer;
-        context.compositeWidth = context.width;
-        context.compositeHeight = context.height;
+    } else if (context.active && m_outputFramebuffer != nullptr) {
+        context.compositeRenderPass = m_offscreenRenderPass->nativeHandle();
+        context.compositeFramebuffer = m_outputFramebuffer;
+        context.compositeTargetLayout = &m_outputLayout;
+        context.compositeWidth = m_desc.width > 0u ? m_desc.width : 1u;
+        context.compositeHeight = m_desc.height > 0u ? m_desc.height : 1u;
         context.compositePipeline = m_offscreenPipeline->nativeHandle();
     } else {
         return;
@@ -492,7 +522,7 @@ bool CompositeGpuPath::initialize(VulkanDevice& device, const CompositeGpuPathDe
         return false;
     }
 
-    m_pipelineCache = PipelineCache::create(device);
+    m_pipelineCache = PipelineCache::create(device, PipelineCacheDesc{device.info().pipelineCreationCacheControl});
     if (m_pipelineCache == nullptr || !m_pipelineCache->isValid()) {
         m_stats.message = "composite pipeline cache failed";
         return false;
@@ -531,7 +561,78 @@ bool CompositeGpuPath::initialize(VulkanDevice& device, const CompositeGpuPathDe
         return false;
     }
     m_sampler = sampler;
+    nameVkObject(vkDevice, vk_object_type::kSampler, m_sampler, "fuse.composite.sampler");
     m_samplerSlot = m_bindless.registerSamplerSlot(sampler);
+
+    VkImageCreateInfo outputInfo{};
+    outputInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    outputInfo.imageType = VK_IMAGE_TYPE_2D;
+    outputInfo.format = static_cast<VkFormat>(kColorFormat);
+    outputInfo.extent = {m_desc.width > 0u ? m_desc.width : 1u, m_desc.height > 0u ? m_desc.height : 1u, 1};
+    outputInfo.mipLevels = 1;
+    outputInfo.arrayLayers = 1;
+    outputInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    outputInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    outputInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                       VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    outputInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    outputInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImage outputImage = VK_NULL_HANDLE;
+    if (vkCreateImage(vkDevice, &outputInfo, nullptr, &outputImage) != VK_SUCCESS) {
+        m_stats.message = "composite output image creation failed";
+        return false;
+    }
+    m_outputImage = outputImage;
+    nameVkObject(vkDevice, vk_object_type::kImage, m_outputImage, "fuse.composite.output");
+
+    VkMemoryRequirements outputRequirements{};
+    vkGetImageMemoryRequirements(vkDevice, outputImage, &outputRequirements);
+    VkMemoryAllocateInfo outputAlloc{};
+    outputAlloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    outputAlloc.allocationSize = outputRequirements.size;
+    outputAlloc.memoryTypeIndex = findMemoryType(physicalDevice, outputRequirements.memoryTypeBits,
+                                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    VkDeviceMemory outputMemory = VK_NULL_HANDLE;
+    if (vkAllocateMemory(vkDevice, &outputAlloc, nullptr, &outputMemory) != VK_SUCCESS) {
+        m_stats.message = "composite output memory allocation failed";
+        return false;
+    }
+    m_outputMemory = outputMemory;
+    nameVkObject(vkDevice, vk_object_type::kDeviceMemory, m_outputMemory, "fuse.composite.output.memory");
+    vkBindImageMemory(vkDevice, outputImage, outputMemory, 0);
+
+    VkImageViewCreateInfo outputViewInfo{};
+    outputViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    outputViewInfo.image = outputImage;
+    outputViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    outputViewInfo.format = outputInfo.format;
+    outputViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    outputViewInfo.subresourceRange.levelCount = 1;
+    outputViewInfo.subresourceRange.layerCount = 1;
+    VkImageView outputView = VK_NULL_HANDLE;
+    if (vkCreateImageView(vkDevice, &outputViewInfo, nullptr, &outputView) != VK_SUCCESS) {
+        m_stats.message = "composite output view creation failed";
+        return false;
+    }
+    m_outputView = outputView;
+    nameVkObject(vkDevice, vk_object_type::kImageView, m_outputView, "fuse.composite.output.view");
+
+    VkFramebufferCreateInfo outputFramebufferInfo{};
+    outputFramebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    outputFramebufferInfo.renderPass = static_cast<VkRenderPass>(m_offscreenRenderPass->nativeHandle());
+    outputFramebufferInfo.attachmentCount = 1;
+    outputFramebufferInfo.pAttachments = &outputView;
+    outputFramebufferInfo.width = outputInfo.extent.width;
+    outputFramebufferInfo.height = outputInfo.extent.height;
+    outputFramebufferInfo.layers = 1;
+    VkFramebuffer outputFramebuffer = VK_NULL_HANDLE;
+    if (vkCreateFramebuffer(vkDevice, &outputFramebufferInfo, nullptr, &outputFramebuffer) != VK_SUCCESS) {
+        m_stats.message = "composite output framebuffer creation failed";
+        return false;
+    }
+    m_outputFramebuffer = outputFramebuffer;
+    nameVkObject(vkDevice, vk_object_type::kFramebuffer, m_outputFramebuffer,
+                       "fuse.composite.output.framebuffer");
 
     const std::array<float, 9> fullscreenVertices = {
         -1.f, -1.f, 0.f,
@@ -551,6 +652,7 @@ bool CompositeGpuPath::initialize(VulkanDevice& device, const CompositeGpuPathDe
         return false;
     }
     m_vertexBuffer = vertexBuffer;
+    nameVkObject(vkDevice, vk_object_type::kBuffer, m_vertexBuffer, "fuse.composite.vb");
 
     VkMemoryRequirements memRequirements{};
     vkGetBufferMemoryRequirements(vkDevice, vertexBuffer, &memRequirements);
@@ -567,6 +669,7 @@ bool CompositeGpuPath::initialize(VulkanDevice& device, const CompositeGpuPathDe
         return false;
     }
     m_vertexMemory = vertexMemory;
+    nameVkObject(vkDevice, vk_object_type::kDeviceMemory, m_vertexMemory, "fuse.composite.vb.memory");
     vkBindBufferMemory(vkDevice, vertexBuffer, vertexMemory, 0);
 
     void* mapped = nullptr;
@@ -595,6 +698,27 @@ void CompositeGpuPath::shutdown() {
             vkFreeMemory(vkDevice, static_cast<VkDeviceMemory>(m_vertexMemory), nullptr);
         }
     }
+    if (m_device != nullptr && m_device->isValid()) {
+        auto vkDevice = static_cast<VkDevice>(m_device->nativeHandle());
+        if (m_outputFramebuffer != nullptr) {
+            vkDestroyFramebuffer(vkDevice, static_cast<VkFramebuffer>(m_outputFramebuffer), nullptr);
+        }
+        if (m_outputView != nullptr) {
+            vkDestroyImageView(vkDevice, static_cast<VkImageView>(m_outputView), nullptr);
+        }
+        if (m_outputImage != nullptr) {
+            vkDestroyImage(vkDevice, static_cast<VkImage>(m_outputImage), nullptr);
+        }
+        if (m_outputMemory != nullptr) {
+            vkFreeMemory(vkDevice, static_cast<VkDeviceMemory>(m_outputMemory), nullptr);
+        }
+    }
+    m_outputFramebuffer = nullptr;
+    m_outputView = nullptr;
+    m_outputImage = nullptr;
+    m_outputMemory = nullptr;
+    m_cudaImageLayout = 0;
+    m_outputLayout = 0;
     m_sampler = nullptr;
     m_vertexBuffer = nullptr;
     m_vertexMemory = nullptr;

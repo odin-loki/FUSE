@@ -6,6 +6,19 @@ One program for 2D, 3D, and hybrid worlds. ISO C++ host, handle-based ownership,
 
 *Exact where it matters. Parallel everywhere else.*
 
+[![FUSE Umbrella (Linux)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-umbrella-linux.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-umbrella-linux.yml)
+[![FUSE clang-tidy (P7)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-clang-tidy.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-clang-tidy.yml)
+[![FUSE fuse_core (Android NDK)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-core-android.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-core-android.yml)
+[![FUSE fuse_core (iOS simulator)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-core-ios.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-core-ios.yml)
+[![FUSE fuse_core (TSan nightly)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-tsan-nightly.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-tsan-nightly.yml)
+[![FUSE CUDA compile-only (Linux)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-cuda-compile.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-cuda-compile.yml)
+[![FUSE Windows x64 (MinGW-w64 cross + Wine)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-cross.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-cross.yml)
+[![FUSE Windows x64 (MSVC native)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-native.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-native.yml)
+[![FUSE Linux Build](https://github.com/odin-loki/FUSE/actions/workflows/build-linux-gcc.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/build-linux-gcc.yml)
+[![FUSE macOS Build](https://github.com/odin-loki/FUSE/actions/workflows/build-macos-clang.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/build-macos-clang.yml)
+[![FUSE Windows Build](https://github.com/odin-loki/FUSE/actions/workflows/build-windows-msvc.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/build-windows-msvc.yml)
+[![FUSE Relight (MinGW-w64 cross + Wine/Xvfb/Lavapipe)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-relight-wine.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-relight-wine.yml)
+
 - Product docs: [`docs/README.md`](docs/README.md)
 - Getting started: [`docs/getting-started.md`](docs/getting-started.md)
 - Architecture: [`docs/architecture.md`](docs/architecture.md)

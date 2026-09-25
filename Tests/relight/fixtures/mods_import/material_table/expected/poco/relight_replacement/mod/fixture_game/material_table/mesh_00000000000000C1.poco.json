@@ -1,0 +1,59 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "relight_replacement",
+  "id": "mod/fixture_game/material_table/mesh_00000000000000C1",
+  "name": "mesh_00000000000000C1",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 1,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "target_kind": "mesh",
+    "key": {
+      "algo": "remix.geom.asset",
+      "value": "00000000000000C1",
+      "rule_id": "4A0F5C58A6691050",
+      "rule": "positions,indices,geometrydescriptor"
+    },
+    "preserveOriginalDrawCall": null,
+    "instanceable": false,
+    "categories": {
+      "set": [],
+      "cleared": []
+    },
+    "parts": [
+      {
+        "mesh": "poco:mod/fixture_game/material_table/mesh_00000000000000C1/panel",
+        "prim": "/RootNode/meshes/mesh_00000000000000C1/panel",
+        "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+        "materials": ["poco:mod/fixture_game/material_table/mat_00000000000000A1", "poco:mod/fixture_game/material_table/mat_00000000000000A2"]
+      }
+    ],
+    "lights": [],
+    "material_bindings": ["/RootNode/Looks/mat_00000000000000A3"],
+    "particles": null
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:material_table"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "material_table",
+      "stage": "mod.usda",
+      "prim": "/RootNode/meshes/mesh_00000000000000C1",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "CC0-1.0",
+  "distribution": "never",
+  "replaces": ["oaid:515ba9e6-008a-5b3d-a575-db73e061d81d"],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

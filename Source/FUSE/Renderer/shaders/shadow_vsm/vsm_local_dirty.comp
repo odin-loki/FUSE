@@ -1,0 +1,50 @@
+#version 460
+// WP-3.2 "vsm.local_dirty": one thread per instance slot. After WP-3.1's vsm.invalidate has written
+// this frame's bounds record of every slot (the ping-pong halves of the VSM bounds buffer: boundsRead
+// = last frame's, boundsWrite = this frame's), a slot whose record changed (moved, added, removed,
+// flags changed) marks every local light whose range sphere its old or new box touches (box and
+// radius grown by 1 %, conservative against the raster's quantisation margin): those lights re-render
+// all their pages this frame, every other local page stays cached. GLSL twin of vsm_local_dirty.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "vsm_raster_common.glsl"
+
+layout(local_size_x = 64) in;
+
+bool fuse_vsmr_record_touches(FuseVsmrWordsRef b, uint at, FuseVsmLocal e) {
+    if (b.v[at + 3u] == 0u) {
+        return false;
+    }
+    const vec3 c = vec3(uintBitsToFloat(b.v[at]), uintBitsToFloat(b.v[at + 1u]), uintBitsToFloat(b.v[at + 2u]));
+    const vec3 x = vec3(uintBitsToFloat(b.v[at + 4u]), uintBitsToFloat(b.v[at + 5u]), uintBitsToFloat(b.v[at + 6u])) * 1.01;
+    return fuse_vsmr_box_sphere(c, x, vec3(e.position[0], e.position[1], e.position[2]), e.range * 1.01);
+}
+
+void main() {
+    FuseVsmShadowRef S = fuse_vsmr_shadow();
+    FuseVsmConstantsRef C = FuseVsmConstantsRef(S.vsm);
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= C.instanceCount || i >= C.boundsCapacity) {
+        return;
+    }
+    FuseVsmrWordsRef b = FuseVsmrWordsRef(C.bounds);
+    const uint prev = (C.boundsRead + i) * 8u;
+    const uint cur = (C.boundsWrite + i) * 8u;
+    bool same = true;
+    for (uint k = 0u; k < 8u; ++k) {
+        same = same && b.v[prev + k] == b.v[cur + k];
+    }
+    if (same) {
+        return;
+    }
+    uint mask = 0u;
+    const uint count = min(S.localCount, FUSE_VSMR_MAX_LOCAL);
+    for (uint k = 0u; k < count; ++k) {
+        const FuseVsmLocal e = S.local[k];
+        if (fuse_vsmr_record_touches(b, prev, e) || fuse_vsmr_record_touches(b, cur, e)) {
+            mask |= 1u << k;
+        }
+    }
+    if (mask != 0u) {
+        atomicOr(FUSE_VSMR_WORDS(S.workHandle)[FUSE_VSMR_WORD_DIRTY], mask);
+    }
+}

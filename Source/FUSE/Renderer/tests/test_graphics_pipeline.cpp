@@ -525,8 +525,6 @@ void testRhiContextWiresRasterPath() {
 #if defined(FUSE_VULKAN_BACKEND)
     expectTrue(submitted, "submit accepted when Vulkan device ready");
     if (submitted) {
-        expectTrue(context->timestampWriteCount() >= 0u,
-                   "timestampWriteCount is non-negative after submitFrame");
         if (context->timestampsReady()) {
             expectTrue(context->timestampWriteCount() > 0u,
                        "submitFrame writes GPU timestamps when timestampsReady");
@@ -553,8 +551,6 @@ void testRhiContextWiresRasterPath() {
     const bool drawSubmitted = context->submitDrawList(draws, 1u);
     if (drawSubmitted) {
         expectTrue(context->lastDrawListCount() == 1u, "lastDrawListCount records one draw");
-        expectTrue(context->timestampWriteCount() >= 0u,
-                   "timestampWriteCount is non-negative after submitDrawList");
         if (context->timestampsReady()) {
             expectTrue(context->timestampWriteCount() > 0u,
                        "submitDrawList writes GPU timestamps when timestampsReady");

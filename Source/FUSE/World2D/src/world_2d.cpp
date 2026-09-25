@@ -1,6 +1,5 @@
 #include <fuse/world2d/world_2d.hpp>
 
-#include <fuse/jobs/parallel_for.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/platform/thread.hpp>
 #include <fuse/world2d/fuselevel_bridge.hpp>
@@ -10,6 +9,16 @@
 #include <cmath>
 
 namespace fuse::world2d {
+
+#if !(defined(FUSE_WORLD2D_HAS_FUSELEVEL) && FUSE_WORLD2D_HAS_FUSELEVEL)
+// fuselevel_bridge.cpp needs fuse_scene (FUSE_BUILD_PROJECT); report the load as unavailable instead.
+FuselevelLoadResult populateWorld2DFromFuselevel(World2D&, const std::string& fuselevelPath) {
+    FuselevelLoadResult result;
+    result.note = "fuselevel loading unavailable (built without FUSE_BUILD_PROJECT)";
+    log::warn("World2D: cannot load '%s' — fuselevel loading requires FUSE_BUILD_PROJECT", fuselevelPath.c_str());
+    return result;
+}
+#endif
 
 World2D::World2D() : m_root(std::make_unique<SceneObject2D>("World2DRoot")) {
     m_physics.init();
@@ -176,24 +185,24 @@ void World2D::buildSnapshot(frame::FrameCtx& ctx) {
 
 void World2D::runParallelCull() {
     const u32 count = static_cast<u32>(m_snapshot.sprites().size());
-    m_cullVisible.assign(count, false);
+    m_cullVisible.assign(count, 0u);
 
     if (count == 0) {
         m_snapshot.setVisibleCount(0);
         return;
     }
 
-    jobs::parallel_for(0u, count, 8u, [this](u32 i) {
+    m_cullJobs.run(count, 8u, [this](u32 i) {
         const SpriteDrawCmd& cmd = m_snapshot.sprites()[i];
         const float x = m_transformSoA.worldX[i];
         const float y = m_transformSoA.worldY[i];
         const bool inView = (x > -10000.f && x < 10000.f && y > -10000.f && y < 10000.f);
-        m_cullVisible[i] = cmd.visible && inView;
+        m_cullVisible[i] = (cmd.visible && inView) ? 1u : 0u;
     });
 
     u32 visible = 0;
-    for (bool v : m_cullVisible) {
-        if (v) {
+    for (u8 v : m_cullVisible) {
+        if (v != 0u) {
             ++visible;
         }
     }

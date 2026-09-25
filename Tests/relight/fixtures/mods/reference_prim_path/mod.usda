@@ -1,0 +1,24 @@
+#usda 1.0
+
+# RL-3.1 fixture: references with explicit prim paths into a material library; the library has no defaultPrim.
+def "RootNode"
+{
+    def "Looks"
+    {
+        def Material "mat_00000000000000C1" (
+            prepend references = @./lib/materials.usd@</Library/Metal>
+        )
+        {
+            over "Shader"
+            {
+                float inputs:metallic_constant = 0.75
+            }
+        }
+
+        def Material "mat_00000000000000C2" (
+            prepend references = @./lib/materials.usd@</Library/Nested/Glass>
+        )
+        {
+        }
+    }
+}

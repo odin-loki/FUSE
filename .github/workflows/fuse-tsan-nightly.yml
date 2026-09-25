@@ -15,7 +15,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
           sudo apt-get install -y ninja-build cmake g++-13
 
       - name: Configure fuse_core tests with TSan
@@ -44,13 +44,8 @@ jobs:
 
       - name: Build fuse_core test targets
         run: |
-          cmake --build build-tsan --target \
-            fuse_core_tests \
-            fuse_core_job_tests \
-            fuse_core_fiber_tests \
-            fuse_core_services_tests \
-            fuse_core_platform_hardening_tests \
-            fuse_core_io_handle_tests
+          # Every executable/probe under Source/FUSE/Core/tests: ctest -R '^fuse_core_' below runs all of them.
+          cmake --build build-tsan --target Source/FUSE/Core/tests/all
 
       - name: Run fuse_core CTest (TSan)
         run: ctest --test-dir build-tsan -R '^fuse_core_' --output-on-failure

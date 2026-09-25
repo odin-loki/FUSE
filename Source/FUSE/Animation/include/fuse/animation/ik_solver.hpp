@@ -78,6 +78,21 @@ struct FABRIKChain {
     f32 min_angle_deg = 0.f;
     f32 max_angle_deg = 160.f;
 
+    /// Before the passes, straighten or curl the current shape uniformly (bisection on a direction
+    /// blend) until its reach equals the target distance, then swing it about the root onto the
+    /// target. This is exact for most reachable targets and removes FABRIK's slow linear tail near
+    /// full extension; the passes then polish or handle the cases the reshape cannot bracket.
+    /// Disable for plain FABRIK behaviour.
+    bool reshape_warm_start = true;
+
+    /// Forward/backward passes run by the last `solve` (0 when the end effector already met `tolerance`).
+    u32 last_iterations = 0;
+    /// End-effector distance to `target` after the last `solve`.
+    f32 last_error = 0.f;
+
+    /// True when the last `solve` finished with the end effector within `tolerance` of the target.
+    [[nodiscard]] bool converged() const { return last_error <= tolerance; }
+
     /// Returns false when the skeleton is empty, the index list has fewer than two bones, any index is out of range,
     /// indices repeat, or consecutive bones are not parent→child in the skeleton hierarchy.
     [[nodiscard]] bool has_valid_chain(const Skeleton& skel) const;
@@ -94,8 +109,15 @@ struct FABRIKChain {
     /// True when `has_valid_chain`, `has_valid_pose`, and `!has_degenerate_segments` all hold.
     [[nodiscard]] bool can_solve(const Pose& pose, const Skeleton& skel) const;
 
+    /// Position-based FABRIK with the chain root pinned and segment lengths preserved. Each chain
+    /// bone's subtree is then rigidly rotated (shortest arc) so world matrices stay consistent.
+    /// Targets beyond the chain length straighten the chain toward the target.
+    /// Joint angle limits (`min_angle_deg`/`max_angle_deg`) are not applied yet.
     /// Returns false when `has_valid_chain` is false or `can_solve` is false after bind-pose fallback.
     [[nodiscard]] bool solve(Pose& pose, const Skeleton& skel);
+
+    /// SoA variant — writes local TRS for the chain bones, then recomputes world transforms.
+    [[nodiscard]] bool solve(PoseSoA& pose, const Skeleton& skel);
 };
 
 struct TwoBoneIK {
@@ -133,10 +155,11 @@ struct TwoBoneIK {
     /// SoA variant of `can_solve`.
     [[nodiscard]] bool can_solve(const PoseSoA& pose, const Skeleton& skel) const;
 
-    /// Closed-form two-bone IK (O(1)). Solves in-place on the current pose; returns false when invalid.
+    /// Closed-form two-bone IK (O(1)). Solves in-place on the current pose by rotating the root and
+    /// mid subtrees (segment lengths preserved); returns false when invalid.
     bool solve(Pose& pose, const Skeleton& skel);
 
-    /// SoA variant — writes local positions for the three-bone chain, then recomputes world transforms.
+    /// SoA variant — writes local rotations for the root and mid bones, then recomputes world transforms.
     bool solve(PoseSoA& pose, const Skeleton& skel);
 };
 

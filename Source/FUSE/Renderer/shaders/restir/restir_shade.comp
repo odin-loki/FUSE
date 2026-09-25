@@ -1,0 +1,32 @@
+#version 460
+// WP-7.2 "restir.shade" (twin: restir_shade.slang). One pixel per thread: the final DI (push.src) / GI (push.aux) reservoirs -> demodulated DI / GI signals (f32x4, the WP-6.4 input layout), linear depth, and this frame's history.
+// CPU reference: rsShade in include/fuse/renderer/restir/restir_kernel.hpp (bit for bit on the same inputs).
+#extension GL_GOOGLE_include_directive : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+#include "lt_common.glsl"
+#include "restir_common.glsl"
+
+layout(local_size_x = RS_TILE, local_size_y = RS_TILE) in;
+
+void main() {
+    const RestirFrame F = rs_frame();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const uint pixel = p.y * F.width + p.x;
+    const bool hasDi = pc.p.src != 0ul;
+    const bool hasGi = pc.p.aux != 0ul;
+    const RestirDiReservoir di = hasDi ? RsDiRef(pc.p.src).v[pixel] : rs_di_empty();
+    const RestirGiReservoir gi = hasGi ? RsGiRef(pc.p.aux).v[pixel] : rs_gi_empty();
+    vec4 diOut;
+    vec4 giOut;
+    float depth;
+    rs_shade(F, p.x, p.y, hasDi, di, hasGi, gi, diOut, giOut, depth);
+    RsVec4Ref(F.diSignal).v[pixel] = diOut;
+    RsVec4Ref(F.giSignal).v[pixel] = giOut;
+    RsFloatRef(F.depth).v[pixel] = depth;
+    RsDiRef(F.diHistory[0]).v[pixel] = di;
+    RsGiRef(F.giHistory[0]).v[pixel] = gi;
+}

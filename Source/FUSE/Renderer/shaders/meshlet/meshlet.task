@@ -1,0 +1,93 @@
+#version 460
+// WP-5.1 task shader, GLSL twin of meshlet_task.slang. One workgroup per MeshletGroup record (region
+// 0 for the culler's phase-1 instances, 1 for phase 2), one invocation per meshlet: per-meshlet
+// frustum, cone and Hi-Z (meshlet_common.glsl == meshlet_cull_kernel.hpp), then one mesh workgroup
+// per surviving meshlet, compacted IN MESHLET ORDER (the raster-order half of the depth-tie rule in
+// meshlet_path.hpp). Modes: EARLY (region 0; deferral mask per record), LATE (region 0; only the
+// deferred meshlets, this frame's Hi-Z), PHASE2 (region 1).
+#extension GL_EXT_mesh_shader : require
+#extension GL_GOOGLE_include_directive : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+#include "cull_common.glsl"
+#include "meshlet_common.glsl"
+
+layout(local_size_x = 32) in;
+
+FUSE_BINDLESS_SSBO_LAYOUT buffer FuseMeshletWords { uint w[]; } fuse_meshlet_words[];
+
+layout(push_constant) uniform Push {
+    vec4 viewProj[4];
+    uint scene;
+    uint target64;
+    uint width;
+    uint height;
+    uint64_t constants;
+    uint mode;
+    uint pad;
+} pc;
+
+taskPayloadSharedEXT FuseMeshletPayload payload;
+shared uint s_draw[FUSE_MESHLET_TASK_GROUP];
+shared uint s_defer[FUSE_MESHLET_TASK_GROUP];
+
+void main() {
+    FuseCullConstantsRef C = FuseCullConstantsRef(pc.constants);
+    FuseMeshletTailRef M = FuseMeshletTailRef(pc.constants + FUSE_MESHLET_TAIL_OFFSET);
+    const uint lane = gl_LocalInvocationID.x;
+    const uint g = gl_WorkGroupID.x;
+    const uint mode = pc.mode;
+    const uint region = mode == FUSE_MESHLET_MODE_PHASE2 ? 1u : 0u;
+    const uint groups = fuse_handle_index(M.groupsBuffer);
+    const uint masks = fuse_handle_index(M.masksBuffer);
+    const uint record = region * M.groupCapacity + g;
+    const uint instance = fuse_meshlet_words[groups].w[record * 2u];
+    const uint first = fuse_meshlet_words[groups].w[record * 2u + 1u];
+    FuseGpuSceneHeaderRef scene = fuse_gpu_scene(pc.scene);
+    const FuseGpuInstance inst = fuse_gpu_scene_instances(scene).v[instance];
+    const FuseGpuMesh mesh = fuse_gpu_scene_meshes(scene).v[inst.mesh];
+    const uint m = first + lane;
+    uint result = FUSE_MESHLET_RESULT_NONE;
+    bool write = mode != FUSE_MESHLET_MODE_LATE;
+    if (m < mesh.meshletCount) {
+        const FuseGpuMeshlet ml = FuseGpuMeshletsRef(mesh.meshlets).v[m];
+        const FuseGpuTransform xf = fuse_gpu_scene_transforms(scene).v[instance];
+        if (mode == FUSE_MESHLET_MODE_LATE) {
+            if (((fuse_meshlet_words[masks].w[g] >> lane) & 1u) != 0u) {
+                result = fuse_meshlet_classify_late(C, xf, ml);
+                write = true;
+            }
+        } else {
+            const FuseGpuTransform prevXf = fuse_gpu_scene_prev_transforms(scene).v[instance];
+            result = fuse_meshlet_classify(C, M, mode, xf, prevXf, ml);
+            if (result == FUSE_MESHLET_RESULT_OVERSIZE) {
+                atomicAdd(fuse_meshlet_words[fuse_handle_index(M.countsBuffer)].w[FUSE_MESHLET_COUNT_OVERSIZE], 1u);
+            }
+        }
+    }
+    if (write && (M.flags & FUSE_MESHLET_WRITE_RESULTS) != 0u) {
+        fuse_meshlet_words[fuse_handle_index(M.resultsBuffer)].w[record * FUSE_MESHLET_TASK_GROUP + lane] = result;
+    }
+    const bool draw = result == FUSE_MESHLET_RESULT_PHASE1_DRAWN || result == FUSE_MESHLET_RESULT_PHASE2_DRAWN;
+    s_draw[lane] = draw ? 1u : 0u;
+    s_defer[lane] = result == FUSE_MESHLET_RESULT_DEFERRED ? 1u : 0u;
+    barrier();
+    uint before = 0u;
+    uint total = 0u;
+    uint deferMask = 0u;
+    for (uint j = 0u; j < FUSE_MESHLET_TASK_GROUP; ++j) {
+        before += j < lane ? s_draw[j] : 0u;
+        total += s_draw[j];
+        deferMask |= s_defer[j] << j;
+    }
+    if (draw) {
+        payload.meshlets[before] = m;
+    }
+    if (lane == 0u) {
+        payload.instance = instance;
+        if (mode == FUSE_MESHLET_MODE_EARLY) {
+            fuse_meshlet_words[masks].w[g] = deferMask;
+        }
+    }
+    EmitMeshTasksEXT(total, 1u, 1u);
+}

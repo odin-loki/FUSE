@@ -1,0 +1,159 @@
+// FUSE Relight RL-1.1: tap / device-import selection through the RL-0.6 options.
+#include <fuse/relight/tap/tap_config.hpp>
+
+#include <fuse/relight/tap/null_tap.hpp>
+#include <fuse/relight/tap/recording_tap.hpp>
+
+#include <fuse/relight/options/options.hpp>
+
+#if defined(FUSE_RELIGHT_HAVE_SETUP_PROFILE)
+#include <fuse/relight/setup/profile_runtime.hpp> // RL-6.3 (setup/CMakeLists.txt sets the define)
+#endif
+
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <mutex>
+
+namespace fuse::relight::tap {
+
+namespace {
+
+struct TapOptions {
+    FUSE_RELIGHT_OPTION_ENV("relight.tap", std::string, mode, "off", "FUSE_RELIGHT_TAP_MODE",
+                            "Relight tap on the D3D9 front end: off (no tap; every hook is a null check), "
+                            "null (events dispatched and ignored), record (events written as JSON Lines) or "
+                            "capture (live texture / geometry capture and draw classification in-process, "
+                            "written as a per-frame capture record).");
+    FUSE_RELIGHT_OPTION_ENV("relight.tap", std::string, recordPath, "relight_tap.jsonl",
+                            "FUSE_RELIGHT_TAP_RECORD_PATH",
+                            "Output file of the recording tap (relight.tap.mode = record, or capture with "
+                            "relight.tap.captureRecord).");
+    FUSE_RELIGHT_OPTION_ENV("relight.tap", std::string, capturePath, "relight_capture.jsonl",
+                            "FUSE_RELIGHT_TAP_CAPTURE_PATH",
+                            "Per-frame capture record of the capture tap (relight.tap.mode = capture): per draw "
+                            "the geometry hashes and asset key, the bound textures' hashes and the classification.");
+    FUSE_RELIGHT_OPTION_ENV("relight.tap", bool, captureRecord, false, "FUSE_RELIGHT_TAP_CAPTURE_RECORD",
+                            "Capture mode also writes the recording tap's event stream (relight.tap.recordPath) "
+                            "from the same events, so the replay tools can check the live capture.");
+};
+
+struct DeviceOptions {
+    FUSE_RELIGHT_OPTION_ENV("relight.device", bool, import, true, "FUSE_RELIGHT_DEVICE_IMPORT",
+                            "FUSE creates the Vulkan instance and device and DXVK imports them (plan AD-2). "
+                            "Off: DXVK creates its own.");
+};
+
+struct VkOptions {
+    FUSE_RELIGHT_OPTION_ENV("relight.vk", bool, validation, false, "FUSE_RELIGHT_VK_VALIDATION",
+                            "Enable VK_LAYER_KHRONOS_validation on the FUSE-created Vulkan instance when the "
+                            "loader offers it, and count validation messages through VK_EXT_debug_utils.");
+};
+
+std::string lower(std::string_view s) {
+    std::string out(s);
+    for (char& c : out) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return out;
+}
+
+bool relightEnvEnabled() {
+    const char* v = std::getenv("FUSE_RELIGHT");
+    return !(v && v[0] == '0' && v[1] == '\0');
+}
+
+} // namespace
+
+bool parseTapMode(std::string_view text, TapMode& out) {
+    const std::string s = lower(text);
+    if (s == "off" || s == "0" || s == "none" || s.empty()) {
+        out = TapMode::Off;
+    } else if (s == "null") {
+        out = TapMode::Null;
+    } else if (s == "record" || s == "recording") {
+        out = TapMode::Record;
+    } else if (s == "capture") {
+        out = TapMode::Capture;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+const char* tapModeName(TapMode mode) {
+    switch (mode) {
+    case TapMode::Off:
+        return "off";
+    case TapMode::Null:
+        return "null";
+    case TapMode::Record:
+        return "record";
+    case TapMode::Capture:
+        return "capture";
+    }
+    return "off";
+}
+
+RuntimeConfig resolveRuntimeConfig() {
+    RuntimeConfig config;
+    config.relightEnabled = relightEnvEnabled();
+    if (!config.relightEnabled) {
+        config.tapMode = TapMode::Off;
+        config.importDevice = false;
+        return config;
+    }
+    if (!options::OptionSystem::isInitialized()) {
+#if defined(FUSE_RELIGHT_HAVE_SETUP_PROFILE)
+        // RL-6.3: the per-game profile matching this executable becomes the app-config layer.
+        options::OptionSystem::initialize(setup::runtimeOptionSystemDesc(std::string()));
+#else
+        options::OptionSystem::initialize();
+#endif
+    }
+    TapMode mode = TapMode::Off;
+    if (!parseTapMode(TapOptions::mode(), mode)) {
+        std::fprintf(stderr, "fuse-relight: unknown relight.tap.mode '%s'; tap off\n", TapOptions::mode().c_str());
+    }
+    config.tapMode = mode;
+    if (!TapOptions::recordPath().empty()) {
+        config.recordPath = TapOptions::recordPath();
+    }
+    if (!TapOptions::capturePath().empty()) {
+        config.capturePath = TapOptions::capturePath();
+    }
+    config.captureRecord = TapOptions::captureRecord();
+    config.importDevice = DeviceOptions::import();
+    config.vkValidation = VkOptions::validation();
+    return config;
+}
+
+const RuntimeConfig& runtimeConfig() {
+    static std::once_flag once;
+    static RuntimeConfig config;
+    std::call_once(once, [] { config = resolveRuntimeConfig(); });
+    return config;
+}
+
+std::unique_ptr<IRelightTap> createTap(const RuntimeConfig& config, unsigned deviceOrdinal) {
+    if (!config.relightEnabled) {
+        return nullptr;
+    }
+    switch (config.tapMode) {
+    case TapMode::Off:
+        return nullptr;
+    case TapMode::Null:
+        return std::make_unique<NullTap>();
+    case TapMode::Record:
+        return std::make_unique<RecordingTap>(devicePath(config.recordPath, deviceOrdinal));
+    case TapMode::Capture:
+        return nullptr; // createTapForDevice (fuse_relight_tap_capture)
+    }
+    return nullptr;
+}
+
+std::string devicePath(const std::string& path, unsigned deviceOrdinal) {
+    return deviceOrdinal > 0 ? path + "." + std::to_string(deviceOrdinal) : path;
+}
+
+} // namespace fuse::relight::tap

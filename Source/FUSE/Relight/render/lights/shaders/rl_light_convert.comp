@@ -1,0 +1,45 @@
+#version 460
+// FUSE Relight RL-4.4 "relight.lights.convert": one game light per invocation, packed D3DLIGHT9 (float4[5]) ->
+// packed RlLight (float4[6]) in the frame's light table (the D3D fixed-function light conversion on the GPU). CPU
+// reference: ConvertKernel (kernels/light_kernels.hpp). GLSL twin of rl_light_convert.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "rl_lights.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(push_constant) uniform RlConvertPush {
+    uint64_t source;
+    uint64_t table;
+    uint count;
+    uint leastSquares;
+    float sphereRadius;
+    float intensityFactor;
+    float maxIntensity;
+    float distantIntensity;
+    float distantAngle;
+    uint reserved;
+} pc;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.count) {
+        return;
+    }
+    RlWordsRef src = RlWordsRef(pc.source);
+    RlWordsRef dst = RlWordsRef(pc.table);
+    vec4 w[5];
+    for (uint k = 0u; k < 5u; ++k) {
+        w[k] = src.v[i * kRlD3dWords + k];
+    }
+    RlConvertParams prm;
+    prm.sphereRadius = pc.sphereRadius;
+    prm.intensityFactor = pc.intensityFactor;
+    prm.maxIntensity = pc.maxIntensity;
+    prm.distantIntensity = pc.distantIntensity;
+    prm.distantAngle = pc.distantAngle;
+    prm.leastSquares = pc.leastSquares;
+    RlLight L = rlConvertD3dLight(rlD3dLightUnpack(w), prm);
+    for (uint k = 0u; k < 6u; ++k) {
+        dst.v[i * kRlLightWords + k] = rlLightWord(L, k);
+    }
+}

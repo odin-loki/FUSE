@@ -10,6 +10,8 @@ enum class ScriptLoadStatus : u8 {
     ParseError,
     BackendUnavailable,
     InvalidArgument,
+    /// Chunk or callback raised a Lua error (includes instruction-budget and memory-limit aborts).
+    RuntimeError,
 };
 
 struct ScriptLoadResult {

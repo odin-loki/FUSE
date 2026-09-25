@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace fuse::renderer::cuda {
 struct FrameSyncPair;
@@ -57,6 +58,11 @@ public:
     /// Registers the raster depth view into bindless. The composite shader samples it when the index is set.
     bool registerRasterDepth(void* imageView);
 
+    /// Read back the offscreen composite target (RGBA8, width*height of the composite desc).
+    /// Returns false in the stub backend, before initialisation, or when composite targets the
+    /// swapchain instead. Used by the B2.11 blend gate.
+    bool readbackOutput(std::vector<u8>& outRgba) const;
+
     /// Registers a CUDA-interop Vulkan image view; when unavailable composite keeps placeholder colour.
     bool registerCudaSource(void* imageView);
 
@@ -104,6 +110,14 @@ private:
     void* m_cudaImageView = nullptr;
     void* m_cudaExportedHandle = nullptr;
     u64 m_cudaAllocationSize = 0;
+    u32 m_cudaImageLayout = 0; // VK_IMAGE_LAYOUT_UNDEFINED until composite first samples it
+    /// Offscreen composite target (compatible with m_offscreenRenderPass). Composite never
+    /// renders into the raster framebuffer it samples from.
+    void* m_outputImage = nullptr;
+    void* m_outputMemory = nullptr;
+    void* m_outputView = nullptr;
+    void* m_outputFramebuffer = nullptr;
+    mutable u32 m_outputLayout = 0; // VK_IMAGE_LAYOUT_UNDEFINED until a composite pass renders into it
 #endif
 };
 

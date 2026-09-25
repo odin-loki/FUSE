@@ -1,5 +1,7 @@
 #include <fuse/renderer/vk/graphics_pipeline.hpp>
 
+#include <fuse/renderer/vk/debug_utils.hpp>
+
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
 #endif
@@ -8,6 +10,37 @@
 
 namespace fuse::renderer {
 namespace {
+
+[[maybe_unused]] u64 graphicsCacheKey(const GraphicsPipelineDesc& desc) {
+    if (desc.cacheKey != 0u) {
+        return desc.cacheKey;
+    }
+    u64 key = combinePipelineKey(0u, 0x6772617068696331ull); // "graphic1"
+    key = combinePipelineKey(key, desc.vertexShader->info().spirvHash);
+    key = combinePipelineKey(key, desc.fragmentShader->info().spirvHash);
+    const u64 state[] = {desc.colorFormat,
+                         desc.colorAttachmentCount,
+                         desc.depthFormat,
+                         desc.polygonMode,
+                         desc.cullMode,
+                         desc.topology,
+                         desc.frontFace,
+                         desc.depthBiasEnable ? 1u : 0u,
+                         desc.depthTest ? 1u : 0u,
+                         desc.depthWrite ? 1u : 0u,
+                         desc.depthCompareOp,
+                         desc.blendEnable ? 1u : 0u,
+                         desc.srcColorBlendFactor,
+                         desc.dstColorBlendFactor,
+                         desc.colorBlendOp,
+                         desc.vertexStrideBytes,
+                         desc.vertexFormat,
+                         desc.useDynamicRendering ? 1u : 0u};
+    for (const u64 value : state) {
+        key = combinePipelineKey(key, value);
+    }
+    return key;
+}
 
 void snapshotPipelineCache(GraphicsPipelineInfo& info, PipelineCache* cache) {
     if (cache == nullptr) {
@@ -180,10 +213,20 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     colorBlendAttachment.dstAlphaBlendFactor = static_cast<VkBlendFactor>(desc.dstColorBlendFactor);
     colorBlendAttachment.alphaBlendOp = static_cast<VkBlendOp>(desc.colorBlendOp);
 
+    const u32 colorCount = desc.colorAttachmentCount;
+    if (colorCount == 0u || colorCount > RenderPassDesc::kMaxColorAttachments) {
+        m_info.message = "graphics pipeline colour attachment count out of range";
+        return false;
+    }
+    VkPipelineColorBlendAttachmentState colorBlendAttachments[RenderPassDesc::kMaxColorAttachments]{};
+    for (u32 i = 0; i < colorCount; ++i) {
+        colorBlendAttachments[i] = colorBlendAttachment;
+    }
+
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+    colorBlending.attachmentCount = colorCount;
+    colorBlending.pAttachments = colorBlendAttachments;
 
     VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
     VkPipelineDynamicStateCreateInfo dynamicState{};
@@ -194,7 +237,13 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     VkPipelineLayout pipelineLayout =
         static_cast<VkPipelineLayout>(desc.layout->nativeHandle());
 
-    VkFormat colorFormat = static_cast<VkFormat>(desc.colorFormat);
+    VkFormat colorFormats[RenderPassDesc::kMaxColorAttachments]{};
+    for (u32 i = 0; i < colorCount; ++i) {
+        const u32 format = i == 0u || desc.renderPass == nullptr
+                               ? desc.colorFormat
+                               : desc.renderPass->colorFormatAt(i);
+        colorFormats[i] = static_cast<VkFormat>(format);
+    }
     VkFormat depthFormat = static_cast<VkFormat>(desc.depthFormat);
     VkPipelineRenderingCreateInfo rendering{};
 
@@ -214,8 +263,8 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     pipelineInfo.subpass = 0;
     if (desc.useDynamicRendering) {
         rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-        rendering.colorAttachmentCount = 1;
-        rendering.pColorAttachmentFormats = &colorFormat;
+        rendering.colorAttachmentCount = colorCount;
+        rendering.pColorAttachmentFormats = colorFormats;
         if (desc.depthFormat != 0) {
             rendering.depthAttachmentFormat = depthFormat;
         }
@@ -228,20 +277,55 @@ bool GraphicsPipeline::initialize(VulkanDevice& device, const GraphicsPipelineDe
     }
 
     VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+    PipelineCache* cache =
+        desc.pipelineCache != nullptr && desc.pipelineCache->isValid() ? desc.pipelineCache : nullptr;
     VkPipelineCache pipelineCache =
-        desc.pipelineCache != nullptr && desc.pipelineCache->isValid()
-            ? static_cast<VkPipelineCache>(desc.pipelineCache->nativeHandle())
-            : VK_NULL_HANDLE;
+        cache != nullptr ? static_cast<VkPipelineCache>(cache->nativeHandle()) : VK_NULL_HANDLE;
+
+    // WP-0.5: creation feedback + optional cache-control probe (see compute_pipeline.cpp).
+    VkPipelineCreationFeedback feedback{};
+    VkPipelineCreationFeedbackCreateInfo feedbackInfo{};
+    feedbackInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO;
+    feedbackInfo.pPipelineCreationFeedback = &feedback;
+    const bool useFeedback = cache != nullptr && cache->creationFeedback();
+    if (useFeedback) {
+        feedbackInfo.pNext = pipelineInfo.pNext;
+        pipelineInfo.pNext = &feedbackInfo;
+    }
+    if (desc.failIfNotCached && cache != nullptr && cache->creationCacheControl()) {
+        pipelineInfo.flags |= VK_PIPELINE_CREATE_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT;
+    }
+    m_info.cache = {};
+    m_info.cache.key = cache != nullptr ? graphicsCacheKey(desc) : 0u;
+
     const VkResult result =
         vkCreateGraphicsPipelines(static_cast<VkDevice>(device.nativeHandle()), pipelineCache, 1,
                                   &pipelineInfo, nullptr, &graphicsPipeline);
+    if (result == VK_PIPELINE_COMPILE_REQUIRED) {
+        m_info.cache.compileRequired = true;
+        cache->noteCompileRequired();
+        m_info.message = "graphics pipeline not in cache (compile required)";
+        return false;
+    }
     if (result != VK_SUCCESS) {
         m_info.message = "vkCreateGraphicsPipelines failed";
         return false;
     }
+    if (cache != nullptr) {
+        m_info.cache.warmStart = cache->isWarm(m_info.cache.key);
+        m_info.cache.feedbackValid =
+            useFeedback && (feedback.flags & VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT) != 0u;
+        m_info.cache.driverCacheHit =
+            m_info.cache.feedbackValid &&
+            (feedback.flags & VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT) != 0u;
+        m_info.cache.durationNs = m_info.cache.feedbackValid ? feedback.duration : 0u;
+        cache->notePipelineCreated(m_info.cache.key, m_info.cache.feedbackValid, m_info.cache.driverCacheHit);
+    }
 
     m_handle = graphicsPipeline;
     m_info.valid = true;
+    nameVkObject(device.nativeHandle(), vk_object_type::kPipeline, m_handle,
+                       desc.debugName != nullptr ? desc.debugName : "fuse.graphics_pipeline");
     m_info.dynamicRendering = desc.useDynamicRendering;
     m_info.depthFormat = desc.depthFormat;
     m_info.hasDynamicDepth = desc.useDynamicRendering && desc.depthFormat != 0;

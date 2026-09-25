@@ -1,0 +1,48 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "texture_set",
+  "id": "mod/fixture_game/remix_basic/mat_3F1A2B3C4D5E6F70",
+  "name": "mat_3F1A2B3C4D5E6F70",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 1,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "albedo": {
+      "sha256": "990e355d71a545c9ca9fef959418ac97bc3c0225e37c0a5ed8551aae03db5bd1",
+      "size": 212,
+      "media": "image/vnd-ms.dds"
+    },
+    "normal": {
+      "sha256": "75f9a8b236254b2a275994a048c703e4a6e6da1c8bf37f0f7d187067d97e0dfb",
+      "size": 212,
+      "media": "image/vnd-ms.dds"
+    },
+    "normalConvention": "GL",
+    "texelsPerMetre": 0,
+    "albedoSrgb": true
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:remix_basic"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "remix_basic",
+      "stage": "mod.usda",
+      "prim": "/RootNode/Looks/mat_3F1A2B3C4D5E6F70",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "MIT",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

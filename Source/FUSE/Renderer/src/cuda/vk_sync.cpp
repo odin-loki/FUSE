@@ -1,4 +1,5 @@
 #include <fuse/renderer/cuda/vk_sync.hpp>
+#include <fuse/renderer/vk/debug_utils.hpp>
 
 #include <fuse/jobs/cuda_jobs.hpp>
 
@@ -65,6 +66,8 @@ bool createVulkanTimelineSemaphore(VkDevice device, bool exportForCuda, VkSemaph
     if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore) != VK_SUCCESS) {
         return false;
     }
+    nameVkObject(device, vk_object_type::kSemaphore, static_cast<void*>(semaphore),
+                       "fuse.cuda_vk.timeline");
     *outSemaphore = semaphore;
     return true;
 }
@@ -215,7 +218,7 @@ SharedTimeline SharedTimeline::create(void* vkDevice, void* vkPhysicalDevice) {
 #endif
 }
 
-void SharedTimeline::destroy(void* vkDevice) {
+void SharedTimeline::destroy([[maybe_unused]] void* vkDevice) {
 #if defined(FUSE_HAS_CUDA)
     if (cudaSemaphore != nullptr) {
         cudaDestroyExternalSemaphore(static_cast<cudaExternalSemaphore_t>(cudaSemaphore));
@@ -262,8 +265,8 @@ bool SharedTimeline::waitCuda(void* cudaStream, u64 waitValue) const {
     cudaExternalSemaphoreWaitParams waitParams{};
     waitParams.params.fence.value = waitValue;
     const cudaStream_t stream = cudaStream != nullptr ? static_cast<cudaStream_t>(cudaStream) : 0;
-    const cudaError_t err = cudaWaitExternalSemaphoresAsync(
-        &static_cast<cudaExternalSemaphore_t>(cudaSemaphore), &waitParams, 1, stream);
+    const cudaExternalSemaphore_t semaphore = static_cast<cudaExternalSemaphore_t>(cudaSemaphore);
+    const cudaError_t err = cudaWaitExternalSemaphoresAsync(&semaphore, &waitParams, 1, stream);
     return err == cudaSuccess;
 #else
     (void)cudaStream;
@@ -281,8 +284,8 @@ bool SharedTimeline::signalCuda(void* cudaStream, u64 newValue) const {
     cudaExternalSemaphoreSignalParams signalParams{};
     signalParams.params.fence.value = newValue;
     const cudaStream_t stream = cudaStream != nullptr ? static_cast<cudaStream_t>(cudaStream) : 0;
-    const cudaError_t err = cudaSignalExternalSemaphoresAsync(
-        &static_cast<cudaExternalSemaphore_t>(cudaSemaphore), &signalParams, 1, stream);
+    const cudaExternalSemaphore_t semaphore = static_cast<cudaExternalSemaphore_t>(cudaSemaphore);
+    const cudaError_t err = cudaSignalExternalSemaphoresAsync(&semaphore, &signalParams, 1, stream);
     return err == cudaSuccess;
 #else
     (void)cudaStream;

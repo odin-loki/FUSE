@@ -1,0 +1,4 @@
+variant /RootNode/lights/light_0000000000000C02 mood
+attr /RootNode/lights/light_0000000000000C02.inputs:intensity = 10
+replacement light 0000000000000C02 type=SphereLight
+nodiag any

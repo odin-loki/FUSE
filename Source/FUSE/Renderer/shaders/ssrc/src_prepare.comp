@@ -1,0 +1,93 @@
+#version 460
+// "ssrc.prepare": the WP-1.5 G-buffer + the WP-2.1 lit image -> the sections the cascades read (one pixel per
+// thread, 8 x 8 tiles): geo = (linear view depth (0 = sky), view normal in the ssfx convention), lit, diffuse =
+// (albedo x (1 - metallic), material AO), albedo. The same unpacking as WP-6.3's ssfx.prepare (shaders/ssfx/
+// sx_prepare.comp); CPU reference: ssfx_gpu::prepare_pixel. GLSL twin of src_prepare.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "src_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// Arithmetic lives in helpers with `precise` locals and plain arguments: glslang's precise propagation fails
+// (unbounded allocation) when a precise expression in the same function depends on a bindless fetch.
+float src_linear_depth(float d, float nearPlane, float farPlane, bool reversedZ) {
+    float z = 0.0;
+    if (reversedZ) {
+        if (d > 0.0) {
+            precise float q = nearPlane / d;
+            z = q;
+        }
+    } else if (d < 1.0 && farPlane > nearPlane) {
+        precise float num = nearPlane * farPlane;
+        precise float den = farPlane - d * (farPlane - nearPlane);
+        precise float q = num / den;
+        z = q;
+    }
+    return (z > 0.0 && z < 3.0e38) ? z : 0.0;
+}
+
+float src_one_minus(float v) {
+    precise float r = 1.0 - v;
+    return r;
+}
+
+float src_pdot(vec3 a, vec3 b) {
+    precise float d = a.x * b.x + a.y * b.y + a.z * b.z;
+    return d;
+}
+
+vec3 src_pscale(vec3 v, float s) {
+    precise vec3 r = vec3(v.x * s, v.y * s, v.z * s);
+    return r;
+}
+
+vec3 src_pnormalize(vec3 v) {
+    precise float len = sqrt(src_pdot(v, v));
+    if (len < 1e-8) {
+        return vec3(0.0);
+    }
+    precise float inv = 1.0 / len;
+    return src_pscale(v, inv);
+}
+
+vec3 src_oct_decode(float ox, float oy) {
+    precise float nz = 1.0 - abs(ox) - abs(oy);
+    float nx = ox;
+    float ny = oy;
+    if (nz < 0.0) {
+        precise float fx = (1.0 - abs(oy)) * (ox >= 0.0 ? 1.0 : -1.0);
+        precise float fy = (1.0 - abs(ox)) * (oy >= 0.0 ? 1.0 : -1.0);
+        nx = fx;
+        ny = fy;
+    }
+    return src_pnormalize(vec3(nx, ny, nz));
+}
+
+vec4 src_fetch(uint handle, ivec2 p) { return texelFetch(fuse_textures_2d[fuse_handle_index(handle)], p, 0); }
+
+void main() {
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const ivec2 ip = ivec2(p);
+    const float rt4 = src_fetch(F.inputDepth, ip).x;
+    const vec4 rt0 = src_fetch(F.inputNormal, ip);
+    const vec4 rt1 = src_fetch(F.inputAlbedo, ip);
+    const vec4 rt2 = src_fetch(F.inputRoughMetal, ip);
+    const vec4 lit = src_fetch(F.inputLit, ip);
+    const uint i = p.y * F.width + p.x;
+
+    const float z = src_linear_depth(rt4, F.nearPlane, F.farPlane, (F.flags & SRC_FLAG_REVERSED_Z) != 0u);
+    const vec3 w = src_oct_decode(rt0.x, rt0.y);
+    // viewRot[r] * w.x + viewRot[4 + r] * w.y + viewRot[8 + r] * w.z (prepare_pixel's order).
+    const float vx = src_pdot(vec3(F.viewRot[0], F.viewRot[4], F.viewRot[8]), w);
+    const float vy = src_pdot(vec3(F.viewRot[1], F.viewRot[5], F.viewRot[9]), w);
+    const float vz = src_pdot(vec3(F.viewRot[2], F.viewRot[6], F.viewRot[10]), w);
+    const vec3 diffuse = src_pscale(rt1.xyz, src_one_minus(rt2.y));
+
+    SrcTexelsRef(F.geo).v[i] = vec4(z, vx, -vy, -vz);
+    SrcTexelsRef(F.lit).v[i] = lit;
+    SrcTexelsRef(F.diffuse).v[i] = vec4(diffuse, rt0.w);
+    SrcTexelsRef(F.albedo).v[i] = vec4(rt1.xyz, 0.0);
+}

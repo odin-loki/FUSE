@@ -1,0 +1,12 @@
+# Explicit prim-path references; connections inside the referenced prim map into the stage namespace.
+prim /RootNode/Looks/mat_00000000000000C1 type=Material
+attr /RootNode/Looks/mat_00000000000000C1/Shader.inputs:metallic_constant = 0.75
+attr /RootNode/Looks/mat_00000000000000C1/Shader.inputs:reflection_roughness_constant = 0.3
+conn /RootNode/Looks/mat_00000000000000C1.outputs:mdl:surface = [</RootNode/Looks/mat_00000000000000C1/Shader.outputs:out>]
+conn /RootNode/Looks/mat_00000000000000C2.outputs:mdl:surface = [</RootNode/Looks/mat_00000000000000C2/Shader.outputs:out>]
+attr /RootNode/Looks/mat_00000000000000C2/Shader.inputs:ior_constant = 1.5
+noprim /Library
+replacement material 00000000000000C1 mdl=AperturePBR_Opacity.mdl key=name
+replacement material 00000000000000C2 mdl=AperturePBR_Translucent.mdl sub=AperturePBR_Translucent
+remix materials 2
+nodiag any

@@ -1,0 +1,67 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "light",
+  "id": "mod/fixture_game/remix_basic/light_1D2C3B4A59687706",
+  "name": "light_1D2C3B4A59687706",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 1,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "type": "Directional",
+    "colorLinear": [1, 0.75, 0.5],
+    "intensity": 12,
+    "range": 0,
+    "innerCone": 0,
+    "outerCone": 0,
+    "size": [0, 0],
+    "castsShadows": true,
+    "relight": {
+      "usd_type": "DistantLight",
+      "intensity_units": "remix",
+      "params": {
+        "radius": 0,
+        "width": 0,
+        "height": 0,
+        "length": 0,
+        "angle": 0.5,
+        "enableColorTemperature": false,
+        "color": [1, 0.75, 0.5],
+        "colorTemperature": 6500,
+        "exposure": 2,
+        "intensity": 3,
+        "shaping:cone:angle": 180,
+        "shaping:cone:softness": 0,
+        "shaping:focus": 0,
+        "volumetric_radiance_scale": 1
+      },
+      "authored": ["angle", "color", "exposure", "intensity"],
+      "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      "remix_hash": "1D2C3B4A59687706",
+      "attached_to": null
+    }
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:remix_basic"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "remix_basic",
+      "stage": "mod.usda",
+      "prim": "/RootNode/lights/light_1D2C3B4A59687706",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "MIT",
+  "distribution": "never",
+  "replaces": ["oaid:6c54764c-bf33-5ff3-b650-25487d70c66e"],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

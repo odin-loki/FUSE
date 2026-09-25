@@ -1,0 +1,72 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "relight_mod",
+  "id": "mod/fixture_game/legacy_particles",
+  "name": "legacy_particles",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 0.0254,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "name": "legacy_particles",
+    "kind": "mod",
+    "root_layer": "mod.usda",
+    "layers": ["mod.usda", "assets/prop.usda"],
+    "layer_type": "",
+    "game_name": "",
+    "rtx_conf": null,
+    "geometry_asset_rule": "legacypositions0,legacyindices",
+    "geometry_asset_rule_source": "option",
+    "licence": {
+      "id": "CC-BY-SA-4.0",
+      "file": "LICENCE.txt",
+      "text": {
+        "sha256": "5302c154f02dad8e4ce4e9a590bd706d2dc2a344992bc9f7e302264107538942",
+        "size": 82,
+        "media": "text/plain"
+      },
+      "detected": true
+    },
+    "graphs": ["/RootNode/FlickerGraph"],
+    "counts": {
+      "mesh_replacements": 2,
+      "meshes": 1,
+      "materials": 1,
+      "textures": 0,
+      "lights": 3,
+      "particles": 2,
+      "keys": 3,
+      "replacements": 3
+    },
+    "diagnostics": [
+      {
+        "severity": "warning",
+        "code": "no_shader",
+        "where": "/RootNode/Looks/mat_00000000000000F2",
+        "message": "material has no Shader prim; Opaque defaults"
+      }
+    ]
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:legacy_particles"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "legacy_particles",
+      "stage": "mod.usda",
+      "prim": ""
+    }
+  },
+  "licence_id": "CC-BY-SA-4.0",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

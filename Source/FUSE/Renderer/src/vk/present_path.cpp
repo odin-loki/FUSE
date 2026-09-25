@@ -77,7 +77,10 @@ bool PresentPath::processPendingResize() {
 
     FrameManager* frameManager = m_bootstrap.frameManager();
     if (frameManager != nullptr && frameManager->isReady()) {
-        const bool waitAllSlots = !m_status.headless;
+        // A real swapchain may have been wired after this path was created (m_status.headless is
+        // then stale): every slot's commands can reference its render pass / framebuffers.
+        const VulkanSwapchain* current = m_bootstrap.swapchain();
+        const bool waitAllSlots = !m_status.headless || (current != nullptr && !current->isHeadless());
         if (!waitInFlightFencesBeforeRecreate(*frameManager, waitAllSlots)) {
             m_status.message = "In-flight fence wait failed before swapchain recreate";
             return false;
@@ -154,8 +157,10 @@ u32 PresentPath::acquireImage() {
     VulkanSwapchain* swapchain = m_bootstrap.swapchain();
 
     u32 imageIndex = UINT32_MAX;
+    m_renderFinishedSignalled = false;
     if (!shouldSkipAcquireForEmptySwapchain(swapchain) && frameManager != nullptr && frameManager->isReady()) {
-        const FrameSyncData& slot = frameManager->current();
+        m_acquireSlot = frameManager->currentIndex();
+        const FrameSyncData& slot = frameManager->slot(m_acquireSlot);
         imageIndex = swapchain->acquireNextImage(slot.imageAvailable);
     }
 
@@ -167,6 +172,7 @@ u32 PresentPath::acquireImage() {
         m_status.message = m_status.headless ? "Headless acquire stub (no swapchain image)"
                                              : "Swapchain acquire returned no image";
     } else {
+        ++m_status.acquiredImageCount;
         m_status.message = "Swapchain image acquired";
     }
     return imageIndex;
@@ -199,13 +205,14 @@ bool PresentPath::presentImage() {
         realQtPresentEligible(swapchain, m_status.acquiredImageIndex, frameManager);
 
     bool presented = false;
-    // FUSE Track B: skip vkQueuePresentKHR unless VulkanProduction is unlocked.
-    if (!productionPresentAllowed() ||
+    // FUSE Track B: skip vkQueuePresentKHR unless VulkanProduction is unlocked. Never present an
+    // image no submit rendered (its renderFinished semaphore would never signal).
+    if (!productionPresentAllowed() || !m_renderFinishedSignalled ||
         shouldEarlyOutEmptyPresent(swapchain, m_status.acquiredImageIndex, frameManager)) {
         presented = true;
         ++m_status.emptyPresentCount;
     } else {
-        const FrameSyncData& slot = frameManager->current();
+        const FrameSyncData& slot = frameManager->slot(m_acquireSlot);
         presented = swapchain->present(slot.renderFinished, m_status.acquiredImageIndex);
         if (presented && realPresentEligibleNow) {
             ++m_status.realPresentCallCount;
@@ -222,7 +229,8 @@ bool PresentPath::presentImage() {
     }
 
     ++m_status.presentedFrames;
-    const bool headlessSink = !realPresentEligibleNow;
+    const bool headlessSink = !realPresentEligibleNow || !m_renderFinishedSignalled;
+    m_renderFinishedSignalled = false;
     m_status.acquiredImageIndex = UINT32_MAX;
     m_status.fenceWaited = false;
     m_status.acquireAttempted = false;
@@ -241,6 +249,10 @@ bool PresentPath::presentImage() {
 
 void PresentPath::noteQueueSubmit(bool ok, bool submitted, bool headless) {
     m_status.lastQueueSubmitOk = ok;
+    // A non-headless submit waited on imageAvailable and signalled renderFinished (queue_submit.cpp).
+    m_renderFinishedSignalled = ok && submitted && !headless &&
+                                (m_status.state == PresentPathState::ImageAcquired ||
+                                 m_status.state == PresentPathState::ReadyToPresent);
     if (submitted) {
         ++m_status.queueSubmitCount;
     }

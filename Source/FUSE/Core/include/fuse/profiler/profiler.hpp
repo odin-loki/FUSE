@@ -120,6 +120,10 @@ private:
 bool enabled();
 void setEnabled(bool enabled);
 
+/// Timestamp source of the recording hot path: "tsc" (invariant TSC via rdtsc on x86-64; ticks
+/// are converted to steady_clock-aligned nanoseconds on read) or "steady_clock".
+const char* clockSourceName();
+
 void beginFrame();
 void endFrame();
 
@@ -234,15 +238,24 @@ std::string exportChromeTraceJson();
 } // namespace fuse::profiler
 
 #if defined(FUSE_NO_PROFILER) && FUSE_NO_PROFILER
-#define FUSE_PROFILE_SCOPE(name) ((void)0)
-#define FUSE_PROFILE_ASYNC_FLOW_BEGIN(name, flowId) ((void)0)
-#define FUSE_PROFILE_ASYNC_FLOW_END(name, flowId) ((void)0)
-#define FUSE_PROFILE_COUNTER(track, value) ((void)0)
-#define FUSE_PROFILE_COUNTER_SNAPSHOT_AT_FRAME(track, value) ((void)0)
-#define FUSE_PROFILE_GPU_BEGIN(name, cmd) ((void)0)
-#define FUSE_PROFILE_GPU_END(cmd) ((void)0)
-#define FUSE_PROFILE_CUDA_BEGIN(name, stream) ((void)0)
-#define FUSE_PROFILE_CUDA_END(stream) ((void)0)
+namespace fuse::profiler::detail {
+/// Shipping strip: arguments are named only inside sizeof — never evaluated, so no call, name
+/// string or side effect is emitted, yet variables that exist only to feed a profiler macro stay
+/// "used" (no -Wunused-variable in shipping builds). Declared, never defined.
+template <typename... Args>
+int unevaluatedUse(const Args&... args) noexcept;
+} // namespace fuse::profiler::detail
+#define FUSE_DETAIL_PROFILE_DISCARD(...) \
+    static_cast<void>(sizeof(::fuse::profiler::detail::unevaluatedUse(__VA_ARGS__)))
+#define FUSE_PROFILE_SCOPE(name) FUSE_DETAIL_PROFILE_DISCARD(name)
+#define FUSE_PROFILE_ASYNC_FLOW_BEGIN(name, flowId) FUSE_DETAIL_PROFILE_DISCARD(name, flowId)
+#define FUSE_PROFILE_ASYNC_FLOW_END(name, flowId) FUSE_DETAIL_PROFILE_DISCARD(name, flowId)
+#define FUSE_PROFILE_COUNTER(track, value) FUSE_DETAIL_PROFILE_DISCARD(track, value)
+#define FUSE_PROFILE_COUNTER_SNAPSHOT_AT_FRAME(track, value) FUSE_DETAIL_PROFILE_DISCARD(track, value)
+#define FUSE_PROFILE_GPU_BEGIN(name, cmd) FUSE_DETAIL_PROFILE_DISCARD(name, cmd)
+#define FUSE_PROFILE_GPU_END(cmd) FUSE_DETAIL_PROFILE_DISCARD(cmd)
+#define FUSE_PROFILE_CUDA_BEGIN(name, stream) FUSE_DETAIL_PROFILE_DISCARD(name, stream)
+#define FUSE_PROFILE_CUDA_END(stream) FUSE_DETAIL_PROFILE_DISCARD(stream)
 #else
 #define FUSE_PROFILE_SCOPE_IMPL2(line, name) ::fuse::profiler::ProfileScope _fuse_profile_scope_##line(name)
 #define FUSE_PROFILE_SCOPE_IMPL(line, name) FUSE_PROFILE_SCOPE_IMPL2(line, name)
@@ -257,3 +270,6 @@ std::string exportChromeTraceJson();
 #define FUSE_PROFILE_CUDA_BEGIN(name, stream) ::fuse::profiler::profile_cuda_begin(name, stream)
 #define FUSE_PROFILE_CUDA_END(stream) ::fuse::profiler::profile_cuda_end(stream)
 #endif
+
+// WP-0.6: optional Tracy backend (FUSE_TRACY=1); expands nothing Tracy-related otherwise.
+#include <fuse/profiler/tracy_adapter.hpp>

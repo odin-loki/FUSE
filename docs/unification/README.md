@@ -22,6 +22,7 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 
 | Document | Description |
 |----------|-------------|
+| [EXECUTION-PLAN.md](./EXECUTION-PLAN.md) | **Current work order** — Track B from the B2.11 gates onward (what is proven, what is next, what needs hardware) |
 | [symbol-collision-report.md](./symbol-collision-report.md) | Duplicate globals/classes across T3D vs T2D — console, platform, math, util, gui, sim, and more |
 | [subsystem-matrix.md](./subsystem-matrix.md) | Per-subsystem T3D vs T2D comparison with Merge / Keep dual / Replace with FUSE recommendations |
 | [addon-ore-catalog.md](./addon-ore-catalog.md) | All seven addons: patches vs scripts vs art; licenses; kernel entry points |

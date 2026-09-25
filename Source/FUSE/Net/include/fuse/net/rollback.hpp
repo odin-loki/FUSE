@@ -9,6 +9,13 @@
 
 namespace fuse::net {
 
+/// Result of comparing a peer's per-frame checksum against the local snapshot.
+enum class DesyncCheck : u8 {
+    Unknown,  ///< No local snapshot retained for that frame.
+    Match,    ///< Checksums agree.
+    Mismatch, ///< Simulation diverged — desync.
+};
+
 /// GGPO-style rollback manager bound to an ECS registry (B7.4).
 class RollbackManager {
 public:
@@ -35,6 +42,13 @@ public:
     [[nodiscard]] bool can_rewind_to(u32 frame) const;
     /// Restore simulation state to `frame` without resimulating forward.
     bool rewind_to(u32 frame);
+    /// Checksum of the retained snapshot for `frame` (state before that frame integrates); 0 if absent.
+    [[nodiscard]] u64 local_checksum(u32 frame) const;
+    /// Compare a remote peer's checksum for `frame`; a mismatch latches `desync_detected()`.
+    DesyncCheck check_remote_checksum(u32 frame, u64 remote_checksum);
+    [[nodiscard]] bool desync_detected() const { return m_desync_detected; }
+    [[nodiscard]] u32 first_desync_frame() const { return m_first_desync_frame; }
+
     /// Stub helper: frames that would be resimulated to reach `target_frame` from `current_frame()`.
     [[nodiscard]] u32 resimulate_count_to(u32 target_frame) const;
 
@@ -50,6 +64,8 @@ private:
     u32 m_max_rollback = 8;
     f32 m_last_dt = 1.f / 60.f;
     bool m_rolling_back = false;
+    bool m_desync_detected = false;
+    u32 m_first_desync_frame = 0;
 
     void capture_registry_state_(GameSnapshot& snapshot) const;
     void restore_registry_state_(const GameSnapshot& snapshot) const;

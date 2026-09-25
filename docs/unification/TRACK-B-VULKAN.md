@@ -5,6 +5,25 @@
 **Threading:** [architecture-parallel.md](./architecture-parallel.md) §4.2, §4.4, §5.3  
 **Hybrid integration:** [U4-HYBRID-FRAME.md](./U4-HYBRID-FRAME.md)
 
+**Execution order from here:** [EXECUTION-PLAN.md](./EXECUTION-PLAN.md)
+
+### B2.11 — validation gate ✅
+
+`fuse_vulkan_validation_gate` re-runs the whole CTest suite with `VK_LAYER_KHRONOS_validation`
+forced on (`VK_INSTANCE_LAYERS`) and fails on any validation message. It runs serially and
+reports *skipped* when the layer manifest is not installed. Linux CI installs
+`vulkan-validationlayers`, so the gate is live there.
+
+```bash
+ctest --test-dir build/fuse-debug -R fuse_vulkan_validation_gate --output-on-failure
+```
+
+Per-image layout tracking (raster colour/depth, swapchain images, CUDA interop image) backs the
+graph barriers: `VkFrameEncodeContext::{barrierImageLayout, depthImageLayout,
+presentImageLayout, cudaImageLayout}` point at state owned by the image owner, barriers use the
+tracked value as `oldLayout`, and render passes update it to their final layout. Composite renders
+into its own offscreen target (never the raster framebuffer it samples).
+
 ---
 
 ## Scope
@@ -818,6 +837,7 @@ cmake -B build -DFUSE_UMBRELLA=ON -DFUSE_BUILD_CUDA=ON
 | `SharedTimeline` / `FrameSyncPair` | `Source/FUSE/Renderer/include/fuse/renderer/cuda/vk_sync.hpp` | Timeline export/import when device supports; `driverWired` flag for honest tests |
 | `FUSE_ENABLE_GLFW_PRESENT` | root `CMakeLists.txt` | OFF default — enables `vkQueuePresentKHR` when display + GLFW WSI available |
 | `FUSE_ENABLE_QT_PRESENT` | root `CMakeLists.txt` | OFF default — enables `vkQueuePresentKHR` when display + Qt Vulkan surface available |
+| `TrackBHostFeature::EditorViewportPresent` | `fuse/core/track_b.hpp` | Host-scoped runtime unlock: `fuse_editor` sets it once its Qt Vulkan surface is wired; satisfies `productionPresentAllowed()` + `desktopQtPresentRuntimeReady()` for the editor process only (global `FUSE_TRACK_B_UNLOCK` unchanged; ignored under `FUSE_SHIPPING`) |
 | `FuseVulkanMobile.cmake` | `cmake/` | Android WSI + MoltenVK macOS stub options (honest OFF defaults) |
 | `RuntimeViewportHook` handoff | `Source/FUSE/Editor/` | `ViewportSwapchainHandoff` → `SwapchainDesc.surface` stub for U6 Qt embed |
 | `StreamManager` | `Source/FUSE/Renderer/include/fuse/renderer/cuda/stream_manager.hpp` | Named streams (Render, Physics, AI, Particles, Upload) |
@@ -869,7 +889,7 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] Android Vulkan WSI + MoltenVK macOS cmake stubs (`FuseVulkanMobile.cmake`, WP-06m)
 - [x] Mobile Vulkan stub status helpers + retirement gate tests (`mobile_vulkan_stub.hpp`, `fuse_placeholder_renderer_retirement`, WP-06p)
 - [x] Lavapipe ICD lock on `fuse_rhi_resource_destroy_order` (WP-06p)
-- [ ] Editor Qt native surface (`U6` viewport) → real `vkQueuePresentKHR` on display with gate ON (WP-06i bootstrap; WP-06m gate)
+- [x] Editor Qt native surface (`U6` viewport) → real `vkQueuePresentKHR` on display (editor-scoped unlock `TrackBHostFeature::EditorViewportPresent`; `fuse_editor_qt_live_present`, see [editor.md](../editor.md#embedded-vulkan-viewport))
 
 ---
 

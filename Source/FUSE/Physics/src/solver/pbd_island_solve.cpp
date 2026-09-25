@@ -363,19 +363,13 @@ void per_pair_delta_application(RigidBodySoA& bodies,
                                 f32 invMassA,
                                 f32 invMassB,
                                 const narrowphase::ContactManifold& contact,
+                                u32 contactIndex,
                                 f32 dt,
                                 f32 contactCompliance,
                                 f32& lambda) {
-    workBuffers.clearPositionDeltasForBodies(bodyA, bodyB);
-    accumulateContactCorrection(bodies,
-                                contact,
-                                invMassA,
-                                invMassB,
-                                dt,
-                                contactCompliance,
-                                lambda,
-                                workBuffers.positionDeltas());
-    workBuffers.applyPositionDeltas(bodies);
+    const ContactBody a{bodyA, invMassA, workBuffers.effectiveInvInertia(bodyA, invMassA)};
+    const ContactBody b{bodyB, invMassB, workBuffers.effectiveInvInertia(bodyB, invMassB)};
+    solveContactConstraint(bodies, workBuffers, contactIndex, contact, a, b, dt, contactCompliance, lambda);
 }
 
 void per_pair_delta_application(RigidBodySoA& bodies,
@@ -387,15 +381,11 @@ void per_pair_delta_application(RigidBodySoA& bodies,
                                 const DistanceConstraint& constraint,
                                 f32 dt,
                                 f32& lambda) {
+    // Anchored joints move and rotate the predicted poses directly (no delta slots needed).
     workBuffers.clearPositionDeltasForBodies(bodyA, bodyB);
-    accumulateDistanceSpringCorrection(bodies,
-                                       constraint,
-                                       invMassA,
-                                       invMassB,
-                                       dt,
-                                       lambda,
-                                       workBuffers.positionDeltas());
-    workBuffers.applyPositionDeltas(bodies);
+    const ContactBody a{bodyA, invMassA, workBuffers.effectiveInvInertia(bodyA, invMassA)};
+    const ContactBody b{bodyB, invMassB, workBuffers.effectiveInvInertia(bodyB, invMassB)};
+    solveDistanceConstraint(bodies, constraint, a, b, dt, lambda);
 }
 
 bool solve_island_job(RigidBodySoA& bodies,
@@ -432,6 +422,7 @@ bool solve_island_job(RigidBodySoA& bodies,
                                  invMassFn(bodies, contact.bodyA),
                                  invMassFn(bodies, contact.bodyB),
                                  contact,
+                                 contactIndex,
                                  dt,
                                  contactCompliance,
                                  lambda);

@@ -1,0 +1,23 @@
+#usda 1.0
+
+# RL-3.1 fixture: instanceable prims are flattened (each instance composes the full prototype); the flag is kept.
+def Xform "RootNode"
+{
+    def Xform "meshes"
+    {
+        def Xform "mesh_0000000000000E01" (
+            instanceable = true
+            prepend references = @./assets/rock.usd@
+        )
+        {
+        }
+
+        def Xform "mesh_0000000000000E02" (
+            instanceable = true
+            prepend references = @./assets/rock.usd@
+        )
+        {
+            float3 tint = (1, 0, 0)
+        }
+    }
+}

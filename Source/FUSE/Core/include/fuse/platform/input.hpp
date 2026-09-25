@@ -98,8 +98,17 @@ public:
 
     /// Apply one `KeyDown`/`KeyUp`, `MouseMove`, `RawMouseDelta`, or `MouseButtonDown`/`Up`.
     /// `RawMouseDelta` accumulates `mouseDeltaX/Y` and does not overwrite absolute `mouseX/Y`.
+    /// Once a raw delta has been seen, `MouseMove` only updates the absolute position: the OS
+    /// cursor path is acceleration-scaled, so mixing it in would corrupt the raw delta.
+    /// `InputCaptureChanged` with `inputCaptured == false` (capture released: raw input stops)
+    /// switches back to `MouseMove` deltas — see `onInputCaptureChanged`.
     /// Other event types are ignored. Unknown key/button codes are ignored.
     void apply(const PlatformEvent& event);
+
+    /// Follow the window's capture state. Release leaves raw mode (`rawMouseActive()` false) and
+    /// drops the stale cursor baseline, so the next `MouseMove` sets the position and the ones
+    /// after it produce deltas. Capture changes nothing until the first `RawMouseDelta`.
+    void onInputCaptureChanged(bool captured);
 
     /// Poll every pending event from `pump` and `apply()` each. Does not call `beginFrame()`.
     /// Returns the number of events applied (including types `apply` ignores).
@@ -115,6 +124,10 @@ public:
     i32 mouseDeltaX() const { return m_mouseDeltaX; }
     i32 mouseDeltaY() const { return m_mouseDeltaY; }
 
+    /// True from the first `RawMouseDelta` until capture is released: deltas then come from raw
+    /// input only.
+    bool rawMouseActive() const { return m_rawMouseActive; }
+
 private:
     static constexpr u32 kKeyCount = static_cast<u32>(Key::COUNT);
     static constexpr u32 kMouseButtonCount = static_cast<u32>(MouseButton::COUNT);
@@ -128,6 +141,7 @@ private:
     i32 m_mouseDeltaX = 0;
     i32 m_mouseDeltaY = 0;
     bool m_haveMousePosition = false;
+    bool m_rawMouseActive = false;
 };
 
 } // namespace fuse::platform

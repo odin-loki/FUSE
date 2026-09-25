@@ -12,6 +12,10 @@
 
 namespace fuse::vfx {
 
+/// True only when the CUDA particle kernels (kernels/particle_sim.cu) are compiled into this build
+/// AND a CUDA device is usable (`kernel::backend_available(Backend::Cuda)`).
+bool particle_cuda_kernel_available();
+
 class ParticleSystem {
 public:
     void init(const VfxDesc& desc);
@@ -35,6 +39,8 @@ public:
     u32 effect_count() const;
     bool is_initialized() const { return m_initialized; }
     const VfxDesc& desc() const { return m_desc; }
+    /// Backend `update()` actually simulates on: Cuda only when GPU simulation is requested *and*
+    /// a CUDA particle kernel plus a CUDA device are available; CpuReference otherwise.
     VfxBackendKind backend_kind() const;
 
 private:

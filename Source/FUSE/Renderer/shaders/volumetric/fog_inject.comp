@@ -1,0 +1,155 @@
+#version 460
+// WP-8.1 "fog.inject": one thread per froxel. The froxel's jittered sample point -> extinction (height fog +
+// local volumes) and scattering x in-scattered radiance: ambient + the WP-2.1 directional list + the
+// sample's cluster list (ascending slot), each light x Henyey-Greenstein phase x WP-3.2 VSM visibility.
+// CPU reference: fog_kernel::inject_froxel (froxel_fog_kernel.hpp). GLSL twin of fog_inject.slang.
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+#include "lc_common.glsl"
+#include "../shadow_vsm/vsm_shadow.glsl"
+#include "fog_common.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(push_constant) uniform FuseFogPush {
+    uint64_t frame;
+    uint64_t reserved;
+} pc;
+
+float fuse_fog_phase(float g, float cosTheta) {
+    precise float g2 = g * g;
+    precise float denom0 = 1.0 + g2 - 2.0 * g * cosTheta;
+    const float denom = max(denom0, 1e-6);
+    precise float r = (1.0 - g2) * FUSE_FOG_INV_4PI / (denom * sqrt(denom));
+    return r;
+}
+
+float fuse_fog_falloff(float d, float radius) {
+    if (!(radius > 0.0) || !(d < radius)) {
+        return 0.0;
+    }
+    precise float ratio = d / radius;
+    precise float ratio2 = ratio * ratio;
+    precise float w0 = 1.0 - ratio2 * ratio2;
+    const float w = fuse_fog_clamp(w0, 0.0, 1.0);
+    precise float r = (w * w) / max(d * d, 1e-4);
+    return r;
+}
+
+float fuse_fog_spot(float cosAngle, float cosInner, float cosOuter) {
+    precise float t0 = (cosAngle - cosOuter) / max(cosInner - cosOuter, 1e-4);
+    const float t = fuse_fog_clamp(t0, 0.0, 1.0);
+    precise float r = t * t;
+    return r;
+}
+
+vec3 fuse_fog_light_in(FuseFogFrameRef R, FuseGpuLight light, uint slot, vec3 p, vec3 v) {
+    vec3 l = vec3(0.0);
+    float attenuation = 1.0;
+    if (light.type == FUSE_LIGHT_DIRECTIONAL) {
+        l = fuse_fog_safe_normalize(vec3(-light.direction[0], -light.direction[1], -light.direction[2]), vec3(0.0, 0.0, 1.0));
+    } else if (light.type == FUSE_LIGHT_POINT || light.type == FUSE_LIGHT_SPOT) {
+        precise vec3 toLight = vec3(light.position[0] - p.x, light.position[1] - p.y, light.position[2] - p.z);
+        precise float distance = sqrt(fuse_fog_dot(toLight, toLight));
+        attenuation = fuse_fog_falloff(distance, light.range);
+        if (attenuation == 0.0) {
+            return vec3(0.0);
+        }
+        precise float inv = 1.0 / max(distance, 1e-6);
+        precise vec3 lv = vec3(toLight.x * inv, toLight.y * inv, toLight.z * inv);
+        l = lv;
+        if (light.type == FUSE_LIGHT_SPOT) {
+            const vec3 axis = fuse_fog_safe_normalize(fuse_fog_vec3(light.direction), vec3(0.0, 0.0, -1.0));
+            precise float att = attenuation * fuse_fog_spot(-fuse_fog_dot(l, axis), light.cosInner, light.cosOuter);
+            attenuation = att;
+            if (attenuation == 0.0) {
+                return vec3(0.0);
+            }
+        }
+    } else {
+        return vec3(0.0);
+    }
+    float visibility = 1.0;
+    if ((R.f.flags & FUSE_FOG_FLAG_SHADOWS) != 0u) {
+        visibility = fuse_vsm_shadow(R.f.shadows, slot, p, vec3(0.0));
+    }
+    const float ph = fuse_fog_phase(R.f.anisotropy, fuse_fog_dot(l, v));
+    precise float s = light.intensity * attenuation * visibility * ph;
+    precise vec3 r = vec3(light.color[0] * s, light.color[1] * s, light.color[2] * s);
+    return r;
+}
+
+// The WP-2.1 cluster of a world point (fog_kernel::light_cluster).
+bool fuse_fog_light_cluster(FuseLcFrame F, vec3 p, out uint cluster) {
+    cluster = 0u;
+    precise vec3 rel = vec3(p.x - F.cameraPosition[0], p.y - F.cameraPosition[1], p.z - F.cameraPosition[2]);
+    const float vx = fuse_fog_dot(rel, fuse_lc_vec3(F.right));
+    const float vy = fuse_fog_dot(rel, fuse_lc_vec3(F.up));
+    precise float depth = -fuse_fog_dot(rel, fuse_lc_vec3(F.back));
+    if (!(depth > 0.0)) {
+        return false;
+    }
+    precise float ndcX = vx / (F.tanX * depth);
+    precise float ndcY = vy / (F.tanY * depth);
+    precise float sx = (ndcX + 1.0) * 0.5;
+    precise float sy = (1.0 - ndcY) * 0.5;
+    return fuse_lc_map_cluster(sx, sy, depth, F, cluster);
+}
+
+vec3 fuse_fog_in_scattering(FuseFogFrameRef R, vec3 p, vec3 v) {
+    precise vec3 L = fuse_fog_vec3(R.f.ambient);
+    if ((R.f.flags & FUSE_FOG_FLAG_LIGHTS) == 0u) {
+        return L;
+    }
+    const FuseLcFrame F = FuseLcFrameRef(R.f.lighting).f;
+    FuseGpuLightsRef lights = fuse_gpu_scene_lights(fuse_gpu_scene(F.scene));
+    FuseLcWordsRef directional = FuseLcWordsRef(F.directional);
+    const uint directionalCount = FuseLcWordsRef(F.listHeader).v[FUSE_LC_HEADER_DIRECTIONAL];
+    for (uint i = 0u; i < directionalCount; ++i) {
+        const uint slot = directional.v[i];
+        if (slot < F.lightCount) {
+            L = L + fuse_fog_light_in(R, lights.v[slot], slot, p, v);
+        }
+    }
+    uint cluster = 0u;
+    if (fuse_fog_light_cluster(F, p, cluster)) {
+        FuseLcWordsRef grid = FuseLcWordsRef(F.grid);
+        FuseLcWordsRef list = FuseLcWordsRef(F.lightList);
+        const uint offset = grid.v[cluster * 2u];
+        const uint count = grid.v[cluster * 2u + 1u];
+        for (uint i = 0u; i < count; ++i) {
+            const uint slot = list.v[offset + i];
+            if (slot < F.lightCount) {
+                L = L + fuse_fog_light_in(R, lights.v[slot], slot, p, v);
+            }
+        }
+    }
+    return L;
+}
+
+void main() {
+    FuseFogFrameRef R = FuseFogFrameRef(pc.frame);
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= R.f.froxelCount) {
+        return;
+    }
+    const uint z = i % R.f.gridZ;
+    const uint col = i / R.f.gridZ;
+    const uint x = col % R.f.gridX;
+    const uint y = col / R.f.gridX;
+    const vec3 p = fuse_fog_froxel_point(R, x, y, z, R.f.jitter[0], R.f.jitter[1], R.f.jitter[2]);
+    vec3 scattering;
+    const float extinction = fuse_fog_medium(R, p, scattering);
+    vec4 result = vec4(0.0);
+    if (extinction > 0.0) {
+        precise vec3 rel = vec3(p.x - R.f.position[0], p.y - R.f.position[1], p.z - R.f.position[2]);
+        const vec3 v = fuse_fog_safe_normalize(rel, vec3(-R.f.back[0], -R.f.back[1], -R.f.back[2]));
+        const vec3 L = fuse_fog_in_scattering(R, p, v);
+        precise vec3 s = vec3(scattering.x * L.x, scattering.y * L.y, scattering.z * L.z);
+        result = vec4(s, extinction);
+    }
+    FuseFogTexelsRef(R.f.current).v[i] = result;
+}

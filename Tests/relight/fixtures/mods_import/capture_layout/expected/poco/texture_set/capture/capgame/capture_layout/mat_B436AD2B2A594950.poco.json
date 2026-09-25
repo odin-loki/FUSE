@@ -1,0 +1,47 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "texture_set",
+  "id": "capture/capgame/capture_layout/mat_B436AD2B2A594950",
+  "name": "mat_B436AD2B2A594950",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 0.0254,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "albedo": {
+      "sha256": "2a720f4f3eefcad7179792c71f52f034f7cb2c4ebb4cdd4db22b033b7f18588c",
+      "size": 192,
+      "media": "image/vnd-ms.dds"
+    },
+    "normalConvention": "GL",
+    "texelsPerMetre": 0,
+    "albedoSrgb": true,
+    "relight": {
+      "remix_hash": "B436AD2B2A594950",
+      "obsolete_hash": false
+    }
+  },
+  "provenance": {
+    "origin": "original",
+    "derived_from": [],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "none",
+    "source": {
+      "mod": "capture_layout",
+      "stage": "mod.usda",
+      "prim": "/RootNode/Looks/mat_B436AD2B2A594950",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "LicenseRef-Original-capgame",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["capture", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

@@ -1,0 +1,26 @@
+#usda 1.0
+(
+    subLayers = [
+        @./deeper/base.usd@
+    ]
+)
+
+def Xform "RootNode"
+{
+    def Xform "meshes"
+    {
+        def Xform "mesh_00000000000000A1"
+        {
+            def Mesh "mesh"
+            {
+                float shared = 3
+                float strong_over_weak = 3
+                float weak_over_base = 3
+                point3f[] points = [(0, 0, 0), (1, 0, 0), (1, 1, 0)]
+            }
+            def Xform "weak_child"
+            {
+            }
+        }
+    }
+}

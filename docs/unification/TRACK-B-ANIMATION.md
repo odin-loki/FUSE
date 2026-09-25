@@ -23,10 +23,10 @@
 | `add_pose_soa` | `Animation/src/skeleton.cpp` | Masked additive local TRS delta relative to bind pose |
 | `FABRIKChain` / `TwoBoneIK` | `Animation/include/fuse/animation/ik_solver.hpp` | FABRIK stub with `has_valid_chain`; closed-form two-bone IK (public solve helpers, in-place AoS + SoA, parent-chain `has_valid_chain`, `has_degenerate_segments`, `effective_pole_vector`, `max_reach`) |
 | `RetargetMap` | `Animation/include/fuse/animation/retarget.hpp` | Name-driven bone map, `build_identity`, `add_bone_mapping` / `clear` / `is_source_mapped` / `is_target_mapped`, `find_source_bone` / `find_target_bone`, `translation_scale`, local TRS copy stub |
-| `skin_vertices` | `Animation/include/fuse/animation/skinning.hpp` | CPU linear blend skinning (`Cuda` when `FUSE_HAS_CUDA`) |
+| `skin_vertices` / `skin_vertices_on` | `Animation/include/fuse/animation/skinning.hpp` | Linear blend skinning through the single-source `skinning_lbs` kernel (`skinning_kernel.hpp`; CPU backends everywhere, `kernels/skinning.cu` when `FUSE_HAS_CUDA` and a device exists) |
 | `Animator` | `Animation/include/fuse/animation/animator.hpp` | Game-thread facade over state machine + pose cache |
 
-**Not in scope (deferred):** CUDA skinning device path, job-system parallel clip eval, full quaternion additive rotation, animation asset import, GPU pose upload.
+**Not in scope (deferred):** dual-quaternion skinning, job-system parallel clip eval, full quaternion additive rotation, animation asset import, GPU pose upload.
 
 ---
 
@@ -101,7 +101,7 @@ ctest --test-dir build --output-on-failure -R fuse_animation_runtime
 | Condition | Behaviour |
 |-----------|-----------|
 | `FUSE_BUILD_CORE_TESTS=OFF` | `fuse_animation_tests` omitted |
-| `FUSE_HAS_CUDA` defined | `skinning_backend()` reports `Cuda`; CPU path still tested |
+| `FUSE_HAS_CUDA` defined + CUDA device | `skinning_cuda_kernel_available()` true, `skinning_backend()` reports `Cuda`; without a device the CPU kernel backends run (fallback recorded) |
 
 ---
 

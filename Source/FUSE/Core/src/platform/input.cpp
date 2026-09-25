@@ -159,8 +159,9 @@ void InputState::apply(const PlatformEvent& event) {
         break;
     }
     case PlatformEventType::MouseMove: {
-        // Consecutive client positions — not OS cursor-acceleration velocity.
-        if (m_haveMousePosition) {
+        // Consecutive client positions (OS cursor path, acceleration applied). Only a fallback
+        // delta source: with raw input active the delta comes from RawMouseDelta alone.
+        if (m_haveMousePosition && !m_rawMouseActive) {
             m_mouseDeltaX += event.mouseX - m_mouseX;
             m_mouseDeltaY += event.mouseY - m_mouseY;
         }
@@ -169,7 +170,11 @@ void InputState::apply(const PlatformEvent& event) {
         m_haveMousePosition = true;
         break;
     }
+    case PlatformEventType::InputCaptureChanged:
+        onInputCaptureChanged(event.inputCaptured);
+        break;
     case PlatformEventType::RawMouseDelta: {
+        m_rawMouseActive = true;
         m_mouseDeltaX += event.mouseX;
         m_mouseDeltaY += event.mouseY;
         break;
@@ -199,6 +204,18 @@ void InputState::apply(const PlatformEvent& event) {
     default:
         break;
     }
+}
+
+void InputState::onInputCaptureChanged(bool captured) {
+    if (captured) {
+        // Raw mode starts with the first RawMouseDelta (raw input may be unavailable).
+        return;
+    }
+    // Raw input stops with capture: deltas come from MouseMove again. The cursor was hidden /
+    // clipped while captured, so the next MouseMove re-establishes the baseline instead of
+    // producing a jump delta.
+    m_rawMouseActive = false;
+    m_haveMousePosition = false;
 }
 
 u32 InputState::applyPump(EventPump& pump) {

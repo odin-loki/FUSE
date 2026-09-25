@@ -25,6 +25,7 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+#if defined(FUSE_PLATFORM_WINDOW_WIN32)
 bool hasExtension(const std::vector<const char*>& extensions, const char* name) {
     for (const char* extension : extensions) {
         if (extension != nullptr && name != nullptr && std::strcmp(extension, name) == 0) {
@@ -33,6 +34,7 @@ bool hasExtension(const std::vector<const char*>& extensions, const char* name) 
     }
     return false;
 }
+#endif
 
 void testBackendIdentity() {
 #if defined(FUSE_PLATFORM_WINDOW_WIN32)
@@ -44,6 +46,13 @@ void testBackendIdentity() {
     expectTrue(fuse::platform::displayServerAvailable(), "Win32 display server is available");
 #elif defined(FUSE_PLATFORM_WINDOW_GLFW)
     expectTrue(fuse::platform::windowWsiBackendName() != nullptr, "GLFW WSI backend name present");
+#elif defined(FUSE_PLATFORM_WINDOW_X11)
+    expectTrue(fuse::platform::activeWindowWsiKind() == fuse::platform::WindowWsiKind::X11,
+               "X11 WSI kind is compiled in");
+    expectTrue(std::strcmp(fuse::platform::windowWsiBackendName(), "x11-xlib") == 0,
+               "X11 WSI backend name");
+    expectTrue(fuse::platform::windowWsiAvailable() == (fuse::platform::nativeDisplayHandle() != nullptr),
+               "X11 WSI availability tracks the display connection");
 #else
     expectTrue(fuse::platform::activeWindowWsiKind() == fuse::platform::WindowWsiKind::Null,
                "default WSI kind is Null");
@@ -62,6 +71,10 @@ void testRequiredInstanceExtensions() {
                "Win32 WSI requires VK_KHR_win32_surface");
 #elif defined(FUSE_PLATFORM_WINDOW_GLFW)
     (void)extensions;
+#elif defined(FUSE_PLATFORM_WINDOW_X11)
+    if (!fuse::platform::windowWsiAvailable()) {
+        expectTrue(extensions.empty(), "X11 WSI without a display requires no instance extensions");
+    }
 #else
     expectTrue(extensions.empty(), "null WSI requires no instance extensions");
 #endif

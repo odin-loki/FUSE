@@ -31,7 +31,8 @@ usize transmittance_lut_entry_count(u32 alt_bins, u32 cos_bins);
 /// Decode a flat index back into `(alt_bin, cos_bin)` — returns false when out of range.
 bool transmittance_lut_decode_index(usize flat_index, u32 alt_bins, u32 cos_bins, u32& alt_bin, u32& cos_bin);
 
-/// Map physical samples to clamped bin indices (CPU stub; bilinear weights deferred).
+/// Map physical samples to clamped bin indices (nearest bin). `altitude_m` is the radial distance
+/// from the planet centre in `[earth_radius, atmo_radius]`, matching the bin axis.
 TransmittanceLutIndex transmittance_lut_index_from_samples(f32 altitude_m, f32 cos_zenith,
                                                            const TransmittanceLutDesc& desc);
 
@@ -41,8 +42,10 @@ f32 transmittance_lut_altitude_for_bin(u32 alt_bin, const TransmittanceLutDesc& 
 /// cos(zenith) in `[-1, 1]` for a bin centre.
 f32 transmittance_lut_cos_zenith_for_bin(u32 cos_bin, const TransmittanceLutDesc& desc);
 
-/// CPU reference transmittance along a vertical column (stub exponential optical depth).
-math::Vec3 compute_transmittance(f32 altitude_m, f32 cos_zenith, const AtmosphereParams& params);
+/// CPU reference transmittance from `radius_m` (distance from the planet centre, the same axis the
+/// LUT altitude bins use) along cos(zenith) to the top of the atmosphere, integrated through the
+/// spherical exponential Rayleigh + Mie shells. Zero when the planet occludes the ray.
+math::Vec3 compute_transmittance(f32 radius_m, f32 cos_zenith, const AtmosphereParams& params);
 
 /// Precomputed transmittance LUT — caches analytic samples for altitude × cos(zenith).
 class TransmittanceLut {
@@ -55,8 +58,10 @@ public:
     u32 cosZenithBins() const { return m_desc.cos_zenith_bins; }
     const std::vector<math::Vec3>& entries() const { return m_entries; }
 
-    /// Sample LUT by altitude (metres) and cos(zenith) (clamped to table range).
+    /// Sample LUT by radial distance from the planet centre (metres) and cos(zenith), nearest bin.
     math::Vec3 sample(f32 altitude_m, f32 cos_zenith) const;
+    /// Bilinear sample between the four surrounding bins (bin i sits at i / (bins - 1) of each axis; clamped).
+    math::Vec3 sampleBilinear(f32 altitude_m, f32 cos_zenith) const;
 
 private:
     TransmittanceLutDesc m_desc{};

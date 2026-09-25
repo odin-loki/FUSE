@@ -84,44 +84,6 @@ std::string extractMissionSceneName(const std::string& text) {
     return "ImportedMission";
 }
 
-std::string extractT2DModuleName(const std::string& text, const std::string& fallbackPath) {
-    const std::string markers[] = {"module \"", "module @"};
-    for (const std::string& marker : markers) {
-        const std::size_t pos = text.find(marker);
-        if (pos == std::string::npos) {
-            continue;
-        }
-
-        std::size_t cursor = pos + marker.size();
-        if (marker == "module @") {
-            while (cursor < text.size() && std::isspace(static_cast<unsigned char>(text[cursor]))) {
-                ++cursor;
-            }
-        }
-
-        std::size_t end = cursor;
-        while (end < text.size()) {
-            const char ch = text[end];
-            if (ch == '"' || ch == ';' || ch == '\n' || ch == '\r') {
-                break;
-            }
-            ++end;
-        }
-
-        if (end > cursor) {
-            return text.substr(cursor, end - cursor);
-        }
-    }
-
-    const std::size_t slash = fallbackPath.find_last_of("/\\");
-    std::string leaf = slash != std::string::npos ? fallbackPath.substr(slash + 1) : fallbackPath;
-    const std::size_t dot = leaf.find('.');
-    if (dot != std::string::npos) {
-        leaf = leaf.substr(0, dot);
-    }
-    return leaf.empty() ? "ImportedModule" : leaf;
-}
-
 bool parseFloatTriplet(const std::string& text, float& a, float& b, float& c) {
     std::istringstream stream(text);
     return static_cast<bool>(stream >> a >> b >> c);

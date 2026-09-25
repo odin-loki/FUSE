@@ -1,0 +1,50 @@
+#usda 1.0
+(
+    customLayerData = {
+        string lightspeed_game_name = "ff_multi_instance"
+        string lightspeed_layer_type = "replacement"
+    }
+    defaultPrim = "RootNode"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+# RL-3.4 fixture, version 2 of multi_v1 (written over it while the app runs): the originals are kept
+# (preserveOriginalDrawCall), the replacement quad moves up, and the second texture's material is replaced.
+def Xform "RootNode"
+{
+    def Scope "meshes"
+    {
+        def Xform "mesh_4DEA70187D2D1944"
+        {
+            int preserveOriginalDrawCall = 1
+
+            def Mesh "v2"
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-0.25, -0.25, 0), (0.25, -0.25, 0), (0.25, 0.25, 0), (-0.25, 0.25, 0)]
+                uniform token subdivisionScheme = "none"
+                double3 xformOp:translate = (0, 1, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+            }
+        }
+    }
+
+    def Scope "Looks"
+    {
+        def Material "mat_F21C4BCC08014719"
+        {
+            token outputs:mdl:surface.connect = </RootNode/Looks/mat_F21C4BCC08014719/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @AperturePBR_Opacity.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "AperturePBR_Opacity"
+                float inputs:reflection_roughness_constant = 0.1
+                token outputs:out
+            }
+        }
+    }
+}

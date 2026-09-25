@@ -38,6 +38,7 @@ struct PresentPathStatus {
     u32 pendingResizeHeight = 0;
     bool resizePending = false;
     u64 presentedFrames = 0;
+    u64 acquiredImageCount = 0; ///< vkAcquireNextImageKHR calls that returned a swapchain image
     u32 fenceWaitCount = 0;
     u32 swapchainRecreateCount = 0;
     u32 resizeCoalesceCount = 0;
@@ -125,6 +126,13 @@ private:
     VulkanBootstrap& m_bootstrap;
     PresentPathDesc m_desc;
     PresentPathStatus m_status;
+    /// Frame-ring slot whose `imageAvailable` the acquire signalled. The render submit waits on it
+    /// and signals the same slot's `renderFinished`; present must wait on that one even though the
+    /// RHI has already advanced the ring (`FrameManager::endFrame`) by the time it presents.
+    u32 m_acquireSlot = 0;
+    /// `noteQueueSubmit` saw a submit that signalled `renderFinished` for the acquired image; a
+    /// real present without it would wait on a semaphore nobody signals.
+    bool m_renderFinishedSignalled = false;
 };
 
 } // namespace fuse::renderer

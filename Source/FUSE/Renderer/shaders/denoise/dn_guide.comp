@@ -1,0 +1,56 @@
+#version 460
+// WP-6.4 "denoise.guide": normal (f32x4 buffer or the G-buffer RT0 image, signed oct) + linear depth ->
+// guide (n.xyz, z) and the screen-space depth gradient (one-sided difference of smaller magnitude, sky
+// neighbours skipped). GLSL twin of dn_guide.slang; CPU reference: svgf_kernel::guide_pixel.
+#extension GL_GOOGLE_include_directive : require
+#include "dn_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+float dn_depth_slope(float z, float zm, bool hasM, float zp, bool hasP) {
+    precise float dm = z - zm;
+    precise float dp = zp - z;
+    if (hasM && hasP) {
+        return abs(dm) <= abs(dp) ? dm : dp;
+    }
+    if (hasM) {
+        return dm;
+    }
+    if (hasP) {
+        return dp;
+    }
+    return 0.0;
+}
+
+void main() {
+    const DnFrame F = dn_frame();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const uint w = F.width;
+    const uint i = p.y * w + p.x;
+    DnFloatsRef depth = DnFloatsRef(F.depth);
+    const float z = depth.v[i];
+    if (!(z > 0.0)) {
+        DnTexelsRef(F.guideCur).v[i] = vec4(0.0);
+        DnPairsRef(F.gradZ).v[i] = vec2(0.0);
+        return;
+    }
+    vec4 n;
+    if ((F.flags & DN_FLAG_NORMAL_IMAGE) != 0u) {
+        n = texelFetch(fuse_textures_2d[fuse_handle_index(F.normalImage)], ivec2(p), 0);
+    } else {
+        n = DnTexelsRef(F.normal).v[i];
+    }
+    if ((F.flags & DN_FLAG_NORMAL_OCT) != 0u) {
+        n = dn_oct_decode(n.x, n.y);
+    }
+    n.w = z;
+    const float zl = p.x > 0u ? depth.v[i - 1u] : 0.0;
+    const float zr = p.x + 1u < w ? depth.v[i + 1u] : 0.0;
+    const float zu = p.y > 0u ? depth.v[i - w] : 0.0;
+    const float zd = p.y + 1u < F.height ? depth.v[i + w] : 0.0;
+    DnTexelsRef(F.guideCur).v[i] = n;
+    DnPairsRef(F.gradZ).v[i] = vec2(dn_depth_slope(z, zl, zl > 0.0, zr, zr > 0.0), dn_depth_slope(z, zu, zu > 0.0, zd, zd > 0.0));
+}

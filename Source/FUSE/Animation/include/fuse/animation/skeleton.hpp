@@ -22,6 +22,18 @@ struct Skeleton {
 
     s32 find_bone(const char* name) const;
     mat4 compute_world_transform(u32 bone_idx) const;
+
+    /// True when `bone_count` matches `bones.size()` and every parent index is -1 or refers to an
+    /// earlier bone (topological order, which also rules out cycles and self-parenting).
+    [[nodiscard]] bool has_valid_hierarchy() const;
+
+    /// Binary skeleton format ("FSKL", version 1, little-endian): u32 bone count, then per bone
+    /// name[64], s32 parent index, inverse bind mat4, local (bind) mat4.
+    [[nodiscard]] bool save(const char* path) const;
+
+    /// Loads a skeleton written by `save`. Rejects bad magic/version, truncated files, and invalid
+    /// hierarchies; leaves `*this` untouched on failure.
+    [[nodiscard]] bool load(const char* path);
 };
 
 struct Pose {
@@ -44,7 +56,12 @@ struct PoseSoA {
     void clear();
 
     static PoseSoA from_bind_pose(const Skeleton& skel);
+    /// In-place from_bind_pose(): reuses this pose's storage (no heap once it has grown to the
+    /// skeleton's bone count). Result is identical to `*this = from_bind_pose(skel)`.
+    void assign_bind_pose(const Skeleton& skel);
     Pose to_pose() const;
+    /// In-place to_pose(): copies bone count + world matrices into `out`, reusing its storage.
+    void to_pose(Pose& out) const;
     void compute_world_transforms(const Skeleton& skel);
 };
 

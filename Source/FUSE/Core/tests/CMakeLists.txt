@@ -42,6 +42,43 @@ target_link_libraries(fuse_cuda_job_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_cuda_job_tests)
 add_test(NAME fuse_cuda_jobs COMMAND fuse_cuda_job_tests)
 
+# B1 row "CUDA compiles against C++23 FUSE host headers": one .cu TU (CUDA C++20, device + nvcc host
+# pass) and one C++23 host TU include the same fuse/types.hpp + fuse/math/* + fuse/gria.hpp and
+# static_assert identical layouts; the exe compares nvcc-host vs C++23-host results (device results
+# only when a GPU exists — otherwise it reports compile-only). Objects are checked by
+# fuse_cuda_compile_gate (Source/FUSE/CMakeLists.txt).
+if(FUSE_CUDA_BACKEND)
+    add_executable(fuse_cuda_shared_headers_gate
+        cuda/test_cuda_shared_headers_host.cpp
+        cuda/test_cuda_shared_headers.cu
+    )
+    target_link_libraries(fuse_cuda_shared_headers_gate PRIVATE fuse_core CUDA::cudart)
+    fuse_apply_cxx23(fuse_cuda_shared_headers_gate)
+    set_target_properties(fuse_cuda_shared_headers_gate PROPERTIES
+        CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON CUDA_EXTENSIONS OFF)
+    add_test(NAME fuse_cuda_shared_headers_gate COMMAND fuse_cuda_shared_headers_gate)
+    set_tests_properties(fuse_cuda_shared_headers_gate PROPERTIES LABELS "gate;cuda" TIMEOUT 120)
+endif()
+
+# Single-source compute kernels (fuse/compute_kernel/*, docs/compute-kernels.md): CpuReference vs
+# CpuParallel parity, deterministic order, zero steady-state heap allocations, workgroup emulation
+# (histogram + prefix scan), profiler scopes + stats registry, backend fallback, LoadScale.
+add_executable(fuse_core_compute_kernel_gates test_compute_kernel_gates.cpp)
+target_link_libraries(fuse_core_compute_kernel_gates PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_compute_kernel_gates)
+add_test(NAME fuse_core_compute_kernel_gates COMMAND fuse_core_compute_kernel_gates)
+set_tests_properties(fuse_core_compute_kernel_gates PROPERTIES RUN_SERIAL TRUE LABELS "gate" TIMEOUT 600)
+
+# Device side of the same test kernels through cuda_launch.cuh (compile gate; device parity when a GPU exists).
+if(FUSE_CUDA_BACKEND)
+    add_executable(fuse_compute_kernel_cuda_gate cuda/test_compute_kernel_device.cu)
+    target_link_libraries(fuse_compute_kernel_cuda_gate PRIVATE fuse_core CUDA::cudart)
+    set_target_properties(fuse_compute_kernel_cuda_gate PROPERTIES
+        CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON CUDA_EXTENSIONS OFF)
+    add_test(NAME fuse_compute_kernel_cuda_gate COMMAND fuse_compute_kernel_cuda_gate)
+    set_tests_properties(fuse_compute_kernel_cuda_gate PROPERTIES LABELS "gate;cuda" TIMEOUT 120)
+endif()
+
 add_executable(fuse_core_services_tests
     test_services.cpp
 )
@@ -65,6 +102,16 @@ add_executable(fuse_core_platform_hardening_tests
 target_link_libraries(fuse_core_platform_hardening_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_platform_hardening_tests)
 add_test(NAME fuse_core_platform_hardening COMMAND fuse_core_platform_hardening_tests)
+
+# sleepAtLeast never returns early (MinGW sleep_for truncates sub-ms waits to nothing).
+add_executable(fuse_core_platform_sleep_tests
+    test_platform_sleep.cpp
+)
+
+target_link_libraries(fuse_core_platform_sleep_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_platform_sleep_tests)
+add_test(NAME fuse_core_platform_sleep COMMAND fuse_core_platform_sleep_tests)
+set_tests_properties(fuse_core_platform_sleep PROPERTIES TIMEOUT 120)
 
 add_executable(fuse_core_io_handle_tests
     test_io_handle.cpp
@@ -198,6 +245,134 @@ target_link_libraries(fuse_core_b17_win32_window_input PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_b17_win32_window_input)
 add_test(NAME fuse_core_b17_win32_window_input COMMAND fuse_core_b17_win32_window_input)
 
+# B1 gate suites (FUSE_MASTER_PLAN B1.8 carry-forward checklist).
+add_executable(fuse_core_b1_jobs_gates
+    test_b1_jobs_gates.cpp
+)
+target_link_libraries(fuse_core_b1_jobs_gates PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b1_jobs_gates)
+add_test(NAME fuse_core_b1_jobs_gates COMMAND fuse_core_b1_jobs_gates)
+set_tests_properties(fuse_core_b1_jobs_gates PROPERTIES RUN_SERIAL TRUE LABELS "gate" TIMEOUT 900)
+
+# Steady-state parallel_for is heap-free on every thread; also reports dispatch latency percentiles
+# (median bound enforced only in optimized, unsanitized builds).
+add_executable(fuse_core_b1_parallel_for_alloc_gates
+    test_b1_parallel_for_alloc_gates.cpp
+)
+target_link_libraries(fuse_core_b1_parallel_for_alloc_gates PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b1_parallel_for_alloc_gates)
+add_test(NAME fuse_core_b1_parallel_for_alloc_gates COMMAND fuse_core_b1_parallel_for_alloc_gates)
+set_tests_properties(fuse_core_b1_parallel_for_alloc_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate" TIMEOUT 600)
+
+add_executable(fuse_core_b1_memory_gates
+    test_b1_memory_gates.cpp
+)
+target_link_libraries(fuse_core_b1_memory_gates PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b1_memory_gates)
+add_test(NAME fuse_core_b1_memory_gates COMMAND fuse_core_b1_memory_gates)
+set_tests_properties(fuse_core_b1_memory_gates PROPERTIES RUN_SERIAL TRUE LABELS "gate" TIMEOUT 600)
+
+add_executable(fuse_core_b1_math_gates
+    test_b1_math_gates.cpp
+)
+target_link_libraries(fuse_core_b1_math_gates PRIVATE fuse_core)
+add_test(NAME fuse_core_b1_math_gates COMMAND fuse_core_b1_math_gates)
+set_tests_properties(fuse_core_b1_math_gates PROPERTIES LABELS "gate" TIMEOUT 600)
+
+# Logging/assert/profiler gates include the profiler scope-overhead timing budget.
+add_executable(fuse_core_b1_logging_gates
+    test_b1_logging_gates.cpp
+)
+target_link_libraries(fuse_core_b1_logging_gates PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b1_logging_gates)
+add_test(NAME fuse_core_b1_logging_gates COMMAND fuse_core_b1_logging_gates)
+set_tests_properties(fuse_core_b1_logging_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate" TIMEOUT 600)
+
+add_executable(fuse_core_b1_platform_gates
+    test_b1_platform_gates.cpp
+)
+target_link_libraries(fuse_core_b1_platform_gates PRIVATE fuse_core)
+add_test(NAME fuse_core_b1_platform_gates COMMAND fuse_core_b1_platform_gates)
+set_tests_properties(fuse_core_b1_platform_gates PROPERTIES LABELS "gate")
+
+# B7.8 platform hardening: crash handler reports (forked crashing children), leak detector.
+add_executable(fuse_core_b7_platform_gates
+    test_b7_platform_gates.cpp
+)
+target_link_libraries(fuse_core_b7_platform_gates PRIVATE fuse_core ${CMAKE_DL_LIBS})
+# Export the crash probes so the report's backtrace symbols and dladdr can name them (ELF only:
+# on PE targets ENABLE_EXPORTS turns into --export-all-symbols + an import library, which is not
+# needed there and trips GCC 13's C++23 constexpr type_info::operator== against static libstdc++).
+if(NOT WIN32)
+    set_target_properties(fuse_core_b7_platform_gates PROPERTIES ENABLE_EXPORTS ON)
+endif()
+target_compile_definitions(fuse_core_b7_platform_gates PRIVATE
+    FUSE_B7_SOURCE_ROOT="${CMAKE_SOURCE_DIR}/Source/FUSE")
+add_test(NAME fuse_core_b7_platform_gates COMMAND fuse_core_b7_platform_gates)
+set_tests_properties(fuse_core_b7_platform_gates PROPERTIES LABELS "gate" TIMEOUT 600)
+
+# B7.8 DPI awareness: core::initialize() opts into per-monitor-v2 on Windows (fallbacks: v1 context,
+# shcore, SetProcessDPIAware); a preset awareness (manifest/host) is kept. NotApplicable elsewhere.
+add_executable(fuse_core_b7_dpi_awareness test_b7_dpi_awareness.cpp)
+target_link_libraries(fuse_core_b7_dpi_awareness PRIVATE fuse_core)
+add_test(NAME fuse_core_b7_dpi_awareness COMMAND fuse_core_b7_dpi_awareness)
+set_tests_properties(fuse_core_b7_dpi_awareness PROPERTIES LABELS "gate" TIMEOUT 120)
+
+# B7.8 Win32 crash handler: child processes crash (null read, worker thread, failed FUSE_VERIFY);
+# the test validates fuse_crash_<pid>.dmp structurally (header, stream directory, Exception /
+# ThreadList / ModuleList / SystemInfo streams, cross-checked with dbghelp) and the .txt report.
+# x64 only (the fault-address checks read CONTEXT::Rip and the x64 unwind table).
+if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+    add_executable(fuse_core_b7_win32_crash_minidump test_b7_win32_crash_minidump.cpp)
+    target_link_libraries(fuse_core_b7_win32_crash_minidump PRIVATE fuse_core dbghelp)
+    add_test(NAME fuse_core_b7_win32_crash_minidump COMMAND fuse_core_b7_win32_crash_minidump)
+    set_tests_properties(fuse_core_b7_win32_crash_minidump PROPERTIES LABELS "gate" TIMEOUT 600)
+endif()
+
+# Shipping strip: every fuse_core public header plus the log/assert/profiler macros compiled with
+# the FUSE_SHIPPING definitions and warnings as errors, then the object is inspected.
+set(_fuse_b7_shipping_headers_cpp "${CMAKE_CURRENT_BINARY_DIR}/b7_shipping_headers.cpp")
+set(_fuse_b7_shipping_includes "// Generated: every fuse_core public header under the shipping definitions.\n")
+foreach(_fuse_b7_header IN LISTS FUSE_CORE_PUBLIC_HEADERS)
+    string(REGEX REPLACE "^include/" "" _fuse_b7_header "${_fuse_b7_header}")
+    string(APPEND _fuse_b7_shipping_includes "#include <${_fuse_b7_header}>\n")
+endforeach()
+file(CONFIGURE OUTPUT "${_fuse_b7_shipping_headers_cpp}" CONTENT "${_fuse_b7_shipping_includes}")
+add_library(fuse_core_b7_shipping_probe OBJECT b7_shipping_probe.cpp "${_fuse_b7_shipping_headers_cpp}")
+target_include_directories(fuse_core_b7_shipping_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+target_compile_definitions(fuse_core_b7_shipping_probe PRIVATE
+    FUSE_SHIPPING=1 FUSE_NO_ASSERT=1 FUSE_NO_LOGGING=1 FUSE_NO_PROFILER=1 FUSE_TRACK_B_UNLOCK=0)
+fuse_apply_cxx23(fuse_core_b7_shipping_probe)
+# MSVC is the MSVC-style command line (cl.exe and clang-cl): clang-cl reads -Wall as -Weverything,
+# and the nm checks below match GNU/Itanium symbol names, not COFF/MSVC-mangled ones.
+if(MSVC)
+    # No /O2: cl rejects it next to the Debug /RTC1 (D8016); the nm inspection is GNU-only anyway.
+    target_compile_options(fuse_core_b7_shipping_probe PRIVATE $<IF:$<CXX_COMPILER_ID:Clang>,/W4,/W3> /WX)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    target_compile_options(fuse_core_b7_shipping_probe PRIVATE -O2 -Wall -Wextra -Werror)
+endif()
+if(CMAKE_NM AND NOT MSVC)
+    add_test(NAME fuse_core_b7_shipping_strip
+        COMMAND ${CMAKE_COMMAND}
+            -DNM=${CMAKE_NM}
+            "-DOBJECTS=$<TARGET_OBJECTS:fuse_core_b7_shipping_probe>"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_b7_shipping_strip.cmake)
+    set_tests_properties(fuse_core_b7_shipping_strip PROPERTIES LABELS "gate")
+endif()
+
+# FUSE_ASSERT codegen: Debug objects must call fuse::assertion::fatal, other configs must not.
+add_library(fuse_core_b1_assert_probe OBJECT b1_assert_probe.cpp)
+target_link_libraries(fuse_core_b1_assert_probe PRIVATE fuse_core)
+if(CMAKE_NM AND NOT MSVC)
+    add_test(NAME fuse_core_b1_assert_codegen
+        COMMAND ${CMAKE_COMMAND}
+            -DNM=${CMAKE_NM}
+            "-DOBJECTS=$<TARGET_OBJECTS:fuse_core_b1_assert_probe>"
+            -DEXPECT=$<IF:$<CONFIG:Debug>,present,absent>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_b1_assert_codegen.cmake)
+    set_tests_properties(fuse_core_b1_assert_codegen PROPERTIES LABELS "gate")
+endif()
+
 get_property(_fuse_core_dir_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
 foreach(_fuse_core_test IN LISTS _fuse_core_dir_targets)
     if(_fuse_core_test MATCHES "^fuse_core_" OR _fuse_core_test STREQUAL "fuse_p6_shipping_qt_ban")
@@ -215,3 +390,56 @@ endif()
 fuse_core_apply_tsan(fuse_core_window_wsi_win32_tests)
 fuse_core_apply_asan_ubsan(fuse_core_window_wsi_win32_tests)
 add_test(NAME fuse_core_window_wsi_win32 COMMAND fuse_core_window_wsi_win32_tests)
+
+# B1.6 follow-up: lock-free async logger ring (logging.async_ring) — MPSC stress, exact overflow drop
+# count, zero producer allocations (replaced operator new), producer latency.
+add_executable(fuse_core_b1_log_async_ring_gates
+    test_b1_log_async_ring_gates.cpp
+)
+target_link_libraries(fuse_core_b1_log_async_ring_gates PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b1_log_async_ring_gates)
+fuse_core_apply_asan_ubsan(fuse_core_b1_log_async_ring_gates)
+add_test(NAME fuse_core_b1_log_async_ring_gates COMMAND fuse_core_b1_log_async_ring_gates)
+set_tests_properties(fuse_core_b1_log_async_ring_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate" TIMEOUT 900)
+
+# B1.8: 1M FULL alloc/free cycles per allocator type (Pool, FreeList, Ring, Stack, Frame) with
+# alignment/corruption/invariant/stats checks and LeakDetector accounting.
+add_executable(fuse_core_b1_alloc_million_cycles
+    test_b1_alloc_million_cycles.cpp
+)
+target_link_libraries(fuse_core_b1_alloc_million_cycles PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b1_alloc_million_cycles)
+fuse_core_apply_asan_ubsan(fuse_core_b1_alloc_million_cycles)
+add_test(NAME fuse_core_b1_alloc_million_cycles COMMAND fuse_core_b1_alloc_million_cycles)
+set_tests_properties(fuse_core_b1_alloc_million_cycles PROPERTIES LABELS "gate" TIMEOUT 900)
+
+# Master plan Appendix A (rename checklist): default window title "FUSE".
+add_executable(fuse_core_rename_window_title test_rename_window_title.cpp)
+target_link_libraries(fuse_core_rename_window_title PRIVATE fuse_core)
+add_test(NAME fuse_lint_a_window_title COMMAND fuse_core_rename_window_title)
+set_tests_properties(fuse_lint_a_window_title PROPERTIES LABELS "gate;lint")
+
+# B1.8: native X11 window gate — window opens mapped, title read back via XFetchName/_NET_WM_NAME,
+# XSendEvent key/mouse/focus/resize/close events dispatched through EventPump; XInput2 raw mouse
+# delta equals XTest-injected device deltas while the cursor is accelerated (B1.8 raw mouse row).
+# Runs on Xvfb via the display wrapper; SKIP (77) when the X11 backend is off or no display/xvfb is available.
+add_executable(fuse_core_b1_x11_window_gates test_b1_x11_window_gates.cpp)
+target_link_libraries(fuse_core_b1_x11_window_gates PRIVATE fuse_core)
+if(FUSE_PLATFORM_WINDOW_X11_ACTIVE)
+    target_include_directories(fuse_core_b1_x11_window_gates PRIVATE ${X11_INCLUDE_DIR})
+    target_link_libraries(fuse_core_b1_x11_window_gates PRIVATE ${X11_LIBRARIES})
+    # Raw-mouse-vs-acceleration gate: XTest injects relative device motion, XInput2 sets the
+    # XTEST pointer's Coordinate Transformation Matrix. Sections skip when either is missing.
+    if(X11_Xtst_FOUND AND X11_Xi_FOUND)
+        target_include_directories(fuse_core_b1_x11_window_gates PRIVATE
+            ${X11_Xtst_INCLUDE_PATH} ${X11_Xi_INCLUDE_PATH})
+        target_link_libraries(fuse_core_b1_x11_window_gates PRIVATE ${X11_Xtst_LIB} ${X11_Xi_LIB})
+        target_compile_definitions(fuse_core_b1_x11_window_gates PRIVATE FUSE_TEST_HAS_XTEST_XI2=1)
+    endif()
+    add_test(NAME fuse_core_b1_x11_window_gates
+        COMMAND "${FUSE_DISPLAY_TEST_WRAPPER}" "$<TARGET_FILE:fuse_core_b1_x11_window_gates>")
+else()
+    add_test(NAME fuse_core_b1_x11_window_gates COMMAND fuse_core_b1_x11_window_gates)
+endif()
+set_tests_properties(fuse_core_b1_x11_window_gates PROPERTIES
+    LABELS "gate" SKIP_RETURN_CODE 77 TIMEOUT 120)

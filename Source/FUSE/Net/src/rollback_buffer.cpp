@@ -56,6 +56,17 @@ std::optional<u32> RollbackBuffer::slot_index_(u32 frame) const {
     return slot;
 }
 
+u32 RollbackBuffer::claim_slot_(u32 frame) {
+    const u32 slot = frame % m_capacity;
+    if (m_slots[slot].frame != frame) {
+        // Ring slot is being reused for a newer frame — drop every field of the stale frame so an
+        // old snapshot / confirmed remote input can never be read back under the new frame number.
+        m_slots[slot] = {};
+        m_slots[slot].frame = frame;
+    }
+    return slot;
+}
+
 std::optional<GameSnapshot> RollbackBuffer::evict_oldest_snapshot() {
     if (!m_has_any_frame || m_capacity == 0) {
         return std::nullopt;
@@ -107,8 +118,7 @@ void RollbackBuffer::store_snapshot(u32 frame, GameSnapshot snapshot) {
     }
 
     snapshot.frame = frame;
-    const u32 slot = frame % m_capacity;
-    m_slots[slot].frame = frame;
+    const u32 slot = claim_slot_(frame);
     m_slots[slot].snapshot = std::move(snapshot);
     m_slots[slot].has_snapshot = true;
 }
@@ -130,24 +140,22 @@ GameSnapshot* RollbackBuffer::snapshot_mut(u32 frame) {
 }
 
 void RollbackBuffer::store_local_input(u32 frame, const PlayerInput& input) {
-    if (m_capacity == 0) {
-        return;
+    if (m_capacity == 0 || (m_has_any_frame && frame < m_oldest_frame)) {
+        return; // Older than the retained window — its slot now belongs to a newer frame.
     }
 
-    const u32 slot = frame % m_capacity;
-    m_slots[slot].frame = frame;
+    const u32 slot = claim_slot_(frame);
     m_slots[slot].local_input = input;
     m_slots[slot].local_input.frame = frame;
     m_slots[slot].has_local_input = true;
 }
 
 void RollbackBuffer::store_remote_input(u32 frame, const PlayerInput& input, bool confirmed) {
-    if (m_capacity == 0) {
-        return;
+    if (m_capacity == 0 || (m_has_any_frame && frame < m_oldest_frame)) {
+        return; // Older than the retained window — its slot now belongs to a newer frame.
     }
 
-    const u32 slot = frame % m_capacity;
-    m_slots[slot].frame = frame;
+    const u32 slot = claim_slot_(frame);
     m_slots[slot].remote_input = input;
     m_slots[slot].remote_input.frame = frame;
     m_slots[slot].remote_confirmed = confirmed;

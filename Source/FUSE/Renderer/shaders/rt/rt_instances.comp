@@ -1,0 +1,50 @@
+#version 460
+// WP-6.0 rt_instances: GPU-scene instance slots -> VkAccelerationStructureInstanceKHR (twin: rt_instances.slang).
+// The GPU definition of rt_types.hpp packRtInstance(); the fuse_rp_rt gates compare it with the CPU
+// fallback byte for byte.
+#extension GL_GOOGLE_include_directive : require
+#include "rt_common.glsl"
+
+layout(local_size_x = FUSE_RT_WORKGROUP) in;
+
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseRtInstances { FuseRtSceneInstance v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseRtTransforms { vec4 v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 8) readonly buffer FuseRtAddresses { uint64_t v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 16) writeonly buffer FuseRtAsInstances { FuseRtAsInstance v[]; };
+
+layout(push_constant) uniform Push { // RtInstancesPush
+    uint64_t instances;
+    uint64_t transforms;
+    uint64_t blasTable;
+    uint64_t outInstances;
+    uint count;
+    uint blasCount;
+    uint64_t inactiveBlas;
+    uint inactiveMask;
+    uint pad0;
+    uint pad1;
+    uint pad2;
+} pc;
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.count) {
+        return;
+    }
+    const FuseRtSceneInstance inst = FuseRtInstances(pc.instances).v[i];
+    const bool valid = (inst.flags & FUSE_RT_INSTANCE_VALID) != 0u;
+    const uint64_t blas = valid && inst.mesh < pc.blasCount ? FuseRtAddresses(pc.blasTable).v[inst.mesh] : 0ul;
+    const uint mask = fuse_rt_instance_mask(inst.flags, blas);
+    FuseRtTransforms xf = FuseRtTransforms(pc.transforms);
+    FuseRtAsInstance o;
+    o.rows[0] = xf.v[i * 3u + 0u];
+    o.rows[1] = xf.v[i * 3u + 1u];
+    o.rows[2] = xf.v[i * 3u + 2u];
+    // Dead slot: spec-inactive (0, 0) or, on quirk drivers, the placeholder (rt_types.hpp packRtInstance).
+    const bool dead = mask == 0u;
+    const bool placeholder = dead && pc.inactiveBlas != 0ul && pc.inactiveMask != 0u;
+    o.customIndexMask = (i & 0x00FFFFFFu) | ((dead ? (placeholder ? pc.inactiveMask : 0u) : mask) << 24u);
+    o.sbtOffsetFlags = FUSE_RT_INSTANCE_FLAGS << 24u;
+    o.blas = dead ? (placeholder ? pc.inactiveBlas : 0ul) : blas;
+    FuseRtAsInstances(pc.outInstances).v[i] = o;
+}

@@ -24,6 +24,8 @@ struct Phase7Deliverable {
     Phase7Module module = Phase7Module::Animation;
     bool stub_landed = false;
     bool automated = false;
+    /// CTest name of the gate test that proves this row (nullptr when none does yet).
+    const char* gate_test = nullptr;
 };
 
 /// B7.10 — Phase 7 deliverable checklist + cross-module integration smoke.

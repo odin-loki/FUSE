@@ -50,15 +50,33 @@ bool taaResolveRejectionSurfacesRequired(const TaaResolveDesc& desc) {
     return taaResolveRequiresVelocity(params) || taaResolveRequiresDepth(params);
 }
 
+namespace {
+
+bool velocitySurfaceBound(const TaaResolveDesc& desc) {
+    return taaResolveUsesCpuSurfaces(desc) ? desc.cpu.velocity_buffer != nullptr
+                                           : desc.surfaces.velocity_buffer != nullptr;
+}
+
+bool depthSurfaceBound(const TaaResolveDesc& desc) {
+    return taaResolveUsesCpuSurfaces(desc) ? desc.cpu.depth_buffer != nullptr
+                                           : desc.surfaces.depth_buffer != nullptr;
+}
+
+} // namespace
+
+bool taaResolveUsesCpuSurfaces(const TaaResolveDesc& desc) {
+    return desc.cpu.isBound();
+}
+
 bool taaResolveRejectionSurfacesSatisfied(const TaaResolveDesc& desc) {
     if (!taaResolveRejectionSurfacesRequired(desc)) {
         return true;
     }
     const TAAParams params = clampTaaParams(desc.params);
-    if (taaResolveRequiresVelocity(params) && desc.surfaces.velocity_buffer == nullptr) {
+    if (taaResolveRequiresVelocity(params) && !velocitySurfaceBound(desc)) {
         return false;
     }
-    if (taaResolveRequiresDepth(params) && desc.surfaces.depth_buffer == nullptr) {
+    if (taaResolveRequiresDepth(params) && !depthSurfaceBound(desc)) {
         return false;
     }
     return true;
@@ -104,16 +122,17 @@ TaaResolveSkipReason classifyTaaResolveSkip(const TaaResolveDesc& desc, const Ta
     if (taaResolveHasDimensionMismatch(desc, history)) {
         return TaaResolveSkipReason::DimensionMismatch;
     }
-    if (desc.surfaces.current_frame == nullptr || desc.surfaces.output == nullptr) {
+    const bool deviceSurfaces = desc.surfaces.current_frame != nullptr && desc.surfaces.output != nullptr;
+    if (!deviceSurfaces && !taaResolveUsesCpuSurfaces(desc)) {
         return TaaResolveSkipReason::MissingSurfaces;
     }
 
     if (desc.enforce_rejection_surfaces) {
         const TAAParams params = clampTaaParams(desc.params);
-        if (taaResolveRequiresVelocity(params) && desc.surfaces.velocity_buffer == nullptr) {
+        if (taaResolveRequiresVelocity(params) && !velocitySurfaceBound(desc)) {
             return TaaResolveSkipReason::MissingVelocityBuffer;
         }
-        if (taaResolveRequiresDepth(params) && desc.surfaces.depth_buffer == nullptr) {
+        if (taaResolveRequiresDepth(params) && !depthSurfaceBound(desc)) {
             return TaaResolveSkipReason::MissingDepthBuffer;
         }
     }
@@ -373,6 +392,13 @@ bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, 
     const TAAParams params = clampTaaParams(desc.params);
     m_stats.first_frame = !history.hasValidHistory();
     const TaaBlendWeights blendWeights = computeTaaResolveBlendWeights(desc, history);
+    const bool cpuPath = taaResolveUsesCpuSurfaces(desc);
+    if (cpuPath && !resolveCpu(desc, history, params, blendWeights.history > 1e-5f)) {
+        m_stats.skipped = true;
+        m_stats.first_frame = false;
+        m_message = "TAA resolve skipped — CPU resolver rejected the bound surfaces";
+        return false;
+    }
     history.markResolved();
     history.swap();
 
@@ -387,6 +413,11 @@ bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, 
     m_stats.accumulated_frames = history.accumulatedFrames();
     m_stats.history_invalidate_generation = history.invalidateGeneration();
 
+    if (cpuPath) {
+        m_message = m_stats.first_frame ? "TAA resolve (CPU reference) — first frame"
+                                        : "TAA resolve (CPU reference)";
+        return true;
+    }
 #if defined(FUSE_HAS_CUDA)
     m_message = m_stats.first_frame ? "TAA resolve recorded — first frame (CUDA kernel deferred)"
                                     : "TAA resolve recorded (CUDA kernel deferred)";
@@ -395,6 +426,34 @@ bool TaaResolve::resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, 
                                     : "TAA resolve recorded (CPU stub — no CUDA toolkit)";
 #endif
 
+    return true;
+}
+
+bool TaaResolve::resolveCpu(const TaaResolveDesc& desc, const TaaHistoryBuffer& history, const TAAParams& params,
+                            bool historyReusable) {
+    if (!m_cpu.resize(desc.width, desc.height)) {
+        return false;
+    }
+    // The CPU history follows the shared history buffer's validity: a warm-up frame, an
+    // invalidation (camera cut, resize) or a stale epoch restarts accumulation.
+    const u32 generation = history.invalidateGeneration();
+    if (!historyReusable || generation != m_cpuHistoryGeneration) {
+        m_cpu.invalidate();
+    }
+
+    TaaCpuFrameInputs inputs{};
+    inputs.current = desc.cpu.current_frame;
+    inputs.velocity = desc.cpu.velocity_buffer;
+    inputs.depth = desc.cpu.depth_buffer;
+    inputs.width = desc.width;
+    inputs.height = desc.height;
+    const bool historyUsed = m_cpu.hasHistory();
+    if (!m_cpu.resolve(inputs, params, desc.cpu.output)) {
+        return false;
+    }
+    m_cpuHistoryGeneration = generation;
+    m_stats.cpu_resolved = true;
+    m_stats.cpu_history_used = historyUsed;
     return true;
 }
 

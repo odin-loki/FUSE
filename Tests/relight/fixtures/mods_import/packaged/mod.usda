@@ -1,0 +1,66 @@
+#usda 1.0
+(
+    defaultPrim = "RootNode"
+    upAxis = "Z"
+)
+
+# RL-3.2 fixture: textures shipped only inside Remix packages (.pkg, generated at test time: RL-3.3 writer), looked up
+# by their path relative to the mod directory (case and separators normalized; reverse alphabetical package order:
+# textures_b.pkg shadows textures_a.pkg for wall_a.dds). One texture is missing, one is not a DDS (upstream refuses
+# non-DDS images). The mesh binds a material that lives inside the replacement (not a mat_ replacement: keyed by
+# path, no DB row), a Looks material with an unknown MDL, an out-of-range constant (clamped) and a hole in the mesh.
+# No licence file: the records fall back to LicenseRef-ThirdPartyMod-packaged.
+def Xform "RootNode"
+{
+    def Scope "meshes"
+    {
+        def Xform "mesh_0123456789ABCDEF"
+        {
+            def Mesh "wall" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [3, 3, 3]
+                int[] faceVertexIndices = [0, 1, 2, 0, 2, 3, 1, 4, 2]
+                int[] holeIndices = [2]
+                point3f[] points = [(0, 0, 0), (4, 0, 0), (4, 0, 3), (0, 0, 3), (6, 0, 1)]
+                matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0.5, 0.25, 0, 1) )
+                uniform token[] xformOpOrder = ["xformOp:transform"]
+                rel material:binding = </RootNode/meshes/mesh_0123456789ABCDEF/Looks/WallMaterial>
+            }
+
+            def Scope "Looks"
+            {
+                def Material "WallMaterial"
+                {
+                    def Shader "Shader"
+                    {
+                        uniform asset info:mdl:sourceAsset = @AperturePBR_Opacity.mdl@
+                        asset inputs:diffuse_texture = @./Textures/Wall_A.dds@
+                        asset inputs:normalmap_texture = @./textures/wall_n.dds@ (
+                            colorSpace = "raw"
+                        )
+                        asset inputs:height_texture = @./textures/wall_h.dds@
+                        asset inputs:emissive_mask_texture = @./textures/wall_e.png@
+                        float inputs:displace_in = 70000
+                        float inputs:opacity_constant = -2
+                        token outputs:out
+                    }
+                }
+            }
+        }
+    }
+
+    def Scope "Looks"
+    {
+        def Material "mat_00000000DEADBEEF"
+        {
+            def Shader "Shader"
+            {
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                float inputs:metallic_constant = 0.5
+                token outputs:out
+            }
+        }
+    }
+}

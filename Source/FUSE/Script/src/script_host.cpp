@@ -143,6 +143,16 @@ ScriptLoadResult ScriptHost::load_string(const char* source, const char* chunk_n
 #endif
     }
 
+    if (route.dialect == LegacyScriptDialect::UaiskCompat) {
+        // UAISK chunks are behaviour-tree data consumed by fuse_ai, not Lua source.
+        if (source == nullptr) {
+            m_lastLoadError = "source is null";
+            return {ScriptLoadStatus::InvalidArgument, m_lastLoadError.c_str()};
+        }
+        m_vm.record_data_chunk(chunk_name);
+        return {ScriptLoadStatus::Ok, nullptr};
+    }
+
     return m_vm.load_string(source, chunk_name);
 }
 

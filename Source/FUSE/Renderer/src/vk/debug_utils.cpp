@@ -1,5 +1,7 @@
 #include <fuse/renderer/vk/debug_utils.hpp>
 
+#include <cstdint>
+
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
 #endif
@@ -29,6 +31,11 @@ bool setDebugObjectName(void* vkDevice, u32 vkObjectType, u64 handle, const char
     (void)vkObjectType;
     return false;
 #endif
+}
+
+bool nameVkObject(void* vkDevice, u32 vkObjectType, const void* handle, const char* name) {
+    return setDebugObjectName(vkDevice, vkObjectType,
+                              static_cast<u64>(reinterpret_cast<uintptr_t>(handle)), name);
 }
 
 } // namespace fuse::renderer

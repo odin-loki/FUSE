@@ -5,6 +5,7 @@
 #include <fuse/terrain/terrain_desc.hpp>
 #include <fuse/types.hpp>
 
+#include <condition_variable>
 #include <functional>
 #include <mutex>
 #include <vector>
@@ -62,6 +63,13 @@ using LodResidencyWorkFn = std::function<bool(u32 chunk_index, LodResidencyReque
 /// Async LOD residency queue backed by JobScheduler (mirrors B7.6 StreamingRequestQueue).
 class LodResidencyQueue {
 public:
+    LodResidencyQueue() = default;
+    /// Blocks until every submitted job has finished touching this queue.
+    ~LodResidencyQueue();
+
+    LodResidencyQueue(const LodResidencyQueue&) = delete;
+    LodResidencyQueue& operator=(const LodResidencyQueue&) = delete;
+
     /// Queue a request for later submission. Promotes priority when the same chunk/kind is already pending.
     bool enqueue(LodResidencyRequest request);
 
@@ -110,10 +118,11 @@ private:
 
     [[nodiscard]] bool would_exceed_budget_() const;
     void sort_pending_by_priority_();
-    void push_completed_(CompletedLodResidencyRequest completed);
 
     mutable std::mutex m_mutex;
+    std::condition_variable m_jobsIdle;
     u32 m_inFlight = 0;
+    u32 m_liveJobs = 0; ///< Jobs still referencing `this`; unlike m_inFlight, never reset by clear()
     u64 m_submit_sequence = 0;
     u64 m_enqueue_sequence = 0;
     u32 m_max_pending_submits = 0; ///< 0 = unlimited pending (in-flight + completed buffer)

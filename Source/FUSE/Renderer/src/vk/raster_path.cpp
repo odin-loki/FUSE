@@ -3,6 +3,7 @@
 #include <fuse/renderer/shader/shader_module.hpp>
 #include <fuse/renderer/vk/debug_utils.hpp>
 #include <fuse/renderer/vk/graphics_pipeline.hpp>
+#include <fuse/renderer/vk/image_readback.hpp>
 #include <fuse/renderer/vk/pipeline_cache.hpp>
 #include <fuse/renderer/vk/pipeline_layout.hpp>
 #include <fuse/renderer/vk/render_pass.hpp>
@@ -80,21 +81,31 @@ bool RasterPath::recordFrame(const RenderCommandList& commands) {
     return m_stats.pipelineReady;
 }
 
-void RasterPath::reloadPipelinesIfWatched() {
+bool RasterPath::pollShaderReload() {
+    return reloadPipelinesIfWatched();
+}
+
+bool RasterPath::reloadPipelinesIfWatched() {
     const u32 changed = m_shaderWatch.pollChanged();
     ++m_stats.shaderWatchPolls;
     if (changed == 0u) {
-        return;
+        return false;
+    }
+
+    // Frames still in flight reference the current pipeline (GraphicsPipeline::rebuild destroys
+    // it immediately); hot reload is a development path, so a device idle is acceptable.
+    if (m_device != nullptr && m_device->isValid()) {
+        m_device->waitIdle();
     }
 
     const bool vertexReloaded = m_vertexShader != nullptr && m_vertexShader->reloadFromDisk();
     const bool fragmentReloaded = m_fragmentShader != nullptr && m_fragmentShader->reloadFromDisk();
     if (!vertexReloaded && !fragmentReloaded) {
-        return;
+        return false;
     }
 
     if (m_graphicsPipeline == nullptr || !m_graphicsPipeline->rebuild()) {
-        return;
+        return false;
     }
 
     ++m_stats.pipelineReloadCount;
@@ -103,11 +114,10 @@ void RasterPath::reloadPipelinesIfWatched() {
         const u64 fragmentHash = m_fragmentShader->info().spirvHash;
         m_stats.pipelineContentHash = vertexHash ^ (fragmentHash * 0x9E3779B97F4A7C15ull);
     }
+    return true;
 }
 
 void RasterPath::updateStatsFromCommands(const RenderCommandList& commands) {
-    reloadPipelinesIfWatched();
-
     if (!m_stats.pipelineReady) {
         m_stats.message = "raster path not ready";
         return;
@@ -150,6 +160,8 @@ VkFrameEncodeContext RasterPath::vulkanEncodeContext() const {
                      context.width > 0u && context.height > 0u;
     context.barrierImage = m_colorImage;
     context.depthImage = m_depthImage;
+    context.barrierImageLayout = &m_colorLayout;
+    context.depthImageLayout = &m_depthLayout;
     context.depthView = m_depthView;
     if (m_bindless != nullptr && m_bindless->descriptorSetHandle() != nullptr) {
         context.bindlessDescriptorSet = m_bindless->descriptorSetHandle();
@@ -281,7 +293,7 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
     }
     m_stats.bindlessLayoutReady = m_pipelineLayout->info().hasBindlessSet;
 
-    m_pipelineCache = PipelineCache::create(device);
+    m_pipelineCache = PipelineCache::create(device, PipelineCacheDesc{device.info().pipelineCreationCacheControl});
     if (m_pipelineCache == nullptr || !m_pipelineCache->isValid()) {
         m_stats.message = "pipeline cache creation failed";
         return false;
@@ -363,6 +375,7 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
         return false;
     }
     m_vertexMemory = vertexMemory;
+    nameVkObject(vkDevice, vk_object_type::kDeviceMemory, m_vertexMemory, "fuse.raster.vb.memory");
     vkBindBufferMemory(vkDevice, vertexBuffer, vertexMemory, 0);
     m_stats.vertexDeviceAddress = queryBufferDeviceAddress(device, vkDevice, vertexBuffer);
 
@@ -406,6 +419,7 @@ bool RasterPath::initialize(VulkanDevice& device, const RasterPathDesc& desc) {
         if (vkAllocateMemory(vkDevice, &indexAllocInfo, nullptr, &indexMemory) == VK_SUCCESS) {
             m_indexBuffer = indexBuffer;
             m_indexMemory = indexMemory;
+            nameVkObject(vkDevice, vk_object_type::kDeviceMemory, m_indexMemory, "fuse.raster.ib.memory");
             vkBindBufferMemory(vkDevice, indexBuffer, indexMemory, 0);
             m_stats.indexDeviceAddress = queryBufferDeviceAddress(device, vkDevice, indexBuffer);
 
@@ -500,6 +514,7 @@ bool RasterPath::createOffscreenTargets() {
         return false;
     }
     m_colorMemory = colorMemory;
+    nameVkObject(vkDevice, vk_object_type::kDeviceMemory, m_colorMemory, "fuse.raster.color.memory");
     vkBindImageMemory(vkDevice, colorImage, colorMemory, 0);
 
     VkImageViewCreateInfo viewInfo{};
@@ -519,6 +534,7 @@ bool RasterPath::createOffscreenTargets() {
         return false;
     }
     m_colorView = colorView;
+    nameVkObject(vkDevice, vk_object_type::kImageView, m_colorView, "fuse.raster.color.view");
 
     VkImageCreateInfo depthImageInfo{};
     depthImageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -529,7 +545,8 @@ bool RasterPath::createOffscreenTargets() {
     depthImageInfo.format = static_cast<VkFormat>(kDepthFormat);
     depthImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     depthImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthImageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    // Sampled: composite binds raster depth in the bindless heap (B2.9).
+    depthImageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     depthImageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     depthImageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -553,6 +570,7 @@ bool RasterPath::createOffscreenTargets() {
         return false;
     }
     m_depthMemory = depthMemory;
+    nameVkObject(vkDevice, vk_object_type::kDeviceMemory, m_depthMemory, "fuse.raster.depth.memory");
     vkBindImageMemory(vkDevice, depthImage, depthMemory, 0);
 
     VkImageViewCreateInfo depthViewInfo{};
@@ -572,6 +590,7 @@ bool RasterPath::createOffscreenTargets() {
         return false;
     }
     m_depthView = depthView;
+    nameVkObject(vkDevice, vk_object_type::kImageView, m_depthView, "fuse.raster.depth.view");
 
     const VkImageView framebufferAttachments[2] = {colorView, depthView};
 
@@ -590,6 +609,7 @@ bool RasterPath::createOffscreenTargets() {
         return false;
     }
     m_framebuffer = framebuffer;
+    nameVkObject(vkDevice, vk_object_type::kFramebuffer, m_framebuffer, "fuse.raster.framebuffer");
     m_stats.depthAttachmentReady = true;
 #else
     (void)0;
@@ -628,6 +648,8 @@ void RasterPath::destroyOffscreenTargets() {
     m_depthView = nullptr;
     m_colorImage = nullptr;
     m_depthImage = nullptr;
+    m_colorLayout = 0;
+    m_depthLayout = 0;
     m_colorMemory = nullptr;
     m_depthMemory = nullptr;
     m_stats.depthAttachmentReady = false;
@@ -671,6 +693,18 @@ void RasterPath::shutdown() {
     }
     m_bindless = nullptr;
     m_device = nullptr;
+}
+
+bool RasterPath::readbackColor(std::vector<u8>& outRgba) const {
+    outRgba.clear();
+#if defined(FUSE_VULKAN_BACKEND)
+    if (m_device == nullptr || m_colorImage == nullptr || m_desc.width == 0u || m_desc.height == 0u) {
+        return false;
+    }
+    return readbackColorImage(*m_device, m_colorImage, m_desc.width, m_desc.height, m_colorLayout, outRgba);
+#else
+    return false;
+#endif
 }
 
 } // namespace fuse::renderer

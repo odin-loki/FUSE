@@ -1,0 +1,85 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "mesh",
+  "id": "mod/fixture_game/material_table/mesh_00000000000000C1/panel",
+  "name": "panel",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 1,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "streams": [
+      {
+        "semantic": "Position",
+        "format": "F32x3",
+        "data": {
+          "sha256": "0c4ac03b38cc939b1638736f05adc629e11e5fdd5b1c40c66b7df818436cbf1c",
+          "size": 84,
+          "media": "fuse/mesh-stream"
+        }
+      },
+      {
+        "semantic": "Uv0",
+        "format": "F32x2",
+        "data": {
+          "sha256": "39648f4141698dc099ea8b21dbabb10654262bf2b787ec48df0fccf652871256",
+          "size": 56,
+          "media": "fuse/mesh-stream"
+        }
+      }
+    ],
+    "indices32": {
+      "sha256": "d8ad430b15c0c870edef2c7f335a69a93d47342be5976a4784070784e6395b17",
+      "size": 36,
+      "media": "fuse/mesh-stream"
+    },
+    "submeshes": [
+      {
+        "indexOffset": 0,
+        "indexCount": 6,
+        "materialSlot": "poco:mod/fixture_game/material_table/mat_00000000000000A1",
+        "subset": "/RootNode/meshes/mesh_00000000000000C1/panel/front"
+      },
+      {
+        "indexOffset": 6,
+        "indexCount": 3,
+        "materialSlot": "poco:mod/fixture_game/material_table/mat_00000000000000A2",
+        "subset": "/RootNode/meshes/mesh_00000000000000C1/panel/glass"
+      }
+    ],
+    "bounds": [0, 0, 0, 2, 1, 0],
+    "skeletonId": "",
+    "lodIds": [],
+    "relight": {
+      "remix_hash": "00000000000000C1",
+      "double_sided": false,
+      "left_handed": false,
+      "face_corner_vertices": true,
+      "uv_primvar": "primvars:st",
+      "influences": 0
+    }
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:material_table"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "material_table",
+      "stage": "mod.usda",
+      "prim": "/RootNode/meshes/mesh_00000000000000C1/panel",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "CC0-1.0",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

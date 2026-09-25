@@ -1,0 +1,52 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "relight_replacement",
+  "id": "mod/fixture_game/legacy_particles/mesh_000000000000F12E",
+  "name": "mesh_000000000000F12E",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 0.0254,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "target_kind": "mesh",
+    "key": {
+      "algo": "remix.geom.legacy0",
+      "value": "000000000000F12E",
+      "rule_id": "FEFDF9AB40DD4D97",
+      "rule": "legacypositions0,legacyindices"
+    },
+    "preserveOriginalDrawCall": null,
+    "instanceable": false,
+    "categories": {
+      "set": [],
+      "cleared": []
+    },
+    "parts": [],
+    "lights": [],
+    "material_bindings": [],
+    "particles": "poco:mod/fixture_game/legacy_particles/mesh_000000000000F12E"
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:legacy_particles"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "legacy_particles",
+      "stage": "mod.usda",
+      "prim": "/RootNode/meshes/mesh_000000000000F12E",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "CC-BY-SA-4.0",
+  "distribution": "never",
+  "replaces": ["oaid:870d44f4-87fd-5508-9f69-59971f386214"],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

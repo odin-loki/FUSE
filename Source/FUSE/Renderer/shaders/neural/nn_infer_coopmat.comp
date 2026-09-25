@@ -1,0 +1,97 @@
+#version 460
+// WP-9.1 "neural.infer", cooperative-matrix kernel (VK_KHR_cooperative_matrix). One workgroup = one 32-wide
+// subgroup = 16 samples: the encoding runs per sample (nn_common.glsl), every hidden layer is a 16 x in by in x out
+// product of 16x16x16 fp16 tiles with fp32 accumulators (activations fp16 in shared memory), the output layer runs
+// per sample in fp32. Constraints (NeuralGpu checks them): fp16 parameters, encoded and hidden widths multiples
+// of 16, at least one hidden layer. Differs from the CPU reference by the fp16 activations and the tile sum order.
+//
+// Compile-only in CI: Lavapipe has no VK_KHR_cooperative_matrix (fuse_rp_neural_coopmat_spirv checks the SPIR-V).
+// Hardware bring-up must also enable shaderFloat16 + storageBuffer16BitAccess and confirm a 16x16x16
+// fp16 x fp16 -> fp32 subgroup-scope entry in vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR, with a subgroup
+// size of 32 (RENDERER-EXECUTION.md WP-9.1 open issues).
+#extension GL_GOOGLE_include_directive : require
+#extension GL_KHR_cooperative_matrix : require
+#extension GL_KHR_memory_scope_semantics : require
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+#extension GL_EXT_shader_16bit_storage : require
+#include "nn_common.glsl"
+
+#define NN_TILE 16u
+#define NN_ROW 64u
+
+layout(local_size_x = 32) in;
+
+layout(buffer_reference, scalar, buffer_reference_align = 2) readonly buffer NnHalfRef { float16_t v[]; };
+layout(buffer_reference, scalar, buffer_reference_align = 4) readonly buffer NnInputsRef { float v[]; };
+layout(buffer_reference, scalar, buffer_reference_align = 4) writeonly buffer NnOutputsRef { float v[]; };
+
+layout(push_constant, scalar) uniform NnPushBlock { NeuralPush pc; };
+
+shared float16_t sAct[2u * NN_TILE * NN_ROW];
+shared float sAcc[NN_TILE * NN_TILE];
+
+void main() {
+    const uint lane = gl_LocalInvocationID.x;
+    const uint first = gl_WorkGroupID.x * NN_TILE;
+    const NeuralGpuHeader h = NnHeaderRef(pc.header).h;
+    if (lane < NN_TILE) {
+        const uint s = first + lane;
+        float x[4] = float[4](0.0, 0.0, 0.0, 0.0);
+        if (s < pc.count) {
+            for (uint d = 0u; d < h.inputDims; ++d) {
+                x[d] = NnInputsRef(pc.inputs).v[s * h.inputDims + d];
+            }
+        }
+        float e[NN_MAX_WIDTH];
+        nn_encode(h, pc.params, x, e);
+        for (uint i = 0u; i < h.encodedDims; ++i) {
+            sAct[lane * NN_ROW + i] = float16_t(e[i]);
+        }
+    }
+    barrier();
+    uint cur = 0u;
+    NnHalfRef weights = NnHalfRef(pc.params);
+    for (uint j = 0u; j + 1u < h.layerCount; ++j) {
+        const uint nin = h.layerIn[j];
+        const uint nout = h.layerOut[j];
+        const uint src = cur * NN_TILE * NN_ROW;
+        const uint dst = (cur ^ 1u) * NN_TILE * NN_ROW;
+        for (uint n0 = 0u; n0 < nout; n0 += NN_TILE) {
+            coopmat<float, gl_ScopeSubgroup, NN_TILE, NN_TILE, gl_MatrixUseAccumulator> acc =
+                coopmat<float, gl_ScopeSubgroup, NN_TILE, NN_TILE, gl_MatrixUseAccumulator>(0.0);
+            for (uint k0 = 0u; k0 < nin; k0 += NN_TILE) {
+                coopmat<float16_t, gl_ScopeSubgroup, NN_TILE, NN_TILE, gl_MatrixUseA> ma;
+                coopmat<float16_t, gl_ScopeSubgroup, NN_TILE, NN_TILE, gl_MatrixUseB> mb;
+                // A: 16 samples x 16 inputs (row-major activations); B: 16 inputs x 16 outputs = W^T, i.e. the
+                // row-major [out][in] weights read column-major with stride nin.
+                coopMatLoad(ma, sAct, src + k0, NN_ROW, gl_CooperativeMatrixLayoutRowMajor);
+                coopMatLoad(mb, weights.v, h.weightOffset[j] + n0 * nin + k0, nin, gl_CooperativeMatrixLayoutColumnMajor);
+                acc = coopMatMulAdd(ma, mb, acc);
+            }
+            coopMatStore(acc, sAcc, 0u, NN_TILE, gl_CooperativeMatrixLayoutRowMajor);
+            barrier();
+            for (uint e = lane; e < NN_TILE * NN_TILE; e += gl_WorkGroupSize.x) {
+                const uint row = e / NN_TILE;
+                const uint col = e % NN_TILE;
+                const float v = sAcc[e] + nn_param(pc.params, h.paramPrecision, h.biasOffset[j] + n0 + col);
+                sAct[dst + row * NN_ROW + n0 + col] = float16_t(nn_activation(h.hiddenActivation, v, h.leakySlope));
+            }
+            barrier();
+        }
+        cur ^= 1u;
+    }
+    const uint s = first + lane;
+    if (lane < NN_TILE && s < pc.count) {
+        const uint j = h.layerCount - 1u;
+        const uint nin = h.layerIn[j];
+        const uint src = cur * NN_TILE * NN_ROW + lane * NN_ROW;
+        for (uint o = 0u; o < h.outputDims; ++o) {
+            float acc = nn_param(pc.params, h.paramPrecision, h.biasOffset[j] + o);
+            const uint row = h.weightOffset[j] + o * nin;
+            for (uint i = 0u; i < nin; ++i) {
+                acc = acc + nn_param(pc.params, h.paramPrecision, row + i) * float(sAct[src + i]);
+            }
+            NnOutputsRef(pc.outputs).v[s * h.outputDims + o] = nn_activation(h.outputActivation, acc, h.leakySlope);
+        }
+    }
+}

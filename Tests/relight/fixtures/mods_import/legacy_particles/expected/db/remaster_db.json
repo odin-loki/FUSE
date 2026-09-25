@@ -1,0 +1,73 @@
+{
+  "schema": "fuse.remaster.db-shim/1",
+  "game_id": "fixture_game",
+  "original_asset": [
+    {
+      "oaid": "870d44f4-87fd-5508-9f69-59971f386214",
+      "kind": "mesh",
+      "game_id": "fixture_game",
+      "first_key": "remix.geom.legacy0:000000000000F12E"
+    },
+    {
+      "oaid": "8f082d3d-de86-59ce-99ea-dd7ca59333f4",
+      "kind": "texture",
+      "game_id": "fixture_game",
+      "first_key": "remix.tex:00000000000000F2"
+    },
+    {
+      "oaid": "985673ee-38b9-5328-9998-eb482e74a11c",
+      "kind": "mesh",
+      "game_id": "fixture_game",
+      "first_key": "remix.geom.legacy0:00000000000B0B01"
+    }
+  ],
+  "hash_key": [
+    {
+      "algo": "remix.geom.legacy0",
+      "value": "000000000000F12E",
+      "oaid": "870d44f4-87fd-5508-9f69-59971f386214",
+      "rule_id": "FEFDF9AB40DD4D97",
+      "kind": "mesh"
+    },
+    {
+      "algo": "remix.geom.legacy0",
+      "value": "00000000000B0B01",
+      "oaid": "985673ee-38b9-5328-9998-eb482e74a11c",
+      "rule_id": "FEFDF9AB40DD4D97",
+      "kind": "mesh"
+    },
+    {
+      "algo": "remix.tex",
+      "value": "00000000000000F2",
+      "oaid": "8f082d3d-de86-59ce-99ea-dd7ca59333f4",
+      "rule_id": null,
+      "kind": "texture"
+    }
+  ],
+  "replacement": [
+    {
+      "oaid": "870d44f4-87fd-5508-9f69-59971f386214",
+      "variant": "default",
+      "tier": "remix",
+      "poco_id": "mod/fixture_game/legacy_particles/mesh_000000000000F12E",
+      "kind": "relight_replacement",
+      "source": "mod/fixture_game/legacy_particles"
+    },
+    {
+      "oaid": "8f082d3d-de86-59ce-99ea-dd7ca59333f4",
+      "variant": "default",
+      "tier": "remix",
+      "poco_id": "mod/fixture_game/legacy_particles/mat_00000000000000F2",
+      "kind": "material",
+      "source": "mod/fixture_game/legacy_particles"
+    },
+    {
+      "oaid": "985673ee-38b9-5328-9998-eb482e74a11c",
+      "variant": "default",
+      "tier": "remix",
+      "poco_id": "mod/fixture_game/legacy_particles/mesh_00000000000B0B01",
+      "kind": "relight_replacement",
+      "source": "mod/fixture_game/legacy_particles"
+    }
+  ]
+}

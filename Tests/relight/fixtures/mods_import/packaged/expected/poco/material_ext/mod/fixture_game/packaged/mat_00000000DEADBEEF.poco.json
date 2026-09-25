@@ -1,0 +1,80 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "material_ext",
+  "id": "mod/fixture_game/packaged/mat_00000000DEADBEEF",
+  "name": "mat_00000000DEADBEEF",
+  "units": {
+    "length": "game",
+    "metersPerUnit": null,
+    "up": "+Z",
+    "handedness": "right"
+  },
+  "payload": {
+    "surface": "opaque",
+    "mdl": {
+      "sourceAsset": "OmniPBR.mdl",
+      "subIdentifier": ""
+    },
+    "ignore_material": false,
+    "preload_textures": false,
+    "params": {
+      "anisotropy": 0,
+      "emissive_intensity": 40,
+      "emissive_color_constant": [1, 0.10000000149011612, 0.10000000149011612],
+      "enable_emission": false,
+      "sprite_sheet_rows": 0,
+      "sprite_sheet_cols": 0,
+      "sprite_sheet_fps": 0,
+      "enable_thin_film": false,
+      "thin_film_thickness_from_albedo_alpha": false,
+      "thin_film_thickness_constant": 200,
+      "use_legacy_alpha_state": true,
+      "blend_enabled": false,
+      "blend_type": 0,
+      "inverted_blend": false,
+      "alpha_test_type": 7,
+      "displace_in": 0.05000000074505806,
+      "displace_out": 0,
+      "subsurface_transmittance_color": [0.5, 0.5, 0.5],
+      "subsurface_measurement_distance": 0,
+      "subsurface_single_scattering_albedo": [0.5, 0.5, 0.5],
+      "subsurface_volumetric_anisotropy": 0,
+      "subsurface_diffusion_profile": false,
+      "subsurface_radius": [0.5, 0.5, 0.5],
+      "subsurface_radius_scale": 1,
+      "subsurface_max_sample_radius": 16,
+      "filter_mode": 1,
+      "wrap_mode_u": 1,
+      "wrap_mode_v": 1,
+      "enable_dlss_control_mask": true,
+      "dlss_control_mask_intensity": 1,
+      "dlss_control_mask_tone_strength": 0.30000001192092896,
+      "dlss_control_mask_structural_strength": 0.699999988079071
+    },
+    "textures": {},
+    "authored": ["metallic_constant"],
+    "remix_hash": "00000000DEADBEEF",
+    "particles": null
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:packaged"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "packaged",
+      "stage": "mod.usda",
+      "prim": "/RootNode/Looks/mat_00000000DEADBEEF",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "LicenseRef-ThirdPartyMod-packaged",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

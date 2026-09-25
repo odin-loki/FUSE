@@ -69,6 +69,7 @@ VulkanSwapchain::~VulkanSwapchain() {
             }
         }
         m_framebuffers.clear();
+        m_imageLayouts.clear();
     }
 #endif
     m_images.clear();
@@ -129,11 +130,12 @@ bool VulkanSwapchain::initialize(VulkanDevice& device, const SwapchainDesc& desc
 #endif
 }
 
-void VulkanSwapchain::destroyPresentTargets(VulkanDevice& device) {
+void VulkanSwapchain::destroyPresentTargets([[maybe_unused]] VulkanDevice& device) {
 #if defined(FUSE_VULKAN_BACKEND)
     if (m_device == nullptr) {
         m_presentRenderPass = nullptr;
         m_framebuffers.clear();
+        m_imageLayouts.clear();
         return;
     }
 
@@ -145,6 +147,7 @@ void VulkanSwapchain::destroyPresentTargets(VulkanDevice& device) {
         }
     }
     m_framebuffers.clear();
+    m_imageLayouts.clear();
 
     if (m_presentRenderPass != nullptr) {
         vkDestroyRenderPass(vkDevice, static_cast<VkRenderPass>(m_presentRenderPass), nullptr);
@@ -154,6 +157,7 @@ void VulkanSwapchain::destroyPresentTargets(VulkanDevice& device) {
     (void)device;
     m_presentRenderPass = nullptr;
     m_framebuffers.clear();
+    m_imageLayouts.clear();
 #endif
 }
 
@@ -355,6 +359,7 @@ bool VulkanSwapchain::createSwapchainResources(VulkanDevice& device, const Swapc
     m_presentRenderPass = presentRenderPass;
 
     m_framebuffers.resize(m_images.size(), nullptr);
+    m_imageLayouts.assign(m_images.size(), 0u); // VK_IMAGE_LAYOUT_UNDEFINED
     for (u32 i = 0; i < m_images.size(); ++i) {
         VkImageView attachments[] = {static_cast<VkImageView>(m_images[i].view)};
         VkFramebufferCreateInfo framebufferInfo{};
@@ -434,7 +439,15 @@ u32 VulkanSwapchain::acquireNextImage(void* imageAvailableSemaphore) {
         VK_NULL_HANDLE,
         &imageIndex);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+    // SUBOPTIMAL still acquired the image and will signal the semaphore: it must be rendered and
+    // presented (dropping it leaks the image and leaves the semaphore signalled). The owner
+    // recreates the swapchain on its next resize.
+    if (result == VK_SUBOPTIMAL_KHR) {
+        ++m_info.suboptimalCount;
+        return imageIndex;
+    }
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        ++m_info.outOfDateCount;
         return UINT32_MAX;
     }
     if (result != VK_SUCCESS) {
@@ -482,6 +495,10 @@ void* VulkanSwapchain::framebufferForImage(u32 imageIndex) const {
         return nullptr;
     }
     return m_framebuffers[imageIndex];
+}
+
+u32* VulkanSwapchain::imageLayoutForIndex(u32 imageIndex) {
+    return imageIndex < m_imageLayouts.size() ? &m_imageLayouts[imageIndex] : nullptr;
 }
 
 void* VulkanSwapchain::imageHandleForIndex(u32 imageIndex) const {

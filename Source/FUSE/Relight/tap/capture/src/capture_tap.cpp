@@ -1,0 +1,721 @@
+// FUSE Relight RL-1.1: the capture tap (relight.tap.mode = capture). See capture_tap.hpp.
+#include <fuse/relight/tap/capture_tap.hpp>
+
+#include <fuse/relight/capture/texture/texture_options.hpp>
+#include <fuse/relight/capture/vertex_capture/spirv_vertex_capture.hpp>
+#include <fuse/relight/scene/classify/classify_options.hpp>
+#include <fuse/relight/scene/translate/translate_json.hpp>
+#include <fuse/relight/tap/device_tap.hpp>
+#include <fuse/relight/tap/recording_tap.hpp>
+
+#if defined(FUSE_RELIGHT_HAVE_REPLACE)
+#include <fuse/relight/replace/replace_live.hpp> // RL-3.4 runtime replacements (linked when the target exists)
+#endif
+#if defined(FUSE_RELIGHT_HAVE_RENDER_FRAME)
+#include <fuse/relight/render/frame/frame_tap.hpp> // RL-4.1 frame orchestration (linked when the target exists)
+#endif
+#if defined(FUSE_RELIGHT_HAVE_LOGIC)
+#include <fuse/relight/logic/logic_live.hpp> // RL-3.5 Logic graphs on the replaced draws (linked when the target exists)
+#endif
+
+#include <algorithm>
+#include <cinttypes>
+#include <cstring>
+#include <span>
+#include <utility>
+
+namespace fuse::relight::tap {
+
+namespace geo = capture::geometry;
+namespace tex = capture::texture;
+
+namespace {
+
+// D3D9 state indices the capture export reads (D3DRENDERSTATETYPE / D3DSAMPLERSTATETYPE values).
+constexpr std::uint32_t kD3DRS_CULLMODE = 22;
+constexpr std::uint32_t kD3DSAMP_ADDRESSU = 1, kD3DSAMP_ADDRESSV = 2, kD3DSAMP_MAGFILTER = 5;
+
+// ---- formatting (the replay tools' spelling, so the checks compare strings) ------------------------
+
+std::string h64(std::uint64_t v) { // geometry_replay: lower-case, no prefix
+    char buf[20];
+    std::snprintf(buf, sizeof buf, "%016" PRIx64, v);
+    return buf;
+}
+
+std::string H64(std::uint64_t v) { // texture replay: upper-case, no prefix
+    char buf[20];
+    std::snprintf(buf, sizeof buf, "%016" PRIX64, v);
+    return buf;
+}
+
+std::string hex0x(std::uint64_t v) { // rl_classify_replay: 0x + lower-case
+    char buf[24];
+    std::snprintf(buf, sizeof buf, "0x%016" PRIx64, v);
+    return buf;
+}
+
+std::string f32bits(float f) {
+    std::uint32_t b = 0;
+    std::memcpy(&b, &f, 4);
+    char buf[12];
+    std::snprintf(buf, sizeof buf, "%08x", b);
+    return buf;
+}
+
+std::string quote(const std::string& s) {
+    std::string out = "\"";
+    for (char c : s) {
+        if (c == '"' || c == '\\') {
+            out += '\\';
+        }
+        out += c;
+    }
+    return out + "\"";
+}
+
+/// Minimal JSON object builder (keys in insertion order).
+class Obj {
+public:
+    Obj& raw(const char* key, const std::string& value) {
+        if (!m_s.empty()) {
+            m_s += ',';
+        }
+        m_s += '"';
+        m_s += key;
+        m_s += "\":";
+        m_s += value;
+        return *this;
+    }
+    Obj& str(const char* key, const std::string& v) { return raw(key, quote(v)); }
+    Obj& u(const char* key, std::uint64_t v) { return raw(key, std::to_string(v)); }
+    Obj& b(const char* key, bool v) { return raw(key, v ? "true" : "false"); }
+    std::string done() const { return "{" + m_s + "}"; }
+
+private:
+    std::string m_s;
+};
+
+std::string array(const std::vector<std::string>& items) {
+    std::string s = "[";
+    for (std::size_t k = 0; k < items.size(); ++k) {
+        s += (k ? "," : "") + items[k];
+    }
+    return s + "]";
+}
+
+const char* decisionName(DrawDecision d) {
+    switch (d) {
+    case DrawDecision::Raster: return "raster";
+    case DrawDecision::Ignore: return "ignore";
+    case DrawDecision::RayTracedPreserveRaster: return "raytraced_preserve_raster";
+    }
+    return "?";
+}
+
+/// geometry_replay's printDraw fields, as a JSON object of strings.
+std::string geometryJson(const geo::CapturedDraw& d, const geo::GeometryCaptureConfig& config) {
+    Obj o;
+    o.str("status", std::string(geo::captureStatusName(d.status)))
+        .str("tci", std::to_string(d.texcoord.texcoordIndex))
+        .str("stage", std::to_string(d.texcoord.firstStage));
+    if (!d.captured()) {
+        return o.done();
+    }
+    const hash::DrawGeometryHashes g = d.geometryHashes();
+    std::string f;
+    for (std::uint32_t i = 0; i < hash::kHashComponentCount; ++i) {
+        f += (i ? "," : "") + h64(g.hashes.fields[i]);
+    }
+    o.str("f", f)
+        .str("ic", std::to_string(g.indexCount))
+        .str("vc", std::to_string(g.vertexCount))
+        .str("min", std::to_string(g.minIndex))
+        .str("max", std::to_string(g.maxIndex))
+        .str("topo", std::to_string(g.topology))
+        .str("it", std::to_string(g.indexType))
+        .str("ps", std::to_string(g.positionStride))
+        .str("key", h64(d.assetHash(config.assetRule)))
+        .str("leg0", h64(hash::meshReplacementHashLegacy(g, hash::rules::kLegacyAsset0, 0)))
+        .str("leg1", h64(hash::meshReplacementHashLegacy(g, hash::rules::kLegacyAsset1, 0)))
+        .str("memo", d.indicesMemoized ? "1" : "0");
+    if (d.boundingBox.valid()) {
+        const geo::BoundingBox& bb = d.boundingBox.get();
+        o.str("aabb", f32bits(bb.minPos[0]) + "," + f32bits(bb.minPos[1]) + "," + f32bits(bb.minPos[2]) + "," +
+                          f32bits(bb.maxPos[0]) + "," + f32bits(bb.maxPos[1]) + "," + f32bits(bb.maxPos[2]));
+    }
+    if (d.skinning.valid()) {
+        const geo::SkinningData& s = d.skinning.get();
+        o.str("skin", std::to_string(s.numBones) + ":" + std::to_string(s.numBonesPerVertex) + ":" +
+                          std::to_string(s.minBoneIndex) + ":" + h64(s.boneHash));
+    } else {
+        o.str("skin", "-");
+    }
+    return o.done();
+}
+
+/// RL-1.6: the draw's captured vertices (capture_tap.hpp, "vertex_capture").
+std::string vertexCaptureJson(const capture::vertex_capture::DrawVertexCapture& c) {
+    namespace vc = capture::vertex_capture;
+    constexpr std::size_t kMaxSlots = 4096;
+    auto floats = [](const float* v, std::size_t n) {
+        std::string out = "[";
+        for (std::size_t i = 0; i < n; ++i) {
+            out += (i ? ",\"" : "\"") + f32bits(v[i]) + "\"";
+        }
+        return out + "]";
+    };
+    std::vector<std::string> slots;
+    std::size_t emitted = 0;
+    for (std::size_t k = 0; k < c.raw.size() && emitted < kMaxSlots; ++k) {
+        const vc::RawCapturedVertex& raw = c.raw[k];
+        if ((raw.fields & vc::fields::kWritten) == 0) {
+            continue;
+        }
+        const vc::CapturedVertex& v = c.vertices[k];
+        char col[12];
+        std::snprintf(col, sizeof col, "%08X", v.color0);
+        slots.push_back(Obj()
+                            .u("k", k)
+                            .u("f", raw.fields)
+                            .raw("clip", floats(raw.clip, 4))
+                            .raw("pos", floats(v.position, 3))
+                            .raw("tex", floats(v.texcoord0, 2))
+                            .raw("nrm", floats(v.normal0, 3))
+                            .str("col", col)
+                            .done());
+        ++emitted;
+    }
+    return Obj()
+        .raw("base", std::to_string(c.baseVertex))
+        .raw("offset", std::to_string(c.vertexOffset))
+        .u("count", c.raw.size())
+        .u("written", c.written)
+        .u("fields", c.fields)
+        .b("truncated", emitted < c.written)
+        .raw("slots", array(slots))
+        .done();
+}
+
+std::string classificationJson(const scene::DrawClassification& r) {
+    return Obj()
+        .u("draw_call_id", r.drawCallId)
+        .str("status", scene::geometryStatusName(r.status))
+        .str("reason", scene::classifyReasonName(r.reason))
+        .b("inject", r.triggerRtxInjection)
+        .str("categories", r.categories.toString())
+        .str("decision", decisionName(scene::toTapDecision(r.prepareFlags)))
+        .b("sky_auto", r.skyAutoDetected)
+        .b("using_rt_rt", r.isUsingRaytracedRenderTarget)
+        .b("drawing_to_rt_rt", r.isDrawingToRaytracedRenderTarget)
+        .str("color_texture", hex0x(r.colorTextureHash))
+        .done();
+}
+
+} // namespace
+
+// ---- configuration ----------------------------------------------------------------------------------
+
+CaptureTapConfig CaptureTapConfig::fromOptions() {
+    CaptureTapConfig c;
+    c.texture = tex::textureTrackerConfigFromOptions();
+    c.geometry = geo::GeometryCaptureConfig::fromOptions();
+    c.exportConfig = CaptureExportConfig::fromOptions();
+    c.vertexCapture = scene::ClassifyOptions::useVertexCapture();
+    c.vertexCaptureOptions = capture::vertex_capture::VertexCaptureOptions::fromOptions();
+    return c;
+}
+
+geo::GeometryCaptureConfig CaptureTap::wireGeometry(geo::GeometryCaptureConfig config) {
+    // Texture facts come from TextureTracker (Remix keeps them on the DxvkImage): a texture has a
+    // hash once RL-1.4 set one (upload, inheritance, render-target counter). Hooks the caller set
+    // explicitly are kept.
+    if (!config.textureHashKnown) {
+        config.textureHashKnown = [this](ResourceId id) { return m_textures.imageHash(id) != hash::kEmptyHash; };
+    }
+    if (!config.isLightmapTexture) {
+        config.isLightmapTexture = [this](ResourceId id) {
+            const hash::Hash64 h = m_textures.imageHash(id);
+            return h != hash::kEmptyHash && scene::ClassifyOptions::lightmapTextures.containsHash(h);
+        };
+    }
+    if (!config.ignoreBakedLightingTexture) {
+        config.ignoreBakedLightingTexture = [this](ResourceId id) {
+            const hash::Hash64 h = m_textures.imageHash(id);
+            return h != hash::kEmptyHash && scene::ClassifyOptions::ignoreBakedLightingTextures.containsHash(h);
+        };
+    }
+    return config;
+}
+
+namespace {
+tex::TextureTrackerConfig textureConfig(tex::TextureTrackerConfig config, const CaptureExportConfig& exportConfig) {
+    if (exportConfig.enabled()) {
+        config.retainShadowAfterHash = true; // the DDS files hold the canonical mip 0 TextureTracker hashed
+    }
+    return config;
+}
+} // namespace
+
+CaptureTap::CaptureTap(CaptureTapConfig config)
+    : m_forward(std::move(config.forward)),
+      m_textures(textureConfig(config.texture, config.exportConfig), &m_registry),
+      m_translate(nullptr,
+                  [this](const scene::TranslatedDraw& d) {
+                      m_lastTranslated = d;
+                      m_haveTranslated = true;
+                  },
+                  [this](const scene::TranslatedFrame& f) {
+                      m_translatedFrame = f;
+                      m_haveTranslatedFrame = true;
+                  }),
+      m_geometry(wireGeometry(std::move(config.geometry))), m_processor(std::move(config.processor)) {
+    m_geometry.setDrawSink([this](const geo::CapturedDrawPtr& d) { m_lastGeometry = d; });
+    m_vertexCapture = config.vertexCapture;
+    m_vertexCaptureOptions = config.vertexCaptureOptions;
+    if (config.exportConfig.enabled()) {
+        m_export = std::make_unique<LiveCaptureExport>(*this, std::move(config.exportConfig));
+    }
+    if (!config.path.empty()) {
+        m_file = std::fopen(config.path.c_str(), "wb");
+        if (!m_file) {
+            std::fprintf(stderr, "fuse-relight: capture tap cannot open '%s'\n", config.path.c_str());
+        }
+    }
+    writeLine(Obj()
+                  .str("ev", "header")
+                  .str("schema", "fuse.relight.capture/1")
+                  .u("interface_version", kTapInterfaceVersion)
+                  .done());
+}
+
+CaptureTap::~CaptureTap() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_destroyed) {
+        flushFrame(true);
+    }
+    if (m_export) {
+        m_export->finish();
+    }
+    if (m_file) {
+        std::fclose(m_file);
+        m_file = nullptr;
+    }
+}
+
+void CaptureTap::setFrameSink(FrameSink sink) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_sink = std::move(sink);
+}
+
+void CaptureTap::writeLine(const std::string& line) {
+    if (!m_file) {
+        return;
+    }
+    std::fwrite(line.data(), 1, line.size(), m_file);
+    std::fputc('\n', m_file);
+}
+
+// ---- events -----------------------------------------------------------------------------------------
+
+void CaptureTap::onDeviceCreate(const DeviceEvent& e) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onDeviceCreate(e);
+    }
+    m_textures.onDeviceCreate(e);
+    m_translate.onDeviceCreate(e);
+    m_geometry.onDeviceCreate(e);
+}
+
+void CaptureTap::onDeviceReset(const DeviceEvent& e) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onDeviceReset(e);
+    }
+    m_textures.onDeviceReset(e);
+    m_translate.onDeviceReset(e);
+    m_geometry.onDeviceReset(e);
+}
+
+void CaptureTap::onDeviceDestroy() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onDeviceDestroy();
+    }
+    flushFrame(true);
+    if (m_export) {
+        m_export->finish(); // before the packages drop their state (texture bytes)
+    }
+    m_textures.onDeviceDestroy();
+    m_translate.onDeviceDestroy();
+    m_geometry.onDeviceDestroy();
+    writeLine(Obj().str("ev", "device_destroy").u("frame", m_frame).u("draws", m_drawCount).done());
+    if (m_file) {
+        std::fflush(m_file);
+    }
+    m_destroyed = true;
+}
+
+void CaptureTap::onTextureCreate(const TextureDesc& d) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onTextureCreate(d);
+    }
+    m_textures.onTextureCreate(d);
+    m_translate.onTextureCreate(d);
+    m_geometry.onTextureCreate(d);
+}
+
+void CaptureTap::onTextureUpload(const TextureUpload& u) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onTextureUpload(u);
+    }
+    m_textures.onTextureUpload(u);
+    m_translate.onTextureUpload(u);
+    m_geometry.onTextureUpload(u);
+}
+
+void CaptureTap::onTextureCopy(const TextureCopy& c) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onTextureCopy(c);
+    }
+    m_textures.onTextureCopy(c);
+    m_translate.onTextureCopy(c);
+    m_geometry.onTextureCopy(c);
+}
+
+void CaptureTap::onTextureWriteLock(const TextureWriteLock& l) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onTextureWriteLock(l);
+    }
+    m_textures.onTextureWriteLock(l);
+    m_translate.onTextureWriteLock(l);
+    m_geometry.onTextureWriteLock(l);
+}
+
+void CaptureTap::onImageDestroy(const ImageDestroy& d) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onImageDestroy(d);
+    }
+    m_textures.onImageDestroy(d);
+    m_translate.onImageDestroy(d);
+    m_geometry.onImageDestroy(d);
+}
+
+void CaptureTap::onBufferCreate(const BufferDesc& d) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onBufferCreate(d);
+    }
+    m_textures.onBufferCreate(d);
+    m_translate.onBufferCreate(d);
+    m_geometry.onBufferCreate(d);
+}
+
+void CaptureTap::onBufferWrite(const BufferWrite& w) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onBufferWrite(w);
+    }
+    m_textures.onBufferWrite(w);
+    m_translate.onBufferWrite(w);
+    m_geometry.onBufferWrite(w); // keeps the written bytes (GeometryCaptureConfig::shadowBuffers)
+}
+
+void CaptureTap::onBufferDestroy(ResourceId id) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onBufferDestroy(id);
+    }
+    m_textures.onBufferDestroy(id);
+    m_translate.onBufferDestroy(id);
+    m_geometry.onBufferDestroy(id);
+}
+
+void CaptureTap::syncClassifierTextures(const DrawState& state) {
+    // The classifier reads Remix's texture hashes (DxvkImage::getHash): TextureTracker's, now that
+    // it has flushed the managed textures this draw samples.
+    scene::D3DStateTracker& tracker = m_translate.tracker();
+    auto sync = [&](ResourceId id) {
+        if (id != kNoResource) {
+            tracker.setTextureHash(id, m_textures.imageHash(id));
+        }
+    };
+    for (ResourceId id : state.textures) {
+        sync(id);
+    }
+    for (ResourceId id : state.renderTargets) {
+        sync(id);
+    }
+}
+
+DrawDecision CaptureTap::onDraw(const DrawCall& call, const DrawState& state) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onDraw(call, state);
+    }
+    m_textures.onDraw(call, state); // flushes (hashes) the managed textures the draw samples
+    syncClassifierTextures(state);
+    m_haveTranslated = false;
+    m_translate.onDraw(call, state); // the classifier, then the fixed-function translation
+    m_lastGeometry.reset();
+    m_geometry.onDraw(call, state);
+
+    CaptureDrawRecord r;
+    r.n = m_drawCount++;
+    r.frame = m_frame;
+    r.drawInFrame = m_drawInFrame++;
+    r.geometry = std::move(m_lastGeometry);
+    if (m_vertexCapture && state.vertexShader.id != kNoResource) {
+        // RL-1.6: the back-transform of this draw; the dispatcher delivers the region at Present.
+        r.vertexCapture = std::make_shared<capture::vertex_capture::DrawVertexCapture>(
+            capture::vertex_capture::beginDrawCapture(state, m_vertexCaptureOptions));
+    }
+    if (m_haveTranslated) {
+        r.classification = m_lastTranslated.classification;
+        r.translation = std::move(m_lastTranslated);
+        r.translated = true;
+    }
+    for (std::uint32_t slot = 0; slot < kSamplerSlotCount; ++slot) {
+        if (const ResourceId id = state.textures[slot]; id != kNoResource) {
+            r.textures.push_back({slot, id, m_textures.imageHash(id), m_textures.descriptorHash(id)});
+        }
+    }
+    if (state.renderStates) {
+        r.cullMode = state.renderStates[kD3DRS_CULLMODE];
+    }
+    if (const std::int32_t slot = r.translation.material.colorTextureSlots[0];
+        r.translated && state.samplerStates && slot >= 0 && slot < std::int32_t(kSamplerSlotCount)) {
+        r.colorSampler.addressU = state.samplerStates[slot][kD3DSAMP_ADDRESSU];
+        r.colorSampler.addressV = state.samplerStates[slot][kD3DSAMP_ADDRESSV];
+        r.colorSampler.magFilter = state.samplerStates[slot][kD3DSAMP_MAGFILTER];
+    }
+    m_pending.push_back(std::move(r));
+    // Advisory until Relight renders: DXVK keeps drawing everything.
+    return DrawDecision::Raster;
+}
+
+bool CaptureTap::substituteVertexShader(const ShaderModule& m, std::vector<std::uint32_t>& replacement) {
+    // DXVK's compile threads, without the device lock: the transform is pure, so no tap state (and
+    // no m_mutex, which the device thread may hold) is involved. The forward tap locks itself.
+    if (m_forward && m_forward->substituteVertexShader(m, replacement)) {
+        return true;
+    }
+    if (!m_vertexCapture || !m.spirv) {
+        return false;
+    }
+    capture::vertex_capture::SpirvCaptureOptions options;
+    options.descriptorSet = m.captureSet;
+    options.binding = m.captureBinding;
+    capture::vertex_capture::SpirvCaptureResult r =
+        capture::vertex_capture::addVertexCapture(std::span(m.spirv, m.wordCount), options);
+    if (!r.transformed()) {
+        std::fprintf(stderr, "fuse-relight: vertex capture skipped %s: %s (%s)\n", m.name ? m.name : "shader",
+                     std::string(capture::vertex_capture::spirvCaptureStatusName(r.status)).c_str(), r.detail.c_str());
+        return false;
+    }
+    replacement = std::move(r.words);
+    return true;
+}
+
+void CaptureTap::onVertexCapture(const VertexCaptureFrame& f) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onVertexCapture(f);
+    }
+    for (std::uint32_t i = 0; i < f.drawCount && f.draws; ++i) {
+        const VertexCaptureDraw& d = f.draws[i];
+        const auto it = std::lower_bound(m_pending.begin(), m_pending.end(), d.draw,
+                                         [](const CaptureDrawRecord& r, std::uint64_t n) { return r.n < n; });
+        if (it != m_pending.end() && it->n == d.draw && it->vertexCapture) {
+            capture::vertex_capture::completeDrawCapture(*it->vertexCapture, d);
+        }
+    }
+}
+
+void CaptureTap::onQueryBegin(const QueryEvent& q) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onQueryBegin(q);
+    }
+    m_translate.onQueryBegin(q);
+}
+
+void CaptureTap::onQueryEnd(const QueryEvent& q) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onQueryEnd(q);
+    }
+    m_translate.onQueryEnd(q);
+}
+
+void CaptureTap::onClear(const ClearEvent& c) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onClear(c);
+    }
+    m_translate.onClear(c);
+}
+
+void CaptureTap::onSetRenderTarget(const SetRenderTargetEvent& e) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onSetRenderTarget(e);
+    }
+    m_translate.onSetRenderTarget(e);
+}
+
+void CaptureTap::onInjectPoint(const FrameEvent& f) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onInjectPoint(f);
+    }
+    m_translate.onInjectPoint(f);
+}
+
+void CaptureTap::onPresent(const FrameEvent& f) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_forward) {
+        m_forward->onPresent(f);
+    }
+    m_textures.onPresent(f);
+    m_haveTranslatedFrame = false;
+    m_translate.onPresent(f); // delivers the TranslatedFrame
+    m_geometry.onPresent(f);
+    flushFrame(false);
+    ++m_frame;
+    m_drawInFrame = 0;
+    if (m_file) {
+        std::fflush(m_file);
+    }
+}
+
+// ---- the per-frame record -----------------------------------------------------------------------------
+
+void CaptureTap::visitPendingDraws(const PendingVisitor& fn) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    fn(m_frame, m_pending);
+}
+
+void CaptureTap::flushFrame(bool final) {
+    // Geometry jobs finish here (JobFuture::get waits), off the draw call's path when the
+    // JobScheduler runs them on workers.
+    for (CaptureDrawRecord& r : m_pending) {
+        if (r.geometry && r.geometry->captured()) {
+            scene::DrawClassifier::applyGeometryCategories(r.classification,
+                                                           r.geometry->assetHash(m_geometry.config().assetRule));
+        }
+    }
+    IFrameProcessor::Output processed;
+    if (m_processor && (!m_pending.empty() || !final)) {
+        processed = m_processor->processFrame(m_frame, m_pending,
+                                              !final && m_haveTranslatedFrame ? &m_translatedFrame : nullptr, !final);
+    }
+    if (m_export) {
+        m_export->onFrame(m_frame, m_pending, !final);
+    }
+    if (m_sink && (!m_pending.empty() || !final)) {
+        m_sink(m_frame, m_pending);
+    }
+    std::uint64_t captured = 0;
+    for (std::size_t di = 0; di < m_pending.size(); ++di) {
+        const CaptureDrawRecord& r = m_pending[di];
+        std::vector<std::string> textures;
+        for (const CaptureDrawRecord::BoundTexture& t : r.textures) {
+            textures.push_back(Obj()
+                                   .u("slot", t.slot)
+                                   .u("texture", t.texture)
+                                   .str("hash", H64(t.imageHash))
+                                   .str("desc", H64(t.descriptorHash))
+                                   .done());
+        }
+        if (r.geometry && r.geometry->captured()) {
+            ++captured;
+        }
+        Obj line;
+        line.str("ev", "draw")
+            .u("n", r.n)
+            .u("frame", r.frame)
+            .u("di", r.drawInFrame)
+            .raw("geometry", r.geometry ? geometryJson(*r.geometry, m_geometry.config()) : "null")
+            .raw("textures", array(textures))
+            .raw("classification", classificationJson(r.classification))
+            .raw("translation", r.translated ? scene::translatedDrawJson(r.translation) : "null");
+        if (r.vertexCapture && r.vertexCapture->captured) {
+            line.raw("vertex_capture", vertexCaptureJson(*r.vertexCapture));
+        }
+        if (di < processed.draws.size() && !processed.draws[di].empty()) {
+            line.raw("replacement", processed.draws[di]);
+        }
+        writeLine(line.done());
+    }
+    if (!processed.frame.empty()) {
+        writeLine("{\"ev\":\"replace_frame\"," + processed.frame + "}");
+    }
+    if (final && m_pending.empty()) {
+        return;
+    }
+    std::vector<std::string> live;
+    for (const tex::TrackedTexture& t : m_textures.textures()) {
+        const bool registered = t.image.valid() && m_registry.lookup(t.image).has_value() &&
+                                m_registry.lookup(t.image)->imageHash == t.imageHash;
+        live.push_back(Obj()
+                           .u("id", t.desc.id)
+                           .str("hash", H64(t.imageHash))
+                           .str("desc", H64(t.descriptorHash))
+                           .str("origin", tex::hashOriginName(t.origin))
+                           .u("from", t.inheritedFrom)
+                           .u("pending", t.flushPending ? 1 : 0)
+                           .u("obsolete", t.obsoleteHash ? 1 : 0)
+                           .str("preview", H64(m_textures.previewImageHash(t.desc.id)))
+                           .u("registered", registered ? 1 : 0)
+                           .done());
+    }
+    writeLine(Obj().str("ev", "textures").u("frame", m_frame).raw("textures", array(live)).done());
+    if (!final && m_haveTranslatedFrame) {
+        writeLine("{\"ev\":\"translate_frame\"," + scene::translatedFrameJson(m_translatedFrame).substr(1));
+    }
+    writeLine(Obj()
+                  .str("ev", "frame")
+                  .u("frame", m_frame)
+                  .u("draws", m_pending.size())
+                  .u("captured", captured)
+                  .b("presented", !final)
+                  .done());
+    m_pending.clear();
+}
+
+// ---- the device factory -----------------------------------------------------------------------------
+
+std::unique_ptr<IRelightTap> createTapForDevice(const RuntimeConfig& config, unsigned deviceOrdinal) {
+    if (!config.relightEnabled || config.tapMode != TapMode::Capture) {
+        return createTap(config, deviceOrdinal);
+    }
+    CaptureTapConfig c = CaptureTapConfig::fromOptions();
+    c.path = devicePath(config.capturePath, deviceOrdinal);
+    if (c.exportConfig.enabled()) {
+        c.exportConfig.dir = devicePath(c.exportConfig.dir, deviceOrdinal);
+    }
+    if (config.captureRecord) {
+        c.forward = std::make_unique<RecordingTap>(devicePath(config.recordPath, deviceOrdinal));
+    }
+#if defined(FUSE_RELIGHT_HAVE_REPLACE)
+    c.processor = replace::createCaptureReplaceProcessor(deviceOrdinal); // null: relight.replace.enable off, no mods
+#endif
+#if defined(FUSE_RELIGHT_HAVE_LOGIC)
+    c.processor = logic::attachLogicProcessor(std::move(c.processor)); // unchanged when null or rtx.graph.enable is off
+#endif
+#if defined(FUSE_RELIGHT_HAVE_RENDER_FRAME)
+    // RL-4.1: the capture tap unchanged unless relight.frame.* asks for frame orchestration.
+    return render::frame::attachFrameTap(std::make_unique<CaptureTap>(std::move(c)), deviceOrdinal);
+#else
+    return std::make_unique<CaptureTap>(std::move(c));
+#endif
+}
+
+} // namespace fuse::relight::tap

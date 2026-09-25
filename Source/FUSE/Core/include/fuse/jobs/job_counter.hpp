@@ -8,8 +8,11 @@
 
 namespace fuse::jobs {
 
+class JobCounter;
+
 namespace detail {
 struct WorkerState;
+bool workerWaitOnCounter(JobCounter* counter);
 } // namespace detail
 
 /// Dependency counter for fork-join jobs.
@@ -28,6 +31,8 @@ public:
     void wait();
 
 private:
+    friend bool detail::workerWaitOnCounter(JobCounter* counter);
+
     void synchronizeCompletion();
 
     std::atomic<u32> m_remaining;

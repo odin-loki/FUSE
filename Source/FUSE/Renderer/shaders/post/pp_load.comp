@@ -1,0 +1,17 @@
+#version 460
+// WP-4.5 "post.load": the input HDR image (RGBA16F lit image / forward composite, bindless sampled
+// image) -> the f32x4 working buffer at pc.dst, one texel per thread. GLSL twin of pp_load.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "pp_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+    const PpFrame F = pp_frame();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const vec4 c = pp_fetch(F.inputHdr, ivec2(p));
+    PpTexelsRef(pc.dst).v[p.y * F.width + p.x] = vec4(c.xyz, 0.0);
+}

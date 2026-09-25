@@ -1,0 +1,103 @@
+#version 460
+// WP-3.2 "vsm.raster": renders exactly the WP-3.1 render list into the physical pool.
+// vkCmdDispatchIndirect on the VSM work buffer's first three counters: one 64-thread workgroup per
+// render-list entry {virtual page, physical page}; vsm.clear has already written the clear value into
+// the page. The workgroup walks the GPU scene's instances in order (uniformly), keeps the shadow
+// casters whose conservative light-space box (mesh bounding sphere + a quantisation step, 1/64 page
+// margin, not entirely beyond the level's far depth) overlaps the page, and rasterises their
+// triangles one per thread (no shared memory, no barriers). Per texel: raster_math::tri_texel, depth
+// clamped to [0, 1], imageAtomicMin of the float bits (R32_UINT). CPU reference:
+// VsmRasterReference::renderPages (vsm_raster_kernel.hpp). GLSL twin of vsm_raster.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "vsm_raster_common.glsl"
+
+layout(local_size_x = 64) in;
+
+void main() {
+    FuseVsmShadowRef S = fuse_vsmr_shadow();
+    FuseVsmConstantsRef C = FuseVsmConstantsRef(S.vsm);
+    const uint tid = gl_LocalInvocationIndex;
+    const uint entry = gl_WorkGroupID.x;
+    FuseVsmrWordsRef vsmWork = FuseVsmrWordsRef(C.work);
+    const uint vp = vsmWork.v[C.offRenderList + entry * 2u];
+    const uint phys = vsmWork.v[C.offRenderList + entry * 2u + 1u];
+    uint level;
+    int ax;
+    int ay;
+    fuse_vsmr_dir_page_of(C, vp, level, ax, ay);
+    if (tid == 0u) {
+        atomicAdd(FUSE_VSMR_WORDS(S.workHandle)[FUSE_VSMR_WORD_DIR_PAGES], 1u);
+    }
+    if (level >= C.levels || level >= 16u || phys >= C.physPages) {
+        return;
+    }
+    const FuseVsmLevel L = C.level[level];
+    const ivec2 origin = ivec2((phys % C.poolPagesX) * FUSE_VSM_PAGE_TEXELS, (phys / C.poolPagesX) * FUSE_VSM_PAGE_TEXELS);
+    const uint pool = fuse_handle_index(C.poolHandle);
+    FuseGpuSceneHeaderRef scene = fuse_gpu_scene(C.scene);
+    FuseGpuInstancesRef instances = fuse_gpu_scene_instances(scene);
+    FuseGpuTransformsRef transforms = fuse_gpu_scene_transforms(scene);
+    FuseGpuMeshesRef meshes = fuse_gpu_scene_meshes(scene);
+    const uint meshCount = scene.counts[FUSE_GPU_SCENE_MESHES];
+    const uint instanceCount = C.instanceCount;
+    const float margin = 1.0 / 64.0;
+    const float fax = float(ax);
+    const float fay = float(ay);
+    uint tris = 0u;
+    uint big = 0u;
+    for (uint i = 0u; i < instanceCount; ++i) {
+        const FuseGpuInstance inst = instances.v[i];
+        if (inst.mesh >= meshCount) {
+            continue;
+        }
+        const FuseGpuMesh mesh = meshes.v[inst.mesh];
+        const FuseGpuTransform xf = transforms.v[i];
+        vec3 c;
+        vec3 e;
+        if (!fuse_vsmr_caster_bounds(inst, mesh, xf, c, e)) {
+            continue;
+        }
+        const vec3 lc = fuse_vsmr_light_point(C, c);
+        precise float lex = (abs(C.lightRotation[0]) * e.x + abs(C.lightRotation[1]) * e.y) + abs(C.lightRotation[2]) * e.z;
+        precise float ley = (abs(C.lightRotation[4]) * e.x + abs(C.lightRotation[5]) * e.y) + abs(C.lightRotation[6]) * e.z;
+        precise float lez = (abs(C.lightRotation[8]) * e.x + abs(C.lightRotation[9]) * e.y) + abs(C.lightRotation[10]) * e.z;
+        precise float u0 = (lc.x - lex) * L.invPageWorld;
+        precise float u1 = (lc.x + lex) * L.invPageWorld;
+        precise float v0 = (lc.y - ley) * L.invPageWorld;
+        precise float v1 = (lc.y + ley) * L.invPageWorld;
+        precise float nearest = fuse_vsmr_dir_depth(L, lc.z + lez);
+        if (!(u1 >= fax - margin && u0 <= fax + 1.0 + margin && v1 >= fay - margin && v0 <= fay + 1.0 + margin && nearest <= 1.001)) {
+            continue;
+        }
+        const uint triangles = mesh.indexCount / 3u;
+        for (uint t = tid; t < triangles; t += FUSE_VSMR_THREADS) {
+            vec3 w[3];
+            if (!fuse_vsmr_triangle_world(scene, mesh, xf, t, w)) {
+                continue;
+            }
+            FuseVsmrTri tri;
+            tri.h = 0.0;
+            for (uint j = 0u; j < 3u; ++j) {
+                const vec3 pv = fuse_vsmr_dir_page_vertex(L, ax, ay, fuse_vsmr_light_point(C, w[j]));
+                tri.x[j] = pv.x;
+                tri.y[j] = pv.y;
+                tri.z[j] = pv.z;
+            }
+            FuseVsmrSetup s;
+            if ((tri.z[0] > 1.0 && tri.z[1] > 1.0 && tri.z[2] > 1.0) || !fuse_vsmr_setup(tri, s)) {
+                continue;
+            }
+            ++tris;
+            big += (s.box.z - s.box.x + 1) * (s.box.w - s.box.y + 1) > FUSE_VSMR_BIG_TEXELS ? 1u : 0u;
+            for (int py = s.box.y; py <= s.box.w; ++py) {
+                for (int px = s.box.x; px <= s.box.z; ++px) {
+                    fuse_vsmr_write_dir(pool, origin, tri, s, px, py);
+                }
+            }
+        }
+    }
+    if (tris != 0u) {
+        atomicAdd(FUSE_VSMR_WORDS(S.workHandle)[FUSE_VSMR_WORD_DIR_TRIANGLES], tris);
+        atomicAdd(FUSE_VSMR_WORDS(S.workHandle)[FUSE_VSMR_WORD_DIR_BIG], big);
+    }
+}

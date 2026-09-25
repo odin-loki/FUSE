@@ -1,0 +1,8 @@
+{
+  "description": "Counter -> GreaterThan -> Toggle, CountToggles, PreviousFrameValue, ConditionallyStore, Select, Bool AND / OR / NOT, Divide + Floor / Ceil / Round; two owners (replacement instances) evaluate the same graph in one batch.",
+  "stage": "toggle_counter.usda",
+  "mesh": "0123456789ABCDEF",
+  "owners": [1, 2],
+  "frames": 12,
+  "dt": 0.1
+}

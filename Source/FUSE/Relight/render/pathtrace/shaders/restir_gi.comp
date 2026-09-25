@@ -1,0 +1,116 @@
+#version 460
+// FUSE Relight RL-5.3 "relight.restir_gi.*": GLSL twin of restir_gi.slang (see there; the stages are
+// restir_gi_core.h, the CPU oracle RestirGiCpu).
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(push_constant) uniform RgiPush {
+    uint64_t params;
+    uint64_t instances;
+    uint64_t triangles;
+    uint64_t materials;
+    uint64_t portals;
+    uint64_t lightMap;
+    uint64_t lightTable;
+    uint64_t lightTree;
+    uint64_t tlas;
+    uint64_t lut;
+    uint64_t restirDi;
+    uint64_t block;
+    uint64_t src;
+    uint64_t dst;
+    uint width;
+    uint height;
+    uint lightCount;
+    uint stage;
+} pc;
+
+#include "rl_pt.glsl"
+
+layout(buffer_reference, std430, buffer_reference_align = 8) readonly buffer RgiU64Ref { uint64_t v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 16) buffer RgiWordsRef { vec4 v[]; };
+
+uint64_t rgiBlock(uint k) { return RgiU64Ref(pc.block).v[k]; }
+
+vec4 rgiSurfaceWord(uint slot, uint pixel, uint k) {
+    return RgiWordsRef(rgiBlock(slot == 0u ? 0u : 1u)).v[pixel * 4u + k];
+}
+vec4 rgiReservoirWord(uint which, uint pixel, uint k) {
+    uint64_t a = which == 0u ? pc.src : rgiBlock(2u);
+    return RgiWordsRef(a).v[pixel * 9u + k];
+}
+
+#define RGI_CTX_PARAM
+#define RGI_CTX_ARG
+#define RGI_PT
+#define RGI_LUT
+#define RGI_PARAM_WORDS(name) vec4 name[2]
+
+#include "restir_gi_core.h"
+
+void rgiStoreReservoir(uint64_t base, uint pixel, RgiReservoir r) {
+    for (uint k = 0u; k < kRgiReservoirWords; ++k) {
+        RgiWordsRef(base).v[pixel * kRgiReservoirWords + k] = rgiReservoirPack(r, k);
+    }
+}
+
+void rgiStageSurface(PtParams P, uint x, uint y, uint pixel) {
+    PtParams Q = P;
+    Q.flags = (P.flags | kPtFlagGiRecord) & ~(kPtFlagNee | kPtFlagRestirDi | kPtFlagDiRecord | kPtFlagRestirGi);
+    g_rgiHave = false;
+    PtSample s = ptRenderSample(Q, x, y, P.sampleBase);
+    vec4 w0;
+    vec4 w1;
+    vec4 w2;
+    vec4 w3;
+    rgiSurfaceWords(P, g_rgiHave, g_rgiHit, g_rgiDir, g_rgiBounce, w0, w1, w2, w3);
+    RgiWordsRef(pc.dst).v[pixel * 4u] = w0;
+    RgiWordsRef(pc.dst).v[pixel * 4u + 1u] = w1;
+    RgiWordsRef(pc.dst).v[pixel * 4u + 2u] = w2;
+    RgiWordsRef(pc.dst).v[pixel * 4u + 3u] = w3;
+}
+
+void rgiStageShade(PtParams P, uint pixel) {
+    RgiReservoir r = rgiLoadReservoir(0u, pixel);
+    RgiWordsRef(rgiBlock(3u)).v[pixel * 2u] = rgiSurfaceWord(0u, pixel, 0u);
+    RgiWordsRef(rgiBlock(3u)).v[pixel * 2u + 1u] = rgiShade(P, r, pixel);
+    rgiStoreReservoir(rgiBlock(2u), pixel, r);
+}
+
+void main() {
+    uvec2 tid = gl_GlobalInvocationID.xy;
+    if (tid.x >= pc.width || tid.y >= pc.height) {
+        return;
+    }
+    vec4 w[11];
+    for (uint k = 0u; k < 11u; ++k) {
+        w[k] = PtWordsRef(pc.params).v[k];
+    }
+    PtParams P = ptParamsUnpack(w);
+    vec4 rw[2];
+    for (uint k = 0u; k < 2u; ++k) {
+        rw[k] = RgiWordsRef(pc.block + uint64_t(32)).v[k];
+    }
+    RgiParams R = rgiParamsUnpack(rw);
+    uint pixel = tid.y * P.width + tid.x;
+    if (pc.stage == 1u) {
+        rgiStageSurface(P, tid.x, tid.y, pixel);
+        return;
+    }
+    if (pc.stage == 4u) {
+        rgiStageShade(P, pixel);
+        return;
+    }
+    if (pc.stage == 2u) {
+        rgiStoreReservoir(pc.dst, pixel, rgiInitial(P, tid.x, tid.y));
+        return;
+    }
+    if (pc.stage >= 8u) {
+        R.iteration = pc.stage - 8u;
+    }
+    rgiStoreReservoir(pc.dst, pixel, rgiReuse(P, R, tid.x, tid.y, pc.stage == 3u));
+}

@@ -1,13 +1,26 @@
 #include <fuse/profiler/profiler.hpp>
 
+#include <fuse/platform/sleep.hpp>
 #include <fuse/platform/thread.hpp>
 
-#include <array>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <thread>
+#include <vector>
+
+#if defined(__x86_64__) || defined(_M_X64)
+#define FUSE_PROFILER_X86_TSC 1
+#if defined(_MSC_VER)
+#include <intrin.h>
+#else
+#include <cpuid.h>
+#include <x86intrin.h>
+#endif
+#endif
 
 namespace fuse::profiler {
 
@@ -15,66 +28,289 @@ bool isValidEventName(const char* name);
 
 namespace {
 
+// ---- Recording model ----------------------------------------------------------------------------
+//
+// Hot path (FUSE_PROFILE_SCOPE): each thread appends to its own ring (ThreadBuffer) — no locks and
+// no shared read-modify-write: one relaxed load of the enabled flag and reset epoch, two raw clock
+// reads (invariant TSC on x86-64, steady_clock elsewhere), plain stores of a 48-byte record, and a
+// release store of the owner-only write counter. Scope ids come from a per-thread block of the
+// global counter. Nothing allocates after a thread's first event (which acquires its buffer).
+//
+// Read side (eventCount / eventAt / export — not hot): the per-thread rings are merged in record
+// order into one view of the latest kRingCapacity events, with ticks converted to nanoseconds.
+// The view is rebuilt only when some ring has advanced (or reset() ran) since the last merge.
+
 constexpr u32 kRingCapacity = 4096u;
+constexpr u32 kMaxThreadBuffers = 256u;
+constexpr u32 kScopeIdBlock = 1024u;
 
 std::atomic<bool> g_enabled{true};
 std::atomic<u32> g_frameIndex{0};
 std::atomic<u32> g_nextScopeId{1};
 std::atomic<u32> g_nextFlowId{1};
-
-std::array<ProfileEvent, kRingCapacity> g_events{};
-std::atomic<u32> g_writeHead{0};
-std::atomic<u32> g_eventCount{0};
-std::atomic<u32> g_maxNestingDepth{0};
-std::atomic<u32> g_maxFlowNestingDepth{0};
 std::atomic<u32> g_openAsyncFlowCount{0};
+std::atomic<u32> g_maxFlowNestingDepth{0};
+/// Bumped by reset(): rings recorded under an older epoch are logically empty.
+std::atomic<u32> g_resetEpoch{1};
 
 std::mutex g_exportMutex;
 
-u64 nowNanoseconds() {
+// ---- Clock --------------------------------------------------------------------------------------
+
+u64 steadyNanoseconds() {
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
-    return static_cast<u64>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
+    return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
 }
 
-u32& threadLocalNestingDepth() {
-    static thread_local u32 depth = 0;
-    return depth;
-}
-
-u32 pushNestingDepth() {
-    u32& depth = threadLocalNestingDepth();
-    const u32 next = depth + 1u;
-    depth = next;
-
-    const u32 observed = g_maxNestingDepth.load(std::memory_order_acquire);
-    if (next > observed) {
-        g_maxNestingDepth.store(next, std::memory_order_release);
+#if defined(FUSE_PROFILER_X86_TSC)
+bool invariantTscAvailable() {
+#if defined(_MSC_VER)
+    int regs[4] = {};
+    __cpuid(regs, 0x80000000);
+    if (static_cast<unsigned>(regs[0]) < 0x80000007u) {
+        return false;
     }
-    return next;
+    __cpuid(regs, 0x80000007);
+    return (static_cast<unsigned>(regs[3]) & (1u << 8)) != 0u;
+#else
+    unsigned eax = 0;
+    unsigned ebx = 0;
+    unsigned ecx = 0;
+    unsigned edx = 0;
+    if (__get_cpuid(0x80000000u, &eax, &ebx, &ecx, &edx) == 0 || eax < 0x80000007u) {
+        return false;
+    }
+    if (__get_cpuid(0x80000007u, &eax, &ebx, &ecx, &edx) == 0) {
+        return false;
+    }
+    return (edx & (1u << 8)) != 0u;
+#endif
+}
+#endif
+
+/// Tick source, fixed before the first buffer is handed out (see acquireThreadBuffer): the
+/// invariant TSC when the CPU has one (a plain `rdtsc`, several times cheaper than a
+/// steady_clock read), else steady_clock nanoseconds (1 tick == 1 ns).
+bool g_useTsc = false;
+u64 g_clockTicks0 = 0;
+u64 g_clockNs0 = 0;
+f64 g_nsPerTick = 1.0;
+bool g_clockCalibrated = false;
+std::once_flag g_clockInitOnce;
+
+inline u64 readTicks() {
+#if defined(FUSE_PROFILER_X86_TSC)
+    if (g_useTsc) {
+        return static_cast<u64>(__rdtsc());
+    }
+#endif
+    return steadyNanoseconds();
 }
 
-void popNestingDepth() {
-    u32& depth = threadLocalNestingDepth();
-    if (depth > 0u) {
-        --depth;
+void initClock() {
+    std::call_once(g_clockInitOnce, []() {
+#if defined(FUSE_PROFILER_X86_TSC)
+        g_useTsc = invariantTscAvailable();
+#endif
+        g_clockNs0 = steadyNanoseconds();
+        g_clockTicks0 = readTicks();
+        g_clockCalibrated = !g_useTsc;
+    });
+}
+
+/// Read side only (under g_viewMutex): fix ticks -> ns once, from >= 10 ms of TSC vs steady_clock.
+void calibrateClock() {
+    initClock();
+    if (g_clockCalibrated) {
+        return;
     }
+    constexpr u64 kCalibrationNs = 10'000'000u;
+    u64 ns = steadyNanoseconds();
+    if (ns - g_clockNs0 < kCalibrationNs) {
+        // sleep_for would truncate to whole ms on MinGW (and skip a sub-ms remainder entirely).
+        platform::sleepAtLeast(std::chrono::ceil<std::chrono::microseconds>(
+            std::chrono::nanoseconds(kCalibrationNs - (ns - g_clockNs0))));
+    }
+    const u64 ticks = readTicks();
+    ns = steadyNanoseconds();
+    if (ticks > g_clockTicks0 && ns > g_clockNs0) {
+        g_nsPerTick = static_cast<f64>(ns - g_clockNs0) / static_cast<f64>(ticks - g_clockTicks0);
+    }
+    g_clockCalibrated = true;
+}
+
+u64 ticksToNs(u64 ticks) {
+    if (!g_useTsc) {
+        return ticks;
+    }
+    const f64 delta = (static_cast<f64>(ticks) - static_cast<f64>(g_clockTicks0)) * g_nsPerTick;
+    const f64 ns = static_cast<f64>(g_clockNs0) + delta;
+    return ns > 0.0 ? static_cast<u64>(ns) : 0u;
+}
+
+u64 tickSpanToNs(u64 ticks) {
+    return g_useTsc ? static_cast<u64>(static_cast<f64>(ticks) * g_nsPerTick) : ticks;
+}
+
+// ---- Per-thread rings ---------------------------------------------------------------------------
+
+/// Compact ring record (48 bytes). `ticks` is the record time (the merge order key); for
+/// GPU / CUDA complete events the event timestamp is `ticks - value.durationTicks`.
+struct Record {
+    const char* name;
+    u64 ticks;
+    union {
+        s64 intValue;
+        f64 floatValue;
+        u64 durationTicks;
+    } value;
+    u32 scopeId;
+    u32 nestingDepth;
+    u32 flowNestingDepth;
+    u32 threadId;
+    u32 counterSnapshotFrame;
+    EventPhase phase;
+    CounterValueKind counterKind;
+};
+static_assert(sizeof(Record) <= 48u, "keep the profiler ring record compact");
+
+struct ThreadBuffer {
+    /// Events written since `epoch` began (owner stores with release; readers acquire).
+    std::atomic<u64> written{0};
+    std::atomic<u32> epoch{0};
+    std::atomic<u32> maxNestingDepth{0};
+    std::atomic<bool> inUse{false};
+    Record records[kRingCapacity];
+};
+
+ThreadBuffer* g_threadBuffers[kMaxThreadBuffers] = {};
+std::atomic<u32> g_threadBufferCount{0};
+std::mutex g_registryMutex;
+
+/// Hot per-thread state: trivially initialised so thread_local access needs no init guard.
+struct ThreadState {
+    ThreadBuffer* buffer;
+    u32 epoch;          ///< reset epoch the ring / id block / max depth belong to
+    u32 threadId;
+    u32 nextScopeId;
+    u32 scopeIdEnd;
+    u32 maxNestingDepth;
+    u32 nestingDepth;
+    u32 flowNestingDepth;
+    bool acquireFailed;
+};
+constinit thread_local ThreadState t_state{};
+
+struct ThreadBufferRelease {
+    ~ThreadBufferRelease() {
+        if (t_state.buffer != nullptr) {
+            // Recorded events stay visible; a later thread may reuse the ring (and append to it).
+            // This thread records nothing more (other thread_local destructors may still run).
+            ThreadBuffer* buffer = t_state.buffer;
+            t_state.buffer = nullptr;
+            t_state.acquireFailed = true;
+            buffer->inUse.store(false, std::memory_order_release);
+        }
+    }
+};
+
+ThreadBuffer* acquireThreadBuffer() {
+    initClock();
+    const std::lock_guard<std::mutex> lock(g_registryMutex);
+    const u32 count = g_threadBufferCount.load(std::memory_order_relaxed);
+    ThreadBuffer* buffer = nullptr;
+    for (u32 i = 0; i < count && buffer == nullptr; ++i) {
+        bool expected = false;
+        if (g_threadBuffers[i]->inUse.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+            buffer = g_threadBuffers[i];
+        }
+    }
+    if (buffer == nullptr && count < kMaxThreadBuffers) {
+        buffer = new ThreadBuffer; // records stay untouched until written
+        buffer->inUse.store(true, std::memory_order_relaxed);
+        g_threadBuffers[count] = buffer;
+        g_threadBufferCount.store(count + 1u, std::memory_order_release);
+    }
+    return buffer;
+}
+
+/// Slow path: first event on this thread, or first event after reset().
+bool prepareThreadState(ThreadState& state, u32 epoch) {
+    if (state.buffer == nullptr) {
+        if (state.acquireFailed) {
+            return false;
+        }
+        static thread_local ThreadBufferRelease release;
+        (void)release;
+        state.buffer = acquireThreadBuffer();
+        if (state.buffer == nullptr) {
+            state.acquireFailed = true; // more live threads than rings: this thread records nothing
+            return false;
+        }
+        state.threadId = fuse::platform::chromeTraceThreadId();
+    }
+    if (state.buffer->epoch.load(std::memory_order_relaxed) != epoch) {
+        state.buffer->written.store(0u, std::memory_order_relaxed);
+        state.buffer->maxNestingDepth.store(0u, std::memory_order_relaxed);
+        state.buffer->epoch.store(epoch, std::memory_order_release);
+    }
+    if (state.epoch != epoch) {
+        state.nextScopeId = 0u;
+        state.scopeIdEnd = 0u;
+        state.maxNestingDepth = 0u;
+    }
+    state.epoch = epoch;
+    return true;
+}
+
+/// The calling thread's state with a ring for the current epoch, or null when not recording.
+inline ThreadState* recordingThreadState() {
+    ThreadState& state = t_state;
+    const u32 epoch = g_resetEpoch.load(std::memory_order_relaxed);
+    if (state.buffer == nullptr || state.epoch != epoch) [[unlikely]] {
+        if (!prepareThreadState(state, epoch)) {
+            return nullptr;
+        }
+    }
+    return &state;
+}
+
+inline u32 allocateScopeId(ThreadState& state) {
+    if (state.nextScopeId == state.scopeIdEnd) [[unlikely]] {
+        state.nextScopeId = g_nextScopeId.fetch_add(kScopeIdBlock, std::memory_order_relaxed);
+        state.scopeIdEnd = state.nextScopeId + kScopeIdBlock;
+    }
+    return state.nextScopeId++;
+}
+
+inline void appendRecord(ThreadState& state, const Record& record) {
+    ThreadBuffer& buffer = *state.buffer;
+    const u64 index = buffer.written.load(std::memory_order_relaxed);
+    buffer.records[index % kRingCapacity] = record;
+    buffer.written.store(index + 1u, std::memory_order_release);
+}
+
+inline void appendScopeRecord(ThreadState& state, const char* name, EventPhase phase, u32 scopeId, u32 depth) {
+    Record record;
+    record.name = name;
+    record.ticks = readTicks();
+    record.value.durationTicks = 0u;
+    record.scopeId = scopeId;
+    record.nestingDepth = depth;
+    record.flowNestingDepth = 0u;
+    record.threadId = state.threadId;
+    record.counterSnapshotFrame = 0u;
+    record.phase = phase;
+    record.counterKind = CounterValueKind::None;
+    appendRecord(state, record);
 }
 
 u32 currentNestingDepth() {
-    return threadLocalNestingDepth();
-}
-
-u32& threadLocalFlowNestingDepth() {
-    static thread_local u32 depth = 0;
-    return depth;
+    return t_state.nestingDepth;
 }
 
 u32 pushFlowNestingDepth() {
-    u32& depth = threadLocalFlowNestingDepth();
-    const u32 next = depth + 1u;
-    depth = next;
-
+    const u32 next = ++t_state.flowNestingDepth;
     const u32 observed = g_maxFlowNestingDepth.load(std::memory_order_acquire);
     if (next > observed) {
         g_maxFlowNestingDepth.store(next, std::memory_order_release);
@@ -83,21 +319,120 @@ u32 pushFlowNestingDepth() {
 }
 
 void popFlowNestingDepth() {
-    u32& depth = threadLocalFlowNestingDepth();
-    if (depth > 0u) {
-        --depth;
+    if (t_state.flowNestingDepth > 0u) {
+        --t_state.flowNestingDepth;
     }
 }
 
 u32 currentFlowNestingDepth() {
-    return threadLocalFlowNestingDepth();
+    return t_state.flowNestingDepth;
+}
+
+// ---- Merged read view ---------------------------------------------------------------------------
+
+std::mutex g_viewMutex;
+std::vector<ProfileEvent> g_view;
+u64 g_viewSignature = ~0ull;
+u32 g_viewEpoch = 0u;
+u32 g_viewBufferCount = 0u;
+
+struct MergeCursor {
+    const ThreadBuffer* buffer;
+    u64 first; ///< oldest retained index
+    u64 next;  ///< one past the next record to take (walking backwards)
+};
+
+ProfileEvent toProfileEvent(const Record& record) {
+    ProfileEvent event{};
+    event.name = record.name;
+    event.phase = record.phase;
+    event.threadId = record.threadId;
+    event.scopeId = record.scopeId;
+    event.nestingDepth = record.nestingDepth;
+    event.flowNestingDepth = record.flowNestingDepth;
+    event.counterKind = record.counterKind;
+    event.counterSnapshotFrame = record.counterSnapshotFrame;
+    if (record.phase == EventPhase::GpuComplete || record.phase == EventPhase::CudaComplete) {
+        event.timestampNs = ticksToNs(record.ticks - record.value.durationTicks);
+        event.durationNs = tickSpanToNs(record.value.durationTicks);
+    } else {
+        event.timestampNs = ticksToNs(record.ticks);
+        if (record.counterKind == CounterValueKind::Int) {
+            event.counterIntValue = record.value.intValue;
+        } else if (record.counterKind == CounterValueKind::Float) {
+            event.counterFloatValue = record.value.floatValue;
+        }
+    }
+    return event;
+}
+
+/// Rebuild g_view when a ring advanced or reset() ran. Caller holds g_viewMutex.
+void refreshViewLocked() {
+    const u32 epoch = g_resetEpoch.load(std::memory_order_acquire);
+    const u32 bufferCount = g_threadBufferCount.load(std::memory_order_acquire);
+    MergeCursor cursors[kMaxThreadBuffers];
+    u32 cursorCount = 0u;
+    u64 signature = 0u;
+    for (u32 i = 0; i < bufferCount; ++i) {
+        const ThreadBuffer* buffer = g_threadBuffers[i];
+        const u64 written = buffer->written.load(std::memory_order_acquire);
+        if (buffer->epoch.load(std::memory_order_acquire) != epoch || written == 0u) {
+            continue;
+        }
+        signature += written;
+        const u64 retained = std::min<u64>(written, kRingCapacity);
+        cursors[cursorCount++] = MergeCursor{buffer, written - retained, written};
+    }
+    if (epoch == g_viewEpoch && bufferCount == g_viewBufferCount && signature == g_viewSignature) {
+        return;
+    }
+    g_viewEpoch = epoch;
+    g_viewBufferCount = bufferCount;
+    g_viewSignature = signature;
+
+    calibrateClock();
+    if (g_view.capacity() < kRingCapacity) {
+        g_view.reserve(kRingCapacity);
+    }
+    u64 total = 0u;
+    for (u32 i = 0; i < cursorCount; ++i) {
+        total += cursors[i].next - cursors[i].first;
+    }
+    const u32 size = static_cast<u32>(std::min<u64>(total, kRingCapacity));
+    g_view.resize(size);
+    // Walk backwards taking the latest record across rings (each ring stays in program order), so
+    // the view holds the newest `size` events in record order.
+    for (u32 out = size; out > 0u; --out) {
+        u32 best = kMaxThreadBuffers;
+        u64 bestTicks = 0u;
+        for (u32 i = 0; i < cursorCount; ++i) {
+            const MergeCursor& cursor = cursors[i];
+            if (cursor.next == cursor.first) {
+                continue;
+            }
+            const u64 ticks = cursor.buffer->records[(cursor.next - 1u) % kRingCapacity].ticks;
+            if (best == kMaxThreadBuffers || ticks > bestTicks) {
+                best = i;
+                bestTicks = ticks;
+            }
+        }
+        MergeCursor& chosen = cursors[best];
+        --chosen.next;
+        g_view[out - 1u] = toProfileEvent(chosen.buffer->records[chosen.next % kRingCapacity]);
+    }
+}
+
+u32 viewSize() {
+    const std::lock_guard<std::mutex> lock(g_viewMutex);
+    refreshViewLocked();
+    return static_cast<u32>(g_view.size());
 }
 
 constexpr u32 kMarkerStackCapacity = 32u;
 
 struct PendingMarker {
     const char* name = nullptr;
-    u64 startNs = 0;
+    u64 startTicks = 0;
     u32 scopeId = 0;
     u32 nestingDepth = 0;
 };
@@ -205,32 +540,33 @@ void recordEvent(const char* name,
                  s64 counterIntValue = 0,
                  f64 counterFloatValue = 0.0,
                  u32 counterSnapshotFrame = 0u,
-                 u64 timestampNs = 0u,
-                 u64 durationNs = 0u) {
-    if (!g_enabled.load(std::memory_order_acquire)) {
+                 u64 durationTicks = 0u) {
+    if (!g_enabled.load(std::memory_order_relaxed)) {
+        return;
+    }
+    ThreadState* state = recordingThreadState();
+    if (state == nullptr) {
         return;
     }
 
-    const u32 index = g_writeHead.fetch_add(1u, std::memory_order_acq_rel) % kRingCapacity;
-    g_events[index] = ProfileEvent{
-        name,
-        timestampNs != 0u ? timestampNs : nowNanoseconds(),
-        phase,
-        fuse::platform::chromeTraceThreadId(),
-        scopeId,
-        nestingDepth,
-        flowNestingDepth,
-        counterKind,
-        counterIntValue,
-        counterFloatValue,
-        counterSnapshotFrame,
-        durationNs,
-    };
-
-    const u32 count = g_eventCount.load(std::memory_order_acquire);
-    if (count < kRingCapacity) {
-        g_eventCount.fetch_add(1u, std::memory_order_acq_rel);
+    Record record;
+    record.name = name;
+    record.ticks = readTicks();
+    if (counterKind == CounterValueKind::Int) {
+        record.value.intValue = counterIntValue;
+    } else if (counterKind == CounterValueKind::Float) {
+        record.value.floatValue = counterFloatValue;
+    } else {
+        record.value.durationTicks = durationTicks;
     }
+    record.scopeId = scopeId;
+    record.nestingDepth = nestingDepth;
+    record.flowNestingDepth = flowNestingDepth;
+    record.threadId = state->threadId;
+    record.counterSnapshotFrame = counterSnapshotFrame;
+    record.phase = phase;
+    record.counterKind = counterKind;
+    appendRecord(*state, record);
 }
 
 const char* chromePhaseToken(EventPhase phase) {
@@ -269,14 +605,18 @@ const char* chromeCategory(EventPhase phase) {
 }
 
 void beginMarker(MarkerStack& stack, const char* name) {
-    if (!g_enabled.load(std::memory_order_acquire) || !isValidEventName(name)) {
+    if (!g_enabled.load(std::memory_order_relaxed) || !isValidEventName(name)) {
         return;
     }
 
+    ThreadState* state = recordingThreadState();
+    if (state == nullptr) {
+        return;
+    }
     PendingMarker marker;
     marker.name = name;
-    marker.startNs = nowNanoseconds();
-    marker.scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
+    marker.startTicks = readTicks();
+    marker.scopeId = allocateScopeId(*state);
     marker.nestingDepth = currentNestingDepth();
     stack.push(marker);
 }
@@ -287,8 +627,9 @@ void endMarker(MarkerStack& stack, EventPhase phase) {
         return;
     }
 
-    const u64 endNs = nowNanoseconds();
-    const u64 durationNs = endNs >= marker.startNs ? endNs - marker.startNs : 0u;
+    // recordEvent stamps the end time; the duration places the start (see toProfileEvent).
+    const u64 endTicks = readTicks();
+    const u64 durationTicks = endTicks >= marker.startTicks ? endTicks - marker.startTicks : 0u;
     recordEvent(marker.name,
                 phase,
                 marker.scopeId,
@@ -298,29 +639,49 @@ void endMarker(MarkerStack& stack, EventPhase phase) {
                 0,
                 0.0,
                 0u,
-                marker.startNs,
-                durationNs);
+                durationTicks);
 }
 
 } // namespace
 
 bool isValidEventName(const char* name);
 
-ProfileScope::ProfileScope(const char* name)
-    : m_name(name),
-      m_active(g_enabled.load(std::memory_order_acquire) && isValidEventName(name)) {
-    if (m_active) {
-        m_scopeId = g_nextScopeId.fetch_add(1u, std::memory_order_acq_rel);
-        m_nestingDepth = pushNestingDepth();
-        recordEvent(m_name, EventPhase::Begin, m_scopeId, m_nestingDepth);
+ProfileScope::ProfileScope(const char* name) : m_name(name) {
+    // Hot path: no locks, no shared read-modify-write, no allocation (see "Recording model").
+    if (!g_enabled.load(std::memory_order_relaxed) || name == nullptr || name[0] == '\0') {
+        return;
     }
+    ThreadState* state = recordingThreadState();
+    if (state == nullptr) {
+        return;
+    }
+    m_active = true;
+    m_scopeId = allocateScopeId(*state);
+    const u32 depth = ++state->nestingDepth;
+    m_nestingDepth = depth;
+    if (depth > state->maxNestingDepth) [[unlikely]] {
+        state->maxNestingDepth = depth;
+        state->buffer->maxNestingDepth.store(depth, std::memory_order_relaxed);
+    }
+    appendScopeRecord(*state, name, EventPhase::Begin, m_scopeId, depth);
 }
 
 ProfileScope::~ProfileScope() {
-    if (m_active) {
-        recordEvent(m_name, EventPhase::End, m_scopeId, m_nestingDepth);
-        popNestingDepth();
+    if (!m_active) {
+        return;
     }
+    ThreadState* state = g_enabled.load(std::memory_order_relaxed) ? recordingThreadState() : nullptr;
+    if (state != nullptr) {
+        appendScopeRecord(*state, m_name, EventPhase::End, m_scopeId, m_nestingDepth);
+    }
+    if (t_state.nestingDepth > 0u) {
+        --t_state.nestingDepth;
+    }
+}
+
+const char* clockSourceName() {
+    initClock();
+    return g_useTsc ? "tsc" : "steady_clock";
 }
 
 bool enabled() {
@@ -344,7 +705,7 @@ u32 frameIndex() {
 }
 
 u32 eventCount() {
-    return g_eventCount.load(std::memory_order_acquire);
+    return viewSize();
 }
 
 u32 ringCapacity() {
@@ -352,7 +713,16 @@ u32 ringCapacity() {
 }
 
 u32 maxNestingDepth() {
-    return g_maxNestingDepth.load(std::memory_order_acquire);
+    const u32 epoch = g_resetEpoch.load(std::memory_order_acquire);
+    const u32 count = g_threadBufferCount.load(std::memory_order_acquire);
+    u32 depth = 0u;
+    for (u32 i = 0; i < count; ++i) {
+        const ThreadBuffer* buffer = g_threadBuffers[i];
+        if (buffer->epoch.load(std::memory_order_acquire) == epoch) {
+            depth = std::max(depth, buffer->maxNestingDepth.load(std::memory_order_relaxed));
+        }
+    }
+    return depth;
 }
 
 u32 nestingDepth() {
@@ -492,15 +862,12 @@ const ProfileEvent& emptyProfileEvent() {
 }
 
 const ProfileEvent& eventAt(u32 index) {
-    if (!isEventIndexValid(index)) {
+    const std::lock_guard<std::mutex> lock(g_viewMutex);
+    refreshViewLocked();
+    if (index >= g_view.size()) {
         return emptyProfileEvent();
     }
-
-    const u32 count = eventCount();
-    const u32 head = g_writeHead.load(std::memory_order_acquire);
-    const u32 start = head >= count ? head - count : 0u;
-    const u32 ringIndex = (start + index) % kRingCapacity;
-    return g_events[ringIndex];
+    return g_view[index];
 }
 
 bool tryEventAt(u32 index, ProfileEvent& outEvent) {
@@ -757,16 +1124,15 @@ ChromeTraceExportPreflight preflightChromeTraceExport() {
 
 void reset() {
     const std::lock_guard<std::mutex> lock(g_exportMutex);
-    g_writeHead.store(0u, std::memory_order_release);
-    g_eventCount.store(0u, std::memory_order_release);
+    // Every ring becomes logically empty; owners clear their ring on their next event.
+    g_resetEpoch.fetch_add(1u, std::memory_order_acq_rel);
     g_frameIndex.store(0u, std::memory_order_release);
     g_nextScopeId.store(1u, std::memory_order_release);
     g_nextFlowId.store(1u, std::memory_order_release);
-    g_maxNestingDepth.store(0u, std::memory_order_release);
     g_maxFlowNestingDepth.store(0u, std::memory_order_release);
     g_openAsyncFlowCount.store(0u, std::memory_order_release);
-    threadLocalNestingDepth() = 0u;
-    threadLocalFlowNestingDepth() = 0u;
+    t_state.nestingDepth = 0u;
+    t_state.flowNestingDepth = 0u;
     g_gpuMarkers.clear();
     g_cudaMarkers.clear();
 }
@@ -909,11 +1275,16 @@ std::string exportChromeTraceJson() {
                   g_frameIndex.load(std::memory_order_acquire));
 
     std::string json = header;
-    const u32 count = eventCount();
+    std::vector<ProfileEvent> events;
+    {
+        // One consistent snapshot, even while other threads keep recording.
+        const std::lock_guard<std::mutex> viewLock(g_viewMutex);
+        refreshViewLocked();
+        events = g_view;
+    }
     bool first = true;
 
-    for (u32 i = 0; i < count; ++i) {
-        const ProfileEvent& event = eventAt(i);
+    for (const ProfileEvent& event : events) {
         if (!isValidEventName(event.name)) {
             continue;
         }
@@ -923,12 +1294,15 @@ std::string exportChromeTraceJson() {
         const char* category = chromeCategory(event.phase);
         const u64 timestampUs = event.timestampNs / 1000u;
 
-        char buffer[768];
+        // Sized for the escaped name so long names are never truncated into invalid JSON.
+        std::string bufferStorage(escapedName.size() + 768u, '\0');
+        char* buffer = bufferStorage.data();
+        const std::size_t bufferSize = bufferStorage.size();
         switch (event.phase) {
         case EventPhase::Begin:
         case EventPhase::End:
             std::snprintf(buffer,
-                          sizeof(buffer),
+                          bufferSize,
                           "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                           "\"tid\":%u,\"id\":%u,\"args\":{\"depth\":%u}}",
                           first ? "" : ",",
@@ -943,7 +1317,7 @@ std::string exportChromeTraceJson() {
         case EventPhase::FlowStart:
             if (event.nestingDepth > 0u && event.flowNestingDepth > 0u) {
                 std::snprintf(buffer,
-                              sizeof(buffer),
+                              bufferSize,
                               "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                               "\"tid\":%u,\"id\":%u,\"args\":{\"depth\":%u,\"flow_depth\":%u}}",
                               first ? "" : ",",
@@ -957,7 +1331,7 @@ std::string exportChromeTraceJson() {
                               event.flowNestingDepth);
             } else if (event.nestingDepth > 0u) {
                 std::snprintf(buffer,
-                              sizeof(buffer),
+                              bufferSize,
                               "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                               "\"tid\":%u,\"id\":%u,\"args\":{\"depth\":%u}}",
                               first ? "" : ",",
@@ -970,7 +1344,7 @@ std::string exportChromeTraceJson() {
                               event.nestingDepth);
             } else if (event.flowNestingDepth > 0u) {
                 std::snprintf(buffer,
-                              sizeof(buffer),
+                              bufferSize,
                               "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                               "\"tid\":%u,\"id\":%u,\"args\":{\"flow_depth\":%u}}",
                               first ? "" : ",",
@@ -983,7 +1357,7 @@ std::string exportChromeTraceJson() {
                               event.flowNestingDepth);
             } else {
                 std::snprintf(buffer,
-                              sizeof(buffer),
+                              bufferSize,
                               "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                               "\"tid\":%u,\"id\":%u}",
                               first ? "" : ",",
@@ -998,7 +1372,7 @@ std::string exportChromeTraceJson() {
         case EventPhase::FlowFinish:
             if (event.nestingDepth > 0u && event.flowNestingDepth > 0u) {
                 std::snprintf(buffer,
-                              sizeof(buffer),
+                              bufferSize,
                               "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                               "\"tid\":%u,\"id\":%u,\"bp\":\"e\",\"args\":{\"depth\":%u,\"flow_depth\":%u}}",
                               first ? "" : ",",
@@ -1012,7 +1386,7 @@ std::string exportChromeTraceJson() {
                               event.flowNestingDepth);
             } else if (event.nestingDepth > 0u) {
                 std::snprintf(buffer,
-                              sizeof(buffer),
+                              bufferSize,
                               "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                               "\"tid\":%u,\"id\":%u,\"bp\":\"e\",\"args\":{\"depth\":%u}}",
                               first ? "" : ",",
@@ -1025,7 +1399,7 @@ std::string exportChromeTraceJson() {
                               event.nestingDepth);
             } else if (event.flowNestingDepth > 0u) {
                 std::snprintf(buffer,
-                              sizeof(buffer),
+                              bufferSize,
                               "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                               "\"tid\":%u,\"id\":%u,\"bp\":\"e\",\"args\":{\"flow_depth\":%u}}",
                               first ? "" : ",",
@@ -1038,7 +1412,7 @@ std::string exportChromeTraceJson() {
                               event.flowNestingDepth);
             } else {
                 std::snprintf(buffer,
-                              sizeof(buffer),
+                              bufferSize,
                               "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                               "\"tid\":%u,\"id\":%u,\"bp\":\"e\"}",
                               first ? "" : ",",
@@ -1051,9 +1425,9 @@ std::string exportChromeTraceJson() {
             }
             break;
         case EventPhase::Counter: {
-            char counterHeader[512];
+            char* counterHeader = buffer;
             std::snprintf(counterHeader,
-                          sizeof(counterHeader),
+                          bufferSize,
                           "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"pid\":1,"
                           "\"tid\":%u,",
                           first ? "" : ",",
@@ -1071,7 +1445,7 @@ std::string exportChromeTraceJson() {
         case EventPhase::GpuComplete:
         case EventPhase::CudaComplete:
             std::snprintf(buffer,
-                          sizeof(buffer),
+                          bufferSize,
                           "%s{\"name\":\"%s\",\"cat\":\"%s\",\"ph\":\"%s\",\"ts\":%llu,\"dur\":%llu,\"pid\":1,"
                           "\"tid\":%u,\"id\":%u,\"args\":{\"depth\":%u}}",
                           first ? "" : ",",

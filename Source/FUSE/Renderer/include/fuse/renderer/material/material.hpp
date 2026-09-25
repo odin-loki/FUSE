@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/math/vec.hpp>
+#include <fuse/renderer/material/procedural_materials.hpp>
 #include <fuse/renderer/resources.hpp>
 #include <fuse/types.hpp>
 
@@ -16,9 +17,12 @@ enum class ShadingModel : u8 {
     Cloth = 5,
 };
 
-/// GPU material flag bits — low bits reserved for procedural function id (see Material::pack).
+/// GPU material flag bits — bits 1..15 carry the procedural function id (see Material::pack).
 namespace MaterialFlagBits {
 static constexpr u32 kProcedural = 1u << 0;
+static constexpr u32 kProceduralIdShift = 1u;
+static constexpr u32 kProceduralIdMask = 0x7FFFu; // ids 0..32767; never reaches bit 16
+static constexpr u32 proceduralId(u32 flags) { return (flags >> kProceduralIdShift) & kProceduralIdMask; }
 static constexpr u32 kHasNormalMap = 1u << 16;
 static constexpr u32 kHasAoMap = 1u << 17;
 static constexpr u32 kHasMetallicMap = 1u << 18;
@@ -77,7 +81,8 @@ struct Material {
     MaterialParameterBlock parameters{};
 
     bool isProcedural = false;
-    u32 proceduralFnId = 0;
+    u32 proceduralFnId = 0; // ProceduralMaterialId; 15-bit field in GPU flags
+    u32 proceduralSeed = 0; // decorrelates procedural materials sharing a function id
 
     /// GPU-packed representation — uploaded to material SSBO.
     struct GPUMaterial {
@@ -93,19 +98,42 @@ struct Material {
         f32 normalStrength = 1.f;
         u32 shadingModel = 0;
         u32 flags = 0;
-        MaterialVec4 subsurfaceBlock{};
-        MaterialVec4 clearCoatBlock{};
-        MaterialVec4 clothBlock{};
-        u32 padding[2]{}; // SSBO row alignment pad (128-byte stride)
+        u32 proceduralSeed = 0;
+        u32 padding = 0; // std430: the vec4 extension blocks below must start on a 16-byte boundary
+        MaterialVec4 subsurfaceBlock{};  // rgb = scatter colour, w = scatter radius
+        MaterialVec4 clearCoatBlock{};   // x = clear coat, y = clear coat roughness, z = sheen roughness
+        MaterialVec4 clothBlock{};       // rgb = sheen colour
     };
 
     GPUMaterial pack() const;
 };
 
-/// SSBO layout validation helpers for CPU tests.
+/// SSBO layout validation helpers for CPU tests. The row layout is std430-compatible and mirrors
+/// `FuseGpuMaterial` in shaders/common/material.glsl (128-byte stride).
 struct MaterialLayout {
+    static constexpr usize kGpuMaterialStride = 128u;
+
     static usize gpuMaterialStride() { return sizeof(Material::GPUMaterial); }
     static bool validateGpuStruct();
+
+    /// Bindless-style row fetch from raw SSBO bytes (`materials[index]` in the shader).
+    /// Returns false when the index lies outside the buffer.
+    static bool fetchRow(const void* ssboBytes, usize byteSize, u32 index, Material::GPUMaterial& out);
+};
+
+/// Shader-side material evaluation, CPU reference (mirrors `fuse_material_sample` in material.glsl).
+struct MaterialEval {
+    /// Emitted radiance of a surface: emissive colour x intensity (linear, W / sr / m^2).
+    static fuse::math::Vec3 emissiveRadiance(const Material& material);
+    static fuse::math::Vec3 emissiveRadiance(const Material::GPUMaterial& gpu);
+
+    /// Evaluates an SSBO row at a world-space point — procedural rows run their function, flat rows
+    /// return their constants. Emissive radiance is filled from the row in both cases.
+    static MaterialSample sample(const Material::GPUMaterial& gpu, const fuse::math::Vec3& worldPos);
+
+    /// Radiance leaving a surface along a GI probe ray: emission plus the Lambertian response of the
+    /// diffuse albedo (albedo * (1 - metallic)) to the irradiance already cached at the hit point.
+    static fuse::math::Vec3 probeRayRadiance(const MaterialSample& sample, const fuse::math::Vec3& irradiance);
 };
 
 } // namespace fuse::renderer

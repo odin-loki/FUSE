@@ -1,0 +1,3 @@
+# Renderer goldens are binary images: never normalise line endings or diff them as text.
+*.png binary
+*.exr binary

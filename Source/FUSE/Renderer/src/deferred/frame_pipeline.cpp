@@ -205,6 +205,7 @@ void DeferredFramePipeline::buildGraph(RenderGraph& graph,
     ClusterCameraDesc clusterCamera{};
     clusterCamera.screenWidth = m_desc.width;
     clusterCamera.screenHeight = m_desc.height;
+    clusterCamera.reversedZ = m_desc.reversedZ;
     addDeferredPass(graph,
                     DeferredPassId::ClusteredLightCull,
                     true,

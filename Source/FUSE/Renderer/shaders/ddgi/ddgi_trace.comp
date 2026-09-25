@@ -1,0 +1,431 @@
+#version 460
+// WP-6.1 "ddgi.trace" (twin: ddgi_trace.slang): one probe ray per thread (x = ray, y = scheduled slot),
+// the GPU form of the CPU oracle's ddgi_kernel::TraceKernel / trace_radiance:
+//   miss            radiance = sky, distance = maxRayDistance
+//   backface hit    (the probe sits inside geometry) radiance 0, distance = -(t * backfaceDistanceScale)
+//                   (signed, RTXGI convention: ddgi.state counts backfaces; the blend uses |distance|)
+//   front-face hit  radiance = emissive + sun (shadow ray) x albedo x cos / pi
+//                   + multi-bounce: albedo x the PREVIOUS volume's irradiance at the hit / pi
+//                   (ddgi_sample.glsl, the oracle's sample_irradiance with view = -ray), distance = t
+// Ray origin: the probe's relocated position (probe data, when relocation is on).
+// Output: f32x4 (radiance, distance) at rays[slot * raysPerProbe + ray].
+//
+// Two permutations of this source:
+//   FUSE_DDGI_RAY_QUERY (T2)  ray queries against the WP-6.0 TLAS (by device address; cull mask
+//                             traceMask & 0x7F, shadow rays shadowMask & 0x7F: kRtMaskDead never traced).
+//                             The hit triangle comes from the GPU scene (instance slot == custom index,
+//                             primitive == mesh triangle: scene index buffer + VPOS dequantisation +
+//                             GpuTransform); its geometric normal decides front / back (counter-clockwise
+//                             seen from outside unless the flag says otherwise); the material row is the
+//                             instance's (Material::GPUMaterial: albedo = base x (1 - metallic), emissive
+//                             = colour x intensity, ddgiSurfaceFromMaterial).
+//   default (T0)              sphere tracing of the global SDF: the Compute agent's analytic scene
+//                             (compute::SdfObject list, ray_march_kernel scene_eval / scene_normal, hard or
+//                             smooth union) + a DdgiSurface per material id. Reference and rules:
+//                             gi_gpu::sdf_trace_radiance (ddgi_gpu_reference.hpp).
+#extension GL_GOOGLE_include_directive : require
+#ifdef FUSE_DDGI_RAY_QUERY
+#extension GL_EXT_ray_query : require
+#endif
+#include "ddgi_common.glsl"
+#include "atmosphere/at_sample.glsl"
+
+layout(local_size_x = FUSE_DDGI_WORKGROUP) in;
+
+// Radiance of a ray that escapes: the WP-8.2 sky (no sun disk: the sun is the direct term) when the frame
+// carries an atmosphere, else the constant skyRadiance.
+vec3 fuse_ddgi_miss(FuseDdgiFrame F, vec3 dir) {
+    if ((F.flags & FUSE_DDGI_FLAG_ATMOSPHERE_SKY) != 0u) {
+        const uint64_t address = uint64_t(F.atmosphereLo) | (uint64_t(F.atmosphereHi) << 32u);
+        return at_sky_radiance(at_load(address), dir, false);
+    }
+    return fuse_ddgi_vec3(F.skyRadiance);
+}
+
+// Direct light at a front-face hit: emissive + the sun term (the oracle's direct_radiance).
+bool fuse_ddgi_sun_occluded(FuseDdgiFrame F, vec3 origin, vec3 direction);
+
+vec3 fuse_ddgi_hit_radiance(FuseDdgiFrame F, vec3 position, vec3 normal, vec3 albedo, vec3 emissive, vec3 dir) {
+    precise vec3 radiance = emissive;
+    const vec3 sunDir = fuse_ddgi_vec3(F.sunDirection);
+    const vec3 sunIrr = fuse_ddgi_vec3(F.sunIrradiance);
+    precise float cosSun = normal.x * sunDir.x + normal.y * sunDir.y + normal.z * sunDir.z;
+    if (cosSun > 0.0 && fuse_ddgi_max_component(sunIrr) > 0.0 && !fuse_ddgi_sun_occluded(F, position, normal)) {
+        precise float k = cosSun * float(FUSE_DDGI_INV_PI);
+        radiance = vec3(radiance.x + (albedo.x * sunIrr.x) * k, radiance.y + (albedo.y * sunIrr.y) * k,
+                        radiance.z + (albedo.z * sunIrr.z) * k);
+    }
+    if ((F.flags & FUSE_DDGI_FLAG_MULTI_BOUNCE) != 0u) {
+        const vec3 e = fuse_ddgi_sample_volume_view(F.volume, position, normal, -dir); // the probe views the hit
+        const float inv = float(FUSE_DDGI_INV_PI);
+        radiance = vec3(radiance.x + (albedo.x * e.x) * inv, radiance.y + (albedo.y * e.y) * inv,
+                        radiance.z + (albedo.z * e.z) * inv);
+    }
+    return radiance;
+}
+
+#ifdef FUSE_DDGI_RAY_QUERY
+// ---------------------------------------------------------------------------------------------------
+// T2: ray query against the TLAS.
+// ---------------------------------------------------------------------------------------------------
+struct FuseDdgiInstance { // gpu_scene::GpuInstance
+    uint mesh;
+    uint material;
+    uint flags;
+    uint generation;
+    uint entityIndex;
+    uint entityGeneration;
+    uint userData;
+    uint reserved;
+};
+struct FuseDdgiTransform { // gpu_scene::GpuTransform
+    vec4 rows[3];
+};
+struct FuseDdgiMesh { // gpu_scene::GpuMesh, 144 bytes
+    uint64_t meshlets;
+    uint64_t meshletVertices;
+    uint64_t meshletTriangles;
+    uint64_t positions;
+    uint64_t normals;
+    uint64_t tangents;
+    uint64_t uvs;
+    uint64_t submeshes;
+    uint meshletCount;
+    uint submeshCount;
+    uint vertexCount;
+    uint triangleCount;
+    float quantOffset[3];
+    float quantStep[3];
+    float boundsCenter[3];
+    float boundsRadius;
+    uint geometryHandle;
+    uint flags;
+    uint firstIndex;
+    uint indexCount;
+    int vertexOffset;
+    uint reserved;
+};
+layout(buffer_reference, std430, buffer_reference_align = 8) readonly buffer FuseDdgiSceneRef { // GpuSceneHeader
+    uint64_t addresses[6];
+    uint counts[6];
+    uint handles[6];
+    uint capacities[6];
+    uint liveInstances;
+    uint liveLights;
+    uint magic;
+    uint version;
+    uint64_t indexAddress;
+};
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseDdgiInstancesRef { FuseDdgiInstance v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseDdgiTransformsRef { FuseDdgiTransform v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FuseDdgiMeshesRef { FuseDdgiMesh v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer FuseDdgiSceneWordsRef { uint v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer FuseDdgiSceneFloatsRef { float v[]; };
+
+bool fuse_ddgi_sun_occluded(FuseDdgiFrame F, vec3 position, vec3 normal) {
+    precise vec3 origin = vec3(position.x + normal.x * F.rayEpsilon, position.y + normal.y * F.rayEpsilon,
+                               position.z + normal.z * F.rayEpsilon);
+    rayQueryEXT q;
+    rayQueryInitializeEXT(q, accelerationStructureEXT(F.tlas), gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
+                          F.shadowMask & 0x7Fu, origin, 0.0, fuse_ddgi_vec3(F.sunDirection), 1.0e30);
+    while (rayQueryProceedEXT(q)) {
+    }
+    return rayQueryGetIntersectionTypeEXT(q, true) == gl_RayQueryCommittedIntersectionTriangleEXT;
+}
+
+vec3 fuse_ddgi_vertex(FuseDdgiMesh mesh, FuseDdgiTransform xf, uint v) {
+    FuseDdgiSceneWordsRef vpos = FuseDdgiSceneWordsRef(mesh.positions);
+    const uint w0 = vpos.v[v * 2u + 0u];
+    const uint w1 = vpos.v[v * 2u + 1u];
+    precise vec3 p = vec3(mesh.quantOffset[0] + float(w0 & 0xFFFFu) * mesh.quantStep[0],
+                          mesh.quantOffset[1] + float(w0 >> 16u) * mesh.quantStep[1],
+                          mesh.quantOffset[2] + float(w1 & 0xFFFFu) * mesh.quantStep[2]);
+    precise vec3 w = vec3(xf.rows[0].x * p.x + xf.rows[0].y * p.y + xf.rows[0].z * p.z + xf.rows[0].w,
+                          xf.rows[1].x * p.x + xf.rows[1].y * p.y + xf.rows[1].z * p.z + xf.rows[1].w,
+                          xf.rows[2].x * p.x + xf.rows[2].y * p.y + xf.rows[2].z * p.z + xf.rows[2].w);
+    return w;
+}
+
+vec4 fuse_ddgi_trace(FuseDdgiFrame F, vec3 origin, vec3 dir) {
+    rayQueryEXT q;
+    rayQueryInitializeEXT(q, accelerationStructureEXT(F.tlas), gl_RayFlagsOpaqueEXT, F.traceMask & 0x7Fu, origin, 0.0, dir,
+                          F.maxRayDistance);
+    while (rayQueryProceedEXT(q)) {
+    }
+    if (rayQueryGetIntersectionTypeEXT(q, true) != gl_RayQueryCommittedIntersectionTriangleEXT) {
+        return vec4(fuse_ddgi_miss(F, dir), F.maxRayDistance);
+    }
+    const float t = rayQueryGetIntersectionTEXT(q, true);
+    const uint slot = uint(rayQueryGetIntersectionInstanceCustomIndexEXT(q, true));
+    const uint prim = uint(rayQueryGetIntersectionPrimitiveIndexEXT(q, true));
+    FuseDdgiSceneRef scene = FuseDdgiSceneRef(F.scene);
+    const FuseDdgiInstance inst = FuseDdgiInstancesRef(scene.addresses[0]).v[slot];
+    const FuseDdgiTransform xf = FuseDdgiTransformsRef(scene.addresses[1]).v[slot];
+    const FuseDdgiMesh mesh = FuseDdgiMeshesRef(scene.addresses[3]).v[inst.mesh];
+    FuseDdgiSceneWordsRef indices = FuseDdgiSceneWordsRef(scene.indexAddress);
+    const uint i0 = mesh.firstIndex + prim * 3u;
+    const vec3 p0 = fuse_ddgi_vertex(mesh, xf, uint(int(indices.v[i0 + 0u]) + mesh.vertexOffset));
+    const vec3 p1 = fuse_ddgi_vertex(mesh, xf, uint(int(indices.v[i0 + 1u]) + mesh.vertexOffset));
+    const vec3 p2 = fuse_ddgi_vertex(mesh, xf, uint(int(indices.v[i0 + 2u]) + mesh.vertexOffset));
+    precise vec3 e1 = vec3(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
+    precise vec3 e2 = vec3(p2.x - p0.x, p2.y - p0.y, p2.z - p0.z);
+    precise vec3 c = vec3(e1.y * e2.z - e1.z * e2.y, e1.z * e2.x - e1.x * e2.z, e1.x * e2.y - e1.y * e2.x);
+    vec3 n = fuse_ddgi_normalized(c);
+    if ((F.flags & FUSE_DDGI_FLAG_FRONT_CCW) == 0u) {
+        n = -n;
+    }
+    precise float facing = n.x * dir.x + n.y * dir.y + n.z * dir.z;
+    if (n == vec3(0.0)) {
+        n = -dir; // degenerate triangle: treat as front facing
+    } else if (facing > 0.0) {
+        precise float d = t * F.backfaceDistanceScale;
+        return vec4(0.0, 0.0, 0.0, -d); // backface: signed (negative)
+    }
+    // Material::GPUMaterial row (128 bytes = 32 floats): base_color.rgb, metallic, roughness, emissive.rgb,
+    // ..., emissive_intensity at float 14.
+    vec3 albedo = vec3(0.8);
+    vec3 emissive = vec3(0.0);
+    if (inst.material != 0xFFFFFFFFu && inst.material < scene.counts[4]) {
+        FuseDdgiSceneFloatsRef m = FuseDdgiSceneFloatsRef(scene.addresses[4]);
+        const uint b = inst.material * 32u;
+        precise float dielectric = 1.0 - clamp(m.v[b + 3u], 0.0, 1.0);
+        albedo = vec3(m.v[b + 0u] * dielectric, m.v[b + 1u] * dielectric, m.v[b + 2u] * dielectric);
+        precise float intensity = max(m.v[b + 14u], 0.0);
+        emissive = vec3(m.v[b + 5u] * intensity, m.v[b + 6u] * intensity, m.v[b + 7u] * intensity);
+    }
+    precise vec3 position = vec3(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t);
+    return vec4(fuse_ddgi_hit_radiance(F, position, n, albedo, emissive, dir), t);
+}
+
+#else
+// ---------------------------------------------------------------------------------------------------
+// T0: sphere tracing of the global SDF (compute::ray_march_kernel semantics).
+// ---------------------------------------------------------------------------------------------------
+#define FUSE_DDGI_SDF_FAR 1.0e30
+#define FUSE_DDGI_SDF_SHADOW_MAX 1.0e4
+
+vec3 fuse_ddgi_sphere_gradient(vec3 p) {
+    const float len = fuse_ddgi_length(p);
+    if (len < 1e-8) {
+        return vec3(1.0, 0.0, 0.0);
+    }
+    precise float inv = 1.0 / len;
+    precise vec3 g = vec3(p.x * inv, p.y * inv, p.z * inv);
+    return g;
+}
+
+// ray_march_kernel::object_sdf (math::SDF::sphere / box / boxGradient; capsule; torus).
+float fuse_ddgi_object_sdf(FuseDdgiSdfObject o, vec3 local, bool wantGrad, out vec3 grad) {
+    grad = vec3(0.0);
+    if (o.type == 0u) { // sphere
+        if (wantGrad) {
+            grad = fuse_ddgi_sphere_gradient(local);
+        }
+        precise float d = fuse_ddgi_length(local) - o.params[0];
+        return d;
+    }
+    if (o.type == 1u) { // box (rounded)
+        const float smallest = min(o.params[0], min(o.params[1], o.params[2]));
+        const float r = clamp(o.rounding, 0.0, max(smallest, 0.0));
+        precise vec3 h = vec3(o.params[0] - r, o.params[1] - r, o.params[2] - r);
+        precise vec3 q = vec3(abs(local.x) - h.x, abs(local.y) - h.y, abs(local.z) - h.z);
+        const vec3 outer = vec3(max(q.x, 0.0), max(q.y, 0.0), max(q.z, 0.0));
+        const float outside = fuse_ddgi_length(outer);
+        if (wantGrad) {
+            const vec3 s = vec3(local.x < 0.0 ? -1.0 : 1.0, local.y < 0.0 ? -1.0 : 1.0, local.z < 0.0 ? -1.0 : 1.0);
+            if (outside > 0.0) {
+                precise vec3 g = vec3(s.x * outer.x / outside, s.y * outer.y / outside, s.z * outer.z / outside);
+                grad = g;
+            } else if (q.x >= q.y && q.x >= q.z) {
+                grad = vec3(s.x, 0.0, 0.0);
+            } else if (q.y >= q.z) {
+                grad = vec3(0.0, s.y, 0.0);
+            } else {
+                grad = vec3(0.0, 0.0, s.z);
+            }
+        }
+        const float inside = min(max(q.x, max(q.y, q.z)), 0.0);
+        precise float d = outside + inside - r;
+        return d;
+    }
+    if (o.type == 2u) { // capsule along local Y
+        const float hh = max(o.params[1], 0.0);
+        precise vec3 v = vec3(local.x, local.y - clamp(local.y, -hh, hh), local.z);
+        if (wantGrad) {
+            grad = fuse_ddgi_sphere_gradient(v);
+        }
+        precise float d = fuse_ddgi_length(v) - o.params[0];
+        return d;
+    }
+    if (o.type == 3u) { // torus in the local XZ plane
+        precise float rad2 = local.x * local.x + local.z * local.z;
+        const float radial = sqrt(rad2);
+        precise float ring = radial - o.params[0];
+        precise float tube2 = ring * ring + local.y * local.y;
+        const float tube = sqrt(tube2);
+        if (wantGrad) {
+            if (tube < 1e-8) {
+                grad = vec3(1.0, 0.0, 0.0);
+            } else {
+                const float rx = radial > 1e-8 ? local.x / radial : 1.0;
+                const float rz = radial > 1e-8 ? local.z / radial : 0.0;
+                precise float s = ring / tube;
+                precise vec3 g = vec3(s * rx, local.y / tube, s * rz);
+                grad = g;
+            }
+        }
+        precise float d = tube - o.params[1];
+        return d;
+    }
+    return FUSE_DDGI_SDF_FAR;
+}
+
+// ray_march_kernel::scene_eval (union in object order; far = FUSE_DDGI_SDF_FAR).
+float fuse_ddgi_scene_eval(FuseDdgiFrame F, vec3 p, bool wantGrad, out vec3 gradient) {
+    FuseDdgiSdfObjectsRef objects = FuseDdgiSdfObjectsRef(F.sdfObjects);
+    precise float distance = FUSE_DDGI_SDF_FAR;
+    precise vec3 g = vec3(0.0);
+    for (uint i = 0u; i < F.sdfCount; ++i) {
+        const FuseDdgiSdfObject o = objects.v[i];
+        precise vec3 local = vec3(p.x - o.position[0], p.y - o.position[1], p.z - o.position[2]);
+        vec3 og;
+        const float od = fuse_ddgi_object_sdf(o, local, wantGrad, og);
+        if (o.alpha > 0.0) {
+            precise float h = max(o.alpha - abs(distance - od), 0.0) / o.alpha;
+            if (wantGrad) {
+                precise float wMin = 1.0 - 0.5 * h;
+                precise float wMax = 0.5 * h;
+                if (distance <= od) {
+                    g = vec3(g.x * wMin + og.x * wMax, g.y * wMin + og.y * wMax, g.z * wMin + og.z * wMax);
+                } else {
+                    g = vec3(g.x * wMax + og.x * wMin, g.y * wMax + og.y * wMin, g.z * wMax + og.z * wMin);
+                }
+            }
+            distance = min(distance, od) - h * h * o.alpha * 0.25;
+        } else {
+            if (od < distance) {
+                g = og;
+            }
+            distance = min(distance, od);
+        }
+    }
+    gradient = g;
+    return distance;
+}
+
+float fuse_ddgi_sdf(FuseDdgiFrame F, vec3 p) {
+    vec3 unused;
+    return fuse_ddgi_scene_eval(F, p, false, unused);
+}
+
+// Material row of the closest object at p (first on ties).
+uint fuse_ddgi_sdf_material(FuseDdgiFrame F, vec3 p) {
+    FuseDdgiSdfObjectsRef objects = FuseDdgiSdfObjectsRef(F.sdfObjects);
+    float best = FUSE_DDGI_SDF_FAR;
+    uint material = 0xFFFFFFFFu;
+    for (uint i = 0u; i < F.sdfCount; ++i) {
+        const FuseDdgiSdfObject o = objects.v[i];
+        precise vec3 local = vec3(p.x - o.position[0], p.y - o.position[1], p.z - o.position[2]);
+        vec3 unused;
+        const float od = fuse_ddgi_object_sdf(o, local, false, unused);
+        if (od < best) {
+            best = od;
+            material = o.materialId;
+        }
+    }
+    return material;
+}
+
+bool fuse_ddgi_sun_occluded(FuseDdgiFrame F, vec3 position, vec3 normal) {
+    precise vec3 origin = vec3(position.x + normal.x * F.sdfShadowBias, position.y + normal.y * F.sdfShadowBias,
+                               position.z + normal.z * F.sdfShadowBias);
+    const vec3 dir = fuse_ddgi_vec3(F.sunDirection);
+    precise float t = 0.0;
+    for (uint step = 0u; step < F.sdfMaxSteps; ++step) {
+        if (t >= FUSE_DDGI_SDF_SHADOW_MAX) {
+            return false;
+        }
+        precise vec3 p = vec3(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t);
+        const float d = fuse_ddgi_sdf(F, p);
+        if (d < F.sdfMinDistance) {
+            return true;
+        }
+        t += d;
+    }
+    return t < FUSE_DDGI_SDF_SHADOW_MAX; // steps exhausted near a surface: occluded
+}
+
+vec4 fuse_ddgi_trace(FuseDdgiFrame F, vec3 origin, vec3 dir) {
+    const float maxD = F.maxRayDistance;
+    const float d0 = fuse_ddgi_sdf(F, origin);
+    if (d0 < 0.0) {
+        // Probe inside geometry: march out to the exit surface; no light, short distance (backface).
+        precise float t = 0.0;
+        for (uint step = 0u; step < F.sdfMaxSteps; ++step) {
+            precise vec3 p = vec3(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t);
+            const float d = fuse_ddgi_sdf(F, p);
+            if (d >= 0.0 || t >= maxD) {
+                break;
+            }
+            t += max(-d, F.sdfMinDistance);
+        }
+        precise float dist = min(t, maxD) * F.backfaceDistanceScale;
+        return vec4(0.0, 0.0, 0.0, -dist); // backface: signed (negative)
+    }
+    precise float t = 0.0;
+    bool hit = false;
+    for (uint step = 0u; step < F.sdfMaxSteps; ++step) {
+        if (t >= maxD) {
+            break;
+        }
+        precise vec3 p = vec3(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t);
+        const float d = fuse_ddgi_sdf(F, p);
+        if (d < F.sdfMinDistance) {
+            hit = true;
+            break;
+        }
+        t += d;
+    }
+    if (!hit && t < maxD) {
+        hit = true; // steps exhausted grazing a surface: a hit at t
+    }
+    if (!hit) {
+        return vec4(fuse_ddgi_miss(F, dir), maxD);
+    }
+    precise vec3 position = vec3(origin.x + dir.x * t, origin.y + dir.y * t, origin.z + dir.z * t);
+    vec3 gradient;
+    const float surfaceDistance = fuse_ddgi_scene_eval(F, position, true, gradient);
+    const float glen = fuse_ddgi_length(gradient);
+    vec3 n = vec3(0.0, 1.0, 0.0);
+    if (glen > 1e-12) {
+        precise float inv = 1.0 / glen;
+        precise vec3 nn = vec3(gradient.x * inv, gradient.y * inv, gradient.z * inv);
+        n = nn;
+    }
+    vec3 albedo = vec3(0.8);
+    vec3 emissive = vec3(0.0);
+    const uint material = fuse_ddgi_sdf_material(F, position);
+    if (material < F.sdfSurfaceCount && F.sdfSurfaces != 0ul) {
+        const FuseDdgiSurface s = FuseDdgiSurfacesRef(F.sdfSurfaces).v[material];
+        albedo = s.albedo.xyz;
+        emissive = s.emissive.xyz;
+    }
+    return vec4(fuse_ddgi_hit_radiance(F, position, n, albedo, emissive, dir), t);
+}
+#endif
+
+void main() {
+    const uint ray = gl_GlobalInvocationID.x;
+    const uint slot = gl_GlobalInvocationID.y;
+    const FuseDdgiFrame F = fuse_ddgi_frame();
+    if (ray >= F.raysPerProbe || slot >= F.scheduled) {
+        return;
+    }
+    const uint probe = FuseDdgiWordsRef(F.schedule).v[slot];
+    if (probe >= F.volume.probeCount) {
+        return;
+    }
+    const vec3 origin = fuse_ddgi_probe_position_relocated(F.volume, probe);
+    const vec3 dir = FuseDdgiVec4Ref(F.rayDirs).v[ray].xyz;
+    FuseDdgiVec4Ref(F.rays).v[slot * F.raysPerProbe + ray] = fuse_ddgi_trace(F, origin, dir);
+}

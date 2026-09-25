@@ -1,0 +1,22 @@
+#usda 1.0
+
+def "RootNode"
+{
+    def "Looks"
+    {
+        def Material "mat_0000000000000B02" (
+            variants = {
+                string color = "red"
+            }
+            references = @./assets/paint.usd@
+        )
+        {
+        }
+
+        def Material "mat_0000000000000B03" (
+            references = @./assets/paint.usd@
+        )
+        {
+        }
+    }
+}

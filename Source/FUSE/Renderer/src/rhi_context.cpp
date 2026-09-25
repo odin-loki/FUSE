@@ -25,6 +25,11 @@ RhiContext::RhiContext(std::unique_ptr<VulkanBootstrap> bootstrap, const Desc& d
     : m_bootstrap(std::move(bootstrap)), m_desc(desc) {}
 
 RhiContext::~RhiContext() {
+    // Members (raster/composite paths, frame ring) are destroyed after this body; the last
+    // submitted frame may still reference them.
+    if (m_bootstrap && m_bootstrap->device() != nullptr) {
+        m_bootstrap->device()->waitIdle();
+    }
     if (m_frameSyncInitialized && m_bootstrap && m_bootstrap->device() != nullptr) {
         m_frameSync.destroy(m_bootstrap->device()->nativeHandle());
         m_frameSyncInitialized = false;
@@ -213,6 +218,10 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
             m_compositePass ? m_compositePass->blendForFrame(commands) : m_desc.composite.defaultBlend;
 
         ensureRasterPath();
+        if (m_rasterPath && m_rasterPath->isReady()) {
+            // Hot reload before recording: the rebuilt pipeline is the one this frame encodes.
+            (void)m_rasterPath->pollShaderReload();
+        }
         const VkFrameEncodeContext* encodeContext = nullptr;
         VkFrameEncodeContext encodeContextStorage{};
         if (m_rasterPath && m_rasterPath->isReady()) {
@@ -234,6 +243,8 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
                 swapchain->framebufferForImage(m_acquiredSwapchainImage);
             encodeContextStorage.presentBarrierImage =
                 swapchain->imageHandleForIndex(m_acquiredSwapchainImage);
+            encodeContextStorage.presentImageLayout =
+                swapchain->imageLayoutForIndex(m_acquiredSwapchainImage);
             encodeContextStorage.presentWidth = swapchain->info().width;
             encodeContextStorage.presentHeight = swapchain->info().height;
             encodeContextStorage.presentActive =
@@ -363,6 +374,9 @@ bool RhiContext::submitDrawList(const DrawList& draws, u32 frameIndex) {
         ensureCompositeGpuPath();
         ensureFrameSyncPair();
         ensureRasterPath();
+        if (m_rasterPath && m_rasterPath->isReady()) {
+            (void)m_rasterPath->pollShaderReload();
+        }
 
         const VkFrameEncodeContext* encodeContext = nullptr;
         VkFrameEncodeContext encodeContextStorage{};
@@ -385,6 +399,8 @@ bool RhiContext::submitDrawList(const DrawList& draws, u32 frameIndex) {
                 swapchain->framebufferForImage(m_acquiredSwapchainImage);
             encodeContextStorage.presentBarrierImage =
                 swapchain->imageHandleForIndex(m_acquiredSwapchainImage);
+            encodeContextStorage.presentImageLayout =
+                swapchain->imageLayoutForIndex(m_acquiredSwapchainImage);
             encodeContextStorage.presentWidth = swapchain->info().width;
             encodeContextStorage.presentHeight = swapchain->info().height;
             encodeContextStorage.presentActive =

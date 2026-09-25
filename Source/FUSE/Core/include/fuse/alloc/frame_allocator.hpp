@@ -8,6 +8,9 @@
 namespace fuse::alloc {
 
 /// Per-frame bump allocator with ping-pong buffers for one-frame debug retention (B1.3).
+/// Frame N allocations stay readable through frame N+1 (previousFrameData()) and are recycled when
+/// frame N+2 starts. Debug builds fill a recycled buffer with kFreedFramePattern so a
+/// use-after-reset reads obvious garbage; isLive() reports whether a pointer is still valid.
 /// Not thread-safe — allocate from worker-local instances only.
 class FrameAllocator final : public IAllocator {
 public:
@@ -29,6 +32,12 @@ public:
     u64 allocationCount() const { return m_stats.allocCount; }
     u64 failedAllocations() const { return m_stats.failedAllocs; }
 
+    /// Byte written over recycled frame storage in FUSE_DEBUG builds.
+    static constexpr u8 kFreedFramePattern = 0xDD;
+
+    /// True when `ptr` points into bytes allocated this frame or retained from the previous frame.
+    bool isLive(const void* ptr) const;
+
     /// Read-only view of the previous frame buffer (valid until the next advanceFrame).
     const u8* previousFrameData() const;
     u32 previousFrameUsedBytes() const { return m_previousUsedBytes; }
@@ -41,9 +50,10 @@ public:
 private:
     u8* activeBuffer();
     const u8* activeBuffer() const;
+    void poisonActive(u32 bytes);
 
     const char* m_name = "frame";
-    std::array<std::vector<u8>, 2> m_buffers{};
+    std::array<detail::ArenaBytes, 2> m_buffers{};
     u32 m_activeIndex = 0;
     u32 m_offset = 0;
     u32 m_previousUsedBytes = 0;

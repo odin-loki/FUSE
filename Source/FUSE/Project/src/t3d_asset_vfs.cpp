@@ -467,6 +467,11 @@ T3DMaterialCookCacheResult drainT3DMaterialLoads(fuse::HandleTable<fuse::io::Ass
         const std::string outputPath = materialVirtualPathToCookOutput(load.asset.virtualPath);
         if (!outputPath.empty()) {
             AssetCooker cooker;
+            // Lenient on purpose: the drained file is the legacy T3D material *definition* (`.mat`),
+            // not an image, so a strict (decoding) cook would always reject it. Until material ->
+            // diffuse-map resolution lands, the editor viewport binds the labelled placeholder
+            // `.fusetex` the lenient path produces (see RuntimeViewportHook::drainPendingMaterialLoads_).
+            cooker.set_import_validation(ImportValidation::Lenient);
             TextureImportDesc desc;
             desc.input_path = physicalPath;
             desc.output_path = outputPath;

@@ -1,0 +1,92 @@
+#usda 1.0
+(
+    customLayerData = {
+        string lightspeed_game_name = "Fixture Game"
+        string lightspeed_layer_type = "replacement"
+    }
+    defaultPrim = "RootNode"
+    metersPerUnit = 1
+    subLayers = [
+        @./materials/materials.usda@
+    ]
+    upAxis = "Y"
+)
+
+# RL-3.2 fixture: laid out like a Remix Toolkit replacement layer. A mesh replacement referencing a mesh asset (a quad
+# with vertex normals / texcoords), bound to a sublayered AperturePBR_Opacity material with DDS textures (BC7 albedo,
+# BC5 normal, generated at test time), an attached light, a category-only override of a captured draw, a light
+# replacement and a legacy sphereLight_ name. MIT licence file, asset rule from rtx.conf.
+over "RootNode"
+{
+    over "meshes"
+    {
+        over "mesh_7E2C8A4F1B3D5E60" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            int preserveOriginalDrawCall = 1
+            rel material:binding = </RootNode/Looks/mat_3F1A2B3C4D5E6F70>
+
+            def Xform "ref_crate" (
+                prepend references = @./assets/meshes/crate.usda@
+            )
+            {
+                double3 xformOp:scale = (2, 2, 2)
+                double3 xformOp:translate = (0, 1, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+
+            def SphereLight "attached_light" (
+                prepend apiSchemas = ["ShapingAPI"]
+            )
+            {
+                float inputs:intensity = 800
+                float inputs:radius = 0.25
+                float inputs:shaping:cone:angle = 60
+                float inputs:shaping:cone:softness = 0.25
+                double3 xformOp:translate = (0, 1.5, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+            }
+        }
+
+        over "mesh_00000000000A11CE"
+        {
+            over "mesh"
+            {
+                custom uniform bool remix_category:ignore = 1
+                custom uniform bool remix_category:terrain = 0
+            }
+        }
+    }
+
+    over "Looks"
+    {
+        over "mat_3F1A2B3C4D5E6F70"
+        {
+            over "Shader"
+            {
+                float inputs:emissive_intensity = 3
+                bool inputs:enable_emission = 1
+            }
+        }
+    }
+
+    over "lights"
+    {
+        def DistantLight "light_1D2C3B4A59687706"
+        {
+            float inputs:angle = 0.5
+            color3f inputs:color = (1, 0.75, 0.5)
+            float inputs:intensity = 3
+            float inputs:exposure = 2
+        }
+
+        def SphereLight "sphereLight_0A0B0C0D0E0F1011"
+        {
+            float inputs:intensity = 40
+            float inputs:radius = 0.5
+            double3 xformOp:translate = (10, 20, 30)
+            uniform token[] xformOpOrder = ["xformOp:translate"]
+        }
+    }
+}

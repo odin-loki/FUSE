@@ -16,7 +16,7 @@ std::string joinPath(const std::string& root, const std::string& relative) {
 
     std::filesystem::path path(root);
     path /= relative;
-    return path.lexically_normal().string();
+    return path.lexically_normal().generic_string(); // "/" separators on Windows too
 }
 
 bool ensureParentDirectory(const std::string& filePath) {

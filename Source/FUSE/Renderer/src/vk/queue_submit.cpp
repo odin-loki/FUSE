@@ -171,6 +171,14 @@ GraphicsQueueSubmitResult submitGraphicsQueue(const GraphicsQueueSubmitDesc& des
         submitInfo.pSignalSemaphores = signalSemaphores;
     }
 
+    // The fence must be unsignaled: retire any prior submission (or the created-signaled state)
+    // when the caller submits without a preceding beginFrame/waitInFlightFence.
+    if ((slot.fenceSignaled || slot.fenceSubmitted) &&
+        !desc.frameManager->waitInFlightFence(desc.frameManager->currentIndex())) {
+        result.message = "in-flight fence retire failed before submit";
+        return result;
+    }
+
     VkFence fence = static_cast<VkFence>(slot.inFlightFence);
     VkQueue queue = static_cast<VkQueue>(desc.device->queues().graphics);
     if (vkQueueSubmit(queue, 1, &submitInfo, fence) != VK_SUCCESS) {
@@ -185,6 +193,11 @@ GraphicsQueueSubmitResult submitGraphicsQueue(const GraphicsQueueSubmitDesc& des
         result.timelineValueAfter = slot.timelineValue;
     }
     slot.fenceSignaled = true;
+    slot.fenceSubmitted = true;
+    if (slot.timestampsPending) {
+        slot.timestampsRecorded = true;
+        slot.timestampsPending = false;
+    }
     result.submitted = true;
     result.ok = true;
     result.message =
@@ -245,6 +258,7 @@ GraphicsQueueSubmitResult submitTransferQueue(const GraphicsQueueSubmitDesc& des
         result.message = "transfer vkQueueSubmit failed";
         return result;
     }
+    slot.pendingTransferQueue = queue;
 
     result.submitted = true;
     result.ok = true;
@@ -304,6 +318,7 @@ GraphicsQueueSubmitResult submitComputeQueue(const GraphicsQueueSubmitDesc& desc
         result.message = "compute vkQueueSubmit failed";
         return result;
     }
+    slot.pendingComputeQueue = queue;
 
     result.submitted = true;
     result.ok = true;

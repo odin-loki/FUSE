@@ -23,7 +23,9 @@ enum RigidBodyFlags : u32 {
     RB_TRIGGER = 1u << 2,
     RB_KINEMATIC = 1u << 3,
     RB_NO_GRAVITY = 1u << 4,
-    RB_CCD = 1u << 5
+    RB_CCD = 1u << 5,
+    /// Translation only: the solver gives the body zero inverse inertia (orientation never changes).
+    RB_FIXED_ROTATION = 1u << 6
 };
 
 /// Torque2D-style layer/mask collision filter (bitmask layers).
@@ -61,6 +63,8 @@ struct RigidBodySoA {
     void clear();
     u32 addBody(vec3 position, f32 invMass, u32 bodyFlags = 0, u32 collisionLayer = 1u,
                 u32 collisionMask = 0xFFFFFFFFu);
+    /// Moves the last body into `index` and shrinks by one (O(1); the last body's index changes).
+    void removeBodySwap(u32 index);
 };
 
 /// Collision shape descriptors stored in SoA layout (B4.1).
@@ -74,6 +78,8 @@ struct CollisionShapeSoA {
 
     void clear();
     u32 addShape(CollisionShapeType type, u32 bodyIndex, vec3 shapeParams, f32 scalarParam = 0.f);
+    /// Moves the last shape into `index` and shrinks by one.
+    void removeShapeSwap(u32 index);
 };
 
 } // namespace fuse::physics

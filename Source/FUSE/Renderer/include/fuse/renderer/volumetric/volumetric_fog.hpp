@@ -569,8 +569,27 @@ bool tryPopulateFromAnalyticFog(FroxelDensityGrid& grid,
                                 FroxelPopulateRejectReason& outReason);
 } // namespace froxel_util
 
-/// CPU stub — exponential height falloff density sample (P5 acceptance reference).
+/// Exponential height-fog density: density * exp(-height_falloff * max(0, y - base_height)).
+/// Constant `density` at and below base_height.
 f32 sample_volumetric_fog_density(const VolumetricFogParams& params, const math::Vec3& world_pos);
+
+/// Ray-marched fog optical depth along `ray_dir` (normalised internally) over [0, distance]:
+/// `params.march_steps` midpoint samples of `sample_volumetric_fog_density` — the same quadrature the
+/// volumetric fog kernel uses per pixel. Returns 0 when march_steps is 0 or distance <= 0.
+f32 march_volumetric_fog_optical_depth(const VolumetricFogParams& params, const math::Vec3& ray_origin,
+                                       const math::Vec3& ray_dir, f32 distance);
+
+/// Closed-form optical depth of the clamped exponential height fog along the same ray:
+/// density * [len_below + sum over above-base pieces of exp(-k h_a) (1 - exp(-k dy len)) / (k dy)],
+/// evaluated with expm1 so horizontal and near-horizontal rays stay exact.
+f32 analytic_volumetric_fog_optical_depth(const VolumetricFogParams& params, const math::Vec3& ray_origin,
+                                          const math::Vec3& ray_dir, f32 distance);
+
+/// Fog transmittance along the march: each of the `march_steps` segments contributes its closed-form
+/// optical depth (exact for any step count), so extinction does not inherit the midpoint error that
+/// the per-step density samples carry on steep rays. Returns 1 when march_steps is 0.
+f32 march_volumetric_fog_transmittance(const VolumetricFogParams& params, const math::Vec3& ray_origin,
+                                       const math::Vec3& ray_dir, f32 distance);
 
 /// Records logical volumetric fog work for the frame; returns false when disabled.
 bool record_volumetric_fog_pass(const VolumetricFogParams& params, VolumetricFogPassStats& stats);

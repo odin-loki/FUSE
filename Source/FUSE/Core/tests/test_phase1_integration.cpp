@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace {
 
@@ -29,6 +30,33 @@ void testChecklistAndModules() {
                "logging/profiler module represented");
 }
 
+const fuse::core::Phase1Deliverable* findRow(const char* id) {
+    for (const fuse::core::Phase1Deliverable& item : fuse::core::Phase1TestRegistry::checklist()) {
+        if (std::strcmp(item.id, id) == 0) {
+            return &item;
+        }
+    }
+    return nullptr;
+}
+
+void testGateProvenRows() {
+    expectTrue(fuse::core::Phase1TestRegistry::automatedCount() >= 18u, "B1.8 gate-proven rows flagged automated");
+    for (const fuse::core::Phase1Deliverable& item : fuse::core::Phase1TestRegistry::checklist()) {
+        if (item.gate_test != nullptr) {
+            expectTrue(item.automated && std::strncmp(item.gate_test, "fuse_core_b1_", 13) == 0,
+                       "gate-proven rows are automated and name a fuse_core_b1_* CTest");
+        }
+    }
+    const fuse::core::Phase1Deliverable* sdf = findRow("math.sdf_primitives");
+    expectTrue(sdf != nullptr && sdf->automated && sdf->gate_test != nullptr &&
+                   std::strcmp(sdf->gate_test, "fuse_core_b1_math_gates") == 0,
+               "math.sdf_primitives proven by fuse_core_b1_math_gates");
+    const fuse::core::Phase1Deliverable* ring = findRow("logging.async_ring");
+    expectTrue(ring != nullptr && ring->automated && ring->gate_test != nullptr &&
+                   std::strcmp(ring->gate_test, "fuse_core_b1_log_async_ring_gates") == 0,
+               "logging.async_ring proven by fuse_core_b1_log_async_ring_gates");
+}
+
 void testIntegrationSmoke() {
     expectTrue(fuse::core::Phase1TestRegistry::runIntegrationSmoke(),
                "phase 1 integration smoke ties jobs + math + handles + vfs async + profiler");
@@ -38,6 +66,7 @@ void testIntegrationSmoke() {
 
 int main() {
     testChecklistAndModules();
+    testGateProvenRows();
     testIntegrationSmoke();
 
     if (g_failures == 0) {

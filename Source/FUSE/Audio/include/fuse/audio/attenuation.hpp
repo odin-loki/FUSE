@@ -8,6 +8,7 @@ struct AudioSourceDesc;
 
 /// Distance attenuation curve — mirrors Torque SFXDistanceModel semantics.
 enum class AttenuationCurve : u8 {
+    /// `1 - rolloff * (d - min) / (max - min)` (OpenAL linear-clamped).
     Linear = 0,
     Logarithmic = 1,
     Exponential = 2,

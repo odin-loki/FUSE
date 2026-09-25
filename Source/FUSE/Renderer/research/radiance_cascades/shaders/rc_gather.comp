@@ -1,0 +1,40 @@
+#version 460
+// WP-6.5 "rc.gather": per pixel, bilinear over cascade 0's probes of the mean over its directions (the mean
+// radiance). CPU reference: rc_gather_pixel (src/rc_reference.cpp). GLSL twin of rc_gather.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "rc_common.glsl"
+
+layout(local_size_x = 64) in;
+
+void main() {
+    const uint index = gl_GlobalInvocationID.x;
+    if (index >= pc.count) {
+        return;
+    }
+    const uint x = index % pc.width;
+    const uint y = index / pc.width;
+    precise float px = float(x) + 0.5;
+    precise float py = float(y) + 0.5;
+    vec4 w;
+    const uvec4 q = rc_bilinear(vec2(px, py), pc.spacing, pc.probesX, pc.probesY, w);
+    precise float inv = 1.0 / float(pc.dirCount);
+    precise float r = 0.0;
+    precise float g = 0.0;
+    precise float b = 0.0;
+    for (uint j = 0u; j < 4u; ++j) {
+        const uint base = (((j >> 1u) != 0u ? q.w : q.z) * pc.probesX + ((j & 1u) != 0u ? q.y : q.x)) * pc.dirCount;
+        precise float sr = 0.0;
+        precise float sg = 0.0;
+        precise float sb = 0.0;
+        for (uint k = 0u; k < pc.dirCount; ++k) {
+            const vec4 v = RcTexelsRef(pc.upper).v[base + k];
+            sr = sr + v.x;
+            sg = sg + v.y;
+            sb = sb + v.z;
+        }
+        r = r + w[j] * (sr * inv);
+        g = g + w[j] * (sg * inv);
+        b = b + w[j] * (sb * inv);
+    }
+    RcTexelsRef(pc.dst).v[index] = vec4(r, g, b, 1.0);
+}

@@ -13,11 +13,13 @@ add_library(fuse_physics STATIC
     src/narrowphase/contact_manifold.cpp
     src/narrowphase/contact_pair.cpp
     src/narrowphase/box_box.cpp
+    src/narrowphase/oriented_shapes.cpp
     src/narrowphase/friction.cpp
     src/narrowphase/gjk.cpp
     src/pbd_solver.cpp
     src/solver/solver_work_buffers.cpp
     src/solver/constraint_accumulation.cpp
+    src/solver/joint_constraint.cpp
     src/solver/contact_island_graph.cpp
     src/solver/pbd_island_solve.cpp
     src/barnes_hut.cpp
@@ -27,6 +29,7 @@ add_library(fuse_physics STATIC
     include/fuse/physics/broadphase/pair_buffer.hpp
     include/fuse/physics/config.hpp
     include/fuse/physics/math.hpp
+    include/fuse/physics/rotation.hpp
     include/fuse/physics/narrowphase/collision_dispatch.hpp
     include/fuse/physics/narrowphase/contact_buffer.hpp
     include/fuse/physics/narrowphase/contact_manifold.hpp
@@ -73,6 +76,24 @@ target_include_directories(fuse_physics
 
 target_link_libraries(fuse_physics PUBLIC fuse_core fuse_ecs)
 target_compile_features(fuse_physics PUBLIC cxx_std_17)
+
+# Single-source compute kernels (docs/compute-kernels.md): broadphase (keys, radix sort, pair
+# emission), narrowphase and the colored constraint solve run as kernel::launch dispatches on the CPU
+# backends; the broadphase sort also has a CUDA wrapper when the toolkit is found.
+target_sources(fuse_physics PRIVATE
+    src/broadphase/broadphase_kernels.cpp
+    src/narrowphase/narrowphase_kernels.cpp
+    src/solver/constraint_coloring.cpp
+    include/fuse/physics/broadphase/broadphase_kernel.hpp
+    include/fuse/physics/broadphase/broadphase_kernels.hpp
+    include/fuse/physics/broadphase/radix_sort_launch.hpp
+    include/fuse/physics/narrowphase/narrowphase_kernels.hpp
+    include/fuse/physics/solver/constraint_coloring.hpp
+)
+if(FUSE_CUDA_BACKEND)
+    target_sources(fuse_physics PRIVATE kernels/physics_broadphase.cu)
+    set_target_properties(fuse_physics PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+endif()
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)

@@ -1,3 +1,4 @@
+#include <fuse/core/temp_path.hpp>
 #include <fuse/cook/bc7_encoder.hpp>
 #include <fuse/cook/cook_stub_writer.hpp>
 #include <fuse/core/init.hpp>
@@ -76,15 +77,15 @@ void testIspcTexcompHookMipLevelHeader() {
         0x01, 0x01, 0x00, 0x05, 0x18, 0xD8, 0x4E, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
         0x42, 0x60, 0x82};
     {
-        std::ofstream out("/tmp/fuse_ispc_mip.png", std::ios::binary);
+        std::ofstream out(fuse::test::tempPath("fuse_ispc_mip.png"), std::ios::binary);
         out.write(reinterpret_cast<const char*>(kMinimalPng), sizeof(kMinimalPng));
     }
 
     const fuse::cook::CookStubWriteResult written =
-        fuse::cook::write_texture_stub("/tmp/fuse_ispc_mip.png", "/tmp/fuse_ispc_mip.fusetex", "BC7", true);
+        fuse::cook::write_texture_stub(fuse::test::tempPath("fuse_ispc_mip.png"), fuse::test::tempPath("fuse_ispc_mip.fusetex"), "BC7", true);
     expectTrue(written.ok, "texture cook with mipmaps ok");
 
-    std::ifstream cooked("/tmp/fuse_ispc_mip.fusetex");
+    std::ifstream cooked(fuse::test::tempPath("fuse_ispc_mip.fusetex"));
     std::string line;
     bool sawMipLevels = false;
     while (std::getline(cooked, line)) {
@@ -99,7 +100,7 @@ void testIspcTexcompHookMipLevelHeader() {
 
 void testIspcTexcompHookUnavailableWithoutInput() {
     const fuse::cook::CookStubWriteResult written =
-        fuse::cook::tryCookTextureIspc("", "/tmp/fuse_ispc_output.fusetex", "BC7", false);
+        fuse::cook::tryCookTextureIspc("", fuse::test::tempPath("fuse_ispc_output.fusetex"), "BC7", false);
 #if defined(FUSE_HAS_ISPC_TEXCOMP) && defined(FUSE_HAS_STB_IMAGE)
     expectTrue(!written.ok, "ispc hook rejects empty input");
 #else
@@ -108,7 +109,7 @@ void testIspcTexcompHookUnavailableWithoutInput() {
 }
 
 void testGlslangShaderCookHook() {
-    const std::string source = "/tmp/fuse_glslang_source.frag";
+    const std::string source = fuse::test::tempPath("fuse_glslang_source.frag");
     {
         std::ofstream out(source, std::ios::trunc);
         out << "#version 450\n"
@@ -116,10 +117,13 @@ void testGlslangShaderCookHook() {
                "void main() { outColor = vec4(1.0, 0.0, 0.0, 1.0); }\n";
     }
 
+    // A cooked file left by an earlier run (e.g. a host build that has glslangValidator) must not
+    // be mistaken for this run's output when the validator is unavailable here.
+    std::remove(fuse::test::tempPath("fuse_glslang_output.fuseshader").c_str());
     const fuse::cook::CookStubWriteResult written =
-        fuse::cook::tryCookShaderGlslang(source, "/tmp/fuse_glslang_output.fuseshader", "fragment", 450u);
+        fuse::cook::tryCookShaderGlslang(source, fuse::test::tempPath("fuse_glslang_output.fuseshader"), "fragment", 450u);
 
-    std::ifstream cooked("/tmp/fuse_glslang_output.fuseshader");
+    std::ifstream cooked(fuse::test::tempPath("fuse_glslang_output.fuseshader"));
     std::string header;
     if (cooked) {
         std::getline(cooked, header);
@@ -136,18 +140,18 @@ void testGlslangShaderCookHook() {
 }
 
 void testBc7CookWriter() {
-    const std::string source = "/tmp/fuse_bc7_source.bin";
+    const std::string source = fuse::test::tempPath("fuse_bc7_source.bin");
     {
         std::ofstream out(source, std::ios::binary);
         out << "texture-bytes";
     }
 
     const fuse::cook::CookStubWriteResult written =
-        fuse::cook::write_texture_bc7_encoded("/tmp/fuse_bc7_output.fusetex", source, true);
+        fuse::cook::write_texture_bc7_encoded(fuse::test::tempPath("fuse_bc7_output.fusetex"), source, true);
     expectTrue(written.ok, "bc7 cook writer ok");
     expectTrue(written.byteCount > 32u, "bc7 output includes header and block payload");
 
-    std::ifstream cooked("/tmp/fuse_bc7_output.fusetex", std::ios::binary);
+    std::ifstream cooked(fuse::test::tempPath("fuse_bc7_output.fusetex"), std::ios::binary);
     std::string header;
     cooked >> header;
     expectTrue(header == "FUSETEX_BC7", "bc7 cook output marker");

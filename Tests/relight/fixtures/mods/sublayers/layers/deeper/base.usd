@@ -1,0 +1,20 @@
+#usda 1.0
+
+def Xform "RootNode"
+{
+    def Scope "meshes"
+    {
+        def Xform "mesh_00000000000000A1"
+        {
+            def Mesh "mesh"
+            {
+                float weak_over_base = 4
+                float base_only = 4
+                asset base_texture = @../../textures/base.dds@
+            }
+            def Xform "base_child"
+            {
+            }
+        }
+    }
+}

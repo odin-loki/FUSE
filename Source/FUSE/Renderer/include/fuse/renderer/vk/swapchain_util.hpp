@@ -38,9 +38,13 @@ bool desktopWin32PresentEnabled();
 /// Compile-time gate: desktop Qt `vkQueuePresentKHR` path (OFF in headless CI by default).
 bool desktopQtPresentEnabled();
 
-/// FUSE Track B: production `vkQueuePresentKHR` is allowed only when VulkanProduction is unlocked.
+/// FUSE Track B: production `vkQueuePresentKHR` is allowed only when VulkanProduction is unlocked
+/// (compile-time, `FUSE_TRACK_B_UNLOCK`) or when the editor host opted in for its own viewport
+/// (`TrackBHostFeature::EditorViewportPresent`, set by fuse_editor once its Qt Vulkan surface is
+/// wired — never by the game runtime).
 [[nodiscard]] inline bool productionPresentAllowed() {
-    return fuse::core::trackBFeatureEnabled(fuse::core::TrackBFeature::VulkanProduction);
+    return fuse::core::trackBFeatureEnabled(fuse::core::TrackBFeature::VulkanProduction) ||
+           fuse::core::trackBHostFeatureEnabled(fuse::core::TrackBHostFeature::EditorViewportPresent);
 }
 
 /// Runtime: display + GLFW WSI available and desktop present gate is ON.
@@ -49,7 +53,8 @@ bool desktopGlfwPresentRuntimeReady();
 /// Runtime: Win32 WSI available and desktop Win32 present gate is ON.
 bool desktopWin32PresentRuntimeReady();
 
-/// Runtime: display available and Qt present gate is ON (editor QVulkan surface path).
+/// Runtime: display available and the Qt present gate is ON — compile-time `FUSE_ENABLE_QT_PRESENT`
+/// or the editor host's runtime opt-in (`TrackBHostFeature::EditorViewportPresent`).
 bool desktopQtPresentRuntimeReady();
 
 /// Runtime: GLFW, Win32, or Qt desktop present path is eligible.

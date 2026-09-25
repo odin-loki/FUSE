@@ -82,7 +82,7 @@ cmake -B build -G Ninja \
 cmake --build build --target fuse_editor
 ```
 
-See [editor.md](editor.md). Editor embed converts bundled/golden worlds before load; real `vkQueuePresentKHR` on a display window remains Track B (`FUSE_ENABLE_QT_PRESENT=ON` when you have a display).
+See [editor.md](editor.md). Editor embed converts bundled/golden worlds before load; with a display the viewport presents through an embedded Vulkan window (editor-scoped Track B present unlock; software placeholder when headless).
 
 ## Enable 2D / 3D / modules in a project
 

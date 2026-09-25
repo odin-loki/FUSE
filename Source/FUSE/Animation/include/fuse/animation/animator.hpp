@@ -2,10 +2,14 @@
 
 #include <fuse/animation/blend_tree.hpp>
 #include <fuse/animation/skeleton.hpp>
+#include <fuse/animation/skinning.hpp>
 #include <fuse/frame/frame_ctx.hpp>
 #include <fuse/handle.hpp>
 #include <fuse/object.hpp>
 #include <fuse/types.hpp>
+
+#include <memory>
+#include <vector>
 
 namespace fuse::animation {
 
@@ -32,6 +36,10 @@ struct Animator {
     bool paused = false;
 
     u32 tick_count = 0;
+
+    /// Bone buffer contents rebuilt every tick: world * inverse_bind per bone (see
+    /// `compute_skinning_palette`). Storage is reused across ticks; GPU upload is the renderer's job.
+    std::vector<mat4> bone_palette;
 
     void tick(const Skeleton& skel, const frame::FrameCtx& ctx = {});
 };

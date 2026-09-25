@@ -1,0 +1,18 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#include "cl_common.glsl"
+
+// WP-8.3 "clouds.weather": one thread per texel of the weatherSize^2 weather map (coverage, density, type).
+// GLSL twin of cl_weather.slang; CPU twin: clouds::weather_texel.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+    const CloudParams P = cl_load(pc.params);
+    const uint x = gl_GlobalInvocationID.x;
+    const uint y = gl_GlobalInvocationID.y;
+    const uint n = P.weatherSize;
+    if (x >= n || y >= n) {
+        return;
+    }
+    ClTexelsRef(P.weather).v[y * n + x] = cl_weather_texel(P, x, y);
+}

@@ -1,0 +1,52 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "relight_replacement",
+  "id": "mod/fixture_game/remix_basic/mesh_00000000000A11CE",
+  "name": "mesh_00000000000A11CE",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 1,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "target_kind": "mesh",
+    "key": {
+      "algo": "remix.geom.asset",
+      "value": "00000000000A11CE",
+      "rule_id": "4A0F5C58A6691050",
+      "rule": "positions,indices,geometrydescriptor"
+    },
+    "preserveOriginalDrawCall": null,
+    "instanceable": false,
+    "categories": {
+      "set": ["Ignore"],
+      "cleared": ["Terrain"]
+    },
+    "parts": [],
+    "lights": [],
+    "material_bindings": [],
+    "particles": null
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:remix_basic"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "remix_basic",
+      "stage": "mod.usda",
+      "prim": "/RootNode/meshes/mesh_00000000000A11CE",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "MIT",
+  "distribution": "never",
+  "replaces": ["oaid:77929c71-c2b5-5ea3-a62f-b928e182f251"],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

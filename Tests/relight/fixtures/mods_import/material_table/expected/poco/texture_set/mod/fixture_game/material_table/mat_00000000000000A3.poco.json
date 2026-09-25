@@ -1,0 +1,43 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "texture_set",
+  "id": "mod/fixture_game/material_table/mat_00000000000000A3",
+  "name": "mat_00000000000000A3",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 1,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "emissive": {
+      "sha256": "2d5f9470b2b24b19198f22d4fe790bc4897af07d6a8a318f02879a749be01c93",
+      "size": 164,
+      "media": "image/vnd-ms.dds"
+    },
+    "normalConvention": "GL",
+    "texelsPerMetre": 0,
+    "albedoSrgb": true
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:material_table"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "material_table",
+      "stage": "mod.usda",
+      "prim": "/RootNode/Looks/mat_00000000000000A3",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "CC0-1.0",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

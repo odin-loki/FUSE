@@ -1,0 +1,134 @@
+#version 460
+// WP-6.1 "ddgi.state" (twin: ddgi_state.slang): probe relocation + classification, the GPU form of the CPU
+// oracle's ddgi_kernel::ProbeStateKernel / update_probe_state (include/fuse/renderer/gi/ddgi_probe_kernel.hpp),
+// after RTXGI DDGI (Majercik et al. 2021, JCGT 10(2); RTXGI SDK ProbeRelocationCS / ProbeClassificationCS).
+// One thread per scheduled probe, run after ddgi.blend on the update's ray results (signed distances:
+// backface hits negative). Writes the probe's (relocation offset xyz, state w) at volume.probeData:
+//   relocation      backface ratio > threshold: through the closest backface (+ half the minimum front-face
+//                   distance); closest front face nearer than the minimum: toward the farthest front face
+//                   (at most probeRelocationStep) when it lies away from the closest; otherwise back toward
+//                   the grid position. A move leaving probeMaxOffset x spacing is not taken.
+//   classification inactive (1) when the backface ratio > threshold or no front face lies inside the cell
+//                   (hit distance <= the nearest of the three planes one spacing away); else active (0).
+// Same expressions in the same order, `precise`.
+#extension GL_GOOGLE_include_directive : require
+#include "ddgi_common.glsl"
+
+layout(local_size_x = FUSE_DDGI_WORKGROUP) in;
+
+#define FUSE_DDGI_STATE_FAR 1e27
+#define FUSE_DDGI_STATE_NONE 0xFFFFFFFFu
+
+void main() {
+    const uint slot = gl_GlobalInvocationID.x;
+    const FuseDdgiFrame F = fuse_ddgi_frame();
+    if (slot >= F.scheduled || F.volume.probeData == 0ul) {
+        return;
+    }
+    const uint probe = FuseDdgiWordsRef(F.schedule).v[slot];
+    if (probe >= F.volume.probeCount) {
+        return;
+    }
+    FuseDdgiProbeDataRef data = FuseDdgiProbeDataRef(F.volume.probeData);
+    FuseDdgiVec4Ref dirs = FuseDdgiVec4Ref(F.rayDirs);
+    FuseDdgiVec4Ref results = FuseDdgiVec4Ref(F.rays);
+    const uint rays = F.raysPerProbe;
+    const uint rayBase = slot * rays;
+    const vec4 current = data.v[probe];
+    vec3 offset = current.xyz;
+    float state = current.w;
+
+    uint closestBack = FUSE_DDGI_STATE_NONE;
+    uint closestFront = FUSE_DDGI_STATE_NONE;
+    uint farthestFront = FUSE_DDGI_STATE_NONE;
+    float closestBackDistance = FUSE_DDGI_STATE_FAR;
+    float closestFrontDistance = FUSE_DDGI_STATE_FAR;
+    float farthestFrontDistance = 0.0;
+    uint backfaces = 0u;
+    precise float undo = F.backfaceDistanceScale > 0.0 ? 1.0 / F.backfaceDistanceScale : 1.0;
+    for (uint r = 0u; r < rays; ++r) {
+        const float d = results.v[rayBase + r].w;
+        if (d < 0.0) {
+            ++backfaces;
+            precise float full = -d * undo;
+            if (full < closestBackDistance) {
+                closestBackDistance = full;
+                closestBack = r;
+            }
+        } else if (d < closestFrontDistance) {
+            closestFrontDistance = d;
+            closestFront = r;
+        } else if (d > farthestFrontDistance) {
+            farthestFrontDistance = d;
+            farthestFront = r;
+        }
+    }
+    precise float ratio = rays > 0u ? float(backfaces) / float(rays) : 0.0;
+    const bool inside = ratio > F.probeBackfaceThreshold;
+    const float minFront = F.probeMinFrontfaceDistance;
+
+    if ((F.flags & FUSE_DDGI_FLAG_RELOCATION) != 0u) {
+        bool moved = false;
+        precise vec3 full = vec3(0.0);
+        if (closestBack != FUSE_DDGI_STATE_NONE && inside) {
+            precise float step = closestBackDistance + minFront * 0.5;
+            const vec3 b = dirs.v[closestBack].xyz;
+            full = vec3(offset.x + b.x * step, offset.y + b.y * step, offset.z + b.z * step);
+            moved = true;
+        } else if (closestFrontDistance < minFront) {
+            if (closestFront != FUSE_DDGI_STATE_NONE && farthestFront != FUSE_DDGI_STATE_NONE) {
+                const vec3 a = dirs.v[closestFront].xyz;
+                const vec3 b = dirs.v[farthestFront].xyz;
+                precise float c = a.x * b.x + a.y * b.y + a.z * b.z;
+                if (c <= 0.0) {
+                    const float step = min(farthestFrontDistance, F.probeRelocationStep);
+                    full = vec3(offset.x + b.x * step, offset.y + b.y * step, offset.z + b.z * step);
+                    moved = true;
+                }
+            }
+        } else if (closestFrontDistance > minFront) {
+            precise float len2 = offset.x * offset.x + offset.y * offset.y + offset.z * offset.z;
+            const float len = sqrt(len2);
+            if (len > 0.0) {
+                precise float gap = closestFrontDistance - minFront;
+                const float margin = min(gap, len);
+                precise float inv = 1.0 / len;
+                precise vec3 back = vec3(-offset.x * inv, -offset.y * inv, -offset.z * inv);
+                full = vec3(offset.x + back.x * margin, offset.y + back.y * margin, offset.z + back.z * margin);
+                moved = true;
+            }
+        }
+        if (moved) {
+            precise vec3 n = vec3(full.x / F.volume.spacing[0], full.y / F.volume.spacing[1], full.z / F.volume.spacing[2]);
+            precise float n2 = n.x * n.x + n.y * n.y + n.z * n.z;
+            precise float limit = F.probeMaxOffset * F.probeMaxOffset;
+            if (n2 < limit) {
+                offset = full;
+            }
+        }
+    }
+
+    if ((F.flags & FUSE_DDGI_FLAG_CLASSIFICATION) != 0u) {
+        state = 1.0; // inactive
+        if (!inside) {
+            for (uint r = 0u; r < rays; ++r) {
+                const float d = results.v[rayBase + r].w;
+                if (d < 0.0 || d >= F.maxRayDistance) {
+                    continue;
+                }
+                const vec3 dir = dirs.v[r].xyz;
+                const float ax = abs(dir.x);
+                const float ay = abs(dir.y);
+                const float az = abs(dir.z);
+                precise float px = ax > 0.0 ? F.volume.spacing[0] / max(ax, 1e-6) : FUSE_DDGI_STATE_FAR;
+                precise float py = ay > 0.0 ? F.volume.spacing[1] / max(ay, 1e-6) : FUSE_DDGI_STATE_FAR;
+                precise float pz = az > 0.0 ? F.volume.spacing[2] / max(az, 1e-6) : FUSE_DDGI_STATE_FAR;
+                if (d <= min(px, min(py, pz))) {
+                    state = 0.0; // active
+                    break;
+                }
+            }
+        }
+    }
+    data.v[probe] = vec4(offset, state);
+}

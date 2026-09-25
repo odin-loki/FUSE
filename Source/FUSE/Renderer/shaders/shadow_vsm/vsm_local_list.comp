@@ -1,0 +1,32 @@
+#version 460
+// WP-3.2 "vsm.local_list": one thread. The local render list = every page of every local light that
+// is dirty (vsm.local_dirty) or forced by the host (new light, light parameters or page assignment
+// changed): entries {light | face << 8, atlas page}, light order then face order; words 0..2 = its
+// VkDispatchIndirectCommand (vsm.local_clear and vsm.local_raster dispatch indirectly from it).
+// GLSL twin of vsm_local_list.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "vsm_raster_common.glsl"
+
+layout(local_size_x = 1) in;
+
+void main() {
+    FuseVsmShadowRef S = fuse_vsmr_shadow();
+    const uint words = fuse_handle_index(S.workHandle);
+    const uint mask = fuse_vsmr_words[words].w[FUSE_VSMR_WORD_DIRTY] | S.forceMask;
+    uint n = 0u;
+    const uint count = min(S.localCount, FUSE_VSMR_MAX_LOCAL);
+    for (uint k = 0u; k < count; ++k) {
+        if (((mask >> k) & 1u) == 0u) {
+            continue;
+        }
+        const uint faces = min(S.local[k].faces, 6u);
+        for (uint f = 0u; f < faces && n < FUSE_VSMR_MAX_LOCAL_PAGES; ++f) {
+            fuse_vsmr_words[words].w[FUSE_VSMR_WORD_LOCAL_LIST + n * 2u] = k | (f << 8u);
+            fuse_vsmr_words[words].w[FUSE_VSMR_WORD_LOCAL_LIST + n * 2u + 1u] = S.local[k].page[f];
+            ++n;
+        }
+    }
+    fuse_vsmr_words[words].w[FUSE_VSMR_WORD_LOCAL_X] = n;
+    fuse_vsmr_words[words].w[FUSE_VSMR_WORD_LOCAL_X + 1u] = 1u;
+    fuse_vsmr_words[words].w[FUSE_VSMR_WORD_LOCAL_X + 2u] = 1u;
+}

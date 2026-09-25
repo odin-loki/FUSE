@@ -1,0 +1,39 @@
+# One mesh, material and light replacement in a single layer.
+defaultPrim RootNode
+layermeta upAxis = "Z"
+layermeta metersPerUnit = 0.01
+customLayerData lightspeed_layer_type = "replacement"
+prim /RootNode specifier=over
+prim /RootNode/meshes/mesh_0123456789ABCDEF specifier=over
+prim /RootNode/meshes/mesh_0123456789ABCDEF/mesh type=Mesh specifier=def
+attr /RootNode/meshes/mesh_0123456789ABCDEF/mesh.points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+attrtype /RootNode/meshes/mesh_0123456789ABCDEF/mesh.points point3f[]
+attr /RootNode/meshes/mesh_0123456789ABCDEF/mesh.faceVertexIndices = [0, 1, 2]
+attr /RootNode/meshes/mesh_0123456789ABCDEF/mesh.primvars:st = [(0, 0), (1, 0), (0, 1)]
+attrmeta /RootNode/meshes/mesh_0123456789ABCDEF/mesh.normals interpolation = "vertex"
+attr /RootNode/meshes/mesh_0123456789ABCDEF/mesh.xformOp:translate = (0, 0, 2.5)
+attr /RootNode/meshes/mesh_0123456789ABCDEF/mesh.xformOpOrder = ["xformOp:translate"]
+uniform /RootNode/meshes/mesh_0123456789ABCDEF/mesh.subdivisionScheme true
+rel /RootNode/meshes/mesh_0123456789ABCDEF.material:binding = [</RootNode/Looks/mat_00000000CAFEF00D>]
+api /RootNode/meshes/mesh_0123456789ABCDEF MaterialBindingAPI
+conn /RootNode/Looks/mat_00000000CAFEF00D.outputs:mdl:surface = [</RootNode/Looks/mat_00000000CAFEF00D/Shader.outputs:out>]
+attr /RootNode/Looks/mat_00000000CAFEF00D/Shader.inputs:reflection_roughness_constant = 0.25
+attr /RootNode/Looks/mat_00000000CAFEF00D/Shader.inputs:diffuse_color_constant = (0.8, 0.2, 0.1)
+resolved /RootNode/Looks/mat_00000000CAFEF00D/Shader.inputs:diffuse_texture textures/albedo.dds
+attr /RootNode/lights/light_FEDCBA9876543210.inputs:intensity = 5000
+api /RootNode/lights/light_FEDCBA9876543210 ShapingAPI
+children /RootNode meshes Looks lights
+class /RootNode section
+class /RootNode/meshes section
+class /RootNode/meshes/mesh_0123456789ABCDEF mesh 0123456789ABCDEF
+class /RootNode/meshes/mesh_0123456789ABCDEF/mesh none
+class /RootNode/Looks/mat_00000000CAFEF00D material 00000000CAFEF00D
+class /RootNode/lights/light_FEDCBA9876543210 light FEDCBA9876543210
+remix meshes 1
+remix materials 1
+remix lights 1
+replacement mesh 0123456789ABCDEF meshes=/RootNode/meshes/mesh_0123456789ABCDEF/mesh bindings=/RootNode/Looks/mat_00000000CAFEF00D preserve=unset
+replacement material 00000000CAFEF00D shader=/RootNode/Looks/mat_00000000CAFEF00D/Shader mdl=AperturePBR_Opacity.mdl sub=AperturePBR_Opacity key=name
+replacement light FEDCBA9876543210 type=SphereLight legacy=false
+prims 9
+nodiag any

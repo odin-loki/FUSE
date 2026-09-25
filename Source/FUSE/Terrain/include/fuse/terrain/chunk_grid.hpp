@@ -22,7 +22,15 @@ public:
     [[nodiscard]] TerrainChunk& chunk(u32 index) { return m_chunks[index]; }
 
     [[nodiscard]] ivec2 world_to_chunk_coord(f32 world_x, f32 world_z) const;
+    /// World footprint of a chunk. The footprint is LOD-independent (LOD changes vertex density only);
+    /// `lod` is accepted for API compatibility.
     [[nodiscard]] AABB chunk_world_bounds(ivec2 coord, u32 lod) const;
+    [[nodiscard]] u32 chunks_per_axis() const { return m_chunks_per_axis; }
+    /// Chunk index for a grid coordinate, or `kInvalidChunkIndex` outside the grid.
+    [[nodiscard]] u32 chunk_index_at(ivec2 coord) const;
+    /// LOD of the resident neighbour across each edge (-X, +X, -Z, +Z); the chunk's own LOD where
+    /// the neighbour is missing or not resident (nothing to stitch against).
+    void neighbor_lods(u32 chunk_index, u32 (&out)[4]) const;
     [[nodiscard]] f32 base_chunk_stride() const;
     [[nodiscard]] f32 effective_load_radius() const;
 
@@ -78,6 +86,7 @@ private:
     LodResidencyBudgetCounters m_budget_counters{};
     std::vector<CompletedLodResidencyRequest> m_completed_batch_;
     u32 m_chunks_per_axis = 0;
+    vec3 m_last_camera_pos{};
     bool m_initialized = false;
 };
 

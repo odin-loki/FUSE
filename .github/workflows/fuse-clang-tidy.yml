@@ -18,9 +18,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake g++ clang-tidy
+        run: sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update && sudo apt-get install -y ninja-build cmake g++ clang-tidy
 
-      - name: Configure fuse-debug (T3D/T2D off)
+      - name: Configure fuse-debug (legacy engines off)
         run: |
           cmake --preset fuse-debug \
             -DFUSE_BUILD_T3D=OFF \

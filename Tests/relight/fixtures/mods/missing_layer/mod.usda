@@ -1,0 +1,38 @@
+#usda 1.0
+(
+    subLayers = [
+        @./does_not_exist.usd@
+    ]
+)
+
+# RL-3.1 fixture: missing layers are errors with the prim path (or the layer, for sublayers); composition goes on.
+def Xform "RootNode"
+{
+    def Xform "meshes"
+    {
+        def Xform "mesh_0000000000004001" (
+            prepend references = @./assets/missing.usd@
+        )
+        {
+            float survives = 1
+        }
+
+        def Xform "mesh_0000000000004002" (
+            prepend references = @./assets/no_default.usd@
+        )
+        {
+        }
+
+        def Xform "mesh_0000000000004003" (
+            prepend references = @./assets/no_default.usd@</Missing>
+        )
+        {
+        }
+
+        def Xform "mesh_0000000000004004" (
+            prepend references = @./assets/no_default.usd@</Present>
+        )
+        {
+        }
+    }
+}

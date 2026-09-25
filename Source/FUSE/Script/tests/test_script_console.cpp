@@ -1,3 +1,4 @@
+#include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/script/script_console.hpp>
 #include <fuse/script/script_console_command_registry.hpp>
@@ -108,7 +109,7 @@ void testHostDispatchLoadAndRun() {
     expectTrue(backend.ok(), "backend command succeeds with attached host");
     expectTrue(backend.output.find("backend=") != std::string::npos, "backend reports kind");
 
-    const auto missing = console.execute("load /tmp/fuse_script_console_missing.lua");
+    const auto missing = console.execute(("load " + fuse::test::tempPath("fuse_script_console_missing.lua")).c_str());
     expectTrue(!missing.ok(), "load missing file fails");
     expectTrue(missing.status == fuse::script::ScriptConsoleCommandStatus::BackendUnavailable,
                "load failure surfaces backend status");

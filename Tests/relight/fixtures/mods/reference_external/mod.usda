@@ -1,0 +1,22 @@
+#usda 1.0
+(
+    defaultPrim = "RootNode"
+)
+
+# RL-3.1 fixture: a mesh replacement referencing an external asset through its defaultPrim, with local overrides.
+def Xform "RootNode"
+{
+    def Xform "meshes"
+    {
+        def Xform "mesh_1111111111111111" (
+            prepend references = @./assets/crate.usd@
+        )
+        {
+            over "geo"
+            {
+                float3 local_override = (9, 9, 9)
+                double3 xformOp:scale = (2, 2, 2)
+            }
+        }
+    }
+}

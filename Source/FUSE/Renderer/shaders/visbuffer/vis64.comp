@@ -1,0 +1,54 @@
+#version 460
+// WP-1.4 64-bit visibility target maintenance, one thread per pixel (8 x 8 groups):
+//   mode 0 clear:  every word <- FUSE_VIS64_CLEAR
+//   mode 1 export: R32G32 visibility (fuse_vis64_to_raster) + R32F depth (fuse_vis64_export_depth,
+//                  the far end of the quantisation interval, for the Hi-Z) from the 64-bit words.
+// FUSE_VIS64_IMAGE: R64_UINT storage image, else u64 storage buffer. GLSL twin of vis64.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "bindless.glsl"
+#include "vis_format.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+#if defined(FUSE_VIS64_IMAGE)
+#extension GL_EXT_shader_image_int64 : require
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(r64ui) uniform u64image2D fuse_vis64_images[];
+#else
+FUSE_BINDLESS_SSBO_LAYOUT buffer FuseVis64Words { uint64_t v[]; } fuse_vis64_buffers[];
+#endif
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(rg32ui) uniform writeonly uimage2D fuse_vis_images[];
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(r32f) uniform writeonly image2D fuse_depth_images[];
+
+layout(push_constant) uniform Push {
+    uint target64;
+    uint vis;
+    uint depth;
+    uint width;
+    uint height;
+    uint mode;
+    uint pad0;
+    uint pad1;
+} pc;
+
+void main() {
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= pc.width || p.y >= pc.height) {
+        return;
+    }
+    const uint t = fuse_handle_index(pc.target64);
+    if (pc.mode == 0u) {
+#if defined(FUSE_VIS64_IMAGE)
+        imageStore(fuse_vis64_images[t], ivec2(p), u64vec4(FUSE_VIS64_CLEAR));
+#else
+        fuse_vis64_buffers[t].v[p.y * pc.width + p.x] = FUSE_VIS64_CLEAR;
+#endif
+        return;
+    }
+#if defined(FUSE_VIS64_IMAGE)
+    const uint64_t v = imageLoad(fuse_vis64_images[t], ivec2(p)).x;
+#else
+    const uint64_t v = fuse_vis64_buffers[t].v[p.y * pc.width + p.x];
+#endif
+    imageStore(fuse_vis_images[fuse_handle_index(pc.vis)], ivec2(p), uvec4(fuse_vis64_to_raster(v), 0u, 0u));
+    imageStore(fuse_depth_images[fuse_handle_index(pc.depth)], ivec2(p), vec4(fuse_vis64_export_depth(v)));
+}

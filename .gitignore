@@ -154,6 +154,7 @@ build-asan
 build-p4
 build-p5
 build-track-a
+build-vk
 eggs
 parts
 bin
@@ -193,3 +194,31 @@ Qt*.dll
 Engine/lib/assimp/include/assimp/config.h
 Engine/lib/assimp/revision.h
 *.o
+
+# Crash reports written by the crash handler when tests run from the repo root
+fuse_crash_*.txt
+
+# NVIDIA RTX SDK runtime binaries (DLSS / NGX / Streamline plugins; NVIDIA RTX SDKs License): never
+# committed — FUSE is MIT. Enforced by ctest fuse_nvidia_no_committed_binaries (docs/nvidia-plugin.md).
+nvngx_*.dll
+nvngx*.bin
+libnvidia-ngx-*.so
+libnvidia-ngx-*.so.*
+libnvsdk_ngx*.a
+nvsdk_ngx*.lib
+sl.*.dll
+sl.*.pdb
+sl.*.so
+nvperf_grfx_target*
+# FUSE's Linux NGX bridge statically links NVIDIA's NGX loader: its binary is RTX-SDK-licensed too.
+libfuse_nvplugin_ngx*.so
+fuse_nvplugin_ngx*.dll
+
+# Relight USD fixtures use a parts/ layer directory (the generic "parts" rule above is for build output).
+!/Tests/relight/fixtures/**/parts/
+
+# fuse_cook incremental cache written at the working directory
+/.fuse/
+
+# Relight package payload (README, rtx.conf, licences): not a build output
+!/Source/FUSE/Relight/package/dist/

@@ -1,0 +1,32 @@
+{
+  "schema": "fuse.relight.translate_expect/1",
+  "scene": "ff_lit",
+  "why": "Tests/relight/apps/scenes/ff_lit.cpp: 4 lit spheres with different material colour sources, then an emissive-only sphere; a directional, a point, a spot and a set-but-disabled point light; LIGHTING, COLORVERTEX, no fog.",
+  "draw_count": 5,
+  "draws": [
+    {"index": [0, 4], "why": "every draw is ray traced by the Main camera, unfogged, untextured, FF lighting",
+     "translated": true, "camera": "Main", "texgen": "None", "fog": {"mode": 0},
+     "material": {"alpha_test": false, "blend": false, "specular_source": "None", "tex_color_op": "Modulate",
+                  "tex_color_arg1": "Texture", "texture_slots": [-1, -1], "hash": "0x0000000000000000",
+                  "tf_blend": false, "vc_baked": true}},
+    {"index": 0, "why": "DIFFUSEMATERIALSOURCE = MATERIAL",
+     "material": {"diffuse_source": "None", "tex_color_arg2": "None",
+                  "d3d_material": {"diffuse": [0.9, 0.9, 0.9, 1], "ambient": [1, 1, 1, 1], "specular": [0.6, 0.6, 0.6, 1],
+                                   "emissive": [0, 0, 0, 0], "power": 24}}},
+    {"index": 1, "why": "DIFFUSEMATERIALSOURCE = COLOR1 -> vertex colour 0; SPECULARMATERIALSOURCE = COLOR2 is not supported upstream (None)",
+     "material": {"diffuse_source": "VertexColor0", "tex_color_arg2": "VertexColor0"}},
+    {"index": 2, "why": "AMBIENTMATERIALSOURCE = COLOR1 does not change the diffuse source",
+     "material": {"diffuse_source": "None"}},
+    {"index": 3, "material": {"diffuse_source": "None"}},
+    {"index": 4, "why": "emissive-only material",
+     "material": {"diffuse_source": "None",
+                  "d3d_material": {"diffuse": [0, 0, 0, 0], "emissive": [0.25, 0.5, 0.75, 1], "power": 0}}}
+  ],
+  "frame": {
+    "why": "three enabled lights: directional -> distant, point and spot -> sphere (the spot shaped); the disabled light 3 is absent",
+    "light_count": 3, "light_types": {"distant": 1, "sphere": 2}, "shaped_lights": 1, "light_indices": [0, 1, 2],
+    "fog": {"mode": 0}, "fog_states": 0, "cameras": ["Main"], "camera_cut": false,
+    "camera": {"fov": 1.04719758, "aspect": 1.33333337, "near": 0.5, "lhs": true, "reverse_z": false,
+               "shear_x": 0, "shear_y": 0, "position": [0, 0.600000024, -4]}
+  }
+}

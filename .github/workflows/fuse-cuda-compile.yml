@@ -1,0 +1,74 @@
+name: FUSE CUDA compile-only (Linux)
+
+# B1 row "CUDA compiles against C++23 FUSE host headers": builds every FUSE .cu TU with the
+# distro CUDA toolkit (nvcc 12.0, C++20 device dialect, host g++-12) next to the C++23 engine
+# (g++-13). Hosted runners have no NVIDIA GPU, so this is compile/link-only: the gates check that
+# each CUDA object carries an sm_86 cubin and that shared FUSE headers keep identical layouts on
+# C++23 host / nvcc host / nvcc device. Kernel results are NOT verified here.
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main, development]
+
+concurrency:
+  group: ci-${{ github.actor }}-${{ github.head_ref || github.run_number }}-${{ github.ref }}-fuse-cuda
+  cancel-in-progress: true
+
+jobs:
+  fuse-cuda-compile:
+    name: CUDA targets (compile-only, no GPU)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk for the CUDA toolkit
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Install dependencies (CUDA 12.0 toolkit + GCC 12 host compiler for nvcc)
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build cmake g++-13 g++-12 \
+            libvulkan-dev glslang-tools nvidia-cuda-toolkit
+          nvcc --version
+          df -h /
+
+      - name: Configure (Release, Vulkan + CUDA)
+        run: |
+          cmake -B build-cuda -G Ninja \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_CUDA_HOST_COMPILER=g++-12 \
+            -DCMAKE_CUDA_ARCHITECTURES=86 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFUSE_UMBRELLA=ON \
+            -DFUSE_BUILD_CORE=ON \
+            -DFUSE_BUILD_CORE_TESTS=ON \
+            -DFUSE_BUILD_VULKAN=ON \
+            -DFUSE_BUILD_CUDA=ON \
+            -DFUSE_BUILD_T3D=OFF \
+            -DFUSE_BUILD_T2D=OFF \
+            -DFUSE_ENABLE_CLANG_TIDY=OFF
+          test -f build-cuda/CMakeFiles/*/CMakeCUDACompiler.cmake  # CUDA language really enabled
+
+      - name: Build CUDA-bearing targets
+        run: |
+          cmake --build build-cuda --target \
+            fuse_core fuse_compute fuse_rhi fuse_fx \
+            fuse_cuda_shared_headers_gate fuse_cuda_job_tests fuse_cuda_interop \
+            fuse_ray_march_stub fuse_screen_space_effects_stub fuse_fx_tests \
+            fuse_compute_kernel_cuda_gate fuse_core_compute_kernel_gates fuse_ray_march_kernel_parity \
+            fuse_animation fuse_vfx fuse_skinning_kernel_parity fuse_particle_kernel_parity \
+            fuse_fx_particle_pool_kernel_parity fuse_animation_tests fuse_vfx_tests \
+            fuse_screen_space_kernel_parity \
+            fuse_scene fuse_audio fuse_svo_ray_kernel_parity fuse_reverb_fft_kernel_parity \
+            fuse_ddgi_kernel_parity fuse_clustered_kernel_parity fuse_sdf_shadows_kernel_parity \
+            fuse_physics fuse_b4_physics_kernel_gates
+
+      - name: CUDA compile gates (ctest -L cuda)
+        run: ctest --test-dir build-cuda -L cuda --output-on-failure
+
+      - name: CUDA host-path tests (no device — CUDA paths report unavailable)
+        run: ctest --test-dir build-cuda -R "^(fuse_cuda_jobs|fuse_cuda_interop|fuse_ray_march_stub|fuse_ray_march_kernel_parity|fuse_core_compute_kernel_gates|fuse_screen_space_effects_stub|fuse_fx_runtime|fuse_skinning_kernel_parity|fuse_particle_kernel_parity|fuse_fx_particle_pool_kernel_parity|fuse_animation_runtime|fuse_vfx_runtime|fuse_screen_space_kernel_parity|fuse_svo_ray_kernel_parity|fuse_reverb_fft_kernel_parity|fuse_ddgi_kernel_parity|fuse_clustered_kernel_parity|fuse_sdf_shadows_kernel_parity|fuse_b4_physics_kernel_gates)$" --output-on-failure

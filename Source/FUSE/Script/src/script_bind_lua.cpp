@@ -2,9 +2,7 @@
 
 #if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
 
-extern "C" {
-#include <lauxlib.h>
-}
+#include "script_lua_compat.hpp"
 
 namespace fuse::script::bind::lua {
 
@@ -92,11 +90,11 @@ bool read_entity_table(lua_State* L, int index, ecs::EntityID& out) {
 
     lua_getfield(L, abs_index, "index");
     lua_getfield(L, abs_index, "generation");
-    if (!lua_isinteger(L, -2) && !lua_isnumber(L, -2)) {
+    if (!detail::lua_is_integral(L, -2)) {
         lua_pop(L, 2);
         return false;
     }
-    if (!lua_isinteger(L, -1) && !lua_isnumber(L, -1)) {
+    if (!detail::lua_is_integral(L, -1)) {
         lua_pop(L, 2);
         return false;
     }

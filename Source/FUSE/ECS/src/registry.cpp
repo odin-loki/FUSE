@@ -55,7 +55,7 @@ EntityID Registry::create() {
             return EntityID::null();
         }
         index = static_cast<u32>(m_records.size());
-        m_records.push_back(EntityRecord{0, 0, generation, true});
+        m_records.push_back(EntityRecord{0, 0, generation, true, false});
         EntityRecord& rec = m_records[index];
         rec.row = static_cast<u32>(m_archetypes[0].append_entity(EntityID{index, generation}));
     }
@@ -64,7 +64,48 @@ EntityID Registry::create() {
     return EntityID{index, generation};
 }
 
+bool Registry::can_create_at(EntityID id) const {
+    if (!id.valid() || id.index >= m_records.size()) {
+        return false;
+    }
+    const EntityRecord& rec = m_records[id.index];
+    return !rec.alive && rec.generation == id.generation;
+}
+
+EntityID Registry::create_at(EntityID id) {
+    ensureInitialized();
+    if (!can_create_at(id)) {
+        return EntityID::null();
+    }
+
+    EntityRecord& rec = m_records[id.index];
+    if (rec.reserved) {
+        rec.reserved = false;
+    } else {
+        // A free slot is on the free list; remove it so create() cannot hand the index out twice.
+        auto it = std::find(m_free_list.begin(), m_free_list.end(), id.index);
+        if (it == m_free_list.end()) {
+            return EntityID::null();
+        }
+        m_free_list.erase(it);
+    }
+
+    rec.alive = true;
+    rec.archetype_index = 0;
+    rec.row = static_cast<u32>(m_archetypes[0].append_entity(id));
+    ++m_alive_count;
+    return id;
+}
+
 void Registry::destroy_entity(EntityID id) {
+    destroy_entity_(id, false);
+}
+
+void Registry::destroy_entity_reserved(EntityID id) {
+    destroy_entity_(id, true);
+}
+
+void Registry::destroy_entity_(EntityID id, bool reserve) {
     ensureInitialized();
 
     EntityRecord* rec = record(id);
@@ -84,8 +125,27 @@ void Registry::destroy_entity(EntityID id) {
     rec->alive = false;
     rec->archetype_index = 0;
     rec->row = 0;
-    m_free_list.push_back(id.index);
+    rec->reserved = reserve;
+    if (!reserve) {
+        m_free_list.push_back(id.index);
+    }
     --m_alive_count;
+}
+
+void Registry::release_reserved(EntityID id) {
+    if (!is_reserved(id)) {
+        return;
+    }
+    m_records[id.index].reserved = false;
+    m_free_list.push_back(id.index);
+}
+
+bool Registry::is_reserved(EntityID id) const {
+    if (!id.valid() || id.index >= m_records.size()) {
+        return false;
+    }
+    const EntityRecord& rec = m_records[id.index];
+    return !rec.alive && rec.reserved && rec.generation == id.generation;
 }
 
 bool Registry::alive(EntityID id) const {
@@ -109,6 +169,26 @@ Registry::EntityRecord* Registry::record(EntityID id) {
         return nullptr;
     }
     return &rec;
+}
+
+std::vector<std::type_index> Registry::component_types(EntityID id) const {
+    const EntityRecord* rec = record(id);
+    if (rec == nullptr || rec->archetype_index >= m_archetypes.size()) {
+        return {};
+    }
+    return m_archetypes[rec->archetype_index].component_types;
+}
+
+const void* Registry::get_raw(EntityID id, std::type_index type) const {
+    const EntityRecord* rec = record(id);
+    if (rec == nullptr || rec->archetype_index >= m_archetypes.size()) {
+        return nullptr;
+    }
+    const ComponentColumn* column = m_archetypes[rec->archetype_index].find_column(type);
+    if (column == nullptr || rec->row >= column->count()) {
+        return nullptr;
+    }
+    return column->at(rec->row);
 }
 
 const Registry::EntityRecord* Registry::record(EntityID id) const {
@@ -151,8 +231,10 @@ void Registry::migrate_entity(EntityID id, const std::vector<std::type_index>& t
         return;
     }
 
-    Archetype& source = m_archetypes[rec->archetype_index];
+    // find_or_create_archetype may grow m_archetypes; take references only afterwards.
+    const u32 source_index = rec->archetype_index;
     const u32 target_index = find_or_create_archetype(target_types);
+    Archetype& source = m_archetypes[source_index];
     Archetype& target = m_archetypes[target_index];
 
     for (const std::type_index& type : target_types) {

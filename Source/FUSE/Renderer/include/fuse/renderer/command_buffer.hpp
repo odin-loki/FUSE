@@ -91,6 +91,10 @@ struct VkFrameEncodeContext {
     /// Offscreen D32_SFLOAT depth attachment (B2.8 raster path).
     void* depthImage = nullptr;
     void* depthView = nullptr;
+    /// Persistent current `VkImageLayout` (as u32) of `barrierImage` / `depthImage`, owned by the
+    /// image owner (RasterPath). Barriers use it as oldLayout; render passes update it on end.
+    u32* barrierImageLayout = nullptr;
+    u32* depthImageLayout = nullptr;
     /// Buffer for graph-planned `vkCmdPipelineBarrier` (`VkBufferMemoryBarrier`).
     void* barrierBuffer = nullptr;
     u32 width = 0;
@@ -101,6 +105,8 @@ struct VkFrameEncodeContext {
     void* presentRenderPass = nullptr;
     void* presentFramebuffer = nullptr;
     void* presentBarrierImage = nullptr;
+    /// Tracked layout of `presentBarrierImage` (owned by VulkanSwapchain, one per image).
+    u32* presentImageLayout = nullptr;
     u32 presentWidth = 0;
     u32 presentHeight = 0;
     bool presentActive = false;
@@ -108,6 +114,8 @@ struct VkFrameEncodeContext {
     /// Composite GPU blit — bindless fullscreen pass into backbuffer (WP-06f).
     void* compositeRenderPass = nullptr;
     void* compositeFramebuffer = nullptr;
+    /// Tracked layout of the offscreen composite target (null when composite targets the swapchain).
+    u32* compositeTargetLayout = nullptr;
     void* compositePipeline = nullptr;
     void* compositePipelineLayout = nullptr;
     void* compositeVertexBuffer = nullptr;
@@ -115,6 +123,9 @@ struct VkFrameEncodeContext {
     u32 rasterTextureBindlessIndex = 0;
     u32 cudaTextureBindlessIndex = UINT32_MAX;
     u32 depthTextureBindlessIndex = UINT32_MAX;
+    /// CUDA interop image sampled by composite; transitioned to SHADER_READ_ONLY before sampling.
+    void* cudaImage = nullptr;
+    u32* cudaImageLayout = nullptr;
     u32 compositeWidth = 0;
     u32 compositeHeight = 0;
     float compositeBlend = 0.5f;
@@ -181,8 +192,14 @@ public:
     u32 vulkanPushConstantCount() const { return m_vulkanPushConstantCount; }
     u32 vulkanCopyImageCount() const { return m_vulkanCopyImageCount; }
     u32 vulkanBlitImageCount() const { return m_vulkanBlitImageCount; }
+    /// Real state-change calls encoded this recording (redundant binds are skipped, B3 draw list gate).
+    u32 vulkanPipelineBindCount() const { return m_vulkanPipelineBindCount; }
+    u32 vulkanVertexBufferBindCount() const { return m_vulkanVertexBufferBindCount; }
+    u32 vulkanIndexBufferBindCount() const { return m_vulkanIndexBufferBindCount; }
 
 private:
+    /// Forget cached bindings (new pipeline / render pass / foreign vkCmd* in between).
+    void invalidateBindState();
     void push(CommandRecordKind kind);
     bool shouldEncodeRasterPass(const char* passName) const;
     void beginVulkanRenderPass();
@@ -236,6 +253,14 @@ private:
     u32 m_vulkanPushConstantCount = 0;
     u32 m_vulkanCopyImageCount = 0;
     u32 m_vulkanBlitImageCount = 0;
+    u32 m_vulkanPipelineBindCount = 0;
+    u32 m_vulkanVertexBufferBindCount = 0;
+    u32 m_vulkanIndexBufferBindCount = 0;
+    /// Last state encoded into the current command buffer; null / UINT32_MAX = unknown.
+    void* m_boundVertexBuffer = nullptr;
+    void* m_boundIndexBuffer = nullptr;
+    u32 m_boundIndexType = UINT32_MAX;
+    u32 m_boundMaterialId = UINT32_MAX;
     std::vector<CommandRecord> m_records;
 };
 

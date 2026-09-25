@@ -1,0 +1,117 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "material_ext",
+  "id": "mod/fixture_game/material_table/mat_00000000000000A2",
+  "name": "mat_00000000000000A2",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 1,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "surface": "translucent",
+    "mdl": {
+      "sourceAsset": "AperturePBR_Translucent.mdl",
+      "subIdentifier": "AperturePBR_Translucent"
+    },
+    "ignore_material": false,
+    "preload_textures": false,
+    "params": {
+      "ior_constant": 1.5,
+      "transmittance_measurement_distance": 2.5,
+      "enable_emission": true,
+      "emissive_intensity": 5,
+      "emissive_color_constant": [0, 0.5, 1],
+      "sprite_sheet_rows": 2,
+      "sprite_sheet_cols": 3,
+      "sprite_sheet_fps": 30,
+      "thin_walled": true,
+      "thin_wall_thickness": 0.5,
+      "use_diffuse_layer": true,
+      "filter_mode": 0,
+      "wrap_mode_u": 0,
+      "wrap_mode_v": 2
+    },
+    "textures": {
+      "normalmap_texture": {
+        "asset": "./textures/translucent/normalmap_texture.dds",
+        "colorSpace": "raw",
+        "slot": "normal",
+        "path": "textures/translucent/normalmap_texture.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "a467b5eb48400981939590191848a530dea2cfe30ed9c1506c4fb15cc53d2a19",
+          "size": 164,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "BC5_UNORM_BLOCK",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": false
+      },
+      "transmittance_texture": {
+        "asset": "./textures/translucent/transmittance_texture.dds",
+        "colorSpace": "raw",
+        "slot": null,
+        "path": "textures/translucent/transmittance_texture.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "9a1fdc8eaf30ab5a83e3e509ff8ff22d4c7e06a6d47dbc19771caaaabf111a93",
+          "size": 212,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "R8G8B8A8_UNORM",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": false
+      },
+      "emissive_mask_texture": {
+        "asset": "./textures/translucent/emissive_mask_texture.dds",
+        "colorSpace": "auto",
+        "slot": "emissive",
+        "path": "textures/translucent/emissive_mask_texture.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "5ef37019fd7eff5f70bee46493937827c186875f33cf9727c107f47907e866d1",
+          "size": 164,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "BC7_UNORM_BLOCK",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": true
+      }
+    },
+    "authored": ["emissive_color_constant", "emissive_intensity", "emissive_mask_texture", "enable_emission", "filter_mode", "ior_constant", "normalmap_texture", "sprite_sheet_cols", "sprite_sheet_fps", "sprite_sheet_rows", "thin_wall_thickness", "thin_walled", "transmittance_color", "transmittance_measurement_distance", "transmittance_texture", "use_diffuse_layer", "wrap_mode_u", "wrap_mode_v"],
+    "remix_hash": "00000000000000A2",
+    "particles": null
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:material_table"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "material_table",
+      "stage": "mod.usda",
+      "prim": "/RootNode/Looks/mat_00000000000000A2",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "CC0-1.0",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

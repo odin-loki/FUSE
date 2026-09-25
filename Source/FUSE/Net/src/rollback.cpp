@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace fuse::net {
 
@@ -15,6 +16,12 @@ namespace {
 
 f32 axis_to_float(std::int16_t axis) {
     return static_cast<f32>(axis) / 32767.f;
+}
+
+void assign_xyz(ecs::vec3& dst, const ecs::vec3& src) {
+    dst.x = src.x;
+    dst.y = src.y;
+    dst.z = src.z;
 }
 
 } // namespace
@@ -32,6 +39,8 @@ void RollbackManager::init(u32 max_rollback_frames) {
 
 void RollbackManager::destroy() {
     m_registry = nullptr;
+    m_desync_detected = false;
+    m_first_desync_frame = 0;
     m_current_frame = 0;
     m_confirmed_frame = 0;
     m_rolling_back = false;
@@ -105,9 +114,10 @@ void RollbackManager::restore_registry_state_(const GameSnapshot& snapshot) cons
             continue;
         }
 
-        transform->position = ecs_reader.read_vec3();
+        // Snapshots carry xyz only — keep the homogeneous w lane so restore is byte-identical.
+        assign_xyz(transform->position, ecs_reader.read_vec3());
         transform->rotation = ecs_reader.read_quat();
-        transform->scale = ecs_reader.read_vec3();
+        assign_xyz(transform->scale, ecs_reader.read_vec3());
         transform->dirty = true;
     }
 
@@ -130,10 +140,14 @@ void RollbackManager::restore_registry_state_(const GameSnapshot& snapshot) cons
             continue;
         }
 
-        body->velocity = physics_reader.read_vec3();
-        body->angular_velocity = physics_reader.read_vec3();
-        body->mass = physics_reader.read_f32();
-        body->inv_mass = body->mass > 0.f ? 1.f / body->mass : 0.f;
+        assign_xyz(body->velocity, physics_reader.read_vec3());
+        assign_xyz(body->angular_velocity, physics_reader.read_vec3());
+        const f32 mass = physics_reader.read_f32();
+        if (std::memcmp(&mass, &body->mass, sizeof(f32)) != 0) {
+            // Only derive inv_mass when mass actually changed (static bodies keep inv_mass = 0).
+            body->mass = mass;
+            body->inv_mass = mass > 0.f ? 1.f / mass : 0.f;
+        }
     }
 }
 
@@ -172,15 +186,17 @@ bool RollbackManager::apply_remote_input(const PlayerInput& input) {
     if (input.frame > m_current_frame) {
         return false;
     }
+    if (m_current_frame - input.frame > m_max_rollback) {
+        return false; // Outside the rollback window — too late to correct.
+    }
 
     (void)reconcile_predicted_input(m_input_history, input.frame, input);
     m_buffer.store_remote_input(input.frame, input, true);
+    if (input.frame >= m_confirmed_frame) {
+        m_confirmed_frame = input.frame + 1;
+    }
 
     if (input.frame < m_current_frame) {
-        if (m_current_frame - input.frame > m_max_rollback) {
-            return false;
-        }
-
         m_rolling_back = true;
         const u32 target_frame = m_current_frame;
         rollback_to_(input.frame);
@@ -190,9 +206,6 @@ bool RollbackManager::apply_remote_input(const PlayerInput& input) {
         return true;
     }
 
-    if (input.frame >= m_confirmed_frame) {
-        m_confirmed_frame = input.frame + 1;
-    }
     return false;
 }
 
@@ -216,9 +229,11 @@ void RollbackManager::rollback_to_(u32 frame) {
 }
 
 void RollbackManager::resimulate_to_(u32 target_frame, f32 dt) {
+    // Same order as tick(): snapshot(F) is the state *before* frame F integrates, so a later
+    // rollback to F restores the correct pre-frame state.
     while (m_current_frame < target_frame) {
-        integrate_frame_(m_current_frame, dt);
         save_snapshot(m_current_frame);
+        integrate_frame_(m_current_frame, dt);
         ++m_current_frame;
     }
 }
@@ -238,6 +253,26 @@ bool RollbackManager::rewind_to(u32 frame) {
     rollback_to_(frame);
     m_current_frame = frame;
     return true;
+}
+
+u64 RollbackManager::local_checksum(u32 frame) const {
+    const GameSnapshot* snapshot = m_buffer.snapshot(frame);
+    return snapshot != nullptr ? snapshot->checksum : 0ull;
+}
+
+DesyncCheck RollbackManager::check_remote_checksum(u32 frame, u64 remote_checksum) {
+    const GameSnapshot* snapshot = m_buffer.snapshot(frame);
+    if (snapshot == nullptr) {
+        return DesyncCheck::Unknown;
+    }
+    if (snapshot->checksum == remote_checksum) {
+        return DesyncCheck::Match;
+    }
+    if (!m_desync_detected || frame < m_first_desync_frame) {
+        m_first_desync_frame = frame;
+    }
+    m_desync_detected = true;
+    return DesyncCheck::Mismatch;
 }
 
 u32 RollbackManager::resimulate_count_to(u32 target_frame) const {

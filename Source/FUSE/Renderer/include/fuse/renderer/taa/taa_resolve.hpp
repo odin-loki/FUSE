@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/renderer/taa/taa_cpu_resolve.hpp>
 #include <fuse/renderer/taa/taa_history.hpp>
 #include <fuse/renderer/taa/taa_types.hpp>
 
@@ -32,7 +33,12 @@ bool tryPreflightTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& 
 /// Early-out when resolve preflight would skip (B5.9 deepen).
 bool shouldSkipTaaResolve(const TaaResolveDesc& desc, const TaaHistoryBuffer& history);
 
-/// CPU/CUDA resolve facade — records resolve intent; kernel deferred (B5.9 stub).
+/// True when the resolve request binds host-memory surfaces (`desc.cpu`) for the CPU resolver.
+bool taaResolveUsesCpuSurfaces(const TaaResolveDesc& desc);
+
+/// CPU/CUDA resolve facade. With CPU surfaces bound (`desc.cpu`) it runs the reference
+/// `TaaCpuResolver` into `desc.cpu.output`; with only opaque device surfaces it records the
+/// resolve (device kernel deferred). Either way a successful resolve marks and swaps `history`.
 class TaaResolve {
 public:
     bool resolve(const TaaResolveDesc& desc, TaaHistoryBuffer& history, void* cudaStream = nullptr);
@@ -43,10 +49,19 @@ public:
 
     const TaaResolveStats& lastStats() const { return m_stats; }
     const std::string& lastMessage() const { return m_message; }
+    /// CPU reference resolver state (history colour/velocity/depth owned by the resolver).
+    const TaaCpuResolver& cpuResolver() const { return m_cpu; }
+    TaaCpuResolver& cpuResolver() { return m_cpu; }
 
 private:
+    bool resolveCpu(const TaaResolveDesc& desc, const TaaHistoryBuffer& history, const TAAParams& params,
+                    bool historyReusable);
+
     TaaResolveStats m_stats{};
     std::string m_message;
+    TaaCpuResolver m_cpu;
+    /// `TaaHistoryBuffer::invalidateGeneration()` the CPU history was accumulated under.
+    u32 m_cpuHistoryGeneration = kTaaResolveNoHistoryGeneration;
 };
 
 } // namespace fuse::renderer

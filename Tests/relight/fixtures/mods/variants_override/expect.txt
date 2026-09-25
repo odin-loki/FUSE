@@ -1,0 +1,7 @@
+variant /RootNode/Looks/mat_0000000000000B02 color blue
+attr /RootNode/Looks/mat_0000000000000B02.tint = (0, 0, 1)
+# No local selection: the asset's own default selection applies.
+variant /RootNode/Looks/mat_0000000000000B03 color green
+attr /RootNode/Looks/mat_0000000000000B03.tint = (0, 1, 0)
+remix materials 2
+nodiag any

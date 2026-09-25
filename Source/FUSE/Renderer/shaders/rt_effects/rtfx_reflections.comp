@@ -1,0 +1,130 @@
+#version 460
+// WP-6.2 "rt.reflections" (twin: rtfx_reflections.slang): one pixel per thread, 8 x 8 tiles.
+// `reflectionSamples` GGX visible-normal rays around the G-buffer normal at alpha = roughness^2 (one ray for
+// a mirror, roughness < mirrorRoughness), the pixel's Owen-scrambled Sobol sequence continued across frames;
+// each closest hit is shaded at first bounce (fuse_rtfx_shade_hit), misses see the sky radiance, directions
+// below the surface contribute 0. Writes the mean radiance + mean hit distance (kRtfxNoHit when nothing was
+// hit); sky pixels write 0 / kRtfxNoHit. Dump: the first sample's ray + hit per pixel.
+// CPU mirror: rt_effects_kernel.hpp; offline reference: RtEffectsReference::reflection / shadeHit.
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_samplerless_texture_functions : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+#include "rtfx_common.glsl"
+#include "atmosphere/at_sample.glsl"
+
+layout(local_size_x = FUSE_RTFX_TILE, local_size_y = FUSE_RTFX_TILE) in;
+
+// Radiance of a reflection ray that misses: the WP-8.2 sky (no sun disk: the sun is a hit light) when the frame
+// carries an atmosphere (kRtfxFlagAtmosphereSky), else the constant sky (RtEffectsReference::shadeHit's miss).
+vec3 fuse_rtfx_miss(FuseRtfxFrame F, vec3 dir) {
+    if ((F.flags & FUSE_RTFX_FLAG_ATMOSPHERE_SKY) != 0u && F.atmosphere != 0ul) {
+        return at_sky_radiance(at_load(F.atmosphere), dir, false);
+    }
+    return fuse_rtfx_vec3(F.sky);
+}
+
+// First-bounce radiance of the closest hit (instance, primitive) at distance t along the ray
+// (RtEffectsReference::shadeHit): geometric normal facing the ray, material emission + Lambert.
+vec3 fuse_rtfx_shade_hit(FuseRtfxFrame F, vec3 origin, vec3 dir, float t, uint instance, uint primitive) {
+    FuseGpuSceneHeaderRef scene = fuse_gpu_scene(F.scene);
+    const FuseGpuInstance inst = fuse_gpu_scene_instances(scene).v[instance];
+    const FuseGpuTransform xf = fuse_gpu_scene_transforms(scene).v[instance];
+    const FuseGpuMesh mesh = fuse_gpu_scene_meshes(scene).v[inst.mesh];
+    FuseGpuSceneIndicesRef indices = fuse_gpu_scene_indices(scene);
+    FuseRtfxWords vpos = FuseRtfxWords(mesh.positions);
+    vec3 w[3];
+    for (uint k = 0u; k < 3u; ++k) {
+        const uint vi = indices.v[mesh.firstIndex + 3u * primitive + k];
+        const uint w0 = vpos.v[vi * 2u];
+        const uint w1 = vpos.v[vi * 2u + 1u];
+        const vec3 q = vec3(float(w0 & 0xFFFFu), float(w0 >> 16u), float(w1 & 0xFFFFu));
+        const vec3 local = vec3(mesh.quantOffset[0] + q.x * mesh.quantStep[0], mesh.quantOffset[1] + q.y * mesh.quantStep[1],
+                                mesh.quantOffset[2] + q.z * mesh.quantStep[2]);
+        w[k] = fuse_gpu_transform_point(xf, local);
+    }
+    vec3 n = fuse_rtfx_normalize(cross(w[1] - w[0], w[2] - w[0]), vec3(0.0, 1.0, 0.0));
+    if (dot(n, dir) > 0.0) {
+        n = -n;
+    }
+    vec3 albedo = vec3(FUSE_RTFX_DEFAULT_ALBEDO);
+    float metallic = 0.0;
+    vec3 emissive = vec3(0.0);
+    if (inst.material < scene.counts[FUSE_GPU_SCENE_MATERIALS]) {
+        const FuseRtfxMaterial m = FuseRtfxMaterials(scene.addresses[FUSE_GPU_SCENE_MATERIALS]).v[inst.material];
+        albedo = m.baseColor.xyz;
+        metallic = clamp(m.baseColor.w, 0.0, 1.0);
+        emissive = max(m.roughnessEmissive.yzw, vec3(0.0)) * max(m.emissiveIntensity, 0.0);
+    }
+    const vec3 point = origin + dir * t;
+    vec3 irradiance = fuse_rtfx_vec3(F.ambient) * FUSE_RTFX_PI;
+    for (uint i = 0u; i < min(F.hitLightCount, FUSE_RTFX_MAX_HIT_LIGHTS); ++i) {
+        const FuseRtfxHitLight l = F.hitLights[i];
+        const vec3 toLight = fuse_rtfx_normalize(fuse_rtfx_vec3(l.direction), vec3(0.0, 1.0, 0.0));
+        const float cosine = dot(n, toLight);
+        if (!(cosine > 0.0)) {
+            continue;
+        }
+        float visible = 1.0;
+        if (l.shadowed != 0u && (F.flags & FUSE_RTFX_FLAG_HIT_SHADOWS) != 0u) {
+            const vec3 o = fuse_rtfx_ray_origin(point, n, fuse_rtfx_vec3(F.cameraPosition), F.normalBias, F.viewBias);
+            visible = fuse_rtfx_occluded(F.tlas, F.shadowCullMask, o, toLight, F.farDistance) ? 0.0 : 1.0;
+        }
+        irradiance += fuse_rtfx_vec3(l.irradiance) * (cosine * visible);
+    }
+    const float diffuse = (1.0 - metallic) / FUSE_RTFX_PI;
+    return emissive + albedo * diffuse * irradiance;
+}
+
+void main() {
+    const FuseRtfxFrame F = fuse_rtfx_frame();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.view.width || p.y >= F.view.height) {
+        return;
+    }
+    const uint pixel = p.y * F.view.width + p.x;
+    FuseRtfxVec4s out_ = FuseRtfxVec4s(F.reflection);
+    const float depth = fuse_rtfx_fetch(F.gbufferDepth, ivec2(p)).x;
+    if (!(depth < 1.0) || isnan(depth) || isinf(depth)) {
+        out_.v[pixel] = vec4(0.0, 0.0, 0.0, FUSE_RTFX_NO_HIT);
+        fuse_rtfx_record(pc.dump, pixel, vec3(0.0), vec3(0.0), 0.0, FUSE_RTFX_NO_HIT, FUSE_RTFX_INVALID, FUSE_RTFX_INVALID, 0u);
+        return;
+    }
+    const vec3 camera = fuse_rtfx_vec3(F.cameraPosition);
+    const vec3 position = fuse_rtfx_reconstruct(F, p, depth);
+    const vec4 rt0 = fuse_rtfx_fetch(F.gbufferNormal, ivec2(p));
+    const float roughness = fuse_rtfx_fetch(F.gbufferRoughMetal, ivec2(p)).x;
+    const vec3 normal = fuse_rtfx_oct_decode(rt0.x, rt0.y);
+    const vec3 origin = fuse_rtfx_ray_origin(position, normal, camera, F.normalBias, F.viewBias);
+    const vec3 view = fuse_rtfx_normalize(camera - position, normal);
+    const bool mirror = !(roughness >= F.mirrorRoughness);
+    const uint samples = mirror ? 1u : max(F.reflectionSamples, 1u);
+    const uint seed = fuse_rtfx_pixel_seed(p.x, p.y, FUSE_RTFX_STREAM_REFLECTION, F.seed);
+    vec3 sum = vec3(0.0);
+    uint hits = 0u;
+    float hitSum = 0.0;
+    for (uint s = 0u; s < samples; ++s) {
+        const vec2 uv = fuse_rtfx_sample2(F.frameIndex * samples + s, seed);
+        vec3 dir;
+        const bool valid = fuse_rtfx_reflection_ray(normal, view, roughness, F.mirrorRoughness, uv.x, uv.y, dir);
+        float t = FUSE_RTFX_NO_HIT;
+        uint instance = FUSE_RTFX_INVALID;
+        uint primitive = FUSE_RTFX_INVALID;
+        if (valid) {
+            t = fuse_rtfx_trace(F.tlas, F.reflectionCullMask, origin, dir, F.farDistance, instance, primitive);
+            if (t >= 0.0) {
+                sum += fuse_rtfx_shade_hit(F, origin, dir, t, instance, primitive);
+                hits += 1u;
+                hitSum += t;
+            } else {
+                sum += fuse_rtfx_miss(F, dir);
+            }
+        }
+        if (s == 0u) {
+            fuse_rtfx_record(pc.dump, pixel, origin, dir, F.farDistance, t, instance, primitive,
+                             (valid ? FUSE_RTFX_RAY_TRACED : 0u) | (t >= 0.0 ? FUSE_RTFX_RAY_HIT : 0u));
+        }
+    }
+    const float inv = 1.0 / float(samples);
+    out_.v[pixel] = vec4(sum * inv, hits > 0u ? hitSum / float(hits) : FUSE_RTFX_NO_HIT);
+}

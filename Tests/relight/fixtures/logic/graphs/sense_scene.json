@@ -1,0 +1,19 @@
+{
+  "description": "Sense components against prim snapshots of the owning replacement (original draw with bounds and bones, a mesh part, a light) while the camera moves towards the mesh, mesh / texture / light / fog hashes come and go and CTRL+K is pressed, held and released.",
+  "stage": "sense_scene.usda",
+  "mesh": "0123456789ABCDEF",
+  "frames": 8,
+  "dt": 0.1,
+  "prims": {
+    "/RootNode/meshes/mesh_0123456789ABCDEF/mesh": {"kind": "mesh", "translation": [0, 0, 10], "scale": [2, 2, 2], "bounds": [-1, -1, -1, 1, 1, 1], "bones": [[0, 0, 0], [0, 3, 0]]},
+    "/RootNode/meshes/mesh_0123456789ABCDEF/part": {"kind": "mesh", "translation": [1, 0, 10], "bounds": [-1, -1, 0, 1, 1, 0.1]},
+    "/RootNode/meshes/mesh_0123456789ABCDEF/lamp": {"kind": "light", "translation": [0, 4, 10]}
+  },
+  "inputs": {
+    "0": {"camera": {"position": [0, 0, 0], "forward": [0, 0, 1], "fov_degrees": 75, "aspect": 1.7777778}, "mesh_hashes": {"0123456789ABCDEF": 2}, "fog_hash": "BB"},
+    "2": {"camera": {"position": [0, 0, 4], "forward": [0, 0, 1], "fov_degrees": 75, "aspect": 1.7777778}, "texture_hashes": {"F21C4BCC08014719": 3}, "keys_down": ["CTRL", "K"], "keys_pressed": ["K"]},
+    "3": {"light_hashes": ["AA"]},
+    "4": {"camera": {"position": [0, 0, 8.5], "forward": [1, 0, 0], "fov_degrees": 75, "aspect": 1.7777778}, "mesh_hashes": {}, "keys_down": ["CTRL"]},
+    "6": {"camera": {"position": [5, 0, 10], "forward": [-1, 0, 0], "fov_degrees": 75, "aspect": 1.7777778}, "fog_hash": "0", "texture_hashes": {}, "light_hashes": []}
+  }
+}

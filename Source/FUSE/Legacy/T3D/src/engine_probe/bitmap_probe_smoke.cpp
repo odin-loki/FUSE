@@ -1,4 +1,5 @@
 // Engine probe smoke wrapper — only linked when FUSE_T3D_LEGACY_ENGINE_PROBE=ON.
+#include <fuse/core/temp_path.hpp>
 #include <fuse/legacy/t3d/api.hpp>
 
 #include "platform/platform.h"
@@ -14,6 +15,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 extern void bitmapExtrude5551_c(const void* srcMip, void* mip, U32 srcHeight, U32 srcWidth);
 
@@ -104,7 +106,7 @@ bool writeBitmapPathSmoke() {
     bits[2] = 0xCC;
     bits[3] = 0xFF;
 
-    const String path("/tmp/fuse_u2_writebitmap_probe.png");
+    const String path(fuse::test::tempPath("fuse_u2_writebitmap_probe.png").c_str());
     const bool wrote = bitmap.writeBitmap(String("png"), Torque::Path(path), 1u);
     GBitmap loaded;
     const bool ok =
@@ -123,7 +125,7 @@ bool writeBitmapPathSmoke() {
     bits[1] = 0xBB;
     bits[2] = 0xCC;
 
-    const String path("/tmp/fuse_u2_writebitmap_stb_probe.bmp");
+    const String path(fuse::test::tempPath("fuse_u2_writebitmap_stb_probe.bmp").c_str());
     const Torque::Path torquePath(path);
     const bool wrote = bitmap.writeBitmap(String("bmp"), torquePath, 1u);
     GBitmap loaded;
@@ -180,7 +182,7 @@ bool readBitmapPathSmoke() {
         0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x13, 0x0B, 0x00, 0x00, 0x13, 0x0B, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00,
     };
-    const String path("/tmp/fuse_u2_readbitmap_probe.bmp");
+    const String path(fuse::test::tempPath("fuse_u2_readbitmap_probe.bmp").c_str());
     {
         FileStream writer;
         if (!writer.open(path, Torque::FS::File::Write)) {

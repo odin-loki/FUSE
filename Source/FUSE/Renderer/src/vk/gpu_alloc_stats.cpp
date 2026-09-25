@@ -114,6 +114,19 @@ void updatePeak(GpuAllocStats& stats) {
     }
 }
 
+usize bytesPerTexel(GpuFormat format) {
+    return bytesPerPixel(format);
+}
+
+usize mipLevelBytes(const TextureDesc& desc, u32 mipLevel) {
+    const auto extent = [mipLevel](u32 size) -> usize {
+        const u32 base = size > 0 ? size : 1u;
+        const u32 shifted = mipLevel < 32u ? (base >> mipLevel) : 0u;
+        return shifted > 0 ? shifted : 1u;
+    };
+    return extent(desc.width) * extent(desc.height) * extent(desc.depth) * bytesPerPixel(desc.format);
+}
+
 usize estimateImageBytes(const TextureDesc& desc) {
     const usize pixelBytes = bytesPerPixel(desc.format);
     const usize width = desc.width > 0 ? desc.width : 1u;

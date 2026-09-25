@@ -7,6 +7,21 @@
 
 namespace fuse::vfx {
 
+enum class ParticleColliderShape : u8 {
+    Plane,
+    Sphere,
+};
+
+/// Analytic signed-distance collider. Plane: `dot(normal, p) - offset` (normal must be unit length).
+/// Sphere: solid ball, `|p - center| - radius`. Particles are pushed to the zero level set.
+struct ParticleCollider {
+    ParticleColliderShape shape = ParticleColliderShape::Plane;
+    math::Vec3 normal{0.f, 1.f, 0.f};
+    f32 offset = 0.f;
+    math::Vec3 center{};
+    f32 radius = 1.f;
+};
+
 struct ParticleEmitterDesc {
     u32 max_particles = 4096;
     f32 emit_rate = 100.f;
@@ -26,6 +41,12 @@ struct ParticleEmitterDesc {
     math::Vec3 gravity{0.f, -9.81f, 0.f};
     f32 drag = 0.1f;
     bool collide_with_world = false;
+    /// Colliders tested when `collide_with_world` is set.
+    std::vector<ParticleCollider> colliders;
+    /// Normal velocity retained after impact (0 = stick, 1 = perfectly elastic).
+    f32 restitution = 0.5f;
+    /// Fraction of tangential velocity removed on impact.
+    f32 friction = 0.f;
     bool affected_by_wind = false;
 
     u32 material_id = 0;
@@ -46,6 +67,9 @@ struct ParticleSoA {
     std::vector<f32> alphas;
     std::vector<u32> alive_flags;
     std::vector<u32> free_slots;
+    /// Simulation kernel scratch (particle_sim_kernel.hpp): global counters followed by one dead
+    /// count per 256-slot workgroup. Sized by `particle_soa::init`, reused every step.
+    std::vector<u32> sim_scratch;
     u32 count = 0;
     u32 capacity = 0;
 };
@@ -61,7 +85,13 @@ public:
 
     void simulate(f32 dt);
     u32 alive_count() const;
+    /// Particles emitted since `init` (burst + rate), including ones that already expired.
+    u64 total_emitted() const { return m_totalEmitted; }
     u32 free_slot_count() const { return static_cast<u32>(m_particles.free_slots.size()); }
+    /// Simulate on the CUDA particle kernel (ParticleSystem sets this when its backend is Cuda);
+    /// otherwise the CPU kernel backends run the step.
+    void set_gpu_simulation(bool enabled) { m_gpuSimulation = enabled; }
+    bool gpu_simulation() const { return m_gpuSimulation; }
 
     const ParticleEmitterDesc& desc() const { return m_desc; }
     const math::Vec3& position() const { return m_worldPos; }
@@ -75,8 +105,12 @@ private:
     math::Vec3 m_worldPos{};
     bool m_enabled = true;
     bool m_initialized = false;
-    f32 m_emitAccum = 0.f;
+    bool m_gpuSimulation = false;
+    f64 m_emitAccum = 0.0;
+    u64 m_totalEmitted = 0;
     u64 m_frameSeed = 1;
+    /// simulate_step dead-slot list reused across frames (steady-state simulate is heap-free).
+    std::vector<u32> m_deadSlotScratch;
 };
 
 } // namespace fuse::vfx

@@ -1,0 +1,58 @@
+#version 460
+// WP-5.1 mesh shader, GLSL twin of meshlet_mesh_ms.slang. One workgroup per surviving meshlet: the
+// meshlet's vertices through the WP-1.4 vertex transform (vis_common.glsl fuse_vis_clip of the same
+// VPOS the indirect path's vertex shader pulls: MVRT[meshlet.vertexOffset + v] + mesh.vertexOffset ==
+// the scene index-buffer entry), its MTRI triangles in order with gl_PrimitiveID = the mesh triangle
+// (meshlet.triangleOffset + t, == the indirect path's gl_PrimitiveID), and the instance slot as the
+// flat per-vertex output the WP-1.4 fragment shaders read at location 0.
+#extension GL_EXT_mesh_shader : require
+#extension GL_GOOGLE_include_directive : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+#include "vis_format.glsl"
+#include "vis_common.glsl"
+#include "cull_common.glsl"
+#include "meshlet_common.glsl"
+
+layout(local_size_x = 64) in;
+layout(triangles, max_vertices = 64, max_primitives = 124) out;
+
+layout(push_constant) uniform Push {
+    vec4 viewProj[4];
+    uint scene;
+    uint target64;
+    uint width;
+    uint height;
+    uint64_t constants;
+    uint mode;
+    uint pad;
+} pc;
+
+taskPayloadSharedEXT FuseMeshletPayload payload;
+layout(location = 0) flat out uint outInstance[];
+
+void main() {
+    const uint lane = gl_LocalInvocationID.x;
+    const uint instance = payload.instance;
+    const uint m = payload.meshlets[gl_WorkGroupID.x];
+    FuseGpuSceneHeaderRef scene = fuse_gpu_scene(pc.scene);
+    const FuseGpuInstance inst = fuse_gpu_scene_instances(scene).v[instance];
+    const FuseGpuMesh mesh = fuse_gpu_scene_meshes(scene).v[inst.mesh];
+    const FuseGpuMeshlet ml = FuseGpuMeshletsRef(mesh.meshlets).v[m];
+    const FuseGpuTransform xf = fuse_gpu_scene_transforms(scene).v[instance];
+    const uint vertexCount = ml.counts & 0xFFu;
+    const uint triangleCount = (ml.counts >> 8u) & 0xFFu;
+    SetMeshOutputsEXT(vertexCount, triangleCount);
+    FuseGpuSceneWordsRef mvrt = FuseGpuSceneWordsRef(mesh.meshletVertices);
+    FuseGpuSceneWordsRef mtri = FuseGpuSceneWordsRef(mesh.meshletTriangles);
+    for (uint v = lane; v < vertexCount; v += FUSE_MESHLET_MESH_THREADS) {
+        const uint vertex = uint(int(mvrt.v[ml.vertexOffset + v]) + mesh.vertexOffset);
+        gl_MeshVerticesEXT[v].gl_Position = fuse_vis_clip(xf, pc.viewProj, fuse_vis_mesh_position(mesh, vertex));
+        outInstance[v] = instance;
+    }
+    for (uint t = lane; t < triangleCount; t += FUSE_MESHLET_MESH_THREADS) {
+        const uint packed = mtri.v[ml.triangleOffset + t];
+        gl_PrimitiveTriangleIndicesEXT[t] = uvec3(packed & 0xFFu, (packed >> 8u) & 0xFFu, (packed >> 16u) & 0xFFu);
+        gl_MeshPrimitivesEXT[t].gl_PrimitiveID = int(ml.triangleOffset + t);
+    }
+}

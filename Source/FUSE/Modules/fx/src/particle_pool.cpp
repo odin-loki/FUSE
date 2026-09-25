@@ -1,5 +1,8 @@
 #include <fuse/fx/particle_pool.hpp>
 
+#include <fuse/compute_kernel/launch.hpp>
+#include <fuse/fx/particle_pool_kernel.hpp>
+
 namespace fuse::fx {
 
 ParticlePool::ParticlePool(u32 capacity) : m_slots(capacity) {}
@@ -32,25 +35,18 @@ bool ParticlePool::spawn(const fuse::math::Vec3& position,
 }
 
 void ParticlePool::tick(const frame::FrameCtx& ctx) {
-    const float dt = ctx.dt > 0.f ? ctx.dt : (1.f / 60.f);
-
-    for (ParticleSlot& slot : m_slots) {
-        if (!slot.alive) {
-            continue;
-        }
-
-        slot.age += dt;
-        slot.position.x += slot.velocity.x * dt;
-        slot.position.y += slot.velocity.y * dt;
-        slot.position.z += slot.velocity.z * dt;
-
-        if (slot.age >= slot.lifetime) {
-            slot.alive = false;
-            if (m_activeCount > 0) {
-                --m_activeCount;
-            }
-        }
+    namespace ppk = particle_pool_kernel;
+    ppk::SlotParams params{};
+    params.slots = {m_slots.data(), static_cast<u32>(m_slots.size())};
+    u32 expired = 0;
+    params.expired = &expired;
+    params.dt = ppk::resolve_dt(ctx.dt);
+    // Pools are small (tens of slots): the serial reference backend beats a job dispatch.
+    if (!kernel::launch(kernel::Backend::CpuReference, ppk::slot_launch(params.slots.size), ppk::SlotKernel{}, params)
+             .ok) {
+        return;
     }
+    m_activeCount = expired < m_activeCount ? m_activeCount - expired : 0u;
 }
 
 void ParticlePool::clear() {

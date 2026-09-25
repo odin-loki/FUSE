@@ -1,0 +1,17 @@
+#version 460
+// WP-8.2 "atmos.skyview": sky-view LUT at the camera radius, one texel per invocation (8 x 8 tiles). Reads
+// the transmittance and multi-scattering LUTs. CPU reference: atmosphere::sky_view_texel. GLSL twin of
+// at_skyview.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "at_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+    const AtParams P = at_load(pc.params);
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= P.skyWidth || p.y >= P.skyHeight) {
+        return;
+    }
+    AtTexelsRef(P.skyView).v[p.y * P.skyWidth + p.x] = at_sky_view_texel(P, p.x, p.y);
+}

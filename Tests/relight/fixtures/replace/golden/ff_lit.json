@@ -1,0 +1,7 @@
+{
+  "app": "ff_lit",
+  "description": "Remix mod lit_lights: a game light replaced, one deleted, one kept; lights attached to the preserved mesh follow its 5 instances.",
+  "mods": [
+    {"fixture": "lit_lights", "root": "remix"}
+  ]
+}

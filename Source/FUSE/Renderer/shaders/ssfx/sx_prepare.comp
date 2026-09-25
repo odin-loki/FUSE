@@ -1,0 +1,75 @@
+#version 460
+// WP-6.3 "ssfx.prepare": the WP-1.5 G-buffer + the WP-2.1 lit image -> the prepared work-buffer sections the
+// screen-space kernels read (one pixel per thread, 8 x 8 tiles). RT4 device depth -> linear view depth
+// (0 = sky), RT0 signed-octahedral world normal -> view normal (ssfx convention: +Y down, +Z forward),
+// RT0.w material AO, RT1 albedo, RT2 roughness / metallic, lit radiance. CPU reference:
+// ssfx_gpu::prepare_pixel (ssfx_gpu_reference.hpp). GLSL twin of sx_prepare.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "sx_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// Arithmetic lives in helpers with `precise` locals and plain arguments: glslang's precise propagation
+// fails (unbounded allocation) when a precise expression in the same function depends on a bindless fetch.
+float sx_linear_depth(float d, float nearPlane, float farPlane, bool reversedZ) {
+    float z = 0.0;
+    if (reversedZ) {
+        if (d > 0.0) {
+            precise float q = nearPlane / d;
+            z = q;
+        }
+    } else if (d < 1.0 && farPlane > nearPlane) {
+        precise float num = nearPlane * farPlane;
+        precise float den = farPlane - d * (farPlane - nearPlane);
+        precise float q = num / den;
+        z = q;
+    }
+    return (z > 0.0 && z < 3.0e38) ? z : 0.0;
+}
+
+float sx_one_minus(float v) {
+    precise float r = 1.0 - v;
+    return r;
+}
+
+vec3 sx_oct_decode(float ox, float oy) {
+    precise float nz = 1.0 - abs(ox) - abs(oy);
+    float nx = ox;
+    float ny = oy;
+    if (nz < 0.0) {
+        precise float fx = (1.0 - abs(oy)) * (ox >= 0.0 ? 1.0 : -1.0);
+        precise float fy = (1.0 - abs(ox)) * (oy >= 0.0 ? 1.0 : -1.0);
+        nx = fx;
+        ny = fy;
+    }
+    return sx_normalize(vec3(nx, ny, nz));
+}
+
+void main() {
+    sx_begin();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    const ivec2 ip = ivec2(p);
+    const float rt4 = sx_fetch(F.inputDepth, ip).x;
+    const vec4 rt0 = sx_fetch(F.inputNormal, ip);
+    const vec4 rt1 = sx_fetch(F.inputAlbedo, ip);
+    const vec4 rt2 = sx_fetch(F.inputRoughMetal, ip);
+    const vec4 lit = sx_fetch(F.inputLit, ip);
+    const uint i = sx_index(p.x, p.y);
+
+    const float z = sx_linear_depth(rt4, F.nearPlane, F.farPlane, (F.flags & SX_FLAG_REVERSED_Z) != 0u);
+    const vec3 w = sx_oct_decode(rt0.x, rt0.y);
+    // viewRot[r] * w.x + viewRot[4 + r] * w.y + viewRot[8 + r] * w.z (sx_dot's order).
+    const float vx = sx_dot(vec3(F.viewRot[0], F.viewRot[4], F.viewRot[8]), w);
+    const float vy = sx_dot(vec3(F.viewRot[1], F.viewRot[5], F.viewRot[9]), w);
+    const float vz = sx_dot(vec3(F.viewRot[2], F.viewRot[6], F.viewRot[10]), w);
+    const vec3 diffuse = sx_scale(rt1.xyz, sx_one_minus(rt2.y));
+
+    SxTexelsRef(F.prepared).v[i] = vec4(z, rt2.x, rt2.y, rt0.w);
+    SxTexelsRef(F.normals).v[i] = vec4(vx, -vy, -vz, 0.0);
+    SxTexelsRef(F.radiance).v[i] = lit;
+    SxTexelsRef(F.albedo).v[i] = vec4(rt1.xyz, 0.0);
+    SxTexelsRef(F.diffuse).v[i] = vec4(diffuse, 0.0);
+}

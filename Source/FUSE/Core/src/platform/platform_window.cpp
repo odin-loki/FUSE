@@ -1,3 +1,4 @@
+#include <fuse/platform/dpi.hpp>
 #include <fuse/platform/event_pump.hpp>
 #include <fuse/platform/window.hpp>
 #include <fuse/platform/window_wsi.hpp>
@@ -7,6 +8,10 @@
 #if defined(FUSE_PLATFORM_WINDOW_GLFW)
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#endif
+
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+#include "x11_window.hpp"
 #endif
 
 #if defined(_WIN32)
@@ -63,6 +68,37 @@ void unregisterPumpWindow(Window* window) {
     }
 }
 
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+// X11 raw mouse: XI_RawMotion is selected on the root window exactly while some registered
+// (native-handle) window holds InputCaptureMode::Captured — the Win32 path registers WM_INPUT
+// the same way. Derived from the pump registry, so destruction / moves / handle swaps stay
+// balanced. Without XInput2 this is a no-op and the MotionNotify cursor path remains.
+bool anyX11WindowCaptured() {
+    for (u32 i = 0; i < g_pumpWindowCount; ++i) {
+        if (g_pumpWindows[i] != nullptr && g_pumpWindows[i]->isInputCaptured()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Raw motion is global to the X server; like Win32 WM_INPUT (no RIDEV_INPUTSINK) it is only
+// delivered to a captured window that currently has focus.
+Window* x11RawMotionTarget() {
+    for (u32 i = 0; i < g_pumpWindowCount; ++i) {
+        Window* window = g_pumpWindows[i];
+        if (window != nullptr && window->isInputCaptured() && window->isFocused()) {
+            return window;
+        }
+    }
+    return nullptr;
+}
+
+void syncX11RawMotion() {
+    x11::setRawMotionEnabled(anyX11WindowCaptured());
+}
+#endif
+
 const char* sanitizeTitle(const char* title) {
     return (title != nullptr && title[0] != '\0') ? title : "FUSE";
 }
@@ -71,11 +107,28 @@ bool isWindowScopedEventType(PlatformEventType type) {
     return type == PlatformEventType::WindowCloseRequested ||
            type == PlatformEventType::WindowResized ||
            type == PlatformEventType::WindowFocusGained ||
-           type == PlatformEventType::WindowFocusLost;
+           type == PlatformEventType::WindowFocusLost ||
+           type == PlatformEventType::InputCaptureChanged;
 }
 
 #if defined(_WIN32)
 constexpr wchar_t kOwnedWindowClassName[] = L"FUSE_PlatformWindow";
+#ifndef WM_DPICHANGED
+#define WM_DPICHANGED 0x02E0
+#endif
+
+// Per-monitor-v2 DPI awareness (dpi.hpp) makes Windows send WM_DPICHANGED instead of stretching
+// the window when it moves to a monitor with a different scale; apply the suggested rectangle so
+// the window keeps its physical size. The resulting WM_SIZE reaches the pump as WindowResized.
+LRESULT CALLBACK ownedWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    if (message == WM_DPICHANGED && lParam != 0) {
+        const RECT* suggested = reinterpret_cast<const RECT*>(lParam);
+        SetWindowPos(hwnd, nullptr, suggested->left, suggested->top, suggested->right - suggested->left,
+                     suggested->bottom - suggested->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        return 0;
+    }
+    return DefWindowProcW(hwnd, message, wParam, lParam);
+}
 
 bool registerOwnedWindowClassOnce() {
     static bool ready = false;
@@ -83,9 +136,12 @@ bool registerOwnedWindowClassOnce() {
         return true;
     }
 
+    // DPI awareness is process-wide and must be fixed before the first window exists.
+    enableHighDpiAwareness();
+
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
-    wc.lpfnWndProc = DefWindowProcW;
+    wc.lpfnWndProc = ownedWindowProc;
     wc.hInstance = GetModuleHandleW(nullptr);
     wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
     wc.lpszClassName = kOwnedWindowClassName;
@@ -121,6 +177,8 @@ void destroyNativeWindow(void*& nativeWindow) {
 
 #if defined(FUSE_PLATFORM_WINDOW_GLFW)
     glfwDestroyWindow(static_cast<GLFWwindow*>(nativeWindow));
+#elif defined(FUSE_PLATFORM_WINDOW_X11)
+    x11::destroyWindow(nativeWindow);
 #elif defined(_WIN32)
     DestroyWindow(reinterpret_cast<HWND>(nativeWindow));
 #endif
@@ -146,6 +204,9 @@ void createNativeWindowIfAvailable(u32 width, u32 height, const char* title, boo
     }
 
     nativeWindow = window;
+#elif defined(FUSE_PLATFORM_WINDOW_X11)
+    // No display (headless CI) -> stays null and the Window keeps the headless path.
+    nativeWindow = x11::createWindow(width, height, title);
 #elif defined(_WIN32)
     nativeWindow = createHiddenOverlappedWindow(width, height, title);
 #else
@@ -464,6 +525,11 @@ Window::~Window() {
 #if defined(_WIN32) && !defined(FUSE_PLATFORM_WINDOW_GLFW)
     releaseOwnedHwndInputCapture(m_nativeWindow, m_ownsNativeWindow, m_inputCapture);
 #endif
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+    if (m_inputCapture == InputCaptureMode::Captured) {
+        syncX11RawMotion();
+    }
+#endif
     releaseOwnedNativeWindow(m_nativeWindow, m_ownsNativeWindow);
     m_pumpAsHwnd = false;
     m_valid = false;
@@ -479,6 +545,7 @@ Window::Window(Window&& other) noexcept
       m_createNative(other.m_createNative),
       m_focused(other.m_focused),
       m_inputCapture(other.m_inputCapture),
+      m_captureChangeUnreported(other.m_captureChangeUnreported),
       m_closeRequest(other.m_closeRequest),
       m_title(std::move(other.m_title)),
       m_nativeWindow(other.m_nativeWindow),
@@ -487,6 +554,7 @@ Window::Window(Window&& other) noexcept
     unregisterPumpWindow(&other);
     other.m_valid = false;
     other.m_inputCapture = InputCaptureMode::Released;
+    other.m_captureChangeUnreported = false;
     other.m_closeRequest = WindowCloseRequest::None;
     other.m_nativeWindow = nullptr;
     other.m_ownsNativeWindow = false;
@@ -511,6 +579,7 @@ Window& Window::operator=(Window&& other) noexcept {
         m_createNative = other.m_createNative;
         m_focused = other.m_focused;
         m_inputCapture = other.m_inputCapture;
+        m_captureChangeUnreported = other.m_captureChangeUnreported;
         m_closeRequest = other.m_closeRequest;
         m_title = std::move(other.m_title);
         m_nativeWindow = other.m_nativeWindow;
@@ -520,11 +589,15 @@ Window& Window::operator=(Window&& other) noexcept {
         unregisterPumpWindow(&other);
         other.m_valid = false;
         other.m_inputCapture = InputCaptureMode::Released;
+        other.m_captureChangeUnreported = false;
         other.m_closeRequest = WindowCloseRequest::None;
         other.m_nativeWindow = nullptr;
         other.m_ownsNativeWindow = false;
         other.m_pumpAsHwnd = false;
         registerPumpWindow(this);
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+        syncX11RawMotion();
+#endif
     }
     return *this;
 }
@@ -555,10 +628,19 @@ void Window::setNativeHandleForPump(void* hwnd) {
     releaseOwnedNativeWindow(m_nativeWindow, m_ownsNativeWindow);
     m_nativeWindow = hwnd;
     m_pumpAsHwnd = hwnd != nullptr;
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+    // X11: `hwnd` is a foreign Window XID; subscribe to its events on the shared display.
+    if (hwnd != nullptr) {
+        x11::selectInput(hwnd);
+    }
+#endif
     registerPumpWindow(this);
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+    syncX11RawMotion();
+#endif
 }
 
-void Window::setInputCapture(InputCaptureMode mode) {
+void Window::setInputCapture(InputCaptureMode mode, EventPump* pump) {
     if (m_inputCapture == mode) {
         return;
     }
@@ -571,6 +653,15 @@ void Window::setInputCapture(InputCaptureMode mode) {
 #endif
 
     m_inputCapture = mode;
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+    syncX11RawMotion();
+#endif
+    if (pump != nullptr) {
+        m_captureChangeUnreported = false;
+        pump->pushInputCaptureChanged(*this);
+    } else {
+        m_captureChangeUnreported = !m_captureChangeUnreported;
+    }
 }
 
 void* Window::nativeVulkanSurface() const {
@@ -586,6 +677,11 @@ VulkanSurfaceWire Window::vulkanSurfaceWire() const {
 
 void Window::setTitle(const char* title) {
     m_title = sanitizeTitle(title);
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+    if (m_nativeWindow != nullptr) {
+        x11::setTitle(m_nativeWindow, m_title.c_str());
+    }
+#endif
 }
 
 void Window::resize(u32 width, u32 height, EventPump* pump) {
@@ -598,6 +694,15 @@ void Window::resize(u32 width, u32 height, EventPump* pump) {
     if (height > 0) {
         m_height = height;
     }
+
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+    // App-requested resize of an owned X11 window: resize the real window too. The echoed
+    // ConfigureNotify matches the stored extent, so it does not enqueue a second event.
+    if (m_ownsNativeWindow && m_nativeWindow != nullptr &&
+        (m_width != previousWidth || m_height != previousHeight)) {
+        x11::resizeWindow(m_nativeWindow, m_width, m_height);
+    }
+#endif
 
     if (pump != nullptr && (m_width != previousWidth || m_height != previousHeight)) {
         pump->pushWindowResized(*this);
@@ -952,13 +1057,114 @@ u32 EventPump::coalescedResizeCount() const {
 }
 
 void EventPump::processOsEvents() {
+    // Capture changes made without a pump: report them before this batch's OS input so the
+    // InputState delta source switches at the right point in the stream.
+    for (u32 i = 0; i < g_pumpWindowCount; ++i) {
+        Window* window = g_pumpWindows[i];
+        if (window != nullptr && window->m_captureChangeUnreported) {
+            window->m_captureChangeUnreported = false;
+            pushInputCaptureChanged(*window);
+        }
+    }
+
 #if defined(FUSE_PLATFORM_WINDOW_GLFW)
     if (windowWsiAvailable()) {
         glfwPollEvents();
     }
 #endif
 
-#if defined(_WIN32)
+#if defined(FUSE_PLATFORM_WINDOW_X11)
+    syncX11RawMotion();
+    if (g_pumpWindowCount == 0u) {
+        return;
+    }
+
+    x11::Event xe;
+    while (x11::pollEvent(xe)) {
+        if (xe.kind == x11::EventKind::RawMouseDelta) {
+            // Root-window XI_RawMotion: device counts before pointer acceleration. Routed to
+            // the captured window; raw motion is only selected while one exists.
+            Window* target = x11RawMotionTarget();
+            if (target != nullptr) {
+                PlatformEvent event{};
+                event.type = PlatformEventType::RawMouseDelta;
+                event.window = target;
+                event.mouseX = xe.x;
+                event.mouseY = xe.y;
+                pushSyntheticEvent(event);
+            }
+            continue;
+        }
+        Window* window = nullptr;
+        for (u32 i = 0; i < g_pumpWindowCount; ++i) {
+            if (g_pumpWindows[i] != nullptr && g_pumpWindows[i]->m_nativeWindow == xe.window) {
+                window = g_pumpWindows[i];
+                break;
+            }
+        }
+        if (window == nullptr) {
+            continue;
+        }
+
+        const bool dropKeyMouse = requireCaptureForInput() && !window->isInputCaptured();
+        PlatformEvent event{};
+        event.window = window;
+        switch (xe.kind) {
+        case x11::EventKind::Close:
+            window->requestClose(this);
+            break;
+        case x11::EventKind::Resize:
+            // OS-driven geometry change: update the stored extent without echoing an
+            // XResizeWindow back to the server.
+            if (xe.width != window->m_width || xe.height != window->m_height) {
+                window->m_width = xe.width;
+                window->m_height = xe.height;
+                pushWindowResized(*window);
+            }
+            break;
+        case x11::EventKind::FocusGained:
+            window->setFocused(true, this);
+            break;
+        case x11::EventKind::FocusLost:
+            window->setFocused(false, this);
+            break;
+        case x11::EventKind::KeyDown:
+        case x11::EventKind::KeyUp:
+            if (!dropKeyMouse) {
+                event.type = xe.kind == x11::EventKind::KeyDown ? PlatformEventType::KeyDown
+                                                                : PlatformEventType::KeyUp;
+                event.keyCode = xe.keyCode;
+                pushSyntheticEvent(event);
+            }
+            break;
+        case x11::EventKind::MouseMove:
+        case x11::EventKind::MouseWheel:
+            // Wheel mirrors the Win32 WM_MOUSEWHEEL mapping (MouseMove, Y = wheel delta).
+            if (!dropKeyMouse) {
+                event.type = PlatformEventType::MouseMove;
+                event.mouseX = xe.x;
+                event.mouseY = xe.y;
+                pushSyntheticEvent(event);
+            }
+            break;
+        case x11::EventKind::MouseButtonDown:
+        case x11::EventKind::MouseButtonUp:
+            if (!dropKeyMouse) {
+                event.type = xe.kind == x11::EventKind::MouseButtonDown
+                                 ? PlatformEventType::MouseButtonDown
+                                 : PlatformEventType::MouseButtonUp;
+                event.mouseX = xe.x;
+                event.mouseY = xe.y;
+                event.mouseButton = xe.button;
+                pushSyntheticEvent(event);
+            }
+            break;
+        case x11::EventKind::RawMouseDelta:
+        case x11::EventKind::Ignored:
+            break;
+        }
+    }
+#elif defined(_WIN32)
     if (g_pumpWindowCount == 0u) {
         return;
     }
@@ -1117,6 +1323,14 @@ void EventPump::pushWindowFocusGained(Window& window) {
     event.mouseX = 0;
     event.mouseY = 0;
     event.mouseButton = 0;
+    pushSyntheticEvent(event);
+}
+
+void EventPump::pushInputCaptureChanged(Window& window) {
+    PlatformEvent event{};
+    event.type = PlatformEventType::InputCaptureChanged;
+    event.window = &window;
+    event.inputCaptured = window.isInputCaptured();
     pushSyntheticEvent(event);
 }
 

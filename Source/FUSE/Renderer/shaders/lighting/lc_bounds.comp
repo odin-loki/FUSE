@@ -1,0 +1,79 @@
+#version 460
+// WP-2.1 "light.bounds": thread i builds cluster i's view-space AABB (i < clusterCount) and light slot
+// i's view-space sphere + candidate slice window (i < lightCount). The AABB uses the host edge tables
+// (LightingFrameConstants::sliceDepth / ndcX / ndcY, computed with the oracle's own expressions) and
+// the oracle's corner loop, so it is clustered_kernel::build_cluster_aabb bit for bit; the sphere is
+// clustered_kernel::BoundsKernel's (range sphere for point and spot lights; free slots, directional
+// lights and lights without a range occupy no cluster: sliceLo > sliceHi). GLSL twin of lc_bounds.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "lc_includes.glsl"
+
+layout(local_size_x = 64) in;
+
+void main() {
+    const FuseLcFrame F = fuse_lc_frame();
+    const uint i = gl_GlobalInvocationID.x;
+    if (i < F.clusterCount) {
+        const uint slice = i % F.slicesZ;
+        const uint tile = i / F.slicesZ;
+        const uint tx = tile % F.tilesX;
+        const uint ty = tile / F.tilesX;
+        const float depths[2] = float[2](F.sliceDepth[slice], F.sliceDepth[slice + 1u]);
+        const float nx[2] = float[2](F.ndcX[tx], F.ndcX[tx + 1u]);
+        const float ny[2] = float[2](F.ndcY[ty + 1u], F.ndcY[ty]);
+        vec3 mn = vec3(0.0);
+        vec3 mx = vec3(0.0);
+        bool first = true;
+        for (uint d = 0u; d < 2u; ++d) {
+            for (uint ix = 0u; ix < 2u; ++ix) {
+                for (uint iy = 0u; iy < 2u; ++iy) {
+                    const float depth = depths[d];
+                    precise float cx = nx[ix] * F.tanX * depth;
+                    precise float cy = ny[iy] * F.tanY * depth;
+                    const vec3 corner = vec3(cx, cy, -depth);
+                    if (first) {
+                        mn = corner;
+                        mx = corner;
+                        first = false;
+                        continue;
+                    }
+                    mn = min(mn, corner);
+                    mx = max(mx, corner);
+                }
+            }
+        }
+        FuseLcAabb a;
+        a.minP = float[3](mn.x, mn.y, mn.z);
+        a.pad0 = 0.0;
+        a.maxP = float[3](mx.x, mx.y, mx.z);
+        a.pad1 = 0.0;
+        FuseLcAabbsRef(F.aabbs).v[i] = a;
+    }
+    if (i < F.lightCount) {
+        const FuseGpuLight light = fuse_gpu_scene_lights(fuse_gpu_scene(F.scene)).v[i];
+        FuseLcBounds b;
+        b.center = float[3](0.0, 0.0, 0.0);
+        b.radius = 0.0;
+        b.sliceLo = 1u;
+        b.sliceHi = 0u;
+        b.type = light.type;
+        b.pad = 0u;
+        const vec3 p = fuse_lc_vec3(light.position);
+        const float radius = light.range;
+        const bool clustered = light.type == FUSE_LIGHT_POINT || light.type == FUSE_LIGHT_SPOT ||
+                               light.type == FUSE_LIGHT_RECT || light.type == FUSE_LIGHT_DISK; // WP-2.2 area lights: range sphere
+        if (clustered && radius > 0.0 && !isinf(radius) && !any(isinf(p)) && !any(isnan(p))) {
+            const vec3 c = fuse_lc_world_to_view(p, F);
+            b.center = float[3](c.x, c.y, c.z);
+            b.radius = radius;
+            precise float depth = -c.z;
+            precise float lo = depth - radius;
+            precise float hi = depth + radius;
+            const uint sLo = fuse_lc_slice_from_depth(clamp(lo, F.nearPlane, F.farPlane), F.slicesZ, F.nearPlane, F.farPlane);
+            const uint sHi = fuse_lc_slice_from_depth(clamp(hi, F.nearPlane, F.farPlane), F.slicesZ, F.nearPlane, F.farPlane);
+            b.sliceLo = sLo > FUSE_LC_SLICE_PAD ? sLo - FUSE_LC_SLICE_PAD : 0u;
+            b.sliceHi = min(sHi + FUSE_LC_SLICE_PAD, F.slicesZ - 1u);
+        }
+        FuseLcBoundsRef(F.bounds).v[i] = b;
+    }
+}

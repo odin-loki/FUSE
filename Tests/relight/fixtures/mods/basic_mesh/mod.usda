@@ -1,0 +1,71 @@
+#usda 1.0
+(
+    customLayerData = {
+        string lightspeed_layer_type = "replacement"
+    }
+    defaultPrim = "RootNode"
+    metersPerUnit = 0.01
+    upAxis = "Z"
+)
+
+# RL-3.1 fixture: one mesh, one material and one light replacement in a single layer.
+over "RootNode"
+{
+    over "meshes"
+    {
+        over "mesh_0123456789ABCDEF" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </RootNode/Looks/mat_00000000CAFEF00D>
+
+            def Mesh "mesh"
+            {
+                int[] faceVertexCounts = [3]
+                int[] faceVertexIndices = [0, 1, 2]
+                normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+                    interpolation = "vertex"
+                )
+                point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (0, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+                double3 xformOp:translate = (0, 0, 2.5)
+                uniform token[] xformOpOrder = ["xformOp:translate"]
+            }
+        }
+    }
+
+    over "Looks"
+    {
+        def Material "mat_00000000CAFEF00D"
+        {
+            token outputs:mdl:surface.connect = </RootNode/Looks/mat_00000000CAFEF00D/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @AperturePBR_Opacity.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "AperturePBR_Opacity"
+                float inputs:reflection_roughness_constant = 0.25
+                color3f inputs:diffuse_color_constant = (0.8, 0.2, 0.1)
+                asset inputs:diffuse_texture = @./textures/albedo.dds@
+                token outputs:out
+            }
+        }
+    }
+
+    over "lights"
+    {
+        def SphereLight "light_FEDCBA9876543210" (
+            prepend apiSchemas = ["ShapingAPI"]
+        )
+        {
+            color3f inputs:color = (1, 0.9, 0.8)
+            float inputs:intensity = 5000
+            float inputs:radius = 2
+            float inputs:shaping:cone:angle = 45
+        }
+    }
+}

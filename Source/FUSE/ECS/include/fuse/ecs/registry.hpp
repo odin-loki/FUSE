@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <span>
 #include <typeindex>
 #include <type_traits>
 #include <unordered_map>
@@ -22,9 +23,30 @@ public:
     void destroy();
 
     EntityID create();
+    /// Revives a destroyed entity with exactly `id` (same index and generation), e.g. for editor
+    /// undo of a delete so older history that refers to `id` stays valid. Succeeds only when the
+    /// slot is free (on the free list or reserved) and its last generation is `id.generation`
+    /// (the slot was not reused since `id` died); returns `EntityID::null()` otherwise.
+    EntityID create_at(EntityID id);
+    /// True when `create_at(id)` would succeed.
+    [[nodiscard]] bool can_create_at(EntityID id) const;
+    /// Destroys `id` but keeps its slot off the free list, so `create()` cannot reuse the index
+    /// and only `create_at(id)` can bring it back. Pair with `release_reserved` when the revival
+    /// can no longer happen (e.g. the undo step that owns it is dropped).
+    void destroy_entity_reserved(EntityID id);
+    /// Returns a reserved slot (destroyed via `destroy_entity_reserved`) to the free list.
+    /// No-op when `id` is not a reserved slot of this registry.
+    void release_reserved(EntityID id);
+    [[nodiscard]] bool is_reserved(EntityID id) const;
     void destroy_entity(EntityID id);
     [[nodiscard]] bool alive(EntityID id) const;
     [[nodiscard]] usize count() const;
+
+    /// Runtime component list of a live entity (sorted by type_index; empty when dead). Lets
+    /// type-erased tools (editor inspector, serialisers) enumerate what an entity carries.
+    [[nodiscard]] std::vector<std::type_index> component_types(EntityID id) const;
+    /// Type-erased read access to one component of a live entity; null when absent or dead.
+    [[nodiscard]] const void* get_raw(EntityID id, std::type_index type) const;
 
     template <typename T>
     T& add(EntityID id, T value = {});
@@ -61,6 +83,20 @@ public:
     template <typename... WithTs, typename... WithoutTs, typename Fn>
     void each_query(Fn&& fn, Without<WithoutTs...> exclude);
 
+    /// Chunk (span) iteration — the idiomatic single-threaded fast path. Calls
+    /// `fn(std::span<const EntityID> ids, std::span<Ts>... columns)` once per matching non-empty
+    /// archetype chunk; every span has the same length and `columns[i]` belongs to `ids[i]`.
+    /// Columns are contiguous SoA storage, so a plain indexed loop over the spans has no per-entity
+    /// indirection and auto-vectorises when its body allows. Chunks hold at most `maxChunkRows`
+    /// rows (0 = whole archetype). The callback must not add/remove components or create/destroy
+    /// entities (same rule as `each`).
+    template <typename... Ts, typename Fn>
+    void each_chunk(Fn&& fn, usize maxChunkRows = 0);
+
+    /// Chunk iteration with With/Without component filters.
+    template <typename... WithTs, typename... WithoutTs, typename Fn>
+    void each_chunk(Fn&& fn, Without<WithoutTs...> exclude, usize maxChunkRows = 0);
+
     /// Parallel iteration over matching archetypes via JobScheduler::parallel_for.
     template <typename... Ts, typename Fn>
     void each_parallel(Fn&& fn, u32 batchSize = 256);
@@ -80,11 +116,14 @@ public:
     [[nodiscard]] usize archetype_count() const { return m_archetypes.size(); }
 
 private:
+    friend class RegistrySerialiser;
+
     struct EntityRecord {
         u32 archetype_index = 0;
         u32 row = 0;
         u32 generation = 0;
         bool alive = false;
+        bool reserved = false; ///< dead, off the free list, revivable only via create_at
     };
 
     friend struct Archetype;
@@ -93,6 +132,7 @@ private:
 
     [[nodiscard]] EntityRecord* record(EntityID id);
     [[nodiscard]] const EntityRecord* record(EntityID id) const;
+    void destroy_entity_(EntityID id, bool reserve);
 
     u32 find_or_create_archetype(const std::vector<std::type_index>& sorted_types);
     void migrate_entity(EntityID id, const std::vector<std::type_index>& target_types,
@@ -105,8 +145,23 @@ private:
         static_assert(std::is_trivially_destructible<T>::value, "components must be trivially destructible");
     }
 
+    /// Typed base pointer of T's column in a matching archetype (columns are SoA byte storage).
+    template <typename T>
+    static T* column_base_(Archetype& archetype) {
+        ComponentColumn* column = archetype.find_column(std::type_index(typeid(T)));
+        return column != nullptr ? reinterpret_cast<T*>(column->storage.data()) : nullptr;
+    }
+
+    /// Visits every matching non-empty archetype with its ids pointer, row count and typed column
+    /// base pointers (resolved once per archetype, never per row).
+    template <typename... WithTs, typename Fn>
+    void for_each_matching_archetype_(const QueryFilter& filter, Fn&& fn);
+
     template <typename... WithTs, typename Fn>
     void each_query_impl_(const QueryFilter& filter, Fn&& fn);
+
+    template <typename... WithTs, typename Fn>
+    void each_chunk_impl_(const QueryFilter& filter, Fn&& fn, usize maxChunkRows);
 
     template <typename... WithTs, typename Fn>
     void each_query_parallel_impl_(const QueryFilter& filter, Fn&& fn, u32 batchSize);
@@ -270,28 +325,63 @@ void Registry::each(Fn&& fn, Without<WithoutTs...> exclude) {
 template <typename... WithTs, typename Fn>
 void Registry::each_query(Fn&& fn) {
     (assertComponent<WithTs>(), ...);
-    each_query_impl_<WithTs...>(make_query_filter(With<WithTs...>{}), std::forward<Fn>(fn));
+    each_query_impl_<WithTs...>(cached_query_filter(With<WithTs...>{}), std::forward<Fn>(fn));
 }
 
 template <typename... WithTs, typename... WithoutTs, typename Fn>
 void Registry::each_query(Fn&& fn, Without<WithoutTs...> /*exclude*/) {
     (assertComponent<WithTs>(), ...);
     (assertComponent<WithoutTs>(), ...);
-    each_query_impl_<WithTs...>(make_query_filter(With<WithTs...>{}, Without<WithoutTs...>{}), std::forward<Fn>(fn));
+    each_query_impl_<WithTs...>(cached_query_filter(With<WithTs...>{}, Without<WithoutTs...>{}), std::forward<Fn>(fn));
+}
+
+template <typename... WithTs, typename Fn>
+void Registry::for_each_matching_archetype_(const QueryFilter& filter, Fn&& fn) {
+    for (Archetype& archetype : m_archetypes) {
+        const usize rowCount = archetype.count();
+        if (rowCount == 0 || !archetype_matches(archetype, filter)) {
+            continue;
+        }
+        fn(static_cast<const EntityID*>(archetype.entities.data()), rowCount, column_base_<WithTs>(archetype)...);
+    }
 }
 
 template <typename... WithTs, typename Fn>
 void Registry::each_query_impl_(const QueryFilter& filter, Fn&& fn) {
-    for (Archetype& archetype : m_archetypes) {
-        if (!archetype_matches(archetype, filter)) {
-            continue;
+    // Columns are resolved once per archetype; the row loop only indexes typed pointers, and `fn`
+    // is a template parameter (no std::function / virtual dispatch), so it inlines into the loop.
+    for_each_matching_archetype_<WithTs...>(filter, [&](const EntityID* ids, usize rowCount, auto*... columns) {
+        for (usize row = 0; row < rowCount; ++row) {
+            fn(ids[row], columns[row]...);
         }
+    });
+}
 
-        for (usize row = 0; row < archetype.count(); ++row) {
-            EntityID id = archetype.entities[row];
-            fn(id, *static_cast<WithTs*>(archetype.find_column(std::type_index(typeid(WithTs)))->at(row))...);
+template <typename... Ts, typename Fn>
+void Registry::each_chunk(Fn&& fn, usize maxChunkRows) {
+    (assertComponent<Ts>(), ...);
+    each_chunk_impl_<Ts...>(cached_query_filter(With<Ts...>{}), std::forward<Fn>(fn), maxChunkRows);
+}
+
+template <typename... WithTs, typename... WithoutTs, typename Fn>
+void Registry::each_chunk(Fn&& fn, Without<WithoutTs...> /*exclude*/, usize maxChunkRows) {
+    (assertComponent<WithTs>(), ...);
+    (assertComponent<WithoutTs>(), ...);
+    each_chunk_impl_<WithTs...>(cached_query_filter(With<WithTs...>{}, Without<WithoutTs...>{}),
+                                std::forward<Fn>(fn),
+                                maxChunkRows);
+}
+
+template <typename... WithTs, typename Fn>
+void Registry::each_chunk_impl_(const QueryFilter& filter, Fn&& fn, usize maxChunkRows) {
+    for_each_matching_archetype_<WithTs...>(filter, [&](const EntityID* ids, usize rowCount, auto*... columns) {
+        const usize step = maxChunkRows == 0 ? rowCount : maxChunkRows;
+        for (usize begin = 0; begin < rowCount; begin += step) {
+            const usize n = std::min(step, rowCount - begin);
+            fn(std::span<const EntityID>(ids + begin, n),
+               std::span<std::remove_pointer_t<decltype(columns)>>(columns + begin, n)...);
         }
-    }
+    });
 }
 
 template <typename... Ts, typename Fn>
@@ -307,14 +397,14 @@ void Registry::each_parallel(Fn&& fn, Without<WithoutTs...> exclude, u32 batchSi
 template <typename... WithTs, typename Fn>
 void Registry::each_query_parallel(Fn&& fn, u32 batchSize) {
     (assertComponent<WithTs>(), ...);
-    each_query_parallel_impl_<WithTs...>(make_query_filter(With<WithTs...>{}), std::forward<Fn>(fn), batchSize);
+    each_query_parallel_impl_<WithTs...>(cached_query_filter(With<WithTs...>{}), std::forward<Fn>(fn), batchSize);
 }
 
 template <typename... WithTs, typename... WithoutTs, typename Fn>
 void Registry::each_query_parallel(Fn&& fn, Without<WithoutTs...> /*exclude*/, u32 batchSize) {
     (assertComponent<WithTs>(), ...);
     (assertComponent<WithoutTs>(), ...);
-    each_query_parallel_impl_<WithTs...>(make_query_filter(With<WithTs...>{}, Without<WithoutTs...>{}),
+    each_query_parallel_impl_<WithTs...>(cached_query_filter(With<WithTs...>{}, Without<WithoutTs...>{}),
                                          std::forward<Fn>(fn),
                                          batchSize);
 }
@@ -323,21 +413,9 @@ template <typename... WithTs, typename Fn>
 void Registry::each_query_parallel_impl_(const QueryFilter& filter, Fn&& fn, u32 batchSize) {
     batchSize = detail::normalize_batch_size(batchSize);
 
-    for (Archetype& archetype : m_archetypes) {
-        if (!archetype_matches(archetype, filter)) {
-            continue;
-        }
-
-        const usize rowCount = archetype.count();
-        if (rowCount == 0) {
-            continue;
-        }
-
-        jobs::parallel_for(0, static_cast<u32>(rowCount), batchSize, [&](u32 row) {
-            EntityID id = archetype.entities[row];
-            fn(id, *static_cast<WithTs*>(archetype.find_column(std::type_index(typeid(WithTs)))->at(row))...);
-        });
-    }
+    for_each_matching_archetype_<WithTs...>(filter, [&](const EntityID* ids, usize rowCount, auto*... columns) {
+        jobs::parallel_for(0, static_cast<u32>(rowCount), batchSize, [&](u32 row) { fn(ids[row], columns[row]...); });
+    });
 }
 
 } // namespace fuse::ecs

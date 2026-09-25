@@ -1,0 +1,127 @@
+#version 460
+// FUSE Relight RL-5.2 "relight.restir_di.*": GLSL twin of restir_di.slang (see there; the stages are
+// restir_di_core.h, the CPU oracle RestirDiCpu).
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(push_constant) uniform RdiPush {
+    uint64_t params;
+    uint64_t instances;
+    uint64_t triangles;
+    uint64_t materials;
+    uint64_t portals;
+    uint64_t lightMap;
+    uint64_t lightTable;
+    uint64_t lightTree;
+    uint64_t tlas;
+    uint64_t lut;
+    uint64_t restirDi;
+    uint64_t block;
+    uint64_t src;
+    uint64_t dst;
+    uint width;
+    uint height;
+    uint lightCount;
+    uint stage;
+} pc;
+
+#include "rl_pt.glsl"
+
+layout(buffer_reference, std430, buffer_reference_align = 8) readonly buffer RdiU64Ref { uint64_t v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 16) buffer RdiWordsRef { vec4 v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer RdiUintRef { uint v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer RdiFloatRef { float v[]; };
+
+uint64_t rdiBlock(uint k) { return RdiU64Ref(pc.block).v[k]; }
+
+vec4 rdiSurfaceWord(uint slot, uint pixel, uint k) {
+    return RdiWordsRef(rdiBlock(slot == 0u ? 0u : 1u)).v[pixel * 4u + k];
+}
+vec4 rdiReservoirWord(uint which, uint pixel, uint k) {
+    uint64_t a = which == 0u ? pc.src : rdiBlock(2u);
+    return RdiWordsRef(a).v[pixel * 2u + k];
+}
+uint rdiTileLight(uint entry) { return RdiUintRef(rdiBlock(3u)).v[entry]; }
+float rdiTilePmf(uint light) { return RdiFloatRef(rdiBlock(4u)).v[light]; }
+float rdiCdf(uint light) { return RdiFloatRef(rdiBlock(5u)).v[light]; }
+float rdiTreePmf(vec3 p, vec3 n, uint light) { return lt_pmf(pc.lightTree, p, n, light); }
+
+#define RDI_CTX_PARAM
+#define RDI_CTX_ARG
+#define RDI_PT
+#define RDI_LUT
+#define RDI_PARAM_WORDS(name) vec4 name[4]
+
+#include "restir_di_core.h"
+
+void rdiStoreReservoir(uint pixel, RdiReservoir r) {
+    RdiWordsRef(pc.dst).v[pixel * 2u] = rdiReservoirWord0(r);
+    RdiWordsRef(pc.dst).v[pixel * 2u + 1u] = rdiReservoirWord1(r);
+}
+
+void rdiStageSurface(PtParams P, uint x, uint y, uint pixel) {
+    PtParams Q = P;
+    Q.flags = (P.flags | kPtFlagDiRecord) & ~(kPtFlagNee | kPtFlagRestirDi);
+    g_rdiHave = false;
+    PtSample s = ptRenderSample(Q, x, y, P.sampleBase);
+    vec4 w0;
+    vec4 w1;
+    vec4 w2;
+    vec4 w3;
+    rdiSurfaceWords(P, g_rdiHave, g_rdiHit, g_rdiDir, w0, w1, w2, w3);
+    RdiWordsRef(pc.dst).v[pixel * 4u] = w0;
+    RdiWordsRef(pc.dst).v[pixel * 4u + 1u] = w1;
+    RdiWordsRef(pc.dst).v[pixel * 4u + 2u] = w2;
+    RdiWordsRef(pc.dst).v[pixel * 4u + 3u] = w3;
+}
+
+void rdiStageShade(PtParams P, uint pixel) {
+    RdiReservoir r = rdiLoadReservoir(0u, pixel);
+    RdiWordsRef(rdiBlock(6u)).v[pixel * 2u] = rdiSurfaceWord(0u, pixel, 0u);
+    RdiWordsRef(rdiBlock(6u)).v[pixel * 2u + 1u] = rdiShade(P, r, pixel);
+    RdiWordsRef(rdiBlock(2u)).v[pixel * 2u] = rdiReservoirWord0(r);
+    RdiWordsRef(rdiBlock(2u)).v[pixel * 2u + 1u] = rdiReservoirWord1(r);
+}
+
+void main() {
+    uvec2 tid = gl_GlobalInvocationID.xy;
+    if (tid.x >= pc.width || tid.y >= pc.height) {
+        return;
+    }
+    vec4 w[11];
+    for (uint k = 0u; k < 11u; ++k) {
+        w[k] = PtWordsRef(pc.params).v[k];
+    }
+    PtParams P = ptParamsUnpack(w);
+    if (pc.stage == 0u) {
+        uint entry = tid.y * pc.width + tid.x;
+        RdiUintRef(pc.dst).v[entry] = rdiPresample(P, entry);
+        return;
+    }
+    vec4 rw[4];
+    for (uint k = 0u; k < 4u; ++k) {
+        rw[k] = RdiWordsRef(pc.block + uint64_t(64)).v[k];
+    }
+    RdiParams R = rdiParamsUnpack(rw);
+    uint pixel = tid.y * P.width + tid.x;
+    if (pc.stage == 1u) {
+        rdiStageSurface(P, tid.x, tid.y, pixel);
+        return;
+    }
+    if (pc.stage == 4u) {
+        rdiStageShade(P, pixel);
+        return;
+    }
+    if (pc.stage == 2u) {
+        rdiStoreReservoir(pixel, rdiInitial(P, R, tid.x, tid.y));
+        return;
+    }
+    if (pc.stage >= 8u) {
+        R.iteration = pc.stage - 8u;
+    }
+    rdiStoreReservoir(pixel, rdiReuse(P, R, tid.x, tid.y, pc.stage == 3u));
+}

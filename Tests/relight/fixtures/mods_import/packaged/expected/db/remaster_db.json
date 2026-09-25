@@ -1,0 +1,52 @@
+{
+  "schema": "fuse.remaster.db-shim/1",
+  "game_id": "fixture_game",
+  "original_asset": [
+    {
+      "oaid": "1f51a583-1eb9-5da6-978f-d0d887c65d16",
+      "kind": "mesh",
+      "game_id": "fixture_game",
+      "first_key": "remix.geom.asset:0123456789ABCDEF"
+    },
+    {
+      "oaid": "c4958ddb-31c6-5ed1-a654-2224653fe9ef",
+      "kind": "texture",
+      "game_id": "fixture_game",
+      "first_key": "remix.tex:00000000DEADBEEF"
+    }
+  ],
+  "hash_key": [
+    {
+      "algo": "remix.geom.asset",
+      "value": "0123456789ABCDEF",
+      "oaid": "1f51a583-1eb9-5da6-978f-d0d887c65d16",
+      "rule_id": "4A0F5C58A6691050",
+      "kind": "mesh"
+    },
+    {
+      "algo": "remix.tex",
+      "value": "00000000DEADBEEF",
+      "oaid": "c4958ddb-31c6-5ed1-a654-2224653fe9ef",
+      "rule_id": null,
+      "kind": "texture"
+    }
+  ],
+  "replacement": [
+    {
+      "oaid": "1f51a583-1eb9-5da6-978f-d0d887c65d16",
+      "variant": "default",
+      "tier": "remix",
+      "poco_id": "mod/fixture_game/packaged/mesh_0123456789ABCDEF",
+      "kind": "relight_replacement",
+      "source": "mod/fixture_game/packaged"
+    },
+    {
+      "oaid": "c4958ddb-31c6-5ed1-a654-2224653fe9ef",
+      "variant": "default",
+      "tier": "remix",
+      "poco_id": "mod/fixture_game/packaged/mat_00000000DEADBEEF",
+      "kind": "material",
+      "source": "mod/fixture_game/packaged"
+    }
+  ]
+}

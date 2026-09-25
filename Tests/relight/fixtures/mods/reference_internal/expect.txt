@@ -1,0 +1,11 @@
+prim /RootNode/meshes/mesh_00000000000000D2 type=Xform
+attr /RootNode/meshes/mesh_00000000000000D2.size = 2
+prim /RootNode/meshes/mesh_00000000000000D2/geo type=Mesh
+rel /RootNode/meshes/mesh_00000000000000D2.material:binding = [</RootNode/Looks/mat_00000000000000D1>]
+rel /RootNode/meshes/mesh_00000000000000D2.self_target = [</RootNode/meshes/mesh_00000000000000D2/geo>]
+api /RootNode/meshes/mesh_00000000000000D2 MaterialBindingAPI
+# The prototype itself is still there.
+rel /RootNode/prototypes/proto.self_target = [</RootNode/prototypes/proto/geo>]
+replacement mesh 00000000000000D2 meshes=/RootNode/meshes/mesh_00000000000000D2/geo bindings=/RootNode/Looks/mat_00000000000000D1
+remix materials 1
+nodiag any

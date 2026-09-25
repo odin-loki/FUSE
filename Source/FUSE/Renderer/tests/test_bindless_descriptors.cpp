@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <string>
 #include <vector>
 
 using fuse::u32;
@@ -204,6 +205,7 @@ void testHeapCounts() {
 
     const fuse::renderer::BindlessSlotHandle a = bindless.allocateBufferSlot();
     const fuse::renderer::BindlessSlotHandle b = bindless.allocateBufferSlot();
+    expectTrue(a.isValid() && b.isValid() && !(a == b), "two distinct buffer slots");
     expectTrue(bindless.heapLiveCount(fuse::renderer::BindlessHeapKind::Buffer) == 2u, "two live buffer slots");
     expectTrue(bindless.heapFreeCount(fuse::renderer::BindlessHeapKind::Buffer) == 0u, "no free buffer slots");
 
@@ -771,6 +773,166 @@ void testPreflightFreeFunction() {
     expectTrue(oob.index_in_range == false, "free-function preflight rejects OOB index");
 }
 
+// --- WP-0.4: shader handles, deferred release, sampler heap (CPU side, stub-safe) ---------------
+
+void testShaderHandlePacking() {
+    using fuse::renderer::BindlessResourceType;
+    const u32 h = fuse::renderer::packBindlessShaderHandle(BindlessResourceType::StorageBuffer, 0xABCDEu, 0x1234u);
+    expectTrue(fuse::renderer::bindlessShaderHandleIndex(h) == 0xABCDEu, "shader handle index round trip");
+    expectTrue(fuse::renderer::bindlessShaderHandleType(h) == BindlessResourceType::StorageBuffer,
+               "shader handle type round trip");
+    expectTrue(fuse::renderer::bindlessShaderHandleGeneration(h) == 0x34u, "shader handle keeps low 8 generation bits");
+    expectTrue(fuse::renderer::packBindlessShaderHandle(BindlessResourceType::Invalid, 3u, 1u) ==
+                   fuse::renderer::kBindlessInvalidShaderHandle,
+               "invalid type packs to the invalid handle");
+    expectTrue(fuse::renderer::packBindlessShaderHandle(BindlessResourceType::Sampler, 1u << 20u, 1u) ==
+                   fuse::renderer::kBindlessInvalidShaderHandle,
+               "index above 20 bits packs to the invalid handle");
+    static_assert(fuse::renderer::kMaxTextures <= fuse::renderer::kBindlessHandleIndexMask + 1u, "heap fits index bits");
+    static_assert(fuse::renderer::kMaxBuffers <= fuse::renderer::kBindlessHandleIndexMask + 1u, "heap fits index bits");
+}
+
+void testShaderHandleFromSlots() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+    using fuse::renderer::BindlessResourceType;
+
+    const auto sampled = bindless.allocateTextureSlot(false);
+    const auto storage = bindless.allocateTextureSlot(true);
+    const auto ssbo = bindless.allocateBufferSlot(false);
+    const auto ubo = bindless.allocateBufferSlot(true);
+    const auto sampler = bindless.allocateSamplerSlot();
+    expectTrue(fuse::renderer::bindlessShaderHandleType(bindless.shaderHandle(sampled)) ==
+                   BindlessResourceType::SampledImage,
+               "sampled texture handle type");
+    expectTrue(fuse::renderer::bindlessShaderHandleType(bindless.shaderHandle(storage)) ==
+                   BindlessResourceType::StorageImage,
+               "storage texture handle type");
+    expectTrue(fuse::renderer::bindlessShaderHandleType(bindless.shaderHandle(ssbo)) ==
+                   BindlessResourceType::StorageBuffer,
+               "storage buffer handle type");
+    expectTrue(fuse::renderer::bindlessShaderHandleType(bindless.shaderHandle(ubo)) ==
+                   BindlessResourceType::UniformBuffer,
+               "uniform buffer handle type");
+    expectTrue(fuse::renderer::bindlessShaderHandleType(bindless.shaderHandle(sampler)) == BindlessResourceType::Sampler,
+               "sampler handle type");
+    const u32 packed = bindless.shaderHandle(storage);
+    expectTrue(bindless.validateShaderHandle(packed) && bindless.slotHandleFromShaderHandle(packed) == storage,
+               "shader handle validates and maps back");
+    // Same index, wrong type bits (sampled vs storage) must be rejected.
+    const u32 wrongType = fuse::renderer::packBindlessShaderHandle(BindlessResourceType::SampledImage, storage.index,
+                                                                   storage.generation);
+    expectTrue(!bindless.validateShaderHandle(wrongType), "shader handle with wrong type bits rejected");
+    expectTrue(!bindless.validateShaderHandle(fuse::renderer::kBindlessInvalidShaderHandle), "zero handle invalid");
+    bindless.freeSlot(storage);
+    expectTrue(!bindless.validateShaderHandle(packed) && bindless.shaderHandle(storage) == 0u,
+               "freed slot: shader handle stale");
+    bindless.destroy(*bootstrap->device());
+}
+
+void testDeferredRetire() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+    using fuse::renderer::BindlessHeapKind;
+
+    bindless.setFrameSerial(10);
+    const auto a = bindless.allocateTextureSlot(false);
+    const auto b = bindless.allocateTextureSlot(false);
+    expectTrue(bindless.retireSlot(a), "retire live slot (serial 10)");
+    expectTrue(!bindless.validateSlot(a), "retired handle invalid immediately");
+    expectTrue(!bindless.retireSlot(a) && !bindless.canFreeSlot(a), "retired handle cannot be retired / freed again");
+    expectTrue(bindless.isSlotRetired(BindlessHeapKind::Texture, a.index), "slot marked retired");
+    expectTrue(bindless.heapFreeCount(BindlessHeapKind::Texture) == 0u, "retired slot not on the free list");
+
+    const auto c = bindless.allocateTextureSlot(false);
+    expectTrue(c.index != a.index, "retired index is not handed out before its serial completes");
+    expectTrue(bindless.retireSlot(b, 12), "retire with explicit serial");
+    expectTrue(bindless.retiredCount() == 2u && bindless.retiredCount(BindlessHeapKind::Texture) == 2u &&
+                   bindless.retiredCount(BindlessHeapKind::Buffer) == 0u,
+               "retired counts");
+
+    expectTrue(bindless.collectRetired(9) == 0u, "nothing reclaimed before serial 10");
+    expectTrue(bindless.collectRetired(11) == 1u && bindless.retiredCount() == 1u, "serial 10 reclaimed at 11");
+    expectTrue(!bindless.isSlotRetired(BindlessHeapKind::Texture, a.index), "reclaimed slot no longer retired");
+    const auto reused = bindless.allocateTextureSlot(true);
+    expectTrue(reused.index == a.index && reused.generation > a.generation, "reclaimed index reused, new generation");
+    expectTrue(!bindless.validateSlot(a) && bindless.validateSlot(reused), "old handle stays stale after reuse");
+    expectTrue(bindless.slotIsStorageTexture(reused.index), "reused slot takes the new storage flag");
+    expectTrue(bindless.collectRetired(UINT64_MAX) == 1u && bindless.retiredCount() == 0u, "all reclaimed");
+    expectTrue(bindless.collectRetiredFromTimeline(nullptr) == 0u, "null timeline reclaims nothing");
+
+    // destroy drops pending retirements.
+    expectTrue(bindless.retireSlot(c, 100), "retire before destroy");
+    bindless.destroy(*bootstrap->device());
+    expectTrue(bindless.retiredCount() == 0u, "destroy clears retired list");
+}
+
+void testSamplerHeapCache() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors bindless;
+    bindless.init(*bootstrap->device());
+
+    fuse::renderer::SamplerDesc nearest{};
+    fuse::renderer::SamplerDesc linear{};
+    linear.minFilter = linear.magFilter = 1;
+    const auto s0 = bindless.acquireSampler(nearest);
+    nearest.name = "renamed"; // name is not part of the cache key
+    const auto s1 = bindless.acquireSampler(nearest);
+    const auto s2 = bindless.acquireSampler(linear);
+    expectTrue(s0.isValid() && s0 == s1, "identical sampler descs share one slot");
+    expectTrue(s2.isValid() && s2 != s0 && bindless.samplerCacheSize() == 2u, "distinct desc gets its own slot");
+    bindless.releaseSampler(s0);
+    expectTrue(bindless.validateSlot(s0), "sampler survives while still referenced");
+    bindless.releaseSampler(s1);
+    expectTrue(!bindless.validateSlot(s0) && bindless.samplerCacheSize() == 1u, "last release retires the sampler");
+    expectTrue(bindless.collectRetired(bindless.frameSerial()) == 1u, "retired sampler slot reclaimed");
+    const auto s3 = bindless.acquireSampler(nearest);
+    expectTrue(s3.isValid() && s3.index == s0.index && s3.generation != s0.generation,
+               "re-acquired sampler reuses the reclaimed slot");
+    bindless.releaseSampler(s2);
+    bindless.releaseSampler(s3);
+    bindless.destroy(*bootstrap->device());
+}
+
+void testBackendSelectionDefaults() {
+    auto bootstrap = makeBootstrap();
+    fuse::renderer::BindlessDescriptors legacy;
+    legacy.init(*bootstrap->device());
+#if defined(FUSE_VULKAN_BACKEND)
+    if (bootstrap->status().deviceReady) {
+        expectTrue(legacy.backend() == fuse::renderer::BindlessBackend::DescriptorSet,
+                   "legacy init keeps the descriptor-set backend");
+        expectTrue(legacy.pipelineCreateFlags() == 0u, "descriptor-set backend needs no pipeline flag");
+    }
+#else
+    expectTrue(legacy.backend() == fuse::renderer::BindlessBackend::None, "stub build: CPU heap only");
+#endif
+    legacy.destroy(*bootstrap->device());
+
+    fuse::renderer::BindlessDescriptors capped;
+    fuse::renderer::BindlessDesc desc{};
+    desc.maxTextures = 256;
+    desc.maxBuffers = 128;
+    desc.maxSamplers = 16;
+    capped.init(*bootstrap->device(), desc);
+    if (capped.vulkanDescriptorsReady()) {
+        const fuse::renderer::BindlessArraySizes& sizes = capped.arraySizes();
+        expectTrue(sizes.sampledImages <= 256u && sizes.storageImages <= sizes.sampledImages &&
+                       sizes.storageBuffers <= 128u && sizes.uniformBuffers <= sizes.storageBuffers &&
+                       sizes.samplers <= 16u,
+                   "BindlessDesc caps clamp the array lengths");
+        u32 allocated = 0;
+        while (capped.allocateSamplerSlot().isValid()) {
+            ++allocated;
+        }
+        expectTrue(allocated == sizes.samplers, "sampler heap exhausts at the capped length");
+    }
+    expectTrue(std::string(fuse::renderer::bindlessBackendName(capped.backend())).size() > 0u, "backend name");
+    capped.destroy(*bootstrap->device());
+}
+
 } // namespace
 
 int main() {
@@ -809,6 +971,11 @@ int main() {
     testVulkanDescriptorPoolScaffold();
     testDescriptorUpdatesOnRegisterUnregister();
     testPreflightFreeFunction();
+    testShaderHandlePacking();
+    testShaderHandleFromSlots();
+    testDeferredRetire();
+    testSamplerHeapCache();
+    testBackendSelectionDefaults();
 
     fuse::core::shutdown();
 

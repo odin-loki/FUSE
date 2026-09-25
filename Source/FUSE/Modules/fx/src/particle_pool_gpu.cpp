@@ -1,5 +1,8 @@
 #include <fuse/fx/particle_pool_gpu.hpp>
 
+#include <fuse/fx/particle_pool_kernel.hpp>
+#include <fuse/jobs/cuda_jobs.hpp>
+
 #include <algorithm>
 #include <cstring>
 
@@ -7,20 +10,23 @@ namespace fuse::fx {
 
 namespace {
 
-constexpr usize kBytesPerSlot = 40u; // pos(12) + vel(12) + lifetime(4) + age(4) + blend(4) + alive(4)
+constexpr usize kBytesPerSlot = particle_pool_kernel::kBytesPerSlot; // pos vel lifetime age blend alive
 
 #if defined(FUSE_HAS_CUDA) && FUSE_HAS_CUDA
 constexpr bool kCudaCompiled = true;
 
-extern "C" void fuse_fx_particle_pool_cuda_stub(const u8* packed, u32 activeCount, float dt, int hostDirty);
+extern "C" int fuse_fx_particle_pool_cuda_integrate(u8* packed, u32 slotCount, float dt, int hostDirty);
 extern "C" u32 fuse_fx_particle_pool_device_ssbo_alloc_count();
 extern "C" u32 fuse_fx_particle_pool_device_ssbo_reuse_count();
 extern "C" u32 fuse_fx_particle_pool_device_ssbo_capacity_bytes();
 extern "C" u32 fuse_fx_particle_pool_device_resident_frames();
 extern "C" u32 fuse_fx_particle_pool_host_to_device_skip_count();
 
-void launchParticlePoolCudaStub(std::vector<u8>& packed, u32 activeCount, float dt, bool hostDirty) {
-    fuse_fx_particle_pool_cuda_stub(packed.data(), activeCount, dt, hostDirty ? 1 : 0);
+/// Integrates every packed slot (live slots may sit anywhere in the pool, not only below the active
+/// count) with the single-source particle_pool_kernel::PackedKernel on the device.
+bool launchParticlePoolCuda(std::vector<u8>& packed, float dt, bool hostDirty) {
+    const u32 slotCount = static_cast<u32>(packed.size() / kBytesPerSlot);
+    return fuse_fx_particle_pool_cuda_integrate(packed.data(), slotCount, dt, hostDirty ? 1 : 0) != 0;
 }
 #else
 constexpr bool kCudaCompiled = false;
@@ -30,8 +36,10 @@ constexpr bool kCudaCompiled = false;
 
 ParticlePoolGpuBackend::ParticlePoolGpuBackend(u32 capacity)
     : m_capacity(capacity)
-    , m_packed(capacity * kBytesPerSlot, 0)
-    , m_cudaEnabled(kCudaCompiled) {}
+    // Compiled-in CUDA is not enough: without a device (e.g. CUDA compile-only CI) the pool takes the
+    // Disabled skip path instead of issuing cudaMalloc/kernel launches that can only fail.
+    , m_cudaEnabled(kCudaCompiled && fuse::jobs::cudaJobsAvailable())
+    , m_packed(capacity * kBytesPerSlot, 0) {}
 
 void ParticlePoolGpuBackend::syncFromCpu(const ParticlePool& pool) {
     m_activeCount = pool.activeCount();
@@ -122,12 +130,13 @@ u32 ParticlePoolGpuBackend::syncSelectivePositionsToCpu(ParticlePool& pool) {
         float velocity[3];
         std::memcpy(velocity, m_packed.data() + offset, sizeof(float) * 3);
         offset += sizeof(float) * 3;
-        const float lifetime = *reinterpret_cast<const float*>(m_packed.data() + offset);
+        offset += sizeof(float); // lifetime: not written back
+        float age = 0.f;
+        std::memcpy(&age, m_packed.data() + offset, sizeof(float));
         offset += sizeof(float);
-        const float age = *reinterpret_cast<const float*>(m_packed.data() + offset);
         offset += sizeof(float);
-        offset += sizeof(float);
-        const u32 aliveFlag = *reinterpret_cast<const u32*>(m_packed.data() + offset);
+        u32 aliveFlag = 0;
+        std::memcpy(&aliveFlag, m_packed.data() + offset, sizeof(u32));
         offset += sizeof(u32);
 
         if (aliveFlag == 0u || age <= 0.f) {
@@ -150,7 +159,7 @@ void ParticlePoolGpuBackend::tick(const frame::FrameCtx& ctx) {
     cudaDispatchOrSkip(ctx);
 }
 
-void ParticlePoolGpuBackend::cudaDispatchOrSkip(const frame::FrameCtx& ctx) {
+void ParticlePoolGpuBackend::cudaDispatchOrSkip([[maybe_unused]] const frame::FrameCtx& ctx) {
     m_lastCudaSkipReason = ParticlePoolCudaSkipReason::None;
 
     if (!m_syncedFromCpu) {
@@ -178,13 +187,13 @@ void ParticlePoolGpuBackend::cudaDispatchOrSkip(const frame::FrameCtx& ctx) {
     }
 
 #if defined(FUSE_HAS_CUDA) && FUSE_HAS_CUDA
-    launchParticlePoolCudaStub(m_packed, m_activeCount, ctx.dt, m_hostDirty);
+    const bool integrated = launchParticlePoolCuda(m_packed, ctx.dt, m_hostDirty);
     m_deviceSsboCapacityBytes = fuse_fx_particle_pool_device_ssbo_capacity_bytes();
     m_deviceSsboAllocCount = fuse_fx_particle_pool_device_ssbo_alloc_count();
     m_deviceSsboReuseCount = fuse_fx_particle_pool_device_ssbo_reuse_count();
     m_deviceResidentFrames = fuse_fx_particle_pool_device_resident_frames();
     m_hostToDeviceSkipCount = fuse_fx_particle_pool_host_to_device_skip_count();
-    m_hostDirty = false;
+    m_hostDirty = !integrated; // re-upload after a failed dispatch
 #endif
     syncResidencyFromPacked();
     ++m_cudaDispatchCount;

@@ -160,12 +160,14 @@ struct State {
 
     std::string hudPromptText;
     std::string guardLineText;
+    std::string guardBranchChosen; ///< Branch picked by dispatchBestBranch (advanceNpcState dispatches follow-ups)
     bool agentInsideTrigger = false;
     bool loadedOutpostStub = false;
     bool spawnedOutpostInteractables = false;
     bool appliedOutpostPlacements = false;
     bool weaponGranted = false;
     u32 cuePreviewCount = 0;
+    u32 setupMountChainDepth = 0; ///< Depth right after the setup mount chain (timeline cues remount later)
     u32 broadphaseRaycastHits = 0;
     u32 broadphaseDbvtHits = 0;
     bool weaponFired = false;

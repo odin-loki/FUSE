@@ -1,0 +1,58 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "texture_set",
+  "id": "mod/fixture_game/material_table/mat_00000000000000A1",
+  "name": "mat_00000000000000A1",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 1,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "albedo": {
+      "sha256": "2dbb7fc8805af87c6035a576bc3c7d0ecee7c04fea482ad6664e73082a38b7b2",
+      "size": 164,
+      "media": "image/vnd-ms.dds"
+    },
+    "normal": {
+      "sha256": "c8b418c873ca7454d5b5ef40971863c3ff1900df8c5555e8c77e44708cb84c54",
+      "size": 164,
+      "media": "image/vnd-ms.dds"
+    },
+    "height": {
+      "sha256": "91244fc4213e6c76ce944d24311ad807c61b32cb48b4fb034cae3d12d8771a66",
+      "size": 212,
+      "media": "image/vnd-ms.dds"
+    },
+    "emissive": {
+      "sha256": "5499cba5a92a5e337f8b581addc943b736335d1a7761a1a15634be8b721333e7",
+      "size": 164,
+      "media": "image/vnd-ms.dds"
+    },
+    "normalConvention": "GL",
+    "texelsPerMetre": 0,
+    "albedoSrgb": true
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:material_table"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "material_table",
+      "stage": "mod.usda",
+      "prim": "/RootNode/Looks/mat_00000000000000A1",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "CC0-1.0",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

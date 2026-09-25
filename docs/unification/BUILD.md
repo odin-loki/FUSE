@@ -16,6 +16,7 @@ The root `CMakeLists.txt` is the **FUSE umbrella** entry point. It can build:
 | `FUSE_BUILD_SMOKE` | ON | `fuse_runtime_smoke` one-process test binary |
 | `FUSE_BUILD_HYBRID_DEMO` | ON | `demo_hybrid_hud` U4 hybrid frame demo (software renderer) |
 | `FUSE_BUILD_MODULES` | ON | L3 feature modules (`fuse_cinematics`, …) |
+| `FUSE_SANITIZE` | "" | `address,undefined` = ASan+UBSan on all FUSE targets + tests (`fuse-asan` preset) |
 | `FUSE_SMOKE_ENABLE_ASAN` | OFF | AddressSanitizer for smoke target |
 | `FUSE_CORE_ENABLE_TSAN` | OFF | ThreadSanitizer for `fuse_core` and `fuse_core_*` tests |
 

@@ -1,0 +1,29 @@
+#version 460
+// WP-1.1 GPU scene scatter upload, GLSL twin of gpu_scene_scatter.slang (see there).
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+layout(local_size_x = 64) in;
+
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer FuseScatterWords { uint v[]; };
+
+layout(push_constant) uniform Push {
+    uint64_t src;
+    uint64_t dst;
+    uint rowWords;
+    uint rowCount;
+    uint indexOffsetWords;
+    uint threadCount;
+} pc;
+
+void main() {
+    FuseScatterWords src = FuseScatterWords(pc.src);
+    FuseScatterWords dst = FuseScatterWords(pc.dst);
+    const uint total = pc.rowWords * pc.rowCount;
+    for (uint i = gl_GlobalInvocationID.x; i < total; i += pc.threadCount) {
+        const uint row = i / pc.rowWords;
+        const uint word = i - row * pc.rowWords;
+        const uint target = src.v[pc.indexOffsetWords + row];
+        dst.v[target * pc.rowWords + word] = src.v[i];
+    }
+}

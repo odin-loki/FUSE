@@ -1,0 +1,316 @@
+{
+  "frames": 3,
+  "generation": 1,
+  "last_frame": {
+    "deleted_lights": [],
+    "draws": [
+      {
+        "color_texture": "0x6808d561b4c64ec4",
+        "di": 0,
+        "key": "06a0e3abadeb3249",
+        "replacement": {
+          "categories": "",
+          "draw_original": false,
+          "instance": 1,
+          "lights": [],
+          "material": null,
+          "mesh": {
+            "key": "06A0E3ABADEB3249",
+            "mod": "textured_a",
+            "parts": [
+              {
+                "material": "mod/ff_textured/textured_a/RootNode/meshes/mesh_06A0E3ABADEB3249/Looks/Brick",
+                "material_mod": "textured_a",
+                "material_source": "bound",
+                "mesh": "mod/ff_textured/textured_a/mesh_06A0E3ABADEB3249/brick_quad",
+                "translation": [
+                  0,
+                  0.25,
+                  0
+                ]
+              }
+            ],
+            "preserve": false,
+            "record": "mod/ff_textured/textured_a/mesh_06A0E3ABADEB3249",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      },
+      {
+        "color_texture": "0x6808d561b4c64ec4",
+        "di": 1,
+        "key": "59d6cc6c20964c16",
+        "replacement": {
+          "categories": "Terrain",
+          "draw_original": true,
+          "instance": 2,
+          "lights": [
+            {
+              "color": [
+                1,
+                0.8,
+                0.6
+              ],
+              "direction": [
+                0,
+                0,
+                -1
+              ],
+              "draw": 1,
+              "hash": null,
+              "instance": 2,
+              "intensity": 25,
+              "mod": "textured_a",
+              "origin": "attached",
+              "position": [
+                0,
+                1,
+                0
+              ],
+              "record": "mod/ff_textured/textured_a/mesh_59D6CC6C20964C16/lamp",
+              "type": "Point"
+            }
+          ],
+          "material": {
+            "ignore": false,
+            "mod": "textured_a",
+            "record": "mod/ff_textured/textured_a/mat_6808D561B4C64EC4",
+            "shadowed": [
+              "textured_b"
+            ]
+          },
+          "mesh": {
+            "key": "59D6CC6C20964C16",
+            "mod": "textured_a",
+            "parts": [
+              {
+                "material": "mod/ff_textured/textured_a/mat_6808D561B4C64EC4",
+                "material_mod": "textured_a",
+                "material_source": "replacement",
+                "mesh": "mod/ff_textured/textured_a/mesh_59D6CC6C20964C16/overlay_quad",
+                "translation": [
+                  0,
+                  0,
+                  -0.5
+                ]
+              }
+            ],
+            "preserve": true,
+            "record": "mod/ff_textured/textured_a/mesh_59D6CC6C20964C16",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      },
+      {
+        "color_texture": "0x6808d561b4c64ec4",
+        "di": 2,
+        "key": "e99f3d1c2ee20781",
+        "replacement": {
+          "categories": "",
+          "draw_original": false,
+          "instance": 3,
+          "lights": [],
+          "material": null,
+          "mesh": {
+            "key": "E99F3D1C2EE20781",
+            "mod": "textured_a",
+            "parts": [],
+            "preserve": false,
+            "record": "mod/ff_textured/textured_a/mesh_E99F3D1C2EE20781",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      },
+      {
+        "color_texture": "0x6808d561b4c64ec4",
+        "di": 3,
+        "key": "518f2df92b58a5ff",
+        "replacement": {
+          "categories": "",
+          "draw_original": true,
+          "instance": 4,
+          "lights": [],
+          "material": {
+            "ignore": false,
+            "mod": "textured_a",
+            "record": "mod/ff_textured/textured_a/mat_6808D561B4C64EC4",
+            "shadowed": [
+              "textured_b"
+            ]
+          },
+          "mesh": null
+        }
+      },
+      {
+        "color_texture": "0x6808d561b4c64ec4",
+        "di": 4,
+        "key": "0ed0711c76285b12",
+        "replacement": {
+          "categories": "",
+          "draw_original": false,
+          "instance": 5,
+          "lights": [],
+          "material": null,
+          "mesh": {
+            "key": "0ED0711C76285B12",
+            "mod": "textured_b",
+            "parts": [
+              {
+                "material": "mod/ff_textured/textured_a/mat_6808D561B4C64EC4",
+                "material_mod": "textured_a",
+                "material_source": "replacement",
+                "mesh": "mod/ff_textured/textured_b/mesh_0ED0711C76285B12/panel",
+                "translation": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ],
+            "preserve": false,
+            "record": "mod/ff_textured/textured_b/mesh_0ED0711C76285B12",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      },
+      {
+        "color_texture": "0xb1718c8d5a971e7b",
+        "di": 5,
+        "key": "49b3126ba812a2d3",
+        "replacement": {
+          "categories": "",
+          "draw_original": true,
+          "instance": 6,
+          "lights": [],
+          "material": {
+            "ignore": false,
+            "mod": "textured_b",
+            "record": "mod/ff_textured/textured_b/mat_B1718C8D5A971E7B",
+            "shadowed": []
+          },
+          "mesh": null
+        }
+      }
+    ],
+    "frame": 2,
+    "lights": [
+      {
+        "color": [
+          1,
+          0.8,
+          0.6
+        ],
+        "direction": [
+          0,
+          0,
+          -1
+        ],
+        "draw": 1,
+        "hash": null,
+        "instance": 2,
+        "intensity": 25,
+        "mod": "textured_a",
+        "origin": "attached",
+        "position": [
+          0,
+          1,
+          0
+        ],
+        "record": "mod/ff_textured/textured_a/mesh_59D6CC6C20964C16/lamp",
+        "type": "Point"
+      }
+    ],
+    "residency": {
+      "budget_bytes": 1073741824,
+      "demoted": 0,
+      "evicted": 0,
+      "loaded": 0,
+      "over_budget": false,
+      "requested": 3,
+      "resident": 3,
+      "resident_bytes": 28668
+    }
+  },
+  "mods": [
+    {
+      "deleted_lights": 0,
+      "errors": 0,
+      "format": "usd",
+      "kind": "remix",
+      "layer": null,
+      "lights": 0,
+      "materials": 1,
+      "meshes": 3,
+      "name": "textured_a",
+      "ok": true,
+      "priority": null,
+      "rank": 0
+    },
+    {
+      "deleted_lights": 0,
+      "errors": 0,
+      "format": "usd",
+      "kind": "fuse",
+      "layer": null,
+      "lights": 0,
+      "materials": 2,
+      "meshes": 1,
+      "name": "textured_b",
+      "ok": true,
+      "priority": null,
+      "rank": 1
+    }
+  ],
+  "reloads": [
+    {
+      "added": [
+        "textured_b",
+        "textured_a"
+      ],
+      "applied_frame": 0,
+      "changed": [],
+      "failed": [],
+      "generation": 1,
+      "invalidated": {
+        "lights": [],
+        "materials": [
+          "6808D561B4C64EC4",
+          "B1718C8D5A971E7B"
+        ],
+        "meshes": [
+          "06A0E3ABADEB3249",
+          "0ED0711C76285B12",
+          "59D6CC6C20964C16",
+          "E99F3D1C2EE20781"
+        ]
+      },
+      "latency_frames": 0,
+      "notified_frame": 0,
+      "removed": []
+    }
+  ],
+  "stats_runs": [
+    {
+      "first": 0,
+      "last": 2,
+      "stats": {
+        "draws": 6,
+        "hidden": 3,
+        "lights_attached": 1,
+        "lights_deleted": 0,
+        "lights_game": 0,
+        "lights_replaced": 0,
+        "material_replaced": 3,
+        "mesh_replaced": 4,
+        "part_material_replaced": 2,
+        "parts": 3,
+        "preserved": 1
+      }
+    }
+  ],
+  "watch": "poll"
+}

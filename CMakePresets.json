@@ -45,6 +45,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "FUSE_PROFILE": "ON",
+        "FUSE_TRACY": "ON",
         "FUSE_UMBRELLA": "ON",
         "FUSE_BUILD_T3D": "OFF",
         "FUSE_BUILD_T2D": "OFF",
@@ -58,12 +59,11 @@
     },
     {
       "name": "fuse-asan",
-      "displayName": "FUSE ASan Debug (GNU/Clang; skipped if libasan missing)",
+      "displayName": "FUSE ASan+UBSan Debug (all FUSE targets + tests; GNU/Clang; skipped if runtime missing)",
       "inherits": "fuse-debug",
       "binaryDir": "${sourceDir}/build/fuse-asan",
       "cacheVariables": {
-        "FUSE_CORE_ENABLE_ASAN": "ON",
-        "FUSE_SMOKE_ENABLE_ASAN": "ON"
+        "FUSE_SANITIZE": "address,undefined"
       }
     },
     {
@@ -103,6 +103,252 @@
         "FUSE_BUILD_CORE": "ON",
         "FUSE_BUILD_CORE_TESTS": "ON",
         "FUSE_SHIPPING": "OFF"
+      }
+    },
+    {
+      "name": "fuse-werror-base",
+      "hidden": true,
+      "cacheVariables": {
+        "FUSE_WARNINGS": "ON",
+        "FUSE_WARNINGS_AS_ERRORS": "ON",
+        "FUSE_BUILD_VULKAN": "ON"
+      }
+    },
+    {
+      "name": "fuse-werror-debug",
+      "displayName": "FUSE Debug (-Wall -Wextra -Werror on FUSE targets)",
+      "inherits": [
+        "fuse-werror-base",
+        "fuse-debug"
+      ],
+      "binaryDir": "${sourceDir}/build/fuse-werror-debug"
+    },
+    {
+      "name": "fuse-werror-release",
+      "displayName": "FUSE Release (-Wall -Wextra -Werror on FUSE targets)",
+      "inherits": [
+        "fuse-werror-base",
+        "fuse-release"
+      ],
+      "binaryDir": "${sourceDir}/build/fuse-werror-release"
+    },
+    {
+      "name": "fuse-werror-profile",
+      "displayName": "FUSE Profile (-Wall -Wextra -Werror on FUSE targets)",
+      "inherits": [
+        "fuse-werror-base",
+        "fuse-profile"
+      ],
+      "binaryDir": "${sourceDir}/build/fuse-werror-profile"
+    },
+    {
+      "name": "fuse-werror-shipping",
+      "displayName": "FUSE Shipping (-Wall -Wextra -Werror on FUSE targets)",
+      "inherits": [
+        "fuse-werror-base",
+        "fuse-shipping"
+      ],
+      "binaryDir": "${sourceDir}/build/fuse-werror-shipping"
+    },
+    {
+      "name": "fuse-mingw-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64-x86_64.cmake",
+      "cacheVariables": {
+        "FUSE_UMBRELLA": "ON",
+        "FUSE_BUILD_T3D": "OFF",
+        "FUSE_BUILD_T2D": "OFF",
+        "FUSE_BUILD_VULKAN": "OFF",
+        "FUSE_BUILD_CUDA": "OFF",
+        "FUSE_BUILD_EDITOR": "OFF",
+        "FUSE_BUILD_CORE": "ON",
+        "FUSE_BUILD_CORE_TESTS": "ON",
+        "FUSE_WARNINGS": "ON",
+        "FUSE_WARNINGS_AS_ERRORS": "ON",
+        "CMAKE_C_FLAGS_DEBUG": "-O0",
+        "CMAKE_CXX_FLAGS_DEBUG": "-O0",
+        "CMAKE_C_FLAGS_RELWITHDEBINFO": "-O2 -DNDEBUG",
+        "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O2 -DNDEBUG"
+      },
+      "displayName": "FUSE Windows x64 cross base (no DWARF: static PE tests with -g need ~9 GB)"
+    },
+    {
+      "name": "fuse-mingw-debug",
+      "displayName": "FUSE Windows x64 Debug (MinGW-w64 cross, -Werror; ctest via Wine)",
+      "inherits": "fuse-mingw-base",
+      "binaryDir": "${sourceDir}/build/fuse-mingw-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "fuse-mingw-release",
+      "displayName": "FUSE Windows x64 Release (MinGW-w64 cross, -Werror; ctest via Wine)",
+      "inherits": "fuse-mingw-base",
+      "binaryDir": "${sourceDir}/build/fuse-mingw-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "fuse-mingw-profile",
+      "displayName": "FUSE Windows x64 Profile (MinGW-w64 cross, -Werror; ctest via Wine)",
+      "inherits": "fuse-mingw-base",
+      "binaryDir": "${sourceDir}/build/fuse-mingw-profile",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "FUSE_PROFILE": "ON"
+      }
+    },
+    {
+      "name": "fuse-mingw-shipping",
+      "displayName": "FUSE Windows x64 Shipping (MinGW-w64 cross, -Werror; ctest via Wine)",
+      "inherits": "fuse-mingw-base",
+      "binaryDir": "${sourceDir}/build/fuse-mingw-shipping",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FUSE_SHIPPING": "ON",
+        "FUSE_BUILD_EDITOR_API": "OFF"
+      }
+    },
+    {
+      "name": "fuse-mingw-relight-base",
+      "hidden": true,
+      "inherits": "fuse-mingw-base",
+      "displayName": "FUSE Relight Windows x64 cross base: DXVK d3d9/d3d8 + the FUSE renderer as PE (RL-0.7)",
+      "cacheVariables": {
+        "FUSE_BUILD_RELIGHT": "ON",
+        "FUSE_RELIGHT_RENDERER": "ON"
+      }
+    },
+    {
+      "name": "fuse-mingw-relight-release",
+      "displayName": "FUSE Relight Windows x64 Release (MinGW-w64 cross, renderer via volk; ctest via Wine + Xvfb + Lavapipe)",
+      "inherits": "fuse-mingw-relight-base",
+      "binaryDir": "${sourceDir}/build/relight-mingw",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "fuse-mingw-relight-debug",
+      "displayName": "FUSE Relight Windows x64 Debug (MinGW-w64 cross, renderer via volk; ctest via Wine + Xvfb + Lavapipe)",
+      "inherits": "fuse-mingw-relight-base",
+      "binaryDir": "${sourceDir}/build/relight-mingw-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "fuse-msvc-base",
+      "hidden": true,
+      "displayName": "FUSE Windows x64 native base (cl.exe, Ninja; run from a VS x64 developer shell)",
+      "generator": "Ninja",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl",
+        "FUSE_UMBRELLA": "ON",
+        "FUSE_BUILD_T3D": "OFF",
+        "FUSE_BUILD_T2D": "OFF",
+        "FUSE_BUILD_VULKAN": "OFF",
+        "FUSE_BUILD_CUDA": "OFF",
+        "FUSE_BUILD_EDITOR": "OFF",
+        "FUSE_BUILD_CORE": "ON",
+        "FUSE_BUILD_CORE_TESTS": "ON",
+        "FUSE_WARNINGS": "ON",
+        "FUSE_WARNINGS_AS_ERRORS": "ON",
+        "CMAKE_C_FLAGS_DEBUG": "/Z7 /Ob0 /Od /RTC1",
+        "CMAKE_CXX_FLAGS_DEBUG": "/Z7 /Ob0 /Od /RTC1",
+        "CMAKE_C_FLAGS_RELWITHDEBINFO": "/Z7 /O2 /Ob1 /DNDEBUG",
+        "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "/Z7 /O2 /Ob1 /DNDEBUG"
+      }
+    },
+    {
+      "name": "fuse-msvc-debug",
+      "displayName": "FUSE Windows x64 Debug (MSVC, /W3 /WX)",
+      "inherits": "fuse-msvc-base",
+      "binaryDir": "${sourceDir}/build/fuse-msvc-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "fuse-msvc-release",
+      "displayName": "FUSE Windows x64 Release (MSVC, /W3 /WX)",
+      "inherits": "fuse-msvc-base",
+      "binaryDir": "${sourceDir}/build/fuse-msvc-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "fuse-msvc-profile",
+      "displayName": "FUSE Windows x64 Profile (MSVC, /W3 /WX)",
+      "inherits": "fuse-msvc-base",
+      "binaryDir": "${sourceDir}/build/fuse-msvc-profile",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "FUSE_PROFILE": "ON"
+      }
+    },
+    {
+      "name": "fuse-msvc-shipping",
+      "displayName": "FUSE Windows x64 Shipping (MSVC, /W3 /WX)",
+      "inherits": "fuse-msvc-base",
+      "binaryDir": "${sourceDir}/build/fuse-msvc-shipping",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FUSE_SHIPPING": "ON",
+        "FUSE_BUILD_EDITOR_API": "OFF"
+      }
+    },
+    {
+      "name": "fuse-clangcl-base",
+      "hidden": true,
+      "displayName": "FUSE Windows x64 native base (clang-cl, Ninja; run from a VS x64 developer shell)",
+      "inherits": "fuse-msvc-base",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl"
+      }
+    },
+    {
+      "name": "fuse-clangcl-debug",
+      "displayName": "FUSE Windows x64 Debug (clang-cl, /W4 /WX)",
+      "inherits": "fuse-clangcl-base",
+      "binaryDir": "${sourceDir}/build/fuse-clangcl-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "fuse-clangcl-release",
+      "displayName": "FUSE Windows x64 Release (clang-cl, /W4 /WX)",
+      "inherits": "fuse-clangcl-base",
+      "binaryDir": "${sourceDir}/build/fuse-clangcl-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "fuse-mingw-relight-renderer",
+      "displayName": "RL-0.7 renderer gates as PE under Wine + Xvfb + Lavapipe (label renderer_pe)",
+      "configurePreset": "fuse-mingw-relight-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "renderer_pe"
+        }
       }
     }
   ]

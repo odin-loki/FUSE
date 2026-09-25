@@ -67,9 +67,17 @@ float sample_attenuation_curve(float distance, const AttenuationParams& params) 
     float gain = 1.f;
 
     switch (params.curve) {
-    case AttenuationCurve::Linear:
-        gain = params.min_dist / (params.min_dist + (clamped - params.min_dist));
+    case AttenuationCurve::Linear: {
+        // OpenAL AL_LINEAR_DISTANCE_CLAMPED / Torque SFXDistanceModelLinear:
+        // 1 - rolloff * (d - min) / (max - min).
+        const float span = params.max_dist - params.min_dist;
+        if (span <= 1e-6f) {
+            gain = clamped <= params.min_dist ? 1.f : 0.f;
+        } else {
+            gain = 1.f - params.rolloff * (std::min(clamped, params.max_dist) - params.min_dist) / span;
+        }
         break;
+    }
 
     case AttenuationCurve::Logarithmic:
         gain = params.min_dist

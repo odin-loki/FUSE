@@ -1,0 +1,5 @@
+attr /RootNode/meshes/mesh_0000000000000A01.winner = "reference"
+attr /RootNode/meshes/mesh_0000000000000A01.payload_only = 7
+attr /RootNode/meshes/mesh_0000000000000A01/hires.points = [(0, 0, 0), (0, 1, 0), (1, 1, 0)]
+replacement mesh 0000000000000A01 meshes=/RootNode/meshes/mesh_0000000000000A01/hires
+nodiag any

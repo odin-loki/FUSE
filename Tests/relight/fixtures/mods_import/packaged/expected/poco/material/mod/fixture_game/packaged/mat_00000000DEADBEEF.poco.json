@@ -1,0 +1,45 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "material",
+  "id": "mod/fixture_game/packaged/mat_00000000DEADBEEF",
+  "name": "mat_00000000DEADBEEF",
+  "units": {
+    "length": "game",
+    "metersPerUnit": null,
+    "up": "+Z",
+    "handedness": "right"
+  },
+  "payload": {
+    "model": "Opaque",
+    "textureSetId": "",
+    "baseColor": [0.20000000298023224, 0.20000000298023224, 0.20000000298023224, 1],
+    "roughness": 0.5,
+    "metallic": 0.5,
+    "emissiveNits": 0,
+    "alphaCutoff": 0,
+    "twoSided": false,
+    "physicalCategory": "",
+    "layerRecipe": ""
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:packaged"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "packaged",
+      "stage": "mod.usda",
+      "prim": "/RootNode/Looks/mat_00000000DEADBEEF",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "LicenseRef-ThirdPartyMod-packaged",
+  "distribution": "never",
+  "replaces": ["oaid:c4958ddb-31c6-5ed1-a654-2224653fe9ef"],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

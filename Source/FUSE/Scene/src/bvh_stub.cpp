@@ -1,5 +1,6 @@
 #include <fuse/scene/bvh_stub.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 

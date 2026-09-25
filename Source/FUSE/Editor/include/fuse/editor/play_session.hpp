@@ -5,6 +5,7 @@
 #include <fuse/editor/play_mode_controller.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/entity.hpp>
+#include <fuse/ecs/registry.hpp>
 #include <fuse/scene/scene.hpp>
 #include <fuse/types.hpp>
 
@@ -89,6 +90,11 @@ struct PlayWorldSnapshot {
 /// PIE play-session orchestrator (B6.12 deepen) — wraps `PlayModeController` with
 /// `EditorState` sync, tick accumulator, world snapshot capture/restore, and ECS
 /// dirty-flag snapshot/restore with coalesced dirty marking during play.
+///
+/// `start` also copies the whole ECS registry (entity records, generations, free list and every
+/// component column) and `stop` restores it, so entities spawned or destroyed during play and
+/// non-Transform state such as RigidBody velocities return exactly to their edit-time values
+/// (the same state `ecs::RegistrySerialiser` persists).
 class PlaySession {
 public:
     void start(EditorScene& editorScene, scene::Scene& scene, EditorState& state,
@@ -99,12 +105,14 @@ public:
     void pause(scene::Scene& scene, EditorState& state, PlayModePhysicsState& physics);
     void resume(scene::Scene& scene, EditorState& state, PlayModePhysicsState& physics);
 
+    /// Variable tick: advances the accumulator and simulates one step of `dt` (physics included).
     void tick(f32 dt, EditorScene& editorScene, PlayModePhysicsState& physics);
     /// Drains `tickAccumulator()` in `fixedDt` slices while playing; returns steps simulated.
     /// @param maxSteps 0 = unlimited; otherwise caps slices simulated this call (spiral guard).
     u32 consumeFixedSteps(f32 fixedDt, EditorScene& editorScene, PlayModePhysicsState& physics,
                           u32 maxSteps = 0);
     /// PIE frame update: `tick(dt)` then drain fixed slices; returns fixed steps simulated.
+    /// Physics advances only in the fixed slices here (the variable tick does not also step it).
     u32 tickFixedStep(f32 dt, f32 fixedDt, EditorScene& editorScene, PlayModePhysicsState& physics,
                       u32 maxSteps = 0);
 
@@ -162,6 +170,8 @@ public:
     bool shouldSkipWorldSnapshotDrain() const;
     bool shouldSkipDirtySnapshotDrain() const;
     bool hasWorldSnapshot() const { return m_hasWorldSnapshot; }
+    /// True between `start` and `stop` — the full edit-time registry copy is held.
+    bool hasRegistrySnapshot() const { return m_hasRegistrySnapshot; }
     bool hasDirtySnapshot() const { return m_hasDirtySnapshot; }
 
     const PlayWorldSnapshot& worldSnapshot() const { return m_worldSnapshot; }
@@ -174,6 +184,11 @@ public:
     bool drainDirtySnapshot(EditorScene& editorScene, EditorState& state);
 
     const PlayModeController& controller() const { return m_controller; }
+    /// Physics world stepped during play (live between `start` and `stop` unless a step hook or
+    /// `drivePhysics = false` was set at start).
+    fuse::physics::PhysicsManager& physicsWorld() { return m_physicsWorld; }
+    const fuse::physics::PhysicsManager& physicsWorld() const { return m_physicsWorld; }
+    bool physicsWorldLive() const { return m_physicsWorldLive; }
 
 private:
     struct DirtySnapshot {
@@ -185,12 +200,19 @@ private:
     void restoreDirtySnapshot_(EditorScene& editorScene, EditorState& state) const;
     void captureWorldSnapshot_(EditorScene& editorScene);
     void restoreWorldSnapshot_(EditorScene& editorScene) const;
-    void simulateStep_(EditorScene& editorScene, PlayModePhysicsState& physics);
+    void tick_(f32 dt, EditorScene& editorScene, PlayModePhysicsState& physics, bool stepPhysics);
+    /// `physicsDt` <= 0 advances counters only.
+    void simulateStep_(EditorScene& editorScene, PlayModePhysicsState& physics, f32 physicsDt);
     void coalesceTransformDirty_(EditorScene& editorScene);
 
     PlayModeController m_controller;
+    fuse::physics::PhysicsManager m_physicsWorld{};
+    fuse::physics::PhysicsStreamManager m_physicsStreams{};
+    bool m_physicsWorldLive = false;
     DirtySnapshot m_dirtySnapshot{};
     PlayWorldSnapshot m_worldSnapshot{};
+    ecs::Registry m_registrySnapshot{};
+    bool m_hasRegistrySnapshot = false;
     bool m_hasWorldSnapshot = false;
     bool m_hasDirtySnapshot = false;
     u32 m_sessionTickCount = 0;

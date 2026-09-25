@@ -2,6 +2,7 @@
 
 #include <fuse/alloc/new_ban.hpp>
 
+#include <fuse/alloc/leak_detector.hpp>
 #include <fuse/assert.hpp>
 
 #include <atomic>
@@ -75,11 +76,18 @@ void checkEngineHeapBan(const char* kind) {
 
 void* checkedMalloc(std::size_t size) {
     checkEngineHeapBan("malloc");
-    return std::malloc(size);
+    void* ptr = std::malloc(size);
+    if constexpr (kLeakDetectorEnabled) {
+        LeakDetector::recordAlloc(ptr, size, "checkedMalloc");
+    }
+    return ptr;
 }
 
 void checkedFree(void* ptr) {
     checkEngineHeapBan("free");
+    if constexpr (kLeakDetectorEnabled) {
+        LeakDetector::recordFree(ptr);
+    }
     std::free(ptr);
 }
 

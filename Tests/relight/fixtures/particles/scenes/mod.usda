@@ -1,0 +1,135 @@
+#usda 1.0
+(
+    customLayerData = {
+        string lightspeed_layer_type = "replacement"
+    }
+    defaultPrim = "RootNode"
+    metersPerUnit = 0.01
+    upAxis = "Y"
+)
+
+# RL-3.6 fixture: the three particle systems of Source/FUSE/Relight/particles/tests/particle_scenarios.hpp authored as
+# Remix ParticleSystemAPI prims (the CPU gate checks both give the same description hash).
+#   mesh_00000000F0074A10  "fountain": the API on a mesh replacement root with one 100 x 100 quad part (the emitter);
+#                          animated channels as curves (colour gradients, Bezier size curve with tangent times, a step
+#                          key), hideEmitter
+#   mat_00000000005A4B50   "sparks": a material override without a shader (upstream: an empty material carrying the
+#                          system); legacy spawn / target pairs, constant count, motion trail, random flips
+#   mat_000000000005E0CE   "smoke": bursts, turbulence, attractor, maxVelocity curves, cylindrical billboards
+def Xform "RootNode"
+{
+    def Scope "meshes"
+    {
+        def Xform "mesh_00000000F0074A10" (
+            prepend apiSchemas = ["ParticleSystemAPI"]
+        )
+        {
+            int primvars:particle:maxNumParticles = 1000
+            float primvars:particle:spawnRatePerSecond = 600
+            float primvars:particle:minTimeToLive = 0.5
+            float primvars:particle:maxTimeToLive = 1
+            float primvars:particle:initialVelocityFromNormal = 200
+            float primvars:particle:initialVelocityFromMotion = 0.5
+            float primvars:particle:gravityForce = -980
+            bool primvars:particle:hideEmitter = 1
+            bool primvars:particle:useSpawnTexcoords = 1
+            float[] primvars:particle:minColor:times = [0, 0.5, 1]
+            color4f[] primvars:particle:minColor:values = [(1, 1, 1, 1), (1, 0.5, 0.25, 1), (1, 0, 0, 0)]
+            float[] primvars:particle:maxColor:times = [0, 1]
+            color4f[] primvars:particle:maxColor:values = [(0.5, 0.75, 1, 1), (0, 0, 1, 0)]
+            float[] primvars:particle:minSize:x:times = [0, 1]
+            float[] primvars:particle:minSize:x:values = [4, 12]
+            token[] primvars:particle:minSize:x:inTangentTypes = ["auto", "auto"]
+            token[] primvars:particle:minSize:x:outTangentTypes = ["auto", "auto"]
+            float[] primvars:particle:minSize:x:inTangentValues = [0, -2]
+            float[] primvars:particle:minSize:x:outTangentValues = [3, 0]
+            float[] primvars:particle:minSize:x:inTangentTimes = [0, -0.25]
+            float[] primvars:particle:minSize:x:outTangentTimes = [0.25, 0]
+            bool[] primvars:particle:minSize:x:tangentBrokens = [0, 0]
+            float[] primvars:particle:minSize:y:times = [0, 0.5, 1]
+            float[] primvars:particle:minSize:y:values = [4, 8, 6]
+            token[] primvars:particle:minSize:y:outTangentTypes = ["linear", "step", "linear"]
+            float[] primvars:particle:maxSize:x:times = [0, 1]
+            float[] primvars:particle:maxSize:x:values = [8, 16]
+
+            def Mesh "emitter"
+            {
+                int[] faceVertexCounts = [4, 4, 4, 4]
+                int[] faceVertexIndices = [0, 3, 4, 1, 1, 4, 5, 2, 3, 6, 7, 4, 4, 7, 8, 5]
+                point3f[] points = [(-50, 0, -50), (0, 0, -50), (50, 0, -50), (-50, 0, 0), (0, 0, 0), (50, 0, 0), (-50, 0, 50), (0, 0, 50), (50, 0, 50)]
+                texCoord2f[] primvars:st = [(0, 0), (0.5, 0), (1, 0), (0, 0.5), (0.5, 0.5), (1, 0.5), (0, 1), (0.5, 1), (1, 1)] (
+                    interpolation = "vertex"
+                )
+                uniform token subdivisionScheme = "none"
+            }
+        }
+    }
+
+    def Scope "Looks"
+    {
+        over "mat_00000000005A4B50" (
+            prepend apiSchemas = ["ParticleSystemAPI"]
+        )
+        {
+            int primvars:particle:maxNumParticles = 64
+            float primvars:particle:spawnRatePerSecond = 64
+            float primvars:particle:minTimeToLive = 0.25
+            float primvars:particle:maxTimeToLive = 0.5
+            float primvars:particle:initialVelocityFromNormal = 300
+            float primvars:particle:initialVelocityConeAngleDegrees = 45
+            float primvars:particle:dragCoefficient = 1.5
+            float primvars:particle:motionTrailMultiplier = 2
+            uniform token primvars:particle:randomFlipAxis = "Both"
+            bool primvars:particle:enableMotionTrail = 1
+            bool primvars:particle:alignParticlesToVelocity = 1
+            color4f primvars:particle:minSpawnColor = (1, 0.75, 0.25, 1)
+            color4f primvars:particle:minTargetColor = (1, 0.25, 0, 0.5)
+            color4f primvars:particle:maxSpawnColor = (1, 1, 0.5, 1)
+            color4f primvars:particle:maxTargetColor = (1, 0.5, 0, 0.5)
+            float2 primvars:particle:minSpawnSize = (2, 2)
+            float2 primvars:particle:minTargetSize = (1, 1)
+            float2 primvars:particle:maxSpawnSize = (3, 3)
+            float2 primvars:particle:maxTargetSize = (1, 1)
+        }
+
+        over "mat_000000000005E0CE" (
+            prepend apiSchemas = ["ParticleSystemAPI"]
+        )
+        {
+            int primvars:particle:maxNumParticles = 2000
+            float primvars:particle:spawnRatePerSecond = 480
+            float primvars:particle:spawnBurstDuration = 0.25
+            float primvars:particle:minTimeToLive = 2
+            float primvars:particle:maxTimeToLive = 3
+            float primvars:particle:initialVelocityFromNormal = 50
+            float primvars:particle:initialVelocityConeAngleDegrees = 20
+            float primvars:particle:initialRotationDeviationDegrees = 90
+            float primvars:particle:turbulenceForce = 20
+            float primvars:particle:turbulenceFrequency = 0.0625
+            float3 primvars:particle:attractorPosition = (0, 300, 0)
+            float primvars:particle:attractorForce = 50
+            float primvars:particle:attractorRadius = 100
+            float primvars:particle:dragCoefficient = 0.5
+            uniform token primvars:particle:billboardType = "FaceCamera_UpAxisLocked"
+            bool primvars:particle:useTurbulence = 1
+            color4f primvars:particle:minSpawnColor = (0.5, 0.5, 0.5, 0.75)
+            color4f primvars:particle:minTargetColor = (0.25, 0.25, 0.25, 0)
+            color4f primvars:particle:maxSpawnColor = (0.75, 0.75, 0.75, 0.75)
+            color4f primvars:particle:maxTargetColor = (0.5, 0.5, 0.5, 0)
+            float2 primvars:particle:minSpawnSize = (20, 20)
+            float2 primvars:particle:minTargetSize = (60, 60)
+            float2 primvars:particle:maxSpawnSize = (30, 30)
+            float2 primvars:particle:maxTargetSize = (90, 90)
+            float[] primvars:particle:minRotationSpeed:times = [0, 1]
+            float[] primvars:particle:minRotationSpeed:values = [0.5, -0.5]
+            float[] primvars:particle:maxRotationSpeed:times = [0, 1]
+            float[] primvars:particle:maxRotationSpeed:values = [1, 0]
+            float[] primvars:particle:maxVelocity:x:times = [0, 1]
+            float[] primvars:particle:maxVelocity:x:values = [30, 30]
+            float[] primvars:particle:maxVelocity:y:times = [0, 0.5, 1]
+            float[] primvars:particle:maxVelocity:y:values = [80, 60, 40]
+            float[] primvars:particle:maxVelocity:z:times = [0, 1]
+            float[] primvars:particle:maxVelocity:z:values = [30, 30]
+        }
+    }
+}

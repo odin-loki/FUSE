@@ -22,3 +22,23 @@ add_executable(fuse_p7_net_smoke
 
 target_link_libraries(fuse_p7_net_smoke PRIVATE fuse_net fuse_core)
 add_test(NAME fuse_p7_net_smoke COMMAND fuse_p7_net_smoke)
+
+# B7.4 / B7.10 networking gate proofs (ENet two-process, rollback, interpolation, deltas, relevance).
+add_executable(fuse_b7_net_gates
+    test_b7_net_gates.cpp
+)
+
+target_link_libraries(fuse_b7_net_gates PRIVATE fuse_net fuse_ecs fuse_core)
+add_test(NAME fuse_b7_net_gates COMMAND fuse_b7_net_gates)
+set_tests_properties(fuse_b7_net_gates PROPERTIES TIMEOUT 180)
+
+# Opt-in sanitizers follow the repo-wide switches (fuse-asan preset / FUSE_CORE_ENABLE_UBSAN).
+foreach(_fuse_net_target fuse_net fuse_net_tests fuse_p7_net_smoke fuse_b7_net_gates)
+    if(COMMAND fuse_apply_asan)
+        fuse_apply_asan(${_fuse_net_target})
+    endif()
+    if(FUSE_CORE_ENABLE_UBSAN AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        target_compile_options(${_fuse_net_target} PRIVATE -fsanitize=undefined -fno-omit-frame-pointer)
+        target_link_options(${_fuse_net_target} PRIVATE -fsanitize=undefined)
+    endif()
+endforeach()

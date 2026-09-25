@@ -1,0 +1,40 @@
+#usda 1.0
+
+# RL-3.1 fixture: internal references (no asset). Targets inside the referenced prim follow it; targets outside
+# keep their path (internal arcs keep the root identity), as in a Remix capture's instances.
+def Xform "RootNode"
+{
+    def Scope "prototypes"
+    {
+        def Xform "proto" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding = </RootNode/Looks/mat_00000000000000D1>
+            rel self_target = </RootNode/prototypes/proto/geo>
+            float size = 1
+
+            def Mesh "geo"
+            {
+                point3f[] points = [(0, 0, 0)]
+            }
+        }
+    }
+
+    def Scope "Looks"
+    {
+        def Material "mat_00000000000000D1"
+        {
+        }
+    }
+
+    def Xform "meshes"
+    {
+        def Xform "mesh_00000000000000D2" (
+            prepend references = </RootNode/prototypes/proto>
+        )
+        {
+            float size = 2
+        }
+    }
+}

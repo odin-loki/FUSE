@@ -1,0 +1,67 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "light",
+  "id": "mod/fixture_game/remix_basic/mesh_7E2C8A4F1B3D5E60/attached_light",
+  "name": "attached_light",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 1,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "type": "Spot",
+    "colorLinear": [1, 1, 1],
+    "intensity": 800,
+    "range": 0,
+    "innerCone": 0.7853981633974483,
+    "outerCone": 1.0471975511965976,
+    "size": [0, 0],
+    "castsShadows": true,
+    "relight": {
+      "usd_type": "SphereLight",
+      "intensity_units": "remix",
+      "params": {
+        "radius": 0.25,
+        "width": 0,
+        "height": 0,
+        "length": 0,
+        "angle": 0,
+        "enableColorTemperature": false,
+        "color": [1, 1, 1],
+        "colorTemperature": 6500,
+        "exposure": 0,
+        "intensity": 800,
+        "shaping:cone:angle": 60,
+        "shaping:cone:softness": 0.25,
+        "shaping:focus": 0,
+        "volumetric_radiance_scale": 1
+      },
+      "authored": ["intensity", "radius", "shaping:cone:angle", "shaping:cone:softness"],
+      "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1.5, 0, 1],
+      "remix_hash": null,
+      "attached_to": "poco:mod/fixture_game/remix_basic/mesh_7E2C8A4F1B3D5E60"
+    }
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:remix_basic"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "remix_basic",
+      "stage": "mod.usda",
+      "prim": "/RootNode/meshes/mesh_7E2C8A4F1B3D5E60/attached_light",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "MIT",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

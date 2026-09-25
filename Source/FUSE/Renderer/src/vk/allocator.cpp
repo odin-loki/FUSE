@@ -3,6 +3,7 @@
 #include <fuse/renderer/vk/debug_utils.hpp>
 
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <utility>
 
@@ -22,10 +23,24 @@
 #include <vulkan/vulkan.h>
 #endif
 
-#if defined(FUSE_VMA_AVAILABLE)
+#if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_VMA_AVAILABLE)
+// Vendored header-only VMA (Engine/lib/vma, pinned in Engine/lib/vma/VERSION); this TU holds the
+// implementation. "Static" Vulkan functions: with volk (WP-0.2, vk/loader.hpp) every vk* name here
+// is volk's function-pointer global, so vmaCreateAllocator copies the table that is current for
+// the device (device-level dispatch, or loader trampolines while several devices are live) and
+// every vkAllocateMemory / vkCreateBuffer / vkCreateImage VMA issues goes through the same
+// pointers as the rest of fuse_rhi (layers, the b5 call-hook tests, which wrap them on reload).
+// VMA_DYNAMIC_VULKAN_FUNCTIONS stays 0: nothing is fetched with vkGet*ProcAddr behind volk's back.
+// VMA_VULKAN_VERSION matches the 1.2 instance (instance.cpp) so no 1.3+ entry points are referenced.
+#define VMA_STATIC_VULKAN_FUNCTIONS 1
+#define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
+#define VMA_VULKAN_VERSION 1002000
 #define VMA_IMPLEMENTATION
-#define VMA_STATIC_VULKAN_FUNCTIONS 0
 #include <vk_mem_alloc.h>
+
+// The header compiled here must be the release Engine/lib/vma/VERSION pins (CMake passes the pin).
+static_assert(VMA_VERSION == VK_MAKE_VERSION(FUSE_VMA_PIN_MAJOR, FUSE_VMA_PIN_MINOR, FUSE_VMA_PIN_PATCH),
+              "Engine/lib/vma/include/vk_mem_alloc.h does not match the version pinned in Engine/lib/vma/VERSION");
 #endif
 
 namespace fuse::renderer {
@@ -34,6 +49,7 @@ namespace {
 
 void closeExportedHandle(void* handle);
 bool bufferNeedsHostMapping(MemoryUsage usage);
+[[maybe_unused]] const char* resolveDebugName(const char* name, const char* fallback);
 
 #if defined(FUSE_VULKAN_BACKEND)
 bool hasUsage(BufferUsage usage, BufferUsage flag) {
@@ -70,6 +86,19 @@ VkBufferUsageFlags toVkBufferUsage(BufferUsage usage) {
     if (hasUsage(usage, BufferUsage::Indirect)) {
         flags |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
     }
+#if defined(VK_KHR_acceleration_structure)
+    if (hasUsage(usage, BufferUsage::AccelerationStructureStorage)) {
+        flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR;
+    }
+    if (hasUsage(usage, BufferUsage::AccelerationStructureBuildInput)) {
+        flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+    }
+#endif
+#if defined(VK_KHR_ray_tracing_pipeline)
+    if (hasUsage(usage, BufferUsage::ShaderBindingTable)) {
+        flags |= VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR;
+    }
+#endif
     return flags;
 }
 
@@ -80,7 +109,8 @@ bool deviceHasBufferDeviceAddress(const VulkanDevice* device) {
 bool usageWantsDeviceAddress(BufferUsage usage) {
     return hasUsage(usage, BufferUsage::ShaderDeviceAddress) ||
            hasUsage(usage, BufferUsage::Storage) || hasUsage(usage, BufferUsage::Uniform) ||
-           hasUsage(usage, BufferUsage::Vertex);
+           hasUsage(usage, BufferUsage::Vertex) || hasUsage(usage, BufferUsage::AccelerationStructureStorage) ||
+           hasUsage(usage, BufferUsage::AccelerationStructureBuildInput) || hasUsage(usage, BufferUsage::ShaderBindingTable);
 }
 
 VkBufferUsageFlags resolveVkBufferUsage(const VulkanDevice* device, BufferUsage usage) {
@@ -90,6 +120,19 @@ VkBufferUsageFlags resolveVkBufferUsage(const VulkanDevice* device, BufferUsage 
     } else if (!deviceHasBufferDeviceAddress(device)) {
         flags &= ~static_cast<VkBufferUsageFlags>(VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
     }
+#if defined(VK_KHR_acceleration_structure)
+    if (device == nullptr || !device->info().caps.accelerationStructure) {
+        // WP-6.0: the AS usages are only valid with VK_KHR_acceleration_structure enabled.
+        flags &= ~static_cast<VkBufferUsageFlags>(VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
+                                                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR);
+    }
+#endif
+#if defined(VK_KHR_ray_tracing_pipeline)
+    if (device == nullptr || !device->info().caps.rayTracingPipeline) {
+        // WP-7.3 follow-up: the SBT usage is only valid with VK_KHR_ray_tracing_pipeline enabled.
+        flags &= ~static_cast<VkBufferUsageFlags>(VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR);
+    }
+#endif
     return flags;
 }
 
@@ -165,31 +208,17 @@ VkImageCreateFlags imageCreateFlags(const TextureDesc& desc) {
     return desc.cubeMap ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
 }
 
-#if defined(FUSE_VMA_AVAILABLE)
-VmaMemoryUsage toVmaMemoryUsage(MemoryUsage usage) {
-    switch (usage) {
-    case MemoryUsage::GpuOnly:
-        return VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-    case MemoryUsage::CpuToGpu:
-        return VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
-    case MemoryUsage::GpuToCpu:
-        return VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
-    case MemoryUsage::CpuOnly:
-        return VMA_MEMORY_USAGE_CPU_ONLY;
-    }
-    return VMA_MEMORY_USAGE_AUTO;
+bool isDepthFormat(GpuFormat format) {
+    return format == GpuFormat::D32Sfloat;
 }
-#else
-u32 findMemoryType(VkPhysicalDevice physicalDevice, u32 typeFilter, VkMemoryPropertyFlags properties) {
-    VkPhysicalDeviceMemoryProperties memProperties{};
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-    for (u32 i = 0; i < memProperties.memoryTypeCount; ++i) {
-        if ((typeFilter & (1u << i)) &&
-            (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            return i;
-        }
-    }
-    return UINT32_MAX;
+
+/// Depth formats need a DEPTH-aspect view; a COLOR-aspect view of D32 is invalid.
+VkImageAspectFlags imageAspectFor(GpuFormat format) {
+    return isDepthFormat(format) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+}
+
+bool textureNeedsHostMapping(const TextureDesc& desc) {
+    return desc.memoryUsage != MemoryUsage::GpuOnly;
 }
 
 VkExternalMemoryHandleTypeFlagBits platformExternalMemoryHandleType() {
@@ -240,6 +269,271 @@ bool exportDeviceMemoryHandle(VkDevice device, VkDeviceMemory memory, void*& out
     return true;
 }
 
+VkImageCreateInfo makeImageCreateInfo(const TextureDesc& desc) {
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.flags = imageCreateFlags(desc);
+    imageInfo.imageType = desc.depth > 1 ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
+    imageInfo.format = toVkFormat(desc.format);
+    imageInfo.extent = {desc.width, desc.height, desc.depth};
+    imageInfo.mipLevels = desc.mipLevels;
+    imageInfo.arrayLayers = desc.arrayLayers;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    const bool hostVisible = textureNeedsHostMapping(desc);
+    imageInfo.tiling = hostVisible ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage = toVkImageUsage(desc.usage);
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    // Linear host textures start PREINITIALIZED so texels the CPU writes before the first
+    // transition survive it; optimal images start UNDEFINED.
+    imageInfo.initialLayout = hostVisible ? VK_IMAGE_LAYOUT_PREINITIALIZED : VK_IMAGE_LAYOUT_UNDEFINED;
+    return imageInfo;
+}
+
+/// Linear tiling (host-mapped textures) is only guaranteed for single-mip, single-layer 2D colour
+/// images, and per-format usage support must be queried.
+bool linearImageSupported(VkPhysicalDevice physicalDevice, const VkImageCreateInfo& imageInfo,
+                          const TextureDesc& desc) {
+    if (imageInfo.imageType != VK_IMAGE_TYPE_2D || desc.mipLevels != 1u || desc.arrayLayers != 1u ||
+        isDepthFormat(desc.format)) {
+        return false;
+    }
+    VkImageFormatProperties formatProperties{};
+    return vkGetPhysicalDeviceImageFormatProperties(physicalDevice, imageInfo.format, imageInfo.imageType,
+                                                    imageInfo.tiling, imageInfo.usage, imageInfo.flags,
+                                                    &formatProperties) == VK_SUCCESS;
+}
+
+/// Row pitch + offset of mip 0 / layer 0 of a linear image, for the persistently mapped pointer.
+VkSubresourceLayout linearImageLayout(VkDevice device, VkImage image) {
+    VkImageSubresource subresource{};
+    subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    VkSubresourceLayout layout{};
+    vkGetImageSubresourceLayout(device, image, &subresource, &layout);
+    return layout;
+}
+
+#if defined(FUSE_VMA_AVAILABLE)
+/// MemoryUsage -> VMA allocation request. Host usages are persistently mapped (MAPPED_BIT) and
+/// require HOST_COHERENT memory: FUSE writes/reads mapped pointers without explicit
+/// vkFlushMappedMemoryRanges / vkInvalidateMappedMemoryRanges (same contract as the native path).
+///   GpuOnly  -> AUTO_PREFER_DEVICE (DEVICE_LOCAL)
+///   CpuToGpu -> AUTO + sequential-write host access (VMA picks BAR memory for non-staging buffers)
+///   GpuToCpu -> AUTO_PREFER_HOST + random host access, preferring HOST_CACHED for fast CPU reads
+///   CpuOnly  -> AUTO_PREFER_HOST + sequential-write host access (system memory)
+VmaAllocationCreateInfo makeAllocationCreateInfo(MemoryUsage usage) {
+    constexpr VkMemoryPropertyFlags kHost =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    VmaAllocationCreateInfo info{};
+    switch (usage) {
+    case MemoryUsage::GpuOnly:
+        info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        break;
+    case MemoryUsage::CpuToGpu:
+        info.usage = VMA_MEMORY_USAGE_AUTO;
+        info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        info.requiredFlags = kHost;
+        break;
+    case MemoryUsage::GpuToCpu:
+        info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+        info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        info.requiredFlags = kHost;
+        info.preferredFlags = VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+        break;
+    case MemoryUsage::CpuOnly:
+        info.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+        info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        info.requiredFlags = kHost;
+        break;
+    }
+    return info;
+}
+
+/// Buffer through VMA. `enableExport` (CUDA interop) needs a whole exportable VkDeviceMemory, so it
+/// goes through vmaCreateDedicatedBuffer with a VkExportMemoryAllocateInfo chain.
+bool vmaCreateBufferImpl(VmaAllocator allocator, const VulkanDevice* vulkanDevice, const BufferDesc& desc,
+                         bool enableExport, Buffer& out) {
+    VkExternalMemoryBufferCreateInfo externalBufferInfo{};
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = desc.size;
+    bufferInfo.usage = resolveVkBufferUsage(vulkanDevice, desc.usage);
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    VkExportMemoryAllocateInfo exportAllocInfo{};
+    if (enableExport) {
+        externalBufferInfo.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO;
+        externalBufferInfo.handleTypes = platformExternalMemoryHandleType();
+        bufferInfo.pNext = &externalBufferInfo;
+        exportAllocInfo.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
+        exportAllocInfo.handleTypes = platformExternalMemoryHandleType();
+    }
+
+    const VmaAllocationCreateInfo allocCreateInfo = makeAllocationCreateInfo(desc.memoryUsage);
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    VmaAllocationInfo allocInfo{};
+    const VkResult result =
+        enableExport ? vmaCreateDedicatedBuffer(allocator, &bufferInfo, &allocCreateInfo, &exportAllocInfo, &buffer,
+                                                &allocation, &allocInfo)
+                     : vmaCreateBuffer(allocator, &bufferInfo, &allocCreateInfo, &buffer, &allocation, &allocInfo);
+    if (result != VK_SUCCESS) {
+        return false;
+    }
+    if (bufferNeedsHostMapping(desc.memoryUsage) && allocInfo.pMappedData == nullptr) {
+        vmaDestroyBuffer(allocator, buffer, allocation);
+        return false;
+    }
+
+    void* exported = nullptr;
+    if (enableExport) {
+        (void)exportDeviceMemoryHandle(static_cast<VkDevice>(vulkanDevice->nativeHandle()), allocInfo.deviceMemory,
+                                       exported);
+    }
+    VkMemoryPropertyFlags memoryFlags = 0;
+    vmaGetMemoryTypeProperties(allocator, allocInfo.memoryType, &memoryFlags);
+
+    out.handle = buffer;
+    out.allocation = allocation;
+    out.desc = desc;
+    out.mapped = bufferNeedsHostMapping(desc.memoryUsage) ? allocInfo.pMappedData : nullptr;
+    out.deviceAddress = fetchBufferDeviceAddress(vulkanDevice, buffer, bufferInfo.usage);
+    out.exportedHandle = exported;
+    out.allocationSize = static_cast<u64>(allocInfo.size);
+    out.memoryPropertyFlags = static_cast<u32>(memoryFlags);
+    return true;
+}
+
+bool vmaCreateImageImpl(VmaAllocator allocator, VkDevice device, VkPhysicalDevice physicalDevice,
+                        const TextureDesc& desc, bool enableExport, Texture& out) {
+    VkImageCreateInfo imageInfo = makeImageCreateInfo(desc);
+    const bool hostVisible = textureNeedsHostMapping(desc);
+    if (hostVisible && !linearImageSupported(physicalDevice, imageInfo, desc)) {
+        return false;
+    }
+    VkExternalMemoryImageCreateInfo externalImageInfo{};
+    VkExportMemoryAllocateInfo exportAllocInfo{};
+    if (enableExport) {
+        externalImageInfo.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
+        externalImageInfo.handleTypes = platformExternalMemoryHandleType();
+        imageInfo.pNext = &externalImageInfo;
+        exportAllocInfo.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
+        exportAllocInfo.handleTypes = platformExternalMemoryHandleType();
+    }
+
+    const VmaAllocationCreateInfo allocCreateInfo = makeAllocationCreateInfo(desc.memoryUsage);
+    VkImage image = VK_NULL_HANDLE;
+    VmaAllocation allocation = VK_NULL_HANDLE;
+    VmaAllocationInfo allocInfo{};
+    const VkResult result =
+        enableExport ? vmaCreateDedicatedImage(allocator, &imageInfo, &allocCreateInfo, &exportAllocInfo, &image,
+                                               &allocation, &allocInfo)
+                     : vmaCreateImage(allocator, &imageInfo, &allocCreateInfo, &image, &allocation, &allocInfo);
+    if (result != VK_SUCCESS) {
+        return false;
+    }
+    if (hostVisible && allocInfo.pMappedData == nullptr) {
+        vmaDestroyImage(allocator, image, allocation);
+        return false;
+    }
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = image;
+    viewInfo.viewType = selectImageViewType(desc);
+    viewInfo.format = toVkFormat(desc.format);
+    viewInfo.subresourceRange.aspectMask = imageAspectFor(desc.format);
+    viewInfo.subresourceRange.levelCount = desc.mipLevels;
+    viewInfo.subresourceRange.layerCount = desc.arrayLayers;
+    VkImageView view = VK_NULL_HANDLE;
+    if (vkCreateImageView(device, &viewInfo, nullptr, &view) != VK_SUCCESS) {
+        vmaDestroyImage(allocator, image, allocation);
+        return false;
+    }
+
+    void* exported = nullptr;
+    if (enableExport) {
+        (void)exportDeviceMemoryHandle(device, allocInfo.deviceMemory, exported);
+    }
+    VkMemoryPropertyFlags memoryFlags = 0;
+    vmaGetMemoryTypeProperties(allocator, allocInfo.memoryType, &memoryFlags);
+
+    out.image = image;
+    out.view = view;
+    out.allocation = allocation;
+    out.desc = desc;
+    out.exportedHandle = exported;
+    out.allocationSize = static_cast<u64>(allocInfo.size);
+    out.memoryPropertyFlags = static_cast<u32>(memoryFlags);
+    out.mapped = nullptr;
+    out.mappedRowPitch = 0;
+    out.layout = 0;
+    if (hostVisible) {
+        // pMappedData points at the start of this allocation (VMA adds the block offset);
+        // the subresource offset is relative to the image.
+        const VkSubresourceLayout layout = linearImageLayout(device, image);
+        out.mapped = static_cast<u8*>(allocInfo.pMappedData) + layout.offset;
+        out.mappedRowPitch = static_cast<u64>(layout.rowPitch);
+        out.layout = static_cast<u32>(VK_IMAGE_LAYOUT_PREINITIALIZED);
+    }
+    return true;
+}
+#else
+u32 findMemoryType(VkPhysicalDevice physicalDevice, u32 typeFilter, VkMemoryPropertyFlags properties,
+                   VkMemoryPropertyFlags* outFlags = nullptr) {
+    VkPhysicalDeviceMemoryProperties memProperties{};
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+    for (u32 i = 0; i < memProperties.memoryTypeCount; ++i) {
+        if ((typeFilter & (1u << i)) &&
+            (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            if (outFlags != nullptr) {
+                *outFlags = memProperties.memoryTypes[i].propertyFlags;
+            }
+            return i;
+        }
+    }
+    return UINT32_MAX;
+}
+
+/// Memory type for a MemoryUsage, most-preferred property set first (VMA usage semantics):
+///   GpuOnly  -> DEVICE_LOCAL
+///   CpuToGpu -> HOST_VISIBLE|COHERENT, preferring DEVICE_LOCAL (BAR) when the heap offers it
+///   GpuToCpu -> HOST_VISIBLE|COHERENT, preferring HOST_CACHED for fast CPU reads
+///   CpuOnly  -> HOST_VISIBLE|COHERENT, preferring non-device-local system memory
+u32 selectMemoryType(VkPhysicalDevice physicalDevice, u32 typeFilter, MemoryUsage usage,
+                     VkMemoryPropertyFlags* outFlags) {
+    constexpr VkMemoryPropertyFlags kHost =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    switch (usage) {
+    case MemoryUsage::GpuOnly:
+        return findMemoryType(physicalDevice, typeFilter, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, outFlags);
+    case MemoryUsage::CpuToGpu: {
+        const u32 bar = findMemoryType(physicalDevice, typeFilter, kHost | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                       outFlags);
+        return bar != UINT32_MAX ? bar : findMemoryType(physicalDevice, typeFilter, kHost, outFlags);
+    }
+    case MemoryUsage::GpuToCpu: {
+        const u32 cached =
+            findMemoryType(physicalDevice, typeFilter, kHost | VK_MEMORY_PROPERTY_HOST_CACHED_BIT, outFlags);
+        return cached != UINT32_MAX ? cached : findMemoryType(physicalDevice, typeFilter, kHost, outFlags);
+    }
+    case MemoryUsage::CpuOnly: {
+        VkPhysicalDeviceMemoryProperties memProperties{};
+        vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+        for (u32 i = 0; i < memProperties.memoryTypeCount; ++i) {
+            const VkMemoryPropertyFlags flags = memProperties.memoryTypes[i].propertyFlags;
+            if ((typeFilter & (1u << i)) && (flags & kHost) == kHost &&
+                (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) == 0) {
+                if (outFlags != nullptr) {
+                    *outFlags = flags;
+                }
+                return i;
+            }
+        }
+        return findMemoryType(physicalDevice, typeFilter, kHost, outFlags);
+    }
+    }
+    return UINT32_MAX;
+}
+
 bool nativeCreateBuffer(const VulkanDevice* vulkanDevice, VkDevice device,
                         VkPhysicalDevice physicalDevice, const BufferDesc& desc, bool enableExport,
                         Buffer& out) {
@@ -264,10 +558,9 @@ bool nativeCreateBuffer(const VulkanDevice* vulkanDevice, VkDevice device,
     vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
 
     const bool hostVisible = bufferNeedsHostMapping(desc.memoryUsage);
-    const VkMemoryPropertyFlags memFlags =
-        hostVisible ? (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
-                    : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    const u32 memoryTypeIndex = findMemoryType(physicalDevice, memRequirements.memoryTypeBits, memFlags);
+    VkMemoryPropertyFlags memoryFlags = 0;
+    const u32 memoryTypeIndex =
+        selectMemoryType(physicalDevice, memRequirements.memoryTypeBits, desc.memoryUsage, &memoryFlags);
     if (memoryTypeIndex == UINT32_MAX) {
         vkDestroyBuffer(device, buffer, nullptr);
         return false;
@@ -326,25 +619,18 @@ bool nativeCreateBuffer(const VulkanDevice* vulkanDevice, VkDevice device,
     out.deviceAddress = fetchBufferDeviceAddress(vulkanDevice, buffer, bufferInfo.usage);
     out.exportedHandle = exported;
     out.allocationSize = memRequirements.size;
+    out.memoryPropertyFlags = static_cast<u32>(memoryFlags);
     return true;
 }
 
 bool nativeCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, const TextureDesc& desc,
                        bool enableExport, Texture& out) {
+    VkImageCreateInfo imageInfo = makeImageCreateInfo(desc);
+    const bool hostVisible = textureNeedsHostMapping(desc);
+    if (hostVisible && !linearImageSupported(physicalDevice, imageInfo, desc)) {
+        return false;
+    }
     VkExternalMemoryImageCreateInfo externalImageInfo{};
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.flags = imageCreateFlags(desc);
-    imageInfo.imageType = desc.depth > 1 ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
-    imageInfo.format = toVkFormat(desc.format);
-    imageInfo.extent = {desc.width, desc.height, desc.depth};
-    imageInfo.mipLevels = desc.mipLevels;
-    imageInfo.arrayLayers = desc.arrayLayers;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.usage = toVkImageUsage(desc.usage);
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     if (enableExport) {
         externalImageInfo.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
         externalImageInfo.handleTypes = platformExternalMemoryHandleType();
@@ -359,8 +645,9 @@ bool nativeCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, const T
     VkMemoryRequirements memRequirements{};
     vkGetImageMemoryRequirements(device, image, &memRequirements);
 
-    const u32 memoryTypeIndex = findMemoryType(physicalDevice, memRequirements.memoryTypeBits,
-                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    VkMemoryPropertyFlags memoryFlags = 0;
+    const u32 memoryTypeIndex =
+        selectMemoryType(physicalDevice, memRequirements.memoryTypeBits, desc.memoryUsage, &memoryFlags);
     if (memoryTypeIndex == UINT32_MAX) {
         vkDestroyImage(device, image, nullptr);
         return false;
@@ -399,7 +686,7 @@ bool nativeCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, const T
     viewInfo.image = image;
     viewInfo.viewType = selectImageViewType(desc);
     viewInfo.format = toVkFormat(desc.format);
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.aspectMask = imageAspectFor(desc.format);
     viewInfo.subresourceRange.levelCount = desc.mipLevels;
     viewInfo.subresourceRange.layerCount = desc.arrayLayers;
 
@@ -411,12 +698,32 @@ bool nativeCreateImage(VkDevice device, VkPhysicalDevice physicalDevice, const T
         return false;
     }
 
+    void* mapped = nullptr;
+    u64 rowPitch = 0;
+    if (hostVisible) {
+        const VkSubresourceLayout layout = linearImageLayout(device, image);
+        void* base = nullptr;
+        if (vkMapMemory(device, memory, 0, VK_WHOLE_SIZE, 0, &base) != VK_SUCCESS) {
+            vkDestroyImageView(device, view, nullptr);
+            closeExportedHandle(exported);
+            vkDestroyImage(device, image, nullptr);
+            vkFreeMemory(device, memory, nullptr);
+            return false;
+        }
+        mapped = static_cast<u8*>(base) + layout.offset;
+        rowPitch = static_cast<u64>(layout.rowPitch);
+    }
+
     out.image = image;
     out.view = view;
     out.allocation = memory;
     out.desc = desc;
     out.exportedHandle = exported;
     out.allocationSize = memRequirements.size;
+    out.mapped = mapped;
+    out.mappedRowPitch = rowPitch;
+    out.memoryPropertyFlags = static_cast<u32>(memoryFlags);
+    out.layout = hostVisible ? static_cast<u32>(VK_IMAGE_LAYOUT_PREINITIALIZED) : 0u;
     return true;
 }
 #endif
@@ -434,14 +741,20 @@ void closeExportedHandle(void* handle) {
 }
 
 bool bufferNeedsHostMapping(MemoryUsage usage) {
-    return usage == MemoryUsage::CpuToGpu || usage == MemoryUsage::GpuToCpu;
+    // CpuOnly is host memory too (staging / CPU-side scratch): it must be mapped like the others.
+    return usage == MemoryUsage::CpuToGpu || usage == MemoryUsage::GpuToCpu || usage == MemoryUsage::CpuOnly;
+}
+
+[[maybe_unused]] const char* resolveDebugName(const char* name, const char* fallback) {
+    return (name != nullptr && name[0] != '\0') ? name : fallback;
 }
 
 #if defined(FUSE_VULKAN_BACKEND)
-// VkObjectType numeric: deviceMemory=8, buffer=9, image=10.
+// VkObjectType numeric: deviceMemory=8, buffer=9, image=10, imageView=14.
 constexpr u32 kVkObjectTypeDeviceMemory = 8;
 constexpr u32 kVkObjectTypeBuffer = 9;
 constexpr u32 kVkObjectTypeImage = 10;
+constexpr u32 kVkObjectTypeImageView = 14;
 
 void trySetDebugName(void* vkDevice, u32 vkObjectType, void* handle, const char* name,
                      GpuAllocStats& stats) {
@@ -455,6 +768,8 @@ void trySetDebugName(void* vkDevice, u32 vkObjectType, void* handle, const char*
 }
 #endif
 
+#if !defined(FUSE_VULKAN_BACKEND)
+// Host-side stand-in for mapped buffers when the Vulkan backend is compiled out.
 void* allocateStubMappedBuffer(usize size) {
     if (size == 0) {
         return nullptr;
@@ -468,8 +783,37 @@ void freeStubMappedBuffer(void* mapped) {
         delete[] static_cast<u8*>(mapped);
     }
 }
+#endif
 
 } // namespace
+
+#if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_VMA_AVAILABLE)
+/// VMA callbacks that need GpuAllocator internals (friend of GpuAllocator).
+struct GpuAllocatorVmaAccess {
+    /// Every VkDeviceMemory VMA allocates (pool blocks and dedicated allocations) gets a debug
+    /// name at birth; dedicated allocations are renamed after their resource by nameMemory().
+    static void VKAPI_PTR onDeviceMemoryAllocated(VmaAllocator /*allocator*/, uint32_t memoryType,
+                                                  VkDeviceMemory memory, VkDeviceSize /*size*/, void* userData) {
+        auto* self = static_cast<GpuAllocator*>(userData);
+        if (self == nullptr || self->m_device == nullptr) {
+            return;
+        }
+        char name[48];
+        std::snprintf(name, sizeof(name), "fuse.gpu_alloc.vma_block.type%u", static_cast<unsigned>(memoryType));
+        trySetDebugName(self->m_device->nativeHandle(), kVkObjectTypeDeviceMemory, reinterpret_cast<void*>(memory),
+                        name, self->m_stats);
+    }
+
+    static void nameMemory(GpuAllocator& self, VmaAllocation allocation, const char* name) {
+        VmaAllocationInfo2 info{};
+        vmaGetAllocationInfo2(static_cast<VmaAllocator>(self.m_allocator), allocation, &info);
+        if (info.dedicatedMemory == VK_TRUE) {
+            trySetDebugName(self.m_device->nativeHandle(), kVkObjectTypeDeviceMemory,
+                            reinterpret_cast<void*>(info.allocationInfo.deviceMemory), name, self.m_stats);
+        }
+    }
+};
+#endif
 
 void GpuAllocator::setStatsName(const char* name) {
     m_statsName = name != nullptr ? name : "gpu_allocator";
@@ -495,9 +839,11 @@ void GpuAllocator::refreshVmaPoolStats() {
         return;
     }
 
+    // VMA has no per-allocator pool count: report the VkDeviceMemory blocks it owns (default
+    // pools + dedicated allocations) and the bytes sub-allocated from them.
     VmaTotalStatistics totalStats{};
     vmaCalculateStatistics(static_cast<VmaAllocator>(m_allocator), &totalStats);
-    m_stats.vmaPoolCount = totalStats.poolCount;
+    m_stats.vmaPoolCount = totalStats.total.statistics.blockCount;
     m_stats.vmaPoolUsedBytes = static_cast<usize>(totalStats.total.statistics.allocationBytes);
 #else
     m_stats.vmaPoolCount = 0;
@@ -542,10 +888,22 @@ bool GpuAllocator::initialize(VulkanDevice& device) {
         return false;
     }
 
+    // VMA must be told the API version the device actually runs (core 1.1/1.2 entry points and
+    // dedicated-allocation / BDA handling depend on it), clamped to what this TU compiled for.
+    u32 apiVersion = device.info().apiVersion != 0u ? device.info().apiVersion : VK_API_VERSION_1_0;
+    if (apiVersion > VK_API_VERSION_1_2) {
+        apiVersion = VK_API_VERSION_1_2;
+    }
+    VmaDeviceMemoryCallbacks memoryCallbacks{};
+    memoryCallbacks.pfnAllocate = &GpuAllocatorVmaAccess::onDeviceMemoryAllocated;
+    memoryCallbacks.pUserData = this;
+
     VmaAllocatorCreateInfo allocatorInfo{};
+    allocatorInfo.vulkanApiVersion = apiVersion;
     allocatorInfo.physicalDevice = static_cast<VkPhysicalDevice>(device.nativePhysicalDevice());
     allocatorInfo.device = static_cast<VkDevice>(device.nativeHandle());
     allocatorInfo.instance = static_cast<VkInstance>(device.instanceHandle());
+    allocatorInfo.pDeviceMemoryCallbacks = &memoryCallbacks;
     if (device.info().bufferDeviceAddress) {
         allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
     }
@@ -559,7 +917,7 @@ bool GpuAllocator::initialize(VulkanDevice& device) {
     m_allocator = vmaAllocator;
     m_info.valid = true;
     m_info.mode = GpuAllocatorMode::Vma;
-    m_info.message = "VMA allocator ready";
+    m_info.message = "VMA allocator ready (vendored VMA " FUSE_VMA_VERSION_STRING ")";
     device.setVmaAllocator(vmaAllocator);
     refreshBudget();
     return true;
@@ -570,7 +928,7 @@ bool GpuAllocator::initialize(VulkanDevice& device) {
     }
     m_info.valid = true;
     m_info.mode = GpuAllocatorMode::Native;
-    m_info.message = "Native Vulkan allocator (VMA header not available)";
+    m_info.message = "Native Vulkan allocator (FUSE_RHI_USE_VMA=OFF)";
     refreshBudget();
     return true;
 #else
@@ -585,10 +943,10 @@ void GpuAllocator::shutdown() {
 #if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_VMA_AVAILABLE)
     if (m_allocator != nullptr) {
         vmaDestroyAllocator(static_cast<VmaAllocator>(m_allocator));
-        m_allocator = nullptr;
-        if (m_device != nullptr) {
+        if (m_device != nullptr && m_device->info().vmaAllocator == m_allocator) {
             m_device->setVmaAllocator(nullptr);
         }
+        m_allocator = nullptr;
     }
 #endif
     m_device = nullptr;
@@ -602,40 +960,18 @@ bool GpuAllocator::createBuffer(const BufferDesc& desc, Buffer& out) {
     }
 
 #if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_VMA_AVAILABLE)
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = desc.size;
-    bufferInfo.usage = resolveVkBufferUsage(m_device, desc.usage);
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = toVmaMemoryUsage(desc.memoryUsage);
-
-    VkBuffer buffer = VK_NULL_HANDLE;
-    VmaAllocation allocation = VK_NULL_HANDLE;
-    if (vmaCreateBuffer(static_cast<VmaAllocator>(m_allocator), &bufferInfo, &allocInfo, &buffer,
-                        &allocation, nullptr) != VK_SUCCESS) {
+    const auto vma = static_cast<VmaAllocator>(m_allocator);
+    // CUDA interop wants an exportable dedicated allocation; fall back to a plain (sub-)allocation
+    // when the driver cannot export, exactly like the native path.
+    if (!vmaCreateBufferImpl(vma, m_device, desc, desc.cudaInterop, out) &&
+        (!desc.cudaInterop || !vmaCreateBufferImpl(vma, m_device, desc, false, out))) {
         gpu_alloc_detail::recordFailedAlloc(m_stats);
         notifyStats();
         return false;
     }
-
-    out.handle = buffer;
-    out.allocation = allocation;
-    out.desc = desc;
-    out.deviceAddress = fetchBufferDeviceAddress(m_device, buffer, bufferInfo.usage);
-    out.exportedHandle = nullptr;
-    if (desc.cudaInterop) {
-        out.allocationSize = desc.size;
-    }
-    vmaMapMemory(static_cast<VmaAllocator>(m_allocator), allocation, &out.mapped);
-    trySetDebugName(m_device->nativeHandle(), kVkObjectTypeBuffer, out.handle, desc.name, m_stats);
-    {
-        VmaAllocationInfo vmaAllocInfo{};
-        vmaGetAllocationInfo(static_cast<VmaAllocator>(m_allocator), allocation, &vmaAllocInfo);
-        trySetDebugName(m_device->nativeHandle(), kVkObjectTypeDeviceMemory,
-                        reinterpret_cast<void*>(vmaAllocInfo.deviceMemory), desc.name, m_stats);
-    }
+    const char* bufferName = resolveDebugName(desc.name, "fuse.gpu_alloc.buffer");
+    trySetDebugName(m_device->nativeHandle(), kVkObjectTypeBuffer, out.handle, bufferName, m_stats);
+    GpuAllocatorVmaAccess::nameMemory(*this, static_cast<VmaAllocation>(out.allocation), bufferName);
     gpu_alloc_detail::recordBufferAlloc(m_stats, desc.size);
     refreshVmaPoolStats();
     notifyStats();
@@ -659,8 +995,9 @@ bool GpuAllocator::createBuffer(const BufferDesc& desc, Buffer& out) {
         return false;
     }
 
-    trySetDebugName(device, kVkObjectTypeBuffer, out.handle, desc.name, m_stats);
-    trySetDebugName(device, kVkObjectTypeDeviceMemory, out.allocation, desc.name, m_stats);
+    const char* bufferName = resolveDebugName(desc.name, "fuse.gpu_alloc.buffer");
+    trySetDebugName(device, kVkObjectTypeBuffer, out.handle, bufferName, m_stats);
+    trySetDebugName(device, kVkObjectTypeDeviceMemory, out.allocation, bufferName, m_stats);
     gpu_alloc_detail::recordBufferAlloc(m_stats, desc.size);
     notifyStats();
     return true;
@@ -685,10 +1022,7 @@ void GpuAllocator::destroyBuffer(Buffer& buffer) {
     buffer.exportedHandle = nullptr;
 #if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_VMA_AVAILABLE)
     if (m_allocator != nullptr && buffer.handle != nullptr) {
-        if (buffer.mapped != nullptr) {
-            vmaUnmapMemory(static_cast<VmaAllocator>(m_allocator),
-                           static_cast<VmaAllocation>(buffer.allocation));
-        }
+        // Host allocations are persistently mapped (VMA_ALLOCATION_CREATE_MAPPED_BIT): VMA unmaps.
         vmaDestroyBuffer(static_cast<VmaAllocator>(m_allocator),
                          static_cast<VkBuffer>(buffer.handle),
                          static_cast<VmaAllocation>(buffer.allocation));
@@ -736,65 +1070,19 @@ bool GpuAllocator::createImage(const TextureDesc& desc, Texture& out) {
     const usize imageBytes = gpu_alloc_detail::estimateImageBytes(desc);
 
 #if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_VMA_AVAILABLE)
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.flags = imageCreateFlags(desc);
-    imageInfo.imageType = desc.depth > 1 ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
-    imageInfo.format = toVkFormat(desc.format);
-    imageInfo.extent = {desc.width, desc.height, desc.depth};
-    imageInfo.mipLevels = desc.mipLevels;
-    imageInfo.arrayLayers = desc.arrayLayers;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.usage = toVkImageUsage(desc.usage);
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-    VmaAllocationCreateInfo allocInfo{};
-    allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
-    VkImage image = VK_NULL_HANDLE;
-    VmaAllocation allocation = VK_NULL_HANDLE;
-    if (vmaCreateImage(static_cast<VmaAllocator>(m_allocator), &imageInfo, &allocInfo, &image,
-                       &allocation, nullptr) != VK_SUCCESS) {
-        gpu_alloc_detail::recordFailedAlloc(m_stats);
-        notifyStats();
-        return false;
-    }
-
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = image;
-    viewInfo.viewType = selectImageViewType(desc);
-    viewInfo.format = toVkFormat(desc.format);
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    viewInfo.subresourceRange.levelCount = desc.mipLevels;
-    viewInfo.subresourceRange.layerCount = desc.arrayLayers;
-
-    VkImageView view = VK_NULL_HANDLE;
+    const auto vma = static_cast<VmaAllocator>(m_allocator);
     const VkDevice device = static_cast<VkDevice>(m_device->nativeHandle());
-    if (vkCreateImageView(device, &viewInfo, nullptr, &view) != VK_SUCCESS) {
-        vmaDestroyImage(static_cast<VmaAllocator>(m_allocator), image, allocation);
+    const VkPhysicalDevice physicalDevice = static_cast<VkPhysicalDevice>(m_device->nativePhysicalDevice());
+    if (!vmaCreateImageImpl(vma, device, physicalDevice, desc, desc.cudaInterop, out) &&
+        (!desc.cudaInterop || !vmaCreateImageImpl(vma, device, physicalDevice, desc, false, out))) {
         gpu_alloc_detail::recordFailedAlloc(m_stats);
         notifyStats();
         return false;
     }
-
-    out.image = image;
-    out.view = view;
-    out.allocation = allocation;
-    out.desc = desc;
-    out.exportedHandle = nullptr;
-    if (desc.cudaInterop) {
-        out.allocationSize = imageBytes;
-    }
-    trySetDebugName(device, kVkObjectTypeImage, out.image, desc.name, m_stats);
-    {
-        VmaAllocationInfo vmaAllocInfo{};
-        vmaGetAllocationInfo(static_cast<VmaAllocator>(m_allocator), allocation, &vmaAllocInfo);
-        trySetDebugName(device, kVkObjectTypeDeviceMemory,
-                        reinterpret_cast<void*>(vmaAllocInfo.deviceMemory), desc.name, m_stats);
-    }
+    const char* imageName = resolveDebugName(desc.name, "fuse.gpu_alloc.image");
+    trySetDebugName(device, kVkObjectTypeImage, out.image, imageName, m_stats);
+    trySetDebugName(device, kVkObjectTypeImageView, out.view, imageName, m_stats);
+    GpuAllocatorVmaAccess::nameMemory(*this, static_cast<VmaAllocation>(out.allocation), imageName);
     gpu_alloc_detail::recordImageAlloc(m_stats, imageBytes);
     refreshVmaPoolStats();
     notifyStats();
@@ -817,8 +1105,10 @@ bool GpuAllocator::createImage(const TextureDesc& desc, Texture& out) {
         return false;
     }
 
-    trySetDebugName(device, kVkObjectTypeImage, out.image, desc.name, m_stats);
-    trySetDebugName(device, kVkObjectTypeDeviceMemory, out.allocation, desc.name, m_stats);
+    const char* imageName = resolveDebugName(desc.name, "fuse.gpu_alloc.image");
+    trySetDebugName(device, kVkObjectTypeImage, out.image, imageName, m_stats);
+    trySetDebugName(device, kVkObjectTypeImageView, out.view, imageName, m_stats);
+    trySetDebugName(device, kVkObjectTypeDeviceMemory, out.allocation, imageName, m_stats);
     gpu_alloc_detail::recordImageAlloc(m_stats, imageBytes);
     notifyStats();
     return true;
@@ -855,6 +1145,9 @@ void GpuAllocator::destroyImage(Texture& texture) {
             vkDestroyImageView(device, static_cast<VkImageView>(texture.view), nullptr);
         }
         vkDestroyImage(device, static_cast<VkImage>(texture.image), nullptr);
+        if (texture.mapped != nullptr && texture.allocation != nullptr) {
+            vkUnmapMemory(device, static_cast<VkDeviceMemory>(texture.allocation));
+        }
         if (texture.allocation != nullptr) {
             vkFreeMemory(device, static_cast<VkDeviceMemory>(texture.allocation), nullptr);
         }

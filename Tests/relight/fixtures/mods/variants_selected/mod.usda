@@ -1,0 +1,38 @@
+#usda 1.0
+
+# RL-3.1 fixture: a variant set with an authored selection; only the selected variant contributes, and variant
+# opinions are weaker than the prim's local opinions.
+def Xform "RootNode"
+{
+    def Xform "meshes"
+    {
+        def Xform "mesh_0000000000000B01" (
+            variants = {
+                string lod = "high"
+            }
+            prepend variantSets = "lod"
+        )
+        {
+            float local_vs_variant = 1
+
+            variantSet "lod" = {
+                "high" {
+                    float local_vs_variant = 2
+                    float detail = 100
+
+                    def Mesh "hires"
+                    {
+                        int[] faceVertexIndices = [0, 1, 2, 2, 1, 3]
+                    }
+                }
+                "low" {
+                    float detail = 1
+
+                    def Mesh "lores"
+                    {
+                    }
+                }
+            }
+        }
+    }
+}

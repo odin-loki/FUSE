@@ -1,6 +1,7 @@
 # fuse_world_partition — Track B7.6 world partition & streaming stubs
 
 set(FUSE_WORLD_PARTITION_PUBLIC_HEADERS
+    include/fuse/world_partition/cell_file.hpp
     include/fuse/world_partition/grid_cell.hpp
     include/fuse/world_partition/residency_set.hpp
     include/fuse/world_partition/streaming_budget.hpp
@@ -10,6 +11,7 @@ set(FUSE_WORLD_PARTITION_PUBLIC_HEADERS
 )
 
 set(FUSE_WORLD_PARTITION_SOURCES
+    src/cell_file.cpp
     src/streaming_request_queue.cpp
     src/world_partition.cpp
 )

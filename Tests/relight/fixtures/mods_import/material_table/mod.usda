@@ -1,0 +1,207 @@
+#usda 1.0
+(
+    customLayerData = {
+        string lightspeed_layer_type = "replacement"
+    }
+    defaultPrim = "RootNode"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+# RL-3.2 fixture: the plan section 4.5 material table. Every parameter of AperturePBR_Opacity, _Translucent and _Portal
+# is authored with a non-default value (the textures are generated at test time); a mesh with two GeomSubsets binds
+# the opaque and translucent materials, with face-varying texcoords and a quad. The expected records carry every
+# value: the base Material holds the constants it can represent, material_ext everything else.
+def Xform "RootNode"
+{
+    def Scope "meshes"
+    {
+        def Xform "mesh_00000000000000C1"
+        {
+            def Mesh "panel" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                int[] faceVertexCounts = [4, 3]
+                int[] faceVertexIndices = [0, 1, 2, 3, 1, 4, 2]
+                point3f[] points = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (2, 0.5, 0)]
+                texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1), (0.5, 0.5), (1, 0.5), (0, 1)] (
+                    interpolation = "faceVarying"
+                )
+                rel material:binding = </RootNode/Looks/mat_00000000000000A3>
+
+                def GeomSubset "front" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    uniform token elementType = "face"
+                    uniform token familyName = "materialBind"
+                    int[] indices = [0]
+                    rel material:binding = </RootNode/Looks/mat_00000000000000A1>
+                }
+
+                def GeomSubset "glass" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    uniform token elementType = "face"
+                    uniform token familyName = "materialBind"
+                    int[] indices = [1]
+                    rel material:binding = </RootNode/Looks/mat_00000000000000A2>
+                }
+            }
+        }
+    }
+
+    def Scope "Looks"
+    {
+        def Material "mat_00000000000000A1"
+        {
+            token outputs:mdl:surface.connect = </RootNode/Looks/mat_00000000000000A1/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @AperturePBR_Opacity.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "AperturePBR_Opacity"
+                asset inputs:diffuse_texture = @./textures/opaque/diffuse_texture.dds@ (
+                    colorSpace = "auto"
+                )
+                asset inputs:normalmap_texture = @./textures/opaque/normalmap_texture.dds@ (
+                    colorSpace = "raw"
+                )
+                asset inputs:tangent_texture = @./textures/opaque/tangent_texture.dds@ (
+                    colorSpace = "raw"
+                )
+                asset inputs:height_texture = @./textures/opaque/height_texture.dds@ (
+                    colorSpace = "raw"
+                )
+                asset inputs:reflectionroughness_texture = @./textures/opaque/reflectionroughness_texture.dds@ (
+                    colorSpace = "raw"
+                )
+                asset inputs:metallic_texture = @./textures/opaque/metallic_texture.dds@ (
+                    colorSpace = "raw"
+                )
+                asset inputs:emissive_mask_texture = @./textures/opaque/emissive_mask_texture.dds@ (
+                    colorSpace = "auto"
+                )
+                asset inputs:subsurface_transmittance_texture = @./textures/opaque/subsurface_transmittance_texture.dds@ (
+                    colorSpace = "raw"
+                )
+                asset inputs:subsurface_thickness_texture = @./textures/opaque/subsurface_thickness_texture.dds@ (
+                    colorSpace = "raw"
+                )
+                asset inputs:subsurface_single_scattering_texture = @./textures/opaque/subsurface_single_scattering_texture.dds@ (
+                    colorSpace = "raw"
+                )
+                asset inputs:subsurface_radius_texture = @./textures/opaque/subsurface_radius_texture.dds@ (
+                    colorSpace = "raw"
+                )
+                asset inputs:secondary_texture = @./textures/opaque/secondary_texture.dds@ (
+                    colorSpace = "raw"
+                )
+                float inputs:anisotropy = 0.5
+                float inputs:emissive_intensity = 12.5
+                color3f inputs:diffuse_color_constant = (0.25, 0.5, 0.75)
+                float inputs:opacity_constant = 0.5
+                float inputs:reflection_roughness_constant = 0.125
+                float inputs:metallic_constant = 0.875
+                color3f inputs:emissive_color_constant = (0.5, 1, 0.25)
+                bool inputs:enable_emission = 1
+                int inputs:sprite_sheet_rows = 4
+                int inputs:sprite_sheet_cols = 8
+                int inputs:sprite_sheet_fps = 24
+                bool inputs:enable_thin_film = 1
+                bool inputs:thin_film_thickness_from_albedo_alpha = 1
+                float inputs:thin_film_thickness_constant = 750
+                bool inputs:use_legacy_alpha_state = 0
+                bool inputs:blend_enabled = 0
+                int inputs:blend_type = 3
+                bool inputs:inverted_blend = 1
+                int inputs:alpha_test_type = 4
+                int inputs:alpha_test_reference_value = 128
+                float inputs:displace_in = 0.25
+                float inputs:displace_out = 0.125
+                color3f inputs:subsurface_transmittance_color = (0.75, 0.5, 0.25)
+                float inputs:subsurface_measurement_distance = 2
+                color3f inputs:subsurface_single_scattering_albedo = (0.125, 0.25, 0.375)
+                float inputs:subsurface_volumetric_anisotropy = -0.5
+                bool inputs:subsurface_diffusion_profile = 1
+                color3f inputs:subsurface_radius = (1, 2, 3)
+                float inputs:subsurface_radius_scale = 4
+                float inputs:subsurface_max_sample_radius = 8
+                int inputs:filter_mode = 0
+                int inputs:wrap_mode_u = 2
+                int inputs:wrap_mode_v = 3
+                bool inputs:enable_dlss_control_mask = 0
+                float inputs:dlss_control_mask_intensity = 0.5
+                float inputs:dlss_control_mask_tone_strength = 0.25
+                float inputs:dlss_control_mask_structural_strength = 0.125
+                token outputs:out
+            }
+        }
+
+        def Material "mat_00000000000000A2"
+        {
+            token outputs:mdl:surface.connect = </RootNode/Looks/mat_00000000000000A2/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @AperturePBR_Translucent.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "AperturePBR_Translucent"
+                asset inputs:normalmap_texture = @./textures/translucent/normalmap_texture.dds@ (
+                    colorSpace = "raw"
+                )
+                asset inputs:transmittance_texture = @./textures/translucent/transmittance_texture.dds@ (
+                    colorSpace = "raw"
+                )
+                asset inputs:emissive_mask_texture = @./textures/translucent/emissive_mask_texture.dds@ (
+                    colorSpace = "auto"
+                )
+                float inputs:ior_constant = 1.5
+                color3f inputs:transmittance_color = (0.5, 0.75, 1)
+                float inputs:transmittance_measurement_distance = 2.5
+                bool inputs:enable_emission = 1
+                float inputs:emissive_intensity = 5
+                color3f inputs:emissive_color_constant = (0, 0.5, 1)
+                int inputs:sprite_sheet_rows = 2
+                int inputs:sprite_sheet_cols = 3
+                int inputs:sprite_sheet_fps = 30
+                bool inputs:thin_walled = 1
+                float inputs:thin_wall_thickness = 0.5
+                bool inputs:use_diffuse_layer = 1
+                int inputs:filter_mode = 0
+                int inputs:wrap_mode_u = 0
+                int inputs:wrap_mode_v = 2
+                token outputs:out
+            }
+        }
+
+        def Material "mat_00000000000000A3"
+        {
+            token outputs:mdl:surface.connect = </RootNode/Looks/mat_00000000000000A3/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @AperturePBR_Portal.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "AperturePBR_Portal"
+                asset inputs:emissive_mask_texture = @./textures/portal/emissive_mask_texture.dds@ (
+                    colorSpace = "auto"
+                )
+                int inputs:portal_index = 1
+                int inputs:sprite_sheet_rows = 5
+                int inputs:sprite_sheet_cols = 6
+                int inputs:sprite_sheet_fps = 12
+                float inputs:rotation_speed = 0.5
+                bool inputs:enable_emission = 1
+                float inputs:emissive_intensity = 80
+                int inputs:filter_mode = 0
+                int inputs:wrap_mode_u = 3
+                int inputs:wrap_mode_v = 0
+                token outputs:out
+            }
+        }
+    }
+}

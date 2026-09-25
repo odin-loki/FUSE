@@ -21,6 +21,10 @@ enum class PlatformEventType : u8 {
     MouseButtonDown,
     MouseButtonUp,
     RawMouseDelta,
+    /// A window's `InputCaptureMode` changed; `inputCaptured` holds the new state. Raw mouse
+    /// input (WM_INPUT / XI_RawMotion) only flows while captured, so `InputState` uses this to
+    /// switch its delta source back to `MouseMove` on release.
+    InputCaptureChanged,
 };
 
 struct PlatformEvent {
@@ -32,6 +36,7 @@ struct PlatformEvent {
     i32 mouseX = 0;  // client X, or signed raw delta when type is RawMouseDelta
     i32 mouseY = 0;  // client Y, or signed raw delta when type is RawMouseDelta
     u8 mouseButton = 0;  // 1=left 2=right 3=middle
+    bool inputCaptured = false;  // InputCaptureChanged: true = Captured, false = Released
 };
 
 /// Snapshot of the most recent in-place resize coalesce (diagnostic only).
@@ -168,8 +173,12 @@ public:
     ///
     /// Win32: PeekMessage loop for registered HWND pumps (KeyDown/Up, MouseMove,
     /// MouseButton, RawMouseDelta from WM_INPUT, WindowCloseRequested, WindowResized,
-    /// Quit). GLFW: glfwPollEvents when WSI is available. No-op when no native window
-    /// is registered.
+    /// Quit). X11: Xlib events for registered windows, plus RawMouseDelta from XInput2
+    /// XI_RawMotion (pre-acceleration device counts) while a focused window is captured.
+    /// GLFW: glfwPollEvents when WSI is available. No-op when no native window is registered.
+    ///
+    /// Capture changes made with `Window::setInputCapture` without a pump are reported here as
+    /// `InputCaptureChanged` (before the OS messages) for every registered native window.
     ///
     /// Key/Mouse mapping in `enqueueMappedOsMessage` is dropped when
     /// `requireCaptureForInput()` is true and the target window is
@@ -201,6 +210,8 @@ public:
     void pushWindowFocusGained(Window& window);
     void pushWindowFocusLost(Window& window);
     void pushWindowCloseRequested(Window& window);
+    /// Enqueue `InputCaptureChanged` for `window`'s current capture mode.
+    void pushInputCaptureChanged(Window& window);
 
     /// Headless input helpers — wrap `pushSyntheticEvent` for key/mouse smoke.
     void pushKeyDown(u32 keyCode);

@@ -1,0 +1,94 @@
+{
+  "schema": "fuse.remaster.db-shim/1",
+  "game_id": "fixture_game",
+  "original_asset": [
+    {
+      "oaid": "4b0aeb9d-1449-5ef8-850e-8dc4583382a3",
+      "kind": "texture",
+      "game_id": "fixture_game",
+      "first_key": "remix.tex:00000000000000A3"
+    },
+    {
+      "oaid": "515ba9e6-008a-5b3d-a575-db73e061d81d",
+      "kind": "mesh",
+      "game_id": "fixture_game",
+      "first_key": "remix.geom.asset:00000000000000C1"
+    },
+    {
+      "oaid": "c36324db-4b4b-5a43-a644-bc9a4c06cdb8",
+      "kind": "texture",
+      "game_id": "fixture_game",
+      "first_key": "remix.tex:00000000000000A2"
+    },
+    {
+      "oaid": "c63f7174-ac38-5c96-8c55-b99e83e1870f",
+      "kind": "texture",
+      "game_id": "fixture_game",
+      "first_key": "remix.tex:00000000000000A1"
+    }
+  ],
+  "hash_key": [
+    {
+      "algo": "remix.geom.asset",
+      "value": "00000000000000C1",
+      "oaid": "515ba9e6-008a-5b3d-a575-db73e061d81d",
+      "rule_id": "4A0F5C58A6691050",
+      "kind": "mesh"
+    },
+    {
+      "algo": "remix.tex",
+      "value": "00000000000000A1",
+      "oaid": "c63f7174-ac38-5c96-8c55-b99e83e1870f",
+      "rule_id": null,
+      "kind": "texture"
+    },
+    {
+      "algo": "remix.tex",
+      "value": "00000000000000A2",
+      "oaid": "c36324db-4b4b-5a43-a644-bc9a4c06cdb8",
+      "rule_id": null,
+      "kind": "texture"
+    },
+    {
+      "algo": "remix.tex",
+      "value": "00000000000000A3",
+      "oaid": "4b0aeb9d-1449-5ef8-850e-8dc4583382a3",
+      "rule_id": null,
+      "kind": "texture"
+    }
+  ],
+  "replacement": [
+    {
+      "oaid": "4b0aeb9d-1449-5ef8-850e-8dc4583382a3",
+      "variant": "default",
+      "tier": "remix",
+      "poco_id": "mod/fixture_game/material_table/mat_00000000000000A3",
+      "kind": "material",
+      "source": "mod/fixture_game/material_table"
+    },
+    {
+      "oaid": "515ba9e6-008a-5b3d-a575-db73e061d81d",
+      "variant": "default",
+      "tier": "remix",
+      "poco_id": "mod/fixture_game/material_table/mesh_00000000000000C1",
+      "kind": "relight_replacement",
+      "source": "mod/fixture_game/material_table"
+    },
+    {
+      "oaid": "c36324db-4b4b-5a43-a644-bc9a4c06cdb8",
+      "variant": "default",
+      "tier": "remix",
+      "poco_id": "mod/fixture_game/material_table/mat_00000000000000A2",
+      "kind": "material",
+      "source": "mod/fixture_game/material_table"
+    },
+    {
+      "oaid": "c63f7174-ac38-5c96-8c55-b99e83e1870f",
+      "variant": "default",
+      "tier": "remix",
+      "poco_id": "mod/fixture_game/material_table/mat_00000000000000A1",
+      "kind": "material",
+      "source": "mod/fixture_game/material_table"
+    }
+  ]
+}

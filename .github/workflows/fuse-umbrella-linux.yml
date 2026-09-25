@@ -19,8 +19,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build cmake g++-13 libvulkan-dev mesa-vulkan-drivers vulkan-tools
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
+          sudo apt-get install -y ninja-build cmake g++-13 libvulkan-dev mesa-vulkan-drivers vulkan-tools vulkan-validationlayers
 
       - name: Configure umbrella (core + legacy + smoke + U7/U8)
         run: |
@@ -83,7 +83,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
           sudo apt-get install -y ninja-build cmake g++-13
 
       - name: Configure fuse_core single-thread profile
@@ -106,32 +106,110 @@ jobs:
           ctest --test-dir build-st --output-on-failure \
             -R 'fuse_core_jobs|fuse_core_jobs_single_thread|fuse_core_worker_count|fuse_core_fiber'
 
-  fuse-smoke-asan:
-    name: fuse_runtime_smoke (ASan)
+  fuse-warnings-as-errors:
+    # Master plan: "CMake builds cleanly in Debug, Release, Profile, Shipping — zero warnings with
+    # -Wall -Wextra" and "Shipping build compiles with zero warnings, zero debug code included —
+    # verified by binary inspection". fuse-werror-* presets set FUSE_WARNINGS_AS_ERRORS=ON, which
+    # applies -Wall -Wextra -Werror to every Source/FUSE + Tools/FUSE target (cmake/FuseWarnings.cmake;
+    # vendored Engine/lib subprojects excluded).
+    name: FUSE -Werror (${{ matrix.config }})
     runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [debug, release, profile, shipping]
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build cmake g++-13
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
+          sudo apt-get install -y ninja-build cmake g++-13 libvulkan-dev mesa-vulkan-drivers vulkan-tools glslang-tools spirv-tools
 
-      - name: Configure smoke with ASan
+      - name: Configure (fuse-werror-${{ matrix.config }})
+        run: cmake --preset fuse-werror-${{ matrix.config }} -DCMAKE_CXX_COMPILER=g++-13
+
+      - name: Build (warnings are errors)
+        run: cmake --build build/fuse-werror-${{ matrix.config }}
+
+      - name: Shipping binary inspection (no assert/profiler code or stripped strings)
+        if: matrix.config == 'shipping'
+        run: ctest --test-dir build/fuse-werror-shipping --output-on-failure -R 'fuse_b7_shipping_binaries|fuse_core_b7_shipping_strip'
+
+  fuse-smoke-asan:
+    # Master plan: "ASan/UBSan clean on subsystem smoke" + "All unit tests pass
+    # under ASan+UBSan". FUSE_SANITIZE instruments every Source/FUSE + Tools/FUSE
+    # target (cmake/FuseSanitizers.cmake); UBSan is non-recoverable so any
+    # finding fails its test. Third-party-only suppressions: cmake/sanitizers/.
+    name: FUSE ASan+UBSan (all unit tests + smoke)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
         run: |
-          cmake -B build-asan -G Ninja \
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
+          sudo apt-get install -y ninja-build cmake g++-13 libvulkan-dev mesa-vulkan-drivers vulkan-tools glslang-tools spirv-tools
+
+      - name: Configure (fuse-asan preset, FUSE_SANITIZE=address,undefined)
+        run: |
+          cmake --preset fuse-asan \
             -DCMAKE_CXX_COMPILER=g++-13 \
-            -DCMAKE_BUILD_TYPE=Debug \
+            -DFUSE_BUILD_LEGACY=ON \
+            -DFUSE_BUILD_SMOKE=ON
+
+      - name: Build
+        run: cmake --build build/fuse-asan
+
+      - name: Run CTest under ASan+UBSan
+        env:
+          # Lavapipe for the Vulkan tests (headless runner).
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
+        run: ctest --test-dir build/fuse-asan --output-on-failure -j2 --timeout 1200
+
+      - name: Run fuse_runtime_smoke under ASan+UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/asan.supp
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/cmake/sanitizers/lsan.supp
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/ubsan.supp
+        run: ./build/fuse-asan/Source/FUSE/Apps/RuntimeSmoke/fuse_runtime_smoke
+
+  fuse-editor-qt:
+    # B6 Qt 6 editor gates ("gate;qt"): the fuse_editor Qt host under Xvfb + Lavapipe. Release so the
+    # 2 ms UI-frame and idle-spike budgets are enforced (they skip with 77 in Debug).
+    name: Qt 6 editor gates (xvfb)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
+          sudo apt-get install -y ninja-build cmake g++-13 libvulkan-dev mesa-vulkan-drivers vulkan-tools \
+            vulkan-validationlayers glslang-tools spirv-tools qt6-base-dev libgl-dev xvfb xauth \
+            libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0
+
+      - name: Configure (Release, FUSE_BUILD_EDITOR=ON)
+        run: |
+          cmake -B build/editor-qt -G Ninja \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_BUILD_TYPE=Release \
             -DFUSE_UMBRELLA=ON \
             -DFUSE_BUILD_CORE=ON \
-            -DFUSE_BUILD_CORE_TESTS=OFF \
-            -DFUSE_BUILD_LEGACY=ON \
-            -DFUSE_BUILD_SMOKE=ON \
-            -DFUSE_SMOKE_ENABLE_ASAN=ON \
+            -DFUSE_BUILD_CORE_TESTS=ON \
+            -DFUSE_BUILD_VULKAN=ON \
+            -DFUSE_BUILD_EDITOR=ON \
             -DFUSE_BUILD_T3D=OFF \
             -DFUSE_BUILD_T2D=OFF
 
-      - name: Build and run smoke
+      - name: Build editor + Qt gates + lint
+        run: cmake --build build/editor-qt --target fuse_editor fuse_editor_qt_gates fuse_lint
+
+      - name: Run Qt gates under xvfb-run
+        env:
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
         run: |
-          cmake --build build-asan --target fuse_runtime_smoke
-          ./build-asan/Source/FUSE/Apps/RuntimeSmoke/fuse_runtime_smoke
+          xvfb-run -a -s "-screen 0 1920x1080x24 -nolisten tcp" \
+            ctest --test-dir build/editor-qt -L qt --output-on-failure --timeout 900

@@ -1,0 +1,11 @@
+{
+  "fusemat": 1,
+  "name": "golden/material_ball/stone_wet_detail",
+  "category": "stone",
+  "base": {"albedo": [1, 1, 1], "roughness": 1, "textures": {"albedo": "stone_albedo", "normal": "stone_normal"}},
+  "uv_scale": 2,
+  "detail": {"albedo": "grain_albedo", "normal": "grain_normal", "scale": 8, "strength": 1, "fade": [4, 12]},
+  "layers": [
+    {"name": "wet", "mode": "wet", "mask": "vertex_b", "albedo": [0.45, 0.45, 0.5], "roughness": 0.08}
+  ]
+}

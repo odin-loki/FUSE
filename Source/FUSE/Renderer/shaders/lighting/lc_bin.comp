@@ -1,0 +1,51 @@
+#version 460
+// WP-2.1 "light.bin": workgroup s < slicesZ lists the light slots whose candidate window covers depth
+// slice s; workgroup slicesZ lists the directional slots. Both in ascending slot order: the slots are
+// visited in chunks of 64, each chunk compacted with a workgroup prefix sum (deterministic, no
+// atomics). CPU counterpart: clustered_kernel::BinKernel. GLSL twin of lc_bin.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "lc_includes.glsl"
+
+layout(local_size_x = 64) in;
+
+shared uint s_scan[64];
+
+void main() {
+    const FuseLcFrame F = fuse_lc_frame();
+    const uint w = gl_WorkGroupID.x;
+    const uint t = gl_LocalInvocationIndex;
+    const bool directional = w == F.slicesZ;
+    FuseLcBoundsRef bounds = FuseLcBoundsRef(F.bounds);
+    FuseLcWordsRef list =
+        FuseLcWordsRef(directional ? F.directional : F.sliceLights + uint64_t(w) * uint64_t(F.lightCapacity) * 4ul);
+    uint running = 0u;
+    for (uint base = 0u; base < F.lightCount; base += 64u) {
+        const uint light = base + t;
+        uint flag = 0u;
+        if (light < F.lightCount) {
+            const FuseLcBounds b = bounds.v[light];
+            flag = directional ? (b.type == FUSE_LIGHT_DIRECTIONAL ? 1u : 0u) : (w >= b.sliceLo && w <= b.sliceHi ? 1u : 0u);
+        }
+        s_scan[t] = flag;
+        barrier();
+        for (uint offset = 1u; offset < 64u; offset <<= 1u) {
+            const uint v = t >= offset ? s_scan[t - offset] : 0u;
+            barrier();
+            s_scan[t] += v;
+            barrier();
+        }
+        if (flag != 0u) {
+            list.v[running + s_scan[t] - 1u] = light;
+        }
+        const uint total = s_scan[63];
+        barrier();
+        running += total;
+    }
+    if (t == 0u) {
+        if (directional) {
+            FuseLcWordsRef(F.listHeader).v[FUSE_LC_HEADER_DIRECTIONAL] = running;
+        } else {
+            FuseLcWordsRef(F.sliceCounts).v[w] = running;
+        }
+    }
+}

@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -20,11 +21,13 @@ struct GridCoord {
     bool operator!=(const GridCoord& other) const { return !(*this == other); }
 };
 
-/// Sentinel returned by guarded eviction picks when no candidate exists.
-inline constexpr GridCoord kInvalidGridCoord{-1, -1};
+/// Sentinel returned by guarded eviction picks when no candidate exists. Negative coordinates are
+/// ordinary cells (worlds extend in every direction from the origin), so the sentinel sits at the
+/// very edge of the coordinate range instead of at {-1, -1}.
+inline constexpr GridCoord kInvalidGridCoord{std::numeric_limits<s32>::min(), std::numeric_limits<s32>::min()};
 
 [[nodiscard]] inline bool is_valid_grid_coord(GridCoord coord) {
-    return coord.x >= 0 && coord.y >= 0;
+    return coord != kInvalidGridCoord;
 }
 
 [[nodiscard]] inline u64 grid_coord_key(GridCoord coord) {

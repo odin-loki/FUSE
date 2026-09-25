@@ -1,0 +1,45 @@
+#version 460
+// WP-3.1 "vsm.update": one thread per virtual page of the active levels (core_logic VsmPagePool
+// update_pages). The cached bit is dropped when the page's level is invalid this frame (flags bit 0:
+// depth key changed or invalidate-all) or its toroidal slot now holds another absolute page (the
+// window scrolled); requested + mapped pages are touched (physical lastUsed = frame); requested +
+// unmapped pages set their need bit. GLSL twin of vsm_update.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "vsm_includes.glsl"
+
+layout(local_size_x = 64) in;
+
+void main() {
+    FuseVsmConstantsRef C = fuse_vsm_constants();
+    const uint v = gl_GlobalInvocationID.x;
+    if (v >= C.virtualPages) {
+        return;
+    }
+    const uint level = v / FUSE_VSM_PAGES_PER_LEVEL;
+    const uint r = v % FUSE_VSM_PAGES_PER_LEVEL;
+    const uint sx = r % FUSE_VSM_PAGES_PER_AXIS;
+    const uint sy = r / FUSE_VSM_PAGES_PER_AXIS;
+    const FuseVsmLevel L = C.level[level];
+    const bool changed = (L.flags & 1u) != 0u || fuse_vsm_slot_to_abs(sx, L.prevOriginX) != fuse_vsm_slot_to_abs(sx, L.originX) ||
+                         fuse_vsm_slot_to_abs(sy, L.prevOriginY) != fuse_vsm_slot_to_abs(sy, L.originY);
+    const uint table = C.pageTableHandle;
+    const uint work = C.workHandle;
+    uint e = FUSE_VSM_WORDS(table)[v];
+    if (changed && (e & FUSE_VSM_PTE_CACHED) != 0u) {
+        e &= ~FUSE_VSM_PTE_CACHED;
+        FUSE_VSM_WORDS(table)[v] = e;
+        atomicAdd(FUSE_VSM_WORDS(work)[FUSE_VSM_COUNTER_SCROLLED], 1u);
+    }
+    const uint bit = 1u << (v % 32u);
+    if ((FUSE_VSM_WORDS(work)[C.offRequest + v / 32u] & bit) == 0u) {
+        return;
+    }
+    atomicAdd(FUSE_VSM_WORDS(work)[FUSE_VSM_COUNTER_REQUESTED], 1u);
+    if ((e & FUSE_VSM_PTE_MAPPED) != 0u) {
+        atomicAdd(FUSE_VSM_WORDS(work)[FUSE_VSM_COUNTER_ALREADY_MAPPED], 1u);
+        FUSE_VSM_WORDS(C.physMetaHandle)[(e & FUSE_VSM_PTE_PHYS_MASK) * 2u + 1u] = C.frame;
+    } else {
+        atomicOr(FUSE_VSM_WORDS(work)[C.offNeed + v / 32u], bit);
+        atomicAdd(FUSE_VSM_WORDS(work)[FUSE_VSM_COUNTER_NEEDED], 1u);
+    }
+}

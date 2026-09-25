@@ -8,6 +8,7 @@
 #include <fuse/renderer/vk/frame.hpp>
 #include <fuse/types.hpp>
 
+#include <span>
 #include <vector>
 
 namespace fuse::renderer {
@@ -66,6 +67,8 @@ struct RGBarrier {
     /// `0xFFFFFFFF` keeps `VK_QUEUE_FAMILY_IGNORED` (no ownership transfer).
     u32 srcQueueFamily = 0xFFFFFFFFu;
     u32 dstQueueFamily = 0xFFFFFFFFu;
+    /// Pass the barrier is recorded in front of (execute() emits barriers per pass).
+    u32 passIndex = 0;
 };
 
 struct RGBufferBarrier {
@@ -74,6 +77,7 @@ struct RGBufferBarrier {
     RGResourceAccess toAccess = RGResourceAccess::ShaderRead;
     u32 srcQueueFamily = 0xFFFFFFFFu;
     u32 dstQueueFamily = 0xFFFFFFFFu;
+    u32 passIndex = 0;
 };
 
 using RGPassExecuteFn = void (*)(void* commandBuffer, void* userData);
@@ -149,11 +153,22 @@ struct RenderGraphExecuteInfo {
     bool computeQueueRecorded = false;
 };
 
-/// Lightweight render graph — pass ordering, barrier planning, and stub command recording.
+/// Render graph v1 — kept as the facade the B5 schedules, the deferred pipeline and the CUDA passes
+/// compile against (WP-0.3). Pass ordering, culling, lifetimes and alias groups are unchanged;
+/// execute() now records each pass's barriers directly in front of that pass (per-pass batches,
+/// encoded by the render graph module, src/rg/). There is no pass cap any more.
+///
+/// New code should use render graph v2 (`fuse/renderer/rg/graph.hpp` + `rg/executor.hpp`):
+/// synchronization2 barriers derived from declared accesses on real VkImage/VkBuffer resources,
+/// subresource and byte ranges, aliased transient memory, async compute / transfer queues with
+/// timeline semaphores and queue-family ownership transfers, and per-pass debug labels.
 class RenderGraph {
 public:
     static constexpr u32 kBackbufferTextureId = 1u;
     static constexpr u32 kDepthTextureId = 2u;
+    /// Size of the per-feature static pass storage the v1 populate helpers keep (sky, shadow,
+    /// composite, ...). No longer a graph limit: addPass() accepts any number of passes (pools grow
+    /// once and keep their capacity, so warm frames still do not allocate).
     static constexpr u32 kMaxPassesPerFrame = 32u;
 
     void reset();
@@ -183,12 +198,16 @@ public:
     u32 backbufferIndex() const { return m_backbufferIndex; }
 
 private:
+    /// Accesses live in the graph-wide pools below (ranges per pass) so steady-state frames reuse
+    /// capacity instead of allocating per pass (B2.11 zero per-frame heap allocations).
     struct PassNode {
         RGPassDesc desc{};
         u32 order = 0;
         bool culled = false;
-        std::vector<RGTextureAccess> textureAccesses;
-        std::vector<RGBufferAccess> bufferAccesses;
+        u32 textureAccessBegin = 0;
+        u32 textureAccessCount = 0;
+        u32 bufferAccessBegin = 0;
+        u32 bufferAccessCount = 0;
     };
 
     struct TextureState {
@@ -210,9 +229,11 @@ private:
 
     RGImageLayout layoutForAccess(RGResourceAccess access) const;
     RGResourceAccess accessForLayout(RGImageLayout layout) const;
+    std::span<const RGTextureAccess> textureAccessesOf(const PassNode& pass) const;
+    std::span<const RGBufferAccess> bufferAccessesOf(const PassNode& pass) const;
     TextureState& textureStateAt(u32 textureId);
     BufferState& bufferStateAt(u32 id);
-    void planBarriersForPass(const PassNode& pass);
+    void planBarriersForPass(u32 passIndex, const PassNode& pass);
     void cullUnusedPasses();
     void buildDependencyEdges();
     void resolveCompileOrder();
@@ -233,6 +254,15 @@ private:
     std::vector<RGPassDependencyEdge> m_dependencyEdges;
     std::vector<RGResourceLifetime> m_resourceLifetimes;
     std::vector<u32> m_compileOrder;
+    std::vector<RGTextureAccess> m_textureAccessPool;
+    std::vector<RGBufferAccess> m_bufferAccessPool;
+    // compile() scratch — cleared, never shrunk, so warm frames do not touch the heap.
+    std::vector<u8> m_scratchRequired;
+    std::vector<u32> m_scratchLastTexturePass;
+    std::vector<u32> m_scratchLastBufferPass;
+    std::vector<u32> m_scratchActivePasses;
+    std::vector<u32> m_scratchIndegree;
+    std::vector<u8> m_scratchEmitted;
 };
 
 void populateRenderGraphFromCommandList(RenderGraph& graph,

@@ -1,3 +1,4 @@
+#include <fuse/core/temp_path.hpp>
 #include <fuse/handle_table.hpp>
 #include <fuse/io/asset.hpp>
 #include <fuse/io/vfs.hpp>
@@ -83,7 +84,7 @@ void testHandleTableWorkerPublish() {
 }
 
 void testVfsAsyncLoadRoundTrip() {
-    const std::string tempPath = "/tmp/fuse_wp04_asset.bin";
+    const std::string tempPath = fuse::test::tempPath("fuse_wp04_asset.bin");
     {
         std::ofstream out(tempPath, std::ios::binary);
         out << "fuse-wp04";
@@ -91,7 +92,7 @@ void testVfsAsyncLoadRoundTrip() {
 
     withScheduler(1, [&]() {
         auto& vfs = fuse::io::VirtualFileSystem::instance();
-        vfs.mount(fuse::io::MountKind::Game, "/tmp", "/game");
+        vfs.mount(fuse::io::MountKind::Game, fuse::test::tempDir(), "/game");
 
         fuse::HandleTable<fuse::io::Asset> table;
         const fuse::io::LoadId loadId = vfs.submitLoadAsync("/game/fuse_wp04_asset.bin");
@@ -262,14 +263,14 @@ void testVfsAsyncLoadCompletionOrdering() {
     };
 
     for (const std::string& name : assetNames) {
-        const std::string tempPath = "/tmp/" + name;
+        const std::string tempPath = fuse::test::tempPath(name);
         std::ofstream out(tempPath, std::ios::binary);
         out << name;
     }
 
     withScheduler(1, [&]() {
         auto& vfs = fuse::io::VirtualFileSystem::instance();
-        vfs.mount(fuse::io::MountKind::Game, "/tmp", "/game");
+        vfs.mount(fuse::io::MountKind::Game, fuse::test::tempDir(), "/game");
 
         std::vector<fuse::io::LoadId> submitted;
         for (const std::string& name : assetNames) {
@@ -320,14 +321,14 @@ void testVfsStagedDrainPreservesCompletionOrder() {
     };
 
     for (const std::string& name : assetNames) {
-        const std::string tempPath = "/tmp/" + name;
+        const std::string tempPath = fuse::test::tempPath(name);
         std::ofstream out(tempPath, std::ios::binary);
         out << name;
     }
 
     withScheduler(1, [&]() {
         auto& vfs = fuse::io::VirtualFileSystem::instance();
-        vfs.mount(fuse::io::MountKind::Game, "/tmp", "/game");
+        vfs.mount(fuse::io::MountKind::Game, fuse::test::tempDir(), "/game");
         fuse::HandleTable<fuse::io::Asset> table;
 
         std::vector<fuse::io::LoadId> submitted;

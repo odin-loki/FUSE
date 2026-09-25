@@ -1,11 +1,12 @@
 # fuse_world_partition — B7.6 World Partition & Streaming
 
-Large-world streaming scaffolding for Track B7.6. Cells are keyed on an XZ grid; a camera-centered `StreamingVolume` queues load/unload with hysteresis. Load and unload paths are stubbed — production wiring will attach scene instantiation and asset I/O.
+Large-world streaming for Track B7.6. Cells are keyed on an XZ grid (negative coordinates included); a camera-centered `StreamingVolume` queues load/unload with hysteresis. With `WorldPartitionDesc::cell_root` set, worker threads read and decode binary `.fusecell` files and the game thread spawns their entities into the attached `fuse::ecs::Registry` (`set_registry`); unloading a cell destroys its entities. Without a cell root the load path is a stub.
 
 ## Layout
 
 | Header | Role |
 |--------|------|
+| `cell_file.hpp` | Binary cell format (`FCEL` v1: header, entity id + transform records, FNV-1a 64 trailer) and read/write helpers |
 | `grid_cell.hpp` | `GridCoord`, `WorldCell`, `CellResidencyState`, grid ↔ world helpers |
 | `residency_set.hpp` | Focus-distance resident set (`add`/`remove`, `try_add_resident`/`try_remove_resident`, `pick_eviction_candidate`, `collect_eviction_candidates`) |
 | `streaming_volume.hpp` | Camera-centered stream-in / stream-out radii + load/unload priority |
@@ -25,13 +26,17 @@ When `async_loading = true` and `JobScheduler` has worker threads:
 
 1. `update()` drains completed requests on the game thread.
 2. `process_queues_()` submits up to `budget.max_loads_per_tick` / `budget.max_unloads_per_tick` jobs per tick, capped by `budget.max_async_in_flight` concurrent in-flight work on `StreamingRequestQueue`.
-3. Worker threads run the I/O stub (`StreamingWorkFn`); callbacks and entity wiring run on drain via `execute_load_` / `execute_unload_`.
+3. Worker threads read + decode cell files into a shared staging store (they never touch the partition); callbacks and entity spawning run on drain via `execute_load_` / `execute_unload_`.
+4. Budget admission counts resident **and** in-progress loads (`committed_cell_count` / `committed_byte_count`), so async completions never push residency past `max_loaded_cells` / `max_resident_bytes`. Budget eviction only swaps a resident for a strictly nearer incoming cell.
+5. `force_load` completes on the calling thread (teleport path): on return the cell is Resident with its entities spawned; superseded async work for that cell is discarded.
 
 Load requests sort by `StreamingVolume::load_priority_for` (closer cells first). Unload requests sort by `unload_priority_for` (farther cells evict first) and combine with per-cell priority via `rank_unload_priority` (`rank_unload_priority_stub` alias). `ResidencySet` mirrors resident cells with planar focus distance; `pick_budget_eviction_candidate` walks `collect_eviction_candidates` farthest-first and skips residents protected by `can_evict_for_incoming` / `incoming_outranks_eviction`. When `needs_budget_eviction` reports cell or byte cap pressure, `evict_for_budget_` queues unloads using `budget_eviction_score` (`EvictionPolicy::DistanceFromFocus` or `EvictionPolicy::Lru` via `last_touch_tick`); successful evictions increment `budget_evictions` and `bytes_evicted`, while `eviction_skipped` tracks cap pressure with no evictable resident. Loads that still cannot fit increment `rejected_loads`. `flush_async_queue_` clamps submits via `clamp_pending_submits` and `init` seeds the async queue pending cap from `budget.max_async_in_flight`. `StreamingRequestQueue::drain_completed` returns completions highest-priority-first with FIFO tie-break on equal priority; `empty()` reports no in-flight or buffered completions. Optional `set_max_pending_submits` rejects enqueue when the in-flight + completed buffer is full. Synchronous mode (`async_loading = false` or single-threaded scheduler) drains queues immediately on the calling thread.
 
 ## Tests
 
 `fuse_world_partition_tests` (`ctest` name `fuse_world_partition_b76`) covers grid math, residency helpers, budget headroom/clamp/counters, `rank_unload_priority`/`budget_eviction_score`/`pick_budget_eviction_candidate`/`can_evict_for_incoming`, `ResidencySet` eviction-candidate ordering/tie-break, empty-residency stub ops and rejection, streaming hysteresis, unload priority ordering, resident-cell and byte budget eviction swap, LRU eviction, per-tick budget caps, callback stubs, camera-driven residency, `StreamingRequestQueue` enqueue/flush/batch/in-flight/FIFO/empty/mixed-kind completion/priority-drain/pending-cap tracking, and async load/unload completion.
+
+`fuse_b7_streaming_gates_tests` (`ctest` name `fuse_b7_streaming_gates`, labels `perf;gate`, RUN_SERIAL) proves the B7.6 / B7.10 streaming rows with real cell files and a real registry: disk round trip, stream-in ahead of a 512 m draw distance on a 2 km traversal at 30 m/s, entity cleanup on stream-out, synchronous `force_load`, hysteresis, async memory budget, game-thread application, determinism, and the per-frame update budget (enforced under `NDEBUG`).
 
 ## Dependencies
 

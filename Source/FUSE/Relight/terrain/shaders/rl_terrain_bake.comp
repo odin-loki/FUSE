@@ -1,0 +1,155 @@
+#version 460
+// FUSE Relight RL-5.6 "relight.terrain.clear" / "relight.terrain.layer": the GPU terrain bake (TerrainBakerGpu,
+// terrain_baker_gpu.hpp), one texel per invocation. Stage 0 clears the bake; stage 1 blends one layer: the texel centre's
+// covering triangle of the layer (top-down, edges inclusive, the highest surface wins, the first triangle on ties),
+// shaded (texture x vertex colour, 2x3 uv transform, bilinear repeat) and blended with the layer's D3D blend state.
+// Line-for-line twin of the CPU reference TerrainBaker::bake (src/terrain_baker.cpp: same expressions in the same
+// order, `precise`), and of rl_terrain_bake.slang.
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(push_constant) uniform TerrainPush {
+    vec4 clearColor; ///< first: 16-byte aligned
+    uint64_t layers;
+    uint64_t vertices;
+    uint64_t indices;
+    uint64_t texels;
+    uint64_t outputs;
+    uint layer;
+    uint width;
+    uint height;
+    uint stage;
+    float minX;
+    float minZ;
+    float sx;
+    float sz;
+} pc;
+
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer TbU4 { uvec4 v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer TbF4 { vec4 v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer TbU1 { uint v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 16) buffer TbOut { vec4 v[]; };
+
+uint tbWrap(int i, uint n) { return uint(((i % int(n)) + int(n)) % int(n)); }
+
+vec4 tbSample(uint base, uint w, uint h, float u, float v) {
+    precise float x = u * float(w) - 0.5;
+    precise float y = v * float(h) - 0.5;
+    float fx = floor(x);
+    float fy = floor(y);
+    precise float ax = x - fx;
+    precise float ay = y - fy;
+    uint x0 = tbWrap(int(fx), w), x1 = tbWrap(int(fx) + 1, w);
+    uint y0 = tbWrap(int(fy), h), y1 = tbWrap(int(fy) + 1, h);
+    TbF4 t = TbF4(pc.texels);
+    vec4 a = t.v[base + y0 * w + x0];
+    vec4 b = t.v[base + y0 * w + x1];
+    vec4 c = t.v[base + y1 * w + x0];
+    vec4 d = t.v[base + y1 * w + x1];
+    precise vec4 top = a + (b - a) * ax;
+    precise vec4 bottom = c + (d - c) * ax;
+    precise vec4 r = top + (bottom - top) * ay;
+    return r;
+}
+
+void main() {
+    uint xi = gl_GlobalInvocationID.x;
+    uint zi = gl_GlobalInvocationID.y;
+    if (xi >= pc.width || zi >= pc.height) {
+        return;
+    }
+    uint i = zi * pc.width + xi;
+    TbOut o = TbOut(pc.outputs);
+    if (pc.stage == 0u) {
+        o.v[i] = pc.clearColor;
+        return;
+    }
+    uvec4 l0 = TbU4(pc.layers).v[pc.layer * 4u];
+    uvec4 l1 = TbU4(pc.layers).v[pc.layer * 4u + 1u];
+    vec4 l2 = TbF4(pc.layers).v[pc.layer * 4u + 2u];
+    vec4 l3 = TbF4(pc.layers).v[pc.layer * 4u + 3u];
+    TbF4 vtx = TbF4(pc.vertices);
+    TbU1 idx = TbU1(pc.indices);
+    float px = float(xi) + 0.5;
+    float pz = float(zi) + 0.5;
+    uint best = 0xFFFFFFFFu;
+    float bestY = 0.0;
+    float bw1 = 0.0;
+    float bw2 = 0.0;
+    for (uint t = 0u; t + 2u < l0.z; t += 3u) {
+        uint i0 = idx.v[l0.y + t], i1 = idx.v[l0.y + t + 1u], i2 = idx.v[l0.y + t + 2u];
+        if (i0 >= l0.w || i1 >= l0.w || i2 >= l0.w) {
+            continue;
+        }
+        vec4 p0 = vtx.v[(l0.x + i0) * 3u];
+        vec4 p1 = vtx.v[(l0.x + i1) * 3u];
+        vec4 p2 = vtx.v[(l0.x + i2) * 3u];
+        precise float ax = (p0.x - pc.minX) * pc.sx, az = (p0.z - pc.minZ) * pc.sz;
+        precise float bx = (p1.x - pc.minX) * pc.sx, bz = (p1.z - pc.minZ) * pc.sz;
+        precise float cx = (p2.x - pc.minX) * pc.sx, cz = (p2.z - pc.minZ) * pc.sz;
+        precise float area = (bx - ax) * (cz - az) - (bz - az) * (cx - ax);
+        if (area == 0.0) {
+            continue;
+        }
+        precise float inv = 1.0 / area;
+        precise float w1 = ((px - ax) * (cz - az) - (pz - az) * (cx - ax)) * inv;
+        precise float w2 = ((bx - ax) * (pz - az) - (bz - az) * (px - ax)) * inv;
+        precise float w0 = 1.0 - w1 - w2;
+        if (w0 < 0.0 || w1 < 0.0 || w2 < 0.0) {
+            continue;
+        }
+        precise float y = p0.y * w0 + p1.y * w1 + p2.y * w2;
+        if (best == 0xFFFFFFFFu || y > bestY) {
+            best = t;
+            bestY = y;
+            bw1 = w1;
+            bw2 = w2;
+        }
+    }
+    if (best == 0xFFFFFFFFu) {
+        return;
+    }
+    precise float w0 = 1.0 - bw1 - bw2;
+    uint v0 = l0.x + idx.v[l0.y + best], v1 = l0.x + idx.v[l0.y + best + 1u], v2 = l0.x + idx.v[l0.y + best + 2u];
+    uint flags = l1.w & 0xFFu;
+    uint blend = l1.w >> 8u;
+    float u = 0.0;
+    float v = 0.0;
+    if ((flags & 2u) != 0u) {
+        precise float uu = vtx.v[v0 * 3u + 1u].x * w0 + vtx.v[v1 * 3u + 1u].x * bw1 + vtx.v[v2 * 3u + 1u].x * bw2;
+        precise float vv = vtx.v[v0 * 3u + 1u].y * w0 + vtx.v[v1 * 3u + 1u].y * bw1 + vtx.v[v2 * 3u + 1u].y * bw2;
+        u = uu;
+        v = vv;
+    }
+    precise float tu = l2.x * u + l2.y * v + l2.z;
+    precise float tv = l2.w * u + l3.x * v + l3.y;
+    vec4 src = vec4(1.0);
+    if ((flags & 8u) != 0u) {
+        src = tbSample(l1.x, l1.y, l1.z, tu, tv);
+    }
+    if ((flags & 4u) != 0u) {
+        precise vec4 c = vtx.v[v0 * 3u + 2u] * w0 + vtx.v[v1 * 3u + 2u] * bw1 + vtx.v[v2 * 3u + 2u] * bw2;
+        precise vec4 s2 = src * c;
+        src = s2;
+    }
+    if ((flags & 1u) != 0u && !(src.w > l3.z)) {
+        return;
+    }
+    precise vec4 dst = o.v[i];
+    float a = src.w;
+    if (blend == 0u) {
+        dst = src;
+    } else if (blend == 1u) {
+        dst.xyz = src.xyz * a + dst.xyz * (1.0 - a);
+        dst.w = a + dst.w * (1.0 - a);
+    } else if (blend == 2u) {
+        dst.xyz = dst.xyz + src.xyz * a;
+    } else if (blend == 3u) {
+        dst.xyz = dst.xyz * src.xyz;
+    } else {
+        dst.xyz = dst.xyz * src.xyz + src.xyz * dst.xyz;
+    }
+    o.v[i] = dst;
+}

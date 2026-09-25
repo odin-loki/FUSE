@@ -1,0 +1,6 @@
+rel /RootNode/meshes/mesh_0000000000006001.material:binding = [</RootNode/meshes/mesh_0000000000006001/Looks/Glow>]
+conn /RootNode/meshes/mesh_0000000000006001/Looks/Glow.outputs:mdl:surface = [</RootNode/meshes/mesh_0000000000006001/Looks/Glow/Shader.outputs:out>]
+rel /RootNode/meshes/mesh_0000000000006001.outside = []
+diag warning target_outside_arc /RootNode/meshes/mesh_0000000000006001
+rel /RootNode/meshes/mesh_0000000000006001.extra = [</RootNode/meshes/mesh_0000000000006001/Bulb>, </RootNode/meshes/mesh_0000000000006001/Shade>, </RootNode/meshes/mesh_0000000000006001/Base>]
+replacement mesh 0000000000006001 meshes=/RootNode/meshes/mesh_0000000000006001/Shade,/RootNode/meshes/mesh_0000000000006001/Base lights=/RootNode/meshes/mesh_0000000000006001/Bulb bindings=/RootNode/meshes/mesh_0000000000006001/Looks/Glow

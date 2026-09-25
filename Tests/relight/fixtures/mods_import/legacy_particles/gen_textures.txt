@@ -1,0 +1,1 @@
+dds assets/spark.dds rgba8_srgb 2 2 31

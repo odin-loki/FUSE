@@ -40,6 +40,14 @@ template <typename... WithTs, typename... WithoutTs>
     return filter;
 }
 
+/// Process-lifetime filter for a compile-time With/Without set: built once on first use (thread-safe
+/// static init), so per-frame `Registry::each` / `each_parallel` calls never touch the heap.
+template <typename... WithTs, typename... WithoutTs>
+[[nodiscard]] const QueryFilter& cached_query_filter(With<WithTs...> = {}, Without<WithoutTs...> = {}) {
+    static const QueryFilter filter = make_query_filter(With<WithTs...>{}, Without<WithoutTs...>{});
+    return filter;
+}
+
 /// Count archetypes whose component signature satisfies `filter` (ignores entity row count).
 [[nodiscard]] u32 count_matching_archetypes(const std::vector<Archetype>& archetypes, const QueryFilter& filter);
 
@@ -107,17 +115,17 @@ struct QueryFilterPreflight {
 /// Compile-time With/Without convenience over `make_query_filter` + `archetype_matches`.
 template <typename... WithTs>
 [[nodiscard]] bool archetype_matches(const Archetype& archetype, With<WithTs...>) {
-    return archetype_matches(archetype, make_query_filter(With<WithTs...>{}));
+    return archetype_matches(archetype, cached_query_filter(With<WithTs...>{}));
 }
 
 template <typename... WithoutTs>
 [[nodiscard]] bool archetype_matches(const Archetype& archetype, Without<WithoutTs...> exclude) {
-    return archetype_matches(archetype, make_query_filter(With<>{}, exclude));
+    return archetype_matches(archetype, cached_query_filter(With<>{}, exclude));
 }
 
 template <typename... WithTs, typename... WithoutTs>
 [[nodiscard]] bool archetype_matches(const Archetype& archetype, With<WithTs...>, Without<WithoutTs...>) {
-    return archetype_matches(archetype, make_query_filter(With<WithTs...>{}, Without<WithoutTs...>{}));
+    return archetype_matches(archetype, cached_query_filter(With<WithTs...>{}, Without<WithoutTs...>{}));
 }
 
 } // namespace fuse::ecs

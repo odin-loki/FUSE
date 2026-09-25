@@ -17,7 +17,7 @@ struct AudioSource {
     Vec3 position{};
     bool playing = false;
     bool paused = false;
-    float play_head = 0.f;
+    double play_head = 0.0; ///< Seconds of clip time rendered (advanced on the sample clock).
     u32 backend_source = 0;
 };
 

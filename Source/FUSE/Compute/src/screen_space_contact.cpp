@@ -1,4 +1,5 @@
 #include <fuse/compute/screen_space_contact.hpp>
+#include <fuse/compute/screen_space_kernels.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -18,16 +19,9 @@ f32 saturate(f32 value) {
 } // namespace
 
 f32 ssr_contact_harden_roughness(f32 ray_hit_distance, f32 material_roughness, const SSRParams& params) {
-    if (!params.contact_hardening || params.contact_distance <= 0.f) {
-        return std::clamp(material_roughness, 0.f, 1.f);
-    }
-
-    const f32 distance = std::max(ray_hit_distance, 0.f);
-    const f32 contactFactor =
-        std::pow(saturate(1.f - distance / params.contact_distance), params.contact_harden_exponent);
-    const f32 hardenedRoughness =
-        material_roughness + (params.contact_roughness_floor - material_roughness) * contactFactor;
-    return std::clamp(hardenedRoughness, params.contact_roughness_floor, 1.f);
+    // Single-source: the SSR kernel body applies the same function (fuse/ssfx/ssr_kernel.hpp).
+    return ssfx::ssr_kernel::contact_harden_roughness(ray_hit_distance, material_roughness,
+                                                      screen_space_kernels::to_contact(params));
 }
 
 f32 ssao_blur_weight(f32 center_depth,
@@ -35,24 +29,9 @@ f32 ssao_blur_weight(f32 center_depth,
                      f32 center_normal_z,
                      f32 neighbor_normal_z,
                      const SSAOParams& params) {
-    if (!params.enable_blur) {
-        return 0.f;
-    }
-
-    const f32 depthDelta = std::fabs(center_depth - neighbor_depth);
-    if (depthDelta > params.blur_depth_threshold) {
-        return 0.f;
-    }
-
-    const f32 normalSimilarity = center_normal_z * neighbor_normal_z;
-    if (normalSimilarity < params.blur_normal_threshold) {
-        return 0.f;
-    }
-
-    const f32 depthWeight = 1.f - depthDelta / std::max(params.blur_depth_threshold, 1e-6f);
-    const f32 normalWeight =
-        (normalSimilarity - params.blur_normal_threshold) / std::max(1.f - params.blur_normal_threshold, 1e-6f);
-    return clamp01(depthWeight * normalWeight);
+    // Single-source: the "screen_space_ao_blur" kernel body uses the same weight.
+    return screen_space_kernels::ao_blur::weight(center_depth, neighbor_depth, center_normal_z, neighbor_normal_z,
+                                                 screen_space_kernels::ao_blur::thresholds(params));
 }
 
 f32 ssr_screen_edge_fade(f32 uv_x, f32 uv_y, const SSRParams& params) {
@@ -105,6 +84,19 @@ bool validate_ssr_params(const SSRParams& params) {
         if (params.contact_roughness_floor < 0.f || params.contact_roughness_floor > 1.f) {
             return false;
         }
+    }
+    return true;
+}
+
+bool validate_ssgi_params(const SSGIParams& params) {
+    if (params.width == 0 || params.height == 0) {
+        return false;
+    }
+    if (params.sample_sqrt == 0 || params.max_steps == 0 || params.ray_step_size <= 0.f) {
+        return false;
+    }
+    if (params.thickness <= 0.f || params.max_distance <= 0.f || params.intensity < 0.f) {
+        return false;
     }
     return true;
 }

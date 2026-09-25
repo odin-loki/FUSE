@@ -1,0 +1,114 @@
+#version 460
+// WP-5.3 "stream.cut": residency-aware LOD cut + streaming feedback, one thread per cluster.
+// GLSL twin of stream_cut.slang; CPU reference: include/fuse/renderer/geometry_streaming/stream_cut_kernel.hpp
+// (geometry_stream_cut) — same expressions in the same order, every value that feeds a decision `precise`
+// (no contraction), so the cut, the priorities and the lists equal the CPU reference bit for bit.
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_nonuniform_qualifier : require
+#include "bindless.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(push_constant) uniform FuseStreamCutPush { // StreamCutPush (geometry_streaming.hpp), 64 bytes
+    float camX;
+    float camY;
+    float camZ;
+    float errorScale;
+    float threshold;
+    float znear;
+    uint clusterCount;
+    uint pageCount;
+    uint links;    // DagClusterLink[] (12 words: self center xyz, radius, error; parent ...; group; refined)
+    uint info;     // StreamClusterInfo[] (member page, producer page)
+    uint state;    // resident bits, then the page -> slot table
+    uint feedback; // FeedbackLayout words
+    uint cut;      // 0 / 1 per cluster
+    uint drawList; // cluster ids
+    uint pad0;
+    uint pad1;
+} pc;
+
+FUSE_BINDLESS_SSBO_LAYOUT buffer FuseStreamWords { uint w[]; } fuse_stream_words[];
+#define WORDS(handle) fuse_stream_words[fuse_handle_index(handle)].w
+
+#define FUSE_STREAM_PAGE_NONE 0xFFFFFFFFu
+#define FUSE_STREAM_PRIORITY_MIN 1u
+#define FUSE_STREAM_PRIORITY_LEVELS 30u
+#define FUSE_STREAM_FEEDBACK_HEADER 4u
+#define kTerminal 3.40282346638528859812e+38 // kDagErrorTerminal (FLT_MAX, exact)
+
+// geometry::dag::cut_kernel::lod_acceptable over the bounds at word `b` of the links buffer.
+bool lodAcceptable(uint b) {
+    const float error = uintBitsToFloat(WORDS(pc.links)[b + 4u]);
+    if (!(error < kTerminal)) {
+        return false;
+    }
+    precise float dx = uintBitsToFloat(WORDS(pc.links)[b + 0u]) - pc.camX;
+    precise float dy = uintBitsToFloat(WORDS(pc.links)[b + 1u]) - pc.camY;
+    precise float dz = uintBitsToFloat(WORDS(pc.links)[b + 2u]) - pc.camZ;
+    precise float d = sqrt(dx * dx + dy * dy + dz * dz) - uintBitsToFloat(WORDS(pc.links)[b + 3u]);
+    precise float dist = d > pc.znear ? d : pc.znear;
+    precise float lhs = error * pc.errorScale;
+    precise float rhs = pc.threshold * dist;
+    return lhs <= rhs;
+}
+
+// stream_kernel::refine_priority (terminal bounds: the cap).
+uint refinePriority(uint b) {
+    if (!(uintBitsToFloat(WORDS(pc.links)[b + 4u]) < kTerminal)) {
+        return FUSE_STREAM_PRIORITY_MIN + FUSE_STREAM_PRIORITY_LEVELS;
+    }
+    precise float dx = uintBitsToFloat(WORDS(pc.links)[b + 0u]) - pc.camX;
+    precise float dy = uintBitsToFloat(WORDS(pc.links)[b + 1u]) - pc.camY;
+    precise float dz = uintBitsToFloat(WORDS(pc.links)[b + 2u]) - pc.camZ;
+    precise float d = sqrt(dx * dx + dy * dy + dz * dz) - uintBitsToFloat(WORDS(pc.links)[b + 3u]);
+    precise float dist = d > pc.znear ? d : pc.znear;
+    precise float lhs = uintBitsToFloat(WORDS(pc.links)[b + 4u]) * pc.errorScale;
+    precise float rhs = pc.threshold * dist;
+    uint k = 0u;
+    while (k < FUSE_STREAM_PRIORITY_LEVELS && lhs > rhs) {
+        rhs = rhs * 2.0;
+        ++k;
+    }
+    return FUSE_STREAM_PRIORITY_MIN + (k > 0u ? k : 1u);
+}
+
+bool pageResident(uint page) {
+    return page != FUSE_STREAM_PAGE_NONE && ((WORDS(pc.state)[page >> 5u] >> (page & 31u)) & 1u) != 0u;
+}
+
+void submitPage(uint page, uint priority) {
+    const uint old = atomicMax(WORDS(pc.feedback)[FUSE_STREAM_FEEDBACK_HEADER + page], priority);
+    if (old == 0u) {
+        const uint slot = atomicAdd(WORDS(pc.feedback)[0], 1u);
+        if (slot < pc.pageCount) {
+            WORDS(pc.feedback)[FUSE_STREAM_FEEDBACK_HEADER + pc.pageCount + slot] = page;
+        }
+    }
+}
+
+void main() {
+    const uint c = gl_GlobalInvocationID.x;
+    if (c >= pc.clusterCount) {
+        return;
+    }
+    const uint link = c * 12u;
+    const uint memberPage = WORDS(pc.info)[c * 2u + 0u];
+    const uint producerPage = WORDS(pc.info)[c * 2u + 1u];
+    const bool selfAcc = lodAcceptable(link);
+    const bool producerOk = selfAcc || !pageResident(producerPage);
+    const bool parentAcc = lodAcceptable(link + 5u);
+    const bool inCut = producerOk && !parentAcc && pageResident(memberPage);
+    WORDS(pc.cut)[c] = inCut ? 1u : 0u;
+    if (!inCut) {
+        return;
+    }
+    const uint slot = atomicAdd(WORDS(pc.feedback)[1], 1u);
+    if (slot < pc.clusterCount) {
+        WORDS(pc.drawList)[slot] = c;
+    }
+    submitPage(memberPage, refinePriority(link + 5u));
+    if (!selfAcc && producerPage != FUSE_STREAM_PAGE_NONE) {
+        submitPage(producerPage, refinePriority(link));
+    }
+}

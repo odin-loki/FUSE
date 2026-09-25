@@ -1,0 +1,37 @@
+#version 460
+// WP-6.1 "ddgi.reset" (twin: ddgi_reset.slang): the volume's initial state, as DdgiCpuVolume::init
+// leaves it: every irradiance texel = initialIrradiance, every distance texel = (maxRayDistance,
+// maxRayDistance^2), every update count 0, every probe unmoved and active (probe data). One thread per texel slot (pc.count = the larger atlas).
+#extension GL_GOOGLE_include_directive : require
+#include "ddgi_common.glsl"
+
+layout(local_size_x = FUSE_DDGI_WORKGROUP) in;
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.count) {
+        return;
+    }
+    const FuseDdgiFrame F = fuse_ddgi_frame();
+    const FuseDdgiVolume V = F.volume;
+    const uint irrTexels = V.probeCount * (V.irradianceRes + 2u) * (V.irradianceRes + 2u);
+    const uint distTexels = V.probeCount * (V.depthRes + 2u) * (V.depthRes + 2u);
+    if (i < irrTexels) {
+        FuseDdgiFloatsRef irr = FuseDdgiFloatsRef(V.irradiance);
+        irr.v[i * 3u + 0u] = F.initialIrradiance[0];
+        irr.v[i * 3u + 1u] = F.initialIrradiance[1];
+        irr.v[i * 3u + 2u] = F.initialIrradiance[2];
+    }
+    if (i < distTexels) {
+        FuseDdgiFloatsRef dist = FuseDdgiFloatsRef(V.distance);
+        precise float d2 = F.maxRayDistance * F.maxRayDistance;
+        dist.v[i * 2u + 0u] = F.maxRayDistance;
+        dist.v[i * 2u + 1u] = d2;
+    }
+    if (i < V.probeCount) {
+        FuseDdgiWordsRef(F.updateCounts).v[i] = 0u;
+        if (V.probeData != 0ul) {
+            FuseDdgiProbeDataRef(V.probeData).v[i] = vec4(0.0); // not moved, active
+        }
+    }
+}

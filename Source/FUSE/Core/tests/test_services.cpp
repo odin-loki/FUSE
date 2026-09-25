@@ -1,3 +1,4 @@
+#include <fuse/core/temp_path.hpp>
 #include <fuse/alloc/frame_allocator.hpp>
 #include <fuse/handle.hpp>
 #include <fuse/io/vfs.hpp>
@@ -29,7 +30,13 @@ void testLoggerSink() {
         &lastMessage);
 
     fuse::log::info("hello %s", "fuse");
+#if defined(FUSE_NO_LOGGING) && FUSE_NO_LOGGING
+    // Shipping strips sub-Fatal log records: the sink must never see the message.
+    expectTrue(lastMessage.empty(), "shipping: info log never reaches sink");
+#else
     expectTrue(lastMessage == "hello fuse", "logger routes through sink");
+#endif
+    fuse::log::Logger::instance().setSink(nullptr, nullptr);
 }
 
 void testHandleGeneration() {
@@ -51,10 +58,10 @@ void testFrameAllocator() {
 
 void testVfsResolve() {
     auto& vfs = fuse::io::VirtualFileSystem::instance();
-    vfs.mount(fuse::io::MountKind::Game, "/tmp/fuse_game", "/game");
+    vfs.mount(fuse::io::MountKind::Game, fuse::test::tempPath("fuse_game"), "/game");
     std::string resolved;
     expectTrue(vfs.resolve("/game/textures/foo.png", resolved), "vfs resolves mounted prefix");
-    expectTrue(resolved == "/tmp/fuse_game/textures/foo.png", "vfs maps suffix to physical path");
+    expectTrue(resolved == fuse::test::tempPath("fuse_game/textures/foo.png"), "vfs maps suffix to physical path");
 }
 
 void testObjectHierarchy() {

@@ -1,0 +1,100 @@
+#version 460
+// FUSE Relight RL-5.4 "relight.radiance_cache.*": GLSL twin of radiance_cache.slang (see there; the cache is
+// kernels/radiance_cache_core.h, the training paths kernels/radiance_cache_path.h, the CPU oracle RadianceCacheCpu).
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+layout(local_size_x = 64) in;
+
+layout(push_constant) uniform RcPush {
+    uint64_t params;
+    uint64_t instances;
+    uint64_t triangles;
+    uint64_t materials;
+    uint64_t portals;
+    uint64_t lightMap;
+    uint64_t lightTable;
+    uint64_t lightTree;
+    uint64_t tlas;
+    uint64_t lut;
+    uint64_t restirDi;
+    uint64_t block;
+    uint width;
+    uint height;
+    uint lightCount;
+    uint stage;
+    uint count;
+    uint pitch;
+} pc;
+
+#include "rl_pt.glsl"
+
+layout(buffer_reference, std430, buffer_reference_align = 8) readonly buffer RcU64Ref { uint64_t v[]; };
+
+void rcTrain(uint tile, RcParams R) {
+    vec4 w[11];
+    for (uint k = 0u; k < 11u; ++k) {
+        w[k] = PtWordsRef(pc.params).v[k];
+    }
+    PtParams P = ptParamsUnpack(w);
+    PtParams Q = P;
+    Q.flags = (P.flags | kPtFlagRcTrain) &
+              ~(kPtFlagRadianceCache | kPtFlagRestirDi | kPtFlagDiRecord | kPtFlagRestirGi | kPtFlagGiRecord);
+    Q.rcTableLo = 0u;
+    Q.rcTableHi = 0u;
+    uint px;
+    uint py;
+    rcTrainPixel(R, P.width, P.height, tile, px, py);
+    PtSample s = ptRenderSample(Q, px, py, P.sampleBase + 1073741824u);
+}
+
+void main() {
+    uint i = gl_GlobalInvocationID.y * pc.pitch + gl_GlobalInvocationID.x;
+    if (i >= pc.count) {
+        return;
+    }
+    g_rcTable = RcU64Ref(pc.block).v[0];
+    g_rcRecords = RcU64Ref(pc.block).v[1];
+    g_rcParams = pc.block + uint64_t(32);
+    vec4 hw[5];
+    for (uint k = 0u; k < 5u; ++k) {
+        hw[k] = RcVec4Ref(g_rcParams).v[k];
+    }
+    RcParams R = rcParamsUnpack(hw);
+    if (pc.stage == 0u) {
+        if (i == 0u) {
+            rcWriteHeader(hw);
+        }
+        rcClearSlot(i);
+        return;
+    }
+    if (pc.stage == 1u) {
+        if (i == 0u) {
+            rcWriteHeader(hw);
+        }
+        rcTrain(i, R);
+        return;
+    }
+    if (pc.stage == 2u) {
+        RcVec4Ref rec = RcVec4Ref(g_rcRecords);
+        rcUpdateRecord(R, rec.v[i * 3u], rec.v[i * 3u + 1u], rec.v[i * 3u + 2u]);
+        return;
+    }
+    if (pc.stage == 4u) {
+        RcVec4Ref rec = RcVec4Ref(g_rcRecords);
+        vec4 a = rec.v[i * 3u];
+        vec4 o = vec4(0.0, 0.0, 0.0, -1.0);
+        if (a.w > 0.5) {
+            vec3 L;
+            float samples;
+            if (rcLookup(R, a.xyz, rec.v[i * 3u + 1u].xyz, L, samples)) {
+                o = vec4(L, samples);
+            }
+        }
+        RcVec4Ref(RcU64Ref(pc.block).v[2]).v[i] = o;
+        return;
+    }
+    rcResolveSlot(R, i);
+}

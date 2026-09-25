@@ -2013,7 +2013,7 @@ void testUaiskInotifyFileWatchProgress() {
     fuse::ai::uaisk::TreeFileWatchRegistry registry;
     registry.watchProfileFromDisk(tempPath.string(), 4u);
     expectTrue(registry.pollInotifyFileChanges(runtime) == 0u, "no inotify reload when unchanged");
-    expectTrue(registry.pollInotifyFileChanges(runtime) >= 0u, "inotify poll path executes");
+    (void)registry.pollInotifyFileChanges(runtime); // poll path executes; reload count is timing-dependent
 
     fs::remove(tempPath);
 }
@@ -2055,14 +2055,15 @@ void testUaiskInotifyHotReloadRegistry() {
     fuse::ai::BehaviorRuntime runtime;
     fuse::ai::uaisk::TreeFileWatchRegistry registry;
     registry.watchProfileFromDisk(tempPath.string(), 6u);
-    expectTrue(registry.inotifyPollCount() >= 0u, "inotify poll counter available");
+    const fuse::u32 pollsBeforeReload = registry.inotifyPollCount();
     expectTrue(registry.pollInotifyFileChanges(runtime) == 0u, "inotify hot reload unchanged");
 
     {
         std::ofstream out(tempPath, std::ios::trunc);
         out << "bb.action.set_flag flag=0\nroot=0\n";
     }
-    expectTrue(registry.pollInotifyFileChanges(runtime) >= 0u, "inotify hot reload poll executes");
+    (void)registry.pollInotifyFileChanges(runtime); // hot reload poll executes; count is timing-dependent
+    expectTrue(registry.inotifyPollCount() > pollsBeforeReload, "inotify poll counter advances");
 
     fs::remove(tempPath);
 }
@@ -2147,7 +2148,7 @@ void testUaiskFSEventsPollPath() {
     fuse::ai::uaisk::TreeFileWatchRegistry registry;
     registry.watchProfileFromDisk(tempPath.string(), 8u);
     expectTrue(registry.pollFSEventsFileChanges(runtime) == 0u, "no fsevents reload when unchanged");
-    expectTrue(registry.pollFSEventsFileChanges(runtime) >= 0u, "fsevents poll path executes");
+    (void)registry.pollFSEventsFileChanges(runtime); // poll path executes; reload count is timing-dependent
 
     fs::remove(tempPath);
 }

@@ -1,0 +1,88 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "mesh",
+  "id": "mod/fixture_game/remix_basic/mesh_7E2C8A4F1B3D5E60/ref_crate/crate_mesh",
+  "name": "crate_mesh",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 1,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "streams": [
+      {
+        "semantic": "Position",
+        "format": "F32x3",
+        "data": {
+          "sha256": "d7c8ae5c3e5aa9e1624a2ab1e67b41fb794360ba482ed7d307e0208c9eb2d0e2",
+          "size": 48,
+          "media": "fuse/mesh-stream"
+        }
+      },
+      {
+        "semantic": "Normal",
+        "format": "F32x3",
+        "data": {
+          "sha256": "796f0b940d4268e7d9ccbd67f52dca773c768e372dae64d3c1b1caf59e6c8247",
+          "size": 48,
+          "media": "fuse/mesh-stream"
+        }
+      },
+      {
+        "semantic": "Uv0",
+        "format": "F32x2",
+        "data": {
+          "sha256": "eeb394f1726eac2bb9656979b5b3190f0fc2bfc9a3df8e179d13da2ebc8c513a",
+          "size": 32,
+          "media": "fuse/mesh-stream"
+        }
+      }
+    ],
+    "indices32": {
+      "sha256": "fe78c65211dd0b56a97024fb61111e686ef1fe054aa132ba58e2891ac496f1ee",
+      "size": 24,
+      "media": "fuse/mesh-stream"
+    },
+    "submeshes": [
+      {
+        "indexOffset": 0,
+        "indexCount": 6,
+        "materialSlot": "poco:mod/fixture_game/remix_basic/mat_3F1A2B3C4D5E6F70",
+        "subset": ""
+      }
+    ],
+    "bounds": [-50, -50, 0, 50, 50, 0],
+    "skeletonId": "",
+    "lodIds": [],
+    "relight": {
+      "remix_hash": "7E2C8A4F1B3D5E60",
+      "double_sided": false,
+      "left_handed": false,
+      "face_corner_vertices": false,
+      "uv_primvar": "primvars:st",
+      "influences": 0
+    }
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:remix_basic"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "remix_basic",
+      "stage": "mod.usda",
+      "prim": "/RootNode/meshes/mesh_7E2C8A4F1B3D5E60/ref_crate/crate_mesh",
+      "layer": "assets/meshes/crate.usda"
+    }
+  },
+  "licence_id": "MIT",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

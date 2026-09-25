@@ -6,6 +6,7 @@
 #include <fuse/net/serializer.hpp>
 #include <fuse/types.hpp>
 
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -248,8 +249,38 @@ struct SnapshotHistoryPreflight {
 [[nodiscard]] SnapshotDelta make_empty_snapshot_delta(u32 base_frame, u32 target_frame, u64 base_checksum = 0,
                                                       u64 target_checksum = 0);
 
+/// Reusable scratch for the allocation-free delta path (FUSE_MASTER_PLAN B1.8): parsed entity
+/// rows, lookup tables and parked patch rows keep their capacity between calls, so a steady-state
+/// replication loop (compute -> serialize -> deserialize -> apply, same entity count every frame)
+/// performs no heap allocations once warmed up. One workspace per thread / per stream.
+class SnapshotDeltaWorkspace {
+public:
+    SnapshotDeltaWorkspace();
+    ~SnapshotDeltaWorkspace();
+    SnapshotDeltaWorkspace(SnapshotDeltaWorkspace&&) noexcept;
+    SnapshotDeltaWorkspace& operator=(SnapshotDeltaWorkspace&&) noexcept;
+    SnapshotDeltaWorkspace(const SnapshotDeltaWorkspace&) = delete;
+    SnapshotDeltaWorkspace& operator=(const SnapshotDeltaWorkspace&) = delete;
+
+    /// Pre-size the scratch for snapshots of up to `entity_rows` entities.
+    void reserve(usize entity_rows);
+
+    struct Impl;
+    [[nodiscard]] Impl& impl() { return *m_impl; }
+
+private:
+    std::unique_ptr<Impl> m_impl;
+};
+
 [[nodiscard]] SnapshotDelta compute_snapshot_delta(const GameSnapshot& base, const GameSnapshot& target);
 [[nodiscard]] GameSnapshot apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
+
+/// In-place forms: `out` / `delta` storage (byte vectors, patch rows) is reused. Same results as
+/// the value-returning forms above, which are implemented on top of these.
+void compute_snapshot_delta(const GameSnapshot& base, const GameSnapshot& target, SnapshotDelta& out,
+                            SnapshotDeltaWorkspace& workspace);
+void apply_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta, GameSnapshot& out,
+                          SnapshotDeltaWorkspace& workspace);
 
 /// Checks baseline checksum and entity-mask consistency without reconstructing state.
 [[nodiscard]] SnapshotDeltaPreflight preflight_snapshot_delta(const GameSnapshot& base, const SnapshotDelta& delta);
@@ -262,6 +293,8 @@ struct SnapshotHistoryPreflight {
 
 void serialize_snapshot_delta(const SnapshotDelta& delta, NetSerializer& out);
 [[nodiscard]] SnapshotDelta deserialize_snapshot_delta(NetSerializer& in);
+/// In-place form: reuses `out`'s patch rows and byte vectors (see SnapshotDeltaWorkspace).
+void deserialize_snapshot_delta(NetSerializer& in, SnapshotDelta& out, SnapshotDeltaWorkspace& workspace);
 
 /// Ring of recent snapshots for rollback-friendly history — reuses `RollbackBuffer` storage (B7.4 deepen).
 class SnapshotHistoryRing {

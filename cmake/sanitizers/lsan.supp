@@ -1,0 +1,7 @@
+# LSAN suppressions for the fuse-asan preset (FUSE_SANITIZE=address,undefined).
+# Wired into every Source/FUSE + Tools/FUSE ctest via ENVIRONMENT by
+# fuse_sanitize_finalize() in cmake/FuseSanitizers.cmake.
+#
+# POLICY: third-party only (Mesa/Lavapipe, LLVM, Vulkan loader, openal-soft,
+# zlib, system libs). Never suppress a finding whose top FUSE frame is in
+# Source/FUSE or Tools/FUSE — fix the code instead. Each entry needs a comment.

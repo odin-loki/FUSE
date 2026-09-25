@@ -20,8 +20,9 @@ bool DirectionalShadow::init(ResourceManager& resources, const DirectionalShadow
         cascadeDesc.width = m_desc.csm.resolution;
         cascadeDesc.height = m_desc.csm.resolution;
         cascadeDesc.format = CascadedShadowMapLayout::depthFormat();
+        // R32F shadow depth (B5.5) is written as a color target; R32F cannot be a depth attachment.
         cascadeDesc.usage = static_cast<ImageUsage>(
-            static_cast<u32>(ImageUsage::DepthStencilAttachment) | static_cast<u32>(ImageUsage::Sampled));
+            static_cast<u32>(ImageUsage::ColorAttachment) | static_cast<u32>(ImageUsage::Sampled));
         cascadeDesc.name = CascadedShadowMapLayout::debugName(i);
 
         m_data.shadowMaps[i] = resources.createTexture(cascadeDesc);

@@ -59,6 +59,7 @@ Handle<ParticleEmitter> ParticleSystem::create_emitter(const ParticleEmitterDesc
 
     ParticleEmitter emitter{};
     emitter.init(desc);
+    emitter.set_gpu_simulation(backend_kind() == VfxBackendKind::Cuda);
     Handle<ParticleEmitter> handle = m_emitters.insert(std::move(emitter));
     m_activeEmitters.push_back(handle);
     return handle;
@@ -150,11 +151,10 @@ u32 ParticleSystem::effect_count() const {
 }
 
 VfxBackendKind ParticleSystem::backend_kind() const {
-#if defined(FUSE_HAS_CUDA)
-    if (m_desc.gpu_simulation) {
+    // particle_cuda_kernel_available() (src/particle_soa_ops.cpp) already requires a usable device.
+    if (m_desc.gpu_simulation && particle_cuda_kernel_available()) {
         return VfxBackendKind::Cuda;
     }
-#endif
     return VfxBackendKind::CpuReference;
 }
 

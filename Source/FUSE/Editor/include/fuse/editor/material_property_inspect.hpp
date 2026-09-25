@@ -70,6 +70,11 @@ inline constexpr u32 kInvalidMaterialSlot = UINT32_MAX;
 [[nodiscard]] f32 clampBaseColorComponent(f32 value);
 [[nodiscard]] u8 clampShadingModel(u8 value);
 
+/// Exact sRGB transfer functions (IEC 61966-2-1). Colour pickers work in display-referred sRGB;
+/// materials store linear base colour, and the post stack re-encodes linear -> sRGB on output.
+[[nodiscard]] f32 srgbToLinear(f32 srgb);
+[[nodiscard]] f32 linearToSrgb(f32 linear);
+
 /// Clamp a scalar inspector edit for the given property id (B6.7 deepen follow-up).
 [[nodiscard]] f32 clampMaterialPropertyScalar(MaterialPropertyId id, f32 value);
 

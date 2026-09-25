@@ -27,7 +27,7 @@ void expectTrue(bool condition, const char* message) {
 void testQueuePendingAndDrainCounts() {
     fuse::adventure::InteractionQueue queue;
     fuse::adventure::InteractionSystem interactions;
-    fuse::adventure::MechanicsBridge bridge(interactions);
+    fuse::adventure::MechanicsBridge bridge;
     fuse::mechanics::MechanicsRegistry registry;
 
     fuse::mechanics::Component player("player");
@@ -61,7 +61,7 @@ void testQueuePendingAndDrainCounts() {
 void testQueueOrderedPickupThenUse() {
     fuse::adventure::InteractionQueue queue;
     fuse::adventure::InteractionSystem interactions;
-    fuse::adventure::MechanicsBridge bridge(interactions);
+    fuse::adventure::MechanicsBridge bridge;
     fuse::mechanics::MechanicsRegistry registry;
 
     fuse::mechanics::Component player("player");
@@ -106,7 +106,7 @@ void testQueueOrderedPickupThenUse() {
 void testQueueFailedInteractionCounted() {
     fuse::adventure::InteractionQueue queue;
     fuse::adventure::InteractionSystem interactions;
-    fuse::adventure::MechanicsBridge bridge(interactions);
+    fuse::adventure::MechanicsBridge bridge;
     fuse::mechanics::MechanicsRegistry registry;
 
     fuse::mechanics::Component player("player");

@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <memory>
 
 namespace fuse::animation {
 
@@ -92,24 +94,14 @@ mat4 build_channel_local(const AnimationClip::BoneChannels& channels, f32 sample
     const vec3 scale =
         channel_has_vec3(channels.scale) ? channels.scale.sample_vec3(sample_time) : vec3{1.f, 1.f, 1.f, 0.f};
 
-    mat4 local = mat4::identity();
-    local.data[0] = scale.x;
-    local.data[5] = scale.y;
-    local.data[10] = scale.z;
-    local.data[12] = position.x;
-    local.data[13] = position.y;
-    local.data[14] = position.z;
-
-    if (rotation.w != 1.f || rotation.x != 0.f || rotation.y != 0.f || rotation.z != 0.f) {
-        local = mat4_multiply(local, mat4_from_trs({}, rotation, {1.f, 1.f, 1.f, 0.f}));
-    }
-    return local;
+    // Standard T * R * S composition (scale applied in the bone's own frame before rotation).
+    return mat4_from_trs(position, quat_normalize(rotation), scale);
 }
 
 } // namespace
 
 void AnimationClip::evaluate(f32 time, const Skeleton& skel, PoseSoA& out_pose) const {
-    out_pose = PoseSoA::from_bind_pose(skel);
+    out_pose.assign_bind_pose(skel);
     const f32 sample_time = clamp_time(time, duration, looping);
 
     for (const BoneChannels& channels : bone_channels) {
@@ -142,17 +134,153 @@ void AnimationClip::sample(f32 time, const Skeleton& skel, Pose& out_pose) const
     out_pose = soa.to_pose();
 }
 
+namespace {
+
+constexpr char kClipMagic[4] = {'F', 'A', 'C', 'L'};
+constexpr u32 kClipVersion = 1;
+constexpr u32 kMaxSerializedCount = 1u << 24;
+
+struct ClipFileCloser {
+    void operator()(std::FILE* file) const {
+        if (file != nullptr) {
+            std::fclose(file);
+        }
+    }
+};
+
+template <typename T>
+bool clip_write(std::FILE* file, const T* data, size_t count) {
+    return count == 0 || std::fwrite(data, sizeof(T), count, file) == count;
+}
+
+template <typename T>
+bool clip_read(std::FILE* file, T* data, size_t count) {
+    return count == 0 || std::fread(data, sizeof(T), count, file) == count;
+}
+
+bool write_channel(std::FILE* file, const KeyframeChannel& channel) {
+    const u32 counts[3] = {static_cast<u32>(channel.times.size()),
+                           static_cast<u32>(channel.values_vec3.size()),
+                           static_cast<u32>(channel.values_quat.size())};
+    if (!clip_write(file, counts, 3) || !clip_write(file, channel.times.data(), channel.times.size())) {
+        return false;
+    }
+    for (const vec3& v : channel.values_vec3) {
+        const f32 xyz[3] = {v.x, v.y, v.z};
+        if (!clip_write(file, xyz, 3)) {
+            return false;
+        }
+    }
+    for (const quat& q : channel.values_quat) {
+        const f32 xyzw[4] = {q.x, q.y, q.z, q.w};
+        if (!clip_write(file, xyzw, 4)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool read_channel(std::FILE* file, KeyframeChannel& channel) {
+    u32 counts[3] = {};
+    if (!clip_read(file, counts, 3) || counts[0] > kMaxSerializedCount || counts[1] > kMaxSerializedCount ||
+        counts[2] > kMaxSerializedCount) {
+        return false;
+    }
+    // Every value track must line up with the key times (or be a single constant key).
+    for (u32 i = 1; i < 3; ++i) {
+        if (counts[i] > 1 && counts[i] != counts[0]) {
+            return false;
+        }
+    }
+    channel.times.resize(counts[0]);
+    if (!clip_read(file, channel.times.data(), channel.times.size())) {
+        return false;
+    }
+    if (!std::is_sorted(channel.times.begin(), channel.times.end())) {
+        return false;
+    }
+    channel.values_vec3.resize(counts[1]);
+    for (vec3& v : channel.values_vec3) {
+        f32 xyz[3] = {};
+        if (!clip_read(file, xyz, 3)) {
+            return false;
+        }
+        v = {xyz[0], xyz[1], xyz[2], 0.f};
+    }
+    channel.values_quat.resize(counts[2]);
+    for (quat& q : channel.values_quat) {
+        f32 xyzw[4] = {};
+        if (!clip_read(file, xyzw, 4)) {
+            return false;
+        }
+        q = {xyzw[0], xyzw[1], xyzw[2], xyzw[3]};
+    }
+    return true;
+}
+
+} // namespace
+
 bool AnimationClip::save(const char* path) const {
-    return path != nullptr && path[0] != '\0';
+    if (path == nullptr || path[0] == '\0') {
+        return false;
+    }
+
+    std::unique_ptr<std::FILE, ClipFileCloser> file(std::fopen(path, "wb"));
+    if (!file) {
+        return false;
+    }
+
+    const u32 channelCount = static_cast<u32>(bone_channels.size());
+    const u8 loopFlag = looping ? 1 : 0;
+    bool ok = clip_write(file.get(), kClipMagic, sizeof(kClipMagic)) && clip_write(file.get(), &kClipVersion, 1) &&
+              clip_write(file.get(), name, sizeof(name)) && clip_write(file.get(), &duration, 1) &&
+              clip_write(file.get(), &sample_rate, 1) && clip_write(file.get(), &loopFlag, 1) &&
+              clip_write(file.get(), &channelCount, 1);
+    for (const BoneChannels& channels : bone_channels) {
+        if (!ok) {
+            break;
+        }
+        ok = clip_write(file.get(), &channels.bone_index, 1) && write_channel(file.get(), channels.position) &&
+             write_channel(file.get(), channels.rotation) && write_channel(file.get(), channels.scale);
+    }
+    return ok && std::fflush(file.get()) == 0;
 }
 
 bool AnimationClip::load(const char* path) {
     if (path == nullptr || path[0] == '\0') {
         return false;
     }
-    std::strncpy(name, path, sizeof(name) - 1);
-    duration = 1.f;
-    sample_rate = 30.f;
+
+    std::unique_ptr<std::FILE, ClipFileCloser> file(std::fopen(path, "rb"));
+    if (!file) {
+        return false;
+    }
+
+    char magic[4] = {};
+    u32 version = 0;
+    AnimationClip loaded;
+    u8 loopFlag = 0;
+    u32 channelCount = 0;
+    if (!clip_read(file.get(), magic, sizeof(magic)) || std::memcmp(magic, kClipMagic, sizeof(magic)) != 0 ||
+        !clip_read(file.get(), &version, 1) || version != kClipVersion ||
+        !clip_read(file.get(), loaded.name, sizeof(loaded.name)) || !clip_read(file.get(), &loaded.duration, 1) ||
+        !clip_read(file.get(), &loaded.sample_rate, 1) || !clip_read(file.get(), &loopFlag, 1) ||
+        !clip_read(file.get(), &channelCount, 1) || channelCount > kMaxSerializedCount ||
+        !(loaded.duration >= 0.f)) {
+        return false;
+    }
+    loaded.name[sizeof(loaded.name) - 1] = '\0';
+    loaded.looping = loopFlag != 0;
+
+    loaded.bone_channels.resize(channelCount);
+    for (BoneChannels& channels : loaded.bone_channels) {
+        if (!clip_read(file.get(), &channels.bone_index, 1) || !read_channel(file.get(), channels.position) ||
+            !read_channel(file.get(), channels.rotation) || !read_channel(file.get(), channels.scale)) {
+            return false;
+        }
+    }
+
+    *this = std::move(loaded);
     return true;
 }
 

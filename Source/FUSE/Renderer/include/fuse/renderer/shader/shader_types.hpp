@@ -27,6 +27,9 @@ struct ShaderDesc {
     u32 defineCount = 0;
     const char** includePaths = nullptr;
     u32 includePathCount = 0;
+    /// Renderer tier this permutation targets (0..3 = T0..T3), or -1 for tier-agnostic. When set,
+    /// runtime compiles add `FUSE_RENDER_TIER=<tier>` and the tier enters the permutation key.
+    i32 tier = -1;
 };
 
 struct CompiledShader {
@@ -41,7 +44,25 @@ struct CompiledShader {
     u32 defineCount = 0;
     u32 includePathCount = 0;
     bool valid = false;
+    /// shaderPermutationKey(desc) of the request that produced this module (0 when unknown).
+    u64 permutationKey = 0;
+    i32 tier = -1;
+    /// Files the source pulled in (#include / Slang import), from the compiler's depfile. Runtime
+    /// compiles only; hot reload watches these next to the source itself.
+    std::vector<std::string> dependencies;
+    /// Where the SPIR-V was loaded from (sibling .spv, cooked .fuseshader or the permutation cache).
+    std::string spirvPath;
 };
+
+/// Source language, from the source path extension: `.slang` -> Slang, `.spv`/`.fuseshader` ->
+/// precompiled, anything else (`.comp`, `.vert`, `.glsl`, ...) -> GLSL.
+enum class ShaderLanguage : u8 { Glsl, Slang, Precompiled };
+ShaderLanguage shaderLanguageForPath(const char* sourcePath);
+
+/// Permutation key: FNV-1a over source path, entry point, stage, the define set (order
+/// independent: defines are sorted first), include paths and tier. Stable across runs and
+/// processes; independent of file contents (combine with a content hash for cache validity).
+u64 shaderPermutationKey(const ShaderDesc& desc);
 
 /// FNV-1a over SPIR-V words. Empty or null input hashes to 0.
 inline u64 hashSpirvWords(const u32* words, u32 wordCount) {

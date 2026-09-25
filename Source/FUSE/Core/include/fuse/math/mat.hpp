@@ -12,7 +12,7 @@ namespace fuse::math {
 struct Mat3 {
     std::array<f32, 9> data{};
 
-    static Mat3 identity() {
+    FUSE_HOST_DEVICE static Mat3 identity() {
         Mat3 m{};
         m.data[0] = 1.f;
         m.data[4] = 1.f;
@@ -20,15 +20,15 @@ struct Mat3 {
         return m;
     }
 
-    f32& at(u32 row, u32 col) { return data[row + col * 3]; }
-    f32 at(u32 row, u32 col) const { return data[row + col * 3]; }
+    FUSE_HOST_DEVICE f32& at(u32 row, u32 col) { return data[row + col * 3]; }
+    FUSE_HOST_DEVICE f32 at(u32 row, u32 col) const { return data[row + col * 3]; }
 };
 
 /// Column-major 4x4 matrix (OpenGL / Vulkan convention).
 struct Mat4 {
     std::array<f32, 16> data{};
 
-    static Mat4 identity() {
+    FUSE_HOST_DEVICE static Mat4 identity() {
         Mat4 m{};
         m.data[0] = 1.f;
         m.data[5] = 1.f;
@@ -37,10 +37,10 @@ struct Mat4 {
         return m;
     }
 
-    f32& at(u32 row, u32 col) { return data[row + col * 4]; }
-    f32 at(u32 row, u32 col) const { return data[row + col * 4]; }
+    FUSE_HOST_DEVICE f32& at(u32 row, u32 col) { return data[row + col * 4]; }
+    FUSE_HOST_DEVICE f32 at(u32 row, u32 col) const { return data[row + col * 4]; }
 
-    Mat3 upper3x3() const {
+    FUSE_HOST_DEVICE Mat3 upper3x3() const {
         Mat3 m{};
         m.data[0] = data[0];
         m.data[1] = data[1];
@@ -55,7 +55,7 @@ struct Mat4 {
     }
 };
 
-inline Mat3 multiply(const Mat3& a, const Mat3& b) {
+FUSE_HOST_DEVICE inline Mat3 multiply(const Mat3& a, const Mat3& b) {
     Mat3 result{};
     for (u32 row = 0; row < 3; ++row) {
         for (u32 col = 0; col < 3; ++col) {
@@ -69,7 +69,7 @@ inline Mat3 multiply(const Mat3& a, const Mat3& b) {
     return result;
 }
 
-inline Mat4 multiply(const Mat4& a, const Mat4& b) {
+FUSE_HOST_DEVICE inline Mat4 multiply(const Mat4& a, const Mat4& b) {
     Mat4 result{};
     for (u32 row = 0; row < 4; ++row) {
         for (u32 col = 0; col < 4; ++col) {
@@ -83,7 +83,7 @@ inline Mat4 multiply(const Mat4& a, const Mat4& b) {
     return result;
 }
 
-inline Mat4 fromTRS(const Vec3& position, const Quat& rotation, const Vec3& scale) {
+FUSE_HOST_DEVICE inline Mat4 fromTRS(const Vec3& position, const Quat& rotation, const Vec3& scale) {
     const f32 x = rotation.x;
     const f32 y = rotation.y;
     const f32 z = rotation.z;
@@ -120,12 +120,12 @@ inline Mat4 fromTRS(const Vec3& position, const Quat& rotation, const Vec3& scal
 }
 
 /// Rigid transform (rotation + translation, unit scale) without building a full TRS matrix.
-inline Mat4 fromRotationTranslation(const Quat& rotation, const Vec3& translation) {
+FUSE_HOST_DEVICE inline Mat4 fromRotationTranslation(const Quat& rotation, const Vec3& translation) {
     return fromTRS(translation, rotation, {1.f, 1.f, 1.f});
 }
 
 /// True when the upper 3×3 block columns are mutually orthogonal with unit length (pure rotation).
-inline bool isOrthogonalUpper3x3(const Mat4& matrix, f32 epsilon = 1e-4f) {
+FUSE_HOST_DEVICE inline bool isOrthogonalUpper3x3(const Mat4& matrix, f32 epsilon = 1e-4f) {
     const Vec3 x{matrix.data[0], matrix.data[1], matrix.data[2]};
     const Vec3 y{matrix.data[4], matrix.data[5], matrix.data[6]};
     const Vec3 z{matrix.data[8], matrix.data[9], matrix.data[10]};
@@ -151,7 +151,7 @@ inline bool isOrthogonalUpper3x3(const Mat4& matrix, f32 epsilon = 1e-4f) {
 }
 
 /// True when the upper 3×3 block is orthogonal with uniform column length (rotation ± uniform scale).
-inline bool isRigidUpper3x3(const Mat4& matrix, f32 epsilon = 1e-4f) {
+FUSE_HOST_DEVICE inline bool isRigidUpper3x3(const Mat4& matrix, f32 epsilon = 1e-4f) {
     const Vec3 x{matrix.data[0], matrix.data[1], matrix.data[2]};
     const Vec3 y{matrix.data[4], matrix.data[5], matrix.data[6]};
     const Vec3 z{matrix.data[8], matrix.data[9], matrix.data[10]};
@@ -175,7 +175,7 @@ inline bool isRigidUpper3x3(const Mat4& matrix, f32 epsilon = 1e-4f) {
            std::fabs(y.dot(z)) <= orthoTolerance;
 }
 
-inline Mat4 inverseAffine(const Mat4& matrix) {
+FUSE_HOST_DEVICE inline Mat4 inverseAffine(const Mat4& matrix) {
     const f32 r00 = matrix.data[0];
     const f32 r01 = matrix.data[4];
     const f32 r02 = matrix.data[8];
@@ -210,18 +210,18 @@ inline Mat4 inverseAffine(const Mat4& matrix) {
 }
 
 /// True when the bottom row is `[0, 0, 0, 1]` (affine transform, not perspective).
-inline bool isAffine(const Mat4& matrix, f32 epsilon = 1e-5f) {
+FUSE_HOST_DEVICE inline bool isAffine(const Mat4& matrix, f32 epsilon = 1e-5f) {
     return std::fabs(matrix.data[3]) <= epsilon && std::fabs(matrix.data[7]) <= epsilon &&
            std::fabs(matrix.data[11]) <= epsilon && std::fabs(matrix.data[15] - 1.f) <= epsilon;
 }
 
 /// True when the matrix is an affine rigid transform (orthogonal upper 3×3 with uniform column length).
-inline bool isRigid(const Mat4& matrix, f32 epsilon = 1e-4f) {
+FUSE_HOST_DEVICE inline bool isRigid(const Mat4& matrix, f32 epsilon = 1e-4f) {
     return isAffine(matrix, epsilon) && isRigidUpper3x3(matrix, epsilon);
 }
 
 /// Translation column of an affine matrix; returns zero when the matrix is not affine.
-inline Vec3 extractTranslation(const Mat4& matrix, f32 epsilon = 1e-5f) {
+FUSE_HOST_DEVICE inline Vec3 extractTranslation(const Mat4& matrix, f32 epsilon = 1e-5f) {
     if (!isAffine(matrix, epsilon)) {
         return {};
     }
@@ -229,7 +229,7 @@ inline Vec3 extractTranslation(const Mat4& matrix, f32 epsilon = 1e-5f) {
 }
 
 /// Uniform column length of a rigid upper 3×3 block; returns `0` when the block is not rigid.
-inline f32 uniformScaleUpper3x3(const Mat4& matrix, f32 epsilon = 1e-4f) {
+FUSE_HOST_DEVICE inline f32 uniformScaleUpper3x3(const Mat4& matrix, f32 epsilon = 1e-4f) {
     if (!isRigidUpper3x3(matrix, epsilon)) {
         return 0.f;
     }
@@ -238,7 +238,7 @@ inline f32 uniformScaleUpper3x3(const Mat4& matrix, f32 epsilon = 1e-4f) {
 }
 
 /// Writes `inverseAffine(matrix)` to `out` when the upper 3×3 block is a pure rotation; returns false for any scale.
-inline bool tryInverseAffine(const Mat4& matrix, Mat4& out) {
+FUSE_HOST_DEVICE inline bool tryInverseAffine(const Mat4& matrix, Mat4& out) {
     if (!isOrthogonalUpper3x3(matrix)) {
         return false;
     }
@@ -247,7 +247,7 @@ inline bool tryInverseAffine(const Mat4& matrix, Mat4& out) {
 }
 
 /// Writes the inverse of a rigid affine matrix (rotation ± uniform scale + translation) to `out`.
-inline bool tryInverseRigid(const Mat4& matrix, Mat4& out, f32 epsilon = 1e-4f) {
+FUSE_HOST_DEVICE inline bool tryInverseRigid(const Mat4& matrix, Mat4& out, f32 epsilon = 1e-4f) {
     if (!isAffine(matrix, epsilon) || !isRigidUpper3x3(matrix, epsilon)) {
         return false;
     }
@@ -292,7 +292,7 @@ inline bool tryInverseRigid(const Mat4& matrix, Mat4& out, f32 epsilon = 1e-4f) 
     return true;
 }
 
-inline Mat4 perspective(f32 fov_deg, f32 aspect, f32 near_plane, f32 far_plane) {
+FUSE_HOST_DEVICE inline Mat4 perspective(f32 fov_deg, f32 aspect, f32 near_plane, f32 far_plane) {
     const f32 f = 1.f / std::tan(fov_deg * 0.5f * 3.14159265f / 180.f);
     Mat4 result{};
     result.data[0] = f / aspect;
@@ -303,7 +303,7 @@ inline Mat4 perspective(f32 fov_deg, f32 aspect, f32 near_plane, f32 far_plane) 
     return result;
 }
 
-inline Mat4 lookAt(const Vec3& eye, const Vec3& target, const Vec3& up) {
+FUSE_HOST_DEVICE inline Mat4 lookAt(const Vec3& eye, const Vec3& target, const Vec3& up) {
     const Vec3 forward = (target - eye).normalized();
     const Vec3 side = cross(forward, up).normalized();
     const Vec3 cam_up = cross(side, forward);
@@ -327,7 +327,7 @@ inline Mat4 lookAt(const Vec3& eye, const Vec3& target, const Vec3& up) {
     return result;
 }
 
-inline Vec3 transformPoint(const Mat4& matrix, const Vec3& point) {
+FUSE_HOST_DEVICE inline Vec3 transformPoint(const Mat4& matrix, const Vec3& point) {
     return {
         matrix.data[0] * point.x + matrix.data[4] * point.y + matrix.data[8] * point.z + matrix.data[12],
         matrix.data[1] * point.x + matrix.data[5] * point.y + matrix.data[9] * point.z + matrix.data[13],
@@ -335,7 +335,7 @@ inline Vec3 transformPoint(const Mat4& matrix, const Vec3& point) {
     };
 }
 
-inline Vec3 transformDirection(const Mat3& matrix, const Vec3& direction) {
+FUSE_HOST_DEVICE inline Vec3 transformDirection(const Mat3& matrix, const Vec3& direction) {
     return {
         matrix.data[0] * direction.x + matrix.data[3] * direction.y + matrix.data[6] * direction.z,
         matrix.data[1] * direction.x + matrix.data[4] * direction.y + matrix.data[7] * direction.z,
@@ -343,12 +343,12 @@ inline Vec3 transformDirection(const Mat3& matrix, const Vec3& direction) {
     };
 }
 
-inline Vec3 transformDirection(const Mat4& matrix, const Vec3& direction) {
+FUSE_HOST_DEVICE inline Vec3 transformDirection(const Mat4& matrix, const Vec3& direction) {
     return transformDirection(matrix.upper3x3(), direction);
 }
 
 /// Transposed upper 3×3 block (inverse rotation when the block is orthogonal).
-inline Mat3 transposeUpper3x3(const Mat4& matrix) {
+FUSE_HOST_DEVICE inline Mat3 transposeUpper3x3(const Mat4& matrix) {
     Mat3 result{};
     for (u32 row = 0; row < 3; ++row) {
         for (u32 col = 0; col < 3; ++col) {
@@ -359,7 +359,7 @@ inline Mat3 transposeUpper3x3(const Mat4& matrix) {
 }
 
 /// Writes `a * b` to `out` when both operands are rigid affine transforms.
-inline bool tryMultiplyRigid(const Mat4& a, const Mat4& b, Mat4& out, f32 epsilon = 1e-4f) {
+FUSE_HOST_DEVICE inline bool tryMultiplyRigid(const Mat4& a, const Mat4& b, Mat4& out, f32 epsilon = 1e-4f) {
     if (!isRigid(a, epsilon) || !isRigid(b, epsilon)) {
         return false;
     }
@@ -368,7 +368,7 @@ inline bool tryMultiplyRigid(const Mat4& a, const Mat4& b, Mat4& out, f32 epsilo
 }
 
 /// Extracts a unit quaternion from a pure-rotation upper 3×3 block.
-inline bool tryToRotationQuat(const Mat4& matrix, Quat& out, f32 epsilon = 1e-4f) {
+FUSE_HOST_DEVICE inline bool tryToRotationQuat(const Mat4& matrix, Quat& out, f32 epsilon = 1e-4f) {
     if (!isOrthogonalUpper3x3(matrix, epsilon)) {
         return false;
     }
@@ -415,7 +415,7 @@ inline bool tryToRotationQuat(const Mat4& matrix, Quat& out, f32 epsilon = 1e-4f
 }
 
 /// Writes `transformPoint(matrix, point)` when the matrix is a rigid affine transform.
-inline bool tryTransformPointRigid(const Mat4& matrix, const Vec3& point, Vec3& out, f32 epsilon = 1e-4f) {
+FUSE_HOST_DEVICE inline bool tryTransformPointRigid(const Mat4& matrix, const Vec3& point, Vec3& out, f32 epsilon = 1e-4f) {
     if (!isRigid(matrix, epsilon)) {
         return false;
     }
@@ -424,7 +424,7 @@ inline bool tryTransformPointRigid(const Mat4& matrix, const Vec3& point, Vec3& 
 }
 
 /// Writes `transformDirection(matrix, direction)` when the matrix is a rigid affine transform.
-inline bool tryTransformDirectionRigid(const Mat4& matrix, const Vec3& direction, Vec3& out,
+FUSE_HOST_DEVICE inline bool tryTransformDirectionRigid(const Mat4& matrix, const Vec3& direction, Vec3& out,
                                        f32 epsilon = 1e-4f) {
     if (!isRigid(matrix, epsilon)) {
         return false;
@@ -434,7 +434,7 @@ inline bool tryTransformDirectionRigid(const Mat4& matrix, const Vec3& direction
 }
 
 /// Builds a rigid affine matrix from translation, rotation, and positive uniform scale.
-inline bool tryFromRigid(const Vec3& translation, const Quat& rotation, f32 uniformScale, Mat4& out,
+FUSE_HOST_DEVICE inline bool tryFromRigid(const Vec3& translation, const Quat& rotation, f32 uniformScale, Mat4& out,
                          f32 epsilon = 1e-4f) {
     if (uniformScale < epsilon) {
         return false;
@@ -448,7 +448,7 @@ inline bool tryFromRigid(const Vec3& translation, const Quat& rotation, f32 unif
 }
 
 /// Decomposes a rigid affine matrix into translation, unit rotation, and uniform column scale.
-inline bool tryExtractRigid(const Mat4& matrix, Vec3& translation, Quat& rotation, f32& uniformScale,
+FUSE_HOST_DEVICE inline bool tryExtractRigid(const Mat4& matrix, Vec3& translation, Quat& rotation, f32& uniformScale,
                             f32 epsilon = 1e-4f) {
     if (!isAffine(matrix, epsilon) || !isRigidUpper3x3(matrix, epsilon)) {
         return false;
@@ -476,7 +476,7 @@ inline bool tryExtractRigid(const Mat4& matrix, Vec3& translation, Quat& rotatio
 }
 
 /// Writes translation column when the matrix is affine; returns false for perspective early-out.
-inline bool tryExtractTranslation(const Mat4& matrix, Vec3& translation, f32 epsilon = 1e-5f) {
+FUSE_HOST_DEVICE inline bool tryExtractTranslation(const Mat4& matrix, Vec3& translation, f32 epsilon = 1e-5f) {
     if (!isAffine(matrix, epsilon)) {
         return false;
     }
@@ -485,7 +485,7 @@ inline bool tryExtractTranslation(const Mat4& matrix, Vec3& translation, f32 eps
 }
 
 /// Writes transposed upper 3×3 when the block is orthogonal; returns false for scaled upper block.
-inline bool tryTransposeUpper3x3(const Mat4& matrix, Mat3& out, f32 epsilon = 1e-4f) {
+FUSE_HOST_DEVICE inline bool tryTransposeUpper3x3(const Mat4& matrix, Mat3& out, f32 epsilon = 1e-4f) {
     if (!isOrthogonalUpper3x3(matrix, epsilon)) {
         return false;
     }
@@ -493,7 +493,7 @@ inline bool tryTransposeUpper3x3(const Mat4& matrix, Mat3& out, f32 epsilon = 1e
     return true;
 }
 
-inline Mat4 operator*(const Mat4& a, const Mat4& b) { return multiply(a, b); }
-inline Mat3 operator*(const Mat3& a, const Mat3& b) { return multiply(a, b); }
+FUSE_HOST_DEVICE inline Mat4 operator*(const Mat4& a, const Mat4& b) { return multiply(a, b); }
+FUSE_HOST_DEVICE inline Mat3 operator*(const Mat3& a, const Mat3& b) { return multiply(a, b); }
 
 } // namespace fuse::math

@@ -1,0 +1,77 @@
+#version 460
+// WP-8.1 "fog.temporal": one thread per froxel. The froxel centre reprojected into the previous camera's
+// volume -> trilinear history (clamp to edge) -> lerp(history, current, alpha); the current sample alone
+// where the centre was outside the previous volume or without a history. CPU reference:
+// fog_kernel::temporal_froxel (froxel_fog_kernel.hpp). GLSL twin of fog_temporal.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "fog_common.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(push_constant) uniform FuseFogPush {
+    uint64_t frame;
+    uint64_t reserved;
+} pc;
+
+bool fuse_fog_reproject(FuseFogFrameRef R, vec3 p, out float gx, out float gy, out float gz) {
+    gx = 0.0;
+    gy = 0.0;
+    gz = 0.0;
+    precise vec3 rel = vec3(p.x - R.f.prevPosition[0], p.y - R.f.prevPosition[1], p.z - R.f.prevPosition[2]);
+    const float vx = fuse_fog_dot(rel, fuse_fog_vec3(R.f.prevRight));
+    const float vy = fuse_fog_dot(rel, fuse_fog_vec3(R.f.prevUp));
+    precise float depth = -fuse_fog_dot(rel, fuse_fog_vec3(R.f.prevBack));
+    if (!(depth >= R.f.nearPlane) || !(depth <= R.f.farPlane)) {
+        return false;
+    }
+    precise float ndcX = vx / (R.f.prevTanX * depth);
+    precise float ndcY = vy / (R.f.prevTanY * depth);
+    precise float sx = (ndcX + 1.0) * 0.5;
+    precise float sy = (1.0 - ndcY) * 0.5;
+    if (!(sx >= 0.0) || !(sx <= 1.0) || !(sy >= 0.0) || !(sy <= 1.0)) {
+        return false;
+    }
+    const uint s = fuse_fog_find_slice(R, depth);
+    const float z0 = R.f.sliceDepth[s];
+    const float z1 = R.f.sliceDepth[s + 1u];
+    precise float x = sx * float(R.f.gridX) - 0.5;
+    precise float y = sy * float(R.f.gridY) - 0.5;
+    precise float z = float(s) + (depth - z0) / (z1 - z0) - 0.5;
+    gx = x;
+    gy = y;
+    gz = z;
+    return true;
+}
+
+void main() {
+    FuseFogFrameRef R = FuseFogFrameRef(pc.frame);
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= R.f.froxelCount) {
+        return;
+    }
+    const uint z = i % R.f.gridZ;
+    const uint col = i / R.f.gridZ;
+    const uint x = col % R.f.gridX;
+    const uint y = col / R.f.gridX;
+    const vec4 cur = FuseFogTexelsRef(R.f.current).v[i];
+    vec4 result = cur;
+    if ((R.f.flags & FUSE_FOG_FLAG_HISTORY) != 0u) {
+        FuseFogTexelsRef history = FuseFogTexelsRef(R.f.historyPrev);
+        bool valid = true;
+        vec4 h = history.v[i];
+        if ((R.f.flags & FUSE_FOG_FLAG_REPROJECT) != 0u) {
+            const vec3 p = fuse_fog_froxel_point(R, x, y, z, 0.5, 0.5, 0.5);
+            float gx;
+            float gy;
+            float gz;
+            valid = fuse_fog_reproject(R, p, gx, gy, gz);
+            if (valid) {
+                h = fuse_fog_sample_grid(R, history, gx, gy, gz);
+            }
+        }
+        if (valid) {
+            result = fuse_fog_lerp4(h, cur, R.f.temporalAlpha);
+        }
+    }
+    FuseFogTexelsRef(R.f.historyCur).v[i] = result;
+}

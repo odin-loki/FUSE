@@ -2,6 +2,8 @@
 
 #include <fuse/cook/bc7_encoder.hpp>
 #include <fuse/cook/ispc_texcomp_hook.hpp>
+#include <fuse/cook/mesh_cook.hpp>
+#include <fuse/cook/texture_cook.hpp>
 
 #include <algorithm>
 #include <cstdlib>
@@ -11,16 +13,6 @@
 #include <vector>
 
 #include <cstring>
-
-#if defined(FUSE_HAS_ASSIMP)
-#include <assimp/Importer.hpp>
-#include <assimp/postprocess.h>
-#include <assimp/scene.h>
-#endif
-
-#if defined(FUSE_HAS_STB_IMAGE)
-#include "stb_image.h"
-#endif
 
 #if defined(FUSE_HAS_OGG_VORBIS)
 #include <ogg/ogg.h>
@@ -32,6 +24,8 @@ namespace fuse::cook {
 
 namespace {
 
+#if defined(FUSE_HAS_OGG_VORBIS)
+// WAV input is only read by the Ogg Vorbis encode path.
 struct WavHeaderInfo {
     bool valid = false;
     u32 channels = 0;
@@ -118,6 +112,7 @@ bool readWavPcm16(std::ifstream& in, const WavHeaderInfo& wav, std::vector<std::
     in.read(reinterpret_cast<char*>(pcm.data()), static_cast<std::streamsize>(wav.dataBytes));
     return in.good();
 }
+#endif // FUSE_HAS_OGG_VORBIS
 
 } // namespace
 
@@ -151,179 +146,52 @@ CookStubWriteResult unavailableHook(const char* hookName) {
     return result;
 }
 
-u32 countMeshVertices(const void* scenePtr) {
-#if defined(FUSE_HAS_ASSIMP)
-    const aiScene* scene = static_cast<const aiScene*>(scenePtr);
-    u32 vertices = 0;
-    for (u32 meshIndex = 0; meshIndex < scene->mNumMeshes; ++meshIndex) {
-        vertices += scene->mMeshes[meshIndex]->mNumVertices;
-    }
-    return vertices;
-#else
-    (void)scenePtr;
-    return 0;
-#endif
-}
-
-u32 countMeshIndices(const void* scenePtr) {
-#if defined(FUSE_HAS_ASSIMP)
-    const aiScene* scene = static_cast<const aiScene*>(scenePtr);
-    u32 indices = 0;
-    for (u32 meshIndex = 0; meshIndex < scene->mNumMeshes; ++meshIndex) {
-        indices += scene->mMeshes[meshIndex]->mNumFaces * 3u;
-    }
-    return indices;
-#else
-    (void)scenePtr;
-    return 0;
-#endif
-}
-
 } // namespace
+
+const char* cookFailureName(CookFailure failure) {
+    switch (failure) {
+    case CookFailure::None:
+        return "none";
+    case CookFailure::InvalidArgument:
+        return "invalid_argument";
+    case CookFailure::ImporterUnavailable:
+        return "importer_unavailable";
+    case CookFailure::MalformedSource:
+        return "malformed_source";
+    case CookFailure::InvalidGeometry:
+        return "invalid_geometry";
+    case CookFailure::CorruptImage:
+        return "corrupt_image";
+    case CookFailure::InvalidImageDimensions:
+        return "invalid_image_dimensions";
+    case CookFailure::WriteFailed:
+        return "write_failed";
+    }
+    return "unknown";
+}
 
 CookStubWriteResult tryCookMeshAssimp(const std::string& input_path, const std::string& output_path,
                                       u32 lod_count, bool compressed) {
-#if defined(FUSE_HAS_ASSIMP)
-    if (input_path.empty() || output_path.empty()) {
-        CookStubWriteResult result;
-        result.note = "assimp missing input or output path";
-        return result;
-    }
-
-    Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile(input_path, aiProcess_Triangulate | aiProcess_GenNormals);
-    if (scene == nullptr || scene->mNumMeshes == 0) {
-        CookStubWriteResult result;
-        result.note = std::string("assimp import failed: ") + importer.GetErrorString();
-        return result;
-    }
-
-    const u32 vertices = countMeshVertices(scene);
-    const u32 indices = countMeshIndices(scene);
-
-    std::ostringstream payload;
-    payload << "FUSEMESH_STUB\n";
-    payload << "hook=assimp\n";
-    payload << "lods=" << lod_count << "\n";
-    payload << "compress=" << (compressed ? "on" : "off") << "\n";
-    payload << "vertices=" << vertices << "\n";
-    payload << "indices=" << indices << "\n";
-    payload << "meshes=" << scene->mNumMeshes << "\n";
-
-    CookStubWriteResult written = writeTextStub(output_path, payload.str());
-    if (written.ok) {
-        written.note = "assimp mesh cooked";
-    }
-    return written;
-#else
-    (void)input_path;
-    (void)output_path;
+    // LOD generation and vertex compression are not implemented yet; the knobs only feed the
+    // cache key. The cooked output is the lossless FMSH binary (see mesh_cook.hpp).
     (void)lod_count;
     (void)compressed;
-    return unavailableHook("assimp");
-#endif
+    return cook_mesh_file(input_path, output_path);
 }
 
 CookStubWriteResult tryCookTextureBc7(const std::string& input_path, const std::string& output_path,
                                       const char* compression, bool mipmaps) {
-#if defined(FUSE_HAS_STB_IMAGE)
-    if (input_path.empty() || output_path.empty()) {
+    // W0.3: BC1 / BC4 / BC5 / BC6H / BC7 through the in-house encoders (bcn_encoder.cpp).
+    TextureCookOptions options;
+    options.mipmaps = mipmaps;
+    if (compression != nullptr && !parse_bc_format(compression, options.format)) {
         CookStubWriteResult result;
-        result.note = "bc7 missing input or output path";
+        result.note = std::string("texture compression '") + compression + "' not supported";
+        result.failure = CookFailure::InvalidArgument;
         return result;
     }
-
-    int width = 0;
-    int height = 0;
-    int channels = 0;
-    unsigned char* pixels = stbi_load(input_path.c_str(), &width, &height, &channels, 4);
-    if (pixels == nullptr) {
-        CookStubWriteResult result;
-        result.note = "stb_image decode failed";
-        return result;
-    }
-
-#if defined(FUSE_HAS_INHOUSE_BC7_ENCODER)
-    std::vector<u8> blocks;
-    const Bc7EncodeResult encoded =
-        encode_bc7_rgba8(pixels, static_cast<u32>(width), static_cast<u32>(height), blocks);
-    stbi_image_free(pixels);
-    if (!encoded.ok) {
-        CookStubWriteResult result;
-        result.note = encoded.note;
-        return result;
-    }
-
-    std::ostringstream header;
-    header << "FUSETEX_BC7\n";
-    header << "hook=bc7_mode6\n";
-    header << "compression=" << compression << "\n";
-    header << "width=" << encoded.width << "\n";
-    header << "height=" << encoded.height << "\n";
-    header << "blocks=" << encoded.blockCount << "\n";
-    header << "mipmaps=" << (mipmaps ? "on" : "off") << "\n";
-    header << "mip_levels=1\n";
-    header << "mode=6\n";
-    header << "DATA\n";
-
-    std::string payload = header.str();
-    payload.append(reinterpret_cast<const char*>(blocks.data()),
-                   static_cast<std::size_t>(blocks.size()));
-
-    std::error_code ec;
-    const std::filesystem::path parent = std::filesystem::path(output_path).parent_path();
-    if (!parent.empty()) {
-        std::filesystem::create_directories(parent, ec);
-    }
-
-    std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
-    CookStubWriteResult written;
-    if (!out) {
-        written.note = "unable to write BC7 texture output";
-        return written;
-    }
-    out.write(payload.data(), static_cast<std::streamsize>(payload.size()));
-    written.ok = out.good();
-    written.byteCount = static_cast<u32>(payload.size());
-    written.note = written.ok ? ("bc7 encoded, blocks=" + std::to_string(encoded.blockCount))
-                              : "bc7 write failed";
-    return written;
-#else
-    const u32 blockWidth = static_cast<u32>((width + 3) / 4);
-    const u32 blockHeight = static_cast<u32>((height + 3) / 4);
-    const u32 bc7Blocks = blockWidth * blockHeight;
-    const u32 bc7PayloadBytes = bc7Blocks * 16u;
-
-    stbi_image_free(pixels);
-
-    std::ostringstream payload;
-    payload << "FUSETEX_STUB\n";
-#if defined(FUSE_HAS_BC7_ENCODER)
-    payload << "hook=bc7\n";
-#else
-    payload << "hook=bc7_rgba_passthrough\n";
-#endif
-    payload << "compression=" << compression << "\n";
-    payload << "mipmaps=" << (mipmaps ? "on" : "off") << "\n";
-    payload << "width=" << width << "\n";
-    payload << "height=" << height << "\n";
-    payload << "channels=4\n";
-    payload << "bc7_blocks=" << bc7Blocks << "\n";
-    payload << "bc7_bytes=" << bc7PayloadBytes << "\n";
-
-    CookStubWriteResult written = writeTextStub(output_path, payload.str());
-    if (written.ok) {
-        written.note = "texture rgba decode cooked";
-    }
-    return written;
-#endif
-#else
-    (void)input_path;
-    (void)output_path;
-    (void)compression;
-    (void)mipmaps;
-    return unavailableHook("bc7");
-#endif
+    options.normal_map = options.format == BcFormat::BC5;
+    return cook_texture_file(input_path, output_path, options);
 }
 
 CookStubWriteResult tryCookAudioOgg(const std::string& input_path, const std::string& output_path,
@@ -526,68 +394,26 @@ CookStubWriteResult write_mesh_stub(const std::string& input_path, const std::st
 
 CookStubWriteResult write_texture_bc7_encoded(const std::string& output_path,
                                               const std::string& source_path, bool mipmaps) {
-#if defined(FUSE_HAS_INHOUSE_BC7_ENCODER)
     if (!source_path.empty()) {
-        const CookStubWriteResult decoded =
-            tryCookTextureBc7(source_path, output_path, "BC7", mipmaps);
+        const CookStubWriteResult decoded = cook_texture_bc7_file(source_path, output_path, mipmaps);
         if (decoded.ok) {
             return decoded;
         }
     }
 
-    CookStubWriteResult result;
+    // Lenient fallback for undecodable sources: a deterministic placeholder image, labelled as such
+    // in the header. Strict cooks (the AssetCooker default, see ImportValidation) never reach this path.
     Bc7RgbaImage working = source_path.empty() ? Bc7RgbaImage{} : synthesize_rgba_from_source(source_path);
     if (working.rgba.empty()) {
         working.width = 4u;
         working.height = 4u;
-        working.rgba = {200, 64, 32, 255, 200, 64, 32, 255, 200, 64, 32, 255, 200, 64, 32, 255};
+        working.rgba.clear();
+        for (u32 i = 0; i < 16u; ++i) {
+            working.rgba.insert(working.rgba.end(), {200, 64, 32, 255});
+        }
     }
-
-    std::vector<u8> blocks;
-    const Bc7EncodeResult encoded =
-        encode_bc7_rgba8(working.rgba.data(), working.width, working.height, blocks);
-    if (!encoded.ok) {
-        result.note = encoded.note;
-        return result;
-    }
-
-    std::ostringstream header;
-    header << "FUSETEX_BC7\n";
-    header << "width=" << encoded.width << "\n";
-    header << "height=" << encoded.height << "\n";
-    header << "blocks=" << encoded.blockCount << "\n";
-    header << "mipmaps=" << (mipmaps ? "on" : "off") << "\n";
-    header << "mip_levels=1\n";
-    header << "mode=6\n";
-    header << "DATA\n";
-
-    std::string payload = header.str();
-    payload.append(reinterpret_cast<const char*>(blocks.data()),
-                   static_cast<std::size_t>(blocks.size()));
-
-    std::error_code ec;
-    const std::filesystem::path parent = std::filesystem::path(output_path).parent_path();
-    if (!parent.empty()) {
-        std::filesystem::create_directories(parent, ec);
-    }
-
-    std::ofstream out(output_path, std::ios::binary | std::ios::trunc);
-    if (!out) {
-        result.note = "unable to write BC7 texture output";
-        return result;
-    }
-
-    out.write(payload.data(), static_cast<std::streamsize>(payload.size()));
-    result.ok = out.good();
-    result.byteCount = static_cast<u32>(payload.size());
-    result.note = result.ok ? ("bc7 encoded, blocks=" + std::to_string(encoded.blockCount)) : "bc7 write failed";
-    return result;
-#else
-    (void)output_path;
-    (void)source_path;
-    (void)mipmaps;
-    return unavailableHook("bc7");
-#endif
+    return write_texture_bc7_rgba(working.rgba.data(), working.width, working.height, output_path, mipmaps,
+                                  "bc7_synthesized_placeholder");
 }
 
 CookStubWriteResult write_texture_stub(const std::string& input_path, const std::string& output_path,

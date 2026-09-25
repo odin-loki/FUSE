@@ -1,0 +1,11 @@
+{
+  "fusemat": 1,
+  "name": "golden/material_ball/stone_moss",
+  "category": "stone",
+  "base": {"albedo": [1, 1, 1], "roughness": 1, "textures": {"albedo": "stone_albedo", "normal": "stone_normal"}},
+  "uv_scale": 2,
+  "layers": [
+    {"name": "moss", "mode": "height", "mask": "vertex_r", "contrast": 6, "albedo": [1, 1, 1], "roughness": 1,
+     "uv_scale": 1.5, "textures": {"albedo": "moss_albedo", "normal": "moss_normal"}}
+  ]
+}

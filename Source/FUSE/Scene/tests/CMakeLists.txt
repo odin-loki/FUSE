@@ -14,6 +14,14 @@ add_executable(fuse_scene_svo_tests
 target_link_libraries(fuse_scene_svo_tests PRIVATE fuse_scene fuse_core fuse_ecs)
 add_test(NAME fuse_scene_svo COMMAND fuse_scene_svo_tests)
 
+add_executable(fuse_b3_svo_gates test_b3_svo_gates.cpp)
+target_link_libraries(fuse_b3_svo_gates PRIVATE fuse_scene fuse_core fuse_ecs)
+add_test(NAME fuse_b3_svo_gates COMMAND fuse_b3_svo_gates)
+
+add_executable(fuse_b3_scene_gates test_b3_scene_gates.cpp)
+target_link_libraries(fuse_b3_scene_gates PRIVATE fuse_scene fuse_core fuse_ecs)
+add_test(NAME fuse_b3_scene_gates COMMAND fuse_b3_scene_gates)
+
 add_executable(fuse_scene_manager_tests
     test_scene_manager.cpp
 )
@@ -65,7 +73,7 @@ add_executable(fuse_p7_parity_scenes
 )
 
 file(TO_CMAKE_PATH "${CMAKE_SOURCE_DIR}" FUSE_SOURCE_DIR_CMAKE)
-target_link_libraries(fuse_p7_parity_scenes PRIVATE fuse_scene fuse_project fuse_core)
+target_link_libraries(fuse_p7_parity_scenes PRIVATE fuse_scene fuse_project fuse_world_converter fuse_core)
 target_compile_definitions(fuse_p7_parity_scenes PRIVATE
     FUSE_SOURCE_DIR="${FUSE_SOURCE_DIR_CMAKE}"
 )
@@ -73,3 +81,49 @@ add_test(NAME fuse_p7_parity_scenes COMMAND fuse_p7_parity_scenes)
 set_tests_properties(fuse_p7_parity_scenes PROPERTIES
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
 )
+# Timing budgets are meaningless while other tests compete for cores.
+set_tests_properties(fuse_b3_scene_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate")
+
+# Appendix A: scene file magic is 'FUSE'; pre-rename 'ENGC' files load through the compat path.
+add_executable(fuse_scene_magic_gates test_scene_magic_gates.cpp)
+target_link_libraries(fuse_scene_magic_gates PRIVATE fuse_scene fuse_core)
+target_compile_definitions(fuse_scene_magic_gates PRIVATE FUSE_SOURCE_DIR="${FUSE_SOURCE_DIR_CMAKE}")
+add_test(NAME fuse_scene_magic_gates COMMAND fuse_scene_magic_gates)
+set_tests_properties(fuse_scene_magic_gates PROPERTIES LABELS "gate")
+
+# B3.9: free camera flies a path; draw counts == brute-force frustum counts every step.
+add_executable(fuse_b3_free_camera_gates test_b3_free_camera_gates.cpp)
+target_link_libraries(fuse_b3_free_camera_gates PRIVATE fuse_scene fuse_core fuse_ecs)
+add_test(NAME fuse_b3_free_camera_gates COMMAND fuse_b3_free_camera_gates)
+set_tests_properties(fuse_b3_free_camera_gates PROPERTIES LABELS "gate")
+
+# B7.10: save -> close -> reload -> save of a simulated scene (.fuselevel + ECS/physics) is bit-identical.
+if(TARGET fuse_physics)
+    add_executable(fuse_b7_save_reload_gates test_b7_save_reload_gates.cpp)
+    target_link_libraries(fuse_b7_save_reload_gates PRIVATE fuse_scene fuse_physics fuse_ecs fuse_core)
+    add_test(NAME fuse_b7_save_reload_gates COMMAND fuse_b7_save_reload_gates)
+    set_tests_properties(fuse_b7_save_reload_gates PROPERTIES LABELS "gate")
+endif()
+
+# B3 row "SceneData SDF object buffer uploads to GPU and ray marcher renders correct scene":
+# SceneData -> SDF object buffer -> device-local upload + byte-exact readback (Lavapipe) -> CPU
+# reference ray march vs closed-form intersections. Exit 77 = no Vulkan device.
+if(TARGET fuse_rhi AND TARGET fuse_compute)
+    add_executable(fuse_b3_sdf_buffer_ray_march test_b3_sdf_buffer_ray_march_gates.cpp)
+    target_link_libraries(fuse_b3_sdf_buffer_ray_march PRIVATE fuse_scene fuse_ecs fuse_rhi fuse_compute fuse_core)
+    add_test(NAME fuse_b3_sdf_buffer_ray_march
+             COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh"
+                     "$<TARGET_FILE:fuse_b3_sdf_buffer_ray_march>")
+    set_tests_properties(fuse_b3_sdf_buffer_ray_march PROPERTIES
+        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
+        RUN_SERIAL TRUE
+        SKIP_RETURN_CODE 77
+        LABELS "gate;vulkan")
+endif()
+
+# Single-source "svo_ray_cast" kernel gate (docs/compute-kernels.md): backend parity, stats, fallback,
+# 1M-ray CPU timing.
+add_executable(fuse_svo_ray_kernel_parity test_svo_ray_kernel_parity.cpp)
+target_link_libraries(fuse_svo_ray_kernel_parity PRIVATE fuse_scene fuse_core)
+add_test(NAME fuse_svo_ray_kernel_parity COMMAND fuse_svo_ray_kernel_parity)
+set_tests_properties(fuse_svo_ray_kernel_parity PROPERTIES LABELS "gate" TIMEOUT 300)

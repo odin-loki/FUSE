@@ -1,0 +1,490 @@
+{
+  "frames": 3,
+  "generation": 1,
+  "last_frame": {
+    "deleted_lights": [
+      "52929E1042A73D88"
+    ],
+    "draws": [
+      {
+        "color_texture": "0x0000000000000000",
+        "di": 0,
+        "key": "6ee2cf9eef058877",
+        "replacement": {
+          "categories": "",
+          "draw_original": true,
+          "instance": 1,
+          "lights": [
+            {
+              "color": [
+                0.5,
+                0.75,
+                1
+              ],
+              "direction": [
+                -0.564642,
+                0,
+                -0.825336
+              ],
+              "draw": 0,
+              "hash": null,
+              "instance": 1,
+              "intensity": 10,
+              "mod": "lit_lights",
+              "origin": "attached",
+              "position": [
+                -1.25,
+                2.05,
+                0
+              ],
+              "record": "mod/ff_lit/lit_lights/mesh_6EE2CF9EEF058877/halo",
+              "type": "Point"
+            }
+          ],
+          "material": null,
+          "mesh": {
+            "key": "6EE2CF9EEF058877",
+            "mod": "lit_lights",
+            "parts": [],
+            "preserve": true,
+            "record": "mod/ff_lit/lit_lights/mesh_6EE2CF9EEF058877",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      },
+      {
+        "color_texture": "0x0000000000000000",
+        "di": 1,
+        "key": "6ee2cf9eef058877",
+        "replacement": {
+          "categories": "",
+          "draw_original": true,
+          "instance": 2,
+          "lights": [
+            {
+              "color": [
+                0.5,
+                0.75,
+                1
+              ],
+              "direction": [
+                -0.564642,
+                0,
+                -0.825336
+              ],
+              "draw": 1,
+              "hash": null,
+              "instance": 2,
+              "intensity": 10,
+              "mod": "lit_lights",
+              "origin": "attached",
+              "position": [
+                0,
+                2.65,
+                0
+              ],
+              "record": "mod/ff_lit/lit_lights/mesh_6EE2CF9EEF058877/halo",
+              "type": "Point"
+            }
+          ],
+          "material": null,
+          "mesh": {
+            "key": "6EE2CF9EEF058877",
+            "mod": "lit_lights",
+            "parts": [],
+            "preserve": true,
+            "record": "mod/ff_lit/lit_lights/mesh_6EE2CF9EEF058877",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      },
+      {
+        "color_texture": "0x0000000000000000",
+        "di": 2,
+        "key": "6ee2cf9eef058877",
+        "replacement": {
+          "categories": "",
+          "draw_original": true,
+          "instance": 3,
+          "lights": [
+            {
+              "color": [
+                0.5,
+                0.75,
+                1
+              ],
+              "direction": [
+                -0.564642,
+                0,
+                -0.825336
+              ],
+              "draw": 2,
+              "hash": null,
+              "instance": 3,
+              "intensity": 10,
+              "mod": "lit_lights",
+              "origin": "attached",
+              "position": [
+                1.25,
+                2.05,
+                0
+              ],
+              "record": "mod/ff_lit/lit_lights/mesh_6EE2CF9EEF058877/halo",
+              "type": "Point"
+            }
+          ],
+          "material": null,
+          "mesh": {
+            "key": "6EE2CF9EEF058877",
+            "mod": "lit_lights",
+            "parts": [],
+            "preserve": true,
+            "record": "mod/ff_lit/lit_lights/mesh_6EE2CF9EEF058877",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      },
+      {
+        "color_texture": "0x0000000000000000",
+        "di": 3,
+        "key": "6ee2cf9eef058877",
+        "replacement": {
+          "categories": "",
+          "draw_original": true,
+          "instance": 4,
+          "lights": [
+            {
+              "color": [
+                0.5,
+                0.75,
+                1
+              ],
+              "direction": [
+                -0.564643,
+                0,
+                -0.825336
+              ],
+              "draw": 3,
+              "hash": null,
+              "instance": 4,
+              "intensity": 10,
+              "mod": "lit_lights",
+              "origin": "attached",
+              "position": [
+                -0.6,
+                0.45,
+                0
+              ],
+              "record": "mod/ff_lit/lit_lights/mesh_6EE2CF9EEF058877/halo",
+              "type": "Point"
+            }
+          ],
+          "material": null,
+          "mesh": {
+            "key": "6EE2CF9EEF058877",
+            "mod": "lit_lights",
+            "parts": [],
+            "preserve": true,
+            "record": "mod/ff_lit/lit_lights/mesh_6EE2CF9EEF058877",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      },
+      {
+        "color_texture": "0x0000000000000000",
+        "di": 4,
+        "key": "6ee2cf9eef058877",
+        "replacement": {
+          "categories": "",
+          "draw_original": true,
+          "instance": 5,
+          "lights": [
+            {
+              "color": [
+                0.5,
+                0.75,
+                1
+              ],
+              "direction": [
+                0,
+                0,
+                -1
+              ],
+              "draw": 4,
+              "hash": null,
+              "instance": 5,
+              "intensity": 10,
+              "mod": "lit_lights",
+              "origin": "attached",
+              "position": [
+                0.75,
+                0.75,
+                0
+              ],
+              "record": "mod/ff_lit/lit_lights/mesh_6EE2CF9EEF058877/halo",
+              "type": "Point"
+            }
+          ],
+          "material": null,
+          "mesh": {
+            "key": "6EE2CF9EEF058877",
+            "mod": "lit_lights",
+            "parts": [],
+            "preserve": true,
+            "record": "mod/ff_lit/lit_lights/mesh_6EE2CF9EEF058877",
+            "rule": "positions,indices,geometrydescriptor",
+            "shadowed": []
+          }
+        }
+      }
+    ],
+    "frame": 2,
+    "lights": [
+      {
+        "color": [
+          1,
+          0.9,
+          0.7
+        ],
+        "direction": [
+          0,
+          0,
+          -1
+        ],
+        "hash": "70660FFAD292AF8D",
+        "intensity": 200,
+        "mod": "lit_lights",
+        "origin": "replaced",
+        "position": [
+          -1,
+          3,
+          -1
+        ],
+        "record": "mod/ff_lit/lit_lights/light_70660FFAD292AF8D",
+        "type": "Point"
+      },
+      {
+        "color": [
+          0.00397887,
+          0.00795775,
+          0.0198944
+        ],
+        "direction": [
+          0,
+          0,
+          1
+        ],
+        "hash": "8B0A310EB4127A3E",
+        "intensity": 0.0198944,
+        "mod": null,
+        "origin": "game",
+        "position": [
+          1.5,
+          2,
+          -1.5
+        ],
+        "record": null,
+        "type": "sphere"
+      },
+      {
+        "color": [
+          0.5,
+          0.75,
+          1
+        ],
+        "direction": [
+          -0.564642,
+          0,
+          -0.825336
+        ],
+        "draw": 0,
+        "hash": null,
+        "instance": 1,
+        "intensity": 10,
+        "mod": "lit_lights",
+        "origin": "attached",
+        "position": [
+          -1.25,
+          2.05,
+          0
+        ],
+        "record": "mod/ff_lit/lit_lights/mesh_6EE2CF9EEF058877/halo",
+        "type": "Point"
+      },
+      {
+        "color": [
+          0.5,
+          0.75,
+          1
+        ],
+        "direction": [
+          -0.564642,
+          0,
+          -0.825336
+        ],
+        "draw": 1,
+        "hash": null,
+        "instance": 2,
+        "intensity": 10,
+        "mod": "lit_lights",
+        "origin": "attached",
+        "position": [
+          0,
+          2.65,
+          0
+        ],
+        "record": "mod/ff_lit/lit_lights/mesh_6EE2CF9EEF058877/halo",
+        "type": "Point"
+      },
+      {
+        "color": [
+          0.5,
+          0.75,
+          1
+        ],
+        "direction": [
+          -0.564642,
+          0,
+          -0.825336
+        ],
+        "draw": 2,
+        "hash": null,
+        "instance": 3,
+        "intensity": 10,
+        "mod": "lit_lights",
+        "origin": "attached",
+        "position": [
+          1.25,
+          2.05,
+          0
+        ],
+        "record": "mod/ff_lit/lit_lights/mesh_6EE2CF9EEF058877/halo",
+        "type": "Point"
+      },
+      {
+        "color": [
+          0.5,
+          0.75,
+          1
+        ],
+        "direction": [
+          -0.564643,
+          0,
+          -0.825336
+        ],
+        "draw": 3,
+        "hash": null,
+        "instance": 4,
+        "intensity": 10,
+        "mod": "lit_lights",
+        "origin": "attached",
+        "position": [
+          -0.6,
+          0.45,
+          0
+        ],
+        "record": "mod/ff_lit/lit_lights/mesh_6EE2CF9EEF058877/halo",
+        "type": "Point"
+      },
+      {
+        "color": [
+          0.5,
+          0.75,
+          1
+        ],
+        "direction": [
+          0,
+          0,
+          -1
+        ],
+        "draw": 4,
+        "hash": null,
+        "instance": 5,
+        "intensity": 10,
+        "mod": "lit_lights",
+        "origin": "attached",
+        "position": [
+          0.75,
+          0.75,
+          0
+        ],
+        "record": "mod/ff_lit/lit_lights/mesh_6EE2CF9EEF058877/halo",
+        "type": "Point"
+      }
+    ],
+    "residency": {
+      "budget_bytes": 1073741824,
+      "demoted": 0,
+      "evicted": 0,
+      "loaded": 0,
+      "over_budget": false,
+      "requested": 0,
+      "resident": 0,
+      "resident_bytes": 0
+    }
+  },
+  "mods": [
+    {
+      "deleted_lights": 1,
+      "errors": 0,
+      "format": "usd",
+      "kind": "remix",
+      "layer": null,
+      "lights": 1,
+      "materials": 0,
+      "meshes": 1,
+      "name": "lit_lights",
+      "ok": true,
+      "priority": null,
+      "rank": 0
+    }
+  ],
+  "reloads": [
+    {
+      "added": [
+        "lit_lights"
+      ],
+      "applied_frame": 0,
+      "changed": [],
+      "failed": [],
+      "generation": 1,
+      "invalidated": {
+        "lights": [
+          "52929E1042A73D88",
+          "70660FFAD292AF8D"
+        ],
+        "materials": [],
+        "meshes": [
+          "6EE2CF9EEF058877"
+        ]
+      },
+      "latency_frames": 0,
+      "notified_frame": 0,
+      "removed": []
+    }
+  ],
+  "stats_runs": [
+    {
+      "first": 0,
+      "last": 2,
+      "stats": {
+        "draws": 5,
+        "hidden": 0,
+        "lights_attached": 5,
+        "lights_deleted": 1,
+        "lights_game": 1,
+        "lights_replaced": 1,
+        "material_replaced": 0,
+        "mesh_replaced": 5,
+        "part_material_replaced": 0,
+        "parts": 0,
+        "preserved": 5
+      }
+    }
+  ],
+  "watch": "poll"
+}

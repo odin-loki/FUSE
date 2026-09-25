@@ -2,8 +2,11 @@ set(FUSE_VULKAN_TEST_ENV "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json"
 set(FUSE_VULKAN_ICD_LOCK_FILE "${CMAKE_BINARY_DIR}/fuse_vulkan_icd.lock")
 set(FUSE_VULKAN_ICD_LOCK_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/run_vulkan_icd_locked.sh")
 file(TOUCH "${FUSE_VULKAN_ICD_LOCK_FILE}")
+# Serialise ICD-using tests on one lock and propagate the test's exit status unchanged.
+# (The previous wrapper exited 0 on every failure via `if ! cmd; then status=$?`, and retried
+# segfaults — both hid real failures.)
 file(WRITE "${FUSE_VULKAN_ICD_LOCK_SCRIPT}"
-"#!/usr/bin/env bash\nset -euo pipefail\nflock -x \"${FUSE_VULKAN_ICD_LOCK_FILE}\" bash -c '\n  set -euo pipefail\n  run_icd_test() {\n    sync\n    sleep 0.10\n    \"$@\"\n  }\n  if ! run_icd_test \"$@\"; then\n    status=$?\n    if [ \"$status\" -eq 139 ] || [ \"$status\" -eq 134 ]; then\n      sync\n      sleep 0.50\n      run_icd_test \"$@\"\n    else\n      exit \"$status\"\n    fi\n  fi\n  sync\n  sleep 0.35\n' _ \"$@\"\n")
+"#!/usr/bin/env bash\nexec flock -x \"${FUSE_VULKAN_ICD_LOCK_FILE}\" \"$@\"\n")
 file(CHMOD "${FUSE_VULKAN_ICD_LOCK_SCRIPT}"
     FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 
@@ -81,6 +84,31 @@ target_compile_definitions(fuse_graphics_pipeline PRIVATE
     FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
 )
 add_test(NAME fuse_graphics_pipeline COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_graphics_pipeline>")
+
+add_executable(fuse_b2_triangle_readback test_b2_triangle_readback.cpp)
+target_link_libraries(fuse_b2_triangle_readback PRIVATE fuse_rhi)
+add_test(NAME fuse_b2_triangle_readback COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_b2_triangle_readback>")
+
+add_executable(fuse_b2_render_graph_budget test_b2_render_graph_budget.cpp)
+target_link_libraries(fuse_b2_render_graph_budget PRIVATE fuse_rhi)
+add_test(NAME fuse_b2_render_graph_budget COMMAND fuse_b2_render_graph_budget)
+set_tests_properties(fuse_b2_render_graph_budget PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate")
+
+add_executable(fuse_b2_staging_wrap test_b2_staging_wrap.cpp)
+target_link_libraries(fuse_b2_staging_wrap PRIVATE fuse_rhi)
+add_test(NAME fuse_b2_staging_wrap COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_b2_staging_wrap>")
+
+add_executable(fuse_b2_frame_alloc_budget test_b2_frame_alloc_budget.cpp)
+target_link_libraries(fuse_b2_frame_alloc_budget PRIVATE fuse_rhi)
+add_test(NAME fuse_b2_frame_alloc_budget COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_b2_frame_alloc_budget>")
+
+add_executable(fuse_b2_composite_blend test_b2_composite_blend.cpp)
+target_link_libraries(fuse_b2_composite_blend PRIVATE fuse_rhi)
+add_test(NAME fuse_b2_composite_blend COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_b2_composite_blend>")
+
+add_executable(fuse_b2_bindless_churn test_b2_bindless_churn.cpp)
+target_link_libraries(fuse_b2_bindless_churn PRIVATE fuse_rhi)
+add_test(NAME fuse_b2_bindless_churn COMMAND "${FUSE_VULKAN_ICD_LOCK_SCRIPT}" "$<TARGET_FILE:fuse_b2_bindless_churn>")
 
 add_executable(fuse_render_graph test_render_graph.cpp)
 target_link_libraries(fuse_render_graph PRIVATE fuse_rhi)
@@ -161,3 +189,23 @@ foreach(_fuse_vulkan_test IN LISTS _fuse_vulkan_icd_tests)
         )
     endif()
 endforeach()
+
+# B1.8 get_vulkan_surface + B2 "Swapchain 1920x1080 triple-buffered, resize rebuilds" on the
+# native X11 window backend: real VkSurfaceKHR (VK_KHR_xlib_surface) + VkSwapchainKHR on Lavapipe
+# under Xvfb, 10 presented frames, resize to 1280x720 + recreate, zero validation errors.
+# SKIP (77) without the X11 backend, a display/xvfb-run, a Vulkan ICD or the validation layer.
+add_executable(fuse_b2_x11_swapchain_gates test_b2_x11_swapchain_gates.cpp)
+target_link_libraries(fuse_b2_x11_swapchain_gates PRIVATE fuse_rhi)
+if(FUSE_PLATFORM_WINDOW_X11_ACTIVE AND FUSE_DISPLAY_TEST_WRAPPER)
+    add_test(NAME fuse_b2_x11_swapchain_gates
+        COMMAND "${FUSE_DISPLAY_TEST_WRAPPER}" "${FUSE_VULKAN_ICD_LOCK_SCRIPT}"
+                "$<TARGET_FILE:fuse_b2_x11_swapchain_gates>")
+else()
+    add_test(NAME fuse_b2_x11_swapchain_gates COMMAND fuse_b2_x11_swapchain_gates)
+endif()
+set_tests_properties(fuse_b2_x11_swapchain_gates PROPERTIES
+    ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
+    RUN_SERIAL TRUE
+    SKIP_RETURN_CODE 77
+    TIMEOUT 300
+    LABELS "vulkan;gate")

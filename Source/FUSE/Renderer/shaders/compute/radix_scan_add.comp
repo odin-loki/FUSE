@@ -1,0 +1,21 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// GpuRadixSort pass 2b/4: add each chunk's scanned total (level above) to every entry of the
+// chunk, turning per-chunk exclusive scans into one exclusive scan of the whole level.
+#include "radix_sort_common.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(std430, set = 0, binding = 4) buffer Scratch { uint scratch[]; };
+
+void main() {
+    const uint tid = gl_LocalInvocationID.x;
+    const uint chunk = gl_WorkGroupID.x;
+    const uint add = scratch[pc.sumsOffset + chunk];
+    for (uint i = 0u; i < RADIX_SCAN_ITEMS; ++i) {
+        const uint idx = chunk * RADIX_SCAN_CHUNK + i * RADIX_WG_SIZE + tid;
+        if (idx < pc.dataLen) {
+            scratch[pc.dataOffset + idx] += add;
+        }
+    }
+}

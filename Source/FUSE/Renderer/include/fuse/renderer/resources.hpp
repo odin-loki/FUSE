@@ -18,7 +18,7 @@ enum class GpuFormat : u32 {
     Undefined = 0,
     R8G8B8A8Unorm = 37,
     R8G8B8A8Srgb = 43,
-    R16G16Sfloat = 76,
+    R16G16Sfloat = 83, // VK_FORMAT_R16G16_SFLOAT (76 is R16_SFLOAT)
     R16G16B16A16Sfloat = 97,
     D32Sfloat = 126,
     R32Sfloat = 100,
@@ -33,7 +33,18 @@ enum class BufferUsage : u32 {
     Index = 1u << 4,
     Vertex = 1u << 5,
     ShaderDeviceAddress = 1u << 6,
+    /// VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT: draw / dispatch arguments and counts (WP-1.3 culling).
     Indirect = 1u << 7,
+    /// VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR: backing store of a BLAS / TLAS (WP-6.0).
+    /// Only valid on devices with VK_KHR_acceleration_structure enabled (RendererCaps).
+    AccelerationStructureStorage = 1u << 8,
+    /// VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR: vertex / index / instance
+    /// input of an acceleration-structure build (WP-6.0). Dropped on devices without acceleration structures.
+    AccelerationStructureBuildInput = 1u << 9,
+    /// VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR (+ SHADER_DEVICE_ADDRESS): a ray-tracing pipeline's shader
+    /// binding table (WP-7.3 follow-up). Dropped on devices without VK_KHR_ray_tracing_pipeline enabled
+    /// (RendererCaps::rayTracingPipeline), like the acceleration-structure usages.
+    ShaderBindingTable = 1u << 10,
 };
 
 enum class ImageUsage : u32 {
@@ -64,6 +75,10 @@ struct TextureDesc {
     bool cubeMap = false;
     bool cudaInterop = false;
     const char* name = nullptr;
+    /// GpuOnly: optimal tiling, device-local. Host-visible usages (CpuToGpu / GpuToCpu / CpuOnly)
+    /// use linear tiling so `Texture::mapped` addresses texel rows directly; they are limited to
+    /// single-mip, single-layer 2D colour images (the Vulkan linear-tiling guarantee).
+    MemoryUsage memoryUsage = MemoryUsage::GpuOnly;
 };
 
 struct BufferDesc {
@@ -83,6 +98,19 @@ struct Texture {
     u32 bindlessIndex = UINT32_MAX;
     void* exportedHandle = nullptr;  // Win32 HANDLE or fd as void*
     u64 allocationSize = 0;
+    /// Current `VkImageLayout` (as u32, 0 = UNDEFINED) of mip 0 and of mips 1.. as left by the
+    /// transitions ResourceManager records (uploads, mip generation, readback). Code that
+    /// transitions the image elsewhere reports it through `ResourceManager::setTextureLayout`.
+    u32 layout = 0;
+    u32 mipTailLayout = 0;
+    /// Upload-queue serial of the newest copy into this image (0: never uploaded).
+    u64 lastUploadSerial = 0;
+    /// Persistently mapped texels for host-visible (linear) textures; null for GpuOnly.
+    void* mapped = nullptr;
+    /// Row pitch of `mapped` in bytes (linear textures only).
+    u64 mappedRowPitch = 0;
+    /// `VkMemoryPropertyFlags` of the backing memory type (0 in the stub backend).
+    u32 memoryPropertyFlags = 0;
 };
 
 /// GPU buffer resource — device_address populated when BDA extension enabled.
@@ -95,6 +123,10 @@ struct Buffer {
     u32 bindlessIndex = UINT32_MAX;
     void* exportedHandle = nullptr;  // Win32 HANDLE or fd as void*
     u64 allocationSize = 0;
+    /// Upload-queue serial of the newest copy into this buffer (0: never uploaded).
+    u64 lastUploadSerial = 0;
+    /// `VkMemoryPropertyFlags` of the backing memory type (0 in the stub backend).
+    u32 memoryPropertyFlags = 0;
 };
 
 struct SamplerDesc {

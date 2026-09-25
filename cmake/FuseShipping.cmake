@@ -99,3 +99,112 @@ function(fuse_shipping_assert_runtime_targets)
 endfunction()
 
 fuse_shipping_force_options()
+
+# Shipping links drop unreferenced code: each function/datum gets its own section and the linker
+# discards the unreachable ones, so debug-only helpers (assert fatal path, profiler scopes) that no
+# shipped call site references are not carried into shipped executables. fuse_b7_shipping_binaries
+# (below) inspects the result.
+if(FUSE_SHIPPING AND MSVC)
+    # cl.exe / clang-cl: COMDAT per function (/Gy) and per datum (/Gw); the linker's default
+    # /OPT:REF,ICF (no /DEBUG in Release-type configs) then discards the unreferenced ones.
+    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/Gy> $<$<COMPILE_LANGUAGE:C,CXX>:/Gw>)
+    add_link_options($<$<NOT:$<CONFIG:Debug>>:/OPT:REF> $<$<NOT:$<CONFIG:Debug>>:/OPT:ICF>)
+elseif(FUSE_SHIPPING AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-ffunction-sections> $<$<COMPILE_LANGUAGE:C,CXX>:-fdata-sections>)
+    if(APPLE)
+        add_link_options(-Wl,-dead_strip)
+    else()
+        add_link_options(-Wl,--gc-sections)
+    endif()
+endif()
+
+# B7.10 engine-wide binary inspection: every fuse_* static library and every shipped (non-test) executable
+# built from Source/FUSE + Tools/FUSE in a FUSE_SHIPPING tree must carry no FUSE_ASSERT fatal
+# references, no ProfileScope code and none of the strings passed to stripped log/assert/profiler
+# macros (Source/FUSE/Core/tests/check_b7_shipping_binaries.cmake). Call once at the end of the
+# top-level CMakeLists.txt, after every FUSE target exists.
+function(_fuse_shipping_collect_targets dir out_targets out_tests)
+    get_property(_targets DIRECTORY "${dir}" PROPERTY BUILDSYSTEM_TARGETS)
+    get_property(_tests DIRECTORY "${dir}" PROPERTY TESTS)
+    get_property(_subdirs DIRECTORY "${dir}" PROPERTY SUBDIRECTORIES)
+    set(_all ${_targets})
+    set(_all_tests ${_tests})
+    foreach(_sd IN LISTS _subdirs)
+        _fuse_shipping_collect_targets("${_sd}" _t _ts)
+        list(APPEND _all ${_t})
+        list(APPEND _all_tests ${_ts})
+    endforeach()
+    set(${out_targets} ${_all} PARENT_SCOPE)
+    set(${out_tests} ${_all_tests} PARENT_SCOPE)
+endfunction()
+
+function(fuse_shipping_add_binary_strip_test)
+    if(NOT FUSE_SHIPPING OR NOT FUSE_BUILD_CORE_TESTS)
+        return()
+    endif()
+    if(NOT CMAKE_NM OR MSVC)
+        message(STATUS "FUSE: fuse_b7_shipping_binaries skipped (needs nm; GNU/Clang toolchains, not cl/clang-cl)")
+        return()
+    endif()
+
+    _fuse_shipping_collect_targets("${CMAKE_SOURCE_DIR}" _targets _all_tests)
+    set(_lines "")
+    set(_count 0)
+    foreach(_t IN LISTS _targets)
+        get_target_property(_type ${_t} TYPE)
+        get_target_property(_imported ${_t} IMPORTED)
+        if(_imported)
+            continue()
+        endif()
+        get_target_property(_sdir ${_t} SOURCE_DIR)
+        set(_is_fuse OFF)
+        foreach(_root "${CMAKE_SOURCE_DIR}/Source/FUSE/" "${CMAKE_SOURCE_DIR}/Tools/FUSE")
+            string(FIND "${_sdir}/" "${_root}" _pos)
+            if(_pos EQUAL 0)
+                set(_is_fuse ON)
+            endif()
+        endforeach()
+        if(NOT _is_fuse)
+            continue()
+        endif()
+        if(_type STREQUAL "STATIC_LIBRARY" AND _t MATCHES "^fuse_")
+            # Engine libraries; test-only helper libraries live under */tests.
+            if(_sdir MATCHES "/tests(/|$)")
+                continue()
+            endif()
+        elseif(_type STREQUAL "EXECUTABLE")
+            # Shipped programs (demos, tools). Test harnesses — anything under */tests, or an
+            # executable registered as a ctest of the same name (gates, runtime smoke) — exercise
+            # debug hooks such as ProfileScope or the assert handler on purpose.
+            if(_sdir MATCHES "/tests(/|$)" OR _t IN_LIST _all_tests)
+                continue()
+            endif()
+            # ... or built only from sources under a tests/ directory (e.g. Renderer/cmake/*.cmake gates).
+            get_target_property(_srcs ${_t} SOURCES)
+            set(_test_only ON)
+            foreach(_src IN LISTS _srcs)
+                if(NOT _src MATCHES "(^|/)tests/")
+                    set(_test_only OFF)
+                endif()
+            endforeach()
+            if(_test_only)
+                continue()
+            endif()
+        else()
+            continue()
+        endif()
+        string(APPEND _lines "$<TARGET_FILE:${_t}>\n")
+        math(EXPR _count "${_count} + 1")
+    endforeach()
+
+    set(_list "${CMAKE_BINARY_DIR}/cmake/fuse_b7_shipping_binaries.txt")
+    file(GENERATE OUTPUT "${_list}" CONTENT "${_lines}")
+    add_test(NAME fuse_b7_shipping_binaries
+        COMMAND ${CMAKE_COMMAND}
+            -DNM=${CMAKE_NM}
+            -DARTIFACT_LIST=${_list}
+            "-DSOURCE_ROOTS=${CMAKE_SOURCE_DIR}/Source/FUSE|${CMAKE_SOURCE_DIR}/Tools/FUSE"
+            -P "${CMAKE_SOURCE_DIR}/Source/FUSE/Core/tests/check_b7_shipping_binaries.cmake")
+    set_tests_properties(fuse_b7_shipping_binaries PROPERTIES LABELS "gate" TIMEOUT 600)
+    message(STATUS "FUSE: fuse_b7_shipping_binaries inspects ${_count} shipping artifacts")
+endfunction()

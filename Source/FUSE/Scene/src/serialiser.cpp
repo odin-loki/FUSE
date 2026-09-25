@@ -13,6 +13,7 @@ namespace {
 constexpr u32 kHeaderSize = 64u;
 constexpr u32 kCameraBlockSize = 40u; // f32×9 + u32 active flag
 constexpr u32 kTransformBlockSize = 40u; // f32×10 (position, rotation, scale)
+static_assert(kTransformBlockSize == 10u * sizeof(f32), "transform block is ten f32 fields");
 constexpr u8 kCameraMarker = 'C';
 constexpr u8 kTransformTableMarker = 'T';
 constexpr u8 kHierarchyTableMarker = 'H';
@@ -252,7 +253,9 @@ SerialiseResult SceneSerialiser::load(const std::string& path, Scene& scene) {
     SceneHeader header{};
     std::memcpy(&header, buffer.data(), sizeof(header));
 
-    if (header.magic != MAGIC) {
+    // Compat loader: pre-rename 'ENGC' files share the v1/v2 layout, only the magic differs.
+    const bool legacyMagic = header.magic == LEGACY_MAGIC_ENGC;
+    if (header.magic != MAGIC && !legacyMagic) {
         result.status = SerialiseStatus::InvalidMagic;
         result.error = "invalid scene magic";
         return result;
@@ -382,6 +385,7 @@ SerialiseResult SceneSerialiser::load(const std::string& path, Scene& scene) {
 
     scene = std::move(loaded);
     scene.camera().update();
+    result.legacyMagic = legacyMagic;
     result.status = SerialiseStatus::Ok;
     return result;
 }

@@ -1,0 +1,141 @@
+#usda 1.0
+(
+    defaultPrim = "RootNode"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+# RL-3.5 logic graph fixture: Sense components on a replacement: camera, prims (original draw, mesh part, light), hashes, keys.
+def Xform "RootNode"
+{
+    def Scope "meshes"
+    {
+        def Xform "mesh_0123456789ABCDEF"
+        {
+            int preserveOriginalDrawCall = 1
+
+            def Mesh "part"
+            {
+                int[] faceVertexCounts = [3]
+                int[] faceVertexIndices = [0, 1, 2]
+                point3f[] points = [(-1, -1, 0), (1, -1, 0), (0, 1, 0)]
+            }
+
+            def SphereLight "lamp"
+            {
+                float inputs:radius = 0.1
+            }
+
+            def OmniGraph "LogicGraph"
+            {
+            def OmniGraphNode "camera"
+            {
+                custom token node:type = "lightspeed.trex.logic.Camera"
+                custom int node:typeVersion = 1
+                custom float3 outputs:position
+                custom float3 outputs:forward
+                custom float outputs:fovDegrees
+                custom float outputs:aspectRatio
+            }
+            def OmniGraphNode "near"
+            {
+                custom token node:type = "lightspeed.trex.logic.MeshProximity"
+                custom int node:typeVersion = 1
+                custom rel inputs:target = </RootNode/meshes/mesh_0123456789ABCDEF/mesh>
+                custom float3 inputs:worldPosition
+                custom float3 inputs:worldPosition.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/camera.outputs:position>
+                custom float inputs:inactiveDistance = 5
+                custom float inputs:fullActivationDistance = 1
+                custom token inputs:easingType = "EaseOut"
+                custom float outputs:signedDistance
+                custom float outputs:activationStrength
+            }
+            def OmniGraphNode "look"
+            {
+                custom token node:type = "lightspeed.trex.logic.AngleToMesh"
+                custom int node:typeVersion = 1
+                custom rel inputs:target = </RootNode/meshes/mesh_0123456789ABCDEF/part>
+                custom float3 inputs:worldPosition
+                custom float3 inputs:worldPosition.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/camera.outputs:position>
+                custom float3 inputs:direction
+                custom float3 inputs:direction.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/camera.outputs:forward>
+                custom float outputs:angleDegrees
+            }
+            def OmniGraphNode "hit"
+            {
+                custom token node:type = "lightspeed.trex.logic.RayMeshIntersection"
+                custom int node:typeVersion = 1
+                custom rel inputs:target = </RootNode/meshes/mesh_0123456789ABCDEF/part>
+                custom float3 inputs:rayOrigin
+                custom float3 inputs:rayOrigin.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/camera.outputs:position>
+                custom float3 inputs:rayDirection
+                custom float3 inputs:rayDirection.connect = </RootNode/meshes/mesh_0123456789ABCDEF/LogicGraph/camera.outputs:forward>
+                custom bool outputs:intersects
+            }
+            def OmniGraphNode "lampAt"
+            {
+                custom token node:type = "lightspeed.trex.logic.ReadTransform"
+                custom int node:typeVersion = 1
+                custom rel inputs:target = </RootNode/meshes/mesh_0123456789ABCDEF/lamp>
+                custom float3 outputs:position
+            }
+            def OmniGraphNode "partAt"
+            {
+                custom token node:type = "lightspeed.trex.logic.ReadTransform"
+                custom int node:typeVersion = 1
+                custom rel inputs:target = </RootNode/meshes/mesh_0123456789ABCDEF/part>
+                custom float3 outputs:position
+                custom float4 outputs:rotation
+                custom float3 outputs:scale
+            }
+            def OmniGraphNode "bone"
+            {
+                custom token node:type = "lightspeed.trex.logic.ReadBoneTransform"
+                custom int node:typeVersion = 1
+                custom rel inputs:target = </RootNode/meshes/mesh_0123456789ABCDEF/mesh>
+                custom float inputs:boneIndex = 1
+                custom float3 outputs:position
+            }
+            def OmniGraphNode "meshSeen"
+            {
+                custom token node:type = "lightspeed.trex.logic.MeshHashChecker"
+                custom int node:typeVersion = 1
+                custom token inputs:meshHash = "0x0123456789ABCDEF"
+                custom bool outputs:isUsed
+                custom float outputs:usageCount
+            }
+            def OmniGraphNode "texSeen"
+            {
+                custom token node:type = "lightspeed.trex.logic.TextureHashChecker"
+                custom int node:typeVersion = 1
+                custom token inputs:textureHash = "0xF21C4BCC08014719"
+                custom bool outputs:isUsed
+                custom float outputs:usageCount
+            }
+            def OmniGraphNode "lightSeen"
+            {
+                custom token node:type = "lightspeed.trex.logic.LightHashChecker"
+                custom int node:typeVersion = 1
+                custom token inputs:lightHash = "0x00000000000000AA"
+                custom bool outputs:isUsed
+            }
+            def OmniGraphNode "fogSeen"
+            {
+                custom token node:type = "lightspeed.trex.logic.FogHashChecker"
+                custom int node:typeVersion = 1
+                custom token inputs:fogHash = "0x00000000000000BB"
+                custom bool outputs:isMatch
+            }
+            def OmniGraphNode "keys"
+            {
+                custom token node:type = "lightspeed.trex.logic.KeyboardInput"
+                custom int node:typeVersion = 1
+                custom string inputs:keyString = "CTRL, K"
+                custom bool outputs:isPressed
+                custom bool outputs:wasJustPressed
+                custom bool outputs:wasClicked
+            }
+            }
+        }
+    }
+}

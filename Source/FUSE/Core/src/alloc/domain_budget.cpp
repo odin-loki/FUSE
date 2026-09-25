@@ -1,6 +1,7 @@
 #include <fuse/alloc/domain_budget.hpp>
 
 #include <fuse/alloc/alloc_stats.hpp>
+#include <fuse/assert.hpp>
 
 namespace fuse::alloc {
 
@@ -18,9 +19,10 @@ AllocStats DomainBudget::stats() const {
 }
 
 bool DomainBudget::tryCharge(usize n) {
-    if (n > m_budget || m_used > m_budget - n) {
+    if (!fits(n)) {
         ++m_failed;
         notifyStats(m_name, stats());
+        FUSE_ASSERT(false, "DomainBudget: charge exceeds the declared domain budget");
         return false;
     }
 

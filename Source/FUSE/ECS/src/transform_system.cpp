@@ -3,6 +3,7 @@
 #include <fuse/ecs/detail/parallel_iteration.hpp>
 #include <fuse/types.hpp>
 
+#include <algorithm>
 #include <vector>
 
 namespace fuse::ecs {
@@ -182,37 +183,76 @@ u32 TransformSystem::count_dirty_roots(Registry& reg) {
 }
 
 void TransformSystem::update(Registry& reg, const TransformSystemOptions& options) {
-    if (!has_any_transforms(reg)) {
-        return;
+    // 1. Dirty roots (no parent) — independent, so parallel when requested. Clean roots are skipped
+    //    inside the pass; no separate "any dirty?" scans.
+    if (options.parallelDirtyRoots) {
+        const u32 grain = detail::normalize_batch_size(options.batchSize);
+        reg.each_parallel<Transform>([](EntityID, Transform& transform) {
+            if (is_dirty_root_transform(transform)) {
+                recompute_world_matrix(transform, mat4::identity());
+            }
+        }, grain);
+    } else {
+        reg.each<Transform>([](EntityID, Transform& transform) {
+            if (is_dirty_root_transform(transform)) {
+                recompute_world_matrix(transform, mat4::identity());
+            }
+        });
     }
 
-    const bool skip_hierarchy = should_skip_hierarchy_update(reg);
-
-    std::vector<EntityID> roots;
+    // 2. Hierarchy: one pass collects (parent, child) links, sorted by parent, so each subtree walk
+    //    finds its children by binary search instead of rescanning every transform per node
+    //    (that rescan made updates O(roots * n)).
+    struct Link {
+        EntityID parent;
+        EntityID child;
+    };
+    std::vector<Link> links;
     reg.each<Transform>([&](EntityID id, Transform& transform) {
-        if (!transform.parent.valid()) {
-            roots.push_back(id);
+        if (transform.parent.valid()) {
+            links.push_back({transform.parent, id});
         }
     });
-
-    if (!should_skip_dirty_roots_update(reg)) {
-        if (options.parallelDirtyRoots) {
-            update_dirty_roots_parallel(reg, options.batchSize);
-        } else {
-            update_dirty_roots_serial(reg);
-        }
-    }
-
-    if (skip_hierarchy) {
+    if (links.empty()) {
         return;
     }
+    auto byParent = [](const Link& a, const Link& b) {
+        return a.parent.index != b.parent.index ? a.parent.index < b.parent.index
+                                                : a.parent.generation < b.parent.generation;
+    };
+    std::sort(links.begin(), links.end(), byParent);
 
-    for (EntityID root : roots) {
-        Transform* transform = reg.get<Transform>(root);
-        if (transform == nullptr) {
+    std::vector<EntityID> stack;
+    for (const Link& link : links) {
+        const Transform* parent = reg.get<Transform>(link.parent);
+        if (parent == nullptr || parent->parent.valid()) {
+            continue; // start walks only at root parents; deeper links are reached from their root
+        }
+        // Each root appears once per child link; walk it only from its first link.
+        if (&link != &links.front() && (&link)[-1].parent == link.parent) {
             continue;
         }
-        update_hierarchy(reg, root, mat4::identity());
+        stack.clear();
+        stack.push_back(link.parent);
+        while (!stack.empty()) {
+            const EntityID node = stack.back();
+            stack.pop_back();
+            const Transform* nodeTransform = reg.get<Transform>(node);
+            if (nodeTransform == nullptr) {
+                continue;
+            }
+            const mat4 parentMatrix = nodeTransform->local_to_world;
+            const auto range = std::equal_range(links.begin(), links.end(), Link{node, EntityID::null()}, byParent);
+            for (auto it = range.first; it != range.second; ++it) {
+                if (it->parent != node) {
+                    continue;
+                }
+                if (Transform* child = reg.get<Transform>(it->child)) {
+                    recompute_world_matrix(*child, parentMatrix); // children always follow their parent
+                    stack.push_back(it->child);
+                }
+            }
+        }
     }
 }
 

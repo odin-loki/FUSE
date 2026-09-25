@@ -15,6 +15,15 @@ struct PositionDelta {
     u32 writeCount = 0;
 };
 
+/// A contact point fixed in each body's frame at detection time: the solver re-evaluates the
+/// point pair as the bodies translate and rotate during the substep's iterations.
+struct ContactAnchor {
+    vec3 localA{};
+    vec3 localB{};
+    /// pA - pB at the substep start pose (static friction measures the drift from it).
+    vec3 startSeparation{};
+};
+
 /// Reusable scratch for PBD constraint iterations (B4.4 deepen).
 /// Avoids per-substep heap churn and holds job-safe delta slots for future CUDA parity.
 struct SolverWorkBuffers {
@@ -30,6 +39,9 @@ struct SolverWorkBuffers {
     void clearPositionDeltasForIslandBodies(const std::vector<u32>& bodyIndices);
     /// Apply accumulated deltas to predicted positions and reset touched slots.
     void applyPositionDeltas(RigidBodySoA& bodies);
+    /// Applies and clears only these two bodies' deltas (island jobs must not touch bodies
+    /// owned by other islands running concurrently).
+    void applyPositionDeltasForBodies(RigidBodySoA& bodies, u32 bodyA, u32 bodyB);
 
     void ensureLambdaCapacity(u32 contactCount, u32 distanceCount);
     void clearLambdas();
@@ -39,6 +51,30 @@ struct SolverWorkBuffers {
     void seedDistanceLambda(u32 distanceIndex, f32 priorLambda);
     f32& contactLambda(u32 contactIndex);
     f32& distanceLambda(u32 distanceIndex);
+
+    /// Body-frame diagonal inverse inertia per body (zero when unset: translation only).
+    std::vector<vec3>& bodyInvInertia() { return bodyInvInertia_; }
+    const std::vector<vec3>& bodyInvInertia() const { return bodyInvInertia_; }
+    /// Inverse inertia the solver uses: zero whenever the effective inverse mass is zero.
+    vec3 effectiveInvInertia(u32 bodyIndex, f32 effectiveInvMass) const {
+        return effectiveInvMass > 0.f && bodyIndex < bodyInvInertia_.size() ? bodyInvInertia_[bodyIndex] : vec3{};
+    }
+
+    /// Fixes every contact point of the current manifolds in both bodies' frames (predicted pose)
+    /// and zeroes the per-point normal lambdas. Call after contact generation each substep.
+    void prepareContactPoints(const RigidBodySoA& bodies);
+    bool hasContactAnchors(u32 contactIndex) const {
+        return (contactIndex + 1u) * narrowphase::kMaxContactPointsPerManifold <= contactAnchors_.size();
+    }
+    const ContactAnchor& contactAnchor(u32 contactIndex, u32 pointIndex) const {
+        return contactAnchors_[contactIndex * narrowphase::kMaxContactPointsPerManifold + pointIndex];
+    }
+    /// Normal lambda of one contact point accumulated over the current substep.
+    f32& contactPointLambda(u32 contactIndex, u32 pointIndex);
+    f32 contactPointLambdaValue(u32 contactIndex, u32 pointIndex) const {
+        const usize slot = static_cast<usize>(contactIndex) * narrowphase::kMaxContactPointsPerManifold + pointIndex;
+        return slot < contactPointLambdas_.size() ? contactPointLambdas_[slot] : 0.f;
+    }
 
     u32 bodyCapacity() const { return static_cast<u32>(positionDeltas_.size()); }
     u32 contactCapacity() const { return static_cast<u32>(contactManifolds_.capacity()); }
@@ -57,6 +93,9 @@ private:
     std::vector<narrowphase::ContactManifold> contactManifolds_;
     std::vector<f32> contactLambdas_;
     std::vector<f32> distanceLambdas_;
+    std::vector<vec3> bodyInvInertia_;
+    std::vector<ContactAnchor> contactAnchors_;
+    std::vector<f32> contactPointLambdas_;
     u32 maxConstraints_ = 0;
 };
 

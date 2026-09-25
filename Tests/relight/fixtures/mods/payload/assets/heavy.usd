@@ -1,0 +1,15 @@
+#usda 1.0
+(
+    defaultPrim = "Heavy"
+)
+
+def Xform "Heavy"
+{
+    custom string winner = "payload"
+    custom int payload_only = 7
+
+    def Mesh "hires"
+    {
+        point3f[] points = [(0, 0, 0), (0, 1, 0), (1, 1, 0)]
+    }
+}

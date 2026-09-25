@@ -1,0 +1,59 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "relight_replacement",
+  "id": "mod/fixture_game/legacy_particles/mesh_00000000000B0B01",
+  "name": "mesh_00000000000B0B01",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 0.0254,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "target_kind": "mesh",
+    "key": {
+      "algo": "remix.geom.legacy0",
+      "value": "00000000000B0B01",
+      "rule_id": "FEFDF9AB40DD4D97",
+      "rule": "legacypositions0,legacyindices"
+    },
+    "preserveOriginalDrawCall": null,
+    "instanceable": true,
+    "categories": {
+      "set": [],
+      "cleared": []
+    },
+    "parts": [
+      {
+        "mesh": "poco:mod/fixture_game/legacy_particles/mesh_00000000000B0B01/body",
+        "prim": "/RootNode/meshes/mesh_00000000000B0B01/body",
+        "transform": [0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 2, 1],
+        "materials": [""]
+      }
+    ],
+    "lights": ["poco:mod/fixture_game/legacy_particles/mesh_00000000000B0B01/panel_light", "poco:mod/fixture_game/legacy_particles/mesh_00000000000B0B01/disk_light", "poco:mod/fixture_game/legacy_particles/mesh_00000000000B0B01/tube_light"],
+    "material_bindings": [],
+    "particles": null
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:legacy_particles"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "legacy_particles",
+      "stage": "mod.usda",
+      "prim": "/RootNode/meshes/mesh_00000000000B0B01",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "CC-BY-SA-4.0",
+  "distribution": "never",
+  "replaces": ["oaid:985673ee-38b9-5328-9998-eb482e74a11c"],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

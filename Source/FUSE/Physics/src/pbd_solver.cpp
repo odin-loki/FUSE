@@ -1,7 +1,9 @@
 #include <fuse/physics/solver/pbd_solver.hpp>
 #include <fuse/physics/solver/constraint_accumulation.hpp>
 #include <fuse/physics/solver/pbd_island_solve.hpp>
+#include <fuse/physics/rotation.hpp>
 
+#include <fuse/compute_kernel/launch.hpp>
 #include <fuse/jobs/parallel_for.hpp>
 
 #include <algorithm>
@@ -11,6 +13,7 @@ namespace fuse::physics {
 namespace {
 
 constexpr u32 kIslandGrainSize = 1u;
+constexpr usize kParallelConstraintThreshold = 8192u;
 
 bool isStaticOrKinematic(u32 flags) {
     return (flags & RB_STATIC) != 0u || (flags & RB_KINEMATIC) != 0u;
@@ -27,6 +30,76 @@ f32 effectiveInvMass(const RigidBodySoA& bodies, u32 index) {
     return bodies.invMasses[index];
 }
 
+/// Params of the colored constraint solve: host SoA / work buffers (CPU kernel backends).
+struct SolveColorParams {
+    RigidBodySoA* bodies = nullptr;
+    SolverWorkBuffers* work = nullptr;
+    const narrowphase::ContactManifold* contacts = nullptr;
+    const DistanceConstraint* distances = nullptr;
+    const u32* items = nullptr; ///< this colour's constraint refs (ConstraintColoring::items)
+    f32 dt = 0.f;
+    f32 compliance = 0.f;
+};
+
+/// "physics_solve_color": one constraint per item. Constraints of a colour share no dynamic body,
+/// so items never race and no float atomics are needed. Same per-constraint solve as the island
+/// path (solveContactConstraint / solveDistanceConstraint with effective inverse masses).
+struct SolveColorKernel {
+    void operator()(const kernel::LaunchIndex& idx, const SolveColorParams& p) const {
+        RigidBodySoA& bodies = *p.bodies;
+        SolverWorkBuffers& work = *p.work;
+        const u32 ref = p.items[idx.linear];
+        if ((ref & ConstraintColoring::kDistanceBit) != 0u) {
+            const u32 index = ref & ~ConstraintColoring::kDistanceBit;
+            const DistanceConstraint& constraint = p.distances[index];
+            const f32 invMassA = effectiveInvMass(bodies, constraint.bodyA);
+            const f32 invMassB = effectiveInvMass(bodies, constraint.bodyB);
+            const ContactBody a{constraint.bodyA, invMassA, work.effectiveInvInertia(constraint.bodyA, invMassA)};
+            const ContactBody b{constraint.bodyB, invMassB, work.effectiveInvInertia(constraint.bodyB, invMassB)};
+            solveDistanceConstraint(bodies, constraint, a, b, p.dt, work.distanceLambda(index));
+            return;
+        }
+        const narrowphase::ContactManifold& contact = p.contacts[ref];
+        const f32 invMassA = effectiveInvMass(bodies, contact.bodyA);
+        const f32 invMassB = effectiveInvMass(bodies, contact.bodyB);
+        const ContactBody a{contact.bodyA, invMassA, work.effectiveInvInertia(contact.bodyA, invMassA)};
+        const ContactBody b{contact.bodyB, invMassB, work.effectiveInvInertia(contact.bodyB, invMassB)};
+        solveContactConstraint(bodies, work, ref, contact, a, b, p.dt, p.compliance, work.contactLambda(ref));
+    }
+};
+
+constexpr u32 kNoShape = 0xFFFFFFFFu;
+constexpr u32 kNoSlot = 0xFFFFFFFFu;
+
+/// Penetrating (not merely speculative) at detection: what counts as a contact for events.
+bool isTouching(const narrowphase::ContactManifold& manifold) {
+    return manifold.maxPenetration() >= -1e-6f;
+}
+
+/// Conservative bounds of a shape at `position`; planes are unbounded (handled separately).
+aabb shapeBoundsAt(const CollisionShapeSoA& shapes, u32 shapeIndex, vec3 position, const quat& orientation) {
+    const vec3 p = shapes.params[shapeIndex];
+    switch (static_cast<CollisionShapeType>(shapes.types[shapeIndex])) {
+    case CollisionShapeType::Box:
+        return broadphase::aabbFromBox(position, orientedBoxHalfExtents(orientation, p));
+    case CollisionShapeType::Capsule:
+        return broadphase::aabbFromBox(position, orientedCapsuleHalfExtents(orientation, p));
+    default:
+        return broadphase::aabbFromSphere(position, p.x);
+    }
+}
+
+aabb sweptBounds(const aabb& start, vec3 motion) {
+    aabb out = start;
+    out.min.x += std::min(motion.x, 0.f);
+    out.min.y += std::min(motion.y, 0.f);
+    out.min.z += std::min(motion.z, 0.f);
+    out.max.x += std::max(motion.x, 0.f);
+    out.max.y += std::max(motion.y, 0.f);
+    out.max.z += std::max(motion.z, 0.f);
+    return out;
+}
+
 } // namespace
 
 void PBDSolver::init(u32 maxBodies, u32 maxContacts, u32 maxConstraints) {
@@ -34,6 +107,10 @@ void PBDSolver::init(u32 maxBodies, u32 maxContacts, u32 maxConstraints) {
     maxContacts_ = maxContacts;
     distanceConstraints_.clear();
     distanceConstraints_.reserve(maxConstraints);
+    joints_.clear();
+    jointResults_.clear();
+    jointStates_.clear();
+    jointIgnoredPairs_.clear();
     workBuffers_.init(maxBodies, maxContacts, maxConstraints);
     islandGraph_.clear();
     lastContactCount_ = 0;
@@ -44,6 +121,10 @@ void PBDSolver::init(u32 maxBodies, u32 maxContacts, u32 maxConstraints) {
 
 void PBDSolver::destroy() {
     distanceConstraints_.clear();
+    joints_.clear();
+    jointResults_.clear();
+    jointStates_.clear();
+    jointIgnoredPairs_.clear();
     workBuffers_.clear();
     islandGraph_.clear();
     maxBodies_ = 0;
@@ -58,13 +139,318 @@ void PBDSolver::setDistanceConstraints(const std::vector<DistanceConstraint>& co
     distanceConstraints_ = constraints;
 }
 
+void PBDSolver::setJoints(const std::vector<JointConstraint>& joints) {
+    joints_.assign(joints.begin(), joints.end());
+    jointResults_.assign(joints_.size(), JointSolveResult{});
+    jointStates_.assign(joints_.size(), JointSubstepState{});
+    jointIgnoredPairs_.clear();
+    for (const JointConstraint& joint : joints_) {
+        if (!joint.collideConnected && joint.bodyA != kJointWorldBody && joint.bodyB != kJointWorldBody) {
+            const u32 lo = std::min(joint.bodyA, joint.bodyB);
+            const u32 hi = std::max(joint.bodyA, joint.bodyB);
+            jointIgnoredPairs_.push_back((static_cast<u64>(lo) << 32u) | hi);
+        }
+    }
+    std::sort(jointIgnoredPairs_.begin(), jointIgnoredPairs_.end());
+}
+
+bool PBDSolver::jointIgnoresPair_(u32 a, u32 b) const {
+    if (jointIgnoredPairs_.empty()) {
+        return false;
+    }
+    const u64 key = (static_cast<u64>(std::min(a, b)) << 32u) | std::max(a, b);
+    return std::binary_search(jointIgnoredPairs_.begin(), jointIgnoredPairs_.end(), key);
+}
+
+void PBDSolver::solveJoints_(RigidBodySoA& bodies, f32 dt) {
+    const u32 bodyCount = bodies.count();
+    const auto jointBody = [&](u32 index) {
+        if (index == kJointWorldBody || index >= bodyCount) {
+            return JointBody{kJointWorldBody, 0.f, {}};
+        }
+        const f32 invMass = effectiveInvMass(bodies, index);
+        return JointBody{index, invMass, workBuffers_.effectiveInvInertia(index, invMass)};
+    };
+    for (u32 jointIndex = 0; jointIndex < joints_.size(); ++jointIndex) {
+        const JointConstraint& joint = joints_[jointIndex];
+        if (jointResults_[jointIndex].broken || (joint.bodyA >= bodyCount && joint.bodyA != kJointWorldBody) ||
+            (joint.bodyB >= bodyCount && joint.bodyB != kJointWorldBody)) {
+            continue;
+        }
+        solveJointConstraint(bodies, joint, jointBody(joint.bodyA), jointBody(joint.bodyB), dt,
+                             jointStates_[jointIndex]);
+    }
+}
+
+void PBDSolver::finishJointSubstep_(f32 dt) {
+    // XPBD: lambda / h^2 is the constraint force (torque) over the substep.
+    const f32 invH2 = 1.f / (dt * dt);
+    for (u32 jointIndex = 0; jointIndex < joints_.size(); ++jointIndex) {
+        JointSolveResult& result = jointResults_[jointIndex];
+        JointSubstepState& state = jointStates_[jointIndex];
+        if (!result.broken) {
+            const f32 force = state.linearImpulse.length() * invH2;
+            const f32 torque = state.angularImpulse.length() * invH2;
+            result.force = std::max(result.force, force);
+            result.torque = std::max(result.torque, torque);
+            const JointConstraint& joint = joints_[jointIndex];
+            if (force > joint.breakForce || torque > joint.breakTorque) {
+                result.broken = true;
+                result.brokeThisStep = true;
+            }
+        }
+        state = JointSubstepState{};
+    }
+}
+
+void PBDSolver::mapBodyShapes_(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes) {
+    const u32 bodyCount = bodies.count();
+    bodyShape_.assign(bodyCount, kNoShape);
+    for (u32 shapeIndex = 0; shapeIndex < shapes.count(); ++shapeIndex) {
+        const u32 body = shapes.bodyIndices[shapeIndex];
+        if (body < bodyCount && bodyShape_[body] == kNoShape) {
+            bodyShape_[body] = shapeIndex;
+        }
+    }
+}
+
+void PBDSolver::computeInverseInertia_(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes) {
+    std::vector<vec3>& inertia = workBuffers_.bodyInvInertia();
+    inertia.resize(bodies.count());
+    for (u32 i = 0; i < bodies.count(); ++i) {
+        const u32 shape = bodyShape_[i];
+        if (shape == kNoShape || (bodies.flags[i] & RB_FIXED_ROTATION) != 0u) {
+            inertia[i] = {};
+            continue;
+        }
+        inertia[i] = shapeInverseInertia(static_cast<CollisionShapeType>(shapes.types[shape]), shapes.params[shape],
+                                         bodies.invMasses[i]);
+    }
+}
+
+u32 PBDSolver::slotForFrameContact_(const narrowphase::ContactManifold& manifold, bool trigger) {
+    const u32 lo = std::min(manifold.bodyA, manifold.bodyB);
+    const u32 hi = std::max(manifold.bodyA, manifold.bodyB);
+    const u64 key = (static_cast<u64>(lo) << 32u) | hi;
+    const auto [slot, inserted] = frameContactSlot_.try_emplace(key, static_cast<u32>(frameContacts_.size()));
+    if (inserted) {
+        frameContacts_.push_back({manifold.bodyA, manifold.bodyB, manifold.contactNormal, manifold.contactPoint, 0.f,
+                                  trigger});
+    }
+    return *slot;
+}
+
+void PBDSolver::wakeJointedBodies_(RigidBodySoA& bodies, const SolverParams& params) {
+    // A sleeping body is immovable to the solver: a moving body joined to it wakes it (same rule
+    // as contacts, so a chain settling as a whole still falls asleep).
+    const u32 bodyCount = bodies.count();
+    for (const DistanceConstraint& constraint : distanceConstraints_) {
+        if (constraint.bodyA >= bodyCount || constraint.bodyB >= bodyCount) {
+            continue;
+        }
+        const auto wake = [&](u32 sleeper, u32 other) {
+            if (isSleeping(bodies.flags[sleeper]) && !isSleeping(bodies.flags[other]) &&
+                (bodies.flags[other] & RB_STATIC) == 0u && bodies.sleepTimers[other] == 0.f &&
+                (bodies.linearVelocities[other].length() > params.sleepLinearThreshold ||
+                 bodies.angularVelocities[other].length() > params.sleepAngularThreshold)) {
+                bodies.flags[sleeper] &= ~RB_SLEEPING;
+                bodies.sleepTimers[sleeper] = 0.f;
+            }
+        };
+        wake(constraint.bodyA, constraint.bodyB);
+        wake(constraint.bodyB, constraint.bodyA);
+    }
+    for (u32 jointIndex = 0; jointIndex < joints_.size(); ++jointIndex) {
+        const JointConstraint& joint = joints_[jointIndex];
+        if (jointResults_[jointIndex].broken || joint.bodyA >= bodyCount || joint.bodyB >= bodyCount) {
+            continue; // the world side never wakes anything
+        }
+        const auto wake = [&](u32 sleeper, u32 other) {
+            if (isSleeping(bodies.flags[sleeper]) && !isSleeping(bodies.flags[other]) &&
+                (bodies.flags[other] & RB_STATIC) == 0u && bodies.sleepTimers[other] == 0.f &&
+                (bodies.linearVelocities[other].length() > params.sleepLinearThreshold ||
+                 bodies.angularVelocities[other].length() > params.sleepAngularThreshold)) {
+                bodies.flags[sleeper] &= ~RB_SLEEPING;
+                bodies.sleepTimers[sleeper] = 0.f;
+            }
+        };
+        wake(joint.bodyA, joint.bodyB);
+        wake(joint.bodyB, joint.bodyA);
+    }
+}
+
+void PBDSolver::recordFrameContacts_(RigidBodySoA& bodies, const SolverParams& params) {
+    const std::vector<narrowphase::ContactManifold>& contacts = workBuffers_.contactManifolds();
+    substepContactSlot_.resize(contacts.size());
+    for (u32 i = 0; i < contacts.size(); ++i) {
+        // Speculative contacts (not yet touching) get a slot only if they end up pushing.
+        if (!isTouching(contacts[i])) {
+            substepContactSlot_[i] = kNoSlot;
+            continue;
+        }
+        substepContactSlot_[i] = slotForFrameContact_(contacts[i], false);
+        // A moving body wakes a sleeping one it runs into. Bodies already settling (non-zero
+        // sleep timer) only creep under gravity and must not wake their resting neighbours.
+        const u32 a = contacts[i].bodyA;
+        const u32 b = contacts[i].bodyB;
+        const auto wake = [&](u32 sleeper, u32 other) {
+            if (isSleeping(bodies.flags[sleeper]) && !isSleeping(bodies.flags[other]) &&
+                (bodies.flags[other] & RB_STATIC) == 0u && bodies.sleepTimers[other] == 0.f &&
+                (bodies.linearVelocities[other].length() > params.sleepLinearThreshold ||
+                 bodies.angularVelocities[other].length() > params.sleepAngularThreshold)) {
+                bodies.flags[sleeper] &= ~RB_SLEEPING;
+                bodies.sleepTimers[sleeper] = 0.f;
+            }
+        };
+        wake(a, b);
+        wake(b, a);
+    }
+    for (const narrowphase::ContactManifold& manifold : triggerManifolds_) {
+        slotForFrameContact_(manifold, true);
+    }
+}
+
+u32 PBDSolver::applyContinuousCollision(RigidBodySoA& bodies, const CollisionShapeSoA& shapes, f32 dt) {
+    lastCcdHitCount_ = 0;
+    ccdBuffer_.clear();
+    const u32 bodyCount = bodies.count();
+    if (bodyCount == 0u || dt <= 0.f) {
+        return 0u;
+    }
+    mapBodyShapes_(bodies, shapes);
+
+    computeInverseInertia_(bodies, shapes);
+
+    // Candidates: every shape a CCD body's swept bounds touch (planes always). A spinning shape
+    // can reach anywhere within its bounding sphere over the frame.
+    sweptBounds_.resize(bodyCount);
+    for (u32 body = 0; body < bodyCount; ++body) {
+        const u32 shape = bodyShape_[body];
+        if (shape == kNoShape) {
+            continue;
+        }
+        aabb start = shapeBoundsAt(shapes, shape, bodies.positions[body], bodies.orientations[body]);
+        const CollisionShapeType type = static_cast<CollisionShapeType>(shapes.types[shape]);
+        if ((type == CollisionShapeType::Box || type == CollisionShapeType::Capsule) &&
+            bodies.angularVelocities[body].dot(bodies.angularVelocities[body]) > 0.f) {
+            const vec3 p = shapes.params[shape];
+            const f32 reach = type == CollisionShapeType::Box ? p.length() : p.x + p.y;
+            const aabb sphere = broadphase::aabbFromSphere(bodies.positions[body], reach);
+            start = {{std::min(start.min.x, sphere.min.x), std::min(start.min.y, sphere.min.y),
+                      std::min(start.min.z, sphere.min.z)},
+                     {std::max(start.max.x, sphere.max.x), std::max(start.max.y, sphere.max.y),
+                      std::max(start.max.z, sphere.max.z)}};
+        }
+        sweptBounds_[body] = sweptBounds(start, bodies.linearVelocities[body] * dt);
+    }
+    ccdPairs_.clear();
+    for (u32 body = 0; body < bodyCount; ++body) {
+        const u32 flags = bodies.flags[body];
+        if ((flags & RB_CCD) == 0u || isStaticOrKinematic(flags) || isSleeping(flags) || bodyShape_[body] == kNoShape) {
+            continue;
+        }
+        const aabb& swept = sweptBounds_[body];
+        for (u32 other = 0; other < bodyCount; ++other) {
+            const u32 otherShape = bodyShape_[other];
+            if (other == body || otherShape == kNoShape) {
+                continue;
+            }
+            if (!collisionLayersCollide(bodies.collisionLayers[body], bodies.collisionMasks[body],
+                                        bodies.collisionLayers[other], bodies.collisionMasks[other]) ||
+                (bodies.flags[other] & RB_TRIGGER) != 0u) {
+                continue;
+            }
+            if (static_cast<CollisionShapeType>(shapes.types[otherShape]) != CollisionShapeType::Plane) {
+                if (!broadphase::aabbOverlap(swept, sweptBounds_[other])) {
+                    continue;
+                }
+                // Both CCD bodies: keep one ordering of the pair.
+                if ((bodies.flags[other] & RB_CCD) != 0u && other < body) {
+                    continue;
+                }
+            }
+            ccdPairs_.push_back({body, other});
+        }
+    }
+    if (ccdPairs_.empty()) {
+        return 0u;
+    }
+    runCcdIntoBuffer(ccdPairs_, bodies, shapes, dt, ccdBuffer_);
+
+    // Earliest impact per body (buffer is sorted by TOI); TOI 0 is an existing contact
+    // the discrete solver already handles.
+    ccdHandled_.assign(bodyCount, 0u);
+    for (u32 i = 0; i < ccdBuffer_.activeCount; ++i) {
+        const f32 toi = ccdBuffer_.toiValues[i];
+        u32 a = ccdBuffer_.bodyA[i];
+        u32 b = ccdBuffer_.bodyB[i];
+        vec3 n = ccdBuffer_.contactNormals[i]; // points towards bodyA
+        if (toi <= 1e-6f || ccdHandled_[a] != 0u || ccdHandled_[b] != 0u) {
+            continue;
+        }
+        if ((bodies.flags[a] & RB_CCD) == 0u) {
+            std::swap(a, b);
+            n = n * -1.f;
+        }
+        const f32 invMassA = effectiveInvMass(bodies, a);
+        const f32 invMassB = effectiveInvMass(bodies, b);
+        if (invMassA + invMassB < 1e-10f) {
+            continue;
+        }
+        // Advance both bodies (position and orientation) to the time of impact.
+        const auto advance = [&](u32 body) {
+            if (isStaticOrKinematic(bodies.flags[body]) || isSleeping(bodies.flags[body])) {
+                return;
+            }
+            bodies.positions[body] += bodies.linearVelocities[body] * (dt * toi);
+            const vec3 spin = bodies.angularVelocities[body] * (dt * toi);
+            if (spin.dot(spin) > 0.f) {
+                bodies.orientations[body] = applyRotationVector(bodies.orientations[body], spin);
+            }
+        };
+        advance(a);
+        advance(b);
+        // Reflect the approach velocity of the contact point (restitution applied) with an impulse
+        // through the generalized inverse masses, so a spinning body's rotation is stopped too.
+        const vec3 point = ccdBuffer_.contactPoints[i];
+        const vec3 rA = point - bodies.positions[a];
+        const vec3 rB = point - bodies.positions[b];
+        const vec3 invInertiaA = workBuffers_.effectiveInvInertia(a, invMassA);
+        const vec3 invInertiaB = workBuffers_.effectiveInvInertia(b, invMassB);
+        const vec3 relative = (bodies.linearVelocities[a] + bodies.angularVelocities[a].cross(rA)) -
+                              (bodies.linearVelocities[b] + bodies.angularVelocities[b].cross(rB));
+        const f32 approach = relative.dot(n);
+        const f32 w = generalizedInverseMass(invMassA, bodies.orientations[a], invInertiaA, rA, n) +
+                      generalizedInverseMass(invMassB, bodies.orientations[b], invInertiaB, rB, n);
+        if (approach < 0.f && w > 1e-10f) {
+            const f32 restitution = bodies.restitutions[a] * bodies.restitutions[b];
+            const vec3 impulse = n * (-(1.f + restitution) * approach / w);
+            bodies.linearVelocities[a] += impulse * invMassA;
+            bodies.linearVelocities[b] -= impulse * invMassB;
+            bodies.angularVelocities[a] += applyInverseInertia(bodies.orientations[a], invInertiaA, rA.cross(impulse));
+            bodies.angularVelocities[b] -= applyInverseInertia(bodies.orientations[b], invInertiaB, rB.cross(impulse));
+        }
+        // Static and kinematic bodies take any number of impacts per frame.
+        ccdHandled_[a] = invMassA > 0.f ? 1u : 0u;
+        ccdHandled_[b] = invMassB > 0.f ? 1u : 0u;
+        ++lastCcdHitCount_;
+    }
+    return lastCcdHitCount_;
+}
+
 void PBDSolver::predict(RigidBodySoA& bodies, const SolverParams& params, f32 dt) {
     const u32 bodyCount = bodies.count();
+    const std::vector<vec3>& invInertia = workBuffers_.bodyInvInertia();
     for (u32 i = 0; i < bodyCount; ++i) {
-        bodies.predictedOrientations[i] = bodies.orientations[i];
-
+        if ((bodies.flags[i] & RB_KINEMATIC) != 0u) {
+            // Driven along its programmed velocity; infinite mass so it pushes but is never pushed.
+            bodies.predictedPositions[i] = bodies.positions[i] + bodies.linearVelocities[i] * dt;
+            bodies.predictedOrientations[i] = applyRotationVector(bodies.orientations[i], bodies.angularVelocities[i] * dt);
+            continue;
+        }
         if (isStaticOrKinematic(bodies.flags[i]) || isSleeping(bodies.flags[i])) {
             bodies.predictedPositions[i] = bodies.positions[i];
+            bodies.predictedOrientations[i] = bodies.orientations[i];
             continue;
         }
 
@@ -78,41 +464,50 @@ void PBDSolver::predict(RigidBodySoA& bodies, const SolverParams& params, f32 dt
 
         bodies.linearVelocities[i] += acceleration * dt;
         bodies.predictedPositions[i] = bodies.positions[i] + bodies.linearVelocities[i] * dt;
-        bodies.forces[i] = {};
-        bodies.torques[i] = {};
+
+        const vec3 bodyInvInertia = i < invInertia.size() ? invInertia[i] : vec3{};
+        if (bodyInvInertia.x <= 0.f || bodyInvInertia.y <= 0.f || bodyInvInertia.z <= 0.f) {
+            bodies.angularVelocities[i] = {}; // no rotational freedom
+            bodies.predictedOrientations[i] = bodies.orientations[i];
+            continue;
+        }
+        const quat q = bodies.orientations[i];
+        vec3& omega = bodies.angularVelocities[i];
+        omega += applyInverseInertia(q, bodyInvInertia, bodies.torques[i]) * dt;
+        omega = implicitGyroscopicStep(q, bodyInvInertia, omega, dt);
+        bodies.predictedOrientations[i] = applyRotationVector(q, omega * dt);
     }
 }
 
 void PBDSolver::generateContacts(RigidBodySoA& bodies,
                                  const CollisionShapeSoA& shapes,
                                  const SolverParams& params) {
-    RigidBodySoA collisionBodies = bodies;
-    collisionBodies.positions = bodies.predictedPositions;
-
-    broadphase::SpatialHashParams hashParams = params.broadphase;
-    hashParams.bodyCount = collisionBodies.count();
-    if (hashParams.tableSize == 0) {
-        hashParams.tableSize = std::max(1024u, hashParams.bodyCount * 8u);
-    }
-    if (hashParams.cellSize <= 0.f) {
-        hashParams.cellSize = 2.f;
-    }
-
-    const std::vector<broadphase::CandidatePair> pairs =
-        broadphase::runBroadphase(collisionBodies, shapes, hashParams);
-    std::vector<narrowphase::ContactManifold> manifolds =
-        narrowphase::runNarrowphase(pairs, collisionBodies, shapes);
+    // Collide at the predicted positions (swapped in place instead of copying the SoA).
+    std::swap(bodies.positions, bodies.predictedPositions);
+    std::swap(bodies.orientations, bodies.predictedOrientations);
+    const f32 cellSize = params.broadphase.cellSize > 0.f ? params.broadphase.cellSize : 2.f;
+    const f32 margin = std::max(params.contactMargin, 0.f);
+    grid_.findPairs(bodies, shapes, cellSize, candidatePairs_, margin);
+    narrowphase::collidePairs(candidatePairs_, bodies, shapes, narrowManifolds_, margin);
+    std::swap(bodies.positions, bodies.predictedPositions);
+    std::swap(bodies.orientations, bodies.predictedOrientations);
 
     std::vector<narrowphase::ContactManifold>& filtered = workBuffers_.contactManifolds();
     filtered.clear();
-    filtered.reserve(manifolds.size());
-    for (const narrowphase::ContactManifold& manifold : manifolds) {
+    triggerManifolds_.clear();
+    for (const narrowphase::ContactManifold& manifold : narrowManifolds_) {
         if (!manifold.valid) {
             continue;
         }
         if ((bodies.flags[manifold.bodyA] & RB_TRIGGER) != 0u ||
             (bodies.flags[manifold.bodyB] & RB_TRIGGER) != 0u) {
+            if (isTouching(manifold)) {
+                triggerManifolds_.push_back(manifold); // reported, never resolved
+            }
             continue;
+        }
+        if (jointIgnoresPair_(manifold.bodyA, manifold.bodyB)) {
+            continue; // jointed bodies without collideConnected
         }
         filtered.push_back(manifold);
     }
@@ -121,6 +516,7 @@ void PBDSolver::generateContacts(RigidBodySoA& bodies,
 f32 PBDSolver::measureConstraintResidual_(RigidBodySoA& bodies) const {
     return measureConstraintResidual(
         bodies,
+        workBuffers_,
         workBuffers_.contactManifolds(),
         distanceConstraints_,
         [](const RigidBodySoA& bodySoA, u32 index) { return effectiveInvMass(bodySoA, index); });
@@ -155,26 +551,46 @@ void PBDSolver::runConstraintIterations(RigidBodySoA& bodies, const SolverParams
         workBuffers_.seedContactLambdaFromImpulse(contactIndex, contacts[contactIndex].warmNormalImpulse, dt);
     }
 
+    // Job dispatch costs more than it saves until there is a lot of constraint work: measured
+    // on 1000 bodies / ~500 contacts, the serial loop is ~4x faster than per-iteration jobs.
+    const bool parallelIslands =
+        contacts.size() + distanceConstraints_.size() >= kParallelConstraintThreshold && islandGraph_.islandCount() > 1u;
+    const bool colored = params.solveMode == ConstraintSolveMode::ColoredKernel;
+    if (colored) {
+        coloring_.build(bodies, contacts, distanceConstraints_);
+    }
     for (u32 iter = 0; iter < maxIterations; ++iter) {
         const u32 islandCount = islandGraph_.islandCount();
-        if (islandCount == 0) {
+        if (colored) {
+            solveColored_(bodies, params, dt);
+        } else if (islandCount == 0) {
             for (u32 distanceIndex = 0; distanceIndex < distanceConstraints_.size(); ++distanceIndex) {
                 const DistanceConstraint& constraint = distanceConstraints_[distanceIndex];
-                workBuffers_.clearPositionDeltasForBodies(constraint.bodyA, constraint.bodyB);
                 const f32 invMassA = effectiveInvMass(bodies, constraint.bodyA);
                 const f32 invMassB = effectiveInvMass(bodies, constraint.bodyB);
-                f32& lambda = workBuffers_.distanceLambda(distanceIndex);
-                accumulateDistanceSpringCorrection(bodies,
-                                                   constraint,
-                                                   invMassA,
-                                                   invMassB,
-                                                   dt,
-                                                   lambda,
-                                                   workBuffers_.positionDeltas());
-                workBuffers_.applyPositionDeltas(bodies);
+                const ContactBody bodyA{constraint.bodyA, invMassA,
+                                        workBuffers_.effectiveInvInertia(constraint.bodyA, invMassA)};
+                const ContactBody bodyB{constraint.bodyB, invMassB,
+                                        workBuffers_.effectiveInvInertia(constraint.bodyB, invMassB)};
+                solveDistanceConstraint(bodies, constraint, bodyA, bodyB, dt, workBuffers_.distanceLambda(distanceIndex));
+            }
+        } else if (!parallelIslands) {
+            for (u32 islandIndex = 0; islandIndex < islandCount; ++islandIndex) {
+                dispatch_solve_island(bodies,
+                                      islandGraph_,
+                                      islandIndex,
+                                      workBuffers_,
+                                      distanceConstraints_,
+                                      dt,
+                                      params.contactCompliance,
+                                      [](const RigidBodySoA& bodySoA, u32 index) {
+                                          return effectiveInvMass(bodySoA, index);
+                                      });
             }
         } else if (has_dispatchable_islands(islandGraph_)) {
-            fuse::jobs::parallel_for(0, islandCount, kIslandGrainSize, [&](u32 islandIndex) {
+            // Batch small islands so each job carries real work (islands touch disjoint bodies).
+            const u32 grain = std::max(kIslandGrainSize, islandCount / 32u);
+            fuse::jobs::parallel_for(0, islandCount, grain, [&](u32 islandIndex) {
                 dispatch_solve_island(bodies,
                                       islandGraph_,
                                       islandIndex,
@@ -188,8 +604,15 @@ void PBDSolver::runConstraintIterations(RigidBodySoA& bodies, const SolverParams
             });
         }
 
-        lastConstraintResidual_ = measureConstraintResidual_(bodies);
+        solveJoints_(bodies, dt);
+
         ++lastIterationCount_;
+        // The residual costs a full pass over the contact points: only measure it when it can end
+        // the loop early, and once after the final iteration for diagnostics.
+        const bool finalIteration = iter + 1u == maxIterations;
+        if (params.residualTolerance > 0.f || finalIteration) {
+            lastConstraintResidual_ = measureConstraintResidual_(bodies);
+        }
 
         if (params.residualTolerance > 0.f && lastConstraintResidual_ <= params.residualTolerance) {
             break;
@@ -197,9 +620,37 @@ void PBDSolver::runConstraintIterations(RigidBodySoA& bodies, const SolverParams
     }
 }
 
+void PBDSolver::solveColored_(RigidBodySoA& bodies, const SolverParams& params, f32 dt) {
+    SolveColorParams p{};
+    p.bodies = &bodies;
+    p.work = &workBuffers_;
+    p.contacts = workBuffers_.contactManifolds().data();
+    p.distances = distanceConstraints_.data();
+    p.dt = dt;
+    p.compliance = params.contactCompliance;
+    for (u32 color = 0; color < coloring_.colorCount; ++color) {
+        p.items = coloring_.colorItems(color);
+        const kernel::KernelLaunch launch{kSolveColorKernelName, kernel::extent1(coloring_.colorSize(color)),
+                                          kernel::Dim3{64u, 1u, 1u}};
+        kernel::launch(params.kernelBackend, launch, SolveColorKernel{}, p);
+    }
+    if (coloring_.overflowCount > 0u) {
+        // Constraints that found no free colour: serial, in build order (still deterministic).
+        p.items = coloring_.colorItems(ConstraintColoring::kMaxColors);
+        const kernel::KernelLaunch launch{kSolveColorKernelName, kernel::extent1(coloring_.overflowCount),
+                                          kernel::Dim3{64u, 1u, 1u}};
+        kernel::launch(kernel::Backend::CpuReference, launch, SolveColorKernel{}, p);
+    }
+}
+
 void PBDSolver::updateVelocities(RigidBodySoA& bodies, f32 dt) {
     const f32 invDt = 1.f / dt;
     for (u32 i = 0; i < bodies.count(); ++i) {
+        if ((bodies.flags[i] & RB_KINEMATIC) != 0u) {
+            bodies.positions[i] = bodies.predictedPositions[i];
+            bodies.orientations[i] = bodies.predictedOrientations[i];
+            continue;
+        }
         if (isStaticOrKinematic(bodies.flags[i])) {
             bodies.linearVelocities[i] = {};
             bodies.angularVelocities[i] = {};
@@ -212,8 +663,153 @@ void PBDSolver::updateVelocities(RigidBodySoA& bodies, f32 dt) {
 
         const vec3 delta = bodies.predictedPositions[i] - bodies.positions[i];
         bodies.linearVelocities[i] = delta * invDt;
+        bodies.angularVelocities[i] =
+            angularVelocityBetween(bodies.orientations[i], bodies.predictedOrientations[i], dt);
         bodies.positions[i] = bodies.predictedPositions[i];
         bodies.orientations[i] = bodies.predictedOrientations[i];
+    }
+}
+
+void PBDSolver::solveVelocities(RigidBodySoA& bodies, const SolverParams& params, f32 dt) {
+    const std::vector<narrowphase::ContactManifold>& contacts = workBuffers_.contactManifolds();
+    const std::vector<f32>& lambdas = workBuffers_.contactLambdas();
+    const f32 restingSpeed = 2.f * params.gravity.length() * dt;
+    for (u32 contactIndex = 0; contactIndex < contacts.size(); ++contactIndex) {
+        const narrowphase::ContactManifold& contact = contacts[contactIndex];
+        if (!contact.valid || contactIndex >= lambdas.size()) {
+            continue;
+        }
+        const f32 start = contactIndex < substepLambdaStart_.size() ? substepLambdaStart_[contactIndex] : 0.f;
+        const f32 normalLambda = lambdas[contactIndex] - start;
+        if (normalLambda <= 0.f) {
+            continue; // contact did not push this substep
+        }
+        if (contactIndex < substepContactSlot_.size()) {
+            u32& slot = substepContactSlot_[contactIndex];
+            if (slot == kNoSlot) {
+                slot = slotForFrameContact_(contact, false); // a speculative contact that pushed
+            }
+            frameContacts_[slot].impulse += normalLambda / dt;
+        }
+        const u32 a = contact.bodyA;
+        const u32 b = contact.bodyB;
+        const f32 invMassA = effectiveInvMass(bodies, a);
+        const f32 invMassB = effectiveInvMass(bodies, b);
+        if (invMassA + invMassB < 1e-10f) {
+            continue;
+        }
+        const vec3 invInertiaA = workBuffers_.effectiveInvInertia(a, invMassA);
+        const vec3 invInertiaB = workBuffers_.effectiveInvInertia(b, invMassB);
+        const quat qA = bodies.orientations[a];
+        const quat qB = bodies.orientations[b];
+        const vec3 n = contact.contactNormal;
+        const f32 mu = std::sqrt(bodies.frictionDynamic[a] * bodies.frictionDynamic[b]);
+        const f32 restitutionCoeff = bodies.restitutions[a] * bodies.restitutions[b];
+        const bool anchored = workBuffers_.hasContactAnchors(contactIndex);
+
+        // Points that pushed this substep, with their arms at the solved pose.
+        constexpr u32 kSlots = narrowphase::kMaxContactPointsPerManifold;
+        f32 pointImpulse[kSlots]{}; // position-solve normal impulse per point
+        vec3 armA[kSlots]{};
+        vec3 armB[kSlots]{};
+        vec3 spinA[kSlots]{}; // I_A^-1 (rA x n)
+        vec3 spinB[kSlots]{};
+        f32 target[kSlots]{};
+        f32 step[kSlots]{};
+        u32 count = 0;
+        for (u32 k = 0; k < contact.pointCount && k < kSlots && (anchored || k == 0u); ++k) {
+            const f32 pointLambda = anchored ? workBuffers_.contactPointLambdaValue(contactIndex, k) : normalLambda;
+            if (pointLambda <= 0.f) {
+                continue;
+            }
+            vec3 rA{};
+            vec3 rB{};
+            if (anchored) {
+                const ContactAnchor& anchor = workBuffers_.contactAnchor(contactIndex, k);
+                rA = rotate(qA, anchor.localA);
+                rB = rotate(qB, anchor.localB);
+            }
+            const vec3 relative = (bodies.linearVelocities[a] + bodies.angularVelocities[a].cross(rA)) -
+                                  (bodies.linearVelocities[b] + bodies.angularVelocities[b].cross(rB));
+            // Restitution against the approach speed before the position solve.
+            const vec3 preRelative = (preSolveVelocities_[a] + preSolveAngular_[a].cross(rA)) -
+                                     (preSolveVelocities_[b] + preSolveAngular_[b].cross(rB));
+            const f32 preNormalSpeed = preRelative.dot(n);
+            const f32 restitution = std::fabs(preNormalSpeed) <= restingSpeed ? 0.f : restitutionCoeff;
+            spinA[count] = applyInverseInertia(qA, invInertiaA, rA.cross(n));
+            spinB[count] = applyInverseInertia(qB, invInertiaB, rB.cross(n));
+            const f32 w = invMassA + invMassB + rA.cross(n).dot(spinA[count]) + rB.cross(n).dot(spinB[count]);
+            pointImpulse[count] = pointLambda / dt;
+            armA[count] = rA;
+            armB[count] = rB;
+            target[count] = -relative.dot(n) + std::max(-restitution * preNormalSpeed, 0.f);
+            step[count] = w > 1e-10f ? target[count] / w : 0.f;
+            ++count;
+        }
+        if (count == 0u) {
+            continue;
+        }
+
+        // Normal velocity: one block over the points, scaled by the least-squares factor that
+        // best meets every point's target (see solveContactConstraint for why not point by point).
+        f32 scale = 1.f;
+        if (count > 1u) {
+            f32 targetDotMoved = 0.f;
+            f32 movedSq = 0.f;
+            for (u32 i = 0; i < count; ++i) {
+                const vec3 ci = armA[i].cross(n);
+                const vec3 di = armB[i].cross(n);
+                f32 moved = 0.f;
+                for (u32 j = 0; j < count; ++j) {
+                    moved += step[j] * (invMassA + invMassB + ci.dot(spinA[j]) + di.dot(spinB[j]));
+                }
+                targetDotMoved += target[i] * moved;
+                movedSq += moved * moved;
+            }
+            scale = movedSq > 1e-20f ? std::clamp(targetDotMoved / movedSq, 0.f, static_cast<f32>(count)) : 0.f;
+        }
+        f32 normalImpulse = 0.f;
+        vec3 turnA{};
+        vec3 turnB{};
+        for (u32 i = 0; i < count; ++i) {
+            step[i] *= scale;
+            normalImpulse += step[i];
+            turnA += spinA[i] * step[i];
+            turnB += spinB[i] * step[i];
+        }
+        bodies.linearVelocities[a] += n * (normalImpulse * invMassA);
+        bodies.linearVelocities[b] -= n * (normalImpulse * invMassB);
+        bodies.angularVelocities[a] += turnA;
+        bodies.angularVelocities[b] -= turnB;
+
+        // Dynamic friction per point, bounded by mu times the point's net normal impulse this
+        // substep (position-solve lambda / dt plus the velocity-level normal correction).
+        for (u32 i = 0; i < count; ++i) {
+            const f32 netNormalImpulse = std::max(pointImpulse[i] + step[i], 0.f);
+            if (netNormalImpulse <= 0.f) {
+                continue;
+            }
+            const vec3 rA = armA[i];
+            const vec3 rB = armB[i];
+            const vec3 relative = (bodies.linearVelocities[a] + bodies.angularVelocities[a].cross(rA)) -
+                                  (bodies.linearVelocities[b] + bodies.angularVelocities[b].cross(rB));
+            const vec3 tangential = relative - n * relative.dot(n);
+            const f32 tangentialSpeed = tangential.length();
+            if (tangentialSpeed <= 1e-9f) {
+                continue;
+            }
+            const vec3 t = tangential * (1.f / tangentialSpeed);
+            const f32 wTangent = generalizedInverseMass(invMassA, qA, invInertiaA, rA, t) +
+                                 generalizedInverseMass(invMassB, qB, invInertiaB, rB, t);
+            if (wTangent < 1e-10f) {
+                continue;
+            }
+            const vec3 impulse = t * (-std::min(mu * netNormalImpulse * wTangent, tangentialSpeed) / wTangent);
+            bodies.linearVelocities[a] += impulse * invMassA;
+            bodies.linearVelocities[b] -= impulse * invMassB;
+            bodies.angularVelocities[a] += applyInverseInertia(qA, invInertiaA, rA.cross(impulse));
+            bodies.angularVelocities[b] -= applyInverseInertia(qB, invInertiaB, rB.cross(impulse));
+        }
     }
 }
 
@@ -261,29 +857,84 @@ void PBDSolver::step(RigidBodySoA& bodies,
         return;
     }
 
+    // Nothing awake or driven: only the sleep bookkeeping runs. Nothing moves, so the last
+    // step's contacts (and contact count) still describe the scene.
+    bool anyActive = false;
+    for (u32 i = 0; i < bodies.count(); ++i) {
+        u32& flags = bodies.flags[i];
+        if (isSleeping(flags) &&
+            (bodies.forces[i].dot(bodies.forces[i]) > 0.f || bodies.torques[i].dot(bodies.torques[i]) > 0.f)) {
+            flags &= ~RB_SLEEPING; // an applied force wakes the body
+            bodies.sleepTimers[i] = 0.f;
+        }
+        anyActive = anyActive || (flags & RB_KINEMATIC) != 0u || ((flags & RB_STATIC) == 0u && !isSleeping(flags));
+    }
+    if (!anyActive) {
+        lastActiveCount_ = 0;
+        lastIterationCount_ = 0;
+        lastConstraintResidual_ = 0.f;
+        lastCcdHitCount_ = 0;
+        for (u32 i = 0; i < bodies.count(); ++i) {
+            bodies.forces[i] = {};
+            bodies.torques[i] = {};
+        }
+        return;
+    }
+
+    frameContacts_.clear();
+    frameContactSlot_.clear();
+    for (JointSolveResult& result : jointResults_) {
+        result.force = 0.f;
+        result.torque = 0.f;
+        result.brokeThisStep = false;
+    }
+    mapBodyShapes_(bodies, shapes);
+    computeInverseInertia_(bodies, shapes);
+    wakeJointedBodies_(bodies, params);
+
+    if (params.enableCcd) {
+        applyContinuousCollision(bodies, shapes, dt);
+    } else {
+        lastCcdHitCount_ = 0;
+    }
+
     const f32 subDt = dt / static_cast<f32>(std::max(1u, params.substeps));
     lastActiveCount_ = 0;
     lastContactCount_ = 0;
-    const std::vector<f32> priorDistanceLambdas = workBuffers_.distanceLambdas();
-    const std::vector<f32> priorContactLambdas = workBuffers_.contactLambdas();
+    priorDistanceLambdas_ = workBuffers_.distanceLambdas();
+    priorContactLambdas_ = workBuffers_.contactLambdas();
 
     for (u32 substep = 0; substep < std::max(1u, params.substeps); ++substep) {
         predict(bodies, params, subDt);
+        preSolveVelocities_ = bodies.linearVelocities;
+        preSolveAngular_ = bodies.angularVelocities;
         generateContacts(bodies, shapes, params);
         if (substep == 0u) {
             frame_lambda_warm_start(workBuffers_,
                                     distanceConstraints_,
-                                    priorDistanceLambdas,
-                                    priorContactLambdas);
+                                    priorDistanceLambdas_,
+                                    priorContactLambdas_);
         }
+        recordFrameContacts_(bodies, params);
+        workBuffers_.prepareContactPoints(bodies);
+        substepLambdaStart_ = workBuffers_.contactLambdas();
         runConstraintIterations(bodies, params, subDt);
+        finishJointSubstep_(subDt);
         updateVelocities(bodies, subDt);
+        solveVelocities(bodies, params, subDt);
     }
 
+    for (u32 i = 0; i < bodies.count(); ++i) {
+        bodies.forces[i] = {};
+        bodies.torques[i] = {};
+    }
     applyDamping(bodies, params);
     detectSleep(bodies, params, dt);
 
-    lastContactCount_ = static_cast<u32>(workBuffers_.contactManifolds().size());
+    lastContactCount_ = 0;
+    for (const narrowphase::ContactManifold& manifold : workBuffers_.contactManifolds()) {
+        lastContactCount_ += isTouching(manifold) ? 1u : 0u;
+    }
     for (u32 i = 0; i < bodies.count(); ++i) {
         if (!isStaticOrKinematic(bodies.flags[i]) && !isSleeping(bodies.flags[i])) {
             ++lastActiveCount_;

@@ -1,0 +1,154 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// GpuRadixSort pass 3/4: stable scatter of one tile.
+//
+// The tile is walked in batches of 1024 elements (4 per thread) in input order. Each batch is
+// stably sorted by the 8-bit digit in shared memory with two 4-bit split rounds:
+//   * the batch is cut into 64 chunks of 16 consecutive elements; counter (bucket b, chunk c)
+//     = number of elements of chunk c whose nibble is b;
+//   * one exclusive scan of the 1024 counters in bucket-major order (b * 64 + c) gives each
+//     (b, c) its first slot, so buckets stay ordered and, inside a bucket, input order is kept;
+//   * an element's slot = first slot of (its nibble, its chunk) + same-nibble elements before it
+//     in its chunk.
+// After both rounds every element knows its rank among earlier same-digit elements of the
+// batch. Output index = scanned global offset of (digit, tile) + same-digit elements of earlier
+// batches + rank, so equal keys keep their input order across batches, tiles and passes.
+// The scan is raked (64 threads x 16 serial, then one thread over 64 totals) to keep the barrier
+// count low — barriers dominate on CPU implementations such as Lavapipe.
+#include "radix_sort_common.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(std430, set = 0, binding = 0) readonly buffer KeysIn { RADIX_KEY_T keysIn[]; };
+layout(std430, set = 0, binding = 1) readonly buffer ValsIn { uint valsIn[]; };
+layout(std430, set = 0, binding = 2) writeonly buffer KeysOut { RADIX_KEY_T keysOut[]; };
+layout(std430, set = 0, binding = 3) writeonly buffer ValsOut { uint valsOut[]; };
+layout(std430, set = 0, binding = 4) readonly buffer Scratch { uint scratch[]; };
+
+#define ITEMS 4u
+#define BATCH (RADIX_WG_SIZE * ITEMS)          // 1024 elements per batch
+#define BATCHES (RADIX_TILE_SIZE / BATCH)      // 4 batches per tile
+#define CHUNK 16u                              // elements per counting chunk
+#define CHUNKS (BATCH / CHUNK)                 // 64 chunks
+#define BUCKETS 16u                            // 4-bit split
+#define INDEX_BITS 10u                         // batch index field of an item
+#define INDEX_MASK ((1u << INDEX_BITS) - 1u)
+
+shared uint sNib[BATCH];             // nibble of each batch slot (current round)
+shared uint sScan[BUCKETS * CHUNKS]; // (bucket, chunk) counts -> first slots, bucket-major
+shared uint sRake[CHUNKS];           // raking totals
+shared uint sItems[BATCH];           // (digit << 10) | batch index, in the current order
+shared uint sDigitStart[RADIX_BINS]; // first sorted slot of each digit present in the batch
+shared uint sDigitBase[RADIX_BINS];  // next global output index of each digit for this tile
+
+void main() {
+    const uint tid = gl_LocalInvocationID.x;
+    const uint tile = gl_WorkGroupID.x;
+    sDigitBase[tid] = scratch[tid * pc.numBlocks + tile];
+
+    const uint tileStart = tile * RADIX_TILE_SIZE;
+    for (uint batch = 0u; batch < BATCHES; ++batch) {
+        const uint base = tileStart + batch * BATCH;
+        if (base >= pc.count) {
+            break; // uniform across the workgroup
+        }
+        const uint valid = min(BATCH, pc.count - base);
+
+        // Slot e = tid + k * 256. Padding slots take digit 255 and the highest batch indices,
+        // so after the stable sort they sit after every valid element (slots >= valid).
+        uint items[ITEMS];
+        for (uint k = 0u; k < ITEMS; ++k) {
+            const uint e = tid + k * RADIX_WG_SIZE;
+            const uint digit = e < valid ? radixDigit(keysIn[base + e], pc.shift) : 0xFFu;
+            items[k] = (digit << INDEX_BITS) | e;
+        }
+
+        for (uint round = 0u; round < 2u; ++round) {
+            const uint nibShift = INDEX_BITS + 4u * round;
+            for (uint k = 0u; k < ITEMS; ++k) {
+                sNib[tid + k * RADIX_WG_SIZE] = (items[k] >> nibShift) & 0xFu;
+            }
+            barrier();
+            for (uint k = 0u; k < ITEMS; ++k) {
+                const uint counter = tid + k * RADIX_WG_SIZE; // = bucket * CHUNKS + chunk
+                const uint bucket = counter / CHUNKS;
+                const uint chunkBase = (counter % CHUNKS) * CHUNK;
+                uint count = 0u;
+                for (uint j = 0u; j < CHUNK; ++j) {
+                    count += sNib[chunkBase + j] == bucket ? 1u : 0u;
+                }
+                sScan[counter] = count;
+            }
+            barrier();
+            // Raked exclusive scan of the 1024 counters.
+            if (tid < CHUNKS) {
+                uint running = 0u;
+                for (uint j = 0u; j < CHUNK; ++j) {
+                    const uint v = sScan[tid * CHUNK + j];
+                    sScan[tid * CHUNK + j] = running;
+                    running += v;
+                }
+                sRake[tid] = running;
+            }
+            barrier();
+            if (tid == 0u) {
+                uint running = 0u;
+                for (uint j = 0u; j < CHUNKS; ++j) {
+                    const uint v = sRake[j];
+                    sRake[j] = running;
+                    running += v;
+                }
+            }
+            barrier();
+            uint ranks[ITEMS];
+            for (uint k = 0u; k < ITEMS; ++k) {
+                const uint e = tid + k * RADIX_WG_SIZE;
+                const uint nib = (items[k] >> nibShift) & 0xFu;
+                const uint chunk = e / CHUNK;
+                const uint counter = nib * CHUNKS + chunk;
+                uint rank = sScan[counter] + sRake[counter / CHUNK];
+                for (uint j = chunk * CHUNK; j < e; ++j) {
+                    rank += sNib[j] == nib ? 1u : 0u;
+                }
+                ranks[k] = rank;
+            }
+            for (uint k = 0u; k < ITEMS; ++k) {
+                sItems[ranks[k]] = items[k];
+            }
+            barrier();
+            for (uint k = 0u; k < ITEMS; ++k) {
+                items[k] = sItems[tid + k * RADIX_WG_SIZE];
+            }
+            barrier(); // sNib / sScan / sRake / sItems are rewritten next
+        }
+
+        // items[k] now holds sorted slot s = tid + k * 256 (sItems mirrors it).
+        for (uint k = 0u; k < ITEMS; ++k) {
+            const uint s = tid + k * RADIX_WG_SIZE;
+            const uint d = items[k] >> INDEX_BITS;
+            if (s < valid && (s == 0u || (sItems[s - 1u] >> INDEX_BITS) != d)) {
+                sDigitStart[d] = s;
+            }
+        }
+        barrier();
+        for (uint k = 0u; k < ITEMS; ++k) {
+            const uint s = tid + k * RADIX_WG_SIZE;
+            if (s < valid) {
+                const uint d = items[k] >> INDEX_BITS;
+                const uint src = base + (items[k] & INDEX_MASK);
+                const uint dst = sDigitBase[d] + s - sDigitStart[d];
+                keysOut[dst] = keysIn[src];
+                valsOut[dst] = valsIn[src];
+            }
+        }
+        barrier();
+        for (uint k = 0u; k < ITEMS; ++k) {
+            const uint s = tid + k * RADIX_WG_SIZE;
+            const uint d = items[k] >> INDEX_BITS;
+            if (s < valid && (s == valid - 1u || (sItems[s + 1u] >> INDEX_BITS) != d)) {
+                sDigitBase[d] += s + 1u - sDigitStart[d];
+            }
+        }
+        barrier();
+    }
+}

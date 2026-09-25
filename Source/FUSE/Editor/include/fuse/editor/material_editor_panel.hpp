@@ -20,6 +20,11 @@ struct MaterialEditState {
     f32 roughness = 0.5f;
     f32 metallic = 0.f;
     u8 shadingModel = 0;
+    /// Procedural shading: when set, the material evaluates `proceduralFnId`
+    /// (`renderer::ProceduralMaterialId`) instead of its constants / textures.
+    bool procedural = false;
+    u32 proceduralFnId = 0;
+    u32 proceduralSeed = 0;
 };
 
 /// Headless material editor panel stub (B6.7).
@@ -66,6 +71,12 @@ public:
     bool setMetallic(f32 metallic, CommandStack& cmds);
     bool setBaseColor(f32 r, f32 g, f32 b, CommandStack& cmds);
     bool setShadingModel(u8 shadingModel, CommandStack& cmds);
+    /// Colour-picker entry point: `r, g, b` are display sRGB in [0, 1]; stored linear.
+    bool setBaseColorSrgb(f32 r, f32 g, f32 b, CommandStack& cmds);
+    /// Base colour re-encoded to sRGB for the colour-picker swatch.
+    void baseColorSrgb(f32& r, f32& g, f32& b) const;
+    /// Switch to procedural shading (`fnId` != 0) or back to constant / texture shading (0).
+    bool setProceduralMaterial(u32 fnId, u32 seed, CommandStack& cmds);
     bool pushToMaterialSystem(renderer::MaterialSystem& materials, CommandStack& cmds);
 
     void refreshPanel();

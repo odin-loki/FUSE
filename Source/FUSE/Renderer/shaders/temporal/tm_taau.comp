@@ -1,0 +1,402 @@
+#version 460
+// WP-4.1 "taau.resolve": the native TAAU kernel on the GPU, one DISPLAY pixel per thread (8 x 8 tiles).
+// Line-for-line twin of include/fuse/renderer/taa/taau_kernel.hpp (taau_kernel::Kernel, Batch 9) and of the
+// taa_common helpers it calls (taa_kernel_common.hpp): same operations in the same order, every float
+// temporary `precise` (no contraction). Spans become BDA buffers (depth, motion, prev depth / motion,
+// history in / out) and bindless images (colour, reactive, transparency: texelFetch, exact). Writes the
+// history, the RGBA16F display output and, when pc.out_ != 0, an f32x4 dump. GLSL twin of tm_taau.slang.
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_samplerless_texture_functions : require
+#include "bindless.glsl"
+#include "tm_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(rgba16f) uniform writeonly image2D fuse_tm_out_images[];
+
+#define FUSE_TM_SKY_DEPTH 1.0e6
+#define FUSE_TM_BIG 3.0e38
+#define FUSE_TM_FILTER_BILINEAR 0u
+#define FUSE_TM_FILTER_LANCZOS2 2u
+
+// --- taa_common twins ----------------------------------------------------------------------------------
+float fuse_tm_saturate(float v) { return max(0.0, min(1.0, v)); }
+
+vec3 fuse_tm_lerp3(vec3 a, vec3 b, float t) {
+    precise vec3 r = a + (b - a) * t;
+    return r;
+}
+
+int fuse_tm_clamp_index(int v, int hi) { return v < 0 ? 0 : (v > hi ? hi : v); }
+
+float fuse_tm_luma709(vec3 c) {
+    precise float l = 0.2126 * c.x + 0.7152 * c.y + 0.0722 * c.z;
+    return l;
+}
+
+vec3 fuse_tm_rgb_to_ycocg(vec3 rgb) {
+    precise vec3 r;
+    r.x = 0.25 * rgb.x + 0.5 * rgb.y + 0.25 * rgb.z;
+    r.y = 0.5 * rgb.x - 0.5 * rgb.z;
+    r.z = -0.25 * rgb.x + 0.5 * rgb.y - 0.25 * rgb.z;
+    return r;
+}
+
+vec3 fuse_tm_ycocg_to_rgb(vec3 c) {
+    precise float tmp = c.x - c.z;
+    precise vec3 r;
+    r.x = tmp + c.y;
+    r.y = c.x + c.z;
+    r.z = tmp - c.y;
+    return r;
+}
+
+vec3 fuse_tm_clip_to_aabb(vec3 history, vec3 boxMin, vec3 boxMax) {
+    precise vec3 center = (boxMin + boxMax) * 0.5;
+    precise vec3 extent = (boxMax - boxMin) * 0.5;
+    precise vec3 offset = history - center;
+    const float eps = 1e-6;
+    precise float ux = abs(offset.x) / max(extent.x, eps);
+    precise float uy = abs(offset.y) / max(extent.y, eps);
+    precise float uz = abs(offset.z) / max(extent.z, eps);
+    const float maxUnit = max(ux, max(uy, uz));
+    if (maxUnit > 1.0) {
+        precise float inv = 1.0 / maxUnit;
+        precise vec3 r = center + offset * inv;
+        return r;
+    }
+    return history;
+}
+
+void fuse_tm_catmull_rom_weights(float t, out float w[4]) {
+    precise float t2 = t * t;
+    precise float t3 = t2 * t;
+    precise float w0 = 0.5 * (-t3 + 2.0 * t2 - t);
+    precise float w1 = 0.5 * (3.0 * t3 - 5.0 * t2 + 2.0);
+    precise float w2 = 0.5 * (-3.0 * t3 + 4.0 * t2 + t);
+    precise float w3 = 0.5 * (t3 - t2);
+    w[0] = w0;
+    w[1] = w1;
+    w[2] = w2;
+    w[3] = w3;
+}
+
+float fuse_tm_lanczos2(float x) {
+    const float ax = abs(x);
+    if (ax < 1e-5) {
+        return 1.0;
+    }
+    if (ax >= 2.0) {
+        return 0.0;
+    }
+    const float kPi = uintBitsToFloat(0x40490FDBu); // 3.14159265358979f
+    precise float px = kPi * ax;
+    precise float r = 2.0 * sin(px) * sin(0.5 * px) / (px * px);
+    return r;
+}
+
+void fuse_tm_lanczos2_weights(float t, out float w[4]) {
+    precise float w0 = fuse_tm_lanczos2(t + 1.0);
+    precise float w1 = fuse_tm_lanczos2(t);
+    precise float w2 = fuse_tm_lanczos2(1.0 - t);
+    precise float w3 = fuse_tm_lanczos2(2.0 - t);
+    precise float inv = 1.0 / (w0 + w1 + w2 + w3);
+    w[0] = w0 * inv;
+    w[1] = w1 * inv;
+    w[2] = w2 * inv;
+    w[3] = w3 * inv;
+}
+
+// --- span access ------------------------------------------------------------------------------------------
+vec3 fuse_tm_color(uint handle, int x, int y) {
+    return texelFetch(fuse_textures_2d[fuse_handle_index(handle)], ivec2(x, y), 0).rgb;
+}
+
+float fuse_tm_mask(uint handle, int x, int y) {
+    return texelFetch(fuse_textures_2d[fuse_handle_index(handle)], ivec2(x, y), 0).r;
+}
+
+// taa_common::texel of the colour image (edge-clamped).
+vec3 fuse_tm_color_texel(FuseTmTaauFrame f, int x, int y) {
+    return fuse_tm_color(f.color, fuse_tm_clamp_index(x, int(f.renderW) - 1), fuse_tm_clamp_index(y, int(f.renderH) - 1));
+}
+
+vec4 fuse_tm_history_texel(FuseTmTaauFrame f, int x, int y) {
+    const int cx = fuse_tm_clamp_index(x, int(f.displayW) - 1);
+    const int cy = fuse_tm_clamp_index(y, int(f.displayH) - 1);
+    return FuseTmVec4Ref(f.historyIn).v[uint(cy) * f.displayW + uint(cx)];
+}
+
+// --- taau_kernel twins ------------------------------------------------------------------------------------
+float fuse_tm_effective_depth(float d) { return d > 0.0 ? d : FUSE_TM_SKY_DEPTH; }
+
+float fuse_tm_sanitize1(float v) { return (v >= 0.0 && v < FUSE_TM_BIG) ? v : 0.0; }
+vec3 fuse_tm_sanitize(vec3 c) { return vec3(fuse_tm_sanitize1(c.x), fuse_tm_sanitize1(c.y), fuse_tm_sanitize1(c.z)); }
+
+float fuse_tm_sample_weight(float d) { return d < 1.0 ? fuse_tm_lanczos2(d) : 0.0; }
+
+float fuse_tm_sample_history_weight(FuseTmTaauFrame f, float px, float py) {
+    precise float fx = px - 0.5;
+    precise float fy = py - 0.5;
+    const int x0 = int(floor(fx));
+    const int y0 = int(floor(fy));
+    precise float tx = fx - float(x0);
+    precise float ty = fy - float(y0);
+    const float a = fuse_tm_history_texel(f, x0, y0).w;
+    const float b = fuse_tm_history_texel(f, x0 + 1, y0).w;
+    const float c = fuse_tm_history_texel(f, x0, y0 + 1).w;
+    const float d = fuse_tm_history_texel(f, x0 + 1, y0 + 1).w;
+    precise float top = a + (b - a) * tx;
+    precise float bottom = c + (d - c) * tx;
+    precise float r = top + (bottom - top) * ty;
+    return r;
+}
+
+vec3 fuse_tm_sample_history(FuseTmTaauFrame f, float px, float py, uint filter_) {
+    precise float fx = px - 0.5;
+    precise float fy = py - 0.5;
+    const int x1 = int(floor(fx));
+    const int y1 = int(floor(fy));
+    precise float tx = fx - float(x1);
+    precise float ty = fy - float(y1);
+    if (filter_ == FUSE_TM_FILTER_BILINEAR) {
+        const vec4 a = fuse_tm_history_texel(f, x1, y1);
+        const vec4 b = fuse_tm_history_texel(f, x1 + 1, y1);
+        const vec4 c = fuse_tm_history_texel(f, x1, y1 + 1);
+        const vec4 d = fuse_tm_history_texel(f, x1 + 1, y1 + 1);
+        const vec3 top = fuse_tm_lerp3(a.xyz, b.xyz, tx);
+        const vec3 bottom = fuse_tm_lerp3(c.xyz, d.xyz, tx);
+        return fuse_tm_lerp3(top, bottom, ty);
+    }
+    float wx[4];
+    float wy[4];
+    if (filter_ == FUSE_TM_FILTER_LANCZOS2) {
+        fuse_tm_lanczos2_weights(tx, wx);
+        fuse_tm_lanczos2_weights(ty, wy);
+    } else {
+        fuse_tm_catmull_rom_weights(tx, wx);
+        fuse_tm_catmull_rom_weights(ty, wy);
+    }
+    precise vec3 sum = vec3(0.0);
+    vec3 lo = vec3(FUSE_TM_BIG);
+    vec3 hi = vec3(0.0);
+    for (int j = 0; j < 4; ++j) {
+        precise vec3 row = vec3(0.0);
+        for (int i = 0; i < 4; ++i) {
+            const vec3 c = fuse_tm_history_texel(f, x1 - 1 + i, y1 - 1 + j).xyz;
+            row = row + c * wx[i];
+            if (i == 1 || i == 2) {
+                if (j == 1 || j == 2) {
+                    lo = min(lo, c);
+                    hi = max(hi, c);
+                }
+            }
+        }
+        sum = sum + row * wy[j];
+    }
+    return max(min(sum, hi), lo);
+}
+
+// taa_common::sample_cubic (Catmull-Rom) of the colour image: the kernel's spatial estimate.
+vec3 fuse_tm_spatial_sample(FuseTmTaauFrame f, float px, float py) {
+    precise float fx = px - 0.5;
+    precise float fy = py - 0.5;
+    const int x1 = int(floor(fx));
+    const int y1 = int(floor(fy));
+    float wx[4];
+    float wy[4];
+    fuse_tm_catmull_rom_weights(fx - float(x1), wx);
+    fuse_tm_catmull_rom_weights(fy - float(y1), wy);
+    precise vec3 sum = vec3(0.0);
+    for (int j = 0; j < 4; ++j) {
+        precise vec3 row = vec3(0.0);
+        for (int i = 0; i < 4; ++i) {
+            row = row + fuse_tm_color_texel(f, x1 - 1 + i, y1 - 1 + j) * wx[i];
+        }
+        sum = sum + row * wy[j];
+    }
+    return sum;
+}
+
+void main() {
+    const FuseTmTaauFrame f = FuseTmTaauFrameRef(pc.frame).f;
+    const uint x = gl_GlobalInvocationID.x;
+    const uint y = gl_GlobalInvocationID.y;
+    if (x >= f.displayW || y >= f.displayH) {
+        return;
+    }
+    FuseTmFloatsRef depthBuf = FuseTmFloatsRef(f.depth);
+    FuseTmVec2Ref motionBuf = FuseTmVec2Ref(f.motion);
+    const uint di = y * f.displayW + x;
+    const float rwf = float(f.renderW);
+    const float rhf = float(f.renderH);
+    const float dwf = float(f.displayW);
+    const float dhf = float(f.displayH);
+    precise float scaleX = dwf / rwf;
+    precise float scaleY = dhf / rhf;
+    const float e = f.exposure;
+
+    // Display pixel centre in UV and in (unjittered) render coordinates; q = jittered texel lattice coordinate.
+    precise float u = (float(x) + 0.5) / dwf;
+    precise float v = (float(y) + 0.5) / dhf;
+    precise float prx = u * rwf;
+    precise float pry = v * rhf;
+    precise float qx = prx - f.jitterX;
+    precise float qy = pry - f.jitterY;
+    const int maxRx = int(f.renderW) - 1;
+    const int maxRy = int(f.renderH) - 1;
+    const int cix = fuse_tm_clamp_index(int(floor(qx)), maxRx);
+    const int ciy = fuse_tm_clamp_index(int(floor(qy)), maxRy);
+    const uint ci = uint(ciy) * f.renderW + uint(cix);
+
+    // 1. Current-frame samples: jitter-aware weights, neighbourhood statistics, closest-depth motion.
+    precise float sumW = 0.0;
+    precise float sumWt = 0.0;
+    precise vec3 sumC = vec3(0.0);
+    vec3 nMin = vec3(FUSE_TM_BIG);
+    vec3 nMax = vec3(-FUSE_TM_BIG);
+    precise vec3 m1 = vec3(0.0);
+    precise vec3 m2 = vec3(0.0);
+    const float ownDepth = fuse_tm_effective_depth(depthBuf.v[ci]);
+    float closest = ownDepth;
+    uint closestIndex = ci;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            const int tx = fuse_tm_clamp_index(cix + dx, maxRx);
+            const int ty = fuse_tm_clamp_index(ciy + dy, maxRy);
+            const uint ti = uint(ty) * f.renderW + uint(tx);
+            precise vec3 c = fuse_tm_sanitize(fuse_tm_color(f.color, tx, ty)) * e;
+            precise float ox = (float(cix + dx) + 0.5 + f.jitterX - prx) * scaleX;
+            precise float oy = (float(ciy + dy) + 0.5 + f.jitterY - pry) * scaleY;
+            precise float dist = sqrt(ox * ox + oy * oy) * f.sampleKernelScale;
+            const float w = fuse_tm_sample_weight(dist);
+            precise float wt = w / (1.0 + fuse_tm_luma709(c));
+            sumW += w;
+            sumWt += wt;
+            sumC = sumC + c * wt;
+            const vec3 yc = fuse_tm_rgb_to_ycocg(c);
+            nMin = min(nMin, yc);
+            nMax = max(nMax, yc);
+            m1 = m1 + yc;
+            m2 = m2 + yc * yc;
+            if (f.dilateMotion != 0u) {
+                const float d = fuse_tm_effective_depth(depthBuf.v[ti]);
+                if (d < closest) {
+                    closest = d;
+                    closestIndex = ti;
+                }
+            }
+        }
+    }
+    precise float dilateLimit = ownDepth * (1.0 - f.dilateDepthThreshold);
+    const vec2 motion = closest < dilateLimit ? motionBuf.v[closestIndex] : motionBuf.v[ci];
+    // Spatial estimate (un-jittered position), clamped into the neighbourhood range (cubic ringing).
+    precise vec3 spatialRgb = fuse_tm_sanitize(fuse_tm_spatial_sample(f, qx, qy)) * e;
+    vec3 spatialY = fuse_tm_rgb_to_ycocg(spatialRgb);
+    spatialY = max(min(spatialY, nMax), nMin);
+    const vec3 spatial = fuse_tm_ycocg_to_rgb(spatialY);
+    precise float spatialWt = f.spatialWeight / (1.0 + fuse_tm_luma709(spatial));
+    precise float invW = 1.0 / (sumWt + spatialWt);
+    precise vec3 current = (sumC + spatial * spatialWt) * invW;
+    precise float confidence = sumW + f.spatialWeight;
+
+    const float reactive = f.reactive == 0u ? 0.0 : fuse_tm_saturate(fuse_tm_mask(f.reactive, cix, ciy));
+    const float transparency = f.transparency == 0u ? 0.0 : fuse_tm_saturate(fuse_tm_mask(f.transparency, cix, ciy));
+
+    // 2. Reprojection.
+    precise float mvx = motion.x * dwf;
+    precise float mvy = motion.y * dhf;
+    precise float hx = float(x) + 0.5 - mvx;
+    precise float hy = float(y) + 0.5 - mvy;
+    precise float historyW = 0.0;
+    vec3 history = vec3(0.0);
+    if (f.historyValid != 0u && hx >= 0.0 && hy >= 0.0 && hx < dwf && hy < dhf) {
+        precise float motionCap = f.maxAccumulation / (1.0 + sqrt(mvx * mvx + mvy * mvy) * f.accumulationMotionFalloff);
+        historyW = min(fuse_tm_sample_history_weight(f, hx, hy), motionCap);
+        history = fuse_tm_sample_history(f, hx, hy, f.historyFilter);
+
+        // 3a. Depth disocclusion (range test of the previous 3x3 render footprint).
+        precise float prevRx = (u - motion.x) * rwf;
+        precise float prevRy = (v - motion.y) * rhf;
+        if (f.hasPrev != 0u && f.depthRejection > 0.0) {
+            const float d = depthBuf.v[ci];
+            precise float expected = fuse_tm_effective_depth(d);
+            if (f.hasCamera != 0u && d > 0.0) {
+                precise float su = (float(cix) + 0.5 + f.jitterX) / rwf;
+                precise float sv = (float(ciy) + 0.5 + f.jitterY) / rhf;
+                precise float vx = (2.0 * su - 1.0) * f.tanHalfX * d;
+                precise float vy = (1.0 - 2.0 * sv) * f.tanHalfY * d;
+                precise float vz = -d;
+                const vec4 m = f.curToPrevView[2];
+                expected = -(m.x * vx + m.y * vy + m.z * vz + m.w);
+            }
+            const int pcx = fuse_tm_clamp_index(int(floor(prevRx)), maxRx);
+            const int pcy = fuse_tm_clamp_index(int(floor(prevRy)), maxRy);
+            FuseTmFloatsRef prevDepth = FuseTmFloatsRef(f.prevDepth);
+            float lo = FUSE_TM_BIG;
+            float hi = 0.0;
+            for (int j = -1; j <= 1; ++j) {
+                for (int i = -1; i <= 1; ++i) {
+                    const uint pi = uint(fuse_tm_clamp_index(pcy + j, maxRy)) * f.renderW + uint(fuse_tm_clamp_index(pcx + i, maxRx));
+                    const float dp = fuse_tm_effective_depth(prevDepth.v[pi]);
+                    lo = min(lo, dp);
+                    hi = max(hi, dp);
+                }
+            }
+            precise float loLimit = lo * (1.0 - f.depthRejection);
+            precise float hiLimit = hi * (1.0 + f.depthRejection);
+            if (expected < loLimit || expected > hiLimit) {
+                historyW = 0.0;
+            }
+        }
+        // 3b. Velocity disagreement with the motion stored where the history came from.
+        if (f.hasPrev != 0u && f.velocityRejectionPx > 0.0 && historyW > 0.0) {
+            const uint pi = uint(fuse_tm_clamp_index(int(floor(prevRy)), maxRy)) * f.renderW +
+                            uint(fuse_tm_clamp_index(int(floor(prevRx)), maxRx));
+            const vec2 pm = FuseTmVec2Ref(f.prevMotion).v[pi];
+            precise float ddx = (motion.x - pm.x) * dwf;
+            precise float ddy = (motion.y - pm.y) * dhf;
+            precise float keep = 1.0 - fuse_tm_saturate(sqrt(ddx * ddx + ddy * ddy) / f.velocityRejectionPx);
+            historyW *= keep;
+        }
+        // 3c. Reactive mask.
+        precise float keepReactive = 1.0 - fuse_tm_saturate(reactive * f.reactiveStrength);
+        historyW *= keepReactive;
+    }
+
+    // 4. Neighbourhood clipping (YCoCg variance box).
+    const vec3 currentY = fuse_tm_rgb_to_ycocg(current);
+    vec3 resolvedY = currentY;
+    if (historyW > 0.0) {
+        const vec3 historyY = fuse_tm_rgb_to_ycocg(history);
+        precise vec3 mean = m1 * (1.0 / 9.0);
+        precise vec3 var = m2 * (1.0 / 9.0) - mean * mean;
+        precise vec3 sigma = vec3(sqrt(max(0.0, var.x)), sqrt(max(0.0, var.y)), sqrt(max(0.0, var.z)));
+        precise vec3 lowBox = mean - sigma * f.clampGamma;
+        precise vec3 highBox = mean + sigma * f.clampGamma;
+        vec3 boxMin = max(nMin, lowBox);
+        vec3 boxMax = min(nMax, highBox);
+        boxMin = min(min(boxMin, boxMax), currentY);
+        boxMax = max(max(boxMin, boxMax), currentY);
+        precise float motionPx = sqrt(mvx * mvx + mvy * mvy);
+        precise float motionClip = motionPx / max(1e-4, f.clipFullMotionPx);
+        precise float transparencyTerm = transparency * f.transparencyClip;
+        const float clipStrength = max(max(fuse_tm_saturate(f.staticClipStrength), fuse_tm_saturate(motionClip)),
+                                       max(reactive > 0.0 ? 1.0 : 0.0, fuse_tm_saturate(transparencyTerm)));
+        const vec3 clipped = fuse_tm_clip_to_aabb(historyY, boxMin, boxMax);
+        const vec3 clippedHistory = fuse_tm_lerp3(historyY, clipped, clipStrength);
+        // 5. Accumulate.
+        precise float alpha = confidence / (historyW + confidence);
+        resolvedY = fuse_tm_lerp3(clippedHistory, currentY, alpha);
+    }
+    const vec3 resolved = fuse_tm_sanitize(fuse_tm_ycocg_to_rgb(resolvedY));
+    precise float newWSum = historyW + confidence;
+    const float newW = min(newWSum, f.maxAccumulation);
+    FuseTmVec4Ref(f.historyOut).v[di] = vec4(resolved, newW);
+    precise float invE = 1.0 / e;
+    precise vec3 outColor = resolved * invE;
+    imageStore(fuse_tm_out_images[fuse_handle_index(f.output_)], ivec2(int(x), int(y)), vec4(outColor, 1.0));
+    if (pc.out_ != 0ul) {
+        FuseTmVec4Ref(pc.out_).v[di] = vec4(outColor, 0.0);
+    }
+}

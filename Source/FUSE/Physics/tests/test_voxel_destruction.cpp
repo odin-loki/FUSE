@@ -1,3 +1,4 @@
+#include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/physics/destruction/voxel_destruction.hpp>
 #include <fuse/physics/spatial/svo.hpp>
 
@@ -24,31 +25,43 @@ void testCarveRadiusDerivation() {
     expectTrue(!fuse::physics::DestructionSystem::shouldDestroy(2.f, material), "impulse below hardness preserved");
 }
 
-void testSvoCarveAndQuery() {
-    fuse::physics::Svo svo;
-    const fuse::physics::vec3 center{1.f, 2.f, 3.f};
-    expectTrue(svo.carve(center, 1.5f), "carve succeeds");
-    expectTrue(svo.isCarved(center), "center voxel carved");
-    expectTrue(!svo.isCarved({10.f, 10.f, 10.f}), "distant voxel not carved");
-    expectTrue(svo.carvedVoxelCount() > 0, "carved voxel count tracked");
+void testVolumeCarveAndQuery() {
+    fuse::physics::VoxelVolume volume;
+    volume.init({0.f, 0.f, 0.f}, 0.5f, {8, 8, 8});
+    volume.fill({0, 0, 0}, {7, 7, 7}, 1u);
+    expectTrue(volume.solidCount() == 512u, "fill counts voxels");
+    const fuse::physics::vec3 center{2.f, 2.f, 2.f};
+    expectTrue(volume.carve(center, 0.8f) > 0u, "carve removes voxels");
+    expectTrue(volume.get(volume.voxelAt(center)) == 0u, "centre voxel carved");
+    expectTrue(volume.get({7, 7, 7}) != 0u, "distant voxel untouched");
 }
 
 void testDebrisSpawnPipeline() {
-    fuse::physics::PhysicsRegistry registry{};
-    fuse::physics::PhysicsResourceManager resources{};
+    // A bar standing on the anchored layer with a block held by a one-voxel neck.
+    fuse::physics::VoxelVolume volume;
+    volume.init({0.f, 0.f, 0.f}, 1.f, {3, 8, 3});
+    volume.fill({1, 0, 1}, {1, 4, 1}, 1u);
+    volume.fill({0, 5, 0}, {2, 7, 2}, 1u);
+    std::unordered_map<fuse::u32, fuse::physics::DestructibleVolume> targets;
+    const fuse::ecs::EntityID wall{7, 1};
     fuse::physics::VoxelMaterial material{};
-    material.hardness = 5.f;
+    material.density = 2.f;
+    targets[wall.index] = {volume, material};
 
+    fuse::ecs::Registry registry;
+    registry.init(64);
     fuse::physics::DestructionEvent event{};
-    event.target = fuse::ecs::EntityID{7, 1};
-    event.impactPoint = {0.f, 0.f, 0.f};
-    event.impactNormal = {0.f, 1.f, 0.f};
-    event.impulse = 25.f;
-    event.carveRadius = fuse::physics::DestructionSystem::deriveCarveRadius(event.impulse, material);
-
-    fuse::physics::DestructionSystem::processEvents({event}, registry, resources);
-    expectTrue(registry.entityCount > 0, "debris entity spawned");
-    expectTrue(resources.meshAllocations > 0, "debris mesh allocated");
+    event.target = wall;
+    event.impactPoint = {1.5f, 3.5f, 1.5f};
+    event.impulse = 1.f;
+    event.carveRadius = 0.6f; // removes the neck voxel (1, 3, 1)
+    std::vector<fuse::physics::DebrisSpawn> spawned;
+    fuse::physics::DestructionSystem::processEvents({event}, targets, registry, spawned);
+    expectTrue(spawned.size() == 1u, "the block above the cut falls off as one piece");
+    expectTrue(!spawned.empty() && spawned[0].voxelCount == 28u && spawned[0].mass == 56.f,
+               "debris mass = voxels x voxel volume x density");
+    expectTrue(!spawned.empty() && registry.get<fuse::ecs::RigidBody>(spawned[0].entity) != nullptr,
+               "debris entity has a rigid body");
     expectTrue(fuse::physics::DestructionSystem::spawnedDebrisCount() > 0, "spawn counter incremented");
 }
 
@@ -56,7 +69,7 @@ void testDebrisSpawnPipeline() {
 
 int main() {
     testCarveRadiusDerivation();
-    testSvoCarveAndQuery();
+    testVolumeCarveAndQuery();
     testDebrisSpawnPipeline();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

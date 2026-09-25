@@ -1,0 +1,29 @@
+#usda 1.0
+(
+    customLayerData = {
+        string lightspeed_game_name = "ff_multi_instance"
+        string lightspeed_layer_type = "replacement"
+    }
+    defaultPrim = "RootNode"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+# RL-3.4 fixture (Remix mod) for the ff_multi_instance hot reload golden, version 1: the instanced mesh
+# (mesh_4DEA70187D2D1944, 9 instances per frame) replaced by a smaller quad, originals hidden.
+def Xform "RootNode"
+{
+    def Scope "meshes"
+    {
+        def Xform "mesh_4DEA70187D2D1944"
+        {
+            def Mesh "v1"
+            {
+                int[] faceVertexCounts = [4]
+                int[] faceVertexIndices = [0, 1, 2, 3]
+                point3f[] points = [(-0.25, -0.25, 0), (0.25, -0.25, 0), (0.25, 0.25, 0), (-0.25, 0.25, 0)]
+                uniform token subdivisionScheme = "none"
+            }
+        }
+    }
+}

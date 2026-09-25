@@ -1,0 +1,45 @@
+{
+  "schema": "fuse.relight.setup_expect/1",
+  "scene": "sky_ui_hud",
+  "comment": [
+    "proposals: by sidecar tag of the recorded frame. applied = in the generated profile's textures / options; pending = suggestions left for review.",
+    "The HUD icon texture also textures the three world cubes, so it is only suggested as UI (tagging it moves the cubes to UI).",
+    "runs: the generated profile (plus accepted suggestions) in <exe dir>/relight/profiles; per tag the expected capture-record classification (a list applies in order, the last entry repeats)."
+  ],
+  "proposals": {
+    "applied": {"exact": true, "textures": {"sky": ["sky"]}, "options": {"rtx.preTransformedVerticesIsUI": "True"}},
+    "pending": {"textures": {"ui": ["hud"]}},
+    "never_applied_tags": ["world", "hud"]
+  },
+  "runs": [
+    {
+      "name": "profile_by_name",
+      "match": "name",
+      "tags": {
+        "sky": {"status": "raytraced", "categories_include": "Sky"},
+        "world": {"status": "raytraced", "reason": "RayTraced"},
+        "hud": {"status": "raytraced", "reason": "RayTraced"},
+        "hud_positiont": [
+          {"status": "rasterized", "reason": "PositionTAsUI", "inject": true},
+          {"status": "rasterized", "reason": "PostInjection", "inject": false}
+        ]
+      }
+    },
+    {
+      "name": "accept_ui_by_hash",
+      "match": "hash",
+      "accept": ["ui"],
+      "tags": {
+        "sky": {"status": "raytraced", "categories_include": "Sky"},
+        "world": [
+          {"status": "raytraced", "reason": "RayTraced"},
+          {"status": "rasterized", "reason": "UserInterface", "inject": true},
+          {"status": "rasterized", "reason": "PostInjection", "inject": false}
+        ],
+        "hud": {"status": "rasterized", "reason": "PostInjection"},
+        "hud_positiont": {"status": "rasterized", "reason": "PostInjection"}
+      }
+    },
+    {"name": "other_exe", "match": "other", "same_as_baseline": true}
+  ]
+}

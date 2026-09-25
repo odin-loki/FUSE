@@ -1,0 +1,35 @@
+#usda 1.0
+
+def Xform "RootNode"
+{
+    def Scope "Looks"
+    {
+        def Material "mat_3F1A2B3C4D5E6F70"
+        {
+            token outputs:mdl:displacement.connect = </RootNode/Looks/mat_3F1A2B3C4D5E6F70/Shader.outputs:out>
+            token outputs:mdl:surface.connect = </RootNode/Looks/mat_3F1A2B3C4D5E6F70/Shader.outputs:out>
+            token outputs:mdl:volume.connect = </RootNode/Looks/mat_3F1A2B3C4D5E6F70/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @AperturePBR_Opacity.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "AperturePBR_Opacity"
+                asset inputs:diffuse_texture = @../assets/textures/crate_a.dds@ (
+                    colorSpace = "auto"
+                )
+                asset inputs:normalmap_texture = @../assets/textures/crate_n.dds@ (
+                    colorSpace = "raw"
+                )
+                float inputs:reflection_roughness_constant = 0.75
+                float inputs:metallic_constant = 0.25
+                color3f inputs:diffuse_color_constant = (0.5, 0.25, 0.125)
+                float inputs:emissive_intensity = 0
+                bool inputs:enable_emission = 0
+                token outputs:out (
+                    renderType = "material"
+                )
+            }
+        }
+    }
+}

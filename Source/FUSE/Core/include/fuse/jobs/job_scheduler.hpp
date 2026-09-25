@@ -8,6 +8,11 @@
 
 namespace fuse::jobs {
 
+namespace detail {
+/// Runs `body(i)` for i in [begin, end); `body` is the type-erased parallel_for body.
+using ParallelForRangeFn = void (*)(const void* body, u32 begin, u32 end);
+} // namespace detail
+
 enum class JobPriority : u8 { Low = 0, Normal = 1, High = 2, Critical = 3 };
 
 /// Work-stealing scheduler with optional cooperative fibers on worker threads (WP-03).
@@ -33,6 +38,9 @@ public:
     bool isInitialized() const { return m_initialized; }
 
     /// Fork-join over [begin, end) with grain size (serial when single-threaded).
+    /// Heap-free in steady state: the caller runs chunks itself alongside at most `workerCount()`
+    /// helper jobs that claim chunks from a pooled dispatch record, and returns once every chunk
+    /// has completed (without waiting for helpers that found nothing left to claim).
     template <typename Body>
     void parallel_for(u32 begin, u32 end, u32 grainSize, const Body& body);
 
@@ -45,8 +53,11 @@ private:
 
     void drainActiveJobs();
 
+    void parallelForDispatch(u32 begin, u32 end, u32 grainSize, detail::ParallelForRangeFn invoke,
+                             const void* body);
+
     struct Impl;
-    Impl* m_impl = nullptr;
+    std::unique_ptr<Impl> m_impl;
 
     u32 m_workerCount = 0;
     bool m_initialized = false;
@@ -58,29 +69,23 @@ void JobScheduler::parallel_for(u32 begin, u32 end, u32 grainSize, const Body& b
         grainSize = 1;
     }
 
-    if (!m_initialized || m_workerCount == 0 || begin >= end) {
+    // One chunk or fewer gains nothing from dispatch; run it inline.
+    if (!m_initialized || m_workerCount == 0 || begin >= end || end - begin <= grainSize) {
         for (u32 i = begin; i < end; ++i) {
             body(i);
         }
         return;
     }
 
-    struct ParallelForState {
-        JobCounter counter{0};
+    // The body stays on the caller's stack and is reached by pointer: dispatch blocks until every
+    // chunk has run, and chunks are only ever claimed before that point.
+    const detail::ParallelForRangeFn invoke = [](const void* bodyPtr, u32 chunkBegin, u32 chunkEnd) {
+        const Body& typedBody = *static_cast<const Body*>(bodyPtr);
+        for (u32 i = chunkBegin; i < chunkEnd; ++i) {
+            typedBody(i);
+        }
     };
-    auto state = std::make_shared<ParallelForState>();
-    for (u32 chunk = begin; chunk < end; chunk += grainSize) {
-        const u32 chunkEnd = (chunk + grainSize < end) ? (chunk + grainSize) : end;
-        state->counter.add(1);
-        submit([state, chunk, chunkEnd, body]() {
-            for (u32 i = chunk; i < chunkEnd; ++i) {
-                body(i);
-            }
-            state->counter.signal();
-        });
-    }
-    state->counter.wait();
-    drainActiveJobs();
+    parallelForDispatch(begin, end, grainSize, invoke, &body);
 }
 
 } // namespace fuse::jobs

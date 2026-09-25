@@ -4,7 +4,10 @@
 #include <fuse/alloc/freelist_allocator.hpp>
 #include <fuse/alloc/pool_allocator.hpp>
 #include <fuse/alloc/ring_allocator.hpp>
+#include <fuse/alloc/size_class_allocator.hpp>
 #include <fuse/alloc/stack_allocator.hpp>
+#include <fuse/assert.hpp>
+#include <fuse/core/flat_u64_map.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -176,6 +179,9 @@ void testFreeListOom() {
 }
 
 void testDomainBudgetReject() {
+    // Over-budget charges raise FUSE_ASSERT in debug builds; keep the process alive to check the
+    // fail-closed bookkeeping (debug assert coverage lives in test_b1_memory_gates.cpp).
+    fuse::assertion::setSuppressAbortForTests(true);
     fuse::alloc::DomainBudget core("core", 32u);
     fuse::alloc::DomainBudget frame("frame", 64u);
     fuse::alloc::DomainBudget scene("scene", 64u);
@@ -194,6 +200,7 @@ void testDomainBudgetReject() {
     expectTrue(scene.tryCharge(64u), "exact cap succeeds");
     expectTrue(scene.peak() == 64u, "peak tracks high water");
     expectTrue(!scene.tryCharge(1u), "charge at cap is rejected");
+    fuse::assertion::setSuppressAbortForTests(false);
 }
 
 void testIAllocatorHierarchy() {
@@ -236,6 +243,88 @@ void testGlobalStatsHook() {
     expectTrue(state.lastStats.allocCount >= 1u, "stats hook receives alloc count");
 }
 
+void testSizeClassAllocatorClasses() {
+    using fuse::alloc::SizeClassAllocator;
+    // Every size maps to the smallest class that holds it; classes are 16-byte multiples.
+    fuse::u32 previous = 0;
+    for (fuse::usize size = 1; size <= SizeClassAllocator::kMaxClassBytes; ++size) {
+        const fuse::u32 cls = SizeClassAllocator::classIndex(size);
+        const fuse::usize bytes = SizeClassAllocator::classBytes(cls);
+        if (cls >= SizeClassAllocator::kClassCount || bytes < size || bytes % 16u != 0u || cls < previous ||
+            (cls > 0u && SizeClassAllocator::classBytes(cls - 1u) >= size)) {
+            expectTrue(false, "size class mapping is tight and monotonic");
+            return;
+        }
+        previous = cls;
+    }
+    expectTrue(SizeClassAllocator::classIndex(SizeClassAllocator::kMaxClassBytes + 1u) ==
+                   SizeClassAllocator::kClassCount,
+               "requests above the largest class are oversize");
+}
+
+void testSizeClassAllocatorRecyclesWithoutSystemAllocs() {
+    fuse::alloc::SizeClassAllocator heap({"test_sizeclass", 64u * 1024u, 0u, false});
+    void* blocks[64] = {};
+    for (int round = 0; round < 3; ++round) {
+        for (int i = 0; i < 64; ++i) {
+            blocks[i] = heap.allocate(static_cast<fuse::usize>(8 + i * 37));
+            expectTrue(blocks[i] != nullptr && reinterpret_cast<uintptr_t>(blocks[i]) % 16u == 0u,
+                       "size-class blocks are 16-byte aligned");
+            std::memset(blocks[i], i, static_cast<fuse::usize>(8 + i * 37));
+        }
+        for (int i = 0; i < 64; ++i) {
+            heap.deallocate(blocks[i], static_cast<fuse::usize>(8 + i * 37));
+        }
+    }
+    const fuse::u64 warm = heap.systemAllocations();
+    for (int i = 0; i < 64; ++i) {
+        blocks[i] = heap.allocate(static_cast<fuse::usize>(8 + i * 37));
+    }
+    for (int i = 0; i < 64; ++i) {
+        heap.deallocate(blocks[i], static_cast<fuse::usize>(8 + i * 37));
+    }
+    expectTrue(heap.systemAllocations() == warm, "warm size-class pool serves a repeat workload without system allocs");
+    expectTrue(heap.stats().usedBytes == 0u, "all blocks returned");
+
+    // realloc keeps the pointer inside a class and preserves contents across classes.
+    auto* p = static_cast<unsigned char*>(heap.reallocate(nullptr, 0u, 20u));
+    std::memset(p, 0x5A, 20u);
+    expectTrue(heap.reallocate(p, 20u, 30u) == p, "realloc within a size class keeps the block");
+    auto* q = static_cast<unsigned char*>(heap.reallocate(p, 30u, 5000u));
+    expectTrue(q != nullptr && q[0] == 0x5A && q[19] == 0x5A, "realloc across classes copies the contents");
+    auto* big = static_cast<unsigned char*>(heap.reallocate(q, 5000u, 100000u));
+    expectTrue(big != nullptr && big[19] == 0x5A, "realloc into an oversize block copies the contents");
+    expectTrue(heap.reallocate(big, 100000u, 0u) == nullptr, "realloc to zero frees");
+
+    void* unsized = heap.allocateUnsized(777u);
+    expectTrue(unsized != nullptr && reinterpret_cast<uintptr_t>(unsized) % 16u == 0u, "unsized block aligned");
+    heap.deallocateUnsized(unsized);
+    expectTrue(heap.stats().usedBytes == 0u, "unsized block returned");
+}
+
+void testFlatU64Map() {
+    fuse::FlatU64Map<fuse::u32> map;
+    for (fuse::u32 round = 0; round < 3; ++round) {
+        map.clear();
+        for (fuse::u32 i = 0; i < 100; ++i) {
+            const auto [value, inserted] = map.try_emplace((static_cast<fuse::u64>(i) << 32u) | (i * 7u), i);
+            expectTrue(inserted && *value == i, "flat map inserts new keys");
+        }
+        expectTrue(!map.try_emplace(0u, 99u).second, "flat map keeps the first value of a key");
+        expectTrue(map.size() == 100u, "flat map size");
+    }
+    expectTrue(map.find((5ull << 32u) | 35u) != nullptr && *map.find((5ull << 32u) | 35u) == 5u, "flat map find");
+    expectTrue(map.find(12345u) == nullptr, "flat map miss");
+    fuse::u32 visited = 0;
+    fuse::u32 expected = 0;
+    bool ordered = true;
+    map.for_each([&](fuse::u64, fuse::u32 value) {
+        ordered = ordered && value == expected++;
+        ++visited;
+    });
+    expectTrue(visited == 100u && ordered, "flat map iterates in insertion order");
+}
+
 } // namespace
 
 int main() {
@@ -255,6 +344,9 @@ int main() {
     testDomainBudgetReject();
     testIAllocatorHierarchy();
     testGlobalStatsHook();
+    testSizeClassAllocatorClasses();
+    testSizeClassAllocatorRecyclesWithoutSystemAllocs();
+    testFlatU64Map();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d test(s) failed\n", g_failures);

@@ -462,6 +462,9 @@ void testEventPumpWin32RequireCaptureDropsReleasedInput() {
     pump.processOsEvents();
 
     fuse::platform::PlatformEvent event;
+    expectTrue(pump.pollEvent(event) && event.type == fuse::platform::PlatformEventType::InputCaptureChanged &&
+                   event.window == &window && event.inputCaptured,
+               "capture change reported (InputCaptureChanged) ahead of the OS input");
     expectTrue(pump.pollEvent(event), "Captured window enqueues OS KeyDown");
     expectTrue(event.type == fuse::platform::PlatformEventType::KeyDown, "captured OS KeyDown type");
     expectEq(event.keyCode, static_cast<fuse::u32>('B'), "captured OS KeyDown virtual key");

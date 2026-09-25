@@ -1,0 +1,26 @@
+#version 460
+// WP-3.1 "vsm.clear": vkCmdDispatchIndirect over the render list (one workgroup per page to render,
+// args = the work buffer's first three counters); each 16 x 16 workgroup writes clearValue into the
+// page's 128 x 128 texels of the physical pool (R32_UINT, 8 x 8 texels per thread). WP-3.2 page
+// rendering (depth as float bits, atomicMin) starts from these texels. GLSL twin of vsm_clear.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "vsm_includes.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(r32ui) uniform writeonly uimage2D fuse_vsm_pool[];
+
+void main() {
+    FuseVsmConstantsRef C = fuse_vsm_constants();
+    const uint entry = gl_WorkGroupID.x;
+    const uint p = FUSE_VSM_WORDS(C.workHandle)[C.offRenderList + entry * 2u + 1u];
+    const uvec2 page = uvec2(p % C.poolPagesX, p / C.poolPagesX);
+    const ivec2 origin = ivec2(page * FUSE_VSM_PAGE_TEXELS + gl_LocalInvocationID.xy * 8u);
+    const uint pool = fuse_handle_index(C.poolHandle);
+    const uvec4 value = uvec4(C.clearValue, 0u, 0u, 0u);
+    for (int y = 0; y < 8; ++y) {
+        for (int x = 0; x < 8; ++x) {
+            imageStore(fuse_vsm_pool[pool], origin + ivec2(x, y), value);
+        }
+    }
+}

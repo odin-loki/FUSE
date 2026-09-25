@@ -1,0 +1,35 @@
+#version 460
+// WP-4.4 "fg.ui_composite" (GLSL twin of fg_ui_composite.slang): the UI composited separately over a frame — the
+// interpolated HUD-less frame of the FSR 3.1 passes or the real HUD-less frame — like the FidelityFX frame-interpolation
+// swapchain's UI composition: out = source * (1 - ui.a) + ui.rgb (premultiplied UI), alpha 1; without a UI texture the
+// source is copied. Point loads only; `precise`: separate multiply and add, like the CPU twin fg_composite.
+#extension GL_EXT_samplerless_texture_functions : require
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform texture2D fgCompositeSource;
+layout(set = 0, binding = 1) uniform texture2D fgCompositeUi;
+layout(set = 0, binding = 2, rgba16f) writeonly uniform image2D fgCompositeOut;
+
+layout(push_constant) uniform FgCompositePush {
+    uint width;
+    uint height;
+    uint hasUi;
+    uint pad;
+} pc;
+
+void main() {
+    const ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (uint(p.x) >= pc.width || uint(p.y) >= pc.height) {
+        return;
+    }
+    const vec4 src = texelFetch(fgCompositeSource, p, 0);
+    vec4 outColor = vec4(src.rgb, 1.0);
+    if (pc.hasUi != 0u) {
+        const vec4 ui = texelFetch(fgCompositeUi, p, 0);
+        precise float k = 1.0 - ui.a;
+        precise vec3 scaled = src.rgb * k;
+        precise vec3 sum = scaled + ui.rgb;
+        outColor = vec4(sum, 1.0);
+    }
+    imageStore(fgCompositeOut, p, outColor);
+}

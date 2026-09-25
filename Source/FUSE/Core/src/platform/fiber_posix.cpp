@@ -23,7 +23,17 @@
 #define FUSE_FIBER_ASAN 1
 #endif
 
+// Tell valgrind about fiber stacks so stack switches are not reported as invalid accesses.
+// The client-request macros are no-ops when the process is not running under valgrind.
+#if defined(__has_include)
+#if __has_include(<valgrind/valgrind.h>)
+#include <valgrind/valgrind.h>
+#define FUSE_FIBER_VALGRIND 1
+#endif
+#endif
+
 #if FUSE_FIBER_ASAN
+#include <pthread.h>
 extern "C" {
 void __sanitizer_start_switch_fiber(void** fake_stack_save, const void* bottom, size_t size);
 void __sanitizer_finish_switch_fiber(void* fake_stack_save, const void** bottom_old, size_t* size_old);
@@ -38,8 +48,14 @@ struct FiberContext {
     void (*entry)(void*) = nullptr;
     void* userData = nullptr;
     bool captured = false;
+    bool started = false;
+#if FUSE_FIBER_VALGRIND
+    unsigned valgrindStackId = 0;
+#endif
 #if FUSE_FIBER_ASAN
     void* asanFakeStack = nullptr;
+    const void* asanThreadStackBottom = nullptr;
+    size_t asanThreadStackSize = 0;
 #endif
 };
 
@@ -53,30 +69,50 @@ void fiberEntryStub() {
         std::abort();
     }
     g_pendingFiberStart = nullptr;
+#if FUSE_FIBER_ASAN
+    // First entry on this stack: complete the switch started in fiberSwap().
+    __sanitizer_finish_switch_fiber(nullptr, nullptr, nullptr);
+#endif
     if (self->entry) {
         self->entry(self->userData);
     }
 }
 
 #if FUSE_FIBER_ASAN
-void asanBeforeSwitch(FiberContext* to) {
-    void* fakeStack = nullptr;
-    if (to && !to->stack.empty()) {
-        __sanitizer_start_switch_fiber(&fakeStack, to->stack.data(), to->stack.size());
+// `from` keeps its own fake stack while it is switched out; the target's stack bounds tell ASan
+// which stack becomes current (a captured thread context reports its pthread stack bounds).
+void asanBeforeSwitch(FiberContext* from, FiberContext* to) {
+    const void* bottom = nullptr;
+    size_t size = 0;
+    if (!to->stack.empty()) {
+        bottom = to->stack.data();
+        size = to->stack.size();
     } else {
-        __sanitizer_start_switch_fiber(&fakeStack, nullptr, 0);
+        bottom = to->asanThreadStackBottom;
+        size = to->asanThreadStackSize;
     }
-    if (to) {
-        to->asanFakeStack = fakeStack;
-    }
+    __sanitizer_start_switch_fiber(&from->asanFakeStack, bottom, size);
 }
 
 void asanAfterSwitch(FiberContext* from) {
-    const void* oldBottom = nullptr;
-    size_t oldSize = 0;
-    __sanitizer_finish_switch_fiber(from ? from->asanFakeStack : nullptr, &oldBottom, &oldSize);
-    (void)oldBottom;
-    (void)oldSize;
+    __sanitizer_finish_switch_fiber(from->asanFakeStack, nullptr, nullptr);
+}
+
+void asanCaptureThreadStack(FiberContext* ctx) {
+#if defined(__linux__)
+    pthread_attr_t attr;
+    if (pthread_getattr_np(pthread_self(), &attr) == 0) {
+        void* addr = nullptr;
+        size_t size = 0;
+        if (pthread_attr_getstack(&attr, &addr, &size) == 0) {
+            ctx->asanThreadStackBottom = addr;
+            ctx->asanThreadStackSize = size;
+        }
+        pthread_attr_destroy(&attr);
+    }
+#else
+    (void)ctx;
+#endif
 }
 #endif
 
@@ -101,6 +137,10 @@ FiberContext* fiberCreate(u32 stackBytes, void (*entry)(void* userData), void* u
 
     auto* fiber = new FiberContext();
     fiber->stack.resize(stackBytes);
+#if FUSE_FIBER_VALGRIND
+    fiber->valgrindStackId =
+        VALGRIND_STACK_REGISTER(fiber->stack.data(), fiber->stack.data() + fiber->stack.size());
+#endif
     fiber->entry = entry;
     fiber->userData = userData;
 
@@ -113,7 +153,6 @@ FiberContext* fiberCreate(u32 stackBytes, void (*entry)(void* userData), void* u
     fiber->ctx.uc_stack.ss_size = fiber->stack.size();
     fiber->ctx.uc_link = nullptr;
 
-    g_pendingFiberStart = fiber;
     makecontext(&fiber->ctx, reinterpret_cast<void (*)()>(fiberEntryStub), 0);
     return fiber;
 }
@@ -123,6 +162,9 @@ void fiberCaptureCurrent(FiberContext* ctx) {
         std::abort();
     }
     ctx->captured = true;
+#if FUSE_FIBER_ASAN
+    asanCaptureThreadStack(ctx);
+#endif
 }
 
 void fiberSwap(FiberContext* from, FiberContext* to) {
@@ -130,8 +172,15 @@ void fiberSwap(FiberContext* from, FiberContext* to) {
         std::abort();
     }
 
+    // Hand the entry context over at first switch-in (not at create time) so several fibers can
+    // be created before any of them runs without the last create clobbering the others.
+    if (!to->captured && !to->started) {
+        to->started = true;
+        g_pendingFiberStart = to;
+    }
+
 #if FUSE_FIBER_ASAN
-    asanBeforeSwitch(to);
+    asanBeforeSwitch(from, to);
 #endif
 
     if (swapcontext(&from->ctx, &to->ctx) != 0) {
@@ -144,6 +193,11 @@ void fiberSwap(FiberContext* from, FiberContext* to) {
 }
 
 void fiberDestroy(FiberContext* ctx) {
+#if FUSE_FIBER_VALGRIND
+    if (ctx != nullptr && !ctx->stack.empty()) {
+        VALGRIND_STACK_DEREGISTER(ctx->valgrindStackId);
+    }
+#endif
     delete ctx;
 }
 

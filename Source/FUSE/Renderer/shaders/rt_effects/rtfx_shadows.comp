@@ -1,0 +1,76 @@
+#version 460
+// WP-6.2 "rt.shadows" (twin: rtfx_shadows.slang): one pixel per thread, 8 x 8 tiles. For each shadowed light
+// (RtfxShadowView::count) `samples` ray queries from the G-buffer surface toward the light (hard kinds: one
+// ray; rectangle / disk: uniform by area; sun: uniform in the cone), (u, v) from the pixel's Owen-scrambled
+// Sobol sequence continued across frames. Writes this frame's visibility (fraction unoccluded) and the mean
+// closest-occluder distance (kRtfxNoHit when none) per light; sky pixels get visibility 1. With a dump
+// address the first sample's ray + hit is recorded per (light, pixel). CPU mirror: rt_effects_kernel.hpp.
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_samplerless_texture_functions : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+#include "rtfx_common.glsl"
+
+layout(local_size_x = FUSE_RTFX_TILE, local_size_y = FUSE_RTFX_TILE) in;
+
+void main() {
+    const FuseRtfxFrame F = fuse_rtfx_frame();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= F.view.width || p.y >= F.view.height) {
+        return;
+    }
+    const uint pixels = F.view.width * F.view.height;
+    const uint pixel = p.y * F.view.width + p.x;
+    const float depth = fuse_rtfx_fetch(F.gbufferDepth, ivec2(p)).x;
+    const bool surface = depth < 1.0 && !isnan(depth) && !isinf(depth);
+    vec3 origin = vec3(0.0);
+    if (surface) {
+        const vec3 position = fuse_rtfx_reconstruct(F, p, depth);
+        const vec4 rt0 = fuse_rtfx_fetch(F.gbufferNormal, ivec2(p));
+        const vec3 normal = fuse_rtfx_oct_decode(rt0.x, rt0.y);
+        origin = fuse_rtfx_ray_origin(position, normal, fuse_rtfx_vec3(F.cameraPosition), F.normalBias, F.viewBias);
+    }
+    FuseRtfxFloats visibility = FuseRtfxFloats(F.view.visibility);
+    FuseRtfxFloats hitDistance = FuseRtfxFloats(F.hitDistance);
+    for (uint c = 0u; c < F.view.count; ++c) {
+        const FuseRtfxShadowLight light = F.shadowLights[c];
+        const uint samples = max(light.samples, 1u);
+        const uint seed = fuse_rtfx_pixel_seed(p.x, p.y, c, F.seed);
+        uint visible = 0u;
+        uint hits = 0u;
+        float hitSum = 0.0;
+        for (uint s = 0u; s < samples; ++s) {
+            if (!surface) {
+                visible += 1u;
+                if (s == 0u) {
+                    fuse_rtfx_record(pc.dump, c * pixels + pixel, vec3(0.0), vec3(0.0), 0.0, FUSE_RTFX_NO_HIT, FUSE_RTFX_INVALID,
+                                     FUSE_RTFX_INVALID, 0u);
+                }
+                continue;
+            }
+            const vec2 uv = fuse_rtfx_sample2(F.frameIndex * samples + s, seed);
+            vec3 dir;
+            float tMax;
+            const bool ok = fuse_rtfx_shadow_ray(light, origin, uv.x, uv.y, F.farDistance, dir, tMax);
+            float t = FUSE_RTFX_NO_HIT;
+            uint instance = FUSE_RTFX_INVALID;
+            uint primitive = FUSE_RTFX_INVALID;
+            const bool traced = ok && tMax > 0.0;
+            if (traced) {
+                t = fuse_rtfx_trace(F.tlas, F.shadowCullMask, origin, dir, tMax, instance, primitive);
+            }
+            if (t >= 0.0) {
+                hits += 1u;
+                hitSum += t;
+            } else {
+                visible += 1u;
+            }
+            if (s == 0u) {
+                fuse_rtfx_record(pc.dump, c * pixels + pixel, origin, dir, tMax, t, instance, primitive,
+                                 (traced ? FUSE_RTFX_RAY_TRACED : 0u) | (t >= 0.0 ? FUSE_RTFX_RAY_HIT : 0u));
+            }
+        }
+        visibility.v[c * pixels + pixel] = float(visible) / float(samples);
+        hitDistance.v[c * pixels + pixel] = hits > 0u ? hitSum / float(hits) : FUSE_RTFX_NO_HIT;
+    }
+}

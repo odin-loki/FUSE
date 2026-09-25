@@ -65,6 +65,7 @@ set(FUSE_RHI_PUBLIC_HEADERS
     include/fuse/renderer/vk/compute_pipeline.hpp
     include/fuse/renderer/vk/pipeline_layout.hpp
     include/fuse/renderer/vk/pipeline_cache.hpp
+    include/fuse/renderer/vk/image_readback.hpp
     include/fuse/renderer/vk/raster_path.hpp
     include/fuse/renderer/vk/render_pass.hpp
     include/fuse/renderer/vk/surface.hpp
@@ -134,6 +135,7 @@ set(FUSE_RHI_SOURCES
     src/vk/compute_pipeline.cpp
     src/vk/pipeline_layout.cpp
     src/vk/pipeline_cache.cpp
+    src/vk/image_readback.cpp
     src/vk/raster_path.cpp
     src/vk/render_pass.cpp
     src/vk/surface.cpp
@@ -163,14 +165,40 @@ target_compile_definitions(fuse_rhi PRIVATE
     FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
 )
 
-# Optional VMA — stub allocator when header not vendored.
-set(FUSE_VMA_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/third_party/VulkanMemoryAllocator/include")
-if(EXISTS "${FUSE_VMA_INCLUDE_DIR}/vk_mem_alloc.h")
-    target_include_directories(fuse_rhi PRIVATE "${FUSE_VMA_INCLUDE_DIR}")
-    target_compile_definitions(fuse_rhi PRIVATE FUSE_VMA_AVAILABLE=1)
-    message(STATUS "FUSE: VMA found at ${FUSE_VMA_INCLUDE_DIR}")
+# GpuAllocator backend. Vulkan builds use the vendored, pinned VMA (Engine/lib/vma, see its VERSION
+# file) by default; FUSE_RHI_USE_VMA=OFF keeps the native one-vkAllocateMemory-per-resource path as
+# a fallback. Never picks up a system vk_mem_alloc.h. Stub builds (no Vulkan) use neither.
+option(FUSE_RHI_USE_VMA "Back fuse_rhi GpuAllocator with vendored VMA (OFF = native vkAllocateMemory fallback)" ON)
+set(FUSE_VMA_DIR "${CMAKE_SOURCE_DIR}/Engine/lib/vma")
+if(FUSE_VULKAN_BACKEND AND FUSE_RHI_USE_VMA)
+    if(NOT EXISTS "${FUSE_VMA_DIR}/include/vk_mem_alloc.h" OR NOT EXISTS "${FUSE_VMA_DIR}/VERSION")
+        message(FATAL_ERROR "FUSE_RHI_USE_VMA=ON but vendored VMA is missing under ${FUSE_VMA_DIR} "
+                            "(expected include/vk_mem_alloc.h + VERSION); configure with -DFUSE_RHI_USE_VMA=OFF "
+                            "for the native allocator")
+    endif()
+    file(STRINGS "${FUSE_VMA_DIR}/VERSION" _fuse_vma_version_line REGEX "^version=")
+    if(NOT _fuse_vma_version_line MATCHES "^version=([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
+        message(FATAL_ERROR "${FUSE_VMA_DIR}/VERSION: no 'version=X.Y.Z' pin line")
+    endif()
+    set(FUSE_VMA_VERSION "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${FUSE_VMA_DIR}/VERSION")
+    # SYSTEM: third-party header, keep FUSE warning levels off VMA's own code.
+    target_include_directories(fuse_rhi SYSTEM PRIVATE "${FUSE_VMA_DIR}/include")
+    target_compile_definitions(fuse_rhi
+        PRIVATE
+            FUSE_VMA_AVAILABLE=1
+            FUSE_VMA_PIN_MAJOR=${CMAKE_MATCH_1}
+            FUSE_VMA_PIN_MINOR=${CMAKE_MATCH_2}
+            FUSE_VMA_PIN_PATCH=${CMAKE_MATCH_3}
+            FUSE_VMA_VERSION_STRING="${FUSE_VMA_VERSION}"
+        # Lets tests assert which allocator backend fuse_rhi was built with.
+        PUBLIC
+            FUSE_RHI_ALLOCATOR_VMA=1)
+    message(STATUS "FUSE: fuse_rhi GpuAllocator uses vendored VMA ${FUSE_VMA_VERSION} (${FUSE_VMA_DIR})")
+elseif(FUSE_VULKAN_BACKEND)
+    message(STATUS "FUSE: fuse_rhi GpuAllocator uses native vkAllocateMemory (FUSE_RHI_USE_VMA=OFF)")
 else()
-    message(STATUS "FUSE: VMA not found — fuse_rhi uses stub GpuAllocator")
+    message(STATUS "FUSE: fuse_rhi GpuAllocator stub (Vulkan backend off)")
 endif()
 
 if(FUSE_VULKAN_BACKEND)
@@ -231,3 +259,65 @@ endif()
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)
 endif()
+
+# B5 gate work streams: one fragment per topic (sources added to fuse_rhi + gate tests).
+foreach(_fuse_b5_topic gbuffer_materials clustered shadows ddgi atmosphere post taa_ssfx)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/b5_${_fuse_b5_topic}.cmake")
+endforeach()
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/vk_followups.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/b5_rhi_rows.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/gpu_radix_sort.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_core_logic.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/upscale_quality.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/look.cmake")
+# Optional, runtime-loaded NVIDIA DLSS / Streamline plugin seam + CI mocks (docs/nvidia-plugin.md).
+add_subdirectory(plugins/nvidia)
+# Upscaler abstraction (ITemporalUpscaler / ISpatialUpscaler, registry) + FSR1 / NIS / CAS ports (docs/upscalers.md).
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/upscale.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp01.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_harness.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp03.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp04.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp02.cmake")  # WP-0.2 volk loader (cmake/FuseVolk.cmake)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp05.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp06.cmake")  # WP-0.6 GPU profiler (Tracy GPU zones) + RenderDoc capture
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp12.cmake")  # WP-1.2 meshlet cook (geometry/, Engine/lib/meshoptimizer)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp11.cmake")  # WP-1.1 GPU scene (include/fuse/renderer/gpu_scene, src/gpu_scene)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp13.cmake")  # WP-1.3 instance cull + Hi-Z + indirect count (culling/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp14.cmake")  # WP-1.4 visibility buffer (visbuffer/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp15.cmake")  # WP-1.5 material resolve (material_resolve/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp21.cmake")  # WP-2.1 GPU clustered lighting (lighting/gpu/, shaders/lighting/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp22.cmake")  # WP-2.2 LTC area lights + BRDF energy compensation (lighting/ltc/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp23.cmake")  # WP-2.3 forward transparency (forward/, shaders/forward/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp31.cmake")  # WP-3.1 virtual shadow map core (shadow/vsm/, core_logic/vsm_pages/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp32.cmake")  # WP-3.2 VSM raster, filtering, local lights (shadow/vsm_raster/, shaders/shadow_vsm/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp41.cmake")  # WP-4.1 GPU motion vectors + TAAU dispatch (temporal/, shaders/temporal/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp45.cmake")  # WP-4.5 GPU post stack (postprocess/gpu/, shaders/post/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp51.cmake")  # WP-5.1 mesh-shader path, T1 (meshlet/, shaders/meshlet/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp52.cmake")  # WP-5.2 cluster DAG + LOD (geometry/dag/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp54.cmake")  # WP-5.4 compute software rasteriser (swraster/, shaders/swraster/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp53.cmake")  # WP-5.3 cluster streaming + residency (geometry_streaming/, core_logic/residency/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp60.cmake")  # WP-6.0 acceleration structures, T2 (rt/, shaders/rt/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp63.cmake")  # WP-6.3 screen-space fallback on Vulkan (ssfx_gpu/, shaders/ssfx/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp64.cmake")  # WP-6.4 in-tree denoiser, SVGF / A-SVGF (denoise/, shaders/denoise/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp62.cmake")  # WP-6.2 ray-traced shadows + reflections, T2 (rt_effects/, shaders/rt_effects/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp61.cmake")  # WP-6.1 DDGI on Vulkan, T0 global SDF + T2 ray query (gi/gpu/, shaders/ddgi/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp71.cmake")  # WP-7.1 light tree (light_tree/, shaders/light_tree/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp82.cmake")  # WP-8.2 Hillaire atmosphere on Vulkan (atmosphere/, shaders/atmosphere/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp42.cmake")  # WP-4.2 FSR 3.1 temporal upscaler (upscale_backends/fsr3/, Engine/lib/fidelityfx)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp81.cmake")  # WP-8.1 froxel volumetric fog on Vulkan (volumetric/gpu/, shaders/volumetric/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp83.cmake")  # WP-8.3 volumetric clouds on Vulkan (clouds/, shaders/clouds/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp72.cmake")  # WP-7.2 ReSTIR DI and GI, T2 (restir/, shaders/restir/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp44.cmake")  # WP-4.4 frame generation + latency (framegen/, present/latency/, Engine/lib/fidelityfx)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp93.cmake")  # WP-9.3 device-generated commands (vk/dgc/, shaders/dgc/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp92.cmake")  # WP-9.2 3D Gaussian splatting (gsplat/, shaders/gsplat/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp43.cmake")  # WP-4.3 Intel XeSS plugin, runtime-loaded libxess (plugins/intel_xess/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp64b.cmake") # WP-6.4b denoiser interface + NVIDIA NRD plugin (denoise/denoiser.hpp, plugins/nvidia_nrd/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp91.cmake")  # WP-9.1 neural runtime, CPU reference + portable/coopmat kernels (neural/, shaders/neural/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp65.cmake")  # WP-6.5 radiance cascades, research (research/radiance_cascades/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_frame.cmake") # Frame integration: FrameComposer (frame/, shaders/frame/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/content_golden.cmake") # Asset plan W0.8 content golden renders + vendored NVIDIA FLIP (Samples/content_golden, Engine/lib/nvidia-flip)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_w07.cmake")  # Asset plan W0.7 .fusemat + layered materials (material_layers/, shaders/material_layers/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp73.cmake") # WP-7.3 path-tracing mode, T3 RT pipeline + T2 ray query (pathtrace/, shaders/pathtrace/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_rl55.cmake") # RL-5.5 radiance denoiser, extends WP-6.4 (denoise/radiance_*, shaders/denoise/rdn*)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_ssrc.cmake")  # WP-6.5 follow-up: screen-space radiance cascades (ssrc/, shaders/ssrc/)

@@ -1,0 +1,65 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "relight_mod",
+  "id": "mod/fixture_game/material_table",
+  "name": "material_table",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 1,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "name": "material_table",
+    "kind": "mod",
+    "root_layer": "mod.usda",
+    "layers": ["mod.usda"],
+    "layer_type": "replacement",
+    "game_name": "",
+    "rtx_conf": null,
+    "geometry_asset_rule": "positions,indices,geometrydescriptor",
+    "geometry_asset_rule_source": "default",
+    "licence": {
+      "id": "CC0-1.0",
+      "file": "LICENSE.md",
+      "text": {
+        "sha256": "8a1e5386b10cea5ec05d56467d4638a7a6677c8ca48df11f014067da3ff2f819",
+        "size": 109,
+        "media": "text/plain"
+      },
+      "detected": true
+    },
+    "graphs": [],
+    "counts": {
+      "mesh_replacements": 1,
+      "meshes": 1,
+      "materials": 3,
+      "textures": 16,
+      "lights": 0,
+      "particles": 0,
+      "keys": 4,
+      "replacements": 4
+    },
+    "diagnostics": []
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:material_table"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "material_table",
+      "stage": "mod.usda",
+      "prim": ""
+    }
+  },
+  "licence_id": "CC0-1.0",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

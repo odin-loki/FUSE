@@ -1,0 +1,30 @@
+#version 460
+// WP-3.1 "vsm.render": one thread per virtual page of the active levels (core_logic VsmPagePool
+// build_render_list): requested + mapped + not cached pages are appended to the render list
+// ({virtual page, physical page}, index = atomicAdd of counters[0], which is also the x of the
+// render list's VkDispatchIndirectCommand) and become cached. GLSL twin of vsm_render.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "vsm_includes.glsl"
+
+layout(local_size_x = 64) in;
+
+void main() {
+    FuseVsmConstantsRef C = fuse_vsm_constants();
+    const uint v = gl_GlobalInvocationID.x;
+    if (v >= C.virtualPages) {
+        return;
+    }
+    const uint work = C.workHandle;
+    if ((FUSE_VSM_WORDS(work)[C.offRequest + v / 32u] & (1u << (v % 32u))) == 0u) {
+        return;
+    }
+    const uint table = C.pageTableHandle;
+    const uint e = FUSE_VSM_WORDS(table)[v];
+    if ((e & FUSE_VSM_PTE_MAPPED) == 0u || (e & FUSE_VSM_PTE_CACHED) != 0u) {
+        return;
+    }
+    const uint slot = atomicAdd(FUSE_VSM_WORDS(work)[FUSE_VSM_COUNTER_RENDER_COUNT], 1u);
+    FUSE_VSM_WORDS(work)[C.offRenderList + slot * 2u] = v;
+    FUSE_VSM_WORDS(work)[C.offRenderList + slot * 2u + 1u] = e & FUSE_VSM_PTE_PHYS_MASK;
+    FUSE_VSM_WORDS(table)[v] = e | FUSE_VSM_PTE_CACHED;
+}

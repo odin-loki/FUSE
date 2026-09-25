@@ -13,6 +13,14 @@
 #elif defined(__APPLE__)
 #include <chrono>
 #include <sys/stat.h>
+#elif defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #else
 #include <sys/stat.h>
 #endif
@@ -50,12 +58,30 @@ u64 statModifiedNs(const std::string& pathStr, u64& outSize) {
     return static_cast<u64>(fileStat.st_mtimespec.tv_sec) * 1'000'000'000ull +
            static_cast<u64>(fileStat.st_mtimespec.tv_nsec);
 #endif
+#elif defined(_WIN32)
+    // FILETIME: 100 ns ticks since 1601-01-01 (UTF-8 path widened for non-ASCII project paths).
+    WIN32_FILE_ATTRIBUTE_DATA data{};
+    wchar_t widePath[MAX_PATH * 2];
+    const int converted = MultiByteToWideChar(CP_UTF8, 0, pathStr.c_str(), -1, widePath,
+                                              static_cast<int>(sizeof(widePath) / sizeof(widePath[0])));
+    if (converted <= 0 || GetFileAttributesExW(widePath, GetFileExInfoStandard, &data) == FALSE ||
+        (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0u) {
+        outSize = 0;
+        return 0;
+    }
+    outSize = (static_cast<u64>(data.nFileSizeHigh) << 32u) | data.nFileSizeLow;
+    const u64 ticks = (static_cast<u64>(data.ftLastWriteTime.dwHighDateTime) << 32u) |
+                      data.ftLastWriteTime.dwLowDateTime;
+    return ticks * 100ull;
 #else
+    (void)pathStr;
     outSize = 0;
     return 0;
 #endif
 }
 
+#if !defined(__linux__) && !defined(__APPLE__) && !defined(_WIN32)
+// Portable fallback: no OS mtime query, so the content hash stands in for lastModifiedNs.
 u64 contentHashNs(const std::string& content) {
     u64 hash = 2166136261u;
     for (unsigned char ch : content) {
@@ -64,6 +90,7 @@ u64 contentHashNs(const std::string& content) {
     }
     return hash;
 }
+#endif
 
 } // namespace
 
@@ -93,7 +120,7 @@ OsFileWatchStatus readOsFileWatchStatus(std::string_view path) {
         return status;
     }
 
-#if !defined(__linux__) && !defined(__APPLE__)
+#if !defined(__linux__) && !defined(__APPLE__) && !defined(_WIN32)
     status.lastModifiedNs = contentHashNs(status.content);
 #endif
 

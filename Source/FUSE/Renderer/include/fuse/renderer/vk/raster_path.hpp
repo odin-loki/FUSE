@@ -9,6 +9,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace fuse::renderer {
 
@@ -71,7 +72,14 @@ public:
     void* indexBufferHandle() const;
 
     /// Updates CPU stats from mirrored commands (GPU work lives in graph execute path).
+    /// Does not poll the shader watch: a rebuild here would destroy the pipeline the frame's
+    /// just-recorded command buffer references. Call `pollShaderReload` before recording.
     void updateStatsFromCommands(const RenderCommandList& commands);
+
+    /// Poll the watched SPIR-V files; on change reload the modules and rebuild the graphics
+    /// pipeline (after the device idles, so no in-flight frame still uses the old pipeline).
+    /// Call at frame start, before `vulkanEncodeContext()`. Returns true when a rebuild happened.
+    bool pollShaderReload();
 
     /// Legacy hook — stats only; real draws are encoded via `CommandBufferRecorder`.
     bool recordFrame(const RenderCommandList& commands);
@@ -80,11 +88,16 @@ public:
     /// the graphics pipeline stay. Zero size is rejected. Same size is a success no-op.
     bool resize(u32 width, u32 height);
 
+    /// Copy the offscreen colour target (R8G8B8A8, tightly packed rows) to `outRgba`.
+    /// Waits for the device to idle, then restores the tracked layout. Returns false in the
+    /// stub backend or before the targets exist (B2.11 triangle readback gate).
+    bool readbackColor(std::vector<u8>& outRgba) const;
+
 private:
     RasterPath() = default;
     bool initialize(VulkanDevice& device, const RasterPathDesc& desc);
     void shutdown();
-    void reloadPipelinesIfWatched();
+    bool reloadPipelinesIfWatched();
     bool createOffscreenTargets();
     void destroyOffscreenTargets();
 
@@ -113,6 +126,9 @@ private:
     void* m_colorMemory = nullptr;
     void* m_colorView = nullptr;
     void* m_depthImage = nullptr;
+    /// Current VkImageLayout of the color/depth targets, advanced by recorded barriers and passes.
+    mutable u32 m_colorLayout = 0; // VK_IMAGE_LAYOUT_UNDEFINED
+    mutable u32 m_depthLayout = 0;
     void* m_depthMemory = nullptr;
     void* m_depthView = nullptr;
     void* m_framebuffer = nullptr;

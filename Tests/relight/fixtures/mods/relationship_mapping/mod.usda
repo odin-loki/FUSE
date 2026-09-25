@@ -1,0 +1,17 @@
+#usda 1.0
+
+# RL-3.1 fixture: relationship targets and connections authored in a referenced layer map into the referencing
+# prim's namespace; targets outside the referenced prim cannot be mapped and are dropped with a warning. List-op
+# targets compose across the layers.
+def Xform "RootNode"
+{
+    def Xform "meshes"
+    {
+        def Xform "mesh_0000000000006001" (
+            prepend references = @./assets/lamp.usd@
+        )
+        {
+            prepend rel extra = </RootNode/meshes/mesh_0000000000006001/Bulb>
+        }
+    }
+}

@@ -3,6 +3,7 @@
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/narrowphase/friction.hpp>
 #include <fuse/physics/narrowphase/gjk.hpp>
+#include <fuse/physics/rotation.hpp>
 
 #include <cmath>
 
@@ -18,6 +19,15 @@ CollisionShapeType shapeType(const CollisionShapeSoA& shapes, u32 shapeIndex) {
 }
 
 u32 findShapeForBody(const CollisionShapeSoA& shapes, u32 bodyIndex, CollisionShapeType preferred) {
+    // Common layout: one shape per body, added in body order. Multi-shape bodies (adjacent
+    // shapes of the same body) take the scan below so `preferred` still wins.
+    if (bodyIndex < shapes.count() && shapes.bodyIndices[bodyIndex] == bodyIndex) {
+        const bool soleShape = (bodyIndex == 0u || shapes.bodyIndices[bodyIndex - 1u] != bodyIndex) &&
+                               (bodyIndex + 1u >= shapes.count() || shapes.bodyIndices[bodyIndex + 1u] != bodyIndex);
+        if (soleShape || static_cast<CollisionShapeType>(shapes.types[bodyIndex]) == preferred) {
+            return bodyIndex;
+        }
+    }
     for (u32 i = 0; i < shapes.count(); ++i) {
         if (shapes.bodyIndices[i] == bodyIndex &&
             static_cast<CollisionShapeType>(shapes.types[i]) == preferred) {
@@ -30,16 +40,6 @@ u32 findShapeForBody(const CollisionShapeSoA& shapes, u32 bodyIndex, CollisionSh
         }
     }
     return shapes.count();
-}
-
-ContactManifold flipContactBodies(ContactManifold manifold, u32 bodyA, u32 bodyB) {
-    if (!manifold.valid) {
-        return invalidContactManifold();
-    }
-    manifold.contactNormal = manifold.contactNormal * -1.f;
-    manifold.bodyA = bodyA;
-    manifold.bodyB = bodyB;
-    return manifold;
 }
 
 ContactManifold collideCapsuleAgainstBox(vec3 capsulePos, vec3 capsuleParams, vec3 boxPos, vec3 boxHalfExtents,
@@ -61,43 +61,6 @@ ContactManifold collideCapsuleAgainstBox(vec3 capsulePos, vec3 capsuleParams, ve
         }
     }
     return best;
-}
-
-ContactManifold collideCapsuleCapsule(vec3 posA, vec3 paramsA, vec3 posB, vec3 paramsB, u32 idxA, u32 idxB) {
-    const f32 halfA = std::max(0.f, paramsA.y);
-    const f32 halfB = std::max(0.f, paramsB.y);
-    const f32 yA0 = posA.y - halfA;
-    const f32 yA1 = posA.y + halfA;
-    const f32 yB0 = posB.y - halfB;
-    const f32 yB1 = posB.y + halfB;
-    const f32 overlapLo = std::max(yA0, yB0);
-    const f32 overlapHi = std::min(yA1, yB1);
-
-    vec3 pointA{};
-    vec3 pointB{};
-    if (overlapLo <= overlapHi) {
-        const f32 y = 0.5f * (overlapLo + overlapHi);
-        pointA = {posA.x, y, posA.z};
-        pointB = {posB.x, y, posB.z};
-    } else if (yA1 < yB0) {
-        pointA = {posA.x, yA1, posA.z};
-        pointB = {posB.x, yB0, posB.z};
-    } else {
-        pointA = {posA.x, yA0, posA.z};
-        pointB = {posB.x, yB1, posB.z};
-    }
-
-    return collideSphereSphere(pointA, paramsA.x, pointB, paramsB.x, idxA, idxB);
-}
-
-ContactManifold collideCapsulePlane(vec3 capsulePos, vec3 capsuleParams, vec3 planeNormal, f32 planeDistance,
-                                    u32 idxCapsule, u32 idxPlane) {
-    const vec3 normal = planeNormal.normalized();
-    const f32 halfHeight = std::max(0.f, capsuleParams.y);
-    const vec3 endA = {capsulePos.x, capsulePos.y - halfHeight, capsulePos.z};
-    const vec3 endB = {capsulePos.x, capsulePos.y + halfHeight, capsulePos.z};
-    const vec3 closest = endA.dot(normal) <= endB.dot(normal) ? endA : endB;
-    return collideSpherePlane(closest, capsuleParams.x, normal, planeDistance, idxCapsule, idxPlane);
 }
 
 ContactManifold collideHullPlane(vec3 hullPos, vec3 halfExtents, vec3 planeNormal, f32 planeDistance, u32 idxHull,
@@ -122,6 +85,9 @@ void writeBoxCorners(vec3 center, vec3 halfExtents, vec3 out[8]) {
 }
 
 bool hasShapeForBody(const CollisionShapeSoA& shapes, u32 bodyIndex) {
+    if (bodyIndex < shapes.count() && shapes.bodyIndices[bodyIndex] == bodyIndex) {
+        return true;
+    }
     for (u32 i = 0; i < shapes.count(); ++i) {
         if (shapes.bodyIndices[i] == bodyIndex) {
             return true;
@@ -130,200 +96,170 @@ bool hasShapeForBody(const CollisionShapeSoA& shapes, u32 bodyIndex) {
     return false;
 }
 
-ContactManifold dispatchShapePair(
+/// Re-labels a manifold computed with the bodies swapped (normal flipped to point B -> A).
+ContactManifold flipped(ContactManifold manifold, u32 bodyA, u32 bodyB) {
+    if (!manifold.valid) {
+        return invalidContactManifold();
+    }
+    manifold.contactNormal = manifold.contactNormal * -1.f;
+    manifold.bodyA = bodyA;
+    manifold.bodyB = bodyB;
+    return manifold;
+}
+
+quat bodyOrientation(const RigidBodySoA& bodies, u32 body) {
+    return body < bodies.orientations.size() ? bodies.orientations[body] : quat{};
+}
+
+ContactManifold dispatchShapePairRaw(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
-    const CollisionShapeSoA& shapes) {
+    const CollisionShapeSoA& shapes,
+    f32 margin) {
     const u32 shapeA = findShapeForBody(shapes, pair.bodyA, CollisionShapeType::Sphere);
     const u32 shapeB = findShapeForBody(shapes, pair.bodyB, CollisionShapeType::Sphere);
     if (shapeA >= shapes.count() || shapeB >= shapes.count()) {
         return invalidContactManifold();
     }
+    const ShapeInstance a{shapeType(shapes, shapeA), shapes.params[shapeA], shapes.scalars[shapeA],
+                          bodies.positions[pair.bodyA], bodyOrientation(bodies, pair.bodyA)};
+    const ShapeInstance b{shapeType(shapes, shapeB), shapes.params[shapeB], shapes.scalars[shapeB],
+                          bodies.positions[pair.bodyB], bodyOrientation(bodies, pair.bodyB)};
+    return collideShapes(a, b, pair.bodyA, pair.bodyB, margin);
+}
 
-    const CollisionShapeType typeA = shapeType(shapes, shapeA);
-    const CollisionShapeType typeB = shapeType(shapes, shapeB);
-    const vec3 posA = bodies.positions[pair.bodyA];
-    const vec3 posB = bodies.positions[pair.bodyB];
+} // namespace
 
-    if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Sphere) {
-        return collideSphereSphere(
-            posA,
-            shapes.params[shapeA].x,
-            posB,
-            shapes.params[shapeB].x,
-            pair.bodyA,
-            pair.bodyB);
+ContactManifold collideShapes(const ShapeInstance& shapeA, const ShapeInstance& shapeB, u32 a, u32 b, f32 margin) {
+    const CollisionShapeType typeA = shapeA.type;
+    const CollisionShapeType typeB = shapeB.type;
+    const vec3 posA = shapeA.position;
+    const vec3 posB = shapeB.position;
+    const quat rotA = shapeA.orientation;
+    const quat rotB = shapeB.orientation;
+    const vec3 paramsA = shapeA.params;
+    const vec3 paramsB = shapeB.params;
+
+    using T = CollisionShapeType;
+    const auto is = [&](T first, T second) { return typeA == first && typeB == second; };
+
+    if (is(T::Sphere, T::Sphere)) {
+        return collideSphereSphere(posA, paramsA.x, posB, paramsB.x, a, b, margin);
     }
-
-    if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Plane) {
-        return collideSpherePlane(
-            posA,
-            shapes.params[shapeA].x,
-            shapes.params[shapeB],
-            shapes.scalars[shapeB],
-            pair.bodyA,
-            pair.bodyB);
+    if (is(T::Sphere, T::Plane)) {
+        return collideSpherePlane(posA, paramsA.x, paramsB, shapeB.scalar, a, b, margin);
     }
-
-    if (typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Sphere) {
-        return collideSpherePlane(
-            posB,
-            shapes.params[shapeB].x,
-            shapes.params[shapeA],
-            shapes.scalars[shapeA],
-            pair.bodyB,
-            pair.bodyA);
+    if (is(T::Plane, T::Sphere)) {
+        return collideSpherePlane(posB, paramsB.x, paramsA, shapeA.scalar, b, a, margin);
     }
-
-    if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Box) {
-        return collideBoxSphere(
-            posA,
-            shapes.params[shapeA].x,
-            posB,
-            shapes.params[shapeB],
-            pair.bodyA,
-            pair.bodyB);
+    if (is(T::Box, T::Plane)) {
+        return collideOrientedBoxPlane(posA, rotA, paramsA, paramsB, shapeB.scalar, a, b, margin);
     }
-
-    if (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Sphere) {
-        const ContactManifold swapped = collideBoxSphere(
-            posB,
-            shapes.params[shapeB].x,
-            posA,
-            shapes.params[shapeA],
-            pair.bodyB,
-            pair.bodyA);
-        if (!swapped.valid) {
-            return invalidContactManifold();
+    if (is(T::Plane, T::Box)) {
+        return collideOrientedBoxPlane(posB, rotB, paramsB, paramsA, shapeA.scalar, b, a, margin);
+    }
+    if (is(T::Sphere, T::Box)) {
+        return collideOrientedBoxSphere(posA, paramsA.x, posB, rotB, paramsB, a, b, margin);
+    }
+    if (is(T::Box, T::Sphere)) {
+        return flipped(collideOrientedBoxSphere(posB, paramsB.x, posA, rotA, paramsA, b, a, margin), a, b);
+    }
+    if (is(T::Box, T::Box)) {
+        if (isIdentity(rotA) && isIdentity(rotB)) {
+            return collideBoxBox(posA, paramsA, posB, paramsB, a, b, margin);
         }
-
-        ContactManifold manifold = swapped;
-        manifold.contactNormal = swapped.contactNormal * -1.f;
-        manifold.bodyA = pair.bodyA;
-        manifold.bodyB = pair.bodyB;
-        return manifold;
+        return collideOrientedBoxBox(posA, rotA, paramsA, posB, rotB, paramsB, a, b, margin);
     }
 
-    if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::Capsule) {
-        return collideCapsuleSphere(
-            posA,
-            shapes.params[shapeA].x,
-            posB,
-            shapes.params[shapeB],
-            pair.bodyA,
-            pair.bodyB);
-    }
-
-    if (typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Sphere) {
-        const ContactManifold swapped = collideCapsuleSphere(
-            posB,
-            shapes.params[shapeB].x,
-            posA,
-            shapes.params[shapeA],
-            pair.bodyB,
-            pair.bodyA);
-        if (!swapped.valid) {
-            return invalidContactManifold();
+    // Capsules: segment along the body's local Y axis.
+    if (is(T::Sphere, T::Capsule)) {
+        if (isIdentity(rotB)) {
+            return collideCapsuleSphere(posA, paramsA.x, posB, paramsB, a, b, margin);
         }
-
-        ContactManifold manifold = swapped;
-        manifold.contactNormal = swapped.contactNormal * -1.f;
-        manifold.bodyA = pair.bodyA;
-        manifold.bodyB = pair.bodyB;
-        return manifold;
+        const vec3 half = capsuleHalfAxis(rotB, paramsB.y);
+        return collideCapsuleSegments(posA, posA, paramsA.x, posA, posB - half, posB + half, paramsB.x, posB, a, b,
+                                      margin);
+    }
+    if (is(T::Capsule, T::Sphere)) {
+        if (isIdentity(rotA)) {
+            return flipped(collideCapsuleSphere(posB, paramsB.x, posA, paramsA, b, a, margin), a, b);
+        }
+        const vec3 half = capsuleHalfAxis(rotA, paramsA.y);
+        return collideCapsuleSegments(posA - half, posA + half, paramsA.x, posA, posB, posB, paramsB.x, posB, a, b,
+                                      margin);
+    }
+    if (is(T::Capsule, T::Capsule)) {
+        const vec3 halfA = capsuleHalfAxis(rotA, paramsA.y);
+        const vec3 halfB = capsuleHalfAxis(rotB, paramsB.y);
+        return collideCapsuleSegments(posA - halfA, posA + halfA, paramsA.x, posA, posB - halfB, posB + halfB,
+                                      paramsB.x, posB, a, b, margin);
+    }
+    if (is(T::Capsule, T::Plane)) {
+        return collideCapsulePlane(posA, rotA, paramsA, paramsB, shapeB.scalar, a, b, margin);
+    }
+    if (is(T::Plane, T::Capsule)) {
+        return flipped(collideCapsulePlane(posB, rotB, paramsB, paramsA, shapeA.scalar, b, a, margin), a, b);
+    }
+    if (is(T::Capsule, T::Box)) {
+        return collideCapsuleBox(posA, rotA, paramsA, posB, rotB, paramsB, a, b, margin);
+    }
+    if (is(T::Box, T::Capsule)) {
+        return flipped(collideCapsuleBox(posB, rotB, paramsB, posA, rotA, paramsA, b, a, margin), a, b);
     }
 
-    if (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Box) {
-        return collideBoxBox(
-            posA,
-            shapes.params[shapeA],
-            posB,
-            shapes.params[shapeB],
-            pair.bodyA,
-            pair.bodyB);
+    if (is(T::Sphere, T::ConvexHull)) {
+        return collideBoxSphere(posA, paramsA.x, posB, paramsB, a, b, margin);
+    }
+    if (is(T::ConvexHull, T::Sphere)) {
+        return flipped(collideBoxSphere(posB, paramsB.x, posA, paramsA, b, a, margin), a, b);
+    }
+    if (is(T::Capsule, T::ConvexHull)) {
+        return collideCapsuleAgainstBox(posA, paramsA, posB, paramsB, a, b);
+    }
+    if (is(T::ConvexHull, T::Capsule)) {
+        return flipped(collideCapsuleAgainstBox(posB, paramsB, posA, paramsA, b, a), a, b);
+    }
+    if (is(T::ConvexHull, T::Plane)) {
+        return collideHullPlane(posA, paramsA, paramsB, shapeB.scalar, a, b);
+    }
+    if (is(T::Plane, T::ConvexHull)) {
+        return flipped(collideHullPlane(posB, paramsB, paramsA, shapeA.scalar, b, a), a, b);
     }
 
-    if (typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Capsule) {
-        return collideCapsuleCapsule(posA, shapes.params[shapeA], posB, shapes.params[shapeB], pair.bodyA,
-                                     pair.bodyB);
-    }
-
-    if (typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Box) {
-        return collideCapsuleAgainstBox(posA, shapes.params[shapeA], posB, shapes.params[shapeB], pair.bodyA,
-                                        pair.bodyB);
-    }
-
-    if (typeA == CollisionShapeType::Box && typeB == CollisionShapeType::Capsule) {
-        const ContactManifold swapped = collideCapsuleAgainstBox(
-            posB, shapes.params[shapeB], posA, shapes.params[shapeA], pair.bodyB, pair.bodyA);
-        return flipContactBodies(swapped, pair.bodyA, pair.bodyB);
-    }
-
-    if (typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::Plane) {
-        return collideCapsulePlane(posA, shapes.params[shapeA], shapes.params[shapeB], shapes.scalars[shapeB],
-                                   pair.bodyA, pair.bodyB);
-    }
-
-    if (typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::Capsule) {
-        const ContactManifold swapped =
-            collideCapsulePlane(posB, shapes.params[shapeB], shapes.params[shapeA], shapes.scalars[shapeA],
-                                pair.bodyB, pair.bodyA);
-        return flipContactBodies(swapped, pair.bodyA, pair.bodyB);
-    }
-
-    if (typeA == CollisionShapeType::Sphere && typeB == CollisionShapeType::ConvexHull) {
-        return collideBoxSphere(posA, shapes.params[shapeA].x, posB, shapes.params[shapeB], pair.bodyA,
-                                pair.bodyB);
-    }
-
-    if (typeA == CollisionShapeType::ConvexHull && typeB == CollisionShapeType::Sphere) {
-        const ContactManifold swapped = collideBoxSphere(
-            posB, shapes.params[shapeB].x, posA, shapes.params[shapeA], pair.bodyB, pair.bodyA);
-        return flipContactBodies(swapped, pair.bodyA, pair.bodyB);
-    }
-
-    if (typeA == CollisionShapeType::Capsule && typeB == CollisionShapeType::ConvexHull) {
-        return collideCapsuleAgainstBox(posA, shapes.params[shapeA], posB, shapes.params[shapeB], pair.bodyA,
-                                        pair.bodyB);
-    }
-
-    if (typeA == CollisionShapeType::ConvexHull && typeB == CollisionShapeType::Capsule) {
-        const ContactManifold swapped = collideCapsuleAgainstBox(
-            posB, shapes.params[shapeB], posA, shapes.params[shapeA], pair.bodyB, pair.bodyA);
-        return flipContactBodies(swapped, pair.bodyA, pair.bodyB);
-    }
-
-    if (typeA == CollisionShapeType::ConvexHull && typeB == CollisionShapeType::Plane) {
-        return collideHullPlane(posA, shapes.params[shapeA], shapes.params[shapeB], shapes.scalars[shapeB],
-                                pair.bodyA, pair.bodyB);
-    }
-
-    if (typeA == CollisionShapeType::Plane && typeB == CollisionShapeType::ConvexHull) {
-        const ContactManifold swapped =
-            collideHullPlane(posB, shapes.params[shapeB], shapes.params[shapeA], shapes.scalars[shapeA],
-                             pair.bodyB, pair.bodyA);
-        return flipContactBodies(swapped, pair.bodyA, pair.bodyB);
-    }
-
-    const bool convexA = typeA == CollisionShapeType::ConvexHull || typeA == CollisionShapeType::Box;
-    const bool convexB = typeB == CollisionShapeType::ConvexHull || typeB == CollisionShapeType::Box;
-    if (convexA && convexB &&
-        (typeA == CollisionShapeType::ConvexHull || typeB == CollisionShapeType::ConvexHull)) {
-        const vec3& halfA = shapes.params[shapeA];
-        const vec3& halfB = shapes.params[shapeB];
-        if (halfA.x <= 0.f || halfA.y <= 0.f || halfA.z <= 0.f || halfB.x <= 0.f || halfB.y <= 0.f ||
-            halfB.z <= 0.f) {
+    const bool convexA = typeA == T::ConvexHull || typeA == T::Box;
+    const bool convexB = typeB == T::ConvexHull || typeB == T::Box;
+    if (convexA && convexB && (typeA == T::ConvexHull || typeB == T::ConvexHull)) {
+        if (paramsA.x <= 0.f || paramsA.y <= 0.f || paramsA.z <= 0.f || paramsB.x <= 0.f || paramsB.y <= 0.f ||
+            paramsB.z <= 0.f) {
             return invalidContactManifold();
         }
 
         vec3 cornersA[8];
         vec3 cornersB[8];
-        writeBoxCorners(posA, shapes.params[shapeA], cornersA);
-        writeBoxCorners(posB, shapes.params[shapeB], cornersB);
-        return epa(cornersA, 8u, cornersB, 8u, pair.bodyA, pair.bodyB);
+        writeBoxCorners(posA, paramsA, cornersA);
+        writeBoxCorners(posB, paramsB, cornersB);
+        return epa(cornersA, 8u, cornersB, 8u, a, b);
     }
 
     return invalidContactManifold();
+}
+
+namespace {
+
+/// minSeparation is stated against the body centres, (pA - pB) . n >= minSeparation, so its
+/// violation equals the deepest penetration whatever the shapes. The solver constrains the
+/// individual contact points (with rotational terms); this centre form remains a diagnostic.
+ContactManifold dispatchShapePair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    f32 margin) {
+    ContactManifold manifold = dispatchShapePairRaw(pair, bodies, shapes, margin);
+    if (manifold.valid) {
+        const vec3 centres = bodies.positions[manifold.bodyA] - bodies.positions[manifold.bodyB];
+        manifold.minSeparation = centres.dot(manifold.contactNormal) + manifold.maxPenetration();
+    }
+    return manifold;
 }
 
 bool isShapeDegenerate(CollisionShapeType type, const vec3& params) {
@@ -601,10 +537,18 @@ ContactManifold detect_contacts_pair(
     const broadphase::CandidatePair& pair,
     const RigidBodySoA& bodies,
     const CollisionShapeSoA& shapes) {
+    return detect_contacts_pair(pair, bodies, shapes, 0.f);
+}
+
+ContactManifold detect_contacts_pair(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    f32 margin) {
     if (is_invalid_contact_pair(pair, bodies, shapes)) {
         return invalidContactManifold();
     }
-    return dispatchShapePair(pair, bodies, shapes);
+    return dispatchShapePair(pair, bodies, shapes, margin);
 }
 
 bool can_finalize_contact_manifold(const ContactManifold& manifold) {

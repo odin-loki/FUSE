@@ -1,0 +1,16 @@
+# External reference to the defaultPrim of assets/crate.usd; the referencing layer's opinions win.
+layers 2
+prim /RootNode/meshes/mesh_1111111111111111 type=Xform kind=component
+attr /RootNode/meshes/mesh_1111111111111111.asset_name = "crate"
+prim /RootNode/meshes/mesh_1111111111111111/geo type=Mesh specifier=def
+attr /RootNode/meshes/mesh_1111111111111111/geo.points = [(-1, -1, 0), (1, -1, 0), (1, 1, 0), (-1, 1, 0)]
+attr /RootNode/meshes/mesh_1111111111111111/geo.local_override = (9, 9, 9)
+attr /RootNode/meshes/mesh_1111111111111111/geo.xformOp:scale = (2, 2, 2)
+resolved /RootNode/meshes/mesh_1111111111111111/geo.inputs:texture assets/tex/crate.dds
+noprim /RootNode/meshes/mesh_1111111111111111/NotReferenced
+noprim /NotReferenced
+children / RootNode
+# The referenced layer's metadata does not change the stage's.
+defaultPrim RootNode
+replacement mesh 1111111111111111 meshes=/RootNode/meshes/mesh_1111111111111111/geo
+nodiag any

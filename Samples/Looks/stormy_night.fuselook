@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "kind": "fuse.look",
+  "name": "stormy_night",
+  "description": "Cold, desaturated night under storm clouds: moonlight LUT, heavy grain, strong vignette, lightning-ready bloom with chromatic fringing. Lightning is a gameplay override; a lantern-lit sphere volume warms the camp.",
+  "graph": ["ambientOcclusion", "depthOfField", "motionBlur", "bloom", "lensDirt", "lensFlare", "exposure", "toneMap",
+            "colorGrade", "sharpen", "chromaticAberration", "vignette", "filmGrain", "outputTransform"],
+  "base": {
+    "ambientOcclusion": { "ssaoStrength": 1.3, "ssilStrength": 0.6 },
+    "exposure": { "biasEv": -0.7, "minEv": -10, "maxEv": 4 },
+    "bloom": { "intensity": 0.09, "threshold": 0.9, "tint": [0.85, 0.92, 1.0] },
+    "lensDirt": { "enabled": true, "intensity": 0.9, "tint": [0.8, 0.9, 1.0] },
+    "toneMap": { "operator": "aces" },
+    "colorGrade": {
+      "temperatureK": 4800, "saturation": 0.7, "contrast": 1.15, "contrastPivot": 0.12,
+      "lift": [0.0, 0.004, 0.012], "gamma": [1.0, 1.0, 1.04],
+      "curve0": [0.0, 0.0, 0.01], "curve1": [0.22, 0.225, 0.24],
+      "lut": "luts/fuse_cold_moonlight.cube", "lutStrength": 1.0
+    },
+    "chromaticAberration": { "enabled": true, "intensity": 0.004 },
+    "vignette": { "intensity": 0.45, "falloff": 2.2, "roundness": 1.0, "color": [0.0, 0.005, 0.015] },
+    "filmGrain": { "intensity": 0.035, "response": 0.4 },
+    "depthOfField": { "enabled": false, "fStop": 2.0 }
+  },
+  "weather": [
+    { "name": "storm", "settings": { "colorGrade": { "saturation": 0.55 }, "lensDirt": { "intensity": 1.6 }, "motionBlur": { "shutterAngle": 220 } } },
+    { "name": "clearing", "settings": { "colorGrade": { "saturation": 0.85, "lutStrength": 0.6 }, "exposure": { "biasEv": -0.3 } } }
+  ],
+  "volumes": [
+    {
+      "name": "lantern_camp", "shape": "sphere", "center": [0.0, 1.0, 0.0], "radius": 8.0,
+      "falloff": 6.0, "priority": 5, "weight": 0.85,
+      "settings": { "colorGrade": { "temperatureK": 7600, "saturation": 0.9, "lut": null }, "vignette": { "intensity": 0.3 } }
+    }
+  ],
+  "overrides": [
+    { "name": "lightning", "settings": { "exposure": { "biasEv": 1.5 }, "bloom": { "intensity": 0.25 }, "colorGrade": { "temperatureK": 9500, "saturation": 0.4 } } }
+  ]
+}

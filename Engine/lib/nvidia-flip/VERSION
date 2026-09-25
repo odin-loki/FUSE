@@ -1,0 +1,25 @@
+# FUSE third-party pin: NVIDIA FLIP (image-difference evaluator), BSD-3-Clause.
+# FUSE asset plan W0.8 (docs/plans/FUSE_ASSET_PLAN.md §3.1, §5.4): golden render harness metric.
+# Checked by `fuse_lint vendored-pins` (ctest: fuse_lint_vendored_pins_nvidia_flip).
+#
+# NVlabs/flip publishes no git tags: version/tag carry the version the README title and
+# pyproject.toml declare at the pinned commit ("v1.7" / version = "1.7") because the pin format
+# requires them; `v1.7.0` is NOT an upstream git tag. The commit is the authoritative pin.
+# Vendored subset (upstream paths): LICENSE, README.md, src/cpp/FLIP.h (-> FLIP.h, the single-header
+# C++ implementation). Not vendored: the CUDA/Python/PyTorch front ends, the tool (stb/tinyexr),
+# images/, tests/. fuse_flip_version.h is FUSE's own record of the version (version_header).
+# Edits: none. To update: re-copy from the new commit and update every field and sha256 together.
+# sha256 is over the file with CRLF normalized to LF.
+name=nvidia-flip
+upstream=https://github.com/NVlabs/flip
+version=1.7.0
+tag=v1.7.0
+commit=b475eb4bf394ab877c42166c9eb0a84a02cc5b14
+retrieved=2026-09-25 (git clone --depth 1 of main at the commit, "Update to FLIP v1.7 (#44)", 2025-11-07)
+license=BSD-3-Clause
+license_file=LICENSE
+version_header=fuse_flip_version.h
+sha256:LICENSE=13b955078ffb4a3215757038ab2e5fcf0cc66349d0990faec9adba8ad034e578
+sha256:README.md=6be94bb2d73e5bc7d9fa2be22bcc2de47e193fa8ad565573d1914329bfbbc325
+sha256:FLIP.h=412b118db343a3a0d030104f17f46c1e3edc7455d2b83a7398a42e25befed104
+sha256:fuse_flip_version.h=5becaa7803f7aa8ab537b487b466b4fd910baf4eca8c12d50db0bd049ef9525c

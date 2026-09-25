@@ -1,5 +1,6 @@
 #include <fuse/renderer/command_buffer.hpp>
 #include <fuse/renderer/render_graph.hpp>
+#include <fuse/renderer/rg/legacy_barriers.hpp>
 
 #include <cstring>
 
@@ -11,6 +12,7 @@ namespace fuse::renderer {
 
 namespace {
 
+#if defined(FUSE_VULKAN_BACKEND)
 bool isRealVulkanCommandBuffer(void* nativeCommandBuffer) {
     return nativeCommandBuffer != nullptr && nativeCommandBuffer != reinterpret_cast<void*>(0x1);
 }
@@ -19,7 +21,6 @@ bool isDepthAttachmentLayout(RGImageLayout layout) {
     return layout == RGImageLayout::DepthAttachment;
 }
 
-#if defined(FUSE_VULKAN_BACKEND)
 void bindRasterBindlessDescriptorSets(VkCommandBuffer commandBuffer, const VkFrameEncodeContext& context) {
     if (context.bindlessDescriptorSet == nullptr || context.graphicsPipelineLayout == nullptr) {
         return;
@@ -29,6 +30,73 @@ void bindRasterBindlessDescriptorSets(VkCommandBuffer commandBuffer, const VkFra
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                             static_cast<VkPipelineLayout>(context.graphicsPipelineLayout), 0, 1,
                             &bindlessSet, 0, nullptr);
+}
+
+void layoutStageAccessMask(VkImageLayout layout, VkPipelineStageFlags& stage, VkAccessFlags& access) {
+    switch (layout) {
+    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+        stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        access = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        break;
+    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+        stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        break;
+    case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+        stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        access = VK_ACCESS_SHADER_READ_BIT;
+        break;
+    case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+        stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        access = VK_ACCESS_TRANSFER_READ_BIT;
+        break;
+    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+        stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        access = VK_ACCESS_TRANSFER_WRITE_BIT;
+        break;
+    case VK_IMAGE_LAYOUT_GENERAL:
+        stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+        access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        break;
+    default: // UNDEFINED / PRESENT_SRC: no prior access to make available
+        stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        access = 0;
+        break;
+    }
+}
+
+/// Transition `image` from its tracked layout (or `fallbackOld` when untracked) to `newLayout`,
+/// then advance the tracker. Emitted even when old == new so it still orders memory access.
+void transitionTrackedImage(VkCommandBuffer commandBuffer, void* image, u32* trackedLayout,
+                            VkImageLayout fallbackOld, VkImageLayout newLayout, VkImageAspectFlags aspect,
+                            u32 baseMip = 0, u32 levelCount = 1, u32 baseLayer = 0, u32 layerCount = 1,
+                            u32 srcQueueFamily = 0xFFFFFFFFu, u32 dstQueueFamily = 0xFFFFFFFFu) {
+    const VkImageLayout oldLayout =
+        trackedLayout != nullptr ? static_cast<VkImageLayout>(*trackedLayout) : fallbackOld;
+
+    VkPipelineStageFlags srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    VkAccessFlags srcAccess = 0;
+    VkPipelineStageFlags dstStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    VkAccessFlags dstAccess = 0;
+    layoutStageAccessMask(oldLayout, srcStage, srcAccess);
+    if (newLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR) {
+        layoutStageAccessMask(newLayout, dstStage, dstAccess);
+    }
+
+    // Recorded by the render graph module (the only place allowed to encode barriers).
+    rg::recordLegacyImageBarrier(commandBuffer, image, static_cast<u32>(oldLayout), static_cast<u32>(newLayout),
+                                 aspect, srcStage, srcAccess, dstStage, dstAccess, baseMip, levelCount, baseLayer,
+                                 layerCount, srcQueueFamily, dstQueueFamily);
+
+    if (trackedLayout != nullptr) {
+        *trackedLayout = static_cast<u32>(newLayout);
+    }
+}
+
+void setTrackedLayout(u32* trackedLayout, VkImageLayout layout) {
+    if (trackedLayout != nullptr) {
+        *trackedLayout = static_cast<u32>(layout);
+    }
 }
 #endif
 
@@ -64,7 +132,18 @@ void CommandBufferRecorder::reset() {
     m_vulkanPushConstantCount = 0;
     m_vulkanCopyImageCount = 0;
     m_vulkanBlitImageCount = 0;
+    m_vulkanPipelineBindCount = 0;
+    m_vulkanVertexBufferBindCount = 0;
+    m_vulkanIndexBufferBindCount = 0;
+    invalidateBindState();
     m_records.clear();
+}
+
+void CommandBufferRecorder::invalidateBindState() {
+    m_boundVertexBuffer = nullptr;
+    m_boundIndexBuffer = nullptr;
+    m_boundIndexType = UINT32_MAX;
+    m_boundMaterialId = UINT32_MAX;
 }
 
 void CommandBufferRecorder::setVulkanEncodeContext(const VkFrameEncodeContext* context) {
@@ -82,6 +161,7 @@ bool CommandBufferRecorder::beginRecording(void* nativeCommandBuffer) {
     m_vulkanRecordingComplete = false;
     m_insideRenderPass = false;
     m_activeRasterPass = false;
+    invalidateBindState();
 
 #if defined(FUSE_VULKAN_BACKEND)
     if (m_encodeContext != nullptr && m_encodeContext->active && isRealVulkanCommandBuffer(nativeCommandBuffer)) {
@@ -137,7 +217,10 @@ bool CommandBufferRecorder::shouldEncodeRasterPass(const char* passName) const {
     if (passName == nullptr) {
         return false;
     }
-    return std::strcmp(passName, "clear3d") == 0 || std::strcmp(passName, "sprites2d") == 0;
+    // "meshes" is the DrawList pass (populateRenderGraphFromDrawList); without it submitDrawList
+    // recorded draws on the CPU only and never encoded them.
+    return std::strcmp(passName, "clear3d") == 0 || std::strcmp(passName, "sprites2d") == 0 ||
+           std::strcmp(passName, "meshes") == 0;
 }
 
 void CommandBufferRecorder::encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLayout, u32 baseMip,
@@ -156,16 +239,23 @@ void CommandBufferRecorder::encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLa
     }
 
     const bool depthTransition = isDepthAttachmentLayout(from) || isDepthAttachmentLayout(to);
+    const bool presentTransition = from == RGImageLayout::PresentSrc || to == RGImageLayout::PresentSrc;
 
+    // Present layouts only apply to the acquired swapchain image; headless frames have none.
     void* barrierImage = nullptr;
-    if (depthTransition) {
-        barrierImage = m_encodeContext->depthImage != nullptr ? m_encodeContext->depthImage
-                                                              : m_encodeContext->barrierImage;
-    } else {
+    u32* trackedLayout = nullptr;
+    if (presentTransition) {
+        barrierImage = m_encodeContext->presentBarrierImage;
+        trackedLayout = m_encodeContext->presentImageLayout;
+    } else if (depthTransition) {
+        barrierImage = m_encodeContext->depthImage;
+        trackedLayout = m_encodeContext->depthImageLayout;
+    } else if (m_encodeContext->barrierImage != nullptr) {
         barrierImage = m_encodeContext->barrierImage;
-        if (barrierImage == nullptr && m_encodeContext->presentBarrierImage != nullptr) {
-            barrierImage = m_encodeContext->presentBarrierImage;
-        }
+        trackedLayout = m_encodeContext->barrierImageLayout;
+    } else {
+        barrierImage = m_encodeContext->presentBarrierImage;
+        trackedLayout = m_encodeContext->presentImageLayout;
     }
     if (barrierImage == nullptr) {
         return;
@@ -192,72 +282,14 @@ void CommandBufferRecorder::encodeVulkanPipelineBarrier(u32 fromLayout, u32 toLa
         }
     };
 
-    auto layoutStageAccess = [](RGImageLayout layout, VkPipelineStageFlags& stage, VkAccessFlags& access) {
-        stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        access = 0;
-        switch (layout) {
-        case RGImageLayout::ColorAttachment:
-            stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-            access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-            break;
-        case RGImageLayout::DepthAttachment:
-            stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-            access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-            break;
-        case RGImageLayout::ShaderReadOnly:
-            stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-            access = VK_ACCESS_SHADER_READ_BIT;
-            break;
-        case RGImageLayout::TransferSrc:
-            stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-            access = VK_ACCESS_TRANSFER_READ_BIT;
-            break;
-        case RGImageLayout::TransferDst:
-            stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-            access = VK_ACCESS_TRANSFER_WRITE_BIT;
-            break;
-        case RGImageLayout::PresentSrc:
-            stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-            access = 0;
-            break;
-        case RGImageLayout::General:
-            stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-            access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-            break;
-        default:
-            break;
-        }
-    };
-
-    VkPipelineStageFlags srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    VkAccessFlags srcAccess = 0;
-    VkPipelineStageFlags dstStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    VkAccessFlags dstAccess = 0;
-    if (from != RGImageLayout::Undefined) {
-        layoutStageAccess(from, srcStage, srcAccess);
+    const VkImageLayout newLayout = toVkLayout(to);
+    if (newLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
+        return; // Cannot transition into UNDEFINED.
     }
-    if (to != RGImageLayout::Undefined) {
-        layoutStageAccess(to, dstStage, dstAccess);
-    }
-
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = toVkLayout(from);
-    barrier.newLayout = toVkLayout(to);
-    barrier.srcQueueFamilyIndex = srcQueueFamily;
-    barrier.dstQueueFamilyIndex = dstQueueFamily;
-    barrier.image = static_cast<VkImage>(barrierImage);
-    barrier.subresourceRange.aspectMask =
-        depthTransition ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseMipLevel = baseMip;
-    barrier.subresourceRange.levelCount = levelCount == 0u ? 1u : levelCount;
-    barrier.subresourceRange.baseArrayLayer = baseLayer;
-    barrier.subresourceRange.layerCount = layerCount == 0u ? 1u : layerCount;
-    barrier.srcAccessMask = srcAccess;
-    barrier.dstAccessMask = dstAccess;
-
     auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
-    vkCmdPipelineBarrier(commandBuffer, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    transitionTrackedImage(commandBuffer, barrierImage, trackedLayout, toVkLayout(from), newLayout,
+                           depthTransition ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT, baseMip,
+                           levelCount, baseLayer, layerCount, srcQueueFamily, dstQueueFamily);
     ++m_vulkanPipelineBarrierCount;
 #else
     (void)fromLayout;
@@ -341,18 +373,8 @@ void CommandBufferRecorder::encodeVulkanBufferBarrier(u32 fromAccess, u32 toAcce
     accessStageMask(static_cast<RGResourceAccess>(fromAccess), srcStage, srcAccess);
     accessStageMask(static_cast<RGResourceAccess>(toAccess), dstStage, dstAccess);
 
-    VkBufferMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-    barrier.srcAccessMask = srcAccess;
-    barrier.dstAccessMask = dstAccess;
-    barrier.srcQueueFamilyIndex = srcQueueFamily;
-    barrier.dstQueueFamilyIndex = dstQueueFamily;
-    barrier.buffer = static_cast<VkBuffer>(m_encodeContext->barrierBuffer);
-    barrier.offset = 0;
-    barrier.size = VK_WHOLE_SIZE;
-
-    auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
-    vkCmdPipelineBarrier(commandBuffer, srcStage, dstStage, 0, 0, nullptr, 1, &barrier, 0, nullptr);
+    rg::recordLegacyBufferBarrier(m_nativeCommandBuffer, m_encodeContext->barrierBuffer, srcStage, srcAccess, dstStage,
+                                  dstAccess, srcQueueFamily, dstQueueFamily);
     ++m_vulkanBufferBarrierCount;
 #else
     (void)fromAccess;
@@ -381,10 +403,14 @@ void CommandBufferRecorder::encodePresentSwapchainPass() {
     renderPassInfo.framebuffer = static_cast<VkFramebuffer>(m_encodeContext->presentFramebuffer);
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = {m_encodeContext->presentWidth, m_encodeContext->presentHeight};
+    VkClearValue presentClear{};
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &presentClear;
 
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     encodeVulkanViewportAndScissor(m_encodeContext->presentWidth, m_encodeContext->presentHeight);
     vkCmdEndRenderPass(commandBuffer);
+    setTrackedLayout(m_encodeContext->presentImageLayout, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
     ++m_vulkanPresentRenderPassBeginCount;
 #else
     (void)0;
@@ -447,6 +473,8 @@ void CommandBufferRecorder::beginVulkanRenderPass() {
     encodeVulkanViewportAndScissor();
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       static_cast<VkPipeline>(m_encodeContext->graphicsPipeline));
+    ++m_vulkanPipelineBindCount;
+    invalidateBindState();
     bindRasterBindlessDescriptorSets(commandBuffer, *m_encodeContext);
 
     m_insideRenderPass = true;
@@ -465,6 +493,11 @@ void CommandBufferRecorder::endVulkanRenderPass() {
     auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
     vkCmdEndRenderPass(commandBuffer);
     m_insideRenderPass = false;
+    // Raster render pass final layouts (RenderPass::create).
+    if (m_encodeContext != nullptr) {
+        setTrackedLayout(m_encodeContext->barrierImageLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        setTrackedLayout(m_encodeContext->depthImageLayout, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+    }
 #else
     (void)0;
 #endif
@@ -478,10 +511,13 @@ void CommandBufferRecorder::encodeDraw(u32 instanceCount) {
     }
 
     auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
-    VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(m_encodeContext->vertexBuffer)};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-    bindRasterBindlessDescriptorSets(commandBuffer, *m_encodeContext);
+    if (m_boundVertexBuffer != m_encodeContext->vertexBuffer) {
+        VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(m_encodeContext->vertexBuffer)};
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+        m_boundVertexBuffer = m_encodeContext->vertexBuffer;
+        ++m_vulkanVertexBufferBindCount;
+    }
 
     const u32 instances = instanceCount > 0u ? instanceCount : 1u;
     vkCmdDraw(commandBuffer, 3, instances, 0, 0);
@@ -506,20 +542,32 @@ void CommandBufferRecorder::encodeDrawIndexed(u32 indexCount, u32 instanceCount,
     }
 
     auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
-    vkCmdBindIndexBuffer(commandBuffer, static_cast<VkBuffer>(resolvedIndex), 0,
-                         m_encodeContext->indexType == 1u ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16);
+    // Material-sorted draw lists share buffers and materials across runs of draws: only encode
+    // the state that actually changes (B3 gate: no redundant state changes).
+    const u32 indexType = m_encodeContext->indexType == 1u ? 1u : 0u;
+    if (m_boundIndexBuffer != resolvedIndex || m_boundIndexType != indexType) {
+        vkCmdBindIndexBuffer(commandBuffer, static_cast<VkBuffer>(resolvedIndex), 0,
+                             indexType == 1u ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16);
+        m_boundIndexBuffer = resolvedIndex;
+        m_boundIndexType = indexType;
+        ++m_vulkanIndexBufferBindCount;
+    }
 
-    if (resolvedVertex != nullptr) {
+    if (resolvedVertex != nullptr && m_boundVertexBuffer != resolvedVertex) {
         VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(resolvedVertex)};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+        m_boundVertexBuffer = resolvedVertex;
+        ++m_vulkanVertexBufferBindCount;
     }
 
-    if (m_encodeContext->graphicsPipelineLayout != nullptr) {
+    if (m_encodeContext->graphicsPipelineLayout != nullptr && m_boundMaterialId != materialId) {
         const u32 payload[4] = {materialId, 0u, 0u, 0u};
         vkCmdPushConstants(commandBuffer,
                            static_cast<VkPipelineLayout>(m_encodeContext->graphicsPipelineLayout),
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 16, payload);
+        m_boundMaterialId = materialId;
+        ++m_vulkanPushConstantCount;
     }
 
     const u32 instances = instanceCount > 0u ? instanceCount : 1u;
@@ -551,15 +599,22 @@ void CommandBufferRecorder::encodeDrawIndexedIndirect(void* indirectBuffer, u32 
     }
 
     auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
-    if (m_encodeContext->indexBuffer != nullptr) {
+    const u32 indexType = m_encodeContext->indexType == 1u ? 1u : 0u;
+    if (m_encodeContext->indexBuffer != nullptr &&
+        (m_boundIndexBuffer != m_encodeContext->indexBuffer || m_boundIndexType != indexType)) {
         vkCmdBindIndexBuffer(commandBuffer, static_cast<VkBuffer>(m_encodeContext->indexBuffer), 0,
-                             m_encodeContext->indexType == 1u ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16);
+                             indexType == 1u ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16);
+        m_boundIndexBuffer = m_encodeContext->indexBuffer;
+        m_boundIndexType = indexType;
+        ++m_vulkanIndexBufferBindCount;
     }
 
-    if (m_encodeContext->vertexBuffer != nullptr) {
+    if (m_encodeContext->vertexBuffer != nullptr && m_boundVertexBuffer != m_encodeContext->vertexBuffer) {
         VkBuffer vertexBuffers[] = {static_cast<VkBuffer>(m_encodeContext->vertexBuffer)};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+        m_boundVertexBuffer = m_encodeContext->vertexBuffer;
+        ++m_vulkanVertexBufferBindCount;
     }
 
     const u32 resolvedDrawCount = drawCount > 0u ? drawCount : 1u;
@@ -1154,18 +1209,41 @@ void CommandBufferRecorder::encodeCompositePass(float blend) {
 
     auto commandBuffer = static_cast<VkCommandBuffer>(m_nativeCommandBuffer);
 
+    // Composite samples raster color/depth and the CUDA interop image through the bindless heap,
+    // whose descriptors are written with SHADER_READ_ONLY_OPTIMAL.
+    const VkImageLayout sampled = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    if (m_encodeContext->barrierImage != nullptr) {
+        transitionTrackedImage(commandBuffer, m_encodeContext->barrierImage, m_encodeContext->barrierImageLayout,
+                               VK_IMAGE_LAYOUT_UNDEFINED, sampled, VK_IMAGE_ASPECT_COLOR_BIT);
+    }
+    if (m_encodeContext->depthImage != nullptr && m_encodeContext->depthTextureBindlessIndex != UINT32_MAX) {
+        transitionTrackedImage(commandBuffer, m_encodeContext->depthImage, m_encodeContext->depthImageLayout,
+                               VK_IMAGE_LAYOUT_UNDEFINED, sampled, VK_IMAGE_ASPECT_DEPTH_BIT);
+    }
+    if (m_encodeContext->cudaImage != nullptr && m_encodeContext->cudaImageLayout != nullptr &&
+        *m_encodeContext->cudaImageLayout != static_cast<u32>(sampled)) {
+        transitionTrackedImage(commandBuffer, m_encodeContext->cudaImage, m_encodeContext->cudaImageLayout,
+                               VK_IMAGE_LAYOUT_UNDEFINED, sampled, VK_IMAGE_ASPECT_COLOR_BIT);
+    }
+
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = static_cast<VkRenderPass>(m_encodeContext->compositeRenderPass);
     renderPassInfo.framebuffer = static_cast<VkFramebuffer>(m_encodeContext->compositeFramebuffer);
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = {m_encodeContext->compositeWidth, m_encodeContext->compositeHeight};
+    VkClearValue compositeClear{};
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &compositeClear;
 
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     encodeVulkanViewportAndScissor(m_encodeContext->compositeWidth, m_encodeContext->compositeHeight);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       static_cast<VkPipeline>(m_encodeContext->compositePipeline));
+    ++m_vulkanPipelineBindCount;
+    // Composite binds its own pipeline layout, push constants and vertex buffer.
+    invalidateBindState();
 
     const VkPipelineLayout pipelineLayout =
         static_cast<VkPipelineLayout>(m_encodeContext->compositePipelineLayout);
@@ -1193,6 +1271,11 @@ void CommandBufferRecorder::encodeCompositePass(float blend) {
     vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
+    if (m_encodeContext->compositeTargetsSwapchain) {
+        setTrackedLayout(m_encodeContext->presentImageLayout, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+    } else {
+        setTrackedLayout(m_encodeContext->compositeTargetLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    }
     ++m_vulkanCompositeDrawCount;
 #else
     (void)blend;

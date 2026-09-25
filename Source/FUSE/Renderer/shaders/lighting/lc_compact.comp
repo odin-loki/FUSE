@@ -1,0 +1,23 @@
+#version 460
+// WP-2.1 "light.compact": one thread per cluster copies its fixed-capacity list to the flat light list
+// at its grid offset: the oracle's clustered_kernel::CompactKernel. GLSL twin of lc_compact.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "lc_includes.glsl"
+
+layout(local_size_x = 64) in;
+
+void main() {
+    const FuseLcFrame F = fuse_lc_frame();
+    const uint c = gl_GlobalInvocationID.x;
+    if (c >= F.clusterCount) {
+        return;
+    }
+    FuseLcWordsRef grid = FuseLcWordsRef(F.grid);
+    const uint offset = grid.v[c * 2u];
+    const uint count = grid.v[c * 2u + 1u];
+    FuseLcWordsRef src = FuseLcWordsRef(F.clusterSlots + uint64_t(c) * uint64_t(F.capacity) * 4ul);
+    FuseLcWordsRef dst = FuseLcWordsRef(F.lightList);
+    for (uint i = 0u; i < count; ++i) {
+        dst.v[offset + i] = src.v[i];
+    }
+}

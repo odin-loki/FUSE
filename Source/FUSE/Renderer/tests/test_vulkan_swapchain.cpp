@@ -20,7 +20,7 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
-void expectEq(fuse::u32 actual, fuse::u32 expected, const char* message) {
+[[maybe_unused]] void expectEq(fuse::u32 actual, fuse::u32 expected, const char* message) {
     if (actual != expected) {
         std::fprintf(stderr, "FAIL: %s (got %u, expected %u)\n", message, actual, expected);
         ++g_failures;

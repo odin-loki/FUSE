@@ -1,0 +1,26 @@
+#usda 1.0
+(
+    subLayers = [
+        @./anim.usd@
+    ]
+    startTimeCode = 0
+    endTimeCode = 10
+    timeCodesPerSecond = 30
+)
+
+# RL-3.1 fixture: time samples (the strongest layer with samples wins as a whole), value blocks and defaults
+# next to samples.
+over "RootNode"
+{
+    over "lights"
+    {
+        over "light_0000000000007001"
+        {
+            float inputs:intensity.timeSamples = {
+                0: 1,
+                10: 2,
+            }
+            float inputs:radius = None
+        }
+    }
+}

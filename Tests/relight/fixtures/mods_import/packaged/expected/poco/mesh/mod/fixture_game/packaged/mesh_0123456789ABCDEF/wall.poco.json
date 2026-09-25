@@ -1,0 +1,70 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "mesh",
+  "id": "mod/fixture_game/packaged/mesh_0123456789ABCDEF/wall",
+  "name": "wall",
+  "units": {
+    "length": "game",
+    "metersPerUnit": null,
+    "up": "+Z",
+    "handedness": "right"
+  },
+  "payload": {
+    "streams": [
+      {
+        "semantic": "Position",
+        "format": "F32x3",
+        "data": {
+          "sha256": "956099973bbf7ab1a1f77cc358e4c4064038225cedad218ef1c5e1b2b227b409",
+          "size": 60,
+          "media": "fuse/mesh-stream"
+        }
+      }
+    ],
+    "indices32": {
+      "sha256": "fe78c65211dd0b56a97024fb61111e686ef1fe054aa132ba58e2891ac496f1ee",
+      "size": 24,
+      "media": "fuse/mesh-stream"
+    },
+    "submeshes": [
+      {
+        "indexOffset": 0,
+        "indexCount": 6,
+        "materialSlot": "poco:mod/fixture_game/packaged/RootNode/meshes/mesh_0123456789ABCDEF/Looks/WallMaterial",
+        "subset": ""
+      }
+    ],
+    "bounds": [0, 0, 0, 6, 0, 3],
+    "skeletonId": "",
+    "lodIds": [],
+    "relight": {
+      "remix_hash": "0123456789ABCDEF",
+      "double_sided": false,
+      "left_handed": false,
+      "face_corner_vertices": false,
+      "uv_primvar": "",
+      "influences": 0
+    }
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:packaged"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "packaged",
+      "stage": "mod.usda",
+      "prim": "/RootNode/meshes/mesh_0123456789ABCDEF/wall",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "LicenseRef-ThirdPartyMod-packaged",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

@@ -1,0 +1,21 @@
+#version 460
+// WP-3.2 "vsm.local_clear": vkCmdDispatchIndirect over the local render list (one 16 x 16 workgroup
+// per page, 8 x 8 texels per thread): writes localClear (float bits of 1.0) into the page's texels of
+// the local atlas before vsm.local_raster. GLSL twin of vsm_local_clear.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "vsm_raster_common.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+void main() {
+    FuseVsmShadowRef S = fuse_vsmr_shadow();
+    const uint page = FUSE_VSMR_WORDS(S.workHandle)[FUSE_VSMR_WORD_LOCAL_LIST + gl_WorkGroupID.x * 2u + 1u];
+    const ivec2 origin = ivec2((page % S.localPagesX) * 128u, (page / S.localPagesX) * 128u) + ivec2(gl_LocalInvocationID.xy * 8u);
+    const uint image = fuse_handle_index(S.localPool);
+    const uvec4 value = uvec4(S.localClear, 0u, 0u, 0u);
+    for (int y = 0; y < 8; ++y) {
+        for (int x = 0; x < 8; ++x) {
+            imageStore(fuse_vsmr_images[image], origin + ivec2(x, y), value);
+        }
+    }
+}

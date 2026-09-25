@@ -21,10 +21,25 @@ namespace fuse::editor {
 /// Headless property inspector model (B6.6) — Qt widgets deferred to `fuse_editor`.
 class PropertyInspector {
 public:
+    /// One labelled, formatted field row of a component section.
+    struct Field {
+        std::string name;
+        std::string value;
+    };
+
     struct ComponentSection {
         std::string componentName;
         u32 exposedFieldCount = 0;
+        std::vector<Field> fields{};
+        /// True when no typed field layout is known for the component (module-registered type):
+        /// the section then shows its size and raw bytes read-only.
+        bool generic = false;
     };
+
+    /// Build the section for one component instance given its registered name, type size and
+    /// raw bytes (type-erased; used for every `ecs::ComponentTypes` entry the entity carries).
+    [[nodiscard]] static ComponentSection describeComponent(const char* componentName, usize size,
+                                                            const void* data);
 
     void sync(const EditorState& state, EditorScene& scene);
     /// Bind the inspector to a `runtimeScene` entity selected by index (P5).
@@ -41,6 +56,17 @@ public:
 
     bool setTransformPosition(const ecs::vec3& position, EditorScene& scene, CommandStack& cmds);
     bool setSdfBlendAlpha(f32 alpha, EditorScene& scene, CommandStack& cmds);
+    /// SDF primitive type edit (`sdf.shape` = type + params, undoable via the editor command
+    /// apply path). Params the new type needs but the old one left at zero are filled from the
+    /// old shape's size (`sdfParamsForType`), so e.g. Sphere -> Box keeps a same-size box.
+    bool setSdfType(ecs::SDFPrimitive type, EditorScene& scene, CommandStack& cmds);
+
+    /// Params for switching `params` (authored for `from`) to primitive `to`.
+    [[nodiscard]] static ecs::vec3 sdfParamsForType(ecs::SDFPrimitive from, ecs::SDFPrimitive to,
+                                                    const ecs::vec3& params);
+    /// "type;x,y,z" text used by the `sdf.shape` command (round-trip float precision).
+    [[nodiscard]] static std::string formatSdfShape(ecs::SDFPrimitive type, const ecs::vec3& params);
+    [[nodiscard]] static bool parseSdfShape(const std::string& text, ecs::SDFPrimitive& type, ecs::vec3& params);
     bool setDirectionalIntensity(f32 intensity, EditorScene& scene, CommandStack& cmds);
     bool setSpotIntensity(f32 intensity, EditorScene& scene, CommandStack& cmds);
 
@@ -55,7 +81,6 @@ public:
                               CommandStack& cmds);
 
 private:
-    void appendSectionIfPresent(const char* componentName, ecs::EntityID id, EditorScene& scene);
 
     ecs::EntityID m_target = ecs::EntityID::null();
     std::vector<ComponentSection> m_sections;

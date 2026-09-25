@@ -84,6 +84,10 @@ public:
     void postFromUi(EditorCommand command);
     void gameTick();
     void setLoadedProject(std::string project);
+    /// Clear the scene for a project switch (game thread; applied by the `project.root` command
+    /// when the root changes): stops PIE, drops undo / command history and selection, and empties
+    /// the editor registry + runtime scene so the new project's world loads into a clean scene.
+    void resetSceneForProjectOpen();
     void setSelectedAiTreeProfileId(u32 profileId);
     void setSelectedAiAgentIndex(u32 agentIndex);
     void setAiAgentEntityBinding(u32 agentIndex, Handle<Object> entity);
@@ -110,8 +114,10 @@ private:
 
     CommandQueue m_queue;
     CommandStack m_commandStack;
-    UndoStack m_undoStack;
+    // Scene before undo stack: commands hold registry references and release reserved entity
+    // slots in their destructors, so the registry must be destroyed after the stack.
     EditorScene m_editorScene;
+    UndoStack m_undoStack;
     EditorState m_state;
     scene::Scene m_runtimeScene;
     PlaySession m_playSession;

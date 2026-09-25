@@ -1,0 +1,19 @@
+# FUSE toolchain pin: Slang shader compiler (slangc), download pin ONLY. Nothing from Slang is
+# vendored or committed: cmake/FuseSlang.cmake downloads the release archive below at configure
+# time, verifies its sha256, and unpacks it into a cache directory outside the source tree
+# (default ~/.cache/fuse/slang/<version>, %LOCALAPPDATA%\fuse\slang\<version> on Windows; override
+# with -DFUSE_SLANG_CACHE_DIR=... or point -DFUSE_SLANGC=... at an existing slangc).
+# Adoption decision: docs/unification/RENDERER-EXECUTION.md §8 (1) and WP-0.5.
+# To update: bump version/tag, download both archives from the release page, and replace both
+# download_sha256 values (sha256sum of the archive as downloaded). Keep the two in sync.
+name=Slang
+upstream=https://github.com/shader-slang/slang
+version=2026.18.2
+tag=v2026.18.2
+retrieved=2026-09-23 (GitHub release assets)
+license=Apache-2.0 WITH LLVM-exception
+license_file=LICENSE (inside the archive)
+download:linux-x86_64=slang-2026.18.2-linux-x86_64.tar.gz
+download_sha256:linux-x86_64=8a097d4365e1cab10265d0b0d77b461b5d30576f99ddc0521a35723c34cad816
+download:windows-x86_64=slang-2026.18.2-windows-x86_64.zip
+download_sha256:windows-x86_64=747602aec6b3623658d55fea87492d71828e15d16802d7941204fde418ceee8e

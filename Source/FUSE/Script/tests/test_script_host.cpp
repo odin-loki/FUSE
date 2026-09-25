@@ -1,3 +1,4 @@
+#include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/script/script_bind.hpp>
@@ -69,7 +70,7 @@ void testLoadStringAndFileStubs() {
     expectTrue(string_result.ok(), "load_string succeeds");
     expectTrue(host.vm().loaded_chunk_count() == 1u, "load_string records one chunk");
 
-    const auto missing_file = host.load_file("/tmp/fuse_script_missing_b73.lua");
+    const auto missing_file = host.load_file(fuse::test::tempPath("fuse_script_missing_b73.lua").c_str());
     expectTrue(!missing_file.ok(), "missing file load fails");
     expectTrue(missing_file.status == fuse::script::ScriptLoadStatus::FileNotFound,
                "missing file reports FileNotFound");

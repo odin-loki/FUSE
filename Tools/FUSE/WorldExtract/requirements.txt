@@ -1,0 +1,18 @@
+# FUSE WorldExtract python dependencies. Every package is OSI-licensed (licence in the comment).
+# Versions are the ones the CPU test was run with (2026-09-23); newer minor versions should work.
+#
+#   core  (this file)            : extract.py on CPU + the fuse_world_extract_synthetic ctest
+#   gpu   (requirements-gpu.txt) : monocular depth, MapAnything poses, gsplat splats (CUDA)
+#   world model                  : Matrix-Game 2.0's own environment (see README: 3090 setup)
+#
+# pip install -r requirements.txt            (core)
+# pip install -r requirements-gpu.txt        (core + gpu)
+
+# ---- core -------------------------------------------------------------------------------------
+numpy>=2.0                        # BSD-3-Clause
+opencv-python-headless>=4.9       # Apache-2.0 (OpenCV >= 4.5)
+scipy>=1.12                       # BSD-3-Clause
+open3d>=0.19                      # MIT         (TSDF VoxelBlockGrid, mesh clean-up, decimation)
+pycolmap>=4.0                     # BSD-3-Clause (COLMAP 4.x: SIFT, matching, incremental + global/GLOMAP)
+xatlas>=0.0.9                     # MIT         (UV atlas; optional: without it --texture vertex)
+pygltflib>=1.16                   # MIT         (only used by the test to validate the .glb)

@@ -1,8 +1,10 @@
 #include <fuse/renderer/vk/instance.hpp>
+#include <fuse/renderer/vk/loader.hpp>
 
 #include <fuse/platform/window_wsi.hpp>
 
 #include <cstring>
+#include <mutex>
 #include <utility>
 
 #if defined(FUSE_VULKAN_BACKEND)
@@ -13,17 +15,32 @@ namespace fuse::renderer {
 
 namespace {
 
+std::mutex& validationMutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+VulkanValidationCounters& validationCounters() {
+    static VulkanValidationCounters counters;
+    return counters;
+}
+
 #if defined(FUSE_VULKAN_BACKEND)
 VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
                                              VkDebugUtilsMessageTypeFlagsEXT type,
                                              const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
                                              void* userData) {
-    (void)severity;
     (void)type;
     (void)userData;
-    if (callbackData != nullptr && callbackData->pMessage != nullptr) {
-        // Validation output is captured by CI logs when layers are present.
-        (void)callbackData->pMessage;
+    std::lock_guard<std::mutex> lock(validationMutex());
+    VulkanValidationCounters& counters = validationCounters();
+    if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0) {
+        ++counters.errors;
+        if (callbackData != nullptr && callbackData->pMessage != nullptr) {
+            counters.lastError = callbackData->pMessage;
+        }
+    } else if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0) {
+        ++counters.warnings;
     }
     return VK_FALSE;
 }
@@ -39,6 +56,28 @@ bool layerAvailable(const char* name) {
         }
     }
     return false;
+}
+
+/// Highest API version the renderer is written against (1.4 when the headers know it, else 1.3),
+/// clamped to what the loader implements (vkEnumerateInstanceVersion) so core entry points resolve
+/// through the loader's trampolines. Never below 1.2: a 1.2 loader still gets an instance, and
+/// device selection then rejects every device unless the FUSE_VK_ALLOW_1_2 escape is set.
+u32 requestedInstanceApiVersion() {
+#if defined(VK_API_VERSION_1_4)
+    u32 wanted = VK_API_VERSION_1_4;
+#else
+    u32 wanted = VK_API_VERSION_1_3;
+#endif
+    u32 loader = VK_API_VERSION_1_0;
+    if (vkEnumerateInstanceVersion(&loader) != VK_SUCCESS) {
+        loader = VK_API_VERSION_1_0;
+    }
+    // Compare major.minor only (VkApplicationInfo::apiVersion patch is ignored).
+    const u32 loaderMinor = VK_MAKE_API_VERSION(0, VK_API_VERSION_MAJOR(loader), VK_API_VERSION_MINOR(loader), 0);
+    if (loaderMinor < wanted) {
+        wanted = loaderMinor < VK_API_VERSION_1_2 ? VK_API_VERSION_1_2 : loaderMinor;
+    }
+    return wanted;
 }
 
 bool extensionAvailable(const char* name) {
@@ -69,6 +108,16 @@ bool containsExtensionName(const std::vector<const char*>& list, const char* nam
 
 } // namespace
 
+VulkanValidationCounters vulkanValidationCounters() {
+    std::lock_guard<std::mutex> lock(validationMutex());
+    return validationCounters();
+}
+
+void resetVulkanValidationCounters() {
+    std::lock_guard<std::mutex> lock(validationMutex());
+    validationCounters() = VulkanValidationCounters{};
+}
+
 bool VulkanInstanceInfo::instanceHasExtension(const char* name) const {
     return containsExtensionName(enabledExtensions, name);
 }
@@ -91,6 +140,12 @@ void* VulkanInstance::nativeHandle() const {
 
 bool VulkanInstance::initialize(const VulkanInstanceDesc& desc) {
 #if defined(FUSE_VULKAN_BACKEND)
+    // fuse_rhi does not link the loader; volk opens it at run time (vk/loader.hpp).
+    if (!vkloader::initialize()) {
+        m_info.mode = VulkanBackendMode::Stub;
+        m_info.message = "Vulkan loader library not found (volk) — falling back to stub semantics";
+        return false;
+    }
     m_info.mode = VulkanBackendMode::Headless;
 
     VkApplicationInfo appInfo{};
@@ -99,7 +154,7 @@ bool VulkanInstance::initialize(const VulkanInstanceDesc& desc) {
     appInfo.applicationVersion = desc.appVersion;
     appInfo.pEngineName = "FUSE";
     appInfo.engineVersion = VK_MAKE_VERSION(0, 1, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_2;
+    appInfo.apiVersion = requestedInstanceApiVersion();
 
     std::vector<const char*> extensions;
     if (extensionAvailable(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
@@ -157,20 +212,26 @@ bool VulkanInstance::initialize(const VulkanInstanceDesc& desc) {
         return false;
     }
 
+    // Load the instance-level table (and loader trampolines for device entry points) before any
+    // other call on this instance.
+    vkloader::registerInstance(instance);
     m_handle = instance;
     m_info.valid = true;
     m_info.apiVersion = appInfo.apiVersion;
-    m_info.enabledExtensions = extensions;
-    m_info.enabledLayers = layers;
+    // Moved, not copied: the locals are dead after vkCreateInstance (and copying the 0/1-element
+    // layer vector trips GCC 13's -Warray-bounds false positive in vector::operator=).
+    const bool validationEnabled = !layers.empty();
+    m_info.enabledExtensions = std::move(extensions);
+    m_info.enabledLayers = std::move(layers);
     if (validationRequested && !validationAvailable) {
         m_info.message = "Instance ready (validation layers unavailable — CI-safe stub path)";
-    } else if (!layers.empty()) {
+    } else if (validationEnabled) {
         m_info.message = "Instance ready with validation layers";
     } else {
         m_info.message = "Instance ready (validation disabled)";
     }
 
-    if (extensionAvailable(VK_EXT_DEBUG_UTILS_EXTENSION_NAME) && !layers.empty()) {
+    if (extensionAvailable(VK_EXT_DEBUG_UTILS_EXTENSION_NAME) && validationEnabled) {
         auto vkCreateDebugUtilsMessengerEXT =
             reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
                 vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT"));
@@ -221,6 +282,7 @@ void VulkanInstance::shutdown() {
     }
 
     vkDestroyInstance(instance, nullptr);
+    vkloader::unregisterInstance(instance);
     m_handle = nullptr;
 #endif
 }

@@ -14,6 +14,11 @@
 
 namespace fuse::editor {
 
+bool viewportHandoffSurfaceOwnedBy(const ViewportSwapchainHandoff& handoff, const void* vkInstance) {
+    return handoff.nativeSurface != nullptr && !handoff.qtStubSurface && vkInstance != nullptr &&
+           handoff.qtVkInstance == vkInstance;
+}
+
 ViewportSwapchainWiringResult wireExternalSwapchainFromHandoff(fuse::renderer::RhiContext& context,
                                                                ViewportSwapchainHandoff& handoff) {
     ViewportSwapchainWiringResult result{};
@@ -33,6 +38,19 @@ ViewportSwapchainWiringResult wireExternalSwapchainFromHandoff(fuse::renderer::R
         result.attempted = true;
         result.fellBackToHeadless = true;
         result.note = handoff.handoffSource != nullptr ? handoff.handoffSource : "qt_winid_stub_not_vk_surface";
+        handoff.pending = false;
+        handoff.consumed = true;
+        return result;
+    }
+
+    const fuse::renderer::VulkanInstance* instance = context.bootstrap().instance();
+    const void* vkInstance = instance != nullptr ? instance->nativeHandle() : nullptr;
+    if (!viewportHandoffSurfaceOwnedBy(handoff, vkInstance)) {
+        // Querying a surface from another VkInstance (or a placeholder handle) is undefined
+        // behaviour — with VK_KHR_surface enabled (any display) the loader dereferences it.
+        result.attempted = true;
+        result.fellBackToHeadless = true;
+        result.note = "external surface not created on this VkInstance — headless path";
         handoff.pending = false;
         handoff.consumed = true;
         return result;
@@ -88,6 +106,10 @@ void syncHybridBootstrapFromConsumedHandoff(fuse::hybrid::HybridRendererBootstra
     fuse::renderer::RhiContext* context = hybrid.rendererBootstrap().rhiContext();
     if (context == nullptr) {
         return;
+    }
+    const fuse::renderer::VulkanInstance* instance = context->bootstrap().instance();
+    if (!viewportHandoffSurfaceOwnedBy(handoff, instance != nullptr ? instance->nativeHandle() : nullptr)) {
+        return; // foreign / placeholder surface: keep the hybrid on its headless swapchain
     }
 
     fuse::renderer::SwapchainDesc desc = handoff.swapchainDesc;

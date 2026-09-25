@@ -64,7 +64,7 @@ ViewportSwapchainRecreateResult requestViewportSwapchainRecreate(
 }
 
 ViewportSwapchainRecreateResult applyViewportPendingSwapchainRecreate(
-    fuse::renderer::RhiContext& context, std::unique_ptr<fuse::renderer::PresentPath>& presentPath) {
+    [[maybe_unused]] fuse::renderer::RhiContext& context, std::unique_ptr<fuse::renderer::PresentPath>& presentPath) {
     ViewportSwapchainRecreateResult result{};
 
 #if defined(FUSE_VULKAN_BACKEND)

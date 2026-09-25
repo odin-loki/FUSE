@@ -22,10 +22,13 @@ void AudioEngine::init(const AudioDesc& desc) {
 
 void AudioEngine::destroy() {
     m_backend.shutdown();
+    m_entitySources.clear();
     m_clips = HandleMap<AudioClip>{};
     m_reverbZones.clear();
     m_mixBuffer.clear();
     m_dryBuffer.clear();
+    m_wetBuffer.clear();
+    m_mixer.clear_one_shots();
     m_cpuReverb.reset();
     m_initialized = false;
 }
@@ -50,26 +53,10 @@ void AudioEngine::update(AudioRegistry& registry, float dt) {
                                              listener->up.z);
     }
 
-    for (EntityId entity : registry.source_entities()) {
-        AudioSource* source = registry.find_source(entity);
-        if (source == nullptr || !source->playing || source->paused) {
-            continue;
-        }
-
-        const AudioClip* clip = m_clips.get(source->desc.clip);
-        if (clip == nullptr) {
-            continue;
-        }
-
-        source->play_head += dt * source->desc.pitch;
-        if (source->play_head * clip->sample_rate >= static_cast<float>(clip->frame_count())) {
-            if (source->desc.looping) {
-                source->play_head = 0.f;
-            } else {
-                source->playing = false;
-                source->play_head = 0.f;
-            }
-        }
+    // Play heads follow the sample clock (frames rendered), not the caller's dt, so consecutive
+    // buffers are sample-continuous.
+    for (u32 retired : m_mixer.advance(registry, m_clips, frames)) {
+        m_backend.destroy_source(retired);
     }
 }
 
@@ -78,15 +65,32 @@ void AudioEngine::play_at(Handle<AudioClip> clip, const Vec3& position, float vo
         return;
     }
 
-    const u32 source_id = m_backend.create_source();
-    m_backend.set_source_position(source_id, position.x, position.y, position.z);
-    m_backend.set_source_gain(source_id, volume);
-    m_backend.play_source(source_id);
-    (void)pitch;
+    OneShotVoice voice;
+    voice.clip = clip;
+    voice.position = position;
+    voice.volume = volume;
+    voice.pitch = pitch;
+    voice.spatial = true;
+    voice.backend_source = m_backend.create_source();
+    m_backend.set_source_position(voice.backend_source, position.x, position.y, position.z);
+    m_backend.set_source_gain(voice.backend_source, volume);
+    m_backend.play_source(voice.backend_source);
+    m_mixer.add_one_shot(voice);
 }
 
 void AudioEngine::play_2d(Handle<AudioClip> clip, float volume) {
-    play_at(clip, Vec3{}, volume, 1.f);
+    if (!m_initialized || !m_clips.valid(clip)) {
+        return;
+    }
+
+    OneShotVoice voice;
+    voice.clip = clip;
+    voice.volume = volume;
+    voice.spatial = false;
+    voice.backend_source = m_backend.create_source();
+    m_backend.set_source_gain(voice.backend_source, volume);
+    m_backend.play_source(voice.backend_source);
+    m_mixer.add_one_shot(voice);
 }
 
 Handle<AudioClip> AudioEngine::load_clip(const char* path) {
@@ -159,8 +163,10 @@ void AudioEngine::apply_reverb_(std::vector<float>& stereo_buffer, u32 frames,
         return;
     }
 
+    // Mono reverb send (L+R)/2 convolved once; the wet signal is added to both channels while
+    // the dry path keeps its stereo image.
     m_dryBuffer.resize(frames);
-    std::vector<float> wet(frames, 0.f);
+    m_wetBuffer.assign(frames, 0.f);
     const float wet_mix = compute_effective_wet_mix(blend);
 
     for (u32 frame = 0; frame < frames; ++frame) {
@@ -168,16 +174,27 @@ void AudioEngine::apply_reverb_(std::vector<float>& stereo_buffer, u32 frames,
                                        + stereo_buffer[static_cast<usize>(frame) * 2 + 1]);
     }
 
-    m_cpuReverb.process(m_dryBuffer.data(), wet.data(), frames);
+    m_cpuReverb.process(m_dryBuffer.data(), m_wetBuffer.data(), frames);
 
     for (u32 frame = 0; frame < frames; ++frame) {
-        const float mixed = blend_dry_wet_sample(m_dryBuffer[frame], wet[frame], wet_mix);
-        stereo_buffer[static_cast<usize>(frame) * 2] = mixed;
-        stereo_buffer[static_cast<usize>(frame) * 2 + 1] = mixed;
+        for (u32 ch = 0; ch < 2; ++ch) {
+            float& sample = stereo_buffer[static_cast<usize>(frame) * 2 + ch];
+            sample = blend_dry_wet_sample(sample, m_wetBuffer[frame], wet_mix);
+        }
     }
 }
 
 void AudioEngine::sync_backend_sources_(AudioRegistry& registry) {
+    // Release backend sources whose entity was destroyed since the last update.
+    for (auto it = m_entitySources.begin(); it != m_entitySources.end();) {
+        if (registry.find_source(it->first) == nullptr) {
+            m_backend.destroy_source(it->second);
+            it = m_entitySources.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
     for (EntityId entity : registry.source_entities()) {
         AudioSource* source = registry.find_source(entity);
         if (source == nullptr) {
@@ -186,13 +203,10 @@ void AudioEngine::sync_backend_sources_(AudioRegistry& registry) {
 
         if (source->backend_source == 0) {
             source->backend_source = m_backend.create_source();
+            m_entitySources[entity] = source->backend_source;
         }
 
-        AttenuationParams attenuation_params;
-        attenuation_params.curve = source->desc.attenuation;
-        attenuation_params.min_dist = source->desc.min_distance;
-        attenuation_params.max_dist = source->desc.max_distance;
-        attenuation_params.rolloff = source->desc.rolloff;
+        const AttenuationParams attenuation_params = make_attenuation_params(source->desc);
 
         const AudioListener* listener = registry.listener();
         const float distance = listener != nullptr

@@ -1,5 +1,8 @@
 #include <fuse/editor/viewport_present_gate.hpp>
+#if defined(FUSE_TEST_HAS_RHI) && FUSE_TEST_HAS_RHI
+// fuse_rhi exists only with FUSE_BUILD_VULKAN=ON; the editor-side gate matrix runs either way.
 #include <fuse/renderer/vk/swapchain_util.hpp>
+#endif
 
 #include <cstdio>
 #include <cstdlib>
@@ -52,8 +55,9 @@ void testViewportPresentGateMatrix() {
                "path-ready handoff keeps placeholder until swapchain presentable");
 
     const auto surfaceOnly = makeQtHandoff(true, true, false, reinterpret_cast<void*>(0x4000u));
-    expectTrue(fuse::editor::shouldDisableSoftwarePlaceholderForEmbed(surfaceOnly, false),
-               "real Qt surface alone retires placeholder when consumed");
+    // Same inputs as `ready` above: a consumed surface without a wired swapchain keeps the placeholder.
+    expectTrue(!fuse::editor::shouldDisableSoftwarePlaceholderForEmbed(surfaceOnly, false),
+               "real Qt surface alone keeps placeholder until swapchain wired");
 }
 
 void testViewportHeadlessWsiProbeSkippedOnCi() {
@@ -62,12 +66,14 @@ void testViewportHeadlessWsiProbeSkippedOnCi() {
 }
 
 void testDesktopPresentGatesHeadlessSafe() {
+#if defined(FUSE_TEST_HAS_RHI) && FUSE_TEST_HAS_RHI
     expectTrue(!fuse::renderer::desktopQtPresentEnabled(),
                "Qt present gate OFF by default on headless CI");
     expectTrue(!fuse::renderer::desktopQtPresentRuntimeReady(),
                "Qt present runtime unavailable without gate");
     expectTrue(!fuse::renderer::realQtPresentEligible(nullptr, 0u, nullptr),
                "realQtPresentEligible rejects null swapchain");
+#endif
 }
 
 } // namespace

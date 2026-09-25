@@ -62,6 +62,48 @@ u32 RigidBodySoA::addBody(vec3 position, f32 invMass, u32 bodyFlags, u32 collisi
     return index;
 }
 
+namespace {
+
+template <typename T>
+void swapRemove(std::vector<T>& values, u32 index) {
+    values[index] = values.back();
+    values.pop_back();
+}
+
+} // namespace
+
+void RigidBodySoA::removeBodySwap(u32 index) {
+    if (index >= count()) {
+        return;
+    }
+    swapRemove(positions, index);
+    swapRemove(orientations, index);
+    swapRemove(linearVelocities, index);
+    swapRemove(angularVelocities, index);
+    swapRemove(invMasses, index);
+    swapRemove(restitutions, index);
+    swapRemove(frictionStatic, index);
+    swapRemove(frictionDynamic, index);
+    swapRemove(flags, index);
+    swapRemove(collisionLayers, index);
+    swapRemove(collisionMasks, index);
+    swapRemove(predictedPositions, index);
+    swapRemove(predictedOrientations, index);
+    swapRemove(forces, index);
+    swapRemove(torques, index);
+    swapRemove(sleepTimers, index);
+}
+
+void CollisionShapeSoA::removeShapeSwap(u32 index) {
+    if (index >= count()) {
+        return;
+    }
+    swapRemove(types, index);
+    swapRemove(params, index);
+    swapRemove(scalars, index);
+    swapRemove(bodyIndices, index);
+}
+
 void CollisionShapeSoA::clear() {
     types.clear();
     params.clear();

@@ -22,6 +22,8 @@ struct Phase1Deliverable {
     Phase1Module module = Phase1Module::Build;
     bool stub_landed = false;
     bool automated = false;
+    /// CTest name of the gate test that proves this row (nullptr when none does yet).
+    const char* gate_test = nullptr;
 };
 
 /// B1.8 — Phase 1 core deliverable checklist + cross-subsystem integration smoke.

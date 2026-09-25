@@ -1,0 +1,20 @@
+# fuse_relight_hash random-case digests: seed 52454c4947485431, 10000 cases per function (XXH3 of the emitted case lines)
+digest xxh64 97dd399935a21092
+digest xxh3 5530af5c7018d45f
+digest geomdesc 957059df376ee9b7
+digest vlayout a4326e0eeb1c9f5c
+digest region ea6687f3be36d884
+digest uniq 1856b174c458bd77
+digest legidx a44005c69d13ca1a
+digest disc 80e063f16d6b3805
+digest legpos e9542e641b97f73e
+digest vshader 8ece368937c50764
+digest rule 3d75bbb58fd48dcc
+digest combine 5b9992306de8f3c9
+digest draw 2152df5e16b1c71c
+digest texlayout f4f833023b12ef3d
+digest texdesc 649de2e8224c4de4
+digest light bc713dd7582091af
+digest hexfmt d95648960de3ce53
+digest parse 8dd918c1e0356c20
+digest all 556659225f14431b

@@ -55,7 +55,7 @@ private:
     void seedArena();
 
     const char* m_name = "freelist";
-    std::vector<u8> m_storage;
+    detail::ArenaBytes m_storage;
     u32 m_capacity = 0;
     u32 m_freeHead = kInvalid;
     AllocStats m_stats{};

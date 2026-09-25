@@ -1,3 +1,4 @@
+#include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/project/importer.hpp>
 #include <fuse/project/importer_extract.hpp>
@@ -42,7 +43,7 @@ void testParseManifest() {
   "defaultWorld2D": ""
 })";
 
-    const fuse::project::LoadResult result = fuse::project::parseManifest(json, "/tmp/demo");
+    const fuse::project::LoadResult result = fuse::project::parseManifest(json, fuse::test::tempPath("demo"));
     expectTrue(result.status == fuse::project::LoadStatus::Ok, "manifest parses");
     expectTrue(result.manifest.name == "demo_3d_empty", "project name");
     expectTrue(result.manifest.dimensions.enable3D, "3D enabled");
@@ -65,7 +66,7 @@ void testWorkerCapManifest() {
   "workerCap": 4
 })";
 
-    const fuse::project::LoadResult result = fuse::project::parseManifest(json, "/tmp");
+    const fuse::project::LoadResult result = fuse::project::parseManifest(json, fuse::test::tempDir());
     expectTrue(result.status == fuse::project::LoadStatus::Ok, "workerCap manifest parses");
     expectTrue(result.manifest.workerCap == 4u, "workerCap value preserved");
 
@@ -81,7 +82,7 @@ void testWorkerCapManifest() {
 
 void testUnsupportedSchema() {
     const char* json = R"({"schemaVersion": 99, "name": "bad"})";
-    const fuse::project::LoadResult result = fuse::project::parseManifest(json, "/tmp");
+    const fuse::project::LoadResult result = fuse::project::parseManifest(json, fuse::test::tempDir());
     expectTrue(result.status == fuse::project::LoadStatus::UnsupportedSchema, "schema rejected");
 }
 
@@ -92,7 +93,7 @@ std::string writeTempFile(const std::string& path, const std::string& contents) 
 }
 
 void testT3DMissionImporter() {
-    const std::string path = writeTempFile("/tmp/fuse_test_mission.mis",
+    const std::string path = writeTempFile(fuse::test::tempPath("fuse_test_mission.mis"),
                                            R"(new Scene(ExampleLevel) {
   new GroundPlane() {
     MaterialAsset = "Prototyping:FloorGray";
@@ -117,7 +118,7 @@ void testT3DMissionImporter() {
 }
 
 void testT2DModuleImporter() {
-    const std::string path = writeTempFile("/tmp/fuse_test_main.cs",
+    const std::string path = writeTempFile(fuse::test::tempPath("fuse_test_main.cs"),
                                            R"(module "SpriteToy";
 new SceneToy() {
   new SpritePlayer(Player) {
@@ -141,7 +142,7 @@ void testProjectImportDryRun() {
   "defaultWorld2D": "worlds/ui.fuselevel"
 })";
 
-    const fuse::project::LoadResult loaded = fuse::project::parseManifest(json, "/tmp/proj");
+    const fuse::project::LoadResult loaded = fuse::project::parseManifest(json, fuse::test::tempPath("proj"));
     expectTrue(loaded.status == fuse::project::LoadStatus::Ok, "dry-run manifest ok");
 
     const fuse::project::ImportDryRunResult dryRun =

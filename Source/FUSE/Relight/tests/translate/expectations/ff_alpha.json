@@ -1,0 +1,37 @@
+{
+  "schema": "fuse.relight.translate_expect/1",
+  "scene": "ff_alpha",
+  "why": "Tests/relight/apps/scenes/ff_alpha.cpp: two background quads, alpha test GREATER / LESSEQUAL 0x80 on a ramp texture, then 8 blend modes; D3D9 adds separate alpha (ONE / ZERO / MAX) on the first blend cell. X8R8G8B8 back buffer (alpha swizzle).",
+  "draw_count": 12,
+  "draws": [
+    {"index": [0, 11], "translated": true, "camera": "Main", "alpha_swizzle": true, "fog": {"mode": 0},
+     "material": {"diffuse_source": "VertexColor0", "tex_color_op": "SelectArg1", "tex_alpha_op": "SelectArg1",
+                  "tfactor": 4294967295, "write_mask": 15}},
+    {"index": [0, 1], "why": "background: vertex colour, no blend, no alpha test, no texture",
+     "z_write": true, "material": {"blend": false, "alpha_test": false, "alpha_test_op": 7, "tex_color_arg1": "VertexColor0",
+                                   "texture_slots": [-1, -1], "hash": "0x0000000000000000"}},
+    {"index": 2, "why": "alpha test GREATER 0x80 on the ramp texture",
+     "material": {"alpha_test": true, "alpha_test_op": 4, "alpha_ref": 128, "blend": false, "tex_color_arg1": "Texture",
+                  "tex_alpha_arg1": "Texture", "texture_slots": [0, -1]}},
+    {"index": 3, "why": "alpha test LESSEQUAL 0x80",
+     "material": {"alpha_test": true, "alpha_test_op": 3, "alpha_ref": 128, "tex_color_arg1": "Texture", "texture_slots": [0, -1]}},
+    {"index": [4, 11], "why": "blended cells: no depth writes, no alpha test, vertex colour",
+     "z_write": false, "material": {"blend": true, "alpha_test": false, "alpha_test_op": 7, "tex_color_arg1": "VertexColor0",
+                                    "texture_slots": [-1, -1]}},
+    {"index": 4, "api": "d3d9", "why": "SRCALPHA / INVSRCALPHA / ADD, separate alpha ONE / ZERO / MAX",
+     "material": {"color_src": 6, "color_dst": 7, "color_op": 0, "alpha_src": 1, "alpha_dst": 0, "alpha_op": 4}},
+    {"index": 4, "api": "d3d8", "why": "SRCALPHA / INVSRCALPHA / ADD (no separate alpha in D3D8)",
+     "material": {"color_src": 6, "color_dst": 7, "color_op": 0, "alpha_src": 6, "alpha_dst": 7, "alpha_op": 0}},
+    {"index": 5, "why": "ONE / ONE / ADD", "material": {"color_src": 1, "color_dst": 1, "color_op": 0, "alpha_src": 1, "alpha_dst": 1, "alpha_op": 0}},
+    {"index": 6, "why": "DESTCOLOR / ZERO / ADD", "material": {"color_src": 4, "color_dst": 0, "color_op": 0}},
+    {"index": 7, "why": "ONE / INVSRCALPHA / ADD", "material": {"color_src": 1, "color_dst": 7, "color_op": 0}},
+    {"index": 8, "why": "SRCALPHA / ONE / SUBTRACT", "material": {"color_src": 6, "color_dst": 1, "color_op": 1, "alpha_op": 1}},
+    {"index": 9, "why": "ONE / ONE / REVSUBTRACT", "material": {"color_src": 1, "color_dst": 1, "color_op": 2}},
+    {"index": 10, "why": "ONE / ONE / MIN", "material": {"color_src": 1, "color_dst": 1, "color_op": 3}},
+    {"index": 11, "why": "ONE / ONE / MAX", "material": {"color_src": 1, "color_dst": 1, "color_op": 4, "alpha_op": 4}}
+  ],
+  "frame": {
+    "light_count": 0, "fog": {"mode": 0}, "fog_states": 0, "cameras": ["Main"],
+    "camera": {"fov": 1.04719758, "aspect": 1.33333337, "near": 0.5, "lhs": true, "position": [0, 0, -3.5999999]}
+  }
+}

@@ -5,9 +5,13 @@
 #include <fuse/renderer/resources.hpp>
 #include <fuse/types.hpp>
 
+#include <memory>
 #include <vector>
 
 namespace fuse::renderer {
+
+class DdgiCpuVolume;
+struct DdgiCpuScene;
 
 /// 3D probe grid dimensions (B5.6 — P5 §5.6).
 struct DDGIGridDims {
@@ -357,13 +361,19 @@ struct ProbeGridLayout {
     static fuse::math::Vec3 clampWorldToProbeGridCoord(const DDGIDesc& desc,
                                                        const fuse::math::Vec3& grid_coord);
     static ProbeGridCoord clampProbeGridCoord(const DDGIDesc& desc, const ProbeGridCoord& coord);
-    /// Top-left texel of the probe's octahedral irradiance tile in the atlas.
+    /// Bordered irradiance tile edge: irradiance_res + 2 (1-texel octahedral border ring, matching
+    /// `DdgiCpuVolume::irradianceTileSize`); 0 when irradiance_res is 0.
+    static u32 irradianceTileSize(const DDGIDesc& desc);
+    /// Bordered depth-moment tile edge: depth_res + 2; 0 when depth_res is 0.
+    static u32 depthTileSize(const DDGIDesc& desc);
+    /// Top-left texel (border included) of the probe's bordered irradiance tile in the atlas:
+    /// column `x`, row `z * dims.y + y`, `irradianceTileSize` texels per tile.
     static fuse::math::Vec2 probeIrradianceAtlasOrigin(const DDGIDesc& desc, const ProbeGridCoord& coord);
-    /// Absolute atlas texel for a world-space direction sample within a probe tile.
+    /// Absolute atlas texel (interior, i.e. origin + 1 + offset) for a direction within a probe tile.
     static fuse::math::Vec2 probeIrradianceAtlasTexel(const DDGIDesc& desc,
                                                       const ProbeGridCoord& coord,
                                                       const fuse::math::Vec3& direction);
-    /// Top-left texel of the probe's depth-variance tile in the atlas.
+    /// Top-left texel (border included) of the probe's bordered depth-moment tile in the atlas.
     static fuse::math::Vec2 probeDepthAtlasOrigin(const DDGIDesc& desc, const ProbeGridCoord& coord);
 };
 
@@ -524,6 +534,7 @@ bool isValidSampleRequest(const DDGIDesc& desc,
 fuse::math::Vec3 probeWorldPosition(const DDGIDesc& desc, u32 probe_index);
 /// World position after `clampProbeIndex` — safe for OOB scheduling indices.
 fuse::math::Vec3 probeWorldPositionClamped(const DDGIDesc& desc, u32 probe_index);
+/// Atlas extents in texels, bordered tiles included (`ProbeGridLayout::irradianceTileSize`).
 u32 irradianceAtlasWidth(const DDGIDesc& desc);
 u32 irradianceAtlasHeight(const DDGIDesc& desc);
 u32 depthAtlasWidth(const DDGIDesc& desc);
@@ -666,10 +677,15 @@ u32 nearestProbeIndex(const DDGIDesc& desc, const fuse::math::Vec3& world_positi
 
 DdgiInfo ddgi_info();
 
-/// DDGI probe volume scaffold — allocates atlas textures via ResourceManager.
+/// DDGI probe volume — allocates atlas textures via ResourceManager and runs the
+/// CPU reference probe trace/blend (`DdgiCpuVolume`) each update. Without an attached
+/// scene the probes trace an empty scene lit by a uniform ambient sky.
 class DDGI {
 public:
-    DDGI() = default;
+    DDGI();
+    ~DDGI();
+    DDGI(const DDGI&) = delete;
+    DDGI& operator=(const DDGI&) = delete;
 
     bool init(const DDGIDesc& desc, ResourceManager& resources);
     void destroy();
@@ -682,11 +698,23 @@ public:
     const DDGIUpdateStats& lastUpdateStats() const { return m_last_update; }
     const DdgiInfo& info() const { return m_info; }
 
-    /// Update a rotating subset of probes — CUDA path when available, CPU reference otherwise.
+    /// Update a rotating subset of probes: device kernels are launched when available and the
+    /// CPU reference trace + blend runs against the attached scene. True when both succeed.
     bool update(u32 frame_index, void* cuda_stream = nullptr);
 
-    /// Sample nearest-probe irradiance (CPU stub for deferred shading integration).
+    /// Irradiance E at a surface point: Chebyshev-weighted trilinear probe sample.
     DDGISampleResult sampleIrradiance(const DDGISampleRequest& request) const;
+
+    /// Scene traced by probe rays; nullptr restores the ambient-sky default. Not owned —
+    /// must outlive subsequent `update` calls.
+    void setCpuScene(const DdgiCpuScene* scene);
+    /// CPU reference probe volume (null before `init`).
+    const DdgiCpuVolume* cpuVolume() const { return m_cpu.get(); }
+
+    /// Copy the CPU volume's bordered tiles into the atlas textures (RGBA16F irradiance E/pi,
+    /// RG16F distance moments) through `ResourceManager::uploadTexture` and submit the batch.
+    /// Asynchronous: `outTicket` completes when both copies have landed.
+    bool uploadAtlases(UploadTicket* outTicket = nullptr);
 
 private:
     void releaseResources();
@@ -699,6 +727,11 @@ private:
     DDGIUpdateStats m_last_update{};
     DdgiInfo m_info{};
     ResourceManager* m_resources = nullptr;
+    std::unique_ptr<DdgiCpuVolume> m_cpu;
+    std::unique_ptr<DdgiCpuScene> m_ambient_scene;
+    const DdgiCpuScene* m_scene = nullptr;
+    std::vector<u16> m_irradiance_staging;
+    std::vector<u16> m_distance_staging;
     bool m_ready = false;
 };
 

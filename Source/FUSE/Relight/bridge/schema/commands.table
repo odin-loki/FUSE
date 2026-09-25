@@ -1,0 +1,333 @@
+# Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
+#
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+# DEALINGS IN THE SOFTWARE.
+#
+# Modifications Copyright (c) 2026 FUSE contributors (MIT)
+# Ported from dxvk-remix bridge/src/util/util_commands.h@0867d3c (command ids and names)
+# Ported from dxvk-remix bridge/src/client/*.cpp@0867d3c (argument lists of the client's ClientMessage calls; RL-2.2)
+
+# FUSE Relight bridge command table (RL-2.1; typed by RL-2.2). gen_commands.cmake turns it into the
+# command ids, per-command structs, encoders, decoders, the host-side dispatch switch, the fuzz
+# randomizers and kSchemaHash (SHA-256 of the normalized table). The handshake rejects a peer whose
+# schema hash differs, so any edit here (add, remove, reorder, retype) is safe across mismatched builds.
+#
+# Row syntax:   Name: type field, type field, ... [-> Reply_X]   (no fields: "Name:" / "Name: -> Reply_X")
+# Types:        u8 u16 u32 u64 i8 i16 i32 i64 f32 f64 handle (u32 client object id)
+#               T[N] fixed array, T[] counted array, bytes (= u8[]), str (UTF-8, counted)
+# Wire:         little-endian, no padding; counted arrays/str/bytes carry a u32 count first.
+#
+# Every COM method row targets the object in MessageHeader::handle; `this` is not a field. Rows that
+# create or return an object carry the client-chosen `handle result` of the new object (upstream
+# assigned client-side ids the same way). Ids are assigned in table order starting at 1 (0 = Invalid).
+# Upstream's Bridge_Any is a wait wildcard (not a command), Bridge_Terminate is a normal row here, and
+# Bridge_SharedHeap_{AddSeg,Alloc,Dealloc} are gone (the heap's segment table and chunk states live in
+# shared memory; see ipc/shared_heap.hpp).
+#
+# ---- RL-2.2 wire conventions (bridge/client/include/fuse/relight/bridge/client/wire_types.hpp) ------
+# D3D structures travel as typed fields, never as raw struct bytes, so an x86 client and an x64 host
+# agree on them (the header static_asserts every layout on both architectures):
+#   rect / point / box    i32[] (0 elements = NULL pointer, else 4 / 2 / 6 elements: RECT / POINT /
+#                         D3DBOX fields in declaration order)
+#   region                i32[] (0 = NULL, else RGNDATA rcBound + nCount rectangles, 4 i32 each)
+#   presentParameters     u32[14]: the D3DPRESENT_PARAMETERS fields in declaration order, with
+#                         hDeviceWindow as a 32-bit window handle (Win32 handles are 32-bit values
+#                         on WOW64; the host sign-extends)
+#   displayModeEx/filter  u32[] (0 = NULL, else the D3DDISPLAYMODEEX / D3DDISPLAYMODEFILTER fields)
+#   vertex elements       u32[] (2 words per D3DVERTEXELEMENT9, its 8-byte pointer-free layout)
+#   shader bytecode       u32[] (the DWORD token stream, D3DSIO_END included)
+#   D3DCAPS9              u32[76] (pointer-free, 304 bytes on both architectures)
+#   D3DMATERIAL9 f32[17], D3DLIGHT9 u32 type + f32[25], D3DMATRIX f32[16] (unchanged from RL-2.1)
+# Window handles, HMONITORs and HDCs are u32 for the same reason as hDeviceWindow.
+#
+# Resource data (Unlock*, UP draws that do not fit the ring) is `u32 heapChunk, u32 heapBytes,
+# bytes data`: heapBytes == 0 means the payload is inline in `data`, otherwise it is the shared-heap
+# run HeapRef{heapChunk, heapBytes} (client-owned, the host releases it after the copy). Pixel
+# payloads are tightly packed: `rows` rows (block rows for BC formats) of `rowBytes` bytes, times
+# `slices` for volumes.
+#
+# Replies. Every reply echoes the request's MessageHeader::uid in requestUid; replies come in request
+# order. A row ending in "-> Reply_X" always gets that typed reply (generated schema::replyOf(id);
+# the list below summarizes them):
+#   Reply_Value        GetAdapterCount, GetAdapterModeCount(Ex), CheckDeviceMultiSampleType (value =
+#                      quality levels), GetAdapterMonitor, GetAvailableTextureMem, ShowCursor (value =
+#                      previous state), ValidateDevice (value = passes), GetLastPresentCount,
+#                      IsSupportedSurfaceFormat
+#   Reply_DisplayMode  EnumAdapterModes(Ex), GetAdapterDisplayMode(Ex), GetDisplayMode(Ex)
+#   Reply_Caps / Reply_AdapterIdentifier / Reply_RasterStatus / Reply_Luid
+#                      GetDeviceCaps / GetAdapterIdentifier / GetRasterStatus / GetAdapterLUID
+#   Reply_Data         GetRenderTargetData, GetFrontBufferData (the whole destination surface),
+#                      Lock, LockRect, LockBox (the locked region), Query GetData (the result when
+#                      hresult == S_OK); tightly packed rows as for uploads, chunked
+#   Reply_Result       Direct3DCreate9, Bridge_Sync, Check* (CheckDeviceType/Format/DepthStencilMatch/
+#                      FormatConversion, CheckDeviceState, CheckResourceResidency), and every other
+#                      command sent with client::kFlagWantsReply (MessageHeader::flags bit 8; the
+#                      client sets it on Create*, Present, Reset and calls whose HRESULT it returns)
+# Host-initiated messages are Bridge_InputState and Bridge_DebugMessage; the client handles them
+# whenever it reads replies.
+#
+# Rows removed by RL-2.2 (the client answers these from its own state, as upstream did unless its
+# debug option SendReadOnlyCalls was on): AddRef, QueryInterface, GetDevice, GetType, GetPriority,
+# Get{Private,Set,Free}PrivateData (private data stays in the client, IUnknown payloads cannot cross
+# processes), GetDesc, GetLevelDesc, GetLevelCount, GetLOD, GetAutoGenFilterType, Get{Transform,
+# Viewport,Material,Light,LightEnable,ClipPlane,RenderState,Texture,TextureStageState,SamplerState,
+# PaletteEntries,CurrentTexturePalette,ScissorRect,SoftwareVertexProcessing,NPatchMode,FVF,
+# VertexDeclaration,VertexShader,PixelShader,*ShaderConstant*,StreamSource*,Indices,RenderTarget,
+# DepthStencilSurface,ClipStatus,GammaRamp,MaximumFrameLatency,GPUThreadPriority,CreationParameters,
+# Direct3D,SwapChain,NumberOfSwapChains,BackBuffer (device level),DeviceCaps (device level),
+# PresentParameters,Declaration,Function,DataSize,Container}, TestCooperativeLevel,
+# RegisterSoftwareDevice (a function pointer; DXVK rejects it too), GetDC/ReleaseDC (GDI on the
+# client's copy of the surface). The per-interface IDirect3D{Texture,VolumeTexture,CubeTexture,
+# VertexBuffer,IndexBuffer,Surface,Volume}9 copies of the IDirect3DResource9 / IDirect3DBaseTexture9
+# methods are folded into those two base interfaces (the host's object pointer is valid as its base
+# interface).
+
+protocol 1 1
+
+# ---- bridge control -------------------------------------------------------------------------------
+Bridge_Syn: u32 protocolMajor, u32 protocolMinor, u64 schemaHash, u32 pid, u32 pointerBits, str buildTag
+Bridge_Ack: u32 protocolMajor, u32 protocolMinor, u64 schemaHash, u32 pid, u32 status, str reason
+Bridge_Continue:
+Bridge_Terminate:
+Bridge_Response: i32 result, bytes payload
+Bridge_DebugMessage: u32 level, str text
+Bridge_UnlinkResource: handle resource
+Bridge_UnlinkVolumeResource: handle resource
+# client -> host: the host finishes every earlier command, then replies Reply_Result (a fence)
+Bridge_Sync: -> Reply_Result
+# client -> host: a window message of the game window (window.cpp / di_hook.cpp forwarding)
+Bridge_WindowMessage: u32 hwnd, u32 msg, u64 wParam, i64 lParam
+# host -> client: renderer UI (developer menu) state; while active the client blocks game input
+Bridge_InputState: u32 uiActive
+
+# ---- host -> client replies -----------------------------------------------------------------------
+Reply_Result: u32 requestUid, i32 hresult
+Reply_Value: u32 requestUid, i32 hresult, u32 value
+Reply_Caps: u32 requestUid, i32 hresult, u32[76] caps
+Reply_DisplayMode: u32 requestUid, i32 hresult, u32 width, u32 height, u32 refreshRate, u32 format, u32 scanLineOrdering, u32 rotation
+Reply_AdapterIdentifier: u32 requestUid, i32 hresult, str driver, str description, str deviceName, u64 driverVersion, u32 vendorId, u32 deviceId, u32 subSysId, u32 revision, u8[16] deviceIdentifier, u32 whqlLevel
+Reply_RasterStatus: u32 requestUid, i32 hresult, u32 inVBlank, u32 scanLine
+Reply_Luid: u32 requestUid, i32 hresult, u32 lowPart, i32 highPart
+# chunked: the client appends chunks until offset + size(data) == totalBytes
+Reply_Data: u32 requestUid, i32 hresult, u32 totalBytes, u32 offset, bytes data
+
+# ---- Remix API forwarding (RL-6.2 refines the payloads) ------------------------------------------
+RemixApi_CreateMaterial: handle material, bytes info
+RemixApi_DestroyMaterial: handle material
+RemixApi_CreateMesh: handle mesh, bytes info
+RemixApi_DestroyMesh: handle mesh
+RemixApi_DrawInstance: bytes info
+RemixApi_CreateLight: handle light, bytes info
+RemixApi_DestroyLight: handle light
+RemixApi_DrawLightInstance: handle light
+RemixApi_SetConfigVariable: str key, str value
+RemixApi_CreateD3D9: u32 editorModeEnabled
+RemixApi_RegisterDevice:
+
+# ---- bridge-only device links (the client names the host's implicit objects) ----------------------
+IDirect3DDevice9Ex_LinkSwapchain: u32 index, handle swapChain
+IDirect3DDevice9Ex_LinkBackBuffer: u32 swapChain, u32 index, handle surface
+IDirect3DDevice9Ex_LinkAutoDepthStencil: handle surface
+
+# ---- entry points and DXVK interop (RL-2.2) -------------------------------------------------------
+# `ex` selects Direct3DCreate9Ex.
+Direct3DCreate9: u32 sdkVersion, u32 ex, handle result -> Reply_Result
+# IDxvkLegacyD3DInterfaceBridge::SetD3DCompatibility (DXVK's d3d8.dll on top of the client)
+IDirect3D9Ex_SetD3DCompatibility: u32 compatibility
+# IDxvkLegacyD3DDeviceBridge: UpdateTextureFromBuffer, IsSupportedSurfaceFormat
+IDirect3DDevice9Ex_UpdateTextureFromBuffer: handle destination, handle source, i32[] sourceRect, i32[] destPoint
+IDirect3DDevice9Ex_IsSupportedSurfaceFormat: u32 format -> Reply_Value
+
+# ---- IDirect3D9Ex ---------------------------------------------------------------------------------
+IDirect3D9Ex_Destroy:
+IDirect3D9Ex_GetAdapterCount: -> Reply_Value
+IDirect3D9Ex_GetAdapterIdentifier: u32 adapter, u32 flags -> Reply_AdapterIdentifier
+IDirect3D9Ex_GetAdapterModeCount: u32 adapter, u32 format -> Reply_Value
+IDirect3D9Ex_EnumAdapterModes: u32 adapter, u32 format, u32 mode -> Reply_DisplayMode
+IDirect3D9Ex_GetAdapterDisplayMode: u32 adapter -> Reply_DisplayMode
+IDirect3D9Ex_CheckDeviceType: u32 adapter, u32 deviceType, u32 adapterFormat, u32 backBufferFormat, u32 windowed -> Reply_Result
+IDirect3D9Ex_CheckDeviceFormat: u32 adapter, u32 deviceType, u32 adapterFormat, u32 usage, u32 resourceType, u32 checkFormat -> Reply_Result
+IDirect3D9Ex_CheckDeviceMultiSampleType: u32 adapter, u32 deviceType, u32 surfaceFormat, u32 windowed, u32 multiSampleType -> Reply_Value
+IDirect3D9Ex_CheckDepthStencilMatch: u32 adapter, u32 deviceType, u32 adapterFormat, u32 renderTargetFormat, u32 depthStencilFormat -> Reply_Result
+IDirect3D9Ex_CheckDeviceFormatConversion: u32 adapter, u32 deviceType, u32 sourceFormat, u32 targetFormat -> Reply_Result
+IDirect3D9Ex_GetDeviceCaps: u32 adapter, u32 deviceType -> Reply_Caps
+IDirect3D9Ex_GetAdapterMonitor: u32 adapter -> Reply_Value
+IDirect3D9Ex_CreateDevice: u32 adapter, u32 deviceType, u32 focusWindow, u32 behaviorFlags, u32[14] presentParameters, handle result
+IDirect3D9Ex_GetAdapterModeCountEx: u32 adapter, u32[] filter -> Reply_Value
+IDirect3D9Ex_EnumAdapterModesEx: u32 adapter, u32[] filter, u32 mode -> Reply_DisplayMode
+IDirect3D9Ex_GetAdapterDisplayModeEx: u32 adapter -> Reply_DisplayMode
+IDirect3D9Ex_CreateDeviceEx: u32 adapter, u32 deviceType, u32 focusWindow, u32 behaviorFlags, u32[14] presentParameters, u32[] fullscreenDisplayMode, handle result
+IDirect3D9Ex_GetAdapterLUID: u32 adapter -> Reply_Luid
+
+# ---- IDirect3DDevice9Ex ---------------------------------------------------------------------------
+IDirect3DDevice9Ex_Destroy:
+IDirect3DDevice9Ex_GetAvailableTextureMem: -> Reply_Value
+IDirect3DDevice9Ex_EvictManagedResources:
+IDirect3DDevice9Ex_GetDisplayMode: u32 swapChain -> Reply_DisplayMode
+IDirect3DDevice9Ex_SetCursorProperties: u32 xHotSpot, u32 yHotSpot, handle cursorBitmap
+IDirect3DDevice9Ex_SetCursorPosition: i32 x, i32 y, u32 flags
+IDirect3DDevice9Ex_ShowCursor: u32 show -> Reply_Value
+IDirect3DDevice9Ex_CreateAdditionalSwapChain: u32[14] presentParameters, handle result
+IDirect3DDevice9Ex_Reset: u32[14] presentParameters
+IDirect3DDevice9Ex_Present: i32[] sourceRect, i32[] destRect, u32 destWindowOverride, i32[] dirtyRegion
+IDirect3DDevice9Ex_GetRasterStatus: u32 swapChain -> Reply_RasterStatus
+IDirect3DDevice9Ex_SetDialogBoxMode: u32 enable
+IDirect3DDevice9Ex_SetGammaRamp: u32 swapChain, u32 flags, u16[768] ramp
+IDirect3DDevice9Ex_CreateTexture: u32 width, u32 height, u32 levels, u32 usage, u32 format, u32 pool, handle result
+IDirect3DDevice9Ex_CreateVolumeTexture: u32 width, u32 height, u32 depth, u32 levels, u32 usage, u32 format, u32 pool, handle result
+IDirect3DDevice9Ex_CreateCubeTexture: u32 edgeLength, u32 levels, u32 usage, u32 format, u32 pool, handle result
+IDirect3DDevice9Ex_CreateVertexBuffer: u32 length, u32 usage, u32 fvf, u32 pool, handle result
+IDirect3DDevice9Ex_CreateIndexBuffer: u32 length, u32 usage, u32 format, u32 pool, handle result
+IDirect3DDevice9Ex_CreateRenderTarget: u32 width, u32 height, u32 format, u32 multiSample, u32 multisampleQuality, u32 lockable, handle result
+IDirect3DDevice9Ex_CreateDepthStencilSurface: u32 width, u32 height, u32 format, u32 multiSample, u32 multisampleQuality, u32 discard, handle result
+IDirect3DDevice9Ex_UpdateSurface: handle source, i32[] sourceRect, handle destination, i32[] destPoint
+IDirect3DDevice9Ex_UpdateTexture: handle source, handle destination
+IDirect3DDevice9Ex_GetRenderTargetData: handle renderTarget, handle destination -> Reply_Data
+IDirect3DDevice9Ex_GetFrontBufferData: u32 swapChain, handle destination -> Reply_Data
+IDirect3DDevice9Ex_StretchRect: handle source, i32[] sourceRect, handle destination, i32[] destRect, u32 filter
+IDirect3DDevice9Ex_ColorFill: handle surface, i32[] rect, u32 color
+IDirect3DDevice9Ex_CreateOffscreenPlainSurface: u32 width, u32 height, u32 format, u32 pool, handle result
+IDirect3DDevice9Ex_SetRenderTarget: u32 index, handle surface
+IDirect3DDevice9Ex_SetDepthStencilSurface: handle surface
+IDirect3DDevice9Ex_BeginScene:
+IDirect3DDevice9Ex_EndScene:
+IDirect3DDevice9Ex_Clear: i32[] rects, u32 flags, u32 color, f32 z, u32 stencil
+IDirect3DDevice9Ex_SetTransform: u32 state, f32[16] matrix
+IDirect3DDevice9Ex_MultiplyTransform: u32 state, f32[16] matrix
+IDirect3DDevice9Ex_SetViewport: u32 x, u32 y, u32 width, u32 height, f32 minZ, f32 maxZ
+IDirect3DDevice9Ex_SetMaterial: f32[17] material
+IDirect3DDevice9Ex_SetLight: u32 index, u32 type, f32[25] parameters
+IDirect3DDevice9Ex_LightEnable: u32 index, u32 enable
+IDirect3DDevice9Ex_SetClipPlane: u32 index, f32[4] plane
+IDirect3DDevice9Ex_SetRenderState: u32 state, u32 value
+IDirect3DDevice9Ex_CreateStateBlock: u32 type, handle result
+IDirect3DDevice9Ex_BeginStateBlock:
+IDirect3DDevice9Ex_EndStateBlock: handle result
+IDirect3DDevice9Ex_SetClipStatus: u32 clipUnion, u32 clipIntersection
+IDirect3DDevice9Ex_SetTexture: u32 stage, handle texture
+IDirect3DDevice9Ex_SetTextureStageState: u32 stage, u32 type, u32 value
+IDirect3DDevice9Ex_SetSamplerState: u32 sampler, u32 type, u32 value
+IDirect3DDevice9Ex_ValidateDevice: -> Reply_Value
+IDirect3DDevice9Ex_SetPaletteEntries: u32 paletteNumber, u8[1024] entries
+IDirect3DDevice9Ex_SetCurrentTexturePalette: u32 paletteNumber
+IDirect3DDevice9Ex_SetScissorRect: i32[4] rect
+IDirect3DDevice9Ex_SetSoftwareVertexProcessing: u32 software
+IDirect3DDevice9Ex_SetNPatchMode: f32 segments
+IDirect3DDevice9Ex_DrawPrimitive: u32 primitiveType, u32 startVertex, u32 primitiveCount
+IDirect3DDevice9Ex_DrawIndexedPrimitive: u32 primitiveType, i32 baseVertexIndex, u32 minVertexIndex, u32 numVertices, u32 startIndex, u32 primitiveCount
+IDirect3DDevice9Ex_DrawPrimitiveUP: u32 primitiveType, u32 primitiveCount, u32 vertexStreamZeroStride, bytes vertexData
+# indices first (indexBytes of them), then the vertices; heap as for resource data
+IDirect3DDevice9Ex_DrawIndexedPrimitiveUP: u32 primitiveType, u32 minVertexIndex, u32 numVertices, u32 primitiveCount, u32 indexDataFormat, u32 vertexStreamZeroStride, u32 indexBytes, u32 heapChunk, u32 heapBytes, bytes data
+# UP draw whose vertices do not fit the ring (DrawPrimitiveUP keeps the RL-2.1 inline shape)
+IDirect3DDevice9Ex_DrawPrimitiveUPHeap: u32 primitiveType, u32 primitiveCount, u32 vertexStreamZeroStride, u32 heapChunk, u32 heapBytes
+IDirect3DDevice9Ex_ProcessVertices: u32 srcStartIndex, u32 destIndex, u32 vertexCount, handle destBuffer, handle vertexDecl, u32 flags
+IDirect3DDevice9Ex_CreateVertexDeclaration: u32[] elements, handle result
+IDirect3DDevice9Ex_SetVertexDeclaration: handle declaration
+IDirect3DDevice9Ex_SetFVF: u32 fvf
+IDirect3DDevice9Ex_CreateVertexShader: u32[] function, handle result
+IDirect3DDevice9Ex_SetVertexShader: handle shader
+IDirect3DDevice9Ex_SetVertexShaderConstantF: u32 startRegister, f32[] data
+IDirect3DDevice9Ex_SetVertexShaderConstantI: u32 startRegister, i32[] data
+IDirect3DDevice9Ex_SetVertexShaderConstantB: u32 startRegister, u32[] data
+IDirect3DDevice9Ex_SetStreamSource: u32 streamNumber, handle vertexBuffer, u32 offsetInBytes, u32 stride
+IDirect3DDevice9Ex_SetStreamSourceFreq: u32 streamNumber, u32 setting
+IDirect3DDevice9Ex_SetIndices: handle indexBuffer
+IDirect3DDevice9Ex_CreatePixelShader: u32[] function, handle result
+IDirect3DDevice9Ex_SetPixelShader: handle shader
+IDirect3DDevice9Ex_SetPixelShaderConstantF: u32 startRegister, f32[] data
+IDirect3DDevice9Ex_SetPixelShaderConstantI: u32 startRegister, i32[] data
+IDirect3DDevice9Ex_SetPixelShaderConstantB: u32 startRegister, u32[] data
+# rectPatchInfo: 0 or 7 words (D3DRECTPATCH_INFO); triPatchInfo: 0 or 4 words (D3DTRIPATCH_INFO)
+IDirect3DDevice9Ex_DrawRectPatch: u32 patchHandle, f32[] numSegs, u32[] rectPatchInfo
+IDirect3DDevice9Ex_DrawTriPatch: u32 patchHandle, f32[] numSegs, u32[] triPatchInfo
+IDirect3DDevice9Ex_DeletePatch: u32 patchHandle
+# result 0: support query (ppQuery == NULL)
+IDirect3DDevice9Ex_CreateQuery: u32 type, handle result
+IDirect3DDevice9Ex_SetConvolutionMonoKernel: u32 width, u32 height, f32[] rows, f32[] columns
+IDirect3DDevice9Ex_ComposeRects: handle source, handle destination, handle srcRectDescs, u32 numRects, handle dstRectDescs, u32 operation, i32 xOffset, i32 yOffset
+IDirect3DDevice9Ex_PresentEx: i32[] sourceRect, i32[] destRect, u32 destWindowOverride, i32[] dirtyRegion, u32 flags
+IDirect3DDevice9Ex_SetGPUThreadPriority: i32 priority
+IDirect3DDevice9Ex_WaitForVBlank: u32 swapChain
+IDirect3DDevice9Ex_CheckResourceResidency: u32[] resources -> Reply_Result
+IDirect3DDevice9Ex_SetMaximumFrameLatency: u32 maxLatency
+IDirect3DDevice9Ex_CheckDeviceState: u32 destinationWindow -> Reply_Result
+IDirect3DDevice9Ex_CreateRenderTargetEx: u32 width, u32 height, u32 format, u32 multiSample, u32 multisampleQuality, u32 lockable, u32 usage, handle result
+IDirect3DDevice9Ex_CreateOffscreenPlainSurfaceEx: u32 width, u32 height, u32 format, u32 pool, u32 usage, handle result
+IDirect3DDevice9Ex_CreateDepthStencilSurfaceEx: u32 width, u32 height, u32 format, u32 multiSample, u32 multisampleQuality, u32 discard, u32 usage, handle result
+IDirect3DDevice9Ex_ResetEx: u32[14] presentParameters, u32[] fullscreenDisplayMode
+IDirect3DDevice9Ex_GetDisplayModeEx: u32 swapChain -> Reply_DisplayMode
+
+# ---- IDirect3DStateBlock9 -------------------------------------------------------------------------
+IDirect3DStateBlock9_Destroy:
+IDirect3DStateBlock9_Capture:
+IDirect3DStateBlock9_Apply:
+
+# ---- IDirect3DSwapChain9(Ex) ----------------------------------------------------------------------
+IDirect3DSwapChain9_Destroy:
+IDirect3DSwapChain9_Present: i32[] sourceRect, i32[] destRect, u32 destWindowOverride, i32[] dirtyRegion, u32 flags
+IDirect3DSwapChain9_GetFrontBufferData: handle destination -> Reply_Data
+IDirect3DSwapChain9_GetBackBuffer: u32 backBuffer, u32 type, handle result
+IDirect3DSwapChain9_GetRasterStatus: -> Reply_RasterStatus
+IDirect3DSwapChain9_GetDisplayMode: -> Reply_DisplayMode
+IDirect3DSwapChain9_GetLastPresentCount: -> Reply_Value
+IDirect3DSwapChain9_GetDisplayModeEx: -> Reply_DisplayMode
+
+# ---- IDirect3DResource9 / IDirect3DBaseTexture9 (every resource type) ------------------------------
+IDirect3DResource9_Destroy:
+IDirect3DResource9_SetPriority: u32 priority
+IDirect3DResource9_PreLoad:
+IDirect3DBaseTexture9_SetLOD: u32 lod
+IDirect3DBaseTexture9_SetAutoGenFilterType: u32 filterType
+IDirect3DBaseTexture9_GenerateMipSubLevels:
+
+# ---- vertex declarations, shaders ------------------------------------------------------------------
+IDirect3DVertexDeclaration9_Destroy:
+IDirect3DVertexShader9_Destroy:
+IDirect3DPixelShader9_Destroy:
+
+# ---- textures: level links, lock read-back, unlock uploads ------------------------------------------
+IDirect3DTexture9_GetSurfaceLevel: u32 level, handle result
+IDirect3DTexture9_LockRect: u32 level, i32[] rect, u32 flags -> Reply_Data
+IDirect3DTexture9_UnlockRect: u32 level, i32[] rect, u32 flags, u32 rowBytes, u32 rows, u32 heapChunk, u32 heapBytes, bytes data
+IDirect3DTexture9_AddDirtyRect: i32[] rect
+IDirect3DVolumeTexture9_GetVolumeLevel: u32 level, handle result
+IDirect3DVolumeTexture9_LockBox: u32 level, i32[] box, u32 flags -> Reply_Data
+IDirect3DVolumeTexture9_UnlockBox: u32 level, i32[] box, u32 flags, u32 rowBytes, u32 rows, u32 slices, u32 heapChunk, u32 heapBytes, bytes data
+IDirect3DVolumeTexture9_AddDirtyBox: i32[] box
+IDirect3DCubeTexture9_GetCubeMapSurface: u32 face, u32 level, handle result
+IDirect3DCubeTexture9_LockRect: u32 face, u32 level, i32[] rect, u32 flags -> Reply_Data
+IDirect3DCubeTexture9_UnlockRect: u32 face, u32 level, i32[] rect, u32 flags, u32 rowBytes, u32 rows, u32 heapChunk, u32 heapBytes, bytes data
+IDirect3DCubeTexture9_AddDirtyRect: u32 face, i32[] rect
+
+# ---- vertex / index buffers ----------------------------------------------------------------------
+IDirect3DVertexBuffer9_Lock: u32 offset, u32 size, u32 flags -> Reply_Data
+IDirect3DVertexBuffer9_Unlock: u32 offset, u32 flags, u32 heapChunk, u32 heapBytes, bytes data
+IDirect3DIndexBuffer9_Lock: u32 offset, u32 size, u32 flags -> Reply_Data
+IDirect3DIndexBuffer9_Unlock: u32 offset, u32 flags, u32 heapChunk, u32 heapBytes, bytes data
+
+# ---- surfaces, volumes ----------------------------------------------------------------------------
+IDirect3DSurface9_LockRect: i32[] rect, u32 flags -> Reply_Data
+IDirect3DSurface9_UnlockRect: i32[] rect, u32 flags, u32 rowBytes, u32 rows, u32 heapChunk, u32 heapBytes, bytes data
+IDirect3DVolume9_LockBox: i32[] box, u32 flags -> Reply_Data
+IDirect3DVolume9_UnlockBox: i32[] box, u32 flags, u32 rowBytes, u32 rows, u32 slices, u32 heapChunk, u32 heapBytes, bytes data
+
+# ---- IDirect3DQuery9 ------------------------------------------------------------------------------
+IDirect3DQuery9_Destroy:
+IDirect3DQuery9_Issue: u32 issueFlags
+# hresult S_OK / S_FALSE; data = the query result when S_OK
+IDirect3DQuery9_GetData: u32 size, u32 getDataFlags -> Reply_Data

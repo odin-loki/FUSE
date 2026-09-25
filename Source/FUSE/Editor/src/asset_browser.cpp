@@ -20,7 +20,7 @@ std::string joinPath(const std::string& root, const std::string& relative) {
     if (relative.empty()) {
         return root;
     }
-    return (std::filesystem::path(root) / relative).lexically_normal().string();
+    return (std::filesystem::path(root) / relative).lexically_normal().generic_string();
 }
 
 } // namespace
@@ -59,7 +59,7 @@ void AssetBrowser::refresh() {
         }
 
         AssetEntry asset;
-        asset.path = entry.path().lexically_relative(std::filesystem::path(m_projectRoot)).string();
+        asset.path = entry.path().lexically_relative(std::filesystem::path(m_projectRoot)).generic_string(); // "/" on Windows too
         asset.name = entry.path().filename().string();
 
         if (entry.is_directory(ec)) {

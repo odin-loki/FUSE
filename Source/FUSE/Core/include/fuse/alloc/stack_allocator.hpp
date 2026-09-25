@@ -31,7 +31,7 @@ public:
 
 private:
     const char* m_name = "stack";
-    std::vector<u8> m_storage;
+    detail::ArenaBytes m_storage;
     u32 m_offset = 0;
     AllocStats m_stats{};
 };

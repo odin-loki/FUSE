@@ -1,0 +1,142 @@
+#version 460
+// WP-4.5 motion blur (renderer::motion_blur_pass, motion_blur.cpp: tile max + neighbour max +
+// depth-aware reconstruction filter):
+//   tile_max       one thread per tile: the longest half blur vector of the tile's pixels (raster
+//                  order, strictly longer wins: the oracle's scan)
+//   neighbor_max   one thread per tile: the longest tile max of the 3 x 3 tile neighbourhood
+//   gather         one thread per pixel: max_samples taps along the neighbour-max vector with the cone /
+//                  cylinder weights; pixels whose neighbourhood does not move are copied
+// GLSL twin of pp_motion_blur.slang.
+#extension GL_GOOGLE_include_directive : require
+#include "pp_common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+vec2 pp_velocity(PpFrame F, uint x, uint y) { return pp_fetch(F.inputVelocity, ivec2(x, y)).xy; }
+float pp_depth(PpFrame F, uint x, uint y) {
+    return (F.flags & PP_FLAG_MB_DEPTH) != 0u ? pp_fetch(F.inputDepth, ivec2(x, y)).x : 0.0;
+}
+float pp_cone(float distance, float halfLength) {
+    if (halfLength <= 1e-6) {
+        return 0.0;
+    }
+    precise float r = 1.0 - distance / halfLength;
+    return pp_clamp(r, 0.0, 1.0);
+}
+float pp_smoothstep(float e0, float e1, float x) {
+    if (e1 <= e0) {
+        return x < e0 ? 0.0 : 1.0;
+    }
+    const float t = pp_clamp((x - e0) / (e1 - e0), 0.0, 1.0);
+    precise float r = t * t * (3.0 - 2.0 * t);
+    return r;
+}
+float pp_cylinder(float distance, float halfLength) {
+    if (halfLength <= 1e-6) {
+        return 0.0;
+    }
+    precise float e0 = 0.95 * halfLength;
+    precise float e1 = 1.05 * halfLength;
+    return 1.0 - pp_smoothstep(e0, e1, distance);
+}
+float pp_in_front(float a, float b, float extent) {
+    precise float r = 1.0 - (a - b) / max(extent, 1e-6);
+    return pp_clamp(r, 0.0, 1.0);
+}
+
+void main() {
+    const PpFrame F = pp_frame();
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    PpPairsRef tileMax = PpPairsRef(F.tileMax);
+    PpPairsRef neighborMax = PpPairsRef(F.neighborMax);
+    if (pc.mode == 0u) {
+        if (p.x >= F.mbTilesX || p.y >= F.mbTilesY) {
+            return;
+        }
+        vec2 best = vec2(0.0);
+        float bestLen = 0.0;
+        const uint x0 = p.x * F.mbTile;
+        const uint y0 = p.y * F.mbTile;
+        const uint x1 = min(x0 + F.mbTile, F.width);
+        const uint y1 = min(y0 + F.mbTile, F.height);
+        for (uint y = y0; y < y1; ++y) {
+            for (uint x = x0; x < x1; ++x) {
+                const vec2 h = pp_half_blur(pp_velocity(F, x, y), F);
+                const float len = pp_dot2(h);
+                if (len > bestLen) {
+                    best = h;
+                    bestLen = len;
+                }
+            }
+        }
+        tileMax.v[p.y * F.mbTilesX + p.x] = best;
+        return;
+    }
+    if (pc.mode == 1u) {
+        if (p.x >= F.mbTilesX || p.y >= F.mbTilesY) {
+            return;
+        }
+        vec2 best = vec2(0.0);
+        float bestLen = 0.0;
+        for (int oy = -1; oy <= 1; ++oy) {
+            for (int ox = -1; ox <= 1; ++ox) {
+                const int nx = int(p.x) + ox;
+                const int ny = int(p.y) + oy;
+                if (nx < 0 || ny < 0 || nx >= int(F.mbTilesX) || ny >= int(F.mbTilesY)) {
+                    continue;
+                }
+                const vec2 c = tileMax.v[uint(ny) * F.mbTilesX + uint(nx)];
+                const float len = pp_dot2(c);
+                if (len > bestLen) {
+                    best = c;
+                    bestLen = len;
+                }
+            }
+        }
+        neighborMax.v[p.y * F.mbTilesX + p.x] = best;
+        return;
+    }
+    if (p.x >= F.width || p.y >= F.height) {
+        return;
+    }
+    PpTexelsRef src = PpTexelsRef(pc.src);
+    const uint index = p.y * F.width + p.x;
+    const vec3 center = src.v[index].xyz;
+    const vec2 vn = neighborMax.v[(p.y / F.mbTile) * F.mbTilesX + p.x / F.mbTile];
+    if (pp_length2(vn) < 0.5) {
+        PpTexelsRef(pc.dst).v[index] = vec4(center, 0.0);
+        return;
+    }
+    const vec2 vx = pp_half_blur(pp_velocity(F, p.x, p.y), F);
+    const float vxLength = pp_length2(vx);
+    const float zx = pp_depth(F, p.x, p.y);
+    precise float totalWeight = 1.0 / max(vxLength, 0.5);
+    precise vec3 sum = center * totalWeight;
+    for (uint i = 0u; i < F.mbSamples; ++i) {
+        precise float t = -1.0 + (2.0 * (float(i) + 0.5)) / float(F.mbSamples);
+        precise float fx = float(p.x) + vn.x * t;
+        precise float fy = float(p.y) + vn.y * t;
+        const int sx = pp_lround(fx);
+        const int sy = pp_lround(fy);
+        if (sx < 0 || sy < 0 || sx >= int(F.width) || sy >= int(F.height)) {
+            continue;
+        }
+        if (sx == int(p.x) && sy == int(p.y)) {
+            continue;
+        }
+        const uint sample_ = uint(sy) * F.width + uint(sx);
+        precise float dx = float(sx) - float(p.x);
+        precise float dy = float(sy) - float(p.y);
+        precise float distance = sqrt(dx * dx + dy * dy);
+        const float vyLength = pp_length2(pp_half_blur(pp_velocity(F, uint(sx), uint(sy)), F));
+        const float zy = pp_depth(F, uint(sx), uint(sy));
+        const float foreground = pp_in_front(zy, zx, F.mbSoftDepth);
+        const float background = pp_in_front(zx, zy, F.mbSoftDepth);
+        precise float weight = (foreground * pp_cone(distance, vyLength) + background * pp_cone(distance, vxLength)) +
+                               (pp_cylinder(distance, vyLength) * pp_cylinder(distance, vxLength)) * 2.0;
+        sum = sum + src.v[sample_].xyz * weight;
+        totalWeight += weight;
+    }
+    precise vec3 result = sum * (1.0 / totalWeight);
+    PpTexelsRef(pc.dst).v[index] = vec4(result, 0.0);
+}

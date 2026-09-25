@@ -93,7 +93,7 @@ struct ContactIslandGraph {
 
     void clear();
 
-    u32 islandCount() const { return static_cast<u32>(islands_.size()); }
+    u32 islandCount() const { return islandCount_; }
     /// Islands that carry at least one contact or distance constraint.
     u32 constrainedIslandCount() const;
     const Island& island(u32 index) const { return islands_[index]; }
@@ -109,7 +109,11 @@ private:
     void compressPath(u32 index);
 
     std::vector<u32> parent_;
+    /// Island slots; only the first islandCount_ are live. Slots are never destroyed between
+    /// builds so their index vectors keep capacity (no per-step allocation, B1.8).
     std::vector<Island> islands_;
+    u32 islandCount_ = 0;
+    std::vector<u32> rootToIsland_;
 };
 
 } // namespace fuse::physics

@@ -1,0 +1,19 @@
+# FUSE WorldExtract GPU extras (CUDA; RTX 3090 24 GB target). OSI licences only.
+# Install torch for your CUDA first (https://pytorch.org), then:  pip install -r requirements-gpu.txt
+# Weights are NOT downloaded at runtime; fetch them once with:
+#   python extract.py download-models --what moge3,mapanything
+-r requirements.txt
+
+# ---- gpu --------------------------------------------------------------------------------------
+torch>=2.4                        # BSD-3-Clause
+torchvision>=0.19                 # BSD-3-Clause
+huggingface_hub>=0.24             # Apache-2.0  (download-models only)
+gsplat>=1.4                       # Apache-2.0  (splat stage; NOT the non-commercial INRIA 3DGS code)
+# MoGe-3 / MoGe-2 monocular geometry: code MIT, weights Ruicheng/moge-3-vitl + moge-2-vitl-normal MIT
+moge @ git+https://github.com/microsoft/MoGe.git
+# MapAnything feed-forward multi-view reconstruction: code Apache-2.0; ONLY the
+# facebook/map-anything-apache weights are allowed (facebook/map-anything is CC-BY-NC-4.0).
+mapanything @ git+https://github.com/facebookresearch/map-anything.git
+# Depth Anything V2 *Small* fallback via transformers (Apache-2.0). Base/Large weights are
+# CC-BY-NC-4.0 and forbidden (REMASTER_PLAN §3.4 / asset-licences lint rule 11).
+transformers>=4.45                # Apache-2.0

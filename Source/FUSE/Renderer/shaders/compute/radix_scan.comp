@@ -1,0 +1,49 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// GpuRadixSort pass 2/4: exclusive scan of one 1024-entry chunk of a scan level, in place.
+// The chunk total goes to scratch[sumsOffset + chunk]; the host scans that level the same way
+// (recursively) and radix_scan_add folds it back. Workgroups never communicate.
+#include "radix_sort_common.glsl"
+
+layout(local_size_x = 256) in;
+
+layout(std430, set = 0, binding = 4) buffer Scratch { uint scratch[]; };
+
+shared uint sScan[RADIX_WG_SIZE];
+
+void main() {
+    const uint tid = gl_LocalInvocationID.x;
+    const uint chunkBase = gl_WorkGroupID.x * RADIX_SCAN_CHUNK + tid * RADIX_SCAN_ITEMS;
+
+    uint v[RADIX_SCAN_ITEMS];
+    uint sum = 0u;
+    for (uint i = 0u; i < RADIX_SCAN_ITEMS; ++i) {
+        const uint idx = chunkBase + i;
+        v[i] = idx < pc.dataLen ? scratch[pc.dataOffset + idx] : 0u;
+        sum += v[i];
+    }
+
+    // Hillis-Steele inclusive scan of the per-thread sums.
+    sScan[tid] = sum;
+    barrier();
+    uint inclusive = sum;
+    for (uint offset = 1u; offset < RADIX_WG_SIZE; offset <<= 1u) {
+        const uint other = tid >= offset ? sScan[tid - offset] : 0u;
+        barrier();
+        inclusive += other;
+        sScan[tid] = inclusive;
+        barrier();
+    }
+
+    uint running = inclusive - sum;
+    for (uint i = 0u; i < RADIX_SCAN_ITEMS; ++i) {
+        const uint idx = chunkBase + i;
+        if (idx < pc.dataLen) {
+            scratch[pc.dataOffset + idx] = running;
+        }
+        running += v[i];
+    }
+    if (tid == RADIX_WG_SIZE - 1u) {
+        scratch[pc.sumsOffset + gl_WorkGroupID.x] = inclusive;
+    }
+}

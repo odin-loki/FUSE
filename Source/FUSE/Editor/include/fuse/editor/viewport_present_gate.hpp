@@ -51,10 +51,9 @@ inline bool shouldDisableSoftwarePlaceholderForEmbed(const ViewportSwapchainHand
     if (viewportQtPresentPathReady(handoff, externalSwapchainWired)) {
         return true;
     }
-    if (externalSwapchainWired && handoff.qtRealSurface) {
-        return true;
-    }
-    return handoff.nativeSurface != nullptr;
+    // A consumed surface alone is not enough: until a presentable swapchain is wired, the software
+    // placeholder is the only thing that reaches the viewport.
+    return externalSwapchainWired && handoff.nativeSurface != nullptr;
 }
 
 } // namespace fuse::editor

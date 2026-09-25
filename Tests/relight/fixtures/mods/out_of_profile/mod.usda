@@ -1,0 +1,46 @@
+#usda 1.0
+
+# RL-3.1 fixture: composition outside the Remix profile (inherits, specializes, value clips, layer offsets on a
+# reference) is reported with the prim path and otherwise ignored; the rest of the prim still composes.
+class "_class_Base"
+{
+    float from_class = 1
+}
+
+def Xform "RootNode"
+{
+    def Xform "meshes"
+    {
+        def Xform "mesh_0000000000003001" (
+            inherits = </_class_Base>
+        )
+        {
+            float local = 1
+        }
+
+        def Xform "mesh_0000000000003002" (
+            specializes = </_class_Base>
+        )
+        {
+        }
+
+        def Xform "mesh_0000000000003003" (
+            clips = {
+                dictionary default = {
+                    double2[] active = [(0, 0)]
+                    asset[] assetPaths = [@./clip.usd@]
+                    asset manifestAssetPath = @./manifest.usd@
+                    string primPath = "/Clip"
+                }
+            }
+        )
+        {
+        }
+
+        def Xform "mesh_0000000000003004" (
+            prepend references = @./asset.usd@ (offset = 24)
+        )
+        {
+        }
+    }
+}

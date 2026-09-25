@@ -1,0 +1,297 @@
+{
+  "schema": "fuse.poco/1",
+  "kind": "material_ext",
+  "id": "mod/fixture_game/material_table/mat_00000000000000A1",
+  "name": "mat_00000000000000A1",
+  "units": {
+    "length": "game",
+    "metersPerUnit": 1,
+    "up": "+Y",
+    "handedness": "right"
+  },
+  "payload": {
+    "surface": "opaque",
+    "mdl": {
+      "sourceAsset": "AperturePBR_Opacity.mdl",
+      "subIdentifier": "AperturePBR_Opacity"
+    },
+    "ignore_material": false,
+    "preload_textures": false,
+    "params": {
+      "anisotropy": 0.5,
+      "emissive_intensity": 12.5,
+      "emissive_color_constant": [0.5, 1, 0.25],
+      "enable_emission": true,
+      "sprite_sheet_rows": 4,
+      "sprite_sheet_cols": 8,
+      "sprite_sheet_fps": 24,
+      "enable_thin_film": true,
+      "thin_film_thickness_from_albedo_alpha": true,
+      "thin_film_thickness_constant": 750,
+      "use_legacy_alpha_state": false,
+      "blend_enabled": false,
+      "blend_type": 3,
+      "inverted_blend": true,
+      "alpha_test_type": 4,
+      "displace_in": 0.25,
+      "displace_out": 0.125,
+      "subsurface_transmittance_color": [0.75, 0.5, 0.25],
+      "subsurface_measurement_distance": 2,
+      "subsurface_single_scattering_albedo": [0.125, 0.25, 0.375],
+      "subsurface_volumetric_anisotropy": -0.5,
+      "subsurface_diffusion_profile": true,
+      "subsurface_radius": [1, 2, 3],
+      "subsurface_radius_scale": 4,
+      "subsurface_max_sample_radius": 8,
+      "filter_mode": 0,
+      "wrap_mode_u": 2,
+      "wrap_mode_v": 3,
+      "enable_dlss_control_mask": false,
+      "dlss_control_mask_intensity": 0.5,
+      "dlss_control_mask_tone_strength": 0.25,
+      "dlss_control_mask_structural_strength": 0.125
+    },
+    "textures": {
+      "diffuse_texture": {
+        "asset": "./textures/opaque/diffuse_texture.dds",
+        "colorSpace": "auto",
+        "slot": "albedo",
+        "path": "textures/opaque/diffuse_texture.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "2dbb7fc8805af87c6035a576bc3c7d0ecee7c04fea482ad6664e73082a38b7b2",
+          "size": 164,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "BC7_UNORM_BLOCK",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": true
+      },
+      "normalmap_texture": {
+        "asset": "./textures/opaque/normalmap_texture.dds",
+        "colorSpace": "raw",
+        "slot": "normal",
+        "path": "textures/opaque/normalmap_texture.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "c8b418c873ca7454d5b5ef40971863c3ff1900df8c5555e8c77e44708cb84c54",
+          "size": 164,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "BC5_UNORM_BLOCK",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": false
+      },
+      "tangent_texture": {
+        "asset": "./textures/opaque/tangent_texture.dds",
+        "colorSpace": "raw",
+        "slot": null,
+        "path": "textures/opaque/tangent_texture.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "2a4059b36c22b706dbb18aaf17b51192fce4efd2dbeba4c5672a5f7375ae79ac",
+          "size": 212,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "R8G8B8A8_UNORM",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": false
+      },
+      "height_texture": {
+        "asset": "./textures/opaque/height_texture.dds",
+        "colorSpace": "raw",
+        "slot": "height",
+        "path": "textures/opaque/height_texture.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "91244fc4213e6c76ce944d24311ad807c61b32cb48b4fb034cae3d12d8771a66",
+          "size": 212,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "R8G8B8A8_UNORM",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": false
+      },
+      "reflectionroughness_texture": {
+        "asset": "./textures/opaque/reflectionroughness_texture.dds",
+        "colorSpace": "raw",
+        "slot": null,
+        "path": "textures/opaque/reflectionroughness_texture.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "714f9c258c4b66b71035fbb36ea0d630660d2a0dc726bbd12c9d718a59e59104",
+          "size": 212,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "R8G8B8A8_UNORM",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": false
+      },
+      "metallic_texture": {
+        "asset": "./textures/opaque/metallic_texture.dds",
+        "colorSpace": "raw",
+        "slot": null,
+        "path": "textures/opaque/metallic_texture.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "b392cd59000d5e2b2546c794ee4a52d184ebc2ec8b63d178e81d211f4b847863",
+          "size": 212,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "R8G8B8A8_UNORM",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": false
+      },
+      "emissive_mask_texture": {
+        "asset": "./textures/opaque/emissive_mask_texture.dds",
+        "colorSpace": "auto",
+        "slot": "emissive",
+        "path": "textures/opaque/emissive_mask_texture.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "5499cba5a92a5e337f8b581addc943b736335d1a7761a1a15634be8b721333e7",
+          "size": 164,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "BC7_UNORM_BLOCK",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": true
+      },
+      "subsurface_transmittance_texture": {
+        "asset": "./textures/opaque/subsurface_transmittance_texture.dds",
+        "colorSpace": "raw",
+        "slot": null,
+        "path": "textures/opaque/subsurface_transmittance_texture.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "9db037aa64e78e7ee6cf9816603a61db4c6bb77883c757c90852073cb27ff1f9",
+          "size": 212,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "R8G8B8A8_UNORM",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": false
+      },
+      "subsurface_thickness_texture": {
+        "asset": "./textures/opaque/subsurface_thickness_texture.dds",
+        "colorSpace": "raw",
+        "slot": null,
+        "path": "textures/opaque/subsurface_thickness_texture.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "1129f8a5efae953bdf5135f616507228263099e711883c4f6d2f7532200284e5",
+          "size": 212,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "R8G8B8A8_UNORM",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": false
+      },
+      "subsurface_single_scattering_texture": {
+        "asset": "./textures/opaque/subsurface_single_scattering_texture.dds",
+        "colorSpace": "raw",
+        "slot": null,
+        "path": "textures/opaque/subsurface_single_scattering_texture.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "e57ee4ca789427b9fce5f3b38d77c98c7f2a58fa8244e94ca49ab7af1d89b012",
+          "size": 212,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "R8G8B8A8_UNORM",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": false
+      },
+      "subsurface_radius_texture": {
+        "asset": "./textures/opaque/subsurface_radius_texture.dds",
+        "colorSpace": "raw",
+        "slot": null,
+        "path": "textures/opaque/subsurface_radius_texture.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "afac4bf3d7e75ba20f9af453018299b4fc35d2a4e43340101a89f4d732d7180b",
+          "size": 212,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "R8G8B8A8_UNORM",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": false
+      },
+      "secondary_texture": {
+        "asset": "./textures/opaque/secondary_texture.dds",
+        "colorSpace": "raw",
+        "slot": null,
+        "path": "textures/opaque/secondary_texture.dds",
+        "status": "ok",
+        "source": "file",
+        "blob": {
+          "sha256": "9f73cfea85658bcd5ba9cf92bd11dee6d8113b2cef0c330fd2c77ac2bf7c7919",
+          "size": 212,
+          "media": "image/vnd-ms.dds"
+        },
+        "format": "R8G8B8A8_UNORM",
+        "width": 4,
+        "height": 4,
+        "mips": 1,
+        "srgb": false
+      }
+    },
+    "authored": ["alpha_test_reference_value", "alpha_test_type", "anisotropy", "blend_enabled", "blend_type", "diffuse_color_constant", "diffuse_texture", "displace_in", "displace_out", "dlss_control_mask_intensity", "dlss_control_mask_structural_strength", "dlss_control_mask_tone_strength", "emissive_color_constant", "emissive_intensity", "emissive_mask_texture", "enable_dlss_control_mask", "enable_emission", "enable_thin_film", "filter_mode", "height_texture", "inverted_blend", "metallic_constant", "metallic_texture", "normalmap_texture", "opacity_constant", "reflection_roughness_constant", "reflectionroughness_texture", "secondary_texture", "sprite_sheet_cols", "sprite_sheet_fps", "sprite_sheet_rows", "subsurface_diffusion_profile", "subsurface_max_sample_radius", "subsurface_measurement_distance", "subsurface_radius", "subsurface_radius_scale", "subsurface_radius_texture", "subsurface_single_scattering_albedo", "subsurface_single_scattering_texture", "subsurface_thickness_texture", "subsurface_transmittance_color", "subsurface_transmittance_texture", "subsurface_volumetric_anisotropy", "tangent_texture", "thin_film_thickness_constant", "thin_film_thickness_from_albedo_alpha", "use_legacy_alpha_state", "wrap_mode_u", "wrap_mode_v"],
+    "remix_hash": "00000000000000A1",
+    "particles": null
+  },
+  "provenance": {
+    "origin": "derived",
+    "derived_from": ["mod:material_table"],
+    "recipe": null,
+    "tool": "Source/FUSE/Relight/mods/import (RL-3.2 fuse_relight_import)",
+    "ai": null,
+    "human_authorship": "unknown",
+    "source": {
+      "mod": "material_table",
+      "stage": "mod.usda",
+      "prim": "/RootNode/Looks/mat_00000000000000A1",
+      "layer": "mod.usda"
+    }
+  },
+  "licence_id": "CC0-1.0",
+  "distribution": "never",
+  "replaces": [],
+  "tags": ["mod", "remix"],
+  "review": {
+    "state": "draft"
+  }
+}

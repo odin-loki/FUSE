@@ -1,0 +1,56 @@
+#version 460
+// WP-5.4 expand, GLSL twin of swraster_expand.slang. One invocation per WP-1.3 culler draw slot of
+// region pc.region: the drawn instance's meshlets become ceil(meshletCount / 32) SwGroup records of
+// the region (appended with atomics), and the region's classify dispatch x = min(records, capacity).
+#extension GL_GOOGLE_include_directive : require
+#include "bindless.glsl"
+#include "gpu_scene.glsl"
+#include "vis_format.glsl"
+#include "vis_common.glsl"
+#include "swraster_common.glsl"
+
+layout(local_size_x = 64) in;
+
+FUSE_BINDLESS_SSBO_LAYOUT buffer FuseSwWords { uint w[]; } fuse_sw_words[];
+
+layout(push_constant) uniform Push {
+    uint64_t constants;
+    uint region;
+    uint pad;
+} pc;
+
+void main() {
+    FuseSwConstantsRef C = FuseSwConstantsRef(pc.constants);
+    const uint i = gl_GlobalInvocationID.x;
+    const uint region = pc.region;
+    const uint cullCounts = fuse_handle_index(C.cullCountsBuffer);
+    const uint draws = fuse_sw_words[cullCounts].w[region == 0u ? FUSE_SW_CULL_PHASE1_DRAWS : FUSE_SW_CULL_PHASE2_DRAWS];
+    if (i >= draws || i >= C.maxDraws) {
+        return;
+    }
+    const uint slot = (region == 0u ? 0u : C.phase2DrawBase) + i;
+    const uint instance = fuse_sw_words[fuse_handle_index(C.cullArgsBuffer)].w[slot * 5u + 4u];
+    FuseGpuSceneHeaderRef scene = fuse_gpu_scene(C.scene);
+    const FuseGpuInstance inst = fuse_gpu_scene_instances(scene).v[instance];
+    const FuseGpuMesh mesh = fuse_gpu_scene_meshes(scene).v[inst.mesh];
+    const uint counts = fuse_handle_index(C.countsBuffer);
+    if (mesh.meshletCount == 0u || mesh.meshlets == 0ul || mesh.meshletVertices == 0ul || mesh.meshletTriangles == 0ul ||
+        mesh.positions == 0ul) {
+        atomicAdd(fuse_sw_words[counts].w[FUSE_SW_COUNT_SKIPPED], 1u);
+        return;
+    }
+    const uint n = (mesh.meshletCount + FUSE_SW_GROUP_SIZE - 1u) / FUSE_SW_GROUP_SIZE;
+    const uint base = atomicAdd(fuse_sw_words[counts].w[FUSE_SW_COUNT_GROUPS_REQUESTED0 + region], n);
+    const uint cap = C.capacity;
+    const uint groups = fuse_handle_index(C.groupsBuffer);
+    for (uint k = 0u; k < n && base + k < cap; ++k) {
+        const uint r = (region * cap + base + k) * 2u;
+        fuse_sw_words[groups].w[r] = instance;
+        fuse_sw_words[groups].w[r + 1u] = k * FUSE_SW_GROUP_SIZE;
+    }
+    const uint end = base + n;
+    atomicMax(fuse_sw_words[counts].w[FUSE_SW_COUNT_CLASSIFY0 + region * 3u], min(end, cap));
+    if (end > cap) {
+        atomicAdd(fuse_sw_words[counts].w[FUSE_SW_COUNT_OVERFLOW], end - max(base, cap));
+    }
+}

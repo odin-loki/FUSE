@@ -1,5 +1,7 @@
 #include <fuse/renderer/material/material_system.hpp>
 
+#include <cstring>
+
 namespace fuse::renderer {
 
 void MaterialSystem::init(ResourceManager& resources) {
@@ -62,6 +64,7 @@ void MaterialSystem::flushGpuBuffer() {
             continue;
         }
         m_gpuMaterials[i] = m_materials[i].pack();
+        resolveBindlessIndices(m_materials[i], m_gpuMaterials[i]);
         m_dirty[i] = false;
     }
     m_dirtyCount = 0;
@@ -75,17 +78,58 @@ void MaterialSystem::flushGpuBuffer() {
         return;
     }
 
-    if (!m_materialSsbo.isValid()) {
-        BufferDesc desc{};
-        desc.size = byteSize;
-        desc.usage = BufferUsage::Storage;
-        desc.memoryUsage = MemoryUsage::CpuToGpu;
-        desc.name = "material_ssbo";
-        m_materialSsbo = m_resources->createBuffer(desc);
+    // Rows are rewritten wholesale: a mapped (CpuToGpu) buffer is updated in place; a buffer that is
+    // too small (materials registered since the last flush) or unmapped is recreated with the rows as
+    // its initial data (its bindless index may change; read it from materialSsbo() each frame).
+    Buffer* existing = m_materialSsbo.isValid() ? m_resources->getBuffer(m_materialSsbo) : nullptr;
+    if (existing != nullptr && existing->desc.size >= byteSize && existing->mapped != nullptr) {
+        std::memcpy(existing->mapped, m_gpuMaterials.data(), byteSize);
+        return;
     }
+    if (m_materialSsbo.isValid()) {
+        m_resources->destroyBuffer(m_materialSsbo);
+        m_materialSsbo = BufferHandle{};
+    }
+
+    BufferDesc desc{};
+    desc.size = byteSize;
+    desc.usage = BufferUsage::Storage;
+    desc.memoryUsage = MemoryUsage::CpuToGpu;
+    desc.name = "material_ssbo";
+    m_materialSsbo = m_resources->createBuffer(desc, m_gpuMaterials.data());
 }
 
 void MaterialSystem::ensureCapacity(u32 /*id*/) {}
+
+void MaterialSystem::resolveBindlessIndices(const Material& material, Material::GPUMaterial& gpu) const {
+    if (m_resources == nullptr) {
+        return;
+    }
+    // Material::pack() can only see handle slots; shaders index the bindless texture heap, whose slot
+    // allocator is independent of the handle map. Unknown / destroyed handles resolve to "no texture".
+    const auto resolve = [this](const TextureHandle& handle) -> u32 {
+        if (!handle.isValid()) {
+            return UINT32_MAX;
+        }
+        const Texture* texture = m_resources->getTexture(handle);
+        return texture != nullptr ? texture->bindlessIndex : UINT32_MAX;
+    };
+    gpu.baseColorTexIdx = resolve(material.baseColorTex);
+    gpu.roughnessTexIdx = resolve(material.roughnessTex);
+    gpu.metallicTexIdx = resolve(material.metallicTex);
+    gpu.normalTexIdx = resolve(material.normalTex);
+    gpu.aoTexIdx = resolve(material.aoTex);
+    gpu.emissiveTexIdx = resolve(material.emissiveTex);
+    if (gpu.normalTexIdx == UINT32_MAX) {
+        gpu.flags &= ~MaterialFlagBits::kHasNormalMap;
+    }
+    if (gpu.aoTexIdx == UINT32_MAX) {
+        gpu.flags &= ~MaterialFlagBits::kHasAoMap;
+    }
+    if (gpu.metallicTexIdx == UINT32_MAX) {
+        gpu.flags &= ~MaterialFlagBits::kHasMetallicMap;
+    }
+}
 
 void MaterialSystem::markDirty(u32 id) {
     if (id >= m_dirty.size() || m_dirty[id]) {

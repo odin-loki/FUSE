@@ -11,15 +11,45 @@ enum class ToneMapper : u8 {
     Filmic = 1,
     Reinhard = 2,
     Neutral = 3,
+    /// Troy Sobotka's AgX base transform (no look), display-linear output (WP-4.5).
+    AgX = 4,
 };
 
 /// CPU reference tone mapping — mirrors renderer/postprocess/tonemapping.cuh.
+///
+/// `aces_tonemap` is the per-channel rational ACES filmic fit
+///   f(x) = x (2.51 x + 0.03) / (x (2.43 x + 0.59) + 0.14), clamped to [0, 1]
+/// (the published Narkowicz 2015 fit of the ACES RRT + sRGB ODT; the P5 sketch calls it the "Hill
+/// approximation" but these are the Narkowicz constants). Un-exposed it maps scene 0.18 to ~0.267
+/// display-linear, so the grade/stack apply a mid-grey calibration exposure (see
+/// `tone_mapper_mid_grey_calibration_ev`) that makes scene 0.18 land on display-linear 0.18.
 fuse::math::Vec3 aces_tonemap(const fuse::math::Vec3& x);
 fuse::math::Vec3 filmic_tonemap(const fuse::math::Vec3& x);
 fuse::math::Vec3 reinhard_tonemap(const fuse::math::Vec3& x);
 
+/// AgX base transform (T. Sobotka; the widely used polynomial fit of the default AgX sigmoid, no
+/// "look" / punch): scene-linear Rec.709 -> inset matrix -> log2 encoding over
+/// [kAgxMinEv, kAgxMaxEv] stops -> 6th-order sigmoid approximation -> outset (inverse inset)
+/// matrix -> 2.2 power to display-linear, clamped to [0, 1]. Unlike the per-channel operators it
+/// mixes channels (the inset desaturates highlights toward white instead of skewing hue). The GPU
+/// post stack (WP-4.5, shaders/post/pp_common) evaluates the same expressions in the same order.
+inline constexpr f32 kAgxMinEv = -12.47393f;
+inline constexpr f32 kAgxMaxEv = 4.026069f;
+f32 agx_contrast_approx(f32 x);
+fuse::math::Vec3 agx_tonemap(const fuse::math::Vec3& x);
+
 fuse::math::Vec3 apply_tone_map(const fuse::math::Vec3& hdr, ToneMapper mapper);
 const char* tone_mapper_name(ToneMapper mapper);
+
+/// Scene-referred mid grey and its display-referred (linear, pre-OETF) target.
+inline constexpr f32 kSceneMidGrey = 0.18f;
+inline constexpr f32 kDisplayMidGrey = 0.18f;
+
+/// Exposure bias (EV stops) such that `apply_tone_map(scene_grey * 2^ev, mapper) == display_grey`
+/// (monotone bisection on the operator). Neutral returns 0 when scene_grey == display_grey.
+/// Returns 0 when the operator cannot reach `display_grey`.
+f32 tone_mapper_mid_grey_calibration_ev(ToneMapper mapper, f32 scene_grey = kSceneMidGrey,
+                                        f32 display_grey = kDisplayMidGrey);
 
 /// Host-side tone-map pass stub (CUDA kernel deferred).
 class ToneMap {

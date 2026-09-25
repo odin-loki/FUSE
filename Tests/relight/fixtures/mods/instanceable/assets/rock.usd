@@ -1,0 +1,19 @@
+#usda 1.0
+(
+    defaultPrim = "Rock"
+)
+
+def Xform "Rock"
+{
+    float3 tint = (0.5, 0.5, 0.5)
+
+    def Mesh "geo"
+    {
+        point3f[] points = [(0, 0, 0), (2, 0, 0), (0, 2, 0)]
+
+        def GeomSubset "top"
+        {
+            int[] indices = [0]
+        }
+    }
+}
