@@ -1922,7 +1922,7 @@ int main() {
 - [x] Bindless descriptor table registers and unregisters textures — no descriptor heap corruption — `fuse_b2_bindless_churn`
 - [x] Staging ring buffer correctly wraps — upload of 256MB in 1MB chunks with no corruption — `fuse_b2_staging_wrap`
 - [x] Async upload completes and signals fence correctly — verified with fence wait timeout test — `fuse_b2_async_upload`
-- [ ] External memory textures allocate with correct Win32 handle — `cudaImportExternalMemory` succeeds
+- [x] External memory allocates with a Win32 handle — `cudaImportExternalMemory` succeeded for a dedicated buffer (`0xC0DA5A5A` round-trip on the RTX 3090, `fuse_cuda_interop`)
 - [x] Shader compiler produces valid SPIR-V for all test shaders — verified with `spirv-val` — `fuse_b5_rhi_spirv_val`
 - [x] Pipeline cache serialises to disk and restores on next run — first frame pipeline stalls eliminated (`fuse_pipeline_cache`)
 - [x] Hot-reload triggers pipeline rebuild in < 200ms — verified by timing shader file write to first redrawn frame — `fuse_b5_rhi_hot_reload` (SPIR-V write -> redrawn frame < 200 ms every time; GLSL write -> glslangValidator -> redrawn frame best-of-5 < 200 ms on Lavapipe)

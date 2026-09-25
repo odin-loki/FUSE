@@ -27,6 +27,9 @@ struct VulkanImageImportDesc {
 
 struct CudaBufferImport {
     void* devicePtr = nullptr;
+    /// cudaExternalMemory_t from a successful import. Release with release_imported_buffer
+    /// before the Vulkan allocation is freed. Not a cudaMalloc pointer.
+    void* externalMemory = nullptr;
     bool ok = false;
     const char* reason = nullptr;
 };
@@ -69,6 +72,8 @@ CudaBufferImport import_vulkan_buffer(void* vkDevice, const Buffer& buffer);
 CudaSurfaceImport import_vulkan_image(void* vkDevice, const Texture& texture);
 
 void free_cuda_import(void* cudaDevicePtr);
+/// Drops a buffer imported with cudaImportExternalMemory. Does not cudaFree the mapped pointer.
+void release_imported_buffer(CudaBufferImport& imported);
 void free_cuda_surface(void* surfaceObject);
 
 } // namespace fuse::renderer::cuda

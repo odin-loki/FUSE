@@ -161,6 +161,7 @@ CudaBufferImport import_vulkan_buffer(VulkanBufferImportDesc desc) {
     }
 
     result.devicePtr = devicePtr;
+    result.externalMemory = externalMemory;
     result.ok = true;
     result.reason = "cudaImportExternalMemory succeeded";
     return result;
@@ -258,6 +259,19 @@ CudaBufferImport import_vulkan_buffer(void* vkDevice, const Buffer& buffer) {
 
 CudaSurfaceImport import_vulkan_image(void* vkDevice, const Texture& texture) {
     return import_vulkan_image(makeImageImportDesc(vkDevice, texture));
+}
+
+void release_imported_buffer(CudaBufferImport& imported) {
+#if defined(FUSE_HAS_CUDA)
+    if (imported.externalMemory != nullptr) {
+        (void)cudaDestroyExternalMemory(static_cast<cudaExternalMemory_t>(imported.externalMemory));
+    }
+#else
+    (void)imported;
+#endif
+    imported.externalMemory = nullptr;
+    imported.devicePtr = nullptr;
+    imported.ok = false;
 }
 
 void free_cuda_import(void* cudaDevicePtr) {

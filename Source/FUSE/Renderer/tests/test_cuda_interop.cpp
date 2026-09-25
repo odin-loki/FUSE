@@ -3,8 +3,13 @@
 #include <fuse/renderer/cuda/interop_fill.hpp>
 #include <fuse/renderer/cuda/stream_manager.hpp>
 #include <fuse/renderer/cuda/vk_sync.hpp>
+#include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
+
+#if defined(FUSE_HAS_CUDA)
+#include <cuda_runtime.h>
+#endif
 
 #include <cstdio>
 #include <cstdlib>
@@ -240,6 +245,12 @@ void testFrameSyncTeardownStressStub() {
 }
 
 void testFrameSyncInteropCombinedStressStub() {
+#if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
+    if (fuse::renderer::cuda::interopFillAvailable()) {
+        std::printf("SKIP: interop fill runtime available — combined stub counts deferred\n");
+        return;
+    }
+#endif
     const fuse::renderer::cuda::FrameSyncInteropCombinedStressResult stress =
         fuse::renderer::cuda::stressFrameSyncAndInteropFillUnderLoad(24u);
 
@@ -258,6 +269,12 @@ void testFrameSyncInteropCombinedStressStub() {
 }
 
 void testInteropFillLoadStressStub() {
+#if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
+    if (fuse::renderer::cuda::interopFillAvailable()) {
+        std::printf("SKIP: interop fill runtime available — load stress needs exported handle\n");
+        return;
+    }
+#endif
     const fuse::renderer::cuda::InteropFillLoadStressResult stress =
         fuse::renderer::cuda::stressInteropFillUnderLoad(24u);
 
@@ -274,6 +291,12 @@ void testInteropFillLoadStressStub() {
 }
 
 void testInteropFillStub() {
+#if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
+    if (fuse::renderer::cuda::interopFillAvailable()) {
+        std::printf("SKIP: interop fill runtime available — needs real exported handle\n");
+        return;
+    }
+#endif
     fuse::renderer::cuda::InteropFillDesc desc{};
     desc.exportedMemoryHandle = reinterpret_cast<void*>(0x10);
     desc.allocationSize = 4096;
@@ -315,6 +338,79 @@ void testInteropReasonStrings() {
                "stub build reports unavailable interop reason");
     expectTrue(fuse::renderer::cuda::interopUnavailableReasonString(reason) != nullptr,
                "reason string non-null");
+}
+
+void testExportedBufferImport() {
+#if !defined(FUSE_HAS_CUDA) || !defined(FUSE_VULKAN_BACKEND)
+    std::printf("SKIP: exported buffer import needs CUDA and Vulkan\n");
+    return;
+#else
+    if (!fuse::renderer::cuda::interopAvailable()) {
+        std::printf("SKIP: external memory import not available\n");
+        return;
+    }
+
+    fuse::renderer::VulkanInstanceDesc instanceDesc{};
+    instanceDesc.enableValidation = false;
+    auto instance = fuse::renderer::VulkanInstance::create(instanceDesc);
+    expectTrue(instance != nullptr, "VulkanInstance for exported buffer import");
+    if (instance == nullptr) {
+        return;
+    }
+    auto device = fuse::renderer::VulkanDevice::create(*instance);
+    expectTrue(device != nullptr && device->isValid(), "VulkanDevice for exported buffer import");
+    if (device == nullptr || !device->isValid()) {
+        return;
+    }
+
+    auto allocator = fuse::renderer::GpuAllocator::create(*device);
+    expectTrue(allocator != nullptr && allocator->isValid(), "GpuAllocator for exported buffer");
+    if (allocator == nullptr || !allocator->isValid()) {
+        return;
+    }
+
+    fuse::renderer::BufferDesc desc{};
+    desc.size = 256;
+    desc.usage = static_cast<fuse::renderer::BufferUsage>(
+        static_cast<fuse::u32>(fuse::renderer::BufferUsage::Storage) |
+        static_cast<fuse::u32>(fuse::renderer::BufferUsage::TransferSrc) |
+        static_cast<fuse::u32>(fuse::renderer::BufferUsage::TransferDst));
+    desc.memoryUsage = fuse::renderer::MemoryUsage::GpuOnly;
+    desc.cudaInterop = true;
+    desc.name = "fuse.cuda.import";
+
+    fuse::renderer::Buffer buffer{};
+    expectTrue(allocator->createBuffer(desc, buffer), "exportable Vulkan buffer created");
+    expectTrue(buffer.exportedHandle != nullptr, "Vulkan buffer exported a Win32 handle");
+    if (buffer.exportedHandle == nullptr) {
+        allocator->destroyBuffer(buffer);
+        return;
+    }
+
+    const fuse::renderer::cuda::CudaBufferImport imported =
+        fuse::renderer::cuda::import_vulkan_buffer(device->nativeHandle(), buffer);
+    expectTrue(imported.ok, imported.reason != nullptr ? imported.reason : "cudaImportExternalMemory failed");
+    expectTrue(imported.devicePtr != nullptr, "imported buffer has a CUDA pointer");
+    if (!imported.ok || imported.devicePtr == nullptr) {
+        fuse::renderer::cuda::CudaBufferImport failed = imported;
+        fuse::renderer::cuda::release_imported_buffer(failed);
+        allocator->destroyBuffer(buffer);
+        return;
+    }
+
+    const fuse::u32 pattern = 0xC0DA5A5Au;
+    expectTrue(cudaMemcpy(imported.devicePtr, &pattern, sizeof(pattern), cudaMemcpyHostToDevice) == cudaSuccess,
+               "cudaMemcpy into imported Vulkan memory");
+    fuse::u32 readback = 0;
+    expectTrue(cudaMemcpy(&readback, imported.devicePtr, sizeof(readback), cudaMemcpyDeviceToHost) == cudaSuccess,
+               "cudaMemcpy from imported Vulkan memory");
+    expectTrue(readback == pattern, "round-trip through cudaImportExternalMemory");
+    std::printf("cudaImportExternalMemory round-trip ok value=0x%08x\n", readback);
+
+    fuse::renderer::cuda::CudaBufferImport owned = imported;
+    fuse::renderer::cuda::release_imported_buffer(owned);
+    allocator->destroyBuffer(buffer);
+#endif
 }
 
 void testStreamManagerStub() {
@@ -382,6 +478,7 @@ int main() {
     testFrameSyncInteropCombinedStressStub();
     testInteropFillLoadStressStub();
     testInteropFillStub();
+    testExportedBufferImport();
     testStreamManagerStub();
     testStreamManagerSynchronize();
 

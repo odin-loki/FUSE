@@ -25,6 +25,13 @@
 #include <string>
 #include <vector>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
 #endif
@@ -134,6 +141,43 @@ bool readAttachment(ResourceManager& resources, TextureHandle handle, std::vecto
 }
 #endif
 
+#if defined(_WIN32)
+// RenderDoc's in-app table, v1.6.0 (10600). Indices match RENDERDOC_API_1_6_0 through EndFrameCapture.
+// Loaded only when renderdoc.dll is already injected (renderdoccmd); otherwise a no-op.
+struct RenderDocCapture {
+    using StartFn = void(__cdecl*)(void*, void*);
+    using EndFn = unsigned(__cdecl*)(void*, void*);
+    using SetPathFn = void(__cdecl*)(const char*);
+    StartFn start = nullptr;
+    EndFn end = nullptr;
+    SetPathFn setPath = nullptr;
+
+    static RenderDocCapture load() {
+        RenderDocCapture capture;
+        HMODULE module = GetModuleHandleA("renderdoc.dll");
+        if (module == nullptr) {
+            return capture;
+        }
+        using GetApiFn = int(__cdecl*)(int, void**);
+        FARPROC proc = GetProcAddress(module, "RENDERDOC_GetAPI");
+        GetApiFn getApi = nullptr;
+        std::memcpy(&getApi, &proc, sizeof(getApi));
+        if (getApi == nullptr) {
+            return capture;
+        }
+        void* api = nullptr;
+        if (getApi(10600, &api) != 1 || api == nullptr) {
+            return capture;
+        }
+        auto* table = reinterpret_cast<void**>(api);
+        capture.setPath = reinterpret_cast<SetPathFn>(table[11]);
+        capture.start = reinterpret_cast<StartFn>(table[19]);
+        capture.end = reinterpret_cast<EndFn>(table[21]);
+        return capture;
+    }
+};
+#endif
+
 } // namespace
 
 int main() {
@@ -149,6 +193,9 @@ int main() {
     auto bootstrap = VulkanBootstrap::create(bootstrapDesc);
     if (bootstrap == nullptr || !bootstrap->status().deviceReady || bootstrap->frameManager() == nullptr ||
         !bootstrap->frameManager()->isReady()) {
+        if (bootstrap != nullptr) {
+            std::fprintf(stderr, "bootstrap: %s\n", bootstrap->status().message.c_str());
+        }
         bootstrap.reset();
         fuse::core::shutdown();
         return b5rhi::skip("fuse_b5_rhi_gbuffer_pass", "no Vulkan device (needs an ICD, Lavapipe in CI)");
@@ -222,6 +269,21 @@ int main() {
             draws[1].firstVertex = 0;
             draws[1].push = toPush(farSurface);
 
+#if defined(_WIN32)
+            const RenderDocCapture renderDoc = RenderDocCapture::load();
+            void* const captureDevice = bootstrap->instance()->nativeHandle();
+            if (renderDoc.setPath != nullptr) {
+                char capturePath[MAX_PATH]{};
+                const DWORD n = GetTempPathA(MAX_PATH, capturePath);
+                if (n > 0 && n < MAX_PATH - 16) {
+                    std::strcat(capturePath, "fuse-gbuffer");
+                    renderDoc.setPath(capturePath);
+                }
+            }
+            if (renderDoc.start != nullptr) {
+                renderDoc.start(captureDevice, nullptr);
+            }
+#endif
             frames.signalTickComplete();
             frames.beginFrame(0u);
             expectTrue(resetFrameSlotCommandPool(device, frames), "frame slot command pool reset");
@@ -241,6 +303,12 @@ int main() {
             expectTrue(submit.ok && submit.submitted, "G-buffer frame submitted");
             frames.endFrame();
             device.waitIdle();
+#if defined(_WIN32)
+            if (renderDoc.end != nullptr) {
+                const unsigned captured = renderDoc.end(captureDevice, nullptr);
+                std::printf("RenderDoc EndFrameCapture %s\n", captured != 0u ? "wrote a capture" : "did not write");
+            }
+#endif
 
             const GBufferTargets& targets = gbuffer.targets();
             Readback rb;

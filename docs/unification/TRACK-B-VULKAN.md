@@ -495,7 +495,7 @@ All shutdown steps are idempotent. GPU init and submit require the registered re
 
 ### Hardware run (2026-09-25, this workstation)
 
-Dual Intel Xeon Gold 6242, NVIDIA GeForce RTX 3090 (24576 MiB, driver 595.79), CUDA 13.2.51. Release. CPU and Vulkan numbers are MinGW GCC 13.2 (`build-hw`). CUDA numbers are MSVC 19.51 (`build-cuda`, `sm_86`). This PC has no integrated GPU. The Vulkan SDK is not installed, so the MSVC tree did not link Vulkan. RenderDoc is not installed. Production present was not unlocked.
+Dual Intel Xeon Gold 6242, NVIDIA GeForce RTX 3090 (24576 MiB, driver 595.79), CUDA 13.2.51. Release. CPU and Vulkan numbers are MinGW GCC 13.2 (`build-hw`). CUDA numbers are MSVC 19.51 (`build-cuda`, `sm_86`). This PC has no integrated GPU. Vulkan SDK 1.4.357.0 is installed. RenderDoc 1.46 is installed (portable, plus a per-user implicit layer that stays idle unless `ENABLE_VULKAN_RENDERDOC_CAPTURE=1`). Production present was not unlocked.
 
 | Gate | Result |
 |------|--------|
@@ -511,8 +511,9 @@ Dual Intel Xeon Gold 6242, NVIDIA GeForce RTX 3090 (24576 MiB, driver 595.79), C
 | Solver step | 9,610 bodies, existing step (4 substeps × 8 iterations): CUDA wall **42.2 ms**. Not “10 iterations × 10k contacts”. 5 ms target missed |
 | `compute-sanitizer` memcheck | **0 errors** on the ray-march, particle (5,000 slots), and physics kernel gates |
 | Nsight occupancy (60% / 70%) | Elevated `ncu` after allowing counters. SDF march 1920×1080 achieved **64%**. Particle compact **73%**, particle update **69%** on 262144 particles |
-| Win32 `cudaImportExternalMemory` | Not run. CUDA and Vulkan were not linked in one binary |
-| On-screen present / RenderDoc | Not run |
+| Win32 `cudaImportExternalMemory` | Passed. `fuse_cuda_interop` imported a dedicated opaque-Win32 Vulkan buffer and round-tripped `0xC0DA5A5A`. Timeline semaphores import as `cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32` |
+| GPU radix + sync validation | Passed on the 3090. 330 cases match `std::stable_sort`. 1M u32 keys: GPU **5.2 ms** (201 Mpairs/s). Validation messages: 0 |
+| G-buffer / RenderDoc | `fuse_b5_rhi_gbuffer_pass` passed (near/far/overlap readback). RenderDoc 1.46 wrote `%TEMP%\fuse-gbuffer_capture.rdc` (577334 bytes) around that submit. On-screen present was not run |
 
 ### Integration test flow (headless)
 

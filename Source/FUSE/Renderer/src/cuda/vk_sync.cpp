@@ -76,7 +76,8 @@ bool createVulkanTimelineSemaphore(VkDevice device, bool exportForCuda, VkSemaph
 #if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
 cudaExternalSemaphoreHandleType externalSemaphoreHandleType() {
 #if defined(_WIN32)
-    return cudaExternalSemaphoreHandleTypeOpaqueWin32;
+    // Timeline semaphores export as an NT handle. OpaqueWin32 import rejects them.
+    return cudaExternalSemaphoreHandleTypeTimelineSemaphoreWin32;
 #else
     return cudaExternalSemaphoreHandleTypeOpaqueFd;
 #endif
@@ -146,8 +147,9 @@ bool importCudaExternalSemaphore(VkDevice device, VkSemaphore vkSemaphore,
 
     cudaExternalSemaphore_t cudaSemaphore = nullptr;
     const cudaError_t importErr = cudaImportExternalSemaphore(&cudaSemaphore, &cudaDesc);
+    // Win32 timeline import does not take ownership of the NT handle.
+    closeExportedSemaphoreHandle(exportedHandle);
     if (importErr != cudaSuccess) {
-        closeExportedSemaphoreHandle(exportedHandle);
         return false;
     }
 
