@@ -22,6 +22,7 @@ struct PtTracePush {
 [[vk::push_constant]] ConstantBuffer<PtTracePush> pc;
 
 #define RGI_HOOK_OUTPUT pc.restirGi
+#define RC_HOOK_QUERY 1 // RL-5.4: radiance cache queries (table address in PtParams.rcTableLo / Hi)
 #include "rl_pt.slang"
 
 uint64_t ptSection(uint s) { return pc.outputs + uint64_t(s) * pc.outStride; }

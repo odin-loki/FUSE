@@ -27,6 +27,9 @@ PT_CONST uint kPtFlagRestirGi = 256u;    ///< RL-5.3: the frame's first sample t
                                          ///< from ReSTIR GI (ptRestirGiVertex; render/pathtrace/restir_gi*)
 PT_CONST uint kPtFlagGiRecord = 512u;    ///< RL-5.3 surface pass: the path stops at the G-buffer vertex after handing
                                          ///< it (and its bounce index) to ptRestirGiVertex (record mode)
+PT_CONST uint kPtFlagRadianceCache = 1024u; ///< RL-5.4: paths may end in the hash-grid radiance cache
+                                            ///< (ptRadianceCacheVertex; render/pathtrace/radiance_cache*)
+PT_CONST uint kPtFlagRcTrain = 2048u;       ///< RL-5.4 training paths: every vertex is recorded for the cache update
 
 // Instance flags (PtInstance)
 PT_CONST uint kPtInstanceVisible = 1u;
@@ -81,6 +84,8 @@ struct PtParams {
     uint samplesPerPixel;
     uint maxAlphaSkips;
     uint portalCount;
+    uint rcTableLo;     ///< RL-5.4: bits 8..31 of the radiance cache table's device address (w10.z; 0: none)
+    uint rcTableHi;     ///< ... bits 32..55 (w10.w). Set by PathTracerGpu::setRadianceCache; unused on the CPU
 };
 
 struct PtRawHit {

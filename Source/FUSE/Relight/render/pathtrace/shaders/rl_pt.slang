@@ -102,5 +102,7 @@ float ptLightSetPdf(float3 p, float3 n, uint light, float3 wi) {
 #include "restir_di_hook.slang"
 // RL-5.3: ptRestirGiVertex (ReSTIR GI record / apply hook; reads RGI_HOOK_OUTPUT).
 #include "restir_gi_hook.slang"
+// RL-5.4: ptRadianceCacheVertex / ptRadianceCacheEnd (hash-grid radiance cache; queries when RC_HOOK_QUERY).
+#include "radiance_cache_hook.slang"
 
 #include "pt_reference_core.h"

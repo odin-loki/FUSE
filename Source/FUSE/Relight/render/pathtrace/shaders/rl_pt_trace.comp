@@ -34,6 +34,7 @@ layout(push_constant) uniform PtTracePush {
 } pc;
 
 #define RGI_HOOK_OUTPUT pc.restirGi
+#define RC_HOOK_QUERY 1 // RL-5.4: radiance cache queries (table address in PtParams.rcTableLo / Hi)
 #include "rl_pt.glsl"
 
 layout(buffer_reference, std430, buffer_reference_align = 16) buffer PtOut4 { vec4 v[]; };

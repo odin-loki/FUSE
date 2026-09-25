@@ -54,6 +54,7 @@ struct PtCpuTexture {
 
 struct PtDiHook; // RL-5.2 ReSTIR DI hook (below)
 struct PtGiHook; // RL-5.3 ReSTIR GI hook (below)
+struct PtRcHook; // RL-5.4 radiance cache hook (below)
 
 /// Everything the core reads on the CPU (not owned).
 struct PtCpuContext {
@@ -75,6 +76,7 @@ struct PtCpuContext {
     u32 textureCount = 0;
     const PtDiHook* diHook = nullptr;                 ///< RL-5.2 ptRestirDiVertex (null: returns 0)
     const PtGiHook* giHook = nullptr;                 ///< RL-5.3 ptRestirGiVertex (null: returns 0)
+    const PtRcHook* rcHook = nullptr;                 ///< RL-5.4 ptRadianceCacheVertex / End (null: no-ops)
 };
 
 #define PT_FN inline
@@ -170,6 +172,29 @@ inline uint ptRestirGiVertex(const PtCpuContext& ctx, PtParams P, uint px, uint 
         return 0u;
     }
     return ctx.giHook->vertex(ctx.giHook->user, P, px, py, h, d, bounce, indirect);
+}
+
+/// RL-5.4: the C++ side of ptRadianceCacheVertex / ptRadianceCacheEnd (render/pathtrace/radiance_cache*: training
+/// records, cache queries; bodies in kernels/radiance_cache_path.h).
+struct PtRcHook {
+    uint (*vertex)(void* user, const PtParams& P, uint px, uint py, uint bounce, uint vflags, const PtSurface& S,
+                   const float3& n, const float3& d, float tHit, float prevPdf, const float3& thr, const float3& acc,
+                   float3& cached) = nullptr;
+    void (*end)(void* user, const PtParams& P, uint px, uint py, const float3& acc) = nullptr;
+    void* user = nullptr;
+};
+inline uint ptRadianceCacheVertex(const PtCpuContext& ctx, PtParams P, uint px, uint py, uint bounce, uint vflags,
+                                  PtSurface S, float3 n, float3 d, float tHit, float prevPdf, float3 thr, float3 acc,
+                                  float3& cached) {
+    if (ctx.rcHook == nullptr || ctx.rcHook->vertex == nullptr) {
+        return 0u;
+    }
+    return ctx.rcHook->vertex(ctx.rcHook->user, P, px, py, bounce, vflags, S, n, d, tHit, prevPdf, thr, acc, cached);
+}
+inline void ptRadianceCacheEnd(const PtCpuContext& ctx, PtParams P, uint px, uint py, float3 acc) {
+    if (ctx.rcHook != nullptr && ctx.rcHook->end != nullptr) {
+        ctx.rcHook->end(ctx.rcHook->user, P, px, py, acc);
+    }
 }
 
 #include "pt_reference_core.h"

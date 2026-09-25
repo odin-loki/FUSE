@@ -159,6 +159,11 @@ public:
     void setRestirDi(u64 address, renderer::rg::BufferRef buffer, renderer::rg::BufferRange range);
     /// RL-5.3: the next addTracePass reads ReSTIR GI's per-pixel output (as setRestirDi); beginFrame clears it.
     void setRestirGi(u64 address, renderer::rg::BufferRef buffer, renderer::rg::BufferRange range);
+    /// RL-5.4: the next addTracePass queries the radiance cache table at `address` (256-byte aligned, below 2^56; its
+    /// header holds the frame's RcParams) when the settings have kPtFlagRadianceCache: the address goes into this
+    /// frame's params (w10.zw) and the pass declares StorageReadWrite (hit counters) on `buffer` / `range`. False on an
+    /// unusable address or before beginFrame; beginFrame clears it.
+    bool setRadianceCache(u64 address, renderer::rg::BufferRef buffer, renderer::rg::BufferRange range);
     u32 collectRetired(u64 completedSerial);
 
     /// Output buffer (host-visible; valid after the frame completed) and a section's first byte.
@@ -253,6 +258,8 @@ private:
     u64 m_restirGiAddress = 0;
     renderer::rg::BufferRef m_restirGiBuffer{};
     renderer::rg::BufferRange m_restirGiRange{};
+    renderer::rg::BufferRef m_rcBuffer{};  ///< RL-5.4 radiance cache table (0: off)
+    renderer::rg::BufferRange m_rcRange{};
     std::vector<Retired> m_retired;
     PassRecord m_record{};
     void* m_layoutHandle = nullptr;   ///< VkPipelineLayout

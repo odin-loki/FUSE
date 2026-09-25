@@ -319,4 +319,5 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_frame.cmake") # Frame integration:
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/content_golden.cmake") # Asset plan W0.8 content golden renders + vendored NVIDIA FLIP (Samples/content_golden, Engine/lib/nvidia-flip)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_w07.cmake")  # Asset plan W0.7 .fusemat + layered materials (material_layers/, shaders/material_layers/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp73.cmake") # WP-7.3 path-tracing mode, T3 RT pipeline + T2 ray query (pathtrace/, shaders/pathtrace/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_rl55.cmake") # RL-5.5 radiance denoiser, extends WP-6.4 (denoise/radiance_*, shaders/denoise/rdn*)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_ssrc.cmake")  # WP-6.5 follow-up: screen-space radiance cascades (ssrc/, shaders/ssrc/)

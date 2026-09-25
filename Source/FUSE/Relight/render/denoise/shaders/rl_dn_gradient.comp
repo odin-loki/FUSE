@@ -1,0 +1,63 @@
+#version 460
+// FUSE Relight RL-5.5 "relight.denoise.gradient": the A-SVGF gradient producer (rl_dn_gradient_core.h has the
+// algorithm) - one invocation per 3 x 3 stratum, the RL-5.1 path-tracing core by ray query on the WP-6.0 TLAS.
+// GLSL twin of rl_dn_gradient.slang; CPU oracle: src/rl_dn_gradient_cpp.hpp (PtDenoiseCpu).
+#extension GL_EXT_ray_query : require
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// RldnPush (pt_denoise.hpp), 128 bytes.
+layout(push_constant) uniform RldnPush {
+    uint64_t params; ///< this frame's kPtParamWords, then the previous frame's
+    uint64_t instances;
+    uint64_t triangles;
+    uint64_t materials;
+    uint64_t portals;
+    uint64_t lightMap;
+    uint64_t lightTable;
+    uint64_t lightTree;
+    uint64_t tlas;
+    uint64_t lut;
+    uint64_t restirDi; ///< 0: the ReSTIR hooks stay off
+    uint64_t records;  ///< f32x4 per stratum (read, then rewritten)
+    uint64_t gradient; ///< f32x4 per stratum (out)
+    uint64_t reserved;
+    uint strataW;
+    uint strataH;
+    uint lightCount;
+    uint havePrev;
+} pc;
+
+#include "rl_pt.glsl"
+#include "rl_dn_gradient_core.h"
+
+layout(buffer_reference, std430, buffer_reference_align = 16) buffer RldnWordsRef { vec4 v[]; };
+
+void rldnStore(uint s, vec4 grad, vec4 next) {
+    RldnWordsRef(pc.gradient).v[s] = grad;
+    RldnWordsRef(pc.records).v[s] = next;
+}
+
+void main() {
+    uvec2 t = gl_GlobalInvocationID.xy;
+    if (t.x >= pc.strataW || t.y >= pc.strataH) {
+        return;
+    }
+    vec4 w[11];
+    vec4 pw[11];
+    for (uint k = 0u; k < 11u; ++k) {
+        w[k] = PtWordsRef(pc.params).v[k];
+        pw[k] = PtWordsRef(pc.params).v[11u + k];
+    }
+    PtParams cur = ptParamsUnpack(w);
+    PtParams prev = ptParamsUnpack(pw);
+    uint s = t.y * pc.strataW + t.x;
+    vec4 rec = RldnWordsRef(pc.records).v[s];
+    vec4 grad;
+    vec4 next;
+    rldnStratum(cur, prev, pc.havePrev != 0u, rec, t.x, t.y, grad, next);
+    rldnStore(s, grad, next);
+}

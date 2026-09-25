@@ -21,6 +21,7 @@ namespace fuse::relight::ptk {
 struct PtReferencePixel;
 struct PtDiHook;
 struct PtGiHook;
+struct PtRcHook;
 }
 
 namespace fuse::relight::render::pathtrace {
@@ -61,9 +62,11 @@ private:
 /// (sized width x height; its G-buffer fields come from sample `sampleBase`). False on invalid input.
 /// `diHook`: RL-5.2's ReSTIR DI hook (ptRestirDiVertex; render/pathtrace/restir_di.hpp), null: none.
 /// `giHook`: RL-5.3's ReSTIR GI hook (ptRestirGiVertex; render/pathtrace/restir_gi.hpp), null: none.
+/// `rcHook`: RL-5.4's radiance cache hook (ptRadianceCacheVertex / End; radiance_cache/radiance_cache.hpp), null: none.
 bool renderReference(const PtCompiledScene& scene, const PtSettings& settings, u32 width, u32 height, u32 frameSeed,
                      u32 sampleBase, u32 samples, PtReferenceImage& image,
                      kernel::Backend backend = kernel::Backend::CpuParallel, PtReferenceStats* stats = nullptr,
-                     const ptk::PtDiHook* diHook = nullptr, const ptk::PtGiHook* giHook = nullptr);
+                     const ptk::PtDiHook* diHook = nullptr, const ptk::PtGiHook* giHook = nullptr,
+                     const ptk::PtRcHook* rcHook = nullptr);
 
 } // namespace fuse::relight::render::pathtrace

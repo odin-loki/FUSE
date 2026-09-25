@@ -33,6 +33,11 @@ if(TARGET fuse_relight_pathtrace_frame AND TARGET fuse_relight_render_frame)
     # The hook in pt_frame_renderer.cpp (#if defined(FUSE_RELIGHT_POST)).
     target_link_libraries(fuse_relight_pathtrace_frame PRIVATE fuse_relight_post_frame)
     target_compile_definitions(fuse_relight_pathtrace_frame PRIVATE FUSE_RELIGHT_POST=1)
+    # RL-5.5: the path tracer's denoiser runs inside the hook (render/denoise, pt_post.hpp).
+    if(TARGET fuse_relight_denoise)
+        target_link_libraries(fuse_relight_post_frame PRIVATE fuse_relight_denoise)
+        target_compile_definitions(fuse_relight_post_frame PRIVATE FUSE_RELIGHT_DENOISE=1)
+    endif()
 endif()
 
 add_subdirectory(tests)

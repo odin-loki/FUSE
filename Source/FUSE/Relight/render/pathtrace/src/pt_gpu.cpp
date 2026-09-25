@@ -344,6 +344,7 @@ bool PathTracerGpu::beginFrame(u64 frameSerial, const PtCompiledScene& scene, co
     m_restirDiBuffer = rg::BufferRef{};
     m_restirGiAddress = 0;
     m_restirGiBuffer = rg::BufferRef{};
+    m_rcBuffer = rg::BufferRef{};
     // GPU scene: instance transforms / flags of this frame (the compiled scene is authoritative).
     m_scene->beginFrame(frameSerial);
     m_as->beginFrame(frameSerial);
@@ -509,6 +510,21 @@ void PathTracerGpu::setRestirGi(u64 address, rg::BufferRef buffer, rg::BufferRan
     m_restirGiRange = range;
 }
 
+bool PathTracerGpu::setRadianceCache(u64 address, rg::BufferRef buffer, rg::BufferRange range) {
+    if (!m_initialized || m_ring.mapped == nullptr || (address & 255u) != 0u || (address >> 56u) != 0u ||
+        !buffer.valid()) {
+        return false;
+    }
+    // PtParams.rcTableLo / rcTableHi (pt_reference_types.h): w10.z = bits 8..31, w10.w = bits 32..55 (exact floats).
+    Word* params = reinterpret_cast<Word*>(static_cast<u8*>(m_ring.mapped) + u64(m_slot) * m_slotStride +
+                                           m_ringLayout.params);
+    params[10].z = float(u32((address >> 8u) & 0xFFFFFFu));
+    params[10].w = float(u32((address >> 32u) & 0xFFFFFFu));
+    m_rcBuffer = buffer;
+    m_rcRange = range;
+    return true;
+}
+
 bool PathTracerGpu::addTracePass(rg::Graph& graph, const PtGraphRefs& refs) {
     if (!m_initialized || !refs.valid) {
         return false;
@@ -556,6 +572,9 @@ bool PathTracerGpu::addTracePass(rg::Graph& graph, const PtGraphRefs& refs) {
     }
     if (m_restirGiBuffer.valid()) {
         pass.use(m_restirGiBuffer, rg::Access::StorageRead, m_restirGiRange, rg::kStageCompute);
+    }
+    if (m_rcBuffer.valid()) {
+        pass.use(m_rcBuffer, rg::Access::StorageReadWrite, m_rcRange, rg::kStageCompute); // RL-5.4 queries + counters
     }
     return true;
 }

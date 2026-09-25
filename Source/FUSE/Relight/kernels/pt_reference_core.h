@@ -47,6 +47,16 @@
 //                                        continuation from this vertex brings except the light-set emission of its
 //                                        first segment: NEE (or ReSTIR DI) runs as usual, the continuation collects
 //                                        that first segment's light-set emission (MIS as usual) and the path stops.
+//   uint ptRadianceCacheVertex(PT_CTX_PARAM PtParams P, uint px, uint py, uint bounce, uint vflags, PtSurface S,
+//                              float3 n, float3 d, float tHit, float prevPdf, float3 thr, float3 acc,
+//                              PT_INOUT(float3) cached);
+//   void ptRadianceCacheEnd(PT_CTX_PARAM PtParams P, uint px, uint py, float3 acc);
+//                                        RL-5.4 radiance cache hooks (render/pathtrace/radiance_cache*, bodies in
+//                                        kernels/radiance_cache_path.h), called only with kPtFlagRadianceCache or
+//                                        kPtFlagRcTrain: at every scattering vertex before its NEE (vflags: primary
+//                                        chain 1, previous scatter dirac 2, ReSTIR-owned 4; thr / acc: the path
+//                                        throughput and radiance so far), 1 = the path ends with thr x `cached` (never
+//                                        on the primary chain); End once per path after the loop (training records).
 //
 // THE ESTIMATOR (unidirectional path tracing, one path per sample; ptRenderSample):
 //   * primary rays from a pinhole camera (the D3D view / projection's eye and field of view), jittered in the pixel
@@ -227,6 +237,8 @@ PT_FN PtParams ptParamsUnpack(PT_PARAM_WORDS(w)) {
     P.samplesPerPixel = uint(w[9].w);
     P.maxAlphaSkips = uint(w[10].x);
     P.portalCount = uint(w[10].y);
+    P.rcTableLo = uint(w[10].z);
+    P.rcTableHi = uint(w[10].w);
     return P;
 }
 
@@ -670,6 +682,24 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
         if (!giReplaced) {
             giIndirect = float3(0.0f, 0.0f, 0.0f);
         }
+        // RL-5.4 radiance cache: record the vertex (training) or end the path with the cached radiance.
+        if ((P.flags & (kPtFlagRadianceCache | kPtFlagRcTrain)) != 0u) {
+            float3 cached = float3(0.0f, 0.0f, 0.0f);
+            uint vflags = (chain ? 1u : 0u) | (prevDelta ? 2u : 0u) | (diReplaced || giReplaced ? 4u : 0u);
+            if (ptRadianceCacheVertex(PT_CTX_ARG P, px, py, bounce, vflags, S, n, d, h.t, prevPdf, thr, R.radiance,
+                                      cached) == 1u) {
+                float3 ccon = thr * cached;
+                if (channel == 1u) {
+                    R.diffuse = R.diffuse + ccon;
+                } else if (channel == 2u) {
+                    R.specular = R.specular + ccon;
+                } else {
+                    R.emissive = R.emissive + ccon;
+                }
+                R.radiance = R.radiance + ccon;
+                break;
+            }
+        }
         if (nee && !diReplaced && P.lightCount > 0u) {
             PtLightPick lp = ptSampleLightSet(PT_CTX_ARG S.position, treeN, ptRandom(seed, dim + 0u),
                                               ptRandom(seed, dim + 1u), ptRandom(seed, dim + 2u));
@@ -793,6 +823,9 @@ PT_FN PtSample ptRenderSample(PT_CTX_PARAM PtParams P, uint px, uint py, uint sa
             }
             thr = thr * (1.0f / q);
         }
+    }
+    if ((P.flags & (kPtFlagRadianceCache | kPtFlagRcTrain)) != 0u) {
+        ptRadianceCacheEnd(PT_CTX_ARG P, px, py, R.radiance); // RL-5.4 (training records; resets the hook's state)
     }
     // Demodulation (exact: remodulated = radiance) and motion of the G-buffer point.
     R.diffuse = ptDiv3(R.diffuse, R.albedoD);

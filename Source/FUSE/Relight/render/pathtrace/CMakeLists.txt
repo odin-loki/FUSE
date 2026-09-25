@@ -77,7 +77,10 @@ set(_rl_pt_core_deps "${RL_PT_KERNELS_DIR}/pt_reference_types.h" "${RL_PT_KERNEL
                      "${RL_PT_RELIGHT_DIR}/shaders/material/bsdf.glsl"
                      "${RL_PT_SHADERS_DIR}/rl_pt.slang" "${RL_PT_SHADERS_DIR}/rl_pt.glsl"
                      "${RL_PT_SHADERS_DIR}/restir_di_hook.slang" "${RL_PT_SHADERS_DIR}/restir_di_hook.glsl"
-                     "${RL_PT_SHADERS_DIR}/restir_gi_hook.slang" "${RL_PT_SHADERS_DIR}/restir_gi_hook.glsl")
+                     "${RL_PT_SHADERS_DIR}/restir_gi_hook.slang" "${RL_PT_SHADERS_DIR}/restir_gi_hook.glsl"
+                     "${RL_PT_KERNELS_DIR}/radiance_cache_types.h" "${RL_PT_KERNELS_DIR}/radiance_cache_core.h"
+                     "${RL_PT_KERNELS_DIR}/radiance_cache_path.h" "${RL_PT_KERNELS_DIR}/radiance_cache_hook.slang"
+                     "${RL_PT_KERNELS_DIR}/radiance_cache_hook.glsl")
 if(COMMAND fuse_add_slang_shaders)
     fuse_add_slang_shaders(fuse_relight_pathtrace_kernels
         SOURCES "${RL_PT_SHADERS_DIR}/rl_pt_trace.slang"

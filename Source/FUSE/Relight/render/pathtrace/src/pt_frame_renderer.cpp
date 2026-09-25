@@ -392,6 +392,9 @@ bool PathTraceFrameRenderer::trace(u32 width, u32 height) {
     fd.width = width;
     fd.height = height;
     fd.frameSeed = 1u;
+#if defined(FUSE_RELIGHT_POST)
+    fd.frameSeed = m_post.frameSeed(m_serial, fd.frameSeed); // RL-5.5: a fresh seed per frame while denoising
+#endif
     fd.sampleBase = m_sampleBase;
     fd.accumulate = m_accumulated;
     fd.settings.maxBounces = m_config.maxBounces;
@@ -415,6 +418,11 @@ bool PathTraceFrameRenderer::trace(u32 width, u32 height) {
         (m_rgi.enabled && !m_restirGi.addPasses(m_graph, m_gpu, refs)) || !m_gpu.addTracePass(m_graph, refs)) {
         return fail("path tracer graph");
     }
+#if defined(FUSE_RELIGHT_POST)
+    if (!m_post.addDenoisePasses(m_graph, m_gpu, refs, m_compiled, fd, m_serial)) { // RL-5.5 denoiser
+        return fail(m_post.error());
+    }
+#endif
     m_graph.addPass("relight.pt.readback", nullptr, nullptr).use(refs.outputs, rg::Access::HostRead);
     m_context->lockQueue();
     m_upload.flush();
@@ -424,6 +432,9 @@ bool PathTraceFrameRenderer::trace(u32 width, u32 height) {
     m_gpu.collectRetired(m_serial);
     m_restir.collectRetired(m_serial);
     m_restirGi.collectRetired(m_serial);
+#if defined(FUSE_RELIGHT_POST)
+    m_post.collectDenoise(m_serial);
+#endif
     if (!result.ok || !waited) {
         return fail("path tracer submission failed");
     }
