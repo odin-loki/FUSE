@@ -1,0 +1,10 @@
+{
+  "fusemat": 1,
+  "name": "golden/material_ball/stone_triplanar_stochastic",
+  "category": "stone",
+  "base": {"albedo": [1, 1, 1], "roughness": 1, "textures": {"albedo": "stone_albedo", "normal": "stone_normal"}},
+  "uv_scale": 0.6,
+  "triplanar": {"enabled": true, "sharpness": 4},
+  "stochastic": {"enabled": true, "lattice": 2},
+  "macro": {"scale": 1.5, "strength": 0.25}
+}

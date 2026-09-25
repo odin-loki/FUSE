@@ -1,0 +1,17 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#include "ml_common.glsl"
+
+// Asset plan W0.7 "materials.balls": the golden material-ball scene, one thread per pixel (ray / ball hit, layered
+// material, sun + hemisphere shading). GLSL twin of ml_balls.slang; CPU twin: material_layers::ml_ball_pixel.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+void main() {
+    const MlParams P = ml_load(pc.params);
+    const uint x = gl_GlobalInvocationID.x;
+    const uint y = gl_GlobalInvocationID.y;
+    if (x >= P.width || y >= P.height) {
+        return;
+    }
+    MlImageRef(P.image).v[y * P.width + x] = ml_ball_pixel(P, ml_view(P), x, y);
+}

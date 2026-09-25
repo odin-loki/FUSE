@@ -317,3 +317,4 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp91.cmake")  # WP-9.1 neural runt
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp65.cmake")  # WP-6.5 radiance cascades, research (research/radiance_cascades/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_frame.cmake") # Frame integration: FrameComposer (frame/, shaders/frame/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/content_golden.cmake") # Asset plan W0.8 content golden renders + vendored NVIDIA FLIP (Samples/content_golden, Engine/lib/nvidia-flip)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_w07.cmake")  # Asset plan W0.7 .fusemat + layered materials (material_layers/, shaders/material_layers/)

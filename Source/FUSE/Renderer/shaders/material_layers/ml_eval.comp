@@ -1,0 +1,17 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#include "ml_common.glsl"
+
+// Asset plan W0.7 "materials.eval": one thread per surface record: the layered-material evaluation (MlSurface ->
+// MlResult). GLSL twin of ml_eval.slang; CPU twin: material_layers::ml_evaluate.
+layout(local_size_x = 64) in;
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.count) {
+        return;
+    }
+    const MlParams P = ml_load(pc.params);
+    const MlSurface s = MlSurfacesRef(pc.src).v[i];
+    MlResultsRef(pc.dst).v[i] = ml_evaluate(ml_view(P), s);
+}
