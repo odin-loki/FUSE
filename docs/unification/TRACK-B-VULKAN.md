@@ -468,9 +468,9 @@ All shutdown steps are idempotent. GPU init and submit require the registered re
 
 | Item | Status | Notes |
 |------|--------|-------|
-| `SharedTimeline` 10k-frame race-free | **Deferred** | Stub semaphore wrapper |
-| Vulkan buffer readback via CUDA pointer | **Deferred** | Import API surface only |
-| CUDA texture visible in composite pass | **Deferred** | Composite is logical stub |
+| `SharedTimeline` 10k-frame race-free | **Coded (3090 run pending)** | `fuse_cuda_vk_timeline_10k`: Vulkan compute lane + CUDA kernel lane on one exported buffer, 10 000 frames, per-frame logs checked. CPU lane on Lavapipe passes (`fuse_cuda_vk_timeline_10k_cpu_lane`, fault-injection self-test `fuse_cuda_vk_timeline_cpu_lane_detects_fault`) |
+| Vulkan buffer readback via CUDA pointer | **Coded (3090 run pending)** | `fuse_cuda_vk_buffer_roundtrip`: full-buffer patterns both directions (4 KiB, 1 MiB + 4 B, 64 MiB), timeline-ordered, re-import of the same handle |
+| CUDA texture visible in composite pass | **Coded (3090 run pending)** | `fuse_cuda_vk_surface_composite`: CUDA `surf2Dwrite` into an imported image, real `CompositeGpuPath` pass at 4 alphas, every pixel checked |
 | `cuda-memcheck` / `compute-sanitizer` clean | **Partial** | 2026-09-25: `compute-sanitizer --tool memcheck` reported 0 errors on the ray-march, particle, and physics kernel gates. Not a full renderer frame loop |
 
 #### Rendering correctness

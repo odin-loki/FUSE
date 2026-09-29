@@ -40,6 +40,7 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/alloc/freelist_allocator.hpp
     include/fuse/alloc/domain_budget.hpp
     include/fuse/alloc/leak_detector.hpp
+    include/fuse/alloc/gpu_allocator.hpp
     include/fuse/io/asset.hpp
     include/fuse/io/file_time.hpp
     include/fuse/io/vfs.hpp
@@ -104,6 +105,7 @@ set(FUSE_CORE_SOURCES
     src/alloc/freelist_allocator.cpp
     src/alloc/domain_budget.cpp
     src/alloc/leak_detector.cpp
+    src/alloc/gpu_allocator.cpp
     src/io/vfs.cpp
     src/io/file_time.cpp
     src/jobs/worker_count.cpp

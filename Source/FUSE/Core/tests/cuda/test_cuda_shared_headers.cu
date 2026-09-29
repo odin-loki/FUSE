@@ -2,6 +2,7 @@
 // Includes the same fuse/types.hpp, fuse/math/*, fuse/gria.hpp that the C++23 engine uses and
 // exercises them from __global__ code; shared_layout_asserts.hpp is re-evaluated in the device pass.
 
+#include "gria_alpha_gate.hpp"
 #include "shared_layout_asserts.hpp"
 
 #include <cuda_runtime.h>
@@ -19,6 +20,14 @@ __global__ void sharedHeadersKernel(const GateSample* samples, f32* results, u32
         return;
     }
     evaluateGateSample(samples[i], results + i * kGateResultFloats);
+}
+
+__global__ void griaAlphaKernel(const AlphaInput* inputs, AlphaRecord* records, u32 count) {
+    const u32 i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= count) {
+        return;
+    }
+    records[i] = evaluateAlpha(inputs[i]);
 }
 
 } // namespace fuse::cuda_gate
@@ -52,5 +61,37 @@ extern "C" bool fuse_cuda_gate_eval_device(const fuse::cuda_gate::GateSample* sa
     }
     cudaFree(dSamples);
     cudaFree(dResults);
+    return ok;
+}
+
+/// nvcc host-pass evaluation of the GRIA Alpha sweep (runs without a GPU).
+extern "C" void fuse_cuda_gate_alpha_nvcc_host(const fuse::cuda_gate::AlphaInput* inputs,
+                                               fuse::cuda_gate::AlphaRecord* records, fuse::u32 count) {
+    for (fuse::u32 i = 0; i < count; ++i) {
+        records[i] = fuse::cuda_gate::evaluateAlpha(inputs[i]);
+    }
+}
+
+/// Device evaluation of the GRIA Alpha sweep. Returns false (and touches nothing) without a CUDA device.
+extern "C" bool fuse_cuda_gate_alpha_device(const fuse::cuda_gate::AlphaInput* inputs,
+                                            fuse::cuda_gate::AlphaRecord* records, fuse::u32 count) {
+    int devices = 0;
+    if (cudaGetDeviceCount(&devices) != cudaSuccess || devices <= 0) {
+        return false;
+    }
+    using fuse::cuda_gate::AlphaInput;
+    using fuse::cuda_gate::AlphaRecord;
+    AlphaInput* dInputs = nullptr;
+    AlphaRecord* dRecords = nullptr;
+    bool ok = cudaMalloc(reinterpret_cast<void**>(&dInputs), sizeof(AlphaInput) * count) == cudaSuccess &&
+              cudaMalloc(reinterpret_cast<void**>(&dRecords), sizeof(AlphaRecord) * count) == cudaSuccess &&
+              cudaMemcpy(dInputs, inputs, sizeof(AlphaInput) * count, cudaMemcpyHostToDevice) == cudaSuccess;
+    if (ok) {
+        fuse::cuda_gate::griaAlphaKernel<<<(count + 127u) / 128u, 128>>>(dInputs, dRecords, count);
+        ok = cudaGetLastError() == cudaSuccess && cudaDeviceSynchronize() == cudaSuccess &&
+             cudaMemcpy(records, dRecords, sizeof(AlphaRecord) * count, cudaMemcpyDeviceToHost) == cudaSuccess;
+    }
+    cudaFree(dInputs);
+    cudaFree(dRecords);
     return ok;
 }

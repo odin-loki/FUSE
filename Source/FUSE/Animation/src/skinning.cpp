@@ -12,6 +12,8 @@ namespace fuse::animation {
 #if defined(FUSE_HAS_CUDA)
 /// kernels/skinning.cu: stages the mesh + palette on the device and runs the same kernel body.
 bool launchSkinningCuda(const skinning_kernel::Params& params, void* stream);
+/// kernels/skinning.cu: CUDA-event timing on resident device buffers (see time_skinning_cuda).
+bool timeSkinningCudaResident(const skinning_kernel::Params& params, u32 iterations, SkinningCudaTiming& timing);
 #endif
 
 bool skinning_cuda_kernel_available() {
@@ -49,6 +51,42 @@ bool skin_vertices_on(kernel::Backend backend, const SkinningInput& input, Skinn
     // CPU backends, or a GPU backend that cannot run here: kernel::launch resolves the fallback
     // (CpuParallel) and records the requested vs executed backend.
     return kernel::launch(backend, skinning_kernel::make_launch(params), skinning_kernel::Kernel{}, params).ok;
+}
+
+SkinningCudaTiming time_skinning_cuda(const SkinningInput& input, SkinningOutput& output, u32 iterations) {
+    SkinningCudaTiming timing{};
+    const usize vertexCount = input.rest_positions.size();
+    const bool hasNormals = !input.rest_normals.empty();
+    if (vertexCount == 0 || !std::in_range<u32>(vertexCount) || input.weights.size() != vertexCount ||
+        (hasNormals && input.rest_normals.size() != vertexCount) || iterations == 0u) {
+        timing.reason = "invalid skinning input or zero iterations";
+        return timing;
+    }
+    if (!skinning_cuda_kernel_available()) {
+#if defined(FUSE_HAS_CUDA)
+        timing.reason = "no CUDA device";
+#else
+        timing.reason = "built without CUDA (FUSE_BUILD_CUDA=OFF)";
+#endif
+        return timing;
+    }
+#if defined(FUSE_HAS_CUDA)
+    output.positions.resize(vertexCount);
+    output.normals.resize(hasNormals ? vertexCount : 0);
+    const skinning_kernel::Params params = skinning_kernel::make_params(input, output);
+    timing.vertices = static_cast<u32>(vertexCount);
+    timing.bones = static_cast<u32>(input.bone_transforms.size());
+    timing.iterations = iterations;
+    if (!timeSkinningCudaResident(params, iterations, timing)) {
+        timing.ran = false;
+        if (timing.reason[0] == '\0') {
+            timing.reason = "CUDA error during timed skinning";
+        }
+    }
+#else
+    (void)output;
+#endif
+    return timing;
 }
 
 bool skin_vertices(const SkinningInput& input, SkinningOutput& output) {

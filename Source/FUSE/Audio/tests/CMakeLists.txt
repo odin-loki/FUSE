@@ -55,3 +55,12 @@ add_executable(fuse_reverb_fft_kernel_parity test_reverb_fft_kernel_parity.cpp)
 target_link_libraries(fuse_reverb_fft_kernel_parity PRIVATE fuse_audio fuse_core)
 add_test(NAME fuse_reverb_fft_kernel_parity COMMAND fuse_reverb_fft_kernel_parity)
 set_tests_properties(fuse_reverb_fft_kernel_parity PROPERTIES LABELS "gate" TIMEOUT 300)
+
+# B7 row "Convolution reverb CUDA FFT produces output within -60 dB noise floor of reference CPU FFT": CPU
+# FFT reference vs direct convolution everywhere; ReverbCuda on the CUDA device vs the CPU FFT reverb (plus
+# CUDA-event block timing) on the RTX 3090. Exit 77 after the CPU checks without a CUDA device.
+add_executable(fuse_b7_reverb_cuda_device test_reverb_cuda_device.cpp)
+target_link_libraries(fuse_b7_reverb_cuda_device PRIVATE fuse_audio fuse_core)
+add_test(NAME fuse_b7_reverb_cuda_device COMMAND fuse_b7_reverb_cuda_device)
+set_tests_properties(fuse_b7_reverb_cuda_device PROPERTIES
+    LABELS "gate;cuda;cuda_device" SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 600)

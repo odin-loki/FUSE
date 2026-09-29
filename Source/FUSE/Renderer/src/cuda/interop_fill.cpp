@@ -21,6 +21,7 @@ InteropFillResult fillFromImportedSurface(const InteropFillDesc& desc, CudaSurfa
     InteropFillResult result{};
     if (!imported.ok || imported.surfaceObject == nullptr) {
         result.reason = imported.reason != nullptr ? imported.reason : "cuda surface import failed";
+        release_imported_surface(imported);
         return result;
     }
 
@@ -29,7 +30,7 @@ InteropFillResult fillFromImportedSurface(const InteropFillDesc& desc, CudaSurfa
     const cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
         result.reason = cudaGetErrorString(err);
-        fuse::renderer::cuda::free_cuda_surface(imported.surfaceObject);
+        release_imported_surface(imported); // surface + mipmapped array + external memory
         return result;
     }
 
@@ -38,11 +39,11 @@ InteropFillResult fillFromImportedSurface(const InteropFillDesc& desc, CudaSurfa
     const cudaError_t syncErr = cudaStreamSynchronize(stream);
     if (syncErr != cudaSuccess) {
         result.reason = cudaGetErrorString(syncErr);
-        fuse::renderer::cuda::free_cuda_surface(imported.surfaceObject);
+        release_imported_surface(imported); // surface + mipmapped array + external memory
         return result;
     }
 
-    fuse::renderer::cuda::free_cuda_surface(imported.surfaceObject);
+    release_imported_surface(imported); // surface + mipmapped array + external memory
     result.ok = true;
     result.reason = "interop fill kernel completed";
     return result;

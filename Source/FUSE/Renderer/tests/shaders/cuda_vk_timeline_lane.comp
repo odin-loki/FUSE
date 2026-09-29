@@ -1,0 +1,54 @@
+#version 450
+// Vulkan lane of the SharedTimeline gate (see tests/cuda_vk_interop_gate_common.hpp). One invocation per
+// data word: check the peer lane's value from the previous frame, write this frame's Vulkan value; thread 0
+// logs the peer frame word it saw and publishes this frame in the Vulkan frame word.
+layout(local_size_x = 256) in;
+
+layout(std430, set = 0, binding = 0) buffer SharedWords {
+    uint words[];
+} sharedBuf;
+
+layout(std430, set = 0, binding = 1) buffer LaneLog {
+    uint entries[];
+} vkLog;
+
+layout(push_constant) uniform Push {
+    uint frame;
+    uint count;
+} pc;
+
+const uint kHeaderWords = 64u;
+const uint kVulkanFrameWord = 0u;
+const uint kPeerFrameWord = 1u;
+const uint kLaneVulkan = 0u;
+const uint kLanePeer = 1u;
+
+// GLSL twin of fuse::cuda_vk_gate::laneValue (uint arithmetic wraps like u32).
+uint laneValue(uint frame, uint lane, uint i) {
+    if (frame == 0u) {
+        return 0u;
+    }
+    uint x = (frame * 0x9E3779B1u) ^ (i * 0x85EBCA77u) ^ (lane * 0xC2B2AE3Du);
+    x ^= x >> 16;
+    x *= 0x7FEB352Du;
+    x ^= x >> 15;
+    x *= 0x846CA68Bu;
+    x ^= x >> 16;
+    return x | 1u;
+}
+
+void main() {
+    const uint i = gl_GlobalInvocationID.x;
+    if (i == 0u) {
+        vkLog.entries[pc.frame * 2u] = sharedBuf.words[kPeerFrameWord];
+        sharedBuf.words[kVulkanFrameWord] = pc.frame;
+    }
+    if (i >= pc.count) {
+        return;
+    }
+    const uint index = kHeaderWords + i;
+    if (sharedBuf.words[index] != laneValue(pc.frame - 1u, kLanePeer, i)) {
+        atomicAdd(vkLog.entries[pc.frame * 2u + 1u], 1u);
+    }
+    sharedBuf.words[index] = laneValue(pc.frame, kLaneVulkan, i);
+}

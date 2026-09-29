@@ -51,6 +51,29 @@ bool skin_vertices(const SkinningInput& input, SkinningOutput& output);
 bool skin_vertices_on(kernel::Backend backend, const SkinningInput& input, SkinningOutput& output,
                       void* stream = nullptr);
 
+/// CUDA-event timing of the skinning kernel on resident device buffers (B7 row "GPU skinning transforms
+/// 10k vertices in < 0.5 ms — verified with CUDA events"). The mesh, weights and palette are staged on the
+/// device once; then, on a dedicated stream, one untimed warm-up launch, `iterations` launches each
+/// bracketed by its own cudaEventRecord pair, a batch of `iterations` back-to-back launches bracketed by
+/// one pair, and `iterations` "frames" of palette upload + launch. `output` receives the device result.
+struct SkinningCudaTiming {
+    bool ran = false;
+    const char* reason = "";      ///< Why ran is false (no CUDA build / device / invalid input / CUDA error).
+    u32 vertices = 0;
+    u32 bones = 0;
+    u32 iterations = 0;
+    f32 kernel_ms_min = 0.f;      ///< Single launch, CUDA events.
+    f32 kernel_ms_median = 0.f;
+    f32 kernel_ms_max = 0.f;
+    f32 batch_ms_per_launch = 0.f; ///< Back-to-back launches / iterations (no host gaps between kernels).
+    f32 frame_ms_median = 0.f;    ///< Palette upload (host -> device) + launch per frame.
+    f32 upload_ms = 0.f;          ///< One-time staging of mesh + weights + palette.
+    f32 download_ms = 0.f;        ///< Read-back of positions + normals.
+};
+
+/// Runs the timing above; ran=false without the CUDA kernel (skinning_cuda_kernel_available()).
+SkinningCudaTiming time_skinning_cuda(const SkinningInput& input, SkinningOutput& output, u32 iterations);
+
 /// Skinning palette (bone buffer contents): out[i] = pose world[i] * skeleton inverse_bind[i].
 /// Reuses `out`'s storage, so steady-state per-frame calls do not allocate.
 void compute_skinning_palette(const Skeleton& skel, const Pose& pose, std::vector<mat4>& out);

@@ -2,8 +2,18 @@
 
 #include <fuse/jobs/cuda_jobs.hpp>
 
+#include <cstdint>
+#include <cstring>
+
 #if defined(FUSE_HAS_CUDA)
 #include <cuda_runtime.h>
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
+#endif
+
+#if defined(FUSE_VULKAN_BACKEND)
+#include <vulkan/vulkan.h>
 #endif
 
 namespace fuse::renderer::cuda {
@@ -17,6 +27,44 @@ cudaExternalMemoryHandleType externalMemoryHandleType() {
 #else
     return cudaExternalMemoryHandleTypeOpaqueFd;
 #endif
+}
+
+/// Imports the exported allocation. Win32: CUDA never takes the NT handle. POSIX: CUDA takes ownership
+/// of the fd it is given, so it gets a dup() and the Vulkan resource keeps its own fd (same contract as
+/// Win32: the allocator closes the exported handle when the resource is destroyed).
+cudaError_t importExternalMemory(void* exportedHandle, u64 allocationSize, cudaExternalMemory_t* out) {
+    cudaExternalMemoryHandleDesc externalDesc{};
+    externalDesc.type = externalMemoryHandleType();
+    externalDesc.size = allocationSize;
+#if defined(_WIN32)
+    externalDesc.handle.win32.handle = exportedHandle;
+    externalDesc.flags = cudaExternalMemoryDedicated;
+    return cudaImportExternalMemory(out, &externalDesc);
+#else
+    const int fd = dup(static_cast<int>(reinterpret_cast<intptr_t>(exportedHandle)));
+    if (fd < 0) {
+        return cudaErrorInvalidValue;
+    }
+    externalDesc.handle.fd = fd;
+    const cudaError_t err = cudaImportExternalMemory(out, &externalDesc);
+    if (err != cudaSuccess) {
+        close(fd); // ownership passes to CUDA only on success
+    }
+    return err;
+#endif
+}
+
+cudaChannelFormatDesc channelFormatFor(u32 format) {
+    switch (format) {
+    case 97: // R16G16B16A16Sfloat
+        return cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindFloat);
+    case 83: // R16G16Sfloat
+        return cudaCreateChannelDesc(16, 16, 0, 0, cudaChannelFormatKindFloat);
+    case 100: // R32Sfloat
+        return cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
+    default: // R8G8B8A8Unorm / Srgb
+        return cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned);
+    }
 }
 #endif
 
@@ -110,6 +158,8 @@ VulkanImageImportDesc makeImageImportDesc(void* vkDevice, const Texture& texture
     desc.width = texture.desc.width;
     desc.height = texture.desc.height;
     desc.format = static_cast<u32>(texture.desc.format);
+    desc.colorAttachment =
+        (static_cast<u32>(texture.desc.usage) & static_cast<u32>(ImageUsage::ColorAttachment)) != 0u;
     return desc;
 }
 
@@ -130,18 +180,8 @@ CudaBufferImport import_vulkan_buffer(VulkanBufferImportDesc desc) {
     }
 
 #if defined(FUSE_HAS_CUDA)
-    cudaExternalMemoryHandleDesc externalDesc{};
-    externalDesc.type = externalMemoryHandleType();
-    externalDesc.size = desc.allocationSize;
-#if defined(_WIN32)
-    externalDesc.handle.win32.handle = desc.exportedHandle;
-    externalDesc.flags = cudaExternalMemoryDedicated;
-#else
-    externalDesc.handle.fd = static_cast<int>(reinterpret_cast<intptr_t>(desc.exportedHandle));
-#endif
-
     cudaExternalMemory_t externalMemory = nullptr;
-    const cudaError_t importErr = cudaImportExternalMemory(&externalMemory, &externalDesc);
+    const cudaError_t importErr = importExternalMemory(desc.exportedHandle, desc.allocationSize, &externalMemory);
     if (importErr != cudaSuccess) {
         result.reason = cudaGetErrorString(importErr);
         return result;
@@ -188,64 +228,59 @@ CudaSurfaceImport import_vulkan_image(VulkanImageImportDesc desc) {
     }
 
 #if defined(FUSE_HAS_CUDA)
-    cudaExternalMemoryHandleDesc externalDesc{};
-    externalDesc.type = externalMemoryHandleType();
-    externalDesc.size = desc.allocationSize;
-#if defined(_WIN32)
-    externalDesc.handle.win32.handle = desc.exportedHandle;
-    externalDesc.flags = cudaExternalMemoryDedicated;
-#else
-    externalDesc.handle.fd = static_cast<int>(reinterpret_cast<intptr_t>(desc.exportedHandle));
-#endif
-
     cudaExternalMemory_t externalMemory = nullptr;
-    const cudaError_t importErr = cudaImportExternalMemory(&externalMemory, &externalDesc);
+    const cudaError_t importErr = importExternalMemory(desc.exportedHandle, desc.allocationSize, &externalMemory);
     if (importErr != cudaSuccess) {
         result.reason = cudaGetErrorString(importErr);
         return result;
     }
 
-    cudaExternalMemoryMipmappedArrayDesc mipDesc{};
-    mipDesc.offset = 0;
-    mipDesc.formatDesc = cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned);
-    mipDesc.extent.width = desc.width;
-    mipDesc.extent.height = desc.height;
-    mipDesc.extent.depth = 0;
-    mipDesc.flags = cudaArrayColorAttachment;
-    mipDesc.numLevels = 1;
+    // Surface writes need cudaArraySurfaceLoadStore; some drivers refuse it on imported images, in which
+    // case the plain mapping is tried (surface objects over imported arrays work there).
+    const unsigned int colorFlag = desc.colorAttachment ? cudaArrayColorAttachment : 0u;
+    const unsigned int flagSets[2] = {cudaArraySurfaceLoadStore | colorFlag, colorFlag};
+    cudaError_t lastErr = cudaSuccess;
+    for (const unsigned int flags : flagSets) {
+        cudaExternalMemoryMipmappedArrayDesc mipDesc{};
+        mipDesc.offset = 0;
+        mipDesc.formatDesc = channelFormatFor(desc.format);
+        mipDesc.extent.width = desc.width;
+        mipDesc.extent.height = desc.height;
+        mipDesc.extent.depth = 0;
+        mipDesc.flags = flags;
+        mipDesc.numLevels = 1;
 
-    cudaMipmappedArray_t mipmappedArray = nullptr;
-    const cudaError_t arrayErr =
-        cudaExternalMemoryGetMappedMipmappedArray(&mipmappedArray, externalMemory, &mipDesc);
-    if (arrayErr != cudaSuccess) {
-        cudaDestroyExternalMemory(externalMemory);
-        result.reason = cudaGetErrorString(arrayErr);
+        cudaMipmappedArray_t mipmappedArray = nullptr;
+        lastErr = cudaExternalMemoryGetMappedMipmappedArray(&mipmappedArray, externalMemory, &mipDesc);
+        if (lastErr != cudaSuccess) {
+            (void)cudaGetLastError();
+            continue;
+        }
+        cudaArray_t cudaArray = nullptr;
+        lastErr = cudaGetMipmappedArrayLevel(&cudaArray, mipmappedArray, 0);
+        cudaSurfaceObject_t surfaceObject = 0;
+        if (lastErr == cudaSuccess) {
+            cudaResourceDesc resourceDesc{};
+            resourceDesc.resType = cudaResourceTypeArray;
+            resourceDesc.res.array.array = cudaArray;
+            lastErr = cudaCreateSurfaceObject(&surfaceObject, &resourceDesc);
+        }
+        if (lastErr != cudaSuccess) {
+            (void)cudaGetLastError();
+            (void)cudaFreeMipmappedArray(mipmappedArray);
+            continue;
+        }
+        result.surfaceObject = reinterpret_cast<void*>(static_cast<uintptr_t>(surfaceObject));
+        result.externalMemory = externalMemory;
+        result.mipmappedArray = mipmappedArray;
+        result.array = cudaArray;
+        result.arrayFlags = flags;
+        result.ok = true;
+        result.reason = "cudaImportExternalMemory image surface succeeded";
         return result;
     }
-
-    cudaArray_t cudaArray = nullptr;
-    const cudaError_t levelErr = cudaGetMipmappedArrayLevel(&cudaArray, mipmappedArray, 0);
-    if (levelErr != cudaSuccess) {
-        cudaDestroyExternalMemory(externalMemory);
-        result.reason = cudaGetErrorString(levelErr);
-        return result;
-    }
-
-    cudaResourceDesc resourceDesc{};
-    resourceDesc.resType = cudaResourceTypeArray;
-    resourceDesc.res.array.array = cudaArray;
-
-    cudaSurfaceObject_t surfaceObject = 0;
-    const cudaError_t surfaceErr = cudaCreateSurfaceObject(&surfaceObject, &resourceDesc);
-    if (surfaceErr != cudaSuccess) {
-        cudaDestroyExternalMemory(externalMemory);
-        result.reason = cudaGetErrorString(surfaceErr);
-        return result;
-    }
-
-    result.surfaceObject = reinterpret_cast<void*>(static_cast<uintptr_t>(surfaceObject));
-    result.ok = true;
-    result.reason = "cudaImportExternalMemory image surface succeeded";
+    (void)cudaDestroyExternalMemory(externalMemory);
+    result.reason = cudaGetErrorString(lastErr);
     return result;
 #else
     result.reason = interopUnavailableReasonString(InteropUnavailableReason::ExternalMemoryUnsupported);
@@ -293,6 +328,60 @@ void free_cuda_surface(void* surfaceObject) {
     }
 #else
     (void)surfaceObject;
+#endif
+}
+
+void release_imported_surface(CudaSurfaceImport& imported) {
+#if defined(FUSE_HAS_CUDA)
+    if (imported.surfaceObject != nullptr) {
+        (void)cudaDestroySurfaceObject(
+            static_cast<cudaSurfaceObject_t>(reinterpret_cast<uintptr_t>(imported.surfaceObject)));
+    }
+    if (imported.mipmappedArray != nullptr) {
+        (void)cudaFreeMipmappedArray(static_cast<cudaMipmappedArray_t>(imported.mipmappedArray));
+    }
+    if (imported.externalMemory != nullptr) {
+        (void)cudaDestroyExternalMemory(static_cast<cudaExternalMemory_t>(imported.externalMemory));
+    }
+#endif
+    imported.surfaceObject = nullptr;
+    imported.mipmappedArray = nullptr;
+    imported.array = nullptr;
+    imported.externalMemory = nullptr;
+    imported.ok = false;
+}
+
+int cuda_device_for_vulkan(void* vkPhysicalDevice) {
+#if defined(FUSE_HAS_CUDA) && defined(FUSE_VULKAN_BACKEND)
+    if (vkPhysicalDevice == nullptr) {
+        return -1;
+    }
+    VkPhysicalDeviceIDProperties idProperties{};
+    idProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES;
+    VkPhysicalDeviceProperties2 properties{};
+    properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    properties.pNext = &idProperties;
+    vkGetPhysicalDeviceProperties2(static_cast<VkPhysicalDevice>(vkPhysicalDevice), &properties);
+
+    int count = 0;
+    if (cudaGetDeviceCount(&count) != cudaSuccess) {
+        (void)cudaGetLastError();
+        return -1;
+    }
+    for (int device = 0; device < count; ++device) {
+        cudaDeviceProp prop{};
+        if (cudaGetDeviceProperties(&prop, device) != cudaSuccess) {
+            continue;
+        }
+        static_assert(sizeof(prop.uuid.bytes) == VK_UUID_SIZE, "CUDA and Vulkan device UUIDs are both 16 bytes");
+        if (std::memcmp(prop.uuid.bytes, idProperties.deviceUUID, VK_UUID_SIZE) == 0) {
+            return device;
+        }
+    }
+    return -1;
+#else
+    (void)vkPhysicalDevice;
+    return -1;
 #endif
 }
 

@@ -58,6 +58,40 @@ if(FUSE_CUDA_BACKEND)
         CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON CUDA_EXTENSIONS OFF)
     add_test(NAME fuse_cuda_shared_headers_gate COMMAND fuse_cuda_shared_headers_gate)
     set_tests_properties(fuse_cuda_shared_headers_gate PROPERTIES LABELS "gate;cuda" TIMEOUT 120)
+    # B1 row "GRIA Alpha evaluates correctly on both host and CUDA device kernel": same executable, but a
+    # pass requires the device kernel (Alpha sweep + shared-header samples) to run and match the C++23 host.
+    add_test(NAME fuse_cuda_gria_alpha_device COMMAND fuse_cuda_shared_headers_gate --require-device)
+    set_tests_properties(fuse_cuda_gria_alpha_device PROPERTIES
+        LABELS "gate;cuda;cuda_device" SKIP_RETURN_CODE 77 TIMEOUT 120)
+endif()
+
+# B1.3 GPUAllocator (fuse/alloc/gpu_allocator.hpp): contract gate in every build (no-device path here,
+# real Device/Pinned/Managed/DeviceMapped allocations when a CUDA device exists). The device gate adds
+# kernel reads/writes of every type + stress + leak check; fuse_gpu_allocator_memcheck runs it under
+# compute-sanitizer memcheck --leak-check full (both skip without a CUDA device).
+add_executable(fuse_core_b1_gpu_allocator test_b1_gpu_allocator.cpp)
+target_link_libraries(fuse_core_b1_gpu_allocator PRIVATE fuse_core)
+add_test(NAME fuse_core_b1_gpu_allocator COMMAND fuse_core_b1_gpu_allocator)
+set_tests_properties(fuse_core_b1_gpu_allocator PROPERTIES LABELS "gate;cuda" TIMEOUT 120)
+if(FUSE_CUDA_BACKEND)
+    add_executable(fuse_gpu_allocator_device_gate cuda/test_gpu_allocator_device.cu)
+    target_link_libraries(fuse_gpu_allocator_device_gate PRIVATE fuse_core CUDA::cudart)
+    set_target_properties(fuse_gpu_allocator_device_gate PROPERTIES
+        CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON CUDA_EXTENSIONS OFF)
+    add_test(NAME fuse_gpu_allocator_device_gate COMMAND fuse_gpu_allocator_device_gate)
+    set_tests_properties(fuse_gpu_allocator_device_gate PROPERTIES
+        LABELS "gate;cuda;cuda_device" SKIP_RETURN_CODE 77 TIMEOUT 300)
+    find_program(FUSE_COMPUTE_SANITIZER NAMES compute-sanitizer compute-sanitizer.bat
+        HINTS "${CUDAToolkit_BIN_DIR}" "${CUDAToolkit_BIN_DIR}/../compute-sanitizer"
+              "${CUDAToolkit_LIBRARY_ROOT}/compute-sanitizer")
+    add_test(NAME fuse_gpu_allocator_memcheck
+        COMMAND "${CMAKE_COMMAND}"
+                "-DFUSE_SANITIZER=${FUSE_COMPUTE_SANITIZER}"
+                "-DFUSE_GATE_EXE=$<TARGET_FILE:fuse_gpu_allocator_device_gate>"
+                -DFUSE_SANITIZER_TOOL=memcheck
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cuda/run_compute_sanitizer.cmake")
+    set_tests_properties(fuse_gpu_allocator_memcheck PROPERTIES
+        LABELS "gate;cuda;cuda_device" SKIP_REGULAR_EXPRESSION "FUSE_SANITIZER_SKIP:" TIMEOUT 1200)
 endif()
 
 # Single-source compute kernels (fuse/compute_kernel/*, docs/compute-kernels.md): CpuReference vs

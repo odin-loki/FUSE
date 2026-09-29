@@ -31,6 +31,12 @@ struct Alpha {
 
     FUSE_HOST_DEVICE constexpr bool operator==(const Alpha& other) const { return value == other.value; }
 
+    /// The named constants as functions: device code cannot reference the ALPHA_* namespace-scope
+    /// constants below (they are host variables of class type), but can call these.
+    FUSE_HOST_DEVICE static constexpr Alpha exact() { return Alpha(0.f); }
+    FUSE_HOST_DEVICE static constexpr Alpha chaos_edge() { return Alpha(0.5f); }
+    FUSE_HOST_DEVICE static constexpr Alpha approximate() { return Alpha(1.f); }
+
 private:
     FUSE_HOST_DEVICE static constexpr f32 clamp01(f32 v) {
         // NaN compares false on both branches and maps to 0 (exact).
@@ -38,8 +44,9 @@ private:
     }
 };
 
-inline constexpr Alpha ALPHA_EXACT{0.f};
-inline constexpr Alpha ALPHA_CHAOS_EDGE{0.5f};
-inline constexpr Alpha ALPHA_APPROXIMATE{1.f};
+/// Host-code constants (use Alpha::exact() / chaos_edge() / approximate() in CUDA device code).
+inline constexpr Alpha ALPHA_EXACT = Alpha::exact();
+inline constexpr Alpha ALPHA_CHAOS_EDGE = Alpha::chaos_edge();
+inline constexpr Alpha ALPHA_APPROXIMATE = Alpha::approximate();
 
 } // namespace fuse

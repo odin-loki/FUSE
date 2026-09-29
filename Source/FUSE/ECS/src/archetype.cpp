@@ -2,8 +2,57 @@
 
 #include <algorithm>
 #include <cstring>
+#include <memory>
+#include <utility>
 
 namespace fuse::ecs {
+
+namespace {
+
+std::pmr::memory_resource* resourceOrDefault(std::pmr::memory_resource* resource) {
+    return resource != nullptr ? resource : std::pmr::new_delete_resource();
+}
+
+} // namespace
+
+ComponentColumn::ComponentColumn(std::type_index column_type, usize size, std::pmr::memory_resource* resource)
+    : type(column_type), element_size(size), storage(resourceOrDefault(resource)) {}
+
+ComponentColumn::ComponentColumn(const ComponentColumn& other)
+    : type(other.type), element_size(other.element_size), storage(other.storage, other.storage.get_allocator()) {}
+
+ComponentColumn& ComponentColumn::operator=(const ComponentColumn& other) {
+    if (this != &other) {
+        // pmr containers never propagate their resource on assignment; rebuild storage on the source's
+        // resource so a copied column stays where the original lives (e.g. CUDA managed memory).
+        std::pmr::vector<std::byte> copy(other.storage, other.storage.get_allocator());
+        type = other.type;
+        element_size = other.element_size;
+        std::destroy_at(&storage);
+        std::construct_at(&storage, std::move(copy));
+    }
+    return *this;
+}
+
+ComponentColumn& ComponentColumn::operator=(ComponentColumn&& other) noexcept {
+    if (this != &other) {
+        type = other.type;
+        element_size = other.element_size;
+        std::destroy_at(&storage);
+        std::construct_at(&storage, std::move(other.storage));
+    }
+    return *this;
+}
+
+void ComponentColumn::rebind(std::pmr::memory_resource* resource) {
+    resource = resourceOrDefault(resource);
+    if (memory_resource() == resource || *memory_resource() == *resource) {
+        return;
+    }
+    std::pmr::vector<std::byte> moved(storage.begin(), storage.end(), resource);
+    std::destroy_at(&storage);
+    std::construct_at(&storage, std::move(moved));
+}
 
 void* ComponentColumn::at(usize row) {
     return storage.data() + row * element_size;
@@ -64,8 +113,13 @@ bool Archetype::has_component(std::type_index type) const {
     return std::find(component_types.begin(), component_types.end(), type) != component_types.end();
 }
 
-ComponentColumn& Archetype::ensure_column(std::type_index type, usize element_size) {
-    ComponentColumn& column = columns[type];
+ComponentColumn& Archetype::ensure_column(std::type_index type, usize element_size,
+                                          std::pmr::memory_resource* resource) {
+    auto it = columns.find(type);
+    if (it == columns.end()) {
+        it = columns.try_emplace(type, type, element_size, resource).first;
+    }
+    ComponentColumn& column = it->second;
     if (column.element_size == 0) {
         column.type = type;
         column.element_size = element_size;

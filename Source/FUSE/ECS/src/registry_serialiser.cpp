@@ -287,7 +287,8 @@ RegistrySerialiseResult RegistrySerialiser::apply(const RegistryImage& image, Re
         Archetype& archetype = registry.m_archetypes[archetypeIndex];
         const u32 firstRow = static_cast<u32>(archetype.count());
         for (usize c = 0; c < block.components.size(); ++c) {
-            ComponentColumn& column = archetype.ensure_column(block.components[c]->type, block.components[c]->size);
+            ComponentColumn& column = archetype.ensure_column(block.components[c]->type, block.components[c]->size,
+                                                              registry.column_memory_resource(block.components[c]->type));
             column.storage.insert(column.storage.end(), block.columns[c].begin(), block.columns[c].end());
         }
         for (usize row = 0; row < block.entities.size(); ++row) {

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <memory_resource>
 #include <span>
 #include <typeindex>
 #include <type_traits>
@@ -115,6 +116,20 @@ public:
 
     [[nodiscard]] usize archetype_count() const { return m_archetypes.size(); }
 
+    /// Column storage for component type `T` (every archetype) comes from `resource` from now on
+    /// (null = new/delete, the default); existing `T` columns are moved there immediately. E.g. a
+    /// fuse::alloc::GPUManagedMemoryResource puts the Transform column in CUDA managed memory, so a
+    /// kernel reads the pointers `each_chunk<Transform>` hands out directly. Non-owning: `resource` must
+    /// outlive the registry (or be unset first). Copies of the registry keep the resource.
+    template <typename T>
+    void set_column_memory_resource(std::pmr::memory_resource* resource) {
+        assertComponent<T>();
+        set_column_memory_resource(std::type_index(typeid(T)), resource);
+    }
+    void set_column_memory_resource(std::type_index type, std::pmr::memory_resource* resource);
+    /// Resource new columns of `type` allocate from (null when none was set: new/delete).
+    [[nodiscard]] std::pmr::memory_resource* column_memory_resource(std::type_index type) const;
+
 private:
     friend class RegistrySerialiser;
 
@@ -170,6 +185,7 @@ private:
     std::vector<u32> m_free_list;
     std::vector<Archetype> m_archetypes;
     std::unordered_map<u64, u32> m_archetype_lookup;
+    std::unordered_map<std::type_index, std::pmr::memory_resource*> m_column_resources;
     usize m_alive_count = 0;
     usize m_max_entities = kMaxEntities;
 };

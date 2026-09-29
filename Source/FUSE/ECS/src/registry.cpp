@@ -205,6 +205,24 @@ const Registry::EntityRecord* Registry::record(EntityID id) const {
     return &rec;
 }
 
+void Registry::set_column_memory_resource(std::type_index type, std::pmr::memory_resource* resource) {
+    if (resource == nullptr) {
+        m_column_resources.erase(type);
+    } else {
+        m_column_resources[type] = resource;
+    }
+    for (Archetype& archetype : m_archetypes) {
+        if (ComponentColumn* column = archetype.find_column(type)) {
+            column->rebind(resource);
+        }
+    }
+}
+
+std::pmr::memory_resource* Registry::column_memory_resource(std::type_index type) const {
+    const auto it = m_column_resources.find(type);
+    return it != m_column_resources.end() ? it->second : nullptr;
+}
+
 u32 Registry::find_or_create_archetype(const std::vector<std::type_index>& sorted_types) {
     ensureInitialized();
 
@@ -247,7 +265,7 @@ void Registry::migrate_entity(EntityID id, const std::vector<std::type_index>& t
         } else if (const ComponentColumn* existing_target = target.find_column(type)) {
             element_size = existing_target->element_size;
         }
-        target.ensure_column(type, element_size);
+        target.ensure_column(type, element_size, column_memory_resource(type));
     }
 
     const usize new_row = target.append_entity(id);
