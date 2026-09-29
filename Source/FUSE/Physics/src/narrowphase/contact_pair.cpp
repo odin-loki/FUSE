@@ -3,6 +3,7 @@
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/narrowphase/friction.hpp>
 #include <fuse/physics/narrowphase/gjk.hpp>
+#include <fuse/physics/narrowphase/primitive_contacts.hpp>
 #include <fuse/physics/rotation.hpp>
 
 #include <cmath>
@@ -130,81 +131,25 @@ ContactManifold dispatchShapePairRaw(
 
 } // namespace
 
+u32 contact_shape_for_body(const CollisionShapeSoA& shapes, u32 bodyIndex) {
+    return findShapeForBody(shapes, bodyIndex, CollisionShapeType::Sphere);
+}
+
 ContactManifold collideShapes(const ShapeInstance& shapeA, const ShapeInstance& shapeB, u32 a, u32 b, f32 margin) {
     const CollisionShapeType typeA = shapeA.type;
     const CollisionShapeType typeB = shapeB.type;
     const vec3 posA = shapeA.position;
     const vec3 posB = shapeB.position;
-    const quat rotA = shapeA.orientation;
-    const quat rotB = shapeB.orientation;
     const vec3 paramsA = shapeA.params;
     const vec3 paramsB = shapeB.params;
 
     using T = CollisionShapeType;
     const auto is = [&](T first, T second) { return typeA == first && typeB == second; };
 
-    if (is(T::Sphere, T::Sphere)) {
-        return collideSphereSphere(posA, paramsA.x, posB, paramsB.x, a, b, margin);
-    }
-    if (is(T::Sphere, T::Plane)) {
-        return collideSpherePlane(posA, paramsA.x, paramsB, shapeB.scalar, a, b, margin);
-    }
-    if (is(T::Plane, T::Sphere)) {
-        return collideSpherePlane(posB, paramsB.x, paramsA, shapeA.scalar, b, a, margin);
-    }
-    if (is(T::Box, T::Plane)) {
-        return collideOrientedBoxPlane(posA, rotA, paramsA, paramsB, shapeB.scalar, a, b, margin);
-    }
-    if (is(T::Plane, T::Box)) {
-        return collideOrientedBoxPlane(posB, rotB, paramsB, paramsA, shapeA.scalar, b, a, margin);
-    }
-    if (is(T::Sphere, T::Box)) {
-        return collideOrientedBoxSphere(posA, paramsA.x, posB, rotB, paramsB, a, b, margin);
-    }
-    if (is(T::Box, T::Sphere)) {
-        return flipped(collideOrientedBoxSphere(posB, paramsB.x, posA, rotA, paramsA, b, a, margin), a, b);
-    }
-    if (is(T::Box, T::Box)) {
-        if (isIdentity(rotA) && isIdentity(rotB)) {
-            return collideBoxBox(posA, paramsA, posB, paramsB, a, b, margin);
-        }
-        return collideOrientedBoxBox(posA, rotA, paramsA, posB, rotB, paramsB, a, b, margin);
-    }
-
-    // Capsules: segment along the body's local Y axis.
-    if (is(T::Sphere, T::Capsule)) {
-        if (isIdentity(rotB)) {
-            return collideCapsuleSphere(posA, paramsA.x, posB, paramsB, a, b, margin);
-        }
-        const vec3 half = capsuleHalfAxis(rotB, paramsB.y);
-        return collideCapsuleSegments(posA, posA, paramsA.x, posA, posB - half, posB + half, paramsB.x, posB, a, b,
-                                      margin);
-    }
-    if (is(T::Capsule, T::Sphere)) {
-        if (isIdentity(rotA)) {
-            return flipped(collideCapsuleSphere(posB, paramsB.x, posA, paramsA, b, a, margin), a, b);
-        }
-        const vec3 half = capsuleHalfAxis(rotA, paramsA.y);
-        return collideCapsuleSegments(posA - half, posA + half, paramsA.x, posA, posB, posB, paramsB.x, posB, a, b,
-                                      margin);
-    }
-    if (is(T::Capsule, T::Capsule)) {
-        const vec3 halfA = capsuleHalfAxis(rotA, paramsA.y);
-        const vec3 halfB = capsuleHalfAxis(rotB, paramsB.y);
-        return collideCapsuleSegments(posA - halfA, posA + halfA, paramsA.x, posA, posB - halfB, posB + halfB,
-                                      paramsB.x, posB, a, b, margin);
-    }
-    if (is(T::Capsule, T::Plane)) {
-        return collideCapsulePlane(posA, rotA, paramsA, paramsB, shapeB.scalar, a, b, margin);
-    }
-    if (is(T::Plane, T::Capsule)) {
-        return flipped(collideCapsulePlane(posB, rotB, paramsB, paramsA, shapeA.scalar, b, a, margin), a, b);
-    }
-    if (is(T::Capsule, T::Box)) {
-        return collideCapsuleBox(posA, rotA, paramsA, posB, rotB, paramsB, a, b, margin);
-    }
-    if (is(T::Box, T::Capsule)) {
-        return flipped(collideCapsuleBox(posB, rotB, paramsB, posA, rotA, paramsA, b, a, margin), a, b);
+    // Sphere / box / capsule / plane pairs: the shared FUSE_HOST_DEVICE dispatch (the CUDA resident
+    // narrowphase runs the same function).
+    if (isPrimitiveShape(typeA) && isPrimitiveShape(typeB)) {
+        return collidePrimitiveShapes(shapeA, shapeB, a, b, margin);
     }
 
     if (is(T::Sphere, T::ConvexHull)) {

@@ -131,8 +131,30 @@ add_test(NAME fuse_b4_joint_gates COMMAND fuse_b4_joint_gates)
 set_tests_properties(fuse_b4_joint_gates PROPERTIES LABELS "gate")
 
 # Physics single-source compute kernels (docs/compute-kernels.md): scan / radix sort / broadphase /
-# narrowphase parity with the legacy CPU path, colored solver determinism, stats + fallback, timings.
-add_executable(fuse_b4_physics_kernel_gates test_b4_physics_kernel_gates.cpp)
+# narrowphase parity with the legacy CPU path, colored solver determinism, stats + fallback, timings,
+# and the resident pipeline (fuse/physics/resident/) on host memory == the legacy paths bit for bit.
+add_executable(fuse_b4_physics_kernel_gates
+    test_b4_physics_kernel_gates.cpp
+    test_b4_physics_resident.cpp
+    physics_kernel_test_scenes.hpp)
 target_link_libraries(fuse_b4_physics_kernel_gates PRIVATE fuse_physics fuse_core)
 add_test(NAME fuse_b4_physics_kernel_gates COMMAND fuse_b4_physics_kernel_gates --no-timings)
-set_tests_properties(fuse_b4_physics_kernel_gates PROPERTIES LABELS "gate")
+set_tests_properties(fuse_b4_physics_kernel_gates PROPERTIES LABELS "gate" TIMEOUT 900)
+
+# The benchmark flow below on host memory (no GPU, no timing targets): keeps the device benchmark code
+# (workload setup, 1k-pair selection, >= 10k-contact solver problem, parity checks) exercised in CI.
+add_test(NAME fuse_b4_physics_resident_bench_dry_run COMMAND fuse_b4_physics_kernel_gates --host-bench)
+set_tests_properties(fuse_b4_physics_resident_bench_dry_run PROPERTIES LABELS "gate" TIMEOUT 600)
+
+# RTX 3090 rows (broadphase 10k bodies < 2 ms, narrowphase 1k contact pairs < 3 ms, 10 solver iterations
+# over 10k contacts < 5 ms): the resident CUDA pipeline checked against the CPU and timed with CUDA events.
+# Exits 77 (skipped) without a device; targets asserted only under fuse::core::timingBudgetsEnforced().
+if(FUSE_CUDA_BACKEND)
+    add_test(NAME fuse_b4_physics_cuda_bench COMMAND fuse_b4_physics_kernel_gates --cuda-bench)
+    set_tests_properties(fuse_b4_physics_cuda_bench PROPERTIES
+        RUN_SERIAL TRUE
+        SKIP_RETURN_CODE 77
+        SKIP_REGULAR_EXPRESSION "FUSE_GATE_SKIP: "
+        TIMEOUT 900
+        LABELS "gate;cuda;perf")
+endif()

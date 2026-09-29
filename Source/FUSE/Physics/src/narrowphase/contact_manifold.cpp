@@ -561,47 +561,6 @@ const ContactPoint& ContactManifold::pointAt(u32 index) const {
     return points[index];
 }
 
-f32 ContactManifold::maxPenetration() const {
-    if (pointCount == 0u) {
-        return 0.f;
-    }
-
-    f32 maxPenetration = points[0].penetration;
-    for (u32 i = 1u; i < pointCount; ++i) {
-        maxPenetration = std::max(maxPenetration, points[i].penetration);
-    }
-    return maxPenetration;
-}
-
-void ContactManifold::addPoint(vec3 point, f32 penetration) {
-    if (pointCount >= kMaxContactPointsPerManifold) {
-        return;
-    }
-
-    points[pointCount].point = point;
-    points[pointCount].penetration = penetration;
-    ++pointCount;
-    syncLegacyFields();
-}
-
-void ContactManifold::syncLegacyFields() {
-    if (pointCount == 0u) {
-        contactPoint = {};
-        penetrationDepth = 0.f;
-        return;
-    }
-
-    u32 dominantIndex = 0u;
-    f32 maxPenetration = points[0].penetration;
-    for (u32 i = 1u; i < pointCount; ++i) {
-        if (points[i].penetration > maxPenetration) {
-            maxPenetration = points[i].penetration;
-            dominantIndex = i;
-        }
-    }
-
-    contactPoint = points[dominantIndex].point;
-    penetrationDepth = maxPenetration;
-}
+// addPoint / syncLegacyFields / maxPenetration are FUSE_HOST_DEVICE inline in contact_manifold.hpp.
 
 } // namespace fuse::physics::narrowphase

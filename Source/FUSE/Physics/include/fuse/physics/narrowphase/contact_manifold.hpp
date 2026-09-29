@@ -39,17 +39,18 @@ struct ContactManifold {
 
     void reset();
     void clear();
-    void addPoint(vec3 point, f32 penetration);
-    void syncLegacyFields();
+    /// Device-safe (inline below): the CUDA resident narrowphase runs the same shape-pair code.
+    FUSE_HOST_DEVICE void addPoint(vec3 point, f32 penetration);
+    FUSE_HOST_DEVICE void syncLegacyFields();
     void buildFrictionBasis();
 
-    bool empty() const { return pointCount == 0u; }
+    FUSE_HOST_DEVICE bool empty() const { return pointCount == 0u; }
     bool hasValidNormal(f32 epsilon = 1e-6f) const;
     bool hasNonUnitNormal(f32 lengthEpsilon = 1e-4f) const;
     bool needsNormalNormalization(f32 lengthEpsilon = 1e-4f) const;
     bool hasFrictionBasis() const;
     const ContactPoint& pointAt(u32 index) const;
-    f32 maxPenetration() const;
+    FUSE_HOST_DEVICE f32 maxPenetration() const;
 
     /// Returns true when at least one point has penetration above `-epsilon` (B4.3 deepen pass).
     bool hasPenetratingPoints(f32 epsilon = 1e-6f) const;
@@ -278,8 +279,47 @@ bool can_prune_manifold_in_place(
     f32 duplicateEpsilon = 1e-4f,
     f32 shallowMinDepth = 0.f);
 
-inline ContactManifold invalidContactManifold() {
+FUSE_HOST_DEVICE inline ContactManifold invalidContactManifold() {
     return ContactManifold();
+}
+
+FUSE_HOST_DEVICE inline f32 ContactManifold::maxPenetration() const {
+    if (pointCount == 0u) {
+        return 0.f;
+    }
+    f32 maxPenetration = points[0].penetration;
+    for (u32 i = 1u; i < pointCount; ++i) {
+        maxPenetration = points[i].penetration > maxPenetration ? points[i].penetration : maxPenetration;
+    }
+    return maxPenetration;
+}
+
+FUSE_HOST_DEVICE inline void ContactManifold::addPoint(vec3 point, f32 penetration) {
+    if (pointCount >= kMaxContactPointsPerManifold) {
+        return;
+    }
+    points[pointCount].point = point;
+    points[pointCount].penetration = penetration;
+    ++pointCount;
+    syncLegacyFields();
+}
+
+FUSE_HOST_DEVICE inline void ContactManifold::syncLegacyFields() {
+    if (pointCount == 0u) {
+        contactPoint = {};
+        penetrationDepth = 0.f;
+        return;
+    }
+    u32 dominantIndex = 0u;
+    f32 maxPenetration = points[0].penetration;
+    for (u32 i = 1u; i < pointCount; ++i) {
+        if (points[i].penetration > maxPenetration) {
+            maxPenetration = points[i].penetration;
+            dominantIndex = i;
+        }
+    }
+    contactPoint = points[dominantIndex].point;
+    penetrationDepth = maxPenetration;
 }
 
 } // namespace fuse::physics::narrowphase

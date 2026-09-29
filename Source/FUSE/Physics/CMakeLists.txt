@@ -36,6 +36,7 @@ add_library(fuse_physics STATIC
     include/fuse/physics/narrowphase/contact_pair.hpp
     include/fuse/physics/narrowphase/friction.hpp
     include/fuse/physics/narrowphase/gjk.hpp
+    include/fuse/physics/narrowphase/primitive_contacts.hpp
     include/fuse/physics/physics_data.hpp
     include/fuse/physics/physics_pipeline.hpp
     include/fuse/physics/physics_world_2d.hpp
@@ -89,9 +90,23 @@ target_sources(fuse_physics PRIVATE
     include/fuse/physics/narrowphase/narrowphase_kernels.hpp
     include/fuse/physics/solver/constraint_coloring.hpp
 )
+
+# Resident pipeline (fuse/physics/resident/): broadphase -> narrowphase -> coloured solver iterations on
+# buffers that stay in one memory space; the same launch sequence runs on the CPU backends (host memory,
+# the reference the CPU gates check) and on CUDA (device memory, one stream, copies only at the edges).
+target_sources(fuse_physics PRIVATE
+    src/resident/resident_physics.cpp
+    include/fuse/physics/resident/resident_cuda_backend.hpp
+    include/fuse/physics/resident/resident_kernels.hpp
+    include/fuse/physics/resident/resident_physics.hpp
+)
 if(FUSE_CUDA_BACKEND)
-    target_sources(fuse_physics PRIVATE kernels/physics_broadphase.cu)
+    target_sources(fuse_physics PRIVATE kernels/physics_broadphase.cu kernels/physics_resident.cu)
     set_target_properties(fuse_physics PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+    # No FMA contraction: device floats then match the x86-64 CpuReference bit for bit (the resident
+    # device gate compares them), and a rotated box lands in the same hash cells on both sides.
+    set_source_files_properties(kernels/physics_broadphase.cu kernels/physics_resident.cu
+        PROPERTIES COMPILE_OPTIONS "--fmad=false")
 endif()
 
 if(FUSE_BUILD_CORE_TESTS)

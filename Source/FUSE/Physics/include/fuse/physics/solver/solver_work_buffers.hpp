@@ -88,6 +88,15 @@ struct SolverWorkBuffers {
     const std::vector<f32>& contactLambdas() const { return contactLambdas_; }
     const std::vector<f32>& distanceLambdas() const { return distanceLambdas_; }
 
+    /// Raw per-substep solver state, for uploading to / downloading from the resident (device) solver
+    /// (fuse/physics/resident/resident_physics.hpp): anchors and per-point lambdas are
+    /// kMaxContactPointsPerManifold slots per contact once prepareContactPoints ran.
+    const std::vector<ContactAnchor>& contactAnchors() const { return contactAnchors_; }
+    std::vector<f32>& contactLambdasMutable() { return contactLambdas_; }
+    std::vector<f32>& distanceLambdasMutable() { return distanceLambdas_; }
+    std::vector<f32>& contactPointLambdas() { return contactPointLambdas_; }
+    const std::vector<f32>& contactPointLambdas() const { return contactPointLambdas_; }
+
 private:
     std::vector<PositionDelta> positionDeltas_;
     std::vector<narrowphase::ContactManifold> contactManifolds_;

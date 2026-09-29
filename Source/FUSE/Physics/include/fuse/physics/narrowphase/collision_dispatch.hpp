@@ -13,7 +13,11 @@
 
 namespace fuse::physics::narrowphase {
 
-FUSE_PHYSICS_INLINE ContactManifold collideSphereSphere(
+// The inline shape-pair functions below are FUSE_HOST_DEVICE: the CUDA resident narrowphase
+// (fuse/physics/resident/resident_kernels.hpp) runs them unchanged, next to the out-of-line
+// oriented / box-box pairs whose bodies live in primitive_contacts.hpp.
+
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE ContactManifold collideSphereSphere(
     vec3 posA,
     f32 radiusA,
     vec3 posB,
@@ -51,7 +55,7 @@ FUSE_PHYSICS_INLINE ContactManifold collideSphereSphere(
     return manifold;
 }
 
-FUSE_PHYSICS_INLINE ContactManifold collideSpherePlane(
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE ContactManifold collideSpherePlane(
     vec3 spherePos,
     f32 sphereRadius,
     vec3 planeNormal,
@@ -81,7 +85,7 @@ FUSE_PHYSICS_INLINE ContactManifold collideSpherePlane(
 }
 
 /// Axis-aligned box vs plane: deepest point along -normal (box orientation ignored like the other box stubs).
-FUSE_PHYSICS_INLINE ContactManifold collideBoxPlane(
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE ContactManifold collideBoxPlane(
     vec3 boxPos,
     vec3 boxHalfExtents,
     vec3 planeNormal,
@@ -106,7 +110,7 @@ FUSE_PHYSICS_INLINE ContactManifold collideBoxPlane(
 }
 
 /// Axis-aligned box vs sphere (box half extents in `boxHalfExtents`, stub ignores orientation).
-FUSE_PHYSICS_INLINE ContactManifold collideBoxSphere(
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE ContactManifold collideBoxSphere(
     vec3 spherePos,
     f32 sphereRadius,
     vec3 boxPos,
@@ -160,7 +164,7 @@ FUSE_PHYSICS_INLINE ContactManifold collideBoxSphere(
 }
 
 /// Y-axis capsule vs sphere (`capsuleParams.x` = radius, `capsuleParams.y` = half height).
-FUSE_PHYSICS_INLINE ContactManifold collideCapsuleSphere(
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE ContactManifold collideCapsuleSphere(
     vec3 spherePos,
     f32 sphereRadius,
     vec3 capsulePos,
@@ -207,7 +211,7 @@ FUSE_PHYSICS_INLINE ContactManifold collideCapsuleSphere(
 
 /// Closest points between segments p1-q1 and p2-q2 (Ericson, RTCD 5.1.9); handles parallel
 /// and zero-length segments. Returns the squared distance.
-FUSE_PHYSICS_INLINE f32 closestPointsSegmentSegment(vec3 p1, vec3 q1, vec3 p2, vec3 q2, vec3& c1, vec3& c2) {
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE f32 closestPointsSegmentSegment(vec3 p1, vec3 q1, vec3 p2, vec3 q2, vec3& c1, vec3& c2) {
     constexpr f32 kEps = 1e-12f;
     const vec3 d1 = q1 - p1;
     const vec3 d2 = q2 - p2;
@@ -250,7 +254,7 @@ FUSE_PHYSICS_INLINE f32 closestPointsSegmentSegment(vec3 p1, vec3 q1, vec3 p2, v
 /// Capsules given by segment endpoints and radii. The normal points from B towards A;
 /// `minSeparation` is expressed against the body centres so centre-based solvers see the
 /// true surface separation.
-FUSE_PHYSICS_INLINE ContactManifold collideCapsuleSegments(
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE ContactManifold collideCapsuleSegments(
     vec3 a0, vec3 a1, f32 radiusA, vec3 centerA,
     vec3 b0, vec3 b1, f32 radiusB, vec3 centerB,
     u32 idxA, u32 idxB, f32 margin = 0.f) {
@@ -289,7 +293,7 @@ FUSE_PHYSICS_INLINE ContactManifold collideCapsuleSegments(
 }
 
 /// Y-axis capsules (`params.x` = radius, `params.y` = half height).
-FUSE_PHYSICS_INLINE ContactManifold collideCapsuleCapsule(
+FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE ContactManifold collideCapsuleCapsule(
     vec3 posA, vec3 paramsA, vec3 posB, vec3 paramsB, u32 idxA, u32 idxB, f32 margin = 0.f) {
     const vec3 upA{0.f, paramsA.y, 0.f};
     const vec3 upB{0.f, paramsB.y, 0.f};

@@ -11,6 +11,19 @@
 //     CpuParallel (0/2/4 workers) bit for bit, repeatable, stacks stay up, close to the island path.
 //   - Kernel stats names / item counts; GPU requests without a device fall back to CpuParallel.
 //   - Prints CPU timings (legacy vs kernel reference vs kernel parallel) at 1000 and 10000 bodies.
+//   - Resident pipeline (test_b4_physics_resident.cpp): the device-count launch sequence on host memory
+//     equals the legacy broadphase / narrowphase / coloured solve bit for bit (always run).
+//
+// Modes:
+//   (no argument)   CPU gates, CPU timings, then the resident CUDA parity + CUDA-event benchmarks when a
+//                   device exists (targets enforced under fuse::core::timingBudgetsEnforced()).
+//   --no-timings    CPU gates only (ctest fuse_b4_physics_kernel_gates).
+//   --cuda-bench    only the resident CUDA parity + CUDA-event benchmarks of the plan workloads
+//                   (broadphase 10k bodies, narrowphase 1k contact pairs, solver 10 iterations over 10k
+//                   contacts); exits 77 ("FUSE_GATE_SKIP: ...") without a CUDA device
+//                   (ctest fuse_b4_physics_cuda_bench).
+//   --host-bench    the same benchmark flow on host memory (CpuParallel, host clock, no targets): a dry
+//                   run of the device benchmark code on machines without a GPU.
 
 #include <fuse/compute_kernel/stats.hpp>
 #include <fuse/core/init.hpp>
@@ -23,6 +36,8 @@
 #include <fuse/physics/physics_pipeline.hpp>
 #include <fuse/physics/rotation.hpp>
 #include <fuse/physics/solver/pbd_solver.hpp>
+
+#include "physics_kernel_test_scenes.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -76,56 +91,9 @@ u64 fnv(u64 h, const void* data, size_t bytes) {
 // Scenes
 // ---------------------------------------------------------------------------------------------
 
-struct Scene {
-    RigidBodySoA bodies;
-    CollisionShapeSoA shapes;
-};
-
-/// Jittered 3D grid of spheres / boxes (some rotated) + a ground plane; ~spacing 0.9 so neighbours overlap.
-Scene makeScene3D(u32 count, u32 seed, bool withPlane = true, bool rotated = true, bool layers = false) {
-    Scene s;
-    std::mt19937 rng(seed);
-    std::uniform_real_distribution<float> jitter(-0.15f, 0.15f);
-    if (withPlane) {
-        const u32 ground = s.bodies.addBody({0.f, 0.f, 0.f}, 0.f, RB_STATIC);
-        s.shapes.addShape(CollisionShapeType::Plane, ground, {0.f, 1.f, 0.f}, 0.f);
-    }
-    const u32 side = static_cast<u32>(std::ceil(std::cbrt(static_cast<double>(count))));
-    for (u32 i = 0; i < count; ++i) {
-        const vec3 p{static_cast<float>(i % side) * 0.9f + jitter(rng),
-                     0.45f + static_cast<float>((i / side) % side) * 0.9f + jitter(rng),
-                     static_cast<float>(i / (side * side)) * 0.9f + jitter(rng)};
-        const u32 layer = layers ? (1u << (i % 3u)) : 1u;
-        const u32 mask = layers ? (i % 5u == 0u ? 0x1u : 0xFFFFFFFFu) : 0xFFFFFFFFu;
-        const u32 body = s.bodies.addBody(p, 1.f, i % 17u == 0u ? RB_STATIC : 0u, layer, mask);
-        if (i % 3u == 0u) {
-            s.shapes.addShape(CollisionShapeType::Box, body, {0.45f, 0.4f, 0.35f});
-            if (rotated && i % 2u == 0u) {
-                s.bodies.orientations[body] = quatFromAxisAngle({0.3f, 1.f, 0.2f}, 0.1f * static_cast<float>(i % 13u));
-            }
-        } else {
-            s.shapes.addShape(CollisionShapeType::Sphere, body, {0.5f, 0.f, 0.f});
-        }
-    }
-    return s;
-}
-
-Scene makeScene2D(u32 count, u32 seed) {
-    Scene s;
-    std::mt19937 rng(seed);
-    std::uniform_real_distribution<float> jitter(-0.2f, 0.2f);
-    for (u32 i = 0; i < count; ++i) {
-        const vec3 p{static_cast<float>(i % 40u) * 0.9f + jitter(rng), static_cast<float>(i / 40u) * 0.9f + jitter(rng),
-                     0.f};
-        const u32 body = s.bodies.addBody(p, 1.f);
-        if (i % 3u == 0u) {
-            s.shapes.addShape(CollisionShapeType::Box, body, {0.45f, 0.45f, 0.f});
-        } else {
-            s.shapes.addShape(CollisionShapeType::Sphere, body, {0.5f, 0.f, 0.f});
-        }
-    }
-    return s;
-}
+using test_scenes::makeScene2D;
+using test_scenes::makeScene3D;
+using test_scenes::Scene;
 
 bool samePairBuffers(const bp::PairBufferSoA& a, const bp::PairBufferSoA& b) {
     return a.activeCount == b.activeCount && a.pairSlotCount == b.pairSlotCount && a.droppedCount == b.droppedCount &&
@@ -469,40 +437,8 @@ void testStatsAndFallback() {
 // Colored solver
 // ---------------------------------------------------------------------------------------------
 
-struct SolverScene {
-    RigidBodySoA bodies;
-    CollisionShapeSoA shapes;
-    std::vector<u32> tops;
-};
-
-/// Columns of stacked boxes and spheres on a ground plane (+ a few distance constraints).
-SolverScene makeSolverScene(u32 columnsPerSide, u32 height) {
-    SolverScene s;
-    const u32 ground = s.bodies.addBody({0.f, 0.f, 0.f}, 0.f, RB_STATIC);
-    s.shapes.addShape(CollisionShapeType::Plane, ground, {0.f, 1.f, 0.f}, 0.f);
-    for (u32 cx = 0; cx < columnsPerSide; ++cx) {
-        for (u32 cz = 0; cz < columnsPerSide; ++cz) {
-            // Box columns stack; sphere "columns" are a single sphere resting on the ground (stacked
-            // spheres are unstable and would roll off in either solver).
-            const bool boxes = ((cx + cz) % 2u) == 0u;
-            const u32 levels = boxes ? height : 1u;
-            for (u32 level = 0; level < levels; ++level) {
-                const vec3 p{static_cast<float>(cx) * 1.5f, 0.5f + static_cast<float>(level) * 1.001f,
-                             static_cast<float>(cz) * 1.5f};
-                const u32 body = s.bodies.addBody(p, 1.f);
-                if (boxes) {
-                    s.shapes.addShape(CollisionShapeType::Box, body, {0.5f, 0.5f, 0.5f});
-                } else {
-                    s.shapes.addShape(CollisionShapeType::Sphere, body, {0.5f, 0.f, 0.f});
-                }
-                if (boxes && level + 1u == height) {
-                    s.tops.push_back(body);
-                }
-            }
-        }
-    }
-    return s;
-}
+using test_scenes::makeSolverScene;
+using test_scenes::SolverScene;
 
 SolverParams solverParams(ConstraintSolveMode mode, kernel::Backend backend) {
     SolverParams params;
@@ -750,7 +686,11 @@ void printTimings() {
             const double cudaSolve = medianUs(5, [&] {
                 cudaSolver.step(cudaScene.bodies, cudaScene.shapes, cudaParams, 1.f / 60.f);
             });
-            std::printf("  %5u bodies  CUDA wall us: broadphase %8.1f | narrowphase %8.1f (%u contacts) | solver step %8.1f\n",
+            // Backend::Cuda on the per-call kernel path: only the broadphase radix sort runs on the GPU
+            // (staged every call); the rest falls back to CpuParallel. The resident path is timed by
+            // residentCudaBench with CUDA events.
+            std::printf("  %5u bodies  per-call Backend::Cuda wall us (CPU fallback + staged sort): broadphase %8.1f | "
+                        "narrowphase %8.1f (%u contacts) | solver step %8.1f\n",
                         count, cudaBp, cudaNpUs, cudaContacts.activeCount, cudaSolve);
         }
     }
@@ -758,17 +698,31 @@ void printTimings() {
 
 } // namespace
 
+// test_b4_physics_resident.cpp
+int residentCpuGates();
+int residentCudaBench(bool standalone);
+int residentHostBench();
+
 int main(int argc, char** argv) {
     fuse::core::initialize();
+    if (argc >= 2 && (std::strcmp(argv[1], "--cuda-bench") == 0 || std::strcmp(argv[1], "--host-bench") == 0)) {
+        const int rc = std::strcmp(argv[1], "--cuda-bench") == 0 ? residentCudaBench(true) : residentHostBench();
+        fuse::core::shutdown();
+        return rc;
+    }
     testScanAndSort();
     testBroadphaseParity();
     testNarrowphaseParity();
     testPipelineParity();
     testStatsAndFallback();
     testColoredSolver();
+    g_failures += residentCpuGates();
     const bool timings = argc < 2 || std::strcmp(argv[1], "--no-timings") != 0;
     if (timings) {
         printTimings();
+        if (residentCudaBench(false) == EXIT_FAILURE) {
+            ++g_failures;
+        }
     }
     fuse::core::shutdown();
 

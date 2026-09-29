@@ -107,6 +107,10 @@ bool is_unsupported_shape_pair(
     const broadphase::CandidatePair& pair,
     const CollisionShapeSoA& shapes);
 
+/// Shape index the pair dispatch uses for `bodyIndex` (the body's shape; on multi-shape bodies the
+/// sphere wins), or shapes.count() when the body has none. The resident narrowphase uploads this map.
+u32 contact_shape_for_body(const CollisionShapeSoA& shapes, u32 bodyIndex);
+
 /// Run shape dispatch for one broadphase candidate pair (B4.3 deepen).
 /// Returns an invalid manifold for empty/self pairs or missing shapes.
 ContactManifold detect_contacts_pair(

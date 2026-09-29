@@ -183,7 +183,7 @@ if(FUSE_CUDA_BACKEND AND FUSE_BUILD_CORE_TESTS)
       "fuse_vfx:particle_sim.cu"
       "fuse_scene:svo_ray_cast.cu"
       "fuse_audio:reverb_fft.cu"
-      "fuse_physics:physics_broadphase.cu")
+      "fuse_physics:physics_broadphase.cu|physics_resident.cu")
     string(REPLACE ":" ";" _pair "${_pair}")
     list(GET _pair 0 _tgt)
     list(GET _pair 1 _cus)

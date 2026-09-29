@@ -19,6 +19,9 @@ struct SortEntries {
     kernel::DeviceEntryFn histogram = nullptr;
     kernel::DeviceEntryFn scatter = nullptr;
     void* stream = nullptr;
+    /// GPU launches wait for completion (the staging wrapper); the resident pipeline clears it so the
+    /// whole sequence queues on one stream (resident_physics.cpp).
+    bool synchronize = true;
 };
 
 inline kernel::LaunchOptions entryOptions(kernel::DeviceEntryFn entry, const SortEntries& entries) {
@@ -26,6 +29,7 @@ inline kernel::LaunchOptions entryOptions(kernel::DeviceEntryFn entry, const Sor
     options.cuda = entry;
     options.stream = entries.stream;
     options.allow_fallback = entry == nullptr; // a CUDA launch on device memory must not fall back
+    options.synchronize = entries.synchronize;
     return options;
 }
 
