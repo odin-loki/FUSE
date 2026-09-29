@@ -7,6 +7,9 @@
 //   - Launches record "particle_update" / "particle_compact" stats; Cuda / Auto / VulkanCompute without
 //     a device fall back to CpuParallel (recorded) with the same state; particle_cuda_kernel_available()
 //     and ParticleSystem::backend_kind() report that; steady-state steps reuse every buffer.
+//   - With a CUDA device: CUDA step == CpuReference (deaths / dead-slot order exact, positions within
+//     1e-4), a 262144-slot fill launch, and the kernels' launch configuration (registers, blocks per SM,
+//     theoretical occupancy > 70%, persistent grid size) for the Nsight Compute occupancy row.
 
 #include <fuse/compute_kernel/parity.hpp>
 #include <fuse/compute_kernel/stats.hpp>
@@ -19,6 +22,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -262,6 +266,22 @@ void testStatsFallbackAndSteadyState() {
         const soa_ops::SimStepResult filled =
             soa_ops::simulate_step_on(kernel::Backend::Cuda, fill, fillDesc, 1.f / 60.f, deadFill);
         expectTrue(filled.integrated == kFill, "CUDA fill launch of 262144 particles");
+
+        // Launch configuration behind the Nsight number: <= 40 registers -> 6 x 256-thread blocks per SM
+        // (100% theoretical on sm_86) and a persistent grid of SMs x 6 blocks striding over the 1024
+        // workgroups, so no half-empty tail wave. Achieved occupancy is measured with ncu (see
+        // docs/unification/TRACK-B-VULKAN.md "Hardware run").
+        vfx::ParticleKernelOccupancy occupancy{};
+        expectTrue(vfx::particle_cuda_occupancy(occupancy), "particle_cuda_occupancy on a device");
+        for (const auto& [name, entry] : {std::pair{"particle_update", occupancy.update},
+                                          std::pair{"particle_compact", occupancy.compact}}) {
+            std::printf("%s: %d regs/thread, %d B local, %d B smem, %u threads x %d blocks/SM = %.0f%% theoretical, "
+                        "persistent grid %d blocks\n",
+                        name, entry.registers_per_thread, entry.local_bytes_per_thread, entry.shared_bytes_per_block,
+                        occupancy.threads_per_block, entry.blocks_per_sm,
+                        100.0 * static_cast<double>(entry.theoretical_occupancy), entry.persistent_blocks);
+            expectTrue(entry.theoretical_occupancy > 0.70f, "particle kernel theoretical occupancy > 70%");
+        }
     }
 
     // Steady state: stepping reuses the dead-slot scratch, the kernel scratch and the free list.

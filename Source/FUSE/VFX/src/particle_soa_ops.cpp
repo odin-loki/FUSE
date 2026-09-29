@@ -26,6 +26,13 @@ bool particle_cuda_kernel_available() {
 #endif
 }
 
+#if !defined(FUSE_HAS_CUDA)
+// kernels/particle_sim.cu defines this in CUDA builds.
+bool particle_cuda_occupancy(ParticleKernelOccupancy& /*out*/) {
+    return false;
+}
+#endif
+
 } // namespace fuse::vfx
 
 namespace fuse::vfx::particle_soa {

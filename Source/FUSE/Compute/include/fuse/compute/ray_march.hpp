@@ -72,6 +72,42 @@ bool launch_ray_march_on(kernel::Backend backend, const RayMarchParams& params, 
 /// CPU-only form of launch_ray_march_on (compiled without any CUDA dependency).
 bool launch_ray_march_cpu_backend(kernel::Backend backend, const RayMarchParams& params);
 
+/// Tiled full-frame march (kernel "sdf_ray_march_tiled", fuse/compute/ray_march_kernel.hpp): each 16x8
+/// tile first culls the objects against its view pyramid into an ordered list, then its pixels march
+/// only that list — a few objects per step instead of all of them, for scenes of hundreds of objects.
+/// Same surfaces as launch_ray_march_on; hit distances agree within the trace's stopping tolerance.
+/// Cuda / Auto run it on the device when one is present; otherwise CpuParallel (recorded fallback).
+bool launch_ray_march_tiled_on(kernel::Backend backend, const RayMarchParams& params, void* stream = nullptr);
+
+/// CPU-only form of launch_ray_march_tiled_on.
+bool launch_ray_march_tiled_cpu_backend(kernel::Backend backend, const RayMarchParams& params);
+
+#if defined(FUSE_HAS_CUDA)
+/// The launch-bounded CUDA entry of the tiled march (kernels/ray_march.cu), for callers that keep their
+/// own resident device buffers: kernel::launch(Backend::Cuda, ray_march_kernel::make_tiled_launch(scene),
+/// ray_march_kernel::TiledKernel{}, ray_march_kernel::make_tiled_params(deviceScene, hostObjects),
+/// {.cuda = ray_march_tiled_cuda_entry(), ...}).
+kernel::DeviceEntryFn ray_march_tiled_cuda_entry();
+#endif
+
+/// Device benchmark (CUDA builds with a device): the objects are uploaded once, `iterations` (>= 1)
+/// full-frame launches run on resident depth + normal surfaces and are timed with CUDA events, and the
+/// last frame is downloaded into `params`' host surfaces (either may be null).
+struct RayMarchDeviceTiming {
+    f32 upload_ms = 0.f;     ///< objects, host -> device (CUDA events)
+    f32 kernel_ms_min = 0.f; ///< best launch (CUDA events)
+    f32 kernel_ms_avg = 0.f; ///< mean launch
+    f32 download_ms = 0.f;   ///< depth + normal surfaces, device -> host
+    u32 iterations = 0;
+    s32 registers_per_thread = -1;
+    s32 shared_bytes_per_block = -1;
+    s32 blocks_per_sm = -1;
+    f32 theoretical_occupancy = 0.f;
+};
+
+/// False (timing untouched) without a CUDA device or on invalid params. `tiled` picks the tiled march.
+bool benchmark_ray_march_cuda(const RayMarchParams& params, bool tiled, u32 iterations, RayMarchDeviceTiming& timing);
+
 /// CPU sphere-tracing reference for unit tests (returns hit distance, or -1 on miss).
 f32 ray_march_center_hit_distance(const RayMarchParams& params);
 

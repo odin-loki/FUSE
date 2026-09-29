@@ -121,6 +121,16 @@ if(TARGET fuse_rhi AND TARGET fuse_compute)
         LABELS "gate;vulkan")
 endif()
 
+# B3 row "Renderer receives SceneData from scene and renders 500 SDF objects at 1080p > 60fps":
+# SceneManager (500 visible SDF entities) -> SceneData -> SDF object buffer -> tiled ray march; CPU
+# parity vs the full-scene march; with a CUDA device, the 1920x1080 CUDA-event benchmark.
+if(TARGET fuse_compute)
+    add_executable(fuse_b3_sdf_scene_500_march test_b3_sdf_scene_500_march.cpp)
+    target_link_libraries(fuse_b3_sdf_scene_500_march PRIVATE fuse_scene fuse_ecs fuse_compute fuse_core)
+    add_test(NAME fuse_b3_sdf_scene_500_march COMMAND fuse_b3_sdf_scene_500_march)
+    set_tests_properties(fuse_b3_sdf_scene_500_march PROPERTIES LABELS "gate" TIMEOUT 600)
+endif()
+
 # Single-source "svo_ray_cast" kernel gate (docs/compute-kernels.md): backend parity, stats, fallback,
 # 1M-ray CPU timing.
 add_executable(fuse_svo_ray_kernel_parity test_svo_ray_kernel_parity.cpp)

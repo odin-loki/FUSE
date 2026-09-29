@@ -33,6 +33,15 @@ bool launch_ray_march_cpu_backend(kernel::Backend backend, const RayMarchParams&
         .ok;
 }
 
+bool launch_ray_march_tiled_cpu_backend(kernel::Backend backend, const RayMarchParams& params) {
+    if (!ray_march_kernel::params_valid(params)) {
+        return false;
+    }
+    return kernel::launch(backend, ray_march_kernel::make_tiled_launch(params), ray_march_kernel::TiledKernel{},
+                          ray_march_kernel::make_tiled_params(params, params.objects))
+        .ok;
+}
+
 bool launch_ray_march_cpu(const RayMarchParams& params) {
     return launch_ray_march_cpu_backend(kernel::Backend::CpuReference, params);
 }

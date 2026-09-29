@@ -17,6 +17,25 @@ struct SVODesc {
     bool storeSdf = true;
 };
 
+/// Linearised copy of an SVO for the ray walk — the layout the CUDA kernel reads (SVO::rayLayout).
+/// Interior nodes become 8-byte svo_kernel::PackedNode records (first child + child mask, children
+/// contiguous) in depth-first order; brick records follow the same order and their ray-relevant payload
+/// words (sparse entries, masked words, dense materials) are repacked brick by brick. It is the same
+/// tree, so svo_kernel::ray_cast over view() makes the same decisions and returns bit-identical hits
+/// to the SVO's own view. Valid until the SVO changes; view() points into these vectors.
+struct SvoRayLayout {
+    std::vector<svo_kernel::PackedNode> nodes;
+    std::vector<SVOBrick> bricks;
+    std::vector<u32> pool;
+    svo_kernel::SvoView constants{}; ///< source view constants (its spans are cleared)
+
+    [[nodiscard]] svo_kernel::SvoView view() const;
+};
+
+/// Builds the ray-walk layout of an SVO view (SVO::view()); an uninitialised or already packed view
+/// yields an empty layout.
+[[nodiscard]] SvoRayLayout buildSvoRayLayout(const svo_kernel::SvoView& source);
+
 /// Sparse Voxel Octree (B3.5). Interior nodes are walked by octant down to brick leaves
 /// (O(depth) get/set). Every written voxel has a material and a signed distance at its centre;
 /// `sdfQuery` trilinearly interpolates those samples (continuous across voxel and brick
@@ -49,6 +68,9 @@ public:
     /// POD view of the node / brick / payload arrays for the single-source kernels (valid until the
     /// next mutation).
     [[nodiscard]] svo_kernel::SvoView view() const;
+
+    /// Linearised ray-walk copy of the tree (see SvoRayLayout); O(nodes + bricks + payload).
+    [[nodiscard]] SvoRayLayout rayLayout() const;
 
     f32 sdfQuery(vec3 worldPos) const;
 

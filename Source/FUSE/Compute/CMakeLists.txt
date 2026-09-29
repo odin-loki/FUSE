@@ -49,6 +49,9 @@ target_link_libraries(fuse_compute PUBLIC fuse_core fuse_ssfx)
 if(FUSE_CUDA_BACKEND)
     target_link_libraries(fuse_compute PUBLIC CUDA::cudart)
     set_target_properties(fuse_compute PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+    # The tiled march's kernel is launch-bounded to 64 registers; its out-of-line tile_frustum (device
+    # call, see ray_march_kernel.hpp) must fit the same budget under separable compilation.
+    set_source_files_properties(kernels/ray_march.cu PROPERTIES COMPILE_OPTIONS "-maxrregcount=64")
     message(STATUS "FUSE: fuse_compute using CUDA toolkit")
 else()
     message(STATUS "FUSE: fuse_compute built in CPU reference stub mode (no CUDA toolkit)")

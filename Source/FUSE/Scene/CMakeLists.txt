@@ -24,6 +24,7 @@ add_library(fuse_scene STATIC
     include/fuse/scene/serialiser.hpp
     include/fuse/scene/svo.hpp
     include/fuse/scene/svo_ray_kernel.hpp
+    include/fuse/scene/svo_ray_device.hpp
     include/fuse/scene/wire_stub.hpp
     include/fuse/scene/wire_runtime_bind.hpp
 )
@@ -41,6 +42,8 @@ target_link_libraries(fuse_scene PUBLIC fuse_core fuse_ecs fuse_project)
 if(FUSE_CUDA_BACKEND)
     target_sources(fuse_scene PRIVATE kernels/svo_ray_cast.cu)
     set_target_properties(fuse_scene PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+    # No fma contraction in the DDA: the device walk takes the same decisions as the host build.
+    set_source_files_properties(kernels/svo_ray_cast.cu PROPERTIES COMPILE_OPTIONS "-fmad=false")
 endif()
 
 if(FUSE_BUILD_CORE_TESTS)

@@ -26,3 +26,12 @@ add_executable(fuse_screen_space_kernel_parity test_screen_space_kernel_parity.c
 target_link_libraries(fuse_screen_space_kernel_parity PRIVATE fuse_compute fuse_ssfx)
 add_test(NAME fuse_screen_space_kernel_parity COMMAND fuse_screen_space_kernel_parity)
 set_tests_properties(fuse_screen_space_kernel_parity PROPERTIES LABELS "gate" TIMEOUT 300)
+
+# Tiled SDF ray march gate ("sdf_ray_march_tiled"): per-16x8-tile object culling. CpuReference ==
+# CpuParallel bit-exact, tiled vs full-scene march agreement on 100 / 500-object scenes, culling
+# soundness, list-overflow fallback, stats + fallback; with a CUDA device, CUDA parity and the 1080p
+# CUDA-event benchmark (100 objects / 128 steps, 500 objects).
+add_executable(fuse_ray_march_tile_cull test_ray_march_tile_cull.cpp)
+target_link_libraries(fuse_ray_march_tile_cull PRIVATE fuse_compute)
+add_test(NAME fuse_ray_march_tile_cull COMMAND fuse_ray_march_tile_cull)
+set_tests_properties(fuse_ray_march_tile_cull PROPERTIES LABELS "gate" TIMEOUT 600)

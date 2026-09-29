@@ -16,6 +16,26 @@ namespace fuse::vfx {
 /// AND a CUDA device is usable (`kernel::backend_available(Backend::Cuda)`).
 bool particle_cuda_kernel_available();
 
+/// Launch configuration of the CUDA particle kernels on the current device (for the B7 occupancy row;
+/// Nsight Compute measures the achieved figure). Each kernel runs 256-thread blocks as a persistent
+/// grid of `persistent_blocks` that strides over the 256-slot workgroups.
+struct ParticleKernelOccupancy {
+    struct Entry {
+        s32 registers_per_thread = -1;
+        s32 local_bytes_per_thread = -1;
+        s32 shared_bytes_per_block = -1;
+        s32 blocks_per_sm = -1;
+        s32 persistent_blocks = -1;
+        f32 theoretical_occupancy = 0.f; ///< resident threads / max threads per SM
+    };
+    u32 threads_per_block = 0;
+    Entry update{};
+    Entry compact{};
+};
+
+/// Fills `out` from cudaFuncGetAttributes / the occupancy calculator; false without a CUDA device.
+bool particle_cuda_occupancy(ParticleKernelOccupancy& out);
+
 class ParticleSystem {
 public:
     void init(const VfxDesc& desc);

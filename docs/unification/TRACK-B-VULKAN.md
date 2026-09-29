@@ -518,6 +518,35 @@ Dual Intel Xeon Gold 6242, NVIDIA GeForce RTX 3090 (24576 MiB, driver 595.79), C
 | GPU radix + sync validation | Passed on the 3090. 330 cases match `std::stable_sort`. 1M u32 keys: GPU **5.2 ms** (201 Mpairs/s). Validation messages: 0 |
 | G-buffer / RenderDoc | `fuse_b5_rhi_gbuffer_pass` passed (near/far/overlap readback). RenderDoc 1.46 wrote `%TEMP%\fuse-gbuffer_capture.rdc` (577334 bytes) around that submit. On-screen present was not run |
 
+### Scene / VFX / SDF CUDA follow-up (2026-09-29 — coded and CPU-verified here, re-run on the 3090)
+
+No GPU in the container: every change below compiles clean in `build/cuda` (nvcc 12.0, `sm_86`) and its CPU gate passes in `build/rel`; the device timings are for the RTX 3090. Device gates print a "no device" skip line without one.
+
+| Gap (2026-09-25 run) | Change | Gate / what the 3090 prints |
+|------|--------|------|
+| SVO 1M rays: launch **130 ms** (target < 10 ms) | Walk jumps empty 4³ / 2³ blocks of sparse bricks from a register cell mask (87 iterations per ray). Only the traversal stack is local memory (144 B per thread, was 336 B), with the brick-level parent cached in it. Device reads a linearised layout (`SVO::rayLayout`: 8-byte child-mask nodes, depth first, 1.8 MB vs 7.1 MB). 128-thread blocks, `__launch_bounds__(128, 8)`: 64 registers, no spills. `-fmad=false` so the device takes the host's float decisions. Resident buffers + CUDA events (`benchmarkSvoRayCastCuda`) | `fuse_svo_ray_kernel_parity`: new walk == previous DDA bit-exact on 100k parity rays and depth 0–10 SVOs (14 of 1M edge-grazing rays differ); packed layout == SVO arrays. On the 3090: CUDA == CPU (voxel / face / hit exact, bit-exact distance count) and "1M rays CUDA events ... kernel min" |
+| Particle update achieved **69%** (theoretical 83%) | Update and compact entries with `__launch_bounds__(256, 6)`: 40 registers (was 42 / 46) = 6 blocks per SM, 100% theoretical. Persistent grid (SMs × resident blocks) striding over the 256-slot workgroups removes the 2.5-wave tail at 262144 slots. Same LaunchIndex per workgroup: CPU results unchanged | `fuse_particle_kernel_parity` prints registers, blocks per SM and theoretical occupancy; achieved occupancy needs `ncu` (below) |
+| SDF march with hundreds of objects (500 @ 1080p > 60 fps; 100 objects / 128 steps < 3 ms) | Tiled march `sdf_ray_march_tiled` (`launch_ray_march_tiled_on`): each 16×8 tile culls the objects against its view pyramid into an ordered list in shared memory (mean 2.9 of 100, 3.1–9.7 of 500 per tile), then marches only that list; overflowing tiles (> 1024) march the whole scene. 64 registers, no spills. The full-scene kernel dropped from 50 to 47 registers (75% → 83% theoretical) after removing `std::clamp` reference temporaries | `fuse_ray_march_tile_cull` (tiled vs full: same hit mask except pixels the full march left unconverged, depth within the stopping tolerance; culled objects never hit their tile's rays) and `fuse_b3_sdf_scene_500_march` (SceneData from 500 entities). On the 3090 both print 1920×1080 CUDA-event times: 100 objects / 128 steps (full, tiled) and 500 objects (full, tiled) |
+
+Commands on the 3090 (MSVC CUDA tree `build-cuda`; with a Visual Studio generator the executables sit in a `Release\` subfolder):
+
+```bat
+cmake --build build-cuda --config Release --target fuse_svo_ray_kernel_parity fuse_particle_kernel_parity fuse_ray_march_tile_cull fuse_b3_sdf_scene_500_march fuse_ray_march_kernel_parity
+set FUSE_DEVICE_BUDGETS=1
+ctest --test-dir build-cuda -C Release -V -R "^(fuse_svo_ray_kernel_parity|fuse_particle_kernel_parity|fuse_ray_march_tile_cull|fuse_b3_sdf_scene_500_march|fuse_ray_march_kernel_parity)$"
+rem Achieved occupancy (elevated prompt, GPU counters allowed). The 262144-slot launches are the
+rem particle_update_kernel / particle_compact_kernel entries with 492 blocks (82 SMs x 6).
+ncu --section Occupancy --section LaunchStats -k regex:"particle_(update|compact)_kernel" build-cuda\Source\FUSE\VFX\tests\fuse_particle_kernel_parity.exe
+rem Optional: the tiled march and the SVO walk under Nsight / memcheck.
+ncu --section Occupancy -k regex:"ray_march_tiled_kernel" -c 4 build-cuda\Source\FUSE\Compute\tests\fuse_ray_march_tile_cull.exe
+ncu --section Occupancy -k regex:"svo_ray_cast_kernel" -c 2 build-cuda\Source\FUSE\Scene\tests\fuse_svo_ray_kernel_parity.exe
+compute-sanitizer --tool memcheck build-cuda\Source\FUSE\Scene\tests\fuse_svo_ray_kernel_parity.exe
+compute-sanitizer --tool memcheck build-cuda\Source\FUSE\Compute\tests\fuse_ray_march_tile_cull.exe
+compute-sanitizer --tool memcheck build-cuda\Source\FUSE\VFX\tests\fuse_particle_kernel_parity.exe
+```
+
+`FUSE_DEVICE_BUDGETS=1` turns the printed targets into assertions (SVO 1M rays < 10 ms, 100 objects / 128 steps < 3 ms, 500 objects at 1080p < 16.7 ms, all CUDA-event kernel times on resident buffers); without it the gates only print them.
+
 ### Integration test flow (headless)
 
 `fuse_vulkan_phase2_integration` validates the full B2.5–B2.10 wiring in one executable:

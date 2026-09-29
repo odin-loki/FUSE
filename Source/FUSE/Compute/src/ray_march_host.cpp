@@ -4,8 +4,10 @@
 namespace fuse::compute {
 
 #if defined(FUSE_HAS_CUDA)
-/// kernels/ray_march.cu: stages the scene + surfaces on the device and runs the same kernel body.
+/// kernels/ray_march.cu: stages the scene + surfaces on the device and runs the same kernel body
+/// (`tiled`: the per-tile culled march).
 bool launchRayMarchCuda(const RayMarchParams& params, void* stream);
+bool launchRayMarchTiledCuda(const RayMarchParams& params, void* stream);
 #endif
 
 RayMarcherInfo ray_marcher_info() {
@@ -33,6 +35,26 @@ bool launch_ray_march_on(kernel::Backend backend, const RayMarchParams& params, 
     // (CpuParallel) and records the requested vs executed backend.
     return launch_ray_march_cpu_backend(backend, params);
 }
+
+bool launch_ray_march_tiled_on(kernel::Backend backend, const RayMarchParams& params, void* stream) {
+#if defined(FUSE_HAS_CUDA)
+    if ((backend == kernel::Backend::Cuda || backend == kernel::Backend::Auto) &&
+        kernel::backend_available(kernel::Backend::Cuda)) {
+        return launchRayMarchTiledCuda(params, stream);
+    }
+#else
+    (void)stream;
+#endif
+    return launch_ray_march_tiled_cpu_backend(backend, params);
+}
+
+#if !defined(FUSE_HAS_CUDA)
+// kernels/ray_march.cu defines the device benchmark in CUDA builds.
+bool benchmark_ray_march_cuda(const RayMarchParams& /*params*/, bool /*tiled*/, u32 /*iterations*/,
+                              RayMarchDeviceTiming& /*timing*/) {
+    return false;
+}
+#endif
 
 bool launch_ray_march(const RayMarchParams& params, void* stream) {
     return launch_ray_march_on(kernel::Backend::Auto, params, stream);
