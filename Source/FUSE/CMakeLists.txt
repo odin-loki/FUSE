@@ -175,6 +175,7 @@ if(FUSE_CUDA_BACKEND AND FUSE_BUILD_CORE_TESTS)
       "fuse_fx:particle_pool_cuda.cu"
       "fuse_cuda_shared_headers_gate:test_cuda_shared_headers.cu"
       "fuse_compute_kernel_cuda_gate:test_compute_kernel_device.cu"
+      "fuse_b5_frame_bench:b5_frame_bench_cuda.cu"
       "fuse_gpu_allocator_device_gate:test_gpu_allocator_device.cu"
       "fuse_b3_ecs_managed_column_device:ecs_managed_column_kernel.cu"
       "fuse_cuda_vk_interop_gates:cuda_vk_interop_gate_kernels.cu"

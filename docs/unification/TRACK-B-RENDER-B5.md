@@ -149,7 +149,7 @@ SDF soft shadows and deferred shading sampling deferred to B2.6 interop + B5.4 C
 
 ## B5.6 — Global Illumination: DDGI
 
-**Status:** CPU-first probe grid, irradiance cache, update/sample stubs landed; probe grid indexing + trilinear irradiance lerp deepened; **B5.6 deepen** adds octahedral direction encoding, border/interior validity flags, and OOB clamp helpers. **Now real:** CPU probe trace/blend/sample with change detection; **gates proven** by `fuse_b5_ddgi_gates` (0.96% vs Monte Carlo). CUDA kernels still pending.
+**Status:** CPU-first probe grid, irradiance cache, update/sample stubs landed; probe grid indexing + trilinear irradiance lerp deepened; **B5.6 deepen** adds octahedral direction encoding, border/interior validity flags, and OOB clamp helpers. **Now real:** CPU probe trace/blend/sample with change detection; **gates proven** by `fuse_b5_ddgi_gates` (0.96% vs Monte Carlo). CUDA: single-source kernels with `kernels/ddgi_probe_update.cu` (one-shot + resident `DdgiDeviceVolume`); device gate `fuse_b5_ddgi_device` pending the RTX 3090 run.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
@@ -297,19 +297,19 @@ timing, RenderDoc or an on-screen present and is tracked in
 | Cluster light lists == brute force | **Done** | `fuse_b5_clustered_gates`: 1000 lights / 3456 clusters, 0 mismatches; cluster AABBs now conservative and follow camera rotation/FOV |
 | Per-cluster light capacity clamp + overflow stats | **Done** | `fuse_b5_clustered_gates` overflow case (@8/cluster) |
 | 1000 point lights — no light leaking | **Done** | `fuse_b5_clustered_gates`: CPU deferred shade bit-identical to all-lights reference; 0 px lit through the wall |
-| Clustered cull + deferred shade < 3 ms @ 1080p (CUDA events) | **Deferred (HW)** | CPU cull 1.8 ms reported for reference only |
+| Clustered cull + deferred shade < 3 ms @ 1080p (CUDA events) | **Coded, 3090 run pending** | Resident `ClusteredDeviceFrame` (`lighting/clustered_device.hpp`, `kernels/clustered_lighting.cu`): bounds → bin → cull → `clustered_light_grid` (fixed-capacity lists in place, no host scan) → `deferred_shading`, CUDA events per kernel. `fuse_b5_clustered_device` (1920×1080, 1000 lights; device == CPU pipeline parity; exit 77 without a GPU). CPU half `fuse_b5_clustered_device_cpu`: fixed-capacity grid shade == compacted grid shade bit for bit, `clustered_light_grid` CpuReference == CpuParallel. CPU cull 1.8 ms reported for reference only |
 | CSM correct shadow across 4 cascades, no seam | **Done** | `fuse_b5_shadows_gates`: 0 mismatches at every cascade boundary |
 | CSM stabilisation eliminates shimmer | **Done** | `fuse_b5_shadows_gates`: bounding-sphere CSM, frame diff 0 px (24 px unstabilised); `fuse_csm_guards` covers the vertical-sun NaN |
 | SDF soft shadows correct penumbra | **Done** | `fuse_b5_shadows_gates`: penumbra width linear in occluder distance (R² 0.99999) |
 | SDF shadow vs path tracer within 5% luminance | **Done** | `fuse_b5_shadows_gates`: max error 2.97%, 0 px > 5% |
-| SDF shadows < 2 ms | **Deferred (HW)** | GPU timing |
+| SDF shadows < 2 ms | **Coded, 3090 run pending** | `fuse_b5_frame_bench`: `sdf_shadows` over the 100-object scene at 1080p, CUDA events on resident buffers |
 
 #### Global Illumination
 
 | Item | Status | Notes |
 |------|--------|-------|
-| DDGI probes initialise and first update without error | **Done** | `fuse_b5_ddgi_gates`: real CPU probe trace/blend/sample; first update vs independent re-trace 2.5e-7 |
-| 2048 probes, 64/frame update < 2 ms | **Deferred (HW)** | Scheduling proven; `fuse_b5_ddgi_timing` reports CPU time only |
+| DDGI probes initialise and first update without error | **Done (CPU); CUDA coded, 3090 run pending** | `fuse_b5_ddgi_gates`: real CPU probe trace/blend/sample; first update vs independent re-trace 2.5e-7. CUDA: the single-source trace + blend bodies run through `kernels/ddgi_probe_update.cu` (one-shot `Backend::Cuda` and the resident `DdgiDeviceVolume`, `gi/ddgi_device.hpp`); `fuse_b5_ddgi_device` checks init + first update without a CUDA error, device == CpuReference and resident == one-shot bit for bit (exit 77 without a GPU); `fuse_b5_ddgi_device_cpu` proves CpuReference == CpuParallel on the timed workloads |
+| 2048 probes, 64/frame update < 2 ms | **Coded, 3090 run pending** | `fuse_b5_ddgi_device` times the 2048-probe / 64-per-frame rolling update and the 64-probe × 256-ray update with CUDA events on resident atlases (upload / trace / blend / cycle; `--enforce-budgets` makes 2 ms fatal). Scheduling proven; `fuse_b5_ddgi_timing` reports CPU time only |
 | Irradiance responds to dynamic lights within 64 frames | **Done** | `fuse_b5_ddgi_gates`: step response ≈ 100% in 64 frames (change detection; plain 0.97 hysteresis reaches 5.9%) |
 | Sun rotation changes GI colour cast | **Done** | `fuse_b5_ddgi_gates`: cast vs −cos(azimuth) correlation 0.998 |
 | GI on white Lambertian within 10% of Monte Carlo | **Done** | `fuse_b5_ddgi_gates`: mean 0.96%, worst 2.10% luminance |
@@ -343,14 +343,14 @@ timing, RenderDoc or an on-screen present and is tracked in
 | Motion blur velocity trail | **Done** | `fuse_b5_post_gates`: trail length = \|v\| × shutter, along v only |
 | ACES tonemap 0.18 grey calibration | **Done** | `fuse_b5_post_gates`: scene 0.18 → display 0.180000 (−0.468 EV bias) |
 | Film grain temporally decorrelated | **Done** | `fuse_b5_post_gates`: frame-to-frame correlation ≤ 0.016 |
-| Bloom + DoF + motion blur + tonemap < 1 ms | **Deferred (HW)** | GPU timing |
+| Bloom + DoF + motion blur + tonemap < 1 ms | **Coded, 3090 run pending** | `fuse_b5_frame_bench`: WP-4.5 `PostStackGpu` (`post.*` passes) at 1080p, GpuProfiler timestamp zones |
 
 #### Full Frame Performance (RTX 3090, 1920×1080)
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Total GPU frame time < 16 ms (60 fps) | **Deferred (HW)** | No present path / perf gate in CI |
-| Per-pass timing gates (depth, G-buffer, DDGI, TAA, etc.) | **Deferred (HW)** | — |
+| Total GPU frame time < 16 ms (60 fps) | **Coded, 3090 run pending** | `fuse_b5_frame_bench` sums the measured passes (no present path). Not asserted in CI |
+| Per-pass timing gates (depth, G-buffer, DDGI, TAA, etc.) | **Coded, 3090 run pending** | `fuse_b5_frame_bench` (`tests/test_b5_frame_bench.cpp`): G-buffer (`GBufferRasterPass`, 1000 draws), TAA (TAAU 1x) and post via GpuProfiler timestamps; SDF march, DDGI, clustered + deferred, SDF shadows, HBAO, SSR via CUDA events on resident buffers; per-pass mean / median / min / max, total, and the profiler-vs-CUDA-event cross-check (≤ 0.5 ms). Depth prepass has no device implementation (reported). The Vulkan half runs on Lavapipe in CI (`fuse_b5_frame_bench_smoke`, 320×180) |
 
 ---
 
@@ -374,6 +374,9 @@ timing, RenderDoc or an on-screen present and is tracked in
 | `fuse_b5_clustered_gates` | **B5.4 gates** — cluster cull vs brute force, deferred shade vs all-lights, leaking |
 | `fuse_b5_shadows_gates`, `fuse_csm_guards` | **B5.5 gates** — CSM seams + shimmer, SDF penumbra, SDF vs path tracer |
 | `fuse_b5_ddgi_gates`, `fuse_b5_ddgi_timing` | **B5.6 gates** — probe trace/blend/sample, 64-frame response, sun cast, Monte Carlo, emissive |
+| `fuse_b5_ddgi_device_cpu`, `fuse_b5_ddgi_device` | **B5.6 device** — CpuReference == CpuParallel on the timed workloads; RTX 3090: first update without a CUDA error, device parity, CUDA-event timing (77 without a GPU) |
+| `fuse_b5_clustered_device_cpu`, `fuse_b5_clustered_device` | **B5.4 device** — fixed-capacity light grid; RTX 3090: 1080p / 1000 lights parity + CUDA-event timing (77 without a GPU) |
+| `fuse_b5_frame_bench_smoke`, `fuse_b5_frame_bench` | **Full frame** — per-pass device timing + profiler cross-check (Lavapipe smoke; RTX 3090 run, 77 without a CUDA device) |
 | `fuse_b5_taa_ssfx_gates` | **B5.7/B5.9 gates** — TAA edges + rejection, HBAO, SSR |
 | `fuse_b5_atmosphere_gates` | **B5.8/B5.11 gates** — sky scattering, 10-bit banding, sun disk, fog |
 | `fuse_b5_post_gates` | **B5.10 gates** — bloom, DoF, motion blur, ACES calibration, film grain |

@@ -172,6 +172,9 @@ FUSE_HOST_DEVICE inline void copyOctahedralBorder(T* tile, u32 res, u32 stride) 
 
 } // namespace ddgi_cpu
 
+struct DdgiUpdateLaunch;  // fuse/renderer/gi/ddgi_device.hpp
+class DdgiDeviceVolume;   // fuse/renderer/gi/ddgi_device.hpp
+
 struct DdgiCpuUpdateStats {
     u32 probes_updated = 0;
     u32 rays_traced = 0;
@@ -231,7 +234,9 @@ public:
 
     /// Backend of the probe trace + blend launches (fuse/renderer/gi/ddgi_probe_kernel.hpp). CpuParallel
     /// (default) and CpuReference are bit-identical; Cuda / Auto use the device when one is present
-    /// (FUSE_HAS_CUDA builds) and otherwise fall back to CpuParallel (recorded in the kernel stats).
+    /// (FUSE_HAS_CUDA builds) and otherwise fall back to CpuParallel (recorded in the kernel stats). A Cuda
+    /// update stages the atlases on the device and reads them back each time; DdgiDeviceVolume
+    /// (ddgi_device.hpp) keeps them resident across updates and times them with CUDA events.
     void setBackend(kernel::Backend backend) { m_backend = backend; }
     kernel::Backend backend() const { return m_backend; }
     /// Bordered irradiance tiles (probe-major, (irradiance_res + 2)^2 texels each, E/pi).
@@ -249,6 +254,21 @@ public:
     bool probeStatesEnabled() const { return m_config.probe_relocation || m_config.probe_classification; }
 
 private:
+    // The device-resident mirror (ddgi_device.hpp) builds its launches with prepareUpdate and copies its
+    // atlases / update counts back into this volume.
+    friend class DdgiDeviceVolume;
+
+    /// Host launch parameters of one update over this volume's arrays and scratch (the trace / blend / state
+    /// params, the stats and the duplicate / probe-state routing flags). `out` is used in place: its blend
+    /// points at `out.fast_response`. False when the volume is not ready or the list is empty.
+    bool prepareUpdate(const DdgiCpuScene& scene,
+                       const u32* probe_indices,
+                       u32 probe_count,
+                       u32 frame_index,
+                       DdgiUpdateLaunch& out);
+    /// The rolling schedule of `frame_index` (probes_per_frame scaled by kernel::LoadScale::probes).
+    void scheduleFrame(u32 frame_index, std::vector<u32>& out_indices, u32& out_count) const;
+
     usize irradianceOffset(u32 probe_index) const;
     usize distanceOffset(u32 probe_index) const;
 

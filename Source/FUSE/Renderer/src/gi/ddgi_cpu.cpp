@@ -8,6 +8,7 @@
 #include <fuse/compute_kernel/load_scale.hpp>
 #include <fuse/compute_kernel/stats.hpp>
 #include <fuse/renderer/deferred/gbuffer.hpp>
+#include <fuse/renderer/gi/ddgi_device.hpp>
 #include <fuse/renderer/gi/ddgi_probe_kernel.hpp>
 
 #include <algorithm>
@@ -216,31 +217,39 @@ usize DdgiCpuVolume::distanceOffset(u32 probe_index) const {
     return static_cast<usize>(probe_index) * distanceTileSize() * distanceTileSize();
 }
 
+void DdgiCpuVolume::scheduleFrame(u32 frame_index, std::vector<u32>& out_indices, u32& out_count) const {
+    // LoadScale::probes scales the rolling per-frame budget (1 = the authored probes_per_frame).
+    const u32 budget = kernel::scaled_count(m_desc.probes_per_frame, kernel::load_scale().probes);
+    out_indices.resize(std::max(budget, 1u));
+    out_count = 0u;
+    ddgi_util::scheduleProbeUpdates(frame_index,
+                                    m_probe_count,
+                                    budget,
+                                    out_indices.data(),
+                                    static_cast<u32>(out_indices.size()),
+                                    &out_count);
+}
+
 DdgiCpuUpdateStats DdgiCpuVolume::update(const DdgiCpuScene& scene, u32 frame_index) {
     if (!m_ready) {
         return {};
     }
-    // LoadScale::probes scales the rolling per-frame budget (1 = the authored probes_per_frame).
-    const u32 budget = kernel::scaled_count(m_desc.probes_per_frame, kernel::load_scale().probes);
-    std::vector<u32> indices(std::max(budget, 1u));
+    std::vector<u32> indices;
     u32 scheduled = 0u;
-    ddgi_util::scheduleProbeUpdates(frame_index,
-                                    m_probe_count,
-                                    budget,
-                                    indices.data(),
-                                    static_cast<u32>(indices.size()),
-                                    &scheduled);
+    scheduleFrame(frame_index, indices, scheduled);
     return updateProbes(scene, indices.data(), scheduled, frame_index);
 }
 
-DdgiCpuUpdateStats DdgiCpuVolume::updateProbes(const DdgiCpuScene& scene,
-                                               const u32* probe_indices,
-                                               u32 probe_count,
-                                               u32 frame_index) {
-    DdgiCpuUpdateStats stats{};
+bool DdgiCpuVolume::prepareUpdate(const DdgiCpuScene& scene,
+                                  const u32* probe_indices,
+                                  u32 probe_count,
+                                  u32 frame_index,
+                                  DdgiUpdateLaunch& out) {
+    out = DdgiUpdateLaunch{};
     if (!m_ready || probe_indices == nullptr || probe_count == 0u) {
-        return stats;
+        return false;
     }
+    DdgiCpuUpdateStats& stats = out.stats;
     const u32 rays = m_desc.rays_per_probe;
     const DdgiRayRotation rotation = ddgi_cpu::updateRotation(m_config.rotation_seed, frame_index);
     m_scratch_dirs.resize(rays);
@@ -271,8 +280,11 @@ DdgiCpuUpdateStats DdgiCpuVolume::updateProbes(const DdgiCpuScene& scene,
         }
     }
     const bool states = probeStatesEnabled();
+    out.slots = probe_count;
+    out.duplicates = duplicates;
+    out.states = states;
 
-    ddgi_kernel::TraceParams trace{};
+    ddgi_kernel::TraceParams& trace = out.trace;
     trace.probe_indices = {probe_indices, probe_count};
     trace.ray_dirs = {m_scratch_dirs.data(), rays};
     trace.scene = sceneView(scene);
@@ -282,8 +294,7 @@ DdgiCpuUpdateStats DdgiCpuVolume::updateProbes(const DdgiCpuScene& scene,
     trace.out_radiance = {m_scratch_radiance.data(), static_cast<u32>(total)};
     trace.out_distance = {m_scratch_distance.data(), static_cast<u32>(total)};
 
-    u32 fast_response = 0u;
-    ddgi_kernel::BlendParams blend{};
+    ddgi_kernel::BlendParams& blend = out.blend;
     blend.probe_indices = {probe_indices, probe_count};
     blend.probe_count = m_probe_count;
     blend.ray_dirs = {m_scratch_dirs.data(), rays};
@@ -295,7 +306,7 @@ DdgiCpuUpdateStats DdgiCpuVolume::updateProbes(const DdgiCpuScene& scene,
     blend.distance_moments = m_distance.data();
     blend.update_counts = m_update_counts.data();
     blend.incoming = {m_scratch_incoming.data(), static_cast<u32>(m_scratch_incoming.size())};
-    blend.fast_response_texels = &fast_response;
+    blend.fast_response_texels = &out.fast_response;
     blend.irradiance_res = ir;
     blend.depth_res = m_desc.depth_res;
     blend.hysteresis = std::clamp(m_desc.hysteresis, 0.f, 1.f);
@@ -311,7 +322,7 @@ DdgiCpuUpdateStats DdgiCpuVolume::updateProbes(const DdgiCpuScene& scene,
                                                        : m_desc.max_ray_distance;
     blend.probe_data = states ? m_probe_data.data() : nullptr;
 
-    ddgi_kernel::ProbeStateParams state{};
+    ddgi_kernel::ProbeStateParams& state = out.state;
     state.probe_indices = {probe_indices, probe_count};
     state.probe_count = m_probe_count;
     state.ray_dirs = {m_scratch_dirs.data(), rays};
@@ -326,30 +337,122 @@ DdgiCpuUpdateStats DdgiCpuVolume::updateProbes(const DdgiCpuScene& scene,
     state.relocation_step = m_config.probe_relocation_step;
     state.relocation = m_config.probe_relocation;
     state.classification = m_config.probe_classification;
+    return true;
+}
 
+DdgiCpuUpdateStats DdgiCpuVolume::updateProbes(const DdgiCpuScene& scene,
+                                               const u32* probe_indices,
+                                               u32 probe_count,
+                                               u32 frame_index) {
+    DdgiUpdateLaunch launch{};
+    if (!prepareUpdate(scene, probe_indices, probe_count, frame_index, launch)) {
+        return {};
+    }
+    const u32 rays = m_desc.rays_per_probe;
 #if defined(FUSE_HAS_CUDA)
     // The CUDA wrapper stages no probe data: relocation / classification run on the CPU backends.
-    if (!duplicates && !states && (m_backend == kernel::Backend::Cuda || m_backend == kernel::Backend::Auto) &&
+    if (!launch.duplicates && !launch.states &&
+        (m_backend == kernel::Backend::Cuda || m_backend == kernel::Backend::Auto) &&
         kernel::backend_available(kernel::Backend::Cuda) &&
-        launchDdgiProbeUpdateCuda(trace, blend, probe_count, nullptr)) {
-        stats.fast_response_texels = fast_response;
-        return stats;
+        launchDdgiProbeUpdateCuda(launch.trace, launch.blend, probe_count, nullptr)) {
+        launch.stats.fast_response_texels = launch.fast_response;
+        return launch.stats;
     }
+    launch.fast_response = 0u; // a failed device attempt must not leak into the CPU fallback's count
 #endif
     // CPU backends, or a GPU backend that cannot run here: kernel::launch resolves the fallback
     // (CpuParallel) and records the requested vs executed backend. The trace reads the pre-update
     // volume for every probe (multi-bounce feedback), exactly like the separate device kernels.
-    kernel::launch(m_backend, ddgi_kernel::make_trace_launch(rays, probe_count), ddgi_kernel::TraceKernel{}, trace);
-    kernel::launch(duplicates ? kernel::Backend::CpuReference : m_backend, ddgi_kernel::make_blend_launch(probe_count),
-                   ddgi_kernel::BlendKernel{}, blend);
-    if (states) {
+    const kernel::Backend blendBackend = launch.duplicates ? kernel::Backend::CpuReference : m_backend;
+    kernel::launch(m_backend, ddgi_kernel::make_trace_launch(rays, probe_count), ddgi_kernel::TraceKernel{},
+                   launch.trace);
+    kernel::launch(blendBackend, ddgi_kernel::make_blend_launch(probe_count), ddgi_kernel::BlendKernel{},
+                   launch.blend);
+    if (launch.states) {
         // After the blend (which used the states from before this update), from this update's rays.
-        kernel::launch(duplicates ? kernel::Backend::CpuReference : m_backend, ddgi_kernel::make_state_launch(probe_count),
-                       ddgi_kernel::ProbeStateKernel{}, state);
+        kernel::launch(blendBackend, ddgi_kernel::make_state_launch(probe_count), ddgi_kernel::ProbeStateKernel{},
+                       launch.state);
     }
-    stats.fast_response_texels = fast_response;
-    return stats;
+    launch.stats.fast_response_texels = launch.fast_response;
+    return launch.stats;
 }
+
+// ---------------------------------------------------------------------------------------------
+// DdgiDeviceVolume: host routing (the device side is kernels/ddgi_probe_update.cu)
+// ---------------------------------------------------------------------------------------------
+
+bool DdgiDeviceVolume::available() {
+    return kernel::backend_available(kernel::Backend::Cuda);
+}
+
+bool DdgiDeviceVolume::fail(const char* message) {
+    m_ok = false;
+    m_message = message;
+    return false;
+}
+
+DdgiCpuUpdateStats DdgiDeviceVolume::update(DdgiCpuVolume& volume, const DdgiCpuScene& scene, u32 frame_index) {
+    if (!volume.isReady()) {
+        fail("DDGI device update: the volume is not initialised");
+        return {};
+    }
+    u32 scheduled = 0u;
+    volume.scheduleFrame(frame_index, m_schedule, scheduled);
+    return updateProbes(volume, scene, m_schedule.data(), scheduled, frame_index);
+}
+
+DdgiCpuUpdateStats DdgiDeviceVolume::updateProbes(DdgiCpuVolume& volume,
+                                                  const DdgiCpuScene& scene,
+                                                  const u32* probe_indices,
+                                                  u32 probe_count,
+                                                  u32 frame_index) {
+    m_timing = {};
+    if (!m_resident) {
+        fail("DDGI device update: upload() the volume first");
+        return {};
+    }
+    DdgiUpdateLaunch launch{};
+    if (!volume.prepareUpdate(scene, probe_indices, probe_count, frame_index, launch)) {
+        fail("DDGI device update: empty probe list or volume not ready");
+        return {};
+    }
+    if (launch.duplicates) {
+        fail("DDGI device update: a probe is listed twice (order-dependent blend; use a CPU backend)");
+        return {};
+    }
+    if (launch.states) {
+        fail("DDGI device update: probe relocation / classification run on the CPU backends only");
+        return {};
+    }
+    if (!launchOnDevice(launch)) {
+        return {}; // launchOnDevice set the message
+    }
+    launch.stats.fast_response_texels = launch.fast_response;
+    m_ok = true;
+    m_message.clear();
+    return launch.stats;
+}
+
+#if !defined(FUSE_HAS_CUDA)
+// No CUDA toolkit in this build: the device mirror exists as an API only and every call fails cleanly.
+struct DdgiDeviceVolume::Impl {};
+
+DdgiDeviceVolume::DdgiDeviceVolume() = default;
+DdgiDeviceVolume::~DdgiDeviceVolume() = default;
+
+bool DdgiDeviceVolume::upload(const DdgiCpuVolume& /*volume*/) {
+    m_resident = false;
+    return fail("DDGI device volume: CUDA backend not built (configure with FUSE_BUILD_CUDA=ON)");
+}
+
+bool DdgiDeviceVolume::download(DdgiCpuVolume& /*volume*/) {
+    return fail("DDGI device volume: CUDA backend not built (configure with FUSE_BUILD_CUDA=ON)");
+}
+
+bool DdgiDeviceVolume::launchOnDevice(DdgiUpdateLaunch& /*launch*/) {
+    return fail("DDGI device volume: CUDA backend not built (configure with FUSE_BUILD_CUDA=ON)");
+}
+#endif
 
 Vec3 DdgiCpuVolume::probePosition(u32 probe_index) const {
     if (!m_ready) {

@@ -6,6 +6,7 @@
 
 #include <fuse/compute_kernel/launch.hpp>
 #include <fuse/compute_kernel/stats.hpp>
+#include <fuse/renderer/lighting/clustered_device.hpp>
 #include <fuse/renderer/lighting/clustered_kernel.hpp>
 
 #include <algorithm>
@@ -125,5 +126,49 @@ DeferredShadeStats clustered_shading::shadeDeferredFrame(const DeferredGBufferVi
     stats.lightEvaluations = (static_cast<u64>(evaluations[1]) << 32u) | evaluations[0];
     return stats;
 }
+
+// ---------------------------------------------------------------------------------------------
+// ClusteredDeviceFrame: host side (the device side is kernels/clustered_lighting.cu)
+// ---------------------------------------------------------------------------------------------
+
+bool ClusteredDeviceFrame::available() {
+    return kernel::backend_available(kernel::Backend::Cuda);
+}
+
+bool ClusteredDeviceFrame::fail(const char* message) {
+    m_ok = false;
+    m_message = message;
+    return false;
+}
+
+#if !defined(FUSE_HAS_CUDA)
+// No CUDA toolkit in this build: the resident frame exists as an API only and every call fails cleanly.
+struct ClusteredDeviceFrame::Impl {};
+
+ClusteredDeviceFrame::ClusteredDeviceFrame() = default;
+ClusteredDeviceFrame::~ClusteredDeviceFrame() = default;
+
+bool ClusteredDeviceFrame::upload(const DeferredGBufferView& /*gbuffer*/,
+                                  const ClusterDesc& /*desc*/,
+                                  const ClusterCameraDesc& /*camera*/,
+                                  const std::vector<PointLightInput>& /*lights*/) {
+    m_resident = false;
+    return fail("clustered device frame: CUDA backend not built (configure with FUSE_BUILD_CUDA=ON)");
+}
+
+bool ClusteredDeviceFrame::updateLights(const std::vector<PointLightInput>& /*lights*/) {
+    return fail("clustered device frame: CUDA backend not built (configure with FUSE_BUILD_CUDA=ON)");
+}
+
+bool ClusteredDeviceFrame::run() {
+    return fail("clustered device frame: CUDA backend not built (configure with FUSE_BUILD_CUDA=ON)");
+}
+
+bool ClusteredDeviceFrame::download(std::vector<fuse::math::Vec3>& /*radiance*/,
+                                    DeferredShadeStats& /*stats*/,
+                                    ClusterCullLists* /*lists*/) {
+    return fail("clustered device frame: CUDA backend not built (configure with FUSE_BUILD_CUDA=ON)");
+}
+#endif
 
 } // namespace fuse::renderer

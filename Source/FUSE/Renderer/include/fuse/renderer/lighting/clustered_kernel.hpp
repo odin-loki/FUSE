@@ -19,6 +19,10 @@
 //   kCompactName "clustered_light_compact"  one item per cluster: copies its fixed-capacity list to the
 //                                           flat light list at the offset of a host exclusive scan
 //                                           (deterministic count -> scan -> write).
+//   kGridName    "clustered_light_grid"     one item per cluster: the light grid over the cull's
+//                                           fixed-capacity lists in place ({cluster x capacity, count}) —
+//                                           the device path's alternative to count -> host scan -> compact
+//                                           (same lists, same order, so the shade is bit-identical).
 //   kShadeName   "deferred_shading"         workgroup kernel, one pixel per thread (8x8 tiles): reconstruct,
 //                                           look up the cluster, sum point lights in list order; per-tile
 //                                           counters reduce in scratch (one global add per tile).
@@ -39,6 +43,7 @@ inline constexpr const char* kBoundsName = "clustered_light_bounds";
 inline constexpr const char* kBinName = "clustered_light_bin";
 inline constexpr const char* kCullName = "clustered_light_cull";
 inline constexpr const char* kCompactName = "clustered_light_compact";
+inline constexpr const char* kGridName = "clustered_light_grid";
 inline constexpr const char* kShadeName = "deferred_shading";
 
 inline constexpr kernel::Dim3 kLinearWorkgroup{64u, 1u, 1u};
@@ -482,6 +487,26 @@ struct CompactKernel {
         for (u32 i = 0; i < p.counts[cluster]; ++i) {
             dst[i] = src[i];
         }
+    }
+};
+
+// ---------------------------------------------------------------------------------------------
+// Fixed-capacity light grid (kGridName)
+// ---------------------------------------------------------------------------------------------
+
+struct GridParams {
+    u32 capacity = 0;                        ///< CullParams::capacity
+    kernel::Span<const u32> counts;          ///< cull output
+    kernel::Span<ClusterGridEntry> out_grid; ///< cluster_count entries into the cull's slot array
+};
+
+struct GridKernel {
+    FUSE_HOST_DEVICE void operator()(const kernel::LaunchIndex& idx, const GridParams& p) const {
+        const u32 cluster = idx.linear;
+        ClusterGridEntry entry{};
+        entry.offset = cluster * p.capacity;
+        entry.count = p.counts[cluster];
+        p.out_grid[cluster] = entry;
     }
 };
 

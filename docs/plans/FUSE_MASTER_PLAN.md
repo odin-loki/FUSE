@@ -4475,13 +4475,13 @@ __global__ void volumetric_fog_kernel(
 - [x] Emissive surfaces contribute correct radiance to GI probes — `fuse_b5_gbuffer_materials_gates`, `fuse_b5_ddgi_gates`
 - [x] Clustered light culler assigns zero lights to clusters with no light overlap — verified by reading light_grid buffer — `fuse_b5_clustered_gates`
 - [x] 1000 point lights in scene — deferred shading correct, no light leaking through walls — verified visually — `fuse_b5_clustered_gates`
-- [ ] Clustered cull + deferred shade runs in < 3ms for 1000 lights at 1080p — measured with CUDA events
+- [ ] Clustered cull + deferred shade runs in < 3ms for 1000 lights at 1080p — measured with CUDA events — coded + CPU-verified, device timing pending the RTX 3090 run: resident `ClusteredDeviceFrame` (`lighting/clustered_device.hpp`, `kernels/clustered_lighting.cu`: bounds → bin → cull → `clustered_light_grid` → `deferred_shading` on one stream, CUDA events per kernel) timed by `fuse_b5_clustered_device` (1920×1080, 1000 lights, device == CPU pipeline parity; exit 77 without a GPU); CPU half `fuse_b5_clustered_device_cpu` (fixed-capacity grid shade == compacted grid shade bit for bit, `clustered_light_grid` CpuReference == CpuParallel)
 - [x] CSM renders correct shadow for directional light across all 4 cascades — no cascade seam visible — `fuse_b5_shadows_gates`
 - [x] CSM stabilisation eliminates shadow shimmer on a static scene — confirmed by frame diff — `fuse_b5_shadows_gates`
 - [x] SDF soft shadows produce correct penumbra width proportional to distance to occluder — `fuse_b5_shadows_gates`
 - [x] SDF shadow matches reference path tracer within 5% luminance error per pixel — `fuse_b5_shadows_gates`
-- [ ] DDGI probes initialise and first update completes without CUDA error — partial: CPU probe trace/blend/sample proven in `fuse_b5_ddgi_gates`; the CUDA kernels are not written
-- [ ] 2048 probes update 64 per frame at < 2ms per update cycle
+- [ ] DDGI probes initialise and first update completes without CUDA error — coded + CPU-verified, device run pending the RTX 3090: single-source trace + blend kernels (`gi/ddgi_probe_kernel.hpp`) with the CUDA path in `kernels/ddgi_probe_update.cu` (one-shot `Backend::Cuda` + resident `DdgiDeviceVolume`, `gi/ddgi_device.hpp`; compiles for sm_86 in build/cuda); CpuReference == CpuParallel on the timed workloads in `fuse_b5_ddgi_device_cpu` (+ `fuse_ddgi_kernel_parity`, `fuse_b5_ddgi_gates`); `fuse_b5_ddgi_device` checks init / first update without a CUDA error, device == CPU parity and resident == one-shot bit for bit (exit 77 without a GPU)
+- [ ] 2048 probes update 64 per frame at < 2ms per update cycle — coded, device timing pending the RTX 3090 run: `fuse_b5_ddgi_device` times the 2048-probe / 64-per-frame rolling update and the 64-probe × 256-ray update with CUDA events on resident atlases (upload / trace / blend / cycle; `--enforce-budgets` makes 2 ms fatal)
 - [x] Irradiance correctly responds to dynamic light changes within 64 frames (hysteresis) — `fuse_b5_ddgi_gates`
 - [x] Moving the sun rotates GI colour cast correctly — verified by recording 10-second timelapse — `fuse_b5_ddgi_gates`
 - [x] GI contribution on a white Lambertian surface matches reference Monte Carlo within 10% — `fuse_b5_ddgi_gates`
@@ -4498,17 +4498,21 @@ __global__ void volumetric_fog_kernel(
 - [x] Motion blur samples correctly trail in direction of velocity vector — `fuse_b5_post_gates`
 - [x] ACES tonemap maps 0.18 grey to 0.18 sRGB — reference calibration check — `fuse_b5_post_gates`
 - [x] Film grain is temporally decorrelated — no fixed pattern visible on static frame — `fuse_b5_post_gates`
-- [ ] Depth prepass: < 0.5ms
-- [ ] G-buffer pass (1000 objects): < 2ms
-- [ ] SDF ray march (100 objects, 128 steps): < 3ms
-- [ ] DDGI probe update (64 probes, 256 rays): < 2ms
-- [ ] Deferred shading + clustered lights (1000 lights): < 3ms
-- [ ] SDF shadows: < 2ms
-- [ ] HBAO: < 1ms
-- [ ] SSR: < 1.5ms
-- [ ] TAA: < 0.5ms
-- [ ] Bloom + DoF + Motion blur + Tonemap: < 1ms
-- [ ] **Total GPU frame time: < 16ms (60fps headroom)**
+*Per-pass budgets: one harness, `fuse_b5_frame_bench` (`tests/test_b5_frame_bench.cpp`), runs every pass below that the tree has on a device path at 1920×1080 and prints per-pass GPU time (CUDA events on resident buffers for the CUDA passes, GpuProfiler timestamp queries for the Vulkan passes), the total and the profiler-vs-CUDA-event cross-check. Coded; the Vulkan half runs on Lavapipe in CI (`fuse_b5_frame_bench_smoke`, 320×180, timings not asserted); the RTX 3090 numbers are pending the user's run (`fuse_b5_frame_bench`, exit 77 without a CUDA device; `--enforce` makes budgets fatal). No row below is ticked until that run.*
+
+- [ ] Depth prepass: < 0.5ms — no device implementation in the tree (the G-buffer raster pass depth-tests in-pass); the harness reports it as not measured
+- [ ] G-buffer pass (1000 objects): < 2ms — coded (`fuse_b5_frame_bench`: `GBufferRasterPass`, 1000 draws, timestamp zone); 3090 timing pending
+- [ ] SDF ray march (100 objects, 128 steps): < 3ms — coded (`fuse_b5_frame_bench`: `sdf_ray_march`, CUDA events); 3090 timing pending. Tiled march (`sdf_ray_march_tiled`, per-tile object culling: mean 2.9 of 100 objects per tile) coded and CPU-verified against the full-scene march; `fuse_ray_march_tile_cull` prints both at 1920×1080 with CUDA events
+- [ ] DDGI probe update (64 probes, 256 rays): < 2ms — coded (`fuse_b5_ddgi_device`, `fuse_b5_frame_bench`: `DdgiDeviceVolume`, CUDA events); 3090 timing pending
+- [ ] Deferred shading + clustered lights (1000 lights): < 3ms — coded (`fuse_b5_clustered_device`, `fuse_b5_frame_bench`: `ClusteredDeviceFrame`, CUDA events); 3090 timing pending
+- [ ] SDF shadows: < 2ms — coded (`fuse_b5_frame_bench`: `sdf_shadows`, CUDA events); 3090 timing pending
+- [ ] HBAO: < 1ms — coded (`fuse_b5_frame_bench`: `screen_space_ao` + blur, CUDA events); 3090 timing pending
+- [ ] SSR: < 1.5ms — coded (`fuse_b5_frame_bench`: `screen_space_reflections`, CUDA events); 3090 timing pending
+- [ ] TAA: < 0.5ms — coded (`fuse_b5_frame_bench`: WP-4.1 `TaauGpu` 1x, `taau.*` timestamp zones); 3090 timing pending
+- [ ] Bloom + DoF + Motion blur + Tonemap: < 1ms — coded (`fuse_b5_frame_bench`: WP-4.5 `PostStackGpu`, `post.*` timestamp zones); 3090 timing pending
+- [ ] **Total GPU frame time: < 16ms (60fps headroom)** — `fuse_b5_frame_bench` prints the sum of the measured passes; 3090 run pending
+
+*RTX 3090 run (the user; Release CUDA tree, e.g. `build-cuda`):* `cmake --build build-cuda --config Release --target fuse_b5_ddgi_device fuse_b5_clustered_device fuse_b5_frame_bench` then `ctest --test-dir build-cuda -C Release -R "^fuse_b5_(ddgi|clustered)_device(_cpu)?$|^fuse_b5_frame_bench$" --output-on-failure -V`. To make the budgets fail the run, execute the binaries directly: `fuse_b5_ddgi_device --enforce-budgets`, `fuse_b5_clustered_device --enforce-budgets`, `fuse_b5_frame_bench --require-cuda --enforce`.
 
 ---
 
@@ -5309,7 +5313,7 @@ private:
 - [x] GRIA alpha blend produces smooth/hard transitions as expected (`fuse_editor_b6_panels_gates`)
 - [x] X symmetry correctly mirrors stroke across X=0 plane — `fuse_editor_b6_panels_gates`
 - [x] Stroke spacing prevents redundant kernel dispatches at slow cursor speeds — `fuse_editor_b6_panels_gates`
-- [ ] GPU pass breakdown times match CUDA event measurements within 0.5ms
+- [ ] GPU pass breakdown times match CUDA event measurements within 0.5ms — coded, pending the RTX 3090 run: `fuse_b5_frame_bench` reruns every CUDA pass with synchronous launches and compares the profiler's per-pass time (the kernels' `kernel::LaunchRecord` durations = the `FUSE_PROFILE_SCOPE(launch.name)` spans) with the CUDA-event time of the same iterations, MATCH within 0.5 ms (`--enforce` makes a mismatch fatal); for the Vulkan passes the profiler breakdown is the GpuProfiler timestamp query itself. The editor `ProfilerPanel` is not yet fed from these numbers
 - [x] Frame history scrolls correctly — no off-by-one in ring buffer — `fuse_editor_b6_panels_gates`
 - [x] Pause correctly freezes history display without stopping engine — `fuse_editor_b6_panels_gates`
 - [x] Enter play: snapshot taken, physics initialised correctly — `fuse_editor_b6_play_mode_gates` (Play drives `PhysicsManager`)
