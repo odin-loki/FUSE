@@ -2,6 +2,7 @@
 #include <fuse/physics/broadphase/broadphase_kernels.hpp>
 #include <fuse/physics/broadphase/pair_buffer.hpp>
 #include <fuse/physics/broadphase/spatial_hash.hpp>
+#include <fuse/physics/shapes/shape_pool.hpp>
 #include <fuse/physics/rotation.hpp>
 
 #include <fuse/jobs/parallel_for.hpp>
@@ -145,6 +146,11 @@ vec3 worldBoxHalfExtents(const RigidBodySoA& bodies, u32 bodyIndex, vec3 halfExt
                                                   : halfExtents;
 }
 
+/// Boxes and pooled shapes (params = origin-centred half extents) are bounded by their oriented box.
+bool boxBounded(CollisionShapeType type) {
+    return type == CollisionShapeType::Box || isPooledShape(type);
+}
+
 f32 shapeRadius(const CollisionShapeSoA& shapes, u32 shapeIndex) {
     if (shapeIndex >= shapes.count()) {
         return 0.5f;
@@ -229,7 +235,7 @@ ShapeCellInsertRejectReason shapeCellInsertRejectReasonImpl(
 
     if (use2D) {
         CellRange2 range = {};
-        if (type == CollisionShapeType::Box) {
+        if (boxBounded(type)) {
             const vec3 halfExtents = worldBoxHalfExtents(bodies, bodyIndex, shapes.params[shapeIndex]);
             const aabb bounds = aabbFromBox(position, halfExtents);
             range = cellRangeFromAabb2D(bounds, cellSize, maxSpan);
@@ -244,7 +250,7 @@ ShapeCellInsertRejectReason shapeCellInsertRejectReasonImpl(
     }
 
     CellRange3 range = {};
-    if (type == CollisionShapeType::Box) {
+    if (boxBounded(type)) {
         const vec3 halfExtents = worldBoxHalfExtents(bodies, bodyIndex, shapes.params[shapeIndex]);
         range = cellRangeFromBox(position, halfExtents, cellSize, maxSpan);
     } else {
@@ -276,7 +282,7 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
         const CollisionShapeType type = shapeType(shapes, shapeIndex);
         if (use2D) {
             CellRange2 range = {};
-            if (type == CollisionShapeType::Box) {
+            if (boxBounded(type)) {
                 const vec3 halfExtents = worldBoxHalfExtents(bodies, bodyIndex, shapes.params[shapeIndex]);
                 const aabb bounds = aabbFromBox(position, halfExtents);
                 range = cellRangeFromAabb2D(bounds, cellSize, maxSpan);
@@ -287,7 +293,7 @@ ShapeCellInsertPreflight preflightShapeCellInsertImpl(
             preflight.occupancyCount = estimateCellOccupancyCount(range);
         } else {
             CellRange3 range = {};
-            if (type == CollisionShapeType::Box) {
+            if (boxBounded(type)) {
                 const vec3 halfExtents = worldBoxHalfExtents(bodies, bodyIndex, shapes.params[shapeIndex]);
                 range = cellRangeFromBox(position, halfExtents, cellSize, maxSpan);
             } else {
@@ -489,7 +495,7 @@ aabb bodyShapeBounds(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes
     if (shapeIndex == kInvalidShapeIndex) {
         return aabbFromSphere(position, 0.5f);
     }
-    if (shapeType(shapes, shapeIndex) == CollisionShapeType::Box) {
+    if (boxBounded(shapeType(shapes, shapeIndex))) {
         return aabbFromBox(position, worldBoxHalfExtents(bodies, bodyIndex, shapes.params[shapeIndex]));
     }
     return aabbFromSphere(position, shapeRadius(shapes, shapeIndex));
@@ -1217,6 +1223,15 @@ void GridBroadphase::findPairs(const RigidBodySoA& bodies, const CollisionShapeS
             break;
         case CollisionShapeType::Capsule:
             m_bounds[body] = aabbFromBox(p, orientedCapsuleHalfExtents(bodies.orientations[body], params));
+            break;
+        case CollisionShapeType::ConvexHull:
+        case CollisionShapeType::TriMesh:
+        case CollisionShapeType::SdfMesh:
+        case CollisionShapeType::Voxel:
+            // Exact pool bounds (a level mesh far from its origin stays tight).
+            m_bounds[body] = shapes.shapeRef(shape) != kNoShapeRef
+                                 ? pooledShapeWorldBounds(shapes.shapeRef(shape), p, bodies.orientations[body])
+                                 : aabbFromBox(p, orientedBoxHalfExtents(bodies.orientations[body], params));
             break;
         default:
             m_bounds[body] = aabbFromSphere(p, params.x);

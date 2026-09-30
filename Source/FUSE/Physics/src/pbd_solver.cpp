@@ -2,6 +2,7 @@
 #include <fuse/physics/solver/constraint_accumulation.hpp>
 #include <fuse/physics/solver/pbd_island_solve.hpp>
 #include <fuse/physics/rotation.hpp>
+#include <fuse/physics/shapes/shape_pool.hpp>
 
 #include <fuse/compute_kernel/launch.hpp>
 #include <fuse/jobs/parallel_for.hpp>
@@ -84,6 +85,13 @@ aabb shapeBoundsAt(const CollisionShapeSoA& shapes, u32 shapeIndex, vec3 positio
         return broadphase::aabbFromBox(position, orientedBoxHalfExtents(orientation, p));
     case CollisionShapeType::Capsule:
         return broadphase::aabbFromBox(position, orientedCapsuleHalfExtents(orientation, p));
+    case CollisionShapeType::ConvexHull:
+    case CollisionShapeType::TriMesh:
+    case CollisionShapeType::SdfMesh:
+    case CollisionShapeType::Voxel:
+        return shapes.shapeRef(shapeIndex) != kNoShapeRef
+                   ? pooledShapeWorldBounds(shapes.shapeRef(shapeIndex), position, orientation)
+                   : broadphase::aabbFromBox(position, orientedBoxHalfExtents(orientation, p));
     default:
         return broadphase::aabbFromSphere(position, p.x);
     }
@@ -113,6 +121,7 @@ void PBDSolver::init(u32 maxBodies, u32 maxContacts, u32 maxConstraints) {
     jointIgnoredPairs_.clear();
     workBuffers_.init(maxBodies, maxContacts, maxConstraints);
     islandGraph_.clear();
+    islandGraph_.reserve(maxBodies, maxContacts, maxConstraints);
     lastContactCount_ = 0;
     lastActiveCount_ = 0;
     lastIterationCount_ = 0;

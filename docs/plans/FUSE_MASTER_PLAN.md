@@ -3561,6 +3561,10 @@ struct CollisionEvent {
 - [x] 10k sleeping bodies: < 0.5ms (sleep check only) — `fuse_b4_manager_gates`
 - [x] 64×64 cloth simulation: < 1ms — `fuse_b4_cloth_gates`
 - [x] 5 simultaneous destruction events with 10 debris each: < 16ms total — `fuse_b4_destruction_gates`
+- [x] Convex hull collision shape (quickhull, shared shape pool, SAT + face-clipped multi-point manifolds vs sphere / box / capsule / hull / plane): SAT == brute force on random pairs, box-shaped hull == Box, hull stack settles, deterministic — `fuse_e18_hull_gates` (GAP-PHYS-HULL-MESH; CPU only, the resident CUDA path refuses pooled shapes)
+- [x] Static triangle-mesh collision (BVH, internal-edge fix, merged manifolds), trimesh ray casts == brute force, `Collider` shape asset fields, `.fusecol` cook (`fuse_cook --collision`) + loader round trip — `fuse_e18_trimesh_gates`, `fuse_asset_collision_cook`
+- [x] Shape casts (TOI == analytic) and the kinematic capsule character controller (steps, slopes, 20 m/s no tunnelling, platforms, pushing) — `fuse_e18_character_gates` (GAP-PHYS-CHARACTER)
+- [x] Voxel and SDF collision shapes on one shared SVO type (sphere on a voxel floor falls through a carved hole; box rests on an SDF) — `fuse_e18_voxel_gates` (UNI-B4-VOX-1)
 
 ---
 
@@ -6368,6 +6372,7 @@ private:
 - [x] Texture BC7 compression PSNR > 40dB vs original — verified with image comparison tool — `fuse_b7_cook_gates`
 - [ ] Engine boots, editor opens, scene loads, physics runs, audio plays in < 3 seconds on ThinkStation P920
 - [ ] 1000 animated skinned characters in scene with physics and audio — frame time < 16ms
+  - Prerequisite coded and CPU-verified (GAP-GAME-LOOP-ECS / MP-B7.1-PARALLEL-EVAL): World3D and PIE tick physics (PhysicsManager over Transform + RigidBody + Collider), parallel animation (AnimationSystem, 1000 Animators parallel == serial, 0 allocs), AudioSource / AudioListener components, VFX emitter components and transform / camera systems from the ECS registry through one fixed-step `world3d::RuntimeSchedule` — `fuse_runtime_schedule_gates`, `fuse_animation_system_gates`. The two timing rows above are not measured here (target hardware)
 - [x] Save, close, reload cycle — scene state bit-identical after round-trip — `fuse_b7_save_reload_gates`
 - [x] Script-controlled entity destroys itself on collision — no dangling entity handles — `fuse_script_b7_self_destroy_gates`
 - [x] World partition streams 16 cells seamlessly as camera traverses 2km at 30m/s — `fuse_b7_streaming_gates`

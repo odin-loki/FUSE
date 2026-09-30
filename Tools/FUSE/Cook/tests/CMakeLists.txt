@@ -99,3 +99,15 @@ else()
     add_test(NAME fuse_asset_audio_cook COMMAND fuse_asset_audio_cook_tests)
 endif()
 set_tests_properties(fuse_asset_audio_cook PROPERTIES LABELS "asset;gate;audio" TIMEOUT 600)
+
+# E18 (GAP-PHYS-HULL-MESH): collision cook FMSH -> .fusecol (quickhull hulls, triangle mesh + BVH), the runtime
+# loader round trip and `fuse_cook --collision`.
+add_executable(fuse_asset_collision_cook_tests test_collision_cook.cpp)
+target_link_libraries(fuse_asset_collision_cook_tests PRIVATE fuse_cook_stubs fuse_core)
+if(FUSE_BUILD_TOOLS)
+    add_dependencies(fuse_asset_collision_cook_tests fuse_cook)
+    add_test(NAME fuse_asset_collision_cook COMMAND fuse_asset_collision_cook_tests "$<TARGET_FILE:fuse_cook>")
+else()
+    add_test(NAME fuse_asset_collision_cook COMMAND fuse_asset_collision_cook_tests)
+endif()
+set_tests_properties(fuse_asset_collision_cook PROPERTIES LABELS "asset;gate;physics" TIMEOUT 300)

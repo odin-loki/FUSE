@@ -68,6 +68,35 @@ add_library(fuse_physics STATIC
     include/fuse/physics/spatial/svo.hpp
 )
 
+# GAP-PHYS-HULL-MESH / GAP-PHYS-CHARACTER / UNI-B4-VOX-1 (package E18): shared shape pool with convex
+# hulls (quickhull), static triangle meshes (BVH), SDF samplers and voxel volumes; their CPU contacts;
+# shape casts, the character controller and the cooked .fusecol collision asset.
+target_sources(fuse_physics PRIVATE
+    src/shapes/convex_hull.cpp
+    src/shapes/tri_mesh.cpp
+    src/shapes/sdf_sampler.cpp
+    src/shapes/shape_pool.cpp
+    src/narrowphase/contact_cluster.cpp
+    src/narrowphase/hull_contacts.cpp
+    src/narrowphase/mesh_contacts.cpp
+    src/narrowphase/field_contacts.cpp
+    src/narrowphase/pooled_dispatch.cpp
+    src/queries/shape_queries.cpp
+    src/character/character_controller.cpp
+    src/assets/collision_asset.cpp
+    include/fuse/physics/shapes/convex_hull.hpp
+    include/fuse/physics/shapes/tri_mesh.hpp
+    include/fuse/physics/shapes/sdf_sampler.hpp
+    include/fuse/physics/shapes/shape_pool.hpp
+    include/fuse/physics/narrowphase/contact_cluster.hpp
+    include/fuse/physics/narrowphase/hull_contacts.hpp
+    include/fuse/physics/narrowphase/mesh_contacts.hpp
+    include/fuse/physics/narrowphase/field_contacts.hpp
+    include/fuse/physics/queries/shape_queries.hpp
+    include/fuse/physics/character/character_controller.hpp
+    include/fuse/physics/assets/collision_asset.hpp
+)
+
 add_library(fuse::physics ALIAS fuse_physics)
 
 target_include_directories(fuse_physics
@@ -75,7 +104,10 @@ target_include_directories(fuse_physics
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-target_link_libraries(fuse_physics PUBLIC fuse_core fuse_ecs)
+# UNI-B4-VOX-1: VoxelVolume stores its voxels in the Scene SVO (fuse_svo, the one SVO type shared with
+# fuse_scene); the library is defined by the Scene fragment so Physics does not depend on fuse_scene.
+include(${CMAKE_CURRENT_SOURCE_DIR}/../Scene/cmake/fuse_svo.cmake)
+target_link_libraries(fuse_physics PUBLIC fuse_core fuse_ecs fuse_svo)
 
 # Single-source compute kernels (docs/compute-kernels.md): broadphase (keys, radix sort, pair
 # emission), narrowphase and the colored constraint solve run as kernel::launch dispatches on the CPU

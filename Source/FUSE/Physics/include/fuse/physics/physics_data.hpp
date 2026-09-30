@@ -14,8 +14,20 @@ enum class CollisionShapeType : u32 {
     ConvexHull = 3,
     SdfMesh = 4,
     Voxel = 5,
-    Plane = 6
+    Plane = 6,
+    /// Static triangle mesh with a per-mesh BVH (shapes/tri_mesh.hpp).
+    TriMesh = 7
 };
+
+/// CollisionShapeSoA::shapeRefs value of a shape with no pooled geometry (the primitives).
+constexpr u32 kNoShapeRef = 0xFFFFFFFFu;
+
+/// Hull, triangle mesh, SDF and voxel shapes keep their geometry in the shared shape pool
+/// (shapes/shape_pool.hpp); their params hold the origin-centred bounding half extents.
+[[nodiscard]] inline bool isPooledShape(CollisionShapeType type) {
+    return type == CollisionShapeType::ConvexHull || type == CollisionShapeType::TriMesh ||
+           type == CollisionShapeType::SdfMesh || type == CollisionShapeType::Voxel;
+}
 
 enum RigidBodyFlags : u32 {
     RB_STATIC = 1u << 0,
@@ -73,11 +85,17 @@ struct CollisionShapeSoA {
     std::vector<vec3> params;
     std::vector<f32> scalars;
     std::vector<u32> bodyIndices;
+    /// Shape-pool reference of pooled shapes (hull / mesh / SDF / voxel), kNoShapeRef otherwise.
+    std::vector<u32> shapeRefs;
 
     u32 count() const { return static_cast<u32>(types.size()); }
+    /// Pool reference of `shapeIndex` (kNoShapeRef when out of range or not pooled).
+    u32 shapeRef(u32 shapeIndex) const { return shapeIndex < shapeRefs.size() ? shapeRefs[shapeIndex] : kNoShapeRef; }
 
     void clear();
     u32 addShape(CollisionShapeType type, u32 bodyIndex, vec3 shapeParams, f32 scalarParam = 0.f);
+    /// Pooled shape: `ref` from the shape pool; params become the shape's bounding half extents.
+    u32 addPooledShape(CollisionShapeType type, u32 bodyIndex, u32 ref);
     /// Moves the last shape into `index` and shrinks by one.
     void removeShapeSwap(u32 index);
 };

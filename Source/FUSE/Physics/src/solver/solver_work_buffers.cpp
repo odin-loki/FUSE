@@ -130,9 +130,9 @@ void SolverWorkBuffers::clearPositionDeltasForBodies(u32 bodyA, u32 bodyB) {
     clearPositionDeltaForBody(bodyB);
 }
 
-void SolverWorkBuffers::clearPositionDeltasForIslandBodies(const std::vector<u32>& bodyIndices) {
-    for (u32 bodyIndex : bodyIndices) {
-        clearPositionDeltaForBody(bodyIndex);
+void SolverWorkBuffers::clearPositionDeltasForIslandBodies(const u32* bodyIndices, usize count) {
+    for (usize i = 0; i < count; ++i) {
+        clearPositionDeltaForBody(bodyIndices[i]);
     }
 }
 

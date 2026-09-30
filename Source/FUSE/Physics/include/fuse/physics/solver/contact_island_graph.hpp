@@ -73,14 +73,39 @@ bool shouldRunContactIslandGraphBuild(
 /// Constraints in different islands may be resolved in parallel; within an island
 /// contacts and distance constraints run sequentially (Gauss-Seidel stub).
 struct ContactIslandGraph {
+    /// Read-only view of one island's index list. The indices live in the graph's flat (CSR) arrays,
+    /// so a rebuild reuses the same storage and never allocates within the reserve()d limits, however
+    /// the islands merge or split between steps.
+    struct IndexSpan {
+        const u32* ptr = nullptr;
+        u32 count = 0;
+
+        const u32* begin() const { return ptr; }
+        const u32* end() const { return ptr + count; }
+        const u32* data() const { return ptr; }
+        usize size() const { return count; }
+        bool empty() const { return count == 0u; }
+        u32 operator[](usize i) const { return ptr[i]; }
+    };
+
     struct Island {
-        std::vector<u32> bodyIndices;
-        std::vector<u32> contactIndices;
-        std::vector<u32> distanceIndices;
+        IndexSpan bodyIndices;
+        IndexSpan contactIndices;
+        IndexSpan distanceIndices;
 
         /// True when the island has no contacts or distance constraints (lone body stub).
         bool isEmpty() const { return contactIndices.empty() && distanceIndices.empty(); }
     };
+
+    ContactIslandGraph() = default;
+    ContactIslandGraph(const ContactIslandGraph& other);
+    ContactIslandGraph& operator=(const ContactIslandGraph& other);
+    ContactIslandGraph(ContactIslandGraph&&) noexcept = default;
+    ContactIslandGraph& operator=(ContactIslandGraph&&) noexcept = default;
+
+    /// Pre-sizes every internal array for up to maxBodies bodies, maxContacts contact slots and
+    /// maxConstraints distance constraints: build() within those limits performs no heap allocation.
+    void reserve(u32 maxBodies, u32 maxContacts, u32 maxConstraints);
 
     void build(u32 bodyCount,
                const std::vector<narrowphase::ContactManifold>& contacts,
@@ -108,12 +133,30 @@ private:
     u32 findRoot(u32 index) const;
     void compressPath(u32 index);
 
+    /// Points every live island's spans at this graph's own flat arrays (after a build or a copy).
+    void rebindSpans_();
+
+    struct Range {
+        u32 bodyBegin = 0;
+        u32 bodyCount = 0;
+        u32 contactBegin = 0;
+        u32 contactCount = 0;
+        u32 distanceBegin = 0;
+        u32 distanceCount = 0;
+    };
+
     std::vector<u32> parent_;
-    /// Island slots; only the first islandCount_ are live. Slots are never destroyed between
-    /// builds so their index vectors keep capacity (no per-step allocation, B1.8).
+    /// Island slots; only the first islandCount_ are live. Each island's indices are a contiguous
+    /// range of flatBodies_/flatContacts_/flatDistances_ (counting sort), so storage is bounded by
+    /// the body/contact/constraint counts rather than by per-island high-water marks (B1.8).
     std::vector<Island> islands_;
+    std::vector<Range> ranges_;
     u32 islandCount_ = 0;
     std::vector<u32> rootToIsland_;
+    std::vector<u32> flatBodies_;
+    std::vector<u32> flatContacts_;
+    std::vector<u32> flatDistances_;
+    std::vector<u32> cursor_;
 };
 
 } // namespace fuse::physics

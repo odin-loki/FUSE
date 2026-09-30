@@ -55,6 +55,12 @@ public:
     void fill(ivec3 minCoord, ivec3 maxCoord, u32 material);
     void carve(vec3 center, f32 radius);
 
+    /// Materials of the voxel box [minCoord, minCoord + size) in x-fastest order: 0 for empty,
+    /// never-written and out-of-range voxels. One octree walk per brick (not per voxel), so the physics
+    /// VoxelVolume (UNI-B4-VOX-1, the same storage) reads whole regions cheaply for contacts, the
+    /// floating-piece flood fill and dual contouring.
+    void readBox(ivec3 minCoord, ivec3 size, std::vector<u32>& out) const;
+
     bool rayCast(vec3 rayOrigin, vec3 rayDirection, f32 maxDistance, ivec3& hitVoxel, vec3& hitNormal,
                  f32& hitDistance) const;
 

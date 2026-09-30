@@ -18,7 +18,7 @@
 | `collideBoxBox` | `narrowphase/box_box.cpp` | Axis-aligned box-box stub emitting four face contact points |
 | `PhysicsWorld2D` / `PhysicsWorld3D` | `physics_world_*.hpp` | World composition hooks |
 | `DestructionSystem` / `DestructionEvent` | `destruction/` | B4.7 SVO carve → debris spawn scaffold |
-| `Svo` | `Source/FUSE/Physics/include/fuse/physics/spatial/` | Minimal carve/query until Track A B3.5 |
+| `VoxelVolume` | `Source/FUSE/Physics/include/fuse/physics/spatial/` | Carve / dual contouring / detach over the shared Scene `SVO` storage (`fuse_svo`, UNI-B4-VOX-1) |
 | `ParticleSoA` / `ClothSimulator` | `Source/FUSE/Physics/include/fuse/physics/softbody/` | Host XPBD stub; CUDA kernels deferred |
 | `PhysicsManager` | `Source/FUSE/Physics/include/fuse/physics/physics_manager.hpp` | ECS ↔ SoA bridge scaffold |
 | `CollisionEventSystem` | `Source/FUSE/Physics/include/fuse/physics/events/` | Enter/Stay/Exit/Trigger callback bus |
@@ -191,6 +191,23 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - [ ] 10k sleeping bodies < 0.5ms — deferred
 
 ---
+
+## E18 — Collision shapes: convex hulls, triangle meshes, character controller, voxel / SDF (GAP-PHYS-HULL-MESH, GAP-PHYS-CHARACTER, UNI-B4-VOX-1)
+
+Coded and CPU-verified 2026-09-30 (build/rel, -Werror; build/cuda compiles). Pooled shapes run on the CPU only.
+
+- [x] Shared shape pool (`shapes/shape_pool.hpp`): hulls, triangle meshes, SDF samplers, voxel views referenced by `CollisionShapeSoA::shapeRefs`; `params` keep the origin-centred bounding half extents (broadphase, inertia)
+- [x] Quickhull (`shapes/convex_hull.cpp`, double precision, coplanar faces merged, edge-midpoint vertices dropped) — 200 random clouds, 0 violations; sampled cube → 8 vertices / 6 quads — `fuse_e18_hull_gates`
+- [x] Hull contacts (`narrowphase/hull_contacts.cpp`): hull–hull SAT with Gauss-map pruned edges + face clipping (≤ 4 points), hull vs sphere / box / capsule / plane — 4000 random pairs: separation == brute-force SAT on every overlapping pair (worst 5.7e-7), 0 overlap-class mismatches, EPA depth agrees (worst 4e-7); box-shaped hull == Box for sphere / plane / box / capsule (0 mismatches on 6.6k contacts ≤ 8 cm deep; deep overlaps may pick a different valid SAT axis than the centre-based box-box test) — `fuse_e18_hull_gates`
+- [x] Hull stack (5 quickhull hexagonal prisms) settles and sleeps; two runs bit-identical — `fuse_e18_hull_gates`
+- [x] Resident CUDA path: `ResidentPhysics::uploadScene` refuses scenes with pooled shapes (their pairs run the CPU narrowphase); primitive pairs untouched — `fuse_b4_physics_kernel_gates` green
+- [x] Static `TriMesh` (`shapes/tri_mesh.cpp`): binned-SAH BVH, internal-edge flags; sphere / capsule / box / hull vs triangles merged per body pair into normal-clustered manifolds (`narrowphase/mesh_contacts.cpp`, `contact_cluster.cpp`) — 20k rays BVH == brute force (bit-identical t); box rests on a mesh floor (0 drift over 600 steps); a sphere rolls over triangle seams exactly as on a plane — `fuse_e18_trimesh_gates`
+- [x] `PhysicsManager::rayCast` supports hulls, meshes, voxels, SDFs (`queries/shape_queries.cpp`) — mesh body == brute force on 4000 rays — `fuse_e18_trimesh_gates`
+- [x] `Collider` fields `shape_asset` / `shape_piece` / `shape_ref` (+ shape ids ConvexHull, SdfMesh, Voxel, TriMesh); `.fusecol` format + loader (`assets/collision_asset.hpp`); collision cook `fuse_cook --collision` (Tools/FUSE/Cook `collision_cook.cpp`) — round trip byte-identical, corrupt/truncated refused — `fuse_e18_trimesh_gates`, `fuse_asset_collision_cook`
+- [x] Shape casts (`PhysicsManager::shapeCast`, sphere / capsule / box vs every shape; GJK conservative advancement) — sphere-plane / sphere-box face and edge / capsule-plane / rotated box-plane TOI == analytic (≤ 8e-6 m) — `fuse_e18_character_gates`
+- [x] Character controller (`character/character_controller.hpp`, ECS `CharacterController`, system run at the start of `PhysicsManager::step`): 0.3 m step climbed, 0.6 m blocked; 30° slope holds, 55° slides; no tunnelling at 20 m/s through 5 cm box / mesh walls; moving platform carries (1.98 m of 2 m); pushes a dynamic crate; deterministic — `fuse_e18_character_gates`
+- [x] Voxel and SdfMesh shapes; `VoxelVolume` stored in the Scene `SVO` (new `fuse_svo` library shared by fuse_scene and fuse_physics; packed ray layout untouched, `fuse_b3_svo_gates` / `fuse_scene_svo` green); destructibles are static Voxel bodies refreshed on carve — sphere rests on a voxel floor then falls through a carved hole; box rests on an analytic SDF; sphere rests on the SVO distance field (`SvoSdfSampler`) — `fuse_e18_voxel_gates`
+- [ ] Not done here: CCD sweeps of pooled shapes (the solver's CCD still skips hull / mesh pairs; shape casts cover the character); `.fusesdf` A-SDF bricks as an SdfSampler (A-SDF); the E14 schedule wiring beyond `PhysicsManager::step` (other package)
 
 ## Thread ownership (locked)
 

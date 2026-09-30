@@ -1,11 +1,15 @@
 #include <fuse/physics/physics_manager.hpp>
 
+#include <fuse/ecs/component_types.hpp>
+#include <fuse/ecs/components/character_controller.hpp>
 #include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/tags.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
+#include <fuse/physics/narrowphase/contact_cluster.hpp>
 #include <fuse/physics/rotation.hpp>
+#include <fuse/physics/shapes/shape_pool.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -52,60 +56,6 @@ void wake(RigidBodySoA& bodies, u32 body) {
     bodies.sleepTimers[body] = 0.f;
 }
 
-/// Ray vs sphere; t of the first hit at or after 0.
-bool raySphere(vec3 origin, vec3 dir, vec3 center, f32 radius, f32& t) {
-    const vec3 m = origin - center;
-    const f32 b = m.dot(dir);
-    const f32 c = m.dot(m) - radius * radius;
-    if (c > 0.f && b > 0.f) {
-        return false;
-    }
-    const f32 disc = b * b - c;
-    if (disc < 0.f) {
-        return false;
-    }
-    t = std::max(0.f, -b - std::sqrt(disc));
-    return true;
-}
-
-bool rayAabb(vec3 origin, vec3 dir, vec3 lo, vec3 hi, f32& t, vec3& normal) {
-    f32 tMin = 0.f;
-    f32 tMax = std::numeric_limits<f32>::max();
-    const f32 o[3] = {origin.x, origin.y, origin.z};
-    const f32 d[3] = {dir.x, dir.y, dir.z};
-    const f32 mn[3] = {lo.x, lo.y, lo.z};
-    const f32 mx[3] = {hi.x, hi.y, hi.z};
-    int axis = -1;
-    f32 sign = 0.f;
-    for (int a = 0; a < 3; ++a) {
-        if (std::fabs(d[a]) < 1e-12f) {
-            if (o[a] < mn[a] || o[a] > mx[a]) {
-                return false;
-            }
-            continue;
-        }
-        f32 t0 = (mn[a] - o[a]) / d[a];
-        f32 t1 = (mx[a] - o[a]) / d[a];
-        f32 s = -1.f;
-        if (t0 > t1) {
-            std::swap(t0, t1);
-            s = 1.f;
-        }
-        if (t0 > tMin) {
-            tMin = t0;
-            axis = a;
-            sign = s;
-        }
-        tMax = std::min(tMax, t1);
-        if (tMin > tMax) {
-            return false;
-        }
-    }
-    t = tMin;
-    normal = {axis == 0 ? sign : 0.f, axis == 1 ? sign : 0.f, axis == 2 ? sign : 0.f};
-    return true;
-}
-
 f32 capsuleDistance(vec3 p, vec3 center, vec3 params, const quat& orientation) {
     const vec3 half = capsuleHalfAxis(orientation, params.y);
     const vec3 a = center - half;
@@ -117,8 +67,13 @@ f32 capsuleDistance(vec3 p, vec3 center, vec3 params, const quat& orientation) {
 
 } // namespace
 
+PhysicsManager::~PhysicsManager() {
+    releaseDestructibleRefs_();
+}
+
 void PhysicsManager::init(const PhysicsManagerDesc& desc) {
     destroy();
+    fuse::ecs::ComponentTypes::register_type<fuse::ecs::CharacterController>();
     m_desc = desc;
     m_desc.solver.enableCcd = desc.enableCcd; // CCD runs inside the solver step (B4.6)
     m_soa_.reserve(std::min(desc.maxBodies, 65536u));
@@ -126,7 +81,20 @@ void PhysicsManager::init(const PhysicsManagerDesc& desc) {
     m_initialized = true;
 }
 
+void PhysicsManager::releaseDestructibleRefs_() {
+    // Only views of this manager's own volumes (a copied manager re-registers its own on its next step).
+    for (const auto& [key, info] : m_destructibleBodies_) {
+        const auto it = m_destructibles_.find(key);
+        if (info.shapeRef != kNoShapeRef && it != m_destructibles_.end() &&
+            ShapePool::global().voxel(info.shapeRef) == &it->second.volume) {
+            ShapePool::global().release(info.shapeRef);
+        }
+    }
+    m_destructibleBodies_.clear();
+}
+
 void PhysicsManager::destroy() {
+    releaseDestructibleRefs_();
     m_solver_.destroy();
     m_soa_.clear();
     m_shapes_.clear();
@@ -139,6 +107,7 @@ void PhysicsManager::destroy() {
     m_kinematicTargets_.clear();
     m_activePairs_.clear();
     m_currentPairs_.clear();
+    m_pairReserve_ = 0;
     m_lastEvents_.clear();
     m_destructionEvents_.clear();
     m_destructibles_.clear();
@@ -170,6 +139,11 @@ void PhysicsManager::step(fuse::ecs::Registry& registry, f32 dt, PhysicsStreamMa
     (void)streams;
     if (!m_initialized || dt <= 0.f) {
         return;
+    }
+    // GAP-PHYS-CHARACTER: kinematic characters move first (against last step's world); a character that
+    // is also a kinematic body then pushes rigid bodies from its new pose in this step's solve.
+    if (m_desc.enableCharacterControllers) {
+        m_characters_.update(registry, *this, dt);
     }
     syncEcsToSoa_(registry, dt);
     for (const fuse::ecs::EntityID id : m_pendingWakes_) {
@@ -273,7 +247,16 @@ void PhysicsManager::syncEcsToSoa_(fuse::ecs::Registry& registry, f32 dt) {
             }
         }
 
-        const f32 invMass = (rb.is_static || kinematic || rb.mass <= 0.f) ? 0.f : 1.f / rb.mass;
+        // Concave pooled shapes (triangle meshes, voxel volumes, SDFs) are static level geometry unless
+        // driven kinematically.
+        const CollisionShapeType shapeType = static_cast<CollisionShapeType>(collider.shape);
+        const bool concave = shapeType == CollisionShapeType::TriMesh || shapeType == CollisionShapeType::Voxel ||
+                             shapeType == CollisionShapeType::SdfMesh;
+        if (concave && !kinematic) {
+            m_soa_.flags[body] = (m_soa_.flags[body] | RB_STATIC) & ~RB_SLEEPING;
+        }
+        const bool immovable = rb.is_static || kinematic || rb.mass <= 0.f || (concave && !kinematic);
+        const f32 invMass = immovable ? 0.f : 1.f / rb.mass;
         if (!created && invMass != m_soa_.invMasses[body] && invMass > 0.f) {
             wake(m_soa_, body); // mass edited by game code: joint and contact loads change
         }
@@ -294,9 +277,19 @@ void PhysicsManager::syncEcsToSoa_(fuse::ecs::Registry& registry, f32 dt) {
             rb.torque_accumulator = {};
         }
         m_shapes_.types[body] = collider.shape;
-        m_shapes_.params[body] = toPhysics(collider.params);
         m_shapes_.scalars[body] = collider.scalar;
+        if (isPooledShape(shapeType)) {
+            // Hull / mesh / SDF / voxel geometry lives in the shape pool; params = its bounds.
+            const u32 ref = resolveShapeRef_(id, collider.shape, collider.shape_asset, collider.shape_piece,
+                                             collider.shape_ref);
+            m_shapes_.shapeRefs[body] = ref;
+            m_shapes_.params[body] = ShapePool::global().halfExtents(ref);
+        } else {
+            m_shapes_.shapeRefs[body] = kNoShapeRef;
+            m_shapes_.params[body] = toPhysics(collider.params);
+        }
     });
+    syncDestructibleBodies_(registry);
 
     // Entities destroyed or stripped of a physics component leave the simulation.
     for (u32 body = m_soa_.count(); body-- > 0;) {
@@ -364,6 +357,17 @@ void PhysicsManager::syncSoaToEcs_(fuse::ecs::Registry& registry) {
 }
 
 void PhysicsManager::raiseEvents_() {
+    // Pre-size the pair maps and the event list for up to kPairsPerBody contact pairs per body (a
+    // dense sphere/box pile stays below it), capped by maxContacts. Only a body-count increase
+    // re-reserves, so contacts forming while a pile settles never rehash mid-simulation.
+    constexpr usize kPairsPerBody = 8u;
+    const usize pairTarget = std::min<usize>(m_desc.maxContacts, static_cast<usize>(m_soa_.count()) * kPairsPerBody);
+    if (pairTarget > m_pairReserve_) {
+        m_activePairs_.reserve(pairTarget);
+        m_currentPairs_.reserve(pairTarget);
+        m_lastEvents_.reserve(pairTarget * 2u);
+        m_pairReserve_ = pairTarget;
+    }
     m_lastEvents_.clear();
     m_currentPairs_.clear();
     for (const FrameContact& contact : m_solver_.frameContacts()) {
@@ -420,64 +424,11 @@ bool PhysicsManager::rayCast(vec3 origin, vec3 direction, f32 maxT, fuse::ecs::E
         if (aliveIn != nullptr && !aliveIn->alive(m_bodyToEntity_[body])) {
             continue; // destroyed since the last step; its body leaves on the next one
         }
-        const vec3 center = m_soa_.positions[body];
-        const vec3 params = m_shapes_.params[body];
-        const quat rotation = m_soa_.orientations[body];
-        f32 tHit = 0.f;
-        vec3 n{};
-        bool ok = false;
-        switch (static_cast<CollisionShapeType>(m_shapes_.types[body])) {
-        case CollisionShapeType::Sphere:
-            ok = raySphere(origin, dir, center, params.x, tHit);
-            n = ok ? (origin + dir * tHit - center).normalized() : n;
-            break;
-        case CollisionShapeType::Box: {
-            // Slab test in the box frame; the hit normal is rotated back to world space.
-            const vec3 localOrigin = inverseRotate(rotation, origin - center);
-            const vec3 localDir = inverseRotate(rotation, dir);
-            ok = rayAabb(localOrigin, localDir, params * -1.f, params, tHit, n);
-            n = rotate(rotation, n);
-            break;
-        }
-        case CollisionShapeType::Capsule: {
-            // Sphere tracing on the capsule distance (exact distance => never overshoots).
-            f32 travelled = 0.f;
-            for (int i = 0; i < 96 && travelled <= best; ++i) {
-                const f32 d = capsuleDistance(origin + dir * travelled, center, params, rotation);
-                if (d < 1e-4f) {
-                    ok = true;
-                    tHit = travelled;
-                    const vec3 p = origin + dir * travelled;
-                    const f32 h = 1e-3f;
-                    n = vec3{capsuleDistance(p + vec3{h, 0.f, 0.f}, center, params, rotation) -
-                                 capsuleDistance(p - vec3{h, 0.f, 0.f}, center, params, rotation),
-                             capsuleDistance(p + vec3{0.f, h, 0.f}, center, params, rotation) -
-                                 capsuleDistance(p - vec3{0.f, h, 0.f}, center, params, rotation),
-                             capsuleDistance(p + vec3{0.f, 0.f, h}, center, params, rotation) -
-                                 capsuleDistance(p - vec3{0.f, 0.f, h}, center, params, rotation)}
-                            .normalized();
-                    break;
-                }
-                travelled += d;
-            }
-            break;
-        }
-        case CollisionShapeType::Plane: {
-            const f32 denom = params.dot(dir);
-            if (std::fabs(denom) > 1e-9f) {
-                tHit = (m_shapes_.scalars[body] - params.dot(origin)) / denom;
-                ok = tHit >= 0.f;
-                n = denom < 0.f ? params : params * -1.f;
-            }
-            break;
-        }
-        default:
-            break;
-        }
-        if (ok && tHit <= best) {
-            best = tHit;
+        RayHit rayHit{};
+        if (rayCastShape(bodyShape(body), origin, dir, best, rayHit) && rayHit.t <= best) {
+            best = rayHit.t;
             hit = m_bodyToEntity_[body];
-            normal = n;
+            normal = rayHit.normal;
             found = true;
         }
     }
@@ -485,6 +436,151 @@ bool PhysicsManager::rayCast(vec3 origin, vec3 direction, f32 maxT, fuse::ecs::E
         t = best;
     }
     return found;
+}
+
+narrowphase::ShapeInstance PhysicsManager::bodyShape(u32 body) const {
+    narrowphase::ShapeInstance shape{};
+    if (body >= m_soa_.count() || body >= m_shapes_.count()) {
+        return shape;
+    }
+    shape.type = static_cast<CollisionShapeType>(m_shapes_.types[body]);
+    shape.params = m_shapes_.params[body];
+    shape.scalar = m_shapes_.scalars[body];
+    shape.position = m_soa_.positions[body];
+    shape.orientation = m_soa_.orientations[body];
+    shape.shapeRef = m_shapes_.shapeRef(body);
+    return shape;
+}
+
+vec3 PhysicsManager::pointVelocity(u32 body, vec3 point) const {
+    if (body >= m_soa_.count() || (m_soa_.flags[body] & RB_STATIC) != 0u) {
+        return {};
+    }
+    return m_soa_.linearVelocities[body] + m_soa_.angularVelocities[body].cross(point - m_soa_.positions[body]);
+}
+
+bool PhysicsManager::bodyPassesFilter_(u32 body, const QueryFilter& filter) const {
+    const fuse::ecs::EntityID entity = m_bodyToEntity_[body];
+    if (filter.ignore.valid() && entity == filter.ignore) {
+        return false;
+    }
+    const u32 flags = m_soa_.flags[body];
+    if ((flags & RB_TRIGGER) != 0u && !filter.includeTriggers) {
+        return false;
+    }
+    if ((m_soa_.collisionLayers[body] & filter.layerMask) == 0u) {
+        return false;
+    }
+    const bool dynamic = (flags & (RB_STATIC | RB_KINEMATIC)) == 0u && m_soa_.invMasses[body] > 0.f;
+    if (dynamic && !filter.includeDynamic) {
+        return false;
+    }
+    return filter.aliveIn == nullptr || filter.aliveIn->alive(entity);
+}
+
+bool PhysicsManager::rayCastFiltered(vec3 origin, vec3 direction, f32 maxT, ShapeCastResult& result,
+                                     const QueryFilter& filter) const {
+    if (direction.length() < 1e-6f || maxT <= 0.f) {
+        return false;
+    }
+    const vec3 dir = direction.normalized();
+    f32 best = maxT;
+    bool found = false;
+    for (u32 body = 0; body < m_soa_.count(); ++body) {
+        if (!bodyPassesFilter_(body, filter)) {
+            continue;
+        }
+        RayHit rayHit{};
+        if (rayCastShape(bodyShape(body), origin, dir, best, rayHit) && rayHit.t <= best) {
+            best = rayHit.t;
+            result.entity = m_bodyToEntity_[body];
+            result.body = body;
+            result.hit = ShapeCastHit{};
+            result.hit.distance = rayHit.t;
+            result.hit.normal = rayHit.normal;
+            result.hit.point = origin + dir * rayHit.t;
+            found = true;
+        }
+    }
+    return found;
+}
+
+bool PhysicsManager::shapeCast(const narrowphase::ShapeInstance& shape, vec3 direction, f32 maxDistance,
+                               ShapeCastResult& result, const QueryFilter& filter) const {
+    if (direction.dot(direction) < 1e-12f || maxDistance < 0.f) {
+        return false;
+    }
+    const vec3 dir = direction.normalized();
+    const aabb start = shapeInstanceBounds(shape);
+    f32 best = maxDistance;
+    bool found = false;
+    for (u32 body = 0; body < m_soa_.count(); ++body) {
+        if (!bodyPassesFilter_(body, filter)) {
+            continue;
+        }
+        const narrowphase::ShapeInstance target = bodyShape(body);
+        if (target.type != CollisionShapeType::Plane) {
+            // Swept bounds of the caster against the body's bounds.
+            const vec3 end = dir * best;
+            const aabb other = shapeInstanceBounds(target);
+            const f32 pad = 1e-3f;
+            if (start.min.x + std::min(end.x, 0.f) > other.max.x + pad || start.max.x + std::max(end.x, 0.f) < other.min.x - pad ||
+                start.min.y + std::min(end.y, 0.f) > other.max.y + pad || start.max.y + std::max(end.y, 0.f) < other.min.y - pad ||
+                start.min.z + std::min(end.z, 0.f) > other.max.z + pad || start.max.z + std::max(end.z, 0.f) < other.min.z - pad) {
+                continue;
+            }
+        }
+        ShapeCastHit hit{};
+        if (!physics::shapeCast(shape, dir, best, target, hit)) {
+            continue;
+        }
+        const bool better = !found || hit.distance < result.hit.distance ||
+                            (hit.startPenetrating && result.hit.startPenetrating && hit.penetration > result.hit.penetration);
+        if (better) {
+            result.entity = m_bodyToEntity_[body];
+            result.body = body;
+            result.hit = hit;
+            best = hit.distance;
+            found = true;
+        }
+    }
+    return found;
+}
+
+u32 PhysicsManager::overlapShape(const narrowphase::ShapeInstance& shape, std::vector<OverlapContact>& out,
+                                 const QueryFilter& filter) const {
+    const u32 before = static_cast<u32>(out.size());
+    const aabb bounds = shapeInstanceBounds(shape);
+    narrowphase::ContactManifold manifolds[narrowphase::kMaxManifoldsPerPair];
+    for (u32 body = 0; body < m_soa_.count(); ++body) {
+        if (!bodyPassesFilter_(body, filter)) {
+            continue;
+        }
+        const narrowphase::ShapeInstance target = bodyShape(body);
+        if (target.type != CollisionShapeType::Plane) {
+            const aabb other = shapeInstanceBounds(target);
+            if (bounds.min.x > other.max.x || bounds.max.x < other.min.x || bounds.min.y > other.max.y ||
+                bounds.max.y < other.min.y || bounds.min.z > other.max.z || bounds.max.z < other.min.z) {
+                continue;
+            }
+        }
+        const u32 count =
+            narrowphase::collideShapesMulti(shape, target, 0u, 1u, 0.f, manifolds, narrowphase::kMaxManifoldsPerPair);
+        for (u32 m = 0; m < count; ++m) {
+            const f32 depth = manifolds[m].maxPenetration();
+            if (!manifolds[m].valid || depth <= 0.f) {
+                continue;
+            }
+            OverlapContact contact{};
+            contact.entity = m_bodyToEntity_[body];
+            contact.body = body;
+            contact.normal = manifolds[m].contactNormal;
+            contact.point = manifolds[m].contactPoint;
+            contact.depth = depth;
+            out.push_back(contact);
+        }
+    }
+    return static_cast<u32>(out.size()) - before;
 }
 
 void PhysicsManager::querySphere(vec3 center, f32 radius, std::vector<fuse::ecs::EntityID>& results,
@@ -516,8 +612,18 @@ void PhysicsManager::querySphere(vec3 center, f32 radius, std::vector<fuse::ecs:
         case CollisionShapeType::Plane:
             overlap = params.dot(center) - m_shapes_.scalars[body] <= radius;
             break;
-        default:
+        default: {
+            // Hulls, meshes, voxels, SDFs: the narrowphase (touching counts).
+            narrowphase::ShapeInstance sphere{};
+            sphere.type = CollisionShapeType::Sphere;
+            sphere.params = {radius, 0.f, 0.f};
+            sphere.position = center;
+            narrowphase::ContactManifold manifolds[narrowphase::kMaxManifoldsPerPair];
+            const u32 count = narrowphase::collideShapesMulti(sphere, bodyShape(body), 0u, 1u, 1e-5f, manifolds,
+                                                              narrowphase::kMaxManifoldsPerPair);
+            overlap = count > 0u;
             break;
+        }
         }
         if (overlap) {
             results.push_back(m_bodyToEntity_[body]);
@@ -594,8 +700,99 @@ void PhysicsManager::pushDestructionEvent(const DestructionEvent& event) {
 
 void PhysicsManager::addDestructible(fuse::ecs::EntityID entity, const VoxelVolume& volume,
                                      const VoxelMaterial& material) {
-    if (entity.valid()) {
-        m_destructibles_[entity.index] = {volume, material};
+    if (!entity.valid()) {
+        return;
+    }
+    DestructibleVolume& target = m_destructibles_[entity.index];
+    target.volume = volume;
+    target.material = material;
+    DestructibleBody& info = m_destructibleBodies_[entity.index];
+    info.entity = entity;
+    destructibleRef_(entity.index);
+    wakeAround_(volume.origin(), 1e30f); // the world changed: anything asleep may now be unsupported
+}
+
+u32 PhysicsManager::destructibleRef_(u32 key) {
+    const auto it = m_destructibles_.find(key);
+    if (it == m_destructibles_.end()) {
+        return kNoShapeRef;
+    }
+    DestructibleBody& info = m_destructibleBodies_[key];
+    ShapePool& pool = ShapePool::global();
+    if (info.shapeRef == kNoShapeRef || pool.voxel(info.shapeRef) != &it->second.volume) {
+        info.shapeRef = pool.addVoxelView(&it->second.volume);
+    }
+    return info.shapeRef;
+}
+
+u32 PhysicsManager::resolveShapeRef_(fuse::ecs::EntityID id, u32 shape, u64 asset, u32 piece, u32 ref) {
+    const CollisionShapeType type = static_cast<CollisionShapeType>(shape);
+    ShapePool& pool = ShapePool::global();
+    if (ref != kNoShapeRef && pool.valid(ref) && pool.type(ref) == type) {
+        return ref;
+    }
+    if (type == CollisionShapeType::Voxel) {
+        const auto it = m_destructibleBodies_.find(id.index);
+        if (it != m_destructibleBodies_.end() && it->second.entity == id) {
+            return destructibleRef_(id.index);
+        }
+    }
+    if (asset != 0u) {
+        return pool.findAsset(asset, piece, type);
+    }
+    return kNoShapeRef;
+}
+
+void PhysicsManager::syncDestructibleBodies_(fuse::ecs::Registry& registry) {
+    if (m_destructibleBodies_.empty()) {
+        return;
+    }
+    // Entity order (the map's iteration order is unspecified): deterministic body indices.
+    m_destructibleKeys_.clear();
+    for (const auto& entry : m_destructibleBodies_) {
+        m_destructibleKeys_.push_back(entry.first);
+    }
+    std::sort(m_destructibleKeys_.begin(), m_destructibleKeys_.end());
+    for (const u32 key : m_destructibleKeys_) {
+        const fuse::ecs::EntityID entity = m_destructibleBodies_[key].entity;
+        if (!registry.alive(entity)) {
+            continue; // leaves the simulation with its entity
+        }
+        const u32 ref = destructibleRef_(key);
+        u32 body = bodyIndex(entity);
+        if (body == kNoBody) {
+            // The volume is in world space: a static body at the origin.
+            body = m_soa_.addBody({}, 0.f, RB_STATIC);
+            m_shapes_.addPooledShape(CollisionShapeType::Voxel, body, ref);
+            m_bodyToEntity_.push_back(entity);
+            m_entityToBodyIdx_[entity.index] = body;
+            m_writtenPositions_.push_back({});
+            m_writtenVelocities_.push_back({});
+            m_writtenOrientations_.push_back({});
+            m_writtenAngularVelocities_.push_back({});
+            m_seen_.push_back(1u);
+            continue;
+        }
+        if (m_seen_[body] == 0u) {
+            // Our own body (the entity has no physics components of its own).
+            m_seen_[body] = 1u;
+            m_shapes_.types[body] = static_cast<u32>(CollisionShapeType::Voxel);
+            m_shapes_.shapeRefs[body] = ref;
+            m_shapes_.params[body] = ShapePool::global().halfExtents(ref);
+        }
+    }
+}
+
+void PhysicsManager::wakeAround_(vec3 center, f32 radius) {
+    for (u32 body = 0; body < m_soa_.count(); ++body) {
+        if ((m_soa_.flags[body] & RB_SLEEPING) == 0u) {
+            continue;
+        }
+        const vec3 p = m_shapes_.params[body];
+        const f32 reach = p.length() + std::max(p.x, 0.f);
+        if ((m_soa_.positions[body] - center).length() <= radius + reach) {
+            wake(m_soa_, body);
+        }
     }
 }
 
@@ -605,8 +802,19 @@ DestructibleVolume* PhysicsManager::destructible(fuse::ecs::EntityID entity) {
 }
 
 void PhysicsManager::processDestructionEvents_(fuse::ecs::Registry& registry) {
-    // Debris entities join the simulation on the next step's sync.
+    // Debris entities join the simulation on the next step's sync. The Voxel collision shapes view the
+    // carved volumes directly (refreshed in place); bodies resting near a crater are woken so they fall.
     DestructionSystem::processEvents(m_destructionEvents_, m_destructibles_, registry, m_lastDebris_);
+    for (const DestructionEvent& event : m_destructionEvents_) {
+        const auto it = m_destructibles_.find(event.target.index);
+        if (it == m_destructibles_.end()) {
+            continue;
+        }
+        const f32 radius = event.carveRadius > 0.f
+                               ? event.carveRadius
+                               : DestructionSystem::deriveCarveRadius(event.impulse, it->second.material);
+        wakeAround_(event.impactPoint, radius + 2.f * it->second.volume.voxelSize());
+    }
 }
 
 // --- Joints ---------------------------------------------------------------------------------------

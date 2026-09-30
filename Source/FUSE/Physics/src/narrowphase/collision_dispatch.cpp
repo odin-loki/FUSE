@@ -1,4 +1,5 @@
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
+#include <fuse/physics/narrowphase/contact_cluster.hpp>
 #include <fuse/physics/narrowphase/contact_buffer.hpp>
 #include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/narrowphase/narrowphase_kernels.hpp>
@@ -45,24 +46,29 @@ void collidePairs(
     out.clear();
     // Only validity checks here: trigger and sleeping pairs are still reported (the solver skips
     // resolving them) so overlap events and resting contacts stay continuous.
+    ContactManifold manifolds[kMaxManifoldsPerPair];
     for (const broadphase::CandidatePair& pair : pairs) {
-        ContactManifold manifold = detect_contacts_pair(pair, bodies, shapes, margin);
-        if (margin > 0.f) {
-            // Finalize prunes separated points: shift speculative points into range and back.
-            for (u32 i = 0; i < manifold.pointCount; ++i) {
-                manifold.points[i].penetration += margin;
+        // Concave pooled shapes (meshes, voxels, SDFs) may give one manifold per normal cluster.
+        const u32 count = detect_contacts_pair_multi(pair, bodies, shapes, margin, manifolds, kMaxManifoldsPerPair);
+        for (u32 m = 0; m < count; ++m) {
+            ContactManifold& manifold = manifolds[m];
+            if (margin > 0.f) {
+                // Finalize prunes separated points: shift speculative points into range and back.
+                for (u32 i = 0; i < manifold.pointCount; ++i) {
+                    manifold.points[i].penetration += margin;
+                }
             }
-        }
-        if (!finalize_contact_manifold_with_preflight(manifold)) {
-            continue;
-        }
-        if (margin > 0.f) {
-            for (u32 i = 0; i < manifold.pointCount; ++i) {
-                manifold.points[i].penetration -= margin;
+            if (!finalize_contact_manifold_with_preflight(manifold)) {
+                continue;
             }
-            manifold.syncLegacyFields();
+            if (margin > 0.f) {
+                for (u32 i = 0; i < manifold.pointCount; ++i) {
+                    manifold.points[i].penetration -= margin;
+                }
+                manifold.syncLegacyFields();
+            }
+            out.push_back(manifold);
         }
-        out.push_back(manifold);
     }
 }
 

@@ -132,6 +132,10 @@ bool shouldRunContactIslandGraphBuild(
 void ContactIslandGraph::clear() {
     parent_.clear();
     islands_.clear();
+    ranges_.clear();
+    flatBodies_.clear();
+    flatContacts_.clear();
+    flatDistances_.clear();
     islandCount_ = 0;
 }
 
@@ -169,10 +173,60 @@ void ContactIslandGraph::unionBodies(u32 a, u32 b) {
     }
 }
 
+ContactIslandGraph::ContactIslandGraph(const ContactIslandGraph& other)
+    : parent_(other.parent_),
+      islands_(other.islands_),
+      ranges_(other.ranges_),
+      islandCount_(other.islandCount_),
+      rootToIsland_(other.rootToIsland_),
+      flatBodies_(other.flatBodies_),
+      flatContacts_(other.flatContacts_),
+      flatDistances_(other.flatDistances_),
+      cursor_(other.cursor_) {
+    rebindSpans_();
+}
+
+ContactIslandGraph& ContactIslandGraph::operator=(const ContactIslandGraph& other) {
+    if (this != &other) {
+        parent_ = other.parent_;
+        islands_ = other.islands_;
+        ranges_ = other.ranges_;
+        islandCount_ = other.islandCount_;
+        rootToIsland_ = other.rootToIsland_;
+        flatBodies_ = other.flatBodies_;
+        flatContacts_ = other.flatContacts_;
+        flatDistances_ = other.flatDistances_;
+        cursor_ = other.cursor_;
+        rebindSpans_();
+    }
+    return *this;
+}
+
+void ContactIslandGraph::reserve(u32 maxBodies, u32 maxContacts, u32 maxConstraints) {
+    parent_.reserve(maxBodies);
+    rootToIsland_.reserve(maxBodies);
+    islands_.reserve(maxBodies);
+    ranges_.reserve(maxBodies);
+    cursor_.reserve(maxBodies);
+    flatBodies_.reserve(maxBodies);
+    flatContacts_.reserve(maxContacts);
+    flatDistances_.reserve(maxConstraints);
+}
+
+void ContactIslandGraph::rebindSpans_() {
+    for (u32 i = 0; i < islandCount_ && i < islands_.size() && i < ranges_.size(); ++i) {
+        const Range& r = ranges_[i];
+        Island& island = islands_[i];
+        island.bodyIndices = {flatBodies_.data() + r.bodyBegin, r.bodyCount};
+        island.contactIndices = {flatContacts_.data() + r.contactBegin, r.contactCount};
+        island.distanceIndices = {flatDistances_.data() + r.distanceBegin, r.distanceCount};
+    }
+}
+
 void ContactIslandGraph::build(u32 bodyCount,
                                const std::vector<narrowphase::ContactManifold>& contacts,
                                const std::vector<DistanceConstraint>& distanceConstraints) {
-    // Island storage is reused across builds (inner vectors keep their capacity).
+    // All storage is reused across builds; within the reserve()d limits nothing allocates.
     parent_.resize(bodyCount);
     for (u32 i = 0; i < bodyCount; ++i) {
         parent_[i] = i;
@@ -208,43 +262,83 @@ void ContactIslandGraph::build(u32 bodyCount,
             rootToIsland[root] = islandCount++;
         }
     }
+    islandCount_ = islandCount;
     if (islands_.size() < islandCount) {
         islands_.resize(islandCount);
     }
-    islandCount_ = islandCount;
-    for (Island& island : islands_) {
-        island.bodyIndices.clear();
-        island.contactIndices.clear();
-        island.distanceIndices.clear();
+    ranges_.assign(islandCount, Range{});
+
+    // Pass 1: count each island's bodies, contacts and distance constraints.
+    for (u32 bodyIndex = 0; bodyIndex < bodyCount; ++bodyIndex) {
+        ++ranges_[rootToIsland[findRoot(bodyIndex)]].bodyCount;
+    }
+    u32 contactTotal = 0;
+    for (const narrowphase::ContactManifold& contact : contacts) {
+        if (!contact.valid || !contactBodiesInRange(contact.bodyA, contact.bodyB, bodyCount)) {
+            continue;
+        }
+        ++ranges_[rootToIsland[findRoot(contact.bodyA)]].contactCount;
+        ++contactTotal;
+    }
+    u32 distanceTotal = 0;
+    for (const DistanceConstraint& constraint : distanceConstraints) {
+        if (!contactBodiesInRange(constraint.bodyA, constraint.bodyB, bodyCount)) {
+            continue;
+        }
+        ++ranges_[rootToIsland[findRoot(constraint.bodyA)]].distanceCount;
+        ++distanceTotal;
+    }
+
+    // Prefix sums: each island owns a contiguous range of the flat arrays.
+    u32 bodyOffset = 0;
+    u32 contactOffset = 0;
+    u32 distanceOffset = 0;
+    for (Range& r : ranges_) {
+        r.bodyBegin = bodyOffset;
+        r.contactBegin = contactOffset;
+        r.distanceBegin = distanceOffset;
+        bodyOffset += r.bodyCount;
+        contactOffset += r.contactCount;
+        distanceOffset += r.distanceCount;
+    }
+    flatBodies_.resize(bodyCount);
+    flatContacts_.resize(contactTotal);
+    flatDistances_.resize(distanceTotal);
+
+    // Pass 2: scatter in ascending index order (the same order the lists always had).
+    cursor_.resize(islandCount);
+    for (u32 i = 0; i < islandCount; ++i) {
+        cursor_[i] = ranges_[i].bodyBegin;
     }
     for (u32 bodyIndex = 0; bodyIndex < bodyCount; ++bodyIndex) {
-        islands_[rootToIsland[findRoot(bodyIndex)]].bodyIndices.push_back(bodyIndex);
+        flatBodies_[cursor_[rootToIsland[findRoot(bodyIndex)]]++] = bodyIndex;
     }
-
+    for (u32 i = 0; i < islandCount; ++i) {
+        cursor_[i] = ranges_[i].contactBegin;
+    }
     for (u32 contactIndex = 0; contactIndex < contacts.size(); ++contactIndex) {
         const narrowphase::ContactManifold& contact = contacts[contactIndex];
-        if (!contact.valid) {
+        if (!contact.valid || !contactBodiesInRange(contact.bodyA, contact.bodyB, bodyCount)) {
             continue;
         }
-        if (!contactBodiesInRange(contact.bodyA, contact.bodyB, bodyCount)) {
-            continue;
-        }
-        const u32 islandIndex = rootToIsland[findRoot(contact.bodyA)];
-        if (islandIndex != invalidIsland) {
-            islands_[islandIndex].contactIndices.push_back(contactIndex);
-        }
+        flatContacts_[cursor_[rootToIsland[findRoot(contact.bodyA)]]++] = contactIndex;
     }
-
+    for (u32 i = 0; i < islandCount; ++i) {
+        cursor_[i] = ranges_[i].distanceBegin;
+    }
     for (u32 distanceIndex = 0; distanceIndex < distanceConstraints.size(); ++distanceIndex) {
         const DistanceConstraint& constraint = distanceConstraints[distanceIndex];
         if (!contactBodiesInRange(constraint.bodyA, constraint.bodyB, bodyCount)) {
             continue;
         }
-        const u32 islandIndex = rootToIsland[findRoot(constraint.bodyA)];
-        if (islandIndex != invalidIsland) {
-            islands_[islandIndex].distanceIndices.push_back(distanceIndex);
-        }
+        flatDistances_[cursor_[rootToIsland[findRoot(constraint.bodyA)]]++] = distanceIndex;
     }
+
+    // Stale slots beyond islandCount_ keep no views into the flat arrays.
+    for (usize i = islandCount; i < islands_.size(); ++i) {
+        islands_[i] = Island{};
+    }
+    rebindSpans_();
 
     // Islands are numbered in order of their lowest body index already (bodies are visited in
     // ascending order), which is the ordering callers rely on.

@@ -410,11 +410,28 @@ struct ShapeInstance {
     f32 scalar = 0.f;
     vec3 position{};
     quat orientation{};
+    /// Shape-pool reference of hull / mesh / SDF / voxel shapes (shapes/shape_pool.hpp).
+    u32 shapeRef = kNoShapeRef;
 };
 
 /// Shape-pair narrowphase at explicit poses (the dispatch `collidePairs` runs per pair). The normal
 /// points from B towards A; invalid for unsupported pairs or shapes further apart than `margin`.
 ContactManifold collideShapes(const ShapeInstance& a, const ShapeInstance& b, u32 idxA, u32 idxB, f32 margin = 0.f);
+
+/// Pairs with a pooled shape (convex hull, triangle mesh, SDF, voxel): the CPU-only dispatch
+/// (narrowphase/pooled_dispatch.cpp). For concave shapes it returns the manifold of the deepest normal
+/// cluster; `collideShapesMulti` returns every cluster.
+ContactManifold collidePooledShapes(const ShapeInstance& a, const ShapeInstance& b, u32 idxA, u32 idxB,
+                                    f32 margin = 0.f);
+
+/// Up to `maxOut` manifolds for the pair: one per contact-normal cluster for triangle meshes, voxels
+/// and SDFs (a box in a V-groove keeps both walls), one for every other pair. Returns the count.
+u32 collideShapesMulti(const ShapeInstance& a, const ShapeInstance& b, u32 idxA, u32 idxB, f32 margin,
+                       ContactManifold* out, u32 maxOut);
+
+/// True when the pair involves a concave pooled shape (triangle mesh, voxel volume, SDF), i.e. when
+/// `collideShapesMulti` may return more than one manifold.
+[[nodiscard]] bool isConcaveShape(CollisionShapeType type);
 
 struct ContactBufferSoA;
 

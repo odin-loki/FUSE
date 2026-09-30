@@ -1,4 +1,5 @@
 #include <fuse/physics/physics_data.hpp>
+#include <fuse/physics/shapes/shape_pool.hpp>
 
 namespace fuse::physics {
 
@@ -102,6 +103,7 @@ void CollisionShapeSoA::removeShapeSwap(u32 index) {
     swapRemove(params, index);
     swapRemove(scalars, index);
     swapRemove(bodyIndices, index);
+    swapRemove(shapeRefs, index);
 }
 
 void CollisionShapeSoA::clear() {
@@ -109,6 +111,7 @@ void CollisionShapeSoA::clear() {
     params.clear();
     scalars.clear();
     bodyIndices.clear();
+    shapeRefs.clear();
 }
 
 u32 CollisionShapeSoA::addShape(CollisionShapeType type, u32 bodyIndex, vec3 shapeParams, f32 scalarParam) {
@@ -117,6 +120,13 @@ u32 CollisionShapeSoA::addShape(CollisionShapeType type, u32 bodyIndex, vec3 sha
     params.push_back(shapeParams);
     scalars.push_back(scalarParam);
     bodyIndices.push_back(bodyIndex);
+    shapeRefs.push_back(kNoShapeRef);
+    return index;
+}
+
+u32 CollisionShapeSoA::addPooledShape(CollisionShapeType type, u32 bodyIndex, u32 ref) {
+    const u32 index = addShape(type, bodyIndex, ShapePool::global().halfExtents(ref));
+    shapeRefs[index] = ref;
     return index;
 }
 

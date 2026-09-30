@@ -21,8 +21,18 @@ void VoxelVolume::init(vec3 origin, f32 voxelSize, ivec3 dims) {
     m_origin = origin;
     m_size = voxelSize > 0.f ? voxelSize : 1.f;
     m_dims = {std::max(dims.x, 0), std::max(dims.y, 0), std::max(dims.z, 0)};
-    m_voxels.assign(static_cast<usize>(m_dims.x) * m_dims.y * m_dims.z, 0u);
-    m_solid = 0;
+    // Smallest octree whose root covers the box (depth >= 1: a depth-0 SVO is a single voxel).
+    const u32 largest = static_cast<u32>(std::max({m_dims.x, m_dims.y, m_dims.z, 2}));
+    u32 depth = 1;
+    while ((1u << depth) < largest) {
+        ++depth;
+    }
+    scene::SVODesc desc{};
+    desc.origin = scene::vec3(m_origin.x, m_origin.y, m_origin.z);
+    desc.rootSize = m_size * static_cast<f32>(1u << depth);
+    desc.maxDepth = depth;
+    desc.storeSdf = false; // occupancy only: the physics carve removes by voxel centre
+    m_svo.init(desc);
 }
 
 bool VoxelVolume::inBounds(ivec3 v) const {
@@ -34,26 +44,56 @@ usize VoxelVolume::linear(ivec3 v) const {
 }
 
 u8 VoxelVolume::get(ivec3 v) const {
-    return inBounds(v) ? m_voxels[linear(v)] : 0u;
+    return inBounds(v) ? static_cast<u8>(m_svo.get(scene::ivec3(v.x, v.y, v.z))) : 0u;
 }
 
 void VoxelVolume::set(ivec3 v, u8 material) {
     if (!inBounds(v)) {
         return;
     }
-    u8& slot = m_voxels[linear(v)];
-    m_solid += (material != 0u ? 1u : 0u) - (slot != 0u ? 1u : 0u);
-    slot = material;
+    m_svo.set(scene::ivec3(v.x, v.y, v.z), material);
 }
 
 void VoxelVolume::fill(ivec3 minCorner, ivec3 maxCorner, u8 material) {
-    for (s32 z = std::max(minCorner.z, 0); z <= std::min(maxCorner.z, m_dims.z - 1); ++z) {
-        for (s32 y = std::max(minCorner.y, 0); y <= std::min(maxCorner.y, m_dims.y - 1); ++y) {
-            for (s32 x = std::max(minCorner.x, 0); x <= std::min(maxCorner.x, m_dims.x - 1); ++x) {
-                set({x, y, z}, material);
+    const ivec3 lo{std::max(minCorner.x, 0), std::max(minCorner.y, 0), std::max(minCorner.z, 0)};
+    const ivec3 hi{std::min(maxCorner.x, m_dims.x - 1), std::min(maxCorner.y, m_dims.y - 1),
+                   std::min(maxCorner.z, m_dims.z - 1)};
+    if (lo.x > hi.x || lo.y > hi.y || lo.z > hi.z) {
+        return;
+    }
+    m_svo.fill(scene::ivec3(lo.x, lo.y, lo.z), scene::ivec3(hi.x, hi.y, hi.z), material);
+}
+
+vec3 VoxelVolume::occupancyNormal(ivec3 v) const {
+    vec3 n{};
+    for (s32 dz = -1; dz <= 1; ++dz) {
+        for (s32 dy = -1; dy <= 1; ++dy) {
+            for (s32 dx = -1; dx <= 1; ++dx) {
+                if ((dx | dy | dz) == 0 || get({v.x + dx, v.y + dy, v.z + dz}) == 0u) {
+                    continue;
+                }
+                // Solid neighbours push the normal away from themselves (face neighbours weigh most).
+                const f32 w = 1.f / static_cast<f32>(dx * dx + dy * dy + dz * dz);
+                n -= vec3{static_cast<f32>(dx), static_cast<f32>(dy), static_cast<f32>(dz)} * w;
             }
         }
     }
+    return n;
+}
+
+bool VoxelVolume::anySolidIn(vec3 lo, vec3 hi) const {
+    const ivec3 a = voxelAt(lo);
+    const ivec3 b = voxelAt(hi);
+    for (s32 z = std::max(a.z, 0); z <= std::min(b.z, m_dims.z - 1); ++z) {
+        for (s32 y = std::max(a.y, 0); y <= std::min(b.y, m_dims.y - 1); ++y) {
+            for (s32 x = std::max(a.x, 0); x <= std::min(b.x, m_dims.x - 1); ++x) {
+                if (get({x, y, z}) != 0u) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 vec3 VoxelVolume::voxelCenter(ivec3 v) const {
@@ -71,14 +111,23 @@ u32 VoxelVolume::carve(vec3 center, f32 radius) {
     if (radius <= 0.f) {
         return 0;
     }
-    const ivec3 lo = voxelAt(center - vec3{radius, radius, radius});
-    const ivec3 hi = voxelAt(center + vec3{radius, radius, radius});
+    const ivec3 a = voxelAt(center - vec3{radius, radius, radius});
+    const ivec3 b = voxelAt(center + vec3{radius, radius, radius});
+    const ivec3 lo{std::max(a.x, 0), std::max(a.y, 0), std::max(a.z, 0)};
+    const ivec3 hi{std::min(b.x, m_dims.x - 1), std::min(b.y, m_dims.y - 1), std::min(b.z, m_dims.z - 1)};
+    if (lo.x > hi.x || lo.y > hi.y || lo.z > hi.z) {
+        return 0;
+    }
+    const ivec3 size{hi.x - lo.x + 1, hi.y - lo.y + 1, hi.z - lo.z + 1};
+    std::vector<u32> region;
+    m_svo.readBox(scene::ivec3(lo.x, lo.y, lo.z), scene::ivec3(size.x, size.y, size.z), region);
     u32 removed = 0;
-    for (s32 z = std::max(lo.z, 0); z <= std::min(hi.z, m_dims.z - 1); ++z) {
-        for (s32 y = std::max(lo.y, 0); y <= std::min(hi.y, m_dims.y - 1); ++y) {
-            for (s32 x = std::max(lo.x, 0); x <= std::min(hi.x, m_dims.x - 1); ++x) {
+    usize i = 0;
+    for (s32 z = lo.z; z <= hi.z; ++z) {
+        for (s32 y = lo.y; y <= hi.y; ++y) {
+            for (s32 x = lo.x; x <= hi.x; ++x, ++i) {
                 const ivec3 v{x, y, z};
-                if (get(v) != 0u && (voxelCenter(v) - center).length() < radius) {
+                if (region[i] != 0u && (voxelCenter(v) - center).length() < radius) {
                     set(v, 0u);
                     ++removed;
                 }
@@ -86,6 +135,15 @@ u32 VoxelVolume::carve(vec3 center, f32 radius) {
         }
     }
     return removed;
+}
+
+void VoxelVolume::snapshot(std::vector<u8>& grid) const {
+    std::vector<u32> materials;
+    m_svo.readBox(scene::ivec3(0, 0, 0), scene::ivec3(m_dims.x, m_dims.y, m_dims.z), materials);
+    grid.resize(materials.size());
+    for (usize i = 0; i < materials.size(); ++i) {
+        grid[i] = static_cast<u8>(materials[i]);
+    }
 }
 
 void VoxelVolume::extractSurface(std::vector<vec3>& vertices, std::vector<u32>& indices) const {
@@ -97,7 +155,9 @@ void VoxelVolume::extractSurface(std::vector<vec3>& vertices, std::vector<u32>& 
     const auto cellIndex = [&](ivec3 c) {
         return (static_cast<usize>(c.z + 1) * cells.y + (c.y + 1)) * cells.x + (c.x + 1);
     };
-    const auto solid = [&](ivec3 v) { return get(v) != 0u; };
+    std::vector<u8> grid;
+    snapshot(grid);
+    const auto solid = [&](ivec3 v) { return inBounds(v) && grid[linear(v)] != 0u; };
     const auto vertexFor = [&](ivec3 c) {
         u32& slot = cellVertex[cellIndex(c)];
         if (slot != ~0u) {
@@ -160,7 +220,10 @@ void VoxelVolume::extractSurface(std::vector<vec3>& vertices, std::vector<u32>& 
 
 std::vector<VoxelFragment> VoxelVolume::detachFloating() {
     std::vector<VoxelFragment> fragments;
-    std::vector<s32> label(m_voxels.size(), -1);
+    std::vector<s32> label(static_cast<usize>(m_dims.x) * m_dims.y * m_dims.z, -1);
+    std::vector<u8> grid;
+    snapshot(grid);
+    const auto solidAt = [&](ivec3 v) { return inBounds(v) && grid[linear(v)] != 0u; };
     std::vector<ivec3> stack;
     std::vector<u8> anchored;
     s32 next = 0;
@@ -169,7 +232,7 @@ std::vector<VoxelFragment> VoxelVolume::detachFloating() {
         for (s32 y = 0; y < m_dims.y; ++y) {
             for (s32 x = 0; x < m_dims.x; ++x) {
                 const ivec3 seed{x, y, z};
-                if (get(seed) == 0u || label[linear(seed)] >= 0) {
+                if (!solidAt(seed) || label[linear(seed)] >= 0) {
                     continue;
                 }
                 const s32 id = next++;
@@ -185,7 +248,7 @@ std::vector<VoxelFragment> VoxelVolume::detachFloating() {
                     for (int axis = 0; axis < 3; ++axis) {
                         for (int sign = -1; sign <= 1; sign += 2) {
                             const ivec3 n = add(v, {axis == 0 ? sign : 0, axis == 1 ? sign : 0, axis == 2 ? sign : 0});
-                            if (get(n) != 0u && label[linear(n)] < 0) {
+                            if (solidAt(n) && label[linear(n)] < 0) {
                                 label[linear(n)] = id;
                                 stack.push_back(n);
                             }

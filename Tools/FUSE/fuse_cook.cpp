@@ -9,6 +9,7 @@
 #include "Cook/fuselevel_cook_stub.hpp"
 
 #include <fuse/cook/audio_cook.hpp>
+#include <fuse/cook/collision_cook.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -27,6 +28,9 @@ void printUsage() {
                  "  fuse_cook --texture --input <path> --output <path> Texture cook (.png/.tga/.jpg/.hdr/.ktx2 in;\n"
                  "             .fusetex out, or .ktx2 out for KTX2 transport export)\n"
                  "  fuse_cook --audio --input <path> --output <path>  Audio cook (.wav/.flac/.ogg in; .fuseaudio out)\n"
+                 "  fuse_cook --collision --input <mesh.fusemesh> --output <mesh.fusecol>  Collision cook (E18)\n"
+                 "             [--collision-mode hull|mesh|both] [--hull-per-submesh]: quickhull hulls and/or the\n"
+                 "             static triangle mesh + BVH, loaded by fuse::physics::loadCollisionAssetFile\n"
                  "  fuse_cook --fuselevel --mis <file.mis> --output <world.fuselevel>\n"
                  "  fuse_cook --fuselevel --module <file.cs> --output <world.fuselevel>\n"
                  "Options:\n"
@@ -145,6 +149,8 @@ int main(int argc, char** argv) {
     fuse::u32 pageBytes = 64u * 1024u;
     fuse::cook::AudioCookOptions audioOptions;
     bool audioOptionsGiven = false;
+    bool collisionCook = false;
+    fuse::cook::CollisionCookOptions collisionOptions;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -247,6 +253,16 @@ int main(int argc, char** argv) {
             }
             (arg == "--lufs" ? audioOptions.target_lufs : audioOptions.ogg_quality) = static_cast<float>(value);
             audioOptionsGiven = true;
+        } else if (arg == "--collision") {
+            collisionCook = true;
+        } else if (arg == "--collision-mode" && i + 1 < argc) {
+            if (!fuse::cook::parse_collision_cook_mode(argv[++i], collisionOptions.mode)) {
+                std::fprintf(stderr, "fuse_cook: unknown --collision-mode %s (hull|mesh|both)\n", argv[i]);
+                fuse::core::shutdown();
+                return EXIT_FAILURE;
+            }
+        } else if (arg == "--hull-per-submesh") {
+            collisionOptions.hull_per_submesh = true;
         } else if (arg == "--help" || arg == "-h") {
             printUsage();
             fuse::core::shutdown();
@@ -257,6 +273,27 @@ int main(int argc, char** argv) {
             fuse::core::shutdown();
             return EXIT_FAILURE;
         }
+    }
+
+    if (collisionCook) {
+        if (inputPath.empty() || outputPath.empty()) {
+            printUsage();
+            fuse::core::shutdown();
+            return EXIT_FAILURE;
+        }
+        fuse::cook::CollisionCookReport report;
+        const fuse::cook::CookStubWriteResult cooked =
+            fuse::cook::cook_collision_file(inputPath, outputPath, collisionOptions, &report);
+        std::printf("  [collision] %s -> %s (%s) %s\n", inputPath.c_str(), outputPath.c_str(),
+                    cooked.ok ? "cooked" : fuse::cook::cookFailureName(cooked.failure), cooked.note.c_str());
+        if (cooked.ok) {
+            std::printf("fuse_cook: collision %u hull(s) (%u vertices, %u faces), %u mesh triangles, BVH %u nodes "
+                        "depth %u, %u bytes\n",
+                        report.hull_count, report.hull_vertices, report.hull_faces, report.mesh_triangles,
+                        report.bvh_nodes, report.bvh_depth, report.bytes);
+        }
+        fuse::core::shutdown();
+        return cooked.ok ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
     if (fuselevelCook) {

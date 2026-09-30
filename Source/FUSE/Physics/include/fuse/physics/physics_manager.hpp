@@ -4,9 +4,12 @@
 #include <fuse/ecs/registry.hpp>
 #include <fuse/physics/ccd/ccd.hpp>
 #include <fuse/physics/ccd/toi_buffer.hpp>
+#include <fuse/physics/character/character_controller.hpp>
 #include <fuse/physics/destruction/voxel_destruction.hpp>
 #include <fuse/physics/events/collision_events.hpp>
+#include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/physics_data.hpp>
+#include <fuse/physics/queries/shape_queries.hpp>
 #include <fuse/physics/solver/pbd_solver.hpp>
 
 #include <limits>
@@ -29,6 +32,35 @@ struct PhysicsManagerDesc {
     bool enableCcd = true;
     bool enableNbody = false;
     bool enableDestruction = true;
+    /// Run CharacterControllerSystem at the start of every step (GAP-PHYS-CHARACTER).
+    bool enableCharacterControllers = true;
+};
+
+/// Which bodies a query sees (PhysicsManager::shapeCast / overlapShape / rayCast helpers).
+struct QueryFilter {
+    /// Skipped entity (e.g. the caster's own body).
+    fuse::ecs::EntityID ignore{};
+    /// Bodies whose collision layer intersects this mask.
+    u32 layerMask = 0xFFFFFFFFu;
+    bool includeTriggers = false;
+    bool includeDynamic = true;
+    /// Skip entities no longer alive in this registry.
+    const fuse::ecs::Registry* aliveIn = nullptr;
+};
+
+struct ShapeCastResult {
+    fuse::ecs::EntityID entity{};
+    u32 body = 0xFFFFFFFFu;
+    ShapeCastHit hit{};
+};
+
+struct OverlapContact {
+    fuse::ecs::EntityID entity{};
+    u32 body = 0xFFFFFFFFu;
+    /// From the body towards the query shape.
+    vec3 normal{};
+    vec3 point{};
+    f32 depth = 0.f;
 };
 
 /// Generational handle to a joint owned by the PhysicsManager.
@@ -104,6 +136,14 @@ struct PhysicsStreamManager {
 /// `setKinematicTarget`) and push dynamic bodies without being pushed back.
 class PhysicsManager {
 public:
+    PhysicsManager() = default;
+    /// Releases the shape-pool views of its destructible volumes.
+    ~PhysicsManager();
+    PhysicsManager(const PhysicsManager&) = default;
+    PhysicsManager& operator=(const PhysicsManager&) = default;
+    PhysicsManager(PhysicsManager&&) = default;
+    PhysicsManager& operator=(PhysicsManager&&) = default;
+
     void init(const PhysicsManagerDesc& desc);
     void destroy();
     void step(fuse::ecs::Registry& registry, f32 dt, PhysicsStreamManager& streams);
@@ -116,6 +156,23 @@ public:
     /// Entities whose shapes overlap the sphere (triggers included); `aliveIn` as for rayCast.
     void querySphere(vec3 center, f32 radius, std::vector<fuse::ecs::EntityID>& results,
                      const fuse::ecs::Registry* aliveIn = nullptr) const;
+
+    /// Sweeps a sphere / capsule / box (`shape` at its start pose) along `direction` up to `maxDistance`
+    /// against every shape (primitives, hulls, triangle meshes, voxels, SDFs) and returns the earliest
+    /// hit: distance travelled, normal (from the hit body towards the shape), point and entity. A shape
+    /// already overlapping something reports distance 0 with startPenetrating. Shapes reflect the last
+    /// step (as for rayCast).
+    bool shapeCast(const narrowphase::ShapeInstance& shape, vec3 direction, f32 maxDistance, ShapeCastResult& result,
+                   const QueryFilter& filter = {}) const;
+    /// Penetrating contacts of `shape` with every body (deepest per body pair / normal cluster).
+    u32 overlapShape(const narrowphase::ShapeInstance& shape, std::vector<OverlapContact>& out,
+                     const QueryFilter& filter = {}) const;
+    /// Nearest ray hit under `filter` (rayCast with layer / ignore / dynamic filtering).
+    bool rayCastFiltered(vec3 origin, vec3 direction, f32 maxT, ShapeCastResult& result, const QueryFilter& filter) const;
+    /// The shape of a body at its current pose.
+    [[nodiscard]] narrowphase::ShapeInstance bodyShape(u32 body) const;
+    /// Velocity of the body's material point at `point` (v + w x r); zero for static bodies.
+    [[nodiscard]] vec3 pointVelocity(u32 body, vec3 point) const;
     bool isSleeping(fuse::ecs::EntityID id) const;
 
     /// Instant velocity change `impulse / mass` through the centre of mass (applied to the solver
@@ -132,7 +189,10 @@ public:
     /// Kinematic pose to reach by the end of the next step (the body is made kinematic).
     void setKinematicTarget(fuse::ecs::EntityID id, vec3 position, quat orientation);
     void pushDestructionEvent(const DestructionEvent& event);
-    /// Registers the voxels that destruction events targeting `entity` carve.
+    /// Registers the voxels that destruction events targeting `entity` carve. The volume (world space) also
+    /// becomes a static Voxel collision body of `entity` (UNI-B4-VOX-1) on the next step, unless the
+    /// entity has its own Transform + RigidBody + Collider (then a Collider with shape Voxel uses this
+    /// volume). Carving refreshes the collision shape and wakes the bodies around the crater.
     void addDestructible(fuse::ecs::EntityID entity, const VoxelVolume& volume, const VoxelMaterial& material);
     DestructibleVolume* destructible(fuse::ecs::EntityID entity);
     /// Debris spawned by the last step's destruction events (entities already in the registry).
@@ -186,6 +246,14 @@ private:
     };
 
     void syncEcsToSoa_(fuse::ecs::Registry& registry, f32 dt);
+    /// Shape-pool reference for a pooled collider (direct ref, cooked asset or destructible volume).
+    u32 resolveShapeRef_(fuse::ecs::EntityID id, u32 shape, u64 asset, u32 piece, u32 ref);
+    /// Pool reference of the destructible keyed `key`, (re)registering its volume view when needed.
+    u32 destructibleRef_(u32 key);
+    void releaseDestructibleRefs_();
+    void syncDestructibleBodies_(fuse::ecs::Registry& registry);
+    bool bodyPassesFilter_(u32 body, const QueryFilter& filter) const;
+    void wakeAround_(vec3 center, f32 radius);
     void syncSoaToEcs_(fuse::ecs::Registry& registry);
     void removeBody_(u32 bodyIndex);
     void raiseEvents_();
@@ -231,8 +299,19 @@ private:
     // Flat maps: cleared and refilled every step without per-contact node allocations (B1.8).
     FlatU64Map<PairKey> m_activePairs_{};
     FlatU64Map<PairKey> m_currentPairs_{};
+    /// Contact pairs the event maps / event list are pre-sized for (grows only with the body count,
+    /// so a settling scene never rehashes mid-simulation; B1.8 steady-state zero allocation).
+    usize m_pairReserve_ = 0;
     std::vector<DestructionEvent> m_destructionEvents_{};
     std::unordered_map<u32, DestructibleVolume> m_destructibles_{};
+    struct DestructibleBody {
+        fuse::ecs::EntityID entity{};
+        u32 shapeRef = kNoShapeRef;
+    };
+    /// Voxel collision shapes of the destructibles (keyed like m_destructibles_).
+    std::unordered_map<u32, DestructibleBody> m_destructibleBodies_{};
+    std::vector<u32> m_destructibleKeys_{};
+    CharacterControllerSystem m_characters_{};
     std::vector<DebrisSpawn> m_lastDebris_{};
     std::vector<JointRecord> m_joints_{};
     std::vector<u32> m_freeJointSlots_{};

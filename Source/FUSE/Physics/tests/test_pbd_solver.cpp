@@ -2245,10 +2245,14 @@ void testPreflightIslandConstraintRefsGuards() {
     expectTrue(!should_skip_island_constraint_refs(island, contacts, constraints),
                "should_skip false when in-range refs exist");
 
+    // Island index lists are views into graph-owned storage; a hand-made island points at locals.
+    const u32 staleBodies[] = {0u, 1u};
+    const u32 staleContacts[] = {9u};
+    const u32 staleDistances[] = {5u};
     ContactIslandGraph::Island staleIsland{};
-    staleIsland.bodyIndices = {0, 1};
-    staleIsland.contactIndices = {9u};
-    staleIsland.distanceIndices = {5u};
+    staleIsland.bodyIndices = {staleBodies, 2u};
+    staleIsland.contactIndices = {staleContacts, 1u};
+    staleIsland.distanceIndices = {staleDistances, 1u};
     const IslandConstraintRefsPreflight stalePreflight =
         preflight_island_constraint_refs(staleIsland, contacts, constraints);
     expectTrue(!stalePreflight.can_solve(), "stale refs preflight cannot solve");

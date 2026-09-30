@@ -126,6 +126,16 @@ ContactManifold detect_contacts_pair(
     const CollisionShapeSoA& shapes,
     f32 margin);
 
+/// As above, but a pair with a concave pooled shape (triangle mesh, voxel volume, SDF) may yield up to
+/// `maxOut` manifolds (one per contact-normal cluster, deepest first). Returns the count written.
+u32 detect_contacts_pair_multi(
+    const broadphase::CandidatePair& pair,
+    const RigidBodySoA& bodies,
+    const CollisionShapeSoA& shapes,
+    f32 margin,
+    ContactManifold* out,
+    u32 maxOut);
+
 /// Preflight guard before finalize: non-empty, unit normal candidate, penetrating points (B4.3 deepen pass).
 bool can_finalize_contact_manifold(const ContactManifold& manifold);
 

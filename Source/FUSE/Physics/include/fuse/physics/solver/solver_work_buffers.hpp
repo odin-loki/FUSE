@@ -36,7 +36,10 @@ struct SolverWorkBuffers {
     /// Clear only the slots touched by a constraint pair (job-safe across parallel islands).
     void clearPositionDeltasForBodies(u32 bodyA, u32 bodyB);
     /// Clear all body slots listed in an island before sequential constraint passes.
-    void clearPositionDeltasForIslandBodies(const std::vector<u32>& bodyIndices);
+    void clearPositionDeltasForIslandBodies(const u32* bodyIndices, usize count);
+    void clearPositionDeltasForIslandBodies(const std::vector<u32>& bodyIndices) {
+        clearPositionDeltasForIslandBodies(bodyIndices.data(), bodyIndices.size());
+    }
     /// Apply accumulated deltas to predicted positions and reset touched slots.
     void applyPositionDeltas(RigidBodySoA& bodies);
     /// Applies and clears only these two bodies' deltas (island jobs must not touch bodies

@@ -166,7 +166,8 @@ FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE vec3 implicitGyroscopicStep(const quat& q, 
 
 /// Diagonal body-frame inverse inertia of a solid shape with inverse mass `invMass`
 /// (sphere radius params.x; box half extents params; capsule radius params.x, half height params.y
-/// along local Y). Zero for massless bodies and for planes.
+/// along local Y; a convex hull as the box of its bounding half extents, so a box-shaped hull behaves
+/// exactly like a Box). Zero for massless bodies and for planes.
 FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE vec3 shapeInverseInertia(CollisionShapeType type, vec3 params, f32 invMass) {
     if (invMass <= 0.f) {
         return {};
@@ -174,6 +175,7 @@ FUSE_HOST_DEVICE FUSE_PHYSICS_INLINE vec3 shapeInverseInertia(CollisionShapeType
     const f32 mass = 1.f / invMass;
     const auto invert = [](f32 moment) { return moment > 1e-12f ? 1.f / moment : 0.f; };
     switch (type) {
+    case CollisionShapeType::ConvexHull: // params = the hull's origin-centred bounding half extents
     case CollisionShapeType::Box: {
         const f32 x2 = params.x * params.x;
         const f32 y2 = params.y * params.y;

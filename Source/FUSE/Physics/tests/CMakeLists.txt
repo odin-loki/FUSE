@@ -158,3 +158,13 @@ if(FUSE_CUDA_BACKEND)
         TIMEOUT 900
         LABELS "gate;cuda;perf")
 endif()
+
+# E18 (GAP-PHYS-HULL-MESH, GAP-PHYS-CHARACTER, UNI-B4-VOX-1): convex hulls (quickhull, SAT vs brute force,
+# box-hull == Box, hull stack), triangle meshes (BVH ray casts vs brute force, box on a mesh floor,
+# .fusecol round trip), shape casts + character controller, voxel / SDF collision on the shared SVO.
+foreach(_e18 hull trimesh character voxel)
+    add_executable(fuse_e18_${_e18}_gates test_e18_${_e18}_gates.cpp e18_test_common.hpp)
+    target_link_libraries(fuse_e18_${_e18}_gates PRIVATE fuse_physics fuse_core)
+    add_test(NAME fuse_e18_${_e18}_gates COMMAND fuse_e18_${_e18}_gates)
+    set_tests_properties(fuse_e18_${_e18}_gates PROPERTIES LABELS "gate;physics" TIMEOUT 600)
+endforeach()

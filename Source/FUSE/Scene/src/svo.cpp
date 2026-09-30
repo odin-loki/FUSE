@@ -523,6 +523,48 @@ void SVO::carve(vec3 center, f32 radius) {
     }
 }
 
+void SVO::readBox(ivec3 minCoord, ivec3 size, std::vector<u32>& out) const {
+    const s32 sx = std::max(size.x, 0);
+    const s32 sy = std::max(size.y, 0);
+    const s32 sz = std::max(size.z, 0);
+    out.assign(static_cast<usize>(sx) * static_cast<usize>(sy) * static_cast<usize>(sz), 0u);
+    if (!m_initialized || m_voxelCount == 0u || out.empty()) {
+        return;
+    }
+    const svo_kernel::SvoView v = view();
+    const s32 last = static_cast<s32>(1u << m_desc.maxDepth) - 1;
+    const s32 lo[3] = {std::max(minCoord.x, 0), std::max(minCoord.y, 0), std::max(minCoord.z, 0)};
+    const s32 hi[3] = {std::min(minCoord.x + sx - 1, last), std::min(minCoord.y + sy - 1, last),
+                       std::min(minCoord.z + sz - 1, last)};
+    if (lo[0] > hi[0] || lo[1] > hi[1] || lo[2] > hi[2]) {
+        return;
+    }
+    const s32 edge = static_cast<s32>(1u << m_brickLog);
+    const s32 log = static_cast<s32>(m_brickLog);
+    for (s32 bz = lo[2] >> log; bz <= hi[2] >> log; ++bz) {
+        for (s32 by = lo[1] >> log; by <= hi[1] >> log; ++by) {
+            for (s32 bx = lo[0] >> log; bx <= hi[0] >> log; ++bx) {
+                const u32 brick = svo_kernel::find_brick(v, bx * edge, by * edge, bz * edge);
+                if (brick == kNoNode) {
+                    continue;
+                }
+                for (s32 z = std::max(lo[2], bz * edge); z <= std::min(hi[2], bz * edge + edge - 1); ++z) {
+                    for (s32 y = std::max(lo[1], by * edge); y <= std::min(hi[1], by * edge + edge - 1); ++y) {
+                        const usize row = (static_cast<usize>(z - minCoord.z) * static_cast<usize>(sy) +
+                                           static_cast<usize>(y - minCoord.y)) *
+                                          static_cast<usize>(sx);
+                        for (s32 x = std::max(lo[0], bx * edge); x <= std::min(hi[0], bx * edge + edge - 1); ++x) {
+                            u32 material = 0u;
+                            svo_kernel::read_voxel(v, brick, svo_kernel::local_index(v, x, y, z), material);
+                            out[row + static_cast<usize>(x - minCoord.x)] = material;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 f32 SVO::sdfQuery(vec3 worldPos) const {
     if (!m_initialized) {
         return std::numeric_limits<f32>::max();

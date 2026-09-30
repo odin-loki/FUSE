@@ -32,7 +32,9 @@ struct MeshFragment {
     std::vector<u32> indices;
 };
 
-/// A destructible entity's voxels and material (owned by the PhysicsManager).
+/// A destructible entity's voxels and material (owned by the PhysicsManager). UNI-B4-VOX-1: the volume
+/// is also a static Voxel collision body (world space: the body sits at the origin) whose shape-pool
+/// entry views `volume`, so a carve refreshes the collision shape in place.
 struct DestructibleVolume {
     VoxelVolume volume;
     VoxelMaterial material;

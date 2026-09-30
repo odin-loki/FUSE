@@ -8,8 +8,6 @@ add_library(fuse_scene STATIC
     src/scene_manager.cpp
     src/scene_snapshot.cpp
     src/serialiser.cpp
-    src/svo.cpp
-    src/svo_ray_cast.cpp
     src/wire_stub.cpp
     src/wire_runtime_bind.cpp
     include/fuse/scene/bvh_stub.hpp
@@ -38,13 +36,10 @@ target_include_directories(fuse_scene
 
 target_link_libraries(fuse_scene PUBLIC fuse_core fuse_ecs fuse_project)
 
-# Single-source "svo_ray_cast" kernel (docs/compute-kernels.md): CUDA trampoline when the toolkit is found.
-if(FUSE_CUDA_BACKEND)
-    target_sources(fuse_scene PRIVATE kernels/svo_ray_cast.cu)
-    set_target_properties(fuse_scene PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-    # No fma contraction in the DDA: the device walk takes the same decisions as the host build.
-    set_source_files_properties(kernels/svo_ray_cast.cu PROPERTIES COMPILE_OPTIONS "-fmad=false")
-endif()
+# The SVO (src/svo.cpp, src/svo_ray_cast.cpp and the CUDA "svo_ray_cast" kernel) is the fuse_svo library
+# (cmake/fuse_svo.cmake), shared with fuse_physics (UNI-B4-VOX-1).
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/fuse_svo.cmake)
+target_link_libraries(fuse_scene PUBLIC fuse_svo)
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)

@@ -86,7 +86,12 @@ FUSE_HOST_DEVICE inline ShapeCells shapeCells(const ShapeView& v, u32 shape) {
     }
     const vec3 position = v.positions[out.body];
     const f32 cellSize = clampCellSize(v.cellSize);
-    const bool box = static_cast<CollisionShapeType>(v.shapeTypes[shape]) == CollisionShapeType::Box;
+    // Boxes and pooled shapes (hull / mesh / SDF / voxel: params = origin-centred half extents) take
+    // box bounds; spheres and capsules the params.x sphere.
+    const CollisionShapeType type = static_cast<CollisionShapeType>(v.shapeTypes[shape]);
+    const bool box = type == CollisionShapeType::Box || type == CollisionShapeType::ConvexHull ||
+                     type == CollisionShapeType::TriMesh || type == CollisionShapeType::SdfMesh ||
+                     type == CollisionShapeType::Voxel;
     vec3 halfExtents{};
     f32 radius = 0.f;
     if (box) {

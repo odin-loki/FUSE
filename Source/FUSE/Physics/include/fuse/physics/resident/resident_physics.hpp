@@ -16,8 +16,9 @@
 // reads the status later) grow the buffers and run again. Steady-state calls allocate nothing.
 //
 // Limits: at most 65536 bodies (packed 32-bit pair keys), no pair buffer max-capacity clamp, and the
-// narrowphase dispatches sphere / box / capsule / plane shapes (uploadScene refuses convex hulls,
-// which stay on the CPU path). Joints are not part of the resident solve.
+// narrowphase dispatches sphere / box / capsule / plane shapes (uploadScene refuses pooled shapes, i.e.
+// convex hulls, triangle meshes, SDFs and voxel volumes, whose pairs run the CPU narrowphase in
+// narrowphase/pooled_dispatch.cpp; primitive pairs are unchanged and stay bit-identical). Joints are not part of the resident solve.
 
 #include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/physics/broadphase/pair_buffer.hpp>
@@ -80,7 +81,8 @@ public:
     // ---- edges: uploads (Cuda: queued on the stream) ------------------------------------------
 
     /// Shapes (types / params / scalars / bodies), the narrowphase body -> shape map, the plane list
-    /// and the body state below. False for more than 65536 bodies or a convex-hull shape.
+    /// and the body state below. False for more than 65536 bodies or a pooled shape (convex hull, triangle
+    /// mesh, SDF, voxel volume): those scenes run the CPU narrowphase.
     bool uploadScene(const RigidBodySoA& bodies, const CollisionShapeSoA& shapes);
     /// Positions, orientations, flags, inverse masses, friction and collision layers (per step).
     bool uploadBodyState(const RigidBodySoA& bodies);

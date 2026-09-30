@@ -404,7 +404,7 @@ bool solve_island_job(RigidBodySoA& bodies,
         return false;
     }
 
-    workBuffers.clearPositionDeltasForIslandBodies(island.bodyIndices);
+    workBuffers.clearPositionDeltasForIslandBodies(island.bodyIndices.data(), island.bodyIndices.size());
 
     for (u32 contactIndex : island.contactIndices) {
         if (contactIndex >= contacts.size()) {

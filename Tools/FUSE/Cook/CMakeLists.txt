@@ -10,7 +10,9 @@ add_library(fuse_cook_stubs STATIC
     src/cook_stb_image.cpp
     src/ispc_texcomp_hook.cpp
     src/audio_cook.cpp
+    src/collision_cook.cpp
     include/fuse/cook/audio_cook.hpp
+    include/fuse/cook/collision_cook.hpp
     include/fuse/cook/bc7_encoder.hpp
     include/fuse/cook/bcn_encoder.hpp
     include/fuse/cook/ktx2.hpp
@@ -28,6 +30,9 @@ target_include_directories(fuse_cook_stubs
 )
 
 target_link_libraries(fuse_cook_stubs PUBLIC fuse_core fuse_asset)  # UNI-U7-ASSET-1: readers live in fuse_asset
+# E18 collision cook (src/collision_cook.cpp): quickhull, the triangle-mesh BVH and the .fusecol writer live in
+# fuse_physics (the runtime loads the same format).
+target_link_libraries(fuse_cook_stubs PUBLIC fuse_physics)
 if(COMMAND fuse_apply_cxx23)
     fuse_apply_cxx23(fuse_cook_stubs)
 endif()

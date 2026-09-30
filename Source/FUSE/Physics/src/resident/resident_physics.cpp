@@ -460,8 +460,8 @@ bool ResidentPhysics::uploadScene(const RigidBodySoA& bodies, const CollisionSha
     m.sceneReady = false;
     const u32 s = shapes.count();
     for (u32 i = 0; i < s; ++i) {
-        if (static_cast<CollisionShapeType>(shapes.types[i]) == CollisionShapeType::ConvexHull) {
-            return false; // EPA / GJK pairs stay on the CPU narrowphase
+        if (isPooledShape(static_cast<CollisionShapeType>(shapes.types[i]))) {
+            return false; // hull / mesh / SDF / voxel pairs stay on the CPU narrowphase (pooled_dispatch.cpp)
         }
     }
     if (!uploadBodyState(bodies)) {

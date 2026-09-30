@@ -123,8 +123,9 @@ are enforced in optimised builds and marked `RUN_SERIAL` + `perf;gate`.
 
 **Rotation (done, `fuse_b4_rotation_gates`):** inertia, orientation integration, per-point contacts with
 generalized inverse mass, oriented box/capsule narrowphase, off-centre impulses; edge/corner drops settle flat,
-incline slide 2.227 m vs 2.219 m. **Follow-ups:** distance constraints ignore local anchors; CCD sweeps position only; the destructible volume
-has no collision shape of its own yet; `Scene::SVO` and the physics `VoxelVolume` are separate.
+incline slide 2.227 m vs 2.219 m. **Follow-ups:** distance constraints ignore local anchors; CCD sweeps position only. Done (E18,
+UNI-B4-VOX-1, 2026-09-30): the destructible volume is a static Voxel body refreshed on carve, and the physics `VoxelVolume` is
+stored in the Scene `SVO` (one SVO type, library `fuse_svo`) — `fuse_e18_voxel_gates`.
 
 ## 4c. B1 re-audit, B5, B6, B7 — parallel work streams
 
