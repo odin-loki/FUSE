@@ -97,6 +97,19 @@ target_sources(fuse_physics PRIVATE
     include/fuse/physics/assets/collision_asset.hpp
 )
 
+# G11 (GAP-WORLD2D-GAMEPLAY): 2D rigid-body world behind PhysicsWorld2D — rotation, polygons, edge
+# chains, contacts + sensors + events, ray / AABB queries, revolute / distance / prismatic joints.
+target_sources(fuse_physics PRIVATE
+    src/physics2d/math_2d.hpp
+    src/physics2d/collide_2d.hpp
+    src/physics2d/collide_2d.cpp
+    src/physics2d/rigid_world_2d.hpp
+    src/physics2d/rigid_world_2d.cpp
+    src/physics2d/contact_solver_2d.cpp
+    src/physics2d/joints_2d.cpp
+    src/physics2d/queries_2d.cpp
+)
+
 add_library(fuse::physics ALIAS fuse_physics)
 
 target_include_directories(fuse_physics

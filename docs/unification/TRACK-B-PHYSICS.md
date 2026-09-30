@@ -16,7 +16,7 @@
 | `ContactManifold` / `ContactBufferSoA` | `narrowphase/contact_manifold.hpp`, `contact_buffer.hpp` | Multi-point slots (up to 4), normal/penetration per point, warm-start impulse stubs, per-contact friction tangent SoA columns |
 | `buildTangentBasis` / `clampFrictionImpulse` | `narrowphase/friction.hpp` | Coulomb friction cone clamp + tangent basis helper, `buildTangentBasisForManifold`, `projectTangentialVelocity` (CPU stub) |
 | `collideBoxBox` | `narrowphase/box_box.cpp` | Axis-aligned box-box stub emitting four face contact points |
-| `PhysicsWorld2D` / `PhysicsWorld3D` | `physics_world_*.hpp` | World composition hooks |
+| `PhysicsWorld2D` / `PhysicsWorld3D` | `physics_world_*.hpp` | World composition hooks; `PhysicsWorld2D` also owns the G11 2D rigid-body world (`src/physics2d/`, see the G11 section) |
 | `DestructionSystem` / `DestructionEvent` | `destruction/` | B4.7 SVO carve → debris spawn scaffold |
 | `VoxelVolume` | `Source/FUSE/Physics/include/fuse/physics/spatial/` | Carve / dual contouring / detach over the shared Scene `SVO` storage (`fuse_svo`, UNI-B4-VOX-1) |
 | `ParticleSoA` / `ClothSimulator` | `Source/FUSE/Physics/include/fuse/physics/softbody/` | Host XPBD stub; CUDA kernels deferred |
@@ -208,6 +208,18 @@ Coded and CPU-verified 2026-09-30 (build/rel, -Werror; build/cuda compiles). Poo
 - [x] Character controller (`character/character_controller.hpp`, ECS `CharacterController`, system run at the start of `PhysicsManager::step`): 0.3 m step climbed, 0.6 m blocked; 30° slope holds, 55° slides; no tunnelling at 20 m/s through 5 cm box / mesh walls; moving platform carries (1.98 m of 2 m); pushes a dynamic crate; deterministic — `fuse_e18_character_gates`
 - [x] Voxel and SdfMesh shapes; `VoxelVolume` stored in the Scene `SVO` (new `fuse_svo` library shared by fuse_scene and fuse_physics; packed ray layout untouched, `fuse_b3_svo_gates` / `fuse_scene_svo` green); destructibles are static Voxel bodies refreshed on carve — sphere rests on a voxel floor then falls through a carved hole; box rests on an analytic SDF; sphere rests on the SVO distance field (`SvoSdfSampler`) — `fuse_e18_voxel_gates`
 - [ ] Not done here: CCD sweeps of pooled shapes (the solver's CCD still skips hull / mesh pairs; shape casts cover the character); `.fusesdf` A-SDF bricks as an SdfSampler (A-SDF); the E14 schedule wiring beyond `PhysicsManager::step` (other package)
+
+## G11 — 2D rigid bodies: rotation, polygons, edge chains, contacts, sensors, queries, joints (GAP-WORLD2D-GAMEPLAY, first half)
+
+Coded and CPU-verified 2026-09-30 (build/rel, -Werror). CPU only (no CUDA code in this package). Implementation: `Source/FUSE/Physics/src/physics2d/` behind the `PhysicsWorld2D` rigid-body API (`createBody` / `add*Shape` / `create*Joint` / queries / events); `step()` advances the legacy pipeline sprite bodies and the rigid world, `stepRigid()` only the latter.
+
+- [x] Angular dynamics: mass / centre / inertia from shapes (density), forces, torques, linear / angular impulses, damping, gravity scale, fixed rotation; static / kinematic / dynamic bodies — box / circle / triangle mass and inertia == analytic, torque → ω and angle == integrator closed form — `fuse_g11_physics2d_gates`
+- [x] Shapes: circle (offset), convex polygon (hull of ≤ 8 points, monotone chain, degenerate input refused), box, two-sided edge, one-sided chain (open / loop) with ghost vertices; SAT + reference-face clipping manifolds with feature ids (circle–circle, polygon–circle, polygon–polygon, edge–circle, edge–polygon with Gauss-map smoothing) — tumbling box settles flat on a 20-edge chain; frictionless box slides over a dozen interior vertices with |vy|, |ω| < 1e-4 and no speed loss; 6-box stack stays upright — `fuse_g11_physics2d_gates`
+- [x] Solver: persistent contacts (sorted-key merge), sequential impulses with friction, restitution and warm starting (feature-id matched, dt-ratio scaled), non-linear position correction; revolute (limit + motor), distance (rigid or spring) and prismatic (limit + motor) joints — revolute and distance pendulum periods within 0.01% of the analytic physical pendulum (gate: 1%); limits hold, motors reach the set speed, prismatic keeps the axis — `fuse_g11_physics2d_gates`
+- [x] Events: contact begin / end (normal A→B, approach speed) and sensor begin / end, as per-step spans and through `ContactListener2D`; destroyed bodies end their contacts on the next step; sensors never respond — each fires exactly once in the gate — `fuse_g11_physics2d_gates`
+- [x] Queries: `rayCastClosest` / `rayCastAll` / `queryAabb` / `queryPoint` over a lazily rebuilt BVH, category-mask and sensor filtering — 3000 rays + 3000 boxes over 400 random bodies (circles, polygons, edges, chains): closest hit (shape and fraction), all-hit counts and AABB sets == brute force — `fuse_g11_physics2d_gates`
+- [x] Deterministic stepping (fixed id / key orders, no hash iteration): two worlds and a reset + rebuild are bit-identical after 400 steps of a 60-body pile with a jointed chain; a steady-state step plus queries makes 0 heap allocations — `fuse_g11_physics2d_gates`
+- [ ] Not done here: World2D sprites still use the legacy pipeline bodies (World2D wiring and tilemap edge chains are G12); no sleeping / islands, no CCD for 2D bodies, no GPU path
 
 ## Thread ownership (locked)
 

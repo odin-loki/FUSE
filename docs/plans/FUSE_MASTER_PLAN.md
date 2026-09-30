@@ -3565,6 +3565,7 @@ struct CollisionEvent {
 - [x] Static triangle-mesh collision (BVH, internal-edge fix, merged manifolds), trimesh ray casts == brute force, `Collider` shape asset fields, `.fusecol` cook (`fuse_cook --collision`) + loader round trip — `fuse_e18_trimesh_gates`, `fuse_asset_collision_cook`
 - [x] Shape casts (TOI == analytic) and the kinematic capsule character controller (steps, slopes, 20 m/s no tunnelling, platforms, pushing) — `fuse_e18_character_gates` (GAP-PHYS-CHARACTER)
 - [x] Voxel and SDF collision shapes on one shared SVO type (sphere on a voxel floor falls through a carved hole; box rests on an SDF) — `fuse_e18_voxel_gates` (UNI-B4-VOX-1)
+- [x] 2D rigid bodies behind `PhysicsWorld2D` (rotation, polygons, one-sided edge chains, contact + sensor events, BVH ray / AABB queries, revolute / distance / prismatic joints, sequential impulses with warm starting, deterministic): box settles on a chain, pendulum periods within 1% of analytic, events fire once, queries == brute force, bit-identical replays, 0 steady-state allocations — `fuse_g11_physics2d_gates` (GAP-WORLD2D-GAMEPLAY first half; CPU only; World2D / tilemap wiring is G12)
 
 ---
 
@@ -5185,6 +5186,7 @@ private:
 
 - [x] **B6.11** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_panels_gates`)
 - [x] Source narrative tests/acceptance for this topic green (`fuse_editor_b6_panels_gates`, `fuse_editor_panels_b69_b612`)
+- [x] Console runs engine commands + a Lua REPL (UNI-U6-CON-1 / MP-B6-EDITOR-SCRIPT-PIE, E15): `registerEditorConsoleCommands` (open / load / save / new / project.new / project.open / play / pause / resume / step / stop / cvar get-set-list / stat / lua) posts `EditorCommand`s through the CommandQueue; any other line runs on the game thread in the ScriptConsole (built-ins) or as Lua (editor VM with the engine API bound to the edit registry; the PIE VM while playing; bare expressions echo); output returns through `EditorHost::drainConsoleOutput`. Qt dock: level colours, level / text filters with per-level counts, "(xN)" repeat counts updated in place, Up / Down history — `fuse_editor_e15_console_pie` (CPU), `fuse_editor_qt_e15_console` (offscreen Qt gate; build/rel has FUSE_BUILD_EDITOR=OFF so ctest skips it there — it was built by hand against build/rel and passed)
 - [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
 - [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
 - [x] Qt 6 only for editor chrome — **no Dear ImGui** (`fuse_lint_b6_editor_qt6_only`: fuse_editor link closure is Qt6-only, no ImGui)
@@ -5234,6 +5236,8 @@ private:
 
 - [x] **B6.12** implemented on FUSE APIs (not ungated Torque guts) (`fuse_editor_b6_play_mode_gates`)
 - [x] Source narrative tests/acceptance for this topic green (`fuse_editor_b6_play_mode_gates`)
+- [x] Scripts in PIE (MP-B6-EDITOR-SCRIPT-PIE, E15): `PlaySession::start` creates ScriptVM + ScriptRuntime + ScriptSystem on the play registry when Script components exist (engine API incl. `Physics.*` on the session's PhysicsManager), the runtime schedule's Scripts stage runs `ScriptSystem::update`, each physics step's contacts go to `on_collision` / `on_trigger_enter`, Stop exits play and restores the edit-time registry; module files are hot-reloaded (script_hot_reload) and logged to the console; Step transport (`CommandKind::StepPlay`, one step while paused); Qt toolbar + Play menu Play / Pause / Resume / Step / Stop with state-driven enable — `fuse_editor_e15_console_pie`, `fuse_editor_qt_e15_transport` (offscreen; hand-built here as above). Shader / asset hot-reload triggers are not wired to the console (script + AI tree only)
+- [x] Project / scene files, headless part of MP-B6-QT-SCENE-FILES (UNI-U6-FILE-1, E15): project manifest writer (`project::writeManifestJson` / `saveToDirectory`, round trip through `parseManifest`), `.fuselevel` v3 = v2 + scene dimension + the `RegistrySerialiser` FECS image of the edit registry (v1 / v2 still load, as Transform-only ECS entities), `EditorHost` NewProject / OpenProject / NewScene / OpenScene / SaveScene / SaveSceneAs commands with dirty tracking (UndoStack / CommandStack baselines) for 2D and 3D scenes — `fuse_editor_e15_scene_files` (Transform / Mesh / lights / Collider / RigidBody / Script save -> load -> re-save byte-identical). Qt File menu / dialogs are E20
 - [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
 - [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
 - [x] Qt 6 only for editor chrome — **no Dear ImGui** (`fuse_lint_b6_editor_qt6_only`: fuse_editor link closure is Qt6-only, no ImGui)

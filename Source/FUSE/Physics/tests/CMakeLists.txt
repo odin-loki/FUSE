@@ -168,3 +168,10 @@ foreach(_e18 hull trimesh character voxel)
     add_test(NAME fuse_e18_${_e18}_gates COMMAND fuse_e18_${_e18}_gates)
     set_tests_properties(fuse_e18_${_e18}_gates PROPERTIES LABELS "gate;physics" TIMEOUT 600)
 endforeach()
+
+# G11 (GAP-WORLD2D-GAMEPLAY): 2D rigid bodies — box settles on a chain, pendulum periods, events once,
+# BVH ray / AABB queries vs brute force, determinism, zero steady-state allocations.
+add_executable(fuse_g11_physics2d_gates test_g11_physics2d_gates.cpp)
+target_link_libraries(fuse_g11_physics2d_gates PRIVATE fuse_physics fuse_core)
+add_test(NAME fuse_g11_physics2d_gates COMMAND fuse_g11_physics2d_gates)
+set_tests_properties(fuse_g11_physics2d_gates PROPERTIES LABELS "gate;physics" TIMEOUT 600)
