@@ -262,55 +262,77 @@ u32 B7TestRegistry::automatedCount() {
 }
 
 bool B7TestRegistry::runIntegrationSmoke() {
+    // Shut core down only if this call brought it up: callers such as fuse_runtime_smoke keep using it.
+    const bool ownsCore = !core::isInitialized();
     core::initialize();
 
     if (!smokePlatformFacade()) {
-        core::shutdown();
+        if (ownsCore) {
+            core::shutdown();
+        }
         return false;
     }
     if (!smokeAnimationFacade()) {
-        core::shutdown();
+        if (ownsCore) {
+            core::shutdown();
+        }
         return false;
     }
     if (!smokeNetFacade()) {
-        core::shutdown();
+        if (ownsCore) {
+            core::shutdown();
+        }
         return false;
     }
     if (!smokeTerrainFacade()) {
-        core::shutdown();
+        if (ownsCore) {
+            core::shutdown();
+        }
         return false;
     }
     if (!smokeWorldPartitionFacade()) {
-        core::shutdown();
+        if (ownsCore) {
+            core::shutdown();
+        }
         return false;
     }
     if (!smokeVfxFacade()) {
-        core::shutdown();
+        if (ownsCore) {
+            core::shutdown();
+        }
         return false;
     }
 
 #if defined(FUSE_B7_HAS_AUDIO)
     if (!smokeAudioFacade()) {
-        core::shutdown();
+        if (ownsCore) {
+            core::shutdown();
+        }
         return false;
     }
 #endif
 
 #if defined(FUSE_B7_HAS_SCRIPT)
     if (!smokeScriptFacade()) {
-        core::shutdown();
+        if (ownsCore) {
+            core::shutdown();
+        }
         return false;
     }
 #endif
 
 #if defined(FUSE_B7_HAS_PROJECT)
     if (!smokeAssetsFacade()) {
-        core::shutdown();
+        if (ownsCore) {
+            core::shutdown();
+        }
         return false;
     }
 #endif
 
-    core::shutdown();
+    if (ownsCore) {
+        core::shutdown();
+    }
     return true;
 }
 

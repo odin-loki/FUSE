@@ -830,9 +830,8 @@ Violations checkCxxStandard(const fs::path& manifest, const fs::path& repo) {
         if (!repoGen.empty() && r.rfind(repoGen, 0) == 0) {
             r = r.substr(repoGen.size());
         }
-        // Torque quarantine is pinned to C++17 by design (Source/FUSE/CMakeLists.txt, FuseCxx23.cmake);
         // vendor/* are vendored third-party C/C++ libraries built under fuse_* names.
-        if (r.rfind("/Source/FUSE/Legacy", 0) == 0 || r.rfind("/vendor/", 0) == 0) {
+        if (r.rfind("/vendor/", 0) == 0) {
             continue;
         }
         ++checked;
@@ -1442,19 +1441,19 @@ bool selfTest(const std::string& check, const fs::path& scratch) {
             rows += "fuse_ok" + std::to_string(i) + "|STATIC_LIBRARY|/r/Source/FUSE/Core|23|1|0||\n";
         }
         const std::string goodRows = rows +
-                                     "fuse_b7|STATIC_LIBRARY|/r/Source/FUSE/Core/b7|17|1|0||\n"
                                      "fuse_lua|STATIC_LIBRARY|/r/vendor/lua||0|0||\n"
                                      "fuse_cuda_kernels|STATIC_LIBRARY|/r/Source/FUSE/Compute||0|1||\n"
                                      "fuse_headers|INTERFACE_LIBRARY|/r/Source/FUSE/Core||0|0||\n";
-        writeFile(scratch / "bad.manifest", rows + "fuse_bad17|STATIC_LIBRARY|/r/Source/FUSE/ECS|17|1|0||\nfuse_unset|EXECUTABLE|/r/Tools/FUSE||1|0||\n");
+        writeFile(scratch / "bad.manifest", rows + "fuse_bad17|STATIC_LIBRARY|/r/Source/FUSE/ECS|17|1|0||\nfuse_unset|EXECUTABLE|/r/Tools/FUSE||1|0||\n"
+                                                          "fuse_b7|STATIC_LIBRARY|/r/Source/FUSE/Core/b7|17|1|0||\n");
         const Violations vb = checkCxxStandard(scratch / "bad.manifest", "/r");
-        t.expect(vb.size() == 2u, "cxx-standard: seeded C++17 and unset targets flagged (got " + std::to_string(vb.size()) + ")");
+        t.expect(vb.size() == 3u, "cxx-standard: seeded C++17, unset and Core/b7 C++17 targets flagged (got " + std::to_string(vb.size()) + ")");
         writeFile(scratch / "good.manifest", goodRows);
         const Violations vg = checkCxxStandard(scratch / "good.manifest", "/r");
         for (const auto& s : vg) {
             std::fprintf(stderr, "  unexpected: %s\n", s.c_str());
         }
-        t.expect(vg.empty(), "cxx-standard: Legacy quarantine, vendored C, CUDA-only and interface targets exempt");
+        t.expect(vg.empty(), "cxx-standard: vendored C, CUDA-only and interface targets exempt");
     } else if (check == "doc-headings") {
         std::string plan = "# Plan\n### Banned / gated\n";
         std::string p1 = "# P1\n";

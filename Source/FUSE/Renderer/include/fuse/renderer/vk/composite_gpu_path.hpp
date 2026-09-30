@@ -55,7 +55,8 @@ public:
     /// Registers the raster color view for bindless sampling; call after RasterPath is ready.
     bool registerRasterSource(void* imageView);
 
-    /// Registers the raster depth view into bindless. The composite shader samples it when the index is set.
+    /// Registers the raster depth view into bindless for depth-aware passes. composite.frag does not sample it:
+    /// B2.11 requires the composite to be exactly mix(cuda, raster, alpha).
     bool registerRasterDepth(void* imageView);
 
     /// Read back the offscreen composite target (RGBA8, width*height of the composite desc).

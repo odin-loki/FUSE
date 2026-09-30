@@ -15,10 +15,6 @@ layout(set = 0, binding = 2) uniform sampler compositeSampler;
 
 void main() {
     vec4 raster = texture(sampler2D(rasterTextures[nonuniformEXT(pc.rasterTexIndex)], compositeSampler), vUV);
-    if (pc.depthTexIndex != 0xFFFFFFFFu) {
-        float depth = texture(sampler2D(rasterTextures[nonuniformEXT(pc.depthTexIndex)], compositeSampler), vUV).r;
-        raster.rgb = mix(raster.rgb, vec3(depth), 0.25);
-    }
     vec4 cuda = vec4(0.05, 0.15, 0.35, 1.0);
     if (pc.cudaTexIndex != 0xFFFFFFFFu) {
         cuda = texture(sampler2D(rasterTextures[nonuniformEXT(pc.cudaTexIndex)], compositeSampler), vUV);
