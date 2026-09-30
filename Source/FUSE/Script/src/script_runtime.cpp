@@ -1,6 +1,7 @@
 #include <fuse/script/script_runtime.hpp>
 
 #include <fuse/ecs/registry.hpp>
+#include <fuse/script/script_cook.hpp>
 #include <fuse/script/script_vm.hpp>
 
 #include "script_lua_compat.hpp"
@@ -19,7 +20,8 @@ namespace fuse::script {
 namespace {
 
 struct ModuleLoad {
-    const char* source = nullptr;     // buffer source, or nullptr to read `path`
+    const char* source = nullptr;     // buffer source (text or bytecode), or nullptr to read `path`
+    usize source_size = 0;
     const char* chunk_name = nullptr; // chunk name for buffer sources
     const char* path = nullptr;
     int old_class_ref = LUA_NOREF;
@@ -33,7 +35,7 @@ struct ModuleLoad {
 void load_module_fn(lua_State* L, void* user) {
     auto* load = static_cast<ModuleLoad*>(user);
     load->load_status = (load->source != nullptr)
-                            ? luaL_loadbuffer(L, load->source, std::strlen(load->source), load->chunk_name)
+                            ? luaL_loadbuffer(L, load->source, load->source_size, load->chunk_name)
                             : luaL_loadfile(L, load->path);
     if (load->load_status != LUA_OK) {
         const char* error = lua_tostring(L, -1);
@@ -170,6 +172,44 @@ void field_read_fn(lua_State* L, void* user) {
     *read->out = bind::lua::read_from_stack(L, 2);
 }
 
+struct PropertyWrite {
+    int self_ref = LUA_NOREF;
+    const ecs::ScriptProperty* property = nullptr;
+    char key[ecs::ScriptProperty::kKeyCapacity] = {};
+};
+
+void property_write_fn(lua_State* L, void* user) {
+    auto* write = static_cast<PropertyWrite*>(user);
+    const ecs::ScriptProperty& property = *write->property;
+    lua_rawgeti(L, LUA_REGISTRYINDEX, write->self_ref);
+    switch (property.type) {
+    case ecs::ScriptProperty::Type::Number:
+        lua_pushnumber(L, static_cast<lua_Number>(property.number));
+        break;
+    case ecs::ScriptProperty::Type::Bool:
+        lua_pushboolean(L, property.boolean ? 1 : 0);
+        break;
+    case ecs::ScriptProperty::Type::String: {
+        const std::string_view text = property.string_value();
+        lua_pushlstring(L, text.data(), text.size());
+        break;
+    }
+    case ecs::ScriptProperty::Type::Vec3:
+        lua_createtable(L, 0, 3);
+        lua_pushnumber(L, property.vec[0]);
+        lua_setfield(L, -2, "x");
+        lua_pushnumber(L, property.vec[1]);
+        lua_setfield(L, -2, "y");
+        lua_pushnumber(L, property.vec[2]);
+        lua_setfield(L, -2, "z");
+        break;
+    case ecs::ScriptProperty::Type::None:
+        lua_pushnil(L);
+        break;
+    }
+    lua_setfield(L, 1, write->key);
+}
+
 } // namespace
 #endif
 
@@ -238,17 +278,38 @@ ScriptLoadResult ScriptRuntime::load_module_file(const char* path) {
         record_error(path, "file not found");
         return {ScriptLoadStatus::FileNotFound, m_lastError.c_str()};
     }
-    return load_module(path, nullptr, path);
+    if (is_cooked_script_path(path)) {
+        CookedScript cooked;
+        std::string error;
+        if (!load_cooked_script(path, cooked, &error)) {
+            record_error(path, error.c_str());
+            return {ScriptLoadStatus::ParseError, m_lastError.c_str()};
+        }
+        if (cooked.kind != CookedScriptKind::LuaBytecode) {
+            record_error(path, "legacy TorqueScript chunk is not a Lua behaviour module");
+            return {ScriptLoadStatus::InvalidArgument, m_lastError.c_str()};
+        }
+        return load_module(path, reinterpret_cast<const char*>(cooked.payload.data()), cooked.payload.size(), nullptr);
+    }
+    return load_module(path, nullptr, 0, path);
 }
 
 ScriptLoadResult ScriptRuntime::load_module_source(const char* module_name, const char* source) {
     if (module_name == nullptr || module_name[0] == '\0' || source == nullptr) {
         return {ScriptLoadStatus::InvalidArgument, "module name or source is empty"};
     }
-    return load_module(module_name, source, nullptr);
+    return load_module(module_name, source, std::strlen(source), nullptr);
 }
 
-ScriptLoadResult ScriptRuntime::load_module(const char* module_name, const char* source, const char* path) {
+ScriptLoadResult ScriptRuntime::load_module_buffer(const char* module_name, const void* data, usize size) {
+    if (module_name == nullptr || module_name[0] == '\0' || data == nullptr || size == 0) {
+        return {ScriptLoadStatus::InvalidArgument, "module name or buffer is empty"};
+    }
+    return load_module(module_name, static_cast<const char*>(data), size, nullptr);
+}
+
+ScriptLoadResult ScriptRuntime::load_module(const char* module_name, const char* source, usize source_size,
+                                            const char* path) {
     if (m_vm == nullptr) {
         return {ScriptLoadStatus::BackendUnavailable, "script runtime not initialized"};
     }
@@ -257,6 +318,7 @@ ScriptLoadResult ScriptRuntime::load_module(const char* module_name, const char*
     std::string parse_error;
     ModuleLoad load;
     load.source = source;
+    load.source_size = source_size;
     load.chunk_name = module_name;
     load.path = path;
     load.old_class_ref = (existing != m_modules.end()) ? existing->second.class_ref : LUA_NOREF;
@@ -287,6 +349,7 @@ ScriptLoadResult ScriptRuntime::load_module(const char* module_name, const char*
 #else
     (void)module_name;
     (void)source;
+    (void)source_size;
     (void)path;
     return {ScriptLoadStatus::BackendUnavailable, "lua backend unavailable"};
 #endif
@@ -490,6 +553,48 @@ bool ScriptRuntime::get_instance_field(ecs::EntityID entity, const char* field, 
     (void)out;
     return false;
 #endif
+}
+
+bool ScriptRuntime::set_instance_property(ecs::EntityID entity, const ecs::ScriptProperty& property) {
+#if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
+    Instance* instance = find_instance(entity);
+    const std::string_view key = property.name();
+    if (m_vm == nullptr || instance == nullptr || key.empty() || key.size() >= ecs::ScriptProperty::kKeyCapacity) {
+        return false;
+    }
+    PropertyWrite write;
+    write.self_ref = instance->self_ref;
+    write.property = &property;
+    std::memcpy(write.key, key.data(), key.size());
+    const ScriptLoadResult result = m_vm->run_protected(property_write_fn, &write);
+    if (!result.ok()) {
+        record_error(instance->module + ":property", result.message);
+        return false;
+    }
+    return true;
+#else
+    (void)entity;
+    (void)property;
+    return false;
+#endif
+}
+
+i32 ScriptRuntime::instance_ref(ecs::EntityID entity) const {
+    for (const Instance& instance : m_instances) {
+        if (instance.entity == entity) {
+            return instance.self_ref;
+        }
+    }
+    return ecs::Script::kNoRef;
+}
+
+bool ScriptRuntime::instance_started(ecs::EntityID entity) const {
+    for (const Instance& instance : m_instances) {
+        if (instance.entity == entity) {
+            return instance.started;
+        }
+    }
+    return false;
 }
 
 } // namespace fuse::script

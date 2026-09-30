@@ -15,6 +15,7 @@ set(FUSE_SCRIPT_PUBLIC_HEADERS
     include/fuse/script/script_hot_reload.hpp
     include/fuse/script/script_result.hpp
     include/fuse/script/script_runtime.hpp
+    include/fuse/script/script_system.hpp
     include/fuse/script/script_update.hpp
     include/fuse/script/script_vm.hpp
 )
@@ -31,6 +32,7 @@ set(FUSE_SCRIPT_SOURCES
     src/script_host_service.cpp
     src/script_hot_reload.cpp
     src/script_runtime.cpp
+    src/script_system.cpp
     src/script_update.cpp
     src/script_vm.cpp
 )
@@ -84,6 +86,26 @@ if(FUSE_SCRIPT_ENABLE_LUA)
         message(STATUS "FUSE: Lua not found — fuse_script uses null backend")
     endif()
 endif()
+
+# MP-B7.3-SCRIPT-COMPONENT: script cook (Lua syntax check + bytecode, legacy .cs passthrough) in a
+# small library of its own (fuse_core + Lua only), so fuse_project's AssetCooker can link it without
+# the runtime host or the Compat VMs.
+add_library(fuse_script_cook STATIC
+    src/script_cook.cpp
+    include/fuse/script/script_cook.hpp
+)
+add_library(fuse::script_cook ALIAS fuse_script_cook)
+target_include_directories(fuse_script_cook PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+target_link_libraries(fuse_script_cook PUBLIC fuse_core)
+if(FUSE_SCRIPT_LUA_BACKEND STREQUAL "system")
+    target_compile_definitions(fuse_script_cook PRIVATE FUSE_SCRIPT_LUA=1)
+    target_link_libraries(fuse_script_cook PRIVATE ${LUA_LIBRARIES})
+    target_include_directories(fuse_script_cook PRIVATE ${LUA_INCLUDE_DIR})
+elseif(FUSE_SCRIPT_LUA_BACKEND STREQUAL "bundled")
+    target_compile_definitions(fuse_script_cook PRIVATE FUSE_SCRIPT_LUA=1)
+    target_link_libraries(fuse_script_cook PRIVATE fuse_lua)
+endif()
+target_link_libraries(fuse_script PUBLIC fuse_script_cook)
 
 # Optional physics bridge: Physics.* script API + collision events on PhysicsManager.
 if(TARGET fuse_physics)

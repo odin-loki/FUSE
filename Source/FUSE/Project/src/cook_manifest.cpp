@@ -1,5 +1,6 @@
 #include <fuse/project/cook_manifest.hpp>
 
+#include <fuse/project/cook_content_hash.hpp>
 #include <fuse/project/json_reader.hpp>
 
 #include <cctype>
@@ -22,19 +23,9 @@ std::string readFileToString(const std::string& path) {
 }
 
 CookAssetKind parseCookAssetKind(std::string_view token) {
-    if (token == "mesh") {
-        return CookAssetKind::Mesh;
-    }
-    if (token == "texture") {
-        return CookAssetKind::Texture;
-    }
-    if (token == "audio") {
-        return CookAssetKind::Audio;
-    }
-    if (token == "shader") {
-        return CookAssetKind::Shader;
-    }
-    return CookAssetKind::Mesh;
+    CookAssetKind kind = CookAssetKind::Mesh;
+    (void)parseCookAssetKindName(token, kind);
+    return kind;
 }
 
 std::string_view trimToken(std::string_view text) {
@@ -167,8 +158,37 @@ const char* cookAssetKindName(CookAssetKind kind) {
         return "audio";
     case CookAssetKind::Shader:
         return "shader";
+    case CookAssetKind::Script:
+        return "script";
     }
     return "unknown";
+}
+
+bool parseCookAssetKindName(std::string_view token, CookAssetKind& out) {
+    static constexpr CookAssetKind kKinds[] = {CookAssetKind::Mesh, CookAssetKind::Texture, CookAssetKind::Audio,
+                                               CookAssetKind::Shader, CookAssetKind::Script};
+    for (const CookAssetKind kind : kKinds) {
+        if (token == cookAssetKindName(kind)) {
+            out = kind;
+            return true;
+        }
+    }
+    return false;
+}
+
+u64 hashScriptCookInput(const std::string& source_path, const std::string& output_path) {
+    if (source_path.empty() || output_path.empty()) {
+        return 0;
+    }
+    const u64 file_hash = hash_file_content(source_path);
+    if (file_hash == 0) {
+        return 0;
+    }
+    static constexpr char kTag[] = "fuse.cook.script.v1";
+    u64 hash = fnv1a64_bytes(reinterpret_cast<const u8*>(kTag), sizeof(kTag) - 1u);
+    hash = fnv1a64_combine(hash, fnv1a64_bytes(reinterpret_cast<const u8*>(source_path.data()), source_path.size()));
+    hash = fnv1a64_combine(hash, fnv1a64_bytes(reinterpret_cast<const u8*>(output_path.data()), output_path.size()));
+    return fnv1a64_combine(hash, file_hash);
 }
 
 const char* cookStatusName(CookStatus status) {
@@ -193,6 +213,8 @@ const char* cookStatusName(CookStatus status) {
         return "invalid_image_dimensions";
     case CookStatus::ImporterUnavailable:
         return "importer_unavailable";
+    case CookStatus::ScriptSyntaxError:
+        return "script_syntax_error";
     }
     return "unknown";
 }

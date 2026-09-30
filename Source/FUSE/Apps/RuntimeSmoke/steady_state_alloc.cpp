@@ -78,7 +78,9 @@
 #include <fuse/ecs/registry.hpp>
 #include <fuse/physics/physics_manager.hpp>
 #include <fuse/script/script_physics_bridge.hpp>
+#include <fuse/ecs/components/script.hpp>
 #include <fuse/script/script_runtime.hpp>
+#include <fuse/script/script_system.hpp>
 #include <fuse/script/script_vm.hpp>
 #endif
 #if FUSE_STEADY_HAS_NET
@@ -668,6 +670,7 @@ struct ScriptWorld {
     std::unique_ptr<fuse::script::PhysicsManagerScriptBackend> backend;
     fuse::script::ScriptVM vm;
     fuse::script::ScriptRuntime runtime; // after vm: shut down (and released) first
+    fuse::script::ScriptSystem system;   // after runtime: shut down first (Script components -> runtime)
     std::vector<fuse::ecs::EntityID> actors;
     std::vector<fuse::ecs::EntityID> movers;
     fuse::usize warmPoolBytes = 0;
@@ -729,19 +732,29 @@ bool setupScript(ScriptWorld& s) {
         !s.runtime.load_module_source("mover", kMoverScript).ok()) {
         return false;
     }
+    // MP-B7.3-SCRIPT-COMPONENT: behaviours come from ecs::Script components, attached by ScriptSystem.
+    const auto addScript = [&s](fuse::ecs::EntityID id, const char* module) {
+        fuse::ecs::Script component{};
+        (void)component.set_path(module);
+        s.registry.add(id, component);
+    };
     for (fuse::ecs::EntityID id : s.actors) {
-        s.runtime.attach(id, "actor");
+        addScript(id, "actor");
     }
     for (fuse::ecs::EntityID id : s.movers) {
-        s.runtime.attach(id, "mover");
+        addScript(id, "mover");
     }
-    return true;
+    if (!s.system.init(s.registry, s.runtime, 64)) {
+        return false;
+    }
+    s.system.enterPlay();
+    return s.system.attached_count() == s.actors.size() + s.movers.size();
 }
 
 void tickScript(ScriptWorld& s) {
     s.physics.step(s.registry, kDt, s.streams);
-    fuse::script::dispatch_physics_events(s.physics.lastEvents(), s.runtime);
-    s.runtime.update(kDt);
+    fuse::script::dispatch_physics_events(s.physics.lastEvents(), s.system);
+    s.system.update(kDt);
 }
 
 double scriptField(ScriptWorld& s, fuse::ecs::EntityID id, const char* field) {
@@ -1459,6 +1472,10 @@ void measure() {
         expectTrue(sw.vm.heap_system_allocations() == sw.warmPoolAllocs,
                    "Lua heap pool took no system allocation after warm-up");
         expectTrue(sw.runtime.frame_count() == frames, "script runtime ticked every frame");
+        expectTrue(sw.system.attached_count() == sw.actors.size() + sw.movers.size() &&
+                       sw.system.stats().attaches == sw.actors.size() + sw.movers.size() &&
+                       sw.system.stats().detaches == 0u,
+                   "ScriptSystem kept every Script component attached (no churn)");
         expectTrue(sw.runtime.error_count() == 0u, "script behaviours ran without errors");
         expectTrue(hits > 0.0 && kicks > 0.0, "scripts performed physics queries (ray hits, impulses)");
         if (sw.runtime.error_count() != 0u) {

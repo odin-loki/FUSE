@@ -5637,6 +5637,18 @@ struct Script {
 };
 ```
 
+> **Status (MP-B7.3-SCRIPT-COMPONENT, CPU-verified):** implemented as `Source/FUSE/ECS/include/fuse/ecs/components/script.hpp`
+> (`module` AssetId or `script_path[256]`, `enabled`, `started`, `lua_ref`, plus an 8-entry exposed-property table:
+> number / bool / string / vec3), registered in `register_builtin_components` and serialised by `RegistrySerialiser`
+> (runtime `started` / `lua_ref` written cleared; malformed rows rejected on load). `fuse::script::ScriptSystem`
+> (`Source/FUSE/Script`) attaches / detaches `ScriptRuntime` instances on component add / remove / disable / module
+> change, entity destroy and scene load, runs on_start / on_update / on_destroy, dispatches contacts, and exposes
+> `enterPlay` / `exitPlay` for PIE (editor inspector + PIE wiring are E17 / E19). `CookAssetKind::Script` syntax-checks
+> `.lua` with the vendored Lua and writes bytecode `.fusescript`; legacy `.cs` is tagged `t3d:` and passed through.
+> Gates: `fuse_script_component` (moves during ticks, save/load re-attach, destroy → on_destroy + detach, zero
+> steady-state allocations in `ScriptSystem::update`), `fuse_script_cook` (syntax error rejected with file:line),
+> `fuse_runtime_steady_state_alloc` (script phase now runs through Script components), `fuse_runtime_smoke`.
+
 #### Engine API Surface (Lua)
 
 ```lua
@@ -6308,6 +6320,8 @@ private:
 - [x] play_at correctly positions source at world position — panning matches camera orientation — `fuse_audio_b7_gates`
 - [ ] Convolution reverb CUDA FFT produces output within -60dB noise floor of reference CPU FFT — partial: CPU FFT reverb and the ReverbCuda CPU fallback are -132 dB vs direct convolution in `fuse_audio_b7_gates`; the CUDA device mirror (kernels/reverb_fft.cu) exists. `fuse_b7_reverb_cuda_device` compares ReverbCuda on the device with the CPU FFT reverb for 1 s / 0.1 s / 2.5 s IRs (steady and irregular blocks) against the -60 dB gate and times each block with CUDA events; here only its CPU part runs (reference -132 dB vs direct convolution), the device comparison is pending the RTX 3090 run
 - [x] 32 simultaneous spatial sources mix without crackling at 48kHz — `fuse_audio_b7_gates`
+- [x] The engine mix is audible on the output device (GAP-AUDIO-DEVICE-OUT): `AudioEngine::update` hands each mixed stereo block to one streaming OpenAL source (4 AL buffers, `AL_EXT_float32` else 16-bit, direct channels) through a lock-free SPSC ring drained by a feeder thread; underruns insert silence and are counted, latency is reported, `ALC_EXT_disconnect` loss re-opens the device (`ALC_SOFT_reopen_device`, else close/reopen); the per-voice AL sources (gain/position without data) are gone. openal-soft's wave driver records a WAV bit-identical to the Null-backend capture of the same scene; Null capture equals the mixer output for N ticks; 0 allocations per tick — `fuse_audio_output`, `fuse_audio_output_wave`, `fuse_audio_output_openal_null` (listening on real speakers is a manual check; hosts with a device set `AudioDesc::pacing = Device`)
+- [x] Cooked Ogg Vorbis plays in the runtime (MP-B7.2-OGG-RUNTIME / UNI-U7-AUDIO-1 / AP-W8.3 runtime half): libogg 1.3.6, libvorbis 1.3.7 and libFLAC 1.5.0 build from the pinned vendored archives (`cmake/FuseXiph.cmake`, `vendor/xiph/*/VERSION`, `fuse_lint_vendored_pins_xiph_*`); `AudioClip::load_ogg` / `load_flac` / `.fuseaudio` (FUSEAUDIO_OGG / PCM_F32 / FLAC) through the VFS, `AudioEngine::load_clip` dispatches by format; long Ogg clips stream through a bounded per-voice decode ring with loop points and seek (30 s voice: 0 underruns, 0 steady-state allocations, output equal to the full decode; looping/seeking streaming voices bit-identical to the PCM clip) — `fuse_audio_output` (the cook half — `Tools/FUSE/Cook` linking `fuse_xiph_vorbisenc` — is package E09)
 - [x] Lua state initialises and executes a hello-world script without error — `fuse_script_b7_gates`
 - [x] Entity.get_position / set_position round-trip correctly through Lua — `fuse_script_b7_gates`
 - [x] Physics.ray_cast returns correct hit from Lua — verified against C++ ray_cast result — `fuse_script_b7_gates`

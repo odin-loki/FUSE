@@ -168,14 +168,14 @@ ctest --test-dir build --output-on-failure -R fuse_script
 - [x] `values_equal` + Lua stack push/pop bridge when linked
 - [x] `ScriptConsole` REPL stubs + history buffer + command dispatch tests
 - [x] CTest target green in umbrella CI
-- [ ] ECS `Script` component + per-entity `lua_ref` (follow-up)
+- [x] ECS `Script` component + per-entity `lua_ref` — `ecs/components/script.hpp` (module path / AssetId, enabled, started, lua_ref, 8-entry number/bool/string/vec3 property table), registered + serialised (runtime fields scrubbed, corrupt rows rejected), `ScriptSystem` attach/detach on add/remove/disable/module change/destroy/scene load, `enterPlay`/`exitPlay`, contact dispatch; gate `fuse_script_component` (MP-B7.3-SCRIPT-COMPONENT, CPU)
 - [ ] Hot-reload watcher (follow-up)
 
 ---
 
 ## Next
 
-- [ ] `ecs/components/script.hpp` + per-entity `lua_ref`
+- [x] `ecs/components/script.hpp` + per-entity `lua_ref` (see gates above; `CookAssetKind::Script` cooks `.lua` → bytecode `.fusescript`, gate `fuse_script_cook`)
 - [ ] `ScriptHotReload` file watcher (master plan sketch)
 - [ ] Engine API surface (`Entity.*`, `Physics.*`, `Input.*`) as Lua bindings
 - [ ] Wire stack bridge into callback dispatch (pass `ctx` fields to Lua handlers)

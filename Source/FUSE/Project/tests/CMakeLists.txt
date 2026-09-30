@@ -64,3 +64,11 @@ target_compile_definitions(fuse_b7_cook_gates_tests PRIVATE
 )
 add_test(NAME fuse_b7_cook_gates COMMAND fuse_b7_cook_gates_tests)
 set_tests_properties(fuse_b7_cook_gates PROPERTIES LABELS "gate")
+
+# MP-B7.3-SCRIPT-COMPONENT: CookAssetKind::Script (Lua syntax check + bytecode, legacy .cs passthrough).
+if(TARGET fuse_script_cook)
+    add_executable(fuse_script_cook_tests test_script_cook.cpp)
+    target_link_libraries(fuse_script_cook_tests PRIVATE fuse_project fuse_script_cook fuse_core)
+    add_test(NAME fuse_script_cook COMMAND fuse_script_cook_tests)
+    set_tests_properties(fuse_script_cook PROPERTIES LABELS "gate" SKIP_RETURN_CODE 77)
+endif()

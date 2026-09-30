@@ -1,6 +1,7 @@
 #include <fuse/ecs/registry_serialiser.hpp>
 
 #include <fuse/ecs/component_types.hpp>
+#include <fuse/ecs/components/script.hpp>
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 
@@ -8,6 +9,8 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <string>
+#include <typeindex>
 
 namespace fuse::ecs {
 
@@ -75,6 +78,63 @@ private:
     usize m_offset = 0;
 };
 
+/// Per-type column fixups for components whose bytes carry runtime-only state or bounded strings.
+/// Script (MP-B7.3-SCRIPT-COMPONENT): the module path + exposed-property table are stored as-is, but
+/// `started` / `lua_ref` belong to the live ScriptRuntime instance, so they are written cleared and
+/// cleared again on load (a loaded scene re-attaches its behaviours through ScriptSystem). On load the
+/// strings must be NUL-terminated inside their buffers and the property table well-formed.
+void scrub_script_runtime_state(Script& script) {
+    script.started = false;
+    script.lua_ref = Script::kNoRef;
+}
+
+bool terminated(const char* text, usize capacity) {
+    return std::memchr(text, 0, capacity) != nullptr;
+}
+
+bool validate_script(const Script& script, std::string& error) {
+    if (!terminated(script.script_path, Script::kPathCapacity)) {
+        error = "corrupt Script component: script_path is not NUL-terminated";
+        return false;
+    }
+    if (script.property_count > Script::kMaxProperties) {
+        error = "corrupt Script component: property_count " + std::to_string(script.property_count) + " exceeds " +
+                std::to_string(Script::kMaxProperties);
+        return false;
+    }
+    for (u32 i = 0; i < script.property_count; ++i) {
+        const ScriptProperty& property = script.properties[i];
+        if (!terminated(property.key, ScriptProperty::kKeyCapacity) ||
+            !terminated(property.text, ScriptProperty::kTextCapacity)) {
+            error = "corrupt Script component: property string is not NUL-terminated";
+            return false;
+        }
+        if (property.key[0] == '\0' || static_cast<u8>(property.type) > static_cast<u8>(ScriptProperty::Type::Vec3)) {
+            error = "corrupt Script component: bad property entry " + std::to_string(i);
+            return false;
+        }
+    }
+    return true;
+}
+
+/// Rewrites `count` Script rows in `rows` (byte storage). `loading` also validates each row.
+bool fixup_script_rows(std::byte* rows, usize count, bool loading, std::string& error) {
+    for (usize i = 0; i < count; ++i) {
+        Script script;
+        std::memcpy(&script, rows + i * sizeof(Script), sizeof(Script));
+        if (loading && !validate_script(script, error)) {
+            return false;
+        }
+        scrub_script_runtime_state(script);
+        std::memcpy(rows + i * sizeof(Script), &script, sizeof(Script));
+    }
+    return true;
+}
+
+bool is_script_column(const ComponentTypeInfo* info) {
+    return info->type == std::type_index(typeid(Script)) && info->size == sizeof(Script);
+}
+
 RegistrySerialiseResult fail(std::string message) {
     RegistrySerialiseResult result;
     result.error = std::move(message);
@@ -141,6 +201,13 @@ RegistrySerialiseResult RegistrySerialiser::save(const Registry& registry, const
             const ComponentColumn* column = archetype.find_column(info->type);
             if (column == nullptr || column->storage.size() != archetype.count() * info->size) {
                 return fail(std::string("column size mismatch for ") + info->name);
+            }
+            if (is_script_column(info)) {
+                std::vector<std::byte> scrubbed(column->storage.begin(), column->storage.end());
+                std::string ignored;
+                (void)fixup_script_rows(scrubbed.data(), archetype.count(), false, ignored);
+                w.bytes(scrubbed.data(), scrubbed.size());
+                continue;
             }
             w.bytes(column->storage.data(), column->storage.size());
         }
@@ -239,6 +306,12 @@ RegistrySerialiseResult RegistrySerialiser::parse(const std::string& path, Regis
             std::vector<std::byte>& column = block.columns.emplace_back(rows * info->size);
             if (!r.bytes(column.data(), column.size())) {
                 return fail(std::string("truncated column ") + info->name);
+            }
+            if (is_script_column(info)) {
+                std::string error;
+                if (!fixup_script_rows(column.data(), rows, true, error)) {
+                    return fail(error);
+                }
             }
         }
         entitiesSeen += rows;

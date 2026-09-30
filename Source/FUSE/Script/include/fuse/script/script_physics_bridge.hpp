@@ -10,6 +10,7 @@
 namespace fuse::script {
 
 class ScriptRuntime;
+class ScriptSystem;
 
 /// `Physics.*` script API on the FUSE `PhysicsManager` (non-owning references).
 class PhysicsManagerScriptBackend final : public ScriptPhysicsBackend {
@@ -32,5 +33,7 @@ private:
 /// `on_trigger_enter`, on both entities of the pair. `Stay`/`Exit` are not script callbacks.
 /// Returns the number of callbacks dispatched.
 usize dispatch_physics_events(const std::vector<physics::CollisionEvent>& events, ScriptRuntime& runtime);
+/// Same mapping for behaviours owned by a ScriptSystem (Script components); no-op outside play.
+usize dispatch_physics_events(const std::vector<physics::CollisionEvent>& events, ScriptSystem& system);
 
 } // namespace fuse::script

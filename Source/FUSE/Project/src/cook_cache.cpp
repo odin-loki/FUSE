@@ -49,6 +49,9 @@ u64 recompute_cache_key_for_entry_(const CookCacheEntry& entry) {
         source_hash = hash_shader_import(desc);
         break;
     }
+    case CookAssetKind::Script:
+        source_hash = hashScriptCookInput(entry.source_path, entry.output_path);
+        break;
     }
     return combine_cook_cache_key(source_hash, entry.upstream_hash);
 }
@@ -815,6 +818,8 @@ bool CookCache::load(const std::string& path) {
             entry.kind = CookAssetKind::Audio;
         } else if (kindText == "shader") {
             entry.kind = CookAssetKind::Shader;
+        } else if (kindText == "script") {
+            entry.kind = CookAssetKind::Script;
         }
 
         if (is_valid_cook_cache_entry(entry)) {

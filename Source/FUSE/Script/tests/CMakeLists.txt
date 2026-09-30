@@ -51,3 +51,12 @@ if(TARGET fuse_script_physics)
         target_link_options(fuse_script_b7_self_destroy_gates PRIVATE -Wl,--allow-multiple-definition)
     endif()
 endif()
+
+# MP-B7.3-SCRIPT-COMPONENT / UNI-U3-SCRIPT-1: ecs::Script + ScriptSystem + serialisation + script cook.
+add_executable(fuse_script_component_tests test_script_component.cpp)
+target_link_libraries(fuse_script_component_tests PRIVATE fuse_script fuse_script_cook fuse_ecs fuse_core)
+add_test(NAME fuse_script_component COMMAND fuse_script_component_tests)
+set_tests_properties(fuse_script_component PROPERTIES LABELS "gate" SKIP_RETURN_CODE 77)
+if(MINGW)
+    target_link_options(fuse_script_component_tests PRIVATE -Wl,--allow-multiple-definition)
+endif()

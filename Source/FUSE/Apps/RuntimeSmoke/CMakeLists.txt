@@ -14,6 +14,12 @@ if(TARGET fuse_b7)
     target_compile_definitions(fuse_runtime_smoke PRIVATE FUSE_HAS_B7_INTEGRATION=1)
 endif()
 
+# UNI-U3-SCRIPT-1: chunks load through ScriptHostService; a Script component runs via ScriptSystem.
+if(TARGET fuse_script)
+    target_link_libraries(fuse_runtime_smoke PRIVATE fuse_script)
+    target_compile_definitions(fuse_runtime_smoke PRIVATE FUSE_SMOKE_HAS_SCRIPT=1)
+endif()
+
 if(FUSE_BUILD_VULKAN)
     target_link_libraries(fuse_runtime_smoke PRIVATE fuse_rhi)
     target_compile_definitions(fuse_runtime_smoke PRIVATE FUSE_HAS_VULKAN_RHI=1)

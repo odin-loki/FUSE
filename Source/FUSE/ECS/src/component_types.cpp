@@ -5,6 +5,7 @@
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
+#include <fuse/ecs/components/script.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/spawn_marker.hpp>
 #include <fuse/ecs/components/tags.hpp>
@@ -80,6 +81,7 @@ void register_builtin_components() {
     ComponentTypes::register_type<TagDestroy>();
     ComponentTypes::register_type<Collider>();
     ComponentTypes::register_type<TagKinematic>();
+    ComponentTypes::register_type<Script>();
 }
 
 } // namespace fuse::ecs

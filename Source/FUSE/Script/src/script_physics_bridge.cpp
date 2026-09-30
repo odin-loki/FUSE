@@ -2,6 +2,7 @@
 
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/script/script_runtime.hpp>
+#include <fuse/script/script_system.hpp>
 
 namespace fuse::script {
 
@@ -102,6 +103,26 @@ usize dispatch_physics_events(const std::vector<physics::CollisionEvent>& events
                 runtime.dispatch_trigger_enter(event.entityB, event.entityA);
                 ++dispatched;
             }
+            break;
+        default:
+            break;
+        }
+    }
+    return dispatched;
+}
+
+usize dispatch_physics_events(const std::vector<physics::CollisionEvent>& events, ScriptSystem& system) {
+    usize dispatched = 0;
+    for (const physics::CollisionEvent& event : events) {
+        const ecs::vec3 point = to_ecs(event.contactPoint);
+        switch (event.type) {
+        case physics::CollisionEventType::Enter:
+            dispatched += system.dispatch_collision(event.entityA, event.entityB, point) ? 1u : 0u;
+            dispatched += system.dispatch_collision(event.entityB, event.entityA, point) ? 1u : 0u;
+            break;
+        case physics::CollisionEventType::Trigger:
+            dispatched += system.dispatch_trigger_enter(event.entityA, event.entityB) ? 1u : 0u;
+            dispatched += system.dispatch_trigger_enter(event.entityB, event.entityA) ? 1u : 0u;
             break;
         default:
             break;

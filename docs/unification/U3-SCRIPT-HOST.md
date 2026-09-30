@@ -54,7 +54,7 @@ ctest --test-dir build --output-on-failure -R fuse_script_b73
 
 ## 5. Next
 
-1. Wire `ScriptHostService` into runtime smoke / hybrid gates (optional follow-up).
-2. `ecs/components/script.hpp` + per-entity instance table.
+1. ~~Wire `ScriptHostService` into runtime smoke~~ — done (UNI-U3-SCRIPT-1): `fuse_runtime_smoke` loads `fuse:` and `t3d:` chunks and cooked `.fusescript` files through `ScriptHostService` (`load_chunk`, `load_cooked`, `load_lua_buffer`) and runs a Script component on the service VM via `ScriptSystem`. Hybrid-renderer gates do not load scripts yet.
+2. ~~`ecs/components/script.hpp` + per-entity instance table~~ — done (UNI-U3-SCRIPT-1): `ecs::Script` + `fuse::script::ScriptSystem` (gate `fuse_script_component`).
 3. Lua bindings for `Entity.*` / `Transform` via existing `script_bind` helpers.
-4. Cook pipeline tags for legacy `.cs` → FUSE script chunks in U7.
+4. ~~Cook pipeline tags for legacy `.cs` → FUSE script chunks~~ — done (UNI-U3-SCRIPT-1): `CookAssetKind::Script` (`fuse_script_cook`) passes `.cs` / `.tscript` through as `t3d:<stem>` chunks in a `.fusescript`; `.lua` is syntax-checked and cooked to Lua bytecode (gate `fuse_script_cook`).

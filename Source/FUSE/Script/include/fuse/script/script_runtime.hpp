@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/ecs/components/script.hpp>
 #include <fuse/ecs/entity.hpp>
 #include <fuse/ecs/math/vec.hpp>
 #include <fuse/script/script_bind.hpp>
@@ -45,8 +46,12 @@ public:
     void shutdown();
     [[nodiscard]] bool is_initialized() const { return m_vm != nullptr; }
 
-    /// Load (or hot-reload, when already loaded) a module from a file; the key is the path.
+    /// Load (or hot-reload, when already loaded) a module from a file; the key is the path. A cooked
+    /// `.fusescript` (script_cook.hpp) is loaded from its Lua bytecode; a legacy TorqueScript
+    /// `.fusescript` is refused (it is not a per-entity behaviour: run it through ScriptHostService).
     ScriptLoadResult load_module_file(const char* path);
+    /// Load (or hot-reload) a module from a source or precompiled-bytecode buffer of `size` bytes.
+    ScriptLoadResult load_module_buffer(const char* module_name, const void* data, usize size);
     /// Load (or hot-reload) a module from source under `module_name`.
     ScriptLoadResult load_module_source(const char* module_name, const char* source);
     [[nodiscard]] bool has_module(const char* module_name) const;
@@ -71,6 +76,12 @@ public:
 
     /// Read `self[field]` of an entity's instance (numbers, strings, booleans, nil).
     bool get_instance_field(ecs::EntityID entity, const char* field, bind::ScriptValue& out);
+    /// Write one exposed property into `self[property.key]` (number / bool / string / {x,y,z}).
+    bool set_instance_property(ecs::EntityID entity, const ecs::ScriptProperty& property);
+    /// Lua registry reference of the entity's `self` table (ecs::Script::kNoRef when not attached).
+    [[nodiscard]] i32 instance_ref(ecs::EntityID entity) const;
+    /// True once `on_start` has run for the entity's instance.
+    [[nodiscard]] bool instance_started(ecs::EntityID entity) const;
 
     [[nodiscard]] u64 frame_count() const { return m_frameCount; }
     [[nodiscard]] u64 callback_count() const { return m_callbackCount; }
@@ -97,7 +108,7 @@ private:
         bool started = false;
     };
 
-    ScriptLoadResult load_module(const char* module_name, const char* source, const char* path);
+    ScriptLoadResult load_module(const char* module_name, const char* source, usize source_size, const char* path);
     bool invoke(Instance& instance, Callback callback, f32 dt, ecs::EntityID other,
                 const ecs::vec3& point);
     Instance* find_instance(ecs::EntityID entity);

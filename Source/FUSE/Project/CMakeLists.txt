@@ -50,6 +50,11 @@ target_include_directories(fuse_project
 )
 
 target_link_libraries(fuse_project PUBLIC fuse_hybrid fuse_core fuse_cook_stubs)
+# MP-B7.3-SCRIPT-COMPONENT: CookAssetKind::Script (Lua syntax check + bytecode) via fuse_script_cook.
+if(TARGET fuse_script_cook)
+    target_link_libraries(fuse_project PRIVATE fuse_script_cook)
+    target_compile_definitions(fuse_project PRIVATE FUSE_PROJECT_HAS_SCRIPT_COOK=1)
+endif()
 
 add_library(fuse_world_converter STATIC
     src/world_converter.cpp

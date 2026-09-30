@@ -18,6 +18,7 @@
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
+#include <fuse/ecs/components/script.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/spawn_marker.hpp>
 #include <fuse/ecs/components/tags.hpp>
@@ -536,6 +537,7 @@ void testInspectorAllComponents() {
     addDefault<fuse::ecs::TagPlayer>(reg, everything);
     addDefault<fuse::ecs::TagKinematic>(reg, everything);
     addDefault<fuse::ecs::TagDestroy>(reg, everything);
+    addDefault<fuse::ecs::Script>(reg, everything);
     addDefault<ModuleComponent>(reg, everything);
 
     fuse::editor::EditorState state;

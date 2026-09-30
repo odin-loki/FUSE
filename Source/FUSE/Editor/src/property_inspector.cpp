@@ -5,6 +5,7 @@
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/component_types.hpp>
 #include <fuse/ecs/components/collider.hpp>
+#include <fuse/ecs/components/script.hpp>
 #include <fuse/ecs/components/spawn_marker.hpp>
 #include <fuse/ecs/components/tags.hpp>
 #include <fuse/object.hpp>
@@ -154,6 +155,14 @@ PropertyInspector::ComponentSection PropertyInspector::describeComponent(const c
                {"mask", std::to_string(c.mask)},
                {"is_trigger", b(c.is_trigger)},
                {"ccd", b(c.ccd)}};
+    } else if (name == ecs::Script::component_name && size == sizeof(ecs::Script)) {
+        const auto& c = as<ecs::Script>(data);
+        const std::string_view path = c.path();
+        out = {{"module", c.module.valid() ? std::to_string(c.module.value) : std::string("none")},
+               {"script_path", path.empty() ? std::string("none") : std::string(path)},
+               {"enabled", b(c.enabled)},
+               {"started", b(c.started)},
+               {"property_count", std::to_string(c.property_count)}};
     } else if (isTagName(name)) {
         // Marker component: header only, no editable fields.
     } else {

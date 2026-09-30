@@ -6,6 +6,10 @@
 #include <fuse/project/cook_content_hash.hpp>
 #include <fuse/log/logger.hpp>
 
+#if defined(FUSE_PROJECT_HAS_SCRIPT_COOK) && FUSE_PROJECT_HAS_SCRIPT_COOK
+#include <fuse/script/script_cook.hpp>
+#endif
+
 #include <sstream>
 
 #include <filesystem>
@@ -48,6 +52,58 @@ CookRecord makeStubRecord(CookAssetKind kind,
     return record;
 }
 
+/// MP-B7.3-SCRIPT-COMPONENT: `.lua` -> syntax check + Lua bytecode, `.cs`/`.tscript` -> `t3d:` passthrough.
+CookWriteOutcome cook_script_outcome(const std::string& source_path, const std::string& output_path) {
+    CookWriteOutcome outcome;
+#if defined(FUSE_PROJECT_HAS_SCRIPT_COOK) && FUSE_PROJECT_HAS_SCRIPT_COOK
+    const fuse::script::ScriptCookResult cooked = fuse::script::cook_script_file(source_path, output_path);
+    outcome.ok = cooked.ok;
+    outcome.byte_count = cooked.byte_count;
+    if (cooked.ok) {
+        outcome.status = CookStatus::Ok;
+        outcome.note = cooked.message + ", chunk " + cooked.chunk_name;
+        return outcome;
+    }
+    outcome.note = cooked.message;
+    switch (cooked.failure) {
+    case fuse::script::ScriptCookFailure::SyntaxError:
+        outcome.status = CookStatus::ScriptSyntaxError;
+        break;
+    case fuse::script::ScriptCookFailure::CompilerUnavailable:
+        outcome.status = CookStatus::ImporterUnavailable;
+        break;
+    case fuse::script::ScriptCookFailure::SourceUnreadable:
+        outcome.status = CookStatus::SourceMissing;
+        break;
+    case fuse::script::ScriptCookFailure::WriteFailed:
+        outcome.status = CookStatus::OutputError;
+        break;
+    case fuse::script::ScriptCookFailure::None:
+    case fuse::script::ScriptCookFailure::InvalidArgument:
+        outcome.status = CookStatus::InvalidInput;
+        break;
+    }
+    return outcome;
+#else
+    (void)source_path;
+    (void)output_path;
+    outcome.ok = false;
+    outcome.status = CookStatus::ImporterUnavailable;
+    outcome.note = "script cook unavailable: fuse_script_cook is not built (FUSE_BUILD_SCRIPT=OFF)";
+    return outcome;
+#endif
+}
+
+bool cooked_script_loads(const std::string& output_path) {
+#if defined(FUSE_PROJECT_HAS_SCRIPT_COOK) && FUSE_PROJECT_HAS_SCRIPT_COOK
+    fuse::script::CookedScript script;
+    return fuse::script::load_cooked_script(output_path, script);
+#else
+    (void)output_path;
+    return false;
+#endif
+}
+
 u64 hash_upstream_from_jobs(const CookJob& job, const std::vector<CookJob>& jobs) {
     u64 hash = 0;
     for (const std::string& dependency_id : job.dependency_ids) {
@@ -85,6 +141,8 @@ bool AssetCooker::lookup_live_entry_(u64 cache_key, CookCacheEntry* out_entry) {
         } else if (cached.kind == CookAssetKind::Texture) {
             fuse::cook::CookedTexture texture;
             live = fuse::cook::load_cooked_texture(cached.output_path, texture);
+        } else if (cached.kind == CookAssetKind::Script) {
+            live = cooked_script_loads(cached.output_path);
         }
     }
     if (!live) {
@@ -186,6 +244,9 @@ bool AssetCooker::probe_cook_cache_hit(const CookManifestEntry& entry, const Coo
         content_hash = hash_shader_import(desc);
         break;
     }
+    case CookAssetKind::Script:
+        content_hash = hashScriptCookInput(entry.source_path, entry.output_path);
+        break;
     }
 
     const u64 cache_key = effective_cache_key_(content_hash, upstream_hash);
@@ -466,6 +527,11 @@ CookRecord AssetCooker::cook_entry(const CookManifestEntry& entry, const CookMan
                                                                                     "fragment", desc.target_version));
                                 });
     }
+    case CookAssetKind::Script:
+        return cook_with_cache_(CookAssetKind::Script, entry.source_path, entry.output_path,
+                                hashScriptCookInput(entry.source_path, entry.output_path), upstream_hash,
+                                "script cook from manifest entry",
+                                [&entry]() { return cook_script_outcome(entry.source_path, entry.output_path); });
     }
     return {};
 }
