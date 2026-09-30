@@ -190,6 +190,6 @@ struct VerifyResult {
     const char* message = nullptr;
 };
 
-VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& composer);
+VerifyResult verify(const State& state, fuse::hybrid::HybridComposer& composer);
 
 } // namespace fuse::hybrid::gates

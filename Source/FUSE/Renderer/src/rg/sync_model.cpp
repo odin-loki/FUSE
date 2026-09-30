@@ -223,7 +223,10 @@ AccessInfo describeAccess(Access access, u8 shaderStages, QueueClass queue) {
         info.transferOk = true;
         break;
     case Access::Present:
-        info.stages = vkc::kStageNone;
+        // ALL_COMMANDS, no access: the PRESENT_SRC layout transition must happen-before the submission's semaphore
+        // signal that vkQueuePresentKHR waits on (the signal's first scope is ALL_COMMANDS). A NONE destination stage
+        // leaves the transition unordered with it: SYNC-HAZARD-PRESENT-AFTER-WRITE (E03 fuse_hybrid_frame_vk_swapchain).
+        info.stages = vkc::kStageAllCommands;
         info.access = 0;
         info.layout = vkc::kLayoutPresentSrc;
         info.graphicsOnly = true;

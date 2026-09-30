@@ -14,10 +14,15 @@
 namespace fuse::hybrid {
 
 /// B2.10 — runtime/demo glue: RendererBootstrap + HybridComposer on one init path.
+/// E03: the composer renders through the GPU scene path (HybridSceneRenderer over the E02 SceneRenderer) whenever the
+/// renderer has a Vulkan device; the PlaceholderRenderer is only the no-device fallback.
 struct HybridRendererBootstrapDesc {
     renderer::RendererBootstrapDesc renderer{};
     VulkanPresentableDesc presentable{};
     DimensionFlags projectFlags{};
+    /// E03: request HybridComposer::enableGpuScene(scene) (created on the first rendered frame).
+    bool enableGpuScene = true;
+    HybridSceneRendererDesc scene{};
 };
 
 struct HybridRendererBootstrapStatus {
@@ -48,6 +53,10 @@ public:
 
     VulkanPresentable* presentable() { return m_presentable.get(); }
     const VulkanPresentable* presentable() const { return m_presentable.get(); }
+
+    /// E03 GPU scene renderer (null before the first frame or without a Vulkan device).
+    HybridSceneRenderer* gpuScene() { return m_composer.gpuScene(); }
+    bool gpuSceneActive() const { return m_composer.gpuSceneActive(); }
 
     renderer::PresentPath* presentPath() { return m_presentPath.get(); }
     const renderer::PresentPath* presentPath() const { return m_presentPath.get(); }

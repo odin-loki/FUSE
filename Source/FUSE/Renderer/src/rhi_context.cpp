@@ -7,6 +7,10 @@
 
 #include <string>
 
+#if defined(FUSE_VULKAN_BACKEND)
+#include <vulkan/vulkan.h>
+#endif
+
 #ifndef FUSE_SHADER_FIXTURE_DIR
 #define FUSE_SHADER_FIXTURE_DIR "Source/FUSE/Renderer/shaders/fixtures"
 #endif
@@ -192,6 +196,73 @@ bool RhiContext::beginFrame(u32 frameIndex) {
     return true;
 }
 
+int RhiContext::submitSceneFrame(const RenderCommandList& commands, u32 frameIndex) {
+    FrameManager* frameManager = m_bootstrap->frameManager();
+    VulkanDevice* device = m_bootstrap->device();
+    if (frameManager == nullptr || !frameManager->isReady() || device == nullptr || !device->isValid()) {
+        return 0;
+    }
+    if (!frameManager->tickComplete()) {
+        frameManager->signalTickComplete();
+        frameManager->beginFrame(frameIndex);
+        m_renderGraph.beginFrame(frameIndex);
+        m_commandRecorder.reset();
+    }
+    FrameSyncData& slot = frameManager->current();
+    // The slot fence must be unsignalled before the scene frame's submission attaches it (same rule as
+    // submitGraphicsQueue): retire any prior submission or the created-signalled state.
+    if ((slot.fenceSignaled || slot.fenceSubmitted) && !frameManager->waitInFlightFence(frameManager->currentIndex())) {
+        return -1;
+    }
+
+    SceneFrameSubmit submit{};
+    submit.fence = slot.inFlightFence;
+    submit.frameIndex = frameIndex;
+    submit.frameSlot = frameManager->currentIndex();
+    VulkanSwapchain* swapchain = m_bootstrap->swapchain();
+    const bool useSemaphores = shouldUseSwapchainSemaphores(swapchain, m_acquiredSwapchainImage);
+    if (useSemaphores) {
+        const u32 index = m_acquiredSwapchainImage;
+        submit.waitSemaphore = slot.imageAvailable;
+        submit.signalSemaphore = slot.renderFinished;
+        submit.swapchainImage = swapchain->imageHandleForIndex(index);
+        submit.swapchainView = index < swapchain->images().size() ? swapchain->images()[index].view : nullptr;
+        submit.swapchainFormat = swapchain->info().format;
+        submit.swapchainWidth = swapchain->info().width;
+        submit.swapchainHeight = swapchain->info().height;
+        submit.swapchainImageIndex = index;
+    }
+    if (!m_sceneSource.submit(submit, m_sceneSource.user)) {
+        ++m_sceneFramesDeclined;
+        return 0;
+    }
+
+    slot.fenceSignaled = true;
+    slot.fenceSubmitted = true;
+    m_lastQueueSubmit = GraphicsQueueSubmitResult{};
+    m_lastQueueSubmit.ok = true;
+    m_lastQueueSubmit.submitted = true;
+    m_lastQueueSubmit.headless = !useSemaphores;
+    m_lastQueueSubmit.semaphoresUsed = useSemaphores;
+    m_lastQueueSubmit.message = useSemaphores ? "scene frame submitted with WSI semaphores"
+                                              : "scene frame submitted headless (no WSI present)";
+    ++m_queueSubmitCount;
+#if defined(FUSE_VULKAN_BACKEND)
+    if (useSemaphores) {
+        // The frame's "present.handoff" pass left the image in PRESENT_SRC_KHR.
+        if (u32* layout = swapchain->imageLayoutForIndex(m_acquiredSwapchainImage)) {
+            *layout = static_cast<u32>(VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+        }
+    }
+#endif
+    frameManager->endFrame();
+    captureGpuTimestampStats(*frameManager);
+    m_lastCommandCount = commands.commandCount();
+    ++m_submittedFrames;
+    ++m_sceneFramesSubmitted;
+    return 1;
+}
+
 bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) {
     bool computeQueueRecorded = false;
     if (!platform::requireGpuContextThread()) {
@@ -200,6 +271,14 @@ bool RhiContext::submitFrame(const RenderCommandList& commands, u32 frameIndex) 
 
     if (!m_bootstrap || !m_bootstrap->status().deviceReady) {
         return false;
+    }
+
+    if (m_sceneSource.submit != nullptr) {
+        // E03: the frame is the scene renderer's render graph (3D -> sprites -> UI -> present / headless target).
+        const int routed = submitSceneFrame(commands, frameIndex);
+        if (routed != 0) {
+            return routed > 0;
+        }
     }
 
     FrameManager* frameManager = m_bootstrap->frameManager();

@@ -710,6 +710,27 @@ void RuntimeViewportHook::syncEcsToEmbedWorld3D_(EditorHost& host) {
         return;
     }
 
+    // E03: the viewport renders the edited scene itself: World3D::render hands the editor's ECS registry
+    // (Transform + Mesh + lights) and the viewport fly camera to the hybrid SceneRenderer (GPU path; the
+    // PlaceholderRenderer only without a Vulkan device).
+    gpu->embedWorld3D.setRenderRegistry(&host.editorScene().registry());
+    {
+        const ViewportCamera& cam = m_panel.camera();
+        const ecs::vec3 forward = m_panel.forward();
+        fuse::world3d::RenderCamera3D view{};
+        view.eye[0] = cam.positionX;
+        view.eye[1] = cam.positionY;
+        view.eye[2] = cam.positionZ;
+        view.target[0] = cam.positionX + forward.x;
+        view.target[1] = cam.positionY + forward.y;
+        view.target[2] = cam.positionZ + forward.z;
+        view.fovY = cam.fovDeg * 0.017453292519943295f;
+        view.nearPlane = cam.nearPlane > 0.f ? cam.nearPlane : 0.1f;
+        view.farPlane = (std::min)(cam.farPlane > view.nearPlane ? cam.farPlane : 1000.f, 2000.f);
+        view.valid = true;
+        gpu->embedWorld3D.setCamera(view);
+    }
+
     // Reused scratch: idle editor ticks must not allocate (fuse_editor_b6_idle_frame_gates).
     std::vector<ecs::EntityID>& entityOrder = m_entityOrderScratch;
     entityOrder.clear();

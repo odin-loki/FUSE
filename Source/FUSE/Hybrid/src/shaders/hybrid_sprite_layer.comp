@@ -1,0 +1,50 @@
+#version 460
+// E03 "hybrid.sprite_layer" (include/fuse/hybrid/sprite_layer.hpp): the hybrid frame's 2D sprites + UI quads, in
+// order, premultiplied "over" into an RGBA16F image the E02 UI stage composites onto the 3D output.
+// CPU reference: fuse::hybrid::spriteLayerTexel (same operation order, no contraction).
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+struct SpriteQuad {
+    vec4 centerHalf; // center.xy, halfExtent.xy (pixels)
+    vec4 cosSinPad;  // cos, sin, pad, pad
+    vec4 color;      // premultiplied RGBA
+};
+
+layout(set = 0, binding = 0, rgba16f) uniform writeonly image2D hy_layer;
+layout(set = 0, binding = 1, std430) readonly buffer HySpriteQuads {
+    SpriteQuad quads[];
+} hy_quads;
+
+layout(push_constant) uniform HySpritePush {
+    uvec2 extent;
+    uint first;
+    uint count;
+} pc;
+
+void main() {
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= pc.extent.x || p.y >= pc.extent.y) {
+        return;
+    }
+    precise float cx = float(p.x) + 0.5;
+    precise float cy = float(p.y) + 0.5;
+    precise vec4 acc = vec4(0.0);
+    for (uint i = 0u; i < pc.count; ++i) {
+        const SpriteQuad q = hy_quads.quads[pc.first + i];
+        precise float dx = cx - q.centerHalf.x;
+        precise float dy = cy - q.centerHalf.y;
+        precise float ax = dx * q.cosSinPad.x;
+        precise float ay = dy * q.cosSinPad.y;
+        precise float lx = ax + ay;
+        precise float bx = dx * q.cosSinPad.y;
+        precise float by = dy * q.cosSinPad.x;
+        precise float ly = by - bx;
+        if (abs(lx) <= q.centerHalf.z && abs(ly) <= q.centerHalf.w) {
+            precise float k = 1.0 - q.color.a;
+            precise vec4 t = k * acc;
+            acc = q.color + t;
+        }
+    }
+    imageStore(hy_layer, ivec2(p), acc);
+}

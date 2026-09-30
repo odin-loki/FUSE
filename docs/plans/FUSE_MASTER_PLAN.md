@@ -1873,8 +1873,9 @@ int main() {
 #### Gates
 
 - [x] **B2.10** implemented on FUSE APIs (not ungated Torque guts) (`fuse_renderer_bootstrap`)
-- [ ] Source narrative tests/acceptance for this topic green
+- [x] Source narrative tests/acceptance for this topic green
   - E02 (2026-09-30): `render_scene` exists renderer-side as `scene_renderer::SceneRenderer::renderScene(registry, camera, graph)` (FrameComposer frame, `fuse_scene_renderer_*` gates on Lavapipe); the main-loop wiring (runtime / editor) is E03, so this box stays open.
+  - E03 (2026-09-30): wired. The main loop (`HybridRendererBootstrap::runFrame` -> `HybridComposer::render` -> `World3D::render` -> `SceneRenderer::renderScene`; `RhiContext::submitFrame` executes the frame graph and blits into the swapchain / headless target) and the editor viewport render the ECS scene on the GPU; gates `fuse_hybrid_frame_vk_{golden,sprite,zero_alloc,swapchain}` on Lavapipe / Xvfb (0 validation messages), demos checked by GPU readback. RTX 3090 frame timings are for the user to measure.
 - [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
 - [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
 

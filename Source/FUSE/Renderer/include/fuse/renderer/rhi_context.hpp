@@ -17,6 +17,37 @@
 
 namespace fuse::renderer {
 
+/// E03 (RE-FI-1 / RE-RUNTIME-3D-RENDER / UNI-U4-1): what `RhiContext::submitFrame` hands a scene frame source.
+/// The source records the frame (SceneRenderer -> sprite / UI layer -> present blit) into its own render graph and
+/// submits it (rg::Executor::execute) waiting on `waitSemaphore` and signalling `signalSemaphore` + `fence`, so the
+/// frame ring, the swapchain acquire and `PresentPath::presentImage` keep working unchanged.
+struct SceneFrameSubmit {
+    /// VkSemaphore signalled by the swapchain acquire (null: headless or no image acquired).
+    void* waitSemaphore = nullptr;
+    /// VkSemaphore `vkQueuePresentKHR` waits on (null when `waitSemaphore` is null).
+    void* signalSemaphore = nullptr;
+    /// VkFence of the frame slot (unsignalled); the submission must signal it.
+    void* fence = nullptr;
+    /// Acquired swapchain image (VkImage / VkImageView / VkFormat / extent); null image: render to a headless target.
+    void* swapchainImage = nullptr;
+    void* swapchainView = nullptr;
+    u32 swapchainFormat = 0;
+    u32 swapchainWidth = 0;
+    u32 swapchainHeight = 0;
+    u32 swapchainImageIndex = UINT32_MAX;
+    u32 frameIndex = 0;
+    u32 frameSlot = 0;
+};
+
+/// Returns true once the frame was submitted (fence attached). False: nothing was submitted and `submitFrame`
+/// records the legacy command-list frame instead.
+using SceneFrameSubmitFn = bool (*)(const SceneFrameSubmit& submit, void* user);
+
+struct SceneFrameSource {
+    SceneFrameSubmitFn submit = nullptr; ///< null: legacy command-list frames only
+    void* user = nullptr;
+};
+
 /// Headless RHI context for Track B — accepts command lists on the render thread.
 class RhiContext {
 public:
@@ -49,6 +80,17 @@ public:
     /// Records commands, issues `vkQueueSubmit` on the frame slot, advances frame ring.
     /// Returns false off render thread.
     bool submitFrame(const RenderCommandList& commands, u32 frameIndex = 0);
+
+    /// E03: route `submitFrame` to a scene frame source (the hybrid SceneRenderer path). While set, every
+    /// `submitFrame` hands the frame slot's semaphores / fence and the acquired swapchain image to the source; the
+    /// command list is only counted (the legacy raster / composite recording is skipped). A source that returns
+    /// false falls back to the legacy recording for that frame. `{}` detaches.
+    void setSceneFrameSource(const SceneFrameSource& source) { m_sceneSource = source; }
+    const SceneFrameSource& sceneFrameSource() const { return m_sceneSource; }
+    bool sceneFrameRouted() const { return m_sceneSource.submit != nullptr; }
+    /// Frames the scene source submitted / declined (fell back to the legacy recording).
+    u32 sceneFramesSubmitted() const { return m_sceneFramesSubmitted; }
+    u32 sceneFramesDeclined() const { return m_sceneFramesDeclined; }
 
     /// Builds the graph from `draws` via `populateRenderGraphFromDrawList`, executes, and submits.
     /// Same thread/device gates as `submitFrame`. Does not unlock production present.
@@ -92,6 +134,8 @@ private:
     void ensureFrameSyncPair();
     void fillComputeEncodeContext(VkFrameEncodeContext& encodeContextStorage);
     void captureGpuTimestampStats(const FrameManager& frameManager);
+    /// 1 = the scene source submitted the frame, 0 = it declined (legacy path follows), -1 = hard failure.
+    int submitSceneFrame(const RenderCommandList& commands, u32 frameIndex);
 
     std::unique_ptr<VulkanBootstrap> m_bootstrap;
     Desc m_desc;
@@ -121,6 +165,9 @@ private:
     bool m_timestampsReady = false;
     u64 m_lastGpuTimeNs = 0;
     u32 m_timestampWriteCount = 0;
+    SceneFrameSource m_sceneSource{};
+    u32 m_sceneFramesSubmitted = 0;
+    u32 m_sceneFramesDeclined = 0;
 };
 
 } // namespace fuse::renderer

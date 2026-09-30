@@ -30,6 +30,8 @@
 
 **Status:** `DeferredRenderer` + `DeferredFramePipeline` landed; 19-pass schedule populates `RenderGraph`.
 
+> Runtime path (E03, 2026-09-30): the runtime, the demos and the editor viewport render through `frame::FrameComposer` (E02 `scene_renderer::SceneRenderer`, driven by `hybrid::HybridSceneRenderer` from `RhiContext::submitFrame`). `DeferredRenderer` / `DeferredFramePipeline` below remain the B5 gate path only.
+
 | Component | Location | Notes |
 |-----------|----------|-------|
 | `DeferredPassId` | `deferred/frame_pipeline.hpp` | Depth prepass → UI composite/present |
@@ -435,8 +437,9 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 
 ## Next
 
-- [ ] Wire `DeferredRenderer` into `RhiContext::submitFrame` (replace hybrid placeholder incrementally)
+- [x] Wire `DeferredRenderer` into `RhiContext::submitFrame` (replace hybrid placeholder incrementally)
   - E02 (2026-09-30): the renderer-side replacement exists — `scene_renderer::SceneRenderer` (ECS scene -> FrameComposer, present blit; `fuse_scene_renderer_*` gates). Wiring it into `RhiContext` / Hybrid is E03 (still open).
+  - E03 (2026-09-30): done with the FrameComposer instead of `DeferredRenderer`: `RhiContext::setSceneFrameSource` routes `submitFrame` to `hybrid::HybridSceneRenderer` (SceneRenderer 3D -> sprite / UI layer -> `present.blit` into the acquired swapchain image or a headless target, submitted on the frame slot's semaphores / fence). **Runtime rendering (Hybrid, World3D, the editor viewport, the demos) uses the FrameComposer; `DeferredRenderer` / `DeferredFramePipeline` stay the B5 gate path** (their gates are unchanged). Gates `fuse_hybrid_frame_vk_{golden,sprite,zero_alloc,swapchain}` (Lavapipe / Xvfb, 0 validation messages).
 - [x] B5.4 follow-up: Cluster grid index/decode/screen-depth helpers, slice-Z mapping, overflow clamp + CPU tests (`fuse_clustered_light_culler`)
 - [ ] B5.4 follow-up: CUDA cluster AABB build + deferred shade kernels
 - [ ] B5.5 follow-up: SDF soft shadows in `fuse_compute` (CSM split + light-space AABB stubs landed)

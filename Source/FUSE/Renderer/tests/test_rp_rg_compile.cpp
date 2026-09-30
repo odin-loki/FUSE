@@ -354,8 +354,8 @@ void testAttachmentsAndSamePassMerge() {
     expect(rwBarriers == 1u, "one barrier for the merged read+write");
     const BarrierRange& present = g.passBarriers(3);
     expect(present.imageCount == 1u && g.imageBarriers()[present.imageBegin].newLayout == vkc::kLayoutPresentSrc &&
-               g.imageBarriers()[present.imageBegin].dstStages == vkc::kStageNone,
-           "present: COLOR_ATTACHMENT -> PRESENT_SRC with dst stage NONE");
+               g.imageBarriers()[present.imageBegin].dstStages == vkc::kStageAllCommands,
+           "present: COLOR_ATTACHMENT -> PRESENT_SRC with dst stage ALL_COMMANDS (ordered before the semaphore signal)");
     expect(g.stats().layoutConflicts == 0u, "no layout conflicts");
 }
 

@@ -121,7 +121,16 @@ void syncHybridBootstrapFromConsumedHandoff(fuse::hybrid::HybridRendererBootstra
     }
     desc.surface.kind = fuse::renderer::SurfaceKind::External;
     desc.surface.nativeSurface = handoff.nativeSurface;
-    context->bootstrap().ensureSwapchain(desc);
+    if (context->bootstrap().ensureSwapchain(desc)) {
+        // E03: the viewport's SceneRenderer frame follows the embedded surface's extent (the composer also tracks
+        // later swapchain recreates on its own).
+        const fuse::renderer::VulkanSwapchain* swapchain = context->bootstrap().swapchain();
+        fuse::hybrid::HybridSceneRenderer* gpu = hybrid.gpuScene();
+        if (gpu != nullptr && swapchain != nullptr && !swapchain->isHeadless() && swapchain->info().width != 0u &&
+            swapchain->info().height != 0u) {
+            (void)gpu->resize(swapchain->info().width, swapchain->info().height);
+        }
+    }
 #else
     (void)hybrid;
     (void)handoff;

@@ -20,7 +20,7 @@ All seven parity demos live under `Samples/unification/`. Each folder is a `proj
 
 **Honest limits today**
 
-- No real GPU window present in parity demos — software placeholder renderer only (Track B).
+- Parity demos render on the GPU (E03: World3D scene through the SceneRenderer, sprites + UI through the sprite layer) whenever a Vulkan device exists and check the frame by GPU readback; the software placeholder renderer is the fallback without a device. Window present from the game runtime stays behind the Track B production unlock (headless target otherwise).
 - Converters produce wiring stubs, not full legacy gameplay replay.
 - Golden addon/T2D assets are used when submodules are initialized; otherwise bundled `.mis` / `.cs` stubs are used automatically.
 

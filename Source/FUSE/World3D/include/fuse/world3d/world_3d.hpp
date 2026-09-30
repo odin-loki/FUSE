@@ -1,8 +1,11 @@
 #pragma once
 
 #include <fuse/dimension/idimension.hpp>
+#include <fuse/ecs/entity.hpp>
+#include <fuse/ecs/registry.hpp>
 #include <fuse/physics/physics_world_3d.hpp>
 #include <fuse/world2d/cull_fork_join.hpp>
+#include <fuse/world3d/render_scene.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
 #include <fuse/world3d/scene_snapshot.hpp>
 
@@ -46,6 +49,38 @@ public:
     float clearColorB() const { return m_clearB; }
     void setClearColor(float r, float g, float b);
 
+    // --- E03 GPU scene (render_scene.hpp) ----------------------------------------------------------------------
+    /// The world's ECS scene (Transform + Mesh + lights + Camera) that World3D::render hands the GPU renderer.
+    /// Owned by the world (initialised on first use, `kRegistryCapacity` entities) unless setRenderRegistry
+    /// points it at another registry (the editor renders its edited scene this way).
+    static constexpr usize kRegistryCapacity = 4096;
+    ecs::Registry& registry();
+    /// External registry to render instead of the owned one (null restores the owned registry).
+    void setRenderRegistry(ecs::Registry* registry) { m_externalRegistry = registry; }
+    bool usesExternalRegistry() const { return m_externalRegistry != nullptr; }
+
+    void setCamera(const RenderCamera3D& camera) { m_camera = camera; }
+    const RenderCamera3D& camera() const { return m_camera; }
+
+    /// Material row `id` (ecs::Mesh::material_id). Bumps materialVersion().
+    void setMaterial(u32 id, const RenderMaterial3D& material);
+    const std::vector<RenderMaterial3D>& materials() const { return m_materials; }
+    u64 materialVersion() const { return m_materialVersion; }
+
+    /// Helpers that fill Transform (position / scale and local_to_world) + the component, in the render registry.
+    /// `halfExtent` scales the unit builtin mesh per axis.
+    ecs::EntityID spawnMesh(BuiltinMesh mesh, u32 materialId, const f32 center[3], const f32 halfExtent[3]);
+    /// Sun shining toward -`toSun` (normalised here).
+    ecs::EntityID spawnDirectionalLight(const f32 toSun[3], const f32 color[3], f32 intensity);
+    ecs::EntityID spawnPointLight(const f32 position[3], const f32 color[3], f32 intensity, f32 radius);
+
+    /// GPU renderer (not owned; null detaches). World3D::render calls it on the render thread.
+    void setRenderer(IWorld3DRenderer* renderer) { m_renderer = renderer; }
+    IWorld3DRenderer* renderer() const { return m_renderer; }
+    /// Frames the attached renderer recorded / refused.
+    u32 gpuFramesRendered() const { return m_gpuFrames; }
+    u32 gpuFramesFailed() const { return m_gpuFailures; }
+
     physics::PhysicsWorld3D& physics() { return m_physics; }
     const physics::PhysicsWorld3D& physics() const { return m_physics; }
     void setPhysicsEnabled(bool enabled) { m_physicsEnabled = enabled; }
@@ -70,6 +105,16 @@ private:
     float m_clearR = 0.1f;
     float m_clearG = 0.15f;
     float m_clearB = 0.25f;
+
+    ecs::Registry m_registry;
+    bool m_registryReady = false;
+    ecs::Registry* m_externalRegistry = nullptr;
+    RenderCamera3D m_camera{};
+    std::vector<RenderMaterial3D> m_materials;
+    u64 m_materialVersion = 0;
+    IWorld3DRenderer* m_renderer = nullptr;
+    u32 m_gpuFrames = 0;
+    u32 m_gpuFailures = 0;
 
     physics::PhysicsWorld3D m_physics;
     std::vector<u32> m_physicsBodyIndices;

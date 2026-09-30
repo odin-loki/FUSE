@@ -815,7 +815,8 @@ void Graph::emitFinalTransitions() {
                 b.resource = r + 1u;
                 b.srcStages = s.writeStages | s.readStages;
                 b.srcAccess = s.writeAccess;
-                b.dstStages = vkc::kStageNone;
+                // A PRESENT_SRC hand-off must be ordered before the frame's semaphore signal (see Access::Present).
+                b.dstStages = resource.finalLayout == vkc::kLayoutPresentSrc ? vkc::kStageAllCommands : vkc::kStageNone;
                 b.dstAccess = 0;
                 b.oldLayout = s.contents ? s.layout : vkc::kLayoutUndefined;
                 b.newLayout = resource.finalLayout;

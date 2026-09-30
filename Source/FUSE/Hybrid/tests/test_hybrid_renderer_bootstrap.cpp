@@ -51,7 +51,28 @@ void testHybridBootstrapInitShutdownOrder() {
     runtime->runFrame(ctx);
 
     expectTrue(runtime->composer().frameCount() == 1u, "runFrame ticked one frame");
-    expectTrue(runtime->composer().renderer().sample(160, 120) > 0, "software path still produces pixels");
+    // E03: with a Vulkan device the frame is GPU-rendered (SceneRenderer) and the placeholder is off; without one
+    // (stub backend / no ICD) the PlaceholderRenderer fallback draws it.
+    if (runtime->composer().gpuSceneActive()) {
+#if defined(FUSE_HAS_VULKAN_RHI)
+        expectTrue(runtime->composer().gpuSceneFrames() == 1u, "GPU scene path rendered the frame");
+        expectTrue(runtime->gpuScene() != nullptr && runtime->gpuScene()->waitIdle() &&
+                       runtime->gpuScene()->readbackPixels() != nullptr,
+                   "GPU frame read back from the headless target");
+        const fuse::u8* px = runtime->gpuScene()->readbackPixels();
+        if (px != nullptr) {
+            const fuse::u32 w = runtime->gpuScene()->width();
+            const fuse::u32 h = runtime->gpuScene()->height();
+            const fuse::u8* centre = px + (static_cast<std::size_t>(h / 2u) * w + w / 2u) * 4u;
+            // The World2D sprite sits at the frame centre: (255, 200, 64) over the 3D frame.
+            expectTrue(centre[0] >= 254u && centre[1] >= 199u && centre[1] <= 201u && centre[2] >= 63u && centre[2] <= 65u,
+                       "GPU path draws the 2D sprite over the 3D frame");
+        }
+        expectTrue(!runtime->composer().softwarePlaceholderEnabled(), "placeholder off while the GPU scene renders");
+#endif
+    } else {
+        expectTrue(runtime->composer().renderer().sample(160, 120) > 0, "software path still produces pixels");
+    }
 
 #if defined(FUSE_HAS_VULKAN_RHI)
     expectTrue(runtime->presentPath() != nullptr, "present path wired through hybrid bootstrap");
@@ -79,7 +100,13 @@ void testHybridComposerSoftwarePlaceholderToggle() {
 
     auto runtime = fuse::hybrid::HybridRendererBootstrap::create(desc);
     expectTrue(runtime != nullptr, "HybridRendererBootstrap allocated for placeholder toggle");
-    expectTrue(runtime->composer().softwarePlaceholderEnabled(), "software placeholder enabled by default");
+    {
+        fuse::frame::FrameCtx first;
+        first.frameIndex = 1u;
+        runtime->runFrame(first);
+    }
+    expectTrue(runtime->composer().softwarePlaceholderEnabled() == !runtime->composer().gpuSceneActive(),
+               "software placeholder on by default only without the GPU scene (no Vulkan device)");
 
     runtime->composer().setSoftwarePlaceholderEnabled(false);
     expectTrue(!runtime->composer().softwarePlaceholderEnabled(), "software placeholder can be disabled");
@@ -90,7 +117,8 @@ void testHybridComposerSoftwarePlaceholderToggle() {
 
     expectTrue(runtime->composer().renderer().pixelCount() == 0u,
                "disabled software placeholder skips RGBA buffer writes");
-    expectTrue(runtime->composer().softwarePlaceholderSkippedFrames() == 1u,
+    expectTrue(runtime->composer().softwarePlaceholderSkippedFrames() ==
+                   (runtime->composer().gpuSceneActive() ? 2u : 1u),
                "disabled software placeholder records skipped frame count");
 
 #if defined(FUSE_HAS_VULKAN_RHI)

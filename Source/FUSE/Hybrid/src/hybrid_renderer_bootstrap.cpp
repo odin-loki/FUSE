@@ -108,6 +108,9 @@ bool HybridRendererBootstrap::initialize() {
 
     m_composer.setProjectFlags(m_desc.projectFlags);
     m_composer.setSharedRhiContext(m_rendererBootstrap->rhiContext());
+    if (m_desc.enableGpuScene) {
+        (void)m_composer.enableGpuScene(m_desc.scene);
+    }
     m_status.rendererReady = true;
     m_status.composerAttached = true;
     m_status.initialized = true;
@@ -138,8 +141,20 @@ void HybridRendererBootstrap::shutdown() {
 
     m_composer.setSharedRhiContext(nullptr);
     m_presentPath.reset();
-    m_rendererBootstrap.reset();
+    // Child objects before their parents: the swapchain before the presentable's VkSurfaceKHR, the surface before
+    // the VkInstance (VUID-vkDestroyInstance-instance-00629). A headless swapchain replaces the real one.
+    if (m_rendererBootstrap != nullptr && m_presentable != nullptr && m_rendererBootstrap->rhiContext() != nullptr) {
+        renderer::VulkanBootstrap& vk = m_rendererBootstrap->rhiContext()->bootstrap();
+        const renderer::VulkanSwapchain* swapchain = vk.swapchain();
+        if (swapchain != nullptr && !swapchain->isHeadless()) {
+            renderer::SwapchainDesc headless{};
+            headless.width = swapchain->info().width;
+            headless.height = swapchain->info().height;
+            (void)vk.ensureSwapchain(headless);
+        }
+    }
     m_presentable.reset();
+    m_rendererBootstrap.reset();
     m_status = HybridRendererBootstrapStatus{};
 }
 

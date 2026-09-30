@@ -61,11 +61,24 @@ int main() {
     const fuse::hybrid::gates::VerifyResult result = fuse::hybrid::gates::verify(gateState, composer);
     check(result.ok, result.message != nullptr ? result.message : "U5 module gates verified");
 
-    fuse::log::info("demo_hybrid_hud: rendered %d frames at %ux%u (RGBA software buffer)",
-                    fuse::hybrid::gates::kFrameCount,
-                    composer.renderer().width(),
-                    composer.renderer().height());
-    fuse::log::info("demo_hybrid_hud: real GL/Vulkan presentation deferred to Track B RHI");
+#if defined(FUSE_HAS_VULKAN_RHI)
+    if (composer.gpuSceneActive()) {
+        fuse::log::info("demo_hybrid_hud: rendered %d frames at %ux%u on the GPU (SceneRenderer + sprite/UI layer, "
+                        "%llu GPU frames, checked by readback)",
+                        fuse::hybrid::gates::kFrameCount, composer.gpuScene()->width(), composer.gpuScene()->height(),
+                        static_cast<unsigned long long>(composer.gpuSceneFrames()));
+    } else
+#endif
+    {
+        fuse::log::info("demo_hybrid_hud: rendered %d frames at %ux%u (PlaceholderRenderer fallback: %s)",
+                        fuse::hybrid::gates::kFrameCount, composer.renderer().width(), composer.renderer().height(),
+#if defined(FUSE_HAS_VULKAN_RHI)
+                        composer.gpuSceneStatus()
+#else
+                        "no Vulkan RHI"
+#endif
+        );
+    }
 
 #if defined(FUSE_HAS_VULKAN_RHI)
     runtime->shutdown();

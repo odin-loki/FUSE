@@ -93,6 +93,29 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     state.world2D.loadWorld(worldHandle);
     state.world3D.loadWorld(worldHandle);
 
+    // E03: the renderable 3D scene (ECS registry of the world): a floor slab, the lever as a gold cube, a sun, and the
+    // camera. The GPU path renders it through the SceneRenderer; the placeholder fallback ignores it.
+    {
+        const float floorCenter[3] = {0.f, -0.1f, -3.f};
+        const float floorHalf[3] = {5.f, 0.1f, 5.f};
+        const float leverCenter[3] = {0.f, 0.4f, -3.f};
+        const float leverHalf[3] = {0.4f, 0.4f, 0.4f};
+        (void)state.world3D.spawnMesh(fuse::world3d::BuiltinMesh::Cube, 0u, floorCenter, floorHalf);
+        (void)state.world3D.spawnMesh(fuse::world3d::BuiltinMesh::Cube, 4u, leverCenter, leverHalf);
+        const float toSun[3] = {0.4f, 0.85f, 0.35f};
+        const float sunColor[3] = {1.f, 0.96f, 0.9f};
+        (void)state.world3D.spawnDirectionalLight(toSun, sunColor, 3.f);
+        fuse::world3d::RenderCamera3D camera{};
+        camera.eye[0] = 0.f;
+        camera.eye[1] = 1.8f;
+        camera.eye[2] = 1.5f;
+        camera.target[0] = 0.f;
+        camera.target[1] = 0.4f;
+        camera.target[2] = -3.f;
+        camera.valid = true;
+        state.world3D.setCamera(camera);
+    }
+
     composer.attachWorld2D(&state.world2D);
     composer.attachWorld3D(&state.world3D);
 
@@ -415,7 +438,7 @@ void tickFrame(State& state, fuse::hybrid::HybridComposer& composer, const fuse:
         fuse::mechanics::BroadphaseProxyFilter::Character);
 }
 
-VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& composer) {
+VerifyResult verify(const State& state, fuse::hybrid::HybridComposer& composer) {
     if (composer.frameCount() != static_cast<fuse::u32>(kFrameCount)) {
         return {false, "all frames ticked"};
     }
@@ -661,6 +684,28 @@ VerifyResult verify(const State& state, const fuse::hybrid::HybridComposer& comp
     if (state.world3D.readSnapshot().objects().size() < 4u) {
         return {false, "3D snapshot includes agent + ally + guard + lever objects"};
     }
+#if defined(FUSE_HAS_VULKAN_RHI)
+    // E03: with a Vulkan device the frame is GPU-rendered (SceneRenderer + sprite / UI layer): check the read-back
+    // frame instead of the PlaceholderRenderer, which stays the no-device fallback below.
+    if (composer.gpuSceneActive()) {
+        HybridSceneRenderer* gpu = composer.gpuScene();
+        if (gpu == nullptr || !gpu->waitIdle() || composer.gpuSceneFrames() == 0u) {
+            return {false, "GPU scene frames rendered"};
+        }
+        const OverlayReadbackCheck overlay = checkOverlayReadback(*gpu);
+        if (!overlay.valid || overlay.covered == 0u || overlay.mismatched != 0u) {
+            return {false, "spinning 2D sprite + HUD quad visible in the GPU readback"};
+        }
+        if (gpu->lastFrame().instances != 2u || !gpu->lastFrame().uiStageRan) {
+            return {false, "GPU frame rendered the floor + lever meshes and composited the UI stage"};
+        }
+        u8 rgb[3] = {0, 0, 0};
+        if (!readbackPixel(*gpu, 2u, 2u, rgb) || (rgb[0] == 0u && rgb[1] == 0u && rgb[2] == 0u)) {
+            return {false, "3D frame (sky) present in the GPU readback"};
+        }
+        return {true, nullptr};
+    }
+#endif
     if (composer.renderer().sample(160, 120) == 0) {
         return {false, "3D clear colour present"};
     }

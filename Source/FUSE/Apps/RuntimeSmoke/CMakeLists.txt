@@ -29,7 +29,22 @@ if(COMMAND fuse_apply_asan)
     fuse_apply_asan(fuse_runtime_smoke)
 endif()
 
-add_test(NAME fuse_runtime_smoke COMMAND fuse_runtime_smoke)
+# E03: `--gpu-frame` renders a World3D cube through the hybrid SceneRenderer path and checks it by GPU readback (the
+# valgrind twin runs without it: Lavapipe's JIT under memcheck is too slow for the frame composer).
+if(TARGET fuse_hybrid AND FUSE_BUILD_VULKAN)
+    target_link_libraries(fuse_runtime_smoke PRIVATE fuse_hybrid)
+    target_compile_definitions(fuse_runtime_smoke PRIVATE FUSE_SMOKE_HAS_HYBRID=1)
+endif()
+if(TARGET fuse_hybrid AND FUSE_VULKAN_BACKEND AND NOT CMAKE_CROSSCOMPILING
+   AND EXISTS "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")
+    add_test(NAME fuse_runtime_smoke
+             COMMAND "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh"
+                     $<TARGET_FILE:fuse_runtime_smoke> --gpu-frame)
+    set_tests_properties(fuse_runtime_smoke PROPERTIES
+        ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json" RUN_SERIAL TRUE)
+else()
+    add_test(NAME fuse_runtime_smoke COMMAND fuse_runtime_smoke)
+endif()
 
 if(COMMAND fuse_shipping_assert_runtime_targets)
     fuse_shipping_assert_runtime_targets()
