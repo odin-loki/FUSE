@@ -1,0 +1,24 @@
+// E06 decode gate (test_cooked_assets_vk.cpp --mode decode): texelFetch of every texel of one mip level of a sampled
+// image (a VK_FORMAT_BC* image or its CPU-decoded twin) into a buffer of vec4, so the gate compares what the
+// implementation's BCn decoder returns with the CPU decoder (cooked_assets/bcn_decode.hpp).
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D u_image;
+layout(set = 0, binding = 1, std430) writeonly buffer Out { vec4 texels[]; } u_out;
+
+layout(push_constant) uniform Push {
+    uint width;
+    uint height;
+    int lod;
+    uint offset; // first output texel
+} p;
+
+void main() {
+    const uvec2 xy = gl_GlobalInvocationID.xy;
+    if (xy.x >= p.width || xy.y >= p.height) {
+        return;
+    }
+    u_out.texels[p.offset + xy.y * p.width + xy.x] = texelFetch(u_image, ivec2(xy), p.lod);
+}

@@ -352,6 +352,12 @@ public:
     /// not per frame). False when the UI stage is unavailable (kernel not built) or the image cannot be created.
     bool setUiSource(const FrameUiSource& source);
     const FrameUiSource& uiSource() const { return m_uiSource; }
+    /// E06 (AP-RT-COOKED): the layered-material table (material_layers::MlResolveTable) that material rows with
+    /// gpu_scene::kGpuMaterialLayered index: its bindless storage-buffer handle (ResolveFrameDesc::layered) and the
+    /// buffer, imported every frame and declared as read by the resolve. handle 0 / table.buffer null clears it.
+    /// Takes effect at the next beginFrame; the buffer must stay alive while frames that used it are in flight.
+    void setLayeredMaterials(u32 tableHandle, const rg::ImportedBuffer& table);
+    u32 layeredMaterialsHandle() const { return m_layeredHandle; }
 
     /// T2: AccelerationStructures::beginFrame (after scene.beginFrame). No-op at T0.
     void beginSceneFrame(u64 serial);
@@ -477,6 +483,8 @@ private:
     u64 m_slotAddress[kSlotCount] = {};
     BindlessSlotHandle m_sampler{}; ///< material sampler (resolve)
     u32 m_samplerHandle = 0;
+    u32 m_layeredHandle = 0;          ///< E06: layered-material table (0: none)
+    rg::ImportedBuffer m_layeredTable{};
     Buffer m_viewRing{};            ///< RtfxShadowView ring (the denoised visibility)
     u64 m_viewAddress = 0;
     OwnedImage m_skyImage{};

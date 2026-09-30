@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/asset/cooked_texture.hpp>
 #include <fuse/handle_map.hpp>
 #include <fuse/renderer/resources.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
@@ -51,6 +52,12 @@ public:
     bool isReady() const { return m_ready; }
 
     TextureHandle createTexture(const TextureDesc& desc, const void* initialData = nullptr);
+    /// E06 (AP-RT-COOKED): a cooked `.fusetex` (BC1 / BC4 / BC5 / BC6H / BC7; 2D, array or cube; every mip) as a
+    /// sampled bindless texture: VK_FORMAT_BC* when the device enabled textureCompressionBC and supports the format,
+    /// else decoded on the CPU into RGBA8 / RGBA16F (cooked_assets/cooked_texture_gpu.hpp). The upload is submitted
+    /// at once (no CPU wait), like createTexture's initial data. `nativeOut` (optional): true when the BC path ran.
+    TextureHandle createCookedTexture(const asset::CookedTexture& texture, bool forceCpuDecode = false,
+                                      bool* nativeOut = nullptr);
     BufferHandle createBuffer(const BufferDesc& desc, const void* initialData = nullptr);
     SamplerHandle createSampler(const SamplerDesc& desc);
     /// Blits mip i-1 -> mip i (linear filter) for the whole chain, transitioning from each level's

@@ -29,6 +29,11 @@
 //
 // The GPU scene's material rows opt in with gpu_scene::kGpuMaterialLayered + the table index
 // (gpu_scene::set_gpu_material_layered).
+//
+// E06 (AP-RT-COOKED): library textures added from cooked `.fusetex` files (MlLibrary::addCookedTexture) upload as
+// VK_FORMAT_BC* images of their cooked mip chain (cooked_assets/cooked_texture_gpu.hpp; CPU-decoded RGBA8 without
+// textureCompressionBC or with MaterialLayersDesc::forceCpuBcDecode). The kernels sample through bindless handles and
+// never assume a texel format; the texel pool (materials.eval / balls) holds the decoded level 0.
 
 #include <fuse/renderer/material_layers/ml_reference.hpp>
 #include <fuse/renderer/material_layers/ml_types.hpp>
@@ -66,6 +71,9 @@ struct MaterialLayersDesc {
     BindlessDescriptors* bindless = nullptr; ///< the pipelines use its layout
     MlKernelLanguage language = MlKernelLanguage::Auto;
     u32 framesInFlight = 3;
+    /// E06: decode cooked BCn textures (MlLibrary::addCookedTexture) on the CPU even when the device samples them
+    /// natively (the fallback path's gate; always used without textureCompressionBC).
+    bool forceCpuBcDecode = false;
 };
 
 /// Camera / light / image of a frame (the library addresses are filled in by beginFrame).
@@ -85,7 +93,8 @@ struct MaterialLayerStats {
     u32 retired = 0;
     u32 passes = 0; ///< this frame
     u32 resolveImages = 0;      ///< mip-mapped bindless images of the resolve table
-    u64 resolveImageBytes = 0;  ///< their texel bytes (every level)
+    u64 resolveImageBytes = 0;  ///< their texel / block bytes (every level)
+    u32 resolveBcImages = 0;    ///< E06: cooked textures uploaded as VK_FORMAT_BC* images (the rest: RGBA8 / decoded)
 };
 
 /// Byte layout of the library buffer (256-aligned sections).

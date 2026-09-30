@@ -70,6 +70,9 @@ struct VulkanDeviceInfo {
     /// lets the 64-bit atomic path write from the fragment stage.
     bool geometryShader = false;
     bool fragmentStoresAndAtomics = false;
+    /// E06: VkPhysicalDeviceFeatures::textureCompressionBC enabled (when supported): cooked BCn `.fusetex`
+    /// textures upload as VK_FORMAT_BC* images; without it they are decoded to RGBA8 / RGBA16F on the CPU.
+    bool textureCompressionBC = false;
     u32 deviceType = 0; // VkPhysicalDeviceType numeric
     /// Physical device selection: index of the chosen device in vkEnumeratePhysicalDevices order
     /// (UINT32_MAX when none), the number enumerated, and a per-device summary ("#i 'name' (type,

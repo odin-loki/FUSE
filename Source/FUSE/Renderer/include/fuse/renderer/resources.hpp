@@ -22,6 +22,15 @@ enum class GpuFormat : u32 {
     R16G16B16A16Sfloat = 97,
     D32Sfloat = 126,
     R32Sfloat = 100,
+    // E06 (AP-RT-COOKED): block-compressed formats of cooked `.fusetex` textures (VkFormat values; sampled only,
+    // need VkPhysicalDeviceFeatures::textureCompressionBC, see cooked_assets/cooked_texture_gpu.hpp).
+    Bc1RgbUnorm = 131,
+    Bc1RgbSrgb = 132,
+    Bc4Unorm = 139,
+    Bc5Unorm = 141,
+    Bc6hUfloat = 143,
+    Bc7Unorm = 145,
+    Bc7Srgb = 146,
 };
 
 enum class BufferUsage : u32 {

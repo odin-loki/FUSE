@@ -1,5 +1,7 @@
 #include <fuse/renderer/resource_manager.hpp>
 
+#include <fuse/renderer/cooked_assets/cooked_texture_gpu.hpp>
+
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/gpu_alloc_stats.hpp>
 
@@ -561,6 +563,56 @@ TextureHandle ResourceManager::createTexture(const TextureDesc& desc, const void
         // Submitted now (no CPU wait): later graphics-queue work is ordered after the copy.
         stageTextureUpload(texture, initialData);
         m_lastUploadTicket = m_uploads.flush();
+    }
+    return m_textures.insert(std::move(texture));
+}
+
+TextureHandle ResourceManager::createCookedTexture(const asset::CookedTexture& cooked, bool forceCpuDecode,
+                                                   bool* nativeOut) {
+    m_lastGpuTextureCopySubmitted = false;
+    m_lastGpuTextureCopyBytes = 0;
+    m_lastGpuCopyUsedTransferQueue = false;
+    m_lastGpuCopyUsedFence = false;
+    m_lastGpuCopyWaitTimedOut = false;
+    if (nativeOut != nullptr) {
+        *nativeOut = false;
+    }
+    if (!m_ready || m_allocator == nullptr || !ensureStagingRing()) {
+        return TextureHandle{};
+    }
+    collectDeferredDestroys();
+    cooked_assets::CookedTextureUploadDesc desc{};
+    desc.device = m_device;
+    desc.allocator = m_allocator.get();
+    desc.upload = &m_uploads;
+    desc.forceCpuDecode = forceCpuDecode;
+    desc.name = "resource_manager.cooked_texture";
+    const UploadTicket ticket = m_uploads.pendingTicket();
+    cooked_assets::CookedTextureGpu gpu{};
+    if (!cooked_assets::upload_cooked_texture(desc, cooked, gpu)) {
+        m_lastGpuCopyWaitTimedOut = m_uploads.lastStageTimedOut();
+        return TextureHandle{};
+    }
+    Texture texture = gpu.image;
+    texture.bindlessIndex = m_bindless->registerTexture(texture, false);
+    if (texture.bindlessIndex == UINT32_MAX) {
+        // The copy is recorded: release the image once that batch retires.
+        texture.lastUploadSerial = m_uploads.pendingTicket().serial;
+        m_lastUploadTicket = m_uploads.flush();
+        m_deferredTextures.push_back(DeferredDestroy<Texture>{texture.lastUploadSerial, texture});
+        ++m_destroyStats.deferred;
+        return TextureHandle{};
+    }
+    // Every mip / layer ends SHADER_READ_ONLY_OPTIMAL (upload_queue.cpp).
+    texture.layout = kImageLayoutShaderReadOnly;
+    texture.lastUploadSerial = ticket.serial != 0u ? ticket.serial : m_uploads.pendingTicket().serial;
+    m_lastUploadTicket = m_uploads.flush();
+    m_lastGpuTextureCopySubmitted = true;
+    m_lastGpuTextureCopyBytes = static_cast<u32>(gpu.stagedBytes);
+    m_lastGpuCopyUsedFence = true;
+    m_lastGpuCopyUsedTransferQueue = m_uploads.stats().dedicatedTransferQueue;
+    if (nativeOut != nullptr) {
+        *nativeOut = gpu.path == cooked_assets::CookedTexturePath::Native;
     }
     return m_textures.insert(std::move(texture));
 }

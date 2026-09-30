@@ -21,6 +21,7 @@
 #define ML_MASK_WORLD_HEIGHT 6u
 #define ML_LAYER_WET 1u
 #define ML_TEX_SRGB 1u
+#define ML_TEX_RG 2u // E06: two-channel texture (BC5 normal map): B and A read as 1
 
 // MlTexture, 32 bytes.
 struct MlTexture {
@@ -381,11 +382,11 @@ vec4 ml_filter(MlView v, MlTexture t, vec2 uv, vec2 dx, vec2 dy) { return ml_bin
 vec4 ml_filter(MlView v, MlTexture t, vec2 uv, vec2 dx, vec2 dy) { return ml_bilinear(v, t, uv); }
 #endif
 
-vec4 ml_sample_tex(MlView v, uint tex, vec2 uv, vec2 dx, vec2 dy, bool stochastic, MlStochastic s, vec4 fallback) {
-    if (tex == ML_NO_TEXTURE || tex >= v.textureCount) {
-        return fallback;
-    }
-    const MlTexture t = MlTexturesRef(v.textures).v[tex];
+// E06: a texture with ML_TEX_RG (a cooked BC5 normal map: VK_FORMAT_BC5 samples (x, y, 0, 1)) reads B = A = 1, the
+// roughness / AO factors of the normal slot's packing, instead of 0 / 1.
+vec4 ml_tex_channels(MlTexture t, vec4 c) { return (t.flags & ML_TEX_RG) != 0u ? vec4(c.x, c.y, 1.0, 1.0) : c; }
+
+vec4 ml_sample_tex_raw(MlView v, MlTexture t, vec2 uv, vec2 dx, vec2 dy, bool stochastic, MlStochastic s) {
     if (!stochastic) {
         return ml_filter(v, t, uv, dx, dy);
     }
@@ -398,6 +399,14 @@ vec4 ml_sample_tex(MlView v, uint tex, vec2 uv, vec2 dx, vec2 dy, bool stochasti
     const float rz = t.mean[2] + (s.w.x * (a.z - t.mean[2]) + s.w.y * (b.z - t.mean[2]) + s.w.z * (c.z - t.mean[2])) * inv;
     const float rw = t.mean[3] + (s.w.x * (a.w - t.mean[3]) + s.w.y * (b.w - t.mean[3]) + s.w.z * (c.w - t.mean[3])) * inv;
     return vec4(ml_saturate(rx), ml_saturate(ry), ml_saturate(rz), ml_saturate(rw));
+}
+
+vec4 ml_sample_tex(MlView v, uint tex, vec2 uv, vec2 dx, vec2 dy, bool stochastic, MlStochastic s, vec4 fallback) {
+    if (tex == ML_NO_TEXTURE || tex >= v.textureCount) {
+        return fallback;
+    }
+    const MlTexture t = MlTexturesRef(v.textures).v[tex];
+    return ml_tex_channels(t, ml_sample_tex_raw(v, t, uv, dx, dy, stochastic, s));
 }
 
 vec3 ml_tangent_normal(vec4 n, float strength) {

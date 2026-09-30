@@ -94,7 +94,7 @@ ctest --test-dir build
 | Legacy T3D/T2D gfx backends wired | ❌ strangler phase |
 | HDR / tonemap shared pass | ❌ Track B |
 | Depth buffer + 3D mesh draw | ✅ E03 (U4-1): `World3D::render` -> `hybrid::HybridSceneRenderer` -> E02 `SceneRenderer` (ECS meshes / lights / camera through the FrameComposer); 2D sprites + UI via `hybrid.sprite_layer` over the 3D output (UI stage); `fuse_hybrid_frame_vk_golden` (lit cube + sprite, golden FLIP), placeholder only without a Vulkan device |
-| Texture upload from jobs | ⏳ asset side coded (UNI-U7-ASSET-1): `fuse::asset::RenderUploadCommand` on the lock-free MPSC `RenderUploadQueue`, decode on JobScheduler workers, render thread drains through `IRenderUploadSink` (`fuse_asset_runtime_mpsc`, also in the TSan nightly); the renderer's `IRenderUploadSink` (GPU texture / mesh upload) is E06 |
+| Texture upload from jobs | ✅ asset side (UNI-U7-ASSET-1): `fuse::asset::RenderUploadCommand` on the lock-free MPSC `RenderUploadQueue`, decode on JobScheduler workers, render thread drains through `IRenderUploadSink` (`fuse_asset_runtime_mpsc`, also in the TSan nightly); render side (E06): `renderer::cooked_assets::CookedAssetRegistry` is that sink (BCn `.fusetex` -> `VK_FORMAT_BC*` / CPU-decoded bindless images, `.fusemat` -> layered GpuScene rows, FMSH v2 -> SceneRenderer mesh rows; gates `fuse_cooked_assets_vk_*`, see TRACK-B-VULKAN.md). Hybrid: `CookedAssetBindings::attachRegistry`; `HybridSceneRenderer` does not attach one yet |
 | iOS/Android hybrid demo on device | ⏳ Android compiles `fuse_hybrid`; device run TBD |
 
 ---

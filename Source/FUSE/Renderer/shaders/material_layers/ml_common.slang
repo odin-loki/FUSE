@@ -16,6 +16,7 @@ static const uint ML_MASK_SLOPE_UP = 5u;
 static const uint ML_MASK_WORLD_HEIGHT = 6u;
 static const uint ML_LAYER_WET = 1u;
 static const uint ML_TEX_SRGB = 1u;
+static const uint ML_TEX_RG = 2u; // E06: two-channel texture (BC5 normal map): B and A read as 1
 
 // MlTexture, 32 bytes.
 struct MlTexture {
@@ -366,11 +367,11 @@ float4 ml_filter(MlView v, MlTexture t, float2 uv, float2 dx, float2 dy) { retur
 float4 ml_filter(MlView v, MlTexture t, float2 uv, float2 dx, float2 dy) { return ml_bilinear(v, t, uv); }
 #endif
 
-float4 ml_sample_tex(MlView v, uint tex, float2 uv, float2 dx, float2 dy, bool stochastic, MlStochastic s, float4 fallback) {
-    if (tex == ML_NO_TEXTURE || tex >= v.textureCount) {
-        return fallback;
-    }
-    const MlTexture t = ((MlTexture*)v.textures)[tex];
+// E06: a texture with ML_TEX_RG (a cooked BC5 normal map: VK_FORMAT_BC5 samples (x, y, 0, 1)) reads B = A = 1, the
+// roughness / AO factors of the normal slot's packing, instead of 0 / 1.
+float4 ml_tex_channels(MlTexture t, float4 c) { return (t.flags & ML_TEX_RG) != 0u ? float4(c.x, c.y, 1.0, 1.0) : c; }
+
+float4 ml_sample_tex_raw(MlView v, MlTexture t, float2 uv, float2 dx, float2 dy, bool stochastic, MlStochastic s) {
     if (!stochastic) {
         return ml_filter(v, t, uv, dx, dy);
     }
@@ -383,6 +384,14 @@ float4 ml_sample_tex(MlView v, uint tex, float2 uv, float2 dx, float2 dy, bool s
     const float rz = t.mean[2] + (s.w.x * (a.z - t.mean[2]) + s.w.y * (b.z - t.mean[2]) + s.w.z * (c.z - t.mean[2])) * inv;
     const float rw = t.mean[3] + (s.w.x * (a.w - t.mean[3]) + s.w.y * (b.w - t.mean[3]) + s.w.z * (c.w - t.mean[3])) * inv;
     return float4(ml_saturate(rx), ml_saturate(ry), ml_saturate(rz), ml_saturate(rw));
+}
+
+float4 ml_sample_tex(MlView v, uint tex, float2 uv, float2 dx, float2 dy, bool stochastic, MlStochastic s, float4 fallback) {
+    if (tex == ML_NO_TEXTURE || tex >= v.textureCount) {
+        return fallback;
+    }
+    const MlTexture t = ((MlTexture*)v.textures)[tex];
+    return ml_tex_channels(t, ml_sample_tex_raw(v, t, uv, dx, dy, stochastic, s));
 }
 
 float3 ml_tangent_normal(float4 n, float strength) {

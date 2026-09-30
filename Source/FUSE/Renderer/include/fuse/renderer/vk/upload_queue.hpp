@@ -44,13 +44,18 @@ struct UploadQueueStats {
 
 /// Full image upload: every mip in [0, mipLevels) of every layer in [0, layerCount). Caller data is
 /// tightly packed mip-major (mip 0 of layers 0..n, then mip 1 ...), uncompressed `bytesPerTexel`.
+/// Block-compressed images (E06: BCn `.fusetex`): `blockWidth` x `blockHeight` texel blocks of
+/// `bytesPerTexel` bytes each (8 or 16); a level of w x h texels holds ceil(w / bw) x ceil(h / bh)
+/// blocks per layer (the `.fusetex` level layout).
 struct UploadImageDesc {
     u32 width = 1;
     u32 height = 1;
     u32 depth = 1;
     u32 mipLevels = 1;
     u32 layerCount = 1;
-    u32 bytesPerTexel = 4;
+    u32 bytesPerTexel = 4; ///< bytes per texel, or per block when blockWidth / blockHeight > 1
+    u32 blockWidth = 1;
+    u32 blockHeight = 1;
 };
 
 /// Asynchronous staging-ring upload queue.

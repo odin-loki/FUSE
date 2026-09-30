@@ -1,6 +1,8 @@
 // Asset plan W0.7: CPU side of layered materials. See include/fuse/renderer/material_layers/ml_reference.hpp.
 #include <fuse/renderer/material_layers/ml_reference.hpp>
 
+#include <fuse/renderer/cooked_assets/bcn_decode.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -165,6 +167,27 @@ u32 MlLibrary::addTexture(std::string_view id, u32 width, u32 height, u32 flags,
     m_textures.push_back(t);
     m_textureIds.emplace_back(id);
     return static_cast<u32>(m_textures.size() - 1u);
+}
+
+u32 MlLibrary::addCookedTexture(std::string_view id, std::shared_ptr<const asset::CookedTexture> texture) {
+    if (texture == nullptr || texture->levels.empty() || texture->width == 0u || texture->height == 0u) {
+        return kMlNoTexture;
+    }
+    std::vector<u32> texels;
+    if (!cooked_assets::decode_cooked_level_rgba8(*texture, 0u, 0u, texels)) {
+        return kMlNoTexture;
+    }
+    const bool colour = texture->format == asset::BcFormat::BC1 || texture->format == asset::BcFormat::BC7;
+    const u32 flags = (colour && texture->srgb ? static_cast<u32>(kMlTexSrgb) : 0u) |
+                      (texture->format == asset::BcFormat::BC5 ? static_cast<u32>(kMlTexRg) : 0u);
+    const u32 index = addTexture(id, texture->width, texture->height, flags, texels);
+    if ((flags & kMlTexRg) != 0u) {
+        m_textures[index].mean[2] = 1.f; // what ml_tex_channels returns
+        m_textures[index].mean[3] = 1.f;
+    }
+    m_cooked.resize(m_textures.size());
+    m_cooked[index] = std::move(texture);
+    return index;
 }
 
 u32 MlLibrary::findTexture(std::string_view id) const {

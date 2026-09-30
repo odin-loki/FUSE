@@ -19,7 +19,14 @@
 // approximation (Lavapipe: rho / log2 approximations) and its filter-weight precision; the resolve gate
 // (fuse_rp_material_resolve_layered_vk_*) bounds both, see the "Asset W0.7" row of RENDERER-EXECUTION.md.
 //
-// Mip generation: 2 x 2 box filter (the odd last row / column of a level is clamped), level sizes max(1, n / 2),
+// E06 (AP-RT-COOKED): textures added from cooked `.fusetex` files (MlLibrary::addCookedTexture) are not RGBA8 on the
+// GPU: MaterialLayers uploads their BC1 / BC4 / BC5 / BC6H / BC7 blocks as VK_FORMAT_BC* images (every cooked level;
+// R8G8B8A8 / R16G16B16A16F decoded on the CPU when the device lacks textureCompressionBC), and their chain here is the
+// cooked levels decoded with cooked_assets::bcn_decode (what a BCn sampler returns; BC7 exact, BC1 / BC4 / BC5 within
+// the implementation's interpolation rounding), not a box filter of level 0. BC4 samples (r, 0, 0, 1) and BC5 (r, g,
+// 0, 1): normal maps reconstruct Z from X / Y (ml_tangent_normal), so BC5 normal maps need no third channel.
+//
+// Mip generation (RGBA8 textures): 2 x 2 box filter (the odd last row / column of a level is clamped), level sizes max(1, n / 2),
 // down to 1 x 1; RGB of sRGB textures is averaged in linear light (LUT decode, IEC 61966-2-1 encode in f64, round to
 // nearest), linear channels and alpha are averaged as integers with round-half-up. Deterministic on every platform.
 

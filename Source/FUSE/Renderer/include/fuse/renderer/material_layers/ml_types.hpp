@@ -64,6 +64,9 @@ enum MlLayerMode : u32 {
 /// MlTexture::flags
 enum MlTexFlag : u32 {
     kMlTexSrgb = 1u << 0, ///< RGB through the sRGB half of the LUT (alpha always linear)
+    /// E06: two-channel texture (a cooked BC5 normal map, sampled (x, y, 0, 1)): B and A read as 1 (the normal slot's
+    /// roughness / AO factors), ml_sample_tex / ml_common's ml_tex_channels.
+    kMlTexRg = 1u << 1,
 };
 
 /// One texture of the pool: 32 bytes.
@@ -198,8 +201,10 @@ static_assert(sizeof(MlParams) == 224u, "MlParams layout (ml_common.glsl / .slan
 /// header of the "materials.resolve_table" buffer MaterialLayers::setLibrary builds when it is given an UploadQueue,
 /// reached through its bindless storage-buffer handle (MaterialLayers::resolveTableHandle()). 32 bytes.
 /// `textures` rows are MlTexture records whose `offset` is the bindless sampled-image handle of that texture's
-/// mip-mapped image (R8G8B8A8_SRGB when kMlTexSrgb, else _UNORM; the mip chain of ml_mips.hpp), sampled with
+/// mip-mapped image (R8G8B8A8_SRGB when kMlTexSrgb, else _UNORM; the mip chain of ml_mips.hpp; E06: cooked textures
+/// are VK_FORMAT_BC1 / BC4 / BC5 / BC6H / BC7 images of their cooked chain, or CPU-decoded twins), sampled with
 /// textureGrad instead of the texel pool's manual bilinear filter; width / height / flags / mean are unchanged.
+/// E06 also builds such a table for cooked .fusemat materials (cooked_assets::CookedAssetRegistry).
 struct MlResolveTable {
     u64 materials = 0; ///< BDA of MlMaterial[materialCount] (the library's resolved materials, same order)
     u64 textures = 0;  ///< BDA of MlTexture[textureCount] (offset = bindless sampled-image handle)

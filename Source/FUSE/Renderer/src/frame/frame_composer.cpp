@@ -740,6 +740,16 @@ bool FrameComposer::setSdfScene(const compute::SdfObject* objects, u32 objectCou
     return (m_available & kStageDdgi) != 0u && m_ddgi.setSdfScene(objects, objectCount, surfaces, surfaceCount);
 }
 
+void FrameComposer::setLayeredMaterials(u32 tableHandle, const rg::ImportedBuffer& table) {
+    if (tableHandle == 0u || table.buffer == nullptr) {
+        m_layeredHandle = 0u;
+        m_layeredTable = rg::ImportedBuffer{};
+        return;
+    }
+    m_layeredHandle = tableHandle;
+    m_layeredTable = table;
+}
+
 bool FrameComposer::setUiSource(const FrameUiSource& source) {
     if (source.record == nullptr) {
         m_uiSource = FrameUiSource{};
@@ -971,6 +981,7 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     rf.scene = scene.headerHandle();
     rf.vis = m_vb.visStorageHandle();
     rf.sampler = m_samplerHandle;
+    rf.layered = m_layeredTable.buffer != nullptr ? m_layeredHandle : 0u;
     ok = m_resolve.beginFrame(serial, rf) && ok;
     temporal::MotionFrameDesc mf{};
     std::memcpy(mf.viewProj, m_viewProj, sizeof(mf.viewProj));
@@ -1468,7 +1479,9 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
     const visbuffer::VisGraphRefs vis = m_vb.importInto(graph);
     m_vb.addCulledFrame(graph, vis, sceneRefs, scene.headerHandle(), m_culler, cull);
     const material_resolve::ResolveGraphRefs gbuffer = m_resolve.importInto(graph);
-    m_resolve.addResolve(graph, gbuffer, vis.vis, sceneRefs, material_resolve::ResolvePath::Binned);
+    const rg::BufferRef layeredTable =
+        m_layeredTable.buffer != nullptr && m_layeredHandle != 0u ? graph.importBuffer(m_layeredTable) : rg::BufferRef{};
+    m_resolve.addResolve(graph, gbuffer, vis.vis, sceneRefs, material_resolve::ResolvePath::Binned, layeredTable);
     out.gbuffer = gbuffer;
     const temporal::MotionGraphRefs motion = m_motion.importInto(graph);
     m_motion.addMotion(graph, motion, vis.vis, sceneRefs);

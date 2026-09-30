@@ -1,10 +1,48 @@
 #include <fuse/hybrid/cooked_asset_bindings.hpp>
 
+#include <fuse/asset/cooked_material.hpp>
+#include <fuse/asset/cooked_mesh.hpp>
+#include <fuse/asset/cooked_texture.hpp>
+
+#if defined(FUSE_HYBRID_HAS_COOKED_REGISTRY)
+#include <fuse/renderer/cooked_assets/cooked_asset_registry.hpp>
+#include <fuse/renderer/material_layers/ml_types.hpp>
+#endif
+
 #include <fstream>
+#include <iterator>
 
 namespace fuse::hybrid {
 
 namespace {
+
+std::vector<u8> readFile(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        return {};
+    }
+    return std::vector<u8>((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+
+/// E06: what the runtime readers recognise (Unknown when none does).
+CookedHeaderKind parsedKind(const std::vector<u8>& bytes) {
+    if (bytes.empty()) {
+        return CookedHeaderKind::Unknown;
+    }
+    asset::CookedTexture texture;
+    if (asset::parse_cooked_texture(bytes.data(), bytes.size(), texture)) {
+        return texture.format == asset::BcFormat::BC7 ? CookedHeaderKind::TextureBc7 : CookedHeaderKind::TextureBcn;
+    }
+    asset::CookedMaterial material;
+    if (asset::read_cooked_material(bytes.data(), bytes.size(), material)) {
+        return CookedHeaderKind::MaterialFusemat;
+    }
+    asset::CookedMesh mesh;
+    if (asset::deserialize_cooked_mesh(bytes.data(), bytes.size(), mesh)) {
+        return CookedHeaderKind::MeshFmsh;
+    }
+    return CookedHeaderKind::Unknown;
+}
 
 bool startsWith(const std::string& text, const char* prefix) {
     if (prefix == nullptr) {
@@ -53,6 +91,11 @@ CookedHeaderKind CookedAssetBindings::probeCookedHeaderKind(const std::string& p
     if (path.empty()) {
         return CookedHeaderKind::Unknown;
     }
+    // E06: real cooked files through the runtime readers first; the marker line only identifies placeholder stubs.
+    const CookedHeaderKind parsed = parsedKind(readFile(path));
+    if (parsed != CookedHeaderKind::Unknown) {
+        return parsed;
+    }
 
     std::ifstream in(path);
     if (!in) {
@@ -77,7 +120,72 @@ void CookedAssetBindings::bindMaterial(const std::string& cookedPath, u32 materi
     binding.materialId = materialId;
     binding.headerKind = probeCookedHeaderKind(cookedPath);
     binding.headerValid = binding.headerKind != CookedHeaderKind::Unknown;
+    uploadBinding(binding);
     m_materials.push_back(std::move(binding));
+}
+
+void CookedAssetBindings::attachRegistry(renderer::cooked_assets::CookedAssetRegistry* registry) {
+    m_registry = registry;
+    m_uploadedRows.clear();
+    for (CookedMaterialBinding& binding : m_materials) {
+        binding.uploaded = false;
+        binding.textureIndex = 0xFFFFFFFFu;
+        binding.bindlessHandle = 0;
+        binding.gpuMaterialRow = 0xFFFFFFFFu;
+        uploadBinding(binding);
+    }
+}
+
+u32 CookedAssetBindings::uploadedMaterialCount() const {
+    u32 count = 0;
+    for (const CookedMaterialBinding& binding : m_materials) {
+        count += binding.uploaded ? 1u : 0u;
+    }
+    return count;
+}
+
+void CookedAssetBindings::uploadBinding(CookedMaterialBinding& binding) {
+#if defined(FUSE_HYBRID_HAS_COOKED_REGISTRY)
+    if (m_registry == nullptr || !m_registry->valid()) {
+        return;
+    }
+    namespace ca = renderer::cooked_assets;
+    if (binding.headerKind == CookedHeaderKind::TextureBc7 || binding.headerKind == CookedHeaderKind::TextureBcn) {
+        u32 index = m_registry->findTexture(binding.cookedPath);
+        if (index == renderer::material_layers::kMlNoTexture) {
+            const std::vector<u8> bytes = readFile(binding.cookedPath);
+            asset::CookedTexture texture;
+            if (asset::parse_cooked_texture(bytes.data(), bytes.size(), texture)) {
+                index = m_registry->addCookedTexture(binding.cookedPath, texture);
+            }
+        }
+        if (index != renderer::material_layers::kMlNoTexture) {
+            binding.uploaded = true;
+            binding.textureIndex = index;
+            binding.bindlessHandle = m_registry->textureHandle(index);
+        }
+    } else if (binding.headerKind == CookedHeaderKind::MaterialFusemat) {
+        for (const auto& [path, row] : m_uploadedRows) {
+            if (path == binding.cookedPath) {
+                binding.uploaded = true;
+                binding.gpuMaterialRow = row;
+                return;
+            }
+        }
+        const std::vector<u8> bytes = readFile(binding.cookedPath);
+        asset::CookedMaterial material;
+        if (asset::read_cooked_material(bytes.data(), bytes.size(), material)) {
+            const u32 row = m_registry->addMaterial(ca::fusemat_from_cooked(material));
+            if (row != ca::CookedAssetRegistry::kInvalid) {
+                binding.uploaded = true;
+                binding.gpuMaterialRow = row;
+                m_uploadedRows.emplace_back(binding.cookedPath, row);
+            }
+        }
+    }
+#else
+    (void)binding;
+#endif
 }
 
 void CookedAssetBindings::bindShader(const std::string& cookedPath, u32 shaderId) {
@@ -159,6 +267,7 @@ float CookedAssetBindings::materialTintBoost(u32 materialId) const {
 
     switch (binding->headerKind) {
     case CookedHeaderKind::TextureBc7:
+    case CookedHeaderKind::TextureBcn:
         return 0.08f;
     case CookedHeaderKind::TextureStub:
         return 0.04f;

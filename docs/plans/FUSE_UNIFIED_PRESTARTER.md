@@ -470,7 +470,7 @@ Mine each addon into a **FUSE module** with:
 
 - Spec `project.json` + world formats (versioned)  
 - Importers: T3D mission, T2D project/module  
-- Cookers: forward assets into FUSE asset DB — runtime side (UNI-U7-ASSET-1) coded: the cooked readers (FMSH v1/v2 incl. meshlet/DAG sections, `.fusetex`, `.fusemat`) moved to the runtime library `fuse_asset` (Tools/FUSE/Cook keeps the writers, links it and re-exports the old names); VFS async read → JobScheduler decode → MPSC `RenderUploadQueue` → render-thread `IRenderUploadSink` → `HandleTable::commit`. `fuse_asset_runtime_cook` cooks a glTF cube + PNG with `fuse_cook` and loads them through the registry (equal to the cook reader output). The renderer-side sink (GPU upload) is E06  
+- Cookers: forward assets into FUSE asset DB — runtime side (UNI-U7-ASSET-1) coded: the cooked readers (FMSH v1/v2 incl. meshlet/DAG sections, `.fusetex`, `.fusemat`) moved to the runtime library `fuse_asset` (Tools/FUSE/Cook keeps the writers, links it and re-exports the old names); VFS async read → JobScheduler decode → MPSC `RenderUploadQueue` → render-thread `IRenderUploadSink` → `HandleTable::commit`. `fuse_asset_runtime_cook` cooks a glTF cube + PNG with `fuse_cook` and loads them through the registry (equal to the cook reader output). The renderer-side sink (GPU upload) is E06: done (2026-09-30) — `renderer::cooked_assets::CookedAssetRegistry` (BCn `VK_FORMAT_BC*` images with CPU-decode fallback, `.fusemat` layered rows, FMSH v2 meshlets / DAG into the SceneRenderer; `fuse_cooked_assets_*`)  
 - Migration guide for community content  
 
 ### 12.2 Gate U7

@@ -920,6 +920,7 @@ bool VulkanDevice::initializeAdopted(const VulkanDeviceAdoptDesc& desc) {
     m_info.samplerAnisotropy = f.core.features.samplerAnisotropy == VK_TRUE;
     m_info.geometryShader = f.core.features.geometryShader == VK_TRUE;
     m_info.fragmentStoresAndAtomics = f.core.features.fragmentStoresAndAtomics == VK_TRUE;
+    m_info.textureCompressionBC = f.core.features.textureCompressionBC == VK_TRUE;
     m_info.maxSamplerAnisotropy = props.limits.maxSamplerAnisotropy;
     fillDescriptorLimits(physical, props, m_info.descriptorIndexing, m_info.descriptorLimits);
 
@@ -1184,6 +1185,8 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     // path writes from the fragment stage (fragmentStoresAndAtomics). Enabled when supported.
     deviceFeatures.geometryShader = supportedSet.core.features.geometryShader;
     deviceFeatures.fragmentStoresAndAtomics = supportedSet.core.features.fragmentStoresAndAtomics;
+    // E06: cooked BCn textures (VK_FORMAT_BC*) are sampled natively when supported (CPU decode otherwise).
+    deviceFeatures.textureCompressionBC = supportedSet.core.features.textureCompressionBC;
 
     auto hasEnabledExtension = [&enabledExtensions](const char* name) {
         for (const char* extension : enabledExtensions) {
@@ -1335,6 +1338,7 @@ bool VulkanDevice::initialize(VulkanInstance& instance, const VulkanDeviceDesc& 
     m_info.samplerAnisotropy = deviceFeatures.samplerAnisotropy == VK_TRUE;
     m_info.geometryShader = deviceFeatures.geometryShader == VK_TRUE;
     m_info.fragmentStoresAndAtomics = deviceFeatures.fragmentStoresAndAtomics == VK_TRUE;
+    m_info.textureCompressionBC = deviceFeatures.textureCompressionBC == VK_TRUE;
     m_info.maxSamplerAnisotropy = props.limits.maxSamplerAnisotropy;
     fillDescriptorLimits(selected, props, m_info.descriptorIndexing, m_info.descriptorLimits);
     m_info.deviceType = static_cast<u32>(props.deviceType);

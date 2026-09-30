@@ -757,8 +757,8 @@ ctest gates. CPU times are estimates for an 8–16 core container.
 | Task | Output | Exit criteria |
 |---|---|---|
 | W0.1 `FMSH` v2 streams (tangent, uv1, colour, skin, quantisation) | `mesh_cook.cpp` + tests | round-trip tests; v1 still loads |
-| W0.2 Vendor meshoptimizer with a `VERSION` pin; LODs + meshlets + cluster DAG in the cook | `Engine/lib/meshoptimizer` | `fuse_lint_vendored_pins_meshoptimizer`; LOD error monotonic test |
-| W0.3 Real BC1/BC4/BC5/BC6H/BC7 through ispc_texcomp; texture arrays | `texture_cook.cpp` | per-format PSNR thresholds; normal maps BC5 |
+| W0.2 Vendor meshoptimizer with a `VERSION` pin; LODs + meshlets + cluster DAG in the cook | `Engine/lib/meshoptimizer` | `fuse_lint_vendored_pins_meshoptimizer`; LOD error monotonic test  Import/CLI wiring (GREP-COOK-1, RE-P1-7, 2026-09-30): `MeshImportDesc::generate_lods/lod_count` → `optimize.lods` (`lod_options_for_count`), `compress` → quantised positions + normals (both opt-in now, defaults off so plain cooks stay FMSH v1), `meshlets/cluster_dag/cluster_pages` → sections + `.fusepages`; the lenient `write_mesh_stub` honours lod_count / compressed; `fuse_cook --lods N --compress --meshlets --dag --pages`; gate `fuse_asset_mesh_cook_complete` |
+| W0.3 Real BC1/BC4/BC5/BC6H/BC7 through ispc_texcomp; texture arrays | `texture_cook.cpp` | per-format PSNR thresholds; normal maps BC5  Runtime (E06 / AP-RT-COOKED, 2026-09-30): the renderer samples them as `VK_FORMAT_BC*` images (CPU-decode fallback without `textureCompressionBC`), `.fusemat` materials and FMSH v2 meshlets / DAG load through `renderer::cooked_assets::CookedAssetRegistry` (the `IRenderUploadSink`); gates `fuse_cooked_assets_*` |
 | W0.4 KTX2 import/export (transport only) | `fuse_cook --texture` accepts `.ktx2` | round-trip test |
 | W0.5 Licence lock + `fuse_lint asset-licences` | `Content/licences.lock.json`, lint mode | ctest `fuse_lint_asset_licences` green |
 | W0.6 Validation gates (§5.3) as `fuse_assetcheck` | tool + ctest | each gate has a failing fixture |

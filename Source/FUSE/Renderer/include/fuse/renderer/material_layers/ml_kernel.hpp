@@ -249,12 +249,14 @@ inline MlF4 ml_filter(const MlView& v, u32 tex, const MlTexture& t, MlF2 uv, MlF
 /// One texture of a set: plain wrap-around bilinear, or the three stochastic taps blended with the variance-
 /// preserving operator. `fallback` for kMlNoTexture. `dx` / `dy`: derivatives of `uv` (the stochastic offsets are
 /// constant per lattice vertex, so every tap has the same footprint).
-inline MlF4 ml_sample_tex(const MlView& v, u32 tex, MlF2 uv, MlF2 dx, MlF2 dy, bool stochastic, const MlStochastic& s,
-                          MlF4 fallback) {
-    if (tex == kMlNoTexture || tex >= v.textureCount) {
-        return fallback;
-    }
-    const MlTexture& t = v.textures[tex];
+/// E06: a texture with kMlTexRg (a cooked BC5 normal map: VK_FORMAT_BC5 samples (x, y, 0, 1)) reads B = A = 1, the
+/// roughness / AO factors of the normal slot's packing, instead of 0 / 1.
+inline MlF4 ml_tex_channels(const MlTexture& t, MlF4 c) {
+    return (t.flags & kMlTexRg) != 0u ? MlF4{c.x, c.y, 1.f, 1.f} : c;
+}
+
+inline MlF4 ml_sample_tex_raw(const MlView& v, u32 tex, const MlTexture& t, MlF2 uv, MlF2 dx, MlF2 dy, bool stochastic,
+                              const MlStochastic& s) {
     if (!stochastic) {
         return ml_filter(v, tex, t, uv, dx, dy);
     }
@@ -267,6 +269,15 @@ inline MlF4 ml_sample_tex(const MlView& v, u32 tex, MlF2 uv, MlF2 dx, MlF2 dy, b
     const f32 rz = t.mean[2] + (s.w[0] * (a.z - t.mean[2]) + s.w[1] * (b.z - t.mean[2]) + s.w[2] * (c.z - t.mean[2])) * inv;
     const f32 rw = t.mean[3] + (s.w[0] * (a.w - t.mean[3]) + s.w[1] * (b.w - t.mean[3]) + s.w[2] * (c.w - t.mean[3])) * inv;
     return MlF4{ml_saturate(rx), ml_saturate(ry), ml_saturate(rz), ml_saturate(rw)};
+}
+
+inline MlF4 ml_sample_tex(const MlView& v, u32 tex, MlF2 uv, MlF2 dx, MlF2 dy, bool stochastic, const MlStochastic& s,
+                          MlF4 fallback) {
+    if (tex == kMlNoTexture || tex >= v.textureCount) {
+        return fallback;
+    }
+    const MlTexture& t = v.textures[tex];
+    return ml_tex_channels(t, ml_sample_tex_raw(v, tex, t, uv, dx, dy, stochastic, s));
 }
 
 /// Tangent-space normal of a normal-set texel (unorm xy, z reconstructed), xy scaled by `strength`.

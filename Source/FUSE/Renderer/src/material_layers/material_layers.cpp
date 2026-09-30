@@ -1,6 +1,7 @@
 // Asset plan W0.7 layered materials on Vulkan: see include/fuse/renderer/material_layers/material_layers.hpp.
 #include <fuse/renderer/material_layers/material_layers.hpp>
 
+#include <fuse/renderer/cooked_assets/cooked_texture_gpu.hpp>
 #include <fuse/renderer/material_layers/ml_mips.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/device.hpp>
@@ -334,25 +335,45 @@ bool MaterialLayers::buildResolveTable(const MlLibrary& library, UploadQueue& up
     m_resolveImageHandles.assign(tc, 0u);
     for (u32 t = 0; t < tc; ++t) {
         const MlTexture& src = library.textures()[t];
-        TextureDesc td{};
-        td.width = src.width;
-        td.height = src.height;
-        td.mipLevels = chains.levelCount[t];
-        td.format = (src.flags & kMlTexSrgb) != 0u ? GpuFormat::R8G8B8A8Srgb : GpuFormat::R8G8B8A8Unorm;
-        td.usage = static_cast<ImageUsage>(static_cast<u32>(ImageUsage::Sampled) | static_cast<u32>(ImageUsage::TransferDst));
-        td.name = "materials.resolve_texture";
-        if (!m_desc.allocator->createImage(td, m_resolveImages[t])) {
-            return false;
-        }
-        UploadImageDesc ud{};
-        ud.width = src.width;
-        ud.height = src.height;
-        ud.mipLevels = td.mipLevels;
-        ud.bytesPerTexel = 4u;
-        usize offset = 0;
-        const u32* texels = chains.texels.data() + chains.levels[chains.firstLevel[t]].offset;
-        if (!upload.stageImage(texels, ud, offset) || !upload.recordImageCopy(m_resolveImages[t].image, offset, ud)) {
-            return false;
+        if (const asset::CookedTexture* cooked = library.cookedTexture(t)) {
+            // E06: cooked BCn texture: VK_FORMAT_BC* image of the cooked chain (CPU-decoded without BC support).
+            cooked_assets::CookedTextureUploadDesc cd{};
+            cd.device = m_desc.device;
+            cd.allocator = m_desc.allocator;
+            cd.upload = &upload;
+            cd.forceCpuDecode = m_desc.forceCpuBcDecode;
+            cd.name = "materials.resolve_texture";
+            cooked_assets::CookedTextureGpu gpu{};
+            if (!cooked_assets::upload_cooked_texture(cd, *cooked, gpu)) {
+                return false;
+            }
+            m_resolveImages[t] = gpu.image;
+            if (gpu.path == cooked_assets::CookedTexturePath::Native) {
+                ++m_stats.resolveBcImages;
+            }
+            m_stats.resolveImageBytes += gpu.stagedBytes;
+        } else {
+            TextureDesc td{};
+            td.width = src.width;
+            td.height = src.height;
+            td.mipLevels = chains.levelCount[t];
+            td.format = (src.flags & kMlTexSrgb) != 0u ? GpuFormat::R8G8B8A8Srgb : GpuFormat::R8G8B8A8Unorm;
+            td.usage = static_cast<ImageUsage>(static_cast<u32>(ImageUsage::Sampled) | static_cast<u32>(ImageUsage::TransferDst));
+            td.name = "materials.resolve_texture";
+            if (!m_desc.allocator->createImage(td, m_resolveImages[t])) {
+                return false;
+            }
+            UploadImageDesc ud{};
+            ud.width = src.width;
+            ud.height = src.height;
+            ud.mipLevels = td.mipLevels;
+            ud.bytesPerTexel = 4u;
+            usize offset = 0;
+            const u32* texels = chains.texels.data() + chains.levels[chains.firstLevel[t]].offset;
+            if (!upload.stageImage(texels, ud, offset) || !upload.recordImageCopy(m_resolveImages[t].image, offset, ud)) {
+                return false;
+            }
+            m_stats.resolveImageBytes += chains.textureTexels(t) * 4u;
         }
         m_resolveImageSlots[t] = m_desc.bindless->registerTextureSlot(m_resolveImages[t], false);
         m_resolveImageHandles[t] = m_desc.bindless->shaderHandle(m_resolveImageSlots[t]);
@@ -361,7 +382,6 @@ bool MaterialLayers::buildResolveTable(const MlLibrary& library, UploadQueue& up
         }
         rows[t].offset = m_resolveImageHandles[t];
         ++m_stats.resolveImages;
-        m_stats.resolveImageBytes += chains.textureTexels(t) * 4u;
     }
     const u64 materialsOffset = align256(sizeof(MlResolveTable));
     const u64 texturesOffset = align256(materialsOffset + std::max<u64>(u64{mc} * sizeof(MlMaterial), 16u));

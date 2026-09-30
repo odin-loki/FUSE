@@ -1742,7 +1742,7 @@ struct DrawCall {
 | Action | Detail |
 |--------|--------|
 | **Replace** | Primary mesh draw path with Vulkan G-buffer / depth prepass raster |
-| **Keep** | Mesh asset pipe via cooks → GPU meshes |
+| **Keep** | Mesh asset pipe via cooks → GPU meshes (E06: FMSH v2 meshlets + DAG → `CookedAssetRegistry` → SceneRenderer mesh rows; `fuse_cooked_assets_*` gates) |
 
 #### Depends on
 
@@ -3776,7 +3776,7 @@ __device__ MaterialSample mat_wood(vec3 world_pos, u32 seed) {
 |--------|--------|
 | **Replace** | Torque material models with FUSE PBR (GGX/Smith/Schlick) + bindless material SSBO |
 | **Compat** | Torque material names/slots mapped into `MaterialSystem` where possible |
-| **Keep** | Texture assets via cook → bindless textures |
+| **Keep** | Texture assets via cook → bindless textures (E06: BCn `.fusetex` → `VK_FORMAT_BC*` bindless images, CPU-decode fallback; `.fusemat` → layered GpuScene rows; `fuse_cooked_assets_*` gates) |
 
 #### Depends on
 
@@ -6336,6 +6336,7 @@ private:
 - [ ] Crash handler writes valid minidump on intentional null dereference — dmp opens in WinDbg — partial: Linux signal report proven in `fuse_core_b7_platform_gates`; Windows minidump proven under Wine by `fuse_core_b7_win32_crash_minidump` (MDMP header, exception 0xC0000005 at address 0 inside the probe, thread/module/system streams, dbghelp MiniDumpReadDumpStream, worker-thread and FUSE_VERIFY abort cases); opening it in WinDbg stays manual
 - [x] Leak detector correctly reports zero leaks after clean shutdown in debug build (`fuse_core_b7_platform_gates`)
 - [x] Mesh importer produces byte-identical output from same source on two machines — deterministic — `fuse_b7_cook_gates`
+- [x] Mesh importer honours `generate_lods`/`lod_count` (meshopt LOD chain) and `compress` (quantised FMSH v2 streams), and on request writes meshlets, the cluster DAG and a `.fusepages` cluster page file validated against the DAG, all part of the cook cache key — `fuse_asset_mesh_cook_complete` (CPU; `generate_lods`/`compress` default off, unlike the design sketch above, so default cooks stay lossless FMSH v1)
 - [x] Texture BC7 compression PSNR > 40dB vs original — verified with image comparison tool — `fuse_b7_cook_gates`
 - [ ] Engine boots, editor opens, scene loads, physics runs, audio plays in < 3 seconds on ThinkStation P920
 - [ ] 1000 animated skinned characters in scene with physics and audio — frame time < 16ms

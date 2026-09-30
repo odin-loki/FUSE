@@ -39,6 +39,13 @@ target_include_directories(fuse_hybrid
 )
 
 target_link_libraries(fuse_hybrid PUBLIC fuse_world3d fuse_world2d fuse_core)
+# E06: cooked_asset_bindings reads cooked files with the runtime readers and uploads them through the renderer's
+# CookedAssetRegistry when the renderer is in the build.
+target_link_libraries(fuse_hybrid PRIVATE fuse_asset)
+if(TARGET fuse_cooked_assets)
+    target_link_libraries(fuse_hybrid PUBLIC fuse_cooked_assets)
+    target_compile_definitions(fuse_hybrid PRIVATE FUSE_HYBRID_HAS_COOKED_REGISTRY=1)
+endif()
 
 if(FUSE_BUILD_VULKAN)
     # E03: the GPU scene path renders through the E02 SceneRenderer (fuse_scene_renderer -> fuse_frame -> fuse_rhi).

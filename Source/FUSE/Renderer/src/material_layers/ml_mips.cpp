@@ -1,6 +1,7 @@
 // Asset plan W0.7 x WP-1.5: see include/fuse/renderer/material_layers/ml_mips.hpp.
 #include <fuse/renderer/material_layers/ml_mips.hpp>
 
+#include <fuse/renderer/cooked_assets/bcn_decode.hpp>
 #include <fuse/renderer/material_layers/ml_reference.hpp>
 
 #include <cmath>
@@ -88,11 +89,17 @@ void ml_build_mips(const MlLibrary& library, MlMipChains& out) {
     out = MlMipChains{};
     out.lut = library.lut();
     const std::vector<MlTexture>& textures = library.textures();
+    // E06: a cooked texture's chain is its cooked levels (decoded), which may stop before 1 x 1.
+    auto levelsOf = [&](u32 index, const MlTexture& t) {
+        const asset::CookedTexture* cooked = library.cookedTexture(index);
+        return cooked != nullptr ? static_cast<u32>(cooked->levels.size()) : ml_mip_level_count(t.width, t.height);
+    };
     u64 total = 0;
-    for (const MlTexture& t : textures) {
+    for (u32 i = 0; i < static_cast<u32>(textures.size()); ++i) {
+        const MlTexture& t = textures[i];
         u32 w = t.width;
         u32 h = t.height;
-        for (u32 l = 0; l < ml_mip_level_count(t.width, t.height); ++l) {
+        for (u32 l = 0; l < levelsOf(i, t); ++l) {
             total += static_cast<u64>(w) * h;
             w = w > 1u ? w / 2u : 1u;
             h = h > 1u ? h / 2u : 1u;
@@ -100,17 +107,27 @@ void ml_build_mips(const MlLibrary& library, MlMipChains& out) {
     }
     out.texels.resize(static_cast<usize>(total));
     u32 cursor = 0;
-    for (const MlTexture& t : textures) {
+    std::vector<u32> decoded;
+    for (u32 i = 0; i < static_cast<u32>(textures.size()); ++i) {
+        const MlTexture& t = textures[i];
+        const asset::CookedTexture* cooked = library.cookedTexture(i);
         out.firstLevel.push_back(static_cast<u32>(out.levels.size()));
-        const u32 count = ml_mip_level_count(t.width, t.height);
+        const u32 count = levelsOf(i, t);
         out.levelCount.push_back(count);
         u32 w = t.width;
         u32 h = t.height;
         for (u32 l = 0; l < count; ++l) {
             MlMipLevel level{cursor, w, h};
-            if (l == 0u) {
-                for (u32 i = 0; i < w * h; ++i) {
-                    out.texels[cursor + i] = library.texels()[t.offset + i];
+            if (cooked != nullptr && l > 0u) {
+                // Level l of the cooked chain, decoded exactly as a BCn sampler returns it.
+                if (cooked_assets::decode_cooked_level_rgba8(*cooked, l, 0u, decoded) && decoded.size() == usize{w} * h) {
+                    for (u32 k = 0; k < w * h; ++k) {
+                        out.texels[cursor + k] = decoded[k];
+                    }
+                }
+            } else if (l == 0u) {
+                for (u32 k = 0; k < w * h; ++k) {
+                    out.texels[cursor + k] = library.texels()[t.offset + k];
                 }
             } else {
                 const MlMipLevel& prev = out.levels.back();

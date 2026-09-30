@@ -31,16 +31,23 @@ usize mipOffsetAlignment(u32 bytesPerTexel) {
 
 bool validImageDesc(const UploadImageDesc& desc) {
     return desc.width > 0 && desc.height > 0 && desc.mipLevels > 0 && desc.layerCount > 0 &&
-           desc.bytesPerTexel > 0 && desc.mipLevels <= 32;
+           desc.bytesPerTexel > 0 && desc.mipLevels <= 32 && desc.blockWidth > 0 && desc.blockHeight > 0 &&
+           desc.blockWidth <= 16 && desc.blockHeight <= 16;
 }
 
 u32 mipExtent(u32 extent, u32 mip) {
     return std::max(1u, (extent > 0 ? extent : 1u) >> mip);
 }
 
+/// Blocks (texels when the block is 1 x 1) covering `extent` texels.
+u32 blocksCovering(u32 extent, u32 block) {
+    return (extent + block - 1u) / block;
+}
+
 usize mipBytes(const UploadImageDesc& desc, u32 mip) {
-    return static_cast<usize>(mipExtent(desc.width, mip)) * mipExtent(desc.height, mip) *
-           mipExtent(desc.depth, mip) * desc.layerCount * desc.bytesPerTexel;
+    return static_cast<usize>(blocksCovering(mipExtent(desc.width, mip), desc.blockWidth)) *
+           blocksCovering(mipExtent(desc.height, mip), desc.blockHeight) * mipExtent(desc.depth, mip) *
+           desc.layerCount * desc.bytesPerTexel;
 }
 
 /// Offset of `mip` inside the staged chain (each mip aligned; mip 0 at 0).
