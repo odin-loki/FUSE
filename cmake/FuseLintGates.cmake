@@ -143,6 +143,10 @@ _fuse_lint_add(fuse_lint_vendored_pins_meshoptimizer vendored-pins --dir "${FUSE
 _fuse_lint_add(fuse_lint_vendored_pins_gdeflate vendored-pins --dir "${FUSE_VENDOR_DIR}/gdeflate")  # RL-3.3 GDeflate CPU codec (MIT + Apache-2.0)
 _fuse_lint_add(fuse_lint_vendored_pins_tinyusdz vendored-pins --dir "${FUSE_VENDOR_DIR}/tinyusdz")  # RL-3.1 / Remaster W2.2 TinyUSDZ USDA + USDC reader (Apache-2.0)
 _fuse_lint_add(fuse_lint_vendored_pins_nvidia_flip vendored-pins --dir "${FUSE_VENDOR_DIR}/nvidia-flip")  # Asset plan W0.8 NVIDIA FLIP golden metric (BSD-3)
+# MP-B7.2-OGG-RUNTIME: vendored xiph release archives built by cmake/FuseXiph.cmake (BSD-3).
+_fuse_lint_add(fuse_lint_vendored_pins_xiph_ogg vendored-pins --dir "${FUSE_VENDOR_DIR}/xiph/ogg")
+_fuse_lint_add(fuse_lint_vendored_pins_xiph_vorbis vendored-pins --dir "${FUSE_VENDOR_DIR}/xiph/vorbis")
+_fuse_lint_add(fuse_lint_vendored_pins_xiph_flac vendored-pins --dir "${FUSE_VENDOR_DIR}/xiph/flac")
 
 get_property(_fuse_lint_all GLOBAL PROPERTY _FUSE_LINT_TESTS)
 set_tests_properties(${_fuse_lint_all} PROPERTIES LABELS "gate;lint" TIMEOUT 300)

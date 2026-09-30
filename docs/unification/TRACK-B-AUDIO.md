@@ -25,8 +25,14 @@
 | `ReverbZoneParams` / `blend_reverb_zones` | `Source/FUSE/Audio/include/fuse/audio/reverb_zones.hpp` | Zone AABB membership + overlapping wet/dry blend + dry/wet sample stubs |
 | `SpatialMixer` | `Source/FUSE/Audio/include/fuse/audio/spatial_mixer.hpp` | CPU HRTF-lite pan + curve attenuation + bus routing + blocker occlusion |
 | `AudioEngine` | `Source/FUSE/Audio/include/fuse/audio/audio_engine.hpp` | OpenAL backend sync, CUDA/CPU reverb facade, zone blend + occlusion blockers |
+| `AudioBackend` | `Source/FUSE/Audio/include/fuse/audio/audio_backend.hpp` | Device output: one streaming OpenAL source fed from an SPSC ring by a feeder thread (float32/s16, underrun + latency + disconnect/reconnect), or the Null device with a capture buffer |
+| `SpscRing` | `Source/FUSE/Audio/include/fuse/audio/spsc_ring.hpp` | Lock-free single-producer/single-consumer ring (game thread -> feeder thread) |
+| `AudioClip::load_ogg` / `load_flac` / `load_fuseaudio` / `load_file` | `Source/FUSE/Audio/include/fuse/audio/audio_clip.hpp` | Runtime decode (vendored xiph, `cmake/FuseXiph.cmake`), cooked `.fuseaudio` containers, VFS-aware load |
+| `StreamDecoder` | `Source/FUSE/Audio/include/fuse/audio/audio_stream.hpp` | Per-voice bounded Ogg Vorbis decode ring + loop-head cache for streaming voices (loop points, seek) |
 
-**Not in scope (deferred):** HRTF impulse-response files, per-source bus sends, ducking/sidechain, real-time CUDA FFT reverb on device, OGG decode, ECS system wiring, dynamic occlusion raycasts, HF IIR/LPF filtering.
+**Not in scope (deferred):** HRTF impulse-response files, per-source bus sends, ducking/sidechain, real-time CUDA FFT reverb on device, ECS system wiring, dynamic occlusion raycasts, HF IIR/LPF filtering.
+
+**Device output and runtime decode (done, `fuse_audio_output*`):** the mix is streamed to the device (GAP-AUDIO-DEVICE-OUT) — `AudioEngine::update` renders one block per call (`AudioPacing::Caller`, default, headless-deterministic) or as many blocks as the output queue takes (`AudioPacing::Device`, what a runtime host with a real device uses) and submits them to `AudioBackend`: one OpenAL streaming source with `device_buffers` AL buffers sized to cover two device periods, AL_EXT_float32 when present, refilled by a feeder thread from the SPSC ring; underruns insert a silence buffer and are counted, `output_stats()` reports latency (queued frames + AL_SOFT_source_latency), `ALC_EXT_disconnect` loss re-opens the device. Checked with openal-soft's wave writer (WAV bit-identical to the Null capture) and null driver (latency, starvation, simulated loss -> reconnect). Ogg Vorbis / FLAC / `.fuseaudio` clips decode at runtime from the vendored xiph archives; Ogg clips longer than `AudioDesc::stream_threshold_seconds` stream (bounded per-voice ring, loop points, seek, 0 steady-state allocations). Listening on physical speakers is a manual check.
 
 ---
 

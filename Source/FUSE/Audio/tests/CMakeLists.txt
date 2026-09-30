@@ -64,3 +64,27 @@ target_link_libraries(fuse_b7_reverb_cuda_device PRIVATE fuse_audio fuse_core)
 add_test(NAME fuse_b7_reverb_cuda_device COMMAND fuse_b7_reverb_cuda_device)
 set_tests_properties(fuse_b7_reverb_cuda_device PROPERTIES
     LABELS "gate;cuda;cuda_device" SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 600)
+
+# GAP-AUDIO-DEVICE-OUT / MP-B7.2-OGG-RUNTIME / UNI-U7-AUDIO-1 / AP-W8.3: Null-backend capture == mix,
+# sine round trip, zero allocations per tick, SPSC ring, vendored xiph (Vorbis encode/decode SNR, FLAC),
+# cooked .fuseaudio containers via the VFS, 30 s streaming voice and looping/seeking streaming voices.
+add_executable(fuse_audio_output_tests test_audio_output.cpp)
+target_link_libraries(fuse_audio_output_tests PRIVATE fuse_audio fuse_core)
+add_test(NAME fuse_audio_output COMMAND fuse_audio_output_tests)
+set_tests_properties(fuse_audio_output PROPERTIES LABELS "gate;audio" TIMEOUT 300)
+
+# Real OpenAL device output (vendored openal-soft): the wave writer driver must record exactly the
+# engine's mix; the null driver exercises counters, latency, starvation and device-lost -> reconnect.
+if(FUSE_AUDIO_HAS_OPENAL)
+    set(_fuse_wave_conf "${CMAKE_CURRENT_BINARY_DIR}/fuse_audio_wave_alsoft.conf")
+    set(_fuse_wave_out "${CMAKE_CURRENT_BINARY_DIR}/fuse_audio_wave_out.wav")
+    file(WRITE "${_fuse_wave_conf}" "[general]\ndrivers=wave\nfrequency=48000\nchannels=stereo\nsample-type=float32\nperiod_size=512\nperiods=3\noutput-limiter=false\ndither=false\nhrtf=false\nstereo-mode=speakers\n[wave]\nfile=${_fuse_wave_out}\n")
+    add_test(NAME fuse_audio_output_wave COMMAND fuse_audio_output_tests --wave "${_fuse_wave_out}")
+    set_tests_properties(fuse_audio_output_wave PROPERTIES
+        LABELS "gate;audio" TIMEOUT 120 SKIP_RETURN_CODE 77
+        ENVIRONMENT "ALSOFT_CONF=${_fuse_wave_conf};ALSOFT_DRIVERS=wave")
+    add_test(NAME fuse_audio_output_openal_null COMMAND fuse_audio_output_tests --openal-null)
+    set_tests_properties(fuse_audio_output_openal_null PROPERTIES
+        LABELS "gate;audio" TIMEOUT 120 SKIP_RETURN_CODE 77
+        ENVIRONMENT "ALSOFT_DRIVERS=null;ALSOFT_CONF=/dev/null")
+endif()

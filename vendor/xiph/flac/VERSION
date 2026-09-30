@@ -1,0 +1,24 @@
+# FUSE third-party pin: libFLAC, built from the vendored upstream source archive vendor/xiph-flac-1.5.0.tar.gz (verbatim
+# release tarball, no local edits). cmake/FuseXiph.cmake extracts it into the build tree at configure
+# time (after checking archive_sha256), compiles the static library for fuse_audio (Ogg Vorbis / FLAC
+# decode, Vorbis encode), and never uses a system copy. COPYING.Xiph is the upstream licence text copied out
+# of the archive; fuse_flac_pin.h is FUSE-authored and only restates the version for the lint.
+# Checked by `fuse_lint vendored-pins` (ctest: fuse_lint_vendored_pins_xiph_flac). commit is the
+# upstream tag commit (also embedded in the archive: `git get-tar-commit-id`).
+# sha256 entries use the lint's CRLF-normalised hash; archive_sha256 is the raw file hash CMake checks.
+# To update: replace the archive, copy the licence file out of it, bump the defines in fuse_flac_pin.h,
+# then update version, tag, commit, archive_sha256 and every sha256 below together.
+name=libFLAC
+upstream=https://github.com/xiph/flac
+version=1.5.0
+tag=1.5.0
+commit=1507800de4b70e21be71f38caa0d9079d0bc6e45
+retrieved=2026-09 (release archive already vendored for the Torque vcpkg ports; pinned for FUSE)
+license=BSD-3-Clause
+license_file=COPYING.Xiph
+version_header=fuse_flac_pin.h
+archive=xiph-flac-1.5.0.tar.gz
+archive_sha256=aea54ed186ad07a34750399cb27fc216a2b62d0ffcd6dc2e3064a3518c3146f8
+sha256:../../xiph-flac-1.5.0.tar.gz=1b94d722cc9baef8d6a63ba20bc4ab5d33d32f3aa416359fc30e8b2209e7b995
+sha256:COPYING.Xiph=7866ee98760fc1f0156b4fe6bf530257e02be487ab3fd94e2b63799dd32d6b2c
+sha256:fuse_flac_pin.h=e82ebcbefdd28141df8b3d44e507e8cd1649f7a883d3e33b789d7795fc62975d

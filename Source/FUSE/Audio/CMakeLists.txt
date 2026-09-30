@@ -3,6 +3,9 @@
 set(FUSE_AUDIO_PUBLIC_HEADERS
     include/fuse/audio/audio_backend.hpp
     include/fuse/audio/audio_clip.hpp
+    include/fuse/audio/audio_codec.hpp
+    include/fuse/audio/audio_container.hpp
+    include/fuse/audio/audio_stream.hpp
     include/fuse/audio/audio_components.hpp
     include/fuse/audio/audio_desc.hpp
     include/fuse/audio/audio_engine.hpp
@@ -17,6 +20,7 @@ set(FUSE_AUDIO_PUBLIC_HEADERS
     include/fuse/audio/reverb_fft_kernel.hpp
     include/fuse/audio/reverb_zones.hpp
     include/fuse/audio/spatial_mixer.hpp
+    include/fuse/audio/spsc_ring.hpp
 )
 
 set(FUSE_AUDIO_SOURCES
@@ -25,6 +29,10 @@ set(FUSE_AUDIO_SOURCES
     src/audio_bus.cpp
     src/audio_backend.cpp
     src/audio_clip.cpp
+    src/audio_codec.cpp
+    src/audio_container.cpp
+    src/audio_stream.cpp
+    src/vorbis_memory_io.hpp
     src/audio_engine.cpp
     src/audio_registry.cpp
     src/conv_reverb_cpu.cpp
@@ -47,6 +55,17 @@ target_include_directories(fuse_audio
 )
 
 target_link_libraries(fuse_audio PUBLIC fuse_core)
+
+# Vendored xiph codecs (cmake/FuseXiph.cmake): runtime Ogg Vorbis / FLAC decode, Vorbis encode.
+include("${CMAKE_SOURCE_DIR}/cmake/FuseXiph.cmake")
+if(FUSE_HAS_OGG_VORBIS)
+    target_link_libraries(fuse_audio PRIVATE fuse_xiph_vorbisfile fuse_xiph_vorbisenc fuse_xiph_vorbis fuse_xiph_ogg)
+    target_compile_definitions(fuse_audio PRIVATE FUSE_HAS_OGG_VORBIS=1)
+endif()
+if(FUSE_HAS_FLAC)
+    target_link_libraries(fuse_audio PRIVATE fuse_xiph_flac)
+    target_compile_definitions(fuse_audio PRIVATE FUSE_HAS_FLAC=1)
+endif()
 
 # Single-source "reverb_fft" / "reverb_cmac" kernels (docs/compute-kernels.md): CUDA device mirror when
 # the toolkit is found (CUDA::cudart and FUSE_HAS_CUDA come through fuse_core).

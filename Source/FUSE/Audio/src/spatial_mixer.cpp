@@ -69,8 +69,10 @@ float SpatialMixer::sample_clip(const AudioClip& clip, double frame_pos, u32 cha
         return 0.f;
     }
     u32 i1 = i0 + 1;
-    if (i1 >= frame_count) {
-        i1 = looping ? 0 : frame_count - 1;
+    if (looping && i1 >= clip.loop_end_frame()) {
+        i1 = clip.loop_start_frame();
+    } else if (i1 >= frame_count) {
+        i1 = frame_count - 1;
     }
     const float frac = static_cast<float>(frame_pos - static_cast<double>(i0));
     const u32 ch = std::min(channel, clip.channel_count - 1);
@@ -80,6 +82,62 @@ float SpatialMixer::sample_clip(const AudioClip& clip, double frame_pos, u32 cha
     }
     const float b = clip.samples[static_cast<usize>(i1) * clip.channel_count + ch];
     return a + (b - a) * frac;
+}
+
+float SpatialMixer::sample_stream(StreamDecoder& decoder, const AudioClip& clip, double frame_pos, u32 channel,
+                                  bool looping) {
+    const u32 frame_count = clip.frame_count();
+    if (clip.channel_count == 0 || frame_count == 0 || frame_pos < 0.0) {
+        return 0.f;
+    }
+    const u32 i0 = static_cast<u32>(frame_pos);
+    if (i0 >= frame_count) {
+        return 0.f;
+    }
+    u32 i1 = i0 + 1;
+    if (looping && i1 >= clip.loop_end_frame()) {
+        i1 = clip.loop_start_frame();
+    } else if (i1 >= frame_count) {
+        i1 = frame_count - 1;
+    }
+    const float frac = static_cast<float>(frame_pos - static_cast<double>(i0));
+    const u32 ch = std::min(channel, clip.channel_count - 1);
+    const float a = decoder.sample(i0, ch);
+    if (frac <= 0.f) {
+        return a;
+    }
+    const float b = decoder.sample(i1, ch);
+    return a + (b - a) * frac;
+}
+
+u32 SpatialMixer::active_stream_voices() const {
+    u32 count = 0;
+    for (const auto& entry : m_voiceState) {
+        if (entry.second.stream) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+u64 SpatialMixer::stream_underruns() const {
+    u64 total = m_retiredStreamUnderruns;
+    for (const auto& entry : m_voiceState) {
+        if (entry.second.stream) {
+            total += entry.second.stream->stats().underruns;
+        }
+    }
+    return total;
+}
+
+u64 SpatialMixer::stream_seeks() const {
+    u64 total = m_retiredStreamSeeks;
+    for (const auto& entry : m_voiceState) {
+        if (entry.second.stream) {
+            total += entry.second.stream->stats().seeks;
+        }
+    }
+    return total;
 }
 
 u32 SpatialMixer::add_one_shot(const OneShotVoice& voice) {
@@ -138,6 +196,33 @@ void SpatialMixer::render_voice(const VoiceRequest& voice, const Vec3& listener_
         static_cast<double>(std::max(voice.pitch, 0.f)) * clip_rate / static_cast<double>(m_sampleRate);
     const double start = voice.play_head * clip_rate;
     const double length = static_cast<double>(clip_frames);
+    const double loop_begin = static_cast<double>(clip.loop_start_frame());
+    const double loop_end = static_cast<double>(clip.loop_end_frame());
+    const double loop_length = loop_end - loop_begin;
+
+    StreamDecoder* decoder = nullptr;
+    if (clip.stream) {
+        if (!state.stream || state.stream_source != clip.stream.get()) {
+            if (state.stream) {
+                m_retiredStreamUnderruns += state.stream->stats().underruns;
+                m_retiredStreamSeeks += state.stream->stats().seeks;
+            }
+            state.stream = std::make_unique<StreamDecoder>();
+            state.stream_source = clip.stream.get();
+            if (!state.stream->open(clip.stream, clip.loop_start_frame(), clip.loop_end_frame())) {
+                state.stream.reset();
+                state.stream_source = nullptr;
+            }
+        }
+        decoder = state.stream.get();
+        if (decoder == nullptr) {
+            return;
+        }
+    }
+    auto fetch = [&](double pos, u32 channel) {
+        return decoder != nullptr ? sample_stream(*decoder, clip, pos, channel, voice.looping)
+                                  : sample_clip(clip, pos, channel, voice.looping);
+    };
     const float lp_coeff = 1.f
         - std::exp(-2.f * 3.14159265358979323846f * kOcclusionCrossoverHz
                    / static_cast<float>(m_sampleRate));
@@ -146,7 +231,9 @@ void SpatialMixer::render_voice(const VoiceRequest& voice, const Vec3& listener_
     for (u32 frame = 0; frame < frames; ++frame) {
         double pos = start + static_cast<double>(frame) * step;
         if (voice.looping) {
-            pos = std::fmod(pos, length);
+            if (pos >= loop_end && loop_length > 0.0) {
+                pos = loop_begin + std::fmod(pos - loop_begin, loop_length);
+            }
         } else if (pos >= length) {
             break;
         }
@@ -154,14 +241,13 @@ void SpatialMixer::render_voice(const VoiceRequest& voice, const Vec3& listener_
         float in_left = 0.f;
         float in_right = 0.f;
         if (clip.channel_count == 1) {
-            in_left = sample_clip(clip, pos, 0, voice.looping);
+            in_left = fetch(pos, 0);
             in_right = in_left;
         } else if (stereo_passthrough) {
-            in_left = sample_clip(clip, pos, 0, voice.looping);
-            in_right = sample_clip(clip, pos, 1, voice.looping);
+            in_left = fetch(pos, 0);
+            in_right = fetch(pos, 1);
         } else {
-            in_left = 0.5f * (sample_clip(clip, pos, 0, voice.looping)
-                              + sample_clip(clip, pos, 1, voice.looping));
+            in_left = 0.5f * (fetch(pos, 0) + fetch(pos, 1));
             in_right = in_left;
         }
 
@@ -282,6 +368,10 @@ void SpatialMixer::mix(const AudioRegistry& registry, const HandleMap<AudioClip>
 
     for (auto it = m_voiceState.begin(); it != m_voiceState.end();) {
         if (!it->second.touched) {
+            if (it->second.stream) {
+                m_retiredStreamUnderruns += it->second.stream->stats().underruns;
+                m_retiredStreamSeeks += it->second.stream->stats().seeks;
+            }
             it = m_voiceState.erase(it);
         } else {
             it->second.touched = false;
@@ -311,7 +401,15 @@ std::vector<u32> SpatialMixer::advance(AudioRegistry& registry, const HandleMap<
         const double length =
             static_cast<double>(clip->frame_count()) / static_cast<double>(clip->sample_rate);
         source->play_head += elapsed * static_cast<double>(std::max(source->desc.pitch, 0.f));
-        if (source->play_head >= length) {
+        const double rate = static_cast<double>(clip->sample_rate);
+        const double loop_end = static_cast<double>(clip->loop_end_frame()) / rate;
+        const double loop_begin = static_cast<double>(clip->loop_start_frame()) / rate;
+        if (source->desc.looping && source->play_head >= loop_end) {
+            const double loop_length = loop_end - loop_begin;
+            source->play_head = loop_length > 0.0
+                ? loop_begin + std::fmod(source->play_head - loop_begin, loop_length)
+                : 0.0;
+        } else if (source->play_head >= length) {
             if (source->desc.looping) {
                 source->play_head = std::fmod(source->play_head, length);
             } else {

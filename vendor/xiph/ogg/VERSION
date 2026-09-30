@@ -1,0 +1,24 @@
+# FUSE third-party pin: libogg, built from the vendored upstream source archive vendor/xiph-ogg-v1.3.6.tar.gz (verbatim
+# release tarball, no local edits). cmake/FuseXiph.cmake extracts it into the build tree at configure
+# time (after checking archive_sha256), compiles the static library for fuse_audio (Ogg Vorbis / FLAC
+# decode, Vorbis encode), and never uses a system copy. COPYING is the upstream licence text copied out
+# of the archive; fuse_ogg_pin.h is FUSE-authored and only restates the version for the lint.
+# Checked by `fuse_lint vendored-pins` (ctest: fuse_lint_vendored_pins_xiph_ogg). commit is the
+# upstream tag commit (also embedded in the archive: `git get-tar-commit-id`).
+# sha256 entries use the lint's CRLF-normalised hash; archive_sha256 is the raw file hash CMake checks.
+# To update: replace the archive, copy the licence file out of it, bump the defines in fuse_ogg_pin.h,
+# then update version, tag, commit, archive_sha256 and every sha256 below together.
+name=libogg
+upstream=https://github.com/xiph/ogg
+version=1.3.6
+tag=v1.3.6
+commit=be05b13e98b048f0b5a0f5fa8ce514d56db5f822
+retrieved=2026-09 (release archive already vendored for the Torque vcpkg ports; pinned for FUSE)
+license=BSD-3-Clause
+license_file=COPYING
+version_header=fuse_ogg_pin.h
+archive=xiph-ogg-v1.3.6.tar.gz
+archive_sha256=95b643da661155d79db9de2fca55daed3a8d491039829def246aacb3d9201c81
+sha256:../../xiph-ogg-v1.3.6.tar.gz=3eaa58b96b224d9eb4f5f80504c69746b8d331ac8174cd2da493ad6f6b6f24c7
+sha256:COPYING=d2ab5758336489da61c12cc5bb757da5339c4ae9001f9bb0562b4370249af814
+sha256:fuse_ogg_pin.h=0aadefbac4ea5d26f80edb8240ea686aba1a27f17ac3bcbcfaa688cdef36466b

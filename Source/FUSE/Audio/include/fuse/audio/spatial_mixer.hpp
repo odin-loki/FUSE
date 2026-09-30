@@ -6,6 +6,7 @@
 #include <fuse/audio/audio_components.hpp>
 #include <fuse/audio/audio_desc.hpp>
 #include <fuse/audio/audio_registry.hpp>
+#include <fuse/audio/audio_stream.hpp>
 #include <fuse/audio/binaural_pan.hpp>
 #include <fuse/audio/math.hpp>
 #include <fuse/audio/occlusion.hpp>
@@ -13,6 +14,7 @@
 #include <fuse/handle_map.hpp>
 #include <fuse/types.hpp>
 
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -78,6 +80,14 @@ public:
 
     float last_master_gain() const { return m_lastMasterGain; }
 
+    /// Streaming voices (clips with AudioClip::stream) currently holding a decoder.
+    u32 active_stream_voices() const;
+    /// Sum of StreamDecoder underruns (samples that could not be decoded in time) over the
+    /// lifetime of the mixer, including decoders already released.
+    u64 stream_underruns() const;
+    /// Sum of StreamDecoder seeks (initial positioning, loop continuation, play-head jumps).
+    u64 stream_seeks() const;
+
     AudioBusMixer& bus_mixer() { return m_busMixer; }
     const AudioBusMixer& bus_mixer() const { return m_busMixer; }
 
@@ -101,7 +111,12 @@ private:
         float lp_right = 0.f;
         bool primed = false;
         bool touched = false;
+        /// Per-voice decoder for streaming clips (bounded decode ring, see StreamDecoder).
+        std::unique_ptr<StreamDecoder> stream;
+        const AudioStreamData* stream_source = nullptr;
     };
+    u64 m_retiredStreamUnderruns = 0;
+    u64 m_retiredStreamSeeks = 0;
     std::unordered_map<u64, VoiceState> m_voiceState;
 
     struct VoiceRequest {
@@ -122,6 +137,8 @@ private:
     std::vector<VoiceRequest> m_requests;
 
     float sample_clip(const AudioClip& clip, double frame_pos, u32 channel, bool looping) const;
+    static float sample_stream(StreamDecoder& decoder, const AudioClip& clip, double frame_pos, u32 channel,
+                               bool looping);
     void render_voice(const VoiceRequest& voice, const Vec3& listener_pos, bool has_listener,
                       const ListenerBasis& basis, std::vector<float>& stereo_out, u32 frames);
 };

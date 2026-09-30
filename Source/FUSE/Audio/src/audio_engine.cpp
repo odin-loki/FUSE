@@ -12,12 +12,14 @@ namespace fuse::audio {
 void AudioEngine::init(const AudioDesc& desc) {
     destroy();
     m_desc = desc;
-    m_backend.init(desc);
+    const bool backend_ok = m_backend.init(desc);
     m_mixer.configure(desc.sample_rate, desc.max_sources, desc.hrtf_enabled);
     m_mixBuffer.clear();
+    m_mixBuffer.reserve(static_cast<usize>(desc.frames_per_buf) * 2);
     m_dryBuffer.clear();
     m_reverbZones.clear();
-    m_initialized = m_backend.is_initialized();
+    m_blocksRendered = 0;
+    m_initialized = backend_ok && m_backend.is_initialized();
 }
 
 void AudioEngine::destroy() {
@@ -30,6 +32,7 @@ void AudioEngine::destroy() {
     m_wetBuffer.clear();
     m_mixer.clear_one_shots();
     m_cpuReverb.reset();
+    m_blocksRendered = 0;
     m_initialized = false;
 }
 
@@ -38,6 +41,19 @@ void AudioEngine::update(AudioRegistry& registry, float dt) {
         return;
     }
 
+    // Caller pacing (and the Null device): one block per update, the caller is the sample clock.
+    // Device pacing with a real device: fill whatever the output queue can take right now.
+    u32 blocks = 1;
+    if (m_desc.pacing == AudioPacing::Device && m_backend.kind() != AudioBackendKind::Null) {
+        blocks = m_backend.writable_blocks();
+    }
+    for (u32 block = 0; block < blocks; ++block) {
+        render_block_(registry, dt);
+        m_backend.submit(m_mixBuffer.data(), m_desc.frames_per_buf);
+    }
+}
+
+void AudioEngine::render_block_(AudioRegistry& registry, float dt) {
     const u32 frames = m_desc.frames_per_buf;
     m_mixer.mix(registry, m_clips, dt, m_mixBuffer, frames);
 
@@ -58,6 +74,7 @@ void AudioEngine::update(AudioRegistry& registry, float dt) {
     for (u32 retired : m_mixer.advance(registry, m_clips, frames)) {
         m_backend.destroy_source(retired);
     }
+    ++m_blocksRendered;
 }
 
 void AudioEngine::play_at(Handle<AudioClip> clip, const Vec3& position, float volume, float pitch) {
@@ -95,7 +112,19 @@ void AudioEngine::play_2d(Handle<AudioClip> clip, float volume) {
 
 Handle<AudioClip> AudioEngine::load_clip(const char* path) {
     AudioClip clip;
-    if (!clip.load_wav(path)) {
+    AudioClipLoadOptions options;
+    options.stream_threshold_seconds = m_desc.stream_threshold_seconds;
+    if (!clip.load_file(path, options)) {
+        return Handle<AudioClip>::invalid();
+    }
+    return register_clip(std::move(clip));
+}
+
+Handle<AudioClip> AudioEngine::load_clip_memory(const u8* data, usize size) {
+    AudioClip clip;
+    AudioClipLoadOptions options;
+    options.stream_threshold_seconds = m_desc.stream_threshold_seconds;
+    if (!clip.load_memory(data, size, options)) {
         return Handle<AudioClip>::invalid();
     }
     return register_clip(std::move(clip));

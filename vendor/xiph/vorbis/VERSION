@@ -1,0 +1,24 @@
+# FUSE third-party pin: libvorbis, built from the vendored upstream source archive vendor/xiph-vorbis-v1.3.7.tar.gz (verbatim
+# release tarball, no local edits). cmake/FuseXiph.cmake extracts it into the build tree at configure
+# time (after checking archive_sha256), compiles the static library for fuse_audio (Ogg Vorbis / FLAC
+# decode, Vorbis encode), and never uses a system copy. COPYING is the upstream licence text copied out
+# of the archive; fuse_vorbis_pin.h is FUSE-authored and only restates the version for the lint.
+# Checked by `fuse_lint vendored-pins` (ctest: fuse_lint_vendored_pins_xiph_vorbis). commit is the
+# upstream tag commit (also embedded in the archive: `git get-tar-commit-id`).
+# sha256 entries use the lint's CRLF-normalised hash; archive_sha256 is the raw file hash CMake checks.
+# To update: replace the archive, copy the licence file out of it, bump the defines in fuse_vorbis_pin.h,
+# then update version, tag, commit, archive_sha256 and every sha256 below together.
+name=libvorbis
+upstream=https://github.com/xiph/vorbis
+version=1.3.7
+tag=v1.3.7
+commit=0657aee69dec8508a0011f47f3b69d7538e9d262
+retrieved=2026-09 (release archive already vendored for the Torque vcpkg ports; pinned for FUSE)
+license=BSD-3-Clause
+license_file=COPYING
+version_header=fuse_vorbis_pin.h
+archive=xiph-vorbis-v1.3.7.tar.gz
+archive_sha256=270c76933d0934e42c5ee0a54a36280e2d87af1de3cc3e584806357e237afd13
+sha256:../../xiph-vorbis-v1.3.7.tar.gz=0fab825bfb68d9a12d738a49045126eeb6a4342bdad83a1c9cf8798ad01bdf68
+sha256:COPYING=ec1815db59fcd302846df949d7424876cb2e2dc5ed1606c5fb0b36787b1cf43a
+sha256:fuse_vorbis_pin.h=5ef9b9cb0ac36588b87c0da8cc0b48c8f8d867cf2253616af65b716354aa53fa
