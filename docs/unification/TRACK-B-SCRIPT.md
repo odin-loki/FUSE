@@ -19,8 +19,11 @@
 | Bind helpers | `Source/FUSE/Script/include/fuse/script/script_bind.hpp` | Tagged `ScriptValue` carriers + `values_equal` + `PropertyStore` / `MethodTable` |
 | Lua stack bridge | `Source/FUSE/Script/include/fuse/script/script_bind_lua.hpp` | `push_to_stack` / `read_from_stack` when `FUSE_SCRIPT_LUA=1` |
 | Callbacks | `Source/FUSE/Script/include/fuse/script/script_callback.hpp` | `OnStart`, `OnUpdate`, `OnDestroy`, collision/trigger hooks |
+| Engine API | `Source/FUSE/Script/include/fuse/script/script_engine_api.hpp` | `bind_engine_api`: `Entity` `Physics` `Input` `Audio` `Scene` `SDF` `CVar` tables; one backend pointer per service in `ScriptEngineBindings` |
+| API backends | `Source/FUSE/Script/include/fuse/script/script_engine_backends.hpp` | `InputScriptBackend` (InputState + ActionMap + GamepadState / PlayerController), `RegistrySceneBackend` (names, sphere query via BVH or scan, active camera) |
+| Audio bridge | `Source/FUSE/Script/include/fuse/script/script_audio_bridge.hpp` | `AudioEngineScriptBackend` in `fuse_script_audio` (links fuse_audio; fuse_script stays audio-free) |
 
-**Not in scope:** ECS `Script` component, hot-reload watcher, physics/input API bindings, per-entity `lua_ref`, Qt editor console chrome.
+**Not in scope:** hot-reload watcher, Qt editor console chrome. (The ECS `Script` component and the engine API tables have since landed — see below.)
 
 ---
 
@@ -56,6 +59,47 @@ Dispatch edge cases covered by tests:
 - **Error isolation** — a throwing script is caught, recorded via `error_count()` / `last_error()`, and remaining scripts continue.
 
 `ScriptHost::tick_update_scripts(dt, entity)` delegates to the registry when initialized.
+
+### Engine API tables (MP-B7.3-LUA-API)
+
+`bind_engine_api(vm, bindings)` registers these globals. Each table reads its service from
+`ScriptEngineBindings` (`registry`, `physics`, `input`, `audio`, `scene`, `cvars`); a call whose
+service is null, or with a malformed argument / unknown name, raises a Lua error that the VM's
+protected call reports. Entity ids are numbers (`generation * 2^32 + index`); a behaviour's `self`
+table is accepted wherever an id is.
+
+```lua
+-- Entity
+Entity.create([name]) -> id            -- a name is registered with the scene backend
+Entity.destroy(id) / Entity.alive(id)
+Entity.get_position(id) -> {x,y,z}     Entity.set_position(id, {x,y,z})
+Entity.get_rotation(id) -> {x,y,z,w}   Entity.set_rotation_euler(id, {x,y,z})  -- degrees
+-- Physics
+Physics.ray_cast(origin, dir[, max]) -> {entity, point, normal, distance} | nil
+Physics.apply_impulse(id, v)  Physics.set_velocity(id, v)  Physics.get_velocity(id) -> v | nil
+-- Input (keys: "Space", "W", "F1", "Left", ...; mouse buttons: "Left", "Right", "Middle", "X1", "X2")
+Input.key_pressed(k) / key_held(k) / key_released(k) -> bool
+Input.mouse_pressed(b) / mouse_held(b) / mouse_released(b) -> bool
+Input.mouse_delta() -> dx, dy          Input.mouse_position() -> x, y
+Input.pressed(action) / held(action) / released(action) -> bool   Input.axis(action) -> number
+Input.gamepad_connected(pad) -> bool   -- pad 0..3
+-- Audio
+Audio.load(path) -> clip | nil
+Audio.play_at(clip, {x,y,z}[, volume[, pitch]]) -> bool   Audio.play_2d(clip[, volume]) -> bool
+-- Scene
+Scene.find_entity(name) -> id | nil    Scene.query_sphere({x,y,z}, radius) -> {id, ...}
+Scene.set_active_camera(id) -> bool    Scene.active_camera() -> id | nil
+-- SDF (SDFObject component)
+SDF.set_radius(id, r)  SDF.set_alpha(id, a)  SDF.set_primitive(id, "Sphere"|"Box"|"Capsule"|"Torus"|"Cylinder"|"Custom")
+SDF.get(id) -> {primitive, radius, alpha, params = {x,y,z}} | nil
+-- CVar (fuse::config, runtime precedence)
+CVar.get(name) -> bool | number | string | nil    CVar.set(name, value) -> true | false, reason
+```
+
+Gate: `fuse_script_lua_api` (Input over synthetic key / mouse / gamepad events and the default
+ActionMap, Audio through the Null backend with audible capture, Scene names / sphere query (scan
+and BVH agree) / active camera, SDF radius / alpha / primitive edits, CVar get / set, errors for
+missing services and bad names).
 
 ### Script console / REPL
 
@@ -169,6 +213,7 @@ ctest --test-dir build --output-on-failure -R fuse_script
 - [x] `ScriptConsole` REPL stubs + history buffer + command dispatch tests
 - [x] CTest target green in umbrella CI
 - [x] ECS `Script` component + per-entity `lua_ref` — `ecs/components/script.hpp` (module path / AssetId, enabled, started, lua_ref, 8-entry number/bool/string/vec3 property table), registered + serialised (runtime fields scrubbed, corrupt rows rejected), `ScriptSystem` attach/detach on add/remove/disable/module change/destroy/scene load, `enterPlay`/`exitPlay`, contact dispatch; gate `fuse_script_component` (MP-B7.3-SCRIPT-COMPONENT, CPU)
+- [x] Engine API tables `Input` / `Audio` / `Scene` / `SDF` / `CVar` next to `Entity` / `Physics`, each with a backend pointer in `ScriptEngineBindings`; gate `fuse_script_lua_api` (MP-B7.3-LUA-API, CPU)
 - [ ] Hot-reload watcher (follow-up)
 
 ---
@@ -177,7 +222,7 @@ ctest --test-dir build --output-on-failure -R fuse_script
 
 - [x] `ecs/components/script.hpp` + per-entity `lua_ref` (see gates above; `CookAssetKind::Script` cooks `.lua` → bytecode `.fusescript`, gate `fuse_script_cook`)
 - [ ] `ScriptHotReload` file watcher (master plan sketch)
-- [ ] Engine API surface (`Entity.*`, `Physics.*`, `Input.*`) as Lua bindings
+- [x] Engine API surface (`Entity.*`, `Physics.*`, `Input.*`, `Audio.*`, `Scene.*`, `SDF.*`, `CVar.*`) as Lua bindings (MP-B7.3-LUA-API; runtime / PIE hosts fill `ScriptEngineBindings` in their own packages)
 - [ ] Wire stack bridge into callback dispatch (pass `ctx` fields to Lua handlers)
 - [ ] Wire `ScriptConsole` into `fuse::editor::ConsolePanel` command line (U6 chrome)
 

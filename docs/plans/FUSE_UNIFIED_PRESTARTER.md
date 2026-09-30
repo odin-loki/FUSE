@@ -310,7 +310,7 @@ Practical tactics (pick based on U0 collision report):
 
 1. Logging → FUSE logger  
 2. File I/O / paths → FUSE VFS mounts (`/t3d/...`, `/t2d/...`, `/game/...`)  
-3. Input → FUSE input (game path); editor via Qt  
+3. Input → FUSE input (game path); editor via Qt — game path landed (UNI-INPUT-1): keyboard / mouse `InputState`, gamepads (XInput / evdev) and `ActionMap` + `PlayerController` in `fuse/platform/`, Lua `Input.*`; gate `fuse_core_action_map`  
 4. Time / timers / job submission → FUSE jobs  
 5. Strings / tables → plan migration off dual StringTables  
 6. Audio → single mixer API (backends may remain dual short-term)  
@@ -620,7 +620,7 @@ Track B: Vulkan, ECS, physics, advanced lighting, production…
 - [ ] World3D load/save/play  
 - [ ] World2D load/save/play  
 - [ ] Hybrid compose in one window  
-- [ ] Shared input/audio/net  
+- [ ] Shared input/audio/net — input done (UNI-INPUT-1: action maps + gamepads shared by runtime / PIE via `PlayerController`); audio and net sharing still open  
 
 ### Features
 - [ ] Behavior trees (AI)  

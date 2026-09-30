@@ -480,3 +480,19 @@ else()
 endif()
 set_tests_properties(fuse_core_b1_x11_window_gates PROPERTIES
     LABELS "gate" SKIP_RETURN_CODE 77 TIMEOUT 120)
+
+# GAP-CVAR: typed cvars, precedence, persistence, callbacks, protection, concurrent reads (TSan with
+# FUSE_CORE_ENABLE_TSAN=ON), settings JSON reader.
+add_executable(fuse_core_cvar_tests config/test_cvar.cpp)
+target_link_libraries(fuse_core_cvar_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_cvar_tests)
+add_test(NAME fuse_core_cvar COMMAND fuse_core_cvar_tests)
+set_tests_properties(fuse_core_cvar PROPERTIES LABELS "gate;config" TIMEOUT 120)
+
+# UNI-INPUT-1: action maps, gamepad state / deadzones, XInput + evdev translation, evdev stream,
+# rebinding persistence, PlayerController.
+add_executable(fuse_core_action_map_tests input/test_action_map.cpp)
+target_link_libraries(fuse_core_action_map_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_action_map_tests)
+add_test(NAME fuse_core_action_map COMMAND fuse_core_action_map_tests)
+set_tests_properties(fuse_core_action_map PROPERTIES LABELS "gate;input" TIMEOUT 120)

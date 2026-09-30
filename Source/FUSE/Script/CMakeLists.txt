@@ -10,6 +10,7 @@ set(FUSE_SCRIPT_PUBLIC_HEADERS
     include/fuse/script/script_console_command_registry.hpp
     include/fuse/script/script_console_history.hpp
     include/fuse/script/script_engine_api.hpp
+    include/fuse/script/script_engine_backends.hpp
     include/fuse/script/script_host.hpp
     include/fuse/script/script_host_service.hpp
     include/fuse/script/script_hot_reload.hpp
@@ -28,6 +29,7 @@ set(FUSE_SCRIPT_SOURCES
     src/script_console_command_registry.cpp
     src/script_console_history.cpp
     src/script_engine_api.cpp
+    src/script_engine_backends.cpp
     src/script_host.cpp
     src/script_host_service.cpp
     src/script_hot_reload.cpp
@@ -115,6 +117,16 @@ if(TARGET fuse_physics)
     )
     add_library(fuse::script_physics ALIAS fuse_script_physics)
     target_link_libraries(fuse_script_physics PUBLIC fuse_script fuse_physics)
+endif()
+
+# MP-B7.3-LUA-API: Audio.* script API on AudioEngine (fuse_script itself stays independent of fuse_audio).
+if(TARGET fuse_audio)
+    add_library(fuse_script_audio STATIC
+        src/script_audio_bridge.cpp
+        include/fuse/script/script_audio_bridge.hpp
+    )
+    add_library(fuse::script_audio ALIAS fuse_script_audio)
+    target_link_libraries(fuse_script_audio PUBLIC fuse_script fuse_audio)
 endif()
 
 if(FUSE_BUILD_CORE_TESTS)

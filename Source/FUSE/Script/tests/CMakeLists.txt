@@ -60,3 +60,17 @@ set_tests_properties(fuse_script_component PROPERTIES LABELS "gate" SKIP_RETURN_
 if(MINGW)
     target_link_options(fuse_script_component_tests PRIVATE -Wl,--allow-multiple-definition)
 endif()
+
+# MP-B7.3-LUA-API / UNI-INPUT-1: Input.* over the ActionMap, Audio.* through the Null backend,
+# Scene.* (names, sphere query, active camera), SDF.* on SDFObject, CVar.*.
+add_executable(fuse_script_lua_api_tests test_script_lua_api.cpp)
+target_link_libraries(fuse_script_lua_api_tests PRIVATE fuse_script fuse_ecs fuse_core)
+if(TARGET fuse_script_audio)
+    target_link_libraries(fuse_script_lua_api_tests PRIVATE fuse_script_audio)
+    target_compile_definitions(fuse_script_lua_api_tests PRIVATE FUSE_TEST_HAS_SCRIPT_AUDIO=1)
+endif()
+add_test(NAME fuse_script_lua_api COMMAND fuse_script_lua_api_tests)
+set_tests_properties(fuse_script_lua_api PROPERTIES LABELS "gate" SKIP_RETURN_CODE 77)
+if(MINGW)
+    target_link_options(fuse_script_lua_api_tests PRIVATE -Wl,--allow-multiple-definition)
+endif()

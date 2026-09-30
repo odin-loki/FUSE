@@ -2,6 +2,8 @@
 
 #include <fuse/types.hpp>
 
+#include <string_view>
+
 namespace fuse::platform {
 
 class EventPump;
@@ -85,6 +87,16 @@ enum class MouseButton : u8 { Left, Right, Middle, X1, X2, COUNT };
 /// Unknown codes return `Key::COUNT` and are ignored by `InputState::apply`.
 Key keyFromPlatformCode(u32 keyCode);
 
+/// Stable text names (action-map files, Lua `Input.key_held("W")`): "A".."Z", "0".."9",
+/// "F1".."F12", "Space", "Enter", "Escape", "Tab", "Backspace", "Delete", "Insert", "Left",
+/// "Right", "Up", "Down", "PageUp", "PageDown", "Home", "End", "Ctrl", "Shift", "Alt", "Super",
+/// "CapsLock". Lookup is case-insensitive; unknown names return `Key::COUNT`.
+std::string_view keyName(Key key);
+Key keyFromName(std::string_view name);
+/// "Left", "Right", "Middle", "X1", "X2" (case-insensitive); unknown -> `MouseButton::COUNT`.
+std::string_view mouseButtonName(MouseButton button);
+MouseButton mouseButtonFromName(std::string_view name);
+
 /// Frame input snapshot. No heap: down/pressed/released are fixed arrays.
 ///
 /// Call `beginFrame()` once per tick, then `apply()` each polled event
@@ -92,7 +104,7 @@ Key keyFromPlatformCode(u32 keyCode);
 /// `keyPressed` is true only until the next `beginFrame()` after a `KeyDown`.
 class InputState {
 public:
-    /// Clears pressed-this-frame, released-this-frame, and mouse delta.
+    /// Clears pressed-this-frame, released-this-frame (keys and mouse buttons), and mouse delta.
     /// Held keys and absolute mouse position stay.
     void beginFrame();
 
@@ -118,6 +130,12 @@ public:
     bool keyPressed(Key key) const;
     bool keyReleased(Key key) const;
     bool mouseDown(MouseButton button) const;
+    /// Button went down / up since the last `beginFrame()`.
+    bool mousePressed(MouseButton button) const;
+    bool mouseReleased(MouseButton button) const;
+
+    /// Focus loss: every held key and button is released (released-this-frame set for each).
+    void releaseAll();
 
     i32 mouseX() const { return m_mouseX; }
     i32 mouseY() const { return m_mouseY; }
@@ -136,6 +154,8 @@ private:
     bool m_keyPressed[kKeyCount]{};
     bool m_keyReleased[kKeyCount]{};
     bool m_mouseDown[kMouseButtonCount]{};
+    bool m_mousePressed[kMouseButtonCount]{};
+    bool m_mouseReleased[kMouseButtonCount]{};
     i32 m_mouseX = 0;
     i32 m_mouseY = 0;
     i32 m_mouseDeltaX = 0;

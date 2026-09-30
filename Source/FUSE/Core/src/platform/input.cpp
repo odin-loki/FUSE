@@ -130,6 +130,10 @@ void InputState::beginFrame() {
         m_keyPressed[i] = false;
         m_keyReleased[i] = false;
     }
+    for (u32 i = 0; i < kMouseButtonCount; ++i) {
+        m_mousePressed[i] = false;
+        m_mouseReleased[i] = false;
+    }
     m_mouseDeltaX = 0;
     m_mouseDeltaY = 0;
 }
@@ -184,6 +188,9 @@ void InputState::apply(const PlatformEvent& event) {
         if (!validMouseButton(button)) {
             return;
         }
+        if (!m_mouseDown[static_cast<u32>(button)]) {
+            m_mousePressed[static_cast<u32>(button)] = true;
+        }
         m_mouseDown[static_cast<u32>(button)] = true;
         m_mouseX = event.mouseX;
         m_mouseY = event.mouseY;
@@ -194,6 +201,9 @@ void InputState::apply(const PlatformEvent& event) {
         const MouseButton button = mouseButtonFromPlatformCode(event.mouseButton);
         if (!validMouseButton(button)) {
             return;
+        }
+        if (m_mouseDown[static_cast<u32>(button)]) {
+            m_mouseReleased[static_cast<u32>(button)] = true;
         }
         m_mouseDown[static_cast<u32>(button)] = false;
         m_mouseX = event.mouseX;
@@ -254,6 +264,105 @@ bool InputState::mouseDown(MouseButton button) const {
         return false;
     }
     return m_mouseDown[static_cast<u32>(button)];
+}
+
+bool InputState::mousePressed(MouseButton button) const {
+    if (!validMouseButton(button)) {
+        return false;
+    }
+    return m_mousePressed[static_cast<u32>(button)];
+}
+
+bool InputState::mouseReleased(MouseButton button) const {
+    if (!validMouseButton(button)) {
+        return false;
+    }
+    return m_mouseReleased[static_cast<u32>(button)];
+}
+
+void InputState::releaseAll() {
+    for (u32 i = 0; i < kKeyCount; ++i) {
+        if (m_keyDown[i]) {
+            m_keyReleased[i] = true;
+        }
+        m_keyDown[i] = false;
+    }
+    for (u32 i = 0; i < kMouseButtonCount; ++i) {
+        if (m_mouseDown[i]) {
+            m_mouseReleased[i] = true;
+        }
+        m_mouseDown[i] = false;
+    }
+}
+
+namespace {
+
+constexpr std::string_view kKeyNames[] = {
+    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S",
+    "T", "U", "V", "W", "X", "Y", "Z", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "F1", "F2",
+    "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "Space", "Enter", "Escape", "Tab",
+    "Backspace", "Delete", "Insert", "Left", "Right", "Up", "Down", "PageUp", "PageDown", "Home",
+    "End", "Ctrl", "Shift", "Alt", "Super", "CapsLock",
+};
+static_assert(sizeof(kKeyNames) / sizeof(kKeyNames[0]) == static_cast<usize>(Key::COUNT),
+              "kKeyNames must list every Key");
+
+constexpr std::string_view kMouseButtonNames[] = {"Left", "Right", "Middle", "X1", "X2"};
+static_assert(sizeof(kMouseButtonNames) / sizeof(kMouseButtonNames[0]) == static_cast<usize>(MouseButton::COUNT),
+              "kMouseButtonNames must list every MouseButton");
+
+bool equalsNoCase(std::string_view a, std::string_view b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (usize i = 0; i < a.size(); ++i) {
+        char x = a[i];
+        char y = b[i];
+        x = (x >= 'A' && x <= 'Z') ? static_cast<char>(x - 'A' + 'a') : x;
+        y = (y >= 'A' && y <= 'Z') ? static_cast<char>(y - 'A' + 'a') : y;
+        if (x != y) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+std::string_view keyName(Key key) {
+    return validKey(key) ? kKeyNames[static_cast<u32>(key)] : std::string_view();
+}
+
+Key keyFromName(std::string_view name) {
+    for (u32 i = 0; i < static_cast<u32>(Key::COUNT); ++i) {
+        if (equalsNoCase(kKeyNames[i], name)) {
+            return static_cast<Key>(i);
+        }
+    }
+    // Common aliases.
+    if (equalsNoCase(name, "Return")) {
+        return Key::Enter;
+    }
+    if (equalsNoCase(name, "Esc")) {
+        return Key::Escape;
+    }
+    if (equalsNoCase(name, "Control")) {
+        return Key::Ctrl;
+    }
+    return Key::COUNT;
+}
+
+std::string_view mouseButtonName(MouseButton button) {
+    return validMouseButton(button) ? kMouseButtonNames[static_cast<u32>(button)] : std::string_view();
+}
+
+MouseButton mouseButtonFromName(std::string_view name) {
+    for (u32 i = 0; i < static_cast<u32>(MouseButton::COUNT); ++i) {
+        if (equalsNoCase(kMouseButtonNames[i], name)) {
+            return static_cast<MouseButton>(i);
+        }
+    }
+    return MouseButton::COUNT;
 }
 
 } // namespace fuse::platform

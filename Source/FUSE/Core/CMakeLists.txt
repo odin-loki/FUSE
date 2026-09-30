@@ -81,6 +81,11 @@ set(FUSE_CORE_PUBLIC_HEADERS
     include/fuse/platform/input.hpp
     include/fuse/platform/window_wsi.hpp
     include/fuse/platform/event_pump.hpp
+    include/fuse/platform/gamepad.hpp
+    include/fuse/platform/action_map.hpp
+    include/fuse/config/cvar.hpp
+    include/fuse/config/engine_cvars.hpp
+    include/fuse/config/json.hpp
 )
 
 set(FUSE_CORE_SOURCES
@@ -120,7 +125,23 @@ set(FUSE_CORE_SOURCES
     src/platform/dpi.cpp
     src/platform/platform_window.cpp
     src/platform/input.cpp
+    src/platform/gamepad.cpp
+    src/platform/action_map.cpp
+    src/config/cvar.cpp
+    src/config/engine_cvars.cpp
+    src/config/json.cpp
 )
+
+# UNI-INPUT-1 gamepad backends: XInput (run-time loaded) on Win32, evdev on Linux, null elsewhere.
+if(WIN32)
+    list(APPEND FUSE_CORE_SOURCES src/platform/win/gamepad_xinput.cpp)
+    set(_fuse_gamepad_backend_define FUSE_GAMEPAD_XINPUT=1)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID)
+    list(APPEND FUSE_CORE_SOURCES src/platform/gamepad_linux.cpp)
+    set(_fuse_gamepad_backend_define FUSE_GAMEPAD_EVDEV=1)
+else()
+    set(_fuse_gamepad_backend_define "")
+endif()
 
 if(WIN32)
     list(APPEND FUSE_CORE_SOURCES src/platform/win/fiber_win32.cpp)
@@ -140,6 +161,9 @@ add_library(fuse_core STATIC
 )
 
 add_library(fuse::core ALIAS fuse_core)
+if(_fuse_gamepad_backend_define)
+    target_compile_definitions(fuse_core PRIVATE ${_fuse_gamepad_backend_define})
+endif()
 
 target_include_directories(fuse_core
     PUBLIC
