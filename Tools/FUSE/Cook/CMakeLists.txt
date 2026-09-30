@@ -9,6 +9,8 @@ add_library(fuse_cook_stubs STATIC
     src/texture_cook.cpp
     src/cook_stb_image.cpp
     src/ispc_texcomp_hook.cpp
+    src/audio_cook.cpp
+    include/fuse/cook/audio_cook.hpp
     include/fuse/cook/bc7_encoder.hpp
     include/fuse/cook/bcn_encoder.hpp
     include/fuse/cook/ktx2.hpp
@@ -89,27 +91,19 @@ elseif(EXISTS "${FUSE_VENDOR_DIR}/assimp/CMakeLists.txt")
     endif()
 endif()
 
-find_package(Vorbis QUIET)
-find_package(Ogg QUIET)
-if(Vorbis_FOUND)
-    target_compile_definitions(fuse_cook_stubs PUBLIC FUSE_HAS_OGG_VORBIS=1)
-    target_link_libraries(fuse_cook_stubs PRIVATE Vorbis::vorbisenc Vorbis::vorbis)
-    if(Ogg_FOUND)
-        target_link_libraries(fuse_cook_stubs PRIVATE Ogg::ogg)
-    endif()
-else()
-    find_path(FUSE_VORBIS_INCLUDE_DIR NAMES vorbis/vorbisenc.h)
-    find_library(FUSE_VORBISENC_LIBRARY NAMES vorbisenc)
-    find_library(FUSE_VORBIS_LIBRARY NAMES vorbis)
-    find_library(FUSE_OGG_LIBRARY NAMES ogg)
-    if(FUSE_VORBIS_INCLUDE_DIR AND FUSE_VORBISENC_LIBRARY AND FUSE_VORBIS_LIBRARY)
-        target_compile_definitions(fuse_cook_stubs PUBLIC FUSE_HAS_OGG_VORBIS=1)
-        target_include_directories(fuse_cook_stubs PRIVATE "${FUSE_VORBIS_INCLUDE_DIR}")
-        target_link_libraries(fuse_cook_stubs PRIVATE "${FUSE_VORBISENC_LIBRARY}" "${FUSE_VORBIS_LIBRARY}")
-        if(FUSE_OGG_LIBRARY)
-            target_link_libraries(fuse_cook_stubs PRIVATE "${FUSE_OGG_LIBRARY}")
-        endif()
-    endif()
+# MP-B7.9-AUDIO-IMPORT / AP-W8.3: the audio cook chain (src/audio_cook.cpp) decodes FLAC / Ogg Vorbis and
+# encodes quality-VBR Ogg Vorbis through the vendored xiph libraries (cmake/FuseXiph.cmake, built by
+# Source/FUSE/Audio, which is added before this directory). Never a system libvorbis.
+if(NOT TARGET fuse_xiph_vorbisenc AND EXISTS "${CMAKE_SOURCE_DIR}/cmake/FuseXiph.cmake")
+    include("${CMAKE_SOURCE_DIR}/cmake/FuseXiph.cmake")
+endif()
+if(TARGET fuse_xiph_vorbisenc AND TARGET fuse_xiph_vorbisfile)
+    target_link_libraries(fuse_cook_stubs PRIVATE fuse_xiph_vorbisfile fuse_xiph_vorbisenc fuse_xiph_vorbis fuse_xiph_ogg)
+    target_compile_definitions(fuse_cook_stubs PRIVATE FUSE_COOK_HAS_VORBIS=1)
+endif()
+if(TARGET fuse_xiph_flac)
+    target_link_libraries(fuse_cook_stubs PRIVATE fuse_xiph_flac)
+    target_compile_definitions(fuse_cook_stubs PRIVATE FUSE_COOK_HAS_FLAC=1)
 endif()
 
 find_path(FUSE_ISPC_TEXCOMP_INCLUDE NAMES ispc_texcomp.h

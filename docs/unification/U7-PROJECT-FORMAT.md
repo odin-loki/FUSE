@@ -175,7 +175,7 @@ Each demo under `Samples/unification/<demo_id>/` ships a `project.json` consumed
 |--------|------|---------------|
 | `write_mesh_stub` | Assimp (`FUSE_HAS_ASSIMP`) — passes `input_path` | `FUSEMESH_STUB` |
 | `write_texture_stub` | STB decode (`FUSE_HAS_STB_IMAGE`) + in-house BC7 mode-6 (`FUSE_HAS_INHOUSE_BC7_ENCODER`) | `FUSETEX_STUB` / `FUSETEX_BC7` |
-| `write_audio_stub` | OGG Vorbis (`FUSE_HAS_OGG_VORBIS`) — WAV sniff stub when linked | `FUSEAUDIO_STUB` |
+| `write_audio_stub` | Audio cook chain (`fuse/cook/audio_cook.hpp`, E09): WAV/FLAC/Ogg decode, 48 kHz resample, trim, EBU R128 normalise, Vorbis quality VBR via the vendored xiph libs; stub only for undecodable sources | `FUSEAUDIO_OGG` / `FUSEAUDIO_PCM_F32` (`FUSEAUDIO_STUB` on failure) |
 | `write_shader_stub` | `.spv` passthrough when input is valid SPIR-V (`FUSESHADER_SPIV`); `glslangValidator` offline compile when available (`FUSESHADER_GLSLANG`); otherwise honest stub | `FUSESHADER_STUB` |
 
 `fuselevel_cook_stub.*` populates `hierarchyLinks` from `ConvertResult::wiringStubCount` on `--fuselevel` cooks.

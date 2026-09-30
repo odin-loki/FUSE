@@ -79,3 +79,23 @@ if(TARGET fuse_meshoptimizer AND TARGET fuse_geometry_dag AND TARGET fuse_geomet
     endif()
     set_tests_properties(fuse_asset_mesh_cook_complete PROPERTIES LABELS "asset;gate" TIMEOUT 600 SKIP_RETURN_CODE 77)
 endif()
+
+# E09 (MP-B7.9-AUDIO-IMPORT / AP-W8.3 / UNI-U7-AUDIO-1): audio cook chain — decode, resample, BS.1770
+# loudness vs a reference meter, trim, loop seams, Vorbis round trip, determinism, fuse_cook --audio.
+add_executable(fuse_asset_audio_cook_tests test_audio_cook.cpp)
+target_link_libraries(fuse_asset_audio_cook_tests PRIVATE fuse_cook_stubs fuse_core)
+if(TARGET fuse_audio)
+    # The runtime side: parse_fuseaudio / decode_ogg_vorbis of the cooked bytes, FLAC sources via encode_flac.
+    target_link_libraries(fuse_asset_audio_cook_tests PRIVATE fuse_audio)
+    target_compile_definitions(fuse_asset_audio_cook_tests PRIVATE FUSE_AUDIO_COOK_TEST_HAS_RUNTIME=1)
+endif()
+if(COMMAND fuse_apply_cxx23)
+    fuse_apply_cxx23(fuse_asset_audio_cook_tests)
+endif()
+if(FUSE_BUILD_TOOLS)
+    add_dependencies(fuse_asset_audio_cook_tests fuse_cook)
+    add_test(NAME fuse_asset_audio_cook COMMAND fuse_asset_audio_cook_tests "$<TARGET_FILE:fuse_cook>")
+else()
+    add_test(NAME fuse_asset_audio_cook COMMAND fuse_asset_audio_cook_tests)
+endif()
+set_tests_properties(fuse_asset_audio_cook PROPERTIES LABELS "asset;gate;audio" TIMEOUT 600)

@@ -8,6 +8,8 @@
 
 #include "Cook/fuselevel_cook_stub.hpp"
 
+#include <fuse/cook/audio_cook.hpp>
+
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -24,7 +26,7 @@ void printUsage() {
                  "  fuse_cook --mesh --input <path> --output <path>   Mesh cook (.fusemesh FMSH; see mesh options)\n"
                  "  fuse_cook --texture --input <path> --output <path> Texture cook (.png/.tga/.jpg/.hdr/.ktx2 in;\n"
                  "             .fusetex out, or .ktx2 out for KTX2 transport export)\n"
-                 "  fuse_cook --audio --input <path> --output <path>  Stub audio cook\n"
+                 "  fuse_cook --audio --input <path> --output <path>  Audio cook (.wav/.flac/.ogg in; .fuseaudio out)\n"
                  "  fuse_cook --fuselevel --mis <file.mis> --output <world.fuselevel>\n"
                  "  fuse_cook --fuselevel --module <file.cs> --output <world.fuselevel>\n"
                  "Options:\n"
@@ -46,7 +48,19 @@ void printUsage() {
                  "  --meshlets     FMSH v2 meshlet table (renderer WP-1.2)\n"
                  "  --dag          FMSH v2 cluster DAG (renderer WP-5.2; implies --meshlets)\n"
                  "  --pages        Also write <output>.fusepages, the WP-5.3 cluster page file (implies --dag)\n"
-                 "  --page-bytes <N>  Page payload capacity for --pages (multiple of 16, >= 1024; default 65536)\n");
+                 "  --page-bytes <N>  Page payload capacity for --pages (multiple of 16, >= 1024; default 65536)\n"
+                 "Audio options (MP-B7.9-AUDIO-IMPORT / AP-W8.3; any of these cooks directly, without the cook cache):\n"
+                 "  --bed | --oneshot  Sound class: -23 LUFS + Vorbis q4, or -16 LUFS + q5 (default: by length)\n"
+                 "  --loop             Seamless loop (zero-crossing crossfade, loop points in the header)\n"
+                 "  --crossfade-ms <N> Loop crossfade length (default 50)\n"
+                 "  --rate <Hz>        Target sample rate (default 48000; 0 keeps the source rate)\n"
+                 "  --mono             Downmix to mono\n"
+                 "  --lufs <L>         Integrated loudness target (EBU R128 / BS.1770)\n"
+                 "  --peak-normalise   Peak-normalise to -1 dBFS instead of loudness\n"
+                 "  --no-normalise     Keep the source level\n"
+                 "  --no-trim          Keep leading/trailing silence\n"
+                 "  --quality <q>      Vorbis VBR quality -0.1 .. 1.0 (q4 = 0.4)\n"
+                 "  --pcm              FUSEAUDIO_PCM_F32 instead of Ogg Vorbis\n");
 }
 
 /// Manifest paths are relative to the manifest's directory, not the caller's working directory.
@@ -129,6 +143,8 @@ int main(int argc, char** argv) {
     bool clusterDag = false;
     bool clusterPages = false;
     fuse::u32 pageBytes = 64u * 1024u;
+    fuse::cook::AudioCookOptions audioOptions;
+    bool audioOptionsGiven = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -189,6 +205,48 @@ int main(int argc, char** argv) {
             clusterDag = true;
         } else if (arg == "--pages") {
             clusterPages = true;
+        } else if (arg == "--bed" || arg == "--oneshot") {
+            audioOptions.audio_class = arg == "--bed" ? fuse::cook::AudioClass::Bed : fuse::cook::AudioClass::OneShot;
+            audioOptionsGiven = true;
+        } else if (arg == "--loop") {
+            audioOptions.make_loop = true;
+            audioOptionsGiven = true;
+        } else if (arg == "--mono") {
+            audioOptions.force_mono = true;
+            audioOptionsGiven = true;
+        } else if (arg == "--pcm") {
+            audioOptions.format = fuse::cook::AudioCookFormat::PcmF32;
+            audioOptionsGiven = true;
+        } else if (arg == "--peak-normalise") {
+            audioOptions.normalise = fuse::cook::AudioNormalise::Peak;
+            audioOptionsGiven = true;
+        } else if (arg == "--no-normalise") {
+            audioOptions.normalise = fuse::cook::AudioNormalise::None;
+            audioOptionsGiven = true;
+        } else if (arg == "--no-trim") {
+            audioOptions.trim_silence = false;
+            audioOptionsGiven = true;
+        } else if ((arg == "--rate" || arg == "--crossfade-ms") && i + 1 < argc) {
+            char* end = nullptr;
+            const unsigned long value = std::strtoul(argv[++i], &end, 10);
+            if (end == nullptr || *end != '\0' || value > 768000ul) {
+                std::fprintf(stderr, "fuse_cook: %s expects an unsigned integer\n", arg.c_str());
+                fuse::core::shutdown();
+                return EXIT_FAILURE;
+            }
+            (arg == "--rate" ? audioOptions.target_sample_rate : audioOptions.loop_crossfade_ms) =
+                static_cast<fuse::u32>(value);
+            audioOptionsGiven = true;
+        } else if ((arg == "--lufs" || arg == "--quality") && i + 1 < argc) {
+            char* end = nullptr;
+            const double value = std::strtod(argv[++i], &end);
+            if (end == nullptr || *end != '\0' || !(value > -100.0 && value < 100.0)) {
+                std::fprintf(stderr, "fuse_cook: %s expects a number\n", arg.c_str());
+                fuse::core::shutdown();
+                return EXIT_FAILURE;
+            }
+            (arg == "--lufs" ? audioOptions.target_lufs : audioOptions.ogg_quality) = static_cast<float>(value);
+            audioOptionsGiven = true;
         } else if (arg == "--help" || arg == "-h") {
             printUsage();
             fuse::core::shutdown();
@@ -221,6 +279,27 @@ int main(int argc, char** argv) {
             printUsage();
             fuse::core::shutdown();
             return EXIT_FAILURE;
+        }
+
+        if (audioCook && audioOptionsGiven) {
+            // Explicit audio options go straight to the cook chain (AudioImportDesc carries only the
+            // defaults through AssetCooker).
+            fuse::cook::AudioCookReport report;
+            const fuse::cook::CookStubWriteResult cooked =
+                fuse::cook::cook_audio_file(inputPath, outputPath, audioOptions, &report);
+            std::printf("  [audio] %s -> %s (%s) %s\n", inputPath.c_str(), outputPath.c_str(),
+                        cooked.ok ? "cooked" : fuse::cook::cookFailureName(cooked.failure), cooked.note.c_str());
+            if (cooked.ok) {
+                std::printf("fuse_cook: audio %s %u Hz x%u, %u frames, source %.2f LUFS -> %.2f LUFS (gain %.2f dB, "
+                            "peak %.2f dBFS%s)%s\n",
+                            fuse::cook::audio_class_name(report.resolved_class), report.output_rate,
+                            report.output_channels, report.output_frames, report.source_lufs, report.output_lufs,
+                            report.gain_db, static_cast<double>(report.output_peak_dbfs),
+                            report.peak_limited ? ", limited" : "",
+                            report.looped ? (report.loop_seam_click ? ", loop seam CLICK" : ", loop seam ok") : "");
+            }
+            fuse::core::shutdown();
+            return cooked.ok && !report.loop_seam_click ? EXIT_SUCCESS : EXIT_FAILURE;
         }
 
         fuse::project::AssetCooker cooker;

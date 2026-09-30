@@ -148,7 +148,7 @@ ctest --test-dir build --output-on-failure -R fuse_assets_b79
 - [ ] Wire Assimp/meshoptimizer for mesh cooks
 - [x] BC7 mode-6 dual-endpoint block encoder (`fuse/cook/bc7_encoder.hpp`, `FUSETEX_BC7` cook output)
 - [x] ispc_texcomp honest stub hook (`third_party/ispc_texcomp`, `tryCookTextureIspc`)
-- [ ] OGG encode + normalise for audio
+- [x] OGG encode + normalise for audio — `Tools/FUSE/Cook/src/audio_cook.cpp` (E09: WAV/FLAC/Ogg decode, windowed-sinc resample, BS.1770 loudness normalise, trim, seamless loops, Vorbis q4/q5 VBR, deterministic bytes) — `fuse_asset_audio_cook`
 - [ ] Shader offline SPIR-V batch (`compile_all`)
 - [ ] Qt cook UI sharing `ImportPipeline`
 
