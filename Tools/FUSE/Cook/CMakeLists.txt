@@ -25,7 +25,7 @@ target_include_directories(fuse_cook_stubs
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
-target_link_libraries(fuse_cook_stubs PUBLIC fuse_core)
+target_link_libraries(fuse_cook_stubs PUBLIC fuse_core fuse_asset)  # UNI-U7-ASSET-1: readers live in fuse_asset
 if(COMMAND fuse_apply_cxx23)
     fuse_apply_cxx23(fuse_cook_stubs)
 endif()

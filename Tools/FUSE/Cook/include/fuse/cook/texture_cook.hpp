@@ -9,40 +9,12 @@
 
 namespace fuse::cook {
 
-/// Cooked block-compressed texture (`.fusetex`): a text header starting `FUSETEX_BC7` (the container
-/// magic; kept for existing readers), `DATA\n`, then the blocks of every mip level from largest to
-/// 1×1. Within a level the layers follow each other (layer 0 first; a cube map stores faces
-/// +X, −X, +Y, −Y, +Z, −Z per array layer). The header never records paths or times, so identical
-/// sources cook to identical bytes.
-///
-/// Header keys: `compression` (BC1 / BC4 / BC5 / BC6H / BC7), `width`, `height`, `blocks` (all levels
-/// and layers), `mipmaps`, `mip_levels`; since asset plan W0.3 also `format_version=2`, `layers`,
-/// `cube`, `srgb`, `block_bytes`, `normal_convention=gl` (normal maps) and `texel_m` (metres per texel at
-/// mip 0, when known). A 2D sRGB BC7 texture keeps the original (version 1) header byte for byte.
-struct CookedTexture {
-    struct Level {
-        u32 width = 0;
-        u32 height = 0;
-        std::vector<u8> blocks; ///< every layer of this level, layer 0 first
-    };
-
-    std::string compression; ///< "BC7", "BC5", ...
-    BcFormat format = BcFormat::BC7;
-    u32 width = 0;
-    u32 height = 0;
-    u32 layers = 1;           ///< array layers × faces
-    bool cube = false;        ///< layers are cube faces (layers % 6 == 0)
-    bool srgb = true;         ///< colour data stored sRGB-encoded (BC1 / BC7 only)
-    bool normal_map = false;  ///< tangent-space normal map (BC5, OpenGL +Y convention)
-    f32 texel_m = 0.f;        ///< metres per texel at mip 0 (0: unknown)
-    std::vector<Level> levels;
-};
-
-/// Largest width or height a texture cook accepts (the common D3D12 / Vulkan 2D image limit). Larger
-/// sources are rejected with `CookFailure::InvalidImageDimensions` before any pixels are decoded.
-inline constexpr u32 kMaxCookTextureDimension = 16384u;
-/// Largest array layer count (Vulkan's guaranteed minimum for maxImageArrayLayers).
-inline constexpr u32 kMaxCookTextureLayers = 2048u;
+// CookedTexture (the `.fusetex` container description), its limits and parse_cooked_texture live in the
+// runtime asset library (fuse/asset/cooked_texture.hpp, UNI-U7-ASSET-1); re-exported here.
+using asset::CookedTexture;
+using asset::kMaxCookTextureDimension;
+using asset::kMaxCookTextureLayers;
+using asset::parse_cooked_texture;
 
 /// How a texture is cooked (asset plan §1.3 format table).
 struct TextureCookOptions {
@@ -70,9 +42,8 @@ struct TextureSource {
 CookStubWriteResult cook_texture_image(const TextureSource& source, const TextureCookOptions& options,
                                        CookedTexture& out);
 
-/// Serialize / parse the `.fusetex` container (see `CookedTexture`).
+/// Serialize the `.fusetex` container (see `CookedTexture`; parse_cooked_texture is fuse::asset's).
 std::vector<u8> serialize_cooked_texture(const CookedTexture& texture);
-bool parse_cooked_texture(const u8* data, usize size, CookedTexture& out, std::string* error = nullptr);
 
 /// Write a cooked texture: `.ktx2` output paths get a KTX2 container (transport), anything else a
 /// `.fusetex`.

@@ -2,6 +2,8 @@
 
 #include "mesh_cook_meshopt.hpp"
 
+#include <fuse/asset/detail/fmsh_layout.hpp>
+
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
@@ -28,10 +30,11 @@ namespace fuse::cook {
 
 namespace {
 
-constexpr u8 kMagic[4] = {'F', 'M', 'S', 'H'};
-constexpr usize kHeaderBytes = 4u + 5u * 4u + 6u * 4u;
-constexpr usize kSubmeshBytes = 4u * 4u;
-constexpr usize kTrailerBytes = 8u;
+// FMSH layout constants are shared with the runtime reader (fuse_asset, UNI-U7-ASSET-1).
+constexpr const u8 (&kMagic)[4] = asset::detail::kFmshMagic;
+constexpr usize kHeaderBytes = asset::detail::kFmshHeaderBytes;
+constexpr usize kSubmeshBytes = asset::detail::kFmshSubmeshBytes;
+constexpr usize kTrailerBytes = asset::detail::kFmshTrailerBytes;
 
 void set_error(std::string* error, const std::string& message) {
     if (error != nullptr) {
@@ -179,14 +182,7 @@ struct ScopedWarningCapture {
 };
 #endif
 
-u64 fnv1a64(const u8* data, usize size) {
-    u64 hash = 14695981039346656037ull;
-    for (usize i = 0; i < size; ++i) {
-        hash ^= static_cast<u64>(data[i]);
-        hash *= 1099511628211ull;
-    }
-    return hash;
-}
+u64 fnv1a64(const u8* data, usize size) { return asset::detail::fmsh_fnv1a64(data, size); }
 
 void put_u32(std::vector<u8>& out, u32 value) {
     for (u32 shift = 0; shift < 32u; shift += 8u) {
@@ -210,22 +206,6 @@ void put_f32(std::vector<u8>& out, f32 value) {
     u32 bits = 0;
     std::memcpy(&bits, &value, sizeof(bits));
     put_u32(out, bits);
-}
-
-u32 get_u32(const u8* data) {
-    return static_cast<u32>(data[0]) | (static_cast<u32>(data[1]) << 8) | (static_cast<u32>(data[2]) << 16) |
-           (static_cast<u32>(data[3]) << 24);
-}
-
-u64 get_u64(const u8* data) {
-    return static_cast<u64>(get_u32(data)) | (static_cast<u64>(get_u32(data + 4)) << 32);
-}
-
-f32 get_f32(const u8* data) {
-    const u32 bits = get_u32(data);
-    f32 value = 0.f;
-    std::memcpy(&value, &bits, sizeof(value));
-    return value;
 }
 
 void compute_bounds(CookedMesh& mesh) {
@@ -533,10 +513,6 @@ void put_u16(std::vector<u8>& out, u32 value) {
     out.push_back(static_cast<u8>((value >> 8) & 0xFFu));
 }
 
-u32 get_u16(const u8* data) {
-    return static_cast<u32>(data[0]) | (static_cast<u32>(data[1]) << 8);
-}
-
 void pad4(std::vector<u8>& out) {
     while (out.size() % 4u != 0u) {
         out.push_back(0u);
@@ -545,11 +521,6 @@ void pad4(std::vector<u8>& out) {
 
 s32 to_snorm16(f32 value) {
     return static_cast<s32>(std::lround(std::clamp(value, -1.f, 1.f) * 32767.f));
-}
-
-f32 from_snorm16(u32 bits) {
-    const s32 v = static_cast<s32>(static_cast<std::int16_t>(static_cast<u16>(bits)));
-    return std::max(static_cast<f32>(v) / 32767.f, -1.f);
 }
 
 void oct_encode(const f32* n, s32 out[2]) {
@@ -571,19 +542,6 @@ void oct_encode(const f32* n, s32 out[2]) {
     out[1] = to_snorm16(y);
 }
 
-void oct_decode(u32 bx, u32 by, f32* n) {
-    f32 x = from_snorm16(bx);
-    f32 y = from_snorm16(by);
-    const f32 z = 1.f - std::fabs(x) - std::fabs(y);
-    const f32 t = std::max(-z, 0.f);
-    x += x >= 0.f ? -t : t;
-    y += y >= 0.f ? -t : t;
-    const f32 len = std::sqrt(x * x + y * y + z * z);
-    n[0] = x / len;
-    n[1] = y / len;
-    n[2] = z / len;
-}
-
 /// Quantise 4 weights to `scale` (65535 or 255) so that they sum to exactly `scale`: round each, then
 /// put the rounding residue on the largest weight (lowest slot on ties).
 void quantize_weights(const f32* w, u32 scale, u32 out[4]) {
@@ -600,49 +558,6 @@ void quantize_weights(const f32* w, u32 scale, u32 out[4]) {
     out[largest] = static_cast<u32>(std::clamp<s64>(fixed, 0, scale));
 }
 
-u32 stream_element_bytes(MeshStreamFormat format) {
-    switch (format) {
-    case MeshStreamFormat::F32x2:
-        return 8u;
-    case MeshStreamFormat::F32x3:
-        return 12u;
-    case MeshStreamFormat::Unorm16x3:
-        return 6u;
-    case MeshStreamFormat::OctSnorm16x2:
-        return 4u;
-    case MeshStreamFormat::OctSnorm16x2Sign:
-        return 8u;
-    case MeshStreamFormat::Unorm8x4:
-    case MeshStreamFormat::Uint8x4:
-        return 4u;
-    case MeshStreamFormat::Uint16x4:
-    case MeshStreamFormat::Unorm16x4:
-        return 8u;
-    }
-    return 0u;
-}
-
-bool stream_format_allowed(MeshStreamSemantic semantic, MeshStreamFormat format) {
-    switch (semantic) {
-    case MeshStreamSemantic::Position:
-        return format == MeshStreamFormat::F32x3 || format == MeshStreamFormat::Unorm16x3;
-    case MeshStreamSemantic::Normal:
-        return format == MeshStreamFormat::F32x3 || format == MeshStreamFormat::OctSnorm16x2;
-    case MeshStreamSemantic::Uv0:
-    case MeshStreamSemantic::Uv1:
-        return format == MeshStreamFormat::F32x2;
-    case MeshStreamSemantic::Tangent:
-        return format == MeshStreamFormat::OctSnorm16x2Sign;
-    case MeshStreamSemantic::Color0:
-        return format == MeshStreamFormat::Unorm8x4;
-    case MeshStreamSemantic::Joints0:
-        return format == MeshStreamFormat::Uint8x4 || format == MeshStreamFormat::Uint16x4;
-    case MeshStreamSemantic::Weights0:
-        return format == MeshStreamFormat::Unorm8x4 || format == MeshStreamFormat::Unorm16x4;
-    }
-    return false;
-}
-
 bool use_meshopt_codec(const MeshEncoding& encoding) {
     return encoding.meshopt_codec && detail::meshopt_codec_available();
 }
@@ -653,10 +568,10 @@ bool needs_v2(const CookedMesh& mesh, const MeshEncoding& encoding) {
            !mesh.material_slots.empty() || use_meshopt_codec(encoding) || detail::has_sections(mesh);
 }
 
-constexpr usize kHeaderBytesV2 = kHeaderBytes + 8u; // + streamCount + materialSlotCount
-constexpr u32 kFlagQuantizedPositions = 1u;
-constexpr u32 kFlagMeshoptCodec = 1u << 4; // W0.2 (bits 1..3 reserved)
-constexpr u32 kFlagSections = 1u << 5;     // W0.2
+using asset::detail::stream_element_bytes;
+constexpr u32 kFlagQuantizedPositions = asset::detail::kFmshFlagQuantizedPositions;
+constexpr u32 kFlagMeshoptCodec = asset::detail::kFmshFlagMeshoptCodec;
+constexpr u32 kFlagSections = asset::detail::kFmshFlagSections;
 
 } // namespace
 
@@ -840,342 +755,7 @@ std::vector<u8> serialize_cooked_mesh(const CookedMesh& mesh, const MeshEncoding
     return out;
 }
 
-namespace {
-
-bool deserialize_v2(const u8* data, usize size, CookedMesh& out, std::string* error) {
-    auto reject = [&](const std::string& message) {
-        set_error(error, message);
-        out = CookedMesh{};
-        return false;
-    };
-    if (size < kHeaderBytesV2 + kTrailerBytes) {
-        return reject("cooked mesh truncated");
-    }
-    if (get_u64(data + size - kTrailerBytes) != fnv1a64(data, size - kTrailerBytes)) {
-        return reject("cooked mesh checksum mismatch");
-    }
-    const u32 flags = get_u32(data + 8);
-    const u32 vertexCount = get_u32(data + 12);
-    const u32 indexCount = get_u32(data + 16);
-    const u32 submeshCount = get_u32(data + 20);
-    const u32 streamCount = get_u32(data + 48);
-    const u32 slotCount = get_u32(data + 52);
-    if ((flags & ~(kFlagQuantizedPositions | kFlagMeshoptCodec | kFlagSections)) != 0u) {
-        return reject("cooked mesh flags unsupported");
-    }
-    const bool codec = (flags & kFlagMeshoptCodec) != 0u;
-    if (codec && !detail::meshopt_codec_available()) {
-        return reject("cooked mesh uses the meshopt codec, which this build lacks");
-    }
-    if (slotCount != 0u && slotCount != submeshCount) {
-        return reject("cooked mesh material slot count must be 0 or the submesh count");
-    }
-    const usize payloadEnd = size - kTrailerBytes;
-    usize cursor = 24u;
-    for (f32& value : out.bounds_min) {
-        value = get_f32(data + cursor);
-        cursor += 4u;
-    }
-    for (f32& value : out.bounds_max) {
-        value = get_f32(data + cursor);
-        cursor += 4u;
-    }
-    for (u32 axis = 0; axis < 3u; ++axis) {
-        if (!std::isfinite(out.bounds_min[axis]) || !std::isfinite(out.bounds_max[axis]) ||
-            out.bounds_min[axis] > out.bounds_max[axis]) {
-            return reject("cooked mesh bounds invalid");
-        }
-    }
-    cursor = kHeaderBytesV2;
-    auto need = [&](u64 bytes) { return static_cast<u64>(cursor) + bytes <= payloadEnd; };
-    if (!need(static_cast<u64>(submeshCount) * kSubmeshBytes)) {
-        return reject("cooked mesh size mismatch");
-    }
-    out.submeshes.resize(submeshCount);
-    for (CookedMesh::Submesh& submesh : out.submeshes) {
-        submesh.index_offset = get_u32(data + cursor);
-        submesh.index_count = get_u32(data + cursor + 4);
-        submesh.vertex_offset = get_u32(data + cursor + 8);
-        submesh.material_index = get_u32(data + cursor + 12);
-        cursor += kSubmeshBytes;
-        if (static_cast<u64>(submesh.index_offset) + submesh.index_count > indexCount ||
-            submesh.vertex_offset > vertexCount) {
-            return reject("cooked mesh submesh range out of bounds");
-        }
-    }
-    for (u32 slot = 0; slot < slotCount; ++slot) {
-        if (!need(4u)) {
-            return reject("cooked mesh size mismatch");
-        }
-        const u32 length = get_u32(data + cursor);
-        cursor += 4u;
-        const u64 padded = (static_cast<u64>(length) + 3u) & ~static_cast<u64>(3u);
-        if (!need(padded)) {
-            return reject("cooked mesh material slot name out of bounds");
-        }
-        out.material_slots.emplace_back(reinterpret_cast<const char*>(data + cursor), length);
-        cursor += static_cast<usize>(padded);
-    }
-
-    const usize n = vertexCount;
-    u32 seen = 0;
-    MeshStreamFormat weightFormat = MeshStreamFormat::Unorm16x4;
-    std::vector<u32> rawWeights;
-    std::vector<u8> decodedStream;
-    for (u32 s = 0; s < streamCount; ++s) {
-        const usize entryBytes = codec ? 16u : 12u;
-        if (!need(entryBytes)) {
-            return reject("cooked mesh stream table truncated");
-        }
-        const u32 semanticRaw = get_u32(data + cursor);
-        const u32 formatRaw = get_u32(data + cursor + 4);
-        const u32 byteLength = get_u32(data + cursor + 8);
-        const u32 encodedBytes = codec ? get_u32(data + cursor + 12) : 0u;
-        cursor += entryBytes;
-        if (semanticRaw < 1u || semanticRaw > 8u) {
-            return reject("cooked mesh stream semantic " + std::to_string(semanticRaw) + " unknown");
-        }
-        if ((seen & (1u << semanticRaw)) != 0u) {
-            return reject("cooked mesh stream semantic " + std::to_string(semanticRaw) + " duplicated");
-        }
-        seen |= 1u << semanticRaw;
-        const auto semantic = static_cast<MeshStreamSemantic>(semanticRaw);
-        const auto format = static_cast<MeshStreamFormat>(formatRaw);
-        if (formatRaw < 1u || formatRaw > 9u || !stream_format_allowed(semantic, format)) {
-            return reject("cooked mesh stream " + std::to_string(semanticRaw) + " has unsupported format " +
-                          std::to_string(formatRaw));
-        }
-        const u64 expected = static_cast<u64>(n) * stream_element_bytes(format);
-        const u64 stored = codec ? static_cast<u64>(encodedBytes) : expected;
-        const u64 padded = (stored + 3u) & ~static_cast<u64>(3u);
-        if (byteLength != expected || !need(padded)) {
-            return reject("cooked mesh stream " + std::to_string(semanticRaw) + " size mismatch");
-        }
-        const u8* p = data + cursor;
-        if (codec) {
-            if (!detail::meshopt_decode_vertices(p, encodedBytes, n, stream_element_bytes(format), decodedStream)) {
-                return reject("cooked mesh stream " + std::to_string(semanticRaw) + " meshopt decode failed");
-            }
-            p = decodedStream.data();
-        }
-        switch (semantic) {
-        case MeshStreamSemantic::Position:
-            out.positions.resize(n * 3u);
-            for (usize i = 0; i < n * 3u; ++i) {
-                if (format == MeshStreamFormat::F32x3) {
-                    out.positions[i] = get_f32(p + i * 4u);
-                } else {
-                    const u32 axis = static_cast<u32>(i % 3u);
-                    const f32 t = static_cast<f32>(get_u16(p + i * 2u)) / 65535.f;
-                    out.positions[i] = out.bounds_min[axis] + t * (out.bounds_max[axis] - out.bounds_min[axis]);
-                }
-            }
-            break;
-        case MeshStreamSemantic::Normal:
-            out.normals.resize(n * 3u);
-            for (usize v = 0; v < n; ++v) {
-                if (format == MeshStreamFormat::F32x3) {
-                    for (u32 d = 0; d < 3u; ++d) {
-                        out.normals[v * 3u + d] = get_f32(p + (v * 3u + d) * 4u);
-                    }
-                } else {
-                    oct_decode(get_u16(p + v * 4u), get_u16(p + v * 4u + 2u), &out.normals[v * 3u]);
-                }
-            }
-            break;
-        case MeshStreamSemantic::Uv0:
-        case MeshStreamSemantic::Uv1: {
-            std::vector<f32>& dst = semantic == MeshStreamSemantic::Uv0 ? out.uvs : out.uv1s;
-            dst.resize(n * 2u);
-            for (usize i = 0; i < n * 2u; ++i) {
-                dst[i] = get_f32(p + i * 4u);
-            }
-            break;
-        }
-        case MeshStreamSemantic::Tangent:
-            out.tangents.resize(n * 4u);
-            for (usize v = 0; v < n; ++v) {
-                const u32 sign = get_u16(p + v * 8u + 4u);
-                if ((sign != 1u && sign != 0xFFFFu) || get_u16(p + v * 8u + 6u) != 0u) {
-                    return reject("cooked mesh tangent sign invalid");
-                }
-                oct_decode(get_u16(p + v * 8u), get_u16(p + v * 8u + 2u), &out.tangents[v * 4u]);
-                out.tangents[v * 4u + 3u] = sign == 1u ? 1.f : -1.f;
-            }
-            break;
-        case MeshStreamSemantic::Color0:
-            out.colors.assign(p, p + n * 4u);
-            break;
-        case MeshStreamSemantic::Joints0:
-            out.joints.resize(n * 4u);
-            for (usize i = 0; i < n * 4u; ++i) {
-                out.joints[i] = static_cast<u16>(format == MeshStreamFormat::Uint8x4 ? p[i] : get_u16(p + i * 2u));
-            }
-            break;
-        case MeshStreamSemantic::Weights0:
-            weightFormat = format;
-            rawWeights.resize(n * 4u);
-            for (usize i = 0; i < n * 4u; ++i) {
-                rawWeights[i] = format == MeshStreamFormat::Unorm8x4 ? p[i] : get_u16(p + i * 2u);
-            }
-            break;
-        }
-        cursor += static_cast<usize>(padded);
-    }
-    if ((seen & (1u << static_cast<u32>(MeshStreamSemantic::Position))) == 0u) {
-        return reject("cooked mesh has no position stream");
-    }
-    const bool hasJoints = (seen & (1u << static_cast<u32>(MeshStreamSemantic::Joints0))) != 0u;
-    const bool hasWeights = (seen & (1u << static_cast<u32>(MeshStreamSemantic::Weights0))) != 0u;
-    if (hasJoints != hasWeights) {
-        return reject("cooked mesh joints and weights must both be present or both absent");
-    }
-    if (hasWeights) {
-        const u32 scale = weightFormat == MeshStreamFormat::Unorm8x4 ? 255u : 65535u;
-        out.weights.resize(n * 4u);
-        for (usize v = 0; v < n; ++v) {
-            u32 sum = 0;
-            for (u32 k = 0; k < 4u; ++k) {
-                sum += rawWeights[v * 4u + k];
-                out.weights[v * 4u + k] = static_cast<f32>(rawWeights[v * 4u + k]) / static_cast<f32>(scale);
-            }
-            if (sum != scale) {
-                return reject("cooked mesh skin weights of vertex " + std::to_string(v) + " do not sum to 1");
-            }
-        }
-    }
-    if (out.normals.empty()) {
-        out.normals.assign(n * 3u, 0.f);
-    }
-    if (out.uvs.empty()) {
-        out.uvs.assign(n * 2u, 0.f);
-    }
-    if (codec) {
-        if (!need(4u)) {
-            return reject("cooked mesh size mismatch");
-        }
-        const u32 encodedBytes = get_u32(data + cursor);
-        cursor += 4u;
-        const u64 padded = (static_cast<u64>(encodedBytes) + 3u) & ~static_cast<u64>(3u);
-        if (!need(padded) || indexCount % 3u != 0u) {
-            return reject("cooked mesh size mismatch");
-        }
-        if (!detail::meshopt_decode_indices(data + cursor, encodedBytes, indexCount, out.indices)) {
-            return reject("cooked mesh index meshopt decode failed");
-        }
-        cursor += static_cast<usize>(padded);
-    } else {
-        if (static_cast<u64>(cursor) + static_cast<u64>(indexCount) * 4u > payloadEnd) {
-            return reject("cooked mesh size mismatch");
-        }
-        out.indices.resize(indexCount);
-        for (u32& index : out.indices) {
-            index = get_u32(data + cursor);
-            cursor += 4u;
-        }
-    }
-    for (u32 index : out.indices) {
-        if (index >= vertexCount) {
-            return reject("cooked mesh index out of range");
-        }
-    }
-    if ((flags & kFlagSections) != 0u) {
-        std::string why;
-        usize consumed = 0;
-        if (!detail::read_sections(data + cursor, payloadEnd - cursor, consumed, codec, out, &why)) {
-            return reject("cooked mesh " + why);
-        }
-        cursor += consumed;
-    }
-    if (cursor != payloadEnd) {
-        return reject("cooked mesh size mismatch");
-    }
-    for (f32 value : out.positions) {
-        if (!std::isfinite(value)) {
-            return reject("cooked mesh position not finite");
-        }
-    }
-    return true;
-}
-
-} // namespace
-
-bool deserialize_cooked_mesh(const u8* data, usize size, CookedMesh& out, std::string* error) {
-    out = CookedMesh{};
-    if (data == nullptr || size < kHeaderBytes + kTrailerBytes) {
-        set_error(error, "cooked mesh truncated");
-        return false;
-    }
-    if (std::memcmp(data, kMagic, sizeof(kMagic)) != 0) {
-        set_error(error, "cooked mesh magic mismatch");
-        return false;
-    }
-    const u32 version = get_u32(data + 4);
-    if (version == kCookedMeshVersion) {
-        return deserialize_v2(data, size, out, error);
-    }
-    if (version != kCookedMeshVersionV1) {
-        set_error(error, "cooked mesh version " + std::to_string(version) + " unsupported");
-        return false;
-    }
-    const u32 vertexCount = get_u32(data + 12);
-    const u32 indexCount = get_u32(data + 16);
-    const u32 submeshCount = get_u32(data + 20);
-    const u64 expected = kHeaderBytes + static_cast<u64>(submeshCount) * kSubmeshBytes +
-                         static_cast<u64>(vertexCount) * 32u + static_cast<u64>(indexCount) * 4u + kTrailerBytes;
-    if (expected != size) {
-        set_error(error, "cooked mesh size mismatch");
-        return false;
-    }
-    if (get_u64(data + size - kTrailerBytes) != fnv1a64(data, size - kTrailerBytes)) {
-        set_error(error, "cooked mesh checksum mismatch");
-        return false;
-    }
-
-    const u8* cursor = data + 24;
-    for (f32& value : out.bounds_min) {
-        value = get_f32(cursor);
-        cursor += 4;
-    }
-    for (f32& value : out.bounds_max) {
-        value = get_f32(cursor);
-        cursor += 4;
-    }
-    out.submeshes.resize(submeshCount);
-    for (CookedMesh::Submesh& submesh : out.submeshes) {
-        submesh.index_offset = get_u32(cursor);
-        submesh.index_count = get_u32(cursor + 4);
-        submesh.vertex_offset = get_u32(cursor + 8);
-        submesh.material_index = get_u32(cursor + 12);
-        cursor += kSubmeshBytes;
-        if (static_cast<u64>(submesh.index_offset) + submesh.index_count > indexCount) {
-            set_error(error, "cooked mesh submesh range out of bounds");
-            out = CookedMesh{};
-            return false;
-        }
-    }
-    auto read_floats = [&](std::vector<f32>& dst, usize count) {
-        dst.resize(count);
-        for (f32& value : dst) {
-            value = get_f32(cursor);
-            cursor += 4;
-        }
-    };
-    read_floats(out.positions, static_cast<usize>(vertexCount) * 3u);
-    read_floats(out.normals, static_cast<usize>(vertexCount) * 3u);
-    read_floats(out.uvs, static_cast<usize>(vertexCount) * 2u);
-    out.indices.resize(indexCount);
-    for (u32& index : out.indices) {
-        index = get_u32(cursor);
-        cursor += 4;
-        if (index >= vertexCount) {
-            set_error(error, "cooked mesh index out of range");
-            out = CookedMesh{};
-            return false;
-        }
-    }
-    return true;
-}
+// deserialize_cooked_mesh moved to the runtime asset library (Source/FUSE/Asset/src/cooked_mesh_reader.cpp).
 
 CookStubWriteResult cook_mesh_file(const std::string& input_path, const std::string& output_path,
                                    const MeshCookOptions& options) {
@@ -1239,14 +819,7 @@ CookStubWriteResult cook_mesh_file(const std::string& input_path, const std::str
 }
 
 bool load_cooked_mesh(const std::string& path, CookedMesh& out, std::string* error) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) {
-        set_error(error, "cooked mesh unreadable");
-        out = CookedMesh{};
-        return false;
-    }
-    const std::vector<u8> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    return deserialize_cooked_mesh(bytes.data(), bytes.size(), out, error);
+    return asset::read_cooked_mesh_file(path, out, error);
 }
 
 } // namespace fuse::cook

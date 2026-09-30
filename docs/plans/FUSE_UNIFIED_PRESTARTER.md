@@ -314,7 +314,7 @@ Practical tactics (pick based on U0 collision report):
 4. Time / timers / job submission → FUSE jobs  
 5. Strings / tables → plan migration off dual StringTables  
 6. Audio → single mixer API (backends may remain dual short-term)  
-7. Asset identifiers → `fuse::AssetId` handles  
+7. Asset identifiers → `fuse::AssetId` handles — UNI-U7-ASSET-1: `fuse::asset::AssetId` (FNV-1a 64 of the normalised virtual path, `Source/FUSE/Core/include/fuse/asset/asset_id.hpp`) and the runtime `fuse::asset::AssetRegistry` (`Source/FUSE/Asset`: AssetId ↔ VFS path ↔ `Handle<Asset>`, refcount / unload / cancel); companion component `ecs::MeshAssets` (mesh + material AssetId) next to `ecs::Mesh`, whose numeric ids keep working. CPU gates `fuse_asset_runtime_*`  
 
 ### 8.2 Rule
 
@@ -470,7 +470,7 @@ Mine each addon into a **FUSE module** with:
 
 - Spec `project.json` + world formats (versioned)  
 - Importers: T3D mission, T2D project/module  
-- Cookers: forward assets into FUSE asset DB  
+- Cookers: forward assets into FUSE asset DB — runtime side (UNI-U7-ASSET-1) coded: the cooked readers (FMSH v1/v2 incl. meshlet/DAG sections, `.fusetex`, `.fusemat`) moved to the runtime library `fuse_asset` (Tools/FUSE/Cook keeps the writers, links it and re-exports the old names); VFS async read → JobScheduler decode → MPSC `RenderUploadQueue` → render-thread `IRenderUploadSink` → `HandleTable::commit`. `fuse_asset_runtime_cook` cooks a glTF cube + PNG with `fuse_cook` and loads them through the registry (equal to the cook reader output). The renderer-side sink (GPU upload) is E06  
 - Migration guide for community content  
 
 ### 12.2 Gate U7

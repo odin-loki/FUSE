@@ -366,43 +366,7 @@ u16 sanitize_uf16(u16 h) {
 // Public API
 // =============================================================================================
 
-const char* bc_format_name(BcFormat format) {
-    switch (format) {
-    case BcFormat::BC1:
-        return "BC1";
-    case BcFormat::BC4:
-        return "BC4";
-    case BcFormat::BC5:
-        return "BC5";
-    case BcFormat::BC6H:
-        return "BC6H";
-    case BcFormat::BC7:
-        return "BC7";
-    }
-    return "BC7";
-}
-
-bool parse_bc_format(const std::string& text, BcFormat& out) {
-    std::string upper = text;
-    std::transform(upper.begin(), upper.end(), upper.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-    static constexpr BcFormat kAll[] = {BcFormat::BC1, BcFormat::BC4, BcFormat::BC5, BcFormat::BC6H, BcFormat::BC7};
-    for (BcFormat format : kAll) {
-        if (upper == bc_format_name(format)) {
-            out = format;
-            return true;
-        }
-    }
-    return false;
-}
-
-u32 bc_block_bytes(BcFormat format) {
-    return (format == BcFormat::BC1 || format == BcFormat::BC4) ? 8u : 16u;
-}
-
-u32 bc_block_count(u32 width, u32 height) {
-    return ((width + 3u) / 4u) * ((height + 3u) / 4u);
-}
+// bc_format_name / parse_bc_format / bc_block_bytes / bc_block_count: fuse_asset (cooked_texture_reader.cpp).
 
 void bc1_encode_block(const u8 rgba[64], u8 block[8]) {
     f32 texels[16][3];

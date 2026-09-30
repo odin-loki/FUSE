@@ -82,7 +82,7 @@ ctest --test-dir build
 | Item | Status |
 |------|--------|
 | `IDimension` / `World2D` / `World3D` / `HybridComposer` headers stable for modules | ✅ |
-| Demo: empty 3D clear + spinning 2D sprite in one process | ✅ (`demo_hybrid_hud`, software renderer) |
+| Demo: empty 3D clear + spinning 2D sprite in one process | ✅ (`demo_hybrid_hud`: GPU-rendered through the SceneRenderer with a Vulkan device (E03), software renderer as the no-device fallback) |
 | Dimension enable/disable from project flags | ✅ |
 | `parallel_for` cull over snapshot + transform SoA (per-world + composer game-thread dispatch) | ✅ |
 | `fillSnapshotSoA` hierarchy walk in `buildSnapshot` (WP-05 gap closed) | ✅ |
@@ -90,11 +90,11 @@ ctest --test-dir build
 | `renderThread()` ownership honoured | ✅ |
 | No cross-thread raw `SceneObject*` in cull path | ✅ (tests) |
 | TSan clean on cull path | ⏳ `fuse-tsan-nightly` workflow (cull + barrier tests included) |
-| Real GLES/Vulkan present to window/swapchain | ❌ Track B RHI |
+| Real GLES/Vulkan present to window/swapchain | ✅ Vulkan (E03): the SceneRenderer frame is blitted into the acquired swapchain image and presented (`fuse_hybrid_frame_vk_swapchain`, Xvfb; the game runtime's `vkQueuePresentKHR` stays behind the Track B production unlock, the editor viewport has its host-scoped unlock) |
 | Legacy T3D/T2D gfx backends wired | ❌ strangler phase |
 | HDR / tonemap shared pass | ❌ Track B |
-| Depth buffer + 3D mesh draw | ❌ placeholder clear only in Hybrid; renderer side ✅ E02 `scene_renderer::SceneRenderer` (ECS meshes / lights through the FrameComposer, `fuse_scene_renderer_vk_golden_*`), Hybrid wiring = E03 |
-| Texture upload from jobs | ❌ `RenderUploadCommand` queue TBD |
+| Depth buffer + 3D mesh draw | ✅ E03 (U4-1): `World3D::render` -> `hybrid::HybridSceneRenderer` -> E02 `SceneRenderer` (ECS meshes / lights / camera through the FrameComposer); 2D sprites + UI via `hybrid.sprite_layer` over the 3D output (UI stage); `fuse_hybrid_frame_vk_golden` (lit cube + sprite, golden FLIP), placeholder only without a Vulkan device |
+| Texture upload from jobs | ⏳ asset side coded (UNI-U7-ASSET-1): `fuse::asset::RenderUploadCommand` on the lock-free MPSC `RenderUploadQueue`, decode on JobScheduler workers, render thread drains through `IRenderUploadSink` (`fuse_asset_runtime_mpsc`, also in the TSan nightly); the renderer's `IRenderUploadSink` (GPU texture / mesh upload) is E06 |
 | iOS/Android hybrid demo on device | ⏳ Android compiles `fuse_hybrid`; device run TBD |
 
 ---
@@ -103,9 +103,9 @@ ctest --test-dir build
 
 1. **Swapchain / surface** — window creation, resize, Android/iOS surface loss.
 2. **RHI abstraction** — command lists, pipeline state, descriptor sets (Track B).
-3. **3D mesh draw** — currently only clear-colour; no depth prepass.
+3. **3D mesh draw** — done (E03): ECS meshes through the SceneRenderer / FrameComposer (visibility buffer, VSM, DDGI, post).
 4. **2D texture atlas** — sprite placeholder is flat-colour rotated quad.
-5. **Hybrid compose** — GPU blit from 3D colour+depth target to 2D overlay target. (E02: `FrameComposer` UI stage — premultiplied UI over the 3D output, `frame.ui_composite` — and the `present.blit` hand-off exist renderer-side; the Hybrid 2D pass does not feed them yet: E03.)
+5. **Hybrid compose** — done (E03): the Hybrid 2D sprites + UI quads are rasterised by `hybrid.sprite_layer` and fed to the E02 UI stage (`frame.ui_composite` over the post-processed 3D output), then `present.blit` to the swapchain / headless target. Textured sprites are F-SPRITE.
 6. **Async upload lane** — staging buffers filled by jobs, committed on render thread.
 7. **Editor PIE viewport** — Qt GL widget integration (U6).
 

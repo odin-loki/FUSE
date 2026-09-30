@@ -1,0 +1,20 @@
+# UNI-U7-ASSET-1: the runtime asset core must not link the offline cook's importers / encoders.
+# Reads the lint target manifest (cmake/FuseLintGates.cmake) and checks fuse_asset's link libraries.
+# -DFUSE_LINT_MANIFEST=<path>
+if(NOT EXISTS "${FUSE_LINT_MANIFEST}")
+    message(FATAL_ERROR "target manifest not found: ${FUSE_LINT_MANIFEST}")
+endif()
+file(STRINGS "${FUSE_LINT_MANIFEST}" _lines REGEX "^fuse_asset\\|")
+list(LENGTH _lines _count)
+if(NOT _count EQUAL 1)
+    message(FATAL_ERROR "fuse_asset not found exactly once in ${FUSE_LINT_MANIFEST}")
+endif()
+string(REPLACE "|" ";" _fields "${_lines}")
+list(GET _fields 6 _links)
+list(GET _fields 7 _ilinks)
+foreach(_banned assimp fuse_cook_stubs stb ispc vorbis fuse_rhi Vulkan)
+    if("${_links},${_ilinks}" MATCHES "${_banned}")
+        message(FATAL_ERROR "fuse_asset links '${_banned}' (${_links} / ${_ilinks}): runtime readers must stay importer/encoder free")
+    endif()
+endforeach()
+message(STATUS "fuse_asset links: ${_links} (no importer / encoder / renderer dependency)")

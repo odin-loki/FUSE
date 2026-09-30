@@ -13,6 +13,7 @@
 //
 // ispc_texcomp (hook in ispc_texcomp_hook.cpp) is used only when its header is present; the in-house
 // encoders are the default and are what the PSNR gates (test_texture_bcn.cpp) measure.
+#include <fuse/asset/cooked_texture.hpp>
 #include <fuse/types.hpp>
 
 #include <string>
@@ -20,15 +21,13 @@
 
 namespace fuse::cook {
 
-enum class BcFormat : u8 { BC1 = 0, BC4, BC5, BC6H, BC7 };
-
-[[nodiscard]] const char* bc_format_name(BcFormat format);
-/// Case-insensitive "BC1" / "BC4" / "BC5" / "BC6H" / "BC7".
-[[nodiscard]] bool parse_bc_format(const std::string& text, BcFormat& out);
-/// 8 for BC1 / BC4, 16 otherwise.
-[[nodiscard]] u32 bc_block_bytes(BcFormat format);
-/// Blocks covering a `width`×`height` level (dimensions rounded up to multiples of 4).
-[[nodiscard]] u32 bc_block_count(u32 width, u32 height);
+// BcFormat and its helpers live in the runtime asset library (fuse/asset/cooked_texture.hpp,
+// UNI-U7-ASSET-1); re-exported here under their original names.
+using asset::BcFormat;
+using asset::bc_block_bytes;
+using asset::bc_block_count;
+using asset::bc_format_name;
+using asset::parse_bc_format;
 
 // Block level (tiles are 4×4 row-major).
 void bc1_encode_block(const u8 rgba[64], u8 block[8]);

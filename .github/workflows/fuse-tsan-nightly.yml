@@ -41,6 +41,8 @@ jobs:
         run: |
           # Every executable/probe under Source/FUSE/Core/tests: ctest -R '^fuse_core_' below runs all of them.
           cmake --build build-tsan --target Source/FUSE/Core/tests/all
+          # UNI-U7-ASSET-1: runtime asset core (MPSC render-upload queue, AssetRegistry job pipeline).
+          cmake --build build-tsan --target Source/FUSE/Asset/tests/all
 
       - name: Run fuse_core CTest (TSan)
-        run: ctest --test-dir build-tsan -R '^fuse_core_' --output-on-failure
+        run: ctest --test-dir build-tsan -R '^fuse_core_|^fuse_asset_runtime_' --output-on-failure

@@ -13,6 +13,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # (incl. Tools/FUSE executables that link fuse_rhi/fuse_fx) gets the CUDA device-link phase.
 
 add_subdirectory(Core)
+add_subdirectory(Asset)  # UNI-U7-ASSET-1 runtime asset core (fuse_asset)
 add_subdirectory(ECS)
 add_subdirectory(Animation)
 add_subdirectory(Physics)

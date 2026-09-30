@@ -5,6 +5,8 @@
 
 #include "mesh_cook_meshopt.hpp"
 
+#include <fuse/asset/detail/fmsh_layout.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -28,42 +30,25 @@ void set_error(std::string* error, const std::string& message) {
     }
 }
 
-constexpr u32 fourcc(char a, char b, char c, char d) {
-    return static_cast<u32>(static_cast<u8>(a)) | (static_cast<u32>(static_cast<u8>(b)) << 8) |
-           (static_cast<u32>(static_cast<u8>(c)) << 16) | (static_cast<u32>(static_cast<u8>(d)) << 24);
-}
+// Section ids: shared with the runtime reader (fuse/asset/detail/fmsh_layout.hpp, UNI-U7-ASSET-1).
+constexpr u32 kLodt = asset::detail::kSectionLodt;
+constexpr u32 kLodr = asset::detail::kSectionLodr;
+constexpr u32 kLodi = asset::detail::kSectionLodi;
+constexpr u32 kLodz = asset::detail::kSectionLodz;
+constexpr u32 kMlth = asset::detail::kSectionMlth;
+constexpr u32 kSubm = asset::detail::kSectionSubm;
+constexpr u32 kMshl = asset::detail::kSectionMshl;
+constexpr u32 kMvrt = asset::detail::kSectionMvrt;
+constexpr u32 kMtri = asset::detail::kSectionMtri;
+constexpr u32 kDagh = asset::detail::kSectionDagh;
+constexpr u32 kDmsh = asset::detail::kSectionDmsh;
+constexpr u32 kDmvr = asset::detail::kSectionDmvr;
+constexpr u32 kDmtr = asset::detail::kSectionDmtr;
+constexpr u32 kDgrp = asset::detail::kSectionDgrp;
+constexpr u32 kDgmb = asset::detail::kSectionDgmb;
+constexpr u32 kDclk = asset::detail::kSectionDclk;
 
-// Section ids (see mesh_cook.hpp). Meshlet / DAG ids and layouts are the renderer's FMLT chunks.
-constexpr u32 kLodt = fourcc('L', 'O', 'D', 'T');
-constexpr u32 kLodr = fourcc('L', 'O', 'D', 'R');
-constexpr u32 kLodi = fourcc('L', 'O', 'D', 'I');
-constexpr u32 kLodz = fourcc('L', 'O', 'D', 'Z');
-constexpr u32 kMlth = fourcc('M', 'L', 'T', 'H');
-constexpr u32 kSubm = fourcc('S', 'U', 'B', 'M');
-constexpr u32 kMshl = fourcc('M', 'S', 'H', 'L');
-constexpr u32 kMvrt = fourcc('M', 'V', 'R', 'T');
-constexpr u32 kMtri = fourcc('M', 'T', 'R', 'I');
-constexpr u32 kDagh = fourcc('D', 'A', 'G', 'H');
-constexpr u32 kDmsh = fourcc('D', 'M', 'S', 'H');
-constexpr u32 kDmvr = fourcc('D', 'M', 'V', 'R');
-constexpr u32 kDmtr = fourcc('D', 'M', 'T', 'R');
-constexpr u32 kDgrp = fourcc('D', 'G', 'R', 'P');
-constexpr u32 kDgmb = fourcc('D', 'G', 'M', 'B');
-constexpr u32 kDclk = fourcc('D', 'C', 'L', 'K');
-
-struct KnownSection {
-    u32 id;
-    u32 element_bytes;
-};
-constexpr KnownSection kKnownSections[] = {
-    {kLodt, 16u}, {kLodr, 8u},  {kLodi, 4u},  {kLodz, 1u},  {kMlth, 16u}, {kSubm, 16u},
-    {kMshl, 96u}, {kMvrt, 4u},  {kMtri, 4u},  {kDagh, 32u}, {kDmsh, 96u}, {kDmvr, 4u},
-    {kDmtr, 4u},  {kDgrp, 48u}, {kDgmb, 4u},  {kDclk, 48u},
-};
-
-constexpr u32 kDagTerminalBits = 0x7F7FFFFFu; // FLT_MAX
-
-// ---- little-endian writer / reader -----------------------------------------------------------------
+// ---- little-endian writer (the reader is in fuse_asset) -----------------------------------------------------------------
 
 struct Writer {
     std::vector<u8>& out;
@@ -115,125 +100,11 @@ struct Writer {
     }
 };
 
-struct Reader {
-    const u8* p;
-    u8 u8v() { return *p++; }
-    u32 u16v() {
-        const u32 v = static_cast<u32>(p[0]) | (static_cast<u32>(p[1]) << 8);
-        p += 2;
-        return v;
-    }
-    u32 u32v() {
-        const u32 v = static_cast<u32>(p[0]) | (static_cast<u32>(p[1]) << 8) | (static_cast<u32>(p[2]) << 16) |
-                      (static_cast<u32>(p[3]) << 24);
-        p += 4;
-        return v;
-    }
-    f32 f32v() {
-        const u32 bits = u32v();
-        f32 v = 0.f;
-        std::memcpy(&v, &bits, sizeof(v));
-        return v;
-    }
-    void f32x3(f32 v[3]) {
-        for (u32 i = 0; i < 3u; ++i) {
-            v[i] = f32v();
-        }
-    }
-    bool record(CookedMeshlet& r) { // false when a reserved word is set
-        r.vertex_offset = u32v();
-        r.triangle_offset = u32v();
-        r.vertex_count = u8v();
-        r.triangle_count = u8v();
-        r.submesh = u16v();
-        f32x3(r.center);
-        r.radius = f32v();
-        f32x3(r.cone_apex);
-        f32x3(r.cone_axis);
-        r.cone_cutoff = f32v();
-        for (std::int8_t& v : r.cone_axis_s8) {
-            v = static_cast<std::int8_t>(u8v());
-        }
-        r.cone_cutoff_s8 = static_cast<std::int8_t>(u8v());
-        f32x3(r.aabb_min);
-        f32x3(r.aabb_max);
-        const u32 reserved = u32v() | u32v() | u32v();
-        return reserved == 0u;
-    }
-    void bounds(ClusterDagTable::Bounds& b) {
-        f32x3(b.center);
-        b.radius = f32v();
-        b.error = f32v();
-    }
-};
-
 void pad4(std::vector<u8>& out) {
     while (out.size() % 4u != 0u) {
         out.push_back(0u);
     }
 }
-
-bool finite3(const f32 v[3]) { return std::isfinite(v[0]) && std::isfinite(v[1]) && std::isfinite(v[2]); }
-
-bool meshlet_bounds_ok(const CookedMeshlet& r) {
-    return finite3(r.center) && std::isfinite(r.radius) && r.radius >= 0.f && finite3(r.cone_apex) &&
-           finite3(r.cone_axis) && std::isfinite(r.cone_cutoff) && finite3(r.aabb_min) && finite3(r.aabb_max) &&
-           r.aabb_min[0] <= r.aabb_max[0] && r.aabb_min[1] <= r.aabb_max[1] && r.aabb_min[2] <= r.aabb_max[2];
-}
-
-bool dag_bounds_ok(const ClusterDagTable::Bounds& b) {
-    u32 bits = 0;
-    std::memcpy(&bits, &b.error, sizeof(bits));
-    return finite3(b.center) && std::isfinite(b.radius) && b.radius >= 0.f &&
-           ((std::isfinite(b.error) && b.error >= 0.f) || bits == kDagTerminalBits);
-}
-
-/// Packed meshlet records + vertex / micro-triangle arrays: offsets are running sums, counts within
-/// limits, vertex indices < vertex_count, micro-indices < the meshlet's vertex count.
-bool check_clusters(const std::vector<CookedMeshlet>& records, const std::vector<u32>& vertices,
-                    const std::vector<u32>& triangles, u32 max_vertices, u32 max_triangles, u32 vertex_count,
-                    u32 submesh_count, const char* what, std::string* error) {
-    u64 vsum = 0;
-    u64 tsum = 0;
-    for (const CookedMeshlet& r : records) {
-        if (r.vertex_offset != vsum || r.triangle_offset != tsum || r.vertex_count == 0u ||
-            r.vertex_count > max_vertices || r.triangle_count == 0u || r.triangle_count > max_triangles ||
-            r.submesh >= submesh_count || !meshlet_bounds_ok(r)) {
-            set_error(error, std::string(what) + " record invalid");
-            return false;
-        }
-        vsum += r.vertex_count;
-        tsum += r.triangle_count;
-        if (vsum > vertices.size() || tsum > triangles.size()) {
-            set_error(error, std::string(what) + " record out of range");
-            return false;
-        }
-        for (u32 t = 0; t < r.triangle_count; ++t) {
-            const u32 packed = triangles[r.triangle_offset + t];
-            if ((packed >> 24) != 0u || (packed & 0xFFu) >= r.vertex_count || ((packed >> 8) & 0xFFu) >= r.vertex_count ||
-                ((packed >> 16) & 0xFFu) >= r.vertex_count) {
-                set_error(error, std::string(what) + " micro-index out of range");
-                return false;
-            }
-        }
-    }
-    if (vsum != vertices.size() || tsum != triangles.size()) {
-        set_error(error, std::string(what) + " arrays do not match the records");
-        return false;
-    }
-    for (u32 v : vertices) {
-        if (v >= vertex_count) {
-            set_error(error, std::string(what) + " vertex index out of range");
-            return false;
-        }
-    }
-    return true;
-}
-
-struct SectionView {
-    u32 element_count = 0;
-    const u8* data = nullptr;
-};
 
 void begin_section(std::vector<u8>& out, u32 id, u32 element_bytes, usize element_count) {
     Writer w{out};
@@ -248,15 +119,6 @@ void write_u32s(std::vector<u8>& out, u32 id, const std::vector<u32>& values) {
     for (u32 v : values) {
         w.u32v(v);
     }
-}
-
-std::vector<u32> read_u32s(const SectionView& view) {
-    std::vector<u32> values(view.element_count);
-    Reader r{view.data};
-    for (u32& v : values) {
-        v = r.u32v();
-    }
-    return values;
 }
 
 #if defined(FUSE_COOK_HAS_GEOMETRY_DAG)
@@ -529,36 +391,6 @@ void meshopt_encode_vertices(const u8* raw, usize count, u32 element_bytes, std:
 #endif
 }
 
-bool meshopt_decode_vertices(const u8* encoded, usize encoded_bytes, usize count, u32 element_bytes,
-                             std::vector<u8>& raw) {
-#if defined(FUSE_COOK_HAS_MESHOPTIMIZER)
-    const u32 stride = (element_bytes + 3u) & ~3u;
-    std::vector<u8> padded(count * stride + 4u, 0u); // +4: non-null destination for count == 0
-    if (meshopt_decodeVertexBuffer(padded.data(), count, stride, encoded, encoded_bytes) != 0) {
-        return false;
-    }
-    raw.assign(count * element_bytes + 4u, 0u);
-    for (usize i = 0; i < count; ++i) {
-        const u8* element = padded.data() + i * stride;
-        for (u32 b = element_bytes; b < stride; ++b) {
-            if (element[b] != 0u) {
-                return false; // padding must be zero (the encoder writes zeros)
-            }
-        }
-        std::memcpy(raw.data() + i * element_bytes, element, element_bytes);
-    }
-    raw.resize(count * element_bytes);
-    return true;
-#else
-    (void)encoded;
-    (void)encoded_bytes;
-    (void)count;
-    (void)element_bytes;
-    (void)raw;
-    return false;
-#endif
-}
-
 void meshopt_encode_indices(const u32* indices, usize count, u32 vertex_count, std::vector<u8>& out) {
     out.clear();
 #if defined(FUSE_COOK_HAS_MESHOPTIMIZER)
@@ -581,31 +413,6 @@ void meshopt_encode_indices(const u32* indices, usize count, u32 vertex_count, s
     (void)indices;
     (void)count;
     (void)vertex_count;
-#endif
-}
-
-bool meshopt_decode_indices(const u8* encoded, usize encoded_bytes, usize count, std::vector<u32>& out) {
-#if defined(FUSE_COOK_HAS_MESHOPTIMIZER)
-    if (count % 3u != 0u || encoded_bytes == 0u) {
-        return false;
-    }
-    out.assign(count + 3u, 0u);
-    const u32 kind = encoded[0] & 0xF0u;
-    const int status = kind == 0xE0u   ? meshopt_decodeIndexBuffer(out.data(), count, 4u, encoded, encoded_bytes)
-                       : kind == 0xD0u ? meshopt_decodeIndexSequence(out.data(), count, 4u, encoded, encoded_bytes)
-                                       : -1;
-    if (status != 0) {
-        out.clear();
-        return false;
-    }
-    out.resize(count);
-    return true;
-#else
-    (void)encoded;
-    (void)encoded_bytes;
-    (void)count;
-    out.clear();
-    return false;
 #endif
 }
 
@@ -712,281 +519,7 @@ void write_sections(const CookedMesh& mesh, bool codec, std::vector<u8>& out) {
     }
 }
 
-bool read_sections(const u8* data, usize size, usize& consumed, bool codec, CookedMesh& out, std::string* error) {
-    (void)codec;
-    auto fail = [&](const std::string& message) {
-        set_error(error, "section table: " + message);
-        return false;
-    };
-    if (size < 4u) {
-        return fail("truncated");
-    }
-    Reader header{data};
-    const u32 sectionCount = header.u32v();
-    usize cursor = 4u;
-    std::map<u32, SectionView> sections;
-    for (u32 s = 0; s < sectionCount; ++s) {
-        if (cursor + 12u > size) {
-            return fail("truncated");
-        }
-        Reader r{data + cursor};
-        const u32 id = r.u32v();
-        const u32 elementBytes = r.u32v();
-        const u32 elementCount = r.u32v();
-        cursor += 12u;
-        const u64 bytes = static_cast<u64>(elementBytes) * elementCount;
-        const u64 padded = (bytes + 3u) & ~static_cast<u64>(3u);
-        if (static_cast<u64>(cursor) + padded > size) {
-            return fail("section out of bounds");
-        }
-        const KnownSection* known = nullptr;
-        for (const KnownSection& k : kKnownSections) {
-            if (k.id == id) {
-                known = &k;
-            }
-        }
-        if (known != nullptr) {
-            if (known->element_bytes != elementBytes) {
-                return fail("section element size mismatch");
-            }
-            if (!sections.emplace(id, SectionView{elementCount, data + cursor}).second) {
-                return fail("section duplicated");
-            }
-        }
-        cursor += static_cast<usize>(padded);
-    }
-    consumed = cursor;
-    auto has = [&](u32 id) { return sections.count(id) != 0u; };
-    const u32 vertexCount = out.vertex_count();
-    const u32 submeshCount = static_cast<u32>(out.submeshes.size());
-
-    // LODs.
-    const bool anyLod = has(kLodt) || has(kLodr) || has(kLodi) || has(kLodz);
-    if (anyLod) {
-        if (!has(kLodt) || !has(kLodr) || has(kLodi) == has(kLodz)) {
-            return fail("LOD sections incomplete");
-        }
-        const SectionView lodt = sections[kLodt];
-        const SectionView lodr = sections[kLodr];
-        if (static_cast<u64>(lodr.element_count) != static_cast<u64>(lodt.element_count) * submeshCount) {
-            return fail("LODR count must be LOD count x submesh count");
-        }
-        Reader rt{lodt.data};
-        Reader rr{lodr.data};
-        u64 total = 0;
-        out.lods.resize(lodt.element_count);
-        for (MeshLod& lod : out.lods) {
-            lod.error = rt.f32v();
-            lod.target_ratio = rt.f32v();
-            if ((rt.u32v() | rt.u32v()) != 0u || !std::isfinite(lod.error) || lod.error < 0.f ||
-                !(lod.target_ratio > 0.f && lod.target_ratio <= 1.f)) {
-                return fail("LOD record invalid");
-            }
-            lod.ranges.resize(submeshCount);
-            for (MeshLod::Range& range : lod.ranges) {
-                range.index_offset = rr.u32v();
-                range.index_count = rr.u32v();
-                if (range.index_offset != total || range.index_count % 3u != 0u) {
-                    return fail("LOD ranges must tile the LOD indices in order");
-                }
-                total += range.index_count;
-            }
-        }
-        if (total > 0xFFFFFFFFull) {
-            return fail("LOD index count overflow");
-        }
-        if (has(kLodi)) {
-            if (sections[kLodi].element_count != total) {
-                return fail("LODI count disagrees with the LOD ranges");
-            }
-            out.lod_indices = read_u32s(sections[kLodi]);
-        } else {
-            const SectionView lodz = sections[kLodz];
-            if (!meshopt_codec_available() ||
-                !meshopt_decode_indices(lodz.data, lodz.element_count, static_cast<usize>(total), out.lod_indices)) {
-                return fail("LODZ meshopt decode failed");
-            }
-        }
-        for (u32 index : out.lod_indices) {
-            if (index >= vertexCount) {
-                return fail("LOD index out of range");
-            }
-        }
-    }
-
-    // Meshlets.
-    const u32 meshletIds[] = {kMlth, kSubm, kMshl, kMvrt, kMtri};
-    const u32 meshletPresent = static_cast<u32>(std::count_if(std::begin(meshletIds), std::end(meshletIds), has));
-    if (meshletPresent != 0u && meshletPresent != 5u) {
-        return fail("meshlet sections incomplete");
-    }
-    if (meshletPresent == 5u) {
-        MeshletTable& t = out.meshlets;
-        const SectionView mlth = sections[kMlth];
-        if (mlth.element_count != 1u) {
-            return fail("MLTH must have one element");
-        }
-        Reader rh{mlth.data};
-        t.max_vertices = rh.u32v();
-        t.max_triangles = rh.u32v();
-        if ((rh.u32v() | rh.u32v()) != 0u || t.max_vertices == 0u || t.max_vertices > 255u || t.max_triangles == 0u ||
-            t.max_triangles > 252u) {
-            return fail("MLTH invalid");
-        }
-        const SectionView subm = sections[kSubm];
-        if (subm.element_count != submeshCount) {
-            return fail("SUBM must have one element per submesh");
-        }
-        Reader rs{subm.data};
-        t.submeshes.resize(subm.element_count);
-        for (MeshletTable::SubmeshRange& s : t.submeshes) {
-            s.meshlet_offset = rs.u32v();
-            s.meshlet_count = rs.u32v();
-            s.material_index = rs.u32v();
-            s.triangle_count = rs.u32v();
-        }
-        const SectionView mshl = sections[kMshl];
-        t.meshlets.resize(mshl.element_count);
-        Reader rm{mshl.data};
-        for (CookedMeshlet& r : t.meshlets) {
-            if (!rm.record(r)) {
-                return fail("MSHL reserved field set");
-            }
-        }
-        t.vertices = read_u32s(sections[kMvrt]);
-        t.triangles = read_u32s(sections[kMtri]);
-        if (!check_clusters(t.meshlets, t.vertices, t.triangles, t.max_vertices, t.max_triangles, vertexCount,
-                            submeshCount, "meshlet", error)) {
-            return false;
-        }
-        u64 meshletSum = 0;
-        for (u32 s = 0; s < submeshCount; ++s) {
-            const MeshletTable::SubmeshRange& range = t.submeshes[s];
-            if (range.meshlet_offset != meshletSum || range.material_index != out.submeshes[s].material_index) {
-                return fail("SUBM ranges must tile the meshlets in submesh order");
-            }
-            u64 triangles = 0;
-            for (u32 m = range.meshlet_offset; m < range.meshlet_offset + range.meshlet_count && m < t.meshlets.size(); ++m) {
-                if (t.meshlets[m].submesh != s) {
-                    return fail("meshlet submesh disagrees with SUBM");
-                }
-                triangles += t.meshlets[m].triangle_count;
-            }
-            if (triangles != range.triangle_count || triangles * 3u != out.submeshes[s].index_count) {
-                return fail("SUBM triangle count disagrees with the meshlets / submesh");
-            }
-            meshletSum += range.meshlet_count;
-        }
-        if (meshletSum != t.meshlets.size()) {
-            return fail("SUBM ranges do not cover every meshlet");
-        }
-    }
-
-    // Cluster DAG.
-    const u32 dagIds[] = {kDagh, kDmsh, kDmvr, kDmtr, kDgrp, kDgmb, kDclk};
-    const u32 dagPresent = static_cast<u32>(std::count_if(std::begin(dagIds), std::end(dagIds), has));
-    if (dagPresent != 0u && dagPresent != 7u) {
-        return fail("cluster DAG sections incomplete");
-    }
-    if (dagPresent == 7u) {
-        if (out.meshlets.empty()) {
-            return fail("cluster DAG without meshlets");
-        }
-        ClusterDagTable& d = out.cluster_dag;
-        const SectionView dagh = sections[kDagh];
-        if (dagh.element_count != 1u) {
-            return fail("DAGH must have one element");
-        }
-        Reader rh{dagh.data};
-        d.leaf_cluster_count = rh.u32v();
-        const u32 lodCount = rh.u32v();
-        const u32 groupCount = rh.u32v();
-        d.level_count = rh.u32v();
-        const u32 lodVertexCount = rh.u32v();
-        const u32 lodTriangleCount = rh.u32v();
-        if ((rh.u32v() | rh.u32v()) != 0u || d.leaf_cluster_count != out.meshlets.meshlets.size() ||
-            lodCount != sections[kDmsh].element_count || groupCount != sections[kDgrp].element_count ||
-            lodVertexCount != sections[kDmvr].element_count || lodTriangleCount != sections[kDmtr].element_count ||
-            d.level_count == 0u || groupCount == 0u) {
-            return fail("DAGH disagrees with the DAG sections");
-        }
-        d.lod_clusters.resize(lodCount);
-        Reader rm{sections[kDmsh].data};
-        for (CookedMeshlet& r : d.lod_clusters) {
-            if (!rm.record(r)) {
-                return fail("DMSH reserved field set");
-            }
-        }
-        d.lod_vertices = read_u32s(sections[kDmvr]);
-        d.lod_triangles = read_u32s(sections[kDmtr]);
-        if (!check_clusters(d.lod_clusters, d.lod_vertices, d.lod_triangles, out.meshlets.max_vertices,
-                            out.meshlets.max_triangles, vertexCount, submeshCount, "DAG cluster", error)) {
-            return false;
-        }
-        const u32 clusterCount = d.cluster_count();
-        d.groups.resize(groupCount);
-        Reader rg{sections[kDgrp].data};
-        for (ClusterDagTable::Group& g : d.groups) {
-            rg.bounds(g.bounds);
-            g.member_offset = rg.u32v();
-            g.member_count = rg.u32v();
-            g.child_offset = rg.u32v();
-            g.child_count = rg.u32v();
-            g.depth = rg.u32v();
-            g.submesh = rg.u32v();
-            g.reserved = rg.u32v();
-        }
-        d.group_members = read_u32s(sections[kDgmb]);
-        d.links.resize(sections[kDclk].element_count);
-        Reader rl{sections[kDclk].data};
-        for (ClusterDagTable::Link& l : d.links) {
-            rl.bounds(l.self);
-            rl.bounds(l.parent);
-            l.group = rl.u32v();
-            l.refined = rl.u32v();
-        }
-        if (d.group_members.size() != clusterCount || d.links.size() != clusterCount) {
-            return fail("DGMB / DCLK must have one entry per cluster");
-        }
-        std::vector<u32> groupOf(clusterCount, 0xFFFFFFFFu);
-        u64 memberSum = 0;
-        u64 childSum = d.leaf_cluster_count;
-        for (u32 gi = 0; gi < groupCount; ++gi) {
-            const ClusterDagTable::Group& g = d.groups[gi];
-            if (g.member_offset != memberSum || g.member_count == 0u || g.reserved != 0u || g.submesh >= submeshCount ||
-                !dag_bounds_ok(g.bounds)) {
-                return fail("DGRP record invalid");
-            }
-            if (g.child_count == 0u ? g.child_offset != 0u : g.child_offset != childSum) {
-                return fail("DGRP child ranges must tile the LOD clusters in group order");
-            }
-            childSum += g.child_count;
-            memberSum += g.member_count;
-            if (memberSum > clusterCount) {
-                return fail("DGRP member range out of bounds");
-            }
-            for (u32 m = g.member_offset; m < g.member_offset + g.member_count; ++m) {
-                const u32 cluster = d.group_members[m];
-                if (cluster >= clusterCount || groupOf[cluster] != 0xFFFFFFFFu) {
-                    return fail("every cluster must be a member of exactly one group");
-                }
-                groupOf[cluster] = gi;
-            }
-        }
-        if (memberSum != clusterCount || childSum != clusterCount) {
-            return fail("DGRP ranges do not cover every cluster");
-        }
-        for (u32 c = 0; c < clusterCount; ++c) {
-            const ClusterDagTable::Link& l = d.links[c];
-            const bool leaf = c < d.leaf_cluster_count;
-            if (l.group != groupOf[c] || (leaf ? l.refined != 0xFFFFFFFFu : l.refined >= groupCount) ||
-                !dag_bounds_ok(l.self) || !dag_bounds_ok(l.parent)) {
-                return fail("DCLK record invalid");
-            }
-        }
-    }
-    return true;
-}
+// read_sections moved to the runtime asset library (Source/FUSE/Asset/src/cooked_mesh_reader.cpp).
 
 } // namespace detail
 
