@@ -155,6 +155,15 @@ target_link_libraries(fuse_core_io_handle_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_io_handle_tests)
 add_test(NAME fuse_core_io_handle COMMAND fuse_core_io_handle_tests)
 
+# UNI-VFS-1: I/O lane (priorities, cancel, power suspend, frame budget, mount stress, zero-alloc reads).
+add_executable(fuse_core_io_lane_tests
+    test_io_lane.cpp
+)
+target_link_libraries(fuse_core_io_lane_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_io_lane_tests)
+add_test(NAME fuse_core_io_lane COMMAND fuse_core_io_lane_tests)
+set_tests_properties(fuse_core_io_lane PROPERTIES RUN_SERIAL TRUE LABELS "gate" TIMEOUT 120)
+
 add_executable(fuse_core_u3_gate_tests
     test_u3_gate.cpp
 )
