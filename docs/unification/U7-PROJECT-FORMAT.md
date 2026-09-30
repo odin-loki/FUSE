@@ -2,7 +2,7 @@
 
 **Phase:** U7 content / converters  
 **Date:** 2026-09-19  
-**Status:** `project.json` v1 + `.fuselevel` v2 hierarchy + T2D runtime bridge (physics shapes/collision layers) + T3D material VFS mount wiring + BC7 mode-6 cook encoder + encoder hooks (honest stubs)
+**Status:** `project.json` v1 (reader + writer, UNI-U6-FILE-1) + `.fuselevel` v2 hierarchy + `.fuselevel` v3 (v2 + scene dimension + ECS component block via RegistrySerialiser; E15) + T2D runtime bridge (physics shapes/collision layers) + T3D material VFS mount wiring + BC7 mode-6 cook encoder + encoder hooks (honest stubs)
 
 ---
 

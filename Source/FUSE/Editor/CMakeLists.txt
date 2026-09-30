@@ -7,6 +7,9 @@ set(FUSE_EDITOR_API_SOURCES
     src/console_panel.cpp
     src/editor_host.cpp
     src/editor_command_apply.cpp
+    src/editor_console_commands.cpp
+    src/editor_scripting.cpp
+    src/editor_scripting.hpp
     src/feature_pane_bridge.cpp
     src/ai_tree_profile_picker.cpp
     src/cinematics_seq_import.cpp
@@ -42,6 +45,7 @@ set(FUSE_EDITOR_API_HEADERS
     include/fuse/editor/command_stack.hpp
     include/fuse/editor/console_panel.hpp
     include/fuse/editor/editor_host.hpp
+    include/fuse/editor/editor_console_commands.hpp
     include/fuse/editor/editor_scene.hpp
     include/fuse/editor/runtime_viewport.hpp
     include/fuse/editor/runtime_embed_session.hpp
@@ -94,6 +98,17 @@ if(FUSE_BUILD_MODULES)
     target_link_libraries(fuse_editor_api PUBLIC fuse_ai fuse_cinematics)
 endif()
 fuse_apply_cxx23(fuse_editor_api)
+
+# MP-B6-EDITOR-SCRIPT-PIE / UNI-U6-CON-1: console Lua REPL + scripts in PIE (fuse_script, E10/E12);
+# the physics bridge adds the Physics.* script API and collision callbacks in PIE.
+if(TARGET fuse_script)
+    target_link_libraries(fuse_editor_api PUBLIC fuse_script)
+    target_compile_definitions(fuse_editor_api PRIVATE FUSE_EDITOR_HAS_SCRIPT=1)
+    if(TARGET fuse_script_physics)
+        target_link_libraries(fuse_editor_api PUBLIC fuse_script_physics)
+        target_compile_definitions(fuse_editor_api PRIVATE FUSE_EDITOR_HAS_SCRIPT_PHYSICS=1)
+    endif()
+endif()
 
 if(FUSE_BUILD_MODULES)
     target_link_libraries(fuse_editor_api PUBLIC fuse_ai)

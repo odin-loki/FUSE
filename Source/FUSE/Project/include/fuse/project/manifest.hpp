@@ -4,6 +4,7 @@
 #include <fuse/types.hpp>
 
 #include <string>
+#include <string_view>
 
 namespace fuse::project {
 
@@ -21,6 +22,9 @@ struct ModuleSettings {
     bool mechanics = false;
     bool adventure = false;
 };
+
+/// The only `project.json` schema this build reads and writes.
+inline constexpr u32 kProjectSchemaVersion = 1u;
 
 struct ProjectManifest {
     u32 schemaVersion = 0;
@@ -48,5 +52,15 @@ struct LoadResult {
 };
 
 hybrid::DimensionFlags toDimensionFlags(const DimensionSettings& settings);
+
+/// UNI-U6-FILE-1: `project.json` text for `manifest` (schemaVersion 1, dimensions, modules, default
+/// worlds, workerCap) in the layout `parseManifest` reads back. `schemaVersion` is always written as
+/// `kProjectSchemaVersion`; `projectRoot` is not stored (it is the file's directory). Strings are
+/// JSON-escaped (quotes, backslashes, control characters).
+std::string writeManifestJson(const ProjectManifest& manifest);
+
+/// JSON string escaping / unescaping used by the manifest writer and loader.
+std::string escapeJsonString(std::string_view text);
+std::string unescapeJsonString(std::string_view text);
 
 } // namespace fuse::project

@@ -37,8 +37,8 @@
 |---------|-------|
 | Dual TorqueScript VMs | Still quarantined U0–U2; `compat/ts_t3d` / `compat/ts_t2d` not linked |
 | ECS `Script` component | Per-entity `lua_ref` deferred — see [TRACK-B-SCRIPT.md](./TRACK-B-SCRIPT.md) |
-| Hot-reload watcher | Deferred |
-| Editor REPL wiring | `ScriptConsole` headless stubs exist; Qt chrome deferred (U6) |
+| Hot-reload watcher | `ScriptHotReload` polled in editor PIE; reloads logged on the console (E15) |
+| Editor REPL wiring | Done (E15, UNI-U6-CON-1): ConsolePanel -> CommandQueue -> game-thread ScriptConsole / Lua REPL (editor VM, PIE VM while playing); Qt console dock |
 
 ---
 

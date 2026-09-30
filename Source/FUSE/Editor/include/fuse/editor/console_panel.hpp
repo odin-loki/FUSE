@@ -27,6 +27,9 @@ public:
     /// Handler for a registered console command; returns false on failure (usage errors etc.).
     using CommandHandler =
         std::function<bool(const std::vector<std::string>& args, ConsolePanel& console)>;
+    /// Receives the raw line when it names no registered command (or does not tokenise, e.g. Lua
+    /// with an unbalanced quote) — the editor routes such lines to the Lua REPL.
+    using FallbackHandler = std::function<bool(const std::string& line, ConsolePanel& console)>;
 
     struct LogLine {
         LogLevel level = LogLevel::Info;
@@ -66,6 +69,11 @@ public:
     /// built in and can be overridden.
     void registerCommand(std::string name, CommandHandler handler);
     [[nodiscard]] bool hasCommand(std::string_view name) const;
+    /// Unknown / untokenisable lines go to `handler` instead of failing (empty clears it).
+    void setFallbackHandler(FallbackHandler handler) { m_fallback = std::move(handler); }
+    [[nodiscard]] bool hasFallbackHandler() const { return static_cast<bool>(m_fallback); }
+    /// Logged lines per level (repeats included), for the Qt filter buttons.
+    [[nodiscard]] u32 levelCount(LogLevel level) const;
     [[nodiscard]] std::vector<std::string> commandNames() const;
 
     /// Echoes the line to the log, records it in the history, parses and dispatches it.
@@ -94,6 +102,7 @@ private:
     std::string m_textFilter;
     std::string m_lastExecutedCommand;
     std::map<std::string, CommandHandler> m_commands;
+    FallbackHandler m_fallback;
     std::vector<std::string> m_history;
     usize m_historyCursor = 0;
     bool m_showTrace = false;

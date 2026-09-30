@@ -13,8 +13,10 @@
 #include <mutex>
 #include <vector>
 
+class QAction;
 class QDockWidget;
 class QLabel;
+class QToolBar;
 
 namespace fuse::editor::qt {
 
@@ -90,8 +92,17 @@ public:
     /// Duration of the last full repaint of the window (ms), as measured by `measureUiFrame`.
     double measureUiFrame();
 
+    /// MP-B6-EDITOR-SCRIPT-PIE: Play / Pause / Resume / Step / Stop transport (toolbar + Play menu).
+    /// Each action posts the matching command (StartPlay, PausePlay, ResumePlay, StepPlay, StopPlay)
+    /// to the host's CommandQueue; the game tick drives PlaySession / PlayModeController.
+    [[nodiscard]] QToolBar* transportToolBar() const { return m_transportBar; }
+    [[nodiscard]] QAction* transportAction(CommandKind kind) const;
+    /// Enable / disable the transport actions from EditorState (runs on the status timer).
+    void updateTransportActions();
+
 private:
     void buildMenus();
+    void buildTransport();
     void buildDocks();
     QDockWidget* addPanelDock(const char* objectName, const QString& title, QWidget* content);
     void onProjectOpenRequested(const QString& projectDirectory);
@@ -116,6 +127,12 @@ private:
     std::vector<QDockWidget*> m_docks;
     QString m_samplesRoot;
     QLabel* m_statusLabel = nullptr;
+    QToolBar* m_transportBar = nullptr;
+    QAction* m_actPlay = nullptr;
+    QAction* m_actPause = nullptr;
+    QAction* m_actResume = nullptr;
+    QAction* m_actStep = nullptr;
+    QAction* m_actStop = nullptr;
     QTimer m_statusTimer;
     bool m_projectWorldShown = false;
 };

@@ -2,8 +2,18 @@
 
 #include <fuse/scene/scene_snapshot.hpp>
 
+#include <fuse/ecs/components/transform.hpp>
+#include <fuse/ecs/registry.hpp>
+#include <fuse/ecs/registry_serialiser.hpp>
+
+#include <atomic>
+#include <chrono>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
+#include <string_view>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 namespace fuse::scene {
@@ -17,6 +27,13 @@ static_assert(kTransformBlockSize == 10u * sizeof(f32), "transform block is ten 
 constexpr u8 kCameraMarker = 'C';
 constexpr u8 kTransformTableMarker = 'T';
 constexpr u8 kHierarchyTableMarker = 'H';
+constexpr u8 kEcsBlockMarker = 'E';
+// Header reserved[] byte indices.
+constexpr usize kReservedCamera = 0;
+constexpr usize kReservedTransforms = 1;
+constexpr usize kReservedHierarchy = 2;
+constexpr usize kReservedEcs = 3;
+constexpr usize kReservedDimension = 4;
 
 struct SceneHeader {
     u32 magic = SceneSerialiser::MAGIC;
@@ -183,26 +200,27 @@ bool readFile(const std::string& path, std::vector<u8>& bytes) {
     return !input.fail();
 }
 
-} // namespace
 
-SerialiseResult SceneSerialiser::save(const Scene& scene, const std::string& path) {
+/// Everything a `.fuselevel` holds, parsed but not yet applied.
+struct ParsedScene {
+    u32 version = 0;
+    bool legacyMagic = false;
+    SceneDimension dimension = SceneDimension::World3D;
+    Camera camera;
+    std::string name;
+    std::vector<SceneEntity> entities;
+    bool hasEcsBlock = false;
+    std::vector<u8> ecsBytes;
+};
+
+SerialiseResult failWith(SerialiseStatus status, std::string message) {
     SerialiseResult result;
+    result.status = status;
+    result.error = std::move(message);
+    return result;
+}
 
-    const bool writeHierarchy = sceneHasHierarchy(scene);
-
-    SceneHeader header;
-    header.entityCount = scene.entityCount();
-    header.version = writeHierarchy ? VERSION_HIERARCHY : VERSION;
-    header.reserved[0] = kCameraMarker;
-    header.reserved[1] = kTransformTableMarker;
-    if (writeHierarchy) {
-        header.reserved[2] = kHierarchyTableMarker;
-    }
-
-    std::vector<u8> buffer;
-    buffer.resize(kHeaderSize, 0);
-    std::memcpy(buffer.data(), &header, sizeof(header));
-
+void writeSceneBody(std::vector<u8>& buffer, const Scene& scene, bool writeHierarchy) {
     writeCameraBlock(buffer, scene.camera());
     writeString(buffer, scene.name());
 
@@ -223,6 +241,243 @@ SerialiseResult SceneSerialiser::save(const Scene& scene, const std::string& pat
             writeS32(buffer, entity.parentIndex);
         }
     }
+}
+
+/// `readEcs` = false skips the v3 ECS block (still bounds-checked).
+SerialiseResult parseScene(const std::vector<u8>& buffer, bool readEcs, ParsedScene& out) {
+    if (buffer.size() < kHeaderSize) {
+        return failWith(SerialiseStatus::TruncatedFile, "scene file too small");
+    }
+
+    SceneHeader header{};
+    std::memcpy(&header, buffer.data(), sizeof(header));
+
+    // Compat loader: pre-rename 'ENGC' files share the v1/v2 layout, only the magic differs.
+    out.legacyMagic = header.magic == SceneSerialiser::LEGACY_MAGIC_ENGC;
+    if (header.magic != SceneSerialiser::MAGIC && !out.legacyMagic) {
+        return failWith(SerialiseStatus::InvalidMagic, "invalid scene magic");
+    }
+
+    if (header.version != SceneSerialiser::VERSION && header.version != SceneSerialiser::VERSION_HIERARCHY &&
+        header.version != SceneSerialiser::VERSION_ECS) {
+        return failWith(SerialiseStatus::UnsupportedVersion, "unsupported scene version");
+    }
+    out.version = header.version;
+
+    const bool hasHierarchyTable =
+        header.version >= SceneSerialiser::VERSION_HIERARCHY && header.reserved[kReservedHierarchy] == kHierarchyTableMarker;
+    const bool hasEcsBlock = header.version == SceneSerialiser::VERSION_ECS;
+    if (hasEcsBlock) {
+        if (header.reserved[kReservedEcs] != kEcsBlockMarker) {
+            return failWith(SerialiseStatus::TruncatedFile, "missing ECS block marker");
+        }
+        const u8 dimension = header.reserved[kReservedDimension];
+        if (dimension > static_cast<u8>(SceneDimension::World2D)) {
+            return failWith(SerialiseStatus::UnsupportedVersion, "unknown scene dimension");
+        }
+        out.dimension = static_cast<SceneDimension>(dimension);
+    }
+
+    if (buffer.size() < kHeaderSize + kCameraBlockSize) {
+        return failWith(SerialiseStatus::TruncatedFile, "scene file missing camera block");
+    }
+
+    if (header.reserved[kReservedCamera] != kCameraMarker) {
+        return failWith(SerialiseStatus::TruncatedFile, "missing camera block marker");
+    }
+
+    const bool hasTransformTable = header.reserved[kReservedTransforms] == kTransformTableMarker;
+
+    const u8* cursor = buffer.data() + kHeaderSize;
+    const u8* end = buffer.data() + buffer.size();
+
+    if (!readCameraBlock(cursor, end, out.camera)) {
+        return failWith(SerialiseStatus::TruncatedFile, "truncated camera block");
+    }
+
+    if (!readString(cursor, end, out.name)) {
+        return failWith(SerialiseStatus::TruncatedFile, "truncated scene name");
+    }
+
+    u32 objectCount = 0;
+    if (!readU32(cursor, end, objectCount)) {
+        return failWith(SerialiseStatus::TruncatedFile, "truncated object table");
+    }
+
+    if (objectCount != header.entityCount) {
+        return failWith(SerialiseStatus::TruncatedFile, "entity count mismatch");
+    }
+    // Every entity needs at least its 4-byte name length: reject absurd counts before reserving.
+    if (objectCount > static_cast<usize>(end - cursor) / 4u) {
+        return failWith(SerialiseStatus::TruncatedFile, "truncated object table");
+    }
+
+    out.entities.clear();
+    out.entities.reserve(objectCount);
+
+    for (u32 i = 0; i < objectCount; ++i) {
+        std::string objectName;
+        if (!readString(cursor, end, objectName)) {
+            return failWith(SerialiseStatus::TruncatedFile, "truncated object name");
+        }
+
+        SceneEntity entity;
+        entity.name = std::move(objectName);
+        out.entities.push_back(std::move(entity));
+    }
+
+    if (hasTransformTable) {
+        u32 transformCount = 0;
+        if (!readU32(cursor, end, transformCount)) {
+            return failWith(SerialiseStatus::TruncatedFile, "truncated transform table");
+        }
+
+        if (transformCount != objectCount) {
+            return failWith(SerialiseStatus::TruncatedFile, "transform count mismatch");
+        }
+
+        for (u32 i = 0; i < transformCount; ++i) {
+            if (!readTransformBlock(cursor, end, out.entities[i].transform)) {
+                return failWith(SerialiseStatus::TruncatedFile, "truncated entity transform");
+            }
+        }
+    }
+
+    if (hasHierarchyTable) {
+        u32 parentCount = 0;
+        if (!readU32(cursor, end, parentCount)) {
+            return failWith(SerialiseStatus::TruncatedFile, "truncated hierarchy table");
+        }
+
+        if (parentCount != objectCount) {
+            return failWith(SerialiseStatus::TruncatedFile, "hierarchy count mismatch");
+        }
+
+        for (u32 i = 0; i < parentCount; ++i) {
+            if (!readS32(cursor, end, out.entities[i].parentIndex)) {
+                return failWith(SerialiseStatus::TruncatedFile, "truncated entity parent index");
+            }
+        }
+    }
+
+    out.hasEcsBlock = hasEcsBlock;
+    if (hasEcsBlock) {
+        u32 ecsBytes = 0;
+        if (!readU32(cursor, end, ecsBytes)) {
+            return failWith(SerialiseStatus::TruncatedFile, "truncated ECS block size");
+        }
+        if (static_cast<usize>(end - cursor) < ecsBytes) {
+            return failWith(SerialiseStatus::TruncatedFile, "truncated ECS block");
+        }
+        if (readEcs) {
+            out.ecsBytes.assign(cursor, cursor + ecsBytes);
+        }
+        cursor += ecsBytes;
+    }
+
+    return SerialiseResult{SerialiseStatus::Ok, {}, out.legacyMagic};
+}
+
+Scene buildScene(ParsedScene& parsed) {
+    Scene loaded(std::move(parsed.name));
+    loaded.camera() = parsed.camera;
+    loaded.clearEntities();
+    for (SceneEntity& entity : parsed.entities) {
+        loaded.addEntity(std::move(entity.name), entity.transform, entity.parentIndex);
+    }
+    loaded.camera().update();
+    return loaded;
+}
+
+/// Unique scratch path for handing an ECS block to RegistrySerialiser (which reads / writes files).
+std::filesystem::path scratchEcsPath(const std::string& nearPath) {
+    static std::atomic<u64> counter{0};
+    const u64 serial = counter.fetch_add(1u, std::memory_order_relaxed);
+    const u64 ticks = static_cast<u64>(std::chrono::steady_clock::now().time_since_epoch().count());
+    const std::string leaf = "fuse_scene_ecs_" + std::to_string(ticks) + "_" + std::to_string(serial) + ".fecs";
+    std::error_code ec;
+    std::filesystem::path dir = std::filesystem::temp_directory_path(ec);
+    if (ec || dir.empty()) {
+        dir = std::filesystem::path(nearPath).parent_path();
+    }
+    return dir / leaf;
+}
+
+SerialiseResult registryToBytes(const ecs::Registry& registry, const std::string& scenePath, std::vector<u8>& out) {
+    const std::filesystem::path scratch = scratchEcsPath(scenePath);
+    const ecs::RegistrySerialiseResult saved = ecs::RegistrySerialiser::save(registry, scratch.string());
+    std::error_code ec;
+    if (!saved.ok) {
+        std::filesystem::remove(scratch, ec);
+        return failWith(SerialiseStatus::IoError, "ECS block: " + saved.error);
+    }
+    const bool read = readFile(scratch.string(), out);
+    std::filesystem::remove(scratch, ec);
+    if (!read) {
+        return failWith(SerialiseStatus::IoError, "ECS block: unable to read back " + scratch.string());
+    }
+    return SerialiseResult{SerialiseStatus::Ok, {}, false};
+}
+
+SerialiseResult registryFromBytes(const std::vector<u8>& bytes, const std::string& scenePath, ecs::Registry& out,
+                                  ecs::RegistrySerialiseResult& loaded) {
+    const std::filesystem::path scratch = scratchEcsPath(scenePath);
+    std::error_code ec;
+    if (!writeFile(scratch.string(), bytes)) {
+        std::filesystem::remove(scratch, ec);
+        return failWith(SerialiseStatus::IoError, "ECS block: unable to stage " + scratch.string());
+    }
+    loaded = ecs::RegistrySerialiser::load(scratch.string(), out);
+    std::filesystem::remove(scratch, ec);
+    if (!loaded.ok) {
+        return failWith(SerialiseStatus::TruncatedFile, "ECS block: " + loaded.error);
+    }
+    return SerialiseResult{SerialiseStatus::Ok, {}, false};
+}
+
+/// v1/v2 compat: one Transform entity per scene entity, parents mapped by index.
+void registryFromSceneEntities(const Scene& scene, ecs::Registry& registry) {
+    registry.init();
+    std::vector<ecs::EntityID> ids;
+    ids.reserve(scene.entityCount());
+    for (const SceneEntity& entity : scene.entities()) {
+        const ecs::EntityID id = registry.create();
+        ecs::Transform transform{};
+        const SceneEntityTransform& t = entity.transform;
+        transform.position = {t.positionX, t.positionY, t.positionZ, 1.f};
+        transform.rotation = {t.rotationX, t.rotationY, t.rotationZ, t.rotationW};
+        transform.scale = {t.scaleX, t.scaleY, t.scaleZ, 0.f};
+        registry.add(id, transform);
+        ids.push_back(id);
+    }
+    for (usize i = 0; i < ids.size(); ++i) {
+        const s32 parent = scene.entities()[i].parentIndex;
+        if (parent >= 0 && static_cast<usize>(parent) < ids.size() && static_cast<usize>(parent) != i) {
+            registry.get<ecs::Transform>(ids[i])->parent = ids[static_cast<usize>(parent)];
+        }
+    }
+}
+
+} // namespace
+
+SerialiseResult SceneSerialiser::save(const Scene& scene, const std::string& path) {
+    SerialiseResult result;
+
+    const bool writeHierarchy = sceneHasHierarchy(scene);
+
+    SceneHeader header;
+    header.entityCount = scene.entityCount();
+    header.version = writeHierarchy ? VERSION_HIERARCHY : VERSION;
+    header.reserved[kReservedCamera] = kCameraMarker;
+    header.reserved[kReservedTransforms] = kTransformTableMarker;
+    if (writeHierarchy) {
+        header.reserved[kReservedHierarchy] = kHierarchyTableMarker;
+    }
+
+    std::vector<u8> buffer;
+    buffer.resize(kHeaderSize, 0);
+    std::memcpy(buffer.data(), &header, sizeof(header));
+    writeSceneBody(buffer, scene, writeHierarchy);
 
     if (!writeFile(path, buffer)) {
         result.status = SerialiseStatus::IoError;
@@ -234,159 +489,108 @@ SerialiseResult SceneSerialiser::save(const Scene& scene, const std::string& pat
     return result;
 }
 
-SerialiseResult SceneSerialiser::load(const std::string& path, Scene& scene) {
-    SerialiseResult result;
+SerialiseResult SceneSerialiser::saveWithRegistry(const Scene& scene, const ecs::Registry& registry,
+                                                  const std::string& path, SceneDimension dimension) {
+    std::vector<u8> ecsBytes;
+    const SerialiseResult ecsResult = registryToBytes(registry, path, ecsBytes);
+    if (ecsResult.status != SerialiseStatus::Ok) {
+        return ecsResult;
+    }
+
+    SceneHeader header;
+    header.entityCount = scene.entityCount();
+    header.version = VERSION_ECS;
+    header.reserved[kReservedCamera] = kCameraMarker;
+    header.reserved[kReservedTransforms] = kTransformTableMarker;
+    header.reserved[kReservedHierarchy] = kHierarchyTableMarker;
+    header.reserved[kReservedEcs] = kEcsBlockMarker;
+    header.reserved[kReservedDimension] = static_cast<u8>(dimension);
 
     std::vector<u8> buffer;
+    buffer.resize(kHeaderSize, 0);
+    std::memcpy(buffer.data(), &header, sizeof(header));
+    writeSceneBody(buffer, scene, true);
+    writeU32(buffer, static_cast<u32>(ecsBytes.size()));
+    buffer.insert(buffer.end(), ecsBytes.begin(), ecsBytes.end());
+
+    // Write next to the target, then swap in: a failed save never leaves a half-written level.
+    const std::string temp = path + ".tmp";
+    if (!writeFile(temp, buffer)) {
+        std::error_code ec;
+        std::filesystem::remove(temp, ec);
+        return failWith(SerialiseStatus::IoError, "unable to write scene file: " + path);
+    }
+    std::error_code ec;
+    std::filesystem::rename(temp, path, ec);
+    if (ec) {
+        std::error_code removeEc;
+        std::filesystem::remove(path, removeEc);
+        ec.clear();
+        std::filesystem::rename(temp, path, ec);
+        if (ec) {
+            std::filesystem::remove(temp, removeEc);
+            return failWith(SerialiseStatus::IoError, "unable to replace scene file: " + path);
+        }
+    }
+    return SerialiseResult{SerialiseStatus::Ok, {}, false};
+}
+
+SerialiseResult SceneSerialiser::load(const std::string& path, Scene& scene) {
+    std::vector<u8> buffer;
     if (!readFile(path, buffer)) {
-        result.status = SerialiseStatus::IoError;
-        result.error = "unable to read scene file: " + path;
+        return failWith(SerialiseStatus::IoError, "unable to read scene file: " + path);
+    }
+
+    ParsedScene parsed;
+    const SerialiseResult result = parseScene(buffer, false, parsed);
+    if (result.status != SerialiseStatus::Ok) {
         return result;
     }
 
-    if (buffer.size() < kHeaderSize) {
-        result.status = SerialiseStatus::TruncatedFile;
-        result.error = "scene file too small";
+    scene = buildScene(parsed);
+    return result;
+}
+
+SerialiseResult SceneSerialiser::loadWithRegistry(const std::string& path, Scene& scene, ecs::Registry& registry,
+                                                  SceneFileInfo* info) {
+    std::vector<u8> buffer;
+    if (!readFile(path, buffer)) {
+        return failWith(SerialiseStatus::IoError, "unable to read scene file: " + path);
+    }
+
+    ParsedScene parsed;
+    const SerialiseResult result = parseScene(buffer, true, parsed);
+    if (result.status != SerialiseStatus::Ok) {
         return result;
     }
 
-    SceneHeader header{};
-    std::memcpy(&header, buffer.data(), sizeof(header));
-
-    // Compat loader: pre-rename 'ENGC' files share the v1/v2 layout, only the magic differs.
-    const bool legacyMagic = header.magic == LEGACY_MAGIC_ENGC;
-    if (header.magic != MAGIC && !legacyMagic) {
-        result.status = SerialiseStatus::InvalidMagic;
-        result.error = "invalid scene magic";
-        return result;
-    }
-
-    if (header.version != VERSION && header.version != VERSION_HIERARCHY) {
-        result.status = SerialiseStatus::UnsupportedVersion;
-        result.error = "unsupported scene version";
-        return result;
-    }
-
-    const bool hasHierarchyTable =
-        header.version == VERSION_HIERARCHY && header.reserved[2] == kHierarchyTableMarker;
-
-    if (buffer.size() < kHeaderSize + kCameraBlockSize) {
-        result.status = SerialiseStatus::TruncatedFile;
-        result.error = "scene file missing camera block";
-        return result;
-    }
-
-    if (header.reserved[0] != kCameraMarker) {
-        result.status = SerialiseStatus::TruncatedFile;
-        result.error = "missing camera block marker";
-        return result;
-    }
-
-    const bool hasTransformTable = header.reserved[1] == kTransformTableMarker;
-
-    const u8* cursor = buffer.data() + kHeaderSize;
-    const u8* end = buffer.data() + buffer.size();
-
-    Camera camera;
-    if (!readCameraBlock(cursor, end, camera)) {
-        result.status = SerialiseStatus::TruncatedFile;
-        result.error = "truncated camera block";
-        return result;
-    }
-
-    std::string sceneName;
-    if (!readString(cursor, end, sceneName)) {
-        result.status = SerialiseStatus::TruncatedFile;
-        result.error = "truncated scene name";
-        return result;
-    }
-
-    u32 objectCount = 0;
-    if (!readU32(cursor, end, objectCount)) {
-        result.status = SerialiseStatus::TruncatedFile;
-        result.error = "truncated object table";
-        return result;
-    }
-
-    if (objectCount != header.entityCount) {
-        result.status = SerialiseStatus::TruncatedFile;
-        result.error = "entity count mismatch";
-        return result;
-    }
-
-    std::vector<SceneEntity> entities;
-    entities.reserve(objectCount);
-
-    for (u32 i = 0; i < objectCount; ++i) {
-        std::string objectName;
-        if (!readString(cursor, end, objectName)) {
-            result.status = SerialiseStatus::TruncatedFile;
-            result.error = "truncated object name";
-            return result;
+    Scene loaded = buildScene(parsed);
+    ecs::Registry loadedRegistry;
+    usize archetypes = 0;
+    usize ecsEntities = 0;
+    if (parsed.hasEcsBlock) {
+        ecs::RegistrySerialiseResult ecsLoad;
+        const SerialiseResult ecsResult = registryFromBytes(parsed.ecsBytes, path, loadedRegistry, ecsLoad);
+        if (ecsResult.status != SerialiseStatus::Ok) {
+            return ecsResult;
         }
-
-        SceneEntity entity;
-        entity.name = std::move(objectName);
-        entities.push_back(std::move(entity));
-    }
-
-    if (hasTransformTable) {
-        u32 transformCount = 0;
-        if (!readU32(cursor, end, transformCount)) {
-            result.status = SerialiseStatus::TruncatedFile;
-            result.error = "truncated transform table";
-            return result;
-        }
-
-        if (transformCount != objectCount) {
-            result.status = SerialiseStatus::TruncatedFile;
-            result.error = "transform count mismatch";
-            return result;
-        }
-
-        for (u32 i = 0; i < transformCount; ++i) {
-            if (!readTransformBlock(cursor, end, entities[i].transform)) {
-                result.status = SerialiseStatus::TruncatedFile;
-                result.error = "truncated entity transform";
-                return result;
-            }
-        }
-    }
-
-    if (hasHierarchyTable) {
-        u32 parentCount = 0;
-        if (!readU32(cursor, end, parentCount)) {
-            result.status = SerialiseStatus::TruncatedFile;
-            result.error = "truncated hierarchy table";
-            return result;
-        }
-
-        if (parentCount != objectCount) {
-            result.status = SerialiseStatus::TruncatedFile;
-            result.error = "hierarchy count mismatch";
-            return result;
-        }
-
-        for (u32 i = 0; i < parentCount; ++i) {
-            if (!readS32(cursor, end, entities[i].parentIndex)) {
-                result.status = SerialiseStatus::TruncatedFile;
-                result.error = "truncated entity parent index";
-                return result;
-            }
-        }
-    }
-
-    Scene loaded(std::move(sceneName));
-    loaded.camera() = camera;
-    loaded.clearEntities();
-    for (SceneEntity& entity : entities) {
-        loaded.addEntity(std::move(entity.name), entity.transform, entity.parentIndex);
+        archetypes = ecsLoad.archetypeCount;
+        ecsEntities = ecsLoad.entityCount;
+    } else {
+        registryFromSceneEntities(loaded, loadedRegistry);
+        ecsEntities = loaded.entityCount();
+        archetypes = ecsEntities > 0u ? 1u : 0u;
     }
 
     scene = std::move(loaded);
-    scene.camera().update();
-    result.legacyMagic = legacyMagic;
-    result.status = SerialiseStatus::Ok;
+    registry = std::move(loadedRegistry);
+    if (info != nullptr) {
+        info->version = parsed.version;
+        info->dimension = parsed.dimension;
+        info->hasEcsBlock = parsed.hasEcsBlock;
+        info->ecsEntityCount = ecsEntities;
+        info->ecsArchetypeCount = archetypes;
+    }
     return result;
 }
 

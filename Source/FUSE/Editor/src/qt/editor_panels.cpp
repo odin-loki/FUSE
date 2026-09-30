@@ -2,6 +2,8 @@
 
 #include "property_pane_widget.hpp"
 
+#include <fuse/editor/editor_console_commands.hpp>
+
 #include <fuse/ecs/components/camera.hpp>
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
@@ -11,6 +13,11 @@
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
+#include <QHBoxLayout>
+#include <QKeyEvent>
+#include <QPalette>
+#include <QSignalBlocker>
+#include <QToolButton>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
@@ -276,9 +283,48 @@ void InspectorWidget::refresh() {
 
 // ---- ConsoleWidget --------------------------------------------------------------------------------
 
-ConsoleWidget::ConsoleWidget(QWidget* parent) : QWidget(parent) {
+namespace {
+
+constexpr fuse::log::Level kConsoleLevels[5] = {fuse::log::Level::Trace, fuse::log::Level::Debug,
+                                                fuse::log::Level::Info, fuse::log::Level::Warn,
+                                                fuse::log::Level::Error};
+
+int consoleLevelSlot(fuse::log::Level level) {
+    for (int i = 0; i < 5; ++i) {
+        if (kConsoleLevels[i] == level) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+} // namespace
+
+ConsoleWidget::ConsoleWidget(QWidget* parent) : ConsoleWidget(nullptr, parent) {}
+
+ConsoleWidget::ConsoleWidget(EditorHost* host, QWidget* parent) : QWidget(parent), m_host(host) {
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(4, 4, 4, 4);
+
+    auto* filterRow = new QHBoxLayout();
+    filterRow->setContentsMargins(0, 0, 0, 0);
+    for (int i = 0; i < 5; ++i) {
+        auto* button = new QToolButton(this);
+        button->setCheckable(true);
+        button->setAutoRaise(true);
+        button->setObjectName(QStringLiteral("fuseConsoleLevel%1").arg(QString::fromLatin1(ConsolePanel::levelLabel(kConsoleLevels[i]))));
+        m_levelButtons[i] = button;
+        filterRow->addWidget(button);
+        connect(button, &QToolButton::toggled, this, [this](bool) { onFiltersChanged(); });
+    }
+    m_filter = new QLineEdit(this);
+    m_filter->setObjectName(QStringLiteral("fuseConsoleFilter"));
+    m_filter->setPlaceholderText(tr("Filter…"));
+    m_filter->setClearButtonEnabled(true);
+    filterRow->addWidget(m_filter, 1);
+    connect(m_filter, &QLineEdit::textChanged, this, [this](const QString&) { onFiltersChanged(); });
+    layout->addLayout(filterRow);
+
     m_log = new QPlainTextEdit(this);
     m_log->setObjectName(QStringLiteral("fuseConsoleLog"));
     m_log->setReadOnly(true);
@@ -286,16 +332,52 @@ ConsoleWidget::ConsoleWidget(QWidget* parent) : QWidget(parent) {
     layout->addWidget(m_log, 1);
     m_input = new QLineEdit(this);
     m_input->setObjectName(QStringLiteral("fuseConsoleInput"));
-    m_input->setPlaceholderText(tr("Command (help)"));
+    m_input->setPlaceholderText(m_host != nullptr ? tr("Command or Lua (help)") : tr("Command (help)"));
+    m_input->installEventFilter(this);
     layout->addWidget(m_input);
     connect(m_input, &QLineEdit::returnPressed, this, &ConsoleWidget::onSubmit);
+
+    if (m_host != nullptr) {
+        registerEditorConsoleCommands(m_panel, *m_host);
+    }
+    // Initial button state mirrors the panel's filters (Trace hidden by default).
+    const bool shown[5] = {m_panel.showTrace(), m_panel.showDebug(), m_panel.showInfo(), m_panel.showWarnings(),
+                           m_panel.showErrors()};
+    for (int i = 0; i < 5; ++i) {
+        const QSignalBlocker block(m_levelButtons[i]);
+        m_levelButtons[i]->setChecked(shown[i]);
+    }
+
     fuse::log::Logger::instance().setSink(&ConsoleWidget::logSink, this);
     m_panel.addLog(fuse::log::Level::Info, "FUSE editor console ready");
+    refreshLevelButtons();
     rerender();
 }
 
 ConsoleWidget::~ConsoleWidget() {
     fuse::log::Logger::instance().setSink(nullptr, nullptr);
+}
+
+QToolButton* ConsoleWidget::levelButton(fuse::log::Level level) const {
+    const int slot = consoleLevelSlot(level);
+    return slot >= 0 ? m_levelButtons[slot] : nullptr;
+}
+
+QColor ConsoleWidget::levelColor(fuse::log::Level level) {
+    switch (level) {
+    case fuse::log::Level::Trace:
+        return QColor(0x80, 0x80, 0x80);
+    case fuse::log::Level::Debug:
+        return QColor(0x6f, 0xa8, 0xdc);
+    case fuse::log::Level::Warn:
+        return QColor(0xe5, 0xb4, 0x3c);
+    case fuse::log::Level::Error:
+    case fuse::log::Level::Fatal:
+        return QColor(0xf0, 0x5a, 0x5a);
+    case fuse::log::Level::Info:
+    default:
+        return QColor(0xd4, 0xd4, 0xd4);
+    }
 }
 
 void ConsoleWidget::logSink(fuse::log::Level level, const char* message, void* userData) {
@@ -313,43 +395,100 @@ void ConsoleWidget::drainLog() {
         std::lock_guard<std::mutex> lock(m_queueMutex);
         pending.swap(m_queue);
     }
-    if (pending.empty()) {
+    usize hostLines = 0;
+    if (m_host != nullptr) {
+        hostLines = m_host->drainConsoleOutput(m_panel);
+    }
+    if (pending.empty() && hostLines == 0u) {
         return;
     }
     for (const auto& [level, text] : pending) {
         m_panel.addLog(level, text.c_str());
     }
+    refreshLevelButtons();
     rerender();
+}
+
+void ConsoleWidget::appendLine(const ConsolePanel::LogLine& line) {
+    QString text = QStringLiteral("[%1] %2").arg(QString::fromLatin1(ConsolePanel::levelLabel(line.level)),
+                                                QString::fromStdString(line.text));
+    if (line.repeatCount > 1) {
+        text += QStringLiteral(" (x%1)").arg(line.repeatCount);
+    }
+    m_log->appendHtml(QStringLiteral("<span style=\"color:%1; white-space:pre-wrap;\">%2</span>")
+                          .arg(levelColor(line.level).name(), text.toHtmlEscaped()));
 }
 
 void ConsoleWidget::rerender() {
     const std::vector<ConsolePanel::LogLine> lines = m_panel.filteredLines();
-    if (lines.size() < m_renderedLines) {
+    const u32 tailRepeat = lines.empty() ? 0u : lines.back().repeatCount;
+    const bool tailChanged = lines.size() == m_renderedLines && tailRepeat != m_renderedTailRepeat;
+    if (lines.size() < m_renderedLines || tailChanged) {
+        // Filter change, clear, or a repeat count bump on the last line: rebuild the view.
+        m_log->clear();
+        m_renderedLines = 0;
+    } else if (m_renderedLines > 0 && m_renderedLines == lines.size()) {
+        return;
+    } else if (m_renderedLines > 0 && lines.size() > m_renderedLines &&
+               lines[m_renderedLines - 1u].repeatCount != m_renderedTailRepeat) {
+        // The previously last line repeated before new lines arrived: its "(xN)" is stale.
         m_log->clear();
         m_renderedLines = 0;
     }
-    // Repeated lines collapse in the panel (repeatCount): re-render the tail line in that case.
-    if (m_renderedLines > 0 && m_renderedLines == lines.size()) {
-        return;
-    }
     for (usize i = m_renderedLines; i < lines.size(); ++i) {
-        const ConsolePanel::LogLine& line = lines[i];
-        QString text = QStringLiteral("[%1] %2").arg(QString::fromLatin1(ConsolePanel::levelLabel(line.level)),
-                                                    QString::fromStdString(line.text));
-        if (line.repeatCount > 1) {
-            text += QStringLiteral(" (x%1)").arg(line.repeatCount);
-        }
-        m_log->appendPlainText(text);
+        appendLine(lines[i]);
     }
     m_renderedLines = lines.size();
+    m_renderedTailRepeat = tailRepeat;
+}
+
+void ConsoleWidget::onFiltersChanged() {
+    m_panel.setShowTrace(m_levelButtons[0]->isChecked());
+    m_panel.setShowDebug(m_levelButtons[1]->isChecked());
+    m_panel.setShowInfo(m_levelButtons[2]->isChecked());
+    m_panel.setShowWarnings(m_levelButtons[3]->isChecked());
+    m_panel.setShowErrors(m_levelButtons[4]->isChecked());
+    m_panel.setTextFilter(m_filter->text().toUtf8().constData());
+    m_log->clear();
+    m_renderedLines = 0;
+    rerender();
+}
+
+void ConsoleWidget::refreshLevelButtons() {
+    for (int i = 0; i < 5; ++i) {
+        const fuse::log::Level level = kConsoleLevels[i];
+        m_levelButtons[i]->setText(QStringLiteral("%1 (%2)")
+                                       .arg(QString::fromLatin1(ConsolePanel::levelLabel(level)))
+                                       .arg(m_panel.levelCount(level)));
+        QPalette palette = m_levelButtons[i]->palette();
+        palette.setColor(QPalette::ButtonText, levelColor(level));
+        m_levelButtons[i]->setPalette(palette);
+    }
+}
+
+bool ConsoleWidget::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_input && event->type() == QEvent::KeyPress) {
+        const auto* key = static_cast<QKeyEvent*>(event);
+        if (key->key() == Qt::Key_Up) {
+            const std::string previous = m_panel.historyPrevious();
+            if (!previous.empty()) {
+                m_input->setText(QString::fromStdString(previous));
+            }
+            return true;
+        }
+        if (key->key() == Qt::Key_Down) {
+            m_input->setText(QString::fromStdString(m_panel.historyNext()));
+            return true;
+        }
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void ConsoleWidget::onSubmit() {
     const QByteArray line = m_input->text().toUtf8();
     m_input->clear();
     m_panel.executeCommand(line.constData());
-    m_log->clear();
-    m_renderedLines = 0;
+    refreshLevelButtons();
     rerender();
 }
 

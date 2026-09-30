@@ -823,6 +823,17 @@ void EditorHost::applyCommand_(const EditorCommand& command) {
             m_state.sceneModified = true;
         }
         break;
+    // E15: project / scene files, PIE step, console lines (editor_host.cpp).
+    case CommandKind::NewProject:
+    case CommandKind::OpenProject:
+    case CommandKind::NewScene:
+    case CommandKind::OpenScene:
+    case CommandKind::SaveScene:
+    case CommandKind::SaveSceneAs:
+    case CommandKind::StepPlay:
+    case CommandKind::ConsoleExec:
+        applyHostCommand_(command);
+        break;
     }
 }
 
@@ -874,6 +885,7 @@ void EditorHost::gameTick() {
         m_aiTreeFileWatch.pollOsFileChanges(m_pieBehaviorRuntime);
         m_playSession.tick(kEditorTickDt, m_editorScene, m_physics);
     }
+    pollHotReload_(); // E15: PIE script hot-reload (no-op unless PIE scripts are live)
 
     ++m_gameTickCount;
 }

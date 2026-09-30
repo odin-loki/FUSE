@@ -2,8 +2,10 @@
 
 #include <fuse/project/json_reader.hpp>
 
+#include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <system_error>
 
 namespace fuse::project {
 
@@ -44,6 +46,7 @@ LoadResult parseManifest(std::string_view jsonText, const std::string& projectRo
         result.error = "missing required field: name";
         return result;
     }
+    result.manifest.name = unescapeJsonString(result.manifest.name);
 
     reader.readBool("dimensions", "enable3D", result.manifest.dimensions.enable3D);
     reader.readBool("dimensions", "enable2D", result.manifest.dimensions.enable2D);
@@ -57,6 +60,8 @@ LoadResult parseManifest(std::string_view jsonText, const std::string& projectRo
 
     reader.readString("defaultWorld3D", result.manifest.defaultWorld3D);
     reader.readString("defaultWorld2D", result.manifest.defaultWorld2D);
+    result.manifest.defaultWorld3D = unescapeJsonString(result.manifest.defaultWorld3D);
+    result.manifest.defaultWorld2D = unescapeJsonString(result.manifest.defaultWorld2D);
     reader.readU32("workerCap", result.manifest.workerCap);
 
     result.status = LoadStatus::Ok;
@@ -90,6 +95,67 @@ LoadResult loadFromDirectory(const std::string& projectDirectory) {
     }
     jsonPath += "project.json";
     return loadFromFile(jsonPath);
+}
+
+SaveResult saveToFile(const ProjectManifest& manifest, const std::string& projectJsonPath) {
+    SaveResult result;
+    result.path = projectJsonPath;
+    if (projectJsonPath.empty()) {
+        result.error = "empty project.json path";
+        return result;
+    }
+
+    const std::filesystem::path target(projectJsonPath);
+    std::error_code ec;
+    if (!target.parent_path().empty()) {
+        std::filesystem::create_directories(target.parent_path(), ec);
+        if (ec) {
+            result.error = "unable to create project directory: " + target.parent_path().string();
+            return result;
+        }
+    }
+
+    const std::string text = writeManifestJson(manifest);
+    std::filesystem::path temp = target;
+    temp += ".tmp";
+    {
+        std::ofstream output(temp, std::ios::binary | std::ios::trunc);
+        if (!output) {
+            result.error = "unable to write: " + temp.string();
+            return result;
+        }
+        output.write(text.data(), static_cast<std::streamsize>(text.size()));
+        output.flush();
+        if (!output) {
+            result.error = "write failed: " + temp.string();
+            return result;
+        }
+    }
+    std::filesystem::rename(temp, target, ec);
+    if (ec) {
+        // rename onto an existing file fails on some platforms: replace explicitly.
+        std::error_code removeEc;
+        std::filesystem::remove(target, removeEc);
+        ec.clear();
+        std::filesystem::rename(temp, target, ec);
+        if (ec) {
+            std::filesystem::remove(temp, removeEc);
+            result.error = "unable to replace: " + projectJsonPath;
+            return result;
+        }
+    }
+
+    result.ok = true;
+    return result;
+}
+
+SaveResult saveToDirectory(const ProjectManifest& manifest, const std::string& projectDirectory) {
+    std::string jsonPath = projectDirectory;
+    if (!jsonPath.empty() && jsonPath.back() != '/' && jsonPath.back() != '\\') {
+        jsonPath.push_back('/');
+    }
+    jsonPath += "project.json";
+    return saveToFile(manifest, jsonPath);
 }
 
 } // namespace fuse::project

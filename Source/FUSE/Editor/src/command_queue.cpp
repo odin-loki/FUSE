@@ -10,6 +10,63 @@ std::string formatPropertyFloat(f32 value) {
     return written > 0 ? std::string(buffer, static_cast<usize>(written)) : std::string("0");
 }
 
+EditorCommand makeNewProjectCommand(std::string directory, std::string name, u32 dimensionFlags) {
+    EditorCommand command;
+    command.kind = CommandKind::NewProject;
+    command.propertyValue = std::move(directory);
+    command.propertyName = std::move(name);
+    command.flags = dimensionFlags;
+    return command;
+}
+
+EditorCommand makeOpenProjectCommand(std::string directory) {
+    EditorCommand command;
+    command.kind = CommandKind::OpenProject;
+    command.propertyValue = std::move(directory);
+    return command;
+}
+
+EditorCommand makeNewSceneCommand(bool scene2D, std::string name) {
+    EditorCommand command;
+    command.kind = CommandKind::NewScene;
+    command.propertyName = std::move(name);
+    command.flags = scene2D ? kScene2D : 0u;
+    return command;
+}
+
+EditorCommand makeOpenSceneCommand(std::string path) {
+    EditorCommand command;
+    command.kind = CommandKind::OpenScene;
+    command.propertyValue = std::move(path);
+    return command;
+}
+
+EditorCommand makeSaveSceneCommand() {
+    EditorCommand command;
+    command.kind = CommandKind::SaveScene;
+    return command;
+}
+
+EditorCommand makeSaveSceneAsCommand(std::string path) {
+    EditorCommand command;
+    command.kind = CommandKind::SaveSceneAs;
+    command.propertyValue = std::move(path);
+    return command;
+}
+
+EditorCommand makeTransportCommand(CommandKind kind) {
+    EditorCommand command;
+    command.kind = kind;
+    return command;
+}
+
+EditorCommand makeConsoleExecCommand(std::string line) {
+    EditorCommand command;
+    command.kind = CommandKind::ConsoleExec;
+    command.propertyValue = std::move(line);
+    return command;
+}
+
 namespace {
 
 bool canCoalesceSetProperty_(const EditorCommand& previous, const EditorCommand& incoming) {

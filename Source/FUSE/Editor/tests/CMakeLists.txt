@@ -228,6 +228,9 @@ if(FUSE_BUILD_PARITY_DEMOS)
     endif()
 endif()
 
+# E15: project / scene files, console REPL, scripts in PIE.
+include(${CMAKE_CURRENT_SOURCE_DIR}/e15_tests.cmake)
+
 if(MINGW)
     get_property(_fuse_editor_test_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
     foreach(_fuse_editor_test IN LISTS _fuse_editor_test_targets)

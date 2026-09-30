@@ -10,7 +10,15 @@
 #include <fuse/types.hpp>
 #include <fuse/world3d/runtime_schedule.hpp>
 
+#include <memory>
+#include <string>
 #include <vector>
+
+namespace fuse::script {
+class ScriptVM;
+class ScriptRuntime;
+class ScriptSystem;
+} // namespace fuse::script
 
 namespace fuse::editor {
 
@@ -96,8 +104,22 @@ struct PlayWorldSnapshot {
 /// component column) and `stop` restores it, so entities spawned or destroyed during play and
 /// non-Transform state such as RigidBody velocities return exactly to their edit-time values
 /// (the same state `ecs::RegistrySerialiser` persists).
+///
+/// MP-B6-EDITOR-SCRIPT-PIE: when the play registry holds `ecs::Script` components (and the editor
+/// is built with fuse_script), `start` creates a ScriptVM + ScriptRuntime + ScriptSystem bound to the
+/// play registry (engine API: Entity / Physics on this session's PhysicsManager / Scene / CVar),
+/// preloads the behaviour modules (paths as given, or relative to `setScriptRoot`), and enters
+/// play; the Scripts stage of the runtime schedule runs `ScriptSystem::update`, physics contact
+/// events of each step are dispatched to `on_collision` / `on_trigger_enter`, and `stop` exits
+/// play (on_destroy), shuts the runtime down and restores the edit-time registry. Module files
+/// are watched: `pollScriptHotReload` reloads changed modules into the live runtime.
 class PlaySession {
 public:
+    PlaySession();
+    ~PlaySession();
+    PlaySession(const PlaySession&) = delete;
+    PlaySession& operator=(const PlaySession&) = delete;
+
     void start(EditorScene& editorScene, scene::Scene& scene, EditorState& state,
                PlayModePhysicsState& physics);
     void stop(EditorScene& editorScene, scene::Scene& scene, EditorState& state,
@@ -194,6 +216,33 @@ public:
     /// order as World3D; live between `start` and `stop`).
     world3d::RuntimeSchedule& runtimeSchedule() { return m_schedule; }
 
+    /// Step transport: one simulated step of `fixedDt` (scripts, physics, ...) while paused.
+    /// Returns false when not paused.
+    bool stepPaused(f32 fixedDt, EditorScene& editorScene, PlayModePhysicsState& physics);
+    [[nodiscard]] u32 manualStepCount() const { return m_manualStepCount; }
+
+    // ---- MP-B6-EDITOR-SCRIPT-PIE -------------------------------------------------------------
+    /// Off: PIE never creates the script runtime (default on).
+    void setScriptsEnabled(bool enabled) { m_scriptsEnabled = enabled; }
+    [[nodiscard]] bool scriptsEnabled() const { return m_scriptsEnabled; }
+    /// Directory that relative Script module paths resolve against (the project root).
+    void setScriptRoot(std::string root) { m_scriptRoot = std::move(root); }
+    [[nodiscard]] const std::string& scriptRoot() const { return m_scriptRoot; }
+    /// True between `start` and `stop` when the script runtime is running.
+    [[nodiscard]] bool scriptsLive() const;
+    [[nodiscard]] script::ScriptVM* scriptVm();
+    [[nodiscard]] script::ScriptRuntime* scriptRuntime();
+    [[nodiscard]] script::ScriptSystem* scriptSystem();
+    [[nodiscard]] usize scriptAttachedCount() const;
+    /// Why the script runtime did not start / the last script error.
+    [[nodiscard]] const std::string& scriptLastError() const { return m_scriptError; }
+    /// Contact callbacks dispatched to behaviours since `start`.
+    [[nodiscard]] u64 scriptContactDispatchCount() const { return m_scriptContactDispatches; }
+    /// Reload changed module files into the live runtime; returns modules reloaded (their paths
+    /// appended to `reloaded` when given). No-op while scripts are not live.
+    u32 pollScriptHotReload(std::vector<std::string>* reloaded = nullptr);
+    [[nodiscard]] u32 scriptReloadCount() const { return m_scriptReloadCount; }
+
 private:
     struct DirtySnapshot {
         bool sceneModified = false;
@@ -209,6 +258,18 @@ private:
     void simulateStep_(EditorScene& editorScene, PlayModePhysicsState& physics, f32 physicsDt);
     void coalesceTransformDirty_(EditorScene& editorScene);
     static void stepPhysicsStage_(void* user, ecs::Registry& registry, f32 dt);
+    static void scriptStage_(void* user, ecs::Registry& registry, f32 dt);
+    void startScripting_(EditorScene& editorScene);
+    void stopScripting_();
+
+    struct PieScripting;
+    std::unique_ptr<PieScripting> m_scripting;
+    bool m_scriptsEnabled = true;
+    std::string m_scriptRoot;
+    std::string m_scriptError;
+    u64 m_scriptContactDispatches = 0;
+    u32 m_scriptReloadCount = 0;
+    u32 m_manualStepCount = 0;
 
     PlayModeController m_controller;
     fuse::physics::PhysicsManager m_physicsWorld{};

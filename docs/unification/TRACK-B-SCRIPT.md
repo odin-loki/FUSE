@@ -221,10 +221,10 @@ ctest --test-dir build --output-on-failure -R fuse_script
 ## Next
 
 - [x] `ecs/components/script.hpp` + per-entity `lua_ref` (see gates above; `CookAssetKind::Script` cooks `.lua` → bytecode `.fusescript`, gate `fuse_script_cook`)
-- [ ] `ScriptHotReload` file watcher (master plan sketch)
+- [x] `ScriptHotReload` file watcher — polled by the editor's PIE session (module edits reload into the live runtime and are logged on the console; E15, `fuse_editor_e15_console_pie`)
 - [x] Engine API surface (`Entity.*`, `Physics.*`, `Input.*`, `Audio.*`, `Scene.*`, `SDF.*`, `CVar.*`) as Lua bindings (MP-B7.3-LUA-API; runtime / PIE hosts fill `ScriptEngineBindings` in their own packages)
 - [ ] Wire stack bridge into callback dispatch (pass `ctx` fields to Lua handlers)
-- [ ] Wire `ScriptConsole` into `fuse::editor::ConsolePanel` command line (U6 chrome)
+- [x] Wire `ScriptConsole` into `fuse::editor::ConsolePanel` command line (E15: non-engine lines go to the game thread's ScriptConsole / Lua REPL via the CommandQueue; Qt console dock included)
 
 ---
 

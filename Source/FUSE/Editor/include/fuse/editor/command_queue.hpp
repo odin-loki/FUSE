@@ -22,6 +22,18 @@ enum class CommandKind {
     ResumePlay,
     Undo,
     Redo,
+    // UNI-U6-FILE-1 / MP-B6-QT-SCENE-FILES: project + scene files (applied by EditorHost on the
+    // game thread; the outcome is `EditorHost::lastFileResult()`). Build them with the make*Command
+    // helpers below.
+    NewProject,  ///< propertyValue = directory, propertyName = project name, flags = kProject* bits
+    OpenProject, ///< propertyValue = directory (or its project.json)
+    NewScene,    ///< flags = kScene2D for a 2D world, propertyName = scene name (optional)
+    OpenScene,   ///< propertyValue = .fuselevel path
+    SaveScene,   ///< save to the current scene path
+    SaveSceneAs, ///< propertyValue = .fuselevel path
+    // MP-B6-EDITOR-SCRIPT-PIE: PIE single step while paused, and console lines for the game thread.
+    StepPlay,
+    ConsoleExec, ///< propertyValue = console line (engine command or Lua), see EditorHost::executeConsoleLine
 };
 
 /// UI-thread command envelope — applied on the game thread via CommandQueue::drain().
@@ -34,7 +46,25 @@ struct EditorCommand {
     std::string propertyValue;
     /// First value in a coalesced drag group — preserved when later edits merge (B6.2 deepen).
     std::string propertyValueBefore;
+    /// Command-specific option bits (NewProject dimensions, NewScene dimension).
+    u32 flags = 0;
 };
+
+/// `EditorCommand::flags` bits.
+inline constexpr u32 kProjectEnable3D = 1u << 0;
+inline constexpr u32 kProjectEnable2D = 1u << 1;
+inline constexpr u32 kProjectEnableUI = 1u << 2;
+inline constexpr u32 kScene2D = 1u << 0;
+
+EditorCommand makeNewProjectCommand(std::string directory, std::string name,
+                                    u32 dimensionFlags = kProjectEnable3D | kProjectEnable2D | kProjectEnableUI);
+EditorCommand makeOpenProjectCommand(std::string directory);
+EditorCommand makeNewSceneCommand(bool scene2D = false, std::string name = {});
+EditorCommand makeOpenSceneCommand(std::string path);
+EditorCommand makeSaveSceneCommand();
+EditorCommand makeSaveSceneAsCommand(std::string path);
+EditorCommand makeTransportCommand(CommandKind kind); ///< StartPlay / StopPlay / PausePlay / ResumePlay / StepPlay
+EditorCommand makeConsoleExecCommand(std::string line);
 
 /// Formats a float for `EditorCommand::propertyValue` so parsing it back yields the identical
 /// value (round-trip precision; `std::to_string` keeps only six decimals).

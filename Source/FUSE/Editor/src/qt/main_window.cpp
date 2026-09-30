@@ -20,6 +20,7 @@
 #include <QScreen>
 #include <QStyle>
 #include <QStatusBar>
+#include <QToolBar>
 #include <QVariant>
 
 namespace fuse::editor::qt {
@@ -47,6 +48,7 @@ MainWindow::MainWindow(const QString& samplesRoot, const Options& options, QWidg
     setCentralWidget(m_viewport);
 
     buildDocks();
+    buildTransport();
     buildMenus();
     resetToDefaultLayout();
 
@@ -112,7 +114,7 @@ QDockWidget* MainWindow::addPanelDock(const char* objectName, const QString& tit
 void MainWindow::buildDocks() {
     m_hierarchy = new HierarchyWidget(m_host, m_sceneMutex);
     m_inspector = new InspectorWidget(m_featureBridge, m_sceneMutex);
-    m_console = new ConsoleWidget();
+    m_console = new ConsoleWidget(&m_host);
     m_projectHub = new ProjectHubWidget();
     m_projectHub->setSamplesRoot(m_samplesRoot);
     m_assetBrowser = new AssetBrowserWidget();
@@ -169,11 +171,67 @@ void MainWindow::buildMenus() {
     connect(reset, &QAction::triggered, this, &MainWindow::resetToDefaultLayout);
 
     QMenu* play = menuBar()->addMenu(tr("&Play"));
-    QAction* start = play->addAction(tr("&Play"));
-    start->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_P));
-    connect(start, &QAction::triggered, this, [this]() { m_featureBridge.postPlayRequested(); });
-    QAction* stop = play->addAction(tr("&Stop"));
-    connect(stop, &QAction::triggered, this, [this]() { m_featureBridge.postStopRequested(); });
+    play->addAction(m_actPlay);
+    play->addAction(m_actPause);
+    play->addAction(m_actResume);
+    play->addAction(m_actStep);
+    play->addAction(m_actStop);
+}
+
+void MainWindow::buildTransport() {
+    m_transportBar = addToolBar(tr("Play"));
+    m_transportBar->setObjectName(QStringLiteral("fuseTransportToolBar"));
+    m_transportBar->setMovable(false);
+    const auto makeAction = [this](const QString& text, const char* objectName, CommandKind kind,
+                                   QStyle::StandardPixmap icon) {
+        auto* action = new QAction(style()->standardIcon(icon), text, this);
+        action->setObjectName(QString::fromLatin1(objectName));
+        connect(action, &QAction::triggered, this, [this, kind]() {
+            m_host.postFromUi(makeTransportCommand(kind));
+            updateTransportActions();
+        });
+        m_transportBar->addAction(action);
+        return action;
+    };
+    m_actPlay = makeAction(tr("&Play"), "fuseActionPlay", CommandKind::StartPlay, QStyle::SP_MediaPlay);
+    m_actPlay->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_P));
+    m_actPause = makeAction(tr("P&ause"), "fuseActionPause", CommandKind::PausePlay, QStyle::SP_MediaPause);
+    m_actResume = makeAction(tr("&Resume"), "fuseActionResume", CommandKind::ResumePlay, QStyle::SP_MediaSeekForward);
+    m_actStep = makeAction(tr("S&tep"), "fuseActionStep", CommandKind::StepPlay, QStyle::SP_MediaSkipForward);
+    m_actStep->setShortcut(QKeySequence(Qt::Key_F10));
+    m_actStop = makeAction(tr("&Stop"), "fuseActionStop", CommandKind::StopPlay, QStyle::SP_MediaStop);
+    updateTransportActions();
+}
+
+QAction* MainWindow::transportAction(CommandKind kind) const {
+    switch (kind) {
+    case CommandKind::StartPlay:
+        return m_actPlay;
+    case CommandKind::PausePlay:
+        return m_actPause;
+    case CommandKind::ResumePlay:
+        return m_actResume;
+    case CommandKind::StepPlay:
+        return m_actStep;
+    case CommandKind::StopPlay:
+        return m_actStop;
+    default:
+        return nullptr;
+    }
+}
+
+void MainWindow::updateTransportActions() {
+    if (m_actPlay == nullptr) {
+        return;
+    }
+    const EditorState& state = m_host.editorState();
+    const bool playing = state.playing;
+    const bool paused = state.playing && state.paused;
+    m_actPlay->setEnabled(!playing);
+    m_actPause->setEnabled(playing && !paused);
+    m_actResume->setEnabled(paused);
+    m_actStep->setEnabled(paused);
+    m_actStop->setEnabled(playing);
 }
 
 QDockWidget* MainWindow::dock(const char* objectName) const {
@@ -314,6 +372,7 @@ double MainWindow::measureUiFrame() {
 void MainWindow::refreshStatusBar() {
     syncProjectWorld();
     m_console->drainLog();
+    updateTransportActions();
     {
         std::lock_guard<std::mutex> lock(m_sceneMutex);
         m_inspector->propertyPane()->refresh();

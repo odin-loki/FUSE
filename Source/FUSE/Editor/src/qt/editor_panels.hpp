@@ -9,6 +9,7 @@
 #include <fuse/editor/profiler_panel.hpp>
 #include <fuse/editor/sdf_sculpt_panel.hpp>
 
+#include <QColor>
 #include <QPointer>
 #include <QWidget>
 
@@ -23,6 +24,7 @@ class QLineEdit;
 class QListWidget;
 class QMenu;
 class QPlainTextEdit;
+class QToolButton;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -84,31 +86,55 @@ private:
 
 /// B6.11 Console dock — `ConsolePanel` log buffer + command line. FUSE log messages (any thread)
 /// are queued by a logger sink and drained on the UI thread.
+///
+/// MP-B6-EDITOR-SCRIPT-PIE / UNI-U6-CON-1: bound to an `EditorHost`, the command line runs the
+/// editor console commands (`registerEditorConsoleCommands`: open / save / new / play / stop /
+/// cvar / stat ...) and sends any other line to the game thread's Lua REPL; the host's console
+/// output queue is drained with the log. Lines are coloured by level, the level buttons and the
+/// text box filter the view, repeated lines show "(xN)", and Up / Down in the command line recall
+/// the command history.
 class ConsoleWidget final : public QWidget {
     Q_OBJECT
 
 public:
     explicit ConsoleWidget(QWidget* parent = nullptr);
+    explicit ConsoleWidget(EditorHost* host, QWidget* parent = nullptr);
     ~ConsoleWidget() override;
 
     ConsolePanel& panel() { return m_panel; }
     [[nodiscard]] QPlainTextEdit* logView() const { return m_log; }
     [[nodiscard]] QLineEdit* input() const { return m_input; }
+    [[nodiscard]] QLineEdit* textFilter() const { return m_filter; }
+    /// Checkable filter button for Trace / Debug / Info / Warn / Error (nullptr for other levels).
+    [[nodiscard]] QToolButton* levelButton(fuse::log::Level level) const;
+    /// Text colour used for `level` lines.
+    [[nodiscard]] static QColor levelColor(fuse::log::Level level);
 
-    /// Move queued log lines into the panel and re-render the filtered view if it changed.
+    /// Move queued log lines (logger sink + host console output) into the panel and re-render the
+    /// filtered view if it changed.
     void drainLog();
     void rerender();
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     static void logSink(fuse::log::Level level, const char* message, void* userData);
     void onSubmit();
+    void onFiltersChanged();
+    void refreshLevelButtons();
+    void appendLine(const ConsolePanel::LogLine& line);
 
+    EditorHost* m_host = nullptr;
     ConsolePanel m_panel;
     QPlainTextEdit* m_log = nullptr;
     QLineEdit* m_input = nullptr;
+    QLineEdit* m_filter = nullptr;
+    QToolButton* m_levelButtons[5] = {};
     std::mutex m_queueMutex;
     std::vector<std::pair<fuse::log::Level, std::string>> m_queue;
     usize m_renderedLines = 0;
+    u32 m_renderedTailRepeat = 0;
 };
 
 /// B6.9 Asset Browser dock — `AssetBrowser` entries of the open project.

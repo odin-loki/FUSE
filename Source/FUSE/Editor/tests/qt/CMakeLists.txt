@@ -96,3 +96,26 @@ set_tests_properties(fuse_editor_qt_icon PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     TIMEOUT 120
 )
+
+# E15 (MP-B6-EDITOR-SCRIPT-PIE / UNI-U6-CON-1): Qt console dock (Lua REPL, level colours / filters,
+# repeat counts, history) and the Play / Pause / Step / Resume / Stop transport, offscreen QPA.
+if(_fuse_qt_gate_available)
+    add_executable(fuse_editor_qt_console_transport_gate test_editor_qt_console_transport.cpp)
+    target_link_libraries(fuse_editor_qt_console_transport_gate PRIVATE fuse_editor_qt fuse_core Qt6::Test)
+    fuse_apply_cxx23(fuse_editor_qt_console_transport_gate)
+    foreach(_e15_gate console transport)
+        add_test(NAME fuse_editor_qt_e15_${_e15_gate} COMMAND fuse_editor_qt_console_transport_gate ${_e15_gate})
+    endforeach()
+else()
+    foreach(_e15_gate console transport)
+        add_test(NAME fuse_editor_qt_e15_${_e15_gate} COMMAND fuse_editor_qt_gates e15_${_e15_gate})
+    endforeach()
+endif()
+foreach(_e15_gate console transport)
+    set_tests_properties(fuse_editor_qt_e15_${_e15_gate} PROPERTIES
+        LABELS "gate;qt;e15"
+        SKIP_RETURN_CODE 77
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 120
+    )
+endforeach()

@@ -234,7 +234,8 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 - [x] `ConsolePanel::addLog` with `fuse::log::Level`
 - [x] Duplicate-line coalescing + level/text filters via `filteredLines()`
 - [x] Command exec stub (`executeCommand`)
-- [ ] Qt text view chrome (U6 follow-up)
+- [x] Qt text view chrome (E15): level colours, level / text filters with counts, "(xN)" repeat counts, Up / Down history (`fuse_editor_qt_e15_console`, offscreen; hand-built against build/rel because the shared tree has FUSE_BUILD_EDITOR=OFF)
+- [x] Engine commands + Lua REPL on the game thread through the CommandQueue (E15, `fuse_editor_e15_console_pie`)
 
 ### B6.12 — Play Mode & Scene Simulation
 
@@ -245,7 +246,9 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 - [x] `PlaySession` PIE deepen — start/stop cycle, tick accumulator, `PlayWorldSnapshot` roundtrip, empty world, coalesced dirty + clean restore on stop (`fuse_editor_play_session`)
 - [x] `PlaySession` PIE deepen follow-up — `consumeFixedSteps`, snapshot `entityCount`/`empty`, idempotent start/stop, full transform snapshot (`fuse_editor_play_session`)
 - [ ] `PhysicsManager` wiring during play (deferred — B4 integration)
-- [ ] Qt play transport toolbar (U6 follow-up)
+- [x] Qt play transport toolbar (E15): Play / Pause / Resume / Step / Stop actions on a toolbar + the Play menu, enable state from EditorState (`fuse_editor_qt_e15_transport`, offscreen)
+- [x] Scripts in PIE (E15): ScriptRuntime + ScriptSystem per play session, Scripts stage of the runtime schedule, contact callbacks, restore on stop, module hot-reload logged (`fuse_editor_e15_console_pie`)
+- [x] Scene / project files (E15): EditorHost New/Open/Save/SaveAs scene + New/Open project commands, `.fuselevel` v3 with ECS component blocks, dirty flag cleared on save (`fuse_editor_e15_scene_files`)
 
 ### B6.13 — Phase 6 Deliverables & Test Suite
 

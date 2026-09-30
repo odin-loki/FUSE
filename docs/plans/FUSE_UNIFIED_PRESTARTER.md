@@ -477,7 +477,7 @@ Mine each addon into a **FUSE module** with:
 
 - [ ] Import one T3D sample mission → playable World3D  
 - [ ] Import one T2D sample → playable World2D  
-- [ ] Round-trip save/load FUSE hybrid project  
+- [x] Round-trip save/load FUSE hybrid project — headless EditorHost (E15, UNI-U6-FILE-1): NewProject writes `project.json` + empty 3D / 2D worlds, OpenProject / OpenScene / SaveScene round-trip scenes with all ECS components (`fuse_editor_e15_scene_files`); Qt File menus are E20  
 
 ---
 

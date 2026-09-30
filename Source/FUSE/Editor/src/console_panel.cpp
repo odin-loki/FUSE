@@ -174,7 +174,10 @@ bool ConsolePanel::executeCommand(const char* command) {
     }
 
     ParsedCommand parsed;
-    if (!parseCommandLine(command, parsed)) {
+    const bool tokenised = parseCommandLine(command, parsed);
+    const bool blank = std::string_view(command).find_first_not_of(" \t\r\n") == std::string_view::npos;
+    // Untokenisable but non-blank lines (e.g. Lua with an unbalanced quote) still reach the fallback.
+    if (!tokenised && (blank || !m_fallback)) {
         if (command[0] != '\0') {
             addLog(LogLevel::Error, (std::string("malformed command: ") + command).c_str());
         }
@@ -192,8 +195,12 @@ bool ConsolePanel::executeCommand(const char* command) {
 
     addLog(LogLevel::Info, ("exec: " + m_lastExecutedCommand).c_str());
 
-    const auto it = m_commands.find(parsed.name);
+    const auto it = tokenised ? m_commands.find(parsed.name) : m_commands.end();
     if (it == m_commands.end()) {
+        if (m_fallback) {
+            const FallbackHandler fallback = m_fallback; // the handler may replace itself
+            return fallback(m_lastExecutedCommand, *this);
+        }
         addLog(LogLevel::Error, ("unknown command: " + parsed.name).c_str());
         return false;
     }
@@ -220,6 +227,16 @@ std::string ConsolePanel::historyNext() {
     }
     ++m_historyCursor;
     return m_history[m_historyCursor];
+}
+
+u32 ConsolePanel::levelCount(LogLevel level) const {
+    u32 count = 0;
+    for (const LogLine& line : m_lines) {
+        if (line.level == level) {
+            count += line.repeatCount;
+        }
+    }
+    return count;
 }
 
 const char* ConsolePanel::levelLabel(LogLevel level) {
