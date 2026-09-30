@@ -460,6 +460,13 @@ bool FrameComposer::init(const FrameComposerDesc& desc) {
         d.framesInFlight = desc.framesInFlight;
         optional(m_framegen.init(d), kStageFrameGen, "frame generation");
     }
+    {
+        FrameUiCompositeDesc d{};
+        d.device = desc.device;
+        d.framesInFlight = desc.framesInFlight;
+        d.language = desc.language;
+        optional(m_ui.init(d), kStageUi, "UI composite");
+    }
 
     // --- composer-owned resources --------------------------------------------------------------------------
     BufferDesc ring{};
@@ -503,6 +510,7 @@ void FrameComposer::destroy() {
         return;
     }
 #if defined(FUSE_VULKAN_BACKEND)
+    m_ui.destroy();
     m_framegen.destroy();
     m_forward.destroy();
     m_restir.destroy();
@@ -567,6 +575,7 @@ void FrameComposer::destroy() {
     m_tree.clear();
     m_fgFrameId = 0;
     m_fgHistory = false;
+    m_uiSource = FrameUiSource{};
     m_recordCount = 0;
     m_available = 0;
     m_plan = 0;
@@ -685,7 +694,7 @@ bool FrameComposer::createTargets() {
 }
 
 void FrameComposer::destroyTargets() {
-    for (OwnedImage* o : {&m_skyImage, &m_aerialImage, &m_restirImage, &m_reflectImage, &m_resolveImage}) {
+    for (OwnedImage* o : {&m_skyImage, &m_aerialImage, &m_restirImage, &m_reflectImage, &m_resolveImage, &m_uiImage}) {
         if (o->storage.isValid()) {
             m_desc.bindless->unregisterSlot(o->storage);
         }
@@ -729,6 +738,21 @@ u32 FrameComposer::sampledHandle(const Texture& texture) {
 bool FrameComposer::setSdfScene(const compute::SdfObject* objects, u32 objectCount, const gi_gpu::DdgiSurface* surfaces,
                                 u32 surfaceCount) {
     return (m_available & kStageDdgi) != 0u && m_ddgi.setSdfScene(objects, objectCount, surfaces, surfaceCount);
+}
+
+bool FrameComposer::setUiSource(const FrameUiSource& source) {
+    if (source.record == nullptr) {
+        m_uiSource = FrameUiSource{};
+        return true;
+    }
+    if (!m_initialized || (m_available & kStageUi) == 0u) {
+        return false;
+    }
+    if (m_uiImage.image.image == nullptr && !createImage(m_uiImage, m_desc.displayWidth, m_desc.displayHeight, "frame.ui_output")) {
+        return false;
+    }
+    m_uiSource = source;
+    return true;
 }
 
 bool FrameComposer::setSplats(const gsplat::GsSplat* splats, u32 count, u32 shDegree) {
@@ -874,6 +898,9 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     }
     if (settings.frameGen) {
         plan |= kStageFrameGen;
+    }
+    if (settings.ui && m_uiSource.record != nullptr && m_uiImage.image.image != nullptr) {
+        plan |= kStageUi;
     }
     // A stage that is not available is dropped (its consumers take the previous image).
     plan &= m_available | kStageScene | kStageLighting | kStageResolve;
@@ -1370,6 +1397,9 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     } else {
         m_fgHistory = false;
     }
+    if ((plan & kStageUi) != 0u) {
+        m_ui.beginFrame(serial);
+    }
     m_plan = plan;
 
     // history for the next frame
@@ -1778,17 +1808,47 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
         ran |= kStagePost;
     }
     out.output = display;
+    out.hudless = display;
 
-    // --- frame generation (last) ------------------------------------------------------------------------------
+    // --- UI source (E02): the caller's passes, recorded after post ------------------------------------------------
+    rg::TextureRef ui{};
+    if ((plan & kStageUi) != 0u) {
+        FrameUiContext uc{};
+        uc.width = m_outputWidth;
+        uc.height = m_outputHeight;
+        uc.serial = m_frame.serial;
+        uc.frameIndex = m_frame.frameIndex;
+        ui = m_uiSource.record(graph, uc, m_uiSource.user);
+        out.ui = ui;
+    }
+
+    // --- frame generation (HUD-less source; the UI goes on top of both presented frames) ------------------------
+    bool fgRan = false;
     if ((plan & kStageFrameGen) != 0u) {
         const framegen::FgGraphRefs fg = m_framegen.importInto(graph);
         framegen::FgGpuInputs fi{};
         fi.source = display;
+        fi.ui = ui;
         fi.depth = motion.depth;
         fi.motion = motion.motion;
         m_framegen.addPasses(graph, fg, fi);
         out.frameGen = fg.interpolated;
+        out.presentInterpolated = fg.presentInterpolated;
+        out.presentReal = fg.presentReal;
         ran |= kStageFrameGen;
+        fgRan = true;
+    }
+
+    // --- UI composite (after frame generation declared its HUD-less reads) --------------------------------------
+    if (ui.valid()) {
+        const rg::TextureRef target = importImage(graph, m_uiImage, "frame.ui_output");
+        if (m_ui.addPass(graph, display, ui, target, m_outputWidth, m_outputHeight)) {
+            out.output = target;
+            ran |= kStageUi;
+            if (fgRan) {
+                out.presentReal = target;
+            }
+        }
     }
     m_stats.ran = ran;
     return out;

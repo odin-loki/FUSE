@@ -436,6 +436,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 ## Next
 
 - [ ] Wire `DeferredRenderer` into `RhiContext::submitFrame` (replace hybrid placeholder incrementally)
+  - E02 (2026-09-30): the renderer-side replacement exists — `scene_renderer::SceneRenderer` (ECS scene -> FrameComposer, present blit; `fuse_scene_renderer_*` gates). Wiring it into `RhiContext` / Hybrid is E03 (still open).
 - [x] B5.4 follow-up: Cluster grid index/decode/screen-depth helpers, slice-Z mapping, overflow clamp + CPU tests (`fuse_clustered_light_culler`)
 - [ ] B5.4 follow-up: CUDA cluster AABB build + deferred shade kernels
 - [ ] B5.5 follow-up: SDF soft shadows in `fuse_compute` (CSM split + light-space AABB stubs landed)

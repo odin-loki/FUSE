@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/vk/swapchain.hpp>
 #include <fuse/types.hpp>
 
@@ -134,5 +135,48 @@ private:
     /// real present without it would wait on a semaphore nobody signals.
     bool m_renderFinishedSignalled = false;
 };
+
+// --- render-graph present hand-off (E02 SceneRenderer, RE-FI-1) -----------------------------------------------------
+// The frame's final image (FrameGraphOutputs::output, RGBA16F) reaches a swapchain image or a headless target through
+// one "present.blit" graph pass (vkCmdBlitImage: format conversion + optional scaling; the graph declares
+// TransferSrc / TransferDst, no hand barrier). A swapchain target then gets a "present.handoff" pass (Access::Present:
+// the graph leaves it in PRESENT_SRC_KHR for vkQueuePresentKHR). With frame generation, the caller blits
+// presentInterpolated to one acquired image and presentReal to the next (see SceneRenderer::addPresent).
+
+/// A swapchain image or a persistent headless target to import into a frame's graph.
+struct PresentTargetDesc {
+    void* image = nullptr; ///< VkImage
+    void* view = nullptr;  ///< optional VkImageView
+    u32 format = 0;        ///< VkFormat (needs BLIT_DST)
+    u32 width = 0;
+    u32 height = 0;
+    /// Swapchain image: imported with UNDEFINED (contents discarded) and handed off in PRESENT_SRC_KHR. Headless
+    /// target: layout / queue tracked through the trackers below (null: UNDEFINED every frame).
+    bool swapchain = false;
+    u32* layoutTracker = nullptr;
+    u8* queueTracker = nullptr;
+    const char* name = "present.target";
+};
+
+/// Imports `target` into `graph` (invalid ref when the description is incomplete).
+rg::TextureRef importPresentTarget(rg::Graph& graph, const PresentTargetDesc& target);
+
+/// One blit of a frame image into a present target. The record must outlive the graph's execution (the pass callback
+/// reads it).
+struct PresentBlit {
+    rg::TextureRef source;
+    u32 sourceWidth = 0;  ///< region [0, w) x [0, h) of the source
+    u32 sourceHeight = 0;
+    rg::TextureRef target;
+    u32 targetWidth = 0;
+    u32 targetHeight = 0;
+    /// Linear filtering when the extents differ (same extent: nearest, an exact per-texel conversion).
+    bool linearFilter = true;
+    /// Adds the "present.handoff" pass (Access::Present) after the blit: set for a swapchain image.
+    bool present = false;
+};
+
+/// Records "present.blit" (+ "present.handoff"). False for invalid refs / extents.
+bool addPresentBlit(rg::Graph& graph, PresentBlit& blit);
 
 } // namespace fuse::renderer

@@ -1874,6 +1874,7 @@ int main() {
 
 - [x] **B2.10** implemented on FUSE APIs (not ungated Torque guts) (`fuse_renderer_bootstrap`)
 - [ ] Source narrative tests/acceptance for this topic green
+  - E02 (2026-09-30): `render_scene` exists renderer-side as `scene_renderer::SceneRenderer::renderScene(registry, camera, graph)` (FrameComposer frame, `fuse_scene_renderer_*` gates on Lavapipe); the main-loop wiring (runtime / editor) is E03, so this box stays open.
 - [x] ASan/UBSan clean on subsystem smoke (`fuse-asan` preset: all FUSE targets instrumented, 296/296)
 - [x] No owning raw pointers in public FUSE APIs (`fuse_lint_ownership_*`, ctest -L lint)
 

@@ -1,0 +1,28 @@
+#version 460
+// E02 "frame.ui_composite" (GLSL twin of fc_ui_composite.slang; see include/fuse/renderer/frame/frame_ui.hpp):
+// premultiplied UI over the display-referred scene, scene alpha kept. CPU reference: frame_ui_composite_texel.
+#extension GL_EXT_samplerless_texture_functions : require
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, rgba16f) uniform writeonly image2D fc_ui_target;
+layout(set = 0, binding = 1) uniform texture2D fc_ui_scene;
+layout(set = 0, binding = 2) uniform texture2D fc_ui_image;
+
+layout(push_constant) uniform FcUiPush {
+    uvec2 extent;
+    uvec2 pad;
+} pc;
+
+void main() {
+    const uvec2 p = gl_GlobalInvocationID.xy;
+    if (p.x >= pc.extent.x || p.y >= pc.extent.y) {
+        return;
+    }
+    const vec4 s = texelFetch(fc_ui_scene, ivec2(p), 0);
+    const vec4 u = texelFetch(fc_ui_image, ivec2(p), 0);
+    precise float k = 1.0 - u.a;
+    precise vec3 t = k * s.rgb;
+    precise vec3 rgb = u.rgb + t;
+    imageStore(fc_ui_target, ivec2(p), vec4(rgb, s.a));
+}

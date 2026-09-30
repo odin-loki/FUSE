@@ -27,6 +27,9 @@
 //   -> GPU post stack (WP-4.5)                                     [post]
 //   -> output (RGBA16F, display resolution)
 //   -> frame generation (WP-4.4: FSR 3.1 FI, the frame halfway to the previous output)  [frameGen]
+//   -> UI / HUD (E02): the caller's FrameUiSource records a premultiplied-RGBA UI image of the output extent; it is
+//      alpha-overed onto the HUD-less output ("frame.ui_composite", frame_ui.hpp) into a composer-owned image, and
+//      handed to frame generation, whose presentReal / presentInterpolated carry it when FG runs      [ui]
 //
 // Tier-driven: T0 never touches ray query (DDGI traces the global SDF, no TLAS / RT effects / ReSTIR); T2
 // builds the TLAS, traces DDGI with ray query and adds RT shadows + the denoiser, RT reflections and (optional)
@@ -45,6 +48,7 @@
 #include <fuse/renderer/denoise/svgf_denoiser.hpp>
 #include <fuse/renderer/forward/forward_transparency.hpp>
 #include <fuse/renderer/frame/frame_types.hpp>
+#include <fuse/renderer/frame/frame_ui.hpp>
 #include <fuse/renderer/framegen/fg_gpu.hpp>
 #include <fuse/renderer/gi/gpu/ddgi_gpu.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
@@ -120,6 +124,26 @@ enum FrameStage : u32 {
     kStageFrameGen = 1u << 21,      ///< WP-4.4 frame interpolation of the output
     kStageRestirDenoise = 1u << 22,     ///< T2: the ReSTIR DI signal through SVGF (IDenoiser) before frame.restir
     kStageReflectionDenoise = 1u << 23, ///< T2: the RT reflection signal through SVGF (IDenoiser) before frame.reflect
+    kStageUi = 1u << 24,                ///< E02 UI / HUD composite after post (FrameUiSource set, FrameSettings::ui)
+};
+
+/// What the UI callback records into (E02).
+struct FrameUiContext {
+    u32 width = 0;  ///< output extent (FrameComposer::outputWidth / outputHeight)
+    u32 height = 0;
+    u64 serial = 0;
+    u32 frameIndex = 0;
+};
+
+/// E02 UI / HUD source: a caller-supplied render-graph callback run in addFrame after post. It records whatever
+/// passes it needs and returns a premultiplied-RGBA image of the output extent (Sampled-readable: a graph transient
+/// or an imported image), or an invalid ref for "no UI this frame". The composer composites it over the HUD-less
+/// output and gives it to frame generation (FgGpuInputs::ui). The callback must not allocate in steady state if the
+/// frame is to stay allocation-free.
+using FrameUiRecordFn = rg::TextureRef (*)(rg::Graph& graph, const FrameUiContext& context, void* user);
+struct FrameUiSource {
+    FrameUiRecordFn record = nullptr; ///< null: no UI stage
+    void* user = nullptr;
 };
 
 /// DenoiserSettings of the in-tree SVGF with the WP-6.4 preset of `signal` (svgf_preset: history length and
@@ -235,6 +259,7 @@ struct FrameSettings {
     FrameUpscaler upscaler = FrameUpscaler::Taau;
     bool post = true;
     post_gpu::PostGpuSettings postSettings{};
+    bool ui = true;         ///< E02: run the FrameUiSource (when one is set) after post
     f32 ambient[3] = {0.03f, 0.035f, 0.045f};
 };
 
@@ -277,6 +302,13 @@ struct FrameGraphOutputs {
     rg::BufferRef restirDenoised;     ///< SVGF output of the ReSTIR DI signal (f32x4 (rgb, variance) per pixel; frame.restir's input)
     rg::BufferRef reflectionDenoised; ///< SVGF output of the RT reflections (f32x4 (rgb, variance); frame.reflect's input)
     rg::TextureRef frameGen;   ///< WP-4.4 interpolated frame (HUD-less, display resolution)
+    // E02 UI / present hand-off
+    rg::TextureRef hudless;    ///< the output before the UI stage (== output when the UI stage did not run)
+    rg::TextureRef ui;         ///< the FrameUiSource image of this frame (invalid: none)
+    /// Frame generation on: the interpolated frame with the UI on top (present first), and this frame with its UI
+    /// (present second; == output). Invalid when frame generation did not run.
+    rg::TextureRef presentInterpolated;
+    rg::TextureRef presentReal;
 };
 
 struct FrameStats {
@@ -316,6 +348,10 @@ public:
     bool setRestirLights(const light_tree::LightTreeLight* lights, const f32 (*rgb)[3], u32 count);
     /// WP-2.3 opacity of a transparent instance (gpu_scene::kInstanceTransparent).
     bool setOpacity(gpu_scene::InstanceHandle handle, f32 opacity);
+    /// E02 UI / HUD source (record == null clears it). Creates the composited output image on first use (allocates;
+    /// not per frame). False when the UI stage is unavailable (kernel not built) or the image cannot be created.
+    bool setUiSource(const FrameUiSource& source);
+    const FrameUiSource& uiSource() const { return m_uiSource; }
 
     /// T2: AccelerationStructures::beginFrame (after scene.beginFrame). No-op at T0.
     void beginSceneFrame(u64 serial);
@@ -431,6 +467,8 @@ private:
     std::vector<restir::RestirLight> m_restirTable;
     forward::ForwardTransparency m_forward;
     framegen::FrameGenGpu m_framegen;
+    FrameUiComposite m_ui;          ///< E02 "frame.ui_composite"
+    FrameUiSource m_uiSource{};
 
     // composer-owned resources
     void* m_layoutHandle = nullptr; ///< VkPipelineLayout (bindless set + 16-byte push)
@@ -446,6 +484,7 @@ private:
     OwnedImage m_restirImage{};
     OwnedImage m_reflectImage{};
     OwnedImage m_resolveImage{};
+    OwnedImage m_uiImage{};         ///< E02: output + UI (display extent; created by setUiSource)
     OwnedBuffer m_background{};     ///< f32x4 (clouds background)
     OwnedBuffer m_distance{};       ///< f32 (clouds scene distance)
     OwnedBuffer m_visibility{};     ///< f32 (packed denoised shadow)

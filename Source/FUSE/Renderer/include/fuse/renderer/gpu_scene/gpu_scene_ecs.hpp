@@ -30,6 +30,10 @@ struct Transform;
 struct Mesh;
 } // namespace fuse::ecs
 
+namespace fuse::renderer {
+class MaterialSystem;
+}
+
 namespace fuse::renderer::gpu_scene {
 
 struct EcsExtractDesc {
@@ -66,6 +70,12 @@ public:
     InstanceHandle instanceOf(ecs::EntityID id) const { return m_instances.handleOf(id); }
     LightHandle lightOf(ecs::EntityID id) const { return m_lights.handleOf(id); }
     const EcsExtractDesc& desc() const { return m_desc; }
+    /// Replaces the mesh remap (the asset bridge's table moved or grew). Instances whose remapped row
+    /// changed are rewritten by the next extract() (the kernel diffs every row).
+    void setMeshRemap(const u32* remap, u32 count) {
+        m_desc.meshRemap = remap;
+        m_desc.meshRemapCount = count;
+    }
 
 private:
     /// Entity index -> GPU scene slot, with liveness stamps and a dense list for removal.
@@ -101,6 +111,30 @@ private:
     EntityMap m_instances;
     EntityMap m_lights;
     u32 m_frame = 0;
+};
+
+/// E02 material feed: MaterialSystem rows -> GpuScene material table (row id = material id = ecs::Mesh::material_id).
+/// sync() re-packs (MaterialSystem::gpuRow: Material::pack + resolveBindlessIndices) and writes only the rows whose
+/// MaterialSystem::version() moved since the last sync, so a material edited N times between two frames is uploaded
+/// once, and an unchanged table costs one serial compare. Call between GpuScene::beginFrame and commit.
+/// Steady state (no new materials) makes no heap allocations.
+struct MaterialFeedStats {
+    u32 rowsChecked = 0; ///< rows whose version was compared (0 when the table's change serial did not move)
+    u32 rowsWritten = 0; ///< rows handed to GpuScene::setMaterial
+};
+
+class GpuSceneMaterialFeed {
+public:
+    /// Forget what was copied (the next sync writes every row).
+    void reset();
+    MaterialFeedStats sync(const MaterialSystem& materials, GpuScene& scene);
+    /// Version of `id` last written to the scene (0 = never).
+    u32 syncedVersion(u32 id) const { return id < m_versions.size() ? m_versions[id] : 0u; }
+
+private:
+    std::vector<u32> m_versions;
+    u64 m_serial = 0;
+    bool m_synced = false;
 };
 
 } // namespace fuse::renderer::gpu_scene

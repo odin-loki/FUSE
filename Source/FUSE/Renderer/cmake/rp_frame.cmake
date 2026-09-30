@@ -9,7 +9,9 @@
 #   fc_frame kernel     SPIR-V  Slang (primary) + GLSL twin, embedded in fuse_frame (shaders/frame/)
 #   fuse_rp_frame_*     ctest   CPU gates (stub-safe) and Lavapipe gates (validation + sync validation)
 
-set(_fuse_frame_kernels "FRAME|Frame|fc_frame.comp|fc_frame.slang")
+set(_fuse_frame_kernels "FRAME|Frame|fc_frame.comp|fc_frame.slang"
+    # E02 UI / HUD composite (src/frame/shaders/: frame_ui.hpp)
+    "UI|UiComposite|fc_ui_composite.comp|fc_ui_composite.slang")
 
 # Script mode (build step): embed the kernel's SPIR-V into a C++ header.
 #   cmake -DOUT=<header> [-DFRAME_SLANG=<spv>] [-DFRAME_GLSL=<spv>] -P rp_frame.cmake
@@ -54,11 +56,13 @@ set(_fuse_frame_shd "${_fuse_frame_root}/shaders/frame")
 set(_fuse_frame_shd_root "${_fuse_frame_root}/shaders")
 set(_fuse_frame_common_inc "${_fuse_frame_root}/shaders/common")
 
-file(GLOB _fuse_frame_shader_files CONFIGURE_DEPENDS "${_fuse_frame_shd}/*")
+file(GLOB _fuse_frame_shader_files CONFIGURE_DEPENDS "${_fuse_frame_shd}/*" "${_fuse_frame_src}/shaders/*")
 add_library(fuse_frame STATIC
     ${_fuse_frame_src}/frame_composer.cpp
+    ${_fuse_frame_src}/frame_ui.cpp
     ${_fuse_frame_inc}/frame_types.hpp
     ${_fuse_frame_inc}/frame_composer.hpp
+    ${_fuse_frame_inc}/frame_ui.hpp
     ${_fuse_frame_shader_files}
 )
 set_source_files_properties(${_fuse_frame_shader_files} PROPERTIES HEADER_FILE_ONLY TRUE)
@@ -84,9 +88,14 @@ foreach(_row IN LISTS _fuse_frame_kernels)
     list(GET _entry 2 _glsl)
     list(GET _entry 3 _slang)
     string(TOLOWER "${_key}" _suffix)
+    # Kernel directory: shaders/frame/, or src/frame/shaders/ (E02 UI composite).
+    set(_dir "${_fuse_frame_shd}")
+    if(EXISTS "${_fuse_frame_src}/shaders/${_glsl}")
+        set(_dir "${_fuse_frame_src}/shaders")
+    endif()
     if(COMMAND fuse_add_slang_shaders)
         fuse_add_slang_shaders(fuse_frame_kernels
-            SOURCES "${_fuse_frame_shd}/${_slang}"
+            SOURCES "${_dir}/${_slang}"
             STAGE compute
             SUFFIX ".fc_${_suffix}"
             INCLUDE_DIRS "${_fuse_frame_shd}" "${_fuse_frame_shd_root}"
@@ -102,12 +111,12 @@ foreach(_row IN LISTS _fuse_frame_kernels)
     if(FUSE_GLSLANG_VALIDATOR)
         set(_out "${_fuse_frame_spv}/fc_${_suffix}.glsl.spv")
         set(_cmds COMMAND "${FUSE_GLSLANG_VALIDATOR}" --target-env vulkan1.3 "-I${_fuse_frame_common_inc}"
-                          "-I${_fuse_frame_shd_root}" "-I${_fuse_frame_shd}" "${_fuse_frame_shd}/${_glsl}" -o "${_out}")
+                          "-I${_fuse_frame_shd_root}" "-I${_fuse_frame_shd}" "${_dir}/${_glsl}" -o "${_out}")
         if(FUSE_SPIRV_VAL)
             list(APPEND _cmds COMMAND "${FUSE_SPIRV_VAL}" --target-env vulkan1.3 "${_out}")
         endif()
         add_custom_command(OUTPUT "${_out}" ${_cmds}
-            DEPENDS "${_fuse_frame_shd}/${_glsl}" ${_fuse_frame_glsl_includes} "${_fuse_frame_common_inc}/bindless.glsl"
+            DEPENDS "${_dir}/${_glsl}" ${_fuse_frame_glsl_includes} "${_fuse_frame_common_inc}/bindless.glsl"
             COMMENT "glslangValidator ${_glsl} (fc_${_suffix}, GLSL twin)"
             VERBATIM)
         list(APPEND _fuse_frame_embed_args "-D${_key}_GLSL=${_out}")

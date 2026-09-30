@@ -10,6 +10,11 @@ void MaterialSystem::init(ResourceManager& resources) {
     m_ready = true;
 }
 
+void MaterialSystem::initStandalone() {
+    destroy();
+    m_ready = true;
+}
+
 void MaterialSystem::destroy() {
     if (m_resources != nullptr && m_materialSsbo.isValid()) {
         m_resources->destroyBuffer(m_materialSsbo);
@@ -19,6 +24,8 @@ void MaterialSystem::destroy() {
     m_materials.clear();
     m_gpuMaterials.clear();
     m_dirty.clear();
+    m_versions.clear();
+    m_changeSerial = 0;
     m_materialSsbo = BufferHandle{};
     m_dirtyCount = 0;
     m_ready = false;
@@ -33,6 +40,8 @@ u32 MaterialSystem::registerMaterial(const Material& material) {
     m_materials.push_back(material);
     m_gpuMaterials.push_back(material.pack());
     m_dirty.push_back(true);
+    m_versions.push_back(1u);
+    ++m_changeSerial;
     ++m_dirtyCount;
     return id;
 }
@@ -43,7 +52,15 @@ void MaterialSystem::updateMaterial(u32 id, const Material& material) {
     }
 
     m_materials[id] = material;
+    ++m_versions[id];
+    ++m_changeSerial;
     markDirty(id);
+}
+
+Material::GPUMaterial MaterialSystem::gpuRow(u32 id) const {
+    Material::GPUMaterial gpu = m_materials.at(id).pack();
+    resolveBindlessIndices(m_materials[id], gpu);
+    return gpu;
 }
 
 Material& MaterialSystem::get(u32 id) {

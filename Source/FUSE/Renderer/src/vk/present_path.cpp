@@ -4,6 +4,10 @@
 #include <fuse/renderer/vk/fence_wait.hpp>
 #include <fuse/renderer/vk/swapchain_util.hpp>
 
+#if defined(FUSE_VULKAN_BACKEND)
+#include <vulkan/vulkan.h>
+#endif
+
 namespace fuse::renderer {
 
 PresentPath::PresentPath(VulkanBootstrap& bootstrap, PresentPathDesc desc)
@@ -348,6 +352,69 @@ bool PresentPath::recreateSwapchain() {
         return true;
     }
     return processPendingResize();
+}
+
+// --- render-graph present hand-off (E02) -----------------------------------------------------------------------------
+
+namespace {
+constexpr u32 kLayoutPresentSrc = 1000001002u; // VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+
+void recordPresentBlit(const rg::PassContext& context, void* user) {
+#if defined(FUSE_VULKAN_BACKEND)
+    const PresentBlit& b = *static_cast<const PresentBlit*>(user);
+    VkImageBlit region{};
+    region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.srcOffsets[1] = {static_cast<s32>(b.sourceWidth), static_cast<s32>(b.sourceHeight), 1};
+    region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.dstOffsets[1] = {static_cast<s32>(b.targetWidth), static_cast<s32>(b.targetHeight), 1};
+    const bool scaled = b.sourceWidth != b.targetWidth || b.sourceHeight != b.targetHeight;
+    vkCmdBlitImage(static_cast<VkCommandBuffer>(context.commandBuffer), static_cast<VkImage>(context.image(b.source)),
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, static_cast<VkImage>(context.image(b.target)),
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region,
+                   scaled && b.linearFilter ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
+#else
+    (void)context;
+    (void)user;
+#endif
+}
+} // namespace
+
+rg::TextureRef importPresentTarget(rg::Graph& graph, const PresentTargetDesc& target) {
+    if (target.image == nullptr || target.width == 0u || target.height == 0u || target.format == 0u) {
+        return rg::TextureRef{};
+    }
+    rg::ImportedImage i{};
+    i.image = target.image;
+    i.view = target.view;
+    i.format = target.format;
+    i.width = target.width;
+    i.height = target.height;
+    i.name = target.name;
+    if (target.swapchain) {
+        i.initialLayout = 0u; // acquired image: previous contents are discarded
+        i.finalLayout = kLayoutPresentSrc;
+    } else {
+        i.initialLayout = target.layoutTracker != nullptr ? *target.layoutTracker : 0u;
+        i.initialQueue = target.queueTracker != nullptr ? *target.queueTracker : rg::kNoQueue;
+        i.layoutTracker = target.layoutTracker;
+        i.queueTracker = target.queueTracker;
+    }
+    return graph.importImage(i);
+}
+
+bool addPresentBlit(rg::Graph& graph, PresentBlit& blit) {
+    if (!blit.source.valid() || !blit.target.valid() || blit.sourceWidth == 0u || blit.sourceHeight == 0u ||
+        blit.targetWidth == 0u || blit.targetHeight == 0u) {
+        return false;
+    }
+    graph.addPass("present.blit", &recordPresentBlit, &blit)
+        .use(blit.source, rg::Access::TransferSrc)
+        .use(blit.target, rg::Access::TransferDst)
+        .neverCull();
+    if (blit.present) {
+        graph.addPass("present.handoff", nullptr, nullptr).use(blit.target, rg::Access::Present).neverCull();
+    }
+    return true;
 }
 
 } // namespace fuse::renderer

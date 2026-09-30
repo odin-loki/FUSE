@@ -927,6 +927,7 @@ Thread ownership unchanged: CUDA launch jobs run on worker threads; Vulkan recor
 - [x] B2.6 follow-up: `FrameSyncPair` progress across render + job lanes (WP-06h)
 - [x] Editor viewport → Qt winId stub `VkSurfaceKHR` handoff (WP-06h)
 - [ ] Replace `PlaceholderRenderer` present path incrementally — keep software fallback for headless CI (**WP-06l/m:** `setSoftwarePlaceholderEnabled` + `shouldDisableSoftwarePlaceholderForEmbed`; full removal deferred)
+  - E02 (2026-09-30), renderer side only: `scene_renderer::SceneRenderer` renders an ECS 3D scene through the GPU-driven `frame::FrameComposer` (mesh registry, material feed, UI stage, `present.blit` hand-off into a swapchain image or a headless target; gates `fuse_scene_renderer_*`, Lavapipe, 0 validation messages). The box stays open until E03 makes Hybrid / World3D / Editor / Apps call it (RE-RUNTIME-3D-RENDER).
 - [x] Own Hybrid presentable path stubs — `PlatformWindow` (null/GLFW), `VulkanPresentable`, `HybridRendererBootstrap` wiring
 - [x] Null/GLFW desktop WSI scaffold — `window_wsi.hpp`, `FUSE_PLATFORM_WINDOW_GLFW` (OFF in CI; headless Lavapipe stays green)
 - [x] B2.2 present path deepen — `PresentPath`, `VsyncMode`, acquire/present/fence-wait/resize recreate stubs + CI state-machine tests

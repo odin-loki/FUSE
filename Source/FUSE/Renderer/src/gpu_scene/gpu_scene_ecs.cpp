@@ -7,6 +7,7 @@
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene_extract_kernel.hpp>
+#include <fuse/renderer/material/material_system.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -274,4 +275,43 @@ void GpuSceneEcsExtractor::releaseAll(GpuScene& scene) {
     }
 }
 
+// --- material feed ------------------------------------------------------------------------------
+
+void GpuSceneMaterialFeed::reset() {
+    m_versions.clear();
+    m_serial = 0;
+    m_synced = false;
+}
+
+MaterialFeedStats GpuSceneMaterialFeed::sync(const MaterialSystem& materials, GpuScene& scene) {
+    MaterialFeedStats stats{};
+    if (m_synced && materials.changeSerial() == m_serial) {
+        return stats;
+    }
+    const u32 count = materials.materialCount();
+    if (m_versions.size() < count) {
+        m_versions.resize(count, 0u);
+    }
+    bool ok = true;
+    for (u32 id = 0; id < count; ++id) {
+        ++stats.rowsChecked;
+        const u32 version = materials.version(id);
+        if (version == m_versions[id]) {
+            continue;
+        }
+        if (scene.setMaterial(id, materials.gpuRow(id))) {
+            m_versions[id] = version;
+            ++stats.rowsWritten;
+        } else {
+            ok = false; // retried next sync
+        }
+    }
+    if (ok) {
+        m_serial = materials.changeSerial();
+        m_synced = true;
+    }
+    return stats;
+}
+
 } // namespace fuse::renderer::gpu_scene
+

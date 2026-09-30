@@ -93,7 +93,7 @@ ctest --test-dir build
 | Real GLES/Vulkan present to window/swapchain | ❌ Track B RHI |
 | Legacy T3D/T2D gfx backends wired | ❌ strangler phase |
 | HDR / tonemap shared pass | ❌ Track B |
-| Depth buffer + 3D mesh draw | ❌ placeholder clear only |
+| Depth buffer + 3D mesh draw | ❌ placeholder clear only in Hybrid; renderer side ✅ E02 `scene_renderer::SceneRenderer` (ECS meshes / lights through the FrameComposer, `fuse_scene_renderer_vk_golden_*`), Hybrid wiring = E03 |
 | Texture upload from jobs | ❌ `RenderUploadCommand` queue TBD |
 | iOS/Android hybrid demo on device | ⏳ Android compiles `fuse_hybrid`; device run TBD |
 
@@ -105,7 +105,7 @@ ctest --test-dir build
 2. **RHI abstraction** — command lists, pipeline state, descriptor sets (Track B).
 3. **3D mesh draw** — currently only clear-colour; no depth prepass.
 4. **2D texture atlas** — sprite placeholder is flat-colour rotated quad.
-5. **Hybrid compose** — GPU blit from 3D colour+depth target to 2D overlay target.
+5. **Hybrid compose** — GPU blit from 3D colour+depth target to 2D overlay target. (E02: `FrameComposer` UI stage — premultiplied UI over the 3D output, `frame.ui_composite` — and the `present.blit` hand-off exist renderer-side; the Hybrid 2D pass does not feed them yet: E03.)
 6. **Async upload lane** — staging buffers filled by jobs, committed on render thread.
 7. **Editor PIE viewport** — Qt GL widget integration (U6).
 

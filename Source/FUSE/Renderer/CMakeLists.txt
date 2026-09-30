@@ -316,6 +316,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp64b.cmake") # WP-6.4b denoiser i
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp91.cmake")  # WP-9.1 neural runtime, CPU reference + portable/coopmat kernels (neural/, shaders/neural/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp65.cmake")  # WP-6.5 radiance cascades, research (research/radiance_cascades/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_frame.cmake") # Frame integration: FrameComposer (frame/, shaders/frame/)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/scene_renderer.cmake") # E02 SceneRenderer: ECS scene -> FrameComposer (scene_renderer/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/content_golden.cmake") # Asset plan W0.8 content golden renders + vendored NVIDIA FLIP (Samples/content_golden, Engine/lib/nvidia-flip)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_w07.cmake")  # Asset plan W0.7 .fusemat + layered materials (material_layers/, shaders/material_layers/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp73.cmake") # WP-7.3 path-tracing mode, T3 RT pipeline + T2 ray query (pathtrace/, shaders/pathtrace/)
