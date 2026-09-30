@@ -29,9 +29,12 @@ World2D::~World2D() {
 }
 
 void World2D::clearLoadedSprites_() {
-    if (m_root) {
-        for (SceneObject2D* sprite : m_sprites) {
-            m_root->removeChild(sprite);
+    for (const Handle<Object> handle : m_sprites) {
+        if (SceneObject2D* sprite = m_handles.resolve(handle)) {
+            if (m_root && sprite->parent() == m_root.get()) {
+                m_root->removeChild(sprite);
+            }
+            m_handles.unpublish(*sprite);
         }
     }
     m_sprites.clear();
@@ -78,15 +81,68 @@ void World2D::loadWorld(dimension::WorldHandle world) {
     log::info("World2D: load world handle index=%u gen=%u", world.index(), world.generation());
 }
 
-void World2D::addSprite(SceneObject2D* sprite) {
+Handle<Object> World2D::addSprite(SceneObject2D* sprite) {
     if (sprite == nullptr) {
-        return;
+        return Handle<Object>::invalid();
     }
-    m_sprites.push_back(sprite);
+    if (m_handles.valid(sprite->handle()) && m_handles.resolve(sprite->handle()) == sprite) {
+        return sprite->handle(); // already in this world
+    }
+    const Handle<Object> handle = m_handles.publish(*sprite);
+    m_sprites.push_back(handle);
     if (m_root) {
         m_root->addChild(sprite);
     }
     attachPhysicsBodyForSprite_(sprite);
+    return handle;
+}
+
+void World2D::removeSprite(SceneObject2D* sprite) {
+    if (sprite == nullptr || !m_handles.valid(sprite->handle()) || m_handles.resolve(sprite->handle()) != sprite) {
+        return;
+    }
+    const Handle<Object> handle = sprite->handle();
+    for (usize i = 0; i < m_sprites.size(); ++i) {
+        if (m_sprites[i] == handle) {
+            m_sprites.erase(m_sprites.begin() + static_cast<std::ptrdiff_t>(i));
+            break;
+        }
+    }
+    m_handles.unpublish(*sprite);
+    if (m_root && sprite->parent() == m_root.get()) {
+        m_root->removeChild(sprite);
+    }
+    for (usize i = 0; i < m_ownedSprites.size(); ++i) {
+        if (m_ownedSprites[i].get() == sprite) {
+            m_ownedSprites.erase(m_ownedSprites.begin() + static_cast<std::ptrdiff_t>(i));
+            break;
+        }
+    }
+    rebuildPhysicsBodies_();
+}
+
+bool World2D::destroySprite(Handle<Object> handle) {
+    SceneObject2D* sprite = m_handles.resolve(handle);
+    if (sprite == nullptr) {
+        return false;
+    }
+    removeSprite(sprite);
+    return true;
+}
+
+void World2D::pruneDeadSprites_() {
+    bool pruned = false;
+    for (usize i = 0; i < m_sprites.size();) {
+        if (!m_handles.valid(m_sprites[i])) {
+            m_sprites.erase(m_sprites.begin() + static_cast<std::ptrdiff_t>(i));
+            pruned = true;
+        } else {
+            ++i;
+        }
+    }
+    if (pruned) {
+        rebuildPhysicsBodies_();
+    }
 }
 
 void World2D::attachPhysicsBodyForSprite_(SceneObject2D* sprite) {
@@ -100,12 +156,14 @@ void World2D::attachPhysicsBodyForSprite_(SceneObject2D* sprite) {
 
     u32 bodyIndex = kNoPhysicsBody;
     if (sprite->physicsShape() == PhysicsShape2D::Box) {
-        bodyIndex = m_physics.addBoxBody(sprite->x(), sprite->y(), sprite->boxHalfWidth(),
+        const math::Vec3 world = sprite->worldTranslation();
+        bodyIndex = m_physics.addBoxBody(world.x, world.y, sprite->boxHalfWidth(),
                                          sprite->boxHalfHeight(), 1.f, collisionLayer, collisionMask);
     } else {
         const f32 radius =
             sprite->physicsShape() == PhysicsShape2D::Circle ? sprite->physicsRadius() : 0.5f;
-        bodyIndex = m_physics.addCircleBody(sprite->x(), sprite->y(), radius, 1.f, collisionLayer,
+        const math::Vec3 world = sprite->worldTranslation();
+        bodyIndex = m_physics.addCircleBody(world.x, world.y, radius, 1.f, collisionLayer,
                                             collisionMask);
     }
     m_physicsBodyIndices.push_back(bodyIndex);
@@ -119,8 +177,8 @@ void World2D::rebuildPhysicsBodies_() {
         return;
     }
 
-    for (SceneObject2D* sprite : m_sprites) {
-        attachPhysicsBodyForSprite_(sprite);
+    for (const Handle<Object> handle : m_sprites) {
+        attachPhysicsBodyForSprite_(m_handles.resolve(handle));
     }
 }
 
@@ -145,11 +203,12 @@ void World2D::syncPhysicsFromScene() {
         if (bodyIndex == kNoPhysicsBody) {
             continue;
         }
-        const SceneObject2D* sprite = m_sprites[i];
+        const SceneObject2D* sprite = m_handles.resolve(m_sprites[i]);
         if (sprite == nullptr) {
             continue;
         }
-        m_physics.setBodyPosition(bodyIndex, sprite->x(), sprite->y());
+        const math::Vec3 world = sprite->worldTranslation();
+        m_physics.setBodyPosition(bodyIndex, world.x, world.y);
     }
 }
 
@@ -159,14 +218,26 @@ void World2D::syncSceneFromPhysics() {
         if (bodyIndex == kNoPhysicsBody) {
             continue;
         }
-        SceneObject2D* sprite = m_sprites[i];
+        SceneObject2D* sprite = m_handles.resolve(m_sprites[i]);
         if (sprite == nullptr) {
             continue;
         }
         float x = 0.f;
         float y = 0.f;
         m_physics.getBodyPosition(bodyIndex, x, y);
-        sprite->setPosition(x, y);
+        const SceneObject2D* parentNode = sprite->sceneParent();
+        if (parentNode == nullptr || parentNode == m_root.get()) {
+            // Root children (the common case): the root is only ever translated, so offset by it.
+            const math::Vec3 rootT = parentNode != nullptr ? parentNode->worldTranslation() : math::Vec3{};
+            sprite->setPosition(x - rootT.x, y - rootT.y);
+        } else {
+            // Nested sprite: convert the world position back through the parent chain.
+            math::Vec3 t;
+            math::Quat r;
+            math::Vec3 sc;
+            scene_math::decomposeTRS(sprite->worldMatrix(), t, r, sc);
+            sprite->setWorldPose({x, y, t.z}, r);
+        }
     }
 }
 
@@ -213,6 +284,8 @@ void World2D::tickGameThread(frame::FrameCtx& ctx) {
     if (!m_enabled) {
         return;
     }
+
+    pruneDeadSprites_();
 
     if (m_physicsEnabled) {
         syncPhysicsFromScene();

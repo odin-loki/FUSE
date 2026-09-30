@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/handle.hpp>
+#include <fuse/math/mat.hpp>
 #include <fuse/object.hpp>
 #include <fuse/types.hpp>
 
@@ -22,11 +23,15 @@ struct SpriteDrawCmd {
     bool visible = true;
 };
 
-/// Parallel arrays for worker-friendly reads (game thread writes, jobs read).
+/// Parallel arrays for worker-friendly reads (game thread writes, jobs read). `worldMatrix[i]` is the
+/// node's full cached world matrix (TRS composed along its parents; UNI-WP05-1), `worldX/Y` its
+/// translation and `worldRotation` its heading about +Z.
 struct SceneTransformSoA2D {
     std::vector<Handle<Object>> object;
     std::vector<float> worldX;
     std::vector<float> worldY;
+    std::vector<float> worldRotation;
+    std::vector<math::Mat4> worldMatrix;
     std::vector<u32> layer;
 
     void clear();
@@ -45,7 +50,8 @@ public:
 
     void setVisibleCount(u32 count) { m_visibleCount = count; }
 
-    /// Game-thread post-pass after hierarchy fill (e.g. per-frame spin for demo sprites).
+    /// Game-thread post-pass after hierarchy fill (e.g. per-frame spin for demo sprites): adds
+    /// `rotation` to every draw command's world rotation (the SoA keeps the pure world transform).
     void setSpriteRotations(float rotation);
 
 private:
@@ -53,7 +59,8 @@ private:
     u32 m_visibleCount = 0;
 };
 
-/// Depth-first walk of node and descendants; fills snapshot + SoA with world transforms.
+/// Depth-first walk of node and descendants; fills snapshot + SoA with world transforms. The walk
+/// refreshes each node's cached world matrix from its parent's (one pass, no per-node chain walk).
 /// When includeNode is false, only descendants of node are recorded (container roots stay out).
 void fillSnapshotSoA(const SceneObject2D& node,
                      SceneSnapshot2D& snapshot,

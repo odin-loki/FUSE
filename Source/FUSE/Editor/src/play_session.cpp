@@ -109,6 +109,22 @@ void PlaySession::start(EditorScene& editorScene, scene::Scene& scene, EditorSta
         m_physicsWorld.init(physics.desc);
         m_physicsWorldLive = true;
     }
+    // GAP-GAME-LOOP-ECS: PIE runs the runtime frame schedule (input -> scripts -> animation ->
+    // physics -> transform -> camera -> audio -> VFX -> extract) over the play registry. Physics is
+    // this session's manager (or the state's step hook). Transform / Camera are off in PIE: the
+    // editor's Transform dirty flags are its play-time change tracking (coalesceTransformDirty_) and
+    // the viewport derives matrices itself; TransformSystem would clear them every step.
+    {
+        world3d::RuntimeScheduleDesc desc{};
+        desc.physics.maxBodies = 16; // the owned manager is unused (external / hook physics below)
+        desc.physics.maxContacts = 64;
+        desc.physics.maxConstraints = 64;
+        desc.enabledStages &= ~(world3d::runtimeStageBit(world3d::RuntimeStage::Transform) |
+                                world3d::runtimeStageBit(world3d::RuntimeStage::Camera));
+        m_schedule.init(editorScene.registry(), desc);
+        m_schedule.setExternalPhysics(&m_physicsWorld);
+        m_schedule.setHook(world3d::RuntimeStage::Physics, &PlaySession::stepPhysicsStage_, this);
+    }
     m_sessionTickCount = 0;
     m_tickAccumulator = 0.f;
     m_coalescedDirtyCount = 0;
@@ -127,6 +143,7 @@ void PlaySession::stop(EditorScene& editorScene, scene::Scene& scene, EditorStat
     }
 
     m_controller.stop(scene, physics);
+    m_schedule.shutdown();
     m_physicsWorld.destroy();
     m_physicsWorldLive = false;
     if (m_hasRegistrySnapshot) {
@@ -512,14 +529,34 @@ void PlaySession::simulateStep_(EditorScene& editorScene, PlayModePhysicsState& 
                                 f32 physicsDt) {
     ++m_sessionTickCount;
     ++physics.stepCount;
-    if (physicsDt > 0.f && physics.drivePhysics) {
-        if (physics.stepHook) {
-            physics.stepHook(editorScene.registry(), physicsDt);
-        } else if (m_physicsWorldLive) {
-            m_physicsWorld.step(editorScene.registry(), physicsDt, m_physicsStreams);
+    if (physicsDt > 0.f) {
+        if (m_schedule.initialized() && m_schedule.registry() == &editorScene.registry()) {
+            m_stepPhysicsState = &physics;
+            m_schedule.step(physicsDt);
+            m_stepPhysicsState = nullptr;
+        } else if (physics.drivePhysics) {
+            // Registry swapped under the session (not expected during play): physics only.
+            if (physics.stepHook) {
+                physics.stepHook(editorScene.registry(), physicsDt);
+            } else if (m_physicsWorldLive) {
+                m_physicsWorld.step(editorScene.registry(), physicsDt, m_physicsStreams);
+            }
         }
     }
     coalesceTransformDirty_(editorScene);
+}
+
+void PlaySession::stepPhysicsStage_(void* user, ecs::Registry& registry, f32 dt) {
+    PlaySession& session = *static_cast<PlaySession*>(user);
+    PlayModePhysicsState* physics = session.m_stepPhysicsState;
+    if (physics == nullptr || !physics->drivePhysics) {
+        return;
+    }
+    if (physics->stepHook) {
+        physics->stepHook(registry, dt);
+    } else if (session.m_physicsWorldLive) {
+        session.m_physicsWorld.step(registry, dt, session.m_physicsStreams);
+    }
 }
 
 void PlaySession::coalesceTransformDirty_(EditorScene& editorScene) {

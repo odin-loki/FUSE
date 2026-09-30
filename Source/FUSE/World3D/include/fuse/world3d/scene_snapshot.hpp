@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/handle.hpp>
+#include <fuse/math/mat.hpp>
 #include <fuse/object.hpp>
 #include <fuse/types.hpp>
 
@@ -20,11 +21,14 @@ struct ObjectDrawCmd3D {
     bool visible = true;
 };
 
+/// Worker-readable transform columns. `worldMatrix[i]` is the node's full cached world matrix
+/// (parent chain TRS composition, UNI-WP05-1); worldX/Y/Z are its translation.
 struct SceneTransformSoA3D {
     std::vector<Handle<Object>> object;
     std::vector<float> worldX;
     std::vector<float> worldY;
     std::vector<float> worldZ;
+    std::vector<math::Mat4> worldMatrix;
 
     void clear();
     void reserve(u32 objectCount);
@@ -46,7 +50,8 @@ private:
     u32 m_visibleCount = 0;
 };
 
-/// When includeNode is false, only descendants of node are recorded (container roots stay out).
+/// Depth-first fill (2D and 3D scene nodes) with the cached world matrices, refreshed top-down in the
+/// same pass. When includeNode is false, only descendants of node are recorded (container roots stay out).
 void fillSnapshotSoA(const SceneObject3D& node,
                      SceneSnapshot3D& snapshot,
                      SceneTransformSoA3D& soa,

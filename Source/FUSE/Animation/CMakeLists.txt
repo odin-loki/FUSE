@@ -10,6 +10,7 @@ set(FUSE_ANIMATION_PUBLIC_HEADERS
     include/fuse/animation/skinning.hpp
     include/fuse/animation/skinning_kernel.hpp
     include/fuse/animation/animator.hpp
+    include/fuse/animation/animation_system.hpp
 )
 
 set(FUSE_ANIMATION_SOURCES
@@ -20,6 +21,7 @@ set(FUSE_ANIMATION_SOURCES
     src/retarget.cpp
     src/skinning.cpp
     src/animator.cpp
+    src/animation_system.cpp
 )
 
 # Single-source skinning kernel (docs/compute-kernels.md): CUDA trampoline over the same body.

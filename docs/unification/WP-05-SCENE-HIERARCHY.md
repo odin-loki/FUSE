@@ -33,6 +33,6 @@ Full Engine `SimObject`/`SceneObject` round-trip waits on U2 Engine init unblock
 
 ## Next (post WP-05)
 
-- Handle publish through `HandleTable` on scene insert/destroy
-- Quat + full TRS world matrices (replace additive xy/z stub)
-- Wire `World2D/3D::buildSnapshot` to `fillSnapshotSoA` when handle table lands
+- [x] Handle publish through `HandleTable` on scene insert/destroy (UNI-WP05-1): `SceneHandleTable` (`World2D/include/fuse/world2d/scene_handle_table.hpp`, over Core `HandleTable`) publishes `Handle<Object>` on `World2D::addSprite` / `World3D::addObject`; `removeSprite` / `destroySprite` / `removeObject` / `clearDynamicObjects` and `~SceneObject2D` (node destroyed while published) remove the slot, so stale handles are rejected (generation bump, slot reuse does not revive them); the worlds keep handles, not raw pointers, and prune destroyed nodes on tick — `fuse_scene_transform_gates`
+- [x] Quat + full TRS world matrices (replace additive xy/z stub) (UNI-WP05-1): `SceneObject2D` (base of `SceneObject3D`) stores translation + unit quaternion + per-axis scale (yaw/pitch/roll setters convert, R = Rz(yaw) Rx(pitch) Ry(roll)); world = parentWorld * T * R * S along scene ancestors, cached per node with a version stamp (a change, a parent change or a plain `Object::reparent` invalidates the subtree lazily); `reparentKeepWorld`, `setWorldPose`; `transform_stubs.hpp` replaced by `scene_transform.hpp`. Gate `fuse_scene_transform_gates`: rotated + non-uniformly scaled 3-level chain vs a double-precision reference product (max error ~1e-6), cache invalidation, reparent keeps world pose, handle staleness, snapshot matrices bitwise equal to the cached ones
+- [x] Wire `World2D/3D::buildSnapshot` to `fillSnapshotSoA` when handle table lands: the snapshot SoA now carries `worldMatrix` (full world matrix) per row next to the handle, filled top-down in one pass from the caches

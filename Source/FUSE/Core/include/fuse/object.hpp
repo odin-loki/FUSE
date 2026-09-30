@@ -53,7 +53,14 @@ public:
 
     virtual const char* typeName() const { return "Object"; }
 
+    /// Scene-graph node kind without RTTI or string compares (UNI-WP05-1): SceneObject2D reports
+    /// Node2D, SceneObject3D Node3D; every other Object None. World transforms compose only
+    /// through scene nodes; other Objects in a parent chain are transparent.
+    enum class SceneNodeKind : u8 { None = 0, Node2D = 2, Node3D = 3 };
+    virtual SceneNodeKind sceneNodeKind() const { return SceneNodeKind::None; }
+
 protected:
+    /// Set by the owning world's SceneHandleTable on publish / unpublish (Handle<Object>::invalid()).
     void setHandle(Handle<Object> handle) { m_handle = handle; }
 
 private:

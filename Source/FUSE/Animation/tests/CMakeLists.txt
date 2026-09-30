@@ -32,3 +32,10 @@ target_compile_features(fuse_b7_skinning_cuda_events PRIVATE cxx_std_20)
 add_test(NAME fuse_b7_skinning_cuda_events COMMAND fuse_b7_skinning_cuda_events)
 set_tests_properties(fuse_b7_skinning_cuda_events PROPERTIES
     LABELS "gate;cuda;cuda_device" SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 300)
+
+# MP-B7.1-PARALLEL-EVAL: AnimationSystem parallel == serial (bit-identical) over 1000 Animators,
+# worker-count independent, zero steady-state allocations.
+add_executable(fuse_animation_system_gates test_animation_system.cpp)
+target_link_libraries(fuse_animation_system_gates PRIVATE fuse_animation fuse_core fuse_ecs)
+add_test(NAME fuse_animation_system_gates COMMAND fuse_animation_system_gates)
+set_tests_properties(fuse_animation_system_gates PROPERTIES LABELS "gate" TIMEOUT 300)

@@ -29,6 +29,7 @@
 | `SpscRing` | `Source/FUSE/Audio/include/fuse/audio/spsc_ring.hpp` | Lock-free single-producer/single-consumer ring (game thread -> feeder thread) |
 | `AudioClip::load_ogg` / `load_flac` / `load_fuseaudio` / `load_file` | `Source/FUSE/Audio/include/fuse/audio/audio_clip.hpp` | Runtime decode (vendored xiph, `cmake/FuseXiph.cmake`), cooked `.fuseaudio` containers, VFS-aware load |
 | `StreamDecoder` | `Source/FUSE/Audio/include/fuse/audio/audio_stream.hpp` | Per-voice bounded Ogg Vorbis decode ring + loop-head cache for streaming voices (loop points, seek) |
+| `AudioEcsSystem` | `Source/FUSE/Audio/include/fuse/audio/audio_ecs_system.hpp` | GAP-GAME-LOOP-ECS: `AudioSource` / `AudioListener` are ECS components; each update reconciles them into the engine's voice table (the `AudioRegistry` is now internal to the engine path), positions/orients from `Transform`, runs `AudioEngine::update` and writes play head / playing back; ticked by the World3D / PIE runtime schedule — `fuse_runtime_schedule_gates` |
 
 **Not in scope (deferred):** HRTF impulse-response files, per-source bus sends, ducking/sidechain, real-time CUDA FFT reverb on device, ECS system wiring, dynamic occlusion raycasts, HF IIR/LPF filtering.
 

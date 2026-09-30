@@ -8,6 +8,7 @@ set(FUSE_VFX_PUBLIC_HEADERS
     include/fuse/vfx/particle_gpu.hpp
     include/fuse/vfx/effect_instance.hpp
     include/fuse/vfx/particle_system.hpp
+    include/fuse/vfx/vfx_ecs_system.hpp
 )
 
 set(FUSE_VFX_SOURCES
@@ -16,6 +17,7 @@ set(FUSE_VFX_SOURCES
     src/particle_gpu.cpp
     src/effect_instance.cpp
     src/particle_system.cpp
+    src/vfx_ecs_system.cpp
 )
 
 # Single-source particle update + compaction kernels (docs/compute-kernels.md): CUDA trampolines.
@@ -36,6 +38,8 @@ target_include_directories(fuse_vfx
 )
 
 target_link_libraries(fuse_vfx PUBLIC fuse_core)
+# GAP-GAME-LOOP-ECS: VfxEcsSystem reads VfxEmitter / Transform components from the ECS registry.
+target_link_libraries(fuse_vfx PUBLIC fuse_ecs)
 
 if(FUSE_CUDA_BACKEND)
     target_link_libraries(fuse_vfx PUBLIC CUDA::cudart)

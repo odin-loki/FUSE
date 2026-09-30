@@ -1,8 +1,11 @@
 #include <fuse/world3d/world_3d.hpp>
 
+#include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
+#include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/world2d/scene_transform.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/platform/thread.hpp>
 
@@ -10,25 +13,45 @@
 
 namespace fuse::world3d {
 
-World3D::World3D() : m_root(std::make_unique<SceneObject3D>("World3DRoot")) {
-    m_physics.init();
-}
+World3D::World3D() : m_root(std::make_unique<SceneObject3D>("World3DRoot")) {}
 
 World3D::~World3D() {
+    m_schedule.shutdown();
+    for (const ObjectEntry& entry : m_objects) {
+        if (SceneObject2D* node = m_handles.resolve(entry.handle)) {
+            m_handles.unpublish(*node);
+        }
+    }
+    m_objects.clear();
     if (m_registryReady) {
         m_registry.destroy();
     }
+}
+
+ecs::Registry& World3D::ownRegistry_() {
+    if (!m_registryReady) {
+        m_registry.init(kRegistryCapacity);
+        m_registryReady = true;
+    }
+    return m_registry;
+}
+
+RuntimeSchedule& World3D::schedule() {
+    if (!m_schedule.initialized()) {
+        // The schedule simulates the world's own registry; an external render registry (the editor's
+        // edited scene) is only drawn, never simulated here.
+        m_schedule.init(ownRegistry_(), m_scheduleDesc);
+        m_schedule.setStageEnabled(RuntimeStage::Physics, m_physicsEnabled);
+        m_schedule.setHook(RuntimeStage::RenderExtract, &World3D::renderExtractHook_, this);
+    }
+    return m_schedule;
 }
 
 ecs::Registry& World3D::registry() {
     if (m_externalRegistry != nullptr) {
         return *m_externalRegistry;
     }
-    if (!m_registryReady) {
-        m_registry.init(kRegistryCapacity);
-        m_registryReady = true;
-    }
-    return m_registry;
+    return ownRegistry_();
 }
 
 void World3D::setMaterial(u32 id, const RenderMaterial3D& material) {
@@ -60,6 +83,7 @@ ecs::EntityID World3D::spawnMesh(BuiltinMesh mesh, u32 materialId, const f32 cen
     t.local_to_world.data[5] = halfExtent[1];
     t.local_to_world.data[10] = halfExtent[2];
     setTranslation(t, center);
+    t.dirty = false; // TRS and local_to_world already agree
     r.add<ecs::Transform>(e, t);
     ecs::Mesh m{};
     m.vertex_buffer = ecs::MeshVertexBufferHandle(static_cast<u32>(mesh), 1);
@@ -108,6 +132,10 @@ ecs::EntityID World3D::spawnDirectionalLight(const f32 toSun[3], const f32 color
     }
     const f32 origin[3] = {0.f, 10.f, 0.f};
     setTranslation(t, origin);
+    // Keep the TRS consistent with the basis so TransformSystem (runtime schedule) rebuilds the same frame.
+    const math::Quat q = scene_math::quatFromBasis({x[0], x[1], x[2]}, {y[0], y[1], y[2]}, {z[0], z[1], z[2]});
+    t.rotation = ecs::quat{q.x, q.y, q.z, q.w};
+    t.dirty = false;
     r.add<ecs::Transform>(e, t);
     ecs::DirectionalLight d{};
     d.color = ecs::vec3{color[0], color[1], color[2], 0.f};
@@ -121,6 +149,7 @@ ecs::EntityID World3D::spawnPointLight(const f32 position[3], const f32 color[3]
     const ecs::EntityID e = r.create();
     ecs::Transform t{};
     setTranslation(t, position);
+    t.dirty = false;
     r.add<ecs::Transform>(e, t);
     ecs::PointLight p{};
     p.color = ecs::vec3{color[0], color[1], color[2], 0.f};
@@ -141,56 +170,262 @@ void World3D::loadWorld(dimension::WorldHandle world) {
     log::info("World3D: load world handle index=%u gen=%u", world.index(), world.generation());
 }
 
-void World3D::addObject(SceneObject3D* object) {
+Handle<Object> World3D::addObject(SceneObject3D* object) {
     if (object == nullptr) {
-        return;
+        return Handle<Object>::invalid();
     }
-    m_objects.push_back(object);
+    if (m_handles.valid(object->handle()) && m_handles.resolve(object->handle()) == object) {
+        return object->handle(); // already in this world
+    }
+    ObjectEntry entry;
+    entry.handle = m_handles.publish(*object);
     if (m_root) {
         m_root->addChild(object);
     }
     if (m_physicsEnabled) {
-        const u32 bodyIndex = m_physics.addSphereBody(object->x(), object->y(), object->z(), 0.5f, 1.f);
-        m_physicsBodyIndices.push_back(bodyIndex);
+        createBody_(entry, *object);
+    }
+    m_objects.push_back(entry);
+    return entry.handle;
+}
+
+void World3D::removeObject(SceneObject3D* object) {
+    if (object == nullptr || m_handles.resolve(object->handle()) != object) {
+        return;
+    }
+    const Handle<Object> handle = object->handle();
+    for (usize i = 0; i < m_objects.size(); ++i) {
+        if (m_objects[i].handle == handle) {
+            destroyBody_(m_objects[i]);
+            m_objects.erase(m_objects.begin() + static_cast<std::ptrdiff_t>(i));
+            break;
+        }
+    }
+    m_handles.unpublish(*object);
+    if (m_root && object->parent() == m_root.get()) {
+        m_root->removeChild(object);
     }
 }
 
+SceneObject3D* World3D::resolve(Handle<Object> handle) const {
+    return asSceneObject3D(m_handles.resolve(handle));
+}
+
+ecs::EntityID World3D::bodyOf(Handle<Object> handle) const {
+    for (const ObjectEntry& entry : m_objects) {
+        if (entry.handle == handle) {
+            return entry.body;
+        }
+    }
+    return ecs::EntityID::null();
+}
+
 void World3D::clearDynamicObjects() {
-    if (m_root) {
-        for (SceneObject3D* object : m_objects) {
-            m_root->removeChild(object);
+    for (ObjectEntry& entry : m_objects) {
+        destroyBody_(entry);
+        if (SceneObject2D* node = m_handles.resolve(entry.handle)) {
+            if (m_root && node->parent() == m_root.get()) {
+                m_root->removeChild(node);
+            }
+            m_handles.unpublish(*node);
         }
     }
     m_objects.clear();
-    m_physicsBodyIndices.clear();
     m_snapshot.clear();
     m_transformSoA.clear();
     m_cullVisible.clear();
 }
 
+void World3D::createBody_(ObjectEntry& entry, SceneObject3D& object) {
+    if (entry.body.valid()) {
+        return;
+    }
+    ecs::Registry& r = ownRegistry_();
+    const math::Mat4& world = object.worldMatrix();
+    math::Vec3 t;
+    math::Quat q;
+    math::Vec3 scale;
+    scene_math::decomposeTRS(world, t, q, scale);
+
+    const ecs::EntityID e = r.create();
+    ecs::Transform transform{};
+    transform.position = ecs::vec3{t.x, t.y, t.z, 1.f};
+    transform.rotation = ecs::quat{q.x, q.y, q.z, q.w};
+    r.add<ecs::Transform>(e, transform);
+
+    ecs::RigidBody body{};
+    body.mass = 1.f;
+    body.inv_mass = 1.f;
+    r.add<ecs::RigidBody>(e, body);
+
+    // The object's physics shape: Box -> box (half width, half height, half width as depth);
+    // Circle -> sphere of physicsRadius; None -> the historical 0.5 m sphere.
+    ecs::Collider collider{};
+    if (object.physicsShape() == PhysicsShape2D::Box) {
+        collider.shape = ecs::Collider::Box;
+        collider.params = ecs::vec3{object.boxHalfWidth(), object.boxHalfHeight(), object.boxHalfWidth(), 0.f};
+    } else {
+        collider.shape = ecs::Collider::Sphere;
+        const f32 radius = object.physicsShape() == PhysicsShape2D::Circle ? object.physicsRadius() : 0.5f;
+        collider.params = ecs::vec3{radius, 0.f, 0.f, 0.f};
+    }
+    if (object.collisionLayer() != 0) {
+        collider.layer = static_cast<u32>(object.collisionLayer());
+    }
+    collider.mask = object.collisionMask();
+    r.add<ecs::Collider>(e, collider);
+
+    entry.body = e;
+    entry.syncedTranslation = t;
+    entry.syncedRotation = q;
+    entry.syncedVersion = object.worldVersion();
+    entry.synced = true;
+}
+
+void World3D::destroyBody_(ObjectEntry& entry) {
+    if (entry.body.valid() && m_registryReady && m_registry.alive(entry.body)) {
+        m_registry.destroy_entity(entry.body);
+    }
+    entry.body = ecs::EntityID::null();
+    entry.synced = false;
+}
+
+void World3D::pruneDeadObjects_() {
+    for (usize i = 0; i < m_objects.size();) {
+        if (!m_handles.valid(m_objects[i].handle)) {
+            destroyBody_(m_objects[i]);
+            m_objects.erase(m_objects.begin() + static_cast<std::ptrdiff_t>(i));
+        } else {
+            ++i;
+        }
+    }
+}
+
+ecs::EntityID World3DPhysics::addStaticPlane(const math::Vec3& normal, f32 distance) {
+    return m_world->addStaticPlane(normal, distance);
+}
+
+u32 World3DPhysics::bodyCount() const {
+    return m_world->physicsManager().bodies().count();
+}
+
+u32 World3DPhysics::contactCount() const {
+    return m_world->physicsManager().solver().contactCount();
+}
+
+physics::PhysicsManager& World3DPhysics::manager() const {
+    return m_world->physicsManager();
+}
+
+ecs::EntityID World3D::addStaticPlane(const math::Vec3& normal, f32 distance) {
+    ecs::Registry& r = ownRegistry_();
+    const ecs::EntityID e = r.create();
+    r.add<ecs::Transform>(e, ecs::Transform{});
+    ecs::RigidBody body{};
+    body.is_static = true;
+    body.mass = 0.f;
+    body.inv_mass = 0.f;
+    r.add<ecs::RigidBody>(e, body);
+    ecs::Collider collider{};
+    collider.shape = ecs::Collider::Plane;
+    const math::Vec3 n = normal.normalized();
+    collider.params = ecs::vec3{n.x, n.y, n.z, 0.f};
+    collider.scalar = distance;
+    r.add<ecs::Collider>(e, collider);
+    return e;
+}
+
+void World3D::setPhysicsEnabled(bool enabled) {
+    if (m_physicsEnabled == enabled) {
+        return;
+    }
+    m_physicsEnabled = enabled;
+    if (m_schedule.initialized()) {
+        m_schedule.setStageEnabled(RuntimeStage::Physics, enabled);
+    }
+    for (ObjectEntry& entry : m_objects) {
+        if (!enabled) {
+            destroyBody_(entry);
+        } else if (SceneObject3D* object = resolve(entry.handle)) {
+            createBody_(entry, *object);
+        }
+    }
+}
+
 void World3D::syncPhysicsFromScene() {
-    for (usize i = 0; i < m_objects.size() && i < m_physicsBodyIndices.size(); ++i) {
-        const SceneObject3D* object = m_objects[i];
-        if (object == nullptr) {
+    // A scene object whose world matrix changed since the last exchange was moved by game code: its
+    // body is teleported (PhysicsManager treats a Transform that differs from what it last wrote as a
+    // teleport / rotation edit and wakes the body).
+    ecs::Registry& r = ownRegistry_();
+    for (ObjectEntry& entry : m_objects) {
+        if (!entry.body.valid()) {
             continue;
         }
-        m_physics.setBodyPosition(m_physicsBodyIndices[i], object->x(), object->y(), object->z());
+        const SceneObject3D* object = resolve(entry.handle);
+        ecs::Transform* transform = r.get<ecs::Transform>(entry.body);
+        if (object == nullptr || transform == nullptr) {
+            continue;
+        }
+        const u64 version = object->worldVersion();
+        if (entry.synced && version == entry.syncedVersion) {
+            continue;
+        }
+        math::Vec3 t;
+        math::Quat q;
+        math::Vec3 scale;
+        scene_math::decomposeTRS(object->worldMatrix(), t, q, scale);
+        transform->position = ecs::vec3{t.x, t.y, t.z, 1.f};
+        transform->rotation = ecs::quat{q.x, q.y, q.z, q.w};
+        transform->dirty = true;
+        entry.syncedTranslation = t;
+        entry.syncedRotation = q;
+        entry.syncedVersion = version;
+        entry.synced = true;
     }
 }
 
 void World3D::syncSceneFromPhysics() {
-    for (usize i = 0; i < m_objects.size() && i < m_physicsBodyIndices.size(); ++i) {
-        SceneObject3D* object = m_objects[i];
-        if (object == nullptr) {
+    ecs::Registry& r = ownRegistry_();
+    for (ObjectEntry& entry : m_objects) {
+        if (!entry.body.valid()) {
             continue;
         }
-        float x = 0.f;
-        float y = 0.f;
-        float z = 0.f;
-        m_physics.getBodyPosition(m_physicsBodyIndices[i], x, y, z);
-        object->setPosition(x, y);
-        object->setZ(z);
+        SceneObject3D* object = resolve(entry.handle);
+        const ecs::Transform* transform = r.get<ecs::Transform>(entry.body);
+        if (object == nullptr || transform == nullptr) {
+            continue;
+        }
+        const math::Vec3 t{transform->position.x, transform->position.y, transform->position.z};
+        const math::Quat q{transform->rotation.x, transform->rotation.y, transform->rotation.z, transform->rotation.w};
+        if (entry.synced && t.x == entry.syncedTranslation.x && t.y == entry.syncedTranslation.y &&
+            t.z == entry.syncedTranslation.z && q.x == entry.syncedRotation.x && q.y == entry.syncedRotation.y &&
+            q.z == entry.syncedRotation.z && q.w == entry.syncedRotation.w) {
+            continue; // body did not move (asleep / static)
+        }
+        const SceneObject2D* parentNode = object->sceneParent();
+        const bool identityParent =
+            parentNode == nullptr || parentNode->worldMatrix().data == math::Mat4::identity().data;
+        if (identityParent) {
+            object->setLocalTranslation(t);
+            object->setLocalRotation(q);
+        } else {
+            object->setWorldPose(t, q);
+        }
+        // Remember the exchanged pose and the resulting world version, so the next pre-physics sync
+        // does not mistake this write-back for a game-side move.
+        entry.syncedTranslation = t;
+        entry.syncedRotation = q;
+        entry.syncedVersion = object->worldVersion();
+        entry.synced = true;
     }
+}
+
+void World3D::renderExtractHook_(void* user, ecs::Registry& /*registry*/, f32 /*dt*/) {
+    World3D& world = *static_cast<World3D*>(user);
+    if (world.m_physicsEnabled) {
+        world.syncSceneFromPhysics();
+    }
+    world.buildSnapshot();
 }
 
 void World3D::buildSnapshot() {
@@ -235,13 +470,14 @@ void World3D::tickGameThread(frame::FrameCtx& ctx) {
         return;
     }
 
+    pruneDeadObjects_();
+    RuntimeSchedule& frameSchedule = schedule();
     if (m_physicsEnabled) {
         syncPhysicsFromScene();
-        m_physics.step(ctx.dt);
-        syncSceneFromPhysics();
     }
-
-    buildSnapshot();
+    // Fixed-step schedule; its RenderExtract stage (renderExtractHook_) writes the bodies back into
+    // the scene objects and builds the snapshot once per frame.
+    frameSchedule.advance(ctx.dt);
 }
 
 void World3D::tick(frame::FrameCtx& ctx) {

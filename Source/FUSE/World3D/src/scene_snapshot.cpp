@@ -1,8 +1,6 @@
 #include <fuse/world3d/scene_snapshot.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
-#include <fuse/world2d/transform_stubs.hpp>
-
-#include <cstring>
+#include <fuse/world2d/scene_transform.hpp>
 
 namespace fuse::world3d {
 
@@ -11,6 +9,7 @@ void SceneTransformSoA3D::clear() {
     worldX.clear();
     worldY.clear();
     worldZ.clear();
+    worldMatrix.clear();
 }
 
 void SceneTransformSoA3D::reserve(u32 objectCount) {
@@ -18,6 +17,7 @@ void SceneTransformSoA3D::reserve(u32 objectCount) {
     worldX.reserve(objectCount);
     worldY.reserve(objectCount);
     worldZ.reserve(objectCount);
+    worldMatrix.reserve(objectCount);
 }
 
 void SceneSnapshot3D::clear() {
@@ -35,39 +35,29 @@ void SceneSnapshot3D::addObject(const ObjectDrawCmd3D& cmd) {
 
 namespace {
 
-void appendNode(const SceneObject3D& node, SceneSnapshot3D& snapshot, SceneTransformSoA3D& soa) {
-    const WorldTransform3D world = node.worldTransform3D();
+/// 2D nodes under a 3D hierarchy are recorded too (their world matrix composes through the 3D
+/// parents; z comes from the matrix).
+void appendNode(const SceneObject2D& node, const SceneObject2D* parent, SceneSnapshot3D& snapshot,
+                SceneTransformSoA3D& soa) {
+    const math::Mat4& world = node.worldMatrixUnder(parent);
 
     ObjectDrawCmd3D cmd;
     cmd.object = node.handle();
-    cmd.x = world.x;
-    cmd.y = world.y;
-    cmd.z = world.z;
+    cmd.x = world.data[12];
+    cmd.y = world.data[13];
+    cmd.z = world.data[14];
     cmd.visible = true;
     snapshot.addObject(cmd);
 
     soa.object.push_back(node.handle());
-    soa.worldX.push_back(world.x);
-    soa.worldY.push_back(world.y);
-    soa.worldZ.push_back(world.z);
+    soa.worldX.push_back(cmd.x);
+    soa.worldY.push_back(cmd.y);
+    soa.worldZ.push_back(cmd.z);
+    soa.worldMatrix.push_back(world);
 
     for (Object* child : node.children()) {
-        if (child != nullptr && std::strcmp(child->typeName(), "SceneObject3D") == 0) {
-            appendNode(*static_cast<SceneObject3D*>(child), snapshot, soa);
-        } else if (const SceneObject2D* child2d = asSceneObject2D(child)) {
-            const WorldTransform2D world2d = child2d->worldTransform();
-            ObjectDrawCmd3D childCmd;
-            childCmd.object = child2d->handle();
-            childCmd.x = world2d.x;
-            childCmd.y = world2d.y;
-            childCmd.z = 0.f;
-            childCmd.visible = true;
-            snapshot.addObject(childCmd);
-
-            soa.object.push_back(child2d->handle());
-            soa.worldX.push_back(world2d.x);
-            soa.worldY.push_back(world2d.y);
-            soa.worldZ.push_back(0.f);
+        if (const SceneObject2D* childNode = asSceneObject2D(child)) {
+            appendNode(*childNode, &node, snapshot, soa);
         }
     }
 }
@@ -80,28 +70,15 @@ void fillSnapshotSoA(const SceneObject3D& node,
                      bool includeNode) {
     snapshot.clear();
     soa.clear();
+    node.worldMatrix();
     if (includeNode) {
-        appendNode(node, snapshot, soa);
+        appendNode(node, node.sceneParent(), snapshot, soa);
         return;
     }
 
     for (Object* child : node.children()) {
-        if (child != nullptr && std::strcmp(child->typeName(), "SceneObject3D") == 0) {
-            appendNode(*static_cast<SceneObject3D*>(child), snapshot, soa);
-        } else if (const SceneObject2D* child2d = asSceneObject2D(child)) {
-            const WorldTransform2D world2d = child2d->worldTransform();
-            ObjectDrawCmd3D childCmd;
-            childCmd.object = child2d->handle();
-            childCmd.x = world2d.x;
-            childCmd.y = world2d.y;
-            childCmd.z = 0.f;
-            childCmd.visible = true;
-            snapshot.addObject(childCmd);
-
-            soa.object.push_back(child2d->handle());
-            soa.worldX.push_back(world2d.x);
-            soa.worldY.push_back(world2d.y);
-            soa.worldZ.push_back(0.f);
+        if (const SceneObject2D* childNode = asSceneObject2D(child)) {
+            appendNode(*childNode, &node, snapshot, soa);
         }
     }
 }

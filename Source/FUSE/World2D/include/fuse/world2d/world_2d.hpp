@@ -4,6 +4,7 @@
 #include <fuse/physics/physics_world_2d.hpp>
 #include <fuse/world2d/cull_fork_join.hpp>
 #include <fuse/world2d/fuselevel_bridge.hpp>
+#include <fuse/world2d/scene_handle_table.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world2d/scene_snapshot.hpp>
 
@@ -50,8 +51,21 @@ public:
     SceneObject2D* root() { return m_root.get(); }
     const SceneObject2D* root() const { return m_root.get(); }
 
-    void addSprite(SceneObject2D* sprite);
+    /// Parents `sprite` under the world root and publishes it in the world's handle table
+    /// (UNI-WP05-1): the returned Handle<Object> is what snapshots and worker jobs carry.
+    Handle<Object> addSprite(SceneObject2D* sprite);
+    /// Unpublishes `sprite` (its handle goes stale) and detaches it from the root; ownership is
+    /// released too when the world owned it (the node is destroyed).
+    void removeSprite(SceneObject2D* sprite);
+    /// removeSprite for a live handle; false when the handle is stale.
+    bool destroySprite(Handle<Object> handle);
     void adoptOwnedSprite(std::unique_ptr<SceneObject2D> sprite);
+
+    /// Game thread: node of a live handle (nullptr once removed or destroyed).
+    SceneObject2D* resolve(Handle<Object> handle) const { return m_handles.resolve(handle); }
+    bool isLive(Handle<Object> handle) const { return m_handles.valid(handle); }
+    const SceneHandleTable& handles() const { return m_handles; }
+    u32 spriteCount() const { return static_cast<u32>(m_sprites.size()); }
     const SceneSnapshot2D& readSnapshot() const { return m_snapshot; }
     const SceneTransformSoA2D& readTransformSoA() const { return m_transformSoA; }
 
@@ -69,6 +83,8 @@ private:
     void syncPhysicsFromScene();
     void syncSceneFromPhysics();
     void clearLoadedSprites_();
+    /// Drops sprites whose node was destroyed while published (stale handles); rebuilds physics.
+    void pruneDeadSprites_();
 
     bool m_enabled = true;
     dimension::WorldHandle m_activeWorld = dimension::WorldHandle::invalid();
@@ -76,8 +92,12 @@ private:
     std::string m_projectRoot;
     std::string m_defaultWorld2DRel;
     FuselevelLoadResult m_lastFuselevelLoad{};
+    /// Declared before the nodes so it outlives them during destruction.
+    SceneHandleTable m_handles;
     std::unique_ptr<SceneObject2D> m_root;
-    std::vector<SceneObject2D*> m_sprites;
+    /// Published sprites (resolved through m_handles every tick: a node destroyed elsewhere is
+    /// dropped instead of being dereferenced).
+    std::vector<Handle<Object>> m_sprites;
     std::vector<std::unique_ptr<SceneObject2D>> m_ownedSprites;
 
     SceneSnapshot2D m_snapshot;

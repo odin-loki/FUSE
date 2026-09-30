@@ -8,6 +8,7 @@
 #include <fuse/ecs/registry.hpp>
 #include <fuse/scene/scene.hpp>
 #include <fuse/types.hpp>
+#include <fuse/world3d/runtime_schedule.hpp>
 
 #include <vector>
 
@@ -189,6 +190,9 @@ public:
     fuse::physics::PhysicsManager& physicsWorld() { return m_physicsWorld; }
     const fuse::physics::PhysicsManager& physicsWorld() const { return m_physicsWorld; }
     bool physicsWorldLive() const { return m_physicsWorldLive; }
+    /// GAP-GAME-LOOP-ECS: the runtime frame schedule PIE runs each simulated step (the same stage
+    /// order as World3D; live between `start` and `stop`).
+    world3d::RuntimeSchedule& runtimeSchedule() { return m_schedule; }
 
 private:
     struct DirtySnapshot {
@@ -204,11 +208,14 @@ private:
     /// `physicsDt` <= 0 advances counters only.
     void simulateStep_(EditorScene& editorScene, PlayModePhysicsState& physics, f32 physicsDt);
     void coalesceTransformDirty_(EditorScene& editorScene);
+    static void stepPhysicsStage_(void* user, ecs::Registry& registry, f32 dt);
 
     PlayModeController m_controller;
     fuse::physics::PhysicsManager m_physicsWorld{};
     fuse::physics::PhysicsStreamManager m_physicsStreams{};
     bool m_physicsWorldLive = false;
+    world3d::RuntimeSchedule m_schedule;
+    PlayModePhysicsState* m_stepPhysicsState = nullptr;
     DirtySnapshot m_dirtySnapshot{};
     PlayWorldSnapshot m_worldSnapshot{};
     ecs::Registry m_registrySnapshot{};

@@ -1,12 +1,14 @@
 add_library(fuse_world2d STATIC
     src/scene_object_2d.cpp
     src/scene_snapshot.cpp
-    src/transform_stubs.cpp
+    src/scene_transform.cpp
+    src/scene_handle_table.cpp
     src/world_2d.cpp
     include/fuse/world2d/cull_fork_join.hpp
     include/fuse/world2d/scene_object_2d.hpp
     include/fuse/world2d/scene_snapshot.hpp
-    include/fuse/world2d/transform_stubs.hpp
+    include/fuse/world2d/scene_transform.hpp
+    include/fuse/world2d/scene_handle_table.hpp
     include/fuse/world2d/fuselevel_bridge.hpp
     include/fuse/world2d/world_2d.hpp
 )

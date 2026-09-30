@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <span>
+#include <vector>
 
 namespace fuse::animation {
 
@@ -82,8 +84,8 @@ mat4 rotation_about_pivot(const quat& rotation, const vec3& pivot) {
 /// Rotate each chain bone's subtree so the chain passes through `solved` (world matrices, AoS).
 void apply_chain_positions(Pose& pose,
                            const Skeleton& skel,
-                           const std::vector<u32>& chain,
-                           const std::vector<vec3>& solved) {
+                           std::span<const u32> chain,
+                           std::span<const vec3> solved) {
     for (size_t i = 0; i + 1 < chain.size(); ++i) {
         const vec3 pivot = bone_translation(pose, chain[i]);
         const vec3 child = bone_translation(pose, chain[i + 1]);
@@ -101,8 +103,8 @@ void apply_chain_positions(Pose& pose,
 /// SoA variant: rewrites the chain bones' local TRS so the chain passes through `solved`.
 void apply_chain_positions(PoseSoA& pose,
                            const Skeleton& skel,
-                           const std::vector<u32>& chain,
-                           const std::vector<vec3>& solved) {
+                           std::span<const u32> chain,
+                           std::span<const vec3> solved) {
     pose.compute_world_transforms(skel);
     for (size_t i = 0; i + 1 < chain.size(); ++i) {
         const u32 bone = chain[i];
@@ -638,7 +640,10 @@ bool TwoBoneIK::solve(Pose& pose, const Skeleton& skel) {
         return false;
     }
 
-    apply_chain_positions(pose, skel, {root_bone, mid_bone, end_bone}, {root, solvedMid, solvedEnd});
+    // Fixed-size chain on the stack (no per-solve heap allocation; MP-B7.1-PARALLEL-EVAL).
+    const u32 chain[3] = {root_bone, mid_bone, end_bone};
+    const vec3 solved[3] = {root, solvedMid, solvedEnd};
+    apply_chain_positions(pose, skel, chain, solved);
     return true;
 }
 
@@ -662,7 +667,10 @@ bool TwoBoneIK::solve(PoseSoA& pose, const Skeleton& skel) {
         return false;
     }
 
-    apply_chain_positions(pose, skel, {root_bone, mid_bone, end_bone}, {root, solvedMid, solvedEnd});
+    // Fixed-size chain on the stack (no per-solve heap allocation; MP-B7.1-PARALLEL-EVAL).
+    const u32 chain[3] = {root_bone, mid_bone, end_bone};
+    const vec3 solved[3] = {root, solvedMid, solvedEnd};
+    apply_chain_positions(pose, skel, chain, solved);
     return true;
 }
 

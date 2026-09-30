@@ -1,11 +1,29 @@
 #include <fuse/animation/blend_tree.hpp>
 
+#include <fuse/animation/animation_system.hpp>
+
 #include <algorithm>
 #include <cmath>
+#include <memory>
+#include <vector>
 
 namespace fuse::animation {
 
 namespace {
+
+/// A bind-pose scratch pose for the current scope (released in LIFO order).
+/// Borrowed from current_pose_scratch() (animation_system.hpp): per-task pools under AnimationSystem,
+/// a thread-local pool otherwise; heap-free once the pool has grown to the tree depth.
+struct ScratchPose {
+    PoseScratchStack& stack;
+    PoseSoA& pose;
+    explicit ScratchPose(const Skeleton& skel) : stack(current_pose_scratch()), pose(stack.push()) {
+        pose.assign_bind_pose(skel);
+    }
+    ~ScratchPose() { stack.pop(); }
+    ScratchPose(const ScratchPose&) = delete;
+    ScratchPose& operator=(const ScratchPose&) = delete;
+};
 
 void blend_poses_soa(const PoseSoA& a, const PoseSoA& b, f32 weight, PoseSoA& out) {
     blend_pose_soa(a, b, weight, out);
@@ -111,12 +129,13 @@ BlendSpace1DSample sample_blend_space_1d(const BlendSpace1D& space, f32 value) {
     return sample;
 }
 
-BlendSpace2DSample sample_blend_space_2d(const BlendSpace2D& space, vec2 value) {
-    BlendSpace2DSample sample{};
-    sample.weights.resize(space.entries.size(), 0.f);
+namespace {
 
+/// Normalised inverse-distance weights into `weights` (resized to the entry count; reuses capacity).
+void blend_space_2d_weights(const BlendSpace2D& space, vec2 value, std::vector<f32>& weights) {
+    weights.assign(space.entries.size(), 0.f);
     if (space.entries.empty()) {
-        return sample;
+        return;
     }
 
     f32 totalWeight = 0.f;
@@ -125,16 +144,22 @@ BlendSpace2DSample sample_blend_space_2d(const BlendSpace2D& space, vec2 value) 
         const f32 dy = value.y - space.entries[i].param.y;
         const f32 distanceSq = dx * dx + dy * dy;
         const f32 weight = 1.f / (distanceSq + 1e-4f);
-        sample.weights[i] = weight;
+        weights[i] = weight;
         totalWeight += weight;
     }
 
     if (totalWeight > 0.f) {
-        for (f32& weight : sample.weights) {
+        for (f32& weight : weights) {
             weight /= totalWeight;
         }
     }
+}
 
+} // namespace
+
+BlendSpace2DSample sample_blend_space_2d(const BlendSpace2D& space, vec2 value) {
+    BlendSpace2DSample sample{};
+    blend_space_2d_weights(space, value, sample.weights);
     return sample;
 }
 
@@ -215,8 +240,10 @@ void BlendNode2::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
         return;
     }
 
-    PoseSoA poseA = PoseSoA::from_bind_pose(skel);
-    PoseSoA poseB = PoseSoA::from_bind_pose(skel);
+    ScratchPose scratchA(skel);
+    ScratchPose scratchB(skel);
+    PoseSoA& poseA = scratchA.pose;
+    PoseSoA& poseB = scratchB.pose;
 
     if (a) {
         a->evaluate_soa(dt, skel, poseA);
@@ -246,8 +273,10 @@ void BlendSpace1D::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
     const f32 value = param ? *param : 0.f;
     const BlendSpace1DSample sample = sample_blend_space_1d(*this, value);
 
-    PoseSoA poseA = PoseSoA::from_bind_pose(skel);
-    PoseSoA poseB = PoseSoA::from_bind_pose(skel);
+    ScratchPose scratchA(skel);
+    ScratchPose scratchB(skel);
+    PoseSoA& poseA = scratchA.pose;
+    PoseSoA& poseB = scratchB.pose;
     if (entries[sample.lower_index].clip) {
         entries[sample.lower_index].clip->evaluate_soa(dt, skel, poseA);
         ensure_pose_soa_bind_fallback(poseA, skel);
@@ -282,20 +311,25 @@ void BlendSpace2D::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) {
     }
 
     const vec2 value = param ? *param : vec2{};
-    const BlendSpace2DSample sample = sample_blend_space_2d(*this, value);
-    PoseSoA result = PoseSoA::from_bind_pose(skel);
+    PoseScratchStack& scratchStack = current_pose_scratch();
+    std::vector<f32>& weights = scratchStack.push_weights();
+    blend_space_2d_weights(*this, value, weights);
+    ScratchPose scratchResult(skel);
+    PoseSoA& result = scratchResult.pose;
     f32 accumulatedWeight = 0.f;
 
     for (u32 i = 0; i < entries.size(); ++i) {
-        if (!entries[i].clip || sample.weights[i] <= 0.f) {
+        if (!entries[i].clip || weights[i] <= 0.f) {
             continue;
         }
 
-        PoseSoA entrySoa = PoseSoA::from_bind_pose(skel);
+        ScratchPose scratchEntry(skel);
+        PoseSoA& entrySoa = scratchEntry.pose;
         entries[i].clip->evaluate_soa(dt, skel, entrySoa);
         ensure_pose_soa_bind_fallback(entrySoa, skel);
-        accumulate_weighted_pose_soa(result, accumulatedWeight, entrySoa, sample.weights[i]);
+        accumulate_weighted_pose_soa(result, accumulatedWeight, entrySoa, weights[i]);
     }
+    scratchStack.pop_weights();
 
     finalize_weighted_pose_soa(result, accumulatedWeight, skel, out);
     ensure_pose_soa_bind_fallback(out, skel);
@@ -307,8 +341,11 @@ void LayeredBlendNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) 
         return;
     }
 
-    PoseSoA baseSoa = PoseSoA::from_bind_pose(skel);
-    PoseSoA layerSoa = PoseSoA::from_bind_pose(skel);
+    ScratchPose scratchBase(skel);
+    ScratchPose scratchLayer(skel);
+    ScratchPose scratchResult(skel);
+    PoseSoA& baseSoa = scratchBase.pose;
+    PoseSoA& layerSoa = scratchLayer.pose;
 
     if (base) {
         base->evaluate_soa(dt, skel, baseSoa);
@@ -319,7 +356,8 @@ void LayeredBlendNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) 
         ensure_pose_soa_bind_fallback(layerSoa, skel);
     }
 
-    PoseSoA result = baseSoa;
+    PoseSoA& result = scratchResult.pose;
+    result = baseSoa;
     const f32 weight = std::clamp(layer_weight, 0.f, 1.f);
     for (u32 boneIndex : masked_bones) {
         if (boneIndex >= result.bone_count) {
@@ -355,8 +393,11 @@ void AdditiveBlendNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out)
         return;
     }
 
-    PoseSoA baseSoa = PoseSoA::from_bind_pose(skel);
-    PoseSoA layerSoa = PoseSoA::from_bind_pose(skel);
+    ScratchPose scratchBase(skel);
+    ScratchPose scratchLayer(skel);
+    ScratchPose scratchBind(skel);
+    PoseSoA& baseSoa = scratchBase.pose;
+    PoseSoA& layerSoa = scratchLayer.pose;
 
     if (base) {
         base->evaluate_soa(dt, skel, baseSoa);
@@ -367,7 +408,7 @@ void AdditiveBlendNode::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out)
         ensure_pose_soa_bind_fallback(layerSoa, skel);
     }
 
-    const PoseSoA bindSoa = PoseSoA::from_bind_pose(skel);
+    const PoseSoA& bindSoa = scratchBind.pose;
     add_pose_soa(baseSoa, layerSoa, bindSoa, layer_weight, masked_bones, out);
     ensure_pose_soa_bind_fallback(out, skel);
     out.compute_world_transforms(skel);
@@ -718,7 +759,8 @@ void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) 
         }
 
         blend_time += dt;
-        PoseSoA targetSoa = PoseSoA::from_bind_pose(skel);
+        ScratchPose scratchTarget(skel);
+        PoseSoA& targetSoa = scratchTarget.pose;
         if (pending_state < states.size() && states[pending_state].node) {
             states[pending_state].node->evaluate_soa(dt, skel, targetSoa);
             ensure_pose_soa_bind_fallback(targetSoa, skel);
@@ -770,7 +812,8 @@ void AnimStateMachine::evaluate_soa(f32 dt, const Skeleton& skel, PoseSoA& out) 
         blend_time = blend_duration <= 0.f ? blend_duration : dt;
         is_transitioning = true;
 
-        PoseSoA targetSoa = PoseSoA::from_bind_pose(skel);
+        ScratchPose scratchTarget(skel);
+        PoseSoA& targetSoa = scratchTarget.pose;
         if (states[pending_state].node) {
             states[pending_state].node->evaluate_soa(dt, skel, targetSoa);
             ensure_pose_soa_bind_fallback(targetSoa, skel);

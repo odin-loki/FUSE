@@ -112,6 +112,11 @@ add_executable(fuse_editor_play_session_tests
 target_link_libraries(fuse_editor_play_session_tests PRIVATE fuse_editor_api fuse_core fuse_scene)
 add_test(NAME fuse_editor_play_session COMMAND fuse_editor_play_session_tests)
 
+# GAP-GAME-LOOP-ECS: PIE runs the World3D runtime schedule (physics, animation, VFX) and Stop restores.
+add_executable(fuse_editor_play_session_schedule_tests test_play_session_schedule.cpp)
+target_link_libraries(fuse_editor_play_session_schedule_tests PRIVATE fuse_editor_api fuse_core fuse_scene)
+add_test(NAME fuse_editor_play_session_schedule COMMAND fuse_editor_play_session_schedule_tests)
+
 add_executable(fuse_editor_gizmo_system_tests
     test_gizmo_system.cpp
 )

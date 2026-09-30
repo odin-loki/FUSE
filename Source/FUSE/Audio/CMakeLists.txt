@@ -9,6 +9,7 @@ set(FUSE_AUDIO_PUBLIC_HEADERS
     include/fuse/audio/audio_components.hpp
     include/fuse/audio/audio_desc.hpp
     include/fuse/audio/audio_engine.hpp
+    include/fuse/audio/audio_ecs_system.hpp
     include/fuse/audio/audio_registry.hpp
     include/fuse/audio/attenuation.hpp
     include/fuse/audio/audio_bus.hpp
@@ -34,6 +35,7 @@ set(FUSE_AUDIO_SOURCES
     src/audio_stream.cpp
     src/vorbis_memory_io.hpp
     src/audio_engine.cpp
+    src/audio_ecs_system.cpp
     src/audio_registry.cpp
     src/conv_reverb_cpu.cpp
     src/occlusion.cpp
@@ -55,6 +57,8 @@ target_include_directories(fuse_audio
 )
 
 target_link_libraries(fuse_audio PUBLIC fuse_core)
+# GAP-GAME-LOOP-ECS: AudioEcsSystem reads AudioSource / AudioListener / Transform from the ECS registry.
+target_link_libraries(fuse_audio PUBLIC fuse_ecs)
 
 # Vendored xiph codecs (cmake/FuseXiph.cmake): runtime Ogg Vorbis / FLAC decode, Vorbis encode.
 include("${CMAKE_SOURCE_DIR}/cmake/FuseXiph.cmake")

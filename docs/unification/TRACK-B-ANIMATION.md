@@ -204,7 +204,7 @@ ctest --test-dir build --output-on-failure -R fuse_animation_runtime
 - [x] `pose_soa_matches_bind` helper and empty layered/additive blend-node fallback tests
 - [x] Additive blend weight clamp, empty clip/1D SoA, and state reset/edge-case tests
 - [ ] CUDA skinning device kernel — deferred
-- [ ] Job-system parallel evaluate — deferred
+- [x] Job-system parallel evaluate (MP-B7.1-PARALLEL-EVAL): `AnimationSystem` (`include/fuse/animation/animation_system.hpp`) keeps Animators in a generation-checked pool referenced by the `AnimatorRef` ECS component and evaluates every one (state machine / blend tree, optional two-bone IK, FK, skinning palette) over `JobScheduler::parallel_for`, one contiguous range + scratch `PoseSoA` + blend-node scratch pool (`PoseScratchStack`, installed per task) per task; blend nodes and TwoBoneIK no longer allocate per evaluation. Gate `fuse_animation_system_gates`: 1000 Animators with crossfades, BlendNode2 and IK — parallel (3 workers, 4 tasks) == `update_serial` bit-identical every frame over 240 frames, 1-worker run reproduces every frame, 0 heap allocations per steady-state update
 
 ---
 
