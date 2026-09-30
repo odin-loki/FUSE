@@ -172,11 +172,14 @@ const char* cookFailureName(CookFailure failure) {
 
 CookStubWriteResult tryCookMeshAssimp(const std::string& input_path, const std::string& output_path,
                                       u32 lod_count, bool compressed) {
-    // LOD generation and vertex compression are not implemented yet; the knobs only feed the
-    // cache key. The cooked output is the lossless FMSH binary (see mesh_cook.hpp).
-    (void)lod_count;
-    (void)compressed;
-    return cook_mesh_file(input_path, output_path);
+    // GREP-COOK-1: lod_count (levels including LOD 0) -> the W0.2 discrete LOD chain,
+    // compressed -> FMSH v2 quantised positions (unorm16) and normals (oct snorm16). The lenient path
+    // only asks for a LOD chain when this build can make one (else the lossless LOD 0 mesh is cooked).
+    MeshCookOptions options;
+    options.optimize.lods = lod_options_for_count(lod_count, options.optimize.lod) && mesh_optimizer_available();
+    options.encoding.quantize_positions = compressed;
+    options.encoding.quantize_normals = compressed;
+    return cook_mesh_file(input_path, output_path, options);
 }
 
 CookStubWriteResult tryCookTextureBc7(const std::string& input_path, const std::string& output_path,

@@ -245,30 +245,82 @@ const char* importValidationName(ImportValidation mode) {
     return mode == ImportValidation::Strict ? "strict" : "lenient";
 }
 
+namespace {
+
+/// GREP-COOK-1 / RE-P1-7: every MeshImportDesc knob the cook honours, as MeshCookOptions.
+fuse::cook::MeshCookOptions mesh_cook_options(const MeshImportDesc& desc) {
+    fuse::cook::MeshCookOptions options;
+    options.generate_normals = desc.generate_normals;
+    options.import_tangents = desc.fmsh_v2_streams && desc.generate_tangents;
+    options.import_uv1 = desc.fmsh_v2_streams;
+    options.import_colors = desc.fmsh_v2_streams;
+    options.import_skin = desc.fmsh_v2_streams;
+    options.import_material_names = desc.fmsh_v2_streams;
+    const bool quantize = desc.quantize_vertices || desc.compress;
+    options.encoding.quantize_positions = quantize;
+    options.encoding.quantize_normals = quantize;
+    options.optimize.lods =
+        desc.generate_lods && fuse::cook::lod_options_for_count(desc.lod_count, options.optimize.lod);
+    options.optimize.meshlets = desc.meshlets || desc.cluster_dag || desc.cluster_pages;
+    options.optimize.cluster_dag = desc.cluster_dag || desc.cluster_pages;
+    options.optimize.cluster_pages = desc.cluster_pages;
+    options.optimize.page_bytes = desc.page_bytes;
+    return options;
+}
+
+} // namespace
+
 CookRecord AssetCooker::cook_mesh(const MeshImportDesc& desc) {
+    const fuse::cook::MeshCookOptions options = mesh_cook_options(desc);
+    const u32 lodLevels = options.optimize.lods ? desc.lod_count : 0u;
+    const bool quantized = options.encoding.quantize_positions;
     std::ostringstream note;
-    note << (strict_import() ? "mesh cook" : "stub mesh cook") << " (lods=" << (desc.generate_lods ? desc.lod_count : 0u)
-         << ", compress=" << (desc.compress ? "on" : "off") << ")";
+    note << (strict_import() ? "mesh cook" : "stub mesh cook") << " (lods=" << lodLevels
+         << ", compress=" << (quantized ? "on" : "off");
+    if (options.optimize.meshlets) {
+        note << ", meshlets=on";
+    }
+    if (options.optimize.cluster_dag) {
+        note << ", dag=on";
+    }
+    if (options.optimize.cluster_pages) {
+        note << ", pages=on";
+    }
+    note << ")";
     const u64 content_hash = hash_mesh_import(desc);
     const bool strict = strict_import();
+
+    if (desc.cluster_pages) {
+        // RE-P1-7 stale detection: the page flags are part of the cache key; on top of that a cached FMSH
+        // is only reused while the `.fusepages` next to it exists and binds to it (links hash + counts).
+        // (contains(): a probe, not a counted lookup; the key hashes output_path, so that is the entry's output.)
+        const u64 cache_key = effective_cache_key_(content_hash, 0);
+        if (is_valid_cook_cache_key(cache_key) && m_cache.contains(cache_key)) {
+            fuse::cook::CookedMesh mesh;
+            if (!fuse::cook::load_cooked_mesh(desc.output_path, mesh) ||
+                !fuse::cook::cluster_pages_bind_to_mesh(mesh, fuse::cook::cluster_pages_path(desc.output_path))) {
+                (void)m_cache.invalidate(cache_key);
+            }
+        }
+    }
+
+    const bool wantsSections = options.optimize.meshlets || options.optimize.cluster_pages;
     return cook_with_cache_(CookAssetKind::Mesh, desc.input_path, desc.output_path, content_hash, 0,
-                            note.str().c_str(), [&desc, strict]() {
+                            note.str().c_str(), [&desc, &options, strict, wantsSections, lodLevels, quantized]() {
                                 if (strict) {
-                                    fuse::cook::MeshCookOptions options;
-                                    options.generate_normals = desc.generate_normals;
-                                    options.import_tangents = desc.fmsh_v2_streams && desc.generate_tangents;
-                                    options.import_uv1 = desc.fmsh_v2_streams;
-                                    options.import_colors = desc.fmsh_v2_streams;
-                                    options.import_skin = desc.fmsh_v2_streams;
-                                    options.import_material_names = desc.fmsh_v2_streams;
-                                    options.encoding.quantize_positions = desc.quantize_vertices;
-                                    options.encoding.quantize_normals = desc.quantize_vertices;
                                     return to_outcome(
                                         fuse::cook::cook_mesh_file(desc.input_path, desc.output_path, options));
                                 }
-                                return to_outcome(fuse::cook::write_mesh_stub(
-                                    desc.input_path, desc.output_path, desc.generate_lods ? desc.lod_count : 0u,
-                                    desc.compress));
+                                if (wantsSections) {
+                                    // Lenient: the full cook when it works, else the stub path below.
+                                    const fuse::cook::CookStubWriteResult full =
+                                        fuse::cook::cook_mesh_file(desc.input_path, desc.output_path, options);
+                                    if (full.ok) {
+                                        return to_outcome(full);
+                                    }
+                                }
+                                return to_outcome(fuse::cook::write_mesh_stub(desc.input_path, desc.output_path,
+                                                                              lodLevels, quantized));
                             });
 }
 

@@ -130,6 +130,13 @@ u64 hash_mesh_import(const MeshImportDesc& desc) {
         hash = fnv1a64_combine(hash, hash_bool(desc.fmsh_v2_streams));
         hash = fnv1a64_combine(hash, hash_bool(desc.quantize_vertices));
     }
+    if (desc.meshlets || desc.cluster_dag || desc.cluster_pages) {
+        // RE-P1-7: only folded in when set, so cooks without renderer sections keep their cache keys.
+        hash = fnv1a64_combine(hash, hash_bool(desc.meshlets));
+        hash = fnv1a64_combine(hash, hash_bool(desc.cluster_dag));
+        hash = fnv1a64_combine(hash, hash_bool(desc.cluster_pages));
+        hash = fnv1a64_combine(hash, hash_u64(desc.cluster_pages ? desc.page_bytes : 0u));
+    }
     hash = fnv1a64_combine(hash, hash_u64(kCookFormatVersion));
     return hash;
 }

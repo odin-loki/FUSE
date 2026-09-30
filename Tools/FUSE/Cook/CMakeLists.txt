@@ -47,6 +47,11 @@ if(TARGET fuse_geometry_dag)
     target_link_libraries(fuse_cook_stubs PRIVATE fuse_geometry_dag)
     target_compile_definitions(fuse_cook_stubs PRIVATE FUSE_COOK_HAS_GEOMETRY_DAG=1)
 endif()
+# RE-P1-7: the WP-5.3 page builder (Source/FUSE/Renderer/cmake/rp_wp53.cmake) for the `.fusepages` cook.
+if(TARGET fuse_geometry_streaming)
+    target_link_libraries(fuse_cook_stubs PRIVATE fuse_geometry_streaming)
+    target_compile_definitions(fuse_cook_stubs PRIVATE FUSE_COOK_HAS_GEOMETRY_STREAMING=1)
+endif()
 
 find_package(assimp QUIET)
 if(assimp_FOUND OR ASSIMP_FOUND)

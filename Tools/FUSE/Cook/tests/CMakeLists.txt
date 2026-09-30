@@ -59,3 +59,23 @@ if(TARGET fuse_meshoptimizer)
         set_tests_properties(fuse_asset_mesh_${_suite} PROPERTIES LABELS "asset;gate" TIMEOUT 600)
     endforeach()
 endif()
+
+# E05 (RE-P1-7, GREP-COOK-1): mesh cook completeness — lod_count / compress / meshlets / DAG / .fusepages
+# through AssetCooker (fuse_project, defined after this directory; resolved at generate time) and the
+# fuse_cook CLI. Needs meshoptimizer + the renderer geometry DAG / streaming libraries.
+if(TARGET fuse_meshoptimizer AND TARGET fuse_geometry_dag AND TARGET fuse_geometry_streaming)
+    add_executable(fuse_asset_mesh_cook_complete_tests test_mesh_cook_complete.cpp)
+    target_link_libraries(fuse_asset_mesh_cook_complete_tests PRIVATE fuse_project fuse_cook_stubs fuse_geometry_streaming fuse_core)
+    target_compile_definitions(fuse_asset_mesh_cook_complete_tests PRIVATE
+        "FUSE_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"" "FUSE_TEST_OUT_DIR=\"${CMAKE_CURRENT_BINARY_DIR}\"")
+    if(COMMAND fuse_apply_cxx23)
+        fuse_apply_cxx23(fuse_asset_mesh_cook_complete_tests)
+    endif()
+    if(FUSE_BUILD_TOOLS)
+        add_dependencies(fuse_asset_mesh_cook_complete_tests fuse_cook)
+        add_test(NAME fuse_asset_mesh_cook_complete COMMAND fuse_asset_mesh_cook_complete_tests "$<TARGET_FILE:fuse_cook>")
+    else()
+        add_test(NAME fuse_asset_mesh_cook_complete COMMAND fuse_asset_mesh_cook_complete_tests)
+    endif()
+    set_tests_properties(fuse_asset_mesh_cook_complete PROPERTIES LABELS "asset;gate" TIMEOUT 600 SKIP_RETURN_CODE 77)
+endif()

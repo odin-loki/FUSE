@@ -52,7 +52,17 @@ struct MeshOptimizeOptions {
     MeshLodOptions lod{};
     bool meshlets = false;     ///< WP-1.2 meshlet table (renderer fuse_geometry)
     bool cluster_dag = false;  ///< WP-5.2 cluster DAG (implies meshlets)
+    /// RE-P1-7: also write the WP-5.3 cluster page file (FCPG, `.fusepages`, see
+    /// `cluster_pages_path`) next to the FMSH, built from the same DAG (implies cluster_dag). Without it
+    /// a `.fusepages` left next to the output by an earlier cook is removed (it would no longer bind).
+    bool cluster_pages = false;
+    u32 page_bytes = 64u * 1024u; ///< page payload capacity (multiple of 16, >= 1024)
 };
+
+/// GREP-COOK-1: LOD options for a manifest / import `lod_count` (levels including LOD 0). 0 or 1: no
+/// LOD chain (returns false). N > 1: N - 1 target ratios, the MeshLodOptions defaults
+/// (0.5, 0.25, 0.1) first, then halving. The chain may still stop early (the min_reduction rule).
+bool lod_options_for_count(u32 lod_count, MeshLodOptions& out);
 
 /// Optional post-write hook for `cook_mesh_file` (WP-1.2: the renderer's meshlet cook installs one
 /// that writes a `.fusemeshlet` sidecar, see Source/FUSE/Renderer/geometry/meshlet_cook_hook.hpp).
@@ -132,6 +142,30 @@ bool build_mesh_meshlets(CookedMesh& mesh, bool with_dag, std::string* error = n
 /// Screen-space LOD switch distance: the distance at which an object-space `error` projects to
 /// `pixels` on a viewport `viewport_height_px` tall with vertical field of view `fov_y_radians`.
 [[nodiscard]] f32 lod_switch_distance(f32 error, f32 fov_y_radians, f32 viewport_height_px, f32 pixels = 1.f);
+
+/// RE-P1-7: `foo/bar.fusemesh` -> `foo/bar.fusepages` (any other extension is replaced the same way).
+[[nodiscard]] std::string cluster_pages_path(const std::string& fusemesh_path);
+
+/// True when this build links the renderer's WP-5.3 page builder (`.fusepages` cook available).
+[[nodiscard]] bool mesh_cluster_pages_available();
+
+/// RE-P1-7: build the `.fusepages` bytes for `mesh`, which must carry the meshlet + DAG sections built
+/// by `build_mesh_meshlets(mesh, true)` from its current (float) streams: the renderer DAG mesh is
+/// rebuilt deterministically, checked equal to the FMSH sections, paged with build_cluster_pages and
+/// validated against that DAG (validate_cluster_page_file) before serializing.
+bool build_mesh_cluster_pages(const CookedMesh& mesh, u32 page_bytes, std::vector<u8>& out,
+                              std::string* error = nullptr);
+
+/// Full check of a `.fusepages` file against `mesh` (float streams + DAG sections, e.g. the imported
+/// source): the rebuilt DAG equals the mesh's sections and validate_cluster_page_file passes.
+bool validate_mesh_cluster_pages(const CookedMesh& mesh, const std::string& pages_path,
+                                 std::string* error = nullptr);
+
+/// Cheap binding check of a `.fusepages` file against a loaded FMSH (works on quantised files): the
+/// file parses, its layout validates, its cluster / group / leaf counts match the FMSH DAG section and
+/// its links_hash equals the hash of the FMSH DCLK links. Used for cache liveness (stale detection).
+bool cluster_pages_bind_to_mesh(const CookedMesh& mesh, const std::string& pages_path,
+                                std::string* error = nullptr);
 
 /// Import + serialize + write. Fails without writing when the source cannot be imported; the
 /// result's `failure` says why (see `import_mesh_file`).

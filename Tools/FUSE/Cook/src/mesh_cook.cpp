@@ -779,9 +779,18 @@ CookStubWriteResult cook_mesh_file(const std::string& input_path, const std::str
         result.failure = mesh_optimizer_available() ? CookFailure::InvalidGeometry : CookFailure::ImporterUnavailable;
         return result;
     }
-    if ((optimize.meshlets || optimize.cluster_dag) && !build_mesh_meshlets(mesh, optimize.cluster_dag, &error)) {
+    const bool wantDag = optimize.cluster_dag || optimize.cluster_pages;
+    if ((optimize.meshlets || wantDag) && !build_mesh_meshlets(mesh, wantDag, &error)) {
         result.note = error;
         result.failure = mesh_meshlets_available() ? CookFailure::InvalidGeometry : CookFailure::ImporterUnavailable;
+        return result;
+    }
+    // RE-P1-7: the .fusepages is built (and validated against the DAG) before anything is written, so a
+    // failed page build never leaves a new FMSH without its pages.
+    std::vector<u8> pageBytes;
+    if (optimize.cluster_pages && !build_mesh_cluster_pages(mesh, optimize.page_bytes, pageBytes, &error)) {
+        result.note = error;
+        result.failure = mesh_cluster_pages_available() ? CookFailure::InvalidGeometry : CookFailure::ImporterUnavailable;
         return result;
     }
     const std::vector<u8> bytes = serialize_cooked_mesh(mesh, options.encoding);
@@ -804,6 +813,32 @@ CookStubWriteResult cook_mesh_file(const std::string& input_path, const std::str
     result.note = result.ok ? ("mesh cooked, vertices=" + std::to_string(mesh.vertex_count()) +
                                " triangles=" + std::to_string(mesh.indices.size() / 3u))
                             : "cooked mesh write failed";
+    if (result.ok && !mesh.lods.empty()) {
+        result.note += " lods=" + std::to_string(mesh.lods.size() + 1u);
+    }
+    if (result.ok && !mesh.meshlets.empty()) {
+        result.note += " meshlets=" + std::to_string(mesh.meshlets.meshlets.size());
+    }
+    if (result.ok && !mesh.cluster_dag.empty()) {
+        result.note += " dag_clusters=" + std::to_string(mesh.cluster_dag.cluster_count());
+    }
+    const std::string pagesPath = cluster_pages_path(output_path);
+    if (result.ok && optimize.cluster_pages) {
+        std::ofstream pages(pagesPath, std::ios::binary | std::ios::trunc);
+        if (pages) {
+            pages.write(reinterpret_cast<const char*>(pageBytes.data()), static_cast<std::streamsize>(pageBytes.size()));
+        }
+        if (!pages || !pages.good()) {
+            result.ok = false;
+            result.failure = CookFailure::WriteFailed;
+            result.note = "cluster page file write failed: " + pagesPath;
+            return result;
+        }
+        result.note += " pages=" + pagesPath + " (" + std::to_string(pageBytes.size()) + " bytes)";
+    } else if (result.ok) {
+        // A page file from an earlier cook of this output no longer binds to the new FMSH.
+        std::filesystem::remove(pagesPath, ec);
+    }
     if (result.ok && options.post_hook != nullptr) {
         out.close();
         std::string hookNote;

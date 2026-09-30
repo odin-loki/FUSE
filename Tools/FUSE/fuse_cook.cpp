@@ -21,7 +21,7 @@ void printUsage() {
                  "Usage:\n"
                  "  fuse_cook --project <dir> [--dry-run]     Plan default cook manifest for project\n"
                  "  fuse_cook --manifest <cook.json> [--dry-run]  Load cook_manifest.json and plan/cook\n"
-                 "  fuse_cook --mesh --input <path> --output <path>   Stub mesh cook\n"
+                 "  fuse_cook --mesh --input <path> --output <path>   Mesh cook (.fusemesh FMSH; see mesh options)\n"
                  "  fuse_cook --texture --input <path> --output <path> Texture cook (.png/.tga/.jpg/.hdr/.ktx2 in;\n"
                  "             .fusetex out, or .ktx2 out for KTX2 transport export)\n"
                  "  fuse_cook --audio --input <path> --output <path>  Stub audio cook\n"
@@ -40,7 +40,13 @@ void printUsage() {
                  "  --no-mips      Level 0 only\n"
                  "Mesh options (asset plan W0.1):\n"
                  "  --fmsh-v2      FMSH v2 streams (tangent, uv1, colour, skin, material slots)\n"
-                 "  --quantize     FMSH v2 quantised positions (unorm16) and normals (oct16)\n");
+                 "  --quantize     FMSH v2 quantised positions (unorm16) and normals (oct16)\n"
+                 "  --compress     Same as --quantize (the import descriptor's `compress`)\n"
+                 "  --lods <N>     Discrete LOD chain of N levels including LOD 0 (meshoptimizer)\n"
+                 "  --meshlets     FMSH v2 meshlet table (renderer WP-1.2)\n"
+                 "  --dag          FMSH v2 cluster DAG (renderer WP-5.2; implies --meshlets)\n"
+                 "  --pages        Also write <output>.fusepages, the WP-5.3 cluster page file (implies --dag)\n"
+                 "  --page-bytes <N>  Page payload capacity for --pages (multiple of 16, >= 1024; default 65536)\n");
 }
 
 /// Manifest paths are relative to the manifest's directory, not the caller's working directory.
@@ -117,6 +123,12 @@ int main(int argc, char** argv) {
     bool noMips = false;
     bool fmshV2 = false;
     bool quantize = false;
+    bool compress = false;
+    fuse::u32 lodCount = 0;
+    bool meshlets = false;
+    bool clusterDag = false;
+    bool clusterPages = false;
+    fuse::u32 pageBytes = 64u * 1024u;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -160,6 +172,23 @@ int main(int argc, char** argv) {
             fmshV2 = true;
         } else if (arg == "--quantize") {
             quantize = true;
+        } else if (arg == "--compress") {
+            compress = true;
+        } else if ((arg == "--lods" || arg == "--page-bytes") && i + 1 < argc) {
+            char* end = nullptr;
+            const unsigned long value = std::strtoul(argv[++i], &end, 10);
+            if (end == nullptr || *end != '\0' || value > 0xFFFFFFFFul) {
+                std::fprintf(stderr, "fuse_cook: %s expects an unsigned integer\n", arg.c_str());
+                fuse::core::shutdown();
+                return EXIT_FAILURE;
+            }
+            (arg == "--lods" ? lodCount : pageBytes) = static_cast<fuse::u32>(value);
+        } else if (arg == "--meshlets") {
+            meshlets = true;
+        } else if (arg == "--dag") {
+            clusterDag = true;
+        } else if (arg == "--pages") {
+            clusterPages = true;
         } else if (arg == "--help" || arg == "-h") {
             printUsage();
             fuse::core::shutdown();
@@ -206,6 +235,15 @@ int main(int argc, char** argv) {
             desc.output_path = outputPath;
             desc.fmsh_v2_streams = fmshV2;
             desc.quantize_vertices = quantize;
+            desc.compress = compress;
+            desc.generate_lods = lodCount > 1u;
+            if (lodCount > 1u) {
+                desc.lod_count = lodCount;
+            }
+            desc.meshlets = meshlets;
+            desc.cluster_dag = clusterDag;
+            desc.cluster_pages = clusterPages;
+            desc.page_bytes = pageBytes;
             record = cooker.cook_mesh(desc);
         } else if (textureCook) {
             fuse::project::TextureImportDesc desc;

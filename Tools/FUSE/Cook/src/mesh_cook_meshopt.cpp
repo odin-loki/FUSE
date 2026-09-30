@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <map>
 
 #if defined(FUSE_COOK_HAS_MESHOPTIMIZER)
@@ -18,6 +19,9 @@
 #if defined(FUSE_COOK_HAS_GEOMETRY_DAG)
 #include <fuse/renderer/geometry/dag/cluster_dag.hpp>
 #include <fuse/renderer/geometry/meshlet_builder.hpp>
+#endif
+#if defined(FUSE_COOK_HAS_GEOMETRY_DAG) && defined(FUSE_COOK_HAS_GEOMETRY_STREAMING)
+#include <fuse/renderer/geometry_streaming/cluster_page_file.hpp>
 #endif
 
 namespace fuse::cook {
@@ -276,8 +280,14 @@ bool build_mesh_lods(CookedMesh& mesh, const MeshLodOptions& options, std::strin
 
 // ---- meshlets + cluster DAG (renderer WP-1.2 / WP-5.2 builders) --------------------------------------
 
-bool build_mesh_meshlets(CookedMesh& mesh, bool with_dag, std::string* error) {
 #if defined(FUSE_COOK_HAS_GEOMETRY_DAG)
+namespace {
+
+/// The renderer's WP-1.2 meshlet mesh (+ WP-5.2 DAG when `with_dag`) of `mesh`'s float streams, and
+/// the FMSH tables that describe it (renderer vertex ids mapped to FMSH vertices through VSRC).
+/// Deterministic, so a rebuild from the same streams reproduces the FMSH sections bit for bit.
+bool build_renderer_dag_mesh(const CookedMesh& mesh, bool with_dag, renderer::geometry::dag::ClusterDagMesh& dagMesh,
+                             MeshletTable& table, ClusterDagTable& dagTable, std::string* error) {
     namespace geo = renderer::geometry;
     const u32 vertexCount = mesh.vertex_count();
     if (mesh.normals.size() != static_cast<usize>(vertexCount) * 3u || mesh.uvs.size() != static_cast<usize>(vertexCount) * 2u) {
@@ -298,7 +308,8 @@ bool build_mesh_meshlets(CookedMesh& mesh, bool with_dag, std::string* error) {
     }
     geo::MeshletBuildOptions options;
     options.keep_source_vertex_map = true;
-    geo::MeshletMesh built;
+    dagMesh = geo::dag::ClusterDagMesh{};
+    geo::MeshletMesh& built = dagMesh.base;
     if (!geo::build_meshlets(source, options, built, error)) {
         return false;
     }
@@ -308,7 +319,7 @@ bool build_mesh_meshlets(CookedMesh& mesh, bool with_dag, std::string* error) {
     }
     auto to_fmsh_vertex = [&](u32 v) { return built.source_vertices[v]; };
 
-    MeshletTable table;
+    table = MeshletTable{};
     table.max_vertices = built.max_vertices;
     table.max_triangles = built.max_triangles;
     for (const geo::SubmeshRange& s : built.submeshes) {
@@ -323,12 +334,13 @@ bool build_mesh_meshlets(CookedMesh& mesh, bool with_dag, std::string* error) {
     }
     table.triangles = built.meshlet_triangles;
 
-    ClusterDagTable dagTable;
+    dagTable = ClusterDagTable{};
     if (with_dag) {
-        geo::dag::ClusterDag dag;
+        geo::dag::ClusterDag& dag = dagMesh.dag;
         if (!geo::dag::build_cluster_dag(built, geo::dag::DagBuildOptions{}, dag, error)) {
             return false;
         }
+        built.version_minor = geo::dag::kClusterDagFormatVersionMinor;
         dagTable.leaf_cluster_count = dag.leaf_cluster_count;
         dagTable.level_count = dag.level_count;
         for (const geo::MeshletRecord& r : dag.lod_clusters) {
@@ -356,6 +368,20 @@ bool build_mesh_meshlets(CookedMesh& mesh, bool with_dag, std::string* error) {
             dagTable.links.push_back({to_cooked(l.self), to_cooked(l.parent), l.group, l.refined});
         }
     }
+    return true;
+}
+
+} // namespace
+#endif
+
+bool build_mesh_meshlets(CookedMesh& mesh, bool with_dag, std::string* error) {
+#if defined(FUSE_COOK_HAS_GEOMETRY_DAG)
+    renderer::geometry::dag::ClusterDagMesh dagMesh;
+    MeshletTable table;
+    ClusterDagTable dagTable;
+    if (!build_renderer_dag_mesh(mesh, with_dag, dagMesh, table, dagTable, error)) {
+        return false;
+    }
     mesh.meshlets = std::move(table);
     mesh.cluster_dag = std::move(dagTable);
     return true;
@@ -365,6 +391,174 @@ bool build_mesh_meshlets(CookedMesh& mesh, bool with_dag, std::string* error) {
     set_error(error, "meshlet build: the renderer geometry libraries are not linked into this build");
     return false;
 #endif
+}
+
+// ---- RE-P1-7: WP-5.3 cluster page file (.fusepages) -------------------------------------------------
+
+std::string cluster_pages_path(const std::string& fusemesh_path) {
+    std::filesystem::path path(fusemesh_path);
+    if (path.extension() == ".fusepages") {
+        return fusemesh_path + ".fusepages";
+    }
+    path.replace_extension(".fusepages");
+    return path.string();
+}
+
+bool mesh_cluster_pages_available() {
+#if defined(FUSE_COOK_HAS_GEOMETRY_DAG) && defined(FUSE_COOK_HAS_GEOMETRY_STREAMING)
+    return true;
+#else
+    return false;
+#endif
+}
+
+#if defined(FUSE_COOK_HAS_GEOMETRY_DAG) && defined(FUSE_COOK_HAS_GEOMETRY_STREAMING)
+namespace {
+
+namespace gs = renderer::geometry_streaming;
+
+/// Rebuild the renderer DAG mesh of `mesh` and require it to be exactly the FMSH's DAG sections.
+bool rebuild_matching_dag_mesh(const CookedMesh& mesh, renderer::geometry::dag::ClusterDagMesh& dagMesh,
+                               std::string* error) {
+    if (mesh.cluster_dag.empty()) {
+        set_error(error, "cluster pages: the mesh has no cluster DAG section (cook with the DAG)");
+        return false;
+    }
+    MeshletTable table;
+    ClusterDagTable dagTable;
+    if (!build_renderer_dag_mesh(mesh, true, dagMesh, table, dagTable, error)) {
+        return false;
+    }
+    if (!(table == mesh.meshlets) || !(dagTable == mesh.cluster_dag)) {
+        set_error(error, "cluster pages: the mesh's meshlet / DAG sections were not built from its streams");
+        return false;
+    }
+    return true;
+}
+
+u64 cooked_links_hash(const ClusterDagTable& table) {
+    renderer::geometry::dag::ClusterDag dag;
+    dag.links.reserve(table.links.size());
+    auto bounds = [](const ClusterDagTable::Bounds& b) {
+        renderer::geometry::dag::DagLodBounds r;
+        std::memcpy(r.center, b.center, sizeof(r.center));
+        r.radius = b.radius;
+        r.error = b.error;
+        return r;
+    };
+    for (const ClusterDagTable::Link& l : table.links) {
+        renderer::geometry::dag::DagClusterLink link;
+        link.self = bounds(l.self);
+        link.parent = bounds(l.parent);
+        link.group = l.group;
+        link.refined = l.refined;
+        dag.links.push_back(link);
+    }
+    return gs::cluster_links_hash(dag);
+}
+
+} // namespace
+#endif
+
+bool build_mesh_cluster_pages(const CookedMesh& mesh, u32 page_bytes, std::vector<u8>& out, std::string* error) {
+    out.clear();
+#if defined(FUSE_COOK_HAS_GEOMETRY_DAG) && defined(FUSE_COOK_HAS_GEOMETRY_STREAMING)
+    renderer::geometry::dag::ClusterDagMesh dagMesh;
+    if (!rebuild_matching_dag_mesh(mesh, dagMesh, error)) {
+        return false;
+    }
+    gs::PageBuildOptions options;
+    options.page_bytes = page_bytes;
+    gs::ClusterPageFile file;
+    std::string why;
+    if (!gs::build_cluster_pages(dagMesh, options, file, &why)) {
+        set_error(error, "cluster pages: " + why);
+        return false;
+    }
+    if (!gs::validate_cluster_page_file(file, dagMesh, &why)) {
+        set_error(error, "cluster pages: built file does not validate against its DAG: " + why);
+        return false;
+    }
+    out = gs::serialize_cluster_page_file(file);
+    return true;
+#else
+    (void)mesh;
+    (void)page_bytes;
+    set_error(error, "cluster pages: the renderer geometry streaming library is not linked into this build");
+    return false;
+#endif
+}
+
+bool validate_mesh_cluster_pages(const CookedMesh& mesh, const std::string& pages_path, std::string* error) {
+#if defined(FUSE_COOK_HAS_GEOMETRY_DAG) && defined(FUSE_COOK_HAS_GEOMETRY_STREAMING)
+    renderer::geometry::dag::ClusterDagMesh dagMesh;
+    if (!rebuild_matching_dag_mesh(mesh, dagMesh, error)) {
+        return false;
+    }
+    gs::ClusterPageFile file;
+    std::string why;
+    if (!gs::load_cluster_page_file(pages_path, file, &why)) {
+        set_error(error, "cluster pages: " + why);
+        return false;
+    }
+    if (!gs::validate_cluster_page_file(file, dagMesh, &why)) {
+        set_error(error, "cluster pages: " + why);
+        return false;
+    }
+    return true;
+#else
+    (void)mesh;
+    (void)pages_path;
+    set_error(error, "cluster pages: the renderer geometry streaming library is not linked into this build");
+    return false;
+#endif
+}
+
+bool cluster_pages_bind_to_mesh(const CookedMesh& mesh, const std::string& pages_path, std::string* error) {
+#if defined(FUSE_COOK_HAS_GEOMETRY_DAG) && defined(FUSE_COOK_HAS_GEOMETRY_STREAMING)
+    if (mesh.cluster_dag.empty()) {
+        set_error(error, "cluster pages: the mesh has no cluster DAG section");
+        return false;
+    }
+    gs::ClusterPageFile file;
+    std::string why;
+    if (!gs::load_cluster_page_file(pages_path, file, &why) || !gs::validate_cluster_page_layout(file, &why)) {
+        set_error(error, "cluster pages: " + why);
+        return false;
+    }
+    const ClusterDagTable& dag = mesh.cluster_dag;
+    if (file.leaf_cluster_count != dag.leaf_cluster_count || file.cluster_count != dag.cluster_count() ||
+        file.group_count != static_cast<u32>(dag.groups.size())) {
+        set_error(error, "cluster pages: cluster / group counts differ from the FMSH DAG");
+        return false;
+    }
+    if (file.links_hash != cooked_links_hash(dag)) {
+        set_error(error, "cluster pages: links_hash does not match the FMSH DAG links (stale page file)");
+        return false;
+    }
+    return true;
+#else
+    (void)mesh;
+    (void)pages_path;
+    set_error(error, "cluster pages: the renderer geometry streaming library is not linked into this build");
+    return false;
+#endif
+}
+
+bool lod_options_for_count(u32 lod_count, MeshLodOptions& out) {
+    out = MeshLodOptions{};
+    if (lod_count <= 1u) {
+        out.ratios.clear();
+        return false;
+    }
+    const std::vector<f32> defaults = out.ratios;
+    out.ratios.clear();
+    f32 ratio = 1.f;
+    for (u32 level = 1; level < lod_count; ++level) {
+        ratio = level <= defaults.size() ? defaults[level - 1u] : ratio * 0.5f;
+        out.ratios.push_back(ratio);
+    }
+    return true;
 }
 
 namespace detail {
