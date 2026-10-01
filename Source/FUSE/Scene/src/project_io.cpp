@@ -81,4 +81,47 @@ SerialiseResult loadForProject(Scene& scene, const project::LoadResult& projectL
     return loadForProject(scene, projectLoad.manifest);
 }
 
+namespace {
+
+const std::string& defaultWorldRel(const project::ProjectManifest& manifest, SceneDimension dimension) {
+    return dimension == SceneDimension::World2D ? manifest.defaultWorld2D : manifest.defaultWorld3D;
+}
+
+std::string defaultWorldPath(const project::ProjectManifest& manifest, SceneDimension dimension) {
+    return dimension == SceneDimension::World2D ? resolveDefaultWorld2DPath(manifest) : resolveDefaultWorldPath(manifest);
+}
+
+SerialiseResult missingWorld(SceneDimension dimension) {
+    SerialiseResult result;
+    result.status = SerialiseStatus::IoError;
+    result.error = dimension == SceneDimension::World2D ? "project manifest missing defaultWorld2D"
+                                                         : "project manifest missing defaultWorld3D";
+    return result;
+}
+
+} // namespace
+
+SerialiseResult saveWorldForProject(const Scene& scene, const ecs::Registry& registry,
+                                    const project::ProjectManifest& manifest, SceneDimension dimension) {
+    if (defaultWorldRel(manifest, dimension).empty()) {
+        return missingWorld(dimension);
+    }
+    const std::string worldPath = defaultWorldPath(manifest, dimension);
+    if (!ensureParentDirectory(worldPath)) {
+        SerialiseResult result;
+        result.status = SerialiseStatus::IoError;
+        result.error = "unable to create parent directory for: " + worldPath;
+        return result;
+    }
+    return SceneSerialiser::saveWithRegistry(scene, registry, worldPath, dimension);
+}
+
+SerialiseResult loadWorldForProject(Scene& scene, ecs::Registry& registry, const project::ProjectManifest& manifest,
+                                    SceneDimension dimension, SceneFileInfo* info) {
+    if (defaultWorldRel(manifest, dimension).empty()) {
+        return missingWorld(dimension);
+    }
+    return SceneSerialiser::loadWithRegistry(defaultWorldPath(manifest, dimension), scene, registry, info);
+}
+
 } // namespace fuse::scene

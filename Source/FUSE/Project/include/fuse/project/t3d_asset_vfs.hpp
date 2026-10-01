@@ -70,7 +70,7 @@ struct T3DShaderCookCacheResult {
 /// Map legacy `MaterialAsset` refs to virtual paths and resolve via mounted VFS.
 [[nodiscard]] std::string materialAssetToVirtualPath(const std::string& materialRef);
 
-/// Map mounted `/t3d/materials/.../*.mat` virtual paths to cooked `.fusetex` outputs.
+/// Map mounted `/t3d/materials/.../*.mat` virtual paths to cooked `.fusemat` outputs (UNI-U7-MAT-1).
 [[nodiscard]] std::string materialVirtualPathToCookOutput(const std::string& virtualPath);
 
 /// Reverse-map `/t3d/materials/Folder/Name.mat` to legacy `Folder:Name` wire ref.

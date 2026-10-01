@@ -1,3 +1,4 @@
+#include <fuse/asset/cooked_material.hpp>
 #include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/handle_table.hpp>
@@ -377,7 +378,9 @@ void testT3DMaterialVfsAsyncLoad() {
     const std::filesystem::path materialPath =
         projectRoot / "data" / "materials" / "Prototyping" / "FloorGray.mat";
     std::filesystem::create_directories(materialPath.parent_path());
-    writeTempFile(materialPath.string(), "async stub material");
+    // UNI-U7-MAT-1: a real material definition (the drain cooks it to .fusemat; plain text cooks nothing).
+    writeTempFile(materialPath.string(),
+                  "singleton Material(FloorGray)\n{\n   diffuseColor[0] = \"0.5 0.5 0.5 1\";\n   roughness[0] = 0.8;\n};\n");
 
     const std::string missionText =
         "new Scene(ExampleLevel) {\n"
@@ -403,8 +406,8 @@ void testT3DMaterialVfsAsyncLoad() {
     const std::string virtualPath =
         fuse::project::materialAssetToVirtualPath("Prototyping:FloorGray");
     const std::string cookOutput = fuse::project::materialVirtualPathToCookOutput(virtualPath);
-    expectTrue(cookOutput == "cooked/materials/Prototyping/FloorGray.fusetex",
-               "material virtual path maps to cooked output");
+    expectTrue(cookOutput == "cooked/materials/Prototyping/FloorGray.fusemat",
+               "material virtual path maps to cooked .fusemat output");
 
     fuse::HandleTable<fuse::io::Asset> table;
     fuse::project::CookCache cache;
@@ -423,6 +426,11 @@ void testT3DMaterialVfsAsyncLoad() {
     expectTrue(cache.lookup(cacheKey, &cached) == fuse::project::CookCacheLookup::Hit,
                "material cook-cache entry is retrievable");
     expectTrue(cached.output_path == cookOutput, "material cook-cache stores cooked output path");
+    fuse::asset::CookedMaterial cookedMaterial;
+    expectTrue(fuse::asset::read_cooked_material_file(cookOutput, cookedMaterial) &&
+                   cookedMaterial.name == "FloorGray" && cookedMaterial.roughness > 0.79f &&
+                   cookedMaterial.roughness < 0.81f,
+               "drained material definition cooked to a readable .fusemat");
 
     const fuse::project::T3DMaterialVfsAsyncLoadResult cachedSubmit =
         fuse::project::submitT3DMaterialLoadsAsync(extract, &cache);

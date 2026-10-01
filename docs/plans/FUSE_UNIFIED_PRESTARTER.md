@@ -469,13 +469,13 @@ Mine each addon into a **FUSE module** with:
 ### 12.1 Work
 
 - Spec `project.json` + world formats (versioned)  
-- Importers: T3D mission, T2D project/module  
+- Importers: T3D mission, T2D project/module — E16 (2026-09-30): the T3D mission converter writes `.fuselevel` v3 with real components from an archetype table (UNI-U7-MIS-1: Sun -> DirectionalLight, PointLight / SpotLight, Skylight -> AmbientLight (DDGI flag), SkyBox / ScatterSky -> SkyAtmosphere, LevelInfo -> EnvironmentFog + clip, GroundPlane -> builtin plane Mesh + MeshAssets material id + static plane Collider / RigidBody, SpawnSphere -> SpawnMarker, TSStatic -> Mesh + MeshAssets shape id (not drawn until the L-DTS shape cook), SimGroup -> hierarchy; unknown classes keep an `archetype` stub; Torque Z-up -> FUSE Y-up, axis-angle rotations); Templates/BaseGame ExampleLevel.mis and the demo_3d_empty mission convert with zero unexpected stubs. T3D Material definitions (UNI-U7-MAT-1: `singleton Material` in .mat / .tscript, MaterialAsset TAML) cook to `.fusemat` with strictly cooked BC7 albedo / BC5 normal `.fusetex` (`t3d_material_parse`); the editor's VFS material drain emits `.fusemat` instead of a placeholder texture. Gates `fuse_t3d_material_mission_gates`, `fuse_world3d_level_gates`. Open: `.fusemat` v1 has no alpha fields (T3D translucency / alphaTest are parsed, not written); MeshAssets material ids reach the renderer only where a CookedAssetRegistry is attached  
 - Cookers: forward assets into FUSE asset DB — runtime side (UNI-U7-ASSET-1) coded: the cooked readers (FMSH v1/v2 incl. meshlet/DAG sections, `.fusetex`, `.fusemat`) moved to the runtime library `fuse_asset` (Tools/FUSE/Cook keeps the writers, links it and re-exports the old names); VFS async read → JobScheduler decode → MPSC `RenderUploadQueue` → render-thread `IRenderUploadSink` → `HandleTable::commit`. `fuse_asset_runtime_cook` cooks a glTF cube + PNG with `fuse_cook` and loads them through the registry (equal to the cook reader output). The renderer-side sink (GPU upload) is E06: done (2026-09-30) — `renderer::cooked_assets::CookedAssetRegistry` (BCn `VK_FORMAT_BC*` images with CPU-decode fallback, `.fusemat` layered rows, FMSH v2 meshlets / DAG into the SceneRenderer; `fuse_cooked_assets_*`)  
 - Migration guide for community content  
 
 ### 12.2 Gate U7
 
-- [ ] Import one T3D sample mission → playable World3D  
+- [ ] Import one T3D sample mission → playable World3D — imported + loaded + rendered with real lights / colliders / meshes / materials ids (E16: ExampleLevel.mis, demo_3d_empty); "playable" (player spawn, game mode, DTS shapes) still open  
 - [ ] Import one T2D sample → playable World2D  
 - [x] Round-trip save/load FUSE hybrid project — headless EditorHost (E15, UNI-U6-FILE-1): NewProject writes `project.json` + empty 3D / 2D worlds, OpenProject / OpenScene / SaveScene round-trip scenes with all ECS components (`fuse_editor_e15_scene_files`); Qt File menus are E20  
 
@@ -617,8 +617,8 @@ Track B: Vulkan, ECS, physics, advanced lighting, production…
 ## Appendix A — Capability checklist (unified product)
 
 ### Dimensions
-- [ ] World3D load/save/play  
-- [ ] World2D load/save/play  
+- [ ] World3D load/save/play — load + save done (UNI-U7-WORLD-1, E16): `World3D::loadWorldFromFuselevel` makes the level's v3 ECS block the world registry (runtime schedule + E03 render; physics from its Collider / RigidBody components, SceneObject3D mirrors), `saveWorld` writes v3 byte-identically after a load (`fuse_world3d_level_gates`); demo_3d_empty renders the converted mission on Lavapipe with 0 validation messages. Play (game mode / player spawn from SpawnMarker) not wired  
+- [ ] World2D load/save/play — load + save done (UNI-U7-WORLD-1, E16): `populateWorld2DFromFuselevel` reads v3 (physics settings from Collider / RigidBody), `saveWorld2DToFuselevel` writes v3, save / load / save byte-identical (`fuse_world3d_level_gates`). Play not wired  
 - [ ] Hybrid compose in one window  
 - [ ] Shared input/audio/net — input done (UNI-INPUT-1: action maps + gamepads shared by runtime / PIE via `PlayerController`); audio and net sharing still open  
 

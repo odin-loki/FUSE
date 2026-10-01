@@ -23,6 +23,7 @@ World3D::~World3D() {
         }
     }
     m_objects.clear();
+    m_level.reset();
     if (m_registryReady) {
         m_registry.destroy();
     }
@@ -168,7 +169,45 @@ void World3D::setClearColor(float r, float g, float b) {
 void World3D::loadWorld(dimension::WorldHandle world) {
     m_activeWorld = world;
     log::info("World3D: load world handle index=%u gen=%u", world.index(), world.generation());
+    if (!m_pendingFuselevelPath.empty()) {
+        const std::string path = m_pendingFuselevelPath;
+        m_pendingFuselevelPath.clear();
+        (void)loadWorldFromFuselevel(path);
+    }
 }
+
+#if !(defined(FUSE_WORLD3D_HAS_FUSELEVEL) && FUSE_WORLD3D_HAS_FUSELEVEL)
+// world_3d_level.cpp needs fuse_scene (FUSE_BUILD_PROJECT); report level I/O as unavailable instead.
+struct World3D::LevelState {};
+
+void World3D::LevelStateDeleter::operator()(LevelState* state) const {
+    delete state;
+}
+
+void World3D::clearLevel_() {
+    m_level.reset();
+}
+
+World3DLevelLoadResult World3D::loadWorldFromFuselevel(const std::string& fuselevelPath) {
+    m_lastLevelLoad = World3DLevelLoadResult{};
+    m_lastLevelLoad.path = fuselevelPath;
+    m_lastLevelLoad.note = "fuselevel loading unavailable (built without FUSE_BUILD_PROJECT)";
+    log::warn("World3D: cannot load '%s' - fuselevel loading requires FUSE_BUILD_PROJECT", fuselevelPath.c_str());
+    return m_lastLevelLoad;
+}
+
+bool World3D::saveWorld(const std::string& fuselevelPath, std::string* error) {
+    if (error != nullptr) {
+        *error = "fuselevel saving unavailable (built without FUSE_BUILD_PROJECT): " + fuselevelPath;
+    }
+    return false;
+}
+
+bool World3D::findSpawnPoint(f32 outPosition[3]) {
+    (void)outPosition;
+    return false;
+}
+#endif
 
 Handle<Object> World3D::addObject(SceneObject3D* object) {
     if (object == nullptr) {
@@ -283,7 +322,7 @@ void World3D::createBody_(ObjectEntry& entry, SceneObject3D& object) {
 }
 
 void World3D::destroyBody_(ObjectEntry& entry) {
-    if (entry.body.valid() && m_registryReady && m_registry.alive(entry.body)) {
+    if (!entry.levelOwned && entry.body.valid() && m_registryReady && m_registry.alive(entry.body)) {
         m_registry.destroy_entity(entry.body);
     }
     entry.body = ecs::EntityID::null();
@@ -344,6 +383,9 @@ void World3D::setPhysicsEnabled(bool enabled) {
         m_schedule.setStageEnabled(RuntimeStage::Physics, enabled);
     }
     for (ObjectEntry& entry : m_objects) {
+        if (entry.levelOwned) {
+            continue; // level bodies are the level's Collider + RigidBody entities (stage toggle only)
+        }
         if (!enabled) {
             destroyBody_(entry);
         } else if (SceneObject3D* object = resolve(entry.handle)) {

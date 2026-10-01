@@ -15,6 +15,7 @@
 #include <fuse/ecs/component_types.hpp>
 #include <fuse/ecs/components/camera.hpp>
 #include <fuse/ecs/components/collider.hpp>
+#include <fuse/ecs/components/environment.hpp>
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
@@ -538,6 +539,10 @@ void testInspectorAllComponents() {
     addDefault<fuse::ecs::TagKinematic>(reg, everything);
     addDefault<fuse::ecs::TagDestroy>(reg, everything);
     addDefault<fuse::ecs::Script>(reg, everything);
+    addDefault<fuse::ecs::MeshAssets>(reg, everything);
+    addDefault<fuse::ecs::AmbientLight>(reg, everything);
+    addDefault<fuse::ecs::SkyAtmosphere>(reg, everything);
+    addDefault<fuse::ecs::EnvironmentFog>(reg, everything);
     addDefault<ModuleComponent>(reg, everything);
 
     fuse::editor::EditorState state;

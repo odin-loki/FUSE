@@ -27,6 +27,15 @@ if(FUSE_BUILD_AUDIO)
     target_compile_definitions(fuse_world3d PUBLIC FUSE_WORLD3D_HAS_AUDIO=1)
 endif()
 
+# UNI-U7-WORLD-1: `.fuselevel` load / save (world_3d_level.cpp) reads and writes levels through fuse_scene,
+# which exists only with FUSE_BUILD_PROJECT (same arrangement as fuse_world2d's fuselevel bridge). Without
+# it World3D::loadWorldFromFuselevel / saveWorld report "unavailable".
+if(FUSE_BUILD_PROJECT)
+    target_sources(fuse_world3d PRIVATE src/world_3d_level.cpp)
+    target_link_libraries(fuse_world3d PUBLIC fuse_scene)
+    target_compile_definitions(fuse_world3d PUBLIC FUSE_WORLD3D_HAS_FUSELEVEL=1)
+endif()
+
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)
 endif()

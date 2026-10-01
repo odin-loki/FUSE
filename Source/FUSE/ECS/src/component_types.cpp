@@ -2,6 +2,7 @@
 
 #include <fuse/ecs/components/camera.hpp>
 #include <fuse/ecs/components/collider.hpp>
+#include <fuse/ecs/components/environment.hpp>
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
@@ -82,6 +83,11 @@ void register_builtin_components() {
     ComponentTypes::register_type<Collider>();
     ComponentTypes::register_type<TagKinematic>();
     ComponentTypes::register_type<Script>();
+    // UNI-U7-MIS-1: converted-level components (cooked asset ids, environment settings).
+    ComponentTypes::register_type<MeshAssets>();
+    ComponentTypes::register_type<AmbientLight>();
+    ComponentTypes::register_type<SkyAtmosphere>();
+    ComponentTypes::register_type<EnvironmentFog>();
 }
 
 } // namespace fuse::ecs

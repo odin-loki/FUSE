@@ -5,6 +5,7 @@
 #include <fuse/project/asset_cooker.hpp>
 #include <fuse/project/cook_content_hash.hpp>
 #include <fuse/project/import_desc.hpp>
+#include <fuse/project/t3d_material_parse.hpp>
 
 #include <cstring>
 #include <filesystem>
@@ -120,6 +121,33 @@ void mountIfMissing(fuse::io::MountKind kind, const std::string& physicalPath,
     ++result.mountsAdded;
 }
 
+/// Cook the Material definition in `physicalPath` (a drained `/t3d/materials/.../Name.mat`) to `outputPath`.
+/// Picks the block named (or mapped to) `Name`, else the only / first block. False when nothing was written.
+bool cookDrainedMaterialDefinition(const std::string& physicalPath, const std::string& virtualPath,
+                                   const std::string& outputPath) {
+    const T3DMaterialParseResult parsed = parseT3DMaterialFile(physicalPath);
+    if (parsed.materials.empty()) {
+        fuse::log::warn("drainT3DMaterialLoads: %s has no Material definition; nothing cooked", virtualPath.c_str());
+        return false;
+    }
+    const std::filesystem::path output(outputPath);
+    const std::string wanted = output.stem().string();
+    const T3DMaterialDef* chosen = &parsed.materials.front();
+    for (const T3DMaterialDef& def : parsed.materials) {
+        if (def.name == wanted || def.mapTo == wanted) {
+            chosen = &def;
+            break;
+        }
+    }
+    T3DMaterialDef def = *chosen;
+    def.name = wanted; // the .fusemat is named after the reference it serves
+    T3DMaterialCookOptions options;
+    options.outputDir = output.parent_path().generic_string();
+    options.gameRoot = std::filesystem::path(physicalPath).parent_path().generic_string();
+    const T3DMaterialCookResult cooked = cookT3DMaterials({def}, options);
+    return cooked.fusematWritten == 1u;
+}
+
 } // namespace
 
 ProjectVfsMountResult mountProjectAssetRoots(const ProjectManifest& manifest) {
@@ -176,7 +204,8 @@ std::string materialVirtualPathToCookOutput(const std::string& virtualPath) {
         relative.resize(relative.size() - 4);
     }
 
-    return "cooked/materials/" + relative + ".fusetex";
+    // UNI-U7-MAT-1: the material definition cooks to a `.fusemat` (its maps to `textures/*.fusetex` beside it).
+    return "cooked/materials/" + relative + ".fusemat";
 }
 
 std::string materialVirtualPathToRefName(const std::string& virtualPath) {
@@ -466,18 +495,10 @@ T3DMaterialCookCacheResult drainT3DMaterialLoads(fuse::HandleTable<fuse::io::Ass
 
         const std::string outputPath = materialVirtualPathToCookOutput(load.asset.virtualPath);
         if (!outputPath.empty()) {
-            AssetCooker cooker;
-            // Lenient on purpose: the drained file is the legacy T3D material *definition* (`.mat`),
-            // not an image, so a strict (decoding) cook would always reject it. Until material ->
-            // diffuse-map resolution lands, the editor viewport binds the labelled placeholder
-            // `.fusetex` the lenient path produces (see RuntimeViewportHook::drainPendingMaterialLoads_).
-            cooker.set_import_validation(ImportValidation::Lenient);
-            TextureImportDesc desc;
-            desc.input_path = physicalPath;
-            desc.output_path = outputPath;
-            desc.generate_mipmaps = true;
-            const CookRecord cooked = cooker.cook_texture(desc);
-            if (cooked.ok) {
+            // UNI-U7-MAT-1: the drained file is the T3D material *definition*. Parse its Material block,
+            // strictly cook the maps it names (BC7 albedo / BC5 normal) and emit the `.fusemat`; a file
+            // without a usable definition produces nothing (no placeholder texture).
+            if (cookDrainedMaterialDefinition(physicalPath, load.asset.virtualPath, outputPath)) {
                 storeMaterialCookCacheEntry(*cache, physicalPath, load.asset.virtualPath);
                 ++result.cookCacheStores;
             }

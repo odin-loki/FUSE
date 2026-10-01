@@ -13,11 +13,34 @@
 #include <fuse/world3d/scene_snapshot.hpp>
 
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace fuse::world3d {
 
 class World3D;
+
+/// UNI-U7-WORLD-1: what World3D::loadWorldFromFuselevel instantiated.
+struct World3DLevelLoadResult {
+    bool ok = false;
+    std::string path;
+    std::string note;
+    /// `.fuselevel` header version (1..3) and whether it carried the v3 ECS block.
+    u32 fileVersion = 0;
+    bool hasEcsBlock = false;
+    u32 sceneEntities = 0;  ///< scene-table entities (including wire stubs)
+    u32 wireStubs = 0;      ///< `__fuse.wire|*` entities (not mirrored)
+    u32 objects = 0;        ///< SceneObject3D mirrors published in the world
+    u32 ecsEntities = 0;    ///< live entities in the world registry after the load
+    u32 meshes = 0;
+    u32 directionalLights = 0;
+    u32 pointLights = 0;
+    u32 spotLights = 0;
+    u32 colliders = 0;
+    u32 rigidBodies = 0;
+    u32 spawnMarkers = 0;
+    u32 physicsLinked = 0;  ///< mirrors whose pose follows a Collider + RigidBody entity
+};
 
 /// Physics view of a World3D: the PhysicsManager its runtime schedule steps plus the helpers the
 /// pre-schedule `World3D::physics()` (PhysicsWorld3D) call sites use.
@@ -62,8 +85,31 @@ public:
     /// Worker-safe cull over the snapshot built by tickGameThread (heap-free JobScheduler fork-join).
     void runParallelCull();
 
+    /// Records the handle; loads the pending `.fuselevel` (setFuselevelPath) when one is set.
     void loadWorld(dimension::WorldHandle world) override;
     dimension::WorldHandle activeWorld() const override { return m_activeWorld; }
+
+    // --- UNI-U7-WORLD-1: `.fuselevel` levels (parity with World2D::loadWorldFromFuselevel) -------------------
+    /// Optional `.fuselevel` consumed by the next loadWorld() call.
+    void setFuselevelPath(std::string path) { m_pendingFuselevelPath = std::move(path); }
+    const std::string& pendingFuselevelPath() const { return m_pendingFuselevelPath; }
+    /// Replaces the world's level: the file's ECS block (v3; v1/v2 files get Transform-only entities)
+    /// becomes the world's own registry (exact entity ids: ECS entity index i == scene entity i), so the
+    /// runtime schedule simulates it and World3D::render draws it; every non-stub scene entity is
+    /// mirrored as a SceneObject3D (name, local TRS from its Transform, hierarchy) published in the
+    /// handle table. Physics comes from the level's Collider + RigidBody components (no per-object
+    /// default bodies); mirrors of such entities follow their body. Material rows referenced by level
+    /// meshes get default RenderMaterial3D rows when missing. Previous level objects, bodies and schedule
+    /// hooks are dropped (the schedule restarts on the new registry). Without FUSE_BUILD_PROJECT this
+    /// returns ok = false.
+    World3DLevelLoadResult loadWorldFromFuselevel(const std::string& fuselevelPath);
+    const World3DLevelLoadResult& lastLevelLoad() const { return m_lastLevelLoad; }
+    /// Saves the world as `.fuselevel` v3 (World3D dimension): the loaded level's scene table (entity
+    /// transforms refreshed from their ECS Transforms) or, without a level, an empty scene table, plus
+    /// the world's whole registry. Load + save without changes reproduces the file byte for byte.
+    bool saveWorld(const std::string& fuselevelPath, std::string* error = nullptr);
+    /// World-space position of the first SpawnMarker entity (false when the level has none).
+    bool findSpawnPoint(f32 outPosition[3]);
 
     SceneObject3D* root() { return m_root.get(); }
     const SceneObject3D* root() const { return m_root.get(); }
@@ -144,6 +190,13 @@ private:
         math::Quat syncedRotation{};
         u64 syncedVersion = 0;
         bool synced = false;
+        /// Mirror of a loaded level entity: the node and its entity belong to the level (the entity is
+        /// never destroyed or created by the per-object physics paths).
+        bool levelOwned = false;
+    };
+    struct LevelState;
+    struct LevelStateDeleter {
+        void operator()(LevelState* state) const;
     };
 
     void buildSnapshot();
@@ -151,6 +204,7 @@ private:
     void createBody_(ObjectEntry& entry, SceneObject3D& object);
     void destroyBody_(ObjectEntry& entry);
     void pruneDeadObjects_();
+    void clearLevel_();
     void syncPhysicsFromScene();
     void syncSceneFromPhysics();
     static void renderExtractHook_(void* user, ecs::Registry& registry, f32 dt);
@@ -181,6 +235,11 @@ private:
     IWorld3DRenderer* m_renderer = nullptr;
     u32 m_gpuFrames = 0;
     u32 m_gpuFailures = 0;
+
+    std::string m_pendingFuselevelPath;
+    World3DLevelLoadResult m_lastLevelLoad{};
+    /// Loaded level (scene table + mirror nodes); defined in world_3d_level.cpp.
+    std::unique_ptr<LevelState, LevelStateDeleter> m_level;
 
     RuntimeScheduleDesc m_scheduleDesc{};
     RuntimeSchedule m_schedule;

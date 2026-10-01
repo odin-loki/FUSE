@@ -37,7 +37,8 @@ if(FUSE_BUILD_PARITY_DEMOS AND FUSE_BUILD_PROJECT)
                 add_test(NAME fuse_u8_${_demo}
                     COMMAND "${_fuse_demo_icd_lock}" "$<TARGET_FILE:${_demo}>" "${_fuse_parity_demo_root}/${_demo}")
                 set_tests_properties(fuse_u8_${_demo} PROPERTIES
-                    ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json" RUN_SERIAL TRUE)
+                    ENVIRONMENT "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json;VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true"
+                    RUN_SERIAL TRUE)
             else()
                 # Target-name COMMAND so a cross build runs it through CMAKE_CROSSCOMPILING_EMULATOR.
                 add_test(NAME fuse_u8_${_demo}

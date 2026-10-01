@@ -72,3 +72,11 @@ if(TARGET fuse_script_cook)
     add_test(NAME fuse_script_cook COMMAND fuse_script_cook_tests)
     set_tests_properties(fuse_script_cook PROPERTIES LABELS "gate" SKIP_RETURN_CODE 77)
 endif()
+
+# UNI-U7-MAT-1 / UNI-U7-MIS-1 (E16): T3D Material -> .fusemat (strict BC7 / BC5 texture cooks) and the
+# mission archetype table -> .fuselevel v3 components.
+add_executable(fuse_t3d_material_mission_gates test_t3d_material_cook.cpp)
+target_link_libraries(fuse_t3d_material_mission_gates PRIVATE fuse_world_converter fuse_project fuse_core)
+target_compile_definitions(fuse_t3d_material_mission_gates PRIVATE FUSE_SOURCE_DIR="${FUSE_SOURCE_DIR_CMAKE}")
+add_test(NAME fuse_t3d_material_mission_gates COMMAND fuse_t3d_material_mission_gates)
+set_tests_properties(fuse_t3d_material_mission_gates PROPERTIES LABELS "gate;world" TIMEOUT 300)

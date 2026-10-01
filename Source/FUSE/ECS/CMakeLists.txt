@@ -13,6 +13,7 @@ set(FUSE_ECS_PUBLIC_HEADERS
     include/fuse/ecs/components/collider.hpp
     include/fuse/ecs/components/camera.hpp
     include/fuse/ecs/components/light.hpp
+    include/fuse/ecs/components/environment.hpp
     include/fuse/ecs/components/tags.hpp
     include/fuse/ecs/system_scheduler.hpp
     include/fuse/ecs/systems/transform_system.hpp

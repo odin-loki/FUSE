@@ -15,6 +15,7 @@ set(FUSE_PROJECT_PUBLIC_HEADERS
     include/fuse/project/importer_extract.hpp
     include/fuse/project/mission_load.hpp
     include/fuse/project/t3d_asset_vfs.hpp
+    include/fuse/project/t3d_material_parse.hpp
     include/fuse/project/parity_legacy_sources.hpp
 )
 
@@ -34,6 +35,7 @@ set(FUSE_PROJECT_SOURCES
     src/importer_extract.cpp
     src/mission_load.cpp
     src/t3d_asset_vfs.cpp
+    src/t3d_material_parse.cpp
     src/parity_legacy_sources.cpp
 )
 
@@ -50,6 +52,8 @@ target_include_directories(fuse_project
 )
 
 target_link_libraries(fuse_project PUBLIC fuse_hybrid fuse_core fuse_cook_stubs)
+# UNI-U7-MAT-1: t3d_material_parse writes .fusemat through the runtime asset core's CookedMaterial record.
+target_link_libraries(fuse_project PUBLIC fuse_asset)
 # MP-B7.3-SCRIPT-COMPONENT: CookAssetKind::Script (Lua syntax check + bytecode) via fuse_script_cook.
 if(TARGET fuse_script_cook)
     target_link_libraries(fuse_project PRIVATE fuse_script_cook)
