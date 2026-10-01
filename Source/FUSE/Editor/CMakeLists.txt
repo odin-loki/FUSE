@@ -37,6 +37,7 @@ set(FUSE_EDITOR_API_SOURCES
     src/entity_context_menu.cpp
     src/material_library_io.cpp
     src/profiler_flame_graph.cpp
+    src/component_schema.cpp
 )
 
 set(FUSE_EDITOR_API_HEADERS
@@ -75,6 +76,7 @@ set(FUSE_EDITOR_API_HEADERS
     include/fuse/editor/entity_context_menu.hpp
     include/fuse/editor/material_library_io.hpp
     include/fuse/editor/profiler_flame_graph.hpp
+    include/fuse/editor/component_schema.hpp
 )
 
 add_library(fuse_editor_api STATIC

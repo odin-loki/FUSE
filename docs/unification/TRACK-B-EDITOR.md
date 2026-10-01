@@ -159,7 +159,7 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 - [x] `SceneHierarchyPanel` search filter (case-insensitive)
 - [x] `reparentSelection` via `UndoStack` + post-command `refresh`
 - [x] `fuse_editor_hierarchy_model` — flatten, search, reparent + undo
-- [ ] Drag-and-drop reparent UI (Qt deferred to U6)
+- [x] Drag-and-drop reparent UI — E20: `HierarchyTreeWidget` internal-move drop posts `ReparentObject` + `kReparentKeepWorldPose` (world pose kept, one undo step, cycles refused) — `fuse_editor_qt_e20_reparent`, `fuse_editor_e20_inspector_commands`
 - [ ] Right-click create/delete entity menu (deferred)
 
 ### B6.6 — Property Inspector Panel
@@ -167,7 +167,7 @@ ctest --test-dir build --output-on-failure -R fuse_editor
 - [x] `PropertyInspector` component section model on FUSE ECS APIs (Qt-free)
 - [x] `setTransformPosition` / `setSdfBlendAlpha` live edits via `CommandStack`
 - [x] `fuse_editor_panels` — transform + SDF section coverage
-- [ ] All component types render without crash (deferred — expand section list)
+- [x] All component types render without crash — every registered type gets a section (typed editors from `component_schema.hpp`, read-only fields for module types); Add / Remove Component (E20, `fuse_editor_qt_e20_inspector`)
 - [ ] Live renderer preview on slider drag (deferred)
 
 ### B6.7 — Material Editor Panel

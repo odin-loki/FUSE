@@ -8,14 +8,19 @@
 #include <QByteArray>
 #include <QElapsedTimer>
 #include <QMainWindow>
+#include <QMessageBox>
+#include <QStringList>
 #include <QTimer>
 
+#include <functional>
 #include <mutex>
 #include <vector>
 
 class QAction;
+class QCloseEvent;
 class QDockWidget;
 class QLabel;
+class QMenu;
 class QToolBar;
 
 namespace fuse::editor::qt {
@@ -47,7 +52,25 @@ public:
         /// VK_LAYER_KHRONOS_validation on the viewport renderer's instance (also
         /// FUSE_EDITOR_VK_VALIDATION=1).
         bool vulkanValidation = false;
+        /// Keep File > Recent Files in QSettings (tests turn it off to stay hermetic).
+        bool persistRecentFiles = true;
     };
+
+    /// File menu action names (QAction::objectName), for `fileAction`.
+    static constexpr const char* kActionNewScene = "fuseActionNewScene";
+    static constexpr const char* kActionOpenScene = "fuseActionOpenScene";
+    static constexpr const char* kActionSave = "fuseActionSaveScene";
+    static constexpr const char* kActionSaveAs = "fuseActionSaveSceneAs";
+    static constexpr const char* kActionNewProject = "fuseActionNewProject";
+    static constexpr const char* kActionQuit = "fuseActionQuit";
+    static constexpr int kMaxRecentFiles = 8;
+
+    /// Answers the unsaved-changes prompt instead of a modal QMessageBox (tests): receives the
+    /// prompt text, returns Save, Discard or Cancel.
+    using DirtyPromptHook = std::function<QMessageBox::StandardButton(const QString& text)>;
+    /// Answers the Open / Save As file dialogs instead of QFileDialog (tests): `saving` is true for
+    /// Save As; return an empty string to cancel.
+    using FileDialogHook = std::function<QString(bool saving)>;
 
     /// Dock object names (stable: they key QMainWindow::saveState / restoreState).
     static constexpr const char* kHierarchyDock = "dock.hierarchy";
@@ -100,7 +123,52 @@ public:
     /// Enable / disable the transport actions from EditorState (runs on the status timer).
     void updateTransportActions();
 
+    // ---- UNI-U6-FILE-1 / MP-B6-QT-SCENE-FILES: File menu ----------------------------------------
+    // New Scene / Open / Save / Save As / Recent Files / New Project / Quit call the E15 EditorHost
+    // file commands (under the scene mutex, like every UI-side scene access). New / Open / Quit ask
+    // to save unsaved changes (EditorHost::isSceneDirty: UndoStack / CommandStack / scene edits).
+    // The window title shows the scene name and a '*' while dirty.
+
+    [[nodiscard]] QAction* fileAction(const char* objectName) const;
+    [[nodiscard]] QMenu* recentFilesMenu() const { return m_recentMenu; }
+    [[nodiscard]] QStringList recentFiles() const { return m_recentFiles; }
+    void setDirtyPromptHook(DirtyPromptHook hook) { m_dirtyPromptHook = std::move(hook); }
+    void setFileDialogHook(FileDialogHook hook) { m_fileDialogHook = std::move(hook); }
+    [[nodiscard]] int dirtyPromptCount() const { return m_dirtyPromptCount; }
+    /// Asks to save when the scene is dirty. False when the user cancelled (or the save failed).
+    bool maybeSaveChanges();
+    /// File actions without their dirty prompt (the menu actions add it). Each returns the
+    /// EditorHost result and refreshes panels, title and recent files.
+    bool newScene();
+    bool openScene(const QString& path);
+    bool saveScene();
+    bool saveSceneAs(const QString& path);
+    /// Creates a project (E15 manifest writer, `EditorHost::newProject`) and opens it; `modules`
+    /// are written into its project.json. Used by the Project hub's New Project wizard.
+    bool createProject(const QString& directory, const QString& name, u32 dimensionFlags,
+                       const project::ModuleSettings& modules);
+    /// "<scene>[*] - <project> - FUSE Editor" from the host's current scene.
+    void updateWindowTitle();
+    [[nodiscard]] QString sceneDisplayName() const;
+
+    // ---- Edit menu: one undo history over the host's UndoStack (structural edits) and
+    // CommandStack (inspector property edits), in the order the edits happened.
+    void undoLatest();
+    void redoLatest();
+
+protected:
+    void closeEvent(QCloseEvent* event) override;
+
 private:
+    enum class UndoSource : u8 { Scene, Property };
+    void syncUndoJournal_();
+    void addRecentFile(const QString& path);
+    void rebuildRecentMenu();
+    QString askFilePath(bool saving);
+    void onFileNew();
+    void onFileOpen();
+    bool onFileSave();
+    bool onFileSaveAs();
     void buildMenus();
     void buildTransport();
     void buildDocks();
@@ -135,6 +203,17 @@ private:
     QAction* m_actStop = nullptr;
     QTimer m_statusTimer;
     bool m_projectWorldShown = false;
+    QString m_projectLabel;
+    QMenu* m_recentMenu = nullptr;
+    QStringList m_recentFiles;
+    DirtyPromptHook m_dirtyPromptHook;
+    FileDialogHook m_fileDialogHook;
+    int m_dirtyPromptCount = 0;
+    u32 m_lastAppliedCommands = 0;
+    std::vector<UndoSource> m_undoJournal;
+    std::vector<UndoSource> m_redoJournal;
+    u32 m_seenSceneUndo = 0;
+    u32 m_seenPropertyUndo = 0;
 };
 
 } // namespace fuse::editor::qt

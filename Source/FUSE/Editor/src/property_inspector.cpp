@@ -1,5 +1,6 @@
 #include <fuse/editor/property_inspector.hpp>
 
+#include <fuse/editor/component_schema.hpp>
 #include <fuse/editor/material_property_inspect.hpp>
 #include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
@@ -163,6 +164,15 @@ PropertyInspector::ComponentSection PropertyInspector::describeComponent(const c
                {"enabled", b(c.enabled)},
                {"started", b(c.started)},
                {"property_count", std::to_string(c.property_count)}};
+    } else if (const ComponentKindDesc* kind = findComponentKind(name);
+               kind != nullptr && kind->size == size && !kind->fields.empty()) {
+        // Module component with a typed inspector schema (e.g. AudioSource): its schema fields.
+        for (const PropertyFieldDesc& field : kind->fields) {
+            std::string value;
+            if (field.read != nullptr && field.read(data, value)) {
+                out.push_back({field.label, value});
+            }
+        }
     } else if (isTagName(name)) {
         // Marker component: header only, no editable fields.
     } else {
@@ -197,6 +207,8 @@ void PropertyInspector::sync(const EditorState& state, EditorScene& scene) {
 
     // One section per registered component type the entity carries, in registration order, so
     // components added by any module show up without inspector changes.
+    // Built-ins; module types (AudioSource via registerEditorComponentTypes, done by EditorHost and
+    // the Qt host) show up as soon as their module registered them.
     ecs::register_builtin_components();
     const std::vector<std::type_index> carried = scene.registry().component_types(m_target);
     for (const ecs::ComponentTypeInfo& info : ecs::ComponentTypes::all()) {

@@ -130,8 +130,8 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 | Mutex-backed command queue with SetProperty coalescing on UI thread | Full GPU swapchain viewport in Qt widget |
 | `EditorHost` routes UI property edits through `CommandStack` undo on game thread | Timelines, addon feature panes |
 | Headless cross-thread queue proof (32 UI posts → game drain) | — |
-| `FeaturePaneBridge` + property edits (`transform`, `mesh.material_id`, `sdf.blend_alpha`) through queue | Live Qt widgets for mesh/SDF beyond position spinboxes |
-| `PropertyInspector` sections: Transform, Mesh, SDF, RigidBody, Camera, Point/Directional/Spot lights | All ECS types + live renderer preview on slider drag |
+| `FeaturePaneBridge` + property edits (`transform`, `mesh.material_id`, `sdf.blend_alpha`) through queue; E20 (UNI-U6-INSP-1): typed Qt editors for every schema component field (`component_schema.hpp`: float / vec3 / Euler / colour / enum / bool / integer / asset path) posting SetProperty through the queue, AddComponent / RemoveComponent command kinds + inspector menu, hierarchy drag-and-drop reparent keeping the world pose — `fuse_editor_e20_inspector_commands`, `fuse_editor_qt_e20_inspector` / `_reparent` | — |
+| `PropertyInspector` sections: every registered ECS type (typed: Transform, Mesh, SDF, RigidBody, Collider, Camera, Point/Directional/Spot lights, AudioSource, Script, SpawnMarker, tags; module types read-only); inspector edits mark the Transform dirty and repaint the viewport on the applying tick | Measured renderer latency of a slider drag on real GPU / display (not asserted here) |
 | `CommandStack` property-edit undo/redo + coalesced Qt spinbox drags | — |
 | ECS `Registry::has_all<Ts...>()` + lazy init (Linux segfault fix); cull light path requires Transform + light | — |
 | `ViewportSwapchainWiring` consumes External handoff via `VulkanBootstrap::ensureSwapchain` (headless fallback; Qt winId stub short-circuits safely) | Live Qt swapchain present |

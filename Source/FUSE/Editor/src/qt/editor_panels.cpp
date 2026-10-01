@@ -2,6 +2,8 @@
 
 #include "property_pane_widget.hpp"
 
+#include <fuse/editor/command_queue.hpp>
+#include <fuse/editor/component_schema.hpp>
 #include <fuse/editor/editor_console_commands.hpp>
 
 #include <fuse/ecs/components/camera.hpp>
@@ -10,10 +12,19 @@
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
 
+#include <QCheckBox>
+#include <QColorDialog>
 #include <QComboBox>
+#include <QDir>
 #include <QDoubleSpinBox>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QFileDialog>
+#include <QGroupBox>
+#include <QScrollArea>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QApplication>
 #include <QKeyEvent>
 #include <QPalette>
 #include <QSignalBlocker>
@@ -49,7 +60,75 @@ ecs::EntityID itemEntity(const QTreeWidgetItem* item) {
     return id;
 }
 
+Handle<Object> entityHandle(ecs::EntityID id) {
+    return id.valid() ? Handle<Object>(id.index, id.generation) : Handle<Object>::invalid();
+}
+
 } // namespace
+
+// ---- HierarchyTreeWidget --------------------------------------------------------------------------
+
+HierarchyTreeWidget::HierarchyTreeWidget(QWidget* parent) : QTreeWidget(parent) {
+    setDragEnabled(true);
+    setAcceptDrops(true);
+    viewport()->setAcceptDrops(true);
+    setDropIndicatorShown(true);
+    setDragDropMode(QAbstractItemView::InternalMove);
+    setDefaultDropAction(Qt::MoveAction);
+}
+
+QTreeWidgetItem* HierarchyTreeWidget::dropParentAt(const QPoint& pos) const {
+    QTreeWidgetItem* target = itemAt(pos);
+    if (target == nullptr) {
+        return nullptr; // empty area: scene root
+    }
+    const QRect rect = visualItemRect(target);
+    const int margin = rect.height() / 4;
+    if (pos.y() < rect.top() + margin || pos.y() > rect.bottom() - margin) {
+        return target->parent(); // between rows: sibling of the target
+    }
+    return target;
+}
+
+bool HierarchyTreeWidget::acceptsDrag_(const QDropEvent* event) const {
+    // Internal moves only: our own rows (a synthetic drag without QDrag in flight has no source).
+    return (event->source() == this || event->source() == nullptr) && event->mimeData() != nullptr &&
+           event->mimeData()->hasFormat(QStringLiteral("application/x-qabstractitemmodeldatalist"));
+}
+
+void HierarchyTreeWidget::dragEnterEvent(QDragEnterEvent* event) {
+    if (!acceptsDrag_(event)) {
+        event->ignore();
+        return;
+    }
+    QTreeWidget::dragEnterEvent(event); // drop indicator / auto-scroll state
+    event->acceptProposedAction();
+}
+
+void HierarchyTreeWidget::dragMoveEvent(QDragMoveEvent* event) {
+    if (!acceptsDrag_(event)) {
+        event->ignore();
+        return;
+    }
+    QTreeWidget::dragMoveEvent(event);
+    event->acceptProposedAction();
+}
+
+void HierarchyTreeWidget::dropEvent(QDropEvent* event) {
+    if (!acceptsDrag_(event)) {
+        event->ignore();
+        return;
+    }
+    const QList<QTreeWidgetItem*> dragged = selectedItems();
+    QTreeWidgetItem* newParent = dropParentAt(event->position().toPoint());
+    // The registry is the source of truth: report the drop, never move the Qt rows here (a copy
+    // action keeps QAbstractItemView from deleting the dragged rows after the drag returns).
+    event->setDropAction(Qt::CopyAction);
+    event->accept();
+    if (!dragged.isEmpty()) {
+        emit rowsDropped(dragged, newParent);
+    }
+}
 
 // ---- HierarchyWidget ------------------------------------------------------------------------------
 
@@ -61,7 +140,7 @@ HierarchyWidget::HierarchyWidget(EditorHost& host, std::mutex& sceneMutex, QWidg
     m_search->setPlaceholderText(tr("Search…"));
     m_search->setClearButtonEnabled(true);
     layout->addWidget(m_search);
-    m_tree = new QTreeWidget(this);
+    m_tree = new HierarchyTreeWidget(this);
     m_tree->setObjectName(QStringLiteral("fuseHierarchyTree"));
     m_tree->setHeaderHidden(true);
     m_tree->setSelectionMode(QAbstractItemView::ExtendedSelection);
@@ -71,6 +150,61 @@ HierarchyWidget::HierarchyWidget(EditorHost& host, std::mutex& sceneMutex, QWidg
     connect(m_search, &QLineEdit::textChanged, this, [this]() { refresh(); });
     connect(m_tree, &QTreeWidget::itemSelectionChanged, this, &HierarchyWidget::onItemSelectionChanged);
     connect(m_tree, &QTreeWidget::customContextMenuRequested, this, &HierarchyWidget::onContextMenuRequested);
+    connect(m_tree, &HierarchyTreeWidget::rowsDropped, this, &HierarchyWidget::onRowsDropped);
+}
+
+QTreeWidgetItem* HierarchyWidget::itemFor(ecs::EntityID id) const {
+    for (QTreeWidgetItemIterator it(m_tree); *it != nullptr; ++it) {
+        if (itemEntity(*it) == id) {
+            return *it;
+        }
+    }
+    return nullptr;
+}
+
+int HierarchyWidget::reparentEntities(const std::vector<ecs::EntityID>& entities, ecs::EntityID newParent) {
+    std::vector<ecs::EntityID> moves;
+    {
+        std::lock_guard<std::mutex> lock(m_sceneMutex);
+        const ecs::Registry& registry = m_host.editorScene().registry();
+        const auto isMoved = [&](ecs::EntityID id) {
+            return std::find(entities.begin(), entities.end(), id) != entities.end();
+        };
+        for (const ecs::EntityID id : entities) {
+            if (!id.valid() || !registry.alive(id) || id == newParent) {
+                continue;
+            }
+            // Keep a moved child under its moved ancestor.
+            bool ancestorMoved = false;
+            const ecs::Transform* t = registry.get<ecs::Transform>(id);
+            for (u32 depth = 0; t != nullptr && t->parent.valid() && depth < 1024u; ++depth) {
+                if (isMoved(t->parent)) {
+                    ancestorMoved = true;
+                    break;
+                }
+                t = registry.get<ecs::Transform>(t->parent);
+            }
+            const ecs::Transform* own = registry.get<ecs::Transform>(id);
+            if (!ancestorMoved && own != nullptr && own->parent != newParent) {
+                moves.push_back(id);
+            }
+        }
+    }
+    for (const ecs::EntityID id : moves) {
+        m_host.postFromUi(makeReparentCommand(entityHandle(id), entityHandle(newParent), true));
+    }
+    if (!moves.empty()) {
+        emit sceneEdited();
+    }
+    return static_cast<int>(moves.size());
+}
+
+void HierarchyWidget::onRowsDropped(const QList<QTreeWidgetItem*>& dragged, QTreeWidgetItem* newParent) {
+    std::vector<ecs::EntityID> entities;
+    for (const QTreeWidgetItem* item : dragged) {
+        entities.push_back(itemEntity(item));
+    }
+    reparentEntities(entities, newParent != nullptr ? itemEntity(newParent) : ecs::EntityID::null());
 }
 
 QString HierarchyWidget::entityLabel(const ecs::Registry& registry, ecs::EntityID id) {
@@ -224,40 +358,141 @@ void HierarchyWidget::onContextMenuRequested(const QPoint& pos) {
 
 // ---- InspectorWidget ------------------------------------------------------------------------------
 
+namespace {
+
+constexpr const char* kVecSuffix[3] = {".x", ".y", ".z"};
+
+QDoubleSpinBox* makeSpin(QWidget* parent, const PropertyFieldDesc& desc, int decimals, const QString& name) {
+    auto* spin = new QDoubleSpinBox(parent);
+    spin->setObjectName(name);
+    spin->setRange(desc.minValue, desc.maxValue);
+    spin->setDecimals(decimals);
+    spin->setSingleStep(desc.step);
+    // Typing posts once on Enter / focus-out; arrows, wheel and drags post every step (the queue
+    // and the CommandStack coalesce those into one undo step).
+    spin->setKeyboardTracking(false);
+    spin->setAccelerated(true);
+    spin->setMinimumWidth(56);
+    return spin;
+}
+
+bool anyHasFocus(const QWidget* root) {
+    if (root == nullptr) {
+        return false;
+    }
+    const QWidget* focus = QApplication::focusWidget();
+    return focus != nullptr && (focus == root || root->isAncestorOf(focus));
+}
+
+void setSpin(QDoubleSpinBox* spin, double value) {
+    if (spin != nullptr && spin->value() != value) {
+        const QSignalBlocker block(spin);
+        spin->setValue(value);
+    }
+}
+
+} // namespace
+
 InspectorWidget::InspectorWidget(FeaturePaneBridge& bridge, std::mutex& sceneMutex, QWidget* parent)
     : QWidget(parent), m_bridge(bridge), m_sceneMutex(sceneMutex) {
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(4, 4, 4, 4);
     m_pane = new PropertyPaneWidget(bridge, this);
     layout->addWidget(m_pane);
+
+    auto* toolRow = new QHBoxLayout();
+    m_addButton = new QToolButton(this);
+    m_addButton->setObjectName(QStringLiteral("fuseInspectorAddComponent"));
+    m_addButton->setText(tr("Add Component"));
+    m_addButton->setPopupMode(QToolButton::InstantPopup);
+    m_addMenu = new QMenu(m_addButton);
+    m_addMenu->setObjectName(QStringLiteral("fuseInspectorAddComponentMenu"));
+    m_addButton->setMenu(m_addMenu);
+    m_addButton->setEnabled(false);
+    toolRow->addWidget(m_addButton);
+    toolRow->addStretch(1);
+    m_rawToggle = new QToolButton(this);
+    m_rawToggle->setObjectName(QStringLiteral("fuseInspectorRawToggle"));
+    m_rawToggle->setText(tr("Raw"));
+    m_rawToggle->setToolTip(tr("Show every component field as read-only text"));
+    m_rawToggle->setCheckable(true);
+    toolRow->addWidget(m_rawToggle);
+    layout->addLayout(toolRow);
+
+    m_scroll = new QScrollArea(this);
+    m_scroll->setObjectName(QStringLiteral("fuseInspectorScroll"));
+    m_scroll->setWidgetResizable(true);
+    m_scroll->setFrameShape(QFrame::NoFrame);
+    m_editorPage = new QWidget(m_scroll);
+    m_editorLayout = new QVBoxLayout(m_editorPage);
+    m_editorLayout->setContentsMargins(0, 0, 0, 0);
+    m_editorLayout->addStretch(1);
+    m_scroll->setWidget(m_editorPage);
+    layout->addWidget(m_scroll, 1);
+
     m_sections = new QTreeWidget(this);
     m_sections->setObjectName(QStringLiteral("fuseInspectorSections"));
     m_sections->setColumnCount(2);
     m_sections->setHeaderLabels({tr("Property"), tr("Value")});
     m_sections->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_sections->setVisible(false);
     layout->addWidget(m_sections, 1);
+    connect(m_rawToggle, &QToolButton::toggled, m_sections, &QWidget::setVisible);
 }
 
 void InspectorWidget::refresh() {
     std::vector<std::string> signature;
+    std::vector<SectionView> sections;
+    std::vector<std::pair<const PropertyFieldDesc*, std::string>> values;
+    std::string structure;
+    ecs::EntityID target = ecs::EntityID::null();
     {
         std::lock_guard<std::mutex> lock(m_sceneMutex);
         m_pane->refresh();
         EditorHost& host = m_bridge.host();
         m_ecsInspector.sync(host.editorState(), host.editorScene());
         if (m_ecsInspector.hasSelection()) {
-            signature.push_back(std::to_string(m_ecsInspector.target().index) + ":" +
-                                std::to_string(m_ecsInspector.target().generation));
+            target = m_ecsInspector.target();
+            const ecs::Registry& registry = host.editorScene().registry();
+            structure = std::to_string(target.index) + ":" + std::to_string(target.generation);
+            signature.push_back(structure);
             for (const PropertyInspector::ComponentSection& section : m_ecsInspector.sections()) {
                 signature.push_back("#" + section.componentName);
                 for (const PropertyInspector::Field& field : section.fields) {
                     signature.push_back(field.name + "=" + field.value);
                 }
+                SectionView view;
+                view.componentName = section.componentName;
+                view.kind = findComponentKind(section.componentName);
+                if (view.kind != nullptr) {
+                    for (const PropertyFieldDesc& field : view.kind->fields) {
+                        std::string value;
+                        if (readComponentProperty(registry, target, field.propertyName, value)) {
+                            values.emplace_back(&field, std::move(value));
+                        }
+                    }
+                } else {
+                    view.readOnlyFields = section.fields;
+                }
+                structure += "#" + section.componentName;
+                // Read-only (module) sections rebuild when their values change.
+                for (const PropertyInspector::Field& field : view.readOnlyFields) {
+                    structure += "|" + field.value;
+                }
+                sections.push_back(std::move(view));
             }
         }
     }
+
+    m_boundEntity = target;
+    if (structure != m_structureKey) {
+        m_structureKey = structure;
+        rebuildEditors(sections);
+    }
+    updateEditorValues(values);
+
     if (signature == m_lastSignature) {
-        return; // unchanged: keep the tree (and its expansion / scroll state) as is
+        return; // unchanged: keep the raw tree (and its expansion / scroll state) as is
     }
     m_lastSignature = signature;
     m_sections->clear();
@@ -279,6 +514,418 @@ void InspectorWidget::refresh() {
         }
     }
     m_sections->expandAll();
+}
+
+void InspectorWidget::clearEditors() {
+    m_bindings.clear();
+    m_removeButtons.clear();
+    m_shownSections.clear();
+    while (m_editorLayout->count() > 1) { // keep the trailing stretch
+        QLayoutItem* item = m_editorLayout->takeAt(0);
+        if (QWidget* widget = item->widget()) {
+            widget->deleteLater();
+            widget->hide();
+        }
+        delete item;
+    }
+}
+
+void InspectorWidget::rebuildEditors(const std::vector<SectionView>& sections) {
+    m_syncing = true;
+    clearEditors();
+    m_addMenu->clear();
+    const bool hasTarget = m_boundEntity.valid();
+    m_addButton->setEnabled(hasTarget);
+
+    for (const SectionView& view : sections) {
+        const QString name = QString::fromStdString(view.componentName);
+        m_shownSections.push_back(view.componentName);
+        auto* group = new QGroupBox(m_editorPage);
+        group->setObjectName(QStringLiteral("fuseInspectorSection.%1").arg(name));
+        group->setTitle(view.kind != nullptr ? tr(view.kind->displayName) : name);
+        auto* groupLayout = new QVBoxLayout(group);
+        groupLayout->setContentsMargins(6, 4, 6, 6);
+        if (view.kind != nullptr && view.kind->removable) {
+            auto* header = new QHBoxLayout();
+            header->addStretch(1);
+            auto* remove = new QToolButton(group);
+            remove->setObjectName(QStringLiteral("fuseInspectorRemove.%1").arg(name));
+            remove->setText(tr("Remove"));
+            remove->setToolTip(tr("Remove the %1 component").arg(name));
+            connect(remove, &QToolButton::clicked, this, [this, name]() { removeComponent(name); });
+            header->addWidget(remove);
+            groupLayout->addLayout(header);
+            m_removeButtons.emplace_back(view.componentName, remove);
+        }
+        auto* form = new QFormLayout();
+        form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+        if (view.kind != nullptr) {
+            for (const PropertyFieldDesc& field : view.kind->fields) {
+                form->addRow(tr(field.label), makeFieldEditor(field, group));
+            }
+        } else {
+            for (const PropertyInspector::Field& field : view.readOnlyFields) {
+                auto* value = new QLabel(QString::fromStdString(field.value), group);
+                value->setTextInteractionFlags(Qt::TextSelectableByMouse);
+                form->addRow(QString::fromStdString(field.name), value);
+            }
+        }
+        groupLayout->addLayout(form);
+        m_editorLayout->insertWidget(m_editorLayout->count() - 1, group);
+    }
+
+    if (hasTarget) {
+        for (const ComponentKindDesc& kind : editorComponentKinds()) {
+            if (!kind.addable ||
+                std::find(m_shownSections.begin(), m_shownSections.end(), std::string(kind.name)) !=
+                    m_shownSections.end()) {
+                continue;
+            }
+            const QString name = QString::fromLatin1(kind.name);
+            QAction* action = m_addMenu->addAction(tr(kind.displayName));
+            action->setObjectName(QStringLiteral("fuseInspectorAdd.%1").arg(name));
+            action->setData(name);
+            connect(action, &QAction::triggered, this, [this, name]() { addComponent(name); });
+        }
+    }
+    m_syncing = false;
+}
+
+QWidget* InspectorWidget::makeFieldEditor(const PropertyFieldDesc& desc, QWidget* parent) {
+    FieldBinding b;
+    b.desc = &desc;
+    const QString prop = QString::fromLatin1(desc.propertyName);
+    auto* root = new QWidget(parent);
+    root->setObjectName(prop);
+    auto* row = new QHBoxLayout(root);
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(2);
+    b.root = root;
+
+    switch (desc.type) {
+    case PropertyFieldType::Float:
+        b.spins[0] = makeSpin(root, desc, 4, prop + QStringLiteral(".value"));
+        row->addWidget(b.spins[0]);
+        break;
+    case PropertyFieldType::UInt:
+        b.spins[0] = makeSpin(root, desc, 0, prop + QStringLiteral(".value"));
+        b.spins[0]->setSingleStep(1.0);
+        row->addWidget(b.spins[0]);
+        break;
+    case PropertyFieldType::Vec3:
+    case PropertyFieldType::Color:
+    case PropertyFieldType::Euler:
+        for (int i = 0; i < 3; ++i) {
+            b.spins[i] = makeSpin(root, desc, desc.type == PropertyFieldType::Euler ? 2 : 4,
+                                  prop + QString::fromLatin1(kVecSuffix[i]));
+            if (desc.type == PropertyFieldType::Euler) {
+                b.spins[i]->setSuffix(QStringLiteral("°"));
+                b.spins[i]->setWrapping(true);
+                b.spins[i]->setRange(-180.0, 180.0);
+            }
+            row->addWidget(b.spins[i], 1);
+        }
+        break;
+    case PropertyFieldType::Enum: {
+        b.combo = new QComboBox(root);
+        b.combo->setObjectName(prop + QStringLiteral(".value"));
+        for (u32 i = 0; i < desc.enumCount; ++i) {
+            b.combo->addItem(QString::fromLatin1(desc.enumNames[i]));
+        }
+        row->addWidget(b.combo, 1);
+        break;
+    }
+    case PropertyFieldType::Bool:
+        b.check = new QCheckBox(root);
+        b.check->setObjectName(prop + QStringLiteral(".value"));
+        row->addWidget(b.check);
+        row->addStretch(1);
+        break;
+    case PropertyFieldType::String:
+    case PropertyFieldType::AssetPath:
+        b.text = new QLineEdit(root);
+        b.text->setObjectName(prop + QStringLiteral(".value"));
+        row->addWidget(b.text, 1);
+        break;
+    }
+
+    m_bindings.push_back(b);
+    const usize index = m_bindings.size() - 1u;
+    const auto post = [this, index]() {
+        if (!m_syncing && index < m_bindings.size()) {
+            postField(m_bindings[index]);
+        }
+    };
+    for (QDoubleSpinBox* spin : b.spins) {
+        if (spin != nullptr) {
+            connect(spin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, post);
+        }
+    }
+    if (b.combo != nullptr) {
+        connect(b.combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, post);
+    }
+    if (b.check != nullptr) {
+        connect(b.check, &QCheckBox::toggled, this, post);
+    }
+    if (b.text != nullptr) {
+        connect(b.text, &QLineEdit::editingFinished, this, post);
+    }
+    if (desc.type == PropertyFieldType::Color) {
+        auto* swatch = new QToolButton(root);
+        swatch->setObjectName(prop + QStringLiteral(".pick"));
+        swatch->setText(QStringLiteral("■"));
+        swatch->setToolTip(tr("Pick a colour"));
+        connect(swatch, &QToolButton::clicked, this, [this, index]() {
+            if (index < m_bindings.size()) {
+                chooseColor(m_bindings[index]);
+            }
+        });
+        row->addWidget(swatch);
+    }
+    if (desc.type == PropertyFieldType::AssetPath) {
+        auto* browse = new QToolButton(root);
+        browse->setObjectName(prop + QStringLiteral(".browse"));
+        browse->setText(QStringLiteral("…"));
+        browse->setToolTip(tr("Choose an asset"));
+        connect(browse, &QToolButton::clicked, this, [this, index]() {
+            if (index < m_bindings.size()) {
+                chooseAsset(m_bindings[index]);
+            }
+        });
+        row->addWidget(browse);
+    }
+    return root;
+}
+
+void InspectorWidget::updateEditorValues(const std::vector<std::pair<const PropertyFieldDesc*, std::string>>& values) {
+    m_syncing = true;
+    for (const auto& [desc, text] : values) {
+        const FieldBinding* found = nullptr;
+        for (const FieldBinding& b : m_bindings) {
+            if (b.desc == desc) {
+                found = &b;
+                break;
+            }
+        }
+        if (found == nullptr || anyHasFocus(found->root)) {
+            continue; // never overwrite a field the user is editing
+        }
+        const FieldBinding& b = *found;
+        switch (desc->type) {
+        case PropertyFieldType::Float:
+        case PropertyFieldType::UInt: {
+            setSpin(b.spins[0], std::strtod(text.c_str(), nullptr));
+            break;
+        }
+        case PropertyFieldType::Vec3:
+        case PropertyFieldType::Color: {
+            f32 v[3]{};
+            if (parsePropertyFloats(text, v, 3u)) {
+                for (int i = 0; i < 3; ++i) {
+                    setSpin(b.spins[i], v[i]);
+                }
+            }
+            break;
+        }
+        case PropertyFieldType::Euler: {
+            f32 q[4]{};
+            if (!parsePropertyFloats(text, q, 4u)) {
+                break;
+            }
+            const ecs::quat stored{q[0], q[1], q[2], q[3]};
+            // Keep the shown angles when they already describe the stored rotation (Euler angles
+            // are not unique; re-deriving them would make the spin boxes jump while editing).
+            const ecs::quat shown = quatFromEulerDeg(static_cast<f32>(b.spins[0]->value()),
+                                                     static_cast<f32>(b.spins[1]->value()),
+                                                     static_cast<f32>(b.spins[2]->value()));
+            const f32 dot = std::fabs(shown.x * stored.x + shown.y * stored.y + shown.z * stored.z + shown.w * stored.w);
+            if (dot > 0.99999f) {
+                break;
+            }
+            const ecs::vec3 euler = eulerDegFromQuat(stored);
+            setSpin(b.spins[0], euler.x);
+            setSpin(b.spins[1], euler.y);
+            setSpin(b.spins[2], euler.z);
+            break;
+        }
+        case PropertyFieldType::Enum: {
+            const int index = static_cast<int>(std::strtoul(text.c_str(), nullptr, 10));
+            if (b.combo->currentIndex() != index) {
+                const QSignalBlocker block(b.combo);
+                b.combo->setCurrentIndex(index);
+            }
+            break;
+        }
+        case PropertyFieldType::Bool: {
+            const bool on = text == "1";
+            if (b.check->isChecked() != on) {
+                const QSignalBlocker block(b.check);
+                b.check->setChecked(on);
+            }
+            break;
+        }
+        case PropertyFieldType::String:
+        case PropertyFieldType::AssetPath: {
+            const QString value = text == kPropertyEmptyString ? QString() : QString::fromStdString(text);
+            if (b.text->text() != value) {
+                const QSignalBlocker block(b.text);
+                b.text->setText(value);
+            }
+            break;
+        }
+        }
+    }
+    m_syncing = false;
+}
+
+void InspectorWidget::postField(const FieldBinding& b) {
+    if (!m_boundEntity.valid() || b.desc == nullptr) {
+        return;
+    }
+    std::string value;
+    switch (b.desc->type) {
+    case PropertyFieldType::Float:
+        value = formatPropertyFloat(static_cast<f32>(b.spins[0]->value()));
+        break;
+    case PropertyFieldType::UInt:
+        value = std::to_string(static_cast<unsigned long long>(std::llround(b.spins[0]->value())));
+        break;
+    case PropertyFieldType::Vec3:
+    case PropertyFieldType::Color:
+        value = formatPropertyFloat(static_cast<f32>(b.spins[0]->value())) + "," +
+                formatPropertyFloat(static_cast<f32>(b.spins[1]->value())) + "," +
+                formatPropertyFloat(static_cast<f32>(b.spins[2]->value()));
+        break;
+    case PropertyFieldType::Euler:
+        value = formatPropertyQuat(quatFromEulerDeg(static_cast<f32>(b.spins[0]->value()),
+                                                    static_cast<f32>(b.spins[1]->value()),
+                                                    static_cast<f32>(b.spins[2]->value())));
+        break;
+    case PropertyFieldType::Enum:
+        value = std::to_string(b.combo->currentIndex() < 0 ? 0 : b.combo->currentIndex());
+        break;
+    case PropertyFieldType::Bool:
+        value = b.check->isChecked() ? "1" : "0";
+        break;
+    case PropertyFieldType::String:
+    case PropertyFieldType::AssetPath:
+        value = b.text->text().toStdString();
+        if (value.empty()) {
+            value = kPropertyEmptyString;
+        }
+        break;
+    }
+    m_bridge.host().postFromUi(makeSetPropertyCommand(entityHandle(m_boundEntity), b.desc->propertyName, value));
+    emit propertyEdited();
+}
+
+void InspectorWidget::chooseColor(const FieldBinding& b) {
+    const QColor initial = QColor::fromRgbF(static_cast<float>(std::clamp(b.spins[0]->value(), 0.0, 1.0)),
+                                            static_cast<float>(std::clamp(b.spins[1]->value(), 0.0, 1.0)),
+                                            static_cast<float>(std::clamp(b.spins[2]->value(), 0.0, 1.0)));
+    const QColor picked = QColorDialog::getColor(initial, this, tr("Pick a colour"));
+    if (!picked.isValid()) {
+        return;
+    }
+    m_syncing = true;
+    setSpin(b.spins[0], picked.redF());
+    setSpin(b.spins[1], picked.greenF());
+    setSpin(b.spins[2], picked.blueF());
+    m_syncing = false;
+    postField(b);
+}
+
+void InspectorWidget::chooseAsset(const FieldBinding& b) {
+    const EditorHost& host = m_bridge.host();
+    const QString root = host.hasProject() ? QString::fromStdString(host.projectManifest().projectRoot) : QString();
+    const QString filter = b.desc->assetFilter != nullptr ? tr(b.desc->assetFilter) : tr("All files (*)");
+    const QString file = QFileDialog::getOpenFileName(this, tr("Choose asset"), root, filter);
+    if (file.isEmpty()) {
+        return;
+    }
+    // Project-relative when the asset lives inside the open project.
+    QString path = file;
+    if (!root.isEmpty()) {
+        const QString relative = QDir(root).relativeFilePath(file);
+        if (!relative.startsWith(QStringLiteral(".."))) {
+            path = relative;
+        }
+    }
+    {
+        const QSignalBlocker block(b.text);
+        b.text->setText(path);
+    }
+    postField(b);
+}
+
+const InspectorWidget::FieldBinding* InspectorWidget::binding(const QString& propertyName) const {
+    for (const FieldBinding& b : m_bindings) {
+        if (propertyName == QLatin1String(b.desc->propertyName)) {
+            return &b;
+        }
+    }
+    return nullptr;
+}
+
+QStringList InspectorWidget::componentSections() const {
+    QStringList names;
+    for (const std::string& name : m_shownSections) {
+        names << QString::fromStdString(name);
+    }
+    return names;
+}
+
+QWidget* InspectorWidget::fieldEditor(const QString& propertyName) const {
+    const FieldBinding* b = binding(propertyName);
+    return b != nullptr ? b->root : nullptr;
+}
+
+QDoubleSpinBox* InspectorWidget::fieldSpin(const QString& propertyName, int component) const {
+    const FieldBinding* b = binding(propertyName);
+    return b != nullptr && component >= 0 && component < 3 ? b->spins[component] : nullptr;
+}
+
+QCheckBox* InspectorWidget::fieldCheck(const QString& propertyName) const {
+    const FieldBinding* b = binding(propertyName);
+    return b != nullptr ? b->check : nullptr;
+}
+
+QComboBox* InspectorWidget::fieldCombo(const QString& propertyName) const {
+    const FieldBinding* b = binding(propertyName);
+    return b != nullptr ? b->combo : nullptr;
+}
+
+QLineEdit* InspectorWidget::fieldText(const QString& propertyName) const {
+    const FieldBinding* b = binding(propertyName);
+    return b != nullptr ? b->text : nullptr;
+}
+
+QToolButton* InspectorWidget::removeButton(const QString& componentName) const {
+    for (const auto& [name, button] : m_removeButtons) {
+        if (componentName == QString::fromStdString(name)) {
+            return button;
+        }
+    }
+    return nullptr;
+}
+
+bool InspectorWidget::addComponent(const QString& componentName) {
+    if (!m_boundEntity.valid() || findComponentKind(componentName.toStdString()) == nullptr) {
+        return false;
+    }
+    m_bridge.host().postFromUi(makeAddComponentCommand(entityHandle(m_boundEntity), componentName.toStdString()));
+    emit componentsChanged();
+    return true;
+}
+
+bool InspectorWidget::removeComponent(const QString& componentName) {
+    const ComponentKindDesc* kind = findComponentKind(componentName.toStdString());
+    if (!m_boundEntity.valid() || kind == nullptr || !kind->removable) {
+        return false;
+    }
+    m_bridge.host().postFromUi(makeRemoveComponentCommand(entityHandle(m_boundEntity), componentName.toStdString()));
+    emit componentsChanged();
+    return true;
 }
 
 // ---- ConsoleWidget --------------------------------------------------------------------------------

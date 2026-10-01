@@ -119,3 +119,6 @@ foreach(_e15_gate console transport)
         TIMEOUT 120
     )
 endforeach()
+
+# E20 (MP-B6-QT-INSPECTOR, UNI-U6-INSP-1, UNI-U6-FILE-1, MP-B6-QT-SCENE-FILES).
+include(${CMAKE_CURRENT_SOURCE_DIR}/e20_qt_tests.cmake)

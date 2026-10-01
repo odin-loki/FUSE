@@ -230,6 +230,8 @@ endif()
 
 # E15: project / scene files, console REPL, scripts in PIE.
 include(${CMAKE_CURRENT_SOURCE_DIR}/e15_tests.cmake)
+# E20: editable inspector (typed component fields, add / remove component), reparent keeping world pose.
+include(${CMAKE_CURRENT_SOURCE_DIR}/e20_tests.cmake)
 
 if(MINGW)
     get_property(_fuse_editor_test_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)

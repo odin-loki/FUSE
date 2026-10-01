@@ -34,6 +34,9 @@ enum class CommandKind {
     // MP-B6-EDITOR-SCRIPT-PIE: PIE single step while paused, and console lines for the game thread.
     StepPlay,
     ConsoleExec, ///< propertyValue = console line (engine command or Lua), see EditorHost::executeConsoleLine
+    // MP-B6-QT-INSPECTOR / UNI-U6-INSP-1: undoable component add / remove on `target` (UndoStack).
+    AddComponent,    ///< propertyName = ecs component name (see component_schema.hpp)
+    RemoveComponent, ///< propertyName = ecs component name (Transform cannot be removed)
 };
 
 /// UI-thread command envelope — applied on the game thread via CommandQueue::drain().
@@ -55,6 +58,9 @@ inline constexpr u32 kProjectEnable3D = 1u << 0;
 inline constexpr u32 kProjectEnable2D = 1u << 1;
 inline constexpr u32 kProjectEnableUI = 1u << 2;
 inline constexpr u32 kScene2D = 1u << 0;
+/// ReparentObject: keep the entity's world transform (local TRS recomputed under the new parent).
+/// Without it the local TRS is kept, as before. Both steps are one undo step.
+inline constexpr u32 kReparentKeepWorldPose = 1u << 0;
 
 EditorCommand makeNewProjectCommand(std::string directory, std::string name,
                                     u32 dimensionFlags = kProjectEnable3D | kProjectEnable2D | kProjectEnableUI);
@@ -65,6 +71,12 @@ EditorCommand makeSaveSceneCommand();
 EditorCommand makeSaveSceneAsCommand(std::string path);
 EditorCommand makeTransportCommand(CommandKind kind); ///< StartPlay / StopPlay / PausePlay / ResumePlay / StepPlay
 EditorCommand makeConsoleExecCommand(std::string line);
+/// MP-B6-QT-INSPECTOR: property / component / hierarchy edits posted by the Qt inspector and
+/// hierarchy (`target` / `parent` are ECS entity ids as Handle<Object>(index, generation)).
+EditorCommand makeSetPropertyCommand(Handle<Object> target, std::string propertyName, std::string value);
+EditorCommand makeAddComponentCommand(Handle<Object> target, std::string componentName);
+EditorCommand makeRemoveComponentCommand(Handle<Object> target, std::string componentName);
+EditorCommand makeReparentCommand(Handle<Object> target, Handle<Object> newParent, bool keepWorldPose = true);
 
 /// Formats a float for `EditorCommand::propertyValue` so parsing it back yields the identical
 /// value (round-trip precision; `std::to_string` keeps only six decimals).

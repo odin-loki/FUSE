@@ -1,3 +1,4 @@
+#include <fuse/editor/component_schema.hpp>
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/property_inspector.hpp>
 #include <fuse/editor/gizmo_system.hpp>
@@ -155,6 +156,12 @@ std::string capturePropertyValueBefore(const EditorHost& host, const EditorComma
         return formatPropertyFloat(registry.get<ecs::SpotLight>(entity)->intensity);
     }
 
+    // MP-B6-QT-INSPECTOR: every other inspector field (component_schema.hpp).
+    std::string schemaValue;
+    if (readComponentProperty(registry, entity, command.propertyName, schemaValue)) {
+        return schemaValue;
+    }
+
     return {};
 }
 
@@ -168,7 +175,17 @@ bool isUndoableEntityProperty(const EditorCommand& command) {
            command.propertyName == "transform.rotation" || command.propertyName == "mesh.material_id" ||
            command.propertyName == "sdf.blend_alpha" || command.propertyName == "sdf.shape" ||
            command.propertyName == "directional.intensity" ||
-           command.propertyName == "spot.intensity";
+           command.propertyName == "spot.intensity" ||
+           findComponentProperty(command.propertyName) != nullptr;
+}
+
+/// Registers the inspector's component types once (AudioSource etc.; idempotent, lock-free after).
+void ensureEditorComponentTypes() {
+    static const bool registered = [] {
+        registerEditorComponentTypes();
+        return true;
+    }();
+    (void)registered;
 }
 
 bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
@@ -600,6 +617,12 @@ bool applySetProperty_(EditorHost& host, const EditorCommand& command) {
         return true;
     }
 
+    // MP-B6-QT-INSPECTOR / UNI-U6-INSP-1: typed inspector fields of every editable component.
+    if (writeComponentProperty(registry, entity, command.propertyName, command.propertyValue)) {
+        host.editorState().sceneModified = true;
+        return true;
+    }
+
     return false;
 }
 
@@ -736,6 +759,7 @@ void EditorHost::incrementCinematicsSeqTimelineHostWireCount() {
 
 void EditorHost::applyCommand_(const EditorCommand& command) {
     ensureInitialized_();
+    ensureEditorComponentTypes();
 
     switch (command.kind) {
     case CommandKind::SetProperty:
@@ -806,8 +830,45 @@ void EditorHost::applyCommand_(const EditorCommand& command) {
         }
 
         const ecs::EntityID oldParent = transform->parent;
+        if ((command.flags & kReparentKeepWorldPose) != 0u) {
+            // MP-B6-QT-INSPECTOR hierarchy drag-and-drop: re-express the local TRS under the new
+            // parent so the world pose is unchanged; reparent + TRS are one undo step.
+            ecs::Registry& registry = m_editorScene.registry();
+            if (newParent == oldParent || wouldCreateParentCycle(registry, entity, newParent)) {
+                break;
+            }
+            const ecs::mat4 world = entityWorldMatrix(registry, entity);
+            const ecs::mat4 parentWorld =
+                newParent.valid() ? entityWorldMatrix(registry, newParent) : ecs::mat4::identity();
+            const TransformCommand::State before = TransformCommand::capture(*transform);
+            TransformCommand::State after = before;
+            localTrsForWorld(parentWorld, world, after.position, after.rotation, after.scale);
+            m_undoStack.beginMacro("Reparent entity");
+            m_undoStack.execute(std::make_unique<ReparentEntityCommand>(registry, entity, newParent, oldParent));
+            m_undoStack.execute(std::make_unique<TransformCommand>(registry, entity, before, after));
+            m_undoStack.endMacro();
+            m_state.sceneModified = true;
+            break;
+        }
         m_undoStack.execute(std::make_unique<ReparentEntityCommand>(
             m_editorScene.registry(), entity, newParent, oldParent));
+        m_state.sceneModified = true;
+        break;
+    }
+    case CommandKind::AddComponent:
+    case CommandKind::RemoveComponent: {
+        const ecs::EntityID entity = handleToEntity(command.target);
+        const ComponentKindDesc* kind = findComponentKind(command.propertyName);
+        if (kind == nullptr || !entity.valid() || !m_editorScene.registry().alive(entity)) {
+            break;
+        }
+        const bool adding = command.kind == CommandKind::AddComponent;
+        const bool present = kind->has(m_editorScene.registry(), entity);
+        if (adding == present || (!adding && !kind->removable)) {
+            break; // nothing to do: already there / not there / not removable
+        }
+        m_undoStack.execute(
+            std::make_unique<ComponentPresenceCommand>(m_editorScene.registry(), entity, *kind, adding));
         m_state.sceneModified = true;
         break;
     }
@@ -859,6 +920,7 @@ void EditorHost::redoPropertyEdit() {
 
 void EditorHost::gameTick() {
     ensureInitialized_();
+    ensureEditorComponentTypes();
 
     m_commandsAppliedLastTick = 0;
     m_queue.drain();
@@ -868,6 +930,13 @@ void EditorHost::gameTick() {
             const std::string before = command.propertyValueBefore.empty()
                                            ? capturePropertyValueBefore(*this, command)
                                            : command.propertyValueBefore;
+            const ComponentKindDesc* kind = nullptr;
+            if (findComponentProperty(command.propertyName, &kind) != nullptr &&
+                !kind->has(m_editorScene.registry(), handleToEntity(command.target))) {
+                // Inspector field of a component the entity does not carry (removed meanwhile):
+                // nothing to edit, and no empty undo step.
+                continue;
+            }
             m_commandStack.push(std::move(stacked), before);
         } else {
             applyCommand_(command);
@@ -888,6 +957,40 @@ void EditorHost::gameTick() {
     pollHotReload_(); // E15: PIE script hot-reload (no-op unless PIE scripts are live)
 
     ++m_gameTickCount;
+}
+
+EditorCommand makeSetPropertyCommand(Handle<Object> target, std::string propertyName, std::string value) {
+    EditorCommand command;
+    command.kind = CommandKind::SetProperty;
+    command.target = target;
+    command.propertyName = std::move(propertyName);
+    command.propertyValue = std::move(value);
+    return command;
+}
+
+EditorCommand makeAddComponentCommand(Handle<Object> target, std::string componentName) {
+    EditorCommand command;
+    command.kind = CommandKind::AddComponent;
+    command.target = target;
+    command.propertyName = std::move(componentName);
+    return command;
+}
+
+EditorCommand makeRemoveComponentCommand(Handle<Object> target, std::string componentName) {
+    EditorCommand command;
+    command.kind = CommandKind::RemoveComponent;
+    command.target = target;
+    command.propertyName = std::move(componentName);
+    return command;
+}
+
+EditorCommand makeReparentCommand(Handle<Object> target, Handle<Object> newParent, bool keepWorldPose) {
+    EditorCommand command;
+    command.kind = CommandKind::ReparentObject;
+    command.target = target;
+    command.parent = newParent;
+    command.flags = keepWorldPose ? kReparentKeepWorldPose : 0u;
+    return command;
 }
 
 } // namespace fuse::editor
