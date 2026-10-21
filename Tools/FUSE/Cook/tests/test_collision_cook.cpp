@@ -163,20 +163,23 @@ void test_files_and_cli(const char* fuse_cook) {
 
     if (fuse_cook == nullptr) {
         std::printf("  fuse_cook CLI check skipped (no executable path given)\n");
+        std::filesystem::remove_all(dir);
         return;
     }
-    const std::string cli = (dir / "cli.fusecol").string();
-    const std::string command =
-        "\"" + std::string(fuse_cook) + "\" --collision --input \"" + fmsh + "\" --output \"" + cli + "\"";
-    check(std::system(command.c_str()) == 0, "fuse_cook --collision");
-    check(read_file(cli) == read_file(api), "fuse_cook --collision writes the API's bytes");
-    const std::string hulls = (dir / "hulls.fusecol").string();
-    const std::string partsCommand = "\"" + std::string(fuse_cook) + "\" --collision --collision-mode hull --hull-per-submesh --input \"" +
-                                     fmsh + "\" --output \"" + hulls + "\"";
+    const std::filesystem::path previous = std::filesystem::current_path();
+    std::filesystem::current_path(dir); // fuse_cook keeps its cook cache in the working directory
+    auto run = [&](const std::string& args) {
+        const std::string command = "\"" + std::string(fuse_cook) + "\" " + args;
+        return std::system(command.c_str());
+    };
+    check(run("--collision --input prop.fusemesh --output cli.fusecol") == 0, "fuse_cook --collision");
+    check(read_file("cli.fusecol") == read_file("api.fusecol"), "fuse_cook --collision writes the API's bytes");
     physics::CollisionAsset parts;
-    check(std::system(partsCommand.c_str()) == 0 && physics::readCollisionAssetFile(hulls, parts) &&
-              parts.hulls.size() == 2u && parts.meshes.empty(),
+    check(run("--collision --collision-mode hull --hull-per-submesh --input prop.fusemesh --output hulls.fusecol") == 0 &&
+              physics::readCollisionAssetFile("hulls.fusecol", parts) && parts.hulls.size() == 2u &&
+              parts.meshes.empty(),
           "fuse_cook --collision --collision-mode hull --hull-per-submesh");
+    std::filesystem::current_path(previous);
     std::filesystem::remove_all(dir);
 }
 
