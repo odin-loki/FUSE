@@ -1,4 +1,4 @@
-/* FUSE pin header for the vendored GDeflate codec (Engine/lib/gdeflate/VERSION). Not an upstream file.
+/* FUSE pin header for the vendored GDeflate codec (vendor/gdeflate/VERSION). Not an upstream file.
  *
  * The codec is NVIDIA's GDeflate branch of libdeflate, whose libdeflate.h declares only
  * LIBDEFLATE_VERSION_MAJOR / _MINOR (1.8). `fuse_lint vendored-pins` reads the FUSE_GDEFLATE_VERSION_*
@@ -15,7 +15,7 @@
 
 #if defined(LIBDEFLATE_VERSION_MAJOR)
 #  if LIBDEFLATE_VERSION_MAJOR != FUSE_GDEFLATE_VERSION_MAJOR || LIBDEFLATE_VERSION_MINOR != FUSE_GDEFLATE_VERSION_MINOR
-#    error "Engine/lib/gdeflate/libdeflate/libdeflate.h does not match the version pinned in Engine/lib/gdeflate/VERSION"
+#    error "vendor/gdeflate/libdeflate/libdeflate.h does not match the version pinned in vendor/gdeflate/VERSION"
 #  endif
 #endif
 

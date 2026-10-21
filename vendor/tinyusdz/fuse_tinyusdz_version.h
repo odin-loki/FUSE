@@ -1,4 +1,4 @@
-/* FUSE pin header for the vendored TinyUSDZ subset (Engine/lib/tinyusdz/VERSION). Not an upstream file.
+/* FUSE pin header for the vendored TinyUSDZ subset (vendor/tinyusdz/VERSION). Not an upstream file.
  *
  * `fuse_lint vendored-pins` reads the FUSE_TINYUSDZ_VERSION_* defines below and requires them to equal the
  * pinned `version` (the upstream tag v0.9.4). Upstream's own src/tinyusdz.hh still declares
@@ -15,7 +15,7 @@
 
 #if defined(__cplusplus) && defined(TINYUSDZ_HH_)
 static_assert(tinyusdz::version_major == FUSE_TINYUSDZ_VERSION_MAJOR && tinyusdz::version_minor == FUSE_TINYUSDZ_VERSION_MINOR,
-              "Engine/lib/tinyusdz/src/tinyusdz.hh does not match the version pinned in Engine/lib/tinyusdz/VERSION");
+              "vendor/tinyusdz/src/tinyusdz.hh does not match the version pinned in vendor/tinyusdz/VERSION");
 #endif
 
 #endif /* FUSE_TINYUSDZ_VERSION_H */

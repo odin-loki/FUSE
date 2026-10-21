@@ -30,7 +30,7 @@ retrieved=2026-09-24 (git clone --depth 1 --branch v0.9.4 --filter=blob:none --s
 license=Apache-2.0
 license_file=LICENSE
 version_header=fuse_tinyusdz_version.h
-sha256:fuse_tinyusdz_version.h=c7cf95f093e311db1055ef711736ad574d7ec29b30cbb2b1e9aaf5f6f9ee9e4b
+sha256:fuse_tinyusdz_version.h=f94bc34697f25f6fcfc78136499e2cf76d1106e2cf2d99c6c44ea53745e518d3
 sha256:LICENSE=956559a8307fa5d9393752f8684f41345231046481b4a2155fa7503e4fe9c113
 sha256:PATCHES.md=96e4fc88d779fb45db348214cf046b62bff91bec6967a28282ef134a034a8435
 sha256:src/ascii-parser-basetype-typedarray.cc=7d008084ab0e4c30755457d2fabc7be3ffb12168ccc1fb4509f54e25c7107a82

@@ -1,4 +1,4 @@
-/* FUSE pin header for the vendored xxHash (Engine/lib/xxhash/VERSION). Not an upstream file.
+/* FUSE pin header for the vendored xxHash (vendor/xxhash/VERSION). Not an upstream file.
  *
  * `fuse_lint vendored-pins` reads the FUSE_XXHASH_VERSION_* defines below and requires them to equal
  * the pinned `version`; the #error below requires the vendored xxhash.h to declare the same version.
@@ -14,7 +14,7 @@
 #if defined(XXH_VERSION_MAJOR)
 #  if XXH_VERSION_MAJOR != FUSE_XXHASH_VERSION_MAJOR || XXH_VERSION_MINOR != FUSE_XXHASH_VERSION_MINOR || \
       XXH_VERSION_RELEASE != FUSE_XXHASH_VERSION_PATCH
-#    error "Engine/lib/xxhash/xxhash.h does not match the version pinned in Engine/lib/xxhash/VERSION"
+#    error "vendor/xxhash/xxhash.h does not match the version pinned in vendor/xxhash/VERSION"
 #  endif
 #endif
 

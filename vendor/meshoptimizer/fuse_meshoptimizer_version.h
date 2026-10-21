@@ -1,4 +1,4 @@
-/* FUSE pin header for the vendored meshoptimizer (Engine/lib/meshoptimizer/VERSION). Not an upstream file.
+/* FUSE pin header for the vendored meshoptimizer (vendor/meshoptimizer/VERSION). Not an upstream file.
  *
  * meshoptimizer.h declares only MESHOPTIMIZER_VERSION (major * 1000 + minor * 10; patch releases keep it),
  * which `fuse_lint vendored-pins` cannot read as X.Y.Z. The FUSE_MESHOPTIMIZER_VERSION_* defines below
@@ -14,7 +14,7 @@
 
 #if defined(MESHOPTIMIZER_VERSION)
 #  if MESHOPTIMIZER_VERSION != (FUSE_MESHOPTIMIZER_VERSION_MAJOR * 1000 + FUSE_MESHOPTIMIZER_VERSION_MINOR * 10)
-#    error "Engine/lib/meshoptimizer/src/meshoptimizer.h does not match the version pinned in Engine/lib/meshoptimizer/VERSION"
+#    error "vendor/meshoptimizer/src/meshoptimizer.h does not match the version pinned in vendor/meshoptimizer/VERSION"
 #  endif
 #endif
 
