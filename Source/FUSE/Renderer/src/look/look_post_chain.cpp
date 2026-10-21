@@ -203,7 +203,7 @@ void LookPostChain::runBloom(const LookResolved& look) {
 
 bool LookPostChain::process(const LookChainInput& input, const LookEffectGraph& graph, const LookResolved& look,
                             const Lut3D& grade_lut, Vec3* out) {
-    FUSE_PROFILE_SCOPE("look_post_chain");
+    FUSE_PROFILE_SCOPE("lpc");
     m_stats = {};
     if (!m_ready || input.hdr == nullptr || out == nullptr || !graph.validate().ok()) {
         return false;

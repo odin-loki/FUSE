@@ -52,7 +52,7 @@ execute_process(
   # Timing budgets (label perf) and valgrind wrappers are proven by the outer run; under the
   # validation layer they only add load-dependent noise (and valgrind x validation is very slow).
   COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${FUSE_GATE_BUILD_DIR}" -V --parallel ${_cores}
-          -E "^${FUSE_GATE_SELF}$" -LE "^(perf|valgrind)$"
+          -E "^${FUSE_GATE_SELF}$" -LE "^(perf|valgrind|validation_control)$"
   RESULT_VARIABLE _ctest_result
   OUTPUT_VARIABLE _ctest_out
   ERROR_VARIABLE _ctest_out)

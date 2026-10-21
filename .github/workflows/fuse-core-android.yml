@@ -5,6 +5,7 @@ on:
     branches: [main, development]
   pull_request:
     branches: [main, development]
+  workflow_dispatch:
 
 concurrency:
   # head_ref is PR-only; on push use ref so main runs share a group but are not cancelled (see cancel-in-progress).

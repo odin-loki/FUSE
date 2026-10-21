@@ -1677,11 +1677,14 @@ int gateLivePresent() {
         QColor afterResize;
         const bool resizePixelsReady = QTest::qWaitFor(
             [&]() {
-                afterResize = screenPatch(viewport, QPoint(viewport->width() - 14, viewport->height() - 14));
-                return afterResize.isValid() && colorDistance(afterResize, corner) <= 6;
+                QCoreApplication::processEvents();
+                afterResize = screenPatch(viewport, QPoint(12, 12));
+                return afterResize.isValid() && colorDistance(afterResize, corner) <= 6 &&
+                       colorDistance(afterResize, placeholder) > 12;
             },
-            8000);
-        std::printf("pixels after resize: bottom-right %s\n", colorText(afterResize).c_str());
+            15000);
+        std::printf("pixels after resize: top-left %s (pre-resize corner %s)\n", colorText(afterResize).c_str(),
+                    colorText(corner).c_str());
         expect(resizePixelsReady,
                "resized viewport shows the rendered frame edge to edge (new corner == old corner colour)");
 

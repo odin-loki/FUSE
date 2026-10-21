@@ -185,3 +185,5 @@ set_tests_properties(${_fuse_wp60_vk_tests} PROPERTIES
     SKIP_RETURN_CODE 77
     TIMEOUT 1200
     LABELS "gate;vulkan;renderer;rt")
+set_tests_properties(fuse_rp_rt_vk_bindless_order PROPERTIES
+    LABELS "gate;vulkan;renderer;rt;validation_control")
