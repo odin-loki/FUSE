@@ -19,6 +19,46 @@ All third-party libraries are committed under `vendor/`; clone and configure —
 | Language | C++23 (`Source/FUSE/`) |
 | Generators | Ninja, Visual Studio, Xcode, Unix Makefiles |
 
+### Linux system packages (Ubuntu 24.04)
+
+Vendored libraries live under `vendor/`; you only need a C++23 toolchain plus optional GPU/Qt packages for the CMake options you enable.
+
+**Toolchain** (`FUSE_BUILD_CORE` only, no Vulkan tests):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ninja-build cmake g++-13
+```
+
+**`FUSE_BUILD_CORE_TESTS` with Vulkan** (`FUSE_BUILD_VULKAN=ON`, shader SPIR-V regen, Lavapipe gates — matches [`.github/workflows/fuse-umbrella-linux.yml`](../.github/workflows/fuse-umbrella-linux.yml)):
+
+```bash
+sudo apt-get install -y ninja-build cmake g++-13 \
+  libvulkan-dev mesa-vulkan-drivers vulkan-tools \
+  vulkan-validationlayers glslang-tools spirv-tools
+```
+
+Point the loader at Mesa Lavapipe for headless runs (CI sets this automatically):
+
+```bash
+export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
+```
+
+| Package | Role |
+|---------|------|
+| `libvulkan-dev` | Vulkan loader + headers (`find_package(Vulkan)`) |
+| `mesa-vulkan-drivers` | Lavapipe software ICD |
+| `vulkan-tools` | `vulkaninfo` and loader diagnostics |
+| `vulkan-validationlayers` | Khronos validation layer (`fuse_vulkan_validation_gate`) |
+| `glslang-tools` | `glslangValidator` (configure-time SPIR-V regen and cook gates) |
+| `spirv-tools` | `spirv-val` (validates regenerated SPIR-V) |
+
+**Qt 6 editor** (`FUSE_BUILD_EDITOR=ON`, optional): `qt6-base-dev` plus the Xvfb/xcb packages listed in the Qt editor CI job — see [editor.md](editor.md).
+
+**CUDA** (`FUSE_BUILD_CUDA=ON`, optional): install the distro CUDA toolkit when you want real device code; without it, configure continues with CUDA stubs. The compile-only CUDA workflow installs `nvidia-cuda-toolkit` on `ubuntu-24.04`.
+
+**Slang** (`FUSE_SLANG=AUTO`, default): no apt package; CMake may download a pinned `slangc` when enabled.
+
 ## Common CMake options
 
 | Option | Default | Target |

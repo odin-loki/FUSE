@@ -12,6 +12,12 @@ concurrency:
   group: ci-${{ github.actor }}-${{ github.head_ref || github.ref }}-${{ github.ref }}-fuse-linux
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Keep apt lists in sync with docs/building.md (Linux system packages).
+env:
+  FUSE_APT_LINUX_BASE: ninja-build cmake g++-13
+  FUSE_APT_LINUX_VULKAN: libvulkan-dev mesa-vulkan-drivers vulkan-tools vulkan-validationlayers glslang-tools spirv-tools
+  FUSE_APT_LINUX_QT_EDITOR: qt6-base-dev libgl-dev xvfb xauth libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0
+
 jobs:
   fuse-core-linux:
     name: fuse_core + tests + smoke
@@ -23,8 +29,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
-          sudo apt-get install -y ninja-build cmake g++-13 libvulkan-dev mesa-vulkan-drivers vulkan-tools \
-            vulkan-validationlayers glslang-tools spirv-tools
+          sudo apt-get install -y ${{ env.FUSE_APT_LINUX_BASE }} ${{ env.FUSE_APT_LINUX_VULKAN }}
 
       - name: Configure umbrella (core + legacy + smoke + U7/U8)
         run: |
@@ -82,7 +87,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
-          sudo apt-get install -y ninja-build cmake g++-13
+          sudo apt-get install -y ${{ env.FUSE_APT_LINUX_BASE }}
 
       - name: Configure fuse_core single-thread profile
         run: |
@@ -120,7 +125,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
-          sudo apt-get install -y ninja-build cmake g++-13 libvulkan-dev mesa-vulkan-drivers vulkan-tools glslang-tools spirv-tools
+          sudo apt-get install -y ${{ env.FUSE_APT_LINUX_BASE }} ${{ env.FUSE_APT_LINUX_VULKAN }}
 
       - name: Configure (fuse-werror-${{ matrix.config }})
         run: cmake --preset fuse-werror-${{ matrix.config }} -DCMAKE_CXX_COMPILER=g++-13
@@ -146,7 +151,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
-          sudo apt-get install -y ninja-build cmake g++-13 libvulkan-dev mesa-vulkan-drivers vulkan-tools glslang-tools spirv-tools
+          sudo apt-get install -y ${{ env.FUSE_APT_LINUX_BASE }} ${{ env.FUSE_APT_LINUX_VULKAN }}
 
       - name: Configure (fuse-asan preset, FUSE_SANITIZE=address,undefined)
         run: |
@@ -181,9 +186,8 @@ jobs:
       - name: Install dependencies
         run: |
           sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
-          sudo apt-get install -y ninja-build cmake g++-13 libvulkan-dev mesa-vulkan-drivers vulkan-tools \
-            vulkan-validationlayers glslang-tools spirv-tools qt6-base-dev libgl-dev xvfb xauth \
-            libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0
+          sudo apt-get install -y ${{ env.FUSE_APT_LINUX_BASE }} ${{ env.FUSE_APT_LINUX_VULKAN }} \
+            ${{ env.FUSE_APT_LINUX_QT_EDITOR }}
 
       - name: Configure (Release, FUSE_BUILD_EDITOR=ON)
         run: |
