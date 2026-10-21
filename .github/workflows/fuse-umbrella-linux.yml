@@ -15,7 +15,8 @@ concurrency:
 jobs:
   fuse-core-linux:
     name: fuse_core + tests + smoke
-    runs-on: ubuntu-latest
+    # ubuntu-latest -> 26.04 (Oct 2026); stay on 24.04 for Lavapipe/Qt gates parity with docs.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -44,9 +45,13 @@ jobs:
         run: cmake --build build-fuse --config Release
 
       - name: Run CTest
+        env:
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
         run: ctest --test-dir build-fuse --output-on-failure
 
       - name: Run demo_hybrid_hud
+        env:
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
         run: ./build-fuse/Source/FUSE/Apps/HybridHud/demo_hybrid_hud
 
       - name: Run U8 parity demos
@@ -69,7 +74,7 @@ jobs:
 
   fuse-core-single-thread:
     name: fuse_core jobs (FUSE_JOBS_SINGLE_THREAD)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -101,10 +106,11 @@ jobs:
     # applies -Wall -Wextra -Werror to every Source/FUSE + Tools/FUSE target (cmake/FuseWarnings.cmake;
     # vendored vendor/ subprojects excluded).
     name: FUSE -Werror (${{ matrix.config }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix:
         config: [debug, release, profile, shipping]
     steps:
@@ -131,7 +137,7 @@ jobs:
     # target (cmake/FuseSanitizers.cmake); UBSan is non-recoverable so any
     # finding fails its test. Third-party-only suppressions: cmake/sanitizers/.
     name: FUSE ASan+UBSan (all unit tests + smoke)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
