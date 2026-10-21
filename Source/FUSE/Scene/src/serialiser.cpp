@@ -1,5 +1,7 @@
 #include <fuse/scene/serialiser.hpp>
 
+#include <fuse/ecs/systems/transform_system.hpp>
+
 #include <fuse/scene/scene_snapshot.hpp>
 
 #include <fuse/ecs/components/transform.hpp>
@@ -580,6 +582,15 @@ SerialiseResult SceneSerialiser::loadWithRegistry(const std::string& path, Scene
         registryFromSceneEntities(loaded, loadedRegistry);
         ecsEntities = loaded.entityCount();
         archetypes = ecsEntities > 0u ? 1u : 0u;
+    }
+
+    if (parsed.hasEcsBlock) {
+        loadedRegistry.each<fuse::ecs::Transform>([](fuse::ecs::EntityID, fuse::ecs::Transform& transform) {
+            transform.dirty = true;
+        });
+    }
+    if (!fuse::ecs::TransformSystem::should_skip_hierarchy_update(loadedRegistry)) {
+        fuse::ecs::TransformSystem::update(loadedRegistry);
     }
 
     scene = std::move(loaded);

@@ -143,7 +143,6 @@ bool is_transform_column(const ComponentTypeInfo* info) {
 void scrub_transform_runtime_state(Transform& transform) {
     transform.local_to_world = mat4::identity();
     transform.world_to_local = mat4::identity();
-    transform.dirty = true;
 }
 
 void fixup_transform_rows(std::byte* rows, usize count) {
