@@ -1,6 +1,6 @@
 option(TORQUE_USE_ZENITY "Use Zenity" ON)
 
-set(TORQUE_NFD_ROOT "${CMAKE_SOURCE_DIR}/Engine/lib/nativeFileDialogs")
+set(TORQUE_NFD_ROOT "${CMAKE_SOURCE_DIR}/vendor/nativeFileDialogs")
 set(TORQUE_NFD_COMMON_SOURCES "${TORQUE_NFD_ROOT}/nfd_common.c")
 set(TORQUE_NFD_INCLUDE_DIRECTORIES "${TORQUE_NFD_ROOT}" "${TORQUE_NFD_ROOT}/include")
 
