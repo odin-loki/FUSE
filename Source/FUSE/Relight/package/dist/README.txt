@@ -3,7 +3,7 @@ FUSE Relight @RL_PKG_VERSION@
 
 FUSE Relight is a drop-in Direct3D 8 / Direct3D 9 runtime that remasters classic games with the FUSE
 renderer. It is built on DXVK (Direct3D to Vulkan) and is compatible with RTX Remix mods and rtx.conf
-files. It needs a Vulkan 1.3 GPU driver. It is MIT-licensed; see LICENSE.txt and THIRD_PARTY_NOTICES.txt.
+files. It needs a Vulkan 1.3 GPU driver. It is AGPL-3.0-licensed; see LICENSE.txt and THIRD_PARTY_NOTICES.txt.
 
 Build: @RL_PKG_BUILD@
 

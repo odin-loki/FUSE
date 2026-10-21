@@ -110,6 +110,9 @@ set(RL_LGPL_HEADER_PATH_RE
 # THIRD_PARTY.md must name the licences and the clean-room files it forbids; it may never carry
 # header phrases (H), MDL bodies (M) or LGPL text (L).
 set(RL_ALLOW_Source/FUSE/Relight/THIRD_PARTY.md "T;N")
+# RL-6.4 package ships the repo AGPL and vendored licence texts verbatim (relight_package_check licence mode).
+set(RL_ALLOW_LICENSE.txt "L")
+set(RL_ALLOW_THIRD_PARTY_NOTICES.txt "L")
 
 # --------------------------------------------------------------------------------------------------
 # Binary gate patterns (lower-cased repo-relative paths).
