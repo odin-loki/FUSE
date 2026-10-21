@@ -321,7 +321,8 @@ std::string writeWav(const std::filesystem::path& path, u32 frames) {
         const f32 s = 0.5f * std::sin(2.f * 3.14159265f * static_cast<f32>(i) / 48.f);
         u16le(static_cast<u16>(static_cast<i32>(s * 32767.f)));
     }
-    return path.string();
+    // Forward slashes: safe in Lua single-quoted strings and on the Windows file APIs.
+    return path.generic_string();
 }
 
 void testAudio() {

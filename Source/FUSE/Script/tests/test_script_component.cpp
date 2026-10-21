@@ -501,7 +501,7 @@ void testCook(const fs::path& dir) {
     const std::string cs = (dir / "Game.cs").string();
     const std::string csOut = (dir / "Game.fusescript").string();
     const std::string csText = "function onStart() { echo(\"legacy\"); }\n";
-    std::ofstream(cs) << csText;
+    std::ofstream(cs, std::ios::binary) << csText;
     const script::ScriptCookResult legacy = script::cook_script_file(cs, csOut);
     script::CookedScript legacyLoaded;
     expectTrue(legacy.ok && legacy.kind == script::CookedScriptKind::LegacyTorqueScript &&
