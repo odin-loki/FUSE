@@ -88,7 +88,7 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 2. **Merge strategy:** lift shared DNA into `fuse::Object` → `SceneObject2D` → `SceneObject3D`; physics/gfx/net stay composition-only.
 3. **Gui and console are the hottest collision domains** — 45+ Gui* classes; identical `SimObject` / `ConsoleObject` hierarchies (addressed by greenfield hierarchy, not dual link).
 4. **Physics and gfx stay dual (composed)** — Box2D behind `World2D`; T3D collision behind `World3D`; render refs on scene objects — no inheritance across backends.
-5. **Addons are mostly content** — kernels are small (BadBehaviour 74 files, Verve 163, GMK component 26); AFX/Verve already in FUSE root `Engine/source/`.
+5. **Addons are mostly content** — kernels are small (BadBehaviour 74 files, Verve 163, GMK component 26); vertical slices live in `Source/FUSE/Modules/` with parity goldens in `Samples/unification/`.
 6. **UAISK is scripts-only** — template pack for `fuse_ai`, no C++ ore.
 7. **Legacy is main-thread-first** — T3D `ThreadPool` (132 refs) with main-only global submit; T2D has no pool; FUSE needs fiber job spine (master plan B1.5).
 
