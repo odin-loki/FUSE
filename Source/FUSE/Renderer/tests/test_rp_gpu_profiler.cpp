@@ -299,9 +299,9 @@ int runManualZones(VulkanDevice& device) {
 
 int main() {
 #if defined(FUSE_NO_PROFILER) && FUSE_NO_PROFILER
-constexpr bool kMacrosRecord = false;
+[[maybe_unused]] constexpr bool kMacrosRecord = false;
 #else
-constexpr bool kMacrosRecord = true;
+[[maybe_unused]] constexpr bool kMacrosRecord = true;
 #endif
 #if defined(FUSE_RP_GPU_PROFILER_EXPECT_TRACY) && FUSE_RP_GPU_PROFILER_EXPECT_TRACY
 constexpr bool kExpectTracy = true;
