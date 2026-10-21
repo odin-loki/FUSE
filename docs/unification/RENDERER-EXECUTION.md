@@ -97,7 +97,7 @@ The GitHub Ubuntu 24.04 runner gets the same `mesa-vulkan-drivers` from noble-up
 
 ### 3.1 Third-party licence notes (plan §4, with [research §6](../research/upscaling-framegen-and-post-injectors.md#6-licensing-matrix-and-blockers))
 
-| Library | Licence | In repo | Rule for FUSE (MIT tree) |
+| Library | Licence | In repo | Rule for FUSE (AGPL-3.0 source tree) |
 |---|---|---|---|
 | VMA | MIT | **Vendored** `vendor/vma` v3.4.0, pinned plus sha256 (`fuse_lint_vendored_pins_vma`) | OK |
 | Slang | Apache-2.0 WITH LLVM-exception | absent | OK to fetch or pin a binary. Keep the NOTICE. Do not vendor the source tree (large). |
@@ -106,7 +106,7 @@ The GitHub Ubuntu 24.04 runner gets the same `mesa-vulkan-drivers` from noble-up
 | Tracy | BSD-3-Clause | absent | OK. Optional, default OFF, notice in credits. |
 | RenderDoc in-app API (`renderdoc_app.h`) | MIT | absent | OK. Header only; the capture tool is not shipped. |
 | NVIDIA Streamline | MIT headers; `sl_nvperf` is proprietary | **In progress**: `vendor/streamline` v2.14.1 headers subset, pinned | Headers and adapter OK. `sl.interposer.dll`, `nvngx_*.dll` and DLSS-G are **never committed** (RTX SDKs License). Windows-only; Linux uses an NGX bridge. |
-| DLSS / NGX / DLSS-G / Reflex runtime, **NRD**, RTXDI, RTXPT, RTXNTC | NVIDIA RTX SDKs License | – | **Not in the MIT tree.** Out-of-tree plugin loaded at runtime, NVIDIA GPUs only, attribution notice, no CI. Must never be made subject to an OSS licence. |
+| DLSS / NGX / DLSS-G / Reflex runtime, **NRD**, RTXDI, RTXPT, RTXNTC | NVIDIA RTX SDKs License | – | **Not in the AGPL source tree.** Out-of-tree plugin loaded at runtime, NVIDIA GPUs only, attribution notice, no CI. Must never be made subject to an OSS licence. |
 | NRI | MIT | – | Only needed if NRD is used. It then lives inside the NRD plugin. |
 | AMD FidelityFX SDK v1.1.4 (FSR 1/2/3.1, CAS, Denoiser, SPD, LPM, …) | MIT | **In progress**: FSR1 plus CAS subset vendored | OK. FSR 3.1 temporal and FG supports Vulkan. **FSR 4 / Redstone is DX12-only**; do not use the leaked FSR 4 source. |
 | Intel XeSS SDK | Intel Simplified Software License (binary only, no modification) | – | Optional runtime plugin. Cannot vendor source. The Vulkan path exists (1.1+); no Linux build is documented. |

@@ -47,7 +47,7 @@ Likelihood: **High** / **Medium** / **Low**
 
 **Mitigation:**
 - U0 report (this deliverable)  
-- U2: static libs `fuse_t3d_legacy`, `fuse_t2d_legacy` with symbol prefix scripts  
+- U2 (historical): prefixed static libs — **removed**; native `fuse::world2d` / `fuse::scene` replaced quarantine  
 - Ban raw dual link (prestarter §3.3)
 
 **Residual:** Prefix maintenance cost until stranglers complete.
@@ -168,7 +168,7 @@ Likelihood: **High** / **Medium** / **Low**
 
 ### R10 — GuideBot license
 
-**Evidence:** `third_party/addons/GuideBot/guidebot_license_agreement.txt` — custom terms, not MIT.
+**Evidence:** upstream GuideBot `guidebot_license_agreement.txt` — custom terms, not MIT.
 
 **Impact:** Redistribution / commercial use constraints.
 

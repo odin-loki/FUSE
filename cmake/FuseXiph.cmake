@@ -195,6 +195,8 @@ if(FUSE_XIPH_CODECS)
 #define HAVE_STDINT_H 1
 #define HAVE_STDLIB_H 1
 #define HAVE_STRING_H 1
+/* MinGW: without this, compat.h #defines fseeko->fseeko64 before <stdio.h> and breaks stdio.h. */
+#define HAVE_FSEEKO 1
 #define PACKAGE_VERSION \"1.5.0\"
 " @ONLY)
         set(_flac_sources

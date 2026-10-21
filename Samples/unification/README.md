@@ -44,6 +44,6 @@ ctest --test-dir build -R fuse_u8_ --output-on-failure
 
 - `fuse_u8_parity_embed_pie_smoke` — editor embed + PIE start/stop across six parity demos (ASan when `FUSE_SMOKE_ENABLE_ASAN`)
 - `demo_fx` bridges `defaultWorld2D` sprite sockets alongside 3D AFX mission VM
-- `resolveParityLegacySource` prefers `third_party/` golden paths when submodules are initialized
+- `resolveParityLegacySource` prefers bundled `Samples/unification/*/worlds/` stubs (no upstream addon trees in-repo)
 
 `demo_hybrid_hud` uses a software placeholder renderer. Real present is Track B.

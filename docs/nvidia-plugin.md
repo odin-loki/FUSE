@@ -26,15 +26,15 @@ also flagged with the lowest RTX generation it needs. The NVIDIA upscalers decla
 ## Architecture
 
 ```
-FUSE (MIT)                                            developer's machine only
+FUSE (AGPL-3.0)                                       developer's machine only
 ------------------------------------------------      ------------------------------------------
 nv_backends      dlss_sr / dlss_rr / dlss_fg / dlss5_look
    |  UpscaleInputs + NvGpuFrame -> NvFrameInputs -> validate_inputs()
 nv_plugin_loader dlopen / LoadLibraryExW(<FUSE_NVIDIA_SDK_DIR>/<provider>)
    |  fuseNvPluginGetApi(ABI 1.x)  (fuse_nv_plugin_abi.h, plain C)
-   +-- fuse_nvplugin_streamline (MIT) --LoadLibrary--> sl.interposer.dll -> sl.dlss*.dll, nvngx_*.dll
-   +-- fuse_nvplugin_ngx  (MIT source; binary links libnvsdk_ngx.a) ---> libnvidia-ngx-dlss.so.*
-   +-- fuse_nvplugin_mock (MIT, CI)
+   +-- fuse_nvplugin_streamline (AGPL-3.0) --LoadLibrary--> sl.interposer.dll -> sl.dlss*.dll, nvngx_*.dll
+   +-- fuse_nvplugin_ngx  (AGPL-3.0 source; binary links libnvsdk_ngx.a) ---> libnvidia-ngx-dlss.so.*
+   +-- fuse_nvplugin_mock (AGPL-3.0, CI)
 ```
 
 - **Provider ABI**, in `Source/FUSE/Renderer/plugins/nvidia/include/fuse/renderer/nvidia/fuse_nv_plugin_abi.h`.
@@ -153,10 +153,10 @@ full on 2026-09-23.
 
 | Component | Licence | Decision |
 |---|---|---|
-| Streamline public headers (`Engine/lib/streamline/include`, v2.14.1, commit `2122257e`) | MIT (`licence.txt`, "Copyright (c) 2023 NVIDIA CORPORATION") | **Vendored.** Only the 13 headers FUSE compiles against are included, verbatim. The pin is in `VERSION` and checked by ctest `fuse_lint_vendored_pins_streamline` plus a compile-time `static_assert` on `SL_VERSION_*`. |
+| Streamline public headers (`vendor/streamline/include`, v2.14.1, commit `2122257e`) | MIT (`licence.txt`, "Copyright (c) 2023 NVIDIA CORPORATION") | **Vendored.** Only the 13 headers FUSE compiles against are included, verbatim. The pin is in `VERSION` and checked by ctest `fuse_lint_vendored_pins_streamline` plus a compile-time `static_assert` on `SL_VERSION_*`. |
 | `sl_nvperf.h` / `sl_nvperf.dll` | NVIDIA Nsight Perf SDK License (proprietary) | **Not vendored.** |
 | `sl_reflex.h`, `sl_pcl.h` | MIT | Not vendored yet (needed for hardware frame generation). v2.14.1's `sl_pcl.h` is ill-formed under Clang in C++23 (`using to_underlying = std::to_underlying;`). |
-| DLSS SDK headers (`nvsdk_ngx*.h`) | `SPDX-License-Identifier: LicenseRef-NvidiaProprietary`, NVIDIA RTX SDKs License | **Not vendored.** FUSE does not re-declare NGX's ABI either: on Linux the NGX entry points live in the static `libnvsdk_ngx.a`, so dlopen has nothing to load, and re-creating the snippet interface would breach §4(a) ("may not reverse engineer"). The Linux path is `fuse_nvplugin_ngx.cpp`. It is FUSE's own MIT source, compiled only against the developer's own SDK checkout. |
+| DLSS SDK headers (`nvsdk_ngx*.h`) | `SPDX-License-Identifier: LicenseRef-NvidiaProprietary`, NVIDIA RTX SDKs License | **Not vendored.** FUSE does not re-declare NGX's ABI either: on Linux the NGX entry points live in the static `libnvsdk_ngx.a`, so dlopen has nothing to load, and re-creating the snippet interface would breach §4(a) ("may not reverse engineer"). The Linux path is `fuse_nvplugin_ngx.cpp`. It is FUSE's own AGPL-3.0 plugin source, compiled only against the developer's own SDK checkout. |
 | DLSS / NGX / Streamline plugin binaries (`nvngx_*.dll`, `libnvidia-ngx-*.so*`, `sl.*.dll`, `libnvsdk_ngx.a`, and the built `libfuse_nvplugin_ngx.so`) | NVIDIA RTX SDKs License | **Never committed.** `.gitignore` covers them. ctest `fuse_nvidia_no_committed_binaries` fails if any is tracked by git, or if `.gitignore` stops ignoring the canonical names. |
 
 **Obligations when you ship a product with DLSS enabled.** These come from the NVIDIA RTX SDKs License
@@ -173,8 +173,8 @@ summary.
   Streamline headers). The notice applies if you add NVIDIA sample code.
 - **§2(c):** your end-user terms must be "at least as protective as the terms of this license".
 - **§4(e):** you "may not use the SDK in any manner that would cause it to become subject to an open source
-  software license". This is why the runtime is kept out of the MIT tree. List it in your third-party
-  notices under NVIDIA's terms, not under FUSE's MIT licence.
+  software license". This is why the runtime is kept out of the FUSE source tree. List it in your third-party
+  notices under NVIDIA's terms, not under FUSE's AGPL-3.0 licence.
 - **Supplement §1:** DLSS and NGX are licensed "only for their use in systems with NVIDIA GPUs". The loader
   registers nothing without an NVIDIA RTX adapter.
 - **Supplement §4:** notify NVIDIA "prior to commercial release" at `https://developer.nvidia.com/sw-notification`.
@@ -182,14 +182,14 @@ summary.
   screens, in the about box of the application (if present), and in credits for game applications". NVIDIA
   must approve the use of its marks beforehand (§7.2(c)).
 - **Streamline (MIT):** the provider compiles the Streamline headers in. Include Streamline's copyright
-  notice and permission notice (`Engine/lib/streamline/LICENSE.txt`) in your third-party notices.
+  notice and permission notice (`vendor/streamline/LICENSE.txt`) in your third-party notices.
 
 Suggested credits and notice text (this is not legal advice):
 
 > NVIDIA DLSS: Portions of this software use NVIDIA DLSS, NVIDIA Streamline and NVIDIA NGX technology,
 > © NVIDIA Corporation. NVIDIA, the NVIDIA logo, NVIDIA RTX and DLSS are trademarks and/or registered
 > trademarks of NVIDIA Corporation. The NVIDIA DLSS runtime is distributed under the NVIDIA RTX SDKs License
-> and is not covered by the FUSE MIT licence.
+> and is not covered by the FUSE AGPL-3.0 licence.
 > NVIDIA Streamline headers: Copyright (c) 2022-2025 NVIDIA CORPORATION, MIT licence (full text in
 > third-party notices).
 

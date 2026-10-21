@@ -2,7 +2,7 @@
 
 **Status:** Vertical slice — `fuse_adventure` + `fuse_mechanics` bridge live in `Source/FUSE/Modules/`.  
 **Proves:** Inventory add/remove, mechanics-registry dispatch, use/pickup interaction, and puzzle-gate unlock (Outpost key flow).  
-**Legacy golden source:** `third_party/addons/3DAAK/Templates/Full/game/levels/Outpost.mis`
+**Legacy golden source:** bundled `worlds/outpost.mis` (upstream 3DAAK `Outpost.mis` ore)
 
 ## 3DAAK ore mapping
 

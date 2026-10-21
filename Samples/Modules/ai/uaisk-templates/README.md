@@ -9,7 +9,7 @@ The Universal AI Starter Kit has **no C++ engine patches**. FUSE maps its Torque
 | `aiActions.cs` | `bb.action.set_flag` | Action executes → blackboard commit |
 | `aiTargeting.cs` | `bb.condition.distance_less` | Range checks → distance condition |
 
-Ore path: `third_party/addons/UAISK/The_Universal_AI_Starter_Kit/Templates/Full/game/scripts/server/UAISK/`
+Ore path: upstream UAISK kit `.../Templates/Full/game/scripts/server/UAISK/` (not vendored; FUSE maps hooks in `uaisk_template_hooks.hpp`)
 
 C++ mapping header: `Source/FUSE/Modules/ai/include/fuse/ai/uaisk_template_hooks.hpp`
 
@@ -19,4 +19,4 @@ C++ mapping header: `Source/FUSE/Modules/ai/include/fuse/ai/uaisk_template_hooks
 |------|-----------|
 | `patrol_squad.bt` | `makePatrolWithAllySupportDemoTree()` equivalent via `loadTreeFromText` |
 
-License: MIT (`third_party/addons/UAISK/LICENSE`).
+License: MIT (upstream UAISK `LICENSE`).

@@ -5,6 +5,8 @@
 **Status:** Proposed target — **documentation only** in U0; no mass directory moves in this PR  
 **Aligns with:** [FUSE_UNIFIED_PRESTARTER.md](../plans/FUSE_UNIFIED_PRESTARTER.md) §3 (layer cake L0–L4), §3.3 (symbol law), §16 (repo hygiene)
 
+**Status (2026-10):** `fuse_t3d_legacy` / `fuse_t2d_legacy`, `Source/FUSE/Legacy/`, Torque addon submodules, and `Engine/` are **not** in the repo. Shipped layout is `Source/FUSE/` + `vendor/` + `Samples/unification/`. Sections below mix U0 target state with historical migration notes.
+
 ---
 
 ## 1. Purpose
@@ -27,8 +29,8 @@ This document proposes the **end-state monorepo layout** for the one-program FUS
 |-------|-----------------|------------------|------------------------|
 | **L0** | FUSE Core | `Source/FUSE/Core/` | `fuse_core` |
 | **L1** | Shared services | `Source/FUSE/Services/` | `fuse_services` (or split: `fuse_assets`, `fuse_audio`, …) |
-| **L2a** | Dimension: 3D | `Source/FUSE/Legacy/T3D/` → later `Source/FUSE/World3D/` | `fuse_t3d_legacy` → `fuse_world3d` |
-| **L2b** | Dimension: 2D | `Source/FUSE/Legacy/T2D/` → later `Source/FUSE/World2D/` | `fuse_t2d_legacy` → `fuse_world2d` |
+| **L2a** | Dimension: 3D | `Source/FUSE/World3D/` | `fuse_world3d` (native; legacy quarantine removed) |
+| **L2b** | Dimension: 2D | `Source/FUSE/World2D/` | `fuse_world2d` (native; legacy quarantine removed) |
 | **L3** | Feature modules | `Source/FUSE/Modules/{ai,fx,cinematics,mechanics,adventure}/` | `fuse_ai`, `fuse_fx`, … |
 | **L4** | Tools | `Source/FUSE/Editor/`, `Tools/FUSE/` | `fuse_editor`, `fuse_tools` |
 | **Apps** | Shipped binaries | `Source/FUSE/Apps/` | `fuse_runtime`, `fuse_runtime_smoke` |
@@ -168,7 +170,7 @@ FUSE/                                    # repo root (today)
     │   ├── AFX-Template/
     │   ├── 3DAAK/
     │   └── README.md
-    └── vendored/                        # (new, optional U3+) non-submodule deps if split from Engine/lib
+    └── vendor/                          # (today) pinned third-party libs
 ```
 
 ---
@@ -193,7 +195,7 @@ FUSE/                                    # repo root (today)
 | `Engine/source/Verve/` | `Source/FUSE/Modules/cinematics/` | **U5** | Same |
 | `third_party/Torque2D/engine/source/` | Wrapped by `Source/FUSE/Legacy/T2D/` | **U1–U2** | Submodule stays; **never** copy into `Engine/` |
 | `third_party/Torque2D/editor/` | Unchanged (ore); optional `Samples/T2D/editor-parity/` doc | **U6+** | Not product UI |
-| `Engine/lib/` | `Engine/lib/` short-term; optional `third_party/vendored/` long-term | **U3+** | Large vendored trees — move only with care |
+| Torque-bundled deps (historical) | `vendor/` | **Done** | Pinned `VERSION` files; see `cmake/FuseVendor.cmake` |
 
 ### 4.3 Tools, templates, projects
 
@@ -209,13 +211,13 @@ FUSE/                                    # repo root (today)
 
 | Today | Target | When | Notes |
 |-------|--------|------|-------|
-| `third_party/addons/GMK/Engine/source/component/` | `Source/FUSE/Modules/mechanics/` | **U5** | Extract ~26 files; discard bundled Engine |
-| `third_party/addons/Verve/Engine/source/Verve/` | `Source/FUSE/Modules/cinematics/` | **U5** | Root copy takes precedence today |
-| `third_party/addons/BadBehaviour/.../BadBehavior/` | `Source/FUSE/Modules/ai/` | **U5** | ~74 C++ files |
-| `third_party/addons/GuideBot/guideBotT3D/engine/` | `Source/FUSE/Modules/ai/guidebot/` | **U5** | Check custom license |
-| `third_party/addons/UAISK/.../UAISK/*.cs` | `Samples/Modules/ai/uaisk-templates/` | **U5** | Scripts only |
-| `third_party/addons/AFX-Template/game/` | `Samples/Modules/fx/` | **U5** | Engine already in `Engine/source/afx/` |
-| `third_party/addons/3DAAK/Templates/.../scripts/` | `Source/FUSE/Modules/adventure/` + samples | **U5** | Script systems, not full Engine |
+| upstream GMK `component/` ore | `Source/FUSE/Modules/mechanics/` | **U5** | Extract ~26 files |
+| upstream Verve `Engine/source/Verve/` | `Source/FUSE/Modules/cinematics/` | **U5** | Kernel harvested |
+| upstream BadBehaviour `BadBehavior/` | `Source/FUSE/Modules/ai/` | **U5** | ~74 C++ files distilled |
+| upstream GuideBot `guideBotT3D/engine/` | `Source/FUSE/Modules/ai/` | **U5** | Check custom license |
+| upstream UAISK `UAISK/*.cs` | `Samples/Modules/ai/uaisk-templates/` | **U5** | Scripts only |
+| upstream AFX-Template `game/` | `Samples/Modules/fx/` + `fuse_fx` | **U5** | Missions stubbed under `Samples/unification/demo_fx/` |
+| upstream 3DAAK scripts | `Source/FUSE/Modules/adventure/` + samples | **U5** | Script systems, not full Engine |
 
 ### 4.5 Docs & samples
 
@@ -237,8 +239,8 @@ FUSE/                                    # repo root (today)
 | `Engine/` | **Stay** — T3D generate/build unchanged |
 | `Tools/CMake/` | **Stay** |
 | `Templates/`, `My Projects/` | **Stay** |
-| `third_party/Torque2D/` | **Stay** (submodule) |
-| `third_party/addons/*` | **Stay** (ore, read-only) |
+| Torque2D upstream | **Removed** from repo (historical submodule) |
+| Torque addon upstream repos | **Not vendored** — ore catalog + `Samples/unification/` stubs |
 | `docs/unification/` | **Add** documentation only |
 | `Samples/unification/README.md` | **Add** placeholder (done) |
 | `Source/FUSE/` | **Optional stub** — U1 may add `Source/FUSE/Core/` empty + CMake only; **not required in U0 PR** |
@@ -270,7 +272,7 @@ FUSE/                                    # repo root (today)
 | Deprecated | Replaced by |
 |------------|-------------|
 | Separate T3D EXE workflow as *product* | `fuse_runtime` + `fuse_editor` |
-| `third_party/addons/*/Engine/` as compile input | `Source/FUSE/Modules/*` |
+| upstream addon `Engine/` trees as compile input | `Source/FUSE/Modules/*` |
 | Dual CMake generate scripts (undocumented) | Single umbrella configure |
 | T2D stock editor as product UI | Qt `fuse_editor` |
 
@@ -298,8 +300,8 @@ FUSE/                                    # repo root (today)
 |--------|----------|
 | `fuse_core` | L0 static lib |
 | `fuse_services` | L1 (may split later) |
-| `fuse_t3d_legacy` | Wrapped `Engine/source` with symbol prefix |
-| `fuse_t2d_legacy` | Wrapped `third_party/Torque2D/engine/source` with prefix |
+| `fuse_t3d_legacy` | **Removed** (U2 plan — not shipped) |
+| `fuse_t2d_legacy` | **Removed** (U2 plan — not shipped) |
 | `fuse_world3d`, `fuse_world2d` | Strangler replacements (grow over U4+) |
 | `fuse_ai`, `fuse_fx`, `fuse_cinematics`, `fuse_mechanics`, `fuse_adventure` | L3 modules |
 | `fuse_runtime` | Ship player |
@@ -315,13 +317,13 @@ FUSE/                                    # repo root (today)
 | `Samples/unification/demo_<name>/` | U8 parity demo; see [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) |
 | `*.fuseproj` / `project.json` | FUSE unified project (U7) |
 | `worlds/*.3d.fuselevel`, `*.2d.fuselevel` | Converted worlds |
-| `third_party/addons/` | **Ore** — reference only after U5 |
-| `third_party/vendored/` | Explicit non-submodule third-party (optional) |
+| Upstream addon repos | **Ore** — not in tree; see [addon-ore-catalog.md](./addon-ore-catalog.md) |
+| `vendor/` | Pinned third-party libraries (today) |
 | `Engine/` | Legacy T3D tree — shrinking via strangler, not deleted abruptly |
 
 ### 6.4 Symbol prefix law (link time)
 
-When `fuse_t3d_legacy` and `fuse_t2d_legacy` link together (U2+):
+When historical legacy libs would have linked together (U2 plan — superseded):
 
 - C linkage / globals: `fuse_t3d_`, `fuse_t2d_` prefix scripts  
 - Do **not** expose raw `Con::`, `Platform::`, or `StringTable` from both libs without rename ([symbol-collision-report.md](./symbol-collision-report.md))
@@ -332,10 +334,9 @@ When `fuse_t3d_legacy` and `fuse_t2d_legacy` link together (U2+):
 
 | Location | Role | Compile? | Lifecycle |
 |----------|------|----------|-----------|
-| `third_party/Torque2D/` | Full T2D upstream (submodule) | Via `fuse_t2d_legacy` wrap only | Until L2b strangler done; then archive |
-| `third_party/addons/*` | Community kits (submodule) | **No** after U5 | Read-only ore → extract to `Source/FUSE/Modules/` |
-| `Engine/lib/` | T3D-bundled deps (bullet, assimp, …) | Yes (today) | Gradual move to `third_party/vendored/` if needed |
-| `third_party/vendored/` (optional) | Shared vcpkg-adjacent pins | Yes | U3+ hygiene |
+| Torque2D upstream | Full T2D tree (removed from repo) | N/A | Native `World2D` replaces wrap |
+| Torque addon upstream | Community kits | **No** compile | Extracted into `Source/FUSE/Modules/` + samples |
+| `vendor/` | Pinned deps (bullet, assimp, …) | Yes (today) | `VERSION` pins + `fuse_lint_vendored_pins_*` |
 
 ---
 
@@ -364,7 +365,7 @@ Repo ships **templates** under `Templates/FUSE/` and **parity demos** under `Sam
 |-----------------|-------------------|
 | L0–L4 layer cake | `Source/FUSE/{Core,Services,World2D,World3D,Modules,Editor}` |
 | 2D→3D extension merge | `World2D/Scene/` base; `World3D/Scene/` extends 2D — see [merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md) |
-| No addon Engine → Engine merge | Addons stay in `third_party/addons/`; extract to `Modules/` |
+| No addon Engine → Engine merge | Upstream ore only; kernels in `Source/FUSE/Modules/` |
 | No physical Engine+T2D source marry | Legacy wrapped in `Legacy/` only |
 | `fuse::` for new code | `include/fuse/` public headers |
 | Legacy quarantine | `Legacy/T3D`, `Legacy/T2D` CMake wraps — no path merge |

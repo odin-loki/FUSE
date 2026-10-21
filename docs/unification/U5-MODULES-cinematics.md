@@ -2,7 +2,7 @@
 
 **Status:** Deepened Verve track kernel (camera / sprite / property / audio / event stubs, scrub + cue queue)  
 **Target:** `Source/FUSE/Modules/cinematics/`  
-**Ore:** Verve MIT — `Engine/source/Verve/Core/` and `third_party/addons/Verve/Engine/source/Verve/Core/`
+**Ore:** Verve MIT — upstream `Engine/source/Verve/Core/` (harvested into `Source/FUSE/Modules/cinematics/`)
 
 ## Harvested concepts
 
@@ -42,4 +42,4 @@
 
 ## License
 
-Verve (Violent Tulip, 2014) — MIT. See `third_party/addons/Verve/LICENSE`.
+Verve (Violent Tulip, 2014) — MIT. See upstream Verve addon `LICENSE`.

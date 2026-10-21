@@ -64,15 +64,15 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 
 | Status | Source path | FUSE destination |
 |--------|-------------|------------------|
-| ✅ P0 | `third_party/addons/BadBehaviour/Engine/source/BadBehavior/core/` | `node_registry.hpp`, flat `BehaviorNode` |
+| ✅ P0 | upstream BadBehaviour `BadBehavior/core/` | `node_registry.hpp`, flat `BehaviorNode` |
 | ✅ P1 | `.../BadBehavior/composite/` | `bb.sequence`, `bb.selector`, `bb.parallel` |
 | ✅ P1 | `.../BadBehavior/decorator/` | `bb.inverter`, `bb.loop`, `bb.succeed_always`, `bb.root` |
 | ✅ P1 | `.../BadBehavior/leaf/` | Scripted/compiled leaves — `bb.action.set_flag`, `bb.action.wait`, `bb.action.blackboard_set`, `bb.condition.blackboard_get`, `bb.action.distance` |
 | ✅ P1 | `.../BadBehavior/decorator/Monitor.h` | `bb.monitor` decorator (guarded + observer children) |
-| ✅ P2 | `third_party/addons/GuideBot/.../guideBot/actionMove.h` | `gb.action.move_toward` — Running/Success arrival, direction scalar, runtime position commit (custom license) |
-| ✅ P3 | `third_party/addons/UAISK/.../UAISK/*.cs` | Template hooks + `Samples/Modules/ai/uaisk-templates/` |
+| ✅ P2 | upstream GuideBot `guideBot/actionMove.h` | `gb.action.move_toward` — Running/Success arrival, direction scalar, runtime position commit (custom license) |
+| ✅ P3 | upstream UAISK `UAISK/*.cs` | Template hooks + `Samples/Modules/ai/uaisk-templates/` |
 
-**Do not compile** from `third_party/addons/*/Engine/` — extract kernels into `Source/FUSE/Modules/ai/`. See [Modules/ai/README.md](../../Source/FUSE/Modules/ai/README.md).
+**Do not compile** upstream addon `Engine/` trees — kernels live in `Source/FUSE/Modules/ai/`. See [Modules/ai/README.md](../../Source/FUSE/Modules/ai/README.md).
 
 ---
 
@@ -133,9 +133,9 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 | ✅ P2 | `Engine/source/afx/afxConstraint.h` | `SocketConstraintManager`, `parse_constraint_spec`, socket remap |
 | ✅ P2 | `Engine/source/afx/util/afxParticlePool.h` | `ParticlePool` CPU stub (spawn/tick/cull) |
 | ✅ P2 | `Engine/source/afx/afxMagicMissile.h` | `MissileDescriptor`, `MissilePipeline` projectile sim stub |
-| ✅ P3 | `third_party/addons/AFX-Template/game/` | `registerAfxTemplateSamplePack()` + `Samples/Modules/fx/afx_minimal_pack.txt` |
+| ✅ P3 | upstream AFX-Template `game/` missions | `registerAfxTemplateSamplePack()` + `Samples/Modules/fx/afx_minimal_pack.txt` |
 
-**Do not compile** from `third_party/addons/*/Engine/` — extract kernels into `Source/FUSE/Modules/fx/`. See [Modules/fx/README.md](../../Source/FUSE/Modules/fx/README.md).
+**Do not compile** upstream addon trees — kernels live in `Source/FUSE/Modules/fx/`. See [Modules/fx/README.md](../../Source/FUSE/Modules/fx/README.md).
 
 ### `fuse_mechanics`
 
@@ -155,7 +155,7 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 - **SwitchComponent** — GMK switch leaf (`flip()`, on/off labels)
 - Tests: above + `fuse_mechanics_physics_trigger_bridge`, `fuse_mechanics_delay_rotate`
 - Hybrid demo: polyhedron trigger + physics bridge + console method toggles lever; delay/rotate on enter
-- TODO: extract remaining GMK `SimComponent` leaves from `third_party/addons/GMK/Engine/source/component/`
+- TODO: extract remaining GMK `SimComponent` leaves from upstream GMK `Engine/source/component/` ore
 
 ### `fuse_adventure`
 

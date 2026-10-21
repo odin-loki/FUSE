@@ -2,7 +2,7 @@
 
 **Phase:** U0 Inventory & collision map  
 **Date:** 2026-09-15  
-**Scope:** All seven addons under `third_party/addons/` — engine patches vs scripts vs art vs tools; licenses; extractable kernel vs content pack; kernel entry points.
+**Scope:** All seven Torque community addons (upstream repos — **not** vendored in FUSE) — engine patches vs scripts vs art vs tools; licenses; extractable kernel vs content pack; kernel entry points. Parity stubs live under `Samples/unification/`.
 
 **Policy:** Addons are **ore**, not drop-in plugins. Do not merge addon `Engine/` trees into FUSE `Engine/` (prestarter §2.2, §16). FUSE root already contains pre-integrated `afx/` and `Verve/` — treat as prior partial merges to be refactored into U5 modules.
 
@@ -10,15 +10,15 @@
 
 ## Summary table
 
-| Addon | Submodule path | Shape | Engine patches | Scripts | Art assets | Tools | License | Kernel estimate | Content pack estimate |
-|-------|---------------|-------|----------------|---------|------------|-------|---------|-----------------|----------------------|
-| **GMK** | `third_party/addons/GMK` | Full T3D tree + Qt4 PM | 26 files in `component/`, `unit/` | ~1,052 | ~4,057 | Qt4 DLLs, PM.exe | MIT (T3D) | **Small** (~30 C++ files) | **Large** (templates, art, docs) |
-| **Verve** | `third_party/addons/Verve` | Engine patch + templates | 163 C++ in `Engine/source/Verve/` | ~104 | ~64 | — | MIT | **Medium** (~163 C++) | Small (template missions) |
-| **BadBehaviour** | `third_party/addons/BadBehaviour` | Full T3D tree | 74 C++ in `BadBehavior/` | ~988 | ~2,191 | project gen | MIT (T3D) | **Medium** (~74 C++) | Large (BehaviorTestbed, art) |
-| **GuideBot** | `third_party/addons/GuideBot` | Module + docs | 96 C++ in `guideBotT3D/engine/` | ~44 | ~145 | PDF guides | Custom (see `guidebot_license_agreement.txt`) | **Small–medium** (~96 C++) | Medium (demo level, models) |
-| **UAISK** | `third_party/addons/UAISK` | Kit folder only | **0** (no engine) | ~44 | ~1 | HTML docs | MIT (`LICENSE`) | **Scripts only** (templates) | Small |
-| **AFX** | `third_party/addons/AFX-Template` | Project template | 0 unique engine (see FUSE `Engine/source/afx/`) | ~640 | ~2,099 | shader scripts | MIT (`LICENSE`) | **Already in FUSE root** (218 files) | Large (demo levels, FX art) |
-| **3DAAK** | `third_party/addons/3DAAK` | Full T3D tree | 0 addon-only dirs (full engine fork) | ~1,014 | ~2,179 | project gen | MIT (`LICENSE.md`) | **Scripts/systems** (inventory, interaction) | Large (Outpost template) |
+| Addon | Upstream repo (not in tree) | Shape | Engine patches | Scripts | Art assets | Tools | License | Kernel estimate | Content pack estimate |
+|-------|------------------------------|-------|----------------|---------|------------|-------|---------|-----------------|----------------------|
+| **GMK** | `TorqueGameEngines/Addon-GMK` | Full T3D tree + Qt4 PM | 26 files in `component/`, `unit/` | ~1,052 | ~4,057 | Qt4 DLLs, PM.exe | MIT (T3D) | **Small** (~30 C++ files) | **Large** (templates, art, docs) |
+| **Verve** | `TorqueGameEngines/Addon-Verve` | Engine patch + templates | 163 C++ in `Engine/source/Verve/` | ~104 | ~64 | — | MIT | **Medium** (~163 C++) | Small (template missions) |
+| **BadBehaviour** | `TorqueGameEngines/Addon-BadBehaviour` | Full T3D tree | 74 C++ in `BadBehavior/` | ~988 | ~2,191 | project gen | MIT (T3D) | **Medium** (~74 C++) | Large (BehaviorTestbed, art) |
+| **GuideBot** | `TorqueGameEngines/Addon-GuideBot` | Module + docs | 96 C++ in `guideBotT3D/engine/` | ~44 | ~145 | PDF guides | Custom (see upstream `guidebot_license_agreement.txt`) | **Small–medium** (~96 C++) | Medium (demo level, models) |
+| **UAISK** | `TorqueGameEngines/Addon-UAISK` | Kit folder only | **0** (no engine) | ~44 | ~1 | HTML docs | MIT (`LICENSE`) | **Scripts only** (templates) | Small |
+| **AFX** | `TorqueGameEngines/Addon-AFX-Template` | Project template | 0 unique engine (AFX concepts in `Source/FUSE/Modules/fx/`) | ~640 | ~2,099 | shader scripts | MIT (`LICENSE`) | **Extracted to `fuse_fx`** | Large (demo levels, FX art) |
+| **3DAAK** | `TorqueGameEngines/Addon-3DAAK` | Full T3D tree | 0 addon-only dirs (full engine fork) | ~1,014 | ~2,179 | project gen | MIT (`LICENSE.md`) | **Scripts/systems** (inventory, interaction) | Large (Outpost template) |
 
 ---
 

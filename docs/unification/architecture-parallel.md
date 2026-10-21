@@ -51,7 +51,7 @@
 │  └──────────────────────────────────────────────────────────┘ │
 │  ┌────────────┐ ┌────────────┐ ┌─────────────────────────┐ │
 │  │ I/O lane   │ │ Audio lane │ │ Legacy adapters (quarantine)│ │
-│  │ (optional) │ │ (1 thread) │ │ fuse_t3d_legacy / t2d    │ │
+│  │ (optional) │ │ (1 thread) │ │ native World2D / World3D │ │
 │  └────────────┘ └────────────┘ └─────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -264,7 +264,7 @@ fuse::Object
 | **Global** `fuse::Heap` | any (atomic buckets) | long-lived assets |
 | **Per-frame linear** | game thread write; workers read prior frame | temp arrays, cull lists |
 | **Per-job scratch** | worker-local bump | decode, cook, BT eval |
-| **Legacy** | quarantined in `fuse_t3d_legacy` | no new allocations from workers into legacy heaps |
+| **Legacy** | removed — native worlds only | no Torque heap in product graph |
 
 **Forbidden:**
 - Raw `SimObject*` / `SceneObject*` on worker threads
@@ -316,7 +316,7 @@ UI thread (Qt)                    Game thread
 
 | Legacy | MT rule |
 |--------|---------|
-| `fuse_t3d_legacy` | Expose **adapter API** callable only from game thread; internal `ThreadPool::GLOBAL()` stays inside lib — **do not** submit work that callbacks into FUSE graph without marshalling |
+| Torque legacy (historical) | U2 planned `fuse_t3d_legacy` adapters — **removed**; game-thread mutation rules still apply to `fuse::` scene graph |
 | `fuse_t2d_legacy` | Same; T2D has no pool — even stricter main-thread assumption |
 | Dual `Con::` | Workers **never** call; compat script only on game thread |
 | `_forceAllMainThread` | Map to `FUSE_JOBS_SINGLE_THREAD` for parity debugging |

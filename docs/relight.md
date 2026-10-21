@@ -163,7 +163,7 @@ Relight works without plugins. These optional runtimes add features when you ins
 | `nrd` | NVIDIA NRD denoiser | `fuse_nrdplugin_nri.dll`, `NRD.dll` | NRD 4.x | `nrd/` | `FUSE_NRD_SDK_DIR` |
 
 Get the vendor runtimes from the vendors, under their licences; FUSE never redistributes them. The
-`fuse_nvplugin_*` and `fuse_nrdplugin_*` providers are FUSE's own MIT adapters, built from the FUSE
+`fuse_nvplugin_*` and `fuse_nrdplugin_*` providers are FUSE's own AGPL-3.0 plugin adapters, built from the FUSE
 sources with `-DFUSE_ENABLE_NVIDIA_PLUGIN=ON` / `-DFUSE_ENABLE_NRD_PLUGIN=ON` (see
 [nvidia-plugin.md](nvidia-plugin.md)).
 

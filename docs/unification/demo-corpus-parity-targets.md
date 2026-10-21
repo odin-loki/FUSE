@@ -99,13 +99,13 @@ T2D uses `main.cs` module entry points under `third_party/Torque2D/` (not `.mis`
 
 | Addon | FUSE module | Golden demo | Path |
 |-------|-------------|-------------|------|
-| **BadBehaviour** | `fuse_ai` | Behavior testbed | `third_party/addons/BadBehaviour/Templates/Full/game/levels/BehaviorTestbed.mis` |
-| **GuideBot** | `fuse_ai` | GuideBot demo | `third_party/addons/GuideBot/guideBotT3D/game/levels/guideBotDemo.mis` |
-| **UAISK** | `fuse_ai` templates | Full template + UAISK scripts | `third_party/addons/UAISK/The_Universal_AI_Starter_Kit/Templates/Full/` |
-| **Verve** | `fuse_cinematics` | Verve template mission | `third_party/addons/Verve/Templates/Full/` (open in Verve editor) |
-| **GMK** | `fuse_mechanics` | Full template mechanics | `third_party/addons/GMK/Templates/Full/game/levels/default.mis` |
-| **AFX** | `fuse_fx` | AFX minimal demo | `third_party/addons/AFX-Template/game/levels/AFXDemo_Minimal.mis` |
-| **3DAAK** | `fuse_adventure` | Outpost adventure | `third_party/addons/3DAAK/Templates/Full/game/levels/Outpost.mis` |
+| **BadBehaviour** | `fuse_ai` | Behavior testbed | `Samples/unification/demo_ai_bt/worlds/behavior_testbed.mis` |
+| **GuideBot** | `fuse_ai` | GuideBot demo | `demo_hybrid_hud` move-toward gate (upstream `guideBotDemo.mis` ore) |
+| **UAISK** | `fuse_ai` templates | Full template + UAISK scripts | `Samples/Modules/ai/uaisk-templates/` |
+| **Verve** | `fuse_cinematics` | Verve template mission | `Samples/unification/demo_timeline/worlds/verve_intro.mis` |
+| **GMK** | `fuse_mechanics` | Full template mechanics | `demo_hybrid_hud` mechanics gates (upstream GMK template ore) |
+| **AFX** | `fuse_fx` | AFX minimal demo | `Samples/unification/demo_fx/worlds/afx_minimal.mis` |
+| **3DAAK** | `fuse_adventure` | Outpost adventure | `Samples/unification/demo_adventure_stub/worlds/outpost.mis` |
 
 ### AFX extended corpus (FX regression)
 

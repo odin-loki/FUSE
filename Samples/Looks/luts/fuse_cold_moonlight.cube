@@ -1,4 +1,4 @@
-# FUSE sample creative LUT, generated for the FUSE samples (MIT, like the rest of FUSE).
+# FUSE sample creative LUT, generated for the FUSE samples (AGPL-3.0, like the rest of FUSE).
 # sRGB-encoded display domain, red fastest.
 TITLE "FUSE cold moonlight"
 LUT_3D_SIZE 17

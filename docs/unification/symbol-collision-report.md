@@ -2,7 +2,7 @@
 
 **Phase:** U0 Inventory & collision map  
 **Date:** 2026-09-15  
-**Evidence base:** FUSE `main` at commit inventory time; submodules initialised (`third_party/Torque2D` @ `e7b0011`, addons @ pinned SHAs in `.gitmodules`)  
+**Evidence base:** FUSE `main` at U0 inventory time (2026-09); Torque2D and addon trees were submodule-pinned then — **removed from the repo in 2026-10**.  
 **Scope:** Duplicate globals, classes, filenames, and linker-visible symbols across T3D (`Engine/source`) and T2D (`third_party/Torque2D/engine/source`)
 
 ---
@@ -22,13 +22,13 @@ Linking raw T3D and T2D engine sources into **one process without renaming or st
 | `Con::` function name collisions | 88 unique | 40 unique | **33** |
 | `IMPLEMENT_CONOBJECT` registered name collisions | 411 registrations | 8 registrations | **1** (`SimXMLDocument`) |
 
-**Conclusion for U2:** Compile each legacy dimension as a **prefixed static library** (`fuse_t3d_legacy`, `fuse_t2d_legacy`) with symbol renaming for C-linkage and shared Torque globals. Do **not** `add_subdirectory` both raw trees into one link unit.
+**Conclusion for U2 (historical):** Prefixed static libraries (`fuse_t3d_legacy`, `fuse_t2d_legacy`) were the planned mitigation. That quarantine was **not** shipped; legacy trees were removed and FUSE uses native `fuse::` world/scene APIs instead. The collision analysis below still informs why raw dual-link is forbidden.
 
 ---
 
 ## 2. Methodology
 
-1. **Submodule init:** `git submodule update --init --recursive` — required; T2D and addons are empty without it.
+1. **Inventory checkout (historical):** U0 used initialized Torque2D and addon submodules; FUSE today clones without submodules — see [README.md](./README.md) § Historical inventory SHAs.
 2. **File inventory:** `find` over both `engine/source` trees; basename intersection.
 3. **Class/struct extraction:** Python scan of `class Foo` at line start (filters comment false-positives like `class is designed for`); supplemental regex pass for totals.
 4. **Console collision:** `Con::identifier(` pattern across both trees.
@@ -209,7 +209,7 @@ These do **not** collide with T2D (T3D-only addons) but reinforce that addon sym
 
 | Priority | Tactic | Applies to |
 |----------|--------|------------|
-| P0 | Separate static libs `fuse_t3d_legacy`, `fuse_t2d_legacy` | All |
+| P0 | Separate static libs (historical U2 plan — not shipped) | All |
 | P0 | C symbol prefix script (`fuse_t3d_`, `fuse_t2d_`) for `extern "C"` and global singletons | Platform, console |
 | P0 | Rename or namespace-wrap `Con::` in one tree | Console |
 | P1 | Header include path isolation — no shared `-I` for both `console/` trees | Build |

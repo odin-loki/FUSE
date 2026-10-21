@@ -99,7 +99,7 @@ Schema details: [projects.md](projects.md).
 
 - Shipping `fuse_runtime` player with installer — demos are the player surface today.
 - Animated sprite GPU texture atlas playback — metadata and wiring stubs only.
-- Full golden submodule corpus without bundled fallbacks — requires `git submodule update --init`.
+- Upstream Torque addon mission trees — not vendored; parity demos use bundled stubs under `Samples/unification/*/worlds/`.
 - Stakeholder sign-off on “one program” — engineering gates are tracked in [demo-corpus-parity-targets.md](unification/demo-corpus-parity-targets.md).
 
 ## Next reads

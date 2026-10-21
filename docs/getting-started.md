@@ -4,9 +4,9 @@ Build FUSE from source, run tests, and launch a hybrid demo.
 
 ## Prerequisites
 
-- Git with submodule support
+- Git
 - CMake 3.21 or newer
-- A C++17 compiler (GCC 11+, Clang 14+, MSVC 2019+). Product code is moving to ISO C++23.
+- A C++23 compiler (GCC 13+, Clang 16+, MSVC 2022 17.8+).
 - Ninja recommended (optional on Windows if you use Visual Studio generators)
 
 Optional:
@@ -19,15 +19,11 @@ Optional:
 ## Clone
 
 ```bash
-git clone --recurse-submodules https://github.com/odin-loki/FUSE.git
+git clone https://github.com/odin-loki/FUSE.git
 cd FUSE
 ```
 
-If you already cloned without submodules:
-
-```bash
-git submodule update --init --recursive
-```
+Vendored dependencies are committed under `vendor/`; no submodule init step is required.
 
 ## Configure and build (core + tests)
 

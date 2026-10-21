@@ -29,7 +29,7 @@ numbered list in the [Sources](#sources) section at the end.*
    License**, which allows redistribution in object form inside an application with "material additional
    functionality". The DLSS SDK may only be used "for systems with NVIDIA GPUs", and the license forbids
    any use that would make the SDK "subject to an open source software license" [S13]. **Consequence for
-   FUSE:** DLSS must be an optional backend that is loaded at runtime, kept out of the MIT tree and out of
+   FUSE:** DLSS must be an optional backend that is loaded at runtime, kept out of the AGPL source tree and out of
    CI. That is feasible, and it is what the licence allows.
 3. **ENBSeries is a closed, hook-based D3D post/lighting injector** by Boris Vorontsov [S30][S31]. Its
    **2026-08-06 EULA** explicitly forbids third-party software from parsing, loading, converting or mapping
@@ -570,12 +570,12 @@ tonemap curves, grade and grain):
 
 ## 6. Licensing matrix and blockers
 
-| Component | Licence | Can FUSE (MIT) vendor source? | Can FUSE redistribute binaries? | Blocker? |
+| Component | Licence | Can FUSE (AGPL-3.0) vendor source? | Can FUSE redistribute binaries? | Blocker? |
 |---|---|---|---|---|
 | FidelityFX SDK v1.1.4 (FSR 1/2/3.1, CAS, LPM, CACAO, SSSR, DoF, Lens, Brixelizer GI…) | MIT [S15] | Yes | Yes | No |
 | FSR SDK 2.x (FSR 4 / Redstone) | Signed DLLs, limited source; DX12 only [S18][S19] | No | Per AMD terms | **Yes for Vulkan (unsupported)**. Avoid the leaked FSR 4 source [S22]. |
 | Streamline | MIT (+ Nsight Perf proprietary part) [S11a] | Yes (headers/adapter) | – | No |
-| DLSS / NGX / DLSS-G / Reflex / NRD / RTXDI / RTXPT / RTXNTC | NVIDIA RTX SDKs License [S13] | **No** (keep outside the MIT tree) | Yes, in object form inside the app, with notice and EULA; NVIDIA GPUs only | **Conditional.** Optional plugin; not in CI; must not be made subject to an OSS licence. |
+| DLSS / NGX / DLSS-G / Reflex / NRD / RTXDI / RTXPT / RTXNTC | NVIDIA RTX SDKs License [S13] | **No** (keep outside the AGPL source tree) | Yes, in object form inside the app, with notice and EULA; NVIDIA GPUs only | **Conditional.** Optional plugin; not in CI; must not be made subject to an OSS licence. |
 | XeSS SDK | Intel Simplified Software License [S21b] | No (binary only) | Yes, with notice; no modification | Conditional (optional plugin) |
 | Arm ASR | MIT [S24] | Yes | Yes | No |
 | Snapdragon GSR | BSD-3 [S25] | Yes | Yes | No |

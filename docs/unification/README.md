@@ -5,7 +5,7 @@
 **Date:** 2026-09-15  
 **Plan:** [FUSE_UNIFIED_PRESTARTER.md](../plans/FUSE_UNIFIED_PRESTARTER.md) §5
 
-This directory contains evidence-based inventory and collision analysis for merging Torque3D (repo root), Torque2D (`third_party/Torque2D`), and seven community addons into **one program**.
+This directory contains evidence-based inventory and collision analysis for merging historical Torque3D, Torque2D, and seven community addons into **one program**. Legacy Torque trees and addon submodules are **not** in the FUSE repo today; product code is under `Source/FUSE/` with parity stubs in `Samples/unification/`.
 
 **Constraint:** Investigation and documentation only — no addon `Engine/` merges into FUSE `Engine/` in this phase.
 
@@ -44,7 +44,7 @@ Physics, gfx, and net remain composition/dual-backend. No physical `Engine/` + T
 
 **Related (not U0):**
 - [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) — Track A/B port (consult for alignment only)
-- [third_party/addons/README.md](../../third_party/addons/README.md) — submodule acquisition map
+- [addon-ore-catalog.md](./addon-ore-catalog.md) — upstream addon ore map (repos not vendored in-tree)
 
 **U1 deliverable:** [BUILD.md](./BUILD.md) (umbrella CMake + `fuse_core` stub) — ✅ landed in U1 PR.  
 **U2 deliverable:** [U2-SMOKE.md](./U2-SMOKE.md) (quarantine libs + `fuse_runtime_smoke`) — ✅ U2 PR.
@@ -100,18 +100,18 @@ Platform scope, adaptive workers, mobile GFX threading, background lifecycle —
 
 ---
 
-## Submodule SHAs (inventory evidence)
+## Historical inventory SHAs (U0 evidence; submodules removed)
 
-| Submodule | Path | Commit (at inventory) |
-|-----------|------|------------------------|
-| Torque2D | `third_party/Torque2D` | `e7b0011a913793fabb5e564549b3d3ddb3913fe9` |
-| GMK | `third_party/addons/GMK` | `e322f148ee2e5fe15cf572472b3644325b4f9e44` |
-| Verve | `third_party/addons/Verve` | `0ea77b28767b665b40ddee0909a74f6bc06cebd3` |
-| BadBehaviour | `third_party/addons/BadBehaviour` | `9fd487314d4636f7e91834acb2994aa56a63f8a7` |
-| GuideBot | `third_party/addons/GuideBot` | `0e1e4230f5aa3f32690476d94f1cdfd3b1bf012e` |
-| UAISK | `third_party/addons/UAISK` | `c8224f7684de68aaa143b2d4252dba3c5b983861` |
-| AFX-Template | `third_party/addons/AFX-Template` | `1907e55b7aac8e0e239f820ec14ad4367ca7430b` |
-| 3DAAK | `third_party/addons/3DAAK` | `8684cd1a65084e52f76131d74520c2fa9e1904a1` |
+| Upstream | Repo / path (2026-09 inventory) | Commit (at inventory) |
+|----------|----------------------------------|------------------------|
+| Torque2D | `third_party/Torque2D` (removed) | `e7b0011a913793fabb5e564549b3d3ddb3913fe9` |
+| GMK | `TorqueGameEngines/Addon-GMK` | `e322f148ee2e5fe15cf572472b3644325b4f9e44` |
+| Verve | `TorqueGameEngines/Addon-Verve` | `0ea77b28767b665b40ddee0909a74f6bc06cebd3` |
+| BadBehaviour | `TorqueGameEngines/Addon-BadBehaviour` | `9fd487314d4636f7e91834acb2994aa56a63f8a7` |
+| GuideBot | `TorqueGameEngines/Addon-GuideBot` | `0e1e4230f5aa3f32690476d94f1cdfd3b1bf012e` |
+| UAISK | `TorqueGameEngines/Addon-UAISK` | `c8224f7684de68aaa143b2d4252dba3c5b983861` |
+| AFX-Template | `TorqueGameEngines/Addon-AFX-Template` | `1907e55b7aac8e0e239f820ec14ad4367ca7430b` |
+| 3DAAK | `TorqueGameEngines/Addon-3DAAK` | `8684cd1a65084e52f76131d74520c2fa9e1904a1` |
 
 ---
 

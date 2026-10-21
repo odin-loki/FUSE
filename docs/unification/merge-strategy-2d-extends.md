@@ -86,12 +86,12 @@ Apply **only** where a 3D entity is legitimately “a 2D scene object plus depth
 
 | Domain | Policy | Anti-pattern |
 |--------|--------|--------------|
-| **Physics** | `World2D` **composes** Box2D (via `fuse_t2d_legacy`); `World3D` **composes** T3D collision (via `fuse_t3d_legacy`) | `World3D : Box2DWorld`, `SceneObject3D : b2Body` |
+| **Physics** | `World2D` **composes** Box2D; `World3D` **composes** 3D collision backend | `World3D : Box2DWorld`, `SceneObject3D : b2Body` |
 | **Graphics** | Dual render backends until U4 hybrid compositor / Track B RHI; `SceneObject2D/3D` hold **render component refs**, not GL/D3D base classes | `SceneObject3D : T3D::SceneObject`, forcing T2D GL under T3D gfx |
 | **Networking** | `fuse::services::net` facade; legacy `GameConnection` / `NetConnection` underneath per dimension | `GameConnection3D : GameConnection2D` |
 | **Audio** | `fuse::services::audio` mixer; legacy sfx/audio backends | Inheritance across mixers |
 | **Gui (product)** | Qt 6 `fuse_editor` only | Any Gui* merge |
-| **Legacy engines** | `fuse_t3d_legacy`, `fuse_t2d_legacy` static libs — wrapped, not subclassed in-place | Physical merge of `Engine/source` + T2D `engine/source` |
+| **Legacy engines** | Historical U2 quarantine — **removed**; strangler continues in `Source/FUSE/` | Physical merge of Torque `Engine/source` trees |
 
 ---
 
@@ -114,7 +114,7 @@ Apply **only** where a 3D entity is legitimately “a 2D scene object plus depth
 
 2. **Do not merge** addon `Engine/` trees into FUSE `Engine/` ([addon-ore-catalog.md](./addon-ore-catalog.md)).
 
-3. **Do not physically marry** `Engine/source` and `third_party/Torque2D/engine/source`. Strangler path: new hierarchy in `Source/FUSE/`; legacy wrapped as `fuse_t3d_legacy` / `fuse_t2d_legacy` until replaced ([unified-layout.md](./unified-layout.md)).
+3. **Do not physically marry** historical Torque3D and Torque2D engine trees. Strangler path: new hierarchy in `Source/FUSE/` with native `World2D` / `World3D` ([unified-layout.md](./unified-layout.md)).
 
 4. **Prefer greenfield** `SceneObject2D` / `SceneObject3D` that **replaces** dual legacy types over time. Temporary adapters at the legacy boundary are expected (U2–U4).
 
@@ -156,7 +156,7 @@ flowchart TB
 
     subgraph Compose["Composition only"]
         B2D["Box2D via fuse_t2d_legacy"]
-        Col3D["T3D collision via fuse_t3d_legacy"]
+        Col3D["3D collision via World3D backend"]
         Gfx2D["T2D GL backend"]
         Gfx3D["T3D gfx backend"]
     end

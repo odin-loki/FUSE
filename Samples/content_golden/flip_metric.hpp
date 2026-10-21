@@ -1,5 +1,5 @@
 // FUSE asset plan W0.8 (docs/plans/FUSE_ASSET_PLAN.md §5.4): LDR-FLIP through the vendored NVIDIA FLIP
-// reference implementation (Engine/lib/nvidia-flip/FLIP.h, BSD-3-Clause, pinned in its VERSION).
+// reference implementation (vendor/nvidia-flip/FLIP.h, BSD-3-Clause, pinned in its VERSION).
 //
 // Inputs are tightly packed sRGB-encoded RGBA8 images (alpha ignored), row 0 at the top, as the golden
 // PNGs store them; they are decoded to linear RGB before FLIP (what FLIP's own tool does for LDR files).

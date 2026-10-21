@@ -23,10 +23,6 @@ See [../building.md](../building.md) for the full option list.
 
 ## Prerequisites
 
-```bash
-git submodule update --init --recursive
-```
-
 Minimum for `fuse_core` only:
 
 - CMake ≥ 3.21

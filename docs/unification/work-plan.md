@@ -64,11 +64,11 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | Field | Value |
 |-------|-------|
 | **Effort** | L |
-| **Scope** | `fuse_t3d_legacy`, `fuse_t2d_legacy` static libs with symbol prefix; `fuse_runtime_smoke`; ASan clean init |
+| **Scope** | Native `fuse_runtime_smoke` (core, jobs, VFS, worlds); legacy quarantine targets removed |
 | **MT note** | Single-threaded smoke OK; **no** parallel tick yet |
-| **Exit** | Core stub + both legacy inits in one process; documented remaining symbol conflicts trending down |
+| **Exit** | One-process smoke binary green in CI; U2 historical notes archived in [U2-SMOKE.md](./U2-SMOKE.md) |
 | **Deps** | WP-01 |
-| **Status** | 🚧 Incremental — Con:: **33/33** shimmed; Engine probe + SimObject bridge slice + owned StringInternTable; full Engine init blocked (see [U2-SMOKE.md](./U2-SMOKE.md)) |
+| **Status** | ✅ Done — see [U2-SMOKE.md](./U2-SMOKE.md) status banner |
 
 ---
 

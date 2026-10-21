@@ -134,7 +134,7 @@ T2D has **no** `ThreadPool` ([concurrency-inventory.md](./concurrency-inventory.
 
 | Check | Command / gate |
 |-------|----------------|
-| Adapter compiles | `fuse_legacy_common` linked by `fuse_t3d_legacy` / `fuse_t2d_legacy` |
+| Adapter compiles | Historical U2 quarantine — **removed**; `fuse_runtime_smoke` uses native worlds |
 | Smoke sum | `fuse_runtime_smoke` — `parallel_for_smoke_sum(0, 100, 10) == 4950` |
 | Mip compress route | `fuse_runtime_smoke` — `compressMipsParallel` on 2 mips, checksum non-zero |
 | Serial parity | `FUSE_JOBS_SINGLE_THREAD=ON` — same checksum as parallel |
