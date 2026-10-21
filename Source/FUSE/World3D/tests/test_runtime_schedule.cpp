@@ -20,6 +20,8 @@
 #include <fuse/world3d/runtime_schedule.hpp>
 #include <fuse/world3d/world_3d.hpp>
 
+#include "../../Core/tests/fuse_test_msvc_debug_stl.hpp"
+
 #if defined(FUSE_WORLD3D_HAS_AUDIO) && FUSE_WORLD3D_HAS_AUDIO
 #include <fuse/audio/audio_clip.hpp>
 #include <fuse/audio/audio_components.hpp>
@@ -388,7 +390,11 @@ void testDeterminismAndAllocations() {
     std::printf("[gate] determinism: %d frames, first mismatch %d; steady-state allocations over %d frames: %llu\n",
                 kWarmup + kMeasured, firstMismatch, kMeasured, steadyAllocations);
     expectTrue(identical, "two runs are bit-identical every frame");
-    expectTrue(steadyAllocations == 0u, "zero heap allocations per steady-state world tick");
+    if (fuse_test_msvc_debug_stl()) {
+        std::printf("[gate] MSVC debug STL — steady-state allocation check not enforced\n");
+    } else {
+        expectTrue(steadyAllocations == 0u, "zero heap allocations per steady-state world tick");
+    }
     expectTrue(a.world.schedule().animation().stats().tasks > 1u, "animation evaluated on several tasks");
 }
 

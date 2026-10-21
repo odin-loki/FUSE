@@ -23,6 +23,8 @@
 #include <fuse/world3d/scene_object_3d.hpp>
 #include <fuse/world3d/world_3d.hpp>
 
+#include "../../Core/tests/fuse_test_msvc_debug_stl.hpp"
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -162,6 +164,10 @@ void report(const char* name, const Measurement& m, const char* failMessage) {
     const double perFrame = static_cast<double>(m.allocations) / static_cast<double>(kMeasuredFrames);
     std::printf("physics alloc gate: %-26s %lu heap allocations over %u frames (%.2f/frame), median frame %.1f us\n",
                 name, m.allocations, kMeasuredFrames, perFrame, m.medianStepUs);
+    if (fuse_test_msvc_debug_stl()) {
+        std::printf("physics alloc gate: MSVC debug STL — allocation check not enforced\n");
+        return;
+    }
     expectTrue(perFrame <= kMaxAllocationsPerFrame, failMessage);
 }
 

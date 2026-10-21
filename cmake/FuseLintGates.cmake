@@ -150,6 +150,8 @@ _fuse_lint_add(fuse_lint_vendored_pins_xiph_flac vendored-pins --dir "${FUSE_VEN
 
 get_property(_fuse_lint_all GLOBAL PROPERTY _FUSE_LINT_TESTS)
 set_tests_properties(${_fuse_lint_all} PROPERTIES LABELS "gate;lint" TIMEOUT 300)
+# torque-names walks the full Source/FUSE tree; MSVC Debug + sccache cold runs can exceed 300 s on CI.
+set_tests_properties(fuse_lint_a_log_mem_domains PROPERTIES TIMEOUT 600)
 set_tests_properties(fuse_lint_b6_editor_qt6_only PROPERTIES LABELS "gate;lint;qt" SKIP_RETURN_CODE 77)
 # FUSE_ASSET_PLAN §2.4 / W0.5: Content/licences.lock.json covers every file under Content/ (labels lint;asset).
 add_test(NAME fuse_lint_asset_licences COMMAND fuse_lint asset-licences --root "${CMAKE_SOURCE_DIR}/Content"

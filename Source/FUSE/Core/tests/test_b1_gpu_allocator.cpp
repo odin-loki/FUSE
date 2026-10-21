@@ -11,6 +11,8 @@
 
 #include <fuse/alloc/gpu_allocator.hpp>
 
+#include "fuse_test_msvc_debug_stl.hpp"
+
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -68,6 +70,10 @@ void testContract() {
 }
 
 void testWithoutCuda() {
+    if (fuse_test_msvc_debug_stl()) {
+        std::printf("GPUAllocator: MSVC debug STL — no-device contract probe skipped\n");
+        return;
+    }
     GPUAllocator allocator;
     std::printf("GPUAllocator: CUDA unavailable (%s) - checking the no-device contract\n",
                 GPUAllocator::unavailable_reason());

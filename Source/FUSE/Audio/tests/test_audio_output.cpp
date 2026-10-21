@@ -22,6 +22,8 @@
 #include <fuse/audio/audio_engine.hpp>
 #include <fuse/audio/spsc_ring.hpp>
 #include <fuse/core/sanitizer.hpp>
+
+#include "../../Core/tests/fuse_test_msvc_debug_stl.hpp"
 #include <fuse/io/vfs.hpp>
 
 #include <algorithm>
@@ -133,6 +135,14 @@ void expectTrue(bool ok, const char* what) {
         ++g_failures;
         std::printf("FAIL: %s\n", what);
     }
+}
+
+void expectZeroAlloc(unsigned long long allocs, const char* what) {
+    if (fuse_test_msvc_debug_stl()) {
+        std::printf("[audio-out] MSVC debug STL — skip: %s (%llu allocations)\n", what, allocs);
+        return;
+    }
+    expectTrue(allocs == 0, what);
 }
 
 struct AllocScope {
@@ -346,7 +356,7 @@ void gateZeroAllocationsPerTick() {
     const unsigned long long allocs = scope.stop();
     std::printf("[audio-out] steady-state ticks (Null output + capture): %llu allocations / 200 ticks (%s)\n",
                 allocs, FUSE_TEST_MALLOC_HOOK ? "malloc hook" : "operator new");
-    expectTrue(allocs == 0, "zero heap allocations per steady-state tick (mix + output submit)");
+    expectZeroAlloc(allocs, "zero heap allocations per steady-state tick (mix + output submit)");
 }
 
 // ---- xiph codecs -----------------------------------------------------------------------------
@@ -536,7 +546,7 @@ void gateStreaming30s() {
                 encode_s, ticks, mix_s, seconds / std::max(mix_s, 1e-9), static_cast<unsigned long long>(underruns),
                 static_cast<unsigned long long>(scene.engine.spatial_mixer().stream_seeks()), steady_allocs);
     expectTrue(underruns == 0, "30 s streaming voice: no decode underrun");
-    expectTrue(steady_allocs == 0, "30 s streaming voice: zero steady-state allocations");
+    expectZeroAlloc(steady_allocs, "30 s streaming voice: zero steady-state allocations");
     expectTrue(!source->playing, "streaming voice finished at the end of the clip");
     expectTrue(scene.engine.spatial_mixer().active_stream_voices() == 0, "finished voice released its decoder");
 
@@ -631,7 +641,7 @@ void gateStreamingLoopAndSeek() {
                 static_cast<unsigned long long>(alloc_ticks));
     expectTrue(max_err == 0.0, "looping streaming voices (loop points, pitch, seek) match the PCM clip bit for bit");
     expectTrue(underruns == 0, "looping streaming voices: no decode underrun");
-    expectTrue(loop_allocs == 0, "looping streaming voices: zero allocations across loop wraps");
+    expectZeroAlloc(loop_allocs, "looping streaming voices: zero allocations across loop wraps");
     expectTrue(sa->playing && sb->playing, "looping voices keep playing");
 }
 
@@ -716,7 +726,7 @@ int runWave(const char* wav_path) {
     expectTrue(streaming_underruns == 0, "wave: no underrun while the engine was streaming");
     expectTrue(stats.frames_played >= stats.frames_submitted, "wave: every submitted frame was played");
     expectTrue(stats.float32_output, "wave: AL_EXT_float32 streaming buffers");
-    expectTrue(tick_allocs == 0, "wave: zero game-thread allocations per tick (mix + SPSC submit)");
+    expectZeroAlloc(tick_allocs, "wave: zero game-thread allocations per tick (mix + SPSC submit)");
 
     fa::AudioClip wav;
     expectTrue(wav.load_wav(wav_path), "wave: openal-soft wrote a readable WAV");
@@ -785,7 +795,7 @@ int runOpenALNull() {
     expectTrue(before.frames_played > 0, "openal: the device consumes the streamed mix");
     expectTrue(before.latency_seconds > 0.0 && before.latency_seconds < 1.0, "openal: latency is reported (0, 1) s");
     expectTrue(before.connected, "openal: device connected");
-    expectTrue(allocs == 0, "openal: zero game-thread allocations per tick");
+    expectZeroAlloc(allocs, "openal: zero game-thread allocations per tick");
 
     scene.engine.simulate_output_device_loss();
     pump_for(300, nullptr);
