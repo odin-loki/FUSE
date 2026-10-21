@@ -5,7 +5,7 @@
 //      backend == run_easu + run_rcas.
 //   2. Constant setup: easu_constants / rcas_constants / cas_constants are bit-identical to the vendored
 //      FidelityFX SDK v1.1.4 host helpers (ffxFsrPopulateEasuConstants, FsrRcasCon, ffxCasSetup compiled
-//      with FFX_CPU from Engine/lib/fidelityfx).
+//      with FFX_CPU from vendor/fidelityfx).
 //   3. Parity: CpuReference vs CpuParallel (0 / 2 / 4 workers) bit-exact for EASU, RCAS, CAS, NIS and
 //      bilinear on grids with partial 8x8 edge tiles; kernel stats names / item counts; a Cuda request
 //      without a device falls back to CpuParallel with identical output.

@@ -10,7 +10,7 @@
 #                             shaders (tests skip with 77). ON: configure fails without slangc.
 #                             OFF: never look for or download slangc.
 #   FUSE_SLANGC=<path>        Use this slangc (any version; a mismatch with the pin only warns).
-#   FUSE_SLANG_DOWNLOAD=ON    Allow the pinned release download (Engine/lib/slang/VERSION).
+#   FUSE_SLANG_DOWNLOAD=ON    Allow the pinned release download (vendor/slang/VERSION).
 #   FUSE_SLANG_CACHE_DIR=...  Unpack root (default ~/.cache/fuse/slang, %LOCALAPPDATA%/fuse/slang).
 #                             The release lands in <root>/<version>; nothing enters the source tree.
 #   FUSE_SLANG_KEEP_LLVM=OFF  Keep libslang-llvm (CPU/host code generation, ~150 MB) after unpacking.
@@ -19,7 +19,7 @@
 #   FUSE_SLANG_FOUND          TRUE when a working slangc was resolved.
 #   FUSE_SLANGC_EXECUTABLE    Absolute path of slangc.
 #   FUSE_SLANGC_VERSION       `slangc -version` output (e.g. 2026.18.2).
-#   FUSE_SLANG_PIN_VERSION    Version pinned in Engine/lib/slang/VERSION.
+#   FUSE_SLANG_PIN_VERSION    Version pinned in vendor/slang/VERSION.
 #   FUSE_SLANG_SPIRV_FLAGS    Code-generation flags shared by build-time and runtime compiles.
 #
 # fuse_add_slang_shaders(<target>
@@ -42,7 +42,7 @@ include_guard(GLOBAL)
 set(FUSE_SLANG "AUTO" CACHE STRING "Slang shader compiler: AUTO, ON (required) or OFF")
 set_property(CACHE FUSE_SLANG PROPERTY STRINGS AUTO ON OFF)
 set(FUSE_SLANGC "" CACHE FILEPATH "Explicit slangc executable (skips the pinned download)")
-option(FUSE_SLANG_DOWNLOAD "Allow downloading the pinned slangc release (Engine/lib/slang/VERSION)" ON)
+option(FUSE_SLANG_DOWNLOAD "Allow downloading the pinned slangc release (vendor/slang/VERSION)" ON)
 set(FUSE_SLANG_CACHE_DIR "" CACHE PATH "Root for downloaded slangc releases (outside the source tree)")
 option(FUSE_SLANG_KEEP_LLVM "Keep libslang-llvm (host/CPU targets) when unpacking slangc" OFF)
 

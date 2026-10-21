@@ -1,4 +1,4 @@
-// FUSE Relight RL-6.1: the developer overlay's immediate-mode UI (FUSE's own; no Dear ImGui in Engine/lib).
+// FUSE Relight RL-6.1: the developer overlay's immediate-mode UI (FUSE's own; no Dear ImGui in vendor).
 //
 // Vulkan-free and deterministic. A frame of the UI is one or more *passes* of the menu's build code over the same
 // widgets; each pass sees at most one input event (Ui::begin), so a press and a release that arrive in the same game

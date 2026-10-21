@@ -11,10 +11,10 @@
 #
 # Targets (always defined when the vendored tree is present, so the stub build compiles and tests
 # the enabled variant even with FUSE_TRACY=OFF):
-#   fuse_tracy_client    Engine/lib/tracy/public/TracyClient.cpp (vendored, warnings off)
+#   fuse_tracy_client    vendor/tracy/public/TracyClient.cpp (vendored, warnings off)
 #   fuse_profiler_tracy  Source/FUSE/Core/src/profiler/tracy_adapter.cpp + the client
 # -----------------------------------------------------------------------------
-option(FUSE_TRACY "Build the FUSE profiler with the Tracy backend (vendored Engine/lib/tracy, BSD-3)" OFF)
+option(FUSE_TRACY "Build the FUSE profiler with the Tracy backend (vendored vendor/tracy, BSD-3)" OFF)
 option(FUSE_TRACY_ON_DEMAND "Tracy records only while a server is connected (TRACY_ON_DEMAND)" ON)
 option(FUSE_TRACY_ONLY_LOCALHOST "Tracy listens on localhost only (TRACY_ONLY_LOCALHOST)" ON)
 

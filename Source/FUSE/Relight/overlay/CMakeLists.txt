@@ -1,5 +1,5 @@
 # FUSE Relight RL-6.1: in-game developer overlay (docs/plans/FUSE_REMIX_PORT_PLAN.md §1.11, Wave R6). Added by one line in
-# Source/FUSE/Relight/CMakeLists.txt, add_subdirectory(overlay). No Dear ImGui is vendored in Engine/lib, so the overlay
+# Source/FUSE/Relight/CMakeLists.txt, add_subdirectory(overlay). No Dear ImGui is vendored in vendor, so the overlay
 # is FUSE's own immediate-mode UI (ui.hpp, 5x7 font) drawn by one small compute pass.
 #
 # Owns Relight/overlay/**. Touches (minimal hooks): render/frame (render_tap.{hpp,cpp}: IFrameOverlay, 5 call sites;

@@ -66,7 +66,7 @@ endfunction()
 # Applied once, at the end of the top-level CMakeLists (fuse_sanitize_finalize),
 # to every buildsystem target whose SOURCE_DIR lives under Source/FUSE or
 # Tools/FUSE (libraries, tests, demos, tools). Vendored third-party subprojects
-# (Engine/lib/*: openal-soft, assimp, bullet, ENet, Lua) are NOT instrumented —
+# (vendor/*: openal-soft, assimp, bullet, ENet, Lua) are NOT instrumented —
 # they are linked into sanitized executables but compiled normally, which keeps
 # UBSan findings scoped to FUSE code. Every ctest registered from those
 # directories gets ASAN_/UBSAN_/LSAN_OPTIONS pointing at

@@ -167,7 +167,7 @@ target_compile_definitions(fuse_rhi PRIVATE
     FUSE_SHADER_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/Source/FUSE/Renderer/shaders/fixtures"
 )
 
-# GpuAllocator backend. Vulkan builds use the vendored, pinned VMA (Engine/lib/vma, see its VERSION
+# GpuAllocator backend. Vulkan builds use the vendored, pinned VMA (vendor/vma, see its VERSION
 # file) by default; FUSE_RHI_USE_VMA=OFF keeps the native one-vkAllocateMemory-per-resource path as
 # a fallback. Never picks up a system vk_mem_alloc.h. Stub builds (no Vulkan) use neither.
 option(FUSE_RHI_USE_VMA "Back fuse_rhi GpuAllocator with vendored VMA (OFF = native vkAllocateMemory fallback)" ON)
@@ -284,7 +284,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp04.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp02.cmake")  # WP-0.2 volk loader (cmake/FuseVolk.cmake)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp05.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp06.cmake")  # WP-0.6 GPU profiler (Tracy GPU zones) + RenderDoc capture
-include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp12.cmake")  # WP-1.2 meshlet cook (geometry/, Engine/lib/meshoptimizer)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp12.cmake")  # WP-1.2 meshlet cook (geometry/, vendor/meshoptimizer)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp11.cmake")  # WP-1.1 GPU scene (include/fuse/renderer/gpu_scene, src/gpu_scene)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp13.cmake")  # WP-1.3 instance cull + Hi-Z + indirect count (culling/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp14.cmake")  # WP-1.4 visibility buffer (visbuffer/)
@@ -307,11 +307,11 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp62.cmake")  # WP-6.2 ray-traced 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp61.cmake")  # WP-6.1 DDGI on Vulkan, T0 global SDF + T2 ray query (gi/gpu/, shaders/ddgi/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp71.cmake")  # WP-7.1 light tree (light_tree/, shaders/light_tree/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp82.cmake")  # WP-8.2 Hillaire atmosphere on Vulkan (atmosphere/, shaders/atmosphere/)
-include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp42.cmake")  # WP-4.2 FSR 3.1 temporal upscaler (upscale_backends/fsr3/, Engine/lib/fidelityfx)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp42.cmake")  # WP-4.2 FSR 3.1 temporal upscaler (upscale_backends/fsr3/, vendor/fidelityfx)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp81.cmake")  # WP-8.1 froxel volumetric fog on Vulkan (volumetric/gpu/, shaders/volumetric/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp83.cmake")  # WP-8.3 volumetric clouds on Vulkan (clouds/, shaders/clouds/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp72.cmake")  # WP-7.2 ReSTIR DI and GI, T2 (restir/, shaders/restir/)
-include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp44.cmake")  # WP-4.4 frame generation + latency (framegen/, present/latency/, Engine/lib/fidelityfx)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp44.cmake")  # WP-4.4 frame generation + latency (framegen/, present/latency/, vendor/fidelityfx)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp93.cmake")  # WP-9.3 device-generated commands (vk/dgc/, shaders/dgc/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp92.cmake")  # WP-9.2 3D Gaussian splatting (gsplat/, shaders/gsplat/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp43.cmake")  # WP-4.3 Intel XeSS plugin, runtime-loaded libxess (plugins/intel_xess/)
@@ -320,7 +320,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp91.cmake")  # WP-9.1 neural runt
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp65.cmake")  # WP-6.5 radiance cascades, research (research/radiance_cascades/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_frame.cmake") # Frame integration: FrameComposer (frame/, shaders/frame/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/scene_renderer.cmake") # E02 SceneRenderer: ECS scene -> FrameComposer (scene_renderer/)
-include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/content_golden.cmake") # Asset plan W0.8 content golden renders + vendored NVIDIA FLIP (Samples/content_golden, Engine/lib/nvidia-flip)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/content_golden.cmake") # Asset plan W0.8 content golden renders + vendored NVIDIA FLIP (Samples/content_golden, vendor/nvidia-flip)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_w07.cmake")  # Asset plan W0.7 .fusemat + layered materials (material_layers/, shaders/material_layers/)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/cooked_assets.cmake") # E06 renderer loads cooked assets (cooked_assets/: BCn .fusetex, FMSH v2, .fusemat)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/rp_wp73.cmake") # WP-7.3 path-tracing mode, T3 RT pipeline + T2 ray query (pathtrace/, shaders/pathtrace/)

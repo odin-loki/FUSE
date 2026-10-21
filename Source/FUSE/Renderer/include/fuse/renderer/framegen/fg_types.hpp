@@ -7,7 +7,7 @@
 //
 // Upstream: AMD FidelityFX SDK v1.1.4 (tag v1.1.4, commit c6efa6bf7f2027b3ec94f28578bb5965eabb9e55, MIT), optical flow
 // effect 1.1.2 and frame interpolation effect 1.1.3 (the FSR 3.1.4 frame generation). The GPU side is the vendored
-// Vulkan GLSL passes (Engine/lib/fidelityfx/shaders/vk/{opticalflow,frameinterpolation}/*.glsl + include/FidelityFX/
+// Vulkan GLSL passes (vendor/fidelityfx/shaders/vk/{opticalflow,frameinterpolation}/*.glsl + include/FidelityFX/
 // gpu/{opticalflow,frameinterpolation,spd}/*), compiled verbatim by cmake/rp_wp44.cmake. The host side (this file,
 // fg_host.cpp, fg_gpu.cpp) replaces sdk/src/components/{opticalflow,frameinterpolation}/*.cpp, the ffx-api frame
 // generation provider (ffx_provider_framegeneration.cpp: OF context at display size, block size 8, optical flow scale

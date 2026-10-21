@@ -1,7 +1,7 @@
 # WP-1.2 (docs/unification/RENDERER-EXECUTION.md): meshlet cook.
 # Owned by WP-1.2; other packages must not edit this file.
 #
-#   fuse_meshoptimizer        STATIC  vendored meshoptimizer (Engine/lib/meshoptimizer, pinned in VERSION)
+#   fuse_meshoptimizer        STATIC  vendored meshoptimizer (vendor/meshoptimizer, pinned in VERSION)
 #   fuse_geometry             STATIC  meshlet builder, vertex codec / bounds / cull kernels, FMLT format
 #                                     (CPU only: no Vulkan, builds in the stub tree)
 #   fuse_geometry_cook        STATIC  FMSH v1 cook hook (links fuse_cook_stubs)

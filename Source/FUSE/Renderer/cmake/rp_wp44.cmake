@@ -7,7 +7,7 @@
 #   fuse_framegen         STATIC  FrameGenGpu: FSR 3.1 frame generation on render graph v2 (optical flow + frame
 #                                 interpolation of the vendored AMD FidelityFX SDK v1.1.4, clean-room host, FUSE convert /
 #                                 UI composite / portable search passes) (include/fuse/renderer/framegen/**, src/framegen/**)
-#   FSR 3.1 FG passes     SPIR-V  the vendored Vulkan GLSL (Engine/lib/fidelityfx, MIT) compiled verbatim with
+#   FSR 3.1 FG passes     SPIR-V  the vendored Vulkan GLSL (vendor/fidelityfx, MIT) compiled verbatim with
 #                                 glslangValidator -Os (the SDK's FidelityFX-SC glslang flags), embedded in fuse_framegen
 #   fuse_rp_latency_*, fuse_rp_framegen_*   ctest   CPU gates (stub-safe) and Lavapipe gates
 

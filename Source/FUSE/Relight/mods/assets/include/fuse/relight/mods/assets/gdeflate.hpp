@@ -1,17 +1,17 @@
 // FUSE Relight RL-3.3: GDeflate CPU codec (docs/plans/FUSE_REMIX_PORT_PLAN.md §4.6).
 //
 // Remix packages store GDeflate-compressed blobs (BlobDesc::compression != 0, RTX IO's
-// "GDEFLATE_1_0"): the DirectStorage GDeflate tile stream. Layout (Engine/lib/gdeflate/GDeflate/
+// "GDEFLATE_1_0"): the DirectStorage GDeflate tile stream. Layout (vendor/gdeflate/GDeflate/
 // TileStream.h): an 8-byte header {u8 id = 4, u8 magic = id ^ 0xff, u16 numTiles, u32 tileSizeIdx:2 = 1,
 // lastTileSize:18, reserved:12}, then u32 tileOffsets[numTiles] (entry 0 holds the compressed size of the
 // last tile, entry i > 0 the offset of tile i), then the tiles. Every tile decodes to 64 KiB except the
 // last (lastTileSize, 0 = a full tile).
 //
-// The codec is the vendored Apache-2.0 reference (Engine/lib/gdeflate: NVIDIA's GDeflate in libdeflate
+// The codec is the vendored Apache-2.0 reference (vendor/gdeflate: NVIDIA's GDeflate in libdeflate
 // plus Microsoft DirectStorage's tile-stream wrapper). decompress() is FUSE's own hardened tile-stream
 // walker around libdeflate_gdeflate_decompress: the header, the offset table and every tile's size are
 // validated before a byte is decoded (the reference GDeflate::Decompress trusts its input), and the
-// vendored decode loop carries one marked FUSE patch (Engine/lib/gdeflate/PATCHES.md, "input-bounds") so a
+// vendored decode loop carries one marked FUSE patch (vendor/gdeflate/PATCHES.md, "input-bounds") so a
 // corrupt tile can never make it read past the tile (found by rl_mods_assets_fuzz_asan). Built with
 // FUSE_RELIGHT_GDEFLATE=OFF the codec is absent: available() is false and decompress() returns
 // Status::CodecUnavailable, so package readers fall back cleanly (uncompressed blobs still load).

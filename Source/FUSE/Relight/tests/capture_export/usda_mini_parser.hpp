@@ -1,7 +1,7 @@
 // FUSE Relight RL-1.8 tests: a minimal USDA (text USD) parser.
 //
 // Plan RL-1.8: "USDA parses with TinyUSDZ (or our parser if W2.2 is late)". Remaster W2.2 (vendored
-// TinyUSDZ / LightUSD) is not in the tree yet (Engine/lib/assimp/contrib/tinyusdz holds only Assimp's patch
+// TinyUSDZ / LightUSD) is not in the tree yet (vendor/assimp/contrib/tinyusdz holds only Assimp's patch
 // notes, not the library), so the capture tests parse with this one. It reads the USDA subset the Remix
 // capture layout uses: the layer header and its metadata (dictionaries included), def / over / class prims
 // with a type, a name and a metadata block (list-op keys such as "prepend references", @asset@</path>

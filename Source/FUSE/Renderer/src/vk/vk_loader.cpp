@@ -30,7 +30,7 @@
 #include <fuse_volk_pin.h>
 
 static_assert(VOLK_HEADER_VERSION == FUSE_VOLK_VERSION_PATCH,
-              "Engine/lib/volk/volk.h does not match the version pinned in Engine/lib/volk/VERSION");
+              "vendor/volk/volk.h does not match the version pinned in vendor/volk/VERSION");
 
 #include <algorithm>
 #include <mutex>

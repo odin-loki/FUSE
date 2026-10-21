@@ -3,8 +3,8 @@
 # Owned by the upscaler work stream; other topics must not edit this file.
 #
 # Vendored (MIT, pinned in each VERSION file, checked by fuse_lint_vendored_pins_*):
-#   Engine/lib/fidelityfx  — FidelityFX SDK v1.1.4 FSR1 (EASU + RCAS) + CAS headers and Vulkan GLSL passes
-#   Engine/lib/nvidia-nis  — NVIDIA Image Scaling SDK v1.0.3 (NIS_Scaler.h, NIS_Config.h, NIS_Main.glsl)
+#   vendor/fidelityfx  — FidelityFX SDK v1.1.4 FSR1 (EASU + RCAS) + CAS headers and Vulkan GLSL passes
+#   vendor/nvidia-nis  — NVIDIA Image Scaling SDK v1.0.3 (NIS_Scaler.h, NIS_Config.h, NIS_Main.glsl)
 
 set(FUSE_FIDELITYFX_DIR "${FUSE_VENDOR_DIR}/fidelityfx")
 set(FUSE_NVIDIA_NIS_DIR "${FUSE_VENDOR_DIR}/nvidia-nis")
@@ -31,7 +31,7 @@ target_sources(fuse_rhi PRIVATE
 target_include_directories(fuse_rhi SYSTEM PRIVATE "${FUSE_NVIDIA_NIS_DIR}/NIS")
 
 # FSR 3.1 temporal backend (WP-4.2, cmake/rp_wp42.cmake: lib fuse_fsr3 over the vendored FidelityFX SDK v1.1.4,
-# Engine/lib/fidelityfx). FUSE_UPSCALER_FSR3 controls whether fsr3::register_fsr3_backend() registers "fsr3"
+# vendor/fidelityfx). FUSE_UPSCALER_FSR3 controls whether fsr3::register_fsr3_backend() registers "fsr3"
 # (compile definition FUSE_UPSCALER_FSR3=1 on fuse_fsr3); fuse_fsr3 and its CPU gates build either way. Default
 # ON with the Vulkan backend; without it registration is impossible (no device) and the option has no effect.
 if(FUSE_VULKAN_BACKEND)

@@ -1,8 +1,8 @@
 #include "nv_streamline_mapping.hpp"
 
-// The vendored headers are pinned (Engine/lib/streamline/VERSION); fail the build if they drift.
+// The vendored headers are pinned (vendor/streamline/VERSION); fail the build if they drift.
 static_assert(SL_VERSION_MAJOR == 2 && SL_VERSION_MINOR == 14 && SL_VERSION_PATCH == 1,
-              "Engine/lib/streamline headers do not match the VERSION pin (2.14.1)");
+              "vendor/streamline headers do not match the VERSION pin (2.14.1)");
 // FUSE's ABI numbering is its own; these are the Streamline ids the mapping relies on.
 static_assert(sl::kFeatureDLSS == 0 && sl::kFeatureDLSS_G == 1000 && sl::kFeatureDLSS_RR == 1001 &&
               sl::kFeatureDLSS_NR == 1004 && sl::kFeatureReflex == 3);

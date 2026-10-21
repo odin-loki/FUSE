@@ -1,6 +1,6 @@
 # fuse_mechanics — GMK component and interactable kernel
 
-FUSE mechanics module extracted from addon **ore** (read-only submodules). No addon `Engine/` trees are compiled or merged into FUSE `Engine/`.
+FUSE mechanics module distilled from GMK addon **ore**. Addon submodules are not vendored in this repo; parity missions live under `Samples/unification/`.
 
 ## Ore sources
 

@@ -1,7 +1,7 @@
 # WP-0.6 (docs/unification/RENDERER-EXECUTION.md): profiling and capture.
 #   fuse_rhi_profiling        GpuProfiler (timestamp-query GPU zones per render-graph pass through
 #                             rg::PassHooks; TracyVk zones when FUSE_TRACY=ON) + RenderDocCapture
-#                             (in-app API loaded at run time, vendored Engine/lib/renderdoc header)
+#                             (in-app API loaded at run time, vendored vendor/renderdoc header)
 #   fuse_rhi_profiling_tracy  the same sources built with the Tracy backend (FUSE_TRACY=OFF builds
 #                             only: tests the enabled variant without a second build tree)
 # Owned by WP-0.6; other packages must not edit this file.

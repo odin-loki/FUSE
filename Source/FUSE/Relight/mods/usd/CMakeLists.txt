@@ -3,7 +3,7 @@
 # package's tests (tests/) and the fixture tool (tools/).
 #
 # Targets
-#   fuse_relight_tinyusdz   the vendored TinyUSDZ subset (Engine/lib/tinyusdz, Apache-2.0; Remaster W2.2): USDA and
+#   fuse_relight_tinyusdz   the vendored TinyUSDZ subset (vendor/tinyusdz, Apache-2.0; Remaster W2.2): USDA and
 #                           USDC (crate) layer readers, the crate writer (fixture generation) and what they need.
 #                           Compiled verbatim; fuse_warnings_finalize gives files outside Source/FUSE `-w`, and the
 #                           headers are SYSTEM includes for the FUSE code that includes them (src/layer_loader.cpp).
@@ -19,7 +19,7 @@
 
 set(FUSE_RELIGHT_TINYUSDZ_DIR "${FUSE_VENDOR_DIR}/tinyusdz")
 
-# The vendored subset (Engine/lib/tinyusdz/VERSION lists every file). Only what USDA + USDC layer reading, the
+# The vendored subset (vendor/tinyusdz/VERSION lists every file). Only what USDA + USDC layer reading, the
 # value pretty-printer (values reach FUSE as USDA text) and the crate writer need.
 set(_rl_tusd "${FUSE_RELIGHT_TINYUSDZ_DIR}/src")
 set(FUSE_RELIGHT_TINYUSDZ_SOURCES

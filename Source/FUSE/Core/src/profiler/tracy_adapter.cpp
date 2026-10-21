@@ -14,7 +14,7 @@
 
 static_assert(tracy::Version::Major == FUSE_TRACY_VERSION_MAJOR && tracy::Version::Minor == FUSE_TRACY_VERSION_MINOR &&
                   tracy::Version::Patch == FUSE_TRACY_VERSION_PATCH,
-              "Engine/lib/tracy: public/common/TracyVersion.hpp disagrees with fuse_tracy_version.h (VERSION pin)");
+              "vendor/tracy: public/common/TracyVersion.hpp disagrees with fuse_tracy_version.h (VERSION pin)");
 
 namespace fuse::profiler::tracy_adapter {
 

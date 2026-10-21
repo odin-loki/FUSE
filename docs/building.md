@@ -4,14 +4,10 @@ Root `CMakeLists.txt` configures the FUSE product graph: `fuse_core`, modules, V
 
 ## Prerequisites
 
-```bash
-git submodule update --init --recursive
-```
-
 | Need | Minimum |
 |------|---------|
 | CMake | 3.21 |
-| Language | C++17 compiler today; C++23 is the product target |
+| Language | C++23 (`Source/FUSE/`) |
 | Generators | Ninja, Visual Studio, Xcode, Unix Makefiles |
 
 ## Common CMake options

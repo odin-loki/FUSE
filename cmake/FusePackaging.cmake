@@ -1,7 +1,7 @@
 # FUSE installer / package (master plan Appendix A rename checklist: "Icons, installer, docs, CI
 # badge names"). Included once, at the end of the top-level CMakeLists (after Tools/FUSE).
 #
-# * install() rules, all in the single component "fuse" so vendored Engine/lib subprojects that
+# * install() rules, all in the single component "fuse" so vendored vendor subprojects that
 #   carry their own install() rules (zlib, SDL, assimp, ...) never leak into the FUSE package:
 #     bin/                               fuse_editor (when Qt 6 is configured), fuse_cook,
 #                                        fuse_convert, fuse_import
@@ -60,7 +60,7 @@ install(FILES "${FUSE_BRANDING_DIR}/fuse.desktop" DESTINATION "${_fuse_data}/app
 set(_fuse_doc "${_fuse_data}/doc/fuse")
 install(FILES "${CMAKE_SOURCE_DIR}/LICENSE.md" "${CMAKE_SOURCE_DIR}/README.md" DESTINATION "${_fuse_doc}"
     COMPONENT ${FUSE_PACKAGE_COMPONENT})
-# Vendored third-party licences shipped with the binaries (name -> licence file under Engine/lib).
+# Vendored third-party licences shipped with the binaries (name -> licence file under vendor).
 set(FUSE_PACKAGE_THIRD_PARTY
     "enet=enet/LICENSE.txt"
     "lua=lua/LICENSE.txt"

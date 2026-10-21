@@ -2,7 +2,7 @@
 // WP-9.3: local mirror of VK_EXT_device_generated_commands (spec revision 1, Vulkan headers >= 1.3.296)
 // for builds against older headers (the local SDK is 1.3.275). Names live in fuse::renderer::dgc::vkx
 // so they never collide with the real declarations when newer headers define them; the numeric
-// values and struct layouts are the registry's (checked against Engine/lib/dxvk's vulkan_core.h 1.4.350
+// values and struct layouts are the registry's (checked against vendor/dxvk's vulkan_core.h 1.4.350
 // by the static_asserts in dgc_pipeline_selector.cpp when the real header is available).
 // Include after <vulkan/vulkan.h>.
 #include <cstdint>

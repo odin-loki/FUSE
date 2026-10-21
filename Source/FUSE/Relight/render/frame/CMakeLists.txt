@@ -5,7 +5,7 @@
 # level adds in Vulkan trees. Without the renderer nothing here is configured, and createTapForDevice keeps the plain
 # capture tap (tap/capture links this library only when the target exists).
 #
-# Owns Relight/render/frame/**. Touches (minimal hooks, see Engine/lib/dxvk/PATCHES.md "Frame orchestration"):
+# Owns Relight/render/frame/**. Touches (minimal hooks, see vendor/dxvk/PATCHES.md "Frame orchestration"):
 # tap/include/fuse/relight/tap/frame_host.hpp (the host interface, tap interface 4), tap/dxvk/fuse_tap_dxvk.{h,cpp}
 # (the DXVK frame host), tap/capture (the factory hook) and FUSE-DXVK patch RL-4.1-01.
 #

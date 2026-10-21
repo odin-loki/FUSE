@@ -22,7 +22,7 @@ struct GpuAllocatorInfo {
     std::string message;
 };
 
-/// Vulkan builds: vendored VMA (Engine/lib/vma) by default; plain vkAllocateMemory per resource
+/// Vulkan builds: vendored VMA (vendor/vma) by default; plain vkAllocateMemory per resource
 /// when configured with FUSE_RHI_USE_VMA=OFF. Stub (host memory) when the Vulkan backend is off.
 class GpuAllocator {
 public:

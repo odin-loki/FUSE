@@ -5,7 +5,7 @@
 // FUSE never links RenderDoc. create() attaches to a RenderDoc that already injected itself into
 // the process (launched from the RenderDoc UI / `renderdoccmd capture`), or loads an explicit
 // library path (desc.libraryPath / FUSE_RENDERDOC_LIB, before the VkInstance is created), and asks
-// for the in-app API (vendored Engine/lib/renderdoc/include/renderdoc_app.h, MIT). Without
+// for the in-app API (vendored vendor/renderdoc/include/renderdoc_app.h, MIT). Without
 // RenderDoc every call is a cheap no-op and available() is false: status() says why.
 //
 // Triggers

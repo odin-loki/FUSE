@@ -1,4 +1,4 @@
-// FUSE Relight: thin wrappers over the vendored xxHash 0.8.x (Engine/lib/xxhash, BSD-2-Clause).
+// FUSE Relight: thin wrappers over the vendored xxHash 0.8.x (vendor/xxhash, BSD-2-Clause).
 //
 // Remix-compatible hashes (docs/plans/FUSE_REMIX_PORT_PLAN.md §4.1) use two xxHash functions:
 // XXH3_64bits (optionally seeded) and XXH64. Their output has been frozen since xxHash 0.8.0, the

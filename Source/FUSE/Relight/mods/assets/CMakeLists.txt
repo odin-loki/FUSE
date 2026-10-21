@@ -3,7 +3,7 @@
 # add_subdirectory(mods/assets). It also adds the package's tests (../../tests/mods_assets).
 #
 # Targets
-#   fuse_relight_gdeflate      the vendored GDeflate reference (Engine/lib/gdeflate: NVIDIA's libdeflate GDeflate
+#   fuse_relight_gdeflate      the vendored GDeflate reference (vendor/gdeflate: NVIDIA's libdeflate GDeflate
 #                              fork, MIT + Apache-2.0, and Microsoft DirectStorage's tile-stream wrapper,
 #                              Apache-2.0). CPU only. Skipped with -DFUSE_RELIGHT_GDEFLATE=OFF.
 #   fuse_relight_mods_assets   texture formats + CPU decode (BC1-7 incl. BC6H), the DDS reader (DX9 + DX10),
@@ -11,7 +11,7 @@
 #                              Pure CPU logic: native and MinGW.
 # Tests: ../../tests/mods_assets (rl_mods_assets_unit, rl_mods_assets_fuzz, rl_mods_assets_fuzz_asan).
 
-option(FUSE_RELIGHT_GDEFLATE "Build the vendored GDeflate CPU codec for Remix packages (Engine/lib/gdeflate)" ON)
+option(FUSE_RELIGHT_GDEFLATE "Build the vendored GDeflate CPU codec for Remix packages (vendor/gdeflate)" ON)
 
 set(FUSE_RELIGHT_GDEFLATE_DIR "${FUSE_VENDOR_DIR}/gdeflate")
 

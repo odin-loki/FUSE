@@ -1,6 +1,6 @@
 // FUSE Relight RL-1.1: the tap seam (docs/plans/FUSE_REMIX_PORT_PLAN.md §2.4).
 //
-// IRelightTap is what the vendored, patched DXVK d3d9 front end (Engine/lib/dxvk, patches
+// IRelightTap is what the vendored, patched DXVK d3d9 front end (vendor/dxvk, patches
 // RL-1.1-NN in PATCHES.md) reports to FUSE Relight. The d3d9 device holds a per-device dispatcher
 // (Source/FUSE/Relight/tap/dxvk/fuse_tap_dxvk.cpp) that owns one IRelightTap. With the tap off
 // (relight.tap.mode = off, or FUSE_RELIGHT=0) the dispatcher does not exist and every patched hook

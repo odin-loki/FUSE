@@ -5,9 +5,11 @@
 **Binary:** `fuse_runtime_smoke`  
 **Build:** [BUILD.md](./BUILD.md)
 
+> **Status (2026-10):** Legacy quarantine (`fuse_t3d_legacy`, `fuse_t2d_legacy`, `prefix_legacy_symbols.py`, Torque addon submodules) was removed. `fuse_runtime_smoke` is a native FUSE smoke test (core, jobs, VFS, worlds, optional B7). Sections below are historical U2 notes.
+
 ---
 
-## 1. What U2 proves today
+## 1. What U2 proved (historical)
 
 `fuse_runtime_smoke` links in **one OS process**:
 

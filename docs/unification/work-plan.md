@@ -442,7 +442,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 3. ✅ **WP-03 stub:** `Source/FUSE/Core/include/fuse/jobs/` + `fuse/platform/` — stubs + worker-count tests (`fuse_core_tests`).
 
-4. ✅ **WP-02 prep:** [Tools/FUSE/prefix_legacy_symbols.py](../../Tools/FUSE/prefix_legacy_symbols.py) — dry-run prefix planner.
+4. ✅ **WP-02 prep:** legacy quarantine removed; parity uses `Samples/unification/` and native `fuse::` APIs (prefix planner deleted).
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 

@@ -28,7 +28,7 @@
 // yields wrong vectors. This variant is the same algorithm with both reductions done in workgroup shared memory (a
 // 64 -> 1 tree; integer min / sum are exact, so on a wave32 / wave64 device it produces the vendored pass's output bit
 // for bit). Everything else — bindings, callbacks, search window, SAD packing, top-left-bias fix, local-search
-// fallback — is the vendored code, included from Engine/lib/fidelityfx unchanged. The host uses the vendored pass when
+// fallback — is the vendored code, included from vendor/fidelityfx unchanged. The host uses the vendored pass when
 // the device's subgroup size is fixed at 32 or 64 and this one otherwise.
 #version 450
 

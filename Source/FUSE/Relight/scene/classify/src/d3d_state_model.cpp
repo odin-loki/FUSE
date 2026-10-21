@@ -1,7 +1,7 @@
 // FUSE Relight RL-1.2: D3DStateModel helpers.
 //
 // isAlphaTestEnabled follows the vendored DXVK's D3D9DeviceEx::UpdateAlphaToCoverangeAndAlphaTest
-// (Engine/lib/dxvk/src/d3d9/d3d9_device.cpp, zlib licence).
+// (vendor/dxvk/src/d3d9/d3d9_device.cpp, zlib licence).
 // formatCompatibilityCategory is Remix Resources::getFormatCompatibilityCategory
 // (dxvk-remix src/dxvk/rtx_render/rtx_resources.cpp@0867d3c, MIT), over the Vulkan enum values.
 #include <fuse/relight/scene/classify/d3d_state_model.hpp>

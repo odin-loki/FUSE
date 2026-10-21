@@ -1,6 +1,6 @@
 // GPU-shader reference gate for the single-source spatial upscaler ports.
 //
-// The vendored GLSL passes (Engine/lib/fidelityfx/shaders/vk/{fsr1,cas}, Engine/lib/nvidia-nis/NIS/NIS_Main.glsl)
+// The vendored GLSL passes (vendor/fidelityfx/shaders/vk/{fsr1,cas}, vendor/nvidia-nis/NIS/NIS_Main.glsl)
 // are compiled with glslangValidator at build time (Renderer/cmake/upscale.cmake) and dispatched here on a Vulkan
 // device (Lavapipe in CI) through a small compute harness that opens the loader at run time (no link dependency,
 // so the gate runs in stub builds too). Each pass gets the same input image and the same constant-buffer bits as

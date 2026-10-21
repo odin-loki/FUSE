@@ -13,7 +13,7 @@
 //       - variant sets: the strongest authored selection anywhere in the prim's index (optionally fallbacks
 //         per set), variant contents nested arbitrarily (a variant may add references, payloads, children and
 //         variant sets; TinyUSDZ's USDA parser drops a variantSet written directly inside a variant body, see
-//         Engine/lib/tinyusdz/PATCHES.md);
+//         vendor/tinyusdz/PATCHES.md);
 //       - instanceable prims flattened (instances are expanded; `instanceable` is kept as a flag);
 //       - inactive prims keep their own opinions but, as on a UsdStage, their subtree is not populated;
 //       - asset paths anchored to the directory of the layer that authored them.

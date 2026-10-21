@@ -1,10 +1,10 @@
 # fuse_cinematics
 
-Standalone cinematics timeline API distilled from **Verve** (MIT). This module does **not** link the legacy `Engine/source/Verve/` tree — it re-implements the playback kernel in `fuse::cinematics`.
+Standalone cinematics timeline API distilled from **Verve** (MIT). This module does **not** link a legacy Torque engine tree — it re-implements the playback kernel in `fuse::cinematics`.
 
 ## License / attribution
 
-Verve is Copyright (C) 2014 Violent Tulip, licensed under the **MIT License**. See `third_party/addons/Verve/LICENSE` and the ore paths below.
+Verve is Copyright (C) 2014 Violent Tulip, licensed under the **MIT License**. Ore paths below name the upstream Torque addon layout (submodules are no longer vendored in this repo).
 
 ## Ore map (Verve → fuse_cinematics)
 
@@ -29,7 +29,7 @@ Verve is Copyright (C) 2014 Violent Tulip, licensed under the **MIT License**. S
 | `CuePayload` | VScriptEventTrack / VSoundEffectTrack cue args | Typed stub payload on each `CueEntry` |
 | `interpolate` | `Engine/source/Verve/Core/VTrack.cpp` | `lerp`, easing, `calculateInterp` helpers |
 
-Submodule reference copy (same layout): `third_party/addons/Verve/Engine/source/Verve/Core/`.
+Parity reference scripts: `Samples/unification/demo_timeline/worlds/verve_intro.mis`.
 
 ## API sketch
 

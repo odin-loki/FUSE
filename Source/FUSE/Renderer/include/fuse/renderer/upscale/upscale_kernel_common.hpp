@@ -3,7 +3,7 @@
 // Device-safe helpers shared by the single-source spatial upscaler / sharpener kernels
 // (fsr1_kernel.hpp, cas_kernel.hpp, nis_kernel.hpp; docs/compute-kernels.md, docs/upscalers.md).
 //
-// The vendored GPU sources (Engine/lib/fidelityfx, Engine/lib/nvidia-nis) are HLSL/GLSL; the CPU ports
+// The vendored GPU sources (vendor/fidelityfx, vendor/nvidia-nis) are HLSL/GLSL; the CPU ports
 // transcribe their float32 paths operation for operation. Two GPU behaviours are reproduced explicitly
 // so the ports match the shaders numerically:
 //   * FidelityFX's bit-trick approximations (ffxApproximateReciprocal & co.) are integer arithmetic on the

@@ -18,7 +18,7 @@
 | `FxComposer` | `Modules/fx/include/fuse/fx/fx_composer.hpp` | Registry + tick facade |
 | `bind::ParameterBinder` | `Modules/fx/include/fuse/fx/parameter_bind.hpp` | Runtime cast slot substitution |
 
-**Ore sources (read-only):** `Engine/source/afx/`, `third_party/addons/AFX-Template/game/` — see [Modules/fx/README.md](../../Source/FUSE/Modules/fx/README.md).
+**Ore sources (read-only):** AFX template missions — see [Modules/fx/README.md](../../Source/FUSE/Modules/fx/README.md) and `Samples/unification/demo_fx/`.
 
 **Not in scope (deferred):** GPU particle pools (`afxParticlePool`), constraint remapping (`afxConstraint`), Torque choreographer bridge, hybrid demo FX drive.
 

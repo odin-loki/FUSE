@@ -1,4 +1,4 @@
-# WP-0.6: verify Engine/lib/renderdoc against its VERSION pin (cmake -DPIN_DIR=<dir> -P this file).
+# WP-0.6: verify vendor/renderdoc against its VERSION pin (cmake -DPIN_DIR=<dir> -P this file).
 # Checks the required fields, every sha256:<file>=<hex> line (CRLF normalized to LF) and that the
 # newest eRENDERDOC_API_Version_X_Y_Z the header declares equals api_version.
 if(NOT PIN_DIR OR NOT EXISTS "${PIN_DIR}/VERSION")

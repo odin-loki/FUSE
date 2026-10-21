@@ -5,7 +5,7 @@
 //
 // Upstream: AMD FidelityFX SDK v1.1.4 (tag v1.1.4, commit c6efa6bf7f2027b3ec94f28578bb5965eabb9e55, MIT),
 // FSR 3.1 upscaler effect version 3.1.4. The GPU side is the vendored Vulkan GLSL passes
-// (Engine/lib/fidelityfx/shaders/vk/fsr3upscaler/*.glsl + include/FidelityFX/gpu/{fsr3upscaler,spd}/*),
+// (vendor/fidelityfx/shaders/vk/fsr3upscaler/*.glsl + include/FidelityFX/gpu/{fsr3upscaler,spd}/*),
 // compiled verbatim by cmake/rp_wp42.cmake. The host side (this file, fsr3_host.cpp, fsr3_gpu.cpp) replaces
 // sdk/src/components/fsr3upscaler/ffx_fsr3upscaler.cpp + the FidelityFX Vulkan backend, which are NOT vendored:
 // the constant setup below reproduces fsr3upscalerDispatch() / setupDeviceDepthToViewSpaceDepthParams()

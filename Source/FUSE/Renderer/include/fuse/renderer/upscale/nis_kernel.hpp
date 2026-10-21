@@ -2,8 +2,8 @@
 
 // Single-source NVIDIA Image Scaling (NVScaler), float32 SDR path.
 //
-// Transcribed from the vendored NIS SDK v1.0.3 shader Engine/lib/nvidia-nis/NIS/NIS_Scaler.h (MIT,
-// Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES; see Engine/lib/nvidia-nis/licence.txt), with
+// Transcribed from the vendored NIS SDK v1.0.3 shader vendor/nvidia-nis/NIS/NIS_Scaler.h (MIT,
+// Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES; see vendor/nvidia-nis/licence.txt), with
 // NIS_SCALER=1, NIS_HDR_MODE_NONE, NIS_USE_HALF_PRECISION=0, NIS_VIEWPORT_SUPPORT=0, no output clamp.
 //
 // The shader stages a luma tile, a 2x2-batched edge map and the filter banks in groupshared memory; every

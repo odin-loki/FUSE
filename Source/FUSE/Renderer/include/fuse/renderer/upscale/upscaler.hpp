@@ -14,7 +14,7 @@
 // Optional, registered at run time (needs a Vulkan device, so not a built-in) by
 // fsr3::register_fsr3_backend() (upscale_backends/fsr3/fsr3_upscaler.hpp, WP-4.2) when the build has
 // FUSE_UPSCALER_FSR3 (CMake option, default ON with the Vulkan backend; docs/upscalers.md):
-//   "fsr3"         temporal   FidelityFX SDK v1.1.4 FSR 3.1 upscaler (Vulkan, vendored in Engine/lib/fidelityfx).
+//   "fsr3"         temporal   FidelityFX SDK v1.1.4 FSR 3.1 upscaler (Vulkan, vendored in vendor/fidelityfx).
 //
 // Temporal backends take the renderer's canonical `UpscaleInputs` (upscale/upscale_inputs.hpp: render/display
 // resolution, jittered linear colour, depth, UV motion, exposure, reactive / transparency masks, cameras,

@@ -5,7 +5,7 @@
 #                                graph v2), the clean-room host (constants, ping-pong, clears, reflection-driven
 #                                descriptor binding) and the "fsr3" ITemporalUpscaler adapter
 #                                (include/fuse/renderer/upscale_backends/fsr3/**, src/upscale_backends/fsr3/**)
-#   FSR 3.1 passes       SPIR-V  the vendored AMD FidelityFX SDK v1.1.4 Vulkan GLSL (Engine/lib/fidelityfx, MIT),
+#   FSR 3.1 passes       SPIR-V  the vendored AMD FidelityFX SDK v1.1.4 Vulkan GLSL (vendor/fidelityfx, MIT),
 #                                compiled verbatim with glslangValidator -Os (the SDK's FidelityFX-SC glslang flags)
 #                                for FUSE's permutation, embedded in fuse_fsr3
 #   fsr3.convert         SPIR-V  FUSE input adapter, Slang (primary) + GLSL twin

@@ -149,7 +149,7 @@ Likelihood: **High** / **Medium** / **Low**
 
 **Impact:** Daily dev friction; CI duplication; drift.
 
-**Mitigation:** U1 product graph — one configure path; quarantine `fuse_t3d_legacy` / `fuse_t2d_legacy` always built under `Source/FUSE/Legacy/`.
+**Mitigation:** U1 product graph — one configure path; legacy quarantine removed; native `fuse::` APIs and `Samples/unification/` parity.
 
 ---
 

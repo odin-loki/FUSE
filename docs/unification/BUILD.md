@@ -204,26 +204,16 @@ See [architecture-parallel.md](./architecture-parallel.md) §3.5 and [wp03-fiber
 
 ---
 
-## WP-02 prep — prefix rename script
-
-Evidence-driven planner (dry-run only):
-
-```bash
-python3 Tools/FUSE/prefix_legacy_symbols.py --list-con
-python3 Tools/FUSE/prefix_legacy_symbols.py --plan --dimension t3d --output /tmp/t3d-prefix-plan.json
-python3 Tools/FUSE/prefix_legacy_symbols.py --plan --dimension t2d --output /tmp/t2d-prefix-plan.json
-```
-
-U2 (`fuse_t3d_legacy` / `fuse_t2d_legacy`) will consume the JSON plans to apply `fuse_t3d_` / `fuse_t2d_` prefixes inside quarantined static libraries — see [symbol-collision-report.md](./symbol-collision-report.md).
-
----
-
 ## Directory map (U1)
 
 ```
 CMakeLists.txt              # FUSE product graph entry
 cmake/
   FusePlatforms.cmake       # FUSE_PLATFORM_* detection
+  FuseVendor.cmake          # vendor/ root (pinned third-party libs)
 Source/FUSE/Core/           # fuse_core library + B7.10 integration registry (fuse_b7)
-Tools/FUSE/prefix_legacy_symbols.py
+Tools/FUSE/                 # fuse_import, fuse_cook, fuse_convert (when FUSE_BUILD_TOOLS)
+vendor/                     # vendored dependencies (was Engine/lib / third_party/vendor)
 ```
+
+Legacy Torque3D quarantine (`fuse_t3d_legacy`, `prefix_legacy_symbols.py`, addon submodules) was removed; parity demos use `Samples/unification/` and native `fuse::` APIs.

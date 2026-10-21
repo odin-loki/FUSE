@@ -1,6 +1,6 @@
 #pragma once
 
-// FUSE provider ABI  ->  NVIDIA Streamline 2.14.1 types (vendored MIT headers, Engine/lib/streamline).
+// FUSE provider ABI  ->  NVIDIA Streamline 2.14.1 types (vendored MIT headers, vendor/streamline).
 // Pure data mapping with no runtime calls, so the gates compile it and check it on any OS; the
 // Streamline provider (fuse_nvplugin_streamline.cpp) uses it to build slSetTagForFrame /
 // slSetConstants / slEvaluateFeature arguments.

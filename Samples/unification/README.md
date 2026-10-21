@@ -26,7 +26,7 @@ ctest --test-dir build -R fuse_u8_ --output-on-failure
 
 - Real GLES/Vulkan present (Track B) — software placeholder renderer only
 - Bit-perfect legacy mission replay — converters produce wiring stubs, not full gameplay
-- Live addon submodule assets — golden paths tried first; bundled `.mis`/`.cs` stubs used when submodules absent
+- Live upstream addon trees — golden paths point at `Samples/unification/*/worlds/`; bundled `.mis`/`.cs` stubs used when a golden file is missing
 
 **Wave 5 wiring**
 

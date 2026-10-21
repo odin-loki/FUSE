@@ -3,7 +3,7 @@
 
 #include <fuse/renderer/upscale/upscale_passes.hpp>
 
-// Vendored NVIDIA Image Scaling SDK v1.0.3 (Engine/lib/nvidia-nis, MIT): NVScalerUpdateConfig and the
+// Vendored NVIDIA Image Scaling SDK v1.0.3 (vendor/nvidia-nis, MIT): NVScalerUpdateConfig and the
 // coef_scale / coef_usm filter banks. Included as a SYSTEM header (third-party warning levels).
 #include <NIS_Config.h>
 

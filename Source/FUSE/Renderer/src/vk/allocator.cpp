@@ -24,7 +24,7 @@
 #endif
 
 #if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_VMA_AVAILABLE)
-// Vendored header-only VMA (Engine/lib/vma, pinned in Engine/lib/vma/VERSION); this TU holds the
+// Vendored header-only VMA (vendor/vma, pinned in vendor/vma/VERSION); this TU holds the
 // implementation. "Static" Vulkan functions: with volk (WP-0.2, vk/loader.hpp) every vk* name here
 // is volk's function-pointer global, so vmaCreateAllocator copies the table that is current for
 // the device (device-level dispatch, or loader trampolines while several devices are live) and
@@ -38,9 +38,9 @@
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
-// The header compiled here must be the release Engine/lib/vma/VERSION pins (CMake passes the pin).
+// The header compiled here must be the release vendor/vma/VERSION pins (CMake passes the pin).
 static_assert(VMA_VERSION == VK_MAKE_VERSION(FUSE_VMA_PIN_MAJOR, FUSE_VMA_PIN_MINOR, FUSE_VMA_PIN_PATCH),
-              "Engine/lib/vma/include/vk_mem_alloc.h does not match the version pinned in Engine/lib/vma/VERSION");
+              "vendor/vma/include/vk_mem_alloc.h does not match the version pinned in vendor/vma/VERSION");
 #endif
 
 namespace fuse::renderer {

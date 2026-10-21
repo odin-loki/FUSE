@@ -1,7 +1,7 @@
 # FUSE asset plan W0.8 (docs/plans/FUSE_ASSET_PLAN.md §5.4, §6 Wave 0): content golden-render harness.
 #
 #   fuse_content_golden_lib      static library: LDR-FLIP over the vendored NVIDIA FLIP header
-#                                (Engine/lib/nvidia-flip, BSD-3-Clause, fuse_lint_vendored_pins_nvidia_flip)
+#                                (vendor/nvidia-flip, BSD-3-Clause, fuse_lint_vendored_pins_nvidia_flip)
 #                                + deterministic reference scenes (Samples/content_golden)
 #   asset_golden_flip            CPU gate (every tree): FLIP identity / sanity ranges / FUSE-FLIP cross-check,
 #                                committed goldens decode

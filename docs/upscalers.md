@@ -109,8 +109,8 @@ Both libraries are MIT-licensed and vendored verbatim with no local edits. Each 
 
 | Directory | Upstream | Tag / commit | Licence | Contents |
 | --- | --- | --- | --- | --- |
-| `Engine/lib/fidelityfx` | GPUOpen-LibrariesAndSDKs/FidelityFX-SDK | v1.1.4 / `c6efa6bf7f2027b3ec94f28578bb5965eabb9e55` | MIT, Copyright (C) 2024 Advanced Micro Devices, Inc. (`LICENSE.txt`) | `gpu/ffx_core*.h`, `ffx_common_types.h`, `gpu/fsr1/*` and `gpu/cas/*` (FSR1 and CAS 1.2.0, `header_version`), `host/ffx_fsr1.h` and `host/ffx_cas.h` (version declarations only; the host runtime is not compiled), and `shaders/vk/{fsr1,cas}/*.glsl` (Vulkan pass entry points) |
-| `Engine/lib/nvidia-nis` | NVIDIAGameWorks/NVIDIAImageScaling | v1.0.3 / `35e13ba316c98eeecf16f37eae70ce88019911f6` | MIT, Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES (`licence.txt`) | `NIS/NIS_Scaler.h`, `NIS_Config.h` (constants and coefficient tables), `NIS_Main.glsl` and `NIS_Main.hlsl` |
+| `vendor/fidelityfx` | GPUOpen-LibrariesAndSDKs/FidelityFX-SDK | v1.1.4 / `c6efa6bf7f2027b3ec94f28578bb5965eabb9e55` | MIT, Copyright (C) 2024 Advanced Micro Devices, Inc. (`LICENSE.txt`) | `gpu/ffx_core*.h`, `ffx_common_types.h`, `gpu/fsr1/*` and `gpu/cas/*` (FSR1 and CAS 1.2.0, `header_version`), `host/ffx_fsr1.h` and `host/ffx_cas.h` (version declarations only; the host runtime is not compiled), and `shaders/vk/{fsr1,cas}/*.glsl` (Vulkan pass entry points) |
+| `vendor/nvidia-nis` | NVIDIAGameWorks/NVIDIAImageScaling | v1.0.3 / `35e13ba316c98eeecf16f37eae70ce88019911f6` | MIT, Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES (`licence.txt`) | `NIS/NIS_Scaler.h`, `NIS_Config.h` (constants and coefficient tables), `NIS_Main.glsl` and `NIS_Main.hlsl` |
 
 `fuse_lint vendored-pins` accepts `#define <X>_VERSION_MAJOR/MINOR/PATCH` triplets (FidelityFX) and an
 `SDK - vX.Y.Z` banner (NIS) as version declarations. It also accepts a `header_version=` key for a component
@@ -177,7 +177,7 @@ first. `nis_pixel` reproduces this so the CPU and GPU outputs stay identical.
 ## FSR 3.1 (WP-4.2, Vulkan)
 
 FSR 3.1 is vendored and built: the AMD FidelityFX SDK v1.1.4 (`c6efa6bf`, MIT, FSR 3.1 upscaler 3.1.4) subset
-in `Engine/lib/fidelityfx` (`gpu/fsr3upscaler/*.h`, `gpu/spd/ffx_spd.h`, the 8 Vulkan GLSL passes), pinned by
+in `vendor/fidelityfx` (`gpu/fsr3upscaler/*.h`, `gpu/spd/ffx_spd.h`, the 8 Vulkan GLSL passes), pinned by
 SHA-256 in its `VERSION` file (lint `fuse_lint_vendored_pins_fidelityfx`). No SDK host runtime, FidelityFX
 Vulkan backend, FidelityFX-SC or frame generation is vendored.
 

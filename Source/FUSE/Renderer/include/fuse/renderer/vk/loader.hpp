@@ -3,7 +3,7 @@
 // Vulkan function loading for fuse_rhi (WP-0.2, docs/unification/RENDERER-EXECUTION.md).
 //
 // fuse_rhi does not link the Vulkan loader. It loads it at run time through the vendored volk
-// (Engine/lib/volk): every `vk*` name that fuse_rhi code and its consumers call is a volk
+// (vendor/volk): every `vk*` name that fuse_rhi code and its consumers call is a volk
 // function-pointer global (the `<vulkan/vulkan.h>` those targets see is a shim that includes the
 // real header with VK_NO_PROTOTYPES and then volk.h; see cmake/FuseVolk.cmake).
 //

@@ -51,7 +51,7 @@ namespace fuse::relight::bridge::host {
 namespace cmd = schema::cmd;
 
 namespace dxvkabi {
-// DXVK's D3D8 interop interfaces (Engine/lib/dxvk/src/d3d9/d3d9_bridge.h), declared by ABI so the
+// DXVK's D3D8 interop interfaces (vendor/dxvk/src/d3d9/d3d9_bridge.h), declared by ABI so the
 // executor does not include DXVK's internal headers: same GUIDs, same vtable order.
 // They must have external linkage: in an anonymous namespace GCC sees that no class of the program
 // implements them and devirtualizes the pure-virtual call into a jump to address 0 (-O2/-O3).

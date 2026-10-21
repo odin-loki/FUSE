@@ -2,7 +2,7 @@
 //
 // Implements fuse_nv_plugin_abi.h by loading the Streamline interposer at runtime from the provider's
 // own directory (FuseNvInitInfo::runtime_dir) and calling it through function pointers typed by the
-// vendored MIT headers (Engine/lib/streamline, v2.14.1). Nothing NVIDIA is linked at build time; the
+// vendored MIT headers (vendor/streamline, v2.14.1). Nothing NVIDIA is linked at build time; the
 // interposer and the sl.* / nvngx_* plugins it loads are the developer's own RTX-SDK-licensed copies.
 //
 // Options ("k=v;k=v"):

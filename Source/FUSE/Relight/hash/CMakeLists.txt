@@ -5,7 +5,7 @@
 # `add_subdirectory(tests/hash)`).
 
 set(FUSE_RELIGHT_XXHASH_DIR "${FUSE_VENDOR_DIR}/xxhash")
-set(FUSE_RELIGHT_XXHASH_DIR "${FUSE_RELIGHT_XXHASH_DIR}" CACHE INTERNAL "Vendored xxHash 0.8.x (Engine/lib/xxhash)")
+set(FUSE_RELIGHT_XXHASH_DIR "${FUSE_RELIGHT_XXHASH_DIR}" CACHE INTERNAL "Vendored xxHash 0.8.x (vendor/xxhash)")
 
 add_library(fuse_relight_hash STATIC
     src/d3d_types.cpp

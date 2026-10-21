@@ -69,7 +69,7 @@ void message(const char* text) noexcept;
 void setThreadName(const char* name) noexcept;
 /// True while a Tracy server is connected (zones are only recorded then: TRACY_ON_DEMAND).
 bool connected() noexcept;
-/// "0.14.1": the vendored client version (Engine/lib/tracy/VERSION).
+/// "0.14.1": the vendored client version (vendor/tracy/VERSION).
 const char* clientVersion() noexcept;
 
 template <typename T>

@@ -1,5 +1,5 @@
 // FUSE Relight RL-1.1: entry points the patched DXVK d3d9 front end calls (FUSE-DXVK patches
-// RL-1.1-NN, Engine/lib/dxvk/PATCHES.md). Included from d3d9_device.h (patch RL-1.1-03); the
+// RL-1.1-NN, vendor/dxvk/PATCHES.md). Included from d3d9_device.h (patch RL-1.1-03); the
 // implementation (fuse_tap_dxvk.cpp) converts DXVK's state into IRelightTap events
 // (Source/FUSE/Relight/tap/include/fuse/relight/tap/relight_tap.hpp).
 //

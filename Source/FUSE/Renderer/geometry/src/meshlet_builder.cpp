@@ -5,7 +5,7 @@
 #include <fuse/renderer/geometry/vertex_codec_kernel.hpp>
 
 #include <meshoptimizer.h>
-// Pin check: #errors when the vendored header's MESHOPTIMIZER_VERSION disagrees with Engine/lib/meshoptimizer/VERSION.
+// Pin check: #errors when the vendored header's MESHOPTIMIZER_VERSION disagrees with vendor/meshoptimizer/VERSION.
 #include <fuse_meshoptimizer_version.h>
 
 #include <algorithm>

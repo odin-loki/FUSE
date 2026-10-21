@@ -1,7 +1,7 @@
 # Optional NVIDIA plugin seam (docs/nvidia-plugin.md). Nothing here links NVIDIA code:
 #
 #   fuse_nvidia_plugin              loader + input contract (always built; pure MIT, no NVIDIA headers)
-#   fuse_nvidia_streamline_mapping  FUSE ABI -> Streamline types (vendored MIT headers, Engine/lib/streamline)
+#   fuse_nvidia_streamline_mapping  FUSE ABI -> Streamline types (vendored MIT headers, vendor/streamline)
 #   fuse_nvplugin_streamline        MODULE provider: loads sl.interposer at runtime (MIT)
 #   fuse_nvplugin_ngx               MODULE Linux bridge against the developer's own DLSS SDK — only with
 #                                   FUSE_ENABLE_NVIDIA_PLUGIN=ON and FUSE_NVIDIA_DLSS_SDK_DIR set; its

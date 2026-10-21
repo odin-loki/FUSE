@@ -3,8 +3,8 @@
 // Single-source AMD FidelityFX Super Resolution 1 (EASU + RCAS), float32 path.
 //
 // Transcribed from the vendored FidelityFX SDK v1.1.4 header
-// Engine/lib/fidelityfx/include/FidelityFX/gpu/fsr1/ffx_fsr1.h (MIT, Copyright (C) 2024 Advanced Micro
-// Devices, Inc.; see Engine/lib/fidelityfx/LICENSE.txt):
+// vendor/fidelityfx/include/FidelityFX/gpu/fsr1/ffx_fsr1.h (MIT, Copyright (C) 2024 Advanced Micro
+// Devices, Inc.; see vendor/fidelityfx/LICENSE.txt):
 //   * easu_pixel  == ffxFsrEasuFloat + fsrEasuSetFloat + fsrEasuTapFloat (FFX_FSR_EASU_FLOAT). The four
 //     textureGather calls of the shader are replaced by the twelve clamp-to-edge texel loads they return.
 //   * rcas_pixel  == FsrRcasF (FSR_RCAS_F) with FSR_RCAS_DENOISE, as ffx_fsr1_rcas.h compiles it.

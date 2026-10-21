@@ -1,5 +1,5 @@
 # WP-0.2 (docs/unification/RENDERER-EXECUTION.md): load Vulkan through the vendored volk meta-loader
-# (Engine/lib/volk, pinned in its VERSION; lint gate fuse_lint_vendored_pins_volk).
+# (vendor/volk, pinned in its VERSION; lint gate fuse_lint_vendored_pins_volk).
 #
 # fuse_volk_attach(<target> IMPLEMENTATION <source>)
 #   * <target> stops linking the Vulkan loader (Vulkan::Vulkan is removed from its link interface) and

@@ -1,6 +1,6 @@
 # fuse_ai — behavior trees and agent runtime
 
-FUSE AI module extracted from addon **ore** (read-only submodules). No addon `Engine/` trees are compiled or merged into FUSE `Engine/`.
+FUSE AI module distilled from Torque addon **ore** (BadBehaviour, GuideBot, UAISK). Addon submodules are not vendored in this repo; parity scripts live under `Samples/unification/`.
 
 ## Ore sources
 

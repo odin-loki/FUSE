@@ -97,7 +97,7 @@ jobs:
     # -Wall -Wextra" and "Shipping build compiles with zero warnings, zero debug code included —
     # verified by binary inspection". fuse-werror-* presets set FUSE_WARNINGS_AS_ERRORS=ON, which
     # applies -Wall -Wextra -Werror to every Source/FUSE + Tools/FUSE target (cmake/FuseWarnings.cmake;
-    # vendored Engine/lib subprojects excluded).
+    # vendored vendor/ subprojects excluded).
     name: FUSE -Werror (${{ matrix.config }})
     runs-on: ubuntu-latest
     timeout-minutes: 120

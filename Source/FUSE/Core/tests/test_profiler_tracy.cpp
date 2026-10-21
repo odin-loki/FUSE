@@ -135,7 +135,7 @@ int main() {
 
 #if FUSE_PROFILER_TRACY_ACTIVE
     expect(std::strcmp(fuse::profiler::tracy_adapter::clientVersion(), "0.14.1") == 0,
-           "tracy_adapter::clientVersion matches Engine/lib/tracy/VERSION");
+           "tracy_adapter::clientVersion matches vendor/tracy/VERSION");
     // TRACY_ON_DEMAND without a server: nothing connected, zones inactive, nothing buffered.
     expect(!fuse::profiler::tracy_adapter::connected(), "no Tracy server connected in the test");
     fuse::profiler::tracy_adapter::message("fuse_core_profiler_tracy_on");

@@ -3,8 +3,8 @@
 // Single-source AMD FidelityFX Contrast Adaptive Sharpening (sharpen-only), float32 path.
 //
 // Transcribed from the vendored FidelityFX SDK v1.1.4 header
-// Engine/lib/fidelityfx/include/FidelityFX/gpu/cas/ffx_cas.h (MIT, Copyright (C) 2024 Advanced Micro
-// Devices, Inc.; see Engine/lib/fidelityfx/LICENSE.txt): cas_pixel == casFilterNoScaling, i.e. the
+// vendor/fidelityfx/include/FidelityFX/gpu/cas/ffx_cas.h (MIT, Copyright (C) 2024 Advanced Micro
+// Devices, Inc.; see vendor/fidelityfx/LICENSE.txt): cas_pixel == casFilterNoScaling, i.e. the
 // FFX_CAS_OPTION_SHARPEN_ONLY=1 permutation of ffx_cas_sharpen_pass with FFX_CAS_COLOR_SPACE_CONVERSION=0.
 // `better_diagonals` / `precise_math` select the FFX_CAS_BETTER_DIAGONALS / FFX_CAS_USE_PRECISE_MATH
 // variants (both off in the SDK's shipped permutations). CAS's own scaling mode (casFilterWithScaling) is

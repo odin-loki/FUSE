@@ -1,8 +1,8 @@
 # RL-0.2: CMake port of upstream DXVK 3.1.1's meson build, restricted to the D3D9 and D3D8 front ends
 # (docs/plans/FUSE_REMIX_PORT_PLAN.md §2.2, §7 RL-0.2). Produces 64-bit PE d3d9.dll and d3d8.dll
-# from Engine/lib/dxvk + Engine/lib/dxbc-spirv. d3d10/d3d11/dxgi are not vendored and never built.
+# from vendor/dxvk + vendor/dxbc-spirv. d3d10/d3d11/dxgi are not vendored and never built.
 #
-# What is translated from meson (Engine/lib/dxvk/meson.build, src/*/meson.build, dxbc-spirv's
+# What is translated from meson (vendor/dxvk/meson.build, src/*/meson.build, dxbc-spirv's
 # meson.build, subprojects/libdisplay-info/meson.build):
 #   * source lists: read straight from the vendored meson.build files at configure time, so an
 #     upstream rebase that adds or removes a file needs no edit here (a missing list is a hard error);
@@ -17,7 +17,7 @@
 #
 # Linux-native DXVK ("dxvk-native") is not built: it needs SDL2/SDL3/GLFW WSI and the LGPL
 # mingw-directx-headers fetched into build/ at configure time. Nothing in Relight needs it yet;
-# the PE DLLs run on Linux under Wine/Proton (G7). See Engine/lib/dxvk/PATCHES.md "Build notes".
+# the PE DLLs run on Linux under Wine/Proton (G7). See vendor/dxvk/PATCHES.md "Build notes".
 #
 # Vendored sources compile with upstream's own warning suppressions below; fuse_warnings_finalize
 # additionally marks every vendored source file -w (they are not FUSE code), while FUSE-owned sources
@@ -25,7 +25,7 @@
 #
 # Tests (ctest -L relight):
 #   rl_dxvk_exports  PE32+ x86-64 and the D3D9/D3D8 entry points are exported (objdump -p).
-#   rl_dxvk_pins     fuse_lint vendored-pins over Engine/lib/dxvk and Engine/lib/dxbc-spirv.
+#   rl_dxvk_pins     fuse_lint vendored-pins over vendor/dxvk and vendor/dxbc-spirv.
 #   rl_dxvk_smoke    Tests/relight/smoke/create_device.c through our d3d9.dll under Xvfb + Wine +
 #                    Lavapipe: device, clear, present, readback (skips 77 without Wine or Xvfb).
 

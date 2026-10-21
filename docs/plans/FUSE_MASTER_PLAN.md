@@ -74,7 +74,7 @@ FUSE treats Torque3D as a **behavioural and asset-compat reference**, not as sac
 3. **Allocators over `new`.** Linear / Pool / FreeList–TLSF / Ring / GPUAllocator + per-domain budgets; route Torque `FrameAllocator` / `Memory::` call sites through FUSE allocators during port.
 4. **Qt owns chrome; engine owns viewport.** Qt main window + docks; Vulkan surface embedded; editor input Qt→FUSE; game path uses raw platform input.
 5. **Scripts last.** TorqueScript quarantined under `compat/`; new gameplay prefers C++23 (+ Lua in Track B7).
-6. **Vendored deps, pinned.** VMA, ENet, Lua, etc. under `Engine/lib/<dep>` with a `VERSION` pin file (upstream, tag, commit, sha256); Qt via SDK is the documented exception.
+6. **Vendored deps, pinned.** VMA, ENet, Lua, etc. under `vendor/<dep>` with a `VERSION` pin file (upstream, tag, commit, sha256); Qt via SDK is the documented exception.
 
 ## A2. Language subset & banned patterns
 
@@ -307,7 +307,7 @@ Three CMake presets: `debug`, `release`, `profile`. A fourth `shipping` preset s
 
 #### Third-Party Policy
 
-No package manager (vcpkg, Conan). All dependencies vendored under `Engine/lib/<dep>` with a `VERSION` pin file (upstream, tag, commit hash, file sha256s) checked by `fuse_lint`. This gives you reproducible builds in air-gapped environments. Permitted third-party libs at this phase:
+No package manager (vcpkg, Conan). All dependencies vendored under `vendor/<dep>` with a `VERSION` pin file (upstream, tag, commit hash, file sha256s) checked by `fuse_lint`. This gives you reproducible builds in air-gapped environments. Permitted third-party libs at this phase:
 
 - ~~Catch2~~ — dropped: FUSE tests are plain CTest executables
 - **VMA (Vulkan Memory Allocator)** — GPU heap management
@@ -1020,7 +1020,7 @@ Phase 1 is complete when every item in this checklist passes. Nothing moves to P
 - [x] CMake builds cleanly in Debug, Release, Profile, Shipping — zero warnings with `-Wall -Wextra` (`FUSE_WARNINGS`/`FUSE_WARNINGS_AS_ERRORS`, `fuse-werror-*` presets, CI `fuse-warnings-as-errors`)
 - [x] CUDA compiles against C++23 FUSE host headers (CUDA device dialect may remain C++23) — no separate CUDA type system or duplicate definitions — compile-only (no GPU): nvcc 12.0 supports at most a C++20 dialect, so `.cu` TUs build as `CUDA_STANDARD 20` (plan header: "CUDA device dialect may remain C++20") while host TUs stay C++23; `fuse/types.hpp` owns `FUSE_HOST_DEVICE`, and `fuse/math/{vec,quat,mat,sdf}.hpp` + `fuse/gria.hpp` are annotated in place (no CUDA copies). `fuse_cuda_shared_headers_gate` (`ctest -L cuda`) includes them from a C++23 TU and a `.cu` TU whose `__global__` kernel evaluates Vec/Quat/Mat4/SDF/`Alpha`; `shared_layout_asserts.hpp` static_asserts identical size/align/offsets in the C++23 host, nvcc host and nvcc device passes, and nvcc-host results are compared with C++23-host results. `fuse_cuda_compile_gate` requires every `Source/FUSE/**/*.cu` (7 TUs) to be built with an sm_86 cubin (`cuobjdump`). CI: `.github/workflows/fuse-cuda-compile.yml` (nvidia-cuda-toolkit, host `g++-12`). Kernels are compile-verified only; ray_march/ssao/ssr/ssgi are empty stubs
 - [ ] All four build configs produce correct binaries on Windows; Linux build compiles without error — partial: MinGW-w64 cross build of all four configs with -Werror, ctest under wine64 (Debug/Release/Profile 252/252, Shipping 216/216; presets `fuse-mingw-*`, CI `fuse-windows-cross`); Linux builds clean; MSVC untested here
-- [x] Third-party dependencies (VMA) build from vendored source with pinned commits — VMA 3.4.0 @3aa92122 in `Engine/lib/vma` (header + LICENSE + VERSION pin), `fuse_lint_vendored_pins_vma` + compile-time `VMA_VERSION` check; Catch2 dropped (tests are plain CTest executables)
+- [x] Third-party dependencies (VMA) build from vendored source with pinned commits — VMA 3.4.0 @3aa92122 in `vendor/vma` (header + LICENSE + VERSION pin), `fuse_lint_vendored_pins_vma` + compile-time `VMA_VERSION` check; Catch2 dropped (tests are plain CTest executables)
 - [ ] Unity builds reduce full rebuild time below 60 seconds on ThinkStation P920
 - [x] All allocators pass 1M alloc/free stress cycles — zero leaks, alignment always correct — `fuse_core_b1_alloc_million_cycles` (exactly 1M full alloc→free cycles each for Pool/FreeList/Ring/Stack/Frame via `IAllocator`; alignment, overlap, periodic stats invariants, allocCount==freeCount==1M, LeakDetector live-record tracking + zero live/unknown frees at exit)
 - [x] LinearAllocator correctly ping-pongs between frames — no use-after-reset in debug — `fuse_core_b1_memory_gates`

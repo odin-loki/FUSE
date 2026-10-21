@@ -23,7 +23,7 @@
 #
 # Applied once, at the end of the top-level CMakeLists (fuse_warnings_finalize),
 # to every buildsystem target whose SOURCE_DIR lives under Source/FUSE or
-# Tools/FUSE. Vendored third-party subprojects (Engine/lib/*) are not touched,
+# Tools/FUSE. Vendored third-party subprojects (vendor/*) are not touched,
 # and third-party headers must be reached through SYSTEM include directories so
 # their diagnostics stay out of FUSE builds. Vendored C/C++ sources compiled
 # directly into a FUSE target (outside Source/FUSE and Tools/FUSE) get the
