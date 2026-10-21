@@ -2,6 +2,35 @@
 
 Thank you for helping. This document is the process for FUSE itself — product code under `Source/FUSE/`, `fuse::` APIs, docs, samples, and tools.
 
+## Repository layout
+
+| Path | Contribute here? |
+|------|------------------|
+| `Source/FUSE/` | **Yes** — product C++23 (`fuse::` APIs) |
+| `Samples/unification/` | **Yes** — U8 parity `project.json` demos and bundled worlds |
+| `Tools/FUSE/` | **Yes** — CLI importers and cookers |
+| `docs/` | **Yes** — user and engineering documentation |
+| `vendor/` | **Rarely** — pinned third-party; bump deliberately and preserve licence files |
+| `Templates/` | Torque-era reference content only — do not add legacy engine CMake targets |
+
+Details: [`docs/repository-layout.md`](docs/repository-layout.md). Parity demo index: [`Samples/unification/README.md`](Samples/unification/README.md).
+
+## Dependencies and vendoring
+
+FUSE does **not** use git submodules. After clone, third-party libraries are already under `vendor/` — no extra checkout step.
+
+Torque addon **ore** (AFX, Verve, BadBehaviour, GMK, 3DAAK, and similar) is **not** vendored in this repo. Extract kernels into `Source/FUSE/Modules/` per [`docs/unification/addon-ore-catalog.md`](docs/unification/addon-ore-catalog.md); parity content belongs in `Samples/unification/`.
+
+When you change `vendor/`:
+
+- Keep upstream `LICENSE` / notice files intact.
+- Prefer minimal, auditable diffs and state the upstream version in the PR.
+- Discuss new copyleft dependencies with maintainers first (product licence: AGPL-3.0 in [`LICENSE.md`](LICENSE.md); provenance: [`docs/heritage.md`](docs/heritage.md)).
+
+## Build
+
+Configure with CMake 3.21+ (presets require 3.25+). Presets live in [`CMakePresets.json`](CMakePresets.json); see [`docs/building.md`](docs/building.md) and [`cmake/README.md`](cmake/README.md).
+
 ## Report an issue
 
 Search [existing issues](https://github.com/odin-loki/FUSE/issues) first. When you open a new one, include:

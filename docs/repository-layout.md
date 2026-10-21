@@ -15,7 +15,7 @@ FUSE is one product graph under `Source/FUSE/`. Everything else is content, tool
 | `Source/FUSE/Editor/`, `Apps/` | Qt editor shell and headless demos |
 | `Source/FUSE/Relight/` | Optional DXVK remaster stack (MinGW/Wine CI; default off on MSVC) |
 | `Tools/FUSE/` | CLI — `fuse_import`, `fuse_cook`, `fuse_convert` |
-| `cmake/` | Platform helpers, sanitizers, `FuseVendor.cmake`, presets |
+| `cmake/` | Platform helpers, sanitizers, `FuseVendor.cmake` — preset overview in [`cmake/README.md`](../cmake/README.md) |
 
 **Language:** ISO C++23 for all targets under `Source/FUSE/` (`CMAKE_CXX_STANDARD 23` in `Source/FUSE/CMakeLists.txt`).
 

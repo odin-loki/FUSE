@@ -27,7 +27,7 @@ Future location: `Samples/unification/<demo_id>/` (see [Samples/unification/READ
 **Honest gaps toward full U8 exit (prestarter §13.2):**
 
 - ❌ Real window present across all seven demos (headless embed + software placeholder only)
-- ✅ Legacy import — bundled stubs under `Samples/unification/*/worlds/` are the default; `classifySubmoduleDirectory` may prefer a local ore mirror when present (CI uses stubs only; no network fetch)
+- ✅ Legacy import — bundled stubs under `Samples/unification/*/worlds/` are the default; a local ore mirror may be preferred when present (CI uses stubs only; no network fetch)
 - 🚧 PIE ASan smoke — `fuse_u8_parity_embed_pie_smoke` covers seven demos when `FUSE_SMOKE_ENABLE_ASAN=ON`; all parity demo binaries also ASan-linked under that flag
 - 🚧 Animated sprite textures — converter emits `__fuse.wire|animated_sprite|*` stubs + runtime bridge counts metadata; no GPU texture atlas playback yet
 - ✅ Player + programmer guides — [`docs/player-guide.md`](../player-guide.md), [`docs/programmer-guide.md`](../programmer-guide.md) (honest limits, real demo binaries + ctest names)
@@ -166,5 +166,5 @@ Per prestarter §1.3 and §17:
 - [x] Converters (U7) can import golden paths (stub importers + `fuse_import` dry-run)
 - [x] U8 wiring wave 2: `fuse_demo_wiring` + bundled `worlds/` sources + `ctest -R fuse_u8_`
 - [x] U8 wiring wave 3: golden-path resolver + editor embed convert-before-load + `fuse_u8_parity_embed_pie_smoke`
-- [x] U8 wiring wave 4: animated-sprite wiring stubs + submodule directory classification + ASan on all parity demos + PIE embed covers `demo_hybrid_hud`
+- [x] U8 wiring wave 4: animated-sprite wiring stubs + golden-path directory classification + ASan on all parity demos + PIE embed covers `demo_hybrid_hud`
 - [x] U8 wiring wave 5: `ensureDefault2DWorldReady` (symmetric to 3D) + parity fallback tests for `demo_fx` / `demo_ai_bt` / `demo_timeline` + player/programmer guides

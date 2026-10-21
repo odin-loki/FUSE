@@ -84,6 +84,8 @@ See `CMakePresets.json` presets `fuse-mingw-*`.
 
 ## Presets
 
+[`CMakePresets.json`](../CMakePresets.json) (CMake 3.25+) lists all configure presets. Short reference: [`cmake/README.md`](../cmake/README.md).
+
 ```bash
 cmake --preset fuse-debug
 cmake --build --preset fuse-debug

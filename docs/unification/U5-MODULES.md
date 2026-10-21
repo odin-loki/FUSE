@@ -118,7 +118,7 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
   - **AFX mission hooks** — `registerAfxTemplateMissionHooks()` (AFXDemo_Minimal `on_spell_cast` ore)
   - **AFX mission script VM** — `AfxMissionScriptVm` dispatches `on_spell_cast` / `on_ambient_fx` / `on_impact_fx` + `dispatchTick()`
   - Hybrid demo: spark + muzzle sockets, AFX template pack + mission hooks, CPU+GPU particle pool tick
-- TODO: refactor remaining `Engine/source/afx/` (218 files) into module; CUDA kernel dispatch
+- TODO: complete upstream AFX ore extraction into `fuse_fx`; CUDA kernel dispatch
 
 #### Ore extraction (AFX)
 
@@ -155,7 +155,7 @@ Modules **must not** hold raw scene pointers across worker jobs. Use handles + i
 - **SwitchComponent** — GMK switch leaf (`flip()`, on/off labels)
 - Tests: above + `fuse_mechanics_physics_trigger_bridge`, `fuse_mechanics_delay_rotate`
 - Hybrid demo: polyhedron trigger + physics bridge + console method toggles lever; delay/rotate on enter
-- TODO: extract remaining GMK `SimComponent` leaves from upstream GMK `Engine/source/component/` ore
+- TODO: extract remaining GMK `SimComponent` leaves from upstream GMK ore (`component/`)
 
 ### `fuse_adventure`
 

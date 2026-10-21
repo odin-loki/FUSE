@@ -192,16 +192,11 @@ comm -12 \
 
 ---
 
-## 6. FUSE root pre-merged addon symbols (inventory note)
+## 6. FUSE addon ore (inventory note — updated 2026-10)
 
-The FUSE root `Engine/source/` already contains **partially integrated** addon engine code (ore merged upstream of U5 extraction):
+Historical U0 evidence compared Torque3D and Torque2D **upstream** trees. FUSE no longer ships a root `Engine/` tree or Torque addon submodules.
 
-| Directory | Source files | Origin |
-|-----------|-------------|--------|
-| `Engine/source/afx/` | 218 | AFX (Arcane FX) |
-| `Engine/source/Verve/` | 163 | Verve cinematic core |
-
-These do **not** collide with T2D (T3D-only addons) but reinforce that addon symbols already live in the T3D link unit. U5 extraction should move these to `fuse_fx` / `fuse_cinematics` modules without duplicating into a second Engine tree.
+U5 extraction lands distilled kernels under `Source/FUSE/Modules/fx/` and `Source/FUSE/Modules/cinematics/` (and sibling module targets). Reference upstream file counts at inventory time included ~218 AFX sources and ~163 Verve sources in addon ore — not compiled as a second in-repo engine tree.
 
 ---
 
