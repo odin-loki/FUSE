@@ -100,18 +100,11 @@ Platform scope, adaptive workers, mobile GFX threading, background lifecycle —
 
 ---
 
-## Historical inventory SHAs (U0 evidence; submodules removed)
+## Addon ore (external)
 
-| Upstream | Repo / path (2026-09 inventory) | Commit (at inventory) |
-|----------|----------------------------------|------------------------|
-| Torque2D | `third_party/Torque2D` (removed) | `e7b0011a913793fabb5e564549b3d3ddb3913fe9` |
-| GMK | `TorqueGameEngines/Addon-GMK` | `e322f148ee2e5fe15cf572472b3644325b4f9e44` |
-| Verve | `TorqueGameEngines/Addon-Verve` | `0ea77b28767b665b40ddee0909a74f6bc06cebd3` |
-| BadBehaviour | `TorqueGameEngines/Addon-BadBehaviour` | `9fd487314d4636f7e91834acb2994aa56a63f8a7` |
-| GuideBot | `TorqueGameEngines/Addon-GuideBot` | `0e1e4230f5aa3f32690476d94f1cdfd3b1bf012e` |
-| UAISK | `TorqueGameEngines/Addon-UAISK` | `c8224f7684de68aaa143b2d4252dba3c5b983861` |
-| AFX-Template | `TorqueGameEngines/Addon-AFX-Template` | `1907e55b7aac8e0e239f820ec14ad4367ca7430b` |
-| 3DAAK | `TorqueGameEngines/Addon-3DAAK` | `8684cd1a65084e52f76131d74520c2fa9e1904a1` |
+The seven Torque community addons are **not** vendored in FUSE. They are **external ore only** — clone upstream repos (or a local `ore/torque-addon/` mirror) for reference during U5 extraction; do not treat them as in-repo submodules.
+
+Upstream repos, U0 inventory SHAs, licenses, and kernel entry points: **[addon-ore-catalog.md](./addon-ore-catalog.md)**.
 
 ---
 

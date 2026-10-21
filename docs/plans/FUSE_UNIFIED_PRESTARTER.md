@@ -18,7 +18,7 @@
 |-------|----------------|---------------------|
 | Torque3D (community) | Repo root (`Engine/`, CMake, Templates…) | Full 3D engine + tools |
 | Torque2D (community) | `third_party/Torque2D/` (submodule) | Separate 2D engine (own CMake, `engine/source/2d`, Box2D, own editor) |
-| Addons | `third_party/addons/*` (submodules) | T3D-era kits: GMK, Verve, BadBehaviour, GuideBot, UAISK, AFX, 3DAAK — mostly whole trees or project packs, not clean plugins |
+| Addons | `ore/torque-addon/` (external) | T3D-era kits: GMK, Verve, BadBehaviour, GuideBot, UAISK, AFX, 3DAAK — mostly whole trees or project packs, not clean plugins |
 
 **Goal:** **One program.** One process. One editor. One player/runtime. One feature surface where:
 
@@ -438,8 +438,8 @@ Mine each addon into a **FUSE module** with:
 
 ### 10.6 Cross-module rules
 
-- Modules depend on **FUSE APIs only**, not on `third_party/addons/...` at compile time once extraction lands  
-- After extraction, submodules become **read-only ore** (or archived under `third_party/addons` for reference)  
+- Modules depend on **FUSE APIs only**, not on `ore/torque-addon/...` at compile time once extraction lands  
+- After extraction, upstream trees remain **read-only external ore** (local mirror under `ore/torque-addon/` for reference only)  
 - Licenses: preserve MIT/third-party notices in `THIRD_PARTY.md`  
 
 ---
@@ -568,7 +568,7 @@ Track B: Vulkan, ECS, physics, advanced lighting, production…
 | Item | Policy |
 |------|--------|
 | `third_party/Torque2D` | Submodule until L2b strangler replaces it; then drop or archive |
-| `third_party/addons/*` | Ore; after U5 extraction, pin tags and stop “merging Engine into Engine” |
+| `ore/torque-addon/` (external) | Ore; after U5 extraction, pin upstream tags and stop “merging Engine into Engine” |
 | Branch | All work on **`main`** (user policy) |
 | Upstream sync | `upstream` TorqueGameEngines/Torque3D — merge selectively; avoid clobbering FUSE umbrella |
 | Licensing | MIT notices + addon licenses → `THIRD_PARTY.md` |
@@ -651,7 +651,7 @@ Track B: Vulkan, ECS, physics, advanced lighting, production…
 
 - [FUSE_MASTER_PLAN.md](./FUSE_MASTER_PLAN.md) — full port + feature fidelity  
 - [FUSE_MASTER_PLAN_TOC.md](./FUSE_MASTER_PLAN_TOC.md) — Track B subsection index  
-- `third_party/addons/README.md` — addon ore map  
+- [docs/unification/addon-ore-catalog.md](../unification/addon-ore-catalog.md) — addon ore map (external repos only)  
 - Upstream: TorqueGameEngines/Torque3D, TorqueGameEngines/Torque2D  
 
 ## Appendix C — Document control
