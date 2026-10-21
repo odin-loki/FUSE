@@ -62,7 +62,7 @@ jobs:
             fuse_screen_space_kernel_parity \
             fuse_scene fuse_audio fuse_svo_ray_kernel_parity fuse_reverb_fft_kernel_parity \
             fuse_ddgi_kernel_parity fuse_clustered_kernel_parity fuse_sdf_shadows_kernel_parity \
-            fuse_physics fuse_b4_physics_kernel_gates
+            fuse_physics fuse_b4_physics_kernel_gates fuse_cuda_compile_gate_deps
 
       - name: CUDA compile gates (ctest -L cuda)
         run: ctest --test-dir build-cuda -L cuda --output-on-failure

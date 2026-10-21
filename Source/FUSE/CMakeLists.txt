@@ -199,6 +199,10 @@ if(FUSE_CUDA_BACKEND AND FUSE_BUILD_CORE_TESTS)
   endforeach()
   list(JOIN _fuse_cuda_gate_objects "|" _fuse_cuda_gate_objects)
   list(JOIN _fuse_cuda_gate_expected "|" _fuse_cuda_gate_expected)
+  add_custom_target(fuse_cuda_compile_gate_deps)
+  foreach(_tgt IN LISTS _fuse_cuda_gate_targets)
+    add_dependencies(fuse_cuda_compile_gate_deps ${_tgt})
+  endforeach()
   find_program(FUSE_CUOBJDUMP cuobjdump HINTS "${CUDAToolkit_BIN_DIR}")
   add_test(NAME fuse_cuda_compile_gate
     COMMAND "${CMAKE_COMMAND}"
