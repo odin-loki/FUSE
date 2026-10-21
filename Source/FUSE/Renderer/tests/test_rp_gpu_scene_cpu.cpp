@@ -47,6 +47,8 @@ thread_local unsigned long long t_allocations = 0;
 // -Wmismatched-new-delete at -O2; replacement functions must not be inline anyway.
 #if defined(__GNUC__)
 #define FUSE_TEST_REPLACEMENT_NOINLINE __attribute__((noinline))
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
 #else
 #define FUSE_TEST_REPLACEMENT_NOINLINE
 #endif
@@ -66,6 +68,10 @@ FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p) noexcept { std::fre
 FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* p) noexcept { std::free(p); }
 FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 namespace {
 
