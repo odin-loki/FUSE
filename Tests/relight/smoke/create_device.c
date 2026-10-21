@@ -1,5 +1,5 @@
 /* RL-0.2 smoke test for the vendored DXVK d3d9.dll (docs/plans/FUSE_REMIX_PORT_PLAN.md §7 RL-0.2).
- * Copyright (c) 2026 FUSE contributors (MIT).
+ * Copyright (c) 2026 FUSE contributors (AGPL-3.0).
  *
  * Creates a D3D9 HAL device on a 128x96 window, renders three frames (full clear, then a partial
  * clear with a D3DRECT), reads the back buffer back with GetRenderTargetData before the last
