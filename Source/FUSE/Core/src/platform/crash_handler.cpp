@@ -711,13 +711,17 @@ void crashAbortHandler(int sig) {
         reportCrash(&pointers, "abort (SIGABRT)");
     }
 
-    // Chain: restore the previous disposition. With SIG_DFL, returning lets abort() terminate the
-    // process (exit code 3); a previously installed handler is invoked directly.
+    // Chain: restore the previous disposition, then terminate. Returning to abort() used to rely on
+    // the CRT exiting with code 3, but UCRT (and MinGW linked against it) may __fastfail
+    // (0xC0000409) once this handler returns unless _set_abort_behavior cleared _CALL_REPORTFAULT
+    // (MSVC-only crt_reporting_msvc.cpp). _Exit(3) matches POSIX abort semantics and the B7 gate.
     ::signal(SIGABRT, g_previousAbort);
     if (g_previousAbort != SIG_DFL && g_previousAbort != SIG_IGN && g_previousAbort != SIG_ERR &&
         g_previousAbort != nullptr) {
         g_previousAbort(sig);
+        return;
     }
+    std::_Exit(3);
 }
 
 template <typename Fn>
