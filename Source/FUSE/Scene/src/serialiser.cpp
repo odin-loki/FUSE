@@ -591,6 +591,10 @@ SerialiseResult SceneSerialiser::loadWithRegistry(const std::string& path, Scene
     }
     if (!fuse::ecs::TransformSystem::should_skip_hierarchy_update(loadedRegistry)) {
         fuse::ecs::TransformSystem::update(loadedRegistry);
+        // Recompute clears `dirty`; serialised transforms are always stored dirty with scrubbed matrices.
+        loadedRegistry.each<fuse::ecs::Transform>([](fuse::ecs::EntityID, fuse::ecs::Transform& transform) {
+            transform.dirty = true;
+        });
     }
 
     scene = std::move(loaded);
