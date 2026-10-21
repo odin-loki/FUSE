@@ -7,8 +7,9 @@ on:
     branches: [main, development]
 
 concurrency:
-  group: ci-${{ github.actor }}-${{ github.head_ref || github.run_number }}-${{ github.ref }}-fuse-linux
-  cancel-in-progress: true
+  # head_ref is PR-only; on push use ref so main runs share a group but are not cancelled (see cancel-in-progress).
+  group: ci-${{ github.actor }}-${{ github.head_ref || github.ref }}-${{ github.ref }}-fuse-linux
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   fuse-core-linux:
