@@ -95,7 +95,11 @@ FuselevelLoadResult populateWorld2DFromFuselevel(World2D& world, const std::stri
                 ++result.physicsBodies;
             }
         } else {
-            object->setPosition(entity.transform.positionX, entity.transform.positionY);
+            const fuse::scene::SceneEntityTransform& st = entity.transform;
+            object->setLocalTranslation({st.positionX, st.positionY, st.positionZ});
+            object->setLocalRotation(
+                math::Quat{st.rotationX, st.rotationY, st.rotationZ, st.rotationW}.normalized());
+            object->setLocalScale({st.scaleX, st.scaleY, st.scaleZ});
         }
         built[index] = object.get();
         world.addSprite(built[index]);
@@ -171,7 +175,7 @@ FuselevelSaveResult saveWorld2DToFuselevel(const World2D& world, const std::stri
         s32 childParent = frame.parentIndex;
         if (sprite != nullptr) {
             const math::Vec3& p = sprite->localTranslation();
-            const math::Quat& q = sprite->localRotation();
+            const math::Quat q = sprite->localRotation().normalized();
             const math::Vec3& s = sprite->localScale();
             fuse::scene::SceneEntityTransform transform{};
             transform.positionX = p.x;
@@ -236,7 +240,11 @@ FuselevelSaveResult saveWorld2DToFuselevel(const World2D& world, const std::stri
         const ecs::EntityID wireEntity = registry.create();
         ids.push_back(wireEntity);
         // Keep ECS row index aligned with the scene entity (see registryFromSceneEntities for v2).
-        registry.add<ecs::Transform>(wireEntity, ecs::Transform{});
+        ecs::Transform wireTransform{};
+        if (owner >= 0) {
+            wireTransform.parent = ids[static_cast<usize>(owner)];
+        }
+        registry.add<ecs::Transform>(wireEntity, wireTransform);
     }
 
     const std::filesystem::path parent = std::filesystem::path(fuselevelPath).parent_path();

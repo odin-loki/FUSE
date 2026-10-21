@@ -2,6 +2,7 @@
 
 #include <fuse/ecs/component_types.hpp>
 #include <fuse/ecs/components/script.hpp>
+#include <fuse/ecs/components/transform.hpp>
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 
@@ -135,6 +136,25 @@ bool is_script_column(const ComponentTypeInfo* info) {
     return info->type == std::type_index(typeid(Script)) && info->size == sizeof(Script);
 }
 
+bool is_transform_column(const ComponentTypeInfo* info) {
+    return info->type == std::type_index(typeid(Transform)) && info->size == sizeof(Transform);
+}
+
+void scrub_transform_runtime_state(Transform& transform) {
+    transform.local_to_world = mat4::identity();
+    transform.world_to_local = mat4::identity();
+    transform.dirty = true;
+}
+
+void fixup_transform_rows(std::byte* rows, usize count) {
+    for (usize i = 0; i < count; ++i) {
+        Transform transform;
+        std::memcpy(&transform, rows + i * sizeof(Transform), sizeof(Transform));
+        scrub_transform_runtime_state(transform);
+        std::memcpy(rows + i * sizeof(Transform), &transform, sizeof(Transform));
+    }
+}
+
 RegistrySerialiseResult fail(std::string message) {
     RegistrySerialiseResult result;
     result.error = std::move(message);
@@ -178,7 +198,7 @@ RegistrySerialiseResult RegistrySerialiser::save(const Registry& registry, const
                 return cmp < 0;
             }
         }
-        return a.archetype->count() < b.archetype->count();
+        return a.archetype < b.archetype;
     });
 
     Writer w;
@@ -208,20 +228,46 @@ RegistrySerialiseResult RegistrySerialiser::save(const Registry& registry, const
             w.bytes(info->name, nameLength);
             w.put(static_cast<u32>(info->size));
         }
-        w.bytes(archetype.entities.data(), archetype.entities.size() * sizeof(EntityID));
+        const u32 rowCount = archetype.count();
+        std::vector<u32> rowOrder(rowCount);
+        for (u32 row = 0; row < rowCount; ++row) {
+            rowOrder[row] = row;
+        }
+        std::sort(rowOrder.begin(), rowOrder.end(), [&](u32 a, u32 b) {
+            const EntityID ea = archetype.entities[a];
+            const EntityID eb = archetype.entities[b];
+            if (ea.index != eb.index) {
+                return ea.index < eb.index;
+            }
+            return ea.generation < eb.generation;
+        });
+
+        std::vector<EntityID> sortedEntities;
+        sortedEntities.reserve(rowCount);
+        for (const u32 row : rowOrder) {
+            sortedEntities.push_back(archetype.entities[row]);
+        }
+        w.bytes(sortedEntities.data(), sortedEntities.size() * sizeof(EntityID));
+
         for (const ComponentTypeInfo* info : block.components) {
             const ComponentColumn* column = archetype.find_column(info->type);
             if (column == nullptr || column->storage.size() != archetype.count() * info->size) {
                 return fail(std::string("column size mismatch for ") + info->name);
             }
-            if (is_script_column(info)) {
-                std::vector<std::byte> scrubbed(column->storage.begin(), column->storage.end());
-                std::string ignored;
-                (void)fixup_script_rows(scrubbed.data(), archetype.count(), false, ignored);
-                w.bytes(scrubbed.data(), scrubbed.size());
-                continue;
+            const usize rowBytes = info->size;
+            std::vector<std::byte> sortedColumn(rowCount * rowBytes);
+            for (u32 outRow = 0; outRow < rowCount; ++outRow) {
+                const u32 srcRow = rowOrder[outRow];
+                std::memcpy(sortedColumn.data() + outRow * rowBytes, column->storage.data() + srcRow * rowBytes,
+                            rowBytes);
             }
-            w.bytes(column->storage.data(), column->storage.size());
+            if (is_script_column(info)) {
+                std::string ignored;
+                (void)fixup_script_rows(sortedColumn.data(), rowCount, false, ignored);
+            } else if (is_transform_column(info)) {
+                fixup_transform_rows(sortedColumn.data(), rowCount);
+            }
+            w.bytes(sortedColumn.data(), sortedColumn.size());
         }
     }
 
