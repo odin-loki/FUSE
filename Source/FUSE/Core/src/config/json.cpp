@@ -1,5 +1,7 @@
 #include <fuse/config/json.hpp>
 
+#include <fuse/core/parse_number.hpp>
+
 #include <charconv>
 #include <cmath>
 #include <system_error>
@@ -208,8 +210,7 @@ private:
         f64 value = 0.0;
         const char* first = m_text.data() + start;
         const char* last = m_text.data() + m_pos;
-        const auto res = std::from_chars(first, last, value);
-        if (res.ec != std::errc() || res.ptr != last || !std::isfinite(value)) {
+        if (!fuse::core::parse_f64(std::string_view(first, static_cast<std::size_t>(last - first)), value)) {
             m_pos = start;
             return fail("invalid number");
         }

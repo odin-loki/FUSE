@@ -233,7 +233,10 @@ FuselevelSaveResult saveWorld2DToFuselevel(const World2D& world, const std::stri
             }
         }
         scene.addEntity("__fuse.wire|" + stub.kind + "|" + stub.owner + "|" + stub.value, {}, owner);
-        ids.push_back(registry.create());
+        const ecs::EntityID wireEntity = registry.create();
+        ids.push_back(wireEntity);
+        // Keep ECS row index aligned with the scene entity (see registryFromSceneEntities for v2).
+        registry.add<ecs::Transform>(wireEntity, ecs::Transform{});
     }
 
     const std::filesystem::path parent = std::filesystem::path(fuselevelPath).parent_path();

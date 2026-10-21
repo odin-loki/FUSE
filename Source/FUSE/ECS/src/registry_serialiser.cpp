@@ -168,6 +168,18 @@ RegistrySerialiseResult RegistrySerialiser::save(const Registry& registry, const
                   [](const ComponentTypeInfo* a, const ComponentTypeInfo* b) { return std::strcmp(a->name, b->name) < 0; });
         blocks.push_back(std::move(block));
     }
+    std::sort(blocks.begin(), blocks.end(), [](const Block& a, const Block& b) {
+        if (a.components.size() != b.components.size()) {
+            return a.components.size() < b.components.size();
+        }
+        for (usize i = 0; i < a.components.size(); ++i) {
+            const int cmp = std::strcmp(a.components[i]->name, b.components[i]->name);
+            if (cmp != 0) {
+                return cmp < 0;
+            }
+        }
+        return a.archetype->count() < b.archetype->count();
+    });
 
     Writer w;
     w.put(kMagic);

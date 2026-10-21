@@ -1,5 +1,7 @@
 #include <fuse/config/cvar.hpp>
 
+#include <fuse/core/parse_number.hpp>
+
 #include <algorithm>
 #include <bit>
 #include <charconv>
@@ -88,14 +90,7 @@ bool parse_i64(std::string_view t, std::int64_t& out) {
 }
 
 bool parse_f64(std::string_view t, f64& out) {
-    if (!t.empty() && t.front() == '+') {
-        t.remove_prefix(1);
-    }
-    if (t.empty()) {
-        return false;
-    }
-    const auto res = std::from_chars(t.data(), t.data() + t.size(), out);
-    return res.ec == std::errc() && res.ptr == t.data() + t.size() && std::isfinite(out);
+    return fuse::core::parse_f64(t, out);
 }
 
 std::string format_float(f32 v) {
