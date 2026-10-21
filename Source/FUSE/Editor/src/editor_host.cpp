@@ -191,6 +191,7 @@ bool EditorHost::openScene(const std::string& path) {
     m_editorScene.registry() = std::move(loadedRegistry);
     m_sceneDimension = info.dimension;
     m_currentScenePath = path;
+    m_runtimeViewport.onSceneFileOpened(m_editorScene.registry());
     markSceneClean_();
     ++m_sceneLoadCount;
     return fileOk_(CommandKind::OpenScene, path,
