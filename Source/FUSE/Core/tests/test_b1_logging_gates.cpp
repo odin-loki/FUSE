@@ -384,7 +384,14 @@ void testProfilerScopeOverhead() {
     // catches a return of shared read-modify-writes / steady_clock stamping. Without a TSC the
     // floor is two steady_clock reads.
     const bool tscClock = std::strcmp(fuse::profiler::clockSourceName(), "tsc") == 0;
-    const double ceiling = tscClock ? 60.0 : std::max(100.0, 3.0 * clockRead);
+#if defined(_WIN32)
+    // Windows QPC/TSC calibration and timer resolution vary by host; the per-scope floor is often
+    // a few ns above Linux CI even with rdtsc, so keep a slightly higher TSC regression ceiling.
+    const double tscCeiling = 70.0;
+#else
+    const double tscCeiling = 60.0;
+#endif
+    const double ceiling = tscClock ? tscCeiling : std::max(100.0, 3.0 * clockRead);
     const char* reference = std::getenv("FUSE_B1_REFERENCE_HARDWARE");
     if (reference != nullptr && reference[0] == '1') {
         expectTrue(best < 10.0, "profiler scope overhead < 10 ns per scope (reference hardware)");
