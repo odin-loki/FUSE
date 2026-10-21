@@ -13,7 +13,7 @@ enum class LegacySourceOrigin : u8 {
     GoldenSubmodule,
 };
 
-/// Local-only submodule directory probe (no `git submodule init` / network fetch).
+/// Local-only reference-tree directory probe (no network fetch).
 enum class SubmodulePathStatus : u8 {
     Absent = 0,
     Uninitialized,

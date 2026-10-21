@@ -113,7 +113,7 @@ fuse::project::ConvertResult result =
     fuse::project::convertT2DModuleToFuselevel("main.cs", "worlds/ui.fuselevel");
 ```
 
-Golden source (historical upstream, not in-repo): `third_party/Torque2D/toybox/SpriteToy/1/main.cs` — bundled stub: `Samples/unification/demo_2d_sprites/worlds/sprite_toy_stub.cs`
+Golden source (upstream Torque2D ore, not vendored in FUSE): `toybox/SpriteToy/1/main.cs` — bundled stub: `Samples/unification/demo_2d_sprites/worlds/sprite_toy_stub.cs`
 
 ### Dry-run
 

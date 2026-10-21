@@ -23,7 +23,7 @@ git clone https://github.com/odin-loki/FUSE.git
 cd FUSE
 ```
 
-Vendored dependencies are committed under `vendor/`; no submodule init step is required.
+Vendored dependencies are committed under `vendor/`; no extra dependency checkout is required.
 
 ## Configure and build (core + tests)
 

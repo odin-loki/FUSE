@@ -37,7 +37,7 @@ cmake -B build -G Ninja \
 cmake --build build
 ```
 
-Vendored dependencies live under `vendor/`; no submodule init step is required. Full option matrix: [building.md](building.md).
+Vendored dependencies live under `vendor/`; no extra dependency checkout is required. Full option matrix: [building.md](building.md).
 
 ## Run demos
 

@@ -42,7 +42,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | M (complete) |
 | **Deliverables** | Collision report, subsystem matrix, addon catalog, demos, risks, layout, merge strategy, **concurrency inventory**, **architecture-parallel**, **work-plan** |
 | **Exit** | All docs in `docs/unification/`; stakeholder defaults documented |
-| **Deps** | Submodules init |
+| **Deps** | Repo clone (`vendor/` committed; no extra checkout) |
 
 ---
 

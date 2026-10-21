@@ -41,7 +41,7 @@ endfunction()
 
 # 1. Self-test.
 set(_bad
-    "bin/nvngx_dlss.dll" "heritage/torque3d/bin/NVNGX_DLSSD.DLL" "nvngx_dlssg.dll" "x/nvngx_dlss_310.bin"
+    "bin/nvngx_dlss.dll" "legacy/torque3d/bin/NVNGX_DLSSD.DLL" "nvngx_dlssg.dll" "x/nvngx_dlss_310.bin"
     "lib/Linux_x86_64/rel/libnvidia-ngx-dlss.so.310.9.1" "libnvidia-ngx-dlssg.so" "lib/libnvsdk_ngx.a"
     "lib/Windows_x86_64/nvsdk_ngx_d.lib" "sdk/sl.interposer.dll" "plugins/sl.dlss_g.dll" "sl.common.pdb"
     "tools/nvperf_grfx_target.dll" "out/libfuse_nvplugin_ngx.so")

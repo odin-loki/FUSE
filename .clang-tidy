@@ -1,6 +1,6 @@
 ---
 # Track A P7 — FUSE-owned seed gate (Source/FUSE only).
-# Do not tidy Engine/, third_party/, or Legacy engine probe.
+# Do not tidy vendor/ or legacy engine probe paths outside Source/FUSE.
 # readability-deleted-default was removed in clang-tidy 13; omit it so
 # clang-tidy 17/18 can load this file. Compiler -Wdefaulted-function-deleted covers it.
 Checks: '-*,bugprone-use-after-move,bugprone-dangling-handle,clang-analyzer-core.NullDereference,modernize-use-override'

@@ -209,7 +209,7 @@ cmake/
   FuseVendor.cmake          # vendor/ root (pinned third-party libs)
 Source/FUSE/Core/           # fuse_core library + B7.10 integration registry (fuse_b7)
 Tools/FUSE/                 # fuse_import, fuse_cook, fuse_convert (when FUSE_BUILD_TOOLS)
-vendor/                     # vendored dependencies (was Engine/lib / third_party/vendor)
+vendor/                     # vendored third-party libraries (pinned in-repo)
 ```
 
 Legacy Torque3D quarantine (`fuse_t3d_legacy`, `prefix_legacy_symbols.py`, addon submodules) was removed; parity demos use `Samples/unification/` and native `fuse::` APIs.

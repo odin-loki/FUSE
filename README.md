@@ -54,7 +54,7 @@ See [`docs/roadmap.md`](docs/roadmap.md) for the phase map.
 ```bash
 git clone https://github.com/odin-loki/FUSE.git
 cd FUSE
-# Vendored deps are under vendor/ — no submodule init required.
+# Vendored deps are under vendor/ — no extra checkout step.
 
 cmake -B build -G Ninja \
   -DFUSE_BUILD_CORE=ON \

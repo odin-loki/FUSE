@@ -17,7 +17,7 @@ This document proposes the **end-state monorepo layout** for the one-program FUS
 
 - **Do not merge** addon `Engine/` trees into FUSE `Engine/` ([addon-ore-catalog.md](./addon-ore-catalog.md), prestarter §2.2).
 - **Do not** big-bang move `Engine/` before U1 umbrella CMake exists — current T3D `generateProjects` / root `CMakeLists.txt` must keep working.
-- **Do not** physically marry `Engine/source` and `third_party/Torque2D/engine/source` — strangler only ([merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md)).
+- **Do not** physically marry historical T3D and T2D engine trees in one directory — strangler only ([merge-strategy-2d-extends.md](./merge-strategy-2d-extends.md)); neither tree ships in FUSE today.
 - New product code lives under `fuse::` namespaces and `Source/FUSE/` CMake targets; legacy stays quarantined until stranglers finish.
 - **Inheritance direction (stakeholder):** `fuse::SceneObject3D : SceneObject2D` — 3D extends 2D for scene identity; physics/gfx/net use **composition**, not inheritance.
 
@@ -75,7 +75,7 @@ FUSE/                                    # repo root (today)
 │       │   ├── T3D/                     # fuse_t3d_legacy — NOT a copy of all Engine/
 │       │   │   ├── CMakeLists.txt       # wraps Engine/source via add_subdirectory or OBJECT lib
 │       │   │   └── README.md            # prefix map, symbol rename policy
-│       │   └── T2D/                     # fuse_t2d_legacy — wraps third_party/Torque2D/engine
+│       │   └── T2D/                     # fuse_t2d_legacy (removed) — wrapped external T2D ore
 │       │       ├── CMakeLists.txt
 │       │       └── README.md
 │       │
@@ -115,11 +115,7 @@ FUSE/                                    # repo root (today)
 │           ├── include/fuse/editor/     # Editor API — no Qt in Core
 │           └── src/
 │
-├── Engine/                              # (today) T3D engine — STAYS until L2a strangler complete
-│   ├── source/                          # 2,513 files — afx/, Verve/ already here
-│   ├── lib/                             # vendored deps (bullet, assimp, …)
-│   ├── modules/
-│   └── bin/
+├── vendor/                              # (today) pinned third-party libraries
 │
 ├── Tools/
 │   ├── CMake/                           # (today) T3D torque_macros — U1: called from umbrella
@@ -155,22 +151,7 @@ FUSE/                                    # repo root (today)
 │   ├── plans/                           # (today) FUSE_MASTER_PLAN, prestarter
 │   └── unification/                     # (today) U0 deliverables
 │
-└── third_party/
-    ├── Torque2D/                        # (ore) submodule — engine/source strangulated, not copied into Engine/
-    │   ├── engine/
-    │   ├── editor/                      # legacy T2D editor — parity only, not product UI
-    │   ├── toybox/
-    │   └── tutorials/
-    ├── addons/                          # (ore) read-only after U5 extraction
-    │   ├── GMK/
-    │   ├── Verve/
-    │   ├── BadBehaviour/
-    │   ├── GuideBot/
-    │   ├── UAISK/
-    │   ├── AFX-Template/
-    │   ├── 3DAAK/
-    │   └── README.md
-    └── vendor/                          # (today) pinned third-party libs
+└── (external ore)                       # Torque2D + community addons — clone upstream for reference; not in-tree
 ```
 
 ---
@@ -184,7 +165,7 @@ FUSE/                                    # repo root (today)
 | `CMakeLists.txt` (T3D app-name driven) | Same file becomes **umbrella** + defers to `Source/FUSE/CMakeLists.txt` | **U1** | Keep `TORQUE_APP_NAME` path working until `fuse_runtime` ships |
 | `vcpkg.json` | Merged / documented dual manifest | **U1** | T2D deps in `docs/unification/BUILD.md` |
 | `Tools/CMake/` | `Tools/CMake/` (unchanged) + consumed by umbrella | **U1** | No move — include paths stay stable |
-| `.gitmodules` | Unchanged; addons remain submodules | **U0–U8** | Pin tags post-U5; optional archive |
+| `.gitmodules` | **Removed** — no in-repo Torque submodules | **Done (2026-10)** | Upstream ore cloned out-of-band for reference |
 
 ### 4.2 Engine & dimensions
 
@@ -193,8 +174,8 @@ FUSE/                                    # repo root (today)
 | `Engine/source/` (T3D) | **Stays in place**; wrapped by `Source/FUSE/Legacy/T3D/` | **U1–U2** wrap only | No file move — CMake `add_subdirectory` or OBJECT library |
 | `Engine/source/afx/` | `Source/FUSE/Modules/fx/` (extract) | **U5** | Already in root Engine — refactor, not re-merge from addon |
 | `Engine/source/Verve/` | `Source/FUSE/Modules/cinematics/` | **U5** | Same |
-| `third_party/Torque2D/engine/source/` | Wrapped by `Source/FUSE/Legacy/T2D/` | **U1–U2** | Submodule stays; **never** copy into `Engine/` |
-| `third_party/Torque2D/editor/` | Unchanged (ore); optional `Samples/T2D/editor-parity/` doc | **U6+** | Not product UI |
+| Torque2D upstream `engine/source/` | Native `World2D` / parity stubs | **Done** | Legacy `fuse_t2d_legacy` wrap removed |
+| Torque2D upstream `editor/` | Docs / optional `Samples/T2D/` references | **U6+** | Not product UI |
 | Torque-bundled deps (historical) | `vendor/` | **Done** | Pinned `VERSION` files; see `cmake/FuseVendor.cmake` |
 
 ### 4.3 Tools, templates, projects
@@ -226,7 +207,7 @@ FUSE/                                    # repo root (today)
 | `docs/plans/` | `docs/plans/` | **Now** | Unchanged |
 | `docs/unification/` | `docs/unification/` | **U0** | This deliverable set |
 | `Samples/unification/README.md` | Per-demo subdirs under `Samples/unification/` | **U8** | Placeholders only until converters exist |
-| `third_party/Torque2D/toybox/` | Referenced by `Samples/T2D/` or docs | **U0–U8** | No move required — path-stable references |
+| Torque2D upstream `toybox/` | Referenced by `Samples/T2D/` or docs | **U0–U8** | Bundled stubs under `Samples/unification/` when ore absent |
 
 ---
 
@@ -330,7 +311,7 @@ When historical legacy libs would have linked together (U2 plan — superseded):
 
 ---
 
-## 7. `third_party`: ore vs vendored deps
+## 7. External ore vs `vendor/`
 
 | Location | Role | Compile? | Lifecycle |
 |----------|------|----------|-----------|
@@ -370,7 +351,7 @@ Repo ships **templates** under `Templates/FUSE/` and **parity demos** under `Sam
 | `fuse::` for new code | `include/fuse/` public headers |
 | Legacy quarantine | `Legacy/T3D`, `Legacy/T2D` CMake wraps — no path merge |
 | One program binaries | `Apps/Runtime`, `Editor/` |
-| Submodule = acquisition | `third_party/`; unified program = `Source/FUSE/` |
+| Vendored deps | `vendor/`; unified program = `Source/FUSE/` |
 
 ---
 

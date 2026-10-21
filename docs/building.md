@@ -9,7 +9,7 @@ git clone https://github.com/odin-loki/FUSE.git
 cd FUSE
 ```
 
-All third-party libraries are committed under `vendor/`; no `git submodule` init step is required.
+All third-party libraries are committed under `vendor/`; clone and configure — no extra dependency checkout.
 
 ## Prerequisites
 
