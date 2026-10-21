@@ -1,5 +1,7 @@
 # FUSE Asset Plan: realistic but lightweight content for the whole planet and for fantasy
 
+> **Path note (2026-10):** `Engine/lib/` in this document means `vendor/`; Torque addon submodules and `third_party/` are no longer in the repo.
+
 Status: plan, not yet started. Author date 2026-09-23. Companion to
 [`FUSE_RENDERER_PLAN.md`](FUSE_RENDERER_PLAN.md) and [`FUSE_MASTER_PLAN.md`](FUSE_MASTER_PLAN.md).
 
@@ -36,7 +38,7 @@ The plan builds on these pieces and names the gaps it must close first (Wave 0).
 | Animation | `Source/FUSE/Animation`: skeleton, clip, animator, blend tree, IK solver, retarget, skinning (CPU/GPU kernel). | No clip importer (BVH/FBX/glTF animation) into the cooked format, no skinned mesh stream in `FMSH`. |
 | VFX | `Source/FUSE/VFX`: particle emitter/system, GPU sim kernel, SoA ops. | No flipbook texture asset, no motion-vector flipbooks. |
 | Audio | `Source/FUSE/Audio`: clip, bus, spatial mixer (HRTF-lite binaural pan), CPU convolution reverb (+ CUDA path), reverb zones, occlusion. `AudioImportDesc` targets 48 kHz, Ogg Vorbis. | No ambience-bed/one-shot bank format, no IR library, no procedural synth. |
-| Lint / pins | `Tools/FUSE/Lint/fuse_lint.cpp` with `vendored-pins` mode; each `Engine/lib/<dep>/VERSION` pins upstream, tag, commit and file sha256s (ctest `fuse_lint_vendored_pins_*`). | Needs a matching `asset-licences` mode (§2.4). |
+| Lint / pins | `Tools/FUSE/Lint/fuse_lint.cpp` with `vendored-pins` mode; each `vendor/<dep>/VERSION` pins upstream, tag, commit and file sha256s (ctest `fuse_lint_vendored_pins_*`). | Needs a matching `asset-licences` mode (§2.4). |
 | Samples | `Samples/unification/demo_*` (2D, 3D-empty, adventure stub, AI BT, FX, HUD, timeline), `Samples/Looks`. | No reference scenes for golden renders of content (§5.4). |
 
 Renderer features the plan relies on (from `FUSE_RENDERER_PLAN.md`): visibility buffer, GPU-driven
@@ -252,7 +254,7 @@ everything the player walks next to, 1024 px/m for anything held or seen within 
 ### 2.4 Licence manifest and the lint gate
 
 Every asset that enters the asset cache gets a sidecar record, collected into
-`Content/licences.lock.json`. The design mirrors the `Engine/lib/<dep>/VERSION` pins that
+`Content/licences.lock.json`. The design mirrors the `vendor/<dep>/VERSION` pins that
 `fuse_lint vendored-pins` checks.
 
 ```json
@@ -757,7 +759,7 @@ ctest gates. CPU times are estimates for an 8–16 core container.
 | Task | Output | Exit criteria |
 |---|---|---|
 | W0.1 `FMSH` v2 streams (tangent, uv1, colour, skin, quantisation) | `mesh_cook.cpp` + tests | round-trip tests; v1 still loads |
-| W0.2 Vendor meshoptimizer with a `VERSION` pin; LODs + meshlets + cluster DAG in the cook | `Engine/lib/meshoptimizer` | `fuse_lint_vendored_pins_meshoptimizer`; LOD error monotonic test  Import/CLI wiring (GREP-COOK-1, RE-P1-7, 2026-09-30): `MeshImportDesc::generate_lods/lod_count` → `optimize.lods` (`lod_options_for_count`), `compress` → quantised positions + normals (both opt-in now, defaults off so plain cooks stay FMSH v1), `meshlets/cluster_dag/cluster_pages` → sections + `.fusepages`; the lenient `write_mesh_stub` honours lod_count / compressed; `fuse_cook --lods N --compress --meshlets --dag --pages`; gate `fuse_asset_mesh_cook_complete` |
+| W0.2 Vendor meshoptimizer with a `VERSION` pin; LODs + meshlets + cluster DAG in the cook | `vendor/meshoptimizer` | `fuse_lint_vendored_pins_meshoptimizer`; LOD error monotonic test  Import/CLI wiring (GREP-COOK-1, RE-P1-7, 2026-09-30): `MeshImportDesc::generate_lods/lod_count` → `optimize.lods` (`lod_options_for_count`), `compress` → quantised positions + normals (both opt-in now, defaults off so plain cooks stay FMSH v1), `meshlets/cluster_dag/cluster_pages` → sections + `.fusepages`; the lenient `write_mesh_stub` honours lod_count / compressed; `fuse_cook --lods N --compress --meshlets --dag --pages`; gate `fuse_asset_mesh_cook_complete` |
 | W0.3 Real BC1/BC4/BC5/BC6H/BC7 through ispc_texcomp; texture arrays | `texture_cook.cpp` | per-format PSNR thresholds; normal maps BC5  Runtime (E06 / AP-RT-COOKED, 2026-09-30): the renderer samples them as `VK_FORMAT_BC*` images (CPU-decode fallback without `textureCompressionBC`), `.fusemat` materials and FMSH v2 meshlets / DAG load through `renderer::cooked_assets::CookedAssetRegistry` (the `IRenderUploadSink`); gates `fuse_cooked_assets_*` |
 | W0.4 KTX2 import/export (transport only) | `fuse_cook --texture` accepts `.ktx2` | round-trip test |
 | W0.5 Licence lock + `fuse_lint asset-licences` | `Content/licences.lock.json`, lint mode | ctest `fuse_lint_asset_licences` green |

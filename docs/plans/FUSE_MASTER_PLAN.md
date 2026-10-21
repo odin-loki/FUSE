@@ -1,5 +1,7 @@
 # FUSE Engine — Master Development Plan (Full Fidelity)
 
+> **Path note (2026-10):** `Engine/lib/` in this document means `vendor/`; Torque addon submodules and `third_party/` are no longer in the repo.
+
 **FUSE** = Fast Unified Simulation Engine  
 *(Meridian dropped — name already in use.)*
 

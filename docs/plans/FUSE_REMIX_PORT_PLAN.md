@@ -1,5 +1,7 @@
 # FUSE Remix Port Plan: FUSE Relight, a FUSE-native D3D8/D3D9 remastering runtime
 
+> **Path note (2026-10):** `Engine/lib/` in this document means `vendor/`; Torque addon submodules and `third_party/` are no longer in the repo.
+
 Status: plan, not started. Written 2026-09-23 on branch `claude/port-execution-plan-bi45jj`.
 Product name: **FUSE Relight**, the runtime half of the FUSE Remaster stack. Remaster track A2 is now fully planned in this document.
 
@@ -77,8 +79,8 @@ Submodule licences were checked by fetching each LICENSE file. File paths in thi
 | `shaders/rtx/algorithm/rtxdi/RtxdiApplicationBridge.slangh` (1,023 lines), `algorithm/rtxcr/rtxcr.slangh`, `rtxcr_material.slangh` (490), `external/NRC.h`, `external/NRD.slangh` | **NVIDIA proprietary** ("NVIDIA CORPORATION and its licensors retain all intellectual property…"). They sit inside the MIT repo but are not MIT. | **Never read or copy (clean room).** Reimplement ReSTIR DI/GI, SSS/hair materials, radiance cache and denoiser from papers (§5). A text-scan gate enforces this (RL-0.1). |
 | `src/mdl/**` (`AperturePBR_*.mdl`, `nvidia/core_definitions.mdl`…) | **NVIDIA proprietary** MDL EULA (`src/mdl/PACKAGE-LICENSES/LICENSE.md`, file headers) | **Drop.** FUSE never compiles MDL. The Remix material *parameter names* (interface facts) are mapped from the MIT table in `rtx_material_data.h` (§4.5). |
 | DXVK core in the Remix fork (`src/d3d9`, `src/dxso`, `src/dxvk` non-rtx, `src/util`) | zlib (`LICENSE`, Rebohle/Ashton) + NV-DXVK MIT modifications | **Do not use the fork** (§2.2). Vendor **upstream DXVK 3.1.1** instead. |
-| Upstream DXVK 3.1.1 `src/{d3d8,d3d9,dxvk,util,wsi,spirv,vulkan}` | zlib (`doitsujin/dxvk/LICENSE`) | **Vendor** into `Engine/lib/dxvk`, marking the altered source (zlib clause 2) and keeping the notice. |
-| `dxbc-spirv` (DXVK 3.x shader front end, including SM1–3 `sm3/`) | MIT (Rebohle 2025) | **Vendor** into `Engine/lib/dxbc-spirv`. |
+| Upstream DXVK 3.1.1 `src/{d3d8,d3d9,dxvk,util,wsi,spirv,vulkan}` | zlib (`doitsujin/dxvk/LICENSE`) | **Vendor** into `vendor/dxvk`, marking the altered source (zlib clause 2) and keeping the notice. |
+| `dxbc-spirv` (DXVK 3.x shader front end, including SM1–3 `sm3/`) | MIT (Rebohle 2025) | **Vendor** into `vendor/dxbc-spirv`. |
 | DXVK `include/native/directx` (mingw-directx-headers) | **LGPL-2.1+** (README of `Joshua-Ashton/mingw-directx-headers`; Wine-derived headers) | **Not vendored.** PE builds use the MinGW toolchain's system headers. Native-Linux unit builds fetch the pinned headers at configure time into `build/`, never into git. |
 | Vulkan-Headers, SPIRV-Headers (submodules) | Apache-2.0 / MIT | Use FUSE's existing Vulkan headers; vendor SPIRV-Headers (MIT) if not already present. |
 | `bridge/**` (formerly bridge-remix) | MIT (`bridge/LICENSE-MIT`) | **Port and revamp** (§3, RL-2.x). |
@@ -87,19 +89,19 @@ Submodule licences were checked by fetching each LICENSE file. File paths in thi
 | `submodules/nrc` (Neural Radiance Cache; ships `NRC_Vulkan.dll`, `cudart64_13.dll`) | **NVIDIA RTX SDKs License** | **Reimplement** (hash-grid radiance cache now, own neural cache later). NRC may be offered as a plugin; not planned. |
 | NRD (packman `rtx-remix-nrd` 4.13; `NVIDIA-RTX/NRD`) | **NVIDIA RTX SDKs License** | **Plugin** (renderer WP-6.4b). The in-tree denoiser is FUSE's own. |
 | `submodules/dlss` (DLSS SR/RR/FG, NGX) | **NVIDIA RTX SDKs License** | **Plugin**, already built as `Renderer/plugins/nvidia` (`dlss_sr`, `dlss_rr`). |
-| Streamline | MIT headers, proprietary runtime DLLs (`license.txt`) | Existing `Engine/lib/streamline` headers plus the plugin. Unchanged. |
+| Streamline | MIT headers, proprietary runtime DLLs (`license.txt`) | Existing `vendor/streamline` headers plus the plugin. Unchanged. |
 | `submodules/nvapi` | MIT for headers and libs (`License.txt`, 2024) | **Drop.** Not needed with Vulkan (it was used for Reflex/driver queries). |
 | Reflex, rtxio, aftermath, Nsight SDK, `ngx_sdk_dlnr` (packman) | NVIDIA proprietary | **Drop.** Reflex goes through the Streamline plugin. rtxio is replaced by the GDeflate reference below. |
 | `submodules/xess` | Intel Simplified Software License (binary, no modification) | **Plugin** (renderer WP-4.3). |
 | `submodules/Detours` | MIT | **Drop** for now. The launcher uses `CreateProcess` + `CREATE_SUSPENDED` + a remote LoadLibrary; add Detours only if a game needs API hooks. |
 | `include/MathLib/External/sse2neon` | MIT | **Drop** (x86-64 only for now). |
-| `src/util/xxHash` | BSD-2 (Yann Collet), v0.8.x | **Vendor** xxHash ≥ 0.8.0 into `Engine/lib/xxhash`. The XXH3 output has been stable since 0.8.0, which hash compatibility needs. |
-| Dear ImGui, ImPlot (`src/dxvk/imgui/imgui*.cpp`, `implot*`) | MIT | **Vendor** upstream Dear ImGui + ImPlot pinned in `Engine/lib/imgui`, not Remix's copy. |
+| `src/util/xxHash` | BSD-2 (Yann Collet), v0.8.x | **Vendor** xxHash ≥ 0.8.0 into `vendor/xxhash`. The XXH3 output has been stable since 0.8.0, which hash compatibility needs. |
+| Dear ImGui, ImPlot (`src/dxvk/imgui/imgui*.cpp`, `implot*`) | MIT | **Vendor** upstream Dear ImGui + ImPlot pinned in `vendor/imgui`, not Remix's copy. |
 | Tracy (`src/tracy`, `bridge/src/tracy`) | BSD-3 | **Drop** here. Renderer WP-0.6 owns Tracy. |
 | gli / glm (`include/gli`, `include/glm`) | MIT | **Drop.** FUSE's own DDS reader and math. |
 | OpenUSD (packman `open_usd` 25.11) | Tomorrow Open Source Technology License (Apache-2.0 variant) | **Optional offline tool only** (`usd-core` wheel for flattening and CI cross-check). The runtime uses TinyUSDZ (Apache-2.0), shared with Remaster W2.2. |
 | Slang (packman) | Apache-2.0 WITH LLVM-exception | Pinned binary per renderer WP-0.5. |
-| GDeflate (RTX IO `.pkg` compression, `RTXIO_COMPRESSION_GDEFLATE_1_0` in `rtx_io.cpp:316`) | Reference codec `microsoft/DirectStorage/GDeflate`: Apache-2.0 | **Vendor** the CPU codec into `Engine/lib/gdeflate` for `.pkg`/`.rtxio` mod packages. |
+| GDeflate (RTX IO `.pkg` compression, `RTXIO_COMPRESSION_GDEFLATE_1_0` in `rtx_io.cpp:316`) | Reference codec `microsoft/DirectStorage/GDeflate`: Apache-2.0 | **Vendor** the CPU codec into `vendor/gdeflate` for `.pkg`/`.rtxio` mod packages. |
 | d3d8to9 (crosire; used by Remix packaging) | BSD-2 | **Drop.** Upstream DXVK 3.x has a native `src/d3d8` front end (5.8k lines, zlib; D8VK was merged). |
 | tiny-cuda-nn (NRC research reference only) | BSD-3 | Not in the runtime. It may be used as a research oracle in `Tools/` (§5.4). |
 | Remix Toolkit (`toolkit-remix`) | Apache-2.0 (Kit runtime is separate and proprietary) | Read only for the mod and USD conventions. Nothing vendored. |
@@ -117,12 +119,12 @@ Submodule licences were checked by fetching each LICENSE file. File paths in thi
    - GDeflate (Apache-2.0, NOTICE);
    - SPIRV-Headers (MIT).
 
-   The packager (RL-6.4) generates `THIRD_PARTY_NOTICES.txt` next to the shipped DLLs from this file and each `Engine/lib/*/LICENSE*`.
+   The packager (RL-6.4) generates `THIRD_PARTY_NOTICES.txt` next to the shipped DLLs from this file and each `vendor/*/LICENSE*`.
 2. **zlib clause 2 ("altered source versions must be plainly marked").** Mark every edit to vendored DXVK in two ways:
    - wrap the edit in `// FUSE-DXVK begin: <reason>` / `// FUSE-DXVK end`;
-   - list the patch in `Engine/lib/dxvk/PATCHES.md` with its purpose and the RL work package.
+   - list the patch in `vendor/dxvk/PATCHES.md` with its purpose and the RL work package.
 
-   `Engine/lib/dxvk/VERSION` records the upstream tag, commit and a sha256 per file (the VMA pin convention). A lint recomputes the hashes of **unmarked** regions to prove that no unmarked edits exist.
+   `vendor/dxvk/VERSION` records the upstream tag, commit and a sha256 per file (the VMA pin convention). A lint recomputes the hashes of **unmarked** regions to prove that no unmarked edits exist.
 3. **MIT notices.** Every file ported from dxvk-remix keeps the NVIDIA MIT header verbatim and adds `Modifications Copyright (c) 2026 FUSE contributors (MIT)`. Ported files carry an `// Ported from dxvk-remix <path>@0867d3c` line, so a rebase can diff against upstream.
 4. **Proprietary-text scan (clean-room enforcement).** A CMake-script gate (the pattern of `plugins/nvidia/cmake/nvidia_binary_gate.cmake`) fails if a tracked file contains NVIDIA's proprietary header phrases, or the "NVIDIA RTX SDKs LICENSE" title, outside an allow-list (`docs/**`). The patterns are assembled from fragments so the gate file does not match itself. It also extends the binary gate with these patterns:
    - `NRC_*.dll`, `cudart64_*.dll`, `nvrtc*.dll`;
@@ -348,7 +350,7 @@ The in-game overlay is ImGui (`dxvk_imgui.cpp` 4,590 lines, `rtx_user_menu.cpp`)
  x64 game: loads Relight d3d9.dll / d3d8.dll directly ───────────────────┐ │
                                                                          ▼ ▼
  ┌───────────────────────── x64 process: game itself, or fuse_relight_host.exe ─────────────────────┐
- │ Engine/lib/dxvk (vendored upstream DXVK 3.x, zlib; FUSE-DXVK patches marked)                     │
+ │ vendor/dxvk (vendored upstream DXVK 3.x, zlib; FUSE-DXVK patches marked)                     │
  │   d3d8 → d3d9 front end → DXVK backend (raster executor for the game's own draws, UI, passthrough)│
  │        │ tap: device/resource/draw/present events (IRelightTap)   ▲ inject/composite             │
  │        ▼                                                          │                              │
@@ -437,11 +439,11 @@ The bridge is a port and revamp of `bridge/` (MIT), with these changes:
 ### 2.7 FUSE module layout (new)
 
 ```
-Engine/lib/dxvk/            vendored upstream DXVK 3.1.x subset (d3d8,d3d9,dxvk,util,wsi,spirv,vulkan) + VERSION + LICENSE + PATCHES.md
-Engine/lib/dxbc-spirv/      vendored (MIT) + VERSION
-Engine/lib/xxhash/          vendored xxHash 0.8.x (BSD-2) + VERSION
-Engine/lib/imgui/           vendored Dear ImGui + ImPlot (MIT) + VERSION
-Engine/lib/gdeflate/        vendored GDeflate CPU codec (Apache-2.0) + NOTICE + VERSION
+vendor/dxvk/            vendored upstream DXVK 3.1.x subset (d3d8,d3d9,dxvk,util,wsi,spirv,vulkan) + VERSION + LICENSE + PATCHES.md
+vendor/dxbc-spirv/      vendored (MIT) + VERSION
+vendor/xxhash/          vendored xxHash 0.8.x (BSD-2) + VERSION
+vendor/imgui/           vendored Dear ImGui + ImPlot (MIT) + VERSION
+vendor/gdeflate/        vendored GDeflate CPU codec (Apache-2.0) + NOTICE + VERSION
 Source/FUSE/Relight/
   THIRD_PARTY.md
   cmake/                    relight_*.cmake (one per work package), licence gates
@@ -486,10 +488,10 @@ Action key: **vendor**, **port** (MIT/zlib code re-homed and modified), **rewrit
 
 | # | Upstream component | Lines | Action | FUSE destination | Depends on | Test strategy |
 |---|---|---|---|---|---|---|
-| 1 | DXVK `d3d9` (upstream 3.1.1) | 30,657 | vendor + ≤ 30 marked patches | `Engine/lib/dxvk/src/d3d9` | – | Test apps tap-off/tap-on goldens; Wine-builtin d3d9 cross-reference |
-| 2 | DXVK `d3d8` (upstream) | 5,815 | vendor | `Engine/lib/dxvk/src/d3d8` | 1 | D3D8 twin apps equal D3D9 captures |
-| 3 | DXVK backend `dxvk`, `util`, `wsi`, `spirv`, `vulkan` (upstream) | ≈ 89,900 | vendor + import patch | `Engine/lib/dxvk/src/*` | – | FUSE device import under validation |
-| 4 | dxbc-spirv (SM1–3) | (pinned) | vendor | `Engine/lib/dxbc-spirv` | – | SM2/SM3 apps |
+| 1 | DXVK `d3d9` (upstream 3.1.1) | 30,657 | vendor + ≤ 30 marked patches | `vendor/dxvk/src/d3d9` | – | Test apps tap-off/tap-on goldens; Wine-builtin d3d9 cross-reference |
+| 2 | DXVK `d3d8` (upstream) | 5,815 | vendor | `vendor/dxvk/src/d3d8` | 1 | D3D8 twin apps equal D3D9 captures |
+| 3 | DXVK backend `dxvk`, `util`, `wsi`, `spirv`, `vulkan` (upstream) | ≈ 89,900 | vendor + import patch | `vendor/dxvk/src/*` | – | FUSE device import under validation |
+| 4 | dxbc-spirv (SM1–3) | (pinned) | vendor | `vendor/dxbc-spirv` | – | SM2/SM3 apps |
 | 5 | Remix `d3d9_rtx*` draw path (classification, index/vertex processing, state capture) | 2,122 | port (logic onto the tap) | `Relight/capture/*`, `Relight/scene/classify` | 1, tap | Rule unit tests + app captures |
 | 6 | `rtx_hashing`, `d3d9_rtx_geometry` hashing, texture hash, `rtx_utils` hash helpers | ≈ 700 | port (bit-exact) | `Relight/hash` | xxHash | KATs + Python reference + 3090 Remix parity |
 | 7 | Vertex capture in `dxso_compiler.cpp` | ≈ 250 | rewrite as a SPIR-V pass | `Relight/capture/vertex_capture` | 4 | SM2/SM3 apps vs CPU transform |
@@ -521,7 +523,7 @@ Action key: **vendor**, **port** (MIT/zlib code re-homed and modified), **rewrit
 | 33 | Options system | 9,153 | port (MIT) | `Relight/options` | – | Ported semantics tests (`test_rtx_option.cpp`, `test_option_layer_export.cpp`) |
 | 34 | Logic graphs | 10,792 | port | `Relight/logic` | 17, 33 | Ported `tests/rtx/unit/graph` semantics |
 | 35 | C API (`rtx_remix_api.cpp`, headers) | 4,318 | port; FUSE-native API + compat exports | `Relight/api` | 9 | Upstream `tests/rtx/apps/RemixAPI_C` behaviour replicated in our own app |
-| 36 | Developer menu (`dxvk_imgui.cpp`, `rtx_user_menu.cpp`, GUI widgets) | ≈ 8,000 | port (MIT) onto vendored Dear ImGui | `Relight/overlay` | Engine/lib/imgui | Scripted UI tests (ImGui test engine is not needed; state-machine unit tests) |
+| 36 | Developer menu (`dxvk_imgui.cpp`, `rtx_user_menu.cpp`, GUI widgets) | ≈ 8,000 | port (MIT) onto vendored Dear ImGui | `Relight/overlay` | vendor/imgui | Scripted UI tests (ImGui test engine is not needed; state-machine unit tests) |
 | 37 | Bridge client/server/util/launcher | 27,634 | port + revamp (generated schema) | `Relight/bridge` | 1 | Wine32 app parity; IPC fuzz |
 | 38 | GPU crash recorder, Sentry, Nsight, aftermath | ≈ 1,600 | drop (FUSE crash handler exists) | – | – | – |
 | 39 | Sparse rendering, DLSS neural rendering | ≈ 900 | drop (DLSS 5 look is in `plugins/nvidia`) | – | – | – |
@@ -907,10 +909,10 @@ Budget: the Wine/Lavapipe jobs are small (≤ 128×96, ≤ 64 spp). The whole `r
 | WP | Title | Owns | Depends | Deliverables | Exit criteria | Est. |
 |---|---|---|---|---|---|---|
 | **RL-0.1** | Licence and attribution gates | new `Source/FUSE/Relight/THIRD_PARTY.md`, `Source/FUSE/Relight/cmake/relight_licence_gates.cmake`, `Source/FUSE/Relight/cmake/relight_proprietary_scan.cmake`, `Source/FUSE/Relight/tests/licence/**`; ⚠ coordinate a pattern addition in `plugins/nvidia/cmake/nvidia_binary_gate.cmake` (or a separate `relight_binary_gate.cmake`; preferred, so no shared edit) | – | Text scan (patterns assembled from fragments); binary patterns (§0.4.4); LGPL-header scan (`GNU Lesser General Public` in `*.h` outside `build/`); THIRD_PARTY skeleton with all planned entries | Seeded bad and good fixtures (generated at test time) behave as expected; the current tree passes; ctest `rl_licence_text_scan`, `rl_binary_gate` (`gate;licence`) | 1.5 |
-| **RL-0.2** | Vendor upstream DXVK 3.1.1 subset + dxbc-spirv, with a CMake build | new `Engine/lib/dxvk/**` (`src/{d3d8,d3d9,dxvk,util,wsi,spirv,vulkan}`, the DXVK shader GLSL, `LICENSE`, `VERSION` with per-file sha256, `PATCHES.md` (empty)), new `Engine/lib/dxbc-spirv/**`, new `Source/FUSE/Relight/CMakeLists.txt`, `Source/FUSE/Relight/cmake/relight_dxvk.cmake`, `Tests/relight/smoke/create_device.c`; ⚠ one line in `Source/FUSE/CMakeLists.txt` | – | CMake port of DXVK's meson (generated `version.h`/`config.h`, glslang shader-to-header rules, `.def` exports, per-target warning suppressions, `FUSE_BUILD_RELIGHT` option default ON only for the MinGW preset); x64 `d3d9.dll`, `d3d8.dll`; no d3d10/11/dxgi | PE32+ exports check (`Direct3DCreate9`, `Direct3DCreate9Ex`, `Direct3DCreate8`); `create_device.c` under `xvfb-run` + Wine + Lavapipe creates a device, clears, presents and reads back the expected colour (ctest `rl_dxvk_smoke`, skip 77 without Xvfb/Wine); pin lint `rl_dxvk_pins` | 4 |
+| **RL-0.2** | Vendor upstream DXVK 3.1.1 subset + dxbc-spirv, with a CMake build | new `vendor/dxvk/**` (`src/{d3d8,d3d9,dxvk,util,wsi,spirv,vulkan}`, the DXVK shader GLSL, `LICENSE`, `VERSION` with per-file sha256, `PATCHES.md` (empty)), new `vendor/dxbc-spirv/**`, new `Source/FUSE/Relight/CMakeLists.txt`, `Source/FUSE/Relight/cmake/relight_dxvk.cmake`, `Tests/relight/smoke/create_device.c`; ⚠ one line in `Source/FUSE/CMakeLists.txt` | – | CMake port of DXVK's meson (generated `version.h`/`config.h`, glslang shader-to-header rules, `.def` exports, per-target warning suppressions, `FUSE_BUILD_RELIGHT` option default ON only for the MinGW preset); x64 `d3d9.dll`, `d3d8.dll`; no d3d10/11/dxgi | PE32+ exports check (`Direct3DCreate9`, `Direct3DCreate9Ex`, `Direct3DCreate8`); `create_device.c` under `xvfb-run` + Wine + Lavapipe creates a device, clears, presents and reads back the expected colour (ctest `rl_dxvk_smoke`, skip 77 without Xvfb/Wine); pin lint `rl_dxvk_pins` | 4 |
 | **RL-0.3** | Wine/Xvfb runner, i686 toolchain, CI workflow | new `cmake/toolchains/fuse-wine-xvfb-run.sh`, new `cmake/toolchains/mingw-w64-i686.cmake`, new `.github/workflows/fuse-relight-wine.yml`, new `Source/FUSE/Relight/tests/env/probe_vulkan.c` | – | Runner: one Xvfb per ctest job (flock), `VK_ICD_FILENAMES` → lvp, validation layer staged into the prefix, exit codes passed through; i686 toolchain; workflow installs `wine32` (multiarch), `g++-mingw-w64-i686-posix`, `xvfb`, `mesa-vulkan-drivers` | `rl_env_probe_x64`: the Windows PE sees llvmpipe with the RT extensions (as verified in §6.1); `rl_env_probe_x86` passes in CI, skips 77 here; the workflow is green on a PR | 2 |
 | **RL-0.4** | D3D9/D3D8 test-app kit | new `Tests/relight/apps/**`, `Tests/relight/apps/common/{rl_app.h,rl_dump.c}`, `Source/FUSE/Relight/cmake/relight_apps.cmake` | RL-0.3 runner (can use `xvfb-run` directly until it lands) | The §6.2 app list (x64; i686 when the toolchain exists); a raw RGBA + JSON sidecar dump; reference runs with Wine's builtin d3d9 produce reference images (FLIP metric from `renderer/quality`) | All apps run on Wine-builtin d3d9 and produce stable dumps (two runs byte-identical); sidecars validate against a schema | 4 |
-| **RL-0.5** | Remix-compatible hash library | new `Engine/lib/xxhash/**` (0.8.x pinned), new `Source/FUSE/Relight/hash/**` (pure logic, no Vulkan or D3D headers; its own `D3DFORMAT` enum values), new `Tools/FUSE/Relight/remix_hash_ref.py`, new `Source/FUSE/Relight/tests/hash/**` | – | Every §4.1 function: components, rules, legacy (SSE semantics with an exact scalar emulation of `_mm_round_ps` FLOOR after multiplying by the reciprocal), the texture layout table for every D3DFORMAT, descriptor hash, light hash, hex formatting and parsing | `rl_hash_kat_*`: xxHash official vectors; KAT tables; C++ vs Python on 10k random cases per function (Python skipped if the wheel is unavailable); property tests (rule order, empty components); MinGW/Wine run gives identical results | 3 |
+| **RL-0.5** | Remix-compatible hash library | new `vendor/xxhash/**` (0.8.x pinned), new `Source/FUSE/Relight/hash/**` (pure logic, no Vulkan or D3D headers; its own `D3DFORMAT` enum values), new `Tools/FUSE/Relight/remix_hash_ref.py`, new `Source/FUSE/Relight/tests/hash/**` | – | Every §4.1 function: components, rules, legacy (SSE semantics with an exact scalar emulation of `_mm_round_ps` FLOOR after multiplying by the reciprocal), the texture layout table for every D3DFORMAT, descriptor hash, light hash, hex formatting and parsing | `rl_hash_kat_*`: xxHash official vectors; KAT tables; C++ vs Python on 10k random cases per function (Python skipped if the wheel is unavailable); property tests (rule order, empty components); MinGW/Wine run gives identical results | 3 |
 | **RL-0.6** | Options system (rtx.conf-compatible) | new `Source/FUSE/Relight/options/**`, `Source/FUSE/Relight/tests/options/**` | – | Port of `rtx_option*` (MIT): typed options, sparse layers (defaults, rtx.conf, dynamic, user.conf, presets), hash lists with `-` removal, env vars, `relight.*` ↔ `rtx.*` alias table, docs generator (`docs/relight-options.md` generated at build, not committed) | Ported semantics of upstream `test_rtx_option.cpp` / `test_option_layer_export.cpp` (rewritten as FUSE gtests); round-trip write of rtx.conf is byte-stable | 3 |
 | RL-0.7 | FUSE renderer on MinGW with Vulkan | new `Source/FUSE/Relight/cmake/relight_renderer_mingw.cmake`; ⚠ coordinate `CMakePresets.json` (new `fuse-mingw-relight-*` presets) and `cmake/FuseFindVulkan.cmake` (volk) | renderer WP-0.2 (volk) | `fuse_renderer` builds as PE with volk, no import lib needed; shaders compiled on the host | `rp_device_tiers` and `rp_golden_gbuffer_roundtrip` run as PE under the Xvfb runner on Lavapipe (T2 reported) | 3 |
 
@@ -918,7 +920,7 @@ Budget: the Wine/Lavapipe jobs are small (≤ 128×96, ≤ 64 spp). The whole `r
 
 | WP | Title | Owns | Depends | Deliverables | Exit criteria | Est. |
 |---|---|---|---|---|---|---|
-| RL-1.1 | Tap seam + device import | `Engine/lib/dxvk/src/d3d9/**` and `src/dxvk/dxvk_{instance,adapter}.*` (patches only, recorded in `PATCHES.md`; ownership of `Engine/lib/dxvk` passes from RL-0.2 to RL-1.1), new `Source/FUSE/Relight/tap/**` | 0.2, 0.4 | `IRelightTap` (§2.4), a null tap, a recording mock tap, and device import from a FUSE-created VkDevice (plain Vulkan bootstrap until 0.7) | Tap off: `rl_passthrough_golden_*` bit-identical to RL-0.2; recording tap: the event stream per app equals the expected JSON; validation clean with an imported device; ≤ 30 marked blocks (lint counts them) | 5 |
+| RL-1.1 | Tap seam + device import | `vendor/dxvk/src/d3d9/**` and `src/dxvk/dxvk_{instance,adapter}.*` (patches only, recorded in `PATCHES.md`; ownership of `vendor/dxvk` passes from RL-0.2 to RL-1.1), new `Source/FUSE/Relight/tap/**` | 0.2, 0.4 | `IRelightTap` (§2.4), a null tap, a recording mock tap, and device import from a FUSE-created VkDevice (plain Vulkan bootstrap until 0.7) | Tap off: `rl_passthrough_golden_*` bit-identical to RL-0.2; recording tap: the event stream per app equals the expected JSON; validation clean with an imported device; ≤ 30 marked blocks (lint counts them) | 5 |
 | RL-1.2 | Draw classifier and heuristics | `Relight/scene/classify/**` | 0.6, 1.1 | Port of `makeDrawCallType`, `isRenderingUI`, sky (explicit + auto), terrain, stencil shadow, shadow mask, raytraced-RT, `POSITIONT`, draw-call range, and categories from texture lists (`setupCategoriesForTexture`) | Unit tests per rule on a synthetic `D3DStateModel`; `sky_ui_hud`, `stencil_shadow`, `shadow_mask`, `rt_target` capture expectations | 3 |
 | RL-1.3 | Geometry extraction + hashing + skinning | `Relight/capture/geometry/**` | 0.5, 1.1 | Index rebase with memoization, stream slicing by usage, `texcoordIndex` selection, async hash/AABB jobs (JobScheduler), FF skinning data, UP draws | `rl_capture_*` geometry hashes equal `remix_hash_ref.py` on every app (u16/u32/non-indexed, negative base vertex, UP) | 4 |
 | RL-1.4 | Texture tracking + hash on upload | `Relight/capture/texture/**` | 0.5, 1.1 | Canonical repack, first-upload hashing, Update* inheritance, recompute-on-write, RT descriptor hash, external image registry (pre-bindless) | `texture_formats` app: every format's hash equals the reference; inheritance cases correct | 3 |
@@ -942,7 +944,7 @@ Budget: the Wine/Lavapipe jobs are small (≤ 128×96, ≤ 64 spp). The whole `r
 |---|---|---|---|---|---|---|
 | RL-3.1 | USD reader (Remix profile) | `Relight/mods/usd/**`, `Tests/relight/fixtures/mods/**` (ours), `Tools/FUSE/Relight/usd_flatten_check.py` | Remaster W2.2 (TinyUSDZ) | Composition subset (§4.3), schemas (categories, particles), prim classification (`mesh_`/`mat_`/`light_`) | `rl_mod_*` on 20+ handcrafted fixtures (USDA and USDC); cross-check with `usd-core` flattening where installed | 5 |
 | RL-3.2 | Mod importer → POCO + DB | `Relight/mods/import/**`, `Tools/FUSE/Relight/fuse_relight_import.cpp` | 3.1, 3.3 | Mesh, material (§4.5 table) and light mapping; `material_ext` records; licence and provenance per §4.8 | Fixture mods → expected POCO JSON; the material table round-trips every parameter; DB export is deterministic | 5 |
-| RL-3.3 | DDS, `.pkg` and GDeflate | `Relight/mods/assets/**`, new `Engine/lib/gdeflate/**` | – | DDS reader (§4.6), package reader, GDeflate CPU decode | Decode vs expected for all formats; GDeflate reference round trip; malformed-file fuzz (1k cases) | 3 |
+| RL-3.3 | DDS, `.pkg` and GDeflate | `Relight/mods/assets/**`, new `vendor/gdeflate/**` | – | DDS reader (§4.6), package reader, GDeflate CPU decode | Decode vs expected for all formats; GDeflate reference round trip; malformed-file fuzz (1k cases) | 3 |
 | RL-3.4 | Runtime replacement engine | `Relight/replace/**` | 1.7, 3.2 | Per-draw lookup, `preserveOriginalDrawCall`, material by texture hash, light replace/delete/attach, mod stacking, per-mod rtx.conf layers, hot reload, texture residency policy | `rl_replace_golden_*`: fixture mods on the apps change the captured scene as expected; hot-reload latency ≤ 1 frame after the notification | 5 |
 | RL-3.5 | Logic graphs | `Relight/logic/**` | 3.1, 0.6 | Component runtime (~60 components: sense, transform, action, const), USD graph parser, option-layer actions | Semantics tests ported from `tests/rtx/unit/graph` and `test_transform_components.cpp` (rewritten); a fixture graph toggles an option layer | 5 |
 | RL-3.6 | Particle system | `Relight/particles/**` | 3.1 | USD `ParticleSystemAPI`, GPU sim + CPU kernel reference, billboard generation | CPU/GPU sim parity (bit-exact CPU backends; ≤ 1e-4 GPU) | 4 |
@@ -972,7 +974,7 @@ Budget: the Wine/Lavapipe jobs are small (≤ 128×96, ≤ 64 spp). The whole `r
 
 | WP | Title | Owns | Depends | Deliverables | Exit criteria | Est. |
 |---|---|---|---|---|---|---|
-| RL-6.1 | In-game developer overlay | new `Engine/lib/imgui/**`, `Relight/overlay/**` | 4.1, 0.6 | Port of the dev menu: texture tagging to rtx.conf layers, option layers, debug views, capture button, replacement stats, graph inspector | UI state-machine tests; the overlay draws on the Wine golden without disturbing passthrough when hidden | 6 |
+| RL-6.1 | In-game developer overlay | new `vendor/imgui/**`, `Relight/overlay/**` | 4.1, 0.6 | Port of the dev menu: texture tagging to rtx.conf layers, option layers, debug views, capture button, replacement stats, graph inspector | UI state-machine tests; the overlay draws on the Wine golden without disturbing passthrough when hidden | 6 |
 | RL-6.2 | C API (FUSE-native + Remix API 0.6 compat) | `Relight/api/**`, `Tests/relight/apps/remixapi_c` | 1.7, 3.4, 2.1 | `fuse_relight_*` API; compat exports (`remixapi_InitializeLibrary` and the function table per the MIT `remix_c.h`); bridge forwarding | The `remixapi_c` app renders the expected scene (x64 direct, x86 via bridge) | 5 |
 | RL-6.3 | Game-setup assistant and per-game profiles | `Relight/scene/setup/**`, `Content/relight/profiles/**` (small JSON, ours) | 1.2, 6.1 | Suggestions: UI/sky/particle texture candidates, camera sanity, hash-rule choice; profile DB (hash lists and options, no game data) | Suggestions reproduce the known categories on the apps | 3 |
 | RL-6.4 | Packaging, docs, plugin discovery | `Relight/cmake/relight_package.cmake`, new `docs/relight.md` | all | Dist layout (`d3d9.dll`, `d3d8.dll`, `fuse_relight_host.exe`, bridge client, `THIRD_PARTY_NOTICES.txt`); `FUSE_NVIDIA_SDK_DIR` plugin discovery | Package manifest test; binary and licence gates on the package tree | 2 |
@@ -1014,7 +1016,7 @@ These have no mutual file overlap and none depends on another's code to start:
    - Owns: `Source/FUSE/Relight/THIRD_PARTY.md`, `Source/FUSE/Relight/cmake/relight_licence_gates.cmake`, `relight_proprietary_scan.cmake`, `Source/FUSE/Relight/tests/licence/**`.
    - Exit: seeded fixtures fail and pass as expected; the tree is clean; ctest `rl_licence_text_scan`, `rl_binary_gate`.
 2. **RL-0.2 Vendor DXVK 3.1.1 + dxbc-spirv (CMake build).**
-   - Owns: `Engine/lib/dxvk/**`, `Engine/lib/dxbc-spirv/**`, `Source/FUSE/Relight/CMakeLists.txt`, `cmake/relight_dxvk.cmake`, `Tests/relight/smoke/**`, plus one line in `Source/FUSE/CMakeLists.txt`.
+   - Owns: `vendor/dxvk/**`, `vendor/dxbc-spirv/**`, `Source/FUSE/Relight/CMakeLists.txt`, `cmake/relight_dxvk.cmake`, `Tests/relight/smoke/**`, plus one line in `Source/FUSE/CMakeLists.txt`.
    - Exit: PE exports present; `rl_dxvk_smoke` (device + clear + readback under Xvfb/Wine/Lavapipe); pin lint.
 3. **RL-0.3 Wine/Xvfb runner, i686 toolchain, CI.**
    - Owns: `cmake/toolchains/fuse-wine-xvfb-run.sh`, `cmake/toolchains/mingw-w64-i686.cmake`, `.github/workflows/fuse-relight-wine.yml`, `Source/FUSE/Relight/tests/env/**`.
@@ -1023,7 +1025,7 @@ These have no mutual file overlap and none depends on another's code to start:
    - Owns: `Tests/relight/apps/**`, `Source/FUSE/Relight/cmake/relight_apps.cmake`.
    - Exit: all §6.2 apps run on Wine-builtin d3d9 with byte-stable dumps and schema-valid sidecars.
 5. **RL-0.5 Hash library.**
-   - Owns: `Engine/lib/xxhash/**`, `Source/FUSE/Relight/hash/**`, `Tools/FUSE/Relight/remix_hash_ref.py`, `Source/FUSE/Relight/tests/hash/**`.
+   - Owns: `vendor/xxhash/**`, `Source/FUSE/Relight/hash/**`, `Tools/FUSE/Relight/remix_hash_ref.py`, `Source/FUSE/Relight/tests/hash/**`.
    - Exit: `rl_hash_kat_*` (official xxHash vectors, KATs, 10k-case C++ vs Python per function, identical under Wine).
 6. **RL-0.6 Options system.**
    - Owns: `Source/FUSE/Relight/options/**`, `Source/FUSE/Relight/tests/options/**`.
@@ -1109,7 +1111,7 @@ These have no mutual file overlap and none depends on another's code to start:
 **FUSE documents:**
 - `docs/plans/{FUSE_RENDERER_PLAN,FUSE_REMASTER_PLAN,FUSE_ASSET_PLAN}.md`, `docs/unification/RENDERER-EXECUTION.md`, `docs/compute-kernels.md`, `docs/nvidia-plugin.md`;
 - `cmake/toolchains/{mingw-w64-x86_64.cmake,fuse-wine-run.sh}`, `.github/workflows/fuse-windows-cross.yml`;
-- `Source/FUSE/Renderer/{include/fuse/renderer/rg/graph.hpp,include/fuse/renderer/upscale/*,plugins/nvidia/cmake/nvidia_binary_gate.cmake}`, `Engine/lib/vma/VERSION`.
+- `Source/FUSE/Renderer/{include/fuse/renderer/rg/graph.hpp,include/fuse/renderer/upscale/*,plugins/nvidia/cmake/nvidia_binary_gate.cmake}`, `vendor/vma/VERSION`.
 
 **Papers** (the implementation basis for §5):
 - Bitterli et al., "Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting", SIGGRAPH 2020.

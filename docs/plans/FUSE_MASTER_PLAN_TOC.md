@@ -1,5 +1,7 @@
 # FUSE Master Plan — TOC companion
 
+> **Path note (2026-10):** `Engine/lib/` in this document means `vendor/`; Torque addon submodules and `third_party/` are no longer in the repo.
+
 Master bytes: 206168
 
 ## All ### B*.* headings (74)

@@ -1,5 +1,7 @@
 # FUSE Pre-Starter Plan — Unified Tree, Unified Features, One Program
 
+> **Path note (2026-10):** `Engine/lib/` in this document means `vendor/`; Torque addon submodules and `third_party/` are no longer in the repo.
+
 **Document type:** Pre-starter (before Track A P0 implementation)  
 **Engine:** FUSE — Fast Unified Simulation Engine  
 **Repo:** https://github.com/odin-loki/FUSE (`main`)  

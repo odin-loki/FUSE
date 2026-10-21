@@ -1,5 +1,7 @@
 # FUSE Remaster Plan: importing legacy games and upgrading them with FUSE Remix, Gemini, open-source world models, local AI and POCO assets
 
+> **Path note (2026-10):** `Engine/lib/` in this document means `vendor/`; Torque addon submodules and `third_party/` are no longer in the repo.
+
 Status: plan, not yet started. Author date 2026-09-23, revised 2026-09-23 for the FOSS-first rule
 (§0.1.0), the local RTX 3090 profile (§3.5) and the FUSE Remix port. Companion to
 [`FUSE_ASSET_PLAN.md`](FUSE_ASSET_PLAN.md) (formats, licence lock, budgets, gates),
@@ -258,7 +260,7 @@ that has not been proven. All web sources were accessed on 2026-09-23 (§9).
 ### 1.3 The shared replacement database
 
 The two tracks meet in one table set. The file is `remaster.db`, SQLite, which is already vendored
-in `Engine/lib/sqlite`. A canonical JSON export, `remaster.lock.json`, is committed for *our*
+in `vendor/sqlite`. A canonical JSON export, `remaster.lock.json`, is committed for *our*
 projects and diffed in review.
 
 | Table | Key | Content |
@@ -418,7 +420,7 @@ W2.1]**.
 |---|---|
 | Remix capture → POCO | Captured mesh prim → `Mesh` (points, normals, `primvars:st`, indices; convert Remix/game units to metres with the per-game `unit_scale`) + `hash_key(remix64)`; captured texture (DDS) → decoded RGBA8 → canonical sha256 + `hash_key(remix64)`; captured lights → `Light` (reference only); camera → golden-capture viewpoint (§4.8). |
 | POCO → Remix mod layer | For each `replacement(oaid, tier=remix)`: write an `over` on the captured prim (`mesh_<HASH>` → reference to our USD mesh; material → `AperturePBR_Opacity` inputs from `Material` + `TextureSet`); write DDS files (BC7 albedo/ORM, BC5 normal) from the POCO blobs; write the `mod.usda` layer stack and a manifest. |
-| USD library | TinyUSDZ (Apache-2.0 with some MIT helper code; now continued as LightUSD) [T6] is small and has no dependencies. It can be vendored with a `VERSION` pin. Assimp 6.0.5 in `Engine/lib/assimp` already contains a TinyUSDZ-based USD importer, currently switched off (`ASSIMP_BUILD_USD_IMPORTER off`). OpenUSD itself is under the TOST licence (Apache 2.0 with a changed trademark section) [T7]. It is heavier and optional (adopted decision A4, §7.2). |
+| USD library | TinyUSDZ (Apache-2.0 with some MIT helper code; now continued as LightUSD) [T6] is small and has no dependencies. It can be vendored with a `VERSION` pin. Assimp 6.0.5 in `vendor/assimp` already contains a TinyUSDZ-based USD importer, currently switched off (`ASSIMP_BUILD_USD_IMPORTER off`). OpenUSD itself is under the TOST licence (Apache 2.0 with a changed trademark section) [T7]. It is heavier and optional (adopted decision A4, §7.2). |
 
 The mod layer contains only our assets and `over`s keyed by hashes, never captured original
 payloads. The Remix capture folder stays in `build/remaster-cache/<game>/capture/`.
@@ -1082,7 +1084,7 @@ Ordered by priority, weighing feasibility, repo lineage and the size of the reus
 | 3 | **Torque DIF interiors** (TGE/TGEA) | **Not in tree.** T3D removed the Interior system (no `Engine/source/interior`). | Vendor or port HiGuy's `Dif` C++ reader (BSD-style licence [F1], [VERIFY exact text]); io_dif/hxDIF as cross-check [F2]. Emit POCO meshes (BSP brushes → triangles), lightmaps dropped, portals/zones → FUSE spatial hints. | BSD-style | **Medium-high** |
 | 4 | **Torque 2D** (T2D modules) | **In tree:** `t2d_module_bridge`, T2D → `.fuselevel` | Sprites → POCO texture sets; 2D remaster via the `World2D` module | MIT | High (2D) |
 | 5 | **Generic interchange** (FBX, glTF, OBJ, Blend) | **In tree:** Assimp 6.0.5 with these importers enabled | Assimp → POCO adapter (shared by 6–8) | BSD-3 | High |
-| 6 | **Quake family: MDL/MD2/MD3/MD5, Q3 BSP** | **In tree (off):** Assimp sources contain MD2, MD3, MD5, MDL, HMP, Q3BSP loaders, but only FBX/glTF/OBJ/Blend are switched on in `Engine/lib/CMakeLists.txt` | Enable those loaders (`ASSIMP_BUILD_MD2/MD3/MD5/MDL/Q3BSP_IMPORTER`); add a BSP entity-lump parser for levels; `.pak`/`.pk3` VFS (PAK is trivial, PK3 is zip). Prior art: ioquake3 (GPL-2.0) is reference reading only. | Assimp BSD-3; engine re-implementations are GPL, so do not copy their code | **High** for models, medium for levels |
+| 6 | **Quake family: MDL/MD2/MD3/MD5, Q3 BSP** | **In tree (off):** Assimp sources contain MD2, MD3, MD5, MDL, HMP, Q3BSP loaders, but only FBX/glTF/OBJ/Blend are switched on in `vendor/CMakeLists.txt` | Enable those loaders (`ASSIMP_BUILD_MD2/MD3/MD5/MDL/Q3BSP_IMPORTER`); add a BSP entity-lump parser for levels; `.pak`/`.pk3` VFS (PAK is trivial, PK3 is zip). Prior art: ioquake3 (GPL-2.0) is reference reading only. | Assimp BSD-3; engine re-implementations are GPL, so do not copy their code | **High** for models, medium for levels |
 | 7 | **DirectX `.x`, 3DS, SMD, MS3D** | Assimp sources (off) | Enable as needed | BSD-3 | High |
 | 8 | **Source / GoldSrc** (BSP v29/v30/v20+, MDL v10/v44+, VTF/VMT, VPK) | Assimp has HL1 MDL; nothing for Source BSP/VTF | New MIT readers from public format docs; VPK VFS; VTF decode (DXT); VMT → POCO `Material` | Write clean-room; avoid LGPL/GPL tool code (VTFLib is LGPL, **[VERIFY]**) | Medium |
 | 9 | **Unreal 1/2** (`.unr`, `.utx`, `.usx`, `.ukx`, `.uax`, UPK/UMOD) | Assimp "Unreal" is only the old `.3d` vertex-mesh format | UE Viewer (umodel) is the prior art, but its "licence is not determined" [F4], so it **cannot be vendored or copied**. Options: user runs umodel themselves and FUSE imports its glTF/PSK output via Assimp (recommended), or a clean-room package reader later. | Undetermined licence, so external tool only | Medium (through the external export route) |
@@ -1145,7 +1147,7 @@ with that plan's format tasks, and neither plan duplicates the other's code.
 | Task | Output | Exit criteria |
 |---|---|---|
 | W2.1 Research spike: pin Remix hash rules, capture layout, mod layer layout, material inputs and DDS conventions from dxvk-remix/toolkit-remix source | `docs/remaster/remix-format-notes.md` + handcrafted `.usda` fixtures (ours) | every [VERIFY] in §2.5 resolved or turned into a documented open question |
-| W2.2 Vendor TinyUSDZ/LightUSD with a `VERSION` pin (or enable Assimp USD) | `Engine/lib/tinyusdz` | `fuse_lint_vendored_pins_tinyusdz`; parse the fixture capture |
+| W2.2 Vendor TinyUSDZ/LightUSD with a `VERSION` pin (or enable Assimp USD) | `vendor/tinyusdz` | `fuse_lint_vendored_pins_tinyusdz`; parse the fixture capture |
 | W2.3 `ingest-remix`: capture USD → POCO + hash keys | CLI | fixture capture → the expected `oaid` set; remix64 ↔ sha256 links |
 | W2.4 `export-remix`: POCO replacements → `mod.usda` + DDS | CLI | output validates against our schema; re-ingest of the mod layer finds every replacement; no original blobs referenced (lint) |
 | W2.5 Remix Toolkit REST client (optional live link for users who run the Omniverse Toolkit) with a mock server | `fuse_ai` provider `remix-toolkit` | mock server contract tests |
@@ -1319,13 +1321,13 @@ Budget defaults in `ai-budget.json`: US$50 per run and US$300 per month per game
 | DIF interiors | Not present (no `Engine/source/interior`) | W1.5 needs an external BSD reader |
 | Legacy conversion | `Tools/FUSE/fuse_convert.cpp`, `fuse_import.cpp`; `Source/FUSE/Project/*/world_converter.*`, `import_pipeline.*`, `t3d_asset_vfs.hpp`, `t3d_datablock_resolve.hpp`, `t2d_module_bridge.hpp`, `mission_load.hpp` | Track B scenes |
 | Cook | `Tools/FUSE/Cook/src/mesh_cook.cpp` (Assimp → FMSH v1), `texture_cook.cpp`, `cook_content_hash.hpp`, `cook_manifest.hpp`, `cook_dependency_graph.hpp` | POCO → cooked |
-| Assimp | `Engine/lib/assimp` 6.0.5; FBX/glTF/OBJ/Blend enabled; MD2/MD3/MD5/MDL/HMP/Q3BSP/SMD/X/3DS/USD sources present but disabled | Importer matrix rows 5–7 |
+| Assimp | `vendor/assimp` 6.0.5; FBX/glTF/OBJ/Blend enabled; MD2/MD3/MD5/MDL/HMP/Q3BSP/SMD/X/3DS/USD sources present but disabled | Importer matrix rows 5–7 |
 | NVIDIA plugin seam | `Source/FUSE/Renderer/plugins/nvidia/` (ABI header, loader, providers, `mock/`, `cmake/nvidia_binary_gate.cmake`) | The pattern for external Remix, the mock-provider approach, and the binary gate extension |
 | Look system | `Source/FUSE/Renderer/src/look/` (`look_schema`, `look_params`, `lut3d`, `look_post_chain`, CAS bridge) | Classic/Remastered/Stylised looks |
 | Quality metrics | `renderer/quality/image_metrics.hpp` (FLIP, SSIM, PSNR), `tests/harness/golden.*` | QA gates |
 | Scripting | `Source/FUSE/Script` (Lua 5.2 sandbox, `ScriptRuntime`, legacy `t3d:`/`t2d:` routes) | Logic port target |
 | Editor | `Source/FUSE/Editor` (asset browser, inspector, material editor, viewport, undo) | Remaster workspace |
-| SQLite | `Engine/lib/sqlite` | Replacement DB |
+| SQLite | `vendor/sqlite` | Replacement DB |
 
 ---
 

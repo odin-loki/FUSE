@@ -1,5 +1,7 @@
 # FUSE Renderer — Implementation Plan
 
+> **Path note (2026-10):** `Engine/lib/` in this document means `vendor/`; Torque addon submodules and `third_party/` are no longer in the repo.
+
 Author: Odin Loch
 Target API: Vulkan 1.3 minimum, 1.4 preferred
 Scope: Core software rendering technology for the FUSE game engine: geometry, visibility, lighting, shadows, global illumination, ray tracing, upscaling and post-processing.
