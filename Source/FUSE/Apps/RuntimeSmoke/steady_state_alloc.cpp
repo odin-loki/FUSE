@@ -13,7 +13,7 @@
 //   hybrid     HybridComposer::tick (World2D/World3D snapshot + parallel cull) + render
 //   physics    physics-enabled World3D + World2D tick (PhysicsPipeline step)
 //   animation  Animator::tick (clip sample, FK, skinning palette)
-//   audio      AudioEngine::update (spatial mix of looping sources)
+//   audio      AudioEngine::update (spatial mix of looping sources; Null device — no OpenAL thread)
 //   vfx        ParticleSystem::update (continuous emitters)
 //   log        one fuse::log::info line per frame
 //   script     Lua ScriptRuntime tick: PhysicsManager step + collision dispatch + on_update of 32
@@ -582,6 +582,9 @@ void setupAnimation(Engine& e) {
 void setupAudio(Engine& e) {
     fuse::audio::AudioDesc desc;
     desc.frames_per_buf = 256;
+    // Null output: exercise the spatial mixer and registry without OpenAL's feeder thread
+    // (alGetSourcei / EAX paths heap-allocate sporadically after warm-up on some hosts).
+    desc.output = fuse::audio::AudioOutputRequest::Null;
     e.audio.init(desc);
     std::vector<float> pcm(48000, 0.25f);
     fuse::audio::AudioClip clip;
