@@ -298,11 +298,17 @@ int runManualZones(VulkanDevice& device) {
 } // namespace
 
 int main() {
-#if defined(FUSE_RP_GPU_PROFILER_EXPECT_TRACY) && FUSE_RP_GPU_PROFILER_EXPECT_TRACY
-    constexpr bool kExpectTracy = true;
-    static_assert(fuse::profiler::kTracyEnabled, "the _tracy variant must build with FUSE_TRACY=1");
+#if defined(FUSE_NO_PROFILER) && FUSE_NO_PROFILER
+constexpr bool kMacrosRecord = false;
 #else
-    constexpr bool kExpectTracy = fuse::profiler::kTracyEnabled;
+constexpr bool kMacrosRecord = true;
+#endif
+#if defined(FUSE_RP_GPU_PROFILER_EXPECT_TRACY) && FUSE_RP_GPU_PROFILER_EXPECT_TRACY
+constexpr bool kExpectTracy = true;
+static_assert(fuse::profiler::kTracyEnabled == (kExpectTracy && kMacrosRecord),
+              "the _tracy variant must build with FUSE_TRACY=1 when profiler macros record");
+#else
+constexpr bool kExpectTracy = fuse::profiler::kTracyEnabled;
 #endif
     if (!layerAvailable(kValidationLayer)) {
         std::printf("SKIP: %s not installed\n", kValidationLayer);
