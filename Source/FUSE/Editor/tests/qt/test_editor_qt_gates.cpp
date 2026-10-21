@@ -1674,9 +1674,15 @@ int gateLivePresent() {
                     static_cast<unsigned long long>(s2.swapchainRecreates));
         expect(recreated, "viewport resize recreates the swapchain at the new extent");
         expect(waitPresented(window, s2.presentedImages + 10, 10000), "frames presented after the recreate");
-        const QColor afterResize = screenPatch(viewport, QPoint(viewport->width() - 14, viewport->height() - 14));
+        QColor afterResize;
+        const bool resizePixelsReady = QTest::qWaitFor(
+            [&]() {
+                afterResize = screenPatch(viewport, QPoint(viewport->width() - 14, viewport->height() - 14));
+                return afterResize.isValid() && colorDistance(afterResize, corner) <= 6;
+            },
+            8000);
         std::printf("pixels after resize: bottom-right %s\n", colorText(afterResize).c_str());
-        expect(colorDistance(afterResize, corner) <= 6,
+        expect(resizePixelsReady,
                "resized viewport shows the rendered frame edge to edge (new corner == old corner colour)");
 
         // ---- input forwarded from the Vulkan window to the viewport widget ---------------------------
