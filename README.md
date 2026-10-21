@@ -15,6 +15,7 @@ One program for 2D, 3D, and hybrid worlds. ISO C++ host, handle-based ownership,
 [![FUSE Windows x64 (MinGW-w64 cross + Wine)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-cross.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-cross.yml)
 [![FUSE Windows x64 (MSVC native)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-native.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-windows-native.yml)
 [![FUSE Relight (MinGW-w64 cross + Wine/Xvfb/Lavapipe)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-relight-wine.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-relight-wine.yml)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE.md)
 
 - Product docs: [`docs/README.md`](docs/README.md)
 - Getting started: [`docs/getting-started.md`](docs/getting-started.md)
