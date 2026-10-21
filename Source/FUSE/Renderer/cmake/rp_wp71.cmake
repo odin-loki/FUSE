@@ -52,13 +52,7 @@ target_link_libraries(fuse_light_tree PUBLIC fuse_rhi PRIVATE fuse_gpu_scene fus
 fuse_apply_cxx23(fuse_light_tree)
 # The CPU sampler must round like the kernels (no multiply-add contraction): PUBLIC, so every user of
 # light_tree_kernel.hpp (tests, WP-7.2 references) compiles it the same way.
-if(MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    target_compile_options(fuse_light_tree PUBLIC /fp:precise /clang:-ffp-contract=off) # clang-cl
-elseif(MSVC)
-    target_compile_options(fuse_light_tree PUBLIC /fp:precise) # no /fp:contract: MSVC does not contract then
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(fuse_light_tree PUBLIC -ffp-contract=off)
-endif()
+fuse_no_fp_contract(fuse_light_tree PUBLIC)
 
 # Kernel, embedded into the library. Slang is the primary source (execution doc §8 decision 1a); the GLSL twin
 # keeps the pass available where slangc is not (FUSE_SLANG=AUTO), and the gates run both.

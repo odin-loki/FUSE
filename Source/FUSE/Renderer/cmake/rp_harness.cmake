@@ -35,11 +35,7 @@ target_include_directories(fuse_rp_harness PUBLIC "${_fuse_rp_harness_dir}")
 target_link_libraries(fuse_rp_harness PUBLIC fuse_rhi)
 fuse_apply_cxx23(fuse_rp_harness)
 # Scene geometry and the resolve must be bit-reproducible across compilers: no FMA contraction.
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(fuse_rp_harness PRIVATE -ffp-contract=off)
-elseif(MSVC)
-    target_compile_options(fuse_rp_harness PRIVATE /fp:precise)
-endif()
+fuse_no_fp_contract(fuse_rp_harness PRIVATE)
 
 # ---- harness vertex stage (CPU-projected NDC with per-vertex depth) -----------------------------
 set(FUSE_RP_HARNESS_SHADER_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders/rp_harness")

@@ -79,9 +79,7 @@ target_include_directories(fuse_vsm PUBLIC "${_fuse_wp31_cl_vsm}/include")
 target_link_libraries(fuse_vsm PUBLIC fuse_gpu_scene fuse_core_logic)
 fuse_apply_cxx23(fuse_vsm)
 # The CPU reference must round like the kernels (no multiply-add contraction).
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(fuse_vsm PUBLIC -ffp-contract=off)
-endif()
+fuse_no_fp_contract(fuse_vsm PUBLIC)
 
 # Kernels, embedded into the library. Slang is the primary source (execution doc §8 decision 1a); the
 # GLSL twins keep the VSM available where slangc is not (FUSE_SLANG=AUTO), and the gates run both.

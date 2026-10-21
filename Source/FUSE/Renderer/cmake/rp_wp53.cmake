@@ -65,9 +65,7 @@ target_link_libraries(fuse_geometry_streaming PUBLIC fuse_geometry_dag fuse_rhi 
 fuse_apply_cxx23(fuse_geometry_streaming)
 target_compile_options(fuse_geometry_streaming PRIVATE ${_fuse_wp53_warn})
 # The CPU reference must round like the kernel (no multiply-add contraction).
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(fuse_geometry_streaming PUBLIC -ffp-contract=off)
-endif()
+fuse_no_fp_contract(fuse_geometry_streaming PUBLIC)
 
 # Kernel, embedded into the library. Slang is the primary source (execution doc §8 decision 1a); the GLSL
 # twin keeps streaming available where slangc is not (FUSE_SLANG=AUTO), and the gates run both.

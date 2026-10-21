@@ -79,7 +79,10 @@ foreach(_api 9 8)
         C_STANDARD 99 C_STANDARD_REQUIRED ON
         # Same bits on every run and every x86 CPU: no x87 excess precision, no FMA contraction.
         POSITION_INDEPENDENT_CODE OFF)
-    target_compile_options(rl_app_kit_d3d${_api} PUBLIC -ffp-contract=off $<$<BOOL:${MINGW}>:-msse2 -mfpmath=sse>)
+    fuse_no_fp_contract(rl_app_kit_d3d${_api} PUBLIC)
+    if(MINGW)
+        target_compile_options(rl_app_kit_d3d${_api} PUBLIC -msse2 -mfpmath=sse)
+    endif()
     # d3d9.dll / d3d8.dll are loaded at run time; only user32/gdi32 are linked.
     target_link_libraries(rl_app_kit_d3d${_api} PUBLIC user32 gdi32)
     if(MINGW)

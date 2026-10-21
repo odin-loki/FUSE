@@ -12,10 +12,12 @@ add_library(fuse_hybrid STATIC
     include/fuse/hybrid/sprite_layer.hpp
 )
 # E03: the sprite-layer CPU reference must match the `precise` GLSL kernel (no FMA contraction).
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set_source_files_properties(src/sprite_layer.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+if(MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set_source_files_properties(src/sprite_layer.cpp PROPERTIES COMPILE_OPTIONS "/fp:precise;/clang:-ffp-contract=off")
 elseif(MSVC)
     set_source_files_properties(src/sprite_layer.cpp PROPERTIES COMPILE_OPTIONS "/fp:precise")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set_source_files_properties(src/sprite_layer.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 endif()
 
 if(FUSE_BUILD_VULKAN)

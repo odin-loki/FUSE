@@ -31,13 +31,13 @@ target_include_directories(fuse_content_golden_lib PUBLIC "${_fuse_cg_dir}")
 target_include_directories(fuse_content_golden_lib SYSTEM PRIVATE "${_fuse_cg_flip}")
 target_link_libraries(fuse_content_golden_lib PUBLIC fuse_rp_harness)
 fuse_apply_cxx23(fuse_content_golden_lib)
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+if(MSVC)
+    fuse_no_fp_contract(fuse_content_golden_lib PRIVATE)
+else()
     # FLIP's separable convolutions are ~20x slower unoptimised; keep Debug trees fast. No FMA
     # contraction, so the metric is identical across -march settings.
     set_source_files_properties(${_fuse_cg_dir}/flip_metric.cpp PROPERTIES COMPILE_OPTIONS "-O2;-ffp-contract=off")
     set_source_files_properties(${_fuse_cg_dir}/reference_scenes.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
-elseif(MSVC)
-    target_compile_options(fuse_content_golden_lib PRIVATE /fp:precise)
 endif()
 
 set(_fuse_cg_golden_dir "${_fuse_cg_dir}/golden")

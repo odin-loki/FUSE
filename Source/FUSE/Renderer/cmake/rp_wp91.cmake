@@ -50,13 +50,7 @@ target_link_libraries(fuse_neural PUBLIC fuse_rhi)
 fuse_apply_cxx23(fuse_neural)
 # The reference inference must round like the kernels and the naive oracle (no multiply-add contraction):
 # PUBLIC, so every user compiles the same way.
-if(MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    target_compile_options(fuse_neural PUBLIC /fp:precise /clang:-ffp-contract=off) # clang-cl
-elseif(MSVC)
-    target_compile_options(fuse_neural PUBLIC /fp:precise)
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(fuse_neural PUBLIC -ffp-contract=off)
-endif()
+fuse_no_fp_contract(fuse_neural PUBLIC)
 
 # Kernels, embedded into the library. Slang is the primary source (execution doc §8 decision 1a); the GLSL twin
 # keeps the pass available where slangc is not (FUSE_SLANG=AUTO), and the gates run both.

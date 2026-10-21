@@ -24,16 +24,7 @@ target_link_libraries(fuse_svo PUBLIC fuse_core)
 # No floating-point contraction in the host DDA / sdf interpolation: the same flags the sources had inside
 # fuse_scene (inherited there from fuse_light_tree), so the Scene SVO ray gates stay bit-identical and the
 # host walk matches the --fmad=false device walk on every compiler.
-if(MSVC)
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        target_compile_options(fuse_svo PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/fp:precise>
-                                                $<$<COMPILE_LANGUAGE:CXX>:/clang:-ffp-contract=off>)
-    else()
-        target_compile_options(fuse_svo PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/fp:precise>)
-    endif()
-else()
-    target_compile_options(fuse_svo PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-ffp-contract=off>)
-endif()
+fuse_no_fp_contract(fuse_svo PRIVATE)
 
 # Single-source "svo_ray_cast" kernel (docs/compute-kernels.md): CUDA trampoline when the toolkit is found.
 if(FUSE_CUDA_BACKEND)
