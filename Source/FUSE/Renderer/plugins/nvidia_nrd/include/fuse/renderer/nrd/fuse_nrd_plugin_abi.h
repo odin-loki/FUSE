@@ -1,5 +1,5 @@
 /*
- * FUSE NRD provider C ABI (MIT, part of FUSE; WP-6.4b). Contains no NVIDIA code and no NRD header.
+ * FUSE NRD provider C ABI (AGPL-3.0, part of FUSE; WP-6.4b). Contains no NVIDIA code and no NRD header.
  *
  * FUSE never links NVIDIA Real-time Denoisers (NRD, NVIDIA RTX SDKs License). At runtime the loader
  * (nrd_denoiser.hpp) dlopen()s / LoadLibrary()s a *provider* shared library from a user-configured directory
@@ -8,7 +8,7 @@
  *   fuse_nrdplugin_nri    provider built by the developer against their own NRD + NRI checkout (it links NRD,
  *                         so its binary is RTX-SDK-licensed and is never committed). Not in this repository yet
  *                         (WP-6.4b Open): this header is its contract.
- *   fuse_nrdplugin_mock   in-tree, MIT: validates and echoes inputs, returns deterministic results; CI gates.
+ *   fuse_nrdplugin_mock   in-tree, AGPL-3.0: validates and echoes inputs, returns deterministic results; CI gates.
  *
  * Rules (same as fuse_nv_plugin_abi.h): plain C, fixed-width integers, no enums and no bool, every struct
  * starts with struct_size. Resources are native API handles carried as uint64_t (VkImage / VkImageView).

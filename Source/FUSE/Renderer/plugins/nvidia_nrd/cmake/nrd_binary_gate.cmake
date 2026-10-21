@@ -1,5 +1,5 @@
 # ctest fuse_rp_nrd_no_committed_binaries (WP-6.4b): NVIDIA NRD binaries and headers are RTX-SDK-licensed and must
-# never enter the (MIT) repository; FUSE loads a developer-built provider at run time.
+# never enter the (AGPL-3.0) repository; FUSE loads a developer-built provider at run time.
 #
 # 1. self-test: the matcher flags every seeded bad path and none of the seeded good ones;
 # 2. fails if `git ls-files` (committed or staged) contains a matching file.

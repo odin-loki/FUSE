@@ -1,5 +1,5 @@
 # ctest fuse_rp_xess_no_committed_binaries (WP-4.3): Intel XeSS runtime binaries and SDK headers are under the
-# Intel Simplified Software License and must never enter the (MIT) repository; FUSE loads the user's libxess at run time.
+# Intel Simplified Software License and must never enter the (AGPL-3.0) repository; FUSE loads the user's libxess at run time.
 #
 # 1. self-test: the matcher flags every seeded bad path and none of the seeded good ones;
 # 2. fails if `git ls-files` (committed or staged) contains a matching file.

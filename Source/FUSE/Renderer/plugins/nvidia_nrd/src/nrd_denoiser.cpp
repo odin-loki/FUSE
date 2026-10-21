@@ -1,4 +1,4 @@
-// WP-6.4b NRD adapter (MIT): provider loader, parameter mapping, NrdDenoiser, registration. nrd_denoiser.hpp.
+// WP-6.4b NRD adapter (AGPL-3.0): provider loader, parameter mapping, NrdDenoiser, registration. nrd_denoiser.hpp.
 #include <fuse/renderer/nrd/nrd_denoiser.hpp>
 
 #include <algorithm>
@@ -584,7 +584,7 @@ denoise::DenoiserCaps nrd_denoiser_caps(const NrdPlugin* plugin) {
     denoise::DenoiserCaps c{};
     c.name = kNrdDenoiserName;
     c.display_name = "NVIDIA Real-time Denoisers (NRD)";
-    c.license = "LicenseRef-NVIDIA-RTX-SDKs"; // adapter MIT; the runtime is the developer's NRD
+    c.license = "LicenseRef-NVIDIA-RTX-SDKs"; // adapter AGPL-3.0; the runtime is the developer's NRD
     c.needs_native_frame = true;
     c.gpu_only = true;
     c.in_tree = false;

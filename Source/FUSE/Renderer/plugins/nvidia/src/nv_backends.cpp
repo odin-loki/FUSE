@@ -101,7 +101,7 @@ upscale::UpscalerCaps make_caps(FuseNvFeature feature) {
     const bool rr = feature == FUSE_NV_FEATURE_DLSS_RR;
     c.name = rr ? kDlssRrName : kDlssSrName;
     c.display_name = rr ? "NVIDIA DLSS Ray Reconstruction" : "NVIDIA DLSS Super Resolution";
-    // Adapter is MIT; the runtime it drives is the developer's NVIDIA RTX SDKs-licensed copy.
+    // Adapter is AGPL-3.0; the runtime it drives is the developer's NVIDIA RTX SDKs-licensed copy.
     c.license = "LicenseRef-NVIDIA-RTX-SDKs";
     c.kind = upscale::UpscalerKind::Temporal;
     c.temporal = true;

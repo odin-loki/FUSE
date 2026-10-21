@@ -1,5 +1,5 @@
 /*
- * Test-only extension of the mock NVIDIA provider (MIT). Not part of the provider ABI: the gates
+ * Test-only extension of the mock NVIDIA provider (AGPL-3.0). Not part of the provider ABI: the gates
  * resolve these extra exports with NvPlugin::symbol() to see exactly what reached the provider.
  */
 #ifndef FUSE_NV_MOCK_ECHO_H

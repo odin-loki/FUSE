@@ -1,5 +1,5 @@
 /*
- * FUSE NVIDIA provider latency extension, C ABI (MIT, part of FUSE). Contains no NVIDIA code. WP-4.4.
+ * FUSE NVIDIA provider latency extension, C ABI (AGPL-3.0, part of FUSE). Contains no NVIDIA code. WP-4.4.
  *
  * NVIDIA Reflex reaches FUSE only through the runtime provider of docs/nvidia-plugin.md (fuse_nv_plugin_abi.h):
  * FUSE never links Streamline / NVAPI / the Reflex SDK. ABI 1.0 of that plugin reports FUSE_NV_FEATURE_REFLEX

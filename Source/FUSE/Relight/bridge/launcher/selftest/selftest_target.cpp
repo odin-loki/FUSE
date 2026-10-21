@@ -1,5 +1,5 @@
 // FUSE Relight RL-2.3: launcher self-test target (a stand-in game). Copyright (c) 2026 FUSE
-// contributors (MIT). New code.
+// contributors (AGPL-3.0). New code.
 //
 //   (no args)             write ran.txt next to the exe; exit 0
 //   --expect-probe [a b]  exit 0 if the probe DLL was attached before main() and every following

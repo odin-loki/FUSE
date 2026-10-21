@@ -1,4 +1,4 @@
-// FUSE NVIDIA provider over NVIDIA Streamline (MIT, part of FUSE; docs/nvidia-plugin.md).
+// FUSE NVIDIA provider over NVIDIA Streamline (AGPL-3.0, part of FUSE; docs/nvidia-plugin.md).
 //
 // Implements fuse_nv_plugin_abi.h by loading the Streamline interposer at runtime from the provider's
 // own directory (FuseNvInitInfo::runtime_dir) and calling it through function pointers typed by the

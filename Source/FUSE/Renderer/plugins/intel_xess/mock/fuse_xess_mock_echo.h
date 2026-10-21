@@ -1,4 +1,4 @@
-/* Test-only exports of the mock libxess (MIT, part of FUSE). */
+/* Test-only exports of the mock libxess (AGPL-3.0, part of FUSE). */
 #ifndef FUSE_XESS_MOCK_ECHO_H
 #define FUSE_XESS_MOCK_ECHO_H
 

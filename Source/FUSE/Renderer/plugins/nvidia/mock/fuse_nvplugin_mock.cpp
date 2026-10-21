@@ -1,4 +1,4 @@
-// Mock NVIDIA provider (MIT, part of FUSE). Implements the FUSE NVIDIA provider C ABI
+// Mock NVIDIA provider (AGPL-3.0, part of FUSE). Implements the FUSE NVIDIA provider C ABI
 // (fuse_nv_plugin_abi.h) without any NVIDIA code or GPU, so CI can gate the loader, feature
 // detection, backend registration, input mapping and failure paths.
 //

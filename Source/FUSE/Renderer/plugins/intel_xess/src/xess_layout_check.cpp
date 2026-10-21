@@ -1,4 +1,4 @@
-// Developer-only layout check (MIT, part of FUSE; WP-4.3). Compiled only when FUSE_XESS_SDK_DIR points at the
+// Developer-only layout check (AGPL-3.0, part of FUSE; WP-4.3). Compiled only when FUSE_XESS_SDK_DIR points at the
 // developer's own XeSS SDK checkout (cmake/rp_wp43.cmake); never in CI, and the SDK headers are never committed.
 // It pins every mirror in xess_api.h against Intel's real declarations, so a mismatch fails the build instead of
 // corrupting parameters on hardware.

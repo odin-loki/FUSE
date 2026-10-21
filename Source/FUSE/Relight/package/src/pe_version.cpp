@@ -1,6 +1,6 @@
 // FUSE Relight RL-6.4: file versions of optional plugin runtimes, read without loading them.
 // PE / resource layout per the Microsoft PE/COFF specification (IMAGE_RESOURCE_DIRECTORY, RT_VERSION = 16,
-// VS_FIXEDFILEINFO signature 0xFEEF04BD). FUSE's own code (MIT).
+// VS_FIXEDFILEINFO signature 0xFEEF04BD). FUSE's own code (AGPL-3.0).
 #include <fuse/relight/package/plugin_discovery.hpp>
 
 #include <cctype>

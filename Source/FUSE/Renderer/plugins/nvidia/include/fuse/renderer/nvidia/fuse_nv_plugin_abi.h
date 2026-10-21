@@ -1,16 +1,16 @@
 /*
- * FUSE NVIDIA provider C ABI (MIT, part of FUSE). Contains no NVIDIA code.
+ * FUSE NVIDIA provider C ABI (AGPL-3.0, part of FUSE). Contains no NVIDIA code.
  *
  * FUSE never links NVIDIA libraries at build time. At runtime the loader
  * (nv_plugin_loader.hpp) dlopen()s / LoadLibrary()s a *provider* shared library from a
  * user-configured directory and resolves one symbol, FUSE_NV_PLUGIN_ENTRY_NAME. Providers:
  *
- *   fuse_nvplugin_streamline  in-tree, MIT: implements this ABI on top of NVIDIA Streamline and
+ *   fuse_nvplugin_streamline  in-tree, AGPL-3.0: implements this ABI on top of NVIDIA Streamline and
  *                             loads sl.interposer.dll (Windows) from the same directory.
  *   fuse_nvplugin_ngx         Linux bridge, built by the developer against their own DLSS SDK
  *                             (statically links libnvsdk_ngx.a, so the *binary* is RTX-SDK-licensed
- *                             and is never committed; only its FUSE source is MIT).
- *   fuse_nvplugin_mock        in-tree, MIT: validates and echoes inputs; drives the CI gates.
+ *                             and is never committed; only its FUSE source is AGPL-3.0).
+ *   fuse_nvplugin_mock        in-tree, AGPL-3.0: validates and echoes inputs; drives the CI gates.
  *
  * Rules: plain C, fixed-width integers, no enums (size is not ABI-stable) and no bool. Every struct
  * starts with struct_size so a newer host can talk to an older provider within one ABI major.

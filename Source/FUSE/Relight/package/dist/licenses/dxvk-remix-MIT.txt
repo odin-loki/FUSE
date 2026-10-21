@@ -2,7 +2,7 @@ dxvk-remix (https://github.com/NVIDIAGameWorks/dxvk-remix), commit 0867d3c748a7,
 
 FUSE Relight ports selected MIT-licensed runtime and bridge sources from dxvk-remix. Every ported file
 keeps the notice below verbatim in its source and adds "Modifications Copyright (c) 2026 FUSE
-contributors (MIT)". No file of dxvk-remix under any other licence is used, and no NVIDIA runtime
+contributors (AGPL-3.0)". No file of dxvk-remix under any other licence is used, and no NVIDIA runtime
 binary is shipped.
 
 Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.

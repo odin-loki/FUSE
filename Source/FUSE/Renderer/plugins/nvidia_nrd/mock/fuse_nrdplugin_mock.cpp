@@ -1,4 +1,4 @@
-// Mock NRD provider (MIT, part of FUSE; WP-6.4b). Implements fuse_nrd_plugin_abi.h without NRD or a GPU so CI can
+// Mock NRD provider (AGPL-3.0, part of FUSE; WP-6.4b). Implements fuse_nrd_plugin_abi.h without NRD or a GPU so CI can
 // gate the loader, denoiser discovery, parameter marshalling and failure paths. It validates on its own (required
 // slots per denoiser, settings before dispatch), records every call and echoes them via fuse_nrd_mock_echo.h.
 //

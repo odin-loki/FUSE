@@ -1,4 +1,4 @@
-// FUSE Relight RL-6.1: the developer overlay's bitmap font (FUSE's own 5x7 glyphs, printable ASCII 32..126; MIT).
+// FUSE Relight RL-6.1: the developer overlay's bitmap font (FUSE's own 5x7 glyphs, printable ASCII 32..126; AGPL-3.0).
 #pragma once
 
 #include <cstdint>

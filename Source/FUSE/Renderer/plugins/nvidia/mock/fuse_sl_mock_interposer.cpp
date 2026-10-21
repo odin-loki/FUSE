@@ -1,4 +1,4 @@
-// Mock NVIDIA Streamline interposer (MIT, part of FUSE; test-only). Exports the subset of the
+// Mock NVIDIA Streamline interposer (AGPL-3.0, part of FUSE; test-only). Exports the subset of the
 // Streamline core C API the FUSE Streamline provider calls, with the exact signatures of the vendored
 // v2.14.1 headers, and records every argument so CI can check the provider's Streamline calls without
 // Windows, an NVIDIA GPU or any NVIDIA binary. It implements no NVIDIA functionality.

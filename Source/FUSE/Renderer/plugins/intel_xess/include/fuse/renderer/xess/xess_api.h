@@ -1,5 +1,5 @@
 /*
- * Minimal declarations of the Intel XeSS Super Resolution runtime entry points FUSE calls (MIT, part of FUSE; WP-4.3).
+ * Minimal declarations of the Intel XeSS Super Resolution runtime entry points FUSE calls (AGPL-3.0, part of FUSE; WP-4.3).
  *
  * Written from Intel's public XeSS API reference / developer guide (XeSS SDK 1.x-2.x, Vulkan path). The SDK's own
  * headers (xess.h, xess_vk.h) are under the Intel Simplified Software License and are NOT vendored or included here:

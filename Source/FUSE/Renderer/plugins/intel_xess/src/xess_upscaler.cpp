@@ -1,4 +1,4 @@
-// WP-4.3 XeSS adapter (MIT): runtime loader, parameter mapping, XessUpscaler, registration. xess_upscaler.hpp.
+// WP-4.3 XeSS adapter (AGPL-3.0): runtime loader, parameter mapping, XessUpscaler, registration. xess_upscaler.hpp.
 #include <fuse/renderer/xess/xess_upscaler.hpp>
 
 #include <algorithm>
@@ -380,7 +380,7 @@ const upscale::UpscalerCaps& xess_caps() {
         upscale::UpscalerCaps c{};
         c.name = kXessName;
         c.display_name = "Intel XeSS Super Resolution";
-        // Adapter MIT; the runtime is the user's Intel-licensed libxess.
+        // Adapter AGPL-3.0; the runtime is the user's Intel-licensed libxess.
         c.license = "LicenseRef-Intel-Simplified-Software-License";
         c.kind = upscale::UpscalerKind::Temporal;
         c.temporal = true;

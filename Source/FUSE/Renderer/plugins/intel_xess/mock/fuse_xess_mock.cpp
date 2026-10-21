@@ -1,4 +1,4 @@
-// Mock libxess (MIT, part of FUSE; WP-4.3). Exports the XeSS entry points FUSE resolves (xess_api.h) without any Intel
+// Mock libxess (AGPL-3.0, part of FUSE; WP-4.3). Exports the XeSS entry points FUSE resolves (xess_api.h) without any Intel
 // code or GPU, so CI can gate discovery, load failures, parameter marshalling and the upscaler's call sequence. It
 // validates like the documented runtime (context required, init before execute, input <= output, jitter in range),
 // records every call and echoes them through fuse_xess_mock_echo.h. Output is a deterministic signature.

@@ -1,7 +1,7 @@
 #pragma once
 
 // WP-6.4b: NVIDIA Real-time Denoisers (NRD: SIGMA, REBLUR, RELAX) behind denoise::IDenoiser, through a runtime-loaded
-// provider (fuse_nrd_plugin_abi.h). This adapter is MIT and contains no NRD code; NRD itself is RTX-SDK-licensed
+// provider (fuse_nrd_plugin_abi.h). This adapter is AGPL-3.0 and contains no NRD code; NRD itself is RTX-SDK-licensed
 // and only ever reaches a machine when the developer builds / installs the provider.
 //
 //   NrdPluginLoader::probe(project)        FUSE_ENABLE_NRD_PLUGIN=ON only; env FUSE_NRD_SDK_DIR / FUSE_NRD_PLUGIN_LIB

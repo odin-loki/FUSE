@@ -1,4 +1,4 @@
-/* Test-only exports of the mock NRD provider (MIT, part of FUSE). */
+/* Test-only exports of the mock NRD provider (AGPL-3.0, part of FUSE). */
 #ifndef FUSE_NRD_MOCK_ECHO_H
 #define FUSE_NRD_MOCK_ECHO_H
 

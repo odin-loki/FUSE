@@ -1,4 +1,4 @@
-// FUSE NVIDIA provider over the NGX / DLSS SDK on Linux (MIT source, part of FUSE; docs/nvidia-plugin.md).
+// FUSE NVIDIA provider over the NGX / DLSS SDK on Linux (AGPL-3.0 source, part of FUSE; docs/nvidia-plugin.md).
 //
 // This file is FUSE's own code. It is compiled ONLY on a developer machine, with
 // -DFUSE_ENABLE_NVIDIA_PLUGIN=ON -DFUSE_NVIDIA_DLSS_SDK_DIR=<their DLSS SDK checkout>: it includes the SDK's

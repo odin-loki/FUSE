@@ -1,4 +1,4 @@
-// FUSE Relight RL-6.4: optional runtime plugin discovery (see plugin_discovery.hpp). FUSE's own code (MIT).
+// FUSE Relight RL-6.4: optional runtime plugin discovery (see plugin_discovery.hpp). FUSE's own code (AGPL-3.0).
 #include <fuse/relight/package/plugin_discovery.hpp>
 
 #include <algorithm>
