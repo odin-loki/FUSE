@@ -642,7 +642,7 @@ void RuntimeViewportHook::syncMeshSdfPreviewFromEcs_(EditorHost& host) {
 #endif
 }
 
-void RuntimeViewportHook::onSceneFileOpened(const ecs::Registry& registry) {
+void RuntimeViewportHook::onSceneFileOpened(ecs::Registry& registry) {
     u32 transformCount = 0;
     registry.each_query<ecs::Transform>([&](ecs::EntityID /*id*/, ecs::Transform& /*transform*/) {
         ++transformCount;

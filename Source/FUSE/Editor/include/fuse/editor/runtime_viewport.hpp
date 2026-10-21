@@ -98,7 +98,7 @@ public:
     /// After loading a `.fuselevel`, the runtime scene table can be smaller than the ECS registry
     /// (extra component-only entities). Record the registry size so `mirrorEditorEntities_` does not
     /// rewrite the scene table on the next tick and break save/load round-trip stability.
-    void onSceneFileOpened(const fuse::ecs::Registry& registry);
+    void onSceneFileOpened(fuse::ecs::Registry& registry);
 
     bool isEmbedded() const { return m_embedded; }
     u32 runtimeTickCount() const { return m_runtimeTickCount; }
