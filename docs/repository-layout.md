@@ -31,7 +31,7 @@ FUSE is one product graph under `Source/FUSE/`. Everything else is content, tool
 
 | Path | Role |
 |------|------|
-| `Samples/` | U8 parity demo `project.json` projects |
+| `Samples/unification/` | U8 parity demo `project.json` projects (see `Samples/Modules/` for script-only templates) |
 | `Tests/` | Golden renders, Relight integration fixtures |
 | `Content/` | Runtime profiles (Relight) |
 | `Templates/` | Torque-era templates (reference) |

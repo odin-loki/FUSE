@@ -402,7 +402,7 @@ class ILatencyProvider { /* markers: sim start/end, render submit, present; back
 |---|---|---|---|
 | 1 | **NativeTaau** | Extends the existing `TaaCpuResolver` to display-resolution history. The main parts are accumulation and validation, as in the survey [S46]; TSR's 200% history and anti-flicker ideas [S29]. Written as a single-source kernel: CpuReference is ground truth, CpuParallel ships, CUDA and Vulkan come later. | Always built; parity-tested in CI |
 | 2 | **Fsr1** (EASU + RCAS) | MIT, trivial, runs after tonemap [S20]. Useful fallback and a "spatial" test point. | Port to a single-source kernel; CI |
-| 3 | **Fsr3** (FSR 3.1 upscaler, FidelityFX SDK v1.1.4) | MIT, Vulkan, vendorable [S15][S16]. Industry-standard input contract (reactive and T&C masks). | Vendor under `third_party/` with the MIT notice. The GPU path needs the Vulkan RHI. A CPU port of the shader logic is possible for parity. |
+| 3 | **Fsr3** (FSR 3.1 upscaler, FidelityFX SDK v1.1.4) | MIT, Vulkan, vendorable [S15][S16]. Industry-standard input contract (reactive and T&C masks). | Vendor under `vendor/` with the MIT notice. The GPU path needs the Vulkan RHI. A CPU port of the shader logic is possible for parity. |
 | 4 | **DlssSR / DlssRR** | Best quality on NVIDIA [S8]. RR could replace hand-written denoisers for the RT/SDF paths [S14]. | Optional `FUSE_WITH_STREAMLINE` (Windows) or `FUSE_WITH_NGX` (Linux). Runtime-detected. **Not built in CI**; binaries fetched by packaging, never committed [S11][S13]. |
 | 5 | **XeSS** | Covers Arc and DP4a GPUs [S21]. | Optional runtime DLL. Licence allows binary redistribution only [S21b]. |
 | 6 | **ArmAsr / Sgsr2** | Mobile and low-power targets; MIT or BSD-3 [S24][S25]. | Optional; low effort once the FSR 2/3 contract exists |

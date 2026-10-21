@@ -16,7 +16,7 @@ This is the product documentation. Start here; then pick a guide.
 | [Editor](editor.md) | Qt 6 shell, command queue, desktop policy |
 | [Scripting](scripting.md) | Script host, callbacks, Lua-ready VM |
 | [Projects](projects.md) | `project.json` schema and importers |
-| [Samples](samples.md) | Headless demos under `Samples/` |
+| [Samples](samples.md) | Headless parity demos under `Samples/unification/` |
 | [Coding standards](coding-standards.md) | Language, ownership, threading rules |
 | [Roadmap](roadmap.md) | Track A / Track B and current gates |
 | [Heritage](heritage.md) | License provenance |

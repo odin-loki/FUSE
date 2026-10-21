@@ -48,7 +48,7 @@ ctest --test-dir build -R 'fuse_rhi_resource_destroy_order|fuse_vulkan_resources
 Optional VMA (developer machines):
 
 ```bash
-# vendor VulkanMemoryAllocator at third_party/VulkanMemoryAllocator/include/vk_mem_alloc.h
+# vendor VMA at vendor/vma/include/vk_mem_alloc.h
 cmake -B build -DFUSE_BUILD_VULKAN=ON
 ```
 

@@ -314,7 +314,7 @@ New `fuse_lint asset-licences` mode (ctest `fuse_lint_asset_licences`, labels `l
 | Material Maker 1.4 | MIT, Godot-based [S35] | Node-based procedural materials (Substance Designer-like) | Needs a GL context. Use Mesa llvmpipe/xvfb, or port its node shaders into FUSE's Python/C++ material baker (preferred) |
 | meshoptimizer v1.x (+ `clusterlod.h`) | MIT | Simplification, meshlets, cluster DAG, vertex/index codecs [S17, S18] | Library (vendor with a `VERSION` pin, per renderer plan) |
 | KTX-Software (`ktx create`) / Basis Universal | Apache-2.0 [S15, S14] | KTX2 packaging, UASTC, supercompression | CLI |
-| ispc_texcomp (already in `third_party/`) | MIT | Fast BC7/BC6H/BC5 encode | Library (already hooked) |
+| ispc_texcomp (already in `vendor/ispc_texcomp`) | MIT | Fast BC7/BC6H/BC5 encode | Library (already hooked) |
 | NVIDIA FLIP | BSD-3-Clause [S36] | Golden-render comparison | C++/Python |
 | WaveFunctionCollapse (reference) | MIT [S37] | Tile layout synthesis (port to Python/C++) | Yes |
 | MPFB 2 | GPLv3 code, CC0 assets [S22, S23] | Humans | Blender extension, scriptable |

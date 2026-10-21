@@ -27,7 +27,7 @@ Future location: `Samples/unification/<demo_id>/` (see [Samples/unification/READ
 **Honest gaps toward full U8 exit (prestarter §13.2):**
 
 - ❌ Real window present across all seven demos (headless embed + software placeholder only)
-- 🚧 Golden-path import — `resolveParityLegacySource` + `classifySubmoduleDirectory` prefer submodule paths when initialized; bundled stubs used in CI with explicit uninitialized/absent notes (no network fetch)
+- ✅ Legacy import — bundled stubs under `Samples/unification/*/worlds/` are the default; `classifySubmoduleDirectory` may prefer a local ore mirror when present (CI uses stubs only; no network fetch)
 - 🚧 PIE ASan smoke — `fuse_u8_parity_embed_pie_smoke` covers seven demos when `FUSE_SMOKE_ENABLE_ASAN=ON`; all parity demo binaries also ASan-linked under that flag
 - 🚧 Animated sprite textures — converter emits `__fuse.wire|animated_sprite|*` stubs + runtime bridge counts metadata; no GPU texture atlas playback yet
 - ✅ Player + programmer guides — [`docs/player-guide.md`](../player-guide.md), [`docs/programmer-guide.md`](../programmer-guide.md) (honest limits, real demo binaries + ctest names)
@@ -56,9 +56,9 @@ Future location: `Samples/unification/<demo_id>/` (see [Samples/unification/READ
 
 ---
 
-## 3. Golden T2D scenes (Torque2D submodule)
+## 3. Golden T2D scenes (historical upstream Torque2D)
 
-T2D uses `main.cs` module entry points under `third_party/Torque2D/` (not `.mis` missions).
+Historical upstream paths below are **not in the FUSE repo** (clone without submodules). Parity demos use bundled stubs under `Samples/unification/`. T2D used `main.cs` module entry points (not `.mis` missions).
 
 ### 3.1 Core tutorials
 

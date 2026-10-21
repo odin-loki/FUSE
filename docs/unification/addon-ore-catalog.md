@@ -76,7 +76,7 @@ Components register via `IMPLEMENT_CONOBJECT` on `SimComponent` derivatives — 
 
 ### FUSE root status
 
-**`Engine/source/Verve/` already exists in FUSE root** (163 files) — submodule copy is reference ore; do not double-merge.
+**`Engine/source/Verve/` already exists in FUSE root** (163 files) — external upstream copy is reference ore only; do not double-merge.
 
 ### Extractable kernel → `fuse_cinematics`
 
@@ -312,4 +312,4 @@ U5 module boundaries should cut on **FUSE APIs**, not on legacy addon folder nam
 ## Gate U0 checklist item
 
 - [x] Addon ore catalog lists kernel entry points for all seven addons
-- [ ] Extraction PRs (U5) not started — ore remains read-only in submodules
+- [ ] Extraction PRs (U5) not started — ore remains external read-only upstream (not in-repo submodules)

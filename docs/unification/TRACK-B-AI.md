@@ -18,7 +18,7 @@
 | `loadTreeFromText` | `Modules/ai/include/fuse/ai/tree_loader.hpp` | Compact `.bt`-style text loader |
 | UAISK hooks | `Modules/ai/include/fuse/ai/uaisk_template_hooks.hpp` | Script-only template mapping |
 
-**Ore sources (read-only submodules):** BadBehaviour `BadBehavior/`, GuideBot `actionMove.h`, UAISK `.cs` templates — see [Modules/ai/README.md](../../Source/FUSE/Modules/ai/README.md).
+**Ore sources (external upstream; not vendored in FUSE):** BadBehaviour `BadBehavior/`, GuideBot `actionMove.h`, UAISK `.cs` templates — see [Modules/ai/README.md](../../Source/FUSE/Modules/ai/README.md) and `Samples/unification/demo_ai_bt/`.
 
 **Not in scope (deferred):** Qt BT graph editor, Torque `ScriptedBehavior` VM bridge, 3D navmesh leaves, BehaviorTestbed parity mission.
 

@@ -2,6 +2,15 @@
 
 Root `CMakeLists.txt` configures the FUSE product graph: `fuse_core`, modules, Vulkan/CUDA, and native world/scene APIs under `Source/FUSE/`. Vendored deps live in `vendor/`. See [repository-layout.md](repository-layout.md).
 
+## Clone
+
+```bash
+git clone https://github.com/odin-loki/FUSE.git
+cd FUSE
+```
+
+All third-party libraries are committed under `vendor/`; no `git submodule` init step is required.
+
 ## Prerequisites
 
 | Need | Minimum |

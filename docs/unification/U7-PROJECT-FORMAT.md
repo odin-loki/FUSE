@@ -113,7 +113,7 @@ fuse::project::ConvertResult result =
     fuse::project::convertT2DModuleToFuselevel("main.cs", "worlds/ui.fuselevel");
 ```
 
-Golden source: `third_party/Torque2D/toybox/SpriteToy/1/main.cs`
+Golden source (historical upstream, not in-repo): `third_party/Torque2D/toybox/SpriteToy/1/main.cs` — bundled stub: `Samples/unification/demo_2d_sprites/worlds/sprite_toy_stub.cs`
 
 ### Dry-run
 
@@ -189,7 +189,7 @@ Each demo under `Samples/unification/<demo_id>/` ships a `project.json` consumed
 | `fuse::scene::applyWireBindingsFromScene` | One-shot: populate table from scene, create ECS entities for non-wire objects, apply bindings |
 | `World2D::setProjectWorldSource` | `loadWorld()` resolves `projectRoot + defaultWorld2D` when no explicit fuselevel path is set |
 
-Cook encoder hooks (`fuse_cook_stubs`): vendored Assimp fallback when system `libassimp-dev` is absent; STB RGBA decode + in-house BC7 mode-6 dual-endpoint block payload (`fuse/cook/bc7_encoder.hpp`); optional ispc_texcomp when `third_party/ispc_texcomp` is present; OGG when `libvorbisenc` is linked.
+Cook encoder hooks (`fuse_cook_stubs`): vendored Assimp fallback when system `libassimp-dev` is absent; STB RGBA decode + in-house BC7 mode-6 dual-endpoint block payload (`fuse/cook/bc7_encoder.hpp`); optional ispc_texcomp when `vendor/ispc_texcomp` is present; OGG when `libvorbisenc` is linked.
 
 ## 11. Wave 9 progress
 
@@ -238,7 +238,7 @@ CTest: `fuse_scene_wire_runtime_bind`, `fuse_world2d_fuselevel_bridge`, `fuse_wo
 | `defaultCookCachePath` | Maps project root → `.fuse/cook_cache.json` |
 | `ImportPipeline::load_cook_cache` / `save_cook_cache` | Persist cook cache across `fuse_cook` CLI invocations |
 | `AssetCooker::probe_cook_cache_hit` | Job-graph short-circuit — import/process/pack skipped on cache hit |
-| `tryCookTextureIspc` | Optional `ispc_texcomp` BC7/BC5 hook (`third_party/ispc_texcomp` honest stub) |
+| `tryCookTextureIspc` | Optional `ispc_texcomp` BC7/BC5 hook (`vendor/ispc_texcomp` honest stub) |
 | `tryCookAudioOgg` deepen | WAV sniff + `vorbis_encode_init` probe when `libvorbisenc` linked |
 
 `fuse_cook` loads/saves `.fuse/cook_cache.json` on `--project` / `--manifest` runs and prints `[cache hit, skipped re-cook]` progress.

@@ -121,7 +121,7 @@ enum class VulkanBackendMode : u8 { Stub, Headless };
 
 \*WSI instance extensions (`VK_KHR_surface`, platform surface) must be enabled by the platform module that creates the surface — not yet wired in CI.
 
-`GpuAllocator` creates a real `VmaAllocator` when `third_party/VulkanMemoryAllocator/include/vk_mem_alloc.h` is present; otherwise stub bookkeeping handles are issued and `VulkanDeviceInfo::vmaAllocator` stays null until VMA is vendored.
+`GpuAllocator` creates a real `VmaAllocator` when `vendor/vma/include/vk_mem_alloc.h` is present; otherwise stub bookkeeping handles are issued and `VulkanDeviceInfo::vmaAllocator` stays null until VMA is vendored.
 
 ---
 
@@ -281,7 +281,7 @@ CUDA nodes (`is_cuda`) are first-class in the API; graph execution remains a no-
 
 **B2.3 deepen:** [TRACK-B-RHI.md](./TRACK-B-RHI.md) — stub alloc stats, destroy-order teardown, `fuse_rhi_resource_destroy_order` tests.
 
-Optional VMA: place [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) at `third_party/VulkanMemoryAllocator/include/vk_mem_alloc.h` and reconfigure.
+Optional VMA: place [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) under `vendor/vma/` (pinned `include/vk_mem_alloc.h` + `VERSION`) and reconfigure.
 
 ---
 

@@ -54,6 +54,7 @@ See [`docs/roadmap.md`](docs/roadmap.md) for the phase map.
 ```bash
 git clone https://github.com/odin-loki/FUSE.git
 cd FUSE
+# Vendored deps are under vendor/ — no submodule init required.
 
 cmake -B build -G Ninja \
   -DFUSE_BUILD_CORE=ON \
@@ -78,7 +79,7 @@ On Windows without Ninja, omit `-G Ninja` and pass `--config Release` to the bui
 ```
 Source/FUSE/          Product engine (C++23) — core, worlds, renderer, modules, editor, apps
 vendor/               Pinned third-party libraries
-Samples/              Demo projects (`project.json`)
+Samples/unification/  U8 parity demo projects (`project.json`)
 Tools/FUSE/           Importers and cookers
 Tests/                Golden and integration fixtures
 docs/                 User and engineering documentation

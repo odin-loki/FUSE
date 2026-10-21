@@ -22,12 +22,12 @@ All seven parity demos live under `Samples/unification/`. Each folder is a `proj
 
 - Parity demos render on the GPU (E03: World3D scene through the SceneRenderer, sprites + UI through the sprite layer) whenever a Vulkan device exists and check the frame by GPU readback; the software placeholder renderer is the fallback without a device. Window present from the game runtime stays behind the Track B production unlock (headless target otherwise).
 - Converters produce wiring stubs, not full legacy gameplay replay.
-- Golden addon/T2D assets are used when submodules are initialized; otherwise bundled `.mis` / `.cs` stubs are used automatically.
+- Parity demos use bundled `.mis` / `.cs` stubs under each demo's `worlds/`; optional local upstream ore mirrors are not required.
 
 ## Build (first time)
 
 ```bash
-git clone --recurse-submodules https://github.com/odin-loki/FUSE.git
+git clone https://github.com/odin-loki/FUSE.git
 cd FUSE
 
 cmake -B build -G Ninja \
@@ -37,7 +37,7 @@ cmake -B build -G Ninja \
 cmake --build build
 ```
 
-Full option matrix: [building.md](building.md). Faster clone without submodules still works — demos fall back to bundled stubs.
+Vendored dependencies live under `vendor/`; no submodule init step is required. Full option matrix: [building.md](building.md).
 
 ## Run demos
 
