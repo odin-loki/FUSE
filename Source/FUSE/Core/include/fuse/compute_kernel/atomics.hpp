@@ -31,8 +31,12 @@ FUSE_HOST_DEVICE inline u32 scratch_atomic_add(u32* address, u32 value) {
 FUSE_HOST_DEVICE inline u32 global_atomic_add(u32* address, u32 value) {
 #if defined(__CUDA_ARCH__)
     return atomicAdd(address, value);
-#else
+#elif defined(__ANDROID__)
+    return __atomic_fetch_add(address, value, __ATOMIC_RELAXED);
+#elif defined(__cpp_lib_atomic_ref) && __cpp_lib_atomic_ref >= 201806L
     return std::atomic_ref<u32>(*address).fetch_add(value, std::memory_order_relaxed);
+#else
+    return reinterpret_cast<std::atomic<u32>*>(address)->fetch_add(value, std::memory_order_relaxed);
 #endif
 }
 
