@@ -1,7 +1,7 @@
 #pragma once
 
 // Ore: Engine/source/Verve/Core/VTrack.cpp (calculateInterp, _calculateInterp)
-//      third_party/addons/Verve/Engine/source/Verve/Core/VTrack.cpp
+//      ore/torque-addon/Verve/Engine/source/Verve/Core/VTrack.cpp
 
 #include <fuse/cinematics/event.hpp>
 #include <fuse/cinematics/types.hpp>

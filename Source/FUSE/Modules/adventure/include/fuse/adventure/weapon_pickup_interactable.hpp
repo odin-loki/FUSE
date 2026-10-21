@@ -1,6 +1,6 @@
 #pragma once
 
-// Ore: third_party/addons/3DAAK/Templates/Full/game/scripts/server/weapon.cs
+// Ore: ore/torque-addon/3DAAK/Templates/Full/game/scripts/server/weapon.cs
 
 #include <fuse/adventure/interactable.hpp>
 #include <fuse/adventure/item_id.hpp>

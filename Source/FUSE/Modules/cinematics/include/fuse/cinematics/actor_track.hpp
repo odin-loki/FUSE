@@ -1,7 +1,7 @@
 #pragma once
 
 // Ore: Engine/source/Verve/VActor/VActor.h (mount/unmount event signal)
-//      third_party/addons/Verve/Engine/source/Verve/VActor/VActor.h
+//      ore/torque-addon/Verve/Engine/source/Verve/VActor/VActor.h
 
 #include <fuse/cinematics/track.hpp>
 

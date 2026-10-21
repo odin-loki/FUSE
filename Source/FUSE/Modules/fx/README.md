@@ -17,7 +17,7 @@ Game-thread FX runtime shaped by Arcane FX concepts already in FUSE root `Engine
 | `FxSocket` | AFX constraint / effectron host attachment |
 | `EffectEntry` / `EffectTiming` | `afxEffectWrapperData` / `afxEffectTimingData` (`afxEffectWrapper.h`) |
 
-Sample content reference only (no Engine merge): `third_party/addons/AFX-Template/game/levels/AFXDemo_Minimal.mis`.
+Sample content reference only (no Engine merge): `ore/torque-addon/AFX-Template/game/levels/AFXDemo_Minimal.mis`.
 
 ## Vertical slice (U5)
 

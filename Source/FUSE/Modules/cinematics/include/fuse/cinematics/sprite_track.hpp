@@ -1,7 +1,7 @@
 #pragma once
 
 // Ore: Engine/source/Verve/Extension/SceneObject/VSceneObjectTrack.h (2D sprite binding stub)
-//      third_party/addons/Verve/Engine/source/Verve/Extension/SceneObject/VSceneObjectTrack.h
+//      ore/torque-addon/Verve/Engine/source/Verve/Extension/SceneObject/VSceneObjectTrack.h
 
 #include <fuse/cinematics/interpolate.hpp>
 #include <fuse/cinematics/track.hpp>

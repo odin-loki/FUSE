@@ -11,7 +11,7 @@
 namespace fuse::ai {
 
 /// Serialized node spec for load path — ore analogue: BadBehaviour CONOBJECT registration.
-/// Ore: third_party/addons/BadBehaviour/Engine/source/BadBehavior/core/Core.h (Node/LeafNode)
+/// Ore: ore/torque-addon/BadBehaviour/Engine/source/BadBehavior/core/Core.h (Node/LeafNode)
 struct NodeLoadSpec {
     std::string typeId;
     float threshold = 0.f;

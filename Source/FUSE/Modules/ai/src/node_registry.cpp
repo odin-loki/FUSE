@@ -296,12 +296,12 @@ bool NodeRegistry::buildNode(const NodeLoadSpec& spec, BehaviorNode& outNode) co
 }
 
 void NodeRegistry::registerBuiltins() {
-    // BadBehaviour composite/ — third_party/addons/BadBehaviour/Engine/source/BadBehavior/composite/
+    // BadBehaviour composite/ — ore/torque-addon/BadBehaviour/Engine/source/BadBehavior/composite/
     registerFactory("bb.sequence", makeSequence);
     registerFactory("bb.selector", makeSelector);
     registerFactory("bb.parallel", makeParallel);
 
-    // BadBehaviour decorator/ — third_party/addons/BadBehaviour/Engine/source/BadBehavior/decorator/
+    // BadBehaviour decorator/ — ore/torque-addon/BadBehaviour/Engine/source/BadBehavior/decorator/
     registerFactory("bb.inverter", makeInverter);
     registerFactory("bb.loop", makeLoop);
     registerFactory("bb.succeed_always", makeSucceedAlways);
@@ -317,7 +317,7 @@ void NodeRegistry::registerBuiltins() {
     registerFactory("bb.action.wait", makeActionWait);
     registerFactory("bb.action.distance", makeActionDistance);
 
-    // GuideBot navigation leaf stub — third_party/addons/GuideBot/.../guideBot/actionMove.h
+    // GuideBot navigation leaf stub — ore/torque-addon/GuideBot/.../guideBot/actionMove.h
     registerFactory("gb.action.move_toward", makeActionMoveToward);
 
     // FUSE spatial query leaves — blackboard ally lookup stubs (BadBehaviour ScriptedBehavior pattern)

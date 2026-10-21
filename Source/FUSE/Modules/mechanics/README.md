@@ -6,8 +6,8 @@ FUSE mechanics module distilled from GMK addon **ore**. Addon submodules are not
 
 | FUSE API | Ore path | License |
 |----------|----------|---------|
-| `Component` / `ComponentInterface` | `third_party/addons/GMK/Engine/source/component/simComponent.h`, `componentInterface.h` | MIT |
-| `InteractableComponent` | `third_party/addons/GMK/Engine/source/component/simpleComponent.h` | MIT |
+| `Component` / `ComponentInterface` | `ore/torque-addon/GMK/Engine/source/component/simComponent.h`, `componentInterface.h` | MIT |
+| `InteractableComponent` | `ore/torque-addon/GMK/Engine/source/component/simpleComponent.h` | MIT |
 | `InteractAction` / `UseActionStub` / `PickupActionStub` / `ExamineActionStub` | GMK leaf action components | MIT |
 | `MechanicsRegistry` | GMK interaction dispatch pattern | MIT |
 

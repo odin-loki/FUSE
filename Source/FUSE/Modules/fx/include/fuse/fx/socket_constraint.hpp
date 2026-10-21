@@ -1,7 +1,7 @@
 #pragma once
 
 // Ore: Engine/source/afx/afxConstraint.h (constraint defs + reference remapping)
-//      third_party/addons/AFX-Template/ (spell socket specs)
+//      ore/torque-addon/AFX-Template/ (spell socket specs)
 
 #include <fuse/fx/fx_defs.hpp>
 #include <fuse/fx/fx_socket.hpp>

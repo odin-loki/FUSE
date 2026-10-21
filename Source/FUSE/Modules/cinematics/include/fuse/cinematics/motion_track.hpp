@@ -1,7 +1,7 @@
 #pragma once
 
 // Ore: Engine/source/Verve/Extension/Motion/VMotionTrack.h, VPath/VPath.h
-//      third_party/addons/Verve/Engine/source/Verve/Extension/Motion/VMotionTrack.h
+//      ore/torque-addon/Verve/Engine/source/Verve/Extension/Motion/VMotionTrack.h
 
 #include <fuse/cinematics/interpolate.hpp>
 #include <fuse/cinematics/track.hpp>

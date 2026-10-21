@@ -1,6 +1,6 @@
 #pragma once
 
-// Ore: third_party/addons/GMK/Engine/source/component/simpleComponent.h (damageable component leaf)
+// Ore: ore/torque-addon/GMK/Engine/source/component/simpleComponent.h (damageable component leaf)
 
 #include <fuse/mechanics/component.hpp>
 #include <fuse/mechanics/component_interface.hpp>

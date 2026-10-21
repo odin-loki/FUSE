@@ -1,6 +1,6 @@
 #pragma once
 
-// Ore: third_party/addons/3DAAK (NPC conversation / lore scripts in Outpost template)
+// Ore: ore/torque-addon/3DAAK (NPC conversation / lore scripts in Outpost template)
 
 #include <fuse/adventure/interactable.hpp>
 #include <fuse/adventure/outpost_loader.hpp>

@@ -1,7 +1,7 @@
 #pragma once
 
 // Ore: Engine/source/Verve/Extension/SoundEffect/VSoundEffectTrack.h
-//      third_party/addons/Verve/Engine/source/Verve/Extension/SoundEffect/VSoundEffectTrack.h
+//      ore/torque-addon/Verve/Engine/source/Verve/Extension/SoundEffect/VSoundEffectTrack.h
 
 #include <fuse/cinematics/interpolate.hpp>
 #include <fuse/cinematics/track.hpp>

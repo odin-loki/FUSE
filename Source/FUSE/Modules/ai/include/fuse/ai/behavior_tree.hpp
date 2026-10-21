@@ -100,7 +100,7 @@ struct ParallelPolicy {
 [[nodiscard]] bool parallel_policy_is_valid(const ParallelPolicy& policy, u32 childCount = 2);
 
 /// Flat behavior-tree node — ore analogue: BadBehaviour composite/decorator/leaf nodes.
-/// Ore: third_party/addons/BadBehaviour/Engine/source/BadBehavior/
+/// Ore: ore/torque-addon/BadBehaviour/Engine/source/BadBehavior/
 struct BehaviorNode {
     static constexpr u32 kNoScalarSlot = UINT32_MAX;
 

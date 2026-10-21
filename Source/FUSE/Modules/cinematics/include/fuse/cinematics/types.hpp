@@ -2,7 +2,7 @@
 
 // fuse_cinematics — distilled from Verve timeline ore (MIT).
 // Ore: Engine/source/Verve/Core/VController.h (time scale, duration, loop)
-//      third_party/addons/Verve/Engine/source/Verve/Core/VController.h
+//      ore/torque-addon/Verve/Engine/source/Verve/Core/VController.h
 
 #include <fuse/types.hpp>
 

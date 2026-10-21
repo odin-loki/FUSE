@@ -1,6 +1,6 @@
 #pragma once
 
-// Ore: third_party/addons/3DAAK (locked door / key use scripts in Outpost template)
+// Ore: ore/torque-addon/3DAAK (locked door / key use scripts in Outpost template)
 
 #include <fuse/adventure/interactable.hpp>
 

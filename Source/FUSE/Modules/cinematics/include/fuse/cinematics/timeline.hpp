@@ -1,7 +1,7 @@
 #pragma once
 
 // Ore: Engine/source/Verve/Core/VController.h, VController.cpp (processTick, play/pause/stop)
-//      third_party/addons/Verve/Engine/source/Verve/Core/VController.h
+//      ore/torque-addon/Verve/Engine/source/Verve/Core/VController.h
 
 #include <fuse/cinematics/cue_queue.hpp>
 #include <fuse/cinematics/group.hpp>

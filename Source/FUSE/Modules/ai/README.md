@@ -6,13 +6,13 @@ FUSE AI module distilled from Torque addon **ore** (BadBehaviour, GuideBot, UAIS
 
 | FUSE API | Ore path | License |
 |----------|----------|---------|
-| `NodeRegistry` / `bb.*` type ids | `third_party/addons/BadBehaviour/Engine/source/BadBehavior/core/` | MIT (Guy Allard) |
+| `NodeRegistry` / `bb.*` type ids | `ore/torque-addon/BadBehaviour/Engine/source/BadBehavior/core/` | MIT (Guy Allard) |
 | `bb.sequence`, `bb.selector`, `bb.parallel` | `.../BadBehavior/composite/Sequence.h`, `Selector.h` (parallel: FUSE aggregate) | MIT |
 | `bb.inverter`, `bb.loop`, `bb.succeed_always`, `bb.root` | `.../BadBehavior/decorator/` | MIT |
 | `bb.action.set_flag`, `bb.action.wait`, `bb.action.blackboard_set`, `bb.condition.blackboard_get`, `bb.action.distance` | `.../BadBehavior/leaf/ScriptedBehavior.h` (pattern) | MIT |
 | `bb.condition.allies_in_radius`, `bb.action.nearest_ally` | FUSE `spatial_query.hpp` (blackboard ally lookup stubs) | — |
-| `gb.action.move_toward` | `third_party/addons/GuideBot/guideBotT3D/engine/lib/guideBot/include/guideBot/actionMove.h` | Custom — see `guidebot_license_agreement.txt` |
-| UAISK template hooks (scripts only) | `third_party/addons/UAISK/.../UAISK/*.cs` | MIT |
+| `gb.action.move_toward` | `ore/torque-addon/GuideBot/guideBotT3D/engine/lib/guideBot/include/guideBot/actionMove.h` | Custom — see `guidebot_license_agreement.txt` |
+| UAISK template hooks (scripts only) | `ore/torque-addon/UAISK/.../UAISK/*.cs` | MIT |
 
 ## Load paths
 

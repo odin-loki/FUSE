@@ -11,7 +11,7 @@ class Component;
 
 /// Thin capability surface exposed by a component (ore: GMK `ComponentInterface`).
 ///
-/// See `third_party/addons/GMK/Engine/source/component/componentInterface.h`.
+/// See `ore/torque-addon/GMK/Engine/source/component/componentInterface.h`.
 class ComponentInterface {
 public:
     virtual ~ComponentInterface() = default;

@@ -39,7 +39,7 @@ public:
 
 /// Reference interactable component with cached interface registration.
 ///
-/// Ore pattern: `third_party/addons/GMK/Engine/source/component/simpleComponent.h`.
+/// Ore pattern: `ore/torque-addon/GMK/Engine/source/component/simpleComponent.h`.
 class InteractableComponent : public Component, public IInteractable {
 public:
     InteractableComponent();

@@ -1,7 +1,7 @@
 #pragma once
 
 // Ore: Engine/source/Verve/Extension/Script/VScriptEventTrack.h
-//      third_party/addons/Verve/Engine/source/Verve/Extension/Script/VScriptEventTrack.h
+//      ore/torque-addon/Verve/Engine/source/Verve/Extension/Script/VScriptEventTrack.h
 
 #include <fuse/cinematics/track.hpp>
 

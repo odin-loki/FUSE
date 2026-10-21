@@ -1,7 +1,7 @@
 #pragma once
 
 // Ore: VController time/duration/status fields (VController.h)
-//      third_party/addons/Verve/Engine/source/Verve/Core/VController.h
+//      ore/torque-addon/Verve/Engine/source/Verve/Core/VController.h
 
 #include <fuse/cinematics/types.hpp>
 

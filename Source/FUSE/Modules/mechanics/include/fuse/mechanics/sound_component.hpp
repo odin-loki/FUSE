@@ -1,6 +1,6 @@
 #pragma once
 
-// Ore: third_party/addons/GMK/Engine/source/component/soundComponent.h
+// Ore: ore/torque-addon/GMK/Engine/source/component/soundComponent.h
 
 #include <fuse/mechanics/component.hpp>
 

@@ -1,7 +1,7 @@
 #pragma once
 
 // Ore: Engine/source/Verve/Core/VTrack.h, VTrack.cpp (sort, span, next-event walk)
-//      third_party/addons/Verve/Engine/source/Verve/Core/VTrack.h
+//      ore/torque-addon/Verve/Engine/source/Verve/Core/VTrack.h
 
 #include <fuse/cinematics/event.hpp>
 

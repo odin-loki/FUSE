@@ -1,6 +1,6 @@
 #pragma once
 
-// Ore: third_party/addons/AFX-Template/game/levels/*.mis mission script hooks
+// Ore: ore/torque-addon/AFX-Template/game/levels/*.mis mission script hooks
 
 #include <fuse/fx/fx_composer.hpp>
 

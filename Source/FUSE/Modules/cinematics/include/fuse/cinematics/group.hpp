@@ -1,7 +1,7 @@
 #pragma once
 
 // Ore: Engine/source/Verve/Core/VGroup.h
-//      third_party/addons/Verve/Engine/source/Verve/Core/VGroup.h
+//      ore/torque-addon/Verve/Engine/source/Verve/Core/VGroup.h
 
 #include <fuse/cinematics/actor_track.hpp>
 #include <fuse/cinematics/audio_track.hpp>

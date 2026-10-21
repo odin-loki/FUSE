@@ -1,6 +1,6 @@
 #pragma once
 
-// Ore: third_party/addons/GMK/Engine/source/component/simpleComponent.h (switch leaf)
+// Ore: ore/torque-addon/GMK/Engine/source/component/simpleComponent.h (switch leaf)
 
 #include <fuse/mechanics/component.hpp>
 #include <fuse/types.hpp>

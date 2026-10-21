@@ -1,7 +1,7 @@
 #pragma once
 
 // Ore: Engine/source/Verve/Extension/Camera/VCameraTrack.h
-//      third_party/addons/Verve/Engine/source/Verve/Extension/Camera/VCameraTrack.h
+//      ore/torque-addon/Verve/Engine/source/Verve/Extension/Camera/VCameraTrack.h
 
 #include <fuse/cinematics/interpolate.hpp>
 #include <fuse/cinematics/track.hpp>

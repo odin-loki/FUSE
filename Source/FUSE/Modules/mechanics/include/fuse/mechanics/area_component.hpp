@@ -1,6 +1,6 @@
 #pragma once
 
-// Ore: third_party/addons/GMK/Engine/source/component/areaComponent.h
+// Ore: ore/torque-addon/GMK/Engine/source/component/areaComponent.h
 
 #include <fuse/mechanics/component.hpp>
 #include <fuse/types.hpp>

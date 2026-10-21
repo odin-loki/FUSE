@@ -10,7 +10,7 @@ namespace fuse::mechanics {
 
 /// FUSE-native component base (ore: GMK `SimComponent`).
 ///
-/// See `third_party/addons/GMK/Engine/source/component/simComponent.h`.
+/// See `ore/torque-addon/GMK/Engine/source/component/simComponent.h`.
 class Component : public Object {
 public:
     Component();

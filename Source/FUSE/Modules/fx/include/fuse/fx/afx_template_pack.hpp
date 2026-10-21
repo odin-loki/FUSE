@@ -1,6 +1,6 @@
 #pragma once
 
-// Ore: third_party/addons/AFX-Template/game/ sample spell/FX content pack
+// Ore: ore/torque-addon/AFX-Template/game/ sample spell/FX content pack
 
 #include <fuse/fx/fx_composer.hpp>
 

@@ -1,6 +1,6 @@
 #pragma once
 
-// Ore: third_party/addons/3DAAK (ShapeBase examine / lore interaction scripts)
+// Ore: ore/torque-addon/3DAAK (ShapeBase examine / lore interaction scripts)
 
 #include <fuse/adventure/interactable.hpp>
 

@@ -8,7 +8,7 @@ namespace fuse::ai::uaisk {
 /// UAISK is scripts-only ore — these hooks map TorqueScript behavior modules to fuse_ai
 /// registry type ids for future script-host import. No compile-time dependency on UAISK.
 ///
-/// Ore: third_party/addons/UAISK/The_Universal_AI_Starter_Kit/Templates/Full/game/scripts/server/UAISK/
+/// Ore: ore/torque-addon/UAISK/The_Universal_AI_Starter_Kit/Templates/Full/game/scripts/server/UAISK/
 struct TemplateHook {
     std::string_view uaiskModule;
     std::string_view fuseRegistryTypeId;

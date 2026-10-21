@@ -1,7 +1,7 @@
 #pragma once
 
 // Ore: Engine/source/Verve/Core/VEvent.h
-//      third_party/addons/Verve/Engine/source/Verve/Core/VEvent.h
+//      ore/torque-addon/Verve/Engine/source/Verve/Core/VEvent.h
 
 #include <fuse/cinematics/types.hpp>
 

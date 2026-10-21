@@ -1,6 +1,6 @@
 #pragma once
 
-// Ore: third_party/addons/3DAAK (2D HUD interaction prompt / use hint scripts)
+// Ore: ore/torque-addon/3DAAK (2D HUD interaction prompt / use hint scripts)
 
 #include <fuse/adventure/interactable.hpp>
 
