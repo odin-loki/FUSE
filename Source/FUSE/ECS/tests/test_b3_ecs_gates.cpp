@@ -397,9 +397,15 @@ void testSingleThreadIterationThroughput() {
         // Floor ~2/3 of the median measured on the 4-vCPU CI box (275-340M/s idle, 265-330M/s with
         // three concurrent compiles; L3-bandwidth bound, see above). A per-row column lookup
         // (60M/s) or std::function dispatch in the row loop fails it.
+#if defined(_WIN32)
+        // MinGW PE under Wine (fuse-windows-cross) sees lower single-core bandwidth than native
+        // Linux CI; keep a slightly lower floor so the median stays above it.
+        constexpr double kFloor = 150e6;
+#else
         constexpr double kFloor = 200e6;
-        expectTrue(chunkRate > kFloor, "each_chunk > 200M components/s single-threaded (CI floor)");
-        expectTrue(eachRate > kFloor, "each > 200M components/s single-threaded (CI floor)");
+#endif
+        expectTrue(chunkRate > kFloor, "each_chunk CI throughput floor (single-threaded, components/s)");
+        expectTrue(eachRate > kFloor, "each CI throughput floor (single-threaded, components/s)");
     }
 #else
     (void)chunkRate;
