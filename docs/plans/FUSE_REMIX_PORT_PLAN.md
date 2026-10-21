@@ -125,7 +125,7 @@ Submodule licences were checked by fetching each LICENSE file. File paths in thi
    - list the patch in `vendor/dxvk/PATCHES.md` with its purpose and the RL work package.
 
    `vendor/dxvk/VERSION` records the upstream tag, commit and a sha256 per file (the VMA pin convention). A lint recomputes the hashes of **unmarked** regions to prove that no unmarked edits exist.
-3. **MIT notices.** Every file ported from dxvk-remix keeps the NVIDIA MIT header verbatim and adds `Modifications Copyright (c) 2026 FUSE contributors (MIT)`. Ported files carry an `// Ported from dxvk-remix <path>@0867d3c` line, so a rebase can diff against upstream.
+3. **MIT notices.** Every file ported from dxvk-remix keeps the NVIDIA MIT header verbatim and adds `Modifications Copyright (c) 2026 FUSE contributors (AGPL-3.0)`. Ported files carry an `// Ported from dxvk-remix <path>@0867d3c` line, so a rebase can diff against upstream.
 4. **Proprietary-text scan (clean-room enforcement).** A CMake-script gate (the pattern of `plugins/nvidia/cmake/nvidia_binary_gate.cmake`) fails if a tracked file contains NVIDIA's proprietary header phrases, or the "NVIDIA RTX SDKs LICENSE" title, outside an allow-list (`docs/**`). The patterns are assembled from fragments so the gate file does not match itself. It also extends the binary gate with these patterns:
    - `NRC_*.dll`, `cudart64_*.dll`, `nvrtc*.dll`;
    - `rtxio*.dll`, `NRD.dll`, `NRI.dll`;
@@ -344,7 +344,7 @@ The in-game overlay is ImGui (`dxvk_imgui.cpp` 4,590 lines, `rtx_user_menu.cpp`)
 ### 2.1 Overview
 
 ```
- game.exe (x86 or x64)                                                      FUSE-owned, MIT
+ game.exe (x86 or x64)                                                      FUSE-owned, AGPL-3.0
  ─────────────────────────────────────────────────────────────────────────────────────────────
  x86 game: Relight bridge client d3d9.dll / d3d8.dll  ──shared-memory IPC──┐   (RL-2.x)
  x64 game: loads Relight d3d9.dll / d3d8.dll directly ───────────────────┐ │
