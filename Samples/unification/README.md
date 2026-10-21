@@ -36,7 +36,7 @@ ctest --test-dir build -R fuse_u8_ --output-on-failure
 **Wave 4 wiring**
 
 - `__fuse.wire|animated_sprite|*` stubs from T2D module convert + runtime bridge metadata counts
-- `classifySubmoduleDirectory` — local-only golden submodule probe (no network init)
+- `classifySubmoduleDirectory` — local-only reference-tree probe (no `git submodule` init)
 - `fuse_u8_parity_embed_pie_smoke` — editor embed + PIE start/stop across **seven** parity demos (ASan when `FUSE_SMOKE_ENABLE_ASAN`)
 - All six `fuse_u8_*` parity demo binaries + `demo_hybrid_hud` ASan-linked when `FUSE_SMOKE_ENABLE_ASAN=ON`
 
