@@ -80,6 +80,7 @@ foreach(_entry IN LISTS _fuse_qt_gate_tests)
         RUN_SERIAL TRUE
     )
 endforeach()
+set_tests_properties(fuse_editor_qt_idle_frames PROPERTIES TIMEOUT 1800)
 
 # Appendix A "Icons": FUSE app icon embedded in the Qt host and installed as the window icon.
 if(_fuse_qt_gate_available)

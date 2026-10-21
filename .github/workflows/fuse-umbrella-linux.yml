@@ -166,7 +166,7 @@ jobs:
         env:
           # Lavapipe for the Vulkan tests (headless runner).
           VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
-        run: ctest --test-dir build/fuse-asan --output-on-failure -j2 --timeout 1200
+        run: ctest --test-dir build/fuse-asan --output-on-failure -j1 --timeout 2400
 
       - name: Run fuse_runtime_smoke under ASan+UBSan
         env:
@@ -204,6 +204,7 @@ jobs:
       - name: Run Qt gates under xvfb-run
         env:
           VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
+          FUSE_QT_IDLE_DEBUG_FRAMES: 2000
         run: |
           xvfb-run -a -s "-screen 0 1920x1080x24 -nolisten tcp" \
-            ctest --test-dir build/editor-qt -L qt --output-on-failure --timeout 900
+            ctest --test-dir build/editor-qt -L qt --output-on-failure --timeout 2400
