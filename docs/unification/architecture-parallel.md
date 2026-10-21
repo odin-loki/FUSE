@@ -94,7 +94,7 @@ u32 N = clamp(usable_cores - reserve, minWorkers, maxWorkers);
 - `fuse::platform::getPowerState()` → `Normal` | `LowPower` | `Thermal` | `Background`
 - Overrides: `project.json` → `jobs.worker_count` (hard cap), env `FUSE_JOB_WORKERS`
 
-**Evidence (T2D lineage):** `third_party/Torque2D/CMakeLists.txt` L10–11 wires Win/macOS/Linux/**iOS/Android/Emscripten**; iOS uses GLES (`CMakeLists.txt` L319); Android `NativeActivity` + `libtorque2d.so` (L147–189). Mobile `backgrounded` flags in `platformiOS/platformiOS.h` L78, `platformAndroid/platformAndroid.h` L70 — FUSE must mirror for worker pool reduction.
+**Evidence (T2D lineage; upstream Torque2D repo, not vendored in FUSE):** root `CMakeLists.txt` L10–11 wires Win/macOS/Linux/**iOS/Android/Emscripten**; iOS uses GLES (L319); Android `NativeActivity` + `libtorque2d.so` (L147–189). Mobile `backgrounded` flags in `platformiOS/platformiOS.h` L78, `platformAndroid/platformAndroid.h` L70 — FUSE must mirror for worker pool reduction.
 
 **No desktop-only assumptions in hot path:**
 - Fiber default stack: **32 KiB mobile**, **64 KiB desktop** (query via `fuse::platform::recommendedFiberStackBytes()` — do not hardcode master-plan 64K everywhere).
