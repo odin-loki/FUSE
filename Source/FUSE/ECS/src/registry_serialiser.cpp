@@ -10,6 +10,7 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <typeindex>
 
@@ -140,6 +141,17 @@ bool is_transform_column(const ComponentTypeInfo* info) {
     return info->type == std::type_index(typeid(Transform)) && info->size == sizeof(Transform);
 }
 
+EntityID archetype_min_entity(const Archetype& archetype) {
+    EntityID best{std::numeric_limits<u32>::max(), std::numeric_limits<u32>::max()};
+    for (u32 row = 0; row < archetype.count(); ++row) {
+        const EntityID id = archetype.entities[row];
+        if (id.index < best.index || (id.index == best.index && id.generation < best.generation)) {
+            best = id;
+        }
+    }
+    return best;
+}
+
 void scrub_transform_runtime_state(Transform& transform) {
     const vec3 position = transform.position;
     const quat rotation = transform.rotation;
@@ -208,7 +220,12 @@ RegistrySerialiseResult RegistrySerialiser::save(const Registry& registry, const
                 return cmp < 0;
             }
         }
-        return a.archetype < b.archetype;
+        const EntityID ea = archetype_min_entity(*a.archetype);
+        const EntityID eb = archetype_min_entity(*b.archetype);
+        if (ea.index != eb.index) {
+            return ea.index < eb.index;
+        }
+        return ea.generation < eb.generation;
     });
 
     Writer w;
