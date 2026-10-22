@@ -24,6 +24,7 @@
 #include <fuse/ecs/components/script.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
+#include <fuse/ecs/registry_serialiser.hpp>
 #include <fuse/handle.hpp>
 #include <fuse/object.hpp>
 #include <fuse/project/loader.hpp>
@@ -214,6 +215,10 @@ void testSerialiserV3(const fs::path& dir) {
     ecs::Registry registry;
     registry.init();
     const Ids ids = populate(registry);
+    // FECS save/load scrubs runtime padding; canonicalise before v3 fuselevel round-trip assertions.
+    const std::string wireCanon = (dir / "e15_wire_canon.fecs").string();
+    expectTrue(ecs::RegistrySerialiser::save(registry, wireCanon).ok, "v3: canonicalise registry wire image");
+    expectTrue(ecs::RegistrySerialiser::load(wireCanon, registry).ok, "v3: reload canonical registry");
     scene::Scene s;
     fillScene(s);
 
