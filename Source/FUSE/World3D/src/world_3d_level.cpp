@@ -105,6 +105,7 @@ World3DLevelLoadResult World3D::loadWorldFromFuselevel(const std::string& fusele
     }
     m_registry = std::move(loaded);
     m_registryReady = true;
+    m_registry.each<ecs::Transform>([](ecs::EntityID, ecs::Transform& transform) { transform.dirty = true; });
     ecs::TransformSystemOptions transformOptions;
     transformOptions.parallelDirtyRoots = false;
     ecs::TransformSystem::update(m_registry, transformOptions); // world matrices valid before the first frame
