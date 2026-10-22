@@ -24,6 +24,10 @@ env:
 jobs:
   fuse-core-linux:
     name: fuse_core + tests + smoke
+    # One heavy ubuntu-24.04 job at a time so push bursts (relight/cuda/windows-cross) do not starve matrix legs.
+    concurrency:
+      group: fuse-umbrella-linux-host-${{ github.head_ref || github.ref }}
+      cancel-in-progress: false
     # ubuntu-latest -> 26.04 (Oct 2026); stay on 24.04 for Lavapipe/Qt gates parity with docs.
     runs-on: ubuntu-24.04
     steps:
@@ -117,11 +121,14 @@ jobs:
     # applies -Wall -Wextra -Werror to every Source/FUSE + Tools/FUSE target (cmake/FuseWarnings.cmake;
     # vendored vendor/ subprojects excluded).
     name: FUSE -Werror (${{ matrix.config }})
+    concurrency:
+      group: fuse-umbrella-linux-host-${{ github.head_ref || github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 1
       matrix:
         config: [debug, release, profile, shipping]
     steps:
@@ -148,6 +155,9 @@ jobs:
     # target (cmake/FuseSanitizers.cmake); UBSan is non-recoverable so any
     # finding fails its test. Third-party-only suppressions: cmake/sanitizers/.
     name: FUSE ASan+UBSan (all unit tests + smoke)
+    concurrency:
+      group: fuse-umbrella-linux-host-${{ github.head_ref || github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
