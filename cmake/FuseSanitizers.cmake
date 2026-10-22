@@ -68,7 +68,10 @@ endfunction()
 # Tools/FUSE (libraries, tests, demos, tools). Vendored third-party subprojects
 # (vendor/*: openal-soft, assimp, bullet, ENet, Lua) are NOT instrumented —
 # they are linked into sanitized executables but compiled normally, which keeps
-# UBSan findings scoped to FUSE code. Every ctest registered from those
+# UBSan findings scoped to FUSE code. fuse_xiph_* is excluded too (see the
+# fuse_xiph_ skip in fuse_sanitize_finalize): those targets are created from
+# Source/FUSE/Audio/CMakeLists.txt and would otherwise inherit SOURCE_DIR under
+# Source/FUSE. Every ctest registered from those
 # directories gets ASAN_/UBSAN_/LSAN_OPTIONS pointing at
 # cmake/sanitizers/*.supp (third-party-only suppressions).
 #
@@ -172,6 +175,9 @@ function(fuse_sanitize_finalize)
         endif()
         get_target_property(_imported ${_t} IMPORTED)
         if(_imported)
+            continue()
+        endif()
+        if(_t MATCHES "^fuse_xiph_")
             continue()
         endif()
         get_target_property(_sdir ${_t} SOURCE_DIR)

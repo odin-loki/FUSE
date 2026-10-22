@@ -5,7 +5,3 @@
 # POLICY: third-party only (Mesa/Lavapipe, LLVM, Vulkan loader, openal-soft,
 # zlib, system libs). Never suppress a finding whose top FUSE frame is in
 # Source/FUSE or Tools/FUSE — fix the code instead. Each entry needs a comment.
-
-# Vendored libvorbis (xiph): psy.c left-shifts a negative value on some paths; not FUSE code.
-shift-base:psy.c
-signed-integer-overflow:psy.c
