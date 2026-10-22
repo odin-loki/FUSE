@@ -224,7 +224,9 @@ RegistrySerialiseResult RegistrySerialiser::save(const Registry& registry, const
         w.put(rec.generation);
         w.put(static_cast<u8>(rec.alive ? 1u : 0u));
     }
-    for (const u32 index : registry.m_free_list) {
+    std::vector<u32> freeList = registry.m_free_list;
+    std::sort(freeList.begin(), freeList.end());
+    for (const u32 index : freeList) {
         w.put(index);
     }
 
