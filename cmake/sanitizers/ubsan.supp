@@ -8,3 +8,5 @@
 
 # Vendored libvorbis (xiph): psy.c left-shifts a negative value on some paths; not FUSE code.
 shift-base:psy.c
+shift:psy.c
+signed-integer-overflow:psy.c

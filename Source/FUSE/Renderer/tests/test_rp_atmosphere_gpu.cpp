@@ -474,7 +474,9 @@ bool runFrame(Context& ctx, AtmosphereGpu& atmos, rg::Graph& graph, const Atmosp
         std::memcpy(out.lut[i].data(), base + rl.at[i], static_cast<usize>(rl.bytes[i]));
     }
     out.probes.resize(probes.size() * kAtProbeOutputs);
-    std::memcpy(out.probes.data(), ctx.probeOut.mapped, out.probes.size() * sizeof(AtTexel));
+    if (!out.probes.empty()) {
+        std::memcpy(out.probes.data(), ctx.probeOut.mapped, out.probes.size() * sizeof(AtTexel));
+    }
     return true;
 }
 

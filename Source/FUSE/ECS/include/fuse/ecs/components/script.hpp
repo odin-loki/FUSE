@@ -78,7 +78,9 @@ struct Script {
             return false;
         }
         std::memset(script_path, 0, sizeof(script_path));
-        std::memcpy(script_path, value.data(), value.size());
+        if (!value.empty()) {
+            std::memcpy(script_path, value.data(), value.size());
+        }
         return true;
     }
 

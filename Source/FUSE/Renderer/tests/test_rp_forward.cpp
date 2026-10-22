@@ -995,7 +995,10 @@ void capture(Context& ctx, const Rig& rig, const FrameState& fs, Captured& c) {
         }
         const u32 draws = rig.forward[k].drawCount();
         c.layers[k].resize(static_cast<usize>(draws) * kPixels);
-        std::memcpy(c.layers[k].data(), ctx.layerDumps[k].mapped, c.layers[k].size() * sizeof(ForwardDumpTexel));
+        if (!c.layers[k].empty()) {
+            std::memcpy(c.layers[k].data(), ctx.layerDumps[k].mapped,
+                        c.layers[k].size() * sizeof(ForwardDumpTexel));
+        }
         c.draws[k].assign(rig.forward[k].draws(), rig.forward[k].draws() + draws);
     }
     // The GPU cluster lists of the frame (the forward pass and light.shade both read these).

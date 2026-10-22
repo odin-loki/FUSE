@@ -9,6 +9,7 @@
 //  - Script cook: Lua syntax check + bytecode `.fusescript`, legacy `.cs` tagged `t3d:` and passed
 //    through, syntax errors rejected with file:line
 //  - zero heap allocations in ScriptSystem::update at steady state
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/ecs/component_types.hpp>
 #include <fuse/ecs/components/script.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -32,11 +33,12 @@
 #include <type_traits>
 #include <vector>
 
-// ---- allocation counter (plain new/delete; aligned forms keep the library defaults) -------------
+// ---- allocation counter (plain new/delete; disabled under ASan — see sanitizer.hpp) ------------
 namespace {
 std::atomic<unsigned long long> g_newCount{0};
 }
 
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
 void* operator new(std::size_t size) {
     g_newCount.fetch_add(1u, std::memory_order_relaxed);
     if (void* p = std::malloc(size == 0 ? 1 : size)) {
@@ -55,6 +57,7 @@ void operator delete(void* p) noexcept { std::free(p); }
 void operator delete[](void* p) noexcept { std::free(p); }
 void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
+#endif // FUSE_TEST_GLOBAL_NEW_HOOKS
 
 namespace {
 
@@ -544,6 +547,10 @@ void testCook(const fs::path& dir) {
 
 // ---------------------------------------------------------------------------------------------
 void testZeroSteadyStateAllocations() {
+#if !FUSE_TEST_GLOBAL_NEW_HOOKS
+    std::printf("ScriptSystem steady-state alloc gate: SKIP (sanitizer build)\n");
+    return;
+#endif
     World w;
     expectTrue(w.init(512u * 1024u), "world init with a reserved Lua heap");
     std::vector<EntityID> ids;
