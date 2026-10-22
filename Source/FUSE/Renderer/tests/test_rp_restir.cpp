@@ -683,9 +683,13 @@ bool beginFrame(Context& ctx, GpuWorld& w, Rig& rig, const Camera& cam, u32 fram
         if (!rig.built[k]) {
             continue;
         }
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
         t_count = countRestir;
+#endif
         ok = rig.restir[k].beginFrame(ctx.serial, desc) && ok;
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
         t_count = false;
+#endif
     }
     return ok;
 }
