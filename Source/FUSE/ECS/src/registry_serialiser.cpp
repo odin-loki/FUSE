@@ -1,7 +1,10 @@
 #include <fuse/ecs/registry_serialiser.hpp>
 
 #include <fuse/ecs/component_types.hpp>
+#include <fuse/ecs/components/mesh.hpp>
+#include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/script.hpp>
+#include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
@@ -139,6 +142,91 @@ bool is_script_column(const ComponentTypeInfo* info) {
 
 bool is_transform_column(const ComponentTypeInfo* info) {
     return info->type == std::type_index(typeid(Transform)) && info->size == sizeof(Transform);
+}
+
+bool is_mesh_column(const ComponentTypeInfo* info) {
+    return info->type == std::type_index(typeid(Mesh)) && info->size == sizeof(Mesh);
+}
+
+bool is_rigidbody_column(const ComponentTypeInfo* info) {
+    return info->type == std::type_index(typeid(RigidBody)) && info->size == sizeof(RigidBody);
+}
+
+bool is_sdf_object_column(const ComponentTypeInfo* info) {
+    return info->type == std::type_index(typeid(SDFObject)) && info->size == sizeof(SDFObject);
+}
+
+void scrub_mesh_runtime_state(Mesh& mesh) {
+    Mesh out{};
+    out.vertex_buffer = mesh.vertex_buffer;
+    out.index_buffer = mesh.index_buffer;
+    out.index_count = mesh.index_count;
+    out.material_id = mesh.material_id;
+    out.aabb_min = mesh.aabb_min;
+    out.aabb_max = mesh.aabb_max;
+    out.cast_shadow = mesh.cast_shadow;
+    out.receive_shadow = mesh.receive_shadow;
+    out.visible = mesh.visible;
+    mesh = out;
+}
+
+void scrub_rigidbody_runtime_state(RigidBody& body) {
+    RigidBody out{};
+    out.velocity = body.velocity;
+    out.angular_velocity = body.angular_velocity;
+    out.force_accumulator = body.force_accumulator;
+    out.torque_accumulator = body.torque_accumulator;
+    out.mass = body.mass;
+    out.inv_mass = body.inv_mass;
+    out.restitution = body.restitution;
+    out.linear_damping = body.linear_damping;
+    out.angular_damping = body.angular_damping;
+    out.is_static = body.is_static;
+    out.is_sleeping = body.is_sleeping;
+    out.sleep_timer = body.sleep_timer;
+    body = out;
+}
+
+void scrub_sdf_object_runtime_state(SDFObject& sdf) {
+    SDFObject out{};
+    out.type = sdf.type;
+    out.op = sdf.op;
+    out.params = sdf.params;
+    out.material_id = sdf.material_id;
+    out.blend_alpha = sdf.blend_alpha;
+    out.casts_shadow = sdf.casts_shadow;
+    out.visible = sdf.visible;
+    out.blend_radius = sdf.blend_radius;
+    out.roughness = sdf.roughness;
+    out.csg_order = sdf.csg_order;
+    sdf = out;
+}
+
+void fixup_mesh_rows(std::byte* rows, usize count) {
+    for (usize i = 0; i < count; ++i) {
+        Mesh mesh;
+        std::memcpy(&mesh, rows + i * sizeof(Mesh), sizeof(Mesh));
+        scrub_mesh_runtime_state(mesh);
+        std::memcpy(rows + i * sizeof(Mesh), &mesh, sizeof(Mesh));
+    }
+}
+
+void fixup_rigidbody_rows(std::byte* rows, usize count) {
+    for (usize i = 0; i < count; ++i) {
+        RigidBody body;
+        std::memcpy(&body, rows + i * sizeof(RigidBody), sizeof(RigidBody));
+        scrub_rigidbody_runtime_state(body);
+        std::memcpy(rows + i * sizeof(RigidBody), &body, sizeof(RigidBody));
+    }
+}
+
+void fixup_sdf_object_rows(std::byte* rows, usize count) {
+    for (usize i = 0; i < count; ++i) {
+        SDFObject sdf;
+        std::memcpy(&sdf, rows + i * sizeof(SDFObject), sizeof(SDFObject));
+        scrub_sdf_object_runtime_state(sdf);
+        std::memcpy(rows + i * sizeof(SDFObject), &sdf, sizeof(SDFObject));
+    }
 }
 
 EntityID archetype_min_entity(const Archetype& archetype) {
@@ -295,6 +383,12 @@ RegistrySerialiseResult RegistrySerialiser::save(const Registry& registry, const
                 (void)fixup_script_rows(sortedColumn.data(), rowCount, false, ignored);
             } else if (is_transform_column(info)) {
                 fixup_transform_rows(sortedColumn.data(), rowCount);
+            } else if (is_mesh_column(info)) {
+                fixup_mesh_rows(sortedColumn.data(), rowCount);
+            } else if (is_rigidbody_column(info)) {
+                fixup_rigidbody_rows(sortedColumn.data(), rowCount);
+            } else if (is_sdf_object_column(info)) {
+                fixup_sdf_object_rows(sortedColumn.data(), rowCount);
             }
             w.bytes(sortedColumn.data(), sortedColumn.size());
         }
@@ -401,6 +495,12 @@ RegistrySerialiseResult RegistrySerialiser::parse(const std::string& path, Regis
                 }
             } else if (is_transform_column(info)) {
                 fixup_transform_rows(column.data(), rows);
+            } else if (is_mesh_column(info)) {
+                fixup_mesh_rows(column.data(), rows);
+            } else if (is_rigidbody_column(info)) {
+                fixup_rigidbody_rows(column.data(), rows);
+            } else if (is_sdf_object_column(info)) {
+                fixup_sdf_object_rows(column.data(), rows);
             }
         }
         entitiesSeen += rows;
