@@ -701,13 +701,36 @@ RegistrySerialiseResult RegistrySerialiser::apply(const RegistryImage& image, Re
     return result;
 }
 
+void RegistrySerialiser::canonicalize_runtime_state(Registry& registry) {
+    register_builtin_components();
+    for (Archetype& archetype : registry.m_archetypes) {
+        const u32 rows = archetype.count();
+        if (rows == 0u) {
+            continue;
+        }
+        for (const std::type_index& type : archetype.component_types) {
+            const ComponentTypeInfo* info = ComponentTypes::find(type);
+            ComponentColumn* column = archetype.find_column(type);
+            if (info == nullptr || column == nullptr || column->storage.size() != rows * info->size) {
+                continue;
+            }
+            std::string ignored;
+            fixup_column_rows(info, column->storage.data(), rows, false, ignored);
+        }
+    }
+}
+
 RegistrySerialiseResult RegistrySerialiser::load(const std::string& path, Registry& registry) {
     RegistryImage image;
     const RegistrySerialiseResult parsed = parse(path, image);
     if (!parsed.ok) {
         return parsed;
     }
-    return apply(image, registry);
+    const RegistrySerialiseResult applied = apply(image, registry);
+    if (applied.ok) {
+        canonicalize_runtime_state(registry);
+    }
+    return applied;
 }
 
 struct RegistryLoadQueue::Request {

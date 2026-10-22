@@ -33,6 +33,9 @@ public:
     static RegistrySerialiseResult save(const Registry& registry, const std::string& path);
     /// Replaces `registry` contents with the file's (exact entity ids and component bytes).
     static RegistrySerialiseResult load(const std::string& path, Registry& registry);
+    /// Zeros struct padding and clears non-persisted fields so in-memory rows match the FECS wire form
+    /// (required for MSVC-stable byte comparisons after load / before scene save).
+    static void canonicalize_runtime_state(Registry& registry);
 
 private:
     friend class RegistryLoadQueue;

@@ -70,7 +70,7 @@ public:
 
     /// v3: `scene` + the full component state of `registry`. Deterministic: saving the result of
     /// `loadWithRegistry` again produces the same bytes.
-    static SerialiseResult saveWithRegistry(const Scene& scene, const ecs::Registry& registry,
+    static SerialiseResult saveWithRegistry(const Scene& scene, ecs::Registry& registry,
                                             const std::string& path,
                                             SceneDimension dimension = SceneDimension::World3D);
     /// Replaces `scene` and `registry` with the file's contents. v3: the registry is restored

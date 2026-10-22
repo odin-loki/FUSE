@@ -489,8 +489,9 @@ SerialiseResult SceneSerialiser::save(const Scene& scene, const std::string& pat
     return result;
 }
 
-SerialiseResult SceneSerialiser::saveWithRegistry(const Scene& scene, const ecs::Registry& registry,
+SerialiseResult SceneSerialiser::saveWithRegistry(const Scene& scene, ecs::Registry& registry,
                                                   const std::string& path, SceneDimension dimension) {
+    ecs::RegistrySerialiser::canonicalize_runtime_state(registry);
     std::vector<u8> ecsBytes;
     const SerialiseResult ecsResult = registryToBytes(registry, path, ecsBytes);
     if (ecsResult.status != SerialiseStatus::Ok) {
