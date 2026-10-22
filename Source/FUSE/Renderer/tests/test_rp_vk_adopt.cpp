@@ -36,6 +36,10 @@
 #include <string>
 #include <vector>
 
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
+
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
 #endif
@@ -84,6 +88,9 @@ int setenv(const char* name, const char* value, int overwrite) {
         return 0;
     }
     return _putenv_s(name, value) == 0 ? 0 : -1;
+}
+int unsetenv(const char* name) {
+    return _putenv_s(name, "") == 0 ? 0 : -1;
 }
 #endif
 
@@ -540,8 +547,8 @@ int run() {
         // duplicate injection, so only the explicit create-info path is used here.
         const char* gateLayers = std::getenv("VK_INSTANCE_LAYERS");
         const std::string savedGateLayers = gateLayers != nullptr ? gateLayers : std::string{};
-        if (!savedGateLayers.empty()) {
-            setenv("VK_INSTANCE_LAYERS", "", 1);
+        if (gateLayers != nullptr) {
+            unsetenv("VK_INSTANCE_LAYERS");
         }
         RawInstance raw;
         expect(createRawInstance(raw), "B: raw vkCreateInstance with validation + create-time messenger");
@@ -622,7 +629,7 @@ int run() {
         destroyRawInstance(raw);
         expect(raw.messages == 0u, "B: zero validation messages on the raw instance (" +
                                        std::to_string(raw.messages) + ": " + raw.lastMessage + ")");
-        if (!savedGateLayers.empty()) {
+        if (gateLayers != nullptr) {
             setenv("VK_INSTANCE_LAYERS", savedGateLayers.c_str(), 1);
         }
     }

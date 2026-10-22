@@ -56,14 +56,13 @@ jobs:
       - name: Run CTest
         env:
           VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
-          VK_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
+          # VK_ADD_LAYER_PATH only: VK_LAYER_PATH would hide FUSE test layers under build-fuse/.
           VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
         run: ctest --test-dir build-fuse --output-on-failure --timeout 2400
 
       - name: Run demo_hybrid_hud
         env:
           VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
-          VK_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
         run: ./build-fuse/Source/FUSE/Apps/HybridHud/demo_hybrid_hud
 
       - name: Run U8 parity demos
@@ -171,7 +170,6 @@ jobs:
       - name: Run CTest under ASan+UBSan
         env:
           VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
-          VK_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
           VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
         run: ctest --test-dir build/fuse-asan --output-on-failure -j1 --timeout 2400
 
@@ -211,7 +209,6 @@ jobs:
       - name: Run Qt gates under xvfb-run
         env:
           VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
-          VK_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
           FUSE_QT_IDLE_DEBUG_FRAMES: 2000
         run: |
           xvfb-run -a -s "-screen 0 1920x1080x24 -nolisten tcp" \
