@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # head_ref is PR-only; on push use ref so main runs share a group but are not cancelled (see cancel-in-progress).
-  group: ci-${{ github.actor }}-${{ github.head_ref || github.ref }}-${{ github.ref }}-fuse-linux
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # One umbrella workflow per ref; cancel superseded pushes so the host slot is not held by an old SHA.
+  group: ci-${{ github.actor }}-${{ github.head_ref || github.ref }}-fuse-linux
+  cancel-in-progress: true
 
 # Keep apt lists in sync with docs/building.md (Linux system packages).
 env:
@@ -27,7 +27,7 @@ jobs:
     # One heavy ubuntu-24.04 job at a time so push bursts (relight/cuda/windows-cross) do not starve matrix legs.
     concurrency:
       group: fuse-umbrella-linux-host-${{ github.head_ref || github.ref }}
-      cancel-in-progress: false
+      cancel-in-progress: true
     # ubuntu-latest -> 26.04 (Oct 2026); stay on 24.04 for Lavapipe/Qt gates parity with docs.
     runs-on: ubuntu-24.04
     steps:
@@ -123,7 +123,7 @@ jobs:
     name: FUSE -Werror (${{ matrix.config }})
     concurrency:
       group: fuse-umbrella-linux-host-${{ github.head_ref || github.ref }}
-      cancel-in-progress: false
+      cancel-in-progress: true
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
@@ -157,7 +157,7 @@ jobs:
     name: FUSE ASan+UBSan (all unit tests + smoke)
     concurrency:
       group: fuse-umbrella-linux-host-${{ github.head_ref || github.ref }}
-      cancel-in-progress: false
+      cancel-in-progress: true
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
