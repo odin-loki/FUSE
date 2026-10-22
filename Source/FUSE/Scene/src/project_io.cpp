@@ -101,7 +101,7 @@ SerialiseResult missingWorld(SceneDimension dimension) {
 
 } // namespace
 
-SerialiseResult saveWorldForProject(const Scene& scene, const ecs::Registry& registry,
+SerialiseResult saveWorldForProject(const Scene& scene, ecs::Registry& registry,
                                     const project::ProjectManifest& manifest, SceneDimension dimension) {
     if (defaultWorldRel(manifest, dimension).empty()) {
         return missingWorld(dimension);

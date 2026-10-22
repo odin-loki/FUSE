@@ -23,7 +23,7 @@ SerialiseResult loadForProject(Scene& scene, const project::LoadResult& projectL
 
 /// UNI-U7-WORLD-1: `.fuselevel` v3 (scene + full ECS registry) for the project's default world of
 /// `dimension` (`defaultWorld3D` / `defaultWorld2D`). Save creates the parent directory.
-SerialiseResult saveWorldForProject(const Scene& scene, const ecs::Registry& registry,
+SerialiseResult saveWorldForProject(const Scene& scene, ecs::Registry& registry,
                                     const project::ProjectManifest& manifest,
                                     SceneDimension dimension = SceneDimension::World3D);
 SerialiseResult loadWorldForProject(Scene& scene, ecs::Registry& registry, const project::ProjectManifest& manifest,
