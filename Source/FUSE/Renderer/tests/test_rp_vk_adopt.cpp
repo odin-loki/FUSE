@@ -535,6 +535,14 @@ int run() {
 
     // ---- B: a bootstrap-style raw instance + T0 device, adopted with ownership ----
     {
+        // fuse_vulkan_validation_gate injects VK_INSTANCE_LAYERS globally; path B also enables the
+        // layer in VkInstanceCreateInfo. Khronos validation warns (and fails this gate) on the
+        // duplicate injection, so only the explicit create-info path is used here.
+        const char* gateLayers = std::getenv("VK_INSTANCE_LAYERS");
+        const std::string savedGateLayers = gateLayers != nullptr ? gateLayers : std::string{};
+        if (!savedGateLayers.empty()) {
+            setenv("VK_INSTANCE_LAYERS", "", 1);
+        }
         RawInstance raw;
         expect(createRawInstance(raw), "B: raw vkCreateInstance with validation + create-time messenger");
         VkPhysicalDevice physical = VK_NULL_HANDLE;
@@ -614,6 +622,9 @@ int run() {
         destroyRawInstance(raw);
         expect(raw.messages == 0u, "B: zero validation messages on the raw instance (" +
                                        std::to_string(raw.messages) + ": " + raw.lastMessage + ")");
+        if (!savedGateLayers.empty()) {
+            setenv("VK_INSTANCE_LAYERS", savedGateLayers.c_str(), 1);
+        }
     }
     expectDispatch(vkloader::DispatchMode::Device, original->nativeHandle(), "B: adoptee (and its device) destroyed");
     runSmoke(*original, autoBackend, "B original after the adoptee");

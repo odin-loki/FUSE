@@ -123,3 +123,13 @@ endforeach()
 
 # E20 (MP-B6-QT-INSPECTOR, UNI-U6-INSP-1, UNI-U6-FILE-1, MP-B6-QT-SCENE-FILES).
 include(${CMAKE_CURRENT_SOURCE_DIR}/e20_qt_tests.cmake)
+
+# CI / local: one build target for every Qt gate executable (icon, E15, E20, xvfb suite).
+if(_fuse_qt_gate_available)
+    add_custom_target(fuse_editor_qt_gates_all)
+    add_dependencies(fuse_editor_qt_gates_all
+        fuse_editor_qt_gates
+        fuse_editor_qt_icon_gate
+        fuse_editor_qt_console_transport_gate
+        fuse_editor_qt_e20_gate)
+endif()

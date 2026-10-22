@@ -17,6 +17,9 @@ env:
   FUSE_APT_LINUX_BASE: ninja-build cmake g++-13
   FUSE_APT_LINUX_VULKAN: libvulkan-dev mesa-vulkan-drivers vulkan-tools vulkan-validationlayers glslang-tools spirv-tools
   FUSE_APT_LINUX_QT_EDITOR: qt6-base-dev libgl-dev xvfb xauth libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0
+  # Lavapipe ICD + Khronos validation manifests (apt vulkan-validationlayers).
+  FUSE_LINUX_VK_ICD: /usr/share/vulkan/icd.d/lvp_icd.json
+  FUSE_LINUX_VK_LAYER_MANIFEST_DIR: /usr/share/vulkan/explicit_layer.d
 
 jobs:
   fuse-core-linux:
@@ -52,12 +55,15 @@ jobs:
 
       - name: Run CTest
         env:
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
+          VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
+          VK_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
+          VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
         run: ctest --test-dir build-fuse --output-on-failure --timeout 2400
 
       - name: Run demo_hybrid_hud
         env:
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
+          VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
+          VK_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
         run: ./build-fuse/Source/FUSE/Apps/HybridHud/demo_hybrid_hud
 
       - name: Run U8 parity demos
@@ -164,8 +170,9 @@ jobs:
 
       - name: Run CTest under ASan+UBSan
         env:
-          # Lavapipe for the Vulkan tests (headless runner).
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
+          VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
+          VK_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
+          VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
         run: ctest --test-dir build/fuse-asan --output-on-failure -j1 --timeout 2400
 
       - name: Run fuse_runtime_smoke under ASan+UBSan
@@ -199,11 +206,12 @@ jobs:
             -DFUSE_BUILD_VULKAN=ON \
             -DFUSE_BUILD_EDITOR=ON
       - name: Build editor + Qt gates + lint
-        run: cmake --build build/editor-qt --target fuse_editor fuse_editor_qt_gates fuse_lint
+        run: cmake --build build/editor-qt --target fuse_editor fuse_editor_qt_gates_all fuse_lint
 
       - name: Run Qt gates under xvfb-run
         env:
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
+          VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
+          VK_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
           FUSE_QT_IDLE_DEBUG_FRAMES: 2000
         run: |
           xvfb-run -a -s "-screen 0 1920x1080x24 -nolisten tcp" \
