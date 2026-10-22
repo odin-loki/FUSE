@@ -145,13 +145,13 @@ void scrub_transform_runtime_state(Transform& transform) {
     const quat rotation = transform.rotation;
     const vec3 scale = transform.scale;
     const EntityID parent = transform.parent;
-    const bool dirty = transform.dirty;
-    transform = Transform{};
+    std::memset(&transform, 0, sizeof(Transform));
     transform.position = position;
     transform.rotation = rotation;
     transform.scale = scale;
     transform.parent = parent;
-    transform.dirty = dirty;
+    // FECS wire image: scrubbed matrices and dirty=true (edit-time dirty is editor state, not serialised).
+    transform.dirty = true;
     transform.local_to_world = mat4::identity();
     transform.world_to_local = mat4::identity();
 }
@@ -380,6 +380,8 @@ RegistrySerialiseResult RegistrySerialiser::parse(const std::string& path, Regis
                 if (!fixup_script_rows(column.data(), rows, true, error)) {
                     return fail(error);
                 }
+            } else if (is_transform_column(info)) {
+                fixup_transform_rows(column.data(), rows);
             }
         }
         entitiesSeen += rows;

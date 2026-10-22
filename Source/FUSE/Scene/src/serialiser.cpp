@@ -1,7 +1,5 @@
 #include <fuse/scene/serialiser.hpp>
 
-#include <fuse/ecs/systems/transform_system.hpp>
-
 #include <fuse/scene/scene_snapshot.hpp>
 
 #include <fuse/ecs/components/transform.hpp>
@@ -582,19 +580,6 @@ SerialiseResult SceneSerialiser::loadWithRegistry(const std::string& path, Scene
         registryFromSceneEntities(loaded, loadedRegistry);
         ecsEntities = loaded.entityCount();
         archetypes = ecsEntities > 0u ? 1u : 0u;
-    }
-
-    if (parsed.hasEcsBlock && parsed.dimension != SceneDimension::World2D) {
-        loadedRegistry.each<fuse::ecs::Transform>([](fuse::ecs::EntityID, fuse::ecs::Transform& transform) {
-            transform.dirty = true;
-        });
-        if (!fuse::ecs::TransformSystem::should_skip_hierarchy_update(loadedRegistry)) {
-            fuse::ecs::TransformSystem::update(loadedRegistry);
-            // Recompute clears `dirty`; serialised transforms are always stored dirty with scrubbed matrices.
-            loadedRegistry.each<fuse::ecs::Transform>([](fuse::ecs::EntityID, fuse::ecs::Transform& transform) {
-                transform.dirty = true;
-            });
-        }
     }
 
     scene = std::move(loaded);
