@@ -27,7 +27,7 @@ jobs:
     # One heavy ubuntu-24.04 job at a time so push bursts (relight/cuda/windows-cross) do not starve matrix legs.
     concurrency:
       group: fuse-umbrella-linux-host-${{ github.head_ref || github.ref }}
-      cancel-in-progress: true
+      cancel-in-progress: false
     # ubuntu-latest -> 26.04 (Oct 2026); stay on 24.04 for Lavapipe/Qt gates parity with docs.
     runs-on: ubuntu-24.04
     steps:
@@ -123,7 +123,7 @@ jobs:
     name: FUSE -Werror (${{ matrix.config }})
     concurrency:
       group: fuse-umbrella-linux-host-${{ github.head_ref || github.ref }}
-      cancel-in-progress: true
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
@@ -157,7 +157,7 @@ jobs:
     name: FUSE ASan+UBSan (all unit tests + smoke)
     concurrency:
       group: fuse-umbrella-linux-host-${{ github.head_ref || github.ref }}
-      cancel-in-progress: true
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
