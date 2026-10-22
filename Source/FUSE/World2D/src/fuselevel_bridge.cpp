@@ -87,7 +87,8 @@ FuselevelLoadResult populateWorld2DFromFuselevel(World2D& world, const std::stri
         if (info.hasEcsBlock && found != byIndex.end()) {
             const ecs::Transform& t = *registry.get<ecs::Transform>(found->second);
             object->setLocalTranslation({t.position.x, t.position.y, t.position.z});
-            object->setLocalRotation(math::Quat{t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w});
+            object->setLocalRotation(
+                math::Quat{t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w}.normalized());
             object->setLocalScale({t.scale.x, t.scale.y, t.scale.z});
             const ecs::Collider* collider = registry.get<ecs::Collider>(found->second);
             if (collider != nullptr && registry.has<ecs::RigidBody>(found->second)) {
