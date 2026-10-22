@@ -145,7 +145,7 @@ void scrub_transform_runtime_state(Transform& transform) {
     const quat rotation = transform.rotation;
     const vec3 scale = transform.scale;
     const EntityID parent = transform.parent;
-    std::memset(&transform, 0, sizeof(Transform));
+    transform = Transform{};
     transform.position = position;
     transform.rotation = rotation;
     transform.scale = scale;

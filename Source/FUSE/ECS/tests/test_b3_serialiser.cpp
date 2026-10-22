@@ -86,6 +86,23 @@ std::vector<EntityID> populate(Registry& reg) {
     return ids;
 }
 
+/// FECS wire image for Transform (matches RegistrySerialiser scrub on save/load).
+Transform wireTransform(const Transform& in) {
+    const vec3 position = in.position;
+    const quat rotation = in.rotation;
+    const vec3 scale = in.scale;
+    const EntityID parent = in.parent;
+    Transform out{};
+    out.position = position;
+    out.rotation = rotation;
+    out.scale = scale;
+    out.parent = parent;
+    out.dirty = true;
+    out.local_to_world = mat4::identity();
+    out.world_to_local = mat4::identity();
+    return out;
+}
+
 /// Per component name: concatenated raw column bytes, in (entity index) order.
 std::map<std::string, std::vector<unsigned char>> snapshot(Registry& reg, std::vector<EntityID>& aliveOut) {
     std::map<std::string, std::vector<unsigned char>> out;
@@ -102,7 +119,10 @@ std::map<std::string, std::vector<unsigned char>> snapshot(Registry& reg, std::v
                 continue;
             }
             aliveOut.push_back(id);
-            if (const auto* c = reg.get<Transform>(id)) grab("Transform", c, sizeof(*c));
+            if (const auto* c = reg.get<Transform>(id)) {
+                const Transform wire = wireTransform(*c);
+                grab("Transform", &wire, sizeof(wire));
+            }
             if (const auto* c = reg.get<Mesh>(id)) grab("Mesh", c, sizeof(*c));
             if (const auto* c = reg.get<RigidBody>(id)) grab("RigidBody", c, sizeof(*c));
             if (const auto* c = reg.get<SDFObject>(id)) grab("SDFObject", c, sizeof(*c));
