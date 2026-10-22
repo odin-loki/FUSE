@@ -23,6 +23,7 @@
 //
 // Exit 77 = skip (stub build, no ICD / validation layer / display).
 #include <fuse/core/init.hpp>
+#include <fuse/core/sanitizer.hpp>
 #include <fuse/core/track_b.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/frame/frame_ctx.hpp>
@@ -57,14 +58,15 @@
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
-#include <fuse/core/sanitizer.hpp>
 #endif
 
 // --- allocation counter (operator new, render thread only) ----------------------------------------------------------
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
 namespace {
 thread_local bool t_count = false;
 thread_local unsigned long long t_allocations = 0;
 } // namespace
+#endif
 
 #if defined(__GNUC__)
 #define FUSE_TEST_NOINLINE __attribute__((noinline))
@@ -596,6 +598,10 @@ void moveCube(Scene& s, u32 frame) {
 }
 
 int runZeroAlloc() {
+#if !FUSE_TEST_GLOBAL_NEW_HOOKS
+    std::printf("zero_alloc: skipped (global new hooks disabled under ASan)\n");
+    return 0;
+#endif
     if (const int rc = configureValidation(false); rc != 0) {
         return rc;
     }
