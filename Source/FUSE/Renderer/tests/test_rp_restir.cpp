@@ -1539,6 +1539,7 @@ int main(int argc, char** argv) {
     if (rc == kSkip) {
         return kSkip;
     }
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
     if (mode == "zero_alloc" && rc == 0) {
         Context counted;
         const int setupRc = setup(counted, false, buffer);
@@ -1547,6 +1548,7 @@ int main(int argc, char** argv) {
         }
         rc = runZeroAlloc(counted, true);
     }
+#endif
     std::printf("validation messages: %u\n", g_messages);
     if (rc != 0 || g_failures != 0 || g_messages != 0u) {
         std::fprintf(stderr, "FAIL: %d failure(s), %u validation message(s)\n", g_failures + rc, g_messages);

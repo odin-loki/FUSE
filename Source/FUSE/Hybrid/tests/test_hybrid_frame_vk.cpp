@@ -601,7 +601,7 @@ int runZeroAlloc() {
 #if !FUSE_TEST_GLOBAL_NEW_HOOKS
     std::printf("zero_alloc: skipped (global new hooks disabled under ASan)\n");
     return 0;
-#endif
+#else
     if (const int rc = configureValidation(false); rc != 0) {
         return rc;
     }
@@ -640,6 +640,7 @@ int runZeroAlloc() {
     runtime->shutdown();
     fuse::core::shutdown();
     return 0;
+#endif // FUSE_TEST_GLOBAL_NEW_HOOKS
 }
 
 int runSwapchain() {
