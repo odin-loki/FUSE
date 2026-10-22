@@ -121,6 +121,7 @@ jobs:
     # applies -Wall -Wextra -Werror to every Source/FUSE + Tools/FUSE target (cmake/FuseWarnings.cmake;
     # vendored vendor/ subprojects excluded).
     name: FUSE -Werror (${{ matrix.config }})
+    needs: [fuse-smoke-asan]
     concurrency:
       group: fuse-umbrella-linux-host-${{ github.head_ref || github.ref }}
       cancel-in-progress: false
@@ -155,6 +156,7 @@ jobs:
     # target (cmake/FuseSanitizers.cmake); UBSan is non-recoverable so any
     # finding fails its test. Third-party-only suppressions: cmake/sanitizers/.
     name: FUSE ASan+UBSan (all unit tests + smoke)
+    needs: [fuse-core-linux]
     concurrency:
       group: fuse-umbrella-linux-host-${{ github.head_ref || github.ref }}
       cancel-in-progress: false
