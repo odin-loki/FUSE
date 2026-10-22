@@ -1,6 +1,8 @@
 #include <fuse/ecs/registry_serialiser.hpp>
 
 #include <fuse/ecs/component_types.hpp>
+#include <fuse/ecs/components/collider.hpp>
+#include <fuse/ecs/components/light.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/script.hpp>
@@ -137,31 +139,8 @@ bool fixup_script_rows(std::byte* rows, usize count, bool loading, std::string& 
     return true;
 }
 
-bool is_script_column(const ComponentTypeInfo* info) {
-    return info->type == std::type_index(typeid(Script)) && info->size == sizeof(Script);
-}
-
-bool is_transform_column(const ComponentTypeInfo* info) {
-    return info->type == std::type_index(typeid(Transform)) && info->size == sizeof(Transform);
-}
-
-bool is_mesh_column(const ComponentTypeInfo* info) {
-    return info->type == std::type_index(typeid(Mesh)) && info->size == sizeof(Mesh);
-}
-
-bool is_rigidbody_column(const ComponentTypeInfo* info) {
-    return info->type == std::type_index(typeid(RigidBody)) && info->size == sizeof(RigidBody);
-}
-
-bool is_sdf_object_column(const ComponentTypeInfo* info) {
-    return info->type == std::type_index(typeid(SDFObject)) && info->size == sizeof(SDFObject);
-}
-
-bool is_tag_column(const ComponentTypeInfo* info) {
-    return (info->size == sizeof(TagStatic) && info->type == std::type_index(typeid(TagStatic))) ||
-           (info->size == sizeof(TagPlayer) && info->type == std::type_index(typeid(TagPlayer))) ||
-           (info->size == sizeof(TagDestroy) && info->type == std::type_index(typeid(TagDestroy))) ||
-           (info->size == sizeof(TagKinematic) && info->type == std::type_index(typeid(TagKinematic)));
+bool column_is(const ComponentTypeInfo* info, const char* name, usize size) {
+    return info != nullptr && info->size == size && std::strcmp(info->name, name) == 0;
 }
 
 template <typename T>
@@ -219,6 +198,52 @@ void scrub_sdf_object_runtime_state(SDFObject& sdf) {
     sdf = out;
 }
 
+void scrub_collider_runtime_state(Collider& collider) {
+    Collider out;
+    zero_init(out);
+    out.shape = collider.shape;
+    out.params = collider.params;
+    out.scalar = collider.scalar;
+    out.friction_static = collider.friction_static;
+    out.friction_dynamic = collider.friction_dynamic;
+    out.layer = collider.layer;
+    out.mask = collider.mask;
+    out.is_trigger = collider.is_trigger;
+    out.ccd = collider.ccd;
+    out.shape_asset = collider.shape_asset;
+    out.shape_piece = collider.shape_piece;
+    out.shape_ref = collider.shape_ref;
+    collider = out;
+}
+
+void scrub_directional_light_runtime_state(DirectionalLight& light) {
+    DirectionalLight out;
+    zero_init(out);
+    out.color = light.color;
+    out.intensity = light.intensity;
+    light = out;
+}
+
+void scrub_point_light_runtime_state(PointLight& light) {
+    PointLight out;
+    zero_init(out);
+    out.color = light.color;
+    out.intensity = light.intensity;
+    out.radius = light.radius;
+    light = out;
+}
+
+void scrub_spot_light_runtime_state(SpotLight& light) {
+    SpotLight out;
+    zero_init(out);
+    out.color = light.color;
+    out.intensity = light.intensity;
+    out.inner_cone_deg = light.inner_cone_deg;
+    out.outer_cone_deg = light.outer_cone_deg;
+    out.radius = light.radius;
+    light = out;
+}
+
 void fixup_mesh_rows(std::byte* rows, usize count) {
     for (usize i = 0; i < count; ++i) {
         Mesh mesh;
@@ -248,6 +273,42 @@ void fixup_sdf_object_rows(std::byte* rows, usize count) {
 
 void fixup_tag_rows(std::byte* rows, usize count, usize elementSize) {
     std::memset(rows, 0, count * elementSize);
+}
+
+void fixup_collider_rows(std::byte* rows, usize count) {
+    for (usize i = 0; i < count; ++i) {
+        Collider collider;
+        std::memcpy(&collider, rows + i * sizeof(Collider), sizeof(Collider));
+        scrub_collider_runtime_state(collider);
+        std::memcpy(rows + i * sizeof(Collider), &collider, sizeof(Collider));
+    }
+}
+
+void fixup_directional_light_rows(std::byte* rows, usize count) {
+    for (usize i = 0; i < count; ++i) {
+        DirectionalLight light;
+        std::memcpy(&light, rows + i * sizeof(DirectionalLight), sizeof(DirectionalLight));
+        scrub_directional_light_runtime_state(light);
+        std::memcpy(rows + i * sizeof(DirectionalLight), &light, sizeof(DirectionalLight));
+    }
+}
+
+void fixup_point_light_rows(std::byte* rows, usize count) {
+    for (usize i = 0; i < count; ++i) {
+        PointLight light;
+        std::memcpy(&light, rows + i * sizeof(PointLight), sizeof(PointLight));
+        scrub_point_light_runtime_state(light);
+        std::memcpy(rows + i * sizeof(PointLight), &light, sizeof(PointLight));
+    }
+}
+
+void fixup_spot_light_rows(std::byte* rows, usize count) {
+    for (usize i = 0; i < count; ++i) {
+        SpotLight light;
+        std::memcpy(&light, rows + i * sizeof(SpotLight), sizeof(SpotLight));
+        scrub_spot_light_runtime_state(light);
+        std::memcpy(rows + i * sizeof(SpotLight), &light, sizeof(SpotLight));
+    }
 }
 
 EntityID archetype_min_entity(const Archetype& archetype) {
@@ -286,22 +347,50 @@ void fixup_transform_rows(std::byte* rows, usize count) {
     }
 }
 
-void fixup_column_rows(const ComponentTypeInfo* info, std::byte* rows, usize count, bool loading, std::string& error) {
-    if (is_script_column(info)) {
-        if (!fixup_script_rows(rows, count, loading, error)) {
-            return;
-        }
-    } else if (is_transform_column(info)) {
-        fixup_transform_rows(rows, count);
-    } else if (is_mesh_column(info)) {
-        fixup_mesh_rows(rows, count);
-    } else if (is_rigidbody_column(info)) {
-        fixup_rigidbody_rows(rows, count);
-    } else if (is_sdf_object_column(info)) {
-        fixup_sdf_object_rows(rows, count);
-    } else if (is_tag_column(info)) {
-        fixup_tag_rows(rows, count, info->size);
+bool fixup_column_rows(const ComponentTypeInfo* info, std::byte* rows, usize count, bool loading, std::string& error) {
+    if (column_is(info, Script::component_name, sizeof(Script))) {
+        return fixup_script_rows(rows, count, loading, error);
     }
+    if (column_is(info, Transform::component_name, sizeof(Transform))) {
+        fixup_transform_rows(rows, count);
+        return true;
+    }
+    if (column_is(info, Mesh::component_name, sizeof(Mesh))) {
+        fixup_mesh_rows(rows, count);
+        return true;
+    }
+    if (column_is(info, RigidBody::component_name, sizeof(RigidBody))) {
+        fixup_rigidbody_rows(rows, count);
+        return true;
+    }
+    if (column_is(info, SDFObject::component_name, sizeof(SDFObject))) {
+        fixup_sdf_object_rows(rows, count);
+        return true;
+    }
+    if (column_is(info, Collider::component_name, sizeof(Collider))) {
+        fixup_collider_rows(rows, count);
+        return true;
+    }
+    if (column_is(info, DirectionalLight::component_name, sizeof(DirectionalLight))) {
+        fixup_directional_light_rows(rows, count);
+        return true;
+    }
+    if (column_is(info, PointLight::component_name, sizeof(PointLight))) {
+        fixup_point_light_rows(rows, count);
+        return true;
+    }
+    if (column_is(info, SpotLight::component_name, sizeof(SpotLight))) {
+        fixup_spot_light_rows(rows, count);
+        return true;
+    }
+    if (column_is(info, TagStatic::component_name, sizeof(TagStatic)) ||
+        column_is(info, TagPlayer::component_name, sizeof(TagPlayer)) ||
+        column_is(info, TagDestroy::component_name, sizeof(TagDestroy)) ||
+        column_is(info, TagKinematic::component_name, sizeof(TagKinematic))) {
+        fixup_tag_rows(rows, count, info->size);
+        return true;
+    }
+    return true;
 }
 
 RegistrySerialiseResult fail(std::string message) {
@@ -419,7 +508,9 @@ RegistrySerialiseResult RegistrySerialiser::save(const Registry& registry, const
             }
             {
                 std::string ignored;
-                fixup_column_rows(info, sortedColumn.data(), rowCount, false, ignored);
+                if (!fixup_column_rows(info, sortedColumn.data(), rowCount, false, ignored)) {
+                    return fail(ignored.empty() ? std::string("column fixup failed for ") + info->name : ignored);
+                }
             }
             w.bytes(sortedColumn.data(), sortedColumn.size());
         }
@@ -521,9 +612,8 @@ RegistrySerialiseResult RegistrySerialiser::parse(const std::string& path, Regis
             }
             {
                 std::string error;
-                fixup_column_rows(info, column.data(), rows, true, error);
-                if (!error.empty()) {
-                    return fail(error);
+                if (!fixup_column_rows(info, column.data(), rows, true, error)) {
+                    return fail(error.empty() ? std::string("column fixup failed for ") + info->name : error);
                 }
             }
         }
