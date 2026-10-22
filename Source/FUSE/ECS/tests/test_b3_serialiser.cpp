@@ -10,6 +10,7 @@
 #include <fuse/ecs/registry_serialiser.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -222,7 +223,23 @@ void testRoundTrip10k() {
     expectTrue(aliveAfter == aliveBefore, "identical entity ids (index + generation)");
     const std::string resaved = tempPath("fuse_b3_scene_roundtrip_resaved.fecs");
     expectTrue(RegistrySerialiser::save(loaded, resaved).ok, "re-save after load");
-    expectTrue(readBytes(path) == readBytes(resaved), "byte-identical FECS on re-save after load");
+    const std::vector<char> firstBytes = readBytes(path);
+    const std::vector<char> secondBytes = readBytes(resaved);
+    if (firstBytes != secondBytes) {
+        const std::size_t limit = std::min(firstBytes.size(), secondBytes.size());
+        for (std::size_t i = 0; i < limit; ++i) {
+            if (firstBytes[i] != secondBytes[i]) {
+                std::fprintf(stderr, "  FECS byte mismatch at offset %zu: 0x%02x vs 0x%02x (sizes %zu vs %zu)\n", i,
+                             static_cast<unsigned char>(firstBytes[i]), static_cast<unsigned char>(secondBytes[i]),
+                             firstBytes.size(), secondBytes.size());
+                break;
+            }
+        }
+        if (firstBytes.size() != secondBytes.size()) {
+            std::fprintf(stderr, "  FECS file sizes differ: %zu vs %zu\n", firstBytes.size(), secondBytes.size());
+        }
+    }
+    expectTrue(firstBytes == secondBytes, "byte-identical FECS on re-save after load");
     std::filesystem::remove(resaved);
 
     bool deadStayDead = true;

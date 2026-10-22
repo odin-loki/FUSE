@@ -5,6 +5,7 @@
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/script.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
+#include <fuse/ecs/components/tags.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
@@ -156,8 +157,22 @@ bool is_sdf_object_column(const ComponentTypeInfo* info) {
     return info->type == std::type_index(typeid(SDFObject)) && info->size == sizeof(SDFObject);
 }
 
+bool is_tag_column(const ComponentTypeInfo* info) {
+    return (info->size == sizeof(TagStatic) && info->type == std::type_index(typeid(TagStatic))) ||
+           (info->size == sizeof(TagPlayer) && info->type == std::type_index(typeid(TagPlayer))) ||
+           (info->size == sizeof(TagDestroy) && info->type == std::type_index(typeid(TagDestroy))) ||
+           (info->size == sizeof(TagKinematic) && info->type == std::type_index(typeid(TagKinematic)));
+}
+
+template <typename T>
+void zero_init(T& value) {
+    alignas(T) std::byte cleared[sizeof(T)]{};
+    std::memcpy(&value, cleared, sizeof(T));
+}
+
 void scrub_mesh_runtime_state(Mesh& mesh) {
-    Mesh out{};
+    Mesh out;
+    zero_init(out);
     out.vertex_buffer = mesh.vertex_buffer;
     out.index_buffer = mesh.index_buffer;
     out.index_count = mesh.index_count;
@@ -171,7 +186,8 @@ void scrub_mesh_runtime_state(Mesh& mesh) {
 }
 
 void scrub_rigidbody_runtime_state(RigidBody& body) {
-    RigidBody out{};
+    RigidBody out;
+    zero_init(out);
     out.velocity = body.velocity;
     out.angular_velocity = body.angular_velocity;
     out.force_accumulator = body.force_accumulator;
@@ -188,7 +204,8 @@ void scrub_rigidbody_runtime_state(RigidBody& body) {
 }
 
 void scrub_sdf_object_runtime_state(SDFObject& sdf) {
-    SDFObject out{};
+    SDFObject out;
+    zero_init(out);
     out.type = sdf.type;
     out.op = sdf.op;
     out.params = sdf.params;
@@ -229,6 +246,10 @@ void fixup_sdf_object_rows(std::byte* rows, usize count) {
     }
 }
 
+void fixup_tag_rows(std::byte* rows, usize count, usize elementSize) {
+    std::memset(rows, 0, count * elementSize);
+}
+
 EntityID archetype_min_entity(const Archetype& archetype) {
     EntityID best{std::numeric_limits<u32>::max(), std::numeric_limits<u32>::max()};
     for (u32 row = 0; row < archetype.count(); ++row) {
@@ -246,7 +267,7 @@ void scrub_transform_runtime_state(Transform& transform) {
     const vec3 scale = transform.scale;
     const EntityID parent = transform.parent;
     const bool dirty = transform.dirty;
-    transform = Transform{};
+    zero_init(transform);
     transform.position = position;
     transform.rotation = rotation;
     transform.scale = scale;
@@ -262,6 +283,24 @@ void fixup_transform_rows(std::byte* rows, usize count) {
         std::memcpy(&transform, rows + i * sizeof(Transform), sizeof(Transform));
         scrub_transform_runtime_state(transform);
         std::memcpy(rows + i * sizeof(Transform), &transform, sizeof(Transform));
+    }
+}
+
+void fixup_column_rows(const ComponentTypeInfo* info, std::byte* rows, usize count, bool loading, std::string& error) {
+    if (is_script_column(info)) {
+        if (!fixup_script_rows(rows, count, loading, error)) {
+            return;
+        }
+    } else if (is_transform_column(info)) {
+        fixup_transform_rows(rows, count);
+    } else if (is_mesh_column(info)) {
+        fixup_mesh_rows(rows, count);
+    } else if (is_rigidbody_column(info)) {
+        fixup_rigidbody_rows(rows, count);
+    } else if (is_sdf_object_column(info)) {
+        fixup_sdf_object_rows(rows, count);
+    } else if (is_tag_column(info)) {
+        fixup_tag_rows(rows, count, info->size);
     }
 }
 
@@ -298,7 +337,7 @@ RegistrySerialiseResult RegistrySerialiser::save(const Registry& registry, const
                   [](const ComponentTypeInfo* a, const ComponentTypeInfo* b) { return std::strcmp(a->name, b->name) < 0; });
         blocks.push_back(std::move(block));
     }
-    std::sort(blocks.begin(), blocks.end(), [](const Block& a, const Block& b) {
+    std::stable_sort(blocks.begin(), blocks.end(), [](const Block& a, const Block& b) {
         if (a.components.size() != b.components.size()) {
             return a.components.size() < b.components.size();
         }
@@ -350,7 +389,7 @@ RegistrySerialiseResult RegistrySerialiser::save(const Registry& registry, const
         for (u32 row = 0; row < rowCount; ++row) {
             rowOrder[row] = row;
         }
-        std::sort(rowOrder.begin(), rowOrder.end(), [&](u32 a, u32 b) {
+        std::stable_sort(rowOrder.begin(), rowOrder.end(), [&](u32 a, u32 b) {
             const EntityID ea = archetype.entities[a];
             const EntityID eb = archetype.entities[b];
             if (ea.index != eb.index) {
@@ -378,17 +417,9 @@ RegistrySerialiseResult RegistrySerialiser::save(const Registry& registry, const
                 std::memcpy(sortedColumn.data() + outRow * rowBytes, column->storage.data() + srcRow * rowBytes,
                             rowBytes);
             }
-            if (is_script_column(info)) {
+            {
                 std::string ignored;
-                (void)fixup_script_rows(sortedColumn.data(), rowCount, false, ignored);
-            } else if (is_transform_column(info)) {
-                fixup_transform_rows(sortedColumn.data(), rowCount);
-            } else if (is_mesh_column(info)) {
-                fixup_mesh_rows(sortedColumn.data(), rowCount);
-            } else if (is_rigidbody_column(info)) {
-                fixup_rigidbody_rows(sortedColumn.data(), rowCount);
-            } else if (is_sdf_object_column(info)) {
-                fixup_sdf_object_rows(sortedColumn.data(), rowCount);
+                fixup_column_rows(info, sortedColumn.data(), rowCount, false, ignored);
             }
             w.bytes(sortedColumn.data(), sortedColumn.size());
         }
@@ -488,19 +519,12 @@ RegistrySerialiseResult RegistrySerialiser::parse(const std::string& path, Regis
             if (!r.bytes(column.data(), column.size())) {
                 return fail(std::string("truncated column ") + info->name);
             }
-            if (is_script_column(info)) {
+            {
                 std::string error;
-                if (!fixup_script_rows(column.data(), rows, true, error)) {
+                fixup_column_rows(info, column.data(), rows, true, error);
+                if (!error.empty()) {
                     return fail(error);
                 }
-            } else if (is_transform_column(info)) {
-                fixup_transform_rows(column.data(), rows);
-            } else if (is_mesh_column(info)) {
-                fixup_mesh_rows(column.data(), rows);
-            } else if (is_rigidbody_column(info)) {
-                fixup_rigidbody_rows(column.data(), rows);
-            } else if (is_sdf_object_column(info)) {
-                fixup_sdf_object_rows(column.data(), rows);
             }
         }
         entitiesSeen += rows;
@@ -545,7 +569,8 @@ RegistrySerialiseResult RegistrySerialiser::apply(const RegistryImage& image, Re
             types.push_back(info->type);
         }
         std::sort(types.begin(), types.end());
-        const u32 archetypeIndex = registry.find_or_create_archetype(types);
+        // Registry::init() already owns the canonical empty archetype at index 0 (ArchetypeID{0}).
+        const u32 archetypeIndex = types.empty() ? 0u : registry.find_or_create_archetype(types);
         Archetype& archetype = registry.m_archetypes[archetypeIndex];
         const u32 firstRow = static_cast<u32>(archetype.count());
         for (usize c = 0; c < block.components.size(); ++c) {
