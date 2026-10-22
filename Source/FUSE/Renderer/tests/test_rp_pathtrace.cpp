@@ -27,11 +27,14 @@
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, device below T2, no kernel built).
 #include "test_rp_pathtrace_scene.hpp"
+#include <fuse/core/sanitizer.hpp>
 
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
 namespace {
 thread_local bool t_count = false;
 thread_local unsigned long long t_allocations = 0;
 } // namespace
+#endif
 
 #if defined(__GNUC__)
 #define FUSE_TEST_REPLACEMENT_NOINLINE __attribute__((noinline))
@@ -103,7 +106,6 @@ int main() {
 #include <vector>
 
 #include <vulkan/vulkan.h>
-#include <fuse/core/sanitizer.hpp>
 
 namespace {
 
@@ -475,9 +477,13 @@ bool beginPtFrames(Context& ctx, Rig& rig, const Frame& f, bool count) {
         if (!rig.built[k]) {
             continue;
         }
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
         t_count = count;
+#endif
         ok = rig.pt[k].beginFrame(ctx.serial, desc) && ok;
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
         t_count = false;
+#endif
     }
     return ok;
 }
@@ -1087,8 +1093,10 @@ int runDenoise(Context& ctx) {
 }
 
 // --- zero allocations -------------------------------------------------------------------------------------
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
 void hookBegin(const rg::PassContext&, const char* name, void*) { t_count = std::strncmp(name, "pathtrace.", 10) == 0; }
 void hookEnd(const rg::PassContext&, const char*, void*) { t_count = false; }
+#endif
 
 int runZeroAlloc(Context& ctx, bool countAllocations) {
     constexpr u32 kW = 24;
@@ -1110,9 +1118,11 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
     constexpr u32 kWarmup = 16;
     constexpr u32 kTotal = 80;
     unsigned long long begin = 0, callbacks = 0, build = 0;
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
     if (countAllocations) {
         ctx.executor->setPassHooks(rg::PassHooks{&hookBegin, &hookEnd, nullptr});
     }
+#endif
     for (u32 frame = 0; frame < kTotal; ++frame) {
         const bool measure = countAllocations && frame >= kWarmup;
         beginSceneFrame(ctx, rig);
@@ -1121,17 +1131,27 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
         ctx.upload.flush();
         bool ok = rig.tree.beginFrame(ctx.serial, rig.world.tree);
         f.frameIndex = frame;
+        unsigned long long inBegin = 0;
+        unsigned long long graphBuild = 0;
+        unsigned long long inCallbacks = 0;
+        rg::ExecuteResult result{};
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
         t_allocations = 0;
         ok = beginPtFrames(ctx, rig, f, measure) && ok;
-        const unsigned long long inBegin = t_allocations;
+        inBegin = t_allocations;
         t_allocations = 0;
         t_count = measure;
         buildGraph(ctx, rig, graph, f);
         t_count = false;
-        const unsigned long long graphBuild = t_allocations;
+        graphBuild = t_allocations;
         t_allocations = 0;
-        const rg::ExecuteResult result = ctx.executor->execute(graph);
-        const unsigned long long inCallbacks = t_allocations;
+        result = ctx.executor->execute(graph);
+        inCallbacks = t_allocations;
+#else
+        ok = beginPtFrames(ctx, rig, f, false) && ok;
+        buildGraph(ctx, rig, graph, f);
+        result = ctx.executor->execute(graph);
+#endif
         const bool waited = ctx.executor->waitIdle() && ctx.upload.waitAll();
         collect(ctx, rig);
         ok = ok && result.ok && waited;

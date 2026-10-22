@@ -103,6 +103,52 @@ Transform wireTransform(const Transform& in) {
     return out;
 }
 
+Mesh wireMesh(const Mesh& in) {
+    Mesh out{};
+    out.vertex_buffer = in.vertex_buffer;
+    out.index_buffer = in.index_buffer;
+    out.index_count = in.index_count;
+    out.material_id = in.material_id;
+    out.aabb_min = in.aabb_min;
+    out.aabb_max = in.aabb_max;
+    out.cast_shadow = in.cast_shadow;
+    out.receive_shadow = in.receive_shadow;
+    out.visible = in.visible;
+    return out;
+}
+
+RigidBody wireRigidBody(const RigidBody& in) {
+    RigidBody out{};
+    out.velocity = in.velocity;
+    out.angular_velocity = in.angular_velocity;
+    out.force_accumulator = in.force_accumulator;
+    out.torque_accumulator = in.torque_accumulator;
+    out.mass = in.mass;
+    out.inv_mass = in.inv_mass;
+    out.restitution = in.restitution;
+    out.linear_damping = in.linear_damping;
+    out.angular_damping = in.angular_damping;
+    out.is_static = in.is_static;
+    out.is_sleeping = in.is_sleeping;
+    out.sleep_timer = in.sleep_timer;
+    return out;
+}
+
+SDFObject wireSdfObject(const SDFObject& in) {
+    SDFObject out{};
+    out.type = in.type;
+    out.op = in.op;
+    out.params = in.params;
+    out.material_id = in.material_id;
+    out.blend_alpha = in.blend_alpha;
+    out.casts_shadow = in.casts_shadow;
+    out.visible = in.visible;
+    out.blend_radius = in.blend_radius;
+    out.roughness = in.roughness;
+    out.csg_order = in.csg_order;
+    return out;
+}
+
 /// Per component name: concatenated raw column bytes, in (entity index) order.
 std::map<std::string, std::vector<unsigned char>> snapshot(Registry& reg, std::vector<EntityID>& aliveOut) {
     std::map<std::string, std::vector<unsigned char>> out;
@@ -123,9 +169,18 @@ std::map<std::string, std::vector<unsigned char>> snapshot(Registry& reg, std::v
                 const Transform wire = wireTransform(*c);
                 grab("Transform", &wire, sizeof(wire));
             }
-            if (const auto* c = reg.get<Mesh>(id)) grab("Mesh", c, sizeof(*c));
-            if (const auto* c = reg.get<RigidBody>(id)) grab("RigidBody", c, sizeof(*c));
-            if (const auto* c = reg.get<SDFObject>(id)) grab("SDFObject", c, sizeof(*c));
+            if (const auto* c = reg.get<Mesh>(id)) {
+                const Mesh wire = wireMesh(*c);
+                grab("Mesh", &wire, sizeof(wire));
+            }
+            if (const auto* c = reg.get<RigidBody>(id)) {
+                const RigidBody wire = wireRigidBody(*c);
+                grab("RigidBody", &wire, sizeof(wire));
+            }
+            if (const auto* c = reg.get<SDFObject>(id)) {
+                const SDFObject wire = wireSdfObject(*c);
+                grab("SDFObject", &wire, sizeof(wire));
+            }
             if (reg.has<TagStatic>(id)) grab("TagStatic", &index, sizeof(index));
         }
     }
