@@ -37,6 +37,7 @@
 #include <new>
 #include <string>
 #include <vector>
+#include <fuse/core/sanitizer.hpp>
 
 namespace {
 thread_local bool t_count = false;
@@ -49,6 +50,7 @@ thread_local unsigned long long t_allocations = 0;
 #define FUSE_TEST_REPLACEMENT_NOINLINE
 #endif
 
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
 FUSE_TEST_REPLACEMENT_NOINLINE void* operator new(std::size_t size) {
     if (t_count) {
         ++t_allocations;
@@ -64,6 +66,7 @@ FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p) noexcept { std::fre
 FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* p) noexcept { std::free(p); }
 FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
+#endif // FUSE_TEST_GLOBAL_NEW_HOOKS
 
 namespace {
 

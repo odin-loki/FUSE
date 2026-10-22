@@ -312,9 +312,8 @@ new Scene(ArchLevel) {
             expectTrue(nearly(light.radius, 12.f) && nearly(light.intensity, 3.f) && nearly(light.color.x, 1.f) &&
                            nearly(light.color.y, 0.f),
                        "PointLight radius / brightness / colour");
-            // Torque (1, 2, 3) -> FUSE (1, 3, -2); parent group is identity.
-            expectTrue(nearly(t.local_to_world.data[12], 1.f) && nearly(t.local_to_world.data[13], 3.f) &&
-                           nearly(t.local_to_world.data[14], -2.f),
+            // Torque (1, 2, 3) -> FUSE (1, 3, -2); matrices are rebuilt by TransformSystem at runtime.
+            expectTrue(nearly(t.position.x, 1.f) && nearly(t.position.y, 3.f) && nearly(t.position.z, -2.f),
                        "Z-up -> Y-up position");
         });
     registry.each<fuse::ecs::SpotLight, fuse::ecs::Transform>(

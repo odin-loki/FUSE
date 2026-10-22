@@ -50,6 +50,8 @@
 #include <string>
 #include <vector>
 
+#include <fuse/core/sanitizer.hpp>
+
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
 #endif
@@ -66,6 +68,7 @@ thread_local unsigned long long t_allocations = 0;
 #define FUSE_TEST_REPLACEMENT_NOINLINE
 #endif
 
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
 FUSE_TEST_REPLACEMENT_NOINLINE void* operator new(std::size_t size) {
     if (t_count) {
         ++t_allocations;
@@ -81,6 +84,7 @@ FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p) noexcept { std::fre
 FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* p) noexcept { std::free(p); }
 FUSE_TEST_REPLACEMENT_NOINLINE void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 FUSE_TEST_REPLACEMENT_NOINLINE void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
+#endif // FUSE_TEST_GLOBAL_NEW_HOOKS
 
 namespace {
 constexpr int kSkip = 77;
@@ -1046,6 +1050,7 @@ int main(int argc, char** argv) {
             return 2;
         }
     }
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
     if (mode == "zero_alloc" && rc == 0) {
         Context counted;
         const int setupRc = setup(counted, backend == "buffer", false);
@@ -1054,6 +1059,7 @@ int main(int argc, char** argv) {
         }
         rc = runZeroAlloc(counted, true);
     }
+#endif
     std::printf("validation messages: %u\n", g_messages);
     if (rc != 0 || g_failures != 0 || g_messages != 0u) {
         std::fprintf(stderr, "FAIL: %d failure(s), %u validation message(s)\n", g_failures + rc, g_messages);

@@ -95,6 +95,7 @@ int posix_memalign(void** out, std::size_t alignment, std::size_t size) noexcept
 }
 }
 #else
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
 void* operator new(std::size_t size) {
     noteAllocation();
     if (void* p = std::malloc(size == 0u ? 1u : size)) {
@@ -117,6 +118,7 @@ void operator delete(void* p, std::size_t) noexcept {
 void operator delete[](void* p, std::size_t) noexcept {
     std::free(p);
 }
+#endif // FUSE_TEST_GLOBAL_NEW_HOOKS
 #endif
 
 namespace {

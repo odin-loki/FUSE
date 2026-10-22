@@ -35,6 +35,10 @@
 
 #define FUSE_SANITIZER_BUILD (FUSE_SANITIZE_ADDRESS || FUSE_SANITIZE_UNDEFINED)
 
+// Zero-alloc / steady-state tests replace global operator new/delete with malloc/free.
+// Under ASan that mismatches Khronos validation (operator new vs free) and breaks the suite.
+#define FUSE_TEST_GLOBAL_NEW_HOOKS (FUSE_SANITIZE_ADDRESS == 0)
+
 // TSan (FUSE_CORE_ENABLE_TSAN) is not part of FUSE_SANITIZER_BUILD, but it
 // still slows code down far too much for wall-clock budgets.
 #if !defined(FUSE_SANITIZE_THREAD)

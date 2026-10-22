@@ -46,6 +46,9 @@ std::atomic<std::uint64_t> g_allocs{0};
 #define RL_PT_NOINLINE
 #endif
 
+#include <fuse/core/sanitizer.hpp>
+
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
 RL_PT_NOINLINE void* operator new(std::size_t n) {
     if (g_countAllocs.load(std::memory_order_relaxed)) {
         g_allocs.fetch_add(1, std::memory_order_relaxed);
@@ -60,6 +63,7 @@ RL_PT_NOINLINE void operator delete(void* p) noexcept { std::free(p); }
 RL_PT_NOINLINE void operator delete[](void* p) noexcept { std::free(p); }
 RL_PT_NOINLINE void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 RL_PT_NOINLINE void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
+#endif // FUSE_TEST_GLOBAL_NEW_HOOKS
 
 namespace {
 
