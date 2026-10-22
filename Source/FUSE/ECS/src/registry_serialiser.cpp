@@ -141,6 +141,17 @@ bool is_transform_column(const ComponentTypeInfo* info) {
 }
 
 void scrub_transform_runtime_state(Transform& transform) {
+    const vec3 position = transform.position;
+    const quat rotation = transform.rotation;
+    const vec3 scale = transform.scale;
+    const EntityID parent = transform.parent;
+    const bool dirty = transform.dirty;
+    transform = Transform{};
+    transform.position = position;
+    transform.rotation = rotation;
+    transform.scale = scale;
+    transform.parent = parent;
+    transform.dirty = dirty;
     transform.local_to_world = mat4::identity();
     transform.world_to_local = mat4::identity();
 }
