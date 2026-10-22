@@ -92,12 +92,13 @@ Transform wireTransform(const Transform& in) {
     const quat rotation = in.rotation;
     const vec3 scale = in.scale;
     const EntityID parent = in.parent;
+    const bool dirty = in.dirty;
     Transform out{};
     out.position = position;
     out.rotation = rotation;
     out.scale = scale;
     out.parent = parent;
-    out.dirty = true;
+    out.dirty = dirty;
     out.local_to_world = mat4::identity();
     out.world_to_local = mat4::identity();
     return out;
