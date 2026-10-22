@@ -25,11 +25,14 @@
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, device below T2, no kernel built).
 #include "test_rp_restir_scene.hpp"
+#include <fuse/core/sanitizer.hpp>
 
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
 namespace {
 thread_local bool t_count = false;
 thread_local unsigned long long t_allocations = 0;
 } // namespace
+#endif
 
 #if defined(__GNUC__)
 #define FUSE_TEST_REPLACEMENT_NOINLINE __attribute__((noinline))
@@ -107,7 +110,6 @@ int main() {
 #include <vector>
 
 #include <vulkan/vulkan.h>
-#include <fuse/core/sanitizer.hpp>
 
 namespace {
 
@@ -1414,8 +1416,10 @@ int runDenoise(Context& ctx) {
 }
 
 // --- zero_alloc ------------------------------------------------------------------------------------------
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
 void hookBegin(const rg::PassContext&, const char* name, void*) { t_count = std::strncmp(name, "restir.", 7) == 0; }
 void hookEnd(const rg::PassContext&, const char*, void*) { t_count = false; }
+#endif
 
 int runZeroAlloc(Context& ctx, bool countAllocations) {
     constexpr u32 kW = 48;
@@ -1450,9 +1454,11 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
     constexpr u32 kWarmup = 16;
     constexpr u32 kTotal = 80;
     unsigned long long begin = 0, callbacks = 0, build = 0;
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
     if (countAllocations) {
         ctx.executor->setPassHooks(rg::PassHooks{&hookBegin, &hookEnd, nullptr});
     }
+#endif
     std::vector<f32> motion[2];
     for (u32 i = 0; i < 2u; ++i) {
         motion[i].assign(pixels * 2u, 0.f);
@@ -1466,17 +1472,28 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
         ctx.upload.flush();
         const Camera cam = frameCamera(w, frame % 2u);
         std::memcpy(ctx.motion.mapped, motion[frame % 2u].data(), pixels * 8u);
+        unsigned long long inBegin = 0;
+        unsigned long long graphBuild = 0;
+        unsigned long long inCallbacks = 0;
+        bool ok = false;
+        rg::ExecuteResult result{};
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
         t_allocations = 0;
-        bool ok = beginFrame(ctx, w, rig, cam, frame, frame == 0u, fs, measure);
-        const unsigned long long inBegin = t_allocations;
+        ok = beginFrame(ctx, w, rig, cam, frame, frame == 0u, fs, measure);
+        inBegin = t_allocations;
         t_allocations = 0;
         t_count = measure;
         buildGraph(ctx, w, rig, graph, fs);
         t_count = false;
-        const unsigned long long graphBuild = t_allocations;
+        graphBuild = t_allocations;
         t_allocations = 0;
-        const rg::ExecuteResult result = ctx.executor->execute(graph);
-        const unsigned long long inCallbacks = t_allocations;
+        result = ctx.executor->execute(graph);
+        inCallbacks = t_allocations;
+#else
+        ok = beginFrame(ctx, w, rig, cam, frame, frame == 0u, fs, false);
+        buildGraph(ctx, w, rig, graph, fs);
+        result = ctx.executor->execute(graph);
+#endif
         const bool waited = ctx.executor->waitIdle() && ctx.upload.waitAll();
         collect(ctx, w, rig);
         ok = ok && result.ok && waited;

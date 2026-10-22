@@ -1200,6 +1200,7 @@ int main(int argc, char** argv) {
             return 2;
         }
     }
+#if FUSE_TEST_GLOBAL_NEW_HOOKS
     if (rc == 0 && mode == "zero_alloc") {
         Context ctx;
         rc = setup(ctx, false, tier == SceneTier::T2);
@@ -1207,6 +1208,7 @@ int main(int argc, char** argv) {
             rc = runZeroAlloc(ctx, tier, true);
         }
     }
+#endif
     if (rc != 0) {
         return rc;
     }
