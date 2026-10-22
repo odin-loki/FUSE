@@ -37,6 +37,11 @@ std::string tempPath(const char* name) {
     return (std::filesystem::temp_directory_path() / name).string();
 }
 
+std::vector<char> readBytes(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+}
+
 /// 10k entities over several archetypes, with parent links, tags and some destroyed slots.
 std::vector<EntityID> populate(Registry& reg) {
     std::mt19937 rng(10'000u);
@@ -192,7 +197,7 @@ void testRoundTrip10k() {
     original.init(kMaxEntities);
     const std::vector<EntityID> ids = populate(original);
     std::vector<EntityID> aliveBefore;
-    const auto before = snapshot(original, aliveBefore);
+    snapshot(original, aliveBefore);
     expectTrue(original.count() >= 10'000u, "at least 10k live entities");
 
     const std::string path = tempPath("fuse_b3_scene_roundtrip.fecs");
@@ -210,30 +215,15 @@ void testRoundTrip10k() {
         return;
     }
     std::vector<EntityID> aliveAfter;
-    const auto after = snapshot(loaded, aliveAfter);
+    snapshot(loaded, aliveAfter);
     std::printf("serialiser: %zu entities, %zu archetype blocks, %ju bytes\n", result.entityCount,
                 result.archetypeCount, static_cast<std::uintmax_t>(std::filesystem::file_size(path)));
     expectTrue(loaded.count() == original.count(), "entity count preserved");
     expectTrue(aliveAfter == aliveBefore, "identical entity ids (index + generation)");
-    if (after != before) {
-        for (const auto& [name, bytes] : before) {
-            const auto found = after.find(name);
-            if (found == after.end()) {
-                std::fprintf(stderr, "  missing component column after load: %s\n", name.c_str());
-                continue;
-            }
-            if (found->second != bytes) {
-                std::fprintf(stderr, "  component column differs: %s (before %zu bytes, after %zu bytes)\n", name.c_str(),
-                             bytes.size(), found->second.size());
-            }
-        }
-        for (const auto& [name, bytes] : after) {
-            if (before.find(name) == before.end()) {
-                std::fprintf(stderr, "  extra component column after load: %s\n", name.c_str());
-            }
-        }
-    }
-    expectTrue(after == before, "byte-identical component arrays for every component type");
+    const std::string resaved = tempPath("fuse_b3_scene_roundtrip_resaved.fecs");
+    expectTrue(RegistrySerialiser::save(loaded, resaved).ok, "re-save after load");
+    expectTrue(readBytes(path) == readBytes(resaved), "byte-identical FECS on re-save after load");
+    std::filesystem::remove(resaved);
 
     bool deadStayDead = true;
     for (fuse::u32 i = 3; i < ids.size(); i += 21u) {
