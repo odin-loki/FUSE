@@ -198,6 +198,8 @@ FuselevelSaveResult saveWorld2DToFuselevel(const World2D& world, const std::stri
             if (frame.parentIndex >= 0) {
                 t.parent = ids[static_cast<usize>(frame.parentIndex)];
             }
+            // FECS wire image: runtime matrices are scrubbed on save; dirty is persisted as-is.
+            t.dirty = false;
             registry.add<ecs::Transform>(e, t);
             if (sprite->physicsEnabled()) {
                 ecs::Collider collider{};
@@ -244,6 +246,7 @@ FuselevelSaveResult saveWorld2DToFuselevel(const World2D& world, const std::stri
         if (owner >= 0) {
             wireTransform.parent = ids[static_cast<usize>(owner)];
         }
+        wireTransform.dirty = false;
         registry.add<ecs::Transform>(wireEntity, wireTransform);
     }
 
