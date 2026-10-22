@@ -479,6 +479,8 @@ bool beginPtFrames(Context& ctx, Rig& rig, const Frame& f, bool count) {
         }
 #if FUSE_TEST_GLOBAL_NEW_HOOKS
         t_count = count;
+#else
+        (void)count;
 #endif
         ok = rig.pt[k].beginFrame(ctx.serial, desc) && ok;
 #if FUSE_TEST_GLOBAL_NEW_HOOKS

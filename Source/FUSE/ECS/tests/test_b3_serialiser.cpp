@@ -215,6 +215,24 @@ void testRoundTrip10k() {
                 result.archetypeCount, static_cast<std::uintmax_t>(std::filesystem::file_size(path)));
     expectTrue(loaded.count() == original.count(), "entity count preserved");
     expectTrue(aliveAfter == aliveBefore, "identical entity ids (index + generation)");
+    if (after != before) {
+        for (const auto& [name, bytes] : before) {
+            const auto found = after.find(name);
+            if (found == after.end()) {
+                std::fprintf(stderr, "  missing component column after load: %s\n", name.c_str());
+                continue;
+            }
+            if (found->second != bytes) {
+                std::fprintf(stderr, "  component column differs: %s (before %zu bytes, after %zu bytes)\n", name.c_str(),
+                             bytes.size(), found->second.size());
+            }
+        }
+        for (const auto& [name, bytes] : after) {
+            if (before.find(name) == before.end()) {
+                std::fprintf(stderr, "  extra component column after load: %s\n", name.c_str());
+            }
+        }
+    }
     expectTrue(after == before, "byte-identical component arrays for every component type");
 
     bool deadStayDead = true;
