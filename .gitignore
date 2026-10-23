@@ -223,5 +223,8 @@ fuse_nvplugin_ngx*.dll
 # fuse_cook incremental cache written at the working directory
 /.fuse/
 
+# Local CI log dumps (e.g. MSVC LastTest.log copies from local test runs)
+/.ci-logs/
+
 # Relight package payload (README, rtx.conf, licences): not a build output
 !/Source/FUSE/Relight/package/dist/
