@@ -30,7 +30,7 @@ sudo apt-get update
 sudo apt-get install -y ninja-build cmake g++-13
 ```
 
-**`FUSE_BUILD_CORE_TESTS` with Vulkan** (`FUSE_BUILD_VULKAN=ON`, shader SPIR-V regen, Lavapipe gates — matches [`.github/workflows/fuse-umbrella-linux.yml`](../.github/workflows/fuse-umbrella-linux.yml)):
+**`FUSE_BUILD_CORE_TESTS` with Vulkan** (`FUSE_BUILD_VULKAN=ON`, shader SPIR-V regen, Lavapipe gates — matches [`.github/workflows/fuse-umbrella-linux.yml`](../.github/workflows/fuse-umbrella-linux.yml), the **full CI gate** on `main`, typically **~3 h** on GitHub Actions):
 
 ```bash
 sudo apt-get install -y ninja-build cmake g++-13 \
