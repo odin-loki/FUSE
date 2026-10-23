@@ -64,7 +64,7 @@ Structural migration off Torque submodules, `third_party/`, and `Engine/` is **c
 
 **Optional hygiene (not blocking configure/build):**
 
-- Root [`vcpkg.json`](../vcpkg.json) still names `torque3d` and is **not** consumed by the FUSE umbrella CMake graph (audio codecs are vendored under `vendor/xiph/`). Safe to delete or archive with unused `Tools/CMake/` Torque vcpkg ports when cleaning legacy Torque build assets.
+- **Legacy Torque vcpkg (audited):** Root `vcpkg.json` (former `torque3d` manifest) had **zero** references from root [`CMakeLists.txt`](../CMakeLists.txt), [`cmake/`](../cmake/), or `Source/FUSE/**` — removed. FUSE audio codecs are vendored under `vendor/xiph/`. [`Tools/CMake/`](../Tools/CMake/) is likewise **outside** the umbrella graph (`torque_configs.cmake` is only for upstream-style Torque builds); **keep** it for now because [`Templates/BaseGame/CMakeLists.txt`](../Templates/BaseGame/CMakeLists.txt) still configures `Tools/CMake/template.torsion.in`. The `Tools/CMake/vcpkg/ports/` tree is only used by that legacy Torque vcpkg path.
 - Consolidated repo-root `THIRD_PARTY.md` remains a future packaging doc; Relight ships [`Source/FUSE/Relight/THIRD_PARTY.md`](../Source/FUSE/Relight/THIRD_PARTY.md).
 
 Working U0/U8 notes under [`docs/unification/`](unification/) and [`docs/plans/`](plans/) may still cite historical `third_party/Torque2D` paths as **external** reference — that is evidence, not an in-tree layout requirement.
