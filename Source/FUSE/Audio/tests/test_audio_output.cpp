@@ -681,7 +681,7 @@ int runWave(const char* wav_path) {
         desc.output = fa::AudioOutputRequest::OpenAL;
         desc.pacing = fa::AudioPacing::Device;
         desc.device_buffers = 4;
-        desc.output_ring_blocks = 16; // ~170 ms of slack: a loaded CI box must not starve the device
+        desc.output_ring_blocks = 32; // ~340 ms of slack: parallel ctest must not starve the feeder
         Scene scene(desc);
         if (scene.engine.backend_kind() != fa::AudioBackendKind::OpenAL) {
             std::printf("FAIL: OpenAL wave device did not open (ALSOFT_CONF / wave driver)\n");
@@ -690,7 +690,8 @@ int runWave(const char* wav_path) {
         scene.add(register_pcm(scene.engine, clip, 2, rate), false, false);
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
         while (scene.engine.blocks_rendered() < total_blocks && std::chrono::steady_clock::now() < deadline) {
-            if (scene.engine.blocks_rendered() >= 16) { // after warm-up (voice state, first blocks)
+            const u64 blocks_before = scene.engine.blocks_rendered();
+            if (blocks_before >= 16) { // after warm-up (voice state, first blocks)
                 AllocScope scope;
                 scene.engine.update(scene.registry, 1.f / 60.f);
                 tick_allocs += scope.stop();
@@ -698,7 +699,13 @@ int runWave(const char* wav_path) {
             } else {
                 scene.engine.update(scene.registry, 1.f / 60.f);
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            // Sleep only when device pacing had nothing to mix (ring full). A fixed sleep here
+            // stretches under parallel ctest load and lets the OpenAL queue run dry.
+            if (scene.engine.blocks_rendered() == blocks_before) {
+                std::this_thread::sleep_for(std::chrono::microseconds(500));
+            } else {
+                std::this_thread::yield();
+            }
         }
         // Everything is submitted; an underrun before this point would be a real one (after it,
         // the device legitimately runs dry at the end of the stream).

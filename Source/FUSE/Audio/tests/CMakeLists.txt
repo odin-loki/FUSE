@@ -81,10 +81,12 @@ if(FUSE_AUDIO_HAS_OPENAL)
     file(WRITE "${_fuse_wave_conf}" "[general]\ndrivers=wave\nfrequency=48000\nchannels=stereo\nsample-type=float32\nperiod_size=512\nperiods=3\noutput-limiter=false\ndither=false\nhrtf=false\nstereo-mode=speakers\n[wave]\nfile=${_fuse_wave_out}\n")
     add_test(NAME fuse_audio_output_wave COMMAND fuse_audio_output_tests --wave "${_fuse_wave_out}")
     set_tests_properties(fuse_audio_output_wave PROPERTIES
-        LABELS "gate;audio" TIMEOUT 120 SKIP_RETURN_CODE 77
+        LABELS "gate;audio" TIMEOUT 120 SKIP_RETURN_CODE 77 RUN_SERIAL TRUE
+        RESOURCE_LOCK fuse_openal_output
         ENVIRONMENT "ALSOFT_CONF=${_fuse_wave_conf};ALSOFT_DRIVERS=wave")
     add_test(NAME fuse_audio_output_openal_null COMMAND fuse_audio_output_tests --openal-null)
     set_tests_properties(fuse_audio_output_openal_null PROPERTIES
-        LABELS "gate;audio" TIMEOUT 120 SKIP_RETURN_CODE 77
+        LABELS "gate;audio" TIMEOUT 120 SKIP_RETURN_CODE 77 RUN_SERIAL TRUE
+        RESOURCE_LOCK fuse_openal_output
         ENVIRONMENT "ALSOFT_DRIVERS=null;ALSOFT_CONF=/dev/null")
 endif()
