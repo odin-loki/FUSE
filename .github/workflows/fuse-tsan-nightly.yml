@@ -6,17 +6,22 @@ on:
     - cron: "0 3 * * *"
   workflow_dispatch:
 
+# Keep apt lists in sync with docs/building.md and fuse-umbrella-linux.yml.
+env:
+  FUSE_APT_LINUX_BASE: ninja-build cmake g++-13
+
 jobs:
   fuse-core-tsan:
     name: fuse_core tests (ThreadSanitizer)
-    runs-on: ubuntu-latest
+    # ubuntu-latest -> 26.04; stay on 24.04 for parity with the umbrella Linux gate.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
-          sudo apt-get install -y ninja-build cmake g++-13
+          sudo apt-get install -y ${{ env.FUSE_APT_LINUX_BASE }}
 
       - name: Configure fuse_core tests with TSan
         run: |
@@ -37,12 +42,13 @@ jobs:
             -DFUSE_BUILD_SCRIPT=OFF \
             -DFUSE_BUILD_VULKAN=OFF \
             -DFUSE_BUILD_CUDA=OFF
+
       - name: Build fuse_core test targets
         run: |
-          # Every executable/probe under Source/FUSE/Core/tests: ctest -R '^fuse_core_' below runs all of them.
+          # Every executable under Source/FUSE/Core/tests (ctest -L tsan below).
           cmake --build build-tsan --target Source/FUSE/Core/tests/all
           # UNI-U7-ASSET-1: runtime asset core (MPSC render-upload queue, AssetRegistry job pipeline).
           cmake --build build-tsan --target Source/FUSE/Asset/tests/all
 
-      - name: Run fuse_core CTest (TSan)
-        run: ctest --test-dir build-tsan -R '^fuse_core_|^fuse_asset_runtime_' --output-on-failure
+      - name: Run TSan CTest (fuse_core + asset runtime)
+        run: ctest --test-dir build-tsan -L tsan --output-on-failure --timeout 2400

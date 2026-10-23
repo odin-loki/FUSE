@@ -71,6 +71,7 @@ endif()
 # compute-sanitizer memcheck --leak-check full (both skip without a CUDA device).
 add_executable(fuse_core_b1_gpu_allocator test_b1_gpu_allocator.cpp)
 target_link_libraries(fuse_core_b1_gpu_allocator PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b1_gpu_allocator)
 add_test(NAME fuse_core_b1_gpu_allocator COMMAND fuse_core_b1_gpu_allocator)
 set_tests_properties(fuse_core_b1_gpu_allocator PROPERTIES LABELS "gate;cuda" TIMEOUT 120)
 if(FUSE_CUDA_BACKEND)
@@ -177,6 +178,7 @@ add_executable(fuse_core_profiler_assert_tests
 )
 
 target_link_libraries(fuse_core_profiler_assert_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_profiler_assert_tests)
 add_test(NAME fuse_core_profiler_assert COMMAND fuse_core_profiler_assert_tests)
 
 add_executable(fuse_core_chrome_trace_tests
@@ -184,6 +186,7 @@ add_executable(fuse_core_chrome_trace_tests
 )
 
 target_link_libraries(fuse_core_chrome_trace_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_chrome_trace_tests)
 add_test(NAME fuse_core_chrome_trace COMMAND fuse_core_chrome_trace_tests)
 
 add_executable(fuse_core_math_tests
@@ -191,6 +194,7 @@ add_executable(fuse_core_math_tests
 )
 
 target_link_libraries(fuse_core_math_tests PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_math_tests)
 add_test(NAME fuse_core_math COMMAND fuse_core_math_tests)
 
 add_executable(fuse_core_allocator_tests
@@ -313,6 +317,7 @@ add_executable(fuse_core_b1_math_gates
     test_b1_math_gates.cpp
 )
 target_link_libraries(fuse_core_b1_math_gates PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b1_math_gates)
 add_test(NAME fuse_core_b1_math_gates COMMAND fuse_core_b1_math_gates)
 set_tests_properties(fuse_core_b1_math_gates PROPERTIES LABELS "gate" TIMEOUT 600)
 
@@ -329,6 +334,7 @@ add_executable(fuse_core_b1_platform_gates
     test_b1_platform_gates.cpp
 )
 target_link_libraries(fuse_core_b1_platform_gates PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b1_platform_gates)
 add_test(NAME fuse_core_b1_platform_gates COMMAND fuse_core_b1_platform_gates)
 set_tests_properties(fuse_core_b1_platform_gates PROPERTIES LABELS "gate")
 
@@ -345,6 +351,7 @@ if(NOT WIN32)
 endif()
 target_compile_definitions(fuse_core_b7_platform_gates PRIVATE
     FUSE_B7_SOURCE_ROOT="${CMAKE_SOURCE_DIR}/Source/FUSE")
+fuse_core_apply_tsan(fuse_core_b7_platform_gates)
 add_test(NAME fuse_core_b7_platform_gates COMMAND fuse_core_b7_platform_gates)
 set_tests_properties(fuse_core_b7_platform_gates PROPERTIES LABELS "gate" TIMEOUT 600)
 
@@ -352,6 +359,7 @@ set_tests_properties(fuse_core_b7_platform_gates PROPERTIES LABELS "gate" TIMEOU
 # shcore, SetProcessDPIAware); a preset awareness (manifest/host) is kept. NotApplicable elsewhere.
 add_executable(fuse_core_b7_dpi_awareness test_b7_dpi_awareness.cpp)
 target_link_libraries(fuse_core_b7_dpi_awareness PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b7_dpi_awareness)
 add_test(NAME fuse_core_b7_dpi_awareness COMMAND fuse_core_b7_dpi_awareness)
 set_tests_properties(fuse_core_b7_dpi_awareness PROPERTIES LABELS "gate" TIMEOUT 120)
 
@@ -462,6 +470,7 @@ set_tests_properties(fuse_lint_a_window_title PROPERTIES LABELS "gate;lint")
 # Runs on Xvfb via the display wrapper; SKIP (77) when the X11 backend is off or no display/xvfb is available.
 add_executable(fuse_core_b1_x11_window_gates test_b1_x11_window_gates.cpp)
 target_link_libraries(fuse_core_b1_x11_window_gates PRIVATE fuse_core)
+fuse_core_apply_tsan(fuse_core_b1_x11_window_gates)
 if(FUSE_PLATFORM_WINDOW_X11_ACTIVE)
     target_include_directories(fuse_core_b1_x11_window_gates PRIVATE ${X11_INCLUDE_DIR})
     target_link_libraries(fuse_core_b1_x11_window_gates PRIVATE ${X11_LIBRARIES})
@@ -496,3 +505,20 @@ target_link_libraries(fuse_core_action_map_tests PRIVATE fuse_core)
 fuse_core_apply_tsan(fuse_core_action_map_tests)
 add_test(NAME fuse_core_action_map COMMAND fuse_core_action_map_tests)
 set_tests_properties(fuse_core_action_map PROPERTIES LABELS "gate;input" TIMEOUT 120)
+
+# fuse-tsan-nightly.yml runs `ctest -L tsan` (not every ^fuse_core_ test — Tracy nm probes and cmake
+# lint scripts are built separately and are not part of Source/FUSE/Core/tests/all).
+if(FUSE_CORE_ENABLE_TSAN)
+    get_property(_fuse_core_tsan_ctests DIRECTORY PROPERTY TESTS)
+    foreach(_fuse_core_tsan_ctest IN LISTS _fuse_core_tsan_ctests)
+        if(_fuse_core_tsan_ctest MATCHES "^fuse_core_"
+                AND NOT _fuse_core_tsan_ctest MATCHES "profiler_tracy"
+                AND NOT _fuse_core_tsan_ctest MATCHES "_shipping_strip$"
+                AND NOT _fuse_core_tsan_ctest MATCHES "_assert_codegen$")
+            set_property(TEST ${_fuse_core_tsan_ctest} APPEND PROPERTY LABELS "tsan")
+        elseif(_fuse_core_tsan_ctest STREQUAL "fuse_p6_shipping_qt_ban"
+                OR _fuse_core_tsan_ctest STREQUAL "fuse_mobile_vulkan_stub")
+            set_property(TEST ${_fuse_core_tsan_ctest} APPEND PROPERTY LABELS "tsan")
+        endif()
+    endforeach()
+endif()

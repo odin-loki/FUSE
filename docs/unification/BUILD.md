@@ -77,9 +77,8 @@ cmake -B build-tsan -G Ninja \
   -DFUSE_BUILD_CORE_TESTS=ON \
   -DFUSE_CORE_ENABLE_TSAN=ON
 
-cmake --build build-tsan --target fuse_core_tests fuse_core_job_tests fuse_core_fiber_tests \
-  fuse_core_services_tests fuse_core_platform_hardening_tests fuse_core_io_handle_tests
-ctest --test-dir build-tsan -R '^fuse_core_' --output-on-failure
+cmake --build build-tsan --target Source/FUSE/Core/tests/all Source/FUSE/Asset/tests/all
+ctest --test-dir build-tsan -L tsan --output-on-failure --timeout 2400
 ```
 
 ---
