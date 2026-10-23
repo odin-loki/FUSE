@@ -84,6 +84,17 @@ export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
 
 Legacy Torque3D/Torque2D application targets are not part of this graph. World conversion and module bridges use native `fuse::world2d` / `fuse::scene` APIs.
 
+## Optional CI (GitHub Actions)
+
+The default **`main`** gate is [`.github/workflows/fuse-umbrella-linux.yml`](../.github/workflows/fuse-umbrella-linux.yml) (see Linux packages above). Two extra workflows are **disabled** in the repository’s Actions settings; they do not run on push or PR. Re-enable a workflow under **Actions → … → Enable workflow**, then use **Run workflow** (`workflow_dispatch` is already defined in each file).
+
+| Workflow | File | Role |
+|----------|------|------|
+| FUSE fuse_core (iOS simulator) | [fuse-core-ios.yml](../.github/workflows/fuse-core-ios.yml) | macOS + Xcode; `fuse_core` iphonesimulator compile only |
+| FUSE fuse_core (TSan nightly) | [fuse-tsan-nightly.yml](../.github/workflows/fuse-tsan-nightly.yml) | `FUSE_CORE_ENABLE_TSAN=ON` on `fuse_core_*` / asset runtime CTest (`03:00` UTC schedule when enabled) |
+
+Local equivalents: set `FUSE_CORE_ENABLE_TSAN=ON` for ThreadSanitizer (see table above), or follow the configure commands in the iOS workflow header / [unification/BUILD.md](unification/BUILD.md) for mobile stubs.
+
 ## Desktop (Linux example)
 
 ```bash
