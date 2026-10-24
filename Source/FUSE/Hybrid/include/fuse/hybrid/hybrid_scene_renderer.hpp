@@ -64,7 +64,8 @@ struct HybridSceneRendererDesc {
     u32 maxQuads = 1024;       ///< sprites + UI quads per frame
     /// Keep an RGBA8 copy of every headless frame in host-visible memory (readbackPixels()).
     bool headlessReadback = true;
-    /// Use runtimeComposerDesc() / runtimeFrameSettings() (full T0 stack, modest LUT / fog / cloud sizes, no upscaler).
+    /// Use runtimeComposerDesc() / runtimeFrameSettings() (Lavapipe T0 composer; frame settings match the
+    /// shared presets but without volumetric clouds — see runtimeFrameSettings()).
     /// False: `composer` / `settings` below as given.
     bool runtimeDefaults = true;
     renderer::frame::FrameComposerDesc composer{};

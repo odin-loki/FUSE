@@ -154,6 +154,7 @@ bool ViewportPlaceholderWidget::attachVulkanWindow_(void* vkInstance) {
     m_vkContainer->setFocusPolicy(Qt::NoFocus);
     m_vkContainer->setGeometry(rect());
     m_vkContainer->show();
+    setAutoFillBackground(false);
     if (m_vkWindow->handle() == nullptr) {
         m_vkWindow->create();
     }
@@ -187,6 +188,7 @@ void ViewportPlaceholderWidget::fallBackToPlaceholder_() {
     if (m_vkContainer != nullptr) {
         m_vkContainer->hide();
     }
+    setAutoFillBackground(true);
     update();
 }
 
@@ -253,7 +255,9 @@ void ViewportPlaceholderWidget::advanceFrame(float dt) {
     m_panel.tick(dt);
     ++m_frameCount;
     emit frameAdvanced(dt);
-    if (m_lookHeld || m_keys.forward || m_keys.back || m_keys.left || m_keys.right || m_keys.up || m_keys.down) {
+    const bool vkPresenting = m_vkSurfacePosted && m_vkContainer != nullptr && m_vkContainer->isVisible();
+    if (!vkPresenting &&
+        (m_lookHeld || m_keys.forward || m_keys.back || m_keys.left || m_keys.right || m_keys.up || m_keys.down)) {
         update();
     }
 }
@@ -547,6 +551,11 @@ void ViewportPlaceholderWidget::resizeEvent(QResizeEvent* event) {
 // ---- paint -----------------------------------------------------------------------------------------
 
 void ViewportPlaceholderWidget::paintEvent(QPaintEvent* /*event*/) {
+    // The embedded QWindowContainer owns on-screen pixels; painting the placeholder here only
+    // confuses screen grabs (fuse_editor_qt_live_present) and can fight the native child under xvfb.
+    if (m_vkSurfacePosted && m_vkContainer != nullptr && m_vkContainer->isVisible()) {
+        return;
+    }
     QPainter painter(this);
     painter.fillRect(rect(), palette().color(QPalette::Window));
 

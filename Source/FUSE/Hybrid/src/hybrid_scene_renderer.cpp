@@ -69,6 +69,10 @@ fr::FrameComposerDesc runtimeComposerDesc() {
 fr::FrameSettings runtimeFrameSettings() {
     fr::FrameSettings fs{};
     fr::applyLavapipeTier0FrameSettings(fs, 0u, 0u);
+    // Runtime / editor viewport: keep the lighter hybrid footprint from before the shared Lavapipe T0
+    // presets (frame gates and golden tests call applyLavapipeTier0FrameSettings directly with clouds on).
+    fs.clouds = false;
+    fs.fogSettings.medium.density = 0.02f;
     return fs;
 }
 
