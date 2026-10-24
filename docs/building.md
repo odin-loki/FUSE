@@ -90,8 +90,8 @@ The default **`main`** gate is [`.github/workflows/fuse-umbrella-linux.yml`](../
 
 | Workflow | File | Actions status | Role |
 |----------|------|----------------|------|
-| FUSE fuse_core (iOS simulator) | [fuse-core-ios.yml](../.github/workflows/fuse-core-ios.yml) | **Active** — `workflow_dispatch` only | macOS + Xcode; `fuse_core` iphonesimulator compile only. **Actions → FUSE fuse_core (iOS simulator) → Run workflow**. |
-| FUSE fuse_core (TSan nightly) | [fuse-tsan-nightly.yml](../.github/workflows/fuse-tsan-nightly.yml) | **Active** — `workflow_dispatch` + optional `03:00` UTC schedule | `FUSE_CORE_ENABLE_TSAN=ON`; builds `Source/FUSE/Core/tests/all` + asset runtime tests; `ctest -L tsan` (not every `fuse_core_*` name — Tracy nm probes stay on the umbrella job). **Actions → FUSE fuse_core (TSan nightly) → Run workflow** for manual runs. |
+| FUSE fuse_core (iOS simulator) | [fuse-core-ios.yml](../.github/workflows/fuse-core-ios.yml) | **Active** — `workflow_dispatch` only; verified green at `204a5f8e6` | macOS + Xcode; `fuse_core` iphonesimulator compile only. **Actions → FUSE fuse_core (iOS simulator) → Run workflow**. |
+| FUSE fuse_core (TSan nightly) | [fuse-tsan-nightly.yml](../.github/workflows/fuse-tsan-nightly.yml) | **Active** — `workflow_dispatch` + optional `03:00` UTC schedule (since `75db736a6`) | `FUSE_CORE_ENABLE_TSAN=ON`; builds `Source/FUSE/Core/tests/all` + asset runtime tests; `ctest -L tsan` (not every `fuse_core_*` name — Tracy nm probes stay on the umbrella job). **Actions → FUSE fuse_core (TSan nightly) → Run workflow** for manual runs. |
 
 Local equivalents: set `FUSE_CORE_ENABLE_TSAN=ON` for ThreadSanitizer (see table above), or follow the configure commands in the iOS workflow header / [unification/BUILD.md](unification/BUILD.md) for mobile stubs.
 
