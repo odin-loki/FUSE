@@ -21,7 +21,8 @@ After bootstrap:
 ```bash
 export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
 cmake -B build-wsl -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  -DFUSE_BUILD_CORE=ON -DFUSE_BUILD_CORE_TESTS=ON -DFUSE_BUILD_VULKAN=ON
+  -DFUSE_BUILD_CORE=ON -DFUSE_BUILD_CORE_TESTS=ON -DFUSE_BUILD_VULKAN=ON \
+  -DFUSE_BUILD_EDITOR=OFF -DFUSE_BUILD_EDITOR_API=OFF
 cmake --build build-wsl
 ctest --test-dir build-wsl -L gate -j"$(nproc)" --output-on-failure
 ```

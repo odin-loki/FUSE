@@ -100,6 +100,9 @@ bool GsplatRenderer::init(const GsplatDesc& desc) {
     GpuRadixSortDesc sortDesc{};
     sortDesc.allocator = desc.allocator;
     sortDesc.debugName = "gsplat.sort";
+#if defined(FUSE_RADIX_SORT_SHADER_DIR)
+    sortDesc.shaderDir = FUSE_RADIX_SORT_SHADER_DIR;
+#endif
     std::unique_ptr<GpuRadixSort> sort = GpuRadixSort::create(*desc.device, sortDesc);
     if (sort == nullptr || !sort->isValid() || desc.maxEntries > sort->maxCount(RadixSortKeyType::U64)) {
         return false;

@@ -1,7 +1,7 @@
 # E03 hybrid GPU frame (RE-FI-1 / RE-RUNTIME-3D-RENDER / UNI-U4-1): the "hybrid.sprite_layer" kernel
-# (src/shaders/hybrid_sprite_layer.comp, GLSL) compiled with glslangValidator and embedded into fuse_hybrid as
-# kHybridSpriteLayerSpv (hybrid_spv.h). Without glslangValidator the header only lacks FUSE_HYBRID_SPRITE_LAYER_SPV and
-# SpriteLayerGpu::init fails (sprites then fall back to the legacy command-list path).
+# (src/shaders/hybrid_sprite_layer.comp, GLSL) embedded into fuse_hybrid as kHybridSpriteLayerSpv (hybrid_spv.h).
+# Prefer glslangValidator (GLSL twin, required when FUSE_SLANG=OFF); else slangc on the same .comp; else the
+# checked-in fixtures/hybrid_sprite_layer.comp.spv (same as composite.frag.spv when no host compiler is found).
 #
 # Script mode (build step): cmake -DOUT=<header> [-DSPRITE_SPV=<spv>] -P hybrid_gpu.cmake
 
@@ -22,24 +22,46 @@ set(_fuse_hybrid_gen "${CMAKE_CURRENT_BINARY_DIR}/hybrid_gen")
 set(_fuse_hybrid_header "${_fuse_hybrid_gen}/hybrid_spv.h")
 file(MAKE_DIRECTORY "${_fuse_hybrid_gen}")
 set(_fuse_hybrid_src "${_fuse_hybrid_root}/src/shaders/hybrid_sprite_layer.comp")
+set(_fuse_hybrid_fixture_spv "${_fuse_hybrid_root}/src/shaders/fixtures/hybrid_sprite_layer.comp.spv")
 set(_fuse_hybrid_args "")
-set(_fuse_hybrid_deps "")
+set(_fuse_hybrid_deps "${CMAKE_CURRENT_LIST_FILE}")
+set(_fuse_hybrid_spv "")
+
 if(FUSE_GLSLANG_VALIDATOR)
-    set(_out "${_fuse_hybrid_gen}/hybrid_sprite_layer.comp.spv")
-    set(_cmds COMMAND "${FUSE_GLSLANG_VALIDATOR}" --target-env vulkan1.3 "${_fuse_hybrid_src}" -o "${_out}")
+    set(_fuse_hybrid_spv "${_fuse_hybrid_gen}/hybrid_sprite_layer.comp.spv")
+    set(_cmds COMMAND "${FUSE_GLSLANG_VALIDATOR}" --target-env vulkan1.3 "${_fuse_hybrid_src}" -o "${_fuse_hybrid_spv}")
     if(FUSE_SPIRV_VAL)
-        list(APPEND _cmds COMMAND "${FUSE_SPIRV_VAL}" --target-env vulkan1.3 "${_out}")
+        list(APPEND _cmds COMMAND "${FUSE_SPIRV_VAL}" --target-env vulkan1.3 "${_fuse_hybrid_spv}")
     endif()
-    add_custom_command(OUTPUT "${_out}" ${_cmds}
+    add_custom_command(OUTPUT "${_fuse_hybrid_spv}" ${_cmds}
         DEPENDS "${_fuse_hybrid_src}"
         COMMENT "glslangValidator hybrid_sprite_layer.comp"
         VERBATIM)
-    list(APPEND _fuse_hybrid_args "-DSPRITE_SPV=${_out}")
-    list(APPEND _fuse_hybrid_deps "${_out}")
+    list(APPEND _fuse_hybrid_deps "${_fuse_hybrid_src}" "${_fuse_hybrid_spv}")
+elseif(FUSE_SLANG_FOUND)
+    set(_fuse_hybrid_spv "${_fuse_hybrid_gen}/hybrid_sprite_layer.slangc.spv")
+    set(_cmds COMMAND "${FUSE_SLANGC_EXECUTABLE}" "${_fuse_hybrid_src}" ${FUSE_SLANG_SPIRV_FLAGS}
+                      -stage compute -entry main -fp-mode precise -o "${_fuse_hybrid_spv}")
+    if(FUSE_SPIRV_VAL)
+        list(APPEND _cmds COMMAND "${FUSE_SPIRV_VAL}" --target-env vulkan1.3 "${_fuse_hybrid_spv}")
+    endif()
+    add_custom_command(OUTPUT "${_fuse_hybrid_spv}" ${_cmds}
+        DEPENDS "${_fuse_hybrid_src}" "${FUSE_SLANGC_EXECUTABLE}"
+        COMMENT "slangc hybrid_sprite_layer.comp (GLSL)"
+        VERBATIM)
+    list(APPEND _fuse_hybrid_deps "${_fuse_hybrid_src}" "${_fuse_hybrid_spv}")
+elseif(EXISTS "${_fuse_hybrid_fixture_spv}")
+    set(_fuse_hybrid_spv "${_fuse_hybrid_fixture_spv}")
+    list(APPEND _fuse_hybrid_deps "${_fuse_hybrid_fixture_spv}" "${_fuse_hybrid_src}")
 endif()
+
+if(_fuse_hybrid_spv)
+    list(APPEND _fuse_hybrid_args "-DSPRITE_SPV=${_fuse_hybrid_spv}")
+endif()
+
 add_custom_command(OUTPUT "${_fuse_hybrid_header}"
     COMMAND "${CMAKE_COMMAND}" "-DOUT=${_fuse_hybrid_header}" ${_fuse_hybrid_args} -P "${CMAKE_CURRENT_LIST_FILE}"
-    DEPENDS ${_fuse_hybrid_deps} "${CMAKE_CURRENT_LIST_FILE}"
+    DEPENDS ${_fuse_hybrid_deps}
     COMMENT "Embedding the hybrid sprite layer kernel's SPIR-V"
     VERBATIM)
 add_custom_target(fuse_hybrid_header DEPENDS "${_fuse_hybrid_header}")

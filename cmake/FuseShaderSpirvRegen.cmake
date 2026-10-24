@@ -2,7 +2,7 @@
 # CI runners with glslang-tools installed regenerate composite.frag.spv automatically.
 # When spirv-val is also available, regenerated SPIR-V is validated before install.
 
-find_program(FUSE_GLSLANG_VALIDATOR NAMES glslangValidator)
+find_program(FUSE_GLSLANG_VALIDATOR NAMES glslangValidator glslang)
 find_program(FUSE_SPIRV_VAL NAMES spirv-val)
 
 if(FUSE_GLSLANG_VALIDATOR)

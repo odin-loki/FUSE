@@ -399,6 +399,9 @@ bool FrameComposer::init(const FrameComposerDesc& desc) {
         d.device = desc.device;
         d.allocator = desc.allocator;
         d.bindless = desc.bindless;
+        d.language = desc.language == FrameKernelLanguage::Slang   ? gsplat::GsKernelLanguage::Slang
+                     : desc.language == FrameKernelLanguage::Glsl ? gsplat::GsKernelLanguage::Glsl
+                                                                : gsplat::GsKernelLanguage::Auto;
         d.framesInFlight = desc.framesInFlight;
         d.maxSplats = desc.maxSplats;
         d.maxEntries = desc.maxSplatEntries;
