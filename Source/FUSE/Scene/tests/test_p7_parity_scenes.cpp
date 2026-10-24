@@ -311,8 +311,15 @@ void testDemo(const std::filesystem::path& repoRoot, const DemoSpec& spec) {
         }
     }
     if (requiredEntity != nullptr) {
-        expectTrue(findEntityByName(scene, requiredEntity),
-                   demoMsg(spec.name, (std::string("required entity present: ") + requiredEntity).c_str()));
+        bool present = findEntityByName(scene, requiredEntity);
+        // Bundled .mis uses GroundPlane(Floor); golden ExampleLevel.mis uses unnamed GroundPlane().
+        // A stale cooked .fuselevel may not match resolveParityLegacySource's preferred origin.
+        if (!present && spec.requiredEntity != nullptr && spec.goldenRequiredEntity != nullptr) {
+            present = findEntityByName(scene, spec.requiredEntity) ||
+                      findEntityByName(scene, spec.goldenRequiredEntity);
+        }
+        expectTrue(present, demoMsg(spec.name, (std::string("required entity present: ") + requiredEntity)
+                                                    .c_str()));
     }
 
     assertHandlesAndRoundTrip(spec.name, scene);
