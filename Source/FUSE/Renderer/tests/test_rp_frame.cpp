@@ -67,6 +67,7 @@
 
 #include <fuse/renderer/deferred/gbuffer.hpp>
 #include <fuse/renderer/frame/frame_composer.hpp>
+#include <fuse/renderer/frame/frame_runtime_presets.hpp>
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
 #include <fuse/renderer/gi/gpu/ddgi_gpu_reference.hpp>
 #include <fuse/renderer/lighting/ltc/ltc_lut.hpp>
@@ -573,40 +574,7 @@ FrameComposerDesc composerDesc(Context& ctx, Scene& s, FrameTier tier) {
 
 FrameSettings baseSettings() {
     FrameSettings fs{};
-    fs.vsmFilter.pcfRadius = 1;
-    fs.ssfxSettings.ssgi_params.sample_sqrt = 2;
-    // Atmosphere: default Earth medium, smaller LUTs (Lavapipe).
-    fs.atmosphere.sizes.transWidth = 64;
-    fs.atmosphere.sizes.transHeight = 32;
-    fs.atmosphere.sizes.skyWidth = 64;
-    fs.atmosphere.sizes.skyHeight = 48;
-    fs.atmosphere.sizes.apWidth = 16;
-    fs.atmosphere.sizes.apHeight = 16;
-    fs.atmosphere.sizes.apDepth = 16;
-    fs.atmosphere.sampling.transSteps = 32;
-    fs.atmosphere.sampling.msDirSqrt = 4;
-    fs.atmosphere.sampling.skySteps = 16;
-    fs.atmosphere.ozoneAbsorption = {0.650e-6f, 1.881e-6f, 0.085e-6f};
-    // Fog: small grid, a visible medium.
-    fs.fogSettings.gridX = 24;
-    fs.fogSettings.gridY = 16;
-    fs.fogSettings.gridZ = 24;
-    fs.fogSettings.farPlane = 30.f;
-    fs.fogSettings.medium.density = 0.04f;
-    fs.fogSettings.ambient[0] = 0.02f;
-    fs.fogSettings.ambient[1] = 0.025f;
-    fs.fogSettings.ambient[2] = 0.03f;
-    // Clouds: small noise volumes, render-resolution reconstruction.
-    clouds::CloudSettings& c = fs.cloudSettings;
-    c.noise.shapeSize = 32;
-    c.noise.detailSize = 16;
-    c.noise.weatherSize = 32;
-    c.resolution.width = kRenderW;
-    c.resolution.height = kRenderH;
-    c.resolution.block = 2;
-    c.sampling.primarySteps = 24;
-    c.sampling.lightSteps = 3;
-    c.medium.coverageBias = 0.2f;
+    applyLavapipeTier0FrameSettings(fs, kRenderW, kRenderH);
     fs.splats = true;
     fs.restir = true; // T2 only (the plan drops it at T0)
     fs.restirSettings.diCandidates = 4;
@@ -936,6 +904,12 @@ int initRig(Context& ctx, Rig& rig, FrameTier tier) {
                                   static_cast<u32>(rig.scene.surfaces.size()))) {
         std::fprintf(stderr, "FAIL: setSdfScene\n");
         return 1;
+    }
+    if ((rig.composer.available() & kStageSplats) == 0u) {
+        std::printf("SKIP: gaussian splats unavailable (%s; gsplat needs embedded kernels and glslang-built "
+                    "GPU radix sort)\n",
+                    rig.composer.reason());
+        return kSkip;
     }
     if (!rig.composer.setSplats(rig.scene.splats.data(), static_cast<u32>(rig.scene.splats.size()), 0u)) {
         std::fprintf(stderr, "FAIL: setSplats\n");

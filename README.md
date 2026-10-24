@@ -73,7 +73,7 @@ Run a hybrid demo (software placeholder renderer):
 ./build/Source/FUSE/Apps/HybridHud/demo_hybrid_hud
 ```
 
-On Windows without Ninja, omit `-G Ninja` and pass `--config Release` to the build step. Full options: [`docs/building.md`](docs/building.md).
+**On Windows**, build inside **WSL2 (Ubuntu)** — not Strawberry Perl’s CMake/GCC. Full steps: [`docs/building.md`](docs/building.md#wsl2-recommended-on-windows). Native MSVC is optional for Windows-only smoke; Lavapipe renderer gates match Linux CI in WSL.
 
 ---
 

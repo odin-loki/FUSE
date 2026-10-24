@@ -28,3 +28,5 @@ ctest --test-dir build/fuse-debug --output-on-failure
 | `fuse-mingw-relight-*` | Optional Relight / DXVK stack (MinGW) |
 
 Full option matrix and platform notes: [`docs/building.md`](../docs/building.md).
+
+**Windows hosts:** run CMake/Ninja/ctest inside **WSL2**, not the Strawberry Perl toolchain. Use `build-wsl/` (or preset dirs under `build/`) from a Linux shell; see [building.md — WSL2](../docs/building.md#wsl2-recommended-on-windows).

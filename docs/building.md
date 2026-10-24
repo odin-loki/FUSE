@@ -116,18 +116,74 @@ Smoke and hybrid demo:
 
 ## Windows
 
-Visual Studio generator:
+**Use WSL2 for day-to-day builds and gates on Windows.** Do **not** point CMake at the [Strawberry Perl](https://strawberryperl.com/) toolchain (`C:\Strawberry\c\bin\cmake.exe`, `gcc.exe`, and so on) for FUSE work: that path is unsupported here, often leaves `FUSE_BUILD_VULKAN=OFF`, breaks or skips renderer Lavapipe tests (`fuse_rp_frame_*`, `fuse_scene_renderer_vk_*`), and Slang/Vulkan configure differently from CI.
+
+| Goal | Where to build |
+|------|----------------|
+| Full umbrella gates, Lavapipe, parallel `ctest -j` | **WSL2** (Ubuntu 24.04) — same as [fuse-umbrella-linux.yml](../.github/workflows/fuse-umbrella-linux.yml) |
+| Native Windows PE / MSVC smoke | Optional: Visual Studio or `fuse-msvc-*` presets (see below) |
+| Cross PE + Wine | Linux host with `fuse-mingw-*` presets (CI), not Strawberry on the desktop |
+
+### WSL2 (recommended on Windows)
+
+1. Install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) with **Ubuntu 24.04**.
+2. In the WSL shell, install dependencies: run **`bash scripts/wsl-bootstrap.sh`** (needs `sudo` once), then **re-configure** `build-wsl` so CMake picks up `glslangValidator` and embedded shaders (`cmake -B build-wsl …` as below). Or install the same packages as [Linux system packages](#linux-system-packages-ubuntu-2404) manually.
+3. Clone or use the repo from the Linux filesystem when you can (`~/FUSE`). A tree on `/mnt/c/...` (OneDrive/Desktop) works but I/O is slower; prefer `~/FUSE` for large `ctest -j` sweeps.
+
+```bash
+# Inside WSL (Ubuntu 24.04)
+sudo apt-get update
+sudo apt-get install -y ninja-build cmake g++-13 \
+  libvulkan-dev mesa-vulkan-drivers vulkan-tools \
+  vulkan-validationlayers glslang-tools spirv-tools
+
+cd ~/FUSE   # or: cd /mnt/c/Users/<you>/OneDrive/Desktop/FUSE
+
+export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
+
+cmake -B build-wsl -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DFUSE_BUILD_CORE=ON \
+  -DFUSE_BUILD_CORE_TESTS=ON \
+  -DFUSE_BUILD_VULKAN=ON
+
+cmake --build build-wsl
+ctest --test-dir build-wsl -L gate -j"$(nproc)" --output-on-failure
+
+# Frame integration only (after wsl-bootstrap.sh):
+bash scripts/wsl-run-frame-gates.sh
+
+# Or one-shot configure + full gate sweep (editor off):
+bash scripts/wsl-build-local.sh
+```
+
+Renderer frame integration (T0 Lavapipe) lives under the `gate;renderer;frame` labels, for example `fuse_rp_frame_vk_full_t0` and `fuse_scene_renderer_vk_golden_t0`. Those Vulkan tests **skip (exit 77)** if `VK_LAYER_KHRONOS_validation` is missing — install `vulkan-validationlayers` (included in `scripts/wsl-bootstrap.sh`) and confirm `/usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json` exists.
+
+`glslangValidator` must be on `PATH` **when you configure** CMake: it embeds the GPU radix-sort shaders (WP-9.2 splats, `hybrid.sprite_layer`, and several other packages). If you configured before installing `glslang-tools`, re-run `cmake -B build-wsl …` after `wsl-bootstrap.sh` and rebuild (`fuse_gsplat`, `fuse_hybrid`, `fuse_compute`).
+
+Presets work inside WSL if CMake 3.25+ is installed:
+
+```bash
+cmake --preset fuse-debug
+cmake --build --preset fuse-debug
+ctest --test-dir build/fuse-debug --output-on-failure
+```
+
+Open the repo in Cursor/VS Code with the [WSL extension](https://code.visualstudio.com/docs/remote/wsl) so terminals and builds run in Linux, not PowerShell + Strawberry.
+
+### Native MSVC (optional)
+
+For Windows-specific debugging without Lavapipe, use a **Visual Studio** or **Ninja + MSVC** developer prompt (Vulkan SDK on the host). This matches [fuse-windows-native.yml](../.github/workflows/fuse-windows-native.yml), not the full Linux umbrella gate.
 
 ```powershell
 cmake -B build `
   -DFUSE_BUILD_CORE=ON `
-  -DFUSE_BUILD_CORE_TESTS=ON
+  -DFUSE_BUILD_CORE_TESTS=ON `
+  -DFUSE_BUILD_VULKAN=ON
 
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
-
-Ninja + MSVC from a developer prompt is the same as the Linux command set.
 
 ### Windows x64 from Linux (MinGW-w64 cross + Wine)
 

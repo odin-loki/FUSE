@@ -5,6 +5,7 @@
 
 #include <fuse/ecs/registry.hpp>
 #include <fuse/frame/frame_ctx.hpp>
+#include <fuse/renderer/frame/frame_runtime_presets.hpp>
 #include <fuse/renderer/material/material.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/scene_renderer/procedural_meshes.hpp>
@@ -61,54 +62,13 @@ renderer::Material toMaterial(const world3d::RenderMaterial3D& m) {
 
 fr::FrameComposerDesc runtimeComposerDesc() {
     fr::FrameComposerDesc d{};
-    d.clusters = renderer::ClusterDesc{};
-    d.vsmClipmap.levels = 12;
-    d.vsmClipmap.firstLevelExtent = 4.f;
-    d.vsmClipmap.markRadiusTexels = 2.5f;
-    d.vsmClipmap.texelsPerPixel = 2.f;
-    d.vsmPoolPagesX = 16;
-    d.vsmPoolPagesY = 16;
-    renderer::DDGIDesc& v = d.ddgiVolume;
-    v.grid_origin = {-6.f, 0.25f, -8.f};
-    v.probe_spacing = {3.f, 1.5f, 3.f};
-    v.grid_dims = {5u, 3u, 5u};
-    v.rays_per_probe = 64;
-    v.probes_per_frame = 75;
-    v.irradiance_res = 6;
-    v.depth_res = 8;
-    v.hysteresis = 0.9f;
-    v.max_ray_distance = 20.f;
-    d.maxSplats = 64;
-    d.maxSplatEntries = 1u << 14;
-    d.frameGen = false;
+    fr::applyLavapipeComposerDefaults(d);
     return d;
 }
 
 fr::FrameSettings runtimeFrameSettings() {
     fr::FrameSettings fs{};
-    fs.vsmFilter.pcfRadius = 1;
-    fs.ssfxSettings.ssgi_params.sample_sqrt = 2;
-    fs.atmosphere.sizes.transWidth = 64;
-    fs.atmosphere.sizes.transHeight = 32;
-    fs.atmosphere.sizes.skyWidth = 64;
-    fs.atmosphere.sizes.skyHeight = 48;
-    fs.atmosphere.sizes.apWidth = 16;
-    fs.atmosphere.sizes.apHeight = 16;
-    fs.atmosphere.sizes.apDepth = 16;
-    fs.atmosphere.sampling.transSteps = 32;
-    fs.atmosphere.sampling.msDirSqrt = 4;
-    fs.atmosphere.sampling.skySteps = 16;
-    fs.fogSettings.gridX = 24;
-    fs.fogSettings.gridY = 16;
-    fs.fogSettings.gridZ = 24;
-    fs.fogSettings.farPlane = 30.f;
-    fs.fogSettings.medium.density = 0.02f;
-    fs.clouds = false;
-    fs.splats = false;
-    fs.restir = false;
-    fs.frameGen = false;
-    fs.upscaler = fr::FrameUpscaler::None;
-    fs.ui = true;
+    fr::applyLavapipeTier0FrameSettings(fs, 0u, 0u);
     return fs;
 }
 

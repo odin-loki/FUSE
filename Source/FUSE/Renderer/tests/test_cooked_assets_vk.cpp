@@ -311,7 +311,8 @@ bool createFetchKernel(Context& ctx, FetchKernel& k) {
 #if defined(FUSE_CA_FETCH_SPV)
     std::ifstream in(FUSE_CA_FETCH_SPV, std::ios::binary);
     const std::vector<char> spv((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    if (spv.empty() || spv.size() % 4u != 0u) {
+    if (!in || spv.empty() || spv.size() % 4u != 0u) {
+        std::fprintf(stderr, "fetch: SPIR-V load failed (path=%s, size=%zu)\n", FUSE_CA_FETCH_SPV, spv.size());
         return false;
     }
     k.device = ctx.vkDevice;
@@ -347,6 +348,7 @@ bool createFetchKernel(Context& ctx, FetchKernel& k) {
     sm.pCode = reinterpret_cast<const u32*>(spv.data());
     VkShaderModule module = VK_NULL_HANDLE;
     if (vkCreateShaderModule(k.device, &sm, nullptr, &module) != VK_SUCCESS) {
+        std::fprintf(stderr, "fetch: vkCreateShaderModule failed\n");
         return false;
     }
     VkComputePipelineCreateInfo cp{};
@@ -359,6 +361,7 @@ bool createFetchKernel(Context& ctx, FetchKernel& k) {
     const VkResult r = vkCreateComputePipelines(k.device, VK_NULL_HANDLE, 1, &cp, nullptr, &k.pipeline);
     vkDestroyShaderModule(k.device, module, nullptr);
     if (r != VK_SUCCESS) {
+        std::fprintf(stderr, "fetch: vkCreateComputePipelines failed (%d)\n", static_cast<int>(r));
         return false;
     }
     VkDescriptorPoolSize sizes[2] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 64}, {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 64}};
@@ -379,7 +382,11 @@ bool createFetchKernel(Context& ctx, FetchKernel& k) {
     si.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     si.maxLod = 16.f;
-    return vkCreateSampler(k.device, &si, nullptr, &k.sampler) == VK_SUCCESS;
+    if (vkCreateSampler(k.device, &si, nullptr, &k.sampler) != VK_SUCCESS) {
+        std::fprintf(stderr, "fetch: vkCreateSampler failed\n");
+        return false;
+    }
+    return true;
 #else
     (void)ctx;
     (void)k;
@@ -1268,8 +1275,11 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "fuse_cooked_assets_vk %s: %d failure(s)\n", mode.c_str(), g_failures);
         return 1;
     }
-    std::printf("fuse_cooked_assets_vk %s: %s (0 validation messages)\n", mode.c_str(), rc == kSkip ? "skipped" : "passed");
-    return rc;
+    if (rc != 0) {
+        return rc;
+    }
+    std::printf("fuse_cooked_assets_vk %s: passed (0 validation messages)\n", mode.c_str());
+    return 0;
 }
 
 #endif

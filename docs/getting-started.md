@@ -7,7 +7,8 @@ Build FUSE from source, run tests, and launch a hybrid demo.
 - Git
 - CMake 3.21 or newer
 - A C++23 compiler (GCC 13+, Clang 16+, MSVC 2022 17.8+).
-- Ninja recommended (optional on Windows if you use Visual Studio generators)
+- Ninja recommended
+- **Windows:** use **WSL2 (Ubuntu 24.04)** for builds and tests — do not use the Strawberry Perl CMake/GCC bundle. See [building.md — Windows (WSL)](building.md#wsl2-recommended-on-windows).
 
 Optional:
 
@@ -40,13 +41,32 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-### Windows (PowerShell)
+### Windows (WSL2 — recommended)
 
-```powershell
-cmake -B build `
-  -DFUSE_BUILD_CORE=ON `
+Open an **Ubuntu** shell in WSL, not PowerShell with Strawberry Perl:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ninja-build cmake g++-13
+
+cd ~/FUSE   # clone here, or cd to your checkout under /mnt/c/...
+
+cmake -B build-wsl -G Ninja \
+  -DFUSE_BUILD_CORE=ON \
   -DFUSE_BUILD_CORE_TESTS=ON
 
+cmake --build build-wsl
+ctest --test-dir build-wsl --output-on-failure
+```
+
+Full Vulkan / Lavapipe packages and `VK_ICD_FILENAMES`: [building.md](building.md#wsl2-recommended-on-windows).
+
+### Windows (native MSVC, optional)
+
+Only if you need a Windows-hosted binary without the Linux gate layout:
+
+```powershell
+cmake -B build -DFUSE_BUILD_CORE=ON -DFUSE_BUILD_CORE_TESTS=ON
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```

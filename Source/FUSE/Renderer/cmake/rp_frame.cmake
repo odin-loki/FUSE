@@ -59,9 +59,11 @@ set(_fuse_frame_common_inc "${_fuse_frame_root}/shaders/common")
 file(GLOB _fuse_frame_shader_files CONFIGURE_DEPENDS "${_fuse_frame_shd}/*" "${_fuse_frame_src}/shaders/*")
 add_library(fuse_frame STATIC
     ${_fuse_frame_src}/frame_composer.cpp
+    ${_fuse_frame_src}/frame_runtime_presets.cpp
     ${_fuse_frame_src}/frame_ui.cpp
     ${_fuse_frame_inc}/frame_types.hpp
     ${_fuse_frame_inc}/frame_composer.hpp
+    ${_fuse_frame_inc}/frame_runtime_presets.hpp
     ${_fuse_frame_inc}/frame_ui.hpp
     ${_fuse_frame_shader_files}
 )
@@ -158,6 +160,12 @@ target_compile_definitions(fuse_rp_frame PRIVATE
     FUSE_RP_GOLDEN_DIR="${FUSE_RP_GOLDEN_DIR}"
     FUSE_RP_HARNESS_ARTIFACT_DIR="${FUSE_RP_HARNESS_ARTIFACT_DIR}")
 fuse_apply_cxx23(fuse_rp_frame)
+if(TARGET fuse_radix_sort_shaders)
+    add_dependencies(fuse_rp_frame fuse_radix_sort_shaders)
+endif()
+if(TARGET fuse_gsplat_header)
+    add_dependencies(fuse_rp_frame fuse_gsplat_header)
+endif()
 
 set(_fuse_frame_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
 set(_fuse_frame_vk_tests "")
