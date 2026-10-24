@@ -64,7 +64,7 @@ struct HybridSceneRendererDesc {
     u32 maxQuads = 1024;       ///< sprites + UI quads per frame
     /// Keep an RGBA8 copy of every headless frame in host-visible memory (readbackPixels()).
     bool headlessReadback = true;
-    /// Use runtimeComposerDesc() / runtimeFrameSettings() (modest VSM / DDGI / fog sizes, clouds off, no upscaler).
+    /// Use runtimeComposerDesc() / runtimeFrameSettings() (full T0 stack, modest LUT / fog / cloud sizes, no upscaler).
     /// False: `composer` / `settings` below as given.
     bool runtimeDefaults = true;
     renderer::frame::FrameComposerDesc composer{};
