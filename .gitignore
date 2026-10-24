@@ -225,6 +225,7 @@ fuse_nvplugin_ngx*.dll
 
 # Local CI log dumps (e.g. MSVC LastTest.log copies from local test runs)
 /.ci-logs/
+build-verify-gate-last.log
 
 # CTest output when the CMake binary directory is the repo root
 /Testing/
