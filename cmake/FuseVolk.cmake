@@ -92,9 +92,10 @@ function(fuse_volk_attach target)
 
     get_target_property(_srcdir ${target} SOURCE_DIR)
     target_sources(${target} PRIVATE "${ARG_IMPLEMENTATION}")
+    # Shim first (non-SYSTEM): MSVC /external:I ordering must not resolve <vulkan/vulkan.h> to the SDK
+    # before the generated shim (VK_NO_PROTOTYPES without volk.h → missing vk* identifiers).
     target_include_directories(${target} BEFORE PUBLIC "$<BUILD_INTERFACE:${_shim_dir}>")
-    # SYSTEM: third-party code (volk.c is compiled inside the implementation TU).
-    target_include_directories(${target} SYSTEM PUBLIC "$<BUILD_INTERFACE:${_shim_dir}>" "$<BUILD_INTERFACE:${_vk_inc}>")
+    target_include_directories(${target} SYSTEM PUBLIC "$<BUILD_INTERFACE:${_vk_inc}>")
     target_compile_definitions(${target} PUBLIC VK_NO_PROTOTYPES FUSE_RHI_VOLK=1)
     target_link_libraries(${target} PUBLIC ${CMAKE_DL_LIBS})
 
