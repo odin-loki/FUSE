@@ -71,7 +71,8 @@ set_tests_properties(fuse_b7_reverb_cuda_device PROPERTIES
 add_executable(fuse_audio_output_tests test_audio_output.cpp)
 target_link_libraries(fuse_audio_output_tests PRIVATE fuse_audio fuse_core)
 add_test(NAME fuse_audio_output COMMAND fuse_audio_output_tests)
-set_tests_properties(fuse_audio_output PROPERTIES LABELS "gate;audio" TIMEOUT 300)
+set_tests_properties(fuse_audio_output PROPERTIES
+    LABELS "gate;audio" TIMEOUT 300 RESOURCE_LOCK fuse_openal_output)
 
 # Real OpenAL device output (vendored openal-soft): the wave writer driver must record exactly the
 # engine's mix; the null driver exercises counters, latency, starvation and device-lost -> reconnect.

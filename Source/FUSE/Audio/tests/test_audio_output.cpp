@@ -694,17 +694,18 @@ int runWave(const char* wav_path) {
             if (blocks_before >= 16) { // after warm-up (voice state, first blocks)
                 AllocScope scope;
                 scene.engine.update(scene.registry, 1.f / 60.f);
-                tick_allocs += scope.stop();
-                ++ticks;
+                if (scene.engine.blocks_rendered() > blocks_before) {
+                    tick_allocs += scope.stop();
+                    ++ticks;
+                } else {
+                    (void)scope.stop();
+                }
             } else {
                 scene.engine.update(scene.registry, 1.f / 60.f);
             }
-            // Sleep only when device pacing had nothing to mix (ring full). A fixed sleep here
-            // stretches under parallel ctest load and lets the OpenAL queue run dry.
+            // Ring full: 1 ms sleep (Windows ignores sub-ms waits). When writable, keep feeding.
             if (scene.engine.blocks_rendered() == blocks_before) {
-                std::this_thread::sleep_for(std::chrono::microseconds(500));
-            } else {
-                std::this_thread::yield();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         }
         // Everything is submitted; an underrun before this point would be a real one (after it,
