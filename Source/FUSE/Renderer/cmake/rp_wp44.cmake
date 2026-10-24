@@ -240,11 +240,13 @@ endforeach()
 
 add_executable(fuse_rp_framegen_cpu ${_fuse_wp44_tests_dir}/test_rp_framegen_cpu.cpp)
 target_link_libraries(fuse_rp_framegen_cpu PRIVATE fuse_framegen)
+add_dependencies(fuse_rp_framegen_cpu fuse_framegen_header)
 target_include_directories(fuse_rp_framegen_cpu SYSTEM PRIVATE "${_fuse_wp44_ffx}/include")
 fuse_apply_cxx23(fuse_rp_framegen_cpu)
 foreach(_suite layout bindings host plan composite of_search)
     add_test(NAME fuse_rp_framegen_${_suite} COMMAND fuse_rp_framegen_cpu ${_suite})
-    set_tests_properties(fuse_rp_framegen_${_suite} PROPERTIES LABELS "gate;renderer;framegen" TIMEOUT 300)
+    set_tests_properties(fuse_rp_framegen_${_suite} PROPERTIES
+        LABELS "gate;renderer;framegen" TIMEOUT 300 SKIP_RETURN_CODE 77)
 endforeach()
 
 # --- Lavapipe gates ------------------------------------------------------------------------------------------------------

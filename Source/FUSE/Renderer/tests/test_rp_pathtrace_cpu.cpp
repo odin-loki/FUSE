@@ -210,8 +210,11 @@ void testLayout() {
     // The payload wraps PtHit + 4 words in both languages.
     const std::string glslPayload = readText(dir + "/pt_payload.glsl");
     const std::string slang = readText(dir + "/pt_common.slang");
-    expect(glslPayload.find("PtHit hit;") != std::string::npos && slang.find("struct PtPayload {\n    PtHit hit;") != std::string::npos,
-           "PtPayload = PtHit + origin words in both languages");
+    const auto hasPtPayload = [](const std::string& text) {
+        return text.find("struct PtPayload") != std::string::npos && text.find("PtHit hit") != std::string::npos &&
+               text.find("originInstance") != std::string::npos && text.find("originPrimitive") != std::string::npos;
+    };
+    expect(hasPtPayload(glslPayload) && hasPtPayload(slang), "PtPayload = PtHit + origin words in both languages");
     for (const auto& ext : {std::pair<u32, u32>{37u, 23u}, std::pair<u32, u32>{1u, 1u}, std::pair<u32, u32>{1920u, 1080u}}) {
         const PtBufferLayout l = PtBufferLayout::compute(ext.first, ext.second);
         const u64 px = static_cast<u64>(ext.first) * ext.second;

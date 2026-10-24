@@ -154,12 +154,14 @@ endif()
 # --- CPU gates (layouts, BSDF, reference estimators, API, reconstruction choice; also run in the stub tree) --------
 add_executable(fuse_rp_pathtrace_cpu ${_fuse_wp73_tests_dir}/test_rp_pathtrace_cpu.cpp)
 target_link_libraries(fuse_rp_pathtrace_cpu PRIVATE fuse_pathtrace fuse_geometry)
+add_dependencies(fuse_rp_pathtrace_cpu fuse_pathtrace_header)
 target_compile_definitions(fuse_rp_pathtrace_cpu PRIVATE "FUSE_RP_PATHTRACE_SHADER_DIR=\"${_fuse_wp73_shd}\"")
 target_compile_options(fuse_rp_pathtrace_cpu PRIVATE ${_fuse_wp73_warn})
 fuse_apply_cxx23(fuse_rp_pathtrace_cpu)
 foreach(_suite layout bsdf furnace analytic strategies determinism api reconstruction zero_alloc)
     add_test(NAME fuse_rp_pathtrace_${_suite} COMMAND fuse_rp_pathtrace_cpu ${_suite})
-    set_tests_properties(fuse_rp_pathtrace_${_suite} PROPERTIES LABELS "gate;renderer;pathtrace" TIMEOUT 1800)
+    set_tests_properties(fuse_rp_pathtrace_${_suite} PROPERTIES
+        LABELS "gate;renderer;pathtrace" TIMEOUT 1800 SKIP_RETURN_CODE 77)
 endforeach()
 
 # --- Lavapipe gates --------------------------------------------------------------------------------------------

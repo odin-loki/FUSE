@@ -26,6 +26,8 @@ cmake -S "${ROOT}" -B "${BUILD}" -G Ninja -DCMAKE_BUILD_TYPE=Release \
 cmake --build "${BUILD}" -j"$(nproc)"
 # SPIR-V embed targets (FSR3, radix sort, cooked-assets fetch) must be up to date before gate binaries run.
 cmake --build "${BUILD}" -j"$(nproc)" \
-  fuse_fsr3_header fuse_radix_sort_shaders fuse_cooked_assets_vk_shaders fuse_hybrid_header \
-  fuse_rp_fsr3_cpu fuse_cooked_assets_vk fuse_rp_frame
+  fuse_fsr3_header fuse_framegen_header fuse_pathtrace_header \
+  fuse_radix_sort_shaders fuse_cooked_assets_vk_shaders fuse_hybrid_header \
+  fuse_rp_fsr3_cpu fuse_rp_framegen_cpu fuse_rp_pathtrace_cpu \
+  fuse_cooked_assets_vk fuse_rp_frame
 ctest --test-dir "${BUILD}" -L gate -j"$(nproc)" --output-on-failure

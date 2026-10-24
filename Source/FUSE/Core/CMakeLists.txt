@@ -378,7 +378,16 @@ else()
         CACHE INTERNAL "Runs a test command on an X display (Xvfb fallback, 77 = skip)")
     file(WRITE "${FUSE_DISPLAY_TEST_WRAPPER}"
 "#!/usr/bin/env bash
-if [ -n \"\${DISPLAY:-}\" ] && [ -z \"\${FUSE_FORCE_XVFB:-}\" ]; then
+_use_xvfb=0
+if [ -n \"\${FUSE_FORCE_XVFB:-}\" ]; then
+    _use_xvfb=1
+elif [ \"\${DISPLAY:-}\" = \":0\" ] && command -v xvfb-run >/dev/null 2>&1; then
+    # WSLg :0 is often present but leaves test windows unmapped (IsViewable fails).
+    _use_xvfb=1
+elif [ -z \"\${DISPLAY:-}\" ]; then
+    _use_xvfb=1
+fi
+if [ \"\${_use_xvfb}\" -eq 0 ]; then
     exec \"$@\"
 fi
 if command -v xvfb-run >/dev/null 2>&1; then
