@@ -128,7 +128,7 @@ Smoke and hybrid demo:
 
 1. Install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) with **Ubuntu 24.04**.
 2. In the WSL shell, install dependencies: run **`bash scripts/wsl-bootstrap.sh`** (needs `sudo` once), then **re-configure** `build-wsl` so CMake picks up `glslangValidator` and embedded shaders (`cmake -B build-wsl …` as below). Or install the same packages as [Linux system packages](#linux-system-packages-ubuntu-2404) manually.
-3. Clone or use the repo from the Linux filesystem when you can (`~/FUSE`). A tree on `/mnt/c/...` (OneDrive/Desktop) works but I/O is slower; prefer `~/FUSE` for large `ctest -j` sweeps.
+3. Clone or use the repo from the Linux filesystem when you can (`~/FUSE`). A tree on `/mnt/c/...` (OneDrive/Desktop, **drvfs**) is fine for core/Vulkan work but I/O is slower; prefer `~/FUSE` for large `ctest -j` sweeps. Drvfs is case-insensitive, so `vendor/volk/VERSION` can shadow the libc++ `<version>` header (see `cmake/FuseVolk.cmake`) and break **Qt editor** configures — build with `FUSE_BUILD_EDITOR=ON` only under `~/FUSE` (or another Linux-native path).
 
 ```bash
 # Inside WSL (Ubuntu 24.04)
@@ -158,6 +158,8 @@ bash scripts/wsl-build-local.sh
 ```
 
 Renderer frame integration (T0 Lavapipe) lives under the `gate;renderer;frame` labels, for example `fuse_rp_frame_vk_full_t0` and `fuse_scene_renderer_vk_golden_t0`. Those Vulkan tests **skip (exit 77)** if `VK_LAYER_KHRONOS_validation` is missing — install `vulkan-validationlayers` (included in `scripts/wsl-bootstrap.sh`) and confirm `/usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json` exists. A ctest run where frame VK tests only skip is **not** the same as passing the frame gates (`scripts/wsl-run-frame-gates.sh`).
+
+Windowed core/editor tests run through `build-wsl/fuse_run_with_display.sh` (generated at configure). It may use `xvfb-run` when `DISPLAY` is unset or is WSLg’s `:0`; the wrapper **unsets `WAYLAND_DISPLAY`** and defaults `QT_QPA_PLATFORM=xcb` so Qt does not select Wayland under Xvfb (teardown aborts). Leave **`FUSE_FORCE_XVFB` unset** unless you need to force Xvfb for every wrapped test.
 
 `glslangValidator` must be on `PATH` **when you configure** CMake: it embeds the GPU radix-sort shaders (WP-9.2 splats, `hybrid.sprite_layer`, and several other packages). If you configured before installing `glslang-tools`, re-run `cmake -B build-wsl …` after `wsl-bootstrap.sh` and rebuild (`fuse_gsplat`, `fuse_hybrid`, `fuse_compute`).
 
