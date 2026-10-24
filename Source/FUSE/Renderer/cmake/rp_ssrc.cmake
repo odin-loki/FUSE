@@ -74,7 +74,7 @@ target_link_libraries(fuse_ssrc_gpu PUBLIC fuse_ssfx_gpu fuse_rhi)
 fuse_apply_cxx23(fuse_ssrc_gpu)
 # The CPU reference and the brute force run ~1e9 depth lookups in the metric gates: optimise them in Debug trees
 # too (GCC / Clang; the result is bit-identical, no fast-math).
-if(NOT MSVC)
+if(NOT MSVC AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set_source_files_properties(${_fuse_ssrc_src}/ssrc_reference.cpp PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")
 endif()
 

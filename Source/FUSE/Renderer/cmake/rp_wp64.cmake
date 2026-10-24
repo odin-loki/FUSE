@@ -75,7 +75,7 @@ target_link_libraries(fuse_denoise PUBLIC fuse_rhi)
 fuse_apply_cxx23(fuse_denoise)
 # The CPU reference and the synthetic scenes run the quality gate's 6 x 32 realisations x 16 frames (~330 s at
 # -O0): optimise them in Debug trees too (GCC / Clang; the result is bit-identical, no fast-math).
-if(NOT MSVC)
+if(NOT MSVC AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set_source_files_properties(${_fuse_wp64_src}/svgf_reference.cpp ${_fuse_wp64_src}/svgf_synthetic.cpp
                                 PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:Debug>:-O2>")
 endif()
