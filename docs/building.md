@@ -152,6 +152,8 @@ ctest --test-dir build-wsl -L gate -j"$(nproc)" --output-on-failure
 
 # Frame integration only (after wsl-bootstrap.sh):
 bash scripts/wsl-run-frame-gates.sh
+# On drvfs (/mnt/c/...), run that script alone: overlapping `ctest -R fuse_rp_frame_vk -j`
+# or other parallel jobs that execute `fuse_rp_frame` often fails with flock "Text file busy".
 
 # Or one-shot configure + full gate sweep (editor off):
 bash scripts/wsl-build-local.sh
