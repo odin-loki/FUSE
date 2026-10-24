@@ -1616,6 +1616,14 @@ int gateLivePresent() {
                "editor-scoped present unlock on; global FUSE_TRACK_B_UNLOCK untouched");
 
         expect(waitPresented(window, 10, 20000), "first 10 viewport frames presented");
+        // Same as idle/ui gates: empty-scene fog/sky can read like the QWidget placeholder on screen grabs.
+        populateScene(window, 16);
+        for (int i = 0; i < 120; ++i) {
+            std::lock_guard<std::mutex> lock(window.sceneMutex());
+            window.host().gameTick();
+            QCoreApplication::processEvents();
+        }
+        expect(waitPresented(window, 30, 20000), "viewport frames presented after scene populate");
         const fuse::editor::WindowPresentStats s0 = presentStats(window);
         QTest::qWait(600);
         const fuse::editor::WindowPresentStats s1 = presentStats(window);
