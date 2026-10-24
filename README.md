@@ -17,6 +17,8 @@ One program for 2D, 3D, and hybrid worlds. ISO C++ host, handle-based ownership,
 [![FUSE Relight (MinGW-w64 cross + Wine/Xvfb/Lavapipe)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-relight-wine.yml/badge.svg?branch=main)](https://github.com/odin-loki/FUSE/actions/workflows/fuse-relight-wine.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE.md)
 
+Optional CI (iOS simulator, TSan nightly): manual or scheduled workflows, not the default `main` gate — [build guide](docs/building.md#optional-ci-github-actions).
+
 - Product docs: [`docs/README.md`](docs/README.md)
 - Getting started: [`docs/getting-started.md`](docs/getting-started.md)
 - Architecture: [`docs/architecture.md`](docs/architecture.md)
