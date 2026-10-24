@@ -80,11 +80,21 @@ function(fuse_volk_attach target)
 #endif
 " @ONLY)
 
+    # Expose only volk.h / fuse_volk_pin.h from the shim tree. Do not add ${_volk_dir} itself: its
+    # VERSION pin file is picked up as <version> on case-insensitive mounts (OneDrive /drvfs), which
+    # breaks Qt and any TU that includes <version> before the libc++ header.
+    foreach(_hdr volk.h fuse_volk_pin.h)
+        set(_link "${_shim_dir}/${_hdr}")
+        if(NOT EXISTS "${_link}")
+            file(CREATE_LINK "${_volk_dir}/${_hdr}" "${_link}" SYMBOLIC COPY_ON_ERROR)
+        endif()
+    endforeach()
+
     get_target_property(_srcdir ${target} SOURCE_DIR)
     target_sources(${target} PRIVATE "${ARG_IMPLEMENTATION}")
     target_include_directories(${target} BEFORE PUBLIC "$<BUILD_INTERFACE:${_shim_dir}>")
     # SYSTEM: third-party code (volk.c is compiled inside the implementation TU).
-    target_include_directories(${target} SYSTEM PUBLIC "$<BUILD_INTERFACE:${_volk_dir}>" "$<BUILD_INTERFACE:${_vk_inc}>")
+    target_include_directories(${target} SYSTEM PUBLIC "$<BUILD_INTERFACE:${_shim_dir}>" "$<BUILD_INTERFACE:${_vk_inc}>")
     target_compile_definitions(${target} PUBLIC VK_NO_PROTOTYPES FUSE_RHI_VOLK=1)
     target_link_libraries(${target} PUBLIC ${CMAKE_DL_LIBS})
 

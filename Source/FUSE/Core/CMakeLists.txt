@@ -391,6 +391,9 @@ if [ \"\${_use_xvfb}\" -eq 0 ]; then
     exec \"$@\"
 fi
 if command -v xvfb-run >/dev/null 2>&1; then
+    # WSLg sets WAYLAND_DISPLAY; Qt prefers Wayland and aborts during teardown under xvfb.
+    unset WAYLAND_DISPLAY
+    export QT_QPA_PLATFORM=\"\${QT_QPA_PLATFORM:-xcb}\"
     exec xvfb-run -a -s \"-screen 0 1920x1080x24 -nolisten tcp\" \"$@\"
 fi
 echo \"SKIP: no DISPLAY and xvfb-run not installed\"

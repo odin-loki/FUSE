@@ -57,8 +57,9 @@ foreach(_entry IN LISTS _fuse_qt_gate_tests)
     add_test(NAME ${_test} COMMAND ${_fuse_qt_gate_launcher} $<TARGET_FILE:fuse_editor_qt_gates> ${_args})
     set(_env)
     if(NOT WIN32)
-        # Linux CI: Mesa lavapipe. On Windows the runner's VK_ICD_FILENAMES / VK_DRIVER_FILES apply.
+        # Linux CI / WSL: Mesa lavapipe; xcb under Xvfb (Wayland on WSLg aborts during Qt teardown).
         list(APPEND _env "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+        list(APPEND _env "QT_QPA_PLATFORM=xcb")
     endif()
     if(_name MATCHES "^font_(.*)$")
         string(REPLACE "_" "." _scale "${CMAKE_MATCH_1}")
@@ -80,7 +81,8 @@ foreach(_entry IN LISTS _fuse_qt_gate_tests)
         RUN_SERIAL TRUE
     )
 endforeach()
-set_tests_properties(fuse_editor_qt_idle_frames PROPERTIES TIMEOUT 1800)
+# Full 10k-frame × up to 3 runs can exceed 30 min on Lavapipe/WSL (CI Release is faster).
+set_tests_properties(fuse_editor_qt_idle_frames PROPERTIES TIMEOUT 3600)
 
 # Appendix A "Icons": FUSE app icon embedded in the Qt host and installed as the window icon.
 if(_fuse_qt_gate_available)
