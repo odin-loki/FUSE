@@ -11,7 +11,8 @@ sudo apt-get update
 sudo apt-get install -y \
   ninja-build cmake g++-13 \
   libvulkan-dev mesa-vulkan-drivers vulkan-tools \
-  vulkan-validationlayers glslang-tools spirv-tools
+  vulkan-validationlayers glslang-tools spirv-tools \
+  xvfb x11-utils libx11-dev libxtst-dev libxi-dev
 
 if [[ -f /usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json ]]; then
   echo "Khronos validation layer: OK"

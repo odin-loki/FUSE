@@ -190,11 +190,13 @@ set(_fuse_wp42_tests_dir "${_fuse_wp42_root}/tests")
 # --- CPU gates (host port, reflection vs C++ layouts, conventions; also run in the stub tree) ------------------
 add_executable(fuse_rp_fsr3_cpu ${_fuse_wp42_tests_dir}/test_rp_fsr3_cpu.cpp)
 target_link_libraries(fuse_rp_fsr3_cpu PRIVATE fuse_fsr3)
+add_dependencies(fuse_rp_fsr3_cpu fuse_fsr3_header)
 target_include_directories(fuse_rp_fsr3_cpu SYSTEM PRIVATE "${_fuse_wp42_ffx}/include")
 fuse_apply_cxx23(fuse_rp_fsr3_cpu)
 foreach(_suite layout bindings host jitter convert)
     add_test(NAME fuse_rp_fsr3_${_suite} COMMAND fuse_rp_fsr3_cpu ${_suite})
-    set_tests_properties(fuse_rp_fsr3_${_suite} PROPERTIES LABELS "gate;renderer;fsr3" TIMEOUT 600)
+    set_tests_properties(fuse_rp_fsr3_${_suite} PROPERTIES
+        LABELS "gate;renderer;fsr3" TIMEOUT 600 SKIP_RETURN_CODE 77)
 endforeach()
 
 # --- Lavapipe gates ------------------------------------------------------------------------------------
