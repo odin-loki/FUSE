@@ -80,10 +80,10 @@ function(fuse_volk_attach target)
 #endif
 " @ONLY)
 
-    # Expose only volk.h / fuse_volk_pin.h from the shim tree. Do not add ${_volk_dir} itself: its
-    # VERSION pin file is picked up as <version> on case-insensitive mounts (OneDrive /drvfs), which
-    # breaks Qt and any TU that includes <version> before the libc++ header.
-    foreach(_hdr volk.h fuse_volk_pin.h)
+    # Expose volk.h, volk.c (VOLK_IMPLEMENTATION), and fuse_volk_pin.h from the shim tree only.
+    # Do not add ${_volk_dir} itself: its VERSION pin file is picked up as <version> on
+    # case-insensitive mounts (OneDrive /drvfs), which breaks Qt and libc++ <version>.
+    foreach(_hdr volk.h volk.c fuse_volk_pin.h)
         set(_link "${_shim_dir}/${_hdr}")
         if(NOT EXISTS "${_link}")
             file(CREATE_LINK "${_volk_dir}/${_hdr}" "${_link}" SYMBOLIC COPY_ON_ERROR)
