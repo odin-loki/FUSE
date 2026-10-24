@@ -374,7 +374,8 @@ int runGolden() {
     hybrid::HybridRendererBootstrapDesc desc = bootstrapDesc(true);
     desc.scene.runtimeDefaults = false;
     fuse::renderer::frame::applyLavapipeComposerDefaults(desc.scene.composer);
-    fuse::renderer::frame::applyLavapipeTier0FrameSettings(desc.scene.settings, kWidth, kHeight);
+    fuse::renderer::frame::applyLavapipeTier0FrameSettings(desc.scene.settings, 0u, 0u);
+    desc.scene.settings.clouds = true;
     auto runtime = hybrid::HybridRendererBootstrap::create(desc);
     MessagePrinter printer;
     printer.attach(*runtime);
