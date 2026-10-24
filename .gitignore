@@ -226,5 +226,8 @@ fuse_nvplugin_ngx*.dll
 # Local CI log dumps (e.g. MSVC LastTest.log copies from local test runs)
 /.ci-logs/
 
+# CTest output when the CMake binary directory is the repo root
+/Testing/
+
 # Relight package payload (README, rtx.conf, licences): not a build output
 !/Source/FUSE/Relight/package/dist/
