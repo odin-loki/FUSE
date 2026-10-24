@@ -117,8 +117,10 @@ jobs:
           Write-Host "$($exes.Count) x64 executables"
           if ($exes.Count -eq 0) { throw "no executables built" }
 
+      # -j1: OpenAL wave gate is timing-sensitive; parallel ctest (even with RUN_SERIAL) still
+      # schedules non-serial perf gates beside it and starves the feeder thread on Windows.
       - name: CTest (native Windows)
-        run: ctest --test-dir build/${{ env.PRESET }} --output-on-failure --no-tests=error -j 2 --timeout 900
+        run: ctest --test-dir build/${{ env.PRESET }} --output-on-failure --no-tests=error -j 1 --timeout 900
 
       - name: sccache stats
         if: always()

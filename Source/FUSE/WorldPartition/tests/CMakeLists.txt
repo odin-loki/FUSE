@@ -11,4 +11,5 @@ add_executable(fuse_b7_streaming_gates_tests
 
 target_link_libraries(fuse_b7_streaming_gates_tests PRIVATE fuse_world_partition fuse_ecs fuse_core)
 add_test(NAME fuse_b7_streaming_gates COMMAND fuse_b7_streaming_gates_tests)
-set_tests_properties(fuse_b7_streaming_gates PROPERTIES RUN_SERIAL TRUE LABELS "perf;gate")
+set_tests_properties(fuse_b7_streaming_gates PROPERTIES
+    RUN_SERIAL TRUE LABELS "perf;gate" RESOURCE_LOCK fuse_host_perf_gate)

@@ -681,7 +681,7 @@ int runWave(const char* wav_path) {
         desc.output = fa::AudioOutputRequest::OpenAL;
         desc.pacing = fa::AudioPacing::Device;
         desc.device_buffers = 4;
-        desc.output_ring_blocks = 32; // ~340 ms of slack: parallel ctest must not starve the feeder
+        desc.output_ring_blocks = 64; // ~680 ms slack: host scheduling must not starve the feeder
         Scene scene(desc);
         if (scene.engine.backend_kind() != fa::AudioBackendKind::OpenAL) {
             std::printf("FAIL: OpenAL wave device did not open (ALSOFT_CONF / wave driver)\n");
