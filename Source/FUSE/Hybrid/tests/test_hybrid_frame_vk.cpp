@@ -37,6 +37,7 @@
 #include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
 #include <fuse/hybrid/hybrid_scene_renderer.hpp>
 #include <fuse/hybrid/sprite_layer_gpu.hpp>
+#include <fuse/renderer/frame/frame_runtime_presets.hpp>
 #include <fuse/platform/window_wsi.hpp>
 #include <fuse/renderer/deferred/gbuffer.hpp>
 #include <fuse/renderer/rg/executor.hpp>
@@ -368,7 +369,13 @@ int runGolden() {
     fuse::core::initialize();
     Scene scene;
     buildScene(scene);
-    auto runtime = hybrid::HybridRendererBootstrap::create(bootstrapDesc(true));
+    // Golden compares against hybrid_frame_t0.png (full Lavapipe T0, clouds on). Editor runtime uses
+    // runtimeFrameSettings() (clouds off); do not inherit HybridSceneRendererDesc::runtimeDefaults here.
+    hybrid::HybridRendererBootstrapDesc desc = bootstrapDesc(true);
+    desc.scene.runtimeDefaults = false;
+    fuse::renderer::frame::applyLavapipeComposerDefaults(desc.scene.composer);
+    fuse::renderer::frame::applyLavapipeTier0FrameSettings(desc.scene.settings, kWidth, kHeight);
+    auto runtime = hybrid::HybridRendererBootstrap::create(desc);
     MessagePrinter printer;
     printer.attach(*runtime);
     attach(*runtime, scene);
