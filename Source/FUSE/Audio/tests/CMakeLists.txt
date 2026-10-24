@@ -83,7 +83,7 @@ if(FUSE_AUDIO_HAS_OPENAL)
     set_tests_properties(fuse_audio_output_wave PROPERTIES
         LABELS "gate;audio" TIMEOUT 120 SKIP_RETURN_CODE 77 RUN_SERIAL TRUE
         # Same lock as fuse_b7_streaming_gates: long perf gates must not run beside the wave writer.
-        RESOURCE_LOCK fuse_openal_output;fuse_host_perf_gate
+        RESOURCE_LOCK "fuse_openal_output;fuse_host_perf_gate"
         ENVIRONMENT "ALSOFT_CONF=${_fuse_wave_conf};ALSOFT_DRIVERS=wave")
     add_test(NAME fuse_audio_output_openal_null COMMAND fuse_audio_output_tests --openal-null)
     set_tests_properties(fuse_audio_output_openal_null PROPERTIES
