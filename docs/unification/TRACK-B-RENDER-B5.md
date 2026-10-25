@@ -151,7 +151,7 @@ SDF soft shadows and deferred shading sampling deferred to B2.6 interop + B5.4 C
 
 ## B5.6 — Global Illumination: DDGI
 
-**Status:** CPU-first probe grid, irradiance cache, update/sample stubs landed; probe grid indexing + trilinear irradiance lerp deepened; **B5.6 deepen** adds octahedral direction encoding, border/interior validity flags, and OOB clamp helpers. **Now real:** CPU probe trace/blend/sample with change detection; **gates proven** by `fuse_b5_ddgi_gates` (0.96% vs Monte Carlo). CUDA: single-source kernels with `kernels/ddgi_probe_update.cu` (one-shot + resident `DdgiDeviceVolume`); device gate `fuse_b5_ddgi_device` pending the RTX 3090 run.
+**Status:** CPU-first probe grid, irradiance cache, update/sample stubs landed; probe grid indexing + trilinear irradiance lerp deepened; **B5.6 deepen** adds octahedral direction encoding, border/interior validity flags, and OOB clamp helpers. **Now real:** CPU probe trace/blend/sample with change detection; **gates proven** by `fuse_b5_ddgi_gates` (0.96% vs Monte Carlo). CUDA: single-source kernels with `kernels/ddgi_probe_update.cu` (one-shot + resident `DdgiDeviceVolume`); umbrella runs `fuse_ddgi_kernel_parity` and `fuse_b5_ddgi_device_cpu`; `fuse_b5_ddgi_device` (exit **77** without a GPU) covers RTX 3090 timing parity.
 
 | Component | Location | Notes |
 |-----------|----------|-------|
@@ -362,7 +362,7 @@ timing, RenderDoc or an on-screen present and is tracked in
 |--------|-----------|
 | `fuse_gbuffer` | B5.2 — formats, octahedral encoding, allocation |
 | `fuse_material_system` | B5.3 — pack/unpack, SSBO table |
-| `fuse_deferred_pipeline` | B5.1 — 16-pass schedule, graph build, execute stub |
+| `fuse_deferred_pipeline` | B5.1 — 19-pass schedule (12 Vulkan + 7 CUDA), graph build, execute stub |
 | `fuse_clustered_light_culler` | B5.4 — cluster grid, slice depth, light-grid rebuild, light cull, pipeline wiring |
 | `fuse_shadow_system` | B5.5 — CSM near/far/range splits, light-space AABB, validation, atlas, shadow pass graph |
 | `fuse_ddgi` | B5.6 — probe grid, update/sample, pipeline slot |
@@ -382,6 +382,8 @@ timing, RenderDoc or an on-screen present and is tracked in
 | `fuse_b5_taa_ssfx_gates` | **B5.7/B5.9 gates** — TAA edges + rejection, HBAO, SSR |
 | `fuse_b5_atmosphere_gates` | **B5.8/B5.11 gates** — sky scattering, 10-bit banding, sun disk, fog |
 | `fuse_b5_post_gates` | **B5.10 gates** — bloom, DoF, motion blur, ACES calibration, film grain |
+| `fuse_b5_rhi_*` | **B5 RHI** — Vulkan/CUDA interop, resident buffers, kernel registration |
+| `fuse_*_kernel_parity` | **CUDA kernels** — CPU bit-exact parity (e.g. `fuse_clustered_kernel_parity`, `fuse_ddgi_kernel_parity`, `fuse_sdf_shadows_kernel_parity`) |
 
 Run Phase 5 suite:
 
@@ -401,12 +403,12 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
 
 ### B5.1–B5.4 (deferred architecture + G-buffer + materials + clustered shading)
 
-- [x] **B5.1** `DeferredFramePipeline` 16-pass schedule on FUSE APIs
+- [x] **B5.1** `DeferredFramePipeline` 19-pass schedule on FUSE APIs (12 Vulkan + 7 CUDA)
 - [x] **B5.2** G-buffer six-attachment layout + octahedral normal encoding
 - [x] **B5.3** `MaterialSystem` bindless SSBO scaffold
 - [x] **B5.4** `ClusteredLightCuller` CPU stub + light-grid rebuild helpers + deferred pipeline wiring
 - [x] CTest targets green under umbrella CI (`FUSE_BUILD_VULKAN=ON`)
-- [ ] ASan/UBSan on renderer subsystem tests (umbrella ASan covers runtime smoke; renderer-specific ASan optional follow-up)
+- [x] ASan/UBSan on renderer subsystem tests (umbrella `fuse-asan` preset: full `ctest` on `build/fuse-asan` with `FUSE_SANITIZE=address,undefined` — includes all `fuse_b5_*` / `fuse_b5_rhi_*` gates; see `fuse-umbrella-linux.yml` and `CMakePresets.json`)
 
 ### B5.5–B5.9 (shadows, GI, screen-space, atmosphere, TAA)
 
@@ -441,8 +443,8 @@ ctest --test-dir build --output-on-failure -R 'fuse_screen_space_effects'
   - E02 (2026-09-30): the renderer-side replacement exists — `scene_renderer::SceneRenderer` (ECS scene -> FrameComposer, present blit; `fuse_scene_renderer_*` gates). Wiring it into `RhiContext` / Hybrid is E03 (still open).
   - E03 (2026-09-30): done with the FrameComposer instead of `DeferredRenderer`: `RhiContext::setSceneFrameSource` routes `submitFrame` to `hybrid::HybridSceneRenderer` (SceneRenderer 3D -> sprite / UI layer -> `present.blit` into the acquired swapchain image or a headless target, submitted on the frame slot's semaphores / fence). **Runtime rendering (Hybrid, World3D, the editor viewport, the demos) uses the FrameComposer; `DeferredRenderer` / `DeferredFramePipeline` stay the B5 gate path** (their gates are unchanged). Gates `fuse_hybrid_frame_vk_{golden,sprite,zero_alloc,swapchain}` (Lavapipe / Xvfb, 0 validation messages).
 - [x] B5.4 follow-up: Cluster grid index/decode/screen-depth helpers, slice-Z mapping, overflow clamp + CPU tests (`fuse_clustered_light_culler`)
-- [ ] B5.4 follow-up: CUDA cluster AABB build + deferred shade kernels
-- [ ] B5.5 follow-up: SDF soft shadows in `fuse_compute` (CSM split + light-space AABB stubs landed)
+- [x] B5.4 follow-up: CUDA cluster AABB build + deferred shade kernels (`clustered_kernel.hpp`, `kernels/clustered_lighting.cu`; umbrella `fuse_clustered_kernel_parity`, `fuse_b5_clustered_device_cpu`; RTX timing via `fuse_b5_clustered_device`)
+- [x] B5.5 follow-up: SDF soft shadows in `fuse_rhi` (`kernels/sdf_shadows.cu`; `fuse_sdf_shadows_kernel_parity`; correctness `fuse_b5_shadows_gates` + `fuse_csm_guards`)
 - [ ] B5.7 follow-up: G-buffer `cudaInterop` surface import via B2.6 (stub params + contact-harden CPU helpers landed)
 - [ ] B5.9 follow-up: CUDA `taa_resolve_kernel` (CPU jitter/history validity stub landed)
 - [ ] B5.10 follow-up: DOF / motion blur / film grain GPU shader chain; CUDA histogram auto-exposure
