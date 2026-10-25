@@ -5,6 +5,7 @@
 #include <fuse/ai/uaisk_cs_syntax_tree.hpp>
 #include <fuse/ai/uaisk_script_import.hpp>
 #include <fuse/cinematics/actor_track.hpp>
+#include <fuse/cinematics/event_track.hpp>
 #include <fuse/cinematics/camera_track.hpp>
 #include <fuse/cinematics/hybrid_timeline_drive.hpp>
 #include <fuse/cinematics/sprite_track.hpp>
@@ -64,6 +65,21 @@ void setupFx(State& state) {
     std::string executeError;
     (void)fuse::fx::execute_afx_mission_from_mis(kExecuteMisText, state.fxComposer, state.missionScriptVm,
                                                 &executeError);
+
+#if FUSE_HYBRID_GATES_WAVE27
+    static const char* kSpellMisText =
+        "new SimObject(FireballSpell) {\n"
+        "  spellId = \"fireball\";\n"
+        "}\n";
+    fuse::fx::AfxMissionBody spellBody;
+    if (fuse::fx::parse_afx_mission_body_from_mis(kSpellMisText, spellBody)) {
+        std::vector<fuse::fx::AfxMissionBodySpell> spells;
+        state.missionSpellCodegenCount = fuse::fx::codegen_spells_from_mission_body(spellBody, spells);
+        if (!spells.empty()) {
+            state.missionSpellCodegenId = spells[0].spellId;
+        }
+    }
+#endif
 
     fuse::fx::FxSocket spriteSocket;
     spriteSocket.kind = fuse::fx::FxSocketKind::Sprite2D;
@@ -242,6 +258,25 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
         "actor agent_3d mount 2000 cockpit 15\n";
     state.timelineHostWired =
         state.timelineHostStub.wireFromTimeline(state.timeline, kTimelineHostAssetText, 2'500);
+#if FUSE_HYBRID_GATES_WAVE25
+    {
+        fuse::cinematics::TrackGroup& scrubGroup = state.timeline.add_group("HybridScrub");
+        fuse::cinematics::EventTrack& scrubEvents = scrubGroup.add_event_track("ScriptCues");
+        scrubEvents.set_script_hook_id("on_hybrid_scrub");
+        scrubEvents.add_event(fuse::cinematics::TimelineEvent("door_open", 1'000));
+        scrubEvents.add_event(fuse::cinematics::TimelineEvent("dialog_start", 3'000));
+        scrubEvents.sort_events();
+        state.timeline.pause();
+        state.timeline.scrub_to(0, false);
+        state.timeline.scrub_to(2'500);
+        state.timelineScrubCueCount = state.timeline.cue_queue().pending_count();
+        if (state.timelineScrubCueCount > 0u) {
+            state.timelineScrubFirstCue = state.timeline.cue_queue().pending()[0].label;
+        }
+        state.timeline.cue_queue().clear();
+        state.timeline.play();
+    }
+#endif
     setupFx(state);
 
     state.loadedOutpostStub = fuse::adventure::loadEmbeddedOutpostStub(state.outpostContent);
@@ -274,6 +309,8 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
         state.leverCounter.increment();
         state.leverMessage.send();
         (void)state.leverSpawn.triggerSpawn();
+        (void)state.leverDestroy.triggerDestroy();
+        state.leverSound.play();
 
         fuse::mechanics::InteractionContext mechanicsCtx;
         mechanicsCtx.verb = "use";
@@ -580,6 +617,24 @@ VerifyResult verify(const State& state, fuse::hybrid::HybridComposer& composer) 
     }
     if (state.vactorBridge.boneMotionSyncCount() == 0u) {
         return {false, "fuse_cinematics bone attach motion sync applied"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE27
+    if (state.missionSpellCodegenCount == 0u || state.missionSpellCodegenId != "fireball") {
+        return {false, "fuse_fx codegen_spells_from_mission_body in hybrid demo"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE26
+    if (state.leverDestroy.destroyCount() == 0u) {
+        return {false, "fuse_mechanics DestroyComponent fired on polyhedron trigger enter"};
+    }
+    if (state.leverSound.playCount() == 0u) {
+        return {false, "fuse_mechanics SoundComponent played on polyhedron trigger enter"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE25
+    if (state.timelineScrubCueCount != 1u || state.timelineScrubFirstCue != "door_open") {
+        return {false, "fuse_cinematics timeline scrub_to enqueues forward-crossed cues in hybrid demo"};
     }
 #endif
 #if FUSE_HYBRID_GATES_WAVE24

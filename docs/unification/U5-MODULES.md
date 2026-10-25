@@ -400,6 +400,27 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_ai` | Hybrid demo registers UAISK profile codegen from `condition = "distance < N"` field |
 | **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE24` asserts parsed threshold and tree profile registration |
 
+#### Landed wave 25 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_cinematics` | Hybrid demo `timeline.scrub_to()` forward cue enqueue (`door_open` @ 2.5s scrub) |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE25` asserts scrub pending cue count and label |
+
+#### Landed wave 26 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_mechanics` | GMK `DestroyComponent` + `SoundComponent` on polyhedron trigger enter |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE26` asserts destroy and play counts |
+
+#### Landed wave 27 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_fx` | `codegen_spells_from_mission_body()` on embedded `.mis` SimObject in hybrid setup |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE27` asserts fireball spell codegen |
+
 ---
 
 ## 8. Related docs
