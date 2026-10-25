@@ -1,6 +1,7 @@
 #include "hybrid_module_gates.hpp"
 
 #include <fuse/ai/behavior_tree.hpp>
+#include <fuse/ai/uaisk_cs_codegen.hpp>
 #include <fuse/ai/uaisk_cs_syntax_tree.hpp>
 #include <fuse/ai/uaisk_script_import.hpp>
 #include <fuse/cinematics/actor_track.hpp>
