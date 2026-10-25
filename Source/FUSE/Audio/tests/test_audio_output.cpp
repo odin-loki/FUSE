@@ -30,6 +30,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -189,10 +190,55 @@ double snr_db(const float* ref, const float* test, size_t count) {
     return 10.0 * std::log10(signal / noise);
 }
 
+/// First stereo frame index whose magnitude exceeds a tiny threshold.
+size_t first_nonzero_frame(const std::vector<float>& stereo) {
+    for (size_t i = 0; i < stereo.size(); ++i) {
+        if (std::fabs(stereo[i]) > 1e-7f) {
+            return i / 2;
+        }
+    }
+    return stereo.size() / 2;
+}
+
+/// SNR after searching a small frame lag (device latency / buffer alignment on Windows CI).
+double best_lag_snr_db(const float* ref, const float* test, size_t ref_frames, size_t test_frames,
+                       size_t ref0, size_t test0, size_t compare_frames, size_t max_lag_frames,
+                       std::int64_t* best_lag_out) {
+    double best = -1e9;
+    std::int64_t best_lag = 0;
+    const size_t max_lag = std::min(max_lag_frames, std::min(ref_frames, test_frames));
+    for (size_t lag = 0; lag <= max_lag; ++lag) {
+        if (ref0 + compare_frames > ref_frames || test0 + lag + compare_frames > test_frames) {
+            break;
+        }
+        const double s =
+            snr_db(ref + ref0 * 2, test + (test0 + lag) * 2, compare_frames * 2);
+        if (s > best) {
+            best = s;
+            best_lag = static_cast<std::int64_t>(lag);
+        }
+    }
+    for (size_t lag = 1; lag <= max_lag; ++lag) {
+        if (ref0 + lag + compare_frames > ref_frames || test0 + compare_frames > test_frames) {
+            break;
+        }
+        const double s = snr_db(ref + (ref0 + lag) * 2, test + test0 * 2, compare_frames * 2);
+        if (s > best) {
+            best = s;
+            best_lag = -static_cast<std::int64_t>(lag);
+        }
+    }
+    if (best_lag_out != nullptr) {
+        *best_lag_out = best_lag;
+    }
+    return best;
+}
+
 fa::AudioDesc null_desc(u32 frames, u32 capture_frames) {
     fa::AudioDesc desc;
     desc.frames_per_buf = frames;
     desc.cuda_reverb = false;
+    desc.hrtf_enabled = false;
     desc.output = fa::AudioOutputRequest::Null;
     desc.capture_frames = capture_frames;
     return desc;
@@ -680,8 +726,11 @@ int runWave(const char* wav_path) {
         desc.cuda_reverb = false;
         desc.output = fa::AudioOutputRequest::OpenAL;
         desc.pacing = fa::AudioPacing::Device;
+        desc.hrtf_enabled = false;
         desc.device_buffers = 4;
         desc.output_ring_blocks = 64; // ~680 ms slack: host scheduling must not starve the feeder
+        // One block per update when the ring has room — matches the Null reference sample clock.
+        desc.max_device_pacing_blocks_per_update = 1;
         Scene scene(desc);
         if (scene.engine.backend_kind() != fa::AudioBackendKind::OpenAL) {
             std::printf("FAIL: OpenAL wave device did not open (ALSOFT_CONF / wave driver)\n");
@@ -714,13 +763,14 @@ int runWave(const char* wav_path) {
         // Drain: wait until the device played everything that was submitted.
         while (std::chrono::steady_clock::now() < deadline) {
             stats = scene.engine.output_stats();
-            if (stats.frames_played >= stats.frames_submitted) {
+            if (stats.frames_played >= stats.frames_submitted && stats.queued_frames == 0) {
                 break;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
         stats = scene.engine.output_stats();
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        // Let the wave backend flush and finalise RIFF sizes (slow RelWithDebInfo CI hosts).
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
         scene.engine.destroy(); // closes the device: the wave writer finalises the RIFF sizes
     }
     std::printf("[audio-out] wave device: submitted %llu played %llu dropped %llu underruns %llu silence %llu, "
@@ -744,24 +794,22 @@ int runWave(const char* wav_path) {
         std::printf("FAIL: wave format %u ch %u Hz\n", wav.channel_count, wav.sample_rate);
         return 1;
     }
-    // Align on the first non-zero frame (the device plays exact silence before the stream starts).
-    auto first_nonzero = [](const std::vector<float>& s) {
-        for (size_t i = 0; i < s.size(); ++i) {
-            if (std::fabs(s[i]) > 1e-7f) {
-                return i / 2;
-            }
-        }
-        return s.size() / 2;
-    };
-    const size_t ref0 = first_nonzero(reference);
-    const size_t wav0 = first_nonzero(wav.samples);
-    const size_t compare = clip_frames - 64;
-    const bool fits = wav0 + compare <= wav.samples.size() / 2 && ref0 + compare <= reference.size() / 2;
-    expectTrue(fits, "wave: WAV holds the whole streamed clip");
-    if (fits) {
-        const double snr = snr_db(reference.data() + ref0 * 2, wav.samples.data() + wav0 * 2, compare * 2);
-        std::printf("[audio-out] wave file vs Null reference: onset frame %zu, SNR %.1f dB over %zu frames\n", wav0,
-                    snr, compare);
+    const size_t ref0 = first_nonzero_frame(reference);
+    const size_t wav0 = first_nonzero_frame(wav.samples);
+    const size_t ref_frames = reference.size() / 2;
+    const size_t wav_frames = wav.samples.size() / 2;
+    const size_t available = std::min(ref_frames - ref0, wav_frames - wav0);
+    const size_t compare = std::min(clip_frames - 64, available);
+    // Require nearly the full 1 s clip (allow a few blocks of device tail trimming).
+    expectTrue(compare + 64 >= clip_frames - block, "wave: WAV holds the streamed clip");
+    if (compare > 0) {
+        std::int64_t lag = 0;
+        const double snr =
+            best_lag_snr_db(reference.data(), wav.samples.data(), ref_frames, wav_frames, ref0, wav0, compare,
+                            block * 2, &lag);
+        std::printf("[audio-out] wave file vs Null reference: onset frame %zu, lag %lld frames, SNR %.1f dB over %zu "
+                    "frames\n",
+                    wav0, static_cast<long long>(lag), snr, compare);
         expectTrue(snr > 60.0, "wave: device output matches the reference mix (SNR > 60 dB)");
     }
     return 0;

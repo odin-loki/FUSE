@@ -37,6 +37,8 @@ struct AudioDesc {
     u32 device_buffers = 4;
     /// OpenAL: blocks the game-thread -> feeder-thread SPSC ring holds ahead of the device (>= 1).
     u32 output_ring_blocks = 4;
+    /// Device pacing only: cap blocks rendered per update (0 = fill the whole writable queue).
+    u32 max_device_pacing_blocks_per_update = 0;
     /// Null: stereo frames kept in the capture buffer (reserved at init; 0 = no capture).
     u32 capture_frames = 0;
 

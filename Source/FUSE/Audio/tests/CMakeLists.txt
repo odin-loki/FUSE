@@ -80,7 +80,7 @@ set_tests_properties(fuse_audio_output PROPERTIES
 if(FUSE_AUDIO_HAS_OPENAL)
     set(_fuse_wave_conf "${CMAKE_CURRENT_BINARY_DIR}/fuse_audio_wave_alsoft.conf")
     set(_fuse_wave_out "${CMAKE_CURRENT_BINARY_DIR}/fuse_audio_wave_out.wav")
-    file(WRITE "${_fuse_wave_conf}" "[general]\ndrivers=wave\nfrequency=48000\nchannels=stereo\nsample-type=float32\nperiod_size=512\nperiods=3\noutput-limiter=false\ndither=false\nhrtf=false\nstereo-mode=speakers\n[wave]\nfile=${_fuse_wave_out}\n")
+    file(WRITE "${_fuse_wave_conf}" "[general]\ndrivers=wave\nfrequency=48000\nchannels=stereo\nsample-type=float32\nperiod_size=512\nperiods=1\noutput-limiter=false\ndither=false\nhrtf=false\nstereo-mode=speakers\n[wave]\nfile=${_fuse_wave_out}\n")
     add_test(NAME fuse_audio_output_wave COMMAND fuse_audio_output_tests --wave "${_fuse_wave_out}")
     set_tests_properties(fuse_audio_output_wave PROPERTIES
         LABELS "gate;audio" TIMEOUT 120 SKIP_RETURN_CODE 77 RUN_SERIAL TRUE

@@ -227,14 +227,22 @@ struct AudioBackend::OpenALStream {
         }
 
         const u32 buffer_samples = buffer_frames * 2;
+        const u32 block_samples = block_frames * 2;
         const bool starved = started && queued == 0;
         if (starved) {
             underruns.fetch_add(1, std::memory_order_relaxed);
         }
         while (free_count > 0) {
-            if (ring.read(scratch.data(), buffer_samples)) {
+            u32 filled_frames = 0;
+            while (filled_frames < buffer_frames) {
+                if (!ring.read(scratch.data() + static_cast<usize>(filled_frames) * 2, block_samples)) {
+                    break;
+                }
+                filled_frames += block_frames;
+            }
+            if (filled_frames == buffer_frames) {
                 started = true;
-            } else if (starved && queued == 0) {
+            } else if (starved && queued == 0 && filled_frames == 0) {
                 std::fill(scratch.begin(), scratch.end(), 0.f);
                 silence_frames.fetch_add(buffer_frames, std::memory_order_relaxed);
             } else {

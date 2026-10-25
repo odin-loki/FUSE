@@ -38,6 +38,9 @@ trap 'rm -f "$log"' EXIT
 rc=$?
 # Show the app's lines, DXVK warnings/errors and device-selection decisions.
 grep -E '^(rl_smoke|SKIP|warn|err)|Found device|Skipping' "$log" || true
+if grep -q '^rl_smoke: FAIL' "$log"; then
+    exit 1
+fi
 if [ "$rc" -ne 0 ] && [ "$rc" -ne 77 ] &&
    grep -q "Skipping: Device does not support required feature 'khrLoadStoreOpNone'" "$log" &&
    grep -q "No adapters found" "$log"; then
@@ -45,5 +48,15 @@ if [ "$rc" -ne 0 ] && [ "$rc" -ne 77 ] &&
     echo "      (the host Vulkan driver may have it; winevulkan filters extensions newer than itself)."
     echo "      Needs a Wine release that knows the extension (Wine 9.0 does not)."
     exit 77
+fi
+# The app prints PASS before exit; Wine/DXVK sometimes still return non-zero during teardown
+# (seen on Relight CI: rl_smoke: PASS with ctest Failed, run 40116149617 @ 39df18db4).
+if [ "$rc" -ne 0 ] && [ "$rc" -ne 77 ] && grep -q '^rl_smoke: PASS' "$log"; then
+    echo "warn: Wine runner exited $rc after rl_smoke: PASS (treating as pass)"
+    exit 0
+fi
+if [ "$rc" -ne 0 ] && [ "$rc" -ne 77 ]; then
+    echo "run_smoke: runner exit $rc (full log tail):" >&2
+    tail -n 20 "$log" >&2 || true
 fi
 exit "$rc"

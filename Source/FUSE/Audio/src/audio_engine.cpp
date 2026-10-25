@@ -46,6 +46,9 @@ void AudioEngine::update(AudioRegistry& registry, float dt) {
     u32 blocks = 1;
     if (m_desc.pacing == AudioPacing::Device && m_backend.kind() != AudioBackendKind::Null) {
         blocks = m_backend.writable_blocks();
+        if (m_desc.max_device_pacing_blocks_per_update > 0) {
+            blocks = std::min(blocks, m_desc.max_device_pacing_blocks_per_update);
+        }
     }
     for (u32 block = 0; block < blocks; ++block) {
         render_block_(registry, dt);
