@@ -421,6 +421,13 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_fx` | `codegen_spells_from_mission_body()` on embedded `.mis` SimObject in hybrid setup |
 | **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE27` asserts fireball spell codegen |
 
+#### Landed wave 31 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | `TreeFileWatchRegistry::fseventsPollCount()` / `fseventsReloadCount()` accessors; hybrid temp `.bt` watch + `pollFSEventsFileChanges()` |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE31` asserts FSEvents poll or reload progressed in hybrid demo |
+
 ---
 
 ## 8. Related docs
