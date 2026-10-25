@@ -185,6 +185,15 @@ jobs:
           VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
         run: ctest --test-dir build/fuse-asan --output-on-failure -j1 --timeout 2400
 
+      - name: U8 parity demos + editor PIE embed (ASan+UBSan)
+        env:
+          VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
+          VK_ADD_LAYER_PATH: ${{ env.FUSE_LINUX_VK_LAYER_MANIFEST_DIR }}
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/asan.supp
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/cmake/sanitizers/lsan.supp
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/ubsan.supp
+        run: ctest --test-dir build/fuse-asan -L u8 --output-on-failure -j1 --timeout 1200
+
       - name: Run fuse_runtime_smoke under ASan+UBSan
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:suppressions=${{ github.workspace }}/cmake/sanitizers/asan.supp
@@ -207,6 +216,7 @@ jobs:
             ${{ env.FUSE_APT_LINUX_QT_EDITOR }}
 
       - name: Configure (Release, FUSE_BUILD_EDITOR=ON)
+        # Live viewport present uses EditorViewportPresent at runtime — FUSE_ENABLE_QT_PRESENT / FUSE_TRACK_B_UNLOCK not required.
         run: |
           cmake -B build/editor-qt -G Ninja \
             -DCMAKE_CXX_COMPILER=g++-13 \

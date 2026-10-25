@@ -180,4 +180,13 @@ void SceneObject2D::reparentKeepWorld(Object* newParent) {
     setLocalRotation(r);
 }
 
+u32 SceneObject2D::spriteAnimationFrameIndex(float timeSec) const {
+    if (m_spriteAnimFrameCount == 0u || m_spriteAnimFps <= 0.f) {
+        return 0u;
+    }
+    const float frame = timeSec * m_spriteAnimFps;
+    const u32 index = static_cast<u32>(std::floor(frame));
+    return index % m_spriteAnimFrameCount;
+}
+
 } // namespace fuse

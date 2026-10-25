@@ -67,6 +67,19 @@
       }
     },
     {
+      "name": "fuse-editor-qt",
+      "displayName": "FUSE Editor Qt gates (Release, mirrors fuse-editor-qt CI)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/editor-qt",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FUSE_BUILD_CORE": "ON",
+        "FUSE_BUILD_CORE_TESTS": "ON",
+        "FUSE_BUILD_VULKAN": "ON",
+        "FUSE_BUILD_EDITOR": "ON"
+      }
+    },
+    {
       "name": "fuse-shipping",
       "displayName": "FUSE Shipping",
       "inherits": "fuse-release",

@@ -252,6 +252,14 @@ void World2D::buildSnapshot(frame::FrameCtx& ctx) {
     m_transformSoA.reserve(static_cast<u32>(m_sprites.size()));
     fillSnapshotSoA(*m_root, m_snapshot, m_transformSoA, false);
     m_snapshot.setSpriteRotations(ctx.time * 1.5f);
+    for (SpriteDrawCmd& cmd : m_snapshot.spritesMut()) {
+        SceneObject2D* sprite = m_handles.resolve(cmd.object);
+        if (sprite == nullptr || !sprite->hasSpriteAnimation()) {
+            continue;
+        }
+        cmd.atlasFrameCount = sprite->spriteAnimationFrameCount();
+        cmd.atlasFrame = sprite->spriteAnimationFrameIndex(ctx.time);
+    }
 }
 
 void World2D::runParallelCull() {

@@ -505,9 +505,9 @@ Mine each addon into a **FUSE module** with:
 - [ ] Users enable 2D/3D/modules via project flags, not by cloning other repos  
 - [ ] Addon capabilities reachable as FUSE features without merging Engine trees by hand  
 - [ ] Submodules are reference ore only (or removed after extraction)  
-- [ ] ASan clean smoke of hybrid PIE — 🚧 `fuse_u8_parity_embed_pie_smoke` + all parity demo binaries when `FUSE_SMOKE_ENABLE_ASAN=ON`; real Qt present still Track B  
+- [x] ASan clean smoke of hybrid PIE — `fuse-asan` + `ctest -L u8` (`fuse_u8_*`, `fuse_u8_parity_embed_pie_smoke`, hybrid gates)  
 - [x] Docs: player guide + programmer guide for unified API — [`docs/player-guide.md`](../../docs/player-guide.md), [`docs/programmer-guide.md`](../../docs/programmer-guide.md)  
-- [ ] Stakeholder agrees: “this is one program”  
+- [ ] Stakeholder agrees: “this is one program” — checklist [docs/unification/U8-EXIT-SIGNOFF.md](../unification/U8-EXIT-SIGNOFF.md)  
 
 **U8 wave 5 honest remainder:** GPU animated-sprite playback, real window present, full golden submodule corpus without bundled stubs, stakeholder sign-off.
 

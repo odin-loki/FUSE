@@ -21,7 +21,13 @@ struct SpriteDrawCmd {
     float rotation = 0.f;
     u32 layer = 0;
     bool visible = true;
+    /// When `atlasFrameCount > 0`, the hybrid GPU path tints sprites per frame (texture atlas sampling deferred).
+    u32 atlasFrame = 0;
+    u32 atlasFrameCount = 0;
 };
+
+/// Deterministic RGB for atlas-frame playback until bindless sprite textures land.
+void spriteAtlasPlaybackTint(u32 atlasFrame, u32 atlasFrameCount, u8& r, u8& g, u8& b);
 
 /// Parallel arrays for worker-friendly reads (game thread writes, jobs read). `worldMatrix[i]` is the
 /// node's full cached world matrix (TRS composed along its parents; UNI-WP05-1), `worldX/Y` its
@@ -46,6 +52,7 @@ public:
     void addSprite(const SpriteDrawCmd& cmd);
 
     const std::vector<SpriteDrawCmd>& sprites() const { return m_sprites; }
+    std::vector<SpriteDrawCmd>& spritesMut() { return m_sprites; }
     u32 visibleCount() const { return m_visibleCount; }
 
     void setVisibleCount(u32 count) { m_visibleCount = count; }

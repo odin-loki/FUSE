@@ -1,4 +1,5 @@
 #include "demo_check.hpp"
+#include "demo_present.hpp"
 #include "demo_project_wiring.hpp"
 
 #include <fuse/ai/behavior_runtime.hpp>
@@ -14,17 +15,22 @@
 #include <fuse/world3d/scene_object_3d.hpp>
 #include <fuse/world3d/world_3d.hpp>
 
+#if defined(FUSE_HAS_VULKAN_RHI)
+#include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
+#endif
+
 #include <cstdlib>
+#include <memory>
 #include <string>
 
 int main(int argc, char** argv) {
     fuse::core::initialize();
     fuse::log::info("demo_ai_bt: fuse_ai BT on hybrid 2D/3D agents + UAISK profile");
 
-    std::string projectPath = "Samples/unification/demo_ai_bt";
-    if (argc > 1) {
-        projectPath = argv[1];
-    }
+    const bool presentGameWindow = fuse::demo::present::requestedFromArgv(argc, argv);
+    const std::string projectPath =
+        fuse::demo::present::projectPathFromArgv(argc, argv, "Samples/unification/demo_ai_bt");
+    const int frameTarget = presentGameWindow ? 3 : 10;
 
     const fuse::project::LoadResult project = fuse::project::loadFromDirectory(projectPath);
     fuse::demo::check(project.status == fuse::project::LoadStatus::Ok, "project.json loads");
@@ -39,7 +45,23 @@ int main(int argc, char** argv) {
         fuse::demo::wiring::ensure3DWorldFromProject(project, runtimeScene);
     fuse::demo::check(missionLoad.ok, "BehaviorTestbed.mis converts and loads");
 
-    fuse::hybrid::HybridComposer composer;
+    fuse::hybrid::HybridComposer localComposer;
+    fuse::hybrid::HybridComposer* composer = &localComposer;
+#if defined(FUSE_HAS_VULKAN_RHI)
+    fuse::demo::present::HostPresentUnlock presentUnlock;
+    fuse::hybrid::HybridRendererBootstrapDesc bootstrapDesc{};
+    bootstrapDesc.renderer.rhi.bootstrap.instance.enableValidation = false;
+    bootstrapDesc.scene.width = 160;
+    bootstrapDesc.scene.height = 120;
+    if (presentGameWindow && fuse::demo::present::gameWindowPresentAvailable()) {
+        fuse::demo::present::applyGameWindowToBootstrapDesc(bootstrapDesc, 256, 160, "demo_ai_bt");
+    }
+    std::unique_ptr<fuse::hybrid::HybridRendererBootstrap> gpuRuntime =
+        fuse::hybrid::HybridRendererBootstrap::create(bootstrapDesc);
+    if (gpuRuntime != nullptr && gpuRuntime->isReady()) {
+        composer = &gpuRuntime->composer();
+    }
+#endif
     fuse::world2d::World2D world2D;
     fuse::world3d::World3D world3DRuntime;
     fuse::SceneObject3D patrolObject3D("patrol_agent");
@@ -51,9 +73,10 @@ int main(int argc, char** argv) {
         fuse::demo::wiring::bridge2DWorldFromProject(project, world2D);
     fuse::demo::check(spriteBridge.ok, "sprite agent module bridges into World2D");
 
-    composer.setProjectFlags(fuse::project::toDimensionFlags(project.manifest.dimensions));
-    composer.attachWorld2D(&world2D);
-    composer.attachWorld3D(&world3DRuntime);
+    composer->setProjectFlags(fuse::project::toDimensionFlags(project.manifest.dimensions));
+    composer->attachWorld2D(&world2D);
+    composer->attachWorld3D(&world3DRuntime);
+    world3DRuntime.setClearColor(0.15f, 0.2f, 0.25f);
 
     fuse::ai::BehaviorRuntime aiRuntime;
     aiRuntime.registerTreeProfile(0, fuse::ai::BehaviorTree::makePatrolWhenNearTarget());
@@ -76,20 +99,38 @@ int main(int argc, char** argv) {
     aiRuntime.addAgent(agent3D);
 
     fuse::frame::FrameCtx ctx;
-    for (int frame = 0; frame < 10; ++frame) {
+    for (int frame = 0; frame < frameTarget; ++frame) {
         ctx.dt = 1.f / 60.f;
         ctx.frameIndex = static_cast<fuse::u32>(frame);
         aiRuntime.buildSnapshots();
         aiRuntime.evaluate(ctx);
         aiRuntime.commit();
-        composer.tick(ctx);
+#if defined(FUSE_HAS_VULKAN_RHI)
+        if (presentGameWindow && composer != &localComposer) {
+            world2D.tickGameThread(ctx);
+            composer->tick(ctx);
+            gpuRuntime->runFrame(ctx);
+        } else
+#endif
+        {
+            composer->tick(ctx);
+        }
     }
 
-    fuse::demo::check(aiRuntime.tickCount() == 10u, "BT ticked each frame");
+    fuse::demo::check(aiRuntime.tickCount() == static_cast<fuse::u32>(frameTarget), "BT ticked each frame");
     fuse::demo::check(aiRuntime.treeProfileCount() >= 2u, "per-agent tree profiles registered");
     fuse::demo::check(aiRuntime.blackboard().flag(0, 0), "near 2D agent sets patrol flag");
     fuse::demo::check(!aiRuntime.blackboard().flag(1, 0), "far 3D agent does not set patrol flag");
     fuse::demo::check(missionLoad.entityCount >= 2u, "converted behavior testbed has patrol agents");
+#if defined(FUSE_HAS_VULKAN_RHI)
+    if (presentGameWindow && composer->gpuSceneActive() && gpuRuntime != nullptr) {
+        fuse::demo::check(fuse::demo::present::realPresentCallCount(*gpuRuntime) >= 1u,
+                          "vkQueuePresentKHR via GameWindow present path");
+    }
+    if (gpuRuntime != nullptr) {
+        gpuRuntime->shutdown();
+    }
+#endif
 
     fuse::core::shutdown();
     return fuse::demo::finish("demo_ai_bt");

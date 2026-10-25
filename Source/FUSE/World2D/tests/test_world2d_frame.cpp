@@ -46,6 +46,24 @@ void testWorld2DTickBuildsSnapshot() {
                "SoA handle matches draw cmd");
 }
 
+void testAnimatedSpriteAtlasFrameAdvances() {
+    fuse::world2d::World2D world;
+    fuse::SceneObject2D hero("Hero");
+    hero.setSpriteAnimation(8u, 12.f);
+    world.addSprite(&hero);
+
+    fuse::frame::FrameCtx early;
+    early.time = 0.f;
+    world.tickGameThread(early);
+    expectTrue(world.readSnapshot().sprites()[0].atlasFrameCount == 8u, "animated sprite exports frame count");
+    expectTrue(world.readSnapshot().sprites()[0].atlasFrame == 0u, "frame 0 at t=0");
+
+    fuse::frame::FrameCtx later;
+    later.time = 0.5f;
+    world.tickGameThread(later);
+    expectTrue(world.readSnapshot().sprites()[0].atlasFrame == 6u, "frame advances with animationFPS");
+}
+
 void testWorld2DHierarchySnapshotSoA() {
     fuse::world2d::World2D world;
     fuse::SceneObject2D group("group");
@@ -70,6 +88,7 @@ void testWorld2DHierarchySnapshotSoA() {
 int main() {
     fuse::core::initialize();
     testWorld2DTickBuildsSnapshot();
+    testAnimatedSpriteAtlasFrameAdvances();
     testWorld2DHierarchySnapshotSoA();
     fuse::core::shutdown();
 

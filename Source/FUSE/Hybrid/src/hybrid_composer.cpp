@@ -1,6 +1,7 @@
 #include <fuse/hybrid/hybrid_composer.hpp>
 
 #include <fuse/log/logger.hpp>
+#include <fuse/world2d/scene_snapshot.hpp>
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/platform/thread.hpp>
 
@@ -316,11 +317,15 @@ void HybridComposer::render(frame::FrameCtx& ctx) {
             if (!cmd.visible) {
                 continue;
             }
+            u8 sr = 255;
+            u8 sg = 200;
+            u8 sb = 64;
+            world2d::spriteAtlasPlaybackTint(cmd.atlasFrame, cmd.atlasFrameCount, sr, sg, sb);
             if (m_softwarePlaceholderEnabled) {
-                m_renderer.drawSprite2D(cmd.x, cmd.y, cmd.rotation, 255, 200, 64);
+                m_renderer.drawSprite2D(cmd.x, cmd.y, cmd.rotation, sr, sg, sb);
             }
 #if defined(FUSE_HAS_VULKAN_RHI)
-            recordSprite2D(cmd.x, cmd.y, cmd.rotation, 255, 200, 64);
+            recordSprite2D(cmd.x, cmd.y, cmd.rotation, sr, sg, sb);
 #endif
         }
     }

@@ -2,7 +2,7 @@
 
 **Phase:** U6 / WP-08 vertical slice  
 **Date:** 2026-09-19  
-**Status:** Inspector + coalesced UI property undo + runtime embed with `PresentPath` deepen (headless-safe null WSI); Qt real-surface live present counters
+**Status:** Inspector + coalesced UI property undo + runtime embed with `PresentPath`; **live Qt GPU viewport present** on X11 (`RuntimeViewportHook::tickWindowPresent_`, editor-scoped `TrackBHostFeature::EditorViewportPresent`, CI gate `fuse_editor_qt_live_present`)
 
 ---
 
@@ -37,6 +37,8 @@ See [architecture-parallel.md](./architecture-parallel.md) §2.1–§3.1 for pro
 | `FUSE_BUILD_EDITOR_API` | `ON` | Build `fuse_editor_api` + headless tests |
 | `FUSE_BUILD_EDITOR` | `OFF` | Build `fuse_editor` Qt shell when Qt 6 Widgets is found |
 | `FUSE_BUILD_CORE_TESTS` | `ON` | Registers `fuse_editor_command_queue` and `fuse_editor_host` CTest entries |
+| `FUSE_ENABLE_QT_PRESENT` | `OFF` | Compile-time Qt WSI present gate on `fuse_rhi` (`desktopQtPresentEnabled()`). **Not required** for `fuse_editor` live viewport — the editor opts in at runtime via `EditorViewportPresent` once the Qt Vulkan surface is wired (see [editor.md](../editor.md#embedded-vulkan-viewport)). |
+| `FUSE_TRACK_B_UNLOCK` | `OFF` | Global Track B production unlock (`VulkanProduction`). The editor does **not** need this for viewport present; it uses the host-scoped flag above instead. |
 
 `fuse_editor` uses `find_package(Qt6 COMPONENTS Widgets QUIET)`. When Qt is absent, **sources are still shipped** and CI runs the headless host tests only.
 
@@ -86,6 +88,34 @@ cmake --build build-fuse
 ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 ```
 
+These targets exercise `RuntimeViewportHook` and embed counters on the **headless** GPU path (`FUSE_BUILD_EDITOR=OFF`). They do **not** call `vkQueuePresentKHR` on a Qt window.
+
+### Qt live GPU present (CI + local)
+
+The real editor viewport presents through an embedded native Vulkan child window (`QWidget::createWindowContainer`). The game thread runs `RuntimeViewportHook::tickWindowPresent_()`: publish a WSI-capable `VkInstance` → UI adopts it and posts `viewport.vk_surface_adopted` → game thread wires an external swapchain → acquire / render / **`vkQueuePresentKHR`** each tick. Details: [editor.md](../editor.md#embedded-vulkan-viewport).
+
+| Prerequisite | Notes |
+|--------------|-------|
+| **Display** | Real desktop or **Xvfb** (`1920×1080×24`, `QT_QPA_PLATFORM=xcb`; CI sets this on Qt gate tests) |
+| **Vulkan ICD** | Linux CI uses Mesa Lavapipe: `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json` |
+| **Qt 6 Widgets + xcb** | `qt6-base-dev`, xcb libs (see `FUSE_APT_LINUX_QT_EDITOR` in [fuse-umbrella-linux.yml](../../.github/workflows/fuse-umbrella-linux.yml)) |
+| **Build** | `FUSE_BUILD_EDITOR=ON`, `FUSE_BUILD_VULKAN=ON`, Release recommended for timing gates |
+
+**Opt-out / fallback:** no display, unsupported WSI, no device, `FUSE_EDITOR_HEADLESS_VIEWPORT=1`, or failed surface wiring → software placeholder + headless embed counters (umbrella **core** job path).
+
+**Local reproduce (matches CI `fuse-editor-qt` job):** see [building.md](../building.md#qt-editor-gates-local-playbook) — separate `build/editor-qt` tree, `cmake --build … fuse_editor fuse_editor_qt_gates_all`, then `ctest -L qt` under `xvfb-run`. For a single slow gate: `ctest -R fuse_editor_qt_live_present -j1`.
+
+| CTest / job | When it runs | What it proves |
+|-------------|--------------|----------------|
+| **`fuse-editor-qt`** (umbrella workflow) | Every push/PR to `main` / `development` | Full Qt gate suite under `xvfb-run`, including live present |
+| **`fuse_editor_qt_live_present`** (`gate;qt;xvfb`) | Inside `fuse-editor-qt` | Real `MainWindow`, game thread running, `SurfaceWired`, acquire/present counts, on-screen pixels ≠ placeholder, resize recreate, input forward, validation clean teardown |
+| **`fuse_editor_qt_present_adopt`** | Same job | Instance adopt path before full present stress |
+| **`fuse_editor_host`**, **`fuse_editor_runtime_embed`** | Umbrella **core** job (`FUSE_BUILD_EDITOR=OFF`) | Headless embed + WSI wiring counters only |
+
+Optional CMake preset: **`fuse-editor-qt`** (Release editor + Vulkan, mirrors CI configure).
+
+**U8 / runtime present (related, not the editor shell):** game-window present uses the same host unlock pattern (`fuse::demo::present::HostPresentUnlock` → `EditorViewportPresent`) for parity demos with `--present` / `FUSE_DEMO_PRESENT=1`, and hybrid regression gate **`fuse_hybrid_frame_vk_swapchain`** (X11 `GameWindow` under the display wrapper). See [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) §5 and [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) (WP-06m editor present checklist).
+
 ---
 
 ## 6. Runtime layout (this slice)
@@ -97,7 +127,7 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 │  │ Qt UI thread     │   │ Game thread (QThread + QTimer) │ │
 │  │  ProjectHub      │   │  EditorHost::gameTick()        │ │
 │  │  PropertyPane    │──▶│  CommandQueue::drain()         │ │
-│  │  Viewport stub   │   │  PlaySession tick while PIE    │ │
+│  │  Viewport embed  │   │  PlaySession tick while PIE    │ │
 │  │  postFromUi()    │   │  RuntimeViewportHook embed     │ │
 │  └──────────────────┘   └───────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
@@ -105,7 +135,7 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 
 - **Project hub** — lists `Samples/unification/*/project.json` directories.
 - **Property pane (WP-08 hook)** — `PropertyPaneWidget` + `FeaturePaneBridge`; Play/Stop posts `StartPlay`/`StopPlay` commands (no direct scene mutation from UI thread). Position spinboxes post `SetProperty` envelopes that coalesce on the UI queue and record undo via the game-thread `CommandStack`.
-- **Runtime viewport hook** — `RuntimeViewportHook` + `RuntimeEmbedSession`: loads project default `.fuselevel` when `project.root` is posted, mirrors editor ECS entities into `runtimeScene`, ticks a headless present stub (`FUSE_VULKAN_BACKEND` submits empty frame when device ready).
+- **Runtime viewport hook** — `RuntimeViewportHook` + `RuntimeEmbedSession`: loads project default `.fuselevel` when `project.root` is posted, mirrors editor ECS entities into `runtimeScene`, runs hybrid embed ticks; with a wired Qt Vulkan surface, `tickWindowPresent_()` acquires/presents on the real swapchain (otherwise headless `PresentPath` / software placeholder).
 - **Open project** — posts `SetProperty { project = <name> }` and optional `project.root = <dir>` to the queue (handle-only command envelope).
 
 ---
@@ -127,42 +157,29 @@ ctest --test-dir build-fuse -R fuse_editor --output-on-failure
 
 | Done (this slice) | Remaining |
 |-------------------|-----------|
-| Mutex-backed command queue with SetProperty coalescing on UI thread | Full GPU swapchain viewport in Qt widget |
-| `EditorHost` routes UI property edits through `CommandStack` undo on game thread | Timelines, addon feature panes |
-| Headless cross-thread queue proof (32 UI posts → game drain) | — |
-| `FeaturePaneBridge` + property edits (`transform`, `mesh.material_id`, `sdf.blend_alpha`) through queue; E20 (UNI-U6-INSP-1): typed Qt editors for every schema component field (`component_schema.hpp`: float / vec3 / Euler / colour / enum / bool / integer / asset path) posting SetProperty through the queue, AddComponent / RemoveComponent command kinds + inspector menu, hierarchy drag-and-drop reparent keeping the world pose — `fuse_editor_e20_inspector_commands`, `fuse_editor_qt_e20_inspector` / `_reparent` | — |
-| `PropertyInspector` sections: every registered ECS type (typed: Transform, Mesh, SDF, RigidBody, Collider, Camera, Point/Directional/Spot lights, AudioSource, Script, SpawnMarker, tags; module types read-only); inspector edits mark the Transform dirty and repaint the viewport on the applying tick | Measured renderer latency of a slider drag on real GPU / display (not asserted here) |
+| Mutex-backed command queue with SetProperty coalescing on UI thread | Timelines, addon feature panes |
+| `EditorHost` routes UI property edits through `CommandStack` undo on game thread | Measured renderer latency of a slider drag on real GPU / display (not asserted in CI) |
+| Headless cross-thread queue proof (32 UI posts → game drain) | Live mesh/material preview from cooked assets in the wired viewport (counters exist; visual parity not gated) |
+| `FeaturePaneBridge` + property edits (`transform`, `mesh.material_id`, `sdf.blend_alpha`) through queue; E20 (UNI-U6-INSP-1): typed Qt editors for every schema component field (`component_schema.hpp`: float / vec3 / Euler / colour / enum / bool / integer / asset path) posting SetProperty through the queue, AddComponent / RemoveComponent command kinds + inspector menu, hierarchy drag-and-drop reparent keeping the world pose — `fuse_editor_e20_inspector_commands`, `fuse_editor_qt_e20_inspector` / `_reparent` | Runtime glslang source compile behind `FUSE_SHADER_GLSLANG` |
+| `PropertyInspector` sections: every registered ECS type (typed: Transform, Mesh, SDF, RigidBody, Collider, Camera, Point/Directional/Spot lights, AudioSource, Script, SpawnMarker, tags; module types read-only); inspector edits mark the Transform dirty and repaint the viewport on the applying tick | — |
 | `CommandStack` property-edit undo/redo + coalesced Qt spinbox drags | — |
 | ECS `Registry::has_all<Ts...>()` + lazy init (Linux segfault fix); cull light path requires Transform + light | — |
-| `ViewportSwapchainWiring` consumes External handoff via `VulkanBootstrap::ensureSwapchain` (headless fallback; Qt winId stub short-circuits safely) | Live Qt swapchain present |
-| Optional `QVulkanInstance` surface path in viewport widget (headless-safe: skips when no DISPLAY/WAYLAND; winId stub fallback) | — |
-| `probeQVulkanWindowWsi` — headless-safe `QVulkanWindow` surface probe; `RuntimeEmbedSession::qVulkanWindowWsiReady` counter | Full in-process GPU viewport compositing |
-| `RuntimeViewportHook` loads manifest world, applies wire bindings + `workerCap`, mirrors editor entities, `PresentPath` tick counters | Live Qt swapchain present under real WSI |
-| `syncEcsToEmbedWorld3D_` mirrors editor ECS transforms into embed `World3D` for hybrid viewport compositing (wave 15) | Live Qt swapchain present under real WSI |
-| `probeQVulkanWindowWsi` deepen — instance API version + window create/destroy counters (headless-safe) | Full in-process GPU viewport compositing |
-| `RuntimeEmbedSession` tracks project VFS mounts + material resolve counts on world load | — |
-| Async material VFS submit + cook-cache drain on world load (`materialCookCacheHits`, `materialCookCacheStores`, `materialAsyncLoadsSubmitted`, `materialAsyncLoadsDrained`) | — |
-| `fuse_cook` CLI cook-cache load/save + job-graph cache-hit skip progress | Full in-process GPU viewport compositing |
-| `probeQVulkanWindowWsi` instance/extension probe + `viewportHeadlessWsiProbeSkipped` gate | Live Qt swapchain present under real WSI |
-| `qtLivePresentAttempts` / `qtLivePresentTicks` when `qtRealSurface` + external swapchain wired (headless CI stays stub) | Full in-process GPU viewport compositing |
-| `HybridRendererBootstrap::runFrame` in embed tick — `hybridComposerFrames` counter; `World2D`/`World3D` attach from project dimensions | Live Qt swapchain present under real WSI |
-| Material texture cook on VFS drain (`materialTextureCooks` counter) | Full in-process GPU viewport compositing |
-| `syncEcsToEmbedWorld3D_` deepen — quaternion→yaw/pitch/roll + `ecsWorld3DSnapshotVisible` after hybrid compose (wave 16) | Live mesh/material preview from cooked assets |
-| Shader async VFS submit + cook-cache drain on world load (`shaderAsyncLoadsSubmitted`, `shaderAsyncLoadsDrained`, `shaderCookCacheHits`, `shaderCookCacheStores`) | — |
-| `resolveT3DShaderVfsFromBindings` + `shaderVfsResolved` counter on embed world load | — |
-| `CookedAssetBindings` on `HybridComposer` — cooked `.fusetex` / `.fuseshader` bind + clear-color tint (wave 17) | Full in-process GPU viewport compositing |
-| `MeshSdfPreviewCatalog` + ECS mesh/SDF preview stubs in embed tick (`meshPreviewHints`, `meshPreviewDraws`) | Live mesh/material preview from cooked assets |
-| `bindCookedAssetsToHybrid_` after VFS drain (`cookedMaterialBindings`, `cookedShaderBindings`) | — |
-| Mission-level `ShaderData =` extract + `resolveT3DShaderVfsPaths` / `submitT3DShaderLoadsAsync(extract)` | — |
-| `CookedAssetBindings` deepen — header kind probe (`FUSETEX_BC7`, `FUSESHADER_GLSLANG`), per-id lookup, tint boost on hybrid compose (wave 18) | Full in-process GPU viewport compositing |
-| `bindCookedAssetsToHybrid_` — wire-ref hash ids, project-root cook probe, `cookedMaterialValidBindings` / `cookedShaderValidBindings` counters | — |
-| `MeshSdfPreviewCatalog` deepen — cooked mesh resolve from bindings, SDF primitive/param draws, `meshPreviewCookedResolved` counter | Live mesh/material preview from cooked assets |
-| `loadCookedFuseshaderSpirv` offline path in `fuse_rhi` shader compiler (headless-safe) | Runtime glslang source compile behind `FUSE_SHADER_GLSLANG` |
+| **Live Qt GPU viewport present** — embedded `ViewportVulkanWindow`, external swapchain wiring, `RuntimeViewportHook::tickWindowPresent_()`, `TrackBHostFeature::EditorViewportPresent`; CI `fuse_editor_qt_live_present` (Xvfb + Lavapipe); headless umbrella core job still uses embed-only tests | — |
+| `ViewportSwapchainWiring` + optional `QVulkanInstance` adopt path; `probeQVulkanWindowWsi` probes (headless-safe); `qtLivePresentAttempts` / `qtLivePresentTicks` when `qtRealSurface` wired | — |
+| `RuntimeViewportHook` loads manifest world, applies wire bindings + `workerCap`, mirrors editor entities, `PresentPath` / hybrid embed tick counters | — |
+| `syncEcsToEmbedWorld3D_` (+ quaternion→yaw/pitch/roll deepen) mirrors editor ECS into embed `World3D`; `HybridRendererBootstrap::runFrame` — `hybridComposerFrames` | — |
+| `RuntimeEmbedSession` VFS mounts, async material/shader loads, cook-cache drains, cooked asset bind counters (waves 15–18) | — |
+| `MeshSdfPreviewCatalog` mesh/SDF preview stubs in embed tick | — |
+| `loadCookedFuseshaderSpirv` offline path in `fuse_rhi` shader compiler (headless-safe) | — |
 
 ---
 
 ## 9. Related docs
 
+- [editor.md](../editor.md) — embedded Vulkan viewport + `fuse_editor_qt_live_present`
+- [building.md](../building.md#qt-editor-gates-local-playbook) — reproduce `fuse-editor-qt` CI locally
+- [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) — U8 demos; optional `--present` game-window path
+- [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) — `FUSE_ENABLE_QT_PRESENT`, Track B present gates
 - [work-plan.md](./work-plan.md) — WP-08 status
 - [architecture-parallel.md](./architecture-parallel.md) — editor threading
 - [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) — `project.json` consumed by hub

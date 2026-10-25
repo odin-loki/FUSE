@@ -42,6 +42,19 @@ void SceneSnapshot2D::setSpriteRotations(float rotation) {
     }
 }
 
+void spriteAtlasPlaybackTint(u32 atlasFrame, u32 atlasFrameCount, u8& r, u8& g, u8& b) {
+    if (atlasFrameCount == 0u) {
+        r = 255;
+        g = 200;
+        b = 64;
+        return;
+    }
+    const u32 f = atlasFrame % atlasFrameCount;
+    r = static_cast<u8>(160u + (f * 37u) % 96u);
+    g = static_cast<u8>(140u + (f * 19u) % 80u);
+    b = static_cast<u8>(80u + (f * 53u) % 100u);
+}
+
 namespace {
 
 void appendNode(const SceneObject2D& node, const SceneObject2D* parent, SceneSnapshot2D& snapshot,

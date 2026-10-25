@@ -3,7 +3,10 @@ add_executable(demo_hybrid_hud
     hybrid_module_gates.cpp
 )
 
+target_include_directories(demo_hybrid_hud PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../Common)
+
 target_link_libraries(demo_hybrid_hud PRIVATE
+    fuse_demo_wiring
     fuse_hybrid
     fuse_ai
     fuse_cinematics

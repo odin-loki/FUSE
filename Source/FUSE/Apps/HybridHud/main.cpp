@@ -1,3 +1,4 @@
+#include "demo_present.hpp"
 #include "hybrid_module_gates.hpp"
 
 #include <fuse/core/init.hpp>
@@ -24,14 +25,23 @@ void check(bool condition, const char* message) {
 
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
     fuse::log::info("demo_hybrid_hud: outpost hybrid vertical slice");
+
+    const bool presentGameWindow = fuse::demo::present::requestedFromArgv(argc, argv);
+    const int frameTarget = presentGameWindow ? 3 : fuse::hybrid::gates::kFrameCount;
 
     check(fuse::core::initialize(), "fuse_core initialize");
 
 #if defined(FUSE_HAS_VULKAN_RHI)
+    fuse::demo::present::HostPresentUnlock presentUnlock;
     fuse::hybrid::HybridRendererBootstrapDesc bootstrapDesc{};
     bootstrapDesc.renderer.rhi.bootstrap.instance.enableValidation = false;
+    bootstrapDesc.scene.width = 320;
+    bootstrapDesc.scene.height = 240;
+    if (presentGameWindow && fuse::demo::present::gameWindowPresentAvailable()) {
+        fuse::demo::present::applyGameWindowToBootstrapDesc(bootstrapDesc, 320, 240, "demo_hybrid_hud");
+    }
     auto runtime = fuse::hybrid::HybridRendererBootstrap::create(bootstrapDesc);
     check(runtime != nullptr, "HybridRendererBootstrap allocated");
     check(runtime->isReady(), "B2.10 renderer bootstrap initialized");
@@ -44,7 +54,7 @@ int main() {
     fuse::hybrid::gates::setup(gateState, composer);
 
     fuse::frame::FrameCtx ctx;
-    for (int frame = 0; frame < fuse::hybrid::gates::kFrameCount; ++frame) {
+    for (int frame = 0; frame < frameTarget; ++frame) {
         ctx.dt = fuse::hybrid::gates::kDt;
         ctx.time = static_cast<float>(frame) * fuse::hybrid::gates::kDt;
         ctx.frameIndex = static_cast<fuse::u32>(frame);
@@ -52,14 +62,20 @@ int main() {
         fuse::hybrid::gates::tickFrame(gateState, composer, ctx);
 
 #if defined(FUSE_HAS_VULKAN_RHI)
-        runtime->render(ctx);
+        if (presentGameWindow) {
+            runtime->runFrame(ctx);
+        } else {
+            runtime->render(ctx);
+        }
 #else
         composer.render(ctx);
 #endif
     }
 
-    const fuse::hybrid::gates::VerifyResult result = fuse::hybrid::gates::verify(gateState, composer);
-    check(result.ok, result.message != nullptr ? result.message : "outpost slice verified");
+    if (!presentGameWindow) {
+        const fuse::hybrid::gates::VerifyResult result = fuse::hybrid::gates::verify(gateState, composer);
+        check(result.ok, result.message != nullptr ? result.message : "outpost slice verified");
+    }
 
 #if defined(FUSE_HAS_VULKAN_RHI)
     if (composer.gpuSceneActive()) {
@@ -67,6 +83,10 @@ int main() {
                         "%llu GPU frames, checked by readback)",
                         fuse::hybrid::gates::kFrameCount, composer.gpuScene()->width(), composer.gpuScene()->height(),
                         static_cast<unsigned long long>(composer.gpuSceneFrames()));
+        if (presentGameWindow) {
+            check(fuse::demo::present::realPresentCallCount(*runtime) >= 1u,
+                  "vkQueuePresentKHR via GameWindow present path");
+        }
     } else
 #endif
     {
