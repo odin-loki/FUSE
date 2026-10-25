@@ -25,7 +25,7 @@ void check(bool condition, const char* message) {
 } // namespace
 
 int main() {
-    fuse::log::info("demo_hybrid_hud: U4 hybrid frame + U5 prestarter §10 module gates");
+    fuse::log::info("demo_hybrid_hud: outpost hybrid vertical slice");
 
     check(fuse::core::initialize(), "fuse_core initialize");
 
@@ -59,7 +59,7 @@ int main() {
     }
 
     const fuse::hybrid::gates::VerifyResult result = fuse::hybrid::gates::verify(gateState, composer);
-    check(result.ok, result.message != nullptr ? result.message : "U5 module gates verified");
+    check(result.ok, result.message != nullptr ? result.message : "outpost slice verified");
 
 #if defined(FUSE_HAS_VULKAN_RHI)
     if (composer.gpuSceneActive()) {

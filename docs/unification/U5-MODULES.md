@@ -221,7 +221,7 @@ ctest --test-dir build-fuse -R "fuse_ai_tests|fuse_cinematics_tests|fuse_fx_test
 | `fuse_mechanics` | One 3D interactable | ✅ lever `InteractableComponent` + trigger zone in hybrid demo |
 | `fuse_adventure` | Pick-up / use in 3D + 2D interface | ✅ `HudPromptInteractable` + `showHudPrompt` on trigger enter |
 
-Headless proof: `fuse_hybrid_module_gates_tests` (shared `hybrid_module_gates.cpp` with demo).
+Headless proof: `fuse_hybrid_module_gates_tests` (shared `hybrid_module_gates.{hpp,cpp}` with `demo_hybrid_hud` — one outpost vertical slice, no per-feature compile switches).
 
 ### Remaining U5 backlog (post-gate)
 
@@ -317,7 +317,6 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_fx` | `syncSelectivePositionsToCpu()` selective CUDA D→H writeback; nested `.mis` SimObject body parse |
 | `fuse_mechanics` | `PathComponent`/`TimerComponent` in hybrid gates; `FUSE_HAS_BULLET` proxy group/mask deepen |
 | `fuse_adventure` | `AnimationBindPoseBridge` weapon mount → bind pose; conversation VM `elif requires` inventory branch |
-| **Hybrid gates** | Optional `FUSE_HYBRID_GATES_WAVE16` assertions for Path/Timer/bone-motion stubs |
 
 #### Landed wave 17 (this slice)
 
@@ -328,7 +327,6 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_fx` | CUDA velocity damping kernel; `codegen_spells_from_mission_body()` + nested `%hook` dispatch; composer tick selective writeback |
 | `fuse_mechanics` | `PathComponent::setLoop()`; `TimerComponent::setOnFire()`; GMK `AnimateComponent` leaf; `queryRaycastStubFiltered()` Bullet-aware |
 | `fuse_adventure` | `WeaponGrantPipeline::grantOnPickupWithMount()`; `dispatchBestBranch()` priority VM; hybrid demo weapon grant + armed branch |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE17` assertions for selective writeback, path loop, weapon grant, armed conversation |
 
 #### Landed wave 18 (this slice)
 
@@ -339,7 +337,6 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_fx` | CUDA particle residency sync (`syncResidencyFromPacked()`); TorqueScript mission function-body execution (`execute_afx_mission_from_mis()`) |
 | `fuse_mechanics` | GMK `WaypointComponent` + `LookAtComponent` leaves; `BroadphaseWorldStub::queryDbvtOverlaps()` btDbvt deepen |
 | `fuse_adventure` | Weapon `fire()` in hybrid demo after grant; `peekBestBranchLine()` + `dispatchBestBranchAllLines()` VM deepen |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE18` assertions for mount rotation, residency, waypoint/look-at, dbvt, weapon fire, conversation peek |
 
 #### Hybrid gates parallel ctest fix (U6/U7 wave 12)
 
@@ -356,7 +353,6 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_fx` | CUDA kernel residency deepen (`hostDirty` skip H2D, `hostToDeviceSkipCount`); TorqueScript mission `schedule()`/`call()` ordered dispatch |
 | `fuse_mechanics` | GMK `RadioComponent` leaf; `FUSE_BUILD_BULLET` links real Bullet when ON |
 | `fuse_adventure` | `WeaponCombatLoop` fire-rate gate + damage apply; conversation VM `injectScriptLine` deepen |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE19` assertions for mount chain, radio, combat loop, injected lines |
 
 #### Landed wave 20 (this slice)
 
@@ -377,112 +373,96 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_fx` | Mission `schedule()` entries route through `scheduleDelayedDispatch()` instead of immediate VM fire |
 | `fuse_mechanics` | `BtDbvtBridge` overlap gates when `FUSE_BUILD_BULLET` / CPU fallback |
 | `fuse_adventure` | `WeaponCombatLoop` hitscan integration; conversation `advanceNpcState` in hybrid demo |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE20` assertions for nested composite, btDbvt, reload, hitscan; `FUSE_HYBRID_GATES_WAVE21` for timeline host wire, schedule→VM delay, hitscan combat, NPC state |
 
 #### Landed wave 22 (this slice)
 
 | Module | Delivered |
 |--------|-----------|
 | `fuse_mechanics` | GMK `SpawnComponent` leaf on polyhedron trigger enter |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE22` asserts `SpawnComponent` fired in hybrid demo |
 
 #### Landed wave 23 (this slice)
 
 | Module | Delivered |
 |--------|-----------|
 | `fuse_fx` | Hybrid demo calls `execute_afx_mission_from_mis()` for TorqueScript function bodies |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE23` asserts mission VM `executeCount()` after `.mis` execution |
 
 #### Landed wave 24 (this slice)
 
 | Module | Delivered |
 |--------|-----------|
 | `fuse_ai` | Hybrid demo registers UAISK profile codegen from `condition = "distance < N"` field |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE24` asserts parsed threshold and tree profile registration |
 
 #### Landed wave 25 (this slice)
 
 | Module | Delivered |
 |--------|-----------|
 | `fuse_cinematics` | Hybrid demo `timeline.scrub_to()` forward cue enqueue (`door_open` @ 2.5s scrub) |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE25` asserts scrub pending cue count and label |
 
 #### Landed wave 26 (this slice)
 
 | Module | Delivered |
 |--------|-----------|
 | `fuse_mechanics` | GMK `DestroyComponent` + `SoundComponent` on polyhedron trigger enter |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE26` asserts destroy and play counts |
 
 #### Landed wave 27 (this slice)
 
 | Module | Delivered |
 |--------|-----------|
 | `fuse_fx` | `codegen_spells_from_mission_body()` on embedded `.mis` SimObject in hybrid setup |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE27` asserts fireball spell codegen |
 
 #### Landed wave 28 (this slice)
 
 | Module | Delivered |
 |--------|-----------|
 | `fuse_mechanics` | GMK `AreaComponent` `contains` / `testObject` on polyhedron trigger enter |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE28` asserts area enter or overlap count |
 
 #### Landed wave 29 (this slice)
 
 | Module | Delivered |
 |--------|-----------|
 | `fuse_fx` | Nested SimObject `.mis` body parse in hybrid FX setup |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE29` asserts nested SimObject count |
 
 #### Landed wave 30 (this slice)
 
 | Module | Delivered |
 |--------|-----------|
 | `fuse_adventure` | `ConversationInteractable::injectScriptLine` on outpost guard in hybrid setup |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE30` asserts injected line count |
 
 #### Landed wave 31 (this slice)
 
 | Module | Delivered |
 |--------|-----------|
 | `fuse_ai` | `TreeFileWatchRegistry::fseventsPollCount()` / `fseventsReloadCount()` accessors; hybrid temp `.bt` watch + `pollFSEventsFileChanges()` |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE31` asserts FSEvents poll or reload progressed in hybrid demo |
 
 #### Landed wave 32 (this slice)
 
 | Module | Delivered |
 |--------|-----------|
 | `fuse_fx` | `register_afx_mission_from_mis()` in hybrid FX setup (`test_fx_runtime` `%on_spell_cast` pattern) |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE32` asserts hook count ≥ 2 and fireball spell registered |
 
 #### Landed wave 33 (this slice)
 
 | Module | Delivered |
 |--------|-----------|
 | `fuse_cinematics` | `timeline.cue_queue().drain()` after `advance()` in hybrid tick (HybridScrub event track) |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE33` asserts cue drain count > 0 over 60 frames |
 
 #### Landed wave 34 (this slice)
 
 | Module | Delivered |
 |--------|-----------|
 | `fuse_mechanics` | Polyhedron `setOnLeave` + `AreaComponent` leave via setup `testObject` outside radius |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE34` asserts polyhedron or area leave progressed |
 
 #### Landed wave 35 (this slice)
 
 | Module | Delivered |
 |--------|-----------|
 | `fuse_adventure` | `conversationScriptVm.dispatchBestBranchAllLines` on outpost guard in trigger |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE35` asserts all-lines dispatch count ≥ 1 |
 
 #### Landed wave 36 (this slice)
 
 | Module | Delivered |
 |--------|-----------|
 | `fuse_ai` | `TreeFileWatchRegistry::pollOsFileChanges()` on temp `.bt` watch in hybrid setup |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE36` asserts `osPollCount` > 0 |
 
 #### Landed wave 37–38 (this slice)
 
@@ -490,7 +470,18 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 |--------|-----------|
 | `fuse_fx` | `apply_afx_mission_spell_assignments()` on embedded `.mis` hook table |
 | `fuse_adventure` | `peekBestBranchLine()` before armed guard dispatch in hybrid trigger |
-| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE37` / `WAVE38` assert spell assignment and peek line |
+
+#### Hybrid outpost slice — integrated coverage (no feature flags)
+
+Single path in `hybrid_module_gates.{hpp,cpp}` / `demo_hybrid_hud` (verified by `fuse_hybrid_module_gates_tests`):
+
+| Module | Behavior wired in the slice |
+|--------|----------------------------|
+| `fuse_adventure` | `promptFor` / `InteractionSystem::pickup`; `.conv` + TorqueScript hook loaders; `CombatHitscanStub`; `MechanicsBridge`; queue fail/clear; door/weapon/VM; registry + `canInteract` |
+| `fuse_ai` | `NodeRegistry` factories; `BlackboardView`; `uaisk` template hooks; `loadTreeFromSpecs`; blackboard scalars; codegen/import/reload; spatial + parallel policy |
+| `fuse_cinematics` | `sample_hybrid_timeline_drive` per frame; `EventTrack` script hook id; `scrub_seq_preview`, motion `.seq`, `MotionTrack`; mount euler + quaternion |
+| `fuse_fx` | `load_afx_mission_hooks_from_mis`; schedule `pendingDelayedCount`; `.mis` tick/impact/spell-ready + `executeFunctionBody`; cast/constraints/graph/missile/codegen |
+| `fuse_mechanics` | `broadphaseProxyMasksCollide`; `InventoryProviderInterface`; action stubs; proxy filter collide; radio `stopBroadcast`; broadphase ray/AABB/remove/layer-mask |
 
 ---
 
