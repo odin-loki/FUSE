@@ -57,6 +57,10 @@ f32 solveContactConstraint(RigidBodySoA& bodies,
                            f32 contactCompliance,
                            f32& lambda);
 
+/// Reflects an approaching relative velocity along the contact normal.
+/// Combined restitution is the minimum of the two bodies. Returns the applied normal speed change.
+f32 applyContactRestitution(RigidBodySoA& bodies, const narrowphase::ContactManifold& contact);
+
 /// Max absolute constraint violation across contacts + distance springs (residual stub).
 f32 measureConstraintResidual(const RigidBodySoA& bodies,
                               const SolverWorkBuffers& work,

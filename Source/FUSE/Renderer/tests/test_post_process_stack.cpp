@@ -58,6 +58,18 @@ void testBloomDownsampleAveragesQuad() {
     fuse::renderer::Bloom::upsampleBox(coarse, 1u, 1u, fine);
     expectNear(fine[0].x, 2.f, 1e-4f, "bloom upsample replicates red");
     expectNear(fine[3].z, 2.f, 1e-4f, "bloom upsample replicates the last texel");
+
+    fuse::math::Vec3 accumulated[4] = {
+        {1.f, 0.f, 0.f},
+        {1.f, 0.f, 0.f},
+        {1.f, 0.f, 0.f},
+        {1.f, 0.f, 0.f},
+    };
+    fuse::renderer::Bloom::upsampleAdd(coarse, 1u, 1u, accumulated, 0.5f);
+    expectNear(accumulated[0].x, 2.f, 1e-4f, "bloom upsampleAdd scatters into the base");
+    expectNear(accumulated[3].y, 1.f, 1e-4f, "bloom upsampleAdd keeps the base green and adds the coarse green");
+    fuse::renderer::Bloom::upsampleAdd(coarse, 1u, 1u, accumulated, 0.f);
+    expectNear(accumulated[0].x, 2.f, 1e-4f, "bloom upsampleAdd ignores a zero scatter");
 }
 
 void testAcesTonemapClamps() {
