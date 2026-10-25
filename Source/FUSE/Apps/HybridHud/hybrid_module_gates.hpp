@@ -97,6 +97,10 @@
 #define FUSE_HYBRID_GATES_WAVE23 1
 #endif
 
+#ifndef FUSE_HYBRID_GATES_WAVE24
+#define FUSE_HYBRID_GATES_WAVE24 1
+#endif
+
 namespace fuse::hybrid::gates {
 
 constexpr int kFrameCount = 60;
@@ -185,6 +189,9 @@ struct State {
     bool weaponReloaded = false;
     bool timelineHostWired = false;
     u32 nestedCompositeNodeCount = 0;
+    u32 uaiskExpressionNodeCount = 0;
+    float uaiskExpressionThreshold = 0.f;
+    bool uaiskExpressionAstValid = false;
     u32 btDbvtOverlapHits = 0;
     u32 delayedMissionDispatchCount = 0;
     float initialClearR = 0.f;

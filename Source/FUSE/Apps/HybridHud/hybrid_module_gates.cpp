@@ -1,6 +1,7 @@
 #include "hybrid_module_gates.hpp"
 
 #include <fuse/ai/behavior_tree.hpp>
+#include <fuse/ai/uaisk_cs_syntax_tree.hpp>
 #include <fuse/ai/uaisk_script_import.hpp>
 #include <fuse/cinematics/actor_track.hpp>
 #include <fuse/cinematics/camera_track.hpp>
@@ -144,6 +145,28 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
                                                     &nestedCompositeError)) {
         state.nestedCompositeNodeCount = nestedCompositeTree.nodeCount();
         state.aiRuntime.registerTreeProfile(2, std::move(nestedCompositeTree));
+    }
+    static const char* kTargetingPatrolCs =
+        "class TargetingPatrol : BehaviorBase {\n"
+        "  condition = \"distance < 12\";\n"
+        "  distanceThreshold = 5.f;\n"
+        "  behaviorTree = \"aiTargeting.cs\";\n"
+        "}\n";
+    fuse::ai::BehaviorTree expressionAstTree;
+    std::string expressionAstError;
+    if (fuse::ai::uaisk::codegenTreeFromSyntaxTree("aiTargeting.cs", kTargetingPatrolCs, expressionAstTree,
+                                                    &expressionAstError)) {
+        state.uaiskExpressionNodeCount = expressionAstTree.nodeCount();
+        state.aiRuntime.registerTreeProfile(3, std::move(expressionAstTree));
+    }
+    fuse::ai::uaisk::UaiskCsSyntaxTree targetingSyntaxTree;
+    if (fuse::ai::uaisk::parseCsSyntaxTree("aiTargeting.cs", kTargetingPatrolCs, targetingSyntaxTree)) {
+        fuse::ai::uaisk::UaiskCsAst targetingAst;
+        if (fuse::ai::uaisk::buildAstFromSyntaxTree(targetingSyntaxTree, targetingAst) &&
+            !targetingAst.conditions.empty()) {
+            state.uaiskExpressionAstValid = targetingAst.conditions[0].valid;
+            state.uaiskExpressionThreshold = targetingAst.conditions[0].threshold;
+        }
     }
     {
         namespace fs = std::filesystem;
@@ -556,6 +579,14 @@ VerifyResult verify(const State& state, fuse::hybrid::HybridComposer& composer) 
     }
     if (state.vactorBridge.boneMotionSyncCount() == 0u) {
         return {false, "fuse_cinematics bone attach motion sync applied"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE24
+    if (state.uaiskExpressionNodeCount < 1u) {
+        return {false, "fuse_ai UaiskExpressionAst distance profile registered in hybrid demo"};
+    }
+    if (!state.uaiskExpressionAstValid || state.uaiskExpressionThreshold != 12.f) {
+        return {false, "fuse_ai UaiskExpressionAst distance < N condition parsed in hybrid demo"};
     }
 #endif
 #if FUSE_HYBRID_GATES_WAVE23
