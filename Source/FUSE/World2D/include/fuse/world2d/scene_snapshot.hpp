@@ -24,6 +24,10 @@ struct SpriteDrawCmd {
     /// When `atlasFrameCount > 0`, the hybrid GPU path tints sprites per frame (texture atlas sampling deferred).
     u32 atlasFrame = 0;
     u32 atlasFrameCount = 0;
+    u8 atlasR = 255;
+    u8 atlasG = 200;
+    u8 atlasB = 64;
+    bool atlasColorFromImageMap = false;
 };
 
 /// Deterministic RGB for atlas-frame playback until bindless sprite textures land.

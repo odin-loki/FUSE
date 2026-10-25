@@ -1,5 +1,6 @@
 add_library(fuse_world2d STATIC
     src/scene_object_2d.cpp
+    src/sprite_image_map.cpp
     src/scene_snapshot.cpp
     src/scene_transform.cpp
     src/scene_handle_table.cpp
@@ -21,6 +22,9 @@ target_include_directories(fuse_world2d
 )
 
 target_link_libraries(fuse_world2d PUBLIC fuse_core fuse_physics)
+include(${CMAKE_SOURCE_DIR}/cmake/FuseVendor.cmake)
+fuse_stb_include(fuse_world2d PRIVATE)
+target_compile_definitions(fuse_world2d PRIVATE FUSE_WORLD2D_HAS_STB_IMAGE=1)
 
 # `.fuselevel` loading (fuselevel_bridge) reads converted worlds through fuse_scene, which is only
 # built with FUSE_BUILD_PROJECT (fuse_scene links fuse_project). Without it World2D still builds and

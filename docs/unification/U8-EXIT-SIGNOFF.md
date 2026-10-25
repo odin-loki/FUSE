@@ -15,7 +15,8 @@
 | Real swapchain present (Linux/Xvfb) | `ctest -L 'u8;present'` / `fuse_u8_<demo>_present` | ✅ `fuse-u8-present` job |
 | Editor embed PIE (seven projects) | `fuse_u8_parity_embed_pie_smoke` | ✅ Lavapipe ICD lock |
 | ASan+UBSan on U8 + PIE | `fuse-asan` → `ctest -L u8` | ✅ `fuse-smoke-asan` |
-| Animated sprites | T2D metadata → `SpriteDrawCmd` → hybrid sprite-layer **atlas strip** + per-frame tint | ✅ `fuse_hybrid_sprite_layer_cpu`, `demo_2d_sprites` |
+| Animated sprites + `imageMap` | PNG strip sample → `SpriteDrawCmd` + hybrid atlas strip | ✅ `fuse_world2d_sprite_image_map_tests`, `demo_2d_sprites` |
+| Editor PIE transport (Qt UI) | Toolbar Play/Pause/Stop | ✅ `fuse_editor_qt_e15_transport` (`fuse-editor-qt`) |
 | Guides | [player-guide.md](../player-guide.md), [programmer-guide.md](../programmer-guide.md) | ✅ |
 | Parity matrix | [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) | ✅ |
 
@@ -25,9 +26,9 @@
 
 | Topic | Note |
 |-------|------|
-| Sprite image maps | Bindless sampling of `imageMap` PNG sheets (today: procedural horizontal atlas strip + tint) |
-| Golden ore | Bundled `Samples/unification/*/worlds/` stubs; optional local ore mirror |
-| Windows present | GameWindow present is X11-first; native WSI optional |
+| Bindless GPU texture fetch | `imageMap` colors sampled on CPU from PNG; hybrid still uses sprite-layer quads |
+| Golden ore | `third_party/Torque2D` SpriteToy when present; else bundled stubs |
+| macOS present | Win32 + X11 GameWindow; Cocoa WSI not in parity CI |
 | Qt live present | `fuse_editor_qt_live_present` on `fuse-editor-qt` — [U6-EDITOR.md](./U6-EDITOR.md) |
 
 ---

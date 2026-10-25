@@ -234,7 +234,13 @@ void HybridComposer::render(frame::FrameCtx& ctx) {
                 u8 sr = 255;
                 u8 sg = 200;
                 u8 sb = 64;
-                world2d::spriteAtlasPlaybackTint(cmd.atlasFrame, cmd.atlasFrameCount, sr, sg, sb);
+                if (cmd.atlasColorFromImageMap) {
+                    sr = cmd.atlasR;
+                    sg = cmd.atlasG;
+                    sb = cmd.atlasB;
+                } else {
+                    world2d::spriteAtlasPlaybackTint(cmd.atlasFrame, cmd.atlasFrameCount, sr, sg, sb);
+                }
                 (void)gpu->addSprite(spriteQuadFromPlaceholder(cmd.x, cmd.y, cmd.rotation, sr, sg, sb, gpu->width(),
                                                                gpu->height(), cmd.atlasFrame, cmd.atlasFrameCount));
             }
@@ -326,7 +332,13 @@ void HybridComposer::render(frame::FrameCtx& ctx) {
             u8 sr = 255;
             u8 sg = 200;
             u8 sb = 64;
-            world2d::spriteAtlasPlaybackTint(cmd.atlasFrame, cmd.atlasFrameCount, sr, sg, sb);
+            if (cmd.atlasColorFromImageMap) {
+                sr = cmd.atlasR;
+                sg = cmd.atlasG;
+                sb = cmd.atlasB;
+            } else {
+                world2d::spriteAtlasPlaybackTint(cmd.atlasFrame, cmd.atlasFrameCount, sr, sg, sb);
+            }
             if (m_softwarePlaceholderEnabled) {
                 m_renderer.drawSprite2D(cmd.x, cmd.y, cmd.rotation, sr, sg, sb);
             }

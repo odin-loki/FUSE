@@ -45,7 +45,7 @@ const char* goldenMissionPathForDemo(const std::string& demoName) {
 
 const char* goldenModulePathForDemo(const std::string& demoName) {
     if (demoName == "demo_2d_sprites") {
-        return "Samples/unification/demo_2d_sprites/worlds/sprite_toy_stub.cs";
+        return "third_party/Torque2D/toybox/SpriteToy/1/main.cs";
     }
     if (demoName == "demo_adventure_stub") {
         return "Samples/unification/demo_adventure_stub/worlds/interact_2d.cs";
@@ -80,6 +80,9 @@ std::string goldenRootForRelative(const char* goldenRel) {
     }
     if (path.rfind("Templates/", 0) == 0) {
         return "Templates";
+    }
+    if (path.rfind("third_party/Torque2D/", 0) == 0) {
+        return "third_party/Torque2D";
     }
     return {};
 }

@@ -1,6 +1,7 @@
 #include <fuse/world2d/world_2d.hpp>
 
 #include <fuse/log/logger.hpp>
+#include <fuse/world2d/sprite_image_map.hpp>
 #include <fuse/platform/thread.hpp>
 #include <fuse/world2d/fuselevel_bridge.hpp>
 
@@ -259,6 +260,18 @@ void World2D::buildSnapshot(frame::FrameCtx& ctx) {
         }
         cmd.atlasFrameCount = sprite->spriteAnimationFrameCount();
         cmd.atlasFrame = sprite->spriteAnimationFrameIndex(ctx.time);
+        if (!sprite->spriteImageMap().empty() && cmd.atlasFrameCount > 0u) {
+            u8 sr = cmd.atlasR;
+            u8 sg = cmd.atlasG;
+            u8 sb = cmd.atlasB;
+            if (sampleSpriteImageMapFrame(m_spriteMapRoots, sprite->spriteImageMap(), cmd.atlasFrame,
+                                          cmd.atlasFrameCount, sr, sg, sb)) {
+                cmd.atlasR = sr;
+                cmd.atlasG = sg;
+                cmd.atlasB = sb;
+                cmd.atlasColorFromImageMap = true;
+            }
+        }
     }
 }
 

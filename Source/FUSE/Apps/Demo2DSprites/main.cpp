@@ -93,6 +93,13 @@ int main(int argc, char** argv) {
             }
         }
         fuse::demo::check(heroAtlasFrameActive, "Hero animated-sprite atlas frame drives GPU tint path");
+        bool heroImageMapColor = false;
+        for (const fuse::world2d::SpriteDrawCmd& cmd : world2D.readSnapshot().sprites()) {
+            if (cmd.atlasColorFromImageMap && cmd.atlasFrameCount >= 8u) {
+                heroImageMapColor = true;
+            }
+        }
+        fuse::demo::check(heroImageMapColor, "Hero imageMap PNG/procedural atlas colors sampled");
     }
 #if defined(FUSE_HAS_VULKAN_RHI)
     if (composer->gpuSceneActive()) {

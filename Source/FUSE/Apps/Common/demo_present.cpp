@@ -22,8 +22,8 @@ bool requestedFromArgv(int argc, char** argv) {
 }
 
 bool gameWindowPresentAvailable() {
-#if defined(FUSE_PLATFORM_WINDOW_X11)
-    return fuse::platform::displayServerAvailable();
+#if defined(FUSE_PLATFORM_WINDOW_WIN32) || defined(FUSE_PLATFORM_WINDOW_X11)
+    return fuse::platform::windowWsiAvailable() && fuse::platform::displayServerAvailable();
 #else
     return false;
 #endif

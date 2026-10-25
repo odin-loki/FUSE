@@ -29,7 +29,7 @@ Future location: `Samples/unification/<demo_id>/` (see [Samples/unification/READ
 - ✅ Real window present — all seven `demo_*` binaries accept `--present` / `FUSE_DEMO_PRESENT=game|1`; Xvfb + Lavapipe gates `ctest -R fuse_u8_.*_present` (GameWindow + `vkQueuePresentKHR`, shared `demo_present.hpp`)
 - ✅ Legacy import — bundled stubs under `Samples/unification/*/worlds/` are the default; a local ore mirror may be preferred when present (CI uses stubs only; no network fetch)
 - ✅ PIE ASan smoke — `fuse-asan` preset instruments all FUSE targets; `fuse_u8_parity_embed_pie_smoke` + `ctest -L u8` in umbrella `fuse-smoke-asan` job (seven demos + headless `fuse_u8_*`)
-- ✅ Animated sprite playback — T2D bridge → `SpriteDrawCmd` atlas frame; hybrid `sprite_layer` horizontal atlas strip + tint (`fuse_hybrid_sprite_layer_cpu`); bindless **imageMap** texture sampling tracked post-U8
+- ✅ Animated sprite playback — T2D `imageMap` PNG sample (`Samples/unification/common/sprite_maps/`) + hybrid atlas strip (`fuse_world2d_sprite_image_map_tests`); bindless GPU texture fetch post-U8
 - ✅ Player + programmer guides — [`docs/player-guide.md`](../player-guide.md), [`docs/programmer-guide.md`](../programmer-guide.md) (honest limits, real demo binaries + ctest names)
 - ✅ U8 engineering exit — CI matrix in [U8-EXIT-SIGNOFF.md](./U8-EXIT-SIGNOFF.md); product sponsor row optional for milestone
 
