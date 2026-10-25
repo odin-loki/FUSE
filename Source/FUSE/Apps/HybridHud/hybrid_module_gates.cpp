@@ -238,6 +238,7 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
         state.leverRotate.advance(1.f / 60.f);
         state.leverCounter.increment();
         state.leverMessage.send();
+        (void)state.leverSpawn.triggerSpawn();
 
         fuse::mechanics::InteractionContext mechanicsCtx;
         mechanicsCtx.verb = "use";
@@ -544,6 +545,11 @@ VerifyResult verify(const State& state, fuse::hybrid::HybridComposer& composer) 
     }
     if (state.vactorBridge.boneMotionSyncCount() == 0u) {
         return {false, "fuse_cinematics bone attach motion sync applied"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE22
+    if (state.leverSpawn.spawnCount() == 0u) {
+        return {false, "fuse_mechanics SpawnComponent fired on polyhedron trigger enter"};
     }
 #endif
 #if FUSE_HYBRID_GATES_WAVE21

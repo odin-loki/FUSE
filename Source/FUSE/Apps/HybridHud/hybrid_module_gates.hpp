@@ -44,6 +44,7 @@
 #include <fuse/mechanics/polyhedron_trigger.hpp>
 #include <fuse/mechanics/registry.hpp>
 #include <fuse/mechanics/rotate_component.hpp>
+#include <fuse/mechanics/spawn_component.hpp>
 #include <fuse/mechanics/switch_component.hpp>
 #include <fuse/mechanics/toggle_component.hpp>
 #include <fuse/cinematics/cue_preview.hpp>
@@ -88,6 +89,10 @@
 #define FUSE_HYBRID_GATES_WAVE21 1
 #endif
 
+#ifndef FUSE_HYBRID_GATES_WAVE22
+#define FUSE_HYBRID_GATES_WAVE22 1
+#endif
+
 namespace fuse::hybrid::gates {
 
 constexpr int kFrameCount = 60;
@@ -122,6 +127,7 @@ struct State {
     fuse::mechanics::RotateComponent leverRotate{"lever_rotate", 45.f};
     fuse::mechanics::CounterComponent leverCounter{"lever_counter", 0, 1};
     fuse::mechanics::MessageComponent leverMessage{"lever_message", "Lever activated"};
+    fuse::mechanics::SpawnComponent leverSpawn{"lever_spawn", "outpost_guard_spawn"};
     fuse::mechanics::PolyhedronTriggerZone leverTrigger;
     fuse::mechanics::PhysicsTriggerBridge physicsTriggerBridge;
     fuse::mechanics::BroadphaseTriggerSync broadphaseTriggerSync;
