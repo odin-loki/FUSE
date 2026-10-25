@@ -10,8 +10,8 @@
 #include <fuse/cinematics/hybrid_timeline_drive.hpp>
 #include <fuse/cinematics/sprite_track.hpp>
 #include <fuse/cinematics/vactor_bridge.hpp>
-#include <fuse/fx/afx_mission_hooks.hpp>
 #include <fuse/fx/afx_mission_loader.hpp>
+#include <fuse/fx/afx_mission_hooks.hpp>
 #include <fuse/fx/afx_template_pack.hpp>
 #include <fuse/fx/fx_socket.hpp>
 #include <fuse/handle.hpp>
@@ -26,6 +26,7 @@ namespace fuse::hybrid::gates {
 namespace {
 
 constexpr u32 kAgentObjectId = 7u;
+constexpr u32 kLeaveSimObjectId = 8u;
 constexpr fuse::cinematics::TimelineMs kAssetTimeScale = 30;
 
 void setupTimelineFromAsset(fuse::cinematics::Timeline& timeline) {
@@ -90,6 +91,37 @@ void setupFx(State& state) {
     fuse::fx::AfxMissionBody nestedBody;
     if (fuse::fx::parse_afx_mission_body_from_mis(kNestedSimObjectMisText, nestedBody)) {
         state.missionNestedSimObjectCount = static_cast<u32>(nestedBody.nestedSimObjectBodies.size());
+    }
+#endif
+
+#if FUSE_HYBRID_GATES_WAVE32
+    static const char* kMisText =
+        "function onSpellCast(%caster, %spell) {\n"
+        "}\n"
+        "function onAmbientFx() {\n"
+        "}\n"
+        "%on_spell_cast = \"fireball\"\n";
+    std::string misRegisterError;
+    if (fuse::fx::register_afx_mission_from_mis(kMisText, state.fxComposer, state.missionScriptVm,
+                                                &misRegisterError)) {
+        state.missionRegisterHookCount = state.missionScriptVm.hookCount();
+    }
+#endif
+
+#if FUSE_HYBRID_GATES_WAVE37
+    static const char* kSpellAssignMisText =
+        "function onSpellCast(%caster, %spell) {\n"
+        "}\n"
+        "%on_spell_cast = \"fireball\"\n";
+    std::vector<fuse::fx::AfxMissionHook> spellHooks;
+    if (fuse::fx::load_afx_mission_hooks_from_mis(kSpellAssignMisText, spellHooks, nullptr)) {
+        state.missionSpellAssignmentApplied =
+            fuse::fx::apply_afx_mission_spell_assignments(kSpellAssignMisText, spellHooks);
+        for (const fuse::fx::AfxMissionHook& hook : spellHooks) {
+            if (hook.scriptHook == "on_spell_cast" && hook.spellId == "fireball") {
+                state.missionSpellAssignmentApplied = true;
+            }
+        }
     }
 #endif
 
@@ -219,6 +251,21 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
         fs::remove(tempPath);
     }
 #endif
+#if FUSE_HYBRID_GATES_WAVE36
+    {
+        namespace fs = std::filesystem;
+        const fs::path osPath = fs::temp_directory_path() / "fuse_hybrid_patrol_wave36.bt";
+        {
+            std::ofstream out(osPath);
+            out << "bb.action.set_flag flag=2\nroot=0\n";
+        }
+        state.treeFileWatchRegistry.watchProfileFromDisk(osPath.string(), 9u);
+        const fuse::u32 osPollsBefore = state.treeFileWatchRegistry.osPollCount();
+        (void)state.treeFileWatchRegistry.pollOsFileChanges(state.aiRuntime);
+        state.treeFileWatchOsPollCount = state.treeFileWatchRegistry.osPollCount() - osPollsBefore;
+        fs::remove(osPath);
+    }
+#endif
 #if FUSE_HYBRID_GATES_SCRIPT
     state.scriptHost.init();
     state.scriptHostBridge.attach();
@@ -336,6 +383,9 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
         state.leverToggle.toggle();
         state.leverSwitch.flip();
     });
+#if FUSE_HYBRID_GATES_WAVE34
+    state.leverTrigger.setOnLeave([&state](u32 /*objectId*/) { ++state.polyhedronLeaveCallbackCount; });
+#endif
     state.leverTrigger.setOnEnter([&state](u32 /*objectId*/) {
         state.agentInsideTrigger = true;
         state.leverConsole.invoke("toggleLever");
@@ -400,6 +450,14 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
             branchCtx.actorName = "player";
             branchCtx.inventory = &state.playerInventory;
             if (state.weaponGranted) {
+#if FUSE_HYBRID_GATES_WAVE38
+                state.guardPeekBranchLine =
+                    state.conversationScriptVm.peekBestBranchLine("outpost_guard", branchCtx);
+#endif
+#if FUSE_HYBRID_GATES_WAVE35
+                state.guardAllLinesDispatchCount = state.conversationScriptVm.dispatchBestBranchAllLines(
+                    "outpost_guard", branchCtx, *guardIt->second);
+#endif
                 state.conversationScriptVm.dispatchBestBranch("outpost_guard", branchCtx, *guardIt->second);
                 state.guardBranchChosen = state.conversationScriptVm.lastBranchDispatched();
                 state.guardLineText = state.conversationScriptVm.lastLineDispatched();
@@ -487,6 +545,13 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
     });
     state.broadphaseTriggerSync.trackBody(kAgentObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
 
+#if FUSE_HYBRID_GATES_WAVE34
+    state.leverTrigger.testObject(kLeaveSimObjectId, state.agent3D.x(), state.agent3D.y(), state.agent3D.z());
+    state.leverTrigger.testObject(kLeaveSimObjectId, 100.f, 100.f, 100.f);
+    (void)state.leverArea.testObject(kLeaveSimObjectId, 0.f, 0.f, 0.f);
+    (void)state.leverArea.testObject(kLeaveSimObjectId, 50.f, 0.f, 0.f);
+#endif
+
     const auto cuePreview = fuse::cinematics::preview_cues_at(state.timeline, 2'500);
     state.cuePreviewCount = static_cast<fuse::u32>(cuePreview.size());
 }
@@ -498,6 +563,10 @@ void tickFrame(State& state, fuse::hybrid::HybridComposer& composer, const fuse:
         static_cast<fuse::cinematics::TimelineMs>(std::lround(ctx.dt * 1000.f * kAssetTimeScale));
     const fuse::cinematics::TimelineMs timelineBefore = state.timeline.playhead().time_ms();
     state.timeline.advance(deltaMs);
+#if FUSE_HYBRID_GATES_WAVE33
+    const std::vector<fuse::cinematics::CueEntry> drainedCues = state.timeline.cue_queue().drain();
+    state.timelineCueDrainCount += static_cast<fuse::u32>(drainedCues.size());
+#endif
     fuse::cinematics::drain_actor_cues(state.timeline, state.vactorBridge, timelineBefore);
     state.vactorBridge.sync_bound_objects();
     state.vactorBridge.sync_motion_from_timeline(state.timeline);
@@ -670,6 +739,45 @@ VerifyResult verify(const State& state, fuse::hybrid::HybridComposer& composer) 
 #if FUSE_HYBRID_GATES_WAVE31
     if (state.treeFileWatchFseventsPollCount == 0u && state.treeFileWatchFseventsReloadCount == 0u) {
         return {false, "fuse_ai TreeFileWatchRegistry pollFSEventsFileChanges progressed in hybrid demo"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE38
+    if (state.guardPeekBranchLine != "I see you are armed. Keep that rifle stowed.") {
+        return {false, "fuse_adventure peekBestBranchLine on armed guard in hybrid demo"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE37
+    if (!state.missionSpellAssignmentApplied) {
+        return {false, "fuse_fx apply_afx_mission_spell_assignments in hybrid demo"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE36
+    if (state.treeFileWatchOsPollCount == 0u) {
+        return {false, "fuse_ai TreeFileWatchRegistry pollOsFileChanges in hybrid demo"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE35
+    if (state.guardAllLinesDispatchCount < 1u) {
+        return {false, "fuse_adventure dispatchBestBranchAllLines on guard trigger in hybrid demo"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE34
+    if (state.leverTrigger.leaveCount() == 0u && state.polyhedronLeaveCallbackCount == 0u &&
+        state.leverArea.leaveCount() == 0u) {
+        return {false, "fuse_mechanics polyhedron setOnLeave and AreaComponent leave in hybrid demo"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE33
+    if (state.timelineCueDrainCount == 0u) {
+        return {false, "fuse_cinematics timeline cue_queue drain during hybrid tick"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE32
+    if (state.missionRegisterHookCount < 2u) {
+        return {false, "fuse_fx register_afx_mission_from_mis hook table in hybrid demo"};
+    }
+    if (state.fxComposer.findSpell("fireball") == nullptr) {
+        return {false, "fuse_fx register_afx_mission_from_mis registered fireball spell"};
     }
 #endif
 #if FUSE_HYBRID_GATES_WAVE30

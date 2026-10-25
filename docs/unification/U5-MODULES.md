@@ -449,6 +449,49 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_ai` | `TreeFileWatchRegistry::fseventsPollCount()` / `fseventsReloadCount()` accessors; hybrid temp `.bt` watch + `pollFSEventsFileChanges()` |
 | **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE31` asserts FSEvents poll or reload progressed in hybrid demo |
 
+#### Landed wave 32 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_fx` | `register_afx_mission_from_mis()` in hybrid FX setup (`test_fx_runtime` `%on_spell_cast` pattern) |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE32` asserts hook count ≥ 2 and fireball spell registered |
+
+#### Landed wave 33 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_cinematics` | `timeline.cue_queue().drain()` after `advance()` in hybrid tick (HybridScrub event track) |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE33` asserts cue drain count > 0 over 60 frames |
+
+#### Landed wave 34 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_mechanics` | Polyhedron `setOnLeave` + `AreaComponent` leave via setup `testObject` outside radius |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE34` asserts polyhedron or area leave progressed |
+
+#### Landed wave 35 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_adventure` | `conversationScriptVm.dispatchBestBranchAllLines` on outpost guard in trigger |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE35` asserts all-lines dispatch count ≥ 1 |
+
+#### Landed wave 36 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | `TreeFileWatchRegistry::pollOsFileChanges()` on temp `.bt` watch in hybrid setup |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE36` asserts `osPollCount` > 0 |
+
+#### Landed wave 37–38 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_fx` | `apply_afx_mission_spell_assignments()` on embedded `.mis` hook table |
+| `fuse_adventure` | `peekBestBranchLine()` before armed guard dispatch in hybrid trigger |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE37` / `WAVE38` assert spell assignment and peek line |
+
 ---
 
 ## 8. Related docs

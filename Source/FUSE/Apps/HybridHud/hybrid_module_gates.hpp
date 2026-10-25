@@ -132,6 +132,34 @@
 #define FUSE_HYBRID_GATES_WAVE31 1
 #endif
 
+#ifndef FUSE_HYBRID_GATES_WAVE32
+#define FUSE_HYBRID_GATES_WAVE32 1
+#endif
+
+#ifndef FUSE_HYBRID_GATES_WAVE33
+#define FUSE_HYBRID_GATES_WAVE33 1
+#endif
+
+#ifndef FUSE_HYBRID_GATES_WAVE34
+#define FUSE_HYBRID_GATES_WAVE34 1
+#endif
+
+#ifndef FUSE_HYBRID_GATES_WAVE35
+#define FUSE_HYBRID_GATES_WAVE35 1
+#endif
+
+#ifndef FUSE_HYBRID_GATES_WAVE36
+#define FUSE_HYBRID_GATES_WAVE36 1
+#endif
+
+#ifndef FUSE_HYBRID_GATES_WAVE37
+#define FUSE_HYBRID_GATES_WAVE37 1
+#endif
+
+#ifndef FUSE_HYBRID_GATES_WAVE38
+#define FUSE_HYBRID_GATES_WAVE38 1
+#endif
+
 namespace fuse::hybrid::gates {
 
 constexpr int kFrameCount = 60;
@@ -237,6 +265,13 @@ struct State {
     u32 conversationInjectedLineCount = 0;
     u32 treeFileWatchFseventsPollCount = 0;
     u32 treeFileWatchFseventsReloadCount = 0;
+    u32 missionRegisterHookCount = 0;
+    u32 timelineCueDrainCount = 0;
+    u32 polyhedronLeaveCallbackCount = 0;
+    u32 guardAllLinesDispatchCount = 0;
+    u32 treeFileWatchOsPollCount = 0;
+    bool missionSpellAssignmentApplied = false;
+    std::string guardPeekBranchLine;
     float initialClearR = 0.f;
     float initialClearG = 0.f;
     float initialClearB = 0.f;
