@@ -125,9 +125,9 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - [x] `fuse_physics_broadphase_tests` — 256-sphere brute-force reference match
 - [x] `PairBufferSoA` — per-pair slot clear/reuse + compact; job-safe `runBroadphaseIntoBuffer`
 - [x] `fuse_physics_broadphase_tests` — empty scene, pair count, AABB overlap stubs, SoA parallel vs serial parity, slot compact, max-capacity clamp, 2D broadphase parity
-- [ ] 10k random spheres vs brute force O(n²) — catalog `broadphase.spatial_hash_10k` (1k parity smoke landed; full 10k deferred)
-- [x] Bodies straddling multiple cells — edge case
-- [ ] GPU radix sort — deferred to CUDA B4.1
+- [x] 10k random spheres vs brute force O(n²) — catalog `broadphase.spatial_hash_10k` (`fuse_b4_broadphase_gates`)
+- [x] Bodies straddling multiple cells — edge case (`fuse_b4_broadphase_gates`)
+- [x] Resident broadphase radix sort — device path == `runBroadphaseIntoBuffer` bit-for-bit (`fuse_b4_physics_kernel_gates`; sort primitive also `fuse_gpu_radix_sort_gates`)
 
 #### Narrow phase
 
@@ -138,9 +138,9 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - [x] `fuse_physics_narrowphase_tests` — manifold fill cap, empty separated contacts, orthonormal friction basis, tangent SoA round-trip
 - [x] `ContactBufferSoA` — multi-point slots, warm-start impulse stubs, box-box four-point manifolds
 - [x] `fuse_physics_narrowphase_tests` — friction clamp + tangent basis, box-box contact count
-- [ ] Sphere-sphere vs Bullet within 0.001f — catalog `narrowphase.sphere_sphere`
-- [ ] Capsule-capsule degeneracies
-- [ ] EPA / SDF smooth normals — deferred
+- [x] Sphere-sphere vs Bullet within 0.001f — catalog `narrowphase.sphere_sphere` (`fuse_b4_narrowphase_gates`)
+- [x] Capsule-capsule parallel + degeneracies (`fuse_b4_narrowphase_gates`)
+- [x] GJK / EPA vs SAT reference; SDF smooth normals (`fuse_b4_narrowphase_gates`)
 
 #### Solver (PBD)
 
@@ -152,8 +152,8 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - [x] `fuse_physics_pbd_tests` — per-constraint body-slot delta clearing for parallel islands; lambda warm-start across substeps
 - [x] `fuse_physics_pbd_tests` — island split, empty island, warm-start lambda seed helpers
 - [x] `fuse_physics_pbd_tests` — applyPositionDeltas slot reset; frame-to-frame distance lambda warm-start
-- [ ] Stack of 10 spheres stable 5s — catalog `solver.stack_stability`
-- [ ] Restitution / friction analytical match — deferred
+- [x] Stack of 10 spheres stable 5s — catalog `solver.stack_stability` (`fuse_b4_solver_gates`)
+- [x] Restitution / friction / distance constraint / sleep — analytical match (`fuse_b4_solver_gates`)
 
 #### CCD
 
@@ -162,19 +162,19 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - [x] `ToiBufferSoA` — per-pair slot clear/reuse + compact; push/sort-by-TOI + `maxCapacity` clamp
 - [x] `fuse_physics_ccd_tests` — sphere-plane + thin-slab + AABB segment TOI helpers, sweep hit/miss smoke
 - [x] `fuse_physics_ccd_tests` — buffer sort order, empty buffer, capacity clamp, stable tie-break, `isSortedByToi`, multi-pair `runCcdIntoBuffer` earliest-first ordering, post-sort `applyMaxCapacityClamp`
-- [ ] High-velocity tunneling through thin wall — catalog `ccd.tunneling` (analytic smoke landed; full gameplay acceptance deferred)
+- [x] High-velocity tunneling through thin wall — catalog `ccd.tunneling` (`fuse_b4_ccd_gates`)
 
 #### Destruction
 
 - [x] `fuse_voxel_destruction` — carve radius, SVO carve/query, debris counters
 - [x] Automated smoke — `destruction.carve_radius`, `destruction.debris_mass`
-- [ ] Dual contouring watertight mesh — B3.5 follow-up
+- [x] Dual contouring watertight mesh — `fuse_b4_destruction_gates` (carve + debris spawn via `VoxelVolume`)
 
 #### Soft body
 
 - [x] `fuse_softbody` — `ParticleSoA`, cloth init, pinned corners, wind
 - [x] Automated smoke — `softbody.cloth_gravity`, `softbody.pinned_corners`
-- [ ] Cloth-sphere collision — deferred
+- [x] Cloth-sphere collision without interpenetration (`fuse_b4_cloth_gates`)
 
 #### Integration
 
@@ -182,13 +182,18 @@ Callbacks keyed by `EntityId::index()`. Both `entityA` and `entityB` receive dis
 - [x] `fuse_collision_events` — Enter/Trigger dispatch
 - [x] `fuse_physics_phase4_integration` — broadphase → narrowphase → PBD/CCD → `PhysicsManager`
 - [x] Catalog entries — `integration.manager_step`, `integration.collision_callbacks`, `integration.broad_to_manager`
-- [ ] ECS Transform writeback every frame — `syncSoaToEcs_` stub
+- [x] ECS Transform writeback every frame — real `Collider` / kinematic bridge (`fuse_b4_manager_gates`)
 
-#### Performance baselines (RTX 3090 / CUDA)
+#### Performance baselines (CPU, optimised gates)
 
-- [ ] 1000-body `PhysicsManager::step` < 8ms — catalog `perf.manager_1000_bodies`
-- [ ] Full pipeline 1000 dynamics < 4ms — deferred to CUDA B4.1–B4.6
-- [ ] 10k sleeping bodies < 0.5ms — deferred
+- [x] 1000-body `PhysicsManager::step` < 8ms — catalog `perf.manager_1000_bodies` (`fuse_b4_manager_gates`)
+- [x] Full pipeline 1000 dynamics < 4ms (`fuse_b4_manager_gates`)
+- [x] 10k sleeping bodies < 0.5ms (`fuse_b4_manager_gates`)
+- [x] 64×64 cloth < 1ms (`fuse_b4_cloth_gates`)
+
+#### Performance baselines (RTX 3090 / CUDA events — GPU-only)
+
+- [ ] Broadphase 10k bodies < 2ms; narrowphase 1k contact pairs < 3ms; solver 10 iterations over ≥10k contacts < 5ms — `fuse_b4_physics_cuda_bench` (`fuse_b4_physics_kernel_gates` + `fuse_b4_physics_resident_bench_dry_run` cover bit-exact parity and host-bench workload in CI; cuda bench skips with exit 77 without a device)
 
 ---
 
@@ -249,11 +254,15 @@ Coded and CPU-verified 2026-09-30 (build/rel, -Werror). CPU only (no CUDA code i
 | `fuse_phase4_deliverables` | Catalog non-empty, category counts, automated smoke |
 | `fuse_physics_phase4_integration` | B4.11 end-to-end: broadphase → narrowphase → PBD/CCD → `PhysicsManager` |
 | `fuse_physics_ccd_tests` | B4.6 CCD sweep helpers, `ToiBufferSoA` push/sort/clamp/`applyMaxCapacityClamp`/`isSortedByToi`, sphere/plane/slab/AABB TOI hit/miss, multi-pair sort order, job-safe pair dispatch |
+| `fuse_b4_{broadphase,narrowphase,solver,ccd,cloth,manager,destruction,rotation,joint}_gates` | B4.11 acceptance rows (EXECUTION-PLAN §4b); CPU perf budgets in optimised builds |
+| `fuse_b4_physics_kernel_gates` | Resident broadphase / narrowphase / coloured solver == legacy CPU bit-for-bit (`--no-timings`) |
+| `fuse_b4_physics_resident_bench_dry_run` | Host-bench workload parity (no GPU, no RTX timing asserts) |
+| `fuse_b4_physics_cuda_bench` | RTX 3090 CUDA-event timings (`--cuda-bench`); registered only with `FUSE_CUDA_BACKEND`; skips without device |
 
 Run:
 
 ```bash
-ctest --test-dir build --output-on-failure -R 'fuse_physics|fuse_voxel|fuse_softbody|fuse_collision|fuse_phase4'
+ctest --test-dir build --output-on-failure -R 'fuse_physics|fuse_voxel|fuse_softbody|fuse_collision|fuse_phase4|fuse_b4_'
 ```
 
 ---
@@ -262,7 +271,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_physics|fuse_voxel|fuse_soft
 
 1. **Linux umbrella** — `FUSE_BUILD_PHYSICS=ON`; all physics tests are CPU-only stubs (no `nvcc`, no Bullet).
 2. **ASan smoke** — physics lib not linked into `fuse_runtime_smoke` yet; subsystem tests run in Release umbrella job.
-3. **CUDA physics** — deferred to B4.1–B4.6 + `FUSE_BUILD_CUDA` integration.
+3. **CUDA physics** — `fuse_b4_physics_kernel_gates` in the CUDA compile workflow; device timing rows are `fuse_b4_physics_cuda_bench` (GPU-only, not provable in the Linux umbrella).
 
 ---
 
@@ -290,7 +299,7 @@ ctest --test-dir build --output-on-failure -R 'fuse_physics|fuse_voxel|fuse_soft
 - [ ] B4.4–B4.6 CUDA: PBD kernels, Barnes-Hut GPU, CCD sweep GPU (CPU stubs on main via #29)
 - [ ] B3.5 SVO integration — real carve + dual contouring mesh extraction
 - [ ] Wire `PhysicsManager` to `fuse::renderer::cuda::StreamManager`
-- [ ] Bullet/reference acceptance tests from B4.11 catalog
+- [x] B4.11 catalog acceptance rows — `fuse_b4_*_gates` + resident kernel parity (see [EXECUTION-PLAN.md](./EXECUTION-PLAN.md) §4b); RTX 3090 CUDA-event row still open (`fuse_b4_physics_cuda_bench`)
 
 ---
 
