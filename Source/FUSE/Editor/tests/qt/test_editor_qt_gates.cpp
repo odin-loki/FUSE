@@ -1723,11 +1723,17 @@ int gateLivePresent() {
         QTest::mousePress(vkWindow, Qt::RightButton, Qt::NoModifier, centre);
         QTest::mouseMove(vkWindow, centre + QPoint(40, 0));
         QTest::mouseMove(vkWindow, centre + QPoint(80, 0));
-        QTest::qWait(60);
+        const float yawBeforeDrag = cam2.yaw;
+        const bool dragTurned = QTest::qWaitFor(
+            [&]() {
+                QCoreApplication::processEvents();
+                return std::abs(viewport->panel().camera().yaw - yawBeforeDrag) > 1.f;
+            },
+            3000);
         QTest::mouseRelease(vkWindow, Qt::RightButton, Qt::NoModifier, centre + QPoint(80, 0));
         const fuse::editor::ViewportCamera cam3 = viewport->panel().camera();
-        std::printf("camera yaw %.2f -> %.2f after RMB drag on the Vulkan window\n", cam2.yaw, cam3.yaw);
-        expect(std::abs(cam3.yaw - cam2.yaw) > 1.f, "RMB drag on the Vulkan window turns the camera");
+        std::printf("camera yaw %.2f -> %.2f after RMB drag on the Vulkan window\n", yawBeforeDrag, cam3.yaw);
+        expect(dragTurned, "RMB drag on the Vulkan window turns the camera");
         expect(viewport->activeContextMenu() == nullptr, "RMB drag does not open the context menu");
 
         QWheelEvent wheel(QPointF(centre), QPointF(vkWindow->mapToGlobal(centre)), QPoint(), QPoint(0, 240),
