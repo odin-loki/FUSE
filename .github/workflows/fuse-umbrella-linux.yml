@@ -87,6 +87,38 @@ jobs:
         run: |
           ./build-fuse/Tools/FUSE/fuse_cook --project Samples/unification/demo_3d_empty --dry-run
 
+  fuse-u8-present:
+    name: U8 demo swapchain present (xvfb)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
+          sudo apt-get install -y ${{ env.FUSE_APT_LINUX_BASE }} ${{ env.FUSE_APT_LINUX_VULKAN }} xvfb xauth
+
+      - name: Configure (parity demos + X11 display wrapper)
+        run: |
+          cmake -B build-u8-present -G Ninja \
+            -DCMAKE_CXX_COMPILER=g++-13 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFUSE_BUILD_CORE=ON \
+            -DFUSE_BUILD_CORE_TESTS=ON \
+            -DFUSE_BUILD_HYBRID_DEMO=ON \
+            -DFUSE_BUILD_PROJECT=ON \
+            -DFUSE_BUILD_PARITY_DEMOS=ON \
+            -DFUSE_BUILD_VULKAN=ON
+
+      - name: Build parity demos
+        run: cmake --build build-u8-present --target demo_3d_empty demo_2d_sprites demo_hybrid_hud demo_fx demo_ai_bt demo_timeline demo_adventure_stub
+
+      - name: Run U8 present ctests
+        env:
+          VK_ICD_FILENAMES: ${{ env.FUSE_LINUX_VK_ICD }}
+        run: ctest --test-dir build-u8-present -L 'u8;present' --output-on-failure -j1 --timeout 1200
+
   fuse-core-single-thread:
     name: fuse_core jobs (FUSE_JOBS_SINGLE_THREAD)
     runs-on: ubuntu-24.04

@@ -6,7 +6,22 @@
 
 namespace fuse::hybrid {
 
-SpriteQuad spriteQuadFromPlaceholder(f32 x, f32 y, f32 rotation, u8 r, u8 g, u8 b, u32 width, u32 height) {
+namespace {
+
+bool spriteAtlasSliceCoversLocalX(f32 lx, f32 halfExtentX, u32 atlasFrame, u32 atlasFrameCount) {
+    if (atlasFrameCount == 0u || halfExtentX <= 0.f) {
+        return true;
+    }
+    const f32 u = (lx / halfExtentX + 1.f) * 0.5f;
+    const f32 f0 = static_cast<f32>(atlasFrame) / static_cast<f32>(atlasFrameCount);
+    const f32 f1 = static_cast<f32>(atlasFrame + 1u) / static_cast<f32>(atlasFrameCount);
+    return u >= f0 && u < f1;
+}
+
+} // namespace
+
+SpriteQuad spriteQuadFromPlaceholder(f32 x, f32 y, f32 rotation, u8 r, u8 g, u8 b, u32 width, u32 height,
+                                     u32 atlasFrame, u32 atlasFrameCount) {
     const f32 w = static_cast<f32>(width > 0u ? width : kPlaceholderWidth);
     const f32 h = static_cast<f32>(height > 0u ? height : kPlaceholderHeight);
     const f32 scale = h / static_cast<f32>(kPlaceholderHeight);
@@ -17,6 +32,10 @@ SpriteQuad spriteQuadFromPlaceholder(f32 x, f32 y, f32 rotation, u8 r, u8 g, u8 
     q.halfExtent[1] = kPlaceholderSpriteHalfExtent * scale;
     q.cosSin[0] = std::cos(rotation);
     q.cosSin[1] = std::sin(rotation);
+    if (atlasFrameCount > 0u) {
+        q.pad[0] = static_cast<f32>(atlasFrame);
+        q.pad[1] = static_cast<f32>(atlasFrameCount);
+    }
     q.color[0] = static_cast<f32>(r) / 255.f;
     q.color[1] = static_cast<f32>(g) / 255.f;
     q.color[2] = static_cast<f32>(b) / 255.f;
@@ -39,6 +58,11 @@ void spriteLayerTexel(const SpriteQuad* quads, u32 count, u32 px, u32 py, f32 ou
         const f32 by = dy * q.cosSin[0];
         const f32 ly = by - bx;
         if (std::fabs(lx) <= q.halfExtent[0] && std::fabs(ly) <= q.halfExtent[1]) {
+            const u32 atlasCount = q.pad[1] > 0.f ? static_cast<u32>(q.pad[1]) : 0u;
+            const u32 atlasFrame = atlasCount > 0u ? static_cast<u32>(q.pad[0]) : 0u;
+            if (!spriteAtlasSliceCoversLocalX(lx, q.halfExtent[0], atlasFrame, atlasCount)) {
+                continue;
+            }
             const f32 k = 1.f - q.color[3];
             for (u32 c = 0; c < 4u; ++c) {
                 const f32 t = k * acc[c];

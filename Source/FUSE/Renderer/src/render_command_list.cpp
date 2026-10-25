@@ -15,7 +15,8 @@ void RenderCommandList::clear3D(float r, float g, float b) {
     m_commands.push_back(cmd);
 }
 
-void RenderCommandList::drawSprite2D(float x, float y, float rotation, u8 r, u8 g, u8 b) {
+void RenderCommandList::drawSprite2D(float x, float y, float rotation, u8 r, u8 g, u8 b, u32 atlasFrame,
+                                     u32 atlasFrameCount) {
     RenderCommand cmd;
     cmd.kind = RenderCommandKind::DrawSprite2D;
     cmd.drawSprite2D.x = x;
@@ -24,6 +25,8 @@ void RenderCommandList::drawSprite2D(float x, float y, float rotation, u8 r, u8 
     cmd.drawSprite2D.r = r;
     cmd.drawSprite2D.g = g;
     cmd.drawSprite2D.b = b;
+    cmd.drawSprite2D.atlasFrame = atlasFrame;
+    cmd.drawSprite2D.atlasFrameCount = atlasFrameCount;
     m_commands.push_back(cmd);
 }
 

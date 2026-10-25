@@ -24,7 +24,7 @@ ctest --test-dir build -R fuse_u8_ --output-on-failure
 
 **Still stub / deferred**
 
-- Bindless sprite **texture atlas** sampling (animated frames use per-frame GPU tint today)
+- Bindless `imageMap` **PNG** sampling (animated frames use hybrid sprite-layer atlas strips + tint today)
 - Bit-perfect legacy mission replay — converters produce wiring stubs, not full gameplay
 - Live upstream addon trees — golden paths point at `Samples/unification/*/worlds/`; bundled `.mis`/`.cs` stubs used when a golden file is missing
 

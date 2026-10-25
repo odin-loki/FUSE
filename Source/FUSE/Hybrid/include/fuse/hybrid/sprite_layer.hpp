@@ -31,7 +31,10 @@ inline constexpr f32 kPlaceholderSpriteHalfExtent = 12.5f;
 
 /// Placeholder-space sprite (x, y from the frame centre, rotation in radians, RGB8 opaque) -> a quad of a
 /// `width` x `height` target (uniform scale height / 240, centred).
-SpriteQuad spriteQuadFromPlaceholder(f32 x, f32 y, f32 rotation, u8 r, u8 g, u8 b, u32 width, u32 height);
+/// When `atlasFrameCount > 0`, `pad` stores the active frame index and count for horizontal atlas-strip clipping
+/// (U8 animated sprites until bindless image maps are wired).
+SpriteQuad spriteQuadFromPlaceholder(f32 x, f32 y, f32 rotation, u8 r, u8 g, u8 b, u32 width, u32 height,
+                                     u32 atlasFrame = 0u, u32 atlasFrameCount = 0u);
 
 /// CPU reference of one texel of "hybrid.sprite_layer": premultiplied RGBA of pixel (px, py) after `count` quads.
 void spriteLayerTexel(const SpriteQuad* quads, u32 count, u32 px, u32 py, f32 out[4]);
