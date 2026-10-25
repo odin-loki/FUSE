@@ -162,7 +162,39 @@ bash scripts/wsl-build-local.sh
 
 Renderer frame integration (T0 Lavapipe) lives under the `gate;renderer;frame` labels, for example `fuse_rp_frame_vk_full_t0` and `fuse_scene_renderer_vk_golden_t0`. Those Vulkan tests **skip (exit 77)** if `VK_LAYER_KHRONOS_validation` is missing — install `vulkan-validationlayers` (included in `scripts/wsl-bootstrap.sh`) and confirm `/usr/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json` exists. A ctest run where frame VK tests only skip is **not** the same as passing the frame gates (`scripts/wsl-run-frame-gates.sh`).
 
-Windowed core/editor tests run through `build-wsl/fuse_run_with_display.sh` (generated at configure). It may use `xvfb-run` when `DISPLAY` is unset or is WSLg’s `:0`; the wrapper **unsets `WAYLAND_DISPLAY`** and defaults `QT_QPA_PLATFORM=xcb` so Qt does not select Wayland under Xvfb (teardown aborts). Leave **`FUSE_FORCE_XVFB` unset** unless you need to force Xvfb for every wrapped test.
+Windowed core/editor tests run through `build-wsl/fuse_run_with_display.sh` (generated at configure). It may use `xvfb-run` when `DISPLAY` is unset or is WSLg’s `:0`; the wrapper **unsets `WAYLAND_DISPLAY`** and defaults `QT_QPA_PLATFORM=xcb` so Qt does not select Wayland under Xvfb (teardown aborts). Leave **`FUSE_FORCE_XVFB` unset** for the default `build-wsl` gate sweep; use **`FUSE_FORCE_XVFB=1`** for the Qt editor playbook below so every wrapped gate matches CI’s Xvfb path even on WSLg `:0`.
+
+### Qt editor gates (local playbook)
+
+The **`fuse-editor-qt`** job in [fuse-umbrella-linux.yml](../.github/workflows/fuse-umbrella-linux.yml) uses a separate **`build/editor-qt`** tree in **Release** with `FUSE_BUILD_EDITOR=ON`, builds `fuse_editor`, `fuse_editor_qt_gates_all`, and `fuse_lint`, then runs `ctest -L qt` under `xvfb-run`. Reproduce that from **`~/FUSE`** (not `/mnt/c/...` — drvfs breaks Qt editor configures; see above). Install `FUSE_APT_LINUX_QT_EDITOR` from the workflow env (`qt6-base-dev`, `xvfb`, xcb libs, plus the Vulkan packages from `wsl-bootstrap.sh`).
+
+```bash
+cd ~/FUSE
+export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
+export FUSE_FORCE_XVFB=1
+
+cmake -B build/editor-qt -G Ninja \
+  -DCMAKE_CXX_COMPILER=g++-13 \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DFUSE_BUILD_CORE=ON \
+  -DFUSE_BUILD_CORE_TESTS=ON \
+  -DFUSE_BUILD_VULKAN=ON \
+  -DFUSE_BUILD_EDITOR=ON
+
+cmake --build build/editor-qt --target fuse_editor fuse_editor_qt_gates_all fuse_lint
+
+ctest --test-dir build/editor-qt -L qt --output-on-failure --timeout 2400
+```
+
+`ui_frame` and `idle_frames` enforce budgets only in **Release** (Debug exits 77). Qt gates are **`RUN_SERIAL`**; use **`-j1`** when iterating on slow xvfb work (`fuse_editor_qt_live_present`, `fuse_editor_qt_idle_frames`) so they do not share the X server or CPU with other tests. CI sets **`FUSE_QT_IDLE_DEBUG_FRAMES=2000`** for a shorter `idle_frames` run (default is 10,000 frames × multiple runs):
+
+```bash
+export FUSE_QT_IDLE_DEBUG_FRAMES=2000
+ctest --test-dir build/editor-qt -R 'fuse_editor_qt_idle_frames' -j1 --output-on-failure
+ctest --test-dir build/editor-qt -R 'fuse_editor_qt_live_present' -j1 --output-on-failure
+```
+
+CTest names are `fuse_editor_qt_<gate>` (`startup`, `layout`, `live_present`, `idle_frames`, …); the binary is `fuse_editor_qt_gates <gate>` — see `Source/FUSE/Editor/tests/qt/test_editor_qt_gates.cpp`.
 
 `glslangValidator` must be on `PATH` **when you configure** CMake: it embeds the GPU radix-sort shaders (WP-9.2 splats, `hybrid.sprite_layer`, and several other packages). If you configured before installing `glslang-tools`, re-run `cmake -B build-wsl …` after `wsl-bootstrap.sh` and rebuild (`fuse_gsplat`, `fuse_hybrid`, `fuse_compute`).
 
