@@ -421,6 +421,13 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_fx` | `codegen_spells_from_mission_body()` on embedded `.mis` SimObject in hybrid setup |
 | **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE27` asserts fireball spell codegen |
 
+#### Landed wave 30 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_adventure` | Hybrid demo `peekBestBranchLine()` + `dispatchBestBranchAllLines()` (`injectScriptLine`) deepen |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE30` asserts armed peek + injected script line count |
+
 ---
 
 ## 8. Related docs

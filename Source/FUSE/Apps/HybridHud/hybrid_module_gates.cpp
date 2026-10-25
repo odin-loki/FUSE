@@ -359,7 +359,15 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
             branchCtx.actorName = "player";
             branchCtx.inventory = &state.playerInventory;
             if (state.weaponGranted) {
+#if FUSE_HYBRID_GATES_WAVE30
+                state.guardPeekBestLine =
+                    state.conversationScriptVm.peekBestBranchLine("outpost_guard", branchCtx);
+                (void)state.conversationScriptVm.dispatchBestBranchAllLines("outpost_guard", branchCtx,
+                                                                            *guardIt->second);
+                state.guardInjectedLineCount = guardIt->second->injectedLineCount();
+#else
                 state.conversationScriptVm.dispatchBestBranch("outpost_guard", branchCtx, *guardIt->second);
+#endif
                 state.guardBranchChosen = state.conversationScriptVm.lastBranchDispatched();
                 state.guardLineText = state.conversationScriptVm.lastLineDispatched();
                 if (state.guardLineText.empty()) {
@@ -619,6 +627,14 @@ VerifyResult verify(const State& state, fuse::hybrid::HybridComposer& composer) 
     }
     if (state.vactorBridge.boneMotionSyncCount() == 0u) {
         return {false, "fuse_cinematics bone attach motion sync applied"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE30
+    if (state.guardPeekBestLine != "I see you are armed. Keep that rifle stowed.") {
+        return {false, "fuse_adventure conversation VM peekBestBranchLine armed"};
+    }
+    if (state.guardInjectedLineCount == 0u) {
+        return {false, "fuse_adventure conversation VM injectScriptLine in hybrid demo"};
     }
 #endif
 #if FUSE_HYBRID_GATES_WAVE27

@@ -115,6 +115,10 @@
 #define FUSE_HYBRID_GATES_WAVE27 1
 #endif
 
+#ifndef FUSE_HYBRID_GATES_WAVE30
+#define FUSE_HYBRID_GATES_WAVE30 1
+#endif
+
 namespace fuse::hybrid::gates {
 
 constexpr int kFrameCount = 60;
@@ -191,6 +195,8 @@ struct State {
     std::string hudPromptText;
     std::string guardLineText;
     std::string guardBranchChosen; ///< Branch picked by dispatchBestBranch (advanceNpcState dispatches follow-ups)
+    std::string guardPeekBestLine;
+    u32 guardInjectedLineCount = 0;
     bool agentInsideTrigger = false;
     bool loadedOutpostStub = false;
     bool spawnedOutpostInteractables = false;
