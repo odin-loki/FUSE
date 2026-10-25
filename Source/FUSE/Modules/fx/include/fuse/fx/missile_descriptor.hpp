@@ -25,7 +25,7 @@ struct MissileDescriptor {
 
 /// One active projectile instance (ore: `afxMagicMissile` runtime state).
 struct MissileInstance {
-    const MissileDescriptor* descriptor = nullptr;
+    MissileDescriptor descriptor{};
     fuse::math::Vec3 position{};
     fuse::math::Vec3 velocity{};
     float elapsed = 0.f;
