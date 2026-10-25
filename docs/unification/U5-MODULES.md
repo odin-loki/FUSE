@@ -483,6 +483,13 @@ Single path in `hybrid_module_gates.{hpp,cpp}` / `demo_hybrid_hud` (verified by 
 | `fuse_fx` | `load_afx_mission_hooks_from_mis`; schedule `pendingDelayedCount`; `.mis` tick/impact/spell-ready + `executeFunctionBody`; cast/constraints/graph/missile/codegen |
 | `fuse_mechanics` | `broadphaseProxyMasksCollide`; `InventoryProviderInterface`; action stubs; proxy filter collide; radio `stopBroadcast`; broadphase ray/AABB/remove/layer-mask |
 
+#### Landed wave 34 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_mechanics` | `AnimateComponent::advance()` driven by `TimerComponent::setOnFire()` patrol timer (existing hybrid wiring) |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE34` asserts animate normalized progress or cycle count via patrol timer |
+
 ---
 
 ## 8. Related docs

@@ -1472,8 +1472,8 @@ VerifyResult verify(const State& state, fuse::hybrid::HybridComposer& composer) 
     if (state.patrolTimer.callbackFireCount() == 0u) {
         return {false, "fuse_mechanics TimerComponent onFire callback fired"};
     }
-    if (state.leverAnimate.cycleCount() == 0u) {
-        return {false, "fuse_mechanics AnimateComponent advanced via timer callback"};
+    if (state.leverAnimate.cycleCount() == 0u || state.leverAnimate.normalizedTime() <= 0.f) {
+        return {false, "fuse_mechanics AnimateComponent advance progress via patrol timer"};
     }
     if (state.broadphaseRaycastHits == 0u) {
         return {false, "fuse_mechanics BroadphaseWorldStub filtered raycast hit agent"};
