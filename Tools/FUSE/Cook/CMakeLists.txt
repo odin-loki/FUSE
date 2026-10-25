@@ -7,7 +7,6 @@ add_library(fuse_cook_stubs STATIC
     src/mesh_cook_meshopt.cpp
     src/mesh_cook_meshopt.hpp
     src/texture_cook.cpp
-    src/cook_stb_image.cpp
     src/ispc_texcomp_hook.cpp
     src/audio_cook.cpp
     src/collision_cook.cpp
@@ -38,9 +37,14 @@ if(COMMAND fuse_apply_cxx23)
 endif()
 target_compile_definitions(fuse_cook_stubs PUBLIC FUSE_HAS_INHOUSE_BC7_ENCODER=1)
 
+include(${CMAKE_SOURCE_DIR}/cmake/FuseVendor.cmake)
 if(EXISTS "${FUSE_STB_DIR}/stb_image.h")
     target_compile_definitions(fuse_cook_stubs PUBLIC FUSE_HAS_STB_IMAGE=1)
     fuse_stb_include(fuse_cook_stubs PRIVATE)
+    fuse_ensure_stb_image_target()
+    if(TARGET fuse_stb_image)
+        target_link_libraries(fuse_cook_stubs PRIVATE fuse_stb_image)
+    endif()
 endif()
 
 # Asset plan W0.2: meshoptimizer (LODs, vertex / index codecs) and the renderer's WP-1.2 meshlet +

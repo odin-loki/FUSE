@@ -1,10 +1,10 @@
 #include "demo_present.hpp"
 
 #include <fuse/core/track_b.hpp>
-#include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
-#include <fuse/hybrid/vulkan_presentable.hpp>
 #include <fuse/platform/window_wsi.hpp>
 #if defined(FUSE_HAS_VULKAN_RHI)
+#include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
+#include <fuse/hybrid/vulkan_presentable.hpp>
 #include <fuse/renderer/vk/present_path.hpp>
 #endif
 
@@ -33,6 +33,7 @@ bool gameWindowPresentAvailable() {
 
 void applyGameWindowToBootstrapDesc(fuse::hybrid::HybridRendererBootstrapDesc& desc, u32 width, u32 height,
                                     const char* windowTitle) {
+#if defined(FUSE_HAS_VULKAN_RHI)
     desc.presentable.backend = fuse::hybrid::PresentableBackend::GameWindow;
     desc.presentable.window.title = windowTitle != nullptr ? windowTitle : "fuse_demo_present";
     desc.presentable.window.width = width;
@@ -41,6 +42,12 @@ void applyGameWindowToBootstrapDesc(fuse::hybrid::HybridRendererBootstrapDesc& d
     desc.presentable.swapchainHeight = height;
     desc.scene.width = 0;
     desc.scene.height = 0;
+#else
+    (void)desc;
+    (void)width;
+    (void)height;
+    (void)windowTitle;
+#endif
 }
 
 HostPresentUnlock::HostPresentUnlock() {

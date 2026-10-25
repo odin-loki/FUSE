@@ -24,6 +24,10 @@ target_include_directories(fuse_world2d
 target_link_libraries(fuse_world2d PUBLIC fuse_core fuse_physics)
 include(${CMAKE_SOURCE_DIR}/cmake/FuseVendor.cmake)
 fuse_stb_include(fuse_world2d PRIVATE)
+fuse_ensure_stb_image_target()
+if(TARGET fuse_stb_image)
+    target_link_libraries(fuse_world2d PRIVATE fuse_stb_image)
+endif()
 target_compile_definitions(fuse_world2d PRIVATE FUSE_WORLD2D_HAS_STB_IMAGE=1)
 
 # `.fuselevel` loading (fuselevel_bridge) reads converted worlds through fuse_scene, which is only
