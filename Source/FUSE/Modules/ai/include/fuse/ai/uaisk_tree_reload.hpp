@@ -47,6 +47,8 @@ public:
     u32 osReloadCount() const { return m_osReloadCount; }
     u32 inotifyPollCount() const { return m_inotifyPollCount; }
     u32 inotifyReloadCount() const { return m_inotifyReloadCount; }
+    u32 fseventsPollCount() const { return m_fseventsPollCount; }
+    u32 fseventsReloadCount() const { return m_fseventsReloadCount; }
     const TreeFileWatchEntry* entryFor(std::string_view path) const;
 
 private:
