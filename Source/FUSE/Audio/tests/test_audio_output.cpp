@@ -729,8 +729,6 @@ int runWave(const char* wav_path) {
         desc.hrtf_enabled = false;
         desc.device_buffers = 4;
         desc.output_ring_blocks = 64; // ~680 ms slack: host scheduling must not starve the feeder
-        // One block per update when the ring has room — matches the Null reference sample clock.
-        desc.max_device_pacing_blocks_per_update = 1;
         Scene scene(desc);
         if (scene.engine.backend_kind() != fa::AudioBackendKind::OpenAL) {
             std::printf("FAIL: OpenAL wave device did not open (ALSOFT_CONF / wave driver)\n");
@@ -763,7 +761,7 @@ int runWave(const char* wav_path) {
         // Drain: wait until the device played everything that was submitted.
         while (std::chrono::steady_clock::now() < deadline) {
             stats = scene.engine.output_stats();
-            if (stats.frames_played >= stats.frames_submitted && stats.queued_frames == 0) {
+            if (stats.frames_played >= stats.frames_submitted) {
                 break;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -799,7 +797,7 @@ int runWave(const char* wav_path) {
     const size_t ref_frames = reference.size() / 2;
     const size_t wav_frames = wav.samples.size() / 2;
     const size_t available = std::min(ref_frames - ref0, wav_frames - wav0);
-    const size_t compare = std::min(clip_frames - 64, available);
+    const size_t compare = std::min(static_cast<size_t>(clip_frames - 64), available);
     // Require nearly the full 1 s clip (allow a few blocks of device tail trimming).
     expectTrue(compare + 64 >= clip_frames - block, "wave: WAV holds the streamed clip");
     if (compare > 0) {
