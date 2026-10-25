@@ -52,6 +52,17 @@ void setupFx(State& state) {
     (void)fuse::fx::dispatch_afx_mission_from_mis(kScheduledMisText, state.fxComposer, state.missionScriptVm,
                                                  &scheduleError);
 
+    static const char* kExecuteMisText =
+        "function onSpellCast() {\n"
+        "  beginCast(\"fireball\");\n"
+        "}\n"
+        "function onAmbientFx() {\n"
+        "  attachEffect(\"spark_burst\");\n"
+        "}\n";
+    std::string executeError;
+    (void)fuse::fx::execute_afx_mission_from_mis(kExecuteMisText, state.fxComposer, state.missionScriptVm,
+                                                &executeError);
+
     fuse::fx::FxSocket spriteSocket;
     spriteSocket.kind = fuse::fx::FxSocketKind::Sprite2D;
     spriteSocket.effectId = "spark_burst";
@@ -545,6 +556,11 @@ VerifyResult verify(const State& state, fuse::hybrid::HybridComposer& composer) 
     }
     if (state.vactorBridge.boneMotionSyncCount() == 0u) {
         return {false, "fuse_cinematics bone attach motion sync applied"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE23
+    if (state.missionScriptVm.executeCount() == 0u) {
+        return {false, "fuse_fx execute_afx_mission_from_mis ran TorqueScript bodies in hybrid demo"};
     }
 #endif
 #if FUSE_HYBRID_GATES_WAVE22
