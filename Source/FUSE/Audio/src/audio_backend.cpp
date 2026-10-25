@@ -226,7 +226,6 @@ struct AudioBackend::OpenALStream {
             frames_played.fetch_add(buffer_frames, std::memory_order_relaxed);
         }
 
-        const u32 buffer_samples = buffer_frames * 2;
         const u32 block_samples = block_frames * 2;
         const bool starved = started && queued == 0;
         if (starved) {
