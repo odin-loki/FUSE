@@ -228,4 +228,4 @@ ctest --test-dir build-cuda -R '^(fuse_cuda_compile_gate|fuse_cuda_shared_header
 
 On Windows use MSVC + `vcvars64` and set `CMAKE_CUDA_ARCHITECTURES=86` for RTX 30xx.
 
-**Device gates (RTX 3090 / sm_86):** with the toolkit and an NVIDIA GPU, run `ctest --test-dir build-cuda -L cuda_device --output-on-failure`. CUDA–Vulkan interop tests need the **system NVIDIA Vulkan ICD** (do not set `VK_ICD_FILENAMES` to Lavapipe). Umbrella Linux configures `FUSE_BUILD_CUDA=ON` without a toolkit, so device tests register and **SKIP (77)**.
+**Device gates (RTX 3090 / sm_86):** with the toolkit and an NVIDIA GPU, run `bash scripts/wsl-run-cuda-device-gates.sh` (optional build dir, default `build-cuda`). CUDA–Vulkan interop tests need the **system NVIDIA Vulkan ICD** (do not set `VK_ICD_FILENAMES` to Lavapipe). Umbrella Linux configures `FUSE_BUILD_CUDA=ON` without a toolkit, so device tests register and **SKIP (77)**.
