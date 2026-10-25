@@ -260,6 +260,18 @@
       }
     },
     {
+      "name": "fuse-msvc-asan-debug",
+      "hidden": true,
+      "displayName": "FUSE Windows x64 Debug (MSVC + /fsanitize=address on fuse_core_* tests; manual / CI spike)",
+      "inherits": "fuse-msvc-debug",
+      "binaryDir": "${sourceDir}/build/fuse-msvc-asan-debug",
+      "cacheVariables": {
+        "FUSE_CORE_ENABLE_ASAN": "ON",
+        "CMAKE_C_FLAGS_DEBUG": "/Z7 /Ob0 /Od",
+        "CMAKE_CXX_FLAGS_DEBUG": "/Z7 /Ob0 /Od"
+      }
+    },
+    {
       "name": "fuse-msvc-release",
       "displayName": "FUSE Windows x64 Release (MSVC, /W3 /WX)",
       "inherits": "fuse-msvc-base",

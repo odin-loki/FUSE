@@ -1,0 +1,77 @@
+name: FUSE Win32 fiber ASan spike
+
+# Manual spike: MSVC /fsanitize=address on fuse_core_* test binaries (FUSE_CORE_ENABLE_ASAN),
+# then run fiber + jobs CTests on native Windows. Not on push/PR — see fuse-windows-native.yml.
+#
+# Preset: CMakePresets.json fuse-msvc-asan-debug (inherits fuse-msvc-debug).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CTEST_OUTPUT_ON_FAILURE: "1"
+
+jobs:
+  msvc-asan-fiber-jobs:
+    name: MSVC ASan — fuse_core_fiber | fuse_core_jobs
+    runs-on: windows-2022
+    timeout-minutes: 180
+    env:
+      PRESET: fuse-msvc-asan-debug
+    steps:
+      - name: Git line endings
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - uses: actions/checkout@v4
+
+      - name: VS x64 developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: No Windows Error Reporting dialogs
+        shell: pwsh
+        run: |
+          $key = 'HKCU:\Software\Microsoft\Windows\Windows Error Reporting'
+          New-Item -Path $key -Force | Out-Null
+          Set-ItemProperty -Path $key -Name DontShowUI -Value 1 -Type DWord
+          Set-ItemProperty -Path $key -Name Disabled -Value 1 -Type DWord
+
+      - name: Toolchain versions
+        shell: pwsh
+        run: |
+          cmake --version
+          ninja --version
+          cl 2>&1 | Select-Object -First 1
+
+      - name: Configure (${{ env.PRESET }})
+        run: cmake --preset ${{ env.PRESET }}
+
+      - name: Build fuse_core test targets
+        run: cmake --build build/${{ env.PRESET }} -- -k 0
+
+      - name: CTest (fiber + jobs under ASan)
+        run: ctest --test-dir build/${{ env.PRESET }} --output-on-failure --no-tests=error -j 1 --timeout 900 -R "fuse_core_fiber|fuse_core_jobs"
+
+      - name: Collect test logs
+        if: failure()
+        shell: pwsh
+        run: |
+          $out = 'fuse-msvc-asan-spike-artifacts'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $log = 'build/${{ env.PRESET }}/Testing/Temporary/LastTest.log'
+          if (Test-Path $log) { Copy-Item $log $out }
+          Get-ChildItem $out
+
+      - name: Upload test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuse-msvc-asan-spike-testlog
+          path: fuse-msvc-asan-spike-artifacts
+          if-no-files-found: ignore
