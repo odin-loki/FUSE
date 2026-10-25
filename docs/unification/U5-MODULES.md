@@ -421,6 +421,34 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_fx` | `codegen_spells_from_mission_body()` on embedded `.mis` SimObject in hybrid setup |
 | **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE27` asserts fireball spell codegen |
 
+#### Landed wave 28 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_mechanics` | GMK `AreaComponent` `contains` / `testObject` on polyhedron trigger enter |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE28` asserts area enter or overlap count |
+
+#### Landed wave 29 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_fx` | Nested SimObject `.mis` body parse in hybrid FX setup |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE29` asserts nested SimObject count |
+
+#### Landed wave 30 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_adventure` | `ConversationInteractable::injectScriptLine` on outpost guard in hybrid setup |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE30` asserts injected line count |
+
+#### Landed wave 31 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | `TreeFileWatchRegistry::fseventsPollCount()` / `fseventsReloadCount()` accessors; hybrid temp `.bt` watch + `pollFSEventsFileChanges()` |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE31` asserts FSEvents poll or reload progressed in hybrid demo |
+
 ---
 
 ## 8. Related docs
