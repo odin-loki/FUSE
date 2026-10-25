@@ -81,6 +81,18 @@ void setupFx(State& state) {
     }
 #endif
 
+#if FUSE_HYBRID_GATES_WAVE29
+    static const char* kNestedSimObjectMisText =
+        "new SimObject(FireballGroup) {\n"
+        "  new SimObject(SparkEmitter) { effectName = \"spark\"; }\n"
+        "  new SimObject(MuzzleFlashEmitter) { effectName = \"muzzle\"; }\n"
+        "}\n";
+    fuse::fx::AfxMissionBody nestedBody;
+    if (fuse::fx::parse_afx_mission_body_from_mis(kNestedSimObjectMisText, nestedBody)) {
+        state.missionNestedSimObjectCount = static_cast<u32>(nestedBody.nestedSimObjectBodies.size());
+    }
+#endif
+
     fuse::fx::FxSocket spriteSocket;
     spriteSocket.kind = fuse::fx::FxSocketKind::Sprite2D;
     spriteSocket.effectId = "spark_burst";
@@ -624,6 +636,11 @@ VerifyResult verify(const State& state, fuse::hybrid::HybridComposer& composer) 
 #if FUSE_HYBRID_GATES_WAVE27
     if (state.missionSpellCodegenCount == 0u || state.missionSpellCodegenId != "fireball") {
         return {false, "fuse_fx codegen_spells_from_mission_body in hybrid demo"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE29
+    if (state.missionNestedSimObjectCount < 2u) {
+        return {false, "fuse_fx parse_afx_mission_body_from_mis nested SimObject in hybrid demo"};
     }
 #endif
 #if FUSE_HYBRID_GATES_WAVE26

@@ -421,6 +421,13 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_fx` | `codegen_spells_from_mission_body()` on embedded `.mis` SimObject in hybrid setup |
 | **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE27` asserts fireball spell codegen |
 
+#### Landed wave 29 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_fx` | `parse_afx_mission_body_from_mis()` nested SimObject bodies in hybrid setup |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE29` asserts nested SimObject capture count |
+
 ---
 
 ## 8. Related docs

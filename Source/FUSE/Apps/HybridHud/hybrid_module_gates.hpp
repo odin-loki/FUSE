@@ -115,6 +115,10 @@
 #define FUSE_HYBRID_GATES_WAVE27 1
 #endif
 
+#ifndef FUSE_HYBRID_GATES_WAVE29
+#define FUSE_HYBRID_GATES_WAVE29 1
+#endif
+
 namespace fuse::hybrid::gates {
 
 constexpr int kFrameCount = 60;
@@ -214,6 +218,7 @@ struct State {
     std::string timelineScrubFirstCue;
     u32 missionSpellCodegenCount = 0;
     std::string missionSpellCodegenId;
+    u32 missionNestedSimObjectCount = 0;
     float initialClearR = 0.f;
     float initialClearG = 0.f;
     float initialClearB = 0.f;
