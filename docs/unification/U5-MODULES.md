@@ -393,6 +393,13 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_fx` | Hybrid demo calls `execute_afx_mission_from_mis()` for TorqueScript function bodies |
 | **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE23` asserts mission VM `executeCount()` after `.mis` execution |
 
+#### Landed wave 24 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_ai` | Hybrid demo registers UAISK profile codegen from `condition = "distance < N"` field |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE24` asserts parsed threshold and tree profile registration |
+
 ---
 
 ## 8. Related docs
