@@ -93,6 +93,20 @@ void setupFx(State& state) {
     }
 #endif
 
+#if FUSE_HYBRID_GATES_WAVE32
+    static const char* kMisText =
+        "function onSpellCast(%caster, %spell) {\n"
+        "}\n"
+        "function onAmbientFx() {\n"
+        "}\n"
+        "%on_spell_cast = \"fireball\"\n";
+    std::string misRegisterError;
+    if (fuse::fx::register_afx_mission_from_mis(kMisText, state.fxComposer, state.missionScriptVm,
+                                                &misRegisterError)) {
+        state.missionRegisterHookCount = state.missionScriptVm.hookCount();
+    }
+#endif
+
     fuse::fx::FxSocket spriteSocket;
     spriteSocket.kind = fuse::fx::FxSocketKind::Sprite2D;
     spriteSocket.effectId = "spark_burst";
@@ -665,6 +679,14 @@ VerifyResult verify(const State& state, fuse::hybrid::HybridComposer& composer) 
 #if FUSE_HYBRID_GATES_WAVE27
     if (state.missionSpellCodegenCount == 0u || state.missionSpellCodegenId != "fireball") {
         return {false, "fuse_fx codegen_spells_from_mission_body in hybrid demo"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE32
+    if (state.missionRegisterHookCount < 2u) {
+        return {false, "fuse_fx register_afx_mission_from_mis hook table in hybrid demo"};
+    }
+    if (state.fxComposer.findSpell("fireball") == nullptr) {
+        return {false, "fuse_fx register_afx_mission_from_mis registered fireball spell"};
     }
 #endif
 #if FUSE_HYBRID_GATES_WAVE31

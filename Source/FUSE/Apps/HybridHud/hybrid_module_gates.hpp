@@ -132,6 +132,10 @@
 #define FUSE_HYBRID_GATES_WAVE31 1
 #endif
 
+#ifndef FUSE_HYBRID_GATES_WAVE32
+#define FUSE_HYBRID_GATES_WAVE32 1
+#endif
+
 namespace fuse::hybrid::gates {
 
 constexpr int kFrameCount = 60;
@@ -237,6 +241,7 @@ struct State {
     u32 conversationInjectedLineCount = 0;
     u32 treeFileWatchFseventsPollCount = 0;
     u32 treeFileWatchFseventsReloadCount = 0;
+    u32 missionRegisterHookCount = 0;
     float initialClearR = 0.f;
     float initialClearG = 0.f;
     float initialClearB = 0.f;

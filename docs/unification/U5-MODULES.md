@@ -449,6 +449,13 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_ai` | `TreeFileWatchRegistry::fseventsPollCount()` / `fseventsReloadCount()` accessors; hybrid temp `.bt` watch + `pollFSEventsFileChanges()` |
 | **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE31` asserts FSEvents poll or reload progressed in hybrid demo |
 
+#### Landed wave 32 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_fx` | `register_afx_mission_from_mis()` in hybrid FX setup (`test_fx_runtime` `%on_spell_cast` pattern) |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE32` asserts hook count ≥ 2 and fireball spell registered |
+
 ---
 
 ## 8. Related docs
