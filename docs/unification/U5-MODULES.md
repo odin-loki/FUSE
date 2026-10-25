@@ -449,6 +449,13 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_ai` | `TreeFileWatchRegistry::fseventsPollCount()` / `fseventsReloadCount()` accessors; hybrid temp `.bt` watch + `pollFSEventsFileChanges()` |
 | **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE31` asserts FSEvents poll or reload progressed in hybrid demo |
 
+#### Landed wave 34 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_mechanics` | `AnimateComponent::advance()` driven by `TimerComponent::setOnFire()` patrol timer (existing hybrid wiring) |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE34` asserts animate normalized progress or cycle count via patrol timer |
+
 ---
 
 ## 8. Related docs

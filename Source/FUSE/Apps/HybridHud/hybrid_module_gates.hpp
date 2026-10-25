@@ -132,6 +132,10 @@
 #define FUSE_HYBRID_GATES_WAVE31 1
 #endif
 
+#ifndef FUSE_HYBRID_GATES_WAVE34
+#define FUSE_HYBRID_GATES_WAVE34 1
+#endif
+
 namespace fuse::hybrid::gates {
 
 constexpr int kFrameCount = 60;

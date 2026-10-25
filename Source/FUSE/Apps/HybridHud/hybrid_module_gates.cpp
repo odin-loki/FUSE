@@ -672,6 +672,11 @@ VerifyResult verify(const State& state, fuse::hybrid::HybridComposer& composer) 
         return {false, "fuse_ai TreeFileWatchRegistry pollFSEventsFileChanges progressed in hybrid demo"};
     }
 #endif
+#if FUSE_HYBRID_GATES_WAVE34
+    if (state.leverAnimate.normalizedTime() <= 0.f && state.leverAnimate.cycleCount() == 0u) {
+        return {false, "fuse_mechanics AnimateComponent advance progress via patrol timer"};
+    }
+#endif
 #if FUSE_HYBRID_GATES_WAVE30
     if (state.conversationInjectedLineCount == 0u) {
         return {false, "fuse_adventure ConversationInteractable injectScriptLine in hybrid demo"};
