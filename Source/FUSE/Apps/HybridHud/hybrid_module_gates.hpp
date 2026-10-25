@@ -29,6 +29,7 @@
 #include <fuse/mechanics/bt_dbvt_bridge.hpp>
 #include <fuse/mechanics/console_method_component.hpp>
 #include <fuse/mechanics/counter_component.hpp>
+#include <fuse/mechanics/destroy_component.hpp>
 #include <fuse/mechanics/delay_component.hpp>
 #include <fuse/mechanics/interactable.hpp>
 #include <fuse/mechanics/message_component.hpp>
@@ -44,6 +45,7 @@
 #include <fuse/mechanics/polyhedron_trigger.hpp>
 #include <fuse/mechanics/registry.hpp>
 #include <fuse/mechanics/rotate_component.hpp>
+#include <fuse/mechanics/sound_component.hpp>
 #include <fuse/mechanics/spawn_component.hpp>
 #include <fuse/mechanics/switch_component.hpp>
 #include <fuse/mechanics/toggle_component.hpp>
@@ -101,6 +103,18 @@
 #define FUSE_HYBRID_GATES_WAVE24 1
 #endif
 
+#ifndef FUSE_HYBRID_GATES_WAVE25
+#define FUSE_HYBRID_GATES_WAVE25 1
+#endif
+
+#ifndef FUSE_HYBRID_GATES_WAVE26
+#define FUSE_HYBRID_GATES_WAVE26 1
+#endif
+
+#ifndef FUSE_HYBRID_GATES_WAVE27
+#define FUSE_HYBRID_GATES_WAVE27 1
+#endif
+
 namespace fuse::hybrid::gates {
 
 constexpr int kFrameCount = 60;
@@ -136,6 +150,8 @@ struct State {
     fuse::mechanics::CounterComponent leverCounter{"lever_counter", 0, 1};
     fuse::mechanics::MessageComponent leverMessage{"lever_message", "Lever activated"};
     fuse::mechanics::SpawnComponent leverSpawn{"lever_spawn", "outpost_guard_spawn"};
+    fuse::mechanics::DestroyComponent leverDestroy{"lever_destroy"};
+    fuse::mechanics::SoundComponent leverSound{"lever_sound", "Audio/lever_click"};
     fuse::mechanics::PolyhedronTriggerZone leverTrigger;
     fuse::mechanics::PhysicsTriggerBridge physicsTriggerBridge;
     fuse::mechanics::BroadphaseTriggerSync broadphaseTriggerSync;
@@ -194,6 +210,10 @@ struct State {
     bool uaiskExpressionAstValid = false;
     u32 btDbvtOverlapHits = 0;
     u32 delayedMissionDispatchCount = 0;
+    u32 timelineScrubCueCount = 0;
+    std::string timelineScrubFirstCue;
+    u32 missionSpellCodegenCount = 0;
+    std::string missionSpellCodegenId;
     float initialClearR = 0.f;
     float initialClearG = 0.f;
     float initialClearB = 0.f;
