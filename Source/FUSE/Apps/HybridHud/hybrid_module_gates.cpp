@@ -274,6 +274,8 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
             state.timelineScrubFirstCue = state.timeline.cue_queue().pending()[0].label;
         }
         state.timeline.cue_queue().clear();
+        state.timeline.clear_consumed_cues();
+        state.timeline.scrub_to(0, false);
         state.timeline.play();
     }
 #endif
