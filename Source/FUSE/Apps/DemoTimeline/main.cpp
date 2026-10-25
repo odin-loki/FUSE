@@ -29,7 +29,6 @@ int main(int argc, char** argv) {
     fuse::core::initialize();
     fuse::log::info("demo_timeline: fuse_cinematics outpost intro asset + hybrid drive");
 
-    const bool presentGameWindow = fuse::demo::present::requestedFromArgv(argc, argv);
     const std::string projectPath =
         fuse::demo::present::projectPathFromArgv(argc, argv, "Samples/unification/demo_timeline");
 
@@ -81,6 +80,7 @@ int main(int argc, char** argv) {
     fuse::demo::check(!cuePreview.empty(), "cue preview collected timeline events");
 
 #if defined(FUSE_HAS_VULKAN_RHI)
+    const bool presentGameWindow = fuse::demo::present::requestedFromArgv(argc, argv);
     if (presentGameWindow) {
         fuse::demo::present::HostPresentUnlock presentUnlock;
         fuse::hybrid::HybridRendererBootstrapDesc bootstrapDesc{};

@@ -4,7 +4,9 @@
 #include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
 #include <fuse/hybrid/vulkan_presentable.hpp>
 #include <fuse/platform/window_wsi.hpp>
+#if defined(FUSE_HAS_VULKAN_RHI)
 #include <fuse/renderer/vk/present_path.hpp>
+#endif
 
 #include <cstdlib>
 #include <cstring>
@@ -56,10 +58,15 @@ HostPresentUnlock::~HostPresentUnlock() {
 }
 
 u32 realPresentCallCount(const fuse::hybrid::HybridRendererBootstrap& runtime) {
+#if defined(FUSE_HAS_VULKAN_RHI)
     if (runtime.presentPath() == nullptr) {
         return 0u;
     }
     return runtime.presentPath()->status().realPresentCallCount;
+#else
+    (void)runtime;
+    return 0u;
+#endif
 }
 
 std::string projectPathFromArgv(int argc, char** argv, const std::string& defaultPath) {

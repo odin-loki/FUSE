@@ -35,7 +35,6 @@ int main(int argc, char** argv) {
     fuse::core::initialize();
     fuse::log::info("demo_adventure_stub: fuse_adventure outpost JSON + mechanics bridge");
 
-    const bool presentGameWindow = fuse::demo::present::requestedFromArgv(argc, argv);
     const std::string projectPath =
         fuse::demo::present::projectPathFromArgv(argc, argv, "Samples/unification/demo_adventure_stub");
 
@@ -126,6 +125,7 @@ int main(int argc, char** argv) {
     fuse::demo::check(missionLoad.entityCount >= 3u, "Outpost mission entities converted");
 
 #if defined(FUSE_HAS_VULKAN_RHI)
+    const bool presentGameWindow = fuse::demo::present::requestedFromArgv(argc, argv);
     if (presentGameWindow) {
         fuse::demo::present::HostPresentUnlock presentUnlock;
         fuse::hybrid::HybridRendererBootstrapDesc bootstrapDesc{};
