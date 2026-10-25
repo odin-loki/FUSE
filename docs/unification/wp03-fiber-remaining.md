@@ -31,6 +31,8 @@
 | I/O + render dependency chains | Needs WP-04 handle commit + WP-06 frame barrier |
 | Win32 ASan fiber annotations | POSIX has `__sanitizer_*_switch_fiber`; Windows backend not yet instrumented |
 
+**MSVC ASan spike (Option B):** Hidden preset `fuse-msvc-asan-debug` inherits `fuse-msvc-debug` with `FUSE_CORE_ENABLE_ASAN=ON` (instruments `fuse_core_*` test executables via `/fsanitize=address`; debug flags drop `/RTC1`, which MSVC ASan rejects). Manual CI only: [`.github/workflows/fuse-msvc-asan-spike.yml`](../../.github/workflows/fuse-msvc-asan-spike.yml) (`workflow_dispatch` on `windows-2022`, `ctest -R 'fuse_core_fiber|fuse_core_jobs'`). Does not gate PRs; use it to see whether Win32 fiber stack switches are ASan-clean before adding `__asan_*` fiber annotations on the Windows backend.
+
 See [architecture-parallel.md](./architecture-parallel.md) §3.2–3.3 and [work-plan.md](./work-plan.md) WP-03.
 
 ---
