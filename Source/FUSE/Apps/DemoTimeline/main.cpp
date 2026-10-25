@@ -1,4 +1,5 @@
 #include "demo_check.hpp"
+#include "demo_present.hpp"
 #include "demo_project_wiring.hpp"
 
 #include <fuse/cinematics/actor_track.hpp>
@@ -8,22 +9,28 @@
 #include <fuse/cinematics/cue_preview.hpp>
 #include <fuse/cinematics/vactor_bridge.hpp>
 #include <fuse/core/init.hpp>
+#include <fuse/frame/frame_ctx.hpp>
+#include <fuse/hybrid/hybrid_composer.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/project/loader.hpp>
 #include <fuse/scene/scene.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
+#include <fuse/world3d/world_3d.hpp>
+
+#if defined(FUSE_HAS_VULKAN_RHI)
+#include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
+#endif
 
 #include <cstdlib>
+#include <memory>
 #include <string>
 
 int main(int argc, char** argv) {
     fuse::core::initialize();
     fuse::log::info("demo_timeline: fuse_cinematics outpost intro asset + hybrid drive");
 
-    std::string projectPath = "Samples/unification/demo_timeline";
-    if (argc > 1) {
-        projectPath = argv[1];
-    }
+    const std::string projectPath =
+        fuse::demo::present::projectPathFromArgv(argc, argv, "Samples/unification/demo_timeline");
 
     const fuse::project::LoadResult project = fuse::project::loadFromDirectory(projectPath);
     fuse::demo::check(project.status == fuse::project::LoadStatus::Ok, "project.json loads");
@@ -71,6 +78,40 @@ int main(int argc, char** argv) {
     fuse::demo::check(drive.spriteX > 0.f || drive.clearG > 0.f, "hybrid timeline drive sampled");
     fuse::demo::check(vactorBridge.mountCount() >= 1u, "VActor mount cue applied");
     fuse::demo::check(!cuePreview.empty(), "cue preview collected timeline events");
+
+#if defined(FUSE_HAS_VULKAN_RHI)
+    const bool presentGameWindow = fuse::demo::present::requestedFromArgv(argc, argv);
+    if (presentGameWindow) {
+        fuse::demo::present::HostPresentUnlock presentUnlock;
+        fuse::hybrid::HybridRendererBootstrapDesc bootstrapDesc{};
+        bootstrapDesc.renderer.rhi.bootstrap.instance.enableValidation = false;
+        bootstrapDesc.scene.width = 320;
+        bootstrapDesc.scene.height = 240;
+        if (fuse::demo::present::gameWindowPresentAvailable()) {
+            fuse::demo::present::applyGameWindowToBootstrapDesc(bootstrapDesc, 320, 240, "demo_timeline");
+        }
+        std::unique_ptr<fuse::hybrid::HybridRendererBootstrap> gpuRuntime =
+            fuse::hybrid::HybridRendererBootstrap::create(bootstrapDesc);
+        fuse::demo::check(gpuRuntime != nullptr && gpuRuntime->isReady(), "present bootstrap ready");
+        fuse::hybrid::HybridComposer& composer = gpuRuntime->composer();
+        fuse::world3d::World3D world3D;
+        world3D.addObject(&actor);
+        world3D.setClearColor(drive.clearR, drive.clearG, drive.clearB);
+        composer.setProjectFlags(fuse::project::toDimensionFlags(project.manifest.dimensions));
+        composer.attachWorld3D(&world3D);
+
+        fuse::frame::FrameCtx ctx;
+        for (int frame = 0; frame < 3; ++frame) {
+            ctx.dt = 1.f / 60.f;
+            ctx.frameIndex = static_cast<fuse::u32>(frame);
+            vactorBridge.sync_bound_objects();
+            gpuRuntime->runFrame(ctx);
+        }
+        fuse::demo::check(fuse::demo::present::realPresentCallCount(*gpuRuntime) >= 1u,
+                          "vkQueuePresentKHR via GameWindow present path");
+        gpuRuntime->shutdown();
+    }
+#endif
 
     fuse::core::shutdown();
     return fuse::demo::finish("demo_timeline");

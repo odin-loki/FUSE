@@ -5,6 +5,7 @@ add_library(fuse_ai STATIC
     src/behavior_runtime.cpp
     src/node_registry.cpp
     src/spatial_query.cpp
+    src/parallel_policy.cpp
     src/tree_loader.cpp
     src/uaisk_script_import.cpp
     src/uaisk_cs_parser.cpp
@@ -22,6 +23,7 @@ add_library(fuse_ai STATIC
     include/fuse/ai/behavior_runtime.hpp
     include/fuse/ai/node_registry.hpp
     include/fuse/ai/spatial_query.hpp
+    include/fuse/ai/parallel_policy.hpp
     include/fuse/ai/tree_loader.hpp
     include/fuse/ai/uaisk_template_hooks.hpp
     include/fuse/ai/uaisk_script_import.hpp

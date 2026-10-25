@@ -6,6 +6,12 @@ target_link_libraries(fuse_world2d_tests PRIVATE fuse_world2d fuse_core)
 
 add_test(NAME fuse_world2d_tests COMMAND fuse_world2d_tests)
 
+add_executable(fuse_world2d_sprite_image_map_tests test_sprite_image_map.cpp)
+target_link_libraries(fuse_world2d_sprite_image_map_tests PRIVATE fuse_world2d fuse_core)
+target_compile_definitions(fuse_world2d_sprite_image_map_tests PRIVATE FUSE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+add_test(NAME fuse_world2d_sprite_image_map_tests COMMAND fuse_world2d_sprite_image_map_tests)
+set_tests_properties(fuse_world2d_sprite_image_map_tests PROPERTIES LABELS "u8")
+
 if(FUSE_BUILD_PROJECT)
     add_executable(fuse_world2d_fuselevel_bridge_tests
         test_fuselevel_bridge.cpp

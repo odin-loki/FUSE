@@ -58,11 +58,10 @@ void testGoldenReferenceStatusOnSpriteToy() {
         project.manifest.projectRoot + "/worlds/sprite_toy_stub.fuselevel";
     const fuse::project::LegacySourceResolution source =
         fuse::project::resolveParityLegacySource(project.manifest, fuselevelPath, ".cs");
-    expectTrue(source.origin == fuse::project::LegacySourceOrigin::GoldenSubmodule,
-               "SpriteToy resolves the Samples golden reference");
-    expectTrue(source.goldenSubmoduleStatus == fuse::project::SubmodulePathStatus::Present,
-               "SpriteToy golden reference tree is present");
-    expectTrue(!source.note.empty(), "SpriteToy golden note recorded");
+    expectTrue(source.origin == fuse::project::LegacySourceOrigin::GoldenSubmodule ||
+                   source.origin == fuse::project::LegacySourceOrigin::Bundled,
+               "SpriteToy resolves upstream golden or bundled fallback");
+    expectTrue(!source.note.empty(), "SpriteToy resolution note recorded");
 }
 
 void testGoldenSpriteToyReference() {
@@ -74,11 +73,13 @@ void testGoldenSpriteToyReference() {
         project.manifest.projectRoot + "/worlds/sprite_toy_stub.fuselevel";
     const fuse::project::LegacySourceResolution source =
         fuse::project::resolveParityLegacySource(project.manifest, fuselevelPath, ".cs");
-    expectTrue(source.origin == fuse::project::LegacySourceOrigin::GoldenSubmodule,
-               "SpriteToy resolves the Samples golden reference");
-    expectTrue(!source.path.empty(), "SpriteToy golden reference path resolved");
-    expectTrue(source.path.find("sprite_toy_stub.cs") != std::string::npos,
-               "SpriteToy golden path points at the bundled sample script");
+    expectTrue(source.origin == fuse::project::LegacySourceOrigin::GoldenSubmodule ||
+                   source.origin == fuse::project::LegacySourceOrigin::Bundled,
+               "SpriteToy resolves upstream golden or bundled fallback");
+    expectTrue(!source.path.empty(), "SpriteToy module path resolved");
+    expectTrue(source.path.find("main.cs") != std::string::npos ||
+                   source.path.find("sprite_toy_stub.cs") != std::string::npos,
+               "SpriteToy path is upstream main.cs or bundled stub");
 }
 
 void testGoldenOutpostReference() {

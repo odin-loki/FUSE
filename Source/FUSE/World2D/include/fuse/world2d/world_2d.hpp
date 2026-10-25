@@ -7,6 +7,7 @@
 #include <fuse/world2d/scene_handle_table.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world2d/scene_snapshot.hpp>
+#include <fuse/world2d/sprite_image_map.hpp>
 
 #include <memory>
 #include <vector>
@@ -74,6 +75,8 @@ public:
     void setPhysicsEnabled(bool enabled);
     bool isPhysicsEnabled() const { return m_physicsEnabled; }
 
+    void setSpriteImageMapSearchRoots(SpriteImageMapSearchRoots roots) { m_spriteMapRoots = std::move(roots); }
+
 private:
     static constexpr u32 kNoPhysicsBody = 0xFFFFFFFFu;
 
@@ -109,6 +112,7 @@ private:
     physics::PhysicsWorld2D m_physics;
     std::vector<u32> m_physicsBodyIndices;
     bool m_physicsEnabled = false;
+    SpriteImageMapSearchRoots m_spriteMapRoots;
 };
 
 } // namespace fuse::world2d

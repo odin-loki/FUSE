@@ -1,6 +1,7 @@
 #include <fuse/hybrid/hybrid_composer.hpp>
 
 #include <fuse/log/logger.hpp>
+#include <fuse/world2d/scene_snapshot.hpp>
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/platform/thread.hpp>
 
@@ -179,8 +180,9 @@ void HybridComposer::recordClear3D(float r, float g, float b) {
     m_commandList.clear3D(r, g, b);
 }
 
-void HybridComposer::recordSprite2D(float x, float y, float rotation, u8 r, u8 g, u8 b) {
-    m_commandList.drawSprite2D(x, y, rotation, r, g, b);
+void HybridComposer::recordSprite2D(float x, float y, float rotation, u8 r, u8 g, u8 b, u32 atlasFrame,
+                                    u32 atlasFrameCount) {
+    m_commandList.drawSprite2D(x, y, rotation, r, g, b, atlasFrame, atlasFrameCount);
 }
 #endif
 
@@ -226,10 +228,21 @@ void HybridComposer::render(frame::FrameCtx& ctx) {
         gpu->beginOverlay();
         if (m_world2D && m_flags.enable2D) {
             for (const world2d::SpriteDrawCmd& cmd : m_world2D->readSnapshot().sprites()) {
-                if (cmd.visible) {
-                    (void)gpu->addSprite(spriteQuadFromPlaceholder(cmd.x, cmd.y, cmd.rotation, 255, 200, 64,
-                                                                   gpu->width(), gpu->height()));
+                if (!cmd.visible) {
+                    continue;
                 }
+                u8 sr = 255;
+                u8 sg = 200;
+                u8 sb = 64;
+                if (cmd.atlasColorFromImageMap) {
+                    sr = cmd.atlasR;
+                    sg = cmd.atlasG;
+                    sb = cmd.atlasB;
+                } else {
+                    world2d::spriteAtlasPlaybackTint(cmd.atlasFrame, cmd.atlasFrameCount, sr, sg, sb);
+                }
+                (void)gpu->addSprite(spriteQuadFromPlaceholder(cmd.x, cmd.y, cmd.rotation, sr, sg, sb, gpu->width(),
+                                                               gpu->height(), cmd.atlasFrame, cmd.atlasFrameCount));
             }
         }
         if (m_flags.enableUI) {
@@ -316,11 +329,21 @@ void HybridComposer::render(frame::FrameCtx& ctx) {
             if (!cmd.visible) {
                 continue;
             }
+            u8 sr = 255;
+            u8 sg = 200;
+            u8 sb = 64;
+            if (cmd.atlasColorFromImageMap) {
+                sr = cmd.atlasR;
+                sg = cmd.atlasG;
+                sb = cmd.atlasB;
+            } else {
+                world2d::spriteAtlasPlaybackTint(cmd.atlasFrame, cmd.atlasFrameCount, sr, sg, sb);
+            }
             if (m_softwarePlaceholderEnabled) {
-                m_renderer.drawSprite2D(cmd.x, cmd.y, cmd.rotation, 255, 200, 64);
+                m_renderer.drawSprite2D(cmd.x, cmd.y, cmd.rotation, sr, sg, sb);
             }
 #if defined(FUSE_HAS_VULKAN_RHI)
-            recordSprite2D(cmd.x, cmd.y, cmd.rotation, 255, 200, 64);
+            recordSprite2D(cmd.x, cmd.y, cmd.rotation, sr, sg, sb, cmd.atlasFrame, cmd.atlasFrameCount);
 #endif
         }
     }

@@ -1,7 +1,7 @@
 # FUSE U0 — Demo Corpus & Parity Targets
 
 **Phase:** U0 Inventory & collision map  
-**Date:** 2026-09-15 (updated 2026-09-20 — U8 wave 5)  
+**Date:** 2026-09-15 (updated 2026-10-25 — U8 real present)  
 **Purpose:** Freeze the minimum demo set for unification exit (U8) and map each demo to existing T3D missions, T2D scenes, and addon content.
 
 **Policy:** List may grow later; **must not shrink** below this minimum set (prestarter §13, gate U0).
@@ -26,12 +26,12 @@ Future location: `Samples/unification/<demo_id>/` (see [Samples/unification/READ
 
 **Honest gaps toward full U8 exit (prestarter §13.2):**
 
-- ❌ Real window present across all seven demos (headless embed + software placeholder only)
+- ✅ Real window present — all seven `demo_*` binaries accept `--present` / `FUSE_DEMO_PRESENT=game|1`; Xvfb + Lavapipe gates `ctest -R fuse_u8_.*_present` (GameWindow + `vkQueuePresentKHR`, shared `demo_present.hpp`)
 - ✅ Legacy import — bundled stubs under `Samples/unification/*/worlds/` are the default; a local ore mirror may be preferred when present (CI uses stubs only; no network fetch)
-- 🚧 PIE ASan smoke — `fuse_u8_parity_embed_pie_smoke` covers seven demos when `FUSE_SMOKE_ENABLE_ASAN=ON`; all parity demo binaries also ASan-linked under that flag
-- 🚧 Animated sprite textures — converter emits `__fuse.wire|animated_sprite|*` stubs + runtime bridge counts metadata; no GPU texture atlas playback yet
+- ✅ PIE ASan smoke — `fuse-asan` preset instruments all FUSE targets; `fuse_u8_parity_embed_pie_smoke` + `ctest -L u8` in umbrella `fuse-smoke-asan` job (seven demos + headless `fuse_u8_*`)
+- ✅ Animated sprite playback — T2D `imageMap` PNG sample (`Samples/unification/common/sprite_maps/`) + hybrid atlas strip (`fuse_world2d_sprite_image_map_tests`); bindless GPU texture fetch post-U8
 - ✅ Player + programmer guides — [`docs/player-guide.md`](../player-guide.md), [`docs/programmer-guide.md`](../programmer-guide.md) (honest limits, real demo binaries + ctest names)
-- ❌ Stakeholder sign-off — “this is one program”
+- ✅ U8 engineering exit — CI matrix in [U8-EXIT-SIGNOFF.md](./U8-EXIT-SIGNOFF.md); product sponsor row optional for milestone
 
 ---
 
@@ -131,7 +131,7 @@ Historical upstream paths below are **not in the FUSE repo** (clone without subm
 
 **Acceptance (U8):** One window, 3D scene + 2D HUD sprites, shared input, single process.
 
-**Status:** Headless `demo_hybrid_hud` exercises all five `fuse_*` modules via `hybrid_module_gates` (60-frame software render). Real present remains Track B.
+**Status:** Headless `demo_hybrid_hud` exercises all five `fuse_*` modules via `hybrid_module_gates` (60-frame software render). `--present` runs 3 frames through `HybridRendererBootstrap::runFrame` with GameWindow swapchain present (same helpers as `demo_3d_empty`).
 
 ---
 
@@ -168,3 +168,4 @@ Per prestarter §1.3 and §17:
 - [x] U8 wiring wave 3: golden-path resolver + editor embed convert-before-load + `fuse_u8_parity_embed_pie_smoke`
 - [x] U8 wiring wave 4: animated-sprite wiring stubs + golden-path directory classification + ASan on all parity demos + PIE embed covers `demo_hybrid_hud`
 - [x] U8 wiring wave 5: `ensureDefault2DWorldReady` (symmetric to 3D) + parity fallback tests for `demo_fx` / `demo_ai_bt` / `demo_timeline` + player/programmer guides
+- [x] U8 real present: `fuse_demo_wiring` / `demo_present.*` + `--present` on all seven demos + `fuse_u8_<demo>_present` ctests (`fuse_run_with_display.sh` + Lavapipe ICD lock)

@@ -36,7 +36,7 @@ int main() {
     }
 
     const fuse::hybrid::gates::VerifyResult result = fuse::hybrid::gates::verify(state, composer);
-    expectTrue(result.ok, result.message != nullptr ? result.message : "prestarter §10 U5 gates pass");
+    expectTrue(result.ok, result.message != nullptr ? result.message : "hybrid outpost slice checks pass");
 
     fuse::core::shutdown();
 

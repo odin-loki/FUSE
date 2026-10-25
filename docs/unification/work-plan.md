@@ -364,7 +364,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | M |
 | **Scope** | `Samples/unification/demo_*` per [demo-corpus-parity-targets.md](./demo-corpus-parity-targets.md) |
 | **Deps** | WP-07 (subset), WP-09 |
-| **Status** | 🚧 Wave 5 — player/programmer guides, `ensureDefault2DWorldReady`, parity fallback tests for remaining demos; real present + stakeholder sign-off still ❌ |
+| **Status** | 🚧 Wave 6 — U8 present + ASan `ctest -L u8`, animated-sprite frame playback (tint path); product sign-off checklist [U8-EXIT-SIGNOFF.md](./U8-EXIT-SIGNOFF.md) |
 
 ---
 
@@ -408,11 +408,11 @@ WP-00 → WP-01 → WP-02 ──────────────────
 | **U1** | Umbrella build | `fuse_core` cmake target exists |
 | **U2** | One-process smoke | ASan init; jobs optional — ✅ smoke + quarantine libs |
 | **U3** | Shared services | I/O job publishes handle; TSan plan live |
-| **U4** | Hybrid demo | `parallel_for` cull + SoA; frame barrier; software demo ✅ — real GLES/Vulkan present ❌ Track B |
+| **U4** | Hybrid demo | `parallel_for` cull + SoA; frame barrier; GameWindow/Qt present paths ✅ on Linux CI — see U6/U8 |
 | **U5** | Feature modules | Five `fuse_*` targets; `fuse_ai` BT slice + tests — 🚧 scaffolds + ore backlog ([U5-MODULES.md](./U5-MODULES.md)) |
-| **U6** | Editor PIE | UI/game thread queue + coalesced property undo + headless runtime embed — 🚧 Qt External GPU viewport remains |
+| **U6** | Editor PIE | UI/game thread queue + headless embed + live Qt present (`fuse_editor_qt_live_present`) — see [U6-EDITOR.md](./U6-EDITOR.md) |
 | **U7** | Project format | `fuse_project` + wiring stubs + toybox convert + cook encoder hooks — 🚧 link real Assimp/BC7/OGG libs |
-| **U8** | Parity demos | Seven demo binaries + bundled `worlds/` sources + module wiring + guides — 🚧 real present, full golden corpus, stakeholder sign-off remain |
+| **U8** | Parity demos | Seven demos + `--present` gates + ASan `ctest -L u8` — 🚧 texture atlas sprites + product sign-off ([U8-EXIT-SIGNOFF.md](./U8-EXIT-SIGNOFF.md)) |
 | **P3 (Track A)** | Job system tests | Fiber scheduler + single-thread fallback |
 
 ---
@@ -446,7 +446,7 @@ WP-00 → WP-01 → WP-02 ──────────────────
 
 5. ✅ **CI:** `.github/workflows/fuse-umbrella-linux.yml` + `fuse-core-android.yml`; iOS stub in `fuse-core-ios.yml` (macOS manual/dispatch).
 
-**Next:** U2 deepen-only on zip/PNG smoke (no new probe batches); U3 script host ECS component + Lua entity bindings; U6 full Qt `vkQueuePresentKHR` on display with `FUSE_ENABLE_QT_PRESENT=ON`; U7 real ispc_texcomp + libvorbisenc on CI images; Track B post–WP-06p (driver-wired timeline stress on NVIDIA CI, full software placeholder removal).
+**Next:** U2 deepen-only on zip/PNG smoke (no new probe batches); U3 script host ECS component + Lua entity bindings; U6 editor polish (timelines, cooked-asset viewport preview, latency budgets — live Qt present landed: `fuse_editor_qt_live_present`, see [U6-EDITOR.md](./U6-EDITOR.md)); U7 real ispc_texcomp + libvorbisenc on CI images; Track B post–WP-06p (driver-wired timeline stress on NVIDIA CI, full software placeholder removal).
 
 **U6/U7 wave 13 landed:** `fuse_cook` cook-cache persist + skip re-cook progress; `ispc_texcomp` honest stub hook; vorbis WAV sniff deepen; Qt WSI instance/extension probe headless-safe.
 

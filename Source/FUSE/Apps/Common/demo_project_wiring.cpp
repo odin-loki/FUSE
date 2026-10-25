@@ -82,6 +82,12 @@ World2DBridgeResult bridge2DWorldFromProject(const project::LoadResult& projectL
         result.note = "project load failed";
         return result;
     }
+
+    world2d::SpriteImageMapSearchRoots spriteMapRoots;
+    spriteMapRoots.projectRoot = projectLoad.manifest.projectRoot;
+    spriteMapRoots.repositoryRoot = project::findRepositoryRoot(projectLoad.manifest.projectRoot);
+    world.setSpriteImageMapSearchRoots(spriteMapRoots);
+
     if (projectLoad.manifest.defaultWorld2D.empty()) {
         result.note = "project missing defaultWorld2D";
         return result;

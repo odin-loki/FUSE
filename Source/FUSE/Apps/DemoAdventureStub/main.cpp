@@ -1,4 +1,5 @@
 #include "demo_check.hpp"
+#include "demo_present.hpp"
 #include "demo_project_wiring.hpp"
 
 #include <fuse/adventure/conversation_script_vm.hpp>
@@ -12,24 +13,30 @@
 #include <fuse/adventure/weapon_grant_pipeline.hpp>
 #include <fuse/adventure/weapon_runtime.hpp>
 #include <fuse/core/init.hpp>
+#include <fuse/frame/frame_ctx.hpp>
+#include <fuse/hybrid/hybrid_composer.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/mechanics/interactable.hpp>
 #include <fuse/mechanics/registry.hpp>
 #include <fuse/project/loader.hpp>
 #include <fuse/scene/scene.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
+#include <fuse/world3d/world_3d.hpp>
+
+#if defined(FUSE_HAS_VULKAN_RHI)
+#include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
+#endif
 
 #include <cstdlib>
+#include <memory>
 #include <string>
 
 int main(int argc, char** argv) {
     fuse::core::initialize();
     fuse::log::info("demo_adventure_stub: fuse_adventure outpost JSON + mechanics bridge");
 
-    std::string projectPath = "Samples/unification/demo_adventure_stub";
-    if (argc > 1) {
-        projectPath = argv[1];
-    }
+    const std::string projectPath =
+        fuse::demo::present::projectPathFromArgv(argc, argv, "Samples/unification/demo_adventure_stub");
 
     const fuse::project::LoadResult project = fuse::project::loadFromDirectory(projectPath);
     fuse::demo::check(project.status == fuse::project::LoadStatus::Ok, "project.json loads");
@@ -116,6 +123,40 @@ int main(int argc, char** argv) {
     fuse::demo::check(hudPrompt.promptShownCount() > 0u, "HUD prompt shown");
     fuse::demo::check(weaponGranted, "armory rifle grant pipeline succeeded");
     fuse::demo::check(missionLoad.entityCount >= 3u, "Outpost mission entities converted");
+
+#if defined(FUSE_HAS_VULKAN_RHI)
+    const bool presentGameWindow = fuse::demo::present::requestedFromArgv(argc, argv);
+    if (presentGameWindow) {
+        fuse::demo::present::HostPresentUnlock presentUnlock;
+        fuse::hybrid::HybridRendererBootstrapDesc bootstrapDesc{};
+        bootstrapDesc.renderer.rhi.bootstrap.instance.enableValidation = false;
+        bootstrapDesc.scene.width = 320;
+        bootstrapDesc.scene.height = 240;
+        if (fuse::demo::present::gameWindowPresentAvailable()) {
+            fuse::demo::present::applyGameWindowToBootstrapDesc(bootstrapDesc, 320, 240, "demo_adventure_stub");
+        }
+        std::unique_ptr<fuse::hybrid::HybridRendererBootstrap> gpuRuntime =
+            fuse::hybrid::HybridRendererBootstrap::create(bootstrapDesc);
+        fuse::demo::check(gpuRuntime != nullptr && gpuRuntime->isReady(), "present bootstrap ready");
+        fuse::hybrid::HybridComposer& composer = gpuRuntime->composer();
+        fuse::world3d::World3D world3D;
+        world3D.addObject(&guardObject);
+        world3D.addObject(&leverObject);
+        world3D.setClearColor(0.12f, 0.16f, 0.22f);
+        composer.setProjectFlags(fuse::project::toDimensionFlags(project.manifest.dimensions));
+        composer.attachWorld3D(&world3D);
+
+        fuse::frame::FrameCtx ctx;
+        for (int frame = 0; frame < 3; ++frame) {
+            ctx.dt = 1.f / 60.f;
+            ctx.frameIndex = static_cast<fuse::u32>(frame);
+            gpuRuntime->runFrame(ctx);
+        }
+        fuse::demo::check(fuse::demo::present::realPresentCallCount(*gpuRuntime) >= 1u,
+                          "vkQueuePresentKHR via GameWindow present path");
+        gpuRuntime->shutdown();
+    }
+#endif
 
     fuse::core::shutdown();
     return fuse::demo::finish("demo_adventure_stub");

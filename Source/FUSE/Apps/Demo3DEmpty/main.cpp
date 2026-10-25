@@ -1,4 +1,5 @@
 #include "demo_check.hpp"
+#include "demo_present.hpp"
 #include "demo_project_wiring.hpp"
 
 #include <fuse/core/init.hpp>
@@ -23,10 +24,10 @@ int main(int argc, char** argv) {
     fuse::core::initialize();
     fuse::log::info("demo_3d_empty: 3D dimension path + U7 mission convert/load");
 
-    std::string projectPath = "Samples/unification/demo_3d_empty";
-    if (argc > 1) {
-        projectPath = argv[1];
-    }
+    const bool presentGameWindow = fuse::demo::present::requestedFromArgv(argc, argv);
+    const std::string projectPath =
+        fuse::demo::present::projectPathFromArgv(argc, argv, "Samples/unification/demo_3d_empty");
+    const int frameTarget = presentGameWindow ? 3 : 30;
 
     const fuse::project::LoadResult project = fuse::project::loadFromDirectory(projectPath);
     fuse::demo::check(project.status == fuse::project::LoadStatus::Ok, "project.json loads");
@@ -94,12 +95,16 @@ int main(int argc, char** argv) {
     fuse::hybrid::HybridComposer localComposer;
     fuse::hybrid::HybridComposer* composer = &localComposer;
 #if defined(FUSE_HAS_VULKAN_RHI)
+    fuse::demo::present::HostPresentUnlock presentUnlock;
     fuse::hybrid::HybridRendererBootstrapDesc bootstrapDesc{};
     // Validation on (the Khronos layer is used when installed; the gate below asserts 0 messages).
-    bootstrapDesc.renderer.rhi.bootstrap.instance.enableValidation = true;
+    bootstrapDesc.renderer.rhi.bootstrap.instance.enableValidation = !presentGameWindow;
     fuse::renderer::resetVulkanValidationCounters();
     bootstrapDesc.scene.width = 160;
     bootstrapDesc.scene.height = 120;
+    if (presentGameWindow && fuse::demo::present::gameWindowPresentAvailable()) {
+        fuse::demo::present::applyGameWindowToBootstrapDesc(bootstrapDesc, 256, 160, "demo_3d_empty");
+    }
     std::unique_ptr<fuse::hybrid::HybridRendererBootstrap> gpuRuntime =
         fuse::hybrid::HybridRendererBootstrap::create(bootstrapDesc);
     if (gpuRuntime != nullptr && gpuRuntime->isReady()) {
@@ -113,7 +118,7 @@ int main(int argc, char** argv) {
     world3D.loadWorld(fuse::dimension::WorldHandle(1u, 1u));
 
     fuse::frame::FrameCtx ctx;
-    for (int frame = 0; frame < 30; ++frame) {
+    for (int frame = 0; frame < frameTarget; ++frame) {
         ctx.dt = 1.f / 60.f;
         ctx.frameIndex = static_cast<fuse::u32>(frame);
 #if defined(FUSE_HAS_VULKAN_RHI)
@@ -126,7 +131,8 @@ int main(int argc, char** argv) {
         composer->render(ctx);
     }
 
-    fuse::demo::check(composer->frameCount() == 30u, "30 frames ticked");
+    fuse::demo::check(composer->frameCount() == static_cast<fuse::u32>(frameTarget),
+                      presentGameWindow ? "present mode frames ticked" : "30 frames ticked");
     fuse::demo::check(world3D.readSnapshot().objects().size() >= level.objects, "3D snapshot includes the level objects");
     fuse::demo::check(world3D.physics().bodyCount() >= level.physicsLinked && level.physicsLinked >= 1u,
                       "level collider entities are physics bodies");
@@ -135,8 +141,9 @@ int main(int argc, char** argv) {
         // GPU readback: the spawn-point camera looks down at the converted ground plane (frame centre).
         fuse::hybrid::HybridSceneRenderer& gpu = *composer->gpuScene();
         fuse::demo::check(gpu.waitIdle(), "GPU frames retired");
-        fuse::demo::check(composer->gpuSceneFrames() == 30u && world3D.gpuFramesRendered() == 30u,
-                          "30 frames rendered by the SceneRenderer from World3D");
+        fuse::demo::check(composer->gpuSceneFrames() == static_cast<fuse::u32>(frameTarget) &&
+                              world3D.gpuFramesRendered() == static_cast<fuse::u32>(frameTarget),
+                          "frames rendered by the SceneRenderer from World3D");
         fuse::demo::check(gpu.lastFrame().instances == level.meshes, "every level mesh is a GPU instance");
         fuse::u8 rgb[3] = {0, 0, 0};
         fuse::demo::check(fuse::hybrid::readbackPixel(gpu, gpu.width() / 2u, gpu.height() / 2u, rgb) && rgb[0] > 40u &&
@@ -150,6 +157,10 @@ int main(int argc, char** argv) {
                           "0 Vulkan validation messages over 30 frames");
         fuse::demo::check(composer->renderer().pixelCount() == 0u, "PlaceholderRenderer off on the GPU path");
         fuse::log::info("demo_3d_empty: GPU path (%ux%u)", gpu.width(), gpu.height());
+        if (presentGameWindow && gpuRuntime != nullptr) {
+            fuse::demo::check(fuse::demo::present::realPresentCallCount(*gpuRuntime) >= 1u,
+                              "vkQueuePresentKHR via GameWindow present path");
+        }
     } else
 #endif
     {

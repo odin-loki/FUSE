@@ -103,7 +103,8 @@ private:
 #if defined(FUSE_HAS_VULKAN_RHI)
     void ensureRhiContext();
     void recordClear3D(float r, float g, float b);
-    void recordSprite2D(float x, float y, float rotation, u8 r, u8 g, u8 b);
+    void recordSprite2D(float x, float y, float rotation, u8 r, u8 g, u8 b, u32 atlasFrame = 0u,
+                        u32 atlasFrameCount = 0u);
     void ensureGpuScene();
     void releaseGpuScene();
 #endif

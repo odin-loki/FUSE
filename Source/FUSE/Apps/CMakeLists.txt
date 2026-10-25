@@ -46,7 +46,39 @@ if(FUSE_BUILD_PARITY_DEMOS AND FUSE_BUILD_PROJECT)
             endif()
             set_tests_properties(fuse_u8_${_demo} PROPERTIES
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+                LABELS "u8;asan"
             )
+        endforeach()
+        set(_fuse_u8_present_demos
+            demo_3d_empty
+            demo_2d_sprites
+            demo_hybrid_hud
+            demo_fx
+            demo_ai_bt
+            demo_timeline
+            demo_adventure_stub
+        )
+        set(_fuse_u8_present_env "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json")
+        foreach(_demo ${_fuse_u8_present_demos})
+            if(FUSE_VULKAN_BACKEND AND FUSE_PLATFORM_WINDOW_X11_ACTIVE AND FUSE_DISPLAY_TEST_WRAPPER
+               AND EXISTS "${_fuse_demo_icd_lock}")
+                if(_demo STREQUAL "demo_hybrid_hud")
+                    add_test(NAME fuse_u8_${_demo}_present
+                        COMMAND "${FUSE_DISPLAY_TEST_WRAPPER}" "${_fuse_demo_icd_lock}"
+                                "$<TARGET_FILE:${_demo}>" --present)
+                else()
+                    add_test(NAME fuse_u8_${_demo}_present
+                        COMMAND "${FUSE_DISPLAY_TEST_WRAPPER}" "${_fuse_demo_icd_lock}"
+                                "$<TARGET_FILE:${_demo}>" --present "${_fuse_parity_demo_root}/${_demo}")
+                endif()
+                set_tests_properties(fuse_u8_${_demo}_present PROPERTIES
+                    ENVIRONMENT "${_fuse_u8_present_env}"
+                    RUN_SERIAL TRUE
+                    SKIP_RETURN_CODE 77
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+                    LABELS "u8;present;xvfb"
+                )
+            endif()
         endforeach()
         if(COMMAND fuse_apply_asan)
             foreach(_demo ${_fuse_parity_demo_tests})

@@ -3,7 +3,10 @@ add_executable(demo_hybrid_hud
     hybrid_module_gates.cpp
 )
 
+target_include_directories(demo_hybrid_hud PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../Common)
+
 target_link_libraries(demo_hybrid_hud PRIVATE
+    fuse_demo_wiring
     fuse_hybrid
     fuse_ai
     fuse_cinematics
@@ -33,16 +36,6 @@ if(FUSE_BUILD_CORE_TESTS)
     if(FUSE_BUILD_SCRIPT)
         target_link_libraries(fuse_hybrid_module_gates_tests PRIVATE fuse_script)
     endif()
-    target_compile_definitions(fuse_hybrid_module_gates_tests PRIVATE
-        FUSE_HYBRID_GATES_WAVE16=1
-        FUSE_HYBRID_GATES_WAVE17=1
-        FUSE_HYBRID_GATES_WAVE18=1
-        FUSE_HYBRID_GATES_WAVE19=1
-        FUSE_HYBRID_GATES_WAVE20=1
-        FUSE_HYBRID_GATES_WAVE21=1
-        FUSE_HYBRID_GATES_WAVE22=1
-        FUSE_HYBRID_GATES_WAVE23=1
-    )
     if(FUSE_BUILD_VULKAN)
         set(FUSE_HYBRID_GATES_VULKAN_ICD_LOCK_SCRIPT
             "${CMAKE_BINARY_DIR}/Source/FUSE/Renderer/tests/run_vulkan_icd_locked.sh")

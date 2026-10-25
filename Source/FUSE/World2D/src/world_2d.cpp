@@ -1,6 +1,7 @@
 #include <fuse/world2d/world_2d.hpp>
 
 #include <fuse/log/logger.hpp>
+#include <fuse/world2d/sprite_image_map.hpp>
 #include <fuse/platform/thread.hpp>
 #include <fuse/world2d/fuselevel_bridge.hpp>
 
@@ -252,6 +253,26 @@ void World2D::buildSnapshot(frame::FrameCtx& ctx) {
     m_transformSoA.reserve(static_cast<u32>(m_sprites.size()));
     fillSnapshotSoA(*m_root, m_snapshot, m_transformSoA, false);
     m_snapshot.setSpriteRotations(ctx.time * 1.5f);
+    for (SpriteDrawCmd& cmd : m_snapshot.spritesMut()) {
+        SceneObject2D* sprite = m_handles.resolve(cmd.object);
+        if (sprite == nullptr || !sprite->hasSpriteAnimation()) {
+            continue;
+        }
+        cmd.atlasFrameCount = sprite->spriteAnimationFrameCount();
+        cmd.atlasFrame = sprite->spriteAnimationFrameIndex(ctx.time);
+        if (!sprite->spriteImageMap().empty() && cmd.atlasFrameCount > 0u) {
+            u8 sr = cmd.atlasR;
+            u8 sg = cmd.atlasG;
+            u8 sb = cmd.atlasB;
+            if (sampleSpriteImageMapFrame(m_spriteMapRoots, sprite->spriteImageMap(), cmd.atlasFrame,
+                                          cmd.atlasFrameCount, sr, sg, sb)) {
+                cmd.atlasR = sr;
+                cmd.atlasG = sg;
+                cmd.atlasB = sb;
+                cmd.atlasColorFromImageMap = true;
+            }
+        }
+    }
 }
 
 void World2D::runParallelCull() {

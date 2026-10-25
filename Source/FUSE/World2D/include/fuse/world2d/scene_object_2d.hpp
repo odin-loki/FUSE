@@ -119,6 +119,18 @@ public:
     float boxHalfHeight() const { return m_boxHalfHeight; }
     void setBoxHalfHeight(float halfHeight) { m_boxHalfHeight = halfHeight; }
 
+    /// T2D AnimatedSprite / imageMap metadata (atlas texture sampling is a separate Track B step).
+    const std::string& spriteImageMap() const { return m_spriteImageMap; }
+    void setSpriteImageMap(const std::string& imageMap) { m_spriteImageMap = imageMap; }
+    u32 spriteAnimationFrameCount() const { return m_spriteAnimFrameCount; }
+    float spriteAnimationFps() const { return m_spriteAnimFps; }
+    void setSpriteAnimation(u32 frameCount, float fps) {
+        m_spriteAnimFrameCount = frameCount;
+        m_spriteAnimFps = fps;
+    }
+    [[nodiscard]] bool hasSpriteAnimation() const { return m_spriteAnimFrameCount > 0u && m_spriteAnimFps > 0.f; }
+    [[nodiscard]] u32 spriteAnimationFrameIndex(float timeSec) const;
+
     /// Table this node is published in (nullptr when unpublished).
     const SceneHandleTable* handleTable() const { return m_handleTable; }
 
@@ -155,6 +167,9 @@ private:
     float m_physicsRadius = 0.5f;
     float m_boxHalfWidth = 0.5f;
     float m_boxHalfHeight = 0.5f;
+    std::string m_spriteImageMap;
+    u32 m_spriteAnimFrameCount = 0;
+    float m_spriteAnimFps = 0.f;
 };
 
 } // namespace fuse

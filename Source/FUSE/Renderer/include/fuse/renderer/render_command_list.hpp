@@ -24,6 +24,8 @@ struct DrawSprite2DCommand {
     u8 r = 255;
     u8 g = 255;
     u8 b = 255;
+    u32 atlasFrame = 0;
+    u32 atlasFrameCount = 0;
 };
 
 struct RenderCommand {
@@ -38,7 +40,8 @@ class RenderCommandList {
 public:
     void reset();
     void clear3D(float r, float g, float b);
-    void drawSprite2D(float x, float y, float rotation, u8 r, u8 g, u8 b);
+    void drawSprite2D(float x, float y, float rotation, u8 r, u8 g, u8 b, u32 atlasFrame = 0u,
+                      u32 atlasFrameCount = 0u);
 
     const std::vector<RenderCommand>& commands() const { return m_commands; }
     u32 commandCount() const { return static_cast<u32>(m_commands.size()); }

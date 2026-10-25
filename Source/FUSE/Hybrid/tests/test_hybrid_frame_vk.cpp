@@ -153,6 +153,16 @@ int runCpu() {
     expect(out[3] == 1.f, "rotated quad covers along its diagonal");
     hybrid::spriteLayerTexel(&r, 1, 160 + 12, 120 + 12, out);
     expect(out[3] == 0.f, "rotated quad leaves its unrotated corner");
+    hybrid::SpriteQuad atlas0 =
+        hybrid::spriteQuadFromPlaceholder(0.f, 0.f, 0.f, 255, 0, 0, 320, 240, 0u, 4u);
+    hybrid::SpriteQuad atlas1 =
+        hybrid::spriteQuadFromPlaceholder(0.f, 0.f, 0.f, 255, 0, 0, 320, 240, 1u, 4u);
+    hybrid::spriteLayerTexel(&atlas0, 1, 150, 120, out);
+    expect(out[3] == 1.f, "atlas frame 0 covers left strip centre");
+    hybrid::spriteLayerTexel(&atlas0, 1, 158, 120, out);
+    expect(out[3] == 0.f, "atlas frame 0 skips second strip");
+    hybrid::spriteLayerTexel(&atlas1, 1, 158, 120, out);
+    expect(out[3] == 1.f, "atlas frame 1 covers second strip");
     return 0;
 }
 

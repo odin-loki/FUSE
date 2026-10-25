@@ -24,9 +24,13 @@ ctest --test-dir build -R fuse_u8_ --output-on-failure
 
 **Still stub / deferred**
 
-- Real GLES/Vulkan present (Track B) — software placeholder renderer only
+- Bindless `imageMap` **PNG** sampling (animated frames use hybrid sprite-layer atlas strips + tint today)
 - Bit-perfect legacy mission replay — converters produce wiring stubs, not full gameplay
 - Live upstream addon trees — golden paths point at `Samples/unification/*/worlds/`; bundled `.mis`/`.cs` stubs used when a golden file is missing
+
+**Present (U8)**
+
+- All seven `demo_*` binaries: `--present` / `FUSE_DEMO_PRESENT=1` → GameWindow + `vkQueuePresentKHR` (Linux/Xvfb CI: `ctest -R 'fuse_u8_.*_present'`)
 
 **Wave 5 wiring**
 
@@ -35,15 +39,13 @@ ctest --test-dir build -R fuse_u8_ --output-on-failure
 
 **Wave 4 wiring**
 
-- `__fuse.wire|animated_sprite|*` stubs from T2D module convert + runtime bridge metadata counts
+- T2D module bridge → `SceneObject2D` animation metadata; GPU hybrid path tints per atlas frame
 - `classifySubmoduleDirectory` — local-only reference-tree probe (no network fetch)
-- `fuse_u8_parity_embed_pie_smoke` — editor embed + PIE start/stop across **seven** parity demos (ASan when `FUSE_SMOKE_ENABLE_ASAN`)
-- All six `fuse_u8_*` parity demo binaries + `demo_hybrid_hud` ASan-linked when `FUSE_SMOKE_ENABLE_ASAN=ON`
+- `fuse_u8_parity_embed_pie_smoke` — editor embed + PIE across **seven** projects
+- `fuse-asan` CI: `ctest -L u8` (six `fuse_u8_*` sample demos + `demo_hybrid_hud` gates + PIE smoke)
 
 **Wave 3 wiring**
-
-- `fuse_u8_parity_embed_pie_smoke` — editor embed + PIE start/stop across six parity demos (ASan when `FUSE_SMOKE_ENABLE_ASAN`)
 - `demo_fx` bridges `defaultWorld2D` sprite sockets alongside 3D AFX mission VM
 - `resolveParityLegacySource` prefers bundled `Samples/unification/*/worlds/` stubs (no upstream addon trees in-repo)
 
-`demo_hybrid_hud` uses a software placeholder renderer. Real present is Track B.
+`demo_hybrid_hud` uses the hybrid GPU path when Vulkan is available; `--present` exercises the same GameWindow path as other demos.

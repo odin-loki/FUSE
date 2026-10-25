@@ -25,7 +25,7 @@ void MissilePipeline::fire(const MissileDescriptor& descriptor,
     }
 
     MissileInstance instance;
-    instance.descriptor = &descriptor;
+    instance.descriptor = descriptor;
     instance.position = origin;
     instance.velocity.x = (direction.x / len) * descriptor.muzzleVelocity;
     instance.velocity.y = (direction.y / len) * descriptor.muzzleVelocity;
@@ -39,7 +39,7 @@ void MissilePipeline::tick(float dt) {
     }
 
     for (MissileInstance& instance : m_instances) {
-        if (instance.finished || instance.descriptor == nullptr) {
+        if (instance.finished) {
             continue;
         }
 
@@ -48,11 +48,11 @@ void MissilePipeline::tick(float dt) {
         instance.position.y += instance.velocity.y * dt;
         instance.position.z += instance.velocity.z * dt;
 
-        if (instance.descriptor->isBallistic) {
-            instance.velocity.z -= instance.descriptor->gravityMod * dt;
+        if (instance.descriptor.isBallistic) {
+            instance.velocity.z -= instance.descriptor.gravityMod * dt;
         }
 
-        if (instance.elapsed >= instance.descriptor->lifetime) {
+        if (instance.elapsed >= instance.descriptor.lifetime) {
             instance.finished = true;
             ++m_completedCount;
         }

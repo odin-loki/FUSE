@@ -41,6 +41,14 @@ void main() {
         precise float by = dy * q.cosSinPad.x;
         precise float ly = by - bx;
         if (abs(lx) <= q.centerHalf.z && abs(ly) <= q.centerHalf.w) {
+            if (q.cosSinPad.w > 0.0) {
+                precise float u = (lx / q.centerHalf.z + 1.0) * 0.5;
+                precise float f0 = q.cosSinPad.z / q.cosSinPad.w;
+                precise float f1 = (q.cosSinPad.z + 1.0) / q.cosSinPad.w;
+                if (u < f0 || u >= f1) {
+                    continue;
+                }
+            }
             precise float k = 1.0 - q.color.a;
             precise vec4 t = k * acc;
             acc = q.color + t;

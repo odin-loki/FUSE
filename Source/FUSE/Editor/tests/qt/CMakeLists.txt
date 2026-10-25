@@ -116,7 +116,7 @@ else()
 endif()
 foreach(_e15_gate console transport)
     set_tests_properties(fuse_editor_qt_e15_${_e15_gate} PROPERTIES
-        LABELS "gate;qt;e15"
+        LABELS "gate;qt;e15;u8"
         SKIP_RETURN_CODE 77
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 120

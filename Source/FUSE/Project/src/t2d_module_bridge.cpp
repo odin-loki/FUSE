@@ -92,6 +92,13 @@ void applyNodeToSprite(const T2DSceneNodeStub& node, u32 spriteIndex, fuse::Scen
         sprite.setPhysicsShape(fuse::PhysicsShape2D::None);
         break;
     }
+
+    if (node.hasAnimatedSpriteFields()) {
+        sprite.setSpriteImageMap(node.imageMap);
+        if (node.frameCount > 0u && node.animationFps > 0.f) {
+            sprite.setSpriteAnimation(node.frameCount, node.animationFps);
+        }
+    }
 }
 
 } // namespace

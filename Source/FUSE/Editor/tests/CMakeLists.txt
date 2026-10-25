@@ -216,11 +216,13 @@ if(FUSE_BUILD_PARITY_DEMOS)
             ENVIRONMENT "${FUSE_VULKAN_TEST_ENV}"
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
             RUN_SERIAL TRUE
+            LABELS "u8;asan;gate"
         )
     else()
         add_test(NAME fuse_u8_parity_embed_pie_smoke COMMAND fuse_u8_parity_embed_pie_tests)
         set_tests_properties(fuse_u8_parity_embed_pie_smoke PROPERTIES
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+            LABELS "u8;asan"
         )
     endif()
     if(COMMAND fuse_apply_asan)
