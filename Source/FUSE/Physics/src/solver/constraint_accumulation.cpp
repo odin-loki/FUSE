@@ -274,6 +274,39 @@ f32 solveContactConstraint(RigidBodySoA& bodies,
     return worst;
 }
 
+f32 applyContactRestitution(RigidBodySoA& bodies, const narrowphase::ContactManifold& contact) {
+    if (!contact.valid || contact.bodyA >= bodies.count() || contact.bodyB >= bodies.count()) {
+        return 0.f;
+    }
+
+    const u32 a = contact.bodyA;
+    const u32 b = contact.bodyB;
+    if (a >= bodies.linearVelocities.size() || b >= bodies.linearVelocities.size() ||
+        a >= bodies.invMasses.size() || b >= bodies.invMasses.size() || a >= bodies.restitutions.size() ||
+        b >= bodies.restitutions.size()) {
+        return 0.f;
+    }
+
+    const f32 invMassA = bodies.invMasses[a];
+    const f32 invMassB = bodies.invMasses[b];
+    const f32 weightSum = invMassA + invMassB;
+    if (weightSum < 1e-10f) {
+        return 0.f;
+    }
+
+    const f32 normalVelocity = (bodies.linearVelocities[a] - bodies.linearVelocities[b]).dot(contact.contactNormal);
+    if (normalVelocity >= 0.f) {
+        return 0.f;
+    }
+
+    const f32 restitution = std::max(0.f, std::min(bodies.restitutions[a], bodies.restitutions[b]));
+    const f32 deltaSpeed = -(1.f + restitution) * normalVelocity;
+    const f32 impulse = deltaSpeed / weightSum;
+    bodies.linearVelocities[a] += contact.contactNormal * (impulse * invMassA);
+    bodies.linearVelocities[b] -= contact.contactNormal * (impulse * invMassB);
+    return deltaSpeed;
+}
+
 f32 measureConstraintResidual(const RigidBodySoA& bodies,
                               const SolverWorkBuffers& work,
                               const std::vector<narrowphase::ContactManifold>& contacts,

@@ -223,4 +223,23 @@ void bloom_composite(const fuse::math::Vec3* hdr, u32 width, u32 height, const B
     }
 }
 
+void Bloom::upsampleAdd(const fuse::math::Vec3* src, u32 width, u32 height, fuse::math::Vec3* dst, f32 scatter) {
+    if (src == nullptr || dst == nullptr || width == 0u || height == 0u || scatter <= 0.f) {
+        return;
+    }
+
+    const u32 dstWidth = width * 2u;
+    for (u32 y = 0; y < height; ++y) {
+        for (u32 x = 0; x < width; ++x) {
+            const fuse::math::Vec3 texel = src[y * width + x] * scatter;
+            const u32 row0 = (y * 2u) * dstWidth;
+            const u32 row1 = (y * 2u + 1u) * dstWidth;
+            dst[row0 + (x * 2u)] = dst[row0 + (x * 2u)] + texel;
+            dst[row0 + (x * 2u + 1u)] = dst[row0 + (x * 2u + 1u)] + texel;
+            dst[row1 + (x * 2u)] = dst[row1 + (x * 2u)] + texel;
+            dst[row1 + (x * 2u + 1u)] = dst[row1 + (x * 2u + 1u)] + texel;
+        }
+    }
+}
+
 } // namespace fuse::renderer

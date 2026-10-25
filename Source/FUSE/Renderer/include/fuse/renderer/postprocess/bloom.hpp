@@ -46,6 +46,8 @@ public:
     static void downsampleBox(const fuse::math::Vec3* src, u32 width, u32 height, fuse::math::Vec3* dst);
     /// Replicate `src` into a double-resolution `dst`. `dst` must be `(width * 2) * (height * 2)`.
     static void upsampleBox(const fuse::math::Vec3* src, u32 width, u32 height, fuse::math::Vec3* dst);
+    /// Upsample `src` and add `scatter * texel` into the existing double-resolution `dst`.
+    static void upsampleAdd(const fuse::math::Vec3* src, u32 width, u32 height, fuse::math::Vec3* dst, f32 scatter);
 
 private:
     BloomParams m_params{};
