@@ -499,6 +499,12 @@ void tickFrame(State& state, fuse::hybrid::HybridComposer& composer, const fuse:
     const fuse::cinematics::TimelineMs timelineBefore = state.timeline.playhead().time_ms();
     state.timeline.advance(deltaMs);
     fuse::cinematics::drain_actor_cues(state.timeline, state.vactorBridge, timelineBefore);
+#if FUSE_HYBRID_GATES_WAVE33
+    {
+        const auto drainedCues = state.timeline.cue_queue().drain();
+        state.timelineCueDrainCount += static_cast<fuse::u32>(drainedCues.size());
+    }
+#endif
     state.vactorBridge.sync_bound_objects();
     state.vactorBridge.sync_motion_from_timeline(state.timeline);
     state.vactorBridge.sync_bone_attach_from_timeline(state.timeline);
@@ -665,6 +671,11 @@ VerifyResult verify(const State& state, fuse::hybrid::HybridComposer& composer) 
 #if FUSE_HYBRID_GATES_WAVE27
     if (state.missionSpellCodegenCount == 0u || state.missionSpellCodegenId != "fireball") {
         return {false, "fuse_fx codegen_spells_from_mission_body in hybrid demo"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE33
+    if (state.timelineCueDrainCount == 0u) {
+        return {false, "fuse_cinematics timeline cue_queue drain in hybrid tickFrame"};
     }
 #endif
 #if FUSE_HYBRID_GATES_WAVE31

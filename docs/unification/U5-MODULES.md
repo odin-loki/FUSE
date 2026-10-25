@@ -449,6 +449,13 @@ Hybrid proof: `fuse_hybrid_module_gates_tests` — cockpit mount yaw on `SceneOb
 | `fuse_ai` | `TreeFileWatchRegistry::fseventsPollCount()` / `fseventsReloadCount()` accessors; hybrid temp `.bt` watch + `pollFSEventsFileChanges()` |
 | **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE31` asserts FSEvents poll or reload progressed in hybrid demo |
 
+#### Landed wave 33 (this slice)
+
+| Module | Delivered |
+|--------|-----------|
+| `fuse_cinematics` | Hybrid demo `tickFrame` drains `timeline.cue_queue()` via `CueQueue::drain()` after timeline advance |
+| **Hybrid gates** | `FUSE_HYBRID_GATES_WAVE33` asserts drained cue count > 0 across hybrid demo frames |
+
 ---
 
 ## 8. Related docs
