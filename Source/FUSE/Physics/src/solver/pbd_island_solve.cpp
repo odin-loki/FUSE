@@ -370,7 +370,6 @@ void per_pair_delta_application(RigidBodySoA& bodies,
     const ContactBody a{bodyA, invMassA, workBuffers.effectiveInvInertia(bodyA, invMassA)};
     const ContactBody b{bodyB, invMassB, workBuffers.effectiveInvInertia(bodyB, invMassB)};
     solveContactConstraint(bodies, workBuffers, contactIndex, contact, a, b, dt, contactCompliance, lambda);
-    applyContactRestitution(bodies, contact);
 }
 
 void per_pair_delta_application(RigidBodySoA& bodies,

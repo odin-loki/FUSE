@@ -66,7 +66,6 @@ struct SolveColorKernel {
         const ContactBody a{contact.bodyA, invMassA, work.effectiveInvInertia(contact.bodyA, invMassA)};
         const ContactBody b{contact.bodyB, invMassB, work.effectiveInvInertia(contact.bodyB, invMassB)};
         solveContactConstraint(bodies, work, ref, contact, a, b, p.dt, p.compliance, work.contactLambda(ref));
-        applyContactRestitution(bodies, contact);
     }
 };
 
