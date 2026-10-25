@@ -34,6 +34,7 @@
 #include <fuse/mechanics/interactable.hpp>
 #include <fuse/mechanics/message_component.hpp>
 #include <fuse/mechanics/animate_component.hpp>
+#include <fuse/mechanics/area_component.hpp>
 #include <fuse/mechanics/health_component.hpp>
 #include <fuse/mechanics/look_at_component.hpp>
 #include <fuse/mechanics/radio_component.hpp>
@@ -115,6 +116,10 @@
 #define FUSE_HYBRID_GATES_WAVE27 1
 #endif
 
+#ifndef FUSE_HYBRID_GATES_WAVE28
+#define FUSE_HYBRID_GATES_WAVE28 1
+#endif
+
 namespace fuse::hybrid::gates {
 
 constexpr int kFrameCount = 60;
@@ -152,6 +157,7 @@ struct State {
     fuse::mechanics::SpawnComponent leverSpawn{"lever_spawn", "outpost_guard_spawn"};
     fuse::mechanics::DestroyComponent leverDestroy{"lever_destroy"};
     fuse::mechanics::SoundComponent leverSound{"lever_sound", "Audio/lever_click"};
+    fuse::mechanics::AreaComponent leverArea{"lever_area", 12.f};
     fuse::mechanics::PolyhedronTriggerZone leverTrigger;
     fuse::mechanics::PhysicsTriggerBridge physicsTriggerBridge;
     fuse::mechanics::BroadphaseTriggerSync broadphaseTriggerSync;
@@ -209,11 +215,14 @@ struct State {
     float uaiskExpressionThreshold = 0.f;
     bool uaiskExpressionAstValid = false;
     u32 btDbvtOverlapHits = 0;
+    u32 areaOverlapCount = 0;
     u32 delayedMissionDispatchCount = 0;
     u32 timelineScrubCueCount = 0;
     std::string timelineScrubFirstCue;
     u32 missionSpellCodegenCount = 0;
     std::string missionSpellCodegenId;
+    u32 treeFileWatchFseventsPollCount = 0;
+    u32 treeFileWatchFseventsReloadCount = 0;
     float initialClearR = 0.f;
     float initialClearG = 0.f;
     float initialClearB = 0.f;

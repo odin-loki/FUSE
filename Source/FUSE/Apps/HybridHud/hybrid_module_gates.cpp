@@ -185,17 +185,28 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
             state.uaiskExpressionThreshold = targetingAst.conditions[0].threshold;
         }
     }
+#if FUSE_HYBRID_GATES_WAVE31
     {
         namespace fs = std::filesystem;
-        const fs::path tempPath = fs::temp_directory_path() / "fuse_hybrid_patrol_wave21.bt";
+        const fs::path tempPath = fs::temp_directory_path() / "fuse_hybrid_patrol_wave31.bt";
         {
             std::ofstream out(tempPath);
             out << "bb.action.set_flag flag=1\nroot=0\n";
         }
         state.treeFileWatchRegistry.watchProfileFromDisk(tempPath.string(), 8u);
+        const fuse::u32 fseventsPollsBefore = state.treeFileWatchRegistry.fseventsPollCount();
         (void)state.treeFileWatchRegistry.pollFSEventsFileChanges(state.aiRuntime);
+        {
+            std::ofstream out(tempPath, std::ios::trunc);
+            out << "bb.action.set_flag flag=0\nroot=0\n";
+        }
+        state.treeFileWatchFseventsReloadCount =
+            state.treeFileWatchRegistry.pollFSEventsFileChanges(state.aiRuntime);
+        state.treeFileWatchFseventsPollCount =
+            state.treeFileWatchRegistry.fseventsPollCount() - fseventsPollsBefore;
         fs::remove(tempPath);
     }
+#endif
 #if FUSE_HYBRID_GATES_SCRIPT
     state.scriptHost.init();
     state.scriptHostBridge.attach();
@@ -313,6 +324,14 @@ void setup(State& state, fuse::hybrid::HybridComposer& composer) {
         (void)state.leverSpawn.triggerSpawn();
         (void)state.leverDestroy.triggerDestroy();
         state.leverSound.play();
+
+#if FUSE_HYBRID_GATES_WAVE28
+        if (state.leverArea.contains(state.agent3D.x(), state.agent3D.y(), state.agent3D.z())) {
+            ++state.areaOverlapCount;
+        }
+        (void)state.leverArea.testObject(kAgentObjectId, state.agent3D.x(), state.agent3D.y(),
+                                         state.agent3D.z());
+#endif
 
         fuse::mechanics::InteractionContext mechanicsCtx;
         mechanicsCtx.verb = "use";
@@ -624,6 +643,16 @@ VerifyResult verify(const State& state, fuse::hybrid::HybridComposer& composer) 
 #if FUSE_HYBRID_GATES_WAVE27
     if (state.missionSpellCodegenCount == 0u || state.missionSpellCodegenId != "fireball") {
         return {false, "fuse_fx codegen_spells_from_mission_body in hybrid demo"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE31
+    if (state.treeFileWatchFseventsPollCount == 0u && state.treeFileWatchFseventsReloadCount == 0u) {
+        return {false, "fuse_ai TreeFileWatchRegistry pollFSEventsFileChanges progressed in hybrid demo"};
+    }
+#endif
+#if FUSE_HYBRID_GATES_WAVE28
+    if (state.leverArea.enterCount() == 0u && state.areaOverlapCount == 0u) {
+        return {false, "fuse_mechanics AreaComponent contains/test on polyhedron trigger enter"};
     }
 #endif
 #if FUSE_HYBRID_GATES_WAVE26
