@@ -119,7 +119,7 @@ are enforced in optimised builds and marked `RUN_SERIAL` + `perf;gate`.
 | Cloth 32×32 stable at 1/60; pins exact; wind direction; cloth-sphere without interpenetration; 64×64 < 1 ms | `fuse_b4_cloth_gates` | ✅ XPBD cloth rewritten (shear/bend, long-range tethers, per-particle drag, sphere contact with friction, banded parallel solve): stretch ≤ 1.05, 0 penetration, 64×64 ≈ 0.7 ms |
 | Transforms reflect physics every frame; `apply_impulse` Δv = J/m; Enter/Exit without misses or spurious callbacks; kinematic path + push; 1000 active < 8 ms; full pipeline 1000 bodies < 4 ms; 10k sleeping < 0.5 ms | `fuse_b4_manager_gates` | ✅ real ECS bridge (`Collider` component, `TagKinematic`). Solver fixes: centre-based `minSeparation` for all shapes (boxes sank into each other), forces over all substeps, kinematic motion, per-constraint delta application that walked every body and raced across island jobs. Perf: 1000 bodies 1.6 ms step / 0.65 ms single pass, 10k sleeping 0.016 ms |
 | Sphere carve exact; dual contouring watertight; debris mass ∝ voxels; debris collides; 10×5 debris no spike > 10 ms; 5×10 debris < 16 ms | `fuse_b4_destruction_gates` | ✅ `VoxelVolume` (carve, dual contouring, floating-piece detach) + ECS debris spawn: 590/590 voxels, 0 open edges, debris frames ≈ 0.9 ms |
-| GPU radix sort; broadphase < 2 ms / 10k (RTX 3090); narrowphase < 3 ms / 1k (RTX); solver 10 iterations × 10k contacts < 5 ms (RTX) | — | §5 (CUDA). CPU references: 1k-pair narrowphase 0.24 ms, 1000-body single pass 0.65 ms |
+| GPU radix sort; broadphase < 2 ms / 10k (RTX 3090); narrowphase < 3 ms / 1k (RTX); solver 10 iterations × 10k contacts < 5 ms (RTX) | `fuse_b4_physics_kernel_gates`, `fuse_b4_physics_resident_bench_dry_run`, `fuse_b4_physics_cuda_bench` | ✅ CI: resident pipeline == legacy CPU bit-for-bit (`--no-timings`) + host-bench workload (`--host-bench`). **Open (GPU):** `fuse_b4_physics_cuda_bench` (`--cuda-bench`, CUDA events, targets under `timingBudgetsEnforced()`; exit 77 skip without device) — §5 workstation. CPU perf gates: 1k-pair narrowphase 0.24 ms, 1000-body single pass 0.65 ms (`fuse_b4_manager_gates` / narrative tests) |
 
 **Rotation (done, `fuse_b4_rotation_gates`):** inertia, orientation integration, per-point contacts with
 generalized inverse mass, oriented box/capsule narrowphase, off-centre impulses; edge/corner drops settle flat,
@@ -171,7 +171,7 @@ only partially (CPU reference instead of CUDA, Wine instead of Windows) are anno
 
 ## 5. Hardware / manual gates (not provable in CI)
 
-RTX 3090 device selection, Nsight occupancy, ECS 500M components/s, CUDA physics timings (radix sort, 10k broadphase, 10k-contact solver), 60 fps / < 8 ms at 1080p, Win32 external memory
+RTX 3090 device selection, Nsight occupancy, ECS 500M components/s, CUDA physics timings (`fuse_b4_physics_cuda_bench`: radix sort + resident broadphase 10k, narrowphase 1k pairs, solver 10× ≥10k contacts), 60 fps / < 8 ms at 1080p, Win32 external memory
 handles, `cudaImportExternalMemory`, `compute-sanitizer`, RenderDoc captures, and on-screen WSI
 present. These need a developer machine with the target GPU; record results in
 [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) when run. The 2026-09-25 RTX 3090 workstation
