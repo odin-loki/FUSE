@@ -156,7 +156,7 @@ if(FUSE_CUDA_BACKEND)
         SKIP_RETURN_CODE 77
         SKIP_REGULAR_EXPRESSION "FUSE_GATE_SKIP: "
         TIMEOUT 900
-        LABELS "gate;cuda;perf")
+        LABELS "gate;cuda;cuda_device;perf")
 endif()
 
 # E18 (GAP-PHYS-HULL-MESH, GAP-PHYS-CHARACTER, UNI-B4-VOX-1): convex hulls (quickhull, SAT vs brute force,

@@ -86,10 +86,11 @@ Legacy Torque3D/Torque2D application targets are not part of this graph. World c
 
 ## Optional CI (GitHub Actions)
 
-The default **`main`** gate is [`.github/workflows/fuse-umbrella-linux.yml`](../.github/workflows/fuse-umbrella-linux.yml) (see Linux packages above). Neither optional workflow below runs on push or PR.
+The default **`main`** gate is [`.github/workflows/fuse-umbrella-linux.yml`](../.github/workflows/fuse-umbrella-linux.yml) (see Linux packages above).
 
 | Workflow | File | Actions status | Role |
 |----------|------|----------------|------|
+| FUSE CUDA compile-only (Linux) | [fuse-cuda-compile.yml](../.github/workflows/fuse-cuda-compile.yml) | **Active** — push/PR to `main` | Installs `nvidia-cuda-toolkit`; cubin/header + host-path CUDA gates (no NVIDIA GPU required). |
 | FUSE fuse_core (iOS simulator) | [fuse-core-ios.yml](../.github/workflows/fuse-core-ios.yml) | **Active** — `workflow_dispatch` only; verified green at `204a5f8e6` | macOS + Xcode; `fuse_core` iphonesimulator compile only. **Actions → FUSE fuse_core (iOS simulator) → Run workflow**. |
 | FUSE fuse_core (TSan nightly) | [fuse-tsan-nightly.yml](../.github/workflows/fuse-tsan-nightly.yml) | **Active** — `workflow_dispatch` + optional `03:00` UTC schedule (since `75db736a6`) | `FUSE_CORE_ENABLE_TSAN=ON`; builds `Source/FUSE/Core/tests/all` + asset runtime tests; `ctest -L tsan` (not every `fuse_core_*` name — Tracy nm probes stay on the umbrella job). **Actions → FUSE fuse_core (TSan nightly) → Run workflow** for manual runs. |
 
@@ -217,8 +218,14 @@ ctest --test-dir build/fuse-debug --output-on-failure
 ```bash
 cmake -B build-cuda -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CUDA_ARCHITECTURES=86 \
+  -DFUSE_BUILD_CORE=ON -DFUSE_BUILD_CORE_TESTS=ON \
   -DFUSE_BUILD_CUDA=ON \
   -DFUSE_BUILD_VULKAN=ON
+cmake --build build-cuda
+ctest --test-dir build-cuda -R '^(fuse_cuda_compile_gate|fuse_cuda_shared_headers_gate|fuse_compute_kernel_cuda_gate)$' --output-on-failure
 ```
 
 On Windows use MSVC + `vcvars64` and set `CMAKE_CUDA_ARCHITECTURES=86` for RTX 30xx.
+
+**Device gates (RTX 3090 / sm_86):** with the toolkit and an NVIDIA GPU, run `ctest --test-dir build-cuda -L cuda_device --output-on-failure`. CUDA–Vulkan interop tests need the **system NVIDIA Vulkan ICD** (do not set `VK_ICD_FILENAMES` to Lavapipe). Umbrella Linux configures `FUSE_BUILD_CUDA=ON` without a toolkit, so device tests register and **SKIP (77)**.

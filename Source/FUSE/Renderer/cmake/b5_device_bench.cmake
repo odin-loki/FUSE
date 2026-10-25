@@ -31,7 +31,7 @@ add_test(NAME fuse_b5_ddgi_device_cpu COMMAND fuse_b5_ddgi_device --cpu)
 set_tests_properties(fuse_b5_ddgi_device_cpu PROPERTIES LABELS "gate;renderer" TIMEOUT 600)
 add_test(NAME fuse_b5_ddgi_device COMMAND fuse_b5_ddgi_device)
 set_tests_properties(fuse_b5_ddgi_device PROPERTIES
-    LABELS "gate;cuda;device" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 900)
+    LABELS "gate;cuda;cuda_device" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 900)
 
 # --- Clustered cull + deferred shade ----------------------------------------------------------------------
 add_executable(fuse_b5_clustered_device ${_fuse_b5_bench_tests}/test_b5_clustered_device.cpp)
@@ -40,7 +40,7 @@ add_test(NAME fuse_b5_clustered_device_cpu COMMAND fuse_b5_clustered_device --cp
 set_tests_properties(fuse_b5_clustered_device_cpu PROPERTIES LABELS "gate;renderer" TIMEOUT 600)
 add_test(NAME fuse_b5_clustered_device COMMAND fuse_b5_clustered_device)
 set_tests_properties(fuse_b5_clustered_device PROPERTIES
-    LABELS "gate;cuda;device" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 900)
+    LABELS "gate;cuda;cuda_device" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 900)
 
 # --- Per-pass frame benchmark -----------------------------------------------------------------------------
 # CUDA passes: resident buffers + CUDA events (tests/cuda/b5_frame_bench_cuda.cu, the sdf_ray_march /
@@ -81,4 +81,4 @@ set_tests_properties(fuse_b5_frame_bench_smoke PROPERTIES
 # The RTX 3090 run: 1920x1080, real Vulkan driver (no ICD override), exit 77 without a CUDA device.
 add_test(NAME fuse_b5_frame_bench COMMAND fuse_b5_frame_bench --require-cuda)
 set_tests_properties(fuse_b5_frame_bench PROPERTIES
-    LABELS "cuda;device;bench" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 1800)
+    LABELS "gate;cuda;cuda_device;bench" RUN_SERIAL TRUE SKIP_RETURN_CODE 77 TIMEOUT 1800)

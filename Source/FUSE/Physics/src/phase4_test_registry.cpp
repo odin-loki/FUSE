@@ -20,11 +20,11 @@ const std::vector<Phase4TestCase> kCatalog = {
      true,
      false},
     {"broadphase.spatial_hash_10k",
-     "Spatial hash finds all overlapping pairs for 10k spheres (1k parallel parity smoke in fuse_physics_broadphase_tests)",
+     "Spatial hash finds all overlapping pairs for 10k spheres (fuse_b4_broadphase_gates)",
      Phase4TestCategory::BroadPhase,
-     false,
+     true,
      false},
-    {"narrowphase.sphere_sphere", "Sphere-sphere matches Bullet reference within 0.001f", Phase4TestCategory::NarrowPhase, false, false},
+    {"narrowphase.sphere_sphere", "Sphere-sphere matches Bullet reference within 0.001f", Phase4TestCategory::NarrowPhase, true, false},
     {"solver.spring_rest_length",
      "Distance constraint holds rest length; compliant spring stretches and recovers",
      Phase4TestCategory::Solver,
@@ -50,9 +50,9 @@ const std::vector<Phase4TestCase> kCatalog = {
      Phase4TestCategory::Solver,
      true,
      false},
-    {"solver.stack_stability", "Stack of 10 spheres stable after 5 seconds", Phase4TestCategory::Solver, false, false},
-    {"ccd.tunneling", "High-velocity sphere does not tunnel through wall", Phase4TestCategory::Ccd, false, false},
-    {"perf.manager_1000_bodies", "PhysicsManager::step < 8ms for 1000 bodies", Phase4TestCategory::Performance, false, false},
+    {"solver.stack_stability", "Stack of 10 spheres stable after 5 seconds", Phase4TestCategory::Solver, true, false},
+    {"ccd.tunneling", "High-velocity sphere does not tunnel through wall", Phase4TestCategory::Ccd, true, false},
+    {"perf.manager_1000_bodies", "PhysicsManager::step < 8ms for 1000 bodies", Phase4TestCategory::Performance, true, false},
 };
 
 } // namespace
