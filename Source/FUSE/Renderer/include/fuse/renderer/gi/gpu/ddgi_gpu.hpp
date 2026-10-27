@@ -49,6 +49,7 @@
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 #include <fuse/renderer/resources.hpp>
 #include <fuse/renderer/rg/graph.hpp>
+#include <fuse/renderer/vk/upload_queue.hpp>
 #include <fuse/renderer/rt/acceleration_structures.hpp>
 #include <fuse/types.hpp>
 
@@ -191,6 +192,10 @@ public:
     bool setSdfScene(const compute::SdfObject* objects, u32 objectCount, const DdgiSurface* surfaces, u32 surfaceCount);
     /// The next frame re-initialises the atlases (ddgi.reset) before updating.
     void reset() { m_needsReset = true; }
+
+    /// Copy a CPU oracle volume into the probe-major `ddgi.work` sections (same layout as ddgi.reset).
+    /// Skips ddgi.reset on the next update. Returns false when the desc mismatches or upload fails.
+    bool importCpuVolumeAtlases(const DdgiCpuVolume& volume, UploadQueue& upload);
 
     // --- frame ----------------------------------------------------------------------------------
     bool beginFrame(u64 frameSerial, const DdgiFrameDesc& frame);

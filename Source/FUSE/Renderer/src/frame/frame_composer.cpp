@@ -1,6 +1,7 @@
 // Frame composer: see include/fuse/renderer/frame/frame_composer.hpp.
 #include <fuse/renderer/frame/frame_composer.hpp>
 
+#include <fuse/renderer/research/rc/rc_reference.hpp>
 #include <fuse/renderer/rt/rt_caps.hpp>
 #include <fuse/renderer/temporal/temporal_types.hpp>
 #include <fuse/renderer/upscale/upscale_inputs.hpp>
@@ -379,6 +380,13 @@ bool FrameComposer::init(const FrameComposerDesc& desc) {
         optional(m_ssrc.init(d), kStageSsrc, "ssrc");
     }
     {
+        research::rc::RcGpuDesc d{};
+        d.device = desc.device;
+        d.allocator = desc.allocator;
+        d.bindless = desc.bindless;
+        optional(m_rc.init(d), kStageRcFlatland, "rc flatland");
+    }
+    {
         atmosphere::AtmosphereGpuDesc d{};
         d.device = desc.device;
         d.allocator = desc.allocator;
@@ -535,6 +543,7 @@ void FrameComposer::destroy() {
     m_atmosphere.destroy();
     m_ssfx.destroy();
     m_ssrc.destroy();
+    m_rc.destroy();
     m_lighting.destroy();
     m_ddgi.destroy();
     m_svgf.destroy();
@@ -694,6 +703,22 @@ bool FrameComposer::createBuffer(OwnedBuffer& o, u64 bytes, const char* name) {
     return true;
 }
 
+void FrameComposer::fillRcSceneDiagnostic_(u32 frameIndex) {
+    if (m_rcScene.buffer.mapped == nullptr || m_rcSceneW == 0u || m_rcSceneH == 0u) {
+        return;
+    }
+    research::rc::RcScene scene{};
+    scene.resize(m_rcSceneW, m_rcSceneH);
+    scene.clear();
+    const f32 t = static_cast<f32>(frameIndex % 60u) / 60.f;
+    scene.fillDisk(static_cast<f32>(m_rcSceneW) * 0.5f, static_cast<f32>(m_rcSceneH) * 0.5f,
+                   static_cast<f32>(m_rcSceneW) * 0.22f, 0.9f, 0.55f + 0.35f * t, 0.2f, true);
+    const usize bytes = scene.texels.size() * sizeof(f32);
+    if (bytes <= m_rcScene.buffer.desc.size) {
+        std::memcpy(m_rcScene.buffer.mapped, scene.texels.data(), bytes);
+    }
+}
+
 bool FrameComposer::createTargets() {
     const u32 w = m_desc.renderWidth;
     const u32 h = m_desc.renderHeight;
@@ -702,7 +727,15 @@ bool FrameComposer::createTargets() {
            createImage(m_restirImage, w, h, "frame.restir") && createImage(m_reflectImage, w, h, "frame.reflect") &&
            createImage(m_resolveImage, w, h, "frame.scene_color") &&
            createBuffer(m_background, n * 16u, "frame.background") && createBuffer(m_distance, n * 4u, "frame.distance") &&
-           createBuffer(m_visibility, n * 4u, "frame.visibility");
+           createBuffer(m_visibility, n * 4u, "frame.visibility") && [&]() {
+        BufferDesc rcDesc{};
+        rcDesc.size = static_cast<usize>(static_cast<u64>(m_rcSceneW) * m_rcSceneH * 16u);
+        rcDesc.usage = bufferUsage({BufferUsage::Storage, BufferUsage::ShaderDeviceAddress, BufferUsage::TransferDst});
+        rcDesc.memoryUsage = MemoryUsage::CpuToGpu;
+        rcDesc.name = "frame.rc_scene";
+        return m_desc.allocator->createBuffer(rcDesc, m_rcScene.buffer) && m_rcScene.buffer.deviceAddress != 0u &&
+               m_rcScene.buffer.mapped != nullptr;
+    }();
 }
 
 void FrameComposer::destroyTargets() {
@@ -715,7 +748,7 @@ void FrameComposer::destroyTargets() {
         }
         *o = OwnedImage{};
     }
-    for (OwnedBuffer* o : {&m_background, &m_distance, &m_visibility}) {
+    for (OwnedBuffer* o : {&m_background, &m_distance, &m_visibility, &m_rcScene}) {
         if (o->buffer.handle != nullptr) {
             m_desc.allocator->destroyBuffer(o->buffer);
         }
@@ -897,6 +930,9 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
                 plan |= kStageAtmosphere;
             }
         }
+    }
+    if (settings.rcFlatland) {
+        plan |= kStageRcFlatland;
     }
     if (settings.ssfx) {
         plan |= kStageSsfx;
@@ -1467,6 +1503,10 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     std::memcpy(m_prevDrawViewProj, m_drawViewProj, sizeof(m_drawViewProj));
     std::memcpy(m_prevView, m_view, sizeof(m_view));
     m_hasPrev = true;
+    if ((plan & kStageRcFlatland) != 0u) {
+        fillRcSceneDiagnostic_(desc.frameIndex);
+    }
+
     m_begun = ok;
     return ok;
 }
@@ -1681,6 +1721,17 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
         out.sky = sky;
         chain = sky;
         ran |= kStageSky;
+    }
+
+    // --- WP-6.5 flatland RC (host scene buffer + rc.*; GPU pack from lit/depth is a follow-up) ----------------
+    if ((plan & kStageRcFlatland) != 0u && m_rcScene.buffer.deviceAddress != 0u) {
+        research::rc::RcSettings rs = m_settings.rcSettings;
+        if (m_rc.beginFrame(m_frame.serial, rs, m_rcSceneW, m_rcSceneH, m_rcScene.buffer.deviceAddress)) {
+            const research::rc::RcGraphRefs rcRefs = m_rc.importInto(graph);
+            const rg::BufferRef sceneRef = importBuffer(graph, m_rcScene, "frame.rc_scene_read");
+            m_rc.addPasses(graph, rcRefs, sceneRef);
+            ran |= kStageRcFlatland;
+        }
     }
 
     // --- SSRC (WP-6.5b, after sky, before SSFX) ---------------------------------------------------------------
@@ -2004,6 +2055,9 @@ void FrameComposer::collectRetired(u64 completedSerial) {
     }
     if ((m_available & kStageSsrc) != 0u) {
         m_ssrc.collectRetired(completedSerial);
+    }
+    if ((m_available & kStageRcFlatland) != 0u) {
+        m_rc.collectRetired(completedSerial);
     }
     if ((m_available & kStageAtmosphere) != 0u) {
         m_atmosphere.collectRetired(completedSerial);

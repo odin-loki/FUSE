@@ -594,6 +594,32 @@ bool packAtlasesHalf(const DdgiCpuVolume& volume,
            packDistanceAtlasRg16f(volume, distance_rg16f);
 }
 
+bool packProbeMajorGpuBlob(const DdgiCpuVolume& volume, DdgiProbeMajorGpuBlob& out) {
+    if (!volume.isReady()) {
+        return false;
+    }
+    out.irradiance.clear();
+    out.distance.clear();
+    for (const Vec3& e : volume.irradianceAtlas()) {
+        out.irradiance.push_back(e.x);
+        out.irradiance.push_back(e.y);
+        out.irradiance.push_back(e.z);
+    }
+    for (const Vec2& m : volume.distanceAtlas()) {
+        out.distance.push_back(m.x);
+        out.distance.push_back(m.y);
+    }
+    out.updateCounts = volume.updateCounts();
+    out.probeData.clear();
+    for (const Vec4& p : volume.probeData()) {
+        out.probeData.push_back(p.x);
+        out.probeData.push_back(p.y);
+        out.probeData.push_back(p.z);
+        out.probeData.push_back(p.w);
+    }
+    return true;
+}
+
 bool packDistanceAtlasRg16f(const DdgiCpuVolume& volume, std::vector<u16>& out) {
     if (!volume.isReady()) {
         return false;

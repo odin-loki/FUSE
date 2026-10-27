@@ -552,6 +552,49 @@ void DdgiGpu::addSamplingUse(rg::Graph& graph, const DdgiGraphRefs& refs, u8 sta
     graph.addPass("ddgi.sample_use", nullptr, nullptr).use(refs.work, rg::Access::StorageRead, {}, stages).neverCull();
 }
 
+bool DdgiGpu::importCpuVolumeAtlases(const DdgiCpuVolume& volume, UploadQueue& upload) {
+    if (!m_ready || !volume.isReady() || m_work.handle == nullptr) {
+        return false;
+    }
+    if (volume.desc().grid_dims.x != m_desc.volume.grid_dims.x || volume.desc().grid_dims.y != m_desc.volume.grid_dims.y ||
+        volume.desc().grid_dims.z != m_desc.volume.grid_dims.z ||
+        volume.desc().irradiance_res != m_desc.volume.irradiance_res ||
+        volume.desc().depth_res != m_desc.volume.depth_res) {
+        return false;
+    }
+    ddgi_cpu::DdgiProbeMajorGpuBlob blob{};
+    if (!ddgi_cpu::packProbeMajorGpuBlob(volume, blob)) {
+        return false;
+    }
+    const usize irrBytes = static_cast<usize>(m_layout.irradianceBytes);
+    const usize distBytes = static_cast<usize>(m_layout.distanceBytes);
+    const usize countBytes = static_cast<usize>(m_probeCount) * sizeof(u32);
+    const usize probeBytes = static_cast<usize>(m_probeCount) * 16u;
+    if (blob.irradiance.size() * sizeof(f32) != irrBytes || blob.distance.size() * sizeof(f32) != distBytes ||
+        blob.updateCounts.size() * sizeof(u32) != countBytes || blob.probeData.size() * sizeof(f32) != probeBytes) {
+        return false;
+    }
+    auto stageCopy = [&](const void* data, usize bytes, u64 dstOffset) -> bool {
+        usize srcOffset = 0;
+        if (!upload.stage(data, bytes, srcOffset)) {
+            return false;
+        }
+        return upload.recordBufferCopy(m_work.handle, srcOffset, dstOffset, bytes);
+    };
+    if (!stageCopy(blob.irradiance.data(), irrBytes, m_layout.irradiance) ||
+        !stageCopy(blob.distance.data(), distBytes, m_layout.distance) ||
+        !stageCopy(blob.updateCounts.data(), countBytes, m_layout.updateCounts) ||
+        !stageCopy(blob.probeData.data(), probeBytes, m_layout.probeData)) {
+        return false;
+    }
+    const UploadTicket ticket = upload.flush();
+    if (!upload.wait(ticket)) {
+        return false;
+    }
+    m_needsReset = false;
+    return true;
+}
+
 void DdgiGpu::recordDispatch(const rg::PassContext& context, void* user) {
 #if defined(FUSE_VULKAN_BACKEND)
     const PassRecord& r = *static_cast<const PassRecord*>(user);

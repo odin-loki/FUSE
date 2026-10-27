@@ -65,6 +65,7 @@
 #include <fuse/renderer/shadow/vsm_raster/vsm_shadows.hpp>
 #include <fuse/renderer/ssfx_gpu/ssfx_gpu.hpp>
 #include <fuse/renderer/ssrc/ssrc_gpu.hpp>
+#include <fuse/renderer/research/rc/rc_gpu.hpp>
 #include <fuse/renderer/temporal/taau_gpu.hpp>
 #include <fuse/renderer/temporal/temporal_motion.hpp>
 #include <fuse/renderer/upscale_backends/fsr3/fsr3_gpu.hpp>
@@ -127,6 +128,7 @@ enum FrameStage : u32 {
     kStageReflectionDenoise = 1u << 23, ///< T2: the RT reflection signal through SVGF (IDenoiser) before frame.reflect
     kStageUi = 1u << 24,                ///< E02 UI / HUD composite after post (FrameUiSource set, FrameSettings::ui)
     kStageSsrc = 1u << 25,              ///< WP-6.5b screen-space radiance cascades (near-field GI + AO)
+    kStageRcFlatland = 1u << 26,        ///< WP-6.5 flatland radiance cascades (research, optional diagnostic)
 };
 
 /// What the UI callback records into (E02).
@@ -225,6 +227,9 @@ struct FrameSettings {
     /// WP-6.5b near-field diffuse GI + AO over the depth buffer (optional; replaces SSFX SSGI when both run).
     bool ssrc = false;
     ssrc::SsrcSettings ssrcSettings{};
+    /// WP-6.5 flatland RC over a downsampled 2D scene buffer built from lit colour + depth (diagnostic).
+    bool rcFlatland = false;
+    research::rc::RcSettings rcSettings{};
     /// SSR rays (and SSGI rays when DDGI is off: DDGI's atmosphere misses already carry the sky irradiance) that
     /// leave the screen or reach the sky return the WP-8.2 sky radiance, when the frame has a sky (`sky`: frame.sky
     /// runs before SSFX); overrides ssfxSettings.skyFallback / ssgiSkyFallback.
@@ -438,6 +443,7 @@ private:
     void destroyTargets();
     bool createImage(OwnedImage& o, u32 width, u32 height, const char* name);
     bool createBuffer(OwnedBuffer& o, u64 bytes, const char* name);
+    void fillRcSceneDiagnostic_(u32 frameIndex);
     rg::TextureRef importImage(rg::Graph& graph, OwnedImage& o, const char* name);
     rg::BufferRef importBuffer(rg::Graph& graph, OwnedBuffer& o, const char* name);
     u32 sampledHandle(const Texture& texture);
@@ -467,6 +473,7 @@ private:
     lighting_gpu::ClusteredLighting m_lighting;
     ssfx_gpu::SsfxGpu m_ssfx;
     ssrc::SsrcGpu m_ssrc;
+    research::rc::RadianceCascadesGpu m_rc;
     atmosphere::AtmosphereGpu m_atmosphere;
     volumetric_gpu::FroxelFog m_fog;
     clouds::VolumetricClouds m_clouds;
@@ -503,6 +510,9 @@ private:
     OwnedBuffer m_background{};     ///< f32x4 (clouds background)
     OwnedBuffer m_distance{};       ///< f32 (clouds scene distance)
     OwnedBuffer m_visibility{};     ///< f32 (packed denoised shadow)
+    OwnedBuffer m_rcScene{};        ///< f32x4 flatland scene texels for WP-6.5 RC
+    u32 m_rcSceneW = 64u;
+    u32 m_rcSceneH = 64u;
     SampledSlot m_sampled[kSampledSlots]{};
     u32 m_sampledCount = 0;
     PassRecord m_records[kMaxRecords]{};

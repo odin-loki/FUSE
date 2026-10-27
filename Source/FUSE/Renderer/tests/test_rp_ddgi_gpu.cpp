@@ -1879,6 +1879,39 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
     return 0;
 }
 
+int runCpuImport(Context& ctx) {
+    const DDGIDesc desc = roomVolume();
+    DdgiCpuConfig config{};
+    DdgiCpuVolume cpu;
+    expect(cpu.init(desc, config), "cpu volume init");
+    const DdgiCpuScene scene = roomScene();
+    std::vector<u32> indices(cpu.probeCount());
+    for (u32 i = 0; i < cpu.probeCount(); ++i) {
+        indices[i] = i;
+    }
+    expect(cpu.updateProbes(scene, indices.data(), cpu.probeCount(), 0u).probes_updated == cpu.probeCount(),
+           "cpu volume update all probes");
+
+    DdgiGpu gpu;
+    DdgiGpuDesc gd{};
+    gd.device = ctx.device.get();
+    gd.allocator = ctx.allocator.get();
+    gd.bindless = &ctx.bindless;
+    gd.volume = desc;
+    gd.config = config;
+    gd.tracer = DdgiTracer::Sdf;
+    expect(gpu.init(gd), "DdgiGpu init");
+    expect(gpu.importCpuVolumeAtlases(cpu, ctx.upload), "importCpuVolumeAtlases");
+
+    ddgi_cpu::DdgiProbeMajorGpuBlob blob{};
+    expect(ddgi_cpu::packProbeMajorGpuBlob(cpu, blob), "pack probe-major blob");
+    expect(blob.irradiance.size() * sizeof(f32) == gpu.layout().irradianceBytes, "irradiance bytes match work layout");
+    expect(blob.distance.size() * sizeof(f32) == gpu.layout().distanceBytes, "distance bytes match work layout");
+    vkDeviceWaitIdle(ctx.vkDevice);
+    gpu.destroy();
+    return g_failures > 0 ? 1 : 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1913,6 +1946,8 @@ int main(int argc, char** argv) {
             rc = runShade(ctx);
         } else if (mode == "zero_alloc") {
             rc = runZeroAlloc(ctx, false);
+        } else if (mode == "cpu_import") {
+            rc = runCpuImport(ctx);
         } else {
             std::fprintf(stderr, "unknown --mode %s\n", mode.c_str());
             return 2;
