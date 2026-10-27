@@ -82,7 +82,7 @@ float3 fogInScattering(FogFrame* R, float3 p, float3 v) {
     if ((R.flags & kFogFlagGi) != 0u) {
         const float3 n = float3(0.0, 1.0, 0.0);
         const float3 view = float3(-v.x, -v.y, -v.z);
-        L = L + fuse_ddgi_sample_irradiance_view(R.ddgi, p, n, view);
+        L = L + fuseDdgiSampleIrradianceView(R.ddgi, p, n, view);
     }
     if ((R.flags & kFogFlagLights) == 0u) {
         return L;
