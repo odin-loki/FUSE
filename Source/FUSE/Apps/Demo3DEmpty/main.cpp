@@ -78,18 +78,7 @@ int main(int argc, char** argv) {
         (void)world3D.spawnDirectionalLight(toSun, sunColor, 2.5f);
         fuse::log::info("demo_3d_empty: level has no Sun; default directional light added");
     }
-    // Camera at the level's spawn point, looking down at the ground ahead of it.
-    float spawn[3] = {0.f, 10.f, 0.f};
-    fuse::demo::check(world3D.findSpawnPoint(spawn), "spawn point found in the level");
-    fuse::world3d::RenderCamera3D camera{};
-    for (int a = 0; a < 3; ++a) {
-        camera.eye[a] = spawn[a];
-    }
-    camera.target[0] = spawn[0];
-    camera.target[1] = 0.f;
-    camera.target[2] = spawn[2] - spawn[1];
-    camera.valid = true;
-    world3D.setCamera(camera);
+    fuse::demo::check(world3D.enterPlayMode(), "standalone play mode places camera at spawn and enables physics");
 
     // GPU path when the build has the Vulkan RHI and a device exists; the PlaceholderRenderer otherwise.
     fuse::hybrid::HybridComposer localComposer;

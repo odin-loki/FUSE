@@ -110,6 +110,14 @@ public:
     bool saveWorld(const std::string& fuselevelPath, std::string* error = nullptr);
     /// World-space position of the first SpawnMarker entity (false when the level has none).
     bool findSpawnPoint(f32 outPosition[3]);
+    /// Place `RenderCamera3D` at the level spawn (eye at marker, target on the ground ahead) — same layout as
+    /// `demo_3d_empty` and editor viewport spawn previews.
+    bool applySpawnViewCamera();
+    /// Standalone play (non-editor): snapshot camera/physics, move the view to spawn, enable physics + runtime schedule.
+    bool enterPlayMode();
+    /// Restore the snapshot taken by `enterPlayMode()` (no-op when not playing).
+    bool exitPlayMode();
+    [[nodiscard]] bool isPlayModeActive() const { return m_playModeActive; }
 
     SceneObject3D* root() { return m_root.get(); }
     const SceneObject3D* root() const { return m_root.get(); }
@@ -244,6 +252,14 @@ private:
     RuntimeScheduleDesc m_scheduleDesc{};
     RuntimeSchedule m_schedule;
     bool m_physicsEnabled = false;
+
+    struct PlayModeSnapshot {
+        RenderCamera3D camera{};
+        bool cameraValid = false;
+        bool physicsEnabled = false;
+    };
+    bool m_playModeActive = false;
+    PlayModeSnapshot m_playSnapshot{};
 };
 
 } // namespace fuse::world3d

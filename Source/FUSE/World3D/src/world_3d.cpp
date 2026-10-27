@@ -548,4 +548,56 @@ void World3D::render(frame::FrameCtx& ctx) {
     }
 }
 
+bool World3D::applySpawnViewCamera() {
+    f32 spawn[3] = {0.f, 10.f, 0.f};
+    if (!findSpawnPoint(spawn)) {
+        return false;
+    }
+
+    RenderCamera3D camera{};
+    for (u32 axis = 0; axis < 3u; ++axis) {
+        camera.eye[axis] = spawn[axis];
+    }
+    camera.target[0] = spawn[0];
+    camera.target[1] = 0.f;
+    camera.target[2] = spawn[2] - spawn[1];
+    camera.valid = true;
+    setCamera(camera);
+    return true;
+}
+
+bool World3D::enterPlayMode() {
+    if (m_playModeActive) {
+        return true;
+    }
+
+    m_playSnapshot.camera = m_camera;
+    m_playSnapshot.cameraValid = m_camera.valid;
+    m_playSnapshot.physicsEnabled = m_physicsEnabled;
+
+    if (!applySpawnViewCamera()) {
+        return false;
+    }
+
+    setPhysicsEnabled(true);
+    schedule().setStageEnabled(RuntimeStage::Physics, true);
+    m_playModeActive = true;
+    return true;
+}
+
+bool World3D::exitPlayMode() {
+    if (!m_playModeActive) {
+        return true;
+    }
+
+    m_camera = m_playSnapshot.camera;
+    if (!m_playSnapshot.cameraValid) {
+        m_camera.valid = false;
+    }
+    setPhysicsEnabled(m_playSnapshot.physicsEnabled);
+    schedule().setStageEnabled(RuntimeStage::Physics, m_physicsEnabled);
+    m_playModeActive = false;
+    return true;
+}
+
 } // namespace fuse::world3d

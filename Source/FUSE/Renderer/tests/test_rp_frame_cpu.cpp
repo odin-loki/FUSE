@@ -388,7 +388,7 @@ void testApi() {
                           kStageLighting, kStageSsfx, kStageAtmosphere, kStageSky, kStageFog, kStageClouds,
                           kStageSplats, kStageResolve, kStageTaau, kStageFsr3, kStagePost, kStageAerial,
                           kStageRestir, kStageRtReflections, kStageForward, kStageFrameGen, kStageRestirDenoise,
-                          kStageReflectionDenoise};
+                          kStageReflectionDenoise, kStageSsrc, kStageUi};
     u32 all = 0;
     bool disjoint = true;
     for (const u32 s : stages) {

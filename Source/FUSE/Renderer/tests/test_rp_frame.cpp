@@ -956,6 +956,13 @@ u32 plannedStages(FrameTier tier, const FrameSettings& fs) {
             p |= fs.rtReflectionAtmosphereSky ? kStageAtmosphere : 0u;
         }
     }
+    p |= fs.ssrc ? kStageSsrc : 0u;
+    if (fs.ssrc && fs.ssrcSettings.ddgi) {
+        p |= kStageDdgi;
+        if (fs.ddgiAtmosphereSky) {
+            p |= kStageAtmosphere;
+        }
+    }
     p |= fs.ssfx ? kStageSsfx : 0u;
     p |= fs.sky ? (kStageSky | kStageAtmosphere) : 0u;
     p |= fs.aerialPerspective ? (kStageAerial | kStageAtmosphere) : 0u;
@@ -968,6 +975,36 @@ u32 plannedStages(FrameTier tier, const FrameSettings& fs) {
     p |= fs.post ? kStagePost : 0u;
     p |= (fs.frameGen && fs.upscaler != FrameUpscaler::None) ? kStageFrameGen : 0u; // display != render extent
     return p;
+}
+
+int runSsrc(Context& ctx, FrameTier tier) {
+    Rig rig;
+    if (const int rc = initRig(ctx, rig, tier); rc != 0) {
+        return rc;
+    }
+    if ((rig.composer.available() & kStageSsrc) == 0u) {
+        std::printf("SKIP: ssrc stage unavailable (%s)\n", rig.composer.reason());
+        return kSkip;
+    }
+    FrameSettings fs = baseSettings();
+    fs.ssfx = false;
+    fs.ssrc = true;
+    fs.ssrcSettings.compose = true;
+    fs.ssrcSettings.ddgi = true;
+    for (u32 frame = 0; frame < 4u; ++frame) {
+        Frame out{};
+        const bool ok = runFrame(ctx, rig.scene, rig.composer, rig.graph, frameDesc(0, frame, frame == 0u), fs, frame == 3u,
+                                 &out);
+        expect(ok, "ssrc frame executes");
+        expect((out.ran & kStageSsrc) != 0u, "ssrc stage ran");
+        if (frame == 3u) {
+            f64 mean = 0.0;
+            expect(finiteAndLit(out.bytes[kRbLit], mean), "ssrc lit chain finite and not black");
+            std::printf("  ssrc frame %u: lit mean %.4f\n", frame, mean);
+        }
+    }
+    std::printf("ssrc %s: 4 frames, validation messages %u\n", tierName(tier), g_messages);
+    return 0;
 }
 
 // --- modes ------------------------------------------------------------------------------------------------
@@ -1668,6 +1705,8 @@ int main(int argc, char** argv) {
             rc = runGolden(ctx, tier);
         } else if (mode == "parity") {
             rc = runParity(ctx, tier);
+        } else if (mode == "ssrc") {
+            rc = runSsrc(ctx, tier);
         } else {
             std::fprintf(stderr, "unknown mode %s\n", mode.c_str());
             return 2;

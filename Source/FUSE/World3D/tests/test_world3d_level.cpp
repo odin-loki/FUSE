@@ -128,6 +128,13 @@ void testDemoLevel(const fs::path& dir) {
     float spawnPoint[3] = {0.f, 0.f, 0.f};
     expectTrue(world.findSpawnPoint(spawnPoint) && nearly(spawnPoint[1], 10.f), "findSpawnPoint = spawn sphere");
 
+    expectTrue(world.enterPlayMode(), "enterPlayMode at spawn");
+    expectTrue(world.isPlayModeActive(), "play mode active");
+    expectTrue(world.camera().valid && nearly(world.camera().eye[1], 10.f), "spawn view camera at marker height");
+    expectTrue(world.isPhysicsEnabled(), "play mode enables physics");
+    expectTrue(world.exitPlayMode(), "exitPlayMode");
+    expectTrue(!world.isPlayModeActive(), "play mode inactive after exit");
+
     fuse::ecs::Registry& registry = world.registry();
     registry.each<fuse::ecs::Collider, fuse::ecs::RigidBody, fuse::ecs::Mesh>(
         [&](fuse::ecs::EntityID, fuse::ecs::Collider& collider, fuse::ecs::RigidBody& body, fuse::ecs::Mesh& mesh) {

@@ -97,6 +97,8 @@ No parallel tick; no cross-thread legacy calls (per [architecture-parallel.md](.
 
 ### 3.1 Incremental quarantine progress (2026-09-19)
 
+> **Engine probe removed (2026-09-25):** The opt-in CMake option `-DFUSE_T3D_LEGACY_ENGINE_PROBE=ON`, the `fuse_t3d_legacy` target, and the stub tree under `Source/FUSE/Legacy/T3D/src/engine_probe/` (including `gbitmap_probe_stub.cpp`) were deleted when FUSE became a product-only monorepo (`c1141a181`, `25b0d4f02`). Those probes compiled curated Torque3D `Engine/source/**/*.cpp` batches against quarantine headers; **`Engine/` is not vendored in this repository anymore**, so the probe cannot be restored without re-introducing that tree. The batch table and stub inventory below are **archival** (what was proven before removal). Default CI and `fuse_runtime_smoke` exercise native FUSE only — see §1 banner.
+
 | Surface | Status | Next step |
 |---------|--------|-----------|
 | `Con::` logging + variables + paths + data | ✅ **33/33** APIs per dimension | class/command registration (`addCommand`, …) deferred to U3 |
@@ -105,7 +107,7 @@ No parallel tick; no cross-thread legacy calls (per [architecture-parallel.md](.
 | SimObject bridge (U3 slice) | ✅ `LegacySimObjectStub` ↔ `fuse::Object` + scene nodes | `className` / `internalName` / `parentName` / `layer` round-trip; first real `SimObject` `.cpp` batch still blocked |
 | StringTable quarantine | ✅ owned-copy `StringInternTable` per dimension | Route to FUSE core intern (U3 / R14) |
 | Image mip compress | ✅ `compressMipsParallel` (squish + `parallel_for`) | `imageUtils.cpp` call-site swap deferred — Engine batch blocked (below) |
-| Engine `.cpp` probe | ✅ **opt-in** `-DFUSE_T3D_LEGACY_ENGINE_PROBE=ON` | Batch 1–18 (see table); batch 18: `zipArchive` core subtree (MemStream deflate write/read — no `zipVolume`/`zipObject`) |
+| Engine `.cpp` probe | **Removed** (was opt-in `FUSE_T3D_LEGACY_ENGINE_PROBE`) | Archival batches 1–18 below; not buildable without restoring `Engine/` + Legacy CMake from git history |
 | Full `SimObject` | ⏳ **blocked** | 122-header closure, `IMPLEMENT_CONOBJECT`, Gui/Con/sim pulls, T2D `SimObject` ODR — **not** force-linking `simObject.cpp` |
 | Gui / script VM | ⏳ blocked | See §3 table |
 
@@ -202,12 +204,12 @@ Re-run collision inventory at U3 when first real Engine `.cpp` batches land in q
 
 | Item | Status |
 |------|--------|
-| `fuse_t3d_legacy` + `fuse_t2d_legacy` CMake targets | ✅ |
-| `fuse_runtime_smoke` one-process binary | ✅ |
-| Prefix strategy documented + tooling | ✅ |
+| `fuse_t3d_legacy` + `fuse_t2d_legacy` CMake targets | **N/A (removed 2026-09-25)** — native `fuse_runtime_smoke` only |
+| `fuse_runtime_smoke` one-process binary | ✅ (native FUSE core + worlds + optional B7) |
+| Prefix strategy documented + tooling | **N/A** — `prefix_legacy_symbols.py` removed with Legacy tree |
 | ASan-friendly smoke target | ✅ `FUSE_SMOKE_ENABLE_ASAN` |
-| Explicit init order documented | ✅ §2.3 |
-| Remaining conflicts listed | ✅ §4 |
+| Explicit init order documented | ✅ §2.3 (historical dual-legacy order) |
+| Remaining collisions listed | ✅ §4 (still true for any future Engine import) |
 | Full Engine dual-init | ⏳ **Blocked** — see §3 |
 
 ---
@@ -218,7 +220,7 @@ Re-run collision inventory at U3 when first real Engine `.cpp` batches land in q
 |--------|-------|
 | **HEAD** | *(updated at push)* — batch 18 deepen (zip disk ReadWrite + PNG pixel verify) |
 | **Consecutive smoke** | 10/10 Release + 10/10 ASan (`fuse_runtime_smoke` loop) |
-| **verify-shims** | `python3 Tools/FUSE/prefix_legacy_symbols.py --verify-shims --dimension t3d/t2d` |
+| **verify-shims** | **N/A** (tool removed); use `ctest -R fuse_runtime_smoke` and native parity demos under `Samples/unification/` |
 | **broadphase** | `ctest -R fuse_physics_broadphase_tests` |
 
 **Remaining Engine probe batches (post-18):** `zipVolume.cpp` (FS mount), `memVolume.cpp` / `volume.cpp` (virtual mount), `streamObject.cpp` (SimObject), full `gBitmap.cpp` I/O, `str.cpp`/`uuid.cpp` real TUs, `zipObject.cpp`, Gui/script VM stacks. See **Probe surface exhaustion** table in §3.1 — util/stream safe band largely covered; future batches should deepen existing smoke/stubs rather than force-link blocked TUs.

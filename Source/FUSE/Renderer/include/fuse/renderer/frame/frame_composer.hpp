@@ -64,6 +64,7 @@
 #include <fuse/renderer/shadow/vsm/virtual_shadow_map.hpp>
 #include <fuse/renderer/shadow/vsm_raster/vsm_shadows.hpp>
 #include <fuse/renderer/ssfx_gpu/ssfx_gpu.hpp>
+#include <fuse/renderer/ssrc/ssrc_gpu.hpp>
 #include <fuse/renderer/temporal/taau_gpu.hpp>
 #include <fuse/renderer/temporal/temporal_motion.hpp>
 #include <fuse/renderer/upscale_backends/fsr3/fsr3_gpu.hpp>
@@ -125,6 +126,7 @@ enum FrameStage : u32 {
     kStageRestirDenoise = 1u << 22,     ///< T2: the ReSTIR DI signal through SVGF (IDenoiser) before frame.restir
     kStageReflectionDenoise = 1u << 23, ///< T2: the RT reflection signal through SVGF (IDenoiser) before frame.reflect
     kStageUi = 1u << 24,                ///< E02 UI / HUD composite after post (FrameUiSource set, FrameSettings::ui)
+    kStageSsrc = 1u << 25,              ///< WP-6.5b screen-space radiance cascades (near-field GI + AO)
 };
 
 /// What the UI callback records into (E02).
@@ -220,6 +222,9 @@ struct FrameSettings {
     denoise::SvgfSettings denoiser{};  ///< the signal is forced to Shadow
     bool ssfx = true;
     ssfx_gpu::SsfxGpuSettings ssfxSettings{};
+    /// WP-6.5b near-field diffuse GI + AO over the depth buffer (optional; replaces SSFX SSGI when both run).
+    bool ssrc = false;
+    ssrc::SsrcSettings ssrcSettings{};
     /// SSR rays (and SSGI rays when DDGI is off: DDGI's atmosphere misses already carry the sky irradiance) that
     /// leave the screen or reach the sky return the WP-8.2 sky radiance, when the frame has a sky (`sky`: frame.sky
     /// runs before SSFX); overrides ssfxSettings.skyFallback / ssgiSkyFallback.
@@ -279,6 +284,7 @@ struct FrameGraphOutputs {
     lighting_gpu::LightingGraphRefs lighting{};
     rg::TextureRef lit;        ///< WP-2.1 lit image
     rg::TextureRef ssfx;       ///< WP-6.3 composed image
+    rg::TextureRef ssrc;       ///< WP-6.5b composed lit + indirect (when compose)
     rg::TextureRef sky;        ///< frame.sky output
     rg::TextureRef fog;        ///< WP-8.1 applied image
     rg::BufferRef splats;      ///< WP-9.2 image buffer (output section: GsplatRenderer copy source Output)
@@ -460,6 +466,7 @@ private:
     gi_gpu::DdgiGpu m_ddgi;
     lighting_gpu::ClusteredLighting m_lighting;
     ssfx_gpu::SsfxGpu m_ssfx;
+    ssrc::SsrcGpu m_ssrc;
     atmosphere::AtmosphereGpu m_atmosphere;
     volumetric_gpu::FroxelFog m_fog;
     clouds::VolumetricClouds m_clouds;
