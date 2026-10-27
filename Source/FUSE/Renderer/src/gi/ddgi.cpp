@@ -1,4 +1,5 @@
 #include <fuse/renderer/gi/ddgi.hpp>
+#include <fuse/compute_kernel/load_scale.hpp>
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
 #include <fuse/renderer/gi/ddgi_kernels.hpp>
 #include <fuse/renderer/gi/ddgi_probe_kernel.hpp>
@@ -1959,9 +1960,11 @@ bool DDGI::update(u32 frame_index, void* cuda_stream) {
     const u32 probe_count = static_cast<u32>(m_cache.size());
     u32 scheduled_indices[256]{};
     u32 scheduled_count = 0u;
+    const u32 budget =
+        fuse::kernel::scaled_count(m_desc.probes_per_frame, fuse::kernel::load_scale().probes);
     ddgi_util::scheduleProbeUpdates(frame_index,
                                     probe_count,
-                                    m_desc.probes_per_frame,
+                                    budget,
                                     scheduled_indices,
                                     static_cast<u32>(sizeof(scheduled_indices) / sizeof(scheduled_indices[0])),
                                     &scheduled_count);
@@ -2021,8 +2024,7 @@ bool DDGI::uploadAtlases(UploadTicket* outTicket) {
     if (!m_ready || m_resources == nullptr || m_cpu == nullptr) {
         return false;
     }
-    if (!ddgi_cpu::packIrradianceAtlasRgba16f(*m_cpu, m_irradiance_staging) ||
-        !ddgi_cpu::packDistanceAtlasRg16f(*m_cpu, m_distance_staging)) {
+    if (!ddgi_cpu::packAtlasesHalf(*m_cpu, m_irradiance_staging, m_distance_staging)) {
         return false;
     }
     const UploadTicket irradiance = m_resources->uploadTexture(m_volume.irradiance_atlas, m_irradiance_staging.data());

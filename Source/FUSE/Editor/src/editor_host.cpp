@@ -84,7 +84,7 @@ EditorHost::~EditorHost() {
     if (m_initialized) {
         // PIE behaviours run on_destroy against the play registry: stop before it goes away.
         if (m_playSession.isActive()) {
-            m_playSession.stop(m_editorScene, m_runtimeScene, m_state, m_physics);
+            stopPlaySession_();
         }
         m_scripting.reset();
         m_editorScene.destroy();

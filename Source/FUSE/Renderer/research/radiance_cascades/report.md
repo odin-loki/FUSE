@@ -1,6 +1,6 @@
 # WP-6.5 — Radiance cascades (research prototype)
 
-**Status:** Metrics-only research library (`fuse_rc_research`). Not wired into the deferred frame; screen-space follow-up is WP-6.5b (`fuse_ssrc_gpu`).
+**Status:** Metrics-only research library (`fuse_rc_research`). Flatland 2D cascades are not wired into `FrameComposer` (no per-texel scene buffer on the deferred path). Near-field radiance cascades in production use WP-6.5b **`fuse_ssrc_gpu`** (`FrameSettings::ssrc`, stage `kStageSsrc`, gate `fuse_rp_frame_vk_ssrc_t0`).
 
 ## What shipped
 

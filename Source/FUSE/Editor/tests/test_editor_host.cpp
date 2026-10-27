@@ -75,6 +75,18 @@ void testHostMultipleTicks() {
 void testHostPieStartStopViaQueue() {
     fuse::editor::EditorHost host;
 
+    const fuse::f32 kSpawnY = 12.f;
+    const fuse::ecs::EntityID spawnEntity = host.editorScene().registry().create();
+    fuse::ecs::Transform spawnT{};
+    spawnT.position = {1.f, kSpawnY, -2.f, 1.f};
+    spawnT.local_to_world = fuse::ecs::mat4::identity();
+    spawnT.local_to_world.data[12] = 1.f;
+    spawnT.local_to_world.data[13] = kSpawnY;
+    spawnT.local_to_world.data[14] = -2.f;
+    host.editorScene().registry().add(spawnEntity, spawnT);
+    host.editorScene().registry().add(spawnEntity, fuse::ecs::SpawnMarker{});
+    const fuse::editor::ViewportCamera beforePlay = host.runtimeViewport().panel().camera();
+
     fuse::editor::EditorCommand start;
     start.kind = fuse::editor::CommandKind::StartPlay;
     host.postFromUi(std::move(start));
@@ -82,6 +94,8 @@ void testHostPieStartStopViaQueue() {
     host.gameTick();
     expectTrue(host.editorState().playing, "PIE start applied on game thread");
     expectTrue(host.playSession().isActive(), "play session active after start command");
+    const fuse::editor::ViewportCamera& atPlay = host.runtimeViewport().panel().camera();
+    expectTrue(atPlay.positionY == kSpawnY, "PIE start snaps viewport to spawn height");
 
     fuse::editor::EditorCommand stop;
     stop.kind = fuse::editor::CommandKind::StopPlay;
@@ -90,6 +104,10 @@ void testHostPieStartStopViaQueue() {
     host.gameTick();
     expectTrue(!host.editorState().playing, "PIE stop applied on game thread");
     expectTrue(!host.playSession().isActive(), "play session stopped");
+    const fuse::editor::ViewportCamera& afterStop = host.runtimeViewport().panel().camera();
+    expectTrue(afterStop.positionX == beforePlay.positionX && afterStop.positionY == beforePlay.positionY &&
+                   afterStop.positionZ == beforePlay.positionZ,
+               "PIE stop restores pre-play viewport camera");
 }
 
 void testHostPieTicksOnGameThread() {

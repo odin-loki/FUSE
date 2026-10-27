@@ -184,6 +184,7 @@ private:
     bool fileFail_(CommandKind kind, const std::string& path, std::string error);
     bool fileOk_(CommandKind kind, const std::string& path, const std::string& message);
     void resetForSceneSwitch_();
+    void stopPlaySession_();
     void markSceneClean_();
     void drainPropertyCommandQueue_();
     void syncPieAiBindings_();

@@ -92,6 +92,11 @@ public:
     ViewportPanel& panel() { return m_panel; }
     const ViewportPanel& panel() const { return m_panel; }
 
+    /// PIE: snap the fly camera to the first active spawn (parity with World3D::enterPlayMode).
+    void enterPlayViewportCamera(fuse::ecs::Registry& registry);
+    /// Restore the camera snapshot from `enterPlayViewportCamera` (no-op when none).
+    void exitPlayViewportCamera();
+
     RuntimeEmbedSession& embedSession() { return m_embedSession; }
     const RuntimeEmbedSession& embedSession() const { return m_embedSession; }
 
@@ -146,6 +151,8 @@ private:
     std::atomic<u32> m_wpHeight{0};
     /// Per-tick entity walk scratch (capacity reused so idle ticks stay allocation-free).
     std::vector<ecs::EntityID> m_entityOrderScratch;
+    bool m_playViewportCameraSaved = false;
+    ViewportCamera m_playViewportCameraSnapshot{};
 
 #if defined(FUSE_VULKAN_BACKEND)
     void* m_headlessGpuStub = nullptr;

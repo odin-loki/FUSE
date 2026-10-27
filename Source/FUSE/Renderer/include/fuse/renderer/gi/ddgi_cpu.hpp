@@ -298,6 +298,10 @@ namespace ddgi_cpu {
 bool packIrradianceAtlasRgba16f(const DdgiCpuVolume& volume, std::vector<u16>& out);
 /// Pack the bordered distance-moment tiles (mean, mean^2) into the depth atlas layout as RG16F bits.
 bool packDistanceAtlasRg16f(const DdgiCpuVolume& volume, std::vector<u16>& out);
+/// Pack both legacy 2D atlas layouts (shared by `DDGI::uploadAtlases` and tests).
+bool packAtlasesHalf(const DdgiCpuVolume& volume,
+                     std::vector<u16>& irradiance_rgba16f,
+                     std::vector<u16>& distance_rg16f);
 
 } // namespace ddgi_cpu
 

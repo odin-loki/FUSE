@@ -680,6 +680,8 @@ DdgiInfo ddgi_info();
 /// DDGI probe volume — allocates atlas textures via ResourceManager and runs the
 /// CPU reference probe trace/blend (`DdgiCpuVolume`) each update. Without an attached
 /// scene the probes trace an empty scene lit by a uniform ambient sky.
+/// B5 legacy bridge: CPU oracle (`DdgiCpuVolume`) + 2D half-float atlases via `ResourceManager`.
+/// Production deferred shading uses `gi_gpu::DdgiGpu` (probe-major work buffer); keep both paths on the same oracle.
 class DDGI {
 public:
     DDGI();

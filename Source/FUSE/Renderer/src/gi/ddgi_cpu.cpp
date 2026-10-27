@@ -587,6 +587,13 @@ bool packIrradianceAtlasRgba16f(const DdgiCpuVolume& volume, std::vector<u16>& o
     });
 }
 
+bool packAtlasesHalf(const DdgiCpuVolume& volume,
+                     std::vector<u16>& irradiance_rgba16f,
+                     std::vector<u16>& distance_rg16f) {
+    return packIrradianceAtlasRgba16f(volume, irradiance_rgba16f) &&
+           packDistanceAtlasRg16f(volume, distance_rg16f);
+}
+
 bool packDistanceAtlasRg16f(const DdgiCpuVolume& volume, std::vector<u16>& out) {
     if (!volume.isReady()) {
         return false;

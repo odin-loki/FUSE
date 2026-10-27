@@ -13,6 +13,7 @@
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/spawn_marker.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/ecs/spawn_query.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/scene/serialiser.hpp>
@@ -267,18 +268,7 @@ bool World3D::saveWorld(const std::string& fuselevelPath, std::string* error) {
 }
 
 bool World3D::findSpawnPoint(f32 outPosition[3]) {
-    bool found = false;
-    ecs::Registry& registry = ownRegistry_();
-    registry.each<ecs::SpawnMarker, ecs::Transform>([&](ecs::EntityID, ecs::SpawnMarker& spawn, ecs::Transform& t) {
-        if (found || !spawn.active) {
-            return;
-        }
-        outPosition[0] = t.local_to_world.data[12];
-        outPosition[1] = t.local_to_world.data[13];
-        outPosition[2] = t.local_to_world.data[14];
-        found = true;
-    });
-    return found;
+    return ecs::findFirstActiveSpawnWorldPosition(ownRegistry_(), outPosition);
 }
 
 } // namespace fuse::world3d

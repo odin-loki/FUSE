@@ -107,6 +107,9 @@ public:
     /// Project a world point to window pixels; false when it lies behind the camera.
     [[nodiscard]] bool worldToScreen(const ecs::vec3& world, f32& px, f32& py) const;
 
+    /// Match standalone `World3D::applySpawnViewCamera`: eye at spawn, look toward ground target.
+    void setFromSpawnView(const f32 spawnPosition[3]);
+
 private:
     ViewportMode m_mode = ViewportMode::View3D;
     ViewportCamera m_camera;
