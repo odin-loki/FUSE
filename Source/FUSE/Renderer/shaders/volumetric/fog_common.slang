@@ -8,6 +8,7 @@ static const uint kFogFlagReproject = 1u << 1;
 static const uint kFogFlagLights = 1u << 2;
 static const uint kFogFlagShadows = 1u << 3;
 static const uint kFogFlagReversedZ = 1u << 4;
+static const uint kFogFlagGi = 1u << 5;
 static const uint kFogVolumeBox = 1u;
 static const uint kFogMaxVolumes = 8u;
 static const float kFogInv4Pi = 0.0795774715459477;
@@ -33,7 +34,7 @@ struct FogFrame {
     uint64_t historyCur;
     uint64_t integrated;
     uint64_t dump;
-    uint64_t reserved0;
+    uint64_t ddgi;
     uint gridX;
     uint gridY;
     uint gridZ;

@@ -16,6 +16,7 @@
 #define FUSE_FOG_FLAG_LIGHTS (1u << 2)
 #define FUSE_FOG_FLAG_SHADOWS (1u << 3)
 #define FUSE_FOG_FLAG_REVERSED_Z (1u << 4)
+#define FUSE_FOG_FLAG_GI (1u << 5)
 #define FUSE_FOG_VOLUME_BOX 1u
 #define FUSE_FOG_MAX_VOLUMES 8u
 #define FUSE_FOG_INV_4PI 0.0795774715459477
@@ -41,7 +42,7 @@ struct FuseFogFrame {
     uint64_t historyCur;
     uint64_t integrated;
     uint64_t dump;
-    uint64_t reserved0;
+    uint64_t ddgi;
     uint gridX;
     uint gridY;
     uint gridZ;

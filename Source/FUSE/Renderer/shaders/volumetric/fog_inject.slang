@@ -2,6 +2,7 @@
 #include "gpu_scene.slang"
 #include "lc_common.slang"
 #include "../shadow_vsm/vsm_shadow.slang"
+#include "../ddgi/ddgi_sample.slang"
 #include "fog_common.slang"
 
 [[vk::push_constant]] ConstantBuffer<FogPush> pc;
@@ -78,6 +79,11 @@ bool fogLightCluster(LcFrame F, float3 p, out uint cluster) {
 
 float3 fogInScattering(FogFrame* R, float3 p, float3 v) {
     float3 L = fogVec3(R.ambient);
+    if ((R.flags & kFogFlagGi) != 0u) {
+        const float3 n = float3(0.0, 1.0, 0.0);
+        const float3 view = float3(-v.x, -v.y, -v.z);
+        L = L + fuse_ddgi_sample_irradiance_view(R.ddgi, p, n, view);
+    }
     if ((R.flags & kFogFlagLights) == 0u) {
         return L;
     }

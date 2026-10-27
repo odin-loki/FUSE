@@ -65,7 +65,7 @@ struct Field {
 #define FOG_FIELD(n) Field{#n, offsetof(FogFrameConstants, n)}
 const Field kFields[] = {
     FOG_FIELD(lighting), FOG_FIELD(shadows), FOG_FIELD(current), FOG_FIELD(historyPrev), FOG_FIELD(historyCur),
-    FOG_FIELD(integrated), FOG_FIELD(dump), FOG_FIELD(reserved0), FOG_FIELD(gridX), FOG_FIELD(gridY), FOG_FIELD(gridZ),
+    FOG_FIELD(integrated), FOG_FIELD(dump), FOG_FIELD(ddgi), FOG_FIELD(gridX), FOG_FIELD(gridY), FOG_FIELD(gridZ),
     FOG_FIELD(froxelCount), FOG_FIELD(width), FOG_FIELD(height), FOG_FIELD(inputDepth), FOG_FIELD(inputLit),
     Field{"output_", offsetof(FogFrameConstants, output)}, FOG_FIELD(flags), FOG_FIELD(frameIndex),
     FOG_FIELD(volumeCount), FOG_FIELD(position), FOG_FIELD(nearPlane), FOG_FIELD(right), FOG_FIELD(farPlane),

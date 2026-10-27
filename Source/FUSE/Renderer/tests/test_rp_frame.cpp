@@ -21,8 +21,8 @@
 //                         rays that leave the screen take the WP-8.2 sky), and the sky fallback alone (on vs off)
 //                         changes geometry pixels only; the SSFX image carries the sky
 //                         aerial perspective on vs off: only geometry pixels change
-//                         SSFX / VSM / DDGI / DDGI atmosphere sky on vs off: only geometry pixels change; SSFX off
-//                         == the lit image
+//                         SSFX / SSRC / SSRC+SSFX / VSM / DDGI / DDGI atmosphere sky on vs off: only geometry
+//                         pixels change; SSFX off == the lit image
 //                         clouds on vs off: only background pixels change (+ a repeated reset frame reproduces
 //                         its bits)
 //                         splats on vs off: only pixels a splat covers (splat T < 1) change
@@ -537,6 +537,7 @@ FrameKernelLanguage g_language = FrameKernelLanguage::Auto;
 
 FrameComposerDesc composerDesc(Context& ctx, Scene& s, FrameTier tier) {
     FrameComposerDesc d{};
+    fuse::renderer::frame::applyLavapipeComposerDefaults(d);
     d.language = g_language;
     d.device = ctx.device.get();
     d.allocator = ctx.allocator.get();
@@ -551,24 +552,6 @@ FrameComposerDesc composerDesc(Context& ctx, Scene& s, FrameTier tier) {
     d.instanceCapacity = 64;
     d.meshCapacity = 4;
     d.lightCapacity = 16;
-    d.vsmClipmap.levels = 12;
-    d.vsmClipmap.firstLevelExtent = 4.f;
-    d.vsmClipmap.markRadiusTexels = 2.5f;
-    d.vsmClipmap.texelsPerPixel = 2.f;
-    d.vsmPoolPagesX = 16;
-    d.vsmPoolPagesY = 16;
-    DDGIDesc& v = d.ddgiVolume;
-    v.grid_origin = {-6.f, 0.5f, -9.f};
-    v.probe_spacing = {3.f, 1.5f, 3.25f};
-    v.grid_dims = {5u, 3u, 5u};
-    v.rays_per_probe = 64;
-    v.probes_per_frame = 75;
-    v.irradiance_res = 6;
-    v.depth_res = 8;
-    v.hysteresis = 0.9f;
-    v.max_ray_distance = 20.f;
-    d.maxSplats = 64;
-    d.maxSplatEntries = 1u << 14;
     return d;
 }
 
@@ -1266,6 +1249,38 @@ int runToggles(Context& ctx, FrameTier tier) {
         const Diff sx = diffImages(p0, off, kRbSceneColor);
         report("SSFX on vs off", sx);
         expect(sx.backgroundChanged == 0u && sx.geometryChanged > 0u, "SSFX changes geometry pixels only");
+    }
+    FrameSettings litOnly = plain;
+    litOnly.ssfx = false;
+    Frame litBase{};
+    run(litOnly, litBase);
+    if ((rig.composer.available() & kStageSsrc) != 0u) {
+        auto geometryOnlyLit = [&](const char* name, const FrameSettings& fs) {
+            Frame off{};
+            run(fs, off);
+            const Diff x = diffImages(litBase, off, kRbSceneColor);
+            report(name, x);
+            expect(x.backgroundChanged == 0u, "the toggle changes no background pixel");
+            expect(x.geometryChanged > 0u, "the toggle changes geometry pixels");
+        };
+        {
+            FrameSettings fs = litOnly;
+            fs.ssrc = true;
+            fs.ssrcSettings.compose = true;
+            fs.ssrcSettings.ddgi = true;
+            geometryOnlyLit("SSRC on vs off", fs);
+        }
+        {
+            FrameSettings both = plain;
+            both.ssrc = true;
+            both.ssrcSettings.compose = true;
+            both.ssrcSettings.ddgi = true;
+            Frame combo{};
+            run(both, combo);
+            const Diff sx = diffImages(p0, combo, kRbSceneColor);
+            report("SSRC + SSFX on vs SSFX alone", sx);
+            expect(sx.backgroundChanged == 0u && sx.geometryChanged > 0u, "SSRC + SSFX change geometry pixels only");
+        }
     }
     auto geometryOnly = [&](const char* name, FrameSettings fs) {
         Frame off{};

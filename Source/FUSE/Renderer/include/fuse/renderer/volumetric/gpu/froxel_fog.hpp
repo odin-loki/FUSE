@@ -86,6 +86,9 @@ struct FogFrameDesc {
     /// VsmShadows::shadowConstantsAddress() (WP-3.2): each light x its visibility at the sample (declare the
     /// images with VsmShadows::addSamplingUse(.., rg::kStageCompute) before addPasses). 0 = unshadowed.
     u64 shadows = 0;
+    /// DdgiGpu::volumeAddress() (WP-6.1): isotropic DDGI irradiance at each froxel sample (declare
+    /// FogGraphInputs::ddgi with DdgiGpu::addSamplingUse before addPasses). 0 = none.
+    u64 ddgi = 0;
     /// fog.apply inputs (same extent; both null = no apply pass): RT4 (R32F device depth) and the lit
     /// image (RGBA16F), bindless sampled.
     const Texture* depth = nullptr;
@@ -100,6 +103,7 @@ struct FogFrameDesc {
 struct FogGraphInputs {
     rg::BufferRef lights;                            ///< LightingGraphRefs::lists (with FogFrameDesc::lighting)
     const gpu_scene::GpuSceneGraphRefs* scene = nullptr; ///< the scene's refs (the light table, BDA)
+    rg::BufferRef ddgi;                              ///< DdgiGraphRefs::work (with FogFrameDesc::ddgi)
     rg::TextureRef depth;
     rg::TextureRef lit;
     rg::BufferRef dump;
