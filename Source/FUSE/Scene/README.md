@@ -25,6 +25,7 @@ Phase 3 scene APIs from [FUSE Master Plan](../../docs/plans/FUSE_MASTER_PLAN.md)
 ### B3.6 — Scene Manager (`scene_manager.hpp`)
 
 - `SceneManager::init` / `update` / `createCamera` / `rayCast` / `querySphere` / `buildFrame`
+- `rayCast` / `querySphere` use the per-frame `fuse::spatial::BVH` (mesh/SDF entities) when populated; voxel hits still come from the SVO with a null `EntityID`
 - `update` runs `TransformSystem` and `CameraSystem`, then keeps a `spatial::BVH` of every Mesh/SDF
   entity (refit when the set is unchanged, rebuild on spawn/despawn)
 - `buildFrame` culls against the active camera through that BVH and gathers draw items / SDF objects

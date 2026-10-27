@@ -112,7 +112,7 @@ struct FABRIKChain {
     /// Position-based FABRIK with the chain root pinned and segment lengths preserved. Each chain
     /// bone's subtree is then rigidly rotated (shortest arc) so world matrices stay consistent.
     /// Targets beyond the chain length straighten the chain toward the target.
-    /// Joint angle limits (`min_angle_deg`/`max_angle_deg`) are not applied yet.
+    /// Interior joint angles are clamped to [`min_angle_deg`, `max_angle_deg`] after each FABRIK pass.
     /// Returns false when `has_valid_chain` is false or `can_solve` is false after bind-pose fallback.
     [[nodiscard]] bool solve(Pose& pose, const Skeleton& skel);
 

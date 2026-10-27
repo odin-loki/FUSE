@@ -1,4 +1,6 @@
 #include <fuse/ecs/components/camera.hpp>
+#include <fuse/ecs/components/mesh.hpp>
+#include <fuse/ecs/components/transform.hpp>
 #include <fuse/scene/scene_manager.hpp>
 
 #include <cstdio>
@@ -77,6 +79,66 @@ void testSceneRayCastUsesBvhAndSvo() {
     expectTrue(hitDistance > 0.f, "scene manager ray cast reports distance");
 }
 
+void testSceneRayCastHitsMeshEntity() {
+    fuse::scene::SceneManager scene;
+    fuse::scene::SceneManagerDesc desc{};
+    desc.worldSize = 64.f;
+    desc.hasVoxels = false;
+    scene.init(desc);
+
+    const fuse::ecs::EntityID meshEntity = scene.registry().create();
+    fuse::ecs::Transform transform{};
+    transform.position = {10.f, 0.f, 0.f, 1.f};
+    transform.local_to_world = fuse::ecs::mat4::identity();
+    transform.local_to_world.data[12] = 10.f;
+    transform.dirty = false;
+    scene.registry().add<fuse::ecs::Transform>(meshEntity, transform);
+
+    fuse::ecs::Mesh mesh{};
+    mesh.aabb_min = {-1.f, -1.f, -1.f, 0.f};
+    mesh.aabb_max = {1.f, 1.f, 1.f, 0.f};
+    scene.registry().add<fuse::ecs::Mesh>(meshEntity, mesh);
+
+    scene.update(1.f / 60.f);
+
+    fuse::ecs::EntityID hit{};
+    fuse::scene::f32 hitDistance = 0.f;
+    const fuse::scene::vec3 origin{0.f, 0.f, 0.f};
+    const fuse::scene::vec3 direction{1.f, 0.f, 0.f};
+    const bool meshHit = scene.rayCast(origin, direction, 100.f, hit, hitDistance);
+    expectTrue(meshHit, "ray cast hits mesh entity through spatial BVH");
+    expectTrue(hit.index == meshEntity.index, "ray cast returns the mesh entity id");
+    expectTrue(hitDistance >= 8.f && hitDistance <= 10.f, "ray cast distance matches translated mesh AABB");
+}
+
+void testSceneQuerySphereFindsMeshEntity() {
+    fuse::scene::SceneManager scene;
+    fuse::scene::SceneManagerDesc desc{};
+    desc.worldSize = 64.f;
+    desc.hasVoxels = false;
+    scene.init(desc);
+
+    const fuse::ecs::EntityID meshEntity = scene.registry().create();
+    fuse::ecs::Transform transform{};
+    transform.position = {5.f, 0.f, 0.f, 1.f};
+    transform.local_to_world = fuse::ecs::mat4::identity();
+    transform.local_to_world.data[12] = 5.f;
+    transform.dirty = false;
+    scene.registry().add<fuse::ecs::Transform>(meshEntity, transform);
+
+    fuse::ecs::Mesh mesh{};
+    mesh.aabb_min = {-1.f, -1.f, -1.f, 0.f};
+    mesh.aabb_max = {1.f, 1.f, 1.f, 0.f};
+    scene.registry().add<fuse::ecs::Mesh>(meshEntity, mesh);
+
+    scene.update(1.f / 60.f);
+
+    std::vector<fuse::ecs::EntityID> results;
+    scene.querySphere({5.f, 0.f, 0.f}, 2.f, results);
+    expectTrue(results.size() == 1u, "querySphere returns one mesh entity");
+    expectTrue(results[0].index == meshEntity.index, "querySphere entity id matches");
+}
+
 void testSceneQuerySphereFindsVoxels() {
     fuse::scene::SceneManager scene;
     fuse::scene::SceneManagerDesc desc{};
@@ -99,6 +161,8 @@ int main() {
     testSceneWithoutVoxels();
     testSceneCameraAndUpdate();
     testSceneRayCastUsesBvhAndSvo();
+    testSceneRayCastHitsMeshEntity();
+    testSceneQuerySphereFindsMeshEntity();
     testSceneQuerySphereFindsVoxels();
 
     if (g_failures == 0) {

@@ -53,6 +53,13 @@ export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
 | `glslang-tools` | `glslangValidator` (configure-time SPIR-V regen and cook gates) |
 | `spirv-tools` | `spirv-val` (validates regenerated SPIR-V) |
 
+**WorldExtract** (`FUSE_BUILD_TOOLS=ON`, optional): the `fuse_world_extract_synthetic` ctest needs Python 3 with [`Tools/FUSE/WorldExtract/requirements.txt`](../Tools/FUSE/WorldExtract/requirements.txt) and `libegl1` (Open3D imports `libEGL`). Umbrella CI installs apt packages then `pip install -r requirements.txt`. Locally:
+
+```bash
+python3 -m pip install -r Tools/FUSE/WorldExtract/requirements.txt
+ctest --test-dir build -R fuse_world_extract_synthetic --output-on-failure
+```
+
 **Qt 6 editor** (`FUSE_BUILD_EDITOR=ON`, optional): `qt6-base-dev` plus the Xvfb/xcb packages listed in the Qt editor CI job — see [editor.md](editor.md).
 
 **CUDA** (`FUSE_BUILD_CUDA=ON`, optional): install the distro CUDA toolkit when you want real device code; without it, configure continues with CUDA stubs. The compile-only CUDA workflow installs `nvidia-cuda-toolkit` on `ubuntu-24.04`.

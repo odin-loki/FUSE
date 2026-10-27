@@ -378,6 +378,39 @@ void testFabrikConverges() {
     expectTrue(error < 0.25f, "FABRIK moves end effector toward target");
 }
 
+void testFabrikJointAngleLimits() {
+    const fuse::animation::Skeleton skel = makeThreeBoneSkeleton();
+    fuse::animation::Pose unlimited = fuse::animation::Pose::make_bind_pose(skel);
+    fuse::animation::Pose limited = unlimited;
+
+    fuse::animation::FABRIKChain chain;
+    chain.bone_indices = {0, 1, 2};
+    chain.target = {-1.5f, 0.5f, 0.f, 0.f};
+    chain.max_iterations = 12;
+    chain.reshape_warm_start = false;
+    chain.max_angle_deg = 179.f;
+
+    fuse::animation::FABRIKChain tight = chain;
+    tight.max_angle_deg = 35.f;
+
+    expectTrue(chain.solve(unlimited, skel), "FABRIK unlimited solve");
+    expectTrue(tight.solve(limited, skel), "FABRIK limited solve");
+
+    const auto end_error = [](const fuse::animation::Pose& pose, const fuse::animation::vec3& target) {
+        const fuse::animation::vec3 end = {pose.bone_world_transforms[2].data[12],
+                                           pose.bone_world_transforms[2].data[13],
+                                           pose.bone_world_transforms[2].data[14], 0.f};
+        const fuse::f32 dx = end.x - target.x;
+        const fuse::f32 dy = end.y - target.y;
+        const fuse::f32 dz = end.z - target.z;
+        return std::sqrt(dx * dx + dy * dy + dz * dz);
+    };
+
+    const fuse::f32 unlimitedError = end_error(unlimited, chain.target);
+    const fuse::f32 limitedError = end_error(limited, chain.target);
+    expectTrue(limitedError > unlimitedError + 0.05f, "joint angle cap prevents tight fold toward target");
+}
+
 void testSkinningCpuPath() {
     // The reported backend is the one skin_vertices() runs on: Cuda needs a CUDA skinning kernel
     // and a CUDA device, never just a CUDA toolkit at build time.
@@ -2366,6 +2399,7 @@ int main() {
     testStateMachineInvalidTransitionIgnored();
     testStateMachineNoInterruptDuringCrossfade();
     testFabrikConverges();
+    testFabrikJointAngleLimits();
     testSkinningCpuPath();
     testAnimatorTick();
     fuse::core::shutdown();

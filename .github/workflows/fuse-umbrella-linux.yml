@@ -16,6 +16,7 @@ concurrency:
 env:
   FUSE_APT_LINUX_BASE: ninja-build cmake g++-13
   FUSE_APT_LINUX_VULKAN: libvulkan-dev mesa-vulkan-drivers vulkan-tools vulkan-validationlayers glslang-tools spirv-tools
+  FUSE_APT_LINUX_WORLDEXTRACT: python3-pip python3-venv libegl1
   FUSE_APT_LINUX_QT_EDITOR: qt6-base-dev libgl-dev xvfb xauth libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0
   # Lavapipe ICD + Khronos validation manifests (apt vulkan-validationlayers).
   FUSE_LINUX_VK_ICD: /usr/share/vulkan/icd.d/lvp_icd.json
@@ -36,7 +37,11 @@ jobs:
       - name: Install dependencies
         run: |
           sudo rm -f /etc/apt/sources.list.d/microsoft-prod*; sudo apt-get update
-          sudo apt-get install -y ${{ env.FUSE_APT_LINUX_BASE }} ${{ env.FUSE_APT_LINUX_VULKAN }}
+          sudo apt-get install -y ${{ env.FUSE_APT_LINUX_BASE }} ${{ env.FUSE_APT_LINUX_VULKAN }} ${{ env.FUSE_APT_LINUX_WORLDEXTRACT }}
+
+      - name: WorldExtract python deps (fuse_world_extract_synthetic)
+        run: |
+          python3 -m pip install --user -r Tools/FUSE/WorldExtract/requirements.txt
 
       - name: Configure umbrella (core + legacy + smoke + U7/U8)
         run: |

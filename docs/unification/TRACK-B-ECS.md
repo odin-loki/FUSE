@@ -70,7 +70,7 @@ CullingSystem::cull (BVH frustum query + per-entity fallback)
        ↓
 SceneBuildSystem::build → SceneData (draw items, SDF, lights)
        ↓
-SceneManager::update (stub tick — systems wired in integration test)
+SceneManager::update (TransformSystem + CameraSystem + spatial BVH sync)
 ```
 
 `Registry::each_parallel` parallelizes row iteration per matching archetype via `JobScheduler::parallel_for` (default batch size 256; `detail::normalize_batch_size` clamps `batchSize == 0` to 1). `TransformSystemOptions::parallelDirtyRoots` selects the parallel dirty-root pass (default on). `TransformSystem::recompute_world_matrix` is the shared CPU stub for local/world matrix recompute; dirty-root serial/parallel stubs delegate to it before the hierarchy walk. `detail::iteration_parity` supplies visit-count and transform-matrix parity helpers used by `fuse_ecs_each_parallel` and `fuse_ecs_query_filter`. `Registry::each` / `each_parallel` and `each_query` / `each_query_parallel` share the same With/Without filter path — pass a trailing `Without<...>` tag to exclude component types. `archetype_matches(archetype, filter)` evaluates runtime `QueryFilter` values (returns false on With/Without conflicts); overloads taking `With<...>` / `Without<...>` tags provide compile-time filter construction, including Without-only exclusion. `query_filter_equal` compares With/Without type sets order-independently. `count_matching_archetypes` tallies signature matches; `count_matching_entities` sums row counts across matching signatures (both return zero on conflicting filters). Managed-memory columns at production scale remain **deferred** to B4+ physics/GPU paths. Current columns use `std::vector<std::byte>` on the CPU.

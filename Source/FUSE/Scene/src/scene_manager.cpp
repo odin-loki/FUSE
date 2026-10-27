@@ -9,6 +9,22 @@
 
 namespace fuse::scene {
 
+namespace {
+
+fuse::ecs::vec3 to_ecs_vec3(vec3 v) { return {v.x, v.y, v.z, 0.f}; }
+
+bool sphere_hits_aabb(vec3 center, f32 radius, const fuse::spatial::AABB& box) {
+    const auto axis_dist_sq = [](f32 v, f32 lo, f32 hi) {
+        const f32 d = v < lo ? lo - v : (v > hi ? v - hi : 0.f);
+        return d * d;
+    };
+    const f32 d2 = axis_dist_sq(center.x, box.min.x, box.max.x) + axis_dist_sq(center.y, box.min.y, box.max.y) +
+                   axis_dist_sq(center.z, box.min.z, box.max.z);
+    return d2 <= radius * radius;
+}
+
+} // namespace
+
 void SceneManager::init(const SceneManagerDesc& desc) {
     destroy();
     m_desc = desc;
@@ -153,10 +169,20 @@ bool SceneManager::rayCast(vec3 origin, vec3 direction, f32 maxDistance, fuse::e
         return false;
     }
 
-    f32 bvhHit = 0.f;
-    if (m_bvh.rayCast(origin, direction, maxDistance, bvhHit)) {
-        hitDistance = bvhHit;
-        return true;
+    if (m_spatialBvh.leaf_count() > 0) {
+        fuse::spatial::BVHLeaf leaf{};
+        f32 t = 0.f;
+        if (m_spatialBvh.ray_cast(to_ecs_vec3(origin), to_ecs_vec3(direction), maxDistance, leaf, t)) {
+            hitEntity = leaf.entity;
+            hitDistance = t;
+            return true;
+        }
+    } else {
+        f32 bvhHit = 0.f;
+        if (m_bvh.rayCast(origin, direction, maxDistance, bvhHit)) {
+            hitDistance = bvhHit;
+            return true;
+        }
     }
 
     if (m_desc.hasVoxels && m_svo.isInitialized()) {
@@ -176,6 +202,16 @@ void SceneManager::querySphere(vec3 center, f32 radius, std::vector<fuse::ecs::E
     results.clear();
     if (!m_initialized || radius <= 0.f) {
         return;
+    }
+
+    if (m_spatialBvh.leaf_count() > 0) {
+        std::vector<fuse::spatial::BVHLeaf> leaves;
+        m_spatialBvh.query_sphere(to_ecs_vec3(center), radius, leaves);
+        for (const fuse::spatial::BVHLeaf& leaf : leaves) {
+            if (m_registry.alive(leaf.entity) && sphere_hits_aabb(center, radius, leaf.aabb)) {
+                results.push_back(leaf.entity);
+            }
+        }
     }
 
     if (m_desc.hasVoxels && m_svo.isInitialized()) {
