@@ -8,7 +8,7 @@
 //   ExampleLevel Templates/BaseGame ExampleLevel.mis: per-archetype component counts (LevelInfo, SkyBox, Sun,
 //                GroundPlane, Skylight, SimGroup, SpawnSphere), Sun orientation from azimuth / elevation.
 //   World2D      saveWorld2DToFuselevel -> populateWorld2DFromFuselevel -> save: identical bytes; physics settings
-//                restored from Collider / RigidBody components.
+//                restored from Collider / RigidBody components; SpawnMarker -> findSpawnPoint / enterPlayMode view + physics.
 
 #include <fuse/core/init.hpp>
 #include <fuse/core/temp_path.hpp>
@@ -360,6 +360,27 @@ void testWorld2DRoundTrip(const fs::path& dir) {
     expectTrue(boxes == 1u, "Box collider with half extents / layer / mask");
 }
 
+void testWorld2DSpawnPlayMode(const fs::path& dir) {
+    const std::string mission = (kSource / "Samples/unification/demo_3d_empty/worlds/example.mis").string();
+    const std::string level = (dir / "example_2d_spawn.fuselevel").generic_string();
+    const fuse::project::ConvertResult converted = fuse::project::convertT3DMissionToFuselevel(mission, level);
+    expectTrue(converted.status == fuse::project::ConvertStatus::Ok, "example.mis converts for World2D spawn");
+
+    fuse::world2d::World2D world;
+    const fuse::world2d::FuselevelLoadResult loaded = world.loadWorldFromFuselevel(level);
+    expectTrue(loaded.ok && loaded.spawnMarkers == 1u, "World2D retains SpawnMarker from the v3 ECS block");
+    expectTrue(world.registry().count() == 5u, "World2D owns the level ECS registry");
+
+    float spawnPoint[3] = {0.f, 0.f, 0.f};
+    expectTrue(world.findSpawnPoint(spawnPoint) && nearly(spawnPoint[1], 10.f), "findSpawnPoint = spawn sphere Y-up");
+    expectTrue(world.enterPlayMode(), "enterPlayMode at spawn");
+    expectTrue(world.isPlayModeActive(), "World2D play mode active");
+    expectTrue(world.view().valid && nearly(world.view().center[1], 10.f), "spawn view centers on marker height");
+    expectTrue(world.isPhysicsEnabled(), "play mode enables physics");
+    expectTrue(world.exitPlayMode(), "exitPlayMode");
+    expectTrue(!world.isPlayModeActive(), "play mode inactive after exit");
+}
+
 } // namespace
 
 int main() {
@@ -369,6 +390,7 @@ int main() {
     testExampleLevel(dir);
     testLegacyLevel(dir);
     testWorld2DRoundTrip(dir);
+    testWorld2DSpawnPlayMode(dir);
     fuse::core::shutdown();
     if (g_failures == 0) {
         std::printf("fuse_world3d_level_gates: all checks passed\n");

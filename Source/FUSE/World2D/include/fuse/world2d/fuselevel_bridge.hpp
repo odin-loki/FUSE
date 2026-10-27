@@ -25,6 +25,7 @@ struct FuselevelLoadResult {
     bool hasEcsBlock = false;
     /// Sprites whose physics settings came from Collider + RigidBody components (v3).
     u32 physicsBodies = 0;
+    u32 spawnMarkers = 0;
     u32 entityCount = 0;
     u32 wireStubCount = 0;
     u32 wireStubResolved = 0;

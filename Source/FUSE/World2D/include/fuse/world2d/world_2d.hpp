@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fuse/dimension/idimension.hpp>
+#include <fuse/ecs/registry.hpp>
 #include <fuse/physics/physics_world_2d.hpp>
 #include <fuse/world2d/cull_fork_join.hpp>
 #include <fuse/world2d/fuselevel_bridge.hpp>
@@ -14,8 +15,16 @@
 
 namespace fuse::world2d {
 
+/// Ortho view center for standalone play / hybrid 2D framing (parity with World3D::RenderCamera3D at spawn).
+struct RenderView2D {
+    f32 center[2] = {0.f, 0.f};
+    bool valid = false;
+};
+
 /// 2D dimension — composes legacy T2D backends; does not inherit Box2D or GL types.
 class World2D : public dimension::IDimension {
+    friend FuselevelLoadResult populateWorld2DFromFuselevel(World2D&, const std::string&);
+
 public:
     World2D();
     ~World2D() override;
@@ -48,6 +57,22 @@ public:
 
     /// Load a converted 2D world file immediately (also used by `loadWorld()` when a path is set).
     FuselevelLoadResult loadWorldFromFuselevel(const std::string& fuselevelPath);
+
+    /// The loaded level's v3 ECS block (SpawnMarker, Transform, …). Empty until a fuselevel load succeeds.
+    static constexpr usize kRegistryCapacity = 4096;
+    ecs::Registry& registry();
+    /// World-space position of the first active SpawnMarker entity (false when the level has none).
+    bool findSpawnPoint(f32 outPosition[3]);
+    /// Center the 2D view on the level spawn (XY of the marker).
+    bool applySpawnViewCamera();
+    /// Standalone play: snapshot view/physics, frame spawn, enable physics.
+    bool enterPlayMode();
+    /// Restore the snapshot taken by `enterPlayMode()` (no-op when not playing).
+    bool exitPlayMode();
+    [[nodiscard]] bool isPlayModeActive() const { return m_playModeActive; }
+
+    void setView(const RenderView2D& view) { m_view = view; }
+    const RenderView2D& view() const { return m_view; }
 
     SceneObject2D* root() { return m_root.get(); }
     const SceneObject2D* root() const { return m_root.get(); }
@@ -86,6 +111,10 @@ private:
     void syncPhysicsFromScene();
     void syncSceneFromPhysics();
     void clearLoadedSprites_();
+    ecs::Registry& ownRegistry_();
+    void destroyLevelRegistry_();
+    /// Takes ownership of a fuselevel ECS block (called from fuselevel_bridge after load).
+    void adoptLevelRegistry_(ecs::Registry&& registry);
     /// Drops sprites whose node was destroyed while published (stale handles); rebuilds physics.
     void pruneDeadSprites_();
 
@@ -113,6 +142,18 @@ private:
     std::vector<u32> m_physicsBodyIndices;
     bool m_physicsEnabled = false;
     SpriteImageMapSearchRoots m_spriteMapRoots;
+
+    ecs::Registry m_registry;
+    bool m_registryReady = false;
+
+    struct PlayModeSnapshot {
+        RenderView2D view{};
+        bool viewValid = false;
+        bool physicsEnabled = false;
+    };
+    bool m_playModeActive = false;
+    PlayModeSnapshot m_playSnapshot{};
+    RenderView2D m_view{};
 };
 
 } // namespace fuse::world2d

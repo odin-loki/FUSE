@@ -2,7 +2,9 @@
 
 #include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
+#include <fuse/ecs/components/spawn_marker.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/scene/serialiser.hpp>
@@ -139,6 +141,15 @@ FuselevelLoadResult populateWorld2DFromFuselevel(World2D& world, const std::stri
         }
         world.setPhysicsEnabled(true);
     }
+
+    registry.each<ecs::SpawnMarker>([&](ecs::EntityID, ecs::SpawnMarker&) { ++result.spawnMarkers; });
+
+    registry.each<ecs::Transform>([](ecs::EntityID, ecs::Transform& transform) { transform.dirty = true; });
+    ecs::TransformSystemOptions transformOptions;
+    transformOptions.parallelDirtyRoots = false;
+    ecs::TransformSystem::update(registry, transformOptions);
+
+    world.adoptLevelRegistry_(std::move(registry));
 
     result.entityCount = entityCount;
     result.wireBindings = fuse::scene::populateLegacyTableFromScene(scene, result.legacyTable);

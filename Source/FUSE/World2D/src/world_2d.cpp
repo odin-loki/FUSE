@@ -19,7 +19,58 @@ FuselevelLoadResult populateWorld2DFromFuselevel(World2D&, const std::string& fu
     log::warn("World2D: cannot load '%s' — fuselevel loading requires FUSE_BUILD_PROJECT", fuselevelPath.c_str());
     return result;
 }
+
+bool World2D::findSpawnPoint(f32 outPosition[3]) {
+    (void)outPosition;
+    return false;
+}
 #endif
+
+bool World2D::applySpawnViewCamera() {
+    f32 spawn[3] = {0.f, 0.f, 0.f};
+    if (!findSpawnPoint(spawn)) {
+        return false;
+    }
+
+    RenderView2D view{};
+    view.center[0] = spawn[0];
+    view.center[1] = spawn[1];
+    view.valid = true;
+    setView(view);
+    return true;
+}
+
+bool World2D::enterPlayMode() {
+    if (m_playModeActive) {
+        return true;
+    }
+
+    m_playSnapshot.view = m_view;
+    m_playSnapshot.viewValid = m_view.valid;
+    m_playSnapshot.physicsEnabled = m_physicsEnabled;
+
+    if (!applySpawnViewCamera()) {
+        return false;
+    }
+
+    setPhysicsEnabled(true);
+    m_playModeActive = true;
+    return true;
+}
+
+bool World2D::exitPlayMode() {
+    if (!m_playModeActive) {
+        return true;
+    }
+
+    m_view = m_playSnapshot.view;
+    if (!m_playSnapshot.viewValid) {
+        m_view.valid = false;
+    }
+    setPhysicsEnabled(m_playSnapshot.physicsEnabled);
+    m_playModeActive = false;
+    return true;
+}
 
 World2D::World2D() : m_root(std::make_unique<SceneObject2D>("World2DRoot")) {
     m_physics.init();
@@ -27,9 +78,39 @@ World2D::World2D() : m_root(std::make_unique<SceneObject2D>("World2DRoot")) {
 
 World2D::~World2D() {
     clearLoadedSprites_();
+    destroyLevelRegistry_();
+}
+
+ecs::Registry& World2D::ownRegistry_() {
+    if (!m_registryReady) {
+        m_registry.init(kRegistryCapacity);
+        m_registryReady = true;
+    }
+    return m_registry;
+}
+
+ecs::Registry& World2D::registry() {
+    return ownRegistry_();
+}
+
+void World2D::destroyLevelRegistry_() {
+    if (m_registryReady) {
+        m_registry.destroy();
+        m_registryReady = false;
+    }
+}
+
+void World2D::adoptLevelRegistry_(ecs::Registry&& registry) {
+    destroyLevelRegistry_();
+    m_registry = std::move(registry);
+    m_registryReady = true;
 }
 
 void World2D::clearLoadedSprites_() {
+    m_playModeActive = false;
+    m_playSnapshot = {};
+    m_view = {};
+    destroyLevelRegistry_();
     for (const Handle<Object> handle : m_sprites) {
         if (SceneObject2D* sprite = m_handles.resolve(handle)) {
             if (m_root && sprite->parent() == m_root.get()) {
