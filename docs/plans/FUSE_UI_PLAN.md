@@ -19,7 +19,7 @@ The plan adds one new layer, **FUSE UI** (`fuse_ui_*` libraries, namespace `fuse
 - **One renderer.** The UI draws through the existing render graph. In a game it is the `FrameUiSource` of the `FrameComposer`. In an app it draws straight to the swapchain with damage tracking. World-space panels render to textures.
 - **Engine rules apply.** Handles, not owning pointers. `std::expected`, not exceptions. Jobs, not threads. Zero heap allocations in steady-state frames. A CPU reference for every GPU kernel, with a FLIP gate between them. Deterministic under `FUSE_JOBS_SINGLE_THREAD`.
 
-Work is split into phases UI0–UI10 (Section 9). Seven decisions need your call before UI1 starts (Section 11).
+Work is split into phases UI0–UI10 (Section 9). Of the seven decisions in Section 11, D5 is decided (Qt first for the editor); the other six need your call before UI1 starts.
 
 ---
 
@@ -561,12 +561,14 @@ int main(int argc, char** argv) {
 
 **Gates:** `fuse_ui_markup_roundtrip`, `fuse_ui_markup_fuzz`, `fuse_ui_hot_reload_identity`, `fuse_ui_script_bind`, `fuse_ui_cooked_registration`.
 
-### UI9 — Editor on FUSE UI (XL) — decision gate D5
+### UI9 — Editor on FUSE UI (XL) — D5 decided: Qt first
 
-- `FUSE_EDITOR_SHELL=fuse` builds the editor chrome with FUSE UI, panel by panel, while the Qt shell keeps working.
+Detailed in [`FUSE_EDITOR_QT_FIRST_PLAN.md`](FUSE_EDITOR_QT_FIRST_PLAN.md): the Qt shell is thinned now (items Q1–Q12, on Qt), and this phase is its Stage 3.
+
+- `FUSE_EDITOR_SHELL=fuse` builds the editor chrome with FUSE UI beside the Qt shell; both call the same Qt-free `EditorController`.
 - The viewport becomes a zero-copy viewport widget; the `QVulkanInstance` adoption handshake and `QWindow` container go away.
-- The editor's `UiContext` runs on the editor UI thread and keeps posting `EditorCommand`s; the locked "UI posts, game thread drains" rule is unchanged.
-- Qt is removed only when every `fuse_editor_qt_*` gate has a green `fuse_editor_ui_*` twin and you sign off.
+- The editor's `UiContext` runs on the editor UI thread and talks only to `EditorController`; the "UI posts, game thread drains" rule is unchanged.
+- Qt is removed only when every `fuse_editor_qt_*` gate has a green `fuse_editor_ui_*` twin, desktop accessibility adapters are in, and you sign off.
 - New capability: the editor can run on tablets.
 
 **Gates:** `fuse_editor_ui_*` parity set, `fuse_editor_ui_frame` (≤ 2 ms full repaint), `fuse_editor_ui_live_present`.
@@ -586,7 +588,7 @@ UI0 ──┬── UI1 ───────────────┐
                                        └── UI10
 ```
 
-UI1, UI2 and UI3 run in parallel. UI6 Tier A starts on the CPU rasteriser before UI4. UI9 needs widget tiers B–D and the designer.
+UI1, UI2 and UI3 run in parallel. UI6 Tier A starts on the CPU rasteriser before UI4. UI9 is desktop-only: it needs the desktop parts of UI1, UI4 and UI5, widget tiers A–C plus part of D, and desktop accessibility adapters, but not mobile, UI7 or the designer (see [`FUSE_EDITOR_QT_FIRST_PLAN.md`](FUSE_EDITOR_QT_FIRST_PLAN.md) §7).
 
 ---
 
@@ -612,7 +614,7 @@ UI1, UI2 and UI3 run in parallel. UI6 Tier A starts on the CPU rasteriser before
 | D2 | Text stack | (a) HarfBuzz + FreeType + bidi + segmentation. (b) Minimal shaping only. (c) In-house shaper | **(a) as `FULL`**, with `MINIMAL` and `COOKED` profiles for small games. Correct Arabic / Indic / Thai is table stakes for an application framework |
 | D3 | Programming model | Retained only / immediate only / both on one core | **Both on one core** (Section 4.4) |
 | D4 | Declarative authoring format | (a) JSON for structure + CSS subset for style. (b) A QML-like DSL | **(a) first.** Reuses the existing JSON parser and tooling; the designer writes it; the cooker binarises it. Revisit a DSL only if hand-authoring becomes the bottleneck |
-| D5 | Move the editor off Qt | This reverses master plan §A3 ("Qt replaces GUI") | **Yes, but only at UI9**, behind `FUSE_EDITOR_SHELL`, with gate-for-gate parity. Qt stays until then |
+| D5 | Move the editor off Qt | This reverses master plan §A3 ("Qt replaces GUI") | **Decided (2026-10-29): Qt first.** The editor stays on Qt while the engine and FUSE UI are built, then moves at UI9 behind `FUSE_EDITOR_SHELL` with gate-for-gate parity — [`FUSE_EDITOR_QT_FIRST_PLAN.md`](FUSE_EDITOR_QT_FIRST_PLAN.md) |
 | D6 | UI logic language | Lua / another VM / C++ only | **Lua** (already the engine VM) plus binding bytecode for simple expressions |
 | D7 | Accessibility | (a) AccessKit (all five platforms; adds a Rust toolchain to builds that enable it). (b) Hand-written native adapters. (c) Defer | **Accessibility tree in UI2 regardless; adapters via (a) as an optional module**, off for `hud` builds, so most builds need no Rust |
 
