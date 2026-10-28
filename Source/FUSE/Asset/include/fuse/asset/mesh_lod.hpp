@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fuse/asset/cooked_mesh.hpp>
 #include <fuse/types.hpp>
 
 #include <cmath>
@@ -7,10 +8,7 @@
 
 namespace fuse::asset {
 
-struct MeshLod {
-    f32 geometricError = 0.f;
-};
-
+/// Uses `MeshLod::error` (cooked_mesh.hpp) as the geometric error.
 /// Screen-space error = (geometricError / distance) * (screenHeightPx * 0.5) / tan(fovY/2) * lodBias.
 /// Returns the coarsest lod whose error is still <= 1 pixel.
 [[nodiscard]] inline u32 select_mesh_lod(std::span<const MeshLod> lods, f32 distance, f32 screenHeightPx,
@@ -30,7 +28,7 @@ struct MeshLod {
     u32 chosen = 0u;
     bool any = false;
     for (u32 i = 0; i < static_cast<u32>(lods.size()); ++i) {
-        const f32 error = lods[i].geometricError;
+        const f32 error = lods[i].error;
         if (!std::isfinite(error) || (i > 0u && !(error > previous))) {
             return 0u;
         }

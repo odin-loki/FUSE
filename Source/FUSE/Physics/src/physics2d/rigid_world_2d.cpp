@@ -689,7 +689,7 @@ void RigidWorld2D::applyCircleCcd(BodyId2D bodyId, u32 circleShape, u32 staticSh
     Manifold manifold;
     collide(wall, wallXf, circle, body.xf, manifold);
     if (manifold.pointCount == 0u) {
-        manifold = {};
+        manifold = Manifold{};
         manifold.type = ManifoldType::FaceA;
         manifold.localNormal = mulT(wallXf.q, normal);
         manifold.localPoint = mulT(wallXf, point);
