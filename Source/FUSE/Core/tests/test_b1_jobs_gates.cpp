@@ -7,7 +7,9 @@
 //   - parallel_for of 1M items is identical to the serial loop
 // Every multi-worker test runs under a watchdog so a deadlock fails the test instead of hanging CI.
 
+#include <fuse/jobs/job_batch.hpp>
 #include <fuse/jobs/job_counter.hpp>
+#include <fuse/jobs/job_priority.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/jobs/parallel_for.hpp>
 #include <fuse/platform/fiber.hpp>
@@ -373,9 +375,29 @@ void testParallelForOneMillionMatchesSerial() {
     }
 }
 
+void testJobBatchOk() {
+    expectTrue(fuse::jobs::job_batch_ok(1), "job_batch_ok(1) is true");
+    expectTrue(fuse::jobs::job_batch_ok(1024), "job_batch_ok(1024) is true");
+    expectTrue(!fuse::jobs::job_batch_ok(0), "job_batch_ok(0) is false");
+    expectTrue(!fuse::jobs::job_batch_ok(1025), "job_batch_ok(1025) is false");
+}
+
+void testJobPriorityOk() {
+    expectTrue(fuse::jobs::job_priority_ok(0), "job_priority_ok(0) is true");
+    expectTrue(fuse::jobs::job_priority_ok(3), "job_priority_ok(3) is true");
+    expectTrue(!fuse::jobs::job_priority_ok(-1), "job_priority_ok(-1) is false");
+    expectTrue(!fuse::jobs::job_priority_ok(4), "job_priority_ok(4) is false");
+}
+
 } // namespace
 
 int main() {
+    testJobBatchOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core_b1_jobs_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testJobPriorityOk();
 #if !FUSE_JOBS_SINGLE_THREAD
     testSchedulerInitialisesNWorkers();
     testOneMillionIndependentJobs();

@@ -552,7 +552,7 @@ void DdgiGpu::addSamplingUse(rg::Graph& graph, const DdgiGraphRefs& refs, u8 sta
     graph.addPass("ddgi.sample_use", nullptr, nullptr).use(refs.work, rg::Access::StorageRead, {}, stages).neverCull();
 }
 
-bool DdgiGpu::importCpuVolumeAtlases(const DdgiCpuVolume& volume, UploadQueue& upload) {
+bool DdgiGpu::importCpuVolumeAtlases(const DdgiCpuVolume& volume, UploadQueue& upload, DdgiCpuImportCheck* check) {
     if (!m_ready || !volume.isReady() || m_work.handle == nullptr) {
         return false;
     }
@@ -574,17 +574,36 @@ bool DdgiGpu::importCpuVolumeAtlases(const DdgiCpuVolume& volume, UploadQueue& u
         blob.updateCounts.size() * sizeof(u32) != countBytes || blob.probeData.size() * sizeof(f32) != probeBytes) {
         return false;
     }
-    auto stageCopy = [&](const void* data, usize bytes, u64 dstOffset) -> bool {
+    if (check != nullptr) {
+        check->irradianceChecksum = 0;
+        check->distanceChecksum = 0;
+    }
+    // Checksum the host-visible ring after stage(), before the copy. Do not read ddgi.work back from
+    // this batch: orderAfterPreviousCopies chains TRANSFER_WRITE only, and a transfer-queue readback
+    // there fails Lavapipe sync/destroy validation. The graphics queue can copy after wait() — the
+    // batch's consumer barrier already includes TRANSFER_READ.
+    auto stageCopy = [&](const void* data, usize bytes, u64 dstOffset, u64* checksum) -> bool {
         usize srcOffset = 0;
         if (!upload.stage(data, bytes, srcOffset)) {
             return false;
         }
+        if (check != nullptr && check->stagingMapped != nullptr) {
+            const u64 staged = fnv1a64(static_cast<const u8*>(check->stagingMapped) + srcOffset, bytes);
+            if (staged != fnv1a64(data, bytes)) {
+                return false;
+            }
+            if (checksum != nullptr) {
+                *checksum = staged;
+            }
+        }
         return upload.recordBufferCopy(m_work.handle, srcOffset, dstOffset, bytes);
     };
-    if (!stageCopy(blob.irradiance.data(), irrBytes, m_layout.irradiance) ||
-        !stageCopy(blob.distance.data(), distBytes, m_layout.distance) ||
-        !stageCopy(blob.updateCounts.data(), countBytes, m_layout.updateCounts) ||
-        !stageCopy(blob.probeData.data(), probeBytes, m_layout.probeData)) {
+    if (!stageCopy(blob.irradiance.data(), irrBytes, m_layout.irradiance,
+                   check != nullptr ? &check->irradianceChecksum : nullptr) ||
+        !stageCopy(blob.distance.data(), distBytes, m_layout.distance,
+                   check != nullptr ? &check->distanceChecksum : nullptr) ||
+        !stageCopy(blob.updateCounts.data(), countBytes, m_layout.updateCounts, nullptr) ||
+        !stageCopy(blob.probeData.data(), probeBytes, m_layout.probeData, nullptr)) {
         return false;
     }
     const UploadTicket ticket = upload.flush();

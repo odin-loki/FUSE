@@ -46,6 +46,7 @@
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 #include <fuse/renderer/meshlet/meshlet_path.hpp>
 #include <fuse/renderer/meshlet/meshlet_reference.hpp>
+#include <fuse/renderer/meshlet_prim.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/visbuffer/vis_reference.hpp>
@@ -115,11 +116,25 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. No allocation. Both mains call this before any GPU skip.
+/// A failure returns non-zero immediately.
+[[nodiscard]] int testMeshletPrimOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::meshlet_prim_ok(1), "meshlet_prim_ok(1) is true");
+    expect(fuse::renderer::meshlet_prim_ok(128), "meshlet_prim_ok(128) is true");
+    expect(!fuse::renderer::meshlet_prim_ok(0), "meshlet_prim_ok(0) is false");
+    expect(!fuse::renderer::meshlet_prim_ok(129), "meshlet_prim_ok(129) is false");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int meshletPrimRc = testMeshletPrimOk()) {
+        return meshletPrimRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1242,6 +1257,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int meshletPrimRc = testMeshletPrimOk()) {
+        return meshletPrimRc;
+    }
     std::string mode = "raster";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

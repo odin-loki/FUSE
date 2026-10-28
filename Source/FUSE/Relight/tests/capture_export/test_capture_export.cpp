@@ -9,7 +9,7 @@
 //   builder    GameCapturer on synthetic RL-1.3 / RL-1.5 / RL-1.7 records: strip / fan -> triangle list,
 //              index reduction, instance names and mesh / material dedup, transform samples only on change,
 //              the LHS camera (mirror correction, winding swap, light root flip), light colour / intensity,
-//              skinning (skeleton, joint primvars), the key set;
+//              rect / disk / cylinder lights, skinning (skeleton, joint primvars), the key set;
 //   writer     the capture written to disk parses (minimal USDA parser: TinyUSDZ is Remaster W2.2, not in the
 //              tree yet), re-ingests with the identical key set, and is byte-identical when written twice;
 //              seeded faults (a flipped blob byte, a renamed mesh, a corrupted DDS, a dropped DB row) are
@@ -20,6 +20,7 @@
 #include <fuse/relight/capture/export/capture_writer.hpp>
 #include <fuse/relight/capture/export/dds.hpp>
 #include <fuse/relight/capture/export/digest.hpp>
+#include <fuse/relight/capture/export/export_name.hpp>
 #include <fuse/relight/capture/export/json.hpp>
 #include <fuse/relight/capture/export/usda_writer.hpp>
 #include <fuse/relight/hash/texture_hash.hpp>
@@ -785,13 +786,132 @@ def Xform "A" (
     CHECK(!rl_usda::parse("#usda 1.0\ndef \"A\" { float x = [1, 2 }\n", &err));
 }
 
+/// Rect, disk, and cylinder survive a build. A sphere stays in sphere lights. Hash 0 and an unknown type do not.
+void testAreaLights() {
+    sc::LightRecord sphere;
+    sphere.type = rh::LightType::Sphere;
+    sphere.hash = 0x5151;
+    sphere.position = {1.f, 2.f, 3.f};
+    sphere.radius = 4.f;
+    sphere.radiance = {1.f, 0.f, 0.f};
+
+    sc::LightRecord rect;
+    rect.type = rh::LightType::Rect;
+    rect.hash = 0xA11;
+    rect.position = {1.f, 0.f, 0.f};
+    rect.direction = {0.f, -1.f, 0.f};
+    rect.radius = 2.f;
+    rect.radiance = {2.f, 1.f, 0.5f};
+    rect.shaping.enabled = true;
+    rect.shaping.direction = {0.f, 0.f, 1.f};
+    rect.shaping.cosConeAngle = 0.5f;
+    rect.shaping.coneSoftness = 0.25f;
+    rect.shaping.focusExponent = 3.f;
+
+    sc::LightRecord disk;
+    disk.type = rh::LightType::Disk;
+    disk.hash = 0xA22;
+    disk.position = {0.f, 1.f, 0.f};
+    disk.direction = {1.f, 0.f, 0.f};
+    disk.radius = 3.f;
+    disk.radiance = {0.f, 0.f, 4.f};
+
+    sc::LightRecord cylinder;
+    cylinder.type = rh::LightType::Cylinder;
+    cylinder.hash = 0xA33;
+    cylinder.position = {0.f, 0.f, 5.f};
+    cylinder.direction = {0.f, 1.f, 0.f};
+    cylinder.radius = 0.5f;
+    cylinder.radiance = {1.f, 1.f, 1.f};
+
+    sc::LightRecord unknown;
+    unknown.type = static_cast<rh::LightType>(99);
+    unknown.hash = 0xA44;
+    unknown.position = {9.f, 9.f, 9.f};
+    unknown.radius = 8.f;
+    unknown.radiance = {1.f, 1.f, 1.f};
+
+    sc::LightRecord zero;
+    zero.type = rh::LightType::Rect;
+    zero.hash = 0;
+    zero.position = {7.f, 7.f, 7.f};
+    zero.radiance = {3.f, 3.f, 3.f};
+
+    ex::GameCapturer cap(ex::CaptureOptions{});
+    ex::CaptureFrame frame;
+    frame.lights = {sphere, rect, disk, cylinder, unknown, zero};
+    CHECK(cap.captureFrame(frame));
+
+    rect.position = {4.f, 5.f, 6.f};
+    rect.direction = {1.f, 0.f, 0.f};
+    rect.radius = 9.f;
+    rect.radiance = {8.f, 0.f, 0.f};
+    disk.shaping.enabled = true;
+    disk.shaping.direction = {0.f, 0.f, 1.f};
+    disk.shaping.cosConeAngle = 0.f;
+    frame.lights = {sphere, rect, disk, cylinder};
+    CHECK(cap.captureFrame(frame));
+
+    const ex::CaptureData c = cap.finish();
+    CHECK(c.sphereLights.size() == 1 && c.sphereLights.count(0x5151) == 1);
+    CHECK(c.sphereLights.count(0xA11) == 0 && c.sphereLights.count(0xA44) == 0 && c.sphereLights.count(0) == 0);
+    CHECK(c.rectLights.count(0x5151) == 0 && c.diskLights.count(0x5151) == 0 && c.cylinderLights.count(0x5151) == 0);
+    CHECK(c.rectLights.size() == 1 && c.diskLights.size() == 1 && c.cylinderLights.size() == 1);
+    CHECK(c.rectLights.count(0xA44) == 0 && c.diskLights.count(0xA44) == 0 && c.cylinderLights.count(0xA44) == 0);
+    CHECK(c.distantLights.count(0xA44) == 0 && c.rectLights.count(0) == 0);
+    const ex::CaptureSphereLight& sl = c.sphereLights.at(0x5151);
+    CHECK(sl.radius == 4.f && sl.xforms.size() == 2 && sl.firstTime == 0.0 && sl.finalTime == 1.0);
+
+    const ex::CaptureAreaLight& rl = c.rectLights.at(0xA11);
+    CHECK(rl.type == rh::LightType::Rect);
+    CHECK(rl.intensity == 2.f && rl.color[0] == 1.f && rl.color[1] == 0.5f && rl.color[2] == 0.25f);
+    CHECK(rl.radius == 2.f);
+    CHECK(rl.position[0] == 4.f && rl.position[1] == 5.f && rl.position[2] == 6.f);
+    CHECK(rl.direction[0] == 1.f && rl.direction[1] == 0.f && rl.direction[2] == 0.f);
+    CHECK(rl.shapingEnabled && std::fabs(rl.coneAngleDegrees - 60.f) < 1e-4f);
+    CHECK(rl.coneSoftness == 0.25f && rl.focusExponent == 3.f);
+    CHECK(rl.firstTime == 0.0 && rl.finalTime == 1.0 && rl.xforms.size() == 2);
+    CHECK(rl.xforms[0].time == 0.0 && rl.xforms[1].time == 1.0);
+    CHECK(rl.xforms[0].xform[12] == 1.0 && rl.xforms[0].xform[13] == 0.0 && rl.xforms[0].xform[14] == 0.0);
+    CHECK(rl.xforms[1].xform[12] == 4.0 && rl.xforms[1].xform[13] == 5.0 && rl.xforms[1].xform[14] == 6.0);
+    CHECK(std::fabs(rl.xforms[0].xform[10] + 1.0) < 1e-12);
+
+    const ex::CaptureAreaLight& dk = c.diskLights.at(0xA22);
+    CHECK(dk.type == rh::LightType::Disk && !dk.shapingEnabled && dk.coneAngleDegrees == 180.f);
+    CHECK(dk.radius == 3.f && dk.intensity == 4.f && dk.color[2] == 1.f);
+    CHECK(dk.position[1] == 1.f && dk.direction[0] == 1.f);
+    CHECK(dk.firstTime == 0.0 && dk.finalTime == 1.0 && dk.xforms.size() == 2);
+    CHECK(std::fabs(dk.xforms[1].xform[10] - 1.0) < 1e-12);
+    CHECK(dk.xforms[0].xform[13] == 1.0);
+
+    const ex::CaptureAreaLight& cy = c.cylinderLights.at(0xA33);
+    CHECK(cy.type == rh::LightType::Cylinder && cy.radius == 0.5f);
+    CHECK(cy.position[2] == 5.f && cy.direction[1] == 1.f && cy.intensity == 1.f);
+    CHECK(!cy.shapingEnabled && cy.firstTime == 0.0 && cy.finalTime == 1.0 && cy.xforms.size() == 2);
+
+    const auto keys = ex::captureKeys(c, rh::parseHashRule(rh::rules::kDefaultAssetRuleString));
+    int lights = 0;
+    for (const ex::CaptureKey& k : keys) {
+        lights += k.algo == ex::key_algo::kLight;
+    }
+    CHECK(lights == 4);
+}
+
+void testExportNameOk() {
+    CHECK(fuse::relight::export_name_ok("Frame"));
+    CHECK(!fuse::relight::export_name_ok(""));
+    CHECK(!fuse::relight::export_name_ok("1Frame"));
+}
+
 } // namespace
 
 int main() {
+    testExportNameOk();
     testDigest();
     testJson();
     testDds();
     testBuilder();
+    testAreaLights();
     testDynamic();
     testParser();
     testWriter();

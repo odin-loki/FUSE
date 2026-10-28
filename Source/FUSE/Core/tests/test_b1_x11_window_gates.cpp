@@ -33,10 +33,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
-#include <unistd.h>
 #include <vector>
 
 #if defined(FUSE_PLATFORM_WINDOW_X11)
+// POSIX sleep for map/resize polls. Windows CI compiles this file but not the X11 body.
+#include <unistd.h>
 // Xlib last: it defines macros (None, KeyPress, FocusIn, ...) that collide with FUSE names.
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>

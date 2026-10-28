@@ -22,6 +22,9 @@
 // There is no GPU SDF ray-march pass yet (Compute/kernels/ray_march.cu is a stub kernel and no Vulkan SDF shader
 // exists), so no GPU readback is performed; this gate covers the CPU reference normal function only.
 
+#include <fuse/compute/dispatch_groups.hpp>
+#include <fuse/compute/normal_delta.hpp>
+#include <fuse/compute/normal_smooth.hpp>
 #include <fuse/compute/ray_march.hpp>
 #include <fuse/math/sdf.hpp>
 
@@ -327,9 +330,48 @@ void partB(const Scene& scene) {
     }
 }
 
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero and does not continue.
+/// Does not allocate.
+void testDispatchGroups() {
+    expectTrue(fuse::compute::dispatch_groups(10, 4) == 3, "dispatch_groups(10, 4) is 3");
+    expectTrue(fuse::compute::dispatch_groups(0, 4) == 0, "dispatch_groups(0, 4) is 0");
+    expectTrue(fuse::compute::dispatch_groups(10, 3) == 0, "dispatch_groups(10, 3) is 0");
+    expectTrue(fuse::compute::dispatch_groups(10, 0) == 0, "dispatch_groups(10, 0) is 0");
+}
+
+/// Finite normal deltas in (0, 0.01] are accepted.
+void testNormalDeltaOk() {
+    expectTrue(fuse::compute::normal_delta_ok(0.001f), "delta 0.001 is accepted");
+    expectTrue(fuse::compute::normal_delta_ok(0.01f), "delta 0.01 is accepted");
+    expectTrue(!fuse::compute::normal_delta_ok(0.f), "delta 0 is rejected");
+    expectTrue(!fuse::compute::normal_delta_ok(-0.001f), "delta -0.001 is rejected");
+    expectTrue(!fuse::compute::normal_delta_ok(0.02f), "delta 0.02 is rejected");
+    expectTrue(!fuse::compute::normal_delta_ok(std::nanf("")), "non-finite delta is rejected");
+}
+
+/// Same unit axis is within minDot 0.99; the opposing axis is not within minDot 0.
+void testNormalsSmoothUnitAxis() {
+    expectTrue(fuse::compute::normals_smooth(0.f, 1.f, 0.f, 0.f, 1.f, 0.f, 0.99f),
+               "same unit axis (0,1,0) vs itself with minDot 0.99 is smooth");
+    expectTrue(!fuse::compute::normals_smooth(0.f, 1.f, 0.f, 0.f, -1.f, 0.f, 0.f),
+               "(0,1,0) vs (0,-1,0) with minDot 0 is not smooth");
+}
+
 } // namespace
 
 int main() {
+    testDispatchGroups();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
+
+    testNormalDeltaOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
+
     const Scene scenes[] = {makeSphere(), makeRoundedBox(), makeSmoothUnion()};
     int legacyFlagged = 0;
     for (const Scene& scene : scenes) {
@@ -340,6 +382,8 @@ int main() {
     }
     std::printf("legacy FD normal flagged in %d zoom-1000x windows\n", legacyFlagged);
     expectTrue(legacyFlagged > 0, "sensitivity: metric flags the legacy finite-difference normal at 1000x");
+
+    testNormalsSmoothUnitAxis();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d failure(s)\n", g_failures);

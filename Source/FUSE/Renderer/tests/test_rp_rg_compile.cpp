@@ -9,6 +9,7 @@
 //   * Steady-state frames (reset + declare + compile + plan) perform zero heap allocations (B2.11).
 #include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/rg/sync_model.hpp>
+#include <fuse/renderer/rg_pass.hpp>
 
 #include <cstdint>
 #include <cstdio>
@@ -514,9 +515,22 @@ void testZeroSteadyStateAllocations() {
     expect(t_allocations == 0u, "zero heap allocations in steady-state reset/declare/compile/plan (B2.11)");
 }
 
+/// CPU gate. No allocation. A failure returns non-zero before any later compile.
+[[nodiscard]] int testRgPassOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::rg_pass_ok(1), "rg_pass_ok(1) is true");
+    expect(fuse::renderer::rg_pass_ok(64), "rg_pass_ok(64) is true");
+    expect(!fuse::renderer::rg_pass_ok(0), "rg_pass_ok(0) is false");
+    expect(!fuse::renderer::rg_pass_ok(65), "rg_pass_ok(65) is false");
+    return g_failures == before ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
 } // namespace
 
 int main() {
+    if (const int rgPassRc = testRgPassOk()) {
+        return rgPassRc;
+    }
     testBufferHazards();
     testImageLayoutsAndSubresources();
     testAttachmentsAndSamePassMerge();

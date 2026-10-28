@@ -47,6 +47,7 @@ add_library(fuse_relight_pathtrace STATIC
     src/pt_reference.cpp
     src/pt_capture_scene.cpp
     src/pt_gpu.cpp
+    src/restir_pt.cpp
     "${RL_PT_KERNELS_DIR}/pt_reference_types.h"
     "${RL_PT_KERNELS_DIR}/pt_reference_core.h"
     "${RL_PT_KERNELS_DIR}/pt_reference_cpp.hpp"

@@ -1,3 +1,4 @@
+#include <fuse/editor/present_frames.hpp>
 #include <fuse/editor/viewport_present_gate.hpp>
 #if defined(FUSE_TEST_HAS_RHI) && FUSE_TEST_HAS_RHI
 // fuse_rhi exists only with FUSE_BUILD_VULKAN=ON; the editor-side gate matrix runs either way.
@@ -65,6 +66,14 @@ void testViewportHeadlessWsiProbeSkippedOnCi() {
                "headless CI skips Qt WSI probe until runtime gate enabled");
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testPresentFramesOk() {
+    expectTrue(fuse::editor::present_frames_ok(1), "present_frames_ok(1) is true");
+    expectTrue(fuse::editor::present_frames_ok(4), "present_frames_ok(4) is true");
+    expectTrue(!fuse::editor::present_frames_ok(0), "present_frames_ok(0) is false");
+    expectTrue(!fuse::editor::present_frames_ok(5), "present_frames_ok(5) is false");
+}
+
 void testDesktopPresentGatesHeadlessSafe() {
 #if defined(FUSE_TEST_HAS_RHI) && FUSE_TEST_HAS_RHI
     expectTrue(!fuse::renderer::desktopQtPresentEnabled(),
@@ -79,6 +88,13 @@ void testDesktopPresentGatesHeadlessSafe() {
 } // namespace
 
 int main() {
+    const int framesBefore = g_failures;
+    testPresentFramesOk();
+    if (g_failures != framesBefore) {
+        std::fprintf(stderr, "FAIL: testPresentFramesOk\n");
+        return EXIT_FAILURE;
+    }
+
     testViewportPresentGateMatrix();
     testViewportHeadlessWsiProbeSkippedOnCi();
     testDesktopPresentGatesHeadlessSafe();
@@ -91,3 +107,27 @@ int main() {
     std::fprintf(stderr, "fuse_editor_viewport_present_gate: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/editor/present_interval.hpp>
+
+namespace {
+
+void testPresentIntervalMap() {
+    const int immediate = fuse::editor::present_interval(0);
+    expectTrue(immediate == 0, "vsync 0 maps to interval 0");
+    expectTrue(!fuse::editor::present_is_fifo(immediate), "interval 0 is not fifo");
+
+    const int vsyncOne = fuse::editor::present_interval(1);
+    expectTrue(vsyncOne == 1, "vsync 1 maps to interval 1");
+    expectTrue(fuse::editor::present_is_fifo(vsyncOne), "interval 1 is fifo");
+
+    expectTrue(fuse::editor::present_interval(9) == 4, "vsync 9 clamps to interval 4");
+}
+
+// Runs before main so the appended check shares the existing failure count.
+[[maybe_unused]] const int g_presentIntervalMapRan = [] {
+    testPresentIntervalMap();
+    return 0;
+}();
+
+} // namespace

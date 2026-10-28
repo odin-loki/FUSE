@@ -2,9 +2,11 @@
 #include <fuse/handle_map.hpp>
 #include <fuse/renderer/cuda/interop.hpp>
 #include <fuse/renderer/resource_manager.hpp>
+#include <fuse/renderer/rhi/buffer_bytes.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/renderer/vk/debug_utils.hpp>
+#include <fuse/renderer/vk/resource_count.hpp>
 #include <fuse/types.hpp>
 
 #include <cstdint>
@@ -793,9 +795,39 @@ void testTextureReadback() {
     bindless.destroy(*bootstrap->device());
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits instead of continuing.
+void testResourceCountOk() {
+    expectTrue(fuse::renderer::resource_count_ok(1), "resource_count_ok(1) is true");
+    expectTrue(fuse::renderer::resource_count_ok(1 << 20), "resource_count_ok(1<<20) is true");
+    expectTrue(!fuse::renderer::resource_count_ok(0), "resource_count_ok(0) is false");
+    expectTrue(!fuse::renderer::resource_count_ok((1 << 20) + 1),
+               "resource_count_ok((1<<20)+1) is false");
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits instead of continuing.
+void testBufferBytesOk() {
+    expectTrue(fuse::renderer::buffer_bytes_ok(1), "buffer_bytes_ok(1) is true");
+    expectTrue(fuse::renderer::buffer_bytes_ok(1ull << 28), "buffer_bytes_ok(1ull<<28) is true");
+    expectTrue(!fuse::renderer::buffer_bytes_ok(0), "buffer_bytes_ok(0) is false");
+    expectTrue(!fuse::renderer::buffer_bytes_ok((1ull << 28) + 1ull),
+               "buffer_bytes_ok((1ull<<28)+1) is false");
+}
+
 } // namespace
 
 int main() {
+    testResourceCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_vulkan_resources: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testBufferBytesOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_vulkan_resources: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testHandleMapGeneration();

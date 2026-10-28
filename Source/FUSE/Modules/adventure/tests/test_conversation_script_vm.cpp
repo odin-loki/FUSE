@@ -1,6 +1,7 @@
 #include <fuse/adventure/conversation_script_vm.hpp>
 #include <fuse/adventure/outpost_loader.hpp>
 #include <fuse/adventure/outpost_spawn.hpp>
+#include <fuse/adventure/speaker_name.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
 
@@ -18,9 +19,23 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+void testSpeakerNameOk() {
+    expectTrue(fuse::adventure::speaker_name_ok("Mara"), "Mara is a speaker name");
+    expectTrue(fuse::adventure::speaker_name_ok("Old Tom"), "Old Tom is a speaker name");
+    expectTrue(fuse::adventure::speaker_name_ok("O'Hara"), "apostrophe is valid after the first letter");
+    expectTrue(fuse::adventure::speaker_name_ok("Abcdefghijklmnopqrstuvwx"),
+               "24-character name is valid");
+    expectTrue(!fuse::adventure::speaker_name_ok("1Mara"), "1Mara is not a speaker name");
+    expectTrue(!fuse::adventure::speaker_name_ok(""), "empty name is invalid");
+    expectTrue(!fuse::adventure::speaker_name_ok("Abcdefghijklmnopqrstuvwxy"),
+               "25-character name is invalid");
+}
+
 } // namespace
 
 int main() {
+    testSpeakerNameOk();
+
     fuse::core::initialize();
 
     fuse::adventure::OutpostStubContent content;
@@ -61,3 +76,21 @@ int main() {
     std::fprintf(stderr, "fuse_adventure_conversation_script_vm: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/adventure/dialogue_choice.hpp>
+
+namespace {
+
+void testDialogueChoiceIndex() {
+    expectTrue(fuse::adventure::dialogue_choice_index(1, 3) == 1, "Choice 1 of 3 is 1");
+    expectTrue(fuse::adventure::dialogue_choice_index(3, 3) == -1, "Choice 3 of 3 is -1");
+    expectTrue(!fuse::adventure::dialogue_has_choices(0), "Zero choices means none");
+}
+
+struct DialogueChoiceIndexTestInit {
+    DialogueChoiceIndexTestInit() { testDialogueChoiceIndex(); }
+};
+
+const DialogueChoiceIndexTestInit g_dialogueChoiceIndexTestInit{};
+
+} // namespace

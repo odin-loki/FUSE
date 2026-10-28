@@ -22,6 +22,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include "platform_window_visibility.hpp"
 #endif
 
 namespace fuse::platform {
@@ -328,6 +329,16 @@ bool shouldDropOsKeyOrMouse(const EventPump& pump, const Window* window) {
 }
 
 void enqueueMappedOsMessage(EventPump& pump, Window* window, const MSG& msg) {
+    // Visibility is not an input event. Non-minimized WM_SIZE restores only while focused;
+    // WM_ACTIVATEAPP and SIZE_MINIMIZED apply on their own.
+    if (const std::optional<AppVisibility> visibility =
+            visibilityFromWin32(msg.message, msg.wParam)) {
+        const bool sizeRestore = msg.message == WM_SIZE && msg.wParam != SIZE_MINIMIZED;
+        if (!sizeRestore || (window != nullptr && window->isFocused())) {
+            notifyAppVisibility(*visibility);
+        }
+    }
+
     const bool dropKeyMouse = shouldDropOsKeyOrMouse(pump, window);
 
     switch (msg.message) {

@@ -1,3 +1,5 @@
+#include <fuse/compat/epoch_ms.hpp>
+#include <fuse/compat/timestamp_ms.hpp>
 #include <fuse/compat/ts.hpp>
 #include <fuse/compat/ts_t2d.hpp>
 #include <fuse/compat/ts_t3d.hpp>
@@ -38,6 +40,19 @@ void expectOutput(fuse::compat::Dialect dialect,
         ++g_failures;
     }
     expectTrue(result.dialect == dialect, "eval records the requested dialect");
+}
+
+void testEpochMsOk() {
+    expectTrue(fuse::compat::epoch_ms_ok(0), "epoch_ms_ok(0) is true");
+    expectTrue(fuse::compat::epoch_ms_ok(1000000000), "epoch_ms_ok(1000000000) is true");
+    expectTrue(!fuse::compat::epoch_ms_ok(-1), "epoch_ms_ok(-1) is false");
+    expectTrue(!fuse::compat::epoch_ms_ok(1000000001), "epoch_ms_ok(1000000001) is false");
+}
+
+void testTimestampMsOk() {
+    expectTrue(fuse::compat::timestamp_ms_ok(0u), "timestamp_ms_ok(0) is true");
+    expectTrue(fuse::compat::timestamp_ms_ok(86400000u), "timestamp_ms_ok(86400000) is true");
+    expectTrue(!fuse::compat::timestamp_ms_ok(86400001u), "timestamp_ms_ok(86400001) is false");
 }
 
 void testEchoHello() {
@@ -119,6 +134,18 @@ void testEvalFile() {
 } // namespace
 
 int main() {
+    testEpochMsOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_compat_ts: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testTimestampMsOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_compat_ts: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     testEchoHello();
     testLocalArithmetic();
     testFunctionCall();

@@ -3,6 +3,7 @@
 #include <fuse/editor/command_stack.hpp>
 #include <fuse/editor/editor_state.hpp>
 #include <fuse/handle.hpp>
+#include <fuse/math/mat.hpp>
 #include <fuse/math/quat.hpp>
 #include <fuse/math/vec.hpp>
 #include <fuse/object.hpp>
@@ -781,6 +782,13 @@ bool dragTransformFromRays(const GizmoTransform& base, GizmoMode mode, GizmoAxis
 /// (perspective, vertical FOV) — scale the gizmo by this to keep a constant on-screen size.
 f32 gizmoWorldScale(const math::Vec3& cameraPosition, const math::Vec3& gizmoPosition,
                     f32 verticalFovRadians, f32 viewportHeightPx, f32 screenSizePx);
+
+/// CPU raster of the translate gizmo. Draws world X/Y/Z axis segments (red/green/blue) from
+/// `worldOrigin` through the tips at `GizmoSystem::kAxisLength` into a tightly packed RGBA8 buffer
+/// (`viewportWidth * viewportHeight * 4` bytes). The buffer is not cleared. An axis is skipped when
+/// its origin or tip is behind the camera (clip-space w <= 0, matching `math::perspective`).
+void rasterizeTranslateGizmo(const math::Mat4& viewProjection, const math::Vec3& worldOrigin,
+                             u32 viewportWidth, u32 viewportHeight, u8* rgba8);
 
 /// Stable text form of a gizmo transform ("px,py,pz,rx,ry,rz,rw,sx,sy,sz", round-trip exact)
 /// carried by the `transform.trs` editor command.

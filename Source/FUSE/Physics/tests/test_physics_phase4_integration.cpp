@@ -1,6 +1,8 @@
 #include <fuse/core/init.hpp>
+#include <fuse/gameplay/spawn_budget.hpp>
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/ccd/ccd.hpp>
+#include <fuse/physics/fixed_dt.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/ecs/components/collider.hpp>
@@ -12,6 +14,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -175,14 +178,78 @@ void testPhysicsManagerEndToEndIntegration() {
     manager.destroy();
 }
 
+void testSpawnBudget() {
+    fuse::gameplay::SpawnBudget budget{};
+    budget.cap = 2u;
+    budget.tokens = 2.f;
+    budget.tokenCap = 2.f;
+    budget.tokensPerSec = 5.f;
+
+    expectTrue(fuse::gameplay::try_spawn(budget), "first spawn succeeds");
+    expectTrue(fuse::gameplay::try_spawn(budget), "second spawn succeeds");
+    expectTrue(budget.live == 2u && budget.tokens == 0.f, "two spawns fill the live cap and spend both tokens");
+    expectTrue(!fuse::gameplay::try_spawn(budget), "third spawn fails");
+    expectTrue(budget.live == 2u && budget.tokens == 0.f, "failed spawn changes nothing");
+
+    fuse::gameplay::tick(budget, 1.f);
+    expectTrue(budget.tokens == budget.tokenCap, "tick refills tokens up to tokenCap");
+    expectTrue(!fuse::gameplay::try_spawn(budget), "token refill does not bypass the live cap");
+
+    fuse::gameplay::release(budget);
+    expectTrue(fuse::gameplay::try_spawn(budget), "release then try_spawn succeeds again");
+    expectTrue(budget.live == 2u && budget.tokens == 1.f, "retry takes the freed slot and spends one token");
+
+    fuse::gameplay::SpawnBudget closed{};
+    closed.cap = 0u;
+    closed.tokens = 3.f;
+    closed.tokenCap = 3.f;
+    expectTrue(!fuse::gameplay::try_spawn(closed), "cap 0 always fails");
+    expectTrue(closed.live == 0u && closed.tokens == 3.f, "cap 0 spawn changes nothing");
+    fuse::gameplay::release(closed);
+    expectTrue(closed.live == 0u, "release clamps live at 0");
+
+    fuse::gameplay::SpawnBudget poor{};
+    poor.cap = 4u;
+    poor.tokens = 0.5f;
+    poor.tokenCap = 4.f;
+    expectTrue(!fuse::gameplay::try_spawn(poor), "spawn fails without a whole token");
+    expectTrue(poor.live == 0u && poor.tokens == 0.5f, "a short token budget is unchanged");
+
+    poor.tokens = std::numeric_limits<float>::quiet_NaN();
+    expectTrue(!fuse::gameplay::try_spawn(poor), "non-finite tokens cannot spawn");
+    expectTrue(poor.live == 0u, "rejected non-finite tokens do not increment live");
+
+    fuse::gameplay::SpawnBudget clock{};
+    clock.tokens = 5.f;
+    clock.tokenCap = 2.f;
+    clock.tokensPerSec = -8.f;
+    fuse::gameplay::tick(clock, 0.f);
+    fuse::gameplay::tick(clock, -1.f);
+    fuse::gameplay::tick(clock, std::numeric_limits<float>::quiet_NaN());
+    fuse::gameplay::tick(clock, std::numeric_limits<float>::infinity());
+    expectTrue(clock.tokens == 5.f, "non-positive or non-finite dt changes nothing");
+    fuse::gameplay::tick(clock, 0.25f);
+    expectTrue(clock.tokens == 2.f, "negative tokensPerSec adds nothing and tick still clamps to tokenCap");
+}
+
+void testFixedDtOk() {
+    expectTrue(fixed_dt_ok(1.f / 60.f), "1/60 is a fixed step");
+    expectTrue(fixed_dt_ok(1.f / 30.f), "1/30 is a fixed step");
+    expectTrue(fixed_dt_ok(1.f / 120.f), "1/120 is a fixed step");
+    expectTrue(!fixed_dt_ok(0.1f), "0.1 is not a fixed step");
+    expectTrue(!fixed_dt_ok(0), "zero is not a fixed step");
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
+    testFixedDtOk();
     testBroadphaseToNarrowphasePipeline();
     testPbdSolverUsesBroadphaseAndNarrowphase();
     testCcdPipelineOnBroadphasePairs();
     testPhysicsManagerEndToEndIntegration();
+    testSpawnBudget();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

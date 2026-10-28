@@ -128,7 +128,7 @@ enum FrameStage : u32 {
     kStageReflectionDenoise = 1u << 23, ///< T2: the RT reflection signal through SVGF (IDenoiser) before frame.reflect
     kStageUi = 1u << 24,                ///< E02 UI / HUD composite after post (FrameUiSource set, FrameSettings::ui)
     kStageSsrc = 1u << 25,              ///< WP-6.5b screen-space radiance cascades (near-field GI + AO)
-    kStageRcFlatland = 1u << 26,        ///< WP-6.5 flatland radiance cascades (research, optional diagnostic)
+    kStageRcFlatland = 1u << 26,        ///< WP-6.5 flatland RC (diagnostic CPU G-buffer packed into RcScene)
 };
 
 /// What the UI callback records into (E02).
@@ -227,7 +227,8 @@ struct FrameSettings {
     /// WP-6.5b near-field diffuse GI + AO over the depth buffer (optional; replaces SSFX SSGI when both run).
     bool ssrc = false;
     ssrc::SsrcSettings ssrcSettings{};
-    /// WP-6.5 flatland RC over a downsampled 2D scene buffer built from lit colour + depth (diagnostic).
+    /// WP-6.5 flatland RC. The scene is a 64^2 diagnostic packed from a CPU G-buffer
+    /// (depth, signed-oct normal, albedo), not the frame's full G-buffer.
     bool rcFlatland = false;
     research::rc::RcSettings rcSettings{};
     /// SSR rays (and SSGI rays when DDGI is off: DDGI's atmosphere misses already carry the sky irradiance) that
@@ -410,6 +411,13 @@ public:
     /// The IDenoiser instances of the ReSTIR DI / RT reflection signals (T2).
     const denoise::SvgfDenoiserAdapter& restirDenoiser() const { return m_restirDenoiser; }
     const denoise::SvgfDenoiserAdapter& reflectionDenoiser() const { return m_reflectDenoiser; }
+    /// Host image of the flatland scene filled by the last beginFrame that planned `kStageRcFlatland`
+    /// (f32x4 per texel, row-major). Null before that fill.
+    const f32* rcFlatlandScene() const {
+        return m_rcScene.buffer.mapped != nullptr ? static_cast<const f32*>(m_rcScene.buffer.mapped) : nullptr;
+    }
+    u32 rcFlatlandSceneWidth() const { return m_rcSceneW; }
+    u32 rcFlatlandSceneHeight() const { return m_rcSceneH; }
 
 private:
     struct OwnedImage {

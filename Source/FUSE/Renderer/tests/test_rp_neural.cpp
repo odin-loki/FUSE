@@ -19,6 +19,7 @@
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
 #include <fuse/renderer/neural/neural_gpu.hpp>
 #include <fuse/renderer/neural/neural_mlp.hpp>
+#include <fuse/renderer/neural_tap.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
@@ -85,11 +86,24 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+int testNeuralTapOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::neural_tap_ok(0), "neural_tap_ok(0) is true");
+    expect(fuse::renderer::neural_tap_ok(7), "neural_tap_ok(7) is true");
+    expect(!fuse::renderer::neural_tap_ok(-1), "neural_tap_ok(-1) is false");
+    expect(!fuse::renderer::neural_tap_ok(8), "neural_tap_ok(8) is false");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int tapRc = testNeuralTapOk()) {
+        return tapRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -558,6 +572,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int tapRc = testNeuralTapOk()) {
+        return tapRc;
+    }
     std::string mode = "infer";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

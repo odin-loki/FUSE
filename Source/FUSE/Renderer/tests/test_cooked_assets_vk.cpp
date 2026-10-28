@@ -34,6 +34,7 @@
 #include <fuse/ecs/registry.hpp>
 #include <fuse/io/vfs.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/renderer/cook_bytes.hpp>
 #include <fuse/renderer/cooked_assets/bcn_decode.hpp>
 #include <fuse/renderer/cooked_assets/cooked_asset_registry.hpp>
 #include <fuse/renderer/cooked_assets/cooked_texture_gpu.hpp>
@@ -79,11 +80,29 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero.
+/// Does not allocate.
+int testCookBytesOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::cook_bytes_ok(1), "cook_bytes_ok(1) is true");
+    expect(fuse::renderer::cook_bytes_ok(1 << 20), "cook_bytes_ok(1<<20) is true");
+    expect(!fuse::renderer::cook_bytes_ok(0), "cook_bytes_ok(0) is false");
+    expect(!fuse::renderer::cook_bytes_ok((1 << 20) + 1), "cook_bytes_ok((1<<20)+1) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testCookBytesOk\n");
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int cookRc = testCookBytesOk()) {
+        return cookRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1236,6 +1255,9 @@ int runE2e(Context& ctx, const char* cookTool) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int cookRc = testCookBytesOk()) {
+        return cookRc;
+    }
     std::string mode = "decode";
     const char* cookTool = nullptr;
     for (int i = 1; i < argc; ++i) {

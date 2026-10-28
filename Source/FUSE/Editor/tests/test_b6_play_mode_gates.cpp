@@ -2,8 +2,10 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/editor_scene.hpp>
 #include <fuse/editor/editor_state.hpp>
+#include <fuse/editor/play_mode.hpp>
 #include <fuse/editor/play_mode_controller.hpp>
 #include <fuse/editor/play_session.hpp>
+#include <fuse/editor/step_cap.hpp>
 #include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
@@ -324,9 +326,36 @@ void testReenterPlayKeepsSnapshot() {
     expectTrue(controller.state() == fuse::editor::PlayModeController::State::Stopped, "stopped");
 }
 
+// Gate: play-mode frame delta is finite, non-negative, and at most 0.1 seconds.
+void testCapPlayDt() {
+    constexpr float kEps = 1e-5f;
+    const float frame = fuse::editor::cap_play_dt(0.016f);
+    const float hitch = fuse::editor::cap_play_dt(0.5f);
+    const float negative = fuse::editor::cap_play_dt(-1.f);
+    expectTrue(frame >= 0.016f - kEps && frame <= 0.016f + kEps, "cap_play_dt(0.016) == 0.016");
+    expectTrue(hitch >= 0.1f - kEps && hitch <= 0.1f + kEps, "cap_play_dt(0.5) == 0.1");
+    expectTrue(negative >= -kEps && negative <= kEps, "cap_play_dt(-1) == 0");
+}
+
+// Gate: play mode is legal only for 0, 1, and 2. Does not allocate.
+void testPlayModeOk() {
+    expectTrue(fuse::editor::play_mode_ok(0), "play_mode_ok(0) is true");
+    expectTrue(fuse::editor::play_mode_ok(2), "play_mode_ok(2) is true");
+    expectTrue(!fuse::editor::play_mode_ok(-1), "play_mode_ok(-1) is false");
+    expectTrue(!fuse::editor::play_mode_ok(3), "play_mode_ok(3) is false");
+}
+
 } // namespace
 
 int main() {
+    testPlayModeOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_editor_b6_play_mode_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testCapPlayDt();
+
     fuse::core::initialize();
 
     testStopRestoresExactly();
@@ -344,3 +373,23 @@ int main() {
     std::fprintf(stderr, "fuse_editor_b6_play_mode_gates: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/editor/time_scale.hpp>
+
+namespace {
+
+// Gate: play-mode time scale. Pause freezes the step; scale is clamped to 0..4.
+void testScaledDt() {
+    expectTrue(fuse::editor::scaled_dt(0.1f, 2.f, false) == 0.2f,
+               "dt 0.1, scale 2, not paused returns 0.2");
+    expectTrue(fuse::editor::scaled_dt(0.1f, 2.f, true) == 0.f, "paused returns 0");
+    expectTrue(fuse::editor::scaled_dt(0.1f, 10.f, false) == 0.4f, "scale 10 is treated as 4");
+}
+
+struct ScaledDtGate {
+    ScaledDtGate() { testScaledDt(); }
+};
+
+[[maybe_unused]] ScaledDtGate g_scaledDtGate;
+
+} // namespace

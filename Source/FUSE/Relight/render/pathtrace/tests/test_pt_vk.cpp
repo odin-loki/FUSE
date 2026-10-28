@@ -21,6 +21,8 @@
 // message fails the run). Exit 77 = skip (stub build, no ICD / layer / ray-query capability / kernel).
 #include "pt_test_scenes.hpp"
 
+#include <fuse/relight/render/pathtrace/bounce_limit.hpp>
+#include <fuse/relight/render/pathtrace/pt_bounce.hpp>
 #include <fuse/relight/render/pathtrace/pt_gpu.hpp>
 #include <fuse/relight/render/pathtrace/pt_reference.hpp>
 
@@ -93,11 +95,57 @@ int g_failures = 0;
     }
 }
 [[maybe_unused]] void check(bool condition, const std::string& message) { check(condition, message.c_str()); }
+
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of 77. No heap allocation.
+int testPtBounceOk() {
+    using fuse::relight::pt_bounce_ok;
+    if (!pt_bounce_ok(1)) {
+        std::fprintf(stderr, "FAIL: testPtBounceOk: bounce count 1 is valid\n");
+        return 1;
+    }
+    if (!pt_bounce_ok(16)) {
+        std::fprintf(stderr, "FAIL: testPtBounceOk: bounce count 16 is valid\n");
+        return 1;
+    }
+    if (pt_bounce_ok(0)) {
+        std::fprintf(stderr, "FAIL: testPtBounceOk: bounce count 0 is invalid\n");
+        return 1;
+    }
+    if (pt_bounce_ok(17)) {
+        std::fprintf(stderr, "FAIL: testPtBounceOk: bounce count 17 is invalid\n");
+        return 1;
+    }
+    return 0;
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of 77.
+int test_bounce_limit() {
+    using fuse::relight::render::pathtrace::bounce_continues;
+    if (!bounce_continues(2, 3)) {
+        std::fprintf(stderr, "FAIL: test_bounce_limit: bounce 2 with max 3 continues\n");
+        return 1;
+    }
+    if (bounce_continues(3, 3)) {
+        std::fprintf(stderr, "FAIL: test_bounce_limit: bounce 3 with max 3 stops\n");
+        return 1;
+    }
+    if (bounce_continues(0, 0) || bounce_continues(2, 0)) {
+        std::fprintf(stderr, "FAIL: test_bounce_limit: max 0 stops\n");
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int bounceOkRc = testPtBounceOk()) {
+        return bounceOkRc;
+    }
+    if (const int bounceRc = test_bounce_limit()) {
+        return bounceRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -715,6 +763,12 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int bounceOkRc = testPtBounceOk()) {
+        return bounceOkRc;
+    }
+    if (const int bounceRc = test_bounce_limit()) {
+        return bounceRc;
+    }
     std::string language = "all";
     Validation validation = Validation::Layer;
     for (int i = 1; i < argc; ++i) {

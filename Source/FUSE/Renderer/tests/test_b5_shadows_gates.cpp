@@ -13,13 +13,17 @@
 // Hardware-only row (not measurable here): "SDF shadows < 2 ms".
 
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/decals/decal_project.hpp>
 #include <fuse/renderer/shadow/csm.hpp>
+#include <fuse/renderer/shadow/depth_bias.hpp>
 #include <fuse/renderer/shadow/sdf_soft_shadow.hpp>
+#include <fuse/renderer/shadow_res.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -827,9 +831,62 @@ void testSdfSoftShadowBasics() {
     expectTrue(std::fabs(fuse::renderer::sdfDiscVisibility(0.f) - 0.5f) < 1e-6f, "edge through light centre = 50%");
 }
 
+void testDecalProject() {
+    const auto center = fuse::renderer::project_decal(Vec3{0.f, 0.f, 0.5f}, Vec3{0.f, 0.f, -1.f});
+    expectTrue(center.has_value() && center->u == 0.5f && center->v == 0.5f && center->depth == 0.5f,
+               "(0,0,0.5) with normal (0,0,-1) maps to uv (0.5, 0.5)");
+    expectTrue(!fuse::renderer::project_decal(Vec3{2.f, 0.f, 0.5f}, Vec3{0.f, 0.f, -1.f}).has_value(),
+               "x=2 is rejected");
+    expectTrue(!fuse::renderer::project_decal(Vec3{0.f, 0.f, 0.5f}, Vec3{0.f, 0.f, 1.f}).has_value(),
+               "+z normal is rejected");
+}
+
+void testShadowResOk() {
+    using fuse::renderer::shadow_res_ok;
+    expectTrue(shadow_res_ok(256), "shadow_res_ok(256) is true");
+    expectTrue(shadow_res_ok(1024), "shadow_res_ok(1024) is true");
+    expectTrue(shadow_res_ok(4096), "shadow_res_ok(4096) is true");
+    expectTrue(!shadow_res_ok(0), "shadow_res_ok(0) is false");
+    expectTrue(!shadow_res_ok(384), "shadow_res_ok(384) is false");
+    expectTrue(!shadow_res_ok(8192), "shadow_res_ok(8192) is false");
+}
+
+void testShadowDepthBias() {
+    using fuse::renderer::shadow_depth_bias;
+    expectTrue(shadow_depth_bias(0.f, 0.f) == 0.f, "shadow_depth_bias(0, 0) is 0");
+    expectTrue(std::fabs(shadow_depth_bias(2.f, 0.001f) - 0.0012f) <= 1e-6f,
+               "shadow_depth_bias(2, 0.001) is 0.0012");
+    expectTrue(shadow_depth_bias(-2.f, 0.001f) == shadow_depth_bias(0.f, 0.001f),
+               "negative slopeScale counts as 0");
+    expectTrue(shadow_depth_bias(2.f, -0.5f) == shadow_depth_bias(2.f, 0.f), "negative constant counts as 0");
+    expectTrue(shadow_depth_bias(100.f, 0.f) == shadow_depth_bias(8.f, 0.f), "slopeScale clamps to 8");
+    expectTrue(std::fabs(shadow_depth_bias(8.f, 0.f) - 8.e-4f) <= 1e-6f, "slopeScale 8 contributes 8e-4");
+    expectTrue(shadow_depth_bias(0.f, 1.f) == shadow_depth_bias(0.f, 0.01f), "constant clamps to 0.01");
+    expectTrue(std::fabs(shadow_depth_bias(0.f, 1.f) - 0.01f) <= 1e-6f, "clamped constant is 0.01");
+
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    expectTrue(shadow_depth_bias(nan, 0.001f) == 0.f, "non-finite slopeScale returns 0");
+    expectTrue(shadow_depth_bias(2.f, nan) == 0.f, "non-finite constant returns 0");
+    expectTrue(shadow_depth_bias(inf, 0.f) == 0.f, "infinite slopeScale returns 0");
+    expectTrue(shadow_depth_bias(0.f, -inf) == 0.f, "infinite constant returns 0");
+}
+
 } // namespace
 
 int main() {
+    testShadowResOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b5_shadows_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testShadowDepthBias();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b5_shadows_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testCascadeSplitsMatchClosedForm();
@@ -839,6 +896,7 @@ int main() {
     testSdfSoftShadowBasics();
     testPenumbraWidthProportionalToOccluderDistance();
     testSdfShadowMatchesReferencePathTracer();
+    testDecalProject();
     std::printf("[hw-only] SDF shadows < 2 ms: requires GPU timing (CUDA events) — not measurable in CI\n");
 
     fuse::core::shutdown();

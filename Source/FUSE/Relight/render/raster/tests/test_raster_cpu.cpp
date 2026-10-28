@@ -19,7 +19,9 @@
 //   emissive  D3DRS_EMISSIVEMATERIALSOURCE: COLOR0 / COLOR1 emissive flags, COLOR1 in the vertex, replacement
 //             materials override it.
 // Usage: fuse_relight_raster_tests <suite>. Exit 0 pass, 1 fail.
+#include <fuse/relight/render/raster/barycentric.hpp>
 #include <fuse/relight/render/raster/raster_options.hpp>
+#include <fuse/relight/render/raster/raster_samples.hpp>
 #include <fuse/relight/render/raster/raster_scene.hpp>
 
 #include <fuse/relight/scene/classify/instance_categories.hpp>
@@ -613,9 +615,43 @@ void testBuild() {
     check(!rr::buildRasterFrame(in, opt, f), "no scene draw -> passthrough");
 }
 
+void testBarycentric() {
+    const rr::Vec2 a{0.f, 0.f};
+    const rr::Vec2 b{1.f, 0.f};
+    const rr::Vec2 c{0.f, 1.f};
+    const rr::Vec2 centroid{(a.x + b.x + c.x) / 3.f, (a.y + b.y + c.y) / 3.f};
+    const rr::Bary mid = rr::barycentric(centroid, a, b, c);
+    check(mid.inside, "centroid is inside");
+    check(approx(mid.u, 1.f / 3.f) && approx(mid.v, 1.f / 3.f) && approx(mid.w, 1.f / 3.f),
+          "centroid weights about (1/3, 1/3, 1/3)");
+    check(approx(mid.u + mid.v + mid.w, 1.f), "centroid weights sum to 1");
+    const rr::Bary outside = rr::barycentric(rr::Vec2{-1.f, -1.f}, a, b, c);
+    check(!outside.inside, "point (-1, -1) is outside");
+
+    const rr::Bary degenerate = rr::barycentric(a, a, b, rr::Vec2{2.f, 0.f});
+    check(!degenerate.inside && degenerate.u == 0.f && degenerate.v == 0.f && degenerate.w == 0.f,
+          "degenerate triangle: inside false and zero weights");
+    const rr::Bary nonFinite = rr::barycentric(rr::Vec2{std::nanf(""), 0.f}, a, b, c);
+    check(!nonFinite.inside, "non-finite input: inside false");
+}
+
+/// CPU gate. Runs before any suite; a failure exits the process.
+void testRasterSamplesOk() {
+    check(fuse::relight::raster_samples_ok(1), "raster_samples_ok(1)");
+    check(fuse::relight::raster_samples_ok(4), "raster_samples_ok(4)");
+    check(fuse::relight::raster_samples_ok(16), "raster_samples_ok(16)");
+    check(!fuse::relight::raster_samples_ok(0), "raster_samples_ok(0)");
+    check(!fuse::relight::raster_samples_ok(3), "raster_samples_ok(3)");
+    check(!fuse::relight::raster_samples_ok(32), "raster_samples_ok(32)");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testRasterSamplesOk();
+    if (g_failures != 0) {
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     if (suite == "tiers" || suite == "all") {
         testTiers();
@@ -635,6 +671,9 @@ int main(int argc, char** argv) {
     }
     if (suite == "emissive" || suite == "all") {
         testEmissive();
+    }
+    if (suite == "barycentric" || suite == "all") {
+        testBarycentric();
     }
     if (g_failures) {
         std::printf("FAIL: %d check(s) (%s)\n", g_failures, suite.c_str());

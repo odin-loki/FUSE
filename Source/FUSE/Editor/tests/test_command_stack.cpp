@@ -1,7 +1,10 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/command_stack.hpp>
+#include <fuse/editor/redo_depth.hpp>
 #include <fuse/editor/undo_stack.hpp>
+#include <fuse/editor/undo_label.hpp>
+#include <fuse/editor/undo_shortcut.hpp>
 #include <fuse/object.hpp>
 
 #include <cstdio>
@@ -1207,9 +1210,36 @@ void testUndoStackSetBaselineClearsDirtyAtBaselineDepth() {
     expectTrue(stack.isAtBaseline(), "repeat baseline save stays at baseline");
 }
 
+void testTrimUndoLabel() {
+    expectTrue(fuse::editor::trim_undo_label("  Move  ", 16) == "Move",
+               "padded move label trims to Move");
+    expectTrue(fuse::editor::trim_undo_label("abcdefghij", 6) == "abc...",
+               "10-character word at max 6 keeps the first 3 characters plus ellipsis");
+}
+
+void testUndoShortcutOk() {
+    expectTrue(fuse::editor::undo_shortcut_ok("Ctrl+Z"), "Ctrl+Z is an undo shortcut");
+    expectTrue(fuse::editor::undo_shortcut_ok("Ctrl+Y"), "Ctrl+Y is an undo shortcut");
+    expectTrue(!fuse::editor::undo_shortcut_ok("ctrl+z"), "lowercase ctrl+z is not an undo shortcut");
+    expectTrue(!fuse::editor::undo_shortcut_ok(""), "empty shortcut is not an undo shortcut");
+}
+
+void testRedoDepthOk() {
+    expectTrue(fuse::editor::redo_depth_ok(0), "a redo depth of 0 is allowed");
+    expectTrue(fuse::editor::redo_depth_ok(512), "a redo depth of 512 is the cap");
+    expectTrue(!fuse::editor::redo_depth_ok(-1), "a redo depth of -1 is rejected");
+    expectTrue(!fuse::editor::redo_depth_ok(513), "a redo depth of 513 is rejected");
+}
+
 } // namespace
 
 int main() {
+    testRedoDepthOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_editor_command_stack_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testUndoShortcutOk();
     fuse::core::initialize();
     testUndoRedoLifo();
     testMergeConsecutiveCommands();
@@ -1282,6 +1312,7 @@ int main() {
     testUndoStackCoalesceGuardAfterUndo();
     testCommandStackSetBaselineClearsDirtyAtBaselineDepth();
     testUndoStackSetBaselineClearsDirtyAtBaselineDepth();
+    testTrimUndoLabel();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

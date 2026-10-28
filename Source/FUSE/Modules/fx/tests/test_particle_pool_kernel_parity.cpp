@@ -8,14 +8,17 @@
 #include <fuse/compute_kernel/parity.hpp>
 #include <fuse/compute_kernel/stats.hpp>
 #include <fuse/core/init.hpp>
+#include <fuse/fx/emit_rate.hpp>
 #include <fuse/fx/particle_pool.hpp>
 #include <fuse/fx/particle_pool_gpu.hpp>
 #include <fuse/fx/particle_pool_kernel.hpp>
+#include <fuse/fx/pool_slot.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <span>
 #include <vector>
 
@@ -153,9 +156,34 @@ void testStatsAndFallback() {
     scheduler.shutdown();
 }
 
+void testEmitRateOk() {
+    expectTrue(fx::emit_rate_ok(0.5f), "emit_rate_ok(0.5)");
+    expectTrue(fx::emit_rate_ok(1000.f), "emit_rate_ok(1000)");
+    expectTrue(!fx::emit_rate_ok(0.f), "emit_rate_ok(0) is false");
+    expectTrue(!fx::emit_rate_ok(1000.1f), "emit_rate_ok(1000.1) is false");
+    expectTrue(!fx::emit_rate_ok(std::numeric_limits<float>::quiet_NaN()), "emit_rate_ok(NaN) is false");
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits instead of continuing.
+void testPoolSlotOk() {
+    expectTrue(fx::pool_slot_ok(0u, 4u), "pool_slot_ok(0, 4)");
+    expectTrue(!fx::pool_slot_ok(4u, 4u), "pool_slot_ok(4, 4) is false");
+    expectTrue(!fx::pool_slot_ok(0u, 0u), "pool_slot_ok(0, 0) is false");
+}
+
 } // namespace
 
 int main() {
+    testEmitRateOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testEmitRateOk\n");
+        return EXIT_FAILURE;
+    }
+    testPoolSlotOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testPoolSlotOk\n");
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
     testPoolVsPackedParity();
     testStatsAndFallback();

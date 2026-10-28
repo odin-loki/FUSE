@@ -61,6 +61,10 @@ struct AudioSourceDesc {
     u32 attenuation_keypoint_count = 0;
     AudioBus bus = AudioBus::Sfx;
     float occlusion = 1.f;
+    /// Level into the listener reverb bus, clamped to [0, 1] at mix time.
+    /// Independent of the zone wet mix. 0 skips this source's wet contribution.
+    /// Mix equation: mix_listener_reverb_sample in reverb_zones.hpp.
+    float reverb_send = 1.f;
     bool looping = false;
     bool spatial = true;
     bool play_on_awake = false;

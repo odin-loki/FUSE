@@ -17,6 +17,7 @@
 #include "b5_rhi_test_common.hpp"
 
 #include <fuse/renderer/compute/gpu_radix_sort.hpp>
+#include <fuse/renderer/sort/radix_bits.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
@@ -59,6 +60,16 @@ using fuse::u32;
 using fuse::u64;
 
 constexpr const char* kTestName = "fuse_gpu_radix_sort_gates";
+
+/// CPU gate. Runs before any GPU or device skip and does not allocate.
+void testRadixBitsOk() {
+    expectTrue(fuse::renderer::radix_bits_ok(4), "radix_bits_ok(4) is true");
+    expectTrue(fuse::renderer::radix_bits_ok(8), "radix_bits_ok(8) is true");
+    expectTrue(fuse::renderer::radix_bits_ok(16), "radix_bits_ok(16) is true");
+    expectTrue(!fuse::renderer::radix_bits_ok(0), "radix_bits_ok(0) is false");
+    expectTrue(!fuse::renderer::radix_bits_ok(2), "radix_bits_ok(2) is false");
+    expectTrue(!fuse::renderer::radix_bits_ok(32), "radix_bits_ok(32) is false");
+}
 
 #if defined(FUSE_VULKAN_BACKEND) && defined(FUSE_RADIX_SORT_SHADERS_BUILT)
 
@@ -507,6 +518,10 @@ int run() {
 } // namespace
 
 int main() {
+    testRadixBitsOk();
+    if (b5rhi::failures() != 0) {
+        return b5rhi::finish(kTestName);
+    }
 #if !defined(FUSE_VULKAN_BACKEND)
     return b5rhi::skip(kTestName, "Vulkan backend disabled");
 #elif !defined(FUSE_RADIX_SORT_SHADERS_BUILT)

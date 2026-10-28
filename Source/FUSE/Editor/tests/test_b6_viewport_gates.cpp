@@ -10,6 +10,8 @@
 #include <fuse/editor/property_inspector.hpp>
 #include <fuse/editor/undo_stack.hpp>
 #include <fuse/editor/viewport_framebuffer.hpp>
+#include <fuse/editor/viewport_id.hpp>
+#include <fuse/editor/viewport_min.hpp>
 #include <fuse/editor/viewport_panel.hpp>
 #include <fuse/editor/viewport_scene_view.hpp>
 #include <fuse/ecs/component_types.hpp>
@@ -893,9 +895,29 @@ void testContextMenuPlacement() {
     }
 }
 
+void testViewportMinOk() {
+    expectTrue(fuse::editor::viewport_min_ok(64, 64), "viewport_min_ok: 64x64 meets the minimum");
+    expectTrue(!fuse::editor::viewport_min_ok(63, 100), "viewport_min_ok: width below 64 fails");
+    expectTrue(fuse::editor::viewport_min_ok(200, 100), "viewport_min_ok: 200x100 meets the minimum");
+}
+
+void testViewportIdOk() {
+    expectTrue(fuse::editor::viewport_id_ok(0), "viewport_id_ok: id 0 is valid");
+    expectTrue(fuse::editor::viewport_id_ok(7), "viewport_id_ok: id 7 is valid");
+    expectTrue(!fuse::editor::viewport_id_ok(-1), "viewport_id_ok: id -1 is invalid");
+    expectTrue(!fuse::editor::viewport_id_ok(8), "viewport_id_ok: id 8 is invalid");
+}
+
 } // namespace
 
 int main() {
+    const int failuresBeforeViewportId = g_failures;
+    testViewportIdOk();
+    if (g_failures != failuresBeforeViewportId) {
+        std::fprintf(stderr, "fuse_editor_b6_viewport_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testViewportMinOk();
     fuse::core::initialize();
 
     testFlyLookCamera();
@@ -916,3 +938,22 @@ int main() {
     std::fprintf(stderr, "fuse_editor_b6_viewport_gates: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/editor/viewport_fit.hpp>
+
+namespace {
+
+void testViewportAspectFit() {
+    const fuse::editor::ViewportRect fitted = fuse::editor::fit_viewport(200, 100, 1.f);
+    expectTrue(fitted.x == 50 && fitted.y == 0 && fitted.w == 100 && fitted.h == 100,
+               "fit_viewport: 200x100 at aspect 1 is 100x100 at x 50 y 0");
+}
+
+// Appended gate: runs before main so the existing failure count still reports it.
+struct ViewportAspectFitTestHook {
+    ViewportAspectFitTestHook() { testViewportAspectFit(); }
+};
+
+const ViewportAspectFitTestHook g_viewportAspectFitTestHook{};
+
+} // namespace

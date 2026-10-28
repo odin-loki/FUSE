@@ -20,6 +20,7 @@
 //   big     the default 16384-page configuration (heap-allocated once): 12k-page 8-layer DAG, 200 frames
 //   errors  argument validation and every check_invariants() negative path (ClTestAccess)
 #include "fuse/core_logic/cluster_page_residency.hpp"
+#include "fuse/core_logic/residency_gen.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -897,9 +898,21 @@ void testErrors() {
     }
 }
 
+// No allocation.
+int testResidencyGenOk() {
+    PR_CHECK(fuse::renderer::residency_gen_ok(0));
+    PR_CHECK(fuse::renderer::residency_gen_ok(1000000));
+    PR_CHECK(!fuse::renderer::residency_gen_ok(-1));
+    PR_CHECK(!fuse::renderer::residency_gen_ok(1000001));
+    return g_failures == 0 ? 0 : 1;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int residencyGenRc = testResidencyGenOk()) {
+        return residencyGenRc;
+    }
     const char* which = argc > 1 ? argv[1] : "all";
     const bool all = std::strcmp(which, "all") == 0;
     bool ran = false;

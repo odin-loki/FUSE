@@ -22,6 +22,7 @@
 // failed check). Opening the .dmp in WinDbg itself stays a manual check.
 #include <fuse/assert.hpp>
 #include <fuse/platform/crash_report.hpp>
+#include <fuse/platform/minidump_name.hpp>
 
 #include <cstdint>
 #include <cstdio>
@@ -609,9 +610,21 @@ void checkVerifyAbort(const std::string& dir, const std::string& exeName) {
 #endif
 }
 
+void testMinidumpNameOk() {
+    expectTrue(fuse::platform::minidump_name_ok("fuse.dmp"), "minidump_name_ok(\"fuse.dmp\") is true");
+    expectTrue(fuse::platform::minidump_name_ok("A.DMP"), "minidump_name_ok(\"A.DMP\") is true");
+    expectTrue(!fuse::platform::minidump_name_ok("fuse.txt"), "minidump_name_ok(\"fuse.txt\") is false");
+    expectTrue(!fuse::platform::minidump_name_ok(".dmp"), "minidump_name_ok(\".dmp\") is false");
+    expectTrue(fuse::platform::minidump_name_ok(std::string(60, 'a') + ".dmp"),
+               "minidump_name_ok length 64 with .dmp is true");
+    expectTrue(!fuse::platform::minidump_name_ok(std::string(61, 'a') + ".dmp"),
+               "minidump_name_ok length 65 with .dmp is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testMinidumpNameOk();
     if (argc >= 4 && std::strcmp(argv[1], "--crash-child") == 0) {
         return runChild(argv[2], argv[3]);
     }

@@ -19,3 +19,21 @@ if(MINGW)
 endif()
 
 add_test(NAME fuse_compat_ts COMMAND fuse_compat_ts_tests)
+
+add_executable(fuse_compat_sim_object_tests
+    test_compat_sim_object_entity.cpp
+)
+
+target_link_libraries(fuse_compat_sim_object_tests PRIVATE fuse_compat_sim_object)
+
+if(COMMAND fuse_apply_cxx23)
+    fuse_apply_cxx23(fuse_compat_sim_object_tests)
+else()
+    set_target_properties(fuse_compat_sim_object_tests PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+endif()
+
+add_test(NAME fuse_compat_sim_object COMMAND fuse_compat_sim_object_tests)

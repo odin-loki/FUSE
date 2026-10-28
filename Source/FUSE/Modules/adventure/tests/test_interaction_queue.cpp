@@ -1,4 +1,6 @@
 #include <fuse/adventure/adventure_interactable_component.hpp>
+#include <fuse/adventure/interact_depth.hpp>
+#include <fuse/adventure/interact_priority.hpp>
 #include <fuse/adventure/interactable.hpp>
 #include <fuse/adventure/interaction_queue.hpp>
 #include <fuse/adventure/inventory_component.hpp>
@@ -22,6 +24,19 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testInteractDepthOk() {
+    expectTrue(fuse::adventure::interact_depth_ok(1), "depth 1 is accepted");
+    expectTrue(fuse::adventure::interact_depth_ok(32), "depth 32 is accepted");
+    expectTrue(!fuse::adventure::interact_depth_ok(0), "depth 0 is rejected");
+    expectTrue(!fuse::adventure::interact_depth_ok(33), "depth 33 is rejected");
+}
+
+void testInteractPriorityWins() {
+    expectTrue(fuse::adventure::interact_priority_wins(3, 2), "priority 3 beats 2");
+    expectTrue(!fuse::adventure::interact_priority_wins(2, 2), "equal priority 2 does not replace");
+    expectTrue(!fuse::adventure::interact_priority_wins(1, 4), "priority 1 does not beat 4");
 }
 
 void testQueuePendingAndDrainCounts() {
@@ -151,6 +166,14 @@ void testQueueClearDropsPending() {
 } // namespace
 
 int main() {
+    const int failuresBeforeDepth = g_failures;
+    testInteractDepthOk();
+    if (g_failures != failuresBeforeDepth) {
+        std::fprintf(stderr, "fuse_adventure interaction queue tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testInteractPriorityWins();
     fuse::core::initialize();
     testQueuePendingAndDrainCounts();
     testQueueOrderedPickupThenUse();
@@ -166,3 +189,21 @@ int main() {
     std::fprintf(stderr, "fuse_adventure interaction queue tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/adventure/interact_queue.hpp>
+
+namespace {
+
+void testInteractQueueCapacity() {
+    expectTrue(fuse::adventure::interact_queue_accept(3, 4), "size 3 capacity 4 accepts");
+    expectTrue(!fuse::adventure::interact_queue_accept(4, 4), "size 4 capacity 4 does not accept");
+    expectTrue(fuse::adventure::interact_queue_overflow(6, 4) == 2, "overflow of size 6 capacity 4 is 2");
+}
+
+struct InteractQueueCapacityTestInit {
+    InteractQueueCapacityTestInit() { testInteractQueueCapacity(); }
+};
+
+const InteractQueueCapacityTestInit g_interactQueueCapacityTestInit{};
+
+} // namespace

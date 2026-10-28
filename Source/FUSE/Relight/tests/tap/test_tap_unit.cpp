@@ -4,6 +4,7 @@
 // block deduplication, identity transforms omitted, UP data hashes).
 #include <fuse/relight/tap/null_tap.hpp>
 #include <fuse/relight/tap/recording_tap.hpp>
+#include <fuse/relight/tap/tap_channel.hpp>
 #include <fuse/relight/tap/tap_config.hpp>
 
 #include "sha256.hpp"
@@ -60,6 +61,13 @@ int countPrefix(const std::vector<std::string>& lines, const std::string& prefix
         n += l.compare(0, prefix.size(), prefix) == 0 ? 1 : 0;
     }
     return n;
+}
+
+void testTapChannelOk() {
+    CHECK(fuse::relight::tap_channel_ok(0));
+    CHECK(fuse::relight::tap_channel_ok(15));
+    CHECK(!fuse::relight::tap_channel_ok(-1));
+    CHECK(!fuse::relight::tap_channel_ok(16));
 }
 
 void testSha256() {
@@ -304,6 +312,7 @@ void testRecordingTap() {
 } // namespace
 
 int main() {
+    testTapChannelOk();
     testSha256();
     testModes();
     testRuntimeConfig();

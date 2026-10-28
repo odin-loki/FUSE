@@ -13,6 +13,7 @@
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/systems/culling_system.hpp>
+#include <fuse/scene/fly_speed.hpp>
 #include <fuse/scene/free_camera.hpp>
 #include <fuse/scene/scene_manager.hpp>
 
@@ -242,9 +243,18 @@ void testControllerBasics() {
     expectTrue(!c.update(reg, in, 0.1f), "update refuses a destroyed camera entity");
 }
 
+void testFlySpeedOk() {
+    expectTrue(fuse::scene::fly_speed_ok(0.1f), "fly speed 0.1");
+    expectTrue(fuse::scene::fly_speed_ok(10.f), "fly speed 10");
+    expectTrue(fuse::scene::fly_speed_ok(100.f), "fly speed 100");
+    expectTrue(!fuse::scene::fly_speed_ok(0.f), "fly speed 0 rejected");
+    expectTrue(!fuse::scene::fly_speed_ok(101.f), "fly speed 101 rejected");
+}
+
 } // namespace
 
 int main() {
+    testFlySpeedOk();
     testControllerBasics();
     testFreeCameraPathCulling();
     if (g_failures == 0) {

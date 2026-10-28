@@ -10,7 +10,12 @@
 //   - BVH ray casts (closest / all) and AABB / point queries == brute force over every shape
 //   - deterministic stepping: two worlds fed the same commands end bit-identical
 //   - a steady-state step makes zero heap allocations
+//   - sleep (off unless enabled): a quiet dynamic body sleeps, statics do not, impulses and fast
+//     contacts wake it, and a sleeper is not integrated or position-corrected
+//   - circle CCD: a fast circle does not tunnel a static edge or polygon; a slow circle keeps the
+//     discrete step; one-sided backs and dynamic walls are not clamped; zero dt / zero radius stay finite
 
+#include <fuse/physics/physics2d/pixel_size.hpp>
 #include <fuse/physics/physics_world_2d.hpp>
 
 #include <algorithm>
@@ -726,9 +731,333 @@ void testDeterminism() {
     check(g_allocations == 0u, "steady-state step and queries make zero heap allocations");
 }
 
+bool finiteBody(const PhysicsWorld2D& world, BodyId2D body) {
+    const vec2 p = world.bodyPosition(body);
+    const vec2 v = world.bodyLinearVelocity(body);
+    return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(world.bodyAngle(body)) && std::isfinite(v.x) &&
+           std::isfinite(v.y) && std::isfinite(world.bodyAngularVelocity(body));
+}
+
+SolverSettings2D sleepSettings(PhysicsWorld2D& world, f32 timeRequired, f32 linear, f32 angular) {
+    SolverSettings2D settings = world.solverSettings();
+    settings.enableSleep = true;
+    settings.sleepTimeRequired = timeRequired;
+    settings.sleepLinearThreshold = linear;
+    settings.sleepAngularThreshold = angular;
+    world.setSolverSettings(settings);
+    return settings;
+}
+
+void testSleep() {
+    std::printf("sleep\n");
+    const f32 dt = 1.f / 60.f;
+    {
+        PhysicsWorld2D world = makeWorld();
+        check(!world.solverSettings().enableSleep, "sleep is off unless enabled");
+        world.setGravity({0.f, 0.f});
+        const BodyId2D box = dynamicBody(world, {0.f, 1.f});
+        world.addBoxShape(box, 0.4f, 0.4f);
+        const BodyId2D ground = staticBody(world);
+        world.addBoxShape(ground, 2.f, 0.4f);
+        for (int i = 0; i < 120; ++i) {
+            world.stepRigid(dt);
+        }
+        check(!world.bodySleeping(box) && !world.bodySleeping(ground),
+              "default settings leave a resting dynamic and a static awake");
+    }
+    {
+        PhysicsWorld2D world = makeWorld();
+        world.setGravity({0.f, 0.f});
+        sleepSettings(world, 0.5f, 0.05f, 0.05f);
+        const BodyId2D quiet = dynamicBody(world, {0.f, 3.f});
+        world.addCircleShape(quiet, 0.3f);
+        const BodyId2D moving = dynamicBody(world, {4.f, 3.f});
+        world.addCircleShape(moving, 0.3f);
+        world.setBodyLinearVelocity(moving, {1.f, 0.f});
+        const BodyId2D spinning = dynamicBody(world, {-4.f, 3.f});
+        world.addCircleShape(spinning, 0.3f);
+        world.setBodyAngularVelocity(spinning, 1.f);
+        BodyDef2D kinDef;
+        kinDef.type = BodyType2D::Kinematic;
+        kinDef.position = {8.f, 3.f};
+        const BodyId2D kinematic = world.createBody(kinDef);
+        world.addBoxShape(kinematic, 0.2f, 0.2f);
+        const BodyId2D ground = staticBody(world, {0.f, -2.f});
+        world.addBoxShape(ground, 1.f, 0.2f);
+
+        world.stepRigid(dt);
+        check(!world.bodySleeping(quiet), "shorter than the required time does not sleep a quiet body");
+        sleepSettings(world, 0.f, 0.05f, 0.05f);
+        world.stepRigid(dt);
+        check(world.bodySleeping(quiet), "a dynamic body under both thresholds sleeps");
+        check(!world.bodySleeping(moving), "linear speed above the threshold stays awake");
+        check(!world.bodySleeping(spinning), "angular speed above the threshold stays awake");
+        check(!world.bodySleeping(ground), "a static body is not put to sleep");
+        check(!world.bodySleeping(kinematic), "a kinematic body is not put to sleep");
+
+        const vec2 sleptAt = world.bodyPosition(quiet);
+        const f32 sleptAngle = world.bodyAngle(quiet);
+        world.setGravity({0.f, -10.f});
+        world.applyForceToCenter(quiet, {50.f, 0.f});
+        world.applyTorque(quiet, 20.f);
+        for (int i = 0; i < 30; ++i) {
+            world.stepRigid(dt);
+        }
+        const vec2 held = world.bodyPosition(quiet);
+        check(world.bodySleeping(quiet), "gravity and forces do not wake a sleeper");
+        check(held.x == sleptAt.x && held.y == sleptAt.y && world.bodyAngle(quiet) == sleptAngle,
+              "a sleeping body is not integrated");
+        check(world.bodyLinearVelocity(quiet).x == 0.f && world.bodyLinearVelocity(quiet).y == 0.f &&
+                  world.bodyAngularVelocity(quiet) == 0.f,
+              "a sleeping body keeps zero velocity");
+
+        world.applyLinearImpulse(quiet, {0.4f, 0.f}, world.bodyWorldCenter(quiet));
+        check(!world.bodySleeping(quiet) && world.bodyLinearVelocity(quiet).x > 0.f, "a linear impulse wakes");
+        world.setBodyLinearVelocity(quiet, {0.f, 0.f});
+        world.setBodyAngularVelocity(quiet, 0.f);
+        world.setGravity({0.f, 0.f});
+        world.stepRigid(dt);
+        check(world.bodySleeping(quiet), "clearing the velocity lets it sleep again");
+        world.setBodyLinearVelocity(quiet, {0.2f, 0.f});
+        check(!world.bodySleeping(quiet), "setting linear velocity wakes");
+        world.setBodyLinearVelocity(quiet, {0.f, 0.f});
+        world.stepRigid(dt);
+        check(world.bodySleeping(quiet), "back to sleep before the angular wake");
+        world.setBodyAngularVelocity(quiet, 0.4f);
+        check(!world.bodySleeping(quiet), "setting angular velocity wakes");
+        world.setBodyAngularVelocity(quiet, 0.f);
+        world.stepRigid(dt);
+        world.applyAngularImpulse(quiet, 0.05f);
+        check(!world.bodySleeping(quiet), "an angular impulse wakes");
+    }
+    {
+        PhysicsWorld2D world = makeWorld();
+        world.setGravity({0.f, 0.f});
+        sleepSettings(world, 0.f, 0.05f, 0.05f);
+        const BodyId2D sleeper = dynamicBody(world, {0.f, 0.f});
+        world.addCircleShape(sleeper, 0.5f);
+        world.stepRigid(dt);
+        check(world.bodySleeping(sleeper), "sleeper is down before the overlap checks");
+        const vec2 at = world.bodyPosition(sleeper);
+
+        const BodyId2D still = dynamicBody(world, {0.4f, 0.f});
+        world.addCircleShape(still, 0.5f);
+        world.stepRigid(dt);
+        check(world.bodySleeping(sleeper), "a touching dynamic body under the sleep speed does not wake");
+        world.destroyBody(still);
+
+        const BodyId2D fast = dynamicBody(world, {0.4f, 0.f});
+        world.addCircleShape(fast, 0.5f);
+        world.setBodyLinearVelocity(fast, {3.f, 0.f});
+        world.stepRigid(dt);
+        check(!world.bodySleeping(sleeper), "a faster awake dynamic contact wakes the sleeper");
+
+        world.setBodyLinearVelocity(sleeper, {0.f, 0.f});
+        world.setBodyAngularVelocity(sleeper, 0.f);
+        world.setBodyTransform(sleeper, {0.f, 5.f}, 0.f);
+        world.stepRigid(dt);
+        check(world.bodySleeping(sleeper), "isolated again, it sleeps");
+        const BodyId2D block = staticBody(world, {0.f, 5.f});
+        world.addBoxShape(block, 1.f, 1.f);
+        const vec2 buried = world.bodyPosition(sleeper);
+        for (int i = 0; i < 10; ++i) {
+            world.stepRigid(dt);
+        }
+        const vec2 after = world.bodyPosition(sleeper);
+        check(world.bodySleeping(sleeper), "overlap with a static body does not wake");
+        check(after.x == buried.x && after.y == buried.y && world.bodyAngle(sleeper) == 0.f,
+              "the contact solver does not push a sleeping body out of a static shape");
+        (void)at;
+    }
+    {
+        PhysicsWorld2D world = makeWorld();
+        sleepSettings(world, 0.25f, 0.4f, 0.4f);
+        const BodyId2D ground = staticBody(world);
+        world.addBoxShape(ground, 4.f, 0.5f, {0.f, -0.5f});
+        const BodyId2D lower = dynamicBody(world, {0.f, 0.55f});
+        const BodyId2D upper = dynamicBody(world, {0.f, 1.65f});
+        world.addBoxShape(lower, 0.5f, 0.5f);
+        world.addBoxShape(upper, 0.5f, 0.5f);
+        for (int i = 0; i < 60 * 6; ++i) {
+            world.stepRigid(dt);
+        }
+        const vec2 lv = world.bodyLinearVelocity(lower);
+        const vec2 uv = world.bodyLinearVelocity(upper);
+        std::printf("    pile speeds %.4f %.4f sleeping %d %d\n", static_cast<double>(std::hypot(lv.x, lv.y)),
+                    static_cast<double>(std::hypot(uv.x, uv.y)), world.bodySleeping(lower) ? 1 : 0,
+                    world.bodySleeping(upper) ? 1 : 0);
+        check(world.bodySleeping(lower) && world.bodySleeping(upper), "a resting stack sleeps together");
+        check(!world.bodySleeping(ground), "the ground under the stack stays awake");
+        const vec2 lp = world.bodyPosition(lower);
+        const vec2 up = world.bodyPosition(upper);
+        for (int i = 0; i < 60; ++i) {
+            world.stepRigid(dt);
+        }
+        check(world.bodyPosition(lower).x == lp.x && world.bodyPosition(lower).y == lp.y &&
+                  world.bodyPosition(upper).x == up.x && world.bodyPosition(upper).y == up.y,
+              "sleeping stack does not move on later steps");
+    }
+}
+
+void testCircleCcd() {
+    std::printf("circle CCD\n");
+    const f32 dt = 1.f / 60.f;
+    const f32 radius = 0.2f;
+    const f32 skin = 0.01f; // polygon / edge skin baked into those shapes
+    auto discreteSteps = [](PhysicsWorld2D& world) {
+        SolverSettings2D settings = world.solverSettings();
+        settings.velocityIterations = 0u;
+        settings.positionIterations = 0u;
+        settings.warmStarting = false;
+        world.setSolverSettings(settings);
+        world.setGravity({0.f, 0.f});
+    };
+
+    {
+        PhysicsWorld2D world = makeWorld();
+        discreteSteps(world);
+        const BodyId2D ground = staticBody(world);
+        world.addEdgeShape(ground, {-5.f, 0.f}, {5.f, 0.f});
+        const f32 y0 = 0.30f;
+        const f32 vy = -6.f;
+        const BodyId2D slow = dynamicBody(world, {0.f, y0});
+        world.addCircleShape(slow, radius);
+        world.setBodyLinearVelocity(slow, {0.f, vy});
+        world.stepRigid(dt);
+        const f32 expected = y0 + dt * vy;
+        check(std::fabs(world.bodyPosition(slow).y - expected) < 1e-5f,
+              "a slow circle keeps the discrete integrated position");
+        check(world.bodyContactCount(slow) == 0u, "the slow step has not reached the edge yet");
+    }
+    {
+        PhysicsWorld2D world = makeWorld();
+        discreteSteps(world);
+        const BodyId2D ground = staticBody(world);
+        const ShapeId2D edge = world.addEdgeShape(ground, {-5.f, 0.f}, {5.f, 0.f});
+        const BodyId2D bullet = dynamicBody(world, {0.25f, 0.5f});
+        const ShapeId2D bulletShape = world.addCircleShape(bullet, radius);
+        world.setBodyLinearVelocity(bullet, {0.f, -1000.f});
+        world.stepRigid(dt);
+        const f32 y = world.bodyPosition(bullet).y;
+        const f32 surface = radius + skin;
+        std::printf("    edge bullet y=%.5f vy=%.5f contacts=%u\n", static_cast<double>(y),
+                    static_cast<double>(world.bodyLinearVelocity(bullet).y), world.bodyContactCount(bullet));
+        check(std::fabs(y - surface) < 1e-3f, "fast circle clamps to the edge time of impact");
+        check(std::fabs(world.bodyLinearVelocity(bullet).y) < 1e-3f, "CCD removes the approaching velocity");
+        check(world.bodyContactCount(bullet) == 1u, "CCD writes a contact");
+        check(finiteBody(world, bullet), "edge CCD pose is finite");
+        int begins = 0;
+        for (const ContactEvent2D& event : world.contactBeginEvents()) {
+            if ((event.shapeA == edge && event.shapeB == bulletShape) ||
+                (event.shapeA == bulletShape && event.shapeB == edge)) {
+                ++begins;
+                check(event.approachSpeed > 50.f, "CCD begin event reports the incoming approach speed");
+            }
+        }
+        check(begins == 1, "CCD contact begins once");
+    }
+    {
+        PhysicsWorld2D world = makeWorld();
+        discreteSteps(world);
+        const BodyId2D ground = staticBody(world);
+        world.addBoxShape(ground, 1.f, 1.f);
+        const BodyId2D bullet = dynamicBody(world, {0.f, 3.f});
+        world.addCircleShape(bullet, radius);
+        world.setBodyLinearVelocity(bullet, {0.f, -1000.f});
+        world.stepRigid(dt);
+        const f32 y = world.bodyPosition(bullet).y;
+        std::printf("    polygon bullet y=%.5f\n", static_cast<double>(y));
+        check(std::fabs(y - (1.f + radius + skin)) < 1e-3f, "fast circle clamps to the polygon time of impact");
+        check(world.bodyContactCount(bullet) == 1u, "polygon CCD writes a contact");
+        check(y > 1.f, "the circle centre stays outside the polygon");
+    }
+    {
+        PhysicsWorld2D world = makeWorld();
+        discreteSteps(world);
+        const BodyId2D mover = dynamicBody(world, {0.f, 0.f});
+        world.addBoxShape(mover, 1.f, 1.f);
+        const BodyId2D bullet = dynamicBody(world, {0.f, 3.f});
+        world.addCircleShape(bullet, radius);
+        world.setBodyLinearVelocity(bullet, {0.f, -1000.f});
+        world.stepRigid(dt);
+        // Translation cap is 2 m, so the unclamped step lands at y = 1. CCD must not pull it back up.
+        check(std::fabs(world.bodyPosition(bullet).y - 1.f) < 1e-4f, "CCD does not clamp against a dynamic polygon");
+    }
+    {
+        PhysicsWorld2D world = makeWorld();
+        discreteSteps(world);
+        const BodyId2D ground = staticBody(world);
+        addGroundChain(world, ground);
+        const BodyId2D fromBelow = dynamicBody(world, {0.5f, -1.f});
+        world.addCircleShape(fromBelow, radius);
+        world.setBodyLinearVelocity(fromBelow, {0.f, 1000.f});
+        world.stepRigid(dt);
+        check(std::fabs(world.bodyPosition(fromBelow).y - 1.f) < 1e-3f,
+              "a fast circle still passes through a one-sided chain from behind");
+
+        const BodyId2D fromAbove = dynamicBody(world, {0.5f, 0.5f});
+        world.addCircleShape(fromAbove, radius);
+        world.setBodyLinearVelocity(fromAbove, {0.f, -1000.f});
+        world.stepRigid(dt);
+        check(std::fabs(world.bodyPosition(fromAbove).y - (radius + skin)) < 1e-3f,
+              "a fast circle clamps onto the front of a one-sided chain");
+    }
+    {
+        PhysicsWorld2D a = makeWorld();
+        PhysicsWorld2D b = makeWorld();
+        discreteSteps(a);
+        discreteSteps(b);
+        for (PhysicsWorld2D* world : {&a, &b}) {
+            const BodyId2D ground = staticBody(*world);
+            world->addEdgeShape(ground, {-2.f, 0.f}, {2.f, 0.f});
+            const BodyId2D bullet = dynamicBody(*world, {0.f, 0.8f});
+            world->addCircleShape(bullet, radius);
+            world->setBodyLinearVelocity(bullet, {0.f, -80.f});
+            world->stepRigid(dt);
+        }
+        check(a.bodyPosition(1u).x == b.bodyPosition(1u).x && a.bodyPosition(1u).y == b.bodyPosition(1u).y &&
+                  a.bodyLinearVelocity(1u).x == b.bodyLinearVelocity(1u).x &&
+                  a.bodyLinearVelocity(1u).y == b.bodyLinearVelocity(1u).y,
+              "two CCD worlds with the same commands match");
+    }
+    {
+        PhysicsWorld2D world = makeWorld();
+        world.setGravity({0.f, 0.f});
+        const BodyId2D ground = staticBody(world);
+        world.addEdgeShape(ground, {-2.f, 0.f}, {2.f, 0.f});
+        const BodyId2D bullet = dynamicBody(world, {0.f, 2.f});
+        world.addCircleShape(bullet, radius);
+        world.setBodyLinearVelocity(bullet, {0.f, -1000.f});
+        world.stepRigid(0.f);
+        check(world.bodyPosition(bullet).y == 2.f && finiteBody(world, bullet), "zero dt does not move or NaN");
+
+        const BodyId2D point = dynamicBody(world, {0.2f, 1.f});
+        const ShapeId2D pointShape = world.addCircleShape(point, 0.f);
+        check(pointShape != kInvalidId2D, "a zero-radius circle is accepted");
+        world.setBodyLinearVelocity(point, {0.f, -1000.f});
+        world.stepRigid(0.f);
+        check(world.bodyPosition(point).y == 1.f && finiteBody(world, point), "zero dt with zero radius stays finite");
+        world.stepRigid(dt);
+        const vec2 p = world.bodyPosition(point);
+        const vec2 v = world.bodyLinearVelocity(point);
+        std::printf("    zero-radius y=%.5f vy=%.5f\n", static_cast<double>(p.y), static_cast<double>(v.y));
+        check(finiteBody(world, point), "a zero-radius sweep does not NaN");
+        check(p.y > -0.05f, "a zero-radius point does not tunnel the edge");
+    }
+}
+
+void testPixelSizeOk() {
+    check(fuse::physics::pixel_size_ok(0.01f), "0.01 m per pixel is in range");
+    check(fuse::physics::pixel_size_ok(0.001f), "0.001 m per pixel is the floor");
+    check(fuse::physics::pixel_size_ok(1.f), "1 m per pixel is the cap");
+    check(!fuse::physics::pixel_size_ok(0.f), "a zero pixel size is rejected");
+    check(!fuse::physics::pixel_size_ok(2.f), "2 m per pixel is rejected");
+}
+
 } // namespace
 
 int main() {
+    testPixelSizeOk();
     testMassAndTorque();
     testBoxSettlesOnChain();
     testNoSnagOnChainVertices();
@@ -738,6 +1067,8 @@ int main() {
     testEvents();
     testQueriesVsBruteForce();
     testDeterminism();
+    testSleep();
+    testCircleCcd();
     if (g_failures != 0) {
         std::fprintf(stderr, "%d G11 physics2d check(s) failed\n", g_failures);
         return EXIT_FAILURE;

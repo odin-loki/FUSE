@@ -16,7 +16,6 @@ void AudioEngine::init(const AudioDesc& desc) {
     m_mixer.configure(desc.sample_rate, desc.max_sources, desc.hrtf_enabled);
     m_mixBuffer.clear();
     m_mixBuffer.reserve(static_cast<usize>(desc.frames_per_buf) * 2);
-    m_dryBuffer.clear();
     m_reverbZones.clear();
     m_blocksRendered = 0;
     m_initialized = backend_ok && m_backend.is_initialized();
@@ -28,7 +27,6 @@ void AudioEngine::destroy() {
     m_clips = HandleMap<AudioClip>{};
     m_reverbZones.clear();
     m_mixBuffer.clear();
-    m_dryBuffer.clear();
     m_wetBuffer.clear();
     m_mixer.clear_one_shots();
     m_cpuReverb.reset();
@@ -195,23 +193,24 @@ void AudioEngine::apply_reverb_(std::vector<float>& stereo_buffer, u32 frames,
         return;
     }
 
-    // Mono reverb send (L+R)/2 convolved once; the wet signal is added to both channels while
-    // the dry path keeps its stereo image.
-    m_dryBuffer.resize(frames);
-    m_wetBuffer.assign(frames, 0.f);
-    const float wet_mix = compute_effective_wet_mix(blend);
-
-    for (u32 frame = 0; frame < frames; ++frame) {
-        m_dryBuffer[frame] = 0.5f * (stereo_buffer[static_cast<usize>(frame) * 2]
-                                       + stereo_buffer[static_cast<usize>(frame) * 2 + 1]);
+    // Per-source sends already summed into the listener bus. Unity send matches the old
+    // 0.5*(L+R) downmix; a silent send contributes nothing. See mix_listener_reverb_sample.
+    const std::vector<float>& send_bus = m_mixer.reverb_send_bus();
+    const std::vector<float>& sent_dry = m_mixer.reverb_sent_dry();
+    if (send_bus.size() < frames || sent_dry.size() < static_cast<usize>(frames) * 2) {
+        return;
     }
 
-    m_cpuReverb.process(m_dryBuffer.data(), m_wetBuffer.data(), frames);
+    m_wetBuffer.assign(frames, 0.f);
+    m_cpuReverb.process(send_bus.data(), m_wetBuffer.data(), frames);
 
+    const float zone_wet = compute_effective_wet_mix(blend);
     for (u32 frame = 0; frame < frames; ++frame) {
+        const float wet = m_wetBuffer[frame];
         for (u32 ch = 0; ch < 2; ++ch) {
-            float& sample = stereo_buffer[static_cast<usize>(frame) * 2 + ch];
-            sample = blend_dry_wet_sample(sample, m_wetBuffer[frame], wet_mix);
+            const usize index = static_cast<usize>(frame) * 2 + ch;
+            float& sample = stereo_buffer[index];
+            sample = mix_listener_reverb_sample(sample, sent_dry[index], wet, zone_wet);
         }
     }
 }

@@ -9,6 +9,7 @@
 //   * texcoordIndex selection (binning, DISABLE break, unused textures, volumes / cubes, lightmaps,
 //     TCI generation flags, pixel shaders);
 //   * skinning rules, bone range and bone hash; bounding box (with NaN); status codes; options.
+#include <fuse/relight/capture/geometry/capture_verts.hpp>
 #include <fuse/relight/capture/geometry/geometry_capture.hpp>
 
 #include <fuse/jobs/job_scheduler.hpp>
@@ -855,9 +856,17 @@ void testOptionsAndConfig() {
     CHECK(JobFuture<int>::schedule([] { return 7; }, false).get() == 7);
 }
 
+void testCaptureVertsOk() {
+    CHECK(capture_verts_ok(3));
+    CHECK(capture_verts_ok(1u << 20));
+    CHECK(!capture_verts_ok(2));
+    CHECK(!capture_verts_ok((1u << 20) + 1u));
+}
+
 } // namespace
 
 int main() {
+    testCaptureVertsOk();
     std::printf("rl_capture_geometry_unit\n");
     testRebase();
     testMemoizer();

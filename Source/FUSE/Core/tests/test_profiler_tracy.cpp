@@ -12,6 +12,8 @@
 // mapping is additive), and in the enabled build the adapter answers (version pin, no server).
 // fuse_core_profiler_tracy_zero_overhead additionally runs nm over fuse_core and this binary.
 #include <fuse/profiler/profiler.hpp>
+#include <fuse/profiler/tracy_zone.hpp>
+#include <fuse/profiler/zone_name.hpp>
 
 #include <cstdio>
 #include <cstring>
@@ -74,6 +76,25 @@ void expect(bool condition, const char* message) {
     }
 }
 
+void testTracyZoneOk() {
+    expect(fuse::profiler::tracy_zone_ok("Frame"), "letter-led tracy zone accepted");
+    expect(!fuse::profiler::tracy_zone_ok(""), "empty tracy zone rejected");
+    expect(!fuse::profiler::tracy_zone_ok("1Frame"), "tracy zone must start with a letter");
+    expect(!fuse::profiler::tracy_zone_ok("Frame Time"), "tracy zone must not contain spaces");
+}
+
+void testZoneNameOk() {
+    expect(fuse::profiler::zone_name_ok("Update"), "letter-led zone name accepted");
+    expect(!fuse::profiler::zone_name_ok(""), "empty zone name rejected");
+    expect(!fuse::profiler::zone_name_ok("1Update"), "zone name must start with a letter");
+    constexpr char kFortyEight[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuv";
+    static_assert(sizeof(kFortyEight) - 1 == 48);
+    expect(fuse::profiler::zone_name_ok(kFortyEight), "48-character zone name accepted");
+    constexpr char kFortyNine[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw";
+    static_assert(sizeof(kFortyNine) - 1 == 49);
+    expect(!fuse::profiler::zone_name_ok(kFortyNine), "49-character zone name rejected");
+}
+
 // One call site fed two different names: the second must still be recorded under its own name.
 void dynamicScope(const char* name) {
     FUSE_PROFILE_SCOPE(name);
@@ -109,6 +130,12 @@ void workload() {
 } // namespace
 
 int main() {
+    testTracyZoneOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
+    testZoneNameOk();
     fuse::profiler::reset();
     fuse::profiler::setEnabled(true);
     fuse::profiler::beginFrame();

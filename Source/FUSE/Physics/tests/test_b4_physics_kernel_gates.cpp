@@ -31,6 +31,7 @@
 #include <fuse/physics/broadphase/broadphase_kernel.hpp>
 #include <fuse/physics/broadphase/broadphase_kernels.hpp>
 #include <fuse/physics/broadphase/pair_buffer.hpp>
+#include <fuse/physics/kernel_name.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/narrowphase/narrowphase_kernels.hpp>
 #include <fuse/physics/physics_pipeline.hpp>
@@ -696,6 +697,18 @@ void printTimings() {
     }
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testPhysicsKernelNameOk() {
+    expectTrue(physics_kernel_name_ok("Broadphase"), "Broadphase is a valid kernel name");
+    expectTrue(!physics_kernel_name_ok(""), "empty kernel name is invalid");
+    expectTrue(!physics_kernel_name_ok("1Kernel"), "leading digit is an invalid kernel name");
+    expectTrue(physics_kernel_name_ok("a"), "single ASCII letter is a valid kernel name");
+    expectTrue(physics_kernel_name_ok("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"),
+               "48-character kernel name is valid");
+    expectTrue(!physics_kernel_name_ok("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"),
+               "49-character kernel name is invalid");
+}
+
 } // namespace
 
 // test_b4_physics_resident.cpp
@@ -704,6 +717,13 @@ int residentCudaBench(bool standalone);
 int residentHostBench();
 
 int main(int argc, char** argv) {
+    const int nameGateBaseline = g_failures;
+    testPhysicsKernelNameOk();
+    if (g_failures != nameGateBaseline) {
+        std::fprintf(stderr, "FAIL: testPhysicsKernelNameOk\n");
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
     if (argc >= 2 && (std::strcmp(argv[1], "--cuda-bench") == 0 || std::strcmp(argv[1], "--host-bench") == 0)) {
         const int rc = std::strcmp(argv[1], "--cuda-bench") == 0 ? residentCudaBench(true) : residentHostBench();
@@ -733,3 +753,28 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "fuse_b4_physics_kernel_gates: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/physics/forces/torque.hpp>
+
+namespace {
+
+void testTorqueFromForce() {
+    const fuse::physics::vec3 torque = fuse::physics::torque_from_force(
+        fuse::physics::vec3{0.f, 0.f, 0.f}, fuse::physics::vec3{1.f, 0.f, 0.f}, fuse::physics::vec3{0.f, 2.f, 0.f});
+    expectTrue(torque.x == 0.f && torque.y == 0.f && torque.z == 2.f,
+               "force (0, 2, 0) at (1, 0, 0) about the origin yields torque (0, 0, 2)");
+
+    const fuse::physics::vec3 bad = fuse::physics::torque_from_force(
+        fuse::physics::vec3{0.f, 0.f, 0.f}, fuse::physics::vec3{std::nanf(""), 0.f, 0.f},
+        fuse::physics::vec3{0.f, 2.f, 0.f});
+    expectTrue(bad.x == 0.f && bad.y == 0.f && bad.z == 0.f, "non-finite point yields zero torque");
+}
+
+// The kernel gate already owns main. This runs first and reports through g_failures, which main checks.
+[[maybe_unused]] const int g_torqueFromForceGate = [] {
+    testTorqueFromForce();
+    return 0;
+}();
+
+} // namespace
+

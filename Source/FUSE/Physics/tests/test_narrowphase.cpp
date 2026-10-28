@@ -1,15 +1,20 @@
+#include <fuse/physics/forces/restitution.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
+#include <fuse/physics/narrowphase/contact_bias.hpp>
 #include <fuse/physics/narrowphase/contact_buffer.hpp>
 #include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/narrowphase/friction.hpp>
 #include <fuse/physics/narrowphase/gjk.hpp>
+#include <fuse/physics/narrowphase/pair_count.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/physics/shapes/shape_pool.hpp>
+#include <fuse/physics/solver/contact_slop.hpp>
 
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <utility>
 
 namespace {
@@ -1903,9 +1908,64 @@ void testFrictionBasisFollowUpRejectGuards() {
     expectTrue(preflight.can_skip_rebuild(), "friction preflight can skip valid basis");
 }
 
+void testCombineRestitution() {
+    expectTrue(
+        fuse::physics::combine_restitution(0.2f, 0.9f, fuse::physics::RestitutionCombine::Maximum) == 0.9f,
+        "maximum restitution of 0.2 and 0.9 is 0.9");
+    expectTrue(
+        fuse::physics::combine_restitution(0.5f, 0.5f, fuse::physics::RestitutionCombine::Multiply) == 0.25f,
+        "multiply restitution of 0.5 and 0.5 is 0.25");
+    expectTrue(
+        fuse::physics::combine_restitution(2.f, 0.5f, fuse::physics::RestitutionCombine::Multiply) == 0.5f,
+        "restitution of 2 clamps to 1 before the combine");
+}
+
+void testContactBiasOk() {
+    expectTrue(fuse::physics::contact_bias_ok(0.5f), "contact_bias_ok(0.5) is true");
+    expectTrue(fuse::physics::contact_bias_ok(1.f), "contact_bias_ok(1) is true");
+    expectTrue(!fuse::physics::contact_bias_ok(0.f), "contact_bias_ok(0) is false");
+    expectTrue(!fuse::physics::contact_bias_ok(1.1f), "contact_bias_ok(1.1) is false");
+    expectTrue(
+        !fuse::physics::contact_bias_ok(std::numeric_limits<fuse::physics::f32>::quiet_NaN()),
+        "contact_bias_ok(NaN) is false");
+}
+
+void testPairCountOk() {
+    expectTrue(fuse::physics::pair_count_ok(0), "pair_count_ok(0) is true");
+    expectTrue(fuse::physics::pair_count_ok(1024), "pair_count_ok(1024) is true");
+    expectTrue(!fuse::physics::pair_count_ok(-1), "pair_count_ok(-1) is false");
+    expectTrue(!fuse::physics::pair_count_ok(1025), "pair_count_ok(1025) is false");
+}
+
+void testContactSlop() {
+    expectNear(fuse::physics::contact_slop(0.05f, 0.02f), 0.03f, 1e-6f, "contact slop of 0.05 beyond 0.02 is 0.03");
+    expectNear(fuse::physics::contact_slop(0.01f, 0.02f), 0.f, 1e-6f, "contact slop of 0.01 within 0.02 is 0");
+    expectNear(fuse::physics::contact_slop(0.02f, 0.02f), 0.f, 1e-6f, "contact slop is 0 when penetration equals allowed");
+    expectNear(fuse::physics::contact_slop(0.04f, -0.1f), 0.04f, 1e-6f, "negative allowed slop counts as 0");
+    expectTrue(
+        fuse::physics::contact_slop(std::numeric_limits<fuse::physics::f32>::quiet_NaN(), 0.02f) == 0.f,
+        "non-finite penetration returns 0 slop");
+    expectTrue(
+        fuse::physics::contact_slop(0.05f, std::numeric_limits<fuse::physics::f32>::infinity()) == 0.f,
+        "non-finite allowed returns 0 slop");
+}
+
 } // namespace
 
 int main() {
+    testContactBiasOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_physics_narrowphase_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testPairCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_physics_narrowphase_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testContactSlop();
     testSphereSphereCollision();
     testSpherePlaneCollision();
     testBoxSphereCollision();
@@ -1961,6 +2021,7 @@ int main() {
     testFrictionBasisDeepenPassGuards();
     testContactBufferDeepenPassGuards();
     testRunNarrowphaseSkipsDeepenRejectedPairs();
+    testCombineRestitution();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_narrowphase_tests: all checks passed\n");

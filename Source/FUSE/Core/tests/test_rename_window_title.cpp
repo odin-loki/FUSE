@@ -1,9 +1,11 @@
 // Master plan Appendix A (rename checklist): default window title "FUSE".
 // A default-constructed WindowDesc and a default (headless stub) Window both report "FUSE".
 
+#include <fuse/platform/rename_title.hpp>
 #include <fuse/platform/window.hpp>
 
 #include <cstdio>
+#include <string>
 #include <string_view>
 
 namespace {
@@ -18,9 +20,27 @@ void expectTitle(const char* actual, const char* what) {
     }
 }
 
+void expectTrue(bool condition, const char* message) {
+    if (!condition) {
+        std::fprintf(stderr, "FAIL: %s\n", message);
+        ++g_failures;
+    }
+}
+
+void testRenameTitleOk() {
+    expectTrue(fuse::platform::rename_title_ok("FUSE"), "rename_title_ok(\"FUSE\") is true");
+    expectTrue(!fuse::platform::rename_title_ok(""), "rename_title_ok(\"\") is false");
+    expectTrue(!fuse::platform::rename_title_ok("1FUSE"), "rename_title_ok(\"1FUSE\") is false");
+    expectTrue(fuse::platform::rename_title_ok("a"), "rename_title_ok length 1 ASCII letter is true");
+    expectTrue(fuse::platform::rename_title_ok(std::string(128, 'Z')), "rename_title_ok length 128 is true");
+    expectTrue(!fuse::platform::rename_title_ok(std::string(129, 'A')), "rename_title_ok length 129 is false");
+}
+
 } // namespace
 
 int main() {
+    testRenameTitleOk();
+
     const fuse::platform::WindowDesc desc{};
     expectTitle(desc.title, "WindowDesc{}");
 

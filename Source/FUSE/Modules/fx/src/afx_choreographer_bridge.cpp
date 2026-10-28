@@ -29,7 +29,7 @@ void AfxChoreographerBridge::tick(FxComposer& composer, const frame::FrameCtx& c
     composer.effectTimeline().tick(dt);
     composer.castPipeline().tick(dt);
     composer.residuals().tick(dt);
-    composer.missiles().tick(dt);
+    composer.missiles().tick(dt, {}, &composer.residuals());
     composer.particlePool().tick(ctx);
     composer.particlePoolGpu().syncFromCpu(composer.particlePool());
     composer.particlePoolGpu().tick(ctx);

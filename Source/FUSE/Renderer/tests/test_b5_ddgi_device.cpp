@@ -22,6 +22,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/core/sanitizer.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/renderer/ddgi_device.hpp>
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
 #include <fuse/renderer/gi/ddgi_device.hpp>
 
@@ -56,6 +57,15 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+// CPU gate. No allocation. main calls this before any device skip.
+// A failure returns non-zero before any later skip.
+void testDdgiDeviceOk() {
+    expectTrue(ddgi_device_ok(0), "ddgi_device_ok(0) is true");
+    expectTrue(ddgi_device_ok(7), "ddgi_device_ok(7) is true");
+    expectTrue(!ddgi_device_ok(-1), "ddgi_device_ok(-1) is false");
+    expectTrue(!ddgi_device_ok(8), "ddgi_device_ok(8) is false");
 }
 
 /// The B5 DDGI room (test_b5_ddgi_gates' big room) plus an emissive panel, so the 2048 probes see sun, sky,
@@ -387,6 +397,12 @@ int runDeviceMode(bool enforce) {
 } // namespace
 
 int main(int argc, char** argv) {
+    testDdgiDeviceOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b5_ddgi_device: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     bool cpu = false;
     bool enforce = false;
     for (int i = 1; i < argc; ++i) {

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cmath>
 
 namespace fuse::physics::p2d {
 
@@ -857,6 +858,308 @@ void buildEdge(Shape2D& shape, vec2 v1, vec2 v2) {
     shape.radius = kPolygonRadius;
     shape.vertex0 = v1;
     shape.vertex3 = v2;
+}
+
+namespace {
+
+f32 nonNegative(f32 value) { return value > 0.f && std::isfinite(value) ? value : 0.f; }
+
+f32 safeSqrt(f32 value) {
+    if (!(value > 0.f) || !std::isfinite(value)) {
+        return 0.f;
+    }
+    return std::sqrt(value);
+}
+
+/// Closest-point distance squared from q to segment pa-pb. Degenerate segments report pa.
+f32 segmentDistanceSq(vec2 q, vec2 pa, vec2 pb) {
+    const vec2 e = pb - pa;
+    const f32 ee = dot(e, e);
+    if (!(ee > kEpsilon * kEpsilon) || !std::isfinite(ee)) {
+        return distanceSq(q, pa);
+    }
+    const f32 t = std::clamp(dot(q - pa, e) / ee, 0.f, 1.f);
+    if (!std::isfinite(t)) {
+        return distanceSq(q, pa);
+    }
+    return distanceSq(q, pa + t * e);
+}
+
+/// Smallest t in (0, 1] where |c0 + t d - centre| = radius, starting strictly outside.
+bool circleEntry(vec2 c0, vec2 d, vec2 centre, f32 radius, f32& tOut) {
+    const vec2 m = c0 - centre;
+    const f32 a = dot(d, d);
+    if (!(a > 0.f) || !std::isfinite(a)) {
+        return false;
+    }
+    const f32 h = dot(m, d);
+    const f32 c = dot(m, m) - radius * radius;
+    if (!(c > 0.f) || !std::isfinite(c) || !std::isfinite(h)) {
+        return false;
+    }
+    const f32 disc = h * h - a * c;
+    if (!(disc >= 0.f) || !std::isfinite(disc)) {
+        return false;
+    }
+    const f32 t = (-h - std::sqrt(disc)) / a;
+    if (!(t > 0.f && t <= 1.f) || !std::isfinite(t)) {
+        return false;
+    }
+    tOut = t;
+    return true;
+}
+
+struct SweepBest {
+    f32 toi = 2.f;
+    vec2 normal{0.f, 1.f};
+    vec2 point{0.f, 0.f};
+    bool hit = false;
+};
+
+void considerSweep(SweepBest& best, f32 t, vec2 normal, vec2 point) {
+    if (!(t > 0.f && t <= 1.f) || !std::isfinite(t)) {
+        return;
+    }
+    if (!std::isfinite(normal.x) || !std::isfinite(normal.y) || !std::isfinite(point.x) || !std::isfinite(point.y)) {
+        return;
+    }
+    if (normalize(normal) == 0.f) {
+        return;
+    }
+    if (!best.hit || t < best.toi) {
+        best.hit = true;
+        best.toi = t;
+        best.normal = normal;
+        best.point = point;
+    }
+}
+
+f32 polygonSignedDistance(const vec2* vertices, const vec2* normals, u32 count, vec2 point) {
+    f32 maxPlane = -FLT_MAX;
+    for (u32 i = 0; i < count; ++i) {
+        const f32 s = dot(normals[i], point - vertices[i]);
+        if (std::isfinite(s)) {
+            maxPlane = std::max(maxPlane, s);
+        }
+    }
+    if (!(maxPlane > 0.f)) {
+        return std::isfinite(maxPlane) ? maxPlane : 0.f;
+    }
+    f32 minSq = FLT_MAX;
+    for (u32 i = 0; i < count; ++i) {
+        const u32 next = i + 1u < count ? i + 1u : 0u;
+        const f32 distSq = segmentDistanceSq(point, vertices[i], vertices[next]);
+        if (std::isfinite(distSq)) {
+            minSq = std::min(minSq, distSq);
+        }
+    }
+    return safeSqrt(minSq);
+}
+
+bool sweepCircleEdge(const Shape2D& shape, const Xf& xf, f32 radius, vec2 c0, vec2 c1, CircleSweepHit2D& out) {
+    const vec2 pa = mul(xf, shape.vertices[0]);
+    const vec2 pb = mul(xf, shape.vertices[1]);
+    const vec2 ghost0 = mul(xf, shape.vertex0);
+    const vec2 ghost3 = mul(xf, shape.vertex3);
+    const vec2 edge = pb - pa;
+    const f32 edgeLength = length(edge);
+    if (!(edgeLength > kEpsilon) || !std::isfinite(edgeLength)) {
+        return false;
+    }
+    const vec2 nh{edge.y / edgeLength, -edge.x / edgeLength};
+    const vec2 travel = c1 - c0;
+    const f32 startDistSq = segmentDistanceSq(c0, pa, pb);
+    const f32 endDistSq = segmentDistanceSq(c1, pa, pb);
+    out.endSeparation = safeSqrt(endDistSq) - radius;
+    if (!std::isfinite(out.endSeparation)) {
+        out.endSeparation = 0.f;
+    }
+    if (shape.oneSided && !(dot(nh, c0 - pa) > 0.f)) {
+        return false;
+    }
+    if (!(startDistSq > radius * radius)) {
+        return false;
+    }
+
+    SweepBest best;
+    const f32 approach = dot(nh, travel);
+    if (approach < 0.f && std::isfinite(approach)) {
+        const f32 s0 = dot(nh, c0 - pa);
+        if (s0 > radius) {
+            const f32 t = (radius - s0) / approach;
+            const vec2 hit = c0 + t * travel;
+            const f32 proj = dot(hit - pa, edge) / (edgeLength * edgeLength);
+            if (proj >= 0.f && proj <= 1.f) {
+                considerSweep(best, t, nh, hit - radius * nh);
+            }
+        }
+    }
+    if (!shape.oneSided && approach > 0.f && std::isfinite(approach)) {
+        const f32 s0 = dot(nh, c0 - pa);
+        if (s0 < -radius) {
+            const f32 t = (-radius - s0) / approach;
+            const vec2 hit = c0 + t * travel;
+            const f32 proj = dot(hit - pa, edge) / (edgeLength * edgeLength);
+            if (proj >= 0.f && proj <= 1.f) {
+                considerSweep(best, t, -nh, hit - radius * (-nh));
+            }
+        }
+    }
+
+    const vec2 caps[2] = {pa, pb};
+    for (u32 cap = 0u; cap < 2u; ++cap) {
+        f32 t = 0.f;
+        if (!circleEntry(c0, travel, caps[cap], radius, t)) {
+            continue;
+        }
+        const vec2 hit = c0 + t * travel;
+        if (cap == 0u) {
+            if (dot(edge, hit - pa) > 0.f) {
+                continue;
+            }
+            if (shape.oneSided) {
+                const vec2 e1 = pa - ghost0;
+                if (dot(e1, pa - hit) > 0.f) {
+                    continue;
+                }
+            }
+        } else {
+            if (dot(edge, pb - hit) > 0.f) {
+                continue;
+            }
+            if (shape.oneSided) {
+                const vec2 e2 = ghost3 - pb;
+                if (dot(e2, hit - pb) > 0.f) {
+                    continue;
+                }
+            }
+        }
+        vec2 normal = hit - caps[cap];
+        if (normalize(normal) == 0.f) {
+            normal = -travel;
+            if (normalize(normal) == 0.f) {
+                normal = nh;
+            }
+        }
+        if (shape.oneSided && dot(normal, nh) < 0.f) {
+            continue;
+        }
+        considerSweep(best, t, normal, caps[cap]);
+    }
+
+    if (!best.hit) {
+        return false;
+    }
+    out.hit = true;
+    out.toi = best.toi;
+    out.normal = best.normal;
+    out.point = best.point;
+    return true;
+}
+
+bool sweepCirclePolygon(const Shape2D& shape, const Xf& xf, f32 radius, vec2 c0, vec2 c1, CircleSweepHit2D& out) {
+    const u32 count = shape.count;
+    if (count < 3u || count > kMaxPolygonVertices2D) {
+        return false;
+    }
+    vec2 vertices[kMaxPolygonVertices2D];
+    vec2 normals[kMaxPolygonVertices2D];
+    for (u32 i = 0; i < count; ++i) {
+        vertices[i] = mul(xf, shape.vertices[i]);
+        normals[i] = mul(xf.q, shape.normals[i]);
+        if (normalize(normals[i]) == 0.f) {
+            return false;
+        }
+    }
+    const f32 endSigned = polygonSignedDistance(vertices, normals, count, c1);
+    out.endSeparation = endSigned - radius;
+    if (!std::isfinite(out.endSeparation)) {
+        out.endSeparation = 0.f;
+    }
+
+    bool separated = false;
+    for (u32 i = 0; i < count; ++i) {
+        const f32 s = dot(normals[i], c0 - vertices[i]);
+        if (s > radius) {
+            separated = true;
+            break;
+        }
+    }
+    if (!separated) {
+        return false;
+    }
+
+    const vec2 travel = c1 - c0;
+    SweepBest best;
+    for (u32 i = 0; i < count; ++i) {
+        const u32 next = i + 1u < count ? i + 1u : 0u;
+        const f32 s0 = dot(normals[i], c0 - vertices[i]);
+        const f32 approach = dot(normals[i], travel);
+        if (!(s0 > radius) || !(approach < 0.f) || !std::isfinite(s0) || !std::isfinite(approach)) {
+            continue;
+        }
+        const f32 t = (radius - s0) / approach;
+        const vec2 hit = c0 + t * travel;
+        const vec2 edge = vertices[next] - vertices[i];
+        const f32 ee = dot(edge, edge);
+        if (!(ee > 0.f) || !std::isfinite(ee)) {
+            continue;
+        }
+        const f32 proj = dot(hit - vertices[i], edge) / ee;
+        if (proj < 0.f || proj > 1.f || !std::isfinite(proj)) {
+            continue;
+        }
+        considerSweep(best, t, normals[i], hit - radius * normals[i]);
+    }
+    for (u32 i = 0; i < count; ++i) {
+        f32 t = 0.f;
+        if (!circleEntry(c0, travel, vertices[i], radius, t)) {
+            continue;
+        }
+        const vec2 hit = c0 + t * travel;
+        const u32 prev = i == 0u ? count - 1u : i - 1u;
+        const u32 next = i + 1u < count ? i + 1u : 0u;
+        if (dot(hit - vertices[i], vertices[next] - vertices[i]) > 0.f ||
+            dot(hit - vertices[i], vertices[prev] - vertices[i]) > 0.f) {
+            continue;
+        }
+        vec2 normal = hit - vertices[i];
+        if (normalize(normal) == 0.f) {
+            normal = -travel;
+            if (normalize(normal) == 0.f) {
+                normal = normals[i];
+            }
+        }
+        considerSweep(best, t, normal, vertices[i]);
+    }
+    if (!best.hit) {
+        return false;
+    }
+    out.hit = true;
+    out.toi = best.toi;
+    out.normal = best.normal;
+    out.point = best.point;
+    return true;
+}
+
+} // namespace
+
+bool sweepCircle(const Shape2D& shape, const Xf& xf, f32 circleRadius, vec2 c0, vec2 c1, CircleSweepHit2D& out) {
+    out = {};
+    if (!std::isfinite(c0.x) || !std::isfinite(c0.y) || !std::isfinite(c1.x) || !std::isfinite(c1.y)) {
+        return false;
+    }
+    const f32 radius = nonNegative(shape.radius) + nonNegative(circleRadius);
+    if (!std::isfinite(radius)) {
+        return false;
+    }
+    if (shape.type == ShapeType2D::Edge) {
+        return sweepCircleEdge(shape, xf, radius, c0, c1, out);
+    }
+    if (shape.type == ShapeType2D::Polygon) {
+        return sweepCirclePolygon(shape, xf, radius, c0, c1, out);
+    }
+    return false;
 }
 
 } // namespace fuse::physics::p2d

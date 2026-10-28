@@ -8,6 +8,7 @@
 #include <fuse/scene/math.hpp>
 #include <fuse/scene/svo.hpp>
 #include <fuse/spatial/bvh.hpp>
+#include <fuse/spatial/frustum.hpp>
 #include <fuse/types.hpp>
 
 #include <vector>
@@ -45,6 +46,12 @@ public:
     bool rayCast(vec3 origin, vec3 direction, f32 maxDistance, fuse::ecs::EntityID& hitEntity,
                  f32& hitDistance) const;
     void querySphere(vec3 center, f32 radius, std::vector<fuse::ecs::EntityID>& results) const;
+    /// Mesh/SDF entities whose world bounds overlap the inclusive AABB. Same alive-entity
+    /// inclusion as querySphere. Results are sorted by entity id.
+    void queryAabb(vec3 min, vec3 max, std::vector<fuse::ecs::EntityID>& results) const;
+    /// Mesh/SDF entities whose world bounds overlap `frustum`. Planes use the spatial BVH
+    /// convention (inward normals, positive half-space inside). Results are sorted by entity id.
+    void queryFrustum(const fuse::spatial::Frustum& frustum, std::vector<fuse::ecs::EntityID>& results) const;
 
     [[nodiscard]] fuse::ecs::Registry& registry() { return m_registry; }
     [[nodiscard]] const fuse::ecs::Registry& registry() const { return m_registry; }

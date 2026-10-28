@@ -15,8 +15,11 @@
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/ecs/registry_serialiser.hpp>
+#include <fuse/script/bind_gen.hpp>
+#include <fuse/script/component_tick.hpp>
 #include <fuse/script/script_cook.hpp>
 #include <fuse/script/script_host_service.hpp>
+#include <fuse/script/script_indent.hpp>
 #include <fuse/script/script_runtime.hpp>
 #include <fuse/script/script_system.hpp>
 #include <fuse/script/script_vm.hpp>
@@ -577,9 +580,42 @@ void testZeroSteadyStateAllocations() {
     expectTrue(w.system.attached_count() == 64u && w.runtime.error_count() == 0u, "64 behaviours ran cleanly");
 }
 
+// Indent spaces are the closed range 0..32. No allocation.
+void testScriptIndentOk() {
+    expectTrue(fuse::script::script_indent_ok(0), "script_indent_ok(0) is true");
+    expectTrue(fuse::script::script_indent_ok(32), "script_indent_ok(32) is true");
+    expectTrue(!fuse::script::script_indent_ok(-1), "script_indent_ok(-1) is false");
+    expectTrue(!fuse::script::script_indent_ok(33), "script_indent_ok(33) is false");
+}
+
+void testBindGenOk() {
+    expectTrue(fuse::script::bind_gen_ok(0), "generation 0 is accepted");
+    expectTrue(fuse::script::bind_gen_ok(1000000), "generation 1000000 is accepted");
+    expectTrue(!fuse::script::bind_gen_ok(-1), "generation -1 is rejected");
+    expectTrue(!fuse::script::bind_gen_ok(1000001), "generation 1000001 is rejected");
+}
+
+void testComponentTicks() {
+    expectTrue(fuse::script::component_ticks(true, true), "enabled and compiled ticks");
+    expectTrue(!fuse::script::component_ticks(true, false), "enabled but not compiled does not tick");
+    expectTrue(!fuse::script::component_ticks(false, true), "compiled but disabled does not tick");
+    expectTrue(!fuse::script::component_ticks(false, false), "disabled and not compiled does not tick");
+}
+
 } // namespace
 
 int main() {
+    testScriptIndentOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_script_component: %d failure(s)\n", g_failures);
+        return 1;
+    }
+    testBindGenOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_script_component: %d failure(s)\n", g_failures);
+        return 1;
+    }
+    testComponentTicks();
     {
         ScriptVM probe;
         if (!probe.init() || !probe.has_lua_backend()) {

@@ -1,4 +1,5 @@
 #include <fuse/mechanics/broadphase_proxy_filter.hpp>
+#include <fuse/mechanics/proxy_layer.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -14,9 +15,16 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+void testProxyLayerOk() {
+    expectTrue(fuse::mechanics::proxy_layer_ok(0u), "proxy_layer_ok(0) is true");
+    expectTrue(fuse::mechanics::proxy_layer_ok(31u), "proxy_layer_ok(31) is true");
+    expectTrue(!fuse::mechanics::proxy_layer_ok(32u), "proxy_layer_ok(32) is false");
+}
+
 } // namespace
 
 int main() {
+    testProxyLayerOk();
     using fuse::mechanics::BroadphaseProxyFilter;
     using fuse::mechanics::broadphaseProxyFiltersCollide;
 

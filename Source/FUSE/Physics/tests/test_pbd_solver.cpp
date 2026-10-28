@@ -1,9 +1,11 @@
 #include <fuse/core/init.hpp>
+#include <fuse/gameplay/item_stack.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/physics/solver/constraint_accumulation.hpp>
 #include <fuse/physics/solver/contact_island_graph.hpp>
 #include <fuse/physics/solver/pbd_island_solve.hpp>
+#include <fuse/physics/solver/pbd_iterations.hpp>
 #include <fuse/physics/solver/pbd_solver.hpp>
 #include <fuse/physics/solver/solver_work_buffers.hpp>
 
@@ -2872,10 +2874,27 @@ void testEarlyExitWhenResidualBelowTolerance() {
                "early-exit stub records residual at or below tolerance");
 }
 
+void testPbdIterationsOk() {
+    expectTrue(fuse::physics::pbd_iterations_ok(1), "1 PBD iteration is in range");
+    expectTrue(fuse::physics::pbd_iterations_ok(32), "32 PBD iterations is the upper bound");
+    expectTrue(!fuse::physics::pbd_iterations_ok(0), "0 PBD iterations is rejected");
+    expectTrue(!fuse::physics::pbd_iterations_ok(33), "33 PBD iterations is rejected");
+}
+
+void testItemStackSplit() {
+    const fuse::gameplay::ItemStack stack{10u, 20u};
+    const fuse::gameplay::StackSplit split = fuse::gameplay::split_stack(stack, 4u);
+    expectTrue(split.ok && split.stay.count == 6u && split.taken.count == 4u, "split 10 by 4 leaves 6 and 4");
+    const fuse::gameplay::StackSplit all = fuse::gameplay::split_stack(stack, 10u);
+    expectTrue(!all.ok && all.stay.count == 10u && all.taken.count == 0u, "taking the whole stack fails");
+}
+
 } // namespace
 
 int main() {
+    testPbdIterationsOk();
     fuse::core::initialize();
+    testItemStackSplit();
     testSphereGroundFallTime();
     testOverlappingSpheresSeparate();
     testDistanceConstraintHoldsLength();

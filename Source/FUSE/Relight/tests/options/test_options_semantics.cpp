@@ -27,6 +27,7 @@
 #include "rl_options_test.hpp"
 
 #include <fuse/core/temp_path.hpp>
+#include <fuse/relight/options/option_key.hpp>
 #include <fuse/relight/options/options.hpp>
 
 #include <cstring>
@@ -1618,9 +1619,17 @@ void test_markdownDocumentation() {
     RL_CHECK(std::filesystem::file_size(path) == doc.size());
 }
 
+void testOptionKeyOk() {
+    RL_CHECK(fuse::relight::option_key_ok("Exposure"));
+    RL_CHECK(!fuse::relight::option_key_ok(""));
+    RL_CHECK(!fuse::relight::option_key_ok("1Exposure"));
+    RL_CHECK(!fuse::relight::option_key_ok("Ex posure"));
+}
+
 } // namespace
 
 void runSemanticsTests() {
+    testOptionKeyOk();
     s_tempDir = fuse::test::makeUniqueTempDir("rl_options_semantics");
 
     // Like the upstream test harness: system layers (from an empty directory), then the startup

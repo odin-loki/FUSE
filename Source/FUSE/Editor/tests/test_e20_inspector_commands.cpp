@@ -13,6 +13,8 @@
 #include <fuse/editor/command_queue.hpp>
 #include <fuse/editor/component_schema.hpp>
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/inspector_row.hpp>
+#include <fuse/editor/property_dirty.hpp>
 #include <fuse/editor/property_inspector.hpp>
 
 #include <fuse/core/temp_path.hpp>
@@ -35,6 +37,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -440,15 +443,52 @@ void testAudioSourceSaveLoad(const fs::path& dir) {
 #endif
 }
 
+// ---- property dirty (inspector float edits) -------------------------------------------------------
+
+void testPropertyDirty() {
+    expectTrue(!editor::property_dirty(1.f, 1.0001f, 0.001f),
+               "property_dirty: 1 and 1.0001 with epsilon 0.001 is not dirty");
+    expectTrue(editor::property_dirty(1.f, 1.1f, 0.001f),
+               "property_dirty: 1 and 1.1 with epsilon 0.001 is dirty");
+
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float posInf = std::numeric_limits<float>::infinity();
+    const float negInf = -std::numeric_limits<float>::infinity();
+    expectTrue(!editor::property_dirty(nan, nan, 0.001f), "property_dirty: both NaN is not dirty");
+    expectTrue(editor::property_dirty(1.f, nan, 0.f), "property_dirty: finite vs NaN is dirty");
+    expectTrue(editor::property_dirty(nan, posInf, 0.f), "property_dirty: NaN vs +inf is dirty");
+    expectTrue(!editor::property_dirty(posInf, posInf, 0.f), "property_dirty: +inf vs +inf is not dirty");
+    expectTrue(!editor::property_dirty(negInf, negInf, 0.f), "property_dirty: -inf vs -inf is not dirty");
+    expectTrue(editor::property_dirty(posInf, negInf, 0.f), "property_dirty: +inf vs -inf is dirty");
+    expectTrue(editor::property_dirty(1.f, posInf, 0.f), "property_dirty: finite vs +inf is dirty");
+    expectTrue(!editor::property_dirty(1.f, 1.f, -1.f), "property_dirty: negative epsilon leaves equal values clean");
+    expectTrue(editor::property_dirty(1.f, 1.0001f, -1.f), "property_dirty: negative epsilon is treated as 0");
+    expectTrue(!editor::property_dirty(0.f, 0.001f, 0.001f),
+               "property_dirty: a difference equal to epsilon is not dirty");
+}
+
+void testInspectorRowOk() {
+    expectTrue(editor::inspector_row_ok(0), "inspector_row_ok: row 0 is valid");
+    expectTrue(editor::inspector_row_ok(512), "inspector_row_ok: row 512 is valid");
+    expectTrue(!editor::inspector_row_ok(-1), "inspector_row_ok: row -1 is invalid");
+    expectTrue(!editor::inspector_row_ok(513), "inspector_row_ok: row 513 is invalid");
+}
+
 } // namespace
 
 int main() {
+    testInspectorRowOk();
+    if (g_failures != 0) {
+        std::printf("e20 inspector commands: FAIL (%d failure(s))\n", g_failures);
+        return 1;
+    }
     const fs::path dir = fuse::test::makeUniqueTempDir("fuse_e20_inspector");
     testSchemaRoundTrip();
     testSetPropertyThroughHost();
     testAddRemoveComponent();
     testReparentKeepsWorldPose();
     testAudioSourceSaveLoad(dir);
+    testPropertyDirty();
     std::error_code ec;
     fs::remove_all(dir, ec);
     std::printf("e20 inspector commands: %s (%d failure(s))\n", g_failures == 0 ? "PASS" : "FAIL", g_failures);

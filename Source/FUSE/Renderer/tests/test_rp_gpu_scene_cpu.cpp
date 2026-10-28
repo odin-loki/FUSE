@@ -25,6 +25,7 @@
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene_ecs.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene_meshlets.hpp>
+#include <fuse/renderer/scene/gpu_scene_cap.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -95,6 +96,14 @@ void expect(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+// CPU gate. Runs before any GPU or device skip and does not allocate.
+void testGpuSceneCapOk() {
+    expect(fuse::renderer::gpu_scene_cap_ok(1), "gpu_scene_cap_ok(1)");
+    expect(fuse::renderer::gpu_scene_cap_ok(1000000), "gpu_scene_cap_ok(1000000)");
+    expect(!fuse::renderer::gpu_scene_cap_ok(0), "gpu_scene_cap_ok(0)");
+    expect(!fuse::renderer::gpu_scene_cap_ok(1000001), "gpu_scene_cap_ok(1000001)");
 }
 
 // Shadow "GPU": the upload sink replays every committed range here.
@@ -807,6 +816,11 @@ int runZeroAlloc() {
 } // namespace
 
 int main(int argc, char** argv) {
+    testGpuSceneCapOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     int rc = 0;
     if (suite == "table" || suite == "all") {

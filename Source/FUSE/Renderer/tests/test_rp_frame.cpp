@@ -68,6 +68,8 @@
 #include <fuse/renderer/deferred/gbuffer.hpp>
 #include <fuse/renderer/frame/frame_composer.hpp>
 #include <fuse/renderer/frame/frame_runtime_presets.hpp>
+#include <fuse/renderer/rp_frame.hpp>
+#include <fuse/renderer/research/rc/rc_reference.hpp>
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
 #include <fuse/renderer/gi/gpu/ddgi_gpu_reference.hpp>
 #include <fuse/renderer/lighting/ltc/ltc_lut.hpp>
@@ -139,11 +141,25 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. No allocation. Both entry points call this before any GPU skip.
+/// A failure returns non-zero before any later skip.
+[[nodiscard]] int testRpFrameOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::rp_frame_ok(0), "rp_frame_ok(0) is true");
+    expect(fuse::renderer::rp_frame_ok(1000000), "rp_frame_ok(1000000) is true");
+    expect(!fuse::renderer::rp_frame_ok(-1), "rp_frame_ok(-1) is false");
+    expect(!fuse::renderer::rp_frame_ok(1000001), "rp_frame_ok(1000001) is false");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int frameRc = testRpFrameOk(); frameRc != 0) {
+        return frameRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -988,6 +1004,21 @@ int runRcFlatland(Context& ctx, FrameTier tier) {
                                  &out);
         expect(ok, "rc flatland frame executes");
         expect((out.ran & kStageRcFlatland) != 0u, "rc flatland stage ran");
+        if (frame == 3u) {
+            research::rc::RcCpuGBuffer gbuffer;
+            research::rc::fillDiagnosticGBuffer(gbuffer, rig.composer.rcFlatlandSceneWidth(),
+                                                rig.composer.rcFlatlandSceneHeight(), frame);
+            research::rc::RcScene expected;
+            const f32* got = rig.composer.rcFlatlandScene();
+            expect(research::rc::packSceneFromGBuffer(gbuffer, expected) && got != nullptr, "rc scene packed from the gbuffer");
+            if (got != nullptr && !expected.texels.empty()) {
+                expect(std::memcmp(got, expected.texels.data(), expected.texels.size() * sizeof(f32)) == 0,
+                       "frame rc scene matches the CPU gbuffer pack");
+                const usize center = (static_cast<usize>(expected.height / 2u) * expected.width + expected.width / 2u) * 4u;
+                expect(expected.texels[center + 3u] == 1.f && expected.texels[3u] == 0.f,
+                       "packed disk is opaque and the corner is empty");
+            }
+        }
     }
     std::printf("rc_flatland %s: 4 frames, validation messages %u\n", tierName(tier), g_messages);
     return g_failures > 0 ? 1 : 0;
@@ -1726,6 +1757,9 @@ int runParity(Context& ctx, FrameTier tier) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int frameRc = testRpFrameOk(); frameRc != 0) {
+        return frameRc;
+    }
     std::string mode = "full";
     std::string tierArg = "t0";
     for (int i = 1; i + 1 < argc; i += 2) {

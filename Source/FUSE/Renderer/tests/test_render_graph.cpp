@@ -2,6 +2,7 @@
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/renderer/command_buffer.hpp>
 #include <fuse/renderer/draw_list.hpp>
+#include <fuse/renderer/graph/pass_name.hpp>
 #include <fuse/renderer/render_command_list.hpp>
 #include <fuse/renderer/render_graph.hpp>
 #include <fuse/renderer/rhi_context.hpp>
@@ -833,9 +834,30 @@ void testRhiContextUsesRenderGraph() {
 #endif
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits instead of continuing.
+void testGraphPassNameOk() {
+    expectTrue(fuse::renderer::graph_pass_name_ok("DepthPrepass"), "DepthPrepass is a valid pass name");
+    expectTrue(!fuse::renderer::graph_pass_name_ok(""), "empty pass name is invalid");
+    expectTrue(!fuse::renderer::graph_pass_name_ok("1Pass"), "leading digit is an invalid pass name");
+    expectTrue(fuse::renderer::graph_pass_name_ok("A"), "single letter is a valid pass name");
+    expectTrue(fuse::renderer::graph_pass_name_ok("depth_1"), "underscore and digit are valid after the first letter");
+    expectTrue(fuse::renderer::graph_pass_name_ok("ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"),
+               "32-character pass name is valid");
+    expectTrue(!fuse::renderer::graph_pass_name_ok("ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567"),
+               "33-character pass name is invalid");
+    expectTrue(!fuse::renderer::graph_pass_name_ok("_Depth"), "leading underscore is invalid");
+    expectTrue(!fuse::renderer::graph_pass_name_ok("Depth-Prepass"), "hyphen is an invalid pass name");
+}
+
 } // namespace
 
 int main() {
+    testGraphPassNameOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testGraphPassNameOk\n");
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testBarrierInsertedBetweenColorAndPresent();

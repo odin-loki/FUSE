@@ -17,6 +17,7 @@
 //   api        InstanceCuller::init fails cleanly without a device; record layouts
 #include <fuse/compute_kernel/launch.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/renderer/cull/cull_distance.hpp>
 #include <fuse/renderer/culling/cull_reference.hpp>
 #include <fuse/renderer/culling/cull_types.hpp>
 #include <fuse/renderer/culling/hiz_build_kernel.hpp>
@@ -566,9 +567,24 @@ int runApi() {
     return 0;
 }
 
+/// CPU gate. Must run before any GPU or device skip; a failure exits instead of continuing.
+void testCullDistanceOk() {
+    expect(cull_distance_ok(100.f), "cull_distance_ok(100) is true");
+    expect(cull_distance_ok(10000.f), "cull_distance_ok(10000) is true");
+    expect(!cull_distance_ok(0.f), "cull_distance_ok(0) is false");
+    expect(!cull_distance_ok(-1.f), "cull_distance_ok(-1) is false");
+    expect(!cull_distance_ok(10001.f), "cull_distance_ok(10001) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testCullDistanceOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testCullDistanceOk\n");
+        return 1;
+    }
+
     const std::string suite = argc > 1 ? argv[1] : "all";
     int rc = 0;
     if (suite == "hiz" || suite == "all") {

@@ -1,3 +1,5 @@
+#include <fuse/physics/body_slot.hpp>
+#include <fuse/physics/forces/box_buoyancy.hpp>
 #include <fuse/physics/narrowphase/contact_manifold.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/physics/solver/constraint_accumulation.hpp>
@@ -14,6 +16,13 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testBodySlotOk() {
+    expectTrue(fuse::physics::body_slot_ok(0, 1), "slot 0 of capacity 1 is valid");
+    expectTrue(fuse::physics::body_slot_ok(3, 4), "slot 3 of capacity 4 is valid");
+    expectTrue(!fuse::physics::body_slot_ok(0, 0), "capacity 0 rejects every slot");
+    expectTrue(!fuse::physics::body_slot_ok(4, 4), "a slot equal to capacity is out of range");
 }
 
 void testRigidBodySoA() {
@@ -63,12 +72,42 @@ void testContactRestitutionBounce() {
                "separating contact leaves the outgoing velocity");
 }
 
+void testBoxBuoyancy() {
+    const fuse::physics::BoxBuoyancy centered =
+        fuse::physics::box_buoyancy(0.f, 1.f, 0.f, 1000.f, -10.f, 2.f, 4.f);
+    expectTrue(centered.submergedFraction == 0.5f, "box centered on the water plane has fraction 0.5");
+    expectTrue(centered.force.y > 0.f && centered.force.x == 0.f && centered.force.z == 0.f,
+               "half-submerged box is pushed up");
+
+    const fuse::physics::BoxBuoyancy submerged =
+        fuse::physics::box_buoyancy(0.f, 1.f, 10.f, 1000.f, -10.f, 1.f, 1.f);
+    expectTrue(submerged.submergedFraction == 1.f && submerged.force.y > 0.f && submerged.force.x == 0.f &&
+                   submerged.force.z == 0.f,
+               "fully submerged box with gravityY -10 has an upward force");
+
+    const fuse::physics::BoxBuoyancy above =
+        fuse::physics::box_buoyancy(5.f, 1.f, 0.f, 1000.f, -10.f, 1.f, 1.f);
+    expectTrue(above.submergedFraction == 0.f && above.force.y == 0.f, "box fully above water has no buoyancy");
+
+    const fuse::physics::BoxBuoyancy degenerate =
+        fuse::physics::box_buoyancy(0.f, 0.f, 0.f, 1000.f, -10.f, 1.f, 1.f);
+    expectTrue(degenerate.submergedFraction == 0.f && degenerate.force.y == 0.f,
+               "non-positive box extent has no buoyancy");
+
+    const fuse::physics::BoxBuoyancy noDensity =
+        fuse::physics::box_buoyancy(0.f, 1.f, 0.f, 0.f, -10.f, 1.f, 1.f);
+    expectTrue(noDensity.submergedFraction == 0.5f && noDensity.force.y == 0.f,
+               "non-positive density keeps the submerged fraction and zero force");
+}
+
 } // namespace
 
 int main() {
+    testBodySlotOk();
     testRigidBodySoA();
     testCollisionShapeSoA();
     testContactRestitutionBounce();
+    testBoxBuoyancy();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_data_tests: all checks passed\n");

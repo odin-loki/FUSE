@@ -1,4 +1,6 @@
 #include <fuse/core/track_b.hpp>
+#include <fuse/core/track_token.hpp>
+#include <fuse/gameplay/status_effect.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -12,6 +14,18 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testTrackTokenOk() {
+    expectTrue(fuse::core::track_token_ok("B1"), "B1 is a valid track token");
+    expectTrue(fuse::core::track_token_ok("B2"), "B2 is a valid track token");
+    expectTrue(fuse::core::track_token_ok("B3"), "B3 is a valid track token");
+    expectTrue(fuse::core::track_token_ok("B4"), "B4 is a valid track token");
+    expectTrue(fuse::core::track_token_ok("B5"), "B5 is a valid track token");
+    expectTrue(fuse::core::track_token_ok("B6"), "B6 is a valid track token");
+    expectTrue(fuse::core::track_token_ok("B7"), "B7 is a valid track token");
+    expectTrue(!fuse::core::track_token_ok("B8"), "B8 is not a valid track token");
+    expectTrue(!fuse::core::track_token_ok("b4"), "lowercase b4 is not a valid track token");
 }
 
 void testDefaultBuildLocksTrackB() {
@@ -62,13 +76,31 @@ void testHostFeatureIsScoped() {
                "host opt-in can be withdrawn");
 }
 
+void testDamageOverTimeTick() {
+    fuse::gameplay::HealthPool pool;
+    pool.health = 10.f;
+    pool.maxHealth = 10.f;
+    pool.armor = 0.f;
+
+    fuse::gameplay::DamageOverTime effect;
+    effect.damagePerSec = 5.f;
+    effect.remaining = 4.f;
+
+    const fuse::f32 dealt = fuse::gameplay::tick_dot(effect, pool, 1.f);
+    expectTrue(dealt == 5.f, "5 dps for 1s deals 5 damage");
+    expectTrue(pool.health == 5.f, "5 dps for 1s leaves a 10-health pool at 5");
+    expectTrue(effect.remaining == 3.f, "remaining decreases by 1");
+}
+
 } // namespace
 
 int main() {
+    testTrackTokenOk();
     testDefaultBuildLocksTrackB();
     testVulkanProductionLockedByDefault();
     testAllFeaturesFollowUnlockGate();
     testHostFeatureIsScoped();
+    testDamageOverTimeTick();
 
     if (g_failures == 0) {
         std::printf("fuse_core_p7_track_b_unlock: Track B production gate is locked\n");

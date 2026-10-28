@@ -1,6 +1,6 @@
 #pragma once
 
-// Ore: 3DAAK weapon hitscan / spread stubs (without TorqueScript)
+// Ore: 3DAAK weapon hitscan / spread / damage-falloff stubs (without TorqueScript)
 
 #include <fuse/adventure/weapon_runtime.hpp>
 #include <fuse/types.hpp>

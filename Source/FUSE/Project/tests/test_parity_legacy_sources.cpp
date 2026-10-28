@@ -1,5 +1,7 @@
 #include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
+#include <fuse/project/legacy_path.hpp>
+#include <fuse/project/legacy_token.hpp>
 #include <fuse/project/loader.hpp>
 #include <fuse/project/parity_legacy_sources.hpp>
 #include <fuse/project/world_converter.hpp>
@@ -155,6 +157,28 @@ void testEnsure2DWorldFromBundledCs() {
     expectTrue(prepared.wiringStubCount >= 1u, "SpriteToy stub emits animated-sprite wiring stubs");
 }
 
+void testLegacyTokenOk() {
+    expectTrue(fuse::project::legacy_token_ok("Legacy"), "Legacy is a valid legacy token");
+    expectTrue(!fuse::project::legacy_token_ok(""), "empty legacy token is invalid");
+    expectTrue(!fuse::project::legacy_token_ok("1Legacy"), "leading digit is invalid");
+    expectTrue(!fuse::project::legacy_token_ok("Old Map"), "space in legacy token is invalid");
+}
+
+void testLegacyPathOk() {
+    expectTrue(fuse::project::legacy_path_ok("old/town.mis"), "old/town.mis is a valid legacy path");
+    expectTrue(!fuse::project::legacy_path_ok("../secret.mis"), "parent segment is invalid");
+    expectTrue(!fuse::project::legacy_path_ok(""), "empty legacy path is invalid");
+    expectTrue(fuse::project::legacy_path_ok("C:/old/town.mis"), "drive letter is allowed");
+    expectTrue(fuse::project::legacy_path_ok("/old/town.mis"), "leading slash is allowed");
+    expectTrue(fuse::project::legacy_path_ok("C:\\old\\town.mis"), "backslash drive path is allowed");
+    expectTrue(!fuse::project::legacy_path_ok("old/../town.mis"), "embedded parent segment is invalid");
+    expectTrue(!fuse::project::legacy_path_ok("old\\..\\town.mis"), "backslash parent segment is invalid");
+    const std::string maxPath(180, 'a');
+    expectTrue(fuse::project::legacy_path_ok(maxPath), "180-character legacy path is valid");
+    const std::string tooLong(181, 'a');
+    expectTrue(!fuse::project::legacy_path_ok(tooLong), "path longer than 180 is invalid");
+}
+
 void testEnsure2DWorldFromAfxSpriteStub() {
     const fuse::project::LoadResult project =
         fuse::project::loadFromDirectory("Samples/unification/demo_fx");
@@ -168,6 +192,12 @@ void testEnsure2DWorldFromAfxSpriteStub() {
 } // namespace
 
 int main() {
+    testLegacyTokenOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_parity_legacy_sources_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testLegacyPathOk();
     fuse::core::initialize();
     testRepositoryRootFromParityDemo();
     testSubmoduleDirectoryClassification();

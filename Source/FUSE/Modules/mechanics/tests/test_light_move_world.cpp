@@ -1,6 +1,7 @@
 #include <fuse/mechanics/camera_component.hpp>
 #include <fuse/mechanics/follow_component.hpp>
 #include <fuse/mechanics/light_component.hpp>
+#include <fuse/mechanics/light_range.hpp>
 #include <fuse/mechanics/move_component.hpp>
 #include <fuse/mechanics/animate_component.hpp>
 #include <fuse/mechanics/waypoint_component.hpp>
@@ -25,9 +26,16 @@ void expectTrue(bool condition, const char* message) {
     }
 }
 
+void testLightRangeOk() {
+    expectTrue(fuse::mechanics::light_range_ok(8.f), "light_range_ok(8) is true");
+    expectTrue(!fuse::mechanics::light_range_ok(0.f), "light_range_ok(0) is false");
+    expectTrue(!fuse::mechanics::light_range_ok(10001.f), "light_range_ok(10001) is false");
+}
+
 } // namespace
 
 int main() {
+    testLightRangeOk();
     fuse::core::initialize();
 
     fuse::mechanics::LightComponent light("outpost_lamp", 2.f);

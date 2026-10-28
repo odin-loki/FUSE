@@ -15,6 +15,13 @@ struct LightShaftsParams {
     u32 ray_march_steps = 16;
     f32 edge_softness = 0.05f;
     bool enabled = true;
+    /// Optional scene-depth row or image, not owned. Null or a zero width/height keeps the
+    /// scalar stub. `depth_stride` is the row pitch in floats; 0 packs rows at `depth_width`.
+    /// A pitch shorter than the width is ignored and the scalar stub is used.
+    const f32* scene_depths = nullptr;
+    u32 depth_width = 0;
+    u32 depth_height = 0;
+    u32 depth_stride = 0;
 };
 
 struct LightShaftsPassStats {
@@ -26,7 +33,12 @@ struct LightShaftsPassStats {
 /// CPU stub — screen-space shaft occlusion from depth delta.
 f32 evaluate_light_shaft_occlusion(f32 ray_depth, f32 scene_depth, f32 edge_softness);
 
-/// Records logical light-shaft work for the frame; returns false when disabled.
+/// Records one light-shaft pass. Returns false when disabled or `ray_march_steps` is 0
+/// (`ready` is cleared; other stats are left unchanged). A depth image is marched from its
+/// center pixel toward normalized `sun_direction.xy`, one pixel per step, for up to
+/// `ray_march_steps` samples. A sample outside the image stops the march. Samples average
+/// `evaluate_light_shaft_occlusion` at ray depth 0.5, then scale by intensity. No image
+/// uses scene depth 0.55 against that same ray depth.
 bool record_light_shafts_pass(const LightShaftsParams& params, LightShaftsPassStats& stats);
 
 /// Render-graph hook — inserts the light-shafts pass after atmosphere/sky.

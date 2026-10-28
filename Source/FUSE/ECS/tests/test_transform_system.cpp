@@ -1,13 +1,17 @@
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/detail/iteration_parity.hpp>
+#include <fuse/ecs/dirty_count.hpp>
 #include <fuse/ecs/math/mat.hpp>
+#include <fuse/ecs/pose_match.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
+#include <fuse/ecs/transform_dirty.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 namespace {
 
@@ -655,9 +659,54 @@ void testSecondUpdateSkipsWhenSceneStaysClean() {
                "second update with clean scene preserves root matrix");
 }
 
+void testPosesMatch() {
+    expectTrue(fuse::ecs::poses_match(0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.001f),
+               "identical poses match within epsilon");
+    expectTrue(!fuse::ecs::poses_match(0.1f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.001f),
+               "pose offset 0.1 exceeds epsilon 0.001");
+    expectTrue(fuse::ecs::poses_match(0.0001f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.001f),
+               "pose offset 0.0001 is inside epsilon 0.001");
+
+    expectTrue(fuse::ecs::poses_match(0.f, 0.f, 0.f, 0.f, 0.f, 0.f, -1.f),
+               "negative epsilon still matches identical poses");
+    expectTrue(!fuse::ecs::poses_match(0.0001f, 0.f, 0.f, 0.f, 0.f, 0.f, -0.001f),
+               "negative epsilon is treated as zero");
+
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    expectTrue(!fuse::ecs::poses_match(nan, 0.f, 0.f, 0.f, 0.f, 0.f, 0.001f),
+               "NaN pose component does not match");
+    expectTrue(!fuse::ecs::poses_match(0.f, 0.f, 0.f, inf, 0.f, 0.f, 1.f),
+               "infinite pose component does not match");
+}
+
+void testDirtyCountOk() {
+    expectTrue(fuse::ecs::dirty_count_ok(0), "dirty_count_ok(0) is true");
+    expectTrue(fuse::ecs::dirty_count_ok(100000), "dirty_count_ok(100000) is true");
+    expectTrue(!fuse::ecs::dirty_count_ok(-1), "dirty_count_ok(-1) is false");
+    expectTrue(!fuse::ecs::dirty_count_ok(100001), "dirty_count_ok(100001) is false");
+}
+
+void testTransformDirty() {
+    expectTrue(fuse::ecs::transform_dirty(0b0001, 0), "transform_dirty(0b0001, 0) is true");
+    expectTrue(!fuse::ecs::transform_dirty(0b0001, 1), "transform_dirty(0b0001, 1) is false");
+    expectTrue(fuse::ecs::transform_dirty(0b1000, 3), "transform_dirty(0b1000, 3) is true");
+    expectTrue(fuse::ecs::transform_dirty(0b10000000, 7), "transform_dirty bit 7 is true");
+    expectTrue(!fuse::ecs::transform_dirty(0b1000, 8), "transform_dirty(0b1000, 8) is false");
+    expectTrue(!fuse::ecs::transform_dirty(0xff, 255), "transform_dirty bit above 7 is false");
+}
+
 } // namespace
 
 int main() {
+    testDirtyCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_ecs_transform_system_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testTransformDirty();
+    testPosesMatch();
     testHasAnyTransformsEmptyRegistry();
     testHasAnyTransformsNonTransformEntities();
     testEmptyRegistryDirtyRootStubsNoOp();

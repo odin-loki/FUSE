@@ -11,10 +11,13 @@
 
 #include <fuse/core/init.hpp>
 #include <fuse/physics/assets/collision_asset.hpp>
+#include <fuse/physics/collision/triangle_count.hpp>
+#include <fuse/physics/queries/closest_point.hpp>
 #include <fuse/physics/shapes/shape_pool.hpp>
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <utility>
 
 using namespace e18;
@@ -266,13 +269,56 @@ void testFusecolRoundTrip() {
     std::remove(path.c_str());
 }
 
+void testClosestPointOnTriangle() {
+    const vec3 a{0.f, 0.f, 0.f};
+    const vec3 b{1.f, 0.f, 0.f};
+    const vec3 c{0.f, 1.f, 0.f};
+    const vec3 centroid{(a.x + b.x + c.x) / 3.f, (a.y + b.y + c.y) / 3.f, (a.z + b.z + c.z) / 3.f};
+    const vec3 above{centroid.x, centroid.y, 2.f};
+    const vec3 projected = closest_point_on_triangle(above, a, b, c);
+    std::printf("closest point above centroid: (%.6f, %.6f, %.6f) centroid (%.6f, %.6f, %.6f)\n",
+                static_cast<double>(projected.x), static_cast<double>(projected.y), static_cast<double>(projected.z),
+                static_cast<double>(centroid.x), static_cast<double>(centroid.y), static_cast<double>(centroid.z));
+    expectTrue(std::fabs(projected.x - centroid.x) <= 1e-5f && std::fabs(projected.y - centroid.y) <= 1e-5f &&
+                   std::fabs(projected.z) <= 1e-5f,
+               "a point above the centroid projects to the centroid in xy with z 0");
+
+    const vec3 onA = closest_point_on_triangle(a, a, b, c);
+    expectTrue(onA.x == a.x && onA.y == a.y && onA.z == a.z, "a point already on vertex a returns a");
+
+    const vec3 degenerate =
+        closest_point_on_triangle({2.2f, 0.5f, 0.f}, {0.f, 0.f, 0.f}, {2.f, 0.f, 0.f}, {4.f, 0.f, 0.f});
+    expectTrue(degenerate.x == 2.f && degenerate.y == 0.f && degenerate.z == 0.f,
+               "a degenerate triangle returns the closest vertex");
+
+    const f32 nan = std::numeric_limits<f32>::quiet_NaN();
+    const vec3 nonFiniteA{nan, nan, nan};
+    const vec3 fromNan = closest_point_on_triangle({nan, 0.f, 0.f}, a, b, c);
+    expectTrue(fromNan.x == a.x && fromNan.y == a.y && fromNan.z == a.z, "a non-finite query returns a when a is finite");
+    const vec3 fromNanZero = closest_point_on_triangle({nan, 1.f, 2.f}, nonFiniteA, b, c);
+    expectTrue(fromNanZero.x == 0.f && fromNanZero.y == 0.f && fromNanZero.z == 0.f,
+               "a non-finite query returns zero when a is non-finite");
+    const vec3 allNonFinite = closest_point_on_triangle({1.f, 2.f, 3.f}, nonFiniteA, nonFiniteA, nonFiniteA);
+    expectTrue(std::isnan(allNonFinite.x) && std::isnan(allNonFinite.y) && std::isnan(allNonFinite.z),
+               "a degenerate triangle with every vertex non-finite returns a");
+}
+
+void testTriangleCountOk() {
+    expectTrue(triangle_count_ok(1), "triangle_count_ok(1) is true");
+    expectTrue(triangle_count_ok(1u << 20), "triangle_count_ok(1u<<20) is true");
+    expectTrue(!triangle_count_ok(0), "triangle_count_ok(0) is false");
+    expectTrue(!triangle_count_ok((1u << 20) + 1u), "triangle_count_ok((1u<<20)+1) is false");
+}
+
 } // namespace
 
 int main() {
+    testTriangleCountOk();
     fuse::core::initialize();
     testRayCastMatchesBruteForce();
     testBodiesRestOnMeshFloor();
     testFusecolRoundTrip();
+    testClosestPointOnTriangle();
     fuse::core::shutdown();
     return finish("fuse_e18_trimesh_gates");
 }

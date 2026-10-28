@@ -18,6 +18,7 @@
 //   zero_alloc    steady-state inference and training steps make no heap allocation (replaced operator new)
 #include <fuse/renderer/neural/neural_gpu.hpp>
 #include <fuse/renderer/neural/neural_mlp.hpp>
+#include <fuse/renderer/neural/neural_scale.hpp>
 #include <fuse/renderer/neural/neural_types.hpp>
 
 #include "test_rp_neural_common.hpp"
@@ -829,9 +830,24 @@ void testZeroAlloc() {
     expect(total == 0u, "training steps and inference make no steady-state heap allocation");
 }
 
+/// CPU gate. Runs before any GPU or device skip and does not allocate.
+void testNeuralScaleOk() {
+    expect(fuse::renderer::neural_scale_ok(0.5f), "neural_scale_ok(0.5) is true");
+    expect(fuse::renderer::neural_scale_ok(1.f), "neural_scale_ok(1) is true");
+    expect(fuse::renderer::neural_scale_ok(4.f), "neural_scale_ok(4) is true");
+    expect(!fuse::renderer::neural_scale_ok(0.4f), "neural_scale_ok(0.4) is false");
+    expect(!fuse::renderer::neural_scale_ok(4.1f), "neural_scale_ok(4.1) is false");
+    expect(!fuse::renderer::neural_scale_ok(std::nanf("")), "neural_scale_ok(non-finite) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testNeuralScaleOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     int rc = 0;

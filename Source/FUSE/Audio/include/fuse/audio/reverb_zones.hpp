@@ -89,4 +89,36 @@ float compute_effective_send_gain(const ReverbZoneBlend& blend);
 float blend_reverb_sample(float dry, float wet, const Vec3& listener, const ReverbZoneParams* zones,
                           u32 zone_count);
 
+/// Sends at or below this (after clamping to [0, 1]) add nothing to the listener reverb bus.
+inline constexpr float kReverbSendSilence = 1.0e-6f;
+
+/// Clamp a per-source reverb send into [0, 1]. Non-finite values become 0.
+float clamp_reverb_send(float send);
+
+/// True when \p send contributes no wet signal (silence, or non-finite).
+bool is_silent_reverb_send(float send);
+
+/// Per-source reverb send into the listener bus. Independent of the zone wet mix.
+///
+///   send_i   = clamp(source.reverb_send, 0, 1)
+///   mono_i   = 0.5 * (dry_left_i + dry_right_i)          // spatialized source, pre-sum
+///   dry     += dry_i
+///   if send_i <= kReverbSendSilence:                     // silence skips the wet contribution
+///       (sent and bus are left untouched)
+///   else:
+///       sent += send_i * dry_i
+///       bus  += send_i * mono_i
+///   wet      = convolve(bus)                             // listener reverb
+///   zone_wet = clamp(zone.wet_dry) * clamp(zone.send_level)
+///   out      = (dry - sent) + blend_dry_wet_sample(sent, wet, zone_wet)
+///            = (dry - sent) + sent * (1 - zone_wet) + wet * zone_wet
+///
+/// send_i = 1 → sent = dry → out = blend_dry_wet_sample(dry, wet, zone_wet)
+/// (the historical listener crossfade). send_i = 0 leaves that source out of sent and bus.
+/// Zone wet mix does not scale send_i; it only crossfades the sent portion.
+float contribute_reverb_send(float dry_sample, float source_send);
+
+/// Listener output sample from the dry sum, the sent portion, the convolved bus, and zone wet mix.
+float mix_listener_reverb_sample(float dry, float sent, float wet, float zone_wet);
+
 } // namespace fuse::audio

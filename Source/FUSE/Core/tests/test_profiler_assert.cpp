@@ -1,6 +1,7 @@
 #include <fuse/assert.hpp>
 #include <fuse/log/logger.hpp>
 #include <fuse/platform/thread.hpp>
+#include <fuse/profiler/assert_message.hpp>
 #include <fuse/profiler/profiler.hpp>
 
 #include <atomic>
@@ -72,6 +73,57 @@ void testFrameBoundaryIncrementsIndex() {
     fuse::profiler::beginFrame();
     fuse::profiler::endFrame();
     expectTrue(fuse::profiler::frameIndex() == before + 1u, "beginFrame increments frame index");
+
+    if constexpr (kMacrosRecordEvents) {
+        expectTrue(fuse::profiler::eventCount() == 1u, "endFrame records one frame-boundary event");
+        expectTrue(fuse::profiler::eventNameMatches(fuse::profiler::eventAt(0), "frame"),
+                   "frame-boundary event is named frame");
+        expectTrue(fuse::profiler::eventAt(0).phase == fuse::profiler::EventPhase::Counter,
+                   "frame-boundary event uses the instant counter phase");
+        expectTrue(fuse::profiler::eventAt(0).durationNs == 0u, "frame-boundary event has no duration");
+
+        fuse::profiler::reset();
+        fuse::profiler::setEnabled(true);
+        {
+            FUSE_PROFILE_SCOPE("scope_around_frames");
+        }
+        expectTrue(fuse::profiler::eventCount() == 2u, "scope records begin and end beside frame markers");
+        expectTrue(fuse::profiler::eventAt(0).phase == fuse::profiler::EventPhase::Begin
+                       && fuse::profiler::eventAt(1).phase == fuse::profiler::EventPhase::End,
+                   "scope begin/end stay paired");
+        const fuse::u64 scopeEndNs = fuse::profiler::eventAt(1).timestampNs;
+
+        fuse::profiler::beginFrame();
+        fuse::profiler::endFrame();
+        fuse::profiler::beginFrame();
+        fuse::profiler::endFrame();
+        expectTrue(fuse::profiler::countEventsByName("frame") == 2u,
+                   "two beginFrame/endFrame pairs yield two frame markers");
+        expectTrue(fuse::profiler::eventCount() == 4u, "frame markers do not change the scope event count");
+        expectTrue(fuse::profiler::eventAt(0).phase == fuse::profiler::EventPhase::Begin
+                       && fuse::profiler::eventNameMatches(fuse::profiler::eventAt(0), "scope_around_frames"),
+                   "scope begin remains the first event");
+        expectTrue(fuse::profiler::eventAt(1).phase == fuse::profiler::EventPhase::End
+                       && fuse::profiler::eventNameMatches(fuse::profiler::eventAt(1), "scope_around_frames"),
+                   "scope end remains paired with begin");
+        expectTrue(fuse::profiler::isScopeNestingBalanced(), "frame markers do not open a scope");
+        const fuse::profiler::ProfileEvent& firstFrame = fuse::profiler::eventAt(2);
+        const fuse::profiler::ProfileEvent& secondFrame = fuse::profiler::eventAt(3);
+        expectTrue(firstFrame.phase == fuse::profiler::EventPhase::Counter
+                       && secondFrame.phase == fuse::profiler::EventPhase::Counter
+                       && fuse::profiler::eventNameMatches(firstFrame, "frame")
+                       && fuse::profiler::eventNameMatches(secondFrame, "frame"),
+                   "both frame markers are instant events named frame");
+        expectTrue(firstFrame.timestampNs >= scopeEndNs && secondFrame.timestampNs >= firstFrame.timestampNs,
+                   "frame markers use the same clock as scope events");
+    }
+
+    fuse::profiler::reset();
+    fuse::profiler::setEnabled(false);
+    fuse::profiler::beginFrame();
+    fuse::profiler::endFrame();
+    expectTrue(fuse::profiler::eventCount() == 0u, "disabled profiler records nothing");
+    resetState();
 }
 
 void testNestedScopeOrdering() {
@@ -2324,7 +2376,17 @@ void testPerThreadRingsMergeInRecordOrder() {
                "reset empties every thread's ring");
 }
 
+void testAssertMessageOk() {
+    expectTrue(fuse::profiler::assert_message_ok("failed"), "a short assert message is accepted");
+    expectTrue(!fuse::profiler::assert_message_ok(""), "an empty assert message is rejected");
+    expectTrue(fuse::profiler::assert_message_ok(std::string(256, 'a')),
+               "a 256-character assert message is accepted");
+    expectTrue(!fuse::profiler::assert_message_ok(std::string(257, 'a')),
+               "a 257-character assert message is rejected");
+}
+
 int main() {
+    testAssertMessageOk();
     if constexpr (kMacrosRecordEvents) {
         testProfileScopeRecordsEvents();
         testPerThreadRingsMergeInRecordOrder();

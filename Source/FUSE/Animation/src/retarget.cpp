@@ -1,6 +1,51 @@
 #include <fuse/animation/retarget.hpp>
 
+#include <cmath>
+
 namespace fuse::animation {
+namespace {
+
+bool rotation_offset_is_finite(const quat& rotation) {
+    return std::isfinite(rotation.x) && std::isfinite(rotation.y) && std::isfinite(rotation.z) &&
+           std::isfinite(rotation.w);
+}
+
+bool is_identity_rotation(const quat& rotation) {
+    return rotation.x == 0.f && rotation.y == 0.f && rotation.z == 0.f &&
+           (rotation.w == 1.f || rotation.w == -1.f);
+}
+
+/// Parent-local product `offset * source`. See `RetargetBoneEntry`.
+quat compose_parent_local_offset(const quat& offset, const quat& source) {
+    const quat normalized = quat_normalize(offset);
+    if (is_identity_rotation(normalized)) {
+        return source;
+    }
+    return quat_multiply(normalized, source);
+}
+
+/// Left-multiply the copied matrix's linear part by `offset`, keeping translation.
+/// `M(offset) * (R * S) = (offset * R) * S`, the same parent-local product as the SoA path.
+mat4 compose_world_rotation_offset(const mat4& source_world, const quat& offset) {
+    const quat normalized = quat_normalize(offset);
+    if (is_identity_rotation(normalized)) {
+        return source_world;
+    }
+
+    const mat4 rotation = mat4_from_trs(vec3{}, normalized, {1.f, 1.f, 1.f, 0.f});
+    mat4 out = source_world;
+    for (u32 col = 0; col < 3u; ++col) {
+        const f32 x = source_world.data[col * 4u + 0u];
+        const f32 y = source_world.data[col * 4u + 1u];
+        const f32 z = source_world.data[col * 4u + 2u];
+        out.data[col * 4u + 0u] = rotation.data[0] * x + rotation.data[4] * y + rotation.data[8] * z;
+        out.data[col * 4u + 1u] = rotation.data[1] * x + rotation.data[5] * y + rotation.data[9] * z;
+        out.data[col * 4u + 2u] = rotation.data[2] * x + rotation.data[6] * y + rotation.data[10] * z;
+    }
+    return out;
+}
+
+} // namespace
 
 bool RetargetMap::is_valid() const {
     if (source_bone_count == 0 || target_bone_count == 0) {
@@ -9,6 +54,9 @@ bool RetargetMap::is_valid() const {
 
     for (const RetargetBoneEntry& entry : bone_map) {
         if (entry.source_bone >= source_bone_count || entry.target_bone >= target_bone_count) {
+            return false;
+        }
+        if (!rotation_offset_is_finite(entry.rotation_offset)) {
             return false;
         }
     }
@@ -49,7 +97,10 @@ void RetargetMap::clear() {
     target_bone_count = 0;
 }
 
-bool RetargetMap::add_bone_mapping(u32 source_bone, u32 target_bone, f32 translation_scale) {
+bool RetargetMap::add_bone_mapping(u32 source_bone,
+                                   u32 target_bone,
+                                   f32 translation_scale,
+                                   quat rotation_offset) {
     if (source_bone_count > 0 && source_bone >= source_bone_count) {
         return false;
     }
@@ -59,11 +110,15 @@ bool RetargetMap::add_bone_mapping(u32 source_bone, u32 target_bone, f32 transla
     if (is_source_mapped(source_bone) || is_target_mapped(target_bone)) {
         return false;
     }
+    if (!rotation_offset_is_finite(rotation_offset)) {
+        return false;
+    }
 
     RetargetBoneEntry entry{};
     entry.source_bone = source_bone;
     entry.target_bone = target_bone;
     entry.translation_scale = translation_scale;
+    entry.rotation_offset = rotation_offset;
     bone_map.push_back(entry);
     return true;
 }
@@ -124,6 +179,7 @@ RetargetMap RetargetMap::build_identity(const Skeleton& skel) {
         entry.source_bone = boneIdx;
         entry.target_bone = boneIdx;
         entry.translation_scale = 1.f;
+        entry.rotation_offset = {0.f, 0.f, 0.f, 1.f};
         map.bone_map.push_back(entry);
     }
 
@@ -149,6 +205,7 @@ RetargetMap RetargetMap::build_by_name(const Skeleton& source, const Skeleton& t
         entry.source_bone = sourceIdx;
         entry.target_bone = static_cast<u32>(targetIdx);
         entry.translation_scale = 1.f;
+        entry.rotation_offset = {0.f, 0.f, 0.f, 1.f};
         map.bone_map.push_back(entry);
     }
 
@@ -177,7 +234,8 @@ void RetargetMap::apply_pose_soa(const PoseSoA& source_pose,
             srcPos.z * entry.translation_scale,
             0.f,
         };
-        out_pose.local_rotations[entry.target_bone] = source_pose.local_rotations[entry.source_bone];
+        out_pose.local_rotations[entry.target_bone] =
+            compose_parent_local_offset(entry.rotation_offset, source_pose.local_rotations[entry.source_bone]);
         out_pose.local_scales[entry.target_bone] = source_pose.local_scales[entry.source_bone];
     }
 
@@ -200,7 +258,8 @@ void RetargetMap::apply_pose(const Pose& source_pose,
             continue;
         }
 
-        out_pose.bone_world_transforms[entry.target_bone] = source_pose.bone_world_transforms[entry.source_bone];
+        out_pose.bone_world_transforms[entry.target_bone] = compose_world_rotation_offset(
+            source_pose.bone_world_transforms[entry.source_bone], entry.rotation_offset);
     }
 }
 

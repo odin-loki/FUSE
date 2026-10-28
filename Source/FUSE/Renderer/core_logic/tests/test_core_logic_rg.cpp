@@ -1,5 +1,6 @@
 // WP-0.8: render-graph compiler model — unit, scenario and property tests against the
 // brute-force oracle (rg_oracle.hpp).
+#include "cl_rg_node.hpp"
 #include "cl_test_util.hpp"
 #include "rg_oracle.hpp"
 
@@ -461,9 +462,29 @@ void test_oracle_mutations(uint32_t iterations) {
     CL_CHECK(aliasCaught == aliasMut && syncCaught == syncMut && barrierCaught * 10u >= barrierMut * 9u);
 }
 
+// Returns non-zero on the first failed bound. Does not allocate.
+int testClRgNodeOk() {
+    if (!fuse::renderer::cl_rg_node_ok(1)) {
+        return 1;
+    }
+    if (!fuse::renderer::cl_rg_node_ok(256)) {
+        return 1;
+    }
+    if (fuse::renderer::cl_rg_node_ok(0)) {
+        return 1;
+    }
+    if (fuse::renderer::cl_rg_node_ok(257)) {
+        return 1;
+    }
+    return 0;
+}
+
 } // namespace
 
 int run_rg_tests() {
+    if (const int nodeRc = testClRgNodeOk()) {
+        return nodeRc;
+    }
     test_validation();
     test_queue_fallback();
     test_scenarios();

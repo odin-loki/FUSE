@@ -14,6 +14,7 @@
 
 #include <fuse/core/sanitizer.hpp>
 #include <fuse/log/logger.hpp>
+#include <fuse/log/ring_slots.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -694,9 +695,18 @@ void checkLatencyBudget() {
 #endif
 }
 
+void testRingSlotsOk() {
+    expectTrue(fuse::log::ring_slots_ok(16u), "16 ring slots is valid");
+    expectTrue(fuse::log::ring_slots_ok(1024u), "1024 ring slots is valid");
+    expectTrue(!fuse::log::ring_slots_ok(8u), "8 ring slots is below the minimum");
+    expectTrue(!fuse::log::ring_slots_ok(24u), "24 ring slots is not a power of two");
+    expectTrue(!fuse::log::ring_slots_ok(131072u), "131072 ring slots is above the maximum");
+}
+
 } // namespace
 
 int main() {
+    testRingSlotsOk();
     std::printf("fuse_core_b1_log_async_ring_gates (sanitized=%d)\n", kSanitized ? 1 : 0);
     testStressNoLossPerThreadOrder();
     testSteadyStateHeapWholeProcess();

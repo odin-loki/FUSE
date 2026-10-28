@@ -1,8 +1,11 @@
 #include <fuse/core/init.hpp>
 #include <fuse/mechanics/health_component.hpp>
+#include <fuse/mechanics/health_ratio.hpp>
+#include <fuse/mechanics/hp_cap.hpp>
 
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 namespace {
 
@@ -44,9 +47,38 @@ void testHealthInterfaceLookup() {
     expectTrue(iface->currentHealth() == 40, "interface reads current health");
 }
 
+void testHpCapOk() {
+    expectTrue(fuse::mechanics::hp_cap_ok(1), "hp_cap_ok(1) is true");
+    expectTrue(fuse::mechanics::hp_cap_ok(100000), "hp_cap_ok(100000) is true");
+    expectTrue(!fuse::mechanics::hp_cap_ok(0), "hp_cap_ok(0) is false");
+    expectTrue(!fuse::mechanics::hp_cap_ok(100001), "hp_cap_ok(100001) is false");
+}
+
+void testHealthRatio() {
+    expectTrue(fuse::mechanics::health_ratio(5.f, 10.f) == 0.5f, "health_ratio(5, 10) == 0.5");
+    expectTrue(fuse::mechanics::health_ratio(12.f, 10.f) == 1.f, "health_ratio(12, 10) == 1");
+    expectTrue(fuse::mechanics::health_ratio(1.f, 0.f) == 0.f, "health_ratio(1, 0) == 0");
+    expectTrue(fuse::mechanics::health_ratio(0.f, 10.f) == 0.f, "zero current returns 0");
+    expectTrue(fuse::mechanics::health_ratio(-4.f, 10.f) == 0.f, "negative current counts as 0");
+    expectTrue(fuse::mechanics::health_ratio(5.f, -1.f) == 0.f, "negative max health returns 0");
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    expectTrue(fuse::mechanics::health_ratio(nan, 10.f) == 0.f, "non-finite current returns 0");
+    expectTrue(fuse::mechanics::health_ratio(5.f, nan) == 0.f, "non-finite max health returns 0");
+    expectTrue(fuse::mechanics::health_ratio(inf, 10.f) == 0.f, "infinite current returns 0");
+    expectTrue(fuse::mechanics::health_ratio(5.f, -inf) == 0.f, "infinite max health returns 0");
+}
+
 } // namespace
 
 int main() {
+    testHpCapOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_mechanics_health_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testHealthRatio();
     fuse::core::initialize();
     testHealthDamageAndHeal();
     testHealthInterfaceLookup();

@@ -2,6 +2,7 @@
 // loader)". SceneSerialiser writes the FUSE magic (bytes "FUSE"); the pre-rename 'ENGC' files
 // still load through the compat path — both a synthesised one and the committed sample
 // `.fuselevel` — and re-saving upgrades them to the FUSE magic with an otherwise identical body.
+#include <fuse/scene/magic_tag.hpp>
 #include <fuse/scene/scene.hpp>
 #include <fuse/scene/serialiser.hpp>
 
@@ -114,6 +115,14 @@ void testCommittedSampleStillLoads() {
     }
 }
 
+void testMagicTagOk() {
+    expectTrue(fuse::scene::magic_tag_ok("FUSE"), "magic tag FUSE");
+    expectTrue(fuse::scene::magic_tag_ok("fuse"), "magic tag fuse");
+    expectTrue(!fuse::scene::magic_tag_ok("FUS"), "magic tag FUS rejected");
+    expectTrue(!fuse::scene::magic_tag_ok("FUSE1"), "magic tag FUSE1 rejected");
+    expectTrue(!fuse::scene::magic_tag_ok(""), "empty magic tag rejected");
+}
+
 void testUnknownMagicRejected() {
     const std::filesystem::path src = tempDir() / "bad_src.fuselevel";
     const std::filesystem::path bad = tempDir() / "bad_magic.fuselevel";
@@ -129,6 +138,7 @@ void testUnknownMagicRejected() {
 } // namespace
 
 int main() {
+    testMagicTagOk();
     testNewMagicWritten();
     testLegacyMagicCompat();
     testCommittedSampleStillLoads();

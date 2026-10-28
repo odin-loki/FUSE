@@ -1,5 +1,7 @@
 #include <fuse/core/init.hpp>
+#include <fuse/project/mission_id.hpp>
 #include <fuse/project/mission_load.hpp>
+#include <fuse/project/mission_name.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -36,6 +38,27 @@ std::string resolveSourceDir(int argc, char** argv) {
         return argv[1];
     }
     return FUSE_SOURCE_DIR;
+}
+
+void testMissionNameOk() {
+    expectTrue(fuse::project::mission_name_ok("Intro"), "Intro is a valid mission name");
+    expectTrue(!fuse::project::mission_name_ok(""), "empty mission name is invalid");
+    expectTrue(!fuse::project::mission_name_ok("1Intro"), "leading digit is invalid");
+    expectTrue(!fuse::project::mission_name_ok("Intro Level"), "space in mission name is invalid");
+}
+
+void testMissionIdOk() {
+    expectTrue(fuse::project::mission_id_ok("intro_01"), "intro_01 is a valid mission id");
+    expectTrue(!fuse::project::mission_id_ok("Intro"), "uppercase first letter is invalid");
+    expectTrue(!fuse::project::mission_id_ok("1intro"), "leading digit is invalid");
+    expectTrue(fuse::project::mission_id_ok("a"), "single lowercase letter is valid");
+    expectTrue(!fuse::project::mission_id_ok(""), "empty mission id is invalid");
+    expectTrue(!fuse::project::mission_id_ok("_intro"), "leading underscore is invalid");
+    expectTrue(!fuse::project::mission_id_ok("inTro"), "uppercase letter is invalid");
+    expectTrue(fuse::project::mission_id_ok("a1234567890123456789012345678901"),
+               "32-character mission id is valid");
+    expectTrue(!fuse::project::mission_id_ok("a12345678901234567890123456789012"),
+               "33-character mission id is invalid");
 }
 
 void testMissingMissionFile() {
@@ -126,6 +149,13 @@ void testGoldenMissionLoad(const std::string& sourceDir) {
 } // namespace
 
 int main(int argc, char** argv) {
+    testMissionNameOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_mission_load_p4: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testMissionIdOk();
     fuse::core::initialize();
 
     testMissingMissionFile();

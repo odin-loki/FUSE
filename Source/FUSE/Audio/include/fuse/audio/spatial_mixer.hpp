@@ -28,12 +28,15 @@ struct OneShotVoice {
     float pitch = 1.f;
     bool spatial = true;
     AudioBus bus = AudioBus::Sfx;
+    /// Per-source send into the listener reverb bus, [0, 1]. See mix_listener_reverb_sample.
+    float reverb_send = 1.f;
     double play_head = 0.0; ///< Seconds of clip time already rendered.
     u32 backend_source = 0;
     u32 id = 0;
 };
 
-/// CPU spatial mixer — HRTF-lite panning and distance attenuation into an interleaved stereo buffer.
+/// CPU spatial mixer — HRTF-lite panning, distance attenuation, an occlusion lowpass, and
+/// per-source reverb sends into an interleaved stereo buffer.
 class SpatialMixer {
 public:
     void configure(u32 sample_rate, u32 max_sources, bool hrtf_enabled);
@@ -55,11 +58,27 @@ public:
                                                          float distance_attenuation,
                                                          float occlusion_gain) const;
 
-    /// Render \p frames of interleaved stereo. Voices are prioritised by audibility when more
-    /// than `max_sources` are active; per-voice gains ramp over \ref kGainRampFrames to avoid
-    /// zipper noise, and occluded voices run through a high-shelf (\ref kOcclusionCrossoverHz).
+    /// Render \p frames of interleaved stereo into \p stereo_out and fill the listener reverb send.
+    ///
+    /// Voices are prioritised by audibility when more than `max_sources` are active. Per-voice
+    /// gains ramp over \ref kGainRampFrames. Spatial sources run the occlusion lowpass
+    /// (\ref apply_occlusion_lpf) on the source sample before the bus sum, then the high-shelf
+    /// at \ref kOcclusionCrossoverHz.
+    ///
+    /// Per-source reverb send, independent of the zone wet mix (\ref mix_listener_reverb_sample):
+    ///   send_i = clamp(source.reverb_send, 0, 1)
+    ///   dry   += dry_i
+    ///   if send_i <= kReverbSendSilence: wet contribution skipped
+    ///   else: sent += send_i * dry_i ; bus += send_i * 0.5 * (L_i + R_i)
+    ///   out    = (dry - sent) + blend_dry_wet_sample(sent, convolve(bus), zone_wet)
+    /// send_i = 1 reproduces the historical listener dry/wet crossfade.
     void mix(const AudioRegistry& registry, const HandleMap<AudioClip>& clips, float dt,
              std::vector<float>& stereo_out, u32 frames);
+
+    /// Mono listener reverb send from the last \ref mix (one sample per frame).
+    const std::vector<float>& reverb_send_bus() const { return m_reverbSend; }
+    /// Interleaved stereo dry signal that was actually sent (silence contributes zeros).
+    const std::vector<float>& reverb_sent_dry() const { return m_reverbSentDry; }
 
     /// Advance registry and one-shot play heads by \p frames of output (the sample clock), wrap
     /// looping voices and retire finished one-shots. Returns backend ids of retired one-shots.
@@ -103,12 +122,13 @@ private:
     u32 m_lastMixedVoices = 0;
     u32 m_lastCulledVoices = 0;
 
-    /// Per-voice DSP state carried across buffers (gain ramp + occlusion shelf memory).
+    /// Per-voice DSP state carried across buffers (gain ramp, shelf, occlusion lowpass).
     struct VoiceState {
         float gain_left = 0.f;
         float gain_right = 0.f;
         float lp_left = 0.f;
         float lp_right = 0.f;
+        float occl_lpf = 0.f;
         bool primed = false;
         bool touched = false;
         /// Per-voice decoder for streaming clips (bounded decode ring, see StreamDecoder).
@@ -130,11 +150,15 @@ private:
         double play_head = 0.0;
         AttenuationParams attenuation{};
         float occlusion = 1.f;
+        float reverb_send = 1.f;
         AudioBus bus = AudioBus::Sfx;
         float audibility = 0.f;
     };
     /// Per-mix voice list, kept across calls so steady-state mixing does not touch the heap.
     std::vector<VoiceRequest> m_requests;
+    /// Mono send into the listener reverb, and the matching interleaved sent-dry signal.
+    std::vector<float> m_reverbSend;
+    std::vector<float> m_reverbSentDry;
 
     float sample_clip(const AudioClip& clip, double frame_pos, u32 channel, bool looping) const;
     static float sample_stream(StreamDecoder& decoder, const AudioClip& clip, double frame_pos, u32 channel,

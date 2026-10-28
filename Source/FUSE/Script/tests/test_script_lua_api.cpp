@@ -14,8 +14,11 @@
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/platform/action_map.hpp>
 #include <fuse/platform/event_pump.hpp>
+#include <fuse/script/lua_stack.hpp>
+#include <fuse/script/memory_budget.hpp>
 #include <fuse/script/script_engine_api.hpp>
 #include <fuse/script/script_engine_backends.hpp>
+#include <fuse/script/script_indent.hpp>
 #include <fuse/script/script_vm.hpp>
 #include <fuse/spatial/bvh.hpp>
 
@@ -380,9 +383,42 @@ void testAudio() {
 }
 #endif
 
+// Indent spaces are the closed range 0..32. No allocation.
+void testScriptIndentOk() {
+    expect(fuse::script::script_indent_ok(0), "script_indent_ok(0) is true");
+    expect(fuse::script::script_indent_ok(32), "script_indent_ok(32) is true");
+    expect(!fuse::script::script_indent_ok(-1), "script_indent_ok(-1) is false");
+    expect(!fuse::script::script_indent_ok(33), "script_indent_ok(33) is false");
+}
+
+void testLuaStackOk() {
+    expect(fuse::script::lua_stack_ok(1), "stack slot 1 is valid");
+    expect(fuse::script::lua_stack_ok(256), "stack slot 256 is valid");
+    expect(!fuse::script::lua_stack_ok(0), "stack slot 0 is invalid");
+    expect(!fuse::script::lua_stack_ok(257), "stack slot 257 is invalid");
+}
+
+void testMemoryWithin() {
+    expect(fuse::script::memory_within(100u, 100u), "100 bytes within a 100 byte limit");
+    expect(!fuse::script::memory_within(101u, 100u), "101 bytes exceeds a 100 byte limit");
+    expect(fuse::script::memory_within(0u, 0u), "zero used bytes within a zero limit");
+    expect(!fuse::script::memory_within(1u, 0u), "one byte exceeds a zero limit");
+}
+
 } // namespace
 
 int main() {
+    testScriptIndentOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_script_lua_api: %d failure(s)\n", g_failures);
+        return 1;
+    }
+    testLuaStackOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_script_lua_api: %d failure(s)\n", g_failures);
+        return 1;
+    }
+    testMemoryWithin();
     {
         ScriptVM probe;
         if (!probe.init() || !probe.has_lua_backend()) {

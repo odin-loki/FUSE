@@ -1,5 +1,9 @@
 #include <fuse/ecs/entity.hpp>
 #include <fuse/net/interest_management.hpp>
+#include <fuse/net/interest_radius.hpp>
+#include <fuse/net/radius_hysteresis.hpp>
+
+#include <limits>
 
 #include "test_helpers.hpp"
 
@@ -16,7 +20,70 @@ fuse::ecs::EntityID make_entity(fuse::u32 index) {
 
 } // namespace
 
+void testRadiusHysteresis() {
+    expectTrue(fuse::net::radius_hysteresis(9.f, 10.f, 2.f, false),
+               "distance 9 enters radius 10");
+    expectTrue(!fuse::net::radius_hysteresis(11.f, 10.f, 2.f, false),
+               "distance 11 stays outside radius 10");
+    expectTrue(fuse::net::radius_hysteresis(11.f, 10.f, 2.f, true),
+               "distance 11 stays inside until radius plus slack");
+    expectTrue(!fuse::net::radius_hysteresis(13.f, 10.f, 2.f, true),
+               "distance 13 leaves past radius plus slack");
+
+    expectTrue(fuse::net::radius_hysteresis(10.f, 10.f, 2.f, false),
+               "distance equal to radius enters");
+    expectTrue(!fuse::net::radius_hysteresis(12.f, 10.f, 2.f, false),
+               "distance at leave edge does not enter");
+    expectTrue(fuse::net::radius_hysteresis(12.f, 10.f, 2.f, true),
+               "distance equal to radius plus slack stays inside");
+
+    expectTrue(fuse::net::radius_hysteresis(0.f, -4.f, 2.f, false),
+               "negative radius counts as 0 for enter");
+    expectTrue(!fuse::net::radius_hysteresis(1.f, -4.f, 0.f, false),
+               "distance above a clamped radius stays outside");
+    expectTrue(fuse::net::radius_hysteresis(1.f, -4.f, 2.f, true),
+               "negative radius still applies slack while inside");
+    expectTrue(!fuse::net::radius_hysteresis(3.f, -4.f, 2.f, true),
+               "leave past clamped radius plus slack");
+
+    expectTrue(fuse::net::radius_hysteresis(10.f, 10.f, -3.f, false),
+               "negative slack does not widen the enter radius");
+    expectTrue(fuse::net::radius_hysteresis(10.f, 10.f, -3.f, true),
+               "negative slack counts as 0 while inside");
+    expectTrue(!fuse::net::radius_hysteresis(10.1f, 10.f, -3.f, true),
+               "zero slack leaves just past the radius");
+
+    const float nonFinite = std::numeric_limits<float>::quiet_NaN();
+    const float infinite = std::numeric_limits<float>::infinity();
+    expectTrue(!fuse::net::radius_hysteresis(nonFinite, 10.f, 2.f, true),
+               "non-finite distance is outside");
+    expectTrue(!fuse::net::radius_hysteresis(nonFinite, 10.f, 2.f, false),
+               "non-finite distance does not enter");
+    expectTrue(!fuse::net::radius_hysteresis(infinite, 10.f, 2.f, true),
+               "infinite distance is outside");
+    expectTrue(!fuse::net::radius_hysteresis(-infinite, 10.f, 2.f, false),
+               "negative infinite distance is outside");
+}
+
+void testInterestRadiusOk() {
+    expectTrue(fuse::net::interest_radius_ok(0.5f), "interest_radius_ok(0.5) is true");
+    expectTrue(fuse::net::interest_radius_ok(256.f), "interest_radius_ok(256) is true");
+    expectTrue(!fuse::net::interest_radius_ok(0.f), "interest_radius_ok(0) is false");
+    expectTrue(!fuse::net::interest_radius_ok(-1.f), "interest_radius_ok(-1) is false");
+    expectTrue(!fuse::net::interest_radius_ok(256.1f), "interest_radius_ok(256.1) is false");
+    expectTrue(!fuse::net::interest_radius_ok(std::numeric_limits<float>::quiet_NaN()),
+               "interest_radius_ok(NaN) is false");
+}
+
 void run_interest_management_tests() {
+    const int before = g_failures;
+    testInterestRadiusOk();
+    if (g_failures != before) {
+        return;
+    }
+
+    testRadiusHysteresis();
+
     fuse::net::InterestPolicy policy{};
     policy.relevance_radius = 100.f;
     policy.always_relevant_radius = 10.f;

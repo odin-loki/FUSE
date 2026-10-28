@@ -22,6 +22,7 @@
 //               the frame index, PRESENT stage at PresentStart only.
 //   selection   select_latency_backend (auto order, explicit preferences, reasons); create_latency_provider without
 //               sources -> None; the stub / Lavapipe bindings report the extensions unavailable.
+#include <fuse/renderer/latency/latency_frames.hpp>
 #include <fuse/renderer/present/latency/latency_provider.hpp>
 #include <fuse/renderer/present/latency/present_timing.hpp>
 
@@ -602,9 +603,22 @@ int runSelection() {
     return 0;
 }
 
+/// CPU gate. Must run before any GPU or device skip; a failure exits the process.
+void testLatencyFramesOk() {
+    expect(fuse::renderer::latency_frames_ok(0), "latency_frames_ok(0) is true");
+    expect(fuse::renderer::latency_frames_ok(8), "latency_frames_ok(8) is true");
+    expect(!fuse::renderer::latency_frames_ok(-1), "latency_frames_ok(-1) is false");
+    expect(!fuse::renderer::latency_frames_ok(9), "latency_frames_ok(9) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testLatencyFramesOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL testLatencyFramesOk: %d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string mode = argc > 1 ? argv[1] : "pacing";
     int rc = 0;
     if (mode == "pacing") {
@@ -632,3 +646,21 @@ int main(int argc, char** argv) {
     std::printf("PASS %s\n", mode.c_str());
     return 0;
 }
+
+#include <fuse/renderer/latency/frame_offset.hpp>
+
+namespace {
+
+int test_simulation_frame() {
+    using fuse::renderer::latency::simulation_frame;
+    expect(simulation_frame(10ull, 2u) == 8ull, "test_simulation_frame: present 10, in flight 2 -> 8");
+    expect(simulation_frame(1ull, 3u) == 0ull, "test_simulation_frame: present 1, in flight 3 -> 0");
+    // 100 clamps to 8, so present 10 resolves as 10 - 8.
+    expect(simulation_frame(10ull, 100u) == 2ull, "test_simulation_frame: in flight 100 is treated as 8");
+    return 0;
+}
+
+// Existing fuse_rp_latency_* modes stay registered in cmake. This check runs with them.
+[[maybe_unused]] const int g_test_simulation_frame = test_simulation_frame();
+
+} // namespace

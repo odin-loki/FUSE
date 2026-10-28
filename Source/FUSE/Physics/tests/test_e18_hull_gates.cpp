@@ -8,6 +8,9 @@
 #include "e18_test_common.hpp"
 
 #include <fuse/core/init.hpp>
+#include <fuse/physics/collision/hull_vertices.hpp>
+#include <fuse/physics/forces/grapple.hpp>
+#include <fuse/physics/hull/hull_verts.hpp>
 #include <fuse/physics/narrowphase/gjk.hpp>
 #include <fuse/physics/narrowphase/hull_contacts.hpp>
 #include <fuse/physics/shapes/shape_pool.hpp>
@@ -435,14 +438,51 @@ void testHullStackSettlesDeterministically() {
     expectTrue(identical, "two runs of the hull stack are bit-identical");
 }
 
+void testHullVertsOk() {
+    expectTrue(hull_verts_ok(4), "hull_verts_ok(4) is true");
+    expectTrue(hull_verts_ok(256), "hull_verts_ok(256) is true");
+    expectTrue(!hull_verts_ok(3), "hull_verts_ok(3) is false");
+    expectTrue(!hull_verts_ok(257), "hull_verts_ok(257) is false");
+}
+
+void testHullVerticesOk() {
+    expectTrue(hull_vertices_ok(4), "hull_vertices_ok(4) is true");
+    expectTrue(hull_vertices_ok(64), "hull_vertices_ok(64) is true");
+    expectTrue(!hull_vertices_ok(3), "hull_vertices_ok(3) is false");
+    expectTrue(!hull_vertices_ok(65), "hull_vertices_ok(65) is false");
+}
+
+void testGrappleForce() {
+    Grapple g;
+    g.anchor = {0.f, 0.f, 0.f};
+    g.restLength = 2.f;
+    g.stiffness = 5.f;
+
+    const vec3 slack = grapple_force(g, {1.f, 0.f, 0.f});
+    expectTrue(slack.x == 0.f && slack.y == 0.f && slack.z == 0.f,
+               "a point inside the rest length gets zero grapple force");
+
+    // d = 5, stretch = 3, direction = (-1, 0, 0), force = -15 on X.
+    const vec3 taut = grapple_force(g, {5.f, 0.f, 0.f});
+    expectTrue(taut.x < 0.f && taut.y == 0.f && taut.z == 0.f,
+               "a point past the rest length along +X is pulled toward the origin");
+    expectTrue(std::fabs(taut.x - (-15.f)) < 1e-4f, "grapple force is stiffness times stretch toward the anchor");
+}
+
 } // namespace
 
 int main() {
+    testHullVertsOk();
+    if (g_failures != 0) {
+        return EXIT_FAILURE;
+    }
+    testHullVerticesOk();
     fuse::core::initialize();
     testQuickhull();
     testHullSatAgainstBruteForce();
     testBoxShapedHullMatchesBox();
     testHullStackSettlesDeterministically();
+    testGrappleForce();
     fuse::core::shutdown();
     return finish("fuse_e18_hull_gates");
 }

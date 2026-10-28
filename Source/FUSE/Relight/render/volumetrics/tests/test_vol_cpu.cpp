@@ -26,6 +26,9 @@
 
 #include "vol_cpp.hpp"
 
+#include <fuse/relight/render/volumetrics/fog_density.hpp>
+#include <fuse/relight/render/volumetrics/height_fog.hpp>
+
 #include <fuse/relight/options/option.hpp>
 #include <fuse/relight/options/option_config.hpp>
 #include <fuse/relight/options/option_manager.hpp>
@@ -894,9 +897,39 @@ void suiteLayout() {
     check(vol::kVolLayerCount == 16u, "layout: kVolMaxLayers == the core's 16-entry layer arrays");
 }
 
+// ---- height_fog -------------------------------------------------------------------------------------------------------
+
+void suiteHeightFog() {
+    const float atBase = vol::height_fog_density(0.f, 0.f, 1.f, 1.f);
+    const float atLn2 = vol::height_fog_density(std::log(2.f), 0.f, 1.f, 1.f);
+    check(atBase == 1.f, "height_fog: height == base returns density");
+    check(std::fabs(atLn2 - 0.5f) < 1e-5f, "height_fog: height ln(2) is about 0.5");
+    check(vol::height_fog_density(-2.f, 0.f, 1.f, 1.f) == 1.f, "height_fog: below the base stays at density");
+    check(vol::height_fog_density(4.f, 0.f, 1.f, 0.f) == 1.f, "height_fog: non-positive falloff does not change density");
+    check(vol::height_fog_density(4.f, 0.f, 1.f, -2.f) == 1.f, "height_fog: negative falloff does not change density");
+    check(vol::height_fog_density(1.f, 0.f, 0.f, 1.f) == 0.f, "height_fog: zero density is 0");
+    check(vol::height_fog_density(1.f, 0.f, -1.f, 1.f) == 0.f, "height_fog: negative density is 0");
+    check(vol::height_fog_density(std::nanf(""), 0.f, 1.f, 1.f) == 0.f, "height_fog: non-finite input is 0");
+    check(atLn2 >= 0.f, "height_fog: result is never negative");
+    std::printf("height_fog: base %g, ln(2) %g\n", atBase, atLn2);
+}
+
+/// Density in [0, 1]. No heap allocation (messages stay inside the small-string buffer).
+int testFogDensityOk() {
+    check(fuse::relight::fog_density_ok(0), "ok 0");
+    check(fuse::relight::fog_density_ok(0.2f), "ok 0.2");
+    check(fuse::relight::fog_density_ok(1), "ok 1");
+    check(!fuse::relight::fog_density_ok(-0.01f), "bad neg");
+    check(!fuse::relight::fog_density_ok(1.5f), "bad 1.5");
+    return g_failures == 0 ? 0 : 1;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int fogRc = testFogDensityOk()) {
+        return fogRc;
+    }
     opt::setEnvironmentVariable(opt::kDxvkConfEnvVar, "");
     opt::setEnvironmentVariable(opt::kRtxConfEnvVar, "");
     (void)BorrowedStandIns::sceneScaleObject();
@@ -910,7 +943,7 @@ int main(int argc, char** argv) {
                             {"reuse", suiteReuse},             {"ghosting", suiteGhosting},
                             {"shadows", suiteShadows},         {"particles", suiteParticles},
                             {"determinism", suiteDeterminism}, {"zero_alloc", suiteZeroAlloc},
-                            {"layout", suiteLayout}};
+                            {"layout", suiteLayout},           {"height_fog", suiteHeightFog}};
     bool ran = false;
     for (const Suite& s : suites) {
         if (suite == "all" || suite == s.name) {

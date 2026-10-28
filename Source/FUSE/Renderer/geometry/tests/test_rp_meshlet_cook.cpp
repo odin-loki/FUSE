@@ -12,6 +12,7 @@
 #include <fuse/compute_kernel/stats.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/renderer/cook_verts.hpp>
 #include <fuse/renderer/geometry/meshlet_bounds_kernel.hpp>
 #include <fuse/renderer/geometry/meshlet_builder.hpp>
 #include <fuse/renderer/geometry/meshlet_cook_hook.hpp>
@@ -1073,9 +1074,25 @@ int suite_cook() {
 #endif
 }
 
+/// CPU gate. No heap allocation. main calls this first and returns non-zero on failure.
+int testCookVertsOk() {
+    const bool atThree = fuse::renderer::cook_verts_ok(3);
+    const bool atMax = fuse::renderer::cook_verts_ok(256);
+    const bool below = fuse::renderer::cook_verts_ok(2);
+    const bool above = fuse::renderer::cook_verts_ok(257);
+    if (atThree && atMax && !below && !above) {
+        return 0;
+    }
+    std::fprintf(stderr, "FAIL: testCookVertsOk\n");
+    return EXIT_FAILURE;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int cookVertsRc = testCookVertsOk()) {
+        return cookVertsRc;
+    }
     fuse::core::initialize();
     const std::string suite = argc > 1 ? argv[1] : "all";
     if (suite == "codec" || suite == "all") {

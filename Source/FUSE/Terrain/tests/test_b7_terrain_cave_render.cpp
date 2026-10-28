@@ -18,6 +18,7 @@
 // The GPU (Vulkan) terrain + SVO render of the same scene remains a manual visual check.
 
 #include <fuse/core/init.hpp>
+#include <fuse/terrain/cave_radius.hpp>
 #include <fuse/terrain/heightfield.hpp>
 #include <fuse/terrain/terrain.hpp>
 
@@ -49,6 +50,14 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testCaveRadiusOk() {
+    expectTrue(cave_radius_ok(1), "cave_radius_ok(1) is true");
+    expectTrue(cave_radius_ok(64), "cave_radius_ok(64) is true");
+    expectTrue(!cave_radius_ok(0.5f), "cave_radius_ok(0.5f) is false");
+    expectTrue(!cave_radius_ok(65), "cave_radius_ok(65) is false");
 }
 
 #if defined(FUSE_TERRAIN_HAS_SVO) && FUSE_TERRAIN_HAS_SVO
@@ -447,6 +456,12 @@ void testCaveRenderAgainstReference() {
 } // namespace
 
 int main() {
+    testCaveRadiusOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testCaveRadiusOk\n");
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 #if defined(FUSE_TERRAIN_HAS_SVO) && FUSE_TERRAIN_HAS_SVO
     testCaveRenderAgainstReference();

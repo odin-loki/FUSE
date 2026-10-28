@@ -8,6 +8,8 @@
 #include <fuse/editor/material_editor_panel.hpp>
 #include <fuse/editor/material_library_io.hpp>
 #include <fuse/editor/material_property_inspect.hpp>
+#include <fuse/editor/material_slot.hpp>
+#include <fuse/editor/profiler_bucket.hpp>
 #include <fuse/editor/profiler_flame_graph.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -447,9 +449,29 @@ void testProfilerFlameGraph() {
                "unpaired events are not drawn");
 }
 
+void testProfilerBucketOk() {
+    expectTrue(fuse::editor::profiler_bucket_ok(0), "profiler_bucket_ok: bucket 0 is valid");
+    expectTrue(fuse::editor::profiler_bucket_ok(15), "profiler_bucket_ok: bucket 15 is valid");
+    expectTrue(!fuse::editor::profiler_bucket_ok(-1), "profiler_bucket_ok: bucket -1 is invalid");
+    expectTrue(!fuse::editor::profiler_bucket_ok(16), "profiler_bucket_ok: bucket 16 is invalid");
+}
+
+void testMaterialSlotOk() {
+    expectTrue(fuse::editor::material_slot_ok(0), "material_slot_ok: slot 0 is valid");
+    expectTrue(fuse::editor::material_slot_ok(15), "material_slot_ok: slot 15 is valid");
+    expectTrue(!fuse::editor::material_slot_ok(-1), "material_slot_ok: slot -1 is invalid");
+    expectTrue(!fuse::editor::material_slot_ok(16), "material_slot_ok: slot 16 is invalid");
+}
+
 } // namespace
 
 int main() {
+    testProfilerBucketOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_editor_b6_material_profiler_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testMaterialSlotOk();
     fuse::core::initialize();
 
     testRoughnessMetallicResponse();

@@ -14,6 +14,7 @@ void WeaponCombatLoop::tick(f32 dt) {
 
 bool WeaponCombatLoop::tryFire(Inventory& inventory) {
     ++m_fireAttemptCount;
+    m_lastAppliedDamage = 0.f;
     if (m_weapon == nullptr || m_cooldownRemaining > 0.f) {
         return false;
     }
@@ -25,6 +26,7 @@ bool WeaponCombatLoop::tryFire(Inventory& inventory) {
     const f32 fireRate = m_weapon->stats().fireRate;
     m_cooldownRemaining = fireRate > 0.f ? (1.f / fireRate) : 0.f;
 
+    f32 damageToApply = m_weapon->lastDamageDealt();
     bool applyDamage = true;
     if (m_hitscan != nullptr) {
         const f32 dx = m_targetX;
@@ -39,14 +41,16 @@ bool WeaponCombatLoop::tryFire(Inventory& inventory) {
         applyDamage = hit.hit;
         if (hit.hit) {
             ++m_hitscanHitCount;
+            damageToApply = hit.damage;
         }
     }
 
     if (applyDamage && m_target != nullptr && m_target->isAlive()) {
-        const s32 damage = static_cast<s32>(m_weapon->lastDamageDealt());
+        const s32 damage = static_cast<s32>(damageToApply);
         if (damage > 0) {
             m_target->applyDamage(damage);
             ++m_damageApplyCount;
+            m_lastAppliedDamage = static_cast<f32>(damage);
         }
     }
 

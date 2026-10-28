@@ -21,6 +21,8 @@
 //   pkg <package path> <asset name> <format> <width> <height> <seed>
 //   dds9 <path> a8r8g8b8 <width> <height> <seed>      (RL-1.8's DX9 writer, as in a capture; prints its remix.tex)
 // formats: rgba8, rgba8_srgb, bc1, bc5, bc7.
+#include <fuse/relight/mods/import/import_name.hpp>
+#include <fuse/relight/mods/import/import_path.hpp>
 #include <fuse/relight/mods/import/light_table.hpp>
 #include <fuse/relight/mods/import/material_table.hpp>
 #include <fuse/relight/mods/import/mesh_import.hpp>
@@ -1076,12 +1078,28 @@ int stage(const fs::path& fixture, const fs::path& out) {
     return 0;
 }
 
+// ---- import paths ---------------------------------------------------------------------------------------------
+
+void testNormalizeImportPath() {
+    CHECK(imp::normalize_import_path("Textures\\Hero.PNG") == "Textures/Hero.png");
+    CHECK(imp::normalize_import_path("./a//b.TXT") == "a/b.txt");
+    CHECK(imp::normalize_import_path("").empty());
+    CHECK(imp::normalize_import_path("../Dir.Name\\File.TXT") == "../Dir.Name/File.txt");
+}
+
+void testImportNameOk() {
+    CHECK(fuse::relight::import_name_ok("Props"));
+    CHECK(!fuse::relight::import_name_ok(""));
+    CHECK(!fuse::relight::import_name_ok("1Props"));
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     if (argc == 4 && std::strcmp(argv[1], "stage") == 0) {
         return stage(argv[2], argv[3]);
     }
+    testImportNameOk();
     testTables();
     testMaterialRoundTrip();
     testLights();
@@ -1089,6 +1107,7 @@ int main(int argc, char** argv) {
     testMesh();
     testMod();
     testCaptureImport();
+    testNormalizeImportPath();
     std::printf("rl_mods_import_unit: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

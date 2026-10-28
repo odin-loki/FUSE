@@ -15,6 +15,7 @@
 //   api        settings / constant resolution, jitter, FroxelFog without a device
 #include <fuse/renderer/lighting/clustered_kernel.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_gpu_kernel.hpp>
+#include <fuse/renderer/volume/vol_steps.hpp>
 #include <fuse/renderer/volumetric/gpu/froxel_fog.hpp>
 #include <fuse/renderer/volumetric/gpu/froxel_fog_kernel.hpp>
 #include <fuse/renderer/volumetric/gpu/froxel_fog_reference.hpp>
@@ -674,9 +675,24 @@ void testApi() {
     expect(!fog.beginFrame(1, fog_test::settings(), FogFrameDesc{}), "beginFrame before init fails");
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testVolStepsOk() {
+    expect(fuse::renderer::vol_steps_ok(8), "vol_steps_ok(8) is true");
+    expect(fuse::renderer::vol_steps_ok(32), "vol_steps_ok(32) is true");
+    expect(fuse::renderer::vol_steps_ok(128), "vol_steps_ok(128) is true");
+    expect(!fuse::renderer::vol_steps_ok(7), "vol_steps_ok(7) is false");
+    expect(!fuse::renderer::vol_steps_ok(24), "vol_steps_ok(24) is false");
+    expect(!fuse::renderer::vol_steps_ok(256), "vol_steps_ok(256) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testVolStepsOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testVolStepsOk\n");
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "layout") {

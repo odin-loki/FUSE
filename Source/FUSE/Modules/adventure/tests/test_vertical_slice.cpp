@@ -2,6 +2,7 @@
 #include <fuse/adventure/interactable.hpp>
 #include <fuse/adventure/inventory_component.hpp>
 #include <fuse/adventure/mechanics_bridge.hpp>
+#include <fuse/adventure/objective_count.hpp>
 #include <fuse/adventure/pickup_interactable.hpp>
 #include <fuse/adventure/puzzle_gate.hpp>
 #include <fuse/core/init.hpp>
@@ -83,9 +84,17 @@ void testRegistryResolvesComponentTree() {
     expectTrue(!registry.canInteract(&lever, ctx), "use fails without inventory item");
 }
 
+void testObjectiveCountOk() {
+    expectTrue(fuse::adventure::objective_count_ok(1), "one objective is in range");
+    expectTrue(!fuse::adventure::objective_count_ok(0), "zero objectives is out of range");
+    expectTrue(fuse::adventure::objective_count_ok(12), "twelve objectives is in range");
+    expectTrue(!fuse::adventure::objective_count_ok(13), "thirteen objectives is out of range");
+}
+
 } // namespace
 
 int main() {
+    testObjectiveCountOk();
     fuse::core::initialize();
     testPickupUseVerticalSlice();
     testRegistryResolvesComponentTree();
@@ -99,3 +108,26 @@ int main() {
     std::fprintf(stderr, "fuse_adventure vertical slice tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/adventure/adventure_slice.hpp>
+
+namespace {
+
+void testAdventureSliceChecklist() {
+    const fuse::adventure::AdventureSlice ready{true, true, true, true};
+    expectTrue(fuse::adventure::adventure_slice_pass(ready), "a complete adventure slice passes");
+    expectTrue(fuse::adventure::adventure_slice_missing(ready) == 0, "a complete adventure slice misses nothing");
+
+    const fuse::adventure::AdventureSlice noDialogue{true, true, false, true};
+    expectTrue(!fuse::adventure::adventure_slice_pass(noDialogue), "dialogue false fails the adventure slice");
+    expectTrue(fuse::adventure::adventure_slice_missing(noDialogue) == 1, "one missing adventure slice check");
+}
+
+struct AdventureSliceChecklistLaunch {
+    AdventureSliceChecklistLaunch() { testAdventureSliceChecklist(); }
+};
+
+[[maybe_unused]] const AdventureSliceChecklistLaunch g_adventureSliceChecklistLaunch{};
+
+} // namespace
+

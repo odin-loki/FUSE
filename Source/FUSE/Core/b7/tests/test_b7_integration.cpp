@@ -1,4 +1,5 @@
 #include <fuse/core/b7_test_registry.hpp>
+#include <fuse/core/integration_step.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -78,9 +79,22 @@ void testIntegrationSmoke() {
                "B7 integration smoke constructs linked facades");
 }
 
+void testIntegrationStepOk() {
+    expectTrue(fuse::core::integration_step_ok(0), "integration_step_ok(0) is true");
+    expectTrue(fuse::core::integration_step_ok(8), "integration_step_ok(8) is true");
+    expectTrue(!fuse::core::integration_step_ok(-1), "integration_step_ok(-1) is false");
+    expectTrue(!fuse::core::integration_step_ok(9), "integration_step_ok(9) is false");
+}
+
 } // namespace
 
 int main() {
+    testIntegrationStepOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b7_integration: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     testChecklistAndModules();
     testGateProvenRows();
     testIntegrationSmoke();

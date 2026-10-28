@@ -29,6 +29,7 @@
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
 #include <fuse/renderer/atmosphere/atmosphere_gpu.hpp>
 #include <fuse/renderer/atmosphere/atmosphere_luts.hpp>
+#include <fuse/renderer/cloud_octaves.hpp>
 #include <fuse/renderer/clouds/cloud_reference.hpp>
 #include <fuse/renderer/clouds/volumetric_clouds.hpp>
 #include <fuse/renderer/rg/executor.hpp>
@@ -104,11 +105,24 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+void testCloudOctavesOk() {
+    expect(fuse::renderer::cloud_octaves_ok(1), "cloud_octaves_ok(1) is true");
+    expect(fuse::renderer::cloud_octaves_ok(8), "cloud_octaves_ok(8) is true");
+    expect(!fuse::renderer::cloud_octaves_ok(0), "cloud_octaves_ok(0) is false");
+    expect(!fuse::renderer::cloud_octaves_ok(9), "cloud_octaves_ok(9) is false");
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    testCloudOctavesOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testCloudOctavesOk\n");
+        return 1;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1455,6 +1469,11 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    testCloudOctavesOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testCloudOctavesOk\n");
+        return 1;
+    }
     std::string mode = "ray";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

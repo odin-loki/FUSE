@@ -1,11 +1,14 @@
 // HybridComposer + FrameBarrier integration — compiled into fuse_hybrid_tests.
 
 #include <fuse/core/init.hpp>
+#include <fuse/hybrid/barrier_step.hpp>
+#include <fuse/hybrid/hybrid_barrier.hpp>
 #include <fuse/hybrid/hybrid_composer.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world2d/world_2d.hpp>
 #include <fuse/world3d/world_3d.hpp>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 
@@ -25,6 +28,22 @@ void expectEq(fuse::u32 actual, fuse::u32 expected, const char* message) {
         std::fprintf(stderr, "FAIL: %s (expected %u, got %u)\n", message, expected, actual);
         ++g_failures;
     }
+}
+
+void testHybridBarrierOk() {
+    expectTrue(fuse::hybrid::hybrid_barrier_ok(0), "generation 0 is a valid hybrid barrier");
+    expectTrue(fuse::hybrid::hybrid_barrier_ok(3), "generation 3 is a valid hybrid barrier");
+    expectTrue(!fuse::hybrid::hybrid_barrier_ok(-1), "generation -1 is not a valid hybrid barrier");
+    expectTrue(!fuse::hybrid::hybrid_barrier_ok(4), "generation 4 is not a valid hybrid barrier");
+}
+
+void testNextBarrierGeneration() {
+    expectTrue(fuse::hybrid::next_barrier_generation(0ull) == 1ull, "next_barrier_generation(0) == 1");
+    expectTrue(fuse::hybrid::next_barrier_generation(41ull) == 42ull, "next_barrier_generation increments by one");
+    expectTrue(fuse::hybrid::next_barrier_generation(UINT64_MAX - 1ull) == UINT64_MAX,
+               "next_barrier_generation advances to UINT64_MAX");
+    expectTrue(fuse::hybrid::next_barrier_generation(UINT64_MAX) == UINT64_MAX,
+               "next_barrier_generation saturates at UINT64_MAX");
 }
 
 void testHybridTickSignalsFrameBarrier() {
@@ -76,6 +95,13 @@ void testDisabledDimensionsSkipCullJobs() {
 } // namespace
 
 int runFrameBarrierIntegrationTests() {
+    testHybridBarrierOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse hybrid frame barrier tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testNextBarrierGeneration();
     testHybridTickSignalsFrameBarrier();
     testDisabledDimensionsSkipCullJobs();
 

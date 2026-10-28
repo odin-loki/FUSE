@@ -36,6 +36,7 @@ public:
     u32 damageApplyCount() const { return m_damageApplyCount; }
     u32 hitscanHitCount() const { return m_hitscanHitCount; }
     f32 cooldownRemaining() const { return m_cooldownRemaining; }
+    f32 lastAppliedDamage() const { return m_lastAppliedDamage; }
 
 private:
     WeaponRuntime* m_weapon = nullptr;
@@ -49,6 +50,7 @@ private:
     u32 m_fireAttemptCount = 0;
     u32 m_damageApplyCount = 0;
     u32 m_hitscanHitCount = 0;
+    f32 m_lastAppliedDamage = 0.f;
 };
 
 } // namespace fuse::adventure

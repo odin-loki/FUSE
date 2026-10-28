@@ -1,6 +1,8 @@
 #include <fuse/core/init.hpp>
 #include <fuse/frame/frame_ctx.hpp>
 #include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
+#include <fuse/hybrid/present_image.hpp>
+#include <fuse/hybrid/present_size.hpp>
 #include <fuse/hybrid/vulkan_presentable.hpp>
 #include <fuse/platform/window.hpp>
 #include <fuse/platform/window_wsi.hpp>
@@ -22,6 +24,19 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testPresentImageOk() {
+    expectTrue(fuse::hybrid::present_image_ok(1), "image count 1 is ok");
+    expectTrue(fuse::hybrid::present_image_ok(8), "image count 8 is ok");
+    expectTrue(!fuse::hybrid::present_image_ok(0), "image count 0 is not ok");
+    expectTrue(!fuse::hybrid::present_image_ok(9), "image count 9 is not ok");
+}
+
+void testPresentSizeOk() {
+    expectTrue(fuse::hybrid::present_size_ok(800, 600), "800x600 present size is ok");
+    expectTrue(!fuse::hybrid::present_size_ok(0, 600), "zero width present size is not ok");
+    expectTrue(!fuse::hybrid::present_size_ok(-1, 10), "negative width present size is not ok");
 }
 
 void testDesktopPresentGateDefaultOff() {
@@ -258,6 +273,18 @@ void testHybridBootstrapRapidTeardownRerun() {
 } // namespace
 
 int main() {
+    testPresentImageOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_hybrid_vulkan_presentable: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testPresentSizeOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_hybrid_vulkan_presentable: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testDesktopPresentGateDefaultOff();

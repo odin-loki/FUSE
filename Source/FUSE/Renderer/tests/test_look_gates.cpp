@@ -23,6 +23,8 @@
 #include <fuse/compute_kernel/parity.hpp>
 #include <fuse/compute_kernel/stats.hpp>
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/ads_scale.hpp>
+#include <fuse/renderer/look/aperture.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/renderer/look/effect_graph.hpp>
 #include <fuse/renderer/look/look_cas_bridge.hpp>
@@ -34,6 +36,7 @@
 #include <fuse/renderer/look/lut3d.hpp>
 #include <fuse/renderer/postprocess/bloom.hpp>
 #include <fuse/renderer/postprocess/color_grade.hpp>
+#include <fuse/renderer/postprocess/exposure_ev.hpp>
 #include <fuse/renderer/postprocess/post_stack.hpp>
 #include <fuse/renderer/postprocess/tonemap.hpp>
 #if __has_include(<fuse/renderer/upscale/upscale_passes.hpp>)
@@ -1430,11 +1433,48 @@ void testSteadyStateAllocations(const char* look_name, LookOutputEncoding encodi
     expectTrue(allocs == 0u && rebakes > 10u, label);
 }
 
+// ADS scale in (0, 1]. CPU only; no heap. A failure returns before later gates.
+void testAdsScaleOk() {
+    expectTrue(fuse::renderer::ads_scale_ok(0.5f), "ads_scale_ok(0.5) is true");
+    expectTrue(fuse::renderer::ads_scale_ok(1.f), "ads_scale_ok(1) is true");
+    expectTrue(!fuse::renderer::ads_scale_ok(0.f), "ads_scale_ok(0) is false");
+    expectTrue(!fuse::renderer::ads_scale_ok(1.1f), "ads_scale_ok(1.1) is false");
+    expectTrue(!fuse::renderer::ads_scale_ok(std::nanf("")), "ads_scale_ok(non-finite) is false");
+}
+
+// Exposure stops <-> linear multiplier. CPU only; a failure counts toward the process exit.
+void testApertureOk() {
+    expectTrue(fuse::renderer::aperture_ok(1.4f), "f/1.4 is a valid aperture");
+    expectTrue(fuse::renderer::aperture_ok(1.f), "f/1 is the wide aperture bound");
+    expectTrue(fuse::renderer::aperture_ok(22.f), "f/22 is the closed aperture bound");
+    expectTrue(!fuse::renderer::aperture_ok(0.5f), "f/0.5 is below the aperture range");
+    expectTrue(!fuse::renderer::aperture_ok(32.f), "f/32 is above the aperture range");
+}
+
+void testExposureEv() {
+    expectTrue(fuse::renderer::exposure_from_ev(0.f) == 1.f, "exposure_from_ev(0) == 1");
+    expectTrue(fuse::renderer::exposure_from_ev(1.f) == 2.f, "exposure_from_ev(1) == 2");
+    expectNear(fuse::renderer::ev_from_exposure(4.f), 2.0, 1e-4, "ev_from_exposure(4) == 2");
+}
+
 } // namespace
 
 int main() {
+    testAdsScaleOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d of %d look gate check(s) failed\n", g_failures, g_checks);
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
+    testApertureOk();
     setWorkers(2);
+    testExposureEv();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d of %d look gate check(s) failed\n", g_failures, g_checks);
+        fuse::jobs::JobScheduler::instance().shutdown();
+        fuse::core::shutdown();
+        return EXIT_FAILURE;
+    }
     testParamTable();
     testGraphValidation();
     testSchema();

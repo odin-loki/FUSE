@@ -7,11 +7,14 @@
 #include <fuse/renderer/atmosphere/sky_scatter.hpp>
 #include <fuse/renderer/atmosphere/sun_disk.hpp>
 #include <fuse/renderer/atmosphere/transmittance_lut.hpp>
+#include <fuse/renderer/atmosphere/zenith.hpp>
+#include <fuse/renderer/deferred/gbuffer.hpp>
 #include <fuse/renderer/render_graph.hpp>
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 namespace {
 
@@ -82,6 +85,50 @@ void testSkyLutBuildAndSample() {
 
     const fuse::math::Vec3 sampled = lut.sample(0.f, kPi * 0.25f);
     expectTrue(sampled.x >= 0.f && sampled.y >= 0.f && sampled.z >= 0.f, "LUT sample non-negative");
+}
+
+fuse::f32 skyLutBinCentreElevation(fuse::u32 bin, fuse::u32 bins) {
+    const fuse::f32 t = static_cast<fuse::f32>(bin) / static_cast<fuse::f32>(bins - 1u);
+    return -kPi * 0.5f + t * kPi;
+}
+
+fuse::math::Vec4 unpackSkyLutTexel(const std::vector<fuse::u8>& bytes, fuse::u32 x, fuse::u32 y, fuse::u32 width) {
+    const fuse::usize offset = (static_cast<fuse::usize>(y) * width + x) * 8u;
+    fuse::f32 channels[4] = {};
+    for (fuse::u32 channel = 0; channel < 4u; ++channel) {
+        const fuse::u16 bits = static_cast<fuse::u16>(
+            bytes[offset + channel * 2u] | (static_cast<fuse::u16>(bytes[offset + channel * 2u + 1u]) << 8));
+        channels[channel] = fuse::renderer::GBufferQuantize::halfToFloat(bits);
+    }
+    return {channels[0], channels[1], channels[2], channels[3]};
+}
+
+void testSkyLutPackRgba16f() {
+    fuse::renderer::SkyLut empty;
+    expectTrue(empty.packRgba16f().empty(), "unready sky LUT packs no bytes");
+
+    fuse::renderer::SkyLutDesc desc{};
+    desc.sun_elevation_bins = 2;
+    desc.view_elevation_bins = 2;
+
+    fuse::renderer::SkyLut lut;
+    const fuse::math::Vec3 sun_dir{0.f, 0.5f, 1.f};
+    expectTrue(lut.build(desc, sun_dir), "2x2 sky LUT builds");
+
+    const std::vector<fuse::u8> packed = lut.packRgba16f();
+    const fuse::u32 width = lut.viewElevationBins();
+    const fuse::u32 height = lut.sunElevationBins();
+    expectTrue(width == 2u && height == 2u, "pack extent is view bins by sun bins");
+    expectTrue(packed.size() == static_cast<fuse::usize>(width) * height * 8u,
+               "tightly packed RGBA16F is 8 bytes per texel");
+
+    const fuse::math::Vec4 texel = unpackSkyLutTexel(packed, 0u, 0u, width);
+    const fuse::math::Vec3 sampled =
+        lut.sample(skyLutBinCentreElevation(0u, height), skyLutBinCentreElevation(0u, width));
+    expectNear(texel.x, sampled.x, 1e-3f, "packed R matches sample of bin-centre elevation");
+    expectNear(texel.y, sampled.y, 1e-3f, "packed G matches sample of bin-centre elevation");
+    expectNear(texel.z, sampled.z, 1e-3f, "packed B matches sample of bin-centre elevation");
+    expectNear(texel.w, 1.f, 1e-3f, "packed A is 1");
 }
 
 void testSkyPassScaffold() {
@@ -190,9 +237,22 @@ void testSkyPassGraphNode() {
     expectTrue(graph.compileInfo().passCount >= 1u, "sky pass node present");
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits instead of continuing.
+void testSkyZenithOk() {
+    expectTrue(fuse::renderer::sky_zenith_ok(0.2f, 0.4f, 0.8f), "sky_zenith_ok(0.2, 0.4, 0.8) is true");
+    expectTrue(!fuse::renderer::sky_zenith_ok(-0.1f, 0.f, 0.f), "sky_zenith_ok(-0.1, 0, 0) is false");
+    expectTrue(!fuse::renderer::sky_zenith_ok(0.f, 1.2f, 0.f), "sky_zenith_ok(0, 1.2, 0) is false");
+}
+
 } // namespace
 
 int main() {
+    testSkyZenithOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testSkyZenithOk\n");
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testAtmosphereParamsDefaults();
@@ -204,6 +264,7 @@ int main() {
     testSunDiskHelpers();
     testSunDiskCompositesSky();
     testSkyLutBuildAndSample();
+    testSkyLutPackRgba16f();
     testSkyPassScaffold();
     testSkyPassGraphNode();
 

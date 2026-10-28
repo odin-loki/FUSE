@@ -1,6 +1,10 @@
 #include <fuse/ai/agent_entity_bind.hpp>
 #include <fuse/ai/behavior_runtime.hpp>
 #include <fuse/ai/behavior_tree.hpp>
+#include <fuse/ai/bt_depth.hpp>
+#include <fuse/ai/bt_status.hpp>
+#include <fuse/ai/invert_status.hpp>
+#include <fuse/ai/utility_score.hpp>
 #include <fuse/ai/uaisk_script_import.hpp>
 #include <fuse/ai/uaisk_cs_parser.hpp>
 #include <fuse/ai/uaisk_cs_codegen.hpp>
@@ -29,6 +33,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <string>
 #include <thread>
 #include <vector>
@@ -2343,11 +2348,59 @@ void testAgentEntityBindSyncsBindingPosition() {
     expectTrue(runtime.snapshots()[0].x == 2.f, "entity bind flows into snapshot");
 }
 
+void testSequenceStatusCombine() {
+    using fuse::ai::BtStatus;
+    expectTrue(fuse::ai::sequence_status(BtStatus::Success, BtStatus::Running) == BtStatus::Running,
+               "sequence status success then running is running");
+    expectTrue(fuse::ai::sequence_status(BtStatus::Success, BtStatus::Failure) == BtStatus::Failure,
+               "sequence status success then failure is failure");
+    expectTrue(fuse::ai::sequence_status(BtStatus::Success, BtStatus::Success) == BtStatus::Success,
+               "sequence status success then success is success");
+}
+
+void testInvertStatus() {
+    using fuse::ai::BtStatus;
+    expectTrue(fuse::ai::invert_status(BtStatus::Success) == BtStatus::Failure,
+               "invert status success is failure");
+    expectTrue(fuse::ai::invert_status(BtStatus::Failure) == BtStatus::Success,
+               "invert status failure is success");
+    expectTrue(fuse::ai::invert_status(BtStatus::Running) == BtStatus::Running,
+               "invert status running stays running");
+    const BtStatus unknown = static_cast<BtStatus>(99);
+    expectTrue(fuse::ai::invert_status(unknown) == unknown,
+               "invert status unknown stays unchanged");
+}
+
+void testBtDepthOk() {
+    expectTrue(fuse::ai::bt_depth_ok(1), "bt_depth_ok(1) is true");
+    expectTrue(fuse::ai::bt_depth_ok(32), "bt_depth_ok(32) is true");
+    expectTrue(!fuse::ai::bt_depth_ok(0), "bt_depth_ok(0) is false");
+    expectTrue(!fuse::ai::bt_depth_ok(33), "bt_depth_ok(33) is false");
+}
+
+void testUtilityScore() {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    expectTrue(fuse::ai::utility_score(1.5f, 2.f) == 1.5f, "utility_score(1.5, 2) is 1.5");
+    expectTrue(fuse::ai::utility_score(nan, 4.f) == 4.f, "utility_score(NaN, 4) is 4");
+    expectTrue(fuse::ai::utility_score(nan, nan) == 0.f, "utility_score(NaN, NaN) is 0");
+}
+
 } // namespace
 
 int run_spatial_query_tests();
 
 int main() {
+    testUtilityScore();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_ai_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testBtDepthOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_ai_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testInvertStatus();
     fuse::core::initialize();
     testPatrolTreeNearTarget();
     testPatrolTreeFarTarget();
@@ -2441,6 +2494,7 @@ int main() {
     testReloadCodegenProfile();
     testRuntimeTreeReloadPreservesBlackboard();
     testAgentEntityBindSyncsBindingPosition();
+    testSequenceStatusCombine();
     g_failures += run_spatial_query_tests();
     fuse::core::shutdown();
 

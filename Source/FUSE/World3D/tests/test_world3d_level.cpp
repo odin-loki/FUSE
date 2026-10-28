@@ -24,7 +24,10 @@
 #include <fuse/scene/serialiser.hpp>
 #include <fuse/world2d/fuselevel_bridge.hpp>
 #include <fuse/world2d/world_2d.hpp>
+#include <fuse/world3d/chunk_origin.hpp>
+#include <fuse/world3d/level_name.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
+#include <fuse/world3d/spawn_yaw.hpp>
 #include <fuse/world3d/world_3d.hpp>
 
 #include <cmath>
@@ -48,11 +51,15 @@ using fuse::u32;
 
 int g_failures = 0;
 
-void expectTrue(bool condition, const std::string& message) {
+void expectTrue(bool condition, const char* message) {
     if (!condition) {
-        std::fprintf(stderr, "FAIL: %s\n", message.c_str());
+        std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void expectTrue(bool condition, const std::string& message) {
+    expectTrue(condition, message.c_str());
 }
 
 bool nearly(float a, float b, float eps = 1e-4f) {
@@ -381,9 +388,42 @@ void testWorld2DSpawnPlayMode(const fs::path& dir) {
     expectTrue(!world.isPlayModeActive(), "play mode inactive after exit");
 }
 
+void testSpawnYawOk() {
+    expectTrue(w3::spawn_yaw_ok(-180.f), "spawn_yaw_ok(-180) is true");
+    expectTrue(w3::spawn_yaw_ok(180.f), "spawn_yaw_ok(180) is true");
+    expectTrue(!w3::spawn_yaw_ok(-180.1f), "spawn_yaw_ok(-180.1) is false");
+    expectTrue(!w3::spawn_yaw_ok(180.1f), "spawn_yaw_ok(180.1) is false");
+    expectTrue(!w3::spawn_yaw_ok(std::nanf("")), "spawn_yaw_ok(NaN) is false");
+}
+
+void testLevelNameOk() {
+    expectTrue(w3::level_name_ok("City"), "City is a valid level name");
+    expectTrue(!w3::level_name_ok(""), "empty level name is invalid");
+    expectTrue(!w3::level_name_ok("1City"), "leading digit is an invalid level name");
+    expectTrue(!w3::level_name_ok("City Block"), "level name with a space is invalid");
+}
+
+void testChunkOrigin() {
+    expectTrue(w3::chunk_origin(2, 64) == 128, "chunk_origin(2, 64) is 128");
+    expectTrue(w3::chunk_origin(-1, 64) == -64, "chunk_origin(-1, 64) is -64");
+    expectTrue(w3::chunk_origin(3, 0) == 0, "chunk_origin(3, 0) is 0");
+    expectTrue(w3::chunk_origin(3, -8) == 0, "negative chunkSize yields 0");
+}
+
 } // namespace
 
 int main() {
+    testSpawnYawOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_world3d_level_gates: %d failure(s)\n", g_failures);
+        return 1;
+    }
+    testLevelNameOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_world3d_level_gates: %d failure(s)\n", g_failures);
+        return 1;
+    }
+    testChunkOrigin();
     fuse::core::initialize();
     const fs::path dir = fuse::test::makeUniqueTempDir("fuse_world3d_level");
     testDemoLevel(dir);

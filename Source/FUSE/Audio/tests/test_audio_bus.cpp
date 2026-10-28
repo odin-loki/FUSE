@@ -1,9 +1,12 @@
 #include <fuse/audio/audio_bus.hpp>
+#include <fuse/audio/bus_count.hpp>
+#include <fuse/audio/bus_gain.hpp>
 #include <fuse/core/init.hpp>
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 namespace {
 
@@ -418,9 +421,23 @@ void testComputeMixOutputGainGuards() {
                1e-5f, "near-zero gain mix output is zero");
 }
 
+void testBusCountOk() {
+    expectTrue(fuse::audio::bus_count_ok(1), "one audio bus is allowed");
+    expectTrue(fuse::audio::bus_count_ok(32), "32 audio buses is the cap");
+    expectTrue(!fuse::audio::bus_count_ok(0), "zero audio buses is rejected");
+    expectTrue(!fuse::audio::bus_count_ok(33), "33 audio buses is rejected");
+}
+
+void testApplyBusGain() {
+    expectNear(fuse::audio::apply_bus_gain(0.5f, 0.f), 0.5f, 1e-5f, "0 dB leaves 0.5 unchanged");
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    expectTrue(fuse::audio::apply_bus_gain(nan, 0.f) == 0.f, "non-finite sample returns 0");
+}
+
 } // namespace
 
 int main() {
+    testBusCountOk();
     fuse::core::initialize();
     testEmptyAudioBusPredicate();
     testNearZeroBusGainEpsilon();
@@ -445,5 +462,6 @@ int main() {
     testHasAnyMixableBusGuards();
     testIsBusMixSilencedWithListener();
     testComputeMixOutputGainGuards();
+    testApplyBusGain();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

@@ -1,13 +1,16 @@
 #include <fuse/core/init.hpp>
 #include <fuse/math/vec.hpp>
 #include <fuse/renderer/deferred/gbuffer.hpp>
+#include <fuse/renderer/deferred/gbuffer_mip.hpp>
 #include <fuse/renderer/resource_manager.hpp>
+#include <fuse/renderer/spread_deg.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 namespace {
 
@@ -25,6 +28,26 @@ void expectNear(float value, float expected, float epsilon, const char* message)
         std::fprintf(stderr, "FAIL: %s (got %f, expected %f)\n", message, value, expected);
         ++g_failures;
     }
+}
+
+/// CPU gate. Runs before any GPU or device skip and does not allocate.
+/// A failure returns non-zero before any later skip.
+void testSpreadDegOk() {
+    expectTrue(fuse::renderer::spread_deg_ok(0.f), "spread_deg_ok(0) is true");
+    expectTrue(fuse::renderer::spread_deg_ok(45.f), "spread_deg_ok(45) is true");
+    expectTrue(!fuse::renderer::spread_deg_ok(-0.1f), "spread_deg_ok(-0.1) is false");
+    expectTrue(!fuse::renderer::spread_deg_ok(45.1f), "spread_deg_ok(45.1) is false");
+    expectTrue(!fuse::renderer::spread_deg_ok(std::numeric_limits<float>::quiet_NaN()),
+               "spread_deg_ok(NaN) is false");
+}
+
+/// CPU gate. Runs before any GPU or device skip and does not allocate.
+/// A failure returns non-zero before any later skip.
+void testGbufferMipOk() {
+    expectTrue(fuse::renderer::gbuffer_mip_ok(1), "gbuffer_mip_ok(1) is true");
+    expectTrue(fuse::renderer::gbuffer_mip_ok(12), "gbuffer_mip_ok(12) is true");
+    expectTrue(!fuse::renderer::gbuffer_mip_ok(0), "gbuffer_mip_ok(0) is false");
+    expectTrue(!fuse::renderer::gbuffer_mip_ok(13), "gbuffer_mip_ok(13) is false");
 }
 
 void testLayoutFormats() {
@@ -137,6 +160,18 @@ void testGBufferAllocationStub() {
 } // namespace
 
 int main() {
+    testSpreadDegOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testSpreadDegOk\n");
+        return EXIT_FAILURE;
+    }
+
+    testGbufferMipOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testGbufferMipOk\n");
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testLayoutFormats();

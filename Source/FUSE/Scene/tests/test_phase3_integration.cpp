@@ -7,6 +7,7 @@
 #include <fuse/ecs/systems/scene_build_system.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/scene/phase3_name.hpp>
 #include <fuse/scene/scene_manager.hpp>
 #include <fuse/spatial/bvh.hpp>
 
@@ -143,9 +144,16 @@ void testPhase3EndToEndPipeline() {
     fuse::jobs::JobScheduler::instance().shutdown();
 }
 
+void testPhase3NameOk() {
+    expectTrue(fuse::scene::phase3_name_ok("Scene"), "phase 3 name Scene");
+    expectTrue(!fuse::scene::phase3_name_ok(""), "empty phase 3 name rejected");
+    expectTrue(!fuse::scene::phase3_name_ok("3Scene"), "digit-leading phase 3 name rejected");
+}
+
 } // namespace
 
 int main() {
+    testPhase3NameOk();
     testPhase3EndToEndPipeline();
 
     if (g_failures == 0) {

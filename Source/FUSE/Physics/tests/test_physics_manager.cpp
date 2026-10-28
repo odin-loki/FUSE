@@ -2,11 +2,14 @@
 #include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/physics/forces/intercept.hpp>
+#include <fuse/physics/gravity_scale.hpp>
 #include <fuse/physics/physics_manager.hpp>
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <optional>
 #include <vector>
 
 namespace {
@@ -118,12 +121,34 @@ void testQueriesAndImpulses() {
     manager.destroy();
 }
 
+void testGravityScaleOk() {
+    expectTrue(fuse::physics::gravity_scale_ok(1), "gravity_scale_ok(1) is true");
+    expectTrue(fuse::physics::gravity_scale_ok(0), "gravity_scale_ok(0) is true");
+    expectTrue(fuse::physics::gravity_scale_ok(-2), "gravity_scale_ok(-2) is true");
+    expectTrue(fuse::physics::gravity_scale_ok(2), "gravity_scale_ok(2) is true");
+    expectTrue(!fuse::physics::gravity_scale_ok(3), "gravity_scale_ok(3) is false");
+    expectTrue(!fuse::physics::gravity_scale_ok(-2.5f), "gravity_scale_ok(-2.5f) is false");
+}
+
+void testInterceptTime() {
+    const std::optional<fuse::physics::f32> stationary = fuse::physics::intercept_time(
+        {}, {10.f, 0.f, 0.f}, {}, 5.f);
+    expectTrue(stationary.has_value() && *stationary == 2.f,
+               "stationary target 10 units on +X at shot speed 5 intercepts at t=2");
+
+    const std::optional<fuse::physics::f32> fleeing =
+        fuse::physics::intercept_time({}, {10.f, 0.f, 0.f}, {10.f, 0.f, 0.f}, 5.f);
+    expectTrue(!fleeing.has_value(), "target moving away faster than the shot is not interceptable");
+}
+
 } // namespace
 
 int main() {
+    testGravityScaleOk();
     fuse::core::initialize();
     testManagerLifecycleAndStep();
     testQueriesAndImpulses();
+    testInterceptTime();
     fuse::core::shutdown();
     if (g_failures == 0) {
         std::printf("fuse_physics_manager: all checks passed\n");

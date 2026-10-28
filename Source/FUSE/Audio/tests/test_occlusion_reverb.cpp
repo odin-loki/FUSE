@@ -1,10 +1,13 @@
+#include <fuse/audio/dry_mix.hpp>
 #include <fuse/audio/occlusion.hpp>
 #include <fuse/audio/reverb_zones.hpp>
+#include <fuse/audio/smoothing.hpp>
 #include <fuse/core/init.hpp>
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 namespace {
 
@@ -279,9 +282,59 @@ void testWetMixGuardConsistency() {
                "zero wet_dry skips wet processing");
 }
 
+void testSmoothingAlpha() {
+    expectTrue(fuse::audio::smoothing_alpha(0.f, 0.1f) == 0.f, "smoothing_alpha(0, 0.1) is 0");
+    expectTrue(fuse::audio::smoothing_alpha(-0.25f, 0.1f) == 0.f, "negative dt returns 0");
+    expectTrue(fuse::audio::smoothing_alpha(0.f, 0.f) == 0.f,
+               "non-positive dt returns 0 before the time check");
+
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float posInf = std::numeric_limits<float>::infinity();
+    const float negInf = -std::numeric_limits<float>::infinity();
+    expectTrue(fuse::audio::smoothing_alpha(nan, 0.1f) == 0.f, "NaN dt returns 0");
+    expectTrue(fuse::audio::smoothing_alpha(posInf, 0.1f) == 0.f, "infinite dt returns 0");
+    expectTrue(fuse::audio::smoothing_alpha(negInf, 0.1f) == 0.f, "negative infinite dt returns 0");
+
+    expectTrue(fuse::audio::smoothing_alpha(0.016f, 0.f) == 1.f, "zero time returns 1");
+    expectTrue(fuse::audio::smoothing_alpha(0.016f, -0.5f) == 1.f, "negative time returns 1");
+    expectTrue(fuse::audio::smoothing_alpha(0.016f, negInf) == 1.f,
+               "negative infinite time returns 1");
+
+    const float dt = 0.01f;
+    const float timeSeconds = 0.1f;
+    const float expected = 1.f - std::exp(-dt / timeSeconds);
+    const float alpha = fuse::audio::smoothing_alpha(dt, timeSeconds);
+    expectNear(alpha, expected, 1e-6f, "alpha is 1 - exp(-dt / timeSeconds)");
+    expectTrue(std::isfinite(alpha) && alpha >= 0.f && alpha <= 1.f, "alpha is clamped to 0..1");
+
+    const float large = fuse::audio::smoothing_alpha(10.f, 0.001f);
+    expectTrue(std::isfinite(large) && large > 0.99f && large <= 1.f,
+               "large dt relative to timeSeconds approaches 1");
+}
+
+void testDryMixOk() {
+    expectTrue(fuse::audio::dry_mix_ok(0.f), "dry mix 0 is in range");
+    expectTrue(fuse::audio::dry_mix_ok(0.5f), "dry mix 0.5 is in range");
+    expectTrue(fuse::audio::dry_mix_ok(1.f), "dry mix 1 is in range");
+    expectTrue(!fuse::audio::dry_mix_ok(-0.1f), "dry mix -0.1 is out of range");
+    expectTrue(!fuse::audio::dry_mix_ok(1.1f), "dry mix 1.1 is out of range");
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    expectTrue(!fuse::audio::dry_mix_ok(nan), "non-finite dry mix is rejected");
+}
+
 } // namespace
 
 int main() {
+    testDryMixOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "test_occlusion_reverb: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testSmoothingAlpha();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "test_occlusion_reverb: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
     testShouldEvaluateOcclusionBlockers();
     testShouldSkipOcclusionAttenuation();

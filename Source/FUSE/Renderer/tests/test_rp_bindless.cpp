@@ -19,6 +19,7 @@
 //                              requested -> must fall back to the descriptor-set backend.
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, shader not built, backend unsupported).
+#include <fuse/renderer/bindless_set.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/device.hpp>
@@ -50,6 +51,17 @@ int g_failures = 0;
     }
 }
 
+/// CPU gate. No allocation. Both entry points call this before any GPU skip.
+/// A failure returns non-zero before any later skip.
+[[nodiscard]] int testBindlessSetOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::bindless_set_ok(0), "bindless_set_ok(0) is true");
+    expect(fuse::renderer::bindless_set_ok(7), "bindless_set_ok(7) is true");
+    expect(!fuse::renderer::bindless_set_ok(-1), "bindless_set_ok(-1) is false");
+    expect(!fuse::renderer::bindless_set_ok(8), "bindless_set_ok(8) is false");
+    return g_failures == before ? 0 : 1;
+}
+
 } // namespace
 
 // Handle packing is shared with shaders/common/bindless.glsl: keep the two in sync.
@@ -67,6 +79,9 @@ static_assert(fuse::renderer::kBindlessBindingBufferAddressTable == 5u, "bindles
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int bindlessSetRc = testBindlessSetOk(); bindlessSetRc != 0) {
+        return bindlessSetRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -890,6 +905,9 @@ int runChurn(Context& ctx) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int bindlessSetRc = testBindlessSetOk(); bindlessSetRc != 0) {
+        return bindlessSetRc;
+    }
     std::string mode = "textures";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; ++i) {

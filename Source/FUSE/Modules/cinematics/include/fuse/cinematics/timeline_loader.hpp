@@ -15,6 +15,9 @@ namespace fuse::cinematics {
 ///   actor <actor_id> mount <time_ms> <mount_point> [<yaw_deg>]
 ///   actor <actor_id> unmount <time_ms>
 ///   motion <path_id> <t0>,<x>,<y>,<z> <t1>,...
+///
+/// Editor import of this same dialect is `import_seq()` (`seq_import.hpp`), which
+/// returns the timeline or a line-numbered error. This function reports that first error.
 bool load_timeline_from_asset(const std::string& text, Timeline& outTimeline, std::string* errorOut = nullptr);
 
 struct SeqScrubPreview {

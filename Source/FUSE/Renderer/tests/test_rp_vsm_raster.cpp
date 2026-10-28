@@ -62,6 +62,7 @@
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
 #include <fuse/renderer/vk/upload_queue.hpp>
+#include <fuse/renderer/vsm_raster_level.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -121,11 +122,28 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+int testVsmRasterLevelOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::vsm_raster_level_ok(0), "vsm_raster_level_ok(0) is true");
+    expect(fuse::renderer::vsm_raster_level_ok(4), "vsm_raster_level_ok(4) is true");
+    expect(!fuse::renderer::vsm_raster_level_ok(-1), "vsm_raster_level_ok(-1) is false");
+    expect(!fuse::renderer::vsm_raster_level_ok(5), "vsm_raster_level_ok(5) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testVsmRasterLevelOk\n");
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int levelRc = testVsmRasterLevelOk()) {
+        return levelRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1904,6 +1922,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int levelRc = testVsmRasterLevelOk()) {
+        return levelRc;
+    }
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::string mode = "seam";
     std::string backend = "set";

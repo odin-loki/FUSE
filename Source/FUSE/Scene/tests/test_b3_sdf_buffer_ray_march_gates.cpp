@@ -28,6 +28,7 @@
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/renderer/vk/instance.hpp>
+#include <fuse/scene/march_budget.hpp>
 #include <fuse/scene/scene_manager.hpp>
 
 #include <algorithm>
@@ -440,9 +441,24 @@ bool runFrame(const char* label, fuse::scene::SceneManager& scene, const Camera&
     return true;
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testMarchBudgetOk() {
+    expectTrue(fuse::scene::march_budget_ok(16), "march_budget_ok(16) is true");
+    expectTrue(fuse::scene::march_budget_ok(256), "march_budget_ok(256) is true");
+    expectTrue(!fuse::scene::march_budget_ok(8), "march_budget_ok(8) is false");
+    expectTrue(!fuse::scene::march_budget_ok(24), "march_budget_ok(24) is false");
+    expectTrue(!fuse::scene::march_budget_ok(512), "march_budget_ok(512) is false");
+}
+
 } // namespace
 
 int main() {
+    testMarchBudgetOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testMarchBudgetOk\n");
+        return EXIT_FAILURE;
+    }
+
     fuse::renderer::VulkanBootstrapDesc bootstrapDesc{};
     bootstrapDesc.instance.enableValidation = true;
     bootstrapDesc.createSwapchain = false;

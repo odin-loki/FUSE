@@ -21,8 +21,10 @@
 // Options: --language slang | glsl | all (default all built), --no-validation (Wine: no layer can be enumerated),
 // --external-validation (the host loader injects the layer: a negative control proves it is live, then every
 // message fails the run). Exit 77 = skip (stub build, no ICD / layer / capability / kernel).
+#include <fuse/relight/render/lights/light_count.hpp>
 #include <fuse/relight/render/lights/light_set.hpp>
 #include <fuse/relight/render/lights/light_set_gpu.hpp>
+#include <fuse/relight/render/lights/range_attenuation.hpp>
 
 #include "light_kernels.hpp"
 
@@ -95,11 +97,58 @@ int g_failures = 0;
     }
 }
 [[maybe_unused]] void check(bool condition, const std::string& message) { check(condition, message.c_str()); }
+
+/// Light count. Returns 1 on failure so the runner can exit before any Vulkan skip (exit 77).
+/// No allocation.
+int testLightCountOk() {
+    const int before = g_failures;
+    check(fuse::relight::light_count_ok(0), "light_count_ok: 0 is true");
+    check(fuse::relight::light_count_ok(256), "light_count_ok: 256 is true");
+    check(!fuse::relight::light_count_ok(-1), "light_count_ok: -1 is false");
+    check(!fuse::relight::light_count_ok(257), "light_count_ok: 257 is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testLightCountOk\n");
+        return 1;
+    }
+    std::printf("testLightCountOk: pass\n");
+    return 0;
+}
+
+/// CPU range falloff. Returns 1 on failure so the runner can exit before any Vulkan skip (exit 77).
+int test_range_attenuation() {
+    namespace rl = fuse::relight::render::lights;
+    const int before = g_failures;
+    check(rl::range_attenuation(0.f, 10.f) == 1.f, "range_attenuation: distance 0, range 10 returns 1");
+    check(rl::range_attenuation(10.f, 10.f) == 0.f, "range_attenuation: distance 10, range 10 returns 0");
+    check(rl::range_attenuation(5.f, 10.f) == 0.5f, "range_attenuation: distance 5, range 10 returns 0.5");
+    // Endpoints and the midpoint also lie on 1 - t. t = 0.25 does not: (0.75)^2 * 1.5 = 0.84375.
+    check(rl::range_attenuation(2.5f, 10.f) == 0.84375f, "range_attenuation: smoothstep complement at t = 0.25");
+    check(rl::range_attenuation(11.f, 10.f) == 0.f, "range_attenuation: past the range returns 0");
+    check(rl::range_attenuation(-4.f, 10.f) == 1.f, "range_attenuation: negative distance is treated as 0");
+    check(rl::range_attenuation(1.f, 0.f) == 0.f, "range_attenuation: range 0 returns 0");
+    check(rl::range_attenuation(1.f, -2.f) == 0.f, "range_attenuation: negative range returns 0");
+    check(rl::range_attenuation(1.f, std::nanf("")) == 0.f, "range_attenuation: non-finite range returns 0");
+    check(rl::range_attenuation(std::nanf(""), 10.f) == 0.f, "range_attenuation: non-finite distance returns 0");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: test_range_attenuation\n");
+        return 1;
+    }
+    std::printf("test_range_attenuation: pass\n");
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    const int lightRc = testLightCountOk();
+    if (lightRc != 0) {
+        return lightRc;
+    }
+    const int rangeRc = test_range_attenuation();
+    if (rangeRc != 0) {
+        return rangeRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -869,6 +918,14 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    const int lightRc = testLightCountOk();
+    if (lightRc != 0) {
+        return lightRc;
+    }
+    const int rangeRc = test_range_attenuation();
+    if (rangeRc != 0) {
+        return rangeRc;
+    }
     std::string language = "all";
     Validation validation = Validation::Layer;
     for (int i = 1; i < argc; ++i) {

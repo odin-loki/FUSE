@@ -1,6 +1,8 @@
+#include <fuse/compute/dispatch_groups.hpp>
 #include <fuse/compute/screen_space_contact.hpp>
 #include <fuse/compute/screen_space_effects.hpp>
 #include <fuse/compute/screen_space_effects_job.hpp>
+#include <fuse/compute/ss_radius.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/cuda_jobs.hpp>
 #include <fuse/jobs/job_counter.hpp>
@@ -1094,9 +1096,38 @@ void testSubmitScreenSpaceJobs() {
 #endif
 }
 
+/// CPU gate. Runs before any GPU skip; a failure returns non-zero and does not continue.
+/// Does not allocate.
+void testDispatchGroups() {
+    expectTrue(fuse::compute::dispatch_groups(10, 4) == 3, "dispatch_groups(10, 4) is 3");
+    expectTrue(fuse::compute::dispatch_groups(0, 4) == 0, "dispatch_groups(0, 4) is 0");
+    expectTrue(fuse::compute::dispatch_groups(10, 3) == 0, "dispatch_groups(10, 3) is 0");
+    expectTrue(fuse::compute::dispatch_groups(10, 0) == 0, "dispatch_groups(10, 0) is 0");
+}
+
+/// CPU gate. Runs before any GPU skip; a failure returns non-zero and does not continue.
+void testSsRadiusOk() {
+    expectTrue(fuse::compute::ss_radius_ok(1.f), "radius 1 is accepted");
+    expectTrue(fuse::compute::ss_radius_ok(64.f), "radius 64 is accepted");
+    expectTrue(!fuse::compute::ss_radius_ok(0.f), "radius 0 is rejected");
+    expectTrue(!fuse::compute::ss_radius_ok(-1.f), "radius -1 is rejected");
+    expectTrue(!fuse::compute::ss_radius_ok(65.f), "radius 65 is rejected");
+    expectTrue(!fuse::compute::ss_radius_ok(std::nanf("")), "non-finite radius is rejected");
+}
+
 } // namespace
 
 int main() {
+    testDispatchGroups();
+    if (g_failures != 0) {
+        return EXIT_FAILURE;
+    }
+
+    testSsRadiusOk();
+    if (g_failures != 0) {
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testScreenSpaceEffectsInfo();

@@ -46,6 +46,9 @@ void RigidWorld2D::clear() {
     m_stats = {};
     m_prevDt = 0.f;
     m_dtRatio = 1.f;
+    m_ccdStartC.clear();
+    m_ccdStartA.clear();
+    m_ccdBest.clear();
     m_bvhDirty = true;
     m_bvhNodes.clear();
     m_bvhItems.clear();
@@ -215,6 +218,9 @@ void RigidWorld2D::setType(BodyId2D id, BodyType2D type) {
         return;
     }
     b.type = type;
+    b.sleeping = false;
+    b.wakeGuard = false;
+    b.sleepTime = 0.f;
     if (type == BodyType2D::Static) {
         b.v = {0.f, 0.f};
         b.w = 0.f;
@@ -222,6 +228,18 @@ void RigidWorld2D::setType(BodyId2D id, BodyType2D type) {
     b.force = {0.f, 0.f};
     b.torque = 0.f;
     resetMassData(id);
+}
+
+void RigidWorld2D::wakeBody(BodyId2D id) {
+    if (!bodyValid(id)) {
+        return;
+    }
+    Body2D& b = m_bodies[id];
+    if (b.type != BodyType2D::Dynamic) {
+        return;
+    }
+    b.sleeping = false;
+    b.sleepTime = 0.f;
 }
 
 // --- shapes -----------------------------------------------------------------------------------------
@@ -541,6 +559,273 @@ u32 RigidWorld2D::bodyContactCount(BodyId2D id) const {
     return count;
 }
 
+// --- sleep / circle CCD -----------------------------------------------------------------------------
+
+namespace {
+
+vec2 circleCenterAt(vec2 com, f32 angle, vec2 localCenter, vec2 shapeCenter) {
+    const Rot q(angle);
+    return com + mul(q, shapeCenter - localCenter);
+}
+
+bool finiteVec(vec2 v) { return std::isfinite(v.x) && std::isfinite(v.y); }
+
+} // namespace
+
+void RigidWorld2D::prepareSleep() {
+    if (settings.enableSleep) {
+        return;
+    }
+    for (Body2D& b : m_bodies) {
+        if (b.sleeping || b.wakeGuard || b.sleepTime != 0.f) {
+            b.sleeping = false;
+            b.wakeGuard = false;
+            b.sleepTime = 0.f;
+        }
+    }
+}
+
+void RigidWorld2D::wakeSleepingContacts() {
+    if (!settings.enableSleep) {
+        return;
+    }
+    const f32 lin2 = settings.sleepLinearThreshold * settings.sleepLinearThreshold;
+    const f32 ang = settings.sleepAngularThreshold;
+    const auto stirring = [&](const Body2D& b) {
+        return b.alive && b.type == BodyType2D::Dynamic && !b.sleeping &&
+               (lengthSq(b.v) > lin2 || std::fabs(b.w) > ang);
+    };
+    for (const Contact2D& contact : m_contacts) {
+        if (!contact.touching || contact.sensor) {
+            continue;
+        }
+        Body2D& ba = m_bodies[m_shapes[contact.shapeA].body];
+        Body2D& bb = m_bodies[m_shapes[contact.shapeB].body];
+        // A woken body is still under the speed threshold, so it does not stir anyone else.
+        if (ba.sleeping && stirring(bb)) {
+            ba.sleeping = false;
+            ba.sleepTime = 0.f;
+            ba.wakeGuard = true;
+        }
+        if (bb.sleeping && stirring(ba)) {
+            bb.sleeping = false;
+            bb.sleepTime = 0.f;
+            bb.wakeGuard = true;
+        }
+    }
+}
+
+void RigidWorld2D::updateSleep(f32 dt) {
+    if (!settings.enableSleep || !(dt > 0.f) || !std::isfinite(dt)) {
+        return;
+    }
+    const f32 lin2 = settings.sleepLinearThreshold * settings.sleepLinearThreshold;
+    const f32 ang = settings.sleepAngularThreshold;
+    for (Body2D& b : m_bodies) {
+        if (!b.alive || b.type != BodyType2D::Dynamic || b.sleeping) {
+            continue;
+        }
+        if (b.wakeGuard) {
+            b.wakeGuard = false;
+            b.sleepTime = 0.f;
+            continue;
+        }
+        const bool under = lengthSq(b.v) < lin2 && std::fabs(b.w) < ang;
+        if (!under) {
+            b.sleepTime = 0.f;
+            continue;
+        }
+        b.sleepTime += dt;
+        if (b.sleepTime >= settings.sleepTimeRequired) {
+            b.sleeping = true;
+            b.v = {0.f, 0.f};
+            b.w = 0.f;
+            b.force = {0.f, 0.f};
+            b.torque = 0.f;
+        }
+    }
+}
+
+bool RigidWorld2D::touchingPair(u32 shapeA, u32 shapeB) const {
+    const u64 key = pairKey(shapeA, shapeB);
+    usize lo = 0u;
+    usize hi = m_contacts.size();
+    while (lo < hi) {
+        const usize mid = (lo + hi) / 2u;
+        if (m_contacts[mid].key < key) {
+            lo = mid + 1u;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo < m_contacts.size() && m_contacts[lo].key == key && m_contacts[lo].touching && !m_contacts[lo].sensor;
+}
+
+void RigidWorld2D::applyCircleCcd(BodyId2D bodyId, u32 circleShape, u32 staticShape, f32 toi, vec2 normal,
+                                  vec2 point) {
+    Body2D& body = m_bodies[bodyId];
+    const Shape2D& circle = m_shapes[circleShape];
+    const Shape2D& wall = m_shapes[staticShape];
+    const f32 a0 = m_ccdStartA[bodyId];
+    const f32 a1 = body.a;
+    const vec2 c0 = circleCenterAt(m_ccdStartC[bodyId], a0, body.localCenter, circle.center);
+    const vec2 c1 = circleCenterAt(body.c, a1, body.localCenter, circle.center);
+    const f32 angle = a0 + toi * (a1 - a0);
+    const vec2 target = c0 + toi * (c1 - c0);
+    if (!std::isfinite(angle) || !finiteVec(target) || !finiteVec(normal) || !finiteVec(point)) {
+        return;
+    }
+    const Rot q(angle);
+    const vec2 newCenter = target - mul(q, circle.center - body.localCenter);
+    if (!finiteVec(newCenter)) {
+        return;
+    }
+    body.a = angle;
+    body.c = newCenter;
+    body.xf.q = q;
+    body.xf.p = body.c - mul(q, body.localCenter);
+
+    const Xf& wallXf = m_bodies[wall.body].xf;
+    Manifold manifold;
+    collide(wall, wallXf, circle, body.xf, manifold);
+    if (manifold.pointCount == 0u) {
+        manifold = {};
+        manifold.type = ManifoldType::FaceA;
+        manifold.localNormal = mulT(wallXf.q, normal);
+        manifold.localPoint = mulT(wallXf, point);
+        manifold.pointCount = 1u;
+        manifold.points[0].localPoint = circle.center;
+        manifold.points[0].id = 0u;
+    }
+
+    const u64 key = pairKey(staticShape, circleShape);
+    usize index = 0u;
+    while (index < m_contacts.size() && m_contacts[index].key < key) {
+        ++index;
+    }
+    const bool exists = index < m_contacts.size() && m_contacts[index].key == key;
+    if (!exists) {
+        Contact2D created;
+        created.key = key;
+        created.shapeA = staticShape;
+        created.shapeB = circleShape;
+        created.sensor = false;
+        created.friction = std::sqrt(std::max(wall.friction, 0.f) * std::max(circle.friction, 0.f));
+        created.restitution = std::max(wall.restitution, circle.restitution);
+        created.touching = false;
+        m_contacts.insert(m_contacts.begin() + static_cast<std::ptrdiff_t>(index), created);
+    }
+    Contact2D& contact = m_contacts[index];
+    const bool wasTouching = contact.touching;
+    contact.shapeA = staticShape;
+    contact.shapeB = circleShape;
+    contact.manifold = manifold;
+    contact.touching = manifold.pointCount > 0u;
+    contact.sensor = false;
+    if (contact.touching && !wasTouching) {
+        m_beginEvents.push_back(makeEvent(contact));
+        ++m_stats.touchingContacts;
+        m_stats.manifoldPoints += contact.manifold.pointCount;
+    }
+    m_stats.contacts = static_cast<u32>(m_contacts.size());
+
+    WorldManifold wm;
+    computeWorldManifold(contact.manifold, wallXf, wall.radius, body.xf, circle.radius, wm);
+    if (!finiteVec(wm.normal) || contact.manifold.pointCount == 0u) {
+        return;
+    }
+    const vec2 r = wm.points[0] - body.c;
+    const f32 vn = dot(body.v + cross(body.w, r), wm.normal);
+    if (!(vn < 0.f) || !std::isfinite(vn)) {
+        return;
+    }
+    const f32 bounce = vn < -kVelocityThreshold ? contact.restitution : 0.f;
+    const f32 rn = cross(r, wm.normal);
+    const f32 k = body.invMass + body.invI * rn * rn;
+    if (!(k > 0.f) || !std::isfinite(k)) {
+        return;
+    }
+    const f32 impulse = -(1.f + bounce) * vn / k;
+    if (!std::isfinite(impulse)) {
+        return;
+    }
+    const vec2 p = impulse * wm.normal;
+    body.v += body.invMass * p;
+    body.w += body.invI * cross(r, p);
+}
+
+void RigidWorld2D::solveCircleCcd() {
+    const u32 bodyCount = static_cast<u32>(m_bodies.size());
+    if (m_ccdBest.size() < m_bodies.size()) {
+        m_ccdBest.resize(m_bodies.size());
+    }
+    for (u32 i = 0; i < bodyCount; ++i) {
+        m_ccdBest[i] = {};
+    }
+    for (u32 circleId = 0; circleId < m_shapes.size(); ++circleId) {
+        const Shape2D& circle = m_shapes[circleId];
+        if (!circle.alive || circle.type != ShapeType2D::Circle || circle.isSensor) {
+            continue;
+        }
+        const Body2D& body = m_bodies[circle.body];
+        if (!body.alive || body.type != BodyType2D::Dynamic || body.sleeping) {
+            continue;
+        }
+        const f32 ownRadius = circle.radius > 0.f ? circle.radius : 0.f;
+        const vec2 c0 = circleCenterAt(m_ccdStartC[circle.body], m_ccdStartA[circle.body], body.localCenter, circle.center);
+        const vec2 c1 = circleCenterAt(body.c, body.a, body.localCenter, circle.center);
+        const vec2 travel = c1 - c0;
+        const f32 motionSq = dot(travel, travel);
+        // At most one radius of motion cannot carry the centre through a thin wall.
+        if (!std::isfinite(motionSq) || motionSq <= ownRadius * ownRadius) {
+            continue;
+        }
+        for (u32 wallId = 0; wallId < m_shapes.size(); ++wallId) {
+            const Shape2D& wall = m_shapes[wallId];
+            if (!wall.alive || wall.isSensor || wallId == circleId) {
+                continue;
+            }
+            if (wall.type != ShapeType2D::Edge && wall.type != ShapeType2D::Polygon) {
+                continue;
+            }
+            const Body2D& wallBody = m_bodies[wall.body];
+            if (!wallBody.alive || wallBody.type != BodyType2D::Static) {
+                continue;
+            }
+            if (!shouldCollide(circleId, wallId)) {
+                continue;
+            }
+            CircleSweepHit2D hit;
+            if (!sweepCircle(wall, wallBody.xf, circle.radius, c0, c1, hit) || !hit.hit) {
+                continue;
+            }
+            if (!(hit.toi > 0.f && hit.toi <= 1.f) || !std::isfinite(hit.toi) || !finiteVec(hit.normal)) {
+                continue;
+            }
+            const bool shallow = hit.endSeparation <= 0.f && hit.endSeparation >= -kCcdDeepPenetration;
+            if (shallow && touchingPair(circleId, wallId)) {
+                continue;
+            }
+            CircleCcdBest& best = m_ccdBest[circle.body];
+            if (!best.hit || hit.toi < best.toi) {
+                best.hit = true;
+                best.toi = hit.toi;
+                best.circle = circleId;
+                best.other = wallId;
+                best.normal = hit.normal;
+                best.point = hit.point;
+            }
+        }
+    }
+    for (u32 bodyId = 0; bodyId < bodyCount; ++bodyId) {
+        const CircleCcdBest& best = m_ccdBest[bodyId];
+        if (!best.hit) {
+            continue;
+        }
+        applyCircleCcd(bodyId, best.circle, best.other, best.toi, best.normal, best.point);
+    }
+}
+
 // --- step -------------------------------------------------------------------------------------------
 
 void RigidWorld2D::step(f32 dt) {
@@ -581,9 +866,11 @@ void RigidWorld2D::step(f32 dt) {
 }
 
 void RigidWorld2D::solve(f32 dt) {
+    prepareSleep();
+    wakeSleepingContacts();
     const f32 h = dt;
     for (Body2D& b : m_bodies) {
-        if (!b.alive || b.type != BodyType2D::Dynamic) {
+        if (!b.alive || b.type != BodyType2D::Dynamic || b.sleeping) {
             continue;
         }
         const vec2 accel = b.gravityScale * settings.gravity + b.invMass * b.force;
@@ -610,8 +897,17 @@ void RigidWorld2D::solve(f32 dt) {
     }
     storeContactImpulses();
 
+    if (m_ccdStartC.size() < m_bodies.size()) {
+        m_ccdStartC.resize(m_bodies.size());
+        m_ccdStartA.resize(m_bodies.size());
+    }
+    for (u32 i = 0; i < m_bodies.size(); ++i) {
+        m_ccdStartC[i] = m_bodies[i].c;
+        m_ccdStartA[i] = m_bodies[i].a;
+    }
+
     for (Body2D& b : m_bodies) {
-        if (!b.alive || b.type == BodyType2D::Static) {
+        if (!b.alive || b.type == BodyType2D::Static || b.sleeping) {
             continue;
         }
         vec2 translation = h * b.v;
@@ -641,6 +937,8 @@ void RigidWorld2D::solve(f32 dt) {
         }
     }
 
+    solveCircleCcd();
+
     for (Body2D& b : m_bodies) {
         if (!b.alive) {
             continue;
@@ -650,6 +948,7 @@ void RigidWorld2D::solve(f32 dt) {
         b.force = {0.f, 0.f};
         b.torque = 0.f;
     }
+    updateSleep(h);
 }
 
 } // namespace fuse::physics::p2d

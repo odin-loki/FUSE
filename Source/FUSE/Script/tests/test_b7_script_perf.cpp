@@ -5,15 +5,19 @@
 #include <fuse/core/sanitizer.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
+#include <fuse/script/script_budget_us.hpp>
 #include <fuse/script/script_engine_api.hpp>
+#include <fuse/script/script_indent.hpp>
 #include <fuse/script/script_runtime.hpp>
 #include <fuse/script/script_vm.hpp>
+#include <fuse/script/time_budget.hpp>
 #include <fuse/types.hpp>
 
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -123,9 +127,59 @@ void testEngineApiOverhead() {
 }
 #endif
 
+// Indent spaces are the closed range 0..32. No allocation.
+void testScriptIndentOk() {
+    expectTrue(fuse::script::script_indent_ok(0), "script_indent_ok(0) is true");
+    expectTrue(fuse::script::script_indent_ok(32), "script_indent_ok(32) is true");
+    expectTrue(!fuse::script::script_indent_ok(-1), "script_indent_ok(-1) is false");
+    expectTrue(!fuse::script::script_indent_ok(33), "script_indent_ok(33) is false");
+}
+
+void testScriptBudgetUsOk() {
+    expectTrue(fuse::script::script_budget_us_ok(1), "1 us budget is accepted");
+    expectTrue(fuse::script::script_budget_us_ok(100000), "100000 us budget is accepted");
+    expectTrue(!fuse::script::script_budget_us_ok(0), "0 us budget is rejected");
+    expectTrue(!fuse::script::script_budget_us_ok(100001), "100001 us budget is rejected");
+}
+
+void testOverBudget() {
+    expectTrue(fuse::script::over_budget(2.5f, 2.f), "2.5 ms exceeds a 2 ms budget");
+    expectTrue(!fuse::script::over_budget(2.f, 2.f), "2 ms meets a 2 ms budget");
+    expectTrue(!fuse::script::over_budget(0.f, 1.f), "0 ms meets a 1 ms budget");
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    expectTrue(fuse::script::over_budget(nan, 1.f), "non-finite milliseconds is over budget");
+    expectTrue(fuse::script::over_budget(inf, 1.f), "infinite milliseconds is over budget");
+    expectTrue(fuse::script::over_budget(-inf, 1.f), "negative infinite milliseconds is over budget");
+    expectTrue(fuse::script::over_budget(1.f, 0.f), "positive time with a zero budget is over budget");
+    expectTrue(fuse::script::over_budget(1.f, -2.f), "positive time with a negative budget is over budget");
+    expectTrue(!fuse::script::over_budget(0.f, 0.f), "zero time with a non-positive budget is within budget");
+    expectTrue(!fuse::script::over_budget(-1.f, -2.f), "negative time with a non-positive budget is within budget");
+    expectTrue(fuse::script::over_budget(1.f, nan), "positive time with a non-finite budget is over budget");
+    expectTrue(fuse::script::over_budget(1.f, inf), "positive time with an infinite budget is over budget");
+    expectTrue(!fuse::script::over_budget(0.f, nan), "zero time with a non-finite budget is within budget");
+    expectTrue(!fuse::script::over_budget(-1.f, inf), "negative time with a non-finite budget is within budget");
+    expectTrue(!fuse::script::over_budget(-0.5f, 1.f), "negative time under a positive budget is within budget");
+}
+
 } // namespace
 
 int main() {
+    testScriptIndentOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_script_b7_perf: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testScriptBudgetUsOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_script_b7_perf: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testOverBudget();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_script_b7_perf: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
 #if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
     testUpdateDispatchOverhead();

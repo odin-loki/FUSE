@@ -1,5 +1,5 @@
-# Quarantined dialect script VMs. Not linked into fuse_core, fuse_runtime_smoke,
-# fuse_editor_api, or Qt targets.
+# Quarantined dialect script VMs and the SimObject id ↔ EntityID table.
+# Not linked into fuse_core, fuse_runtime_smoke, fuse_editor_api, or Qt targets.
 
 option(FUSE_BUILD_COMPAT_TS "Build quarantined dialect script VMs under Compat/" ON)
 if(FUSE_SHIPPING)
@@ -65,6 +65,21 @@ target_include_directories(fuse_compat_ts_t2d
 
 target_link_libraries(fuse_compat_ts_t2d PUBLIC fuse_compat_ts)
 fuse_compat_apply_cxx23(fuse_compat_ts_t2d)
+
+add_library(fuse_compat_sim_object STATIC
+    src/sim_object_entity.cpp
+    include/fuse/compat/sim_object_entity.hpp
+)
+
+add_library(fuse::compat_sim_object ALIAS fuse_compat_sim_object)
+
+target_include_directories(fuse_compat_sim_object
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+
+target_link_libraries(fuse_compat_sim_object PUBLIC fuse_ecs)
+fuse_compat_apply_cxx23(fuse_compat_sim_object)
 
 if(FUSE_BUILD_CORE_TESTS)
     add_subdirectory(tests)

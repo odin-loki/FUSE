@@ -7,6 +7,7 @@
 
 #include <fuse/compute_kernel/launch.hpp>
 #include <fuse/renderer/taa/taau.hpp>
+#include <fuse/renderer/temporal/history_count.hpp>
 #include <fuse/renderer/temporal/motion_kernel.hpp>
 #include <fuse/renderer/temporal/taau_gpu.hpp>
 #include <fuse/renderer/temporal/temporal_types.hpp>
@@ -40,6 +41,14 @@ void expect(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+/// CPU gate. Must run before any GPU or device skip; a failure exits the process.
+void testTemporalHistoryOk() {
+    expect(temporal_history_ok(1), "temporal_history_ok(1) is true");
+    expect(temporal_history_ok(16), "temporal_history_ok(16) is true");
+    expect(!temporal_history_ok(0), "temporal_history_ok(0) is false");
+    expect(!temporal_history_ok(17), "temporal_history_ok(17) is false");
 }
 
 constexpr f64 kTolMotionPx = 1e-3; // acceptance: analytic reprojection error < 1e-3 px
@@ -433,6 +442,12 @@ void runTaauParams() {
 } // namespace
 
 int main(int argc, char** argv) {
+    testTemporalHistoryOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testTemporalHistoryOk\n");
+        return 1;
+    }
+
     const std::string suite = argc > 1 ? argv[1] : "layout";
     if (suite == "layout") {
         runLayout();

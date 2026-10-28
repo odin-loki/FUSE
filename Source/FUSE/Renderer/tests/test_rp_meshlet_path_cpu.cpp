@@ -21,6 +21,7 @@
 #include <fuse/compute_kernel/kernel.hpp>
 #include <fuse/renderer/culling/cull_reference.hpp>
 #include <fuse/renderer/geometry/meshlet_cull_kernel.hpp>
+#include <fuse/renderer/meshlet/meshlet_count.hpp>
 #include <fuse/renderer/meshlet/meshlet_cull_kernel.hpp>
 #include <fuse/renderer/meshlet/meshlet_path.hpp>
 #include <fuse/renderer/meshlet/meshlet_reference.hpp>
@@ -58,6 +59,14 @@ u32 bits(f32 v) {
     u32 b = 0;
     std::memcpy(&b, &v, sizeof(b));
     return b;
+}
+
+/// CPU gate. Must run before any GPU or device skip; a failure returns non-zero.
+void testMeshletCountOk() {
+    expect(fuse::renderer::meshlet_count_ok(1), "meshlet_count_ok(1) is true");
+    expect(fuse::renderer::meshlet_count_ok(1 << 20), "meshlet_count_ok(1<<20) is true");
+    expect(!fuse::renderer::meshlet_count_ok(0), "meshlet_count_ok(0) is false");
+    expect(!fuse::renderer::meshlet_count_ok((1 << 20) + 1), "meshlet_count_ok((1<<20)+1) is false");
 }
 
 // --- shared fixtures -------------------------------------------------------------------------------
@@ -510,6 +519,11 @@ void testApi() {
 } // namespace
 
 int main(int argc, char** argv) {
+    testMeshletCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: %d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "layout") {

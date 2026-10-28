@@ -1,9 +1,13 @@
 #include <fuse/core/init.hpp>
+#include <fuse/physics/broadphase/barnes_theta.hpp>
+#include <fuse/physics/forces/force_volume.hpp>
+#include <fuse/physics/forces/softening.hpp>
 #include <fuse/physics/nbody/barnes_hut.hpp>
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -106,10 +110,55 @@ void testTwoBodyFallback() {
     expectNear(bh_forces[1].x, naive_forces[1].x, 1e-4f, "two-body BH x matches naive");
 }
 
+void testForceVolumes() {
+    DirectionalVolume box;
+    box.center = {0.f, 0.f, 0.f};
+    box.halfExtents = {1.f, 1.f, 1.f};
+    box.force = {0.f, 4.f, 0.f};
+    box.falloff = ForceFalloff::None;
+    const vec3 outside = sample_directional(box, {3.f, 0.f, 0.f});
+    expectNear(outside.y, 0.f, 1e-6f, "directional volume is zero outside the box");
+    const vec3 center = sample_directional(box, {0.f, 0.f, 0.f});
+    expectNear(center.y, 4.f, 1e-6f, "directional volume center gets the full force");
+
+    RadialVolume radial;
+    radial.center = {0.f, 0.f, 0.f};
+    radial.radius = 2.f;
+    radial.strength = 5.f;
+    radial.falloff = ForceFalloff::Linear;
+    const vec3 origin = sample_radial(radial, {0.f, 0.f, 0.f});
+    expectNear(origin.x, 0.f, 1e-6f, "radial volume at the center is zero");
+    expectNear(origin.y, 0.f, 1e-6f, "radial volume at the center has no y");
+}
+
+void testBarnesThetaOk() {
+    expectTrue(barnes_theta_ok(0.5f), "barnes_theta_ok(0.5f) is true");
+    expectTrue(barnes_theta_ok(1.f), "barnes_theta_ok(1) is true");
+    expectTrue(!barnes_theta_ok(0.f), "barnes_theta_ok(0) is false");
+    expectTrue(!barnes_theta_ok(-0.1f), "barnes_theta_ok(-0.1f) is false");
+    expectTrue(!barnes_theta_ok(1.1f), "barnes_theta_ok(1.1f) is false");
+    expectTrue(!barnes_theta_ok(std::numeric_limits<float>::quiet_NaN()),
+               "barnes_theta_ok(non-finite) is false");
+}
+
+void testSofteningOk() {
+    expectTrue(softening_ok(0.1f), "softening_ok(0.1f) is true");
+    expectTrue(softening_ok(1), "softening_ok(1) is true");
+    expectTrue(!softening_ok(0), "softening_ok(0) is false");
+    expectTrue(!softening_ok(2), "softening_ok(2) is false");
+}
+
 } // namespace
 
 int main() {
+    testBarnesThetaOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_physics_barnes_hut_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testSofteningOk();
     fuse::core::initialize();
+    testForceVolumes();
     testExactModeUsesNaiveReference();
     testApproximateModeProducesForces();
     testTwoBodyFallback();

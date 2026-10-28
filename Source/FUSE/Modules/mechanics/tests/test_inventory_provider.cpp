@@ -1,6 +1,8 @@
 #include <fuse/core/init.hpp>
 #include <fuse/mechanics/component.hpp>
 #include <fuse/mechanics/inventory_provider.hpp>
+#include <fuse/mechanics/provider_qty.hpp>
+#include <fuse/mechanics/provider_stack.hpp>
 #include <fuse/types.hpp>
 
 #include <cstdio>
@@ -59,6 +61,13 @@ private:
     std::unordered_map<std::string, ::fuse::u32> m_counts;
 };
 
+void testProviderStackOk() {
+    expectTrue(fuse::mechanics::provider_stack_ok(0), "stack count 0 is valid");
+    expectTrue(fuse::mechanics::provider_stack_ok(99), "stack count 99 is valid");
+    expectTrue(!fuse::mechanics::provider_stack_ok(-1), "stack count -1 is invalid");
+    expectTrue(!fuse::mechanics::provider_stack_ok(100), "stack count 100 is invalid");
+}
+
 void testInventoryProviderInterface() {
     fuse::mechanics::Component player("player");
     TestInventoryProvider inventory;
@@ -75,9 +84,23 @@ void testInventoryProviderInterface() {
     expectTrue(!iface->hasItem("key"), "inventory empty after consume");
 }
 
+void testProviderQty() {
+    expectTrue(fuse::mechanics::provider_can_give(5, 2), "five items can satisfy a request of two");
+    expectTrue(fuse::mechanics::provider_left(5, 2) == 3, "a successful give leaves three");
+    expectTrue(!fuse::mechanics::provider_can_give(5, 6), "five items cannot satisfy a request of six");
+    expectTrue(fuse::mechanics::provider_left(5, 6) == 5, "a refused give leaves the stock unchanged");
+}
+
 } // namespace
 
 int main() {
+    testProviderStackOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_mechanics inventory provider tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testProviderQty();
     fuse::core::initialize();
     testInventoryProviderInterface();
     fuse::core::shutdown();

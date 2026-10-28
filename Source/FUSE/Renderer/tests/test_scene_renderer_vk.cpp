@@ -35,6 +35,7 @@
 #include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/rt/rt_caps.hpp>
 #include <fuse/renderer/scene_renderer/scene_renderer.hpp>
+#include <fuse/renderer/scene_view.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/device.hpp>
@@ -97,11 +98,32 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+int testSceneViewOk() {
+    const bool atZero = fuse::renderer::scene_view_ok(0);
+    const bool atSeven = fuse::renderer::scene_view_ok(7);
+    const bool below = fuse::renderer::scene_view_ok(-1);
+    const bool above = fuse::renderer::scene_view_ok(8);
+    if (!atZero || !atSeven || below || above) {
+        std::fprintf(stderr, "FAIL: testSceneViewOk (0=%d, 7=%d, -1=%d, 8=%d)\n", static_cast<int>(atZero),
+                     static_cast<int>(atSeven), static_cast<int>(below), static_cast<int>(above));
+        return 1;
+    }
+    return 0;
+}
+
+int testPremultiplyClear();
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (testSceneViewOk() != 0) {
+        return 1;
+    }
+    if (testPremultiplyClear() != 0) {
+        return 1;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1170,6 +1192,12 @@ int runUi(Context& ctx, SceneTier tier) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (testSceneViewOk() != 0) {
+        return 1;
+    }
+    if (testPremultiplyClear() != 0) {
+        return 1;
+    }
     std::string mode = "golden";
     std::string tierArg = "t0";
     for (int i = 1; i + 1 < argc; i += 2) {
@@ -1222,3 +1250,40 @@ int main(int argc, char** argv) {
 }
 
 #endif
+
+#include <fuse/renderer/frame/clear_color.hpp>
+
+#include <limits>
+
+namespace {
+
+int testPremultiplyClear() {
+    const auto same = [](fuse::math::Vec4 value, float r, float g, float b, float a) {
+        return value.x == r && value.y == g && value.z == b && value.w == a;
+    };
+    const fuse::math::Vec4 half = fuse::renderer::premultiply_clear({1.f, 0.f, 0.f, 0.5f});
+    if (!same(half, 0.5f, 0.f, 0.f, 0.5f)) {
+        std::fprintf(stderr, "FAIL: testPremultiplyClear (1, 0, 0, 0.5) -> (0.5, 0, 0, 0.5)\n");
+        return 1;
+    }
+    const fuse::math::Vec4 zero = fuse::renderer::premultiply_clear({1.f, 1.f, 1.f, 0.f});
+    if (!same(zero, 0.f, 0.f, 0.f, 0.f)) {
+        std::fprintf(stderr, "FAIL: testPremultiplyClear (1, 1, 1, 0) -> zeros\n");
+        return 1;
+    }
+    const fuse::math::Vec4 wide = fuse::renderer::premultiply_clear({2.f, -1.f, 0.25f, 2.f});
+    if (!same(wide, 1.f, 0.f, 0.25f, 1.f)) {
+        std::fprintf(stderr, "FAIL: testPremultiplyClear clamps alpha before the multiply, then clamps rgb\n");
+        return 1;
+    }
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const fuse::math::Vec4 nonFinite =
+        fuse::renderer::premultiply_clear({nan, 0.25f, 0.5f, std::numeric_limits<float>::infinity()});
+    if (!same(nonFinite, 0.f, 0.f, 0.f, 0.f)) {
+        std::fprintf(stderr, "FAIL: testPremultiplyClear non-finite channels become 0\n");
+        return 1;
+    }
+    return 0;
+}
+
+} // namespace

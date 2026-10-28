@@ -22,6 +22,7 @@
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
 #include "test_rp_material_layers_common.hpp"
 
+#include <fuse/renderer/mat_layer.hpp>
 #include <fuse/renderer/material_layers/material_layers.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
@@ -95,11 +96,28 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+int testMatLayerOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::mat_layer_ok(1), "mat_layer_ok(1) is true");
+    expect(fuse::renderer::mat_layer_ok(8), "mat_layer_ok(8) is true");
+    expect(!fuse::renderer::mat_layer_ok(0), "mat_layer_ok(0) is false");
+    expect(!fuse::renderer::mat_layer_ok(9), "mat_layer_ok(9) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testMatLayerOk\n");
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int layerRc = testMatLayerOk()) {
+        return layerRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -687,6 +705,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int layerRc = testMatLayerOk()) {
+        return layerRc;
+    }
     std::string mode = "parity";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

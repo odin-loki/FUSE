@@ -15,6 +15,8 @@
 #include "image_io.hpp"
 #include "scene.hpp"
 
+#include <fuse/renderer/image_channel.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -277,9 +279,22 @@ void testGoldenGate(const std::string& dir) {
     store.printSummary();
 }
 
+void testImageChannelOk() {
+    expect(fuse::renderer::image_channel_ok(1), "image_channel_ok(1) is true");
+    expect(fuse::renderer::image_channel_ok(4), "image_channel_ok(4) is true");
+    expect(!fuse::renderer::image_channel_ok(0), "image_channel_ok(0) is false");
+    expect(!fuse::renderer::image_channel_ok(5), "image_channel_ok(5) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testImageChannelOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testImageChannelOk\n");
+        return EXIT_FAILURE;
+    }
+
     std::string dir = argc > 1 ? argv[1] : "rp_harness_image_io_out";
     ensureDirectory(dir);
     std::printf("quality metrics library: %s\n", goldenQualityMetricsAvailable() ? "linked (SSIM/FLIP)" : "absent (PSNR fallback)");

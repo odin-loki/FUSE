@@ -18,6 +18,8 @@
 #include <fuse/ecs/registry.hpp>
 #include <fuse/ecs/registry_serialiser.hpp>
 #include <fuse/physics/physics_manager.hpp>
+#include <fuse/scene/reload_gen.hpp>
+#include <fuse/scene/save_slot.hpp>
 #include <fuse/scene/scene.hpp>
 #include <fuse/scene/serialiser.hpp>
 
@@ -267,10 +269,25 @@ void testSaveCloseReloadBitIdentical() {
     resumed.destroy();
 }
 
+void testSanitizeSaveSlot() {
+    expectTrue(fuse::scene::sanitize_save_slot("Hero 01!") == "hero_01",
+               "sanitize_save_slot(\"Hero 01!\") == \"hero_01\"");
+    expectTrue(fuse::scene::sanitize_save_slot("") == "slot",
+               "sanitize_save_slot(\"\") == \"slot\"");
+}
+
+void testReloadGenOk() {
+    expectTrue(fuse::scene::reload_gen_ok(0u), "reload generation 0");
+    expectTrue(fuse::scene::reload_gen_ok(1000u), "reload generation 1000");
+    expectTrue(!fuse::scene::reload_gen_ok(1001u), "reload generation 1001 rejected");
+}
+
 } // namespace
 
 int main() {
+    testReloadGenOk();
     testSaveCloseReloadBitIdentical();
+    testSanitizeSaveSlot();
     if (g_failures == 0) {
         std::printf("fuse_b7_save_reload_gates: all checks passed\n");
         return EXIT_SUCCESS;

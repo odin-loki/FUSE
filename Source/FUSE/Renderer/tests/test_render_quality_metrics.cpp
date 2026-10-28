@@ -15,6 +15,7 @@
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/renderer/quality/image_metrics.hpp>
 #include <fuse/renderer/quality/quality_kernels.hpp>
+#include <fuse/renderer/quality/quality_score.hpp>
 
 #include <cmath>
 #include <cstdio>
@@ -53,6 +54,17 @@ void expectNear(f64 value, f64 expected, f64 tolerance, const char* message) {
         std::fprintf(stderr, "FAIL: %s (got %.7f, expected %.7f +/- %g)\n", message, value, expected, tolerance);
         ++g_failures;
     }
+}
+
+// CPU gate. No allocation. main calls this before any GPU or device skip.
+// A failure returns non-zero before any later skip.
+void testQualityScoreOk() {
+    expectTrue(fuse::renderer::quality_score_ok(0.f), "quality_score_ok(0) is true");
+    expectTrue(fuse::renderer::quality_score_ok(1.f), "quality_score_ok(1) is true");
+    expectTrue(fuse::renderer::quality_score_ok(0.5f), "quality_score_ok(0.5) is true");
+    expectTrue(!fuse::renderer::quality_score_ok(-0.1f), "quality_score_ok(-0.1) is false");
+    expectTrue(!fuse::renderer::quality_score_ok(1.1f), "quality_score_ok(1.1) is false");
+    expectTrue(!fuse::renderer::quality_score_ok(std::nanf("")), "quality_score_ok(non-finite) is false");
 }
 
 q::QualityImage view(const std::vector<Vec3>& pixels, u32 w, u32 h) { return {pixels.data(), w, h}; }
@@ -429,6 +441,11 @@ void testParityAndStats() {
 } // namespace
 
 int main() {
+    testQualityScoreOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d quality metric check(s) failed\n", g_failures);
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
     testKnownValues();
     testReferencePairs();

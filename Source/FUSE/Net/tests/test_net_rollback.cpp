@@ -1,13 +1,36 @@
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
+#include <fuse/net/rewind_count.hpp>
+#include <fuse/net/rewind_frames.hpp>
 #include <fuse/net/rollback.hpp>
 
 #include "test_helpers.hpp"
 
 namespace fuse::net::tests {
 
+void testRewindCount() {
+    expectTrue(fuse::net::rewind_count(10, 7, 8) == 3u, "rewind_count is the frame gap inside the cap");
+    expectTrue(fuse::net::rewind_count(20, 5, 4) == 4u, "rewind_count caps at maxFrames");
+    expectTrue(fuse::net::rewind_count(3, 9, 8) == 0u, "rewind_count is zero when current is behind target");
+}
+
+bool testRewindFramesOk() {
+    const int before = g_failures;
+    expectTrue(fuse::net::rewind_frames_ok(0), "rewind_frames_ok accepts 0");
+    expectTrue(fuse::net::rewind_frames_ok(32), "rewind_frames_ok accepts 32");
+    expectTrue(!fuse::net::rewind_frames_ok(-1), "rewind_frames_ok rejects -1");
+    expectTrue(!fuse::net::rewind_frames_ok(33), "rewind_frames_ok rejects 33");
+    return g_failures == before;
+}
+
 void run_rollback_tests() {
+    if (!testRewindFramesOk()) {
+        return;
+    }
+
+    testRewindCount();
+
     fuse::ecs::Registry registry;
     registry.init(64);
 

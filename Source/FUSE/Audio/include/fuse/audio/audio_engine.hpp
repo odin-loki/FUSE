@@ -95,7 +95,6 @@ private:
     SpatialMixer m_mixer;
     ConvReverbCpu m_cpuReverb;
     std::vector<float> m_mixBuffer;
-    std::vector<float> m_dryBuffer;
     std::vector<float> m_wetBuffer;
     std::unordered_map<EntityId, u32> m_entitySources;
     u64 m_blocksRendered = 0;

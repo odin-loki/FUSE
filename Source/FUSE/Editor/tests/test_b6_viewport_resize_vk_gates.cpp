@@ -4,6 +4,7 @@
 // (Lavapipe in CI) with VK_LAYER_KHRONOS_validation enabled and requires zero validation errors.
 // Without a Vulkan loader / device it reports the headless model only.
 #include <fuse/core/init.hpp>
+#include <fuse/editor/resize_px.hpp>
 #include <fuse/editor/viewport_framebuffer.hpp>
 #include <fuse/editor/viewport_panel.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
@@ -44,6 +45,18 @@ bool validationLayerEnabled(const fuse::renderer::VulkanBootstrap& bootstrap) {
         }
     }
     return false;
+}
+
+void testResizePxOk() {
+    const int before = g_failures;
+    expectTrue(fuse::editor::resize_px_ok(1, 1), "resize_px_ok: 1x1 is allowed");
+    expectTrue(fuse::editor::resize_px_ok(8192, 8192), "resize_px_ok: 8192x8192 is allowed");
+    expectTrue(!fuse::editor::resize_px_ok(0, 100), "resize_px_ok: width 0 is rejected");
+    expectTrue(!fuse::editor::resize_px_ok(100, 8193), "resize_px_ok: height above 8192 is rejected");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testResizePxOk\n");
+        std::exit(EXIT_FAILURE);
+    }
 }
 
 void testViewportResizeOnDevice() {
@@ -137,6 +150,7 @@ void testViewportResizeOnDevice() {
 } // namespace
 
 int main() {
+    testResizePxOk();
     fuse::core::initialize();
     testViewportResizeOnDevice();
     fuse::core::shutdown();
@@ -148,3 +162,30 @@ int main() {
     std::fprintf(stderr, "fuse_editor_b6_viewport_resize_vk_gates: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/editor/resize_debounce.hpp>
+
+namespace {
+
+void testViewportResizeDebounce() {
+    const int before = g_failures;
+    expectTrue(!fuse::editor::resize_due(0.05f, 0.1f, 800, 600),
+               "0.05 s since last resize with debounce 0.1 and size 800x600 is not due");
+    expectTrue(fuse::editor::resize_due(0.1f, 0.1f, 800, 600),
+               "0.1 s since last resize with debounce 0.1 and size 800x600 is due");
+    expectTrue(!fuse::editor::resize_due(0.1f, 0.1f, 0, 600), "size 0x600 is not due");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testViewportResizeDebounce\n");
+        std::exit(EXIT_FAILURE);
+    }
+}
+
+// Runs before main, ahead of the Vulkan device skip. A failure exits the process
+// instead of falling through to that skip.
+struct ViewportResizeDebounceTestHook {
+    ViewportResizeDebounceTestHook() { testViewportResizeDebounce(); }
+};
+
+[[maybe_unused]] const ViewportResizeDebounceTestHook g_viewportResizeDebounceTestHook{};
+
+} // namespace

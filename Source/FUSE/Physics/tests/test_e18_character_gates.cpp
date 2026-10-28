@@ -12,6 +12,8 @@
 #include <fuse/core/init.hpp>
 #include <fuse/ecs/component_types.hpp>
 #include <fuse/ecs/components/character_controller.hpp>
+#include <fuse/physics/character/step_height.hpp>
+#include <fuse/physics/character/step_offset.hpp>
 #include <fuse/physics/queries/shape_queries.hpp>
 #include <fuse/physics/shapes/shape_pool.hpp>
 
@@ -349,10 +351,27 @@ void testDeterminismAndRegistration() {
                "the CharacterController component is registered (serialisable)");
 }
 
+void testStepHeightOk() {
+    expectTrue(step_height_ok(0.f), "a zero step height is allowed");
+    expectTrue(step_height_ok(0.3f), "a 0.3 m step height is allowed");
+    expectTrue(step_height_ok(1.f), "a 1 m step height is the cap");
+    expectTrue(!step_height_ok(-0.1f), "a negative step height is rejected");
+    expectTrue(!step_height_ok(1.5f), "a 1.5 m step height is rejected");
+}
+
+void testStepOffset() {
+    expectTrue(can_step_up(0.3f, 0.4f, 0.f), "a 0.3 m obstacle is within the 0.4 m step");
+    expectTrue(step_up_delta(0.3f, 0.4f, 0.f) == 0.3f, "step delta matches the obstacle height");
+    expectTrue(!can_step_up(0.5f, 0.4f, 0.f), "a 0.5 m obstacle is too tall to step");
+    expectTrue(!can_step_up(0.f, 0.4f, 0.f) && step_up_delta(0.f, 0.4f, 0.f) == 0.f, "flat ground is not a step");
+}
+
 } // namespace
 
 int main() {
+    testStepHeightOk();
     fuse::core::initialize();
+    testStepOffset();
     testSweepToiAnalytic();
     testSteps();
     testSlopes();

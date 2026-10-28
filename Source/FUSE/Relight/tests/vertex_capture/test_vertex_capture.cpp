@@ -14,6 +14,7 @@
 #include <fuse/relight/capture/vertex_capture/dxvk_hook.hpp>
 #include <fuse/relight/capture/vertex_capture/spirv_vertex_capture.hpp>
 #include <fuse/relight/capture/vertex_capture/vs_hash.hpp>
+#include <fuse/relight/capture/vertex_capture/vertex_stride.hpp>
 #include <fuse/relight/hash/geometry_hash.hpp>
 
 #include <spirv/unified1/spirv.hpp>
@@ -135,6 +136,14 @@ std::vector<std::uint32_t> vsSm3() {
         0x03000002, 0x800f0001, 0x80e40001, 0xa0e40009, 0x0000002b, 0x03000002, 0xe00f0002, 0x90e40001,
         0x80e40001, 0x02000001, 0xe0030001, 0x90e40002, 0x0000ffff,
     };
+}
+
+void testVertexStrideOk() {
+    VC_CHECK(vertex_stride_ok(4));
+    VC_CHECK(vertex_stride_ok(256));
+    VC_CHECK(!vertex_stride_ok(0));
+    VC_CHECK(!vertex_stride_ok(2));
+    VC_CHECK(!vertex_stride_ok(260));
 }
 
 void testAnalysis() {
@@ -978,6 +987,7 @@ int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--analyze") {
         return analyze(argv[2]);
     }
+    testVertexStrideOk();
     testAnalysis();
     testHash();
     testBackTransform();

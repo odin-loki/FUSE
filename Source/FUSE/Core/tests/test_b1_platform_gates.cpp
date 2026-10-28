@@ -7,6 +7,8 @@
 
 #include <fuse/platform/event_pump.hpp>
 #include <fuse/platform/input.hpp>
+#include <fuse/platform/sleep_ms.hpp>
+#include <fuse/gameplay/combo.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -134,11 +136,32 @@ void testRawMouseDeltaIgnoresAcceleratedCursor() {
                "cursor-position delta is used only when no raw input exists");
 }
 
+void testComboCounter() {
+    fuse::gameplay::ComboCounter combo{};
+    combo.window = 0.5f;
+    combo.maxCount = 3u;
+    expectTrue(fuse::gameplay::hit(combo) == 1u, "first hit starts the combo at 1");
+    expectTrue(fuse::gameplay::hit(combo) == 2u, "two hits without a tick yield 2");
+    fuse::gameplay::tick(combo, 1.f);
+    expectTrue(combo.count == 0u && combo.timeLeft == 0.f, "a tick of 1 clears the combo");
+    expectTrue(fuse::gameplay::hit(combo) == 1u, "the next hit after the window expires returns 1");
+}
+
+void testSleepMsOk() {
+    expectTrue(fuse::platform::sleep_ms_ok(0), "sleep_ms_ok(0) is true");
+    expectTrue(fuse::platform::sleep_ms_ok(16), "sleep_ms_ok(16) is true");
+    expectTrue(fuse::platform::sleep_ms_ok(1000), "sleep_ms_ok(1000) is true");
+    expectTrue(!fuse::platform::sleep_ms_ok(-1), "sleep_ms_ok(-1) is false");
+    expectTrue(!fuse::platform::sleep_ms_ok(1001), "sleep_ms_ok(1001) is false");
+}
+
 } // namespace
 
 int main() {
+    testSleepMsOk();
     testKeyPressedExactlyOneFrame();
     testRawMouseDeltaIgnoresAcceleratedCursor();
+    testComboCounter();
 
     if (g_failures == 0) {
         std::printf("fuse_core_b1_platform_gates: all checks passed\n");

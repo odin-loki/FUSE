@@ -3,6 +3,7 @@
 // ResourceManager upload path. Verified by reading both atlases back (Lavapipe) and comparing
 // every texel with the packed CPU volume, plus spot checks of tile origins and border texels.
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/atlas_edge.hpp>
 #include <fuse/renderer/deferred/gbuffer.hpp>
 #include <fuse/renderer/gi/ddgi.hpp>
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
@@ -32,6 +33,16 @@ using fuse::usize;
 using fuse::math::Vec2;
 using fuse::math::Vec3;
 using namespace fuse::renderer;
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+void testAtlasEdgeOk() {
+    expectTrue(atlas_edge_ok(8), "atlas_edge_ok(8) is true");
+    expectTrue(atlas_edge_ok(64), "atlas_edge_ok(64) is true");
+    expectTrue(atlas_edge_ok(256), "atlas_edge_ok(256) is true");
+    expectTrue(!atlas_edge_ok(0), "atlas_edge_ok(0) is false");
+    expectTrue(!atlas_edge_ok(12), "atlas_edge_ok(12) is false");
+    expectTrue(!atlas_edge_ok(512), "atlas_edge_ok(512) is false");
+}
 
 DDGIDesc smallVolume() {
     DDGIDesc desc{};
@@ -181,6 +192,12 @@ void testPackWithoutDevice() {
 } // namespace
 
 int main() {
+    testAtlasEdgeOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_ddgi_atlas_upload: %d failure(s)\n", g_failures);
+        return 1;
+    }
+
     fuse::core::initialize();
     testPackWithoutDevice();
     testUploadRoundTrip();

@@ -1,7 +1,9 @@
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/cuda_jobs.hpp>
+#include <fuse/jobs/cuda_lane.hpp>
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/math/view_cone.hpp>
 
 #include <atomic>
 #include <cstdio>
@@ -25,6 +27,14 @@ void withScheduler(fuse::u32 workers, Body&& body) {
     scheduler.initialize(workers);
     body();
     scheduler.shutdown();
+}
+
+/// CPU gate. Must run before any CUDA skip; a failure exits instead of continuing.
+void testCudaLaneOk() {
+    expectTrue(fuse::jobs::cuda_lane_ok(0), "cuda_lane_ok(0) is true");
+    expectTrue(fuse::jobs::cuda_lane_ok(7), "cuda_lane_ok(7) is true");
+    expectTrue(!fuse::jobs::cuda_lane_ok(-1), "cuda_lane_ok(-1) is false");
+    expectTrue(!fuse::jobs::cuda_lane_ok(8), "cuda_lane_ok(8) is false");
 }
 
 void testCudaAvailabilityMatchesBuild() {
@@ -80,14 +90,38 @@ void testSubmitCudaWithoutScheduler() {
     expectTrue(ran.load(std::memory_order_acquire), "submit_cuda runs inline when scheduler down");
 }
 
+void testInViewCone() {
+    const fuse::math::Vec3 origin{0.f, 0.f, 0.f};
+    const fuse::math::Vec3 forward{0.f, 0.f, 1.f};
+    constexpr fuse::f32 range = 10.f;
+    constexpr fuse::f32 halfAngleRadians = 0.5f;
+
+    expectTrue(fuse::math::in_view_cone(origin, forward, fuse::math::Vec3{0.f, 0.f, 5.f}, range,
+                                         halfAngleRadians),
+               "target straight ahead inside range is inside the view cone");
+    expectTrue(!fuse::math::in_view_cone(origin, forward, fuse::math::Vec3{0.f, 0.f, -1.f}, range,
+                                          halfAngleRadians),
+               "target behind is outside the view cone");
+    expectTrue(!fuse::math::in_view_cone(origin, forward, fuse::math::Vec3{0.f, 0.f, 11.f}, range,
+                                          halfAngleRadians),
+               "target past range is outside the view cone");
+}
+
 } // namespace
 
 int main() {
+    testCudaLaneOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testCudaLaneOk\n");
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testCudaAvailabilityMatchesBuild();
     testSubmitCudaSignalsCounter();
     testSubmitCudaWithoutScheduler();
+    testInViewCone();
 
     fuse::core::shutdown();
 

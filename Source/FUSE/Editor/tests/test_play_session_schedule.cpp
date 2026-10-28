@@ -11,6 +11,7 @@
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/editor/editor_scene.hpp>
+#include <fuse/editor/tick_hz.hpp>
 #include <fuse/editor/editor_state.hpp>
 #include <fuse/editor/play_session.hpp>
 #include <fuse/scene/scene.hpp>
@@ -93,9 +94,17 @@ void testPieRunsRuntimeSchedule() {
                "entity spawned during play is gone after stop");
 }
 
+void testTickHzOk() {
+    expectTrue(fuse::editor::tick_hz_ok(60), "60 Hz is a play tick rate");
+    expectTrue(fuse::editor::tick_hz_ok(120), "120 Hz is a play tick rate");
+    expectTrue(!fuse::editor::tick_hz_ok(0), "0 Hz is not a play tick rate");
+    expectTrue(!fuse::editor::tick_hz_ok(45), "45 Hz is not a play tick rate");
+}
+
 } // namespace
 
 int main() {
+    testTickHzOk();
     fuse::core::initialize();
     testPieRunsRuntimeSchedule();
     fuse::core::shutdown();
@@ -106,3 +115,24 @@ int main() {
     std::fprintf(stderr, "fuse editor PIE schedule tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/editor/tick_accum.hpp>
+
+namespace {
+
+void testAccumulateTicksRemainder() {
+    float accumulator = 0.f;
+    const int ticks = fuse::editor::accumulate_ticks(accumulator, 0.05f, 0.016f, 8);
+    expectTrue(ticks == 3, "accumulate_ticks: 0.05s at 0.016s yields 3 ticks");
+    expectTrue(accumulator > 0.f && accumulator < 0.016f,
+               "accumulate_ticks: remainder stays under one tick");
+}
+
+// Appended gate: runs before main so the existing failure count still reports it.
+struct AccumulateTicksRemainderHook {
+    AccumulateTicksRemainderHook() { testAccumulateTicksRemainder(); }
+};
+
+[[maybe_unused]] const AccumulateTicksRemainderHook g_accumulateTicksRemainderHook{};
+
+} // namespace

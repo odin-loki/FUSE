@@ -14,6 +14,8 @@
 //                returns the same triangle and t as the alpha-test path for every ray.
 //   zero_alloc   lookups and resolves make no heap allocation.
 #include <fuse/relight/render/pathtrace/omm/omm.hpp>
+#include <fuse/relight/render/pathtrace/omm/omm_level.hpp>
+#include <fuse/relight/render/pathtrace/omm/opacity_cutoff.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -21,6 +23,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <new>
 #include <set>
 #include <string>
@@ -467,9 +470,57 @@ void suiteZeroAlloc() {
     check(g_allocations.load() == 0u, "zero_alloc: lookups make no heap allocation");
 }
 
+void testOmmLevelOk() {
+    check(fuse::relight::omm_level_ok(0), "omm_level_ok(0)");
+    check(fuse::relight::omm_level_ok(4), "omm_level_ok(4)");
+    check(!fuse::relight::omm_level_ok(-1), "omm_level_ok(-1)");
+    check(!fuse::relight::omm_level_ok(5), "omm_level_ok(5)");
+}
+
+/// CPU gate for opacity_state. Called from main before the suite runner so a failure
+/// exits 1 instead of a skip.
+void test_opacity_cutoff() {
+    std::printf("test_opacity_cutoff\n");
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float posInf = std::numeric_limits<float>::infinity();
+    const float negInf = -std::numeric_limits<float>::infinity();
+    check(om::opacity_state(0.f, 0.1f, 0.9f) == om::OpacityState::Transparent,
+          "test_opacity_cutoff: alpha 0 is Transparent");
+    check(om::opacity_state(1.f, 0.1f, 0.9f) == om::OpacityState::Opaque, "test_opacity_cutoff: alpha 1 is Opaque");
+    check(om::opacity_state(0.5f, 0.1f, 0.9f) == om::OpacityState::Unknown,
+          "test_opacity_cutoff: alpha 0.5 with thresholds 0.1 and 0.9 is Unknown");
+    check(om::opacity_state(0.1f, 0.1f, 0.9f) == om::OpacityState::Transparent,
+          "test_opacity_cutoff: alpha == transparentAt is Transparent");
+    check(om::opacity_state(0.9f, 0.1f, 0.9f) == om::OpacityState::Opaque,
+          "test_opacity_cutoff: alpha == opaqueAt is Opaque");
+    check(om::opacity_state(0.5f, 0.9f, 0.1f) == om::OpacityState::Unknown,
+          "test_opacity_cutoff: swapped thresholds leave alpha 0.5 Unknown");
+    check(om::opacity_state(0.5f, 0.5f, 0.5f) == om::OpacityState::Transparent,
+          "test_opacity_cutoff: an equal threshold pair is Transparent");
+    check(om::opacity_state(0.f, -1.f, 2.f) == om::OpacityState::Transparent,
+          "test_opacity_cutoff: alpha 0 is Transparent after clamping thresholds");
+    check(om::opacity_state(1.f, 2.f, -1.f) == om::OpacityState::Opaque,
+          "test_opacity_cutoff: alpha 1 is Opaque after swap and clamp");
+    check(om::opacity_state(nan, 0.1f, 0.9f) == om::OpacityState::Unknown,
+          "test_opacity_cutoff: non-finite alpha is Unknown");
+    check(om::opacity_state(posInf, 0.1f, 0.9f) == om::OpacityState::Unknown,
+          "test_opacity_cutoff: +inf alpha is Unknown");
+    check(om::opacity_state(negInf, 0.1f, 0.9f) == om::OpacityState::Unknown,
+          "test_opacity_cutoff: -inf alpha is Unknown");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testOmmLevelOk();
+    if (g_failures != 0) {
+        return 1;
+    }
+    test_opacity_cutoff();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: test_opacity_cutoff\n");
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     struct Suite {
         const char* name;

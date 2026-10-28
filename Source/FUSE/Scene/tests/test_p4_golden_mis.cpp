@@ -1,4 +1,5 @@
 #include <fuse/core/init.hpp>
+#include <fuse/scene/mis_samples.hpp>
 #include <fuse/scene/mission_load.hpp>
 #include <fuse/scene/scene.hpp>
 
@@ -127,9 +128,29 @@ void testGoldenMissionLoad() {
     }
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+int testMisSamplesOk() {
+    const int before = g_failures;
+    expectTrue(fuse::scene::mis_samples_ok(1), "mis_samples_ok(1) is true");
+    expectTrue(fuse::scene::mis_samples_ok(16), "mis_samples_ok(16) is true");
+    expectTrue(fuse::scene::mis_samples_ok(64), "mis_samples_ok(64) is true");
+    expectTrue(!fuse::scene::mis_samples_ok(0), "mis_samples_ok(0) is false");
+    expectTrue(!fuse::scene::mis_samples_ok(3), "mis_samples_ok(3) is false");
+    expectTrue(!fuse::scene::mis_samples_ok(128), "mis_samples_ok(128) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testMisSamplesOk\n");
+        return EXIT_FAILURE;
+    }
+    return 0;
+}
+
 } // namespace
 
 int main() {
+    if (const int samplesRc = testMisSamplesOk()) {
+        return samplesRc;
+    }
+
     fuse::core::initialize();
 
     testMissingMissionFile();

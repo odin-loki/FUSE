@@ -42,6 +42,7 @@
 #include <fuse/renderer/deferred/gbuffer.hpp>
 #include <fuse/renderer/geometry/vertex_codec_kernel.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
+#include <fuse/renderer/layer_blend.hpp>
 #include <fuse/renderer/material_layers/material_layers.hpp>
 #include <fuse/renderer/material_layers/ml_mips.hpp>
 #include <fuse/renderer/material_resolve/material_resolve.hpp>
@@ -60,6 +61,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <new>
 #include <random>
@@ -121,11 +123,31 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+int testLayerBlendOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::layer_blend_ok(0.f), "layer_blend_ok(0) is true");
+    expect(fuse::renderer::layer_blend_ok(0.5f), "layer_blend_ok(0.5) is true");
+    expect(fuse::renderer::layer_blend_ok(1.f), "layer_blend_ok(1) is true");
+    expect(!fuse::renderer::layer_blend_ok(-0.1f), "layer_blend_ok(-0.1) is false");
+    expect(!fuse::renderer::layer_blend_ok(1.1f), "layer_blend_ok(1.1) is false");
+    expect(!fuse::renderer::layer_blend_ok(std::numeric_limits<float>::quiet_NaN()),
+           "layer_blend_ok(non-finite) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testLayerBlendOk\n");
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int blendRc = testLayerBlendOk()) {
+        return blendRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1543,6 +1565,9 @@ int runPlainHash(Context& ctx) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int blendRc = testLayerBlendOk()) {
+        return blendRc;
+    }
     std::string mode = "parity";
     std::string backend = "set";
     bool update = false;

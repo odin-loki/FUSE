@@ -1,5 +1,6 @@
 #include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
+#include <fuse/hybrid/binding_slot.hpp>
 #include <fuse/hybrid/cooked_asset_bindings.hpp>
 #include <fuse/hybrid/hybrid_composer.hpp>
 #include <fuse/hybrid/mesh_sdf_preview_stub.hpp>
@@ -31,6 +32,16 @@ void writeBinaryFile(const char* path, const std::string& header, const std::vec
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     out << header;
     out.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+}
+
+void testBindingSlotOk() {
+    expectTrue(fuse::hybrid::binding_slot_ok(0), "binding_slot_ok(0) is true");
+    expectTrue(fuse::hybrid::binding_slot_ok(31), "binding_slot_ok(31) is true");
+    expectTrue(!fuse::hybrid::binding_slot_ok(-1), "binding_slot_ok(-1) is false");
+    expectTrue(!fuse::hybrid::binding_slot_ok(32), "binding_slot_ok(32) is false");
+    expectTrue(fuse::hybrid::binding_slot_ok(0u, 1u), "slot zero of one is ok");
+    expectTrue(!fuse::hybrid::binding_slot_ok(1u, 1u), "slot equal to count is not ok");
+    expectTrue(!fuse::hybrid::binding_slot_ok(0u, 0u), "zero count is not ok");
 }
 
 void testCookedAssetBindingsProbeHeaders() {
@@ -109,6 +120,11 @@ void testMeshSdfPreviewCatalogAndComposerDraws() {
 } // namespace
 
 int main() {
+    testBindingSlotOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_hybrid_cooked_bindings: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
     testCookedAssetBindingsProbeHeaders();
     testMeshSdfPreviewCatalogAndComposerDraws();

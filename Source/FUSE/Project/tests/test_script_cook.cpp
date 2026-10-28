@@ -6,6 +6,8 @@
 #include <fuse/project/asset_cooker.hpp>
 #include <fuse/project/cook_cache.hpp>
 #include <fuse/project/cook_manifest.hpp>
+#include <fuse/project/script_cook_name.hpp>
+#include <fuse/project/script_ext.hpp>
 #include <fuse/script/script_cook.hpp>
 
 #include <cstdio>
@@ -40,9 +42,39 @@ CookManifestEntry scriptEntry(const fs::path& source, const fs::path& output) {
     return entry;
 }
 
+void testScriptCookOk() {
+    expectTrue(fuse::project::script_cook_ok("Dialogue"), "Dialogue is a valid script cook name");
+    expectTrue(!fuse::project::script_cook_ok(""), "empty script cook name is invalid");
+    expectTrue(!fuse::project::script_cook_ok("1Dialogue"), "leading digit is invalid");
+    expectTrue(!fuse::project::script_cook_ok("Dia logue"), "space in script cook name is invalid");
+}
+
+void testScriptExtOk() {
+    expectTrue(fuse::project::script_ext_ok("hero.lua"), "hero.lua is a script");
+    expectTrue(fuse::project::script_ext_ok("Hero.LUA"), "Hero.LUA is a script");
+    expectTrue(fuse::project::script_ext_ok("mods/hero.fuse.script"), ".fuse.script is a script");
+    expectTrue(fuse::project::script_ext_ok("mods/Hero.FUSE.SCRIPT"), "mixed-case .fuse.script is a script");
+    expectTrue(fuse::project::script_ext_ok("mods\\hero.lua"), "backslash path uses the filename extension");
+    expectTrue(!fuse::project::script_ext_ok("hero.txt"), "hero.txt is not a script");
+    expectTrue(!fuse::project::script_ext_ok("hero"), "path with no extension is not a script");
+    expectTrue(!fuse::project::script_ext_ok("mods/hero"), "directory path with no extension is not a script");
+    expectTrue(!fuse::project::script_ext_ok("hero.script"), ".script without .fuse is not a script");
+    expectTrue(!fuse::project::script_ext_ok("notes.lua.txt"), ".lua that is not the extension is not a script");
+}
+
 } // namespace
 
 int main() {
+    testScriptCookOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_script_cook: %d failure(s)\n", g_failures);
+        return 1;
+    }
+    testScriptExtOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_script_cook: %d failure(s)\n", g_failures);
+        return 1;
+    }
     if (!fuse::script::script_compiler_available()) {
         std::printf("fuse_script_cook: SKIP (no Lua compiler in this build)\n");
         return 77;

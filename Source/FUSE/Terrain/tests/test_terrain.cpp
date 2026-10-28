@@ -3,10 +3,12 @@
 #include <fuse/terrain/chunk_grid.hpp>
 #include <fuse/terrain/heightfield.hpp>
 #include <fuse/terrain/lod.hpp>
+#include <fuse/terrain/lod_level.hpp>
 #include <fuse/terrain/lod_residency_budget.hpp>
 #include <fuse/terrain/lod_residency_queue.hpp>
 #include <fuse/terrain/lod_residency_set.hpp>
 #include <fuse/terrain/queries.hpp>
+#include <fuse/terrain/slope.hpp>
 #include <fuse/terrain/terrain.hpp>
 
 #include <atomic>
@@ -14,6 +16,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <thread>
 
 namespace {
@@ -1343,10 +1346,199 @@ void testTerrainFacade() {
     expectTrue(terrainHasMorph, "terrain visible chunks carry morph factors");
 }
 
+bool sameTexelHeights(const fuse::terrain::Terrain& actual, const fuse::terrain::Terrain& expected, fuse::f32 epsilon) {
+    if (actual.desc().resolution != expected.desc().resolution) {
+        return false;
+    }
+    const fuse::u32 resolution = actual.desc().resolution;
+    for (fuse::u32 z = 0; z < resolution; ++z) {
+        for (fuse::u32 x = 0; x < resolution; ++x) {
+            const fuse::f32 got = actual.heightfield().get_height_texel(x, z);
+            const fuse::f32 want = expected.heightfield().get_height_texel(x, z);
+            if (std::fabs(got - want) > epsilon) {
+                std::fprintf(stderr, "  texel %u,%u expected %.5f got %.5f\n", x, z, want, got);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+void editTerrain(fuse::terrain::Terrain& terrain) {
+    terrain.generate(42);
+    terrain.deform({8.f, 0.f, 8.f}, 4.f, 2.f);
+    terrain.deform({10.f, 0.f, 8.f}, 4.f, -1.f);
+    terrain.carve_cave({8.f, -2.f, 8.f}, 2.5f);
+    terrain.carve_cave({24.f, -4.f, 24.f}, 2.f);
+}
+
+void testTerrainDeformDeltaSurvivesReload() {
+    fuse::terrain::TerrainDesc desc = makeTestDesc();
+    desc.async_loading = false;
+
+    fuse::terrain::Terrain edited{};
+    fuse::terrain::Terrain twin{};
+    edited.init(desc);
+    twin.init(desc);
+    editTerrain(edited);
+    editTerrain(twin);
+
+    const fuse::u32 cells = desc.resolution * desc.resolution;
+    expectTrue(edited.height_edit_count() > 0u, "deform records a sparse height delta");
+    expectTrue(edited.height_edit_count() < cells / 4u, "height delta stores touched texels only");
+    expectEq(edited.cave_edit_count(), 2u, "both cave carves are recorded");
+    expectTrue(edited.save_edits().size() < static_cast<fuse::usize>(cells) * sizeof(fuse::f32),
+               "edit blob is smaller than the full heightfield");
+
+    fuse::terrain::Terrain base{};
+    base.init(desc);
+    base.generate(42);
+    expectNear(edited.get_height(0.f, 0.f), base.get_height(0.f, 0.f), 1e-5f,
+               "untouched ground matches the generated base");
+    expectNear(edited.get_height(8.f, 8.f) - base.get_height(8.f, 8.f), 1.5f, 1e-4f,
+               "overlapping deforms accumulate on the centre texel");
+
+    const std::vector<fuse::u8> bytes = edited.save_edits();
+    expectTrue(twin.save_edits() == bytes, "the same edits produce the same blob");
+    expectTrue(!bytes.empty(), "initialized terrain saves an edit blob");
+
+    expectTrue(edited.load_edits(bytes.data(), bytes.size()), "reload accepts its own edit blob");
+    expectTrue(sameTexelHeights(edited, twin, 1e-4f), "idempotent reload matches the edited heightfield");
+    expectEq(edited.height_edit_count(), twin.height_edit_count(), "reload keeps the sparse height edit count");
+    expectEq(edited.cave_edit_count(), 2u, "reload replaces cave edits instead of stacking them");
+
+    fuse::terrain::vec3 cave_center{};
+    fuse::f32 cave_radius = 0.f;
+    expectTrue(edited.cave_edit(0u, cave_center, cave_radius), "first cave edit is addressable");
+    expectNear(cave_center.x, 8.f, 1e-5f, "reloaded cave centre x");
+    expectNear(cave_center.y, -2.f, 1e-5f, "reloaded cave centre y");
+    expectNear(cave_center.z, 8.f, 1e-5f, "reloaded cave centre z");
+    expectNear(cave_radius, 2.5f, 1e-5f, "reloaded cave radius");
+    expectTrue(edited.cave_edit(1u, cave_center, cave_radius), "second cave edit is addressable");
+    expectNear(cave_center.x, 24.f, 1e-5f, "second cave centre x");
+    expectNear(cave_radius, 2.f, 1e-5f, "second cave radius");
+    expectTrue(!edited.cave_edit(2u, cave_center, cave_radius), "cave edit index past the end is rejected");
+
+    fuse::terrain::Terrain reloaded{};
+    reloaded.init(desc);
+    reloaded.generate(999);
+    expectTrue(reloaded.load_edits(bytes.data(), bytes.size()), "load replaces a different generated seed");
+    expectTrue(sameTexelHeights(reloaded, twin, 1e-4f), "loaded heightfield matches the edited terrain");
+    expectNear(reloaded.get_height(8.f, 8.f), twin.get_height(8.f, 8.f), 1e-4f,
+               "loaded sample height matches the deformed centre");
+    expectNear(reloaded.get_height(9.f, 8.f), twin.get_height(9.f, 8.f), 1e-4f,
+               "loaded sample height matches the overlapping deform");
+    expectNear(reloaded.get_height(0.f, 0.f), twin.get_height(0.f, 0.f), 1e-4f,
+               "loaded sample height matches untouched ground");
+    expectTrue(reloaded.load_edits(bytes.data(), bytes.size()), "second load accepts the same blob");
+    expectTrue(sameTexelHeights(reloaded, twin, 1e-4f), "second load does not stack height deltas");
+    expectEq(reloaded.cave_edit_count(), 2u, "second load does not stack cave edits");
+
+#if defined(FUSE_TERRAIN_HAS_SVO) && FUSE_TERRAIN_HAS_SVO
+    const fuse::terrain::vec3 inside_a{8.f, -2.f, 8.f};
+    const fuse::terrain::vec3 inside_b{24.f, -4.f, 24.f};
+    const fuse::terrain::vec3 outside{16.f, -2.f, 16.f};
+    expectTrue(twin.caves().is_cave(inside_a), "carved sphere is cave air");
+    expectTrue(twin.caves().is_cave(inside_b), "second carved sphere is cave air");
+    expectTrue(!twin.caves().is_cave(outside), "unrelated point stays solid rock");
+    expectTrue(reloaded.caves().is_cave(inside_a), "reloaded cave air matches the first carve");
+    expectTrue(reloaded.caves().is_cave(inside_b), "reloaded cave air matches the second carve");
+    expectTrue(!reloaded.caves().is_cave(outside), "reload does not invent cave air");
+    expectTrue(reloaded.caves().carved_voxel_count() == twin.caves().carved_voxel_count(),
+               "reload carves the same number of cave voxels");
+#endif
+
+    fuse::terrain::Terrain cancelled{};
+    cancelled.init(desc);
+    cancelled.generate(42);
+    cancelled.deform({8.f, 0.f, 8.f}, 4.f, 3.f);
+    expectTrue(cancelled.height_edit_count() > 0u, "a raise records height edits");
+    cancelled.deform({8.f, 0.f, 8.f}, 4.f, -3.f);
+    expectEq(cancelled.height_edit_count(), 0u, "an opposite deform drops the sparse delta");
+    expectTrue(sameTexelHeights(cancelled, base, 1e-4f), "cancelled deform matches the generated base");
+
+    fuse::terrain::Terrain regenerated{};
+    regenerated.init(desc);
+    editTerrain(regenerated);
+    regenerated.generate(7);
+    expectEq(regenerated.height_edit_count(), 0u, "generate clears height deltas from the previous base");
+    expectEq(regenerated.cave_edit_count(), 2u, "generate keeps cave edits");
+    fuse::terrain::Terrain fresh_seed{};
+    fresh_seed.init(desc);
+    fresh_seed.generate(7);
+    expectTrue(sameTexelHeights(regenerated, fresh_seed, 1e-4f), "generate replaces deformed heights");
+
+    fuse::terrain::Terrain flat{};
+    flat.init(desc);
+    flat.deform({8.f, 0.f, 8.f}, 4.f, 2.f);
+    const std::vector<fuse::u8> flat_bytes = flat.save_edits();
+    fuse::terrain::Terrain flat_loaded{};
+    flat_loaded.init(desc);
+    flat_loaded.generate(5);
+    expectTrue(flat_loaded.load_edits(flat_bytes.data(), flat_bytes.size()), "flat-base edits load");
+    expectTrue(sameTexelHeights(flat_loaded, flat, 1e-4f), "flat-base reload matches the deformed zeroes");
+    expectEq(flat_loaded.cave_edit_count(), 0u, "flat-base blob has no cave edits");
+
+    fuse::terrain::TerrainDesc mismatch_desc = desc;
+    mismatch_desc.resolution = 17u;
+    fuse::terrain::Terrain mismatch{};
+    mismatch.init(mismatch_desc);
+    mismatch.generate(42);
+    const fuse::f32 mismatch_height = mismatch.get_height(4.f, 4.f);
+    expectTrue(!mismatch.load_edits(bytes.data(), bytes.size()), "resolution mismatch rejects the edit blob");
+    expectNear(mismatch.get_height(4.f, 4.f), mismatch_height, 1e-5f, "rejected load leaves the other terrain unchanged");
+
+    fuse::terrain::Terrain keeper{};
+    keeper.init(desc);
+    keeper.generate(7);
+    keeper.deform({8.f, 0.f, 8.f}, 4.f, 1.5f);
+    keeper.carve_cave({8.f, -2.f, 8.f}, 2.5f);
+    const fuse::f32 kept_height = keeper.get_height(8.f, 8.f);
+    const fuse::u32 kept_edits = keeper.height_edit_count();
+    std::vector<fuse::u8> corrupt = bytes;
+    corrupt[0] ^= 0xFFu;
+    expectTrue(!keeper.load_edits(corrupt.data(), corrupt.size()), "corrupt edit blob is rejected");
+    expectTrue(!keeper.load_edits(bytes.data(), 8u), "truncated edit blob is rejected");
+    std::vector<fuse::u8> extra = bytes;
+    extra.push_back(0u);
+    expectTrue(!keeper.load_edits(extra.data(), extra.size()), "trailing bytes reject the edit blob");
+    expectNear(keeper.get_height(8.f, 8.f), kept_height, 1e-5f, "rejected load keeps the current height");
+    expectEq(keeper.height_edit_count(), kept_edits, "rejected load keeps the current height delta");
+    expectEq(keeper.cave_edit_count(), 1u, "rejected load keeps the current cave edit");
+
+    fuse::terrain::Terrain dead{};
+    expectTrue(dead.save_edits().empty(), "uninitialized terrain saves no edits");
+    expectTrue(!dead.load_edits(bytes.data(), bytes.size()), "uninitialized terrain rejects load");
+}
+
+void testTerrainLodOk() {
+    expectTrue(fuse::terrain::terrain_lod_ok(0), "LOD 0 is valid");
+    expectTrue(fuse::terrain::terrain_lod_ok(4), "LOD 4 is valid");
+    expectTrue(!fuse::terrain::terrain_lod_ok(-1), "LOD -1 is rejected");
+    expectTrue(!fuse::terrain::terrain_lod_ok(5), "LOD 5 is rejected");
+}
+
+void testSlopeRadians() {
+    expectNear(fuse::terrain::slope_radians(1.f, 1.f), 0.7853981633974483f, 1e-5f,
+               "unit rise and run is pi/4");
+    expectNear(fuse::terrain::slope_radians(0.f, 1.f), 0.f, 1e-5f, "zero rise over a positive run is flat");
+    expectTrue(fuse::terrain::slope_radians(0.f, 0.f) == 0.f, "zero rise and zero run is zero");
+
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    expectTrue(fuse::terrain::slope_radians(nan, 1.f) == 0.f, "non-finite rise returns zero");
+    expectTrue(fuse::terrain::slope_radians(1.f, nan) == 0.f, "non-finite run returns zero");
+    expectTrue(fuse::terrain::slope_radians(nan, nan) == 0.f, "non-finite rise and run return zero");
+    expectTrue(fuse::terrain::slope_radians(inf, 1.f) == 0.f, "infinite rise returns zero");
+    expectTrue(fuse::terrain::slope_radians(1.f, -inf) == 0.f, "infinite run returns zero");
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
+    testTerrainLodOk();
+    testSlopeRadians();
     testHeightfieldSampling();
     testLodSelection();
     testLodTransitionMorphBand();
@@ -1402,6 +1594,7 @@ int main() {
     testChunkGridAsyncInFlightCapGuard();
     testHeightfieldRaycast();
     testTerrainFacade();
+    testTerrainDeformDeltaSurvivesReload();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

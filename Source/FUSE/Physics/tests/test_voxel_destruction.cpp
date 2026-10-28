@@ -1,5 +1,7 @@
 #include <fuse/ecs/components/rigidbody.hpp>
+#include <fuse/physics/destruction/debris_count.hpp>
 #include <fuse/physics/destruction/voxel_destruction.hpp>
+#include <fuse/physics/forces/explosion.hpp>
 #include <fuse/physics/spatial/svo.hpp>
 
 #include <cstdio>
@@ -14,6 +16,13 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testDebrisCountOk() {
+    expectTrue(fuse::physics::debris_count_ok(0), "debris_count_ok(0) is true");
+    expectTrue(fuse::physics::debris_count_ok(64), "debris_count_ok(64) is true");
+    expectTrue(!fuse::physics::debris_count_ok(-1), "debris_count_ok(-1) is false");
+    expectTrue(!fuse::physics::debris_count_ok(65), "debris_count_ok(65) is false");
 }
 
 void testCarveRadiusDerivation() {
@@ -65,11 +74,31 @@ void testDebrisSpawnPipeline() {
     expectTrue(fuse::physics::DestructionSystem::spawnedDebrisCount() > 0, "spawn counter incremented");
 }
 
+void testExplosionImpulse() {
+    fuse::physics::Explosion boom{};
+    boom.origin = {0.f, 0.f, 0.f};
+    boom.radius = 4.f;
+    boom.impulse = 8.f;
+    const fuse::physics::vec3 side =
+        fuse::physics::explosion_impulse(boom, fuse::physics::vec3{2.f, 0.f, 0.f}, 2.f);
+    expectTrue(side.x > 0.f && side.y == 0.f && side.z == 0.f, "+X point receives a +X explosion impulse");
+
+    const fuse::physics::vec3 outside =
+        fuse::physics::explosion_impulse(boom, fuse::physics::vec3{5.f, 0.f, 0.f}, 2.f);
+    expectTrue(outside.x == 0.f && outside.y == 0.f && outside.z == 0.f, "point outside the radius gets zero");
+
+    const fuse::physics::vec3 origin =
+        fuse::physics::explosion_impulse(boom, boom.origin, 2.f);
+    expectTrue(origin.x == 0.f && origin.y == 0.f && origin.z == 0.f, "origin gets zero");
+}
+
 } // namespace
 
 int main() {
+    testDebrisCountOk();
     testCarveRadiusDerivation();
     testVolumeCarveAndQuery();
     testDebrisSpawnPipeline();
+    testExplosionImpulse();
     return g_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

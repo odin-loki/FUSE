@@ -14,9 +14,12 @@
 #include "b5_vk_call_hooks.hpp"
 
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/postprocess/chromatic.hpp>
+#include <fuse/renderer/rhi/primitive_kind.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <set>
 #include <vector>
 
@@ -37,9 +40,33 @@ u32 materialRuns(const std::vector<u32>& sequence) {
     return runs;
 }
 
+void testPrimitiveKindOk() {
+    expectTrue(fuse::renderer::primitive_kind_ok(0), "primitive kind 0 is valid");
+    expectTrue(fuse::renderer::primitive_kind_ok(5), "primitive kind 5 is valid");
+    expectTrue(!fuse::renderer::primitive_kind_ok(-1), "primitive kind -1 is rejected");
+    expectTrue(!fuse::renderer::primitive_kind_ok(6), "primitive kind 6 is rejected");
+}
+
+void testChromaticOffset() {
+    const fuse::renderer::ChromaticOffset center = fuse::renderer::chromatic_offset(0.5f, 0.5f, 0.1f);
+    expectTrue(center.red.x == 0.f && center.red.y == 0.f && center.blue.x == 0.f && center.green.x == 0.f,
+               "chromatic offset is zero at the frame center");
+    const fuse::renderer::ChromaticOffset edge = fuse::renderer::chromatic_offset(1.f, 0.5f, 0.1f);
+    expectTrue(std::fabs(edge.red.x - 0.05f) < 1e-5f && std::fabs(edge.blue.x + 0.05f) < 1e-5f && edge.green.x == 0.f,
+               "red shifts outward and blue shifts inward by the same amount");
+}
+
 } // namespace
 
 int main() {
+    testPrimitiveKindOk();
+    if (b5rhi::failures() != 0) {
+        return b5rhi::finish("fuse_b5_rhi_draw_state");
+    }
+    testChromaticOffset();
+    if (b5rhi::failures() != 0) {
+        return b5rhi::finish("fuse_b5_rhi_draw_state");
+    }
     if (!b5hooks::available()) {
         return b5rhi::skip("fuse_b5_rhi_draw_state", "Vulkan backend disabled");
     }

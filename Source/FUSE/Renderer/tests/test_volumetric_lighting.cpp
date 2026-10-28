@@ -4,6 +4,7 @@
 #include <fuse/renderer/postprocess/lens_flare.hpp>
 #include <fuse/renderer/render_graph.hpp>
 #include <fuse/renderer/resource_manager.hpp>
+#include <fuse/renderer/vol_sample.hpp>
 #include <fuse/renderer/volumetric/light_shafts.hpp>
 #include <fuse/renderer/volumetric/volumetric_fog.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
@@ -1675,6 +1676,171 @@ void testLightShaftsOcclusion() {
     expectTrue(stats.lastOcclusion > 0.f, "shafts pass tracks occlusion");
 }
 
+void testLightShaftsDepthBufferOcclusion() {
+    fuse::renderer::LightShaftsParams params{};
+    params.enabled = true;
+    params.intensity = 2.f;
+    params.edge_softness = 0.05f;
+    params.ray_march_steps = 12u;
+    params.sun_direction = {1.f, 0.f, 0.f};
+
+    const fuse::f32 scalar =
+        fuse::renderer::evaluate_light_shaft_occlusion(0.5f, 0.55f, params.edge_softness) * params.intensity;
+    const fuse::f32 farSample =
+        fuse::renderer::evaluate_light_shaft_occlusion(0.5f, 1.f, params.edge_softness);
+    const fuse::f32 wallSample =
+        fuse::renderer::evaluate_light_shaft_occlusion(0.5f, 0.1f, params.edge_softness);
+    expectTrue(wallSample == 0.f, "scene depth in front of the shaft ray is blocked");
+    expectTrue(farSample > wallSample, "far scene depth contributes past the shaft ray");
+
+    fuse::renderer::LightShaftsPassStats stats{};
+    expectTrue(fuse::renderer::record_light_shafts_pass(params, stats), "missing depth image records");
+    expectNear(stats.lastOcclusion, scalar, 1e-5f, "missing depth image keeps the scalar occlusion");
+
+    params.depth_width = 8u;
+    params.depth_height = 8u;
+    params.scene_depths = nullptr;
+    stats = {};
+    expectTrue(fuse::renderer::record_light_shafts_pass(params, stats), "null depth pointer records");
+    expectNear(stats.lastOcclusion, scalar, 1e-5f, "null depth pointer keeps the scalar occlusion");
+
+    fuse::f32 oneDepth = 0.1f;
+    params.scene_depths = &oneDepth;
+    params.depth_width = 0u;
+    params.depth_height = 4u;
+    stats = {};
+    expectTrue(fuse::renderer::record_light_shafts_pass(params, stats), "zero depth width records");
+    expectNear(stats.lastOcclusion, scalar, 1e-5f, "zero depth width keeps the scalar occlusion");
+
+    params.depth_width = 4u;
+    params.depth_height = 0u;
+    stats = {};
+    expectTrue(fuse::renderer::record_light_shafts_pass(params, stats), "zero depth height records");
+    expectNear(stats.lastOcclusion, scalar, 1e-5f, "zero depth height keeps the scalar occlusion");
+
+    fuse::f32 shortStride[4] = {0.1f, 0.1f, 0.1f, 0.1f};
+    params.scene_depths = shortStride;
+    params.depth_width = 4u;
+    params.depth_height = 1u;
+    params.depth_stride = 1u;
+    stats = {};
+    expectTrue(fuse::renderer::record_light_shafts_pass(params, stats), "short depth stride records");
+    expectNear(stats.lastOcclusion, scalar, 1e-5f, "stride shorter than width keeps the scalar occlusion");
+
+    // Logical width 8; the tail is poison so a march that fails to stop changes the average.
+    fuse::f32 farRow[16]{};
+    fuse::f32 nearWall[16]{};
+    for (fuse::u32 i = 0u; i < 16u; ++i) {
+        farRow[i] = i < 8u ? 1.f : 0.52f;
+        nearWall[i] = i < 8u ? 0.1f : 0.52f;
+    }
+
+    params.depth_stride = 0u;
+    params.depth_width = 8u;
+    params.depth_height = 1u;
+    params.ray_march_steps = 12u;
+    params.sun_direction = {1.f, 0.f, 0.f};
+    params.scene_depths = farRow;
+    fuse::renderer::LightShaftsPassStats farStats{};
+    expectTrue(fuse::renderer::record_light_shafts_pass(params, farStats), "far depth row records");
+    expectTrue(farStats.ready && farStats.framesRecorded == 1u, "far depth march counts a frame");
+    expectNear(farStats.lastOcclusion, farSample * params.intensity, 1e-5f,
+               "empty far-depth buffer keeps the shaft open");
+    expectTrue(std::isfinite(farStats.lastOcclusion), "far depth march is finite");
+
+    params.scene_depths = nearWall;
+    fuse::renderer::LightShaftsPassStats wallStats{};
+    expectTrue(fuse::renderer::record_light_shafts_pass(params, wallStats), "near depth wall records");
+    expectNear(wallStats.lastOcclusion, wallSample * params.intensity, 1e-5f,
+               "depth wall in front of the ray blocks the shaft");
+    expectTrue(std::isfinite(wallStats.lastOcclusion), "near wall march is finite");
+    // lastOcclusion is unoccluded shaft contribution, so a nearer wall lowers it.
+    const fuse::f32 occlusionIncrease = farStats.lastOcclusion - wallStats.lastOcclusion;
+    expectTrue(occlusionIncrease > 0.f,
+               "depth wall in front of the ray increases occlusion versus an empty far-depth buffer");
+
+    // Center of width 8 is x=3. Normalized +X visits 3 (far), then 4..6 (wall).
+    fuse::f32 split[12]{};
+    for (fuse::u32 i = 0u; i < 12u; ++i) {
+        if (i >= 8u) {
+            split[i] = 0.52f;
+        } else if (i >= 4u) {
+            split[i] = 0.1f;
+        } else {
+            split[i] = 1.f;
+        }
+    }
+    params.scene_depths = split;
+    params.depth_width = 8u;
+    params.depth_height = 1u;
+    params.depth_stride = 0u;
+    params.ray_march_steps = 4u;
+    params.sun_direction = {2.f, 0.f, 0.f};
+    stats = {};
+    expectTrue(fuse::renderer::record_light_shafts_pass(params, stats), "sunward depth wall records");
+    const fuse::f32 expectedSplit =
+        ((farSample + wallSample + wallSample + wallSample) / 4.f) * params.intensity;
+    expectNear(stats.lastOcclusion, expectedSplit, 1e-5f, "march toward sun xy averages samples along the ray");
+
+    // Stride 6, 4x2. Start (1, 0); +Y reads row 0 far then row 1 wall. Padding is poison.
+    fuse::f32 image[24]{};
+    for (fuse::u32 i = 0u; i < 24u; ++i) {
+        image[i] = 0.52f;
+    }
+    for (fuse::u32 i = 0u; i < 4u; ++i) {
+        image[i] = 1.f;
+        image[6u + i] = 0.1f;
+    }
+    params.scene_depths = image;
+    params.depth_width = 4u;
+    params.depth_height = 2u;
+    params.depth_stride = 6u;
+    params.ray_march_steps = 2u;
+    params.sun_direction = {0.f, 3.f, 0.f};
+    stats = {};
+    expectTrue(fuse::renderer::record_light_shafts_pass(params, stats), "strided depth image records");
+    const fuse::f32 expectedStride = ((farSample + wallSample) / 2.f) * params.intensity;
+    expectNear(stats.lastOcclusion, expectedStride, 1e-5f, "depth stride addresses rows toward the sun");
+
+    fuse::f32 centerWall = 0.1f;
+    params.scene_depths = &centerWall;
+    params.depth_width = 1u;
+    params.depth_height = 1u;
+    params.depth_stride = 0u;
+    params.ray_march_steps = 4u;
+    params.sun_direction = {0.f, 0.f, 1.f};
+    stats = {};
+    expectTrue(fuse::renderer::record_light_shafts_pass(params, stats), "sun along z still records");
+    expectNear(stats.lastOcclusion, wallSample * params.intensity, 1e-5f, "zero sun xy samples the center depth");
+    expectTrue(std::isfinite(stats.lastOcclusion), "zero sun xy occlusion is finite");
+
+    params.scene_depths = nearWall;
+    params.depth_width = 8u;
+    params.depth_height = 1u;
+    params.depth_stride = 0u;
+    params.ray_march_steps = 0u;
+    params.sun_direction = {1.f, 0.f, 0.f};
+    params.enabled = true;
+    stats = {};
+    stats.lastOcclusion = 0.25f;
+    stats.framesRecorded = 7u;
+    expectTrue(!fuse::renderer::record_light_shafts_pass(params, stats), "zero steps rejects the pass");
+    expectTrue(!stats.ready, "zero steps is not ready");
+    expectTrue(stats.framesRecorded == 7u, "zero steps does not count a frame");
+    expectTrue(stats.lastOcclusion == 0.25f && std::isfinite(stats.lastOcclusion), "zero steps does not write NaN");
+
+    params.ray_march_steps = 12u;
+    params.enabled = false;
+    stats.lastOcclusion = 0.25f;
+    stats.framesRecorded = 7u;
+    stats.ready = true;
+    expectTrue(!fuse::renderer::record_light_shafts_pass(params, stats), "disabled shafts pass rejects");
+    expectTrue(!stats.ready, "disabled shafts pass is not ready");
+    expectTrue(stats.framesRecorded == 7u, "disabled shafts pass does not count a frame");
+    expectTrue(stats.lastOcclusion == 0.25f && std::isfinite(stats.lastOcclusion),
+               "disabled shafts pass does not write NaN");
+}
+
 void testLensFlareGeneration() {
     fuse::renderer::LensFlareParams params{};
     params.ghost_count = 4;
@@ -1747,9 +1913,25 @@ void testDeferredPipelinePassHooks() {
     bindless.destroy(*bootstrap->device());
 }
 
+// CPU gate. Must run before any GPU skip; a failure returns non-zero.
+void testVolSampleOk() {
+    expectTrue(fuse::renderer::vol_sample_ok(8), "vol_sample_ok(8) is true");
+    expectTrue(fuse::renderer::vol_sample_ok(32), "vol_sample_ok(32) is true");
+    expectTrue(fuse::renderer::vol_sample_ok(128), "vol_sample_ok(128) is true");
+    expectTrue(!fuse::renderer::vol_sample_ok(0), "vol_sample_ok(0) is false");
+    expectTrue(!fuse::renderer::vol_sample_ok(12), "vol_sample_ok(12) is false");
+    expectTrue(!fuse::renderer::vol_sample_ok(256), "vol_sample_ok(256) is false");
+}
+
 } // namespace
 
 int main() {
+    testVolSampleOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_volumetric_lighting: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testVolumetricFogDensity();
@@ -1771,6 +1953,7 @@ int main() {
     testZeroDimensionFroxelGrid();
     testFroxelPopulateFromAnalyticFog();
     testLightShaftsOcclusion();
+    testLightShaftsDepthBufferOcclusion();
     testLensFlareGeneration();
     testDeferredPipelinePassHooks();
 

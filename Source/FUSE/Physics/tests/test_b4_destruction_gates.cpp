@@ -10,6 +10,8 @@
 #include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/physics/destruction/fracture_pieces.hpp>
+#include <fuse/physics/forces/buoyancy.hpp>
 #include <fuse/physics/physics_manager.hpp>
 
 #include <algorithm>
@@ -268,10 +270,28 @@ void testSimultaneousImpactsBudget(u32 hubCount, u32 piecesPerHub, f32 budgetMs,
 #endif
 }
 
+void testFracturePiecesOk() {
+    expectTrue(fracture_pieces_ok(2), "fracture_pieces_ok(2) is true");
+    expectTrue(fracture_pieces_ok(256), "fracture_pieces_ok(256) is true");
+    expectTrue(!fracture_pieces_ok(1), "fracture_pieces_ok(1) is false");
+    expectTrue(!fracture_pieces_ok(257), "fracture_pieces_ok(257) is false");
+}
+
+void testSphereBuoyancy() {
+    const BuoyancySample above = sphere_buoyancy(5.f, 1.f, 0.f, 1000.f, -9.81f);
+    expectTrue(above.submergedFraction == 0.f && above.force.y == 0.f, "sphere fully above water has no buoyancy");
+    const BuoyancySample mid = sphere_buoyancy(0.f, 1.f, 0.f, 1000.f, -9.81f);
+    expectTrue(std::fabs(mid.submergedFraction - 0.5f) < 1e-3f, "sphere centered on the plane is half submerged");
+    const BuoyancySample under = sphere_buoyancy(0.f, 1.f, 10.f, 1000.f, -9.81f);
+    expectTrue(under.submergedFraction == 1.f && under.force.y > 0.f, "fully submerged sphere is pushed up");
+}
+
 } // namespace
 
 int main() {
+    testFracturePiecesOk();
     fuse::core::initialize();
+    testSphereBuoyancy();
     testCarveExact();
     testDualContouringWatertight();
     testDebrisMassAndCollision();

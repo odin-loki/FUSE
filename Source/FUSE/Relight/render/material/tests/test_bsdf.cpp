@@ -25,7 +25,9 @@
 
 #include <fuse/compute_kernel/stats.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/relight/render/material/ggx.hpp>
 #include <fuse/relight/render/material/material_bsdf.hpp>
+#include <fuse/relight/render/material/roughness.hpp>
 #if defined(FUSE_RL_BSDF_HAS_DFG)
 #include <fuse/renderer/lighting/ltc/ltc_kernel.hpp>
 #include <fuse/renderer/lighting/ltc/ltc_lut.hpp>
@@ -934,9 +936,36 @@ void suiteMapping() {
     }
 }
 
+void testRoughnessOk() {
+    check(fuse::relight::roughness_ok(0), "roughness_ok(0) is true");
+    check(fuse::relight::roughness_ok(0.5f), "roughness_ok(0.5f) is true");
+    check(fuse::relight::roughness_ok(1), "roughness_ok(1) is true");
+    check(!fuse::relight::roughness_ok(-0.1f), "roughness_ok(-0.1f) is false");
+    check(!fuse::relight::roughness_ok(1.2f), "roughness_ok(1.2f) is false");
+}
+
+/// GGX NDF peak: D(1, 1) = 1/pi. Failure counts toward the process exit (not a skip).
+void test_ggx_ndf() {
+    const float d = rm::ggx_ndf(1.f, 1.f);
+    const double expected = 1.0 / kPi;
+    std::printf("== test_ggx_ndf\n");
+    check(std::fabs(static_cast<double>(d) - expected) <= 1e-4, "ggx_ndf(1, 1) = %.8g, expected 1/pi (%.8g)", d,
+          expected);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testRoughnessOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
+    test_ggx_ndf();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "";
     struct Entry {
         const char* name;

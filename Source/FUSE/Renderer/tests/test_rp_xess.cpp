@@ -15,6 +15,7 @@
 //   zero_alloc   64 steady-state frames (bind + evaluate, jitter cycling): 0 operator new
 #include <fuse/renderer/upscale/upscaler.hpp>
 #include <fuse/renderer/xess/xess_upscaler.hpp>
+#include <fuse/renderer/xess_scale.hpp>
 
 #include "fuse_xess_mock_echo.h"
 
@@ -76,6 +77,18 @@ int g_failures = 0;
             ++g_failures;                                                             \
         }                                                                             \
     } while (0)
+
+// CPU gate. No allocation. Returns non-zero before any GPU skip.
+[[nodiscard]] int testXessScaleOk() {
+    const int before = g_failures;
+    CHECK(xess_scale_ok(1.5f));
+    CHECK(xess_scale_ok(4.f));
+    CHECK(!xess_scale_ok(1.f));
+    CHECK(!xess_scale_ok(0.5f));
+    CHECK(!xess_scale_ok(4.1f));
+    CHECK(!xess_scale_ok(std::nanf("")));
+    return g_failures == before ? 0 : 1;
+}
 
 bool contains(const std::string& s, const char* needle) { return s.find(needle) != std::string::npos; }
 
@@ -486,6 +499,9 @@ void test_zero_alloc() {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int scaleRc = testXessScaleOk(); scaleRc != 0) {
+        return scaleRc;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "discovery") {

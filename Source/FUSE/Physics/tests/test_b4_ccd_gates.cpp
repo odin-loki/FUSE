@@ -9,9 +9,13 @@
 //    `ccdIterationStats()`) and bounded over every gate case above plus a seeded sweep of hard
 //    cases (fast spin, grazing, thin posts, tumbling onto planes), each checked against a dense
 //    brute-force reference so the bound is never bought by skipping an impact.
+//  - hull, triangle mesh, SDF and voxel pairs sweep the origin-centred bounding box stored in
+//    params (half extents x, y, z) instead of tunneling; a zero bound is a point box
 #include <fuse/core/sanitizer.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/physics/ccd/ccd.hpp>
+#include <fuse/physics/ccd/ccd_margin.hpp>
+#include <fuse/physics/ccd/toi_range.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/physics/rotation.hpp>
@@ -22,6 +26,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <random>
 
 namespace {
@@ -392,9 +397,385 @@ void testToiIterationsOnHardCases() {
     expectTrue(lateImpacts == 0, "no hard-case TOI lands after the brute-force first contact");
 }
 
+/// One swept pair. `dt` is 1, so linear and angular velocities are the frame displacements.
+/// Pooled shapes are not registered in the shape pool: CCD reads type plus `params`.
+struct PooledSweep {
+    CollisionShapeType typeA = CollisionShapeType::Box;
+    vec3 paramsA{};
+    vec3 posA{};
+    vec3 velA{};
+    vec3 spinA{};
+    quat orientA{};
+    f32 scalarA = 0.f;
+    bool ccdA = true;
+    CollisionShapeType typeB = CollisionShapeType::Box;
+    vec3 paramsB{};
+    vec3 posB{};
+    vec3 velB{};
+    vec3 spinB{};
+    quat orientB{};
+    f32 scalarB = 0.f;
+    bool ccdB = false;
+};
+
+TOIResult sweepPair(const PooledSweep& s) {
+    RigidBodySoA bodies;
+    CollisionShapeSoA shapes;
+    const u32 a = bodies.addBody(s.posA, 1.f, s.ccdA ? RB_CCD : 0u);
+    const u32 b = bodies.addBody(s.posB, 1.f, s.ccdB ? RB_CCD : 0u);
+    bodies.linearVelocities[a] = s.velA;
+    bodies.linearVelocities[b] = s.velB;
+    bodies.angularVelocities[a] = s.spinA;
+    bodies.angularVelocities[b] = s.spinB;
+    bodies.orientations[a] = s.orientA;
+    bodies.orientations[b] = s.orientB;
+    shapes.addShape(s.typeA, a, s.paramsA, s.scalarA);
+    shapes.addShape(s.typeB, b, s.paramsB, s.scalarB);
+
+    std::vector<broadphase::CandidatePair> pairs{{a, b}};
+    std::vector<TOIResult> results;
+    CcdPipeline pipeline;
+    pipeline.sweepPairs(bodies, shapes, pairs, 1.f, results);
+    return results.empty() ? TOIResult{} : results[0];
+}
+
+bool finiteVec(vec3 v) {
+    return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
+
+void expectMatchesBox(const char* label, const TOIResult& pooled, const TOIResult& box) {
+    char message[256];
+    std::snprintf(message, sizeof(message),
+                  "%s matches box sweep (pooled valid=%d toi=%.5f, box valid=%d toi=%.5f)", label,
+                  pooled.valid ? 1 : 0, pooled.toi, box.valid ? 1 : 0, box.toi);
+    const bool finite = std::isfinite(pooled.toi) && finiteVec(pooled.contactPoint) && finiteVec(pooled.contactNormal);
+    const bool sameHit = pooled.valid == box.valid && (!pooled.valid || std::fabs(pooled.toi - box.toi) <= 1e-4f);
+    const f32 align = (pooled.valid && box.valid) ? pooled.contactNormal.dot(box.contactNormal) : 1.f;
+    expectTrue(finite && sameHit && align > 0.99f, message);
+}
+
+void expectCaught(const char* label, const TOIResult& result, f32 latest) {
+    char message[192];
+    std::snprintf(message, sizeof(message), "%s caught before t=%.3f (valid=%d toi=%.5f)", label, latest,
+                  result.valid ? 1 : 0, result.toi);
+    expectTrue(result.valid && std::isfinite(result.toi) && result.toi > 0.f && result.toi < latest &&
+                   finiteVec(result.contactPoint) && finiteVec(result.contactNormal),
+               message);
+}
+
+const char* pooledShapeName(CollisionShapeType type) {
+    switch (type) {
+    case CollisionShapeType::ConvexHull:
+        return "ConvexHull";
+    case CollisionShapeType::TriMesh:
+        return "TriMesh";
+    case CollisionShapeType::SdfMesh:
+        return "SdfMesh";
+    case CollisionShapeType::Voxel:
+        return "Voxel";
+    default:
+        return "shape";
+    }
+}
+
+void testPooledShapesSweepBoundingBoxes() {
+    resetCcdIterationStats();
+    const CollisionShapeType pooledTypes[] = {
+        CollisionShapeType::ConvexHull,
+        CollisionShapeType::TriMesh,
+        CollisionShapeType::SdfMesh,
+        CollisionShapeType::Voxel,
+    };
+
+    for (CollisionShapeType type : pooledTypes) {
+        const char* name = pooledShapeName(type);
+        char label[96];
+
+        // Translating bound into a static box. Gap along z is 2.5 m at 12 m/frame.
+        PooledSweep intoBox;
+        intoBox.typeA = type;
+        intoBox.paramsA = {0.5f, 0.4f, 0.3f};
+        intoBox.posA = {0.f, 0.f, -3.f};
+        intoBox.velA = {0.f, 0.f, 12.f};
+        intoBox.typeB = CollisionShapeType::Box;
+        intoBox.paramsB = {1.f, 1.f, 0.2f};
+        PooledSweep intoBoxAsBox = intoBox;
+        intoBoxAsBox.typeA = CollisionShapeType::Box;
+        std::snprintf(label, sizeof(label), "%s vs box", name);
+        const TOIResult intoBoxToi = sweepPair(intoBox);
+        expectMatchesBox(label, intoBoxToi, sweepPair(intoBoxAsBox));
+        expectCaught(label, intoBoxToi, 0.5f);
+
+        // Falling onto a plane, and the same pair with the plane on the other side.
+        PooledSweep ontoPlane;
+        ontoPlane.typeA = type;
+        ontoPlane.paramsA = {0.4f, 0.2f, 0.5f};
+        ontoPlane.posA = {0.f, 2.f, 0.f};
+        ontoPlane.velA = {0.f, -8.f, 0.f};
+        ontoPlane.typeB = CollisionShapeType::Plane;
+        ontoPlane.paramsB = {0.f, 1.f, 0.f};
+        PooledSweep ontoPlaneAsBox = ontoPlane;
+        ontoPlaneAsBox.typeA = CollisionShapeType::Box;
+        std::snprintf(label, sizeof(label), "%s vs plane", name);
+        const TOIResult ontoPlaneToi = sweepPair(ontoPlane);
+        expectMatchesBox(label, ontoPlaneToi, sweepPair(ontoPlaneAsBox));
+        expectCaught(label, ontoPlaneToi, 0.5f);
+
+        PooledSweep planeFirst;
+        planeFirst.typeA = CollisionShapeType::Plane;
+        planeFirst.paramsA = {0.f, 1.f, 0.f};
+        planeFirst.ccdA = false;
+        planeFirst.typeB = type;
+        planeFirst.paramsB = {0.4f, 0.2f, 0.5f};
+        planeFirst.posB = {0.f, 2.f, 0.f};
+        planeFirst.velB = {0.f, -8.f, 0.f};
+        planeFirst.ccdB = true;
+        PooledSweep planeFirstAsBox = planeFirst;
+        planeFirstAsBox.typeB = CollisionShapeType::Box;
+        std::snprintf(label, sizeof(label), "plane vs %s", name);
+        const TOIResult planeFirstToi = sweepPair(planeFirst);
+        expectMatchesBox(label, planeFirstToi, sweepPair(planeFirstAsBox));
+        expectCaught(label, planeFirstToi, 0.5f);
+
+        // A fully collapsed bound is a point. It still has to hit, and it must stay finite.
+        PooledSweep pointOntoPlane = ontoPlane;
+        pointOntoPlane.paramsA = {};
+        pointOntoPlane.posA = {0.f, 1.5f, 0.f};
+        pointOntoPlane.velA = {0.f, -6.f, 0.f};
+        PooledSweep pointAsBox = pointOntoPlane;
+        pointAsBox.typeA = CollisionShapeType::Box;
+        std::snprintf(label, sizeof(label), "%s point bound vs plane", name);
+        const TOIResult pointToi = sweepPair(pointOntoPlane);
+        expectMatchesBox(label, pointToi, sweepPair(pointAsBox));
+        expectCaught(label, pointToi, 0.5f);
+    }
+
+    // Two pooled shapes, both substituted, closing on each other.
+    PooledSweep both;
+    both.typeA = CollisionShapeType::ConvexHull;
+    both.paramsA = {0.25f, 0.25f, 0.25f};
+    both.posA = {0.f, 0.f, -2.f};
+    both.velA = {0.f, 0.f, 6.f};
+    both.typeB = CollisionShapeType::TriMesh;
+    both.paramsB = {0.25f, 0.25f, 0.25f};
+    both.posB = {0.f, 0.f, 2.f};
+    both.velB = {0.f, 0.f, -6.f};
+    both.ccdB = true;
+    PooledSweep bothAsBox = both;
+    bothAsBox.typeA = CollisionShapeType::Box;
+    bothAsBox.typeB = CollisionShapeType::Box;
+    const TOIResult bothToi = sweepPair(both);
+    expectMatchesBox("ConvexHull vs TriMesh", bothToi, sweepPair(bothAsBox));
+    expectCaught("ConvexHull vs TriMesh", bothToi, 0.6f);
+
+    PooledSweep sdfVoxel;
+    sdfVoxel.typeA = CollisionShapeType::SdfMesh;
+    sdfVoxel.paramsA = {0.4f, 0.3f, 0.2f};
+    sdfVoxel.posA = {-2.5f, 0.f, 0.f};
+    sdfVoxel.velA = {7.f, 0.f, 0.f};
+    sdfVoxel.typeB = CollisionShapeType::Voxel;
+    sdfVoxel.paramsB = {0.3f, 0.3f, 0.3f};
+    PooledSweep sdfVoxelAsBox = sdfVoxel;
+    sdfVoxelAsBox.typeA = CollisionShapeType::Box;
+    sdfVoxelAsBox.typeB = CollisionShapeType::Box;
+    const TOIResult sdfVoxelToi = sweepPair(sdfVoxel);
+    expectMatchesBox("SdfMesh vs Voxel", sdfVoxelToi, sweepPair(sdfVoxelAsBox));
+    expectCaught("SdfMesh vs Voxel", sdfVoxelToi, 0.6f);
+
+    // Two degenerate points meeting. Gap 1.5 m at 4 m/frame.
+    PooledSweep points;
+    points.typeA = CollisionShapeType::ConvexHull;
+    points.paramsA = {};
+    points.posA = {};
+    points.velA = {4.f, 0.f, 0.f};
+    points.typeB = CollisionShapeType::TriMesh;
+    points.paramsB = {};
+    points.posB = {1.5f, 0.f, 0.f};
+    PooledSweep pointsAsBox = points;
+    pointsAsBox.typeA = CollisionShapeType::Box;
+    pointsAsBox.typeB = CollisionShapeType::Box;
+    const TOIResult pointsToi = sweepPair(points);
+    expectMatchesBox("point hull vs point mesh", pointsToi, sweepPair(pointsAsBox));
+    expectCaught("point hull vs point mesh", pointsToi, 0.6f);
+
+    // A zero thickness on one axis stays that flat box (a ground-like mesh is not a point).
+    // Front face is 0.5 m from the wall at 4 m/frame, so the hit is well before a point's.
+    PooledSweep flat;
+    flat.typeA = CollisionShapeType::ConvexHull;
+    flat.paramsA = {2.f, 0.f, 2.f};
+    flat.posA = {-3.f, 0.f, 0.f};
+    flat.velA = {4.f, 0.f, 0.f};
+    flat.paramsB = {0.5f, 0.5f, 0.5f};
+    PooledSweep flatAsBox = flat;
+    flatAsBox.typeA = CollisionShapeType::Box;
+    const TOIResult flatToi = sweepPair(flat);
+    expectMatchesBox("flat hull vs box", flatToi, sweepPair(flatAsBox));
+    expectCaught("flat hull vs box", flatToi, 0.35f);
+
+    // Oriented and spinning bounds take the same non-analytic box sweep, orientation included.
+    const quat tilt = quatFromAxisAngle({0.f, 1.f, 0.f}, 0.6f);
+    PooledSweep oriented;
+    oriented.typeA = CollisionShapeType::ConvexHull;
+    oriented.paramsA = {0.3f, 0.2f, 0.35f};
+    oriented.posA = {0.f, 0.f, -2.5f};
+    oriented.velA = {0.f, 0.f, 6.f};
+    oriented.orientA = tilt;
+    oriented.paramsB = {1.f, 1.f, 0.25f};
+    PooledSweep orientedAsBox = oriented;
+    orientedAsBox.typeA = CollisionShapeType::Box;
+    const TOIResult orientedToi = sweepPair(oriented);
+    expectMatchesBox("oriented hull vs box", orientedToi, sweepPair(orientedAsBox));
+    expectCaught("oriented hull vs box", orientedToi, 0.6f);
+
+    PooledSweep spinning;
+    spinning.typeA = CollisionShapeType::Voxel;
+    spinning.paramsA = {1.f, 0.05f, 0.05f};
+    spinning.spinA = {0.f, 0.f, 2.f};
+    spinning.typeB = CollisionShapeType::SdfMesh;
+    spinning.paramsB = {1.2f, 0.05f, 0.4f};
+    spinning.posB = {0.f, 0.7f, 0.f};
+    PooledSweep spinningAsBox = spinning;
+    spinningAsBox.typeA = CollisionShapeType::Box;
+    spinningAsBox.typeB = CollisionShapeType::Box;
+    const TOIResult spinningToi = sweepPair(spinning);
+    expectMatchesBox("spinning voxel vs sdf", spinningToi, sweepPair(spinningAsBox));
+    expectCaught("spinning voxel vs sdf", spinningToi, 0.85f);
+
+    // Sphere versus an axis-aligned bound uses the closed-form sphere-box sweep.
+    PooledSweep sphereHull;
+    sphereHull.typeA = CollisionShapeType::Sphere;
+    sphereHull.paramsA = {0.25f, 0.f, 0.f};
+    sphereHull.posA = {0.f, 0.f, -4.f};
+    sphereHull.velA = {0.f, 0.f, 15.f};
+    sphereHull.typeB = CollisionShapeType::ConvexHull;
+    sphereHull.paramsB = {0.5f, 0.5f, 0.5f};
+    PooledSweep sphereBox = sphereHull;
+    sphereBox.typeB = CollisionShapeType::Box;
+    const TOIResult sphereHullToi = sweepPair(sphereHull);
+    expectMatchesBox("sphere vs hull", sphereHullToi, sweepPair(sphereBox));
+    expectCaught("sphere vs hull", sphereHullToi, 0.4f);
+
+    PooledSweep sphereOriented = oriented;
+    sphereOriented.typeA = CollisionShapeType::Sphere;
+    sphereOriented.paramsA = {0.2f, 0.f, 0.f};
+    sphereOriented.posA = {0.f, 0.f, -3.f};
+    sphereOriented.velA = {0.f, 0.f, 8.f};
+    sphereOriented.orientA = {};
+    sphereOriented.typeB = CollisionShapeType::TriMesh;
+    sphereOriented.orientB = tilt;
+    sphereOriented.posB = {};
+    sphereOriented.velB = {};
+    sphereOriented.paramsB = {0.3f, 0.2f, 0.35f};
+    PooledSweep sphereOrientedBox = sphereOriented;
+    sphereOrientedBox.typeB = CollisionShapeType::Box;
+    const TOIResult sphereOrientedToi = sweepPair(sphereOriented);
+    expectMatchesBox("sphere vs oriented mesh", sphereOrientedToi, sweepPair(sphereOrientedBox));
+    expectCaught("sphere vs oriented mesh", sphereOrientedToi, 0.6f);
+
+    PooledSweep capsule;
+    capsule.typeA = CollisionShapeType::Capsule;
+    capsule.paramsA = {0.2f, 0.5f, 0.f};
+    capsule.posA = {-2.f, 0.f, 0.f};
+    capsule.velA = {8.f, 0.f, 0.f};
+    capsule.typeB = CollisionShapeType::Voxel;
+    capsule.paramsB = {0.3f, 0.3f, 0.3f};
+    PooledSweep capsuleBox = capsule;
+    capsuleBox.typeB = CollisionShapeType::Box;
+    const TOIResult capsuleToi = sweepPair(capsule);
+    expectMatchesBox("capsule vs voxel", capsuleToi, sweepPair(capsuleBox));
+    expectCaught("capsule vs voxel", capsuleToi, 0.5f);
+
+    // A point bound against a sphere stays on the analytic AABB path and stays finite.
+    PooledSweep pointSphere;
+    pointSphere.typeA = CollisionShapeType::Sphere;
+    pointSphere.paramsA = {0.5f, 0.f, 0.f};
+    pointSphere.posA = {0.f, 2.f, 0.f};
+    pointSphere.velA = {0.f, -5.f, 0.f};
+    pointSphere.typeB = CollisionShapeType::SdfMesh;
+    pointSphere.paramsB = {};
+    PooledSweep pointSphereBox = pointSphere;
+    pointSphereBox.typeB = CollisionShapeType::Box;
+    const TOIResult pointSphereToi = sweepPair(pointSphere);
+    expectMatchesBox("sphere vs point sdf", pointSphereToi, sweepPair(pointSphereBox));
+    expectCaught("sphere vs point sdf", pointSphereToi, 0.5f);
+
+    PooledSweep away;
+    away.typeA = CollisionShapeType::ConvexHull;
+    away.paramsA = {0.5f, 0.4f, 0.3f};
+    away.posA = {0.f, 0.f, -3.f};
+    away.velA = {0.f, 0.f, -12.f};
+    away.paramsB = {1.f, 1.f, 0.2f};
+    PooledSweep awayBox = away;
+    awayBox.typeA = CollisionShapeType::Box;
+    const TOIResult awayToi = sweepPair(away);
+    expectMatchesBox("separating hull", awayToi, sweepPair(awayBox));
+    expectTrue(!awayToi.valid, "a hull moving away from a box does not report a hit");
+
+    PooledSweep unflagged = away;
+    unflagged.velA = {0.f, 0.f, 12.f};
+    unflagged.ccdA = false;
+    expectTrue(!sweepPair(unflagged).valid, "a pooled pair still requires RB_CCD");
+
+    // Primitive closed forms are untouched.
+    PooledSweep spheres;
+    spheres.typeA = CollisionShapeType::Sphere;
+    spheres.paramsA = {0.5f, 0.f, 0.f};
+    spheres.velA = {10.f, 0.f, 0.f};
+    spheres.typeB = CollisionShapeType::Sphere;
+    spheres.paramsB = {0.5f, 0.f, 0.f};
+    spheres.posB = {5.f, 0.f, 0.f};
+    const TOIResult sphereToi = sweepPair(spheres);
+    expectTrue(sphereToi.valid && std::fabs(sphereToi.toi - 0.4f) <= 1e-3f, "sphere-sphere TOI is unchanged");
+
+    PooledSweep sphereWall;
+    sphereWall.typeA = CollisionShapeType::Sphere;
+    sphereWall.paramsA = {0.5f, 0.f, 0.f};
+    sphereWall.velA = {10.f, 0.f, 0.f};
+    sphereWall.typeB = CollisionShapeType::Box;
+    sphereWall.paramsB = {1.f, 1.f, 1.f};
+    sphereWall.posB = {5.f, 0.f, 0.f};
+    const TOIResult sphereWallToi = sweepPair(sphereWall);
+    expectTrue(sphereWallToi.valid && std::fabs(sphereWallToi.toi - 0.35f) <= 1e-3f, "sphere-box TOI is unchanged");
+
+    PooledSweep sphereGround;
+    sphereGround.typeA = CollisionShapeType::Sphere;
+    sphereGround.paramsA = {1.f, 0.f, 0.f};
+    sphereGround.posA = {0.f, 5.f, 0.f};
+    sphereGround.velA = {0.f, -10.f, 0.f};
+    sphereGround.typeB = CollisionShapeType::Plane;
+    sphereGround.paramsB = {0.f, 1.f, 0.f};
+    const TOIResult sphereGroundToi = sweepPair(sphereGround);
+    expectTrue(sphereGroundToi.valid && std::fabs(sphereGroundToi.toi - 0.4f) <= 1e-3f, "sphere-plane TOI is unchanged");
+
+    std::printf("CCD pooled bounds: hull/mesh/sdf/voxel sweeps match their bounding boxes\n");
+}
+
+void testCcdMarginOk() {
+    expectTrue(ccd_margin_ok(0.001f), "CCD margin 0.001 is in range");
+    expectTrue(ccd_margin_ok(1.f), "CCD margin 1 is in range");
+    expectTrue(!ccd_margin_ok(0.f), "a zero CCD margin is rejected");
+    expectTrue(!ccd_margin_ok(-0.1f), "a negative CCD margin is rejected");
+    expectTrue(!ccd_margin_ok(1.1f), "a CCD margin past 1 is rejected");
+    expectTrue(!ccd_margin_ok(std::numeric_limits<float>::quiet_NaN()), "a non-finite CCD margin is rejected");
+}
+
+void testToiInRange() {
+    expectTrue(toi_in_range(0.f), "TOI 0 is in range");
+    expectTrue(toi_in_range(0.25f), "TOI 0.25 is in range");
+    expectTrue(toi_in_range(1.f), "TOI 1 is in range");
+    expectTrue(!toi_in_range(-0.01f), "a negative TOI is rejected");
+    expectTrue(!toi_in_range(1.01f), "a TOI past 1 is rejected");
+}
+
 } // namespace
 
 int main() {
+    testCcdMarginOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b4_ccd_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testToiInRange();
     fuse::core::initialize();
     resetCcdIterationStats();
     testNoTunnellingThroughThinWall();
@@ -406,6 +787,7 @@ int main() {
     testCcdOverheadHundredBodies();
     expectIterationBudget("100 fast bodies");
     testToiIterationsOnHardCases();
+    testPooledShapesSweepBoundingBoxes();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

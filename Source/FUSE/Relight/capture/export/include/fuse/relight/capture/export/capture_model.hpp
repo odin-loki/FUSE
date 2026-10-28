@@ -31,10 +31,12 @@
 //
 // FUSE changes: one buffer set per mesh (no per-frame mesh time samples, see capture_builder.hpp); the
 // captured albedo texture is part of the model (CaptureTexture: canonical mip-0 bytes, written as DDS) and
-// the key set (captureKeys) is derived from it for the replacement DB (plan §4.1.5).
+// the key set (captureKeys) is derived from it for the replacement DB (plan §4.1.5). Rect, disk, and
+// cylinder lights are recorded from the LightRecord fields that exist (upstream's exporter skipped them).
 #pragma once
 
 #include <fuse/relight/hash/geometry_hash.hpp>
+#include <fuse/relight/hash/light_hash.hpp>
 #include <fuse/relight/scene/classify/instance_categories.hpp>
 
 #include <array>
@@ -192,6 +194,26 @@ struct CaptureDistantLight {
     double firstTime = 0.0, finalTime = 0.0;
 };
 
+/// Rect, disk, or cylinder light. LightRecord has position, direction, and radius (no width or height).
+/// Colour, radius, and shaping are taken from the first sample. Position, direction, and an xform are
+/// written every frame. firstTime is the first sample; finalTime updates every frame, as for a sphere.
+/// `type` is Rect, Disk, or Cylinder.
+struct CaptureAreaLight {
+    Hash64 hash = 0;
+    hash::LightType type = hash::LightType::Rect;
+    Vec3f color{0.f, 0.f, 0.f};
+    float intensity = 0.f;
+    float radius = 0.f;
+    Vec3f position{0.f, 0.f, 0.f};
+    Vec3f direction{0.f, 0.f, 1.f};
+    bool shapingEnabled = false;
+    float coneAngleDegrees = 180.f;
+    float coneSoftness = 0.f;
+    float focusExponent = 0.f;
+    double firstTime = 0.0, finalTime = 0.0;
+    std::vector<SampledXform> xforms;
+};
+
 /// lss::Camera.
 struct CaptureCamera {
     bool valid = false;
@@ -233,6 +255,9 @@ struct CaptureData {
     std::map<std::uint64_t, CaptureInstance> instances;
     std::map<Hash64, CaptureSphereLight> sphereLights;
     std::map<Hash64, CaptureDistantLight> distantLights;
+    std::map<Hash64, CaptureAreaLight> rectLights;
+    std::map<Hash64, CaptureAreaLight> diskLights;
+    std::map<Hash64, CaptureAreaLight> cylinderLights;
     CaptureCamera camera;
     Mat4d globalXform = identity4d(); ///< the lights root correction (upstream Export::globalXform)
 };

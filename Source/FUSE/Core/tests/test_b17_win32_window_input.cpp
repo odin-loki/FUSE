@@ -1,6 +1,8 @@
 #include <fuse/core/track_b.hpp>
 #include <fuse/platform/event_pump.hpp>
 #include <fuse/platform/input.hpp>
+#include <fuse/platform/mouse_button.hpp>
+#include <fuse/platform/win_button.hpp>
 #include <fuse/platform/window.hpp>
 
 #include <cstdio>
@@ -15,6 +17,20 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testWinButtonOk() {
+    expectTrue(fuse::platform::win_button_ok(0), "win_button_ok(0)");
+    expectTrue(fuse::platform::win_button_ok(7), "win_button_ok(7)");
+    expectTrue(!fuse::platform::win_button_ok(-1), "win_button_ok(-1)");
+    expectTrue(!fuse::platform::win_button_ok(8), "win_button_ok(8)");
+}
+
+void testMouseButtonOk() {
+    expectTrue(fuse::platform::mouse_button_ok(0), "mouse_button_ok(0)");
+    expectTrue(fuse::platform::mouse_button_ok(4), "mouse_button_ok(4)");
+    expectTrue(!fuse::platform::mouse_button_ok(-1), "mouse_button_ok(-1)");
+    expectTrue(!fuse::platform::mouse_button_ok(5), "mouse_button_ok(5)");
 }
 
 void testTrackBUnlockIndependentOfThisBinary() {
@@ -84,6 +100,13 @@ void testWin32OptionalCreateNativeProcessOsEvents() {
 } // namespace
 
 int main() {
+    testWinButtonOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core_b17_win32_window_input: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testMouseButtonOk();
     testTrackBUnlockIndependentOfThisBinary();
     testEventPumpFeedsInputState();
     testProcessOsEventsWithoutNativeHandle();

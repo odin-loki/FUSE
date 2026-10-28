@@ -26,6 +26,7 @@
 #include <fuse/relight/render/pathtrace/pt_reference.hpp>
 #include <fuse/relight/render/pathtrace/radiance_cache.hpp>
 #include <fuse/relight/render/pathtrace/radiance_cache_gpu.hpp>
+#include <fuse/relight/render/pathtrace/rc_cell.hpp>
 
 #include "pt_reference_kernels.hpp"
 
@@ -96,11 +97,24 @@ int g_failures = 0;
     }
 }
 [[maybe_unused]] void check(bool condition, const std::string& message) { check(condition, message.c_str()); }
+
+/// CPU gate. No heap allocation. Must run before any GPU skip; a failure returns non-zero.
+int testRcCellOk() {
+    const int before = g_failures;
+    check(fuse::relight::rc_cell_ok(1), "rc_cell_ok(1)");
+    check(fuse::relight::rc_cell_ok(256), "rc_cell_ok(256)");
+    check(!fuse::relight::rc_cell_ok(0), "rc_cell_ok(0)");
+    check(!fuse::relight::rc_cell_ok(257), "rc_cell_ok(257)");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int rcCellRc = testRcCellOk()) {
+        return rcCellRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -782,6 +796,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int rcCellRc = testRcCellOk()) {
+        return rcCellRc;
+    }
     std::string language = "all";
     Validation validation = Validation::Layer;
     for (int i = 1; i < argc; ++i) {

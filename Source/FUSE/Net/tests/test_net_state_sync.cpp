@@ -1,12 +1,45 @@
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
+#include <fuse/net/rtt.hpp>
+#include <fuse/net/rtt_ms.hpp>
 #include <fuse/net/state_sync.hpp>
+
+#include <limits>
 
 #include "test_helpers.hpp"
 
 namespace fuse::net::tests {
 
+void testClampRtt() {
+    expectTrue(fuse::net::clamp_rtt_ms(50.f, 10.f, 100.f) == 50.f, "clamp_rtt_ms(50, 10, 100) == 50");
+    expectTrue(fuse::net::clamp_rtt_ms(0.f, 10.f, 100.f) == 10.f, "clamp_rtt_ms(0, 10, 100) == 10");
+    expectTrue(fuse::net::clamp_rtt_ms(250.f, 10.f, 100.f) == 100.f, "clamp_rtt_ms(250, 10, 100) == 100");
+    expectTrue(fuse::net::clamp_rtt_ms(50.f, 100.f, 10.f) == 50.f, "clamp_rtt_ms orders inverted bounds");
+    expectTrue(fuse::net::clamp_rtt_ms(0.f, 100.f, 10.f) == 10.f, "clamp_rtt_ms low sample uses the ordered minimum");
+    expectTrue(fuse::net::clamp_rtt_ms(250.f, 100.f, 10.f) == 100.f, "clamp_rtt_ms high sample uses the ordered maximum");
+    const float nonFinite = std::numeric_limits<float>::quiet_NaN();
+    expectTrue(fuse::net::clamp_rtt_ms(nonFinite, 10.f, 100.f) == 10.f,
+               "non-finite sample returns the finite minimum");
+    expectTrue(fuse::net::clamp_rtt_ms(nonFinite, nonFinite, nonFinite) == 0.f,
+               "non-finite sample with a non-finite minimum returns 0");
+}
+
+void testRttMsOk() {
+    expectTrue(fuse::net::rtt_ms_ok(0), "rtt_ms_ok(0) is true");
+    expectTrue(fuse::net::rtt_ms_ok(1000), "rtt_ms_ok(1000) is true");
+    expectTrue(!fuse::net::rtt_ms_ok(-1), "rtt_ms_ok(-1) is false");
+    expectTrue(!fuse::net::rtt_ms_ok(1001), "rtt_ms_ok(1001) is false");
+}
+
 void run_state_sync_tests() {
+    const int failuresBefore = g_failures;
+    testRttMsOk();
+    if (g_failures != failuresBefore) {
+        return;
+    }
+
+    testClampRtt();
+
     fuse::ecs::Registry registry;
     registry.init(16);
 

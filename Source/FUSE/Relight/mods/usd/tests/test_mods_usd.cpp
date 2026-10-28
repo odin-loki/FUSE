@@ -10,6 +10,7 @@
 //                sublayer offsets stripped (TinyUSDZ cannot parse them), deterministic dumps;
 //   robustness   mutated and truncated layers never crash the loader or the composer.
 #include <fuse/relight/mods/usd/remix_profile.hpp>
+#include <fuse/relight/mods/usd/usd_prim.hpp>
 #include <fuse/relight/mods/usd/usd_stage.hpp>
 
 #include <algorithm>
@@ -37,6 +38,13 @@ int g_failures = 0;
 
 namespace usd = fuse::relight::mods::usd;
 using usd::Value;
+
+void testUsdPrimOk() {
+    CHECK(fuse::relight::usd_prim_ok("Hero"));
+    CHECK(!fuse::relight::usd_prim_ok(""));
+    CHECK(!fuse::relight::usd_prim_ok("1Hero"));
+    CHECK(!fuse::relight::usd_prim_ok("Hero Mesh"));
+}
 
 // ---- values ---------------------------------------------------------------------------------------------------
 
@@ -453,6 +461,10 @@ def Xform "RootNode" (
 } // namespace
 
 int main() {
+    testUsdPrimOk();
+    if (g_failures != 0) {
+        return 1;
+    }
     testValues();
     testPaths();
     testClassify();

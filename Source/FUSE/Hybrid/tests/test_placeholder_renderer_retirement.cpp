@@ -1,5 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
+#include <fuse/hybrid/preview_flag.hpp>
+#include <fuse/hybrid/retire_pass.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
 #include <fuse/world2d/world_2d.hpp>
 #include <fuse/world3d/world_3d.hpp>
@@ -16,6 +18,22 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testRetirePassOk() {
+    expectTrue(fuse::hybrid::retire_pass_ok(0), "retire_pass_ok(0) is true");
+    expectTrue(fuse::hybrid::retire_pass_ok(4), "retire_pass_ok(4) is true");
+    expectTrue(!fuse::hybrid::retire_pass_ok(-1), "retire_pass_ok(-1) is false");
+    expectTrue(!fuse::hybrid::retire_pass_ok(5), "retire_pass_ok(5) is false");
+}
+
+void testSoftwarePreviewEnabled() {
+    expectTrue(!fuse::hybrid::software_preview_enabled(false, false),
+               "software_preview_enabled(false, false) is false");
+    expectTrue(fuse::hybrid::software_preview_enabled(true, false),
+               "software_preview_enabled(true, false) is true");
+    expectTrue(fuse::hybrid::software_preview_enabled(false, true),
+               "software_preview_enabled(false, true) is true");
 }
 
 void testSoftwarePlaceholderSkippedFrameAccumulation() {
@@ -67,6 +85,18 @@ void testSoftwarePlaceholderSkippedFrameAccumulation() {
 } // namespace
 
 int main() {
+    testRetirePassOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_placeholder_renderer_retirement: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testSoftwarePreviewEnabled();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_placeholder_renderer_retirement: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     testSoftwarePlaceholderSkippedFrameAccumulation();
 
     if (g_failures == 0) {

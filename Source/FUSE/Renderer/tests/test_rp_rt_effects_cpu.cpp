@@ -19,6 +19,7 @@
 #include <fuse/renderer/lighting/gpu/clustered_gpu_kernel.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_gpu_types.hpp>
 #include <fuse/renderer/lighting/ltc/ltc_lut.hpp>
+#include <fuse/renderer/rt/rt_effect.hpp>
 #include <fuse/renderer/rt/rt_reference.hpp>
 #include <fuse/renderer/rt_effects/rt_effects.hpp>
 #include <fuse/renderer/rt_effects/rt_effects_kernel.hpp>
@@ -54,6 +55,14 @@ void expect(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+// CPU gate. Runs before any GPU or device skip and does not allocate.
+void testRtEffectOk() {
+    expect(rt_effect_ok("Shadows"), "rt_effect_ok(\"Shadows\") is true");
+    expect(!rt_effect_ok(""), "rt_effect_ok(\"\") is false");
+    expect(!rt_effect_ok("1Shadows"), "rt_effect_ok(\"1Shadows\") is false");
+    expect(!rt_effect_ok("Soft Shadow"), "rt_effect_ok(\"Soft Shadow\") is false");
 }
 
 std::string readFile(const std::string& path) {
@@ -746,6 +755,11 @@ void testApi() {
 } // namespace
 
 int main(int argc, char** argv) {
+    testRtEffectOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: %d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "layout";
     if (suite == "layout") {
         testLayout();

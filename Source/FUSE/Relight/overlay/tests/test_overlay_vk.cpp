@@ -460,9 +460,21 @@ std::vector<std::uint8_t> runCase(const Case& c, ov::OverlayGpu& gpu, TestDevice
     return got;
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of 77.
+int testOverlayLayerOk();
+
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of 77.
+int test_snap_anchor();
+
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int layerRc = testOverlayLayerOk()) {
+        return layerRc;
+    }
+    if (const int anchorRc = test_snap_anchor()) {
+        return anchorRc;
+    }
     bool validation = true;
     bool external = false;
     for (int i = 1; i < argc; ++i) {
@@ -674,3 +686,91 @@ int main(int argc, char** argv) {
                 caseCount, validation ? "0 validation messages" : "validation not run");
     return 0;
 }
+
+#include <limits>
+
+#include <fuse/relight/overlay/anchor.hpp>
+#include <fuse/relight/overlay/overlay_layer.hpp>
+
+namespace {
+
+int testOverlayLayerOk() {
+    int failures = 0;
+    if (!fuse::relight::overlay_layer_ok(0)) {
+        std::printf("FAIL: overlay_layer_ok(0)\n");
+        ++failures;
+    }
+    if (!fuse::relight::overlay_layer_ok(7)) {
+        std::printf("FAIL: overlay_layer_ok(7)\n");
+        ++failures;
+    }
+    if (fuse::relight::overlay_layer_ok(-1)) {
+        std::printf("FAIL: overlay_layer_ok(-1)\n");
+        ++failures;
+    }
+    if (fuse::relight::overlay_layer_ok(8)) {
+        std::printf("FAIL: overlay_layer_ok(8)\n");
+        ++failures;
+    }
+    if (failures != 0) {
+        std::printf("FAIL: testOverlayLayerOk\n");
+        return 1;
+    }
+    std::printf("testOverlayLayerOk: pass\n");
+    return 0;
+}
+
+int test_snap_anchor() {
+    using fuse::relight::overlay::OverlayAnchor;
+    using fuse::relight::overlay::OverlayPos;
+    using fuse::relight::overlay::snap_anchor;
+    int failures = 0;
+    const auto expect = [&](OverlayPos pos, float x, float y, const char* what) {
+        if (pos.x == x && pos.y == y) {
+            return;
+        }
+        ++failures;
+        std::fprintf(stderr, "FAIL: test_snap_anchor: %s (got %g, %g)\n", what, static_cast<double>(pos.x),
+                     static_cast<double>(pos.y));
+    };
+    expect(snap_anchor(OverlayAnchor::TopRight, 100.f, 50.f, 10.f, 10.f, 2.f), 88.f, 2.f,
+           "TopRight on 100x50 with a 10x10 box and margin 2 is (88, 2)");
+    expect(snap_anchor(OverlayAnchor::TopLeft, 100.f, 50.f, 10.f, 10.f, 2.f), 2.f, 2.f,
+           "TopLeft is (margin, margin)");
+    expect(snap_anchor(OverlayAnchor::BottomLeft, 100.f, 50.f, 10.f, 10.f, 2.f), 2.f, 38.f,
+           "BottomLeft is (margin, screenH - boxH - margin)");
+    expect(snap_anchor(OverlayAnchor::BottomRight, 100.f, 50.f, 10.f, 10.f, 2.f), 88.f, 38.f,
+           "BottomRight is (screenW - boxW - margin, screenH - boxH - margin)");
+    expect(snap_anchor(OverlayAnchor::TopRight, 100.f, 50.f, 10.f, 10.f, -3.f), 90.f, 0.f,
+           "negative margin is 0");
+    expect(snap_anchor(OverlayAnchor::TopLeft, 0.f, 50.f, 10.f, 10.f, 2.f), 0.f, 0.f,
+           "non-positive screen width returns (0, 0)");
+    expect(snap_anchor(OverlayAnchor::TopLeft, 100.f, -5.f, 10.f, 10.f, 2.f), 0.f, 0.f,
+           "non-positive screen height returns (0, 0)");
+    expect(snap_anchor(OverlayAnchor::BottomRight, 100.f, 50.f, 0.f, 10.f, 2.f), 0.f, 0.f,
+           "non-positive box width returns (0, 0)");
+    expect(snap_anchor(OverlayAnchor::BottomLeft, 100.f, 50.f, 10.f, -1.f, 2.f), 0.f, 0.f,
+           "non-positive box height returns (0, 0)");
+    const float nonFinite[] = {std::nanf(""), std::numeric_limits<float>::infinity(),
+                               -std::numeric_limits<float>::infinity()};
+    for (const float bad : nonFinite) {
+        expect(snap_anchor(OverlayAnchor::TopRight, bad, 50.f, 10.f, 10.f, 2.f), 0.f, 0.f,
+               "non-finite screen returns (0, 0)");
+        expect(snap_anchor(OverlayAnchor::TopRight, 100.f, bad, 10.f, 10.f, 2.f), 0.f, 0.f,
+               "non-finite screen height returns (0, 0)");
+        expect(snap_anchor(OverlayAnchor::TopRight, 100.f, 50.f, bad, 10.f, 2.f), 0.f, 0.f,
+               "non-finite box returns (0, 0)");
+        expect(snap_anchor(OverlayAnchor::TopRight, 100.f, 50.f, 10.f, bad, 2.f), 0.f, 0.f,
+               "non-finite box height returns (0, 0)");
+        expect(snap_anchor(OverlayAnchor::TopLeft, 100.f, 50.f, 10.f, 10.f, bad), 0.f, 0.f,
+               "non-finite margin returns (0, 0)");
+    }
+    if (failures != 0) {
+        std::fprintf(stderr, "FAIL: test_snap_anchor\n");
+        return 1;
+    }
+    std::printf("test_snap_anchor: pass\n");
+    return 0;
+}
+
+} // namespace

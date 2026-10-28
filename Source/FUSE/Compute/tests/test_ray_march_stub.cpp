@@ -1,5 +1,8 @@
+#include <fuse/compute/dispatch_groups.hpp>
+#include <fuse/compute/march_epsilon.hpp>
 #include <fuse/compute/ray_march.hpp>
 #include <fuse/compute/ray_march_job.hpp>
+#include <fuse/compute/ray_steps.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/jobs/cuda_jobs.hpp>
 #include <fuse/jobs/job_counter.hpp>
@@ -265,10 +268,45 @@ void testSubmitRayMarchJob() {
     expectTrue(counter.isComplete(), "ray march job signals counter");
 }
 
+void testMarchEpsilonOk() {
+    expectTrue(fuse::compute::march_epsilon_ok(0.001f), "epsilon 0.001 is accepted");
+    expectTrue(fuse::compute::march_epsilon_ok(1e-5f), "epsilon 1e-5 is accepted");
+    expectTrue(fuse::compute::march_epsilon_ok(1e-1f), "epsilon 1e-1 is accepted");
+    expectTrue(!fuse::compute::march_epsilon_ok(0.f), "epsilon 0 is rejected");
+    expectTrue(!fuse::compute::march_epsilon_ok(1.f), "epsilon 1 is rejected");
+    expectTrue(!fuse::compute::march_epsilon_ok(std::nanf("")), "non-finite epsilon is rejected");
+}
+
+void testRayStepCount() {
+    expectTrue(fuse::compute::ray_step_count(10.f, 3.f) == 4u, "distance 10 step 3 is 4 steps");
+    expectTrue(fuse::compute::ray_step_count(0.f, 3.f) == 0u, "distance 0 is 0 steps");
+}
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero and does not continue.
+/// Does not allocate.
+void testDispatchGroups() {
+    expectTrue(fuse::compute::dispatch_groups(10, 4) == 3, "dispatch_groups(10, 4) is 3");
+    expectTrue(fuse::compute::dispatch_groups(0, 4) == 0, "dispatch_groups(0, 4) is 0");
+    expectTrue(fuse::compute::dispatch_groups(10, 3) == 0, "dispatch_groups(10, 3) is 0");
+    expectTrue(fuse::compute::dispatch_groups(10, 0) == 0, "dispatch_groups(10, 0) is 0");
+}
+
 } // namespace
 
 int main() {
+    testDispatchGroups();
+    if (g_failures != 0) {
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
+
+    testMarchEpsilonOk();
+    testRayStepCount();
+    if (g_failures != 0) {
+        fuse::core::shutdown();
+        return EXIT_FAILURE;
+    }
 
     testRayMarcherInfo();
     testCpuSphereHit();

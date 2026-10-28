@@ -1,9 +1,15 @@
 #include <fuse/platform/event_pump.hpp>
 #include <fuse/platform/input.hpp>
+#include <fuse/platform/input_chord.hpp>
+#include <fuse/platform/key_index.hpp>
+#include <fuse/platform/radial_deadzone.hpp>
+#include <fuse/platform/repeat_delay.hpp>
 #include <fuse/platform/window.hpp>
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 namespace {
 
@@ -248,9 +254,132 @@ void testCaptureChangeWithoutPumpIsNoOpForUnchangedMode() {
     expectTrue(window.isInputCaptured(), "capture stored without a pump");
 }
 
+void testChordMatcherWithinGapLateAndReset() {
+    constexpr fuse::u32 kGapMs = 100u;
+
+    fuse::platform::ChordMatcher within({fuse::platform::Key::A, fuse::platform::Key::B}, kGapMs);
+    within.feed(fuse::platform::Key::A, 0u);
+    expectTrue(!within.matched(), "A alone does not complete the chord");
+    within.feed(fuse::platform::Key::B, 40u);
+    expectTrue(within.matched(), "A then B within the gap matches");
+    within.feed(fuse::platform::Key::A, 50u);
+    expectTrue(!within.matched(), "the next feed clears matched and starts fresh");
+    within.feed(fuse::platform::Key::B, 80u);
+    expectTrue(within.matched(), "A then B matches again after a completed chord");
+
+    fuse::platform::ChordMatcher onTime({fuse::platform::Key::A, fuse::platform::Key::B}, kGapMs);
+    onTime.feed(fuse::platform::Key::A, 0u);
+    onTime.feed(fuse::platform::Key::B, kGapMs);
+    expectTrue(onTime.matched(), "a gap equal to maxGapMs still matches");
+
+    fuse::platform::ChordMatcher late({fuse::platform::Key::A, fuse::platform::Key::B}, kGapMs);
+    late.feed(fuse::platform::Key::A, 0u);
+    late.feed(fuse::platform::Key::B, kGapMs + 1u);
+    expectTrue(!late.matched(), "A then a late B does not match");
+
+    fuse::platform::ChordMatcher restarted({fuse::platform::Key::A, fuse::platform::Key::B}, kGapMs);
+    restarted.feed(fuse::platform::Key::A, 0u);
+    restarted.feed(fuse::platform::Key::A, 1000u);
+    expectTrue(!restarted.matched(), "a late opener restarts and does not complete");
+    restarted.feed(fuse::platform::Key::B, 1040u);
+    expectTrue(restarted.matched(), "B within the gap of a restarted A matches");
+
+    fuse::platform::ChordMatcher wrong({fuse::platform::Key::A, fuse::platform::Key::B}, kGapMs);
+    wrong.feed(fuse::platform::Key::A, 0u);
+    wrong.feed(fuse::platform::Key::C, 10u);
+    expectTrue(!wrong.matched(), "a wrong key is not a match");
+    wrong.feed(fuse::platform::Key::B, 20u);
+    expectTrue(!wrong.matched(), "a wrong key resets");
+    wrong.feed(fuse::platform::Key::A, 30u);
+    wrong.feed(fuse::platform::Key::B, 40u);
+    expectTrue(wrong.matched(), "A then B matches after the reset");
+
+    fuse::platform::ChordMatcher repeated({fuse::platform::Key::A, fuse::platform::Key::B}, kGapMs);
+    repeated.feed(fuse::platform::Key::A, 0u);
+    repeated.feed(fuse::platform::Key::A, 10u);
+    repeated.feed(fuse::platform::Key::B, 20u);
+    expectTrue(!repeated.matched(), "a wrong opener is discarded and does not restart the chord");
+
+    fuse::platform::ChordMatcher empty({}, kGapMs);
+    empty.feed(fuse::platform::Key::A, 0u);
+    empty.feed(fuse::platform::Key::B, 10u);
+    expectTrue(!empty.matched(), "empty sequence never matches");
+}
+
+void testRadialDeadzone() {
+    const auto near = [](float actual, float expected) {
+        return std::fabs(actual - expected) <= 1e-5f;
+    };
+
+    const fuse::platform::StickAxis full = fuse::platform::apply_radial_deadzone(1.f, 0.f, 0.2f);
+    expectTrue(near(full.x, 1.f) && near(full.y, 0.f), "(1, 0) with deadzone 0.2 stays (1, 0)");
+
+    const fuse::platform::StickAxis inside = fuse::platform::apply_radial_deadzone(0.1f, 0.f, 0.2f);
+    expectTrue(inside.x == 0.f && inside.y == 0.f, "(0.1, 0) with deadzone 0.2 is (0, 0)");
+
+    const fuse::platform::StickAxis mid = fuse::platform::apply_radial_deadzone(0.6f, 0.f, 0.2f);
+    expectTrue(near(mid.x, 0.5f) && near(mid.y, 0.f), "(0.6, 0) with deadzone 0.2 is (0.5, 0)");
+
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    const fuse::platform::StickAxis badX = fuse::platform::apply_radial_deadzone(nan, 0.f, 0.2f);
+    const fuse::platform::StickAxis badY = fuse::platform::apply_radial_deadzone(0.f, inf, 0.2f);
+    const fuse::platform::StickAxis badDz = fuse::platform::apply_radial_deadzone(1.f, 0.f, nan);
+    expectTrue(badX.x == 0.f && badX.y == 0.f, "non-finite x returns (0, 0)");
+    expectTrue(badY.x == 0.f && badY.y == 0.f, "non-finite y returns (0, 0)");
+    expectTrue(badDz.x == 0.f && badDz.y == 0.f, "non-finite deadzone returns (0, 0)");
+
+    const fuse::platform::StickAxis negativeDeadzone =
+        fuse::platform::apply_radial_deadzone(0.4f, 0.f, -1.f);
+    expectTrue(near(negativeDeadzone.x, 0.4f) && near(negativeDeadzone.y, 0.f),
+               "negative deadzone clamps to 0");
+
+    const fuse::platform::StickAxis highDeadzone =
+        fuse::platform::apply_radial_deadzone(0.5f, 0.f, 1.5f);
+    expectTrue(highDeadzone.x == 0.f && highDeadzone.y == 0.f,
+               "deadzone above 0.99 clamps and rejects length 0.5");
+
+    const fuse::platform::StickAxis pastUnit =
+        fuse::platform::apply_radial_deadzone(2.f, 0.f, 0.2f);
+    expectTrue(near(pastUnit.x, 1.f) && near(pastUnit.y, 0.f),
+               "length > 1 scales onto the unit circle");
+
+    const fuse::platform::StickAxis zero = fuse::platform::apply_radial_deadzone(0.f, 0.f, 0.2f);
+    expectTrue(zero.x == 0.f && zero.y == 0.f, "zero length returns (0, 0)");
+
+    const fuse::platform::StickAxis up = fuse::platform::apply_radial_deadzone(0.f, 0.6f, 0.2f);
+    expectTrue(near(up.x, 0.f) && near(up.y, 0.5f), "(0, 0.6) with deadzone 0.2 is (0, 0.5)");
+
+    const fuse::platform::StickAxis left = fuse::platform::apply_radial_deadzone(-0.6f, 0.f, 0.2f);
+    expectTrue(near(left.x, -0.5f) && near(left.y, 0.f), "(-0.6, 0) with deadzone 0.2 is (-0.5, 0)");
+}
+
+// No allocation. A failure returns from main before later tests.
+void testKeyIndexOk() {
+    expectTrue(fuse::platform::key_index_ok(0), "key index 0 is ok");
+    expectTrue(fuse::platform::key_index_ok(255), "key index 255 is ok");
+    expectTrue(!fuse::platform::key_index_ok(-1), "key index -1 is not ok");
+    expectTrue(!fuse::platform::key_index_ok(256), "key index 256 is not ok");
+}
+
+void testRepeatDelayOk() {
+    expectTrue(fuse::platform::repeat_delay_ok(0), "repeat delay 0 is ok");
+    expectTrue(fuse::platform::repeat_delay_ok(400), "repeat delay 400 is ok");
+    expectTrue(fuse::platform::repeat_delay_ok(2000), "repeat delay 2000 is ok");
+    expectTrue(!fuse::platform::repeat_delay_ok(-1), "repeat delay -1 is not ok");
+    expectTrue(!fuse::platform::repeat_delay_ok(2001), "repeat delay 2001 is not ok");
+}
+
 } // namespace
 
 int main() {
+    testKeyIndexOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core input state: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testRepeatDelayOk();
+    testRadialDeadzone();
     testKeyFromPlatformCodeMapsA();
     testKeyDownSetsDownAndPressedWithoutBeginFrame();
     testBeginFrameClearsPressedHeldKeyStaysDown();
@@ -262,6 +391,7 @@ int main() {
     testRawMouseDeltaAccumulatesWithoutChangingAbsolutePosition();
     testCaptureReleaseRestoresCursorDeltas();
     testCaptureChangeWithoutPumpIsNoOpForUnchangedMode();
+    testChordMatcherWithinGapLateAndReset();
 
     if (g_failures == 0) {
         std::printf("fuse_core input state: all checks passed\n");

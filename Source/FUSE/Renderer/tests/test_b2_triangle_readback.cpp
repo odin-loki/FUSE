@@ -3,6 +3,7 @@
 // which is read back and checked pixel-wise (validation is covered by fuse_vulkan_validation_gate).
 #include <fuse/core/init.hpp>
 #include <fuse/platform/gl_context.hpp>
+#include <fuse/renderer/readback_px.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 #include <fuse/renderer/vk/raster_path.hpp>
 
@@ -36,6 +37,20 @@ bool isWhite(Rgba p) {
 
 bool isBlack(Rgba p) {
     return p.r == 0 && p.g == 0 && p.b == 0;
+}
+
+/// CPU gate. Must run before any device skip; a failure returns non-zero.
+/// No heap allocation.
+int testReadbackPxOk() {
+    expectTrue(fuse::renderer::readback_px_ok(1), "readback_px_ok(1) is true");
+    expectTrue(fuse::renderer::readback_px_ok(4096), "readback_px_ok(4096) is true");
+    expectTrue(!fuse::renderer::readback_px_ok(0), "readback_px_ok(0) is false");
+    expectTrue(!fuse::renderer::readback_px_ok(4097), "readback_px_ok(4097) is false");
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b2_triangle_readback: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    return 0;
 }
 
 void testWhiteTriangleOnBlack() {
@@ -124,6 +139,10 @@ void testWhiteTriangleOnBlack() {
 } // namespace
 
 int main() {
+    if (const int readbackRc = testReadbackPxOk()) {
+        return readbackRc;
+    }
+
     fuse::core::initialize();
     testWhiteTriangleOnBlack();
     fuse::core::shutdown();

@@ -8,6 +8,7 @@
 //
 //   fuse_relight_plugin_discovery_tests <scratch dir> [<real PE with a version resource>]
 #include <fuse/relight/package/plugin_discovery.hpp>
+#include <fuse/relight/plugin_id.hpp>
 
 #include <cstdio>
 #include <cstring>
@@ -309,9 +310,19 @@ void testDiscovery(const fs::path& scratch) {
     }
 }
 
+void testPluginIdOk() {
+    CHECK(fuse::relight::plugin_id_ok("Bloom"));
+    CHECK(!fuse::relight::plugin_id_ok(""));
+    CHECK(!fuse::relight::plugin_id_ok("1Bloom"));
+    CHECK(!fuse::relight::plugin_id_ok("Bl oom"));
+    CHECK(fuse::relight::plugin_id_ok("B2345678901234567890123456789012"));
+    CHECK(!fuse::relight::plugin_id_ok("B23456789012345678901234567890123"));
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testPluginIdOk();
     const fs::path scratch = argc > 1 ? fs::path(argv[1]) : fs::temp_directory_path() / "rl_plugin_discovery";
     std::error_code ec;
     fs::remove_all(scratch, ec);
@@ -346,3 +357,27 @@ int main(int argc, char** argv) {
     std::printf("rl_package_plugin_discovery: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }
+
+#include <fuse/relight/package/semver.hpp>
+
+namespace {
+
+void testSemVer() {
+    const auto parsed = parse_semver("1.2.3");
+    CHECK(parsed && parsed->major == 1 && parsed->minor == 2 && parsed->patch == 3);
+    CHECK(compare_semver(SemVer{1, 0, 0}, SemVer{1, 0, 1}) == -1);
+    CHECK(compare_semver(SemVer{1, 0, 1}, SemVer{1, 0, 0}) == 1);
+    CHECK(compare_semver(SemVer{2, 0, 0}, SemVer{1, 9, 9}) == 1);
+    CHECK(compare_semver(SemVer{1, 2, 0}, SemVer{1, 3, 0}) == -1);
+    CHECK(compare_semver(SemVer{1, 2, 3}, SemVer{1, 2, 3}) == 0);
+    CHECK(!parse_semver("1.2"));
+    CHECK(!parse_semver("1.2.3-alpha"));
+}
+
+struct RunTestSemVer {
+    RunTestSemVer() { testSemVer(); }
+};
+
+const RunTestSemVer kRunTestSemVer{};
+
+} // namespace

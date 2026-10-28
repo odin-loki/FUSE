@@ -33,10 +33,12 @@
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, passes not built).
 #include "test_rp_temporal_common.hpp"
 
+#include <fuse/renderer/fsr_scale.hpp>
 #include <fuse/renderer/quality/image_metrics.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/taa/taau.hpp>
+#include <fuse/renderer/temporal/history_reset.hpp>
 #include <fuse/renderer/temporal/taau_gpu.hpp>
 #include <fuse/renderer/upscale/reference_scene.hpp>
 #include <fuse/renderer/upscale/upscaler.hpp>
@@ -52,6 +54,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <new>
 #include <string>
@@ -103,11 +106,51 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+// Host predicate. Both entry points call this before any Vulkan skip (exit 77).
+[[nodiscard]] int testFsrScaleOk() {
+    using fuse::renderer::fsr_scale_ok;
+    const int before = g_failures;
+    expect(fsr_scale_ok(1.5f), "a 1.5x scale is accepted");
+    expect(fsr_scale_ok(4.f), "a 4x scale is accepted");
+    expect(!fsr_scale_ok(1.f), "a 1x scale is rejected");
+    expect(!fsr_scale_ok(0.5f), "a scale at or below 1 is rejected");
+    expect(!fsr_scale_ok(4.1f), "a scale above 4 is rejected");
+    expect(!fsr_scale_ok(std::numeric_limits<float>::quiet_NaN()), "a non-finite scale is rejected");
+    return g_failures == before ? 0 : 1;
+}
+
+// Host predicate. Both entry points call this before any Vulkan skip (exit 77).
+[[nodiscard]] int testHistoryShouldReset() {
+    using fuse::renderer::temporal::history_should_reset;
+    const int before = g_failures;
+    const float step = 0.016f;
+    expect(history_should_reset(true, false, step), "a camera cut resets history");
+    expect(history_should_reset(false, true, step), "the first frame resets history");
+    expect(history_should_reset(false, false, std::numeric_limits<float>::quiet_NaN()),
+           "a non-finite delta resets history");
+    expect(history_should_reset(false, false, std::numeric_limits<float>::infinity()),
+           "an infinite delta resets history");
+    expect(history_should_reset(false, false, -std::numeric_limits<float>::infinity()),
+           "a negative infinite delta resets history");
+    expect(history_should_reset(false, false, 0.51f), "a delta above 0.5s resets history");
+    expect(history_should_reset(false, false, -step), "a negative delta resets history");
+    expect(!history_should_reset(false, false, 0.5f), "a half-second delta keeps history");
+    expect(!history_should_reset(false, false, 0.f), "a zero delta keeps history");
+    expect(!history_should_reset(false, false, step), "a 16 ms step keeps history");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int scaleRc = testFsrScaleOk(); scaleRc != 0) {
+        return scaleRc;
+    }
+    if (const int historyRc = testHistoryShouldReset(); historyRc != 0) {
+        return historyRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1026,6 +1069,12 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int scaleRc = testFsrScaleOk(); scaleRc != 0) {
+        return scaleRc;
+    }
+    if (const int historyRc = testHistoryShouldReset(); historyRc != 0) {
+        return historyRc;
+    }
     std::string mode = "quality";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

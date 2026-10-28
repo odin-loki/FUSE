@@ -16,4 +16,9 @@ namespace fuse::net {
 /// Number of simulation steps needed to advance from `from_frame` to `to_frame` (0 when `to_frame <= from_frame`).
 [[nodiscard]] u32 resimulate_frame_count(u32 from_frame, u32 to_frame);
 
+/// True only for window sizes 1 through 32 inclusive.
+[[nodiscard]] inline bool rollback_window_ok(int size) {
+    return size >= 1 && size <= 32;
+}
+
 } // namespace fuse::net

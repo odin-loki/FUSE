@@ -50,6 +50,8 @@
 // trilinear / division rounding moves a weight: temporal) on every channel.
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
+#include <fuse/renderer/vol_gpu_step.hpp>
+#include <fuse/renderer/volumetric/light_shafts.hpp>
 #include <fuse/renderer/deferred/gbuffer.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_lighting.hpp>
@@ -127,11 +129,73 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. No allocation. Both mains call this before any GPU skip.
+/// A failure returns non-zero immediately.
+int testVolGpuStepOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::vol_gpu_step_ok(4), "vol_gpu_step_ok(4) is true");
+    expect(fuse::renderer::vol_gpu_step_ok(16), "vol_gpu_step_ok(16) is true");
+    expect(fuse::renderer::vol_gpu_step_ok(64), "vol_gpu_step_ok(64) is true");
+    expect(!fuse::renderer::vol_gpu_step_ok(0), "vol_gpu_step_ok(0) is false");
+    expect(!fuse::renderer::vol_gpu_step_ok(6), "vol_gpu_step_ok(6) is false");
+    expect(!fuse::renderer::vol_gpu_step_ok(128), "vol_gpu_step_ok(128) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testVolGpuStepOk\n");
+        return 1;
+    }
+    return 0;
+}
+
+/// CPU gate. No Vulkan. Both mains call this before any GPU or Vulkan skip.
+/// A failure returns non-zero immediately.
+/// One color-attachment write is registered, then ignored once every static slot is full.
+int testLightShaftsPassToGraph() {
+    const int before = g_failures;
+    fuse::renderer::RenderGraph graph;
+    const fuse::renderer::RGTextureRef output{fuse::renderer::RenderGraph::kBackbufferTextureId};
+
+    fuse::renderer::addLightShaftsPassToGraph(graph, output);
+    graph.compile();
+    expect(graph.compileInfo().compiled, "light shafts graph compiles");
+    expect(graph.compileInfo().passCount == 1u, "one light shafts pass is registered");
+    expect(graph.compileInfo().culledPassCount == 1u, "color-write shaft pass is culled");
+    expect(graph.compileInfo().executablePassCount == 0u, "culled shaft pass is not executable");
+    expect(graph.compileInfo().barrierCount == 0u, "culled shaft pass plans no barriers");
+    expect(graph.compileInfo().resourceLifetimeCount == 0u, "culled shaft pass records no lifetime");
+
+    for (fuse::u32 slot = 1u; slot < fuse::renderer::RenderGraph::kMaxPassesPerFrame; ++slot) {
+        fuse::renderer::addLightShaftsPassToGraph(graph, output);
+    }
+    graph.compile();
+    expect(graph.compileInfo().passCount == fuse::renderer::RenderGraph::kMaxPassesPerFrame,
+           "light shafts storage accepts one pass per slot");
+    expect(graph.compileInfo().culledPassCount == fuse::renderer::RenderGraph::kMaxPassesPerFrame,
+           "every shaft pass stays culled");
+    expect(graph.compileInfo().executablePassCount == 0u, "a full shaft table stays non-executable");
+
+    fuse::renderer::addLightShaftsPassToGraph(graph, output);
+    graph.compile();
+    expect(graph.compileInfo().passCount == fuse::renderer::RenderGraph::kMaxPassesPerFrame,
+           "a shaft pass past the slot table is dropped");
+
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testLightShaftsPassToGraph\n");
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int lightShaftsRc = testLightShaftsPassToGraph()) {
+        return lightShaftsRc;
+    }
+    if (const int volGpuStepRc = testVolGpuStepOk()) {
+        return volGpuStepRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1480,6 +1544,12 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int lightShaftsRc = testLightShaftsPassToGraph()) {
+        return lightShaftsRc;
+    }
+    if (const int volGpuStepRc = testVolGpuStepOk()) {
+        return volGpuStepRc;
+    }
     std::string mode = "passes";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

@@ -3,6 +3,10 @@
 #include <fuse/ecs/components/tags.hpp>
 #include <fuse/ecs/components/camera.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/ecs/entity_gen.hpp>
+#include <fuse/ecs/entity_index.hpp>
+#include <fuse/ecs/index_range.hpp>
+#include <fuse/ecs/registry_cap.hpp>
 #include <fuse/ecs/registry.hpp>
 
 #include <cstdio>
@@ -221,9 +225,51 @@ void testCameraThenTransformAdd() {
     expectTrue(transform_ptr != nullptr, "transform get after camera add");
 }
 
+void testEntityGenOk() {
+    expectTrue(fuse::ecs::entity_gen_ok(0), "generation 0 is valid");
+    expectTrue(fuse::ecs::entity_gen_ok(1000000), "generation 1000000 is valid");
+    expectTrue(!fuse::ecs::entity_gen_ok(-1), "generation -1 is invalid");
+    expectTrue(!fuse::ecs::entity_gen_ok(1000001), "generation 1000001 is invalid");
+}
+
+void testRegistryCapOk() {
+    expectTrue(fuse::ecs::registry_cap_ok(1), "capacity 1 is valid");
+    expectTrue(fuse::ecs::registry_cap_ok(1000000), "capacity 1000000 is valid");
+    expectTrue(!fuse::ecs::registry_cap_ok(0), "capacity 0 is invalid");
+    expectTrue(!fuse::ecs::registry_cap_ok(1000001), "capacity 1000001 is invalid");
+}
+
+void testEntityIndexOk() {
+    expectTrue(fuse::ecs::entity_index_ok(0u), "index 0 is a valid entity index");
+    expectTrue(fuse::ecs::entity_index_ok((1u << 20) - 1u), "last index below 1<<20 is valid");
+    expectTrue(!fuse::ecs::entity_index_ok(1u << 20), "index 1<<20 is invalid");
+}
+
+void testIndexInCapacity() {
+    expectTrue(!fuse::ecs::index_in_capacity(0u, 0u), "capacity 0 rejects index 0");
+    expectTrue(!fuse::ecs::index_in_capacity(4u, 0u), "capacity 0 rejects any index");
+    expectTrue(fuse::ecs::index_in_capacity(0u, 1u), "index 0 is inside capacity 1");
+    expectTrue(!fuse::ecs::index_in_capacity(4u, 4u), "index equal to capacity is outside");
+    expectTrue(fuse::ecs::index_in_capacity(3u, 4u), "last in-range index is accepted");
+}
+
 } // namespace
 
 int main() {
+    testEntityGenOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_ecs_registry_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testRegistryCapOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_ecs_registry_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testEntityIndexOk();
+    testIndexInCapacity();
     testCreateDestroy();
     testStaleHandle();
     testCreateAtRevivesSameId();

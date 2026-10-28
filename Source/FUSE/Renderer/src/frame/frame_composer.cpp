@@ -707,12 +707,14 @@ void FrameComposer::fillRcSceneDiagnostic_(u32 frameIndex) {
     if (m_rcScene.buffer.mapped == nullptr || m_rcSceneW == 0u || m_rcSceneH == 0u) {
         return;
     }
-    research::rc::RcScene scene{};
-    scene.resize(m_rcSceneW, m_rcSceneH);
-    scene.clear();
-    const f32 t = static_cast<f32>(frameIndex % 60u) / 60.f;
-    scene.fillDisk(static_cast<f32>(m_rcSceneW) * 0.5f, static_cast<f32>(m_rcSceneH) * 0.5f,
-                   static_cast<f32>(m_rcSceneW) * 0.22f, 0.9f, 0.55f + 0.35f * t, 0.2f, true);
+    // CPU pack of a 64^2 G-buffer (depth, signed-oct normal, albedo). No new cascade shader:
+    // a previous full-frame GPU pack did not fit the glslang budget.
+    research::rc::RcCpuGBuffer gbuffer;
+    research::rc::fillDiagnosticGBuffer(gbuffer, m_rcSceneW, m_rcSceneH, frameIndex);
+    research::rc::RcScene scene;
+    if (!research::rc::packSceneFromGBuffer(gbuffer, scene)) {
+        return;
+    }
     const usize bytes = scene.texels.size() * sizeof(f32);
     if (bytes <= m_rcScene.buffer.desc.size) {
         std::memcpy(m_rcScene.buffer.mapped, scene.texels.data(), bytes);
@@ -1723,7 +1725,7 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
         ran |= kStageSky;
     }
 
-    // --- WP-6.5 flatland RC (host scene buffer + rc.*; GPU pack from lit/depth is a follow-up) ----------------
+    // --- WP-6.5 flatland RC (CPU G-buffer pack into the host scene buffer + rc.*) ---------------------------
     if ((plan & kStageRcFlatland) != 0u && m_rcScene.buffer.deviceAddress != 0u) {
         research::rc::RcSettings rs = m_settings.rcSettings;
         if (m_rc.beginFrame(m_frame.serial, rs, m_rcSceneW, m_rcSceneH, m_rcScene.buffer.deviceAddress)) {

@@ -2,13 +2,35 @@
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/net/rollback.hpp>
+#include <fuse/net/rollback_gap.hpp>
 #include <fuse/net/rollback_window.hpp>
 
 #include "test_helpers.hpp"
 
 namespace fuse::net::tests {
 
+void testFramesBehind() {
+    expectTrue(fuse::net::frames_behind(10, 7) == 3u, "frames_behind reports the server lead");
+    expectTrue(fuse::net::frames_behind(4, 4) == 0u, "frames_behind is zero when frames match");
+    expectTrue(fuse::net::frames_behind(3, 9) == 0u, "frames_behind is zero when the client is ahead");
+}
+
+bool testRollbackWindowOk() {
+    const int before = g_failures;
+    expectTrue(fuse::net::rollback_window_ok(1), "rollback_window_ok accepts 1");
+    expectTrue(fuse::net::rollback_window_ok(32), "rollback_window_ok accepts 32");
+    expectTrue(!fuse::net::rollback_window_ok(0), "rollback_window_ok rejects 0");
+    expectTrue(!fuse::net::rollback_window_ok(33), "rollback_window_ok rejects 33");
+    return g_failures == before;
+}
+
 void run_rollback_window_tests() {
+    if (!testRollbackWindowOk()) {
+        return;
+    }
+
+    testFramesBehind();
+
     expectTrue(fuse::net::earliest_rewindable_frame(10, 4) == 6u, "earliest rewindable frame within window");
     expectTrue(fuse::net::earliest_rewindable_frame(3, 8) == 0u, "earliest rewindable clamps at frame 0");
     expectTrue(fuse::net::clamp_rewind_target(10, 8, 4) == 8u, "clamp keeps in-window target");

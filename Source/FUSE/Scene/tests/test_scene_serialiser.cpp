@@ -3,6 +3,7 @@
 #include <fuse/scene/project_io.hpp>
 #include <fuse/scene/scene.hpp>
 #include <fuse/scene/scene_snapshot.hpp>
+#include <fuse/scene/serial_version.hpp>
 #include <fuse/scene/serialiser.hpp>
 
 #include <fuse/types.hpp>
@@ -224,9 +225,17 @@ void testLoadForProjectFromLoadResult() {
     expectTrue(loaded.name() == "ViaLoadResult", "loaded scene via LoadResult wrapper");
 }
 
+void testSerialVersionOk() {
+    expectTrue(fuse::scene::serial_version_ok(1), "serial version 1");
+    expectTrue(fuse::scene::serial_version_ok(16), "serial version 16");
+    expectTrue(!fuse::scene::serial_version_ok(0), "serial version 0 rejected");
+    expectTrue(!fuse::scene::serial_version_ok(17), "serial version 17 rejected");
+}
+
 } // namespace
 
 int test_scene_serialiser_main() {
+    testSerialVersionOk();
     fuse::core::initialize();
     testSceneRoundTrip();
     testEntityTransformRoundTrip();

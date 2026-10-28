@@ -2,6 +2,7 @@
 
 #include <fuse/editor/material_property_inspect.hpp>
 #include <fuse/handle.hpp>
+#include <fuse/math/vec.hpp>
 #include <fuse/object.hpp>
 
 #if defined(FUSE_EDITOR_HAS_RHI)
@@ -9,6 +10,8 @@
 #include <fuse/renderer/material/material_system.hpp>
 #endif
 
+#include <algorithm>
+#include <cmath>
 #include <string>
 
 namespace fuse::editor {
@@ -17,6 +20,24 @@ namespace {
 
 Handle<Object> materialHandle(u32 materialId) {
     return Handle<Object>(materialId, 1u);
+}
+
+/// NaN and -Inf land on 0, +Inf on 1, everything else on [0, 1].
+f32 clampPreview01(f32 value) {
+    if (!std::isfinite(value)) {
+        return value > 0.f ? 1.f : 0.f;
+    }
+    return std::clamp(value, 0.f, 1.f);
+}
+
+u8 encodePreviewByte(f32 value) {
+    if (!(value > 0.f)) {
+        return 0u;
+    }
+    if (value >= 1.f) {
+        return 255u;
+    }
+    return static_cast<u8>(value * 255.f + 0.5f);
 }
 
 } // namespace
@@ -114,6 +135,63 @@ bool MaterialEditorPanel::tryRefreshPanel() {
         return false;
     }
     refreshPanel();
+    return true;
+}
+
+bool MaterialEditorPanel::renderPreview(u32 width, u32 height, u8* rgba8) const {
+    if (width == 0u || height == 0u || rgba8 == nullptr) {
+        return false;
+    }
+
+    const f32 roughness = clampPreview01(m_editState.roughness);
+    const f32 metallic = clampPreview01(m_editState.metallic);
+    const f32 baseR = clampPreview01(m_editState.baseColorR);
+    const f32 baseG = clampPreview01(m_editState.baseColorG);
+    const f32 baseB = clampPreview01(m_editState.baseColorB);
+
+    // Roughness 0 -> exponent 256 (tight highlight). Roughness 1 -> exponent 1 (wide).
+    const f32 specularExponent = std::exp2((1.f - roughness) * 8.f);
+    const f32 diffuseScale = 1.f - metallic;
+    constexpr f32 kDielectricF0 = 0.04f;
+    const f32 specR = kDielectricF0 + (baseR - kDielectricF0) * metallic;
+    const f32 specG = kDielectricF0 + (baseG - kDielectricF0) * metallic;
+    const f32 specB = kDielectricF0 + (baseB - kDielectricF0) * metallic;
+
+    const math::Vec3 light = math::Vec3{0.3f, 0.8f, 0.4f}.normalized();
+    const math::Vec3 view{0.f, 0.f, 1.f};
+    const math::Vec3 half = (light + view).normalized();
+
+    const f32 minAxis = static_cast<f32>(width < height ? width : height);
+    const f32 xExtent = static_cast<f32>(width) / minAxis;
+    const f32 yExtent = static_cast<f32>(height) / minAxis;
+    const f32 invWidth = 1.f / static_cast<f32>(width);
+    const f32 invHeight = 1.f / static_cast<f32>(height);
+
+    for (u32 y = 0u; y < height; ++y) {
+        const f32 py = (1.f - (static_cast<f32>(y) + 0.5f) * invHeight * 2.f) * yExtent;
+        for (u32 x = 0u; x < width; ++x) {
+            const f32 px = ((static_cast<f32>(x) + 0.5f) * invWidth * 2.f - 1.f) * xExtent;
+            u8* pixel = rgba8 + (static_cast<usize>(y) * width + x) * 4u;
+            const f32 r2 = px * px + py * py;
+            if (r2 > 1.f) {
+                pixel[0] = 0u;
+                pixel[1] = 0u;
+                pixel[2] = 0u;
+                pixel[3] = 0u;
+                continue;
+            }
+
+            const math::Vec3 normal{px, py, std::sqrt(1.f - r2)};
+            const f32 nDotL = std::max(normal.dot(light), 0.f);
+            const f32 nDotH = std::max(normal.dot(half), 0.f);
+            const f32 lambert = nDotL * diffuseScale;
+            const f32 specular = std::pow(nDotH, specularExponent) * nDotL;
+            pixel[0] = encodePreviewByte(baseR * lambert + specR * specular);
+            pixel[1] = encodePreviewByte(baseG * lambert + specG * specular);
+            pixel[2] = encodePreviewByte(baseB * lambert + specB * specular);
+            pixel[3] = 255u;
+        }
+    }
     return true;
 }
 

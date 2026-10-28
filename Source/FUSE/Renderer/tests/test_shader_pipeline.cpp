@@ -4,6 +4,7 @@
 #include <fuse/renderer/shader/shader_compiler.hpp>
 #include <fuse/renderer/shader/shader_io.hpp>
 #include <fuse/renderer/shader/shader_module.hpp>
+#include <fuse/renderer/shader_stage.hpp>
 #include <fuse/renderer/vk/bootstrap.hpp>
 #include <fuse/renderer/vk/compute_pipeline.hpp>
 #include <fuse/renderer/vk/pipeline_layout.hpp>
@@ -588,9 +589,23 @@ void testComputePipeline() {
 #endif
 }
 
+// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+void testShaderStageOk() {
+    expectTrue(fuse::renderer::shader_stage_ok(0), "shader_stage_ok(0) is true");
+    expectTrue(fuse::renderer::shader_stage_ok(5), "shader_stage_ok(5) is true");
+    expectTrue(!fuse::renderer::shader_stage_ok(-1), "shader_stage_ok(-1) is false");
+    expectTrue(!fuse::renderer::shader_stage_ok(6), "shader_stage_ok(6) is false");
+}
+
 } // namespace
 
 int main() {
+    testShaderStageOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_shader_pipeline: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testSpirvIo();

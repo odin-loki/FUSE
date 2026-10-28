@@ -1,3 +1,4 @@
+#include <fuse/net/input_age.hpp>
 #include <fuse/net/input_history.hpp>
 #include <fuse/net/reconcile.hpp>
 
@@ -5,7 +6,31 @@
 
 namespace fuse::net::tests {
 
+void testInputExpired() {
+    expectTrue(fuse::net::input_expired(1, 10, 8), "age 9 expires past window 8");
+    expectTrue(!fuse::net::input_expired(5, 10, 8), "age 5 stays inside window 8");
+    expectTrue(!fuse::net::input_expired(10, 4, 8), "frame ahead of now is not expired");
+}
+
+bool testInputAgeOk() {
+    const bool age0 = fuse::net::input_age_ok(0);
+    const bool age128 = fuse::net::input_age_ok(128);
+    const bool ageNeg1 = !fuse::net::input_age_ok(-1);
+    const bool age129 = !fuse::net::input_age_ok(129);
+    expectTrue(age0, "input_age_ok(0) is true");
+    expectTrue(age128, "input_age_ok(128) is true");
+    expectTrue(ageNeg1, "input_age_ok(-1) is false");
+    expectTrue(age129, "input_age_ok(129) is false");
+    return age0 && age128 && ageNeg1 && age129;
+}
+
 void run_input_history_tests() {
+    if (!testInputAgeOk()) {
+        return;
+    }
+
+    testInputExpired();
+
     fuse::net::InputHistoryBuffer empty;
     empty.init(8);
     expectTrue(!empty.pop_oldest().has_value(), "pop_oldest on empty history returns nullopt");

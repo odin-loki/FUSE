@@ -8,9 +8,12 @@
 
 #include <fuse/gria.hpp>
 #include <fuse/math/mat.hpp>
+#include <fuse/math/math_eps.hpp>
 #include <fuse/math/quat.hpp>
+#include <fuse/math/saturate.hpp>
 #include <fuse/math/sdf.hpp>
 #include <fuse/math/simd.hpp>
+#include <fuse/math/spline.hpp>
 #include <fuse/math/vec.hpp>
 
 #include <algorithm>
@@ -352,15 +355,90 @@ void testGriaAlphaHost() {
                "edge-of-chaos band is (0.49, 0.51)");
 }
 
+void testCatmullRomSpline() {
+    const Vec3 p0{0.f, 0.f, 0.f};
+    const Vec3 p1{1.f, 2.f, 3.f};
+    const Vec3 p2{4.f, 5.f, 6.f};
+    const Vec3 p3{-1.f, 0.5f, 2.f};
+
+    const Vec3 at0 = fuse::math::catmull_rom(p0, p1, p2, p3, 0.f);
+    const Vec3 at1 = fuse::math::catmull_rom(p0, p1, p2, p3, 1.f);
+    expectTrue(at0.x == p1.x && at0.y == p1.y && at0.z == p1.z, "catmull_rom t=0 returns p1");
+    expectTrue(at1.x == p2.x && at1.y == p2.y && at1.z == p2.z, "catmull_rom t=1 returns p2");
+
+    const Vec3 clampedLow = fuse::math::catmull_rom(p0, p1, p2, p3, -1.f);
+    const Vec3 clampedHigh = fuse::math::catmull_rom(p0, p1, p2, p3, 2.f);
+    expectTrue(clampedLow.x == p1.x && clampedLow.y == p1.y && clampedLow.z == p1.z,
+               "catmull_rom clamps t below 0 to p1");
+    expectTrue(clampedHigh.x == p2.x && clampedHigh.y == p2.y && clampedHigh.z == p2.z,
+               "catmull_rom clamps t above 1 to p2");
+
+    const Vec3 nonFinite = fuse::math::catmull_rom(
+        p0, Vec3{std::numeric_limits<f32>::quiet_NaN(), 0.f, 0.f}, p2, p3, 0.25f);
+    expectTrue(nonFinite.x == 0.f && nonFinite.y == 0.f && nonFinite.z == 0.f,
+               "catmull_rom returns zero when a control is non-finite");
+
+    const Vec3 line[] = {Vec3{0.f, 0.f, 0.f}, Vec3{2.f, 2.f, 2.f}, Vec3{4.f, 4.f, 4.f}};
+    bool ok = false;
+    const Vec3 mid = fuse::math::sample_polyline(line, 0.5f, ok);
+    expectTrue(ok, "sample_polyline accepts a 3-point line");
+    const Vec3 normal = fuse::math::cross(line[2] - line[0], mid - line[0]);
+    expectTrue(normal.length() <= 1e-5f, "polyline midpoint of a straight 3-point line lies on the line");
+
+    bool startOk = false;
+    bool endOk = false;
+    const Vec3 start = fuse::math::sample_polyline(line, 0.f, startOk);
+    const Vec3 end = fuse::math::sample_polyline(line, 1.f, endOk);
+    expectTrue(startOk && start.x == line[0].x && start.y == line[0].y && start.z == line[0].z,
+               "polyline t=0 is the first point");
+    expectTrue(endOk && end.x == line[2].x && end.y == line[2].y && end.z == line[2].z,
+               "polyline t=1 is the last point");
+
+    bool missing = true;
+    const Vec3 only[] = {Vec3{1.f, 0.f, 0.f}};
+    const Vec3 rejected = fuse::math::sample_polyline(only, 0.5f, missing);
+    expectTrue(!missing && rejected.x == 0.f && rejected.y == 0.f && rejected.z == 0.f,
+               "fewer than two points returns zero and false");
+}
+
+void testMathEpsOk() {
+    expectTrue(fuse::math::math_eps_ok(1e-6f), "math_eps_ok(1e-6) is true");
+    expectTrue(fuse::math::math_eps_ok(0.001f), "math_eps_ok(0.001) is true");
+    expectTrue(!fuse::math::math_eps_ok(0.f), "math_eps_ok(0) is false");
+    expectTrue(!fuse::math::math_eps_ok(-1e-6f), "math_eps_ok(-1e-6) is false");
+    expectTrue(!fuse::math::math_eps_ok(0.002f), "math_eps_ok(0.002) is false");
+    expectTrue(!fuse::math::math_eps_ok(std::numeric_limits<f32>::quiet_NaN()),
+               "math_eps_ok(NaN) is false");
+}
+
+void testSaturate01() {
+    expectTrue(fuse::math::saturate01(-1.f) == 0.f, "saturate01(-1) == 0");
+    expectTrue(fuse::math::saturate01(0.4f) == 0.4f, "saturate01(0.4) == 0.4");
+    expectTrue(fuse::math::saturate01(2.f) == 1.f, "saturate01(2) == 1");
+    expectTrue(fuse::math::saturate01(std::numeric_limits<f32>::quiet_NaN()) == 0.f,
+               "saturate01 maps NaN to 0");
+    expectTrue(fuse::math::saturate01(std::numeric_limits<f32>::infinity()) == 0.f,
+               "saturate01 maps +inf to 0");
+    expectTrue(fuse::math::saturate01(-std::numeric_limits<f32>::infinity()) == 0.f,
+               "saturate01 maps -inf to 0");
+}
+
 } // namespace
 
 int main() {
+    testMathEpsOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core_b1_math_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testSaturate01();
     testVec4SimdBitIdentical();
     testMat4MultiplyExact();
     testSdfPrimitivesMatchRayMarcher();
     testSdfGradientNormals();
     testQuatSlerpUnit();
     testGriaAlphaHost();
+    testCatmullRomSpline();
 
     if (g_failures == 0) {
         std::printf("fuse_core_b1_math_gates: all checks passed\n");

@@ -20,6 +20,8 @@
 #include "project_hub_widget.hpp"
 
 #include <fuse/core/init.hpp>
+#include <fuse/editor/inspector_file.hpp>
+#include <fuse/editor/property_path.hpp>
 #include <fuse/core/temp_path.hpp>
 #include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/light.hpp>
@@ -544,9 +546,29 @@ int gateWizard(MainWindow& window, const std::filesystem::path& dir) {
     return 0;
 }
 
+void testInspectorFileOk() {
+    expect(fuse::editor::inspector_file_ok(0), "inspector file count 0 is allowed");
+    expect(fuse::editor::inspector_file_ok(64), "inspector file count 64 is allowed");
+    expect(!fuse::editor::inspector_file_ok(-1), "inspector file count -1 is rejected");
+    expect(!fuse::editor::inspector_file_ok(65), "inspector file count 65 is rejected");
+}
+
+void testPropertyPath() {
+    expect(fuse::editor::join_property_path("Hero", "health") == "Hero.health", "object and property join with a dot");
+    expect(fuse::editor::join_property_path("", "health") == "health", "an empty object keeps the property");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testInspectorFileOk();
+    if (g_failures != 0) {
+        return 1;
+    }
+    testPropertyPath();
+    if (g_failures != 0) {
+        return 1;
+    }
     if (qgetenv("QT_QPA_PLATFORM").isEmpty()) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }

@@ -22,6 +22,7 @@
 
 #include <fuse/compute_kernel/stats.hpp>
 #include <fuse/core/sanitizer.hpp>
+#include <fuse/gameplay/threat.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/physics/broadphase/broadphase_kernel.hpp>
 #include <fuse/physics/broadphase/broadphase_kernels.hpp>
@@ -31,6 +32,7 @@
 #include <fuse/physics/narrowphase/contact_pair.hpp>
 #include <fuse/physics/narrowphase/narrowphase_kernels.hpp>
 #include <fuse/physics/resident/resident_physics.hpp>
+#include <fuse/physics/resident_bytes.hpp>
 #include <fuse/physics/rotation.hpp>
 #include <fuse/physics/solver/constraint_accumulation.hpp>
 #include <fuse/physics/solver/constraint_coloring.hpp>
@@ -781,8 +783,26 @@ double timeWallMedian(u32 runs, Fn&& body) {
 // Entry points (called from test_b4_physics_kernel_gates.cpp)
 // ---------------------------------------------------------------------------------------------
 
+void testThreatTable() {
+    fuse::gameplay::ThreatTable table;
+    table.add(2u, 5.f);
+    table.add(1u, 5.f);
+    expectTrue(table.top() == 1u, "equal threat breaks toward the smaller id");
+    table.add(2u, 10.f);
+    expectTrue(table.top() == 2u, "the higher threat becomes the target");
+}
+
+void testResidentBytesOk() {
+    expectTrue(fuse::physics::resident_bytes_ok(1u), "resident_bytes_ok(1) is true");
+    expectTrue(fuse::physics::resident_bytes_ok(64u * 1024u * 1024u), "resident_bytes_ok(64 MiB) is true");
+    expectTrue(!fuse::physics::resident_bytes_ok(0u), "resident_bytes_ok(0) is false");
+    expectTrue(!fuse::physics::resident_bytes_ok(64u * 1024u * 1024u + 1u), "resident_bytes_ok(64 MiB + 1) is false");
+}
+
 int residentCpuGates() {
     g_failures = 0;
+    testResidentBytesOk();
+    testThreatTable();
     testResidentBroadphase();
     testResidentNarrowphase();
     testResidentSolver();

@@ -1,9 +1,11 @@
 // FUSE Relight RL-4.1 CPU tests: options, the bindless registration semantics (CPU heap), the GPU-scene adapter
 // (CPU mirror of gpu_scene::GpuScene) and the passthrough-swap eligibility. Any platform (Wine in the MinGW tree).
-//   fuse_relight_frame_tests <suite>   suites: options, bindless, scene, swap, all
+//   fuse_relight_frame_tests <suite>   suites: options, bindless, scene, swap, index, all
 #include <fuse/relight/render/frame/bindless_images.hpp>
+#include <fuse/relight/render/frame/frame_index.hpp>
 #include <fuse/relight/render/frame/frame_options.hpp>
 #include <fuse/relight/render/frame/frame_orchestrator.hpp>
+#include <fuse/relight/render/frame/relight_frame.hpp>
 #include <fuse/relight/render/frame/scene_adapter.hpp>
 
 #include <cstdio>
@@ -218,9 +220,28 @@ void testSwap() {
     check(!orch.swapTexture(t), "swap without a host does nothing");
 }
 
+void testFrameIndex() {
+    check(rf::next_frame_index(7u, 8u) == 0u, "next frame index wraps the ring");
+    check(rf::frames_between(6u, 1u, 8u) == 3u, "forward distance on the ring");
+    check(rf::next_frame_index(4u, 0u) == 4u, "modulo 0 leaves the frame unchanged");
+    check(rf::next_frame_index(0xffffffffu, 3u) == 1u, "uint32 increment still takes the modulo");
+    check(rf::frames_between(2u, 5u, 0u) == 3u, "linear distance when later is ahead");
+    check(rf::frames_between(5u, 2u, 0u) == 0u, "linear distance is 0 when later is behind");
+}
+
+void testRelightFrameOk() {
+    check(fuse::relight::relight_frame_ok(0), "relight frame 0");
+    check(fuse::relight::relight_frame_ok(1000000u), "relight frame 1000000");
+    check(!fuse::relight::relight_frame_ok(1000001u), "relight frame 1000001 rejected");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testRelightFrameOk();
+    if (g_failures != 0) {
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "options") {
@@ -234,6 +255,9 @@ int main(int argc, char** argv) {
     }
     if (all || suite == "swap") {
         testSwap();
+    }
+    if (all || suite == "index") {
+        testFrameIndex();
     }
     if (g_failures) {
         std::printf("FAIL: %s: %d check(s)\n", suite.c_str(), g_failures);

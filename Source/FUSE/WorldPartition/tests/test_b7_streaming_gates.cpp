@@ -8,6 +8,7 @@
 #include <fuse/ecs/registry.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/platform/sleep.hpp>
+#include <fuse/world/stream_radius.hpp>
 #include <fuse/world_partition/cell_file.hpp>
 #include <fuse/world_partition/world_partition.hpp>
 
@@ -730,9 +731,18 @@ void testDeterministicStreaming() {
     expectTrue(!a.empty() && a == b, "streaming event sequence is deterministic for identical inputs");
 }
 
+void testStreamRadiusOk() {
+    expectTrue(fuse::world::stream_radius_ok(16.f), "stream radius 16 m is accepted");
+    expectTrue(fuse::world::stream_radius_ok(256.f), "stream radius 256 m is accepted");
+    expectTrue(fuse::world::stream_radius_ok(4096.f), "stream radius 4096 m is accepted");
+    expectTrue(!fuse::world::stream_radius_ok(8.f), "stream radius 8 m is rejected");
+    expectTrue(!fuse::world::stream_radius_ok(4097.f), "stream radius 4097 m is rejected");
+}
+
 } // namespace
 
 int main() {
+    testStreamRadiusOk();
     fuse::core::initialize();
     std::printf("fuse_b7_streaming_gates\n");
     testCellFileFormat();

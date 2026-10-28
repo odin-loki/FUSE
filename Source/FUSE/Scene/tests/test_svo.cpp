@@ -1,5 +1,7 @@
+#include <fuse/math/morton.hpp>
 #include <fuse/scene/scene.hpp>
 #include <fuse/scene/svo.hpp>
+#include <fuse/scene/svo_depth.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -95,14 +97,31 @@ void testSvoRayCastHitsSolid() {
     expectTrue(hitDistance > 0.f, "ray cast reports positive distance");
 }
 
+void testMorton2() {
+    expectTrue(fuse::math::morton2(1u, 0u) == 1u, "morton2(1, 0) is 1");
+    expectTrue(fuse::math::morton2(0u, 1u) == 2u, "morton2(0, 1) is 2");
+    const auto code = fuse::math::morton2(3u, 1u);
+    expectTrue(fuse::math::morton2_x(code) == 3u, "morton2_x round-trips x of morton2(3, 1)");
+    expectTrue(fuse::math::morton2_y(code) == 1u, "morton2_y round-trips y of morton2(3, 1)");
+}
+
+void testSvoDepthOk() {
+    expectTrue(fuse::scene::svo_depth_ok(1), "svo depth 1");
+    expectTrue(fuse::scene::svo_depth_ok(12), "svo depth 12");
+    expectTrue(!fuse::scene::svo_depth_ok(0), "svo depth 0 rejected");
+    expectTrue(!fuse::scene::svo_depth_ok(13), "svo depth 13 rejected");
+}
+
 } // namespace
 
 int main() {
+    testSvoDepthOk();
     testSvoSetGetRoundTrip();
     testSvoFill();
     testSvoCarveRemovesSolid();
     testSvoSdfQuery();
     testSvoRayCastHitsSolid();
+    testMorton2();
 
     if (g_failures == 0) {
         std::printf("fuse scene svo tests: all checks passed\n");

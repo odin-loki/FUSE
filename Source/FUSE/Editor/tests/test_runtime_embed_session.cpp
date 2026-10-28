@@ -1,5 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/embed_size.hpp>
+#include <fuse/editor/session_count.hpp>
 #include <fuse/editor/viewport_vulkan_surface.hpp>
 #include <fuse/ecs/components/transform.hpp>
 
@@ -176,9 +178,27 @@ void testRuntimeEmbedEcsWorld3DSync() {
                "qt wsi probe attempted during embed tick");
 }
 
+void testSessionCountOk() {
+    expectTrue(fuse::editor::session_count_ok(1), "a session count of 1 is allowed");
+    expectTrue(fuse::editor::session_count_ok(8), "a session count of 8 is the cap");
+    expectTrue(!fuse::editor::session_count_ok(0), "a session count of 0 is rejected");
+    expectTrue(!fuse::editor::session_count_ok(9), "a session count of 9 is rejected");
+}
+
+void testClampEmbedSize() {
+    const fuse::editor::EmbedSize clamped = fuse::editor::clamp_embed_size(2000, 100, 1920);
+    expectTrue(clamped.w == 1920 && clamped.h == 100, "2000x100 with max 1920 becomes 1920x100");
+    expectTrue(fuse::editor::embed_size_visible(clamped), "1920x100 is visible");
+
+    const fuse::editor::EmbedSize hidden = fuse::editor::clamp_embed_size(0, 10, 1920);
+    expectTrue(hidden.w == 0 && hidden.h == 10, "0x10 stays 0x10");
+    expectTrue(!fuse::editor::embed_size_visible(hidden), "0x10 is not visible");
+}
+
 } // namespace
 
 int main() {
+    testSessionCountOk();
     fuse::core::initialize();
     testRuntimeViewportHeadlessTick();
     testRuntimeEmbedSessionCounters();
@@ -187,6 +207,7 @@ int main() {
     testRuntimeViewportSwapchainRecreateStub();
     testRuntimeEmbedEcsWorld3DSync();
     testRuntimeEmbedTeardownStress();
+    testClampEmbedSize();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

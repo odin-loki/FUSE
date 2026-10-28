@@ -25,4 +25,26 @@ namespace fuse::ai {
 [[nodiscard]] ParallelPolicy normalize_parallel_policy(const ParallelPolicy& policy,
                                                        u32 activeChildCount);
 
+/// Child-success rule for a parallel node.
+namespace success_policy {
+
+enum class ParallelPolicy { RequireAll, RequireOne };
+
+/// `childCount <= 0` is failure. `successCount < 0` counts as zero.
+/// RequireAll is `successCount >= childCount`. RequireOne is `successCount > 0`.
+[[nodiscard]] inline bool parallel_succeeded(int successCount, int childCount, ParallelPolicy policy) {
+    if (childCount <= 0) {
+        return false;
+    }
+    const int successes = successCount < 0 ? 0 : successCount;
+    if (policy == ParallelPolicy::RequireAll) {
+        return successes >= childCount;
+    }
+    return successes > 0;
+}
+
+} // namespace success_policy
+
+using success_policy::parallel_succeeded;
+
 } // namespace fuse::ai

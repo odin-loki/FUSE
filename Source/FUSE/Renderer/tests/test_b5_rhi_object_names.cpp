@@ -9,6 +9,8 @@
 #include "b5_vk_call_hooks.hpp"
 
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/postprocess/screen_flash.hpp>
+#include <fuse/renderer/rhi/object_name.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 
 #include <cstdio>
@@ -43,9 +45,44 @@ int reportUnnamed(const char* phase) {
     return unnamed;
 }
 
+void testRhiObjectNameOk() {
+    expectTrue(fuse::renderer::rhi_object_name_ok("Shadow/Atlas"), "Shadow/Atlas is a valid object name");
+    expectTrue(!fuse::renderer::rhi_object_name_ok(""), "empty object name is rejected");
+    expectTrue(!fuse::renderer::rhi_object_name_ok("has space"), "object name with a space is rejected");
+
+    const std::string maxName(64, 'A');
+    const std::string tooLong(65, 'A');
+    expectTrue(fuse::renderer::rhi_object_name_ok(maxName), "64-character object name is valid");
+    expectTrue(!fuse::renderer::rhi_object_name_ok(tooLong), "65-character object name is rejected");
+}
+
+void testScreenFlashOverlay() {
+    const fuse::math::Vec3 base{0.2f, 0.4f, 0.8f};
+    const fuse::math::Vec3 flashColor{1.f, 0.25f, 0.f};
+
+    fuse::renderer::ScreenFlash full{};
+    full.color = flashColor;
+    full.intensity = 1.f;
+    const fuse::math::Vec3 replaced = fuse::renderer::overlay(base, full);
+    expectTrue(replaced.x == flashColor.x && replaced.y == flashColor.y && replaced.z == flashColor.z,
+               "intensity 1 replaces the base with the flash color");
+
+    fuse::renderer::ScreenFlash clear{};
+    clear.color = flashColor;
+    clear.intensity = 0.f;
+    const fuse::math::Vec3 unchanged = fuse::renderer::overlay(base, clear);
+    expectTrue(unchanged.x == base.x && unchanged.y == base.y && unchanged.z == base.z,
+               "intensity 0 leaves the base unchanged");
+}
+
 } // namespace
 
 int main() {
+    testRhiObjectNameOk();
+    testScreenFlashOverlay();
+    if (b5rhi::failures() != 0) {
+        return b5rhi::finish("fuse_b5_rhi_object_names");
+    }
     if (!b5hooks::available()) {
         return b5rhi::skip("fuse_b5_rhi_object_names", "Vulkan backend disabled");
     }

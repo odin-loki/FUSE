@@ -41,6 +41,7 @@
 
 #include <fuse/renderer/culling/instance_culler.hpp>
 #include <fuse/renderer/deferred/gbuffer.hpp>
+#include <fuse/renderer/effect_mask.hpp>
 #include <fuse/renderer/lighting/clustered_kernel.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_gpu_reference.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_lighting.hpp>
@@ -49,6 +50,7 @@
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/rt/acceleration_structures.hpp>
+#include <fuse/renderer/rt/miss_distance.hpp>
 #include <fuse/renderer/rt/rt_caps.hpp>
 #include <fuse/renderer/rt/rt_reference.hpp>
 #include <fuse/renderer/rt_effects/rt_effects.hpp>
@@ -120,11 +122,43 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+// CPU gate for rt::miss_distance. Called before any GPU skip so a failure exits 1, not 77.
+void test_miss_distance() {
+    expect(fuse::renderer::rt::miss_distance(3.f, 10.f, true) == 3.f, "hit at 3 with tMax 10 returns 3");
+    expect(fuse::renderer::rt::miss_distance(3.f, 10.f, false) == 10.f, "miss with tMax 10 returns 10");
+    expect(fuse::renderer::rt::miss_distance(12.f, 10.f, true) == 10.f, "hit at 12 with tMax 10 returns 10");
+    expect(fuse::renderer::rt::miss_distance(-1.f, 10.f, true) == 10.f, "negative tHit falls back to tMax");
+    expect(fuse::renderer::rt::miss_distance(std::nanf(""), 10.f, true) == 10.f, "non-finite tHit falls back to tMax");
+    expect(fuse::renderer::rt::miss_distance(3.f, 0.f, false) == 0.f, "non-positive tMax returns 0");
+    expect(fuse::renderer::rt::miss_distance(3.f, -4.f, true) == 0.f, "negative tMax returns 0");
+    expect(fuse::renderer::rt::miss_distance(3.f, std::nanf(""), false) == 0.f, "non-finite tMax returns 0");
+}
+
+// CPU gate for effect_mask_ok. Called before any GPU skip so a failure exits 1, not 77.
+// No allocation.
+[[nodiscard]] int testEffectMaskOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::effect_mask_ok(0), "effect_mask_ok(0) is true");
+    expect(fuse::renderer::effect_mask_ok(15), "effect_mask_ok(15) is true");
+    expect(!fuse::renderer::effect_mask_ok(-1), "effect_mask_ok(-1) is false");
+    expect(!fuse::renderer::effect_mask_ok(16), "effect_mask_ok(16) is false");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int maskRc = testEffectMaskOk()) {
+        std::fprintf(stderr, "FAIL: testEffectMaskOk\n");
+        return maskRc;
+    }
+    test_miss_distance();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: test_miss_distance\n");
+        return 1;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1899,7 +1933,16 @@ int runCapsGate() {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int maskRc = testEffectMaskOk()) {
+        std::fprintf(stderr, "FAIL: testEffectMaskOk\n");
+        return maskRc;
+    }
     std::setvbuf(stdout, nullptr, _IONBF, 0);
+    test_miss_distance();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: test_miss_distance\n");
+        return 1;
+    }
     std::string mode = "hard";
     for (int i = 1; i + 1 < argc; i += 2) {
         if (std::strcmp(argv[i], "--mode") == 0) {

@@ -12,6 +12,9 @@ extern "C" {
 #include <fuse/script/legacy_script_route.hpp>
 #include <fuse/script/script_host.hpp>
 #include <fuse/script/script_host_service.hpp>
+#include <fuse/script/host_name.hpp>
+#include <fuse/script/script_indent.hpp>
+#include <fuse/script/script_name.hpp>
 #include <fuse/script/script_update.hpp>
 #include <fuse/types.hpp>
 
@@ -597,11 +600,41 @@ void testLuaBindStackRoundTrip() {
 }
 #endif
 
+void testScriptNameValid() {
+    expectTrue(fuse::script::script_name_valid("player_tick"), "player_tick is a valid script name");
+    expectTrue(!fuse::script::script_name_valid("1start"), "leading digit is an invalid script name");
+    expectTrue(!fuse::script::script_name_valid(""), "empty script name is invalid");
+    expectTrue(fuse::script::script_name_valid("A"), "single letter is a valid script name");
+    const std::string too_long(65, 'a');
+    expectTrue(!fuse::script::script_name_valid(too_long), "65-character script name is invalid");
+}
+
+// Indent spaces are the closed range 0..32. No allocation.
+void testScriptIndentOk() {
+    expectTrue(fuse::script::script_indent_ok(0), "script_indent_ok(0) is true");
+    expectTrue(fuse::script::script_indent_ok(32), "script_indent_ok(32) is true");
+    expectTrue(!fuse::script::script_indent_ok(-1), "script_indent_ok(-1) is false");
+    expectTrue(!fuse::script::script_indent_ok(33), "script_indent_ok(33) is false");
+}
+
+void testHostNameOk() {
+    expectTrue(fuse::script::host_name_ok("Lua"), "host name Lua");
+    expectTrue(!fuse::script::host_name_ok(""), "empty host name rejected");
+    expectTrue(!fuse::script::host_name_ok("1Lua"), "digit-leading host name rejected");
+}
+
 } // namespace
 
 int main() {
+    testScriptIndentOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d test failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testHostNameOk();
     fuse::core::initialize();
 
+    testScriptNameValid();
     testHostInitializes();
     testLoadStringAndFileStubs();
     testCallbackRegisterDispatchUnregister();

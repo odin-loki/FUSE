@@ -27,6 +27,9 @@
 #include "editor_theme.hpp"
 #include "main_window.hpp"
 #include "project_hub_widget.hpp"
+
+#include <fuse/editor/qt_gate_name.hpp>
+#include <fuse/editor/ui_scale.hpp>
 #include "property_pane_widget.hpp"
 #include "viewport_placeholder_widget.hpp"
 #include "viewport_vulkan_window.hpp"
@@ -1772,9 +1775,32 @@ int gateLivePresent() {
     return 77;
 #endif
 }
+
+void testQtGateNameOk() {
+    expect(fuse::editor::qt_gate_name_ok("Panels"), "Panels is a qt gate name");
+    expect(!fuse::editor::qt_gate_name_ok(""), "empty name is rejected");
+    expect(!fuse::editor::qt_gate_name_ok("1Panels"), "digit-leading name is rejected");
+    expect(!fuse::editor::qt_gate_name_ok("Qt Panels"), "spaces are rejected");
+}
+
+void testUiScale() {
+    expect(fuse::editor::snap_ui_scale(1.1f) == 1.f, "1.1 snaps to 1");
+    expect(fuse::editor::snap_ui_scale(1.3f) == 1.25f, "1.3 snaps to 1.25");
+    expect(fuse::editor::snap_ui_scale(1.4f) == 1.5f, "1.4 snaps to 1.5");
+    expect(fuse::editor::snap_ui_scale(3.f) == 2.f, "a huge scale snaps to 2");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testQtGateNameOk();
+    if (g_failures != 0) {
+        return 1;
+    }
+    testUiScale();
+    if (g_failures != 0) {
+        return 1;
+    }
     if (argc < 2) {
         std::fprintf(stderr, "usage: %s <startup|layout|theme|font <scale>|wasd|context_menu|fuse_api|project_open|ui_frame|"
                              "idle_frames>\n",

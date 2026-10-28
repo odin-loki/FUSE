@@ -10,6 +10,8 @@
 
 #include "ecs_managed_column_check.hpp"
 
+#include <fuse/ecs/column_align.hpp>
+#include <fuse/ecs/column_stride.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -112,6 +114,39 @@ f64 expectedChecksum(ecs::Registry& registry) {
     return sum;
 }
 
+/// CPU predicate. A failure returns non-zero before any later device skip.
+int testColumnAlignOk() {
+    const int before = g_failures;
+    expectTrue(ecs::column_align_ok(4), "column_align_ok(4) is true");
+    expectTrue(ecs::column_align_ok(16), "column_align_ok(16) is true");
+    expectTrue(ecs::column_align_ok(64), "column_align_ok(64) is true");
+    expectTrue(!ecs::column_align_ok(0), "column_align_ok(0) is false");
+    expectTrue(!ecs::column_align_ok(6), "column_align_ok(6) is false");
+    expectTrue(!ecs::column_align_ok(128), "column_align_ok(128) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testColumnAlignOk\n");
+        return EXIT_FAILURE;
+    }
+    return 0;
+}
+
+void testColumnStride() {
+    expectTrue(ecs::column_stride(12u, 8u) == 16u, "column_stride(12, 8) == 16");
+    expectTrue(ecs::column_stride(8u, 8u) == 8u, "column_stride(8, 8) == 8");
+    expectTrue(ecs::column_stride(0u, 8u) == 0u, "column_stride(0, 8) == 0");
+    expectTrue(ecs::column_stride(0u, 0u) == 0u, "zero element size returns 0");
+    expectTrue(ecs::column_stride(0u, 3u) == 0u, "zero element size ignores a non-power-of-two alignment");
+    expectTrue(ecs::column_stride(7u, 0u) == 7u, "zero alignment returns element size");
+    expectTrue(ecs::column_stride(9u, 3u) == 9u, "non-power-of-two alignment returns element size");
+    expectTrue(ecs::column_stride(1u, 1u) == 1u, "alignment 1 stays 1");
+    expectTrue(ecs::column_stride(5u, 8u) == 8u, "5 rounds up to 8");
+    expectTrue(ecs::column_stride(0xFFFFFFFCu, 4u) == 0xFFFFFFFCu, "largest multiple of 4 stays");
+    expectTrue(ecs::column_stride(0xFFFFFFFDu, 4u) == 0xFFFFFFFCu, "wrap returns largest multiple of 4");
+    expectTrue(ecs::column_stride(0xFFFFFFFFu, 8u) == 0xFFFFFFF8u, "wrap returns largest multiple of 8");
+    expectTrue(ecs::column_stride(0x80000000u, 0x80000000u) == 0x80000000u, "2^31 stays aligned");
+    expectTrue(ecs::column_stride(0x80000001u, 0x80000000u) == 0x80000000u, "wrap returns largest multiple of 2^31");
+}
+
 void testManagedColumn() {
     TrackingResource resource;
     ecs::Registry registry;
@@ -201,6 +236,10 @@ void testManagedColumn() {
 } // namespace
 
 int main() {
+    if (const int alignRc = testColumnAlignOk()) {
+        return alignRc;
+    }
+    testColumnStride();
     testManagedColumn();
     if (g_failures != 0) {
         std::fprintf(stderr, "fuse_b3_ecs_managed_column: %d failure(s)\n", g_failures);

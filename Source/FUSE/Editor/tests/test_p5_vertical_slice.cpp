@@ -1,5 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/command_queue.hpp>
+#include <fuse/editor/slice_gate.hpp>
+#include <fuse/editor/slice_name.hpp>
 #include <fuse/editor/editor_host.hpp>
 #include <fuse/editor/hierarchy_model.hpp>
 #include <fuse/editor/property_inspector.hpp>
@@ -237,9 +239,31 @@ void testOpenSelectTweakSaveReload() {
                "tweaked name survived EditorHost reload");
 }
 
+void testSliceNameOk() {
+    expectTrue(fuse::editor::slice_name_ok("Combat"), "Combat is a slice name");
+    expectTrue(!fuse::editor::slice_name_ok(""), "empty name is rejected");
+    expectTrue(!fuse::editor::slice_name_ok("1Combat"), "name starting with a digit is rejected");
+    expectTrue(fuse::editor::slice_name_ok("a"), "single ASCII letter is a slice name");
+    expectTrue(fuse::editor::slice_name_ok("abcdefghijklmnopqrstuvwxyzABCDEF"),
+               "32-character name starting with a letter is accepted");
+    expectTrue(!fuse::editor::slice_name_ok("abcdefghijklmnopqrstuvwxyzABCDEFG"),
+               "33-character name is rejected");
+}
+
+void testSliceGate() {
+    const fuse::editor::SliceChecks ready{true, true, true, true};
+    expectTrue(fuse::editor::slice_gate_pass(ready), "a complete slice passes");
+    expectTrue(fuse::editor::slice_gate_missing(ready) == 0, "a complete slice misses nothing");
+    const fuse::editor::SliceChecks noPlay{false, true, true, true};
+    expectTrue(!fuse::editor::slice_gate_pass(noPlay), "a slice that cannot play fails");
+    expectTrue(fuse::editor::slice_gate_missing(noPlay) == 1, "one missing slice check");
+}
+
 } // namespace
 
 int main() {
+    testSliceNameOk();
+    testSliceGate();
     fuse::core::initialize();
     testOpenSelectTweakSaveReload();
     fuse::core::shutdown();

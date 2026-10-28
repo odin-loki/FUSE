@@ -1,3 +1,4 @@
+#include <fuse/net/listen_port.hpp>
 #include <fuse/net/transport.hpp>
 
 #include "test_helpers.hpp"
@@ -6,7 +7,15 @@
 
 namespace fuse::net::tests {
 
+void testListenPortOk() {
+    expectTrue(fuse::net::listen_port_ok(27015), "listen_port_ok(27015) is true");
+    expectTrue(!fuse::net::listen_port_ok(0), "listen_port_ok(0) is false");
+    expectTrue(fuse::net::listen_port_ok(65535), "listen_port_ok(65535) is true");
+}
+
 void run_transport_tests() {
+    testListenPortOk();
+
     fuse::net::LoopbackTransport host;
     fuse::net::LoopbackTransport client;
 

@@ -1,6 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/ccd/ccd.hpp>
+#include <fuse/physics/ccd/ccd_substeps.hpp>
 #include <fuse/physics/ccd/toi_buffer.hpp>
 #include <fuse/physics/physics_data.hpp>
 
@@ -987,6 +988,13 @@ void testCcdPipelineSkipsUnflaggedBodies() {
     expectTrue(count == 0u, "CCD pipeline skips pairs without RB_CCD flag");
 }
 
+void testCcdSubstepsOk() {
+    expectTrue(ccd_substeps_ok(1), "ccd_substeps_ok(1) is true");
+    expectTrue(ccd_substeps_ok(8), "ccd_substeps_ok(8) is true");
+    expectTrue(!ccd_substeps_ok(0), "ccd_substeps_ok(0) is false");
+    expectTrue(!ccd_substeps_ok(9), "ccd_substeps_ok(9) is false");
+}
+
 void testCcdPipelineSpherePlanePair() {
     RigidBodySoA bodies;
     CollisionShapeSoA shapes;
@@ -1011,6 +1019,7 @@ void testCcdPipelineSpherePlanePair() {
 
 int main() {
     fuse::core::initialize();
+    testCcdSubstepsOk();
     testSweptSphereSphereFindsImpact();
     testSweptSphereSphereRejectsMiss();
     testSweptSphereSphereBoundaryAtOne();

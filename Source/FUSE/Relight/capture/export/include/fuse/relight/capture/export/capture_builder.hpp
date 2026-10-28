@@ -49,7 +49,8 @@
 //     instances kept alive but not drawn);
 //   * RtInstance::isFrontFaceFlipped is not tracked by RL-1.7 yet: meshes are captured as not LHS;
 //   * the sky probe bake and the window icon are not produced (no renderer yet);
-//   * captureDistantLight tests its own table (upstream tests sphereLights, re-initialising every frame).
+//   * captureDistantLight tests its own table (upstream tests sphereLights, re-initialising every frame);
+//   * Rect, Disk, and Cylinder lights are recorded in their own tables (upstream skipped them).
 #pragma once
 
 #include <fuse/relight/capture/export/capture_model.hpp>

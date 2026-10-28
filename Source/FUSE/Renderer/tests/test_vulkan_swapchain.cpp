@@ -4,6 +4,7 @@
 #include <fuse/renderer/vk/frame.hpp>
 #include <fuse/renderer/vk/surface.hpp>
 #include <fuse/renderer/vk/swapchain.hpp>
+#include <fuse/renderer/vk/swapchain_images.hpp>
 #include <fuse/renderer/vk/swapchain_util.hpp>
 
 #include <cstdio>
@@ -282,9 +283,23 @@ void testEmptySwapchainSkipGuards() {
 #endif
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testSwapchainImagesOk() {
+    expectTrue(fuse::renderer::swapchain_images_ok(2), "swapchain_images_ok(2) is true");
+    expectTrue(fuse::renderer::swapchain_images_ok(8), "swapchain_images_ok(8) is true");
+    expectTrue(!fuse::renderer::swapchain_images_ok(1), "swapchain_images_ok(1) is false");
+    expectTrue(!fuse::renderer::swapchain_images_ok(9), "swapchain_images_ok(9) is false");
+}
+
 } // namespace
 
 int main() {
+    testSwapchainImagesOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_vulkan_swapchain: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testHeadlessSwapchainRecordsDesc();

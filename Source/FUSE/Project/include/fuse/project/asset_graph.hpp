@@ -7,7 +7,9 @@
 
 namespace fuse::project {
 
-/// Tracks cooked assets and source dependencies for incremental reimport (B7.9 stub).
+class AssetCooker;
+
+/// Tracks cooked assets and source dependencies for incremental reimport.
 class AssetGraph {
 public:
     void add_asset(const std::string& output_path, const std::string& source_path);
@@ -16,7 +18,9 @@ public:
     void scan_for_changes();
     [[nodiscard]] const std::vector<std::string>& dirty_assets() const { return m_dirty; }
 
-    void reimport_dirty(const std::string& project_dir);
+    /// Cook dirty assets through `AssetCooker`. A null `cooker` uses a default one.
+    /// `last_import_time` is stamped and that dirty entry removed only when the cook succeeds.
+    void reimport_dirty(const std::string& project_dir, AssetCooker* cooker = nullptr);
     bool save(const std::string& path) const;
     bool load(const std::string& path);
 

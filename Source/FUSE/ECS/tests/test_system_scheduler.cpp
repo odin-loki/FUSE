@@ -1,3 +1,5 @@
+#include <fuse/ecs/sched_phase.hpp>
+#include <fuse/ecs/system_name.hpp>
 #include <fuse/ecs/system_scheduler.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 
@@ -17,6 +19,13 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testSchedPhaseOk() {
+    expectTrue(fuse::ecs::sched_phase_ok(0), "phase 0 is a valid schedule phase");
+    expectTrue(fuse::ecs::sched_phase_ok(7), "phase 7 is a valid schedule phase");
+    expectTrue(!fuse::ecs::sched_phase_ok(-1), "phase -1 is an invalid schedule phase");
+    expectTrue(!fuse::ecs::sched_phase_ok(8), "phase 8 is an invalid schedule phase");
 }
 
 void testDependencyOrder() {
@@ -88,9 +97,29 @@ void testDeterministicInlineOrder() {
     expectTrue(threw, "cyclic dependencies throw");
 }
 
+void testSystemNameOk() {
+    expectTrue(fuse::ecs::system_name_ok("TransformSystem"), "TransformSystem is a valid system name");
+    expectTrue(!fuse::ecs::system_name_ok(""), "empty system name is invalid");
+    expectTrue(!fuse::ecs::system_name_ok("2D"), "leading digit is an invalid system name");
+    expectTrue(!fuse::ecs::system_name_ok("_Hidden"), "leading underscore is an invalid system name");
+    expectTrue(!fuse::ecs::system_name_ok("Camera System"), "space is an invalid system name character");
+    expectTrue(fuse::ecs::system_name_ok("A"), "single letter is a valid system name");
+    expectTrue(fuse::ecs::system_name_ok("transformSystem"), "lowercase first letter is a valid system name");
+    expectTrue(fuse::ecs::system_name_ok("Camera_System2"), "underscore and digit are valid after the first letter");
+    expectTrue(fuse::ecs::system_name_ok(std::string(40, 'A')), "40-character system name is valid");
+    expectTrue(!fuse::ecs::system_name_ok(std::string(41, 'A')), "41-character system name is invalid");
+}
+
 } // namespace
 
 int main() {
+    const int before = g_failures;
+    testSchedPhaseOk();
+    if (g_failures != before) {
+        std::fprintf(stderr, "fuse_ecs system scheduler tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testSystemNameOk();
     testDependencyOrder();
     testDeterministicInlineOrder();
 
@@ -102,3 +131,23 @@ int main() {
     std::fprintf(stderr, "fuse_ecs system scheduler tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/ecs/schedule_order.hpp>
+
+namespace {
+
+void testScheduleOrder() {
+    expectTrue(fuse::ecs::system_before(10, 20), "Order 10 is before 20");
+    expectTrue(fuse::ecs::system_phase(10) == 1, "Order 10 is phase 1");
+    expectTrue(fuse::ecs::system_phase(-5) == 0, "Order -5 is phase 0");
+    expectTrue(fuse::ecs::system_phase(100) == 2, "Order 100 is phase 2");
+}
+
+// Startup registration so main's failure count includes this check.
+struct ScheduleOrderTestRegistration {
+    ScheduleOrderTestRegistration() { testScheduleOrder(); }
+};
+
+ScheduleOrderTestRegistration g_scheduleOrderTestRegistration;
+
+} // namespace

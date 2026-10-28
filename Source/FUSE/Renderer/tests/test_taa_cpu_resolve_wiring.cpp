@@ -3,6 +3,7 @@
 // with the history buffer's validity (warm-up, invalidation). The resolved output must match a
 // standalone `TaaCpuResolver` fed the same frames bit for bit.
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/resolve_sample.hpp>
 #include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/taa/taa_cpu_resolve.hpp>
 #include <fuse/renderer/taa/taa_history.hpp>
@@ -239,9 +240,25 @@ void testTaaPassCpuFrames(Context& ctx) {
     pass->destroy();
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits instead of continuing.
+void testResolveSampleOk() {
+    expectTrue(resolve_sample_ok(1), "resolve_sample_ok(1) is true");
+    expectTrue(resolve_sample_ok(4), "resolve_sample_ok(4) is true");
+    expectTrue(resolve_sample_ok(16), "resolve_sample_ok(16) is true");
+    expectTrue(!resolve_sample_ok(0), "resolve_sample_ok(0) is false");
+    expectTrue(!resolve_sample_ok(3), "resolve_sample_ok(3) is false");
+    expectTrue(!resolve_sample_ok(32), "resolve_sample_ok(32) is false");
+}
+
 } // namespace
 
 int main() {
+    testResolveSampleOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_taa_cpu_resolve_wiring: %d failure(s)\n", g_failures);
+        return 1;
+    }
+
     fuse::core::initialize();
     Context ctx;
     if (!ctx.init()) {

@@ -1,3 +1,5 @@
+#include <fuse/platform/client_extent.hpp>
+#include <fuse/platform/client_px.hpp>
 #include <fuse/platform/window.hpp>
 #include <fuse/platform/window_wsi.hpp>
 
@@ -35,6 +37,22 @@ bool hasExtension(const std::vector<const char*>& extensions, const char* name) 
     return false;
 }
 #endif
+
+/// CPU gate. Must run before any GPU or window skip; a failure exits instead of continuing.
+void testClientPxOk() {
+    expectTrue(fuse::platform::client_px_ok(1), "client_px_ok(1) is true");
+    expectTrue(fuse::platform::client_px_ok(8192), "client_px_ok(8192) is true");
+    expectTrue(!fuse::platform::client_px_ok(0), "client_px_ok(0) is false");
+    expectTrue(!fuse::platform::client_px_ok(8193), "client_px_ok(8193) is false");
+}
+
+/// CPU gate. Must run before any GPU or window skip; a failure exits instead of continuing.
+void testClientExtentOk() {
+    expectTrue(fuse::platform::client_extent_ok(1, 1), "client_extent_ok(1, 1) is true");
+    expectTrue(fuse::platform::client_extent_ok(1920, 1080), "client_extent_ok(1920, 1080) is true");
+    expectTrue(!fuse::platform::client_extent_ok(0, 100), "client_extent_ok(0, 100) is false");
+    expectTrue(!fuse::platform::client_extent_ok(16385, 100), "client_extent_ok(16385, 100) is false");
+}
 
 void testBackendIdentity() {
 #if defined(FUSE_PLATFORM_WINDOW_WIN32)
@@ -161,6 +179,18 @@ void testCreateSurfaceWithHwndIfInstanceExists() {
 } // namespace
 
 int main() {
+    testClientPxOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testClientPxOk\n");
+        return EXIT_FAILURE;
+    }
+
+    testClientExtentOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testClientExtentOk\n");
+        return EXIT_FAILURE;
+    }
+
     testBackendIdentity();
     testRequiredInstanceExtensions();
     testCreateSurfaceWithoutHwndReturnsFalse();

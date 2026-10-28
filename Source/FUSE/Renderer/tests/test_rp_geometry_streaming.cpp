@@ -28,6 +28,7 @@
 #include <fuse/renderer/geometry_streaming/geometry_streaming.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
+#include <fuse/renderer/stream_bytes.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/device.hpp>
@@ -88,11 +89,39 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. No allocation. Must run before any GPU skip; a failure returns non-zero.
+int testStreamBytesOk() {
+    if (!fuse::renderer::stream_bytes_ok(1)) {
+        std::fprintf(stderr, "FAIL: stream_bytes_ok(1) is true\n");
+        ++g_failures;
+    }
+    if (!fuse::renderer::stream_bytes_ok(1 << 20)) {
+        std::fprintf(stderr, "FAIL: stream_bytes_ok(1<<20) is true\n");
+        ++g_failures;
+    }
+    if (fuse::renderer::stream_bytes_ok(0)) {
+        std::fprintf(stderr, "FAIL: stream_bytes_ok(0) is false\n");
+        ++g_failures;
+    }
+    if (fuse::renderer::stream_bytes_ok((1 << 20) + 1)) {
+        std::fprintf(stderr, "FAIL: stream_bytes_ok((1<<20)+1) is false\n");
+        ++g_failures;
+    }
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testStreamBytesOk\n");
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int streamRc = testStreamBytesOk()) {
+        return streamRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -678,6 +707,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int streamRc = testStreamBytesOk()) {
+        return streamRc;
+    }
     std::string mode = "parity";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

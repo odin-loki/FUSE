@@ -100,7 +100,11 @@ public:
     void setPhysicsEnabled(bool enabled);
     bool isPhysicsEnabled() const { return m_physicsEnabled; }
 
-    void setSpriteImageMapSearchRoots(SpriteImageMapSearchRoots roots) { m_spriteMapRoots = std::move(roots); }
+    void setSpriteImageMapSearchRoots(SpriteImageMapSearchRoots roots) {
+        m_spriteMapRoots = std::move(roots);
+        // Samples embed the search roots (project / repo paths). A new root set must re-read sheets.
+        m_spriteMapSamples.clear();
+    }
 
 private:
     static constexpr u32 kNoPhysicsBody = 0xFFFFFFFFu;
@@ -117,6 +121,10 @@ private:
     void adoptLevelRegistry_(ecs::Registry&& registry);
     /// Drops sprites whose node was destroyed while published (stale handles); rebuilds physics.
     void pruneDeadSprites_();
+    /// Centre RGB of one atlas column. The strip is sampled once per map (filesystem paths, PNG
+    /// decode, procedural hash); later ticks only index the stored bytes.
+    bool cachedSpriteImageMapColor_(const std::string& imageMap, u32 frameIndex, u32 frameCount, u8& r, u8& g,
+                                    u8& b);
 
     bool m_enabled = true;
     dimension::WorldHandle m_activeWorld = dimension::WorldHandle::invalid();
@@ -142,6 +150,13 @@ private:
     std::vector<u32> m_physicsBodyIndices;
     bool m_physicsEnabled = false;
     SpriteImageMapSearchRoots m_spriteMapRoots;
+    struct SpriteMapSample {
+        std::string imageMap;
+        u32 frameCount = 0;
+        /// Tight RGB triples, column `frame` at `frame * 3`.
+        std::vector<u8> rgb;
+    };
+    std::vector<SpriteMapSample> m_spriteMapSamples;
 
     ecs::Registry m_registry;
     bool m_registryReady = false;

@@ -10,6 +10,9 @@
 // live in fuse_gpu_allocator_device_gate; fuse_gpu_allocator_memcheck runs that under compute-sanitizer.
 
 #include <fuse/alloc/gpu_allocator.hpp>
+#include <fuse/core/gpu_block_count.hpp>
+#include <fuse/gameplay/magazine.hpp>
+#include <fuse/memory/gpu_block.hpp>
 
 #include "fuse_test_msvc_debug_stl.hpp"
 
@@ -44,6 +47,20 @@ constexpr GPUMemoryType kTypes[] = {GPUMemoryType::Device, GPUMemoryType::Pinned
 
 bool aligned256(const void* p) {
     return p == nullptr || (reinterpret_cast<std::uintptr_t>(p) % fuse::alloc::kGPUAllocationAlignment) == 0u;
+}
+
+void testGpuBlockCountOk() {
+    expectTrue(fuse::core::gpu_block_count_ok(1), "GPU block count 1 is valid");
+    expectTrue(fuse::core::gpu_block_count_ok(4096), "GPU block count 4096 is valid");
+    expectTrue(!fuse::core::gpu_block_count_ok(0), "GPU block count 0 is below the minimum");
+    expectTrue(!fuse::core::gpu_block_count_ok(4097), "GPU block count 4097 is above the maximum");
+}
+
+void testGpuBlockOk() {
+    expectTrue(fuse::memory::gpu_block_ok(256u), "256-byte GPU block is valid");
+    expectTrue(fuse::memory::gpu_block_ok(4096u), "4096-byte GPU block is valid");
+    expectTrue(!fuse::memory::gpu_block_ok(128u), "128-byte GPU block is below the minimum");
+    expectTrue(!fuse::memory::gpu_block_ok(300u), "300-byte GPU block is not a power of two");
 }
 
 void testContract() {
@@ -171,15 +188,42 @@ void testWithCuda() {
     expectTrue(allocator.release_all() == 1u && allocator.stats().live_count() == 0u, "release_all frees what is live");
 }
 
+void testMagazineReload() {
+    fuse::gameplay::Magazine mag;
+    mag.rounds = 2u;
+    mag.capacity = 2u;
+    mag.reloadRemaining = 0.f;
+    mag.reloadDuration = 1.5f;
+
+    expectTrue(fuse::gameplay::try_fire(mag), "first shot fires");
+    expectTrue(mag.rounds == 1u, "first shot consumes one round");
+    expectTrue(fuse::gameplay::try_fire(mag), "second shot fires");
+    expectTrue(mag.rounds == 0u, "second shot empties a capacity-2 magazine");
+    expectTrue(!fuse::gameplay::try_fire(mag), "third shot fails");
+    expectTrue(mag.rounds == 0u, "failed shot leaves the magazine empty");
+    expectTrue(fuse::gameplay::start_reload(mag), "empty magazine starts reloading");
+    expectTrue(mag.reloadRemaining == mag.reloadDuration, "reload timer starts at the duration");
+    fuse::gameplay::tick_reload(mag, mag.reloadDuration);
+    expectTrue(mag.rounds == 2u, "ticking the reload duration refills to capacity");
+    expectTrue(mag.reloadRemaining == 0.f, "completed reload clears the timer");
+}
+
 } // namespace
 
 int main() {
+    testGpuBlockCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core_b1_gpu_allocator: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testGpuBlockOk();
     testContract();
     if (GPUAllocator::cuda_available()) {
         testWithCuda();
     } else {
         testWithoutCuda();
     }
+    testMagazineReload();
     if (g_failures != 0) {
         std::fprintf(stderr, "fuse_core_b1_gpu_allocator: %d failure(s)\n", g_failures);
         return EXIT_FAILURE;

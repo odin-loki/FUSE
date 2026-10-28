@@ -5,6 +5,7 @@
 
 #include <fuse/config/cvar.hpp>
 #include <fuse/core/temp_path.hpp>
+#include <fuse/platform/action_id.hpp>
 #include <fuse/platform/action_map.hpp>
 #include <fuse/platform/event_pump.hpp>
 #include <fuse/platform/gamepad.hpp>
@@ -469,9 +470,22 @@ void testPlayerController() {
     expect(player.moveY() == -1.f, "re-enabled controller resumes (pad state kept)");
 }
 
+// No allocation. A failure returns from main before later tests.
+void testActionIdOk() {
+    expect(action_id_ok("Jump"), "action_id_ok(\"Jump\") is true");
+    expect(!action_id_ok(""), "action_id_ok(\"\") is false");
+    expect(!action_id_ok("1Jump"), "action_id_ok(\"1Jump\") is false");
+    expect(!action_id_ok("Jump Now"), "action_id_ok(\"Jump Now\") is false");
+}
+
 } // namespace
 
 int main() {
+    testActionIdOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core_action_map: %d failure(s)\n", g_failures);
+        return 1;
+    }
     testKeyNamesAndMouseEdges();
     testDeadzones();
     testGamepadState();

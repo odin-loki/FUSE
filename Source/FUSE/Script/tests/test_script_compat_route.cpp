@@ -1,5 +1,7 @@
 #include <fuse/core/init.hpp>
+#include <fuse/script/route_token.hpp>
 #include <fuse/script/script_host.hpp>
+#include <fuse/script/script_indent.hpp>
 #include <fuse/script/script_result.hpp>
 
 #include <cstdio>
@@ -15,6 +17,22 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+// Indent spaces are the closed range 0..32. No allocation.
+void testScriptIndentOk() {
+    expectTrue(fuse::script::script_indent_ok(0), "script_indent_ok(0) is true");
+    expectTrue(fuse::script::script_indent_ok(32), "script_indent_ok(32) is true");
+    expectTrue(!fuse::script::script_indent_ok(-1), "script_indent_ok(-1) is false");
+    expectTrue(!fuse::script::script_indent_ok(33), "script_indent_ok(33) is false");
+}
+
+// No allocation. A failure returns from main before later tests.
+void testRouteTokenOk() {
+    expectTrue(fuse::script::route_token_ok("Reload"), "Reload is a valid route token");
+    expectTrue(!fuse::script::route_token_ok(""), "empty route token is invalid");
+    expectTrue(!fuse::script::route_token_ok("1Reload"), "1Reload is an invalid route token");
+    expectTrue(!fuse::script::route_token_ok("Re load"), "Re load is an invalid route token");
 }
 
 void testCompatRouteChunks() {
@@ -65,6 +83,20 @@ void testCompatRouteChunks() {
 } // namespace
 
 int main() {
+    const int scriptIndentFailures = g_failures;
+    testScriptIndentOk();
+    if (g_failures != scriptIndentFailures) {
+        std::fprintf(stderr, "fuse_script_compat_route: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    const int routeTokenFailures = g_failures;
+    testRouteTokenOk();
+    if (g_failures != routeTokenFailures) {
+        std::fprintf(stderr, "fuse_script_compat_route: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
     testCompatRouteChunks();
 
@@ -76,3 +108,22 @@ int main() {
     std::fprintf(stdout, "fuse_script_compat_route: all tests passed\n");
     return EXIT_SUCCESS;
 }
+
+#include <fuse/script/route_name.hpp>
+
+namespace {
+
+void testScriptRouteOk() {
+    expectTrue(fuse::script::script_route_ok("player_tick"), "player_tick is a valid route name");
+    expectTrue(!fuse::script::script_route_ok("1start"), "1start is an invalid route name");
+    expectTrue(!fuse::script::script_route_ok(""), "empty route name is invalid");
+}
+
+// Runs before main(); failures accumulate in g_failures, which main() already reports.
+struct ScriptRouteOkTestRegistration {
+    ScriptRouteOkTestRegistration() { testScriptRouteOk(); }
+};
+
+[[maybe_unused]] const ScriptRouteOkTestRegistration g_scriptRouteOkTestRegistration{};
+
+} // namespace

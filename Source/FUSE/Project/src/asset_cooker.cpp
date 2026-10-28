@@ -712,25 +712,42 @@ CookBatchResult AssetCooker::cook_dirty(AssetGraph& graph, const std::string& pr
     graph.scan_for_changes();
     const std::vector<std::string> dirty = graph.dirty_assets();
 
-    CookBatchResult result;
-    result.records.reserve(dirty.size());
-
     for (const std::string& output_path : dirty) {
         if (const std::string* source_path = graph.source_path_for(output_path)) {
             m_cache.invalidate_source(*source_path);
         }
+    }
+
+    graph.reimport_dirty(project_dir, this);
+
+    CookBatchResult result;
+    result.records.reserve(dirty.size());
+    usize cooked = 0;
+    for (const std::string& output_path : dirty) {
+        bool still_dirty = false;
+        for (const std::string& pending : graph.dirty_assets()) {
+            if (pending == output_path) {
+                still_dirty = true;
+                break;
+            }
+        }
 
         CookRecord record;
         record.output_path = output_path;
-        record.status = CookStatus::Ok;
-        record.ok = true;
-        record.note = "dirty asset reimport stub";
+        if (const std::string* source_path = graph.source_path_for(output_path)) {
+            record.source_path = *source_path;
+        }
+        record.ok = !still_dirty;
+        record.status = record.ok ? CookStatus::Ok : CookStatus::InvalidInput;
+        record.note = record.ok ? "dirty asset reimport" : "dirty asset reimport failed";
+        if (record.ok) {
+            ++cooked;
+        }
         result.records.push_back(std::move(record));
     }
 
-    graph.reimport_dirty(project_dir);
-    result.ok = true;
-    result.summary = "reimported " + std::to_string(dirty.size()) + " dirty assets (stub)";
+    result.ok = graph.dirty_assets().empty();
+    result.summary = "reimported " + std::to_string(cooked) + "/" + std::to_string(dirty.size()) + " dirty assets";
     return result;
 }
 

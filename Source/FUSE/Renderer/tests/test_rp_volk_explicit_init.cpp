@@ -16,9 +16,11 @@
 //   fuse_rp_volk_auto_init      default link (FUSE_RP_EXPECT_AUTO_INIT): the static auto-init ran
 //                               before main and global entry points are loaded (WP-0.2 behaviour).
 // Exit 77 = skip (stub build, no loader / ICD).
+#include <fuse/renderer/device/volk_init.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
 #include <fuse/renderer/vk/loader.hpp>
+#include <fuse/renderer/vk/loader_step.hpp>
 
 #include <cstdio>
 #include <cstring>
@@ -145,9 +147,30 @@ int useLoader(const char* name) {
 
 #endif
 
+void testVolkInitRequired() {
+    expect(fuse::renderer::volk_init_required(true, false), "a linked loader that is not up still needs init");
+    expect(!fuse::renderer::volk_init_required(true, true), "an initialized loader does not need init");
+    expect(!fuse::renderer::volk_init_required(false, false), "an unlinked loader does not need init");
+}
+
+void testLoaderStepOk() {
+    expect(fuse::renderer::loader_step_ok(0), "loader step 0 is accepted");
+    expect(fuse::renderer::loader_step_ok(3), "loader step 3 is accepted");
+    expect(!fuse::renderer::loader_step_ok(-1), "loader step -1 is rejected");
+    expect(!fuse::renderer::loader_step_ok(4), "loader step 4 is rejected");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testLoaderStepOk();
+    if (g_failures != 0) {
+        return 1;
+    }
+    testVolkInitRequired();
+    if (g_failures != 0) {
+        return 1;
+    }
     std::string mode = "explicit";
     for (int i = 1; i + 1 < argc; ++i) {
         if (std::strcmp(argv[i], "--mode") == 0) {

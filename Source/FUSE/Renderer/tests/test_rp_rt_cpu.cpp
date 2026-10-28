@@ -11,6 +11,7 @@
 //              (same (instance, primitive), t within 1e-9) on 4096 random rays incl. cull masks;
 //              robust-ray fraction reported
 //   refit      reference refit (moved instances, deformed mesh) == a fresh build on the same rays
+#include <fuse/renderer/rt/rt_bounce.hpp>
 #include <fuse/renderer/rt/rt_caps.hpp>
 #include <fuse/renderer/rt/rt_reference.hpp>
 #include <fuse/renderer/rt/rt_types.hpp>
@@ -448,9 +449,22 @@ int runRefit() {
     return 0;
 }
 
+// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testRtBounceOk() {
+    expect(fuse::renderer::rt_bounce_ok(1), "rt_bounce_ok(1) is true");
+    expect(fuse::renderer::rt_bounce_ok(8), "rt_bounce_ok(8) is true");
+    expect(!fuse::renderer::rt_bounce_ok(0), "rt_bounce_ok(0) is false");
+    expect(!fuse::renderer::rt_bounce_ok(9), "rt_bounce_ok(9) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testRtBounceOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testRtBounceOk\n");
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "layout";
     int rc = 0;
     if (suite == "layout") {

@@ -15,15 +15,15 @@
 | `make_attenuation_params` / `sample_attenuation_at_*` | `Source/FUSE/Audio/src/attenuation.cpp` | Build params from `AudioSourceDesc`; min/max endpoint sample stubs |
 | `ListenerBasis` / `to_listener_space` | `Source/FUSE/Audio/include/fuse/audio/math.hpp` | World → listener-local transform; safe fallbacks for degenerate forward/up |
 | `AudioBus` / `AudioBusMixer` | `Source/FUSE/Audio/include/fuse/audio/audio_bus.hpp` | Per-category gain stub with parent-chain routing, cycle guard, `reset_gains` |
-| `OcclusionParams` / `evaluate_occlusion_*` | `Source/FUSE/Audio/include/fuse/audio/occlusion.hpp` | Visibility → LF/HF gain stubs; segment-vs-AABB ray + blocker factor 0..1 |
+| `OcclusionParams` / `evaluate_occlusion_*` / occlusion lowpass | `Source/FUSE/Audio/include/fuse/audio/occlusion.hpp` | Visibility → LF/HF gain; segment-vs-AABB ray + blocker factor 0..1; one-pole HF lowpass |
 | `PanLaw` / `sample_pan_law` | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | Equal-power and linear stereo pan law curves |
 | `compute_pan_position_from_azimuth` | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | Azimuth (radians) → clamped pan position for ILD stub |
 | `BinauralPanParams` / `compute_binaural_*` | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | Listener-local/world-space azimuth/elevation, selectable pan law, ITD stub, distance blend |
 | `HrtfIrStub` / `has_hrtf_ir` / `should_apply_hrtf_pan` | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | Empty-IR guard and HRTF bypass for disabled/co-located sources |
 | `compute_listener_basis` / listener-position pan helpers | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | `AudioListener` → basis and world-space binaural angles/gains |
 | `HrtfAttenuationCoupling` / `apply_hrtf_attenuation_coupling` | `Source/FUSE/Audio/include/fuse/audio/binaural_pan.hpp` | Distance + occlusion spatial blend stub |
-| `ReverbZoneParams` / `blend_reverb_zones` | `Source/FUSE/Audio/include/fuse/audio/reverb_zones.hpp` | Zone AABB membership + overlapping wet/dry blend + dry/wet sample stubs |
-| `SpatialMixer` | `Source/FUSE/Audio/include/fuse/audio/spatial_mixer.hpp` | CPU HRTF-lite pan + curve attenuation + bus routing + blocker occlusion |
+| `ReverbZoneParams` / `blend_reverb_zones` / per-source send | `Source/FUSE/Audio/include/fuse/audio/reverb_zones.hpp` | Zone AABB membership + overlapping wet/dry blend + per-source listener-bus send |
+| `SpatialMixer` | `Source/FUSE/Audio/include/fuse/audio/spatial_mixer.hpp` | CPU HRTF-lite pan + curve attenuation + bus routing + blocker occlusion + reverb send |
 | `AudioEngine` | `Source/FUSE/Audio/include/fuse/audio/audio_engine.hpp` | OpenAL backend sync, CUDA/CPU reverb facade, zone blend + occlusion blockers |
 | `AudioBackend` | `Source/FUSE/Audio/include/fuse/audio/audio_backend.hpp` | Device output: one streaming OpenAL source fed from an SPSC ring by a feeder thread (float32/s16, underrun + latency + disconnect/reconnect), or the Null device with a capture buffer |
 | `SpscRing` | `Source/FUSE/Audio/include/fuse/audio/spsc_ring.hpp` | Lock-free single-producer/single-consumer ring (game thread -> feeder thread) |
@@ -31,7 +31,7 @@
 | `StreamDecoder` | `Source/FUSE/Audio/include/fuse/audio/audio_stream.hpp` | Per-voice bounded Ogg Vorbis decode ring + loop-head cache for streaming voices (loop points, seek) |
 | `AudioEcsSystem` | `Source/FUSE/Audio/include/fuse/audio/audio_ecs_system.hpp` | GAP-GAME-LOOP-ECS: `AudioSource` / `AudioListener` are ECS components; each update reconciles them into the engine's voice table (the `AudioRegistry` is now internal to the engine path), positions/orients from `Transform`, runs `AudioEngine::update` and writes play head / playing back; ticked by the World3D / PIE runtime schedule — `fuse_runtime_schedule_gates` |
 
-**Not in scope (deferred):** HRTF impulse-response files, per-source bus sends, ducking/sidechain, real-time CUDA FFT reverb on device, ECS system wiring, dynamic occlusion raycasts, HF IIR/LPF filtering.
+**Not in scope (deferred):** HRTF impulse-response files, per-source bus sends, ducking/sidechain, real-time CUDA FFT reverb on device, ECS system wiring, dynamic occlusion raycasts.
 
 **Device output and runtime decode (done, `fuse_audio_output*`):** the mix is streamed to the device (GAP-AUDIO-DEVICE-OUT) — `AudioEngine::update` renders one block per call (`AudioPacing::Caller`, default, headless-deterministic) or as many blocks as the output queue takes (`AudioPacing::Device`, what a runtime host with a real device uses) and submits them to `AudioBackend`: one OpenAL streaming source with `device_buffers` AL buffers sized to cover two device periods, AL_EXT_float32 when present, refilled by a feeder thread from the SPSC ring; underruns insert a silence buffer and are counted, `output_stats()` reports latency (queued frames + AL_SOFT_source_latency), `ALC_EXT_disconnect` loss re-opens the device. Checked with openal-soft's wave writer (WAV bit-identical to the Null capture) and null driver (latency, starvation, simulated loss -> reconnect). Ogg Vorbis / FLAC / `.fuseaudio` clips decode at runtime from the vendored xiph archives; Ogg clips longer than `AudioDesc::stream_threshold_seconds` stream (bounded per-voice ring, loop points, seek, 0 steady-state allocations). Listening on physical speakers is a manual check.
 
@@ -124,21 +124,36 @@ Occlusion helpers map visibility to attenuation multipliers:
 | `compute_blockers_factor` | Maximum blocker factor across multiple AABBs |
 | `SpatialMixer::compute_source_visibility` | Combines per-source occlusion with registered blockers |
 
-`SpatialMixer` and `AudioEngine::sync_backend_sources_` multiply distance attenuation by `occlusion.gain * occlusion.hf_gain` before panning/backend gain. No HF filter yet — `hf_gain` is a scalar energy stub.
+`AudioEngine::sync_backend_sources_` multiplies distance attenuation by `occlusion.gain * occlusion.hf_gain` for the device-source gain. The CPU mix multiplies by `occlusion.gain`, then filters each spatial source before the bus sum: a one-pole lowpass whose cutoff falls with visibility, then the high-shelf at `kOcclusionCrossoverHz` scaled by `hf_gain`.
+
+```
+fc(v)    = 400 * (nyquist / 400) ^ v     // nyquist = sample_rate / 2, default 48 kHz
+v >= 1:  y = x                            // bit-exact bypass
+else:    a = 1 - exp(-2π fc / fs);  y = y1 + a * (x - y1)
+```
+
+Fully blocked (`v = 0`) muffles at 400 Hz. Fully open bypasses so an unoccluded source stays uncoloured. `|y| < 1e-15` flushes to zero.
 
 ### Reverb zones (stub)
 
 `ReverbZone` carries an AABB `bounds`, `wet_dry` (mix ratio), and `send_level` (bus send scalar). `listener_in_reverb_zone` tests membership; `count_listener_reverb_zones` counts active zones; `blend_reverb_zones` averages wet/dry and send across all zones containing the listener.
 
-Effective wet contribution when the listener is inside at least one zone:
+Effective wet contribution when the listener is inside at least one zone. Each source has its own send into that bus (`AudioSourceDesc::reverb_send`), independent of the zone wet mix:
 
 ```
-blend     = blend_reverb_zones(listener, zones)
-wet_mix   = compute_effective_wet_mix(blend)    // wet_dry * send_level, clamped
-mixed     = blend_dry_wet_sample(dry, wet, wet_mix)
+send_i   = clamp(reverb_send, 0, 1)
+dry     += dry_i
+if send_i <= 1e-6:                 // silence skips this source's wet contribution
+    (sent and bus unchanged)
+else:
+    sent += send_i * dry_i
+    bus  += send_i * 0.5 * (L_i + R_i)
+wet      = convolve(bus)
+zone_wet = clamp(wet_dry) * clamp(zone.send_level)
+out      = (dry - sent) + blend_dry_wet_sample(sent, wet, zone_wet)
 ```
 
-When the listener is outside all zones, reverb is skipped (fully dry). `AudioEngine::set_reverb_send_level` / `reverb_send_level()` adjust zone send without re-adding zones. Convolution runs through `ConvReverbCpu` (CUDA facade deferred).
+`send_i = 1` makes `sent = dry`, which is the historical listener crossfade (`blend_dry_wet_sample(dry, wet, zone_wet)`). Zone `wet_dry` and `send_level` scale only `zone_wet`. When the listener is outside all zones, reverb is skipped (fully dry). `AudioEngine::set_reverb_send_level` / `reverb_send_level()` adjust zone send without re-adding zones. Convolution runs through `ConvReverbCpu` (CUDA device FFT remains deferred).
 
 ---
 
@@ -218,6 +233,8 @@ ctest --test-dir build --output-on-failure -R fuse_audio
 | `testOcclusionFactorExtremes` | Unity vs floored effective occlusion gain; visibility pipeline and blocker attenuation |
 | `testOcclusionReducesMixOutput` | Occluded source is quieter with min_gain floor |
 | `testOcclusionBlockerAttenuatesMix` | AABB blocker on LOS reduces spatial mix energy |
+| `testOcclusionLowpassCutoffExtremes` | Open bypass, blocked 400 Hz, denormal flush, NaN and 1 Hz stability |
+| `testOcclusionLowpassDarkensBlockedSource` | Spatial blocked highs fall off faster than lows; 2D path stays bright |
 | `testReverbZoneMembership` | Listener inside/outside zone AABB |
 | `testReverbZoneBlendExtremes` | Dry/wet extremes and clamped zone parameters |
 | `testReverbZoneOverlappingBlend` | Overlapping zones average wet/dry; outside yields dry |
@@ -227,6 +244,8 @@ ctest --test-dir build --output-on-failure -R fuse_audio
 | `testReverbSendLevelDryMix` | Zero `wet_dry` leaves dry mix unchanged |
 | `testReverbSendLevelWetMix` | Full send increases mix energy vs dry |
 | `testReverbSendLevelScalesMixOutput` | `set_reverb_send_level` scales wet contribution |
+| `testPerSourceReverbSendMixEquation` | Silent and clamped sends; unity send keeps the zone crossfade |
+| `testPerSourceReverbSendSkipsWet` | Silent send stays dry; partial send scales the bus, not the zone |
 | `testSpatialPanRespectsListenerOrientation` | L/R asymmetry changes when listener rotates |
 | `testSpatialAttenuationAtMaxDistance` | Source at `max_distance` is near-silent |
 | `testThirtyTwoSourcesMixWithoutNaN` | 32 spatial sources mix without NaN |
@@ -257,9 +276,11 @@ ctest --test-dir build --output-on-failure -R fuse_audio
 - [x] Reverb zone AABB membership + overlapping blend + listener-scoped wet/dry
 - [x] `fuse_audio_b72` CTest target green
 - [x] No owning raw pointers in public FUSE APIs
-- [ ] Per-source reverb sends (follow-up)
-- [ ] HF occlusion IIR/LPF filter (follow-up)
+- [x] Per-source reverb sends (follow-up). Each source has `reverb_send` in [0, 1] on the listener reverb bus, independent of zone wet mix; a silent send adds nothing to that bus, and a unity send keeps the existing dry/wet crossfade.
+- [x] HF occlusion IIR/LPF filter (follow-up). Spatial sources run a one-pole lowpass before the bus sum; cutoff falls with visibility (fully open bypasses, fully blocked is 400 Hz at 48 kHz) and stays finite at both extremes.
 - [ ] Real-time CUDA FFT reverb on device (follow-up)
+
+`fuse_audio_b7_gates` covers the same two paths in `gatePerSourceReverbSend` and `gateOcclusionLowpassFollowsVisibility` (the blocked high-shelf gate now includes the lowpass cascade).
 
 ---
 

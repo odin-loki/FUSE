@@ -19,6 +19,7 @@
 #include <fuse/relight/bridge/ipc/atomic_queue.hpp>
 #include <fuse/relight/bridge/ipc/blocking_queue.hpp>
 #include <fuse/relight/bridge/ipc/data_ring.hpp>
+#include <fuse/relight/bridge/ipc/ipc_bytes.hpp>
 #include <fuse/relight/bridge/ipc/session.hpp>
 #include <fuse/relight/bridge/ipc/shared_heap.hpp>
 #include <fuse/relight/bridge/schema/commands_random.gen.hpp>
@@ -622,7 +623,16 @@ void testSessionBackPressure() {
     }
 }
 
+void testIpcBytesOk() {
+    CHECK(fuse::relight::ipc_bytes_ok(16));
+    CHECK(fuse::relight::ipc_bytes_ok(4096));
+    CHECK(!fuse::relight::ipc_bytes_ok(0));
+    CHECK(!fuse::relight::ipc_bytes_ok(8));
+    CHECK(!fuse::relight::ipc_bytes_ok(4112));
+}
+
 int runUnit() {
+    testIpcBytesOk();
     std::printf("rl_bridge_ipc_unit: schema %u commands, protocol %u.%u, hash 0x%016" PRIx64 "\n",
                 unsigned(schema::kCommandCount), schema::kProtocolMajor, schema::kProtocolMinor, schema::kSchemaHash);
     testCodecRoundTrip();
@@ -1119,3 +1129,31 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "usage: %s unit | fuzz [--count N] [--blocking] | heap [--count N] | peer-death\n", argv[0]);
     return 2;
 }
+
+#include <fuse/relight/bridge/ipc/frame_bounds.hpp>
+
+namespace {
+
+// Frame size: 100 bytes with max 1000 is accepted, a 0-byte payload is not, and the on-wire
+// total is the payload plus the 8-byte size and type header.
+void testIpcFrameBounds() {
+    CHECK(ipc::ipc_frame_ok(100, 1000));
+    CHECK(!ipc::ipc_frame_ok(0, 1000));
+    CHECK(!ipc::ipc_frame_ok(100, 0));
+    CHECK(!ipc::ipc_frame_ok(0, 0));
+    CHECK(ipc::ipc_frame_ok(1000, 1000));
+    CHECK(!ipc::ipc_frame_ok(1001, 1000));
+    CHECK(ipc::ipc_frame_total(100) == 108);
+    CHECK(ipc::ipc_frame_total(0xFFFFFFF7u) == 0xFFFFFFFFu);
+    CHECK(ipc::ipc_frame_total(0xFFFFFFF8u) == 0xFFFFFFFFu);
+    CHECK(ipc::ipc_frame_total(0xFFFFFFFFu) == 0xFFFFFFFFu);
+}
+
+// The unit entry point is above this append; startup folds these checks into g_failures.
+struct IpcFrameBoundsStartup {
+    IpcFrameBoundsStartup() { testIpcFrameBounds(); }
+};
+
+const IpcFrameBoundsStartup g_ipcFrameBoundsStartup{};
+
+}  // namespace

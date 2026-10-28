@@ -1,10 +1,33 @@
+#include <fuse/net/buffer_slot.hpp>
 #include <fuse/net/rollback_buffer.hpp>
+#include <fuse/net/rollback_slot.hpp>
 
 #include "test_helpers.hpp"
 
 namespace fuse::net::tests {
 
+void testRollbackSlotOk() {
+    expectTrue(fuse::net::rollback_slot_ok(0), "rollback_slot_ok(0) is true");
+    expectTrue(fuse::net::rollback_slot_ok(63), "rollback_slot_ok(63) is true");
+    expectTrue(!fuse::net::rollback_slot_ok(-1), "rollback_slot_ok(-1) is false");
+    expectTrue(!fuse::net::rollback_slot_ok(64), "rollback_slot_ok(64) is false");
+}
+
+void testBufferIndex() {
+    expectTrue(fuse::net::buffer_index(5, 4) == 1u, "buffer_index(5, 4) is 1");
+    expectTrue(fuse::net::buffer_index(4, 4) == 0u, "buffer_index(4, 4) is 0");
+    expectTrue(fuse::net::buffer_index(3, 0) == 0u, "buffer_index(3, 0) is 0");
+}
+
 void run_rollback_buffer_tests() {
+    const int failuresBefore = g_failures;
+    testRollbackSlotOk();
+    if (g_failures != failuresBefore) {
+        return;
+    }
+
+    testBufferIndex();
+
     fuse::net::RollbackBuffer empty;
     empty.init(8);
     expectTrue(empty.stored_frame_count() == 0u, "empty buffer reports zero stored frames");

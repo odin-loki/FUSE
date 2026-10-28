@@ -37,6 +37,7 @@
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
+#include <fuse/renderer/vis_bin.hpp>
 #include <fuse/renderer/visbuffer/vis_reference.hpp>
 #include <fuse/renderer/visbuffer/visbuffer.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
@@ -104,11 +105,24 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+int testVisBinOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::vis_bin_ok(1), "vis_bin_ok(1) is true");
+    expect(fuse::renderer::vis_bin_ok(32), "vis_bin_ok(32) is true");
+    expect(!fuse::renderer::vis_bin_ok(0), "vis_bin_ok(0) is false");
+    expect(!fuse::renderer::vis_bin_ok(33), "vis_bin_ok(33) is false");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int visBinRc = testVisBinOk()) {
+        return visBinRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -993,6 +1007,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int visBinRc = testVisBinOk()) {
+        return visBinRc;
+    }
     std::string mode = "raster";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

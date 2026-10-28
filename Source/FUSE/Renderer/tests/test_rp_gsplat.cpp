@@ -30,6 +30,7 @@
 #include <fuse/renderer/gsplat/gsplat_reference.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
+#include <fuse/renderer/splat_lod.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
 #include <fuse/renderer/vk/device.hpp>
@@ -93,11 +94,28 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+int testSplatLodOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::splat_lod_ok(0), "splat_lod_ok(0) is true");
+    expect(fuse::renderer::splat_lod_ok(8), "splat_lod_ok(8) is true");
+    expect(!fuse::renderer::splat_lod_ok(-1), "splat_lod_ok(-1) is false");
+    expect(!fuse::renderer::splat_lod_ok(9), "splat_lod_ok(9) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testSplatLodOk\n");
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int lodRc = testSplatLodOk()) {
+        return lodRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -794,6 +812,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int lodRc = testSplatLodOk()) {
+        return lodRc;
+    }
     std::string mode = "passes";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

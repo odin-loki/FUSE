@@ -2,6 +2,8 @@
 #include <fuse/ecs/components/tags.hpp>
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/detail/iteration_parity.hpp>
+#include <fuse/ecs/filter_bits.hpp>
+#include <fuse/ecs/query_empty.hpp>
 #include <fuse/ecs/query_filter.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
@@ -973,9 +975,27 @@ void testPreflightConflictGuardShortCircuitsCounts() {
              "count_matching_entities short-circuits on conflict");
 }
 
+void testQueryIsEmpty() {
+    expectTrue(fuse::ecs::query_is_empty(0), "query_is_empty(0) is true");
+    expectTrue(!fuse::ecs::query_is_empty(1), "query_is_empty(1) is false");
+    expectTrue(!fuse::ecs::query_is_empty(1ull << 63), "query_is_empty(1ull<<63) is false");
+}
+
+void testFilterBitsOk() {
+    expectTrue(fuse::ecs::filter_bits_ok(0), "filter_bits_ok(0) is true");
+    expectTrue(fuse::ecs::filter_bits_ok(32), "filter_bits_ok(32) is true");
+    expectTrue(!fuse::ecs::filter_bits_ok(-1), "filter_bits_ok(-1) is false");
+    expectTrue(!fuse::ecs::filter_bits_ok(33), "filter_bits_ok(33) is false");
+}
+
 } // namespace
 
 int main() {
+    testFilterBitsOk();
+    if (g_failures != 0) {
+        return EXIT_FAILURE;
+    }
+    testQueryIsEmpty();
     testArchetypeMatchesWithRequiredComponents();
     testArchetypeMatchesWithoutExcludedComponents();
     testArchetypeMatchesEmptyArchetype();
@@ -1021,3 +1041,24 @@ int main() {
     std::fprintf(stderr, "fuse_ecs_query_filter_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/ecs/query_mask.hpp>
+
+namespace {
+
+void testQueryMatchesBitmask() {
+    constexpr std::uint32_t has = 0b0111;
+    constexpr std::uint32_t allOf = 0b0011;
+    expectTrue(fuse::ecs::query_matches(has, allOf, 0),
+               "query_matches accepts allOf when noneOf is zero");
+    expectTrue(!fuse::ecs::query_matches(has, allOf, 0b0100),
+               "query_matches rejects noneOf bits that overlap has");
+}
+
+struct QueryMatchesBitmaskRunner {
+    QueryMatchesBitmaskRunner() { testQueryMatchesBitmask(); }
+};
+
+[[maybe_unused]] const QueryMatchesBitmaskRunner g_queryMatchesBitmaskRunner{};
+
+} // namespace

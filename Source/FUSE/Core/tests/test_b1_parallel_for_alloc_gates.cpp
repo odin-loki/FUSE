@@ -12,8 +12,10 @@
 // Every multi-worker section runs under a watchdog so a deadlock fails instead of hanging CI.
 
 #include <fuse/core/sanitizer.hpp>
+#include <fuse/gameplay/time_of_day.hpp>
 #include <fuse/jobs/job_counter.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/jobs/parallel_count.hpp>
 #include <fuse/jobs/parallel_for.hpp>
 #include <fuse/platform/sleep.hpp>
 
@@ -25,6 +27,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <limits>
 #include <mutex>
 #include <new>
 #include <thread>
@@ -439,10 +442,53 @@ void testIdleWorkersSleep() {
 }
 #endif
 
+void testTimeOfDay() {
+    fuse::gameplay::TimeOfDay clock{};
+    clock.seconds = 0.f;
+    clock.dayLength = 100.f;
+    fuse::gameplay::advance(clock, 150.f);
+    expectTrue(clock.seconds == 50.f, "100-second day advanced by 150 seconds lands at 50");
+    expectTrue(fuse::gameplay::normalized(clock) == 0.5f, "normalized is seconds/dayLength in [0, 1)");
+
+    fuse::gameplay::TimeOfDay midnight{};
+    midnight.seconds = 0.f;
+    midnight.dayLength = 100.f;
+    expectTrue(fuse::gameplay::sun_height(midnight) == 0.f, "sun_height at 0 is 0");
+
+    fuse::gameplay::TimeOfDay quarter{};
+    quarter.dayLength = 100.f;
+    quarter.seconds = quarter.dayLength / 4.f;
+    expectTrue(fuse::gameplay::sun_height(quarter) == 1.f, "sun_height at dayLength/4 is 1");
+
+    const fuse::f32 landed = clock.seconds;
+    fuse::gameplay::advance(clock, std::numeric_limits<fuse::f32>::quiet_NaN());
+    fuse::gameplay::advance(clock, std::numeric_limits<fuse::f32>::infinity());
+    expectTrue(clock.seconds == landed, "non-finite dt does nothing");
+
+    fuse::gameplay::advance(clock, -70.f);
+    expectTrue(clock.seconds == 80.f, "negative dt wraps backward");
+
+    fuse::gameplay::TimeOfDay unsetDay{};
+    unsetDay.seconds = 0.f;
+    unsetDay.dayLength = -5.f;
+    fuse::gameplay::advance(unsetDay, 100.f);
+    expectTrue(unsetDay.seconds == 100.f, "dayLength <= 0 is treated as 86400");
+}
+
+void testParallelCountOk() {
+    expectTrue(fuse::jobs::parallel_count_ok(1u), "parallel_count_ok(1) is true");
+    expectTrue(fuse::jobs::parallel_count_ok(1u << 20), "parallel_count_ok(1u<<20) is true");
+    expectTrue(!fuse::jobs::parallel_count_ok(0u), "parallel_count_ok(0) is false");
+    expectTrue(!fuse::jobs::parallel_count_ok((1u << 20) + 1u), "parallel_count_ok((1u<<20)+1) is false");
+}
+
 } // namespace
 
 int main() {
+    testParallelCountOk();
     std::printf("B1 parallel_for allocation / latency gates\n");
+
+    testTimeOfDay();
 
     for (u32 workers : {1u, 2u, 4u}) {
         testZeroAllocations(workers);

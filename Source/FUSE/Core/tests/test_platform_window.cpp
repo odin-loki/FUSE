@@ -1,6 +1,10 @@
 #include <fuse/platform/event_pump.hpp>
+#include <fuse/platform/lifecycle.hpp>
+#include <fuse/platform/poll_ms.hpp>
 #include <fuse/platform/profile.hpp>
+#include <fuse/platform/title_len.hpp>
 #include <fuse/platform/window.hpp>
+#include <fuse/platform/window_title.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -15,6 +19,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include "../src/platform/platform_window_visibility.hpp"
 #endif
 
 namespace {
@@ -33,6 +38,38 @@ void expectEq(fuse::u32 actual, fuse::u32 expected, const char* message) {
         std::fprintf(stderr, "FAIL: %s (expected %u, got %u)\n", message, expected, actual);
         ++g_failures;
     }
+}
+
+/// CPU gate. Must run before any window skip; a failure exits instead of continuing.
+void testPollMsOk() {
+    expectTrue(fuse::platform::poll_ms_ok(1), "poll ms 1 is accepted");
+    expectTrue(fuse::platform::poll_ms_ok(100), "poll ms 100 is accepted");
+    expectTrue(!fuse::platform::poll_ms_ok(0), "poll ms 0 is rejected");
+    expectTrue(!fuse::platform::poll_ms_ok(101), "poll ms 101 is rejected");
+}
+
+/// CPU gate. Must run before any window skip; a failure exits instead of continuing.
+void testTitleLenOk() {
+    expectTrue(fuse::platform::title_len_ok(1), "title length 1 is accepted");
+    expectTrue(fuse::platform::title_len_ok(128), "title length 128 is accepted");
+    expectTrue(!fuse::platform::title_len_ok(0), "title length 0 is rejected");
+    expectTrue(!fuse::platform::title_len_ok(129), "title length 129 is rejected");
+}
+
+void testWindowTitleOk() {
+    expectTrue(fuse::platform::window_title_ok("FUSE"), "FUSE is a valid window title");
+    expectTrue(!fuse::platform::window_title_ok(""), "empty title is rejected");
+    expectTrue(!fuse::platform::window_title_ok("FUSE\n"), "newline in title is rejected");
+
+    expectTrue(fuse::platform::window_title_ok(" "), "space is printable ASCII");
+    expectTrue(fuse::platform::window_title_ok("~"), "tilde is printable ASCII");
+    expectTrue(!fuse::platform::window_title_ok("\x1f"), "code 31 is rejected");
+    expectTrue(!fuse::platform::window_title_ok("\x7f"), "DEL is rejected");
+
+    const std::string maxTitle(128, 'A');
+    expectTrue(fuse::platform::window_title_ok(maxTitle), "128 character title is accepted");
+    const std::string tooLong(129, 'A');
+    expectTrue(!fuse::platform::window_title_ok(tooLong), "129 character title is rejected");
 }
 
 void testWindowStubStoresDescription() {
@@ -476,6 +513,142 @@ void testEventPumpWin32RequireCaptureDropsReleasedInput() {
     UnregisterClassW(className, GetModuleHandleW(nullptr));
     pump.setRequireCaptureForInput(false);
 }
+
+void testEventPumpWin32AppVisibilityMessages() {
+    using fuse::platform::AppVisibility;
+
+    const auto activated = fuse::platform::visibilityFromWin32(WM_ACTIVATEAPP, TRUE);
+    const auto deactivated = fuse::platform::visibilityFromWin32(WM_ACTIVATEAPP, FALSE);
+    const auto minimized = fuse::platform::visibilityFromWin32(WM_SIZE, SIZE_MINIMIZED);
+    const auto restored = fuse::platform::visibilityFromWin32(WM_SIZE, SIZE_RESTORED);
+    const auto maximized = fuse::platform::visibilityFromWin32(WM_SIZE, SIZE_MAXIMIZED);
+    const auto maxShow = fuse::platform::visibilityFromWin32(WM_SIZE, SIZE_MAXSHOW);
+    const auto maxHide = fuse::platform::visibilityFromWin32(WM_SIZE, SIZE_MAXHIDE);
+
+    expectTrue(activated.has_value() && *activated == AppVisibility::Foreground,
+               "WM_ACTIVATEAPP TRUE -> Foreground");
+    expectTrue(deactivated.has_value() && *deactivated == AppVisibility::Background,
+               "WM_ACTIVATEAPP FALSE -> Background");
+    expectTrue(minimized.has_value() && *minimized == AppVisibility::Background,
+               "WM_SIZE SIZE_MINIMIZED -> Background");
+    expectTrue(restored.has_value() && *restored == AppVisibility::Foreground,
+               "WM_SIZE SIZE_RESTORED -> Foreground");
+    expectTrue(maximized.has_value() && *maximized == AppVisibility::Foreground,
+               "WM_SIZE SIZE_MAXIMIZED -> Foreground");
+    expectTrue(maxShow.has_value() && *maxShow == AppVisibility::Foreground,
+               "WM_SIZE SIZE_MAXSHOW -> Foreground");
+    expectTrue(maxHide.has_value() && *maxHide == AppVisibility::Foreground,
+               "WM_SIZE SIZE_MAXHIDE -> Foreground");
+    expectTrue(!fuse::platform::visibilityFromWin32(WM_KEYDOWN, static_cast<WPARAM>('A')).has_value(),
+               "WM_KEYDOWN does not map to visibility");
+    expectTrue(!fuse::platform::visibilityFromWin32(WM_SETFOCUS, 0).has_value(),
+               "WM_SETFOCUS does not map to visibility");
+    expectTrue(!fuse::platform::visibilityFromWin32(WM_KILLFOCUS, 0).has_value(),
+               "WM_KILLFOCUS does not map to visibility");
+
+    // Message-only HWND: PostMessage reaches the pump with no display.
+    fuse::platform::notifyAppVisibility(AppVisibility::Foreground);
+
+    fuse::platform::EventPump pump;
+    fuse::platform::Window window;
+    expectTrue(window.isFocused(), "pump window starts focused");
+
+    const wchar_t* className = L"FUSE_EventPumpVisibility";
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = DefWindowProcW;
+    wc.hInstance = GetModuleHandleW(nullptr);
+    wc.lpszClassName = className;
+
+    ATOM atom = RegisterClassW(&wc);
+    if (atom == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+        expectTrue(false, "RegisterClassW for visibility HWND");
+        return;
+    }
+
+    HWND hwnd = CreateWindowExW(0, className, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr,
+                                GetModuleHandleW(nullptr), nullptr);
+    if (hwnd == nullptr) {
+        std::fprintf(stderr, "SKIP: visibility HWND unavailable (GetLastError=%lu)\n",
+                     static_cast<unsigned long>(GetLastError()));
+        return;
+    }
+
+    window.setNativeHandleForPump(hwnd);
+
+    expectTrue(PostMessageW(hwnd, WM_ACTIVATEAPP, FALSE, 0) != FALSE, "PostMessageW WM_ACTIVATEAPP FALSE");
+    expectTrue(PostMessageW(hwnd, WM_KEYDOWN, static_cast<WPARAM>('A'), 0) != FALSE,
+               "PostMessageW WM_KEYDOWN after deactivate");
+    pump.processOsEvents();
+    expectTrue(fuse::platform::getAppVisibility() == AppVisibility::Background,
+               "WM_ACTIVATEAPP FALSE backgrounds the app");
+
+    fuse::platform::PlatformEvent event;
+    expectTrue(pump.pollEvent(event), "key still queued after visibility message");
+    expectTrue(event.type == fuse::platform::PlatformEventType::KeyDown, "key type preserved");
+    expectEq(event.keyCode, static_cast<fuse::u32>('A'), "WM_KEYDOWN keyCode preserved");
+    expectTrue(!pump.hasPendingEvents(), "visibility message did not enqueue an input event");
+
+    expectTrue(PostMessageW(hwnd, WM_ACTIVATEAPP, TRUE, 0) != FALSE, "PostMessageW WM_ACTIVATEAPP TRUE");
+    pump.processOsEvents();
+    expectTrue(fuse::platform::getAppVisibility() == AppVisibility::Foreground,
+               "WM_ACTIVATEAPP TRUE foregrounds the app");
+    expectTrue(!pump.hasPendingEvents(), "WM_ACTIVATEAPP enqueues no platform event");
+
+    expectTrue(PostMessageW(hwnd, WM_SIZE, SIZE_MINIMIZED, 0) != FALSE, "PostMessageW WM_SIZE minimized");
+    pump.processOsEvents();
+    expectTrue(fuse::platform::getAppVisibility() == AppVisibility::Background,
+               "WM_SIZE SIZE_MINIMIZED backgrounds the focused window");
+    expectTrue(window.isFocused(), "minimize does not clear focus");
+    expectTrue(!pump.hasPendingEvents(), "SIZE_MINIMIZED enqueues no resize");
+
+    expectTrue(PostMessageW(hwnd, WM_KILLFOCUS, 0, 0) != FALSE, "PostMessageW WM_KILLFOCUS");
+    pump.processOsEvents();
+    expectTrue(pump.pollEvent(event) && event.type == fuse::platform::PlatformEventType::WindowFocusLost,
+               "WM_KILLFOCUS still reports focus loss");
+    expectTrue(!window.isFocused(), "WM_KILLFOCUS clears focus");
+    expectTrue(fuse::platform::getAppVisibility() == AppVisibility::Background,
+               "WM_KILLFOCUS leaves the app backgrounded");
+    expectTrue(!pump.hasPendingEvents(), "WM_KILLFOCUS enqueues only focus loss");
+
+    expectTrue(PostMessageW(hwnd, WM_SIZE, SIZE_RESTORED, 0) != FALSE,
+               "PostMessageW WM_SIZE restored while unfocused");
+    pump.processOsEvents();
+    expectTrue(fuse::platform::getAppVisibility() == AppVisibility::Background,
+               "non-minimized WM_SIZE while unfocused stays Background");
+    expectTrue(!pump.hasPendingEvents(), "zero-size WM_SIZE enqueues no resize");
+
+    expectTrue(PostMessageW(hwnd, WM_SETFOCUS, 0, 0) != FALSE, "PostMessageW WM_SETFOCUS");
+    pump.processOsEvents();
+    expectTrue(pump.pollEvent(event) && event.type == fuse::platform::PlatformEventType::WindowFocusGained,
+               "WM_SETFOCUS still reports focus gain");
+    expectTrue(window.isFocused(), "WM_SETFOCUS sets focus");
+    expectTrue(fuse::platform::getAppVisibility() == AppVisibility::Background,
+               "WM_SETFOCUS does not foreground by itself");
+    expectTrue(!pump.hasPendingEvents(), "WM_SETFOCUS enqueues only focus gain");
+
+    expectTrue(PostMessageW(hwnd, WM_SIZE, SIZE_RESTORED, 0) != FALSE,
+               "PostMessageW WM_SIZE restored while focused");
+    pump.processOsEvents();
+    expectTrue(fuse::platform::getAppVisibility() == AppVisibility::Foreground,
+               "non-minimized WM_SIZE while focused foregrounds the app");
+    expectTrue(!pump.hasPendingEvents(), "focused restore enqueues no resize when size is zero");
+
+    expectTrue(PostMessageW(hwnd, WM_SIZE, SIZE_MINIMIZED, 0) != FALSE, "PostMessageW WM_SIZE minimized again");
+    pump.processOsEvents();
+    expectTrue(fuse::platform::getAppVisibility() == AppVisibility::Background,
+               "second SIZE_MINIMIZED backgrounds again");
+
+    expectTrue(PostMessageW(hwnd, WM_SIZE, SIZE_MAXIMIZED, 0) != FALSE,
+               "PostMessageW WM_SIZE maximized while focused");
+    pump.processOsEvents();
+    expectTrue(fuse::platform::getAppVisibility() == AppVisibility::Foreground,
+               "SIZE_MAXIMIZED while focused foregrounds the app");
+
+    window.setNativeHandleForPump(nullptr);
+    DestroyWindow(hwnd);
+    UnregisterClassW(className, GetModuleHandleW(nullptr));
+    fuse::platform::notifyAppVisibility(AppVisibility::Foreground);
+}
 #endif
 
 void testEventPumpPollQueueFifoOrder() {
@@ -616,6 +789,19 @@ void testMobileProfileStillUsesWindowStub() {
 } // namespace
 
 int main() {
+    testPollMsOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core platform window tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testTitleLenOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_core platform window tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testWindowTitleOk();
     testWindowStubStoresDescription();
     testWindowInputCaptureDefaultReleased();
     testWindowInputCaptureSetCaptured();
@@ -637,6 +823,7 @@ int main() {
     testWindowDescriptionRoundTripsCreateNative();
     testEventPumpWin32MessageOnlyHwndMapsKeyDown();
     testEventPumpWin32RequireCaptureDropsReleasedInput();
+    testEventPumpWin32AppVisibilityMessages();
 #endif
     testEventPumpPollQueueFifoOrder();
     testEventPumpPollQueueOverflowDropsTail();

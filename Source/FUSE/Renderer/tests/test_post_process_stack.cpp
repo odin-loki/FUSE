@@ -1,7 +1,9 @@
 #include <fuse/core/init.hpp>
 #include <fuse/math/vec.hpp>
 #include <fuse/renderer/postprocess/auto_exposure.hpp>
+#include <fuse/renderer/postprocess/display_stage.hpp>
 #include <fuse/renderer/postprocess/bloom.hpp>
+#include <fuse/renderer/postprocess/bloom_radius.hpp>
 #include <fuse/renderer/postprocess/color_grade.hpp>
 #include <fuse/renderer/postprocess/post_stack.hpp>
 #include <fuse/renderer/postprocess/tonemap.hpp>
@@ -996,11 +998,38 @@ void testTonemapCurveApplyAndSpanGuards() {
     expectNear(passthrough.z, input.z, 1e-6f, "invalid curve apply guard preserves blue");
 }
 
+void testDisplayStageOrder() {
+    expectTrue(fuse::renderer::display_stage_before(fuse::renderer::DisplayStage::Depth,
+                                                    fuse::renderer::DisplayStage::Tonemap),
+               "depth runs before tonemap");
+    expectTrue(!fuse::renderer::display_stage_before(fuse::renderer::DisplayStage::Ui,
+                                                     fuse::renderer::DisplayStage::Color),
+               "ui does not run before color");
+    expectTrue(fuse::renderer::display_stage_index(fuse::renderer::DisplayStage::Tonemap) == 4,
+               "tonemap index is 4");
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits instead of continuing.
+void testBloomRadiusOk() {
+    expectTrue(fuse::renderer::bloom_radius_ok(0), "bloom_radius_ok(0) is true");
+    expectTrue(fuse::renderer::bloom_radius_ok(0.5f), "bloom_radius_ok(0.5f) is true");
+    expectTrue(fuse::renderer::bloom_radius_ok(1), "bloom_radius_ok(1) is true");
+    expectTrue(!fuse::renderer::bloom_radius_ok(-0.1f), "bloom_radius_ok(-0.1f) is false");
+    expectTrue(!fuse::renderer::bloom_radius_ok(1.2f), "bloom_radius_ok(1.2f) is false");
+}
+
 } // namespace
 
 int main() {
+    testBloomRadiusOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testBloomRadiusOk\n");
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
+    testDisplayStageOrder();
     testBloomBlackFrameProducesZeroContribution();
     testBloomDownsampleAveragesQuad();
     testAcesTonemapClamps();

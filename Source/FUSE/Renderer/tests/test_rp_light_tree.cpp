@@ -17,6 +17,7 @@
 //   --backend set | buffer   bindless descriptor-set backend / VK_EXT_descriptor_buffer (skip if absent)
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
+#include <fuse/renderer/light_depth.hpp>
 #include <fuse/renderer/light_tree/light_tree.hpp>
 #include <fuse/renderer/light_tree/light_tree_gpu.hpp>
 #include <fuse/renderer/rg/executor.hpp>
@@ -83,11 +84,25 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. No allocation. Both entry points call this before any GPU skip.
+/// A failure returns non-zero before any later skip.
+[[nodiscard]] int testLightDepthOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::light_depth_ok(1), "light_depth_ok(1) is true");
+    expect(fuse::renderer::light_depth_ok(32), "light_depth_ok(32) is true");
+    expect(!fuse::renderer::light_depth_ok(0), "light_depth_ok(0) is false");
+    expect(!fuse::renderer::light_depth_ok(33), "light_depth_ok(33) is false");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int depthRc = testLightDepthOk(); depthRc != 0) {
+        return depthRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -578,6 +593,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int depthRc = testLightDepthOk(); depthRc != 0) {
+        return depthRc;
+    }
     std::string mode = "sample";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

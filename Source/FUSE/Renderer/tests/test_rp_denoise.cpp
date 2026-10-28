@@ -27,6 +27,7 @@
 //   --backend set | buffer   bindless descriptor-set backend / VK_EXT_descriptor_buffer (skip if absent)
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
+#include <fuse/renderer/denoise_pass.hpp>
 #include <fuse/renderer/denoise/denoise_types.hpp>
 #include <fuse/renderer/denoise/svgf_denoiser.hpp>
 #include <fuse/renderer/denoise/svgf_kernel.hpp>
@@ -97,11 +98,28 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+int testDenoisePassOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::denoise_pass_ok(0), "denoise_pass_ok(0) is true");
+    expect(fuse::renderer::denoise_pass_ok(4), "denoise_pass_ok(4) is true");
+    expect(!fuse::renderer::denoise_pass_ok(-1), "denoise_pass_ok(-1) is false");
+    expect(!fuse::renderer::denoise_pass_ok(5), "denoise_pass_ok(5) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testDenoisePassOk\n");
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int denoiseRc = testDenoisePassOk()) {
+        return denoiseRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1243,6 +1261,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int denoiseRc = testDenoisePassOk()) {
+        return denoiseRc;
+    }
     std::string mode = "passes";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

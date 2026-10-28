@@ -12,16 +12,20 @@
 #include <fuse/ecs/components/collider.hpp>
 #include <fuse/ecs/components/rigidbody.hpp>
 #include <fuse/ecs/components/transform.hpp>
+#include <fuse/physics/forces/surface_friction.hpp>
 #include <fuse/physics/narrowphase/collision_dispatch.hpp>
 #include <fuse/physics/physics_data.hpp>
 #include <fuse/physics/physics_manager.hpp>
 #include <fuse/physics/rotation.hpp>
+#include <fuse/physics/rotation/rotation_steps.hpp>
+#include <fuse/physics/rotation/wrap_degrees.hpp>
 #include <fuse/physics/solver/pbd_solver.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 namespace {
 
@@ -598,9 +602,48 @@ void testOrientedNarrowphase() {
                "sphere on a rotated box face: normal along the face, depth 0.1");
 }
 
+void testSurfaceFriction() {
+    const f32 product = combine_friction(0.5f, 0.5f, FrictionCombine::Multiply);
+    const f32 lesser = combine_friction(0.2f, 0.8f, FrictionCombine::Minimum);
+    const f32 mean = combine_friction(0.2f, 0.8f, FrictionCombine::Average);
+    std::printf("surface friction: multiply %.2f, minimum %.2f, average %.2f\n", product, lesser, mean);
+    expectTrue(product == 0.25f, "multiply(0.5, 0.5) == 0.25");
+    expectTrue(lesser == 0.2f, "minimum(0.2, 0.8) == 0.2");
+    expectTrue(mean == 0.5f, "average(0.2, 0.8) == 0.5");
+    expectTrue(combine_friction(2.f, 4.f, FrictionCombine::Average) == 3.f, "average friction is not clamped to 1");
+    expectTrue(combine_friction(2.f, 4.f, FrictionCombine::Multiply) == 8.f, "multiply friction is not clamped to 1");
+    expectTrue(combine_friction(-1.f, 0.4f, FrictionCombine::Multiply) == 0.f, "negative friction clamps to 0");
+    expectTrue(combine_friction(std::nanf(""), 0.5f, FrictionCombine::Average) == 0.f,
+               "non-finite friction returns 0");
+}
+
+void testRotationStepsOk() {
+    expectTrue(rotation_steps_ok(1), "rotation_steps_ok(1) is true");
+    expectTrue(rotation_steps_ok(16), "rotation_steps_ok(16) is true");
+    expectTrue(!rotation_steps_ok(0), "rotation_steps_ok(0) is false");
+    expectTrue(!rotation_steps_ok(17), "rotation_steps_ok(17) is false");
+}
+
+void testWrapDegrees() {
+    constexpr f32 kTol = 1e-3f;
+    expectTrue(std::fabs(wrap_degrees(0.f) - 0.f) < kTol, "wrap_degrees(0) == 0");
+    expectTrue(std::fabs(wrap_degrees(360.f) - 0.f) < kTol, "wrap_degrees(360) == 0");
+    expectTrue(std::fabs(wrap_degrees(-90.f) - 270.f) < kTol, "wrap_degrees(-90) == 270");
+    expectTrue(std::fabs(wrap_degrees(450.f) - 90.f) < kTol, "wrap_degrees(450) == 90");
+    expectTrue(std::fabs(wrap_degrees(std::numeric_limits<float>::quiet_NaN())) < kTol, "wrap_degrees(NaN) == 0");
+    expectTrue(std::fabs(wrap_degrees(std::numeric_limits<float>::infinity())) < kTol, "wrap_degrees(+inf) == 0");
+    expectTrue(std::fabs(wrap_degrees(-std::numeric_limits<float>::infinity())) < kTol, "wrap_degrees(-inf) == 0");
+}
+
 } // namespace
 
 int main() {
+    testRotationStepsOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b4_rotation_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testWrapDegrees();
     fuse::core::initialize();
     testOrientedNarrowphase();
     testOffCentreImpulse();
@@ -613,6 +656,7 @@ int main() {
     testTallTwistedStack();
     testCapsuleFallsOnItsSide();
     testSpinningBoxSleepsOnlyWhenStopped();
+    testSurfaceFriction();
     fuse::core::shutdown();
 
     if (g_failures == 0) {

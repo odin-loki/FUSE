@@ -5,7 +5,11 @@
 #include <fuse/animation/animator.hpp>
 #include <fuse/animation/blend_tree.hpp>
 #include <fuse/animation/clip.hpp>
+#include <fuse/animation/crossfade_ms.hpp>
 #include <fuse/animation/ik_solver.hpp>
+#include <fuse/animation/layer_count.hpp>
+#include <fuse/animation/loop_phase.hpp>
+#include <fuse/animation/retarget.hpp>
 #include <fuse/animation/skeleton.hpp>
 #include <fuse/animation/skinning.hpp>
 
@@ -1153,9 +1157,90 @@ void supportDecomposeTrs() {
                 worstScale, worstInverse, worstSlerp);
 }
 
+void testAnimLayerOk() {
+    expectTrue(anim::anim_layer_ok(1), "one animation layer is allowed");
+    expectTrue(anim::anim_layer_ok(8), "eight animation layers is the cap");
+    expectTrue(!anim::anim_layer_ok(0), "zero animation layers is rejected");
+    expectTrue(!anim::anim_layer_ok(9), "nine animation layers is rejected");
+}
+
+void testCrossfadeMsOk() {
+    expectTrue(anim::crossfade_ms_ok(0), "zero crossfade milliseconds is allowed");
+    expectTrue(anim::crossfade_ms_ok(5000), "5000 crossfade milliseconds is the cap");
+    expectTrue(!anim::crossfade_ms_ok(-1), "negative crossfade milliseconds is rejected");
+    expectTrue(!anim::crossfade_ms_ok(5001), "5001 crossfade milliseconds is rejected");
+}
+
+void testLoopPhase() {
+    expectTrue(anim::loop_phase(1.5f, 1.f) == 0.5f, "loop_phase(1.5, 1) is 0.5");
+    expectTrue(anim::loop_phase(-0.25f, 1.f) == 0.75f, "loop_phase(-0.25, 1) is 0.75");
+    expectTrue(anim::loop_phase(1.f, 0.f) == 0.f, "loop_phase(1, 0) is 0");
+}
+
+// `are_skeletons_compatible` requires a valid map and exact bone-count equality on both skeletons.
+void testRetargetSkeletonsCompatible() {
+    anim::RetargetMap map{};
+    map.source_bone_count = 2u;
+    map.target_bone_count = 3u;
+    anim::RetargetBoneEntry entry{};
+    entry.source_bone = 0u;
+    entry.target_bone = 1u;
+    map.bone_map.push_back(entry);
+
+    anim::Skeleton source{};
+    source.bone_count = 2u;
+    anim::Skeleton target{};
+    target.bone_count = 3u;
+    expectTrue(map.are_skeletons_compatible(source, target),
+               "are_skeletons_compatible accepts skeletons whose bone counts match a valid map");
+
+    anim::Skeleton shortSource{};
+    shortSource.bone_count = 1u;
+    expectTrue(!map.are_skeletons_compatible(shortSource, target),
+               "are_skeletons_compatible rejects a smaller source bone count");
+
+    anim::Skeleton longSource{};
+    longSource.bone_count = 4u;
+    expectTrue(!map.are_skeletons_compatible(longSource, target),
+               "are_skeletons_compatible rejects a larger source bone count");
+
+    anim::Skeleton shortTarget{};
+    shortTarget.bone_count = 2u;
+    expectTrue(!map.are_skeletons_compatible(source, shortTarget),
+               "are_skeletons_compatible rejects a target bone count mismatch");
+
+    anim::Skeleton empty{};
+    expectTrue(!map.are_skeletons_compatible(empty, target),
+               "are_skeletons_compatible rejects an empty source skeleton");
+    expectTrue(!map.are_skeletons_compatible(source, empty),
+               "are_skeletons_compatible rejects an empty target skeleton");
+
+    anim::RetargetMap invalid{};
+    invalid.source_bone_count = 2u;
+    invalid.target_bone_count = 3u;
+    expectTrue(!invalid.are_skeletons_compatible(source, target),
+               "are_skeletons_compatible rejects a map with no bone entries");
+}
+
 } // namespace
 
 int main() {
+    testRetargetSkeletonsCompatible();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b7_animation_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testLoopPhase();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b7_animation_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testCrossfadeMsOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b7_animation_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testAnimLayerOk();
     gateSkeletonBinaryLoad();
     gateClipNodeKeyframes();
     gateBlendNode2();

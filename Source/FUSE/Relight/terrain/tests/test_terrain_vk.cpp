@@ -12,6 +12,7 @@
 
 #include <fuse/relight/terrain/terrain_baker.hpp>
 #include <fuse/relight/terrain/terrain_baker_gpu.hpp>
+#include <fuse/relight/terrain/terrain_lod.hpp>
 
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
@@ -77,11 +78,29 @@ int g_failures = 0;
     }
 }
 [[maybe_unused]] void check(bool condition, const std::string& message) { check(condition, message.c_str()); }
+
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of 77. No heap allocation.
+int testTerrainLodOk() {
+    const int before = g_failures;
+    check(fuse::relight::terrain_lod_ok(0), "terrain_lod_ok(0) is true");
+    check(fuse::relight::terrain_lod_ok(8), "terrain_lod_ok(8) is true");
+    check(!fuse::relight::terrain_lod_ok(-1), "terrain_lod_ok(-1) is false");
+    check(!fuse::relight::terrain_lod_ok(9), "terrain_lod_ok(9) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testTerrainLodOk\n");
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    const int lodRc = testTerrainLodOk();
+    if (lodRc != 0) {
+        return lodRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -460,6 +479,10 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    const int lodRc = testTerrainLodOk();
+    if (lodRc != 0) {
+        return lodRc;
+    }
     std::string language = "all";
     Validation validation = Validation::Layer;
     for (int i = 1; i < argc; ++i) {

@@ -1,3 +1,4 @@
+#include <fuse/ai/child_count.hpp>
 #include <fuse/ai/parallel_policy.hpp>
 #include <fuse/ai/spatial_query.hpp>
 
@@ -14,6 +15,13 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testChildCountOk() {
+    expectTrue(fuse::ai::child_count_ok(1), "child_count_ok(1) is true");
+    expectTrue(!fuse::ai::child_count_ok(0), "child_count_ok(0) is false");
+    expectTrue(fuse::ai::child_count_ok(16), "child_count_ok(16) is true");
+    expectTrue(!fuse::ai::child_count_ok(17), "child_count_ok(17) is false");
 }
 
 void testEffectiveThresholds() {
@@ -84,12 +92,25 @@ void testParallelPolicyValidity() {
                "success threshold above child count is invalid");
 }
 
+void testParallelSucceeded() {
+    using fuse::ai::success_policy::ParallelPolicy;
+    using fuse::ai::parallel_succeeded;
+    expectTrue(parallel_succeeded(2, 2, ParallelPolicy::RequireAll),
+               "2 of 2 with RequireAll succeeds");
+    expectTrue(!parallel_succeeded(1, 2, ParallelPolicy::RequireAll),
+               "1 of 2 with RequireAll fails");
+    expectTrue(parallel_succeeded(1, 2, ParallelPolicy::RequireOne),
+               "1 of 2 with RequireOne succeeds");
+}
+
 } // namespace
 
 int run_parallel_policy_tests() {
+    testChildCountOk();
     testEffectiveThresholds();
     testParallelPreconditions();
     testNormalizeParallelPolicy();
     testParallelPolicyValidity();
+    testParallelSucceeded();
     return g_failures;
 }

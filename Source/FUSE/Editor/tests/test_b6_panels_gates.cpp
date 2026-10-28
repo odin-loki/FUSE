@@ -2,8 +2,10 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/asset_browser.hpp>
 #include <fuse/editor/console_panel.hpp>
+#include <fuse/editor/dock_side.hpp>
 #include <fuse/editor/editor_scene.hpp>
 #include <fuse/editor/editor_state.hpp>
+#include <fuse/editor/panel_index.hpp>
 #include <fuse/editor/profiler_panel.hpp>
 #include <fuse/editor/sdf_sculpt_panel.hpp>
 #include <fuse/editor/undo_stack.hpp>
@@ -416,11 +418,34 @@ void testConsoleParsingAndHistory() {
     expectTrue(console.executeCommand("clear") && console.lines().empty(), "built-in clear empties the log");
 }
 
+void testDockSideOk() {
+    expectTrue(fuse::editor::dock_side_ok("Left"), "Left is a dock side");
+    expectTrue(fuse::editor::dock_side_ok("Right"), "Right is a dock side");
+    expectTrue(fuse::editor::dock_side_ok("Top"), "Top is a dock side");
+    expectTrue(fuse::editor::dock_side_ok("Bottom"), "Bottom is a dock side");
+    expectTrue(!fuse::editor::dock_side_ok("left"), "lowercase left is rejected");
+    expectTrue(!fuse::editor::dock_side_ok("Center"), "Center is not a dock side");
+}
+
+void testPanelIndexOk() {
+    expectTrue(fuse::editor::panel_index_ok(0), "index 0 is a panel index");
+    expectTrue(fuse::editor::panel_index_ok(15), "index 15 is a panel index");
+    expectTrue(!fuse::editor::panel_index_ok(-1), "index -1 is rejected");
+    expectTrue(!fuse::editor::panel_index_ok(16), "index 16 is rejected");
+}
+
 } // namespace
 
 int main() {
+    testPanelIndexOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_editor_b6_panels_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
+    testDockSideOk();
     testSculptAddBrushAndSymmetry();
     testSculptCsgBrushes();
     testAssetBrowserModel();
@@ -436,3 +461,37 @@ int main() {
     std::fprintf(stderr, "fuse_editor_b6_panels_gates: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/editor/panel_mask.hpp>
+
+namespace {
+
+void testPanelVisibilityMask() {
+    using fuse::editor::EditorPanel;
+    unsigned mask = 0u;
+    const bool hierarchy = fuse::editor::panel_visible(mask, EditorPanel::Hierarchy);
+
+    mask = fuse::editor::panel_toggle(mask, EditorPanel::Viewport);
+    expectTrue(fuse::editor::panel_visible(mask, EditorPanel::Viewport),
+               "mask 0 toggled with Viewport becomes visible");
+    expectTrue(mask == static_cast<unsigned>(EditorPanel::Viewport),
+               "only the Viewport bit is set");
+    expectTrue(fuse::editor::panel_visible(mask, EditorPanel::Hierarchy) == hierarchy,
+               "hierarchy stays unchanged when Viewport is shown");
+
+    mask = fuse::editor::panel_toggle(mask, EditorPanel::Viewport);
+    expectTrue(!fuse::editor::panel_visible(mask, EditorPanel::Viewport),
+               "toggling Viewport again hides it");
+    expectTrue(mask == 0u, "second Viewport toggle clears that bit");
+    expectTrue(fuse::editor::panel_visible(mask, EditorPanel::Hierarchy) == hierarchy,
+               "hierarchy stays unchanged when Viewport is hidden");
+}
+
+// Appended gate: runs before main so the existing failure count still reports it.
+struct PanelVisibilityMaskTestHook {
+    PanelVisibilityMaskTestHook() { testPanelVisibilityMask(); }
+};
+
+[[maybe_unused]] const PanelVisibilityMaskTestHook g_panelVisibilityMaskTestHook{};
+
+} // namespace

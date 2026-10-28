@@ -25,6 +25,8 @@
 //   parity      light_d3d_convert and light_set_sample: CpuReference == CpuParallel bit for bit.
 //   zero_alloc  steady-state frames (game lights, authored lights, emissive meshes, build / refit, sampling): no
 //               operator-new call.
+#include <fuse/relight/render/lights/ies_profile.hpp>
+#include <fuse/relight/render/lights/intensity.hpp>
 #include <fuse/relight/render/lights/light_set.hpp>
 
 #include "light_kernels.hpp"
@@ -1165,9 +1167,39 @@ void suiteZeroAlloc() {
     check(builds > 2u && refits > 2u, "the loop exercised both rebuilds and refits");
 }
 
+void suiteIes() {
+    const char* one = "TILT=NONE\n1 1000 1 1 1 1 1 0 0 0 1 1 1 100\n0\n0\n100\n";
+    const std::optional<rl::IesProfile> single = rl::parse_ies(one);
+    check(single.has_value(), "single-angle IES parses");
+    if (single) {
+        check(std::fabs(single->sample(0.f, 0.f) - 100.f) < 1e-3f, "single-angle sample is 100 cd");
+    }
+    const char* pair = "TILT=NONE\n1 1000 1 2 1 1 1 0 0 0 1 1 1 100\n0 90\n0\n0 100\n";
+    const std::optional<rl::IesProfile> two = rl::parse_ies(pair);
+    check(two.has_value(), "two-angle IES parses");
+    if (two) {
+        check(std::fabs(two->sample(45.f, 0.f) - 50.f) < 1e-3f, "mid-angle sample is the bilinear midpoint");
+        check(std::fabs(two->sample(-10.f, 0.f) - two->sample(0.f, 0.f)) < 1e-4f,
+              "angles outside the table clamp to the edge");
+    }
+    check(!rl::parse_ies("TILT=INCLUDE\n1\n").has_value(), "TILT=INCLUDE is rejected");
+}
+
+void testIntensityOk() {
+    check(fuse::relight::intensity_ok(0), "nits 0");
+    check(fuse::relight::intensity_ok(1000), "nits 1000");
+    check(fuse::relight::intensity_ok(100000), "nits 100000");
+    check(!fuse::relight::intensity_ok(-1), "nits -1");
+    check(!fuse::relight::intensity_ok(100001), "nits 100001");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testIntensityOk();
+    if (g_failures != 0) {
+        return 1;
+    }
     options::setEnvironmentVariable(options::kDxvkConfEnvVar, "");
     options::setEnvironmentVariable(options::kRtxConfEnvVar, "");
     (void)BorrowedStandIns::sceneScaleObject();
@@ -1184,7 +1216,7 @@ int main(int argc, char** argv) {
     };
     const Suite suites[] = {{"convert", suiteConvert}, {"pdf", suitePdf},     {"sample", suiteSample},
                             {"usd", suiteUsd},         {"emissive", suiteEmissive}, {"set", suiteSet},
-                            {"parity", suiteParity},   {"zero_alloc", suiteZeroAlloc}};
+                            {"parity", suiteParity},   {"zero_alloc", suiteZeroAlloc}, {"ies", suiteIes}};
     bool ran = false;
     for (const Suite& s : suites) {
         if (suite == "all" || suite == s.name) {

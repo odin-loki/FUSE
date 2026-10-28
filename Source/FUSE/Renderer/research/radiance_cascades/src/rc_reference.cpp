@@ -5,6 +5,9 @@
 // -fp-mode precise, so no multiply-add is contracted on either side).
 #include <fuse/renderer/research/rc/rc_reference.hpp>
 
+#include <fuse/math/vec.hpp>
+#include <fuse/renderer/deferred/gbuffer.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -121,6 +124,93 @@ void RcScene::fillDisk(f32 cx, f32 cy, f32 radius, f32 r, f32 g, f32 b, bool isO
             }
         }
     }
+}
+
+void RcCpuGBuffer::resize(u32 w, u32 h) {
+    width = w;
+    height = h;
+    const usize n = static_cast<usize>(w) * h;
+    depth.assign(n, 0.0f);
+    octNormal.assign(n * 2u, 0.0f);
+    albedo.assign(n * 3u, 0.0f);
+}
+
+void RcCpuGBuffer::clear() {
+    std::fill(depth.begin(), depth.end(), 0.0f);
+    std::fill(octNormal.begin(), octNormal.end(), 0.0f);
+    std::fill(albedo.begin(), albedo.end(), 0.0f);
+}
+
+bool RcCpuGBuffer::write(u32 x, u32 y, f32 z, f32 nx, f32 ny, f32 nz, f32 ar, f32 ag, f32 ab) {
+    if (x >= width || y >= height) {
+        return false;
+    }
+    if (!(z > 0.0f)) {
+        return true;
+    }
+    const usize i = static_cast<usize>(y) * width + x;
+    if (depth[i] > 0.0f && !(z < depth[i])) {
+        return true;
+    }
+    fuse::math::Vec3 n{nx, ny, nz};
+    n = n.normalized();
+    if (n.x == 0.0f && n.y == 0.0f && n.z == 0.0f) {
+        n = {0.0f, 0.0f, 1.0f};
+    }
+    const fuse::math::Vec2 oct = fuse::renderer::GBufferEncoding::encodeOctSigned(n);
+    depth[i] = z;
+    octNormal[i * 2u] = oct.x;
+    octNormal[i * 2u + 1u] = oct.y;
+    albedo[i * 3u] = ar;
+    albedo[i * 3u + 1u] = ag;
+    albedo[i * 3u + 2u] = ab;
+    return true;
+}
+
+void rasterizeDisk(RcCpuGBuffer& gb, f32 cx, f32 cy, f32 radius, f32 z, f32 nx, f32 ny, f32 nz, f32 ar, f32 ag, f32 ab) {
+    for (u32 y = 0; y < gb.height; ++y) {
+        for (u32 x = 0; x < gb.width; ++x) {
+            const f32 dx = static_cast<f32>(x) + 0.5f - cx;
+            const f32 dy = static_cast<f32>(y) + 0.5f - cy;
+            if (dx * dx + dy * dy <= radius * radius) {
+                gb.write(x, y, z, nx, ny, nz, ar, ag, ab);
+            }
+        }
+    }
+}
+
+void fillDiagnosticGBuffer(RcCpuGBuffer& gb, u32 width, u32 height, u32 frameIndex) {
+    gb.resize(width, height);
+    const f32 w = static_cast<f32>(width);
+    const f32 h = static_cast<f32>(height);
+    rasterizeDisk(gb, kRcDiagCenter[0] * w, kRcDiagCenter[1] * h, kRcDiagRadius * w, kRcDiagDepth, kRcDiagNormal[0],
+                  kRcDiagNormal[1], kRcDiagNormal[2], kRcDiagAlbedoR, rcDiagAlbedoG(frameIndex), kRcDiagAlbedoB);
+    rasterizeDisk(gb, kRcDiagDisk2[0] * w, kRcDiagDisk2[1] * h, kRcDiagRadius2 * w, kRcDiagDepth2, kRcDiagNormal2[0],
+                  kRcDiagNormal2[1], kRcDiagNormal2[2], kRcDiagAlbedo2[0], kRcDiagAlbedo2[1], kRcDiagAlbedo2[2]);
+}
+
+bool packSceneFromGBuffer(const RcCpuGBuffer& gb, RcScene& scene) {
+    const usize n = static_cast<usize>(gb.width) * gb.height;
+    if (gb.width == 0u || gb.height == 0u || gb.depth.size() != n || gb.octNormal.size() != n * 2u ||
+        gb.albedo.size() != n * 3u) {
+        return false;
+    }
+    scene.resize(gb.width, gb.height);
+    const fuse::math::Vec3 light = fuse::math::Vec3{kRcPackLight[0], kRcPackLight[1], kRcPackLight[2]}.normalized();
+    for (u32 y = 0; y < gb.height; ++y) {
+        for (u32 x = 0; x < gb.width; ++x) {
+            const usize i = static_cast<usize>(y) * gb.width + x;
+            if (!(gb.depth[i] > 0.0f)) {
+                continue;
+            }
+            const fuse::math::Vec3 normal = fuse::renderer::GBufferEncoding::decodeOctSigned(
+                {gb.octNormal[i * 2u], gb.octNormal[i * 2u + 1u]});
+            const f32 shade = std::max(0.0f, normal.dot(light));
+            scene.set(x, y, gb.albedo[i * 3u] * shade, gb.albedo[i * 3u + 1u] * shade, gb.albedo[i * 3u + 2u] * shade,
+                      true);
+        }
+    }
+    return true;
 }
 
 // --- layout ------------------------------------------------------------------------------------------------

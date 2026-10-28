@@ -25,6 +25,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/core/sanitizer.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/renderer/cluster_device.hpp>
 #include <fuse/renderer/lighting/clustered.hpp>
 #include <fuse/renderer/lighting/clustered_device.hpp>
 #include <fuse/renderer/lighting/clustered_kernel.hpp>
@@ -64,6 +65,15 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+// CPU gate. No allocation. main calls this before any device skip.
+// A failure returns non-zero before any later skip.
+void testClusterDeviceOk() {
+    expectTrue(cluster_device_ok(0), "cluster_device_ok(0) is true");
+    expectTrue(cluster_device_ok(7), "cluster_device_ok(7) is true");
+    expectTrue(!cluster_device_ok(-1), "cluster_device_ok(-1) is false");
+    expectTrue(!cluster_device_ok(8), "cluster_device_ok(8) is false");
 }
 
 struct Options {
@@ -328,6 +338,12 @@ bool parseU32(const char* text, u32& out) {
 } // namespace
 
 int main(int argc, char** argv) {
+    testClusterDeviceOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_b5_clustered_device: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     Options opt;
     for (int i = 1; i < argc; ++i) {
         const bool hasValue = i + 1 < argc;

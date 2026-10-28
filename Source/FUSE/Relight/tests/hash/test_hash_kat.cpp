@@ -19,7 +19,9 @@
 #include "cases.hpp"
 #include "upstream_oracle.hpp"
 
+#include <fuse/relight/hash/hash_bytes.hpp>
 #include <fuse/relight/hash/remix_hash.hpp>
+#include <fuse/relight/hash/span_equal.hpp>
 
 #include <bit>
 #include <cmath>
@@ -588,6 +590,22 @@ bool emitCases(const std::string& path, std::uint64_t seed, std::size_t count) {
     return std::fclose(fp) == 0;
 }
 
+void testHashBytesOk() {
+    check(fuse::relight::hash::hash_bytes_ok(4), "4-byte hash width is allowed");
+    check(fuse::relight::hash::hash_bytes_ok(8), "8-byte hash width is allowed");
+    check(fuse::relight::hash::hash_bytes_ok(16), "16-byte hash width is allowed");
+    check(fuse::relight::hash::hash_bytes_ok(32), "32-byte hash width is allowed");
+    check(!fuse::relight::hash::hash_bytes_ok(0), "zero hash width is rejected");
+    check(!fuse::relight::hash::hash_bytes_ok(12), "12-byte hash width is rejected");
+}
+
+void testSpansEqual() {
+    const std::uint8_t abc[] = {1, 2, 3};
+    const std::uint8_t ab[] = {1, 2};
+    check(fuse::relight::hash::spans_equal(abc, 3, abc, 3), "a span equals itself");
+    check(!fuse::relight::hash::spans_equal(ab, 2, abc, 3), "different lengths are not equal");
+}
+
 int usage() {
     std::fprintf(stderr,
                  "usage: fuse_relight_hash_kat [--vectors F] [--kat F] [--self] [--digest-check F] [--digest]\n"
@@ -598,6 +616,11 @@ int usage() {
 } // namespace
 
 int main(int argc, char** argv) {
+    testHashBytesOk();
+    testSpansEqual();
+    if (g_failures != 0) {
+        return 1;
+    }
     std::vector<std::string> args(argv + 1, argv + argc);
     std::size_t count = kDefaultCount;
     std::uint64_t seed = kDefaultSeed;

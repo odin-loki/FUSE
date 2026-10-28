@@ -25,6 +25,7 @@
 //   --backend set | buffer   bindless descriptor-set backend / VK_EXT_descriptor_buffer (skip if absent)
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, no kernel built, backend unsupported).
+#include <fuse/renderer/cull_batch.hpp>
 #include <fuse/renderer/culling/cull_reference.hpp>
 #include <fuse/renderer/culling/instance_culler.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
@@ -99,11 +100,23 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. Must run before any GPU or device skip; a failure returns non-zero. Does not allocate.
+void testCullBatchOk() {
+    expect(fuse::renderer::cull_batch_ok(1), "cull_batch_ok(1) is true");
+    expect(fuse::renderer::cull_batch_ok(1024), "cull_batch_ok(1024) is true");
+    expect(!fuse::renderer::cull_batch_ok(0), "cull_batch_ok(0) is false");
+    expect(!fuse::renderer::cull_batch_ok(1025), "cull_batch_ok(1025) is false");
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    testCullBatchOk();
+    if (g_failures != 0) {
+        return 1;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1565,6 +1578,10 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    testCullBatchOk();
+    if (g_failures != 0) {
+        return 1;
+    }
     std::string mode = "parity";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

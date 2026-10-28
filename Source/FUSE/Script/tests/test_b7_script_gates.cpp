@@ -15,11 +15,14 @@
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/physics/physics_manager.hpp>
+#include <fuse/script/hot_reload.hpp>
 #include <fuse/script/script_engine_api.hpp>
 #include <fuse/script/script_host.hpp>
 #include <fuse/script/script_hot_reload.hpp>
+#include <fuse/script/script_indent.hpp>
 #include <fuse/script/script_physics_bridge.hpp>
 #include <fuse/script/script_runtime.hpp>
+#include <fuse/script/script_slot.hpp>
 #include <fuse/script/script_vm.hpp>
 #include <fuse/types.hpp>
 
@@ -916,10 +919,51 @@ void testCoroutines() {
     expectTrue(runtime.error_count() == 0, "no coroutine errors");
 }
 
+// Indent spaces are the closed range 0..32. No allocation.
+void testScriptIndentOk() {
+    expectTrue(fuse::script::script_indent_ok(0), "script_indent_ok(0) is true");
+    expectTrue(fuse::script::script_indent_ok(32), "script_indent_ok(32) is true");
+    expectTrue(!fuse::script::script_indent_ok(-1), "script_indent_ok(-1) is false");
+    expectTrue(!fuse::script::script_indent_ok(33), "script_indent_ok(33) is false");
+}
+
+// Script slots are the closed range 0..63.
+void testScriptSlotOk() {
+    expectTrue(fuse::script::script_slot_ok(0), "script_slot_ok(0) is true");
+    expectTrue(fuse::script::script_slot_ok(63), "script_slot_ok(63) is true");
+    expectTrue(!fuse::script::script_slot_ok(-1), "script_slot_ok(-1) is false");
+    expectTrue(!fuse::script::script_slot_ok(64), "script_slot_ok(64) is false");
+}
+
+// Editing during play does not reload. A source change reloads only while stopped.
+void testHotReloadDue() {
+    expectTrue(fuse::script::hot_reload_due(true, false), "changed source reloads when not playing");
+    expectTrue(!fuse::script::hot_reload_due(true, true), "editing during play does not reload");
+    expectTrue(!fuse::script::hot_reload_due(false, false), "unchanged source does not reload when stopped");
+    expectTrue(!fuse::script::hot_reload_due(false, true), "unchanged source does not reload while playing");
+}
+
 } // namespace
 
 int main() {
+    testScriptIndentOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_script_b7_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testScriptSlotOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_script_b7_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
+
+    testHotReloadDue();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_script_b7_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
 
 #if defined(FUSE_SCRIPT_LUA) && FUSE_SCRIPT_LUA
     testHelloWorld();

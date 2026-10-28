@@ -12,9 +12,11 @@
 //    after every reload; removing it restores the unwrapped table.
 //  * Zero validation errors and warnings (validation + sync validation enabled by the ctest env).
 // The companion ctest fuse_rp_volk_no_loader_imports checks the link side (no vk* imports).
+#include <fuse/renderer/device/loader_name.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/instance.hpp>
 #include <fuse/renderer/vk/loader.hpp>
+#include <fuse/renderer/vk/volk_symbol.hpp>
 
 #include <cstdio>
 #include <cstring>
@@ -347,9 +349,32 @@ int runVulkan() {
 
 #endif
 
+// CPU gate. Must run before any GPU skip; a failure exits 1 instead of 77.
+void testVolkSymbolOk() {
+    expectTrue(fuse::renderer::volk_symbol_ok("vkCreateInstance"), "vkCreateInstance is a volk symbol");
+    expectTrue(!fuse::renderer::volk_symbol_ok(""), "empty name is not a volk symbol");
+    expectTrue(!fuse::renderer::volk_symbol_ok("1vk"), "a digit is not a volk symbol start");
+    expectTrue(!fuse::renderer::volk_symbol_ok("vk Create"), "a space is not allowed in a volk symbol");
+}
+
+void testLoaderName() {
+    expectTrue(fuse::renderer::vulkan_loader_name("vulkan-1.dll"), "vulkan-1.dll is a loader name");
+    expectTrue(!fuse::renderer::vulkan_loader_name("d3d9.dll"), "d3d9.dll is not a loader name");
+    expectTrue(fuse::renderer::vulkan_loader_name("C:\\Windows\\System32\\vulkan-1.dll"),
+               "a full path still names the loader");
+}
+
 } // namespace
 
 int main() {
+    testVolkSymbolOk();
+    if (g_failures != 0) {
+        return 1;
+    }
+    testLoaderName();
+    if (g_failures != 0) {
+        return 1;
+    }
 #if defined(FUSE_VULKAN_BACKEND)
     const int rc = runVulkan();
     if (rc == kSkip) {

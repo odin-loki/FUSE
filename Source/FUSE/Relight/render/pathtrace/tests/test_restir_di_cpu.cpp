@@ -25,6 +25,7 @@
 // Usage: fuse_relight_restir_di_tests <suite>|all. Exit 0 pass, 1 fail.
 #include "pt_test_scenes.hpp"
 
+#include <fuse/relight/render/pathtrace/di_candidates.hpp>
 #include <fuse/relight/render/pathtrace/restir_di.hpp>
 
 #include <fuse/relight/options/option.hpp>
@@ -575,9 +576,21 @@ void suiteOptions() {
     check(!d.enabled && d.unbiased && d.tileCandidates == 8u && d.spatialSamples == 4u, "options: defaults");
 }
 
+/// Runs before option setup. No heap allocation. Failure returns non-zero.
+int testDiCandidatesOk() {
+    check(fuse::relight::di_candidates_ok(1), "di_candidates_ok(1)");
+    check(fuse::relight::di_candidates_ok(32), "di_candidates_ok(32)");
+    check(!fuse::relight::di_candidates_ok(0), "di_candidates_ok(0)");
+    check(!fuse::relight::di_candidates_ok(33), "di_candidates_ok(33)");
+    return g_failures == 0 ? 0 : 1;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int diCandidatesRc = testDiCandidatesOk()) {
+        return diCandidatesRc;
+    }
     opt::setEnvironmentVariable(opt::kDxvkConfEnvVar, "");
     opt::setEnvironmentVariable(opt::kRtxConfEnvVar, "");
     (void)BorrowedStandIns::sceneScaleObject();

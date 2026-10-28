@@ -1,7 +1,10 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/command_stack.hpp>
 #include <fuse/editor/editor_state.hpp>
+#include <fuse/editor/gizmo_hover.hpp>
 #include <fuse/editor/gizmo_system.hpp>
+#include <fuse/editor/grid_snap.hpp>
+#include <fuse/math/mat.hpp>
 #include <fuse/types.hpp>
 
 #include <cmath>
@@ -9,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <vector>
 
 namespace {
 
@@ -2821,11 +2825,103 @@ void testInteractionRejectReasonHelpers() {
     gizmo.endDrag();
 }
 
+void testRasterizeTranslateGizmo() {
+    const fuse::math::Mat4 view =
+        fuse::math::lookAt({0.f, 0.f, 5.f}, {0.f, 0.f, 0.f}, {0.f, 1.f, 0.f});
+    const fuse::math::Mat4 projection = fuse::math::perspective(60.f, 1.f, 0.1f, 100.f);
+    const fuse::math::Mat4 viewProjection = fuse::math::multiply(projection, view);
+
+    constexpr fuse::u32 width = 64;
+    constexpr fuse::u32 height = 64;
+    const fuse::usize pixelCount = static_cast<fuse::usize>(width) * height;
+    std::vector<fuse::u8> pixels(pixelCount * 4u, 0);
+    pixels[3] = 1;
+
+    fuse::editor::rasterizeTranslateGizmo(viewProjection, {0.f, 0.f, 0.f}, width, height,
+                                          pixels.data());
+
+    expectTrue(pixels[3] == 1, "rasterizeTranslateGizmo does not clear the buffer");
+
+    int redIndex = -1;
+    int greenIndex = -1;
+    for (fuse::usize i = 0; i < pixelCount; ++i) {
+        const fuse::u8* pixel = pixels.data() + i * 4u;
+        if (redIndex < 0 && pixel[0] != 0) {
+            redIndex = static_cast<int>(i);
+        }
+        if (greenIndex < 0 && pixel[1] != 0) {
+            greenIndex = static_cast<int>(i);
+        }
+    }
+    expectTrue(redIndex >= 0, "translate gizmo writes a non-zero red pixel");
+    expectTrue(greenIndex >= 0, "translate gizmo writes a non-zero green pixel");
+    expectTrue(redIndex >= 0 && greenIndex >= 0 && redIndex != greenIndex,
+               "red and green gizmo pixels are not the same pixel");
+
+    std::vector<fuse::u8> behind(pixelCount * 4u, 0);
+    const fuse::math::Mat4 away =
+        fuse::math::lookAt({0.f, 0.f, -5.f}, {0.f, 0.f, -6.f}, {0.f, 1.f, 0.f});
+    fuse::editor::rasterizeTranslateGizmo(fuse::math::multiply(projection, away), {0.f, 0.f, 0.f},
+                                          width, height, behind.data());
+    bool wroteBehind = false;
+    for (fuse::u8 byte : behind) {
+        if (byte != 0) {
+            wroteBehind = true;
+            break;
+        }
+    }
+    expectTrue(!wroteBehind, "axes behind the camera are skipped");
+}
+
+void testSnapToGrid() {
+    expectTrue(fuse::editor::snap_to_grid(1.2f, 0.5f) == 1.f, "snap_to_grid(1.2, 0.5) == 1");
+    expectTrue(fuse::editor::snap_to_grid(1.25f, 0.5f) == 1.5f, "snap_to_grid(1.25, 0.5) == 1.5");
+    expectTrue(fuse::editor::snap_to_grid(-1.25f, 0.5f) == -1.5f,
+               "snap_to_grid(-1.25, 0.5) == -1.5");
+
+    expectTrue(fuse::editor::snap_to_grid(1.2f, 0.f) == 1.2f, "zero grid returns a finite value");
+    expectTrue(fuse::editor::snap_to_grid(-1.25f, -0.5f) == -1.25f,
+               "negative grid returns a finite value");
+
+    const fuse::f32 inf = std::numeric_limits<fuse::f32>::infinity();
+    const fuse::f32 nan = std::numeric_limits<fuse::f32>::quiet_NaN();
+    expectTrue(fuse::editor::snap_to_grid(1.2f, inf) == 1.2f, "non-finite grid returns a finite value");
+    expectTrue(fuse::editor::snap_to_grid(1.2f, nan) == 1.2f, "NaN grid returns a finite value");
+    expectTrue(fuse::editor::snap_to_grid(nan, 0.f) == 0.f,
+               "non-finite value with a non-positive grid returns 0");
+    expectTrue(fuse::editor::snap_to_grid(nan, 0.5f) == 0.f, "non-finite value returns 0");
+    expectTrue(fuse::editor::snap_to_grid(inf, 0.5f) == 0.f, "infinite value returns 0");
+    expectTrue(fuse::editor::snap_to_grid(-inf, inf) == 0.f,
+               "non-finite value with a non-finite grid returns 0");
+}
+
+void testGizmoHoverOk() {
+    expectTrue(fuse::editor::gizmo_hover_ok(4.f, 8.f), "gizmo_hover_ok(4, 8)");
+    expectTrue(fuse::editor::gizmo_hover_ok(8.f, 8.f), "gizmo_hover_ok(8, 8)");
+    expectTrue(!fuse::editor::gizmo_hover_ok(9.f, 8.f), "gizmo_hover_ok(9, 8)");
+    expectTrue(!fuse::editor::gizmo_hover_ok(1.f, 0.f), "gizmo_hover_ok(1, 0)");
+
+    expectTrue(fuse::editor::gizmo_hover_ok(1.f, 1.f), "radius 1 accepts a distance on the radius");
+    expectTrue(fuse::editor::gizmo_hover_ok(32.f, 32.f), "radius 32 accepts a distance on the radius");
+    expectTrue(!fuse::editor::gizmo_hover_ok(0.f, 0.999f), "radius below 1 is rejected");
+    expectTrue(!fuse::editor::gizmo_hover_ok(0.f, 32.001f), "radius above 32 is rejected");
+    expectTrue(!fuse::editor::gizmo_hover_ok(-0.1f, 8.f), "negative distance is rejected");
+
+    const fuse::f32 inf = std::numeric_limits<fuse::f32>::infinity();
+    const fuse::f32 nan = std::numeric_limits<fuse::f32>::quiet_NaN();
+    expectTrue(!fuse::editor::gizmo_hover_ok(nan, 8.f), "non-finite distance is rejected");
+    expectTrue(!fuse::editor::gizmo_hover_ok(inf, 8.f), "infinite distance is rejected");
+    expectTrue(!fuse::editor::gizmo_hover_ok(4.f, nan), "non-finite radius is rejected");
+    expectTrue(!fuse::editor::gizmo_hover_ok(4.f, inf), "infinite radius is rejected");
+}
+
 } // namespace
 
 int main() {
     fuse::core::initialize();
 
+    testGizmoHoverOk();
+    testSnapToGrid();
     testModeSwitch();
     testScreenAxisPickExtremes();
     testRayAxisPickExtremes();
@@ -2901,6 +2997,7 @@ int main() {
     testInteractionPreflightIsSnapDegraded();
     testSnapDragRejectReasonGuards();
     testInteractionRejectReasonHelpers();
+    testRasterizeTranslateGizmo();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d test failure(s)\n", g_failures);

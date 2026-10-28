@@ -6,6 +6,7 @@
 #include <fuse/project/parity_legacy_sources.hpp>
 #include <fuse/project/world_converter.hpp>
 #include <fuse/scene/mission_load.hpp>
+#include <fuse/scene/parity_name.hpp>
 #include <fuse/scene/project_io.hpp>
 #include <fuse/scene/scene.hpp>
 #include <fuse/scene/serialiser.hpp>
@@ -346,9 +347,16 @@ void testParitySuite(const std::filesystem::path& repoRoot) {
     }
 }
 
+void testParityNameOk() {
+    expectTrue(fuse::scene::parity_name_ok("Lobby"), "parity name Lobby");
+    expectTrue(!fuse::scene::parity_name_ok(""), "empty parity name rejected");
+    expectTrue(!fuse::scene::parity_name_ok("1Lobby"), "digit-leading parity name rejected");
+}
+
 } // namespace
 
 int main() {
+    testParityNameOk();
     fuse::core::initialize();
 
     testParitySuite(findRepoRoot());

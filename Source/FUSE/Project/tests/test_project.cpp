@@ -6,6 +6,7 @@
 #include <fuse/jobs/worker_count.hpp>
 #include <fuse/platform/power.hpp>
 #include <fuse/project/manifest.hpp>
+#include <fuse/project/project_name.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -21,6 +22,16 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testProjectNameOk() {
+    expectTrue(fuse::project::project_name_ok("FUSE Demo"), "FUSE Demo is a valid project name");
+    expectTrue(!fuse::project::project_name_ok(" fuse"), "leading space is invalid");
+    expectTrue(!fuse::project::project_name_ok(""), "empty name is invalid");
+    const std::string maxName(48, 'A');
+    expectTrue(fuse::project::project_name_ok(maxName), "48-character name is valid");
+    const std::string tooLong(49, 'A');
+    expectTrue(!fuse::project::project_name_ok(tooLong), "name longer than 48 is invalid");
 }
 
 void testParseManifest() {
@@ -154,6 +165,7 @@ void testProjectImportDryRun() {
 } // namespace
 
 int main() {
+    testProjectNameOk();
     fuse::core::initialize();
     testParseManifest();
     testWorkerCapManifest();

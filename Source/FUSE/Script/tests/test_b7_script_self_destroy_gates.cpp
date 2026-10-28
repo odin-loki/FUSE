@@ -18,7 +18,9 @@
 #include <fuse/ecs/components/transform.hpp>
 #include <fuse/ecs/registry.hpp>
 #include <fuse/physics/physics_manager.hpp>
+#include <fuse/script/self_destroy.hpp>
 #include <fuse/script/script_engine_api.hpp>
+#include <fuse/script/script_indent.hpp>
 #include <fuse/script/script_physics_bridge.hpp>
 #include <fuse/script/script_runtime.hpp>
 #include <fuse/script/script_vm.hpp>
@@ -27,6 +29,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -82,6 +85,28 @@ f64 globalNumber(ScriptVM& vm, const char* name) {
 }
 
 bool eventNames(const fuse::physics::CollisionEvent& e, EntityID id) { return e.entityA == id || e.entityB == id; }
+
+// Indent spaces are the closed range 0..32. No allocation.
+void testScriptIndentOk() {
+    expectTrue(fuse::script::script_indent_ok(0), "script_indent_ok(0) is true");
+    expectTrue(fuse::script::script_indent_ok(32), "script_indent_ok(32) is true");
+    expectTrue(!fuse::script::script_indent_ok(-1), "script_indent_ok(-1) is false");
+    expectTrue(!fuse::script::script_indent_ok(33), "script_indent_ok(33) is false");
+}
+
+void testSelfDestroyDue() {
+    expectTrue(fuse::script::self_destroy_due(1.f, 1.f), "self_destroy_due(1, 1) is true");
+    expectTrue(!fuse::script::self_destroy_due(0.9f, 1.f), "self_destroy_due(0.9, 1) is false");
+    expectTrue(fuse::script::self_destroy_due(2.f, 1.f), "age past a positive limit is due");
+    expectTrue(!fuse::script::self_destroy_due(1.f, 0.f), "a zero limit is not due");
+    expectTrue(!fuse::script::self_destroy_due(1.f, -1.f), "a negative limit is not due");
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    expectTrue(!fuse::script::self_destroy_due(nan, 1.f), "non-finite age is not due");
+    expectTrue(!fuse::script::self_destroy_due(1.f, nan), "non-finite limit is not due");
+    expectTrue(!fuse::script::self_destroy_due(inf, 1.f), "infinite age is not due");
+    expectTrue(!fuse::script::self_destroy_due(1.f, inf), "infinite limit is not due");
+}
 
 void testSelfDestroyOnCollision() {
     Registry reg;
@@ -265,6 +290,16 @@ void testSelfDestroyOnCollision() {
 } // namespace
 
 int main() {
+    testScriptIndentOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_script_b7_self_destroy_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testSelfDestroyDue();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_script_b7_self_destroy_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
     testSelfDestroyOnCollision();
     fuse::core::shutdown();

@@ -15,6 +15,11 @@ bool cooperativeFibersAvailable();
 /// Diagnostic label for the active backend ("posix-ucontext", "win32", or "stub").
 const char* fiberBackendName();
 
+/// True only when this binary calls real ASan fiber-switch hooks
+/// (`__sanitizer_start_switch_fiber` / `__sanitizer_finish_switch_fiber`).
+/// False in non-ASan builds and when the linked ASan runtime does not export them.
+bool fiberASanAnnotationsActive();
+
 FiberContext* fiberAllocateContext();
 void fiberCaptureCurrent(FiberContext* ctx);
 FiberContext* fiberCreate(u32 stackBytes, void (*entry)(void* userData), void* userData);

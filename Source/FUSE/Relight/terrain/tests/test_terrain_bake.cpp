@@ -12,6 +12,7 @@
 //   zero_alloc  steady-state bakes (same sizes) make no heap allocation.
 #include "terrain_test_scene.hpp"
 
+#include <fuse/relight/terrain/bake_res.hpp>
 #include <fuse/relight/terrain/terrain_baker.hpp>
 
 #include <algorithm>
@@ -231,9 +232,24 @@ void suiteZeroAlloc() {
     check(g_allocations.load() == 0u, "zero_alloc: no heap allocation");
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits 1 instead of continuing.
+void testBakeResOk() {
+    check(fuse::relight::bake_res_ok(64), "bake_res_ok(64) is true");
+    check(fuse::relight::bake_res_ok(1024), "bake_res_ok(1024) is true");
+    check(fuse::relight::bake_res_ok(2048), "bake_res_ok(2048) is true");
+    check(!fuse::relight::bake_res_ok(32), "bake_res_ok(32) is false");
+    check(!fuse::relight::bake_res_ok(100), "bake_res_ok(100) is false");
+    check(!fuse::relight::bake_res_ok(4096), "bake_res_ok(4096) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testBakeResOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testBakeResOk\n");
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     struct Suite {
         const char* name;

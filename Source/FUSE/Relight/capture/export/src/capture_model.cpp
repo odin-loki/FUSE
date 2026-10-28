@@ -145,13 +145,26 @@ std::vector<CaptureKey> captureKeys(const CaptureData& capture, hash::HashRule a
             keys.push_back({key_algo::kCaptureSha256, sha, "", "texture"});
         }
     }
+    auto addLightKey = [&](Hash64 h) { keys.push_back({key_algo::kLight, hash::hashToString(h), "", "light"}); };
     for (const auto& [h, light] : capture.sphereLights) {
         (void)light;
-        keys.push_back({key_algo::kLight, hash::hashToString(h), "", "light"});
+        addLightKey(h);
     }
     for (const auto& [h, light] : capture.distantLights) {
         (void)light;
-        keys.push_back({key_algo::kLight, hash::hashToString(h), "", "light"});
+        addLightKey(h);
+    }
+    for (const auto& [h, light] : capture.rectLights) {
+        (void)light;
+        addLightKey(h);
+    }
+    for (const auto& [h, light] : capture.diskLights) {
+        (void)light;
+        addLightKey(h);
+    }
+    for (const auto& [h, light] : capture.cylinderLights) {
+        (void)light;
+        addLightKey(h);
     }
     std::sort(keys.begin(), keys.end());
     // Identical content under two Remix keys (two meshes with the same vertices, or the same pixels

@@ -1,10 +1,13 @@
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/exposure_ev.hpp>
+#include <fuse/renderer/frame/swap_index.hpp>
 #include <fuse/renderer/vk/device.hpp>
 #include <fuse/renderer/vk/frame.hpp>
 #include <fuse/renderer/vk/instance.hpp>
 
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 #if defined(FUSE_VULKAN_BACKEND)
 #include <vulkan/vulkan.h>
@@ -19,6 +22,24 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+// No allocation. main calls this before any GPU or device skip.
+void testExposureEvOk() {
+    expectTrue(fuse::renderer::exposure_ev_ok(-8.f), "exposure_ev_ok(-8) is true");
+    expectTrue(fuse::renderer::exposure_ev_ok(8.f), "exposure_ev_ok(8) is true");
+    expectTrue(!fuse::renderer::exposure_ev_ok(-8.1f), "exposure_ev_ok(-8.1) is false");
+    expectTrue(!fuse::renderer::exposure_ev_ok(8.1f), "exposure_ev_ok(8.1) is false");
+    expectTrue(!fuse::renderer::exposure_ev_ok(std::numeric_limits<float>::quiet_NaN()),
+               "exposure_ev_ok(NaN) is false");
+}
+
+// No allocation. main calls this before any GPU or device skip.
+void testSwapIndexOk() {
+    expectTrue(fuse::renderer::swap_index_ok(0), "swap_index_ok(0) is true");
+    expectTrue(fuse::renderer::swap_index_ok(7), "swap_index_ok(7) is true");
+    expectTrue(!fuse::renderer::swap_index_ok(-1), "swap_index_ok(-1) is false");
+    expectTrue(!fuse::renderer::swap_index_ok(8), "swap_index_ok(8) is false");
 }
 
 void testScratchResetAndDescriptorPool() {
@@ -231,6 +252,18 @@ void testFrameDebugNamesAndFenceWait() {
 } // namespace
 
 int main() {
+    testExposureEvOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_frame_manager: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testSwapIndexOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_frame_manager: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testScratchResetAndDescriptorPool();

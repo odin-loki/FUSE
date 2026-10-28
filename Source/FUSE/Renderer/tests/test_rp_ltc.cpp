@@ -15,6 +15,7 @@
 
 #include "test_rp_ltc_mc.hpp"
 
+#include <fuse/renderer/ltc_lut.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_lighting.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/device.hpp>
@@ -42,11 +43,27 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. No allocation. Both mains call this before any GPU skip.
+/// A failure returns non-zero before any later skip.
+[[nodiscard]] int testLtcLutOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::ltc_lut_ok(16), "ltc_lut_ok(16) is true");
+    expect(fuse::renderer::ltc_lut_ok(64), "ltc_lut_ok(64) is true");
+    expect(fuse::renderer::ltc_lut_ok(256), "ltc_lut_ok(256) is true");
+    expect(!fuse::renderer::ltc_lut_ok(0), "ltc_lut_ok(0) is false");
+    expect(!fuse::renderer::ltc_lut_ok(12), "ltc_lut_ok(12) is false");
+    expect(!fuse::renderer::ltc_lut_ok(512), "ltc_lut_ok(512) is false");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int ltcLutRc = testLtcLutOk(); ltcLutRc != 0) {
+        return ltcLutRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -457,6 +474,9 @@ int run(const std::string& language) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int ltcLutRc = testLtcLutOk(); ltcLutRc != 0) {
+        return ltcLutRc;
+    }
     std::string language = "slang";
     for (int i = 1; i + 1 < argc; i += 2) {
         if (std::strcmp(argv[i], "--language") == 0) {

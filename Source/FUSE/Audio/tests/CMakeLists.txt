@@ -93,3 +93,13 @@ if(FUSE_AUDIO_HAS_OPENAL)
         RESOURCE_LOCK fuse_openal_output
         ENVIRONMENT "ALSOFT_DRIVERS=null;ALSOFT_CONF=/dev/null")
 endif()
+
+# Per-source sidechain duck (attack / hold / release). The envelope is compiled into this
+# target so the spatial mixer library list stays untouched.
+add_executable(fuse_audio_sidechain_duck_tests
+    test_sidechain_duck.cpp
+    ../src/sidechain_duck.cpp
+)
+
+target_link_libraries(fuse_audio_sidechain_duck_tests PRIVATE fuse_audio fuse_core)
+add_test(NAME fuse_audio_sidechain_duck COMMAND fuse_audio_sidechain_duck_tests)

@@ -6,15 +6,18 @@
 #include <fuse/cinematics/cue_payload.hpp>
 #include <fuse/cinematics/cue_preview.hpp>
 #include <fuse/cinematics/cue_queue.hpp>
+#include <fuse/cinematics/cue_time.hpp>
 #include <fuse/cinematics/event_track.hpp>
 #include <fuse/cinematics/interpolate.hpp>
 #include <fuse/cinematics/look_at.hpp>
 #include <fuse/cinematics/mount_orientation.hpp>
 #include <fuse/cinematics/motion_track.hpp>
 #include <fuse/cinematics/property_track.hpp>
+#include <fuse/cinematics/shot_duration.hpp>
 #include <fuse/cinematics/sprite_track.hpp>
 #include <fuse/cinematics/timeline_host_stub.hpp>
 #include <fuse/cinematics/timeline.hpp>
+#include <fuse/cinematics/seq_import.hpp>
 #include <fuse/cinematics/timeline_loader.hpp>
 #include <fuse/cinematics/vactor_bridge.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
@@ -1638,6 +1641,159 @@ void testTimelineHostStubOverlay() {
     expectTrue(wiredHost.lastOverlaySample().valid, "timeline host wired overlay sample valid");
 }
 
+std::size_t countTracks(const fuse::cinematics::Timeline& timeline) {
+    std::size_t count = 0;
+    for (const fuse::cinematics::TrackGroup& group : timeline.groups()) {
+        count += group.tracks().size();
+    }
+    return count;
+}
+
+std::size_t countTracksOfKind(const fuse::cinematics::Timeline& timeline, fuse::cinematics::TrackKind kind) {
+    std::size_t count = 0;
+    for (const fuse::cinematics::TrackGroup& group : timeline.groups()) {
+        for (const auto& track : group.tracks()) {
+            if (track != nullptr && track->kind() == kind) {
+                ++count;
+            }
+        }
+    }
+    return count;
+}
+
+void expectSeqImportError(const fuse::cinematics::SeqImportResult& result, fuse::cinematics::SeqImportErrorKind kind,
+                          int line, const char* label) {
+    expectTrue(!result.ok, label);
+    expectTrue(result.errors.size() == 1u, label);
+    expectTrue(result.timeline.groups().empty(), label);
+    if (result.errors.size() == 1u) {
+        expectTrue(result.errors[0].kind == kind, label);
+        expectTrue(result.errors[0].line == line, label);
+    }
+}
+
+void testImportSeqOutpostRoundTrip() {
+    // Track lines copied from Samples/Modules/cinematics/outpost_intro_30s.seq.
+    // Mount and unmount share one actor track, so the loader produces four tracks.
+    static const char* kOutpostSeq =
+        "# Outpost intro 30s sequence - Verve VController ore (Samples asset pack)\n"
+        "duration_ms=30000\n"
+        "sprite hud_sprite 0,-20,0,1 15000,0,10,1 30000,40,20,1\n"
+        "camera 0,0,0,8,55 15000,0,30,12,70 30000,0,60,15,85\n"
+        "motion outpost_intro 0,0,0,0 15000,10,0,5 30000,20,5,10\n"
+        "actor agent_3d mount 2000 cockpit 15\n"
+        "actor agent_3d unmount 28000\n";
+
+    const fuse::cinematics::SeqImportResult imported = fuse::cinematics::import_seq(kOutpostSeq);
+    expectTrue(imported.ok, "import_seq accepts outpost sample");
+    expectTrue(imported.errors.empty(), "import_seq outpost sample has no errors");
+
+    fuse::cinematics::Timeline loaded;
+    std::string error;
+    expectTrue(fuse::cinematics::load_timeline_from_asset(kOutpostSeq, loaded, &error),
+               "loader accepts the same outpost sample");
+
+    const std::size_t importedTracks = countTracks(imported.timeline);
+    const std::size_t loadedTracks = countTracks(loaded);
+    expectTrue(importedTracks == loadedTracks, "import_seq track count matches loader");
+    expectTrue(importedTracks == 4u, "outpost sample imports four tracks");
+    expectTrue(imported.timeline.groups().size() == loaded.groups().size(),
+               "import_seq group count matches loader");
+    expectTrue(imported.timeline.playhead().duration_ms() == loaded.playhead().duration_ms(),
+               "import_seq duration matches loader");
+    expectTrue(imported.timeline.playhead().duration_ms() == 30'000, "outpost import duration is 30s");
+    expectTrue(countTracksOfKind(imported.timeline, fuse::cinematics::TrackKind::Sprite) ==
+                   countTracksOfKind(loaded, fuse::cinematics::TrackKind::Sprite),
+               "import_seq sprite track count matches loader");
+    expectTrue(countTracksOfKind(imported.timeline, fuse::cinematics::TrackKind::Camera) ==
+                   countTracksOfKind(loaded, fuse::cinematics::TrackKind::Camera),
+               "import_seq camera track count matches loader");
+    expectTrue(countTracksOfKind(imported.timeline, fuse::cinematics::TrackKind::Motion) ==
+                   countTracksOfKind(loaded, fuse::cinematics::TrackKind::Motion),
+               "import_seq motion track count matches loader");
+    expectTrue(countTracksOfKind(imported.timeline, fuse::cinematics::TrackKind::Actor) ==
+                   countTracksOfKind(loaded, fuse::cinematics::TrackKind::Actor),
+               "import_seq actor track count matches loader");
+    expectTrue(countTracksOfKind(imported.timeline, fuse::cinematics::TrackKind::Actor) == 1u,
+               "mount and unmount share one actor track");
+}
+
+void testImportSeqLineNumberedErrors() {
+    const fuse::cinematics::SeqImportResult empty = fuse::cinematics::import_seq("");
+    expectSeqImportError(empty, fuse::cinematics::SeqImportErrorKind::EmptyFile, 1, "empty seq file");
+    expectTrue(empty.errors.size() == 1u && empty.errors[0].message.find("empty file") != std::string::npos,
+               "empty seq message");
+
+    const fuse::cinematics::SeqImportResult blank = fuse::cinematics::import_seq("\n  \t\r\n");
+    expectSeqImportError(blank, fuse::cinematics::SeqImportErrorKind::EmptyFile, 1, "whitespace-only seq file");
+
+    const fuse::cinematics::SeqImportResult commentsOnly = fuse::cinematics::import_seq("# only a comment\n");
+    expectTrue(!commentsOnly.ok, "comment-only seq is rejected");
+    expectTrue(commentsOnly.errors.size() == 1u &&
+                   commentsOnly.errors[0].kind != fuse::cinematics::SeqImportErrorKind::EmptyFile,
+               "comment-only seq is not an empty file");
+    expectTrue(commentsOnly.errors.size() == 1u && commentsOnly.errors[0].line == 1 &&
+                   commentsOnly.errors[0].message.find("duration_ms") != std::string::npos,
+               "comment-only seq reports missing duration on line 1");
+
+    static const char* kUnknownTrack =
+        "# comment\n"
+        "duration_ms=1000\n"
+        "\n"
+        "audio boom 0,1\n";
+    const fuse::cinematics::SeqImportResult unknown = fuse::cinematics::import_seq(kUnknownTrack);
+    expectSeqImportError(unknown, fuse::cinematics::SeqImportErrorKind::UnknownTrack, 4, "unknown track line 4");
+    expectTrue(unknown.errors.size() == 1u && unknown.errors[0].message.find("unknown track") != std::string::npos,
+               "unknown track message");
+
+    fuse::cinematics::Timeline loadedUnknown;
+    std::string loaderError;
+    expectTrue(!fuse::cinematics::load_timeline_from_asset(kUnknownTrack, loadedUnknown, &loaderError),
+               "loader rejects unknown track");
+    expectTrue(loaderError.find("line 4") != std::string::npos, "loader error includes line 4");
+    expectTrue(loaderError.find("unknown track") != std::string::npos, "loader error names the unknown track");
+    expectTrue(loadedUnknown.groups().empty(), "loader clears the timeline when import fails");
+
+    expectSeqImportError(fuse::cinematics::import_seq("duration_ms=1000\n"
+                                                      "sprite hud 0,1,2\n"),
+                         fuse::cinematics::SeqImportErrorKind::BadKeyframe, 2, "sprite keyframe arity line 2");
+    expectSeqImportError(fuse::cinematics::import_seq("# cam\n"
+                                                      "duration_ms=1000\n"
+                                                      "camera 0,0,0,8,nope\n"),
+                         fuse::cinematics::SeqImportErrorKind::BadKeyframe, 3, "invalid camera keyframe line 3");
+    expectSeqImportError(fuse::cinematics::import_seq("duration_ms=1000\n"
+                                                      "motion path 0,1,2\n"),
+                         fuse::cinematics::SeqImportErrorKind::BadKeyframe, 2, "motion waypoint arity line 2");
+
+    expectSeqImportError(fuse::cinematics::import_seq("{\n"
+                                                      "  \"duration_ms\": 1000\n"
+                                                      "}\n"),
+                         fuse::cinematics::SeqImportErrorKind::NotSeqDialect, 1, "json is not the seq dialect");
+    expectSeqImportError(fuse::cinematics::import_seq("duration_ms=1000\n"
+                                                      "{ \"tracks\": [] }\n"),
+                         fuse::cinematics::SeqImportErrorKind::NotSeqDialect, 2,
+                         "json after a header is not the seq dialect");
+
+    std::string embeddedNul = "duration_ms=1000\n";
+    embeddedNul.push_back('\0');
+    embeddedNul += "sprite hud 0,0,0,1\n";
+    expectSeqImportError(fuse::cinematics::import_seq(embeddedNul), fuse::cinematics::SeqImportErrorKind::NotSeqDialect,
+                         2, "embedded nul is not the seq dialect");
+
+    bool threw = false;
+    try {
+        (void)fuse::cinematics::import_seq("");
+        (void)fuse::cinematics::import_seq("{\n\"duration_ms\": 1\n}\n");
+        (void)fuse::cinematics::import_seq("duration_ms=1000\nsprite hud 0,1,2\n");
+        (void)fuse::cinematics::import_seq("duration_ms=nope\n");
+        (void)fuse::cinematics::import_seq(std::string("\0\xff", 2));
+        (void)fuse::cinematics::import_seq(embeddedNul);
+    } catch (...) {
+        threw = true;
+    }
+    expectTrue(!threw, "import_seq does not throw");
+}
+
 void testVActorMotionSync() {
     fuse::cinematics::Timeline timeline = fuse::cinematics::make_outpost_intro_30s_stub();
     fuse::SceneObject3D agent("agent_3d");
@@ -1649,9 +1805,32 @@ void testVActorMotionSync() {
     expectTrue(bridge.motionSyncCount() == 1u, "motion sync counted");
 }
 
+void testCueTimeOk() {
+    expectTrue(fuse::cinematics::cue_time_ok(0.f), "cue_time_ok(0) is true");
+    expectTrue(fuse::cinematics::cue_time_ok(3600.f), "cue_time_ok(3600) is true");
+    expectTrue(!fuse::cinematics::cue_time_ok(-0.1f), "cue_time_ok(-0.1) is false");
+    expectTrue(!fuse::cinematics::cue_time_ok(3600.1f), "cue_time_ok(3600.1) is false");
+    expectTrue(!fuse::cinematics::cue_time_ok(std::numeric_limits<float>::quiet_NaN()),
+               "cue_time_ok(NaN) is false");
+}
+
+void testShotDurationOk() {
+    expectTrue(fuse::cinematics::shot_duration_ok(1), "shot_duration_ok(1) is true");
+    expectTrue(fuse::cinematics::shot_duration_ok(1000), "shot_duration_ok(1000) is true");
+    expectTrue(fuse::cinematics::shot_duration_ok(600000), "shot_duration_ok(600000) is true");
+    expectTrue(!fuse::cinematics::shot_duration_ok(0), "shot_duration_ok(0) is false");
+    expectTrue(!fuse::cinematics::shot_duration_ok(600001), "shot_duration_ok(600001) is false");
+}
+
 } // namespace
 
 int main() {
+    testCueTimeOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_cinematics_tests: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testShotDurationOk();
     fuse::core::initialize();
     testThirtySecondTimelineAdvance();
     testTimelineLoopRewinds();
@@ -1744,6 +1923,8 @@ int main() {
     testMountQuaternionCombine();
     testSeqScrubPreviewStub();
     testSeqAssetMotionLoader();
+    testImportSeqOutpostRoundTrip();
+    testImportSeqLineNumberedErrors();
     testTimelineHostStubOverlay();
     testVActorMotionSync();
     fuse::core::shutdown();

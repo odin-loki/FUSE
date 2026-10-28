@@ -1,5 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/phase6_gate.hpp>
+#include <fuse/editor/phase6_step.hpp>
 #include <fuse/editor/scene_hierarchy_panel.hpp>
 #include <fuse/editor/undo_stack.hpp>
 #include <fuse/editor/viewport_panel.hpp>
@@ -84,9 +86,27 @@ void testUndoHierarchyViewportIntegration() {
     expectTrue(child.name() == "player", "redo restores rename");
 }
 
+void testPhase6StepOk() {
+    expectTrue(fuse::editor::phase6_step_ok(0), "phase 6 step 0");
+    expectTrue(fuse::editor::phase6_step_ok(8), "phase 6 step 8");
+    expectTrue(!fuse::editor::phase6_step_ok(-1), "phase 6 step -1 rejected");
+    expectTrue(!fuse::editor::phase6_step_ok(9), "phase 6 step 9 rejected");
+}
+
+void testPhase6Gate() {
+    const fuse::editor::Phase6Checks ready{true, true, true, true};
+    expectTrue(fuse::editor::phase6_gate_pass(ready), "a complete phase 6 gate passes");
+    expectTrue(fuse::editor::phase6_gate_missing(ready) == 0, "a complete phase 6 gate misses nothing");
+    const fuse::editor::Phase6Checks noPlay{true, false, true, true};
+    expectTrue(!fuse::editor::phase6_gate_pass(noPlay), "phase 6 fails without play");
+    expectTrue(fuse::editor::phase6_gate_missing(noPlay) == 1, "phase 6 counts one miss");
+}
+
 } // namespace
 
 int main() {
+    testPhase6StepOk();
+    testPhase6Gate();
     fuse::core::initialize();
     testUndoHierarchyViewportIntegration();
     fuse::core::shutdown();

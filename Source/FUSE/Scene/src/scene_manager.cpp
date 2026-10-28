@@ -7,6 +7,8 @@
 #include <fuse/ecs/systems/camera_system.hpp>
 #include <fuse/ecs/systems/transform_system.hpp>
 
+#include <algorithm>
+
 namespace fuse::scene {
 
 namespace {
@@ -21,6 +23,15 @@ bool sphere_hits_aabb(vec3 center, f32 radius, const fuse::spatial::AABB& box) {
     const f32 d2 = axis_dist_sq(center.x, box.min.x, box.max.x) + axis_dist_sq(center.y, box.min.y, box.max.y) +
                    axis_dist_sq(center.z, box.min.z, box.max.z);
     return d2 <= radius * radius;
+}
+
+void sort_by_entity_id(std::vector<fuse::ecs::EntityID>& ids) {
+    std::sort(ids.begin(), ids.end(), [](fuse::ecs::EntityID a, fuse::ecs::EntityID b) {
+        if (a.index != b.index) {
+            return a.index < b.index;
+        }
+        return a.generation < b.generation;
+    });
 }
 
 } // namespace
@@ -239,6 +250,50 @@ void SceneManager::querySphere(vec3 center, f32 radius, std::vector<fuse::ecs::E
             }
         }
     }
+}
+
+void SceneManager::queryAabb(vec3 min, vec3 max, std::vector<fuse::ecs::EntityID>& results) const {
+    results.clear();
+    if (!m_initialized) {
+        return;
+    }
+
+    // querySphere keeps a leaf only when the entity is alive and its world bounds actually overlap.
+    // query_aabb already tests each leaf; the overlaps check is the same inclusive rule.
+    if (m_spatialBvh.leaf_count() > 0) {
+        const fuse::spatial::AABB box{to_ecs_vec3(min), to_ecs_vec3(max)};
+        std::vector<fuse::spatial::BVHLeaf> leaves;
+        m_spatialBvh.query_aabb(box, leaves);
+        for (const fuse::spatial::BVHLeaf& leaf : leaves) {
+            if (m_registry.alive(leaf.entity) && leaf.aabb.overlaps(box)) {
+                results.push_back(leaf.entity);
+            }
+        }
+    }
+
+    sort_by_entity_id(results);
+}
+
+void SceneManager::queryFrustum(const fuse::spatial::Frustum& frustum,
+                                std::vector<fuse::ecs::EntityID>& results) const {
+    results.clear();
+    if (!m_initialized) {
+        return;
+    }
+
+    // Planes are forwarded unchanged: spatial::BVH::query_frustum uses inward normals
+    // (positive half-space inside), the same test as spatial::test_aabb_frustum.
+    if (m_spatialBvh.leaf_count() > 0) {
+        std::vector<fuse::spatial::BVHLeaf> leaves;
+        m_spatialBvh.query_frustum(frustum, leaves);
+        for (const fuse::spatial::BVHLeaf& leaf : leaves) {
+            if (m_registry.alive(leaf.entity)) {
+                results.push_back(leaf.entity);
+            }
+        }
+    }
+
+    sort_by_entity_id(results);
 }
 
 } // namespace fuse::scene

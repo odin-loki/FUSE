@@ -1,4 +1,6 @@
 #include <fuse/core/init.hpp>
+#include <fuse/hybrid/extent_ok.hpp>
+#include <fuse/hybrid/hybrid_boot.hpp>
 #include <fuse/hybrid/hybrid_renderer_bootstrap.hpp>
 #include <fuse/platform/gl_context.hpp>
 #include <fuse/world2d/scene_object_2d.hpp>
@@ -17,6 +19,20 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testHybridBootOk() {
+    expectTrue(fuse::hybrid::hybrid_boot_ok(0), "step 0 is a valid hybrid boot step");
+    expectTrue(fuse::hybrid::hybrid_boot_ok(8), "step 8 is a valid hybrid boot step");
+    expectTrue(!fuse::hybrid::hybrid_boot_ok(-1), "step -1 is not a valid hybrid boot step");
+    expectTrue(!fuse::hybrid::hybrid_boot_ok(9), "step 9 is not a valid hybrid boot step");
+}
+
+void testSwapchainExtentOk() {
+    expectTrue(fuse::hybrid::swapchain_extent_ok(1280u, 720u), "1280x720 is a valid swapchain extent");
+    expectTrue(!fuse::hybrid::swapchain_extent_ok(0u, 720u), "zero width is not a valid swapchain extent");
+    expectTrue(fuse::hybrid::swapchain_extent_ok(16384u, 16384u), "16384x16384 is a valid swapchain extent");
+    expectTrue(!fuse::hybrid::swapchain_extent_ok(16385u, 1u), "width above 16384 is not a valid swapchain extent");
 }
 
 void testHybridBootstrapInitShutdownOrder() {
@@ -133,6 +149,18 @@ void testHybridComposerSoftwarePlaceholderToggle() {
 } // namespace
 
 int main() {
+    testHybridBootOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_hybrid_renderer_bootstrap: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testSwapchainExtentOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_hybrid_renderer_bootstrap: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     testHybridBootstrapInitShutdownOrder();
     testHybridComposerSoftwarePlaceholderToggle();
 

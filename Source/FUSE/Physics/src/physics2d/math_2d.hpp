@@ -17,6 +17,8 @@ inline constexpr f32 kMaxLinearCorrection = 0.2f;
 inline constexpr f32 kMaxAngularCorrection = 8.f / 180.f * 3.14159265359f;
 inline constexpr f32 kBaumgarte = 0.2f;
 inline constexpr f32 kMaxTranslation = 2.f;
+/// End-of-step overlap deeper than this, or a swept hit that finishes separated, is a circle tunnel.
+inline constexpr f32 kCcdDeepPenetration = kMaxLinearCorrection;
 inline constexpr f32 kMaxRotation = 0.5f * 3.14159265359f;
 inline constexpr f32 kVelocityThreshold = 1.f;
 inline constexpr f32 kAabbMargin = 0.1f;

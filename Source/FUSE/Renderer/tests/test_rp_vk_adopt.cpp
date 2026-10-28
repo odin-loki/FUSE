@@ -18,6 +18,7 @@
 //
 // Validation + synchronization validation on; every message fails the run. Exit 77 = skip (stub
 // build, no ICD / validation layer, shader not built).
+#include <fuse/renderer/adopt_queue.hpp>
 #include <fuse/renderer/rg/executor.hpp>
 #include <fuse/renderer/rg/graph.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
@@ -56,11 +57,37 @@ void expect(bool condition, const std::string& message) {
     }
 }
 
+/// CPU gate. No allocation. Both mains call this before any GPU skip.
+/// A failure returns non-zero before any later skip.
+int testAdoptQueueOk() {
+    const int before = g_failures;
+    if (!fuse::renderer::adopt_queue_ok(0)) {
+        std::fprintf(stderr, "FAIL: adopt_queue_ok(0) is true\n");
+        ++g_failures;
+    }
+    if (!fuse::renderer::adopt_queue_ok(7)) {
+        std::fprintf(stderr, "FAIL: adopt_queue_ok(7) is true\n");
+        ++g_failures;
+    }
+    if (fuse::renderer::adopt_queue_ok(-1)) {
+        std::fprintf(stderr, "FAIL: adopt_queue_ok(-1) is false\n");
+        ++g_failures;
+    }
+    if (fuse::renderer::adopt_queue_ok(8)) {
+        std::fprintf(stderr, "FAIL: adopt_queue_ok(8) is false\n");
+        ++g_failures;
+    }
+    return g_failures == before ? 0 : 1;
+}
+
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int adoptQueueRc = testAdoptQueueOk()) {
+        return adoptQueueRc;
+    }
     using namespace fuse::renderer;
     // Stub build: adopt() compiles and reports an invalid device.
     VulkanDeviceAdoptDesc desc{};
@@ -649,6 +676,9 @@ int run() {
 } // namespace
 
 int main() {
+    if (const int adoptQueueRc = testAdoptQueueOk()) {
+        return adoptQueueRc;
+    }
     const int rc = run();
     if (rc == kSkip) {
         return kSkip;

@@ -1,6 +1,8 @@
 // FUSE Relight RL-2.3: launcher unit tests (any platform): anti-cheat table and scans, glob, PE
 // machine detection, command-line quoting. Copyright (c) 2026 FUSE contributors (AGPL-3.0).
 
+#include <fuse/relight/bridge/launcher/launch_args.hpp>
+#include <fuse/relight/bridge/launcher/launch_name.hpp>
 #include <fuse/relight/bridge/launcher/launcher.hpp>
 
 #include <cstdio>
@@ -52,6 +54,12 @@ bool hasProduct(const std::vector<AntiCheatHit>& hits, const char* product) {
         }
     }
     return false;
+}
+
+void testLaunchNameOk() {
+    CHECK(fuse::relight::launch_name_ok("Default"));
+    CHECK(!fuse::relight::launch_name_ok(""));
+    CHECK(!fuse::relight::launch_name_ok("1Default"));
 }
 
 void testTable() {
@@ -171,9 +179,26 @@ void testExitCodes() {
     CHECK(exitCodeFor(LaunchStatus::Ok) == 0);
 }
 
+void testLaunchArgs() {
+    char prog[] = "prog";
+    char gameFlag[] = "--game";
+    char game[] = "fuse";
+    char headless[] = "--headless";
+    char sizeFlag[] = "--size";
+    char size[] = "640x480";
+    char* argv[] = {prog, gameFlag, game, headless, sizeFlag, size};
+    const LaunchArgs args = parse_launch_args(6, argv);
+    CHECK(args.game == "fuse");
+    CHECK(args.headless);
+    CHECK(args.width == 640);
+    CHECK(args.height == 480);
+    CHECK(args.ok);
+}
+
 }  // namespace
 
 int main() {
+    testLaunchNameOk();
     testTable();
     testGlob();
     testInstallScan();
@@ -181,6 +206,7 @@ int main() {
     testPe();
     testQuote();
     testExitCodes();
+    testLaunchArgs();
     std::printf("rl_bridge_launcher_unit: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

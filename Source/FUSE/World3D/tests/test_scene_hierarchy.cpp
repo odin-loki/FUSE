@@ -4,6 +4,7 @@
 #include <fuse/world2d/scene_snapshot.hpp>
 #include <fuse/world3d/scene_object_3d.hpp>
 #include <fuse/world3d/scene_snapshot.hpp>
+#include <fuse/world3d/sibling_count.hpp>
 
 #include <atomic>
 #include <cmath>
@@ -228,9 +229,17 @@ void testSceneObjectFieldRoundTrip() {
     expectNear(mesh.z(), 3.f, 1e-4f, "3D z round-trip");
 }
 
+void testSiblingCountOk() {
+    expectTrue(fuse::world3d::sibling_count_ok(0), "zero siblings is ok");
+    expectTrue(fuse::world3d::sibling_count_ok(256), "256 siblings is ok");
+    expectTrue(!fuse::world3d::sibling_count_ok(-1), "negative sibling count is not ok");
+    expectTrue(!fuse::world3d::sibling_count_ok(257), "257 siblings is not ok");
+}
+
 } // namespace
 
 int main() {
+    testSiblingCountOk();
     test2dTo3dInheritance();
     testMixedHierarchy();
     testObjectReparent();
@@ -249,3 +258,22 @@ int main() {
     std::fprintf(stderr, "fuse scene hierarchy tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/world3d/hierarchy_depth.hpp>
+
+namespace {
+
+void testHierarchyDepthCap() {
+    expectTrue(fuse::world3d::hierarchy_depth_ok(3, 8), "depth 3 with max 8 is ok");
+    expectTrue(!fuse::world3d::hierarchy_depth_ok(9, 8), "depth 9 with max 8 is not");
+    expectTrue(fuse::world3d::hierarchy_child_depth(3) == 4, "child of 3 is 4");
+}
+
+// Appended after main. Static initialization runs this before main reads g_failures.
+const int g_testHierarchyDepthCap = [] {
+    testHierarchyDepthCap();
+    return 0;
+}();
+
+} // namespace
+

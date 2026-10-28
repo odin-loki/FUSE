@@ -13,6 +13,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/math/vec.hpp>
 #include <fuse/renderer/atmosphere/atmosphere_params.hpp>
+#include <fuse/renderer/atmosphere/mie_scale.hpp>
 #include <fuse/renderer/atmosphere/sky_lut.hpp>
 #include <fuse/renderer/atmosphere/sky_output.hpp>
 #include <fuse/renderer/atmosphere/sky_scatter.hpp>
@@ -869,9 +870,24 @@ void testVolumetricFogFalloffMatchesAnalytic() {
     }
 }
 
+/// CPU gate. Must run before any GPU skip; a failure exits instead of continuing.
+void testMieScaleOk() {
+    expectTrue(fuse::renderer::mie_scale_ok(0.f), "mie_scale_ok(0) is true");
+    expectTrue(fuse::renderer::mie_scale_ok(0.4f), "mie_scale_ok(0.4) is true");
+    expectTrue(fuse::renderer::mie_scale_ok(1.f), "mie_scale_ok(1) is true");
+    expectTrue(!fuse::renderer::mie_scale_ok(-0.01f), "mie_scale_ok(-0.01) is false");
+    expectTrue(!fuse::renderer::mie_scale_ok(1.2f), "mie_scale_ok(1.2) is false");
+}
+
 } // namespace
 
 int main() {
+    testMieScaleOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testMieScaleOk\n");
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     std::printf("[row] Sky renders correct Rayleigh scattering\n");

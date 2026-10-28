@@ -50,6 +50,10 @@
 //                      0 operator-new calls in DdgiGpu::beginFrame / importInto / addUpdate / addProbe /
 //                      addSamplingUse, the ddgi.* pass callbacks and the whole graph build (validated run first);
 //                      the last 4 frames run under LoadScale::probes 0.5 / 2 (rolling schedule == the oracle's budget)
+//   --mode cpu_import  one CPU volume, all probes updated: DdgiGpu::importCpuVolumeAtlases (staging FNV-1a of the
+//                      irradiance / distance bytes, then a graphics-queue readback of those sections bit-exact)
+//                      and DDGI::importCpuVolume (packAtlasesHalf into the legacy RGBA16F / RG16F atlases, read
+//                      back bit-exact, probe-offset xyz matches probeData). A mismatched grid is rejected.
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
 #include "test_rp_vsm_raster_common.hpp"
@@ -58,10 +62,12 @@
 #include <fuse/renderer/deferred/gbuffer.hpp>
 #include <fuse/renderer/gi/ddgi.hpp>
 #include <fuse/renderer/gi/ddgi_cpu.hpp>
+#include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/gi/ddgi_probe_kernel.hpp>
 #include <fuse/renderer/gi/gpu/ddgi_gpu.hpp>
 #include <fuse/renderer/gi/gpu/ddgi_gpu_reference.hpp>
 #include <fuse/compute_kernel/load_scale.hpp>
+#include <fuse/renderer/gpu_probe.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 #include <fuse/renderer/lighting/clustered_kernel.hpp>
 #include <fuse/renderer/lighting/gpu/clustered_gpu_kernel.hpp>
@@ -137,11 +143,25 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. No allocation. Each main calls this before any GPU skip.
+/// A failure returns non-zero before any later skip.
+int testGpuProbeOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::gpu_probe_ok(0), "probe index 0 is accepted");
+    expect(fuse::renderer::gpu_probe_ok(15), "probe index 15 is accepted");
+    expect(!fuse::renderer::gpu_probe_ok(-1), "probe index -1 is rejected");
+    expect(!fuse::renderer::gpu_probe_ok(16), "probe index 16 is rejected");
+    return g_failures == before ? 0 : 1;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int probeRc = testGpuProbeOk()) {
+        return probeRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1882,6 +1902,7 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 int runCpuImport(Context& ctx) {
     const DDGIDesc desc = roomVolume();
     DdgiCpuConfig config{};
+    config.probe_relocation = true;
     DdgiCpuVolume cpu;
     expect(cpu.init(desc, config), "cpu volume init");
     const DdgiCpuScene scene = roomScene();
@@ -1892,6 +1913,19 @@ int runCpuImport(Context& ctx) {
     expect(cpu.updateProbes(scene, indices.data(), cpu.probeCount(), 0u).probes_updated == cpu.probeCount(),
            "cpu volume update all probes");
 
+    ddgi_cpu::DdgiProbeMajorGpuBlob blob{};
+    expect(ddgi_cpu::packProbeMajorGpuBlob(cpu, blob), "pack probe-major blob");
+    f32 peakIrr = 0.f;
+    for (const f32 v : blob.irradiance) {
+        peakIrr = std::max(peakIrr, std::fabs(v));
+    }
+    u32 moved = 0;
+    for (const Vec4& p : cpu.probeData()) {
+        moved += (p.x != 0.f || p.y != 0.f || p.z != 0.f) ? 1u : 0u;
+    }
+    expect(peakIrr > 1e-4f, "updated irradiance is not the zero volume");
+    expect(moved > 0u, "relocation wrote a non-zero probe offset");
+
     DdgiGpu gpu;
     DdgiGpuDesc gd{};
     gd.device = ctx.device.get();
@@ -1901,12 +1935,125 @@ int runCpuImport(Context& ctx) {
     gd.config = config;
     gd.tracer = DdgiTracer::Sdf;
     expect(gpu.init(gd), "DdgiGpu init");
-    expect(gpu.importCpuVolumeAtlases(cpu, ctx.upload), "importCpuVolumeAtlases");
+    {
+        DdgiCpuVolume bad;
+        DDGIDesc badDesc = desc;
+        badDesc.grid_dims.x = 2u;
+        expect(bad.init(badDesc), "mismatched volume init");
+        expect(!gpu.importCpuVolumeAtlases(bad, ctx.upload), "import rejects a mismatched grid");
+    }
 
-    ddgi_cpu::DdgiProbeMajorGpuBlob blob{};
-    expect(ddgi_cpu::packProbeMajorGpuBlob(cpu, blob), "pack probe-major blob");
+    DdgiCpuImportCheck check{};
+    check.stagingMapped = ctx.staging.mapped;
+    expect(gpu.importCpuVolumeAtlases(cpu, ctx.upload, &check), "importCpuVolumeAtlases");
     expect(blob.irradiance.size() * sizeof(f32) == gpu.layout().irradianceBytes, "irradiance bytes match work layout");
     expect(blob.distance.size() * sizeof(f32) == gpu.layout().distanceBytes, "distance bytes match work layout");
+    expect(check.irradianceChecksum == fnv1a64(blob.irradiance.data(), blob.irradiance.size() * sizeof(f32)) &&
+               check.irradianceChecksum != 0u,
+           "irradiance staging checksum matches the CPU volume");
+    expect(check.distanceChecksum == fnv1a64(blob.distance.data(), blob.distance.size() * sizeof(f32)) &&
+               check.distanceChecksum != 0u,
+           "distance staging checksum matches the CPU volume");
+
+    // Graphics-queue copy after the upload fence. Not an in-batch transfer-queue readback (that barrier
+    // orders TRANSFER_WRITE only and has failed Lavapipe sync/destroy validation).
+    const u64 workBytes = gpu.workBuffer().desc.size;
+    expect(workBytes > 0u && workBytes <= kReadbackBytes, "work buffer fits the readback");
+    {
+        rg::Graph graph;
+        const DdgiGraphRefs refs = gpu.importInto(graph);
+        const rg::BufferRef rb = graph.importBuffer(
+            rg::ImportedBuffer{ctx.readback.handle, ctx.readback.desc.size, rg::kNoQueue, nullptr, "rp_ddgi.readback"});
+        CopyRecord copy{refs.work, rb, 0, workBytes};
+        graph.addPass("readback.copy", &recordCopy, &copy)
+            .use(refs.work, rg::Access::TransferSrc)
+            .use(rb, rg::Access::TransferDst, rg::BufferRange{0, copy.bytes});
+        graph.addPass("readback.host", nullptr, nullptr).use(rb, rg::Access::HostRead);
+        const rg::ExecuteResult result = ctx.executor->execute(graph);
+        const bool waited = ctx.executor->waitIdle();
+        expect(refs.work.valid() && result.ok && waited, "import readback");
+        if (result.ok && waited && ctx.readback.mapped != nullptr) {
+            const u8* base = static_cast<const u8*>(ctx.readback.mapped);
+            const DdgiWorkLayout& layout = gpu.layout();
+            const bool irrMatch = std::memcmp(base + layout.irradiance, blob.irradiance.data(), layout.irradianceBytes) == 0;
+            const bool distMatch = std::memcmp(base + layout.distance, blob.distance.data(), layout.distanceBytes) == 0;
+            const bool countMatch =
+                std::memcmp(base + layout.updateCounts, blob.updateCounts.data(), cpu.probeCount() * sizeof(u32)) == 0;
+            const bool probeMatch =
+                std::memcmp(base + layout.probeData, blob.probeData.data(), cpu.probeCount() * sizeof(Vec4)) == 0;
+            expect(irrMatch, "readback irradiance matches the CPU volume");
+            expect(distMatch, "readback distance matches the CPU volume");
+            expect(countMatch, "readback update counts match the CPU volume");
+            expect(probeMatch, "readback probe data matches the CPU volume");
+            std::printf("cpu_import: irr %llu B dist %llu B staging+readback %s, %u probes relocated\n",
+                        static_cast<unsigned long long>(layout.irradianceBytes),
+                        static_cast<unsigned long long>(layout.distanceBytes),
+                        (irrMatch && distMatch && countMatch && probeMatch) ? "match" : "MISMATCH", moved);
+        }
+    }
+
+    {
+        ResourceManager resources;
+        expect(resources.init(*ctx.device, ctx.bindless), "resource manager ready");
+        DDGI legacy;
+        expect(legacy.init(desc, resources), "legacy DDGI init");
+        UploadTicket rejected{};
+        DdgiCpuVolume bad;
+        DDGIDesc badDesc = desc;
+        badDesc.irradiance_res = desc.irradiance_res == 6u ? 8u : 6u;
+        expect(bad.init(badDesc), "legacy mismatch volume");
+        expect(!legacy.importCpuVolume(bad, &rejected), "legacy import rejects a mismatched tile");
+        UploadTicket ticket{};
+        expect(legacy.importCpuVolume(cpu, &ticket) && ticket.isValid() && resources.waitUpload(ticket),
+               "legacy importCpuVolume");
+        expect(legacy.cpuVolume() != nullptr &&
+                   legacy.cpuVolume()->irradianceTexel(0u, 1u, 1u).x == cpu.irradianceTexel(0u, 1u, 1u).x,
+               "legacy cpu volume matches the imported oracle");
+        std::vector<u16> expectedIrr;
+        std::vector<u16> expectedDist;
+        expect(ddgi_cpu::packAtlasesHalf(cpu, expectedIrr, expectedDist), "packAtlasesHalf");
+        std::vector<u16> readIrr(expectedIrr.size(), 0xFFFFu);
+        std::vector<u16> readDist(expectedDist.size(), 0xFFFFu);
+        expect(resources.readTexture(legacy.volume().irradiance_atlas, readIrr.data(), readIrr.size() * sizeof(u16)) &&
+                   readIrr == expectedIrr,
+               "legacy irradiance atlas matches packAtlasesHalf");
+        expect(resources.readTexture(legacy.volume().depth_atlas, readDist.data(), readDist.size() * sizeof(u16)) &&
+                   readDist == expectedDist,
+               "legacy distance atlas matches packAtlasesHalf");
+        // Graphics-queue copy. readBuffer's one-shot has no barrier after the upload, so sync validation
+        // would flag it; the graph's first use waits on ALL_COMMANDS / MEMORY_WRITE.
+        const Buffer* offsetBuf = resources.getBuffer(legacy.volume().probe_offsets);
+        expect(offsetBuf != nullptr && offsetBuf->handle != nullptr && offsetBuf->desc.size >= cpu.probeCount() * sizeof(Vec3),
+               "legacy probe offset buffer");
+        if (offsetBuf != nullptr && offsetBuf->handle != nullptr) {
+            rg::Graph graph;
+            const rg::BufferRef src = graph.importBuffer(rg::ImportedBuffer{
+                offsetBuf->handle, offsetBuf->desc.size, rg::kNoQueue, nullptr, "ddgi.probe_offsets"});
+            const rg::BufferRef rb = graph.importBuffer(rg::ImportedBuffer{
+                ctx.readback.handle, ctx.readback.desc.size, rg::kNoQueue, nullptr, "rp_ddgi.readback"});
+            CopyRecord copy{src, rb, 0, offsetBuf->desc.size};
+            graph.addPass("offset.readback", &recordCopy, &copy)
+                .use(src, rg::Access::TransferSrc)
+                .use(rb, rg::Access::TransferDst, rg::BufferRange{0, copy.bytes});
+            graph.addPass("offset.host", nullptr, nullptr).use(rb, rg::Access::HostRead);
+            const rg::ExecuteResult result = ctx.executor->execute(graph);
+            const bool waited = ctx.executor->waitIdle();
+            expect(src.valid() && result.ok && waited, "legacy probe offset readback");
+            if (result.ok && waited && ctx.readback.mapped != nullptr) {
+                const auto* readOffsets = static_cast<const Vec3*>(ctx.readback.mapped);
+                u32 offsetMismatch = 0;
+                for (u32 i = 0; i < cpu.probeCount(); ++i) {
+                    const Vec4 p = cpu.probeData()[i];
+                    offsetMismatch +=
+                        (readOffsets[i].x != p.x || readOffsets[i].y != p.y || readOffsets[i].z != p.z) ? 1u : 0u;
+                }
+                expect(offsetMismatch == 0u, "legacy probe offsets match probeData xyz");
+            }
+        }
+        legacy.destroy();
+        resources.destroy();
+    }
+
     vkDeviceWaitIdle(ctx.vkDevice);
     gpu.destroy();
     return g_failures > 0 ? 1 : 0;
@@ -1915,6 +2062,9 @@ int runCpuImport(Context& ctx) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int probeRc = testGpuProbeOk()) {
+        return probeRc;
+    }
     std::string mode = "parity_rq";
     for (int i = 1; i + 1 < argc; i += 2) {
         if (std::strcmp(argv[i], "--mode") == 0) {

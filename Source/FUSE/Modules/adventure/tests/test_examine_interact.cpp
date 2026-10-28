@@ -1,4 +1,5 @@
 #include <fuse/adventure/examine_interactable.hpp>
+#include <fuse/adventure/examine_title.hpp>
 #include <fuse/adventure/interaction.hpp>
 #include <fuse/core/init.hpp>
 
@@ -30,9 +31,19 @@ void testExamineInteractable() {
     expectTrue(!plaque.description().empty(), "lore text preserved");
 }
 
+void testExamineTitleOk() {
+    expectTrue(fuse::adventure::examine_title_ok("Brass key"), "Brass key title ok");
+    expectTrue(!fuse::adventure::examine_title_ok(""), "empty title rejected");
+    expectTrue(!fuse::adventure::examine_title_ok(
+                   "1234567890123456789012345678901234567890123456789"),
+               "49-character title rejected");
+    expectTrue(!fuse::adventure::examine_title_ok("   "), "three spaces rejected");
+}
+
 } // namespace
 
 int main() {
+    testExamineTitleOk();
     fuse::core::initialize();
     testExamineInteractable();
     fuse::core::shutdown();
@@ -45,3 +56,21 @@ int main() {
     std::fprintf(stderr, "fuse_adventure_examine_tests: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/adventure/examine_text.hpp>
+
+namespace {
+
+void testExamineTextWrap() {
+    expectTrue(fuse::adventure::examine_line_count(40, 16) == 3, "40 characters, 16 columns is 3 lines");
+    expectTrue(fuse::adventure::examine_fits(40, 16, 3), "40 characters fit in 3 lines");
+    expectTrue(!fuse::adventure::examine_fits(40, 16, 2), "40 characters do not fit in 2 lines");
+}
+
+struct ExamineTextWrapTestInit {
+    ExamineTextWrapTestInit() { testExamineTextWrap(); }
+};
+
+const ExamineTextWrapTestInit g_examineTextWrapTestInit{};
+
+} // namespace

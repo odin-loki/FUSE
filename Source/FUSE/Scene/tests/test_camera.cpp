@@ -1,4 +1,6 @@
 #include <fuse/scene/camera.hpp>
+#include <fuse/scene/fov_deg.hpp>
+#include <fuse/scene/lod_distance.hpp>
 
 #include <cmath>
 #include <cstdio>
@@ -101,9 +103,40 @@ void testCameraProjectionOffCenter() {
     expectTrue(ndcX > 0.1f, "positive x world point lands right of center in ndc");
 }
 
+void testFovDegOk() {
+    expectTrue(fuse::scene::fov_deg_ok(20.f), "fov 20");
+    expectTrue(fuse::scene::fov_deg_ok(90.f), "fov 90");
+    expectTrue(fuse::scene::fov_deg_ok(120.f), "fov 120");
+    expectTrue(!fuse::scene::fov_deg_ok(10.f), "fov 10 rejected");
+    expectTrue(!fuse::scene::fov_deg_ok(130.f), "fov 130 rejected");
+}
+
+int testLodDistance() {
+    const float ratio = fuse::scene::lod_distance(2.f, 4.f);
+    if (ratio != 0.5f) {
+        std::fprintf(stderr, "FAIL: lod_distance(2, 4) (got %f expected %f)\n", ratio, 0.5f);
+        return 1;
+    }
+    const float stopped = fuse::scene::lod_distance(2.f, 0.f);
+    if (stopped != 0.f) {
+        std::fprintf(stderr, "FAIL: lod_distance(2, 0) (got %f expected %f)\n", stopped, 0.f);
+        return 1;
+    }
+    const float nanError = fuse::scene::lod_distance(std::nanf(""), 4.f);
+    if (nanError != 0.f) {
+        std::fprintf(stderr, "FAIL: lod_distance(NaN, 4) (got %f expected %f)\n", nanError, 0.f);
+        return 1;
+    }
+    return 0;
+}
+
 } // namespace
 
 int test_camera_main() {
+    if (const int lodRc = testLodDistance()) {
+        return lodRc;
+    }
+    testFovDegOk();
     testCameraUpdate();
     testCameraOrientationRoundTrip();
     testCameraProjectionHelpers();

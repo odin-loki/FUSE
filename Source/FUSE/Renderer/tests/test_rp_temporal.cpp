@@ -51,6 +51,7 @@
 #include <fuse/renderer/temporal/motion_kernel.hpp>
 #include <fuse/renderer/temporal/taau_gpu.hpp>
 #include <fuse/renderer/temporal/temporal_motion.hpp>
+#include <fuse/renderer/temporal_frame.hpp>
 #include <fuse/renderer/visbuffer/visbuffer.hpp>
 #include <fuse/renderer/vk/allocator.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
@@ -117,11 +118,28 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero. Does not allocate.
+int testTemporalFrameOk() {
+    const int before = g_failures;
+    expect(fuse::renderer::temporal_frame_ok(0), "temporal_frame_ok(0) is true");
+    expect(fuse::renderer::temporal_frame_ok(7), "temporal_frame_ok(7) is true");
+    expect(!fuse::renderer::temporal_frame_ok(-1), "temporal_frame_ok(-1) is false");
+    expect(!fuse::renderer::temporal_frame_ok(8), "temporal_frame_ok(8) is false");
+    if (g_failures != before) {
+        std::fprintf(stderr, "FAIL: testTemporalFrameOk\n");
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int temporalRc = testTemporalFrameOk()) {
+        return temporalRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -1340,6 +1358,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int temporalRc = testTemporalFrameOk()) {
+        return temporalRc;
+    }
     std::string mode = "motion";
     std::string backend = "set";
     for (int i = 1; i + 1 < argc; i += 2) {

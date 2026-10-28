@@ -5,6 +5,7 @@
 //  - refit after 1k transform updates is correct (no stale bounds)
 //  - BVH frustum cull of 10k objects < 0.1 ms (reported; enforced in optimised builds)
 #include <fuse/core/sanitizer.hpp>
+#include <fuse/ecs/bvh_depth.hpp>
 #include <fuse/ecs/math/mat.hpp>
 #include <fuse/spatial/bvh.hpp>
 #include <fuse/spatial/frustum.hpp>
@@ -193,9 +194,17 @@ void testFrustumAndRefit() {
     expectTrue(!bvh.update_leaf_aabb(static_cast<fuse::u32>(leaves.size()), {}), "out-of-range update rejected");
 }
 
+void testBvhDepthOk() {
+    expectTrue(fuse::ecs::bvh_depth_ok(1), "bvh_depth_ok(1) is true");
+    expectTrue(fuse::ecs::bvh_depth_ok(32), "bvh_depth_ok(32) is true");
+    expectTrue(!fuse::ecs::bvh_depth_ok(0), "bvh_depth_ok(0) is false");
+    expectTrue(!fuse::ecs::bvh_depth_ok(33), "bvh_depth_ok(33) is false");
+}
+
 } // namespace
 
 int main() {
+    testBvhDepthOk();
     testSahBuildTime();
     testRayCastMatchesBruteForce();
     testFrustumAndRefit();

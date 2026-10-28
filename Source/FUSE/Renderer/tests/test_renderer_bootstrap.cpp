@@ -1,5 +1,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/platform/gl_context.hpp>
+#include <fuse/renderer/bootstrap/bootstrap_step.hpp>
+#include <fuse/renderer/device/required_extensions.hpp>
 #include <fuse/renderer/renderer_bootstrap.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 
@@ -97,9 +99,41 @@ void testSubmitAfterBootstrapInit() {
     fuse::core::shutdown();
 }
 
+/// CPU gate. Runs before any GPU or device skip and does not allocate.
+/// A failure returns non-zero before any later skip.
+void testBootstrapStepOk() {
+    expectTrue(fuse::renderer::bootstrap_step_ok(0), "bootstrap_step_ok(0) is true");
+    expectTrue(fuse::renderer::bootstrap_step_ok(8), "bootstrap_step_ok(8) is true");
+    expectTrue(!fuse::renderer::bootstrap_step_ok(-1), "bootstrap_step_ok(-1) is false");
+    expectTrue(!fuse::renderer::bootstrap_step_ok(9), "bootstrap_step_ok(9) is false");
+}
+
+void testExtensionsSatisfied() {
+    const char* have[] = {"VK_KHR_swapchain", "VK_KHR_timeline_semaphore"};
+    const char* need[] = {"VK_KHR_swapchain"};
+    expectTrue(fuse::renderer::extensions_satisfied(have, 2, need, 1),
+               "VK_KHR_swapchain is satisfied by the available set");
+
+    const char* missing[] = {"VK_KHR_timeline_semaphore"};
+    expectTrue(!fuse::renderer::extensions_satisfied(missing, 1, need, 1),
+               "missing VK_KHR_swapchain is not satisfied");
+}
+
 } // namespace
 
 int main() {
+    testBootstrapStepOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_renderer_bootstrap: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
+    testExtensionsSatisfied();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_renderer_bootstrap: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     testInitRequiresCore();
     testInitShutdownOrder();
     testDoubleShutdownSafe();

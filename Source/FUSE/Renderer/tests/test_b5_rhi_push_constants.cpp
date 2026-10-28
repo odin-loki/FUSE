@@ -11,8 +11,12 @@
 #include "b5_rhi_test_common.hpp"
 
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/postprocess/vignette.hpp>
+#include <fuse/renderer/rhi/push_bytes.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 
+#include <cmath>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -35,9 +39,53 @@ struct Rgb {
     return p.r == r && p.g == g && p.b == b;
 }
 
+void testPushBytesOk() {
+    using fuse::renderer::push_bytes_ok;
+    expectTrue(push_bytes_ok(0), "push_bytes_ok(0) is true");
+    expectTrue(push_bytes_ok(128), "push_bytes_ok(128) is true");
+    expectTrue(push_bytes_ok(4), "push_bytes_ok(4) is true");
+    expectTrue(!push_bytes_ok(2), "push_bytes_ok(2) is false");
+    expectTrue(!push_bytes_ok(132), "push_bytes_ok(132) is false");
+    expectTrue(!push_bytes_ok(-4), "push_bytes_ok(-4) is false");
+}
+
+void testVignetteFactor() {
+    using fuse::renderer::vignette_factor;
+    expectTrue(vignette_factor(0.5f, 0.5f, 1.f, 1.f) == 1.f, "vignette center is 1");
+    expectTrue(vignette_factor(0.f, 0.f, 0.f, 0.f) == 1.f, "intensity 0 leaves a corner at 1");
+    expectTrue(vignette_factor(1.f, 1.f, 0.f, 1.f) == 1.f, "intensity 0 leaves the opposite corner at 1");
+
+    const float squareCorner = vignette_factor(0.f, 0.f, 1.f, 0.f);
+    const float roundCorner = vignette_factor(0.f, 1.f, 1.f, 1.f);
+    expectTrue(squareCorner >= 0.f && squareCorner < 0.25f, "square corner at intensity 1 is below 0.25");
+    expectTrue(roundCorner >= 0.f && roundCorner < 0.25f, "round corner at intensity 1 is below 0.25");
+
+    // (0.75, 0.75): max(|0.25|, |0.25|) = 0.25, so roundness 0 is exactly 0.5.
+    expectTrue(vignette_factor(0.75f, 0.75f, 1.f, 0.f) == 0.5f, "roundness 0 uses the max absolute offset");
+    const float circle = vignette_factor(0.75f, 0.75f, 1.f, 1.f);
+    expectTrue(circle < 0.5f && circle > 0.25f, "roundness 1 uses the euclidean radius");
+    const float blended = vignette_factor(0.75f, 0.75f, 1.f, 0.5f);
+    expectTrue(std::fabs(blended - (0.5f + circle) * 0.5f) < 1e-6f, "roundness blends square and circle");
+    expectTrue(vignette_factor(0.75f, 0.75f, 1.f, 4.f) == circle, "roundness above 1 matches a circle");
+    expectTrue(vignette_factor(0.75f, 0.75f, 1.f, -2.f) == 0.5f, "roundness below 0 matches a square");
+    expectTrue(vignette_factor(0.75f, 0.75f, 3.f, 0.f) == 0.5f, "intensity above 1 clamps to 1");
+    expectTrue(vignette_factor(0.f, 0.f, -1.f, 1.f) == 1.f, "negative intensity clamps to a clear frame");
+
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    expectTrue(vignette_factor(nan, 0.5f, 1.f, 1.f) == 1.f, "non-finite uv returns 1");
+    expectTrue(vignette_factor(0.5f, 0.5f, inf, 0.f) == 1.f, "non-finite intensity returns 1");
+    expectTrue(vignette_factor(0.5f, 0.5f, 1.f, nan) == 1.f, "non-finite roundness returns 1");
+}
+
 } // namespace
 
 int main() {
+    testPushBytesOk();
+    testVignetteFactor();
+    if (b5rhi::failures() != 0) {
+        return b5rhi::finish("fuse_b5_rhi_push_constants");
+    }
 #if !defined(FUSE_VULKAN_BACKEND)
     return b5rhi::skip("fuse_b5_rhi_push_constants", "Vulkan backend disabled");
 #elif !defined(FUSE_B5_RHI_SHADERS_BUILT)

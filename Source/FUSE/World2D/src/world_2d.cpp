@@ -134,6 +134,7 @@ void World2D::clearLoadedSprites_() {
     m_snapshot.clear();
     m_transformSoA.clear();
     m_cullVisible.clear();
+    m_spriteMapSamples.clear();
 }
 
 FuselevelLoadResult World2D::loadWorldFromFuselevel(const std::string& fuselevelPath) {
@@ -323,6 +324,50 @@ void World2D::syncSceneFromPhysics() {
     }
 }
 
+bool World2D::cachedSpriteImageMapColor_(const std::string& imageMap, u32 frameIndex, u32 frameCount, u8& r,
+                                         u8& g, u8& b) {
+    if (imageMap.empty() || frameCount == 0u) {
+        return false;
+    }
+
+    for (const SpriteMapSample& existing : m_spriteMapSamples) {
+        if (existing.frameCount == frameCount && existing.imageMap == imageMap) {
+            const u32 frame = frameIndex % frameCount;
+            const usize base = static_cast<usize>(frame) * 3u;
+            r = existing.rgb[base];
+            g = existing.rgb[base + 1u];
+            b = existing.rgb[base + 2u];
+            return true;
+        }
+    }
+
+    // First sight of this sheet: sample every column now so a later atlas frame does not allocate.
+    SpriteMapSample created;
+    created.imageMap = imageMap;
+    created.frameCount = frameCount;
+    created.rgb.resize(static_cast<usize>(frameCount) * 3u);
+    for (u32 frame = 0; frame < frameCount; ++frame) {
+        u8 sr = 0;
+        u8 sg = 0;
+        u8 sb = 0;
+        if (!sampleSpriteImageMapFrame(m_spriteMapRoots, imageMap, frame, frameCount, sr, sg, sb)) {
+            return false;
+        }
+        const usize base = static_cast<usize>(frame) * 3u;
+        created.rgb[base] = sr;
+        created.rgb[base + 1u] = sg;
+        created.rgb[base + 2u] = sb;
+    }
+
+    const u32 frame = frameIndex % frameCount;
+    const usize base = static_cast<usize>(frame) * 3u;
+    r = created.rgb[base];
+    g = created.rgb[base + 1u];
+    b = created.rgb[base + 2u];
+    m_spriteMapSamples.push_back(std::move(created));
+    return true;
+}
+
 void World2D::buildSnapshot(frame::FrameCtx& ctx) {
     if (!m_root) {
         m_snapshot.clear();
@@ -345,8 +390,8 @@ void World2D::buildSnapshot(frame::FrameCtx& ctx) {
             u8 sr = cmd.atlasR;
             u8 sg = cmd.atlasG;
             u8 sb = cmd.atlasB;
-            if (sampleSpriteImageMapFrame(m_spriteMapRoots, sprite->spriteImageMap(), cmd.atlasFrame,
-                                          cmd.atlasFrameCount, sr, sg, sb)) {
+            if (cachedSpriteImageMapColor_(sprite->spriteImageMap(), cmd.atlasFrame, cmd.atlasFrameCount, sr, sg,
+                                           sb)) {
                 cmd.atlasR = sr;
                 cmd.atlasG = sg;
                 cmd.atlasB = sb;

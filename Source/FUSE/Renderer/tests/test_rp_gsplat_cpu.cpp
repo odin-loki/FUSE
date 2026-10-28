@@ -15,6 +15,7 @@
 #include <fuse/renderer/gsplat/gsplat.hpp>
 #include <fuse/renderer/gsplat/gsplat_ply.hpp>
 #include <fuse/renderer/gsplat/gsplat_reference.hpp>
+#include <fuse/renderer/gsplat/splat_count.hpp>
 
 #include "test_rp_gsplat_scene.hpp"
 
@@ -46,6 +47,14 @@ void expect(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+/// CPU gate. Must run before any GPU or device skip; a failure returns non-zero.
+void testSplatCountOk() {
+    expect(fuse::renderer::splat_count_ok(1), "splat_count_ok(1) is true");
+    expect(fuse::renderer::splat_count_ok(1 << 20), "splat_count_ok(1<<20) is true");
+    expect(!fuse::renderer::splat_count_ok(0), "splat_count_ok(0) is false");
+    expect(!fuse::renderer::splat_count_ok((1 << 20) + 1), "splat_count_ok((1<<20)+1) is false");
 }
 
 // --- layout ----------------------------------------------------------------------------------------
@@ -437,6 +446,11 @@ void testApi() {
 } // namespace
 
 int main(int argc, char** argv) {
+    testSplatCountOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "layout") {

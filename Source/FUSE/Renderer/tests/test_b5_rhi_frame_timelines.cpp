@@ -12,8 +12,11 @@
 #include "b5_rhi_test_common.hpp"
 
 #include <fuse/core/init.hpp>
+#include <fuse/renderer/postprocess/motion_clamp.hpp>
+#include <fuse/renderer/rhi/timeline_slot.hpp>
 #include <fuse/renderer/rhi_context.hpp>
 
+#include <cmath>
 #include <set>
 
 #if defined(FUSE_VULKAN_BACKEND)
@@ -36,9 +39,31 @@ u64 gpuCounter(VkDevice device, void* semaphore) {
 }
 #endif
 
+void testTimelineSlotOk() {
+    expectTrue(fuse::renderer::timeline_slot_ok(0), "timeline slot 0 is valid");
+    expectTrue(fuse::renderer::timeline_slot_ok(15), "timeline slot 15 is valid");
+    expectTrue(!fuse::renderer::timeline_slot_ok(-1), "timeline slot -1 is rejected");
+    expectTrue(!fuse::renderer::timeline_slot_ok(16), "timeline slot 16 is rejected");
+}
+
+void testMotionClamp() {
+    const fuse::math::Vec2 clamped = fuse::renderer::clamp_motion({10.f, 0.f}, 4.f);
+    expectTrue(std::fabs(clamped.length() - 4.f) < 1e-5f, "10 px vector with max 4 has length 4");
+    const fuse::math::Vec2 kept = fuse::renderer::clamp_motion({1.f, 0.f}, 4.f);
+    expectTrue(kept.x == 1.f && kept.y == 0.f, "1 px vector is unchanged");
+}
+
 } // namespace
 
 int main() {
+    testTimelineSlotOk();
+    if (b5rhi::failures() != 0) {
+        return b5rhi::finish("fuse_b5_rhi_frame_timelines");
+    }
+    testMotionClamp();
+    if (b5rhi::failures() != 0) {
+        return b5rhi::finish("fuse_b5_rhi_frame_timelines");
+    }
 #if !defined(FUSE_VULKAN_BACKEND)
     return b5rhi::skip("fuse_b5_rhi_frame_timelines", "Vulkan backend disabled");
 #else

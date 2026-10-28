@@ -6,6 +6,8 @@
 //   - Launches record "sdf_ray_march" stats; Cuda / Auto without a device fall back to CpuParallel
 //     with the same image; invalid params are rejected on every backend.
 
+#include <fuse/compute/dispatch_groups.hpp>
+#include <fuse/compute/march_steps.hpp>
 #include <fuse/compute/ray_march.hpp>
 #include <fuse/compute/ray_march_kernel.hpp>
 #include <fuse/compute_kernel/parity.hpp>
@@ -232,9 +234,39 @@ void timeCuda1080() {
                 params.object_count, wallMs, have ? static_cast<double>(ks.last_ns) / 1e6 : -1.0);
 }
 
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero and does not continue.
+/// Does not allocate.
+void testDispatchGroups() {
+    expectTrue(compute::dispatch_groups(10, 4) == 3, "dispatch_groups(10, 4) is 3");
+    expectTrue(compute::dispatch_groups(0, 4) == 0, "dispatch_groups(0, 4) is 0");
+    expectTrue(compute::dispatch_groups(10, 3) == 0, "dispatch_groups(10, 3) is 0");
+    expectTrue(compute::dispatch_groups(10, 0) == 0, "dispatch_groups(10, 0) is 0");
+}
+
+/// CPU gate. Must run before any GPU skip; a failure returns non-zero and does not continue.
+/// Does not allocate.
+void testMarchStepsOk() {
+    expectTrue(compute::march_steps_ok(16), "march_steps_ok(16) is true");
+    expectTrue(compute::march_steps_ok(64), "march_steps_ok(64) is true");
+    expectTrue(compute::march_steps_ok(256), "march_steps_ok(256) is true");
+    expectTrue(!compute::march_steps_ok(0), "march_steps_ok(0) is false");
+    expectTrue(!compute::march_steps_ok(24), "march_steps_ok(24) is false");
+    expectTrue(!compute::march_steps_ok(512), "march_steps_ok(512) is false");
+}
+
 } // namespace
 
 int main() {
+    testDispatchGroups();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d ray march kernel parity check(s) failed\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testMarchStepsOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d ray march kernel parity check(s) failed\n", g_failures);
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
     testBackendParity();
     testStatsAndFallback();
@@ -247,3 +279,23 @@ int main() {
     std::printf("Ray march kernel parity gates passed\n");
     return EXIT_SUCCESS;
 }
+
+#include <fuse/compute/step_clamp.hpp>
+
+namespace {
+
+/// Sphere-trace step clamped into [min, max]. Inverted bounds are ordered first.
+void testClampRayStep() {
+    expectTrue(compute::clamp_ray_step(0.01f, 0.1f, 1.f) == 0.1f, "clamp_ray_step(0.01, 0.1, 1) == 0.1");
+    expectTrue(compute::clamp_ray_step(5.f, 0.1f, 1.f) == 1.f, "clamp_ray_step(5, 0.1, 1) == 1");
+    expectTrue(compute::clamp_ray_step(0.4f, 1.f, 0.1f) == 0.4f, "clamp_ray_step(0.4, 1, 0.1) == 0.4");
+}
+
+// Startup so main's existing g_failures check covers this case. The driver above is unchanged.
+struct RegisterTestClampRayStep {
+    RegisterTestClampRayStep() { testClampRayStep(); }
+};
+
+const RegisterTestClampRayStep registerTestClampRayStep{};
+
+} // namespace

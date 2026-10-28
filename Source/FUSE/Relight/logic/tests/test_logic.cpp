@@ -9,7 +9,9 @@
 #include "test_logic_common.hpp"
 
 #include <fuse/relight/capture/export/json.hpp>
+#include <fuse/relight/logic/condition.hpp>
 #include <fuse/relight/logic/keybind.hpp>
+#include <fuse/relight/logic/logic_indent.hpp>
 #include <fuse/relight/logic/logic_log.hpp>
 #include <fuse/relight/logic/logic_runtime.hpp>
 #include <fuse/relight/mods/usd/usd_stage.hpp>
@@ -412,6 +414,30 @@ void Single::set(const std::string& property, const PropertyValue& value) {
     CHECK_MSG(false, "no property " + property);
 }
 
+void testLogicIndentOk() {
+    using fuse::relight::logic_indent_ok;
+    CHECK(logic_indent_ok(0));
+    CHECK(logic_indent_ok(8));
+    CHECK(!logic_indent_ok(-1));
+    CHECK(!logic_indent_ok(9));
+}
+
+void testConditionEval() {
+    using fuse::relight::logic::Cond;
+    using fuse::relight::logic::CondOp;
+    using fuse::relight::logic::eval_condition;
+    const Cond nodes[] = {
+        {CondOp::Not, 1, -1},
+        {CondOp::False, -1, -1},
+        {CondOp::And, 3, 1},
+        {CondOp::True, -1, -1},
+        {CondOp::Or, 1, 3},
+    };
+    CHECK(eval_condition(nodes, 2, 0));
+    CHECK(!eval_condition(nodes, 4, 2));
+    CHECK(eval_condition(nodes, 5, 4));
+}
+
 } // namespace rl_logic_test
 
 int main(int argc, char** argv) {
@@ -429,7 +455,9 @@ int main(int argc, char** argv) {
     const fs::path tmp = fs::absolute("rl_logic_tmp");
     fs::remove_all(tmp);
     fs::create_directories(tmp);
+    testLogicIndentOk();
     testRegistry();
+    testConditionEval();
     testComponents();
     testParser();
     if (fixtures) {

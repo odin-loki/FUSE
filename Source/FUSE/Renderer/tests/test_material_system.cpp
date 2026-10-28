@@ -1,5 +1,6 @@
 #include <fuse/core/init.hpp>
 #include <fuse/renderer/material/material.hpp>
+#include <fuse/renderer/material/material_name.hpp>
 #include <fuse/renderer/material/material_system.hpp>
 #include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
@@ -7,6 +8,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 namespace {
 
@@ -17,6 +19,16 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testMaterialNameOk() {
+    expectTrue(fuse::renderer::material_name_ok("lit/default"), "material name lit/default");
+    expectTrue(!fuse::renderer::material_name_ok(""), "material name empty");
+    expectTrue(!fuse::renderer::material_name_ok("has space"), "material name space");
+    expectTrue(fuse::renderer::material_name_ok("A_1"), "material name letter digit underscore");
+    expectTrue(fuse::renderer::material_name_ok(std::string(48, 'a')), "material name length 48");
+    expectTrue(!fuse::renderer::material_name_ok(std::string(49, 'a')), "material name length 49");
+    expectTrue(!fuse::renderer::material_name_ok("lit-default"), "material name hyphen");
 }
 
 void testMaterialPack() {
@@ -103,6 +115,12 @@ void testMaterialSystemRegisterFlush() {
 } // namespace
 
 int main() {
+    testMaterialNameOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_material_system: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
 
     testMaterialPack();

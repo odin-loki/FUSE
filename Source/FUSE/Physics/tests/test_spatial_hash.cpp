@@ -1,7 +1,10 @@
+#include <fuse/physics/broadphase/bucket_count.hpp>
+#include <fuse/physics/broadphase/hash_bucket.hpp>
 #include <fuse/physics/broadphase/pair_buffer.hpp>
 #include <fuse/physics/broadphase/spatial_hash.hpp>
 #include <fuse/physics/physics_data.hpp>
 
+#include <fuse/gameplay/fog_of_war.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/jobs/parallel_for.hpp>
 
@@ -2113,9 +2116,64 @@ void testBroadphaseMergeRejectReasonGuards() {
              "merge preflight carries reject reason");
 }
 
+void testFogGridChebyshevReveal() {
+    fuse::gameplay::FogGrid grid(5, 5);
+    expectEq(grid.seen_count(), 0, "fog grid starts hidden");
+    expectTrue(!grid.seen(0, 0), "corner starts hidden");
+    expectTrue(!grid.seen(-1, 2), "seen is false out of range");
+    expectTrue(!grid.seen(5, 2), "seen is false past the edge");
+
+    grid.reveal(5, 2);
+    grid.reveal(-1, 2);
+    expectEq(grid.seen_count(), 0, "out of range reveal does nothing");
+
+    grid.reveal_radius(2, 2, -1);
+    expectEq(grid.seen_count(), 0, "negative radius reveals nothing");
+
+    grid.reveal_radius(2, 2, 1);
+    expectEq(grid.seen_count(), 9, "reveal_radius(2, 2, 1) reveals 9 cells");
+    expectTrue(grid.seen(2, 2), "center cell is seen");
+    expectTrue(grid.seen(1, 1), "chebyshev corner of the radius is seen");
+    expectTrue(grid.seen(3, 1), "chebyshev corner of the radius is seen");
+    expectTrue(!grid.seen(0, 0), "corner cell stays hidden");
+    expectTrue(!grid.seen(0, 2), "distance 2 stays hidden");
+    expectTrue(!grid.seen(4, 4), "far corner stays hidden");
+
+    grid.reveal(2, 2);
+    expectEq(grid.seen_count(), 9, "revealing a seen cell does not change the count");
+    grid.reveal(0, 0);
+    expectTrue(grid.seen(0, 0), "reveal marks one cell seen");
+    expectEq(grid.seen_count(), 10, "single reveal increases the seen count");
+}
+
+void testHashBucket() {
+    expectTrue(fuse::physics::hash_bucket(0, 0, 0, 16) == 0u, "the origin hashes into bucket 0");
+    expectTrue(fuse::physics::hash_bucket(1, 0, 0, 0) == 0u, "a zero bucket count returns 0");
+    expectTrue(fuse::physics::hash_bucket(1, 0, 0, 16) == 13u, "cell (1, 0, 0) hashes into bucket 13");
+}
+
+int testBucketCountOk() {
+    const int before = g_failures;
+    expectTrue(fuse::physics::bucket_count_ok(16), "bucket_count_ok(16) is true");
+    expectTrue(fuse::physics::bucket_count_ok(256), "bucket_count_ok(256) is true");
+    expectTrue(fuse::physics::bucket_count_ok(4096), "bucket_count_ok(4096) is true");
+    expectTrue(!fuse::physics::bucket_count_ok(0), "bucket_count_ok(0) is false");
+    expectTrue(!fuse::physics::bucket_count_ok(24), "bucket_count_ok(24) is false");
+    expectTrue(!fuse::physics::bucket_count_ok(8192), "bucket_count_ok(8192) is false");
+    if (g_failures != before) {
+        return EXIT_FAILURE;
+    }
+    return 0;
+}
+
 } // namespace
 
 int main() {
+    if (const int bucketCountRc = testBucketCountOk()) {
+        return bucketCountRc;
+    }
+
+    testHashBucket();
     testSpatialHashFunction();
     testAabbOverlapStub();
     testPairBufferSoAClearReuse();
@@ -2193,6 +2251,7 @@ int main() {
     testPairBufferWouldSkipWriteSlotGuards();
     testCellCapacityWouldSkipGuards();
     testRefineDedupeMergeWouldSkipGuards();
+    testFogGridChebyshevReveal();
 
     if (g_failures == 0) {
         std::printf("fuse_physics_broadphase_tests: all checks passed\n");

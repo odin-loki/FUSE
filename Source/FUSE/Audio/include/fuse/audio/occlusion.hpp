@@ -109,4 +109,46 @@ OcclusionAttenuation evaluate_occlusion_from_blockers(const Vec3& listener, cons
                                                       u32 blocker_count,
                                                       const OcclusionParams& params = {});
 
+/// Fully blocked one-pole cutoff (Hz). Fully open bypasses; this is the dark end of the curve.
+inline constexpr float kOcclusionLpfBlockedHz = 400.f;
+
+/// Sample rate used when a caller omits one or passes a non-positive rate. Matches AudioDesc.
+inline constexpr u32 kOcclusionLpfSampleRate = 48000;
+
+/// |y| below this flushes to zero so the one-pole cannot denormal-stall.
+inline constexpr float kOcclusionLpfDenormalFloor = 1.0e-15f;
+
+/// HF occlusion lowpass. Cutoff drops as visibility falls (blocked = darker).
+///
+///   v       = clamp(visibility, 0, 1)
+///   nyquist = sample_rate / 2
+///   fc(v)   = fc_blocked * (nyquist / fc_blocked) ^ v ,   fc(1) = nyquist
+///   a(v)    = 1                              if v >= 1     (bypass, y = x)
+///           = clamp(1 - exp(-2π fc(v) / fs), 0, 1)        otherwise
+///   y[n]    = y[n-1] + a * (x[n] - y[n-1])
+///   y[n-1]  = 0 when y is non-finite or |y| < kOcclusionLpfDenormalFloor
+///
+/// fc_blocked is kOcclusionLpfBlockedHz. Fully open is a bit-exact bypass so an
+/// unoccluded source is not coloured. Non-positive sample rates use kOcclusionLpfSampleRate.
+float occlusion_lpf_cutoff_hz(float visibility,
+                              float sample_rate = static_cast<float>(kOcclusionLpfSampleRate));
+
+/// One-pole coefficient a in [0, 1] for a cutoff. 0 holds state; values at or above Nyquist stay finite.
+float occlusion_lpf_coefficient(float cutoff_hz,
+                                float sample_rate = static_cast<float>(kOcclusionLpfSampleRate));
+
+/// True when visibility is fully open and the lowpass must copy the input.
+bool should_bypass_occlusion_lpf(float visibility);
+
+/// Coefficient used by the mixer: exactly 1 when \ref should_bypass_occlusion_lpf is true.
+float occlusion_lpf_mix_coefficient(float visibility,
+                                    float sample_rate = static_cast<float>(kOcclusionLpfSampleRate));
+
+/// Advance one one-pole sample. Coefficient is clamped to [0, 1]. Non-finite input clears state.
+float process_occlusion_lpf(float input, float& state, float coefficient);
+
+/// One sample of the HF occlusion lowpass, including the fully-open bypass.
+float apply_occlusion_lpf(float input, float& state, float visibility,
+                          float sample_rate = static_cast<float>(kOcclusionLpfSampleRate));
+
 } // namespace fuse::audio

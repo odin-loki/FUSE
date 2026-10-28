@@ -14,6 +14,7 @@
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene_ecs.hpp>
 #include <fuse/renderer/material/material_system.hpp>
+#include <fuse/renderer/scene/view_index.hpp>
 #include <fuse/renderer/scene_renderer/mesh_registry.hpp>
 #include <fuse/renderer/scene_renderer/procedural_meshes.hpp>
 
@@ -332,9 +333,31 @@ int runProcedural() {
     return 0;
 }
 
+/// CPU gate. Must run before any GPU or device skip; a failure returns non-zero before any later skip.
+/// The predicate and these checks allocate nothing.
+void testViewIndexOk() {
+    t_allocations = 0;
+    t_count = true;
+    const bool zero = view_index_ok(0);
+    const bool seven = view_index_ok(7);
+    const bool negative = view_index_ok(-1);
+    const bool eight = view_index_ok(8);
+    t_count = false;
+    expect(t_allocations == 0u, "view_index_ok allocates nothing");
+    expect(zero, "view_index_ok(0) is true");
+    expect(seven, "view_index_ok(7) is true");
+    expect(!negative, "view_index_ok(-1) is false");
+    expect(!eight, "view_index_ok(8) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testViewIndexOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     if (suite == "registry" || suite == "all") {
         runRegistry();

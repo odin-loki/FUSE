@@ -23,11 +23,15 @@
 //   options      rtx.radianceCache.* are registered and RadianceCacheSettings::fromOptions reads them.
 //   layout       the push blocks of radiance_cache.{slang,comp} match RadianceCacheGpu::Push field for field; the
 //                path tracer's PtTracePush is unchanged (RL-5.3 layout); PtParams ends with rcTableLo, rcTableHi.
+//   cell_index   cache_cell_index: positive modulo into the grid, uint64 index saturated to UINT32_MAX.
+//   probe_count  probe_count_ok: power of two in [1, 256].
 //
 // Usage: fuse_relight_radiance_cache_tests <suite>|all. Exit 0 pass, 1 fail.
 #include "pt_test_scenes.hpp"
 
 #include <fuse/relight/render/pathtrace/radiance_cache.hpp>
+#include <fuse/relight/render/pathtrace/radiance_cache/cache_cell.hpp>
+#include <fuse/relight/render/pathtrace/radiance_cache/probe_count.hpp>
 
 #include <fuse/relight/options/option.hpp>
 #include <fuse/relight/options/option_config.hpp>
@@ -723,9 +727,36 @@ void suiteLayout() {
           "layout: PtParams ends with rcTableLo, rcTableHi (ptParamsUnpack w10.z / w10.w)");
 }
 
+// --- cell_index -------------------------------------------------------------------------------------------------------
+void suiteCellIndex() {
+    using fuse::relight::render::pathtrace::cache_cell_index;
+    // (z * resolution + y) * resolution + x = (3 * 4 + 2) * 4 + 1 = 57.
+    constexpr std::uint32_t kCell123 = (3u * 4u + 2u) * 4u + 1u;
+    static_assert(kCell123 == 57u, "(3*4+2)*4+1");
+    check(cache_cell_index(1, 2, 3, 4) == kCell123, "cell_index: (1, 2, 3) at resolution 4 is (3*4+2)*4+1");
+    check(cache_cell_index(-1, 0, 0, 4) == 3u, "cell_index: (-1, 0, 0) wraps x to 3");
+    check(cache_cell_index(1, 2, 3, 0) == UINT32_MAX && cache_cell_index(1, 2, 3, -2) == UINT32_MAX,
+          "cell_index: non-positive resolution is UINT32_MAX");
+    check(cache_cell_index(1999, 1999, 1999, 2000) == UINT32_MAX, "cell_index: a product past uint32 saturates");
+}
+
+/// probe_count_ok: power of two in [1, 256]. Runs before option setup.
+void testProbeCountOk() {
+    check(fuse::relight::probe_count_ok(1), "probe_count_ok(1)");
+    check(fuse::relight::probe_count_ok(16), "probe_count_ok(16)");
+    check(fuse::relight::probe_count_ok(256), "probe_count_ok(256)");
+    check(!fuse::relight::probe_count_ok(0), "probe_count_ok(0)");
+    check(!fuse::relight::probe_count_ok(3), "probe_count_ok(3)");
+    check(!fuse::relight::probe_count_ok(512), "probe_count_ok(512)");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testProbeCountOk();
+    if (g_failures != 0) {
+        return 1;
+    }
     opt::setEnvironmentVariable(opt::kDxvkConfEnvVar, "");
     opt::setEnvironmentVariable(opt::kRtxConfEnvVar, "");
     (void)BorrowedStandIns::sceneScaleObject();
@@ -738,7 +769,8 @@ int main(int argc, char** argv) {
     };
     const Suite suites[] = {{"cells", suiteCells},       {"update", suiteUpdate},     {"converge", suiteConverge},
                             {"variance", suiteVariance}, {"hitrate", suiteHitRate},   {"determinism", suiteDeterminism},
-                            {"zero_alloc", suiteZeroAlloc}, {"options", suiteOptions}, {"layout", suiteLayout}};
+                            {"zero_alloc", suiteZeroAlloc}, {"options", suiteOptions}, {"layout", suiteLayout},
+                            {"cell_index", suiteCellIndex}};
     bool ran = false;
     for (const Suite& s : suites) {
         if (suite == "all" || suite == s.name) {

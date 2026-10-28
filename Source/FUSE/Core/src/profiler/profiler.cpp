@@ -697,7 +697,14 @@ void beginFrame() {
 }
 
 void endFrame() {
-    // Frame boundary marker for future GPU correlation — no-op in CPU stub.
+    // Frame-boundary instant on the recording clock. Counter is the existing point-sample
+    // phase (no duration). End would be an unmatched scope close and would unpair B/E traces.
+    // Shipping strip records nothing, same as the profiler macros.
+#if defined(FUSE_NO_PROFILER) && FUSE_NO_PROFILER
+    return;
+#else
+    recordEvent("frame", EventPhase::Counter, 0u, currentNestingDepth(), currentFlowNestingDepth());
+#endif
 }
 
 u32 frameIndex() {

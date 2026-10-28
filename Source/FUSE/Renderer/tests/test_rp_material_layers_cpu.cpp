@@ -15,6 +15,7 @@
 //   api         MaterialLayers stub behaviour (init fails without a device), PNG codec round trip
 #include "test_rp_material_layers_common.hpp"
 
+#include <fuse/renderer/material/material_layer.hpp>
 #include <fuse/renderer/material_layers/material_layers.hpp>
 
 #include <algorithm>
@@ -566,9 +567,22 @@ void testApi() {
     expect(!ml_make_builtin_texture("nope_albedo", 64u, t, flags), "unknown builtin texture");
 }
 
+/// CPU gate. Must run before any GPU or device skip; a failure exits instead of continuing.
+void testMaterialLayerOk() {
+    expect(fuse::renderer::material_layer_ok(1), "material_layer_ok(1) is true");
+    expect(fuse::renderer::material_layer_ok(8), "material_layer_ok(8) is true");
+    expect(!fuse::renderer::material_layer_ok(0), "material_layer_ok(0) is false");
+    expect(!fuse::renderer::material_layer_ok(9), "material_layer_ok(9) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testMaterialLayerOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: %d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "layout") {

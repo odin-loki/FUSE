@@ -25,6 +25,7 @@
 #include <fuse/renderer/light_tree/light_tree_gpu.hpp>
 #include <fuse/renderer/light_tree/light_tree_kernel.hpp>
 #include <fuse/renderer/lighting/ltc/ltc_lut.hpp>
+#include <fuse/renderer/lights/light_tree_depth.hpp>
 #include <fuse/renderer/material/material.hpp>
 
 #include "test_rp_light_tree_scene.hpp"
@@ -1106,9 +1107,23 @@ void testZeroAlloc() {
     expect(total == 0u, "build / refit / sample / pmf make no steady-state heap allocation");
 }
 
+/// CPU gate. Must run before any GPU or device skip; a failure exits the process.
+void testLightTreeDepthOk() {
+    expect(fuse::renderer::light_tree_depth_ok(1), "light_tree_depth_ok(1) is true");
+    expect(fuse::renderer::light_tree_depth_ok(16), "light_tree_depth_ok(16) is true");
+    expect(!fuse::renderer::light_tree_depth_ok(0), "light_tree_depth_ok(0) is false");
+    expect(!fuse::renderer::light_tree_depth_ok(17), "light_tree_depth_ok(17) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testLightTreeDepthOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testLightTreeDepthOk\n");
+        return 1;
+    }
+
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     if (all || suite == "layout") {

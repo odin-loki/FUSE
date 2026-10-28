@@ -2,6 +2,7 @@
 #include <fuse/renderer/command_buffer.hpp>
 #include <fuse/renderer/deferred/deferred_renderer.hpp>
 #include <fuse/renderer/deferred/frame_pipeline.hpp>
+#include <fuse/renderer/cluster/tile_count.hpp>
 #include <fuse/renderer/lighting/clustered.hpp>
 #include <fuse/renderer/resource_manager.hpp>
 #include <fuse/renderer/vk/bindless.hpp>
@@ -1361,9 +1362,22 @@ void testDeferredPipelineWiresClusterPass() {
     bindless.destroy(*bootstrap->device());
 }
 
+void testClusterTilesOk() {
+    expectTrue(fuse::renderer::cluster_tiles_ok(16, 9), "a 16 by 9 cluster grid is valid");
+    expectTrue(fuse::renderer::cluster_tiles_ok(1, 1), "a 1 by 1 cluster grid is valid");
+    expectTrue(fuse::renderer::cluster_tiles_ok(64, 64), "a 64 by 64 cluster grid is the cap");
+    expectTrue(!fuse::renderer::cluster_tiles_ok(0, 8), "a zero tile axis is rejected");
+    expectTrue(!fuse::renderer::cluster_tiles_ok(65, 8), "65 tiles on one axis is rejected");
+}
+
 } // namespace
 
 int main() {
+    testClusterTilesOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "fuse_clustered_light_culler: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
     fuse::core::initialize();
 
     testClusterDescCount();

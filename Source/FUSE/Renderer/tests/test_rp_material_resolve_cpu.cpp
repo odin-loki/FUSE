@@ -24,6 +24,7 @@
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/renderer/deferred/gbuffer.hpp>
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
+#include <fuse/renderer/material/resolve_pass.hpp>
 #include <fuse/renderer/material_resolve/material_resolve.hpp>
 #include <fuse/renderer/material_resolve/resolve_kernel.hpp>
 #include <fuse/renderer/material_resolve/resolve_reference.hpp>
@@ -613,9 +614,22 @@ int runApi() {
     return 0;
 }
 
+/// CPU gate. Must run before any GPU or device skip; a failure exits the process.
+void testResolvePassOk() {
+    expect(fuse::renderer::resolve_pass_ok(0), "resolve_pass_ok(0) is true");
+    expect(fuse::renderer::resolve_pass_ok(3), "resolve_pass_ok(3) is true");
+    expect(!fuse::renderer::resolve_pass_ok(-1), "resolve_pass_ok(-1) is false");
+    expect(!fuse::renderer::resolve_pass_ok(4), "resolve_pass_ok(4) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testResolvePassOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     int rc = 0;
     if (suite == "layout" || suite == "all") {

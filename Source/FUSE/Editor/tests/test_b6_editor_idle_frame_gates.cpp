@@ -20,6 +20,7 @@
 #include <fuse/core/init.hpp>
 #include <fuse/core/sanitizer.hpp>
 #include <fuse/editor/editor_host.hpp>
+#include <fuse/editor/idle_ms.hpp>
 #include <fuse/ecs/components/mesh.hpp>
 #include <fuse/ecs/components/sdf_object.hpp>
 #include <fuse/ecs/components/transform.hpp>
@@ -313,9 +314,18 @@ IdleStats runIdleFrames(fuse::editor::EditorHost& host, std::vector<long long>& 
     return stats;
 }
 
+void testIdleMsOk() {
+    expectTrue(fuse::editor::idle_ms_ok(0), "idle_ms_ok(0)");
+    expectTrue(fuse::editor::idle_ms_ok(16.6f), "idle_ms_ok(16.6)");
+    expectTrue(fuse::editor::idle_ms_ok(100), "idle_ms_ok(100)");
+    expectTrue(!fuse::editor::idle_ms_ok(-1), "idle_ms_ok(-1)");
+    expectTrue(!fuse::editor::idle_ms_ok(101), "idle_ms_ok(101)");
+}
+
 } // namespace
 
 int main() {
+    testIdleMsOk();
     fuse::core::initialize();
 
     // --- Runtime-only baseline: the runtime's own ECS + scene holding the same content. ---
@@ -449,3 +459,23 @@ int main() {
     std::fprintf(stderr, "fuse_editor_b6_idle_frame_gates: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/editor/idle_frame.hpp>
+
+namespace {
+
+void testEditorIdleFrame() {
+    expectTrue(fuse::editor::editor_idle(2.f, 1.f),
+               "editor_idle: 2 seconds since input with idleAfter 1 is idle");
+    expectTrue(fuse::editor::idle_dt(0.1f, true, 0.25f) == 0.025f,
+               "idle_dt: idle_dt(0.1, true, 0.25) == 0.025");
+}
+
+// Appended gate: runs before main so the existing failure count still reports it.
+struct EditorIdleFrameTestHook {
+    EditorIdleFrameTestHook() { testEditorIdleFrame(); }
+};
+
+const EditorIdleFrameTestHook g_editorIdleFrameTestHook{};
+
+} // namespace

@@ -6,6 +6,8 @@
 //  - 64x64 cloth simulation < 1 ms per frame (optimised builds)
 #include <fuse/core/sanitizer.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
+#include <fuse/physics/cloth/cloth_iter.hpp>
+#include <fuse/physics/softbody/cloth_pin.hpp>
 #include <fuse/physics/softbody/cloth_simulator.hpp>
 
 #include <algorithm>
@@ -48,6 +50,19 @@ vec3 centroid(const ClothSimulator& cloth) {
         sum += cloth.position(i);
     }
     return sum * (1.f / static_cast<f32>(cloth.particleCount()));
+}
+
+void testClothIterOk() {
+    expectTrue(cloth_iter_ok(1), "cloth iteration count 1 is valid");
+    expectTrue(cloth_iter_ok(32), "cloth iteration count 32 is valid");
+    expectTrue(!cloth_iter_ok(0), "cloth iteration count 0 is invalid");
+    expectTrue(!cloth_iter_ok(33), "cloth iteration count 33 is invalid");
+}
+
+void testClothPinOk() {
+    expectTrue(cloth_pin_ok(0), "cloth pin mask 0 is valid");
+    expectTrue(cloth_pin_ok(0b1111), "cloth pin mask 0b1111 is valid");
+    expectTrue(!cloth_pin_ok(0b10000), "cloth pin mask 0b10000 is invalid");
 }
 
 void testHangingClothStableAndPinned() {
@@ -200,6 +215,13 @@ void testLargeClothBudget() {
 } // namespace
 
 int main() {
+    const int clothIterBaseline = g_failures;
+    testClothIterOk();
+    if (g_failures != clothIterBaseline) {
+        std::fprintf(stderr, "fuse_b4_cloth_gates: %d failure(s)\n", g_failures);
+        return EXIT_FAILURE;
+    }
+    testClothPinOk();
     fuse::jobs::JobScheduler::instance().initialize(3u); // bands solve on workers + caller
     testHangingClothStableAndPinned();
     testWindDeflectsDownwind();
@@ -215,3 +237,26 @@ int main() {
     std::fprintf(stderr, "fuse_b4_cloth_gates: %d failure(s)\n", g_failures);
     return EXIT_FAILURE;
 }
+
+#include <fuse/physics/cloth/rest_length.hpp>
+
+namespace {
+
+void testRestLengthError() {
+    const float error = fuse::physics::rest_length_error(1.2f, 1.f);
+    const float correction = fuse::physics::rest_length_correction(1.2f, 1.f, 1.f);
+    std::printf("cloth rest length: error %.6f, correction %.6f\n", error, correction);
+    expectTrue(std::fabs(error - 0.2f) < 1e-6f, "distance 1.2 rest 1 error is 0.2");
+    expectTrue(std::fabs(correction - 0.2f) < 1e-6f, "distance 1.2 rest 1 stiffness 1 correction is 0.2");
+    expectTrue(error == correction, "stiffness 1 correction matches the error");
+    expectTrue(fuse::physics::rest_length_error(1.f, 1.f) == 0.f, "distance 1 rest 1 returns 0");
+}
+
+// Runs before main(); failures accumulate in g_failures, which main() already reports.
+struct RestLengthErrorTestRegistration {
+    RestLengthErrorTestRegistration() { testRestLengthError(); }
+};
+
+[[maybe_unused]] const RestLengthErrorTestRegistration g_restLengthErrorTestRegistration{};
+
+} // namespace

@@ -8,6 +8,8 @@
 // result must match CpuReference within 1e-4 abs / 1e-5 rel. Exit 77 (after the CPU checks passed) when
 // there is no CUDA kernel or device.
 
+#include <fuse/animation/event_name.hpp>
+#include <fuse/animation/loop_phase.hpp>
 #include <fuse/animation/skinning.hpp>
 #include <fuse/compute_kernel/parity.hpp>
 #include <fuse/core/init.hpp>
@@ -40,6 +42,20 @@ void expectTrue(bool condition, const char* message) {
         std::fprintf(stderr, "FAIL: %s\n", message);
         ++g_failures;
     }
+}
+
+void testLoopPhase() {
+    expectTrue(anim::loop_phase(1.5f, 1.f) == 0.5f, "loop_phase(1.5, 1) is 0.5");
+    expectTrue(anim::loop_phase(-0.25f, 1.f) == 0.75f, "loop_phase(-0.25, 1) is 0.75");
+    expectTrue(anim::loop_phase(1.f, 0.f) == 0.f, "loop_phase(1, 0) is 0");
+}
+
+/// CPU gate. Must run before any GPU skip; a failure exits the process.
+void testSkinEventNameOk() {
+    expectTrue(anim::skin_event_name_ok("Skin"), "skin_event_name_ok(\"Skin\") is true");
+    expectTrue(!anim::skin_event_name_ok(""), "skin_event_name_ok(\"\") is false");
+    expectTrue(!anim::skin_event_name_ok("1Skin"), "skin_event_name_ok(\"1Skin\") is false");
+    expectTrue(!anim::skin_event_name_ok("Sk in"), "skin_event_name_ok(\"Sk in\") is false");
 }
 
 /// Deterministic LCG in [0, 1).
@@ -111,6 +127,18 @@ double cpuMs(kernel::Backend backend, const anim::SkinningInput& input, anim::Sk
 } // namespace
 
 int main() {
+    testLoopPhase();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testLoopPhase\n");
+        return EXIT_FAILURE;
+    }
+
+    testSkinEventNameOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: testSkinEventNameOk\n");
+        return EXIT_FAILURE;
+    }
+
     fuse::core::initialize();
     const anim::SkinningInput input = makeMesh();
 

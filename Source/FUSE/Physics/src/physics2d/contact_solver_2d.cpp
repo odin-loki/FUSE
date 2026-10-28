@@ -71,6 +71,10 @@ void RigidWorld2D::initContactConstraints(f32 dtRatio) {
         const Shape2D& sb = m_shapes[contact.shapeB];
         const Body2D& ba = m_bodies[sa.body];
         const Body2D& bb = m_bodies[sb.body];
+        // A sleeping body is frozen: skip the whole contact (statics never carry the flag).
+        if (ba.sleeping || bb.sleeping) {
+            continue;
+        }
 
         ContactConstraint cc;
         cc.contactIndex = ci;

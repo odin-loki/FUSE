@@ -22,6 +22,7 @@
 #include <fuse/compute_kernel/launch.hpp>
 #include <fuse/jobs/job_scheduler.hpp>
 #include <fuse/renderer/denoise/radiance_denoise.hpp>
+#include <fuse/renderer/denoise/rdn_radius.hpp>
 #include <fuse/renderer/denoise/rdn_synthetic.hpp>
 
 #include <cmath>
@@ -499,9 +500,26 @@ void testZeroAlloc() {
     }
 }
 
+/// CPU gate. Must run before any GPU or device skip; a failure returns non-zero.
+/// No heap allocation.
+int testRdnRadiusOk() {
+    expect(fuse::renderer::rdn_radius_ok(1), "rdn_radius_ok(1) is true");
+    expect(fuse::renderer::rdn_radius_ok(8), "rdn_radius_ok(8) is true");
+    expect(!fuse::renderer::rdn_radius_ok(0), "rdn_radius_ok(0) is false");
+    expect(!fuse::renderer::rdn_radius_ok(9), "rdn_radius_ok(9) is false");
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: %d failure(s)\n", g_failures);
+        return 1;
+    }
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int radiusRc = testRdnRadiusOk()) {
+        return radiusRc;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     const bool all = suite == "all";
     bool ran = false;

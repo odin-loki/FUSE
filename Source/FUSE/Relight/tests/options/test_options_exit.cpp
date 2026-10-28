@@ -5,6 +5,8 @@
 
 #include <fuse/core/temp_path.hpp>
 #include <fuse/relight/options/options.hpp>
+#include <fuse/relight/options/options_exit.hpp>
+#include <fuse/relight/options/shutdown_phase.hpp>
 
 #include <cstdio>
 
@@ -22,9 +24,47 @@ struct ExitOptions {
 // Destroyed at exit, after main(): drops the last reference to a dynamic layer.
 OptionLayerHandle s_heldLayer;
 
+// Phases 0 through 3 inclusive are valid. No allocation.
+bool testShutdownPhaseOk() {
+    if (!shutdown_phase_ok(0)) {
+        return false;
+    }
+    if (!shutdown_phase_ok(3)) {
+        return false;
+    }
+    if (shutdown_phase_ok(-1)) {
+        return false;
+    }
+    if (shutdown_phase_ok(4)) {
+        return false;
+    }
+    return true;
+}
+
+// Saved is 0, Cancelled is 1, Invalid is 2. Ok shares Saved's success status.
+bool testOptionsExitCode() {
+    if (options_exit_code(OptionsExit::Ok) != 0) {
+        return false;
+    }
+    if (options_exit_code(OptionsExit::Saved) != 0) {
+        return false;
+    }
+    if (options_exit_code(OptionsExit::Cancelled) != 1) {
+        return false;
+    }
+    if (options_exit_code(OptionsExit::Invalid) != 2) {
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 int main() {
+    if (!testShutdownPhaseOk()) {
+        std::printf("rl_options_exit: testShutdownPhaseOk: FAILED\n");
+        return 1;
+    }
     setEnvironmentVariable(kDxvkConfEnvVar, "");
     setEnvironmentVariable(kRtxConfEnvVar, "");
     OptionSystemDesc desc;
@@ -38,5 +78,9 @@ int main() {
     // Deliberately no applyPendingValues() and no shutdown(): both options stay dirty.
     const bool dirty = ExitOptions::dirtyAtExitObject().isDirty() && ExitOptions::dirtyHashesAtExitObject().isDirty();
     std::printf("rl_options_exit: options dirty at exit: %s\n", dirty ? "yes" : "no");
+    if (!testOptionsExitCode()) {
+        std::printf("rl_options_exit: testOptionsExitCode: FAILED\n");
+        return 1;
+    }
     return dirty ? 0 : 1;
 }

@@ -21,6 +21,7 @@
 #include "test_rp_material_resolve_layered_scene.hpp"
 
 #include <fuse/renderer/gpu_scene/gpu_scene.hpp>
+#include <fuse/renderer/material/layer_weight.hpp>
 #include <fuse/renderer/material_layers/material_layers.hpp>
 #include <fuse/renderer/material_layers/ml_mips.hpp>
 #include <fuse/renderer/material_resolve/material_resolve.hpp>
@@ -34,6 +35,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -672,9 +674,25 @@ int runApi() {
     return 0;
 }
 
+/// CPU gate. Must run before any GPU or device skip; a failure returns before later work.
+void testLayerWeightOk() {
+    expect(fuse::renderer::layer_weight_ok(0.f), "layer_weight_ok(0)");
+    expect(fuse::renderer::layer_weight_ok(0.5f), "layer_weight_ok(0.5)");
+    expect(fuse::renderer::layer_weight_ok(1.f), "layer_weight_ok(1)");
+    expect(!fuse::renderer::layer_weight_ok(-0.1f), "layer_weight_ok(-0.1) is false");
+    expect(!fuse::renderer::layer_weight_ok(1.1f), "layer_weight_ok(1.1) is false");
+    expect(!fuse::renderer::layer_weight_ok(std::numeric_limits<float>::quiet_NaN()),
+           "layer_weight_ok(non-finite) is false");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
+    testLayerWeightOk();
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: %d failure(s)\n", g_failures);
+        return 1;
+    }
     const std::string suite = argc > 1 ? argv[1] : "all";
     int rc = 0;
     if (suite == "layout" || suite == "all") {

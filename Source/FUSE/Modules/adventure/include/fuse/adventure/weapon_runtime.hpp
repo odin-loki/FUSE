@@ -16,6 +16,10 @@ struct WeaponStats {
     f32 spreadDeg = 2.f;
     u32 magazineSize = 30;
     u32 reloadMs = 2000;
+    /// Fraction of `damage` remaining at `range`. 1 keeps damage flat inside range.
+    /// Values below 1 scale linearly from full damage at the muzzle to this fraction at `range`.
+    /// Values outside 0..1 are clamped.
+    f32 falloffMinScale = 1.f;
 };
 
 /// Minimal weapon runtime: consumes ammo from inventory when firing active weapon.

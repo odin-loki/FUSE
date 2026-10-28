@@ -2,7 +2,23 @@
 
 #include <fuse/renderer/command_buffer.hpp>
 
+#include <algorithm>
+#include <vector>
+
 namespace fuse::renderer {
+namespace {
+
+bool deferredGBufferDrawLess(const DeferredGBufferDraw& a, const DeferredGBufferDraw& b) {
+    if (a.materialId != b.materialId) {
+        return a.materialId < b.materialId;
+    }
+    if (a.entity.index != b.entity.index) {
+        return a.entity.index < b.entity.index;
+    }
+    return a.entity.generation < b.entity.generation;
+}
+
+} // namespace
 
 std::unique_ptr<DeferredRenderer> DeferredRenderer::create(const DeferredRendererDesc& desc) {
     return std::unique_ptr<DeferredRenderer>(new DeferredRenderer(desc));
@@ -41,6 +57,7 @@ void DeferredRenderer::destroy() {
     m_materials.destroy();
     m_resources = nullptr;
     m_stats = {};
+    // CPU draws survive init/destroy. appendGBufferDrawList({}) is what clears them.
 }
 
 bool DeferredRenderer::buildFrameGraph(RenderGraph& graph, u32 backbufferIndex) {
@@ -49,7 +66,8 @@ bool DeferredRenderer::buildFrameGraph(RenderGraph& graph, u32 backbufferIndex) 
     }
 
     graph.beginFrame(backbufferIndex);
-    m_pipeline.buildGraph(graph, m_gbuffer, m_lightCuller.isReady() ? &m_lightCuller : nullptr);
+    m_pipeline.buildGraph(graph, m_gbuffer, m_lightCuller.isReady() ? &m_lightCuller : nullptr,
+                          &m_gbufferDraws);
     graph.compile();
 
     ++m_stats.framesBuilt;
@@ -69,6 +87,19 @@ RenderGraphExecuteInfo DeferredRenderer::executeFrame(VulkanDevice& device,
     const RenderGraphExecuteInfo info = graph.execute(device, frames, recorder);
     m_stats.lastExecutedPassCount = info.executedPassCount;
     return info;
+}
+
+void DeferredRenderer::appendGBufferDrawList(std::span<const DeferredGBufferDraw> draws) {
+    if (draws.empty()) {
+        m_gbufferDraws.clear();
+        return;
+    }
+
+    // Copy first so a span that aliases the stored list cannot invalidate the insert.
+    const std::vector<DeferredGBufferDraw> incoming(draws.begin(), draws.end());
+    m_gbufferDraws.reserve(m_gbufferDraws.size() + incoming.size());
+    m_gbufferDraws.insert(m_gbufferDraws.end(), incoming.begin(), incoming.end());
+    std::stable_sort(m_gbufferDraws.begin(), m_gbufferDraws.end(), deferredGBufferDrawLess);
 }
 
 } // namespace fuse::renderer

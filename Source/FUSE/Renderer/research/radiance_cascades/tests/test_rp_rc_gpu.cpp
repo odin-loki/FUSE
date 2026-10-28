@@ -18,6 +18,7 @@
 //                      pipelines' layout (skip if absent).
 //
 // Exit 77 = skip (stub build, no ICD / validation layer, capability missing, no kernel built).
+#include <fuse/renderer/rc_gpu_level.hpp>
 #include <fuse/renderer/research/rc/rc_gpu.hpp>
 #include <fuse/renderer/research/rc/rc_reference.hpp>
 #include <fuse/renderer/rg/executor.hpp>
@@ -85,11 +86,27 @@ int g_failures = 0;
         ++g_failures;
     }
 }
+
+/// CPU gate. No allocation. Must run before any Vulkan/GPU/device skip; a failure returns non-zero.
+int testRcGpuLevelOk() {
+    expect(fuse::renderer::rc_gpu_level_ok(0), "rc_gpu_level_ok(0) is true");
+    expect(fuse::renderer::rc_gpu_level_ok(7), "rc_gpu_level_ok(7) is true");
+    expect(!fuse::renderer::rc_gpu_level_ok(-1), "rc_gpu_level_ok(-1) is false");
+    expect(!fuse::renderer::rc_gpu_level_ok(8), "rc_gpu_level_ok(8) is false");
+    if (g_failures != 0) {
+        std::fprintf(stderr, "FAIL: %d failure(s)\n", g_failures);
+        return 1;
+    }
+    return 0;
+}
 } // namespace
 
 #if !defined(FUSE_VULKAN_BACKEND)
 
 int main() {
+    if (const int levelRc = testRcGpuLevelOk()) {
+        return levelRc;
+    }
     std::printf("SKIP: stub build (no Vulkan backend)\n");
     return kSkip;
 }
@@ -561,6 +578,9 @@ int runZeroAlloc(Context& ctx, bool countAllocations) {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (const int levelRc = testRcGpuLevelOk()) {
+        return levelRc;
+    }
     std::string mode = "parity";
     std::string backend = "none";
     for (int i = 1; i + 1 < argc; i += 2) {

@@ -1,8 +1,10 @@
 #include <fuse/core/temp_path.hpp>
 #include <fuse/core/init.hpp>
 #include <fuse/project/asset_cooker.hpp>
+#include <fuse/project/cache_key.hpp>
 #include <fuse/project/cook_cache.hpp>
 #include <fuse/project/cook_content_hash.hpp>
+#include <fuse/project/cook_gen.hpp>
 #include <fuse/project/cook_manifest.hpp>
 #include <fuse/project/import_desc.hpp>
 
@@ -799,6 +801,25 @@ void testCookCachePruneInvalidEntriesOnLoad() {
     expectTrue(loaded.contains(valid_hash), "valid loaded entry remains addressable");
 }
 
+void testCookGenOk() {
+    expectTrue(fuse::project::cook_gen_ok(0u), "generation 0 is accepted");
+    expectTrue(fuse::project::cook_gen_ok(1000000u), "generation 1000000 is accepted");
+    expectTrue(!fuse::project::cook_gen_ok(1000001u), "generation 1000001 is rejected");
+}
+
+void testCacheKeyOk() {
+    expectTrue(fuse::project::cache_key_ok("ab12"), "lowercase hex cache key is accepted");
+    expectTrue(!fuse::project::cache_key_ok("AB12"), "uppercase hex cache key is rejected");
+    expectTrue(!fuse::project::cache_key_ok(""), "empty cache key is rejected");
+    expectTrue(!fuse::project::cache_key_ok("ab1g"), "non-hex cache key is rejected");
+
+    expectTrue(fuse::project::cache_key_ok("a"), "single lowercase hex digit is accepted");
+    const std::string hex64(64, 'f');
+    const std::string hex65(65, 'f');
+    expectTrue(fuse::project::cache_key_ok(hex64), "64 lowercase hex digits are accepted");
+    expectTrue(!fuse::project::cache_key_ok(hex65), "65 lowercase hex digits are rejected");
+}
+
 void testDefaultCookCachePath() {
     expectTrue(fuse::project::defaultCookCachePath("").empty(), "empty project root has no cache path");
     expectTrue(fuse::project::defaultCookCachePath(fuse::test::tempPath("demo")) == fuse::test::tempPath("demo/.fuse/cook_cache.json"),
@@ -808,6 +829,11 @@ void testDefaultCookCachePath() {
 } // namespace
 
 int main() {
+    testCookGenOk();
+    if (g_failures != 0) {
+        return EXIT_FAILURE;
+    }
+    testCacheKeyOk();
     fuse::core::initialize();
 
     testDefaultCookCachePath();
