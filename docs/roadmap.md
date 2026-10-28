@@ -39,17 +39,19 @@ These prove “one program” while Track A/B land:
 |------|---------|--------|
 | U1 | Umbrella CMake | Landed |
 | U2 | One-process smoke + quarantine libs | Landed |
-| U3 | Shared services, jobs/fibers | In progress |
+| U3 | Shared services, jobs/fibers | Landed (POSIX fiber waits; Windows/Emscripten fiber backends deferred — [wp03-fiber-remaining](unification/wp03-fiber-remaining.md)) |
 | U4 | Dimension APIs + hybrid frame | World2D/3D `findSpawnPoint` + `enterPlayMode`; SSRC/DDGI/fog + optional flatland RC (`rcFlatland`) in `FrameComposer`; `DdgiGpu::importCpuVolumeAtlases` for CPU-volume staging |
 | U5 | Feature modules | Vertical slices landed |
-| U6 | Qt editor shell | PIE snaps viewport to `SpawnMarker` (parity with standalone play) |
-| U7 | `project.json` + importers | Minimal loader + CLI dry-run |
+| U6 | Qt editor shell | In progress (wave 10: real-surface present counters, project VFS mount); PIE snaps viewport to `SpawnMarker` (parity with standalone play) |
+| U7 | `project.json` + importers | In progress (wave 12): loader, CLI dry-run, async material cook cache |
 | U8 | Parity demo corpus | Seven headless demos |
 
 ## What is real today vs later
 
 **In tree and testable:** `fuse_core` (jobs, handles, allocators, math, VFS, platform), World2D/World3D, hybrid composer (software present), L3 modules, project loader, editor API, script host stubs, terrain/VFX/world-partition CPU scaffolding.
 
-**Scaffolding / Track B:** Vulkan RHI, CUDA kernels, full PBR frame, in-viewport gizmos, native world files, Lua as the default shipped VM.
+**Vulkan on Lavapipe (gated in CI):** Vulkan RHI with render graph v2, GPU scene / visibility buffer, clustered lighting, VSM, DDGI, SSFX, post, fog, atmosphere, and the `FrameComposer` frame (SSRC and flatland RC behind settings, off by default) — status per deliverable in [`unification/RENDERER-EXECUTION.md`](unification/RENDERER-EXECUTION.md).
+
+**Still scaffolding / later:** CUDA kernels on real hardware, vendor plugins (DLSS, XeSS, NRD runtimes), in-viewport gizmos, native world files, Lua as the default shipped VM.
 
 Engineering notes: [`unification/README.md`](unification/README.md), [`plans/FUSE_MASTER_PLAN.md`](plans/FUSE_MASTER_PLAN.md).

@@ -342,7 +342,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | In-process PIE; UI thread vs game thread command queue; one feature pane |
 | **Deps** | WP-06, WP-05 |
-| **Status** | 🚧 Wave 10: Qt real-surface live present counters + project VFS mount on embed load — [U6-EDITOR.md](./U6-EDITOR.md) |
+| **Status** | 🚧 Through U6/U7 wave 17 (see §6): Qt real-surface live present, project VFS mount, ECS→`World3D` embed mirror, cooked-asset bindings in the embed; PIE viewport snaps to `SpawnMarker` like standalone play (PR #2276) — [U6-EDITOR.md](./U6-EDITOR.md) |
 
 ---
 
@@ -353,7 +353,7 @@ Stream H — Docs / gates           U0 ✓ ──► ongoing
 | **Effort** | L |
 | **Scope** | `project.json`, importers, cookers under `Tools/FUSE/` |
 | **Deps** | WP-06 |
-| **Status** | 🚧 Wave 12: async material cook-cache integration + editor embed drain — [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) |
+| **Status** | 🚧 Through U6/U7 wave 17 (see §6): async material + shader cook cache, `fuse_cook` persist / skip re-cook, legacy VFS path remap; real Assimp/BC7/OGG links still open — [U7-PROJECT-FORMAT.md](./U7-PROJECT-FORMAT.md) |
 
 ---
 
@@ -407,9 +407,9 @@ WP-00 → WP-01 → WP-02 ──────────────────
 |------|-------------|---------------------|
 | **U1** | Umbrella build | `fuse_core` cmake target exists |
 | **U2** | One-process smoke | ASan init; jobs optional — ✅ smoke + quarantine libs |
-| **U3** | Shared services | I/O job publishes handle; TSan plan live |
-| **U4** | Hybrid demo | `parallel_for` cull + SoA; frame barrier; GameWindow/Qt present paths ✅ on Linux CI — see U6/U8 |
-| **U5** | Feature modules | Five `fuse_*` targets; `fuse_ai` BT slice + tests — 🚧 scaffolds + ore backlog ([U5-MODULES.md](./U5-MODULES.md)) |
+| **U3** | Shared services | I/O job publishes handle; TSan plan live — ✅ (WP-04; TSan nightly in `fuse-tsan-nightly.yml`) |
+| **U4** | Hybrid demo | `parallel_for` cull + SoA; frame barrier; GameWindow/Qt present paths ✅ on Linux CI; World2D/World3D `findSpawnPoint` + `enterPlayMode` standalone play ✅; `FrameComposer` SSRC / DDGI-lit fog / flatland RC behind settings ✅ (PR #2276) — see U6/U8 |
+| **U5** | Feature modules | Five `fuse_*` targets; `fuse_ai` BT slice + tests — ✅ prestarter gates closed (WP-07); post-gate backlog continues in [U5-MODULES.md](./U5-MODULES.md) |
 | **U6** | Editor PIE | UI/game thread queue + headless embed + live Qt present (`fuse_editor_qt_live_present`) — see [U6-EDITOR.md](./U6-EDITOR.md) |
 | **U7** | Project format | `fuse_project` + wiring stubs + toybox convert + cook encoder hooks — 🚧 link real Assimp/BC7/OGG libs |
 | **U8** | Parity demos | Seven demos + `--present` gates + ASan `ctest -L u8` — 🚧 texture atlas sprites + product sign-off ([U8-EXIT-SIGNOFF.md](./U8-EXIT-SIGNOFF.md)) |
