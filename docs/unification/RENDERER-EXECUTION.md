@@ -2,7 +2,7 @@
 
 **Plan:** [FUSE_RENDERER_PLAN.md](../plans/FUSE_RENDERER_PLAN.md) (Phases 0–9, tiers T0–T3)
 **Related:** [FUSE_MASTER_PLAN.md](../plans/FUSE_MASTER_PLAN.md) §B2 / §B5 · [TRACK-B-VULKAN.md](./TRACK-B-VULKAN.md) · [TRACK-B-RENDER-B5.md](./TRACK-B-RENDER-B5.md) · [B5.7-SCREEN-SPACE-EFFECTS.md](./B5.7-SCREEN-SPACE-EFFECTS.md) · [compute-kernels.md](../compute-kernels.md) · [upscaling research](../research/upscaling-framegen-and-post-injectors.md)
-**Snapshot:** 2026-09-23, working tree (including uncommitted work by other agents). Re-survey before starting any package.
+**Snapshot:** 2026-09-23 survey (§1–§3 below are that survey, kept for history). §4 status rows and §5 packages were re-checked against `main` on 2026-10-29: every Wave 0–5 package plus WP-FI is landed, so rows that still said *Missing* / *In progress* for Slang, Tracy, RenderDoc, the upscaler backends, frame generation, ReSTIR / path tracing and Phase 9 now point at their package. Re-survey before starting any package.
 
 This file maps every deliverable in the renderer plan to the code that exists today. For each item it gives a status, the evidence, the gap, and what can be tested on this machine. It then breaks the remaining work into packages that parallel agents can pick up without touching the same files. The packages are ordered by the dependency graph in plan §7.
 
@@ -132,11 +132,11 @@ The GitHub Ubuntu 24.04 runner gets the same `mesa-vulkan-drivers` from noble-up
 | Render graph: transient aliasing | **Done** (v2, WP-0.3) | `rg::Executor` realises transients (usage derived from declared accesses), first-fit blocks over execution-order lifetimes, one `vmaAllocateMemory` per block + `vmaBindImageMemory`/`vmaBindBufferMemory` (native `vkAllocateMemory` fallback); cached across frames by signature. Gate `fuse_rp_rg_transient_alias`: 2 images + 2 buffers in 1 block (VMA allocation delta 1 vs 4), identical readbacks with aliasing off | Offset-0 aliasing only (no sub-block packing); v1 `createTransient` still has no memory | LVP (VMA aliasing plus readback) |
 | Render graph: async compute queue | **Done** (v2, WP-0.3; LVP-func) | Queue classes Graphics / AsyncCompute / Transfer (fallback to graphics when unavailable or the access needs graphics), per-queue batches, QFOT release/acquire (image layout change applied after the acquire), prologue batches for imported resources, timeline semaphore per queue (retirement, cross-frame ordering) + binary semaphores for intra-frame edges (`ExecutorDesc::timelineCrossQueueWaits` for timeline edges). Gate `fuse_rp_rg_async_spoof` (split-family layer, 4 batches, 5 QFOTs, sync validation clean, equals single-queue) | Overlap not observable on LVP; batches are submitted in declaration order (no reordering for overlap yet). Syncval 1.3.275 does not follow timeline waits, so timeline-edge mode is functionally tested only | LVP-func via a spoof layer (single real queue) |
 | Bindless descriptor registry | **Done** (WP-0.4 + WP-0.4b) | `src/vk/bindless.cpp`, `src/vk/bindless_descriptor_buffer.cpp`, `include/fuse/renderer/vk/bindless.hpp`, `shaders/common/bindless.glsl`: one global set (storage images, sampled images, samplers, storage buffers, UBOs, buffer-address table), generation-checked slots, 32-bit shader handles (20-bit index, 4-bit type, 8-bit generation), deferred release tied to frame fences / timeline values, sampler heap, `VK_EXT_descriptor_buffer` backend with descriptor-indexing fallback. Gates: `fuse_rp_bindless_{textures,churn}_{set,buffer,fallback}`, `test_bindless_descriptors`, `test_b2_bindless_churn` | Slang twin of `bindless.glsl` (with WP-0.5). `ResourceManager` still frees slots immediately (legacy contract), not through `retireSlot`. Null descriptors (robustness2) not used: released slots keep stale descriptors (bindings are PARTIALLY_BOUND). | LVP |
-| Slang toolchain | **Missing** | GLSL only (see **A1**) | Pinned `slangc`, CMake rule, SPIR-V validation, reflection → pipeline layout | LVP once `slangc` is fetched |
+| Slang toolchain | **Done** (WP-0.5) | `cmake/FuseSlang.cmake` (pinned `slangc` 2026.18.2 download, `vendor/slang/VERSION`), `fuse_rp_slang_*` gates; new Phase 1+ kernels ship Slang with GLSL twins | GPL fast-link deferred (see WP-0.5 row) | LVP |
 | Shader hot reload | **Done** (GLSL) | `shader/shader_watch.cpp`, `ShaderCompiler::pollHotReload`; `test_shader_watch`, `test_b5_rhi_hot_reload` | Extend to Slang modules and include dependency tracking | LVP |
-| Pipeline cache | **Partial** | `src/vk/pipeline_cache.cpp` (on-disk, per-SPIR-V-hash file); `test_pipeline_cache`, `test_shader_pipeline`, `test_graphics_pipeline` | No permutation keying, no background compile job, no `VK_EXT_graphics_pipeline_library` or shader-object fast path | LVP |
-| Tracy GPU zones | **Missing** | `Core/profiler`, `frame.cpp` timestamp pool | Tracy adapter, per-pass GPU zones | LVP (zones recorded; timings meaningless) |
-| RenderDoc integration | **Missing** | – | In-app API hook (`renderdoc_app.h`), capture-frame hotkey or CLI flag | Manual |
+| Pipeline cache | **Done** (v2, WP-0.5; graphics-pipeline-library fast link deferred) | `src/vk/pipeline_cache.cpp` (on-disk, per-SPIR-V-hash file) plus the WP-0.5 v2 keying; `test_pipeline_cache`, `test_shader_pipeline`, `test_graphics_pipeline` | `VK_EXT_graphics_pipeline_library` / shader-object fast path (WP-0.5b) | LVP |
+| Tracy GPU zones | **Done** (WP-0.6, optional `FUSE_TRACY`, default OFF) | `vendor/tracy` (pinned), `cmake/FuseTracy.cmake`, `Core/src/profiler/tracy_adapter.cpp`, `src/vk/gpu_profiler.cpp`; `rg::PassHooks` per-pass GPU zones | – | LVP (zones recorded; timings meaningless) |
+| RenderDoc integration | **Done** (WP-0.6) | `vendor/renderdoc` (`renderdoc_app.h`), `src/vk/renderdoc_capture.cpp` (runtime-loaded in-app API) | Capture itself is manual | Manual |
 | **Exit:** zero validation errors on test scenes | **Partial** | Current suite is clean | No plan reference scenes exist yet (§8) | LVP |
 | **Exit:** pass added without a manual barrier | **Done** (WP-0.3) | `fuse_rp_rg_no_manual_barrier_lint` (`cmake/rp_wp03_barrier_lint.cmake`: no `vkCmdPipelineBarrier[2]` in module sources outside `Renderer/src/rg/` + allow-list) with a negative fixture test | Allow-list (see above) to shrink as those helpers move onto the graph | LVP |
 
@@ -182,13 +182,13 @@ The GitHub Ubuntu 24.04 runner gets the same `mesa-vulkan-drivers` from noble-up
 |---|---|---|---|---|
 | Motion vectors (camera and per-object) | **Done** (camera, rigid, sky; WP-4.1) / skinned **Gap** | `temporal.motion` (`include/fuse/renderer/temporal/**`, lib `fuse_temporal`): UV motion (current - previous, unjittered) + linear depth per render pixel from the WP-1.4 visibility buffer, the WP-1.1 previous transforms and the unjittered view-projections; jitter handled explicitly (`jitter_view_proj`); sky = rotation-only reprojection. Gates `fuse_rp_temporal_*` (5 CPU, 4 Lavapipe) | No skinned MVs (the GPU scene / visibility buffer have no skinned path and `BoneBuffer` keeps no previous palette); no SDF MVs; the WP-1.5 RG16F velocity still carries the jitter (see WP-4.1 row) | LVP (analytic reprojection test) |
 | Jitter sequence | **Done** | `taa/taa_jitter.*` (Halton), `test_taa_pass` | Phase count from the upscale ratio (in progress with TAAU) | CPU |
-| Reactive and transparency masks | **In progress** | UpscaleInputs agent | – | CPU / LVP |
-| IUpscaler interface | **In progress** | IUpscaler, FSR1, NIS and CAS agent; `vendor/{fidelityfx,nvidia-nis}` vendored; planned `include/fuse/renderer/upscale/` | – | CPU plus LVP (GPU reference gate on Lavapipe) |
-| DLSS via Streamline | **In progress** | `plugins/nvidia/.../fuse_nv_plugin_abi.h`, `vendor/streamline` headers | Runtime: HW only (Windows plus RTX) | CPU (mock provider) / HW |
-| FSR via FidelityFX (temporal 2.x/3.1) | **Missing** | Only FSR1 (spatial) in progress | Vendor FSR 3.1 Vulkan backend (MIT); `IUpscaler` backend | LVP (runs, slow) |
-| XeSS | **Missing** | – | Binary-only runtime plugin (Intel licence) | HW |
+| Reactive and transparency masks | **Done** | `upscale/reactive_mask.hpp`, `upscale/upscale_inputs.hpp`; consumed by TAAU (`taa/taau_kernel.hpp`) and the FSR3 backend | – | CPU / LVP |
+| IUpscaler interface | **Done** | `include/fuse/renderer/upscale/upscaler.hpp` with FSR1 / NIS / CAS backends (`vendor/{fidelityfx,nvidia-nis}`); gates `fuse_upscale_gates`, `fuse_upscale_gpu_reference`, `fuse_taau_gates` | – | CPU plus LVP |
+| DLSS via Streamline | **Adapter landed** (mock-gated) | `Renderer/plugins/nvidia/**` (`fuse_nv_plugin_abi.h`, `streamline/`, `mock/`, `providers/`), `vendor/streamline` headers | Runtime: HW only (Windows plus RTX); binaries never committed | CPU (mock provider) / HW |
+| FSR via FidelityFX (temporal 2.x/3.1) | **Done** (WP-4.2) | `src/upscale_backends/fsr3/**`, `include/fuse/renderer/upscale_backends/fsr3/**`; gates `fuse_rp_fsr3_cpu*`, `fuse_rp_fsr3_vk_*` | – | LVP (runs, slow) |
+| XeSS | **Plugin landed** (WP-4.3; CPU / mock gates) | `Renderer/plugins/intel_xess/**`; `fuse_rp_xess_cpu*`, `fuse_rp_xess_no_committed_binaries` | Binary-only runtime (Intel licence); HW run manual | HW |
 | Native TAA fallback | **Done** (same-res, CPU) / TAAU **In progress** | `taa/taa_cpu_resolve.*`, `taa_resolve.*`, `taa_history.*`; `test_taa_cpu_resolve_wiring`, `test_b5_taa_ssfx_gates`; `taa/taa_kernel_common.hpp` (new, in progress) | TAAU Vulkan dispatch **Done** (WP-4.1: `TaauGpu`, `taau.resolve` + `taau.keep`, output == CPU kernel within tolerance on LVP) | LVP |
-| Frame generation (Streamline, FSR) and Reflex | **Missing** (Reflex headers vendored) | `vendor/streamline/include/sl_reflex.h`, `sl_dlss_g.h`, `sl_pcl.h` | FSR 3.1 FG (MIT, Vulkan), DLSS-G plugin, `ILatencyProvider`, present timing | CPU (timeline model) / HW |
+| Frame generation (Streamline, FSR) and Reflex | **Done** (WP-4.4; HW items open) | `src/framegen/**`, `src/present/latency/**`; gates `fuse_rp_framegen_cpu*`, `fuse_rp_framegen_vk_*`, `fuse_rp_latency_cpu*`; Reflex / DLSS-G headers in `vendor/streamline` | DLSS-G and Reflex runtime on HW | CPU / LVP / HW |
 | Post stack: exposure, bloom, tonemap (AgX/ACES), grading LUT, DoF, motion blur | **Done** (GPU, WP-4.5; the CPU chain stays the oracle) / Look: see the Look agent | CPU oracle: `postprocess/{auto_exposure,bloom,tonemap,tonemap_curve,color_grade,dof,motion_blur,lens_flare,post_stack}.*` (`test_post_process_stack`, `test_b5_post_gates`); ACES (Narkowicz), Filmic, Reinhard, Neutral and **AgX** (`ToneMapper::AgX`, `agx_tonemap`: Sobotka base transform, polynomial sigmoid, WP-4.5); Look 3D LUT (`look/lut3d.hpp`). GPU: `include/fuse/renderer/postprocess/gpu/**`, `src/postprocess/gpu/**`, `shaders/post/**` (lib `fuse_post_gpu`): `PostStackGpu` records `post.load`, `post.bloom.*`, `post.dof.*`, `post.mb.*`, `post.exposure.{histogram,adapt}`, `post.display` (exposure, curve, tone map incl. AgX, PostStack grade or the Look LUT, vignette, grain, sRGB) on RG v2 from the WP-2.1 / WP-2.3 RGBA16F image; driven by a `PostStack` (`settings_from_post_stack`) or node by node by a Look effect graph (`settings_from_look` / `beginLookFrame`); every pass == its CPU reference within 1/1024 (bloom, DoF, motion blur bit-identical), no-op Look bit-identical to PostStack (`fuse_rp_post_gpu_*`) | HDR10 / scRGB output encodes, lens dirt / flare, sharpen and chromatic aberration have no GPU pass yet (Look nodes reported and skipped); f32x4 intermediates (~110 B / pixel) | CPU plus LVP |
 | **Exit:** runtime-switchable upscalers with no missing-input artefacts | **Missing** | – | Switch test across NativeTaau, FSR1, NIS and FSR3 on LVP; DLSS and XeSS on HW | LVP / HW |
 
@@ -220,11 +220,11 @@ The GitHub Ubuntu 24.04 runner gets the same `mesa-vulkan-drivers` from noble-up
 
 | Deliverable | Status | Evidence | Gap | Testable |
 |---|---|---|---|---|
-| ReSTIR DI (spatiotemporal reservoirs) | **Missing** | GPU radix sort is reusable (`compute/gpu_radix_sort.*`) | All | LVP (tiny) |
-| ReSTIR GI | **Missing** | – | All | LVP (tiny) |
-| Real-time path tracing mode with DLSS RR or NRD | **Missing** | – | PT on LVP (RT pipeline present); RR and NRD on HW | LVP / HW |
-| Light BVH or light tree | **Missing** | `Scene/bvh_stub.*` is a stub | Build (CPU), GPU traversal | CPU plus LVP |
-| **Exit:** 10k+ emissive lights, stable and low-noise | **Missing** | – | Variance metric against a 4k-spp reference on a tiny scene | LVP-func |
+| ReSTIR DI (spatiotemporal reservoirs) | **Done** (WP-7.2) | `restir/**` (lib + `shaders/restir/**`); gates `fuse_rp_restir_cpu*`, `fuse_rp_restir_vk_*` | – | LVP (tiny) |
+| ReSTIR GI | **Done** (WP-7.2) | as above | – | LVP (tiny) |
+| Real-time path tracing mode with DLSS RR or NRD | **Done** (WP-7.3; RT pipeline on LVP) / RR **Missing** | `pathtrace/**`; gates `fuse_rp_pathtrace_cpu*`, `fuse_rp_pathtrace_vk_*`; NRD through the WP-6.4b adapter | Not wired into `FrameComposer`; DLSS RR needs HW | LVP / HW |
+| Light BVH or light tree | **Done** (WP-7.1) | `light_tree/**`; gates `fuse_rp_light_tree_cpu*`, `fuse_rp_light_tree_vk_*` | – | CPU plus LVP |
+| **Exit:** 10k+ emissive lights, stable and low-noise | **Partial** | WP-7.1 / 7.2 gates on tiny scenes | Variance metric against a 4k-spp reference at 10k+ lights | LVP-func |
 
 ### Phase 8 — Volumetrics and atmosphere
 
@@ -239,10 +239,10 @@ The GitHub Ubuntu 24.04 runner gets the same `mesa-vulkan-drivers` from noble-up
 
 | Deliverable | Status | Evidence | Gap | Testable |
 |---|---|---|---|---|
-| Neural texture compression (cooperative matrix or vector) | **Missing** | – | CPU reference MLP first | CPU / HW |
-| Neural radiance cache | **Missing** | – | | CPU / HW |
-| 3D Gaussian splatting composited with the VB | **Missing** | GPU radix sort exists and is gated on Lavapipe (`test_gpu_radix_sort_gates`) | Splat raster, depth composite with the VB | LVP |
-| Device-generated commands for GPU pipeline selection | **Missing** | – | `VK_EXT_device_generated_commands` is on LVP | LVP |
+| Neural texture compression (cooperative matrix or vector) | **Done** (WP-9.1: CPU reference + portable GPU; coop matrix compile-only) | `neural/**`; `fuse_rp_neural_cpu*`, `fuse_rp_neural_coopmat_spirv` | Coop-matrix execution needs HW | CPU / HW |
+| Neural radiance cache | **Partial** (WP-9.1 MLP infrastructure) | `neural/**` | Cache training loop on HW | CPU / HW |
+| 3D Gaussian splatting composited with the VB | **Done** (WP-9.2) | `gsplat/**`; gates `fuse_rp_gsplat_cpu*`, `fuse_rp_gsplat_vk_*` | – | LVP |
+| Device-generated commands for GPU pipeline selection | **Done** (WP-9.3; runs on LVP, unvalidated) | `src/vk/dgc/**`; `fuse_rp_dgc_cpu*`, `fuse_rp_dgc_glsl*` | Validation layer 1.3.275 does not cover DGC | LVP |
 | **Exit:** measured against conventional path | **Missing** | – | Harness equals §8 metrics plus memory accounting | CPU / HW |
 
 ### §3 Vulkan extensions and features
