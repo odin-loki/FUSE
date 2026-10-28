@@ -35,7 +35,8 @@ enum FrameKernelMode : u32 {
     kFrameModeShadowPack = 3,
     kFrameModeRestir = 4,
     kFrameModeReflect = 5,
-    kFrameModeCount = 6,
+    kFrameModeRcPack = 6, ///< WP-6.5 flatland RC: G-buffer (RT0 / RT1 / RT4) -> f32x4 RcScene texels
+    kFrameModeCount = 7,
 };
 
 /// FrameConstants::flags
@@ -70,11 +71,13 @@ struct FrameConstants {
     u32 gbufferNormal = 0;    ///< bindless sampled handle of RT0 (octahedral normal xy, RGBA16F) (Reflect)
     u32 gbufferAlbedo = 0;    ///< RT1 (albedo rgb) (Reflect)
     u32 gbufferRoughMetal = 0;///< RT2 (roughness, metallic) (Reflect)
-    u32 reserved1[2] = {0u, 0u};
+    u32 rcWidth = 0;          ///< RcPack: flatland scene extent (one thread per scene texel)
+    u32 rcHeight = 0;
     f32 invViewProj[16] = {}; ///< column-major clip -> world of the depth's (jittered) projection
     f32 cameraPos[4] = {0.f, 0.f, 0.f, 0.f};
     f32 skyDistance = 1.0e30f; ///< Gather: view distance written for background pixels
-    f32 reserved2[3] = {0.f, 0.f, 0.f};
+    f32 reserved2 = 0.f;
+    u64 rcScene = 0;          ///< RcPack out: f32x4 per flatland texel (rgb emission, a opacity)
 };
 static_assert(sizeof(FrameConstants) == 224u, "FrameConstants layout (fc_common.glsl / .slang)");
 
@@ -146,6 +149,39 @@ inline void frame_restir_texel(const f32 (&in)[4], f32 depth, const f32 (&albedo
             out[k] = in[k] + m;
         }
     }
+}
+
+/// RcPack light direction (== research::rc::kRcPackLight; normalised by frame_rc_pack_texel).
+inline constexpr f32 kFrameRcLight[3] = {0.35f, 0.75f, 0.45f};
+
+/// RcPack: the render pixel a flatland texel samples (nearest, integer centre mapping).
+inline u32 frame_rc_source(u32 texel, u32 rcExtent, u32 renderExtent) {
+    return (texel * renderExtent + renderExtent / 2u) / rcExtent;
+}
+
+inline void frame_oct_decode(f32 ox, f32 oy, f32 (&n)[3]);
+
+/// RcPack: G-buffer texel -> flatland record. Background (depth >= 1) is empty; geometry is an opaque emitter
+/// with albedo x saturate(N . L) (the research::rc::packSceneFromGBuffer rule on the frame's own G-buffer).
+inline void frame_rc_pack_texel(f32 depth, const f32 (&rt0)[4], const f32 (&rt1)[4], f32 (&out)[4]) {
+    out[0] = out[1] = out[2] = out[3] = 0.f;
+    if (!(depth < 1.f)) {
+        return;
+    }
+    f32 n[3];
+    frame_oct_decode(rt0[0], rt0[1], n);
+    const f32 l2 = kFrameRcLight[0] * kFrameRcLight[0] + kFrameRcLight[1] * kFrameRcLight[1] +
+                   kFrameRcLight[2] * kFrameRcLight[2];
+    const f32 ll = std::sqrt(l2);
+    const f32 lx = kFrameRcLight[0] / ll;
+    const f32 ly = kFrameRcLight[1] / ll;
+    const f32 lz = kFrameRcLight[2] / ll;
+    const f32 d = n[0] * lx + n[1] * ly + n[2] * lz;
+    const f32 shade = std::max(0.f, d);
+    out[0] = rt1[0] * shade;
+    out[1] = rt1[1] * shade;
+    out[2] = rt1[2] * shade;
+    out[3] = 1.f;
 }
 
 /// Signed octahedral decode of RT0.xy (shaders/common/gbuffer.glsl oct_decode_signed), normalised.

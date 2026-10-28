@@ -658,6 +658,8 @@ enum Readback : u32 {
     kRbRt0,        ///< RGBA16F render
     kRbRt1,        ///< RGBA8 render
     kRbRt2,        ///< RGBA8 render
+    kRbRcScene,    ///< f32x4 flatland scene (WP-6.5)
+    kRbRcOutput,   ///< f32x4 flatland RC output (WP-6.5)
     kRbCount,
 };
 
@@ -748,6 +750,15 @@ void buildFrame(Context& ctx, FrameComposer& composer, rg::Graph& graph, FrameIo
         add(kRbRt0, true, outs.gbuffer.gbuffer[0], {}, 0, n * 8u, kRenderW, kRenderH);
         add(kRbRt1, true, outs.gbuffer.gbuffer[1], {}, 0, n * 4u, kRenderW, kRenderH);
         add(kRbRt2, true, outs.gbuffer.gbuffer[2], {}, 0, n * 4u, kRenderW, kRenderH);
+    }
+    if (outs.rcScene.valid()) {
+        const u64 rcBytes = static_cast<u64>(composer.rcFlatlandSceneWidth()) * composer.rcFlatlandSceneHeight() * 16u;
+        add(kRbRcScene, false, {}, outs.rcScene, 0, rcBytes, 0, 0);
+        add(kRbRcOutput, false, {}, outs.rcWork, composer.rcOutputOffset(), rcBytes, 0, 0);
+        if (!outs.reflect.valid()) {
+            add(kRbRt0, true, outs.gbuffer.gbuffer[0], {}, 0, n * 8u, kRenderW, kRenderH);
+            add(kRbRt1, true, outs.gbuffer.gbuffer[1], {}, 0, n * 4u, kRenderW, kRenderH);
+        }
     }
     graph.addPass("readback.host", nullptr, nullptr).use(rb, rg::Access::HostRead);
 }
@@ -996,6 +1007,7 @@ int runRcFlatland(Context& ctx, FrameTier tier) {
     FrameSettings fs = baseSettings();
     fs.ssfx = false;
     fs.rcFlatland = true;
+    fs.rcFlatlandDiagnostic = true;
     fs.rcSettings.probeSpacing0 = 2u;
     fs.rcSettings.dirs0 = 4u;
     for (u32 frame = 0; frame < 4u; ++frame) {
@@ -1021,6 +1033,112 @@ int runRcFlatland(Context& ctx, FrameTier tier) {
         }
     }
     std::printf("rc_flatland %s: 4 frames, validation messages %u\n", tierName(tier), g_messages);
+    return g_failures > 0 ? 1 : 0;
+}
+
+// WP-6.5 flatland RC fed by the frame's own G-buffer: frame.rc_pack (GPU) == frame_rc_pack_texel on the read-back
+// RT0 / RT1 / RT4 (nearest pixel per texel), the scene has geometry and background, and the in-frame rc.* output ==
+// research::rc::RcCpuSolver on the GPU's packed scene (WP-6.5 parity: bit-exact; gate 1e-5 relative + 1e-6).
+int runRcFlatlandGbuffer(Context& ctx, FrameTier tier) {
+    Rig rig;
+    if (const int rc = initRig(ctx, rig, tier); rc != 0) {
+        return rc;
+    }
+    if ((rig.composer.available() & kStageRcFlatland) == 0u) {
+        std::printf("SKIP: rc flatland stage unavailable (%s)\n", rig.composer.reason());
+        return kSkip;
+    }
+    FrameSettings fs = baseSettings();
+    fs.ssfx = false;
+    fs.rcFlatland = true;
+    fs.rcSettings.probeSpacing0 = 2u;
+    fs.rcSettings.dirs0 = 4u;
+    fs.rcSettings.sky[0] = 0.05f;
+    fs.rcSettings.sky[1] = 0.07f;
+    fs.rcSettings.sky[2] = 0.1f;
+    const u32 rw = rig.composer.rcFlatlandSceneWidth();
+    const u32 rh = rig.composer.rcFlatlandSceneHeight();
+    const usize texels = static_cast<usize>(rw) * rh;
+    const usize n = static_cast<usize>(kRenderW) * kRenderH;
+    for (u32 frame = 0; frame < 4u; ++frame) {
+        Frame out{};
+        const bool ok = runFrame(ctx, rig.scene, rig.composer, rig.graph, frameDesc(0, frame, frame == 0u), fs, true, &out);
+        expect(ok, "rc flatland (gbuffer) frame executes");
+        expect((out.ran & kStageRcFlatland) != 0u, "rc flatland stage ran");
+        if (out.bytes[kRbRcScene].size() != texels * 16u || out.bytes[kRbRcOutput].size() != texels * 16u ||
+            out.bytes[kRbDepth].size() != n * 4u || out.bytes[kRbRt0].size() != n * 8u || out.bytes[kRbRt1].size() != n * 4u) {
+            expect(false, "rc flatland read-backs present");
+            continue;
+        }
+        std::vector<f32> scene(texels * 4u);
+        std::memcpy(scene.data(), out.bytes[kRbRcScene].data(), texels * 16u);
+        u32 opaque = 0, empty = 0, packBad = 0, emissive = 0;
+        f64 packWorst = 0.0;
+        for (u32 y = 0; y < rh; ++y) {
+            for (u32 x = 0; x < rw; ++x) {
+                const u32 sx = frame_rc_source(x, rw, kRenderW);
+                const u32 sy = frame_rc_source(y, rh, kRenderH);
+                const usize p = static_cast<usize>(sy) * kRenderW + sx;
+                f32 depth = 0.f;
+                std::memcpy(&depth, out.bytes[kRbDepth].data() + p * 4u, 4u);
+                f32 rt0[4];
+                f32 rt1[4];
+                for (u32 k = 0; k < 4u; ++k) {
+                    u16 h = 0;
+                    std::memcpy(&h, out.bytes[kRbRt0].data() + p * 8u + k * 2u, 2u);
+                    rt0[k] = halfToFloat(h);
+                    rt1[k] = static_cast<f32>(out.bytes[kRbRt1][p * 4u + k]) / 255.f;
+                }
+                f32 want[4];
+                frame_rc_pack_texel(depth, rt0, rt1, want);
+                const f32* got = scene.data() + (static_cast<usize>(y) * rw + x) * 4u;
+                for (u32 k = 0; k < 4u; ++k) {
+                    const f64 err = std::fabs(static_cast<f64>(got[k]) - want[k]);
+                    packWorst = std::max(packWorst, err);
+                    if (!(err <= 1e-5 * std::fabs(want[k]) + 1e-6)) {
+                        ++packBad;
+                    }
+                }
+                if (got[3] > 0.5f) {
+                    ++opaque;
+                    emissive += (got[0] + got[1] + got[2]) > 0.f ? 1u : 0u;
+                } else {
+                    ++empty;
+                }
+            }
+        }
+        expect(packBad == 0u, "frame.rc_pack == frame_rc_pack_texel on the read-back G-buffer");
+        expect(opaque > 0u && empty > 0u && emissive > 0u, "packed scene has lit geometry and background");
+        research::rc::RcScene cpuScene;
+        cpuScene.width = rw;
+        cpuScene.height = rh;
+        cpuScene.texels = scene;
+        research::rc::RcCpuSolver solver;
+        std::vector<f32> ref;
+        expect(solver.solve(cpuScene, fs.rcSettings, ref), "cpu rc solve");
+        u32 rcBad = 0;
+        f64 rcWorst = 0.0, mean = 0.0;
+        if (ref.size() == texels * 4u) {
+            std::vector<f32> gpu(texels * 4u);
+            std::memcpy(gpu.data(), out.bytes[kRbRcOutput].data(), texels * 16u);
+            for (usize i = 0; i < gpu.size(); ++i) {
+                const f64 err = std::fabs(static_cast<f64>(gpu[i]) - ref[i]);
+                rcWorst = std::max(rcWorst, err);
+                if (!std::isfinite(gpu[i]) || !(err <= 1e-5 * std::fabs(ref[i]) + 1e-6)) {
+                    ++rcBad;
+                }
+                if (i % 4u < 3u) {
+                    mean += gpu[i];
+                }
+            }
+            mean /= static_cast<f64>(texels * 3u);
+        }
+        expect(rcBad == 0u, "in-frame rc output == RcCpuSolver on the packed scene");
+        expect(mean > 0.0, "rc output not black");
+        std::printf("  frame %u: %ux%u scene, %u opaque (%u emissive) / %u empty, pack worst %.3g, rc worst %.3g, rc mean %.4f\n",
+                    frame, rw, rh, opaque, emissive, empty, packWorst, rcWorst, mean);
+    }
+    std::printf("rc_flatland_gbuffer %s: 4 frames, validation messages %u\n", tierName(tier), g_messages);
     return g_failures > 0 ? 1 : 0;
 }
 
@@ -1797,6 +1915,8 @@ int main(int argc, char** argv) {
             rc = runSsrc(ctx, tier);
         } else if (mode == "rc_flatland") {
             rc = runRcFlatland(ctx, tier);
+        } else if (mode == "rc_flatland_gbuffer") {
+            rc = runRcFlatlandGbuffer(ctx, tier);
         } else {
             std::fprintf(stderr, "unknown mode %s\n", mode.c_str());
             return 2;

@@ -732,7 +732,8 @@ bool FrameComposer::createTargets() {
            createBuffer(m_visibility, n * 4u, "frame.visibility") && [&]() {
         BufferDesc rcDesc{};
         rcDesc.size = static_cast<usize>(static_cast<u64>(m_rcSceneW) * m_rcSceneH * 16u);
-        rcDesc.usage = bufferUsage({BufferUsage::Storage, BufferUsage::ShaderDeviceAddress, BufferUsage::TransferDst});
+        rcDesc.usage = bufferUsage({BufferUsage::Storage, BufferUsage::ShaderDeviceAddress, BufferUsage::TransferDst,
+                                   BufferUsage::TransferSrc});
         rcDesc.memoryUsage = MemoryUsage::CpuToGpu;
         rcDesc.name = "frame.rc_scene";
         return m_desc.allocator->createBuffer(rcDesc, m_rcScene.buffer) && m_rcScene.buffer.deviceAddress != 0u &&
@@ -1233,6 +1234,7 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     if ((plan & kStageSky) != 0u) {
         chain = &m_skyImage.image;
     }
+    const bool rcPack = (plan & kStageRcFlatland) != 0u && !settings.rcFlatlandDiagnostic;
     std::memset(m_ssfxProj, 0, sizeof(m_ssfxProj));
     ssfx_gpu::SsfxCameraDesc screenCam{};
     const bool screenSpaceGi = (plan & (kStageSsfx | kStageSsrc)) != 0u;
@@ -1392,7 +1394,7 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     c.cameraPos[1] = cam.eye[1];
     c.cameraPos[2] = cam.eye[2];
     c.skyDistance = 1.0e30f;
-    FrameConstants slots[kSlotCount] = {c, c, c, c, c};
+    FrameConstants slots[kSlotCount] = {c, c, c, c, c, c};
     // [main] frame.gather / frame.resolve
     slots[kSlotMain].inColor = sampledHandle(*mainIn);
     slots[kSlotMain].flags = ((plan & kStageClouds) != 0u ? static_cast<u32>(kFrameFlagClouds) : 0u) |
@@ -1411,6 +1413,17 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     // [reflect] frame.reflect
     slots[kSlotReflect].inColor = sampledHandle(*reflectIn);
     slots[kSlotReflect].outColor = m_reflectImage.storageHandle;
+    // [rc pack] frame.rc_pack: G-buffer -> flatland scene texels (WP-6.5)
+    slots[kSlotRcPack].inColor = sampledHandle(*chain);
+    if (rcPack) {
+        slots[kSlotRcPack].gbufferNormal = sampledHandle(m_resolve.gbufferImage(0));
+        slots[kSlotRcPack].gbufferAlbedo = sampledHandle(m_resolve.gbufferImage(1));
+        slots[kSlotRcPack].rcWidth = m_rcSceneW;
+        slots[kSlotRcPack].rcHeight = m_rcSceneH;
+        slots[kSlotRcPack].rcScene = m_rcScene.buffer.deviceAddress;
+        ok = ok && slots[kSlotRcPack].gbufferNormal != 0u && slots[kSlotRcPack].gbufferAlbedo != 0u &&
+             slots[kSlotRcPack].rcScene != 0u;
+    }
     for (const FrameConstants& s : slots) {
         if (s.inColor == 0u) {
             ok = false;
@@ -1505,7 +1518,7 @@ bool FrameComposer::beginFrame(const FrameDesc& desc, const FrameSettings& setti
     std::memcpy(m_prevDrawViewProj, m_drawViewProj, sizeof(m_drawViewProj));
     std::memcpy(m_prevView, m_view, sizeof(m_view));
     m_hasPrev = true;
-    if ((plan & kStageRcFlatland) != 0u) {
+    if ((plan & kStageRcFlatland) != 0u && settings.rcFlatlandDiagnostic) {
         fillRcSceneDiagnostic_(desc.frameIndex);
     }
 
@@ -1725,14 +1738,31 @@ FrameGraphOutputs FrameComposer::addFrame(rg::Graph& graph) {
         ran |= kStageSky;
     }
 
-    // --- WP-6.5 flatland RC (CPU G-buffer pack into the host scene buffer + rc.*) ---------------------------
+    // --- WP-6.5 flatland RC: frame.rc_pack (G-buffer -> scene texels on the GPU) or the host diagnostic, rc.* --
     if ((plan & kStageRcFlatland) != 0u && m_rcScene.buffer.deviceAddress != 0u) {
         research::rc::RcSettings rs = m_settings.rcSettings;
         if (m_rc.beginFrame(m_frame.serial, rs, m_rcSceneW, m_rcSceneH, m_rcScene.buffer.deviceAddress)) {
             const research::rc::RcGraphRefs rcRefs = m_rc.importInto(graph);
-            const rg::BufferRef sceneRef = importBuffer(graph, m_rcScene, "frame.rc_scene_read");
-            m_rc.addPasses(graph, rcRefs, sceneRef);
-            ran |= kStageRcFlatland;
+            const rg::BufferRef sceneRef = importBuffer(graph, m_rcScene, "frame.rc_scene");
+            bool packed = m_settings.rcFlatlandDiagnostic;
+            if (!packed) {
+                if (PassRecord* r = nextRecord(kFrameModeRcPack, kSlotRcPack)) {
+                    r->groups[0] = groups(m_rcSceneW);
+                    r->groups[1] = groups(m_rcSceneH);
+                    graph.addPass("frame.rc_pack", &FrameComposer::recordDispatch, r)
+                        .use(depth, rg::Access::SampledRead, {}, rg::kStageCompute)
+                        .use(gbuffer.gbuffer[0], rg::Access::SampledRead, {}, rg::kStageCompute)
+                        .use(gbuffer.gbuffer[1], rg::Access::SampledRead, {}, rg::kStageCompute)
+                        .use(sceneRef, rg::Access::StorageWrite, {}, rg::kStageCompute);
+                    packed = true;
+                }
+            }
+            if (packed) {
+                m_rc.addPasses(graph, rcRefs, sceneRef);
+                out.rcScene = sceneRef;
+                out.rcWork = rcRefs.work;
+                ran |= kStageRcFlatland;
+            }
         }
     }
 

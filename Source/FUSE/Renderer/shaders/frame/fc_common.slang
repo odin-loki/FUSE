@@ -9,6 +9,7 @@ static const uint kFcModeResolve = 2u;
 static const uint kFcModeShadowPack = 3u;
 static const uint kFcModeRestir = 4u;
 static const uint kFcModeReflect = 5u;
+static const uint kFcModeRcPack = 6u;
 
 static const uint kFcFlagSky = 1u << 0;
 static const uint kFcFlagAerial = 1u << 1;
@@ -38,11 +39,13 @@ struct FcFrame {
     uint gbufferNormal;
     uint gbufferAlbedo;
     uint gbufferRoughMetal;
-    uint reserved1[2];
+    uint rcWidth;
+    uint rcHeight;
     float invViewProj[16];
     float cameraPos[4];
     float skyDistance;
-    float reserved2[3];
+    float reserved2;
+    uint64_t rcScene;
 };
 
 struct FcPush {

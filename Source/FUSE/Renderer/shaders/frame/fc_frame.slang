@@ -7,6 +7,27 @@
 void main(uint3 tid: SV_DispatchThreadID) {
     fcBegin();
     const uint2 p = tid.xy;
+    if (pc.mode == kFcModeRcPack) {
+        // frame_rc_pack_texel: one thread per flatland texel, nearest render pixel of the G-buffer.
+        if (p.x >= F.rcWidth || p.y >= F.rcHeight) {
+            return;
+        }
+        const int2 s = int2((p.x * F.width + F.width / 2u) / F.rcWidth, (p.y * F.height + F.height / 2u) / F.rcHeight);
+        const float sd = fcFetch(F.inDepth, s).x;
+        float4 r = float4(0.0, 0.0, 0.0, 0.0);
+        if (sd < 1.0) {
+            const float4 rt0 = fcFetch(F.gbufferNormal, s);
+            const float4 rt1 = fcFetch(F.gbufferAlbedo, s);
+            const float3 n = fcOctDecode(rt0.x, rt0.y);
+            const float l2 = 0.35 * 0.35 + 0.75 * 0.75 + 0.45 * 0.45;
+            const float ll = sqrt(l2);
+            const float d = n.x * (0.35 / ll) + n.y * (0.75 / ll) + n.z * (0.45 / ll);
+            const float shade = max(0.0, d);
+            r = float4(rt1.x * shade, rt1.y * shade, rt1.z * shade, 1.0);
+        }
+        fcTexels(F.rcScene)[p.y * F.rcWidth + p.x] = r;
+        return;
+    }
     if (p.x >= F.width || p.y >= F.height) {
         return;
     }

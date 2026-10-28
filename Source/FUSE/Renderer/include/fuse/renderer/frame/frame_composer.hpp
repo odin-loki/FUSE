@@ -230,6 +230,9 @@ struct FrameSettings {
     /// WP-6.5 flatland RC. The scene is a 64^2 diagnostic packed from a CPU G-buffer
     /// (depth, signed-oct normal, albedo), not the frame's full G-buffer.
     bool rcFlatland = false;
+    /// false (default): frame.rc_pack packs this frame's G-buffer (RT0 normal, RT1 albedo, RT4 depth; nearest
+    /// render pixel per flatland texel) into the scene buffer on the GPU. true: the host-filled diagnostic scene.
+    bool rcFlatlandDiagnostic = false;
     research::rc::RcSettings rcSettings{};
     /// SSR rays (and SSGI rays when DDGI is off: DDGI's atmosphere misses already carry the sky irradiance) that
     /// leave the screen or reach the sky return the WP-8.2 sky radiance, when the frame has a sky (`sky`: frame.sky
@@ -292,6 +295,8 @@ struct FrameGraphOutputs {
     rg::TextureRef ssfx;       ///< WP-6.3 composed image
     rg::TextureRef ssrc;       ///< WP-6.5b composed lit + indirect (when compose)
     rg::TextureRef sky;        ///< frame.sky output
+    rg::BufferRef rcScene;     ///< WP-6.5 flatland scene (f32x4 per texel; frame.rc_pack output or host fill)
+    rg::BufferRef rcWork;      ///< WP-6.5 RadianceCascadesGpu work buffer (output at rcOutputOffset())
     rg::TextureRef fog;        ///< WP-8.1 applied image
     rg::BufferRef splats;      ///< WP-9.2 image buffer (output section: GsplatRenderer copy source Output)
     rg::TextureRef sceneColor; ///< frame.resolve output (render resolution, the upscaler input)
@@ -417,6 +422,9 @@ public:
         return m_rcScene.buffer.mapped != nullptr ? static_cast<const f32*>(m_rcScene.buffer.mapped) : nullptr;
     }
     u32 rcFlatlandSceneWidth() const { return m_rcSceneW; }
+    /// Offset of the flatland RC per-texel output (f32x4) in FrameGraphOutputs::rcWork.
+    u64 rcOutputOffset() const { return m_rc.bufferLayout().output; }
+    const research::rc::RadianceCascadesGpu& radianceCascades() const { return m_rc; }
     u32 rcFlatlandSceneHeight() const { return m_rcSceneH; }
 
 private:
@@ -444,7 +452,7 @@ private:
     static constexpr u32 kSampledSlots = 24u;
     static constexpr u32 kMaxRecords = 12u;
     /// Ring slots per frame: one FrameConstants per composer pass flavour.
-    enum ConstantSlot : u32 { kSlotMain = 0, kSlotSky, kSlotAerial, kSlotRestir, kSlotReflect, kSlotCount };
+    enum ConstantSlot : u32 { kSlotMain = 0, kSlotSky, kSlotAerial, kSlotRestir, kSlotReflect, kSlotRcPack, kSlotCount };
 
     bool createPipeline();
     bool createTargets();

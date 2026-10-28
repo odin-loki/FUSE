@@ -170,7 +170,7 @@ endif()
 
 set(_fuse_frame_lock "${CMAKE_CURRENT_BINARY_DIR}/tests/run_vulkan_icd_locked.sh")
 set(_fuse_frame_vk_tests "")
-foreach(_case "ssrc;t0;auto" "rc_flatland;t0;auto" "full;t0;auto" "full;t2;auto" "toggles;t0;auto" "toggles;t2;auto" "determinism;t0;auto"
+foreach(_case "ssrc;t0;auto" "rc_flatland;t0;auto" "rc_flatland_gbuffer;t0;auto" "full;t0;auto" "full;t2;auto" "toggles;t0;auto" "toggles;t2;auto" "determinism;t0;auto"
               "determinism;t2;auto" "zero_alloc;t0;auto" "zero_alloc;t2;auto" "golden;t0;auto" "golden;t2;auto"
               "parity;t0;slang" "parity;t2;slang" "parity;t0;glsl" "parity;t2;glsl" "full;t2;glsl")
     list(GET _case 0 _mode)

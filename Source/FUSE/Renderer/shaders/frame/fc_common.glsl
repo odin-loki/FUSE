@@ -16,6 +16,7 @@
 #define FC_MODE_SHADOW_PACK 3u
 #define FC_MODE_RESTIR 4u
 #define FC_MODE_REFLECT 5u
+#define FC_MODE_RC_PACK 6u
 
 #define FC_FLAG_SKY (1u << 0)
 #define FC_FLAG_AERIAL (1u << 1)
@@ -45,11 +46,13 @@ struct FcFrame {
     uint gbufferNormal;
     uint gbufferAlbedo;
     uint gbufferRoughMetal;
-    uint reserved1[2];
+    uint rcWidth;
+    uint rcHeight;
     float invViewProj[16];
     float cameraPos[4];
     float skyDistance;
-    float reserved2[3];
+    float reserved2;
+    uint64_t rcScene;
 };
 
 layout(buffer_reference, std430, buffer_reference_align = 16) readonly buffer FcFrameRef { FcFrame f; };

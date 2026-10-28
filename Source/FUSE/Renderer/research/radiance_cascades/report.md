@@ -1,6 +1,6 @@
 # WP-6.5 — Radiance cascades (research prototype)
 
-**Status:** Research library (`fuse_rc_research`) with an optional **`FrameComposer`** hook: `FrameSettings::rcFlatland` / `kStageRcFlatland` (gates `fuse_rp_frame_reference`, `fuse_rp_frame_vk_rc_flatland_t0`). The frame path packs a host-visible `RcScene` from a 64^2 CPU G-buffer (depth, signed-oct normal, albedo) each frame (`fillDiagnosticGBuffer` / `packSceneFromGBuffer`). That diagnostic is not the frame's G-buffer, and there is no new cascade shader. Near-field radiance cascades in production use WP-6.5b **`fuse_ssrc_gpu`** (`FrameSettings::ssrc`, stage `kStageSsrc`, gate `fuse_rp_frame_vk_ssrc_t0`).
+**Status:** Research library (`fuse_rc_research`) with an optional **`FrameComposer`** hook: `FrameSettings::rcFlatland` / `kStageRcFlatland` (gates `fuse_rp_frame_reference`, `fuse_rp_frame_vk_rc_flatland_t0`). By default the frame path packs the frame's own G-buffer (RT4 depth, RT0 normal, RT1 albedo) into a 64^2 `RcScene` on the GPU (`frame.rc_pack`, gate `fuse_rp_frame_vk_rc_flatland_gbuffer_t0`); `FrameSettings::rcFlatlandDiagnostic` keeps the host CPU G-buffer (`fillDiagnosticGBuffer` / `packSceneFromGBuffer`). There is no new cascade shader. Near-field radiance cascades in production use WP-6.5b **`fuse_ssrc_gpu`** (`FrameSettings::ssrc`, stage `kStageSsrc`, gate `fuse_rp_frame_vk_ssrc_t0`).
 
 ## What shipped
 

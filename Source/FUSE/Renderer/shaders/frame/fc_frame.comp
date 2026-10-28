@@ -18,6 +18,30 @@ FUSE_BINDLESS_STORAGE_IMAGE_LAYOUT(rgba16f) uniform writeonly image2D fuse_fc_im
 
 void main() {
     const uvec2 p = gl_GlobalInvocationID.xy;
+    if (pc.mode == FC_MODE_RC_PACK) {
+        // frame_rc_pack_texel: one thread per flatland texel, nearest render pixel of the G-buffer.
+        if (p.x >= F.rcWidth || p.y >= F.rcHeight) {
+            return;
+        }
+        const ivec2 s = ivec2((p.x * F.width + F.width / 2u) / F.rcWidth, (p.y * F.height + F.height / 2u) / F.rcHeight);
+        const float sd = fc_fetch(F.inDepth, s).x;
+        vec4 r = vec4(0.0);
+        if (sd < 1.0) {
+            const vec4 rt0 = fc_fetch(F.gbufferNormal, s);
+            const vec4 rt1 = fc_fetch(F.gbufferAlbedo, s);
+            const vec3 n = fc_oct_decode(rt0.x, rt0.y);
+            precise float l2 = 0.35 * 0.35 + 0.75 * 0.75 + 0.45 * 0.45;
+            const float ll = sqrt(l2);
+            precise float d = n.x * (0.35 / ll) + n.y * (0.75 / ll) + n.z * (0.45 / ll);
+            const float shade = max(0.0, d);
+            precise float er = rt1.x * shade;
+            precise float eg = rt1.y * shade;
+            precise float eb = rt1.z * shade;
+            r = vec4(er, eg, eb, 1.0);
+        }
+        FcTexelsRef(F.rcScene).v[p.y * F.rcWidth + p.x] = r;
+        return;
+    }
     if (p.x >= F.width || p.y >= F.height) {
         return;
     }

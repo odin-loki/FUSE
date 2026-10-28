@@ -71,7 +71,8 @@ const Field kFields[] = {
     FC_FIELD(denoised),     FC_FIELD(visibility), FC_FIELD(restirDi),      FC_FIELD(restirAlbedo),  FC_FIELD(reflection),
     FC_FIELD(width),        FC_FIELD(height),     FC_FIELD(inColor),       FC_FIELD(inDepth),       FC_FIELD(outColor),
     FC_FIELD(outResolve),   FC_FIELD(flags),      FC_FIELD(gbufferNormal), FC_FIELD(gbufferAlbedo), FC_FIELD(gbufferRoughMetal),
-    FC_FIELD(reserved1),    FC_FIELD(invViewProj), FC_FIELD(cameraPos),    FC_FIELD(skyDistance),   FC_FIELD(reserved2),
+    FC_FIELD(rcWidth),      FC_FIELD(rcHeight),   FC_FIELD(invViewProj),   FC_FIELD(cameraPos),     FC_FIELD(skyDistance),
+    FC_FIELD(reserved2),    FC_FIELD(rcScene),
 };
 #undef FC_FIELD
 
