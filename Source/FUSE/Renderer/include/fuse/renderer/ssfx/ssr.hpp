@@ -6,12 +6,12 @@
 
 namespace fuse::renderer {
 
-using ssfx::SsrHit;
-using ssfx::SsrParams;
-using ssfx::clampSsrParams;
-using ssfx::computeSsrCpu;
-using ssfx::ssrReflect;
-using ssfx::ssrTracePixel;
-using ssfx::ssrTraceRay;
+using ::fuse::ssfx::SsrHit;
+using ::fuse::ssfx::SsrParams;
+using ::fuse::ssfx::clampSsrParams;
+using ::fuse::ssfx::computeSsrCpu;
+using ::fuse::ssfx::ssrReflect;
+using ::fuse::ssfx::ssrTracePixel;
+using ::fuse::ssfx::ssrTraceRay;
 
 } // namespace fuse::renderer

@@ -45,6 +45,7 @@ if(FUSE_BUILD_PROJECT)  # fuse_cook_stubs (Tools/FUSE/Cook) is added after Rende
     if(FUSE_BUILD_CORE_TESTS)
         add_executable(fuse_rp_meshlet_cook_tests ${_fuse_geo_dir}/tests/test_rp_meshlet_cook.cpp)
         target_link_libraries(fuse_rp_meshlet_cook_tests PRIVATE fuse_geometry_cook)
+        target_include_directories(fuse_rp_meshlet_cook_tests PRIVATE ${CMAKE_CURRENT_LIST_DIR}/../include)
         target_compile_definitions(fuse_rp_meshlet_cook_tests PRIVATE FUSE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
         fuse_apply_cxx23(fuse_rp_meshlet_cook_tests)
         foreach(_suite codec build format cook)

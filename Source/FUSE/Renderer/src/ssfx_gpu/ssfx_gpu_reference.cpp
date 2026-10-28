@@ -8,7 +8,7 @@
 
 namespace fuse::renderer::ssfx_gpu {
 
-bool camera_from_projection(const f32 (&proj)[16], u32 width, u32 height, ssfx::SsfxCamera& camera) {
+bool camera_from_projection(const f32 (&proj)[16], u32 width, u32 height, ::fuse::ssfx::SsfxCamera& camera) {
     if (width == 0u || height == 0u || !(proj[0] > 0.f) || !(proj[5] > 0.f) || std::fabs(proj[11] + 1.f) > 1e-4f) {
         return false;
     }
@@ -26,7 +26,7 @@ bool camera_from_projection(const f32 (&proj)[16], u32 width, u32 height, ssfx::
 
 bool resolve_constants(const SsfxGpuSettings& settings, const SsfxCameraDesc& camera, const f32 (&ambient)[3],
                        u32 width, u32 height, SsfxFrameConstants& out) {
-    ssfx::SsfxCamera cam{};
+    ::fuse::ssfx::SsfxCamera cam{};
     if (!camera_from_projection(camera.proj, width, height, cam) || !(camera.nearPlane > 0.f)) {
         return false;
     }
@@ -77,7 +77,7 @@ bool resolve_constants(const SsfxGpuSettings& settings, const SsfxCameraDesc& ca
     c.ambient[1] = ambient[1];
     c.ambient[2] = ambient[2];
 
-    const ssfx::gtao_kernel::Params g = ssfx::gtao_kernel::make_params(ssfx::SsfxGBufferView{}, settings.gtao, nullptr);
+    const ::fuse::ssfx::gtao_kernel::Params g = ::fuse::ssfx::gtao_kernel::make_params(::fuse::ssfx::SsfxGBufferView{}, settings.gtao, nullptr);
     c.aoRadius = g.gtao.radius;
     c.aoFalloff = g.gtao.falloff;
     c.aoBias = g.gtao.bias;
@@ -94,7 +94,7 @@ bool resolve_constants(const SsfxGpuSettings& settings, const SsfxCameraDesc& ca
         c.aoSliceSin[k] = g.slice_sin[k];
     }
 
-    const ssfx::SsrParams s = ssfx::ssr_kernel::clamp_params(settings.ssr_params);
+    const ::fuse::ssfx::SsrParams s = ::fuse::ssfx::ssr_kernel::clamp_params(settings.ssr_params);
     c.ssrMaxSteps = s.max_steps;
     c.ssrRefineSteps = s.refine_steps;
     c.ssrStride = s.stride_px;
@@ -105,7 +105,7 @@ bool resolve_constants(const SsfxGpuSettings& settings, const SsfxCameraDesc& ca
     c.ssrContactFloor = settings.contact.roughness_floor;
     c.ssrContactExponent = settings.contact.exponent;
 
-    const ssfx::SsgiParams gi = ssfx::ssgi_kernel::clamp_params(settings.ssgi_params);
+    const ::fuse::ssfx::SsgiParams gi = ::fuse::ssfx::ssgi_kernel::clamp_params(settings.ssgi_params);
     c.giSampleSqrt = gi.sample_sqrt;
     c.giBounces = gi.bounces;
     c.giMaxSteps = gi.max_steps;
@@ -118,9 +118,9 @@ bool resolve_constants(const SsfxGpuSettings& settings, const SsfxCameraDesc& ca
     return true;
 }
 
-ssfx::SsfxGBufferView prepared_view(const SsfxFrameConstants& c, const std::vector<f32>& depth,
+::fuse::ssfx::SsfxGBufferView prepared_view(const SsfxFrameConstants& c, const std::vector<f32>& depth,
                                     const std::vector<math::Vec3>& normals) {
-    ssfx::SsfxGBufferView view{};
+    ::fuse::ssfx::SsfxGBufferView view{};
     view.camera = camera_of(c);
     view.depth = depth.data();
     view.normals = normals.data();
@@ -128,25 +128,25 @@ ssfx::SsfxGBufferView prepared_view(const SsfxFrameConstants& c, const std::vect
     return view;
 }
 
-bool computeGtaoCpu(const ssfx::SsfxGBufferView& view, const ssfx::GtaoParams& params, f32* visibilityOut,
+bool computeGtaoCpu(const ::fuse::ssfx::SsfxGBufferView& view, const ::fuse::ssfx::GtaoParams& params, f32* visibilityOut,
                     kernel::Backend backend) {
     if (!view.valid() || visibilityOut == nullptr) {
         return false;
     }
-    return kernel::launch(backend, ssfx::gtao_kernel::make_launch(view), ssfx::gtao_kernel::Kernel{},
-                          ssfx::gtao_kernel::make_params(view, params, visibilityOut))
+    return kernel::launch(backend, ::fuse::ssfx::gtao_kernel::make_launch(view), ::fuse::ssfx::gtao_kernel::Kernel{},
+                          ::fuse::ssfx::gtao_kernel::make_params(view, params, visibilityOut))
         .ok;
 }
 
 namespace {
 
 /// ssgi_kernel::pixel_gather + the sky fallback (sx_ssgi's sx_pixel_gather with kSsfxFlagSky).
-math::Vec3 gather_with_sky(const ssfx::SsfxGBufferView& view, const math::Vec3* radiance, const ssfx::SsgiParams& params,
+math::Vec3 gather_with_sky(const ::fuse::ssfx::SsfxGBufferView& view, const math::Vec3* radiance, const ::fuse::ssfx::SsgiParams& params,
                            const SsfxFrameConstants& c, const SsfxSkySource& sky, u32 x, u32 y) {
     if (x >= view.camera.width || y >= view.camera.height || view.depthAt(x, y) <= 0.f) {
         return {};
     }
-    const ssfx::SsrParams trace = ssfx::ssgi_kernel::trace_params(params);
+    const ::fuse::ssfx::SsrParams trace = ::fuse::ssfx::ssgi_kernel::trace_params(params);
     const math::Vec3 p = view.positionAt(x, y);
     math::Vec3 n = view.normalAt(x, y).normalized();
     if (n.dot(p) > 0.f) {
@@ -156,8 +156,8 @@ math::Vec3 gather_with_sky(const ssfx::SsfxGBufferView& view, const math::Vec3* 
     const u32 total = params.sample_sqrt * params.sample_sqrt;
     for (u32 i = 0u; i < params.sample_sqrt; ++i) {
         for (u32 j = 0u; j < params.sample_sqrt; ++j) {
-            const math::Vec3 dir = ssfx::ssgi_kernel::sample_direction(n, x, y, i, j, params.sample_sqrt);
-            const ssfx::SsrHit hit = ssfx::ssr_kernel::trace_ray(view, radiance, trace, x, y, dir);
+            const math::Vec3 dir = ::fuse::ssfx::ssgi_kernel::sample_direction(n, x, y, i, j, params.sample_sqrt);
+            const ::fuse::ssfx::SsrHit hit = ::fuse::ssfx::ssr_kernel::trace_ray(view, radiance, trace, x, y, dir);
             if (!hit.hit) {
                 if (sky_exit(view, params.max_distance, x, y, dir)) {
                     sum = sum + sky.radiance(sky.user, sky_world_dir(c, dir.normalized()));
@@ -201,7 +201,7 @@ bool reference_frame(const SsfxGpuSettings& settings, const SsfxFrameConstants& 
         depth[i] = in.prepared[i].x;
         roughness[i] = in.prepared[i].y;
     }
-    const ssfx::SsfxGBufferView view = prepared_view(c, depth, in.normal);
+    const ::fuse::ssfx::SsfxGBufferView view = prepared_view(c, depth, in.normal);
     out.ao.assign(n, 1.f);
     out.ssr.assign(n, math::Vec4{});
     out.gi.assign(n, math::Vec3{});
@@ -210,31 +210,31 @@ bool reference_frame(const SsfxGpuSettings& settings, const SsfxFrameConstants& 
         return false;
     }
     if (settings.ssr) {
-        ssfx::ssr_kernel::Params kp{};
+        ::fuse::ssfx::ssr_kernel::Params kp{};
         kp.view = view;
         kp.scene_color = in.radiance.data();
         kp.trace = settings.ssr_params;
         kp.roughness = settings.ssrRoughness ? roughness.data() : nullptr;
         kp.contact = settings.contact;
         kp.rgba_out = out.ssr.data();
-        if (!kernel::launch(backend, ssfx::ssr_kernel::make_launch(view), ssfx::ssr_kernel::Kernel{}, kp).ok) {
+        if (!kernel::launch(backend, ::fuse::ssfx::ssr_kernel::make_launch(view), ::fuse::ssfx::ssr_kernel::Kernel{}, kp).ok) {
             return false;
         }
         if (skyOn) { // sx_ssr: a miss that sky_exit takes the sky at confidence 1 x the gloss fade at max distance
-            const ssfx::SsrParams sp = ssfx::ssr_kernel::clamp_params(settings.ssr_params);
+            const ::fuse::ssfx::SsrParams sp = ::fuse::ssfx::ssr_kernel::clamp_params(settings.ssr_params);
             for (u32 y = 0; y < in.height; ++y) {
                 for (u32 x = 0; x < in.width; ++x) {
                     const usize i = static_cast<usize>(y) * in.width + x;
                     const f32 r = settings.ssrRoughness ? roughness[i] : 0.f;
                     if (!(r < 1.f) || view.depthAt(x, y) <= 0.f ||
-                        ssfx::ssr_kernel::trace_pixel(view, in.radiance.data(), sp, x, y).hit) {
+                        ::fuse::ssfx::ssr_kernel::trace_pixel(view, in.radiance.data(), sp, x, y).hit) {
                         continue;
                     }
                     const math::Vec3 dir = pixel_reflection(view, x, y);
                     if (!sky_exit(view, sp.max_distance, x, y, dir)) {
                         continue;
                     }
-                    const f32 fade = settings.ssrRoughness ? ssfx::ssr_kernel::gloss_fade(settings.contact, sp.max_distance, r) : 1.f;
+                    const f32 fade = settings.ssrRoughness ? ::fuse::ssfx::ssr_kernel::gloss_fade(settings.contact, sp.max_distance, r) : 1.f;
                     const math::Vec3 L = sky.radiance(sky.user, sky_world_dir(c, dir.normalized()));
                     out.ssr[i] = math::Vec4{L.x, L.y, L.z, fade};
                 }
@@ -242,7 +242,7 @@ bool reference_frame(const SsfxGpuSettings& settings, const SsfxFrameConstants& 
         }
     }
     if (settings.ssgi && skyGi) { // the bounce chain of computeSsgiCpu with the sky fallback
-        const ssfx::SsgiParams gp = ssfx::ssgi_kernel::clamp_params(settings.ssgi_params);
+        const ::fuse::ssfx::SsgiParams gp = ::fuse::ssfx::ssgi_kernel::clamp_params(settings.ssgi_params);
         std::vector<math::Vec3> src = in.radiance;
         for (u32 b = 0; b < gp.bounces; ++b) {
             for (u32 y = 0; y < in.height; ++y) {
@@ -258,7 +258,7 @@ bool reference_frame(const SsfxGpuSettings& settings, const SsfxFrameConstants& 
             }
         }
     } else if (settings.ssgi &&
-               !ssfx::computeSsgiCpu(view, in.radiance.data(), in.diffuse.data(), settings.ssgi_params, out.gi.data(), backend)) {
+               !::fuse::ssfx::computeSsgiCpu(view, in.radiance.data(), in.diffuse.data(), settings.ssgi_params, out.gi.data(), backend)) {
         return false;
     }
     for (u32 y = 0; y < in.height; ++y) {

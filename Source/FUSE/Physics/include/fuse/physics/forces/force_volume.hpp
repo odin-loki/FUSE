@@ -2,6 +2,7 @@
 
 #include <fuse/physics/math.hpp>
 
+#include <algorithm>
 #include <cmath>
 
 namespace fuse::physics {

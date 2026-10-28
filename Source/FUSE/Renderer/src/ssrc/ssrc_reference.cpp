@@ -449,7 +449,7 @@ bool resolve_layout(const SsrcSettings& s, u32 width, u32 height, SsrcFrameConst
 
 bool resolve_constants(const SsrcSettings& settings, const ssfx_gpu::SsfxCameraDesc& camera, const f32 (&ambient)[3],
                        u32 width, u32 height, SsrcFrameConstants& out, SsrcLayoutInfo* info) {
-    ssfx::SsfxCamera cam{};
+    ::fuse::ssfx::SsfxCamera cam{};
     if (!ssfx_gpu::camera_from_projection(camera.proj, width, height, cam) || !(camera.nearPlane > 0.f)) {
         return false;
     }
@@ -1045,7 +1045,7 @@ void bruteForce(const SsrcFrameConstants& c, const SsrcInputs& in, const ddgi_ke
             for (u32 i = 0; i < k; ++i) {
                 for (u32 j = 0; j < k; ++j) {
                     const math::Vec3 s =
-                        ssfx::ssgi_kernel::sample_direction(math::Vec3{nrm.x, nrm.y, nrm.z}, x, y, i, j, k);
+                        ::fuse::ssfx::ssgi_kernel::sample_direction(math::Vec3{nrm.x, nrm.y, nrm.z}, x, y, i, j, k);
                     const F3 d = normalize(F3{s.x, s.y, s.z});
                     f32 farRgb[3];
                     const Ray ray = raySetup(c, origin, d);

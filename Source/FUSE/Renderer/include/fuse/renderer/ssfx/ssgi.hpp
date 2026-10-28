@@ -6,9 +6,9 @@
 
 namespace fuse::renderer {
 
-using ssfx::SsgiParams;
-using ssfx::clampSsgiParams;
-using ssfx::computeSsgiCpu;
-using ssfx::ssgiPixelGather;
+using ::fuse::ssfx::SsgiParams;
+using ::fuse::ssfx::clampSsgiParams;
+using ::fuse::ssfx::computeSsgiCpu;
+using ::fuse::ssfx::ssgiPixelGather;
 
 } // namespace fuse::renderer

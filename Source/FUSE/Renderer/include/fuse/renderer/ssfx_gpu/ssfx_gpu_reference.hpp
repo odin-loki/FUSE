@@ -44,16 +44,16 @@ namespace fuse::renderer::ssfx_gpu {
 /// Which passes run and their parameters (the CPU kernels' own parameter structs).
 struct SsfxGpuSettings {
     bool ao = true;
-    ssfx::GtaoParams gtao{};
+    ::fuse::ssfx::GtaoParams gtao{};
     bool multiBounce = false;
     bool ssr = true;
-    ssfx::SsrParams ssr_params{};
+    ::fuse::ssfx::SsrParams ssr_params{};
     /// Gate / gloss-fade SSR by the G-buffer roughness (RT2.x); false = every surface is a mirror.
     bool ssrRoughness = true;
     /// Contact hardening (B5 SSRParams defaults: enabled).
-    ssfx::ssr_kernel::ContactHardening contact{true, 0.5f, 0.02f, 2.f};
+    ::fuse::ssfx::ssr_kernel::ContactHardening contact{true, 0.5f, 0.02f, 2.f};
     bool ssgi = true;
-    ssfx::SsgiParams ssgi_params{};
+    ::fuse::ssfx::SsgiParams ssgi_params{};
     /// Sky fallback (needs SsfxFrameImages::skyAddress): SSR (kSsfxFlagSky) / SSGI (kSsfxFlagSkyGi) rays that miss and
     /// leave the screen or end over the sky (sky_exit below) return the atmosphere's sky radiance instead of nothing.
     /// Off: the B5 kernels. (A renderer whose other GI already integrates the sky, e.g. DDGI with atmosphere misses,
@@ -75,7 +75,7 @@ struct SsfxCameraDesc {
 
 /// SsfxCamera of a column-major perspective projection (pixel rows grow downwards: view +Y up maps to
 /// decreasing rows). False when `proj` is not a perspective projection.
-bool camera_from_projection(const f32 (&proj)[16], u32 width, u32 height, ssfx::SsfxCamera& camera);
+bool camera_from_projection(const f32 (&proj)[16], u32 width, u32 height, ::fuse::ssfx::SsfxCamera& camera);
 
 /// Fills every non-address field of the frame constants (extent, flags, camera, ambient, clamped kernel
 /// parameters incl. the GTAO slice table from gtao_kernel::make_params). False on an invalid camera.
@@ -83,8 +83,8 @@ bool resolve_constants(const SsfxGpuSettings& settings, const SsfxCameraDesc& ca
                        u32 width, u32 height, SsfxFrameConstants& out);
 
 /// The SsfxCamera of resolved constants.
-FUSE_HOST_DEVICE inline ssfx::SsfxCamera camera_of(const SsfxFrameConstants& c) {
-    ssfx::SsfxCamera cam{};
+FUSE_HOST_DEVICE inline ::fuse::ssfx::SsfxCamera camera_of(const SsfxFrameConstants& c) {
+    ::fuse::ssfx::SsfxCamera cam{};
     cam.width = c.width;
     cam.height = c.height;
     cam.fx = c.fx;
@@ -168,9 +168,9 @@ FUSE_HOST_DEVICE inline math::Vec4 compose_pixel(const SsfxFrameConstants& c, u3
         f32 vg = ao;
         f32 vb = ao;
         if ((c.flags & kSsfxFlagMultiBounce) != 0u) {
-            vr = ssfx::gtao_kernel::multi_bounce(ao, albedo.x);
-            vg = ssfx::gtao_kernel::multi_bounce(ao, albedo.y);
-            vb = ssfx::gtao_kernel::multi_bounce(ao, albedo.z);
+            vr = ::fuse::ssfx::gtao_kernel::multi_bounce(ao, albedo.x);
+            vg = ::fuse::ssfx::gtao_kernel::multi_bounce(ao, albedo.y);
+            vb = ::fuse::ssfx::gtao_kernel::multi_bounce(ao, albedo.z);
         }
         const f32 k = prepared.w;
         r = r + c.ambient[0] * albedo.x * k * (vr - 1.f);
@@ -210,13 +210,13 @@ FUSE_HOST_DEVICE inline math::Vec4 compose_pixel(const SsfxFrameConstants& c, u3
 /// sky: the march's own setup (ssr_kernel::trace_ray: near-plane clip, max distance) and its end point leaves the
 /// screen or lies over a sky pixel (depth 0). A miss whose end point lies over geometry (the ray ran out of length
 /// or passed behind a surface) stays a miss. `maxDistance` = the clamped trace parameter.
-FUSE_HOST_DEVICE inline bool sky_exit(const ssfx::SsfxGBufferView& view, f32 maxDistance, u32 x, u32 y,
+FUSE_HOST_DEVICE inline bool sky_exit(const ::fuse::ssfx::SsfxGBufferView& view, f32 maxDistance, u32 x, u32 y,
                                       const math::Vec3& direction) {
     if (!view.valid() || x >= view.camera.width || y >= view.camera.height || view.depthAt(x, y) <= 0.f ||
         direction.length() <= 0.f) {
         return false;
     }
-    const ssfx::SsfxCamera& cam = view.camera;
+    const ::fuse::ssfx::SsfxCamera& cam = view.camera;
     const math::Vec3 p = view.positionAt(x, y);
     const math::Vec3 r = direction.normalized();
     f32 rayLength = maxDistance;
@@ -236,7 +236,7 @@ FUSE_HOST_DEVICE inline bool sky_exit(const ssfx::SsfxGBufferView& view, f32 max
     if (!cam.inside(ex, ey)) {
         return true;
     }
-    return ssfx::ssr_kernel::depth_nearest(view, ex, ey) <= 0.f;
+    return ::fuse::ssfx::ssr_kernel::depth_nearest(view, ex, ey) <= 0.f;
 }
 
 /// World direction of a view-space direction in the ssfx convention (+X right, +Y down, +Z forward): the
@@ -252,14 +252,14 @@ FUSE_HOST_DEVICE inline math::Vec3 sky_world_dir(const SsfxFrameConstants& c, co
 }
 
 /// Mirror reflection direction ssfx.ssr traces from pixel (x, y) (ssr_kernel::trace_pixel's).
-FUSE_HOST_DEVICE inline math::Vec3 pixel_reflection(const ssfx::SsfxGBufferView& view, u32 x, u32 y) {
+FUSE_HOST_DEVICE inline math::Vec3 pixel_reflection(const ::fuse::ssfx::SsfxGBufferView& view, u32 x, u32 y) {
     const math::Vec3 p = view.positionAt(x, y);
     math::Vec3 n = view.normalAt(x, y).normalized();
     const math::Vec3 v = p.normalized();
     if (n.dot(v) > 0.f) {
         n = n * -1.f;
     }
-    return ssfx::ssr_kernel::reflect(v, n);
+    return ::fuse::ssfx::ssr_kernel::reflect(v, n);
 }
 
 /// The CPU side of the sky source: the radiance along a unit world direction (the kernels'
@@ -300,11 +300,11 @@ bool reference_frame(const SsfxGpuSettings& settings, const SsfxFrameConstants& 
                      SsfxReferenceFrame& out, kernel::Backend backend, const SsfxSkySource& sky);
 
 /// View of the prepared depth / normals: `depth` must hold `prepared[i].x` (callers keep it alive).
-ssfx::SsfxGBufferView prepared_view(const SsfxFrameConstants& c, const std::vector<f32>& depth,
+::fuse::ssfx::SsfxGBufferView prepared_view(const SsfxFrameConstants& c, const std::vector<f32>& depth,
                                     const std::vector<math::Vec3>& normals);
 
 /// Full-frame CPU GTAO (gtao_kernel on `backend`). False on bad input.
-bool computeGtaoCpu(const ssfx::SsfxGBufferView& view, const ssfx::GtaoParams& params, f32* visibilityOut,
+bool computeGtaoCpu(const ::fuse::ssfx::SsfxGBufferView& view, const ::fuse::ssfx::GtaoParams& params, f32* visibilityOut,
                     kernel::Backend backend = kernel::Backend::CpuReference);
 
 } // namespace fuse::renderer::ssfx_gpu

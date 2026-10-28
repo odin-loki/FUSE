@@ -6,8 +6,8 @@
 
 namespace fuse::renderer {
 
-using ssfx::SsfxCamera;
-using ssfx::SsfxGBufferView;
-using ssfx::ssfxReconstructNormal;
+using ::fuse::ssfx::SsfxCamera;
+using ::fuse::ssfx::SsfxGBufferView;
+using ::fuse::ssfx::ssfxReconstructNormal;
 
 } // namespace fuse::renderer
